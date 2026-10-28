@@ -1,0 +1,16 @@
+__pycache__/
+data/
+logs/
+.venv/
+test-results/
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*backup*.json
+*备份*.json
+.pytest_cache/
+.idea/
+.vscode/
