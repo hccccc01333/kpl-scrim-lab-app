@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>回放 2D 审阅器 · KPL 赛训</title>
+  <meta name="description" content="只读本地回放数据集：2D 命令目标点、朝向、事件与尾部 712 帧时间轴。">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./replay-review.css">
+</head>
+<body>
+  <header class="rr-topbar">
+    <div class="rr-brand">
+      <span class="rr-mark">2D</span>
+      <div class="rr-brand-text">
+        <h1>回放 2D 审阅器</h1>
+        <p>REPLAY COMMAND VIEWER · 本地只读</p>
+      </div>
+    </div>
+    <div class="rr-topbar-actions">
+      <span id="source-badge" class="rr-source-badge">内置快照</span>
+      <button id="btn-reload" class="rr-button" type="button" title="重新读取内置数据快照">重载快照</button>
+      <button id="btn-folder" class="rr-button rr-button-accent" type="button" title="选择包含 replay_*.csv / 11-2 CSV / gzip 事件流的文件夹">打开数据文件夹</button>
+      <button id="btn-gzip" class="rr-button" type="button" title="选择 replay_event_stream_events.jsonl.gz，浏览器流式解压">加载 R1 gzip</button>
+      <button id="btn-path" class="rr-button" type="button" title="当页面由项目根目录静态服务器提供时，读取 CSV、11-2 购买/加点与 gzip 事件流">尝试 data/ 路径</button>
+      <a class="rr-button rr-button-ghost" href="./studio.html">返回分析台</a>
+      <input id="folder-input" type="file" webkitdirectory multiple hidden>
+      <input id="gzip-input" type="file" accept=".gz,application/gzip" hidden>
+    </div>
+  </header>
+
+  <main class="rr-layout">
+    <aside class="rr-sidebar">
+      <section class="rr-card">
+        <div class="rr-card-head">
+          <h2>样本 <span> SAMPLE</span></h2>
+          <span id="sample-count" class="rr-chip">0</span>
+        </div>
+        <label class="rr-field">
+          <span>本地样本</span>
+          <select id="sample-select" aria-label="选择回放样本"></select>
+        </label>
+        <div id="sample-meta" class="rr-meta"></div>
+        <div id="sample-warnings" class="rr-warnings"></div>
+        <details class="rr-details">
+          <summary>数据源与行数</summary>
+          <div id="source-list" class="rr-source-list"></div>
+        </details>
+      </section>
+
+      <section class="rr-card">
+        <div class="rr-card-head">
+          <h2>筛选 <span> FILTER</span></h2>
+          <button id="btn-reset-filters" class="rr-mini" type="button">重置</button>
+        </div>
+        <label class="rr-field">
+          <span>选手 / 英雄 / 实体</span>
+          <input id="search" type="search" placeholder="昵称、英雄、skin 或 entity" autocomplete="off">
+        </label>
+        <div class="rr-field-row">
+          <label class="rr-field">
+            <span>阵营</span>
+            <select id="team-filter">
+              <option value="all">全部</option>
+              <option value="1">team 1 / 蓝</option>
+              <option value="2">team 2 / 红</option>
+              <option value="0">未分队</option>
+            </select>
+          </label>
+          <label class="rr-field">
+            <span>英雄</span>
+            <select id="hero-filter"><option value="all">全部</option></select>
+          </label>
+        </div>
+        <label class="rr-check"><input id="local-only" type="checkbox"> 仅本地 / 被记录视角</label>
+        <div class="rr-inline-actions">
+          <button id="btn-all-players" class="rr-mini" type="button">全选</button>
+          <button id="btn-none-players" class="rr-mini" type="button">清空</button>
+          <span id="visible-count" class="rr-muted">0 / 10 可见</span>
+        </div>
+        <div id="roster-list" class="rr-roster" aria-live="polite"></div>
+      </section>
+
+      <section class="rr-card">
+        <div class="rr-card-head"><h2>图层 <span> LAYERS</span></h2></div>
+        <label class="rr-check"><input id="layer-history" type="checkbox" checked> 命令目标点残影</label>
+        <label class="rr-check"><input id="layer-labels" type="checkbox" checked> 选手标签 / 最新目标</label>
+        <label class="rr-check"><input id="layer-heading" type="checkbox" checked> 朝向箭头（本地视角）</label>
+        <label class="rr-check"><input id="layer-events" type="checkbox" checked> 事件脉冲（锚定目标点）</label>
+        <label class="rr-check"><input id="layer-map" type="checkbox" checked> 地图底图 / 车道</label>
+        <label class="rr-field">
+          <span>残影窗口</span>
+          <select id="history-window">
+            <option value="600">近 600 帧</option>
+            <option value="1800" selected>近 1,800 帧</option>
+            <option value="3600">近 3,600 帧</option>
+            <option value="0">全部历史</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="rr-card rr-notes">
+        <div class="rr-card-head"><h2>读法 <span> NOTES</span></h2></div>
+        <p><strong>点不是位置。</strong> 每个点是一条 0x2C 坐标命令的目标/瞄准点；点之间不连线，避免伪装成连续轨迹。</p>
+        <p><strong>朝向不是移动方向。</strong> 0x2D 来自技能指示器拖动，且只有本地/被记录视角有样本。</p>
+        <p><strong>角度基准未验证。</strong> 画布按 0° 向上、顺时针绘制，只作方向提示。</p>
+        <p><strong>帧率未确认。</strong> 时间显示按 30 fps 估算，仅用于定位，不是官方时长。</p>
+        <p><strong>BUYEQUIP 不是金币收入。</strong> 11/2 购买/加点来自 CSV；去重标价和只是参考，不能当花费（集合含合成件+成品+重复）。最终 6 格装备成本才与面板累计金币对拍。本页不展示 gold_event_total。</p>
+      </section>
+    </aside>
+
+    <section class="rr-stage">
+      <div class="rr-map-card">
+        <div class="rr-map-head">
+          <div>
+            <h2>地图命令视图</h2>
+            <p id="map-subtitle">坐标目标点 / 瞄准点 · 范围约 ±55,000</p>
+          </div>
+          <div class="rr-map-head-right">
+            <span id="map-time" class="rr-chip rr-chip-strong">帧 0</span>
+            <span id="map-visible" class="rr-chip">0 人</span>
+            <span id="map-cmds" class="rr-chip">0 条命令</span>
+          </div>
+        </div>
+        <div class="rr-map-overlay rr-map-overlay-top">
+          <span class="rr-legend-title">命令类型</span>
+          <span class="rr-legend-item"><i class="rr-dot rr-cmd-attack"></i>攻击目标 0x0200</span>
+          <span class="rr-legend-item"><i class="rr-dot rr-cmd-skill"></i>技能瞄准 0x0100</span>
+          <span class="rr-legend-item"><i class="rr-dot rr-cmd-signal"></i>信号 0x0400</span>
+          <span class="rr-legend-item"><i class="rr-dot rr-cmd-unknown"></i>未知/取消</span>
+        </div>
+        <div class="rr-map-wrap">
+          <canvas id="map" role="img" aria-label="2D 地图：显示选手命令目标点、朝向箭头和事件锚点"></canvas>
+          <div id="map-empty" class="rr-map-empty" hidden>
+            <strong>当前筛选没有坐标命令</strong>
+            <span>换一个样本、放宽筛选，或播放到有命令的帧段。</span>
+          </div>
+        </div>
+        <div class="rr-map-overlay rr-map-overlay-bottom">
+          <span>示意底图 · 非游戏实景</span>
+          <span id="map-selected">未选中选手</span>
+          <span id="map-hint">点击选手或地图标记可聚焦</span>
+        </div>
+      </div>
+
+      <div class="rr-timeline-card">
+        <div class="rr-transport">
+          <div class="rr-transport-group">
+            <button id="btn-step-back100" class="rr-icon-button" type="button" title="后退 100 帧（Shift+←）">−100</button>
+            <button id="btn-step-back1" class="rr-icon-button" type="button" title="后退 1 帧（←）">−1</button>
+            <button id="btn-play" class="rr-play-button" type="button" aria-label="播放">播放</button>
+            <button id="btn-step-fwd1" class="rr-icon-button" type="button" title="前进 1 帧（→）">+1</button>
+            <button id="btn-step-fwd100" class="rr-icon-button" type="button" title="前进 100 帧（Shift+→）">+100</button>
+          </div>
+          <div class="rr-transport-group">
+            <label class="rr-inline-label">速度
+              <select id="speed-select">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+                <option value="8">8×</option>
+                <option value="16">16×</option>
+              </select>
+            </label>
+            <label class="rr-check rr-check-inline"><input id="loop-toggle" type="checkbox"> 循环</label>
+            <button id="btn-tail" class="rr-button rr-button-small" type="button" title="跳到尾部第二段起点">跳到尾部 712 帧</button>
+          </div>
+          <div id="time-display" class="rr-time-display">帧 0 · 00:00.0</div>
+        </div>
+        <div class="rr-timeline-wrap">
+          <canvas id="timeline" role="img" aria-label="时间轴：命令、事件密度与尾部 712 帧区间"></canvas>
+          <div id="timeline-tooltip" class="rr-timeline-tooltip" hidden></div>
+        </div>
+        <input id="scrubber" class="rr-scrubber" type="range" min="0" max="100" step="1" value="0" aria-label="时间轴拖动">
+        <div class="rr-timeline-foot">
+          <span>主段 + 尾部第二段</span>
+          <span class="rr-tl-legend"><i class="rr-dot rr-tl-buy"></i>BUYEQUIP <i class="rr-dot rr-tl-learn"></i>LEARNSKILL <i class="rr-dot rr-tl-skill"></i>技能升级 <i class="rr-dot rr-tl-state"></i>状态0x23 <i class="rr-dot rr-tl-beacon"></i>beacon0x03 <i class="rr-dot rr-tl-tail"></i>尾部/R1其他</span>
+          <span id="tail-marker-text">无尾部第二段</span>
+          <span>空格播放 / ← → 单帧 / Shift+← → 百帧 / T 跳尾部</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="rr-inspector">
+      <div class="rr-tabs" role="tablist" aria-label="详情面板">
+        <button class="rr-tab is-active" type="button" data-tab="now" role="tab" aria-selected="true">当前</button>
+        <button class="rr-tab" type="button" data-tab="events" role="tab" aria-selected="false">事件</button>
+        <button class="rr-tab" type="button" data-tab="buy" role="tab" aria-selected="false">购买/加点</button>
+        <button class="rr-tab" type="button" data-tab="commands" role="tab" aria-selected="false">命令</button>
+        <button class="rr-tab" type="button" data-tab="tail" role="tab" aria-selected="false">尾部</button>
+      </div>
+      <div id="inspector-body" class="rr-inspector-body" aria-live="polite"></div>
+    </aside>
+  </main>
+
+  <footer class="rr-footer">
+    <span>只读本地静态数据 · 不连接游戏 · 不登录 · 不注入</span>
+    <span id="footer-source">内置快照</span>
+  </footer>
+
+  <div id="toast" class="rr-toast" role="status" hidden></div>
+
+  <script src="./replay-review-data.js"></script>
+  <script src="./replay-review.js"></script>
+</body>
+</html>

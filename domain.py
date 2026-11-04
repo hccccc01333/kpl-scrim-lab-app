@@ -24,6 +24,57 @@ def number(value):
     return n
 
 
+EVENT_TYPES = ('tyrant', 'dominator', 'storm', 'tower', 'firstTower')
+
+
+def validate_bp(value):
+    """BP 既兼容旧自由文本，也接受结构化字典；结构不入库前不清洗旧数据。"""
+    if isinstance(value, str):
+        if len(value) > 12000:
+            raise ValueError('BP 文本过长')
+        return value
+    if not isinstance(value, dict):
+        raise ValueError('BP 格式错误')
+    notes = value.get('notes', '')
+    if not isinstance(notes, str) or len(notes) > 12000:
+        raise ValueError('BP 备注过长')
+    if value.get('firstPick') not in ('left', 'right', ''):
+        raise ValueError('一手方标记无效')
+    bp = {'bans': {}, 'picks': {}, 'firstPick': value.get('firstPick') or '', 'notes': notes}
+    for side in ('left', 'right'):
+        section = value.get('bans', {}).get(side, []) if isinstance(value.get('bans'), dict) else []
+        if not isinstance(section, list) or len(section) > 4:
+            raise ValueError('每侧禁用最多 4 个')
+        picks = value.get('picks', {}).get(side, []) if isinstance(value.get('picks'), dict) else []
+        if not isinstance(picks, list) or len(picks) > 5:
+            raise ValueError('每侧选用最多 5 个')
+        for group, limit in ((section, 4), (picks, 5)):
+            for hero in group:
+                if not isinstance(hero, str) or len(hero.strip()) > 50:
+                    raise ValueError('BP 英雄名称格式错误')
+        bp['bans'][side] = [hero.strip() for hero in section]
+        bp['picks'][side] = [hero.strip() for hero in picks]
+    return bp
+
+
+def validate_events(value):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 80:
+        raise ValueError('资源事件数量无效')
+    events = []
+    for event in value:
+        if not isinstance(event, dict) or event.get('type') not in EVENT_TYPES:
+            raise ValueError('资源事件类型无效')
+        if event.get('side') not in ('left', 'right'):
+            raise ValueError('资源事件阵营无效')
+        t = event.get('t')
+        if t is not None and (not isinstance(t, str) or not re.fullmatch(r'\d{1,3}(:\d{2})?', t or '')):
+            raise ValueError('事件时间格式应为 分 或 分:秒')
+        events.append({'type': event['type'], 'side': event['side'], 't': t or None})
+    return events
+
+
 def validate_match(raw, roster):
     m = copy.deepcopy(raw)
     if not isinstance(m, dict):
@@ -40,9 +91,16 @@ def validate_match(raw, roster):
         raise ValueError('请确认胜方')
     if m.get('date'):
         date.fromisoformat(m['date'])
-    for key in ('opponent', 'version', 'session', 'notes', 'bp'):
+    for key in ('opponent', 'version', 'session', 'notes'):
         if not isinstance(m.get(key, ''), str) or len(m.get(key, '')) > 12000:
             raise ValueError('文字字段过长或格式错误')
+    m['bp'] = validate_bp(m.get('bp', ''))
+    m['events'] = validate_events(m.get('events'))
+    focus_ids = m.get('focusIds', [])
+    if not isinstance(focus_ids, list) or len(focus_ids) > 20 or \
+            any(not isinstance(item, str) or len(item) > 80 for item in focus_ids):
+        raise ValueError('训练重点关联格式错误')
+    m['focusIds'] = [item for item in focus_ids if item]
     duration = number(m.get('duration'))
     if duration is not None and duration <= 0:
         raise ValueError('时长应大于零')
@@ -100,7 +158,8 @@ def validate_match(raw, roster):
     return m
 
 
-def summarize(matches, roster):
+def summarize(matches, roster, player_filter=None):
+    from analytics import aggregate_measures
     active = [m for m in matches if m['status'] == 'confirmed']
     groups = {k: defaultdict(list) for k in ('heroes', 'players', 'opponents', 'lineups')}
     wins = 0
@@ -109,6 +168,8 @@ def summarize(matches, roster):
         wins += won
         own = [p for p in m['players'] if p['side'] == m['side']]
         for p in own:
+            if player_filter and not player_filter(p):
+                continue
             row = (m, p, won)
             groups['heroes'][p['hero'].strip()].append(row)
             groups['players'][p['playerId']].append(row)
@@ -127,6 +188,7 @@ def summarize(matches, roster):
                 values = [v for v in values if v is not None]
                 row[metric] = sum(values) / len(values) if values else None
                 row[metric + 'Samples'] = len(values)
+            row.update(aggregate_measures(items))
             rows.append(row)
         output[kind] = sorted(rows, key=lambda r: (-r['games'], r['name']))
     return output

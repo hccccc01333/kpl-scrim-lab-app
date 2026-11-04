@@ -33,8 +33,8 @@ try:
         page = browser.new_page(viewport={'width': 1500, 'height': 1020}, device_scale_factor=1)
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
-        page.goto(base)
-        page.get_by_role('heading', name='把每一场训练，变成下一场的进步').wait_for()
+        page.goto(base + '/legacy')
+        page.get_by_role('heading', name='训练概览').wait_for()
         page.screenshot(path=str(OUT/'overview-desktop.png'), full_page=True)
         page.locator('nav a[data-page="roster"]').click()
         for name in ('青山', '归舟', '长风', '听雨', '明川'):
@@ -59,11 +59,14 @@ try:
         page.locator('[data-meta="side"]').select_option('right')
         page.locator('[data-meta="winner"]').select_option('right')
         page.locator('[data-meta="session"]').fill('验收训练 · 第 1 局')
+        page.locator('[data-meta="duration"]').fill('20')
         s = page.request.get(base+'/api/state').json()
         for i, hero in enumerate(('小乔','马超','后羿','弈星','大乔')):
             if i:
                 page.locator(f'[data-player="right-{i}"][data-key="hero"]').fill(hero)
             page.locator(f'[data-player="right-{i}"][data-key="playerId"]').select_option(s['settings']['roster'][i]['id'])
+            # Explicit synthetic role input tests filtering; not inferred from the screenshot.
+            page.locator(f'[data-player="right-{i}"][data-key="position"]').select_option(('中路','对抗路','发育路','打野','游走')[i])
         page.locator('#reviewed').check()
         page.locator('#confirm-match').click()
         page.wait_for_function('document.querySelector("#save-hint")?.textContent.includes("已保存")')
@@ -75,11 +78,37 @@ try:
         page.locator('nav a[data-page="analysis"]').click()
         page.locator('#analysis-table tbody').wait_for()
         assert page.locator('#analysis-table tbody tr').count() == 5
+        page.locator('#analysis-mode').select_option('rates')
+        page.get_by_role('columnheader',name='输出 / 分钟 · 样本',exact=True).wait_for()
+        page.locator('#filter-position').select_option('中路')
+        page.wait_for_function('document.querySelectorAll("#analysis-table tbody tr").length===1')
+        assert '5,195' in page.locator('#analysis-table').inner_text()
+        with page.expect_download() as csv_download:
+            page.locator('#export-analysis').click()
+        csv_path=OUT/'filtered-analysis.csv'
+        csv_download.value.save_as(str(csv_path))
+        csv_text=csv_path.read_text(encoding='utf-8-sig')
+        assert '分均输出有效局数' in csv_text and '小乔' in csv_text and '中路' in csv_text
+        assert '马超' not in csv_text
+        page.locator('#filter-position').select_option('')
+        page.wait_for_function('document.querySelectorAll("#analysis-table tbody tr").length===5')
         page.locator('#filter-player').select_option(s['settings']['roster'][0]['id'])
         page.wait_for_function('document.querySelectorAll("#analysis-table tbody tr").length===1')
         page.get_by_role('button', name='逐局查看').click()
         page.locator('#drilldown a').wait_for()
         page.screenshot(path=str(OUT/'analysis-desktop.png'), full_page=True)
+        page.goto(base+'/legacy#review/'+s['matches'][0]['id'])
+        page.get_by_role('heading',name='已确认分路的终局对照').wait_for()
+        assert '没有' not in page.locator('.review-player-table').first.inner_text()
+        assert '5,195' in page.locator('.review-player-table').first.inner_text()
+        with page.expect_download() as report_download:
+            page.locator('#export-review').click()
+        report_path=OUT/'review-export.json'
+        report_download.value.save_as(str(report_path))
+        report=json.loads(report_path.read_text(encoding='utf-8'))
+        assert report['order']==['right','left'] and report['duration']==20
+        assert report['teams']['right']['players'][0]['metrics']['damagePerMinute']==5195
+        page.screenshot(path=str(OUT/'review-desktop.png'),full_page=True)
         # Confirm the backup contains original image bytes and survives a merge restore.
         backup = page.request.get(base+'/api/backup').json()
         assert backup['images'][0]['data']
@@ -87,10 +116,10 @@ try:
         assert restored == {'added':0, 'skipped':1}, restored
         # Page reload must rebuild statistics from SQLite, not in-memory fixtures.
         page.reload()
-        page.locator('#analysis-table tbody').wait_for()
+        page.get_by_role('heading',name='已确认分路的终局对照').wait_for()
         assert page.request.get(base+'/api/state').json()['summary']['games'] == 1
         # Reopen a saved game: cached results and review actions must return without rerunning OCR.
-        page.goto(base+'/#edit/'+s['matches'][0]['id'])
+        page.goto(base+'/legacy#edit/'+s['matches'][0]['id'])
         page.get_by_role('button', name='图标核对', exact=True).wait_for()
         page.locator('.page-correction summary').click()
         page.locator('[data-page-score="left"]').fill('17')
@@ -132,7 +161,7 @@ try:
         assert page.locator('.icon-review-dialog').evaluate('(node)=>node.getBoundingClientRect().width <= window.innerWidth')
         page.locator('.icon-review-dialog [data-close]').click()
         page.locator('nav a[data-page="overview"]').click()
-        page.get_by_role('heading', name='把每一场训练，变成下一场的进步').wait_for()
+        page.get_by_role('heading', name='训练概览').wait_for()
         page.screenshot(path=str(OUT/'overview-mobile.png'), full_page=True)
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth'), 'Page overflows mobile viewport'
         assert not errors, errors

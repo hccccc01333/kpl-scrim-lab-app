@@ -14,3 +14,26 @@ test-results/
 .pytest_cache/
 .idea/
 .vscode/
+.screenshots/
+*.abc
+*.ope
+
+# host probe build artifacts
+host/build/
+host/fixtures/
+frida-server*
+*.stackdump
+bash.exe.stackdump
+.workbuddy/
+
+# generated / research-only datasets (device-derived game data)
+datasets/agent_qts_replay_files.csv
+datasets/agent_qts_replay_files.json
+datasets/agent_qts_replay_files.md
+datasets/agent_replay_ui_binding.csv
+datasets/agent_replay_ui_binding.md
+
+# local Mimo weights
+models/
+
+camp_auth.json

@@ -1,0 +1,280 @@
+"""王者营地微信扫码授权（独立实现）。
+
+只依赖公开可观察的协议行为：营地 App 走微信开放平台扫码登录，授权码换取
+营地登录态（token / userKey）。业务接口的鉴权字段都在请求头里。
+
+本工具只在本机保存使用者自己的登录凭证，不采集、不存储他人数据。
+
+    python tools/camp_auth.py            生成二维码并等待确认，凭证写入 data/camp_auth.json
+    python tools/camp_auth.py --status   查看已存凭证（脱敏）
+    python tools/camp_auth.py --clear    删除凭证
+
+安全提醒：camp_auth.json 等同于账号登录态，不要提交进 git、不要发给别人；
+感觉泄露就删掉它并重扫一次。
+"""
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import secrets
+import sys
+import time
+import uuid
+from pathlib import Path
+from urllib import parse, request
+
+from Crypto.Cipher import PKCS1_v1_5
+from Crypto.PublicKey import RSA
+
+ROOT = Path(__file__).resolve().parents[1]
+AUTH_PATH = Path(os.environ.get('CAMP_AUTH_FILE', ROOT / 'data' / 'camp_auth.json'))
+QR_PATH = ROOT / 'test-results' / 'camp-login-qr.png'
+
+CAMP_BASE = 'https://ssl.kohsocialapp.qq.com:10001'
+WX_QR_URL = 'https://open.weixin.qq.com/connect/sdk/qrconnect'
+WX_POLL_URL = 'https://long.open.weixin.qq.com/connect/l/qrconnect'
+WX_APPID = 'wxf4b1e8a3e9aaf978'
+
+# 营地返回的 RSA 公钥（base64，DER），用于解开登录响应里的 encodeRes
+RSA_PUBLIC_B64 = (
+    'MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC0h62mV/zjJtFsNdfFNlxksfUOpjDI2KCcBrPiA8T7'
+    'szABT4InLDTrdXAW84QyGNiazB0i7pgPCNGSAYbiJrCRutZ5jQsVS0Wg/RnXfwVQDJcAHJDjP5IXyroeLX7'
+    'NUxDai8nPcpfRsvq6sneobyPexZSH0TlVSnecsJZTj5wu/wIDAQAB'
+)
+
+BASE_HEADERS = {
+    'Content-Encrypt': '',
+    'Accept-Encrypt': '',
+    'NOENCRYPT': '1',
+    'X-Client-Proto': 'https',
+    'User-Agent': 'okhttp/4.9.1',
+}
+
+# 营地客户端版本字符串。协议升级导致登录失败时，先更新这里。
+CLIENT_CONSTANTS = {
+    'cChannelId': '10003391',
+    'cClientVersionCode': '2057957801',
+    'cClientVersionName': '10.111.0323',
+    'cCurrentGameId': '20001',
+    'cGameId': '20001',
+    'cGzip': '1',
+    'cIsArm64': 'true',
+    'cSupportArm64': 'true',
+    'cSystem': 'android',
+    'cSystemVersionCode': '34',
+    'cSystemVersionName': '14',
+    'cpuHardware': 'qcom',
+    'gameId': '20001',
+    'tinkerId': '2057957801_64_0',
+}
+
+
+def _public_key() -> RSA.RsaKey:
+    return RSA.import_key(base64.b64decode(RSA_PUBLIC_B64))
+
+
+def rsa_public_decrypt(signature: bytes) -> bytes:
+    """营地用私钥对 encodeRes 签名，这里用公钥恢复原文（PKCS#1 v1.5）。"""
+    key = _public_key()
+    size = (key.n.bit_length() + 7) // 8
+    recovered = pow(int.from_bytes(signature, 'big'), key.e, key.n)
+    raw = recovered.to_bytes(size, 'big')
+    if raw[:2] != b'\x00\x01':
+        raise ValueError('PKCS#1 v1.5 块类型不符')
+    separator = raw.index(b'\x00', 2)
+    return raw[separator + 1:]
+
+
+def rsa_encrypt(data: bytes) -> bytes:
+    cipher = PKCS1_v1_5.new(_public_key())
+    output = b''
+    for offset in range(0, len(data), 117):
+        output += cipher.encrypt(data[offset:offset + 117])
+    return output
+
+
+def http_json(url, method='GET', headers=None, body=None, timeout=20):
+    payload = body.encode('utf-8') if isinstance(body, str) else body
+    req = request.Request(url, method=method, data=payload, headers=headers or {})
+    with request.urlopen(req, timeout=timeout) as resp:
+        text = resp.read().decode('utf-8', 'replace')
+    try:
+        return json.loads(text)
+    except ValueError:
+        return {'raw': text}
+
+
+def device_fingerprint() -> str:
+    """登录表单要求的设备描述，RSA 加密后随表单提交。值只用于本地这一次登录。"""
+    device = uuid.uuid4().hex
+    now = int(time.time() * 1000)
+    payload = {
+        'timestamp': now,
+        'nonce': f':{device}:{now}',
+        'cDeviceId': device,
+        'deviceid': device,
+        'cDeviceImei': device[:15],
+        'cDeviceMac': '02:00:00:00:00:00',
+        'cDevicePPI': 480,
+        'cDeviceScreenWidth': 1080,
+        'cDeviceScreenHeight': 2400,
+        'cDeviceBrand': 'OnePlus',
+        'cDeviceModel': 'PHK110',
+        'cDeviceMem': 12 * 1024 * 1024 * 1024,
+        'cDeviceCPU': 'SM8650',
+        'cSystemVersionCode': '34',
+        'cDeviceNet': 'WIFI',
+        'cDeviceSP': 'China Mobile',
+        'cDeviceOaid': device,
+        'deviceLevel': 3,
+        'px': 0,
+        'py': 0,
+        'wifi_ssid': 'unknown',
+        'wifi_mac': '02:00:00:00:00:00',
+    }
+    return base64.b64encode(rsa_encrypt(json.dumps(payload).encode('utf-8'))).decode()
+
+
+def get_sdk_ticket(xlog_uid: str) -> str:
+    result = http_json(f'{CAMP_BASE}/a/getwxsdkticket', 'POST',
+                       {**BASE_HEADERS, 'x-log-uid': xlog_uid}, body='')
+    ticket = (result.get('data') or {}).get('sdkTicket')
+    if result.get('returnCode') != 0 or not ticket:
+        raise RuntimeError(f"获取微信登录票据失败：{json.dumps(result, ensure_ascii=False)[:200]}")
+    return ticket
+
+
+def get_qrcode(ticket: str):
+    nonce = ''.join(secrets.choice('0123456789') for _ in range(8))
+    timestamp = str(int(time.time()))
+    signature = hashlib.sha1(
+        f'appid={WX_APPID}&noncestr={nonce}&sdk_ticket={ticket}&timestamp={timestamp}'.encode()
+    ).hexdigest()
+    query = parse.urlencode({'appid': WX_APPID, 'noncestr': nonce, 'timestamp': timestamp,
+                             'scope': 'snsapi_userinfo', 'signature': signature})
+    result = http_json(f'{WX_QR_URL}?{query}')
+    qrcode = (result.get('qrcode') or {}).get('qrcodebase64')
+    if result.get('errcode') != 0 or not qrcode or not result.get('uuid'):
+        raise RuntimeError(f"获取登录二维码失败：{json.dumps(result, ensure_ascii=False)[:200]}")
+    return result['uuid'], qrcode
+
+
+def poll_qrcode(uuid_value: str):
+    result = http_json(f'{WX_POLL_URL}?' + parse.urlencode({'f': 'json', 'uuid': uuid_value}))
+    status = result.get('wx_errcode', result.get('errcode'))
+    auth_code = result.get('wx_code', result.get('code'))
+    return status, auth_code
+
+
+def login_with_code(auth_code: str, xlog_uid: str) -> dict:
+    fingerprint = device_fingerprint()
+    form = {
+        'loginType': 'wx',
+        'code': auth_code,
+        'delOldUser': '0',
+        'key1': uuid.uuid4().hex,
+        'lastLoginTime': '0',
+        'lastGetRemarkTime': '0',
+        'cRand': str(int(time.time() * 1000)),
+        'specialEncodeParam': fingerprint,
+        **CLIENT_CONSTANTS,
+    }
+    headers = {
+        **BASE_HEADERS,
+        'x-log-uid': xlog_uid,
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'specialEncodeParam': fingerprint,
+        **CLIENT_CONSTANTS,
+    }
+    result = http_json(f'{CAMP_BASE}/user/login', 'POST', headers,
+                       body=parse.urlencode(form))
+    data = result.get('data') or {}
+    if result.get('returnCode') != 0 or not data.get('token'):
+        raise RuntimeError(f"营地登录失败：{json.dumps(result, ensure_ascii=False)[:300]}")
+    return data
+
+
+def build_account(data: dict, xlog_uid: str) -> dict:
+    encode_res = str(data.get('encodeRes') or '')
+    user_key = ''
+    if encode_res:
+        try:
+            payload = rsa_public_decrypt(base64.b64decode(encode_res))
+            user_key = str(json.loads(payload.decode('utf-8', 'replace')).get('userKey') or '')
+        except Exception as error:
+            print(f'警告：encodeRes 解析失败（{error}），加密接口暂不可用', file=sys.stderr)
+    return {
+        'userId': str(data.get('userId') or ''),
+        'token': str(data.get('token') or ''),
+        'userKey': user_key,
+        'openId': str(data.get('openId') or data.get('appOpenid') or ''),
+        'nickname': str(data.get('nickname') or data.get('snsnickname') or ''),
+        'expires': str(data.get('expires') or ''),
+        'xLogUid': xlog_uid,
+        'loginAt': time.strftime('%Y-%m-%dT%H:%M:%S'),
+    }
+
+
+def show_status():
+    if not AUTH_PATH.is_file():
+        print('还没有登录凭证。先运行 python tools/camp_auth.py 扫码。')
+        return
+    account = json.loads(AUTH_PATH.read_text(encoding='utf-8'))
+    token = account.get('token') or ''
+    print(f"昵称   : {account.get('nickname') or '—'}")
+    print(f"userId : {account.get('userId') or '—'}")
+    print(f"token  : {token[:6]}…({len(token)} 字符)" if token else 'token  : 无')
+    print(f"userKey: {'有' if account.get('userKey') else '无'}")
+    print(f"登录于 : {account.get('loginAt') or '—'}（expires 字段：{account.get('expires') or '未提供'}）")
+    print(f"位置   : {AUTH_PATH}")
+
+
+def login_flow():
+    xlog_uid = str(uuid.uuid4()).upper()
+    print('获取登录二维码…')
+    uuid_value, qrcode_b64 = get_qrcode(get_sdk_ticket(xlog_uid))
+    QR_PATH.parent.mkdir(parents=True, exist_ok=True)
+    QR_PATH.write_bytes(base64.b64decode(qrcode_b64))
+    print(f'二维码已保存：{QR_PATH}')
+    try:
+        os.startfile(QR_PATH)
+    except AttributeError:
+        pass
+    print('请用打过训练赛的微信扫码并在手机上确认（3 分钟内有效）…')
+    deadline = time.time() + 200
+    last_status = None
+    while time.time() < deadline:
+        time.sleep(2)
+        status, auth_code = poll_qrcode(uuid_value)
+        if auth_code and status == 405:
+            account = build_account(login_with_code(auth_code, xlog_uid), xlog_uid)
+            AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+            AUTH_PATH.write_text(json.dumps(account, ensure_ascii=False, indent=2),
+                                 encoding='utf-8')
+            print(f"登录成功：{account.get('nickname') or account['userId']}")
+            print(f'凭证已写入 {AUTH_PATH}（含登录态，勿外传、勿入 git）。')
+            return account
+        if status == 404 and last_status != 404:
+            print('已扫码，等待手机上确认…')
+        elif status == 402:
+            raise SystemExit('二维码已过期，请重新运行本命令。')
+        elif status == 403:
+            raise SystemExit('已在手机上取消登录。')
+        last_status = status
+    raise SystemExit('等待超时。重新运行 python tools/camp_auth.py 会生成新二维码。')
+
+
+def main(argv):
+    if '--status' in argv:
+        show_status()
+    elif '--clear' in argv:
+        AUTH_PATH.unlink(missing_ok=True)
+        print(f'已删除 {AUTH_PATH}')
+    else:
+        login_flow()
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])

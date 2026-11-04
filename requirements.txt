@@ -3,3 +3,8 @@ uvicorn>=0.30,<1
 Pillow>=10,<13
 numpy>=1.26,<3
 rapidocr-onnxruntime>=1.4,<2
+openpyxl>=3.1,<4
+# Mimo precision OCR is part of the required OCR capability.
+torch>=2.14,<2.15
+torchvision>=0.29,<0.30
+transformers>=5.17,<5.18

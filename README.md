@@ -1,12 +1,45 @@
-# 训练赛分析工作台
+# KPL 赛训分析
 
 面向王者荣耀训练赛战队，将赛后截图和回放录屏整理成可核对的队员、英雄和团队数据，替代手工维护统计表。
 
-当前状态：本地 V0.3，包括截图上传、本地 OCR、英雄名字与装备核对、十人校对、队员名单、正式入库、英雄与队员统计、比赛归档，以及备份恢复。回放过程分析尚未实现。
+## 快速部署（别人 clone 后从这里开始）
+
+```bash
+python -m venv .venv
+# Linux/macOS: . .venv/bin/activate
+# Windows: .\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python server.py
+```
+
+打开 <http://127.0.0.1:8766/studio>。核心工作台不需要游戏、MuMu、ADB 或
+`.abc` 回放；首次启动会自动建库。`requirements.txt` 已包含 OCR 依赖
+（RapidOCR + Mimo）；Mimo 模型权重按 [OCR 说明](docs/ocr_engine.md) 准备。
+完整的环境变量、Docker、局域网和排障说明见 [部署指南](docs/deploy.md)。
+
+自检：
+
+```bash
+python scripts/check_deploy.py
+```
+
+## 先从这里开始
+
+- [使用指南](docs/product_guide.md)：导入、校对、比赛复盘、选手与英雄对比。
+- [采集要求与示例](docs/collection_sop.md)：营地链接获取方法、单段录屏起止和面板、七张结算图、选填表格模板。
+- [文档目录](docs/README.md)：按使用、开发、数据与协议研究分类。
+- [页面与路由](docs/unified_platform.md)：全部入口及旧链接兼容说明。
+
+<details>
+<summary>当前版本能力与识别范围</summary>
+
+当前状态：本地 V0.3，包括截图上传、本地 OCR、英雄名字与装备核对、十人校对、队员名单、正式入库、英雄与队员统计、比赛归档，以及备份恢复。回放结构探针（含 `.ope` 操作流事件结构解析，遇到未适配变体时如实报墙）、运行时赛训数据导入、回放录屏 OCR、单局数据包、表格数据导入、工作台内数据分析为常规功能；新版分页赛后截图 OCR、“截图采集”页、“录屏采集”页和“一局采集通道”也已加入。快速 OCR 负责数值列，本机 Mimo（`mimo-ocr-0`）可选精读英雄名/昵称、加载页阵容和团队面板关键帧。录屏 OCR、截图 OCR 与数据包/表格导入只读取、整理可见数据，不进入正式统计。
+
+</details>
 
 ## 启动使用
 
-需要 Python 3.10 或更高版本。首次使用双击 `安装依赖.bat`，随后双击 `启动工作台.bat`，在浏览器打开 <http://127.0.0.1:8766>。启动窗口需要保持运行。
+需要 Python 3.10 或更高版本。首次使用双击 `安装依赖.bat`，日常使用双击 `启动工作台-后台.vbs`，在浏览器打开 <http://127.0.0.1:8766/studio>。停止时运行 `停止工作台.bat`。排查问题时使用 `启动工作台.bat`，并保留命令窗口。
 
 也可在项目目录执行：
 
@@ -14,6 +47,44 @@
 python -m pip install -r requirements.txt
 python server.py
 ```
+
+## 页面与使用路径
+
+打开 <http://127.0.0.1:8766/studio>。顶部直接按对象与功能进入：
+
+- **首页**：最近一局、比分与阵容、近期比赛及全部功能目录。
+- **比赛**：比赛档案、精选对局、训练纪录、对局工作区、手工录入。
+- **战队**：团队复盘、数据看板、训练跟踪、战队名单、前期转化、经济转折、训练组汇总和报告。
+- **选手**：选手表现、近期状态、双人搭档、资源产出和身份绑定。身份绑定按每局左右方自动分成两队，只有本队昵称可绑定本队名单；对手同名昵称不会被并入，别名只作用于本队阵营。战队支持内置队名或“自定义战队”。
+- **英雄**：英雄与阵容、英雄组合、英雄池、选手英雄参照和阵容关联。
+- **BP**：禁用、选用、先后手和对手 BP。
+- **对比**：选手对比、英雄对比；切换类型同步路径，详情进入时保留当前对象。
+- **数据**：采集一局、采集通道、批量导入、截图/录屏/回放、数据集、清洗、字段与来源、统计实验和模型实验。
+
+桌面端点击一级入口旁的展开按钮可查看全部子页；总览底部还有完整功能地图，按任务列出所有页面。原有九项深入分析分散到战队、选手、英雄，菜单直接进入对应功能。详情页支持“打印 / PDF”，`/api/health` 返回数据路径。日常使用双击 `启动工作台-后台.vbs`（隐藏窗口、异常退出自动重启），停止用 `停止工作台.bat`；`启动工作台-守护.bat` 保留为前台看护入口。
+
+旧的 `#channel/<id>`、`#edit/<id>`、`#review/<id>`、`#stats`、`#training`、`#clean` 深链继续工作；原对局工作区改为 `#desk`。完整页面与字段对应关系见 [docs/unified_platform.md](docs/unified_platform.md)，视觉与页面模板见 [docs/design_system.md](docs/design_system.md)。
+
+### 分析可视化
+
+选手/英雄页新增表现散点与指标热力矩阵，支持指标切换、样本筛选、对象检查及 CSV 导出；对比页提供蓝橙差异图和共同有效指标结构；单局经济时间轴支持拖动、键盘和原值读数；对象详情保留缺失位置与近五条记录窗口均值；战队页按本队方向展示分时经济矩阵。使用方法见 [分析指南](docs/product_guide.md#新版分析怎么读)。
+
+空值不补零、经济时点不向观测范围外延用、每个时点标注有效样本。新增组件在 `web/analysis-visuals.js`，纯计算在 `web/analysis-math.mjs`。
+
+### 数据规模评测
+
+`scripts/eval_scale.py` 会创建独立数据库并启动测试服务，不写用户数据：
+
+```powershell
+python scripts/eval_scale.py
+$env:SCALE_COUNT = "5000"; python scripts/eval_scale.py
+$env:SCALE_COUNT = "10000"; python scripts/eval_scale.py
+python scripts/eval_identity.py
+```
+
+500 局：比赛 API 802 ms、搜索 620 ms；比赛页 2.55 s、加载更多 1.25 s；英雄/选手页 1.3 s；纪录/精选 0.8 s。1,000 局：比赛 API 0.6–1.0 s、搜索 0.1–0.7 s；比赛页 2.7–3.0 s、加载更多 1.3 s；英雄页 1.4 s、选手页 2.3–2.9 s；纪录/精选 0.8–1.9 s。5,000 局：比赛 API 1.0 s、搜索 37 ms；比赛页 1.25 s、加载更多 1.27 s；英雄页 1.33 s、选手页 0.89 s；纪录/精选 0.81/0.07 s。10,000 局：比赛 API 1.47 s、搜索 33 ms；比赛页 3.59 s、加载更多 1.25 s；英雄页 1.31 s、选手页 1.30 s；纪录/精选 2.31/0.05 s。工作台稳态请求约 0.07–0.2 s；缓存未命中时需重建仓库与工作台索引（10,000 局约 8 s / 3.9 s），数据变化后的首次打开会付这一次成本。逐局明细使用独立轻量行接口，不再为列表计算全量去重；英雄列表省略比赛键数组。报告在 `test-results/scale/`；身份绑定端到端评测在 `test-results/identity-eval/`。
+
+下面的 1–6 是旧版单局截图校对流程；统一平台推荐从“总览 → 采集一局”进入，先建采集通道，再把表格、截图、录屏、回放挂到同一局。
 
 1. 在“战队名单”填写战队和首发/替补队员。
 2. 新建训练赛，添加属于同一局的战绩页和/或数据页。
@@ -24,9 +95,21 @@ python server.py
 
 所有正式记录与原图保存于 `data/training.sqlite3`。识别在本机执行，不调用云端图像服务。页面提供含原图与修订记录的 JSON 备份；恢复采用合并策略，相同比赛 ID 保留本机版本。归档会退出统计，保留原记录和图片。
 
+### 本机 OCR 引擎（RapidOCR + Mimo）
+
+- 默认上传仍走快速 OCR，秒级返回；Mimo 是可选精读，不改变默认流程。
+- Mimo 只读取它擅长的文字列：英雄名、昵称、加载页阵容、团队面板 KDA/累计金币。整页结构化抽取会把英雄/昵称对调、把占比列错位，因此不默认使用。
+- 模型完全离线；路径、性能、缓存和限制见 [docs/ocr_engine.md](docs/ocr_engine.md)。
+- 交付前先运行：
+
+```powershell
+python scripts/check_ocr_engine.py
+python scripts/check_ocr_engine.py --load
+```
+
 ### 当前识别边界
 
-- 适配用户提供的赛后双列五行面板，支持相近布局缩放；其他布局、裁切或低清图未验证，允许手工录入。
+- 旧版比赛校对仍适配旧版赛后双列五行面板，支持相近布局缩放；其他布局、裁切或低清图未验证，允许手工录入。新版带页签的赛后 UI 走独立的“截图采集”页（见下文），不会混入旧版双列识别。
 - 文字 OCR 支持战绩页比分、部分 KDA、经济和评分，以及数据页输出、承伤、经济、参团率和评分。识别失败的字段留空，全部结果必须人工校对。
 - 英雄只依据头像下方的名字进行 OCR，单独裁剪放大，支持彩色与灰度读取。唯一明确的文字匹配可填入待核对字段；近似匹配只能作为候选，读不清时保留未知。皮肤头像不再用于推断英雄。
 - 核对界面展示名字裁剪与 OCR 原文，可搜索英雄目录。六格装备仍支持逐项核对，但图像相似度不足或候选难以区分时不展示猜测名称，需要搜索或手动输入。
@@ -36,16 +119,138 @@ python server.py
 - 同图去重基于原图 SHA-256；重新压缩、裁切等不同文件仍需人工核对是否为重复比赛。
 - 两张截图比分或日期冲突时阻止正式合并；比分相同不等于已证明是同一局，仍需用户确认。
 - 确认是 OCR 误读时，可展开“校正本张比分 / 日期”修正单张图的信息，原始识别结果和图片仍保留。页面会显示已加载截图的冲突，后端在正式入库时再次检查。重新打开比赛会恢复已缓存的识别与图标核对入口。
-- 目前是单战队、本机使用版本，不提供云端协作、游戏账号同步或录像解析。
+- 目前是单战队、本机使用版本，不提供云端协作或游戏账号同步；回放文件解析与录屏 OCR 仍为实验功能，不进入正式统计。
+
+截图字段的固定契约见 [docs/screenshot_fields.md](docs/screenshot_fields.md)。旧版双列截图仍用只读探针审计：
+
+```powershell
+python scripts/screenshot_probe.py "旧版战绩页.png" "旧版数据页.png"
+```
+
+探针会输出固定字段、缺失字段和“画面可见但尚未进入字段”的候选（胜负/模式等），不写数据库。
+
+### 新版分页赛后截图 OCR（实验）
+
+当前赛后 UI 带底部页签：战绩、数据、输出、生存、发育、团队。新增 `postgame_ocr.py` 只读识别这六类页面，并尝试把同一局的多页合并；字段契约、单位、页型矩阵和真实样本覆盖见 [docs/screenshot_fields.md](docs/screenshot_fields.md)。
+
+```powershell
+python scripts/postgame_screenshot.py `
+  "战绩.png" "数据.png" "输出.png" "生存.png" "发育.png" "团队.png" `
+  --out test-results/postgame.json
+```
+
+- **工作台入口**：工作台「采集 → 截图」（`/#screenshots`），按 7 个固定入口上传：战绩（装备型/KDA占比）、数据、输出、生存、发育、团队。每个入口带截图示意图，也保留“自动识别/批量上传”。上传、识别、分组、逐人字段查看和导出 JSON 都在本机完成。每组可生成比赛草稿，只带入日期、比分、KDA、经济、输出、承伤、参团和评分。
+- 采集结果写入独立的本机表 `postgame_images`，不覆盖旧版比赛校对的 `images.ocr`；原图和识别结果包含在完整备份里。
+- 英雄名使用“精确同名 + 唯一近似/前缀自动匹配 + 多候选保留”策略；示例 `01` 已补到 10/10（其中 `澜` 字完全无 OCR 输出，按画面校正）。英雄读不清时可展开 10 人明细用下拉兜底；同局放入采集通道后，会先用回放/录像/表格名单自动比对。
+- 同一局多页按日期/时长/比分和十人阵容合并；不同比赛不会静默混合。每组显示必采/建议页缺口清单；必采为战绩 + 数据 + 团队。
+- KDA 页是 KDA 的权威页。若装备型战绩页把 KDA 读错，组内会按 KDA 页的击杀/死亡占比与比分自动校正，原读数保留在字段 `originalValue`，并在组内提示。
+- 已用 7 张真实截图校准：`01` 是 33:34 的装备型战绩页；`02-06` 是同一局 14:26 的五个页签；`07` 是另一局的团队页。`02-06` 可合并成一局，KDA 合计与比分一致；`07` 不能并入。
+- 2026-11-02 的完整 7 页签样本（27:6、11:33）已合并为一组：必采页齐全、英雄 10/10、字段覆盖完整；右方第一行误读的 7/17 已按 KDA 页占比校正为 1/7，左右击杀合计 27/6 与比分一致。
+- 新版装备图标不在 v1；日期/时长/胜负只在战绩页；数据页/输出页/生存页/发育页只有比分。
+- 分组内提供派生分析：截图左右团队汇总、KDA/经济/输出/承伤/团队指标对比、选手排行和字段覆盖；部分数据不会冒充团队合计。这是采集候选预览，不进入正式统计；正式分析在工作台「数据分析」（`/#stats`）读取已确认记录、数据包和表格导入。
+- 没有采集数据时可“载入示例分析”（7 张样例，约 1 分钟本机识别），示例单独标记并可清除，不进入正式统计。
+- 采集页本身不进入英雄胜率；“生成比赛草稿”只创建待校对草稿，本队阵营、队员、英雄和正式确认仍需在比赛校对页完成。
+
+回归测试与浏览器验收：
+
+```powershell
+python -m unittest tests.test_postgame_ocr -v
+python -m unittest tests.test_postgame_workbench -v
+python -m unittest tests.test_postgame_analysis -v
+python -m unittest tests.test_channel_store -v
+python -m unittest tests.test_channels_api -v
+python scripts/verify_screenshots_page.py
+python scripts/verify_channels_page.py
+```
+
+### 录屏采集（工作台）
+
+工作台「采集 → 录屏」（`/#recordings`）把一份回放录屏变成可核对的本机报告：
+
+1. 上传 mp4/mov/mkv/webm；一局一个文件。
+2. 选择采样帧率（0.5/1/2 fps）和识别方式：
+   - **Mimo 精读 + 快速布局**（默认）：快速布局读逐帧时钟/金币/击杀，Mimo 读加载页与团队面板关键帧。
+   - **仅快速布局**：不加载 Mimo，更快。
+3. 后台单线程执行，页面显示排队/进度/取消；完成后可查看阵容、经济击杀时间轴、记分板/团队面板、证据帧，导出 JSON，交给“采集通道”的录像来源。
+
+- 支持 16:9 和 20:9 长屏；20:9 的底部团队面板更矮，快速 OCR 可能只读到部分行，报告会保留关键帧并给出警告。
+- 录像末尾的赛后页会保存为证据帧（`07-postgame-*.png`），但终局固定字段仍以“截图采集”的同一局截图为准。
+- 英雄身份以加载页印刷文字/同局 `.abc`/截图名单交叉核对；Mimo 读不出的行不会按位置猜。
+- 录屏原文件、报告和证据帧在 `data/recordings/<id>/`，不进入 SQLite 或 JSON 备份。默认单文件上限 2 GB，空间不足时会拒绝上传。可用 `KPL_RECORDINGS` 指向其他盘：
+
+```powershell
+$env:KPL_RECORDINGS = "E:\kpl-recordings"
+python server.py
+```
+
+CLI 仍保留：
+
+```powershell
+python scripts/replay_video_ocr.py "录屏.mp4" --fps 1 --ocr-engine auto `
+  --evidence data/replays/video_ocr/evidence/demo
+```
+
+引擎与性能说明见 [docs/ocr_engine.md](docs/ocr_engine.md)，录屏字段与限制见 [docs/replay_video_ocr.md](docs/replay_video_ocr.md)。
+
+### 官方回放链接（王者营地）
+
+赛训组提供一条 `camp.qq.com` 回放链接，工作台可以提取官方公开数据并挂到同一局采集通道：
+
+```powershell
+python scripts/import_camp_replay.py "https://camp.qq.com/h5/webdist/battle-replay/...?gameseq=..."
+```
+
+- 支持个人回放、KPL、Beta 三种入口；自动选择 `/game/battleanalyze/old`、`/game/kplbattleanalyze/old`、`/game/betabattleanalyze/old`。
+- 提取胜方、团队最终金币、约 **30 秒一个点**的团队金币/经济差、事件、10 人 KDA/评分，以及每人 **1 秒位置**。
+- **没有 1 秒金币**；曲线平滑是前端把 30 秒点连起来，不是实测。逐秒位置不能替代逐秒经济。
+- 工作台入口：「采集 → 一局采集」→ 打开一局 → “官方回放（王者营地）”粘贴链接 → 提取并关联。关联后优先使用官方 30 秒金币曲线，原录屏曲线保留在 `recordingTimeline`。
+- 原始响应/归一化数据/位置文件在 `data/official_replays/<camp-gameseq>/`；该目录不进入 SQLite/JSON 备份。
+- 微信里直接转发战绩卡片得到的 `cu.qq.com` 短链**可以直接用**：短链 302 一跳落到公开的 `mp-redirect` 页，四个参数都在地址里，不需要登录，也不需要打开小程序。只有 `servicewechat.com/wxascheme/...` 和 `#小程序://` 纯文本链还原不了。
+- 短链只解决“这一局的链接从哪来”，**不能批量列出战绩**。要拿到一批链接，仍然需要选手在营地里逐局转发。
+
+完整字段、API 和限制见 [docs/camp_replay.md](docs/camp_replay.md)。
+
+### 一局采集通道（实验）
+
+把一局训练赛固定成一个通道：表格、录像、截图、回放四种原料都挂在这一局下，解析完成后生成跨来源草稿，人工审核后保存到分析平台。
+
+```text
+/#channels          通道列表 / 新建一局
+/#channel/<id>      来源状态、草稿、审核、修改日志
+```
+
+- 表格：上传 CSV/XLSX/XLSM，自动画像后补 KDA、经济、输出、承伤、参团、评分。
+- 录像：上传回放录屏 OCR 生成的 JSON 报告，一局一份报告即可；必采材料为营地链接、七种结算图和一段完整录屏；报告提供英雄名单、时间轴和过程快照。
+- 截图：选择同一局的分页截图组，提供终局 KDA、经济、输出、承伤、参团。
+- 回放：关联 `.abc` / `.ope` 记录，提供十人名单（阵营、真实槽位、昵称、entityId、英雄）、胜负、胜/败方 MVP、十人评分、版本/帧数/同局配对；评分可直接补草稿，KDA/经济/输出/承伤/参团仍以截图/表格/录像/运行时为准。
+- 草稿：按字段保留来源、冲突和缺失；10 人表可直接修订；任何来源变更会使审核失效。
+- 审核：记录复核人、审核时间、前后值；审核完成后才能保存。
+- 保存：写入 `data/matches/channel-<id>.json`（`kpl-match-data-v1`），分析平台刷新后按这一局展示。
+
+英雄名单对比优先使用同局 `.abc`、录像 lineups 和表格英雄列；候选只提升到 `roster-candidate`，单剩一个英雄时才用排除法，不按头像猜。
+
+完整状态机、字段分工、API 与限制见 [docs/collection_channel.md](docs/collection_channel.md)。
 
 ### 开发验证
 
 ```powershell
 python -m unittest discover -s tests -v
 python scripts/verify_browser.py
+python scripts/verify_runtime_page.py
+python -m unittest tests.test_video_ocr -v
+python -m unittest tests.test_match_data -v
+python -m unittest tests.test_sheet_import -v
+python -m unittest tests.test_analysis_data -v
+python -m unittest tests.test_screenshot_fields -v
+python -m unittest tests.test_postgame_ocr -v
+python -m unittest tests.test_postgame_workbench -v
+python scripts/verify_analysis_page.py
+python scripts/verify_screenshots_page.py
+python scripts/check_ocr_engine.py
+python -m unittest tests.test_camp_replay -v
 ```
 
-单元/API 测试额外需要 `httpx`；浏览器验收脚本额外需要 Playwright 及已安装的 Chromium，并使用开发时的两张本地样例图片。测试数据库和截图单独保存于 `test-results/`，不使用正式数据库。该目录保留测试产物，不自动删除文件。
+单元/API 测试额外需要 `httpx`；浏览器验收脚本额外需要 Playwright 及已安装的 Chromium。`verify_browser.py` 使用开发时的两张本地样例图片；`verify_runtime_page.py` 使用合成回放与运行时数据，不需要样例图片。测试数据库和截图单独保存于 `test-results/`，不使用正式数据库。该目录保留测试产物，不自动删除文件。
 
 ### 更新图标目录
 
@@ -88,6 +293,121 @@ python scripts/sync_catalog.py
 
 本阶段首先做离线回放分析。实时屏幕采集属于后续扩展，不把离线处理速度称为游戏实时数据接口。现有职业赛事胜率模型不能直接视作训练赛有效模型。
 
+### 回放文件只读探针（实验）
+
+当前版本样本的 `.abc` 头部、十人英雄块和 `.ope` 明文头可用只读脚本查看：
+
+```powershell
+python scripts/replay_probe.py data/replays/samples/20261028_135516.abc
+```
+
+脚本不写数据库、不进入正式入库和统计，只输出本地玩家、版本、双方阵容以及 `.ope` 时间戳和对局 ID，并按 `emOperatorDataType` 枚举命名 `.ope` 第二层操作流的记录类型（Common/TouchOpe/MoveOpe/SkillUseOpe/SkillSlotOpe 等，见 `docs/replay_binary_format.md` 第 4.6 节）。操作流结构解析在已确认形态覆盖全流时输出事件计数，遇到未解码的序列化变体时如实报墙，不输出基于猜测形态的计数。
+
+回放记录流同时支持 ID1075（多人，逐帧记录）与 ID1051（单局，逐条目 `[len][帧号][payload]`，帧号与头部 totalFrameNum 吻合；条目级已解码为 0x02 通道事件族（帧命令/击杀通知/购买/方向技能等，4 万条零未知），其中 02/83 = POV 英雄朝向角采样（±180°）、02/87 = 技能加点时间轴、02/85 = 购买镜像、02/82 = 瞄准世界坐标（i32BE，§5.145 修正）、02/80 = hero-specific 帧命令、CC 缓冲 = 逐帧键值状态广播（初始推送含打野签名 8c=2+85=1，经狩猎宽刃首购两局对拍验证），工作台单局时间轴含 POV 朝向角曲线；CC key23 = camp1 专属 per-hero bool；解码状态总表见 docs 第 5.149 节；设备恢复与 AdvanceFrameCommands 绑定指引见 docs/device_setup.md 与 docs 第 5.133-5.141 节）；工作台对 1051 渲染单局时间轴（技能加点/购买流水），见 docs 第 5.133-5.138 节）。当前解析器同时支持两种 `.abc` 布局：旧样本的 1,517 字节定长玩家块（如 `20261028_135516`），以及 2026-11-01 新赛季构建 5247758 的变长十人块。后者由真人块和电脑块（固定 2,782 字节、5 字节 post）组成，英雄 ID 为块内 `s+0x48` 的 u16BE；已用 11-01 人机样本（2 真人 + 8 电脑）和 11-02 两局正常 5V5（10 真人）验证。正常 5V5 中红方真人块没有蓝方的 12 字节块尾，需按“下一块起点”收尾；玩家名可能含零宽字符并以 NUL 补齐，解析器按 Unicode 格式字符容忍，不因此丢弃整块。`.abc` 尾部不再是旧 TLV，而是 `seq/pad/L/payload` 帧流（11-01 样本 9,900 条，11-02 样本 10,509 / 15,379 条，seq 从 1 开始）；`.ope` 第二层压缩流偏移由样本决定（5247758 人机样本 0x91，11-02 正常 5V5 样本 0x8B，旧样本 0x8B）。新版 `.ope` 操作流在偏移 0x1B 出现未适配类型（11-01 为 0x84，11-02 为 0xEF），解析器会如实标注未解码。字段名除 frame/unityFrame/eventId 外均为推断，完整过程数据仍按本节“播放回放 → 录屏 → 识别”获取。
+
+帧内命令的 packed 移动/普攻位域已破解（5247758，三样本 213,032 条验证）：`PLAYER_MOVE` 的 u16 = `[unit:5][seq:2][sign:1][mag:8]`，`mag` ∈ [0,180]；`unit = 8 + (camp-1)*8 + slot`（camp1→8-12，camp2→16-20）即英雄槽位，普攻字节同构。人机局只有真人发输入（8 个 AI 英雄全零，引擎确定性模拟）。方向角已标定（见 `docs/replay_binary_format.md` 第 5.128 节）：dir_deg 与方向技能瞄准角共用同一角度系（两局 400+ 配对 Δ 中位数 0±6°）；尾部帧流 0x82 kind=2 为英雄自身世界坐标（位移方向与移动航向相关 r≈0.5-0.58）；世界向量 = `(cos dir°, sin dir°)`（native 轴 +y 向南），罗盘方位 = `(90+dir) mod 360`（蓝方左下、红方右上的标准地图）。`python tools/replay_input_timeline.py <abc> --out <json>` 导出 unit→英雄 的逐帧输入时间轴（移动方向/普攻/购买/学技能/技能施放/0x82 稀疏位置锚点）。工作台「采集 → 回放文件」的回放详情新增“英雄输入时间轴”：十人输入概览表和按英雄的方向时间轴图（`GET /api/replays/<id>/inputs`，按需从已存 .abc 解码）。帧→秒已标定：15 帧/秒，t≈(frame−F0)/15（±1s；20261102_161129 与赛后截图同局确证，显示时长 11:33=693s，见 docs 第 5.129 节）；尾部流 0x85 经逐字节修正为购买镜像（equip/object/flag，无金币收入——收入账本不可从回放重建，见 docs 第 5.130 节）；0x01 包装内 0x2d 为 0-359° 角度采样（≈dir+180，变化触发，部分英雄含录制者）、0x1e/0x1f 与 KDA 阴性，原始 TLV 已留档（见 docs 第 5.131 节）；0x82 采样稀疏；方向积分形状图层已上线但漂移严重（对锚点残差 1.8万-6.5万，见 docs 第 5.132 节），仅示意转向历史，真值轨迹仍需引擎侧帧模拟。浏览器验收：`python scripts/verify_replay_inputs_page.py`。
+
+### 运行时赛训数据导入（实验）
+
+`.abc` 不保存十人经济、伤害、承伤或位置的最终表；尾部只有 1251 `SCPKG_GAMEOVER_MVPSCORE` 包（胜方/败方 MVP 与十人评分），完整结算包 1082 不在记录流中。这些状态由客户端 `GameCore` 在播放回放时重新模拟。工作台新增一份 JSONL 契约，接收采集器导出的逐帧队员状态与事件，并在回放实验室中计算 KDA、GPM、XPM、分均伤害/承伤、参团率、经济占比和事件时间轴。
+
+操作：回放实验室 → 查看结果 → 运行时赛训数据 → 选择 `.jsonl` → 导入并分析。数据只进入实验分析，不自动创建正式比赛，也不进入英雄胜率统计。
+
+运行时入口的静态核查结论、字段格式、采集路线与限制见 [docs/runtime_data.md](docs/runtime_data.md)。当前样本的 `GameModeConfig.json` 为 `IsSharedMemReplay_b=false`，不能假设共享内存可用；实际设备上仍需读取 `CAutoReplayManager.GetIsShmReplay()` 复核。
+
+设备在线且游戏已进入回放后，可先运行只读探针：
+
+```powershell
+python scripts/runtime_probe.py
+python scripts/runtime_probe.py --dump --serial emulator-5554
+```
+
+探针只读 `/proc/<pid>/maps`；`--dump` 需要 root，并明确限制总读取量。它不会修改游戏进程或回放文件。
+
+### 回放录屏 OCR（实验）
+
+对立绘固定的本地回放录屏做只读文字识别：回放列表、加载页阵容、对局顶部计时/击杀/团队经济、底部所选面板、记分板逐人经济。输出带原始文本、置信度和警告的 JSON 报告；不写数据库，不进入正式比赛和胜率统计。
+
+```powershell
+python scripts/replay_video_ocr.py "C:\path\to\录屏.mp4" --fps 1
+python scripts/replay_video_ocr.py "C:\path\to\录屏.mp4" --fps 1 `
+  --abc data/replays/samples/20261028_135516.abc --evidence data/replays/video_ocr/evidence
+```
+
+默认报告写到 `data/replays/video_ocr/<视频 sha 前 16 位>.json`。`--abc` 可选，只读解析同一局的 `.abc` 十人英雄集合，用于补全录屏中未读出的英雄名；不写数据库。
+
+当前样本（141 秒、1600×900、快速赛）结果：阶段切分为列表/加载/对局；十人阵容 10/10（加载页直读 8 名，孙膑、蚩奼由同局 `.abc` 补全）；对局 00:00 → 01:46 / 总时长 02:57，1.0x；团队金币 1500 → 9100（蓝）/ 8600（红），击杀 2:1，龙/塔计数双方均为 0；记分板 4 个有效快照均十人齐全，逐人 K/D/A + 累计金币，K/D 与顶部击杀/死亡交叉校验（01:00 示例：影 0/1/0、程咬金 1/0/0、百里玄策 0/0/1），2 个金币快照被拒；底部面板 5 段对应观战目标切换，铭文 10宿命/5调和/3狩猎/2狩猎/10虚…（末尾裁切），孙膑 1/6 装备槽（学识宝石候选），铠 3/6 槽但名称未达阈值；团队面板 00:32、00:33、00:53、00:54 共 4 个样本，双方各 5 行 KDA/累计金币均读全。记分板行序会按金币重排，身份按行内名字匹配，不能按行号推定。1 fps 单次约 1–2 分钟。
+
+边界：只读取画面可见文字，不能得到输出伤害、承伤、参团率、位置/轨迹，或未打开记分板/团队面板时的逐人经济/KDA；底部金币是“可用金币”，不是累计经济；铭文只在本地面板显示且末尾常被裁切；装备名只作候选，相似度不足时只记填充状态；技能冷却、血/蓝条、召唤师技能名称未提取；顶部龙/塔只读团队累计数，不区分具体资源；底部面板身份未由画面文字确认；团队面板按行序绑队伍槽位，面板关闭时回退记分板快照；团队金币按 `k` 取整；记分板行序会变，身份靠名字匹配，最后一行被遮挡时只能按团队 K/D 补 0/0；录像未播放完时不提供赛后总数据。固定布局依赖 16:9 和当前 UI，改版需重新校准。完整布局、格式、样本结果与限制见 [docs/replay_video_ocr.md](docs/replay_video_ocr.md)。
+
+### 单局数据包（数据整理）
+
+把赛后战绩页/数据页 OCR 与多路录屏 OCR 整理成一份 `kpl-match-data-v1` JSON：统一字段、对齐同一局、保留原始文本和来源。这里不计算胜率、分均经济或伤害，分析层再消费这份文件。
+
+```powershell
+python scripts/build_match_data.py `
+  --video data/replays/video_ocr/team.json --follow - `
+  --video data/replays/video_ocr/pov-ying.json --follow 影 `
+  --postgame data/screenshots/score.png `
+  --postgame data/screenshots/data.png `
+  --out data/matches/<key>.json
+```
+
+- `--video` 可重复，第一路作为阵容基准；`--follow` 与视频按顺序对应，`-` 表示团队/记分板视频。POV 身份是人工标签，不能用录制账号的 `pov` 自动代替。
+- 赛后两张图按行内英雄名匹配到录屏阵容，不按截图行号合并；只有战绩页或只有数据页时，缺失字段保留 `null` 并写警告。
+- 同一局校验：日期、总时长、十人英雄集合；日期/时长冲突或英雄重合 <8 默认拒绝生成，需 `--force`。多路视频标题不同允许（不同玩家 POV），只写警告。
+- 只有录屏时，终局字段退化为最后一张记分板快照，标 `partial` 和快照时间，不冒充全场终局；录屏覆盖到 01:46/02:57 时明确标“团队曲线不是全场”。
+- 输出默认 `data/matches/<key>.json`，只写本机 `data/`，不进入数据库、不创建正式比赛。
+
+本样本只有录屏，没有同一局的赛后截图，已生成 `data/matches/1028-177-71b998.json`：1 路视频、终局 10 人取自 01:00 记分板快照（部分）、团队时间轴 97 点、记分板 4 快照、POV 孙膑 5 段观战切换警告。赛后两页合并、左右阵营互换、行序不同、单页缺失、`--force` 等由合成 OCR 测试覆盖。完整规则与字段语义见 [docs/match_data.md](docs/match_data.md)。
+
+### 表格数据导入（数据整理）
+
+赛训组已有的 CSV/Excel 表格先画像，再按 profile 落盘。导入器区分单局单队员、单局单队、事件、跨局聚合和宽表；原始列全部保留，百分比统一到 0–100，聚合字段标 `aggregated`/`aggregate`，不会被当成单局字段再求和。
+
+```powershell
+# 1) 预览：粒度、键、指标、未映射列、质量警告
+python scripts/import_sheet.py "赛训表.xlsx" --preview
+
+# 2) 生成可编辑的 profile
+python scripts/import_sheet.py "赛训表.xlsx" --write-profile data/imports/table-profile.json --preview
+
+# 3) 用 profile 落盘到 data/imports/<sha16>/
+python scripts/import_sheet.py "赛训表.xlsx" --profile data/imports/table-profile.json
+
+# 快速试导入（manifest 会标 inferred，不建议直接用于正式分析）
+python scripts/import_sheet.py "赛训表.xlsx" --accept-inferred
+```
+
+- 支持 CSV/TSV/XLSX/XLSM；`.xls` 需先转换。单文件 ≤64 MB、≤200,000 行。
+- 单局表里的“场次”按场次号处理；聚合表的“场次”按场次数处理。单局表混入胜率/场均列时，列标 `aggregate: true` 并警告。
+- 宽表（一行一局、十人横向展开）需要 profile 的 `wide.players` 显式映射；自动画像只检测重复前缀，不猜队员。
+- 不自动绑定昵称到队员 ID，不写工作台数据库，不创建正式比赛。输出 `manifest.json` + `profile.json` + `rows/*.jsonl`，分析层按 `grain`/`aggregated` 分开消费。
+- 完整字段语义、profile 示例（单局/聚合/事件/宽表）与限制见 [docs/sheet_import.md](docs/sheet_import.md)。
+
+### 数据分析（工作台内模块）
+
+数据分析是工作台内的一个功能页，不再是独立平台。左侧栏「分析」分组 → 「数据分析」（`/#stats`）打开，共用 8766 与工作台外壳；旧地址 `/analysis` 重定向到 `/#stats`。`analysis_server.py` 只保留为独立调试入口，正式使用不需要另开 8767。
+
+按子模块组织，顶部筛选（数据来源、日期、队员、英雄、赛段、版本、对手、结果、包含部分数据）对全部模块生效：
+
+- **总览**：核心指标卡、近期状态（近 10 场胜负与连胜连败）、月度战绩、队员/英雄概览、数据覆盖与提示。
+- **队员**：出场、胜负、胜率、KDA、GPM、DPM、参团、英雄池；点击行查看 KDA 逐场趋势与逐场明细，可导出 CSV。
+- **英雄**：出场、胜负、胜率、KDA、GPM、DPM、常用队员；点击行跳转比赛列表并按该英雄筛选，可导出 CSV。
+- **对手**：对手对阵表（胜负、胜率条）、团队场均经济/经济差/击杀、本队阵营样本。
+- **阵容**：本队五人英雄组合的出场与胜负（来自已确认比赛），可展开逐局证据回校对页。
+- **比赛**：全部比赛列表；点击查看十人终局、团队经济曲线、记分板快照与 POV 面板段。
+- **采集候选**：来自「截图采集」的分页截图候选（含示例数据）的扩展字段排行——分均补刀、伤害转化比、对塔伤害、控制、治疗、每死承伤；只读展示，不进入正式统计。
+- **数据源**：本机记录、录像数据包、表格导入与聚合表的覆盖情况。
+
+- 本机记录（`training.sqlite3`）只读；数据包按日期/时长/十人英雄自动关联到本机比赛，关联后终局优先用已确认记录，时间轴/记分板/POV 来自数据包。
+- 表格导入默认不计入单局统计，聚合表单独展示，禁止与单局相加/再平均。
+- KDA、GPM/DPM/TPM、占比、参团率按统一口径计算；每分钟指标用 `sum(值)/sum(有效分钟)`，部分快照不按全场时长折算。
+- 部分数据默认排除在队员/英雄统计外；勾选“包含部分数据”可查看过程快照，行上标“部分”。
+- 完整数据源、关联规则、指标口径、API 和限制见 [docs/analysis_platform.md](docs/analysis_platform.md)；
+指标注册表见 [docs/metric_registry.md](docs/metric_registry.md)，日常采集流程见 [docs/collection_sop.md](docs/collection_sop.md)。
+经济机制口径（装备被动、多人分摊、兵线时序与兵线经济表）见 [docs/economy_rules.md](docs/economy_rules.md)；只作复盘参考，不进入统计。
+
 ## 数据与指标约束
 
 - 保存原图/视频引用、识别位置、原始文本、识别置信度及人工修订记录，统计可回到具体比赛。
@@ -112,3 +432,5 @@ python scripts/sync_catalog.py
 先完成单局草稿、图片关联、人工校对、保存与统计的闭环，再逐项接入自动识别，随后扩展回放解析。界面可先于 OCR 完成，但必须标明手工录入与自动识别状态。
 
 可参考原 KPL 项目的统计与视频解析模块，但需适配普通训练赛界面并重新验证。原始回放文件导出、格式解析及账号自动同步均未验证，不作为首版依赖。
+
+采集和补录细节：通道可填 BP，已采集比赛从“BP 补录”单独保存；批量导入页上传前展示表头与约束；采集说明使用真实画面和昵称显示遮罩。名单提供 2026 夏季赛 18 支 KPL 队名快照、自定义队名和默认分路；手工录入支持日期控件、分秒时长及资源事件滑杆。空白页不产生恢复草稿提示。清洗修改后自动预览，保存生成独立数据集。

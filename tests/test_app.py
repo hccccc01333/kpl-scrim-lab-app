@@ -1,5 +1,6 @@
 import copy
 import io
+import json
 import os
 import sys
 import unittest
@@ -117,6 +118,21 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(s['heroes'][0]['key'], '英雄0')
         self.assertEqual(self.client.get('/api/summary?from=2030-01-01').json()['games'], 0)
 
+    def test_role_and_hero_filters_apply_to_same_player(self):
+        m=self.fixture(); m['opponent']='同一队员筛选回归'; m['duration']='20'
+        m['players'][5]['position']='中路';m['players'][6]['position']='游走'
+        response=self.client.post('/api/matches',json=m)
+        self.assertEqual(response.status_code,200,response.text)
+        s=self.client.get('/api/summary?opponent=同一队员筛选回归&position=中路&hero=英雄0').json()
+        self.assertEqual(s['games'],1);self.assertEqual(len(s['players']),1)
+        self.assertEqual(s['heroes'][0]['damagePerMinute'],2090)
+        self.assertEqual(self.client.get('/api/summary?opponent=同一队员筛选回归&position=游走&hero=英雄0').json()['games'],0)
+        self.assertEqual(self.client.get('/api/summary?position=不存在位置').status_code,400)
+        report=self.client.get('/api/matches/'+m['id']+'/review')
+        self.assertEqual(report.status_code,200)
+        self.assertEqual(report.json()['order'],['right','left'])
+        self.assertEqual(self.client.get('/api/matches/missing/review').status_code,404)
+
     def test_backup_merge_and_atomic_invalid_restore(self):
         backup = self.client.get('/api/backup').json()
         before = len(self.client.get('/api/state').json()['matches'])
@@ -129,9 +145,50 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/restore', json=bad).status_code, 400)
         self.assertEqual(len(self.client.get('/api/state').json()['matches']), before)
 
+    def test_focus_crud_evaluate_and_backup(self):
+        created = self.client.post('/api/focus', json={
+            'title': '射手生存', 'metric': 'deaths', 'scopeType': 'player',
+            'scopeId': '3', 'direction': 'down', 'target': 2})
+        self.assertEqual(created.status_code, 200, created.text)
+        focus_id = created.json()['id']
+        listed = self.client.get('/api/focus').json()['items']
+        self.assertEqual(listed[-1]['title'], '射手生存')
+        updated = self.client.patch(f'/api/focus/{focus_id}', json={'status': 'improved'})
+        self.assertEqual(updated.json()['status'], 'improved')
+        evaluation = self.client.get('/api/focus/evaluate').json()['items']
+        target = next(item for item in evaluation if item['id'] == focus_id)
+        self.assertEqual(target['points'], [])  # 没有已确认比赛时如实为空
+        backup = self.client.get('/api/backup').json()
+        self.assertTrue(any(item['body']['title'] == '射手生存' for item in backup['focusItems']))
+        # 备份恢复进全新数据库
+        import server
+        snapshot = json.dumps(backup, ensure_ascii=False)
+        original_path = server.DB_PATH
+        try:
+            server.DB_PATH = original_path.parent / f'focus-restore-{uuid.uuid4().hex}.sqlite3'
+            server.init_db()
+            restored = self.client.post('/api/restore', json=json.loads(snapshot))
+            self.assertEqual(restored.status_code, 200, restored.text)
+            with server.db() as c:
+                rows = c.execute('SELECT body FROM focus_items').fetchall()
+            self.assertTrue(any(json.loads(row['body'])['title'] == '射手生存' for row in rows))
+        finally:
+            server.DB_PATH = original_path
+
     def test_local_origin_and_bad_image(self):
         self.assertEqual(self.client.post('/api/images', content=b'not an image').status_code, 400)
         self.assertEqual(self.client.put('/api/settings', headers={'Origin': 'https://other.example'}, json={}).status_code, 403)
+
+    def test_analysis_redirects_into_workbench(self):
+        redirect = self.client.get('/analysis', follow_redirects=False)
+        self.assertIn(redirect.status_code, (301, 302, 303, 307))
+        location = redirect.headers['location']
+        self.assertTrue(location.startswith('/#stats') or location.startswith('/studio'))
+        index = self.client.get('/')
+        self.assertEqual(index.status_code, 200)
+        self.assertTrue('data-page="stats"' in index.text
+                        or 'data-platform="unified"' in index.text)
+        self.assertNotIn('/analysis"', index.text)
 
     def test_backup_into_fresh_database(self):
         import server

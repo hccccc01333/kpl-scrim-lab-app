@@ -1,30 +1,48 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>训练室 · 训练赛分析工作台</title>
-  <meta name="description" content="从赛后截图到训练复盘，让每一场训练留下可用的记录。">
-  <link rel="stylesheet" href="/assets/style.css"><script type="module" src="/assets/app.js"></script>
+  <meta name="description" content="赛事赛训组用的本机训练赛数据工作台：赛后截图入库、人工校对、统计汇总。">
+  <link rel="stylesheet" href="/assets/style.css?v=7">
+  <script type="module" src="/assets/app.js?v=8"></script>
 </head>
 <body>
-  <aside class="sidebar">
-    <a href="#overview" class="brand"><span class="brand-mark">训</span><span>训练室<small>SCRIM WORKSPACE</small></span></a>
-    <div class="team-block"><span class="team-emblem">T</span><div><strong id="team-label">我的训练队</strong><small>本地战队空间</small></div><span class="online-dot"></span></div>
-    <div class="nav-caption">工作空间</div>
+  <header class="topbar">
+    <a href="#overview" class="brand">
+      <span class="brand-mark">训</span>
+      <span class="brand-text">训练室<small>SCRIM DATA CONSOLE</small></span>
+    </a>
     <nav id="navigation">
-      <a href="#overview" data-page="overview"><span class="nav-icon">▦</span>训练概览</a>
-      <a href="#matches" data-page="matches"><span class="nav-icon">≡</span>比赛档案<span id="match-count" class="nav-count">0</span></a>
-      <a href="#analysis" data-page="analysis"><span class="nav-icon">⌁</span>英雄与队员</a>
-      <a href="#roster" data-page="roster"><span class="nav-icon">♧</span>战队名单</a>
+      <a href="#overview" data-page="overview">训练概览</a>
+      <a href="#matches" data-page="matches">比赛档案<span id="match-count" class="nav-count">0</span></a>
+      <a href="#roster" data-page="roster">战队名单</a>
+      <span class="nav-div"></span>
+      <a href="#screenshots" data-page="screenshots">截图采集</a>
+      <a href="#recordings" data-page="recordings">录屏采集</a>
+      <a href="#channels" data-page="channels">采集通道</a>
+      <a href="#replays" data-page="replays">回放文件<span class="nav-count dim">实验</span></a>
+      <span class="nav-div"></span>
+      <a href="#stats" data-page="stats">数据分析</a>
+      <a href="/studio">分析台<span class="nav-count">新</span></a>
     </nav>
-    <div class="sidebar-bottom"><div class="local-badge"><span class="online-dot"></span>仅在本机运行</div><p>截图与训练记录保存在本机。<br>定期备份，让训练积累有据可循。</p><button id="backup" class="sidebar-button">导出完整备份 ↗</button><button id="restore" class="sidebar-button muted">从备份恢复</button><input type="file" id="backup-file" accept=".json,application/json" hidden></div>
-    <div class="sidebar-footer">TRAINING ROOM <span>V0.3</span></div>
-  </aside>
+    <div class="topbar-right">
+      <span id="team-label" class="team-chip"></span>
+      <button id="backup" class="topbar-button">导出备份</button>
+      <button id="restore" class="topbar-button">从备份恢复</button>
+      <input type="file" id="backup-file" accept=".json,application/json" hidden>
+      <button id="mobile-backup" class="mobile-only button ghost">备份</button>
+      <button id="mobile-restore" class="mobile-only button ghost">恢复</button>
+      <span class="privacy"><span class="dot"></span>本机存储</span>
+    </div>
+  </header>
+
   <main>
-    <header class="topbar"><span id="breadcrumb">工作空间 / 训练概览</span><div class="topbar-right"><button id="mobile-backup" class="mobile-only button ghost">备份</button><button id="mobile-restore" class="mobile-only button ghost">恢复</button><span class="privacy"><span class="online-dot"></span>本地存储</span><span class="avatar">队</span></div></header>
     <div id="content" class="content" aria-live="polite"></div>
-    <footer class="main-footer">每一场训练，都值得认真记录。<span>训练室 · 赛后分析工作台</span></footer>
+    <footer class="main-footer">比赛记录与识别结果均保存在本机<span>修改后请定期导出备份</span></footer>
   </main>
+
   <div id="toast" role="status" hidden></div>
   <dialog id="image-dialog"><button id="close-dialog" class="button secondary">关闭预览</button><img alt="原始赛后截图" id="full-image"></dialog>
   <datalist id="hero-list"></datalist>

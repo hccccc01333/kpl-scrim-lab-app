@@ -1,0 +1,26 @@
+const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=(v,d=0)=>v===null||v===undefined?'—':Number(v).toLocaleString('zh-CN',{maximumFractionDigits:d});
+const percent=v=>v===null||v===undefined?'—':fmt(v,1)+'%';
+const signed=v=>v===null||v===undefined?'—':(v>0?'+':'')+fmt(v);
+
+function teamTable(team){
+ return `<section class="panel section-gap"><div class="panel-header"><div><h2>${team.displaySide||(team.isOwn?'本队':'对手')} · ${esc(team.name)}</h2><div class="panel-subtitle">${team.side==='left'?'截图左侧':'截图右侧'} · 终局统计与时长派生指标</div></div></div><div class="table-wrap"><table class="review-player-table"><thead><tr><th>英雄 / 队员</th><th>实际分路</th><th>K / D / A</th><th>输出</th><th>输出 / 分钟</th><th>经济 / 分钟</th><th>输出占比</th><th>经济占比</th><th>截图参团率</th></tr></thead><tbody>${team.players.map(p=>`<tr><td><strong>${esc(p.hero||'英雄待确认')}</strong><div class="helper">${esc(p.name||(team.isOwn?'未关联队员':'对手昵称未记录'))}</div></td><td>${esc(p.position||'未确认')}</td><td>${fmt(p.metrics.kills)} / ${fmt(p.metrics.deaths)} / ${fmt(p.metrics.assists)}</td><td>${fmt(p.metrics.damage)}</td><td>${fmt(p.metrics.damagePerMinute,1)}</td><td>${fmt(p.metrics.goldPerMinute,1)}</td><td>${percent(p.metrics.damageShare)}</td><td>${percent(p.metrics.goldShare)}</td><td>${percent(p.metrics.participation)}</td></tr>`).join('')}</tbody></table></div><div class="summary-footnote">占比仅在本侧五人对应数据完整且总量大于零时计算。分均指标需要已录入的比赛时长；缺失项显示“—”。</div></section>`;
+}
+
+export function renderReview(container,r,{onImage,onExport}){
+ const [first,second]=r.order,ownKnown=['left','right'].includes(r.side);
+ const labels={gold:'终局经济差',damage:'总输出差',taken:'总承伤差',kills:'总击杀差'};
+ const firstLabel=ownKnown?'本队':first==='left'?'左侧':'右侧',secondLabel=ownKnown?'对手':second==='left'?'左侧':'右侧';
+ const result=ownKnown&&r.winner?(r.winner===r.side?'胜利':'失利'):'胜负待确认';
+ const teamA={...r.teams[first],name:r.teams[first].name||firstLabel,displaySide:firstLabel},teamB={...r.teams[second],name:r.teams[second].name||secondLabel,displaySide:secondLabel};
+ container.innerHTML=`<a class="back-link" href="#matches">← 返回比赛档案</a><div class="page-heading"><div><h1>${esc(teamA.name)} vs ${esc(teamB.name)}</h1><p class="subtitle">${esc(r.date||'日期待确认')} · ${esc(r.session||'日常训练')} · ${r.duration?fmt(r.duration,2)+' 分钟':'时长未录入'}${r.version?' · '+esc(r.version):''}</p></div><div class="review-actions"><span class="tag ${r.status==='confirmed'?'':'amber'}">${r.status==='confirmed'?result:r.status==='archived'?'已归档':'草稿 · 不计入统计'}</span><a class="button secondary" href="#edit/${esc(r.id)}">校对 / 编辑</a><button class="button" id="export-review">导出复盘 JSON</button></div></div>
+ <div class="notice green">这里展示已保存的第 ${fmt(r.revision)} 版记录。数据差异用于定位复盘问题，不直接判断个人实力或比赛败因。</div>
+ <div class="metrics review-metrics">${r.comparisons.map(c=>`<div class="metric"><div class="metric-label">${labels[c.metric]}<span class="helper">${firstLabel} − ${secondLabel}</span></div><div class="metric-number">${signed(c.difference)}</div><div class="metric-note">${firstLabel} ${fmt(c.first.value)} / ${secondLabel} ${fmt(c.second.value)}</div><div class="helper">数据覆盖：${firstLabel} ${c.first.samples}/5，${secondLabel} ${c.second.samples}/5</div></div>`).join('')}</div>
+ <section class="panel"><div class="panel-header"><h2>已确认分路的终局对照</h2><span class="tag gray">${r.matchups.length} 组</span></div>${r.matchups.length?`<div class="table-wrap"><table><thead><tr><th>分路</th><th>${firstLabel}英雄</th><th>${secondLabel}英雄</th><th>终局经济差（${firstLabel}−${secondLabel}）</th></tr></thead><tbody>${r.matchups.map(m=>`<tr><td>${esc(m.position)}</td><td>${esc(m.first.hero||'待确认')}</td><td>${esc(m.second.hero||'待确认')}</td><td>${signed(m.goldDifference)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">双方同一分路各确认一人后才生成对照，未按截图排列猜测分路。</div>'}<div class="summary-footnote">${r.warnings.map(esc).join('；')||'终局经济差不是对线期经济差，仍需结合英雄、阵容与录像判断。'}</div></section>
+ ${teamTable(teamA)}${teamTable(teamB)}
+ <div class="review-notes-grid section-gap"><section class="panel"><div class="panel-header"><h2>BP 与阵容要点</h2></div><div class="review-note">${esc(r.bp||'这局尚未记录 BP 要点，可进入编辑补充。')}</div></section><section class="panel"><div class="panel-header"><h2>复盘记录</h2></div><div class="review-note">${esc(r.notes||'这局尚未记录复盘要点，可进入编辑补充。')}</div></section></div>
+ ${r.imageIds.length?`<section class="panel section-gap"><div class="panel-header"><h2>本局截图证据</h2><span class="tag gray">${r.imageIds.length} 张</span></div><div class="review-evidence">${r.imageIds.map((id,i)=>`<button data-review-image="${esc(id)}" aria-label="查看第 ${i+1} 张原始截图"><img src="/api/images/${esc(id)}" alt="本局第 ${i+1} 张原始截图"></button>`).join('')}</div></section>`:''}
+ <details class="review-method section-gap"><summary>计算口径与数据边界</summary><p>单局分均值 = 终局数值 / 已录入分钟数。输出、经济、承伤占比 = 个人数值 / 本侧五人对应数值之和 × 100%。截图中使用 k 等缩写的数值仍是按显示精度换算的近似值。</p><p>跨局分均指标以有对应数据和时长的比赛配对汇总：总数值 / 总分钟数；KDA = Σ(击杀+助攻) / max(1,Σ死亡)，只使用 K/D/A 三项齐全的记录，不是逐局 KDA 的简单平均。</p><p>无过程数据时不生成经济曲线、转折点或技能行为判断。方法：${esc(r.method)}</p></details>`;
+ container.querySelectorAll('[data-review-image]').forEach(b=>b.onclick=()=>onImage(b.dataset.reviewImage));
+ container.querySelector('#export-review').onclick=()=>onExport(r);
+}
