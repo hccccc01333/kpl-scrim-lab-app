@@ -217,6 +217,63 @@ def build_account(data: dict, xlog_uid: str) -> dict:
     }
 
 
+# ---- 登录会话（供工作台网页逐步扫码/轮询使用） ----
+
+_login_sessions: dict = {}
+SESSION_TTL = 180
+
+
+def create_login_session() -> dict:
+    """生成一次扫码会话，返回 {taskId, qrcodeBase64}。二维码 3 分钟内有效。"""
+    xlog_uid = str(uuid.uuid4()).upper()
+    uuid_value, qrcode_b64 = get_qrcode(get_sdk_ticket(xlog_uid))
+    task_id = uuid.uuid4().hex
+    _login_sessions[task_id] = {'xlogUid': xlog_uid, 'uuid': uuid_value,
+                                'createdAt': time.time()}
+    return {'taskId': task_id, 'qrcodeBase64': qrcode_b64}
+
+
+def poll_login_once(task_id: str) -> dict:
+    """轮询一次扫码状态。success 时凭证已写入 AUTH_PATH。"""
+    session = _login_sessions.get(task_id)
+    if not session or time.time() - session['createdAt'] > SESSION_TTL:
+        _login_sessions.pop(task_id, None)
+        return {'status': 'expired'}
+    status, auth_code = poll_qrcode(session['uuid'])
+    if auth_code and status == 405:
+        account = build_account(login_with_code(auth_code, session['xLogUid']),
+                                session['xLogUid'])
+        AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+        AUTH_PATH.write_text(json.dumps(account, ensure_ascii=False, indent=2),
+                             encoding='utf-8')
+        _login_sessions.pop(task_id, None)
+        return {'status': 'success', 'nickname': account.get('nickname') or '',
+                'userId': account.get('userId') or ''}
+    if status == 404:
+        return {'status': 'scanned'}
+    if status == 402:
+        _login_sessions.pop(task_id, None)
+        return {'status': 'expired'}
+    if status == 403:
+        _login_sessions.pop(task_id, None)
+        return {'status': 'canceled'}
+    return {'status': 'waiting'}
+
+
+def read_account() -> dict:
+    """读取已保存的凭证（脱敏摘要），没有则返回 {'authorized': False}。"""
+    if not AUTH_PATH.is_file():
+        return {'authorized': False}
+    try:
+        account = json.loads(AUTH_PATH.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'authorized': False}
+    if not account.get('token'):
+        return {'authorized': False}
+    return {'authorized': True, 'nickname': account.get('nickname') or '',
+            'userId': account.get('userId') or '', 'loginAt': account.get('loginAt') or ''}
+
+
 def show_status():
     if not AUTH_PATH.is_file():
         print('还没有登录凭证。先运行 python tools/camp_auth.py 扫码。')
@@ -232,37 +289,32 @@ def show_status():
 
 
 def login_flow():
-    xlog_uid = str(uuid.uuid4()).upper()
     print('获取登录二维码…')
-    uuid_value, qrcode_b64 = get_qrcode(get_sdk_ticket(xlog_uid))
+    session = create_login_session()
     QR_PATH.parent.mkdir(parents=True, exist_ok=True)
-    QR_PATH.write_bytes(base64.b64decode(qrcode_b64))
+    QR_PATH.write_bytes(base64.b64decode(session['qrcodeBase64']))
     print(f'二维码已保存：{QR_PATH}')
     try:
         os.startfile(QR_PATH)
     except AttributeError:
         pass
     print('请用打过训练赛的微信扫码并在手机上确认（3 分钟内有效）…')
-    deadline = time.time() + 200
+    deadline = time.time() + SESSION_TTL + 10
     last_status = None
     while time.time() < deadline:
         time.sleep(2)
-        status, auth_code = poll_qrcode(uuid_value)
-        if auth_code and status == 405:
-            account = build_account(login_with_code(auth_code, xlog_uid), xlog_uid)
-            AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
-            AUTH_PATH.write_text(json.dumps(account, ensure_ascii=False, indent=2),
-                                 encoding='utf-8')
-            print(f"登录成功：{account.get('nickname') or account['userId']}")
+        result = poll_login_once(session['taskId'])
+        if result['status'] == 'success':
+            print(f"登录成功：{result.get('nickname') or result.get('userId')}")
             print(f'凭证已写入 {AUTH_PATH}（含登录态，勿外传、勿入 git）。')
-            return account
-        if status == 404 and last_status != 404:
+            return
+        if result['status'] == 'scanned' and last_status != 'scanned':
             print('已扫码，等待手机上确认…')
-        elif status == 402:
+        elif result['status'] == 'expired':
             raise SystemExit('二维码已过期，请重新运行本命令。')
-        elif status == 403:
+        elif result['status'] == 'canceled':
             raise SystemExit('已在手机上取消登录。')
-        last_status = status
+        last_status = result['status']
     raise SystemExit('等待超时。重新运行 python tools/camp_auth.py 会生成新二维码。')
 
 

@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import sqlite3
+import sys
 import tempfile
 import threading
 import time
@@ -953,6 +954,137 @@ def get_official_positions(replay_id: str):
     if not path:
         raise HTTPException(404, '该官方回放没有位置文件')
     return FileResponse(path)
+
+
+# ---- Camp login-state sync: an authorized coach account pulls per-player details ----
+
+CAMP_CONFIG_PATH = Path(os.environ.get('CAMP_CONFIG_FILE', ROOT / 'data' / 'camp_config.json'))
+_camp_sync_lock = threading.Lock()
+_camp_sync_job = {'running': False, 'result': None, 'error': None,
+                  'startedAt': None, 'finishedAt': None}
+
+
+def _camp_tools():
+    tools = ROOT / 'tools'
+    if str(tools) not in sys.path:
+        sys.path.insert(0, str(tools))
+
+
+def _clean_camp_players(players) -> list:
+    cleaned = []
+    for player in players if isinstance(players, list) else []:
+        if not isinstance(player, dict):
+            continue
+        camp_id = str(player.get('campUserId') or '').strip()
+        if not camp_id.isdigit():
+            continue
+        cleaned.append({'nickname': str(player.get('nickname') or '').strip()[:40],
+                        'campUserId': camp_id})
+    return cleaned
+
+
+def _camp_config_read() -> dict:
+    try:
+        value = json.loads(CAMP_CONFIG_PATH.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {'players': []}
+    return {'players': _clean_camp_players(value.get('players'))}
+
+
+def _camp_sync_worker(players):
+    _camp_tools()
+    import camp_sync
+    results = []
+    for player in players:
+        try:
+            summary = camp_sync.sync(player['campUserId'])
+            results.append({'nickname': player['nickname'], 'campUserId': player['campUserId'],
+                            'ok': True, 'summary': summary})
+        except BaseException as error:  # camp_sync 用 SystemExit 报致命错误
+            results.append({'nickname': player['nickname'], 'campUserId': player['campUserId'],
+                            'ok': False, 'error': f'{type(error).__name__}: {error}'})
+    return results
+
+
+@app.get('/api/camp/auth')
+def camp_auth_status():
+    _camp_tools()
+    import camp_auth
+    return camp_auth.read_account()
+
+
+@app.post('/api/camp/auth/qr')
+def camp_auth_qr():
+    _camp_tools()
+    import camp_auth
+    try:
+        return camp_auth.create_login_session()
+    except Exception as error:
+        raise HTTPException(502, f'获取登录二维码失败：{error}')
+
+
+@app.get('/api/camp/auth/poll')
+def camp_auth_poll(taskId: str):
+    _camp_tools()
+    import camp_auth
+    return camp_auth.poll_login_once(taskId)
+
+
+@app.post('/api/camp/auth/clear')
+def camp_auth_clear():
+    _camp_tools()
+    import camp_auth
+    camp_auth.AUTH_PATH.unlink(missing_ok=True)
+    return {'ok': True}
+
+
+@app.get('/api/camp/config')
+def camp_config_get():
+    return _camp_config_read()
+
+
+@app.post('/api/camp/config')
+def camp_config_set(value: dict):
+    players = _clean_camp_players(value.get('players'))
+    CAMP_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CAMP_CONFIG_PATH.write_text(json.dumps({'players': players}, ensure_ascii=False, indent=1),
+                                encoding='utf-8')
+    return {'players': players}
+
+
+@app.get('/api/camp/sync')
+def camp_sync_status():
+    _camp_tools()
+    import camp_sync
+    import camp_auth
+    details = list(camp_sync.DETAIL_DIR.glob('*.json')) if camp_sync.DETAIL_DIR.is_dir() else []
+    return {**_camp_sync_job, 'detailsCount': len(details),
+            'config': _camp_config_read(), 'auth': camp_auth.read_account()}
+
+
+@app.post('/api/camp/sync')
+def camp_sync_start():
+    with _camp_sync_lock:
+        if _camp_sync_job['running']:
+            raise HTTPException(409, '同步已在进行中')
+        players = _camp_config_read()['players']
+        if not players:
+            raise HTTPException(400, '请先在选手清单里添加至少一个营地 ID')
+        _camp_sync_job.update({'running': True, 'result': None, 'error': None,
+                               'startedAt': time.time(), 'finishedAt': None})
+
+    def worker():
+        try:
+            results = _camp_sync_worker(players)
+            _camp_sync_job.update({'running': False,
+                                   'result': {'players': results}, 'finishedAt': time.time()})
+        except Exception as error:
+            _camp_sync_job.update({'running': False,
+                                   'error': f'{type(error).__name__}: {error}',
+                                   'finishedAt': time.time()})
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {'ok': True}
 
 
 @app.post('/api/channels/{channel_id}/official')
