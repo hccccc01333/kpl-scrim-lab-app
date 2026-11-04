@@ -1,13 +1,14 @@
 {
-  "version": "collection-v2",
+  "version": "collection-v3",
   "requiredSources": [
-    "official",
-    "screenshot",
-    "video"
+    "official"
   ],
   "optionalSources": [
+    "screenshot",
+    "video",
     "table",
-    "replay"
+    "replay",
+    "camp"
   ],
   "videoReports": 1,
   "screenshotPages": [

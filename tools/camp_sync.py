@@ -65,7 +65,8 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
     account = load_account()  # 提前校验凭证，避免跑到一半发现没登录
     DETAIL_DIR.mkdir(parents=True, exist_ok=True)
 
-    summary = {'fetched': 0, 'saved': 0, 'cached': 0, 'failed': 0, 'pages': 0}
+    summary = {'fetched': 0, 'saved': 0, 'cached': 0, 'failed': 0, 'pages': 0,
+               'gameSeqs': []}
     cursor = watermark
     newest = watermark
 
@@ -106,6 +107,7 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
                 out_path.write_text(json.dumps(detail_body, ensure_ascii=False, indent=1),
                                     encoding='utf-8')
                 summary['saved'] += 1
+                summary['gameSeqs'].append(seq)
                 print(f"  已入库 {seq} · {entry.get('mapName')} · {entry.get('gametime')}")
             time.sleep(REQUEST_INTERVAL)
 

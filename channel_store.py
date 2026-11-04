@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 SCHEMA = 'kpl-collection-channel-v1'
 BUNDLE_SCHEMA = 'kpl-match-data-v1'
-SOURCES = ('table', 'video', 'screenshot', 'replay')
+SOURCES = ('table', 'video', 'screenshot', 'replay', 'camp')
 CORE_FIELDS = ('kills', 'deaths', 'assists', 'gold', 'damage', 'taken', 'participation', 'rating')
 FIELD_LABELS = {
     'hero': '英雄', 'kills': '击杀', 'deaths': '死亡', 'assists': '助攻',
@@ -41,9 +41,10 @@ def blank(match=None):
         },
         'sources': {
             'table': {'status': 'missing', 'files': [], 'rows': [], 'summary': None},
-            'video': {'status': 'missing', 'required': 1, 'files': [], 'roster': [], 'summary': None},
+            'video': {'status': 'missing', 'required': 0, 'files': [], 'roster': [], 'summary': None},
             'screenshot': {'status': 'missing', 'imageIds': [], 'group': None, 'summary': None},
             'replay': {'status': 'missing', 'replayId': None, 'roster': [], 'summary': None},
+            'camp': {'status': 'missing', 'gameSeq': None, 'players': [], 'ban': None, 'summary': None},
         },
         'draft': {'players': [], 'match': match, 'conflicts': [], 'missing': [], 'coverage': {}},
         'review': {'status': 'unreviewed', 'reviewedBy': '', 'reviewedAt': '', 'notes': ''},
@@ -60,33 +61,38 @@ def append_log(channel, action, actor=None, detail=None):
 
 
 def source_status(channel):
+    """必采只看营地链接；截图/录屏已降级为选填兜底（营地同步提供同批终局数值）。"""
     sources = channel.get('sources') or {}
-    table, video, screenshot, replay = [sources.get(key) or {} for key in SOURCES]
+    table, video, screenshot, replay, camp = [sources.get(key) or {} for key in SOURCES]
     files_video = len(video.get('files') or [])
     page_types = {page.get('pageType') for page in (screenshot.get('group') or {}).get('pages') or []}
-    missing_pages = [key for key in PAGE_TYPES if key not in page_types]
     shot_count = len(screenshot.get('imageIds') or [])
     official = bool((channel.get('official') or {}).get('id'))
     statuses = {
         'official': 'completed' if official else 'missing',
+        'camp': camp.get('status') or 'missing',
         'table': table.get('status') or 'missing',
         'video': 'completed' if files_video else 'missing',
-        'screenshot': 'completed' if shot_count >= 7 and not missing_pages else 'partial' if shot_count else 'missing',
+        'screenshot': 'completed' if shot_count >= 7 else 'partial' if shot_count else 'missing',
         'replay': replay.get('status') or 'missing',
     }
     missing = []
     if not official:
         missing.append('王者营地：请提取并关联本局网页回放链接')
-    if statuses['screenshot'] != 'completed':
-        missing.append('赛后截图：需要同局七张；缺少 ' + '、'.join(PAGE_NAMES[key] for key in missing_pages) if missing_pages else '赛后截图：图片数量不足七张')
-    if not files_video:
-        missing.append('完整录屏：请关联一段录屏生成的 OCR 报告')
+    else:
+        # 双合规路径：营地自动流（camp 详情）或传统手动流（七图+录屏）任一即可审核
+        camp_ok = statuses['camp'] == 'parsed'
+        legacy_ok = statuses['screenshot'] == 'completed' and files_video
+        if not camp_ok and not legacy_ok:
+            missing.append('营地十人面板：在「营地自动同步」后于本页导入；'
+                           '或补齐七张截图与一段录屏作为兜底')
     return {'policyVersion': CONTRACT['version'], 'statuses': statuses, 'complete': not missing,
-            'counts': {'official': int(official), 'table':len(table.get('files') or []), 'video':files_video,
+            'counts': {'official': int(official), 'camp': int(bool(camp.get('gameSeq'))),
+                       'table':len(table.get('files') or []), 'video':files_video,
                        'screenshot':shot_count, 'replay':int(bool(replay.get('replayId')))},
-            'required': {'official':1,'table':0,'video':1,'screenshot':7,'replay':0},
+            'required': {'official':1,'camp':0,'table':0,'video':0,'screenshot':0,'replay':0},
             'requiredSources': CONTRACT['requiredSources'], 'optionalSources': CONTRACT['optionalSources'],
-            'missingPages':missing_pages, 'missing':missing}
+            'missing':missing}
 
 
 def require_collection(channel):
@@ -246,6 +252,8 @@ def attach_official(channel, official_id, meta, normalized, actor=None):
     channel['official'] = {
         'id': official_id, 'schema': normalized.get('schema'),
         'kind': (normalized.get('source') or {}).get('kind'),
+        'source': {'gameSeq': meta.get('gameSeq'), 'gameSvr': meta.get('gameSvr'),
+                   'relaySvr': meta.get('relaySvr'), 'playerId': meta.get('playerId')},
         'match': match, 'economy': economy, 'events': events,
         'positions': {**positions,
                       'file': ((meta.get('files') or {}).get('positions'))},
@@ -378,6 +386,7 @@ def _build_draft(channel):
     _merge_video_identity(players, channel)
     _merge_replay_identity(players, channel)
     _merge_replay_rating(players, channel)
+    _merge_camp(players, channel)
     _resolve_heroes(players, _roster(channel))
     _apply_manual(players, channel)
     match = channel.get('match') or {}
@@ -476,6 +485,96 @@ def _seed_table_identity(players, channel):
             target = next(player for player in players if player['side'] == side and player['slot'] == slot)
             keys = row.get('keys') or {}
             target.update(hero=keys.get('hero'), nickname=keys.get('player'), heroStatus='table', heroSource='table')
+
+
+def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=None):
+    """营地登录态详情（battledetail）：BP、十人面板与出装，数值来源标 camp。
+
+    official_players 来自公开回放接口的 matchInfo（playerId→heroName），
+    用于把营地十人对到英雄名；没有时只填昵称，英雄待 official 关联后补。
+    """
+    invalidate_review(channel, actor)
+    data = (detail or {}).get('data') or {}
+    head = data.get('head') or {}
+    official_players = official_players or []
+    by_player_id = {str(item.get('playerId')): item for item in official_players
+                    if item.get('playerId') is not None}
+    stat_map = {'killCnt': 'kills', 'deadCnt': 'deaths', 'assistCnt': 'assists',
+                'money': 'gold', 'totalHurtCnt': 'damage', 'totalBehurtCnt': 'taken'}
+    players, ban, team_gold = [], {}, {}
+    for roles_key, camp in (('blueRoles', 'blue'), ('redRoles', 'red')):
+        roles = data.get(roles_key) or []
+        if len(roles) != 5:
+            raise ValueError(f'{camp} 阵营人数异常（{len(roles)}，应为 5）')
+        team = data.get(f'{camp}Team') or {}
+        ban[camp] = [item.get('heroId') for item in (team.get('banHeros') or []) if item.get('heroId')]
+        team_gold[camp] = team.get('money')
+        for index, role in enumerate(roles):
+            basic = role.get('basicInfo') or {}
+            stats = role.get('battleStats') or {}
+            official_match = by_player_id.get(str(basic.get('playerId') or ''))
+            fields = {}
+            for src, dst in stat_map.items():
+                value = stats.get(src)
+                if value not in (None, ''):
+                    fields[dst] = int(value) if str(value).lstrip('-').isdigit() else value
+            participation = stats.get('joinGamePercent')
+            if participation not in (None, ''):
+                fields['participation'] = round(float(participation) * 100, 1)
+            rating = stats.get('gradeGame')
+            if rating not in (None, ''):
+                fields['rating'] = float(rating)
+            players.append({'camp': camp, 'slot': index,
+                            'playerId': str(basic.get('playerId') or ''),
+                            'nickname': _identity_name(basic.get('roleName')),
+                            'hero': (official_match or {}).get('heroName'),
+                            'heroId': (official_match or {}).get('heroId'),
+                            'stats': fields})
+    if sum(1 for player in players if player['stats']) != 10:
+        raise ValueError('营地详情的十人面板不完整，拒绝入库')
+    source = channel['sources'].setdefault('camp', {})
+    source.update({'status': 'parsed', 'gameSeq': str(game_seq),
+                   'mapName': head.get('mapName'),
+                   'players': players, 'ban': ban, 'teamGold': team_gold,
+                   'attachedAt': now(), 'parsedAt': now()})
+    append_log(channel, 'attach-camp', actor,
+               {'gameSeq': game_seq, 'players': len(players),
+                'gold': team_gold})
+    rebuild(channel)
+
+
+def _merge_camp(players, channel):
+    """营地详情的数值按 昵称/英雄 匹配进草稿；与截图/表格的冲突保留待核对。"""
+    rows = (channel['sources'].get('camp') or {}).get('players') or []
+    for row in rows:
+        side = _side_from_camp(row.get('camp'))
+        if not side:
+            continue
+        target = _replay_target(players, row, side)
+        if target is None:
+            continue
+        nickname = _identity_name(row.get('nickname'))
+        if nickname and not target.get('nickname'):
+            target['nickname'] = nickname
+            target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
+        if row.get('hero') and not target.get('hero'):
+            target['hero'] = row['hero']
+            target['heroStatus'] = 'exact'
+            target['heroSource'] = 'camp'
+            target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
+        for key, value in (row.get('stats') or {}).items():
+            if key not in CORE_FIELDS or value is None:
+                continue
+            current = target['fields'].get(key)
+            if current is None:
+                target['fields'][key] = {'value': value, 'raw': str(value),
+                                         'source': 'camp', 'confidence': 'high'}
+                target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
+            elif current.get('value') != value and current.get('source') in ('screenshot', 'table'):
+                conflict = {'side': target['side'], 'slot': target['slot'], 'field': key,
+                            'camp': value}
+                conflict[current.get('source')] = current.get('value')
+                target['conflicts'].append(conflict)
 
 
 def _merge_table(players, channel):

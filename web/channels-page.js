@@ -4,9 +4,9 @@ const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 const num = (v) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 1});
 const clock = (seconds) => seconds == null ? '—' : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 const SIDE = {left: '左', right: '右'};
-const SOURCE_LABELS = {official:'王者营地',table: '表格', video: '录像', screenshot: '截图', replay: '回放'};
+const SOURCE_LABELS = {official:'王者营地', camp: '营地十人面板', table: '表格', video: '录像', screenshot: '截图', replay: '回放'};
 const CAMP_BATTLE_MODES = {'16': '排位', '12': '排位（双排样本）'};
-const SOURCE_HINTS = {official:'必需 · 本局网页回放链接',table:'选填 · 标准十人表',video:'必需 · 一段完整录屏的报告',screenshot:'必需 · 同局七种页面各一张',replay:'选填 · .abc / .ope'};
+const SOURCE_HINTS = {official:'必需 · 本局网页回放链接', camp: '必需 · 同步后一键导入 BP 与十人面板', table:'选填 · 标准十人表',video:'选填 · 一段完整录屏的报告',screenshot:'选填兜底 · 同局七种页面各一张',replay:'选填 · .abc / .ope'};
 const FIELD_LABELS = {kills: '击杀', deaths: '死亡', assists: '助攻', gold: '总经济', damage: '输出', taken: '承伤', participation: '参团率', rating: '评分'};
 const SOURCE_NAMES = {screenshot: '截图', table: '表格', source: '来源', video: '录像', replay: '回放', manual: '手工'};
 const HERO_STATUS = {table:'表格原值',exact: '精确', 'roster-candidate': '名单候选', 'roster-elimination': '名单排除', uncertain: '待确认', unreadable: '未识别', manual: '手工'};
@@ -38,8 +38,8 @@ function heading(title, subtitle, extra = '') {
 function sourceRows(channel) {
   const status = channel.sourceStatus || {};
   const sources = channel.sources || {};
-  return ['official', 'screenshot', 'video', 'table', 'replay'].map(key => {
-    const source = key==='official' ? channel.official || {} : sources[key] || {};
+  return ['official', 'camp', 'screenshot', 'video', 'table', 'replay'].map(key => {
+    const source = key==='official' ? channel.official || {} : key==='camp' ? channel.sources?.camp || {} : sources[key] || {};
     const count = (status.counts || {})[key] || 0;
     const required = (status.required || {})[key] || 0;
     return `<tr><td><strong>${SOURCE_LABELS[key]}</strong><div class="helper">${SOURCE_HINTS[key]}</div></td>
@@ -121,6 +121,8 @@ function officialBlock(channel) {
       <div><span>事件</span><strong>${num(match.keyEvents)} + ${num(match.extendedEvents)}</strong></div>
       <div><span>逐秒位置</span><strong>${official.positions?.perSecond ? '有' : '无'} · ${num(official.positions?.pointsPerPlayer)} 点/人</strong></div>
     </div>
+    <div class="channel-actions"><button class="button secondary" id="camp-detail-import">导入营地十人面板（BP / 数值）</button>
+      <span class="helper">${(channel.sources?.camp?.players || []).length ? '已导入，草稿与冲突已更新' : '把本机同步的营地详情映射进草稿；数值来源标“营地”，与截图互校'}</span></div>
     <div class="helper">官方金币是约30秒一个点；1秒只有位置，没有1秒金币。终局字段仍以截图/回放为准。</div>`;
 }
 
@@ -455,7 +457,7 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
       </div>
       <section class="panel section-gap"><div class="panel-header"><div><h2>跨来源数据草稿</h2><div class="panel-subtitle">字段来源、冲突和缺失都保留；可直接修改</div></div><div class="channel-actions">${(() => { const count = (channel.draft?.players || []).filter(player => ['roster-candidate', 'roster-elimination'].includes(player.heroStatus)).length; return count ? `<span class="tag">名单比对 ${count}</span>` : ''; })()}<span class="tag gray">${missingText(channel)}</span><button class="button secondary" id="save-draft-edits">保存草稿修订</button></div></div>
       <div class="table-wrap"><table class="channel-draft-table"><thead><tr><th>位置</th><th>昵称</th><th>英雄</th><th>K / D / A</th><th>经济</th><th>输出</th><th>承伤</th><th>参团</th><th>评分</th><th>来源</th></tr></thead><tbody>${draftRows(channel)}</tbody></table></div>
-      ${(draft.conflicts || []).length ? `<div class="notice">冲突 ${draft.conflicts.length} 处：${draft.conflicts.map(item => `${item.side}${item.slot + 1} ${FIELD_LABELS[item.field] || item.field} 截图 ${item.screenshot} / 表格 ${item.table}`).join('；')}</div>` : ''}</section>
+      ${(draft.conflicts || []).length ? `<div class="notice">冲突 ${draft.conflicts.length} 处：${draft.conflicts.map(item => `${item.side}${item.slot + 1} ${FIELD_LABELS[item.field] || item.field} 截图 ${item.screenshot ?? '—'} / 表格 ${item.table ?? '—'}${item.camp != null ? ' / 营地 ' + item.camp : ''}`).join('；')}</div>` : ''}</section>
       ${reviewBlock(channel)}
       <section class="panel section-gap"><div class="panel-header"><h2>修改日志</h2><span class="tag gray">${(channel.changeLog || []).length} 条</span></div><div class="form-section">${logRows(channel) || '<div class="empty">还没有修改记录。</div>'}</div></section>`;
     bind();
@@ -518,6 +520,22 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
           {officialId: imported.id});
         draw();
         toast(imported.cached ? '官方回放已存在，已关联本局' : '官方回放已提取并关联本局');
+      } catch (error) {
+        button.disabled = false;
+        button.textContent = old;
+        toast(error.message, true);
+      }
+    };
+    const campImport = container.querySelector('#camp-detail-import');
+    if (campImport) campImport.onclick = async () => {
+      const button = campImport;
+      button.disabled = true;
+      const old = button.textContent;
+      button.textContent = '导入中…';
+      try {
+        channel = await api(`/api/channels/${encodeURIComponent(id)}/camp`, 'POST',
+          {gameSeq: (channel.official?.id || '').slice(5)});
+        draw(); toast('营地十人面板已导入，草稿与冲突已更新');
       } catch (error) {
         button.disabled = false;
         button.textContent = old;

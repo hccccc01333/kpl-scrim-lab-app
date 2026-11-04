@@ -16,6 +16,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
+from urllib import parse as url_parse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
@@ -1003,19 +1004,49 @@ def _camp_config_read() -> dict:
     return {'players': _clean_camp_players(value.get('players'))}
 
 
+def _camp_auto_attach(game_seqs):
+    """同步完成后，把新入库的营地详情自动挂到已关联同局官方回放的通道。"""
+    attached = []
+    with db() as c:
+        rows = c.execute('SELECT id, body FROM channels').fetchall()
+    channels = []
+    for row in rows:
+        try:
+            channels.append(json.loads(row['body']))
+        except (TypeError, ValueError):
+            continue
+    for game_seq in game_seqs:
+        target = next((channel for channel in channels
+                       if (channel.get('official') or {}).get('id') == f'camp-{game_seq}'
+                       and not ((channel.get('sources') or {}).get('camp') or {}).get('players')), None)
+        if target is None:
+            continue
+        try:
+            _camp_attach_to_channel(target, game_seq)
+            with db() as c:
+                _save_channel(c, target)
+            attached.append({'channelId': target.get('id'), 'gameSeq': game_seq})
+        except Exception:
+            continue  # 单通道失败不影响其他
+    return attached
+
+
 def _camp_sync_worker(players):
     _camp_tools()
     import camp_sync
     results = []
+    game_seqs = []
     for player in players:
         try:
             summary = camp_sync.sync(player['campUserId'])
+            game_seqs.extend(summary.get('gameSeqs') or [])
             results.append({'nickname': player['nickname'], 'campUserId': player['campUserId'],
                             'ok': True, 'summary': summary})
         except BaseException as error:  # camp_sync 用 SystemExit 报致命错误
             results.append({'nickname': player['nickname'], 'campUserId': player['campUserId'],
                             'ok': False, 'error': f'{type(error).__name__}: {error}'})
-    return results
+    auto_attached = _camp_auto_attach(game_seqs) if game_seqs else []
+    return results, auto_attached
 
 
 @app.get('/api/camp/auth')
@@ -1108,9 +1139,10 @@ def camp_sync_start():
 
     def worker():
         try:
-            results = _camp_sync_worker(players)
+            results, auto_attached = _camp_sync_worker(players)
             _camp_sync_job.update({'running': False,
-                                   'result': {'players': results}, 'finishedAt': time.time()})
+                                   'result': {'players': results, 'autoAttached': auto_attached},
+                                   'finishedAt': time.time()})
         except Exception as error:
             _camp_sync_job.update({'running': False,
                                    'error': f'{type(error).__name__}: {error}',
@@ -1118,6 +1150,59 @@ def camp_sync_start():
 
     threading.Thread(target=worker, daemon=True).start()
     return {'ok': True}
+
+
+@app.post('/api/channels/{channel_id}/camp')
+def channel_attach_camp(channel_id: str, value: dict):
+    """把本机已同步的营地详情（BP+十人面板）映射进通道草稿，来源标 camp。
+
+    英雄名按 playerId 从公开回放接口的 matchInfo 关联：优先用通道已关联的
+    official 四元组现取（缓存命中零成本），否则读本机的 raw.json 快照。
+    """
+    game_seq = str(value.get('gameSeq') or '').strip()
+    detail_path = ROOT / 'data' / 'camp_details' / f'{game_seq}.json'
+    if not detail_path.is_file():
+        raise HTTPException(404, '本机还没有这局的营地详情；请先在采集通道页完成同步')
+    try:
+        detail = json.loads(detail_path.read_text(encoding='utf-8'))
+    except ValueError as error:
+        raise HTTPException(500, f'营地详情文件损坏：{error}')
+    with db() as c:
+        channel = _load_channel(c, channel_id)
+    official = channel.get('official') or {}
+    official_players = None
+    official_id = official.get('id') or ''
+    if official_id.startswith('camp-') and official_id[5:] != game_seq:
+        raise HTTPException(400, f'通道已关联的是对局 {official_id[5:]}，与营地详情 {game_seq} 不一致')
+    source = official.get('source') or {}
+    if source.get('gameSeq') and source.get('gameSvr') and source.get('relaySvr'):
+        try:
+            link = camp_replay.parse_link(
+                'https://camp.qq.com/h5/webdist/battle-replay/index.html?'
+                + url_parse.urlencode({'gameseq': source['gameSeq'],
+                                       'gamesvrentity': source['gameSvr'],
+                                       'relaysvrentity': source['relaySvr'],
+                                       'playerid': source.get('playerId') or 'undefined'}))
+            _, official_data = camp_replay.fetch(link)
+            official_players = (official_data or {}).get('matchInfo') or []
+        except Exception:
+            official_players = None
+    if official_players is None and official_id.startswith('camp-'):
+        raw_path = camp_replay.STORE / official_id / 'raw.json'
+        if raw_path.is_file():
+            try:
+                official_players = (json.loads(raw_path.read_text(encoding='utf-8'))
+                                    .get('data') or {}).get('matchInfo') or []
+            except (OSError, ValueError):
+                official_players = None
+    try:
+        channel_store.attach_camp_detail(channel, game_seq, detail, official_players,
+                                         value.get('actor'))
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    with db() as c:
+        _save_channel(c, channel, value.get('actor'))
+    return channel
 
 
 @app.post('/api/channels/{channel_id}/official')
