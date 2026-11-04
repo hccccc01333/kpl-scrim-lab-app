@@ -104,7 +104,18 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
                 print(f"  详情失败 {seq}: returnCode={detail_body.get('returnCode')} "
                       f"{str(detail_body.get('returnMsg'))[:60]}", file=sys.stderr)
             else:
-                out_path.write_text(json.dumps(detail_body, ensure_ascii=False, indent=1),
+                out_path.write_text(json.dumps({**detail_body,
+                                                '_campEntry': {
+                                                    'dtEventTime': entry.get('dtEventTime'),
+                                                    'mapName': entry.get('mapName'),
+                                                    'gametime': entry.get('gametime'),
+                                                    'battleType': entry.get('battleType'),
+                                                    'winCamp': entry.get('winCamp'),
+                                                    'killcnt': entry.get('killcnt'),
+                                                    'deadcnt': entry.get('deadcnt'),
+                                                    'assistcnt': entry.get('assistcnt'),
+                                                }},
+                                               ensure_ascii=False, indent=1),
                                     encoding='utf-8')
                 summary['saved'] += 1
                 summary['gameSeqs'].append(seq)

@@ -296,6 +296,15 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
       <div class="channel-actions"><button class="button" id="camp-sync-run" ${!auth.authorized || !players.length || running ? 'disabled' : ''}>${running ? '同步进行中…' : '同步营地战绩'}</button>
         <span id="camp-sync-status" class="helper">${esc(camp.syncStatus || (running ? '正在拉取，每局约 2 秒…' : ''))}</span></div>
       ${resultRows.length ? `<div class="table-wrap"><table><thead><tr><th>选手</th><th>结果</th></tr></thead><tbody>${resultRows.join('')}</tbody></table></div>` : ''}
+      ${(camp.details || []).length ? `<details class="recording-check"><summary>已入库对局（${camp.details.length}）</summary>
+        <div class="table-wrap"><table><thead><tr><th>对局</th><th>模式</th><th>时间</th><th>KDA</th><th>胜负</th><th>通道</th></tr></thead><tbody>
+        ${(camp.details || []).map(item => {
+          const win = String(item.winCamp) === '1' ? '蓝方胜' : String(item.winCamp) === '2' ? '红方胜' : '—';
+          const kda = (item.kda || []).filter(v => v != null).join('/');
+          return `<tr><td><strong>${esc(item.gameSeq)}</strong></td><td>${esc(item.mapName || '—')}</td>
+            <td>${esc(item.gametime || '—')}</td><td>${esc(kda || '—')}</td><td>${win}</td>
+            <td>${item.channelId ? `<a class="button ghost" href="#channel/${esc(item.channelId)}">打开通道 →</a>` : '<span class="tag gray">未建局</span>'}</td></tr>`;
+        }).join('')}</tbody></table></div></details>` : ''}
       ${camp.job?.error ? `<div class="notice">${esc(camp.job.error)}</div>` : ''}
       </div></section>`;
   }

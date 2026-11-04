@@ -1122,7 +1122,37 @@ def camp_sync_status():
     import camp_sync
     import camp_auth
     details = list(camp_sync.DETAIL_DIR.glob('*.json')) if camp_sync.DETAIL_DIR.is_dir() else []
+    with db() as c:
+        rows = c.execute('SELECT id, body FROM channels').fetchall()
+    channel_by_game_seq = {}
+    for row in rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        official = channel.get('official') or {}
+        if str(official.get('id') or '').startswith('camp-'):
+            channel_by_game_seq[official['id'][5:]] = channel.get('id')
+    detail_items = []
+    for path in sorted(details, key=lambda item: item.stat().st_mtime, reverse=True)[:60]:
+        try:
+            body = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        entry = body.get('_campEntry') or {}
+        head = (body.get('data') or {}).get('head') or {}
+        detail_items.append({
+            'gameSeq': path.stem,
+            'mapName': entry.get('mapName') or head.get('mapName'),
+            'gametime': entry.get('gametime'),
+            'battleType': entry.get('battleType'),
+            'winCamp': entry.get('winCamp'),
+            'kda': [entry.get('killcnt'), entry.get('deadcnt'), entry.get('assistcnt')],
+            'syncedAt': path.stat().st_mtime,
+            'channelId': channel_by_game_seq.get(path.stem),
+        })
     return {**_camp_sync_job, 'detailsCount': len(details),
+            'details': detail_items,
             'config': _camp_config_read(), 'auth': camp_auth.read_account()}
 
 
