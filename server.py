@@ -905,8 +905,19 @@ def import_official_replays_batch(value: dict):
     items = []
     for url in ordered:
         entry = {'url': url}
+        share_user_id = None
         try:
-            result = camp_replay.import_link(url, force=bool(value.get('force')))
+            # 分享链接自带分享者的营地 ID（userId=），顺便提取出来供同步清单登记
+            share_url = url
+            if camp_replay.is_short_link(share_url):
+                share_url = camp_replay.expand_short_link(share_url)
+            share_link = camp_replay.parse_link(share_url)
+            if share_link.get('playerId') and share_link['playerId'] != 'undefined':
+                share_user_id = share_link['playerId']
+        except Exception:
+            share_user_id = None
+        try:
+            result = camp_replay.import_link(share_url, force=bool(value.get('force')))
             meta = result.get('meta') or {}
             match = meta.get('match') or {}
             entry.update({
@@ -920,6 +931,7 @@ def import_official_replays_batch(value: dict):
                 'teamGold': match.get('teamGold'),
                 'goldPoints': match.get('goldPoints'),
                 'cached': bool(result.get('cached')),
+                'shareUserId': share_user_id,
             })
         except camp_replay.CampReplayError as error:
             entry.update({'ok': False, 'error': str(error)})
@@ -1036,6 +1048,27 @@ def camp_auth_clear():
     import camp_auth
     camp_auth.AUTH_PATH.unlink(missing_ok=True)
     return {'ok': True}
+
+
+@app.post('/api/camp/resolve')
+def camp_resolve(value: dict):
+    """从营地分享链接/短链解析营地 ID，供选手白名单登记，免人工抄写。"""
+    _camp_tools()
+    import camp_replay
+    url = str(value.get('url') or '').strip()
+    if not url:
+        raise HTTPException(400, '请粘贴营地分享链接')
+    try:
+        if camp_replay.is_short_link(url):
+            url = camp_replay.expand_short_link(url)
+        link = camp_replay.parse_link(url)
+    except camp_replay.CampReplayError as error:
+        raise HTTPException(400, str(error))
+    user_id = link.get('playerId')
+    if not user_id or user_id == 'undefined':
+        raise HTTPException(400, '链接里没有 userId，无法得到营地 ID')
+    return {'userId': user_id, 'gameSeq': link.get('gameSeq'),
+            'battleType': link.get('battleType'), 'pvpType': link.get('pvpType')}
 
 
 @app.get('/api/camp/config')

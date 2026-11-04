@@ -3,6 +3,7 @@ import sys
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -15,7 +16,14 @@ os.environ['CAMP_SYNC_STATE'] = str(TMP / 'camp_sync_state.json')
 
 from fastapi.testclient import TestClient
 
+import camp_replay
 from server import app
+
+
+def fake_import(url, force=False):
+    meta = {'id': 'camp-1793606215', 'gameSeq': '1793606215',
+            'match': {'winCamp': '1', 'durationSec': 693.0}}
+    return {'id': 'camp-1793606215', 'meta': meta, 'cached': True}
 
 
 class CampConfigTests(unittest.TestCase):
@@ -49,6 +57,29 @@ class CampConfigTests(unittest.TestCase):
         for key in ('running', 'result', 'error', 'detailsCount', 'config', 'auth'):
             self.assertIn(key, status)
         self.assertFalse(status['running'])
+
+    def test_resolve_extracts_user_id_from_share_link(self):
+        """分享链接（含 mp-redirect 形态）直接解出营地 ID，不用人工抄。"""
+        response = self.client.post('/api/camp/resolve', json={'url':
+            'https://camp.qq.com/h5/webdist/mp-redirect/index.html?userId=540599032'
+            '&gameSeq=1793795458&battleType=12&gameSvrId=108724&relaySvrId=1260446482'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['userId'], '540599032')
+        self.assertEqual(response.json()['gameSeq'], '1793795458')
+
+    def test_resolve_rejects_non_camp_links(self):
+        response = self.client.post('/api/camp/resolve', json={'url': 'https://example.com/x'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_batch_items_carry_share_user_id(self):
+        """批量导入顺便带回分享者的营地 ID，供一键加入同步清单。"""
+        text = ('https://camp.qq.com/h5/webdist/battle-replay/index.html?gameseq=1793606215'
+                '&gamesvrentity=2&relaysvrentity=3&userId=540599032')
+        with mock.patch.object(camp_replay, 'import_link', side_effect=fake_import):
+            response = self.client.post('/api/official/replays/batch', json={'text': text})
+        self.assertEqual(response.status_code, 200)
+        item = response.json()['items'][0]
+        self.assertEqual(item['shareUserId'], '540599032')
 
 
 if __name__ == '__main__':

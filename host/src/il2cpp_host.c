@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <execinfo.h>
 #include <semaphore.h>
+#include <unwind.h>
 
 typedef void *Il2CppDomain;
 typedef void *Il2CppAssembly;
@@ -35,10 +36,12 @@ typedef void *Il2CppImage;
 typedef void *Il2CppClass;
 typedef void *Il2CppMethod;
 
-/* Test stub: libil2cpp's init calls setlocale(LC_ALL=6, ...) before its
- * C++ locale globals are initialized.  Export a no-op "C" locale. */
+/* Interpose setlocale: libil2cpp's init calls setlocale(LC_ALL=6, ...)
+ * before its C++ locale globals are initialized, and the real call walks the
+ * locale machinery (operator new) that is not ready yet.  The executable's
+ * symbol wins over libc for every library in the global namespace. */
 __attribute__((visibility("default")))
-char *kpl_setlocale_stub(int category, const char *locale) {
+char *setlocale(int category, const char *locale) {
     (void)category; (void)locale;
     return (char *)"C";
 }
@@ -51,6 +54,20 @@ static int kpl_backtrace(void **bt, int n) {
 }
 static void kpl_backtrace_symbols(void **bt, int n) {
     if (backtrace_symbols_fd) backtrace_symbols_fd(bt, n, 2);
+}
+
+struct bt_ctx { int n; };
+static _Unwind_Reason_Code bt_cb(struct _Unwind_Context *c, void *arg) {
+    struct bt_ctx *b = (struct bt_ctx *)arg;
+    uintptr_t ip = _Unwind_GetIP(c);
+    Dl_info di;
+    memset(&di, 0, sizeof di);
+    dladdr((void *)ip, &di);
+    dprintf(2, "  uw[%d] pc=%#lx %s +%#lx%c", b->n, (unsigned long)ip,
+            di.dli_fname ? di.dli_fname : "?",
+            di.dli_fbase ? ip - (uintptr_t)di.dli_fbase : 0, 10);
+    b->n++;
+    return b->n < 24 ? _URC_NO_REASON : _URC_END_OF_STACK;
 }
 
 static void on_fault(int sig, siginfo_t *si, void *ctx) {
@@ -87,10 +104,8 @@ static void on_fault(int sig, siginfo_t *si, void *ctx) {
         if (next <= fp) break;
         fp = next;
     }
-    void *bt[48];
-    int nbt = kpl_backtrace(bt, 48);
-    dprintf(2, "backtrace count=%d%c", nbt, 10);
-    kpl_backtrace_symbols(bt, nbt);
+    struct bt_ctx bctx = {0};
+    _Unwind_Backtrace(bt_cb, &bctx);
     /* Let debuggerd produce a full tombstone with the platform unwinder. */
     sigset_t unblock;
     sigemptyset(&unblock);

@@ -186,6 +186,9 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     };
     const campAdd = container.querySelector('#camp-player-add');
     if (campAdd) campAdd.onclick = addCampPlayer;
+    container.querySelectorAll('[data-camp-share]').forEach(button => {
+      button.onclick = () => addCampPlayerById(button.dataset.campShare);
+    });
     container.querySelectorAll('[data-camp-remove]').forEach(button => {
       button.onclick = () => removeCampPlayer(button.dataset.campRemove);
     });
@@ -205,7 +208,8 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
         <td>${win}</td>
         <td>${clock(item.durationSec)}</td>
         <td>${num(gold.blue)} : ${num(gold.red)}</td>
-        <td>${created ? '<span class="tag">已建局</span>' : `<button class="button ghost" data-camp-create="${esc(item.id)}">创建本局</button>`}</td></tr>`;
+        <td>${created ? '<span class="tag">已建局</span>' : `<button class="button ghost" data-camp-create="${esc(item.id)}">创建本局</button>`}
+          ${item.shareUserId ? `<button class="button ghost" data-camp-share="${esc(item.shareUserId)}" title="把分享者的营地 ID 加入同步清单">清单+</button>` : ''}</td></tr>`;
     }).join('');
     return `<div class="table-wrap"><table><thead><tr><th>对局</th><th>模式</th><th>胜方</th><th>时长</th><th>团队金币</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
       ${batch.summary ? `<div class="helper">${esc(batch.summary)} · 导入后打开本局通道，补日期、对手、七张截图和录屏报告。</div>` : ''}`;
@@ -282,7 +286,7 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
         ${auth.authorized ? '<button class="button ghost" id="camp-auth-clear">删除凭证</button>' : ''}</div>`}
       <div class="form-grid">
         <label class="field">选手昵称<input id="camp-player-nickname" placeholder="例如：队长"></label>
-        <label class="field">营地 ID<input id="camp-player-id" placeholder="分享链接 userId= 后的数字"></label>
+        <label class="field">营地 ID 或分享链接<input id="camp-player-id" placeholder="userId= 后的数字，或直接粘贴 cu.qq.com/… 链接"></label>
         <button class="button secondary" id="camp-player-add">加入清单</button>
       </div>
       ${players.length ? `<div class="table-wrap"><table><thead><tr><th>选手</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
@@ -332,13 +336,30 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
   }
   async function addCampPlayer() {
     const nickname = container.querySelector('#camp-player-nickname')?.value.trim() || '';
-    const campUserId = container.querySelector('#camp-player-id')?.value.trim() || '';
-    if (!campUserId || !/^\d{5,15}$/.test(campUserId)) { toast('营地 ID 是 5–15 位数字（分享链接 userId= 后的数字）', true); return; }
+    const raw = container.querySelector('#camp-player-id')?.value.trim() || '';
+    if (!raw) { toast('请填营地 ID，或直接粘贴选手的分享链接', true); return; }
+    let campUserId = raw;
+    if (raw.includes('://') || raw.includes('cu.qq.com')) {
+      try {
+        const resolved = await api('/api/camp/resolve', 'POST', {url: raw});
+        campUserId = resolved.userId;
+        camp.syncStatus = `识别到营地 ID ${campUserId}${resolved.gameSeq ? `（对局 ${resolved.gameSeq}）` : ''}`;
+      } catch (error) { toast(error.message, true); return; }
+    }
+    if (!/^\d{5,15}$/.test(campUserId)) { toast('营地 ID 是 5–15 位数字，或直接粘贴分享链接', true); return; }
     const players = (camp.config?.players || []).filter(p => p.campUserId !== campUserId);
     players.push({nickname: nickname || `选手 ${campUserId.slice(-4)}`, campUserId});
     try {
       camp.config = await api('/api/camp/config', 'POST', {players});
       draw(); toast('已加入选手清单');
+    } catch (error) { toast(error.message, true); }
+  }
+  async function addCampPlayerById(campUserId) {
+    const players = (camp.config?.players || []).filter(p => p.campUserId !== campUserId);
+    players.push({nickname: `选手 ${campUserId.slice(-4)}`, campUserId});
+    try {
+      camp.config = await api('/api/camp/config', 'POST', {players});
+      draw(); toast(`营地 ID ${campUserId} 已加入同步清单`);
     } catch (error) { toast(error.message, true); }
   }
   async function removeCampPlayer(campUserId) {
