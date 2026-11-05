@@ -5,7 +5,7 @@ import {finite as metricNumber} from '/assets/analysis-math.mjs?v=1';
 import {renderWorkbench,deactivateWorkbench,allowWorkbenchNavigation} from '/assets/app.js?v=unified-13';
 import {renderPrepare,renderDatasets} from '/assets/pipeline-page.js?v=5';
 import {renderHome} from '/assets/home-page.js?v=11';
-import {renderCapture} from '/assets/capture-page.js?v=6';
+import {renderCapture} from '/assets/capture-page.js?v=7';
 import {renderOpponent,renderBp,renderCombos,renderFeatured,renderRecords} from '/assets/insight-pages.js?v=6';
 import {renderPanorama,disposePanorama} from '/assets/panorama-page.js?v=16';
 const $ = (q, root = document) => root.querySelector(q);

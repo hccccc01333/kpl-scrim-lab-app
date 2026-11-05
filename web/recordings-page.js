@@ -1,4 +1,4 @@
-﻿import {renderCollectionGuide} from '/assets/collection-guide.js?v=6';
+﻿import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v, digits = 0) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: digits});
 const bytes = (v) => v == null ? '—' : v >= 1024 ** 3 ? `${(v / 1024 ** 3).toFixed(2)} GB` : v >= 1024 ** 2 ? `${(v / 1024 ** 2).toFixed(1)} MB` : `${Math.round(v / 1024)} KB`;

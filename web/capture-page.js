@@ -1,18 +1,27 @@
-import {renderCollectionGuide} from '/assets/collection-guide.js?v=6';
+import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// 与 web/capture-guide/requirements.json (collection-v3) 及 channel_store.py 的双合规口径一致：
+// 唯一必采 = official；审核门槛 = 营地十人面板 或 七图+录屏；table/replay 始终选填。
+const SOURCE_LEVELS = {
+  required: {text: '必需', cls: 'amber'},
+  recommended: {text: '推荐', cls: 'blue'},
+  fallback: {text: '兜底', cls: 'gray'},
+  optional: {text: '选填', cls: 'gray'},
+};
 const SOURCES = [
-  {key: 'official', label: '王者营地链接', required: true, hint: '官方过程数据：约30秒金币、事件、逐秒位置', href: '#channels'},
-  {key: 'screenshots', label: '七张赛后截图', required: true, hint: '终局 KDA、经济、输出、承伤、参团的权威来源', href: '#screenshots'},
-  {key: 'video', label: '一段完整录屏', required: true, hint: '逐帧时间轴与面板快照，识别在本机完成', href: '#recordings'},
-  {key: 'table', label: '标准表格', required: false, hint: '选填：补齐或校正十人字段，一局十行', href: '#import'},
-  {key: 'replay', label: '回放文件', required: false, hint: '选填：.abc / .ope，补名单、MVP 与评分', href: '#replays'},
+  {key: 'official', label: '王者营地链接', level: 'required', hint: '唯一必采：官方过程数据（约 30 秒经济、事件、逐秒位置）', href: '#channels'},
+  {key: 'camp', label: '营地自动同步', level: 'recommended', hint: '推荐主路径：教练扫码一次，每天勾选拉取 BP 与十人完整面板', href: '#channels'},
+  {key: 'screenshots', label: '七张赛后截图', level: 'fallback', hint: '兜底路径：与完整录屏一起，可替代营地十人面板完成审核', href: '#screenshots'},
+  {key: 'video', label: '一段完整录屏', level: 'fallback', hint: '兜底路径：与七张截图一起提供过程时间轴与面板快照', href: '#recordings'},
+  {key: 'table', label: '标准表格', level: 'optional', hint: '选填：补齐或校正十人字段，一局十行', href: '#import'},
+  {key: 'replay', label: '回放文件', level: 'optional', hint: '选填：.abc / .ope，补名单与评分', href: '#replays'},
 ];
 
 const STEPS = [
   ['建立本局', '填写日期、对手和训练分组，创建采集通道；之后的材料都挂到这一局下。'],
-  ['挂上材料', '必采为营地链接、七张截图和一段完整录屏；表格与回放文件选填。解析结果自动合并成跨来源草稿。'],
-  ['审核保存', '字段冲突会保留待核对；人工审核通过后写入分析平台，可回溯每一份来源。'],
+  ['挂上材料', '唯一必采是本局营地回放链接；推荐用营地自动同步导入十人面板，或按传统兜底补齐七张截图与一段完整录屏。'],
+  ['审核保存', '两条合规路径任一齐备即可审核；字段冲突保留待核对，审核通过后写入分析平台，可回溯每一份来源。'],
 ];
 
 export async function renderCapture(container, {api, toast, isCurrent}) {
@@ -45,12 +54,21 @@ export async function renderCapture(container, {api, toast, isCurrent}) {
           <div class="channel-actions"><button class="button" type="submit">创建采集通道</button>
             <span id="capture-create-status" class="helper" role="status">${esc(statusText)}</span></div>
         </form></section>
-      <section class="panel section-gap"><div class="panel-header"><h2>本局要挂的五类材料</h2>
-        <span class="tag gray">必采三项 · 选填两项</span></div>
-        <div class="capture-source">
-          ${SOURCES.map(source => `<a class="capture-source-item" href="${source.href}"><strong>${esc(source.label)}${source.required ? ' <em class="tag amber">必需</em>' : ' <em class="tag gray">选填</em>'}</strong><p>${esc(source.hint)}</p></a>`).join('')}
+      <section class="panel section-gap"><div class="panel-header"><div><h2>本局要挂的六类材料</h2>
+        <div class="panel-subtitle">先满足唯一必采，再二选一凑齐审核门槛；其余按需补充</div></div>
+        <span class="tag gray">1 必需 · 1 推荐 · 2 兜底 · 2 选填</span></div>
+        <div class="capture-sources">
+          ${SOURCES.map((source, index) => {
+            const level = SOURCE_LEVELS[source.level];
+            return `<a class="capture-source" href="${source.href}">
+              <span class="capture-source-index">${String(index + 1).padStart(2, '0')}</span>
+              <h2>${esc(source.label)}</h2>
+              <span class="tag ${level.cls}">${level.text}</span>
+              <p>${esc(source.hint)}</p>
+              <span class="capture-source-cta">前往关联 →</span></a>`;
+          }).join('')}
         </div>
-        <p class="helper">已保存的比赛也可以在比赛详情里补录 BP 和漏采的材料；批量粘贴营地分享链接在采集通道页。</p></section>
+        <p class="helper">审核门槛：营地十人面板<strong>或</strong>「七张截图 + 一段完整录屏」任一齐备即可；表格与回放文件始终选填。已保存的比赛可在比赛详情补录 BP，批量粘贴营地分享链接在采集通道页。</p></section>
       ${renderCollectionGuide()}
     </div>`;
     const form = container.querySelector('#capture-create-form');

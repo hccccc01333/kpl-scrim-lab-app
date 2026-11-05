@@ -88,8 +88,11 @@ try:
         page.goto(BASE + '/studio#capture', wait_until='networkidle')
         page.wait_for_selector('.capture-steps', timeout=15000)
         check('采集三步', page.locator('.capture-steps > div').count() == 3)
-        check('必采与选填五个入口', page.locator('.capture-source').count() == 5)
-        check('四份采集说明', page.locator('[data-guide]').count() == 5)
+        check('六类采集来源卡片', page.locator('.capture-sources > .capture-source').count() == 6)
+        check('唯一必采标签', page.locator('.capture-sources .tag.amber').count() == 1)
+        check('推荐主路径标签', page.locator('.capture-sources .tag.blue').count() == 1)
+        check('五份采集说明', page.locator('[data-guide]').count() == 5)
+        check('审核双合规口径可见', '审核门槛' in page.locator('.capture-page').inner_text())
         page.screenshot(path=str(OUT / 'platform-capture.png'), full_page=False)
 
         page.locator('#navigation a.nav-item[href="#matches"]').click()

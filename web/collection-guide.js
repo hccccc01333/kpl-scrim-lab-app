@@ -28,11 +28,11 @@ function officialGuide() {
   <div class="collection-path-example" aria-label="链接获取路径示意"><span>战绩</span><b>→</b><span>本局详情</span><b>→</b><span>对局回顾</span><b>→</b><span>分享网页链接</span></div>
   <p class="note">最快的方式：在该局详情点<strong>分享</strong>转发到微信，复制 <code>cu.qq.com/…</code> 短链直接粘贴，短链会自动展开成回放参数，不需要打开小程序。上方路径图为示意，并非某一版本 App 的真实按钮截图。</p>
   <div class="collection-link-example"><strong>正确格式示例（占位符，不可提取）</strong><code>https://camp.qq.com/h5/webdist/battle-replay/index.html?gameseq=对局编号&amp;gamesvrentity=服务器编号&amp;relaysvrentity=转播编号&amp;playerid=玩家编号</code><p>个人回放需保留 gameseq、gamesvrentity、relaysvrentity、playerid；赛事链接保留分享时自带的全部参数。</p><strong>不能用</strong><p>只有战绩截图、营地首页、视频分享链接，或 <code>#小程序://王者营地/…</code> 这类纯文本卡片（参数不在文本里，只能由微信打开）。<code>cu.qq.com</code> 短链可以使用，粘贴后会自动展开。</p></div>
-  <p class="note">官方链接用于约 30 秒经济点、事件和位置来源；逐秒位置不等于逐秒金币。录屏和七张终局截图仍需提供。</p>`;
+  <p class="note">官方链接用于约 30 秒经济点、事件和位置来源；逐秒位置不等于逐秒金币。审核还需营地十人面板，或七张截图与一段录屏作为兜底。</p>`;
 }
 
 function videoGuide() {
-  return `<p><strong>一局只录一段完整视频，包含双方十人团队信息。</strong></p>
+  return `<p><strong>兜底路径：一局只录一段完整视频，包含双方十人团队信息。</strong>若本局已导入营地十人面板，录屏不是必需的；只在走传统兜底路径时才需要。</p>
   ${steps([
     '<strong>从哪里开始：</strong>进入该局回放前就开始录屏，至少包含十名英雄和昵称的<strong>加载页</strong>，画面清晰后保留约 5 秒；继续录到局内 00:00。不要只从中途或高光片段开始。',
     '<strong>对局中保持：</strong>横屏、原比例、简体中文，建议 1080p / 30 fps、1 倍速；不裁切顶部比赛时钟、双方击杀和团队累计金币。不要剪辑、拖进度条或用倍速跳过过程。',
@@ -46,7 +46,7 @@ function videoGuide() {
 }
 
 function screenshotGuide() {
-  return `<p><strong>同一局必须七张，七种页面各一张。</strong>其中战绩要拍两种显示方式，所以“战绩、数据、输出、生存、发育、团队”六个页签最终是七张图。</p><p>在完整赛后结算页切换页面，保留顶部比分、双方全部十人、列名和底部页签；用原图，不裁剪、不拼图、不盖住数值。先拍战绩装备型，再切到战绩 KDA 占比型。</p>
+  return `<p><strong>兜底路径：同一局七张，七种页面各一张。</strong>若本局已导入营地十人面板，七张截图不是必需的。其中战绩要拍两种显示方式，所以“战绩、数据、输出、生存、发育、团队”六个页签最终是七张图。</p><p>在完整赛后结算页切换页面，保留顶部比分、双方全部十人、列名和底部页签；用原图，不裁剪、不拼图、不盖住数值。先拍战绩装备型，再切到战绩 KDA 占比型。</p>
   <div class="collection-seven">${collectionRequirements.screenshotPages.map((page,i)=>`<a href="/assets/collection-example.html?image=${encodeURIComponent(page.file)}&amp;kind=postgame&amp;label=${encodeURIComponent(page.label)}" target="_blank" rel="noopener">${realCaptureExample(page.file,page.label,'postgame')}<strong>${String(i+1).padStart(2,'0')} ${esc(page.label)}</strong><small>${String(i+1).padStart(2,'0')}-${esc(page.label)}.png</small></a>`).join('')}</div>
   <p class="note">以上七张来自项目内同一局真实结算画面，昵称区域以遮罩隐藏，数据与页签保留原样。七张必须来自同一局；七张“数据”页不算七种页面齐全。不同局不会因为数量够七张就自动合并。上传后检查分组、比分、时长、阵容，再关联到本局。</p>`;
 }
@@ -74,10 +74,10 @@ function campSyncGuide() {
 
 export function renderCollectionGuide(section='all', open=false) {
   const guides = [
-    ['official','王者营地链接','必需 · 提取并关联本局网页回放',officialGuide],
-    ['camp-sync','营地数据自动采集','教练号授权 · 每天增量拉取 BP 与十人面板',campSyncGuide],
-    ['video','完整录屏','必需 · 一局一段，从加载页到赛后战绩',videoGuide],
-    ['screenshots','七张赛后截图','必需 · 七种页面各一张',screenshotGuide],
+    ['official','王者营地链接','唯一必采 · 提取并关联本局网页回放',officialGuide],
+    ['camp-sync','营地数据自动采集','推荐主路径 · 教练号授权，每天增量拉取 BP 与十人面板',campSyncGuide],
+    ['video','完整录屏','兜底路径 · 与七张截图一起凑齐审核门槛',videoGuide],
+    ['screenshots','七张赛后截图','兜底路径 · 与一段录屏一起凑齐审核门槛',screenshotGuide],
     ['table','标准表格','选填 · 下载模板，按字段填写',tableGuide],
   ];
   return `<section class="collection-handbook" aria-label="采集要求与示例">${guides.filter(([key])=>section==='all'||key===section).map(([key,title,subtitle,render])=>`<details class="collection-guide-panel" data-guide="${key}"${open?' open':''}><summary><span><strong>${title}</strong><small>${subtitle}</small></span><b aria-hidden="true">＋</b></summary><div class="collection-guide-body">${render()}</div></details>`).join('')}</section>`;

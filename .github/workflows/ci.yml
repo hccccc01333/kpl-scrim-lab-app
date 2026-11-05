@@ -27,3 +27,15 @@ jobs:
             tests.test_replay_profiles \
             tests.test_state_series_checkpoints \
             tests.test_replay_frame_commands -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Frontend syntax check
+        run: |
+          for f in web/*.js; do node --experimental-default-type=module --check "$f"; done
+      - name: Install browser test dependencies
+        run: |
+          python -m pip install "playwright>=1.48,<2"
+          python -m playwright install chromium --with-deps
+      - name: Frontend route audit (desktop + mobile)
+        run: python scripts/verify_frontend.py --no-shots

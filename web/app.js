@@ -3,8 +3,8 @@ import {kplTeams,teamPresetSource,teamPresetLabel} from '/assets/team-presets.js
 import { renderReview } from '/assets/review-page.js?v=6';
 import { renderReplays } from '/assets/replays-page.js?v=10';
 import { renderRecordings } from '/assets/recordings-page.js?v=4';
-import { renderScreenshots } from '/assets/screenshot-page.js?v=9';
-import { renderChannels, renderChannel } from '/assets/channels-page.js?v=15';
+import { renderScreenshots } from '/assets/screenshot-page.js?v=10';
+import { renderChannels, renderChannel } from '/assets/channels-page.js?v=16';
 import { renderStats } from '/assets/stats-page.js?v=9';
 import { openIconReview } from '/assets/icon-review.js?v=6';
 const embedded = document.body.dataset.platform === 'unified';

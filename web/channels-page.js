@@ -1,12 +1,13 @@
 ﻿import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=4';
-import {renderCollectionGuide} from '/assets/collection-guide.js?v=6';
+import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 1});
 const clock = (seconds) => seconds == null ? '—' : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 const SIDE = {left: '左', right: '右'};
 const SOURCE_LABELS = {official:'王者营地', camp: '营地十人面板', table: '表格', video: '录像', screenshot: '截图', replay: '回放'};
 const CAMP_BATTLE_MODES = {'16': '排位', '12': '排位（双排样本）'};
-const SOURCE_HINTS = {official:'必需 · 本局网页回放链接', camp: '必需 · 同步后一键导入 BP 与十人面板', table:'选填 · 标准十人表',video:'选填 · 一段完整录屏的报告',screenshot:'选填兜底 · 同局七种页面各一张',replay:'选填 · .abc / .ope'};
+// collection-v3：官方链接唯一必采；营地面板（推荐）或 七图+录屏（兜底）任一齐备即可审核。
+const SOURCE_HINTS = {official:'唯一必采 · 本局网页回放链接', camp: '推荐主路径 · 同步后一键导入 BP 与十人面板', table:'选填 · 标准十人表',video:'兜底路径 · 与七图一起凑齐审核门槛',screenshot:'兜底路径 · 与录屏一起凑齐审核门槛',replay:'选填 · .abc / .ope'};
 const FIELD_LABELS = {kills: '击杀', deaths: '死亡', assists: '助攻', gold: '总经济', damage: '输出', taken: '承伤', participation: '参团率', rating: '评分'};
 const SOURCE_NAMES = {screenshot: '截图', table: '表格', source: '来源', video: '录像', replay: '回放', manual: '手工'};
 const HERO_STATUS = {table:'表格原值',exact: '精确', 'roster-candidate': '名单候选', 'roster-elimination': '名单排除', uncertain: '待确认', unreadable: '未识别', manual: '手工'};
@@ -99,7 +100,7 @@ function reviewBlock(channel) {
     <div class="panel-subtitle">审核人、时间、前后值都会写入修改日志</div></div>${review.status === 'reviewed' ? `<span class="tag">已审核 · ${esc(review.reviewedBy)}</span>` : '<span class="tag amber">待审核</span>'}</div>
     <div class="form-section"><div class="form-grid"><label class="field">复核人<input id="channel-reviewer" value="${esc(review.reviewedBy || '')}" placeholder="例如：教练甲"></label>
     <label class="field">审核备注<input id="channel-review-notes" value="${esc(review.notes || '')}" placeholder="可选"></label></div>
-    ${!channel.sourceStatus?.complete?`<div class="notice collection-required-warning">必采材料未齐：${esc((channel.sourceStatus?.missing||['王者营地链接、同局七张截图和一份完整录屏报告']).join('；'))}。表格与回放文件选填。</div>`:''}
+    ${!channel.sourceStatus?.complete?`<div class="notice collection-required-warning">审核门槛未满足：${esc((channel.sourceStatus?.missing||['先关联本局营地回放链接，再导入营地十人面板，或补齐七张截图与一段录屏']).join('；'))}。表格与回放文件始终选填。</div>`:''}
     <div class="helper">审核时间：${timeText(review.reviewedAt)} · 审核完成后才能保存本局数据。</div>
     <div class="channel-actions"><button class="button secondary" id="channel-review" ${channel.sourceStatus?.complete?'':'disabled'}>完成审核</button>
     <button class="button" id="channel-save" ${review.status === 'reviewed' && channel.sourceStatus?.complete ? '' : 'disabled'}>保存本局数据</button>
@@ -149,9 +150,9 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
   const draw = () => {
     if (!isCurrent()) return;
     const channels = data.channels || [];
-    container.innerHTML = heading('采集通道', '一局一个通道：营地、七图和一段录屏为必采，表格与回放文件选填。',
+    container.innerHTML = heading('采集通道', '一局一个通道：唯一必采是本局营地回放链接；营地自动同步导入十人面板，或按兜底路径补齐七图与录屏，任一齐备即可审核。',
       '<span class="tag amber">采集 · 审核 · 入库</span>') + `
-      <section class="panel"><div class="panel-header"><div><h2>新建一局通道</h2><div class="panel-subtitle">先建局，再关联营地链接、七图和完整录屏；表格选填</div></div></div>
+      <section class="panel"><div class="panel-header"><div><h2>新建一局通道</h2><div class="panel-subtitle">先建局并关联营地链接，再导入营地十人面板；表格与回放文件选填，七图与录屏可作为兜底</div></div></div>
       <div class="form-section"><div class="form-grid"><label class="field">比赛日期<input id="channel-date" type="date"></label>
       <label class="field">对手<input id="channel-opponent" placeholder="例如：周三训练对手"></label>
       <label class="field">训练分组<input id="channel-session" placeholder="例如：晚训 · 第 1 组"></label>
@@ -241,7 +242,7 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
           ${item.shareUserId ? `<button class="button ghost" data-camp-share="${esc(item.shareUserId)}" title="把分享者的营地 ID 加入同步清单">清单+</button>` : ''}</td></tr>`;
     }).join('');
     return `<div class="table-wrap"><table><thead><tr><th>对局</th><th>模式</th><th>胜方</th><th>时长</th><th>团队金币</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
-      ${batch.summary ? `<div class="helper">${esc(batch.summary)} · 导入后打开本局通道，补日期、对手、七张截图和录屏报告。</div>` : ''}`;
+      ${batch.summary ? `<div class="helper">${esc(batch.summary)} · 导入后打开本局通道，补日期、对手，并按需导入营地十人面板。</div>` : ''}`;
   }
   async function runBatch() {
     if (busy) return;
@@ -542,8 +543,8 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
       ? `${replayResult.winningCamp === 'blue' ? '蓝方' : '红方'}胜 · MVP ${winMvp.nickname || ''}${winMvp.hero ? '（' + winMvp.hero + '）' : ''}${winMvp.rating != null ? ' ' + Number(winMvp.rating).toFixed(2) : ''}${loseMvp.nickname ? ' · SVP ' + loseMvp.nickname : ''}`
       : '';
     container.innerHTML = `<a href="#channels" class="back-link">← 返回采集通道</a>` + heading(matchTitle(channel.match),
-      '必采营地链接、七张截图、一段完整录屏；表格与回放文件选填。', `<span class="tag ${status.complete ? '' : 'amber'}">${status.complete ? '来源齐全' : '来源未齐'}</span>`) + `
-      <section class="panel section-gap"><div class="panel-header"><div><h2>王者营地链接（必需）</h2><div class="panel-subtitle">粘贴 camp.qq.com 回放链接，提取官方经济、事件和逐秒位置</div></div><span class="tag amber">必需来源</span></div>
+      '唯一必采：本局营地回放链接。审核门槛二选一：导入营地十人面板，或补齐七张截图与一段录屏；表格与回放文件选填。', `<span class="tag ${status.complete ? '' : 'amber'}">${status.complete ? '来源齐全' : '来源未齐'}</span>`) + `
+      <section class="panel section-gap"><div class="panel-header"><div><h2>王者营地链接（唯一必采）</h2><div class="panel-subtitle">粘贴 camp.qq.com 回放链接，提取官方经济、事件和逐秒位置</div></div><span class="tag amber">唯一必采</span></div>
       <div class="form-section">${renderCollectionGuide('official')}${officialBlock(channel)}
       <div class="recording-upload" style="grid-template-columns:minmax(0,1fr) auto">
         <label class="field">营地回放链接<input id="channel-official-url" placeholder="https://camp.qq.com/h5/webdist/battle-replay/...?gameseq=..." autocomplete="off"></label>
@@ -557,12 +558,12 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
       <label class="field">版本<input id="meta-version" value="${esc(channel.match.version || '')}"></label></div>
       <div class="channel-actions"><button class="button secondary" id="save-meta">保存本局信息</button><span class="helper">${channel.id}</span></div></div></section>
       ${bpEditorHtml(channel.match.bp||{})}
-      <section class="panel section-gap"><div class="panel-header"><h2>来源状态</h2><span class="tag gray">${status.complete ? '必采齐全' : '必采未齐'}</span></div>
+      <section class="panel section-gap"><div class="panel-header"><h2>来源状态</h2><span class="tag gray">${status.complete ? '审核门槛已满足' : '审核门槛未满足'}</span></div>
       <div class="table-wrap"><table><thead><tr><th>来源</th><th>已放入 / 需要</th><th>状态</th><th>最近上传</th><th>解析完成</th><th>提示</th></tr></thead><tbody>${sourceRows(channel)}</tbody></table></div></section>
       <div class="channel-grid">
         <section class="panel"><div class="panel-header"><h2>表格（选填）</h2><a class="text-link" href="/assets/collection-guide.html?section=table" target="_blank" rel="noopener">下载模板 / 字段示例 ↗</a></div><div class="form-section"><label class="mini-upload">＋ 放入赛训表<input id="channel-table" type="file" accept=".csv,.tsv,.txt,.xlsx,.xlsm" hidden></label><p class="helper">${channel.sources.table.summary ? `粒度 ${esc(channel.sources.table.summary.grain || '未识别')} · ${channel.sources.table.summary.rows || 0} 行 · ${channel.sources.table.summary.files || 0} 份` : '使用项目模板：一局十行、双方各五人；不接收聚合表。未知字段留空，冲突保留待核对。'}</p></div></section>
-        <section class="panel"><div class="panel-header"><h2>录屏（必需一段）</h2><a class="text-link" href="/assets/collection-guide.html?section=video" target="_blank" rel="noopener">起止位置 / 面板示例 ↗</a></div><div class="form-section"><a class="button secondary" href="#recordings">先上传完整视频 →</a><label class="mini-upload">＋ 关联识别后的 JSON 报告<input id="channel-video" type="file" accept=".json" hidden></label><p class="helper">${channel.sources.video.summary ? `${channel.sources.video.summary.files || 0}/1 份 · 英雄 ${channel.sources.video.summary.heroes || 0}` : '当前接收回放录屏 OCR 生成的 JSON 报告；一局只需一段完整视频对应的一份报告。'}</p></div></section>
-        <section class="panel"><div class="panel-header"><h2>截图（必需七张）</h2><a class="text-link" href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">七张清单 / 示意图 ↗</a></div><div class="form-section"><select class="control" id="channel-shot-group"><option value="">${groups.length ? '选择截图组' : '尚无截图组'}</option>${groupOptions}</select><button class="button secondary" id="attach-shot" ${groups.length ? '' : 'disabled'}>关联截图组</button><p class="helper">${channel.sources.screenshot.summary ? `已关联 ${channel.sources.screenshot.imageIds?.length || 0} 张 · ${channel.sources.screenshot.summary.pageTypes?.join(' / ') || ''}` : '截图组提供终局 KDA、经济、输出、承伤、参团。'}</p></div></section>
+        <section class="panel"><div class="panel-header"><h2>录屏（兜底路径）</h2><a class="text-link" href="/assets/collection-guide.html?section=video" target="_blank" rel="noopener">起止位置 / 面板示例 ↗</a></div><div class="form-section"><a class="button secondary" href="#recordings">先上传完整视频 →</a><label class="mini-upload">＋ 关联识别后的 JSON 报告<input id="channel-video" type="file" accept=".json" hidden></label><p class="helper">${channel.sources.video.summary ? `${channel.sources.video.summary.files || 0}/1 份 · 英雄 ${channel.sources.video.summary.heroes || 0}` : '当前接收回放录屏 OCR 生成的 JSON 报告；一局只需一段完整视频对应的一份报告。'}</p></div></section>
+        <section class="panel"><div class="panel-header"><h2>截图（兜底路径）</h2><a class="text-link" href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">七张清单 / 示意图 ↗</a></div><div class="form-section"><select class="control" id="channel-shot-group"><option value="">${groups.length ? '选择截图组' : '尚无截图组'}</option>${groupOptions}</select><button class="button secondary" id="attach-shot" ${groups.length ? '' : 'disabled'}>关联截图组</button><p class="helper">${channel.sources.screenshot.summary ? `已关联 ${channel.sources.screenshot.imageIds?.length || 0} 张 · ${channel.sources.screenshot.summary.pageTypes?.join(' / ') || ''}` : '截图组提供终局 KDA、经济、输出、承伤、参团。'}</p></div></section>
         <section class="panel"><div class="panel-header"><h2>回放文件（选填）</h2><span class="helper">.abc / .ope</span></div><div class="form-section"><select class="control" id="channel-replay"><option value="">${replays.length ? '选择回放记录' : '尚无回放记录'}</option>${replayOptions}</select><button class="button secondary" id="attach-replay" ${replays.length ? '' : 'disabled'}>关联回放</button><p class="helper">${replaySource.summary ? `已关联 · 英雄块 ${replaySource.summary.blocks || 0}${replayResultText ? ' · ' + esc(replayResultText) : ''}${replaySource.summary.totalFrameNum ? ' · ' + num(replaySource.summary.totalFrameNum) + ' 帧' : ''}` : '回放补十人名单、胜负、MVP、评分和同局元数据；KDA/经济/输出/承伤/参团仍以截图/表格/录像为准。'}</p></div></section>
       </div>
       <section class="panel section-gap"><div class="panel-header"><div><h2>跨来源数据草稿</h2><div class="panel-subtitle">字段来源、冲突和缺失都保留；可直接修改</div></div><div class="channel-actions">${(() => { const count = (channel.draft?.players || []).filter(player => ['roster-candidate', 'roster-elimination'].includes(player.heroStatus)).length; return count ? `<span class="tag">名单比对 ${count}</span>` : ''; })()}<span class="tag gray">${missingText(channel)}</span><button class="button secondary" id="save-draft-edits">保存草稿修订</button></div></div>

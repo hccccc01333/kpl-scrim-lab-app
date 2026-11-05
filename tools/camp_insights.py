@@ -95,6 +95,23 @@ def official_players_for(game_seq: str, entry: dict):
         return []
 
 
+def load_curve(game_seq: str, camp: str):
+    """公开接口缓存的团队金币曲线（约30秒一点），转成本人视角的经济差序列。"""
+    path = camp_replay.STORE / f'camp-{game_seq}' / 'normalized.json'
+    if not path.is_file():
+        return None
+    try:
+        normalized = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    economy = normalized.get('economy') or {}
+    blue, red = economy.get('blue') or [], economy.get('red') or []
+    if not blue or not red:
+        return None
+    diffs = [float(b) - float(r) for b, r in zip(blue, red)]
+    return [round(value if camp == 'blue' else -value, 1) for value in diffs]
+
+
 def load_matches(camp_user_id: str, refresh: bool = False):
     entries = fetch_list(camp_user_id, refresh)
     by_seq = {str(entry.get('gameSeq') or ''): entry for entry in entries}
@@ -161,6 +178,7 @@ def load_matches(camp_user_id: str, refresh: bool = False):
         by_pid = {str(p.get('playerId')): p for p in players if p.get('playerId')}
         opp = by_pid.get(match['oppPlayerId'])
         match['oppHero'] = (opp or {}).get('hero')
+        match['econCurve'] = load_curve(match['gameSeq'], match['camp'])
     bans = Counter()
     for path in sorted(DETAIL_DIR.glob('*.json')):
         try:
@@ -230,9 +248,33 @@ def aggregate(matches, bans):
         factors.append({'label': label, 'win': w_avg, 'lose': l_avg,
                         'delta': (w_avg - l_avg) / abs(l_avg) * 100 if l_avg else 0})
     factors.sort(key=lambda item: -abs(item['delta']))
+    # 王者标准时间分段：0–4 前期 / 4–10 中期 / 10+ 后期（金币点约 30 秒一个）
+    def seg_value(curve, minute, camp):
+        if not curve:
+            return None
+        index = min(int(minute * 60 / 30), len(curve) - 1) if minute is not None else len(curve) - 1
+        return curve[index]
+
+    segments = []
+    for key, label, minute in (('early', '前期 0–4 分', 4), ('mid', '中期 4–10 分', 10),
+                               ('late', '后期 10 分+', None)):
+        values = [(seg_value(m.get('econCurve'), minute, m['camp']), m['win'])
+                  for m in matches if m.get('econCurve')]
+        values = [(value, win) for value, win in values if value is not None]
+        segments.append({'key': key, 'label': label, 'games': len(values),
+                         'avgDiff': sum(v for v, _ in values) / len(values) if values else 0,
+                         'winRate': sum(1 for _, win in values if win) / len(values) * 100 if values else 0})
+    early_rows = [(seg_value(m.get('econCurve'), 4, m['camp']), m['win'])
+                  for m in matches if m.get('econCurve')]
+    early_rows = [(value, win) for value, win in early_rows if value is not None]
+    lead = [win for value, win in early_rows if value > 0]
+    behind = [win for value, win in early_rows if value <= 0]
+    conversion = {'earlyGames': len(early_rows),
+                  'leadGames': len(lead), 'leadWin': sum(1 for w in lead if w) / len(lead) * 100 if lead else 0,
+                  'behindGames': len(behind), 'behindWin': sum(1 for w in behind if w) / len(behind) * 100 if behind else 0}
     return {'matches': matches, 'totals': totals, 'hero_pool': hero_pool, 'bans': bans,
             'radar': radar, 'factors': factors, 'econRanks': econ_ranks,
-            'laneTable': lane_table,
+            'laneTable': lane_table, 'segments': segments, 'conversion': conversion,
             'outPct': sum((m['damage'] / (m['teamMoney'] or 1) * 100) for m in matches) / max(total, 1)}
 
 
@@ -342,6 +384,42 @@ def svg_diverging(factors, width=640):
     return ''.join(parts)
 
 
+def svg_segments(matches, width=640, height=200):
+    rows = [m for m in matches if m.get('econCurve')]
+    if len(rows) < 2:
+        return '<p class="helper">过程金币数据不足，无法绘制分段趋势。</p>'
+
+    def seg_value(curve, minute):
+        return curve[-1] if minute is None else curve[min(int(minute * 60 / 30), len(curve) - 1)]
+
+    series = [('前期末', '#D85A30', 4), ('中期末', '#BA7517', 10), ('终局', '#185FA5', None)]
+    all_values = [seg_value(m['econCurve'], minute) for m in rows for _, _, minute in series]
+    scale = max(max(all_values), abs(min(all_values)), 1) * 1.15
+    inner_w, inner_h = width - 70, height - 58
+    step = inner_w / max(len(rows) - 1, 1)
+    zero = 22 + inner_h / 2
+    parts = [f'<svg viewBox="0 0 {width} {height}" width="100%" xmlns="http://www.w3.org/2000/svg">']
+    parts.append(f'<line x1="36" y1="{zero:.0f}" x2="{width - 20}" y2="{zero:.0f}" '
+                 f'stroke="var(--muted)" stroke-width="0.8"/>')
+    for _label, color, minute in series:
+        points = ' '.join(f'{36 + index * step:.1f},'
+                          f'{zero - inner_h / 2 * seg_value(m["econCurve"], minute) / scale:.1f}'
+                          for index, m in enumerate(rows))
+        parts.append(f'<polyline points="{points}" fill="none" stroke="{color}" stroke-width="1.8"/>')
+    for index, m in enumerate(rows):
+        if index % max(1, len(rows) // 9) == 0:
+            parts.append(f'<text x="{36 + index * step:.0f}" y="{height - 22}" font-size="10" '
+                         f'fill="var(--muted)" text-anchor="middle">{esc(m["time"][:5])}</text>')
+    legend_x = 36
+    for label, color, _minute in series:
+        parts.append(f'<rect x="{legend_x}" y="{height - 12}" width="10" height="10" fill="{color}"/>')
+        parts.append(f'<text x="{legend_x + 14}" y="{height - 3}" font-size="11" fill="var(--ink)">'
+                     f'{label}</text>')
+        legend_x += 92
+    parts.append('</svg>')
+    return ''.join(parts)
+
+
 def build_report(camp_user_id: str, agg) -> str:
     totals = agg['totals']
     matches = agg['matches']
@@ -355,6 +433,8 @@ def build_report(camp_user_id: str, agg) -> str:
         + (f"；对 {best_lane['opp']} 场均压 {best_lane['avgDiff']:.0f} 金最狠" if best_lane else ''),
         (f"被压制点：对 {worst_lane['opp']} 场均落后 {abs(worst_lane['avgDiff']):.0f} 金"
          if worst_lane and worst_lane['avgDiff'] < 0 else ''),
+        f"节奏转化：前期领先 {agg['conversion']['leadGames']} 局胜率 {agg['conversion']['leadWin']:.0f}%"
+        f"，前期落后 {agg['conversion']['behindGames']} 局胜率 {agg['conversion']['behindWin']:.0f}%",
         f"产出结构：场均对英雄输出 {totals['damage'] / 1000:.1f}k、承伤 {totals['taken'] / 1000:.1f}k、"
         f"参团 {totals['joinPct']:.0f}%",
     ]
@@ -419,6 +499,20 @@ th{{background:var(--card);font-weight:500}}
 <div class="panel"><table><thead><tr><th>对位英雄</th><th>场次</th><th>我方胜率</th><th>场均经济差</th></tr></thead>
 <tbody>{lane_rows}</tbody></table>
 <p class="helper">按场均经济差排序。样本 &lt; 3 局的行仅供参考。</p></div>
+
+<h2>节奏分段 <span class="helper">（王者口径：0–4 前期 / 4–10 中期 / 10+ 后期，约 30 秒金币点）</span></h2>
+<div class="panel">
+  <div class="cards" style="grid-template-columns:repeat(3,1fr)">
+    {''.join(f'<div class="card"><div class="label">{esc(seg["label"])}</div>'
+             f'<div class="value">{"+" if seg["avgDiff"] >= 0 else ""}{seg["avgDiff"] / 1000:.1f}k</div>'
+             f'<div class="label" style="margin-top:2px">经济差 · 胜率 {seg["winRate"]:.0f}%（{seg["games"]} 局）</div></div>'
+             for seg in agg['segments'])}
+  </div>
+  {svg_segments(matches)}
+  <p class="helper">前期领先（4 分钟经济差 &gt; 0）{agg['conversion']['leadGames']} 局，胜率
+  {agg['conversion']['leadWin']:.0f}%；前期落后/持平 {agg['conversion']['behindGames']} 局，胜率
+  {agg['conversion']['behindWin']:.0f}%。差值就是这套体系里"前期优势转化"的效率。</p>
+</div>
 
 <h2>资源与产出</h2>
 <div class="cards">

@@ -5,7 +5,7 @@
 - [部署指南](deploy.md)：新机器安装、环境变量、Docker、自检与开源边界。
 - [使用指南](product_guide.md)：启动、导入、校对、复盘与对比的完整路径。
 - [统一平台](unified_platform.md)：页面、功能、数据口径和兼容路由。
-- [采集要求与示例](collection_sop.md)：营地链接、七图、单段完整录屏和选填表格；[单局采集说明](collection_channel.md)。
+- [采集要求与示例](collection_sop.md)：唯一必采的营地链接、审核双合规路径（营地面板 / 七图+录屏兜底）与选填表格；[单局采集说明](collection_channel.md)。
 - [截图字段说明](screenshot_fields.md)、[表格导入](sheet_import.md)、[录屏识别](replay_video_ocr.md)、[官方营地回放](camp_replay.md)。
 - [本机 OCR 引擎](ocr_engine.md)：可选模型、安装要求与识别限制。
 

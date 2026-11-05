@@ -1,4 +1,4 @@
-import {renderCollectionGuide} from '/assets/collection-guide.js?v=4';
+import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const PAGE_LABELS = {
   score: '战绩 · 装备型', kda: '战绩 · KDA占比', data: '数据', output: '输出',
@@ -211,7 +211,7 @@ function checklistBlock(group) {
   const missingRequired = checklist.missingRequired || [];
   const missingRecommended = checklist.missingRecommended || [];
   return `<div class="capture-checklist ${checklist.complete ? 'ok' : 'warn'}">
-    <div class="capture-checklist-head"><strong>${checklist.complete ? '必采页齐全' : '还缺必采页'}</strong>
+    <div class="capture-checklist-head"><strong>${checklist.complete ? '七种页型齐全' : '还缺页型'}</strong>
       <span>${(checklist.present || []).map(item => `<span class="tag">${esc(item)}</span>`).join('') || '<span class="tag gray">暂无页签</span>'}</span></div>
     ${missingRequired.length ? `<div class="capture-checklist-missing">缺：${missingRequired.map(item => `<b>${esc(item.page)}</b><small>${esc(item.detail)}</small>`).join('')}</div>` : ''}
     ${missingRecommended.length ? `<div class="helper">建议补采：${missingRecommended.map(item => esc(item.page)).join(' / ')}</div>` : ''}
