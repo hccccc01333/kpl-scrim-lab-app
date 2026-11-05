@@ -1,4 +1,4 @@
-﻿import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=5';
+﻿import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=6';
 import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 1});

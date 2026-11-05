@@ -1,5 +1,5 @@
 ﻿import {kplTeams,teamPresetSource,teamPresetLabel,lanes} from '/assets/team-presets.js?v=1';
-import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=5';
+import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=6';
 import {disposeAnalysisVisuals,mountPerformanceExplorer,comparisonVisual,mountEconomyTimeline,mountEntityTrend,processMatrix} from '/assets/analysis-visuals.js?v=2';
 import {finite as metricNumber} from '/assets/analysis-math.mjs?v=1';
 import {renderWorkbench,deactivateWorkbench,allowWorkbenchNavigation} from '/assets/app.js?v=unified-13';

@@ -553,6 +553,22 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
         match['ownSide'] = 'left' if head_camp == '1' else 'right'
     if sum(1 for player in players if player['stats']) != 10:
         raise ValueError('营地详情的十人面板不完整，拒绝入库')
+    # 人头比：团队击杀 = 本阵营五人 killCnt 之和（未手工填写时自动补）
+    def _team_kills(roles):
+        total = 0
+        for role in roles or []:
+            stats = role.get('battleStats') or {}
+            try:
+                total += int(float(stats.get('killCnt') or 0))
+            except (TypeError, ValueError):
+                pass
+        return total
+    scores = channel.setdefault('match', {}).setdefault('scores', {'left': None, 'right': None})
+    if scores.get('left') is None and scores.get('right') is None:
+        blue_kills = _team_kills(data.get('blueRoles'))
+        red_kills = _team_kills(data.get('redRoles'))
+        if blue_kills or red_kills:
+            scores['left'], scores['right'] = blue_kills, red_kills
     source = channel['sources'].setdefault('camp', {})
     source.update({'status': 'parsed', 'gameSeq': str(game_seq),
                    'mapName': head.get('mapName'),
