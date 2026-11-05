@@ -46,9 +46,9 @@ class CampConfigTests(unittest.TestCase):
 
     def test_sync_requires_whitelist(self):
         self.client.post('/api/camp/config', json={'players': []})
-        response = self.client.post('/api/camp/sync')
+        response = self.client.post('/api/camp/sync', json={'entries': []})
         self.assertEqual(response.status_code, 400)
-        self.assertIn('选手清单', response.json()['detail'])
+        self.assertIn('勾选', response.json()['detail'])
 
     def test_status_shapes(self):
         auth = self.client.get('/api/camp/auth').json()

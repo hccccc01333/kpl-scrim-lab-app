@@ -196,6 +196,29 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     });
     const campSyncRun = container.querySelector('#camp-sync-run');
     if (campSyncRun) campSyncRun.onclick = runCampSync;
+    const campSelect = container.querySelector('#camp-player-select');
+    if (campSelect) campSelect.onchange = () => {
+      camp.selectedPlayer = campSelect.value;
+      camp.list = [];
+      camp.checked = {};
+      camp.checkedCount = 0;
+      draw();
+    };
+    const campListFetch = container.querySelector('#camp-list-fetch');
+    if (campListFetch) campListFetch.onclick = fetchCampList;
+    const campListAll = container.querySelector('#camp-list-all');
+    if (campListAll) campListAll.onchange = () => {
+      for (const item of camp.list || []) {
+        if (item.imported) continue;
+        if (campListAll.checked) camp.checked[item.gameSeq] = true;
+        else delete camp.checked[item.gameSeq];
+      }
+      camp.checkedCount = Object.keys(camp.checked).length;
+      draw();
+    };
+    container.querySelectorAll('[data-list-check]').forEach(checkbox => {
+      checkbox.onchange = () => toggleListCheck(checkbox.dataset.listCheck, checkbox.checked);
+    });
   };
   function batchRows() {
     if (!batch.items.length) return '';
@@ -275,27 +298,43 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     const resultRows = syncResult.map(item => item.ok
       ? `<tr><td>${esc(item.nickname || item.campUserId)}</td><td>新局 ${num(item.summary?.fetched)} · 入库 ${num(item.summary?.saved)} · 已知 ${num(item.summary?.cached)}${item.summary?.failed ? ` · 失败 ${item.summary.failed}` : ''}</td></tr>`
       : `<tr><td>${esc(item.nickname || item.campUserId)}</td><td><span class="tag amber">失败</span> ${esc(item.error || '')}</td></tr>`);
+    const autoAttached = camp.job?.result?.autoAttached || [];
+    const authExpiresNote = auth.authorized
+      ? `授权于 ${esc(auth.loginAt || '—')}；营地未提供有效期，接口报登录态失效时此处会提示重新扫码。`
+      : '还没有授权。扫码后即可按选手清单自动同步。';
     return `<section class="panel section-gap"><div class="panel-header"><div><h2>营地自动同步</h2>
-      <div class="panel-subtitle">教练号授权后，按选手清单增量拉取每局的 BP、十人面板和出装；当前本机已有 ${num(camp.detailsCount)} 份对局详情</div></div>
+      <div class="panel-subtitle">教练号授权 → 选选手 → 勾选要拉取的对局 → 一键入库；当前本机已有 ${num(camp.detailsCount)} 份对局详情</div></div>
       <span class="tag ${auth.authorized ? '' : 'amber'}">${auth.authorized ? '已授权' : '未授权'}</span></div>
       <div class="form-section">
       ${camp.qrTask ? `<div class="recording-upload" style="grid-template-columns:auto minmax(0,1fr)">
         <img class="camp-qr" style="width:180px;border:1px solid var(--line);border-radius:8px" src="data:image/png;base64,${esc(camp.qrTask.qrcodeBase64)}" alt="扫码授权二维码">
         <div><p class="helper">用<strong>打过训练赛的教练微信</strong>扫码，并在手机上确认。</p>
         <p class="helper" id="camp-auth-status">${esc(camp.authStatus || '等待扫码…')}</p></div></div>`
-      : `<div class="channel-actions"><span class="helper">${auth.authorized ? `已授权：${esc(auth.nickname || auth.userId)} · ${esc(auth.loginAt || '')}` : '还没有授权。扫码后即可按选手清单自动同步。'}</span>
-        <button class="button secondary" id="camp-auth-qr">${auth.authorized ? '重新扫码授权' : '扫码授权'}</button>
-        ${auth.authorized ? '<button class="button ghost" id="camp-auth-clear">删除凭证</button>' : ''}</div>`}
+      : `<div class="recording-upload" style="grid-template-columns:auto minmax(0,1fr)">
+        <div class="recording-engine ${auth.authorized ? 'ok' : 'bad'}" style="padding:14px 18px"><span>教练授权</span><strong>${auth.authorized ? esc(auth.nickname || auth.userId) : '未授权'}</strong><small>${esc(authExpiresNote)}</small></div>
+        <div><div class="channel-actions"><button class="button secondary" id="camp-auth-qr">${auth.authorized ? '重新扫码授权' : '扫码授权'}</button>
+        ${auth.authorized ? '<button class="button ghost" id="camp-auth-clear">删除凭证</button>' : ''}</div>
+        <p class="helper">授权一次长期使用；二维码 3 分钟有效，过期会自动刷新。</p></div></div>`}
       <div class="form-grid">
-        <label class="field">选手昵称<input id="camp-player-nickname" placeholder="例如：队长"></label>
-        <label class="field">营地 ID 或分享链接<input id="camp-player-id" placeholder="userId= 后的数字，或直接粘贴 cu.qq.com/… 链接"></label>
-        <button class="button secondary" id="camp-player-add">加入清单</button>
+        <label class="field">选择选手<select id="camp-player-select"><option value="">${players.length ? '选择选手' : '尚无选手（先在下方加入清单）'}</option>${players.map(player => `<option value="${esc(player.campUserId)}" ${camp.selectedPlayer === player.campUserId ? 'selected' : ''}>${esc(player.nickname || player.campUserId)}</option>`).join('')}</select></label>
+        <button class="button secondary" id="camp-list-fetch" ${!auth.authorized || !camp.selectedPlayer || camp.listLoading ? 'disabled' : ''}>${camp.listLoading ? '获取中…' : '获取对局列表'}</button>
       </div>
+      <label class="field">选手昵称 / 营地 ID / 分享链接<input id="camp-player-nickname" placeholder="昵称可选" style="max-width:180px"><input id="camp-player-id" placeholder="userId= 后的数字，或直接粘贴 cu.qq.com/… 链接"><button class="button ghost" id="camp-player-add" style="margin-top:8px">加入清单</button></label>
       ${players.length ? `<div class="table-wrap"><table><thead><tr><th>选手</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
-        : '<div class="empty">还没有选手。把选手分享链接里 <code>userId=</code> 的数字填进来；一个稳定上场的选手即可覆盖全队每局。</div>'}
-      <div class="channel-actions"><button class="button" id="camp-sync-run" ${!auth.authorized || !players.length || running ? 'disabled' : ''}>${running ? '同步进行中…' : '同步营地战绩'}</button>
+        : '<div class="empty">还没有选手。把选手分享链接里 <code>userId=</code> 的数字或整条链接填进来；一个稳定上场的选手即可覆盖全队每局。</div>'}
+      <div class="channel-actions"><button class="button" id="camp-sync-run" ${!camp.checkedCount ? 'disabled' : ''}>${running ? '拉取进行中…' : `拉取选中的 ${camp.checkedCount || 0} 局`}</button>
         <span id="camp-sync-status" class="helper">${esc(camp.syncStatus || (running ? '正在拉取，每局约 2 秒…' : ''))}</span></div>
       ${resultRows.length ? `<div class="table-wrap"><table><thead><tr><th>选手</th><th>结果</th></tr></thead><tbody>${resultRows.join('')}</tbody></table></div>` : ''}
+      ${(camp.list || []).length ? `<div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="camp-list-all" ${camp.list.every(item => camp.checked[item.gameSeq]) ? 'checked' : ''}></th><th>对局</th><th>模式</th><th>时间</th><th>KDA</th><th>胜负</th><th>状态</th></tr></thead><tbody>
+        ${camp.list.map(item => {
+          const win = String(item.winCamp) === '1' ? '蓝方胜' : String(item.winCamp) === '2' ? '红方胜' : '—';
+          const kda = [item.killcnt, item.deadcnt, item.assistcnt].filter(v => v != null).join('/');
+          return `<tr><td><input type="checkbox" data-list-check="${esc(item.gameSeq)}" ${camp.checked[item.gameSeq] ? 'checked' : ''} ${item.imported ? 'disabled' : ''}></td>
+            <td><strong>${esc(item.gameSeq)}</strong></td><td>${esc(item.mapName || '—')}</td><td>${esc(item.gametime || '—')}</td>
+            <td>${esc(kda || '—')}</td><td>${win}</td>
+            <td>${item.imported ? '<span class="tag">已入库</span>' : '<span class="tag amber">待拉取</span>'}</td></tr>`;
+        }).join('')}</tbody></table></div>
+        ${camp.listHasMore ? '<p class="helper">还有更早的对局未显示；如需拉取更早历史，用 tools/camp_sync.py --reset 重拉。</p>' : ''}` : ''}
       ${(camp.details || []).length ? `<details class="recording-check"><summary>已入库对局（${camp.details.length}）</summary>
         <div class="table-wrap"><table><thead><tr><th>对局</th><th>模式</th><th>时间</th><th>KDA</th><th>胜负</th><th>通道</th></tr></thead><tbody>
         ${(camp.details || []).map(item => {
@@ -306,6 +345,7 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
             <td>${item.channelId ? `<a class="button ghost" href="#channel/${esc(item.channelId)}">打开通道 →</a>` : '<span class="tag gray">未建局</span>'}</td></tr>`;
         }).join('')}</tbody></table></div></details>` : ''}
       ${camp.job?.error ? `<div class="notice">${esc(camp.job.error)}</div>` : ''}
+      ${(autoAttached || []).length ? `<div class="notice">已自动挂载 ${autoAttached.length} 个通道的营地十人面板。</div>` : ''}
       </div></section>`;
   }
   function stopCampTimers() {
@@ -319,6 +359,7 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     try {
       camp.qrTask = await api('/api/camp/auth/qr', 'POST');
       camp.authStatus = '等待扫码…';
+      camp.qrRefreshes = 0;
       draw();
       clearInterval(camp.authTimer);
       camp.authTimer = setInterval(async () => {
@@ -336,7 +377,22 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
           if (result.status === 'expired' || result.status === 'canceled') {
             clearInterval(camp.authTimer);
             camp.authTimer = null;
-            camp.authStatus = result.status === 'expired' ? '二维码已过期，请重新扫码。' : '已在手机上取消。';
+            if (result.status === 'canceled') {
+              camp.authStatus = '已在手机上取消，可重新扫码。';
+              camp.qrTask = null;
+              draw();
+              return;
+            }
+            // 二维码过期自动刷新（最多 3 次，避免无人扫码时空转）
+            camp.qrRefreshes = (camp.qrRefreshes || 0) + 1;
+            if (camp.qrRefreshes <= 3) {
+              camp.authStatus = '二维码已过期，正在自动刷新…';
+              camp.qrTask = null;
+              busy = false;
+              await startCampAuth();
+              return;
+            }
+            camp.authStatus = '二维码已多次过期。准备好后再点「扫码授权」。';
             camp.qrTask = null;
             draw();
           }
@@ -344,6 +400,38 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
       }, 2500);
     } catch (error) { toast(error.message, true); }
     finally { busy = false; }
+  }
+  async function fetchCampList() {
+    if (!camp.selectedPlayer) { toast('请先选择选手', true); return; }
+    camp.listLoading = true;
+    camp.list = [];
+    camp.checked = {};
+    draw();
+    try {
+      const player = (camp.config?.players || []).find(p => p.campUserId === camp.selectedPlayer) || {};
+      const result = await api('/api/camp/list', 'POST',
+        {campUserId: camp.selectedPlayer, lastTime: 0});
+      camp.list = result.entries || [];
+      camp.listHasMore = !!result.hasMore;
+      for (const item of camp.list) if (!item.imported) camp.checked[item.gameSeq] = true;
+      camp.checkedCount = Object.keys(camp.checked).length;
+      camp.listLoading = false;
+      if (result.gaming) toast('该选手有一局正在进行中，列表不含对局中的比赛');
+      draw();
+    } catch (error) {
+      camp.listLoading = false;
+      camp.list = [];
+      draw();
+      if (String(error.message).includes('隐藏')) toast('选手战绩对教练不可见：请其把教练加入白名单或恢复公开', true);
+      else toast(error.message, true);
+    }
+  }
+  function toggleListCheck(gameSeq, checked) {
+    if (checked) camp.checked[gameSeq] = true;
+    else delete camp.checked[gameSeq];
+    camp.checkedCount = Object.keys(camp.checked).length;
+    const button = container.querySelector('#camp-sync-run');
+    if (button) button.textContent = `拉取选中的 ${camp.checkedCount} 局`;
   }
   async function addCampPlayer() {
     const nickname = container.querySelector('#camp-player-nickname')?.value.trim() || '';
@@ -382,10 +470,14 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
   }
   async function runCampSync() {
     if (busy) return;
+    const entries = (camp.list || []).filter(item => camp.checked[item.gameSeq]);
+    if (!entries.length) { toast('请先勾选要拉取的对局', true); return; }
     busy = true;
-    camp.syncStatus = '已启动，正在按选手清单拉取…';
+    camp.syncStatus = `已启动，正在拉取选中的 ${entries.length} 局…`;
     try {
-      await api('/api/camp/sync', 'POST');
+      const player = (camp.config?.players || []).find(p => p.campUserId === camp.selectedPlayer) || {};
+      await api('/api/camp/sync', 'POST', {campUserId: camp.selectedPlayer,
+        nickname: player.nickname || '', entries});
       clearInterval(camp.syncTimer);
       camp.syncTimer = setInterval(async () => {
         try {
@@ -399,8 +491,10 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
             camp.syncTimer = null;
             busy = false;
             camp.syncStatus = '';
+            camp.checked = {};
+            camp.checkedCount = 0;
             const failed = (status.result?.players || []).filter(item => !item.ok).length;
-            if (failed) toast(`同步完成，但有 ${failed} 位选手失败，详见面板`, true);
+            if (failed) toast(`同步完成，但有失败项，详见面板`, true);
             await loadCamp(); draw();
           }
         } catch { /* keep polling */ }
@@ -409,7 +503,10 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     } catch (error) {
       busy = false;
       camp.syncStatus = '';
-      toast(error.message, true);
+      if (String(error.message).includes('登录态')) {
+        camp.auth = {authorized: false};
+        toast('登录态已失效，请重新扫码授权', true);
+      } else toast(error.message, true);
       draw();
     }
   }

@@ -39,7 +39,8 @@ class ChannelStoreTests(unittest.TestCase):
         status = c.source_status(channel)
         self.assertFalse(status['complete'])
         self.assertEqual(status['counts']['video'], 0)
-        self.assertEqual(status['required']['video'], 1)
+        # 营地链接是唯一必采；录屏降级为兜底，所以 required 计数为 0。
+        self.assertEqual(status['required']['video'], 0)
 
     def test_screenshot_roster_and_table_merge(self):
         channel = c.blank({'date': '2026-06-17'})

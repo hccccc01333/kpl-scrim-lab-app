@@ -73,7 +73,8 @@ def source_status(channel):
         'camp': camp.get('status') or 'missing',
         'table': table.get('status') or 'missing',
         'video': 'completed' if files_video else 'missing',
-        'screenshot': 'completed' if shot_count >= 7 else 'partial' if shot_count else 'missing',
+        # 七张截图必须覆盖七种页面类型；同页重复不满足兜底条件。
+        'screenshot': 'completed' if len(page_types) >= 7 else 'partial' if shot_count else 'missing',
         'replay': replay.get('status') or 'missing',
     }
     missing = []

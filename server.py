@@ -1031,22 +1031,21 @@ def _camp_auto_attach(game_seqs):
     return attached
 
 
-def _camp_sync_worker(players):
+def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
     _camp_tools()
     import camp_sync
-    results = []
-    game_seqs = []
-    for player in players:
-        try:
-            summary = camp_sync.sync(player['campUserId'])
-            game_seqs.extend(summary.get('gameSeqs') or [])
-            results.append({'nickname': player['nickname'], 'campUserId': player['campUserId'],
-                            'ok': True, 'summary': summary})
-        except BaseException as error:  # camp_sync 用 SystemExit 报致命错误
-            results.append({'nickname': player['nickname'], 'campUserId': player['campUserId'],
-                            'ok': False, 'error': f'{type(error).__name__}: {error}'})
+    try:
+        summary = camp_sync.sync_entries(camp_user_id, entries)
+        game_seqs = summary.get('gameSeqs') or []
+        result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
+                  'campUserId': camp_user_id, 'ok': True, 'summary': summary}
+    except BaseException as error:  # camp_sync 用 SystemExit 报致命错误
+        result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
+                  'campUserId': camp_user_id, 'ok': False,
+                  'error': f'{type(error).__name__}: {error}'}
+        return [result], []
     auto_attached = _camp_auto_attach(game_seqs) if game_seqs else []
-    return results, auto_attached
+    return [result], auto_attached
 
 
 @app.get('/api/camp/auth')
@@ -1156,20 +1155,65 @@ def camp_sync_status():
             'config': _camp_config_read(), 'auth': camp_auth.read_account()}
 
 
+@app.post('/api/camp/list')
+def camp_list(value: dict):
+    """拉取选手的可达对局列表（只读预览，不落盘），每条附已入库标记。"""
+    _camp_tools()
+    import camp_client
+    import camp_sync
+    camp_user_id = str(value.get('campUserId') or '').strip()
+    if not camp_user_id.isdigit():
+        raise HTTPException(400, '营地 ID 需为 5–15 位数字')
+    try:
+        result = camp_client.call('/game/morebattlelist', {
+            'lastTime': int(value.get('lastTime') or 0),
+            'recommendPrivacy': 0, 'apiVersion': 5,
+            'friendUserId': camp_user_id, 'option': 0})
+    except SystemExit as error:
+        raise HTTPException(409, str(error))
+    body = result.get('body') or {}
+    if body.get('returnCode') not in (0, '0'):
+        raise HTTPException(502, f"营地列表接口失败：{json.dumps(body, ensure_ascii=False)[:200]}")
+    data = body.get('data') or {}
+    if data.get('invisible'):
+        raise HTTPException(403, '该选手隐藏了战绩：请其在营地隐私设置里对教练可见（白名单）或恢复公开')
+    entries = []
+    for entry in data.get('list') or []:
+        game_seq = str(entry.get('gameSeq') or '')
+        entries.append({
+            'gameSeq': game_seq,
+            'dtEventTime': int(entry.get('dtEventTime') or 0),
+            'mapName': entry.get('mapName'), 'gametime': entry.get('gametime'),
+            'battleType': entry.get('battleType'), 'winCamp': entry.get('winCamp'),
+            'killcnt': entry.get('killcnt'), 'deadcnt': entry.get('deadcnt'),
+            'assistcnt': entry.get('assistcnt'),
+            'gameSvrId': str(entry.get('gameSvrId') or ''),
+            'relaySvrId': str(entry.get('relaySvrId') or ''),
+            'uniqueRoleId': camp_sync.entry_role_id(entry),
+            'imported': (camp_sync.DETAIL_DIR / f'{game_seq}.json').is_file(),
+        })
+    return {'entries': entries, 'hasMore': bool(data.get('hasMore')),
+            'lastTime': data.get('lastTime'), 'gaming': data.get('gaming')}
+
+
 @app.post('/api/camp/sync')
-def camp_sync_start():
+def camp_sync_start(value: dict):
+    """两段式同步第二段：按教练勾选的对局条目拉取详情并落盘，随后自动挂载通道。"""
+    entries = value.get('entries') if isinstance(value.get('entries'), list) else []
+    entries = [entry for entry in entries if isinstance(entry, dict) and entry.get('gameSeq')]
+    camp_user_id = str(value.get('campUserId') or '').strip()
+    nickname = str(value.get('nickname') or '').strip()
+    if not entries:
+        raise HTTPException(400, '请先获取对局列表并勾选要拉取的局')
     with _camp_sync_lock:
         if _camp_sync_job['running']:
             raise HTTPException(409, '同步已在进行中')
-        players = _camp_config_read()['players']
-        if not players:
-            raise HTTPException(400, '请先在选手清单里添加至少一个营地 ID')
         _camp_sync_job.update({'running': True, 'result': None, 'error': None,
                                'startedAt': time.time(), 'finishedAt': None})
 
     def worker():
         try:
-            results, auto_attached = _camp_sync_worker(players)
+            results, auto_attached = _camp_sync_worker(camp_user_id, nickname, entries)
             _camp_sync_job.update({'running': False,
                                    'result': {'players': results, 'autoAttached': auto_attached},
                                    'finishedAt': time.time()})
@@ -1179,7 +1223,7 @@ def camp_sync_start():
                                    'finishedAt': time.time()})
 
     threading.Thread(target=worker, daemon=True).start()
-    return {'ok': True}
+    return {'ok': True, 'count': len(entries)}
 
 
 @app.post('/api/channels/{channel_id}/camp')

@@ -136,6 +136,61 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
     return summary
 
 
+def sync_entries(camp_user_id: str, entries, interval: float = 2.0) -> dict:
+    """按教练勾选的对局条目逐条拉取详情并落盘（两段式同步的第二段）。
+
+    entries 是 /api/camp/list 返回的条目原样回传；已入库的局跳过；
+    水位推进到已入库条目的最新 dtEventTime（未勾选的最新局下次仍会列出）。
+    """
+    state = load_state()
+    watermark = int(state.get(camp_user_id) or 0)
+    newest = watermark
+    summary = {'fetched': 0, 'saved': 0, 'cached': 0, 'failed': 0, 'gameSeqs': []}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        seq = str(entry.get('gameSeq') or '')
+        if not seq:
+            summary['failed'] += 1
+            continue
+        summary['fetched'] += 1
+        event_time = int(entry.get('dtEventTime') or 0)
+        out_path = DETAIL_DIR / f'{seq}.json'
+        if out_path.is_file():
+            summary['cached'] += 1
+            newest = max(newest, event_time)
+            continue
+        detail = battle_detail(
+            seq, str(entry.get('gameSvrId') or ''), str(entry.get('relaySvrId') or ''),
+            str(entry.get('battleType') or 0), str(entry.get('uniqueRoleId') or entry.get('roleId') or 0))
+        detail_body = detail.get('body') or {}
+        if detail_body.get('returnCode') not in (0, '0'):
+            summary['failed'] += 1
+            continue
+        out_path.write_text(json.dumps({**detail_body,
+                                        '_campEntry': {
+                                            'dtEventTime': entry.get('dtEventTime'),
+                                            'mapName': entry.get('mapName'),
+                                            'gametime': entry.get('gametime'),
+                                            'battleType': entry.get('battleType'),
+                                            'winCamp': entry.get('winCamp'),
+                                            'killcnt': entry.get('killcnt'),
+                                            'deadcnt': entry.get('deadcnt'),
+                                            'assistcnt': entry.get('assistcnt'),
+                                        }},
+                                       ensure_ascii=False, indent=1),
+                            encoding='utf-8')
+        summary['saved'] += 1
+        summary['gameSeqs'].append(seq)
+        newest = max(newest, event_time)
+        time.sleep(interval)
+    if newest > watermark:
+        state[camp_user_id] = newest
+        save_state(state)
+    summary['watermark'] = newest
+    return summary
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description='营地战绩增量同步')
     parser.add_argument('friend_user_id', help='营地账号 ID（数字）')

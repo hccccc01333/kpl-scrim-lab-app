@@ -415,7 +415,7 @@ async function playersPage(token) {
   const icon=heroIcons[row.hero];
   const kda=row.kda??null, gpm=row.gpm??null, dpm=row.dpm??null;
   const badge=row.decided?`${n(row.winRate,0)}%`:'—';
-  return `<a class="hero-card" href="#hero/${encodeURIComponent(row.hero)}"><span class="hero-card-icon">${icon?`<img src="${esc(icon)}" alt="" loading="lazy">`:`<b>${esc((row.hero||'?')[0])}</b>`}</span><span class="hero-card-name"><strong>${esc(row.hero)}</strong><small><b class="hero-rank">样本</b> ${n(row.picks,0)} 次出场 · ${(row.players||[]).length} 名选手</small></span><span class="hero-card-badge ${row.decided&&sampleOf(row)>=3?'':'muted'}" title="样本 ${sampleOf(row)} 次">${badge}</span><span class="hero-card-stats"><span>KDA <b>${n(kda,2)}</b></span><span>分均经济 <b>${n(gpm,1)}</b></span><span>分均输出 <b>${n(dpm,1)}</b></span></span></a>`;
+  return `<a class="hero-card" href="#hero/${encodeURIComponent(row.hero)}"><span class="hero-card-icon">${icon?`<img src="${esc(icon)}" alt="" loading="lazy">`:`<b>${esc((row.hero||'?')[0])}</b>`}</span><span class="hero-card-name"><strong>${esc(row.hero)}</strong><small><b class="hero-rank">样本</b> ${n(row.picks,0)} 次 · ${(row.players||[]).length} 人</small></span><span class="hero-card-badge ${row.decided&&sampleOf(row)>=3?'':'muted'}" title="样本 ${sampleOf(row)} 次">${badge}</span><span class="hero-card-stats"><span>KDA <b>${n(kda,2)}</b></span><span>分均经济 <b>${n(gpm,1)}</b></span><span>分均输出 <b>${n(dpm,1)}</b></span></span></a>`;
  };
  const playerCard=(row,index)=>{
   const badge=row.decided?`${n(row.winRate,0)}%`:'—';

@@ -59,7 +59,7 @@ class CollectionContractTests(unittest.TestCase):
         complete_collection(channel)
         status=c.source_status(channel)
         self.assertTrue(status['complete'])
-        self.assertEqual(status['required']['video'],1)
+        self.assertEqual(status['required']['video'],0)
         self.assertEqual(status['required']['table'],0)
         self.assertEqual(status['statuses']['table'],'missing')
         c.set_review(channel,'tester')
@@ -74,7 +74,7 @@ class CollectionContractTests(unittest.TestCase):
         channel=complete_collection(c.blank())
         channel['sources']['screenshot']['group']['pages']=[{'pageType':'data'}]*7
         self.assertFalse(c.source_status(channel)['complete'])
-        with self.assertRaisesRegex(ValueError,'战绩'):
+        with self.assertRaisesRegex(ValueError,'营地十人面板'):
             c.set_review(channel,'tester')
 
     def test_direct_save_cannot_bypass_source_gate(self):
