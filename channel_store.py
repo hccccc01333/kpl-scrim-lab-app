@@ -502,13 +502,18 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
                     if item.get('playerId') is not None}
     stat_map = {'killCnt': 'kills', 'deadCnt': 'deaths', 'assistCnt': 'assists',
                 'money': 'gold', 'totalHurtCnt': 'damage', 'totalBehurtCnt': 'taken'}
-    players, ban, team_gold = [], {}, {}
+    players, ban, team_gold, ban_names = [], {}, {}, {}
     for roles_key, camp in (('blueRoles', 'blue'), ('redRoles', 'red')):
         roles = data.get(roles_key) or []
         if len(roles) != 5:
             raise ValueError(f'{camp} 阵营人数异常（{len(roles)}，应为 5）')
         team = data.get(f'{camp}Team') or {}
         ban[camp] = [item.get('heroId') for item in (team.get('banHeros') or []) if item.get('heroId')]
+        try:
+            from hero_catalog import hero_names as _hero_id_names
+            ban_names[camp] = _hero_id_names(ban[camp])
+        except Exception:
+            ban_names[camp] = []
         team_gold[camp] = team.get('money')
         for index, role in enumerate(roles):
             basic = role.get('basicInfo') or {}
@@ -536,7 +541,8 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
     source = channel['sources'].setdefault('camp', {})
     source.update({'status': 'parsed', 'gameSeq': str(game_seq),
                    'mapName': head.get('mapName'),
-                   'players': players, 'ban': ban, 'teamGold': team_gold,
+                   'players': players, 'ban': ban, 'banNames': ban_names,
+                   'teamGold': team_gold,
                    'attachedAt': now(), 'parsedAt': now()})
     append_log(channel, 'attach-camp', actor,
                {'gameSeq': game_seq, 'players': len(players),

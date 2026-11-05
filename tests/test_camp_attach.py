@@ -5,6 +5,7 @@ import sys
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -67,8 +68,10 @@ class AttachCampDetailTests(unittest.TestCase):
         self.channel = channel_store.blank({'date': '2026-11-02', 'opponent': '测试对手'})
 
     def test_ten_players_mapped_with_camp_source(self):
-        channel_store.attach_camp_detail(self.channel, '1793795458', sample_detail(),
-                                         OFFICIAL_PLAYERS, '测试')
+        with mock.patch('hero_catalog._load',
+                        return_value={521: '海月', 519: '敖隐', 135: '项羽'}):
+            channel_store.attach_camp_detail(self.channel, '1793795458', sample_detail(),
+                                             OFFICIAL_PLAYERS, '测试')
         players = self.channel['draft']['players']
         self.assertEqual(len(players), 10)
         sun = next(p for p in players if p.get('hero') == '孙悟空')
@@ -80,8 +83,10 @@ class AttachCampDetailTests(unittest.TestCase):
         self.assertEqual(sun['fields']['participation']['value'], 60.0)
         self.assertEqual(sun['fields']['rating']['value'], 8.1)
         self.assertIn('camp', sun['sources'])
-        # BP 原始禁用落库（heroId→名称映射后续做）
+        # BP 禁用：heroId 原始值 + 名称映射（缺失的保底 #ID）
         self.assertEqual(self.channel['sources']['camp']['ban']['blue'], [521, 519])
+        self.assertEqual(self.channel['sources']['camp']['banNames']['blue'], ['海月', '敖隐'])
+        self.assertEqual(self.channel['sources']['camp']['banNames']['red'], ['项羽'])
 
     def test_conflict_preserved_against_screenshot(self):
         """先放截图值再导入营地，不一致时保留冲突而不是静默覆盖。"""

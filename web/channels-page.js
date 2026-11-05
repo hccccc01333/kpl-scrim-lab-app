@@ -114,13 +114,17 @@ function officialBlock(channel) {
   const gold = match.teamGold || {};
   const kind = {personal: '个人回放', kpl: 'KPL', beta: 'Beta'}[official.kind] || official.kind || '官方';
   const win = String(match.winCamp) === '1' ? '蓝方胜' : String(match.winCamp) === '2' ? '红方胜' : '胜负未读';
-  return `<div class="notice">已关联官方回放：${esc(kind)}${teams.length ? ' · ' + esc(teams.join(' vs ')) : ''} · ${esc(win)}</div>
+    const banNames = channel.sources?.camp?.banNames || {};
+    const banText = ['blue', 'red'].map(camp => (banNames[camp] || []).length
+      ? `${camp === 'blue' ? '蓝方禁' : '红方禁'}：${banNames[camp].join('、')}` : '').filter(Boolean).join(' · ');
+    return `<div class="notice">已关联官方回放：${esc(kind)}${teams.length ? ' · ' + esc(teams.join(' vs ')) : ''} · ${esc(win)}</div>
     <div class="replay-facts">
       <div><span>团队金币</span><strong>${num(gold.blue)} : ${num(gold.red)}</strong></div>
       <div><span>金币点</span><strong>${num(match.goldPoints)} 个 · 约30秒</strong></div>
       <div><span>事件</span><strong>${num(match.keyEvents)} + ${num(match.extendedEvents)}</strong></div>
       <div><span>逐秒位置</span><strong>${official.positions?.perSecond ? '有' : '无'} · ${num(official.positions?.pointsPerPlayer)} 点/人</strong></div>
     </div>
+    ${banText ? `<p class="helper">禁用：${esc(banText)}</p>` : ''}
     <div class="channel-actions"><button class="button secondary" id="camp-detail-import">导入营地十人面板（BP / 数值）</button>
       <span class="helper">${(channel.sources?.camp?.players || []).length ? '已导入，草稿与冲突已更新' : '把本机同步的营地详情映射进草稿；数值来源标“营地”，与截图互校'}</span></div>
     <div class="helper">官方金币是约30秒一个点；1秒只有位置，没有1秒金币。终局字段仍以截图/回放为准。</div>`;
