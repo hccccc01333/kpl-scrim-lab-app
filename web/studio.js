@@ -1,5 +1,5 @@
-import {kplTeams,teamPresetSource,teamPresetLabel,lanes} from '/assets/team-presets.js?v=1';
-import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=4';
+﻿import {kplTeams,teamPresetSource,teamPresetLabel,lanes} from '/assets/team-presets.js?v=1';
+import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=5';
 import {disposeAnalysisVisuals,mountPerformanceExplorer,comparisonVisual,mountEconomyTimeline,mountEntityTrend,processMatrix} from '/assets/analysis-visuals.js?v=2';
 import {finite as metricNumber} from '/assets/analysis-math.mjs?v=1';
 import {renderWorkbench,deactivateWorkbench,allowWorkbenchNavigation} from '/assets/app.js?v=unified-13';
@@ -376,7 +376,7 @@ async function matchPage(key, token) {
   await renderPanorama($('#content'),{api,key:reviewKey,payload:review,embedded:true,isCurrent:()=>token===generation,toast});
   if(token!==generation)return;
   $('#content').insertAdjacentHTML('beforeend',extras);
-  bindBpEditor($('#content'),async bp=>{await api('/api/studio/bp/'+encodeURIComponent(key),{bp,expectedBp:d.bp||{}});d.bp=bp;await fetch('/api/analysis/reload',{method:'POST'});workspaceDirty=true;},toast);
+  bindBpEditor($('#content'),async bp=>{await api('/api/studio/bp/'+encodeURIComponent(key),{bp,expectedBp:d.bp||{}});d.bp=bp;await fetch('/api/analysis/reload',{method:'POST'});workspaceDirty=true;},toast,{channelId:key.startsWith('channel-')?key.slice(8):null});
   return;
  }
  $('#content').innerHTML=`<a class="back-link" href="#matches">← 返回比赛档案</a><div class="page-heading"><div><span class="page-eyebrow">MATCH · 对局详情</span><h1>${esc(d.opponent?'vs '+d.opponent:d.title||'对局详情')}</h1><p>${esc(d.date||'日期待补')} · ${esc(d.session||'训练赛')} · ${esc(d.mode||'模式未记录')} · ${dur}</p><div class="page-facts"><span>${players.length} 人</span><span>${sourceText}</span><span>${warnings.length} 条提示</span></div></div><div class="heading-actions"><button class="button" data-print>打印 / PDF</button>${d.dbId?`<a class="button" href="#review/${encodeURIComponent(d.dbId)}">原始复盘记录</a>`:''}<a class="button" href="#matches">比赛档案</a></div></div>`
@@ -387,7 +387,7 @@ async function matchPage(key, token) {
  +`<div id="match-bp">${bpEditorHtml(d.bp||{})}</div>`
  +equipmentPanel
  +`<details class="panel raw-fold"><summary id="match-full-data">十人完整数据（${players.length} 人）</summary><div class="panel-body">${table(players.map(p=>({...p,partial:p.partial})),['label','hero','camp','kills','deaths','assists','gold','damage','taken','participation','rating','partial'])}</div></details>`;
- bindBpEditor($('#content'),async bp=>{await api('/api/studio/bp/'+encodeURIComponent(key),{bp,expectedBp:d.bp||{}});d.bp=bp;await fetch('/api/analysis/reload',{method:'POST'});workspaceDirty=true;},toast);
+ bindBpEditor($('#content'),async bp=>{await api('/api/studio/bp/'+encodeURIComponent(key),{bp,expectedBp:d.bp||{}});d.bp=bp;await fetch('/api/analysis/reload',{method:'POST'});workspaceDirty=true;},toast,{channelId:key.startsWith('channel-')?key.slice(8):null});
  mountEconomyTimeline($('#interactive-match-timeline'),orderedTimeline);
  document.querySelectorAll('[data-section]').forEach(button=>button.onclick=()=>{const target=document.getElementById(button.dataset.section);if(target?.tagName==='SUMMARY')target.parentElement.open=true;target?.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});});
 
@@ -653,7 +653,11 @@ async function runLab() {
 function hasResultContent(result){return Boolean(result?.rows?.length||result?.coefficients?.length||result?.members?.length);}
 function resultHtml(result){
  const meta=result.meta;
- let content=`<div class="result-meta"><span><strong>${n(meta.rows,0)}</strong> 行</span><span><strong>${n(meta.matches,0)}</strong> 场记录</span><span>${meta.duplicates.length} 份内容折叠</span><span title="用于确认源数据未变化">数据版本 ${meta.fingerprint.slice(0,10)}</span></div>`;
+ // 备份恢复进来的历史结果可能缺 duplicates / warnings / fingerprint；容错避免「查看记录」
+ // 抛异常后被 click 的 try/catch 静默吞掉，只剩一句 toast 且弹窗打不开。
+ const duplicates=Array.isArray(meta.duplicates)?meta.duplicates:[];
+ const warnings=Array.isArray(meta.warnings)?meta.warnings:[];
+ let content=`<div class="result-meta"><span><strong>${n(meta.rows,0)}</strong> 行</span><span><strong>${n(meta.matches,0)}</strong> 场记录</span><span>${duplicates.length} 份内容折叠</span><span title="用于确认源数据未变化">数据版本 ${String(meta.fingerprint||'').slice(0,10)}</span></div>`;
  if(result.status!=='ok')return content+empty('当前样本还不能计算这项结果',result.reason,'','')+`<div class="result-note">所需门槛：${esc(result.required)} · 当前可用：${esc(result.available)}。可以切换统计方法，先检查分布与字段覆盖。</div>`;
  if(result.distribution?.length)content+=histogram(result.distribution,workspace.metrics.find(m=>m.key===meta.metrics[0]));if(['trend','anomaly'].includes(meta.method))content+=chart(result.rows.map((r,i)=>({x:i+1,y:r.value,matchKey:r.matchKey})), 'line','比赛顺序',workspace.metrics.find(m=>m.key===meta.metrics[0]).label);
  if(result.points?.length){const pca=meta.method==='pca';content+=chart(result.points,'scatter',pca?'主成分 1':workspace.metrics.find(m=>m.key===meta.metrics[0]).label,pca?'主成分 2':workspace.metrics.find(m=>m.key===meta.metrics[1]).label,'选手单局');}
@@ -661,7 +665,7 @@ function resultHtml(result){
  if(result.summary)content+=`<div class="result-meta">${Object.entries(result.summary).map(([k,v])=>`<span>${esc(k)} <strong>${n(v,1)}</strong></span>`).join('')}</div>`;content+=table(result.rows,result.columns,{emptyTitle:'本次没有满足条件的条目',emptyText:'方法已执行；没有达到规则频次或有效值要求的结果。',limit:25});
  if(result.coefficients)content+=table(result.coefficients,['metric','weight']);
  if(result.members)content+=`<details class="panel-body"><summary class="note">查看分组成员（${result.members.length} 行）</summary>${table(result.members,['label','hero','cluster','matchKey'])}</details>`;
- content+=`<div class="result-note">${esc(result.note || '缺失值逐指标剔除；每项结果保留各自有效行数。')}<br>${meta.warnings.map(esc).join('<br>')}</div>${hasResultContent(result)?`<div class="panel-body"><button class="button" data-export-result>导出结果 CSV ${icon('download')}</button></div>`:''}`;
+ content+=`<div class="result-note">${esc(result.note || '缺失值逐指标剔除；每项结果保留各自有效行数。')}<br>${warnings.map(esc).join('<br>')}</div>${hasResultContent(result)?`<div class="panel-body"><button class="button" data-export-result>导出结果 CSV ${icon('download')}</button></div>`:''}`;
  return content;
 }
 function saveForm(){return `<div class="report-form" id="save-form"><label class="field">报告标题<input id="report-title" maxlength="120" placeholder="如：近期发育与输出关系"></label><label class="field">观察与下一步<textarea id="report-note" maxlength="4000" placeholder="记录观察、待核实原因和后续训练安排"></textarea></label><button class="button primary" id="save-result">保存记录</button></div>`;}

@@ -75,7 +75,79 @@ function enhancePicker(picker, icons, extra) {
   heroSelect.onchange = updatePreview;
 }
 
-export function bindBpEditor(root, save, toast) {
+async function loadCampPrefill(root, channelId, toast) {
+  let channel;
+  try {
+    const response = await fetch('/api/channels/' + encodeURIComponent(channelId));
+    if (!response.ok) return;
+    channel = await response.json();
+  } catch {
+    return;
+  }
+  const camp = (channel.sources || {}).camp || {};
+  const banNames = camp.banNames || {};
+  const players = camp.players || [];
+  const prefill = {
+    bans: {left: (banNames.blue || []).slice(), right: (banNames.red || []).slice()},
+    picks: {
+      left: players.filter(p => p.camp === 'blue').map(p => p.hero).filter(Boolean),
+      right: players.filter(p => p.camp === 'red').map(p => p.hero).filter(Boolean),
+    },
+  };
+  const filled = {bans: {left: [], right: []}, picks: {left: [], right: []}};
+  root.querySelectorAll('[data-capture-bp]').forEach(field => {
+    const [kind, side] = field.dataset.captureBp.split(':');
+    if (field.value && filled[kind] && filled[kind][side]) filled[kind][side].push(field.value);
+  });
+  const rows = [];
+  for (const [kind, label] of [['bans', '禁用'], ['picks', '选用']]) {
+    for (const [side, sideLabel] of [['left', '蓝方'], ['right', '红方']]) {
+      const names = prefill[kind][side].filter(name => !filled[kind][side].includes(name));
+      if (!names.length) continue;
+      rows.push(`<div class="bp-prefill-row" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0"><span style="min-width:64px;font-size:12px;opacity:.7">${sideLabel}${label}</span>${names.map(name => `<button type="button" class="bp-prefill-chip" data-prefill="${kind}:${side}:${esc(name)}" title="${esc(name)} · 按手序点击填入" style="display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 3px;border:1px solid rgba(127,127,127,.35);border-radius:999px;background:transparent;cursor:pointer;font:inherit;color:inherit"><span>${esc(name)}</span></button>`).join('')}</div>`);
+    }
+  }
+  if (!rows.length) return;
+  const section = root.querySelector('.bp-capture');
+  const grid = section?.querySelector('.bp-grid');
+  if (!section || !grid) return;
+  const holder = document.createElement('div');
+  holder.className = 'bp-prefill';
+  holder.innerHTML = `<p class="note" style="margin:0 0 4px">营地接口已获取以下英雄（顺序未知）：<strong>按手序依次点击头像</strong>，自动填入该边下一个空位；填错的槽位照常改下拉即可。</p>${rows.join('')}`;
+  grid.parentElement.insertBefore(holder, grid);
+  loadHeroCatalog().then(catalog => {
+    if (!holder.isConnected) return;
+    const icons = Object.fromEntries((catalog.entries || [])
+      .filter(entry => entry.kind === 'hero' && entry.icon)
+      .map(entry => [entry.name, entry.icon]));
+    holder.querySelectorAll('[data-prefill]').forEach(chip => {
+      const name = chip.dataset.prefill.split(':').slice(2).join(':');
+      const icon = icons[name];
+      if (icon) {
+        chip.innerHTML = `<img src="${esc(icon)}" alt="${esc(name)}" style="width:26px;height:26px;border-radius:50%;object-fit:cover"><span>${esc(name)}</span>`;
+      }
+    });
+  });
+  holder.querySelectorAll('[data-prefill]').forEach(chip => {
+    chip.onclick = () => {
+      const [kind, side] = chip.dataset.prefill.split(':');
+      const name = chip.dataset.prefill.split(':').slice(2).join(':');
+      const fields = [...root.querySelectorAll(`[data-capture-bp^="${kind}:${side}:"]`)];
+      const empty = fields.find(field => !field.value);
+      if (!empty) {
+        toast(`该边${kind === 'bans' ? '禁用' : '选用'}已填满，可直接改下拉`, true);
+        return;
+      }
+      empty.value = name;
+      empty.dispatchEvent(new Event('change', {bubbles: true}));
+      chip.disabled = true;
+      chip.style.opacity = '.35';
+      chip.style.cursor = 'default';
+    };
+  });
+}
+
+export function bindBpEditor(root, save, toast, options = {}) {
   const button = root.querySelector('[data-save-bp]');
   button.onclick = async () => {
     const bp = {bans: {left: [], right: []}, picks: {left: [], right: []},
@@ -98,6 +170,7 @@ export function bindBpEditor(root, save, toast) {
   };
   const pickers = [...root.querySelectorAll('.bp-pick')];
   if (!pickers.length) return;
+  if (options.channelId) loadCampPrefill(root, options.channelId, toast);
   loadHeroCatalog().then(catalog => {
     if (!root.isConnected) return;
     const icons = Object.fromEntries((catalog.entries || [])

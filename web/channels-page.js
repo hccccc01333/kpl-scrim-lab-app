@@ -1,4 +1,4 @@
-﻿import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=4';
+﻿import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=5';
 import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num = (v) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 1});
@@ -579,7 +579,7 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
       if(channel.saved?.bundleKey)await api('/api/studio/bp/'+encodeURIComponent(channel.saved.bundleKey),'POST',{bp});
       await fetch('/api/analysis/reload',{method:'POST'});
       window.dispatchEvent(new Event('platform-data-changed'));
-    },toast);
+    },toast,{channelId:id});
     container.querySelector('#save-meta').onclick = async () => {
       try {
         channel = await api('/api/channels/' + encodeURIComponent(id), 'PATCH', {match: {
