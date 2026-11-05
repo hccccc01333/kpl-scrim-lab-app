@@ -103,20 +103,22 @@ export function comparisonVisual(a,b,definitions,pool){
 
 export function mountEconomyTimeline(root,points){
   if(!root)return;
-  const good=cleanTimeline(points);let selected=good.length-1,mode='diff';
+  const good=cleanTimeline(points);let selected=good.length-1,mode='diff',xScale=null;
   if(!good.length){root.innerHTML=empty('没有可用经济观测点；不外推或补零。');return;}
   root.innerHTML=`<div class="av-timeline-toolbar"><div class="av-segment"><button data-economy="diff" class="active">经济差</button><button data-economy="total">双方经济</button></div><span>蓝方 − 红方 · ${good.length} 个实测点</span></div><div class="av-timeline-readout" aria-live="polite"></div><div class="av-timeline-plot"></div><label class="av-range-label">选择观测时刻<input type="range" min="0" max="${good.length-1}" value="${selected}" step="1" aria-label="经济时间轴观测点"></label><div class="av-axis-caption"><span>观测 ${clock(good[0].gameTime)}–${clock(good.at(-1).gameTime)}</span><span>拖动游标或使用方向键 · 断开处为超过 120 秒的缺口</span></div>`;
   function readout(){const p=good[selected];root.querySelector('.av-timeline-readout').innerHTML=`<div><span>当前观测</span><strong>${clock(p.gameTime)}</strong></div><div><span>蓝方经济</span><strong class="av-a">${fmt(p.blueGold,0)}</strong></div><div><span>红方经济</span><strong class="av-red">${fmt(p.redGold,0)}</strong></div><div><span>蓝 − 红</span><strong>${p.diff>0?'+':''}${fmt(p.diff,0)}</strong></div>`;root.querySelector('input').setAttribute('aria-valuetext',`${clock(p.gameTime)}，蓝方 ${p.blueGold}，红方 ${p.redGold}，差值 ${p.diff}`);}
+  function updateSelection(){const box=root.querySelector('.av-timeline-plot');if(!box||!xScale)return;const cursor=box.querySelector('.av-cursor');if(cursor){const xv=xScale(good[selected].gameTime);cursor.setAttribute('x1',xv);cursor.setAttribute('x2',xv);}box.querySelectorAll('[data-time-index]').forEach((el,index)=>el.setAttribute('r',index===selected?6:3));readout();}
   function draw(){
     const box=root.querySelector('.av-timeline-plot'),w=Math.max(300,Math.round(box.clientWidth)),h=320,l=65,r=22,t=20,b=44;
     const xd=[good[0].gameTime,Math.max(good[0].gameTime+1,good.at(-1).gameTime)],yd=extent(mode==='diff'?good.map(p=>p.diff):good.flatMap(p=>[p.blueGold,p.redGold]),{zero:true});
     const x=v=>l+(v-xd[0])/(xd[1]-xd[0])*(w-l-r),y=v=>h-b-(v-yd[0])/(yd[1]-yd[0])*(h-t-b);
+    xScale=x;
     const lines=segments(good).map(segment=>(mode==='diff'?['diff']:['blueGold','redGold']).map(key=>`<path d="${segment.map((p,i)=>`${i?'L':'M'}${x(p.gameTime)},${y(p[key])}`).join(' ')}" fill="none" stroke="${key==='redGold'?colors.red:colors.a}" stroke-width="2.5" stroke-linejoin="round"/>`).join('')).join('');
     box.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="group" aria-label="交互经济时间轴">${grid(w,h,l,r,t,b,xd,yd,v=>clock(v),fmt)}${mode==='diff'?`<line x1="${l}" x2="${w-r}" y1="${y(0)}" y2="${y(0)}" stroke="#a5b6d0" stroke-dasharray="4 4"/>`:''}${lines}<line x1="${x(good[selected].gameTime)}" x2="${x(good[selected].gameTime)}" y1="${t}" y2="${h-b}" class="av-cursor"/>${good.map((p,i)=>`<circle data-time-index="${i}" cx="${x(p.gameTime)}" cy="${y(mode==='diff'?p.diff:p.blueGold)}" r="${i===selected?6:3}" fill="${colors.a}" class="av-time-point"><title>${clock(p.gameTime)} · ${fmt(p.diff,0)}</title></circle>`).join('')}</svg>`;
     readout();
   }
-  root.querySelector('input').oninput=event=>{selected=Number(event.target.value);draw();};
-  root.addEventListener('click',event=>{const modeButton=event.target.closest('[data-economy]');if(modeButton){mode=modeButton.dataset.economy;root.querySelectorAll('[data-economy]').forEach(b=>b.classList.toggle('active',b===modeButton));draw();}const point=event.target.closest('[data-time-index]');if(point){selected=Number(point.dataset.timeIndex);root.querySelector('input').value=selected;draw();}});
+  root.querySelector('input').oninput=event=>{selected=Number(event.target.value);updateSelection();};
+  root.addEventListener('click',event=>{const modeButton=event.target.closest('[data-economy]');if(modeButton){mode=modeButton.dataset.economy;root.querySelectorAll('[data-economy]').forEach(b=>b.classList.toggle('active',b===modeButton));draw();return;}const point=event.target.closest('[data-time-index]');if(point){selected=Number(point.dataset.timeIndex);root.querySelector('input').value=selected;updateSelection();}});
   draw();resize(root,draw);
 }
 

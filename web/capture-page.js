@@ -1,4 +1,5 @@
 import {renderCollectionGuide} from '/assets/collection-guide.js?v=7';
+import {FEATURES} from '/assets/features.js?v=1';
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 // 与 web/capture-guide/requirements.json (collection-v3) 及 channel_store.py 的双合规口径一致：
@@ -16,7 +17,7 @@ const SOURCES = [
   {key: 'video', label: '一段完整录屏', level: 'fallback', hint: '兜底路径：与七张截图一起提供过程时间轴与面板快照', href: '#recordings'},
   {key: 'table', label: '标准表格', level: 'optional', hint: '选填：补齐或校正十人字段，一局十行', href: '#import'},
   {key: 'replay', label: '回放文件', level: 'optional', hint: '选填：.abc / .ope，补名单与评分', href: '#replays'},
-];
+].filter(item => item.key !== 'replay' || FEATURES.replay);
 
 const STEPS = [
   ['建立本局', '填写日期、对手和训练分组，创建采集通道；之后的材料都挂到这一局下。'],
@@ -68,7 +69,7 @@ export async function renderCapture(container, {api, toast, isCurrent}) {
               <span class="capture-source-cta">前往关联 →</span></a>`;
           }).join('')}
         </div>
-        <p class="helper">审核门槛：营地十人面板<strong>或</strong>「七张截图 + 一段完整录屏」任一齐备即可；表格与回放文件始终选填。已保存的比赛可在比赛详情补录 BP，批量粘贴营地分享链接在采集通道页。</p></section>
+        <p class="helper">审核门槛：营地十人面板<strong>或</strong>「七张截图 + 一段完整录屏」任一齐备即可；表格始终选填。已保存的比赛可在比赛详情补录 BP，批量粘贴营地分享链接在采集通道页。</p></section>
       ${renderCollectionGuide()}
     </div>`;
     const form = container.querySelector('#capture-create-form');

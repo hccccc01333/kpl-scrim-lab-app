@@ -4,11 +4,14 @@ const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 const num = (v) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 1});
 const clock = (seconds) => seconds == null ? '—' : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 const SIDE = {left: '左', right: '右'};
+import {FEATURES} from '/assets/features.js?v=1';
 const SOURCE_LABELS = {official:'王者营地', camp: '营地十人面板', table: '表格', video: '录像', screenshot: '截图', replay: '回放'};
 const CAMP_BATTLE_MODES = {'16': '排位', '12': '排位（双排样本）'};
 // collection-v3：官方链接唯一必采；营地面板（推荐）或 七图+录屏（兜底）任一齐备即可审核。
 const SOURCE_HINTS = {official:'唯一必采 · 本局网页回放链接', camp: '推荐主路径 · 同步后一键导入 BP 与十人面板', table:'选填 · 标准十人表',video:'兜底路径 · 与七图一起凑齐审核门槛',screenshot:'兜底路径 · 与录屏一起凑齐审核门槛',replay:'选填 · .abc / .ope'};
-const FIELD_LABELS = {kills: '击杀', deaths: '死亡', assists: '助攻', gold: '总经济', damage: '输出', taken: '承伤', participation: '参团率', rating: '评分'};
+// 后 7 项是营地十人面板自动带入的 B 组增强字段；草稿表格只校对前 8 项必填，
+// 但冲突/变更提示必须能显示中文名，否则会露出英文键。
+const FIELD_LABELS = {kills: '击杀', deaths: '死亡', assists: '助攻', gold: '总经济', damage: '输出', taken: '承伤', participation: '参团率', rating: '评分', cs: '补刀', jungleGold: '野怪经济', control: '控制效果', healing: '治疗量', towerDamage: '对塔伤害', damageConversion: '伤害转化比', takenPerDeath: '每死承伤'};
 const SOURCE_NAMES = {screenshot: '截图', table: '表格', source: '来源', video: '录像', replay: '回放', manual: '手工'};
 const HERO_STATUS = {table:'表格原值',exact: '精确', 'roster-candidate': '名单候选', 'roster-elimination': '名单排除', uncertain: '待确认', unreadable: '未识别', manual: '手工'};
 const ACTION_NAMES = {create: '创建', 'update-match': '修改本局信息', 'attach-screenshot': '关联截图', 'attach-table': '关联表格', 'attach-video': '关联录像报告', 'attach-replay': '关联回放', 'attach-official': '关联官方回放', review: '完成审核', 'review-invalidated': '来源变更，审核失效', save: '保存本局数据'};
@@ -39,7 +42,7 @@ function heading(title, subtitle, extra = '') {
 function sourceRows(channel) {
   const status = channel.sourceStatus || {};
   const sources = channel.sources || {};
-  return ['official', 'camp', 'screenshot', 'video', 'table', 'replay'].map(key => {
+  return ['official', 'camp', 'screenshot', 'video', 'table'].concat(FEATURES.replay ? ['replay'] : []).map(key => {
     const source = key==='official' ? channel.official || {} : key==='camp' ? channel.sources?.camp || {} : sources[key] || {};
     const count = (status.counts || {})[key] || 0;
     const required = (status.required || {})[key] || 0;
@@ -524,7 +527,8 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
   let busy = false;
   const load = async () => {
     const [channelValue, postgame, replayValue] = await Promise.all([
-      api('/api/channels/' + encodeURIComponent(id)), api('/api/postgame/images'), api('/api/replays')]);
+      api('/api/channels/' + encodeURIComponent(id)), api('/api/postgame/images'),
+      FEATURES.replay ? api('/api/replays') : Promise.resolve({replays: []})]);
     channel = channelValue;
     groups = postgame.groups || [];
     replays = replayValue.replays || [];

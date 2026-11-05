@@ -1,13 +1,14 @@
 ﻿import {kplTeams,teamPresetSource,teamPresetLabel,lanes} from '/assets/team-presets.js?v=1';
 import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=6';
-import {disposeAnalysisVisuals,mountPerformanceExplorer,comparisonVisual,mountEconomyTimeline,mountEntityTrend,processMatrix} from '/assets/analysis-visuals.js?v=2';
+import {FEATURES} from '/assets/features.js?v=1';
+import {disposeAnalysisVisuals,mountPerformanceExplorer,comparisonVisual,mountEconomyTimeline,mountEntityTrend,processMatrix} from '/assets/analysis-visuals.js?v=3';
 import {finite as metricNumber} from '/assets/analysis-math.mjs?v=1';
 import {renderWorkbench,deactivateWorkbench,allowWorkbenchNavigation} from '/assets/app.js?v=unified-13';
 import {renderPrepare,renderDatasets} from '/assets/pipeline-page.js?v=5';
 import {renderHome} from '/assets/home-page.js?v=11';
 import {renderCapture} from '/assets/capture-page.js?v=7';
 import {renderOpponent,renderBp,renderCombos,renderFeatured,renderRecords} from '/assets/insight-pages.js?v=6';
-import {renderPanorama,disposePanorama} from '/assets/panorama-page.js?v=16';
+import {renderPanorama,disposePanorama} from '/assets/panorama-page.js?v=17';
 const $ = (q, root = document) => root.querySelector(q);
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const n = (v, digits = 1) => metricNumber(v) === null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: digits});
@@ -39,6 +40,7 @@ const nav = [
  ['对比', [['compare/player','选手对比'],['compare/hero','英雄对比']]],
  ['数据', [['capture','采集一局'],['channels','采集通道'],['import','批量导入'],['screenshots','截图采集'],['recordings','录屏采集'],['replays','回放文件'],['datasets','数据集'],['clean','数据清洗'],['sources','字段与来源'],['lab','统计实验'],['models','模型实验']]],
 ];
+if(!FEATURES.replay){for(const stage of nav)stage[1]=stage[1].filter(([key])=>key!=='replays');}
 const navDescriptions = {
  overview:'从哪开始、待办和数据状态',
  capture:'表格、截图、录屏、回放挂到同一局',
@@ -764,8 +766,10 @@ async function reportsPage(token){
 async function showReport(id){const report=await api('/api/studio/reports/'+encodeURIComponent(id));currentResult=report.result;currentSpec=report.result.spec;$('#detail-title').textContent=report.title;$('#detail-body').innerHTML=`<p class="inline-summary">${esc(report.note)}</p>`+resultHtml(report.result);$('#detail-dialog').showModal();}
 function sourcesPage(){
  const rows=workspace.overview.rows;
+ const sourceBoxes=[['表格','单局明细、团队统计与自定义赛训记录。','#channels','放入表格'],['赛后截图','KDA、发育、输出、生存和团队字段。','#screenshots','查看截图'],['回放录屏','团队时间轴、记分板快照及 POV 片段。','#recordings','查看录屏']];
+ if(FEATURES.replay)sourceBoxes.push(['回放文件','十人名单、英雄、评分与版本信息。','#replays','查看回放']);
  $('#content').innerHTML=heading('字段与来源','查看四类原料、字段覆盖与记录关联，保留原始证据。',`<a class="button primary" href="#channels">采集通道 ${icon('arrow')}</a>`)
- +`<div class="source-grid">${[['表格','单局明细、团队统计与自定义赛训记录。','#channels','放入表格'],['赛后截图','KDA、发育、输出、生存和团队字段。','#screenshots','查看截图'],['回放录屏','团队时间轴、记分板快照及 POV 片段。','#recordings','查看录屏'],['回放文件','十人名单、英雄、评分与版本信息。','#replays','查看回放']].map(([t,d,u,a])=>`<section class="source-box"><h2>${t}</h2><p>${d}</p><a href="${u}">${a} ↗</a></section>`).join('')}</div>`
+ +`<div class="source-grid">${sourceBoxes.map(([t,d,u,a])=>`<section class="source-box"><h2>${t}</h2><p>${d}</p><a href="${u}">${a} ↗</a></section>`).join('')}</div>`
  +`<div class="data-quality">${panel('记录关联','保留文件，不在源数据上直接合并',workspace.duplicates.length?table(workspace.duplicates,['excluded','retained']):'<p class="note">未发现字段内容完全相同的比赛记录。</p>')}${panel('统计口径','分析时保留样本、来源与适用范围',`<dl class="definition"><dt>比赛记录与截图候选</dt><dd>分别选择、分别计算；候选字段不混入确认记录。</dd><dt>完整终局与过程片段</dt><dd>默认排除部分行。完整时长缺失时不计算分均指标。</dd><dt>研究与预测</dt><dd>相关性、聚类与模型系数用于研究；赛前模型只输入已选阵容，并按时间留出比赛。</dd></dl>`)}</div>`
  +`<div class="section-heading"><h2>指标字典</h2><span class="note">当前数据共 ${rows} 行</span></div><section class="panel">${table(workspace.metrics.map(m=>({...m,metric:m.label})),['metric','key','unit','available','complete'])}</section>`;
 }

@@ -516,6 +516,7 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     return [best[1], best[2]];
   }
 
+  let lastTick = -1;
   function updateCursor() {
     const cursor = pulse.querySelector('#pn-pulse-cursor');
     if (cursor) {
@@ -529,12 +530,17 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
       const x = left + state.time / duration * span;
       riverCursor.setAttribute('x1', x); riverCursor.setAttribute('x2', x);
     }
-    timeInput.value = String(Math.round(state.time));
+    const tick = Math.round(state.time);
+    if (document.activeElement !== timeInput) timeInput.value = String(tick);
     timeLabel.textContent = clock(state.time);
     const mapClock = map.querySelector('#pn-map-clock');
     if (mapClock) mapClock.textContent = clock(state.time);
-    updateTrail();
-    readout.innerHTML = readoutHtml(state.time, goldAt(state.time), false);
+    // 拖动时按整秒做重操作（轨迹重绘/读数重建），避免每帧重建 SVG 造成抖动
+    if (tick !== lastTick) {
+      lastTick = tick;
+      updateTrail();
+      readout.innerHTML = readoutHtml(state.time, goldAt(state.time), false);
+    }
     for (const player of d.players) {
       const dot = positionAt(player.key, state.time);
       if (!dot) continue;
@@ -752,7 +758,14 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     if (state.player === playerSelect.value) return;
     selectPlayer(playerSelect.value);
   };
-  timeInput.oninput = () => setTime(Number(timeInput.value));
+  let scrubFrame = null;
+  timeInput.oninput = () => {
+    if (scrubFrame) return;
+    scrubFrame = requestAnimationFrame(() => {
+      scrubFrame = null;
+      setTime(Number(timeInput.value));
+    });
+  };
   playButton.onclick = play;
   speedSelect.onchange = () => { state.speed = Number(speedSelect.value) || 1; };
   const resize = () => { drawPulse(); drawRiver(); };
