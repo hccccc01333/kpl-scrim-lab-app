@@ -1226,41 +1226,41 @@ def camp_sync_start(value: dict):
     return {'ok': True, 'count': len(entries)}
 
 
-@app.post('/api/channels/{channel_id}/camp')
-def channel_attach_camp(channel_id: str, value: dict):
-    """把本机已同步的营地详情（BP+十人面板）映射进通道草稿，来源标 camp。
+def _camp_attach_to_channel(channel: dict, game_seq: str, actor=None):
+    """读取本机营地详情并映射进通道草稿（纯内存；落库由调用方负责）。
 
-    英雄名按 playerId 从公开回放接口的 matchInfo 关联：优先用通道已关联的
-    official 四元组现取（缓存命中零成本），否则读本机的 raw.json 快照。
+    官方十人（heroName）优先读本地 normalized 缓存（含 heroName 且不依赖网络）；
+    公开接口的身份字段已脱敏，hero 按阵营+顺序在 attach_camp_detail 里对应。
     """
-    game_seq = str(value.get('gameSeq') or '').strip()
     detail_path = ROOT / 'data' / 'camp_details' / f'{game_seq}.json'
     if not detail_path.is_file():
-        raise HTTPException(404, '本机还没有这局的营地详情；请先在采集通道页完成同步')
-    try:
-        detail = json.loads(detail_path.read_text(encoding='utf-8'))
-    except ValueError as error:
-        raise HTTPException(500, f'营地详情文件损坏：{error}')
-    with db() as c:
-        channel = _load_channel(c, channel_id)
+        raise ValueError('本机还没有这局的营地详情；请先在采集通道页完成同步')
+    detail = json.loads(detail_path.read_text(encoding='utf-8'))
     official = channel.get('official') or {}
-    official_players = None
     official_id = official.get('id') or ''
     if official_id.startswith('camp-') and official_id[5:] != game_seq:
-        raise HTTPException(400, f'通道已关联的是对局 {official_id[5:]}，与营地详情 {game_seq} 不一致')
-    source = official.get('source') or {}
-    if source.get('gameSeq') and source.get('gameSvr') and source.get('relaySvr'):
+        raise ValueError(f'通道已关联的是对局 {official_id[5:]}，与营地详情 {game_seq} 不一致')
+    official_players = None
+    if official_id.startswith('camp-'):
         try:
-            link = camp_replay.parse_link(
-                'https://camp.qq.com/h5/webdist/battle-replay/index.html?'
-                + url_parse.urlencode({'gameseq': source['gameSeq'],
-                                       'gamesvrentity': source['gameSvr'],
-                                       'relaysvrentity': source['relaySvr'],
-                                       'playerid': source.get('playerId') or 'undefined'}))
-            _, official_data = camp_replay.fetch(link)
-            official_players = (official_data or {}).get('matchInfo') or []
+            _, normalized = camp_replay.read_normalized(official_id)
+            official_players = normalized.get('players') or []
         except Exception:
             official_players = None
+    if official_players is None:
+        source = official.get('source') or {}
+        if source.get('gameSeq') and source.get('gameSvr') and source.get('relaySvr'):
+            try:
+                link = camp_replay.parse_link(
+                    'https://camp.qq.com/h5/webdist/battle-replay/index.html?'
+                    + url_parse.urlencode({'gameseq': source['gameSeq'],
+                                           'gamesvrentity': source['gameSvr'],
+                                           'relaysvrentity': source['relaySvr'],
+                                           'playerid': source.get('playerId') or 'undefined'}))
+                _, official_data = camp_replay.fetch(link)
+                official_players = (official_data or {}).get('matchInfo') or []
+            except Exception:
+                official_players = None
     if official_players is None and official_id.startswith('camp-'):
         raw_path = camp_replay.STORE / official_id / 'raw.json'
         if raw_path.is_file():
@@ -1269,9 +1269,16 @@ def channel_attach_camp(channel_id: str, value: dict):
                                     .get('data') or {}).get('matchInfo') or []
             except (OSError, ValueError):
                 official_players = None
+    channel_store.attach_camp_detail(channel, game_seq, detail, official_players, actor)
+
+
+@app.post('/api/channels/{channel_id}/camp')
+def channel_attach_camp(channel_id: str, value: dict):
+    game_seq = str(value.get('gameSeq') or '').strip()
+    with db() as c:
+        channel = _load_channel(c, channel_id)
     try:
-        channel_store.attach_camp_detail(channel, game_seq, detail, official_players,
-                                         value.get('actor'))
+        _camp_attach_to_channel(channel, game_seq, value.get('actor'))
     except ValueError as error:
         raise HTTPException(400, str(error))
     with db() as c:

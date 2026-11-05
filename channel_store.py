@@ -500,6 +500,14 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
     official_players = official_players or []
     by_player_id = {str(item.get('playerId')): item for item in official_players
                     if item.get('playerId') is not None}
+    # 公开接口的 matchInfo 身份字段被脱敏（roleId/userId 为 0），playerId 与
+    # 营地详情不是同一体系；阵营内顺序（blue 5 人 / red 5 人）是同局一一对应的。
+    official_by_camp = {'blue': [], 'red': []}
+    for item in official_players:
+        camp_code = str(item.get('camp') or item.get('acntcamp') or '')
+        camp_key = {'1': 'blue', '2': 'red', 'blue': 'blue', 'red': 'red'}.get(camp_code)
+        if camp_key:
+            official_by_camp[camp_key].append(item)
     stat_map = {'killCnt': 'kills', 'deadCnt': 'deaths', 'assistCnt': 'assists',
                 'money': 'gold', 'totalHurtCnt': 'damage', 'totalBehurtCnt': 'taken'}
     players, ban, team_gold, ban_names = [], {}, {}, {}
@@ -519,6 +527,8 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
             basic = role.get('basicInfo') or {}
             stats = role.get('battleStats') or {}
             official_match = by_player_id.get(str(basic.get('playerId') or ''))
+            if official_match is None and len(official_by_camp.get(camp) or []) == 5:
+                official_match = official_by_camp[camp][index]
             fields = {}
             for src, dst in stat_map.items():
                 value = stats.get(src)
@@ -533,9 +543,14 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
             players.append({'camp': camp, 'slot': index,
                             'playerId': str(basic.get('playerId') or ''),
                             'nickname': _identity_name(basic.get('roleName')),
-                            'hero': (official_match or {}).get('heroName'),
+                            'hero': (official_match or {}).get('heroName') or (official_match or {}).get('hero'),
                             'heroId': (official_match or {}).get('heroId'),
                             'stats': fields})
+    # 本人阵营：head.acntCamp（1=蓝 / 2=红）→ 通道的 ownSide
+    head_camp = str(head.get('acntCamp') or '')
+    match = channel.setdefault('match', {})
+    if head_camp in ('1', '2') and not match.get('ownSide'):
+        match['ownSide'] = 'left' if head_camp == '1' else 'right'
     if sum(1 for player in players if player['stats']) != 10:
         raise ValueError('营地详情的十人面板不完整，拒绝入库')
     source = channel['sources'].setdefault('camp', {})
@@ -749,7 +764,8 @@ def bundle(channel):
         players.append({
             'key': f'{camp}-{player.get("slot")}', 'camp': camp, 'side': camp,
             'slot': player.get('slot'), 'panelSlot': player.get('slot'),
-            'hero': player.get('hero'), 'heroStatus': player.get('heroStatus'),
+            'hero': player.get('hero'), 'heroId': player.get('heroId'),
+            'heroStatus': player.get('heroStatus'),
             'heroSource': player.get('heroSource'), 'nickname': player.get('nickname'),
             'nicknameRaw': player.get('nickname'), 'nicknameConfidence': None,
             'replayEntityId': player.get('replayEntityId'),
@@ -762,6 +778,11 @@ def bundle(channel):
     camp_map = {'left': 'blue', 'right': 'red'}
     own_camp = camp_map.get(own_side)
     winner_camp = camp_map.get(winner_side)
+    # 未手工指定胜负时，用官方回放的 winCamp（'1'=蓝 / '2'=红）推断
+    if not winner_camp:
+        win_code = str(((channel.get('official') or {}).get('match') or {}).get('winCamp') or '')
+        if win_code in ('1', '2'):
+            winner_camp = 'blue' if win_code == '1' else 'red'
     scores = dict(match.get('scores') or {})
     if 'left' in scores or 'right' in scores:
         scores.setdefault('blue', scores.get('left'))

@@ -175,9 +175,11 @@ def load_matches(camp_user_id: str, refresh: bool = False):
     for match in matches:
         entry = by_seq.get(match['gameSeq']) or {}
         players = official_players_for(match['gameSeq'], entry)
-        by_pid = {str(p.get('playerId')): p for p in players if p.get('playerId')}
-        opp = by_pid.get(match['oppPlayerId'])
-        match['oppHero'] = (opp or {}).get('hero')
+        # 公开接口身份字段已脱敏（playerId 与营地详情不同体系），按阵营内顺序对应
+        opp_camp = '2' if match['camp'] == 'red' else '1'
+        opp_players = [p for p in players if str(p.get('camp')) == opp_camp]
+        match['oppHero'] = (opp_players[match['index']].get('hero')
+                            if match['index'] < len(opp_players) else None)
         match['econCurve'] = load_curve(match['gameSeq'], match['camp'])
     bans = Counter()
     for path in sorted(DETAIL_DIR.glob('*.json')):
