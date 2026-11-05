@@ -19,7 +19,7 @@ TOPICS = [
     ('resource_efficiency', '资源与产出', '对照经济占比、输出占比与伤害转化，保留每局证据。'),
     ('hero_combos', '阵容组合与 Lift', '比较完整阵容中的实际共现与独立选用基线。'),
     ('player_pairs', '双人搭档', '基于稳定选手 ID 查看同队搭档的出场与胜负。'),
-    ('tempo', '前期与优势转化', '按真实观测读取 5 / 8 / 10 / 15 分钟经济差。'),
+    ('tempo', '前期与优势转化', '按王者三段口径（0–4 前期 / 4–10 中期 / 10+ 后期）读取段末与段内经济差。'),
     ('swing_windows', '经济转折窗口', '连续经济差变化合并为窗口，提供回看起止时间。'),
     ('session_summary', '训练组证据汇总', '按日期、训练组、对手汇总比赛与数据覆盖。'),
 ]
@@ -158,9 +158,13 @@ def research(rows, topic, metric='damage', matches=None):
                 return None
             if topic=='tempo':
                 winner = m.get('winnerCamp') or m.get('winner')
+                gold4, gold10, gold_end = rounded(at(240)), rounded(at(600)), rounded(points[-1][1])
                 out.append({'matchKey':m['key'],'date':m.get('date'),'perspective':'本队 − 对手' if own in ('blue','red') else '蓝方 − 红方',
-                            'gold5':rounded(at(300)),'gold8':rounded(at(480)),'gold10':rounded(at(600)),
-                            'gold15':rounded(at(900)),'observedEnd':rounded(points[-1][0]/60),
+                            'gold4':gold4,'gold10':gold10,'goldEnd':gold_end,
+                            'earlyDelta':gold4,
+                            'midDelta':rounded(gold10-gold4) if None not in (gold4,gold10) else None,
+                            'lateDelta':rounded(gold_end-gold10) if None not in (gold10,gold_end) else None,
+                            'observedEnd':rounded(points[-1][0]/60),
                             'result':('win' if winner==own else 'loss') if own and winner else 'unknown'})
             else:
                 segments=[];current=None
@@ -182,8 +186,8 @@ def research(rows, topic, metric='damage', matches=None):
                                 'endMinute':rounded(segment['end']/60),'goldChange':rounded(change),
                                 'perspective':'本队 − 对手' if own in ('blue','red') else '蓝方 − 红方',
                                 'note':'经济差代理窗口；回看录像确认事件'})
-        columns=['matchKey','date','perspective','gold5','gold8','gold10','gold15','observedEnd','result'] if topic=='tempo' else ['matchKey','startMinute','endMinute','goldChange','perspective','note']
-        note='只在观测区间内插值，相邻点间隔最多 120 秒；不把短片段外推到 10/15 分钟。经济差不转换成未经训练的胜率。'
+        columns=['matchKey','date','perspective','gold4','gold10','goldEnd','earlyDelta','midDelta','lateDelta','observedEnd','result'] if topic=='tempo' else ['matchKey','startMinute','endMinute','goldChange','perspective','note']
+        note='王者三段口径：0–4 前期 / 4–10 中期 / 10+ 后期；gold4/gold10/goldEnd 为段末经济差，earlyDelta/midDelta/lateDelta 为段内变化。只在观测区间内插值，相邻点间隔最多 120 秒；不把短片段外推到 10 分钟。经济差不转换成未经训练的胜率。'
     else:
         groups=defaultdict(dict)
         for r in rows:
@@ -203,9 +207,12 @@ def research(rows, topic, metric='damage', matches=None):
         note='训练组由明确填写的日期、训练组和对手组成；不把同一天的不同对局自动当成 BO 系列赛。'
     summary = None
     if topic == 'tempo':
-        lead = [r for r in out if r['gold10'] is not None and r['gold10']>0 and r['result'] in ('win','loss')]
-        summary = {'十分钟领先且有赛果':len(lead), '其中胜场':sum(r['result']=='win' for r in lead),
-                   '优势转化率（%）':rounded(sum(r['result']=='win' for r in lead)/len(lead)*100) if lead else None}
+        early = [r for r in out if r['gold4'] is not None and r['gold4']>0 and r['result'] in ('win','loss')]
+        late = [r for r in out if r['gold10'] is not None and r['gold10']>0 and r['result'] in ('win','loss')]
+        summary = {'前期领先且有赛果':len(early), '前期其中胜场':sum(r['result']=='win' for r in early),
+                   '前期转化率（%）':rounded(sum(r['result']=='win' for r in early)/len(early)*100) if early else None,
+                   '十分钟领先且有赛果':len(late), '十分钟其中胜场':sum(r['result']=='win' for r in late),
+                   '十分钟转化率（%）':rounded(sum(r['result']=='win' for r in late)/len(late)*100) if late else None}
     return {'topic':topic,'metric':metric,'columns':columns,'rows':out[:500], 'summary':summary,
             'matches':len({r['matchKey'] for r in rows}),'folded':len(folded),'note':note,
             'reference':'https://github.com/hccccc01333/kpl-research','referenceCommit':'59f776c364ee03d2d298d8923ce8e6233bae234f'}

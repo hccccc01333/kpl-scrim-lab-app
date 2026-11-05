@@ -67,7 +67,7 @@ const navDescriptions = {
  'topics/player_form':'近期状态、波动与有效样本',
  'topics/player_pairs':'稳定选手身份下的搭档表现',
  'topics/resource_efficiency':'经济投入、输出与伤害转化',
- 'topics/tempo':'5 / 8 / 10 / 15 分钟优势',
+ 'topics/tempo':'前期 / 中期 / 后期三段优势',
  'topics/swing_windows':'真实经济变化与回看时间窗',
  'topics/session_summary':'按训练组汇总比赛和证据',
  bp:'禁用、选用、先后手和对手 BP',

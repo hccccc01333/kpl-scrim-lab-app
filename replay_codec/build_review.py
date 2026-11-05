@@ -265,33 +265,33 @@ def terrain_svg():
           'opacity=".13"/>' % (cx, cy, rx, ry))
     # 河道（左上 → 右下）
     A('<path d="M24 24 L576 576" stroke="var(--river-edge)" '
-      'stroke-width="90" fill="none" opacity=".45"/>')
+      'stroke-width="76" fill="none" opacity=".45"/>')
     A('<path d="M24 24 L576 576" stroke="var(--river)" '
-      'stroke-width="72" fill="none"/>')
+      'stroke-width="60" fill="none"/>')
     A('<path d="M24 24 L576 576" stroke="var(--river-core)" '
-      'stroke-width="30" fill="none" opacity=".72"/>')
+      'stroke-width="22" fill="none" opacity=".72"/>')
     # 三路
     lanes = [("M24 576 L24 24 L576 24", "上路"),
              ("M24 576 L576 24", "中路"),
              ("M24 576 L576 576 L576 24", "下路")]
     for d, _ in lanes:
-        A('<path d="%s" stroke="var(--lane-edge)" stroke-width="34" '
+        A('<path d="%s" stroke="var(--lane-edge)" stroke-width="30" '
           'fill="none" stroke-linejoin="round" opacity=".55"/>' % d)
-        A('<path d="%s" stroke="var(--lane)" stroke-width="25" '
+        A('<path d="%s" stroke="var(--lane)" stroke-width="22" '
           'fill="none" stroke-linejoin="round"/>' % d)
         A('<path d="%s" stroke="var(--lane-dash)" stroke-width="1.3" '
           'fill="none" stroke-dasharray="7 12" opacity=".85"/>' % d)
     # 防御塔：每方每路 3 座
     towers = []
-    # 边界塔向内收 10px，避免旋转后的菱形被 clip 裁成半个小三角
+    # 边界塔收进路面内侧：既不被 clip 裁成半个小三角，也不像装饰边框
     for y in (470, 390, 310):
-        towers.append((34, y, "blue"))
+        towers.append((48, y, "blue"))
     for x in (470, 390, 310):
-        towers.append((x, 34, "red"))
+        towers.append((x, 48, "red"))
     for x in (130, 210, 290):
-        towers.append((x, 566, "blue"))
+        towers.append((x, 552, "blue"))
     for y in (130, 210, 290):
-        towers.append((566, y, "red"))
+        towers.append((552, y, "red"))
     for p in (0.18, 0.33, 0.47):
         towers.append((24 + 552 * p, 576 - 552 * p, "blue"))
     for p in (0.53, 0.67, 0.82):
@@ -299,10 +299,10 @@ def terrain_svg():
     for x, y, c in towers:
         col = "var(--tower-b)" if c == "blue" else "var(--tower-r)"
         side = "蓝" if c == "blue" else "红"
-        A('<rect x="%.1f" y="%.1f" width="9" height="9" rx="1.5" '
+        A('<rect x="%.1f" y="%.1f" width="10.5" height="10.5" rx="1.5" '
           'fill="var(--mapbg)" stroke="%s" stroke-width="2" '
           'transform="rotate(45 %.1f %.1f)"><title>%s方防御塔</title></rect>'
-          % (x - 4.5, y - 4.5, col, x, y, side))
+          % (x - 5.25, y - 5.25, col, x, y, side))
     # 红蓝 BUFF 野怪点
     for x, y, lab, col in [(168, 424, "蓝BUFF", "#3b82f6"),
                            (250, 496, "红BUFF", "#ef4444"),
@@ -345,8 +345,6 @@ def terrain_svg():
         A('<text x="%d" y="%d" text-anchor="middle" font-size="11" '
           'letter-spacing="1" fill="var(--terrain-txt)" opacity=".9"%s>'
           '%s</text>' % (x, y, tr, lab))
-    A('<text x="36" y="42" font-size="9.5" fill="var(--terrain-txt)" '
-      'opacity=".75">格坐标 ±57 · 阵营出生点 (−55,−57) / (+55,+55)</text>')
     A('<rect x="24" y="24" width="552" height="552" rx="10" fill="none" '
       'stroke="var(--lane-edge)" stroke-width="2"/>')
     return "".join(o)
@@ -601,7 +599,8 @@ code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11px}
     相邻秒之间<b>不是真实走位</b>；默认只画本秒有事件者。</div>
   </div>
   <p class="cap">空格播放/暂停，← / → 逐秒，N 跳下一条技能，Shift + ← / → 跳 ±10 秒。
-    点击右侧英雄行可聚焦单人。峡谷为自绘示意图，非官方素材。</p>
+    点击右侧英雄行可聚焦单人。峡谷为自绘示意图（格坐标 ±57，蓝方出生
+    −55/−57、红方 +55/+57），非官方素材；底图只用于判断大致方位，不用于测距。</p>
  </div>
 
  <div class="side">
