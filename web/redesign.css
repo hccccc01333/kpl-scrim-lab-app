@@ -155,7 +155,7 @@ main { max-width: 1480px; padding: 34px 36px 42px; }
 .home-warnings summary { cursor: pointer; color: var(--amber); }
 .home-warnings p { margin: 8px 0 0; line-height: 1.7; }
 
-/* ---------- 采集一局 ---------- */
+/* ---------- 采集 ---------- */
 .capture-page { max-width: 1320px; margin: 0 auto; }
 .capture-kicker { font: 10.5px ui-monospace, Consolas, monospace; letter-spacing: 1.2px; color: var(--muted); }
 .capture-steps { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: #fff; margin: 0 0 18px; }

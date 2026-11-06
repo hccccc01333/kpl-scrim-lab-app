@@ -910,33 +910,50 @@ function renderProcess() {
 
 async function ensureBp() {
   if (state.bp) return;
-  state.bp = await ctx.api('/api/analysis/bp' + qs(currentParams()));
+  const [bp, catalog] = await Promise.all([
+    ctx.api('/api/analysis/bp' + qs(currentParams())),
+    ctx.api('/api/catalog').catch(() => ({entries: []})),
+  ]);
+  state.bp = bp;
+  state.bpIcons = {};
+  ((catalog && catalog.entries) || []).forEach(entry => {
+    if (entry.kind === 'hero' && entry.icon) state.bpIcons[entry.name] = entry.icon;
+  });
+}
+
+function bpFace(name, meta, icons) {
+  const info = (meta && meta[name]) || {};
+  const src = info.icon || (icons && icons[name]) || (info.id ? `/catalog/icons/hero-${info.id}.png` : '');
+  return src ? `<img src="${esc(src)}" alt="" style="width:20px;height:20px;border-radius:5px;vertical-align:middle;margin-right:5px;object-fit:cover">` : '';
 }
 
 function renderBp() {
   const body = $('#stats-body');
   body.innerHTML = `<section class="panel"><div class="panel-header"><div><h2>BP 分析</h2>
-    <div class="panel-subtitle">来自比赛校对页的结构化 BP 面板；旧文本 BP 不参与统计</div></div>
+    <div class="panel-subtitle">营地 battledetail 名单自动同步 + 比赛校对人工手序；旧文本 BP 不参与统计</div></div>
     <span class="tag gray" id="bp-count">…</span></div><div id="bp-body"><div class="loading">正在汇总 BP 数据…</div></div></section>`;
   ensureBp().then(() => {
     const box = $('#bp-body');
     if (!box) return;
     const data = state.bp;
-    $('#bp-count').textContent = `${data.matchesWithBp || 0} 局有结构化 BP`;
+    $('#bp-count').textContent = `${data.matchesWithBp || 0} 局有 BP`;
     if (!data.matchesWithBp) {
-      box.innerHTML = emptyBox('还没有结构化 BP。在「比赛校对」页的 BP 面板按手序填写禁用与选用，保存后这里自动出现 ban 频率、手序效果和对手习惯。');
+      box.innerHTML = emptyBox('还没有 BP 记录。在采集页同步营地战绩并核对入库，或在比赛校对页按手序填写双方 ban/pick。');
       return;
     }
     const win = value => value === null || value === undefined ? '—' : percent(value);
-    box.innerHTML = `
+    const face = name => bpFace(name, data.heroMeta, state.bpIcons);
+    const source = `<div class="helper" style="margin-bottom:10px">数据来源：营地自动 ${num(data.campBpMatches || 0)} 场 · 人工录入 ${num(data.manualBpMatches || 0)} 场；营地名单不含 pick 手序与一手方，手序统计只来自人工录入。</div>`;
+    const warning = data.sampleWarning ? `<div class="helper" style="margin-bottom:10px;padding:8px;border-radius:6px;background:#fff2f0;color:#a32d2d">注意：${esc(data.sampleWarning)}</div>` : '';
+    box.innerHTML = `${source}${warning}
     <div class="stats-grid2">
       <section class="panel"><div class="panel-header"><div><h2>禁用频率榜</h2><div class="panel-subtitle">括号内为实施禁用一方在该局的胜率</div></div></div>
         ${data.bans.length ? table(['英雄', '总次数', '左方禁', '右方禁', '左方胜率', '右方胜率'],
-          data.bans.map(item => [esc(item.hero), num(item.total), num(item.byLeft), num(item.byRight), win(item.leftWinRate), win(item.rightWinRate)]),
+          data.bans.map(item => [`${face(item.hero)}${esc(item.hero)}`, num(item.total), num(item.byLeft), num(item.byRight), win(item.leftWinRate), win(item.rightWinRate)]),
           '', ['总次数', '左方禁', '右方禁', '左方胜率', '右方胜率']) : emptyBox('还没有禁用记录。')}</section>
       <section class="panel"><div class="panel-header"><div><h2>我方选用与手序</h2><div class="panel-subtitle">按手序分桶的胜率是描述性统计</div></div></div>
         ${data.ownPicks.length ? table(['英雄', '选用', '胜场'],
-          data.ownPicks.map(item => [esc(item.hero), num(item.count), num(item.wins)]), '', ['选用', '胜场']) : emptyBox('还没有选用记录。')}
+          data.ownPicks.map(item => [`${face(item.hero)}${esc(item.hero)}`, num(item.count), num(item.wins)]), '', ['选用', '胜场']) : emptyBox('还没有选用记录。')}
         <div class="form-section"><h3 class="detail-title">手序效果</h3>
         <div class="cards">${data.orderEffect.map(item => `<div class="card"><div class="k">第 ${item.order} 手</div>
           <div class="v small">${item.n ? percent(item.wins / item.n * 100) : '—'}</div><div class="s">${item.n} 局</div></div>`).join('')}</div></div></section>
@@ -944,8 +961,8 @@ function renderBp() {
     <section class="panel section-gap"><div class="panel-header"><div><h2>对手 BP 习惯</h2><div class="panel-subtitle">按对手汇总的禁用与选用频率</div></div></div>
       ${data.opponents.filter(item => item.bans.length || item.picks.length).length ? data.opponents.map(item => `
         <details class="fold-fold"><summary>${esc(item.opponent)} · ${item.matches} 局</summary>
-        <div class="form-section bp-habits"><div><strong>他们常禁</strong><div class="bp-habit-list">${item.bans.length ? item.bans.map(([hero, count]) => `<span class="tag gray">${esc(hero)} ×${count}</span>`).join('') : '<span class="helper">无记录</span>'}</div></div>
-        <div><strong>他们常用</strong><div class="bp-habit-list">${item.picks.length ? item.picks.map(([hero, count]) => `<span class="tag blue">${esc(hero)} ×${count}</span>`).join('') : '<span class="helper">无记录</span>'}</div></div></div></details>`).join('')
+        <div class="form-section bp-habits"><div><strong>他们常禁</strong><div class="bp-habit-list">${item.bans.length ? item.bans.map(([hero, count]) => `<span class="tag gray">${face(hero)}${esc(hero)} ×${count}</span>`).join('') : '<span class="helper">无记录</span>'}</div></div>
+        <div><strong>他们常用</strong><div class="bp-habit-list">${item.picks.length ? item.picks.map(([hero, count]) => `<span class="tag blue">${face(hero)}${esc(hero)} ×${count}</span>`).join('') : '<span class="helper">无记录</span>'}</div></div></div></details>`).join('')
       : emptyBox('还没有对手的 BP 记录。')}</section>`;
   }).catch(error => { $('#bp-body').innerHTML = emptyBox(error.message); });
 }

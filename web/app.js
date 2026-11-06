@@ -2,11 +2,10 @@ import {hasDraftContent,isRecoverableDraft} from '/assets/draft-state.mjs?v=2';
 import {kplTeams,teamPresetSource,teamPresetLabel} from '/assets/team-presets.js?v=1';
 import { renderReview } from '/assets/review-page.js?v=6';
 import { renderReplays } from '/assets/replays-page.js?v=10';
-import { FEATURES } from '/assets/features.js?v=1';
 import { renderRecordings } from '/assets/recordings-page.js?v=4';
 import { renderScreenshots } from '/assets/screenshot-page.js?v=10';
-import { renderChannels, renderChannel } from '/assets/channels-page.js?v=16';
-import { renderStats } from '/assets/stats-page.js?v=9';
+import { renderChannels, renderChannel } from '/assets/channels-page.js?v=18';
+import { renderStats } from '/assets/stats-page.js?v=11';
 import { openIconReview } from '/assets/icon-review.js?v=6';
 const embedded = document.body.dataset.platform === 'unified';
 const $ = (q) => document.querySelector(q);
@@ -45,7 +44,7 @@ function resultTag(m){return m.status==='draft'?'<span class="tag amber">待校�
 function teamPresetOptions(teamName){
  const custom=teamName && !kplTeams.includes(teamName);
  return `<option value="__custom__"${!teamName?' selected':''}>＋ 自定义战队（在下一栏填写）</option>`
-  +(custom?`<option value="${esc(teamName)}" selected>${esc(teamName)} · 我的自定义战队</option>`:'')
+  +[...new Set([...(state.settings.customTeams||[]),...(custom?[teamName]:[])])].filter(name=>!kplTeams.includes(name)).map(name=>`<option value="${esc(name)}"${name===teamName?' selected':''}>${esc(name)} · 自定义</option>`).join('')
   +kplTeams.map(name=>`<option${name===teamName?' selected':''}>${esc(name)}</option>`).join('');
 }
 function overview(){
@@ -167,7 +166,7 @@ async function hydrateFocus(){
    box.querySelectorAll('.focus-chip').forEach(chip=>chip.classList.toggle('on',chip.querySelector('input').checked));remember();});
   const metricSelect=box.querySelector('#focus-metric'),scopeSelect=box.querySelector('#focus-scope');
   const renderScope=()=>{const spec=FOCUS_METRICS[metricSelect.value];
-   scopeSelect.innerHTML=spec.scope==='player'?state.settings.roster.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
+   scopeSelect.innerHTML=spec.scope==='player'?ownRoster().map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')
     :spec.scope==='position'?positions.map(p=>`<option>${p}</option>`).join(''):'<option value="">全队</option>';
    scopeSelect.disabled=spec.scope==='team';};
   metricSelect.onchange=renderScope;renderScope();
@@ -183,11 +182,44 @@ function blankMatch(){return {id:uid(),revision:0,status:'draft',date:'',side:''
 function remember(){dirty=hasDraftContent(draft);draft.reviewed=false;const check=$('#reviewed');if(check)check.checked=false;const hint=$('#save-hint');if(hint)hint.textContent=dirty?'有未保存修改 · 请保存草稿或重新确认入库':'尚未填写内容';try{if(dirty)localStorage.setItem('training-unsaved',JSON.stringify(draft));else localStorage.removeItem('training-unsaved');}catch{} }
 function field(label,name,type='text',placeholder=''){return `<label class="field">${label}<input data-meta="${name}" type="${type}" value="${esc(draft[name])}" placeholder="${placeholder}"></label>`;}
 function sideSelect(name,label){return `<label class="field">${label}<select data-meta="${name}"><option value="">请确认</option><option value="left" ${draft[name]==='left'?'selected':''}>截图左侧</option><option value="right" ${draft[name]==='right'?'selected':''}>截图右侧</option></select></label>`;}
-function playerTable(side){const ownSide=draft.side===side,rosterOptions=p=>ownSide?state.settings.roster.map(r=>`<option value="${esc(r.id)}" ${r.id===p.playerId?'selected':''}>${esc(r.name)}</option>`).join(''):'';return `<section class="panel editor-panel"><div class="panel-header"><h2>${side==='left'?'左侧':'右侧'}五人 <span class="tag gray">${ownSide?'本队':draft.side?'对手':'请先确认本队阵营'}</span></h2><span class="helper">空值保留未知 · k = 千 · 金色框为识别候选</span></div><div class="table-wrap"><table class="editor-table"><thead><tr><th>#</th><th>队员身份</th><th>英雄</th><th>实际分路</th>${fields.map(([,name])=>`<th>${name}</th>`).join('')}<th>装备</th></tr></thead><tbody>${draft.players.filter(p=>p.side===side).map(p=>`<tr data-row="${side}-${p.slot}"><td class="row-num">${p.slot+1}</td><td><select aria-label="${side}第${p.slot+1}行队员" class="player-input name" data-player="${p.side}-${p.slot}" data-key="playerId"><option value="">${ownSide?'关联本队队员':draft.side?'对手 / 不关联本队':'请先确认本队阵营'}</option>${rosterOptions(p)}</select></td><td><input class="player-input hero" list="hero-list" data-player="${p.side}-${p.slot}" data-key="hero" aria-label="${side}第${p.slot+1}行英雄" value="${esc(p.hero)}" placeholder="手动选择"></td><td><select class="player-input" data-player="${p.side}-${p.slot}" data-key="position" aria-label="实际分路"><option value="">待确认</option>${positions.map(pos=>`<option ${p.position===pos?'selected':''}>${pos}</option>`).join('')}</select></td>${fields.map(([key])=>`<td><input class="player-input ${p.sources?.[key]?'source-ocr':''}" inputmode="decimal" data-player="${p.side}-${p.slot}" data-key="${key}" aria-label="${side}第${p.slot+1}行${key}" value="${esc(p[key])}" placeholder="—" title="${p.sources?.[key]?esc('识别原文：'+p.sources[key].raw+'；模型置信度：'+Math.round(p.sources[key].confidence*100)+'%。请人工核对。'):'未录入即为未知'}"></td>`).join('')}<td><input class="player-input name" data-player="${p.side}-${p.slot}" data-key="equipment" aria-label="装备" value="${esc(p.equipment||'')}" placeholder="待补充"></td></tr>`).join('')}</tbody></table></div></section>`;}
+function ownRoster(){
+ const team=draft?.ownTeam||state.settings.teamName;
+ return state.settings.roster.filter(player=>(player.team||state.settings.teamName)===team);
+}
+function prepareManualMatch(){
+ const team=state.settings.teamName;
+ const members=ownRoster();
+ const options=members.map(player=>`<option value="${esc(player.id)}">${esc(player.name)} · ${esc(player.position||'分路未设')}</option>`).join('');
+ $('#content').innerHTML=heading('确认本局阵容',`本队为 ${esc(team)}。按截图顺序绑定五名出场队员，再填写比赛数据。`)+`
+ <section class="panel editor-panel"><div class="form-section">
+ <a class="button secondary" href="#roster">管理本队名单</a>
+ ${members.length<5?'<p class="notice">请先在战队名单中为本队添加或绑定至少五名队员。</p>':`
+ <div class="form-grid"><label class="field">本队在截图中的位置<select id="lineup-side"><option value="">请选择</option><option value="left">左侧</option><option value="right">右侧</option></select></label>
+ ${Array.from({length:5},(_,i)=>`<label class="field">截图第 ${i+1} 位<select data-start-player><option value="">请选择本队队员</option>${options}</select></label>`).join('')}</div>
+ <button class="button primary" id="start-match">确认阵容，开始录入</button>`}
+ </div></section>`;
+ const start=$('#start-match');
+ if(!start)return;
+ start.onclick=()=>{
+  const side=$('#lineup-side').value;
+  const ids=[...document.querySelectorAll('[data-start-player]')].map(select=>select.value);
+  if(!side||ids.includes('')||new Set(ids).size!==5){toast('请选择本队位置和五名不同的队员',true);return;}
+  draft.ownTeam=team;
+  draft.side=side;
+  draft.players.filter(player=>player.side===side).forEach((player,index)=>{
+   player.playerId=ids[index];
+   player.position=members.find(member=>member.id===ids[index]).position||'';
+  });
+  history.replaceState(null,'','#edit/'+draft.id);
+  editor();
+  remember();
+ };
+}
+function playerTable(side){const ownSide=draft.side===side,rosterOptions=p=>ownSide?state.settings.roster.filter(r=>r.id===p.playerId||ownRoster().includes(r)).map(r=>`<option value="${esc(r.id)}" ${r.id===p.playerId?'selected':''}>${esc(r.name)}</option>`).join(''):'';return `<section class="panel editor-panel"><div class="panel-header"><h2>${side==='left'?'左侧':'右侧'}五人 <span class="tag gray">${ownSide?'本队':draft.side?'对手':'请先确认本队阵营'}</span></h2><span class="helper">空值保留未知 · k = 千 · 金色框为识别候选</span></div><div class="table-wrap"><table class="editor-table"><thead><tr><th>#</th><th>队员身份</th><th>英雄</th><th>实际分路</th>${fields.map(([,name])=>`<th>${name}</th>`).join('')}<th>装备</th></tr></thead><tbody>${draft.players.filter(p=>p.side===side).map(p=>`<tr data-row="${side}-${p.slot}"><td class="row-num">${p.slot+1}</td><td><select aria-label="${side}第${p.slot+1}行队员" class="player-input name" data-player="${p.side}-${p.slot}" data-key="playerId"><option value="">${ownSide?'关联本队队员':draft.side?'对手 / 不关联本队':'请先确认本队阵营'}</option>${rosterOptions(p)}</select></td><td><input class="player-input hero" list="hero-list" data-player="${p.side}-${p.slot}" data-key="hero" aria-label="${side}第${p.slot+1}行英雄" value="${esc(p.hero)}" placeholder="手动选择"></td><td><select class="player-input" data-player="${p.side}-${p.slot}" data-key="position" aria-label="实际分路"><option value="">待确认</option>${positions.map(pos=>`<option ${p.position===pos?'selected':''}>${pos}</option>`).join('')}</select></td>${fields.map(([key])=>`<td><input class="player-input ${p.sources?.[key]?'source-ocr':''}" inputmode="decimal" data-player="${p.side}-${p.slot}" data-key="${key}" aria-label="${side}第${p.slot+1}行${key}" value="${esc(p[key])}" placeholder="—" title="${p.sources?.[key]?esc('识别原文：'+p.sources[key].raw+'；模型置信度：'+Math.round(p.sources[key].confidence*100)+'%。请人工核对。'):'未录入即为未知'}"></td>`).join('')}<td><input class="player-input name" data-player="${p.side}-${p.slot}" data-key="equipment" aria-label="装备" value="${esc(p.equipment||'')}" placeholder="待补充"></td></tr>`).join('')}</tbody></table></div></section>`;}
 function editor(){
  const existing=state.matches.some(m=>m.id===draft.id), archived=draft.status==='archived';
  draft.bp=normalizeBp(draft.bp);draft.events=Array.isArray(draft.events)?draft.events:[];draft.focusIds=Array.isArray(draft.focusIds)?draft.focusIds:[];
- $('#content').innerHTML=`<a href="#matches" class="back-link">← 返回比赛档案</a>`+heading(existing?'校对与复盘':'记录一场新的训练赛','先建立一局，再把这局的战绩页、数据页放在一起。',resultTag(draft)+(existing?`<a class="button secondary" href="#review/${draft.id}">查看复盘报告</a>`:''))+`
+ $('#content').innerHTML=`<a href="#matches" class="back-link">← 返回比赛档案</a>`+heading(existing?'校对与复盘':'记录一场新的训练赛','按已确认的阵容填写本局数据，再核对截图与赛果。',resultTag(draft)+(existing?`<a class="button secondary" href="#review/${draft.id}">查看复盘报告</a>`:''))+`
  ${!state.settings.roster.length?'<div class="notice">尚未建立队员名单。你可以先保存草稿，再到“战队名单”添加队员后关联本队五人。</div>':''}
  <div class="editor-layout"><div><section class="panel editor-panel"><div class="panel-header"><h2>比赛信息</h2><span class="helper">本队不固定在左侧，请根据截图确认</span></div><div class="form-section"><div class="form-grid">${field('比赛日期','date','date')}${field('对手名称','opponent','text','例如：周三训练对手')}${field('训练分组 / 大场','session','text','例如：晚训 BO5 · 第 1 局')}${sideSelect('side','本队在截图中的位置')}${sideSelect('winner','本局胜方')}${field('游戏版本','version','text','例如：S42 / 补丁日期')}${durationControl()}<label class="field">左侧击杀比分<input data-score="left" value="${esc(draft.scores.left)}" inputmode="numeric" placeholder="待确认"></label><label class="field">右侧击杀比分<input data-score="right" value="${esc(draft.scores.right)}" inputmode="numeric" placeholder="待确认"></label></div></div></section></div>
  <aside class="panel"><div class="panel-header"><h2>原始截图</h2><span class="tag gray" id="image-count">${draft.imageIds.length} 张</span></div><div class="evidence-conflict notice" id="evidence-conflicts" hidden></div><div class="evidence-list" id="evidence-list"></div></aside></div>
@@ -306,10 +338,10 @@ async function saveDraft(status){
 }
 function rosterPage(){
  const laneOptions=value=>`<option value="">分路待确认</option>${positions.map(pos=>`<option${pos===value?' selected':''}>${pos}</option>`).join('')}`;
- $('#content').innerHTML=heading('战队与选手名单','选择内置战队或填写自定义队名；为每位选手设置默认分路，每局仍可单独调整。')+`<section class="panel"><div class="panel-header"><h2>战队设置</h2><span class="tag gray">${state.settings.roster.length} 位队员</span></div><div class="roster-form"><div class="form-grid"><label class="field">参赛层级<select id="team-league">${['KPL','次级联赛','普通战队'].map(v=>`<option${v===(state.settings.league||'普通战队')?' selected':''}>${v}</option>`).join('')}</select></label><label class="field">战队选择<select id="team-preset">${teamPresetOptions(state.settings.teamName)}</select></label><label class="field">战队名称（可自定义）<input id="team-name" value="${esc(state.settings.teamName)}" maxlength="50"></label></div><p class="helper">内置名单：<a href="${teamPresetSource}" target="_blank" rel="noopener">${teamPresetLabel}</a>。改名或新队可直接填写自定义名称。</p><div class="roster-grid">${state.settings.roster.map(p=>`<div class="roster-entry"><span class="initial">${esc(p.name[0])}</span><label class="field">选手昵称<input class="control" data-roster="${esc(p.id)}" value="${esc(p.name)}" maxlength="50"></label><label class="field">默认分路<select data-roster-lane="${esc(p.id)}">${laneOptions(p.position)}</select></label></div>`).join('')}</div><div class="roster-add"><input class="control" id="new-player" aria-label="新队员昵称" placeholder="添加队员昵称" maxlength="50"><select id="new-player-lane" class="control" aria-label="新队员默认分路">${laneOptions('')}</select><button class="button secondary" id="add-player">＋ 添加队员</button></div><p class="helper">默认分路用于录入建议，不覆盖历史对局的实际分路。首发、替补均可加入。</p><button class="button primary" id="save-roster">保存战队设置</button></div></section>`;
+ $('#content').innerHTML=heading('战队与选手名单','选择内置战队或填写自定义队名；为每位选手设置默认分路，每局仍可单独调整。')+`<section class="panel"><div class="panel-header"><h2>战队设置</h2><span class="tag gray">${state.settings.roster.length} 位队员</span></div><div class="roster-form"><div class="form-grid"><label class="field">参赛层级<select id="team-league">${['KPL','次级联赛','普通战队'].map(v=>`<option${v===(state.settings.league||'普通战队')?' selected':''}>${v}</option>`).join('')}</select></label><label class="field">战队选择<select id="team-preset">${teamPresetOptions(state.settings.teamName)}</select></label><label class="field">战队名称（可自定义）<input id="team-name" value="${esc(state.settings.teamName)}" maxlength="50"></label></div><p class="helper">内置名单：<a href="${teamPresetSource}" target="_blank" rel="noopener">${teamPresetLabel}</a>。改名或新队可直接填写自定义名称。</p><div class="roster-grid">${state.settings.roster.map(p=>`<div class="roster-entry"><span class="initial">${esc(p.name[0])}</span><label class="field">选手昵称<input class="control" data-roster="${esc(p.id)}" value="${esc(p.name)}" maxlength="50"></label><label class="field">所属战队<select data-roster-team="${esc(p.id)}">${teamPresetOptions(p.team||state.settings.teamName)}</select></label><label class="field">默认分路<select data-roster-lane="${esc(p.id)}">${laneOptions(p.position)}</select></label></div>`).join('')}</div><div class="roster-add"><input class="control" id="new-player" aria-label="新队员昵称" placeholder="添加队员昵称" maxlength="50"><select id="new-player-lane" class="control" aria-label="新队员默认分路">${laneOptions('')}</select><button class="button secondary" id="add-player">＋ 添加队员</button></div><p class="helper">默认分路用于录入建议，不覆盖历史对局的实际分路。首发、替补均可加入。</p><button class="button primary" id="save-roster">保存战队设置</button> <a class="button secondary" href="#new">开始手工录入</a></div></section>`;
  $('#team-preset').onchange=()=>{const value=$('#team-preset').value;if(value==='__custom__'){$('#team-name').focus();$('#team-name').select();return;}if(value){$('#team-name').value=value;$('#team-league').value='KPL';}};
- const collect=()=>({...state.settings,league:$('#team-league').value,teamName:$('#team-name').value.trim(),roster:state.settings.roster.map(p=>({...p,name:document.querySelector(`[data-roster="${CSS.escape(p.id)}"]`).value.trim(),position:document.querySelector(`[data-roster-lane="${CSS.escape(p.id)}"]`).value}))});
- const save=async(add=false)=>{try{const s=collect();if(add){const name=$('#new-player').value.trim();if(!name)throw Error('请填写新队员昵称');s.roster.push({id:uid(),name,position:$('#new-player-lane').value});}await api('/api/settings','PUT',s);await refresh();rosterPage();toast('战队名单已保存');}catch(e){toast(e.message,true);}};
+ const collect=()=>({...state.settings,league:$('#team-league').value,teamName:$('#team-name').value.trim(),roster:state.settings.roster.map(p=>({...p,name:document.querySelector(`[data-roster="${CSS.escape(p.id)}"]`).value.trim(),team:document.querySelector(`[data-roster-team="${CSS.escape(p.id)}"]`).value,position:document.querySelector(`[data-roster-lane="${CSS.escape(p.id)}"]`).value}))});
+ const save=async(add=false)=>{try{const s=collect();if(add){const name=$('#new-player').value.trim();if(!name)throw Error('请填写新队员昵称');s.roster.push({id:uid(),name,team:s.teamName,position:$('#new-player-lane').value});}if(s.roster.some(player=>player.team==='__custom__'))throw Error('请先保存自定义队名，再为队员选择该战队');await api('/api/settings','PUT',s);await refresh();rosterPage();toast('战队名单已保存');}catch(e){toast(e.message,true);}};
  $('#add-player').onclick=()=>save(true);$('#save-roster').onclick=()=>save();$('#new-player').onkeydown=e=>{if(e.key==='Enter')save(true);};
 }
 function durationControl(){
@@ -339,11 +371,12 @@ async function route(){
    const restore=recoverable&&confirm('发现一条尚未保存的草稿，继续填写它？');
    draft=restore?buffered:blankMatch();dirty=!!restore;
    if(recoverable&&!restore)localStorage.removeItem('training-unsaved');
+   if(!restore){prepareManualMatch();return;}
    history.replaceState(null,'','#edit/'+draft.id);
   }else if(existing&&draft?.id===id&&dirty){}else if(existing){let buffered;try{buffered=JSON.parse(localStorage.getItem('training-unsaved'));}catch{}const recover=buffered?.id===id&&isRecoverableDraft(buffered,state.matches);if(recover&&confirm('本局有未保存的修改，恢复继续填写？')){draft=buffered;dirty=true;}else{draft=structuredClone(existing);dirty=false;if(buffered?.id===id)localStorage.removeItem('training-unsaved');}}
   else if(!draft||draft.id!==id){let buffered;try{buffered=JSON.parse(localStorage.getItem('training-unsaved'));}catch{}if(buffered?.id===id&&isRecoverableDraft(buffered,state.matches)){draft=buffered;dirty=true;}else{toast('没有找到该比赛，已返回档案',true);location.hash='matches';return;}}
   editor();
- }else if(page==='replays'){if(!FEATURES.replay){location.hash='channels';return;}await renderReplays($('#content'),{api,toast,isCurrent:()=>currentPage==='replays'&&location.hash.slice(1)===hash});}else if(page==='recordings')await renderRecordings($('#content'),{api,toast,isCurrent:()=>currentPage==='recordings'&&location.hash.slice(1)===hash});else if(page==='screenshots')await renderScreenshots($('#content'),{api,toast,isCurrent:()=>currentPage==='screenshots'&&location.hash.slice(1)===hash});else if(page==='channels')await renderChannels($('#content'),{api,toast,isCurrent:()=>currentPage==='channels'&&location.hash.slice(1)===hash});else if(page==='channel')await renderChannel($('#content'),{api,toast,isCurrent:()=>currentPage==='channel'&&location.hash.slice(1)===hash,id:hash.split('/')[1]});else if(page==='review')await reviewPage(hash.split('/')[1]);else if(page==='matches')matchesPage();else if(page==='training')await renderStats($('#content'),{api,toast,isCurrent:()=>currentPage==='training'&&location.hash.slice(1)===hash,initialTab:'focus'});else if(page==='stats')await renderStats($('#content'),{api,toast,isCurrent:()=>currentPage==='stats'&&location.hash.slice(1)===hash});else if(page==='roster')rosterPage();else overview();
+ }else if(page==='replays')await renderReplays($('#content'),{api,toast,isCurrent:()=>currentPage==='replays'&&location.hash.slice(1)===hash});else if(page==='recordings')await renderRecordings($('#content'),{api,toast,isCurrent:()=>currentPage==='recordings'&&location.hash.slice(1)===hash});else if(page==='screenshots')await renderScreenshots($('#content'),{api,toast,isCurrent:()=>currentPage==='screenshots'&&location.hash.slice(1)===hash});else if(page==='channels')await renderChannels($('#content'),{api,toast,isCurrent:()=>currentPage==='channels'&&location.hash.slice(1)===hash});else if(page==='channel')await renderChannel($('#content'),{api,toast,isCurrent:()=>currentPage==='channel'&&location.hash.slice(1)===hash,id:hash.split('/')[1]});else if(page==='review')await reviewPage(hash.split('/')[1]);else if(page==='matches')matchesPage();else if(page==='training')await renderStats($('#content'),{api,toast,isCurrent:()=>currentPage==='training'&&location.hash.slice(1)===hash,initialTab:'focus'});else if(page==='stats')await renderStats($('#content'),{api,toast,isCurrent:()=>currentPage==='stats'&&location.hash.slice(1)===hash});else if(page==='roster')rosterPage();else overview();
  window.scrollTo(0,0);
 }
 $('#close-dialog').onclick=()=>$('#image-dialog').close();

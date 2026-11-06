@@ -225,13 +225,13 @@ function storageWarning(status) {
   return `<div class="notice red"><strong>数据库所在磁盘剩余仅 ${(free / 1024 / 1024).toFixed(1)} MB。</strong>截图识别结果可能写不进去。请清理磁盘，或把 TRAINING_DB 指向空间更充足的位置后重启服务。</div>`;
 }
 
-function engineBanner(status) {
+function engineBanner(status, ready = true) {
   const mimo = status?.mimo || {};
   const rapid = status?.rapid || {};
   const active = (status?.jobs || []).filter(job => ['queued', 'running'].includes(job.status)).length;
   return `<div class="capture-engine">
-    <div><span>Mimo 精读</span><strong>${mimo.available ? 'mimo-ocr-0' : '未找到模型'}</strong><small>${mimo.available ? `${esc(mimo.device || 'cpu')} · 缓存 ${num(mimo.cacheFiles)} 张` : '快速识别仍可用'}</small></div>
-    <div><span>快速布局</span><strong>${rapid.available ? 'RapidOCR' : '未安装'}</strong><small>页型 / 数值 / 坐标</small></div>
+    <div><span>Mimo 精读</span><strong>${!ready ? '读取中…' : (mimo.available ? 'mimo-ocr-0' : '未找到模型')}</strong><small>${mimo.available ? `${esc(mimo.device || 'cpu')} · 缓存 ${num(mimo.cacheFiles)} 张` : '快速识别仍可用'}</small></div>
+    <div><span>快速布局</span><strong>${!ready ? '读取中…' : (rapid.available ? 'RapidOCR' : '未安装')}</strong><small>页型 / 数值 / 坐标</small></div>
     <div><span>后台任务</span><strong>${num(active)}</strong><small>精读排队执行</small></div>
   </div>`;
 }
@@ -349,16 +349,35 @@ export async function renderScreenshots(container, {api, toast, isCurrent}) {
   let data = {images: [], groups: []};
   let status = {mimo: {}, rapid: {}, jobs: []};
   let busy = false;
+  let dataLoaded = false;
+  let statusLoaded = false;
+  let statusPending = null;
   let autoRefine = localStorage.getItem('capture-auto-refine') === '1';
+  // /api/ocr/status 首次调用会惰性初始化 OCR 引擎并统计录屏目录，冷启动约 4 秒；
+  // 不能让它挡住截图列表首屏。状态单独异步取，到达后补刷一次即可。
+  const refreshStatus = () => {
+    if (statusLoaded) return Promise.resolve();
+    if (statusPending) return statusPending;
+    statusPending = api('/api/ocr/status?t=' + Date.now())
+      .then(result => {
+        status = {...result, jobs: status.jobs || []};
+        statusLoaded = true;
+        if (isCurrent() && !busy && dataLoaded) draw();
+      })
+      .catch(() => {})
+      .finally(() => { statusPending = null; });
+    return statusPending;
+  };
   const load = async () => {
-    const [collection, catalog, ocrStatus, jobsResult] = await Promise.all([
+    refreshStatus();
+    const [collection, catalog, jobsResult] = await Promise.all([
       api('/api/postgame/images?t=' + Date.now()),
       api('/api/catalog?t=' + Date.now()),
-      api('/api/ocr/status?t=' + Date.now()),
       api('/api/ocr/jobs?limit=40&t=' + Date.now()),
     ]);
     data = collection;
-    status = {...ocrStatus, jobs: jobsResult.jobs || []};
+    dataLoaded = true;
+    status = {...status, jobs: jobsResult.jobs || []};
     HERO_NAMES = (catalog.entries || []).filter(entry => entry.kind === 'hero').map(entry => entry.name).sort((a, b) => a.localeCompare(b, 'zh'));
   };
   const draw = () => {
@@ -370,7 +389,7 @@ export async function renderScreenshots(container, {api, toast, isCurrent}) {
       <p class="subtitle">把新版赛后分页截图放进工作台，逐页提取固定字段，再把同一局的多页合成一组。</p></div>
       <span class="tag amber">采集通道 · 候选数据</span></div>
       ${renderCollectionGuide('screenshots')}
-      ${engineBanner(status)}
+      ${engineBanner(status, statusLoaded)}
       ${storageWarning(status)}
       ${!images.length ? `<div class="notice capture-demo-banner"><strong>还没有采集数据？</strong>可以先载入 7 张示例截图查看团队汇总、选手对比和字段覆盖。<button class="button secondary" id="load-demo">载入示例分析</button></div>` : ''}
       ${summary(data)}

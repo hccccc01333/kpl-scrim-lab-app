@@ -1,0 +1,22 @@
+# Normalize line endings so the repository behaves the same on every platform.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.xlsx binary
+*.zip binary
+*.abc binary
+*.ope binary
+*.bin binary

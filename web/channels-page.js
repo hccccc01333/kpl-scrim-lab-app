@@ -4,7 +4,6 @@ const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','
 const num = (v) => v == null ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: 1});
 const clock = (seconds) => seconds == null ? '—' : `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 const SIDE = {left: '左', right: '右'};
-import {FEATURES} from '/assets/features.js?v=1';
 const SOURCE_LABELS = {official:'王者营地', camp: '营地十人面板', table: '表格', video: '录像', screenshot: '截图', replay: '回放'};
 const CAMP_BATTLE_MODES = {'16': '排位', '12': '排位（双排样本）'};
 // collection-v3：官方链接唯一必采；营地面板（推荐）或 七图+录屏（兜底）任一齐备即可审核。
@@ -42,7 +41,7 @@ function heading(title, subtitle, extra = '') {
 function sourceRows(channel) {
   const status = channel.sourceStatus || {};
   const sources = channel.sources || {};
-  return ['official', 'camp', 'screenshot', 'video', 'table'].concat(FEATURES.replay ? ['replay'] : []).map(key => {
+  return ['official', 'camp', 'screenshot', 'video', 'table', 'replay'].map(key => {
     const source = key==='official' ? channel.official || {} : key==='camp' ? channel.sources?.camp || {} : sources[key] || {};
     const count = (status.counts || {})[key] || 0;
     const required = (status.required || {})[key] || 0;
@@ -189,8 +188,13 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     }
     const campQr = container.querySelector('#camp-auth-qr');
     if (campQr) campQr.onclick = startCampAuth;
+    const campCancel = container.querySelector('#camp-auth-cancel');
+    if (campCancel) campCancel.onclick = cancelCampAuth;
     const campClear = container.querySelector('#camp-auth-clear');
     if (campClear) campClear.onclick = async () => {
+      stopCampAuth();
+      camp.qrTask = null;
+      camp.authStatus = '';
       try { await api('/api/camp/auth/clear', 'POST'); await loadCamp(); draw(); toast('凭证已删除'); }
       catch (error) { toast(error.message, true); }
     };
@@ -317,7 +321,8 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
       ${camp.qrTask ? `<div class="recording-upload" style="grid-template-columns:auto minmax(0,1fr)">
         <img class="camp-qr" style="width:180px;border:1px solid var(--line);border-radius:8px" src="data:image/png;base64,${esc(camp.qrTask.qrcodeBase64)}" alt="扫码授权二维码">
         <div><p class="helper">用<strong>打过训练赛的教练微信</strong>扫码，并在手机上确认。</p>
-        <p class="helper" id="camp-auth-status">${esc(camp.authStatus || '等待扫码…')}</p></div></div>`
+        <p class="helper" id="camp-auth-status">${esc(camp.authStatus || '等待扫码…')}</p>
+        <button class="button ghost" id="camp-auth-cancel" style="margin-top:8px">取消扫码</button></div></div>`
       : `<div class="recording-upload" style="grid-template-columns:auto minmax(0,1fr)">
         <div class="recording-engine ${auth.authorized ? 'ok' : 'bad'}" style="padding:14px 18px"><span>教练授权</span><strong>${auth.authorized ? esc(auth.nickname || auth.userId) : '未授权'}</strong><small>${esc(authExpiresNote)}</small></div>
         <div><div class="channel-actions"><button class="button secondary" id="camp-auth-qr">${auth.authorized ? '重新扫码授权' : '扫码授权'}</button>
@@ -361,50 +366,97 @@ export async function renderChannels(container, {api, toast, isCurrent}) {
     clearInterval(camp.syncTimer);
     camp.authTimer = camp.syncTimer = null;
   }
+  function stopCampAuth() {
+    clearInterval(camp.authTimer);
+    camp.authTimer = null;
+    camp.authFailures = 0;
+  }
+  function showAuthStatus(message) {
+    camp.authStatus = message;
+    const el = container.querySelector('#camp-auth-status');
+    if (el) el.textContent = message;
+  }
+  async function cancelCampAuth() {
+    const taskId = camp.qrTask?.taskId;
+    stopCampAuth();
+    camp.qrTask = null;
+    camp.authStatus = '';
+    if (taskId) {
+      try { await api('/api/camp/auth/cancel?taskId=' + encodeURIComponent(taskId), 'POST'); }
+      catch { /* 会话会自行过期，不阻塞退出 */ }
+    }
+    draw();
+  }
   async function startCampAuth() {
-    if (busy) return;
+    if (busy || camp.authTimer) return;
     busy = true;
+    stopCampAuth();
     try {
       camp.qrTask = await api('/api/camp/auth/qr', 'POST');
       camp.authStatus = '等待扫码…';
       camp.qrRefreshes = 0;
       draw();
-      clearInterval(camp.authTimer);
+      const taskId = camp.qrTask.taskId;
       camp.authTimer = setInterval(async () => {
+        if (!isCurrent() || !camp.qrTask || camp.qrTask.taskId !== taskId) {
+          stopCampAuth();
+          return;
+        }
+        let result;
         try {
-          const result = await api('/api/camp/auth/poll?taskId=' + encodeURIComponent(camp.qrTask.taskId));
-          const statusEl = container.querySelector('#camp-auth-status');
-          if (result.status === 'scanned' && statusEl) statusEl.textContent = '已扫码，等待手机上确认…';
-          if (result.status === 'success') {
-            clearInterval(camp.authTimer);
-            camp.authTimer = null;
+          result = await api('/api/camp/auth/poll?taskId=' + encodeURIComponent(taskId));
+        } catch (error) {
+          camp.authFailures = (camp.authFailures || 0) + 1;
+          showAuthStatus(`连接中断（${camp.authFailures}/3）：${error.message}`);
+          if (camp.authFailures >= 3) {
+            stopCampAuth();
             camp.qrTask = null;
-            toast(`已授权：${result.nickname || result.userId}`);
-            await loadCamp(); draw();
+            camp.authStatus = '';
+            draw();
+            toast('授权轮询中断，请重新扫码', true);
           }
-          if (result.status === 'expired' || result.status === 'canceled') {
-            clearInterval(camp.authTimer);
-            camp.authTimer = null;
-            if (result.status === 'canceled') {
-              camp.authStatus = '已在手机上取消，可重新扫码。';
-              camp.qrTask = null;
-              draw();
-              return;
-            }
-            // 二维码过期自动刷新（最多 3 次，避免无人扫码时空转）
-            camp.qrRefreshes = (camp.qrRefreshes || 0) + 1;
-            if (camp.qrRefreshes <= 3) {
-              camp.authStatus = '二维码已过期，正在自动刷新…';
-              camp.qrTask = null;
-              busy = false;
-              await startCampAuth();
-              return;
-            }
-            camp.authStatus = '二维码已多次过期。准备好后再点「扫码授权」。';
+          return;
+        }
+        camp.authFailures = 0;
+        if (result.status === 'scanned') { showAuthStatus('已扫码，等待手机上确认…'); return; }
+        if (result.status === 'waiting') return;
+        if (result.status === 'success') {
+          stopCampAuth();
+          camp.qrTask = null;
+          camp.authStatus = '';
+          toast(`已授权：${result.nickname || result.userId}`);
+          await loadCamp(); draw();
+          return;
+        }
+        if (result.status === 'error') {
+          stopCampAuth();
+          camp.qrTask = null;
+          camp.authStatus = '';
+          draw();
+          toast(result.message || '授权确认失败，请重新扫码', true);
+          return;
+        }
+        if (result.status === 'expired' || result.status === 'canceled') {
+          stopCampAuth();
+          if (result.status === 'canceled') {
+            camp.authStatus = '已在手机上取消，可重新扫码。';
             camp.qrTask = null;
             draw();
+            return;
           }
-        } catch { /* keep polling */ }
+          // 二维码过期自动刷新（最多 3 次，避免无人扫码时空转）
+          camp.qrRefreshes = (camp.qrRefreshes || 0) + 1;
+          if (camp.qrRefreshes <= 3) {
+            camp.authStatus = '二维码已过期，正在自动刷新…';
+            camp.qrTask = null;
+            busy = false;
+            await startCampAuth();
+            return;
+          }
+          camp.authStatus = '二维码已多次过期。准备好后再点「扫码授权」。';
+          camp.qrTask = null;
+          draw();
+        }
       }, 2500);
     } catch (error) { toast(error.message, true); }
     finally { busy = false; }
@@ -527,8 +579,7 @@ export async function renderChannel(container, {api, toast, isCurrent, id}) {
   let busy = false;
   const load = async () => {
     const [channelValue, postgame, replayValue] = await Promise.all([
-      api('/api/channels/' + encodeURIComponent(id)), api('/api/postgame/images'),
-      FEATURES.replay ? api('/api/replays') : Promise.resolve({replays: []})]);
+      api('/api/channels/' + encodeURIComponent(id)), api('/api/postgame/images'), api('/api/replays')]);
     channel = channelValue;
     groups = postgame.groups || [];
     replays = replayValue.replays || [];

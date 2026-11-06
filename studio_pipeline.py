@@ -184,8 +184,13 @@ class DatasetStore:
             return []
         with self.connect() as c:
             values = c.execute('SELECT id,title,created_at,body FROM prepared_datasets ORDER BY created_at DESC').fetchall()
-        return [{**{'id': key, 'title': title, 'createdAt': created},
-                 **{name: body[name] for name in ('after', 'fingerprint', 'exploratory')}}
+        # 备份恢复只校验 schema/rows/after/fingerprint，不强制 exploratory；旧版或手工编辑的
+        # 备份可能缺这个字段。这里容错取值，避免一条历史记录让 /api/studio/workspace 500，
+        # 进而使整个工作台只剩「无法连接本地服务」。
+        return [{'id': key, 'title': title, 'createdAt': created,
+                 'after': body.get('after') or {},
+                 'fingerprint': body.get('fingerprint') or '',
+                 'exploratory': bool(body.get('exploratory', False))}
                 for key, title, created, raw in values for body in [json.loads(raw)]]
 
     def get(self, key):

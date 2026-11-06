@@ -16,6 +16,15 @@ PID_FILE = ROOT / 'data' / 'watchdog.pid'
 def main():
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()), encoding='ascii')
+    updater = ROOT / 'updater.py'
+    if updater.is_file():
+        try:
+            code = subprocess.call([sys.executable, str(updater), '--apply-pending'],
+                                   cwd=str(ROOT))
+            if code != 0:
+                print('待应用更新未生效，继续启动当前版本。', flush=True)
+        except OSError as exc:
+            print(f'更新器启动失败：{exc}', flush=True)
     try:
         while True:
             try:

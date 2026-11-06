@@ -15,11 +15,65 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from sheet_import import SheetImportError, infer_profile, read_workbook, rebuild_profile, write_staging
+from identity_auto import build_plan
 
 from studio_analysis import (DIMENSIONS, METHODS, METRICS, deduplicate, extract_rows,
                              finite, fingerprint, run_analysis, screenshot_rows, StudioRepository)
 from studio_pipeline import DatasetStore, prepare
 from studio_research import TOPICS, research
+
+
+def camp_games(camp_details_dir, db_path=None):
+    """营地十人面板逐局的「我方在哪边、对手是谁」清单，供对局分边页标注。
+
+    我方阵营默认取 head.acntCamp（营地详情取数账号 = 本方选手账号，1=蓝 2=红，
+    自动推断）；match_meta 里 match_key = 'camp:<gameSeq>' 的 ownCamp / opponent
+    是教练的手动覆盖与对手命名，与 depth_api._camp_meta 读的是同一份覆盖层。
+    """
+    directory = Path(camp_details_dir)
+    overrides = {}
+    if db_path:
+        try:
+            connection = sqlite3.connect(db_path)
+            try:
+                rows = connection.execute(
+                    "SELECT match_key, body FROM match_meta WHERE match_key LIKE 'camp:%'").fetchall()
+            finally:
+                connection.close()
+        except sqlite3.OperationalError:
+            rows = []
+        for key, body in rows:
+            try:
+                overrides[str(key)[len('camp:'):]] = json.loads(body)
+            except (TypeError, ValueError):
+                continue
+    games = []
+    for path in sorted(directory.glob('*.json')):
+        try:
+            body = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        data = body.get('data') or {}
+        head = data.get('head') or {}
+        battle = data.get('battle') or {}
+        override = overrides.get(path.stem) or {}
+        own_camp = str(override.get('ownCamp') or '')
+        source = 'manual' if own_camp in ('blue', 'red') else None
+        if own_camp not in ('blue', 'red'):
+            code = str(head.get('acntCamp') or '')
+            own_camp = 'blue' if code == '1' else 'red' if code == '2' else ''
+            source = 'auto' if own_camp else None
+        result = head.get('gameResult')
+        own_win = result if (own_camp and isinstance(result, bool)) else None
+        games.append({
+            'key': f'camp:{path.stem}', 'id': path.stem,
+            'date': str(battle.get('startTime') or '')[:10],
+            'start': battle.get('startTime') or '',
+            'ownCamp': own_camp or None, 'ownCampSource': source,
+            'opponent': str(override.get('opponent') or '') or None,
+            'ownWin': own_win,
+        })
+    return games
 
 
 def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
@@ -104,13 +158,20 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     data_cache_dir.mkdir(parents=True, exist_ok=True)
 
     def source_stamp(path):
+        path = Path(path)
         try:
-            return Path(path).stat().st_mtime_ns
+            stamp = path.stat().st_mtime_ns
+            # Windows 上改写目录内文件不一定刷新目录 mtime；直接把包内 JSON
+            # 的最新 mtime 计入，避免营地 BP 回填后仍读旧快照。
+            if path.is_dir():
+                stamp = max([stamp] + [item.stat().st_mtime_ns
+                                       for item in path.glob('*.json')])
+            return stamp
         except OSError:
             return 0
 
     def snapshot_key():
-        return ('identity-raw-v4', source_stamp(db_path), source_stamp(matches_dir),
+        return ('identity-raw-v6', source_stamp(db_path), source_stamp(matches_dir),
                 source_stamp(imports_dir), source_stamp(results_db))
 
     def cached(key, builder):
@@ -162,8 +223,10 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         if not isinstance(filters, dict):
             raise ValueError('筛选条件格式无效')
         filters = {k: v for k, v in filters.items() if k in
-                   ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp', 'sources', 'includePartial')}
-        if any(not isinstance(v, str) for k, v in filters.items() if k not in ('sources', 'includePartial')):
+                   ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp',
+                    'sources', 'includePartial', 'excludeSeeds', 'ownOnly')}
+        if any(not isinstance(v, str) for k, v in filters.items()
+               if k not in ('sources', 'includePartial', 'excludeSeeds', 'ownOnly')):
             raise ValueError('筛选值必须是文本')
         if 'sources' in filters and (not isinstance(filters['sources'], list) or any(s not in ('db', 'bundle', 'sheet') for s in filters['sources'])):
             raise ValueError('数据来源无效')
@@ -182,6 +245,8 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         elif dataset_name == 'records':
             repo = repository()
             rows, warnings = extract_rows(repo, filters)
+            if filters.get('ownOnly'):
+                rows = [r for r in rows if r.get('isOwn')]
             if not filters.get('includePartial'):
                 rows = [r for r in rows if r.get('full')]
             if filters.get('from') or filters.get('to'):
@@ -267,6 +332,133 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 'datasets': datasets.list(),
                 'topics': [{'key': key, 'name': name, 'description': description} for key, name, description in TOPICS],
                 'warnings': list(dict.fromkeys(data['warnings'] + warnings))}
+
+    @router.get('/match-meta')
+    def get_match_meta():
+        try:
+            with sqlite3.connect(db_path) as connection:
+                rows = connection.execute('SELECT match_key, body FROM match_meta').fetchall()
+        except sqlite3.Error:
+            return {'meta': {}}
+        meta = {}
+        for key, body in rows:
+            try:
+                meta[key] = json.loads(body)
+            except (TypeError, ValueError):
+                continue
+        return {'meta': meta}
+
+    @router.post('/match-meta/{key:path}')
+    def save_match_meta(key: str, value: dict):
+        """补录比赛档案：对手、时长、训练组、赛果。原始记录不改，写覆盖层。"""
+        if not key or len(key) > 200:
+            raise HTTPException(400, '比赛标识无效')
+        patch = {}
+
+        def text(name, limit):
+            if name in value:
+                raw = value.get(name)
+                if raw is not None and not isinstance(raw, str):
+                    raise HTTPException(400, f'{name} 必须是文本')
+                cleaned = (raw or '').strip()
+                if len(cleaned) > limit:
+                    raise HTTPException(400, '内容过长')
+                patch[name] = cleaned
+
+        text('opponent', 50)
+        text('session', 40)
+        text('title', 120)
+        text('version', 40)
+        text('mode', 20)
+        text('venue', 40)
+        text('note', 500)
+        if 'duration' in value:
+            raw = value.get('duration')
+            if raw in (None, ''):
+                patch['duration'] = None
+            else:
+                try:
+                    minutes = float(raw)
+                except (TypeError, ValueError):
+                    raise HTTPException(400, '时长必须是分钟数') from None
+                if not 0 < minutes <= 180:
+                    raise HTTPException(400, '时长需在 0–180 分钟之间')
+                patch['duration'] = round(minutes, 2)
+        if 'result' in value:
+            if value.get('result') not in ('win', 'loss', 'draw', 'unknown'):
+                raise HTTPException(400, '赛果取值无效')
+            patch['result'] = value['result']
+        if 'ownCamp' in value:
+            # 本队这一局在蓝方还是红方；空值表示恢复自动判断。
+            if value.get('ownCamp') not in ('blue', 'red', '', None):
+                raise HTTPException(400, '阵营取值无效')
+            patch['ownCamp'] = value['ownCamp'] or None
+        if not patch:
+            raise HTTPException(400, '没有需要保存的字段')
+
+        with sqlite3.connect(db_path) as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute('SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+            merged = {}
+            if row:
+                try:
+                    merged = json.loads(row[0])
+                except (TypeError, ValueError):
+                    merged = {}
+            merged.update(patch)
+            connection.execute(
+                'INSERT INTO match_meta(match_key, body, updated_at) VALUES(?,?,?) '
+                'ON CONFLICT(match_key) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at',
+                (key, json.dumps(merged, ensure_ascii=False), time.time()))
+        repository_cache['value'] = None
+        result_cache.clear()
+        return {'ok': True, 'key': key, 'meta': merged}
+
+    @router.post('/match-meta')
+    def save_match_meta_batch(value: dict):
+        """批量补录：一次把同一批比赛的对手/训练组写进去。"""
+        keys = value.get('keys') or []
+        patch = value.get('patch') or {}
+        if not isinstance(keys, list) or not keys or len(keys) > 200:
+            raise HTTPException(400, '请选择 1–200 场比赛')
+        if not isinstance(patch, dict) or not patch:
+            raise HTTPException(400, '没有需要保存的字段')
+        fail = []
+        for key in keys:
+            try:
+                save_match_meta(str(key), patch)
+            except HTTPException as error:
+                fail.append({'key': key, 'detail': error.detail})
+        return {'ok': not fail, 'saved': len(keys) - len(fail), 'failed': fail}
+
+    @router.post('/profile')
+    def save_profile(value: dict):
+        """队伍建档：队名、教练、赛季。队员名单仍走 /api/settings，避免两套写入。"""
+        with sqlite3.connect(db_path) as connection:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            if not row:
+                raise HTTPException(400, '设置尚未初始化')
+            settings = json.loads(row[0])
+            team_name = value.get('teamName')
+            if team_name is not None:
+                if not isinstance(team_name, str) or not team_name.strip() or len(team_name.strip()) > 50:
+                    raise HTTPException(400, '请填写 1–50 字的战队名称')
+                settings['teamName'] = team_name.strip()
+            for key, limit in (('coach', 30), ('season', 40), ('organization', 60)):
+                if key in value:
+                    raw = value.get(key)
+                    if raw is not None and not isinstance(raw, str):
+                        raise HTTPException(400, f'{key} 必须是文本')
+                    cleaned = (raw or '').strip()
+                    if len(cleaned) > limit:
+                        raise HTTPException(400, '内容过长')
+                    settings[key] = cleaned
+            connection.execute('UPDATE settings SET body=? WHERE id=1',
+                               (json.dumps(settings, ensure_ascii=False),))
+        repository_cache['value'] = None
+        result_cache.clear()
+        return {'ok': True, 'teamName': settings.get('teamName'),
+                'coach': settings.get('coach', ''), 'season': settings.get('season', '')}
 
     @router.get('/workspace')
     def workspace():
@@ -416,6 +608,10 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         filters = {k: request.query_params[k] for k in ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp') if request.query_params.get(k)}
         filters['sources'] = [s for s in request.query_params.get('source', 'db,bundle').split(',') if s in ('db', 'bundle', 'sheet')]
         filters['includePartial'] = request.query_params.get('includePartial') == '1'
+        if request.query_params.get('own') == '1':
+            filters['ownOnly'] = True
+        if request.query_params.get('excludeSeeds') == '1':
+            filters['excludeSeeds'] = True
         result = cached(('view', section, json.dumps(filters, sort_keys=True), snapshot_key()),
                         lambda: getattr(repository(), methods[section])(filters))
         if section in ('players', 'heroes'):
@@ -462,6 +658,10 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         filters = {k: request.query_params[k] for k in ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp') if request.query_params.get(k)}
         filters['sources'] = [s for s in request.query_params.get('source', 'db,bundle').split(',') if s in ('db', 'bundle', 'sheet')]
         filters['includePartial'] = request.query_params.get('includePartial') == '1'
+        if request.query_params.get('excludeSeeds') == '1':
+            filters['excludeSeeds'] = True
+        if request.query_params.get('own') == '1':
+            filters['ownOnly'] = True
         kind = request.query_params.get('kind') or ''
         name = request.query_params.get('name') or ''
         if kind and kind not in ('player', 'hero'):
@@ -473,6 +673,8 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
         def build():
             selected, _ = repository()._selected_rows(filters)
+            if filters.get('ownOnly'):
+                selected = [row for row in selected if row.get('isOwn')]
             if not filters.get('includePartial'):
                 selected = [row for row in selected if row.get('full')]
             if filters.get('from') or filters.get('to'):
@@ -492,6 +694,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.get('/identity')
     def identity():
         data = repository().get()
+        camp_list = camp_games(Path(matches_dir).parent / 'camp_details', db_path)
         groups = {}
         for row in data.get('rows', []):
             if not row.get('isOwn') or not row.get('label'):
@@ -549,8 +752,34 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                                 'title': match.get('title'), 'opponent': match.get('opponent'),
                                 'ownCamp': own_camp, 'sides': sides})
         return {'unbound': [item for item in unbound if item['label'] in unbound_labels], 'identities': unbound, 'aliases': aliases,
+                'enemyAliases': (data.get('profile') or {}).get('enemyAliases') or {},
                 'teamName': data.get('teamName'), 'roster': data.get('roster', {}),
-                'matchTeams': match_teams}
+                'matchTeams': match_teams,
+                'campGames': camp_list,
+                'campMeta': {'games': len(camp_list),
+                             'named': sum(1 for g in camp_list if g['opponent']),
+                             'manual': sum(1 for g in camp_list if g['ownCampSource'] == 'manual')}}
+
+    @router.post('/identity/auto-claim')
+    async def identity_auto_claim(request: Request):
+        """自动认领预览（只读）：教练的判断作为 decisions 传入，落库由前端走既有接口。"""
+        try:
+            body = await request.json()
+        except (ValueError, TypeError):
+            body = {}
+        if not isinstance(body, dict):
+            raise HTTPException(400, '请求格式无效')
+        decisions = body.get('decisions') or {}
+        if not isinstance(decisions, dict) or len(decisions) > 200:
+            raise HTTPException(400, '教练判断格式无效')
+        try:
+            with sqlite3.connect(db_path) as connection:
+                row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            settings = json.loads(row[0]) if row else {}
+        except (sqlite3.Error, ValueError):
+            settings = {}
+        return build_plan(repository().get(), settings,
+                          max_diff=body.get('maxDiff', 1), decisions=decisions)
 
     @router.post('/import/preview')
     async def import_preview(request: Request, name: str = ''):

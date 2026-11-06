@@ -115,6 +115,12 @@ function pageHtml(d, maxValues, embedded = false) {
       <span class="pn-build-count">${items.length}</span>
     </div>`;
   }).join('');
+  const hasPosition = player => (d.positions.players?.[player.key]?.points || []).length > 0;
+  const duelSlot = [3, 0, 1, 2, 4].find(slot => blue.some(player => player.slot === slot && hasPosition(player))
+    && red.some(player => player.slot === slot && hasPosition(player)));
+  const duelBlue = blue.find(player => duelSlot != null && player.slot === duelSlot && hasPosition(player)) || blue.find(hasPosition) || blue[0];
+  const duelRed = red.find(player => duelSlot != null && player.slot === duelSlot && hasPosition(player)) || red.find(hasPosition) || red[0];
+  const duelOptions = (list, chosen) => list.map(player => `<option value="${esc(player.key)}"${player.key === chosen?.key ? ' selected' : ''}>${esc(player.hero || '')} · ${esc(player.nickname || '')}</option>`).join('');
   const phaseRows = d.phases.map(phase => {
     const team = phase.team || {};
     return `<tr>
@@ -161,15 +167,29 @@ function pageHtml(d, maxValues, embedded = false) {
     </section>
 
     <section class="pn-card pn-map-card" id="pn-map-card">
-      <div class="pn-card-head"><div><span class="pn-eyebrow">SPATIAL CONTROL</span><h2>战场分布</h2><p>逐秒坐标聚合：热区表示停留密度，轨迹由浅到深表示时间推进；静止死亡样本已排除。</p></div>
+      <div class="pn-card-head"><div><span class="pn-eyebrow">SPATIAL CONTROL</span><h2>战场分布</h2><p>逐秒坐标经高斯平滑生成连续密度场，蓝 / 红双通道共用同一标尺，重叠处偏亮表示双方都常驻；轨迹由浅到深表示时间推进，静止死亡样本已排除。</p></div>
         <div class="pn-map-controls"><div class="pn-segment" data-pn-team><button data-team="both" class="active">双方</button><button data-team="blue">蓝方</button><button data-team="red">红方</button></div>${phaseButtons}<select id="pn-player-select" aria-label="选择选手"><option value="">全队热区</option>${playerOptions}</select><span class="pn-play-group"><button class="button pn-play" id="pn-play">播放</button><select id="pn-speed" aria-label="播放速度"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></span></div>
       </div>
       <div class="pn-map-layout"><div class="pn-map" id="pn-map"></div><aside class="pn-map-side" id="pn-map-side"></aside></div>
     </section>
 
     <section class="pn-card pn-heat-card">
-      <div class="pn-card-head"><div><span class="pn-eyebrow">POSITION HEATMAPS</span><h2>十人热区</h2><p>每名选手一张小地图，颜色越亮表示停留越久；点击选手卡回到主地图查看轨迹。</p></div>${phaseButtons}</div>
+      <div class="pn-card-head"><div><span class="pn-eyebrow">POSITION HEATMAPS</span><h2>十人热区</h2><p>逐秒坐标经高斯平滑生成连续密度场，10 张图共用同一标尺，可直接横向比较；点击选手卡回到主地图查看轨迹。</p></div>${phaseButtons}</div>
+      <div class="pn-heat-legend" id="pn-heat-legend"></div>
       <div class="pn-heat-grid" id="pn-heat-grid"></div>
+    </section>
+
+    <section class="pn-card pn-duel-card">
+      <div class="pn-card-head pn-duel-head">
+        <div class="pn-duel-headline"><h2 id="pn-duel-title">对位分布</h2><p>双方坐标按己方出生角镜像至左下，右上为对侧深区；六幅图共用热度与坐标标尺，阵亡等待样本已排除。</p></div>
+        <div class="pn-duel-pickers">
+          <label><span>蓝方</span><select id="pn-duel-blue" aria-label="选择蓝方对位选手">${duelOptions(blue, duelBlue)}</select></label>
+          <span class="pn-duel-vs">VS</span>
+          <label><span>红方</span><select id="pn-duel-red" aria-label="选择红方对位选手">${duelOptions(red, duelRed)}</select></label>
+        </div>
+      </div>
+      <div id="pn-duel"></div>
+      <div class="pn-duel-foot" id="pn-duel-foot"></div>
     </section>
 
     <section class="pn-card">
@@ -441,24 +461,27 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     }
     const width = MAP_SIZE, height = MAP_SIZE, pad = MAP_PAD;
     const mx = mapX, my = mapY;
-    const heatLayers = [];
     const teams = state.player ? [byKey.get(state.player)?.camp]
       : state.team === 'both' ? ['blue', 'red'] : [state.team];
-    const layers = teams.filter(Boolean).map(team => ({
+    const fields = teams.filter(Boolean).map(team => ({
       team,
-      grid: phaseGrid(state.player ? [byKey.get(state.player)].filter(Boolean) : (team === 'blue' ? blue : red)),
+      field: smoothGrid(phaseGrid(state.player ? [byKey.get(state.player)].filter(Boolean) : (team === 'blue' ? blue : red))),
     }));
-    const heatMax = Math.max(1, ...layers.flatMap(layer => layer.grid.flat()));
-    for (const layer of layers) {
-      for (let row = 0; row < 12; row += 1) for (let column = 0; column < 12; column += 1) {
-        const count = layer.grid[row][column];
-        if (!count) continue;
-        const opacity = 0.09 + (count / heatMax) * 0.62;
-        const x0 = pad + column / 12 * (width - pad * 2);
-        const y0 = height - pad - (row + 1) / 12 * (height - pad * 2);
-        heatLayers.push(`<rect x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${((width - pad * 2) / 12 + 1.2).toFixed(1)}" height="${((height - pad * 2) / 12 + 1.2).toFixed(1)}" fill="${CAMP[layer.team].color}" fill-opacity="${opacity.toFixed(3)}"/>`);
-      }
-    }
+    const heatMax = Math.max(1, ...fields.flatMap(layer => layer.field.flat()));
+    const inset = (pad / width * 100).toFixed(3);
+    const extent = ((width - pad * 2) / width * 100).toFixed(3);
+    const heatCanvases = fields.map(layer => `<canvas class="pn-map-heat ${layer.team}" data-pn-map-heat="${layer.team}" width="256" height="256" style="left:${inset}%;top:${inset}%;width:${extent}%;height:${extent}%"></canvas>`).join('');
+    const peaks = fields.map(layer => {
+      let best = {row: 0, column: 0, value: 0};
+      layer.field.forEach((rowData, row) => rowData.forEach((value, column) => {
+        if (value > best.value) best = {row, column, value};
+      }));
+      if (best.value <= 0) return '';
+      const cx = pad + (best.column + 0.5) / 12 * (width - pad * 2);
+      const cy = height - pad - (best.row + 0.5) / 12 * (height - pad * 2);
+      const color = CAMP[layer.team].color;
+      return `<g class="pn-map-peak"><title>${CAMP[layer.team].label}停留峰值</title><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="9" fill="none" stroke="${color}" stroke-opacity=".9" stroke-width="1.2"/><circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="1.8" fill="#fff" fill-opacity=".9"/><path d="M${cx.toFixed(1)} ${(cy - 15).toFixed(1)}v4M${cx.toFixed(1)} ${(cy + 11).toFixed(1)}v4M${(cx - 15).toFixed(1)} ${cy.toFixed(1)}h4M${(cx + 11).toFixed(1)} ${cy.toFixed(1)}h4" fill="none" stroke="${color}" stroke-opacity=".7" stroke-width="1"/></g>`;
+    }).join('');
     const trails = state.player ? (() => {
       const points = trailPoints();
       if (points.length < 2) return '';
@@ -476,28 +499,38 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
       if (!dot) return '';
       return `<circle data-pn-dot="${esc(player.key)}" cx="${mx(dot[0]).toFixed(1)}" cy="${my(dot[1]).toFixed(1)}" r="${state.player === player.key ? 7 : 5}" fill="${CAMP[player.camp].color}" stroke="#fff" stroke-width="${state.player === player.key ? 2.4 : 1.5}" class="pn-live-dot"><title>${esc(player.hero || '')} · ${esc(player.nickname || '')}</title></circle>`;
     }).join('');
-    map.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="group" aria-label="战场热区与走位"><defs>
-      <radialGradient id="pn-map-glow"><stop offset="0" stop-color="#264a7a" stop-opacity=".5"/><stop offset="1" stop-color="#0d1726" stop-opacity="0"/></radialGradient>
-      <pattern id="pn-map-grid" width="35" height="35" patternUnits="userSpaceOnUse"><path d="M35 0H0V35" fill="none" stroke="#ffffff" stroke-opacity=".045"/></pattern>
-      <filter id="pn-heat-blur" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>
-      </defs>
-      <rect width="${width}" height="${height}" rx="18" fill="#0f1a2c"/>
-      <rect x="8" y="8" width="${width - 16}" height="${height - 16}" rx="14" fill="url(#pn-map-grid)" stroke="#263c5e"/>
-      <rect width="${width}" height="${height}" rx="18" fill="url(#pn-map-glow)" opacity=".7"/>
-      <path d="M${mx(-55)},${my(55)} L${mx(55)},${my(-55)}" stroke="#3d7bb0" stroke-opacity=".22" stroke-width="66"/>
-      <path d="M${mx(-55)},${my(55)} L${mx(55)},${my(-55)}" stroke="#6fa8d6" stroke-opacity=".22" stroke-width="1.2" stroke-dasharray="6 8"/>
-      <path d="M${mx(-45)},${my(-45)} Q${mx(-45)},${my(42)} ${mx(-6)},${my(49)} T${mx(47)},${my(45)}" fill="none" stroke="#ffffff" stroke-opacity=".07" stroke-width="18"/>
-      <path d="M${mx(-45)},${my(-45)} Q${mx(42)},${my(-45)} ${mx(49)},${my(-6)} T${mx(45)},${my(47)}" fill="none" stroke="#ffffff" stroke-opacity=".07" stroke-width="18"/>
-      <path d="M${mx(-45)},${my(-45)} L${mx(45)},${my(45)}" stroke="#ffffff" stroke-opacity=".08" stroke-width="18"/>
-      <circle cx="${mx(-48)}" cy="${my(-48)}" r="14" fill="#2f6fe4" fill-opacity=".16" stroke="#2f6fe4" stroke-opacity=".4"/>
-      <circle cx="${mx(48)}" cy="${my(48)}" r="14" fill="#da6b76" fill-opacity=".16" stroke="#da6b76" stroke-opacity=".4"/>
-      <text x="${mx(-48)}" y="${my(-48) + 4}" text-anchor="middle" class="pn-map-base">蓝</text>
-      <text x="${mx(48)}" y="${my(48) + 4}" text-anchor="middle" class="pn-map-base">红</text>
-      <g id="pn-heat" filter="url(#pn-heat-blur)">${heatLayers.join('')}</g>
-      <g id="pn-trail">${trails}</g>
-      <g id="pn-map-events">${eventMarkers}</g>
-      <g id="pn-live">${live}</g>
-    </svg><div class="pn-map-clock" id="pn-map-clock">${clock(state.time)}</div>`;
+    const corners = [[pad, pad, 1, 1], [pad + width - pad * 2, pad, -1, 1], [pad, pad + height - pad * 2, 1, -1], [pad + width - pad * 2, pad + height - pad * 2, -1, -1]]
+      .map(([x, y, dx, dy]) => `<path d="M${x} ${y + dy * 12}V${y}H${x + dx * 12}" fill="none" stroke="#8fb4ff" stroke-opacity=".3" stroke-width="1.2"/>`).join('');
+    map.innerHTML = `<div class="pn-map-surface">
+      <svg class="pn-map-underlay" viewBox="0 0 ${width} ${height}" aria-hidden="true"><defs>
+        <pattern id="pn-map-grid" width="35" height="35" patternUnits="userSpaceOnUse"><path d="M35 0H0V35" fill="none" stroke="#ffffff" stroke-opacity=".032"/></pattern>
+        </defs>
+        <rect width="${width}" height="${height}" rx="18" fill="#0d1728"/>
+        <rect x="8" y="8" width="${width - 16}" height="${height - 16}" rx="14" fill="url(#pn-map-grid)" stroke="#263c5e"/>
+        <path d="M${mx(-55)},${my(55)} L${mx(55)},${my(-55)}" fill="none" stroke="#3d7bb0" stroke-opacity=".075" stroke-width="54" stroke-linecap="round"/>
+        <path d="M${mx(-55)},${my(55)} L${mx(55)},${my(-55)}" fill="none" stroke="#6fa8d6" stroke-opacity=".18" stroke-width="1.2" stroke-dasharray="6 8"/>
+        <path d="M${mx(-45)},${my(-45)} Q${mx(-45)},${my(42)} ${mx(-6)},${my(49)} T${mx(47)},${my(45)}" fill="none" stroke="#ffffff" stroke-opacity=".035" stroke-width="8"/>
+        <path d="M${mx(-45)},${my(-45)} Q${mx(42)},${my(-45)} ${mx(49)},${my(-6)} T${mx(45)},${my(47)}" fill="none" stroke="#ffffff" stroke-opacity=".035" stroke-width="8"/>
+        <path d="M${mx(-45)},${my(-45)} L${mx(45)},${my(45)}" stroke="#ffffff" stroke-opacity=".035" stroke-width="8"/>
+        ${corners}
+        <circle cx="${mx(-48)}" cy="${my(-48)}" r="14" fill="#2f6fe4" fill-opacity=".16" stroke="#2f6fe4" stroke-opacity=".4"/>
+        <circle cx="${mx(48)}" cy="${my(48)}" r="14" fill="#da6b76" fill-opacity=".16" stroke="#da6b76" stroke-opacity=".4"/>
+        <text x="${mx(-48)}" y="${my(-48) + 4}" text-anchor="middle" class="pn-map-base">蓝</text>
+        <text x="${mx(48)}" y="${my(48) + 4}" text-anchor="middle" class="pn-map-base">红</text>
+      </svg>
+      ${heatCanvases}
+      <svg class="pn-map-overlay" viewBox="0 0 ${width} ${height}" role="group" aria-label="战场热区与走位">
+        ${peaks}
+        <g id="pn-trail">${trails}</g>
+        <g id="pn-map-events">${eventMarkers}</g>
+        <g id="pn-live">${live}</g>
+      </svg>
+      <div class="pn-map-key"><span>停留密度</span><i class="blue"></i><i class="red"></i><span>少 → 多</span></div>
+    </div><div class="pn-map-clock" id="pn-map-clock">${clock(state.time)}</div>`;
+    fields.forEach(layer => {
+      const canvas = map.querySelector(`canvas[data-pn-map-heat="${layer.team}"]`);
+      if (canvas) paintCampHeat(canvas, layer.field, heatMax, layer.team);
+    });
     map.querySelectorAll('[data-pn-event]').forEach(marker => {
       marker.onclick = () => setTime(d.events[Number(marker.dataset.pnEvent)].t);
     });
@@ -628,55 +661,355 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     };
   }
 
-  function miniHeatSvg(player, grid, max) {
-    const cells = [];
-    const span = MAP_SIZE - MAP_PAD * 2;
-    for (let row = 0; row < 12; row += 1) for (let column = 0; column < 12; column += 1) {
-      const count = grid[row][column];
-      if (!count) continue;
-      const x0 = MAP_PAD + column / 12 * span;
-      const y0 = MAP_SIZE - MAP_PAD - (row + 1) / 12 * span;
-      cells.push(`<rect x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${(span / 12 + 0.8).toFixed(1)}" height="${(span / 12 + 0.8).toFixed(1)}" fill="${CAMP[player.camp].color}" fill-opacity="${(0.08 + count / Math.max(1, max) * 0.72).toFixed(3)}"/>`);
+  const HEAT_RAMP = [
+    [0, [16, 24, 52, 0]],
+    [0.16, [58, 32, 96, 40]],
+    [0.36, [132, 42, 128, 118]],
+    [0.56, [214, 70, 100, 205]],
+    [0.76, [250, 150, 78, 235]],
+    [1, [255, 248, 214, 255]],
+  ];
+  const CAMP_RAMP = {
+    blue: [
+      [0, [8, 16, 36, 0]], [0.14, [22, 52, 104, 14]], [0.36, [34, 96, 184, 82]],
+      [0.62, [62, 152, 234, 168]], [0.84, [126, 208, 252, 212]], [1, [178, 230, 255, 228]],
+    ],
+    red: [
+      [0, [12, 12, 32, 0]], [0.14, [88, 30, 60, 14]], [0.36, [160, 48, 78, 82]],
+      [0.62, [220, 80, 94, 168]], [0.84, [248, 142, 104, 212]], [1, [255, 200, 152, 228]],
+    ],
+  };
+  function rampColor(ramp, t) {
+    const value = Math.max(0, Math.min(1, t));
+    for (let i = 1; i < ramp.length; i += 1) {
+      const [start, from] = ramp[i - 1];
+      const [end, to] = ramp[i];
+      if (value <= end) {
+        const ratio = (value - start) / (end - start || 1);
+        return from.map((channel, j) => Math.round(channel + (to[j] - channel) * ratio));
+      }
     }
+    return ramp.at(-1)[1];
+  }
+  const heatColor = t => rampColor(HEAT_RAMP, t);
+  const HEAT_LUT = Array.from({length: 256}, (_, index) => heatColor(index / 255));
+  const CAMP_LUT = {
+    blue: Array.from({length: 256}, (_, index) => rampColor(CAMP_RAMP.blue, index / 255)),
+    red: Array.from({length: 256}, (_, index) => rampColor(CAMP_RAMP.red, index / 255)),
+  };
+  function paintCampHeat(canvas, field, max, tone) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const width = canvas.width, height = canvas.height, size = field.length;
+    const image = ctx.createImageData(width, height), data = image.data;
+    const lut = CAMP_LUT[tone];
+    for (let py = 0; py < height; py += 1) {
+      const gy = (1 - (py + 0.5) / height) * size - 0.5;
+      for (let px = 0; px < width; px += 1) {
+        const gx = ((px + 0.5) / width) * size - 0.5;
+        let t = Math.pow(Math.max(0, bilinear(field, gx, gy)) / max, 1.12);
+        t = Math.max(0, Math.min(1, (t - 0.13) / 0.87));
+        const color = lut[Math.round(t * 255)];
+        const offset = (py * width + px) * 4;
+        data[offset] = color[0];
+        data[offset + 1] = color[1];
+        data[offset + 2] = color[2];
+        data[offset + 3] = color[3];
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+  function smoothGrid(grid) {
+    const size = grid.length;
+    const kernel = [1, 2, 1];
+    const output = Array.from({length: size}, () => Array(size).fill(0));
+    for (let row = 0; row < size; row += 1) for (let column = 0; column < size; column += 1) {
+      let sum = 0, weight = 0;
+      for (let dr = -1; dr <= 1; dr += 1) for (let dc = -1; dc <= 1; dc += 1) {
+        const r = row + dr, c = column + dc;
+        if (r < 0 || r >= size || c < 0 || c >= size) continue;
+        const w = kernel[dr + 1] * kernel[dc + 1];
+        sum += grid[r][c] * w;
+        weight += w;
+      }
+      output[row][column] = sum / (weight || 1);
+    }
+    return output;
+  }
+  function bilinear(field, gx, gy) {
+    const size = field.length;
+    const x = Math.max(0, Math.min(size - 1, gx));
+    const y = Math.max(0, Math.min(size - 1, gy));
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const x1 = Math.min(size - 1, x0 + 1), y1 = Math.min(size - 1, y0 + 1);
+    const fx = x - x0, fy = y - y0;
+    const top = field[y0][x0] * (1 - fx) + field[y0][x1] * fx;
+    const bottom = field[y1][x0] * (1 - fx) + field[y1][x1] * fx;
+    return top * (1 - fy) + bottom * fy;
+  }
+  function paintHeat(canvas, field, max) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const width = canvas.width, height = canvas.height, size = field.length;
+    const image = ctx.createImageData(width, height);
+    const data = image.data;
+    for (let py = 0; py < height; py += 1) {
+      const gy = (1 - (py + 0.5) / height) * size - 0.5;
+      for (let px = 0; px < width; px += 1) {
+        const gx = ((px + 0.5) / width) * size - 0.5;
+        let t = Math.pow(Math.max(0, bilinear(field, gx, gy)) / max, 0.82);
+        t = Math.max(0, Math.min(1, (t - 0.085) / 0.915));
+        const color = HEAT_LUT[Math.round(t * 255)];
+        const offset = (py * width + px) * 4;
+        data[offset] = color[0];
+        data[offset + 1] = color[1];
+        data[offset + 2] = color[2];
+        data[offset + 3] = color[3];
+      }
+    }
+    ctx.putImageData(image, 0, 0);
+  }
+  function miniHeatSvg(player, index) {
+    const span = MAP_SIZE - MAP_PAD * 2;
+    const inset = (MAP_PAD / MAP_SIZE * 100).toFixed(3);
+    const extent = (span / MAP_SIZE * 100).toFixed(3);
     const stats = playerPhaseStats(player);
-    return `<svg viewBox="0 0 ${MAP_SIZE} ${MAP_SIZE}" role="img" aria-label="${esc(player.hero || '')} 位置热区">
-      <rect width="${MAP_SIZE}" height="${MAP_SIZE}" rx="18" fill="#0f1a2c"/>
-      <path d="M${mapX(-55)},${mapY(55)} L${mapX(55)},${mapY(-55)}" stroke="#3d7bb0" stroke-opacity=".2" stroke-width="54"/>
-      <path d="M${mapX(-45)},${mapY(-45)} L${mapX(45)},${mapY(45)}" stroke="#ffffff" stroke-opacity=".05" stroke-width="14"/>
-      <circle cx="${mapX(-48)}" cy="${mapY(-48)}" r="12" fill="#2f6fe4" fill-opacity=".16" stroke="#2f6fe4" stroke-opacity=".35"/>
-      <circle cx="${mapX(48)}" cy="${mapY(48)}" r="12" fill="#da6b76" fill-opacity=".16" stroke="#da6b76" stroke-opacity=".35"/>
-      <text x="${mapX(-48)}" y="${mapY(-48) + 4}" text-anchor="middle" class="pn-map-base">蓝</text>
-      <text x="${mapX(48)}" y="${mapY(48) + 4}" text-anchor="middle" class="pn-map-base">红</text>
-      ${cells.join('')}
-      <circle cx="${mapX(stats.avgX).toFixed(1)}" cy="${mapY(stats.avgY).toFixed(1)}" r="4" fill="#fff" fill-opacity=".85"/>
-    </svg>`;
+    const unit = span / 6;
+    const gridLines = Array.from({length: 7}, (_, i) => {
+      const p = (MAP_PAD + i * unit).toFixed(1);
+      return `<path d="M${p} ${MAP_PAD}V${MAP_PAD + span}M${MAP_PAD} ${p}H${MAP_PAD + span}" fill="none" stroke="#ffffff" stroke-opacity=".035" stroke-width="1"/>`;
+    }).join('');
+    const corners = [[MAP_PAD, MAP_PAD, 1, 1], [MAP_PAD + span, MAP_PAD, -1, 1], [MAP_PAD, MAP_PAD + span, 1, -1], [MAP_PAD + span, MAP_PAD + span, -1, -1]]
+      .map(([x, y, dx, dy]) => `<path d="M${x} ${y + dy * 10}V${y}H${x + dx * 10}" fill="none" stroke="#8fb4ff" stroke-opacity=".38" stroke-width="1.2"/>`).join('');
+    const cx = mapX(stats.avgX).toFixed(1), cy = mapY(stats.avgY).toFixed(1);
+    const cross = `<g><title>平均位置</title><circle cx="${cx}" cy="${cy}" r="9" fill="none" stroke="#ffffff" stroke-opacity=".8" stroke-width="1"/><circle cx="${cx}" cy="${cy}" r="1.8" fill="#ffffff"/><path d="M${cx} ${Number(cy) - 15}v4M${cx} ${Number(cy) + 11}v4M${Number(cx) - 15} ${cy}h4M${Number(cx) + 11} ${cy}h4" fill="none" stroke="#ffffff" stroke-opacity=".7" stroke-width="1"/></g>`;
+    return `<span class="pn-heat-map" role="img" aria-label="${esc(player.hero || '')} 位置热区">
+      <svg class="pn-heat-base" viewBox="0 0 ${MAP_SIZE} ${MAP_SIZE}" aria-hidden="true">
+        <rect width="${MAP_SIZE}" height="${MAP_SIZE}" rx="18" fill="#0d1728"/>
+        <path d="M${mapX(-55).toFixed(1)},${mapY(55).toFixed(1)} L${mapX(55).toFixed(1)},${mapY(-55).toFixed(1)}" stroke="#3d7bb0" stroke-opacity=".07" stroke-width="46" stroke-linecap="round"/>
+        <path d="M${mapX(-45).toFixed(1)},${mapY(-45).toFixed(1)} L${mapX(45).toFixed(1)},${mapY(45).toFixed(1)}" stroke="#ffffff" stroke-opacity=".045" stroke-width="9"/>
+        <path d="M${mapX(-45).toFixed(1)},${mapY(-45).toFixed(1)} Q${mapX(-45).toFixed(1)},${mapY(42).toFixed(1)} ${mapX(-6).toFixed(1)},${mapY(49).toFixed(1)} T${mapX(47).toFixed(1)},${mapY(45).toFixed(1)}" fill="none" stroke="#ffffff" stroke-opacity=".04" stroke-width="8"/>
+        <path d="M${mapX(-45).toFixed(1)},${mapY(-45).toFixed(1)} Q${mapX(42).toFixed(1)},${mapY(-45).toFixed(1)} ${mapX(49).toFixed(1)},${mapY(-6).toFixed(1)} T${mapX(45).toFixed(1)},${mapY(47).toFixed(1)}" fill="none" stroke="#ffffff" stroke-opacity=".04" stroke-width="8"/>
+        ${gridLines}
+        <rect x="${MAP_PAD}" y="${MAP_PAD}" width="${span}" height="${span}" fill="none" stroke="#ffffff" stroke-opacity=".09" stroke-width="1"/>
+        ${corners}
+        <circle cx="${mapX(-48).toFixed(1)}" cy="${mapY(-48).toFixed(1)}" r="8" fill="#2f6fe4" fill-opacity=".14" stroke="#2f6fe4" stroke-opacity=".55" stroke-width="1"/>
+        <circle cx="${mapX(48).toFixed(1)}" cy="${mapY(48).toFixed(1)}" r="8" fill="#da6b76" fill-opacity=".14" stroke="#da6b76" stroke-opacity=".55" stroke-width="1"/>
+      </svg>
+      <canvas class="pn-heat-canvas" width="160" height="160" data-pn-heat-idx="${index}" style="left:${inset}%;top:${inset}%;width:${extent}%;height:${extent}%"></canvas>
+      <svg class="pn-heat-overlay" viewBox="0 0 ${MAP_SIZE} ${MAP_SIZE}" aria-hidden="true">${cross}</svg>
+    </span>`;
   }
 
   function renderHeatGrid() {
     const box = root.querySelector('#pn-heat-grid');
+    const legend = root.querySelector('#pn-heat-legend');
     if (!box) return;
-    if (!d.positions.players || !Object.keys(d.positions.players).length) {
-      box.innerHTML = '<div class="pn-empty">本局没有逐秒坐标，无法生成十人热区。</div>';
-      return;
-    }
+    const empty = '<div class="pn-empty">本局没有逐秒坐标，无法生成十人热区。</div>';
+    const blank = () => {
+      box.innerHTML = empty;
+      if (legend) legend.innerHTML = '';
+    };
+    if (!d.positions.players || !Object.keys(d.positions.players).length) return blank();
     const entries = d.players
       .filter(player => (d.positions.players[player.key]?.points || []).length)
       .map(player => ({player, grid: heatGridFor(player)}));
-    if (!entries.length) {
-      box.innerHTML = '<div class="pn-empty">本局没有逐秒坐标，无法生成十人热区。</div>';
-      return;
+    if (!entries.length) return blank();
+    const fields = entries.map(({grid}) => smoothGrid(grid));
+    const max = Math.max(1, ...fields.flatMap(field => field.flat()));
+    if (legend) {
+      legend.innerHTML = `<span class="pn-heat-legend-label">停留时长</span>
+        <span class="pn-heat-legend-end">少</span>
+        <span class="pn-heat-legend-bar" aria-hidden="true"></span>
+        <span class="pn-heat-legend-end">多</span>
+        <span class="pn-heat-legend-scale">全局统一标尺 · 峰值 ${num(max, 1)} 采样点，10 张图不各自归一化</span>
+        <span class="pn-heat-legend-note">颜色只表示停留，阵营看卡片右上角色点</span>`;
     }
-    const max = Math.max(1, ...entries.flatMap(entry => entry.grid.flat()));
-    box.innerHTML = entries.map(({player, grid}) => {
+    box.innerHTML = entries.map(({player}, index) => {
       const stats = playerPhaseStats(player);
       const active = state.player === player.key;
+      const peak = Math.max(0, ...fields[index].flat());
+      const share = Math.max(0, Math.min(100, Number(stats.enemy) * 100 || 0));
       return `<button class="pn-heat-tile ${player.camp}${active ? ' active' : ''}" data-pn-heat-player="${esc(player.key)}" aria-pressed="${active}" title="在主地图查看 ${esc(player.nickname || player.hero)} 的轨迹">
-        <span class="pn-heat-head"><span class="pn-heat-icon">${heroIcon(player)}</span><span class="pn-heat-name"><b>${esc(player.hero || '')}</b><small>${esc(player.nickname || '')}</small></span></span>
-        <span class="pn-heat-map">${miniHeatSvg(player, grid, max)}</span>
-        <span class="pn-heat-stats"><span>敌方半区 <b>${pct(stats.enemy)}</b></span><span>位移 <b>${num(stats.distance)}</b></span><span>最深 <b>${stats.advance ? `${num(stats.advance * 100)}%` : '—'}</b></span></span>
+        <span class="pn-heat-head"><span class="pn-heat-icon">${heroIcon(player)}</span><span class="pn-heat-name"><b>${esc(player.hero || '')}</b><small>${esc(player.nickname || '')}</small></span><i class="pn-heat-camp ${player.camp}"></i></span>
+        ${miniHeatSvg(player, index)}
+        <span class="pn-heat-metric"><span>敌方半区</span><b>${pct(stats.enemy)}</b><i class="pn-heat-bar"><em style="width:${share.toFixed(1)}%"></em></i></span>
+        <span class="pn-heat-sub"><span>位移 <b>${num(stats.distance)}</b></span><span>最深 <b>${stats.advance ? `${num(stats.advance * 100)}%` : '—'}</b></span><span>峰值 <b>${num(peak, 1)}</b></span></span>
       </button>`;
     }).join('');
+    box.querySelectorAll('canvas[data-pn-heat-idx]').forEach(canvas => {
+      const index = Number(canvas.dataset.pnHeatIdx);
+      if (fields[index]) paintHeat(canvas, fields[index], max);
+    });
     box.querySelectorAll('[data-pn-heat-player]').forEach(button => button.onclick = () => selectPlayer(button.dataset.pnHeatPlayer));
+  }
+
+  const DUEL_TONES = {
+    gold: {line: '#e8b45c', ramp: [
+      [0, [146, 106, 48, 0.3]], [0.3, [196, 143, 62, 0.66]],
+      [0.65, [238, 184, 86, 0.9]], [1, [255, 233, 173, 1]],
+    ]},
+    teal: {line: '#4ec9c1', ramp: [
+      [0, [38, 108, 112, 0.3]], [0.3, [52, 162, 162, 0.66]],
+      [0.65, [88, 211, 202, 0.9]], [1, [212, 255, 247, 1]],
+    ]},
+  };
+  const DEEP_RATIO = 0.35;
+  function duelColor(tone, t) {
+    const ramp = DUEL_TONES[tone].ramp;
+    const value = Math.max(0, Math.min(1, t));
+    for (let i = 1; i < ramp.length; i += 1) {
+      const [start, from] = ramp[i - 1], [end, to] = ramp[i];
+      if (value <= end) {
+        const ratio = (value - start) / (end - start || 1);
+        return from.map((channel, j) => j === 3
+          ? (channel + (to[j] - channel) * ratio).toFixed(3)
+          : Math.round(channel + (to[j] - channel) * ratio));
+      }
+    }
+    return ramp.at(-1)[1];
+  }
+  function mirroredGrid(heat, camp) {
+    const grid = Array.from({length: 12}, (_, row) => Array.from({length: 12}, (_, column) => heat?.[row]?.[column] || 0));
+    if (camp !== 'red') return grid;
+    return grid.map((_, index) => [...grid[11 - index]].reverse());
+  }
+  function deepSeconds(grid, step) {
+    const bounds = d.positions.bounds || [-57, 57];
+    const min = Number(bounds[0]), span = Number(bounds[1]) - min;
+    let count = 0;
+    for (let row = 0; row < 12; row += 1) for (let column = 0; column < 12; column += 1) {
+      const x = min + (column + 0.5) / 12 * span;
+      const y = min + (row + 0.5) / 12 * span;
+      if ((x + y) / span > DEEP_RATIO) count += grid[row][column];
+    }
+    return count * step;
+  }
+  function duelMapSvg(grid, max, step, tone) {
+    const span = MAP_SIZE - MAP_PAD * 2;
+    const cell = span / 12;
+    const bounds = d.positions.bounds || [-57, 57];
+    const lo = Number(bounds[0]), hi = Number(bounds[1]), extent = hi - lo;
+    const cut = DEEP_RATIO * extent;
+    const edge = cut - hi;
+    const voxels = [];
+    for (let row = 0; row < 12; row += 1) for (let column = 0; column < 12; column += 1) {
+      const value = grid[row][column];
+      if (!value) continue;
+      const [r, g, b, a] = duelColor(tone, Math.pow(Math.min(1, value / max), 0.68));
+      const x = MAP_PAD + column * cell + 0.6;
+      const y = MAP_PAD + (11 - row) * cell + 0.6;
+      voxels.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${(cell - 1.2).toFixed(1)}" height="${(cell - 1.2).toFixed(1)}" rx="1.5" fill="rgb(${r},${g},${b})" fill-opacity="${a}"><title>${value * step} 秒</title></rect>`);
+    }
+    const gridLines = Array.from({length: 13}, (_, index) => {
+      const p = (MAP_PAD + index * cell).toFixed(1);
+      return `<path d="M${p} ${MAP_PAD}V${MAP_PAD + span}M${MAP_PAD} ${p}H${MAP_PAD + span}" fill="none" stroke="#ffffff" stroke-opacity=".035" stroke-width="1"/>`;
+    }).join('');
+    const corners = [[MAP_PAD, MAP_PAD, 1, 1], [MAP_PAD + span, MAP_PAD, -1, 1], [MAP_PAD, MAP_PAD + span, 1, -1], [MAP_PAD + span, MAP_PAD + span, -1, -1]]
+      .map(([x, y, dx, dy]) => `<path d="M${x} ${y + dy * 10}V${y}H${x + dx * 10}" fill="none" stroke="#8fb4ff" stroke-opacity=".3" stroke-width="1.2"/>`).join('');
+    const deepPoly = [[edge, hi], [hi, hi], [hi, edge]]
+      .map(([x, y]) => `${mapX(x).toFixed(1)},${mapY(y).toFixed(1)}`).join(' ');
+    const deepLine = `M${mapX(edge).toFixed(1)},${mapY(hi).toFixed(1)} L${mapX(hi).toFixed(1)},${mapY(edge).toFixed(1)}`;
+    return `<svg viewBox="0 0 ${MAP_SIZE} ${MAP_SIZE}" role="img" aria-label="对位分布：己方出生角在左下，右上为对侧深区">
+      <rect width="${MAP_SIZE}" height="${MAP_SIZE}" rx="14" fill="#0c1728"/>
+      <polygon points="${deepPoly}" fill="${DUEL_TONES[tone].line}" fill-opacity=".085"/>
+      <path d="M${mapX(lo).toFixed(1)},${mapY(hi).toFixed(1)} L${mapX(hi).toFixed(1)},${mapY(lo).toFixed(1)}" stroke="#3d7bb0" stroke-opacity=".075" stroke-width="38" stroke-linecap="round"/>
+      ${gridLines}
+      <rect x="${MAP_PAD}" y="${MAP_PAD}" width="${span}" height="${span}" fill="none" stroke="#ffffff" stroke-opacity=".09" stroke-width="1"/>
+      ${corners}
+      <path d="${deepLine}" fill="none" stroke="${DUEL_TONES[tone].line}" stroke-opacity=".8" stroke-width="1.8" stroke-dasharray="7 5"/>
+      ${voxels.join('')}
+      <circle cx="${mapX(-48).toFixed(1)}" cy="${mapY(-48).toFixed(1)}" r="6.5" fill="${DUEL_TONES[tone].line}" fill-opacity=".9" stroke="#0c1728" stroke-width="2"><title>己方出生角</title></circle>
+      <circle cx="${mapX(48).toFixed(1)}" cy="${mapY(48).toFixed(1)}" r="6.5" fill="none" stroke="#ffffff" stroke-opacity=".75" stroke-width="1.6"><title>对侧出生角</title></circle>
+    </svg>`;
+  }
+
+  function renderDuel() {
+    const box = root.querySelector('#pn-duel');
+    const title = root.querySelector('#pn-duel-title');
+    const foot = root.querySelector('#pn-duel-foot');
+    const blueSelect = root.querySelector('#pn-duel-blue');
+    const redSelect = root.querySelector('#pn-duel-red');
+    if (!box || !title || !foot || !blueSelect || !redSelect) return;
+    const picks = [byKey.get(blueSelect.value), byKey.get(redSelect.value)];
+    const step = Number(d.positions.step) || 2;
+    const phases = d.phases || [];
+    if (picks.some(player => !player) || !phases.length || !Object.keys(d.positions.players || {}).length) {
+      box.innerHTML = '<div class="pn-empty">本局没有逐秒坐标，无法生成对位分布。</div>';
+      title.textContent = '对位分布';
+      foot.innerHTML = '';
+      return;
+    }
+    const sides = picks.map((player, index) => {
+      const tone = index === 0 ? 'gold' : 'teal';
+      const playerPhases = d.positions.players[player.key]?.phases || [];
+      const cells = phases.map((phase, phaseIndex) => {
+        const source = playerPhases.find(item => item.key === phase.key) || playerPhases[phaseIndex] || {};
+        const grid = mirroredGrid(source.heat, player.camp);
+        return {phase, grid, seconds: deepSeconds(grid, step), peak: Math.max(0, ...grid.flat())};
+      });
+      return {player, tone, cells};
+    });
+    const maxPeak = Math.max(1, ...sides.flatMap(side => side.cells.map(cell => cell.peak)));
+    if (!sides.some(side => side.cells.some(cell => cell.grid.some(row => row.some(Boolean))))) {
+      box.innerHTML = '<div class="pn-empty">这两名选手没有逐秒坐标，无法生成对位分布。</div>';
+      title.textContent = '对位分布';
+      foot.innerHTML = '';
+      return;
+    }
+    const late = phases.at(-1);
+    const last = sides.map(side => side.cells.at(-1)?.seconds || 0);
+    if (!last[0] && !last[1]) title.textContent = `两人${late.label}均未进入对侧深区`;
+    else if (Math.abs(last[0] - last[1]) <= 4) title.textContent = `${sides[0].player.hero} 与 ${sides[1].player.hero} ${late.label}对侧深区停留接近：${num(last[0])} / ${num(last[1])} 秒`;
+    else {
+      const top = last[0] > last[1] ? 0 : 1, low = 1 - top;
+      title.textContent = `${sides[top].player.hero} ${late.label}在对侧深区 ${num(last[top])} 秒，${sides[low].player.hero} ${num(last[low])} 秒`;
+    }
+    box.innerHTML = sides.map(side => {
+      const total = side.cells.reduce((sum, cell) => sum + cell.seconds, 0);
+      return `<div class="pn-duel-side ${side.tone}">
+        <div class="pn-duel-side-head">
+          <span class="pn-heat-icon">${heroIcon(side.player)}</span>
+          <span class="pn-duel-name"><b>${esc(side.player.hero || '')}</b><small>${esc(side.player.nickname || '')} · ${CAMP[side.player.camp].label}</small></span>
+          <span class="pn-duel-total">全场深区 <b>${num(total)}</b> 秒</span>
+        </div>
+        <div class="pn-duel-phases">${side.cells.map(cell => {
+          const active = state.player === side.player.key && state.phase === cell.phase.key;
+          return `<button class="pn-duel-cell${active ? ' active' : ''}" data-pn-duel-player="${esc(side.player.key)}" data-pn-duel-phase="${esc(cell.phase.key)}" aria-pressed="${active}" title="在主地图查看 ${esc(side.player.hero || '')} 的${esc(cell.phase.label)}轨迹">
+            <span class="pn-duel-phase"><b>${esc(cell.phase.label)}</b><small>${clock(cell.phase.from)}–${clock(cell.phase.to)} · 时长 ${clock((cell.phase.to || 0) - (cell.phase.from || 0))}</small></span>
+            <span class="pn-duel-map">${duelMapSvg(cell.grid, maxPeak, step, side.tone)}</span>
+            <span class="pn-duel-value${cell.seconds ? '' : ' zero'}">${num(cell.seconds)}<small>秒</small></span>
+            <span class="pn-duel-value-label">对侧深区停留</span>
+          </button>`;
+        }).join('')}</div>
+      </div>`;
+    }).join('');
+    const bounds = d.positions.bounds || [-57, 57];
+    foot.innerHTML = `<div class="pn-duel-legend">
+        <span class="pn-heat-legend-label">停留密度</span>
+        <span class="pn-heat-legend-end">少</span>
+        <span class="pn-duel-legend-bars"><i class="gold"></i><i class="teal"></i></span>
+        <span class="pn-heat-legend-end">多</span>
+        <span class="pn-duel-legend-deep"><i></i>虚线右上为对侧深区</span>
+        <span class="pn-heat-legend-scale">六图共用标尺 · 峰值 ${num(maxPeak)} 采样点（${num(maxPeak * step)} 秒）· 色相区分对位双方，亮度表示停留密度</span>
+      </div>
+      <p class="pn-duel-note">每格为地图 1/12 宽度 · 实心点为己方出生角、空心点为对侧 · 对侧深区 = 推进深度 &gt; ${Math.round(DEEP_RATIO * 100)}%（x+y &gt; ${num(DEEP_RATIO * (Number(bounds[1]) - Number(bounds[0])), 0)} 网格单位）· 红方坐标已 180° 镜像，双方己方出生角统一在左下 · 每采样点 ${step} 秒，阵亡等待与静止样本已排除</p>`;
+    box.querySelectorAll('[data-pn-duel-player]').forEach(button => button.onclick = () => {
+      const key = button.dataset.pnDuelPlayer, phase = button.dataset.pnDuelPhase;
+      const player = byKey.get(key);
+      if (!player) return;
+      state.player = key;
+      state.team = player.camp;
+      state.phase = phase;
+      playerSelect.value = key;
+      root.querySelectorAll('[data-pn-phase] button').forEach(item => item.classList.toggle('active', item.dataset.phase === phase));
+      root.querySelectorAll('[data-pn-card]').forEach(card => card.classList.toggle('active', card.dataset.pnCard === key));
+      drawMap();
+      mapSide.innerHTML = mapStatsHtml();
+      renderHeatGrid();
+      renderDuel();
+      document.getElementById('pn-map-card')?.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start'});
+    });
   }
 
   function selectPlayer(key) {
@@ -689,6 +1022,7 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     drawMap();
     mapSide.innerHTML = mapStatsHtml();
     renderHeatGrid();
+    renderDuel();
     if (state.player) {
       document.getElementById('pn-map-card')?.scrollIntoView({behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start'});
     }
@@ -700,6 +1034,7 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     drawMap();
     mapSide.innerHTML = mapStatsHtml();
     renderHeatGrid();
+    renderDuel();
   }
 
   function drawAll() {
@@ -708,6 +1043,7 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     drawMap();
     mapSide.innerHTML = mapStatsHtml();
     renderHeatGrid();
+    renderDuel();
     updateCursor();
   }
 
@@ -745,14 +1081,17 @@ export async function renderPanorama(root, {api, key, isCurrent = () => true, to
     state.team = button.dataset.team; state.player = ''; playerSelect.value = '';
     root.querySelectorAll('[data-pn-team] button').forEach(item => item.classList.toggle('active', item === button));
     root.querySelectorAll('[data-pn-card]').forEach(card => card.classList.remove('active'));
-    drawMap(); mapSide.innerHTML = mapStatsHtml(); renderHeatGrid();
+    drawMap(); mapSide.innerHTML = mapStatsHtml(); renderHeatGrid(); renderDuel();
   });
   root.querySelectorAll('[data-pn-phase] button').forEach(button => button.onclick = () => setPhase(button.dataset.phase));
+  [root.querySelector('#pn-duel-blue'), root.querySelector('#pn-duel-red')].forEach(select => {
+    if (select) select.onchange = () => renderDuel();
+  });
   playerSelect.onchange = () => {
     if (!playerSelect.value) {
       state.player = '';
       root.querySelectorAll('[data-pn-card]').forEach(card => card.classList.remove('active'));
-      drawMap(); mapSide.innerHTML = mapStatsHtml(); renderHeatGrid();
+      drawMap(); mapSide.innerHTML = mapStatsHtml(); renderHeatGrid(); renderDuel();
       return;
     }
     if (state.player === playerSelect.value) return;

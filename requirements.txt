@@ -1,10 +1,13 @@
+# 核心依赖：装完这一组即可启动工作台，赛后截图 OCR 可用
 fastapi>=0.115,<1
 uvicorn>=0.30,<1
 Pillow>=10,<13
 numpy>=1.26,<3
-rapidocr-onnxruntime>=1.4,<2
 openpyxl>=3.1,<4
-# Mimo precision OCR is part of the required OCR capability.
-torch>=2.14,<2.15
-torchvision>=0.29,<0.30
-transformers>=5.17,<5.18
+# 王者营地登录态使用 RSA 加密，营地同步与对局导入依赖它
+pycryptodome>=3.20,<4
+# HTTP 客户端：营地接口调用与 FastAPI 测试客户端共用
+httpx>=0.27
+# 本地 OCR（赛后截图识别）必需
+# 注意：1.4.x 仅支持 Python <3.13，1.2.3 是同时支持 3.11–3.13 的最后一个版本
+rapidocr-onnxruntime==1.2.3

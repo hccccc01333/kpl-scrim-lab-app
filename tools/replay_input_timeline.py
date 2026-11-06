@@ -33,6 +33,7 @@ from tools.replay_record_stream import _iter_1051  # noqa: E402
 from tools.replay_frame_commands import events as events_source  # noqa: E402
 
 PRICE_TABLES = (
+    ROOT / "resources" / "equip_prices.csv",
     ROOT / "data" / "replays" / "_analysis" / "datasets" / "agent_equip_prices.csv",
 )
 
@@ -45,12 +46,15 @@ def load_prices():
         prices = {}
         with path.open(encoding="utf-8-sig") as handle:
             for row in csv.DictReader(handle):
-                if row.get("section") == "battle_item":
-                    try:
-                        prices[int(row["item_id"])] = int(row["buy_price"])
-                    except (TypeError, ValueError):
-                        continue
-        return prices
+                section = row.get("section")
+                if section is not None and section != "battle_item":
+                    continue
+                try:
+                    prices[int(row["item_id"])] = int(row["buy_price"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+        if prices:
+            return prices
     return {}
 
 

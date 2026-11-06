@@ -106,6 +106,9 @@ def research(rows, topic, metric='damage', matches=None):
         for members in teams.values():
             if len(members)!=5:
                 continue
+            # 只看本队阵容：对手的五个英雄不是我们的英雄池。
+            if not all(r.get('isOwn') for r in members):
+                continue
             if topic=='player_pairs' and not all(r.get('bound') for r in members):
                 continue
             ids={r['hero'] if topic=='hero_combos' else r['playerKey'] for r in members}
@@ -122,7 +125,7 @@ def research(rows, topic, metric='damage', matches=None):
         out=[]
         for (a,b),outcomes in combos.items():
             count=len(outcomes)
-            if count<2:
+            if count<3:
                 continue
             decided=sum(o in ('win','loss') for o in outcomes)
             observed=count/len(units)
@@ -133,7 +136,7 @@ def research(rows, topic, metric='damage', matches=None):
                         'winRate':rounded(outcomes.count('win')/decided*100) if decided else None})
         out.sort(key=lambda r:(-r['n'],-r['lift']))
         columns=['a','b','n','cooccurrence','expectedRate','lift','decided','winRate']
-        note='只使用完整五人/五英雄阵容，至少共现 2 次；Lift 仅描述共现，不代表协同因果或 BP 优势。双人专题要求稳定选手身份。'
+        note='只统计本队完整五人阵容，至少共现 3 次；Lift 仅描述共现，不代表协同因果或 BP 优势。双人专题要求稳定选手身份。'
     elif topic in ('tempo','swing_windows'):
         out=[]
         selected={r['matchKey'] for r in rows}

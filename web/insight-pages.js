@@ -67,21 +67,7 @@ export async function renderOpponent(container, {api, workspace, isCurrent, quer
     + `<div class="section-heading"><h2>下一步</h2></div><div class="next-grid"><a class="next-card" href="#team"><strong>看团队复盘</strong><span>经济节奏、资源、BP 和对手档案</span><em>→</em></a><a class="next-card" href="#matches"><strong>查看全部比赛</strong><span>按日期、选手和英雄筛选</span><em>→</em></a><a class="next-card" href="#topics/player_pairs"><strong>查看双人搭档</strong><span>英雄池、搭档、经济转折</span><em>→</em></a></div>`;
 }
 
-export async function renderBp(container, {api, isCurrent, query}) {
-  const [data, catalog] = await Promise.all([api('/api/studio/view/bp' + query()), api('/api/catalog').catch(() => ({entries: []}))]);
-  if (isCurrent && !isCurrent()) return;
-  const icons = heroIcons(catalog);
-  const bans = data.bans || [], picks = data.ownPicks || [], orders = data.orderEffect || [], opponents = data.opponents || [];
-  const hasData = Number(data.matchesWithBp) > 0 || bans.length || picks.length || opponents.length;
-  const maxBan = Math.max(1, ...bans.map(item => Number(item.count) || 0));
-  const banRows = bans.map(item => `<div class="bp-row">${heroIcon(item.hero, icons, 'bp-hero-icon')}<strong>${esc(item.hero)}</strong><span class="bp-bar"><i style="width:${Math.round((Number(item.count) || 0) / maxBan * 100)}%"></i></span><b>${num(item.count)}</b></div>`).join('');
-  const pickRows = picks.map(item => `<div class="bp-row">${heroIcon(item.hero, icons, 'bp-hero-icon')}<strong>${esc(item.hero)}</strong><span class="bp-bar"><i style="width:${Math.round((Number(item.count) || 0) / Math.max(1, ...picks.map(p => Number(p.count) || 0)) * 100)}%"></i></span><b>${num(item.count)}</b><small>${item.winRate == null ? '' : `胜率 ${num(item.winRate)}%`}</small></div>`).join('');
-  const orderCards = orders.map(item => `<div class="order-card"><span>第 ${num(item.order)} 手</span><b>${item.n ? `${num(item.wins / item.n * 100, 0)}%` : '—'}</b><small>${num(item.wins)} 胜 / ${num(item.n)} 场</small></div>`).join('');
-  container.innerHTML = pageHeader('DRAFT · BP 分析', 'BP 记录', '禁用、选用、先后手和对手 BP；只读取校对时填写的 ban/pick。', [`${num(data.matchesWithBp)} 场有 BP`, `${bans.length} 个禁用英雄`, `${picks.length} 个选用英雄`, `${opponents.length} 个对手`], `<a class="button" href="#matches">比赛档案</a>`)
-    + (hasData
-      ? `<div class="bp-grid"><section class="panel"><div class="panel-head"><div><h2>禁用榜</h2><p>按出现次数排序。</p></div></div><div class="panel-body">${banRows || '<div class="empty-state">没有禁用记录。</div>'}</div></section><section class="panel"><div class="panel-head"><div><h2>本队选用</h2><p>只统计已填写 pick 的比赛。</p></div></div><div class="panel-body">${pickRows || '<div class="empty-state">没有选用记录。</div>'}</div></section></div><section class="panel"><div class="panel-head"><div><h2>本方选用手序</h2><p>本方第 1–5 次选用的已知赛果胜率；手序不等于蓝红方先后手。</p></div></div><div class="panel-body"><div class="order-grid">${orderCards}</div></div></section>`
-      : `<section class="panel"><div class="empty-state"><strong>还没有结构化 BP 记录</strong>在校对比赛时填写双方 ban/pick，BP 页会自动生成禁用榜、选用和先后手统计。<br><a href="#matches">去比赛档案填写 →</a></div></section>`);
-}
+export {renderBp} from '/assets/bp-page.js?v=3';
 
 export async function renderCombos(container, {api, isCurrent, query}) {
   const base = {dataset: 'records', metric: 'damage', filters: {sources: ['db', 'bundle', 'sheet'], includePartial: true}};
@@ -94,8 +80,8 @@ export async function renderCombos(container, {api, isCurrent, query}) {
   const icons = heroIcons(catalog);
   const heroRows = heroResult.rows || [], playerRows = playerResult.rows || [];
   const comboCard = (row, hero) => `<article class="combo-card">${hero ? `<div class="combo-heroes">${heroIcon(row.a, icons, 'combo-icon')}${heroIcon(row.b, icons, 'combo-icon')}</div>` : `<div class="combo-heroes"><span class="combo-avatar">${esc((row.a || '?').slice(0, 2))}</span><span class="combo-avatar">${esc((row.b || '?').slice(0, 2))}</span></div>`}<h3>${esc(row.a)} + ${esc(row.b)}</h3><div class="combo-stats"><span>共现 <b>${num(row.n)}</b></span><span>胜率 <b>${row.winRate == null ? '—' : `${num(row.winRate)}%`}</b></span><span>Lift <b>${num(row.lift, 2)}</b></span></div></article>`;
-  container.innerHTML = pageHeader('COMBO · 组合', '英雄组合与双人搭档', '完整五英雄阵容的实际共现；至少共现 2 次才进入结果。Lift 描述共现，不代表因果。', [`${heroRows.length} 组英雄组合`, `${playerRows.length} 组双人搭档`, '完整阵容门槛'], `<a class="button" href="#topics/player_pairs">双人搭档</a>`)
-    + `<section class="panel"><div class="panel-head"><div><h2>英雄组合</h2><p>同队两名英雄的实际共现、胜率和独立选用基线。</p></div><span class="pill">${heroRows.length} 组</span></div><div class="panel-body">${heroRows.length ? `<div class="combo-grid">${heroRows.slice(0, 30).map(row => comboCard(row, true)).join('')}</div>` : `<div class="empty-state">当前没有达到共现门槛的英雄组合；需要完整五人阵容且至少共现 2 次。</div>`}</div></section>`
+  container.innerHTML = pageHeader('COMBO · 组合', '英雄组合与双人搭档', '只统计本队完整五英雄阵容；至少共现 3 次才进入结果。Lift 描述共现，不代表因果。', [`${heroRows.length} 组英雄组合`, `${playerRows.length} 组双人搭档`, '完整阵容门槛'], `<a class="button" href="#topics/player_pairs">双人搭档</a>`)
+    + `<section class="panel"><div class="panel-head"><div><h2>英雄组合</h2><p>同队两名英雄的实际共现、胜率和独立选用基线。</p></div><span class="pill">${heroRows.length} 组</span></div><div class="panel-body">${heroRows.length ? `<div class="combo-grid">${heroRows.slice(0, 30).map(row => comboCard(row, true)).join('')}</div>` : `<div class="empty-state">当前没有达到共现门槛的英雄组合；需要本队完整五人阵容且至少共现 3 次。</div>`}</div></section>`
     + `<section class="panel"><div class="panel-head"><div><h2>双人搭档</h2><p>基于稳定选手 ID 的同队搭档；未绑定昵称不进入。</p></div><span class="pill">${playerRows.length} 组</span></div><div class="panel-body">${playerRows.length ? `<div class="combo-grid">${playerRows.slice(0, 30).map(row => comboCard(row, false)).join('')}</div>` : `<div class="empty-state">当前没有达到门槛的双人搭档；需要稳定选手身份和完整五人阵容。</div>`}</div></section>`;
 }
 
@@ -135,5 +121,5 @@ export async function renderRecords(container, {api, isCurrent, query}) {
   if (flips.length) records.push({label: '经济反复最多', value: `${Math.max(...flips.map(match => Number(match.signFlips)))} 次`, note: '经济差方向变化', match: flips.reduce((a, b) => Number(a.signFlips) >= Number(b.signFlips) ? a : b)});
   const card = record => `<article class="record-card"><span>${esc(record.label)}</span><b>${esc(record.value)}</b><small>${esc(record.note)}</small>${record.match ? `<a class="text-link" href="#match/${esc(record.match.key)}">${esc(record.match.opponent ? 'vs ' + record.match.opponent : record.match.date || '打开对局')} →</a>` : ''}</article>`;
   container.innerHTML = pageHeader('RECORDS · 训练纪录', '训练赛纪录', '从已确认比赛的时长、比分、经济差和时间轴计算；没有过程数据的纪录不计算。', [`${matches.length} 份记录`, `${process.length} 场有时间轴`, `${records.length} 项纪录`], `<a class="button" href="#matches">比赛档案</a>`)
-    + (matches.length ? `<div class="record-grid">${records.map(card).join('')}</div>` : `<section class="panel"><div class="empty-state"><strong>还没有比赛记录</strong>先采集并确认比赛，纪录会随比赛增加自动更新。<br><a href="#capture">采集一局 →</a></div></section>`);
+    + (matches.length ? `<div class="record-grid">${records.map(card).join('')}</div>` : `<section class="panel"><div class="empty-state"><strong>还没有比赛记录</strong>先采集并确认比赛，纪录会随比赛增加自动更新。<br><a href="#capture">采集 →</a></div></section>`);
 }

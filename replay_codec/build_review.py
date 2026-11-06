@@ -571,8 +571,9 @@ code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11px}
    <label><input type="checkbox" id="ckAnchor" checked>位置锚点</label>
    <label><input type="checkbox" id="ckDeath" checked>死亡区间徽标</label>
    <label>英雄名 <select id="labelMode" style="padding:2px 5px;font-size:11px">
-     <option value="active" selected>仅本秒有事件 / 死亡区间者</option>
-     <option value="all">十人全部</option><option value="none">不显示</option>
+     <option value="all" selected>十人全部</option>
+     <option value="active">仅本秒有事件 / 死亡区间者</option>
+     <option value="none">不显示</option>
     </select></label>
    <label>轨迹范围 <select id="trailMode" style="padding:2px 5px;font-size:11px">
      <option value="active" selected>仅本秒有事件者</option>
@@ -581,9 +582,9 @@ code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11px}
   </div>
   <div class="legend">
    <div><b>英雄位置</b><span class="sw" style="background:#3b82f6"></span>蓝方 /
-    <span class="sw" style="background:#ef4444"></span>红方，圆内为简称；
-    默认只给<b>本秒有事件 / 处于死亡区间者</b>附全名标签（避免团战时叠成一团，
-    可在图层区切换十人全部）。<b>黄环</b>=本秒有事件，
+    <span class="sw" style="background:#ef4444"></span>红方，圆内为简称，
+    旁附全名标签（左右交替避让）；团战太挤时可在图层区切换为
+    「仅本秒有事件 / 死亡区间者」。<b>黄环</b>=本秒有事件，
     <b>红虚线环</b>=处于死亡差分区间。</div>
    <div><b>方向技能</b><span class="sw" style="background:#fb923c"></span>橙箭头 =
     施法朝向（<code>degree/100</code>），带角度标注；近 2 秒余辉半透明。</div>
@@ -881,19 +882,19 @@ function render(t){
  ["R","L"].forEach(side=>{
   let last=-100;
   labs.filter(l=>l.side===side).sort((a,b)=>a.y-b.y).forEach(l=>{
-   l.ly=Math.max(l.y,last+17);last=l.ly;
+   l.ly=Math.max(l.y,last+15.5);last=l.ly;
   });
  });
  labs.forEach(l=>{
-  const w=l.hero.length*12+12;
-  let bx=l.side==="R"?l.x+14:l.x-14-w;
+  const w=l.hero.length*11+11;
+  let bx=l.side==="R"?l.x+13:l.x-13-w;
   bx=Math.max(28,Math.min(576-w-6,bx));
-  const by=Math.max(28,Math.min(558,l.ly-8));
+  const by=Math.max(28,Math.min(558,l.ly-7));
   lb+='<g opacity="'+((focus&&!l.focus) ? 0.55 : 1)+'"><rect x="'+bx.toFixed(1)+
-   '" y="'+by.toFixed(1)+'" width="'+w+'" height="16" rx="8" fill="'+
+   '" y="'+by.toFixed(1)+'" width="'+w+'" height="14.5" rx="7" fill="'+
    COL[l.camp]+'" opacity=".94" stroke="#fff" stroke-opacity=".6" '+
-   'stroke-width="1"/><text x="'+(bx+w/2).toFixed(1)+'" y="'+(by+11.5).toFixed(1)+
-   '" text-anchor="middle" font-size="10.5" font-weight="650" fill="#fff">'+
+   'stroke-width="1"/><text x="'+(bx+w/2).toFixed(1)+'" y="'+(by+10.4).toFixed(1)+
+   '" text-anchor="middle" font-size="10" font-weight="650" fill="#fff">'+
    esc(l.hero)+'</text></g>';
  });
 

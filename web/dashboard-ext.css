@@ -1,0 +1,170 @@
+/* 数据看板 · 终局扩展指标（B 组）专用样式。浅色主题，与深度分析页同色板。 */
+.db-ext {
+  --ext-ink: #16233a;
+  --ext-muted: #5d6b82;
+  --ext-faint: #8a97a9;
+  --ext-line: #e4e9f2;
+  --ext-surface: #fff;
+  --ext-soft: #f8fafd;
+  --ext-blue: #3b6ce8;
+  --ext-teal: #2aa79b;
+  --ext-red: #d95f6b;
+  --ext-amber: #e08a3c;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-ext-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.db-ext-card {
+  background: var(--ext-soft);
+  border: 1px solid var(--ext-line);
+  border-radius: 10px;
+  padding: 13px 14px 11px;
+  min-width: 0;
+}
+
+.db-ext-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ext-muted);
+  font-size: 12px;
+}
+
+.db-ext-top b {
+  color: var(--ext-ink);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.db-ext-top span {
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--ext-faint);
+}
+
+.db-ext-value {
+  margin-top: 8px;
+  font-size: 26px;
+  line-height: 1.1;
+  font-weight: 680;
+  color: var(--ext-ink);
+  letter-spacing: -0.02em;
+}
+
+.db-ext-value small {
+  margin-left: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ext-faint);
+  letter-spacing: 0;
+}
+
+.db-ext-value.empty {
+  color: var(--ext-faint);
+  font-size: 20px;
+}
+
+.db-ext-cmp {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--ext-muted);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.db-ext-cmp em {
+  font-style: normal;
+  font-weight: 650;
+}
+
+.db-ext-cmp em.pos { color: var(--ext-teal); }
+.db-ext-cmp em.neg { color: var(--ext-red); }
+.db-ext-cmp em.flat { color: var(--ext-faint); }
+
+.db-ext-range {
+  position: relative;
+  height: 9px;
+  margin-top: 13px;
+  border-radius: 5px;
+  background: #e9eef7;
+  overflow: visible;
+}
+
+.db-ext-range i {
+  position: absolute;
+  top: 0;
+  height: 9px;
+  border-radius: 5px;
+  background: #b9cdf6;
+}
+
+.db-ext-range b {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 15px;
+  border-radius: 1px;
+  background: var(--ext-blue);
+}
+
+.db-ext-cov {
+  height: 4px;
+  margin-top: 11px;
+  border-radius: 3px;
+  background: #e9eef7;
+  overflow: hidden;
+}
+
+.db-ext-cov i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ext-teal);
+}
+
+.db-ext-foot {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ext-faint);
+  white-space: nowrap;
+}
+
+.db-ext-note {
+  margin: 12px 0 0;
+  padding: 10px 13px;
+  border-left: 3px solid var(--ext-amber);
+  background: #fffaf3;
+  border-radius: 0 6px 6px 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ext-muted);
+}
+
+.db-ext-note b { color: var(--ext-ink); }
+
+.db-ext-empty {
+  padding: 18px;
+  border: 1px dashed var(--ext-line);
+  border-radius: 8px;
+  color: var(--ext-muted);
+  font-size: 12px;
+  line-height: 1.7;
+  background: var(--ext-soft);
+}
+
+@media (max-width: 720px) {
+  .db-ext-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .db-ext-value { font-size: 21px; }
+  .db-ext-foot { font-size: 9.5px; }
+}

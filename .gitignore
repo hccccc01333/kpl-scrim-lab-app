@@ -39,3 +39,7 @@ models/
 camp_auth.json
 
 dist/
+
+# open-source export scratch copies (own .git, virtualenv and build output)
+oss-v4/
+oss-v5/

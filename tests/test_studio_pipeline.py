@@ -90,14 +90,19 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(result['rows'][0]['n'],4)
 
     def test_no_time_extrapolation_and_missing_gap(self):
+        # 王者三段口径（0-4 / 4-10 / 10+）后字段从 gold5/gold15 改为 gold4/goldEnd；
+        # 语义不变：相邻观测点间隔 600s > 120s 时不插值、不把短片段外推到十分钟。
         rows=[player(1)]
         match={'key':'1','ownCamp':'blue','process':{'timeline':[
             {'gameTime':0,'blueGold':100,'redGold':100},
             {'gameTime':600,'blueGold':1000,'redGold':500}]}}
         result=research(rows,'tempo',matches=[match])
-        self.assertIsNone(result['rows'][0]['gold5'])
-        self.assertIsNone(result['rows'][0]['gold15'])
-        self.assertEqual(result['rows'][0]['gold10'],500)
+        row=result['rows'][0]
+        self.assertIsNone(row['gold4'])
+        self.assertIsNone(row['earlyDelta'])
+        self.assertIsNone(row['midDelta'])
+        self.assertEqual(row['gold10'],500)
+        self.assertEqual(row['goldEnd'],500)
         self.assertEqual(result['summary']['十分钟领先且有赛果'],0)
 
     def test_swing_window_keeps_evidence(self):
@@ -148,6 +153,26 @@ class PipelineApiTests(unittest.TestCase):
         self.assertEqual(store.restore(backup)['added'],0)
         altered=copy.deepcopy(backup);altered[0]['body']['rows'][0]['gold']=9876
         with self.assertRaises(ValueError):store.restore(altered)
+
+    def test_legacy_dataset_without_exploratory_keeps_workspace_alive(self):
+        """旧版/手工编辑的备份可能缺 exploratory；restore 不校验该字段，
+        list() 曾硬取 body['exploratory'] 导致 /api/studio/workspace 500，
+        整个工作台只剩「无法连接本地服务」。"""
+        store=DatasetStore(self.results)
+        saved=store.save('旧版备份缺字段',prepare([player(1)]),{})
+        item=next(x for x in store.backup() if x['id']==saved['id'])
+        body=item['body']
+        body.pop('exploratory',None)
+        with store.connect() as c:
+            c.execute('UPDATE prepared_datasets SET body=? WHERE id=?',
+                      (json.dumps(body,ensure_ascii=False),item['id']))
+        listed={x['id']:x for x in store.list()}
+        self.assertIn(item['id'],listed)
+        self.assertFalse(listed[item['id']]['exploratory'])
+        self.assertEqual(listed[item['id']]['after']['rows'],1)
+        response=self.client.get('/api/studio/workspace')
+        self.assertEqual(response.status_code,200,response.text)
+        self.assertIsInstance(response.json()['datasets'],list)
 
     def test_topic_report_save(self):
         spec={'topic':'hero_pool','dataset':'records','filters':{'includePartial':True}}

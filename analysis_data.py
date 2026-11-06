@@ -117,6 +117,12 @@ def _result_for(camp, winner, scores):
     return 'unknown'
 
 
+def _is_seed_title(title):
+    """验证脚本写入的对局标题固定带「验证数据」前缀，用于隔离测试样本。"""
+    text = clean(title)
+    return text.startswith('验证数据') or '排位验证' in text
+
+
 def _complete(player):
     keys = ('kills', 'deaths', 'assists', 'gold', 'damage', 'taken')
     return all(player.get(key) is not None for key in keys)
@@ -140,16 +146,18 @@ class AnalysisRepository:
     # ---------- loading ----------
     def _load(self):
         warnings = []
-        roster, team_name, db_matches, drafts, aliases = self._load_db(warnings)
+        roster, team_name, db_matches, drafts, aliases, profile = self._load_db(warnings)
         bundles = self._load_bundles(warnings)
         matches, links = self._unify(db_matches, bundles, warnings)
-        self._apply_aliases(matches, aliases, roster)
+        self._apply_aliases(matches, aliases, roster, (profile.get('enemyAliases') or {}))
+        self._apply_match_meta(matches, self._load_match_meta(warnings))
         sheet_matches, imports, aggregates = self._load_imports(warnings)
         rows = self._flat_rows(matches, warnings)
         # 表格行按需加入；默认 source=db,bundle。
         sheet_rows = self._sheet_flat_rows(sheet_matches, warnings)
         data = {
             'teamName': team_name,
+            'profile': profile,
             'roster': roster,
             'aliases': aliases,
             'matches': matches,
@@ -165,12 +173,13 @@ class AnalysisRepository:
         return data
 
     @staticmethod
-    def _apply_aliases(matches, aliases, roster):
-        """Bind未绑定昵称到稳定选手 ID；只影响分析视图，不改原始比赛。
+    def _apply_aliases(matches, aliases, roster, enemy_aliases=None):
+        """Bind 昵称到稳定选手 ID；只影响分析视图，不改原始比赛。
 
-        Aliases belong to our team. Never apply them to the opponent camp:
-        the same nickname can appear on both sides across matches.
+        本队昵称走 aliases，对手昵称走 enemy_aliases：
+        同一个昵称可能在不同对局出现在两侧，必须按阵营分开映射。
         """
+        enemy_aliases = enemy_aliases or {}
         for match in matches:
             own = match.get('ownCamp') or match.get('ownSide')
             for player in match.get('players', []):
@@ -178,9 +187,9 @@ class AnalysisRepository:
                 if player.get('playerId') or not own:
                     continue
                 camp = player.get('camp') or player.get('side')
-                if camp and camp != own:
-                    continue
-                player_id = aliases.get(player.get('label') or '')
+                is_own = not camp or camp == own
+                table = aliases if is_own else enemy_aliases
+                player_id = table.get(player.get('label') or '')
                 if player_id and player_id in roster:
                     player['playerId'] = player_id
                     player['label'] = roster[player_id]
@@ -189,14 +198,48 @@ class AnalysisRepository:
     def _load_db(self, warnings):
         if not self.db_path.is_file():
             warnings.append('未找到工作台数据库，仅使用录像数据包/表格。')
-            return {}, None, [], 0, {}
+            return {}, None, [], 0, {}, {}
         try:
             connection = sqlite3.connect(f'file:{self.db_path.as_posix()}?mode=ro', uri=True)
             connection.row_factory = sqlite3.Row
             settings_row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
             settings = json.loads(settings_row[0]) if settings_row else {'teamName': '', 'roster': []}
-            roster = {player['id']: player.get('name') or player['id'] for player in settings.get('roster', [])}
+            roster_members = settings.get('roster', [])
+            own_team = (settings.get('teamName') or '').strip()
+
+            def identity_label(player):
+                """身份标签：跨战队时带前缀，例如「重庆狼队.小胖」。
+
+                同一名选手的大小号通过 aliases 归到同一条名单记录，标签只写一次。
+                """
+                name = (player.get('name') or player.get('id') or '').strip()
+                team = (player.get('team') or '').strip()
+                if team and team != own_team and name and not name.startswith(team + '.'):
+                    return f'{team}.{name}'
+                return name
+
+            roster = {player['id']: identity_label(player) for player in roster_members}
             aliases = settings.get('aliases') if isinstance(settings.get('aliases'), dict) else {}
+            profile = {
+                'teamName': settings.get('teamName') or '',
+                'coach': clean(settings.get('coach')),
+                'season': clean(settings.get('season')),
+                'organization': clean(settings.get('organization')),
+                'teams': settings.get('teams') if isinstance(settings.get('teams'), list) else [],
+                'enemyAliases': settings.get('enemyAliases') if isinstance(settings.get('enemyAliases'), dict) else {},
+                'members': [{
+                    'id': player.get('id'),
+                    'name': player.get('name') or player.get('id'),
+                    'label': identity_label(player),
+                    'realName': player.get('realName') or '',
+                    'position': player.get('position') or '',
+                    'team': player.get('team') or '',
+                    'tags': player.get('tags') or [],
+                    'number': player.get('number'),
+                    'campUserId': str(player.get('campUserId') or ''),
+                    'archived': bool(player.get('archived')),
+                } for player in roster_members],
+            }
             matches, drafts = [], 0
             for row in connection.execute('SELECT body FROM matches'):
                 body = json.loads(row[0])
@@ -205,10 +248,67 @@ class AnalysisRepository:
                     continue
                 matches.append(self._db_match(body, roster))
             connection.close()
-            return roster, settings.get('teamName'), matches, drafts, aliases
+            return roster, settings.get('teamName'), matches, drafts, aliases, profile
         except (sqlite3.Error, json.JSONDecodeError, KeyError) as error:
             warnings.append(f'工作台数据库读取失败：{error}')
-            return {}, None, [], 0, {}
+            return {}, None, [], 0, {}, {}
+
+    def _load_match_meta(self, warnings):
+        """人工补录的比赛档案（对手、时长、赛果等），以覆盖层形式生效。
+
+        原始数据包/记录不改写；补录内容单独存放，可随时撤回。
+        """
+        if not self.db_path.is_file():
+            return {}
+        try:
+            connection = sqlite3.connect(f'file:{self.db_path.as_posix()}?mode=ro', uri=True)
+            try:
+                rows = connection.execute('SELECT match_key, body FROM match_meta').fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return {}
+        meta = {}
+        for key, body in rows:
+            try:
+                value = json.loads(body)
+            except (TypeError, ValueError):
+                continue
+            if isinstance(value, dict):
+                meta[key] = value
+        return meta
+
+    @staticmethod
+    def _apply_match_meta(matches, meta):
+        if not meta:
+            return
+        text_fields = ('opponent', 'session', 'title', 'version', 'mode', 'venue', 'note')
+        for match in matches:
+            patch = meta.get(match.get('key'))
+            if not patch:
+                continue
+            for key in text_fields:
+                if key in patch:
+                    match[key] = clean(patch.get(key))
+            if 'duration' in patch:
+                minutes = number(patch.get('duration'))
+                match['duration'] = int(round(minutes * 60)) if minutes and minutes > 0 else None
+            camp = patch.get('ownCamp')
+            if camp in ('blue', 'red'):
+                # 教练可以指定本队这一局在蓝方还是红方；胜方随之按比分重算。
+                match['ownCamp'] = camp
+                match['ownSide'] = 'left' if camp == 'blue' else 'right'
+                scores = match.get('scores') or {}
+                blue = number(scores.get('blue')) if scores.get('blue') is not None else number(scores.get('left'))
+                red = number(scores.get('red')) if scores.get('red') is not None else number(scores.get('right'))
+                if blue is not None and red is not None and blue != red:
+                    match['winnerCamp'] = 'blue' if blue > red else 'red'
+            result = patch.get('result')
+            if result in ('win', 'loss', 'draw') and match.get('ownCamp') in ('blue', 'red'):
+                own = match['ownCamp']
+                match['winnerCamp'] = {'win': own, 'loss': 'red' if own == 'blue' else 'blue',
+                                       'draw': None}[result]
+            match['metaFields'] = sorted(patch.keys())
 
     def _db_match(self, body, roster):
         duration = number(body.get('duration'))
@@ -235,6 +335,11 @@ class AnalysisRepository:
                 'taken': _metric(player, 'taken'),
                 'participation': _metric(player, 'participation'),
                 'rating': _metric(player, 'rating'),
+                'cs': _metric(player, 'cs'), 'jungleGold': _metric(player, 'jungleGold'),
+                'control': _metric(player, 'control'), 'healing': _metric(player, 'healing'),
+                'towerDamage': _metric(player, 'towerDamage'),
+                'damageConversion': _metric(player, 'damageConversion'),
+                'takenPerDeath': _metric(player, 'takenPerDeath'),
                 'finalSource': 'db', 'partial': False, 'process': None,
                 'equipment': player.get('equipment'),
             })
@@ -281,6 +386,11 @@ class AnalysisRepository:
                     'assists': number(final.get('assists')), 'gold': number(final.get('totalGold')),
                     'damage': number(final.get('damage')), 'taken': number(final.get('taken')),
                     'participation': number(final.get('participation')), 'rating': number(final.get('rating')),
+                    'cs': number(final.get('cs')), 'jungleGold': number(final.get('jungleGold')),
+                    'control': number(final.get('control')), 'healing': number(final.get('healing')),
+                    'towerDamage': number(final.get('towerDamage')),
+                    'damageConversion': number(final.get('damageConversion')),
+                    'takenPerDeath': number(final.get('takenPerDeath')),
                     'finalSource': final.get('source') or 'bundle',
                     'partial': bool(final.get('partial', not final.get('complete', False))),
                     'process': process,
@@ -297,11 +407,16 @@ class AnalysisRepository:
                 'dbId': None, 'bundleKey': match.get('key') or path.stem,
                 'sources': ['bundle'], 'source': 'bundle',
                 'date': date.get('text'), 'dateText': date.get('text'),
-                'duration': match.get('duration'), 'opponent': None,
-                'session': None, 'version': None, 'mode': match.get('mode'),
+                'duration': match.get('duration'),
+                'opponent': match.get('opponent'), 'session': match.get('session'),
+                'version': None, 'mode': match.get('mode'),
                 'title': match.get('title'), 'ownSide': own_camp,
-                'ownCamp': own_camp,
-                'winner': None, 'scores': match.get('scores') or {},
+                'ownCamp': own_camp or match.get('ownCamp'),
+                # winner 保持原有口径（数据包默认不由面板冒充胜负）；
+                # winnerCamp 是营地/官方回放自带的真实胜负，BP 聚合优先读它。
+                'winner': None, 'winnerCamp': match.get('winnerCamp'),
+                'campBp': match.get('campBp'),
+                'scores': match.get('scores') or {},
                 'players': players, 'process': {
                     'timeline': (value.get('team') or {}).get('timeline') or [],
                     'scoreboardSnapshots': (value.get('team') or {}).get('scoreboardSnapshots') or [],
@@ -539,6 +654,7 @@ class AnalysisRepository:
                     'opponent': match.get('opponent') or '', 'session': match.get('session') or '',
                     'version': match.get('version') or '', 'mode': match.get('mode') or '',
                     'title': match.get('title') or '',
+                    'seed': _is_seed_title(match.get('title')),
                     'playerId': player.get('playerId'),
                     'playerKey': player.get('playerId') or f"label:{camp}:{player.get('label')}",
                     'label': player.get('label') or player.get('hero') or '未知队员',
@@ -574,6 +690,15 @@ class AnalysisRepository:
                     'result': player.get('result') or _result_for(
                         camp, match.get('winnerCamp') or match.get('winner'), match.get('scores')),
                     'process': player.get('process') or {},
+                    # B 组扩展终局值：营地 battledetail 实测优先，缺失保持 None，
+                    # 由 studio_analysis 在明确标记 derivedFields 后才允许派生。
+                    'cs': number(player.get('cs')),
+                    'jungleGold': number(player.get('jungleGold')),
+                    'control': number(player.get('control')),
+                    'healing': number(player.get('healing')),
+                    'towerDamage': number(player.get('towerDamage')),
+                    'damageConversion': number(player.get('damageConversion')),
+                    'takenPerDeath': number(player.get('takenPerDeath')),
                 }
                 own = match.get('ownCamp')
                 row['isOwn'] = bool(own and camp == own)
@@ -598,6 +723,8 @@ class AnalysisRepository:
             if partial:
                 warnings.append(f'{partial} 行只有月日，日期筛选会排除这些行。')
         def keep(row):
+            if filters.get('excludeSeeds') and row.get('seed'):
+                return False
             if filters.get('from') and row.get('dateKey') and row['dateKey'] < filters['from']:
                 return False
             if filters.get('to') and row.get('dateKey') and row['dateKey'] > filters['to']:
@@ -628,6 +755,8 @@ class AnalysisRepository:
 
     def _aggregate_rows(self, filters):
         rows, warnings = self._selected_rows(filters)
+        if filters.get('ownOnly'):
+            rows = [row for row in rows if row.get('isOwn')]
         if filters.get('includePartial'):
             return rows, warnings
         return [row for row in rows if row.get('full')], warnings
@@ -680,9 +809,15 @@ class AnalysisRepository:
                                    f'可勾选“包含部分数据”查看快照。')
         result = {
             'teamName': self.get()['teamName'],
+            'coach': (self.get().get('profile') or {}).get('coach') or '',
+            'season': (self.get().get('profile') or {}).get('season') or '',
             'matches': len(matches), 'decided': decided, 'wins': wins,
             'winRate': round(wins / decided * 100, 1) if decided else None,
             'players': len(players), 'heroes': len(heroes),
+            # 本队口径：首页和英雄页要的是「我们自己的」，不含对手。
+            'ownPlayers': len({row['label'] for row in rows if row.get('isOwn') and row.get('label')}),
+            'ownHeroes': len({row['hero'] for row in rows if row.get('isOwn') and row['hero']}),
+            'boundPlayers': len({row['playerId'] for row in rows if row.get('isOwn') and row.get('playerId')}),
             'rows': len(rows), 'sources': filters.get('sources') or list(DEFAULT_SOURCES),
             'coverage': {'timelineMatches': timeline, 'scoreboardMatches': snapshots,
                          'povMatches': pov, 'completeMatches': complete_matches,
@@ -693,12 +828,65 @@ class AnalysisRepository:
                           'imports': len(self.get()['imports']),
                           'aggregateTables': len(self.get()['aggregates']),
                           'drafts': self.get()['drafts']},
+            'dataQuality': self._data_quality(matches),
+            'profile': self.get().get('profile') or {},
             'warnings': list(dict.fromkeys(self.get()['warnings'] + filter_warnings)),
         }
         if include_top:
             result['topPlayers'] = self.player_stats(filters)[:5]
             result['topHeroes'] = self.hero_stats(filters)[:5]
         return result
+
+    @staticmethod
+    def _is_seed_match(match):
+        return _is_seed_title(match.get('title'))
+
+    def _data_quality(self, matches):
+        """档案体检：教练打开就能看到「哪些数字是可信的、哪些还缺」。
+
+        只报事实，不估算；每项都给出分母，避免拿 0 场当 0%。
+        """
+        total = len(matches)
+        checks = []
+
+        def add(key, label, missing, hint):
+            checks.append({'key': key, 'label': label, 'ok': max(0, total - missing),
+                           'missing': missing, 'total': total, 'hint': hint})
+
+        add('opponent', '对手', sum(1 for m in matches if not m.get('opponent')),
+            '对手决定交手记录与对手英雄，缺失时这些页面为空')
+        add('duration', '时长', sum(1 for m in matches if not m.get('duration')),
+            '没有时长就无法换算分均经济/输出，也判断不了经济差的时间位置')
+        add('curve', '经济差', sum(
+            1 for m in matches
+            if not ((m.get('process') or {}).get('timeline') and m.get('duration'))),
+            '需要「经济时间轴 + 时长」同时具备，才算得出 10 分钟领先、经济转折')
+        add('lane', '分路', sum(
+            1 for m in matches
+            if not any(p.get('position') for p in m.get('players', []))),
+            '没有分路就无法做同位置对位，只能看个人总量')
+        own_unbound = 0
+        for match in matches:
+            own = match.get('ownCamp') or match.get('ownSide')
+            for player in match.get('players', []):
+                camp = player.get('camp') or player.get('side')
+                if own and camp and camp != own:
+                    continue
+                if not player.get('playerId'):
+                    own_unbound += 1
+                    break
+        add('identity', '选手绑定', own_unbound,
+            '未绑定的昵称会拆散个人数据，无法跨局对比')
+        seeded = sum(1 for m in matches if self._is_seed_match(m))
+        quality_score = None
+        if total:
+            quality_score = round(sum(item['ok'] for item in checks) / (len(checks) * total) * 100)
+        return {
+            'score': quality_score,
+            'total': total,
+            'seedMatches': seeded,
+            'checks': checks,
+        }
 
     def player_stats(self, filters):
         rows, _ = self._aggregate_rows(filters)
@@ -777,6 +965,8 @@ class AnalysisRepository:
 
     def hero_stats(self, filters):
         rows, _ = self._aggregate_rows(filters)
+        if filters.get('ownOnly'):
+            rows = [row for row in rows if row.get('isOwn')]
         groups = defaultdict(list)
         for row in rows:
             if row['hero']:
@@ -866,6 +1056,7 @@ class AnalysisRepository:
         result = []
         for match in matches:
             own_camp = match.get('ownCamp')
+            own, enemy = self._camp_totals(match, own_camp)
             result.append({
                 'key': match['key'], 'date': match.get('date'), 'dateText': match.get('dateText'),
                 'opponent': match.get('opponent'), 'session': match.get('session'),
@@ -880,8 +1071,72 @@ class AnalysisRepository:
                 'hasScoreboard': bool((match.get('process') or {}).get('scoreboardSnapshots')),
                 'hasPov': any((player.get('process') or {}).get('pov') for player in match.get('players', [])),
                 'warnings': len(match.get('warnings') or []),
+                'isSeed': self._is_seed_match(match),
+                'own': own, 'enemy': enemy,
+                'goldDiff': self._final_gold_diff(match, own_camp),
+                'missing': self._match_gaps(match),
+                'heroes': [player.get('hero') for player in match.get('players', [])
+                           if player.get('hero') and (player.get('camp') or player.get('side')) == own_camp][:5],
             })
         return {'matches': result, 'warnings': warnings}
+
+    @staticmethod
+    def _camp_totals(match, own_camp):
+        """本队/对手五项合计；只用来做卡片摘要，不参与正式统计。"""
+        def totals(camp):
+            players = [p for p in match.get('players', [])
+                       if camp and (p.get('camp') or p.get('side')) == camp]
+            if not players:
+                return None
+            out = {'kills': 0, 'deaths': 0, 'assists': 0, 'gold': 0, 'damage': 0, 'games': len(players)}
+            for player in players:
+                for key in ('kills', 'deaths', 'assists', 'gold', 'damage'):
+                    value = player.get(key)
+                    if isinstance(value, (int, float)) and math.isfinite(value):
+                        out[key] += value
+            out['kda'] = round((out['kills'] + out['assists']) / max(1, out['deaths']), 2)
+            return out
+        enemy_camp = {'blue': 'red', 'red': 'blue'}.get(own_camp)
+        return totals(own_camp), totals(enemy_camp)
+
+    @staticmethod
+    def _final_gold_diff(match, own_camp):
+        timeline = (match.get('process') or {}).get('timeline') or []
+        if own_camp not in ('blue', 'red'):
+            return None
+        last = None
+        for point in timeline:
+            try:
+                blue, red = float(point.get('blueGold')), float(point.get('redGold'))
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(blue) and math.isfinite(red):
+                last = (blue - red) if own_camp == 'blue' else (red - blue)
+        return None if last is None else round(last)
+
+    @staticmethod
+    def _match_gaps(match):
+        """这场「教练想问但答不了」的问题，按影响排序。"""
+        gaps = []
+        if not match.get('opponent'):
+            gaps.append('对手')
+        if not match.get('duration'):
+            gaps.append('时长')
+        if not (match.get('process') or {}).get('timeline'):
+            gaps.append('经济时间轴')
+        own = match.get('ownCamp') or match.get('ownSide')
+        positions = [p for p in match.get('players', []) if p.get('position')]
+        if not positions:
+            gaps.append('分路')
+        for player in match.get('players', []):
+            camp = player.get('camp') or player.get('side')
+            if own and camp and camp != own:
+                continue
+            if not player.get('playerId'):
+                gaps.append('选手绑定')
+                break
+        return gaps
+
 
     def match_detail(self, key):
         for match in self.get()['matches'] + self.get()['sheetMatches']:
@@ -1089,7 +1344,7 @@ class AnalysisRepository:
         scan_filters = dict(filters)
         scan_filters['includePartial'] = True
         matches, warnings = self._selected_matches(scan_filters)
-        landmarks = (120, 300, 600, 900)
+        landmarks = (120, 240, 300, 600, 900)
         per_match = []
         agg = {'leadAt10Games': 0, 'leadAt10Wins': 0,
                'diffAt': {str(t): {'sum': 0, 'n': 0} for t in landmarks},
@@ -1144,9 +1399,10 @@ class AnalysisRepository:
             winner = match.get('winnerCamp') or match.get('winner')
             win = (winner == own) if winner in ('blue', 'red') else None
             diff_at_map = {str(t): diff_at(t) for t in landmarks}
-            early = diff_at_map['300'] - points[0][1] if diff_at_map['300'] is not None else None
-            mid = diff_at_map['900'] - diff_at_map['300'] if all(diff_at_map[k] is not None for k in ('300','900')) else None
-            late = points[-1][1] - diff_at_map['900'] if last_t > 900 and diff_at_map['900'] is not None else None
+            # 王者三段口径：0–4 前期 / 4–10 中期 / 10+ 后期。
+            early = diff_at_map['240'] - points[0][1] if diff_at_map['240'] is not None else None
+            mid = diff_at_map['600'] - diff_at_map['240'] if all(diff_at_map[k] is not None for k in ('240', '600')) else None
+            late = points[-1][1] - diff_at_map['600'] if last_t > 600 and diff_at_map['600'] is not None else None
             sign_flips = 0
             last_sign = 0
             for _, diff in points:
@@ -1169,11 +1425,25 @@ class AnalysisRepository:
                 kill_points.append((t, blue_kills, red_kills))
             kill_points.sort()
             kills_per_minute = None
+            kills_source = None
             if len(kill_points) >= 2:
                 monotonic = all(all(right[i] >= left[i] for i in (1,2)) for left,right in zip(kill_points,kill_points[1:]))
                 elapsed = (kill_points[-1][0] - kill_points[0][0]) / 60
                 if monotonic and elapsed > 0:
                     kills_per_minute = (sum(kill_points[-1][1:]) - sum(kill_points[0][1:])) / elapsed
+                    kills_source = 'timeline'
+            if kills_per_minute is None:
+                # 营地官方回放只提供约 30 秒一个点的团队金币，timeline 的
+                # blueKills/redKills 常为空；终局比分是双方真实击杀数（不是
+                # 事件条数），配合结算时长可算整局击杀率。仅作为回退口径，
+                # 有时间轴击杀快照时仍优先用 timeline。
+                duration = number(match.get('duration'))
+                blue_kills = number(final_scores.get('blue')) if final_scores.get('blue') is not None else number(final_scores.get('left'))
+                red_kills = number(final_scores.get('red')) if final_scores.get('red') is not None else number(final_scores.get('right'))
+                if (duration and duration > 0 and blue_kills is not None and red_kills is not None
+                        and blue_kills >= 0 and red_kills >= 0):
+                    kills_per_minute = (blue_kills + red_kills) / (duration / 60)
+                    kills_source = 'final-score'
             lead_at_10 = diff_at_map['600'] > 0 if diff_at_map['600'] is not None else None
             entry = {
                 'key': match['key'], 'date': match.get('date'), 'opponent': match.get('opponent') or '',
@@ -1184,7 +1454,9 @@ class AnalysisRepository:
                            'late': round(late) if late is not None else None},
                 'leadAt10': lead_at_10, 'signFlips': sign_flips,
                 'finalDiff': round(points[-1][1]), 'observedEnd': last_t, 'observedStart': first_t, 'perspective': 'own-minus-enemy',
+                'duration': match.get('duration'),
                 'killsPerMinute': round(kills_per_minute, 2) if kills_per_minute is not None else None,
+                'killsPerMinuteSource': kills_source,
             }
             per_match.append(entry)
             for t in landmarks:
@@ -1225,83 +1497,238 @@ class AnalysisRepository:
                 'warnings': warnings}
 
     def bp_summary(self, filters):
-        """结构化 BP 聚合：ban 频率、我方手序、对手 BP 习惯。旧文本 BP 不参与。"""
+        """BP 聚合：人工手序录入优先、营地名单兜底，两类来源不混算手序。
+
+        营地 battledetail 给的是终局 ban/pick 名单（无 1–5 楼顺序、无一手方），
+        所以名单类指标（禁用/选用频率、阵容、分路、对手习惯）自动出；
+        手序效果与先后手只使用比赛校对页人工填写的 match.bp。
+        旧字段（bans / ownPicks / orderEffect / opponents）保持原形状。
+        """
+        from bp_camp import merge_bp_sources
         matches, warnings = self._selected_matches(filters)
-        bans, own_picks, order_effect = {}, {}, {order: {'n': 0, 'wins': 0} for order in range(1, 6)}
-        opponents = {}
-        matches_with_bp = 0
+        SIDE = {'blue': 'left', 'red': 'right', 'left': 'left', 'right': 'right'}
+        bans, own_picks, enemy_picks, pick_counts = {}, {}, {}, {}
+        order_effect = {order: {'n': 0, 'wins': 0} for order in range(1, 6)}
+        opponents, pairs, compositions, lane_stats, first_pick_effect = {}, {}, {}, {}, {}
+        sides = {side: {'side': side, 'bans': 0, 'picks': 0, 'matches': 0, 'wins': 0}
+                 for side in ('left', 'right')}
+        hero_meta, match_rows = {}, []
+        totals = {'bans': 0, 'picks': 0, 'decided': 0, 'wins': 0}
+        camp_matches = manual_matches = 0
+
+        def add_pick(target, hero, win):
+            entry = target.setdefault(hero, {'hero': hero, 'count': 0, 'wins': 0,
+                                            'decided': 0, 'winRate': None})
+            entry['count'] += 1
+            if win is not None:
+                entry['decided'] += 1
+                entry['wins'] += 1 if win else 0
+            return entry
+
+        def rate(wins, n):
+            return round(wins / n * 100, 1) if n else None
+
+        def note_lane(hero, kind):
+            lane = hero_meta.get(hero, {}).get('lane') or '未分路'
+            bucket = lane_stats.setdefault(lane, {'lane': lane, 'bans': 0, 'picks': 0,
+                                                  'heroes': {}})
+            bucket[kind] += 1
+            bucket['heroes'][hero] = bucket['heroes'].get(hero, 0) + 1
+
         for match in matches:
-            bp = match.get('bp')
-            if not isinstance(bp, dict) or not any(hero for kind in ('bans', 'picks') for values in (bp.get(kind) or {}).values() for hero in values):
+            record = merge_bp_sources(match.get('bp'), match.get('campBp'), match)
+            if not record:
                 continue
-            matches_with_bp += 1
-            side_map = {'blue': 'left', 'red': 'right', 'left': 'left', 'right': 'right'}
-            own_side = side_map.get(match.get('ownCamp'))
-            winner = side_map.get(match.get('winnerCamp') or match.get('winner'))
+            camp_matches += record['source'] == 'camp'
+            manual_matches += record['source'] == 'manual'
+            for name, value in record['heroMeta'].items():
+                current = hero_meta.setdefault(name, {'id': None, 'icon': None, 'lane': None})
+                for key in ('id', 'icon', 'lane'):
+                    if value.get(key) and not current.get(key):
+                        current[key] = value[key]
+            # 跨局补齐：本局被 ban 的英雄可能在别的局出场，那里才有分路/头像。
+            for group in (record['bans'], record['picks']):
+                for entries in group.values():
+                    for entry in entries:
+                        meta = hero_meta.get(entry['name']) or {}
+                        for key in ('id', 'icon', 'lane'):
+                            if not entry.get(key):
+                                entry[key] = meta.get(key)
+            own_side = SIDE.get(match.get('ownCamp')) or record['ownSide']
+            winner = (SIDE.get(match.get('winnerCamp') or match.get('winner'))
+                      or record['winnerSide'])
             win = winner == own_side if winner and own_side else None
+            if winner:
+                for side in ('left', 'right'):
+                    sides[side]['matches'] += 1
+                sides[winner]['wins'] += 1
+                totals['decided'] += 1
+                totals['wins'] += 1 if win else 0
+
             for side in ('left', 'right'):
-                for hero in (bp.get('bans') or {}).get(side, []):
-                    if not hero:
-                        continue
-                    entry = bans.setdefault(hero, {'hero': hero, 'total': 0, 'byLeft': 0, 'byRight': 0,
-                                                   'leftN': 0, 'leftWins': 0, 'rightN': 0, 'rightWins': 0})
+                entries = record['bans'][side]
+                sides[side]['bans'] += len(entries)
+                totals['bans'] += len(entries)
+                for item in entries:
+                    hero = item['name']
+                    entry = bans.setdefault(hero, {'hero': hero, 'total': 0, 'byLeft': 0,
+                                                   'byRight': 0, 'leftN': 0, 'leftWins': 0,
+                                                   'rightN': 0, 'rightWins': 0})
                     entry['total'] += 1
                     entry['byLeft' if side == 'left' else 'byRight'] += 1
                     if winner is not None:
-                        key = f'{"left" if side == "left" else "right"}'
-                        entry[f'{key}N'] += 1
-                        entry[f'{key}Wins'] += 1 if winner == side else 0
-            if not own_side:
-                continue
-            enemy_side = 'right' if own_side == 'left' else 'left'
-            for order, hero in enumerate((bp.get('picks') or {}).get(own_side, []), start=1):
-                if not hero:
-                    continue
-                entry = own_picks.setdefault(hero, {'hero': hero, 'count': 0, 'wins': 0, 'decided': 0})
-                entry['count'] += 1
-                if win is not None:
-                    entry['decided'] += 1
-                    entry['wins'] += 1 if win else 0
-                bucket = order_effect.get(order)
-                if bucket and win is not None:
-                    bucket['n'] += 1
-                    if win:
-                        bucket['wins'] += 1
-            opponent = match.get('opponent') or ''
-            habits = opponents.setdefault(opponent, {'opponent': opponent, 'matches': 0,
-                                                     'bans': {}, 'picks': {}})
-            habits['matches'] += 1
-            for hero in (bp.get('bans') or {}).get(enemy_side, []):
-                if not hero:
-                    continue
-                habits['bans'][hero] = habits['bans'].get(hero, 0) + 1
-            for hero in (bp.get('picks') or {}).get(enemy_side, []):
-                if not hero:
-                    continue
-                habits['picks'][hero] = habits['picks'].get(hero, 0) + 1
+                        entry[f'{side}N'] += 1
+                        entry[f'{side}Wins'] += 1 if winner == side else 0
+                    note_lane(hero, 'bans')
 
-        def win_rate(entry, key):
-            n = entry[f'{key}N']
-            return round(entry[f'{key}Wins'] / n * 100, 1) if n else None
+            enemy_side = 'right' if own_side == 'left' else 'left' if own_side else None
+            for side in ('left', 'right'):
+                entries = record['picks'][side]
+                sides[side]['picks'] += len(entries)
+                totals['picks'] += len(entries)
+                for index, item in enumerate(entries, start=1):
+                    hero = item['name']
+                    pick_counts[hero] = pick_counts.get(hero, 0) + 1
+                    note_lane(hero, 'picks')
+                    if side == own_side:
+                        add_pick(own_picks, hero, win)
+                        if record['pickOrderKnown'] and win is not None:
+                            bucket = order_effect.get(index)
+                            if bucket:
+                                bucket['n'] += 1
+                                bucket['wins'] += 1 if win else 0
+                    elif side == enemy_side:
+                        add_pick(enemy_picks, hero, win)
+
+            own_names = [item['name'] for item in (record['picks'].get(own_side) or [])] if own_side else []
+            if len(own_names) == 5:
+                key = ' · '.join(sorted(own_names))
+                comp = compositions.setdefault(key, {'heroes': sorted(own_names), 'count': 0,
+                                                     'wins': 0, 'decided': 0})
+                comp['count'] += 1
+                if win is not None:
+                    comp['decided'] += 1
+                    comp['wins'] += 1 if win else 0
+            for i, a in enumerate(own_names):
+                for b in own_names[i + 1:]:
+                    left, right = sorted((a, b))
+                    pair = pairs.setdefault((left, right), {'a': left, 'b': right, 'n': 0,
+                                                            'wins': 0, 'decided': 0})
+                    pair['n'] += 1
+                    if win is not None:
+                        pair['decided'] += 1
+                        pair['wins'] += 1 if win else 0
+
+            if own_side and enemy_side:
+                opponent = match.get('opponent') or ''
+                habits = opponents.setdefault(opponent, {'opponent': opponent, 'matches': 0,
+                                                         'bans': {}, 'picks': {}})
+                habits['matches'] += 1
+                for item in record['bans'][enemy_side]:
+                    habits['bans'][item['name']] = habits['bans'].get(item['name'], 0) + 1
+                for item in record['picks'][enemy_side]:
+                    habits['picks'][item['name']] = habits['picks'].get(item['name'], 0) + 1
+
+            if record['firstPick'] and own_side and win is not None:
+                label = '我方一手' if record['firstPick'] == own_side else '对手一手'
+                bucket = first_pick_effect.setdefault(label, {'label': label, 'n': 0, 'wins': 0})
+                bucket['n'] += 1
+                bucket['wins'] += 1 if win else 0
+
+            match_rows.append({
+                'key': match.get('key'), 'date': match.get('date'),
+                'dateText': match.get('dateText') or match.get('date'),
+                'opponent': match.get('opponent') or '', 'session': match.get('session') or '',
+                'title': match.get('title') or '', 'duration': record['duration'],
+                'mapName': record['mapName'], 'gameSeq': record['gameSeq'],
+                'source': record['source'], 'pickOrderKnown': record['pickOrderKnown'],
+                'firstPick': record['firstPick'], 'ownSide': own_side,
+                'winnerSide': winner,
+                'result': ('win' if win else 'loss') if win is not None else 'unknown',
+                'bans': record['bans'], 'picks': record['picks'],
+                'teamStats': record['teamStats'], 'scores': match.get('scores') or {},
+            })
 
         ban_list = []
         for entry in bans.values():
-            ban_list.append({**entry, 'count': entry['total'], 'leftWinRate': win_rate(entry, 'left'), 'rightWinRate': win_rate(entry, 'right')})
+            ban_list.append({**entry, 'count': entry['total'],
+                             'leftWinRate': rate(entry['leftWins'], entry['leftN']),
+                             'rightWinRate': rate(entry['rightWins'], entry['rightN'])})
         ban_list.sort(key=lambda item: -item['total'])
+        for target in (own_picks, enemy_picks):
+            for entry in target.values():
+                entry['winRate'] = rate(entry['wins'], entry['decided'])
         pick_list = sorted(own_picks.values(), key=lambda item: -item['count'])
-        for entry in pick_list:
-            entry['winRate'] = round(entry['wins'] / entry['decided'] * 100, 1) if entry['decided'] else None
+        enemy_list = sorted(enemy_picks.values(), key=lambda item: -item['count'])
+
+        def heroes_with_meta(items):
+            return [{'name': name, 'count': count,
+                     **(hero_meta.get(name) or {})} for name, count in items]
+
         habit_list = []
         for entry in opponents.values():
-            habit_list.append({**entry,
-                               'bans': sorted(entry['bans'].items(), key=lambda kv: -kv[1])[:8],
-                               'picks': sorted(entry['picks'].items(), key=lambda kv: -kv[1])[:8]})
+            bans_top = sorted(entry['bans'].items(), key=lambda kv: -kv[1])[:8]
+            picks_top = sorted(entry['picks'].items(), key=lambda kv: -kv[1])[:8]
+            habit_list.append({**entry, 'bans': bans_top, 'picks': picks_top,
+                               'banHeroes': heroes_with_meta(bans_top),
+                               'pickHeroes': heroes_with_meta(picks_top)})
         habit_list.sort(key=lambda item: -item['matches'])
-        return {'matchesWithBp': matches_with_bp,
-                'bans': ban_list[:30],
-                'ownPicks': pick_list[:30],
-                'orderEffect': [{'order': order, **value} for order, value in order_effect.items()],
-                'opponents': habit_list[:20], 'warnings': warnings}
+
+        lane_list = []
+        for bucket in lane_stats.values():
+            lane_list.append({**bucket,
+                              'heroes': sorted(bucket['heroes'].items(), key=lambda kv: -kv[1])[:6]})
+        lane_list.sort(key=lambda item: -(item['bans'] + item['picks']))
+
+        pressure = []
+        for hero in set(bans) | set(pick_counts):
+            b, p = bans.get(hero, {}).get('total', 0), pick_counts.get(hero, 0)
+            pressure.append({'hero': hero, 'bans': b, 'picks': p,
+                             'banRate': rate(b, b + p), 'appearance': b + p})
+        pressure.sort(key=lambda item: (-item['bans'], -item['picks']))
+
+        comp_list = sorted(compositions.values(), key=lambda item: -item['count'])
+        for item in comp_list:
+            item['winRate'] = rate(item['wins'], item['decided'])
+        pair_list = sorted(pairs.values(), key=lambda item: -item['n'])
+        for item in pair_list:
+            item['winRate'] = rate(item['wins'], item['decided'])
+        for side in sides.values():
+            side['winRate'] = rate(side['wins'], side['matches'])
+        first_pick_list = sorted(first_pick_effect.values(), key=lambda item: item['label'])
+        for item in first_pick_list:
+            item['winRate'] = rate(item['wins'], item['n'])
+        totals['heroes'] = len(hero_meta)
+        linked_seqs = {row['gameSeq'] for row in match_rows if row['gameSeq']}
+        pending_camp = 0
+        detail_dir = self.db_path.parent / 'camp_details'
+        if detail_dir.is_dir():
+            try:
+                pending_camp = max(0, len(list(detail_dir.glob('*.json'))) - len(linked_seqs))
+            except OSError:
+                pass
+        sample_warning = None
+        if totals['decided'] and totals['wins'] == totals['decided']:
+            sample_warning = ('当前有胜负的 BP 对局全部为胜局，胜率类指标受样本选择偏差影响，'
+                              '不能据此判断英雄强弱。')
+        return {
+            'sampleWarning': sample_warning, 'pendingCampMatches': pending_camp,
+            'matchesWithBp': len(match_rows),
+            'campBpMatches': camp_matches, 'manualBpMatches': manual_matches,
+            'bans': ban_list[:30], 'ownPicks': pick_list[:30],
+            'enemyPicks': enemy_list[:30],
+            'orderEffect': [{'order': order, **value} for order, value in order_effect.items()],
+            'opponents': habit_list[:20],
+            'heroMeta': hero_meta, 'matches': match_rows[:40],
+            'compositions': comp_list[:20], 'pairs': pair_list[:30],
+            'lanes': lane_list, 'pressure': pressure[:30],
+            'sides': sides, 'firstPickEffect': first_pick_list,
+            'totals': totals,
+            'sourceNote': ('禁用/选用名单默认来自营地 battledetail 自动同步（终局名单，'
+                           '不含 pick 手序与一手方）；比赛校对页人工填写的 BP 优先，'
+                           '且只有人工数据参与手序与先后手统计。'),
+            'warnings': warnings,
+        }
 
     def objectives(self, filters):
         """资源事件聚合：暴君/主宰/风暴龙王控制率、塔数差、一塔归属与胜负的描述性关系。"""

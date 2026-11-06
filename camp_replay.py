@@ -116,6 +116,39 @@ def parse_link(url):
             'battleType': battle_type, 'pvpType': pvp_type, 'url': url}
 
 
+# 分享链接里「营地账号 ID」的字段名（大小写不敏感）。roleId /
+# uniqueRoleId / toAppRoleId 是游戏角色 ID，绝不能拿去查战绩列表。
+CAMP_USER_ID_KEYS = ('userid', 'frienduserid', 'shareuserid', 'campuserid')
+
+
+def extract_camp_user_id(url: str) -> dict:
+    """从营地网页链接里提取营地账号 ID，供「登记同步选手」使用。
+
+    与 parse_link 分开：登记选手只需要 userId，不需要 gameseq / 服务器参数，
+    也不该受对局模式（battleType）、页面路径（mp-redirect / battle-replay）
+    或 KPL/beta 标记影响。开房间征召等未实测模式的链接因此同样可用。
+    parse_link 仍严格服务于导入官方回放，那里必须拿到完整的回放参数。
+    """
+    parsed = urllib.parse.urlparse(str(url or '').strip())
+    host = (parsed.netloc or '').lower()
+    if host.endswith('servicewechat.com') or host.endswith('weixin.qq.com'):
+        raise CampReplayError('这是微信小程序跳转链，不是营地网页链接；'
+                              '请在浏览器里打开后再复制地址栏链接。')
+    if host and not (host == 'camp.qq.com' or host.endswith('.camp.qq.com')):
+        raise CampReplayError('只接受 camp.qq.com 的营地链接')
+    lower = {key.lower(): values[-1] for key, values in
+             urllib.parse.parse_qs(parsed.query).items() if values}
+    user_id = next((lower[key] for key in CAMP_USER_ID_KEYS if lower.get(key)), '')
+    if not re.fullmatch(r'\d{5,15}', user_id or ''):
+        raise CampReplayError(
+            '链接里没有 userId（营地 ID）；请用微信分享的 mp-redirect 链接，'
+            '或直接填 5–15 位数字营地 ID。roleId / playerid 是角色 ID，不能代替。')
+    return {'userId': user_id,
+            'gameSeq': lower.get('gameseq'),
+            'battleType': lower.get('battletype'),
+            'pvpType': lower.get('pvptype')}
+
+
 def payload_for(link):
     payload = {'cSystem': 'unknown', 'h5Get': 1, 'gameSeq': link['gameSeq'],
                'gameSvr': link['gameSvr'], 'playerId': link['playerId'],
@@ -172,6 +205,7 @@ def normalize(payload, link):
     if not isinstance(data, dict):
         raise CampReplayError('接口缺少 data')
     key_events = [_key_event(event) for event in data.get('keyEventArr') or []]
+    battles = _battles(data)
     extended = []
     for block in data.get('extendEventArr') or []:
         for event in block.get('eventList') or []:
@@ -222,6 +256,7 @@ def normalize(payload, link):
                     'note': '官方回放接口只提供约30秒一个点的团队金币。'},
         'events': {'key': key_events, 'extended': extended,
                    'equipment': data.get('equipEvent') or []},
+        'battles': battles,
         'players': players,
         'positions': {'perSecond': True,
                       'pointsPerPlayer': max([position['points'] for position in positions] + [0]),
@@ -230,7 +265,7 @@ def normalize(payload, link):
         'warnings': [
             '官方回放金币是约30秒一个点，不是1秒；不能生成1秒金币曲线。',
             '有逐秒位置，但没有逐秒金币/KDA。',
-            '没有逐人原始输出/承伤/总经济；终局仍以赛后截图为准。',
+            '没有逐人全局原始输出/承伤/总经济；battles.battleDetail 只有团战窗口内的逐人值，终局仍以赛后截图为准。',
         ],
     }
     if link['kind'] == 'kpl':
@@ -238,7 +273,105 @@ def normalize(payload, link):
     return normalized, positions
 
 
+def _battles(data):
+    """Team fights, hero kills and death positions from the raw response.
+
+    ``keyEventArr`` rows with ``eventType == 'battle'`` carry ``battle`` and
+    ``battleDetail`` instead of ``dtData``.  ``battle.killInfo`` is the per-kill
+    hero ledger (victim, killer, camp, millisecond time); it matches the final
+    panel kill totals in every sampled game.  ``battleDetail`` holds per-fight
+    per-player damage / taken / control / KDA.  Earlier versions read ``dtData``
+    for every key event, flattening all 504 fights to ``timeSec=0, kills=[]``.
+
+    Account ids are deliberately not copied into ``playerMap``: callers join
+    on (game, camp, hero) and use their own anonymous identity mapping.
+    """
+    obj_map = {}
+    for item in data.get('playBaseInfoArr') or []:
+        obj = str(item.get('inBattleObjID') or '')
+        if not obj:
+            continue
+        obj_map[obj] = {'heroId': _int(item.get('heroID')),
+                        'hero': '', 'camp': str(item.get('acntCamp') or '')}
+    info_by_play = {str(p.get('playerId')): p for p in data.get('matchInfo') or []}
+    for item in data.get('playBaseInfoArr') or []:
+        obj = str(item.get('inBattleObjID') or '')
+        if obj not in obj_map:
+            continue
+        info = info_by_play.get(str(item.get('playID') or '')) or {}
+        obj_map[obj]['hero'] = info.get('heroName') or ''
+        obj_map[obj]['kills'] = _int(info.get('killCnt'))
+        obj_map[obj]['deaths'] = _int(info.get('deadCnt'))
+        obj_map[obj]['assists'] = _int(info.get('assistCnt'))
+
+    fights = []
+    for event in data.get('keyEventArr') or []:
+        battle = event.get('battle')
+        if not isinstance(battle, dict):
+            continue
+        kills = [{'timeSec': round(_int(k.get('time')) / 1000, 3),
+                  'victimCamp': str(k.get('camp') or ''),
+                  'victim': str(k.get('objID') or ''),
+                  'killerCamp': str(k.get('killerCamp') or ''),
+                  'killer': str(k.get('killerObjID') or '')}
+                 for k in battle.get('killInfo') or []]
+        details = [{
+            'fightId': str(row.get('fightId') or ''),
+            'objID': str(row.get('objID') or ''), 'camp': str(row.get('camp') or ''),
+            'support': _int(row.get('isSupport')),
+            'kills': _int(row.get('killCnt')), 'deaths': _int(row.get('deadCnt')),
+            'assists': _int(row.get('assistCnt')),
+            'hurt': _int(row.get('hurtTotal')), 'taken': _int(row.get('behurtTotal')),
+            'heal': _int(row.get('therapicTotal')),
+            'hardCtrl': _int(row.get('hardctrlTotal')),
+            'softCtrl': _int(row.get('softctrlTotal')),
+            'lowHP': _int(row.get('lowHP')), 'beginHP': _int(row.get('beginHP')),
+            'endHP': _int(row.get('endHP')),
+            'ultimates': _int(row.get('ultimateskillCnt')),
+        } for row in event.get('battleDetail') or []]
+        fights.append({
+            'fightId': str(battle.get('fightId') or ''),
+            'startSec': round(_int(battle.get('startTime')) / 1000, 3),
+            'endSec': round(_int(battle.get('endTime')) / 1000, 3),
+            'firstKillerCamp': str(battle.get('firstKillerCamp') or ''),
+            'camp1': _int(battle.get('camp1MemNum')),
+            'camp2': _int(battle.get('camp2MemNum')),
+            'participants': [{'objID': str(p.get('objID') or ''),
+                              'camp': str(p.get('camp') or ''),
+                              'timeSec': round(_int(p.get('time')) / 1000, 3),
+                              'beginner': _int(p.get('isBeginner'))}
+                             for p in battle.get('joinMemInfo') or []],
+            'kills': kills, 'details': details,
+        })
+
+    deaths = []
+    for item in data.get('playBaseInfoArr') or []:
+        for point in item.get('deathPosArr') or []:
+            deaths.append({'objID': str(item.get('inBattleObjID') or ''),
+                           'camp': str(item.get('acntCamp') or ''),
+                           'heroId': _int(item.get('heroID')),
+                           'x': _int(point.get('coordX')),
+                           'y': _int(point.get('coordY')),
+                           'timeSec': round(_int(point.get('time')), 3)})
+    return {'schema': 'camp-battles-v1',
+            'source': 'raw.json keyEventArr[eventType=battle].battle/battleDetail + playBaseInfoArr.deathPosArr',
+            'fights': fights, 'deaths': deaths, 'playerMap': obj_map,
+            'counts': {'fights': len(fights),
+                       'heroKills': sum(len(f['kills']) for f in fights),
+                       'fightRows': sum(len(f['details']) for f in fights),
+                       'deathPoints': len(deaths)}}
+
+
 def _key_event(event):
+    if event.get('eventType') == 'battle' and isinstance(event.get('battle'), dict):
+        battle = event['battle']
+        return {'eventType': 'battle',
+                'timeSec': round(_int(battle.get('startTime')) / 1000, 3),
+                'endSec': round(_int(battle.get('endTime')) / 1000, 3),
+                'fightId': battle.get('fightId'),
+                'killerCamp': battle.get('firstKillerCamp'),
+                'killCount': len(battle.get('killInfo') or []),
+                'kills': []}
     dt = event.get('dtData') or {}
     return {'eventType': event.get('eventType'),
             'timeSec': round(_int(dt.get('killTime')) / 1000, 3),

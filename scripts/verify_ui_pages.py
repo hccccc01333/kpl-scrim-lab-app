@@ -65,11 +65,11 @@ READY = """() => {
 LAYOUT_PROBE = r"""() => {
   const main = document.querySelector('#content');
   if (!main) return {issues: ['no_main'], squeezed: 0, clipped: 0, stretched: 0,
-                     offscreen: 0, table_misalign: 0, uneven_cards: 0};
+                     offscreen: 0, table_misalign: 0, uneven_cards: 0, card_clip: 0};
   const issues = [];
   const vw = window.innerWidth;
-  let squeezed = 0, clipped = 0, stretched = 0, offscreen = 0;
-  const samples = {squeezed: [], clipped: [], stretched: [], offscreen: []};
+  let squeezed = 0, clipped = 0, stretched = 0, offscreen = 0, card_clip = 0;
+  const samples = {squeezed: [], clipped: [], stretched: [], offscreen: [], card_clip: []};
   const skipTag = new Set(['TABLE','THEAD','TBODY','TR','SELECT','INPUT','SVG','PATH']);
   for (const el of main.querySelectorAll('h1,h2,h3,h4,strong,b,span,td,th,button,a,p,label,small')) {
     const r = el.getBoundingClientRect();
@@ -96,15 +96,27 @@ LAYOUT_PROBE = r"""() => {
       const p = el.parentElement;
       if (p && p.clientWidth > 0 && r.width > p.clientWidth * 0.94) {
         stretched++;
-        if (samples.stretched.length < 4) samples.stretched.push(txt.slice(0, 14));
+        if (samples.stretched.length < 4) samples.stretched.push(
+          (el.id ? '#' + el.id : '') + '.' + (el.className || '').toString().slice(0, 24) +
+          ':' + txt.slice(0, 10) + ':' + Math.round(r.width));
       }
     }
-    // 元素右边界越过视口
+    // 元素右边界越过视口；横向可滚动容器（表格等）内的越界属正常，不算缺陷
     if (r.right > vw + 3 && r.width < vw * 1.5 &&
         cs.position !== 'fixed' && !skipTag.has(el.tagName)) {
-      offscreen++;
-      if (samples.offscreen.length < 4) samples.offscreen.push(
-        el.tagName.toLowerCase() + '.' + (el.className || '').toString().slice(0, 24));
+      let p = el.parentElement, scrollable = false;
+      while (p && p !== main) {
+        const pcs = getComputedStyle(p);
+        if (/(auto|scroll)/.test(pcs.overflowX) && p.scrollWidth > p.clientWidth + 4) {
+          scrollable = true; break;
+        }
+        p = p.parentElement;
+      }
+      if (!scrollable) {
+        offscreen++;
+        if (samples.offscreen.length < 4) samples.offscreen.push(
+          el.tagName.toLowerCase() + '.' + (el.className || '').toString().slice(0, 24));
+      }
     }
   }
   // 表头与首行数值列的 text-align 一致性
@@ -119,6 +131,21 @@ LAYOUT_PROBE = r"""() => {
       const a = getComputedStyle(th).textAlign, b = getComputedStyle(cells[i]).textAlign;
       if (a !== b && (a === 'right' || b === 'right')) table_misalign++;
     });
+  }
+  // 卡片内文字越过卡片右边界（如对手卡片胜率数字被裁）
+  for (const card of main.querySelectorAll('.opponent-card,.research-card,.scenario-card,.next-card,.home-card')) {
+    const cr = card.getBoundingClientRect();
+    if (cr.width < 40) continue;
+    for (const child of card.querySelectorAll('b,strong,span,h3,em')) {
+      const r = child.getBoundingClientRect();
+      if (r.width > 0 && r.right > cr.right + 1) {
+        card_clip++;
+        if (samples.card_clip.length < 4) samples.card_clip.push(
+          (card.className || '').split(' ')[0] + '>' + child.tagName.toLowerCase() +
+          ':' + (child.innerText || '').trim().slice(0, 12));
+        break;
+      }
+    }
   }
   // 同一网格里的卡片高度是否齐平（排除明确设了 auto 的容器）
   let uneven_cards = 0;
@@ -139,8 +166,9 @@ LAYOUT_PROBE = r"""() => {
   if (offscreen) issues.push('offscreen_element');
   if (table_misalign) issues.push('table_misalign');
   if (uneven_cards) issues.push('uneven_cards');
+  if (card_clip) issues.push('card_clip');
   return {issues, squeezed, clipped, stretched, offscreen,
-          table_misalign, uneven_cards, overflow_x,
+          table_misalign, uneven_cards, card_clip, overflow_x,
           scroll_width: doc.scrollWidth, inner_width: vw,
           content_len: (main.innerText || '').trim().length,
           error_banner: /无法连接本地服务|Internal Server Error|not valid JSON|读取失败|加载失败/i.test(main.innerText || ''),
@@ -222,7 +250,8 @@ def seed(base):
                 'meta': {'engineVersion': 'studio-1', 'method': method,
                          'metrics': ['gold'], 'rows': len(rows), 'inputRows': len(rows),
                          'matches': matches, 'fingerprint': 'ui-seed-fp',
-                         'generatedAt': datetime.now().isoformat(), 'warnings': []},
+                         'duplicates': [], 'generatedAt': datetime.now().isoformat(),
+                         'warnings': []},
                 'columns': ['label', 'mean'], 'rows': rows,
                 'spec': {'method': method}}
 
@@ -243,7 +272,7 @@ def seed(base):
         ds_rows = [{'matchKey': 'ui-seed-%02d' % g, 'label': roster[g % 5]['name'],
                     'gold': 9000 + g * 700, 'damage': 38000 + g * 1500} for g in range(6)]
         body = {'schema': 'kpl-prepared-dataset-v1', 'rows': ds_rows,
-                'fingerprint': fingerprint(ds_rows),
+                'fingerprint': fingerprint(ds_rows), 'exploratory': False,
                 'before': {'rows': 6, 'matches': 6}, 'after': {'rows': 6, 'matches': 6},
                 'rules': {'trim': True, 'deduplicate': True}, 'logs': []}
         datasets = [{'id': 'ui-seed-dataset-1', 'title': '十月训练赛清洗快照',
@@ -283,12 +312,29 @@ def audit_page(context, base, route, slug, label, vp_name, take_shot):
     bucket = attach_errors(page)
     try:
         page.goto(base + '/studio' + route, wait_until='domcontentloaded', timeout=25000)
+        # 先等主内容就绪，否则标签栏还没渲染，点击会静默落空
+        try:
+            page.wait_for_function(READY, timeout=9000)
+        except Exception:
+            pass
+        if route in ('#lab', '#models'):
+            # 统计/模型实验的高级设置是主要操作区，展开后再截图验收
+            adv = page.locator('.lab-advanced')
+            if adv.count():
+                adv.first.evaluate('e => e.open = true')
+                page.wait_for_timeout(350)
         if route == '#team':
-            # 对手档案：切到 scouting 标签，让卡片网格真正渲染
+            # 对手档案：切到 scouting 标签，并确认激活态，避免把默认「经济节奏」页当对手档案验收
             tab = page.locator('[data-team-tab="scouting"]')
             if tab.count():
                 tab.first.click()
-                page.wait_for_timeout(350)
+                try:
+                    page.wait_for_function(
+                        "() => !!document.querySelector('[data-team-tab=\"scouting\"].active')",
+                        timeout=6000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(450)
         try:
             page.wait_for_function(READY, timeout=9000)
         except Exception:
@@ -512,11 +558,12 @@ def main():
     server = None
     base = args.base.rstrip('/')
     if not base:
-        base = 'http://127.0.0.1:8772'
+        # 与 verify_platform_page.py(8772)、verify_frontend.py(8771) 错开，便于并行回归
+        base = 'http://127.0.0.1:8773'
         tag = uuid.uuid4().hex[:10]
         db = OUT / ('ui-pages-%s.sqlite3' % tag)
         results_db = OUT / ('ui-pages-studio-%s.sqlite3' % tag)
-        env = dict(os.environ, TRAINING_PORT='8772', TRAINING_DB=str(db),
+        env = dict(os.environ, TRAINING_PORT='8773', TRAINING_DB=str(db),
                    STUDIO_RESULTS_DB=str(results_db), TRAINING_ALLOW_REMOTE='',
                    PYTHONIOENCODING='utf-8')
         log_stream = (open(OUT / 'ui-pages-server.log', 'w', encoding='utf-8')
@@ -583,7 +630,7 @@ def main():
         'overflow': sum(1 for c in cases if c['overflow_x']),
         'layout_signals': {k: sum(1 for c in cases if c.get(k))
                            for k in ('squeezed', 'clipped', 'stretched', 'offscreen',
-                                     'table_misalign', 'uneven_cards')},
+                                     'table_misalign', 'uneven_cards', 'card_clip')},
         'interactions': len(inter['cases']), 'interaction_failed': failed_inter,
         'interaction_skipped': sum(1 for c in inter['cases'] if c.get('skipped')),
         'interaction_passed': sum(1 for c in inter['cases']

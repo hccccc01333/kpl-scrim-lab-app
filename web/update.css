@@ -1,0 +1,184 @@
+/* 版本号与更新提示；不依赖具体页面布局。 */
+
+.kpl-version {
+  position: fixed;
+  left: 12px;
+  bottom: 8px;
+  z-index: 40;
+  padding: 2px 7px;
+  border: 1px solid var(--line-soft, #edf1f7);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .78);
+  color: var(--muted, #5f6b7e);
+  font: 10.5px/1.55 var(--font, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif);
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+}
+
+.kpl-update-card {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  width: min(370px, calc(100vw - 32px));
+  max-height: min(72vh, 580px);
+  overflow: hidden;
+  border: 1px solid var(--line, #e3e8f1);
+  border-radius: 16px;
+  background: var(--paper, #fff);
+  color: var(--ink, #171c26);
+  box-shadow: 0 18px 48px rgba(20, 32, 60, .18);
+  font: 13px/1.6 var(--font, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif);
+}
+
+.kpl-update-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 15px 16px 11px;
+  border-bottom: 1px solid var(--line-soft, #edf1f7);
+}
+
+.kpl-update-head h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  letter-spacing: .1px;
+}
+
+.kpl-update-close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted, #5f6b7e);
+  font-size: 18px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.kpl-update-close:hover {
+  background: var(--soft, #eaf1ff);
+  color: var(--ink, #171c26);
+}
+
+.kpl-update-body {
+  padding: 12px 16px 4px;
+  overflow: auto;
+}
+
+.kpl-update-meta {
+  margin: 0 0 8px;
+  color: var(--muted, #5f6b7e);
+  font-size: 11.5px;
+}
+
+.kpl-update-notes {
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--ink, #171c26);
+}
+
+.kpl-update-notes li {
+  margin: 4px 0;
+  word-break: break-word;
+}
+
+.kpl-update-warning {
+  margin: 9px 0 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #fff7e8;
+  color: #8a5315;
+  font-size: 12px;
+}
+
+.kpl-update-status {
+  min-height: 18px;
+  margin: 10px 0 0;
+  color: var(--muted, #5f6b7e);
+  font-size: 11.5px;
+}
+
+.kpl-update-status.is-error {
+  color: #b42318;
+}
+
+.kpl-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.kpl-update-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 13px;
+  border: 1px solid var(--line, #e3e8f1);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink, #171c26);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.kpl-update-btn:hover {
+  border-color: #cbd6e8;
+  background: #f8fafd;
+}
+
+.kpl-update-btn[disabled] {
+  opacity: .55;
+  cursor: default;
+}
+
+.kpl-update-btn.primary {
+  border-color: var(--green, #2f6fe4);
+  background: var(--green, #2f6fe4);
+  color: #fff;
+}
+
+.kpl-update-btn.primary:hover {
+  background: var(--green-ink, #1f56c4);
+  border-color: var(--green-ink, #1f56c4);
+}
+
+.kpl-update-btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted, #5f6b7e);
+}
+
+.kpl-update-btn.ghost:hover {
+  background: var(--soft, #eaf1ff);
+  color: var(--ink, #171c26);
+}
+
+.kpl-update-file {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .kpl-version {
+    display: none;
+  }
+
+  .kpl-update-card {
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 74vh;
+    border-radius: 16px 16px 0 0;
+  }
+}

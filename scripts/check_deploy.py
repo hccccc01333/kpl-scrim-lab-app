@@ -73,7 +73,10 @@ def main() -> int:
         if not rapid_ok:
             failures.append(('ocr.rapid', 'rapidocr-onnxruntime missing'))
         if not deps_ok:
-            failures.append(('ocr.mimoDeps', 'torch/transformers missing'))
+            # Mimo refinement is an optional add-on; the core workbench runs
+            # on RapidOCR alone. See requirements-mimo.txt.
+            print('note: Mimo dependencies are not installed; RapidOCR still works.')
+            print('      install them with: pip install -r requirements-mimo.txt')
         if not mimo.get('available'):
             print('note: Mimo model weights are not present; RapidOCR still works.')
 

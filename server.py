@@ -24,9 +24,12 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 
 from analysis_api import create_analysis_router
+from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
 from replay_v2_api import create_v2_router
+from update_api import create_update_router
+from version import VERSION, RELEASE_DATE, RELEASE_NAME
 import focus as focus_module
 import camp_replay
 from collection_contract import validate_sheet
@@ -98,6 +101,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS replays (id TEXT PRIMARY KEY, abc_file_id TEXT NOT NULL, ope_file_id TEXT, body TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS replay_checkpoints (replay_id TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL);
         CREATE TABLE IF NOT EXISTS focus_items (id TEXT PRIMARY KEY, body TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS match_meta (match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL);
         ''')
         c.execute('INSERT OR IGNORE INTO settings VALUES (1, ?)', (json.dumps({'teamName': '我的训练队', 'roster': []}, ensure_ascii=False),))
 
@@ -105,9 +109,11 @@ def init_db():
 init_db()
 app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
+app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_v2_router(V2_DIR))
 app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, V2_DIR, ROOT))
+app.include_router(create_update_router(ROOT, VERSION))
 
 
 @app.middleware('http')
@@ -146,18 +152,56 @@ def validate_settings(value):
         if not isinstance(p, dict) or not isinstance(p.get('id'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', p['id']) or p['id'] in ids:
             raise ValueError('队员 ID 缺失或重复')
         if not isinstance(p.get('name'), str) or not p['name'].strip() or len(p['name']) > 50:
-            raise ValueError('请填写有效队员昵称')
+            raise ValueError('请填写有效的选手名（职业 ID 或真名）')
+        if p.get('realName') is not None and (not isinstance(p['realName'], str) or len(p['realName']) > 50):
+            raise ValueError('选手真名无效')
+        tags = p.get('tags', [])
+        if not isinstance(tags, list) or len(tags) > 8 or any(
+                not isinstance(tag, str) or not tag.strip() or len(tag) > 12 for tag in tags):
+            raise ValueError('选手标签无效（最多 8 个，每个 12 字以内）')
+        p['tags'] = [tag.strip() for tag in tags if tag.strip()]
         ids.add(p['id'])
         if p.get('position', '') not in ['', '对抗路', '打野', '中路', '发育路', '游走']:
             raise ValueError('队员默认分路无效')
-    aliases = value.get('aliases', {})
-    if not isinstance(aliases, dict) or len(aliases) > 2000:
-        raise ValueError('昵称别名映射无效')
-    for label, player_id in aliases.items():
-        if (not isinstance(label, str) or not label.strip() or len(label) > 80
-                or player_id not in ids):
-            raise ValueError('昵称别名映射包含无效队员或昵称')
-    value['aliases'] = aliases
+        if p.get('team') is not None and (not isinstance(p['team'], str) or len(p['team']) > 50):
+            raise ValueError('所属战队无效')
+        camp_user_id = str(p.get('campUserId') or '').strip()
+        if camp_user_id and not re.fullmatch(r'\d{5,15}', camp_user_id):
+            raise ValueError('营地 ID 需为 5–15 位数字')
+        p['campUserId'] = camp_user_id
+        p.pop('archived', None)  # 名单移除就是硬删除，不再保留软删除标记
+    teams = value.get('teams', [])
+    if not isinstance(teams, list) or len(teams) > 60:
+        raise ValueError('战队名录无效')
+    clean_teams = []
+    seen_team = {value['teamName'].strip()}
+    for team in teams:
+        if not isinstance(team, dict):
+            raise ValueError('战队条目无效')
+        name = team.get('name')
+        if not isinstance(name, str) or not name.strip() or len(name.strip()) > 50:
+            raise ValueError('战队名称需为 1–50 字')
+        name = name.strip()
+        if name in seen_team:
+            continue
+        seen_team.add(name)
+        clean_teams.append({
+            'id': str(team.get('id') or f'team-{len(clean_teams) + 1}')[:80],
+            'name': name,
+            'short': str(team.get('short') or '')[:20],
+            'coach': str(team.get('coach') or '')[:30],
+            'note': str(team.get('note') or '')[:200],
+        })
+    value['teams'] = clean_teams
+    for field in ('aliases', 'enemyAliases'):
+        mapping = value.get(field, {})
+        if not isinstance(mapping, dict) or len(mapping) > 2000:
+            raise ValueError('昵称别名映射无效')
+        for label, player_id in mapping.items():
+            if (not isinstance(label, str) or not label.strip() or len(label) > 80
+                    or player_id not in ids):
+                raise ValueError('昵称别名映射包含无效选手或昵称')
+        value[field] = mapping
     return value
 
 
@@ -284,9 +328,22 @@ def save_settings(value: dict):
     try:
         with db() as c:
             old = settings(c)
-            if isinstance(value, dict) and 'aliases' not in value:
-                value['aliases'] = old.get('aliases', {})
+            if isinstance(value, dict):
+                value.setdefault('aliases', old.get('aliases', {}))
+                value.setdefault('enemyAliases', old.get('enemyAliases', {}))
             value = validate_settings(value)
+            previous_team = old['teamName']
+            old_teams = {p['id']: p.get('team', previous_team) for p in old['roster']}
+            current_team = value['teamName']
+            value['customTeams'] = list(dict.fromkeys([*old.get('customTeams', []), previous_team, current_team]))
+            for player in value['roster']:
+                player.setdefault('team', old_teams.get(player['id'], current_team))
+                team = player['team']
+                if not isinstance(team, str) or not team.strip() or len(team) > 50 or team == '__custom__':
+                    raise ValueError('队员所属战队无效')
+                if team not in value['customTeams']:
+                    value['customTeams'].append(team)
+
             if value.get('aliases') != old.get('aliases', {}):
                 from analysis_data import AnalysisRepository
                 identity_matches = AnalysisRepository(DB_PATH, MATCHES_DIR, IMPORTS_DIR).get()['matches']
@@ -912,10 +969,9 @@ def import_official_replays_batch(value: dict):
             share_url = url
             if camp_replay.is_short_link(share_url):
                 share_url = camp_replay.expand_short_link(share_url)
-            share_link = camp_replay.parse_link(share_url)
-            if share_link.get('playerId') and share_link['playerId'] != 'undefined':
-                share_user_id = share_link['playerId']
+            share_user_id = camp_replay.extract_camp_user_id(share_url).get('userId')
         except Exception:
+            # 只影响「清单+」快捷按钮，不让整批导入失败
             share_user_id = None
         try:
             result = camp_replay.import_link(share_url, force=bool(value.get('force')))
@@ -1069,7 +1125,11 @@ def camp_auth_qr():
 def camp_auth_poll(taskId: str):
     _camp_tools()
     import camp_auth
-    return camp_auth.poll_login_once(taskId)
+    try:
+        return camp_auth.poll_login_once(taskId)
+    except Exception as error:
+        # 兜底：轮询接口永远返回结构化状态，避免前端把 500 当成「继续等待」。
+        return {'status': 'error', 'message': f'轮询失败：{error}'}
 
 
 @app.post('/api/camp/auth/clear')
@@ -1077,12 +1137,25 @@ def camp_auth_clear():
     _camp_tools()
     import camp_auth
     camp_auth.AUTH_PATH.unlink(missing_ok=True)
+    camp_auth.cancel_login_session()
+    return {'ok': True}
+
+
+@app.post('/api/camp/auth/cancel')
+def camp_auth_cancel(taskId: str = ''):
+    """放弃当前二维码（用户点「取消扫码」或退出重新扫时调用）。"""
+    _camp_tools()
+    import camp_auth
+    camp_auth.cancel_login_session(taskId)
     return {'ok': True}
 
 
 @app.post('/api/camp/resolve')
 def camp_resolve(value: dict):
-    """从营地分享链接/短链解析营地 ID，供选手白名单登记，免人工抄写。"""
+    """从营地分享链接/短链解析营地 ID，供选手白名单登记，免人工抄写。
+
+    只看 userId：对局模式（含开房间征召）、页面路径和回放服务器参数都不影响结果。
+    """
     _camp_tools()
     import camp_replay
     url = str(value.get('url') or '').strip()
@@ -1091,14 +1164,10 @@ def camp_resolve(value: dict):
     try:
         if camp_replay.is_short_link(url):
             url = camp_replay.expand_short_link(url)
-        link = camp_replay.parse_link(url)
+        info = camp_replay.extract_camp_user_id(url)
     except camp_replay.CampReplayError as error:
         raise HTTPException(400, str(error))
-    user_id = link.get('playerId')
-    if not user_id or user_id == 'undefined':
-        raise HTTPException(400, '链接里没有 userId，无法得到营地 ID')
-    return {'userId': user_id, 'gameSeq': link.get('gameSeq'),
-            'battleType': link.get('battleType'), 'pvpType': link.get('pvpType')}
+    return info
 
 
 @app.get('/api/camp/config')
@@ -2504,7 +2573,8 @@ def legacy_index():
 @app.get('/api/health')
 def health():
     return {'ok': True, 'pid': os.getpid(), 'dbPath': str(DB_PATH),
-            'matchesDir': str(MATCHES_DIR), 'importsDir': str(IMPORTS_DIR)}
+            'matchesDir': str(MATCHES_DIR), 'importsDir': str(IMPORTS_DIR),
+            'version': VERSION, 'releaseDate': RELEASE_DATE, 'releaseName': RELEASE_NAME}
 
 
 app.mount('/assets', StaticFiles(directory=ROOT / 'web'), name='assets')

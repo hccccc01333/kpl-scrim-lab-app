@@ -19,6 +19,7 @@ RUN python -m pip install --upgrade pip \
 COPY *.py ./
 COPY web ./web
 COPY resources ./resources
+COPY tools ./tools
 COPY scripts/check_deploy.py ./scripts/check_deploy.py
 
 RUN mkdir -p /app/data

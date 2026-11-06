@@ -127,6 +127,13 @@ export function mountEntityTrend(root,rows,metric){
   const info=metrics[metric]||{label:metric,unit:'',digits:1};
   const rolling=rollingMean(rows,metric,5),values=rows.map(row=>finite(row[metric])),count=values.filter(v=>v!==null).length;
   if(!count){root.innerHTML=empty('当前范围没有该指标的有效观测；缺失值保留为空。');return;}
+  if(count===1){
+    // 只有一条观测时折线退化成单点，画出来是一大片空白；改为一条读数。
+    const index=values.findIndex(v=>v!==null),row=rows[index]||{};
+    root.innerHTML=`<div class="av-trend-single"><div class="av-trend-single-main"><span>${esc(info.label)}</span><b>${fmt(values[index],info.digits)}<em>${esc(info.unit)}</em></b></div><p><strong>${esc(row.date||'日期未记录')} · ${esc(row.hero||row.label||'本局')}</strong><br>当前只有 1 条有效观测，画折线看不出走势；再导入一局，这里会变成逐局曲线。</p></div>`;
+    root.onclick=null;root.onkeydown=null;
+    return;
+  }
   root.innerHTML=`<div class="av-trend-head"><span><i></i>逐局原值 <i class="rolling"></i>近5条记录均值</span><span>${count} / ${rows.length} 行有效</span></div><div class="av-trend-plot"></div><div class="av-trend-detail" aria-live="polite"></div>`;
   let selected=values.findLastIndex(v=>v!==null);
   function inspect(index){selected=index;const row=rows[index];root.querySelector('.av-trend-detail').innerHTML=`<div><strong>${esc(row.date||'日期未记录')} · ${esc(row.hero||row.label||'本局')}</strong><span>${info.label} ${fmt(values[index],info.digits)} ${info.unit} · 近5条记录均值 ${fmt(rolling[index].value,info.digits)}（${rolling[index].n} 个有效值）</span></div><a class="button" href="#match/${encodeURIComponent(row.matchKey)}">查看本局 ↗</a>`;}

@@ -1,6 +1,7 @@
 """Smoke-test the unified platform shell: home, capture entry, analysis and compatibility routes."""
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -65,8 +66,8 @@ try:
         check('全部子页可见', page.locator('#navigation .nav-menu-link').count() == 36)
         page.locator('#navigation a.nav-item[href="#capture"]').click()
         page.wait_for_selector('.capture-page', timeout=10000)
-        check('采集页标题', page.locator('h1').inner_text() == '采集一局')
-        check('采集二级导航', page.locator('#subnavigation a').all_inner_texts() == ['采集一局', '采集通道', '批量导入', '截图采集', '录屏采集', '回放文件', '数据集', '数据清洗', '字段与来源', '统计实验', '模型实验'])
+        check('采集页标题', page.locator('h1').inner_text() == '采集')
+        check('采集二级导航', page.locator('#subnavigation a').all_inner_texts() == ['采集', '采集通道', '批量导入', '截图采集', '录屏采集', '回放文件', '数据集', '数据清洗', '字段与来源', '统计实验', '模型实验'])
         check('采集直接建局', page.locator('#capture-create-form').count() == 1)
         page.locator('#capture-create-form button').click()
         page.wait_for_selector('#capture-create-status:has-text("至少填写")')
@@ -167,7 +168,15 @@ try:
 
         page.goto(BASE + '/studio#heroes', wait_until='networkidle')
         page.wait_for_selector('.page-facts', timeout=15000)
-        check('英雄页样本提示', page.locator('.sample-note').count() == 1)
+        # 提示条的业务规则是「样本 < 3 局才提示」，不能硬编码成「必须恰好 1 条」：
+        # 测试库里已确认的比赛数会随前面的用例变化，>=3 局时本就不该出现。
+        facts = page.locator('.page-facts').first.inner_text()
+        found = re.search(r'(\d+)\s*局', facts)
+        match_count = int(found.group(1)) if found else None
+        notes = page.locator('.sample-note').count()
+        expected = 1 if match_count is not None and match_count < 3 else 0
+        check('英雄页样本提示', notes == expected,
+              f'{match_count} 局时提示条 {notes} 条（期望 {expected} 条）')
         check('英雄页数据折叠', page.locator('.raw-fold').count() == 2)
         check('英雄页筛选折叠', page.locator('.page-filter').evaluate('(el) => !el.open'))
         check('英雄页下一步', page.locator('.next-card').count() == 3)

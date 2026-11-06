@@ -234,21 +234,43 @@ def create_login_session() -> dict:
 
 
 def poll_login_once(task_id: str) -> dict:
-    """轮询一次扫码状态。success 时凭证已写入 AUTH_PATH。"""
+    """轮询一次扫码状态。success 时凭证已写入 AUTH_PATH。
+
+    任何一步失败都返回结构化 status，不把异常抛到 HTTP 层：轮询一旦变成
+    500，前端会静默停在「已扫码，等待确认」，用户只能刷新页面重来。
+    """
     session = _login_sessions.get(task_id)
     if not session or time.time() - session['createdAt'] > SESSION_TTL:
         _login_sessions.pop(task_id, None)
         return {'status': 'expired'}
-    status, auth_code = poll_qrcode(session['uuid'])
+    try:
+        status, auth_code = poll_qrcode(session['uuid'])
+    except Exception as error:
+        # 微信长轮询偶发超时/断网：保留会话，下一次继续。
+        return {'status': 'waiting', 'warning': str(error)}
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        status = 0
     if auth_code and status == 405:
-        account = build_account(login_with_code(auth_code, session['xLogUid']),
-                                session['xLogUid'])
-        AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
-        AUTH_PATH.write_text(json.dumps(account, ensure_ascii=False, indent=2),
-                             encoding='utf-8')
+        # create_login_session 存的是 xlogUid；写成 xLogUid 会让「手机上点了
+        # 确定」变成 KeyError → 500，二维码永远停在等待确认。
+        xlog_uid = session.get('xlogUid') or session.get('xLogUid') or ''
+        try:
+            account = build_account(login_with_code(auth_code, xlog_uid), xlog_uid)
+            AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
+            AUTH_PATH.write_text(json.dumps(account, ensure_ascii=False, indent=2),
+                                 encoding='utf-8')
+        except Exception as error:
+            _login_sessions.pop(task_id, None)
+            return {'status': 'error', 'message': f'登录确认失败：{error}'}
         _login_sessions.pop(task_id, None)
         return {'status': 'success', 'nickname': account.get('nickname') or '',
                 'userId': account.get('userId') or ''}
+    if status == 405 and not auth_code:
+        # 已确认却没拿到 code：继续轮询也是白等，明确让用户重扫一次。
+        _login_sessions.pop(task_id, None)
+        return {'status': 'error', 'message': '微信已确认但未返回授权码，请重新扫码。'}
     if status == 404:
         return {'status': 'scanned'}
     if status == 402:
@@ -258,6 +280,14 @@ def poll_login_once(task_id: str) -> dict:
         _login_sessions.pop(task_id, None)
         return {'status': 'canceled'}
     return {'status': 'waiting'}
+
+
+def cancel_login_session(task_id: str = '') -> None:
+    """放弃一次扫码会话；不传 taskId 时清空全部（删除凭证时一并调用）。"""
+    if task_id:
+        _login_sessions.pop(task_id, None)
+    else:
+        _login_sessions.clear()
 
 
 def read_account() -> dict:

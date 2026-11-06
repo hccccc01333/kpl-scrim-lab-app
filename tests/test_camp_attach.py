@@ -24,10 +24,13 @@ def sample_detail():
         return {'roleId': role_id, 'roleName': name, 'playerId': player_id, 'acntCamp': camp}
 
     def stats(kills, deaths, assists, money, hurt, taken, join, grade):
+        # 真实 battledetail 的数值全是字符串，且含小数（hurtTransRate 0.5）。
+        # 保留这些格式，防止映射层把小数当字符串塞进统计口径。
         return {'killCnt': kills, 'deadCnt': deaths, 'assistCnt': assists, 'money': money,
                 'totalHurtCnt': hurt, 'totalBehurtCnt': taken, 'joinGamePercent': join,
-                'gradeGame': grade, 'killSoldier': 13, 'ctrlTime': 22, 'healCnt': 100,
-                'buildingDamage': 0, 'monsterCoin': 0}
+                'gradeGame': grade, 'killSoldier': '13', 'ctrlTime': '22', 'healCnt': '100',
+                'buildingDamage': '0', 'monsterCoin': '270',
+                'hurtTransRate': '0.5', 'behurtPerDeath': '26792.5'}
 
     blue_stats = [stats(5, 1, 5, 9000, 30000, 20000, 0.6, '8.1'),
                   stats(8, 1, 7, 11000, 28000, 18000, 0.9, '9.0'),
@@ -111,6 +114,98 @@ class AttachCampDetailTests(unittest.TestCase):
         conflict = next(c for c in player['conflicts'] if c['field'] == 'kills')
         self.assertEqual(conflict['screenshot'], 999)
         self.assertEqual(conflict['camp'], 5)
+
+    def _reviewable_channel(self, detail=None):
+        """凑齐唯一必采 official + 营地十人面板，使通道可审核。"""
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(self.channel, '1793795458',
+                                             detail or sample_detail(), OFFICIAL_PLAYERS, '测试')
+        channel_store.attach_official(
+            self.channel, 'camp-1793795458',
+            {'gameSeq': '1793795458', 'gameSvr': '1', 'relaySvr': '2',
+             'playerId': '540599032'},
+            {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
+             'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
+            '测试')
+        return self.channel
+
+    def test_extended_fields_mapped_as_numbers(self):
+        """营地 B 组 7 字段进草稿；小数必须解析成 float 而非字符串。"""
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(self.channel, '1793795458',
+                                             sample_detail(), OFFICIAL_PLAYERS, '测试')
+        sun = next(p for p in self.channel['draft']['players'] if p.get('hero') == '孙悟空')
+        fields = sun['fields']
+        self.assertEqual(fields['cs']['value'], 13)
+        self.assertEqual(fields['jungleGold']['value'], 270)
+        self.assertEqual(fields['control']['value'], 22)
+        self.assertEqual(fields['healing']['value'], 100)
+        self.assertEqual(fields['towerDamage']['value'], 0)
+        self.assertEqual(fields['damageConversion']['value'], 0.5)
+        self.assertIsInstance(fields['damageConversion']['value'], float)
+        self.assertEqual(fields['takenPerDeath']['value'], 26792.5)
+        self.assertIsInstance(fields['takenPerDeath']['value'], float)
+        self.assertEqual(fields['cs']['source'], 'camp')
+        # 契约一致性：扩展键必须同时有中文标签、且不与核心必采字段重叠
+        self.assertEqual(set(channel_store.ALL_FIELDS),
+                         set(channel_store.CORE_FIELDS) | set(channel_store.CAMP_EXTENDED_FIELDS))
+        for key in channel_store.CAMP_EXTENDED_FIELDS:
+            self.assertIn(key, channel_store.FIELD_LABELS)
+            self.assertNotIn(key, channel_store.CORE_FIELDS)
+
+    def test_extended_fields_survive_bundle_and_analysis(self):
+        """bundle.final 与跨局分析 rows 都要拿到扩展字段。"""
+        import tempfile
+        from analysis_data import AnalysisRepository
+        channel = self._reviewable_channel()
+        channel_store.set_review(channel, '教练甲', '已核对')
+        data = channel_store.bundle(channel)
+        final = data['players'][0]['final']
+        self.assertEqual(final['cs'], 13)
+        self.assertEqual(final['jungleGold'], 270)
+        self.assertEqual(final['healing'], 100)
+        self.assertEqual(final['damageConversion'], 0.5)
+        self.assertEqual(final['takenPerDeath'], 26792.5)
+        self.assertTrue(final['complete'])  # 扩展字段不参与必填判定
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'matches').mkdir()
+            (root / 'imports').mkdir()
+            (root / 'matches' / 'sample.json').write_text(
+                json.dumps(data, ensure_ascii=False), encoding='utf-8')
+            repo = AnalysisRepository(root / 'unused.sqlite3',
+                                      root / 'matches', root / 'imports')
+            bundles = repo._load_bundles([])
+            flat_rows = repo.get()['rows']
+        self.assertEqual(len(bundles), 1)
+        row = bundles[0]['players'][0]
+        self.assertEqual(row['cs'], 13)
+        self.assertEqual(row['healing'], 100)
+        self.assertEqual(row['damageConversion'], 0.5)
+        self.assertEqual(row['takenPerDeath'], 26792.5)
+        # 跨局分析真正消费的是扁平化 rows，不是 bundle.players
+        self.assertTrue(flat_rows, '扁平化行不能为空')
+        self.assertTrue(any(r.get('cs') == 13 and r.get('healing') == 100
+                            for r in flat_rows))
+        self.assertTrue(any(r.get('damageConversion') == 0.5
+                            and r.get('takenPerDeath') == 26792.5
+                            for r in flat_rows))
+
+    def test_extended_fields_optional_for_review(self):
+        """旧版营地面板没有扩展字段时，审核门槛与 complete 判定不受影响。"""
+        detail = sample_detail()
+        for roles_key in ('blueRoles', 'redRoles'):
+            for role in detail['data'][roles_key]:
+                for field in ('killSoldier', 'monsterCoin', 'ctrlTime', 'healCnt',
+                              'buildingDamage', 'hurtTransRate', 'behurtPerDeath'):
+                    role['battleStats'].pop(field, None)
+        channel = self._reviewable_channel(detail)
+        self.assertTrue(channel['sourceStatus']['complete'])
+        channel_store.set_review(channel, '教练甲', '已核对')
+        final = channel_store.bundle(channel)['players'][0]['final']
+        self.assertTrue(final['complete'])
+        for key in channel_store.CAMP_EXTENDED_FIELDS:
+            self.assertIsNone(final[key])  # 缺失保持 None，不估算补数
 
     def test_missing_detail_raises(self):
         channel = channel_store.blank()

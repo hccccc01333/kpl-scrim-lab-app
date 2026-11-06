@@ -21,6 +21,13 @@ data/camp_details/<gameSeq>.json
 过程数据（团队金币曲线、事件、逐秒位置）另由**公开回放接口**提供，
 两端可以互相校验。
 
+十人面板里的 7 项扩展终局值（`killSoldier` / `monsterCoin` / `ctrlTime` /
+`healCnt` / `buildingDamage` / `hurtTransRate` / `behurtPerDeath`）自 2026-11-05
+起由 `channel_store.attach_camp_detail` 按 `docs/screenshot_fields.md` 的契约键
+映射进采集通道草稿，随 bundle 落盘并进入跨局分析；教练无需额外采集七张截图。
+字段口径与缺失处理见 [指标注册表](metric_registry.md) B 组。`data/camp_details/`
+是只读原始样本缓存，不做回填改写。
+
 ## 二、需要准备什么（人工清单）
 
 | # | 事项 | 谁做 | 频率 |

@@ -2,24 +2,30 @@ name: ci
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
-      - name: Install core dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
       - name: Deploy smoke test
         run: python scripts/check_deploy.py
-      - name: Replay/checkpoint tests
+      - name: Replay and checkpoint tests
         run: |
           python -m unittest \
             tests.test_replay_checkpoints_api \
@@ -27,15 +33,31 @@ jobs:
             tests.test_replay_profiles \
             tests.test_state_series_checkpoints \
             tests.test_replay_frame_commands -v
+      - name: Full Python test suite
+        run: python -m pytest tests -q --disable-warnings
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
       - name: Frontend syntax check
         run: |
           for f in web/*.js; do node --experimental-default-type=module --check "$f"; done
       - name: Install browser test dependencies
         run: |
-          python -m pip install "playwright>=1.48,<2"
           python -m playwright install chromium --with-deps
-      - name: Frontend route audit (desktop + mobile)
+      - name: Frontend route audit (desktop and mobile)
         run: python scripts/verify_frontend.py --no-shots
+      - name: UI pages, layout and interaction checks
+        run: python scripts/verify_ui_pages.py --no-shots

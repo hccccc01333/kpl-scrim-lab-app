@@ -5,6 +5,7 @@ attachments: table, video OCR reports, screenshots and replay files.  This
 module only builds candidate drafts and bundles; it never confirms a match or
 writes a formal record.
 """
+import math
 import re
 from collection_contract import CONTRACT, PAGE_TYPES, PAGE_NAMES
 from datetime import datetime, timezone
@@ -13,11 +14,50 @@ SCHEMA = 'kpl-collection-channel-v1'
 BUNDLE_SCHEMA = 'kpl-match-data-v1'
 SOURCES = ('table', 'video', 'screenshot', 'replay', 'camp')
 CORE_FIELDS = ('kills', 'deaths', 'assists', 'gold', 'damage', 'taken', 'participation', 'rating')
+# 营地 battledetail 的 battleStats 已带 B 组终局扩展指标。键名沿用
+# docs/screenshot_fields.md 契约与 studio_analysis.METRICS，不用营地原名，
+# 保证下游跨局聚合能直接消费。这些是「增强字段」：缺失不阻止审核、
+# 不计入 complete/partial，也不参与 coverage 的必填缺项统计。
+CAMP_EXTENDED_FIELDS = ('cs', 'jungleGold', 'control', 'healing',
+                        'towerDamage', 'damageConversion', 'takenPerDeath')
+ALL_FIELDS = CORE_FIELDS + CAMP_EXTENDED_FIELDS
+# 营地原生键 → 契约键。hurtTransRate / behurtPerDeath 可能是小数，
+# 统一走 _camp_number 解析，不能按整数处理。
+CAMP_STAT_MAP = {
+    'killCnt': 'kills', 'deadCnt': 'deaths', 'assistCnt': 'assists',
+    'money': 'gold', 'totalHurtCnt': 'damage', 'totalBehurtCnt': 'taken',
+    'killSoldier': 'cs', 'monsterCoin': 'jungleGold', 'ctrlTime': 'control',
+    'healCnt': 'healing', 'buildingDamage': 'towerDamage',
+    'hurtTransRate': 'damageConversion', 'behurtPerDeath': 'takenPerDeath',
+}
 FIELD_LABELS = {
     'hero': '英雄', 'kills': '击杀', 'deaths': '死亡', 'assists': '助攻',
     'gold': '总经济', 'damage': '输出', 'taken': '承伤',
     'participation': '参团率', 'rating': '评分',
+    'cs': '补刀', 'jungleGold': '野怪经济', 'control': '控制效果',
+    'healing': '治疗量', 'towerDamage': '对塔伤害',
+    'damageConversion': '伤害转化比', 'takenPerDeath': '每死承伤',
 }
+
+
+def _camp_number(value):
+    """营地 battleStats 的数值几乎都是字符串（'38' / '0.5' / '26792'）。
+    统一转成 int/float，非数值原样返回，避免小数变成字符串混进下游统计。
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip().replace(',', '')
+    if not text:
+        return None
+    try:
+        number = float(text)
+    except ValueError:
+        return value
+    if not math.isfinite(number):
+        return value
+    return int(number) if number.is_integer() else number
 
 
 def now():
@@ -284,7 +324,7 @@ def apply_draft(channel, players, actor=None):
             hero = str(item.get('hero') or '').strip()
             edit['hero'] = hero or None
         for key, value in (item.get('fields') or {}).items():
-            if key not in CORE_FIELDS:
+            if key not in ALL_FIELDS:
                 continue
             if value in (None, ''):
                 edit.setdefault('fields', {})[key] = None
@@ -427,7 +467,7 @@ def _apply_manual(players, channel):
             player['heroStatus'] = 'manual' if edit['hero'] else 'unreadable'
             player['heroSource'] = 'manual'
         for key, value in (edit.get('fields') or {}).items():
-            if key not in CORE_FIELDS:
+            if key not in ALL_FIELDS:
                 continue
             if value is None:
                 player['fields'].pop(key, None)
@@ -508,8 +548,6 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
         camp_key = {'1': 'blue', '2': 'red', 'blue': 'blue', 'red': 'red'}.get(camp_code)
         if camp_key:
             official_by_camp[camp_key].append(item)
-    stat_map = {'killCnt': 'kills', 'deadCnt': 'deaths', 'assistCnt': 'assists',
-                'money': 'gold', 'totalHurtCnt': 'damage', 'totalBehurtCnt': 'taken'}
     players, ban, team_gold, ban_names = [], {}, {}, {}
     for roles_key, camp in (('blueRoles', 'blue'), ('redRoles', 'red')):
         roles = data.get(roles_key) or []
@@ -530,15 +568,15 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
             if official_match is None and len(official_by_camp.get(camp) or []) == 5:
                 official_match = official_by_camp[camp][index]
             fields = {}
-            for src, dst in stat_map.items():
-                value = stats.get(src)
-                if value not in (None, ''):
-                    fields[dst] = int(value) if str(value).lstrip('-').isdigit() else value
-            participation = stats.get('joinGamePercent')
-            if participation not in (None, ''):
+            for src, dst in CAMP_STAT_MAP.items():
+                value = _camp_number(stats.get(src))
+                if value is not None:
+                    fields[dst] = value
+            participation = _camp_number(stats.get('joinGamePercent'))
+            if participation is not None:
                 fields['participation'] = round(float(participation) * 100, 1)
-            rating = stats.get('gradeGame')
-            if rating not in (None, ''):
+            rating = _camp_number(stats.get('gradeGame'))
+            if rating is not None:
                 fields['rating'] = float(rating)
             players.append({'camp': camp, 'slot': index,
                             'playerId': str(basic.get('playerId') or ''),
@@ -570,9 +608,17 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
         if blue_kills or red_kills:
             scores['left'], scores['right'] = blue_kills, red_kills
     source = channel['sources'].setdefault('camp', {})
+    # 名单口径 BP：营地同时给 banHeros / pickHeros（终局名单，无手序、无一手方）。
+    # 与人工校对录入的 match.bp 分开存，避免把阵容冒充 1–5 楼手序。
+    from bp_camp import parse_camp_bp
+    camp_bp = parse_camp_bp(detail, game_seq)
+    pick_names = ({'blue': [item['name'] for item in camp_bp['picks']['left']],
+                   'red': [item['name'] for item in camp_bp['picks']['right']]}
+                  if camp_bp else {'blue': [], 'red': []})
     source.update({'status': 'parsed', 'gameSeq': str(game_seq),
                    'mapName': head.get('mapName'),
                    'players': players, 'ban': ban, 'banNames': ban_names,
+                   'pickNames': pick_names, 'bp': camp_bp,
                    'teamGold': team_gold,
                    'attachedAt': now(), 'parsedAt': now()})
     append_log(channel, 'attach-camp', actor,
@@ -601,7 +647,7 @@ def _merge_camp(players, channel):
             target['heroSource'] = 'camp'
             target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
         for key, value in (row.get('stats') or {}).items():
-            if key not in CORE_FIELDS or value is None:
+            if key not in ALL_FIELDS or value is None:
                 continue
             current = target['fields'].get(key)
             if current is None:
@@ -777,6 +823,10 @@ def bundle(channel):
             'rating': (fields.get('rating') or {}).get('value'),
             'complete': all((fields.get(key) or {}).get('value') is not None for key in CORE_FIELDS),
         }
+        # B 组扩展字段随 bundle 一起落盘，供跨局聚合消费；缺失保持 None，
+        # 不估算补数，也不影响上面的 complete/partial 判定。
+        for key in CAMP_EXTENDED_FIELDS:
+            final[key] = (fields.get(key) or {}).get('value')
         players.append({
             'key': f'{camp}-{player.get("slot")}', 'camp': camp, 'side': camp,
             'slot': player.get('slot'), 'panelSlot': player.get('slot'),
@@ -812,6 +862,9 @@ def bundle(channel):
         'winner': winner_camp, 'winnerCamp': winner_camp,
         'identity': {'confidence': 'manual-review', 'checks': {}, 'warnings': []},
         'videoCoverage': None, 'bp': match.get('bp'),
+        # 营地名单口径 BP 单独带出，供跨局聚合；人工 bp 优先、它作兜底。
+        'campBp': (channel.get('sources', {}).get('camp') or {}).get('bp'),
+        'opponent': match.get('opponent'), 'session': match.get('session'),
     }
     replay_result = (channel.get('sources', {}).get('replay') or {}).get('result') or {}
     if winner_camp:

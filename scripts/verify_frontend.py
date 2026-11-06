@@ -43,14 +43,21 @@ PROBE = """() => {
   const doc = document.documentElement;
   const main = document.querySelector('#content') || document.querySelector('main');
   const text = (main ? main.innerText : (document.body.innerText || '')).trim();
+  const controls = main ? main.querySelectorAll('input, select, textarea, button, table').length : 0;
   return {
     content_len: text.length,
     title: document.title,
     has_main: !!main,
+    controls: controls,
+    // An empty state that links to the next step is a rendered page.
+    guided: !!main && main.querySelector('a.button, .notice, .empty-state, .hint') !== null,
     overflow_x: doc.scrollWidth > window.innerWidth + 2,
     scroll_width: doc.scrollWidth,
     inner_width: window.innerWidth,
-    loading_only: /^(正在读取|正在打开|正在获取|加载中|正在加载|loading)/i.test(text),
+    // The loading banner sits above the rendered content, so only treat the
+    // page as stuck when the loading text is all there is.
+    loading_only: /^(正在读取|正在打开|正在获取|加载中|正在加载|loading)[^]{0,40}$/i.test(text)
+                   && text.length < 120,
     empty_hint: /还没有|暂无|没有数据|空态|empty/i.test(text)
   };
 }"""
@@ -59,9 +66,10 @@ PROBE = """() => {
 READY = """() => {
   const main = document.querySelector('#content') || document.querySelector('main');
   const t = (main ? main.innerText : '').trim();
-  if (/^(正在读取|正在打开|正在获取|加载中|正在加载|loading)/i.test(t)) return false;
+  const loading = /^(正在读取|正在打开|正在获取|加载中|正在加载|loading)[^]{0,40}$/i.test(t);
+  if (loading && t.length < 120) return false;
   if (/还没有|暂无|没有数据|空态|empty/i.test(t)) return true;
-  return t.length >= 80;
+  return t.length >= 80 || (main ? main.querySelectorAll('input, select, textarea, button, table').length > 0 : false);
 }"""
 SLOW_MS = 2500
 
@@ -132,7 +140,13 @@ def audit_route(page, base, route, viewport_name, errors, take_shot):
         problems.append('request_failed')
     if case['http_errors']:
         problems.append('http_error')
-    if case['content_len'] < 80:
+    # A page that renders a form, a table or a guided empty state is a real
+    # page even when its text is short: manual entry and empty forms
+    # legitimately have little copy.
+    sparse = (case['content_len'] < 80
+              and not case.get('controls')
+              and not case.get('guided'))
+    if sparse:
         problems.append('blank_page')
     if case['loading_only']:
         problems.append('stuck_loading')
@@ -223,7 +237,9 @@ def main():
         'critical': sum(1 for c in cases if c['status'] == 'critical'),
         'with_js_error': sum(1 for c in cases if c['js_errors']),
         'with_overflow': sum(1 for c in cases if c['overflow_x']),
-        'blank_pages': sum(1 for c in cases if c['content_len'] < 80),
+        'blank_pages': sum(1 for c in cases
+                           if c['content_len'] < 80
+                           and not c.get('controls') and not c.get('guided')),
         'slow_pages': sum(1 for c in cases if c['ready_ms'] > SLOW_MS),
         'max_ready_ms': max((c['ready_ms'] for c in cases), default=0),
     }

@@ -5,7 +5,7 @@
 
 可用性标记：
 
-- ✅ 现在可用（数据已在本地产生）
+- ✅ 现在可用（数据已在本地产生；B 组需本局已导入营地十人面板，见该节）
 - 📷 需新版分页截图采集推广（字段已进契约，见 `screenshot_fields.md`）
 - ⏱ 需回放录屏 OCR 常态化（时间轴链路已通：录屏 → 采集通道 → 比赛关联）
 - 🏷 需结构化 BP / 事件采集（本方案新增录入）
@@ -25,18 +25,76 @@
 | 六格装备 equipment | 逐格核对结果（旧版战绩页） | ✅ |
 | MVP / 评价称号 title | 画面值 | 📷 |
 
-## B. 终局个人·扩展（来源：新版分页截图采集，字段已入契约）
+## B. 终局个人·扩展（主来源：营地十人面板自动同步；兜底：新版分页截图）
+
+2026-11-05 起，营地 `battledetail` 的 `battleStats` 直接提供本组 7 项终局值，
+`channel_store.attach_camp_detail` 按 `docs/screenshot_fields.md` 的契约键映射，
+随 bundle 的 `final` 落盘并进入 `/#stats` 跨局聚合。教练扫码同步一次后**无需额外采集**，
+七张结算截图的数值内容不再依赖。
+
+| 营地原生键 | 契约键 | 口径 |
+|---|---|---|
+| `killSoldier` | `cs` | 补刀数 |
+| `monsterCoin` | `jungleGold` | 野怪经济 |
+| `ctrlTime` | `control` | 控制效果（营地原始值） |
+| `healCnt` | `healing` | 治疗量 |
+| `buildingDamage` | `towerDamage` | 对塔伤害 |
+| `hurtTransRate` | `damageConversion` | 伤害转化比 |
+| `behurtPerDeath` | `takenPerDeath` | 每死承伤 |
+
+**可用条件**：本局已导入营地十人面板。未导入时按 📷 走截图兜底或显示缺失，
+**不估算补数**。`damageConversion` / `takenPerDeath` 在缺实测值时允许由 A 组派生
+（`输出/总经济`、`承伤/死亡`），但必须标 `derivedFields`，且不与实测值混算。
+这些是增强字段：缺失不阻止审核、不计入 `complete/partial`，数据清洗页也只对
+5 个原始计数开放人工校正，两个比值字段不手改。
 
 | 指标 | 口径 | 可用 |
 |---|---|---|
-| 补刀 cs / 分均补刀 csPerMin | cs / 本局时长 | 📷 |
-| 伤害转化比 damageConversion | 输出伤害 / 总经济 | 📷 |
-| 每死承伤 takenPerDeath | 承伤 / 死亡 | 📷 |
-| 野怪经济 jungleGold / 野怪占比 | 画面值 | 📷 |
-| 控制效果 control | 画面值（时长或次数按画面） | 📷 |
-| 治疗量 healing | 画面值 | 📷 |
-| 对塔伤害 towerDamage | 画面值 | 📷 |
+| 补刀 cs / 分均补刀 csPerMin | 营地面板实测；cs / 本局时长 | ✅ |
+| 伤害转化比 damageConversion | 优先营地面板实测，缺失才派生 | ✅ |
+| 每死承伤 takenPerDeath | 优先营地面板实测，缺失才派生 | ✅ |
+| 野怪经济 jungleGold / 野怪占比 | 营地面板实测 | ✅ |
+| 控制效果 control | 营地面板原始值（不再按画面推断） | ✅ |
+| 治疗量 healing | 营地面板实测 | ✅ |
+| 对塔伤害 towerDamage | 营地面板实测 | ✅ |
 | 十项占比 shares | 击杀/死亡/助攻/输出/承伤/经济/野怪/补刀/控制/治疗/对塔 占本侧合计的 % | 📷 |
+
+`shares` 系列营地不直接提供，仍保持 📷：按页面显示值保存，不擅自重算。
+
+### 历史数据回填（2026-11-05）
+
+`CAMP_STAT_MAP` 扩到 15 项**之前**采集的对局，`channels` 表与
+`data/matches/*.json` 只存了 A 组 8 项，所以正式分析行里 B 组一度是 0/110。
+`tools/backfill_camp_extended.py` 用 `sources.camp.gameSeq` 对应
+`data/camp_details/<gameSeq>.json`，按 `(camp, slot)` 逐人把 7 项实测值回填到
+三处：通道 `sources.camp.players[].stats`、草稿 `draft.players[].fields`、
+比赛包 `players[].final`。只补缺失键、不覆盖已有值、不碰 A 组/身份/审核状态，
+不把 `roleName` / `playerId` 写进比赛包；幂等，支持 `--dry-run`，写入前自动
+备份 sqlite 与受影响比赛包到 `data/backups/camp-extended-<时间戳>/`。
+
+本机 11 局中 10 局有营地面板 → B 组 7 项覆盖率 **0/110 → 100/110**；第 11 局
+无面板，保持缺失。**新采集的对局在 `attach_camp_detail` 时已直接写入 B 组，
+无需再跑回填**。看板「终局扩展指标」只统计实测值：后端对缺失的
+`damageConversion` / `takenPerDeath` 会用 A 组派生并标 `derivedFields`，
+派生比值与营地实测不是同一口径，看板已剔除派生行、不与实测混算。
+
+**对局时长**（同日补）：卡片「时长」一度显示 `—`，不是没有数据，而是早期
+采集没把值写进 `data/matches/*.json` 的 `match.duration` —— 11 局里只有 1 局
+有值（693，官方回放挂载）。`tools/backfill_match_duration.py` 用同样的
+`gameSeq` 关联 `data/camp_details/<gameSeq>.json`，取 `data.battle.usedTime`
+（秒，**官方结算实测**），回填两处：通道 `match.durationSec` 与比赛包
+`match.duration`。必须写两处，因为 `channel_store.bundle()` 用前者生成后者，
+只改比赛包会在下次重建时丢掉。只补缺失、不覆盖、幂等、`--dry-run`、写入前
+备份到 `data/backups/match-duration-<时间戳>/`。结果 **11/11 局有时长**，
+链路解锁分均换算、时间轴覆盖率判定（实测 90–95%）、场均时长 KPI 与档案缺口。
+
+口径边界：官方回放 `normalized.json` 的 `match.durationSec` 是**回放长度**，
+与结算时长可能差 3–4 秒（例：面板 820 / 回放 816）。两者不是同一口径，
+回填只用营地面板 `usedTime`，不与回放时长混用；已有值一律不覆盖。
+
+分路 `battleRecords.position` 是 0–4 编码，尚未标定到
+`analysis_data.LANES` 的中文路名；按「未知值不猜」不硬映射，因此正式分析行
+的 `position` 仍为空，同分路基线分析暂不启用。
 
 ## C. 过程·个人（来源：录屏 OCR 记分板快照 / POV 面板 / 运行时帧）
 
@@ -107,16 +165,31 @@
 | 资源-胜负相关 | 控制率分桶 vs 胜率（描述性） | 🏷 |
 | 运行时事件流 | kill/death/assist/tower/dragon/tyrant/overlord | ⏱ |
 
-## I. BP（来源：结构化录入， bans/picks 有序列表 + firstPick）
+## I. BP（双来源：营地名单自动 + 人工手序录入）
+
+2026-11-05 起，营地 `battledetail` 的 `banHeros` / `pickHeros` 在通道关联时由
+`bp_camp.py` 解析，随比赛包 `match.campBp` 落盘（`channel_store` 同时保留
+`ban` / `banNames` / `pickNames`）。这是**终局名单**：不含 1–5 楼 pick 顺序、
+不含一手方，ban 个数随模式变化（排位 5 / 征召 4）。人工 `match.bp`
+（`bp_input.validate_bp`）优先，且只有人工数据参与手序与先后手统计；旧字段
+`bans / ownPicks / orderEffect / opponents` 形状保持不变。
 
 | 指标 | 口径 | 可用 |
 |---|---|---|
-| ban 频率榜 / ban 与该局胜率 | 双方 ban 有序表 | 🏷 |
-| pick 手序 | 1–5 楼顺序；一手方 firstPick | 🏷 |
-| 手序效果 | 按 order 分组的胜率（描述性） | 🏷 |
+| ban 频率榜 / ban 与该局胜率 | 双方 ban 名单；营地自动 | ✅ |
+| pick 频率（本队 / 对手） | 双方终局阵容；营地自动 | ✅ |
+| 禁用压力 ban/(ban+pick) | 被针对程度；营地自动 | ✅ |
+| 五人阵容重复度 / 双人共现 | 本队完整五人；营地自动 | ✅ |
+| 分路分布 | 实测 `battleRecords.position` 优先，静态参考表兜底 | ✅ |
+| 蓝红方概览 / 逐局 BP 名单 | 含本地英雄头像 | ✅ |
+| 对手 BP 习惯 | 按 opponent 聚合 ban/pick | ✅ |
+| pick 手序 / 一手方 firstPick | 人工按 1–5 楼录入 | 🏷 |
+| 手序效果 | 按 order 分组胜率（描述性），仅人工 | 🏷 |
+| 体系聚类 | 五人组合 ✅；**带 pick 顺序的模式** 🏷 | 🏷 |
 | 英雄池深度 | 队员 distinct 英雄数 / 出场比 | ✅ |
-| 对手 BP 习惯 | 按对手聚合的 ban/pick 频率 | 🏷 |
-| 体系聚类 | 五人组合 + pick 顺序模式 | 🏷 |
+
+页面显式标注「营地自动 / 人工录入」和手序不可知；有胜负样本全为胜局时显示
+选择偏差提示，并提示本地营地详情还有多少局未入库（避免把采集偏差当结论）。
 
 ## J. 表格导入（来源：`sheet_import`，五类粒度）
 
