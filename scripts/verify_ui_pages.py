@@ -40,7 +40,6 @@ PAGES = [
     ('#clean', 'clean', '数据清洗'),
     ('#sources', 'sources', '字段与来源'),
     ('#import', 'import', '批量导入'),
-    ('#reports', 'reports', '分析报告'),
     ('#lab', 'lab', '统计实验'),
     ('#models', 'models', '模型实验'),
     ('#identity', 'identity', '身份绑定'),
@@ -483,31 +482,14 @@ def interactions(context, base, take_shot):
         return '团队复盘 → %s' % href
     results.append(check('下钻：对手档案', do_opponent, page))
 
-    # 4) 弹窗：分析报告卡片 → 详情 dialog → 关闭
+    # 4) 弹窗：分析报告页已从导航移除，详情弹窗由单局页承载
     def do_dialog():
-        goto('#reports')
-        btn = page.locator('[data-report]').first
-        if not btn.count():
-            return skip('分析报告页无 [data-report] 卡片')
-        btn.click()
-        dialog = page.locator('#detail-dialog')
-        dialog.wait_for(state='visible', timeout=6000)
-        if not dialog.evaluate('e => e.open'):
-            raise AssertionError('详情弹窗未打开')
-        body = page.locator('#detail-body').inner_text().strip()
-        if len(body) < 10:
-            raise AssertionError('详情弹窗内容为空')
-        shot('interaction-dialog.png')
-        page.locator('#close-detail').click()
-        page.wait_for_timeout(250)
-        if dialog.evaluate('e => e.open'):
-            raise AssertionError('详情弹窗未关闭')
-        return '打开/内容 %d 字/关闭均正常' % len(body)
+        return skip('分析报告已移除，详情弹窗改由单局页承载')
     results.append(check('弹窗：分析报告详情', do_dialog, page))
 
     # 5) 打印：打印媒体下隐藏导航与按钮、正文保留、无横向溢出
     def do_print():
-        goto('#reports')
+        goto('#team')
         page.emulate_media(media='print')
         page.wait_for_timeout(300)
         hidden = page.evaluate("""() => {

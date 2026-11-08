@@ -93,11 +93,14 @@ try:
   check('失败提供反馈且按钮可重试',page.locator('#prepare-run').is_enabled())
   page.unroute('**/api/studio/clean/preview');page.locator('#prepare-run').click();page.wait_for_function("!document.querySelector('#prepare-run').disabled && !document.querySelector('#prepare-status').classList.contains('error')")
   check('清洗失败后可恢复',True)
-  for topic,group in [('hero_benchmark','英雄'),('hero_pool','英雄'),('hero_combos','英雄'),('player_form','选手'),('player_pairs','选手'),('resource_efficiency','选手'),('tempo','战队'),('swing_windows','战队'),('session_summary','战队')]:
+  for topic,group in [('hero_benchmark','对比'),('hero_pool','选手'),('hero_combos','BP'),('player_form','选手'),('player_pairs','选手'),('resource_efficiency','选手'),('tempo','战队'),('swing_windows','战队'),('session_summary','战队')]:
    go('topics/'+topic);check('直达功能 '+topic,page.locator('.topic-card').count()==0 and page.locator('#navigation .nav-item.active').inner_text()==group)
-  go('compare/player');page.wait_for_selector('.radar-wrap svg')
-  check('雷达标签在最外环之外',page.locator('.radar-wrap svg').evaluate("svg=>[...svg.querySelectorAll('text')].every(t=>Math.hypot(Number(t.getAttribute('x'))-220,Number(t.getAttribute('y'))-220)>160)"))
-  page.locator('.radar-wrap').screenshot(path=str(OUT/'radar.png'))
+  go('compare/player')
+  source=page.get_by_label('纳入其他来源')
+  check('默认以营地为分析来源',not source.is_checked())
+  source.check();page.wait_for_selector('.av-dumbbell')
+  check('对比展示原始指标和两边证据入口',page.get_by_text('查看 A 的逐局记录').count()==1 and page.get_by_text('查看 B 的逐局记录').count()==1)
+  page.locator('#compare-output').screenshot(path=str(OUT/'comparison.png'))
   page.goto(BASE+'/assets/collection-guide.html?section=screenshots',wait_until='networkidle');page.wait_for_function("document.querySelectorAll('.collection-seven img').length===7 && [...document.querySelectorAll('.collection-seven img')].every(i=>i.complete&&i.naturalWidth>1000)")
   check('七张真实结算图并遮罩昵称',page.locator('.collection-seven .capture-name-mask').count()==70)
   for section,count in [('video',3),('official',1)]:

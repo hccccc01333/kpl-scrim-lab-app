@@ -179,16 +179,27 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/images', content=b'not an image').status_code, 400)
         self.assertEqual(self.client.put('/api/settings', headers={'Origin': 'https://other.example'}, json={}).status_code, 403)
 
-    def test_analysis_redirects_into_workbench(self):
+    def test_root_serves_v3_and_analysis_redirects(self):
+        # V3 是默认界面：根路径直接返回 V2 的 index.html，/analysis 旧别名回根路径。
+        index = self.client.get('/', follow_redirects=False)
+        self.assertEqual(index.status_code, 200)
+        self.assertIn('text/html', index.headers['content-type'])
+        self.assertIn('static/app.js', index.text)
+
         redirect = self.client.get('/analysis', follow_redirects=False)
         self.assertIn(redirect.status_code, (301, 302, 303, 307))
-        location = redirect.headers['location']
-        self.assertTrue(location.startswith('/#stats') or location.startswith('/studio'))
-        index = self.client.get('/')
-        self.assertEqual(index.status_code, 200)
-        self.assertTrue('data-page="stats"' in index.text
-                        or 'data-platform="unified"' in index.text)
-        self.assertNotIn('/analysis"', index.text)
+        self.assertEqual(redirect.headers['location'], '/')
+
+        # /v3 旧链接 302 回根路径，静态资源也跟随重定向。
+        legacy = self.client.get('/v3/', follow_redirects=False)
+        self.assertEqual(legacy.status_code, 302)
+        self.assertEqual(legacy.headers['location'], '/')
+        old_asset = self.client.get('/v3/static/app.js', follow_redirects=False)
+        self.assertEqual(old_asset.status_code, 302)
+        self.assertEqual(old_asset.headers['location'], '/static/app.js')
+        asset = self.client.get('/static/app.js')
+        self.assertEqual(asset.status_code, 200)
+        self.assertIn('javascript', asset.headers['content-type'])
 
     def test_backup_into_fresh_database(self):
         import server

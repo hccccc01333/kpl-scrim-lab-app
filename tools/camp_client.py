@@ -17,13 +17,45 @@ import time
 import uuid
 from pathlib import Path
 from urllib import request
+from urllib.parse import unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from camp_auth import AUTH_PATH, BASE_HEADERS, CLIENT_CONSTANTS, rsa_encrypt  # noqa: E402
+from camp_auth import (AUTH_PATH, BASE_HEADERS, CLIENT_CONSTANTS, mark_invalid,  # noqa: E402
+                       mark_valid, rsa_encrypt)
 from xxtea_algo import decrypt_bytes as xxtea_decrypt_bytes  # noqa: E402
 from xxtea_algo import encrypt_bytes as xxtea_encrypt_bytes  # noqa: E402
 
 API_BASE = 'https://kohcamp.qq.com'
+
+# 营地明确表示「登录态不可用」的返回码 / 文案。码值随协议调整，文案兜底。
+AUTH_ERROR_CODES = {'-30003', '-30314', '30314'}
+AUTH_ERROR_HINTS = ('登录态', '未登录', '重新登录', '登录已过期', '安全参数被拒')
+
+
+class CampAuthError(SystemExit):
+    """营地登录态失效：保留 SystemExit 基类，命令行行为不变，服务端可单独识别。"""
+
+    def __init__(self, message: str, code: str = ''):
+        super().__init__(message)
+        self.auth_invalid = True
+        self.code = str(code or '')
+        self.reason = str(message)
+
+
+def looks_like_auth_error(code, message) -> bool:
+    if str(code or '').strip() in AUTH_ERROR_CODES:
+        return True
+    text = str(message or '')
+    return any(hint in text for hint in AUTH_ERROR_HINTS)
+
+
+def _raise_auth_error(code, message) -> None:
+    code = str(code or '').strip()
+    message = unquote(str(message or '')).strip()
+    detail = ' '.join(part for part in (code, message) if part)
+    reason = (f'营地登录态已失效（{detail}）。' if detail else '营地登录态已失效。')
+    mark_invalid(reason, code)
+    raise CampAuthError(reason, code)
 
 
 def load_account() -> dict:
@@ -90,26 +122,43 @@ def xxtea_decrypt_camp(text: str, user_key: str) -> str:
     return data.decode('utf-8', 'replace').rstrip('\x00')
 
 
-def call(endpoint: str, body: dict) -> dict:
+def call(endpoint: str, body: dict, timeout: int = 30) -> dict:
     account = load_account()
     req = request.Request(API_BASE + endpoint,
                           data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
                           method='POST', headers=build_headers(account))
-    with request.urlopen(req, timeout=30) as resp:
+    with request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read(8 * 1024 * 1024).decode('utf-8', 'replace')
         headers = {k.lower(): v for k, v in resp.headers.items()}
     if headers.get('encryptparamerr'):
-        raise SystemExit(f'安全参数被拒（{headers["encryptparamerr"]}），重新扫码可能解决。')
+        _raise_auth_error(headers['encryptparamerr'], '安全参数被拒')
     code = headers.get('returncode', '')
     message = headers.get('returnmsg', '')
+    header_auth_error = looks_like_auth_error(code, message)
     if headers.get('campencrypt') == 'true':
         if not account.get('userKey'):
-            raise SystemExit('响应已加密但缺少 userKey，请重新扫码。')
-        raw = xxtea_decrypt_camp(raw, account['userKey'])
+            _raise_auth_error(code, '响应已加密但缺少 userKey')
+        try:
+            raw = xxtea_decrypt_camp(raw, account['userKey'])
+        except Exception:
+            # 登录态失效时响应可能无法解密；响应头已经说明原因时优先按失效处理。
+            if header_auth_error:
+                _raise_auth_error(code, message)
+            raise
     try:
         payload = json.loads(raw)
     except ValueError:
         payload = {'raw': raw[:500]}
+    body_code = payload.get('returnCode') if isinstance(payload, dict) else ''
+    body_message = payload.get('returnMsg') if isinstance(payload, dict) else ''
+    # 正文里的文案比响应头完整（头里的 returnmsg 常是 URL 编码的摘要）。
+    if looks_like_auth_error(body_code, body_message):
+        _raise_auth_error(body_code or code, body_message or message)
+    if header_auth_error:
+        _raise_auth_error(code, message)
+    # 拿到营地的结构化响应，说明登录态被接受（业务报错如「用户不存在」不算失效）。
+    if isinstance(payload, dict) and 'returnCode' in payload:
+        mark_valid()
     return {'returnCode': code, 'returnMsg': message, 'encrypted': headers.get('campencrypt') == 'true',
             'body': payload}
 

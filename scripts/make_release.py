@@ -74,7 +74,7 @@ set PYTHONIOENCODING=utf-8
 if not exist data mkdir data
 if exist runtime\\python.exe (
   runtime\\python.exe updater.py --apply-pending
-  echo KPL 赛训分析：http://127.0.0.1:8766/studio
+  echo KPL 赛训分析：http://127.0.0.1:8766/
   echo 使用指南见「部署说明.txt」；请保持此窗口运行（关闭窗口即停止服务）。
   runtime\\python.exe server.py
 ) else (
@@ -155,7 +155,7 @@ SOP = """KPL 赛训数据工具 · 部署说明
   只用营地同步、不需要截图兜底的队伍可以不装。
 
 八、故障处理
-  - 提示登录态失效 / 安全参数被拒 → 重新扫码授权。
+  - 提示登录态失效（-30003 / -30314）/ 安全参数被拒 → 工作台会显示「补充授权」，重新扫码即可。
   - 用户ID不存在 → 营地 ID 填错（应为分享链接 userId= 的数字）。
   - 列表为空但选手打过 → 该营地账号未绑定游戏大区角色。
   - 启动失败 → 查看 logs 目录，把 update.log 或窗口报错发给作者。
@@ -230,6 +230,20 @@ def ship_files() -> list[str]:
             if '__pycache__' in path.parts or path.suffix in ('.pyc', '.map'):
                 continue
             files.append(path.relative_to(ROOT).as_posix())
+    # V3 默认界面：V2 的 ASGI 应用随包发布，根路径才能正常打开。
+    v3 = ROOT / 'v3'
+    if v3.is_dir():
+        for name in ('serve.py', 'deep_analysis.py', 'demo_data.py'):
+            if (v3 / name).is_file():
+                files.append(f'v3/{name}')
+        public = v3 / 'public'
+        if public.is_dir():
+            for path in sorted(public.rglob('*')):
+                if not path.is_file():
+                    continue
+                if '__pycache__' in path.parts or path.suffix in ('.pyc', '.map'):
+                    continue
+                files.append(path.relative_to(ROOT).as_posix())
     for name in DOCS_SHIP:
         if (ROOT / 'docs' / name).is_file():
             files.append(f'docs/{name}')
@@ -262,7 +276,7 @@ def previous_tag(version: str) -> str | None:
 def _shippable_path(path: str) -> bool:
     if path in ROOT_FILES:
         return True
-    if path.startswith(('web/', 'resources/', 'docs/')):
+    if path.startswith(('web/', 'resources/', 'docs/', 'v3/')):
         return True
     return '/' not in path and path.endswith('.py')
 

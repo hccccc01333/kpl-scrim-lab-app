@@ -1,4 +1,4 @@
-﻿import {kplTeams,teamPresetSource,teamPresetLabel,lanes} from '/assets/team-presets.js?v=1';
+import {kplTeams,teamPresetSource,teamPresetLabel,lanes} from '/assets/team-presets.js?v=1';
 import {bpEditorHtml,bindBpEditor} from '/assets/bp-editor.js?v=6';
 import {disposeAnalysisVisuals,mountPerformanceExplorer,comparisonVisual,mountEconomyTimeline,mountEntityTrend,processMatrix} from '/assets/analysis-visuals.js?v=4';
 import {finite as metricNumber} from '/assets/analysis-math.mjs?v=1';
@@ -6,15 +6,20 @@ import {renderWorkbench,deactivateWorkbench,allowWorkbenchNavigation} from '/ass
 import {renderPrepare,renderDatasets} from '/assets/pipeline-page.js?v=6';
 import {renderHome} from '/assets/home-page.js?v=15';
 import {renderCapture} from '/assets/capture-page.js?v=26';
+import {renderOpponents} from '/assets/opponents-page.js?v=3';
+import {renderPlan, renderH2H, renderCoach, renderVersions, renderPending, renderEconomy, renderOppProfiles, renderEffect, renderSetup} from '/assets/scrim-pages.js?v=13';
+import {renderCompareLab} from '/assets/compare-lab.js?v=4';
+import {renderBriefing} from '/assets/report-page.js?v=2';
+import {appendDepthSections} from '/assets/depth-section.js';
+import {renderGuide} from '/assets/guide-page.js?v=1';
 import {renderOpponent,renderBp,renderCombos} from '/assets/insight-pages.js?v=13';
 import {renderTeam} from '/assets/team-page.js?v=3';
 import {renderDashboard} from '/assets/dashboard-page.js?v=6';
-import {renderPlayers} from '/assets/player-page.js?v=8';
+import {renderPlayers} from '/assets/player-page.js?v=10';
 import {renderIdentity} from '/assets/identity-page.js?v=7';
-import {renderDepthEntry} from '/assets/depth-page.js?v=12';
-import {renderMatches,renderFeatured,renderRecords} from '/assets/match-archive.js?v=8';
+import {renderMatches,renderFeatured,renderRecords} from '/assets/match-archive.js?v=9';
 import {renderProfile} from '/assets/profile-page.js?v=108';
-import {renderTeamArchive} from '/assets/team-archive.js?v=1';
+import {renderTeamArchive} from '/assets/team-archive.js?v=2';
 import {renderPanorama,disposePanorama} from '/assets/panorama-page.js?v=17';
 const $ = (q, root = document) => root.querySelector(q);
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -37,27 +42,39 @@ const paths = {
  download:'<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.chart}</svg>`;
+/* 导航：平台自有工作流 5 组 + 内嵌参考站 1 组。
+   2026-11-07 收口：原来 10 组（赛训 + 参考站点的八个分组）并列，一级菜单和二级页签
+   互相重复。现在按"对象"归并，第三方站点统一收进「参考站」，不再和自有页面平级。
+   同一次改动把 refRedirect 停用了，team / stats / bp / combos / topics / reports
+   以及选手、英雄详情页恢复成平台自己的页面，因此重新接回导航。
+   ref/ 前缀的条目仍走内嵌页（iframe），不进 SPA。 */
 const nav = [
- ['首页', [['overview','首页']]],
- ['数据', [['capture','采集']]],
- ['绑定', [['profile','录入'],['identity','对局分边'],['teams','战队档案']]],
- ['比赛', [['matches','比赛档案'],['featured','精选对局'],['records','训练纪录'],['new','手工录入']]],
- ['战队', [['team','团队复盘'],['stats','数据看板'],['reports','分析报告']]],
- ['选手', [['players','选手表现']]],
- ['英雄', [['heroes','英雄与阵容'],['combos','英雄组合'],['topics/hero_benchmark','选手英雄参照'],['topics/hero_pool','英雄池'],['topics/hero_combos','阵容关联']]],
- ['BP', [['bp','BP 分析']]],
- ['对比', [['compare/player','选手对比'],['compare/hero','英雄对比']]],
+ ['赛训', [['overview','首页'],['setup','建档'],['capture','采集'],['identity','对局分边'],
+          ['matches','比赛档案'],['featured','精选对局'],['pending','待确认'],['profile','录入']]],
+ ['战队', [['teams','战队档案'],['team','团队复盘'],['opponents','对手归属'],
+          ['h2h','交手记录'],['opprofile','对手画像'],['effect','训练效果']]],
+ ['选手英雄', [['players','选手表现'],['heroes','英雄表现'],['bp','BP 与阵容'],['combos','英雄组合'],
+            ['compare','对比工作台'],['versions','版本对比']]],
+ ['分析', [['stats','数据看板'],['econ','经济转折与兑现'],['records','训练纪录'],
+          ['topics','专题研究'],['reports','分析报告'],['coach','教练档案'],
+          ['plan','约定计划'],['report','赛前简报']]],
+ ['参考站', [['ref/teams.html','战队榜'],['ref/players.html','选手榜'],['ref/heroes.html','英雄列表'],
+            ['ref/hero-performance.html','英雄表现'],['ref/combos.html','英雄组合'],
+            ['ref/compare-player.html','选手对比'],['ref/bp.html','BP 分析'],
+            ['ref/bp-studio.html','BP 演播室'],['ref/team-bp.html','战队 BP'],
+            ['ref/picks.html','精选对局'],['ref/query.html','数据查询'],
+            ['ref/find.html','智能找局'],['ref/honors.html','荣誉中心']]],
+ ['教程', [['guide','使用教程']]],
 ];
-// 深度分析按主题并入各模块的页签行：key=导航组名，label=页签短名，hash 为 #depth/<id>
-const DEPTH_TABS = {
- '比赛':[['time_cross_match','训练节奏'],['time_economy','经济差过程'],['time_events','事件密度'],['time_kill_rhythm','击杀节奏'],['death_point_economy','掉点经济']],
- '战队':[['cross_space_time','推进与抱团'],['space_heatmap','走位热区'],['space_lane','分路占位'],['space_deaths','死亡热区'],['cross_teamfight_contribution','团战贡献'],['death_point_impact','掉点代价']],
- '选手':[['cs_conversion','补刀转化'],['cross_resource_output','资源产出']],
- '英雄':[['cross_lane_hero','补刀对照'],['equip_matrix','出装分布'],['equip_impact','装备对照'],['stability','英雄波动']],
- 'BP':[['resource_bp','BP 资源']],
- '对比':[['compare_baseline','同位置参照'],['compare_camp','蓝红偏差']],
+// 深度分析已拆散：图表并入各模块页面（space/matches/records/players/heroes/teams/compare）。
+// 旧链接仍然可用：访问 #depth/<id> 会重定向到对应模块页。
+const DEPTH_HOME = {
+ time_cross_match:'records', time_economy:'matches', time_events:'matches', time_kill_rhythm:'matches',
+ death_point_economy:'matches',
+ cs_conversion:'compare', cross_resource_output:'compare',
+ cross_lane_hero:'compare', equip_matrix:'compare', equip_impact:'compare', stability:'compare',
+ resource_bp:'teams', compare_baseline:'compare/tier', compare_camp:'compare',
 };
-const DEPTH_LABELS = Object.fromEntries(Object.values(DEPTH_TABS).flat());
 const navDescriptions = {
  overview:'从哪开始、待办和数据状态',
  capture:'表格、截图、录屏、回放挂到同一局',
@@ -76,7 +93,7 @@ const navDescriptions = {
  analysis:'按功能分类查看全部页面',
  'compare/player':'两名选手的表现、样本与指标差异',
  'compare/hero':'两个英雄的出场、胜率和产出对照',
- compare:'两名选手或两个英雄的指标对照',
+ compare:'拉几个对象做数据 / 对位 / 层次对比',
  heroes:'英雄表现、阵容搭配与对位',
  team:'经济节奏、资源、BP 和对手档案',
  opponent:'交手记录、对手英雄和时间轴汇总',
@@ -105,27 +122,25 @@ const nativePages=new Set(['channel','new','edit','review']);
 let workspaceDirty=false;let selectedTopic='hero_pool';let lastRenderedHash='';
 let excludeSeeds=localStorage.getItem('excludeSeeds')==='1';
 function stageFor(page){
- if(page==='topics'){const key='topics/'+(location.hash.split('/')[1]||'hero_pool');return nav.find(s=>s[1].some(v=>v[0]===key))||nav[4];}
- if(page==='depth'&&location.hash.split('/')[1]){
-  const key='depth/'+location.hash.split('/')[1];
-  const group=Object.entries(DEPTH_TABS).find(([,list])=>list.some(([id])=>'depth/'+id===key));
-  return nav.find(s=>s[0]===group?.[0]) || nav[0];
- }
- const name={'channel':'数据','capture':'数据','edit':'比赛','review':'比赛','match':'比赛','player':'选手','hero':'英雄','opponent':'战队'}[page];
+ if(page.startsWith('ref/')) return nav.find(s=>s[1].some(v=>v[0]===page)) || nav[0];
+ const name={'channel':'赛训','capture':'赛训','edit':'赛训','review':'赛训','match':'赛训',
+             'player':'选手英雄','hero':'选手英雄','bp':'选手英雄','combos':'选手英雄',
+             'team':'战队','opponent':'战队'}[page];
  return nav.find(s=>s[0]===name) || nav.find(s=>s[1].some(v=>v[0].split('/')[0]===page)) || nav[0];
 }
 function labelFor(page){
+ if(page.startsWith('ref/')) return nav.flatMap(s=>s[1]).find(([k])=>k===page)?.[1] || '分析页面';
  if(page==='topics')return stageFor(page)[1].find(v=>v[0]===location.hash.slice(1))?.[1]||'英雄池';
- if(page==='depth'&&location.hash.split('/')[1])return DEPTH_LABELS[location.hash.split('/')[1]]||'深度分析';
- if(page==='compare')return location.hash.split('/')[1]==='hero'?'英雄对比':'选手对比';
+ if(page==='compare')return {matchup:'对位对比',tier:'层次对比'}[location.hash.split('/')[1]]||'对比工作台';
  if(page==='analysis')return '全部功能';
  const detail={'channel':'采集通道','edit':'比赛校对','review':'单局复盘','capture':'采集','match':'对局详情','player':'选手详情','hero':'英雄详情','opponent':'对手档案','profile':'录入'};
  return stageFor(page)[1].find(v=>v[0]===page)?.[1] || detail[page] || '总览';
 }
 function navItemActive(key, page) {
+ if(key.startsWith('ref/')) return key === page;
  if(key.startsWith('topics/'))return key===location.hash.slice(1);
  if(key.startsWith('depth/'))return key===location.hash.slice(1);
- if(key.startsWith('compare/'))return page==='compare'&&key.split('/')[1]===(location.hash.split('/')[1]==='hero'?'hero':'player');
+ if(key.startsWith('compare/'))return key===location.hash.slice(1);
  return key === page
    || (key === 'channels' && page === 'channel')
    || (key === 'matches' && ['edit', 'review', 'match'].includes(page))
@@ -142,7 +157,7 @@ function updateNavigation(page){
    return `<div class="nav-group${active?' active':''}"><a href="#${first}" class="nav-item${active?' active':''}" data-stage="${i}">${s[0]}</a>${menu?`<button class="nav-menu-toggle" type="button" aria-expanded="false" aria-label="展开${s[0]}页面"><i class="nav-caret" aria-hidden="true"></i></button>`:''}${menu}</div>`;
  }).join('');
  const sub=$('#subnavigation');
- const items=stage[1].concat((DEPTH_TABS[stage[0]]||[]).map(([id,label])=>['depth/'+id,label]));
+ const items=stage[1];
  sub.hidden=items.length<2;
  sub.innerHTML=items.length<2?'':items.map(([key,label])=>`<a href="#${key}" class="${navItemActive(key,page)?'active':''}">${label}</a>`).join('');
  if(window.innerWidth<=1100){const active=$('#navigation .nav-group.active');if(active)$('#navigation').scrollLeft=Math.max(0,active.offsetLeft-$('#navigation').offsetLeft-$('#navigation').clientWidth/2+active.clientWidth/2);}
@@ -160,7 +175,7 @@ async function api(url, value) {
 }
 let toastTimer;
 function toast(message, error = false) {const el = $('#toast');el.textContent=message;el.classList.toggle('error',error);el.hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.hidden=true,error?6500:2800);}
-function pageName(){return (location.hash.slice(1).split('/')[0] || 'overview');}
+function pageName(){return (location.hash.slice(1).split(/[/?]/)[0] || 'overview');}
 function heading(title, subtitle, action = '') {return `<div class="page-heading"><div><h1>${title}</h1><p>${subtitle}</p></div>${action ? `<div class="heading-actions">${action}</div>` : ''}</div>`;}
 function panel(title, subtitle, body, action = '') {return `<section class="panel"><div class="panel-head"><div><h2>${title}</h2>${subtitle ? `<p>${subtitle}</p>` : ''}</div>${action}</div><div class="panel-body">${body}</div></section>`;}
 function notice(message){return `<div class="notice">${icon('warning')}<span>${message}</span></div>`;}
@@ -337,6 +352,12 @@ async function playersPage(token) {
  +aggregateDetails
  +`<div class="section-heading"><h2>下一步</h2></div><div class="next-grid"><a class="next-card" href="${isHero?'#players':'#heroes'}"><strong>${isHero?'看选手状态':'看英雄池'}</strong><span>${isHero?'近期表现、稳定性和英雄池':'出场、表现和阵容搭配'}</span><em>→</em></a><a class="next-card" href="#team"><strong>看团队节奏</strong><span>经济、资源、BP 和对手档案</span><em>→</em></a><a class="next-card" href="#topics/hero_pool"><strong>检查英雄池</strong><span>英雄池、搭档、经济转折</span><em>→</em></a></div>`;
  mountPerformanceExplorer($('#performance-explorer'),rows,{kind:isHero?'hero':'player'});
+ if(isHero) appendDepthSections($('#content'),[
+  {id:'cross_lane_hero', note:'补刀对照'},
+  {id:'equip_matrix', note:'出装分布'},
+  {id:'equip_impact', note:'装备对照'},
+  {id:'stability', note:'英雄波动'},
+ ],{api,isCurrent:()=>token===generation});
 }
 function analysisPage(){
  $('#content').innerHTML=heading('全部功能','按比赛、战队、选手、英雄和具体任务查找，直接进入所需页面。')
@@ -632,12 +653,63 @@ function setupSeedToggle(){
  btn.onclick=()=>{excludeSeeds=!excludeSeeds;localStorage.setItem('excludeSeeds',excludeSeeds?'1':'0');sync();render();};
 }
 
+/* 参考站点页面（web/refsite）以嵌入模式接进平台：隐藏它自己的顶栏/页脚，只取内容。 */
+/* 参考站 iframe 自动高度：涨到与内容同高，滚动统一交给平台页面，手感与其他页一致。 */
+let refsiteSync = null;
+window.addEventListener('resize', () => { refsiteSync && refsiteSync(); });
+
+function renderRefsiteFile(file){
+ const frame = document.createElement('iframe');
+ frame.className = 'refsite-frame';
+ frame.src = '/assets/refsite/' + file + (file.includes('?') ? '&' : '?') + 'embed=1';
+ frame.title = file;
+ frame.style.cssText = 'width:100%;height:calc(100vh - 128px);border:0;display:block;background:#fff';
+ const box = document.getElementById('content');
+ box.innerHTML = '';
+ box.appendChild(frame);
+ frame.addEventListener('load', () => {
+   const sync = () => {
+     try {
+       const doc = frame.contentDocument;
+       if (!doc || !doc.documentElement) return;
+       frame.style.height = '0px';                       // 先归零再量，避免历史高度撑高量测
+       const h = Math.max(doc.documentElement.scrollHeight, doc.body ? doc.body.scrollHeight : 0);
+       frame.style.height = Math.min(24000, Math.max(480, h)) + 'px';
+     } catch (error) { /* 跨域时保持默认高度 */ }
+   };
+   sync();
+   setTimeout(sync, 400); setTimeout(sync, 1200);
+   if (frame.__ro) frame.__ro.disconnect();
+   try {
+     frame.__ro = new ResizeObserver(sync);
+     frame.__ro.observe(frame.contentDocument.body);
+   } catch (error) { /* 老浏览器回退到定时同步 */ }
+   refsiteSync = sync;
+ });
+}
+/* 旧的 hash 路由 → 参考站页面
+   2026-11-07：整表停用。这些路由的原生页面（renderPlayers / renderTeam /
+   renderDashboard / renderBp / renderCombos / entityPage）都能正常渲染；
+   重定向把自有分析全部换成了第三方站 iframe（单页 5.9MB）。保留函数便于回滚。 */
+function refRedirect(hash, page){
+ const name = hash.split('/').slice(1).join('/');
+ if(page==='depth') return DEPTH_HOME[name] || 'matches';
+ return null;
+}
+
 async function render(){
  const hash=location.hash.slice(1)||'overview';if(!allowWorkbenchNavigation(hash))return;
  if(hash.startsWith('panorama/')){location.replace('#match/'+hash.slice('panorama/'.length));return;}
  if(hash.split('/')[0]==='desk'){location.replace('#matches');return;}
  if(hash.split('/')[0]==='roster'){location.replace('#profile');return;}
  const token=++generation,page=pageName();if(!workspace)return;
+ if(hash.startsWith('ref/')){
+  const file = hash.slice(4);
+  if(file.startsWith('series.html')){location.replace('#ref/teams.html');return;}
+  updateNavigation(hash);document.title=labelFor(hash)+' · 赛训分析';renderRefsiteFile(file);return;
+ }
+ const ref = refRedirect(hash, page);
+ if(ref){location.replace('#'+ref);return;}
  disposeAnalysisVisuals();disposePanorama();
  if(['channels','import','screenshots','recordings','replays'].includes(page)){location.replace('#capture');return;}
  if(!nativePages.has(page))deactivateWorkbench();
@@ -652,6 +724,17 @@ async function render(){
   else if(page==='capture')await renderCapture($('#content'),{api,toast,isCurrent:()=>token===generation,workspace});
   else if(page==='matches')await renderMatches($('#content'),{api,workspace,isCurrent:()=>token===generation,toast});
   else if(page==='profile')await renderProfile($('#content'),{api,workspace,isCurrent:()=>token===generation,toast,onSaved:async()=>{workspace=await api('/api/studio/workspace');if(!workspace.profile&&workspace.overview?.profile)workspace.profile=workspace.overview.profile;}});
+  else if(page==='opponents')await renderOpponents($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='plan')await renderPlan($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='h2h')await renderH2H($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='coach')await renderCoach($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='versions')await renderVersions($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='pending')await renderPending($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='econ')await renderEconomy($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='space'){location.hash='#matches';return;}   /* 空间与团战已下线：旧链接回落到对局档案 */
+  else if(page==='opprofile')await renderOppProfiles($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='effect')await renderEffect($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='setup')await renderSetup($('#content'),{api,isCurrent:()=>token===generation});
   else if(page==='teams')await renderTeamArchive($('#content'),{api,workspace,isCurrent:()=>token===generation,toast,onChanged:async()=>{workspaceDirty=true;}});
   else if(page==='match')await matchPage(hash.split('/')[1],token);
    else if(page==='opponent')await renderOpponent($('#content'),{api,workspace,isCurrent:()=>token===generation,query,filters},decodeURIComponent(hash.split('/').slice(1).join('/')));
@@ -662,16 +745,13 @@ async function render(){
   else if(page==='player')await entityPage('player',decodeURIComponent(hash.split('/').slice(1).join('/')),token);
   else if(page==='hero')await entityPage('hero',decodeURIComponent(hash.split('/').slice(1).join('/')),token);
   else if(page==='analysis')analysisPage();
-  else if(page==='compare')await comparePage(token);
+  else if(page==='compare')await renderCompareLab($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='guide')await renderGuide($('#content'),{api,isCurrent:()=>token===generation});
+  else if(page==='report')await renderBriefing($('#content'),{api,isCurrent:()=>token===generation});
   else if(page==='players')await renderPlayers($('#content'),{api,workspace,isCurrent:()=>token===generation});
   else if(page==='heroes'){listTab='heroes';await playersPage(token);}
   else if(page==='team')await renderTeam($('#content'),{api,workspace,isCurrent:()=>token===generation,query});
   else if(page==='stats')await renderDashboard($('#content'),{api,workspace,isCurrent:()=>token===generation,query});
-  else if(page==='depth'){
-   // 深度分析只保留单条页（#depth/<id>，挂各模块页签）；原来的「全部分析」索引页
-   // 与各模块页签 100% 重复，已移除——裸 #depth 回到团队复盘。
-   if(!hash.split('/')[1]){location.replace('#team');return;}
-  }
   else if(page==='training')location.replace('#stats');
   else if(page==='lab'||page==='models')await labPage(token);
   else if(page==='topics')await topicsPage(token);
@@ -681,54 +761,85 @@ async function render(){
   else if(page==='identity')await renderIdentity($('#content'),{api,workspace,isCurrent:()=>token===generation,toast,onSaved:async()=>{workspace=await api('/api/studio/workspace');if(!workspace.profile&&workspace.overview?.profile)workspace.profile=workspace.overview.profile;}});
   else if(page==='sources')sourcesPage();
   else await renderMatches($('#content'),{api,workspace,isCurrent:()=>token===generation,toast});
-  if(token===generation && page==='depth' && hash.split('/')[1]){
-   const sub=hash.split('/')[1];
-   try{
-    await renderDepthEntry($('#content'),{api,isCurrent:()=>token===generation,id:decodeURIComponent(sub),
-      module:(Object.entries(DEPTH_TABS).find(([,list])=>list.some(([x])=>x===sub))||['深度分析'])[0]});
-   }catch(error){console.warn('深度分析加载失败',error);}
-  }
   if(token===generation && hash!==lastRenderedHash){window.scrollTo({top:0,behavior:'instant'});lastRenderedHash=hash;}
+ if(token===generation){
+  const box=$('#content');box.classList.add('page-enter');
+  clearTimeout(pageEnterTimer);pageEnterTimer=setTimeout(()=>box.classList.remove('page-enter'),620);
+ }
  }catch(error){if(token!==generation)return;$('#content').innerHTML=heading('数据读取失败',esc(error.message))+`<button class="button" id="retry">重新读取</button>`;$('#retry').onclick=render;}
 }
+let pageEnterTimer=0;
 document.addEventListener('click',async e=>{let target=e.target.closest('[data-method],[data-match],[data-team-tab],[data-report],[data-export-result],#apply-filters,#reset-filters');if(!target)return;if(target.dataset.match&&target.closest('#stats-body'))return;try{if(target.dataset.method){selectedMethod=target.dataset.method;if(['lab','models'].includes(pageName()))render();else location.hash='lab';}else if(target.dataset.match)await matchDetail(target.dataset.match);else if(target.dataset.report)await showReport(target.dataset.report);else if(target.dataset.teamTab){teamTab=target.dataset.teamTab;render();}else if(target.hasAttribute('data-export-result'))exportCsv();else if(target.id==='apply-filters'){readFilters();render();}else if(target.id==='reset-filters'){Object.assign(filters,{from:'',to:'',hero:'',player:'',opponent:'',version:'',sources:['db','bundle'],includePartial:false});render();}}catch(error){toast(error.message,true);}});
 document.addEventListener('click',e=>{if(e.target.closest('[data-print]')){e.preventDefault();window.print();}});
 $('#close-detail').onclick=()=>$('#detail-dialog').close();
 $('#detail-dialog').addEventListener('click',e=>{if(e.target===$('#detail-dialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}});
 function setupGlobalSearch(){
  const input=$('#global-search'),box=$('#global-search-results');if(!input||!box)return;
+ const wrap=input.closest('.global-search')||input.parentElement;
+ let backdrop=null;
+ const openPalette=()=>{
+  if(!backdrop){backdrop=document.createElement('div');backdrop.id='palette-backdrop';backdrop.addEventListener('click',closePalette);document.body.appendChild(backdrop);}
+  backdrop.hidden=false;wrap.classList.add('palette-open');input.focus();input.select();
+ };
+ const closePalette=()=>{wrap.classList.remove('palette-open');if(backdrop)backdrop.hidden=true;box.hidden=true;active=-1;};
  const build=()=>{
   const items=[];
   nav.forEach(([group,list])=>list.forEach(([key,label])=>items.push({type:'功能',label,meta:group,href:'#'+key})));
-  Object.entries(DEPTH_LABELS).forEach(([id,label])=>items.push({type:'深度分析',label,meta:'深度分析',href:'#depth/'+id}));
   (workspace?.filters?.players||[]).forEach(player=>items.push({type:'选手',label:player.label,meta:player.bound?'已绑定名单':'未绑定',href:'#player/'+encodeURIComponent(player.label)}));
   (workspace?.filters?.heroes||[]).forEach(hero=>items.push({type:'英雄',label:hero,meta:'',href:'#hero/'+encodeURIComponent(hero)}));
   (workspace?.recent||[]).forEach(match=>items.push({type:'比赛',label:match.opponent?'vs '+match.opponent:match.title||match.key,meta:[match.date,match.session].filter(Boolean).join(' · '),href:'#match/'+encodeURIComponent(match.key)}));
   return items;
  };
- let searchSerial=0;
+ let searchSerial=0,flat=[],active=-1;
  const renderResults=items=>{
-  box.innerHTML=items.length?items.map(item=>`<a class="search-result" href="${esc(item.href)}"><span class="search-type">${esc(item.type)}</span><strong>${esc(item.label)}</strong><small>${esc(item.meta||'')}</small></a>`).join(''):'<div class="search-empty">没有匹配的选手、英雄、比赛或功能。</div>';
+  flat=[];const groups=[];
+  items.forEach(item=>{const last=groups[groups.length-1];if(last&&last.type===item.type)last.items.push(item);else groups.push({type:item.type,items:[item]});});
+  box.innerHTML=groups.length?groups.map(group=>
+    `<div class="search-group-head">${esc(group.type)}</div>`+group.items.map(item=>{
+      flat.push(item);
+      return `<a class="search-result" href="${esc(item.href)}"><strong>${esc(item.label)}</strong><small>${esc(item.meta||'')}</small><kbd>↵</kbd></a>`;
+    }).join('')).join('')
+   :'<div class="search-empty">没有匹配的选手、英雄、比赛或功能。</div>'
+   +'<div class="search-hints"><span><b>↑↓</b> 选择</span><span><b>↵</b> 打开</span><span><b>Esc</b> 关闭</span><span><b>Ctrl K</b> 随时唤起</span></div>';
   box.hidden=false;
+ };
+ const setActive=index=>{
+  if(!flat.length)return;
+  active=Math.max(0,Math.min(flat.length-1,index));
+  box.querySelectorAll('.search-result').forEach((node,i)=>node.classList.toggle('active',i===active));
+  const node=box.querySelectorAll('.search-result')[active];
+  if(node)node.scrollIntoView({block:'nearest'});
  };
  const draw=async()=>{
   const raw=input.value.trim(),query=raw.toLowerCase();
-  if(!query){box.hidden=true;box.innerHTML='';return;}
+  if(!query){box.hidden=true;box.innerHTML='';flat=[];active=-1;return;}
   const local=build().filter(item=>[item.type,item.label,item.meta].join(' ').toLowerCase().includes(query));
-  renderResults(local.slice(0,12));
+  renderResults(local.slice(0,14));
+  setActive(0);
   const current=++searchSerial;
   try{
    const data=await api('/api/studio/view/matches?source=db,bundle,sheet&limit=8&q='+encodeURIComponent(raw));
    if(current!==searchSerial||input.value.trim()!==raw)return;
    const matches=(data.matches||[]).map(match=>({type:'比赛',label:match.opponent?'vs '+match.opponent:match.title||match.key,meta:[match.date,match.session].filter(Boolean).join(' · '),href:'#match/'+encodeURIComponent(match.key)}));
-   renderResults([...local.filter(item=>item.type!=='比赛'),...matches].slice(0,12));
+   renderResults([...local.filter(item=>item.type!=='比赛'),...matches].slice(0,14));
+   setActive(0);
   }catch{/* 本地结果已经显示，网络失败时保留 */ }
  };
  input.addEventListener('input',draw);
  input.addEventListener('focus',draw);
- input.addEventListener('keydown',event=>{if(event.key==='Escape'){box.hidden=true;input.blur();}});
- box.addEventListener('click',event=>{if(event.target.closest('.search-result')){box.hidden=true;input.value='';}});
- document.addEventListener('click',event=>{if(!event.target.closest('.global-search'))box.hidden=true;});
+ input.addEventListener('keydown',event=>{
+  if(event.key==='Escape'){event.stopPropagation();closePalette();return;}
+  if(!flat.length)return;
+  if(event.key==='ArrowDown'){event.preventDefault();setActive(active+1);}
+  else if(event.key==='ArrowUp'){event.preventDefault();setActive(active-1);}
+  else if(event.key==='Enter'&&flat[active]){event.preventDefault();location.hash=flat[active].href;closePalette();input.value='';}
+ });
+ box.addEventListener('click',event=>{if(event.target.closest('.search-result')){closePalette();input.value='';}});
+ document.addEventListener('click',event=>{if(!event.target.closest('.global-search')&&wrap.classList.contains('palette-open'))closePalette();});
+ document.addEventListener('keydown',event=>{
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();openPalette();}
+ });
+ input.addEventListener('click',openPalette);
 }
 document.addEventListener('click',event=>{
  const toggle=event.target.closest('.nav-menu-toggle');

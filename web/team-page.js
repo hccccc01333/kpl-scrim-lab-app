@@ -70,14 +70,14 @@ function verdictCards(aggregate, matches, quality) {
       label: '10 分钟领先转化',
       value: conv == null ? '—' : `${num(conv, 0)}%`,
       note: `${num(aggregate.leadAt10Games)} 场 10 分钟领先，赢下 ${num(Math.round(aggregate.leadAt10Games * (conv || 0) / 100))} 场`,
-      verdict: conv != null && conv >= 70 ? '领先局能收' : '领先局有被翻的风险',
+      verdict: '对照领先后赢下与输掉的场次',
     });
   }
   if (aggregate.blownLeads) {
     cards.push({tone: 'bad', label: '被翻盘', value: num(aggregate.blownLeads), note: '领先 2,000 以上仍输掉', verdict: '需要复盘中期决策'});
   }
   if (aggregate.comebacks) {
-    cards.push({tone: 'good', label: '翻盘', value: num(aggregate.comebacks), note: '落后 2,000 以上仍赢下', verdict: '逆风处理是强项'});
+    cards.push({tone: 'good', label: '翻盘', value: num(aggregate.comebacks), note: '落后 2,000 以上仍赢下', verdict: '回看经济差回升的区间'});
   }
   const d10 = aggregate.avgDiffAt?.['600'];
   if (d10 != null) {
@@ -90,9 +90,9 @@ function verdictCards(aggregate, matches, quality) {
   if (quality?.score != null) {
     const gaps = (quality.checks || []).filter(c => c.missing > 0);
     cards.push({
-      tone: quality.score >= 75 ? 'good' : 'warn', label: '数据可信度',
-      value: `${num(quality.score)}%`, note: gaps.length ? gaps.map(g => g.label).slice(0, 2).join('、') + ' 缺失' : '四项齐全',
-      verdict: quality.score >= 75 ? '可以直接下结论' : '结论只能当方向，不能当定论',
+      tone: quality.score >= 75 ? 'good' : 'warn', label: '档案字段覆盖',
+      value: `${num(quality.score)}%`, note: gaps.length ? gaps.map(g => g.label).slice(0, 2).join('、') + ' 缺失' : '检查字段齐全',
+      verdict: '按当前对局范围计算',
     });
   }
   return cards.map(c => `<article class="tp-verdict ${c.tone}">
@@ -161,8 +161,8 @@ export async function renderTeam(container, {api, workspace, isCurrent, query}) 
   const aggregate = processData.aggregate || {};
   const matches = processData.matches || [];
   const summary = matchesView.summary || {};
-  const quality = workspace?.overview?.dataQuality || null;
-  const total = Number(matchesView.total) || Number(workspace?.overview?.matches) || 0;
+  const quality = processData.dataQuality;
+  const total = Number(matchesView.total) || 0;
   const wins = Number(summary.wins) || 0;
   const losses = Number(summary.losses) || 0;
   const games = Number(aggregate.games) || 0;

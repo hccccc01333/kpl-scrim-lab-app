@@ -5,28 +5,18 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="训练赛分析：比赛复盘、选手表现、英雄阵容与数据采集。">
   <title>赛训分析</title>
-  <link rel="stylesheet" href="/assets/workbench.css?v=1">
-  <link rel="stylesheet" href="/assets/studio.css?v=4">
-  <link rel="stylesheet" href="/assets/redesign.css?v=5">
-  <link rel="stylesheet" href="/assets/polish.css?v=50">
-  <link rel="stylesheet" href="/assets/archive.css?v=8">
-  <link rel="stylesheet" href="/assets/profile.css?v=9">
-  <link rel="stylesheet" href="/assets/team-archive.css?v=1">
-  <link rel="stylesheet" href="/assets/team.css?v=2">
-  <link rel="stylesheet" href="/assets/player.css?v=4">
-  <link rel="stylesheet" href="/assets/identity.css?v=2">
-  <link rel="stylesheet" href="/assets/ui.css?v=17">
-  <link rel="stylesheet" href="/assets/depth.css?v=7">
-  <link rel="stylesheet" href="/assets/dashboard-ext.css?v=2">
-  <link rel="stylesheet" href="/assets/update.css?v=1">
-  <script type="module" src="/assets/studio.js?v=120"></script>
+  <!-- 样式只有三层，顺序固定：令牌 → 骨架 → 组件。不要在这里插新的样式表。 -->
+  <link rel="stylesheet" href="/assets/styles/tokens.css?v=1">
+  <link rel="stylesheet" href="/assets/styles/layout.css?v=1">
+  <link rel="stylesheet" href="/assets/styles/components.css?v=1">
+  <script type="module" src="/assets/studio.js?v=139"></script>
   <script type="module" src="/assets/update.js?v=1"></script>
 </head>
 <body data-platform="unified" data-design="product">
   <header class="app-navigation">
     <div class="global-search"><input id="global-search" type="search" placeholder="搜索选手、英雄、比赛…" autocomplete="off" spellcheck="false" aria-label="全局搜索"><div id="global-search-results" class="search-results" hidden></div></div>
     <nav id="navigation" aria-label="主导航"></nav>
-    <div class="top-actions"><button class="button subtle" id="seed-toggle" aria-pressed="false" title="排除「验证数据」测试局，只看真实训练赛">排除验证数据</button><a class="button primary product-import" href="#capture">＋ 导入比赛</a><details class="project-tools"><summary>项目工具 <span aria-hidden="true">⌄</span></summary><div class="project-tools-menu"><button class="button subtle" id="backup" title="数据库、分析包、数据集和分析报告；原始录屏目录需单独备份">备份项目</button><button class="button subtle" id="restore">恢复项目</button></div></details></div><span class="source-link" id="team-label">赛训项目</span>
+    <div class="top-actions"><button class="button subtle" id="seed-toggle" aria-pressed="false" title="排除「验证数据」测试局，只看真实训练赛">排除验证数据</button><a class="button primary product-import" href="#capture">＋ 导入比赛</a><details class="project-tools"><summary>项目工具 <i class="nav-caret" aria-hidden="true"></i></summary><div class="project-tools-menu"><button class="button subtle" id="backup" title="数据库、分析包和数据集；原始录屏目录需单独备份">备份项目</button><button class="button subtle" id="restore">恢复项目</button></div></details></div><span class="source-link" id="team-label">赛训项目</span>
   </header>
   <div class="app-shell">
     <nav class="subnavigation" id="subnavigation" aria-label="功能导航"></nav>

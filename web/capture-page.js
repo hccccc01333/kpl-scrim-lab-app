@@ -210,14 +210,15 @@ export async function renderCapture(container, {api, toast, isCurrent, workspace
           <div class="capture-fold-body">
             <p class="capture-helper camp-link-intro">这一步每位选手只做一次，配置的是<strong>「选手是谁」</strong>，不是某一局比赛：用选手本人分享出来的营地链接，系统解析出<strong>营地 ID</strong> 存进下方清单。之后每天点右上角「拉取对局」即可同步他最近的比赛，不用再找选手要链接。</p>
             <ol class="camp-link-steps">
-              <li><span class="camp-link-num">01</span><div><strong>选手在王者营地 App 里把「回顾分析」分享到微信</strong>
-                <p>营地 →「战绩」→ 打开任意一局 →「回顾分析 / 对局回顾」→ 右上角分享 → 发送到微信（发给教练，或发到「文件传输助手」自己留着都行）。微信里会收到一张灰色的「回顾分析」卡片，来源标注「王者营地」。</p></div></li>
+              <li><span class="camp-link-num">01</span><div><strong>选手在王者营地 App 的对局结算页把战绩分享到微信</strong>
+                <p>打完一局停在结算页（也可以从营地 →「战绩」→ 打开任意一局进「回顾分析」），点右上角「…」→「分享」→ 发送给朋友：发给教练，或发到「文件传输助手」自己留着。微信里会收到一张灰色的营地卡片（标题可能是战绩文案），来源标注「王者营地」。</p>
+                <figure class="camp-link-shot is-wide"><a class="camp-link-zoom" href="/assets/capture-guide/camp-share-entry.jpg" target="_blank" rel="noopener" aria-label="查看分享入口大图"><img src="/assets/capture-guide/camp-share-entry.jpg" alt="王者营地对局结算页，右上角「…」是分享入口" loading="lazy"></a><figcaption>图 1 · 对局结算页右上角「…」→ 分享到微信（点击看大图）</figcaption></figure></div></li>
               <li><span class="camp-link-num">02</span><div><strong>在微信里长按卡片，点「用默认浏览器打开」</strong>
-                <p>长按这张「回顾分析」卡片 → 选绿色的「用默认浏览器打开」（或「打开方式」里挑一个浏览器）。微信内置浏览器看不到完整地址，必须跳到外部浏览器，才能拿到下面那串链接。</p>
-                <figure class="camp-link-shot is-portrait"><a class="camp-link-zoom" href="/assets/capture-guide/camp-share-wechat.png" target="_blank" rel="noopener" aria-label="查看微信操作大图"><img src="/assets/capture-guide/camp-share-wechat.png" alt="微信里长按回顾分析卡片，选择用默认浏览器打开" loading="lazy"></a><figcaption>图 1 · 微信长按消息 →「用默认浏览器打开」（点击看大图）</figcaption></figure></div></li>
+                <p>长按这张营地卡片（标题可能是战绩文案，来源标注「王者营地」）→ 选绿色的「用默认浏览器打开」（或「打开方式」里挑一个浏览器）。微信内置浏览器看不到完整地址，必须跳到外部浏览器，才能拿到下面那串链接。</p>
+                <figure class="camp-link-shot is-menu"><a class="camp-link-zoom" href="/assets/capture-guide/camp-share-wechat.png" target="_blank" rel="noopener" aria-label="查看微信操作大图"><img src="/assets/capture-guide/camp-share-wechat.png" alt="微信里长按营地分享卡片，选择用默认浏览器打开" loading="lazy"></a><figcaption>图 2 · 微信长按消息 →「用默认浏览器打开」（点击看大图）</figcaption></figure></div></li>
               <li><span class="camp-link-num">03</span><div><strong>复制浏览器地址栏里的整条链接</strong>
-                <p>打开后页面标题是「对局回顾」，地址以 <code>https://camp.qq.com/h5/webdist/battle-replay/index.html?</code> 开头，后面跟着 <code>gameseq</code>、<code>userId / playerid</code> 等一长串参数。长按地址栏 → 全选 → 复制，<strong>整条都要</strong>：只复制到 <code>.html</code> 或漏掉参数，会提示「链接缺少 gameseq」「链接里没有 userId」。</p>
-                <figure class="camp-link-shot is-wide"><a class="camp-link-zoom" href="/assets/capture-guide/camp-share-browser.png" target="_blank" rel="noopener" aria-label="查看地址栏链接大图"><img src="/assets/capture-guide/camp-share-browser.png" alt="浏览器地址栏里的对局回顾完整链接" loading="lazy"></a><figcaption>图 2 · 复制地址栏完整链接，含 ? 后的全部参数（点击看大图）</figcaption></figure></div></li>
+                <p>打开后地址栏是一串 <code>https://camp.qq.com/h5/webdist/mp-redirect/index.html?</code> 开头的链接，关键参数是 <code>userId</code>（营地 ID）、<code>roleId</code> 和 <code>gameSeq</code>。页面若提示「此站点正在尝试打开 Weixin」，关掉提示即可，不影响复制。长按地址栏 → 全选 → 复制，<strong>整条都要</strong>：漏掉参数会提示「链接里没有 userId」。</p>
+                <figure class="camp-link-shot is-wide"><a class="camp-link-zoom" href="/assets/capture-guide/camp-share-browser.png" target="_blank" rel="noopener" aria-label="查看地址栏链接大图"><img src="/assets/capture-guide/camp-share-browser.png" alt="浏览器地址栏里的营地分享完整链接，含 userId 等参数" loading="lazy"></a><figcaption>图 3 · 复制地址栏完整链接，含 ? 后的 userId 等全部参数（点击看大图）</figcaption></figure></div></li>
               <li><span class="camp-link-num">04</span><div><strong>粘贴到下方输入框，点「解析并保存」</strong>
                 <p>整条粘进来即可，不用手抄 ID。系统会读出营地 ID；昵称先按「选手 XXXX」占位，可在下方清单里直接改。保存后这位选手长期有效。</p></div></li>
             </ol>

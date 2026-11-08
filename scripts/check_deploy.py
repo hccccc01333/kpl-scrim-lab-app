@@ -36,8 +36,9 @@ def main() -> int:
         ('GET', '/api/health'),
         ('GET', '/api/replays'),
         ('GET', '/api/state'),
-        ('GET', '/studio'),
-        ('GET', '/assets/app.js'),
+        ('GET', '/'),
+        ('GET', '/static/app.js'),
+        ('GET', '/assets/capture-guide/requirements.json'),
     ]
     failures = []
     for method, path in checks:

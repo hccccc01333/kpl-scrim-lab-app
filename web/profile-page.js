@@ -33,7 +33,27 @@ export async function renderProfile(container, {api, workspace, isCurrent, toast
   const teams = (settings.teams || []).map(t => ({...t}));
   const aliases = {...(settings.aliases || {})};
   const unbound = identity.unbound || [];
+  const matchMeta = {...(identity.matchMeta || {})};
   const overview = workspace?.overview || {};
+
+  // 开赛时间只在部分数据源里有；有值才推断时段，没有就明确标「未记录」，不臆造上午/下午。
+  const clockOf = value => {
+    const raw = String(value || '');
+    const match = raw.match(/(?:^|[ T])(\d{1,2}):(\d{2})/);
+    if (!match) return null;
+    const hour = Number(match[1]);
+    if (!Number.isFinite(hour) || hour < 0 || hour > 23) return null;
+    return {hour, text: `${String(hour).padStart(2, '0')}:${match[2]}`};
+  };
+  const periodOf = value => {
+    const clock = clockOf(value);
+    if (!clock) return '';
+    return clock.hour < 12 ? '上午' : clock.hour < 18 ? '下午' : '晚间';
+  };
+  const durationOf = seconds => {
+    const value = Number(seconds);
+    return Number.isFinite(value) && value > 0 ? `${Math.round(value / 60)} 分钟` : '';
+  };
 
   const active = () => roster;
   const aliasesFor = id => Object.keys(aliases).filter(label => aliases[label] === id);
@@ -95,6 +115,8 @@ export async function renderProfile(container, {api, workspace, isCurrent, toast
   let teamEditMode = !hasProfile;
   let selectedId = roster.find(p => (p.name || '').trim() && p.name !== '新选手')?.id || roster[0]?.id || '';
   let historyOpen = false;
+  let openGroups = new Set();
+  let groupsInitialized = false;
   let laneStatus = '拖动选手到分路，自动保存';
   let laneSaving = false;
   let teamsHistory = (() => {
@@ -170,12 +192,12 @@ export async function renderProfile(container, {api, workspace, isCurrent, toast
   };
 
   // 待认领昵称：目标身份就是上方选中的那个人，每项不再重复一整排头像。
-  const bindListHtml = () => {
-    if (!pending.length) return '<div class="pf-empty">没有待认领的昵称。导入新比赛后会出现在这里。</div>';
+  const bindListHtml = (items = pending) => {
+    if (!items.length) return '<div class="pf-empty">没有待认领的昵称。导入新比赛后会出现在这里。</div>';
     const current = roster.find(p => p.id === selectedId);
     const currentName = current ? (identityOf(current) || current.name || '未命名') : '';
     return `<div class="pf-bind-list">
-      ${pending.map(item => {
+      ${items.map(item => {
         const owner = roster.find(p => p.id === aliases[item.label]);
         const detail = `${item.matches ? `${item.matches} 场` : ''}${item.heroes?.length ? ` · 常用 ${item.heroes.slice(0, 3).map(esc).join('、')}` : ''}${item.lastDate ? ` · 最近 ${esc(item.lastDate)}` : ''}`;
         return `<div class="pf-bind ${owner ? 'is-bound' : ''}" data-label="${esc(item.label)}">
@@ -190,6 +212,85 @@ export async function renderProfile(container, {api, workspace, isCurrent, toast
           </div>
         </div>`;
       }).join('')}
+    </div>`;
+  };
+
+  // 按「对局场次」归类待认领昵称：教练只打开当天要处理的那一场，不必在整包选手里翻。
+  // 同一昵称出现在多场时会分别列在对应场次下；认领是全局的，任一处认领后所有场次同步。
+  const claimGroups = () => {
+    const sessions = new Map();
+    const loose = [];
+    pending.forEach(item => {
+      const keys = (item.matchKeys || []).filter(key => matchMeta[key]);
+      if (!keys.length) { loose.push(item); return; }
+      keys.forEach(key => {
+        if (!sessions.has(key)) sessions.set(key, []);
+        sessions.get(key).push(item);
+      });
+    });
+    const groups = [...sessions.entries()].map(([key, items]) => {
+      const meta = matchMeta[key];
+      const clock = clockOf(meta.startTime);
+      return {
+        key,
+        date: (meta.date || '').slice(0, 10) || '日期未记录',
+        period: periodOf(meta.startTime),
+        time: clock?.text || '',
+        title: meta.title || meta.opponent || meta.session || '',
+        duration: durationOf(meta.duration),
+        items,
+        bound: items.filter(item => aliases[item.label]).length,
+      };
+    });
+    groups.sort((a, b) => b.date.localeCompare(a.date)
+      || (a.time || '99:99').localeCompare(b.time || '99:99')
+      || a.key.localeCompare(b.key));
+    if (loose.length) groups.push({
+      key: '__loose__', date: '未关联对局', period: '', time: '', title: '没有场次信息的昵称',
+      duration: '', items: loose, bound: loose.filter(item => aliases[item.label]).length,
+    });
+    return groups;
+  };
+
+  const bindGroupsHtml = () => {
+    const groups = claimGroups();
+    if (!groups.length) return '<div class="pf-empty">没有待认领的昵称。导入新比赛后会出现在这里。</div>';
+    if (!groupsInitialized) { openGroups.add(groups[0].key); groupsInitialized = true; }
+    const allOpen = groups.every(group => openGroups.has(group.key));
+    let lastDate = '';
+    let index = 0;
+    const rows = groups.map(group => {
+      let dateHead = '';
+      if (group.date !== lastDate) {
+        lastDate = group.date;
+        index = 0;
+        const sameDate = groups.filter(item => item.date === group.date);
+        const periodOrder = ['上午', '下午', '晚间'];
+        const periods = [...new Set(sameDate.map(item => item.period).filter(Boolean))]
+          .sort((a, b) => periodOrder.indexOf(a) - periodOrder.indexOf(b));
+        dateHead = `<div class="pf-date-head"><b>${esc(group.date)}</b><small>${sameDate.length} 场 · ${periods.length ? periods.map(esc).join(' / ') : '开赛时间未记录'}</small></div>`;
+      }
+      index += 1;
+      const open = openGroups.has(group.key);
+      return `${dateHead}<div class="pf-group ${open ? 'is-open' : ''}">
+        <button class="pf-group-head" type="button" data-toggle-group="${esc(group.key)}" aria-expanded="${open}">
+          <span class="pf-group-chevron">${open ? '▾' : '▸'}</span>
+          <span class="pf-group-title">
+            <b>第 ${index} 场</b>
+            ${group.period ? `<em class="pf-period">${esc(group.period)}${group.time ? ` ${esc(group.time)}` : ''}</em>` : ''}
+            <span>${esc(group.title || '未命名对局')}</span>
+          </span>
+          <span class="pf-group-meta">${group.duration ? `${esc(group.duration)} · ` : ''}${group.items.length} 人 · 已认领 ${group.bound}</span>
+        </button>
+        ${open ? `<div class="pf-group-body">${bindListHtml(group.items)}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="pf-claim-groups">
+      <div class="pf-groups-bar">
+        <span>${groups.length} 场对局 · 按场次展开，认领一次全场同步</span>
+        <button class="button ghost" type="button" id="pf-toggle-all" data-toggle-all="${allOpen ? 'collapse' : 'expand'}">${allOpen ? '全部收起' : '全部展开'}</button>
+      </div>
+      ${rows}
     </div>`;
   };
 
@@ -242,14 +343,14 @@ export async function renderProfile(container, {api, workspace, isCurrent, toast
         <div class="pf-subhead">
           <div>
             <b>待认领的游戏昵称</b>
-            <small>点「认领给…」即归到上面选中的身份；已认领的点名字可跳去编辑那个人</small>
+            <small>先点开要看的那一场，再点「认领给…」归到上面选中的身份；已认领的点名字可跳去编辑那个人</small>
           </div>
           <div class="pf-subhead-actions">
             <span class="pf-count pf-bind-count">已认领 ${boundCount}</span>
             <button class="button ghost" type="button" id="pf-auto">按同名自动认领</button>
           </div>
         </div>
-        <div id="pf-bind-wrap">${bindListHtml()}</div>
+        <div id="pf-bind-wrap">${bindGroupsHtml()}</div>
       </div>
 
       <div class="pf-actions">
@@ -520,6 +621,20 @@ export async function renderProfile(container, {api, workspace, isCurrent, toast
     if (!btn) return;
 
     if (btn.dataset.bindNew) { openPlayerDialog(btn.dataset.bindNew); return; }
+
+    if (btn.dataset.toggleGroup) {
+      const key = btn.dataset.toggleGroup;
+      if (openGroups.has(key)) openGroups.delete(key);
+      else openGroups.add(key);
+      paintIdentity();
+      return;
+    }
+    if (btn.dataset.toggleAll) {
+      if (btn.dataset.toggleAll === 'expand') claimGroups().forEach(group => openGroups.add(group.key));
+      else openGroups.clear();
+      paintIdentity();
+      return;
+    }
 
     // 认领：目标就是当前选中的身份，不再每项重复一排头像
     if (btn.dataset.claimLabel) {

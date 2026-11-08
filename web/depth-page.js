@@ -1,7 +1,9 @@
-/* 深度分析单条页：基于营地十人面板 + 营地官方回放同步的可运行分析，
+/* 深度分析：目录页（renderDepthHub，按方向分组的轻量清单）与单条页（renderDepthEntry），
+   基于营地十人面板 + 营地官方回放同步的可运行分析，
    作为各模块（比赛 / 战队 / 选手 / 英雄 / BP / 对比）子页签的独立页，
    每条分析呈现目的 / 深度 / 样本 / 图形 / 诚实边界。
-   可分边的分析带「视角」选项框：全部 / 我方 / 对方（按对手战队）/ 对比。 */
+   可分边的分析带「视角」选项框：全部 / 我方 / 对方（按对手战队）/ 对比；
+   选手 / 英雄选项框按 meta.filters 出现，与视角、对局一起进入查询参数。 */
 const esc = (v = '') => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const fmt = (v, d = 1) => v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('zh-CN', {maximumFractionDigits: d});
 const signed = (v, d = 1) => v === null || v === undefined || !Number.isFinite(Number(v)) ? '—' : `${Number(v) > 0 ? '+' : ''}${fmt(v, d)}`;
@@ -36,11 +38,14 @@ function axis(w, h, l, r, t, b, xd, yd, xfmt = fmt, yfmt = fmt) {
   return out;
 }
 const tip = text => ` data-tip="${esc(String(text).replace(/\s+/g, ' ').slice(0, 240))}"`;
-/* 对局行的可读名：后端新字段 label 优先，旧数据继续用 id / game。 */
+/* 对局行的可读名：后端 label 优先；旧数据没有 label 时也不直接把长数字 ID 露给教练。 */
 const gameLabel = item => {
   if (item === null || item === undefined) return '—';
-  if (typeof item !== 'object') return String(item);
-  return item.label || item.start || item.id || item.game || item.match || '—';
+  if (typeof item !== 'object') {
+    const text = String(item);
+    return /^\d{6,}$/.test(text) ? '未命名对局' : text;
+  }
+  return item.label || item.start || '未命名对局';
 };
 
 function matrix(payload, opts = {}) {
@@ -129,7 +134,17 @@ function timeline(payload) {
   out += `</svg>`;
   const hours = payload.hours || [], maxH = Math.max(1, ...hours.map(x => x.count));
   const hourBars = hours.map(x => `<div class="dp-hour"><span>${x.hour}时</span><i style="height:${Math.max(3, x.count / maxH * 74)}px"></i><b>${x.count}</b></div>`).join('');
-  return `<div class="dp-subhead">逐局分均经济 <span>${games.length} 局按开始时刻排序</span></div>${out}
+  const durations = games.map(g => g.duration).filter(Boolean);
+  const avg = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+  const stats = `<div class="dp-inline-stats">
+    <div><span>对局</span><b>${fmt(games.length, 0)} 局</b><small>按开赛时刻排序</small></div>
+    <div><span>平均分均经济</span><b>${fmt(avg(games.map(g => g.avgGpm)), 0)}</b><small>十人中位数</small></div>
+    <div><span>平均时长</span><b>${avg(durations) == null ? '—' : clock(avg(durations))}</b><small>${durations.length} 局有时长</small></div>
+    <div><span>时段跨度</span><b>${hours.length ? `${hours[0].hour}–${hours.at(-1).hour} 时` : '—'}</b><small>按营地 startTime</small></div>
+  </div>`;
+  const rows = games.map(g => `<tr><td>${esc(gameLabel(g))}</td><td>${g.duration ? clock(g.duration) : '—'}</td><td class="num">${fmt(g.avgGpm, 0)}</td><td class="num">${fmt(g.avgCs, 0)}</td><td class="num">${fmt(g.avgGold, 0)}</td><td>${esc((g.heroes || []).join(' / ') || '—')}</td></tr>`).join('');
+  return `${stats}<div class="dp-subhead">逐局分均经济 <span>${games.length} 局按开始时刻排序，悬停可看对局名</span></div>${out}
+    <details class="dp-fold" open><summary>对局清单（${games.length} 局）</summary><div class="dp-scroll"><table class="dp-table"><thead><tr><th>对局</th><th>时长</th><th>分均经济</th><th>补刀</th><th>场均经济</th><th>常用英雄</th></tr></thead><tbody>${rows}</tbody></table></div></details>
     <div class="dp-two-col"><section><div class="dp-subhead">对局时段分布 <span>营地 startTime 的小时</span></div><div class="dp-hours">${hourBars}</div></section>
     <section><div class="dp-subhead">时长 × 产出效率 <span>r = ${fmt(payload.scatter?.corr, 2)}</span></div>${scatter(payload.scatter || {points: []}, true)}</section></div>`;
 }
@@ -153,11 +168,17 @@ function economy(payload) {
     const name = gameLabel(g);
     return `<tr><th>${esc(name)}</th>${marks.map(m => {
       const v = g.diffAt[m];
-      return `<td class="${v == null ? 'dp-missing' : ''}" style="${v == null ? '' : `background:${v >= 0 ? `rgba(59,108,232,${.06 + Math.abs(v) / maxAbs * .5})` : `rgba(217,95,107,${.06 + Math.abs(v) / maxAbs * .5})`}`}"${tip(`${name} · ${m / 60} 分 · 蓝−红 ${fmt(v, 0)}`)}>${signed(v, 0)}</td>`;
+      return `<td class="${v == null ? 'dp-missing' : ''}" style="${v == null ? '' : `background:${v >= 0 ? `rgba(37,99,235,${.04 + Math.abs(v) / maxAbs * .26})` : `rgba(180,81,60,${.04 + Math.abs(v) / maxAbs * .26})`}`}"${tip(`${name} · ${m / 60} 分 · 蓝−红 ${fmt(v, 0)}`)}>${signed(v, 0)}</td>`;
     }).join('')}<td${tip(`${name} · 胜方 ${g.winCamp === '1' ? '蓝方' : g.winCamp === '2' ? '红方' : '未记录'}`)}>${g.winCamp === '1' ? '蓝' : g.winCamp === '2' ? '红' : '—'}</td></tr>`;
   }).join('')}</tbody></table></div>`;
   const lead = payload.leadAt10 || {};
-  return `<div class="dp-finding"><b>10 分钟检查点：${lead.n || 0} 局有实测，其中蓝方领先 ${lead.blueLead || 0} 局，最终蓝方获胜 ${lead.blueLeadWins || 0} 局</b><span>只看已覆盖的检查点，不外推到终局</span></div>
+  const stats = `<div class="dp-inline-stats">
+    <div><span>对局</span><b>${fmt(curves.length, 0)} 局</b><small>${payload.selected ? '当前只看所选对局' : '全部有经济时间轴的对局'}</small></div>
+    <div><span>10 分钟有实测</span><b>${fmt(lead.n, 0)} 局</b><small>蓝方领先 ${fmt(lead.blueLead, 0)} 局</small></div>
+    <div><span>蓝方领先后获胜</span><b>${fmt(lead.blueLeadWins, 0)} 局</b><small>只看有检查点的局</small></div>
+    <div><span>检查点</span><b>${marks.map(m => m / 60 + '分').join(' / ')}</b><small>取最近实测值，不插值</small></div>
+  </div>`;
+  return `${stats}<div class="dp-finding"><b>10 分钟检查点：${lead.n || 0} 局有实测，其中蓝方领先 ${lead.blueLead || 0} 局，最终蓝方获胜 ${lead.blueLeadWins || 0} 局</b><span>只看已覆盖的检查点，不外推到终局</span></div>
     <div class="dp-subhead">${curves.length} 局经济差过程 <span>同一纵轴 · 蓝线为蓝方领先、红线为落后 · 30 秒一个实测点</span></div><div class="dp-sparks">${tiles}</div>
     <div class="dp-subhead">检查点矩阵 <span>蓝 − 红 · 深色 = 差距大 · — = 该时点没有数据</span></div>${table}`;
 }
@@ -181,8 +202,15 @@ function events(payload) {
   out += `</svg><div class="dp-legend">${names.map((k, j) => `<span><i style="background:${colors[j % colors.length]}"></i>${esc(k)} · ${fmt(payload.totals?.[k] || 0, 0)} 条</span>`).join('')}</div>`;
   const swings = payload.swings || [];
   const positive = swings.filter(s => s.delta > 0).length;
+  const totalEvents = Object.values(payload.totals || {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const stats = `<div class="dp-inline-stats">
+    <div><span>事件</span><b>${fmt(totalEvents, 0)} 条</b><small>${payload.selected ? '当前只看所选对局' : '全部有官方回放的对局'}</small></div>
+    <div><span>分钟桶</span><b>${fmt((payload.minutes || []).length, 0)} 个</b><small>按事件时刻归到分钟</small></div>
+    <div><span>可算 swing 的事件</span><b>${fmt(payload.swingCount || 0, 0)} 个</b><small>事件前后各 60 秒</small></div>
+    <div><span>事件后经济上行</span><b>${fmt(positive, 0)} 个</b><small>时间关联，不是因果</small></div>
+  </div>`;
   const rows = swings.slice(0, 24).map(s => `<tr><td>${esc(gameLabel(s))}</td><td>${clock(s.t)}</td><td>${esc(s.type)}</td><td>${s.camp === '1' ? '蓝' : s.camp === '2' ? '红' : '—'}</td><td>${signed(s.before, 0)}</td><td>${signed(s.after, 0)}</td><td class="${s.delta >= 0 ? 'pos' : 'neg'}">${signed(s.delta, 0)}</td></tr>`).join('');
-  return `${out}<div class="dp-finding"><b>${payload.swingCount || 0} 个资源事件可算前后 swing，其中 ${positive} 个事件后经济差上行</b><span>时间关联，不是资源导致经济的证据</span></div>
+  return `${stats}${out}<div class="dp-finding"><b>${payload.swingCount || 0} 个资源事件可算前后 swing，其中 ${positive} 个事件后经济差上行</b><span>时间关联，不是资源导致经济的证据</span></div>
     <div class="dp-subhead">事件前后 60 秒经济差变化 <span>前 24 条</span></div><div class="dp-scroll"><table class="dp-table"><thead><tr><th>对局</th><th>时刻</th><th>事件</th><th>触发方</th><th>前 60s</th><th>后 60s</th><th>变化</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -248,13 +276,23 @@ function pace(payload) {
 
 function baseline(payload) {
   const rows = payload.rows || [];
+  if (!rows.length) return '<div class="dp-empty">当前筛选下没有可比较的同位置样本。</div>';
   const max = Math.max(1, ...rows.map(r => Math.max(r.value || 0, r.p90 || 0)));
   const P = v => Math.min(98, (v || 0) / max * 100);
-  return `<div class="dp-baseline"><div class="dp-baseline-head"><span>身份 / 分路</span><span>样本</span><span>${esc(payload.metric)} · 相对同位置平均</span><span>分位</span></div>
-  ${rows.map(r => `<div class="dp-baseline-row"><div><b>${esc(r.player)}</b><small>${esc(r.lane)} · ${esc((r.heroes || []).join(' / ') || '—')}</small></div><span class="dp-num">${r.n}</span>
+  const lanes = [...new Set(rows.map(r => r.lane).filter(Boolean))];
+  const leader = rows.filter(r => r.percentile !== null).sort((a, b) => b.percentile - a.percentile)[0];
+  const stats = `<div class="dp-inline-stats">
+    <div><span>身份样本</span><b>${fmt(rows.length, 0)} 人</b><small>${lanes.length} 个分路</small></div>
+    <div><span>当前指标</span><b>${esc(payload.metric || '')}</b><small>同位置中位数作参照</small></div>
+    <div><span>分位最高</span><b>${leader ? esc(leader.player) : '—'}</b><small>${leader ? `${leader.lane} · 分位 ${fmt(leader.percentile, 0)}%` : ''}</small></div>
+  </div>`;
+  const laneButtons = `<div class="dp-baseline-lanes"><button class="active" data-baseline-lane="">全部 ${rows.length} 人</button>${lanes.map(lane => `<button data-baseline-lane="${esc(lane)}">${esc(lane)} ${rows.filter(r => r.lane === lane).length}</button>`).join('')}</div>`;
+  return `${stats}<div class="dp-finding"><b>同位置 = 对抗路 / 打野 / 中路 / 发育路 / 游走；参照 = 同位置所有已记录行（含对手）的中位数与分位</b><span>蓝点越靠右越突出；分位只描述这批样本内的相对位置，不评价个人能力</span></div>${laneButtons}
+  <div class="dp-baseline"><div class="dp-baseline-head"><span>身份 / 分路</span><span>样本</span><span>${esc(payload.metric)} · 相对同位置平均</span><span>分位</span></div>
+  ${rows.map(r => `<div class="dp-baseline-row" data-baseline-row data-lane="${esc(r.lane)}"><div><b><a href="#player/${encodeURIComponent(r.player)}">${esc(r.player)}</a></b><small>${esc(r.lane)} · ${esc((r.heroes || []).join(' / ') || '—')}</small></div><span class="dp-num">${r.n}</span>
     <div class="dp-bullet"><i class="dp-bullet-p75" style="left:${P(r.p75)}%;width:${Math.max(0, P(r.p90) - P(r.p75))}%"></i><i class="dp-bullet-base" style="left:${P(r.baseline)}%"></i><i class="dp-bullet-value" style="left:${P(r.value)}%"${tip(`${r.player} · 本人 ${fmt(r.value)} · 同位置平均 ${fmt(r.baseline)} · 前列区间 ${fmt(r.p75)}–${fmt(r.p90)}`)}></i></div>
     <span class="dp-num">${r.percentile === null ? '—' : fmt(r.percentile, 0) + '%'}</span></div>`).join('')}</div>
-  <div class="dp-legend"><span><i style="background:#c9d8f5"></i>同位置前列区间</span><span><i style="background:#8a97a9"></i>同位置平均</span><span><i style="background:#3b6ce8"></i>本人</span></div>`;
+  <div class="dp-legend"><span><i style="background:#c9d8f5"></i>同位置前列区间</span><span><i style="background:#8a97a9"></i>同位置平均</span><span><i style="background:#3b6ce8"></i>本人</span><span class="dp-legend-note">点击分路只看该路</span></div>`;
 }
 
 function camp(payload) {
@@ -270,14 +308,36 @@ function camp(payload) {
 }
 
 function bp(payload) {
-  const bars = (list, color) => list.map(i => `<div class="dp-inline-bar"><span>${esc(i.label)}</span><i style="width:${Math.min(100, i.value / Math.max(1, list[0].value) * 100)}%;background:${color}"></i><b>${i.value}</b></div>`).join('');
   const objs = payload.objectives || [];
-  const withResult = objs.filter(o => o.result !== null && o.result !== undefined);
-  return `<div class="dp-two-col"><section><div class="dp-subhead">禁用频率 <span>队侧 ${objs.length} 份</span></div>${bars(payload.bans || [], '#d95f6b')}</section>
-  <section><div class="dp-subhead">选用频率 <span>队侧 ${objs.length} 份</span></div>${bars(payload.picks || [], '#3b6ce8')}</section></div>
-  <div class="dp-subhead">龙与塔控制 <span>终局计数</span></div>
-  <div class="dp-scroll"><table class="dp-table"><thead><tr><th>对局</th><th>阵营</th><th>推塔</th><th>资源计数</th><th>团队经济</th><th>赛果字段</th></tr></thead><tbody>${objs.slice(0, 14).map(o => `<tr><td>${esc(gameLabel(o))}</td><td>${esc(o.camp)}</td><td>${fmt(o.towers, 0)}</td><td>${fmt(o.dragons, 0)}</td><td>${fmt(o.money, 0)}</td><td>${o.result == null ? '—' : esc(o.result)}</td></tr>`).join('')}</tbody></table></div>
-  <div class="dp-finding"><b>${withResult.length} / ${objs.length} 个队侧有胜负字段</b><span>资源与胜负的关系只做描述，不做统计推断</span></div>`;
+  const bans = payload.bans || [], picks = payload.picks || [];
+  const max = Math.max(1, ...[...bans, ...picks].map(item => item.value));
+  const rank = (label, rows, tone) => `<section class="dp-bp-rank" data-tone="${tone}">
+    <h3>${label}</h3><p>按次数计，与另一张榜共用刻度。</p>
+    ${rows.length ? `<ol>${rows.slice(0, 8).map(item => `<li><span>${esc(item.label)}</span>
+      <i aria-hidden="true"><b style="width:${100 * item.value / max}%"></b></i><strong>${fmt(item.value, 0)} 次</strong></li>`).join('')}</ol>`
+      : '<div class="dp-empty">当前筛选没有对应的禁选名单。</div>'}</section>`;
+  const allGames = new Map(objs.map(item => [item.match, gameLabel(item)]));
+  const games = new Map([...allGames].slice(0, 24));
+  const hasValue = value => typeof value === 'number' && Number.isFinite(value);
+  const cards = [
+    ['覆盖对局', allGames.size, '按对局去重'],
+    ['推塔有记录', objs.filter(item => hasValue(item.towers)).length, '队侧'],
+    ['龙类计数有记录', objs.filter(item => hasValue(item.dragons)).length, '队侧'],
+  ];
+  return `<div class="dp-bp-summary">${cards.map(([label, value, note]) =>
+    `<div><span>${label}</span><strong>${fmt(value, 0)}</strong><small>${note}</small></div>`).join('')}</div>
+    <div class="dp-bp-ranks">${rank('英雄禁用', bans, 'ban')}${rank('英雄选用', picks, 'pick')}</div>
+    <section class="dp-bp-evidence"><div class="dp-bp-evidence-head"><div><h3>逐局龙塔与经济</h3>
+      <p>蓝红表示游戏阵营。这里展示终局计数，空值表示缺少记录。</p></div>
+      ${games.size ? `<label>定位对局<select data-bp-objective-select><option value="">全部可见对局</option>
+        ${[...games].map(([id, label]) => `<option value="${esc(id)}">${esc(label)}</option>`).join('')}</select></label>` : ''}</div>
+      ${games.size ? `<div class="dp-scroll" tabindex="0" role="region" aria-label="终局资源证据表"><table class="dp-table"><thead><tr><th>对局</th><th>阵营</th><th>推塔</th><th>龙类计数</th><th>团队经济</th><th>赛果</th></tr></thead><tbody>
+        ${objs.filter(item => games.has(item.match)).map(item => `<tr data-bp-match="${esc(item.match)}"><td>${esc(gameLabel(item))}</td>
+          <td><span class="dp-bp-camp" data-camp="${esc(item.camp)}">${esc(item.camp)}方</span></td>
+          <td>${fmt(item.towers, 0)}</td><td>${fmt(item.dragons, 0)}</td><td>${fmt(item.money, 0)}</td>
+          <td>${item.result === true ? '胜' : item.result === false ? '负' : item.result == null ? '—' : esc(item.result)}</td></tr>`).join('')}
+      </tbody></table></div>${allGames.size > games.size ? `<p>展示前 ${games.size} 局，共 ${allGames.size} 局。可缩小日期范围查看其他记录。</p>` : ''}` :
+      '<div class="dp-empty">当前筛选没有龙塔资源明细。</div>'}</section>`;
 }
 
 function stability(payload) {
@@ -311,13 +371,20 @@ function killrhythm(payload) {
   });
   out += `</svg><div class="dp-legend"><span><i style="background:#3b6ce8"></i>蓝方击杀</span><span><i style="background:#d95f6b"></i>红方击杀</span><span class="dp-legend-note">每一格 = 1 分钟 · 数据为实测击杀时刻，不是按总比分摊平</span></div>`;
   const fb = payload.firstBlood || {};
+  const totalKills = minutes.reduce((sum, minute) => sum + minute.blue + minute.red, 0);
+  const sizes = payload.sizes || [], maxSize = Math.max(1, ...sizes.map(s => s.fights));
+  const stats = `<div class="dp-inline-stats">
+    <div><span>击杀</span><b>${fmt(totalKills, 0)} 次</b><small>${payload.selected ? '当前只看所选对局' : '全部有官方回放的对局'}</small></div>
+    <div><span>首杀中位</span><b>${clock(fb.median || 0)}</b><small>常见 ${clock(fb.p25 || 0)} – ${clock(fb.p75 || 0)}</small></div>
+    <div><span>爆发窗口</span><b>${fmt(payload.burstCount, 0)} 个</b><small>60 秒内 ≥3 杀</small></div>
+    <div><span>团战规模</span><b>${sizes.length ? `${fmt(Math.min(...sizes.map(s => s.kills)), 0)}–${fmt(Math.max(...sizes.map(s => s.kills)), 0)} 杀` : '—'}</b><small>按单场团战击杀数</small></div>
+  </div>`;
   const headline = `<div class="dp-finding"><b>首杀常见在 ${clock(fb.p25 || 0)} – ${clock(fb.p75 || 0)}，平均水平 ${clock(fb.median || 0)}（${fb.n || 0} 局）</b><span>60 秒内 ≥3 杀的爆发窗口共 ${fmt(payload.burstCount, 0)} 个</span></div>`;
   const phaseCards = `<div class="dp-inline-stats">${phases.map(p => `<div><span>${esc(p.label)}</span><b>${fmt(p.n, 0)} 次</b><small>占 ${fmt(p.pct)}% · ${fmt(p.rate, 2)} 杀/分</small></div>`).join('')}</div>`;
-  const sizes = payload.sizes || [], maxSize = Math.max(1, ...sizes.map(s => s.fights));
   const sizeBars = `<div class="dp-inline-bars">${sizes.map(s => `<div class="dp-inline-bar"><span>${fmt(s.kills, 0)} 杀团战</span><i style="width:${s.fights / maxSize * 100}%"></i><b>${s.fights}</b></div>`).join('')}</div>`;
   const burstRows = (payload.bursts || []).slice(0, 14).map(b => `<tr><td>${esc(gameLabel(b))}</td><td>${clock(b.t)}</td><td><b>${fmt(b.n, 0)}</b></td><td>${b.n >= 5 ? '高强度' : '交火密集'}</td></tr>`).join('');
   const ledgerRows = (payload.ledger || []).map(k => `<tr><td>${esc(gameLabel(k))}</td><td>${clock(k.t)}</td><td><span class="dp-camp-dot ${k.camp === '蓝' ? 'blue' : 'red'}"></span>${esc(k.killer)}</td><td>→</td><td>${esc(k.victim)}</td><td>${esc(k.fight)}</td></tr>`).join('');
-  return `${headline}${out}${phaseCards}
+  return `${stats}${headline}${out}${phaseCards}
     <div class="dp-two-col"><div><div class="dp-subhead">团战规模分布 <span>每场团战的击杀数</span></div>${sizeBars}</div>
     <div><div class="dp-subhead">爆发窗口 Top 14 <span>单局单分钟击杀数</span></div><div class="dp-scroll"><table class="dp-table"><thead><tr><th>对局</th><th>时刻</th><th>击杀</th><th>标记</th></tr></thead><tbody>${burstRows || '<tr><td colspan="4">无</td></tr>'}</tbody></table></div></div></div>
     <div class="dp-subhead">逐次击杀流水 <span>前 30 条 · 「谁击杀谁」来自官方 killInfo</span></div>
@@ -381,7 +448,7 @@ function dropwindow(payload) {
   const chains = (payload.chains || []).slice().sort((a, b) => a.t - b.t);
   const duration = payload.duration || 1;
   const selectedGame = games.find(g => String(g.id) === String(payload.selected));
-  const currentName = payload.selectedLabel || (selectedGame ? gameLabel(selectedGame) : (payload.selected || '—'));
+  const currentName = payload.selectedLabel || (selectedGame ? gameLabel(selectedGame) : (payload.selected ? '未命名对局' : '—'));
   const multi = chains.filter(c => c.n >= 2).length;
   const tools = `<div class="dp-map-tools"><label>对局 <select data-game-select>${games.map(g =>
     `<option value="${esc(g.id)}"${g.id === payload.selected ? ' selected' : ''}>${esc(gameLabel(g))} · ${fmt(g.deaths, 0)} 次阵亡 · ${clock(g.duration || 0)}</option>`).join('')}</select></label>
@@ -492,7 +559,7 @@ function dropimpact(payload) {
   return `${stats}${finding}
     <div class="dp-subhead">全部掉点：时刻 × 单笔损失 <span>每点一次阵亡窗口 · 正数 = 本队经济差恶化</span></div>${dropScatter(payload.points, s.medianLoss)}
     <div class="dp-subhead">掉点阶段 <span>按阵亡时刻分段，不是按复活时刻</span></div>${phaseCards}
-    <div class="dp-two-col"><div><div class="dp-subhead">分路编码 × 掉点代价 <span>位置为营地原始编码</span></div>
+    <div class="dp-two-col"><div><div class="dp-subhead">分路 × 掉点代价 <span>分路已显示为中文路名</span></div>
       <div class="dp-scroll"><table class="dp-table"><thead><tr><th>分路</th><th>笔数</th><th>平均</th><th>中位</th><th>高位</th><th>未复活</th></tr></thead><tbody>${laneRows}</tbody></table></div></div>
       <div><div class="dp-subhead">英雄 × 掉点代价 <span>窗口 ≥ 8 笔 · 已剔除 ${fmt(payload.heroExcluded, 0)} 个英雄</span></div>
       <div class="dp-scroll"><table class="dp-table"><thead><tr><th>英雄</th><th>平均</th><th>中位</th><th>高位</th><th>窗口中位</th><th>未复活</th></tr></thead><tbody>${heroRows}</tbody></table></div></div></div>
@@ -581,13 +648,91 @@ function heroDrillLink(analysisId, payload, heroChoice, fallbackHero) {
   return `<div class="dp-drill-footer"><a href="#hero/${encodeURIComponent(hero)}">去英雄页看逐局 · ${esc(hero)} →</a></div>`;
 }
 
+function matchup(payload) {
+  const rows = payload.roads || [], lanes = payload.lanes || [];
+  const heroes = payload.heroes || [], players = payload.players || [];
+  if (!rows.length) return '<div class="dp-empty">当前没有可判定的同分路对位。先到「对局分边」确认我方阵营，并在录入里补齐双方分路。</div>';
+  const avg = list => list.length ? list.reduce((sum, value) => sum + value, 0) / list.length : null;
+  const ahead = rows.filter(row => row.ahead).length;
+  const aheadWithResult = rows.filter(row => row.ahead && row.win !== null && row.win !== undefined);
+  const aheadWins = aheadWithResult.filter(row => row.win === true).length;
+  const overall = `<div class="dp-inline-stats">
+    <div><span>对位人局</span><b>${fmt(rows.length, 0)}</b><small>${new Set(rows.map(row => row.match)).size} 局 · ${new Set(rows.map(row => row.ownPlayer)).size} 名我方选手</small></div>
+    <div><span>平均经济差</span><b>${signed(avg(rows.map(row => row.goldDiff)), 0)}</b><small>我方 − 对方终局金币</small></div>
+    <div><span>占优率</span><b>${fmt(ahead / rows.length * 100, 1)}%</b><small>${ahead} / ${rows.length} 人局</small></div>
+    <div><span>占优时胜率</span><b>${aheadWithResult.length ? fmt(aheadWins / aheadWithResult.length * 100, 1) + '%' : '—'}</b><small>${aheadWins} / ${aheadWithResult.length} 局有胜负</small></div>
+  </div>`;
+  const laneCards = `<div class="dp-matchup-lanes"><button class="dp-matchup-lane active" data-matchup-lane="">全部 ${rows.length} 人局</button>${lanes.map(lane => `<button class="dp-matchup-lane" data-matchup-lane="${esc(lane.lane)}">
+      <span>${esc(lane.lane)}</span><b class="${lane.avgGoldDiff >= 0 ? 'pos' : 'neg'}">${signed(lane.avgGoldDiff, 0)}</b>
+      <small>${lane.n} 人局 · 占优 ${fmt(lane.aheadRate, 0)}%${lane.avgKdaDiff == null ? '' : ` · KDA ${signed(lane.avgKdaDiff, 2)}`}</small>
+    </button>`).join('')}</div>`;
+  const heroRows = heroes.map(item => `<tr><th>${esc(item.ownHero)}<small>我方</small></th><td>${esc(item.enemyHero)}</td><td>${fmt(item.n, 0)}</td><td class="${item.avgGoldDiff >= 0 ? 'pos' : 'neg'}">${signed(item.avgGoldDiff, 0)}</td><td>${fmt(item.aheadRate, 0)}%</td><td>${item.winRate == null ? '—' : fmt(item.winRate, 0) + '%'}</td><td>${item.avgKdaDiff == null ? '—' : signed(item.avgKdaDiff, 2)}</td></tr>`).join('');
+  const playerRows = players.map(item => `<tr><th>${esc(item.ownPlayer)}<small>${esc(item.lane)}</small></th><td>${esc(item.enemyPlayer)}</td><td>${fmt(item.n, 0)}</td><td class="${item.avgGoldDiff >= 0 ? 'pos' : 'neg'}">${signed(item.avgGoldDiff, 0)}</td><td>${fmt(item.aheadRate, 0)}%</td><td>${item.winRate == null ? '—' : fmt(item.winRate, 0) + '%'}</td></tr>`).join('');
+  const detailRows = rows.map(row => `<tr data-matchup-row data-lane="${esc(row.lane)}" data-ahead="${row.ahead ? '1' : '0'}">
+      <td>${esc(gameLabel(row))}</td><td>${esc(row.lane)}</td>
+      <td><b>${esc(row.ownPlayer)}</b><small>${esc(row.ownHero)}</small></td>
+      <td><b>${esc(row.enemyPlayer)}</b><small>${esc(row.enemyHero)}</small></td>
+      <td class="${row.goldDiff >= 0 ? 'pos' : 'neg'}">${signed(row.goldDiff, 0)}</td>
+      <td class="${row.kdaDiff == null ? '' : row.kdaDiff >= 0 ? 'pos' : 'neg'}">${row.kdaDiff == null ? '—' : signed(row.kdaDiff, 2)}</td>
+      <td>${row.winLabel || '—'}</td></tr>`).join('');
+  return `${overall}${matchupSummary(payload)}${laneCards}
+    <div class="dp-subhead">同分路对位 <span>点上面的分路只看该路；经济差 = 我方 − 对方</span></div>
+    <div class="dp-matchup-actions"><button class="active" data-matchup-state="all">全部</button><button data-matchup-state="ahead">只看我方占优</button><button data-matchup-state="behind">只看我方落后</button></div>
+    <div class="dp-scroll"><table class="dp-table dp-matchup-table"><thead><tr><th>对局</th><th>分路</th><th>我方</th><th>对方</th><th>经济差</th><th>KDA 差</th><th>结果</th></tr></thead><tbody>${detailRows}</tbody></table></div>
+    <div class="dp-two-col"><div><div class="dp-subhead">英雄对位 <span>同分路双方英雄组合 · 按人局数排序</span></div>
+      <div class="dp-scroll"><table class="dp-table"><thead><tr><th>我方英雄</th><th>对方英雄</th><th>人局</th><th>经济差</th><th>占优率</th><th>胜率</th><th>KDA 差</th></tr></thead><tbody>${heroRows || '<tr><td colspan="7">样本不足</td></tr>'}</tbody></table></div></div>
+    <div><div class="dp-subhead">选手对位 <span>同一组对手的累计对照</span></div>
+      <div class="dp-scroll"><table class="dp-table"><thead><tr><th>我方选手</th><th>对方选手</th><th>人局</th><th>经济差</th><th>占优率</th><th>胜率</th></tr></thead><tbody>${playerRows || '<tr><td colspan="6">样本不足</td></tr>'}</tbody></table></div></div></div>`;
+}
+
+function matchupSummary(payload) {
+  const rows = payload.roads || [];
+  const lanes = payload.lanes || [];
+  const best = lanes.reduce((top, item) => !top || item.avgGoldDiff > top.avgGoldDiff ? item : top, null);
+  const worst = lanes.filter(item => item.avgGoldDiff < 0)
+    .reduce((low, item) => !low || item.avgGoldDiff < low.avgGoldDiff ? item : low, null);
+  const leadText = best ? `${best.lane} 平均领先 ${signed(best.avgGoldDiff, 0)}` : '暂无分路结论';
+  const lagText = worst ? `，${worst.lane} 平均落后 ${signed(Math.abs(worst.avgGoldDiff), 0)}`
+    : (best && best.avgGoldDiff > 0 ? '，全部路平均领先' : '');
+  return `<div class="dp-finding"><b>${rows.length} 个同分路对位样本；${leadText}${lagText}</b><span>经济差是终局结果对照，不等于个人能力，也不能推断因果</span></div>`;
+}
+
 const RENDERERS = {matrix, scatter, chain, impact, timeline, economy, events, map,
                    lanespace, pace, baseline, camp, bp, stability,
-                   killrhythm, fightscatter, deathmap, dropwindow, dropimpact};
+                   killrhythm, fightscatter, deathmap, dropwindow, dropimpact,
+                   matchup};
 
 /* 区块/单条页共享的图形交互：轨迹开关、对局选择、悬停提示 */
 function bindDepthTools(wrap, tooltip, {onGameSelect}) {
+  const applyMatchupFilter = () => {
+    const activeLane = wrap.querySelector('[data-matchup-lane].active')?.dataset.matchupLane || '';
+    const state = wrap.querySelector('[data-matchup-state].active')?.dataset.matchupState || 'all';
+    wrap.querySelectorAll('[data-matchup-row]').forEach(row => {
+      const laneOk = !activeLane || row.dataset.lane === activeLane;
+      const aheadOk = state === 'all' || (state === 'ahead' ? row.dataset.ahead === '1' : row.dataset.ahead === '0');
+      row.hidden = !(laneOk && aheadOk);
+    });
+  };
   wrap.addEventListener('click', event => {
+    const baseBtn = event.target.closest('[data-baseline-lane]');
+    if (baseBtn) {
+      const lane = baseBtn.dataset.baselineLane;
+      wrap.querySelectorAll('[data-baseline-lane]').forEach(btn => btn.classList.toggle('active', btn === baseBtn));
+      wrap.querySelectorAll('[data-baseline-row]').forEach(row => { row.hidden = !!lane && row.dataset.lane !== lane; });
+      return;
+    }
+    const laneBtn = event.target.closest('[data-matchup-lane]');
+    if (laneBtn) {
+      wrap.querySelectorAll('[data-matchup-lane]').forEach(btn => btn.classList.toggle('active', btn === laneBtn));
+      applyMatchupFilter();
+      return;
+    }
+    const stateBtn = event.target.closest('[data-matchup-state]');
+    if (stateBtn) {
+      wrap.querySelectorAll('[data-matchup-state]').forEach(btn => btn.classList.toggle('active', btn === stateBtn));
+      applyMatchupFilter();
+      return;
+    }
     const all = event.target.closest('[data-track-all]');
     if (all) {
       const mode = all.dataset.trackAll;
@@ -608,6 +753,13 @@ function bindDepthTools(wrap, tooltip, {onGameSelect}) {
     }
   });
   wrap.addEventListener('change', event => {
+    const objective = event.target.closest('[data-bp-objective-select]');
+    if (objective) {
+      objective.closest('.dp-bp-evidence').querySelectorAll('[data-bp-match]').forEach(row => {
+        row.hidden = Boolean(objective.value && row.dataset.bpMatch !== objective.value);
+      });
+      return;
+    }
     const select = event.target.closest('[data-game-select]');
     if (select && onGameSelect) onGameSelect(select.value);
   });
@@ -669,7 +821,7 @@ export async function renderDepthHub(container, {api, isCurrent, ids, title, mod
 
   const item = a => `<a class="dp-hub-item" href="#depth/${encodeURIComponent(a.id)}">
       <span class="dp-hub-item-main">
-        <span class="dp-hub-item-title"><span class="dp-dir-chip">${esc(a.direction || '')}</span>${esc(a.title)}</span>
+        <span class="dp-hub-item-title"><span class="dp-dir-chip">${esc(a.direction || '其他')}</span>${esc(a.title)}</span>
         <span class="dp-hub-sub">${esc(a.subtitle || '')}</span>
       </span>
       <span class="dp-hub-samples" title="${esc(a.samples || '')}">样本 ${esc(a.samples || '—')}</span>
@@ -696,7 +848,7 @@ export async function renderDepthHub(container, {api, isCurrent, ids, title, mod
 /* 单条分析页（#depth/<id>，从各模块页签行进入）。
    可分边的分析带「视角」选项框：全部 / 我方 / 对方（可按对手战队）/ 对比。
    我方阵营由营地取数账号（head.acntCamp）自动识别；教练在「对局分边」可覆盖并命名对手。 */
-export async function renderDepthEntry(container, {api, isCurrent, id, module = '深度分析'}) {
+export async function renderDepthEntry(container, {api, isCurrent, id, module = '深度分析', initialQuery = '', embedded = false}) {
   const catalog = await api('/api/depth/catalog');
   if (isCurrent && !isCurrent()) return;
   const a = (catalog.analyses || []).find(x => x.id === id);
@@ -706,24 +858,42 @@ export async function renderDepthEntry(container, {api, isCurrent, id, module = 
   }
   const campMeta = catalog.campMeta || {};
   const opponents = campMeta.opponents || [];
-  // sided=false：双边过程图（逐局节奏 / 经济差 / 事件密度 / 击杀节奏）与蓝红视角体检，
-  // 本来就是两方对照，单边过滤没有意义，不出现视角选项框。
+  const scopedGames = catalog.games || [];
+  const initial = new URLSearchParams(initialQuery);
+  let sideChoice = initial.get('side') || '';
+  let playerChoice = initial.get('player') || '';
+  let heroChoice = initial.get('hero') || '';
+  let gameChoice = initial.get('game') || '';
+  let matchChoice = initial.get('match') || '';
+  let teamChoice = initial.get('team') || '';
+  let metricChoice = initial.get('metric') || 'gpm';
+  let dateFrom = initial.get('from') || '';
+  let dateTo = initial.get('to') || '';
+  if (sideChoice.includes('|')) {
+    const [kind, team] = sideChoice.split('|');
+    sideChoice = kind;
+    if (!teamChoice) teamChoice = team;
+  }
+  // sided=false：双边过程图与全队层面的分析；是否出现视角 / 对手战队 / 选手 / 英雄
+  // 由后端 meta.filters 决定，避免每个模块手写一套。
   const sided = a.sided !== false;
-  // meta.filters 是后端新契约（side / player / hero 的子集）；旧数据没有时退回 sided。
   const rawFilters = a.filters;
   const metaFilters = Array.isArray(rawFilters)
     ? rawFilters
     : typeof rawFilters === 'string' ? rawFilters.split(',').map(x => x.trim()).filter(Boolean) : null;
   const allowSide = metaFilters ? metaFilters.includes('side') : sided;
+  const allowTeam = allowSide || Boolean(metaFilters?.includes('team'));
+  const allowMatch = (allowTeam || id === 'compare_camp') && scopedGames.length > 0;
   const allowPlayer = metaFilters ? metaFilters.includes('player') : false;
   const allowHero = metaFilters ? metaFilters.includes('hero') : false;
+  const allowGame = ['time_economy', 'time_events', 'time_kill_rhythm'].includes(id);
   const catalogPlayers = Array.isArray(catalog.players) ? catalog.players
     : Array.isArray(catalog.playersCatalog) ? catalog.playersCatalog : [];
   const catalogHeroes = Array.isArray(catalog.heroes) ? catalog.heroes
     : Array.isArray(catalog.heroCatalog) ? catalog.heroCatalog
       : Array.isArray(catalog.heroesCatalog) ? catalog.heroesCatalog : [];
   const playerOptions = catalogPlayers.map(p => {
-    const label = String(typeof p === 'string' ? p : (p?.label || p?.player || p?.name || ''));
+    const label = String(typeof p === 'string' ? p : (p?.label || p?.player || p?.playerName || p?.name || ''));
     const bound = typeof p === 'object' && p !== null && p.bound !== null && p.bound !== undefined
       ? Boolean(p.bound)
       : !/^P\d+$/i.test(label);
@@ -736,12 +906,16 @@ export async function renderDepthEntry(container, {api, isCurrent, id, module = 
     ? `我方阵营 ${campMeta.manual ? '手动' : '自动识别'} ${campMeta.auto + campMeta.manual}/${campMeta.games} 局 · 对手已命名 ${campMeta.named} 局`
     : '';
   const sideControl = allowSide && campMeta.games ? `<label>视角 <select data-side-select>
-        <option value="">全部</option>
-        <option value="own">我方</option>
-        <option value="opp">对方（全部对手）</option>
-        ${opponents.map(o => `<option value="opp|${esc(o.name)}">对方 · ${esc(o.name)}（${o.games} 局）</option>`).join('')}
-        <option value="compare">对比 · 我方 vs 对方</option>
+        <option value="">双方合计</option>
+        <option value="own">只看我方</option>
+        <option value="opp">只看对手</option>
+        <option value="compare">我方与对手并排</option>
       </select></label>` : '';
+  const teamControl = allowTeam && campMeta.games ? `<label>对手战队 <select data-team-select${opponents.length ? '' : ' disabled'}>
+        <option value="">${opponents.length ? '全部对手' : '暂无已标记战队'}</option>
+        ${opponents.map(o => `<option value="${esc(o.name)}">${esc(o.name)}（${o.games} 局）</option>`).join('')}
+      </select></label>` : '';
+  const matchControl = allowMatch ? '<label>对局 <select data-match-scope></select></label>' : '';
   const playerControl = allowPlayer && playerOptions.length ? `<label>选手 <select data-player-select>
         <option value="">全部选手</option>
         ${playerOptions.map(p => `<option value="${esc(p.label)}" class="${p.bound ? '' : 'dp-option-unbound'}">${esc(p.label)} · ${p.bound ? '已认领' : '未认领'}</option>`).join('')}
@@ -750,44 +924,104 @@ export async function renderDepthEntry(container, {api, isCurrent, id, module = 
         <option value="">全部英雄</option>
         ${heroOptions.map(h => `<option value="${esc(h)}">${esc(h)}</option>`).join('')}
       </select></label>` : '';
-  const sideNote = allowSide && campMeta.games
-    ? `<span class="dp-side-note">${esc(campStatus)}${campMeta.named < campMeta.games ? ` · <a href="#identity">去对局分边命名对手 →</a>` : ''}</span>`
+  const metricControl = id === 'compare_baseline' ? `<label>指标 <select data-metric-select>
+        ${[['gpm', '分均经济'], ['dpm', '分均输出'], ['participation', '参团率'], ['goldShare', '经济占比'], ['damageShare', '输出占比']].map(([key, label]) => `<option value="${key}"${metricChoice === key ? ' selected' : ''}>${label}</option>`).join('')}
+      </select></label>` : '';
+  const gameControl = allowGame && !allowMatch ? `<label data-game-wrap hidden>对局 <select data-game-select><option value="">全部对局</option></select></label>` : '';
+  const sideNote = (allowSide || allowTeam) && campMeta.games
+    ? `<span class="dp-side-note">${esc(campStatus)}${campMeta.named < campMeta.games ? ' · 未命名的对手可先按对局查看' : ''}</span>`
     : '';
-  const toolControls = [sideControl, playerControl, heroControl].filter(Boolean);
+  const toolControls = [sideControl, teamControl, matchControl, playerControl, heroControl, metricControl, gameControl].filter(Boolean);
   const sideTools = toolControls.length ? `<div class="dp-side-tools">${toolControls.join('')}${sideNote}</div>` : '';
+  const dateTools = `<form class="dp-side-tools" data-depth-dates>
+      <label>起始日期 <input type="date" name="from" value="${esc(dateFrom)}"></label>
+      <label>结束日期 <input type="date" name="to" value="${esc(dateTo)}"></label>
+      <button class="button" type="submit">筛选日期</button>
+      <span class="dp-side-note">指定日期时，开赛时间缺失的对局不计入。</span>
+    </form>`;
   const wrap = document.createElement('section');
-  wrap.className = 'dp-entry';
-  wrap.innerHTML = `<div class="page-heading"><div>
-      <span class="page-eyebrow">${esc(module)} · 深度分析</span>
+  wrap.className = embedded ? 'aw dp-entry dp-entry-embedded' : 'aw dp-entry';
+  wrap.innerHTML = `${embedded ? `<header class="dp-embedded-head"><div><span class="aw-kicker">${esc(a.category || '深度分析')} · 营地明细</span>
+      <h2>${esc(a.title)}</h2><p>${esc(a.purpose || a.subtitle || '')}</p></div>
+      <span class="dp-embedded-source">营地独立样本</span></header>` : `<header class="aw-head"><div>
+      <span class="aw-kicker">${esc(module)} · 营地明细</span>
       <h1>${esc(a.title)}</h1>
-      <p>${esc(a.subtitle || '')}</p>
-      <div class="page-facts"><span>样本：${esc(a.samples)}</span><span>营地口径，不随顶栏筛选变化</span>${campStatus && !allowSide ? `<span>${esc(campStatus)}</span>` : ''}</div></div>
-      <div class="heading-actions"><span class="pill neutral">${esc(a.direction || '')}</span></div></div>
-    <div class="dp-detail-head">
-      <div class="dp-purpose"><span>这张图回答</span><p>${esc(a.purpose)}</p></div>
-      <div class="dp-facts"><div><span>怎么读</span><b></b></div>
-        <div><span>注意</span><b class="dp-boundary">${esc(a.boundary)}</b></div></div>
-    </div>
+      <p>${esc(a.purpose || a.subtitle || '')}</p></div>
+      <div class="aw-actions"><button type="button" data-print>打印 / PDF</button></div></header>`}
+    <div class="aw-source"><span><i aria-hidden="true"></i>营地十人面板 / 官方回放</span>
+      ${campStatus && !allowSide && !allowTeam ? `<span>${esc(campStatus)}</span>` : ''}</div>
     ${sideTools}
+    ${allowMatch ? `<details class="dp-bp-dates" data-opponent-editor hidden><summary>标记此局的对手战队</summary>
+      <form class="dp-side-tools"><label>对手名称 <input name="opponent" required maxlength="50" list="depth-opponents"></label>
+      <datalist id="depth-opponents">${opponents.map(item=>`<option value="${esc(item.name)}"></option>`).join('')}</datalist>
+      <button type="submit">保存对手</button><span role="status" data-save-opponent-status></span></form></details>` : ''}
+    ${embedded ? `<details class="dp-bp-dates"${dateFrom || dateTo ? ' open' : ''}><summary>按开赛日期筛选</summary>${dateTools}</details>` : dateTools}
     <div class="dp-entry-main"><div class="dp-loading">正在计算…</div></div>
+    <details class="aw-study-note"><summary>读图与样本口径</summary>
+      <p data-reading-note></p><p>${esc(a.boundary || '')}</p></details>
     <div class="dp-tooltip" hidden></div>`;
-  container.appendChild(wrap);
+  // 调用方（studio.js）会先写入「正在读取本地数据…」占位；这里必须整块替换而不是追加，
+  // 否则占位会一直留在页面顶部，看起来像卡在加载。
+  container.replaceChildren(wrap);
 
   const main = wrap.querySelector('.dp-entry-main');
   const tooltip = wrap.querySelector('.dp-tooltip');
   const cache = new Map();
-  let sideChoice = '', playerChoice = '', heroChoice = '', gameChoice = '';
+  let requestNumber = 0;
+  const matchSelect = wrap.querySelector('[data-match-scope]');
+  const editor = wrap.querySelector('[data-opponent-editor]');
+  const updateMatchOptions = () => {
+    if (!matchSelect) return;
+    const available = scopedGames.filter(game => (!teamChoice || game.opponent === teamChoice) &&
+      (!(dateFrom || dateTo) || (/^\d{4}-\d{2}-\d{2}$/.test(game.date) &&
+        (!dateFrom || game.date >= dateFrom) && (!dateTo || game.date <= dateTo))));
+    if (!available.some(game => game.id === matchChoice)) matchChoice = '';
+    matchSelect.innerHTML = '<option value="">全部对局</option>' + available.map(game =>
+      `<option value="${esc(game.id)}">${esc(gameLabel(game))}${game.opponent ? '' : ' · 对手待标记'}</option>`).join('');
+    matchSelect.value = matchChoice;
+    const selected = available.find(game => game.id === matchChoice);
+    editor.hidden = !selected;
+    editor.querySelector('input').value = selected?.opponent || '';
+    editor.querySelector('[data-save-opponent-status]').textContent = '';
+  };
+  const setChoice = (selector, value) => {
+    const el = wrap.querySelector(selector);
+    if (el && value) el.value = value;
+  };
+  setChoice('[data-side-select]', sideChoice);
+  setChoice('[data-team-select]', teamChoice);
+  setChoice('[data-player-select]', playerChoice);
+  setChoice('[data-hero-select]', heroChoice);
+  setChoice('[data-metric-select]', metricChoice);
+  if (allowMatch && !matchChoice && gameChoice && scopedGames.some(game => game.id === gameChoice)) {
+    matchChoice = gameChoice;
+    gameChoice = '';
+  }
+  updateMatchOptions();
+
+  const applyGameOptions = payload => {
+    if (!allowGame) return;
+    const box = wrap.querySelector('[data-game-wrap]');
+    const select = wrap.querySelector('[data-game-select]');
+    if (!box || !select) return;
+    const games = payload?.games || [];
+    if (!games.length) { box.hidden = true; return; }
+    box.hidden = false;
+    select.innerHTML = '<option value="">全部对局</option>' + games.map(g => `<option value="${esc(g.id)}">${esc(gameLabel(g))}</option>`).join('');
+    select.value = gameChoice || '';
+  };
 
   const buildQuery = side => {
     const params = new URLSearchParams();
     if (gameChoice) params.set('game', gameChoice);
+    if (matchChoice) params.set('match', matchChoice);
     if (playerChoice) params.set('player', playerChoice);
     if (heroChoice) params.set('hero', heroChoice);
-    if (side) {
-      const [kind, team] = side.split('|');
-      params.set('side', kind);
-      if (team) params.set('team', team);
-    }
+    if (dateFrom) params.set('from', dateFrom);
+    if (dateTo) params.set('to', dateTo);
+    if (teamChoice) params.set('team', teamChoice);
+    if (id === 'compare_baseline' && metricChoice) params.set('metric', metricChoice);
+    if (side) params.set('side', side);
     const q = params.toString();
     return q ? '?' + q : '';
   };
@@ -833,7 +1067,7 @@ export async function renderDepthEntry(container, {api, isCurrent, id, module = 
       + panel('对方', 'opp', renderer(opp.payload, renderOptions) + byPlayerSection(id, opp.payload));
   }
 
-  async function drawCompare() {
+  async function drawCompare(isLatest) {
     const key = id + '|compare|' + buildQuery('');
     if (!cache.has(key)) main.innerHTML = '<div class="dp-loading">正在计算…</div>';
     try {
@@ -842,51 +1076,100 @@ export async function renderDepthEntry(container, {api, isCurrent, id, module = 
           api('/api/depth/analysis/' + encodeURIComponent(id) + buildQuery('own')),
           api('/api/depth/analysis/' + encodeURIComponent(id) + buildQuery('opp')),
         ]);
-        if (isCurrent && !isCurrent()) return;
+        if (!isLatest()) return;
         cache.set(key, {payload: {viz: own.payload.viz, own: own.payload, opp: opp.payload}});
       }
       const result = cache.get(key);
       main.innerHTML = compareHtml({payload: result.payload.own}, {payload: result.payload.opp})
         + heroDrillLink(id, result.payload.own, heroChoice, fallbackHero);
-      const noteEl = wrap.querySelector('.dp-facts b');
+      applyGameOptions(result.payload.own);
+      const noteEl = wrap.querySelector('[data-reading-note]');
       if (noteEl) noteEl.textContent = result.payload.own.note || '';
     } catch (error) {
+      if (!isLatest()) return;
       main.innerHTML = `<div class="dp-empty">该分析读取失败：${esc(error.message)}</div>`;
     }
   }
 
-  async function draw(query = '') {
+  async function draw(query, isLatest) {
     const key = id + query;
     if (!cache.has(key)) main.innerHTML = '<div class="dp-loading">正在计算…</div>';
     try {
       if (!cache.has(key)) {
         const result = await api('/api/depth/analysis/' + encodeURIComponent(id) + query);
-        if (isCurrent && !isCurrent()) return;
+        if (!isLatest()) return;
         cache.set(key, result);
       }
       const result = cache.get(key);
       const renderer = RENDERERS[result.payload.viz] || (() => '<div class="dp-empty">该图形尚未接入。</div>');
       main.innerHTML = `<section class="dp-chart-card">${renderer(result.payload, renderOptions)}${byPlayerSection(id, result.payload)}</section>`
         + heroDrillLink(id, result.payload, heroChoice, fallbackHero);
-      const noteEl = wrap.querySelector('.dp-facts b');
+      applyGameOptions(result.payload);
+      const noteEl = wrap.querySelector('[data-reading-note]');
       if (noteEl) noteEl.textContent = result.payload.note || '';
     } catch (error) {
+      if (!isLatest()) return;
       main.innerHTML = `<div class="dp-empty">该分析读取失败：${esc(error.message)}</div>`;
     }
   }
 
   async function redraw() {
-    if (sideChoice === 'compare') return drawCompare();
-    return draw(buildQuery(sideChoice));
+    const request = ++requestNumber;
+    const isLatest = () => request === requestNumber && (!isCurrent || isCurrent());
+    if (sideChoice === 'compare') return drawCompare(isLatest);
+    return draw(buildQuery(sideChoice), isLatest);
   }
 
+  const dates = wrap.querySelector('[data-depth-dates]');
+  dates.addEventListener('input', () => dates.elements.to.setCustomValidity(''));
+  dates.addEventListener('submit', event => {
+    event.preventDefault();
+    const from = dates.elements.from.value;
+    const to = dates.elements.to.value;
+    if (from && to && from > to) {
+      dates.elements.to.setCustomValidity('结束日期不能早于起始日期');
+      dates.elements.to.reportValidity();
+      return;
+    }
+    dateFrom = from;
+    dateTo = to;
+    gameChoice = '';
+    updateMatchOptions();
+    redraw();
+  });
+  if (editor) editor.querySelector('form').onsubmit = async event => {
+    event.preventDefault();
+    const selected = matchChoice;
+    const button = editor.querySelector('button');
+    const status = editor.querySelector('[data-save-opponent-status]');
+    const opponent = editor.querySelector('input').value.trim();
+    if (!selected || !opponent) { status.textContent = '请先选择对局并填写战队名称。'; return; }
+    button.disabled = true;
+    status.textContent = '正在保存…';
+    try {
+      await api('/api/studio/match-meta/' + encodeURIComponent('camp:' + selected), {opponent});
+      if (!wrap.isConnected || (isCurrent && !isCurrent())) return;
+      const next = new URLSearchParams(buildQuery(sideChoice));
+      if (teamChoice && teamChoice !== opponent) next.delete('team');
+      await renderDepthEntry(container, {api, isCurrent, id, module, initialQuery:next.toString(), embedded});
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  };
   await redraw();
   // 掉点经济等分析带对局下拉；切对局 / 视角 / 选手 / 英雄都要按当前组合重算
   bindDepthTools(wrap, tooltip, {onGameSelect: value => {gameChoice = value; redraw();}});
   wrap.addEventListener('change', event => {
-    const select = event.target.closest('[data-side-select],[data-player-select],[data-hero-select]');
+    const select = event.target.closest('[data-side-select],[data-team-select],[data-match-scope],[data-player-select],[data-hero-select],[data-metric-select]');
     if (!select) return;
-    if (select.hasAttribute('data-side-select')) sideChoice = select.value;
-    else if (select.hasAttribute('data-player-select')) playerChoice = select.value;
-    else heroChoice = select.value;
-   
+    if (select.hasAttribute('data-side-select')) { sideChoice = select.value; gameChoice = ''; }
+    else if (select.hasAttribute('data-team-select')) { teamChoice = select.value; gameChoice = ''; updateMatchOptions(); }
+    else if (select.hasAttribute('data-match-scope')) { matchChoice = select.value; gameChoice = ''; updateMatchOptions(); }
+    else if (select.hasAttribute('data-player-select')) { playerChoice = select.value; gameChoice = ''; }
+    else if (select.hasAttribute('data-hero-select')) { heroChoice = select.value; gameChoice = ''; }
+    else metricChoice = select.value;
+    redraw();
+  });
+}

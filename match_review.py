@@ -2,10 +2,12 @@
 
 The official replay event stream (``dragontower``) covers two things only:
 resource/monster kills (``dtType=1``) and structure destroys (``dtType=2``).
-It does not contain hero kills, so this module never turns those events into a
-kill timeline.  Final score, KDA and damage still come from the confirmed
-bundle.  Positions are per-second grid coordinates from the personal replay;
-they are used for area/distance analysis, not as a frame-accurate trajectory.
+Hero kills are not in that stream; they live in ``normalized.battles`` —
+team-fight ledgers (``fights[].kills[]``) and death coordinates
+(``deaths[]``) — and are exposed separately as ``kills`` / ``deaths``.
+Final score, KDA and damage still come from the confirmed bundle.  Positions
+are per-second grid coordinates from the personal replay; they are used for
+area/distance analysis, not as a frame-accurate trajectory.
 """
 from __future__ import annotations
 
@@ -427,6 +429,52 @@ def _normalize_events(raw_events, players):
     return result
 
 
+def _battle_ledger(official):
+    """英雄击杀与死亡坐标：没有人头流，就按团战账本还原。
+
+    ``normalized.battles.fights[].kills[]`` 逐次给出时间、击杀/被击杀对象与阵营；
+    ``battles.deaths[]`` 给出死亡坐标。对象 ID 的类型在不同版本里不一致（int/str），
+    所以查表时两种都试一次。
+    """
+    battles = ((official or {}).get('normalized') or {}).get('battles') or {}
+    if not isinstance(battles, dict):
+        return [], []
+    player_map = battles.get('playerMap') or {}
+
+    def lookup(obj_id):
+        return player_map.get(obj_id) or player_map.get(str(obj_id)) or {}
+
+    def info_of(obj_id):
+        info = lookup(obj_id)
+        return {'hero': info.get('hero') or '', 'camp': _camp(info.get('camp'))}
+
+    kills, deaths = [], []
+    for fight in battles.get('fights') or []:
+        for kill in fight.get('kills') or []:
+            seconds = _num(kill.get('timeSec'))
+            if seconds is None:
+                continue
+            killer = info_of(kill.get('killer'))
+            victim = info_of(kill.get('victim'))
+            kills.append({
+                't': seconds, 'fight': str(fight.get('fightId') or ''),
+                'killer': killer['hero'], 'killerCamp': _camp(kill.get('killerCamp')) or killer['camp'],
+                'victim': victim['hero'], 'victimCamp': _camp(kill.get('victimCamp')) or victim['camp'],
+            })
+    for death in battles.get('deaths') or []:
+        seconds = _num(death.get('timeSec'))
+        if seconds is None:
+            continue
+        who = info_of(death.get('objID'))
+        deaths.append({
+            't': seconds, 'hero': who['hero'], 'camp': _camp(death.get('camp')) or who['camp'],
+            'x': _num(death.get('x')), 'y': _num(death.get('y')),
+        })
+    kills.sort(key=lambda value: value['t'])
+    deaths.sort(key=lambda value: value['t'])
+    return kills, deaths
+
+
 def _windows(events, gap=25, minimum=2):
     clusters, current = [], []
     for event in events:
@@ -631,6 +679,7 @@ def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
     else:
         positions = {}
     events = _normalize_events(_official_events(official), players) if official else []
+    kills, deaths = _battle_ledger(official) if official else ([], [])
     gold = _gold_points(bundle)
     duration = _int(match.get('duration')) or (gold[-1]['t'] if gold else 0)
     phases = _phase_ranges(duration)
@@ -662,6 +711,8 @@ def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
                  'landmarks': {str(seconds): (_landmark(gold, seconds) or {}).get('diff')
                                for seconds in (300, 600, 900)}},
         'events': events,
+        'kills': kills,
+        'deaths': deaths,
         'windows': _windows(events),
         'phases': phase_stats,
         'positions': {
@@ -685,10 +736,11 @@ def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
                           'players': len(positions), 'perSecond': bool(positions)},
             'builds': {'players': len(builds),
                        'items': sum(len(value['items']) for value in builds.values())},
-            'heroKills': False,
+            'heroKills': bool(kills),
         },
         'notes': [
             '官方事件覆盖野区/河道资源与建筑摧毁，不含英雄击杀；比分、KDA 与输出承伤来自终局数据。',
+            '英雄击杀与死亡坐标取自团战账本（fights[].kills / deaths），按时间排序，不与资源事件混用。',
             '位置为个人回放逐秒网格坐标（-57 至 57），用于区域、距离和集结分析，不是逐帧轨迹。',
             '连续 12 秒以上完全静止的坐标样本（如死亡停留）不计入移动与热区。',
             '出装时间来自 .abc 帧命令，误差约 ±3 秒；文件未提供装备价格。',

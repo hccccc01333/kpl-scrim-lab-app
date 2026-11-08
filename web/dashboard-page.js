@@ -168,7 +168,7 @@ function extendedSection(ownRows, allRows) {
       <b>伤害转化比 / 每死承伤</b>在缺面板时后端会用 A 组派生（输出÷经济、承伤÷死亡）并标记
       <code>derivedFields</code>，与营地实测不是同一口径，本区已剔除派生值、<b>不与实测混算</b>。
       若已开启「排除验证数据」，历史测试数据被剔除后样本会明显变少。
-      分路按营地 position 编码映射：0=对抗路 / 1=中路 / 2=发育路 / 3=打野 / 4=游走（已按本批高频英雄核对），本页不给出分路结论。</p>`;
+      分路按营地坐标映射为中文路名：对抗路 / 打野 / 中路 / 发育路 / 游走，本页不给出分路结论。</p>`;
 }
 
 function matchRows(matches) {
@@ -190,10 +190,10 @@ function matchRows(matches) {
   }).join('')}</tbody></table></div>`;
 }
 
-export async function renderDashboard(container, {api, workspace, isCurrent, query}) {
+export async function renderDashboard(container, {api, workspace, isCurrent, query, filters}) {
   const [matchesView, dataset] = await Promise.all([
     api('/api/studio/view/matches' + query() + '&limit=200&offset=0'),
-    api('/api/studio/dataset', {dataset: 'records', filters: {sources: ['db', 'bundle', 'sheet'], includePartial: true, excludeSeeds: localStorage.getItem('excludeSeeds') === '1'}, deduplicate: true}),
+    api('/api/studio/dataset', {dataset: 'records', filters: {...filters, includePartial: true}, deduplicate: true}),
   ]);
   if (isCurrent && !isCurrent()) return;
   const matches = matchesView.matches || [];
@@ -269,6 +269,8 @@ export async function renderDashboard(container, {api, workspace, isCurrent, que
       <div class="heading-actions">
         <a class="button" href="#team">团队复盘</a>
         <a class="button" href="#matches">比赛档案</a>
+        <a class="button" href="#depth/compare_camp">蓝红数据体检</a>
+        <a class="button" href="#lab">统计实验</a>
         <button class="button" data-print>打印 / PDF</button>
       </div>
     </div>
@@ -279,7 +281,7 @@ export async function renderDashboard(container, {api, workspace, isCurrent, que
       ${kpi('场均终局经济差', avgDiff == null ? '—' : signed(avgDiff), '', diffs.length ? `${diffs.length} 场可算` : '缺时间轴', avgDiff == null ? 'dim' : avgDiff >= 0 ? 'good' : 'bad')}
       ${kpi('场均击杀 / 死亡', avgKills == null ? '—' : `${num(avgKills, 1)} / ${num(avgDeaths, 1)}`, '', '本队五人合计', '')}
       ${kpi('场均时长', avgDuration == null ? '—' : clock(avgDuration), '', durations.length ? `${durations.length} 场有记录` : '缺时长', avgDuration == null ? 'dim' : '')}
-      ${kpi('档案完整度', quality?.score == null ? '—' : num(quality.score), '%', quality?.seedMatches ? `含 ${quality.seedMatches} 场测试数据` : '四项基础档案', (quality?.score ?? 0) >= 75 ? 'good' : 'warn')}
+      ${kpi('全库档案完整度', quality?.score == null ? '—' : num(quality.score), '%', quality?.seedMatches ? `含 ${quality.seedMatches} 场验证数据` : '全库字段检查', (quality?.score ?? 0) >= 75 ? 'good' : 'warn')}
     </section>
 
     <div class="db-two">

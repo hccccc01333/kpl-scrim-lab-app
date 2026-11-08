@@ -139,6 +139,27 @@ function filterBar(state, workspace) {
 
 /* ---------------- 比赛卡片 ---------------- */
 
+/* 未认领对手的托底显示名：对手字段为空、或对手名没有认领到战队档案时，
+   标题显示「未认领N」。编号取自全量对手清单（与当前筛选无关，顺序稳定）；
+   真实对手名不写回数据——筛选、补全档案、撤销都仍按原名工作，
+   悬停「对手未认领」徽章可见原名。 */
+function unclaimedCtx(workspace, teamName) {
+  const registered = new Set([teamName, ...(workspace?.profile?.teams || []).map(team => team.name)]
+    .filter(Boolean).map(name => String(name).trim().toLowerCase()));
+  const named = (workspace?.filters?.opponents || [])
+    .filter(name => !registered.has(String(name).trim().toLowerCase()));
+  const labels = new Map(named.map((name, index) => [String(name).trim().toLowerCase(), `未认领${index + 1}`]));
+  return {registered, labels, emptyLabel: `未认领${named.length + 1}`};
+}
+
+function opponentView(match, ctx) {
+  const raw = String(match?.opponent || '').trim();
+  if (!raw) return {text: ctx.emptyLabel, orphan: false, raw: ''};
+  const key = raw.toLowerCase();
+  if (ctx.registered.has(key)) return {text: raw, orphan: false, raw};
+  return {text: ctx.labels.get(key) || raw, orphan: true, raw};
+}
+
 function metricCell(label, value, note, tone = '') {
   return `<div class="ar-metric ${tone}"><span>${esc(label)}</span><b>${value}</b><small>${esc(note)}</small></div>`;
 }
@@ -149,16 +170,23 @@ function matchCard(match, teamName, options = {}) {
   const duration = clock(match.duration);
   const own = match.own || null;
   const enemy = match.enemy || null;
-  const title = match.opponent ? `${teamName} vs ${match.opponent}` : (match.title || '未命名对局');
+  const view = options.ctx ? opponentView(match, options.ctx) : null;
+  const shown = view ? view.text : String(match.opponent || '').trim();
+  const title = shown ? `${teamName} vs ${shown}` : (match.title || '未命名对局');
   const sub = [match.date ? `${match.date} ${weekday(match.date)}` : '日期未记录', match.session, match.mode]
     .filter(Boolean).join(' · ');
   const heroes = (match.heroes || []).slice(0, 5);
   const gaps = match.missing || [];
   const sources = (match.sources || []).map(s => SOURCE[s] || s).join(' + ');
   const reason = options.reasonFor ? options.reasonFor(match) : '';
-  // 对手名只存在比赛里、战队档案里没有时给出入口，避免「A 已移出名录却还挂在标题上」看不出原因。
-  const orphan = !!(match.opponent && options.registered
-    && !options.registered.has(String(match.opponent).trim().toLowerCase()));
+  // 对手没有认领到战队档案（空名或旧名）时给出入口，避免删除战队后看不出比赛丢了对手。
+  const orphan = view
+    ? view.orphan
+    : !!(match.opponent && options.registered
+      && !options.registered.has(String(match.opponent).trim().toLowerCase()));
+  const orphanTip = view && view.raw
+    ? `原名「${view.raw}」没有认领到战队档案；去战队档案认领、统一名称或清空`
+    : '这个对手名没有建档，去战队档案统一口径';
   return `<article class="ar-card ${tone}" data-key="${esc(match.key)}">
     <header class="ar-card-head">
       <div class="ar-card-title">
@@ -166,7 +194,7 @@ function matchCard(match, teamName, options = {}) {
           <span>${esc(sub)}</span>
           ${match.isSeed ? '<span class="ar-flag">测试数据</span>' : ''}
           <span class="ar-src">${esc(sources)}</span>
-          ${orphan ? '<a class="ar-flag ar-flag-team" href="#teams" title="这个对手名没有建档，去战队档案统一口径">对手未建档</a>' : ''}
+          ${orphan ? `<a class="ar-flag ar-flag-team" href="#teams" title="${esc(orphanTip)}">对手未认领</a>` : ''}
         </div>
         <h3>${esc(title)}</h3>
       </div>
@@ -224,15 +252,16 @@ function qualityBar(quality) {
 
 /* ---------------- 主页面：比赛档案 ---------------- */
 
+import {appendDepthSections} from '/assets/depth-section.js';
+
 export async function renderMatches(container, {api, workspace, isCurrent, toast}) {
   const teamName = workspace?.overview?.teamName || '本队';
   const knownTeams = [...new Set([
     ...(workspace?.profile?.teams || []).map(team => team.name).filter(Boolean),
     ...(workspace?.filters?.opponents || []),
   ])].slice(0, 60);
-  // 只有教练手动录入的战队算「已建档」；filters.opponents 包含所有出现过的对手名，不能当档案用。
-  const registered = new Set([teamName, ...(workspace?.profile?.teams || []).map(team => team.name)]
-    .filter(Boolean).map(name => String(name).trim().toLowerCase()));
+  // 只有教练手动录入的战队算「已认领」；filters.opponents 包含所有出现过的对手名，不能当档案用。
+  const ctx = unclaimedCtx(workspace, teamName);
   const state = {
     q: '', from: '', to: '', range: 'all', opponent: '', player: '', hero: '',
     result: '', sources: ['db', 'bundle'], includePartial: true, open: false,
@@ -240,7 +269,8 @@ export async function renderMatches(container, {api, workspace, isCurrent, toast
   let items = [];
   let total = 0;
   let summary = {};
-  let layout = 'cards';
+  // 数据页面默认密排表格；卡片视图保留给需要看缺口的场景，选择记在本地
+  let layout = localStorage.getItem('ar-layout') === 'cards' ? 'cards' : 'table';
   let serial = 0;
   let quality = workspace?.overview?.dataQuality || null;
 
@@ -312,10 +342,10 @@ export async function renderMatches(container, {api, workspace, isCurrent, toast
       return;
     }
     if (layout === 'table') {
-      body.innerHTML = matchesTable(items, teamName);
+      body.innerHTML = matchesTable(items, teamName, ctx);
       return;
     }
-    body.innerHTML = `<div class="ar-grid">${items.map(m => matchCard(m, teamName, {registered})).join('')}</div>`;
+    body.innerHTML = `<div class="ar-grid">${items.map(m => matchCard(m, teamName, {ctx})).join('')}</div>`;
   };
 
   const refresh = async () => {
@@ -376,6 +406,7 @@ export async function renderMatches(container, {api, workspace, isCurrent, toast
     const layoutBtn = event.target.closest('[data-layout]');
     if (layoutBtn) {
       layout = layoutBtn.dataset.layout;
+      localStorage.setItem('ar-layout', layout);
       container.querySelectorAll('[data-layout]').forEach(b => b.classList.toggle('active', b.dataset.layout === layout));
       paint();
       return;
@@ -432,14 +463,21 @@ export async function renderMatches(container, {api, workspace, isCurrent, toast
   });
 
   paint();
+  appendDepthSections(container, [
+    {id: 'time_economy', note: '逐局经济差过程（含掉点窗口）'},
+    {id: 'time_events', note: '逐局事件密度'},
+    {id: 'time_kill_rhythm', note: '逐局击杀节奏'},
+  ], {api, isCurrent});
 }
 
-function matchesTable(items, teamName) {
+function matchesTable(items, teamName, ctx = null) {
   const rows = items.map(m => {
     const score = scoreLine(m, teamName);
+    const view = ctx ? opponentView(m, ctx) : null;
+    const shown = view ? view.text : String(m.opponent || '').trim();
     return `<tr class="clickable" data-open="${esc(m.key)}">
       <td>${esc(m.date || '—')}</td>
-      <td class="main-cell">${esc(m.opponent || m.title || '未命名')}</td>
+      <td class="main-cell">${esc(shown || m.title || '未命名')}</td>
       <td>${score ? `${num(score.own)}:${num(score.enemy)}` : '—'}</td>
       <td>${esc(RESULT[m.result] || '待确认')}</td>
       <td class="num">${clock(m.duration) || '—'}</td>
@@ -625,7 +663,7 @@ export async function renderFeatured(container, {api, workspace, isCurrent, quer
             missing: full.missing || [],
             heroes: full.heroes || [],
           }, teamName,
-          {reasonFor: () => `<span class="ar-reason-label">入选理由</span>${reasons.map(k => `<b>${esc(RULES.find(r => r.key === k)?.label || k)}</b>`).join('')}`});
+          {ctx: unclaimedCtx(workspace, teamName), reasonFor: () => `<span class="ar-reason-label">入选理由</span>${reasons.map(k => `<b>${esc(RULES.find(r => r.key === k)?.label || k)}</b>`).join('')}`});
         }).join('')}</div>`
       : `<div class="ar-empty"><strong>当前没有触发任何规则的对局</strong>
           <p>${all.length ? '这几场都是「领先并且赢下、经济差明显」的常规局，回看优先级不高。' : '先补齐时长与时间轴，再回来看。'}</p>
@@ -635,10 +673,11 @@ export async function renderFeatured(container, {api, workspace, isCurrent, quer
 
 /* ---------------- 训练纪录 ---------------- */
 
-export async function renderRecords(container, {api, isCurrent, query}) {
+export async function renderRecords(container, {api, workspace, isCurrent, query}) {
   const data = await api('/api/studio/view/process' + query());
   if (isCurrent && !isCurrent()) return;
   const all = data.matches || [];
+  const recordCtx = unclaimedCtx(workspace, workspace?.overview?.teamName || '本队');
 
   const byDuration = all.filter(m => m.duration || m.observedEnd)
     .sort((a, b) => (b.duration || b.observedEnd * 60) - (a.duration || a.observedEnd * 60));
@@ -652,7 +691,7 @@ export async function renderRecords(container, {api, isCurrent, query}) {
       <b class="ar-record-value">${value}<small>${esc(unit)}</small></b>
       <span class="ar-record-note">${note}</span>
       ${compare ? `<span class="ar-record-compare">${compare}</span>` : ''}
-      ${match ? `<a class="ar-record-link" href="#match/${encodeURIComponent(match.key)}">${esc(match.opponent ? 'vs ' + match.opponent : (match.date || '查看对局'))} →</a>` : ''}
+      ${match ? `<a class="ar-record-link" href="#match/${encodeURIComponent(match.key)}">${esc('vs ' + opponentView(match, recordCtx).text)} →</a>` : ''}
     </article>`;
 
   const longest = byDuration[0], shortest = byDuration[byDuration.length - 1];
@@ -691,4 +730,7 @@ export async function renderRecords(container, {api, isCurrent, query}) {
       </div>
       <p class="ar-rules-note">没有参与的纪录（例如「总击杀最高」）已移除：它与胜负、经济差的解释力重复，且容易被单局爆发误导。</p>`}
   `;
+  appendDepthSections(container, [
+    {id: 'time_cross_match', note: '跨局训练节奏'},
+  ], {api, isCurrent});
 }

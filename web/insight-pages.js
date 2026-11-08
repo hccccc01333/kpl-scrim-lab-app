@@ -69,20 +69,17 @@ export async function renderOpponent(container, {api, workspace, isCurrent, quer
 
 export {renderBp} from '/assets/bp-page.js?v=3';
 
-export async function renderCombos(container, {api, isCurrent, query}) {
-  const base = {dataset: 'records', metric: 'damage', filters: {sources: ['db', 'bundle', 'sheet'], includePartial: true}};
-  const [heroResult, playerResult, catalog] = await Promise.all([
-    api('/api/studio/research', {...base, topic: 'hero_combos'}),
-    api('/api/studio/research', {...base, topic: 'player_pairs'}),
+export async function renderCombos(container, {api, isCurrent, filters}) {
+  const [heroResult, catalog] = await Promise.all([
+    api('/api/studio/research', {dataset:'records', topic:'hero_combos', metric:'damage', filters:{...filters, includePartial:true}}),
     api('/api/catalog').catch(() => ({entries: []})),
   ]);
   if (isCurrent && !isCurrent()) return;
   const icons = heroIcons(catalog);
-  const heroRows = heroResult.rows || [], playerRows = playerResult.rows || [];
-  const comboCard = (row, hero) => `<article class="combo-card">${hero ? `<div class="combo-heroes">${heroIcon(row.a, icons, 'combo-icon')}${heroIcon(row.b, icons, 'combo-icon')}</div>` : `<div class="combo-heroes"><span class="combo-avatar">${esc((row.a || '?').slice(0, 2))}</span><span class="combo-avatar">${esc((row.b || '?').slice(0, 2))}</span></div>`}<h3>${esc(row.a)} + ${esc(row.b)}</h3><div class="combo-stats"><span>共现 <b>${num(row.n)}</b></span><span>胜率 <b>${row.winRate == null ? '—' : `${num(row.winRate)}%`}</b></span><span>Lift <b>${num(row.lift, 2)}</b></span></div></article>`;
-  container.innerHTML = pageHeader('COMBO · 组合', '英雄组合与双人搭档', '只统计本队完整五英雄阵容；至少共现 3 次才进入结果。Lift 描述共现，不代表因果。', [`${heroRows.length} 组英雄组合`, `${playerRows.length} 组双人搭档`, '完整阵容门槛'], `<a class="button" href="#topics/player_pairs">双人搭档</a>`)
-    + `<section class="panel"><div class="panel-head"><div><h2>英雄组合</h2><p>同队两名英雄的实际共现、胜率和独立选用基线。</p></div><span class="pill">${heroRows.length} 组</span></div><div class="panel-body">${heroRows.length ? `<div class="combo-grid">${heroRows.slice(0, 30).map(row => comboCard(row, true)).join('')}</div>` : `<div class="empty-state">当前没有达到共现门槛的英雄组合；需要本队完整五人阵容且至少共现 3 次。</div>`}</div></section>`
-    + `<section class="panel"><div class="panel-head"><div><h2>双人搭档</h2><p>基于稳定选手 ID 的同队搭档；未绑定昵称不进入。</p></div><span class="pill">${playerRows.length} 组</span></div><div class="panel-body">${playerRows.length ? `<div class="combo-grid">${playerRows.slice(0, 30).map(row => comboCard(row, false)).join('')}</div>` : `<div class="empty-state">当前没有达到门槛的双人搭档；需要稳定选手身份和完整五人阵容。</div>`}</div></section>`;
+  const heroRows = heroResult.rows || [];
+  const comboCard = row => `<article class="combo-card"><div class="combo-heroes">${heroIcon(row.a, icons, 'combo-icon')}${heroIcon(row.b, icons, 'combo-icon')}</div><h3>${esc(row.a)} + ${esc(row.b)}</h3><div class="combo-stats"><span>共现 <b>${num(row.n)} 局</b></span><span>胜率 <b>${row.winRate == null ? '—' : `${num(row.winRate)}%`}</b></span><span>Lift <b>${num(row.lift, 2)}</b></span></div></article>`;
+  container.innerHTML = pageHeader('BP · 阵容分析', '双英雄组合', '只统计本队完整五英雄阵容。Lift 比较实际共现和独立选用基线。', [`${heroRows.length} 组达到共现门槛`, '至少一起出场 3 局'])
+    + `<section class="panel"><div class="panel-body">${heroRows.length ? `<div class="combo-grid">${heroRows.slice(0, 30).map(comboCard).join('')}</div>` : '<div class="empty-state">当前没有达到共现门槛的英雄组合。</div>'}</div></section>`;
 }
 
 export async function renderFeatured(container, {api, isCurrent, query}) {

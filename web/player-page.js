@@ -66,15 +66,17 @@ function trendCard(player, position, series) {
       ${metric('输出占比', player.damageShare == null ? '—' : `${num(player.damageShare, 1)}%`, '队内份额')}
     </div>
     ${heroes.length ? `<div class="pl-heroes">${heroes.map(h => `<span>${esc(h.hero)} <b>${num(h.matches)}</b></span>`).join('')}</div>` : ''}
-    <footer><a class="pl-link" href="#player/${encodeURIComponent(player.label)}">看逐局记录 →</a></footer>
+    <footer><a class="pl-link" href="#player/${encodeURIComponent(player.label)}">看逐局记录 →</a><div class="pl-drill"><a href="#depth/cs_conversion?player=${encodeURIComponent(player.label)}">补刀</a><a href="#depth/cross_resource_output?player=${encodeURIComponent(player.label)}">资源</a></div></footer>
   </article>`;
 }
 
-export async function renderPlayers(container, {api, workspace, isCurrent}) {
+import {appendDepthSections} from '/assets/depth-section.js';
+
+export async function renderPlayers(container, {api, workspace, isCurrent, filters}) {
   // 只统计本队：heroes/players 聚合包含对手，会把敌方同名昵称也算进来。
   const dataset = await api('/api/studio/dataset', {
     dataset: 'records',
-    filters: {sources: ['db', 'bundle', 'sheet'], includePartial: true, excludeSeeds: localStorage.getItem('excludeSeeds') === '1'},
+    filters: {...filters, includePartial: true},
     deduplicate: true,
   });
   if (isCurrent && !isCurrent()) return;
@@ -87,10 +89,11 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
       key, label: row.label || '未识别', bound: false, games: 0, wins: 0, decided: 0,
       kills: 0, deaths: 0, assists: 0, gold: 0, damage: 0,
       participation: [], goldShare: [], damageShare: [], heroes: new Map(), lastDate: '',
-      series: [],
+      positions: new Set(), series: [],
     };
     item.bound = item.bound || !!row.bound;
     item.games += 1;
+    if (row.position) item.positions.add(row.position);
     if (row.result === 'win') item.wins += 1;
     if (row.result === 'win' || row.result === 'loss') item.decided += 1;
     for (const k of ['kills', 'deaths', 'assists', 'gold', 'damage']) {
@@ -120,12 +123,18 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
     avgDamage: p.damage / Math.max(1, p.games),
     heroCount: p.heroes.size,
     heroes: [...p.heroes.entries()].sort((a, b) => b[1] - a[1]).map(([hero, matches]) => ({hero, matches})),
+    positions: [...p.positions],
+    mainPosition: [...p.positions][0] || '',
     series: p.series.sort((a, b) => String(a.date || '').localeCompare(String(b.date || ''))),
   }));
 
   const members = (workspace?.profile?.members || []).filter(m => !m.archived);
   const memberOf = name => members.find(m => (m.label || m.name) === name) || null;
-  const positionOf = name => (memberOf(name) || {}).position || '';
+  const positionOf = name => {
+    const member = memberOf(name) || {};
+    const item = players.find(player => player.label === name);
+    return member.position || item?.mainPosition || '';
+  };
   const tagsOf = name => (memberOf(name) || {}).tags || [];
   const bound = players.filter(p => p.bound).sort((a, b) => b.games - a.games);
   const unbound = players.filter(p => !p.bound);
@@ -154,6 +163,14 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
       </div>
     </div>
 
+    <section class="pl-picker panel">
+      <div class="pl-picker-row">
+        <label class="field">选择选手<select id="pl-player-pick">${ranked.map(p => `<option value="${esc(p.label)}">${esc(p.label)} · ${num(p.games)} 局${positionOf(p.label) ? ` · ${esc(positionOf(p.label))}` : ''}</option>`).join('')}</select></label>
+        <button class="button primary" id="pl-open-player">打开选手档案</button>
+        <span class="pl-picker-note">档案里有逐局记录、英雄拆分、同位置对照和同分路对位；也可以直接跳到补刀、团战、掉点等深度分析。</span>
+      </div>
+    </section>
+
     ${coverage < 100 ? `<div class="pl-coverage">
       <div class="pl-coverage-main">
         <strong>身份覆盖率 ${num(coverage)}%</strong>
@@ -177,6 +194,14 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
             <button class="pl-filter" data-filter="unbound">未绑定 ${num(unbound.length)}</button>
             <button class="pl-filter active" data-mingames="2" title="隐藏只出现 1 场的身份">只看 2 场以上</button>
           </div>
+          <div class="pl-search-row">
+            <input class="control" id="pl-search" type="search" placeholder="搜索选手昵称" aria-label="搜索选手">
+            <select class="control" id="pl-lane" aria-label="按分路筛选">
+              <option value="">全部分路</option>
+              ${['对抗路','打野','中路','发育路','游走'].map(lane => `<option value="${lane}">${lane}</option>`).join('')}
+            </select>
+            <span class="pl-search-note">搜索和分路会同时作用于排行与趋势卡</span>
+          </div>
         </header>
         <div class="table-scroll">
           <table class="data-table pl-rank" id="pl-rank">
@@ -193,21 +218,33 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
       </section>
 
       <section class="pl-section">
-        <header><h2>趋势与英雄池</h2><p>折线是该身份逐局 KDA；只列场次最多的前 6 个，避免单场噪声</p></header>
-        <div class="pl-grid">${ranked.slice(0, 6).map(p => trendCard(p, positionOf(p.label), p.series)).join('')}</div>
+        <header><h2>趋势与英雄池</h2><p>折线是该身份逐局 KDA；默认列出场次最多的前 6 个，搜索或分路筛选后同步更新</p></header>
+        <div class="pl-grid" id="pl-trend">${ranked.slice(0, 6).map(p => trendCard(p, positionOf(p.label), p.series)).join('')}</div>
       </section>
     `}
   `;
 
   const tbody = container.querySelector('#pl-rank tbody');
   const moreBox = container.querySelector('#pl-more');
+  const trendBox = container.querySelector('#pl-trend');
   let filter = 'all';
   let limit = 25;
   let minGames = 2;
+  let search = '';
+  let lane = '';
 
   const source = () => {
     const base = filter === 'bound' ? bound : filter === 'unbound' ? unbound : players;
-    return minGames > 1 ? base.filter(p => p.games >= minGames) : base;
+    let rows = minGames > 1 ? base.filter(p => p.games >= minGames) : base;
+    if (search) rows = rows.filter(p => String(p.label).toLowerCase().includes(search));
+    if (lane) rows = rows.filter(p => positionOf(p.label) === lane || (p.positions || []).includes(lane));
+    return rows;
+  };
+
+  const paintTrend = () => {
+    if (!trendBox) return;
+    const rows = source().slice().sort((a, b) => b.games - a.games || b.kda - a.kda).slice(0, 6);
+    trendBox.innerHTML = rows.map(p => trendCard(p, positionOf(p.label), p.series)).join('');
   };
 
   const paintRows = () => {
@@ -242,6 +279,28 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
     }
   };
   paintRows();
+  paintTrend();
+
+  const openPicked = () => {
+    const picked = container.querySelector('#pl-player-pick')?.value;
+    if (picked) location.hash = `player/${encodeURIComponent(picked)}`;
+  };
+  container.querySelector('#pl-open-player')?.addEventListener('click', openPicked);
+  container.querySelector('#pl-player-pick')?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') openPicked();
+  });
+  container.querySelector('#pl-search')?.addEventListener('input', event => {
+    search = event.target.value.trim().toLowerCase();
+    limit = 25;
+    paintRows();
+    paintTrend();
+  });
+  container.querySelector('#pl-lane')?.addEventListener('change', event => {
+    lane = event.target.value;
+    limit = 25;
+    paintRows();
+    paintTrend();
+  });
 
   container.addEventListener('click', (event) => {
     const minBtn = event.target.closest('[data-mingames]');
@@ -251,6 +310,7 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
       minBtn.classList.toggle('active', minGames > 1);
       minBtn.textContent = minGames > 1 ? '只看 2 场以上' : '显示全部场次';
       paintRows();
+      paintTrend();
       return;
     }
     const filterBtn = event.target.closest('[data-filter]');
@@ -259,6 +319,7 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
       limit = 25;
       container.querySelectorAll('[data-filter]').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === filter));
       paintRows();
+      paintTrend();
       return;
     }
     const th = event.target.closest('[data-sort]');
@@ -272,4 +333,8 @@ export async function renderPlayers(container, {api, workspace, isCurrent}) {
     });
     paintRows();
   });
+  appendDepthSections(container, [
+    {id: 'cs_conversion', note: '补刀与发育转化'},
+    {id: 'cross_resource_output', note: '经济与输出产出'},
+  ], {api, isCurrent});
 }

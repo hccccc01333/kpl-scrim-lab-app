@@ -83,7 +83,7 @@ def _settings_team(settings):
     return _text(settings.get('teamName')) or '我的训练队'
 
 
-def build_archive(data, settings, decisions=None, matches=None):
+def build_archive(data, settings, decisions=None):
     """team -> {nick: {'playerId': ..., 'weight': ..., 'sources': [...]}}。
 
     同一个昵称若出现在两支战队的存档里，直接丢弃：它无法用来判断分边。
@@ -128,15 +128,25 @@ def build_archive(data, settings, decisions=None, matches=None):
             if member:
                 add(nick, _text(member.get('team')) or own, player_id, 3, table)
 
-    # 2) 教练保存过分边的对局：整局十人名单进存档
+    # 2) 教练保存过分边的对局：只要确认了「本队在哪边」，本队五人就能进存档；
+    #    对手侧必须同时命名了战队，否则不知道该记到哪支队伍名下。
     all_matches = (data.get('matches') or []) + (data.get('sheetMatches') or [])
     for match in all_matches:
         fields = match.get('metaFields') or []
-        if 'ownCamp' not in fields or 'opponent' not in fields:
+        if 'ownCamp' not in fields:
+            continue
+        own_camp = canon(match.get('ownCamp') or match.get('ownSide'))
+        source = _text(match.get('key'))[:60]
+        if own_camp in ('blue', 'red'):
+            player_ids = ids_of(match).get(own_camp) or {}
+            for nick in _nicks(match, own_camp):
+                add(nick, own, None, 1, source)
+                if player_ids.get(nick):
+                    add(nick, own, player_ids[nick], 0, source)
+        if 'opponent' not in fields:
             continue
         add_lineup({'blue': _nicks(match, 'blue'), 'red': _nicks(match, 'red')},
-                   canon(match.get('ownCamp') or match.get('ownSide')),
-                   _text(match.get('opponent')), _text(match.get('key'))[:60], ids_of(match))
+                   own_camp, _text(match.get('opponent')), source, ids_of(match))
 
     # 3) 本轮教练刚做的判断，立刻当作存档（同一批里相似对局就能跟着自动）
     for key, decision in (decisions or {}).items():
@@ -355,7 +365,7 @@ def build_plan(data, settings, max_diff=DEFAULT_MAX_DIFF, decisions=None, limit=
     matches = eligible(data, limit)
     own = _settings_team(settings)
     clean_decisions = _sanitize_decisions(decisions, matches, own)
-    archive, own = build_archive(data, settings, clean_decisions, matches)
+    archive, own = build_archive(data, settings, clean_decisions)
     opponents = candidate_opponents(data, settings, archive, own)
     resolver = Resolver(settings, own, archive)
     plans = []
@@ -412,9 +422,13 @@ def build_plan(data, settings, max_diff=DEFAULT_MAX_DIFF, decisions=None, limit=
                 if camp_score['diff'] > max_diff:
                     missing.append(f"{label}侧 {camp_score['diff']} 个没见过的昵称"
                                    f"（{'、'.join(camp_score['unknown'][:5])}）")
-            detail = '；'.join(missing) or '两侧名单都对不上'
-            _review(plan, detail + '，可能是开小号，也可能是约到了新对手',
-                    ['这类对局交给教练：确认本队在哪边、对手是谁，判断结果会成为下一次的存档'])
+            if not missing and best_any['cross']:
+                _review(plan, '同一批昵称同时出现在本队和对手的存档里，分边存疑',
+                        ['多半是分边记反了或存档有串号，请教练确认本队在哪边、对手是谁'])
+            else:
+                detail = '；'.join(missing) or '两侧名单都对不上'
+                _review(plan, detail + '，可能是开小号，也可能是约到了新对手',
+                        ['这类对局交给教练：确认本队在哪边、对手是谁，判断结果会成为下一次的存档'])
             plans.append(plan)
             continue
         if not valid:
@@ -429,12 +443,6 @@ def build_plan(data, settings, max_diff=DEFAULT_MAX_DIFF, decisions=None, limit=
         if tied:
             _review(plan, '有多支战队都能对上这局名单，无法唯一确定对手',
                     ['请教练指定对手战队；指定后这一批里的同类对局会自动跟随'])
-            plans.append(plan)
-            continue
-
-        if best['cross']:
-            _review(plan, '同一批昵称同时出现在本队和对手的存档里，分边存疑',
-                    ['多半是分边记反了或存档有串号，请教练确认'])
             plans.append(plan)
             continue
 

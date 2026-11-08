@@ -20,6 +20,7 @@ COPY *.py ./
 COPY web ./web
 COPY resources ./resources
 COPY tools ./tools
+COPY v3 ./v3
 COPY scripts/check_deploy.py ./scripts/check_deploy.py
 
 RUN mkdir -p /app/data

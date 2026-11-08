@@ -91,11 +91,10 @@ class DeathWindowApiTest(unittest.TestCase):
         if not cls.facts.get('replayGames'):
             raise unittest.SkipTest('缺少营地对局详情样本（公开仓库不含对局数据）')
 
-    def test_catalog_exposes_two_drop_analyses(self):
+    def test_catalog_exposes_drop_economy_analysis(self):
         catalog = analyses_catalog(self.facts)
         drops = [a for a in catalog if a['direction'] == '掉点']
-        self.assertEqual([a['id'] for a in drops],
-                         ['death_point_economy', 'death_point_impact'])
+        self.assertEqual([a['id'] for a in drops], ['death_point_economy'])
         for a in drops:
             self.assertEqual(a['status'], '可运行')
             self.assertTrue(a['boundary'])
@@ -123,57 +122,6 @@ class DeathWindowApiTest(unittest.TestCase):
         p = analysis_payload(self.facts, 'death_point_economy', other['id'])
         self.assertEqual(p['selected'], other['id'])
         self.assertEqual(p['headline']['deaths'], other['deaths'])
-
-    def test_impact_payload_has_honest_aggregation(self):
-        p = analysis_payload(self.facts, 'death_point_impact')
-        self.assertEqual(p['viz'], 'dropimpact')
-        self.assertEqual(p['summary']['n'], self.facts['counts']['dropWindows'])
-        self.assertEqual(sum(x['n'] for x in p['phases']), p['summary']['n'])
-        self.assertEqual(len(p['points']), p['summary']['n'])
-        self.assertLess(p['summary']['chainCount'], p['summary']['n'])
-        self.assertEqual(p['summary']['revived'] + p['summary']['final'], p['summary']['n'])
-        self.assertEqual(len(p['top']), 20)
-        self.assertTrue(p['chains'])
-        self.assertIn('不能全记在阵亡头上', p['note'])
-        self.assertIn('掉点集群', p['note'])
-
-
-class DepthEntryRegressionTest(unittest.TestCase):
-    """Lock the visible entry point so 掉点 analyses cannot be hidden again.
-
-    2026-11-05 起深度分析只有单条页（#depth/<id>，挂各模块子页签）；原来的
-    「全部分析」索引页与各模块页签 100% 重复，已移除，裸 #depth 跳回团队复盘。
-    掉点两条分别挂在 比赛（掉点经济）与 战队（掉点代价）的子页签行。
-    """
-
-    def test_index_page_is_removed_and_bare_depth_redirects(self):
-        js = (ROOT / 'web' / 'studio.js').read_text(encoding='utf-8')
-        lines = js.splitlines()
-        team_nav = next((l for l in lines if l.strip().startswith("['战队'")), '')
-        self.assertNotIn("['depth','深度分析']", team_nav)
-        self.assertIn('DEPTH_TABS', js)
-        self.assertIn("location.replace('#team')", js)
-        self.assertNotIn('renderDepthBlock', js)
-
-    def test_both_drop_analyses_have_module_tabs(self):
-        js = (ROOT / 'web' / 'studio.js').read_text(encoding='utf-8')
-        lines = js.splitlines()
-        match_line = next((l for l in lines if l.strip().startswith("'比赛':[")), '')
-        team_line = next((l for l in lines if l.strip().startswith("'战队':[")), '')
-        self.assertIn("['death_point_economy','掉点经济']", match_line)
-        self.assertIn("['death_point_impact','掉点代价']", team_line)
-        self.assertIn("'depth/'+id", js)
-        self.assertIn('renderDepthEntry', js)
-
-    def test_single_analysis_page_has_side_tools_and_game_selector(self):
-        source = (ROOT / 'web' / 'depth-page.js').read_text(encoding='utf-8')
-        css = (ROOT / 'web' / 'depth.css').read_text(encoding='utf-8')
-        self.assertIn('export async function renderDepthEntry', source)
-        self.assertIn('data-side-select', source)
-        self.assertIn("value=\"compare\"", source)
-        self.assertIn('.dp-side-tools', css)
-        # 掉点经济在单条页也保留 21 局下拉，且切对局要带上当前视角组合重算
-        self.assertIn('onGameSelect: value => {gameChoice = value; redraw();}', source)
 
 
 if __name__ == '__main__':

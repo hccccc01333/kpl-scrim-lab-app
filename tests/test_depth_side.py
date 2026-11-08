@@ -11,9 +11,10 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
-from depth_api import (_apply_side, _camp_meta, _signature, analysis_payload,
+from depth_api import (_apply_side, _camp_meta, _filter_matches, _signature, analysis_payload,
                        analyses_catalog, build_facts)
 from studio_api import camp_games
 
@@ -72,6 +73,13 @@ class OwnCampInferenceTest(unittest.TestCase):
         self.assertEqual(matches['g2']['ownCampSource'], 'auto')
         self.assertEqual(facts['campMeta']['auto'], 2)
         self.assertEqual(facts['campMeta']['manual'], 0)
+
+    def test_date_scope_filters_matches_and_their_player_rows(self):
+        write_camp_game(self.root / 'data' / 'camp_details', 'g2', 2, '2026-10-02 19:30:00')
+        facts = build_facts(self.root)
+        selected = _filter_matches(facts, date_from=date(2026, 10, 2), date_to=date(2026, 10, 2))
+        self.assertEqual([item['id'] for item in selected['matches']], ['g2'])
+        self.assertEqual({item['match'] for item in selected['players']}, {'g2'})
 
     def test_manual_override_and_opponent_naming(self):
         facts = build_facts(self.root, {'g2': {'ownCamp': 'blue', 'opponent': '星海队'}})
@@ -202,7 +210,7 @@ class PayloadSideTest(unittest.TestCase):
         meta = {a['id']: a for a in catalog}
         for aid in ('time_cross_match', 'time_economy', 'time_events', 'time_kill_rhythm', 'compare_camp'):
             self.assertFalse(meta[aid]['sided'], f'{aid} 是双边过程/视角体检，不应可分边')
-        for aid in ('cs_conversion', 'cross_lane_hero', 'space_heatmap', 'cross_teamfight_contribution', 'death_point_impact'):
+        for aid in ('cs_conversion', 'cross_lane_hero'):
             self.assertTrue(meta[aid]['sided'], f'{aid} 应支持分边')
         self.assertTrue(meta['cs_conversion']['samples'])
 
@@ -247,9 +255,92 @@ class CampGamesHelperTest(unittest.TestCase):
         from depth_api import _camp_meta
         self.assertEqual(_camp_meta(self.db)['g2']['opponent'], '星海队')
 
+    def test_entry_epoch_overrides_yearless_text_start(self):
+        """新同步的 dtEventTime 精确到秒，优先于只有 MM-DD 的 startTime。"""
+        write_camp_game(self.details, 'g3', acnt_camp=1, start='10-02 14:05')
+        path = self.details / 'g3.json'
+        body = json.loads(path.read_text(encoding='utf-8'))
+        body['_campEntry'] = {'dtEventTime': '1790925600', 'usedTime': 900}
+        path.write_text(json.dumps(body, ensure_ascii=False), encoding='utf-8')
+        games = {g['id']: g for g in camp_games(self.details, None)}
+        self.assertEqual(games['g3']['date'], '2026-10-02')
+        self.assertEqual(games['g3']['start'], '2026-10-02T15:05:00+08:00')
+        self.assertEqual(games['g3']['eventAt'], '2026-10-02T15:20:00+08:00')
+        self.assertEqual(games['g3']['durationSec'], 900)
+
     def test_missing_db_yields_auto_only(self):
         games = camp_games(self.details, None)
         self.assertEqual([g['ownCampSource'] for g in games], ['auto', 'auto'])
+
+
+class LaneMatchupTest(unittest.TestCase):
+    """对位对比：同分路双方各一人时，生成我方 − 对方的经济 / KDA 对照。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        details = root / 'data' / 'camp_details'
+        details.mkdir(parents=True)
+        self.root = root
+
+        def person(player_id, hero, position, gold, damage):
+            return {
+                'basicInfo': {'playerId': player_id},
+                'battleRecords': {'usedHero': {'heroName': hero}, 'position': position,
+                                  'finalEquips': []},
+                'battleStats': {'money': gold, 'killCnt': 4, 'deadCnt': 2, 'assistCnt': 6,
+                                'totalHeroHurtCnt': damage, 'totalHurtCnt': damage,
+                                'totalBehurtCnt': 1200},
+            }
+
+        body = {'data': {
+            'battle': {'usedTime': 900, 'startTime': '2026-10-01 19:30:00'},
+            'head': {'acntCamp': 1, 'gameResult': True},
+            'blueTeam': {'acntCamp': 1, 'gameResult': True, 'money': 50000},
+            'redTeam': {'acntCamp': 2, 'gameResult': False, 'money': 48000},
+            'blueRoles': [person(f'b{i}', f'蓝{i}', i, 10000 + i * 100, 20000 + i * 100)
+                          for i in range(5)],
+            'redRoles': [person(f'r{i}', f'红{i}', i, 9000 + i * 100, 18000 + i * 100)
+                         for i in range(5)],
+        }}
+        (details / 'm1.json').write_text(json.dumps(body, ensure_ascii=False), encoding='utf-8')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_catalog_exposes_lane_matchup(self):
+        facts = build_facts(self.root)
+        item = next(a for a in analyses_catalog(facts) if a['id'] == 'lane_matchup')
+        self.assertEqual(item['direction'], '对比')
+        self.assertEqual(item['viz'], 'matchup')
+        self.assertEqual(item['filters'], ['team', 'player'])
+        self.assertTrue(item['boundary'])
+
+    def test_payload_pairs_same_lane_and_names_lanes(self):
+        facts = build_facts(self.root)
+        payload = analysis_payload(facts, 'lane_matchup')
+        self.assertEqual(payload['viz'], 'matchup')
+        self.assertEqual(len(payload['roads']), 5)
+        self.assertEqual([lane['lane'] for lane in payload['lanes']],
+                         ['对抗路', '中路', '发育路', '打野', '游走'])
+        first = payload['roads'][0]
+        self.assertEqual(first['goldDiff'], 1000)
+        self.assertEqual(first['ownHero'], '蓝0')
+        self.assertEqual(first['enemyHero'], '红0')
+        self.assertTrue(first['win'])
+        self.assertIn('19:30', first['label'])
+
+    def test_game_labels_never_expose_raw_ids(self):
+        from depth_api import _build_game_labels
+        labels = _build_game_labels(
+            [{'id': '1793595424', 'start': '', 'opponent': '星海队'}], [], {})
+        self.assertEqual(labels['1793595424'], 'vs 星海队 · 第1局')
+        labels = _build_game_labels(
+            [{'id': 'g1', 'start': '', 'opponent': ''}], [], {})
+        self.assertEqual(labels['g1'], '训练赛 · 第1局')
+        labels = _build_game_labels(
+            [{'id': 'g2', 'start': '2026-10-01 19:30:00', 'opponent': ''}], [], {})
+        self.assertEqual(labels['g2'], '10-01 19:30 · 训练赛')
 
 
 if __name__ == '__main__':

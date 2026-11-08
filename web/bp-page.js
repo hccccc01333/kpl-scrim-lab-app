@@ -148,16 +148,9 @@ function sideChart(sides) {
     <div class="bp2-inline-note">胜率按阵营统计，样本含偏差时仅作描述，不用于判断阵营强弱。</div></div>`;
 }
 
-/* 手序柱 */
-function orderChart(orders, firstPick, manualN) {
-  const bars = (orders || []).map(item => {
-    const pct = item.n ? item.wins / item.n * 100 : 0;
-    return `<div class="bp2-obar"><div class="bp2-obar-track"><i style="height:${item.n ? Math.max(8, pct).toFixed(1) : 0}%"></i></div>
-      <b>${item.n ? `${num(pct, 0)}%` : '—'}</b><span>第 ${num(item.order)} 手</span><small>${num(item.n)} 场</small></div>`;
-  }).join('');
-  const first = (firstPick || []).length ? `<div class="bp2-subhead">先后手</div><div class="bp2-first">${firstPick.map(item => `<div><strong>${esc(item.label)}</strong><b>${item.n ? `${num(item.winRate)}%` : '—'}</b><small>${num(item.wins)} 胜 / ${num(item.n)} 场</small></div>`).join('')}</div>` : '';
-  const note = manualN ? '' : '<div class="bp2-inline-note is-strong">营地终局名单不含 pick 顺序与一手方；本功能当前 0 场人工录入，需要在「比赛校对」页按 1–5 楼手序填写 BP 后才有数据。</div>';
-  return note + `<div class="bp2-obars">${bars}</div>${first}`;
+function firstPickSummary(firstPick) {
+  if (!firstPick?.length) return '<div class="bp2-inline-note">当前没有同时记录先选方和赛果的对局。营地终局名单可用于禁选统计，先选方可在比赛校对时补录。</div>';
+  return `<div class="bp2-first">${firstPick.map(item => `<div><strong>${esc(item.label)}</strong><b>${item.n ? `${num(item.winRate)}%` : '—'}</b><small>${num(item.wins)} 胜 / ${num(item.n)} 场</small></div>`).join('')}</div>`;
 }
 
 /* 榜单行 */
@@ -168,16 +161,18 @@ function rankRow(item, max, note, tone, icons, meta) {
     <div class="bp2-track"><i style="width:${(count / max * 100).toFixed(1)}%"></i></div><small>${note}</small></div></div>`;
 }
 
-export async function renderBp(container, {api, isCurrent, query}) {
-  const [data, catalog] = await Promise.all([
-    api('/api/studio/view/bp' + query()),
+export async function renderBp(container, {api, isCurrent, query, initialQuery = '', includeFallback, onSourceChange}) {
+  const [data, catalog, synergy] = await Promise.all([
+    api('/api/studio/view/bp' + query() + '&campFirst=1'),
     api('/api/catalog').catch(() => ({entries: []})),
+    // 协同加成来自营地口径，和 BP 入库样本不是同一批，面板里会写明
+    api('/api/studio/camp-combos?min=3').catch(() => null),
   ]);
   if (isCurrent && !isCurrent()) return;
   const icons = heroIcons(catalog), meta = data.heroMeta || {};
   const ico = (name, cls) => face(name, icons, meta, cls);
   const bans = data.bans || [], picks = data.ownPicks || [], enemies = data.enemyPicks || [];
-  const orders = data.orderEffect || [], opponents = data.opponents || [], rows = data.matches || [];
+  const opponents = data.opponents || [], rows = data.matches || [];
   const pressure = data.pressure || [], lanes = data.lanes || [], pairs = data.pairs || [];
   const comps = data.compositions || [], sides = data.sides || {};
   const totals = data.totals || {}, n = Number(data.matchesWithBp) || 0;
@@ -204,15 +199,19 @@ export async function renderBp(container, {api, isCurrent, query}) {
 
   const sourceBar = `<div class="bp2-source">
     <span class="bp2-source-item"><i class="is-camp"></i>营地自动 <b>${num(campN)}</b> 场</span>
-    <span class="bp2-source-item"><i class="is-manual"></i>人工录入 <b>${num(manualN)}</b> 场</span>
+    <span class="bp2-source-item"><i class="is-manual"></i>有人工手序 <b>${num(manualN)}</b> 场</span>
+    ${onSourceChange?`<label class="bp2-source-item"><input type="checkbox" data-bp-fallback${includeFallback?' checked':''}> 纳入其他来源</label>`:''}
     ${data.sampleWarning ? `<span class="bp2-source-alert">注意 · ${esc(data.sampleWarning)}</span>` : ''}
     ${Number(data.pendingCampMatches) > 0 ? `<a class="bp2-source-pending" href="#capture">另有 ${num(data.pendingCampMatches)} 局营地详情未入库 · 去勾选入库 →</a>` : ''}
   </div>`;
 
-  if (!n) {
-    container.innerHTML = hero + sourceBar + `<section class="panel"><div class="empty-state"><strong>还没有 BP 记录</strong>在采集页同步营地战绩并核对入库，或在比赛校对页填写双方 ban/pick；营地名单会自动生成禁用榜、选用、阵容和分路统计。<br><a href="#matches">去比赛档案 →</a></div></section>`;
-    return;
-  }
+  const bindFallback = () => {
+    const checkbox = container.querySelector('[data-bp-fallback]');
+    if (checkbox) checkbox.onchange = () => onSourceChange(checkbox.checked);
+  };
+  const emptyArchive = `<section class="panel"><div class="empty-state"><strong>还没有已入档的 BP 记录</strong>
+    <p>可去采集页同步并核对入档，也可以直接在「深度洞察」查看已同步的营地明细。</p>
+    <a href="#capture">去采集 →</a></div></section>`;
 
   /* ---------- 01 总览 ---------- */
   const kpi = (label, value, sub, tone) => `<div class="team-kpi bp2-kpi ${tone}"><span>${esc(label)}</span><b>${value}</b><small>${esc(sub)}</small></div>`;
@@ -312,11 +311,29 @@ export async function renderBp(container, {api, isCurrent, query}) {
     <div class="bp2-pair-main"><strong>${esc(item.a)} + ${esc(item.b)}</strong><div class="bp2-track is-thin"><i style="width:${(item.n / maxPair * 100).toFixed(1)}%"></i></div></div>
     <b>${num(item.n)}</b><small>${item.winRate == null ? '' : `${num(item.winRate)}%`}</small></div>`).join('');
   const repeated = comps.filter(x => x.count > 1).length;
+  // 协同加成：组合胜率 − 各英雄单独胜率均值；只列达到样本门槛的组合
+  const synRows = set => ((synergy?.[set]?.own?.combos) || [])
+    .filter(row => !row.small).slice(0, set === 'pairs' ? 8 : 5);
+  const synBlock = (label, set, note) => {
+    const rows = synRows(set);
+    const body = rows.length
+      ? rows.map(row => `<div class="bp2-syn"><span>${row.heroes.map(esc).join(' · ')}</span>
+          <b class="${row.synergy > 0 ? 'is-pos' : row.synergy < 0 ? 'is-neg' : 'is-zero'}">${row.synergy > 0 ? '+' : ''}${num(row.synergy, 1)}</b>
+          <small>${num(row.games)} 局 · 胜率 ${num(row.winRate, 1)}%</small></div>`).join('')
+      : `<p class="bp2-empty">没有达到 ${num(synergy?.minGames || 3)} 局门槛的组合。</p>`;
+    return `<div class="bp2-syn-col"><h3>${label}<small>${note}</small></h3>${body}</div>`;
+  };
+  const synergyPanel = synergy
+    ? panel('协同加成', `营地 ${num(synergy.games)} 局口径，不随上方 BP 筛选变化；正数=搭配本身有效，负数=只是强英雄堆叠。`,
+        `<div class="bp2-syn-cols">${synBlock('双人', 'pairs', '门槛 ' + num(synergy?.pairs?.minGames || 3) + ' 局')}${synBlock('三人', 'trios', '门槛 ' + num(synergy?.trios?.minGames || 5) + ' 局')}</div>`,
+        `${num((synergy.pairs?.own?.pairs) || 0)} 组双人`)
+    : '';
   const compsPanel = panel('五人阵容', repeated ? `${repeated} 套阵容重复出现。` : `${comps.length} 套阵容均只出现 1 次，样本内没有重复体系。`,
     compCards ? `<div class="bp2-comp-grid">${compCards}</div>` : '', `${comps.length} 套`)
     + `<div class="bp2-grid">${panel('双人共现矩阵', '出现频率最高的 8 个英雄两两同队场次；数字越大颜色越深。', pairMatrix(pairs, icons, meta), `${pairs.length} 组`, 'bp2-matrix-card')
       }${panel('共现 Top 9', '同队两名英雄的共现次数。', pairList, `Top 9 / ${pairs.length}`)}</div>`
-    + panel('分路分布', '禁用 / 选用按英雄主分路归类；实测位置优先，静态参考表兜底。', laneChart(lanes, icons, meta), `${lanes.length} 类`);
+    + panel('分路分布', '禁用 / 选用按英雄主分路归类；实测位置优先，静态参考表兜底。', laneChart(lanes, icons, meta), `${lanes.length} 类`)
+    + synergyPanel;
 
   /* ---------- 05 对手与赛果 ---------- */
   const opponentCards = opponents.map(item => {
@@ -327,43 +344,69 @@ export async function renderBp(container, {api, isCurrent, query}) {
   }).join('');
   const contextPanel = `<div class="bp2-grid">${panel('对手 BP 习惯', '按对手聚合的禁用与选用频率；对手未命名时归到「未标注对手」。', opponentCards, `${opponents.length} 个`)
     }${panel('蓝红方概览', '按阵营汇总禁用、选用与赛果。', sideChart(sides), '2 个阵营')}</div>`
-    + panel('手序与先后手', '仅人工录入的 1–5 楼顺序参与；描述性统计，不代表因果。', orderChart(orders, data.firstPickEffect, manualN), `${num(manualN)} 场人工`)
+    + panel('先选方与赛果', '只统计明确记录先选方且有赛果的对局。逐局手序在 BP 核对里查看。', firstPickSummary(data.firstPickEffect), `${num(manualN)} 场有手序`)
     + panel('样本口径', '读数前必须知道的三件事。', `<div class="bp2-caveats">
-      <div><b>01</b><span><strong>来源</strong>营地终局名单 ${num(campN)} 场 + 人工手序 ${num(manualN)} 场；人工录入优先，两类来源不混算手序。</span></div>
+      <div><b>01</b><span><strong>来源</strong>营地终局名单 ${num(campN)} 场 + 人工补录 ${num(manualN)} 场；优先读取营地禁选名单，手序仅使用实际记录。</span></div>
       <div><b>02</b><span><strong>偏差</strong>${esc(data.sampleWarning || '当前样本无胜负偏差提示。')}</span></div>
       <div><b>03</b><span><strong>缺口</strong>本地另有 ${num(data.pendingCampMatches || 0)} 局营地详情未入库。到「采集」页的营地战绩清单勾选并拉取、核对入库后，本页统计自动纳入；本页不直接写数据。<a href="#capture">去采集 →</a></span></div></div>`, '必读');
 
-  /* ---------- 06 深度洞察：营地口径的分析已并入顶部页签行「BP 资源」 ---------- */
-  const depthPanel = `<div class="bp2-depth-note"><strong>已并入页签</strong>
-    <span>营地全量口径的 ban/pick 与龙塔资源分析，现在是顶部页签行里的「BP 资源」，点开即达、口径更清楚。</span></div>
-    <div class="bp2-depth-slot" id="bp2-depth-slot"><a class="button primary" href="#depth/resource_bp">打开「BP 资源」分析 →</a></div>`;
-
   /* ---------- 挂载与交互 ---------- */
-  const params = new URLSearchParams(location.search);
-  let active = params.get('tab') || '';
+  const params = new URLSearchParams(initialQuery);
+  let active = params.get('tab') || new URLSearchParams(location.search).get('tab') || '';
   if (!TABS.some(t => t.key === active)) { try { active = sessionStorage.getItem('bp2.tab') || ''; } catch (_) { /* 隐私模式 */ } }
   if (!TABS.some(t => t.key === active)) active = 'overview';
-  const contents = {overview, matches, heroes: heroesPanel, comps: compsPanel, context: contextPanel, depth: depthPanel};
-  const tabs = `<nav class="bp2-tabs" aria-label="BP 功能分区">${TABS.map(t => `<button data-bp2-tab="${t.key}" class="${t.key === active ? 'is-active' : ''}"><span>${t.no}</span><strong>${esc(t.name)}</strong><small>${esc(t.desc)}</small></button>`).join('')}</nav>`;
-  const panels = `<div class="bp2-panels">${TABS.map(t => `<div class="bp2-panel" data-panel="${t.key}" ${t.key === active ? '' : 'hidden'}>${contents[t.key]}</div>`).join('')}</div>`;
-  container.innerHTML = hero + sourceBar + tabs + panels;
+  const depthPanel = '<div data-bp-depth></div>';
+  const contents = {overview, matches, heroes: heroesPanel, comps: compsPanel, context: contextPanel};
+  const tabs = `<nav class="bp2-tabs" aria-label="BP 功能分区">${TABS.map(t => `<button type="button" data-bp2-tab="${t.key}" aria-pressed="${t.key === active}" aria-controls="bp2-panel-${t.key}" class="${t.key === active ? 'is-active' : ''}"><span>${t.no}</span><strong>${esc(t.name)}</strong><small>${esc(t.desc)}</small></button>`).join('')}</nav>`;
+  const panels = `<div class="bp2-panels">${TABS.map(t => `<div class="bp2-panel" id="bp2-panel-${t.key}" data-panel="${t.key}" ${t.key === active ? '' : 'hidden'}>${t.key === 'depth' ? depthPanel : n ? contents[t.key] : emptyArchive}</div>`).join('')}</div>`;
+  const root = document.createElement('div');
+  root.className = 'bp2-workspace';
+  root.innerHTML = hero + sourceBar + tabs + panels;
+  container.replaceChildren(root);
+  bindFallback();
+
+  const depth = root.querySelector('[data-bp-depth]');
+  const scrollToTabs = () => root.querySelector('.bp2-tabs').scrollIntoView({
+    block:'start', behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
+  });
+  let depthStarted = false;
+  const showDepth = async () => {
+    if (depthStarted) return;
+    depthStarted = true;
+    depth.innerHTML = '<div class="dp-loading" role="status">正在读取营地 BP 与资源数据…</div>';
+    try {
+      const {renderDepthEntry} = await import('/assets/depth-page.js?v=18');
+      if (!root.isConnected || (isCurrent && !isCurrent())) return;
+      await renderDepthEntry(depth, {api, isCurrent: () => root.isConnected && (!isCurrent || isCurrent()),
+        id:'resource_bp', module:'BP', initialQuery, embedded:true});
+      if (root.isConnected && !depth.closest('.bp2-panel').hidden) scrollToTabs();
+    } catch (error) {
+      if (!root.isConnected) return;
+      depthStarted = false;
+      depth.innerHTML = `<div class="dp-empty">${esc(error.message)} <button class="button" type="button">重试</button></div>`;
+      depth.querySelector('button').onclick = showDepth;
+    }
+  };
 
   const setTab = key => {
     const tab = TABS.find(t => t.key === key);
     if (!tab) return;
-    container.querySelectorAll('.bp2-tabs [data-bp2-tab]').forEach(el => el.classList.toggle('is-active', el.dataset.bp2Tab === tab.key));
-    container.querySelectorAll('[data-panel]').forEach(el => { el.hidden = el.dataset.panel !== tab.key; });
+    root.querySelectorAll('.bp2-tabs [data-bp2-tab]').forEach(el => {
+      const selected = el.dataset.bp2Tab === tab.key;
+      el.classList.toggle('is-active', selected);
+      el.setAttribute('aria-pressed', String(selected));
+    });
+    root.querySelectorAll('.bp2-panel').forEach(el => { el.hidden = el.dataset.panel !== tab.key; });
     const url = new URL(location.href);
-    url.searchParams.set('tab', tab.key);
+    url.searchParams.delete('tab');
+    params.set('tab', tab.key);
+    url.hash = 'bp?' + params;
     history.replaceState(null, '', url.pathname + url.search + url.hash);
     try { sessionStorage.setItem('bp2.tab', tab.key); } catch (_) { /* 忽略 */ }
-    const nav = container.querySelector('.bp2-tabs');
-    if (nav) {
-      const top = nav.getBoundingClientRect().top + window.scrollY - 76;
-      window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
-    }
+    if (key === 'depth') showDepth();
+    scrollToTabs();
   };
-  container.addEventListener('click', event => {
+  root.addEventListener('click', event => {
     const tabButton = event.target.closest('[data-bp2-tab]');
     if (tabButton && container.contains(tabButton)) { setTab(tabButton.dataset.bp2Tab); return; }
     const sourceButton = event.target.closest('[data-bp2-source]');
@@ -379,4 +422,5 @@ export async function renderBp(container, {api, isCurrent, query}) {
       if (button) button.remove();
     }
   });
+  if (active === 'depth') await showDepth();
 }

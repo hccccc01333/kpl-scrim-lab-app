@@ -24,7 +24,7 @@ python -m pip install -r requirements.txt
 python server.py
 ```
 
-打开 <http://127.0.0.1:8766/studio>。
+打开 <http://127.0.0.1:8766/>（V3 界面；V1/V2 入口已退役）。
 
 ### Linux / macOS
 
@@ -88,7 +88,7 @@ python server.py
 docker compose up --build
 ```
 
-打开 <http://127.0.0.1:8766/studio>。数据持久化在 `./data`。
+打开 <http://127.0.0.1:8766/>（V3 界面；V1/V2 入口已退役）。数据持久化在 `./data`。
 默认 compose 只映射到 `127.0.0.1`；需要局域网访问时修改端口映射并设置
 `TRAINING_ALLOW_REMOTE=1`。
 

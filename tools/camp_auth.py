@@ -20,6 +20,7 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -261,6 +262,7 @@ def poll_login_once(task_id: str) -> dict:
             AUTH_PATH.parent.mkdir(parents=True, exist_ok=True)
             AUTH_PATH.write_text(json.dumps(account, ensure_ascii=False, indent=2),
                                  encoding='utf-8')
+            reset_health()
         except Exception as error:
             _login_sessions.pop(task_id, None)
             return {'status': 'error', 'message': f'登录确认失败：{error}'}
@@ -290,8 +292,99 @@ def cancel_login_session(task_id: str = '') -> None:
         _login_sessions.clear()
 
 
+# ---- 登录态健康状态（供工作台提示「授权失效 → 补充授权」） ----
+
+_HEALTH_LOCK = threading.Lock()
+
+
+def _now_text() -> str:
+    return time.strftime('%Y-%m-%dT%H:%M:%S')
+
+
+def health_path() -> Path:
+    """健康状态文件跟着凭证走。
+
+    只覆盖 CAMP_AUTH_FILE（测试/多实例）时也不会写到真实的 data/ 目录；
+    需要单独指定时用 CAMP_AUTH_HEALTH_FILE。
+    """
+    explicit = os.environ.get('CAMP_AUTH_HEALTH_FILE')
+    if explicit:
+        return Path(explicit)
+    return AUTH_PATH.with_name(f'{AUTH_PATH.stem}_health.json')
+
+
+def _empty_health() -> dict:
+    return {'invalid': False, 'reason': '', 'code': '', 'invalidAt': '', 'checkedAt': ''}
+
+
+def read_health() -> dict:
+    """读取最近一次授权检测结果；没有记录时按「未发现问题」返回。"""
+    try:
+        data = json.loads(health_path().read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return _empty_health()
+    if not isinstance(data, dict):
+        return _empty_health()
+    return {
+        'invalid': bool(data.get('invalid')),
+        'reason': str(data.get('reason') or ''),
+        'code': str(data.get('code') or ''),
+        'invalidAt': str(data.get('invalidAt') or ''),
+        'checkedAt': str(data.get('checkedAt') or ''),
+    }
+
+
+def _write_health(**changes) -> dict:
+    with _HEALTH_LOCK:
+        state = read_health()
+        state.update({key: value for key, value in changes.items() if value is not None})
+        path = health_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # 先写临时文件再替换：请求线程与同步线程并发读写时不会读到半截 JSON。
+        temporary = path.with_name(path.name + '.tmp')
+        temporary.write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding='utf-8')
+        os.replace(temporary, path)
+    return state
+
+
+def mark_invalid(reason: str, code: str = '') -> None:
+    """营地接口明确报登录态失效时记下来，页面不必等到拉取失败才提示。"""
+    _write_health(invalid=True, reason=str(reason or ''), code=str(code or ''),
+                  invalidAt=_now_text(), checkedAt=_now_text())
+
+
+def mark_valid() -> None:
+    """接口确认登录态可用：清掉失效标记；没有失效记录时不写盘。"""
+    state = read_health()
+    if not state['invalid'] and not state['reason']:
+        return
+    _write_health(invalid=False, reason='', code='', invalidAt='', checkedAt=_now_text())
+
+
+def mark_checked(valid: bool, reason: str = '', code: str = '') -> dict:
+    """主动检测的结果（网络错误不要走到这里，避免把断网当成失效）。"""
+    return _write_health(invalid=not valid,
+                         reason='' if valid else str(reason or ''),
+                         code='' if valid else str(code or ''),
+                         invalidAt='' if valid else _now_text(),
+                         checkedAt=_now_text())
+
+
+def reset_health() -> None:
+    """重新授权或删除凭证后清空旧状态。"""
+    with _HEALTH_LOCK:
+        try:
+            health_path().unlink()
+        except FileNotFoundError:
+            pass
+
+
 def read_account() -> dict:
-    """读取已保存的凭证（脱敏摘要），没有则返回 {'authorized': False}。"""
+    """读取已保存的凭证（脱敏摘要），没有则返回 {'authorized': False}。
+
+    expired/reason/code/checkedAt 来自最近一次接口报错或主动检测；没有失效记录
+    时 expired 为 False、reason 为空，页面不会因此提前报警。
+    """
     if not AUTH_PATH.is_file():
         return {'authorized': False}
     try:
@@ -300,8 +393,12 @@ def read_account() -> dict:
         return {'authorized': False}
     if not account.get('token'):
         return {'authorized': False}
+    health = read_health()
     return {'authorized': True, 'nickname': account.get('nickname') or '',
-            'userId': account.get('userId') or '', 'loginAt': account.get('loginAt') or ''}
+            'userId': account.get('userId') or '', 'loginAt': account.get('loginAt') or '',
+            'expired': health['invalid'], 'reason': health['reason'],
+            'code': health['code'], 'invalidAt': health['invalidAt'],
+            'checkedAt': health['checkedAt']}
 
 
 def show_status():
@@ -315,6 +412,12 @@ def show_status():
     print(f"token  : {token[:6]}…({len(token)} 字符)" if token else 'token  : 无')
     print(f"userKey: {'有' if account.get('userKey') else '无'}")
     print(f"登录于 : {account.get('loginAt') or '—'}（expires 字段：{account.get('expires') or '未提供'}）")
+    health = read_health()
+    if health['invalid']:
+        print('状态   : 已失效 → 重新扫码授权')
+        print(f"原因   : {health['reason'] or '营地接口报登录态失效'}")
+    else:
+        print(f"状态   : 未发现登录态问题（最近检测：{health['checkedAt'] or '未检测'}）")
     print(f"位置   : {AUTH_PATH}")
 
 
@@ -353,6 +456,7 @@ def main(argv):
         show_status()
     elif '--clear' in argv:
         AUTH_PATH.unlink(missing_ok=True)
+        reset_health()
         print(f'已删除 {AUTH_PATH}')
     else:
         login_flow()

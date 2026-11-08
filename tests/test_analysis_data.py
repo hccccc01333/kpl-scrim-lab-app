@@ -198,6 +198,32 @@ class AnalysisDataTests(unittest.TestCase):
         self.assertAlmostEqual(jia['kda'], 6.0, places=2)
         self.assertAlmostEqual(jia['gpm'], 20000 / 38, places=1)
 
+    def test_own_nickname_is_not_split_by_source_camp_token(self):
+        """本机记录写 left/right、数据包写 blue/red；同一个本队昵称不应被拆成两个人。"""
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            database = root / 'training.sqlite3'
+            make_db(database)
+            body = db_match('N', '2026-10-06', '对手N', 'left', 'left', 20, OWN, ENEMY)
+            body['players'][0].update({'playerId': None, 'label': '同名队员'})
+            connection = sqlite3.connect(database)
+            connection.execute('INSERT INTO matches VALUES (?,1,?)',
+                               ('N', json.dumps(body, ensure_ascii=False)))
+            connection.commit()
+            connection.close()
+            matches = root / 'matches'
+            matches.mkdir()
+            data = bundle('N-bundle', '2026-10-07', 900, C_BLUE, C_RED, scores={'blue': 12, 'red': 8})
+            data['players'][0]['nickname'] = '同名队员'
+            (matches / 'n.json').write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+            (root / 'imports').mkdir()
+            repo = AnalysisRepository(database, matches, root / 'imports')
+            rows = [row for row in repo.player_stats({'sources': ['db', 'bundle']})
+                    if row['label'] == '同名队员']
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['matches'], 2)
+            self.assertFalse(rows[0]['bound'])
+
     def test_hero_and_team_stats(self):
         heroes = self.repo.hero_stats({'sources': ['db', 'bundle']})
         ying = next(hero for hero in heroes if hero['hero'] == '影')

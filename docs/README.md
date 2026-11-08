@@ -13,8 +13,9 @@
 
 - [设计系统](design_system.md)：布局、颜色、交互规范与数据展示要求。
 - [分析平台](analysis_platform.md)：分析数据组织与扩展说明。
-- `../web/`：页面、原生 JavaScript 模块与样式；`../server.py`：本机 API；`../tests/`：后端测试；`../scripts/`：运行、评测和浏览器验收脚本。
-- `python scripts/verify_platform_page.py`：导航、深链、直接建局、失败重试、分析和手机布局检查。该脚本创建独立测试数据库，不修改用户比赛数据库；默认读取本机现有分析包以验收详情。
+- `../v3/`：V3 页面、原生 JavaScript 模块与样式（V1 的 `../web/` 已退役，仅保留采集规范资料）；`../server.py`：本机 API；`../tests/`：后端测试；`../scripts/`：运行、评测和浏览器验收脚本。
+- `python scripts/audit_v3_regression.py http://127.0.0.1:8766`：V3 的 26 条路由逐条渲染、JS 异常和空页检查。
+- `python scripts/verify_frontend.py --no-shots`：从导航动态抓路由，跑桌面/手机视口、横向溢出和失败请求。
 - `node scripts/test_analysis_math.mjs`：缺失值、滚动窗口、并列分位、Wilson 区间及时间轴分段计算。
 - `python -m unittest tests.test_analysis_timeline tests.test_analysis_data tests.test_studio -v`：分析统计与时间轴口径回归。
 - `python scripts/verify_analysis_visuals.py`：当前本机样本的可视化交互验收；合成边界数据仅挂在测试浏览器，不写入项目数据。

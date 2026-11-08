@@ -176,6 +176,24 @@ class BpSummaryTwoSourcesTest(unittest.TestCase):
         self.assertIn('pressure', value)
         self.assertIn('pairs', value)
 
+    def test_camp_only_excludes_local_matches_and_prefers_camp_lineup(self):
+        path = self.matches_dir / 'camp-1.json'
+        bundle_value = json.loads(path.read_text(encoding='utf-8'))
+        bundle_value['match']['bp'] = {
+            'bans': {'left': ['沈梦溪'], 'right': []},
+            'picks': {'left': ['影'], 'right': []},
+            'firstPick': 'left',
+        }
+        path.write_text(json.dumps(bundle_value, ensure_ascii=False), encoding='utf-8')
+        repo = AnalysisRepository(self.db, self.matches_dir, self.imports_dir)
+        filters = {'sources': ['db', 'bundle'], 'campOnly': True, 'campFirst': True}
+        self.assertEqual({item['key'] for item in repo.matches(filters)['matches']}, {'camp-1'})
+        bp = repo.bp_summary(filters)
+        self.assertEqual(bp['campBpMatches'], 1)
+        self.assertEqual(bp['manualBpMatches'], 0)
+        self.assertIn('鲁班七号', {item['hero'] for item in bp['ownPicks']})
+        self.assertNotIn('影', {item['hero'] for item in bp['ownPicks']})
+
 
 if __name__ == '__main__':
     unittest.main()

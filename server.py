@@ -32,6 +32,7 @@ from update_api import create_update_router
 from version import VERSION, RELEASE_DATE, RELEASE_NAME
 import focus as focus_module
 import camp_replay
+from camp_time import camp_times
 from collection_contract import validate_sheet
 import channel_store
 import mimo_ocr
@@ -108,6 +109,8 @@ def init_db():
 
 init_db()
 app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
+# V3 的路由模块在 _mount_v3() 里加载；中间件用它刷新分析快照缓存。
+V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
@@ -125,11 +128,15 @@ async def local_only(request: Request, call_next):
     if request.method != 'GET' and origin and origin not in (f'http://{request.headers.get("host")}',):
         return JSONResponse({'detail': '来源不匹配，请从本地工作台操作'}, status_code=403)
     response = await call_next(request)
+    # V3 与分析快照：写操作成功后让缓存失效，下次读取重新构建。
+    if request.method not in ('GET', 'HEAD', 'OPTIONS') and response.status_code < 400:
+        if V3_MODULE is not None:
+            V3_MODULE.invalidate_snapshot()
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'no-referrer'
-    if request.url.path.startswith('/assets') or request.url.path in ('/', '/analysis'):
-        # 本机工作台经常直接替换 web/ 下的文件；每次协商校验，避免浏览器用旧样式
-        response.headers['Cache-Control'] = 'no-cache'
+    if request.url.path.startswith(('/assets', '/static', '/api')) or request.url.path in ('/', '/analysis'):
+        # 本机工作台经常直接替换前端文件；每次协商校验，避免浏览器用旧资源
+        response.headers['Cache-Control'] = 'no-store'
     return response
 
 
@@ -1096,8 +1103,11 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
                   'campUserId': camp_user_id, 'ok': True, 'summary': summary}
     except BaseException as error:  # camp_sync 用 SystemExit 报致命错误
+        auth_invalid = bool(getattr(error, 'auth_invalid', False))
         result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
                   'campUserId': camp_user_id, 'ok': False,
+                  'authInvalid': auth_invalid,
+                  'reason': getattr(error, 'reason', '') if auth_invalid else '',
                   'error': f'{type(error).__name__}: {error}'}
         return [result], []
     auto_attached = _camp_auto_attach(game_seqs) if game_seqs else []
@@ -1109,6 +1119,55 @@ def camp_auth_status():
     _camp_tools()
     import camp_auth
     return camp_auth.read_account()
+
+
+AUTH_CHECK_TTL = 300
+
+
+@app.post('/api/camp/auth/check')
+def camp_auth_check(force: bool = False):
+    """主动检测一次营地登录态，让「授权失效」在拉取前就显示出来。
+
+    只发一次轻量列表请求：营地返回任何结构化响应（包括「用户不存在」这类
+    业务错误）都说明登录态被接受；只有明确的登录态错误才记为失效。网络异常
+    只返回「暂时无法检测」，不误伤本地凭证。
+    """
+    _camp_tools()
+    import camp_auth
+    import camp_client
+    account = camp_auth.read_account()
+    if not account.get('authorized'):
+        return {'authorized': False, 'valid': False, 'reason': '还没有营地登录凭证。'}
+    health = camp_auth.read_health()
+    if not force and health.get('checkedAt'):
+        try:
+            checked = time.mktime(time.strptime(health['checkedAt'], '%Y-%m-%dT%H:%M:%S'))
+        except (ValueError, OverflowError):
+            checked = 0
+        if time.time() - checked < AUTH_CHECK_TTL:
+            return {'authorized': True, 'valid': not health['invalid'],
+                    'reason': health['reason'], 'code': health['code'],
+                    'checkedAt': health['checkedAt'], 'cached': True}
+    if not account.get('userId'):
+        return {'authorized': True, 'valid': None,
+                'reason': '凭证缺少营地用户 ID，无法完成检测。'}
+    try:
+        camp_client.call('/game/morebattlelist', {
+            'lastTime': 0, 'recommendPrivacy': 0, 'apiVersion': 5,
+            'friendUserId': account['userId'], 'option': 0}, timeout=8)
+    except camp_client.CampAuthError as error:
+        # 即使异常不是本模块发起的，也把失效状态落下来，页面刷新后仍然能提示。
+        camp_auth.mark_invalid(str(error), getattr(error, 'code', ''))
+        current = camp_auth.read_health()
+        return {'authorized': True, 'valid': False, 'reason': str(error),
+                'code': getattr(error, 'code', ''), 'checkedAt': current['checkedAt'],
+                'cached': False}
+    except Exception as error:  # noqa: BLE001 - 网络/协议异常不当作授权失效
+        return {'authorized': True, 'valid': None,
+                'reason': f'暂时无法完成检测：{type(error).__name__}: {error}'}
+    camp_auth.mark_checked(True)
+    return {'authorized': True, 'valid': True, 'reason': '', 'code': '',
+            'checkedAt': camp_auth.read_health()['checkedAt'], 'cached': False}
 
 
 @app.post('/api/camp/auth/qr')
@@ -1137,6 +1196,7 @@ def camp_auth_clear():
     _camp_tools()
     import camp_auth
     camp_auth.AUTH_PATH.unlink(missing_ok=True)
+    camp_auth.reset_health()
     camp_auth.cancel_login_session()
     return {'ok': True}
 
@@ -1209,10 +1269,13 @@ def camp_sync_status():
             continue
         entry = body.get('_campEntry') or {}
         head = (body.get('data') or {}).get('head') or {}
+        times = camp_times(body)
         detail_items.append({
             'gameSeq': path.stem,
             'mapName': entry.get('mapName') or head.get('mapName'),
             'gametime': entry.get('gametime'),
+            'startedAt': times.get('startedAt'),
+            'eventAt': times.get('eventAt'),
             'battleType': entry.get('battleType'),
             'winCamp': entry.get('winCamp'),
             'kda': [entry.get('killcnt'), entry.get('deadcnt'), entry.get('assistcnt')],
@@ -1238,6 +1301,12 @@ def camp_list(value: dict):
             'lastTime': int(value.get('lastTime') or 0),
             'recommendPrivacy': 0, 'apiVersion': 5,
             'friendUserId': camp_user_id, 'option': 0})
+    except camp_client.CampAuthError as error:
+        # detail 保持字符串：V1 采集页按字符串显示；V2 另外读 authInvalid 提前提示补充授权。
+        return JSONResponse(status_code=401, content={
+            'detail': str(error), 'authInvalid': True,
+            'reason': getattr(error, 'reason', str(error)),
+            'code': getattr(error, 'code', '')})
     except SystemExit as error:
         raise HTTPException(409, str(error))
     body = result.get('body') or {}
@@ -1252,6 +1321,7 @@ def camp_list(value: dict):
         entries.append({
             'gameSeq': game_seq,
             'dtEventTime': int(entry.get('dtEventTime') or 0),
+            'usedTime': int(entry.get('usedTime') or 0),
             'mapName': entry.get('mapName'), 'gametime': entry.get('gametime'),
             'battleType': entry.get('battleType'), 'winCamp': entry.get('winCamp'),
             'killcnt': entry.get('killcnt'), 'deadcnt': entry.get('deadcnt'),
@@ -2548,7 +2618,15 @@ def restore(value: dict):
 
 @app.get('/analysis')
 def analysis_index():
-    return RedirectResponse('/studio', status_code=302)
+    # V3 已是默认界面，旧别名直接回根路径。
+    return RedirectResponse('/', status_code=302)
+
+
+@app.get('/v3')
+@app.get('/v3/{path:path}')
+def v3_legacy(path: str = ''):
+    # 旧版 /v3 下的链接（包括静态资源）统一回根路径。
+    return RedirectResponse('/' + path, status_code=302)
 
 
 app.state.source_backup = backup
@@ -2557,17 +2635,22 @@ app.state.source_restore = restore
 
 @app.get('/studio')
 def studio_index():
-    return FileResponse(ROOT / 'web' / 'studio.html')
+    # V1 工作台已退役：旧入口统一回 V3。
+    return RedirectResponse('/', status_code=302)
 
 
 @app.get('/')
 def index():
-    return FileResponse(ROOT / 'web' / 'studio.html')
+    # V3 是默认界面：根路径直接返回 V2 的 index.html。
+    # /v3 保留给旧链接，/studio 仅用于回看 V1 旧界面。
+    v3_index = ROOT / 'v3' / 'public' / 'index.html'
+    if v3_index.is_file():
+        return FileResponse(v3_index)
+    return JSONResponse({'detail': 'V3 前端资源缺失，请重新安装完整包'}, status_code=503)
 
 
-@app.get('/legacy')
-def legacy_index():
-    return FileResponse(ROOT / 'web' / 'index.html')
+# 2026-11-07：旧的 /legacy 独立外壳（web/index.html + style.css）已归档到
+# .archive/2026-11-07-frontend-cleanup/，此路由随之删除。它没有任何入站链接。
 
 
 @app.get('/api/health')
@@ -2579,6 +2662,47 @@ def health():
 
 app.mount('/assets', StaticFiles(directory=ROOT / 'web'), name='assets')
 app.mount('/catalog', StaticFiles(directory=ROOT / 'resources', check_dir=False), name='catalog')
+
+
+# ---------------------------------------------------------------------------
+# V3：单应用入口
+#
+# 旧 V2 原本跑在自己的 serve.py（8771）上，和 V1 是两个端口、两套交付。
+# 现在 V3（v3/serve.py）的路由已改成 APIRouter，并进同一个 app：
+#   /          V3 默认界面（V2 的 index.html）
+#   /static    V3 前端资源
+#   /api/*     V1 采集/校对接口 + V2 只读分析接口（同一张路由表）
+#   /v3       旧链接 302 到根路径
+# V1 的 /api/* 注册在前，路径重复时优先命中；V2 的 /api/matches 是 GET，
+# V1 的同名路由是 POST，不会互相遮挡。
+# ---------------------------------------------------------------------------
+def _mount_v3() -> bool:
+    global V3_MODULE
+    path = ROOT / 'v3' / 'serve.py'
+    if not path.is_file():
+        print('[v3] 未找到 v3/serve.py，跳过加载')
+        return False
+    try:
+        # serve.py 依赖同目录的 deep_analysis.py，加载前把它所在的目录加进搜索路径
+        v3_dir = str(path.parent)
+        if v3_dir not in sys.path:
+            sys.path.insert(0, v3_dir)
+        spec = importlib.util.spec_from_file_location('kpl_v3_app', path)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules['kpl_v3_app'] = module
+        spec.loader.exec_module(module)
+        V3_MODULE = module
+        app.include_router(module.router)
+        app.mount('/static', StaticFiles(directory=path.parent / 'public'), name='v3-static')
+        print('[v3] 已加载路由与 /static')
+        return True
+    except Exception as exc:                       # noqa: BLE001
+        print(f'[v3] 加载失败，根路径会提示前端资源缺失: {exc}')
+        return False
+
+
+_mount_v3()
+
 
 if __name__ == '__main__':
     import uvicorn

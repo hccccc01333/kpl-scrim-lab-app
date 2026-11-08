@@ -7,6 +7,8 @@ writes a formal record.
 """
 import math
 import re
+from bp_camp import POSITION_LANES
+from camp_time import camp_times
 from collection_contract import CONTRACT, PAGE_TYPES, PAGE_NAMES
 from datetime import datetime, timezone
 
@@ -436,6 +438,7 @@ def _build_draft(channel):
         'date': match.get('date'), 'opponent': match.get('opponent'),
         'session': match.get('session'), 'version': match.get('version'),
         'mode': match.get('mode'), 'durationSec': match.get('durationSec'),
+        'startedAt': match.get('startedAt'), 'eventAt': match.get('eventAt'),
         'scores': match.get('scores') or {'left': None, 'right': None},
         'ownSide': match.get('ownSide'), 'winner': match.get('winner'),
         'replay': replay, 'bp': match.get('bp'),
@@ -564,6 +567,9 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
         for index, role in enumerate(roles):
             basic = role.get('basicInfo') or {}
             stats = role.get('battleStats') or {}
+            battle_record = role.get('battleRecords') or {}
+            used_hero = battle_record.get('usedHero') or {}
+            position = POSITION_LANES.get(_camp_number(battle_record.get('position')))
             official_match = by_player_id.get(str(basic.get('playerId') or ''))
             if official_match is None and len(official_by_camp.get(camp) or []) == 5:
                 official_match = official_by_camp[camp][index]
@@ -581,14 +587,24 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
             players.append({'camp': camp, 'slot': index,
                             'playerId': str(basic.get('playerId') or ''),
                             'nickname': _identity_name(basic.get('roleName')),
-                            'hero': (official_match or {}).get('heroName') or (official_match or {}).get('hero'),
-                            'heroId': (official_match or {}).get('heroId'),
+                            'hero': used_hero.get('heroName') or (official_match or {}).get('heroName') or (official_match or {}).get('hero'),
+                            'heroId': used_hero.get('heroId') or (official_match or {}).get('heroId'),
+                            'position': position,
                             'stats': fields})
     # 本人阵营：head.acntCamp（1=蓝 / 2=红）→ 通道的 ownSide
     head_camp = str(head.get('acntCamp') or '')
     match = channel.setdefault('match', {})
     if head_camp in ('1', '2') and not match.get('ownSide'):
         match['ownSide'] = 'left' if head_camp == '1' else 'right'
+    # 营地列表的 dtEventTime 是记录发送时间；减 usedTime 得到开赛时间。
+    # 只补空值：人工填写的日期/时间优先，不被营地覆盖。
+    times = camp_times(detail)
+    if times:
+        for key in ('startedAt', 'eventAt'):
+            if times.get(key) and not match.get(key):
+                match[key] = times[key]
+        if times.get('date') and not match.get('date'):
+            match['date'] = times['date']
     if sum(1 for player in players if player['stats']) != 10:
         raise ValueError('营地详情的十人面板不完整，拒绝入库')
     # 人头比：团队击杀 = 本阵营五人 killCnt 之和（未手工填写时自动补）
@@ -619,7 +635,7 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
                    'mapName': head.get('mapName'),
                    'players': players, 'ban': ban, 'banNames': ban_names,
                    'pickNames': pick_names, 'bp': camp_bp,
-                   'teamGold': team_gold,
+                   'teamGold': team_gold, 'times': times,
                    'attachedAt': now(), 'parsedAt': now()})
     append_log(channel, 'attach-camp', actor,
                {'gameSeq': game_seq, 'players': len(players),
@@ -646,19 +662,20 @@ def _merge_camp(players, channel):
             target['heroStatus'] = 'exact'
             target['heroSource'] = 'camp'
             target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
+        if row.get('position'):
+            target['position'] = row['position']
         for key, value in (row.get('stats') or {}).items():
             if key not in ALL_FIELDS or value is None:
                 continue
             current = target['fields'].get(key)
-            if current is None:
-                target['fields'][key] = {'value': value, 'raw': str(value),
-                                         'source': 'camp', 'confidence': 'high'}
-                target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
-            elif current.get('value') != value and current.get('source') in ('screenshot', 'table'):
+            if current and current.get('value') != value and current.get('source') in ('screenshot', 'table'):
                 conflict = {'side': target['side'], 'slot': target['slot'], 'field': key,
                             'camp': value}
                 conflict[current.get('source')] = current.get('value')
                 target['conflicts'].append(conflict)
+            target['fields'][key] = {'value': value, 'raw': str(value),
+                                     'source': 'camp', 'confidence': 'high'}
+            target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
 
 
 def _merge_table(players, channel):
@@ -831,6 +848,7 @@ def bundle(channel):
             'key': f'{camp}-{player.get("slot")}', 'camp': camp, 'side': camp,
             'slot': player.get('slot'), 'panelSlot': player.get('slot'),
             'hero': player.get('hero'), 'heroId': player.get('heroId'),
+            'position': player.get('position'),
             'heroStatus': player.get('heroStatus'),
             'heroSource': player.get('heroSource'), 'nickname': player.get('nickname'),
             'nicknameRaw': player.get('nickname'), 'nicknameConfidence': None,
@@ -856,7 +874,8 @@ def bundle(channel):
     match_body = {
         'key': f'channel-{channel.get("id")}',
         'title': ' · '.join(value for value in (match.get('session'), f'vs {match.get("opponent")}' if match.get('opponent') else None) if value) or '采集通道',
-        'mode': match.get('mode'), 'date': _date_parts(match.get('date')), 'startTime': None,
+        'mode': match.get('mode'), 'date': _date_parts(match.get('date')),
+        'startTime': match.get('startedAt') or None,
         'duration': match.get('durationSec'), 'scores': scores,
         'ownSide': own_side or None, 'ownCamp': own_camp,
         'winner': winner_camp, 'winnerCamp': winner_camp,

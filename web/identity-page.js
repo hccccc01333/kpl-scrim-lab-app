@@ -1,5 +1,5 @@
-/* 对局分边与认领：先确定这一局我方在蓝/红哪边，再把两边的昵称认领到选手身份。
-   一个昵称一个坑——认错了可以解绑或改绑，不会出现「显示已绑定但下拉是不绑定」。
+/* 对局分边：逐条认领/改绑/解绑统一在「录入」页，这里只做分边、对手命名和批量自动认领。
+   每局两侧的十人名单只用来确认谁在哪边；每人右侧是只读的认领状态，不再重复一套下拉。
 */
 const esc = (value = '') => String(value ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const CAMP_NAME = {blue: '蓝方', red: '红方'};
@@ -27,34 +27,20 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
   const campNamed = campGames.filter(g => g.opponent).length;
   const draftTeams = [...teams];
 
-  const membersOf = team => roster.filter(m => (m.team || ownTeam) === team);
-
   const teamSelect = (camp, current) => `<select class="idp-team" data-team-select="${camp}">
     <option value=""${current ? '' : ' selected'}>选择战队…</option>
     ${draftTeams.map(t => `<option value="${esc(t)}"${t === current ? ' selected' : ''}>${esc(t)}</option>`).join('')}
     <option value="__new__">＋ 新建战队…</option>
   </select>`;
 
-  const playerRow = (match, side, player, index) => {
-    const isOwn = side.isOwn;
-    const nickname = player.label;
-    const boundId = (isOwn ? aliases : enemyAliases)[nickname] || '';
-    const options = membersOf(isOwn ? ownTeam : (side.teamName === '对手待填写' ? '' : side.teamName));
-    const list = options.length ? options : roster;
-    return `<div class="idp-player" data-camp="${side.camp}" data-nick="${esc(nickname)}" data-bound="${boundId ? '1' : '0'}">
-      <span class="idp-index">${index + 1}</span>
-      <div class="idp-who">
-        <strong>${esc(nickname)}</strong>
-        <small>${esc(player.hero || '英雄未识别')}${boundId ? ` · 已认领 ${esc(identityOf(roster.find(m => m.id === boundId) || {}, ownTeam))}` : ''}</small>
-      </div>
-      <select class="idp-bind" data-bind="${esc(nickname)}" data-own="${isOwn ? '1' : '0'}">
-        <option value="">未认领</option>
-        ${list.map(m => `<option value="${esc(m.id)}"${m.id === boundId ? ' selected' : ''}>${esc(identityOf(m, ownTeam))}${m.position ? ` · ${m.position}` : ''}</option>`).join('')}
-        <option value="__new__">＋ 新建选手身份…</option>
-      </select>
-      <button class="idp-unbind" type="button" data-unbind="${esc(nickname)}" data-own="${isOwn ? '1' : '0'}" ${boundId ? '' : 'disabled'} title="解除这条认领">解绑</button>
-    </div>`;
-  };
+  // 认领在「录入」页做过了，这里只列十人名单，不再放认领下拉 / 解绑 / 认领状态。
+  const playerRow = (side, player, index) => `<div class="idp-player" data-camp="${side.camp}" data-nick="${esc(player.label)}">
+    <span class="idp-index">${index + 1}</span>
+    <div class="idp-who">
+      <strong>${esc(player.label)}</strong>
+      <small>${esc(player.hero || '英雄未识别')}</small>
+    </div>
+  </div>`;
 
   const sideBlock = (match, side) => {
     const current = side.isOwn ? ownTeam : (side.teamName === '对手待填写' ? '' : side.teamName);
@@ -65,7 +51,7 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
         <span class="idp-side-role">${side.isOwn ? '本队' : (current ? '对手' : '待指定')}</span>
       </header>
       <div class="idp-players">
-        ${(side.players || []).map((p, i) => playerRow(match, side, p, i)).join('')}
+        ${(side.players || []).map((p, i) => playerRow(side, p, i)).join('')}
       </div>
     </div>`;
   };
@@ -110,8 +96,8 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
     <div class="page-heading">
       <div>
         <span class="page-eyebrow">IDENTITY · 对局分边</span>
-        <h1>对局分边与认领</h1>
-        <p>先选这一局本队在蓝方还是红方，再给两边填战队、把游戏昵称认领到选手身份。认错了可以解绑或直接改绑。</p>
+        <h1>对局分边</h1>
+        <p>给每局确认本队在蓝方还是红方、对手是哪支战队。昵称认领统一在「录入」页完成，这里只显示认领结果；批量处理可点「自动认领」。</p>
         <div class="page-facts">
           <span>${matches.length} 场可核对</span>
           <span>${roster.length} 个选手身份</span>
@@ -129,8 +115,7 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
 
     <div class="idp-tip">
       <strong>怎么用</strong>
-      <span>两边的战队下拉决定「这五个人属于谁」。选错边就把两边的战队对调；昵称认领后显示为「战队.选手名」，同一个人的小号认领到同一身份即可合并。认领与解绑会立即保存。先点「自动认领」让系统跑一遍，存疑的再交给教练。</span>
-      <label class="idp-only"><input type="checkbox" id="idp-only-unclaimed"> 只看未认领</label>
+      <span>两边的战队下拉决定「这五个人属于谁」，选错边就把两边对调。逐条认领、改绑、解绑都在<a href="#profile">「录入」页</a>，本页不重复维护；右侧只是当前认领状态。想一次处理多局，点「自动认领」跑一遍，存疑的再交给教练。</span>
     </div>
 
     <div class="idp-auto" id="idp-auto" hidden></div>
@@ -149,71 +134,27 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
   const refreshColumn = (card, camp) => {
     const side = card.querySelector(`[data-side="${camp}"]`);
     if (!side) return;
-    const isOwn = side.dataset.own === '1';
     const team = side.querySelector('[data-team-select]').value;
-    const pool = team ? membersOf(team) : roster;
-    const list = pool.length ? pool : roster;
-    side.querySelectorAll('.idp-bind').forEach(select => {
-      const value = select.value;
-      select.innerHTML = `<option value="">未认领</option>` + list.map(m =>
-        `<option value="${esc(m.id)}"${m.id === value ? ' selected' : ''}>${esc(identityOf(m, ownTeam))}${m.position ? ` · ${m.position}` : ''}</option>`).join('')
-        + `<option value="__new__">＋ 新建选手身份…</option>`;
-    });
     side.querySelector('.idp-side-role').textContent = team === ownTeam ? '本队' : (team ? '对手' : '待指定');
   };
 
-  const applyBind = (row) => {
-    if (!row) return;
-    const side = row.closest('.idp-side');
-    const team = side.querySelector('[data-team-select]').value;
-    const isOwn = team === ownTeam;
-    const select = row.querySelector('.idp-bind');
-    const nick = select.dataset.bind;
-    const table = isOwn ? aliases : enemyAliases;
-    // 只改当前这一侧的表：同一个昵称可能在不同对局出现在两边。
-    if (select.value) table[nick] = select.value;
-    else delete table[nick];
-  };
-
+  // 保存分边只写 match_meta；aliases / enemyAliases 由「录入」页和自动认领维护，
+  // 这里不再随页面快照回写，避免两个页面同时打开时把新认领覆盖掉。
   const saveMatch = async (card) => {
     const key = card.dataset.idpKey;
-    const sides = [...card.querySelectorAll('.idp-side')].map(side => {
-      const team = side.querySelector('[data-team-select]').value;
-      return {
-        camp: side.dataset.side,
-        team,
-        own: team === ownTeam,
-        binds: [...side.querySelectorAll('.idp-bind')].map(sel => ({
-          nick: sel.dataset.bind, value: sel.value,
-        })),
-      };
-    });
+    const sides = [...card.querySelectorAll('.idp-side')].map(side => ({
+      camp: side.dataset.side,
+      team: side.querySelector('[data-team-select]').value,
+    }));
     const ownSide = sides.find(side => side.team === ownTeam);
     if (!ownSide) throw Error('两边的战队里必须有一边是「' + ownTeam + '」');
     const other = sides.find(side => side !== ownSide);
     if (other && other.team === ownSide.team) throw Error('两边不能是同一支战队');
-    const opponent = other ? (other.team === ownTeam ? '' : other.team) : '';
 
     await fetch(`/api/studio/match-meta/${encodeURIComponent(key)}`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ownCamp: ownSide.camp, opponent: opponent || ''}),
+      body: JSON.stringify({ownCamp: ownSide.camp, opponent: other ? other.team : ''}),
     }).then(async r => { if (!r.ok) throw Error((await r.json()).detail || '保存分边失败'); });
-
-    sides.forEach(side => {
-      side.binds.forEach(bind => {
-        const table = side.own ? aliases : enemyAliases;
-        if (bind.value) table[bind.nick] = bind.value;
-        else delete table[bind.nick];
-      });
-    });
-    card.querySelectorAll('.idp-side').forEach(side => {
-      const isOwnSide = side.querySelector('[data-team-select]').value === ownTeam;
-      side.dataset.own = isOwnSide ? '1' : '0';
-      side.classList.toggle('own', isOwnSide);
-      side.classList.toggle('enemy', !isOwnSide);
-      side.querySelectorAll('.idp-bind').forEach(sel => sel.dataset.own = isOwnSide ? '1' : '0');
-      side.querySelectorAll('.idp-unbind').forEach(btn => btn.dataset.own = isOwnSide ? '1' : '0');
-    });
   };
 
   const persist = async () => {
@@ -221,17 +162,18 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
       ...settings,
       teamName: ownTeam,
       roster,
-      aliases,
-      enemyAliases,
       teams: draftTeams.filter(t => t !== ownTeam).map(name => {
         const existing = (settings.teams || []).find(t => t.name === name);
         return existing || {id: 'team-' + Math.random().toString(36).slice(2, 9), name, short: '', coach: '', note: ''};
       }),
     };
+    // 认领表不随本页回写：服务端会用库里最新的 aliases / enemyAliases 补齐。
+    delete payload.aliases;
+    delete payload.enemyAliases;
     const response = await fetch('/api/settings', {
       method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
     });
-    if (!response.ok) throw Error((await response.json().catch(() => ({}))).detail || '保存认领失败');
+    if (!response.ok) throw Error((await response.json().catch(() => ({}))).detail || '保存设置失败');
   };
 
   let persistTimer = null;
@@ -256,28 +198,216 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
   const saveCards = async (cards) => {
     for (const card of cards) await saveMatch(card);
     await persist();
-    toast?.('已保存分边与认领');
+    toast?.('已保存分边与对手');
     await onSaved?.();
     location.reload();
   };
 
-  container.addEventListener('change', (event) => {
-    if (event.target.id === 'idp-only-unclaimed') {
-      container.classList.toggle('only-unclaimed', event.target.checked);
+  /* ---------- 自动认领 ----------
+     后端按存档战队名单给出「可自动 / 存疑」预览；这里只负责展示、收教练的判断、
+     以及把可落库的那部分写到既有接口（/api/settings + /api/studio/match-meta）。
+     教练判断过的对局会整局建档，下一次同类对局就能自动匹配。 */
+  let autoPlan = null, autoMaxDiff = 1, autoDecisions = {}, autoNewTeams = [],
+      autoOnlyReview = false, autoBusy = false;
+  const autoPanel = () => container.querySelector('#idp-auto');
+
+  const autoDecisionControls = item => {
+    const key = esc(item.key);
+    const chosen = autoDecisions[item.key];
+    if (chosen) {
+      return `<div class="idp-auto-decided">
+        <span>本队${esc(CAMP_NAME[chosen.ownCamp] || chosen.ownCamp)} · 对手「${esc(chosen.opponent)}」</span>
+        <button class="button tiny" type="button" data-auto-undo="${key}">撤销判断</button>
+      </div>`;
     }
-  }, true);
+    const hint = item.hintCamp === 'red' ? 'red' : 'blue';
+    const camps = ['blue', 'red'].map(c =>
+      `<option value="${c}"${c === hint ? ' selected' : ''}>本队在${CAMP_NAME[c]}</option>`).join('');
+    const teams = `<option value="">选择对手战队…</option>`
+      + (autoPlan?.options?.teams || []).map(t =>
+        `<option value="${esc(t)}"${t === item.currentOpponent ? ' selected' : ''}>${esc(t)}</option>`).join('')
+      + `<option value="__new__">＋ 新建战队…</option>`;
+    return `<div class="idp-auto-decide">
+      <select data-auto-camp="${key}" aria-label="本队所在阵营">${camps}</select>
+      <select data-auto-opponent="${key}" aria-label="对手战队">${teams}</select>
+      <button class="button tiny" type="button" data-auto-decide="${key}">按此判断建档</button>
+    </div>`;
+  };
+
+  const markReviewCards = () => {
+    const byKey = new Map((autoPlan?.matches || []).map(item => [item.key, item]));
+    container.querySelectorAll('.idp-match').forEach(card => {
+      card.querySelectorAll('.idp-review-badge').forEach(node => node.remove());
+      const item = byKey.get(card.dataset.idpKey);
+      const review = item?.status === 'review';
+      card.classList.toggle('is-review', review);
+      if (review) {
+        card.querySelector('.idp-match-head > div')?.insertAdjacentHTML('beforeend',
+          `<span class="idp-review-badge">存疑 · 待教练判断</span>`);
+      }
+    });
+  };
+
+  const renderAutoPanel = () => {
+    const panel = autoPanel();
+    if (!panel || !autoPlan) return;
+    const summary = autoPlan.summary;
+    const applicable = summary.auto + summary.decided;
+    const archive = Object.entries(summary.archiveTeams || {})
+      .map(([team, count]) => `${esc(team)} ${count} 个昵称`).join(' · ') || '暂无存档';
+    const rows = autoPlan.matches.map(item => {
+      const badge = item.status === 'auto' ? '可自动' : item.status === 'decided' ? '教练判断' : '存疑 · 交给教练';
+      const sides = (item.sides || []).length ? `<div class="idp-auto-sides">${item.sides.map(side =>
+        `<span>${esc(CAMP_NAME[side.camp] || side.camp)} · ${esc(side.team)} <b>${side.hits}/${side.binds.length}</b>${
+          side.unknown?.length ? ` · 新昵称：${esc(side.unknown.slice(0, 3).join('、'))}${side.unknown.length > 3 ? '…' : ''}` : ''}</span>`).join('')}</div>` : '';
+      const notes = (item.notes || []).length ? `<small class="idp-auto-notes">${esc(item.notes.join('；'))}</small>` : '';
+      const control = item.status === 'auto'
+        ? `<div class="idp-auto-ok">本队${esc(CAMP_NAME[item.ownCampPlan] || '')} · 对手「${esc(item.opponent || '')}」</div>`
+        : autoDecisionControls(item);
+      return `<div class="idp-auto-row ${item.status}">
+        <span class="idp-auto-badge">${badge}</span>
+        <div class="idp-auto-main">
+          <strong>${esc(item.date ? item.date + ' · ' : '')}${esc(item.title)}</strong>
+          <small>${esc(item.reason)}</small>${sides}${notes}
+        </div>
+        <div class="idp-auto-ctrl">${control}</div>
+      </div>`;
+    }).join('');
+    panel.hidden = false;
+    panel.innerHTML = `
+      <div class="idp-auto-head">
+        <div>
+          <strong>自动认领 · 预览</strong>
+          <p>一侧最多 <b>${summary.maxDiff}</b> 个没见过的昵称就自动认领；2 个及以上（可能是对手开小号，或约到了新对手）交给教练。红蓝一边本队、一边对手。教练的判断会写进存档，下一次同类对局就能自动匹配。</p>
+        </div>
+        <div class="idp-auto-tools">
+          <label>允许不同 <select data-auto-diff aria-label="允许几个没见过的昵称">
+            ${[0, 1, 2].map(n => `<option value="${n}"${n === summary.maxDiff ? ' selected' : ''}>${n} 个</option>`).join('')}
+          </select></label>
+          <label class="idp-auto-filter"><input type="checkbox" data-auto-filter${autoOnlyReview ? ' checked' : ''}> 只看存疑</label>
+          <button class="button tiny" type="button" data-auto-close>收起</button>
+        </div>
+      </div>
+      <div class="idp-auto-summary">
+        <span><b>${summary.total}</b> 局待核对</span>
+        <span class="ok"><b>${applicable}</b> 局可应用</span>
+        <span class="warn"><b>${summary.review}</b> 局交给教练</span>
+        <span class="muted">存档：${archive}</span>
+      </div>
+      <div class="idp-auto-list">${rows || '<div class="idp-auto-empty">没有可核对的 5v5 对局。</div>'}</div>
+      <div class="idp-auto-foot">
+        <small>应用只写入「可自动」和「教练判断」的对局；存疑局保持原样。昵称认领、新建身份和分边会立即保存。</small>
+        <button class="button primary" type="button" data-auto-apply${applicable ? '' : ' disabled'}>应用 ${applicable} 局</button>
+      </div>`;
+    container.classList.toggle('only-review', autoOnlyReview);
+  };
+
+  const loadPlan = async () => {
+    if (autoBusy) return;
+    autoBusy = true;
+    try {
+      const plan = await api('/api/studio/identity/auto-claim', {maxDiff: autoMaxDiff, decisions: autoDecisions});
+      // 本轮刚新建的战队还没落库，重算预览时要补回下拉，方便教练连续判断多局。
+      autoNewTeams.forEach(name => {
+        if (!plan.options.teams.includes(name)) plan.options.teams.push(name);
+      });
+      autoPlan = plan;
+      renderAutoPanel();
+      markReviewCards();
+    } catch (error) {
+      toast?.(error.message, true);
+    } finally {
+      autoBusy = false;
+    }
+  };
+
+  const applyPlan = async () => {
+    const delta = autoPlan?.deltas;
+    if (!delta?.metas?.length) { toast?.('没有可应用的结果', true); return; }
+    const state = await api('/api/state');
+    const next = {...(state.settings || {})};
+    next.roster = [...(next.roster || []), ...delta.members];
+    next.aliases = {...(next.aliases || {}), ...delta.aliases};
+    next.enemyAliases = {...(next.enemyAliases || {}), ...delta.enemyAliases};
+    const teams = [...(next.teams || [])];
+    (delta.teams || []).forEach(name => {
+      if (name && name !== next.teamName && !teams.some(t => t.name === name)) {
+        teams.push({id: 'team-' + Math.random().toString(36).slice(2, 9), name, short: '', coach: '', note: ''});
+      }
+    });
+    next.teams = teams;
+    for (const meta of delta.metas) {
+      const response = await fetch(`/api/studio/match-meta/${encodeURIComponent(meta.key)}`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ownCamp: meta.ownCamp, opponent: meta.opponent}),
+      });
+      if (!response.ok) throw Error((await response.json().catch(() => ({}))).detail || '保存分边失败');
+    }
+    const response = await fetch('/api/settings', {
+      method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(next),
+    });
+    if (!response.ok) throw Error((await response.json().catch(() => ({}))).detail || '保存认领失败');
+    toast?.(`已自动认领 ${delta.metas.length} 局，存疑的留给教练`);
+    await onSaved?.();
+    location.reload();
+  };
+
+  container.addEventListener('change', async (event) => {
+    if (event.target.matches('[data-auto-diff]')) {
+      autoMaxDiff = Number(event.target.value) || 0;
+      await loadPlan();
+      return;
+    }
+    if (event.target.matches('[data-auto-filter]')) {
+      autoOnlyReview = event.target.checked;
+      container.classList.toggle('only-review', autoOnlyReview);
+    }
+  });
 
   container.addEventListener('click', async (event) => {
-    const unbind = event.target.closest('[data-unbind]');
-    if (unbind) {
-      const row = unbind.closest('.idp-player');
-      const select = row.querySelector('.idp-bind');
-      select.value = '';
-      unbind.disabled = true;
-      row.querySelector('.idp-who small').textContent = row.querySelector('.idp-who small').textContent.split(' · 已认领')[0];
-      row.dataset.bound = '0';
-      applyBind(row);
-      schedulePersist('已解除认领');
+    const start = event.target.closest('[data-auto-claim]');
+    if (start) {
+      start.disabled = true;
+      await loadPlan();
+      start.disabled = false;
+      autoPanel()?.scrollIntoView({behavior: 'smooth', block: 'start'});
+      return;
+    }
+    if (event.target.closest('[data-auto-close]')) {
+      const panel = autoPanel();
+      if (panel) panel.hidden = true;
+      return;
+    }
+    const undo = event.target.closest('[data-auto-undo]');
+    if (undo) {
+      delete autoDecisions[undo.dataset.autoUndo];
+      await loadPlan();
+      return;
+    }
+    const decide = event.target.closest('[data-auto-decide]');
+    if (decide) {
+      const key = decide.dataset.autoDecide;
+      const row = decide.closest('.idp-auto-row');
+      const camp = row?.querySelector('[data-auto-camp]')?.value || 'blue';
+      const opponentSelect = row?.querySelector('[data-auto-opponent]');
+      let opponent = opponentSelect?.value || '';
+      if (opponent === '__new__') {
+        const name = prompt('新战队名称（如：重庆狼队）');
+        if (!name?.trim()) return;
+        opponent = name.trim().slice(0, 50);
+        if (!autoNewTeams.includes(opponent)) autoNewTeams.push(opponent);
+        if (!autoPlan.options.teams.includes(opponent)) autoPlan.options.teams.push(opponent);
+      }
+      if (!opponent) { toast?.('请先选对手战队', true); return; }
+      autoDecisions[key] = {ownCamp: camp, opponent};
+      await loadPlan();
+      return;
+    }
+    const apply = event.target.closest('[data-auto-apply]');
+    if (apply) {
+      apply.disabled = true;
+      try { await applyPlan(); }
+      catch (error) { toast?.(error.message, true); apply.disabled = false; }
       return;
     }
 
@@ -318,37 +448,6 @@ export async function renderIdentity(container, {api, workspace, isCurrent, toas
       }
       const card = teamSel.closest('.idp-match');
       refreshColumn(card, teamSel.dataset.teamSelect);
-      return;
-    }
-
-    const bind = event.target.closest('.idp-bind');
-    if (bind) {
-      const row = bind.closest('.idp-player');
-      if (bind.value === '__new__') {
-        const side = bind.closest('.idp-side');
-        const team = side.querySelector('[data-team-select]').value || ownTeam;
-        const nickname = bind.dataset.bind;
-        const name = prompt(`新建选手身份（所属战队：${team}）`, nickname);
-        if (!name?.trim()) { bind.value = ''; return; }
-        const member = {
-          id: 'p-' + Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-3),
-          name: name.trim().slice(0, 50), team, position: '', tags: [],
-        };
-        roster.push(member);
-        bind.insertAdjacentHTML('afterbegin',
-          `<option value="${esc(member.id)}">${esc(identityOf(member, ownTeam))}</option>`);
-        bind.value = member.id;
-        toast?.(`已新建 ${identityOf(member, ownTeam)}，记得保存`);
-      }
-      const btn = row.querySelector('.idp-unbind');
-      btn.disabled = !bind.value;
-      const hint = row.querySelector('.idp-who small');
-      const hero = hint.textContent.split(' · 已认领')[0];
-      const member = roster.find(m => m.id === bind.value);
-      hint.textContent = member ? `${hero} · 已认领 ${identityOf(member, ownTeam)}` : hero;
-      bind.closest('.idp-player').dataset.bound = bind.value ? '1' : '0';
-      applyBind(bind.closest('.idp-player'));
-      schedulePersist('认领已更新');
     }
   });
 

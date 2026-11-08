@@ -125,6 +125,26 @@ class AutoClaimTests(unittest.TestCase):
         self.assertEqual(len({m['id'] for m in plan['deltas']['members']}),
                          len(plan['deltas']['members']))
 
+    def test_coach_decision_registers_new_team_and_ignores_bad_keys(self):
+        empty = {'teamName': OWN, 'roster': [], 'aliases': {}, 'enemyAliases': {}, 'teams': []}
+        plan = build_plan(data(game('m1', A, B)), empty, decisions={
+            'm1': {'ownCamp': 'blue', 'opponent': '新对手'},
+            '不存在的局': {'ownCamp': 'blue', 'opponent': '幽灵队'},
+        })
+        self.assertIn('新对手', plan['deltas']['teams'])
+        self.assertNotIn('幽灵队', plan['deltas']['teams'])
+        self.assertEqual(plan['deltas']['metas'][0]['opponent'], '新对手')
+        self.assertEqual(plan['summary']['decided'], 1)
+
+    def test_side_confirmation_alone_seeds_own_lineup(self):
+        # 教练只确认了「本队在蓝方」、对手还没命名：本队名单照样学，对手侧不记。
+        plain = {'teamName': OWN, 'roster': [], 'aliases': {}, 'enemyAliases': {},
+                 'teams': [{'id': 'team-1', 'name': ENEMY}]}
+        seed = game('m1', A, B, opponent='', meta=['ownCamp', 'opponent'])
+        plan = build_plan(data(seed), plain)
+        self.assertEqual(plan['summary']['archiveTeams'], {OWN: 5})
+        self.assertEqual(plan['matches'][0]['status'], 'review')
+
     def test_confirmed_match_is_archive_source(self):
         # 教练只保存过分边、没逐个认领：整局十人名单照样能当存档。
         plain = {'teamName': OWN, 'roster': [], 'aliases': {}, 'enemyAliases': {}, 'teams': []}

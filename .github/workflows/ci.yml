@@ -54,10 +54,19 @@ jobs:
       - name: Frontend syntax check
         run: |
           for f in web/*.js; do node --experimental-default-type=module --check "$f"; done
+          for f in v3/public/*.js; do node --experimental-default-type=module --check "$f"; done
       - name: Install browser test dependencies
         run: |
           python -m playwright install chromium --with-deps
       - name: Frontend route audit (desktop and mobile)
         run: python scripts/verify_frontend.py --no-shots
-      - name: UI pages, layout and interaction checks
-        run: python scripts/verify_ui_pages.py --no-shots
+      - name: Start V3 server
+        run: |
+          python server.py &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8766/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: V3 route audit
+        run: python scripts/audit_v3_regression.py http://127.0.0.1:8766

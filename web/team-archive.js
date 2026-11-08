@@ -27,6 +27,8 @@ const matchLabel = m => {
   return `${date} · ${name}`;
 };
 
+import {appendDepthSections} from '/assets/depth-section.js';
+
 export async function renderTeamArchive(container, {api, workspace, isCurrent, toast, onChanged}) {
   let settings = {};
   let matches = [];
@@ -84,7 +86,7 @@ export async function renderTeamArchive(container, {api, workspace, isCurrent, t
   };
   const usageFor = (name, map = usageMap()) => map.get(norm(name))?.matches || [];
   const orphans = map => [...map.values()]
-    .filter(entry => entry.name !== ownName() && !teams().some(t => norm(t.name) === norm(entry.name)))
+    .filter(entry => norm(entry.name) !== norm(ownName()) && !teams().some(t => norm(t.name) === norm(entry.name)))
     .sort((a, b) => b.matches.length - a.matches.length);
 
   const statOf = list => {
@@ -216,8 +218,8 @@ export async function renderTeamArchive(container, {api, workspace, isCurrent, t
     ${notice ? `<div class="ta-notice"><span>${esc(notice)}</span>${canUndo ? '<button class="ta-btn primary" type="button" data-ta="undo">撤销上一步</button>' : ''}</div>` : ''}
 
     ${orphanList.length ? `<section class="ta-alert">
-      <div><b>有 ${num(orphanList.length)} 个对手名只存在于比赛里</b>
-      <p>例如比赛卡片上的「1 vs A」：A 被移出名录后，历史比赛的对手名不会自动消失。下面可以直接建档、并入已有战队，或清空这些比赛的对手名。</p></div>
+      <div><b>有 ${num(orphanList.length)} 个对手名没有认领到档案</b>
+      <p>比赛卡片上显示「未认领N」的就是它们：名字只存在于比赛里（可能是移出名录后留下的旧名）。下面可以直接建档、并入已有战队，或清空这些比赛的对手名；卡片上的原名悬停「对手未认领」可见。</p></div>
       <a class="button" href="#ta-orphans">去统一 →</a>
     </section>` : `<section class="ta-alert is-clean"><div><b>对手口径已统一</b><p>比赛里出现的对手名都在战队档案里，没有孤立队名。</p></div></section>`}
 
@@ -243,7 +245,10 @@ export async function renderTeamArchive(container, {api, workspace, isCurrent, t
     </section>`;
   };
 
-  const paint = () => { container.innerHTML = template(); };
+  const paint = () => {
+    container.innerHTML = template();
+    appendDepthSections(container, [{id: 'resource_bp', note: '禁选与龙塔资源'}], {api, isCurrent});
+  };
   const refresh = async () => {
     const ok = await loadData();
     if (!ok) return;

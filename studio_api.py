@@ -16,6 +16,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from sheet_import import SheetImportError, infer_profile, read_workbook, rebuild_profile, write_staging
 from identity_auto import build_plan
+import team_clusters
+import vocab
+from camp_time import camp_times
 
 from studio_analysis import (DIMENSIONS, METHODS, METRICS, deduplicate, extract_rows,
                              finite, fingerprint, run_analysis, screenshot_rows, StudioRepository)
@@ -65,10 +68,13 @@ def camp_games(camp_details_dir, db_path=None):
             source = 'auto' if own_camp else None
         result = head.get('gameResult')
         own_win = result if (own_camp and isinstance(result, bool)) else None
+        times = camp_times(body)
         games.append({
             'key': f'camp:{path.stem}', 'id': path.stem,
-            'date': str(battle.get('startTime') or '')[:10],
-            'start': battle.get('startTime') or '',
+            'date': times.get('date') or str(battle.get('startTime') or '')[:10],
+            'start': times.get('startedAt') or battle.get('startTime') or '',
+            'eventAt': times.get('eventAt'),
+            'durationSec': times.get('durationSec'),
             'ownCamp': own_camp or None, 'ownCampSource': source,
             'opponent': str(override.get('opponent') or '') or None,
             'ownWin': own_win,
@@ -80,6 +86,8 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     router = APIRouter(prefix='/api/studio', tags=['studio'])
     results_db = Path(results_db or os.environ.get('STUDIO_RESULTS_DB') or Path(db_path).with_name('studio.sqlite3'))
     datasets = DatasetStore(results_db)
+    # 版本 / 规则 / 赛制 / 训练组统一走词表：写库前折成规范值，新值自动登记。
+    vocab_dir = Path(db_path).parent
 
     @router.get('/bp/{key}')
     def get_bp(key: str):
@@ -171,7 +179,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             return 0
 
     def snapshot_key():
-        return ('identity-raw-v6', source_stamp(db_path), source_stamp(matches_dir),
+        return ('identity-raw-v7', source_stamp(db_path), source_stamp(matches_dir),
                 source_stamp(imports_dir), source_stamp(results_db))
 
     def cached(key, builder):
@@ -223,10 +231,10 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         if not isinstance(filters, dict):
             raise ValueError('筛选条件格式无效')
         filters = {k: v for k, v in filters.items() if k in
-                   ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp',
-                    'sources', 'includePartial', 'excludeSeeds', 'ownOnly')}
+                   ('from', 'to', 'player', 'hero', 'position', 'opponent', 'version', 'session', 'result', 'camp',
+                    'sources', 'includePartial', 'excludeSeeds', 'ownOnly', 'campOnly')}
         if any(not isinstance(v, str) for k, v in filters.items()
-               if k not in ('sources', 'includePartial', 'excludeSeeds', 'ownOnly')):
+               if k not in ('sources', 'includePartial', 'excludeSeeds', 'ownOnly', 'campOnly')):
             raise ValueError('筛选值必须是文本')
         if 'sources' in filters and (not isinstance(filters['sources'], list) or any(s not in ('db', 'bundle', 'sheet') for s in filters['sources'])):
             raise ValueError('数据来源无效')
@@ -605,11 +613,15 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                    'objectives': 'objectives', 'scouting': 'scouting'}
         if section not in methods:
             raise HTTPException(404, '分析页面不存在')
-        filters = {k: request.query_params[k] for k in ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp') if request.query_params.get(k)}
+        filters = {k: request.query_params[k] for k in ('from', 'to', 'player', 'hero', 'position', 'opponent', 'version', 'session', 'result', 'camp') if request.query_params.get(k)}
         filters['sources'] = [s for s in request.query_params.get('source', 'db,bundle').split(',') if s in ('db', 'bundle', 'sheet')]
         filters['includePartial'] = request.query_params.get('includePartial') == '1'
         if request.query_params.get('own') == '1':
             filters['ownOnly'] = True
+        if request.query_params.get('campOnly') == '1':
+            filters['campOnly'] = True
+        if section == 'bp' and request.query_params.get('campFirst') == '1':
+            filters['campFirst'] = True
         if request.query_params.get('excludeSeeds') == '1':
             filters['excludeSeeds'] = True
         result = cached(('view', section, json.dumps(filters, sort_keys=True), snapshot_key()),
@@ -655,15 +667,18 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         over every row. List pages only need a bounded sample, so they use this
         path instead of paying that cost on every render.
         """
-        filters = {k: request.query_params[k] for k in ('from', 'to', 'player', 'hero', 'opponent', 'version', 'session', 'result', 'camp') if request.query_params.get(k)}
+        filters = {k: request.query_params[k] for k in ('from', 'to', 'player', 'hero', 'position', 'opponent', 'version', 'session', 'result', 'camp') if request.query_params.get(k)}
         filters['sources'] = [s for s in request.query_params.get('source', 'db,bundle').split(',') if s in ('db', 'bundle', 'sheet')]
         filters['includePartial'] = request.query_params.get('includePartial') == '1'
         if request.query_params.get('excludeSeeds') == '1':
             filters['excludeSeeds'] = True
         if request.query_params.get('own') == '1':
             filters['ownOnly'] = True
+        if request.query_params.get('campOnly') == '1':
+            filters['campOnly'] = True
         kind = request.query_params.get('kind') or ''
         name = request.query_params.get('name') or ''
+        recent_first = request.query_params.get('sort') == 'recent'
         if kind and kind not in ('player', 'hero'):
             raise HTTPException(400, '实体类型无效')
         try:
@@ -683,12 +698,15 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 selected = [row for row in selected if row.get('label') == name]
             elif kind == 'hero':
                 selected = [row for row in selected if row.get('hero') == name]
+            if recent_first:
+                selected.sort(key=lambda row: (bool(row.get('dateFull')), row.get('dateKey') or '',
+                                               row.get('matchKey') or ''), reverse=True)
             return {'total': len(selected),
                     'matches': len({row.get('matchKey') for row in selected if row.get('matchKey')}),
                     'rows': [{key: value for key, value in row.items() if key != 'process'}
                              for row in selected[:limit]]}
 
-        result = cached(('rows', kind, name, limit, json.dumps(filters, sort_keys=True), snapshot_key()), build)
+        result = cached(('rows', kind, name, limit, recent_first, json.dumps(filters, sort_keys=True), snapshot_key()), build)
         return {**result, 'truncated': result['total'] > len(result['rows']), 'limit': limit}
 
     @router.get('/identity')
@@ -751,10 +769,28 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             match_teams.append({'key': match.get('key'), 'date': match.get('date'),
                                 'title': match.get('title'), 'opponent': match.get('opponent'),
                                 'ownCamp': own_camp, 'sides': sides})
+        # 场次元数据：前端按对局折叠待认领昵称时，用 matchKeys 关联到日期/标题/开赛时间。
+        # startTime 多数历史数据为空；有值时前端据此推断上午 / 下午 / 晚间，无值不臆造。
+        match_meta = {}
+        for match in list(data.get('matches') or []) + list(data.get('sheetMatches') or []):
+            key = match.get('key') or match.get('matchKey')
+            if not key:
+                continue
+            raw_date = match.get('date') or match.get('dateKey') or ''
+            if isinstance(raw_date, dict):
+                raw_date = raw_date.get('text') or ''
+            match_meta[key] = {
+                'date': str(raw_date)[:10],
+                'title': str(match.get('title') or ''),
+                'opponent': str(match.get('opponent') or ''),
+                'session': str(match.get('session') or ''),
+                'startTime': str(match.get('startTime') or ''),
+                'duration': match.get('duration'),
+            }
         return {'unbound': [item for item in unbound if item['label'] in unbound_labels], 'identities': unbound, 'aliases': aliases,
                 'enemyAliases': (data.get('profile') or {}).get('enemyAliases') or {},
                 'teamName': data.get('teamName'), 'roster': data.get('roster', {}),
-                'matchTeams': match_teams,
+                'matchTeams': match_teams, 'matchMeta': match_meta,
                 'campGames': camp_list,
                 'campMeta': {'games': len(camp_list),
                              'named': sum(1 for g in camp_list if g['opponent']),
@@ -1057,5 +1093,426 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         table = '<table><thead><tr>' + ''.join('<th>'+esc(k)+'</th>' for k in result['columns']) + '</tr></thead><tbody>'
         table += ''.join('<tr>'+''.join('<td>'+esc(row.get(k))+'</td>' for k in result['columns'])+'</tr>' for row in result['rows'])+'</tbody></table>'
         return '<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>'+esc(report['title'])+'</title><style>body{font:14px/1.7 system-ui;margin:48px;color:#222}table{border-collapse:collapse;width:100%;font-size:12px}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left}pre{white-space:pre-wrap}small{color:#666}</style><h1>'+esc(report['title'])+'</h1><small>'+esc(report['createdAt'])+' · '+str(result['meta']['matches'])+' 场记录</small><p>'+esc(report['note'])+'</p>'+table+'<p>'+esc(result.get('note',''))+'</p><h2>数据与方法</h2><pre>'+esc(json.dumps(result['spec'], ensure_ascii=False, indent=2))+'</pre><small>数据指纹 '+esc(result['meta']['fingerprint'])+'</small><p>'+esc('；'.join(result['meta']['warnings']))+'</p></html>'
+
+    # ---------------- 对手战队聚类 ----------------
+    # 身份来自营地十人面板的阵容签名；命名/合并写覆盖层，不动原始比赛。
+
+    def camp_dir():
+        # 允许用环境变量指向别的面板目录（造演示数据、跑回归夹具时用）
+        override = os.environ.get('STUDIO_CAMP_DIR')
+        if override:
+            return Path(override)
+        return Path(matches_dir).parent / 'camp_details'
+
+    def own_team_name():
+        if not Path(db_path).is_file():
+            return ''
+        try:
+            connection = sqlite3.connect(f'file:{Path(db_path).as_posix()}?mode=ro', uri=True)
+            try:
+                row = connection.execute('SELECT body FROM settings LIMIT 1').fetchone()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return ''
+        try:
+            return str((json.loads(row[0]) if row else {}).get('teamName') or '')
+        except (TypeError, ValueError):
+            return ''
+
+    @router.get('/teams')
+    def teams():
+        return team_clusters.list_teams(camp_dir(), db_path, own_team_name())
+
+    # ---------------- 约定计划（教练登记） ----------------
+    def plans_connection():
+        connection = sqlite3.connect(str(db_path))
+        connection.execute('''CREATE TABLE IF NOT EXISTS scrim_plans (
+            id TEXT PRIMARY KEY, date TEXT NOT NULL, time TEXT NOT NULL DEFAULT '',
+            opponent TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
+            created_at REAL NOT NULL)''')
+        return connection
+
+    # ---------------- 工作区主数据（teams / players / schedules / training） ----------------
+    def workspace():
+        import workspace_store
+        return workspace_store.Workspace(db_path).ensure_schema()
+
+    @router.get('/analysis/opponents')
+    def opponent_profiles(min: int = 3):
+        import analysis_profile
+        return analysis_profile.profiles(camp_dir(), db_path, min_games=max(1, min))
+
+    @router.get('/analysis/training-effect')
+    def training_effect(session: str = ''):
+        import analysis_profile
+        rows = workspace().list_training()
+        if session:
+            rows = [row for row in rows if row['session_id'] == session]
+        return {'results': [dict(row, effect=analysis_profile.effect(camp_dir(), row)) for row in rows]}
+
+    @router.get('/analysis/space')
+    def space_analyses():
+        import analysis_space, map_calibration
+        data_dir = Path(matches_dir).parent
+        replays = data_dir / 'official_replays'
+        calibration = map_calibration.load(data_dir) or map_calibration.compute(replays)
+        return analysis_space.all_analyses(replays, camp_dir(), calibration)
+
+    @router.get('/analysis/map-calibration')
+    def map_calibration_status(refresh: int = 0):
+        import map_calibration
+        data_dir = Path(matches_dir).parent
+        replays = data_dir / 'official_replays'
+        calibration = None if refresh else map_calibration.load(data_dir)
+        if calibration is None:
+            calibration = map_calibration.compute(replays)
+            map_calibration.save(calibration, data_dir)
+        return calibration
+
+    @router.get('/analysis/turning-points')
+    def turning_points(limit: int = 40):
+        import analysis_economy
+        replays = Path(matches_dir).parent / 'official_replays'
+        return analysis_economy.turning_points(replays, camp_dir(), limit=max(1, min(200, limit)))
+
+    @router.get('/analysis/advantage')
+    def advantage():
+        import analysis_economy
+        replays = Path(matches_dir).parent / 'official_replays'
+        return analysis_economy.advantage(replays, camp_dir())
+
+    @router.post('/workspace/prefill/run')
+    def wb_prefill_run():
+        import prefill
+        created = prefill.run(workspace())
+        return {'ok': True, 'created': created}
+
+    @router.get('/workspace/pending')
+    def wb_pending():
+        import prefill
+        return prefill.queue(workspace())
+
+    @router.post('/workspace/pending/confirm')
+    async def wb_confirm(request: Request):
+        payload = await request.json()
+        match_key = str(payload.get('matchKey') or '').strip()
+        field = str(payload.get('field') or '').strip()
+        if not match_key or not field:
+            raise HTTPException(400, '缺少对局或字段')
+        value = payload.get('value')
+        if value is None or str(value).strip() == '':
+            raise HTTPException(400, '请填写值')
+        # 版本 / 规则 / 赛制 / 训练组确认时统一归一化，避免同一场里两种写法。
+        kind = vocab.FIELD_KINDS.get(field)
+        if kind:
+            value = vocab.prepare(kind, value, vocab_dir)
+        workspace().confirm_prefill(match_key, field, value, actor=payload.get('actor') or 'coach')
+        return {'ok': True, 'value': value}
+
+    @router.post('/workspace/pending/confirm-batch')
+    async def wb_confirm_batch(request: Request):
+        payload = await request.json()
+        items = payload.get('items') if isinstance(payload, dict) else None
+        if not isinstance(items, list) or not 1 <= len(items) <= 200:
+            raise HTTPException(400, '请选择 1–200 个待确认字段')
+        normalized = []
+        for index, item in enumerate(items, 1):
+            if not isinstance(item, dict):
+                raise HTTPException(400, f'第 {index} 项格式无效')
+            match_key = str(item.get('matchKey') or '').strip()
+            field = str(item.get('field') or '').strip()
+            value = item.get('value')
+            if not match_key or not field:
+                raise HTTPException(400, f'第 {index} 项缺少对局或字段')
+            if value is None or (not isinstance(value, list) and str(value).strip() == ''):
+                raise HTTPException(400, f'第 {index} 项缺少值')
+            if field == 'pick_order' and isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f'第 {index} 项选用顺序须为 JSON 数组')
+                if not isinstance(value, list):
+                    raise HTTPException(400, f'第 {index} 项选用顺序须为 JSON 数组')
+            kind = vocab.FIELD_KINDS.get(field)
+            if kind:
+                value = vocab.prepare(kind, value, vocab_dir)
+            normalized.append({'matchKey': match_key, 'field': field, 'value': value})
+        try:
+            confirmed = workspace().confirm_prefills(normalized, actor=payload.get('actor') or 'coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        return {'ok': True, 'confirmed': len(confirmed), 'items': confirmed}
+
+    @router.get('/workspace/teams')
+    def wb_teams(q: str = '', include_archived: bool = False):
+        ws = workspace()
+        return {'teams': ws.search_teams(q) if q else ws.list_teams(include_archived=include_archived)}
+
+    @router.post('/workspace/teams')
+    async def wb_save_team(request: Request):
+        payload = await request.json()
+        ws = workspace()
+        team_id = ws.upsert_team(payload.get('id'), name=payload.get('name') or '',
+                                 short_name=payload.get('shortName'), aliases=payload.get('aliases'),
+                                 league=payload.get('league'), coach=payload.get('coach'),
+                                 analyst=payload.get('analyst'), notes=payload.get('notes'),
+                                 first_seen=payload.get('firstSeen'), status=payload.get('status') or 'active')
+        # 工作区是权威来源，这里同步兼容覆盖层；旧页面/旧脚本读覆盖层时也能拿到同一个名字。
+        if payload.get('name'):
+            team_clusters.save_override(db_path, team_id,
+                                        {'name': payload.get('name'), 'coach': payload.get('coach')})
+        return {'ok': True, 'id': team_id}
+
+    @router.post('/workspace/teams/merge')
+    async def wb_merge_team(request: Request):
+        payload = await request.json()
+        source = str(payload.get('from') or '').strip()
+        target = str(payload.get('into') or '').strip()
+        if not source or not target or source == target:
+            raise HTTPException(400, '合并参数无效')
+        # merge_team 内部同时归档工作区源队、改挂选手并写覆盖层。
+        team_clusters.merge_team(db_path, source, target)
+        return {'ok': True, 'from': source, 'into': target}
+
+    @router.post('/workspace/teams/reconcile')
+    def wb_reconcile_teams(dry_run: bool = False):
+        """一次性对账历史覆盖层与工作区主数据；默认只报告，dry_run=false 时写入。"""
+        return team_clusters.reconcile_workspace(db_path, dry_run=dry_run)
+
+    @router.get('/workspace/players')
+    def wb_players(team: str = ''):
+        return {'players': workspace().list_players(team or None)}
+
+    @router.post('/workspace/players')
+    async def wb_save_player(request: Request):
+        payload = await request.json()
+        ws = workspace()
+        player_id = ws.upsert_player(payload.get('id'), team_id=payload.get('teamId') or '',
+                                     name=payload.get('name') or '', position=payload.get('position'),
+                                     aliases=payload.get('aliases'), camp_user_id=payload.get('campUserId'),
+                                     role=payload.get('role') or 'main', match_name=payload.get('matchName'))
+        return {'ok': True, 'id': player_id}
+
+    @router.post('/workspace/players/migrate-profile')
+    def wb_migrate_profile_players():
+        """把旧 settings.roster 一次性迁入工作区选手表；同一旧 id 保留。"""
+        with sqlite3.connect(db_path) as connection:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            if not row:
+                raise HTTPException(400, '设置尚未初始化')
+            try:
+                settings = json.loads(row[0])
+            except (TypeError, ValueError):
+                raise HTTPException(400, '设置格式异常，无法迁移旧名单')
+        roster = settings.get('roster')
+        if not isinstance(roster, list):
+            raise HTTPException(400, '旧名单格式异常，无法迁移')
+        try:
+            report = workspace().migrate_roster(
+                roster, own_team_name=str(settings.get('teamName') or '').strip(), actor='coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        settings['rosterMigratedAt'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        with sqlite3.connect(db_path) as connection:
+            connection.execute('UPDATE settings SET body=? WHERE id=1',
+                               (json.dumps(settings, ensure_ascii=False),))
+        repository_cache['value'] = None
+        result_cache.clear()
+        return {'ok': True, **report, 'migratedAt': settings['rosterMigratedAt']}
+
+    @router.get('/workspace/schedules')
+    def wb_schedules(status: str = ''):
+        return {'schedules': workspace().list_schedules(status=status or None)}
+
+    @router.post('/workspace/schedules')
+    async def wb_save_schedule(request: Request):
+        payload = await request.json()
+        ws = workspace()
+        schedule_id = ws.save_schedule(
+            payload.get('id'), date=payload.get('date') or '', start_time=payload.get('startTime'),
+            opponent_team_id=payload.get('opponentTeamId'),
+            session=vocab.prepare('sessions', payload.get('session'), vocab_dir),
+            format=vocab.prepare('formats', payload.get('format'), vocab_dir),
+            rules=vocab.prepare('rules', payload.get('rules'), vocab_dir),
+            version=vocab.prepare('versions', payload.get('version'), vocab_dir),
+            status=payload.get('status') or 'planned', notes=payload.get('notes'),
+            created_by=payload.get('createdBy'))
+        return {'ok': True, 'id': schedule_id}
+
+    @router.get('/workspace/training')
+    def wb_training():
+        return {'training': workspace().list_training()}
+
+    @router.post('/workspace/training')
+    async def wb_save_training(request: Request):
+        payload = await request.json()
+        ws = workspace()
+        session_id = ws.save_training(
+            payload.get('sessionId'), goal=payload.get('goal') or '',
+            intervention=payload.get('intervention') or '', start_date=payload.get('startDate') or '',
+            end_date=payload.get('endDate'), player_ids=payload.get('playerIds'),
+            metric=payload.get('metric') or '', target=payload.get('target'), review=payload.get('review'))
+        return {'ok': True, 'id': session_id}
+
+    @router.get('/plans')
+    def list_plans():
+        with plans_connection() as connection:
+            rows = connection.execute(
+                'SELECT id, date, time, opponent, mode, note, status FROM scrim_plans ORDER BY date DESC, time DESC').fetchall()
+        return {'plans': [{'id': r[0], 'date': r[1], 'time': r[2], 'opponent': r[3],
+                           'mode': r[4], 'note': r[5], 'status': r[6]} for r in rows]}
+
+    @router.post('/plans')
+    async def save_plan(request: Request):
+        payload = await request.json()
+        date = str(payload.get('date') or '').strip()
+        if not date:
+            raise HTTPException(400, '缺少日期')
+        plan_id = str(payload.get('id') or '').strip() or uuid.uuid4().hex[:12]
+        values = (plan_id, date, str(payload.get('time') or '').strip(),
+                  str(payload.get('opponent') or '').strip(), str(payload.get('mode') or '').strip(),
+                  str(payload.get('note') or '').strip(), str(payload.get('status') or 'pending'),
+                  time.time())
+        with plans_connection() as connection:
+            connection.execute(
+                'INSERT INTO scrim_plans(id,date,time,opponent,mode,note,status,created_at) '
+                'VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET date=excluded.date, time=excluded.time, '
+                'opponent=excluded.opponent, mode=excluded.mode, note=excluded.note, status=excluded.status',
+                values)
+            connection.commit()
+        return {'ok': True, 'id': plan_id}
+
+    @router.post('/plans/delete')
+    async def delete_plan(request: Request):
+        payload = await request.json()
+        plan_id = str(payload.get('id') or '').strip()
+        if not plan_id:
+            raise HTTPException(400, '缺少 id')
+        with plans_connection() as connection:
+            connection.execute('DELETE FROM scrim_plans WHERE id=?', (plan_id,))
+            connection.commit()
+        return {'ok': True, 'id': plan_id}
+
+    @router.get('/coach')
+    def coach_board():
+        """教练档案：本队教练 + 各对手战队教练（可填）与阵容。"""
+        opponents = team_clusters.opponent_players(camp_dir(), db_path)
+        overrides = team_clusters.load_overrides(db_path)
+        teams = []
+        for team in opponents['teams']:
+            override = overrides.get(team['id'], {})
+            teams.append({
+                'id': team['id'], 'name': team['displayName'], 'named': team['named'],
+                'coach': override.get('coach') or '',
+                'players': [{'id': p['id'], 'name': p['name'], 'lanes': p['lanes'], 'games': p['games']}
+                            for p in team['players']],
+            })
+        return {'own': {'coach': own_coach_name()}, 'teams': teams}
+
+    def own_coach_name():
+        if not Path(db_path).is_file():
+            return ''
+        try:
+            connection = sqlite3.connect(f'file:{Path(db_path).as_posix()}?mode=ro', uri=True)
+            try:
+                row = connection.execute('SELECT body FROM settings LIMIT 1').fetchone()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return ''
+        try:
+            return str((json.loads(row[0]) if row else {}).get('coach') or '')
+        except (TypeError, ValueError):
+            return ''
+
+    @router.post('/coach')
+    async def save_coach(request: Request):
+        payload = await request.json()
+        team_id = str(payload.get('teamId') or '').strip()
+        name = str(payload.get('name') or '').strip()
+        if team_id:
+            team_clusters.save_override(db_path, team_id, {'coach': name})
+            return {'ok': True, 'teamId': team_id, 'name': name}
+        if not Path(db_path).is_file():
+            raise HTTPException(400, '数据库不存在')
+        connection = sqlite3.connect(str(db_path))
+        try:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            body = json.loads(row[0]) if row else {}
+            body['coach'] = name
+            connection.execute('INSERT INTO settings(id, body) VALUES(1, ?) '
+                               'ON CONFLICT(id) DO UPDATE SET body=excluded.body',
+                               (json.dumps(body, ensure_ascii=False),))
+            connection.commit()
+        finally:
+            connection.close()
+        return {'ok': True, 'name': name}
+
+    @router.get('/opponents')
+    def opponents():
+        """对手战队与其选手归属（教练可手动指派）。"""
+        return team_clusters.opponent_players(camp_dir(), db_path)
+
+    @router.post('/opponents/assign')
+    async def assign_opponent_player(request: Request):
+        payload = await request.json()
+        player_id = str(payload.get('playerId') or '').strip()
+        team_id = payload.get('teamId')
+        if not player_id:
+            raise HTTPException(400, '缺少选手 id')
+        team_clusters.assign_player(db_path, player_id, str(team_id).strip() if team_id else None)
+        return {'ok': True, 'playerId': player_id, 'teamId': team_id}
+
+    @router.get('/camp-compare')
+    def camp_compare(team: str = ''):
+        """逐人 / 逐英雄对照。不传 team 就是全部对手合并后的口径。"""
+        return team_clusters.compare(camp_dir(), team or None)
+
+    @router.get('/camp-combos')
+    def camp_combos(min: int = 3):
+        """营地面板的双人 / 三人组合，带协同加成。"""
+        return team_clusters.combo_sets(camp_dir(), min_games=max(2, min))
+
+    @router.get('/camp-partners')
+    def camp_partners(hero: str = '', side: str = 'own'):
+        """某英雄的搭档协同；只返回包含该英雄的双人组合。"""
+        if not hero.strip():
+            raise HTTPException(400, '缺少英雄名')
+        return team_clusters.partners(camp_dir(), hero.strip(),
+                                      side if side in ('own', 'enemy') else 'own')
+
+    @router.post('/teams/rename-batch')
+    async def rename_team_batch(request: Request):
+        payload = await request.json()
+        items = payload.get('items') if isinstance(payload, dict) else None
+        try:
+            return team_clusters.rename_many(db_path, items)
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    @router.post('/teams/rename')
+    async def rename_team(request: Request):
+        payload = await request.json()
+        key = str(payload.get('id') or '').strip()
+        name = payload.get('name')
+        coach = payload.get('coach')
+        if not key:
+            raise HTTPException(400, '缺少战队 id')
+        if name is not None and len(str(name)) > 40:
+            raise HTTPException(400, '战队名过长')
+        team_clusters.rename_team(db_path, key, name, coach)
+        return {'ok': True, 'id': key}
+
+    @router.post('/teams/merge')
+    async def merge_teams(request: Request):
+        payload = await request.json()
+        source = str(payload.get('from') or '').strip()
+        target = str(payload.get('into') or '').strip()
+        if not source or not target or source == target:
+            raise HTTPException(400, '合并来源和目标无效')
+        team_clusters.merge_team(db_path, source, target)
+        return {'ok': True, 'from': source, 'into': target}
 
     return router

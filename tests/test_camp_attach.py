@@ -109,8 +109,8 @@ class AttachCampDetailTests(unittest.TestCase):
         channel_store.attach_camp_detail(channel, '1793795458', sample_detail(),
                                          OFFICIAL_PLAYERS, '测试')
         player = channel['draft']['players'][0]
-        self.assertEqual(player['fields']['kills']['value'], 999)  # 截图值保留
-        self.assertEqual(player['fields']['kills']['source'], 'screenshot')
+        self.assertEqual(player['fields']['kills']['value'], 5)
+        self.assertEqual(player['fields']['kills']['source'], 'camp')
         conflict = next(c for c in player['conflicts'] if c['field'] == 'kills')
         self.assertEqual(conflict['screenshot'], 999)
         self.assertEqual(conflict['camp'], 5)
@@ -212,6 +212,39 @@ class AttachCampDetailTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             channel_store.attach_camp_detail(channel, '000', {'data': {'blueRoles': [], 'redRoles': []}},
                                              None, '测试')
+
+    def test_camp_entry_time_fills_match_and_bundle(self):
+        """dtEventTime 是发送时间；开赛时间 = dtEventTime - usedTime，按北京时间落库。"""
+        detail = sample_detail()
+        detail['_campEntry'] = {'dtEventTime': '1793804938', 'usedTime': 838}
+        channel = channel_store.blank({'opponent': '测试对手'})
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(channel, '1793804938', detail,
+                                             OFFICIAL_PLAYERS, '测试')
+        self.assertEqual(channel['match']['date'], '2026-11-04')
+        self.assertEqual(channel['match']['startedAt'], '2026-11-04T22:55:00+08:00')
+        self.assertEqual(channel['match']['eventAt'], '2026-11-04T23:08:58+08:00')
+        self.assertEqual(channel['sources']['camp']['times']['eventAt'],
+                         '2026-11-04T23:08:58+08:00')
+        channel_store.attach_official(channel, 'camp-1793804938',
+                                      {'gameSeq': '1793804938', 'gameSvr': '1', 'relaySvr': '2',
+                                       'playerId': '540599032'},
+                                      {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
+                                       'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
+                                      '测试')
+        channel_store.set_review(channel, '教练甲', '已核对')
+        bundle = channel_store.bundle(channel)
+        self.assertEqual(bundle['match']['startTime'], '2026-11-04T22:55:00+08:00')
+        self.assertEqual(bundle['match']['date']['text'], '2026-11-04')
+
+    def test_manual_date_survives_camp_time(self):
+        detail = sample_detail()
+        detail['_campEntry'] = {'dtEventTime': '1793804938', 'usedTime': 838}
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(self.channel, '1793804938', detail,
+                                             OFFICIAL_PLAYERS, '测试')
+        self.assertEqual(self.channel['match']['date'], '2026-11-02')
+        self.assertEqual(self.channel['match']['startedAt'], '2026-11-04T22:55:00+08:00')
 
     def test_required_only_official_plus_camp(self):
         channel_store.attach_camp_detail(self.channel, '1793795458', sample_detail(),

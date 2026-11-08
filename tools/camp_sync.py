@@ -107,6 +107,7 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
                 out_path.write_text(json.dumps({**detail_body,
                                                 '_campEntry': {
                                                     'dtEventTime': entry.get('dtEventTime'),
+                                                    'usedTime': entry.get('usedTime'),
                                                     'mapName': entry.get('mapName'),
                                                     'gametime': entry.get('gametime'),
                                                     'battleType': entry.get('battleType'),
@@ -170,6 +171,7 @@ def sync_entries(camp_user_id: str, entries, interval: float = 2.0) -> dict:
         out_path.write_text(json.dumps({**detail_body,
                                         '_campEntry': {
                                             'dtEventTime': entry.get('dtEventTime'),
+                                            'usedTime': entry.get('usedTime'),
                                             'mapName': entry.get('mapName'),
                                             'gametime': entry.get('gametime'),
                                             'battleType': entry.get('battleType'),

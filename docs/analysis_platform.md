@@ -6,8 +6,8 @@
 
 ```powershell
 python server.py
-# 工作台：http://127.0.0.1:8766
-# 分析页：http://127.0.0.1:8766/analysis
+# V3 入口：http://127.0.0.1:8766/
+# 旧分析别名 /analysis 会 302 到根路径
 ```
 
 分析页与录入工作台是同一个 FastAPI 服务，侧栏“数据分析平台”直接进入；录入工作台仍是 `server.py` / `启动工作台.bat`。`analysis_server.py` 只保留为独立调试入口（8767），正式使用不需要另开服务。可选环境变量：

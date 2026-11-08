@@ -1,0 +1,1496 @@
+"""V3 route module: read training data and expose the analysis API."""
+
+import argparse
+import json
+import re
+import sqlite3
+import os
+import sys
+import subprocess
+import uuid
+from urllib.request import urlopen
+from urllib.error import URLError
+from collections import Counter, defaultdict
+from contextlib import closing
+from datetime import date
+from pathlib import Path
+from threading import Lock
+from time import monotonic
+
+import uvicorn
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+sys.path.insert(0, str(ROOT))
+
+from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
+from bp_camp import merge_bp_sources
+from match_review import PanoramaRepository
+from studio_api import create_studio_router
+from analysis_api import create_analysis_router
+from depth_api import create_depth_router
+import deep_analysis
+import vocab as vocab_store
+
+
+def data_path(variable, default):
+    return Path(os.environ.get(variable, ROOT / 'data' / default))
+
+
+DB = data_path('TRAINING_DB', 'training.sqlite3')
+# 词表与写入归一化共用数据目录；版本 / 规则 / 赛制 / 训练组都落在这里。
+DATA_DIR = DB.parent
+MATCHES = data_path('ANALYSIS_MATCHES', 'matches')
+IMPORTS = data_path('ANALYSIS_IMPORTS', 'imports')
+OFFICIAL = data_path('ANALYSIS_OFFICIAL', 'official_replays')
+BUILDS = data_path('ANALYSIS_V2', 'v2')
+DEMO_ROOT = Path(os.environ['TRAINING_DEMO_ROOT']) if os.environ.get('TRAINING_DEMO_ROOT') else None
+POSITION_STEP = 2  # 位置降采样步长（秒），693 秒的局约 347 点/人
+IS_DEMO = DEMO_ROOT is not None
+panorama = PanoramaRepository(MATCHES, OFFICIAL, BUILDS, ROOT)
+router = APIRouter()
+app = FastAPI(title='峡谷棱镜 · 赛训数据平台', docs_url=None, redoc_url=None, openapi_url=None)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost'])
+# Expose only reviewed studio endpoints. Several other V1 routes automatically
+# unlink cache/upload files, so they are not mounted here.
+_studio = create_studio_router(DB, MATCHES, IMPORTS)
+_STUDIO_ALLOWED = {
+    '/api/studio/teams', '/api/studio/teams/rename', '/api/studio/teams/rename-batch',
+    '/api/studio/teams/merge',
+    '/api/studio/opponents', '/api/studio/opponents/assign', '/api/studio/coach',
+    '/api/studio/camp-compare', '/api/studio/camp-combos', '/api/studio/camp-partners',
+    '/api/studio/analysis/opponents',
+    '/api/studio/workspace/teams', '/api/studio/workspace/teams/merge',
+    '/api/studio/workspace/teams/reconcile',
+    '/api/studio/workspace/players', '/api/studio/workspace/players/migrate-profile',
+    '/api/studio/workspace/schedules',
+    '/api/studio/workspace/training', '/api/studio/workspace/prefill/run',
+    '/api/studio/workspace/pending', '/api/studio/workspace/pending/confirm',
+    '/api/studio/workspace/pending/confirm-batch',
+    '/api/studio/profile',
+}
+_studio.routes = [route for route in _studio.routes if route.path in _STUDIO_ALLOWED]
+app.include_router(_studio)
+app.include_router(create_analysis_router(DB, MATCHES, IMPORTS))
+app.include_router(create_depth_router(DEMO_ROOT or ROOT, DB))
+app.mount('/static', StaticFiles(directory=HERE / 'public'), name='frontend')
+app.mount('/catalog/icons', StaticFiles(directory=ROOT / 'resources' / 'icons', check_dir=False),
+          name='icons')
+
+_lock = Lock()
+_snapshot = None
+_loaded_at = float('-inf')
+
+
+def apply_bp_overrides(data):
+    """Attach explicitly entered V3 BP records to the in-memory snapshot."""
+    if not DB.is_file(): return
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            rows=connection.execute('SELECT match_key,body,revision FROM v2_bp_overrides').fetchall()
+    except sqlite3.Error:
+        return
+    overrides={}
+    for key, body, revision in rows:
+        try:
+            value=json.loads(body)
+            if isinstance(value,dict): overrides[key]=(value,revision)
+        except (ValueError,TypeError):
+            continue
+    for match in data.get('matches',[]) + data.get('sheetMatches',[]):
+        if match.get('key') in overrides:
+            match['bp'],match['v2BpRevision']=overrides[match['key']]
+
+
+def invalidate_snapshot():
+    global _snapshot, _loaded_at
+    with _lock:
+        _snapshot, _loaded_at = None, float('-inf')
+
+
+def repository(request: Request):
+    global _snapshot, _loaded_at
+    with _lock:
+        if request.query_params.get('fresh') == '1' or monotonic() - _loaded_at >= 15:
+            snapshot = AnalysisRepository(DB, MATCHES, IMPORTS)
+            data = snapshot.get()
+            apply_bp_overrides(data)
+            _snapshot, _loaded_at = snapshot, monotonic()
+        return _snapshot
+
+
+def filters(request: Request):
+    q = request.query_params
+    sources = [source for source in q.get('source', '').split(',') if source in ALL_SOURCES]
+    try:
+        start = date.fromisoformat(q['from']) if q.get('from') else None
+        end = date.fromisoformat(q['to']) if q.get('to') else None
+    except ValueError as error:
+        raise HTTPException(400, '日期格式无效') from error
+    if start and end and start > end:
+        raise HTTPException(400, '开始日期不能晚于结束日期')
+    return {
+        'sources': sources or list(DEFAULT_SOURCES),
+        'from': start.isoformat() if start else None,
+        'to': end.isoformat() if end else None,
+        'hero': q.get('hero') or None,
+        'opponent': q.get('opponent') or None,
+        'excludeSeeds': q.get('validation') != '1',
+        'ownOnly': q.get('scope') != 'all',
+    }
+
+
+@app.middleware('http')
+async def prevent_data_caching(request, call_next):
+    global _snapshot, _loaded_at
+    response = await call_next(request)
+    if request.method not in ('GET', 'HEAD', 'OPTIONS') and response.status_code < 400:
+        invalidate_snapshot()
+    # 静态资源也要禁用缓存：前端文件改动后，普通刷新就要能看到，不依赖强刷。
+    path = request.url.path
+    if path.startswith('/api/') or '/static/' in path or path == '/' or path.endswith('/v3/'):
+        response.headers['Cache-Control'] = 'no-store'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
+
+
+@router.get('/')
+def v3_index():
+    return FileResponse(HERE / 'public' / 'index.html')
+
+
+@router.get('/api/overview')
+def overview(repo=Depends(repository), values=Depends(filters)):
+    summary = repo.overview(values)
+    matches = sorted(repo.matches(values)['matches'], key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    process = repo.process(values)
+    process['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    return {
+        'summary': {key: value for key, value in summary.items() if key != 'profile'},
+        'team': repo.team_stats(values),
+        'matches': matches,
+        'process': process,
+    }
+
+
+@router.get('/api/matches')
+def matches(repo=Depends(repository), values=Depends(filters)):
+    result = repo.matches(values)
+    # The structured store may contain a confirmed version that predates V3.
+    # An explicit per-match override remains authoritative.
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            versions = dict(connection.execute('SELECT match_key, version FROM match_records WHERE version IS NOT NULL AND version != \"\"'))
+        for item in result['matches']:
+            if not item.get('version') and item['key'] in versions:
+                item['version'] = versions[item['key']]
+    except sqlite3.Error:
+        pass
+    result['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    return result
+
+
+@router.get('/api/matches/{key:path}')
+def match(key: str, repo=Depends(repository)):
+    detail = repo.match_detail(key)
+    if detail is None:
+        raise HTTPException(404, '找不到该局对战记录')
+    detail['draft'] = merge_bp_sources(detail.get('bp'), detail.get('campBp'), detail)
+    if not detail.get('version'):
+        try:
+            with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+                row = connection.execute('SELECT version FROM match_records WHERE match_key=?', (key,)).fetchone()
+            if row and row[0]: detail['version'] = row[0]
+        except sqlite3.Error:
+            pass
+    return detail
+
+
+@router.get('/api/replay/{key:path}')
+def replay(key: str, repo=Depends(repository)):
+    detail = repo.match_detail(key)
+    result = panorama.get(detail['bundleKey']) if detail and detail.get('bundleKey') else None
+    if result is None:
+        raise HTTPException(404, '该局没有全景回放数据')
+    return {name: result[name] for name in ('events', 'kills', 'deaths', 'coverage', 'notes') if name in result}
+
+
+@router.get('/api/positions/{key:path}')
+def match_positions(key: str):
+    """营地回放的逐秒位置（十人）。用于单局的热区与对位深区。
+
+    通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
+    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `STEP` 秒一点。
+    """
+    # 对局 key 带 channel- 前缀，channels 表的 id 不带。
+    channel_id = key[len('channel-'):] if key.startswith('channel-') else key
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            row = connection.execute('SELECT body FROM channels WHERE id=?', (channel_id,)).fetchone()
+    except sqlite3.Error:
+        row = None
+    if not row:
+        raise HTTPException(404, '找不到该局的采集通道')
+    channel = json.loads(row[0])
+    camp = (channel.get('sources') or {}).get('camp') or {}
+    seq = str(camp.get('gameSeq') or '')
+    if not seq:
+        raise HTTPException(404, '这一局没有营地回放')
+    path = OFFICIAL / f'camp-{seq}' / 'positions.json'
+    if not path.is_file():
+        raise HTTPException(404, '缺少位置数据文件')
+    data = json.loads(path.read_text(encoding='utf-8'))
+    roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
+    step = POSITION_STEP
+    players = []
+    for item in data.get('players') or []:
+        info = roster.get(str(item.get('playerId'))) or {}
+        arr = item.get('posArr') or []
+        players.append({
+            'camp': info.get('camp'), 'slot': info.get('slot'),
+            'nickname': info.get('nickname'), 'hero': info.get('hero'),
+            'points': [[int(x), int(y)] for x, y in arr[::step]],
+        })
+    players.sort(key=lambda p: (0 if p['camp'] == 'blue' else 1, p['slot'] if p['slot'] is not None else 99))
+    return {
+        'step': step,
+        'duration': int(max((len(item.get('posArr') or []) for item in data.get('players') or []), default=0)),
+        'players': players,
+    }
+
+
+@router.get('/api/players')
+def players(repo=Depends(repository), values=Depends(filters)):
+    return {'players': repo.player_stats(values)}
+
+
+@router.get('/api/v2/players/board')
+def players_board(repo=Depends(repository), values=Depends(filters)):
+    return repo.player_board(values)
+
+
+@router.get('/api/players/{key:path}')
+def player(key: str, repo=Depends(repository), values=Depends(filters)):
+    stats = next((row for row in repo.player_stats(values) if row['playerKey'] == key), None)
+    return {'stats': stats, **repo.player_trend(key, values)}
+
+
+@router.get('/api/bp')
+def bp(repo=Depends(repository), values=Depends(filters)):
+    return {'draft': repo.bp_summary(values), 'heroes': repo.hero_stats(values)}
+
+
+@router.get('/api/tempo')
+def tempo(repo=Depends(repository), values=Depends(filters)):
+    return {'process': repo.process(values), 'objectives': repo.objectives(values)}
+
+
+@router.get('/api/opponents')
+def opponents(repo=Depends(repository), values=Depends(filters)):
+    scoped, warnings = repo._selected_matches(values)
+    match_rows = {row['key']: row for row in repo.matches(values)['matches']}
+    groups = defaultdict(list)
+    unknown = 0
+    for item in scoped:
+        if not item.get('opponent'):
+            unknown += 1
+            continue
+        groups[item['opponent']].append(item)
+    result = []
+    for name, games in groups.items():
+        picks = Counter()
+        bans = Counter()
+        draft_count = 0
+        rows = [match_rows[item['key']] for item in games]
+        wins = sum(row['result'] == 'win' for row in rows)
+        losses = sum(row['result'] == 'loss' for row in rows)
+        for item in games:
+            own = item.get('ownCamp')
+            enemy = {'blue': 'red', 'red': 'blue', 'left': 'right', 'right': 'left'}.get(own)
+            if not enemy:
+                continue
+            picks.update(p['hero'] for p in item['players'] if p.get('camp') == enemy and p.get('hero'))
+            draft = merge_bp_sources(item.get('bp'), item.get('campBp'), item)
+            if draft:
+                side = 'left' if enemy in ('blue', 'left') else 'right'
+                draft_count += 1
+                bans.update(hero['name'] for hero in draft['bans'][side])
+        result.append({
+            'name': name, 'matches': rows, 'wins': wins, 'losses': losses,
+            'picks': picks.most_common(), 'bans': bans.most_common(), 'draftCount': draft_count,
+        })
+    result.sort(key=lambda item: (-len(item['matches']), item['name']))
+    return {'opponents': result, 'unknown': unknown, 'warnings': warnings}
+
+
+@router.get('/api/sources')
+def sources(repo=Depends(repository), values=Depends(filters)):
+    stats = repo.overview(values, include_top=False)
+    return {
+        **repo.sources(), 'quality': stats['dataQuality'], 'coverage': stats['coverage'],
+        'inventory': stats['inventory'], 'scopeWarnings': stats['warnings'],
+        'validationCount': sum(repo._is_seed_match(match) for match in repo.get()['matches']),
+    }
+
+
+@router.get('/api/metadata')
+def metadata(repo=Depends(repository)):
+    path = ROOT / 'resources' / 'catalog.json'
+    entries = json.loads(path.read_text(encoding='utf-8')).get('entries', []) if path.is_file() else []
+    return {
+        'teamName': repo.get()['teamName'], 'options': repo.filters(), 'demo': IS_DEMO,
+        'icons': {entry['name']: entry['icon'] for entry in entries
+                  if entry.get('kind') == 'hero' and entry.get('name') and entry.get('icon')},
+    }
+
+
+_demo_lock = Lock()
+
+
+@router.get('/api/v2/mode')
+def data_mode():
+    return {'demo': IS_DEMO, 'application': 'training-data-v2', 'synthetic': IS_DEMO}
+
+
+@router.post('/api/v2/demo/start')
+def start_demo():
+    """Start a separate local V3 demo instance backed only by generated demo data."""
+    if IS_DEMO:
+        return {'url': 'http://127.0.0.1:8773/', 'demo': True}
+    from urllib.error import HTTPError
+    def existing():
+        try:
+            with urlopen('http://127.0.0.1:8773/api/v2/mode', timeout=1) as response:
+                return json.load(response)
+        except HTTPError:
+            return {'occupied': True}
+        except (OSError, ValueError):
+            return None
+    with _demo_lock:
+        status = existing()
+        if status:
+            if status.get('application') == 'training-data-v2' and status.get('demo'):
+                return {'url': 'http://127.0.0.1:8773/', 'demo': True}
+            raise HTTPException(409, '演示端口 8773 已被其他程序占用。')
+        import demo_data
+        demo_base = HERE / 'demo-data'
+        demo_base.mkdir(exist_ok=True)
+        pointer = demo_base / 'active.json'
+        demo_root = None
+        if pointer.is_file():
+            try:
+                name = json.loads(pointer.read_text(encoding='utf-8')).get('directory', '')
+                if name and Path(name).name == name:
+                    candidate = demo_base / name
+                    if (candidate / 'DEMO.json').is_file() and (candidate / 'data' / 'training.sqlite3').is_file():
+                        demo_root = candidate
+            except (OSError, ValueError, AttributeError):
+                pass
+        if demo_root is None:
+            demo_root = demo_base / ('sample-' + uuid.uuid4().hex[:10])
+            demo_data.create(demo_root)
+            pointer.write_text(json.dumps({'directory':demo_root.name}), encoding='utf-8')
+        data = demo_root / 'data'
+        env = os.environ.copy()
+        # V1 permits global overrides; never let those point demo mode at real data.
+        env.pop('STUDIO_CAMP_DIR', None)
+        env.pop('STUDIO_RESULTS_DB', None)
+        env.update({'TRAINING_DEMO_ROOT':str(demo_root), 'TRAINING_DB':str(data/'training.sqlite3'),
+                    'ANALYSIS_MATCHES':str(data/'matches'), 'ANALYSIS_IMPORTS':str(data/'imports'),
+                    'ANALYSIS_OFFICIAL':str(data/'official_replays'), 'ANALYSIS_V2':str(data/'v2')})
+        subprocess.Popen([sys.executable, str(HERE/'serve.py'), '--port', '8773'], cwd=str(ROOT), env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        import time
+        for _ in range(60):
+            status = existing()
+            if status and status.get('demo') and status.get('application') == 'training-data-v2':
+                return {'url': 'http://127.0.0.1:8773/', 'demo': True}
+            if status and status.get('occupied'):
+                break
+            time.sleep(.1)
+        raise HTTPException(503, '演示环境未能启动，请检查端口或重试。')
+
+
+@router.get('/api/v2/space')
+def spatial_analysis():
+    return deep_analysis.space(OFFICIAL, DB.parent / 'camp_details', DB.parent)
+
+
+@router.get('/api/v2/economy')
+def economy_analysis():
+    return deep_analysis.economy(OFFICIAL, DB.parent / 'camp_details')
+
+
+def research_result(topic, values):
+    from studio_analysis import StudioRepository, extract_rows, fingerprint
+    from studio_research import TOPICS, research
+    if topic not in {item[0] for item in TOPICS}:
+        raise HTTPException(404, '专题不存在')
+    source = StudioRepository(DB, MATCHES, IMPORTS)
+    rows, warnings = extract_rows(source, values)
+    rows = [row for row in rows if row.get('isOwn') and row.get('full')]
+    result = research(rows, topic, 'damage', source.get()['matches'] + source.get()['sheetMatches'])
+    result['fingerprint'] = fingerprint(rows)
+    result['warnings'] = warnings
+    result['sourceRows'] = len(rows)
+    result['filters'] = values
+    return result
+
+
+@router.get('/api/v2/research/catalog')
+def research_catalog():
+    from studio_research import TOPICS
+    return {'topics': [{'id':key,'name':name,'description':desc} for key,name,desc in TOPICS]}
+
+
+@router.get('/api/v2/research/reports')
+def research_reports():
+    path = DB.with_name('v2-reports.sqlite3')
+    if not path.is_file(): return {'reports': []}
+    with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as conn:
+        try: rows = conn.execute('SELECT id,title,created_at,topic FROM reports ORDER BY created_at DESC').fetchall()
+        except sqlite3.Error: rows = []
+    return {'reports': [{'id':r[0],'title':r[1],'createdAt':r[2],'topic':r[3]} for r in rows]}
+
+
+@router.get('/api/v2/research/reports/{report_id}')
+def research_report(report_id: str):
+    path = DB.with_name('v2-reports.sqlite3')
+    if not path.is_file(): raise HTTPException(404, '报告不存在')
+    with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as conn:
+        row=conn.execute('SELECT title,created_at,body FROM reports WHERE id=?', (report_id,)).fetchone()
+    if not row: raise HTTPException(404, '报告不存在')
+    return {'title':row[0],'createdAt':row[1],'result':json.loads(row[2])}
+
+
+@router.get('/api/v2/research/{topic}')
+def get_research(topic: str, values=Depends(filters)):
+    return research_result(topic, values)
+
+
+@router.post('/api/v2/research/reports')
+async def save_research_report(request: Request):
+    body=await request.json()
+    title=str(body.get('title') or '').strip() if isinstance(body,dict) else ''
+    if not title or len(title)>120: raise HTTPException(400, '请填写 1–120 字的报告标题。')
+    values=body.get('filters')
+    if not isinstance(values,dict): raise HTTPException(400, '数据范围无效。')
+    values={k:v for k,v in values.items() if k in ('sources','from','to','hero','opponent','excludeSeeds','ownOnly')}
+    if not isinstance(values.get('sources'),list) or any(x not in ALL_SOURCES for x in values['sources']):
+        raise HTTPException(400, '来源无效。')
+    result=research_result(body.get('topic',''), values)
+    if not result['rows']: raise HTTPException(400, '当前没有可保存的专题结果。')
+    if result['fingerprint'] != body.get('fingerprint'): raise HTTPException(409, '数据已变化，请刷新后再保存。')
+    from datetime import datetime, timezone
+    report_id=uuid.uuid4().hex; created=datetime.now(timezone.utc).isoformat(timespec='seconds')
+    with sqlite3.connect(DB.with_name('v2-reports.sqlite3')) as conn:
+        conn.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL)')
+        conn.execute('INSERT INTO reports VALUES(?,?,?,?,?)',(report_id,title,created,body['topic'],json.dumps(result,ensure_ascii=False)))
+    return {'id':report_id,'title':title,'createdAt':created}
+
+
+@router.post('/api/v2/import/preview')
+async def preview_sheet(request: Request, name: str = ''):
+    """Preview an uploaded sheet without deleting or overwriting files."""
+    from sheet_import import SheetImportError, infer_profile, read_workbook
+    suffix = Path(name).suffix.lower()
+    if suffix not in ('.csv', '.tsv', '.xlsx', '.xlsm'):
+        raise HTTPException(400, '请选择 CSV、TSV、XLSX 或 XLSM 文件。')
+    content = await request.body()
+    if not content or len(content) > 20 * 1024 * 1024:
+        raise HTTPException(400, '文件为空或超过 20 MB。')
+    folder = IMPORTS / '_v2_previews'; folder.mkdir(parents=True, exist_ok=True)
+    preview_id = uuid.uuid4().hex
+    path = folder / (preview_id + suffix)
+    with path.open('xb') as out:
+        out.write(content)
+    with (folder / (preview_id + '.meta.json')).open('x', encoding='utf-8') as out:
+        json.dump({'name':Path(name).name, 'suffix':suffix}, out, ensure_ascii=False)
+    try:
+        workbook = read_workbook(path)
+        sheets = []
+        for sheet in workbook.get('sheets') or []:
+            profile = infer_profile(sheet)
+            sheets.append({'name':sheet['name'], 'rows':len(sheet['rows']), 'header':sheet['header'],
+                           'sample':sheet['rows'][:5], 'grain':profile.get('grain'),
+                           'columns':profile.get('columns', []), 'warnings':profile.get('warnings', []),
+                           'unmappedColumns':profile.get('unmappedColumns', [])})
+        if not sheets: raise SheetImportError('表格没有可读取的工作表。')
+    except SheetImportError as error:
+        raise HTTPException(400, str(error)) from error
+    return {'previewId':preview_id, 'name':Path(name).name, 'sheets':sheets}
+
+
+@router.post('/api/v2/import/commit')
+async def commit_sheet(request: Request):
+    from sheet_import import SheetImportError, infer_profile, read_workbook, write_staging
+    body = await request.json()
+    preview_id = body.get('previewId', '') if isinstance(body, dict) else ''
+    if len(preview_id) != 32 or any(c not in '0123456789abcdef' for c in preview_id):
+        raise HTTPException(400, '预览标识无效。')
+    folder = IMPORTS / '_v2_previews'
+    try:
+        meta = json.loads((folder/(preview_id+'.meta.json')).read_text(encoding='utf-8'))
+        if meta.get('suffix') not in ('.csv','.tsv','.xlsx','.xlsm'): raise ValueError('invalid suffix')
+        workbook = read_workbook(folder/(preview_id+meta['suffix']))
+        workbook['source']['name'] = meta.get('name') or '表格'
+        for manifest in IMPORTS.glob('*/manifest.json'):
+            try:
+                existing=json.loads(manifest.read_text(encoding='utf-8'))
+                if (existing.get('source') or {}).get('sha256') == workbook['source']['sha256']:
+                    raise HTTPException(409, '该文件已经导入；为避免重复统计，不会再次导入。')
+            except (OSError, ValueError, AttributeError):
+                continue
+        profiles={sheet['name']:infer_profile(sheet) for sheet in workbook['sheets']}
+        destination=IMPORTS/('v2-'+uuid.uuid4().hex[:16]); destination.mkdir(parents=True,exist_ok=False)
+        manifest=write_staging(workbook['source'],workbook['sheets'],profiles,destination,'inferred')
+    except (OSError, ValueError, SheetImportError) as error:
+        raise HTTPException(400, '读取表格失败：'+str(error)) from error
+    return {'ok':True,'id':destination.name,'quality':manifest.get('quality',{}),
+            'warnings':manifest.get('warnings',[]),'sheets':manifest.get('sheets',[])}
+
+
+@router.get('/api/v2/identity')
+def identity_view(repo=Depends(repository), values=Depends(filters)):
+    data=repo.get(); rows,_=repo._selected_rows(values)
+    groups={}
+    for row in rows:
+        label=row.get('rawLabel') or row.get('label')
+        if not row.get('isOwn') or not label: continue
+        item=groups.setdefault(label, {'label':label,'matches':set(),'heroes':set(),'bound':False})
+        if row.get('matchKey'): item['matches'].add(row['matchKey'])
+        if row.get('hero'): item['heroes'].add(row['hero'])
+        item['bound'] = item['bound'] or bool(row.get('bound'))
+    entries=[{'label':x['label'],'matches':len(x['matches']),'heroes':sorted(x['heroes']),'bound':x['bound']} for x in groups.values()]
+    entries.sort(key=lambda x:(x['bound'],-x['matches'],x['label']))
+    profile=data.get('profile') or {}; team=profile.get('teamName') or ''
+    members=[m for m in profile.get('members',[]) if not m.get('archived') and (not m.get('team') or m.get('team')==team)]
+    return {'entries':entries,'members':members,'aliases':data.get('aliases') or {},'teamName':team}
+
+
+@router.post('/api/v2/identity/roster')
+async def add_roster_member(request: Request):
+    import workspace_store
+    value=await request.json(); name=str(value.get('name') or '').strip() if isinstance(value,dict) else ''
+    position=str(value.get('position') or '').strip() if isinstance(value,dict) else ''
+    if not name or len(name)>40 or position not in ('','对抗路','打野','中路','发育路','游走'):
+        raise HTTPException(400, '请填写选手名称并选择有效位置。')
+    ws=workspace_store.Workspace(DB).ensure_schema(); player_id='p-'+uuid.uuid4().hex[:12]
+    with closing(ws.connect()) as connection, connection:
+        connection.execute('BEGIN IMMEDIATE')
+        row=connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+        if not row: raise HTTPException(400, '请先在建档页设置本队资料。')
+        settings=json.loads(row[0]); roster=settings.get('roster')
+        if not isinstance(roster,list): raise HTTPException(400, '本队名单格式异常，请先检查已有资料。')
+        if any(str(p.get('name') or '').strip()==name and not p.get('archived') for p in roster):
+            raise HTTPException(409, '名单中已有同名选手，请先核对。')
+        team_name=str(settings.get('teamName') or '').strip()
+        if not team_name: raise HTTPException(400, '请先填写本队名称。')
+        team=connection.execute("SELECT id FROM teams WHERE name=? AND status='active' ORDER BY id LIMIT 1",(team_name,)).fetchone()
+        team_id=team[0] if team else 'team-'+uuid.uuid4().hex[:10]
+        if not team: connection.execute('INSERT INTO teams(id,name) VALUES(?,?)',(team_id,team_name))
+        connection.execute('INSERT INTO players(id,team_id,name,position) VALUES(?,?,?,?)',(player_id,team_id,name,position or None))
+        roster.append({'id':player_id,'name':name,'position':position,'team':team_name,'archived':False})
+        connection.execute('UPDATE settings SET body=? WHERE id=1',(json.dumps(settings,ensure_ascii=False),))
+        ws._log(connection,'player',player_id,'created',None,name,'manual','coach')
+    return {'ok':True,'id':player_id}
+
+
+@router.post('/api/v2/identity/claim')
+async def claim_identity(request: Request, repo=Depends(repository)):
+    import workspace_store
+    body=await request.json()
+    if not isinstance(body,dict): raise HTTPException(400, '认领信息无效。')
+    label=str(body.get('label') or '').strip(); player_id=str(body.get('playerId') or '').strip(); expected=str(body.get('expected') or '')
+    if not label or not player_id or len(label)>100: raise HTTPException(400, '请选择昵称和本队选手。')
+    if not any((r.get('rawLabel') or r.get('label'))==label and r.get('isOwn') for r in repo.get()['rows']+repo.get()['sheetRows']):
+        raise HTTPException(400, '该昵称不在本队记录中，请先确认阵营。')
+    ws=workspace_store.Workspace(DB).ensure_schema()
+    with closing(ws.connect()) as connection, connection:
+        connection.execute('BEGIN IMMEDIATE'); row=connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+        if not row: raise HTTPException(400, '本队资料不存在。')
+        settings=json.loads(row[0]); team=settings.get('teamName') or ''
+        if not any(str(p.get('id'))==player_id and not p.get('archived') and (not p.get('team') or p.get('team')==team) for p in settings.get('roster',[])):
+            raise HTTPException(400, '请选择本队名单中的有效选手。')
+        aliases=settings.get('aliases')
+        if aliases is None: aliases={}; settings['aliases']=aliases
+        if not isinstance(aliases,dict): raise HTTPException(400, '选手认领资料格式异常，请先检查已有资料。')
+        previous=str(aliases.get(label) or '')
+        if previous != expected: raise HTTPException(409, '认领状态已改变，请刷新后重试。')
+        aliases[label]=player_id
+        connection.execute('UPDATE settings SET body=? WHERE id=1',(json.dumps(settings,ensure_ascii=False),))
+        ws._log(connection,'player',player_id,'alias:'+label,previous,player_id,'manual','coach')
+    return {'ok':True,'playerId':player_id}
+
+
+@router.post('/api/v2/identity/name')
+async def name_identity(request: Request, repo=Depends(repository)):
+    """教练给未命名的参赛标识命名，并归入战队；写入名单与别名。"""
+    import workspace_store
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, '命名信息无效。')
+    label = str(body.get('label') or '').strip()
+    name = str(body.get('name') or '').strip()
+    position = str(body.get('position') or '').strip()
+    team = str(body.get('team') or '').strip()
+    if not label or not name or len(label) > 100 or len(name) > 40:
+        raise HTTPException(400, '请填写昵称与选手名称。')
+    if position not in ('', '对抗路', '打野', '中路', '发育路', '游走'):
+        raise HTTPException(400, '请选择有效位置。')
+    if len(team) > 40:
+        raise HTTPException(400, '战队名称过长。')
+    if not any((r.get('rawLabel') or r.get('label')) == label and r.get('isOwn')
+               for r in repo.get()['rows'] + repo.get()['sheetRows']):
+        raise HTTPException(400, '该昵称不在本队记录中，请先确认阵营。')
+    ws = workspace_store.Workspace(DB).ensure_schema()
+    with closing(ws.connect()) as connection, connection:
+        connection.execute('BEGIN IMMEDIATE')
+        row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+        if not row:
+            raise HTTPException(400, '请先在「赛训 → 建档」填写本队资料。')
+        settings = json.loads(row[0])
+        roster = settings.get('roster')
+        if not isinstance(roster, list):
+            raise HTTPException(400, '本队名单格式异常，请先检查已有资料。')
+        aliases = settings.get('aliases')
+        if aliases is None:
+            aliases = {}
+            settings['aliases'] = aliases
+        if not isinstance(aliases, dict):
+            raise HTTPException(400, '选手认领资料格式异常，请先检查已有资料。')
+        own_team = str(settings.get('teamName') or '').strip()
+        team_name = team or own_team
+        if not team_name:
+            raise HTTPException(400, '请填写所属战队，或先在建档页填写本队名称。')
+        member = next((p for p in roster if not p.get('archived')
+                       and str(p.get('name') or '').strip() == name
+                       and str(p.get('team') or '').strip() == team_name), None)
+        if member is None:
+            player_id = 'p-' + uuid.uuid4().hex[:12]
+            member = {'id': player_id, 'name': name, 'position': position,
+                      'team': team_name, 'archived': False}
+            roster.append(member)
+        else:
+            player_id = member['id']
+            if position:
+                member['position'] = position
+        team_row = connection.execute(
+            "SELECT id FROM teams WHERE name=? AND status='active' ORDER BY id LIMIT 1",
+            (team_name,)).fetchone()
+        team_id = team_row[0] if team_row else 'team-' + uuid.uuid4().hex[:10]
+        if not team_row:
+            connection.execute('INSERT INTO teams(id,name) VALUES(?,?)', (team_id, team_name))
+        existing = connection.execute('SELECT id FROM players WHERE id=?', (player_id,)).fetchone()
+        if not existing:
+            connection.execute('INSERT INTO players(id,team_id,name,position) VALUES(?,?,?,?)',
+                               (player_id, team_id, name, position or None))
+        aliases[label] = player_id
+        connection.execute('UPDATE settings SET body=?', (json.dumps(settings, ensure_ascii=False),))
+        ws._log(connection, 'player', player_id, 'named:' + label, '', team_name, 'manual', 'coach')
+    return {'ok': True, 'playerId': player_id, 'team': team_name}
+
+
+@router.post('/api/v2/match-bp/{key:path}')
+
+async def update_match_bp(key: str, request: Request, repo=Depends(repository)):
+    """Save only explicitly entered BP order in a V3-specific overlay."""
+    from bp_input import validate_bp
+    import time
+    if repo.match_detail(key) is None: raise HTTPException(404, '找不到该场对局')
+    body=await request.json()
+    if not isinstance(body,dict): raise HTTPException(400, 'BP 格式无效')
+    try:
+        bp=validate_bp(body.get('bp'))
+        expected=int(body.get('expectedRevision') or 0)
+    except (ValueError,TypeError) as error:
+        raise HTTPException(400, str(error)) from error
+    if not any(hero for kind in ('bans','picks') for side in ('left','right') for hero in bp[kind][side]):
+        raise HTTPException(400, '请至少填写一项已确认的禁选。')
+    with sqlite3.connect(DB) as connection:
+        connection.execute('CREATE TABLE IF NOT EXISTS v2_bp_overrides (match_key TEXT PRIMARY KEY,body TEXT NOT NULL,revision INTEGER NOT NULL,updated_at REAL NOT NULL)')
+        connection.execute('BEGIN IMMEDIATE')
+        current=connection.execute('SELECT revision FROM v2_bp_overrides WHERE match_key=?',(key,)).fetchone()
+        revision=current[0] if current else 0
+        if revision != expected: raise HTTPException(409, 'BP 已被修改，请刷新后重新核对。')
+        connection.execute('INSERT INTO v2_bp_overrides VALUES(?,?,?,?) ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_at=excluded.updated_at',
+                           (key,json.dumps(bp,ensure_ascii=False),revision+1,time.time()))
+    return {'ok':True,'revision':revision+1}
+
+
+@router.post('/api/v2/match-meta/{key:path}')
+async def update_match_meta(key: str, request: Request, repo=Depends(repository)):
+    """Write the verified match overlay without invoking V1 file cleanup."""
+    import time
+    if not key or len(key) > 200 or repo.match_detail(key) is None:
+        raise HTTPException(404, '找不到该场对局')
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, '数据格式无效')
+    patch = {}
+    for name, limit in (('opponent',50),('session',40),('version',40),('mode',20)):
+        if name in body:
+            if not isinstance(body[name], str) or len(body[name].strip()) > limit:
+                raise HTTPException(400, '字段格式或长度不正确')
+            patch[name] = body[name].strip()
+    camp = body.get('ownCamp')
+    if camp not in ('blue','red','',None):
+        raise HTTPException(400, '阵营无效')
+    if 'ownCamp' in body:
+        patch['ownCamp'] = camp or None
+    result = body.get('result')
+    if result not in ('win','loss','draw','unknown',None):
+        raise HTTPException(400, '赛果无效')
+    if result is not None:
+        patch['result'] = result
+    # 单局补录同样走词表：`S40赛季` / `s40` 落库前折成 `S40`，新值自动登记。
+    for name, kind in (('version', 'versions'), ('session', 'sessions')):
+        if name in patch:
+            patch[name] = vocab_store.prepare(kind, patch[name], DATA_DIR)
+    if not patch:
+        raise HTTPException(400, '没有要保存的内容')
+    with sqlite3.connect(DB) as connection:
+        connection.execute('CREATE TABLE IF NOT EXISTS match_meta (match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+        connection.execute('BEGIN IMMEDIATE')
+        row = connection.execute('SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+        try:
+            previous = json.loads(row[0]) if row else {}
+            if not isinstance(previous, dict): previous = {}
+        except (ValueError, TypeError):
+            previous = {}
+        previous.update(patch)
+        connection.execute('INSERT INTO match_meta(match_key,body,updated_at) VALUES(?,?,?) ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at',
+                           (key,json.dumps(previous,ensure_ascii=False),time.time()))
+    return {'ok': True, 'meta': previous}
+
+
+@router.get('/api/v2/workspace/overview')
+def workspace_overview(repo=Depends(repository)):
+    selection = {'sources': list(ALL_SOURCES), 'excludeSeeds': True, 'ownOnly': True}
+    return {'overview': repo.overview(selection)}
+
+
+def migration_candidates(repo):
+    """Select real legacy matches without altering existing structured records."""
+    import workspace_store
+    ws = workspace_store.Workspace(DB).ensure_schema()
+    with closing(ws.connect()) as connection:
+        existing = {row[0] for row in connection.execute('SELECT match_key FROM match_records')}
+        counts = {name: connection.execute('SELECT COUNT(*) FROM ' + name).fetchone()[0]
+                  for name in ('match_records', 'match_rosters', 'bp')}
+    selection = {'sources': list(ALL_SOURCES), 'excludeSeeds': True, 'ownOnly': True}
+    matches = repo.matches(selection).get('matches', [])
+    return ws, counts, [m for m in matches if m.get('key') and m['key'] not in existing]
+
+
+@router.get('/api/v2/workspace/migration')
+def migration_preview(repo=Depends(repository)):
+    _, counts, candidates = migration_candidates(repo)
+    return {'counts': counts, 'candidates': len(candidates),
+            'note': '仅新增未迁移的真实对局基本信息；不覆盖现有记录，不推测选手身份、对手归属及 BP 手序。'}
+
+
+@router.post('/api/v2/workspace/migration')
+def migrate_new_matches(repo=Depends(repository)):
+    import time
+    ws, _, candidates = migration_candidates(repo)
+    inserted = 0
+    with closing(ws.connect()) as connection, connection:
+        connection.execute('BEGIN IMMEDIATE')
+        for match in candidates:
+            own = match.get('ownCamp') if match.get('ownCamp') in ('blue', 'red') else None
+            result = match.get('result')
+            winner = (own if result == 'win' else {'blue': 'red', 'red': 'blue'}.get(own)) if own and result in ('win', 'loss') else None
+            scores = match.get('scores')
+            score = json.dumps(scores, ensure_ascii=False) if isinstance(scores, dict) and any(v is not None for v in scores.values()) else None
+            fields = {'date': match.get('date'), 'session': match.get('session'),
+                      'mode': match.get('mode'), 'version': match.get('version'),
+                      'own_side': own, 'winner': winner, 'score': score, 'duration': match.get('duration')}
+            cursor = connection.execute(
+                'INSERT OR IGNORE INTO match_records(match_key, date, session, mode, version, own_side, winner, score, duration, status, source) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                (match['key'], *fields.values(), 'draft', match.get('source') or 'unknown'))
+            if not cursor.rowcount:
+                continue
+            inserted += 1
+            for field, value in fields.items():
+                if value is not None and value != '':
+                    connection.execute('INSERT INTO provenance(match_key,field,source,confidence,synthetic,updated_at) VALUES(?,?,?,?,?,?)',
+                                       (match['key'], field, match.get('source') or 'unknown', 'medium', 0, time.time()))
+    return {'ok': True, 'created': inserted}
+
+
+@router.get('/api/v2/team-bp')
+def team_bp():
+    """Opponent picks and bans from recorded lineups, without inventing order."""
+    import team_clusters
+    from bp_camp import parse_camp_bp
+    camp_dir = MATCHES.parent / 'camp_details'
+    clusters = team_clusters.list_teams(camp_dir, DB)
+    teams = []
+    for team in clusters['teams']:
+        picks, bans = Counter(), Counter()
+        available = 0
+        for seq in team.get('seqs', []):
+            try:
+                detail = json.loads((camp_dir / (str(seq) + '.json')).read_text(encoding='utf-8'))
+                bp = parse_camp_bp(detail, seq)
+            except (OSError, ValueError):
+                continue
+            if not bp or bp.get('ownSide') not in ('left', 'right'):
+                continue
+            side = 'right' if bp['ownSide'] == 'left' else 'left'
+            available += 1
+            for entry in bp['picks'][side]:
+                picks[entry['name']] += 1
+            for entry in bp['bans'][side]:
+                bans[entry['name']] += 1
+        teams.append({'id': team['id'], 'name': team['displayName'],
+                      'games': team['matches'], 'available': available,
+                      'picks': [{'hero': k, 'count': v} for k, v in picks.most_common()],
+                      'bans': [{'hero': k, 'count': v} for k, v in bans.most_common()]})
+    return {'teams': teams}
+
+
+@router.get('/api/v2/bp-board')
+def bp_board():
+    """BP 三页共用的全量聚合：营地面板终局名单 + 战队 / 教练档案。
+
+    营地只给「谁上场 / 谁被禁」的终局名单，没有禁选先后顺序，也不含一手方。
+    这里只输出逐局名单与元数据；筛选、画像、风格指标由前端按局实时重算，
+    这样 BP 概览 / 战队 BP / 教练档案三页用的是同一份口径，不会混算。
+    """
+    import team_clusters
+    from bp_camp import parse_camp_bp
+    camp_dir = MATCHES.parent / 'camp_details'
+    clusters = team_clusters.list_teams(camp_dir, DB)
+    teams = clusters['teams']
+    # 教练由使用者在战队档案里录入；开发期按「已补好」的默认状态在展示层预置一组
+    # 稳定姓名，录入真名后自动覆盖。只影响展示，不改写档案数据库。
+    preset_coaches = ('陈昱', '林澈', '周砚', '吴珂', '郑霖', '孙骁', '赵衡', '钱越',
+                      '李牧', '王铮', '刘屿', '黄铮', '徐墨', '何川', '高岩', '马骁',
+                      '沈砚', '许澈', '韩昱', '唐珂', '冯霖', '曹衡', '彭越', '董牧',
+                      '袁铮', '邓屿', '傅墨', '苏川', '蒋岩', '卢骁', '余澈', '叶昱')
+    coach_of = {t['id']: (t.get('coach') or preset_coaches[i % len(preset_coaches)])
+                for i, t in enumerate(teams)}
+    seq_team = {seq: team for team in teams for seq in team.get('seqs', [])}
+    games, hero_meta = [], {}
+    for panel in team_clusters.load_panels(camp_dir):
+        seq = panel['seq']
+        try:
+            detail = json.loads((camp_dir / (seq + '.json')).read_text(encoding='utf-8'))
+            bp = parse_camp_bp(detail, seq)
+        except (OSError, ValueError):
+            continue
+        if not bp:
+            continue
+        own = bp.get('ownSide') if bp.get('ownSide') in ('left', 'right') else (
+            'left' if panel['own'] == 'blue' else 'right')
+        enemy = 'right' if own == 'left' else 'left'
+        team = seq_team.get(seq) or {}
+        start = panel.get('start') or ''
+        day = start.split(' ')[0]
+        result = panel.get('win')
+        if result is None and bp.get('winnerSide'):
+            result = bp['winnerSide'] == own
+        hero_meta.update(bp.get('heroMeta') or {})
+
+        def entries(kind, side):
+            return [{'name': e.get('name'), 'icon': e.get('icon'), 'lane': e.get('lane')}
+                    for e in (bp.get(kind) or {}).get(side, []) if e.get('name')]
+
+        games.append({
+            'key': seq, 'start': start, 'day': day,
+            'session': day.replace('-', '/') + ' 训练赛' if day else '训练赛',
+            'opponent': team.get('displayName') or '未归属对手',
+            'teamId': team.get('id') or '', 'coach': coach_of.get(team.get('id'), ''),
+            'result': 'win' if result else ('loss' if result is False else None),
+            'side': panel['own'], 'ownSide': own,
+            'duration': bp.get('duration'), 'mapName': bp.get('mapName'),
+            'picks': {'own': entries('picks', own), 'enemy': entries('picks', enemy)},
+            'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
+            'players': {'own': [p.get('name') for p in panel['own_roster']],
+                        'enemy': [p.get('name') for p in panel['enemy_roster']]},
+        })
+    games.sort(key=lambda g: g['start'], reverse=True)
+    return {
+        'games': games,
+        'teams': [{'id': t['id'], 'name': t['displayName'], 'coach': coach_of[t['id']],
+                   'matches': t['matches'], 'wins': t['wins'], 'losses': t['losses'],
+                   'players': [p.get('name') for p in t['players'][:6]]} for t in teams],
+        'heroMeta': hero_meta,
+        'source': '营地终局名单 · 不推断禁选先后顺序',
+    }
+
+
+@router.get('/api/v2/effect')
+def training_effect_analysis():
+    import workspace_store
+    workspace = workspace_store.Workspace(DB).ensure_schema()
+    return deep_analysis.training_effects(DB.parent / 'camp_details', workspace)
+
+
+# ── 选手看板：营地十人面板 → 逐人逐局记录 ──────────────────────────────
+# 四张选手页（名单与状态 / 选手认领 / 选手与位置 / 选手对比）共用这一份数据。
+# 只用营地自己的字段：battleStats 的击杀/死亡/助攻/经济/输出/承伤/参团/评分，
+# 以及 battleRecords 的 position / usedHero。不推算、不补值。
+_CAMP_LANES = {0: '对抗路', 1: '中路', 2: '发育路', 3: '打野', 4: '游走'}
+_CAMP_LANE_ORDER = ['对抗路', '打野', '中路', '发育路', '游走']
+_CAMP_ALIASES = str.maketrans('', '', ''.join(chr(code) for code in
+    (0x2004, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064,
+     0xfe00, 0xfe01, 0xfe02, 0xfe03, 0xfe04, 0xfe05, 0xfe06, 0xfe07, 0xfe08, 0xfe09, 0xfe0a,
+     0xfe0b, 0xfe0c, 0xfe0d, 0xfe0e, 0xfe0f, 0xfeff)))
+_players_cache = None
+_players_at = 0.0
+
+
+def _camp_number(value):
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(',', '').replace('%', '')
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _camp_name(value):
+    return str(value or '').translate(_CAMP_ALIASES).strip()
+
+
+def _panel_games():
+    """营地面板 id → 对局标题 / 对手 / 日期，用于把面板挂回训练赛。"""
+    index = {}
+    for path in (ROOT / 'data' / 'matches').glob('*.json'):
+        try:
+            body = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        match = body.get('match') or {}
+        seq = str((match.get('campBp') or {}).get('gameSeq') or '')
+        if not seq:
+            continue
+        date = match.get('date') or {}
+        index[seq] = {'key': match.get('key') or path.stem,
+                      'title': match.get('title') or '',
+                      'opponent': (match.get('opponent') or '').strip(),
+                      'date': date.get('text') or ''}
+    return index
+
+
+def _camp_stamp(text, year):
+    """面板里的 '11-02 13:10' 只有月日时，补年份成 ISO 日期与排序键。"""
+    match = re.match(r'\s*(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})', str(text or ''))
+    if not match:
+        return '', ''
+    month, day, hour, minute = (int(part) for part in match.groups())
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return '', ''
+    return f'{year:04d}-{month:02d}-{day:02d}', f'{year:04d}{month:02d}{day:02d}{hour:02d}{minute:02d}'
+
+
+def _camp_records():
+    """解析 data/camp_details 的十人面板，产出逐人逐局记录（60 秒缓存）。"""
+    global _players_cache, _players_at
+    if _players_cache is not None and monotonic() - _players_at <= 60:
+        return _players_cache
+    from camp_time import camp_times
+    linked = _panel_games()
+    games, records = [], []
+    for path in sorted((ROOT / 'data' / 'camp_details').glob('*.json')):
+        try:
+            body = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        data = body.get('data') or {}
+        head = data.get('head') or {}
+        camp_code = _camp_number(head.get('acntCamp'))
+        if camp_code not in (1, 2):
+            continue
+        own_camp = int(camp_code)
+        won = head.get('gameResult')
+        result = 'win' if won is True else 'loss' if won is False else 'unknown'
+        times = camp_times(body) or {}
+        info = linked.get(path.stem) or {}
+        day = times.get('date') or info.get('date') or ''
+        year = int(day[:4]) if day[:4].isdigit() else date.today().year
+        stamp_text = ((data.get('battle') or {}).get('startTime')
+                      or (data.get('battle') or {}).get('dtEventTime') or '')
+        stamp_day, stamp_key = _camp_stamp(stamp_text, year)
+        if not day:
+            day = stamp_day
+        at = f'{day} {str(stamp_text).split(" ")[-1]}' if day and stamp_key else day
+        duration = _camp_number((data.get('battle') or {}).get('usedTime')) or 0
+        minutes = duration / 60 if duration else 0
+        map_name = head.get('mapName') or ''
+        opponent = info.get('opponent') or ('排位对手' if '排位' in map_name else '')
+        game = {'id': path.stem, 'day': day, 'at': at, 'sort': stamp_key or path.stem,
+                'title': info.get('title') or '',
+                # 已挂到训练赛档案的面板带 matchKey，名单行可以直接跳到该局复盘。
+                'match': info.get('key') or '',
+                'opponent': opponent, 'map': map_name,
+                'ownCamp': '蓝方' if own_camp == 1 else '红方',
+                'result': result, 'duration': round(minutes, 1), 'own': [], 'enemy': []}
+        for camp, key in ((1, 'blueRoles'), (2, 'redRoles')):
+            roles = data.get(key) or []
+            if len(roles) != 5:
+                continue
+            parsed = []
+            for role in roles:
+                stats = role.get('battleStats') or {}
+                parsed.append({
+                    'basic': role.get('basicInfo') or {},
+                    'record': role.get('battleRecords') or {},
+                    'stats': stats,
+                    'gold': _camp_number(stats.get('money')) or 0,
+                    'damage': _camp_number(stats.get('totalHurtCnt')) or 0,
+                    'taken': _camp_number(stats.get('totalBehurtCnt')) or 0,
+                })
+            team_gold = sum(item['gold'] for item in parsed) or 1
+            team_damage = sum(item['damage'] for item in parsed) or 1
+            team_taken = sum(item['taken'] for item in parsed) or 1
+            for item in parsed:
+                stats = item['stats']
+                name = _camp_name(item['basic'].get('roleName'))
+                lane = _CAMP_LANES.get(_camp_number(item['record'].get('position')))
+                hero = (item['record'].get('usedHero') or {}).get('heroName') or ''
+                if not name or not lane:
+                    continue
+                side = 'own' if camp == own_camp else 'enemy'
+                kills = _camp_number(stats.get('killCnt')) or 0
+                deaths = _camp_number(stats.get('deadCnt')) or 0
+                assists = _camp_number(stats.get('assistCnt')) or 0
+                participation = _camp_number(stats.get('joinGamePercent'))
+                rating = _camp_number(stats.get('gradeGame'))
+                row = {
+                    'gameId': path.stem, 'day': day, 'at': at, 'sort': stamp_key or path.stem,
+                    'opponent': opponent, 'map': map_name,
+                    'side': side, 'camp': '蓝方' if camp == 1 else '红方',
+                    'result': result if side == 'own' else
+                              ('loss' if result == 'win' else 'win' if result == 'loss' else 'unknown'),
+                    'name': name, 'hero': hero, 'lane': lane,
+                    'kills': kills, 'deaths': deaths, 'assists': assists,
+                    'kda': round((kills + assists) / deaths, 2) if deaths else round(kills + assists, 2),
+                    'gold': item['gold'], 'damage': item['damage'], 'taken': item['taken'],
+                    'cs': _camp_number(stats.get('killSoldier')) or 0,
+                    'gpm': round(item['gold'] / minutes) if minutes else None,
+                    'dpm': round(item['damage'] / minutes) if minutes else None,
+                    'dtpm': round(item['taken'] / minutes) if minutes else None,
+                    'goldShare': round(item['gold'] / team_gold * 100, 1),
+                    'damageShare': round(item['damage'] / team_damage * 100, 1),
+                    'takenShare': round(item['taken'] / team_taken * 100, 1),
+                    'participation': round(participation * 100, 1) if participation is not None and participation <= 1
+                                     else (round(participation, 1) if participation is not None else None),
+                    'rating': round(rating, 1) if rating is not None else None,
+                    'mvp': bool(stats.get('mvp')),
+                }
+                records.append(row)
+                game[side].append({'name': name, 'hero': hero, 'lane': lane,
+                                   'kda': row['kda'], 'gold': item['gold']})
+        if game['own'] and game['enemy']:
+            games.append(game)
+    _players_cache = {'games': games, 'records': records}
+    _players_at = monotonic()
+    return _players_cache
+
+
+def _mean_of(values, digits=0):
+    values = [value for value in values if isinstance(value, (int, float))]
+    if not values:
+        return None
+    return round(sum(values) / len(values), digits)
+
+
+def _percentile(values, value):
+    if value is None or not values:
+        return None
+    below = sum(1 for item in values if item < value)
+    equal = sum(1 for item in values if item == value)
+    return round((below + equal * 0.5) / len(values) * 100, 1)
+
+
+def _players_board():
+    facts = _camp_records()
+    games, records = facts['games'], facts['records']
+    profile = {}
+    try:
+        with closing(sqlite3.connect(DB)) as connection:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            profile = json.loads(row[0]) if row else {}
+    except (sqlite3.Error, ValueError):
+        profile = {}
+    team_name = str(profile.get('teamName') or '').strip()
+    members = []
+    for member in (profile.get('members') or profile.get('roster') or []):
+        if member.get('archived') or (member.get('team') and member.get('team') != team_name):
+            continue
+        item = dict(member)
+        item['label'] = item.get('label') or item.get('name') or ''
+        item['position'] = item.get('position') or ''
+        members.append(item)
+    aliases = {str(key): str(value) for key, value in (profile.get('aliases') or {}).items()}
+    member_by_id = {member['id']: member for member in members}
+    name_to_member = {}
+    for member in members:
+        for label in (member.get('label'), member.get('name')):
+            if label:
+                name_to_member[str(label)] = member
+    for alias, member_id in aliases.items():
+        if member_id in member_by_id:
+            name_to_member[alias] = member_by_id[member_id]
+
+    buckets = {}
+    for row in records:
+        bucket = buckets.setdefault(row['name'], {
+            'name': row['name'], 'side': row['side'], 'games': 0, 'wins': 0, 'decided': 0,
+            '_kda': [], '_gpm': [], '_dpm': [], '_dtpm': [], '_part': [], '_goldShare': [],
+            '_damageShare': [], '_takenShare': [], '_rating': [], 'mvp': 0, '_cs': [],
+            'lanes': Counter(), 'heroes': Counter(), 'heroWins': Counter(),
+            'heroDecided': Counter(), 'recent': []})
+        bucket['games'] += 1
+        if row['result'] in ('win', 'loss'):
+            bucket['decided'] += 1
+            if row['result'] == 'win':
+                bucket['wins'] += 1
+        bucket['_kda'].append(row['kda'])
+        for key, field in (('_gpm', 'gpm'), ('_dpm', 'dpm'), ('_dtpm', 'dtpm'),
+                           ('_part', 'participation'), ('_goldShare', 'goldShare'),
+                           ('_damageShare', 'damageShare'), ('_takenShare', 'takenShare'),
+                           ('_rating', 'rating'), ('_cs', 'cs')):
+            if row.get(field) is not None:
+                bucket[key].append(row[field])
+        if row['mvp']:
+            bucket['mvp'] += 1
+        bucket['lanes'][row['lane']] += 1
+        bucket['heroes'][row['hero']] += 1
+        if row['result'] in ('win', 'loss'):
+            bucket['heroDecided'][row['hero']] += 1
+            if row['result'] == 'win':
+                bucket['heroWins'][row['hero']] += 1
+        bucket['recent'].append(row)
+
+    def mean(values, digits=1):
+        values = [value for value in values if value is not None]
+        return round(sum(values) / len(values), digits) if values else None
+
+    players = []
+    for bucket in buckets.values():
+        lane = bucket['lanes'].most_common(1)[0][0] if bucket['lanes'] else ''
+        member = name_to_member.get(bucket['name'])
+        players.append({
+            'name': bucket['name'], 'lane': lane,
+            'laneMix': [{'lane': name, 'games': n} for name, n in bucket['lanes'].most_common()],
+            'side': bucket['side'], 'bound': bool(member), 'memberId': member['id'] if member else None,
+            'games': bucket['games'], 'wins': bucket['wins'], 'decided': bucket['decided'],
+            'winRate': round(bucket['wins'] / bucket['decided'] * 100, 1) if bucket['decided'] else None,
+            'kda': mean(bucket['_kda'], 2), 'gpm': mean(bucket['_gpm'], 0), 'dpm': mean(bucket['_dpm'], 0),
+            'dtpm': mean(bucket['_dtpm'], 0), 'participation': mean(bucket['_part'], 1),
+            'goldShare': mean(bucket['_goldShare'], 1), 'damageShare': mean(bucket['_damageShare'], 1),
+            'takenShare': mean(bucket['_takenShare'], 1), 'cs': mean(bucket['_cs'], 0),
+            'rating': mean(bucket['_rating'], 1), 'mvp': bucket['mvp'],
+            'heroes': [{'hero': hero, 'games': n,
+                        'wins': bucket['heroWins'].get(hero, 0),
+                        'decided': bucket['heroDecided'].get(hero, 0)}
+                       for hero, n in bucket['heroes'].most_common(6)],
+            '_recent': sorted(bucket['recent'], key=lambda item: (item['sort'], item['gameId'])),
+            '_ratings': [row['rating'] for row in sorted(bucket['recent'], key=lambda item: (item['sort'], item['gameId']))
+                         if row.get('rating') is not None],
+        })
+
+    # 同位置分位：只和同位置选手比；表现分 = 分位均值，50 即分路平均。
+    lanes = {}
+    for player in players:
+        lanes.setdefault(player['lane'], []).append(player)
+    keys = ['kda', 'gpm', 'dpm', 'participation', 'damageShare', 'takenShare', 'goldShare']
+    for lane, group in lanes.items():
+        for key in keys:
+            values = sorted(player[key] for player in group if player.get(key) is not None)
+            for player in group:
+                player.setdefault('percent', {})[key] = _percentile(values, player.get(key))
+    for player in players:
+        percent = player.get('percent') or {}
+        core = [percent.get(key) for key in ('kda', 'gpm', 'dpm', 'participation') if percent.get(key) is not None]
+        player['score'] = round(sum(core) / len(core), 1) if core else None
+        ratings = player.pop('_ratings')
+        if len(ratings) >= 6:
+            prior = sum(ratings[-6:-3]) / 3
+            recent = sum(ratings[-3:]) / 3
+            delta = recent - prior
+            player['form'] = {'available': True, 'prior': round(prior, 1), 'recent': round(recent, 1),
+                              'delta': round(delta, 1), 'samples': len(ratings),
+                              'tone': 'up' if delta >= 0.5 else 'down' if delta <= -0.5 else 'flat'}
+        else:
+            player['form'] = {'available': False, 'samples': len(ratings)}
+        recent = player.pop('_recent')[-12:]
+        player['recent'] = [{key: row.get(key) for key in
+                             ('gameId', 'day', 'at', 'opponent', 'hero', 'lane', 'result', 'kda', 'gpm', 'dpm', 'rating', 'mvp')}
+                            for row in reversed(recent)]
+
+    # 搭档：同局同阵营双人共现，按有胜负的局算组合胜率。
+    pair_map = {}
+    for game in games:
+        own = [item['name'] for item in game['own']]
+        for i in range(len(own)):
+            for j in range(i + 1, len(own)):
+                key = tuple(sorted((own[i], own[j])))
+                item = pair_map.setdefault(key, {'games': 0, 'wins': 0, 'decided': 0})
+                item['games'] += 1
+                if game['result'] in ('win', 'loss'):
+                    item['decided'] += 1
+                    if game['result'] == 'win':
+                        item['wins'] += 1
+    pairs = [{'a': key[0], 'b': key[1], 'games': item['games'], 'wins': item['wins'],
+              'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None}
+             for key, item in pair_map.items() if item['games'] >= 2]
+    pairs.sort(key=lambda item: (-item['games'], -item['wins']))
+
+    # 位置对照：本队 / 对手在同一位置的分均与参团。
+    lane_rows = []
+    for lane in _CAMP_LANE_ORDER:
+        rows = [row for row in records if row['lane'] == lane]
+        item = {'lane': lane}
+        for side in ('own', 'enemy'):
+            cells = [row for row in rows if row['side'] == side]
+            decided = [row for row in cells if row['result'] in ('win', 'loss')]
+            wins = sum(1 for row in decided if row['result'] == 'win')
+            item[side] = {
+                'games': len(cells), 'winRate': round(wins / len(decided) * 100, 1) if decided else None,
+                'gpm': _mean_of([row.get('gpm') for row in cells]),
+                'dpm': _mean_of([row.get('dpm') for row in cells]),
+                'dtpm': _mean_of([row.get('dtpm') for row in cells]),
+                'participation': _mean_of([row.get('participation') for row in cells], 1),
+                'players': len({row['name'] for row in cells}),
+            }
+        lane_rows.append(item)
+
+    # 位置名册：有认领就用认领，否则给该位置出场最多的人（认领页的第一候选）。
+    roster = []
+    for lane in _CAMP_LANE_ORDER:
+        claimed = next((member for member in members if (member.get('position') or '') == lane), None)
+        candidate = next((player for player in sorted(players, key=lambda item: -item['games'])
+                          if player['lane'] == lane and player['side'] == 'own'), None)
+        roster.append({'lane': lane, 'member': (claimed.get('label') or claimed.get('name')) if claimed else '',
+                       'memberId': claimed['id'] if claimed else None,
+                       'player': candidate['name'] if candidate else '',
+                       'games': candidate['games'] if candidate else 0,
+                       'winRate': candidate['winRate'] if candidate else None,
+                       'bound': bool(claimed)})
+
+    own = [player for player in players if player['side'] == 'own']
+    unclaimed = [player for player in own if not player['bound'] and player['games'] >= 2]
+    unclaimed.sort(key=lambda item: -item['games'])
+    entries = [{'label': player['name'], 'matches': player['games'], 'lane': player['lane'],
+                'heroes': [item['hero'] for item in player['heroes'][:3]],
+                'winRate': player['winRate'], 'bound': player['bound'],
+                'memberId': player['memberId']} for player in own]
+    entries.sort(key=lambda item: (item['bound'], -item['matches'], item['label']))
+    decided_games = [game for game in games if game['result'] in ('win', 'loss')]
+    summary = {
+        'games': len(games), 'decided': len(decided_games),
+        'wins': sum(1 for game in decided_games if game['result'] == 'win'),
+        'winRate': round(sum(1 for game in decided_games if game['result'] == 'win') / len(decided_games) * 100, 1)
+                   if decided_games else None,
+        'players': len(players), 'ownPlayers': len(own), 'bound': sum(1 for player in own if player['bound']),
+        'unclaimed': sum(1 for player in own if not player['bound']),
+        'formReady': sum(1 for player in players if player['form']['available']),
+        'rising': sum(1 for player in players if player['form'].get('tone') == 'up'),
+        'falling': sum(1 for player in players if player['form'].get('tone') == 'down'),
+        'pairs': len(pairs), 'days': len({game['day'] for game in games if game['day']}),
+        'positions': len({player['lane'] for player in players if player['lane']}),
+        'teamName': team_name,
+    }
+    board = {'games': sorted(games, key=lambda game: (game['sort'], game['id']), reverse=True),
+             'players': sorted(players, key=lambda item: (-item['games'], -item['wins'], item['name'])),
+             'lanes': lane_rows, 'pairs': pairs[:24], 'roster': roster,
+             'unclaimed': [{'name': player['name'], 'games': player['games'], 'lane': player['lane'],
+                            'winRate': player['winRate'], 'heroes': [item['hero'] for item in player['heroes'][:3]],
+                            'teammates': []} for player in unclaimed[:24]],
+             'identity': {'entries': entries, 'members': members, 'aliases': aliases, 'teamName': team_name},
+             'summary': summary}
+    # 认领候选的常见队友：同一批对局里同阵营出场最多的人。
+    by_name = {player['name']: player for player in players}
+    for item in board['unclaimed']:
+        mates = Counter()
+        for game in games:
+            names = [row['name'] for row in game['own']]
+            if item['name'] in names:
+                mates.update(name for name in names if name != item['name'])
+        item['teammates'] = [{'name': name, 'games': n} for name, n in mates.most_common(3)]
+    del by_name
+    return board
+
+
+@router.get('/api/v2/players-board')
+def players_board_v2():
+    """选手板块四页共用聚合：逐人逐局记录、位置对照、搭档、认领状态。"""
+    return _players_board()
+
+
+@router.get('/api/v2/vocab')
+def vocab_board():
+    """赛训词表：版本 / 规则 / 赛制 / 训练组。
+
+    表单选项与预填确认共用这一份口径；历史记录里已经出现的值也会并进来，
+    避免词表升级后老值从下拉里消失、改一次就被悄悄覆盖。
+    """
+    base = vocab_store.load(DATA_DIR)
+    sessions, versions = list(base.get('sessions') or []), list(base.get('versions') or [])
+    try:
+        with closing(sqlite3.connect(DB)) as connection:
+            sessions += [row[0] for row in connection.execute(
+                'SELECT DISTINCT session FROM schedules WHERE session IS NOT NULL AND session <> ""')]
+            for row in connection.execute(
+                    'SELECT DISTINCT version FROM schedules WHERE version IS NOT NULL AND version <> ""'):
+                versions.append(row[0])
+            for table in ('matches',):
+                try:
+                    sessions += [row[0] for row in connection.execute(
+                        f'SELECT DISTINCT session FROM {table} WHERE session IS NOT NULL AND session <> ""')]
+                    versions += [row[0] for row in connection.execute(
+                        f'SELECT DISTINCT version FROM {table} WHERE version IS NOT NULL AND version <> ""')]
+                except sqlite3.Error:
+                    continue
+    except sqlite3.Error:
+        pass
+    return {
+        'versions': vocab_store.sort_values('versions', versions),
+        'rules': list(base.get('rules') or []),
+        'formats': list(base.get('formats') or []),
+        'sessions': vocab_store.sort_values('sessions', sessions),
+    }
+
+
+_hero_facts_cache = None
+_hero_facts_at = 0.0
+
+
+def _hero_facts():
+    """营地面板逐人记录（含出装）复用 60 秒，避免详情页每次全量解析。"""
+    global _hero_facts_cache, _hero_facts_at
+    if _hero_facts_cache is None or monotonic() - _hero_facts_at > 60:
+        import depth_api
+        _hero_facts_cache = depth_api.build_facts(ROOT)
+        _hero_facts_at = monotonic()
+    return _hero_facts_cache
+
+
+@router.get('/api/v2/hero-detail/{hero}')
+def hero_detail(hero: str, repo=Depends(repository)):
+    """英雄详情页的聚合数据：选手使用榜 / 战队使用 / 本队均值对照 / 成长曲线 / 选手出装。
+
+    全部从同一份营地逐行面板算出，避免前端把多个来源的口径混在一起。
+    """
+    base = {'sources': list(DEFAULT_SOURCES)}
+    hero_rows, _ = repo._selected_rows({**base, 'hero': hero})
+    all_rows, _ = repo._selected_rows(base)
+    hero_rows = [row for row in hero_rows if row.get('isOwn')]
+    all_rows = [row for row in all_rows if row.get('isOwn')]
+
+    def mean(rows, key):
+        values = [row[key] for row in rows if isinstance(row.get(key), (int, float))]
+        return round(sum(values) / len(values), 2) if values else None
+
+    def group(rows, field):
+        buckets = {}
+        for row in rows:
+            name = row.get(field) or '未标注'
+            item = buckets.setdefault(name, {'name': name, 'games': 0, 'wins': 0,
+                                            'decided': 0, '_kda': [], '_gpm': []})
+            item['games'] += 1
+            if row.get('result') in ('win', 'loss'):
+                item['decided'] += 1
+                if row['result'] == 'win':
+                    item['wins'] += 1
+            for key, bucket in (('kda', '_kda'), ('gpm', '_gpm')):
+                if isinstance(row.get(key), (int, float)):
+                    item[bucket].append(row[key])
+        result = [{
+            'name': item['name'], 'games': item['games'], 'wins': item['wins'],
+            'decided': item['decided'],
+            'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None,
+            'kda': round(sum(item['_kda']) / len(item['_kda']), 2) if item['_kda'] else None,
+            'gpm': round(sum(item['_gpm']) / len(item['_gpm'])) if item['_gpm'] else None,
+        } for item in buckets.values()]
+        return sorted(result, key=lambda x: -x['games'])[:12]
+
+    league = {key: {'hero': mean(hero_rows, key), 'all': mean(all_rows, key)}
+              for key in ('kda', 'gpm', 'dpm', 'participation', 'gold', 'cs')}
+
+    match_keys = {row.get('matchKey') for row in hero_rows if row.get('matchKey')}
+    curves = [match for match in (repo.process(base).get('matches') or [])
+              if match.get('key') in match_keys]
+    buckets = defaultdict(list)
+    for match in curves:
+        for point in match.get('points') or []:
+            if isinstance(point, (list, tuple)) and len(point) >= 2 and isinstance(point[1], (int, float)):
+                buckets[int(point[0])].append(point[1])
+    growth = [{'t': second, 'value': round(sum(values) / len(values))}
+              for second, values in sorted(buckets.items()) if values]
+
+    facts = _hero_facts()
+    match_result = {str(match.get('id')): match.get('result')
+                    for match in (facts.get('matches') or [])}
+    builders = {}
+    for row in (facts.get('players') or []):
+        if row.get('hero') != hero:
+            continue
+        name = row.get('player') or '未标注'
+        item = builders.setdefault(name, {'name': name, 'games': 0, 'wins': 0,
+                                         'decided': 0, '_gold': [], '_kda': [],
+                                         'equips': Counter(), 'first': Counter(),
+                                         'summoner': Counter()})
+        item['games'] += 1
+        result = match_result.get(str(row.get('match')))
+        if result is not None:
+            item['decided'] += 1
+            if result:
+                item['wins'] += 1
+        for key, bucket in (('gold', '_gold'), ('kda', '_kda')):
+            if isinstance(row.get(key), (int, float)):
+                item[bucket].append(row[key])
+        equips = [value for value in (row.get('equips') or []) if value]
+        for equip in equips:
+            item['equips'][equip] += 1
+        if equips:
+            item['first'][equips[0]] += 1
+        if row.get('summoner'):
+            item['summoner'][row['summoner']] += 1
+
+    def avg(values, digits=1):
+        return round(sum(values) / len(values), digits) if values else None
+
+    def chips(counter, limit):
+        return [{'name': name, 'count': count} for name, count in counter.most_common(limit)]
+
+    player_builds = [{
+        'name': item['name'], 'games': item['games'], 'wins': item['wins'],
+        'decided': item['decided'],
+        'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None,
+        'gold': avg(item['_gold'], 0), 'kda': avg(item['_kda'], 2),
+        'equips': chips(item['equips'], 6), 'first': chips(item['first'], 2),
+        'summoner': chips(item['summoner'], 2),
+    } for item in builders.values()]
+    player_builds.sort(key=lambda x: -x['games'])
+
+    return {'hero': hero, 'games': len(hero_rows), 'players': group(hero_rows, 'label'),
+            'teams': group(hero_rows, 'opponent'), 'league': league,
+            'growth': growth, 'curveGames': len(curves),
+            'playerBuilds': player_builds[:8]}
+
+
+app.include_router(router)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--port', type=int, default=8771, help='V3 dev/demo port (default: 8771)')
+    uvicorn.run(app, host='127.0.0.1', port=parser.parse_args().port)
+

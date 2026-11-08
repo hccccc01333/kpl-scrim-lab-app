@@ -25,9 +25,11 @@ import re
 import sqlite3
 import statistics
 from collections import Counter, defaultdict
+from datetime import date
 from pathlib import Path
 
 from bp_camp import POSITION_LANES
+from camp_time import camp_times
 from fastapi import APIRouter, HTTPException, Request
 
 DEPTH_SCALE = [
@@ -66,7 +68,7 @@ LANES = [POSITION_LANES[i] for i in range(5)]
 
 # 营地昵称常夹带零宽字符（如「信则\u2060\u2061有\u2062」），按可见文本认领前先清洗。
 _ZERO_WIDTH = {code: None for code in
-               (*range(0x200b, 0x2010), *range(0x2060, 0x2065), 0xfeff)}
+               (*range(0x200b, 0x2010), *range(0x2060, 0x2065), 0xfeff, *range(0xfe00, 0xfe10))}
 _START_MINUTE = re.compile(
     r'(?:(?:\d{4})[-/])?(\d{1,2})[-/](\d{1,2})[ T]+(\d{1,2}):(\d{2})')
 
@@ -91,8 +93,8 @@ def _start_minute(value):
 def _build_game_labels(matches, extra_ids, opponents):
     """对局可读标签：'MM-DD HH:MM · vs 对手'，同一分钟多局追加「第k局」。
 
-    标签只用于展示，原始对局 id 字段保持不变。取不到开赛时间时退回
-    「对局 <id 后4位>」，避免前端再直接暴露一串数字。
+    标签只用于展示，原始对局 id 字段保持不变。取不到开赛时间时按列表顺序
+    生成「vs 对手 · 第N局」/「训练赛 · 第N局」，不把一串数字直接暴露给教练。
     """
     entries, seen = [], set()
     for match in matches:
@@ -100,29 +102,35 @@ def _build_game_labels(matches, extra_ids, opponents):
         if not game_id or game_id in seen:
             continue
         seen.add(game_id)
-        entries.append((game_id, str(match.get('start') or '')))
+        entries.append((game_id, str(match.get('start') or ''),
+                        str(match.get('opponent') or '')))
     for game_id in extra_ids:
         game_id = str(game_id or '')
         if not game_id or game_id in seen:
             continue
         seen.add(game_id)
-        entries.append((game_id, ''))
+        entries.append((game_id, '', _clean_text((opponents or {}).get(game_id))))
 
     labels = {}
     grouped = defaultdict(list)
-    for game_id, start in entries:
+    unstarted = []
+    for index, (game_id, start, opponent) in enumerate(entries, 1):
         minute = _start_minute(start)
         if minute:
-            grouped[minute].append((start, game_id))
+            grouped[minute].append((start, game_id, opponent))
         else:
-            labels[game_id] = f'对局 {game_id[-4:]}'
+            unstarted.append((index, game_id, opponent))
     for minute, group in grouped.items():
         group.sort(key=lambda item: (item[0], item[1]))
-        for index, (_, game_id) in enumerate(group, 1):
-            opponent = _clean_text((opponents or {}).get(game_id))
-            tail = f' · vs {opponent}' if opponent else ' · 对局'
+        for index, (_, game_id, opponent) in enumerate(group, 1):
+            opponent = _clean_text(opponent or (opponents or {}).get(game_id))
+            tail = f' · vs {opponent}' if opponent else ' · 训练赛'
             suffix = f' 第{index}局' if len(group) > 1 else ''
             labels[game_id] = f'{minute}{tail}{suffix}'
+    for index, game_id, opponent in unstarted:
+        opponent = _clean_text(opponent or (opponents or {}).get(game_id))
+        prefix = f'vs {opponent}' if opponent else '训练赛'
+        labels[game_id] = f'{prefix} · 第{index}局'
     return labels
 
 
@@ -196,7 +204,7 @@ def _identity_resolver(profile):
 
 
 def _player_label(player):
-    """玩家行的展示名：已认领用名单名，未认领退回 P0X 匿名标签。"""
+    """玩家行的展示名：已认领用名单名，未认领用营地昵称，缺失才退回 P0X。"""
     return player.get('name') or player.get('player') or '未知'
 
 
@@ -331,7 +339,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
     """Load panels and camp official replays once; return JSON-ready facts.
 
     profile 来自工作台设置（aliases / enemyAliases / roster / teamName + stamp）；
-    只有名单里认领过的昵称才会变成显示名，未认领的继续用 P0X 匿名标签。
+    只有名单里认领过的昵称会变成名单名，未认领的保留营地昵称（便于按选手筛选）。
     """
     players, teams, matches = [], [], []
     anon = {}
@@ -357,6 +365,8 @@ def build_facts(root: Path, camp_meta=None, profile=None):
         head = data.get('head') or {}
         match_id = path.stem
         duration = num(battle.get('usedTime'))
+        times = camp_times(body)
+        start_text = times.get('startedAt') or battle.get('startTime') or ''
         # 我方阵营：match_meta 的手动覆盖优先，否则用 head.acntCamp 自动推断
         # （营地详情取数账号 = 本方选手账号，1 = 蓝、2 = 红）。
         meta = camp_meta.get(match_id) or {}
@@ -366,7 +376,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
             code = num(head.get('acntCamp'))
             own_camp = '蓝' if code == 1 else '红' if code == 2 else None
             own_source = 'auto' if own_camp else None
-        matches.append({'id': match_id, 'start': battle.get('startTime') or '',
+        matches.append({'id': match_id, 'start': start_text,
                         'duration': duration, 'gameType': battle.get('gameType'),
                         'result': head.get('gameResult'),
                         'ownCamp': own_camp, 'ownCampSource': own_source,
@@ -394,14 +404,17 @@ def build_facts(root: Path, camp_meta=None, profile=None):
                 equips = [e.get('equipName') for e in (record.get('finalEquips') or []) if isinstance(e, dict)]
                 lane = num(record.get('position'))
                 panel_lane[(match_id, str(camp_code), hero)] = lane
-                # 昵称只用于认领；认领失败时 name 留空，绝不把原始昵称写进 facts。
-                display_name, bound = resolve_identity(basic.get('roleName'))
-                row = {'match': match_id, 'player': anonymous(basic.get('playerId') or basic.get('roleId')),
-                       'name': display_name, 'bound': bound,
+                # 已认领用名单名；未认领用营地昵称，教练才能在「选手」筛选里对上人。
+                # 没有昵称时才退回 P0X（不把 playerId 直接写进 facts）。
+                raw_name = _clean_text(basic.get('roleName'))
+                display_name, bound = resolve_identity(raw_name)
+                row = {'match': match_id,
+                       'player': display_name or raw_name or anonymous(basic.get('playerId') or basic.get('roleId')),
+                       'name': display_name, 'raw': raw_name, 'bound': bound,
                        'camp': '蓝' if camp_code == 1 else '红', 'hero': hero, 'lane': lane,
                        'equips': [e for e in equips if e],
                        'summoner': (record.get('skill') or {}).get('skillName') or '',
-                       'duration': duration, 'start': battle.get('startTime') or ''}
+                       'duration': duration, 'start': start_text}
                 for key, source in NUM_FIELDS.items():
                     row[key] = num(stats.get(source))
                 if row['gold'] is not None and duration:
@@ -421,6 +434,10 @@ def build_facts(root: Path, camp_meta=None, profile=None):
 
     # Camp official replay sync: per-second positions, ~30s team gold, key events,
     # plus team fights / hero kill ledger / death positions rebuilt from raw.json.
+    # 回放层只带英雄，不带昵称；按 (对局, 阵营, 英雄) 回连面板行，
+    # 让「选手」筛选能作用到位置热区 / 团战贡献 / 掉点这些回放分析。
+    identity_by_hero = {(p['match'], p['camp'], p['hero']): _player_label(p)
+                        for p in players if p.get('hero')}
     replay_games, replay_players = [], []
     kill_events, fight_facts, fight_rows, death_points = [], [], [], []
     drop_windows, drop_roster = [], []
@@ -473,6 +490,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
                 fight_rows.append({
                     'game': game_id, 'fight': fid, 't': start, 'objID': obj,
                     'hero': hero, 'camp': '蓝' if camp_code == '1' else '红',
+                    'player': identity_by_hero.get((game_id, '蓝' if camp_code == '1' else '红', hero), ''),
                     'lane': panel_lane.get((game_id, camp_code, hero)),
                     'hurt': num(row.get('hurt')), 'taken': num(row.get('taken')),
                     'heal': num(row.get('heal')),
@@ -498,6 +516,8 @@ def build_facts(root: Path, camp_meta=None, profile=None):
                 'x': num(death.get('x')), 'y': num(death.get('y')),
                 'camp': '蓝' if camp_code == '1' else '红',
                 'hero': info.get('hero') or '',
+                'player': identity_by_hero.get((game_id, '蓝' if camp_code == '1' else '红',
+                                                info.get('hero') or ''), ''),
                 'lane': panel_lane.get((game_id, camp_code, info.get('hero') or '')),
                 'duration': duration})
 
@@ -530,6 +550,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
             hero = info.get('hero') or ''
             drop_roster.append({'game': game_id, 'objID': obj, 'hero': hero,
                                 'camp': '蓝' if camp_code == '1' else '红',
+                                'player': identity_by_hero.get((game_id, '蓝' if camp_code == '1' else '红', hero), ''),
                                 'lane': panel_lane.get((game_id, camp_code, hero))})
         deaths_by_obj = defaultdict(list)
         for death in battles.get('deaths') or []:
@@ -564,6 +585,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
                 drop_windows.append({
                     'game': game_id, 'objID': obj, 'hero': hero,
                     'camp': '蓝' if camp_code == '1' else '红',
+                    'player': identity_by_hero.get((game_id, '蓝' if camp_code == '1' else '红', hero), ''),
                     'lane': panel_lane.get((game_id, camp_code, hero)),
                     't': t, 'end': end, 'final': final, 'windowSec': round(end - t, 1),
                     'x': num(death.get('x')), 'y': num(death.get('y')),
@@ -584,6 +606,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
             position_points += len(coords)
             replay_players.append({'game': game_id, 'playerId': pid, 'hero': hero,
                                    'camp': '蓝' if camp == '1' else '红',
+                                   'player': identity_by_hero.get((game_id, '蓝' if camp == '1' else '红', hero), ''),
                                    'lane': panel_lane.get((game_id, camp, hero)),
                                    'coords': coords})
     matched = [g for g in replay_games if g['hasPanel']]
@@ -739,19 +762,74 @@ def _apply_side(facts, side, team=None):
     return result
 
 
+def _filter_matches(facts, team=None, date_from=None, date_to=None, match_id=None):
+    """先按对局筛选，再用同一批局计算面板与回放结果。"""
+    team = _clean_text(team) or None
+    if not (team or date_from or date_to or match_id):
+        return facts
+    opponents = facts.get('opponents') or {}
+    match_ids = set()
+    for match in facts.get('matches') or []:
+        key = str(match.get('id'))
+        if match_id and key != match_id:
+            continue
+        if team and _clean_text(opponents.get(key)) != team:
+            continue
+        if date_from or date_to:
+            try:
+                played = date.fromisoformat(_clean_text(match.get('start'))[:10])
+            except ValueError:
+                continue
+            if (date_from and played < date_from) or (date_to and played > date_to):
+                continue
+        match_ids.add(key)
+    result = dict(facts)
+    for key in ('matches', 'teams', 'players', 'replayGames', 'replayPlayers',
+                'killEvents', 'fightFacts', 'fightRows', 'deathPoints',
+                'dropWindows', 'dropRoster'):
+        rows = []
+        for row in facts.get(key) or []:
+            game = str(row.get('game') or row.get('match') or row.get('id') or '')
+            if game in match_ids:
+                rows.append(row)
+        result[key] = rows
+    return result
+
+
 def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
-                     player=None, hero=None):
+                     player=None, hero=None, metric=None, date_from=None, date_to=None, match_id=None):
+    facts = _filter_matches(facts, team, date_from, date_to, match_id)
     facts = _apply_side(facts, side, team)
     players = _filter_players(facts['players'], player, hero)
+    pool_players = facts['players']
     teams = facts['teams']
     games = facts['replayGames']
-    replay_players = facts['replayPlayers']
     n = len(players)
     labels = facts.get('labels') or {}
 
+    def replay_rows(key):
+        rows = facts.get(key) or []
+        if player:
+            rows = [row for row in rows if row.get('player') == player]
+        if hero:
+            rows = [row for row in rows if row.get('hero') == hero]
+        return rows
+
+    replay_players = replay_rows('replayPlayers')
+    fight_rows = replay_rows('fightRows')
+    death_points = replay_rows('deathPoints')
+    drop_windows = replay_rows('dropWindows')
+    drop_roster = replay_rows('dropRoster')
+    if player:
+        visible = ({row.get('game') for row in replay_players}
+                   | {row.get('game') for row in fight_rows}
+                   | {row.get('game') for row in death_points}
+                   | {row.get('game') for row in drop_windows})
+        games = [g for g in games if g['id'] in visible]
+
     def game_label(value):
         key = str(value or '')
-        return labels.get(key) or (f'对局 {key[-4:]}' if key else '—')
+        return labels.get(key) or ('未命名对局' if key else '—')
 
     if analysis_id == 'cross_lane_hero':
         metric = 'csPerMin'
@@ -768,8 +846,8 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
                       for lane in rows]
         return {'viz': 'matrix', 'rows': rows, 'cols': heroes, 'cells': cells,
                 'unit': '分均补刀', 'laneStats': lane_stats,
-                'note': ('分路按营地 position 编码映射为中文路名（0=对抗路 / 1=中路 / 2=发育路 / '
-                         '3=打野 / 4=游走，已按本批高频英雄核对）；带斜纹的格子样本不足 3 局，别读结论。')}
+                'note': ('分路已按营地坐标映射为中文路名：对抗路 / 中路 / 发育路 / 打野 / 游走；'
+                         '带斜纹的格子样本不足 3 局，别读结论。')}
 
     if analysis_id == 'cross_resource_output':
         pts = [p for p in players if p.get('goldShare') is not None and p.get('damageShare') is not None]
@@ -879,8 +957,11 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
 
     if analysis_id == 'time_economy':
         landmarks = [120, 300, 600, 900]
+        active = [g for g in games if str(g['id']) == str(game_id)] if game_id else list(games)
+        if not active:
+            active = list(games)
         curves, grid = [], []
-        for g in games:
+        for g in active:
             if not g['diff'] or not g['duration']:
                 continue
             step = g['duration'] / max(1, len(g['diff']) - 1)
@@ -894,14 +975,20 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
         lead = [r for r in grid if r['diffAt'].get(600) is not None]
         lead_win = sum(1 for r in lead if r['diffAt'][600] > 0 and str(r['winCamp']) == '1')
         return {'viz': 'economy', 'curves': curves, 'grid': grid, 'landmarks': landmarks,
+                'games': [{'id': g['id'], 'label': game_label(g['id']),
+                           'duration': g['duration'], 'winCamp': g['winCamp']} for g in games],
+                'selected': game_id or '',
                 'leadAt10': {'n': len(lead), 'blueLead': sum(1 for r in lead if r['diffAt'][600] > 0),
                              'blueLeadWins': lead_win},
                 'note': '约 30 秒一个金币点，中间不补数值；检查点取最近的实测值，末列「胜方」来自营地原始字段。'}
 
     if analysis_id == 'time_events':
+        active = [g for g in games if str(g['id']) == str(game_id)] if game_id else list(games)
+        if not active:
+            active = list(games)
         by_minute = defaultdict(Counter)
         totals = Counter()
-        for g in games:
+        for g in active:
             for e in g['events']:
                 if e['t'] is None:
                     continue
@@ -911,7 +998,7 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
         minutes = [{'minute': m, 'values': {k: c.get(k, 0) for k in names}}
                    for m, c in sorted(by_minute.items())]
         swings = []
-        for g in games:
+        for g in active:
             for e in g['events']:
                 if e['type'] not in ('dragontower', 'killbuff') or e['t'] is None:
                     continue
@@ -924,132 +1011,166 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
                                'camp': e['camp'], 'before': before, 'after': after,
                                'delta': round(after - before, 1)})
         return {'viz': 'events', 'minutes': minutes, 'names': names, 'totals': dict(totals),
+                'games': [{'id': g['id'], 'label': game_label(g['id']),
+                           'duration': g['duration']} for g in games],
+                'selected': game_id or '',
                 'swings': swings[:120], 'swingCount': len(swings),
                 'note': '事件来自官方回放事件表；swing = 事件前后各 60 秒的经济差变化，是时间关联不是因果。'}
 
-    if analysis_id == 'space_heatmap':
-        heat = Counter()
-        for p in replay_players:
-            for x, y in p['coords']:
-                heat[(int(x // 10) * 10, int(y // 10) * 10)] += 1
-        selected = next((g for g in games if g['id'] == game_id), games[0] if games else None)
-        tracks = []
-        if selected:
-            for p in replay_players:
-                if p['game'] != selected['id'] or not p['coords']:
-                    continue
-                step = max(1, len(p['coords']) // 260)
-                tracks.append({'label': p['hero'], 'points': p['coords'][::step],
-                               'camp': p['camp'], 'lane': _lane_of(p)})
-        return {'viz': 'map',
-                'heat': [{'x': x, 'y': y, 'n': c} for (x, y), c in heat.most_common(220)],
-                'tracks': tracks, 'bounds': [-60, 60],
-                'games': [{'id': g['id'], 'label': game_label(g['id']),
-                           'duration': g['duration']} for g in games],
-                'selected': selected['id'] if selected else None,
-                'selectedLabel': game_label(selected['id']) if selected else None,
-                'note': '热区把所有对局的位置点按网格聚合；轨迹是所选单局十人的抽样点，每秒一个位置。'}
-
-    if analysis_id == 'space_lane':
-        rows = []
-        for lane in LANES + ['未标注']:
-            group = [p for p in replay_players if _lane_of(p) == lane]
-            depths, spans, crossings = [], [], []
-            for p in group:
-                if not p['coords']:
-                    continue
-                ds = [(x + y + 114) / 228 for x, y in p['coords']]
-                own = ds if p['camp'] == '蓝' else [1 - d for d in ds]
-                depths.append(statistics.mean(own))
-                spans.append(statistics.pstdev(own))
-                prev = None
-                cross = 0
-                for d in ds:
-                    side = d >= .5
-                    if prev is not None and side != prev:
-                        cross += 1
-                    prev = side
-                crossings.append(cross)
-            if not depths:
+    if analysis_id == 'lane_matchup':
+        own_camps = facts.get('ownCamps') or {}
+        opponents = facts.get('opponents') or {}
+        win_camp = {str(g.get('id')): str(g.get('winCamp') or '')
+                    for g in facts.get('replayGames') or []}
+        for team in facts.get('teams') or []:
+            if team.get('result') in (True, 1, '1', 'true'):
+                win_camp.setdefault(str(team.get('match')),
+                                    '1' if team.get('camp') == '蓝' else '2')
+        grouped = defaultdict(list)
+        for p in facts.get('players') or []:
+            lane = _lane_of(p)
+            if lane == '未标注' or not p.get('hero'):
                 continue
-            rows.append({'lane': lane, 'players': len(depths),
-                         'depth': round(statistics.mean(depths), 3),
-                         'spread': round(statistics.mean(spans), 3),
-                         'crossings': round(statistics.mean(crossings), 1),
-                         'p10': quantile(depths, .1), 'p90': quantile(depths, .9)})
-        return {'viz': 'lanespace', 'rows': rows,
-                'note': '深度刻度：0 = 自家基地 → 1 = 敌方基地（按阵营翻转）；过河道 = 越过中线的次数，越多支援越频繁。'}
+            grouped[(p['match'], p['camp'], lane)].append(p)
 
-    if analysis_id == 'cross_space_time':
-        phases = [('0–4 分', 0, 240), ('4–10 分', 240, 600), ('10 分后', 600, 10 ** 6)]
-        phase_rows, lane_series = [], defaultdict(list)
-        for label, start, end in phases:
-            depths, spreads = defaultdict(list), []
-            for g in games:
-                people = [p for p in replay_players if p['game'] == g['id']]
-                by_camp = defaultdict(list)
-                for p in people:
-                    by_camp[p['camp']].append(p['coords'])
-                for second in range(int(start), min(int(end), int(g['duration'] or 0)), 5):
-                    for camp, coords_list in by_camp.items():
-                        pts = []
-                        for coords in coords_list:
-                            if second < len(coords):
-                                x, y = coords[second]
-                                d = (x + y + 114) / 228
-                                pts.append([x, y, d if camp == '蓝' else 1 - d])
-                        if len(pts) < 5:
-                            continue
-                        depths['全部'].append(statistics.mean(p[2] for p in pts))
-                        cx = statistics.mean(p[0] for p in pts)
-                        cy = statistics.mean(p[1] for p in pts)
-                        spreads.append(statistics.mean(math.hypot(p[0] - cx, p[1] - cy) for p in pts))
-            phase_rows.append({'phase': label, 'depth': round(statistics.mean(depths['全部']), 3)
-                               if depths['全部'] else None,
-                               'spread': round(statistics.mean(spreads), 1) if spreads else None,
-                               'samples': len(depths['全部'])})
-        # per-lane depth by minute
-        for minute in range(0, 13):
-            values = defaultdict(list)
-            for p in replay_players:
-                second = minute * 60
-                if second >= len(p['coords']):
+        def kda_of(player):
+            values = (player.get('kills'), player.get('deaths'), player.get('assists'))
+            if any(value is None for value in values):
+                return None
+            return (values[0] + values[2]) / max(1, values[1])
+
+        rows = []
+        for game, own in own_camps.items():
+            enemy = '红' if own == '蓝' else '蓝'
+            for (g, camp, lane), people in grouped.items():
+                if g != game or camp != own:
                     continue
-                x, y = p['coords'][second]
-                d = (x + y + 114) / 228
-                values[_lane_of(p)].append(d if p['camp'] == '蓝' else 1 - d)
-            for lane in LANES:
-                if values[lane]:
-                    lane_series[lane].append([minute, round(statistics.mean(values[lane]), 3)])
-        return {'viz': 'pace', 'phases': phase_rows,
-                'series': [{'label': lane, 'points': lane_series[lane]} for lane in LANES if lane_series[lane]],
-                'note': '每 5 秒采一次全队推进深度；抱团度 = 五人到队伍中心的平均距离，数值越小越抱团。分路为营地编码映射的中文路名。'}
+                if player:
+                    people = [p for p in people if _player_label(p) == player]
+                enemies = grouped.get((game, enemy, lane)) or []
+                if not people or not enemies:
+                    continue
+                o, e = people[0], enemies[0]
+                if o.get('gold') is None or e.get('gold') is None:
+                    continue
+                gold_diff = o['gold'] - e['gold']
+                kda_o, kda_e = kda_of(o), kda_of(e)
+                kda_diff = round(kda_o - kda_e, 2) if kda_o is not None and kda_e is not None else None
+                damage_diff = (round((o.get('heroDamage') or 0) - (e.get('heroDamage') or 0))
+                               if o.get('heroDamage') is not None and e.get('heroDamage') is not None
+                               else None)
+                winner = win_camp.get(game) or ''
+                win = None
+                if winner:
+                    win = (winner == '1') if own == '蓝' else (winner == '2')
+                rows.append({
+                    'match': game, 'label': game_label(game),
+                    'opponent': opponents.get(game) or '',
+                    'lane': lane, 'ownPlayer': _player_label(o), 'ownHero': o.get('hero') or '',
+                    'enemyPlayer': _player_label(e), 'enemyHero': e.get('hero') or '',
+                    'ownGold': o['gold'], 'enemyGold': e['gold'], 'goldDiff': gold_diff,
+                    'ownKda': kda_o, 'enemyKda': kda_e, 'kdaDiff': kda_diff,
+                    'ownDamage': o.get('heroDamage'), 'enemyDamage': e.get('heroDamage'),
+                    'damageDiff': damage_diff, 'ahead': gold_diff > 0, 'win': win,
+                    'winLabel': '胜' if win is True else '负' if win is False else '—'})
+
+        lanes = []
+        for lane in LANES:
+            group = [row for row in rows if row['lane'] == lane]
+            if not group:
+                continue
+            with_result = [row for row in group if row['win'] is not None]
+            ahead = [row for row in group if row['ahead']]
+            ahead_with_result = [row for row in ahead if row['win'] is not None]
+            lanes.append({
+                'lane': lane, 'n': len(group),
+                'avgGoldDiff': round(statistics.mean(row['goldDiff'] for row in group)),
+                'aheadRate': round(len(ahead) / len(group) * 100, 1),
+                'avgKdaDiff': (round(statistics.mean(row['kdaDiff'] for row in group
+                                                     if row['kdaDiff'] is not None), 2)
+                               if any(row['kdaDiff'] is not None for row in group) else None),
+                'winWhenAhead': (round(sum(1 for row in ahead_with_result if row['win'])
+                                       / len(ahead_with_result) * 100, 1)
+                                 if ahead_with_result else None),
+                'winRate': (round(sum(1 for row in with_result if row['win'])
+                                  / len(with_result) * 100, 1) if with_result else None)})
+
+        hero_pairs = defaultdict(list)
+        for row in rows:
+            hero_pairs[(row['ownHero'], row['enemyHero'])].append(row)
+        heroes = []
+        for (own_hero, enemy_hero), group in hero_pairs.items():
+            with_result = [row for row in group if row['win'] is not None]
+            heroes.append({'ownHero': own_hero, 'enemyHero': enemy_hero, 'n': len(group),
+                           'avgGoldDiff': round(statistics.mean(row['goldDiff'] for row in group)),
+                           'aheadRate': round(sum(1 for row in group if row['ahead']) / len(group) * 100, 1),
+                           'winRate': (round(sum(1 for row in with_result if row['win'])
+                                             / len(with_result) * 100, 1) if with_result else None),
+                           'avgKdaDiff': (round(statistics.mean(row['kdaDiff'] for row in group
+                                                                if row['kdaDiff'] is not None), 2)
+                                          if any(row['kdaDiff'] is not None for row in group) else None)})
+        heroes.sort(key=lambda item: (-item['n'], -item['avgGoldDiff']))
+        player_pairs = defaultdict(list)
+        for row in rows:
+            player_pairs[(row['ownPlayer'], row['enemyPlayer'], row['lane'])].append(row)
+        players_out = []
+        for (own_player, enemy_player, lane), group in player_pairs.items():
+            players_out.append({'ownPlayer': own_player, 'enemyPlayer': enemy_player,
+                                'lane': lane, 'n': len(group),
+                                'avgGoldDiff': round(statistics.mean(row['goldDiff'] for row in group)),
+                                'aheadRate': round(sum(1 for row in group if row['ahead']) / len(group) * 100, 1),
+                                'winRate': (round(sum(1 for row in group if row['win'])
+                                                  / len([row for row in group if row['win'] is not None]) * 100, 1)
+                                            if any(row['win'] is not None for row in group) else None)})
+        players_out.sort(key=lambda item: (-item['n'], -item['avgGoldDiff']))
+        return {'viz': 'matchup', 'lanes': lanes, 'roads': rows,
+                'heroes': heroes[:20], 'players': players_out[:20],
+                'note': ('只统计「对局分边」能判定我方阵营、且同分路双方各有一人的局；'
+                         '经济差 = 我方 − 对方终局金币，KDA 差 = 我方 − 对方。'
+                         '这是对线结果对照，不等于个人能力评价，也不能推断因果。')}
 
     if analysis_id == 'compare_baseline':
-        metric = 'gpm'
-        pools = defaultdict(list)
-        for p in players:
-            if p.get(metric) is not None:
-                pools[_lane_of(p)].append(p[metric])
+        metric_keys = ['gpm', 'dpm', 'participation', 'goldShare', 'damageShare']
+        metric_keys = [k for k in metric_keys if k in FIELD_LABELS]
+        selected_metric = metric if metric in metric_keys else 'gpm'
+        scale = lambda key, value: value * 100 if key == 'participation' and value is not None else value
+        pools = {key: defaultdict(list) for key in metric_keys}
+        for p in pool_players:
+            for key in metric_keys:
+                if p.get(key) is not None:
+                    pools[key][_lane_of(p)].append(scale(key, p[key]))
         by_player = defaultdict(list)
         for p in players:
-            if p.get(metric) is not None:
+            if any(p.get(key) is not None for key in metric_keys):
                 by_player[_player_label(p)].append(p)
         rows = []
         for label, group in by_player.items():
             lane = _lane_of(group[0])
-            value = median([p[metric] for p in group])
-            pool = pools[lane]
-            rank = sum(1 for v in pool if v < value) / len(pool) * 100 if pool else None
+            metrics = {}
+            for key in metric_keys:
+                values = [scale(key, p[key]) for p in group if p.get(key) is not None]
+                if not values:
+                    metrics[key] = None
+                    continue
+                value = median(values)
+                pool = pools[key][lane]
+                rank = (sum(1 for v in pool if v < value) / len(pool) * 100) if pool else None
+                metrics[key] = {'value': value, 'baseline': median(pool),
+                                'p75': quantile(pool, .75), 'p90': quantile(pool, .9),
+                                'percentile': round(rank, 1) if rank is not None else None,
+                                'n': len(pool)}
+            chosen = metrics.get(selected_metric) or {}
             rows.append({'player': label, 'bound': any(bool(p.get('bound')) for p in group),
-                         'lane': lane, 'n': len(group), 'value': value,
-                         'baseline': median(pool), 'p75': quantile(pool, .75),
-                         'p90': quantile(pool, .9),
-                         'percentile': round(rank, 1) if rank is not None else None,
+                         'lane': lane, 'n': len(group), 'metrics': metrics,
+                         'value': chosen.get('value'),
+                         'baseline': chosen.get('baseline'), 'p75': chosen.get('p75'),
+                         'p90': chosen.get('p90'), 'percentile': chosen.get('percentile'),
                          'heroes': sorted({p['hero'] for p in group if p['hero']})[:4]})
         rows.sort(key=lambda r: (r['value'] is None, -(r['value'] or 0)))
-        return {'viz': 'baseline', 'rows': rows[:40], 'metric': FIELD_LABELS[metric],
-                'note': '平均线取同位置内的中位数；身份是匿名的，分位只描述这批样本内的相对位置，不评价具体队员。'}
+        return {'viz': 'baseline', 'rows': rows[:60], 'metric': FIELD_LABELS[selected_metric],
+                'metrics': [{'key': key, 'label': FIELD_LABELS[key]} for key in metric_keys],
+                'note': ('同位置 = 对抗路 / 打野 / 中路 / 发育路 / 游走；参照 = 同位置所有已记录行（含对手）的'
+                         '中位数与分位。分位只描述这批样本内的相对位置，不评价具体队员。')}
 
     if analysis_id == 'compare_camp':
         definitions = [('gold', '总经济'), ('heroDamage', '对英雄输出'), ('gpm', '分均经济'),
@@ -1076,7 +1197,8 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
         picks = Counter(x for t in teams for x in t['picks'])
         objectives = [{'match': t['match'], 'label': game_label(t['match']),
                        'camp': t['camp'], 'towers': t['towers'],
-                       'dragons': sum(v or 0 for v in t['dragons'].values()),
+                       'dragons': (sum(v for v in t['dragons'].values() if v is not None)
+                                   if any(v is not None for v in t['dragons'].values()) else None),
                        'result': t['result'], 'money': t['money']} for t in teams]
         return {'viz': 'bp',
                 'bans': [{'label': k, 'value': v} for k, v in bans.most_common(16)],
@@ -1102,7 +1224,12 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
                 'note': '同一英雄聚合了不同选手和对局，看的是英雄波动，不是某个选手的状态稳定性。'}
 
     if analysis_id == 'time_kill_rhythm':
-        kills = [k for k in facts['killEvents'] if k['t'] is not None]
+        active = [g for g in games if str(g['id']) == str(game_id)] if game_id else list(games)
+        if not active:
+            active = list(games)
+        active_ids = {g['id'] for g in active}
+        kills = [k for k in facts['killEvents']
+                 if k['t'] is not None and k['game'] in active_ids]
         by_minute = defaultdict(Counter)
         for k in kills:
             by_minute[int(k['t'] // 60)]['蓝' if str(k['killerCamp']) == '1' else '红'] += 1
@@ -1112,31 +1239,34 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
         for label, lo, hi in (('前期 0–4 分', 0, 240), ('中期 4–10 分', 240, 600),
                               ('后期 10 分+', 600, 10 ** 9)):
             group = [k for k in kills if lo <= k['t'] < hi]
-            observed = sum(max(0, min(hi, g['duration'] or 0) - lo) for g in games
+            observed = sum(max(0, min(hi, g['duration'] or 0) - lo) for g in active
                            if (g['duration'] or 0) > lo)
             phases.append({'label': label, 'n': len(group),
                            'pct': round(len(group) / len(kills) * 100, 1) if kills else 0,
                            'rate': round(len(group) / (observed / 60), 2) if observed else None})
         first_blood = []
-        for g in games:
+        for g in active:
             values = [k['t'] for k in kills if k['game'] == g['id']]
             if values:
                 first_blood.append(min(values))
         bursts = []
-        for g in games:
+        for g in active:
             buckets = Counter(int(k['t'] // 60) for k in kills if k['game'] == g['id'])
             for minute, count in buckets.items():
                 if count >= 3:
                     bursts.append({'game': g['id'], 'label': game_label(g['id']),
                                    't': minute * 60, 'n': count})
         bursts.sort(key=lambda b: (-b['n'], b['game']))
-        sizes = Counter(f['kills'] for f in facts['fightFacts'])
+        sizes = Counter(f['kills'] for f in facts['fightFacts'] if f['game'] in active_ids)
         ledger = [{'game': k['game'], 'label': game_label(k['game']),
                    't': k['t'], 'killer': k['killer'],
                    'victim': k['victim'], 'camp': '蓝' if str(k['killerCamp']) == '1' else '红',
                    'fight': k['fight']}
                   for k in sorted(kills, key=lambda x: (x['game'], x['t']))[:30]]
         return {'viz': 'killrhythm', 'minutes': minutes, 'phases': phases,
+                'games': [{'id': g['id'], 'label': game_label(g['id']),
+                           'duration': g['duration']} for g in games],
+                'selected': game_id or '',
                 'firstBlood': {'median': median(first_blood), 'p25': quantile(first_blood, .25),
                                'p75': quantile(first_blood, .75), 'n': len(first_blood)},
                 'bursts': bursts[:20], 'burstCount': len(bursts),
@@ -1145,76 +1275,9 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
                 'note': ('击杀时刻来自官方回放逐次记录，与终局面板总击杀逐局一致；'
                          '阶段速率按该阶段实际时长折算，爆发窗口按 60 秒分桶。')}
 
-    if analysis_id == 'cross_teamfight_contribution':
-        rows = [r for r in facts['fightRows']
-                if r['hurt'] is not None and r['taken'] is not None and r['hero']]
-        first_camp = {(f['game'], f['fight']): str(f['firstCamp'])
-                      for f in facts['fightFacts']}
-        groups = defaultdict(list)
-        for r in rows:
-            groups[r['hero']].append(r)
-        heroes = []
-        for hero, group in groups.items():
-            if len(group) < 5:
-                continue
-            n = len(group)
-            camps = Counter(r['camp'] for r in group)
-            first_wins = sum(1 for r in group
-                             if first_camp.get((r['game'], r['fight']))
-                             == ('1' if r['camp'] == '蓝' else '2'))
-            heroes.append({
-                'hero': hero, 'n': n, 'camp': camps.most_common(1)[0][0],
-                'hurt': round(statistics.mean(r['hurt'] for r in group)),
-                'taken': round(statistics.mean(r['taken'] for r in group)),
-                'ctrl': round(statistics.mean((r['hardCtrl'] or 0) + (r['softCtrl'] or 0)
-                                              for r in group)),
-                'supportRate': round(sum(1 for r in group if r['support']) / n * 100, 1),
-                'kills': sum(r['kills'] or 0 for r in group),
-                'deaths': sum(r['deaths'] or 0 for r in group),
-                'assists': sum(r['assists'] or 0 for r in group),
-                'firstWin': round(first_wins / n * 100, 1),
-                'lowHPRate': round(sum(1 for r in group if (r['lowHP'] or 0) <= 0) / n * 100, 1)})
-        heroes.sort(key=lambda h: -h['hurt'])
-        return {'viz': 'fightscatter', 'points': heroes,
-                'table': heroes[:16],
-                'medians': {'hurt': median([h['hurt'] for h in heroes]),
-                            'taken': median([h['taken'] for h in heroes])},
-                'excluded': len(groups) - len(heroes),
-                'note': ('只统计团战窗口内的输出 / 承伤 / 控制，不是全局伤害；参团少于 5 次的英雄未纳入。'
-                         '「先手方」是官方记录的先手阵营，不等于该英雄拿到一血。')}
-
-    if analysis_id == 'space_deaths':
-        points = [d for d in facts['deathPoints']
-                  if d['x'] is not None and d['y'] is not None]
-        heat = Counter((int(d['x'] // 10) * 10, int(d['y'] // 10) * 10) for d in points)
-        by_minute = Counter(int(d['t'] // 60) for d in points if d['t'] is not None)
-        phases = []
-        for label, lo, hi in (('前期 0–4 分', 0, 240), ('中期 4–10 分', 240, 600),
-                              ('后期 10 分+', 600, 10 ** 9)):
-            group = [d for d in points if d['t'] is not None and lo <= d['t'] < hi]
-            phases.append({'label': label, 'n': len(group),
-                           'pct': round(len(group) / len(points) * 100, 1) if points else 0,
-                           'avgDepth': round(statistics.mean(
-                               [(d['x'] + d['y'] + 114) / 228 for d in group]), 3) if group else None})
-        camps = []
-        for camp in ('蓝', '红'):
-            group = [d for d in points if d['camp'] == camp]
-            depths = [(d['x'] + d['y'] + 114) / 228 for d in group]
-            enemy = sum(1 for v in depths if (v > .5 if camp == '蓝' else v < .5))
-            camps.append({'camp': camp, 'n': len(group),
-                          'avgDepth': round(statistics.mean(depths), 3) if depths else None,
-                          'enemyHalfPct': round(enemy / len(group) * 100, 1) if group else 0,
-                          'avgTime': median([d['t'] for d in group if d['t'] is not None])})
-        return {'viz': 'deathmap',
-                'heat': [{'x': x, 'y': y, 'n': n} for (x, y), n in heat.most_common()],
-                'bounds': [-60, 60], 'phases': phases, 'camps': camps,
-                'minutes': [{'minute': m, 'n': c} for m, c in sorted(by_minute.items())],
-                'note': ('死亡坐标是实测点（结算时刻采样），含少量野怪 / 建筑击杀，总数略多于逐次击杀。'
-                         '深度 > 0.5 表示死在红方半场；每秒一格，不是逐帧轨迹。')}
-
     if analysis_id == 'death_point_economy':
-        wins = facts['dropWindows']
-        roster = facts['dropRoster']
+        wins = drop_windows
+        roster = drop_roster
         selected = next((g for g in games if g['id'] == game_id), None)
         if selected is None and games:
             counts = {g['id']: sum(1 for w in wins if w['game'] == g['id']) for g in games}
@@ -1278,93 +1341,6 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
                      '窗口内还有兵线、野怪、推塔等其他收入，是时间关联不是阵亡本身的净损失；'
                      '同一团战多人阵亡时窗口重叠，逐笔别相加，团队口径看下方「掉点集群」。')}
 
-    if analysis_id == 'death_point_impact':
-        wins = facts['dropWindows']
-        chains = _drop_chains(wins)
-        losses = [w['loss'] for w in wins]
-        windows = [w['windowSec'] for w in wins if not w['final']]
-        positive = sum(1 for v in losses if v > 0)
-        summary = {
-            'n': len(wins), 'games': len(games),
-            'revived': sum(1 for w in wins if not w['final']),
-            'final': sum(1 for w in wins if w['final']),
-            'revivePct': round(sum(1 for w in wins if not w['final']) / len(wins) * 100, 1) if wins else 0,
-            'medianWindow': median(windows), 'p25Window': quantile(windows, .25),
-            'p75Window': quantile(windows, .75),
-            'medianLoss': median(losses), 'p25Loss': quantile(losses, .25),
-            'p75Loss': quantile(losses, .75), 'p90Loss': quantile(losses, .9),
-            'positive': positive, 'positivePct': round(positive / len(losses) * 100, 1) if losses else 0,
-            'sumWindowLoss': sum(losses),
-            'chainCount': len(chains),
-            'multiChains': sum(1 for c in chains if c['n'] >= 2),
-            'chainSwingSum': sum(abs(c['swing']) for c in chains),
-        }
-        phases = []
-        for label, lo, hi in (('前期 0–4 分', 0, 240), ('中期 4–10 分', 240, 600),
-                              ('后期 10 分+', 600, 10 ** 9)):
-            group = [w for w in wins if lo <= w['t'] < hi]
-            phases.append({'label': label, 'n': len(group),
-                           'pct': round(len(group) / len(wins) * 100, 1) if wins else 0,
-                           'avgLoss': round(statistics.mean([w['loss'] for w in group])) if group else None,
-                           'medianLoss': median([w['loss'] for w in group]),
-                           'finalPct': round(sum(1 for w in group if w['final']) / len(group) * 100, 1) if group else 0})
-        lanes = []
-        for lane in LANES + ['未标注']:
-            group = [w for w in wins if _lane_of(w) == lane]
-            if not group:
-                continue
-            lanes.append({'label': lane, 'n': len(group),
-                          'avgLoss': round(statistics.mean([w['loss'] for w in group])),
-                          'medianLoss': median([w['loss'] for w in group]),
-                          'p90Loss': quantile([w['loss'] for w in group], .9),
-                          'finalPct': round(sum(1 for w in group if w['final']) / len(group) * 100, 1)})
-        hero_groups = defaultdict(list)
-        for w in wins:
-            if w['hero']:
-                hero_groups[w['hero']].append(w)
-        heroes = []
-        for hero, group in hero_groups.items():
-            if len(group) < 8:
-                continue
-            heroes.append({'hero': hero, 'n': len(group),
-                           'avgLoss': round(statistics.mean([w['loss'] for w in group])),
-                           'medianLoss': median([w['loss'] for w in group]),
-                           'p90Loss': quantile([w['loss'] for w in group], .9),
-                           'finalPct': round(sum(1 for w in group if w['final']) / len(group) * 100, 1),
-                           'medianWindow': median([w['windowSec'] for w in group if not w['final']])})
-        heroes.sort(key=lambda h: -h['avgLoss'])
-        points = [{'x': round(w['t'] / 60, 2), 'y': w['loss'],
-                   'group': w['camp'], 'final': w['final'],
-                   'label': w['hero'],
-                   'detail': f"{game_label(w['game'])} · 窗口 {w['windowSec']:g}s · "
-                             f"{'终局未复活' if w['final'] else '实测复活'}"}
-                  for w in wins]
-        outcome = []
-        for label, is_winner in (('最终胜方', True), ('最终负方', False)):
-            group = [w for w in wins
-                     if (str(w['winCamp']) == ('1' if w['camp'] == '蓝' else '2')) is is_winner]
-            outcome.append({'label': label, 'n': len(group),
-                            'avgLoss': round(statistics.mean([w['loss'] for w in group])) if group else None,
-                            'medianLoss': median([w['loss'] for w in group]),
-                            'finalPct': round(sum(1 for w in group if w['final']) / len(group) * 100, 1) if group else 0})
-        flips = {
-            'leadLost': sum(1 for w in wins if w['diffStart'] > 0 >= w['diffEnd']),
-            'leadKept': sum(1 for w in wins if w['diffStart'] > 0 and w['diffEnd'] > 0),
-            'deficitRecovered': sum(1 for w in wins if w['diffStart'] < 0 <= w['diffEnd']),
-            'deficitKept': sum(1 for w in wins if w['diffStart'] < 0 and w['diffEnd'] < 0)}
-        top = [{**{k: w[k] for k in ('game', 't', 'end', 'final', 'windowSec', 'hero', 'camp',
-                                     'killer', 'fight', 'diffStart', 'diffEnd', 'loss')},
-                'label': game_label(w['game'])}
-               for w in sorted(wins, key=lambda w: -w['loss'])[:20]]
-        worst_chains = [{**chain, 'label': game_label(chain['game'])}
-                        for chain in sorted(chains, key=lambda c: -abs(c['swing']))[:15]]
-        return {'viz': 'dropimpact', 'summary': summary, 'phases': phases,
-                'lanes': lanes, 'heroes': heroes[:18], 'heroExcluded': len(hero_groups) - len(heroes),
-                'points': points, 'outcome': outcome, 'flips': flips,
-                'top': top, 'chains': worst_chains,
-                'note': ('同一团战多人阵亡时窗口重叠，逐笔相加会重复计账——团队级结论只看「掉点集群」的净摆动，'
-                         '且摆动包含窗口内所有事件，不能全记在阵亡头上；参战窗口少于 8 次的英雄已剔除。')}
-
     raise HTTPException(status_code=404, detail='未知分析')
 
 
@@ -1379,18 +1355,21 @@ def analyses_catalog(facts):
 
     def item(aid, direction, title, subtitle, purpose, level, status, samples, boundary, viz, fields,
              sided=True):
-        # sided=False：双边过程图（逐局节奏 / 经济差 / 事件密度 / 击杀节奏）与
-        # 蓝红视角体检——它们本来就是两方对照，单边过滤没有意义，前端不出现分边选项框。
-        # filters 告诉前端该分析可用的筛选器：side / player / hero。
+        # sided=False：双边过程图与全队层面的分析；filters 告诉前端该分析可用的
+        # 筛选器：side（我方/对方）/ team（按对手战队）/ player / hero。
         filters = ['side'] if sided else []
-        if aid in ('cs_conversion', 'cross_resource_output'):
+        if aid in ('cs_conversion', 'cross_resource_output',
+                   'cross_teamfight_contribution', 'death_point_economy',
+                   'death_point_impact', 'space_heatmap', 'space_lane', 'space_deaths'):
             filters = ['side', 'player']
         elif aid in ('cross_lane_hero', 'equip_matrix', 'equip_impact', 'stability'):
             filters = ['side', 'hero']
-        elif aid == 'compare_baseline':
-            filters = ['side', 'player']
-        elif aid.startswith('time_') or aid == 'compare_camp':
-            filters = []
+        elif aid in ('compare_baseline', 'lane_matchup'):
+            filters = ['side', 'player'] if aid == 'compare_baseline' else ['team', 'player']
+        elif aid.startswith('time_') or aid == 'cross_space_time':
+            filters = ['team']
+        elif aid in ('compare_camp', 'resource_bp'):
+            filters = [] if aid == 'compare_camp' else ['side']
         return {'id': aid, 'direction': direction, 'title': title, 'subtitle': subtitle,
                 'purpose': purpose,
                 'depth': level, 'status': status, 'samples': samples,
@@ -1400,19 +1379,14 @@ def analyses_catalog(facts):
     return [
         item('cross_lane_hero', '交叉', '哪条路用哪个英雄补刀更稳', '分路 × 英雄的补刀效率对照',
              '每个格子是一组分路 + 英雄的平均补刀，颜色越深数值越高。用来定分路人选和训练重点。',
-             'D2', '可运行', f'{games} 局 / {cov["lane"]["have"]} 人有分路编码 / {cov["cs"]["have"]} 人有补刀',
+             'D2', '可运行', f'{games} 局 / {cov["lane"]["have"]} 人有分路 / {cov["cs"]["have"]} 人有补刀',
              '带斜纹的格子样本太少（不足 3 局），不作参考。', 'matrix',
              ['position', 'killSoldier', 'usedTime', 'usedHero']),
         item('cross_resource_output', '交叉', '谁吃了资源没打出输出', '经济占比 vs 输出占比，错配一眼看出',
              '点越靠右吃得越多、越靠上打得越多。点在虚线下方 = 吃钱多干活少，就是要复盘的人。',
              'D2', '可运行', f'{n} 人 / {cov["goldShare"]["have"]} 人可算占比',
-             '这是相关不是因果；身份是匿名账号视角，不对应具体队员。', 'scatter',
+             '这是相关不是因果；未认领身份显示营地昵称，同名会合并。', 'scatter',
              ['money', 'totalHeroHurtCnt', 'team.money']),
-        item('cross_space_time', '交叉', '哪条路压得最深、什么时候开始抱团', '前 / 中 / 后三段的分路推进与抱团度',
-             '深度越接近 1 越压到对面基地。三张卡看各阶段推进，折线看队伍什么时候整体过河。',
-             'D3', '可运行', f'{replay_games} 局 / {points:,} 个逐秒位置点',
-             '每 5 秒采一次样；抱团度是五人到队伍中心的距离，不等于战术协同质量。', 'pace',
-             ['positions.posArr', 'position', 'usedTime']),
         item('cs_conversion', '补刀', '谁的补刀没变成钱、钱没变成伤害', '补刀 → 经济 → 输出，三段链条看断在哪',
              '三张图各管一段：补刀高钱少 = 补刀质量差；钱多伤害少 = 打法保守。找断点下药。',
              'D2', '可运行', f'{cov["cs"]["have"]} 人补刀 / {cov["gold"]["have"]} 人经济 / {cov["heroDamage"]["have"]} 人对英雄输出',
@@ -1443,21 +1417,16 @@ def analyses_catalog(facts):
              'D3', '可运行', f'{facts["counts"]["events"]:,} 条带时间戳事件 / {replay_games} 局',
              'swing 只是事件前后 60 秒的经济变化，是时间关联不是因果。', 'events',
              ['events.key', 'events.extended', 'economy.diff'], sided=False),
-        item('space_heatmap', '空间', '人都跑在哪：热区 + 单局走位', '橙色越深 = 越常被经过，可切单局看十人轨迹',
-             '把复盘拉回地图：哪些区域反复交火、某局十人实际怎么走。蓝红按阵营着色。',
-             'D3', '可运行', f'{replay_games} 局 / {points:,} 个逐秒位置点',
-             '每秒一个位置点（营地采样），轨迹做了下采样，不能测走位速度和碰撞。', 'map',
-             ['positions.posArr', 'normalized.players']),
-        item('space_lane', '空间', '每条路压到多深、支援多频繁', '分路推进深度 + 活动范围 + 过河道次数',
-             '圆点 = 平均推进深度（0 自家基地 → 1 敌方基地），过河道次数 ≈ 支援节奏。对照各路职责看谁没做到。',
-             'D2', '可运行', f'{replay_games} 局 / {len(facts["replayPlayers"])} 人局轨迹',
-             '按对角线归一化，未做路径插值。', 'lanespace',
-             ['positions.posArr', 'position', 'camp']),
+        item('lane_matchup', '对比', '同分路对位：谁压谁', '同分路双方经济 / KDA 对照 + 英雄对位',
+             '逐路看我方与对方同分路的经济差、KDA 差和占优率；英雄对位表回答「这个英雄遇到谁会吃亏」。',
+             'D3', '可运行', f'{len(facts["ownCamps"])} 局可判定阵营 / {len(facts["players"])} 人行级样本',
+             '只统计双方同分路各有一人且终局经济齐全的局；对线结果不是个人能力评价，也不作因果推断。',
+             'matchup', ['position', 'money', 'killCnt', 'deadCnt', 'assistCnt', 'usedHero']),
         item('compare_baseline', '对比', '谁在同位置里算突出', '相对同位置平均的分位排行',
              '每人跟同位置比：蓝条 = 常见区间、竖线 = 同位置平均、蓝点 = 本人。分位越高越突出。',
-             'D2', '可运行', f'{facts["counts"]["anonymousPlayers"]} 个身份样本 / {n} 行',
-             '身份是匿名的，不对应具体队员，只看相对位置。', 'baseline',
-             ['gpm', 'position', 'playerId→匿名']),
+             'D2', '可运行', f'{n} 个身份 / {games} 局',
+             '未认领身份显示营地昵称；分位只描述这批样本内的相对位置。', 'baseline',
+             ['gpm', 'position', 'player']),
         item('compare_camp', '对比', '蓝红两侧数据有没有偏差', '采集视角体检：蓝 vs 红产出对照',
              '检查数据本身：若蓝红出现系统性落差，复盘结论要先把视角偏差扣掉再看。',
              'D1', '可运行', f'{len(facts["teams"])} 个队侧 / {games} 局',
@@ -1480,18 +1449,6 @@ def analyses_catalog(facts):
              '击杀时刻与终局面板逐局一致；爆发窗口是 60 秒固定桶，只描述节奏不解释胜因。',
              'killrhythm', ['battle.killInfo', 'battle.startTime/endTime', 'matchInfo.killCnt'],
              sided=False),
-        item('cross_teamfight_contribution', '交叉', '团战里谁在干活：输出、扛伤、控制', '团战场均输出 vs 承伤散点 + 贡献表',
-             '点越靠右上越能打能扛，点越大参团越多。四个象限天然分出输出手 / 坦克 / 工具人。',
-             'D3', '可运行',
-             f'{facts["counts"]["fightRows"]:,} 行团战逐人明细 / {facts["counts"]["fights"]:,} 场团战 / {replay_games} 局',
-             '只统计团战窗口内的伤害，不是全局输出；参团少于 5 次的英雄没画进来。',
-             'fightscatter', ['battleDetail.hurtTotal', 'behurtTotal', 'hardctrlTotal', 'softctrlTotal', 'isSupport']),
-        item('space_deaths', '空间', '人死在哪、什么时候死', '死亡热区 + 阶段分布 + 死在谁家半场',
-             '红色越深死亡越密集。结合阶段分布看是前期送还是后期崩，敌方半场占比看是谁在深入送头。',
-             'D3', '可运行',
-             f'{facts["counts"]["deathPoints"]:,} 个实测死亡坐标 / {replay_games} 局',
-             '坐标是实测死亡点（结算采样），含少量野怪 / 建筑击杀。',
-             'deathmap', ['playBaseInfoArr.deathPosArr', 'acntCamp', 'usedTime']),
         item('death_point_economy', '掉点', '每次阵亡掉多少经济', '逐人掉点窗口 + 团队经济差过程',
              '每一笔 = 一次阵亡到复活的窗口，读数是窗口内团队经济差变化。掉点流水直接指到人。',
              'D3', '可运行',
@@ -1501,14 +1458,6 @@ def analyses_catalog(facts):
              'dropwindow',
              ['playBaseInfoArr.deathPosArr', 'reportData.playerPosInfo.revivePosArr',
               'ecoDistance', 'battle.killInfo']),
-        item('death_point_impact', '掉点', '掉点代价：哪个阶段、哪条路最贵', '阶段 × 分路 × 胜负 × 掉点集群',
-             '把重叠窗口合并成团队级摆动后，看掉点集中在哪个阶段、哪个位置，胜方负方差多少。',
-             'D4', '可运行',
-             (f'{facts["counts"]["dropWindows"]:,} 笔窗口 / {replay_games} 局 / '
-              f'{len(_drop_chains(facts["dropWindows"])):,} 个掉点集群'),
-             '逐笔相加会重复计账，团队口径以集群净摆动为准；不做因果推断。',
-             'dropimpact',
-             ['deathPosArr', 'revivePosArr', 'ecoDistance', 'winCamp', 'position', 'usedHero']),
     ]
 
 
@@ -1531,13 +1480,14 @@ def create_depth_router(root, db_path=None, profile_loader=None):
     @router.get('/catalog')
     def catalog():
         f = facts()
+        unbound = sum(1 for p in f['players'] if not p.get('bound'))
         return {
             'depthScale': DEPTH_SCALE,
             'analyses': analyses_catalog(f),
             'layers': [
                 {'id': 'L1', 'name': '营地十人面板', 'detail': 'data/camp_details/*.json',
-                 'samples': f"{f['counts']['games']} 局 / {f['counts']['players']} 人 / {f['counts']['anonymousPlayers']} 个匿名身份",
-                 'limits': '终局值为主；身份未绑定战队名单，跨局个人结论不成立'},
+                 'samples': f"{f['counts']['games']} 局 / {f['counts']['players']} 人 / {unbound} 人未认领",
+                 'limits': '终局值为主；未认领身份用营地昵称显示，跨局个人结论仍需先绑定名单'},
                 {'id': 'L2', 'name': '营地官方回放同步', 'detail': 'data/official_replays/camp-*/',
                  'samples': (f"{f['counts']['replayGames']} 局与面板匹配 / {f['counts']['positionPoints']:,} 位置点 / "
                              f"{f['counts']['heroKills']:,} 次逐次击杀 / {f['counts']['fights']:,} 场团战 / "
@@ -1552,8 +1502,15 @@ def create_depth_router(root, db_path=None, profile_loader=None):
                           'participation', 'lane', 'gpm', 'dpm', 'goldShare', 'damageShare')},
             'fieldLabels': FIELD_LABELS,
             'campMeta': f.get('campMeta'),
+            'games': [{'id': item['id'], 'label': f['labels'].get(item['id'], ''),
+                       'opponent': item.get('opponent') or '', 'date': str(item.get('start') or '')[:10],
+                       'ownCamp': item.get('ownCamp')}
+                      for item in reversed(f['matches'])],
             'labels': f.get('labels') or {},
+            'players': f.get('playersCatalog') or [],
             'playersCatalog': f.get('playersCatalog') or [],
+            'heroes': [name for name, _ in Counter(
+                p['hero'] for p in f['players'] if p.get('hero')).most_common()],
             'counts': f['counts'],
         }
 
@@ -1568,9 +1525,21 @@ def create_depth_router(root, db_path=None, profile_loader=None):
         team = (request.query_params.get('team') or '').strip() or None
         player = (request.query_params.get('player') or '').strip() or None
         hero = (request.query_params.get('hero') or '').strip() or None
+        metric = (request.query_params.get('metric') or '').strip() or None
+        start = request.query_params.get('from')
+        end = request.query_params.get('to')
+        try:
+            date_from = date.fromisoformat(start) if start else None
+            date_to = date.fromisoformat(end) if end else None
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail='日期须为 YYYY-MM-DD') from error
+        if date_from and date_to and date_from > date_to:
+            raise HTTPException(status_code=400, detail='开始日期不能晚于结束日期')
         if side not in (None, 'own', 'opp'):
             raise HTTPException(status_code=400, detail='side 取值无效（own / opp）')
         return {'meta': meta, 'payload': analysis_payload(
-            f, analysis_id, game_id, side=side, team=team, player=player, hero=hero)}
+            f, analysis_id, game_id, side=side, team=team, player=player, hero=hero,
+            metric=metric, date_from=date_from, date_to=date_to,
+            match_id=request.query_params.get('match') or None)}
 
     return router
