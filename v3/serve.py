@@ -53,6 +53,16 @@ POSITION_STEP = 2  # 位置降采样步长（秒），693 秒的局约 347 点/�
 IS_DEMO = DEMO_ROOT is not None
 panorama = PanoramaRepository(MATCHES, OFFICIAL, BUILDS, ROOT)
 router = APIRouter()
+
+
+async def read_json(request: Request):
+    """把非法 JSON 统一变成 400，避免写接口抛 500。"""
+    try:
+        return await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        raise HTTPException(400, '请求体不是有效 JSON。') from None
+
+
 app = FastAPI(title='峡谷棱镜 · 赛训数据平台', docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost'])
 # Expose only reviewed studio endpoints. Several other V1 routes automatically
@@ -475,7 +485,7 @@ def get_research(topic: str, values=Depends(filters)):
 
 @router.post('/api/v2/research/reports')
 async def save_research_report(request: Request):
-    body=await request.json()
+    body=await read_json(request)
     title=str(body.get('title') or '').strip() if isinstance(body,dict) else ''
     if not title or len(title)>120: raise HTTPException(400, '请填写 1–120 字的报告标题。')
     values=body.get('filters')
@@ -529,7 +539,7 @@ async def preview_sheet(request: Request, name: str = ''):
 @router.post('/api/v2/import/commit')
 async def commit_sheet(request: Request):
     from sheet_import import SheetImportError, infer_profile, read_workbook, write_staging
-    body = await request.json()
+    body = await read_json(request)
     preview_id = body.get('previewId', '') if isinstance(body, dict) else ''
     if len(preview_id) != 32 or any(c not in '0123456789abcdef' for c in preview_id):
         raise HTTPException(400, '预览标识无效。')
@@ -576,7 +586,7 @@ def identity_view(repo=Depends(repository), values=Depends(filters)):
 @router.post('/api/v2/identity/roster')
 async def add_roster_member(request: Request):
     import workspace_store
-    value=await request.json(); name=str(value.get('name') or '').strip() if isinstance(value,dict) else ''
+    value=await read_json(request); name=str(value.get('name') or '').strip() if isinstance(value,dict) else ''
     position=str(value.get('position') or '').strip() if isinstance(value,dict) else ''
     if not name or len(name)>40 or position not in ('','对抗路','打野','中路','发育路','游走'):
         raise HTTPException(400, '请填写选手名称并选择有效位置。')
@@ -604,7 +614,7 @@ async def add_roster_member(request: Request):
 @router.post('/api/v2/identity/claim')
 async def claim_identity(request: Request, repo=Depends(repository)):
     import workspace_store
-    body=await request.json()
+    body=await read_json(request)
     if not isinstance(body,dict): raise HTTPException(400, '认领信息无效。')
     label=str(body.get('label') or '').strip(); player_id=str(body.get('playerId') or '').strip(); expected=str(body.get('expected') or '')
     if not label or not player_id or len(label)>100: raise HTTPException(400, '请选择昵称和本队选手。')
@@ -632,7 +642,7 @@ async def claim_identity(request: Request, repo=Depends(repository)):
 async def name_identity(request: Request, repo=Depends(repository)):
     """教练给未命名的参赛标识命名，并归入战队；写入名单与别名。"""
     import workspace_store
-    body = await request.json()
+    body = await read_json(request)
     if not isinstance(body, dict):
         raise HTTPException(400, '命名信息无效。')
     label = str(body.get('label') or '').strip()
@@ -703,7 +713,7 @@ async def update_match_bp(key: str, request: Request, repo=Depends(repository)):
     from bp_input import validate_bp
     import time
     if repo.match_detail(key) is None: raise HTTPException(404, '找不到该场对局')
-    body=await request.json()
+    body=await read_json(request)
     if not isinstance(body,dict): raise HTTPException(400, 'BP 格式无效')
     try:
         bp=validate_bp(body.get('bp'))
@@ -729,7 +739,7 @@ async def update_match_meta(key: str, request: Request, repo=Depends(repository)
     import time
     if not key or len(key) > 200 or repo.match_detail(key) is None:
         raise HTTPException(404, '找不到该场对局')
-    body = await request.json()
+    body = await read_json(request)
     if not isinstance(body, dict):
         raise HTTPException(400, '数据格式无效')
     patch = {}

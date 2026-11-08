@@ -21,6 +21,34 @@ class ServiceBoundaryTests(unittest.TestCase):
         self.assertIn('/api/v2/import/preview', paths)
         self.assertIn('/api/v2/workspace/overview', paths)
 
+    def test_malformed_json_returns_400(self):
+        from fastapi.testclient import TestClient
+        client = TestClient(serve.app, base_url='http://127.0.0.1')
+        endpoints = [
+            '/api/v2/research/reports',
+            '/api/v2/import/commit',
+            '/api/v2/identity/roster',
+            '/api/v2/identity/claim',
+            '/api/v2/identity/name',
+        ]
+        for path in endpoints:
+            with self.subTest(path=path):
+                response = client.post(path, content=b'{bad',
+                                       headers={'Content-Type': 'application/json'})
+                self.assertEqual(response.status_code, 400,
+                                 (path, response.status_code, response.text[:120]))
+        # 这两个接口先查对局是否存在；有对局时再验证非法 JSON 返回 400。
+        matches = client.get('/api/matches').json().get('matches') or []
+        if not matches:
+            return
+        key = matches[0]['key']
+        for path in (f'/api/v2/match-bp/{key}', f'/api/v2/match-meta/{key}'):
+            with self.subTest(path=path):
+                response = client.post(path, content=b'{bad',
+                                       headers={'Content-Type': 'application/json'})
+                self.assertEqual(response.status_code, 400,
+                                 (path, response.status_code, response.text[:120]))
+
     def test_migration_inserts_once_and_preserves_existing_manual_values(self):
         uri = 'file:v2-test-' + uuid.uuid4().hex + '?mode=memory&cache=shared'
         keeper = sqlite3.connect(uri, uri=True)

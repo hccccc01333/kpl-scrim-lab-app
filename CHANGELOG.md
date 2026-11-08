@@ -9,6 +9,7 @@
 - 根路径直接进入 V3；V2 的 40 条路由改成 `APIRouter` 并入 `server.py`，不再挂第二个 app。
 - `frontend-v2-rebuild/` 改名为 `v3/`；V1 `/studio`、V2 8771 独立入口和 `启动赛训数据V2.bat` 退役。
 - 写操作会通过 `server.py` 中间件刷新 V3 分析快照；`/v3`、`/studio`、`/analysis` 统一 302 到根路径。
+- V3 写接口遇到非法 JSON 请求体时统一返回 400，不再抛 `JSONDecodeError` 变成 500。
 - 发布包与 Docker 镜像纳入 `v3/`；启动入口和文档同步改为 `http://127.0.0.1:8766/`。
 
 ### 营地授权失效检测
