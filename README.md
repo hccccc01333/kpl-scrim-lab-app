@@ -9,7 +9,9 @@
 
 识别在本机完成，数据全部留在本地，平台不依赖任何云端服务。
 
-> 2026-11-08 起，V3 是唯一入口；V1 工作台和 V2 独立服务已退役。
+**官网：<https://hccccc01333.github.io/>** — 产品介绍、[下载安装包](https://github.com/hccccc01333/kpl-scrim-lab/releases/latest)、[安装说明](https://hccccc01333.github.io/guide.html)、[更新日志](https://hccccc01333.github.io/changelog.html)。
+
+> 2026-11-08 起，平台只有一个 V3 应用：一个进程、一套接口、一套命名。
 
 ![平台总览](docs/images/01-overview.png)
 
@@ -142,7 +144,7 @@ pip install -r requirements.txt
 python server.py
 ```
 
-打开 <http://127.0.0.1:8766/>（V3 界面；V1/V2 入口已退役）。
+打开 <http://127.0.0.1:8766/>（V3 界面）。
 
 首次启动会自动创建 `data/` 目录与本地数据库。Windows 用户也可以直接运行
 `安装依赖.bat` 与 `启动工作台.bat`。
@@ -180,10 +182,13 @@ python scripts/sync_catalog.py
 
 ## 更新与分发
 
-面向赛训组的交付物是免安装包，不是仓库源码。构建命令：
+面向赛训组的交付物是**安装包**（推荐）或免安装包，不是仓库源码。
 
 ```bash
-# 全量包 + 增量包 + update.json（首次发布或测试时用 --all）
+# 安装包：首次安装用，桌面/开始菜单快捷方式 + 卸载项，装到当前用户目录
+python scripts/make_installer.py
+
+# 免安装包 + 增量包 + update.json（首次发布或测试时用 --all）
 python scripts/make_release.py --all
 
 # 日常发版：自动对比上一个 git tag，只打包变更文件
@@ -194,14 +199,19 @@ python scripts/make_release.py
 
 | 文件 | 用途 |
 |---|---|
-| `KPL赛训工具-<版本>-full.zip` | 首次安装，内置 Python，解压即用 |
+| `KPL赛训工具-<版本>-setup.exe` | 正式交付：双击安装，开始菜单入口，卸载保留 data |
+| `KPL赛训工具-<版本>-full.zip` | 免安装版，内置 Python，解压即用；也是安装包的构建输入 |
 | `patch-<版本>.zip` | 老用户增量更新，只含变更文件 |
 | `update.json` | 更新清单：版本、说明、文件哈希 |
+
+安装版启动走 `launcher.py`（`pythonw`，无黑窗）：起服务 → 等 `/api/health` →
+打开浏览器，失败弹窗并写 `logs/launcher.log`。服务在后台运行，关掉浏览器不会停止；
+开始菜单的「停止工作台」会调用本机专用的 `/api/shutdown` 优雅退出。
 
 工作台启动后会在右下角静默检查 `update.json`，发现新版本时显示更新内容；
 点「立即更新」下载增量包、校验、替换程序文件、重启并做健康检查，失败自动回滚。
 `data/`、`.env`、`camp_auth.json` 永远不在更新范围内。离线时可以在提示里选择
-本地 `patch-*.zip`。
+本地 `patch-*.zip`。换内置 Python 或核心依赖才需要重发安装包，日常改代码只发增量包。
 
 更新源默认走 GitHub Releases；国内可把 Gitee 镜像写进包内 `update_config.json`
 的 `manifestUrls`（增量包不会覆盖这个文件），或用 `UPDATE_MANIFEST_URLS` 覆盖。
@@ -209,8 +219,12 @@ python scripts/make_release.py
 源码用户直接运行 `更新代码.bat`（等价于 `git pull --ff-only` + 补依赖），
 不要用免安装包的增量包覆盖源码目录。
 
-发布前建议在干净目录解压完整包，双击启动并访问 `/api/health` 做一次冒烟测试；
-`make_release.py` 在打包完整包时也会用内置 Python 执行 `import server` 自检。
+发布前建议：在干净目录跑一遍安装包 → 双击启动 → 访问 `/api/health` → 卸载确认
+`data/` 还在；`make_installer.py` 覆盖程序文件时会用当前工作树，避免装出旧代码。
+
+安装包未做代码签名。给赛训组时**用微信 / 网盘客户端发 zip，不要发浏览器下载链接**——
+经浏览器下载的 exe 会带网络标记并触发 SmartScreen；同时发出 `.sha256` 供对方核对。
+安装器本身不申请管理员权限，不会弹 UAC。完整说明见 [docs/update.md](docs/update.md#没有代码签名时怎么交付)。
 
 ---
 
@@ -226,7 +240,7 @@ python scripts/make_release.py
 | `ANALYSIS_MATCHES` | 比赛记录目录 | `data/matches` |
 | `ANALYSIS_IMPORTS` | 导入文件目录 | `data/imports` |
 | `ANALYSIS_OFFICIAL` | 官方回放缓存目录 | `data/official_replays` |
-| `ANALYSIS_V2` | 回放分析目录 | `data/v2` |
+| `ANALYSIS_BUILDS` | 出装时间轴目录 | `data/builds` |
 | `KPL_RECORDINGS` | 录屏文件目录 | `data/recordings` |
 | `TRAINING_ALLOWED_HOSTS` | 允许访问的主机名 | `127.0.0.1,localhost,::1` |
 | `TRAINING_ALLOW_REMOTE` | 是否允许局域网访问 | `0` |
@@ -247,13 +261,28 @@ python scripts/make_release.py
 ├── camp_replay.py       # 营地链接与对局导入
 ├── channel_store.py     # 通道化数据存储
 ├── v3/                  # V3 前端与只读分析路由（唯一入口，无构建步骤）
-├── web/                 # 采集规范/模板等静态资料（V1 界面已退役）
+├── website/             # 官网源码与静态产物（GitHub Pages）
+├── web/                 # 采集规范/模板等静态资料
 ├── tools/               # 回放解析、营地客户端等运行时依赖
 ├── scripts/             # 导入、巡检、截图与数据种子
 └── tests/               # 单元测试
 ```
 
 前端是原生 ES module，仓库不带打包器。改完刷新页面即可看到效果。
+
+---
+
+## 官网
+
+`website/` 是产品站源码：纯静态模板 + 一个渲染脚本，产物 `website/dist/` 由 GitHub Actions
+自动发布到 GitHub Pages。
+
+```bash
+python scripts/build_website.py --serve   # 构建并本地预览 http://127.0.0.1:8137/
+```
+
+版本号、更新日志和截图都从仓库读取（`version.py`、`CHANGELOG.md`、`docs/images/`），
+改完重新构建即可，不需要手工改 HTML。
 
 ---
 
