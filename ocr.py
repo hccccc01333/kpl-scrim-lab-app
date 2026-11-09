@@ -30,18 +30,26 @@ def detect_tokens(image):
 def read_line(image):
     """Read one tightly cropped line; 返回 [(text, confidence), ...]。
 
-    引擎原始结果是 (box, text, score) 三元组，这里统一成两元组：调用方
-    （ocr.read_crop_line / postgame_ocr 的紧裁读取）都按 (text, confidence) 取。
+    引擎在关闭检测时的返回结构随版本变化：rapidocr-onnxruntime <= 1.3 返回
+    ``(box, text, score)`` 三元组，1.4.x 只返回 ``(text, score)``。这里两种都
+    接受，统一成两元组，调用方（ocr.read_crop_line / postgame_ocr 的紧裁读取）
+    一律按 (text, confidence) 取。
     """
     with _lock:
         found, _ = get_engine()(np.array(image), use_det=False, use_cls=False)
     result = []
     for item in found or []:
-        try:
-            text, confidence = str(item[1]), float(item[2])
-        except (TypeError, IndexError, ValueError):
+        record = list(item) if not isinstance(item, (str, bytes)) else [item]
+        if len(record) >= 3:
+            text, confidence = record[1], record[2]
+        elif len(record) == 2:
+            text, confidence = record[0], record[1]
+        else:
             continue
-        result.append((text, confidence))
+        try:
+            result.append((str(text), float(confidence)))
+        except (TypeError, ValueError):
+            continue
     return result
 
 

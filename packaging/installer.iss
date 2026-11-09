@@ -26,6 +26,8 @@
 
 #define AppName "KPL 赛训工具"
 #define AppShortName "KPL赛训工具"
+; 产出文件名用 ASCII（下载/CI/网盘都更稳），安装目录仍用 AppShortName，避免老用户升级后找不到 data/
+#define AppFileName "KPL-Scrim-Lab"
 ; 双击入口：PyInstaller 打包的薄壳启动器，内部再调 runtime\pythonw.exe launcher.py
 #define AppExe "KPLScrimLab.exe"
 #define AppPublisher "KPL 赛训工具"
@@ -46,7 +48,7 @@ DisableProgramGroupPage=yes
 DisableDirPage=auto
 LicenseFile=..\LICENSE
 OutputDir={#OutputDir}
-OutputBaseFilename={#AppShortName}-{#AppVersion}-setup
+OutputBaseFilename={#AppFileName}-{#AppVersion}-setup
 SetupIconFile=app.ico
 UninstallDisplayIcon={app}\app.ico
 UninstallDisplayName={#AppName} {#AppVersion}

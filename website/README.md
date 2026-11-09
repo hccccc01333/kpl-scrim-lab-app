@@ -19,7 +19,9 @@ website/
 ```bash
 python scripts/build_website.py                 # 只构建
 python scripts/build_website.py --serve         # 构建 + 本地预览 8137
-python scripts/build_website.py --download-url URL
+python scripts/build_website.py --site-url https://<官网域名>
+python scripts/build_website.py --download-url URL       # 覆盖安装版直链
+python scripts/build_website.py --full-download-url URL  # 覆盖免安装版直链
 python scripts/build_website.py --include-unreleased
 ```
 
@@ -32,15 +34,21 @@ python scripts/build_website.py --include-unreleased
 | `{{VERSION}}` `{{RELEASE_DATE}}` | `version.py` |
 | `{{LATEST_NOTES}}` `{{CHANGELOG_SECTIONS}}` | `CHANGELOG.md`（默认不渲染「未发布」段） |
 | 产品截图 | `website/src/assets/img/*` 原样拷进 `dist/assets/img`（构建会清掉多余的旧图） |
-| `{{DOWNLOAD_URL}}` | 默认 GitHub Releases，可用 `--download-url` 覆盖 |
+| `{{DOWNLOAD_URL}}` | 安装版直链，默认按版本拼 Gitee Releases；可用 `--download-url` 覆盖 |
+| `{{FULL_DOWNLOAD_URL}}` | 免安装版直链，默认按版本拼 Gitee Releases；可用 `--full-download-url` 覆盖 |
+| `{{GITHUB_DOWNLOAD_URL}}` | GitHub Releases 页面，海外备用 |
+| `{{RELEASE_PAGE_URL}}` | Gitee 当前版本的 Release 页面（校验和 / 全部文件） |
+| `{{SITE_URL}}` | 站点根地址，默认 GitHub Pages；搬 CloudBase 后用 `--site-url` 覆盖 canonical / sitemap |
 | `{{ASSET_VERSION}}` | `style.css` 与 `assets/` 的内容指纹，用于绕开 Pages 的 10 分钟资源缓存 |
 
 改版本号、写 CHANGELOG、换截图，三个动作就能发一版官网，不需要动 HTML。
 
 ## 部署
 
-推到 `main` 后 `.github/workflows/website.yml` 自动构建并发布到 GitHub Pages。
-首次启用：仓库 Settings → Pages → Source 选「GitHub Actions」。
+- **国内主站**：构建后把 `website/dist/` 上传到腾讯云 CloudBase 静态网站托管。默认域名国内直连、不需要备案；免费额度和默认域名有效期以控制台为准。构建时用 `--site-url https://<环境默认域名>` 让 canonical / sitemap 指向新站。
+- **海外备用**：`.github/workflows/website.yml` 仍会把 `dist/` 发到 GitHub Pages，保留海外访问。
+- **下载**：安装包和补丁发在 Gitee Releases（`Rainfun42/kpl-scrim-lab-app`），官网按钮默认指向 Gitee 当前版本的直链；GitHub Releases 只作海外备用。
+- 首次启用 GitHub Pages：仓库 Settings → Pages → Source 选「GitHub Actions」。
 
 ## 约定
 

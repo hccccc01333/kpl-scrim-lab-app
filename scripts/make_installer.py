@@ -1,7 +1,7 @@
-"""Build the Windows installer (``KPL赛训工具-<版本>-setup.exe``).
+"""Build the Windows installer (``KPL-Scrim-Lab-<版本>-setup.exe``).
 
 The installer wraps the *portable* full package instead of rebuilding the
-runtime: ``dist/KPL赛训工具-<版本>-full.zip`` already contains the embedded
+runtime: ``dist/KPL-Scrim-Lab-<版本>-full.zip`` already contains the embedded
 Python, dependencies and data skeleton.  Current program files from the working
 tree are overlaid on top, so an installer can be produced after ordinary code
 changes without a 60 MB runtime rebuild.

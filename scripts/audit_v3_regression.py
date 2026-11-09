@@ -1,4 +1,9 @@
-"""V3 全站回归：所有一级/二级路由渲染、报错、请求失败。"""
+"""V3 全站回归：所有一级/二级路由渲染、报错、请求失败。
+
+空态判定：`#content` 里有可见的 `.empty` 文案时算正常空态（例如
+「当前范围没有可用的教练记录」），不再因为 innerHTML 短而报失败。
+没有内容也没有空态说明、或页面抛 JS 异常，仍然判 FAIL。
+"""
 from __future__ import annotations
 
 import sys
@@ -20,14 +25,32 @@ ROUTES = [
     ("reports", "#reports"), ("sources", "#sources"),
 ]
 
+CONTENT_MIN = 300
+
+
+def classify(info: dict, errors: list[str]) -> tuple[str, str]:
+    """把一次页面探测结果归成 (类型, 说明)。类型：正常 / 空态 / FAIL。"""
+    if errors:
+        return "FAIL", "; ".join(errors)[:60]
+    empty_text = str(info.get("emptyText") or "").strip()
+    loading_text = str(info.get("loadingText") or "").strip()
+    length = int(info.get("len") or 0)
+    if length < CONTENT_MIN and not empty_text:
+        reason = "加载未完成：" + loading_text if loading_text else "空页（无内容且无空态说明）"
+        return "FAIL", reason[:60]
+    if info.get("emptyOnly") or (length < CONTENT_MIN and empty_text):
+        return "空态", empty_text[:40]
+    return "正常", ""
+
 
 def main() -> int:
     with sync_playwright() as p:
         browser = p.chromium.launch()
         ctx = browser.new_context(viewport={"width": 1440, "height": 900}, locale="zh-CN")
         bad = 0
-        print(f"{'路由':<14}{'h1':<22}{'内容':>7}{'错误':>7}结论")
-        print("-" * 74)
+        empty_states = 0
+        print(f"{'路由':<14}{'h1':<22}{'内容':>7}{'错误':>7}  {'类型':<6}说明")
+        print("-" * 88)
         for name, route in ROUTES:
             page = ctx.new_page()
             errs: list[str] = []
@@ -36,24 +59,38 @@ def main() -> int:
                 page.goto(f"{BASE}/v3/{route}", wait_until="load", timeout=25000)
                 page.wait_for_timeout(2200)
                 info = page.evaluate(
-                    """() => ({
-                        h1: (document.querySelector('#content h1')?.textContent || '').trim().slice(0, 20),
-                        len: (document.querySelector('#content')?.innerHTML || '').length,
-                        failed: document.querySelector('#content .empty')?.textContent?.slice(0, 40) || '',
-                    })"""
+                    r"""() => {
+                        const box = document.querySelector('#content');
+                        const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+                        const visible = (el) => el.getClientRects().length > 0;
+                        const texts = box ? [...box.querySelectorAll('.empty')]
+                            .filter(visible).map((el) => clean(el.textContent)).filter(Boolean) : [];
+                        const loading = texts.filter((text) => /^(正在|加载)/.test(text));
+                        const empties = texts.filter((text) => !/^(正在|加载)/.test(text));
+                        const pageText = clean(box ? box.textContent : '');
+                        const emptyChars = empties.reduce((sum, text) => sum + text.length, 0);
+                        return {
+                            h1: clean(box ? box.querySelector('h1')?.textContent : '').slice(0, 20),
+                            len: box ? box.innerHTML.length : 0,
+                            emptyText: empties.join(' / ').slice(0, 80),
+                            loadingText: loading.join(' / ').slice(0, 80),
+                            emptyOnly: empties.length > 0 && pageText.length - emptyChars < 40,
+                        };
+                    }"""
                 )
-                broken = info["len"] < 300 or errs
-                if broken:
+                kind, detail = classify(info, errs)
+                if kind == "FAIL":
                     bad += 1
-                print(f"{name:<14}{info['h1'] or '—':<22}{info['len']:>7}{len(errs):>7}"
-                      f"{'FAIL ' + '; '.join(errs)[:40] if broken else 'OK'}")
+                elif kind == "空态":
+                    empty_states += 1
+                print(f"{name:<14}{info['h1'] or '—':<22}{info['len']:>7}{len(errs):>7}  {kind:<6}{detail}")
             except Exception as exc:  # noqa: BLE001
                 bad += 1
-                print(f"{name:<14}{'—':<22}{'—':>7}{'—':>7}FAIL {str(exc)[:40]}")
+                print(f"{name:<14}{'—':<22}{'—':>7}{'—':>7}  {'FAIL':<6}{str(exc)[:50]}")
             page.close()
         browser.close()
-        print("-" * 74)
-        print(f"共 {len(ROUTES)} 条，失败 {bad} 条")
+        print("-" * 88)
+        print(f"共 {len(ROUTES)} 条，失败 {bad} 条，空态 {empty_states} 条")
     return 1 if bad else 0
 
 

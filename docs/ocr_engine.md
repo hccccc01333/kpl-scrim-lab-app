@@ -42,6 +42,15 @@ python scripts/check_ocr_engine.py --load
 python -m pip install -r requirements.txt
 ```
 
+快速 OCR 固定使用 `rapidocr-onnxruntime>=1.4.4,<1.5`。1.4.x 只发布到 Python 3.12，
+因此本项目支持 **3.11 / 3.12**，不支持 3.13。
+
+1.4 起 `read_line` 返回 `(text, score)` 二元组（旧版是 `(box, text, score)`），
+1.3.0 之前按三元组取值会抛 `IndexError` 并被静默吞掉，导致「整页漏字 → 裁剪补读」
+的兜底整条失效。已改为按元素个数自适应，两种返回结构都兼容。
+
+实测同一批样本：战绩页击杀从旧版 1/10 恢复到 **10/10**，结算页击杀与经济 10/10。
+
 Mimo 额外需要 `torch` / `torchvision` / `transformers`；模型权重约 1.7 GB，CPU 推理需要约 3–4 GB 内存。没有安装时，快速 OCR 仍可正常使用，页面会提示“Mimo 未找到”。
 
 ## 在页面里使用

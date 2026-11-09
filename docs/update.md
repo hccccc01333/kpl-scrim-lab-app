@@ -9,7 +9,7 @@
 
 | 文件 | 内容 |
 |---|---|
-| `KPL赛训工具-<版本>-full.zip` | 首次安装，内置 Python 与核心依赖 |
+| `KPL-Scrim-Lab-<版本>-full.zip` | 首次安装，内置 Python 与核心依赖 |
 | `patch-<版本>.zip` | 增量包，只含变更文件与 `update.json` |
 | `update.json` | 更新清单，供 `/api/update/check` 读取 |
 
@@ -43,14 +43,15 @@ python scripts/make_release.py --python-archive D:\cache\python-3.12.10-embed-am
 2. 提交并打 tag：`git tag v1.0.1 && git push origin v1.0.1`。
 3. CI（`.github/workflows/release.yml`）自动构建增量包与 `update.json`，上传到 GitHub Release。
 4. 完整包在 Windows 本机构建后手动上传到同一个 Release；首次安装才需要。
-5. 国内镜像可把 `patch-*.zip` 与 `update.json` 同步到 Gitee 发行版/仓库，
-   客户端通过 `UPDATE_MANIFEST_URLS` 配置多个地址。
+5. 国内镜像把 `patch-*.zip`、`update.json`、完整包同步到 Gitee 发行版
+   （`Rainfun42/kpl-scrim-lab-app`），并把 `update.json` 提交到仓库根目录，
+   客户端用 `raw/main/update.json` 做稳定清单地址。
 
-GitHub Release 的 `releases/latest/download/update.json` 是稳定地址；
-清单里的相对 `patch-*.zip` 会自然解析到同一个 Release，不需要域名和服务器。
-Gitee 镜像建议把 `patch-*.zip` 与 `update.json` 放在同一目录（仓库 raw 或发行版附件），
-这样相对路径同样有效；如果补丁在另一个地址，构建时用 `--base-url` 生成一份
-指向 Gitee 的清单，并在 `update_config.json` 里把 Gitee 地址放在第一位。
+GitHub Release 的 `releases/latest/download/update.json` 是海外稳定地址；
+清单里的相对 `patch-*.zip` 会自然解析到同一个 Release。
+国内镜像不要在清单里用相对路径：清单在 Gitee raw、包在 Releases 时会解析到错误目录。
+发版时给构建命令传 `--base-url https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v<版本>/`，
+让 `patch.url` / `full.url` 变成绝对地址，然后把生成的 `update.json` 提交到 Gitee `main`。
 
 ## 安装包（推荐的交付方式）
 
@@ -61,9 +62,9 @@ python scripts/make_installer.py            # 复用 dist/ 里的 full 包
 python scripts/make_installer.py --rebuild  # 依赖或内置 Python 变了才需要
 ```
 
-产物：`dist/KPL赛训工具-<版本>-setup.exe`（约 58 MB）。构建流程：
+产物：`dist/KPL-Scrim-Lab-<版本>-setup.exe`（约 58 MB）。构建流程：
 
-1. 解包 `dist/KPL赛训工具-<版本>-full.zip`，得到内置 Python 与依赖；
+1. 解包 `dist/KPL-Scrim-Lab-<版本>-full.zip`，得到内置 Python 与依赖；
 2. 用当前工作树覆盖程序文件（`ship_files()`），所以改完代码不用重打完整包；
 3. 调 Inno Setup 编译 `packaging/installer.iss`。
 
@@ -131,22 +132,25 @@ signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 <setup.exe
 
 | 变量 | 说明 |
 |---|---|
-| `UPDATE_MANIFEST_URLS` | 更新清单地址，逗号分隔；留空时读取 `update_config.json`，再回退到内置 GitHub 地址 |
+| `UPDATE_MANIFEST_URLS` | 更新清单地址，逗号分隔；留空时读取 `update_config.json`，再回退到内置 Gitee / GitHub 地址 |
 | `UPDATE_ALLOW_HTTP` | 仅本地调试时允许 http 更新源，正式使用保持 0 |
 | `TRAINING_PORT` | 重启健康检查使用的端口，默认 8766 |
 
-`update_config.json` 位于应用根目录，完整包内置一份空列表：
+`update_config.json` 位于应用根目录，完整包内置一份（Gitee 第一位，GitHub 海外备用）：
 
 ```json
 {
   "manifestUrls": [
-    "https://gitee.com/<你的账号>/kpl-scrim-lab/raw/master/update.json",
+    "https://gitee.com/Rainfun42/kpl-scrim-lab-app/raw/main/update.json",
     "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest/download/update.json"
   ]
 }
 ```
 
 交付前把 Gitee 镜像放在第一位即可。增量包不会覆盖这个文件，方便按队伍配置不同镜像。
+
+> 如果 Gitee 仓库是从 GitHub 镜像自动同步的，`update.json` 也要提交到 GitHub 仓库根目录，
+> 或单独建一个只放 manifest 的 Gitee 仓库，避免同步时被覆盖。
 
 ## 源码用户
 

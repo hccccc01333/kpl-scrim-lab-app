@@ -20,9 +20,9 @@ python scripts/make_installer.py            # 复用 dist/ 里的 full 包
 python scripts/make_installer.py --rebuild  # 依赖或内置 Python 变了才需要
 ```
 
-产物 `dist/KPL赛训工具-<版本>-setup.exe`。
+产物 `dist/KPL-Scrim-Lab-<版本>-setup.exe`。
 
-流程是「full 包 + 覆盖」：解包 `dist/KPL赛训工具-<版本>-full.zip`（内置 Python、
+流程是「full 包 + 覆盖」：解包 `dist/KPL-Scrim-Lab-<版本>-full.zip`（内置 Python、
 依赖、data 骨架），再用当前工作树的 `ship_files()` 覆盖程序文件，最后交给
 ISCC 编译。所以改完代码直接跑一次即可，不需要重打 64 MB 的运行时。
 

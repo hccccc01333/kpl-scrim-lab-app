@@ -6,7 +6,7 @@
 <title>安装与升级 — KPL 赛训工具</title>
 <meta name="description" content="KPL 赛训工具安装、首次配置与增量更新的完整说明。Windows 10 / 11，内置运行时，不需要另装环境。">
 <meta name="theme-color" content="#0a0a0a">
-<link rel="canonical" href="https://hccccc01333.github.io/kpl-scrim-lab-site/guide.html">
+<link rel="canonical" href="{{SITE_URL}}/guide.html">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f1c31'/%3E%3Crect x='6' y='13' width='5' height='12' rx='2' fill='%232a8f8b'/%3E%3Crect x='13.5' y='7' width='5' height='18' rx='2' fill='%23f08a6c'/%3E%3Crect x='21' y='15' width='5' height='10' rx='2' fill='%232a8f8b'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="assets/style.css">
 </head>
@@ -80,6 +80,7 @@
 
   <h2>以后怎么升级</h2>
   <p>启动后工作台会在右下角静默检查新版本，发现更新时点「立即更新」：下载增量包 → 校验 SHA-256 → 暂存 → 重启替换 → 健康检查，失败自动回滚到上一版本。<code>data</code>、<code>.env</code>、营地授权不在更新范围内。</p>
+  <p>国内网络会优先从 Gitee 镜像检查更新，GitHub 只作为海外备用；更新包和清单都带 SHA-256，下载不完整不会替换程序。</p>
   <p>完全离线的机器，可以让作者把 <code>patch-版本号.zip</code> 发过来，在更新提示里选「选择本地更新包」。</p>
 
   <div class="note warn">
@@ -129,7 +130,7 @@
     </details>
     <details>
       <summary>需要先装 Python 或者配置环境吗？</summary>
-      <p>不需要。安装包和免安装包都内置了 Python 运行时与依赖，解压或安装后直接双击即可。源码运行才需要 Python 3.11+。</p>
+      <p>不需要。安装包和免安装包都内置了 Python 运行时与依赖，解压或安装后直接双击即可。源码运行才需要 Python 3.11 / 3.12（3.13 暂不支持）。</p>
     </details>
     <details>
       <summary>支持 macOS、平板或手机吗？</summary>

@@ -9,8 +9,12 @@
 用法：
     python scripts/build_website.py                     # 只构建
     python scripts/build_website.py --serve             # 构建并在本机预览
-    python scripts/build_website.py --download-url URL  # 覆盖下载按钮指向
+    python scripts/build_website.py --site-url URL      # 站点根地址（canonical / sitemap）
+    python scripts/build_website.py --download-url URL  # 覆盖安装版下载直链
+    python scripts/build_website.py --full-download-url URL  # 覆盖免安装版下载直链
     python scripts/build_website.py --include-unreleased
+
+默认下载走 Gitee Releases（国内直连），GitHub 作为海外备用。
 
 纯标准库，无第三方依赖；GitHub Actions 直接跑这个脚本即可部署。
 """
@@ -29,7 +33,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'website' / 'src'
 DIST = ROOT / 'website' / 'dist'
 REPO_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app'
-DEFAULT_DOWNLOAD_URL = f'{REPO_URL}/releases/latest'
+GITEE_REPO_URL = 'https://gitee.com/Rainfun42/kpl-scrim-lab-app'
+DEFAULT_SITE_URL = 'https://hccccc01333.github.io/kpl-scrim-lab-site'
 SPONSOR_URL = 'https://afdian.com/a/kplscrim'
 PAGES = ('index.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
 
@@ -148,14 +153,28 @@ def render_sections(sections: list[dict], version: str, release_name: str,
     return '\n'.join(out)
 
 
-def build(download_url: str, include_unreleased: bool) -> None:
+def release_asset_url(version: str, filename: str) -> str:
+    return f'{GITEE_REPO_URL}/releases/download/v{version}/{filename}'
+
+
+def build(download_url: str | None, full_download_url: str | None,
+          site_url: str, include_unreleased: bool) -> None:
     version, release_date, release_name = read_version()
     sections = parse_changelog()
+    site_url = site_url.rstrip('/')
+    setup_url = download_url or release_asset_url(
+        version, f'KPL-Scrim-Lab-{version}-setup.exe')
+    portable_url = full_download_url or release_asset_url(
+        version, f'KPL-Scrim-Lab-{version}-full.zip')
     tokens = {
         'VERSION': version,
         'RELEASE_DATE': release_date,
         'YEAR': release_date[:4] or '2026',
-        'DOWNLOAD_URL': download_url,
+        'DOWNLOAD_URL': setup_url,
+        'FULL_DOWNLOAD_URL': portable_url,
+        'GITHUB_DOWNLOAD_URL': f'{REPO_URL}/releases/latest',
+        'RELEASE_PAGE_URL': f'{GITEE_REPO_URL}/releases/tag/v{version}',
+        'SITE_URL': site_url,
         'REPO_URL': REPO_URL,
         'LICENSE_URL': f'{REPO_URL}/blob/main/LICENSE',
         'LATEST_NOTES': render_latest_notes(sections, version, release_name),
@@ -176,11 +195,14 @@ def build(download_url: str, include_unreleased: bool) -> None:
         (DIST / name).write_text(page, encoding='utf-8')
 
     shutil.copyfile(SRC / 'style.css', DIST / 'assets' / 'style.css')
-    # SEO 文件（robots / sitemap）放在站点根目录
+    # SEO 文件（robots / sitemap）放在站点根目录，域名同样走 {{SITE_URL}}
     for name in ('robots.txt', 'sitemap.xml'):
         f = SRC / name
         if f.is_file():
-            shutil.copyfile(f, DIST / name)
+            text = f.read_text(encoding='utf-8')
+            for key, value in tokens.items():
+                text = text.replace('{{' + key + '}}', value)
+            (DIST / name).write_text(text, encoding='utf-8')
     # 自托管字体等静态资源（manrope.woff2 及其许可证），无外部请求
     src_assets = SRC / 'assets'
     if src_assets.is_dir():
@@ -215,14 +237,19 @@ def serve(port: int) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--download-url', default=DEFAULT_DOWNLOAD_URL,
-                    help=f'下载按钮指向（默认 GitHub Releases：{DEFAULT_DOWNLOAD_URL}）')
+    ap.add_argument('--download-url', default=None,
+                    help='安装版下载直链（默认按版本拼 Gitee Releases）')
+    ap.add_argument('--full-download-url', default=None,
+                    help='免安装版下载直链（默认按版本拼 Gitee Releases）')
+    ap.add_argument('--site-url', default=DEFAULT_SITE_URL,
+                    help=f'站点根地址，用于 canonical / sitemap（默认 {DEFAULT_SITE_URL}）')
     ap.add_argument('--include-unreleased', action='store_true',
                     help='在更新日志页渲染「未发布」段落（默认隐藏）')
     ap.add_argument('--serve', nargs='?', const=8137, type=int, metavar='PORT',
                     help='构建后启动本地预览服务（默认端口 8137）')
     args = ap.parse_args()
-    build(args.download_url, args.include_unreleased)
+    build(args.download_url, args.full_download_url, args.site_url,
+          args.include_unreleased)
     if args.serve:
         serve(args.serve)
 

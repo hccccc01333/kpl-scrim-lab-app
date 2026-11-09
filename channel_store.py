@@ -120,15 +120,19 @@ def source_status(channel):
         'replay': replay.get('status') or 'missing',
     }
     missing = []
-    if not official:
+    # 表格按王者营地赛后口径人工抄录，可以单独作为本局的十人面板来源：
+    # 旧局（营地只保留一个月回放）拿不到回放时，不再强制要求 official。
+    table_ok = statuses['table'] in ('parsed', 'completed') and len(table.get('rows') or []) >= 10
+    if not official and not table_ok:
         missing.append('王者营地：请提取并关联本局网页回放链接')
     else:
-        # 双合规路径：营地自动流（camp 详情）或传统手动流（七图+录屏）任一即可审核
+        # 双合规路径：营地自动流（camp 详情）或传统手动流（七图+录屏）任一即可审核；
+        # 本局十人表校验通过时同样算齐。
         camp_ok = statuses['camp'] == 'parsed'
         legacy_ok = statuses['screenshot'] == 'completed' and files_video
-        if not camp_ok and not legacy_ok:
+        if not camp_ok and not legacy_ok and not table_ok:
             missing.append('营地十人面板：在「营地自动同步」后于本页导入；'
-                           '或补齐七张截图与一段录屏作为兜底')
+                           '或补齐七张截图与一段录屏，或导入本局十人表')
     return {'policyVersion': CONTRACT['version'], 'statuses': statuses, 'complete': not missing,
             'counts': {'official': int(official), 'camp': int(bool(camp.get('gameSeq'))),
                        'table':len(table.get('files') or []), 'video':files_video,
@@ -239,6 +243,46 @@ def attach_replay(channel, replay_id, report, actor=None):
     rebuild(channel)
 
 
+def _fill_match_from_table(channel, rows):
+    """表格是旧局唯一来源时，把比赛级字段（日期/对手/时长/比分/胜负）补进通道。"""
+    table_rows = [row for row in rows if row.get('grain') == 'match_player']
+    if not table_rows:
+        return
+    match = channel.setdefault('match', {})
+    first = table_rows[0].get('keys') or {}
+    if not match.get('date') and first.get('date'):
+        match['date'] = str(first['date'])[:10]
+    if not match.get('opponent') and first.get('opponent'):
+        match['opponent'] = str(first['opponent'])
+    durations = {((row.get('metrics') or {}).get('duration') or {}).get('value')
+                 for row in table_rows}
+    durations.discard(None)
+    if not match.get('durationSec') and len(durations) == 1:
+        try:
+            match['durationSec'] = int(next(iter(durations)))
+        except (TypeError, ValueError):
+            pass
+    if not match.get('scores'):
+        totals = {}
+        for camp in ('blue', 'red'):
+            values = [((row.get('metrics') or {}).get('kills') or {}).get('value')
+                      for row in table_rows if (row.get('keys') or {}).get('side') == camp]
+            if len(values) == 5 and all(isinstance(value, (int, float)) for value in values):
+                totals[camp] = int(sum(values))
+        if len(totals) == 2:
+            match['scores'] = totals
+    if not match.get('winner'):
+        wins = {'blue': set(), 'red': set()}
+        for row in table_rows:
+            outcome = (row.get('dimensions') or {}).get('win')
+            if outcome in (0, 1):
+                wins[(row.get('keys') or {}).get('side')].add(outcome)
+        if wins['blue'] == {1} and wins['red'] == {0}:
+            match['winner'] = 'left'
+        elif wins['blue'] == {0} and wins['red'] == {1}:
+            match['winner'] = 'right'
+
+
 def attach_table(channel, file_info, parsed, actor=None):
     invalidate_review(channel, actor)
     rows = parsed.get('rows') or []
@@ -247,6 +291,7 @@ def attach_table(channel, file_info, parsed, actor=None):
                 if isinstance(row.get('keys'), dict) and row['keys'].get('ownSide')), None)
     if own in ('blue', 'red') and not (channel.get('match') or {}).get('ownSide'):
         channel.setdefault('match', {})['ownSide'] = 'left' if own == 'blue' else 'right'
+    _fill_match_from_table(channel, rows)
     source = channel['sources']['table']
     files = source.setdefault('files', [])
     files.append({**file_info, 'uploadedAt': now(), 'parsedAt': now(), 'status': 'parsed'})
@@ -533,7 +578,9 @@ def _seed_table_identity(players, channel):
         for slot, row in enumerate(group):
             target = next(player for player in players if player['side'] == side and player['slot'] == slot)
             keys = row.get('keys') or {}
-            target.update(hero=keys.get('hero'), nickname=keys.get('player'), heroStatus='table', heroSource='table')
+            target.update(hero=keys.get('hero'), nickname=keys.get('player'),
+                          position=keys.get('position') or None,
+                          heroStatus='table', heroSource='table')
 
 
 def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=None):
@@ -697,6 +744,8 @@ def _merge_table(players, channel):
         if len(candidates) != 1:
             continue
         target = candidates[0]
+        if not target.get('position') and keys.get('position'):
+            target['position'] = keys.get('position')
         for key, metric in (row.get('metrics') or {}).items():
             if key not in CORE_FIELDS or not isinstance(metric, dict) or not metric.get('valid'):
                 continue

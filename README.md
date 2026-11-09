@@ -4,15 +4,16 @@
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
 
   <p>
-    <img alt="版本" src="https://img.shields.io/badge/version-1.2.0-176B69?style=flat-square&labelColor=0F2E29">
-    <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.13-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
+    <img alt="版本" src="https://img.shields.io/badge/version-1.3.0-176B69?style=flat-square&labelColor=0F2E29">
+    <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
     <img alt="许可" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
     <img alt="运行方式" src="https://img.shields.io/badge/runtime-100%25%20local-7A8FA6?style=flat-square&labelColor=0F2E29">
   </p>
 
   <p>
-    <a href="https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest"><b>下载安装包</b></a>
+    <a href="https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases"><b>下载安装包（国内）</b></a>
+    &nbsp;·&nbsp; <a href="https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest">GitHub 备用</a>
     &nbsp;·&nbsp; <a href="#快速开始">快速开始</a>
     &nbsp;·&nbsp; <a href="#系统架构">系统架构</a>
     &nbsp;·&nbsp; <a href="#延伸阅读">延伸阅读</a>
@@ -108,7 +109,7 @@
 | **存储** · SQLite + `data/` 目录 | 单文件数据库可整包备份；原始图片、录屏证据帧直接留档 |
 | **识别** · RapidOCR（ONNX Runtime），可选 Mimo 精读 | 开箱即可识别且不联网；精读模型缺失时自动降级，而不是报错 |
 | **前端** · 原生 ES module | 没有 node 工具链，教练机上改一行刷新就能看 |
-| **测试** · pytest + Playwright | 后端用例 + 浏览器逐页渲染巡检；CI 在 3.11 / 3.12 / 3.13 上跑 |
+| **测试** · pytest + Playwright | 后端用例 + 浏览器逐页渲染巡检；CI 在 3.11 / 3.12 上跑 |
 | **交付** · 自带 Python 运行时的免安装包 | 目标机器不用装 Python，也不需要管理员权限 |
 
 ---
@@ -222,7 +223,7 @@
 
 ## 快速开始
 
-需要 **Python 3.11+**（CI 覆盖 3.11 / 3.12 / 3.13）。
+需要 **Python 3.11 或 3.12**（CI 覆盖 3.11 / 3.12；3.13 暂不支持，因为 OCR 组件 1.4.x 只发布到 3.12）。
 
 ```bash
 git clone https://github.com/hccccc01333/kpl-scrim-lab-app.git
@@ -352,7 +353,7 @@ python scripts/verify_frontend.py --no-shots # 桌面 / 手机视口巡检
 python scripts/verify_ui_pages.py            # 页面渲染与交互检查
 ```
 
-CI 分两条流水线：**test** 在 3.11 / 3.12 / 3.13 上跑全量用例与部署自检；
+CI 分两条流水线：**test** 在 3.11 / 3.12 上跑全量用例与部署自检；
 **frontend** 做前端语法检查、路由渲染审计与真实浏览器巡检。
 `test-results/` 存放截图、临时库和验收报告，已在忽略列表。
 

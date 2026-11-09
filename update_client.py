@@ -18,7 +18,9 @@ from urllib.request import Request, urlopen
 
 from paths import data_root
 
+# Gitee 放第一位：国内不翻墙也能检查更新；GitHub 作为海外网络兜底。
 DEFAULT_MANIFEST_URLS = (
+    'https://gitee.com/Rainfun42/kpl-scrim-lab-app/raw/main/update.json',
     'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest/download/update.json',
     'https://raw.githubusercontent.com/hccccc01333/kpl-scrim-lab-app/main/update.json',
 )
