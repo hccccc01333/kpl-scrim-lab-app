@@ -785,6 +785,25 @@ def _frac_box(image, region):
             min(width, round(x2 * width)), min(height, round(y2 * height)))
 
 
+def _glyph_crosscheck_int(image, token, parsed):
+    """整页检测偶尔把细小字形读反（w1920 下曾以 0.97 置信度把 6 读成 9）。
+
+    对检测框做字形级紧框重读：只有全部高置信变体一致给出另一个单位数时才
+    采信，token 原值进 originalValue 供审查对照；其余情况维持 token 结果。
+    """
+    glyph = _glyph_read(image, _frac_box(image, _token_box_region(token, pad=.002)))
+    digits = {text for text, confidence in (glyph or [])
+              if len(text) == 1 and text.isdigit() and confidence >= .85}
+    if len(digits) == 1:
+        value = int(next(iter(digits)))
+        if value != parsed:
+            raw, confidence = next((text, conf) for text, conf in glyph if text == str(value))
+            return {'value': value, 'raw': raw, 'confidence': confidence,
+                    'box': token['box'], 'originalValue': parsed,
+                    'correctedBy': 'glyph-vote'}
+    return _field(token, parsed)
+
+
 def _read_score_fields(image, tokens, row):
     fields = {}
     left = _x(row['token']) < .5
@@ -1014,6 +1033,8 @@ def _read_columns_with_profile(image, row_tokens, all_tokens, row, side, profile
                             'confidence': probe[1], 'box': probe[2]}
             if cell is not None:
                 fields[column['field']] = cell
+            elif column['kind'] == 'int':
+                fields[column['field']] = _glyph_crosscheck_int(image, token, parsed)
             else:
                 fields[column['field']] = _field(token, parsed)
         else:
@@ -1309,6 +1330,16 @@ def _merge_cluster(cluster, name):
             _merge_player(target, player, result.get('pageType'), base['warnings'])
     base['players'].sort(key=lambda item: (item['side'] != 'left', item['slot']))
     _reconcile_kda(base['players'], base['match'], base['warnings'], base)
+    for player in base['players']:
+        gold = (player.get('fields') or {}).get('gold')
+        if not gold:
+            continue
+        # 战绩页的精确经济没读出来、只挂上数据/发育页的 k 值时，明确告诉教练
+        # 这是千位精度，不是识别错误。
+        if re.search(r'[kK万]', str(gold.get('raw') or '')):
+            base['warnings'].append(
+                f"{player['side']} {player['slot'] + 1} 经济为千位精度（{gold.get('raw')}，"
+                '战绩页精确值没读出），分析用前建议核对')
     base['coverage'] = {
         'players': len(base['players']),
         'byField': _merged_coverage(base['players']),
