@@ -125,7 +125,7 @@ def recognize(data, name=None, include_tokens=False, engine='rapid', on_stage=No
         warnings.append('新版战绩页装备图标未纳入 v1；装备名称需人工核对。')
     _validate_scores(match, players, page, warnings)
     coverage = _coverage(players)
-    quality = image_quality(image)
+    quality = image_quality(image, raw=data)
     for warning in quality.get('warnings') or []:
         warnings.append(f'采集质量：{warning}')
     output = {
@@ -152,7 +152,35 @@ def recognize(data, name=None, include_tokens=False, engine='rapid', on_stage=No
     return output
 
 
-def image_quality(image):
+JPEG_BASE_75 = [16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55]
+
+
+def _estimate_jpeg_quality(raw):
+    """从亮度量化表估算 JPEG 有效画质（0-100）；非 JPEG 或表缺失返回 None。
+
+    依据 IJG 约定反推：q=100-50×(当前表/基准表)（低频段均值）。聊天工具转发
+    非原图通常按 70-80 再压缩，实测估算误差 ±0.2。
+    """
+    try:
+        image = Image.open(io.BytesIO(raw))
+    except Exception:
+        return None
+    if (image.format or '').upper() != 'JPEG':
+        return None
+    try:
+        luma = (image.quantization or {}).get(0)
+    except Exception:
+        return None
+    if not luma or len(luma) < len(JPEG_BASE_75):
+        return None
+    ratio = (sum(int(v) for v in luma[:len(JPEG_BASE_75)]) / len(JPEG_BASE_75)
+             / (sum(JPEG_BASE_75) / len(JPEG_BASE_75)))
+    if ratio <= 0:
+        return None
+    return round(max(1.0, min(100.0, 100 - 50 * ratio)), 1)
+
+
+def image_quality(image, raw=None):
     """Non-blocking capture checks.  They never reject a screenshot."""
     width, height = image.size
     pixels = np.asarray(image.convert('L'), dtype=np.float32)
@@ -169,8 +197,13 @@ def image_quality(image):
     ratio = width / height if height else 0
     if not 1.2 <= ratio <= 3.4:
         warnings.append(f'宽高比 {ratio:.2f} 非常规，可能被裁切；请确认列头完整。')
+    jpeg_quality = _estimate_jpeg_quality(raw) if raw else None
+    if jpeg_quality is not None and jpeg_quality < 82:
+        warnings.append(f'这张图疑似经微信/QQ 等聊天软件压缩（估算画质 {jpeg_quality:.0f}），'
+                        '小字识别容易出错；建议手机端勾选「原图」或用文件方式重传。')
     return {'width': width, 'height': height, 'blur': round(blur, 1),
-            'aspect': round(ratio, 3), 'warnings': warnings}
+            'aspect': round(ratio, 3), 'jpegQuality': jpeg_quality,
+            'warnings': warnings}
 
 
 def _normalize_tokens(raw, width, height):

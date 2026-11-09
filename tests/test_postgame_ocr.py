@@ -29,6 +29,38 @@ class ParserTests(unittest.TestCase):
         for expected, tokens in cases.items():
             self.assertEqual(p.classify_page(tokens), expected, expected)
 
+
+class ImageQualityTests(unittest.TestCase):
+    """聊天软件压缩检测：量化表估算画质，低画质提示重传原图。"""
+
+    def test_recompressed_jpeg_warns(self):
+        import io
+
+        from PIL import Image
+        image = Image.new('RGB', (1600, 720), (40, 60, 90))
+        low = io.BytesIO()
+        image.save(low, 'JPEG', quality=70)
+        low_quality = p.image_quality(image, raw=low.getvalue())
+        self.assertIsNotNone(low_quality['jpegQuality'])
+        self.assertLess(low_quality['jpegQuality'], 82)
+        self.assertTrue(any('压缩' in warning for warning in low_quality['warnings']))
+
+    def test_original_quality_and_png_stay_silent(self):
+        import io
+
+        from PIL import Image
+        image = Image.new('RGB', (1600, 720), (40, 60, 90))
+        high = io.BytesIO()
+        image.save(high, 'JPEG', quality=95)
+        high_quality = p.image_quality(image, raw=high.getvalue())
+        self.assertGreaterEqual(high_quality['jpegQuality'], 82)
+        self.assertFalse(any('压缩' in warning for warning in high_quality['warnings']))
+        png = io.BytesIO()
+        image.save(png, 'PNG')
+        png_quality = p.image_quality(image, raw=png.getvalue())
+        self.assertIsNone(png_quality['jpegQuality'])
+        self.assertFalse(any('压缩' in warning for warning in png_quality['warnings']))
+
     def test_split_kda_gold(self):
         cases = {
             '9/4/1313171': (9, 4, 13, 13171),
