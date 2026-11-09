@@ -19,8 +19,8 @@ from urllib.request import Request, urlopen
 from paths import data_root
 
 DEFAULT_MANIFEST_URLS = (
-    'https://github.com/hccccc01333/kpl-scrim-lab/releases/latest/download/update.json',
-    'https://raw.githubusercontent.com/hccccc01333/kpl-scrim-lab/main/update.json',
+    'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest/download/update.json',
+    'https://raw.githubusercontent.com/hccccc01333/kpl-scrim-lab-app/main/update.json',
 )
 MAX_MANIFEST_BYTES = 256 * 1024
 CACHE_MAX_AGE = 6 * 3600

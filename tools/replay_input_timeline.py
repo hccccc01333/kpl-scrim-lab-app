@@ -334,7 +334,7 @@ def timeline(abc: bytes) -> dict:
                          "uncertaintySeconds": 1,
                          "streamSeconds": round((last_activity - first_input + 1) / FRAME_RATE, 2),
                          "note": "t ≈ (frame − battleStart)/15 s，battleStart ∈ [0..14] 帧，误差 ≤ ±1s。"
-                                 "校准依据 docs 5.129：20261102_161129 与赛后截图同局（十人 1251 评分"
+                                 "校准依据 docs 5.129：某局样本与赛后截图同局（十人 1251 评分"
                                  "与英雄逐一一致），页面时长 11:33 = 693s，最后手动购买帧 10409 → "
                                  "(10409−[0..14])/15 = 692.9-693.9s ✓；流末尾为胜利动画（输入已锁定）。",
                          "verifiedFor": "5247758 样本；未逐构建验证"},

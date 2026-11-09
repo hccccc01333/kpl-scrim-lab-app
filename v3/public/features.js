@@ -2502,7 +2502,7 @@ export function createFeatures(h) {
           <div class="report-section"><h2>对手简报</h2>${briefHtml}</div>
         </aside>
       </section>
-      <footer class="report-footer"><span>数据来源：营地面板与对局档案</span><span>赛训数据 · ${generated} · 内部资料</span></footer>
+      <footer class="report-footer"><span>数据来源：营地面板与对局档案</span><span>赛训数据 · ${generated}</span></footer>
     </article></div>`;
   }
   function weeklyReport(data, key) {
@@ -2645,7 +2645,7 @@ export function createFeatures(h) {
           <div class="report-section"><h2>训练效果</h2>${weekEffects.length ? `<div class="report-effect"><b>${fmt(weekEffects.length)} 条干预记录</b><span>可对比 ${fmt(usableEffects.length)} 条 · 平均效应量 ${meanEffect == null ? '—' : fmt(meanEffect, 2)}</span></div>` : '<p class="report-muted">本周没有训练干预记录。</p>'}</div>
         </aside>
       </section>
-      <footer class="report-footer"><span>数据来源：训练计划、对局档案与训练效果</span><span>赛训数据 · ${generated} · 内部资料</span></footer>
+      <footer class="report-footer"><span>数据来源：训练计划、对局档案与训练效果</span><span>赛训数据 · ${generated}</span></footer>
     </article></div>`;
   }
   function sessionPage(value, key) {
