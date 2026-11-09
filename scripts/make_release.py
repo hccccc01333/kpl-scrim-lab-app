@@ -463,8 +463,12 @@ def install_deps(runtime: Path, index_url: str | None = None,
         shutil.copytree(source, target, dirs_exist_ok=True)
         return
     print('安装核心依赖（fastapi/uvicorn/Pillow/numpy/openpyxl/pycryptodome）…')
+    # 构建机可能是 3.13，而内置运行时固定 3.12：不指定 ABI 的话 pip 会装
+    # cp313 的二进制轮子，装进 3.12 后 import pydantic_core 直接失败。
+    target_python = '.'.join(PY_VER.split('.')[:2])
     base = [sys.executable, '-m', 'pip', 'install', '--target', str(target),
-            '--disable-pip-version-check', *CORE_DEPS]
+            '--disable-pip-version-check', '--only-binary=:all:',
+            '--python-version', target_python, '--platform', 'win_amd64', *CORE_DEPS]
     if index_url:
         try:
             subprocess.run([*base, '-i', index_url], check=True)
