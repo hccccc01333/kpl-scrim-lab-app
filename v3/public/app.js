@@ -6,7 +6,7 @@ import { createTour } from './tour.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
-const CLIENT_DOWNLOAD_URL = 'https://github.com/hccccc01333/kpl-scrim-lab/releases/latest';
+const CLIENT_DOWNLOAD_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest';
 const app = document.querySelector('#app');
 const nav = [
   ['overview', '首页'], ['ingest', '采集'], ['matches', '对局'], ['teams', '战队'], ['players', '选手'],

@@ -141,7 +141,7 @@ signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 <setup.exe
 {
   "manifestUrls": [
     "https://gitee.com/<你的账号>/kpl-scrim-lab/raw/master/update.json",
-    "https://github.com/hccccc01333/kpl-scrim-lab/releases/latest/download/update.json"
+    "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest/download/update.json"
   ]
 }
 ```

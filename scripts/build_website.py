@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / 'website' / 'src'
 DIST = ROOT / 'website' / 'dist'
-REPO_URL = 'https://github.com/hccccc01333/kpl-scrim-lab'
+REPO_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app'
 DEFAULT_DOWNLOAD_URL = f'{REPO_URL}/releases/latest'
 SPONSOR_URL = 'https://afdian.com/a/kplscrim'
 PAGES = ('index.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
