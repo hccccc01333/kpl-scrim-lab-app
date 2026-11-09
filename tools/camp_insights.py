@@ -42,7 +42,7 @@ def esc(value):
     return str(value).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
 
 
-def fetch_list(camp_user_id: str, refresh: bool = False, max_pages: int = 8) -> list:
+def fetch_list(camp_user_id: str, refresh: bool = False, max_pages: int = 30) -> list:
     LIST_DIR.mkdir(parents=True, exist_ok=True)
     cache = LIST_DIR / f'{camp_user_id}.json'
     if cache.is_file() and not refresh:

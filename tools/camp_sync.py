@@ -3,12 +3,14 @@
 拉取指定营地账号的战绩列表（水位线增量），逐局拉取对局详情（含 BP、
 十人面板、出装）落盘到 data/camp_details/<gameSeq>.json。
 
-    python tools/camp_sync.py <friendUserId> [--max-pages 8]
+    python tools/camp_sync.py <friendUserId> [--max-pages N]
 
 约定：
 - 水位记录在 data/camp_sync_state.json：每账号保存最后一条对局的
   dtEventTime（秒），下次只拉这个时间之后的新局。
-- 请求间隔 2 秒，单次最多 8 页，把风控暴露压到人工水平。
+- 请求间隔 2 秒，把风控暴露压到人工水平。
+- 页数：增量同步默认 8 页；首次全量（无水位）自动翻到营地详情保留期边界
+  或 hasMore=false（上限 60 页，约 900 局），不再静默截断在 8 页≈127 局。
 - 列表里每局自 battleType/mapName，训练赛筛选在工作台侧做，这里全量入库。
 """
 from __future__ import annotations
@@ -31,6 +33,8 @@ STATE_PATH = Path(os.environ['CAMP_SYNC_STATE']) if 'CAMP_SYNC_STATE' in os.envi
     else ROOT / 'data' / 'camp_sync_state.json'
 DETAIL_DIR = Path(os.environ.get('CAMP_DETAIL_DIR', ROOT / 'data' / 'camp_details'))
 REQUEST_INTERVAL = 2.0
+INCREMENTAL_MAX_PAGES = 8
+FULL_PULL_MAX_PAGES = 60
 
 
 def load_state() -> dict:
@@ -60,7 +64,9 @@ def entry_role_id(entry: dict) -> str:
     return '0'
 
 
-def sync(friend_user_id: str, max_pages: int = 8) -> dict:
+def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
+    """max_pages=None 时自动决定：首次全量（无水位）翻到详情保留期边界或
+    hasMore=false（上限 60 页），增量同步沿用 8 页。"""
     state = load_state()
     watermark = int(state.get(friend_user_id) or 0)
     account = load_account()  # 提前校验凭证，避免跑到一半发现没登录
@@ -70,6 +76,12 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
                'gameSeqs': []}
     cursor = watermark
     newest = watermark
+    if max_pages is None:
+        max_pages = FULL_PULL_MAX_PAGES if watermark == 0 else INCREMENTAL_MAX_PAGES
+    # 营地详情只保留最近 DETAIL_TTL_DAYS 天：整页都超出保留期后继续翻页
+    # 只会拿到无法入库的列表项，到此为止。
+    window_start = time.time() - DETAIL_TTL_DAYS * 86400
+    oldest_fetched = 0
 
     for _ in range(max_pages):
         result = battle_list(friend_user_id, cursor)
@@ -80,8 +92,17 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
         entries = data.get('list') or []
         summary['pages'] += 1
 
+        page_times = [int(e.get('dtEventTime') or 0) for e in entries
+                      if e.get('dtEventTime')]
+        if page_times:
+            oldest_fetched = min(page_times)
+            summary['oldest'] = oldest_fetched
+        if page_times and max(page_times) < window_start:
+            summary['reachedWindow'] = True
+            break
         new_entries = [e for e in entries if int(e.get('dtEventTime') or 0) > watermark]
         if not new_entries:
+            summary['reachedWindow'] = bool(page_times and min(page_times) < window_start)
             break
 
         for entry in new_entries:
@@ -286,7 +307,8 @@ def sync_entries(camp_user_id: str, entries, interval: float = 2.0, on_progress=
 def main(argv):
     parser = argparse.ArgumentParser(description='营地战绩增量同步')
     parser.add_argument('friend_user_id', help='营地账号 ID（数字）')
-    parser.add_argument('--max-pages', type=int, default=8)
+    parser.add_argument('--max-pages', type=int, default=None,
+                        help='翻页上限；缺省自动（首次全量 60 页，增量 8 页）')
     parser.add_argument('--reset', action='store_true', help='忽略水位，从头同步')
     args = parser.parse_args(argv)
     if args.reset:
@@ -294,6 +316,9 @@ def main(argv):
         state.pop(args.friend_user_id, None)
         save_state(state)
     summary = sync(args.friend_user_id, args.max_pages)
+    if summary.get('oldest'):
+        print(f"已覆盖到 {datetime.fromtimestamp(summary['oldest']):%Y-%m-%d %H:%M}"
+              + ('（营地详情保留期边界）' if summary.get('reachedWindow') else ''))
     print(f"同步完成：{summary}")
 
 
