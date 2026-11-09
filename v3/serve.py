@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
 from bp_camp import merge_bp_sources
-from collection_contract import reject_example_table
+from collection_contract import reject_example_table, validate_table
 from match_review import PanoramaRepository
 from paths import data_root
 from studio_api import create_studio_router
@@ -1029,9 +1029,13 @@ async def preview_sheet(request: Request, name: str = ''):
         json.dump({'name':Path(name).name, 'suffix':suffix}, out, ensure_ascii=False)
     try:
         workbook = read_workbook(path)
+        strict = request.query_params.get('strict') == '1'
+        source_sheets = (workbook.get('sheets') or [])[:1] if strict else (workbook.get('sheets') or [])
         sheets = []
-        for sheet in workbook.get('sheets') or []:
+        for sheet in source_sheets:
             reject_example_table(sheet)
+            if strict:
+                validate_table(sheet)
             profile = infer_profile(sheet)
             sheets.append({'name':sheet['name'], 'rows':len(sheet['rows']), 'header':sheet['header'],
                            'sample':sheet['rows'][:5], 'grain':profile.get('grain'),
@@ -1045,6 +1049,21 @@ async def preview_sheet(request: Request, name: str = ''):
     return {'previewId':preview_id, 'name':Path(name).name, 'sheets':sheets}
 
 
+def _single_match_sheet(sheet, profile):
+    """这页是否只有一局（本局十人模板）。多局表不套用单一「本队阵营」。"""
+    keys = profile.get('keys') or {}
+    header = sheet.get('header') or []
+    for field in ('matchId', 'matchNo'):
+        column = keys.get(field)
+        if not column or column not in header:
+            continue
+        index = header.index(column)
+        values = {str(row[index]).strip() for row in sheet.get('rows') or []
+                  if index < len(row) and str(row[index]).strip()}
+        return len(values) == 1
+    return False
+
+
 @router.post('/api/v3/import/commit')
 async def commit_sheet(request: Request):
     from sheet_import import SheetImportError, infer_profile, read_workbook, write_staging
@@ -1052,12 +1071,20 @@ async def commit_sheet(request: Request):
     preview_id = body.get('previewId', '') if isinstance(body, dict) else ''
     if len(preview_id) != 32 or any(c not in '0123456789abcdef' for c in preview_id):
         raise HTTPException(400, '预览标识无效。')
+    own_side = str(body.get('ownSide') or '').strip().lower() if isinstance(body, dict) else ''
+    if own_side not in ('', 'blue', 'red'):
+        raise HTTPException(400, '本队阵营只能是蓝方或红方。')
     folder = IMPORTS / '_import_previews'
     try:
         meta = json.loads((folder/(preview_id+'.meta.json')).read_text(encoding='utf-8'))
         if meta.get('suffix') not in ('.csv','.tsv','.xlsx','.xlsm'): raise ValueError('invalid suffix')
         workbook = read_workbook(folder/(preview_id+meta['suffix']))
         workbook['source']['name'] = meta.get('name') or '表格'
+        if isinstance(body, dict) and body.get('strict'):
+            workbook['sheets'] = (workbook.get('sheets') or [])[:1]
+            if not workbook['sheets']:
+                raise ValueError('表格没有可读取的工作表')
+            validate_table(workbook['sheets'][0])
         for sheet in workbook['sheets']:
             reject_example_table(sheet)
         for manifest in IMPORTS.glob('*/manifest.json'):
@@ -1068,6 +1095,10 @@ async def commit_sheet(request: Request):
             except (OSError, ValueError, AttributeError):
                 continue
         profiles={sheet['name']:infer_profile(sheet) for sheet in workbook['sheets']}
+        if own_side:
+            for sheet in workbook['sheets']:
+                if _single_match_sheet(sheet, profiles[sheet['name']]):
+                    profiles[sheet['name']]['ownSide'] = own_side
         destination=IMPORTS/('import-'+uuid.uuid4().hex[:16]); destination.mkdir(parents=True,exist_ok=False)
         manifest=write_staging(workbook['source'],workbook['sheets'],profiles,destination,'inferred')
     except ValueError as error:

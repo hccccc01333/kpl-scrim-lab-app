@@ -163,6 +163,12 @@
         "field": "win",
         "rule": "胜 / 负 / 未知，同阵营一致；未知可空",
         "required": false
+      },
+      {
+        "name": "本队阵营",
+        "field": "ownSide",
+        "rule": "blue 或 red，十行一致；标本队在哪一方",
+        "required": true
       }
     ]
   }

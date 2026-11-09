@@ -4,7 +4,7 @@
 
 ## 本局附件与批量导入的区别
 
-“采集通道 → 表格”是选填来源，必须使用[本项目十人模板](http://127.0.0.1:8766/assets/capture-guide/match-template.xlsx)，恰好十行、双方各五人，严格校验表头、日期、分路和数值；未知数值可空，示例编号不允许提交。完整规则和虚构示例见[采集 SOP](collection_sop.md)。机器约束定义在 `web/capture-guide/requirements.json`，服务端在写入附件前校验。
+“采集通道 → 表格”是选填来源，必须使用[本项目十人模板](http://127.0.0.1:8766/assets/capture-guide/match-template.xlsx)，每局恰好十行、双方各五人，严格校验表头、日期、分路、本队阵营和数值；未知数值可空，示例编号不允许提交。完整规则和虚构示例见[采集 SOP](collection_sop.md)。机器约束定义在 `web/capture-guide/requirements.json`，服务端在写入附件前校验。
 
 以下自动画像、聚合表与多局表说明属于“批量导入”和 CLI，不代表本局附件接受任意格式。
 

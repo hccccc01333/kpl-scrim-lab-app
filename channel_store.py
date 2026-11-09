@@ -242,6 +242,11 @@ def attach_replay(channel, replay_id, report, actor=None):
 def attach_table(channel, file_info, parsed, actor=None):
     invalidate_review(channel, actor)
     rows = parsed.get('rows') or []
+    # 表格自带「本队阵营」时，顺手补齐通道的本队视角；已有（营地详情给的）不覆盖。
+    own = next((row['keys'].get('ownSide') for row in rows
+                if isinstance(row.get('keys'), dict) and row['keys'].get('ownSide')), None)
+    if own in ('blue', 'red') and not (channel.get('match') or {}).get('ownSide'):
+        channel.setdefault('match', {})['ownSide'] = 'left' if own == 'blue' else 'right'
     source = channel['sources']['table']
     files = source.setdefault('files', [])
     files.append({**file_info, 'uploadedAt': now(), 'parsedAt': now(), 'status': 'parsed'})

@@ -1,7 +1,8 @@
-import json
+﻿import json
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 from analysis_api import create_analysis_router
@@ -143,6 +144,44 @@ def write_sheet_import(root):
     (folder / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
 
 
+def write_single_match_import(root):
+    """一局十人、带「本队=蓝方」的表，用来验证导入后的胜负与比分。"""
+    import_id = 'own1'
+    folder = Path(root) / import_id
+    rows_dir = folder / 'rows'
+    rows_dir.mkdir(parents=True)
+    lanes = ['对抗路', '打野', '中路', '发育路', '游走']
+    heroes = {'blue': ['姬小满', '大司命', '甄姬', '公孙离', '张飞'],
+              'red': ['曹操', '裴擒虎', '不知火舞', '孙尚香', '少司缘']}
+    kills = {'blue': [3, 3, 3, 3, 3], 'red': [2, 2, 2, 2, 1]}
+    rows = []
+    for camp in ('blue', 'red'):
+        for slot in range(5):
+            rows.append({
+                'rowNumber': len(rows) + 2, 'grain': 'match_player', 'aggregated': False, 'raw': {},
+                'keys': {'date': '2026-10-06', 'matchId': 'S9', 'opponent': '表格对手',
+                         'position': lanes[slot], 'player': f'{camp}{slot}',
+                         'hero': heroes[camp][slot], 'side': camp},
+                'dimensions': {'win': 1 if camp == 'blue' else 0},
+                'metrics': {'kills': {'value': kills[camp][slot]}, 'deaths': {'value': 2},
+                            'assists': {'value': 4}, 'gold': {'value': 12000},
+                            'damage': {'value': 50000}, 'taken': {'value': 30000},
+                            'duration': {'value': 900}},
+            })
+    (rows_dir / '01-match.jsonl').write_text(
+        '\n'.join(json.dumps(row, ensure_ascii=False) for row in rows) + '\n', encoding='utf-8')
+    manifest = {
+        'schema': 'kpl-sheet-import-v1', 'source': {'name': 'own.csv'},
+        'profileSource': 'provided', 'quality': {'rows': 10, 'duplicates': 0},
+        'warnings': [], 'createdAt': '2026-10-30',
+        'sheets': [{'name': '单局', 'grain': 'match_player', 'aggregated': False, 'rowCount': 10,
+                    'rowsFile': 'rows/01-match.jsonl', 'keys': {}, 'metrics': ['kills'],
+                    'unmappedColumns': [], 'ownSide': 'blue'}],
+    }
+    (folder / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
+    return 'sheet-own1-单局-S9'
+
+
 class AnalysisDataTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -252,6 +291,33 @@ class AnalysisDataTests(unittest.TestCase):
         self.assertEqual(len(imports['imports']), 1)
         self.assertEqual(len(imports['aggregates']), 1)
         self.assertTrue(self.repo.import_rows('sheet1', '赛季')['aggregated'])
+
+    def test_sheet_own_side_gives_result_and_score(self):
+        imports = self.root / 'imports_own'
+        imports.mkdir()
+        key = write_single_match_import(imports)
+        repo = AnalysisRepository(self.db, self.matches, imports)
+        matches = repo.matches({'sources': ['sheet']})['matches']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['key'], key)
+        self.assertEqual(matches[0]['ownCamp'], 'blue')
+        self.assertEqual(matches[0]['scores'], {'blue': 15, 'red': 9})
+        self.assertEqual(matches[0]['result'], 'win')
+
+    def test_match_meta_own_camp_applies_to_sheet_match(self):
+        imports = self.root / 'imports_meta'
+        imports.mkdir()
+        key = write_single_match_import(imports)
+        with closing(sqlite3.connect(self.db)) as connection:
+            connection.execute('CREATE TABLE IF NOT EXISTS match_meta '
+                               '(match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+            connection.execute('INSERT INTO match_meta VALUES(?,?,?)',
+                               (key, json.dumps({'ownCamp': 'red'}, ensure_ascii=False), 0.0))
+            connection.commit()
+        repo = AnalysisRepository(self.db, self.matches, imports)
+        match = repo.matches({'sources': ['sheet']})['matches'][0]
+        self.assertEqual(match['ownCamp'], 'red')
+        self.assertEqual(match['result'], 'loss')
 
     def test_match_detail_and_trend(self):
         detail = self.repo.match_detail('db-A')
@@ -438,3 +504,4 @@ class DeepAnalyticsTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

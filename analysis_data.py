@@ -173,9 +173,12 @@ class AnalysisRepository:
         roster, team_name, db_matches, drafts, aliases, profile = self._load_db(warnings)
         bundles = self._load_bundles(warnings)
         matches, links = self._unify(db_matches, bundles, warnings)
-        self._apply_aliases(matches, aliases, roster, (profile.get('enemyAliases') or {}))
-        self._apply_match_meta(matches, self._load_match_meta(warnings))
         sheet_matches, imports, aggregates = self._load_imports(warnings)
+        # 表格导入的局也吃「本队阵营」覆盖层与昵称绑定：教练在单局页标了蓝/红，
+        # 下一层才能算胜负、比分与本队/对手两侧；以前这两步只跑在 db/bundle 上。
+        combined = matches + sheet_matches
+        self._apply_match_meta(combined, self._load_match_meta(warnings))
+        self._apply_aliases(combined, aliases, roster, (profile.get('enemyAliases') or {}))
         rows = self._flat_rows(matches, warnings)
         # 表格行按需加入；默认 source=db,bundle。
         sheet_rows = self._sheet_flat_rows(sheet_matches, warnings)
@@ -206,6 +209,20 @@ class AnalysisRepository:
         enemy_aliases = enemy_aliases or {}
         for match in matches:
             own = match.get('ownCamp') or match.get('ownSide')
+            if not own and match.get('source') == 'sheet' and aliases:
+                # 导入时没选本队阵营：用已认领的本队昵称反推；两侧都能命中就不猜。
+                hits = {'blue': 0, 'red': 0}
+                for player in match.get('players', []):
+                    camp = player.get('camp')
+                    if camp in hits and (player.get('label') or '') in aliases:
+                        hits[camp] += 1
+                if hits['blue'] and not hits['red']:
+                    own = 'blue'
+                elif hits['red'] and not hits['blue']:
+                    own = 'red'
+                if own:
+                    match['ownCamp'] = own
+                    match['ownSide'] = 'left' if own == 'blue' else 'right'
             for player in match.get('players', []):
                 player['rawLabel'] = player.get('label') or ''
                 if player.get('playerId') or not own:
@@ -638,7 +655,7 @@ class AnalysisRepository:
                     'camp': keys.get('side') or dimensions.get('side') or 'unknown',
                     'side': keys.get('side') or dimensions.get('side') or 'unknown',
                     'slot': keys.get('slot'), 'hero': clean(keys.get('hero')),
-                    # 单局表的分路/对手/训练组由 infer_profile 归到 keys（模板 17 列都走 keys），
+                    # 单局表的分路/对手/训练组/本队阵营由 infer_profile 归到 keys（模板 18 列都走 keys），
                     # 只有胜负在 dimensions；这里两处都读，避免表格入库后分路和对手整列丢失。
                     'position': lane_name(keys.get('position') or dimensions.get('position')),
                     'kills': metric('kills'), 'deaths': metric('deaths'), 'assists': metric('assists'),
@@ -659,6 +676,28 @@ class AnalysisRepository:
                 if isinstance(item, dict) and item.get('value') is not None:
                     duration = item['value']
                     break
+            # 表格里没有营地的终局比分，用双方击杀合计还原；胜负优先取「胜负」列，
+            # 缺失时才按比分比较。本队阵营取表格的「本队阵营」列，缺了就留空、不猜。
+            scores = {}
+            for camp in ('blue', 'red'):
+                values = [player['kills'] for player in players if player['camp'] == camp]
+                if len(values) == 5 and all(isinstance(value, (int, float)) for value in values):
+                    scores[camp] = int(sum(values))
+            results = {'blue': set(), 'red': set()}
+            for player in players:
+                if player.get('result') in ('win', 'loss'):
+                    results[player['camp']].add(player['result'])
+            outcomes = {camp: next(iter(values)) for camp, values in results.items() if len(values) == 1}
+            winner = None
+            if outcomes.get('blue') == 'win' and outcomes.get('red') == 'loss':
+                winner = 'blue'
+            elif outcomes.get('red') == 'win' and outcomes.get('blue') == 'loss':
+                winner = 'red'
+            if winner is None and scores.get('blue') is not None and scores.get('red') is not None \
+                    and scores['blue'] != scores['red']:
+                winner = 'blue' if scores['blue'] > scores['red'] else 'red'
+            own = str(keys.get('ownSide') or sheet.get('ownSide') or '').strip().lower()
+            own = own if own in ('blue', 'red') else None
             result.append({
                 'key': f'sheet-{import_id[:8]}-{sheet.get("name")}-{match_key}',
                 'dbId': None, 'bundleKey': None, 'sources': ['sheet'], 'source': 'sheet',
@@ -667,7 +706,8 @@ class AnalysisRepository:
                 'session': dimensions.get('session') or keys.get('session') or '',
                 'version': dimensions.get('version') or keys.get('version') or '',
                 'mode': None, 'title': entry.get('source', {}).get('name'),
-                'ownSide': None, 'ownCamp': None, 'winner': None, 'scores': {},
+                'ownSide': ('left' if own == 'blue' else 'right') if own else None,
+                'ownCamp': own, 'winner': winner, 'scores': scores,
                 'players': players, 'process': None,
                 'warnings': ['表格来源，可能与本机记录重复；未自动去重。'],
                 'status': 'sheet',

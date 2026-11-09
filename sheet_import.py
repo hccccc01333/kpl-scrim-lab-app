@@ -22,7 +22,7 @@ GRAINS = ('match_player', 'match_team', 'event', 'aggregate_player',
           'aggregate_team', 'aggregate_hero', 'match_wide')
 AGGREGATE_GRAINS = {'aggregate_player', 'aggregate_team', 'aggregate_hero'}
 KEY_FIELDS = {'date', 'matchId', 'matchNo', 'session', 'period', 'player', 'playerId',
-              'hero', 'team', 'opponent', 'side', 'position', 'event', 'time', 'frame'}
+              'hero', 'team', 'opponent', 'side', 'ownSide', 'position', 'event', 'time', 'frame'}
 DIMENSION_FIELDS = {'session', 'period', 'opponent', 'position', 'team', 'side',
                     'event', 'skill', 'equipment', 'runes', 'win'}
 METRIC_FIELDS = {'kills', 'deaths', 'assists', 'kda', 'gold', 'gpm', 'damage', 'dpm',
@@ -81,6 +81,7 @@ ALIASES = {
     'team': ['队伍', '战队', '队伍名称', '战队名称', '我方', 'team'],
     'opponent': ['对手', '敌方', '对方', 'opponent', 'enemy'],
     'side': ['阵营', '红蓝', '红蓝方', 'side', 'camp'],
+    'ownSide': ['本队阵营', '本队', '我方阵营', 'ownside', 'ourside'],
     'position': ['位置', '分路', '对位', 'position', 'role', 'lane'],
     'event': ['事件', '事件类型', '行为', 'action', 'event'],
     'time': ['时间', '时刻', '秒', '比赛时间', 'time', 'timestamp', 'elapsed'],
@@ -435,7 +436,7 @@ def infer_profile(sheet):
     keys = {}
     preferred = {
         'match_player': ['date', 'matchId', 'matchNo', 'session', 'opponent', 'team',
-                         'side', 'position', 'player', 'playerId', 'hero'],
+                         'side', 'ownSide', 'position', 'player', 'playerId', 'hero'],
         'match_team': ['date', 'matchId', 'matchNo', 'session', 'opponent', 'team', 'side'],
         'event': ['date', 'matchId', 'session', 'opponent', 'time', 'frame', 'event',
                   'player', 'hero', 'skill'],
@@ -612,7 +613,7 @@ def _normalize_key(field, value):
         return None
     if field == 'date':
         return _date_value(value) or str(value).strip()
-    if field == 'side':
+    if field in ('side', 'ownSide'):
         text = compact_name(value)
         if text in ('蓝', '蓝方', '蓝色', 'blue', 'b', '1'):
             return 'blue'
@@ -868,6 +869,7 @@ def write_staging(source, sheets, profiles, out_dir, profile_source='provided'):
             'metrics': list((profile.get('metrics') or {}).keys()),
             'dimensions': list((profile.get('dimensions') or {}).keys()),
             'unmappedColumns': profile.get('unmappedColumns', []),
+            'ownSide': profile.get('ownSide') or '',
             'rowsFile': str(rows_file.relative_to(out)).replace('\\', '/'),
             'quality': applied['quality'],
         })

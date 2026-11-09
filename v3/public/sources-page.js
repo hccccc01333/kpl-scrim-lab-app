@@ -855,7 +855,7 @@ export function createSources(h) {
 
     const lanes = (sheet.positions || []).join(' / ');
 
-    return withPage('导入表格', '选填 · 补充 —— 只在营地与截图都没有某个字段时才需要手填。表格必须按下面的列结构，否则导入后进不了平台。',
+    return withPage('导入表格', '选填 · 补充 —— 表格只进分析数据集（在「数据范围」里勾「表格导入」查看），不写营地口径的正式统计；正式统计仍要本局营地回放。',
       backLink()
       + noticeBox()
       + block('上传与预览', '支持 CSV / TSV / XLSX / XLSM，单个文件不超过 20 MB。先预览识别结果，确认后再导入。', upload)
@@ -865,8 +865,9 @@ export function createSources(h) {
           <div><b>阵营</b><span>${(sheet.sides || []).map((s) => (s === 'blue' ? 'blue（蓝方）' : 'red（红方）')).join(' / ')}，每方 5 行</span></div>
           <div><b>分路</b><span>${esc(lanes)}，每方每个分路各 1 人</span></div>
           <div><b>唯一性</b><span>选手昵称十行不重复；每方英雄不重复</span></div>
+          <div><b>本队阵营</b><span>blue 或 red，十行一致；多局逐局不同</span></div>
         </div>
-        <p class="capture-hint">多局或跨局汇总不要放进本局表格，走「批量导入」。</p>`)
+        <p class="capture-hint">同一张表可以往下追加多局：每局十行、对局ID不同；跨局汇总不要放进来。</p>`)
       + block('字段要求', `共 ${sheet.columns.length} 列，其中 ${requiredCount} 列必填。`,
         `<div class="table-wrap sv-spec-wrap"><table class="sv-spec-table"><thead><tr>
           <th>列名</th><th>字段</th><th>要求</th><th>规则</th>

@@ -2,7 +2,7 @@ import copy
 import unittest
 from pathlib import Path
 import channel_store as c
-from collection_contract import validate_sheet, PAGE_TYPES, reject_example_table
+from collection_contract import validate_sheet, validate_table, PAGE_TYPES, reject_example_table
 from sheet_import import read_workbook
 from tests.collection_fixtures import complete_collection
 
@@ -54,6 +54,29 @@ class CollectionContractTests(unittest.TestCase):
             reject_example_table(sheet)
         sheet['rows'][0][0] = 'real-match-1'
         reject_example_table(sheet)
+
+    def test_own_side_is_required_and_consistent(self):
+        sheet = self.sheet()
+        index = sheet['header'].index('本队阵营')
+        sheet['rows'][0][index] = 'red'
+        with self.assertRaisesRegex(ValueError, '本队阵营十行必须一致'):
+            validate_sheet(sheet)
+        sheet = self.sheet()
+        sheet['rows'][0][index] = '绿'
+        with self.assertRaisesRegex(ValueError, '本队阵营'):
+            validate_sheet(sheet)
+
+    def test_multi_match_blocks_each_need_ten_rows(self):
+        sheet = self.sheet()
+        first = [list(row) for row in sheet['rows']]
+        second = [list(row) for row in first]
+        for row in second:
+            row[0] = 'real-match-2'
+        table = {'name': '多局', 'header': list(sheet['header']), 'rows': first + second}
+        self.assertEqual(validate_table(table), {'real-match-1': 10, 'real-match-2': 10})
+        table['rows'] = first + second[:9]
+        with self.assertRaisesRegex(ValueError, '10 行'):
+            validate_table(table)
 
     def test_valid_template_normalizes_metrics(self):
         sheet=self.sheet();validate_sheet(sheet,{'date':'2026-11-04'})

@@ -211,6 +211,23 @@ class SheetImportTests(unittest.TestCase):
         first = json.loads(rows_file.read_text(encoding='utf-8').splitlines()[0])
         self.assertEqual(first['metrics']['kills']['value'], 1)
 
+    def test_write_staging_keeps_own_side(self):
+        workbook = self.read(MATCH)
+        sheet = workbook['sheets'][0]
+        profile = s.infer_profile(sheet)
+        profile['ownSide'] = 'blue'
+        out = self.root / 'import-side'
+        manifest = s.write_staging(workbook['source'], [sheet], {'CSV': profile}, out)
+        self.assertEqual(manifest['sheets'][0]['ownSide'], 'blue')
+
+    def test_template_own_side_maps_to_key(self):
+        path = Path(__file__).resolve().parents[1] / 'web/capture-guide/match-sample.csv'
+        sheet = s.read_workbook(path)['sheets'][0]
+        profile = s.infer_profile(sheet)
+        self.assertEqual(profile['keys'].get('ownSide'), '本队阵营')
+        applied = s.apply_profile(sheet, profile)
+        self.assertEqual(applied['rows'][0]['keys']['ownSide'], 'blue')
+
     @unittest.skipUnless(Workbook, 'openpyxl unavailable')
     def test_xlsx(self):
         path = self.root / 'data.xlsx'
