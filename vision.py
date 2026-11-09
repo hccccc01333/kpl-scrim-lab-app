@@ -24,8 +24,10 @@ def prepare_image(data):
     rows = np.where((arr.min(axis=2) < 225).mean(axis=1) > .55)[0]
     top, bottom = (int(rows[0]), int(rows[-1]) + 1) if len(rows) else (0, image.height)
     image = image.crop((0, top, image.width, bottom))
-    if image.width > 1600:
-        image = image.resize((1600, round(image.height * 1600 / image.width)))
+    # v1.5: 不再把横屏截图压到 1600 宽——按显示精度读数的数值列对分辨率敏感。
+    # 只对极端大图限幅，避免内存失控；普通手机截图（<=3200 宽）全程原分辨率。
+    if image.width > 3200:
+        image = image.resize((3200, round(image.height * 3200 / image.width)), Image.Resampling.LANCZOS)
     return image, {'top': top, 'bottom': bottom}
 
 

@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.4.0'
-RELEASE_DATE = '2026-11-09'
-RELEASE_NAME = 'V3 一键安装版'
+VERSION = '1.5.0'
+RELEASE_DATE = '2026-11-10'
+RELEASE_NAME = '截图识别准确度'

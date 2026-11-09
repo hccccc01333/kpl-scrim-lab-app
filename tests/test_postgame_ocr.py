@@ -138,7 +138,8 @@ class RealSampleTests(unittest.TestCase):
         self.assertEqual(first['title']['value'], '银牌中路')
         self.assertEqual({key: first['fields'][key]['value'] for key in ('kills', 'deaths', 'assists', 'gold')},
                          {'kills': 5, 'deaths': 5, 'assists': 16, 'gold': 11435})
-        self.assertEqual(first['heroStatus'], 'auto-matched')
+        # v1.5 起截图保持原分辨率，英雄名小字可精确命中词表（此前模糊匹配）。
+        self.assertEqual(first['heroStatus'], 'exact')
         self.assertEqual(first['hero']['value'], '武则天')
         self.assertIn('武则天', [candidate['name'] for candidate in first['heroCandidates']])
         right_first = self.player(result, 'right', 0)

@@ -24,6 +24,7 @@ RATING_RE = re.compile(r'^\d{1,2}\.\d$')
 KDA_RE = re.compile(r'^(\d{1,3})/(\d{1,3})/(\d{1,3})$')
 TITLE_RE = re.compile(r'(?:金牌|银牌|铜牌)(?:对抗路|打野|中路|发育路|游走)')
 INT_RE = re.compile(r'^\d{1,3}$')
+GOLD_TOKEN_RE = re.compile(r'^\d{3,6}$')
 BIG_RE = re.compile(r'^(\d{1,6}(?:\.\d+)?)([kK万])?$')
 RATIO_RE = re.compile(r'^(?:\d+(?:\.\d+)?|\.\d+)$')
 PERCENT_RE = re.compile(r'^(\d{1,3}(?:\.\d+)?)%$')
@@ -662,48 +663,236 @@ def _read_title(tokens):
     return None
 
 
+def _glyph_read(image, box, scales=(6, 10)):
+    """Otsu 定位字形包围盒后回原图紧裁重读，返回 [(text, confidence), ...]。
+
+    深色底上的细小数字（对塔伤害的 0、右队战绩行的 KDA）常规整框重读容易
+    失败或被相邻列污染；先自适应二值化找前景包围盒，再从原图裁出带反锯齿
+    的紧贴区域放大识别。只在常规读取失败后调用。
+    """
+    if not box:
+        return None
+    crop = image.crop(box)
+    gray = np.asarray(crop.convert('L'), dtype=np.float32)
+    if gray.size < 16:
+        return None
+    hist, _ = np.histogram(gray, bins=256, range=(0, 256))
+    total = gray.size
+    sum_all = float((np.arange(256) * hist).sum())
+    sum_b = weight_b = 0.0
+    threshold, best_var = 0, -1.0
+    for level in range(256):
+        weight_b += hist[level]
+        if not weight_b:
+            continue
+        weight_f = total - weight_b
+        if not weight_f:
+            break
+        sum_b += level * hist[level]
+        mean_b, mean_f = sum_b / weight_b, (sum_all - sum_b) / weight_f
+        var = weight_b * weight_f * (mean_b - mean_f) ** 2
+        if var > best_var:
+            best_var, threshold = var, level
+    bright = gray >= threshold
+    dark = ~bright
+    # 结算页数值是深底亮字；前景占比异常说明整框偏亮/偏暗，换极性再试。
+    fg = bright if .004 <= float(bright.mean()) <= .4 else dark
+    ys, xs = np.where(fg)
+    if not len(xs):
+        return None
+    width, height = crop.size
+    pad_x, pad_y = max(1, round(width * .02)), max(1, round(height * .08))
+    x1, x2 = max(0, int(xs.min()) - pad_x), min(width, int(xs.max()) + pad_x + 1)
+    y1, y2 = max(0, int(ys.min()) - pad_y), min(height, int(ys.max()) + pad_y + 1)
+    tight = crop.crop((x1, y1, x2, y2))
+    results = []
+    for scale in scales:
+        big = tight.resize((tight.width * scale, tight.height * scale), Image.Resampling.LANCZOS)
+        for variant in (big, ImageOps.autocontrast(big)):
+            for text, confidence in ocr.read_line(variant) or []:
+                text = _compact(str(text))
+                if text:
+                    results.append((text, float(confidence)))
+    results.sort(key=lambda item: -item[1])
+    return results
+
+
+def _parse_kda_text(text):
+    """解析 KDA 文本并做合理性门限（MVP 徽章粘连可能产生 78/1/79243）。"""
+    match = KDA_RE.match(_compact(text))
+    if not match:
+        return None
+    kills, deaths, assists = (int(value) for value in match.groups())
+    if kills > 40 or deaths > 40 or assists > 60:
+        return None
+    return kills, deaths, assists
+
+
+def _kda_field_plausible(key, value):
+    if value is None:
+        return False
+    if key == 'gold':
+        return 200 <= value <= 40000
+    if key == 'assists':
+        return 0 <= value <= 60
+    return 0 <= value <= 40
+
+
+def _token_box_region(token, pad=.004):
+    xs = [p[0] for p in token['box']]
+    ys = [p[1] for p in token['box']]
+    return (max(0, min(xs) - pad), max(0, min(ys) - pad), max(xs) + pad, max(ys) + pad)
+
+
+def _frac_box(image, region):
+    """归一化坐标区域 → 像素包围盒。"""
+    width, height = image.size
+    x1, y1, x2, y2 = region
+    return (max(0, round(x1 * width)), max(0, round(y1 * height)),
+            min(width, round(x2 * width)), min(height, round(y2 * height)))
+
+
 def _read_score_fields(image, tokens, row):
     fields = {}
     left = _x(row['token']) < .5
-    x1, x2 = (.31, .45) if left else (.79, .915)
-    y = row['y'] - .06
-    combined = _read_cell_text(image, (x1 + x2) / 2, y,
-                               width=x2 - x1, height=.04)
-    if combined:
-        parsed = _split_kda_gold(combined[0])
+    kda_x1, kda_x2 = (.30, .44) if left else (.772, .875)
+    gold_x1, gold_x2 = (.39, .47) if left else (.838, .965)
+    line = row['y'] - .05
+
+    # v1.5: 行内干净 token 优先。MVP 徽章偶尔把 KDA 和经济粘连成一个坏
+    # token（78/1/79243），先尝试标准 KDA 正则，失败再走合并拆分。
+    kda_token = gold_token = None
+    for token in tokens:
+        text = _compact(_text(token))
+        if not (kda_x1 <= _x(token) <= gold_x2) or abs(_y(token) - line) > .04:
+            continue
+        if '/' in text and kda_token is None:
+            kda_token = token
+        if GOLD_TOKEN_RE.match(text) and gold_token is None and _x(token) >= gold_x1:
+            gold_token = token
+    if kda_token is not None or gold_token is not None:
+        line = _y(kda_token or gold_token)
+    kills = deaths = assists = gold = None
+    kda_token_is_merged = False
+    if kda_token is not None:
+        parsed = _parse_kda_text(_text(kda_token))
         if parsed:
-            for key in ('kills', 'deaths', 'assists', 'gold'):
-                value = parsed[key]
-                fields[key] = {'value': value, 'raw': combined[0],
-                               'confidence': combined[1], 'box': combined[2]}
-    if not fields:
-        for token in tokens:
-            parsed = _split_kda_gold(_compact(_text(token)))
+            kills, deaths, assists = parsed
+        else:
+            # KDA 与经济粘连成一个 token（5/0/88697）：按已知拆分规则展开。
+            split = _split_kda_gold(_compact(_text(kda_token)))
+            if split and split['kills'] <= 40 and split['deaths'] <= 40 and split['assists'] <= 60:
+                kills, deaths, assists = split['kills'], split['deaths'], split['assists']
+                if 200 <= split['gold'] <= 40000:
+                    gold = split['gold']
+                    kda_token_is_merged = True
+    if gold_token is not None:
+        value = int(_compact(_text(gold_token)))
+        if 200 <= value <= 40000:
+            gold = value
+
+    # 行内 token 解析不全 → 字形级重读（KDA 区右边界卡到经济 token 之前，
+    # 避免金色数字首位混进 KDA 读成 2/7/25）。
+    kda_rescue = gold_rescue = None
+    if kills is None:
+        if kda_token is not None:
+            region = _token_box_region(kda_token)
+            if gold_token is not None:
+                region = (region[0], region[1],
+                          min(region[2], min(p[0] for p in gold_token['box']) - .003),
+                          region[3])
+        else:
+            region = (kda_x1, line - .024, min(kda_x2, gold_x1 - .003), line + .024)
+        for text, confidence in (_glyph_read(image, _frac_box(image, region)) or []):
+            parsed = _parse_kda_text(text)
             if parsed:
-                for key, value in parsed.items():
-                    fields[key] = {'value': value, 'raw': _text(token),
-                                   'confidence': token['confidence'], 'box': token['box']}
+                kills, deaths, assists = parsed
+                kda_rescue = (text, confidence)
                 break
-    if not fields:
-        kda_x1, kda_x2 = (.31, .405) if left else (.80, .875)
-        gold_x1, gold_x2 = (.395, .45) if left else (.88, .95)
-        kda_text = _read_cell_text(image, (kda_x1 + kda_x2) / 2, y,
-                                   width=kda_x2 - kda_x1, height=.035)
-        gold_text = _read_cell_text(image, (gold_x1 + gold_x2) / 2, y,
-                                    width=gold_x2 - gold_x1, height=.035)
+    if gold is None and gold_token is None:
+        region_x1 = gold_x1
+        if kda_token is not None:
+            region_x1 = max(region_x1, max(p[0] for p in kda_token['box']) + .003)
+        region = (region_x1, line - .022, gold_x2, line + .022)
+        for text, confidence in (_glyph_read(image, _frac_box(image, region)) or []):
+            match = re.fullmatch(r'\d{3,6}', text)
+            if match and 200 <= int(text) <= 40000:
+                gold = int(text)
+                gold_rescue = (text, confidence)
+                break
+
+    rescued = {}
+    if kills is not None:
+        if kda_rescue:
+            raw, confidence, box = kda_rescue[0], kda_rescue[1], None
+        elif kda_token is not None:
+            raw, confidence, box = _text(kda_token), kda_token['confidence'], kda_token['box']
+        else:
+            raw, confidence, box = f'{kills}/{deaths}/{assists}', 0.0, None
+        for key, value in zip(('kills', 'deaths', 'assists'), (kills, deaths, assists)):
+            rescued[key] = {'value': value, 'raw': raw,
+                            'confidence': confidence, 'box': box}
+    if gold is not None:
+        if gold_rescue:
+            raw, confidence, box = gold_rescue[0], gold_rescue[1], None
+        elif gold_token is not None:
+            raw, confidence, box = _text(gold_token), gold_token['confidence'], gold_token['box']
+        elif kda_token_is_merged and kda_token is not None:
+            raw, confidence, box = _text(kda_token), kda_token['confidence'], kda_token['box']
+        else:
+            raw, confidence, box = str(gold), 0.0, None
+        rescued['gold'] = {'value': gold, 'raw': raw,
+                           'confidence': confidence, 'box': box}
+
+    # 原链路兜底：行内合并拆分 → 合并读拆分 → 定点分列读。
+    legacy = {}
+    for token in tokens:
+        parsed = _split_kda_gold(_compact(_text(token)))
+        if parsed:
+            for key, value in parsed.items():
+                legacy[key] = {'value': value, 'raw': _text(token),
+                               'confidence': token['confidence'], 'box': token['box']}
+            break
+    if not legacy:
+        combined = _read_cell_text(image, (kda_x1 + gold_x2) / 2, row['y'] - .06,
+                                   width=gold_x2 - kda_x1, height=.04)
+        if combined:
+            parsed = _split_kda_gold(combined[0])
+            if parsed:
+                for key in ('kills', 'deaths', 'assists', 'gold'):
+                    legacy[key] = {'value': parsed[key], 'raw': combined[0],
+                                   'confidence': combined[1], 'box': combined[2]}
+    if not legacy:
+        kda_mid_x1, kda_mid_x2 = (.31, .405) if left else (.80, .875)
+        gold_mid_x1, gold_mid_x2 = (.395, .45) if left else (.88, .95)
+        y = row['y'] - .06
+        kda_text = _read_cell_text(image, (kda_mid_x1 + kda_mid_x2) / 2, y,
+                                   width=kda_mid_x2 - kda_mid_x1, height=.035)
+        gold_text = _read_cell_text(image, (gold_mid_x1 + gold_mid_x2) / 2, y,
+                                    width=gold_mid_x2 - gold_mid_x1, height=.035)
         if kda_text:
-            match = KDA_RE.match(_compact(kda_text[0]))
-            if match:
-                for key, raw in zip(('kills', 'deaths', 'assists'), match.groups()):
-                    fields[key] = {'value': int(raw), 'raw': raw,
+            parsed = _parse_kda_text(kda_text[0])
+            if parsed:
+                for key, value in zip(('kills', 'deaths', 'assists'), parsed):
+                    legacy[key] = {'value': value, 'raw': _compact(kda_text[0]),
                                    'confidence': kda_text[1], 'box': kda_text[2]}
         if gold_text:
             match = BIG_RE.match(_compact(gold_text[0]))
             if match:
                 value = _big_value(match)
-                if value is not None and 0 <= value <= 100000:
-                    fields['gold'] = {'value': value, 'raw': match.group(0),
+                if value is not None:
+                    legacy['gold'] = {'value': value, 'raw': match.group(0),
                                       'confidence': gold_text[1], 'box': gold_text[2]}
+
+    # 按字段合并：字形/token 级结果优先，原链路补缺；每个值过合理性门限。
+    for key in ('kills', 'deaths', 'assists', 'gold'):
+        if key in rescued:
+            fields[key] = rescued[key]
+            continue
+        candidate = legacy.get(key)
+        if candidate is None or not _kda_field_plausible(key, candidate['value']):
+            continue
+        fields[key] = candidate
     return fields
 
 
@@ -712,40 +901,45 @@ def _split_kda_gold(text):
 
     The last assist digit and the first gold digit are printed adjacently and
     OCR often joins them.  Try every legal split and reject implausible gold
-    totals (the screenshot's four-digit/五位数 gold band).
+    totals (the screenshot's four-digit/五位数 gold band).  JPEG 压缩偶尔在
+    尾部粘出一个幽灵数字（2/7/2+5828 → 2/7/258280），因此同时给截掉 1-2 位
+    尾部的文本打分选全局最优；助攻用小值先验（>20 少见）。
     """
     text = _compact(text)
-    match = re.match(r'^(\d{1,3})/(\d{1,3})/(\d{3,7})$', text)
-    if not match:
-        return None
-    kills, deaths, rest = match.groups()
-    candidates = []
-    for length in (1, 2, 3):
-        if len(rest) <= length + 2:
+    best = None
+    for trim in (0, 1, 2):
+        trimmed = text[:len(text) - trim] if trim else text
+        match = re.match(r'^(\d{1,3})/(\d{1,3})/(\d{3,7})$', trimmed)
+        if not match:
             continue
-        assist = int(rest[:length])
-        gold_text = rest[length:]
-        if assist > 100 or len(gold_text) < 3 or len(gold_text) > 6:
-            continue
-        gold = int(gold_text)
-        score = 0
-        if 2000 <= gold <= 30000:
-            score += 4
-        if 4000 <= gold <= 20000:
-            score += 2
-        if len(gold_text) in (4, 5):
-            score += 1
-        if length == 2:
-            score += 1
-        if assist > 40:
-            score -= 3
-        if gold < 1000:
-            score -= 2
-        candidates.append((score, -length, assist, gold))
-    if not candidates:
+        kills, deaths, rest = match.groups()
+        for length in (1, 2, 3):
+            if len(rest) <= length + 2:
+                continue
+            assist = int(rest[:length])
+            gold_text = rest[length:]
+            if assist > 100 or len(gold_text) < 3 or len(gold_text) > 6:
+                continue
+            gold = int(gold_text)
+            score = 0
+            if 2000 <= gold <= 30000:
+                score += 4
+            if 4000 <= gold <= 20000:
+                score += 2
+            if len(gold_text) in (4, 5):
+                score += 1
+            if assist <= 20:
+                score += 2
+            elif assist > 40:
+                score -= 3
+            if gold < 1000:
+                score -= 2
+            candidate = (score, -trim, -length, int(kills), int(deaths), assist, gold)
+            if best is None or candidate > best:
+                best = candidate
+    if best is None:
         return None
-    _, _, assist, gold = max(candidates, key=lambda item: (item[0], item[1]))
-    return {'kills': int(kills), 'deaths': int(deaths), 'assists': assist, 'gold': gold}
+    return {'kills': best[3], 'deaths': best[4], 'assists': best[5], 'gold': best[6]}
 
 
 def _read_columns(image, row_tokens, all_tokens, row, side, page):
@@ -772,15 +966,23 @@ def _read_columns_with_profile(image, row_tokens, all_tokens, row, side, profile
                 continue
             candidates.append((abs(y - value_y) + abs(x - value_x), -token['confidence'], token, parsed))
         if candidates:
-            _, _, token, parsed = min(candidates, key=lambda item: (item[0], item[1]))
-            if column['kind'] == 'ratio' and _compact(_text(token)).startswith('.'):
-                cell = _read_cell_text(image, value_x, value_y, width=.05, height=.025)
-                cell_value = _parse_metric(cell[0], 'ratio') if cell else None
+            distance, _, token, parsed = min(candidates, key=lambda item: (item[0], item[1]))
+            # v1.5: 明显偏离预期位置或低置信度的 token 先与定点直读互核，防串列
+            # （昵称行的 ③ 徽章曾顶替没检测到的击败数 2）。阈值不能太紧——
+            # 正常 token 也可能偏离 0.02 左右，互核裁剪框容易蹭到邻近列。
+            cell = None
+            if distance > .03 or token['confidence'] < .85:
+                cell = _read_cell_metric(image, value_x, value_y, kind=column['kind'])
+            if cell is None and column['kind'] == 'ratio' and _compact(_text(token)).startswith('.'):
+                probe = _read_cell_text(image, value_x, value_y, width=.05, height=.025)
+                cell_value = _parse_metric(probe[0], 'ratio') if probe else None
                 if cell_value is not None:
-                    fields[column['field']] = {'value': cell_value, 'raw': cell[0],
-                                               'confidence': cell[1], 'box': cell[2]}
-                    continue
-            fields[column['field']] = _field(token, parsed)
+                    cell = {'value': cell_value, 'raw': probe[0],
+                            'confidence': probe[1], 'box': probe[2]}
+            if cell is not None:
+                fields[column['field']] = cell
+            else:
+                fields[column['field']] = _field(token, parsed)
         else:
             cell = _read_cell_metric(image, value_x, value_y, kind=column['kind'])
             if cell:
@@ -838,6 +1040,8 @@ def _parse_metric(text, kind):
         match = PERCENT_RE.match(text)
         return None if not match else round(float(match.group(1)), 1)
     if kind == 'int':
+        # 细小 0 字形常被识别成字母 O（对塔伤害列），仅限整型列做映射。
+        text = text.replace('O', '0').replace('o', '0')
         match = INT_RE.match(text)
         return None if not match else int(text)
     if kind == 'ratio':
@@ -882,25 +1086,55 @@ def _read_cell_text(image, x, y, width=.06, height=.024):
 
 def _read_cell_value(image, x, y, kind, width=.06, height=.024):
     result = _read_cell_text(image, x, y, width=width, height=height)
-    if not result:
-        return None
-    value = _parse_metric(result[0], kind)
-    if value is None and kind == 'big':
+    value = _parse_metric(result[0], kind) if result else None
+    if value is None and kind == 'big' and result:
         # A one-decimal display can lose its trailing zero (1.0 -> 1).
         value = _parse_metric(result[0] + '.0', kind) if INT_RE.match(result[0]) else None
+    if value is None:
+        # v1.5: 常规重读失败 → 字形级救援（深底细小 0、低对比 KDA）。
+        box = _crop_box(image, x, y, width, height)
+        for text, confidence in (_glyph_read(image, box) or []):
+            value = _parse_metric(text, kind)
+            if value is None and kind == 'big':
+                value = _parse_metric(text + '.0', kind) if INT_RE.match(text) else None
+            if value is not None:
+                return value
     return value
 
 
 def _read_cell_metric(image, x, y, kind, width=.06, height=.024):
+    """定点直读 + 字形变体投票。
+
+    JPEG 压缩的振铃会把细字重影或粘出幽灵数字（7→77、1→51、11→211、
+    66%→99%），单一读取难以稳定；对同一裁剪框收集常规直读与字形变体的
+    全部可解析候选，按出现次数取多数，平票时保留常规直读。
+    """
     result = _read_cell_text(image, x, y, width=width, height=height)
-    if not result:
+    box = _crop_box(image, x, y, width, height)
+    candidates = []
+    if result:
+        value = _parse_metric(result[0], kind)
+        if value is None and kind == 'big':
+            value = _parse_metric(result[0] + '.0', kind) if INT_RE.match(result[0]) else None
+        if value is not None:
+            candidates.append((value, result[0], result[1]))
+    for text, confidence in (_glyph_read(image, box) or []):
+        value = _parse_metric(text, kind)
+        if value is None and kind == 'big':
+            value = _parse_metric(text + '.0', kind) if INT_RE.match(text) else None
+        if value is not None:
+            candidates.append((value, text, confidence))
+    if not candidates:
         return None
-    value = _parse_metric(result[0], kind)
-    if value is None and kind == 'big':
-        value = _parse_metric(result[0] + '.0', kind) if INT_RE.match(result[0]) else None
-    if value is None:
-        return None
-    return {'value': value, 'raw': result[0], 'confidence': result[1], 'box': result[2]}
+    counts = {}
+    for value, _, _ in candidates:
+        counts[value] = counts.get(value, 0) + 1
+    top = max(counts.values())
+    tied = [value for value, count in counts.items() if count == top]
+    best_value = candidates[0][0] if candidates[0][0] in tied else tied[0]
+    raw, confidence = next((raw, conf) for value, raw, conf in candidates if value == best_value)
+    return {'value': best_value, 'raw': raw, 'confidence': confidence,
+            'box': _box_to_list(box, image.size)}
 
 
 def _crop_box(image, x, y, width, height):
@@ -1267,9 +1501,15 @@ def _reconcile_kda(players, match, warnings, bundle):
                 if current is None or target_value == current:
                     continue
                 if abs(target_value - current) > 15:
-                    warnings.append(f'{side} {player["slot"] + 1} {stat} 按占比推算为 '
-                                    f'{target_value}，与识别 {current} 差异过大，保留原值')
-                    continue
+                    # v1.5: 差距过大时，若当前值与自己的占比自相矛盾（JPEG 鬼影
+                    # 可让两页读出同一个 51），而摊算值自洽，则仍采信摊算。
+                    share_ratio = float(share['value']) / 100
+                    current_broken = abs(float(current) / total - share_ratio) > .03
+                    target_sound = abs(float(target_value) / total - share_ratio) <= .03
+                    if not (current_broken and target_sound):
+                        warnings.append(f'{side} {player["slot"] + 1} {stat} 按占比推算为 '
+                                        f'{target_value}，与识别 {current} 差异过大，保留原值')
+                        continue
                 field['originalValue'] = current
                 field['value'] = target_value
                 field['correctedBy'] = f'{share_key}-share'
