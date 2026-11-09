@@ -38,6 +38,7 @@ from collection_contract import validate_sheet
 import channel_store
 import mimo_ocr
 import ocr_jobs
+import official_economy
 import postgame_mimo
 import recording_store
 import video_mimo
@@ -112,7 +113,7 @@ init_db()
 app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
 # V3 的路由模块在 _mount_v3() 里加载；中间件用它刷新分析快照缓存。
 V3_MODULE = None
-app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
+app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR, OFFICIAL_DIR))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, BUILDS_DIR, ROOT))
@@ -1258,6 +1259,50 @@ def _write_channel_bundle(channel: dict) -> dict:
     return data
 
 
+def _refresh_saved_bundle_official(channel: dict) -> bool:
+    """把后挂上的官方回放补进已入库 bundle，不改动其余终局数据。
+
+    挂回放时通道会以 unreviewed 结束（来源变化需要重新复核），不能直接调用
+    ``channel_store.bundle`` 重算整包；这里只补时间轴与 officialReplay 元数据，
+    这样旧对局不必重新入库也能恢复脉搏/阶段分析。
+    """
+    if (channel.get('saved') or {}).get('status') != 'saved':
+        return False
+    path = MATCHES_DIR / f'channel-{channel["id"]}.json'
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    official = channel.get('official') or {}
+    timeline = official_economy.timeline(official)
+    if not timeline:
+        return False
+    team = data.setdefault('team', {})
+    previous = team.get('timeline') or []
+    if previous and not team.get('recordingTimeline'):
+        team['recordingTimeline'] = previous
+    team['timeline'] = timeline
+    team['timelineSource'] = 'official-30s'
+    official_match = official.get('match') or {}
+    official_positions = official.get('positions') or {}
+    data.setdefault('match', {})['officialReplay'] = {
+        'id': official.get('id'), 'kind': official.get('kind'),
+        'winCamp': official_match.get('winCamp'),
+        'teams': official_match.get('teams'), 'score': official_match.get('score'),
+        'teamGold': official_match.get('teamGold'),
+        'goldPoints': official_match.get('goldPoints'),
+        'goldIntervalSecApprox': official_match.get('goldIntervalSecApprox'),
+        'events': official_match.get('keyEvents'),
+        'positions': {'perSecond': official_positions.get('perSecond'),
+                      'pointsPerPlayer': official_positions.get('pointsPerPlayer'),
+                      'file': official_positions.get('file')},
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    return True
+
+
 def _approve_channel(channel: dict, reviewer: str = AUTO_REVIEWER, notes: str = '',
                      allow_missing: bool = False) -> dict:
     """复核并写入正式统计；有缺失值时默认拒绝，除非明确确认。"""
@@ -2114,6 +2159,8 @@ def channel_attach_official(channel_id: str, value: dict):
         channel = _load_channel(c, channel_id)
         channel_store.attach_official(channel, official_id, meta, normalized,
                                       value.get('actor'))
+        # 已入库的局：挂回放后同步刷新 bundle，否则脉搏/阶段会一直空着。
+        _refresh_saved_bundle_official(channel)
         _save_channel(c, channel, value.get('actor'))
         return channel
 

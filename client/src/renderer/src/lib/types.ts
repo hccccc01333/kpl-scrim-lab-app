@@ -713,7 +713,21 @@ export interface ReplayCoverage {
   [key: string]: unknown
 }
 
+export interface ReplayGoldPoint {
+  t: number
+  blue: number
+  red: number
+  diff: number
+}
+
+export interface ReplayGold {
+  points?: ReplayGoldPoint[]
+  interval?: number | null
+  landmarks?: Record<string, number | null>
+}
+
 export interface ReplayData {
+  gold?: ReplayGold
   events?: ReplayEvent[]
   kills?: ReplayKill[]
   deaths?: ReplayDeath[]

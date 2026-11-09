@@ -113,7 +113,11 @@ export function MatchPage() {
       return ownA - ownB || a.slot - b.slot
     })
     const duration = match.duration || 0
-    const timeline = match.process?.timeline || []
+    const stored = match.process?.timeline || []
+    // 工作台旧数据可能只有官方回放金币；单局接口已返回 gold.points 时直接兜底。
+    const timeline = stored.length ? stored : (replayQuery.data?.gold?.points || []).map((point) => ({
+      gameTime: point.t, blueGold: point.blue, redGold: point.red
+    }))
     const series = buildSeries(timeline, ownCamp, duration)
     const finalDiff = series.length ? series[series.length - 1].diff : null
     const eventList = replayQuery.data?.events || []

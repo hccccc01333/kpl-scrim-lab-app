@@ -6,8 +6,9 @@ from fastapi import APIRouter, HTTPException, Request
 from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
 
 
-def create_analysis_router(db_path, matches_dir, imports_dir):
-    repository = AnalysisRepository(Path(db_path), Path(matches_dir), Path(imports_dir))
+def create_analysis_router(db_path, matches_dir, imports_dir, official_dir=None):
+    repository = AnalysisRepository(Path(db_path), Path(matches_dir), Path(imports_dir),
+                                    official_dir=official_dir)
     router = APIRouter(prefix='/api/analysis', tags=['analysis'])
 
     def filters(request: Request):

@@ -103,7 +103,7 @@ _STUDIO_ALLOWED = {
 }
 _studio.routes = [route for route in _studio.routes if route.path in _STUDIO_ALLOWED]
 app.include_router(_studio)
-app.include_router(create_analysis_router(DB, MATCHES, IMPORTS))
+app.include_router(create_analysis_router(DB, MATCHES, IMPORTS, OFFICIAL))
 app.include_router(create_depth_router(DEMO_ROOT or ROOT, DB))
 app.mount('/static', StaticFiles(directory=HERE / 'public'), name='frontend')
 app.mount('/catalog/icons', StaticFiles(directory=ROOT / 'resources' / 'icons', check_dir=False),
@@ -148,7 +148,7 @@ def repository(request: Request):
     global _snapshot, _loaded_at
     with _lock:
         if request.query_params.get('fresh') == '1' or monotonic() - _loaded_at >= 15:
-            snapshot = AnalysisRepository(DB, MATCHES, IMPORTS)
+            snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
             data = snapshot.get()
             apply_bp_overrides(data)
             _snapshot, _loaded_at = snapshot, monotonic()
@@ -374,7 +374,9 @@ def replay(key: str, repo=Depends(repository)):
     result = panorama.get(detail['bundleKey']) if detail and detail.get('bundleKey') else None
     if result is None:
         raise HTTPException(404, '该局没有全景回放数据')
-    return {name: result[name] for name in ('events', 'kills', 'deaths', 'fights', 'coverage', 'notes') if name in result}
+    return {name: result[name] for name in
+            ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage', 'notes')
+            if name in result}
 
 
 @router.get('/api/positions/{key:path}')

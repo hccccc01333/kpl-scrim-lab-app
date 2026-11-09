@@ -17,6 +17,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+import official_economy
+
 SCHEMA = 'kpl-match-panorama-v1'
 MATCH_SCHEMA = 'kpl-match-data-v1'
 MAP_MIN, MAP_MAX = -57.0, 57.0
@@ -709,6 +711,10 @@ def build_panorama(matches_dir, official_dir, builds_dir, key, root=None):
     ledger = _battle_ledger(official) if official else {'kills': [], 'deaths': [], 'fights': []}
     kills, deaths, fights = ledger['kills'], ledger['deaths'], ledger['fights']
     gold = _gold_points(bundle)
+    if not gold and official:
+        # 先入库、后挂官方回放的旧 bundle 没有录制时间轴；直接吃官方
+        # 约 30 秒一个点的团队经济，脉搏/阶段/里程碑才不会是空的。
+        gold = official_economy.diff_points((official or {}).get('normalized'))
     duration = _int(match.get('duration')) or (gold[-1]['t'] if gold else 0)
     phases = _phase_ranges(duration)
     analysis, team = _position_analysis(positions, players, phases)

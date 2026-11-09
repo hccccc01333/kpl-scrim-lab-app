@@ -10,6 +10,8 @@ import sqlite3
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import official_economy
+
 MATCH_SCHEMA = 'kpl-match-data-v1'
 IMPORT_SCHEMA = 'kpl-sheet-import-v1'
 DEFAULT_SOURCES = ('db', 'bundle')
@@ -147,10 +149,14 @@ def _complete(player):
 
 
 class AnalysisRepository:
-    def __init__(self, db_path, matches_dir, imports_dir):
+    def __init__(self, db_path, matches_dir, imports_dir, official_dir=None):
         self.db_path = Path(db_path)
         self.matches_dir = Path(matches_dir)
         self.imports_dir = Path(imports_dir)
+        # 正式比赛包可能早于官方回放入库；读取时从同一数据目录的
+        # official_replays 兜底，避免所有分析都要求先重写 bundle。
+        self.official_dir = (Path(official_dir) if official_dir
+                             else self.matches_dir.parent / 'official_replays')
         self._data = None
 
     def get(self):
@@ -434,6 +440,11 @@ class AnalysisRepository:
             camp_backed = camp_backed or any(
                 ((source.get('channelSources') or {}).get('statuses') or {}).get('camp') == 'parsed'
                 for source in value.get('sources', []))
+            timeline = (value.get('team') or {}).get('timeline') or []
+            if not timeline:
+                # 回放在对局保存之后才挂上时，旧 bundle 的 timeline 会是空的；
+                # 直接读官方经济，避免要求用户重新入库一次。
+                timeline = official_economy.from_bundle(self.official_dir, value)
             result.append({
                 'key': match.get('key') or path.stem,
                 'dbId': None, 'bundleKey': match.get('key') or path.stem,
@@ -451,7 +462,7 @@ class AnalysisRepository:
                 'campBp': match.get('campBp'),
                 'scores': match.get('scores') or {},
                 'players': players, 'process': {
-                    'timeline': (value.get('team') or {}).get('timeline') or [],
+                    'timeline': timeline,
                     'scoreboardSnapshots': (value.get('team') or {}).get('scoreboardSnapshots') or [],
                     'killEvents': (value.get('team') or {}).get('killEvents') or [],
                 },
