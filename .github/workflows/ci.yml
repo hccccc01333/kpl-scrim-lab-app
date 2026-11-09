@@ -27,12 +27,13 @@ jobs:
         run: python scripts/check_deploy.py
       - name: Replay and checkpoint tests
         run: |
-          python -m unittest \
-            tests.test_replay_checkpoints_api \
-            tests.test_replay_inputs_api \
-            tests.test_replay_profiles \
-            tests.test_state_series_checkpoints \
-            tests.test_replay_frame_commands -v
+          # checkpoints 用例只随源码发行版发布；公开仓库里跳过，避免整体失败。
+          suite="tests.test_replay_inputs_api tests.test_replay_profiles \
+            tests.test_state_series_checkpoints tests.test_replay_frame_commands"
+          if [ -f tests/test_replay_checkpoints_api.py ]; then
+            suite="tests.test_replay_checkpoints_api $suite"
+          fi
+          python -m unittest $suite -v
       - name: Full Python test suite
         run: python -m pytest tests -q --disable-warnings
 
@@ -53,8 +54,10 @@ jobs:
           python -m pip install -r requirements-dev.txt
       - name: Frontend syntax check
         run: |
-          for f in web/*.js; do node --experimental-default-type=module --check "$f"; done
-          for f in v3/public/*.js; do node --experimental-default-type=module --check "$f"; done
+          shopt -s nullglob
+          files=(web/*.js v3/public/*.js)
+          printf 'checking %d files\n' "${#files[@]}"
+          for f in "${files[@]}"; do node --experimental-default-type=module --check "$f"; done
       - name: Install browser test dependencies
         run: |
           python -m playwright install chromium --with-deps

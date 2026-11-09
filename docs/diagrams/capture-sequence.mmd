@@ -1,0 +1,23 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter", "fontSize": "13.5px", "background": "#ffffff", "primaryColor": "#EAF5F0", "primaryTextColor": "#10241F", "primaryBorderColor": "#BBDACD", "lineColor": "#8FB3A7", "edgeLabelBackground": "#FFFFFF", "actorBkg": "#EAF5F0", "actorBorder": "#2E8B76", "actorTextColor": "#10241F", "actorLineColor": "#B7D2C9", "signalColor": "#3C5A52", "signalTextColor": "#17352D", "labelBoxBkgColor": "#EAF5F0", "labelBoxBorderColor": "#2E8B76", "labelTextColor": "#10241F", "loopTextColor": "#4A3A12", "noteBkgColor": "#FFF8E8", "noteBorderColor": "#D9B36A", "noteTextColor": "#4A3A12", "activationBkgColor": "#D9EDE5", "activationBorderColor": "#7FB8A5", "sequenceNumberColor": "#FFFFFF"}, "sequence": {"mirrorActors": false, "messageAlign": "center", "actorMargin": 42, "width": 132}}}%%
+sequenceDiagram
+    autonumber
+    actor C as 教练
+    participant UI as V3 工作台
+    participant S as 本机服务
+    participant D as 通道 / 数据包
+
+    C->>UI: 上传七张结算截图
+    UI->>S: POST /api/images
+    UI->>S: POST /api/postgame/…/ocr
+    S->>S: 本机分页识别（不出网）
+    S->>D: 按页契约合并，缺页点名
+    C->>UI: 逐项核对、手改、认领英雄
+    UI->>S: PATCH /api/channels/{id}/draft
+    C->>UI: 提交审核
+    UI->>S: POST /api/channels/{id}/review
+    alt 必采未齐
+        S-->>UI: 拒绝，并列出缺哪几项
+    else 齐全
+        S->>D: 写 kpl-match-data-v1
+        S-->>UI: 已保存，分析可读
+    end
