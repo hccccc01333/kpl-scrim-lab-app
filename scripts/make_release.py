@@ -2,7 +2,7 @@
 
 Outputs (in ``dist/`` by default):
 
-* ``KPL赛训工具-<version>-full.zip``  first install, includes embedded Python
+* ``KPL-Scrim-Lab-<version>-full.zip``  first install, includes embedded Python
 * ``patch-<version>.zip``             changed files only, for one-click updates
 * ``update.json``                     manifest consumed by ``/api/update/check``
 
@@ -80,7 +80,7 @@ ROOT_FILES = [
     'update_config.json',
 ]
 PATCH_EXCLUDE = {'update_config.json'}
-PACKAGE_NAME = 'KPL赛训工具'
+PACKAGE_NAME = 'KPL-Scrim-Lab'
 
 STARTER_BAT = """@echo off
 chcp 65001 >nul
