@@ -184,13 +184,46 @@ def evaluate_bundle(engine: str, images: dict, truth: dict, on_stage=None) -> di
             'problems': problems}
 
 
+def make_variants(out_dir: Path) -> None:
+    """从库内原图生成 6 组压力变体（模拟微信压缩与低分辨率手机截图）。"""
+    import io
+
+    from PIL import Image
+
+    with sqlite3.connect(DB) as conn:
+        rows = conn.execute(
+            'SELECT pi.id, i.data FROM postgame_images pi JOIN images i ON i.id=pi.id').fetchall()
+    tags = ('q85', 'q70', 'q55', 'w2400', 'w1920', 'w2400q70')
+    for tag in tags:
+        (out_dir / tag).mkdir(parents=True, exist_ok=True)
+    for image_id, data in rows:
+        prefix = image_id[:8]
+        image = Image.open(io.BytesIO(data)).convert('RGB')
+        for quality in (85, 70, 55):
+            buf = io.BytesIO()
+            image.save(buf, 'JPEG', quality=quality)
+            (out_dir / f'q{quality}' / f'{prefix}__q{quality}.jpg').write_bytes(buf.getvalue())
+        for width in (2400, 1920):
+            smaller = image.resize((width, round(image.height * width / image.width)), Image.LANCZOS)
+            smaller.save(out_dir / f'w{width}' / f'{prefix}__w{width}.png')
+            if width == 2400:
+                buf = io.BytesIO()
+                smaller.save(buf, 'JPEG', quality=70)
+                (out_dir / 'w2400q70' / f'{prefix}__w2400q70.jpg').write_bytes(buf.getvalue())
+    print(f'变体已生成到 {out_dir}：' + '、'.join(tags))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--engine', default='rapid', choices=['rapid', 'hybrid', 'mimo', 'both'])
     parser.add_argument('--dir', help='从这个目录加载变体截图（文件名前 8 位 = 页面 id 前缀）')
     parser.add_argument('--bundle', action='store_true', help='捆绑级评测（7 页合并成一局，生产口径）')
+    parser.add_argument('--make-variants', help='生成 6 组压力变体到该目录后退出')
     parser.add_argument('--json', help='把完整报告写到这个文件')
     args = parser.parse_args()
+    if args.make_variants:
+        make_variants(Path(args.make_variants))
+        return
     images = load_images(args.dir)
     truth = json.loads(GT.read_text(encoding='utf-8'))
     engines = ['rapid', 'hybrid'] if args.engine == 'both' else [args.engine]
