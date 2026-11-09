@@ -201,6 +201,86 @@ begin
               '如果 {#AppPort} 端口被其他程序占用，请先关闭那个程序。';
 end;
 
+{ 逐段比较 1.4.0 vs 1.3.9 这类版本号；返回 1 / 0 / -1。 }
+function CompareVersionStr(A, B: String): Integer;
+var
+  I, P, NA, NB: Integer;
+  SA, SB: String;
+begin
+  Result := 0;
+  for I := 1 to 4 do
+  begin
+    P := Pos('.', A);
+    if P > 0 then
+    begin
+      SA := Copy(A, 1, P - 1);
+      A := Copy(A, P + 1, Length(A));
+    end
+    else
+    begin
+      SA := A;
+      A := '';
+    end;
+    P := Pos('.', B);
+    if P > 0 then
+    begin
+      SB := Copy(B, 1, P - 1);
+      B := Copy(B, P + 1, Length(B));
+    end
+    else
+    begin
+      SB := B;
+      B := '';
+    end;
+    NA := StrToIntDef(SA, 0);
+    NB := StrToIntDef(SB, 0);
+    if NA > NB then
+    begin
+      Result := 1;
+      Exit;
+    end;
+    if NA < NB then
+    begin
+      Result := -1;
+      Exit;
+    end;
+  end;
+end;
+
+{ 防降级：已经装了更新的版本时，双击旧安装包会静默回退，赛训组很难自己发现。 }
+function InitializeSetup(): Boolean;
+var
+  Installed, Key: String;
+begin
+  Result := True;
+  { 花括号在 Inno 的 Pascal 里会被当成常量引用，所以用 Chr 拼出来。 }
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\';
+  Key := Key + Chr(123) + '6F1C2D84-9A3B-4E57-8C21-5B7E9D0A4F13' + Chr(125) + '_is1';
+  if not RegQueryStringValue(HKCU, Key, 'DisplayVersion', Installed) then
+  begin
+    Log('降级检查: 未读到已安装版本，按全新安装处理');
+    Exit;
+  end;
+  Log('降级检查: 已安装=' + Installed + ' 本包={#AppVersion}');
+  if Installed = '' then
+    Exit;
+  if CompareVersionStr('{#AppVersion}', Installed) >= 0 then
+    Exit;
+
+  if WizardSilent then
+  begin
+    { 静默安装不做降级，直接中止，避免脚本误装旧版。 }
+    Result := False;
+    Exit;
+  end;
+
+  Result := MsgBox('这台电脑已经装了更新的版本 ' + Installed + '。' + Chr(13) + Chr(10) +
+                   '当前安装包是 {#AppVersion}，继续安装会把程序降级。' +
+                   Chr(13) + Chr(10) + Chr(13) + Chr(10) +
+                   '比赛数据不会丢，但界面和功能会退回旧版。确实要降级吗？',
+                   mbConfirmation, MB_YESNO) = IDYES;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then

@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib import parse as url_parse
 
@@ -31,9 +32,11 @@ from studio_api import create_studio_router
 from update_api import create_update_router
 from paths import DATA_DIR
 from version import VERSION, RELEASE_DATE, RELEASE_NAME
+
+import media_tools
 import focus as focus_module
 import camp_replay
-from camp_time import camp_times
+from camp_time import CAMP_TZ, camp_times
 from collection_contract import validate_sheet
 import channel_store
 import mimo_ocr
@@ -858,8 +861,9 @@ def ocr_status():
     return {
         'mimo': mimo_ocr.status(),
         'rapid': {'engine': 'rapidocr-onnxruntime', 'available': rapid},
-        'ffmpeg': shutil.which('ffmpeg') is not None,
-        'ffprobe': shutil.which('ffprobe') is not None,
+        'ffmpeg': media_tools.available(),
+        'ffprobe': media_tools.probe_available(),
+        'ffmpegSource': media_tools.source(),
         'storage': {'dbPath': str(DB_PATH), 'dbFreeBytes': db_free,
                     'recordingsFreeBytes': recording_store.free_bytes()},
         'jobs': ocr_jobs.list_jobs(limit=12),
@@ -883,7 +887,16 @@ _OCR_INSTALL_JOB = {
 _OCR_INSTALL_TARGETS = {
     'rapid': {'file': 'requirements-ocr.txt', 'label': '主 OCR'},
     'mimo': {'file': 'requirements-mimo.txt', 'label': 'Mimo 精读'},
+    # ffmpeg 不走 pip：直接下一份静态包解压到 tools/ffmpeg，不动系统 PATH。
+    'ffmpeg': {'file': None, 'label': 'ffmpeg'},
 }
+
+# 静态包：BtbN 的 GitHub 构建优先（实测国内 3–4 MB/s），gyan.dev 官方兜底（实测常只有几十 KB/s）。
+_FFMPEG_URLS = (
+    'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/'
+    'ffmpeg-master-latest-win64-gpl.zip',
+    'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+)
 
 
 def _ocr_install_update(**fields) -> None:
@@ -981,9 +994,78 @@ def _download_mimo_model() -> None:
             os.environ['HF_ENDPOINT'] = previous_endpoint
 
 
+def _install_ffmpeg() -> None:
+    """下载 ffmpeg 静态包并解压到 tools/ffmpeg/bin（不需要管理员权限）。"""
+    import tempfile
+    import urllib.request
+    import zipfile
+
+    destination = media_tools.LOCAL_ROOT
+    destination.mkdir(parents=True, exist_ok=True)
+    error = ''
+    for url in _FFMPEG_URLS:
+        _ocr_install_update(phase='deps', percent=6, message=f'正在下载 ffmpeg…（{url.split("/")[2]}）')
+        try:
+            with tempfile.TemporaryDirectory(prefix='kpl-ffmpeg-') as tmp:
+                archive = Path(tmp) / 'ffmpeg.zip'
+                with urllib.request.urlopen(url, timeout=60) as response:
+                    total = int(response.headers.get('Content-Length') or 0)
+                    done = 0
+                    with open(archive, 'wb') as handle:
+                        while True:
+                            chunk = response.read(512 * 1024)
+                            if not chunk:
+                                break
+                            handle.write(chunk)
+                            done += len(chunk)
+                            percent = 6 + int(70 * done / total) if total else 40
+                            _ocr_install_update(
+                                phase='deps', percent=min(78, percent), bytes=done,
+                                totalBytes=total,
+                                message=f'正在下载 ffmpeg {done / 1024 ** 2:.0f}'
+                                        + (f' / {total / 1024 ** 2:.0f}' if total else '') + ' MB')
+                _ocr_install_update(phase='deps', percent=80, message='正在解压 ffmpeg…')
+                with zipfile.ZipFile(archive) as bundle:
+                    member = next((n for n in bundle.namelist()
+                                   if n.replace('\\', '/').endswith('/bin/ffmpeg.exe')), None)
+                    if member is None:
+                        raise RuntimeError('压缩包里没有找到 ffmpeg.exe')
+                    prefix = member.replace('\\', '/')[:-len('ffmpeg.exe')]
+                    wanted = [n for n in bundle.namelist()
+                              if n.replace('\\', '/').startswith(prefix)
+                              and not n.endswith('/')]
+                    bin_dir = destination / 'bin'
+                    bin_dir.mkdir(parents=True, exist_ok=True)
+                    for name in wanted:
+                        flat = name.replace('\\', '/')[len(prefix):]
+                        # ffplay 用不上，跳过能省 160 MB。
+                        if '/' in flat or flat.lower() not in ('ffmpeg.exe', 'ffprobe.exe'):
+                            continue
+                        with bundle.open(name) as src, open(bin_dir / flat, 'wb') as dst:
+                            shutil.copyfileobj(src, dst)
+            if media_tools.local_exe('ffmpeg') is None:
+                raise RuntimeError('解压后仍找不到 ffmpeg.exe')
+            _ocr_install_update(phase='deps', percent=92, message='正在校验 ffprobe…')
+            if media_tools.local_exe('ffprobe') is None:
+                raise RuntimeError('解压后缺少 ffprobe.exe')
+            error = ''
+            break
+        except Exception as exc:  # noqa: BLE001 - 换源继续，最后统一报错
+            error = f'{type(exc).__name__}: {exc}'
+            _ocr_install_update(message=f'这个源不行，换下一个…（{error[:80]}）')
+    if error:
+        raise RuntimeError(f'ffmpeg 下载失败：{error}')
+
+
 def _ocr_install_worker(target: str) -> None:
     spec = _OCR_INSTALL_TARGETS[target]
     try:
+        if target == 'ffmpeg':
+            _ocr_install_update(phase='deps', percent=4, message='正在安装 ffmpeg（约 200 MB，视网速 1–5 分钟）…')
+            _install_ffmpeg()
+            _ocr_install_update(running=False, phase='done', percent=100,
+                                message='ffmpeg 已就绪，不用重启', finishedAt=time.time())
+            return
         _ocr_install_update(phase='deps', percent=4,
                             message=f'正在安装{spec["label"]}组件（首次较慢）…')
         ok, last = _pip_install(spec['file'])
@@ -1006,18 +1088,27 @@ def ocr_install_status():
     with _OCR_INSTALL_LOCK:
         job = dict(_OCR_INSTALL_JOB)
     rapid = importlib.util.find_spec('rapidocr_onnxruntime') is not None
-    return {**job, 'rapid': {'available': rapid}, 'mimo': mimo_ocr.status()}
+    return {**job, 'rapid': {'available': rapid}, 'mimo': mimo_ocr.status(),
+            'ffmpeg': {'available': media_tools.available(),
+                       'source': media_tools.source()}}
 
 
 @app.post('/api/ocr/install')
 def ocr_install_start(target: str = 'mimo'):
     target = str(target or 'mimo').lower()
     if target not in _OCR_INSTALL_TARGETS:
-        raise HTTPException(400, '安装目标需为 rapid 或 mimo')
+        raise HTTPException(400, '安装目标需为 rapid、mimo 或 ffmpeg')
     requirement = _OCR_INSTALL_TARGETS[target]['file']
-    if not (ROOT / requirement).is_file():
+    if requirement and not (ROOT / requirement).is_file():
         raise HTTPException(400, f'安装包里缺少 {requirement}，请更新到最新版本')
-    if target == 'mimo':
+    if target == 'ffmpeg':
+        try:
+            free = shutil.disk_usage(ROOT).free
+        except OSError:
+            free = 0
+        if free and free < 900 * 1024 ** 2:
+            raise HTTPException(400, f'磁盘剩余 {free / 1024 ** 2:.0f} MB，安装 ffmpeg 至少要 900 MB')
+    elif target == 'mimo':
         try:
             free = shutil.disk_usage(ROOT).free
         except OSError:
@@ -1326,8 +1417,12 @@ def _clean_camp_players(players) -> list:
         camp_id = str(player.get('campUserId') or '').strip()
         if not camp_id.isdigit():
             continue
-        cleaned.append({'nickname': str(player.get('nickname') or '').strip()[:40],
-                        'campUserId': camp_id})
+        item = {'nickname': str(player.get('nickname') or '').strip()[:40],
+                'campUserId': camp_id}
+        # 离队的号不必删除：取消勾选就不再拉取，历史数据还留着。
+        if 'enabled' in player:
+            item['enabled'] = bool(player.get('enabled'))
+        cleaned.append(item)
     return cleaned
 
 

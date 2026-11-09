@@ -64,3 +64,4 @@ packaging/launcher-dist/
 *~RF*.TMP
 *.tmp
 
+tools/ffmpeg/

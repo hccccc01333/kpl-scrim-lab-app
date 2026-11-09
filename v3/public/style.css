@@ -1096,6 +1096,16 @@ button:disabled { cursor:wait; opacity:.6; }
   border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; }
 .conn-list b { font-weight: 650; }
 .conn-list small { color: var(--quiet); font-size: 11px; font-variant-numeric: tabular-nums; }
+.conn-list li.is-off { opacity: .55; }
+.conn-pick { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); cursor: pointer; }
+.conn-pick input { margin: 0; accent-color: var(--accent); }
+.conn-rename { border: 0; background: transparent; color: var(--accent); font-size: 11.5px; cursor: pointer; padding: 0 2px; }
+.conn-rename:hover { text-decoration: underline; }
+.conn-keytip { display: grid; gap: 8px; margin: 12px 0 4px; padding: 12px 14px; border-radius: 10px;
+  background: #fff8ec; border: 1px solid #f0dcb8; }
+.conn-keytip div { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.conn-keytip b { font-size: 12.5px; color: #8a5a12; font-weight: 700; }
+.conn-keytip span { font-size: 12px; color: #7a6444; }
 .conn-x { border: 0; background: transparent; color: var(--quiet); font-size: 15px; line-height: 1;
   cursor: pointer; padding: 0 2px; }
 .conn-x:hover { color: #a54c46; }

@@ -771,14 +771,27 @@ export function createCapture(h) {
     }
 
     const list = players.length
-      ? `<ul class="conn-list">${players.map((player) => `<li>
-          <b>${esc(player.nickname || '未命名')}</b><small>${text(player.campUserId)}</small>
-          <button class="conn-x" data-capture-action="player-remove" data-camp-user="${esc(player.campUserId)}" aria-label="移除这个选手">×</button>
-        </li>`).join('')}</ul>`
+      ? `<ul class="conn-list">${players.map((player) => {
+          const off = player.enabled === false;
+          return `<li class="${off ? 'is-off' : ''}">
+            <label class="conn-pick" title="取消勾选后，拉取对局会跳过这个号">
+              <input type="checkbox" ${off ? '' : 'checked'}
+                data-capture-action="player-toggle" data-camp-user="${esc(player.campUserId)}">
+              <span>拉取</span>
+            </label>
+            <b>${esc(player.nickname || '未命名')}</b><small>${text(player.campUserId)}</small>
+            <button class="conn-rename" data-capture-action="player-rename" data-camp-user="${esc(player.campUserId)}">改名</button>
+            <button class="conn-x" data-capture-action="player-remove" data-camp-user="${esc(player.campUserId)}" aria-label="移除这个选手">×</button>
+          </li>`;
+        }).join('')}</ul>`
       : '';
 
     const playersBody = `<div class="conn-players" data-tour="camp-players">
-      <div class="conn-players-head"><h3>选手白名单</h3><span class="conn-count">${fmt(players.length)} 位</span></div>
+      <div class="conn-players-head"><h3>选手白名单</h3><span class="conn-count">${fmt(players.length)} 位 · 勾选 ${fmt(players.filter((p) => p.enabled !== false).length)} 位</span></div>
+      <div class="conn-keytip">
+        <div><b>只绑一个每场都上的号就够</b><span>一局详情自带双方十人面板，不用每个选手都绑。</span></div>
+        <div><b>看不到某位选手的战绩？</b><span>让他在王者营地「隐私设置」里把教练加入白名单，否则拉不到他的对局。</span></div>
+      </div>
       ${players.length ? '' : '<p class="conn-empty">还没有绑定选手 —— 填好下面这一栏，拉取就有东西可读了。</p>'}
       <details class="camp-link-help" data-tour="camp-link">
         <summary>怎么拿到这条链接？（带图步骤）</summary>
@@ -847,6 +860,8 @@ export function createCapture(h) {
   }
 
   function pullBlock(players) {
+    const allPlayers = players;
+    players = players.filter((player) => player.enabled !== false);
     const list = state.list;
     const checked = Object.keys(state.checked).length;
     const blocked = Boolean(state.authIssue);
@@ -863,9 +878,15 @@ export function createCapture(h) {
       <button class="${checked ? 'primary' : 'control'}" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button></div>`;
 
     const flow = `${summaryLine()}<div data-cap-progress>${progressBar()}</div>`;
-    if (!players.length) {
+    if (!allPlayers.length) {
       return block('拉取对局', '绑定选手后，这里会列出他们最近的战绩供你勾选。',
         `<div class="cap-body">${flow}${blockedHint}<p class="capture-hint">还没有可拉取的选手 —— 先在上面「营地连接」里绑定一位。</p></div>`, right, 'data-tour="camp-pull"');
+    }
+    if (!players.length) {
+      const offNames = allPlayers.map((p) => p.nickname || p.campUserId).join('、');
+      return block('拉取对局', '所有选手都取消了勾选。',
+        `<div class="cap-body">${flow}${blockedHint}<p class="capture-hint is-warn">当前白名单里 ${esc(offNames)} 都取消勾选了。在「营地连接」里勾上至少一个号再拉取。</p></div>`,
+        right, 'data-tour="camp-pull"');
     }
     const lastSync = (state.value?.sync?.details || []).reduce(
       (max, detail) => Math.max(max, Number(detail.syncedAt) || 0), 0);
@@ -1327,6 +1348,37 @@ export function createCapture(h) {
     }
   }
 
+  async function updatePlayer(campUserId, patchValue) {
+    state.busy = 'player';
+    try {
+      const players = (state.value?.config?.players || []).map((player) => (
+        player.campUserId === campUserId ? { ...player, ...patchValue } : player));
+      await api('camp/config', { method: 'POST', body: { players } });
+      await reloadValue();
+    } catch (error) {
+      setNotice(error.message, true);
+    } finally {
+      state.busy = '';
+      paint();
+    }
+  }
+
+  async function renamePlayer(campUserId) {
+    const current = (state.value?.config?.players || [])
+      .find((player) => player.campUserId === campUserId);
+    const answer = window.prompt('这个选手叫什么？（只影响本机显示）', current?.nickname || '');
+    if (answer === null) return;
+    const name = answer.trim().slice(0, 40);
+    if (!name) { setNotice('昵称不能为空。', true); return; }
+    await updatePlayer(campUserId, { nickname: name });
+    setNotice('已改名。');
+  }
+
+  async function togglePlayer(campUserId, enabled) {
+    await updatePlayer(campUserId, { enabled });
+    setNotice(enabled ? '已加入拉取。' : '已停止拉取该选手，历史数据不受影响。');
+  }
+
   async function removePlayer(campUserId) {
     state.busy = 'player';
     try {
@@ -1348,8 +1400,10 @@ export function createCapture(h) {
 
   async function pullList(extend = false) {
     if (state.busy) return; // 顶部「下一步」和卡片里都有拉取按钮，别让它们叠着跑
-    const players = state.value?.config?.players || [];
-    if (!players.length) { setNotice('先在「营地选手」里添加选手。', true); paint(); return; }
+    const allPlayers = state.value?.config?.players || [];
+    if (!allPlayers.length) { setNotice('先在「营地选手」里添加选手。', true); paint(); return; }
+    const players = allPlayers.filter((player) => player.enabled !== false);
+    if (!players.length) { setNotice('白名单里的号都取消勾选了，先勾上至少一个再拉取。', true); paint(); return; }
     state.busy = 'pull';
     if (!extend) {
       state.list = null;
@@ -1807,6 +1861,11 @@ export function createCapture(h) {
         return true;
       }
       if (action === 'player-remove') { await removePlayer(button.dataset.campUser); return true; }
+    if (action === 'player-rename') { await renamePlayer(button.dataset.campUser); return true; }
+    if (action === 'player-toggle') {
+      await togglePlayer(button.dataset.campUser, button.checked);
+      return true;
+    }
     }
 
     const form = event.target.closest('[data-capture-form="player"]');

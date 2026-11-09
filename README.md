@@ -271,7 +271,7 @@ python scripts/seed_demo_data.py   # 另一个终端：灌入 12 场合成演示
 | 能力 | 需要 | 没有会怎样 |
 | :-- | :-- | :-- |
 | Mimo 精读 OCR | `pip install -r requirements-mimo.txt` + 模型权重（约数 GB，不随仓库分发） | 自动跳过精读，只用主 OCR，准确率略低 |
-| 录屏抽帧 | 系统 `ffmpeg` | 截图识别不受影响，录屏识别不可用 |
+| 录屏抽帧 | 「识别引擎」条里点**安装 ffmpeg**（自动下载解压到 `tools/ffmpeg`，不动系统 PATH），或直接用系统 PATH 里的 ffmpeg | 截图识别不受影响，录屏识别不可用 |
 | 英雄 / 装备图标 | `python scripts/sync_catalog.py` | 跳过图像匹配，手工录入照常 |
 
 V3 的「识别引擎」条会检测这三项，缺什么就在哪一行给出安装入口和原因，不用等到上传才报错。

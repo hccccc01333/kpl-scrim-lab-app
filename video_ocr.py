@@ -13,6 +13,8 @@ from collections import Counter
 from datetime import datetime, timezone
 
 import numpy as np
+
+import media_tools
 from PIL import Image
 
 from vision import catalog, rank_icon
@@ -1066,7 +1068,7 @@ def _classify(image):
 def probe_video(path):
     if not os.path.isfile(path):
         raise VideoOCRError('视频文件不存在')
-    command = ['ffprobe', '-v', 'error', '-select_streams', 'v:0',
+    command = [media_tools.ffprobe(), '-v', 'error', '-select_streams', 'v:0',
                '-show_entries', 'stream=width,height,avg_frame_rate,codec_name',
                '-show_entries', 'format=duration,size', '-of', 'json', path]
     try:
@@ -1100,7 +1102,7 @@ def probe_video(path):
 def iter_frames(path, fps, info=None):
     info = info or probe_video(path)
     height = max(2, round(info['height'] * SAMPLE_WIDTH / info['width'] / 2) * 2)
-    command = ['ffmpeg', '-v', 'error', '-i', path,
+    command = [media_tools.ffmpeg(), '-v', 'error', '-i', path,
                '-vf', f'fps={fps},scale={SAMPLE_WIDTH}:{height}',
                '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
     try:
@@ -1128,7 +1130,7 @@ def iter_frames(path, fps, info=None):
 def _iter_window(path, start, duration, fps, info):
     """短窗口重扫：只用于记分板快照附近的补充读取。"""
     height = max(2, round(info['height'] * SAMPLE_WIDTH / info['width'] / 2) * 2)
-    command = ['ffmpeg', '-v', 'error', '-ss', f'{max(0, start):.3f}', '-t', f'{duration:.3f}',
+    command = [media_tools.ffmpeg(), '-v', 'error', '-ss', f'{max(0, start):.3f}', '-t', f'{duration:.3f}',
                '-i', path, '-vf', f'fps={fps},scale={SAMPLE_WIDTH}:{height}',
                '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

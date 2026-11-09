@@ -183,12 +183,13 @@ export function createSources(h) {
     const mimo = status.mimo || install?.mimo || {};
     const rapid = status.rapid || {};
     const ffmpeg = Boolean(status.ffmpeg && status.ffprobe);
+    const ffmpegSource = status.ffmpegSource || '';
     const depsReady = Boolean(mimo.device) && mimo.device !== 'unavailable';
     const modelReady = Boolean(mimo.available);
     const freeBytes = Number(status.storage?.dbFreeBytes || 0);
     const recordingsBytes = Number(status.recordings?.bytes || 0);
     return {
-      install, mimo, rapid, ffmpeg, depsReady, modelReady, freeBytes, recordingsBytes,
+      install, mimo, rapid, ffmpeg, ffmpegSource, depsReady, modelReady, freeBytes, recordingsBytes,
       diskEnough: !freeBytes || freeBytes >= 4 * 1024 ** 3,
       running: Boolean(install?.running),
       ready: depsReady && modelReady,
@@ -251,10 +252,12 @@ export function createSources(h) {
           <b>ffmpeg</b>
           <i class="chip ${s.ffmpeg ? 'is-done' : 'is-warn'}">${s.ffmpeg ? '可用' : '未检测到'}</i>
           <div class="src-engine-main">${s.ffmpeg
-            ? '<small>录屏抽帧已可用。</small>'
-            : `<details class="src-ffmpeg"><summary>装好后点「重新检测」</summary>
-                <p>命令行执行 <code>winget install Gyan.FFmpeg</code>，或从 gyan.dev 下载解压，
-                把 <code>bin</code> 目录加进 PATH，然后回来点「重新检测」。</p></details>`}</div>
+            ? `<small>录屏抽帧已可用${s.ffmpegSource === 'bundled' ? '（应用内安装）'
+                : s.ffmpegSource === 'path' ? '（系统 PATH）' : ''}。</small>`
+            : '<small>录屏抽帧要用它。点「安装 ffmpeg」自动下载约 200 MB 解压到程序目录，'
+              + '不用改系统 PATH，也不需要管理员权限。</small>'}</div>
+          ${s.ffmpeg ? '' : `<button class="control" data-source-action="install-ffmpeg"
+            ${s.running ? 'disabled' : ''}>安装 ffmpeg</button>`}
         </div>
       </div>` : ''}
       <div class="src-engine-foot">
@@ -342,7 +345,9 @@ export function createSources(h) {
       if (status.phase === 'done') {
         setNotice(status.target === 'rapid'
           ? '主 OCR 已安装完成，可以直接上传截图识别了。'
-          : 'Mimo 精读已安装完成，可以直接用，不用重启。');
+          : status.target === 'ffmpeg'
+            ? 'ffmpeg 已就绪，录屏抽帧可以直接用了。'
+            : 'Mimo 精读已安装完成，可以直接用，不用重启。');
       }
       if (status.phase === 'error') setNotice(`安装失败：${status.error || status.message}`, true);
       setTimeout(() => renderInstallWidget(null), 15000);
@@ -356,7 +361,9 @@ export function createSources(h) {
       state.install = await api('ocr/install');
       setNotice(target === 'rapid'
         ? '已开始安装主 OCR，可以切页面；装好后右下角会提示。'
-        : '已开始安装 Mimo，可以切页面；装好后右下角会提示。');
+        : target === 'ffmpeg'
+          ? '已开始下载 ffmpeg（约 200 MB），可以切页面；装好后右下角会提示。'
+          : '已开始安装 Mimo，可以切页面；装好后右下角会提示。');
       if (isOcrPage()) paint();
       renderInstallWidget(state.install);
       startInstallWatch();
@@ -1014,6 +1021,7 @@ export function createSources(h) {
     if (action === 'attach-recording') { await attachRecording(button.dataset.recording); return true; }
     if (action === 'install-mimo') { await installOcr('mimo'); return true; }
     if (action === 'install-rapid') { await installOcr('rapid'); return true; }
+    if (action === 'install-ffmpeg') { await installOcr('ffmpeg'); return true; }
     if (action === 'engine-toggle') { state.engineOpen = !(state.engineOpen ?? false); paint(); return true; }
     if (action === 'recheck-engine') { await refresh(); setNotice('已重新检测引擎状态。'); paint(); return true; }
     if (action === 'attach-replay') {

@@ -151,6 +151,58 @@ def extract_camp_user_id(url: str) -> dict:
             'pvpType': lower.get('pvptype')}
 
 
+def extract_share_game(url: str) -> dict:
+    """从营地分享链接里提取「这一局」的完整身份，供直接补拉对局详情。
+
+    白名单登记只认 userId，但教练贴链接往往是为了「链接里的这一局」。营地
+    ``morebattlelist`` 对部分账号返回空列表（隐私、未绑定大区角色、非好友），
+    而分享链接本身带着 gameSeq / gameSvrId / relaySvrId，可以直接查
+    ``battledetail``。这里把这几项一起解析出来；缺任何一项都标
+    ``complete=False``，调用方仍可只用 userId 登记选手。
+
+    只做解析，不发请求；短链请先用 :func:`expand_short_link` 展开。
+    """
+    parsed = urllib.parse.urlparse(str(url or '').strip())
+    host = (parsed.netloc or '').lower()
+    if host.endswith('servicewechat.com') or host.endswith('weixin.qq.com'):
+        raise CampReplayError('这是微信小程序跳转链，不是营地网页链接；'
+                              '请在浏览器里打开后再复制地址栏链接。')
+    if host and not (host == 'camp.qq.com' or host.endswith('.camp.qq.com')):
+        raise CampReplayError('只接受 camp.qq.com 的营地链接')
+    lower = {key.lower(): values[-1] for key, values in
+             urllib.parse.parse_qs(parsed.query).items() if values}
+
+    def pick(*names):
+        for name in names:
+            value = str(lower.get(name) or '').strip()
+            if value:
+                return value
+        return ''
+
+    user_id = pick(*CAMP_USER_ID_KEYS)
+    game_seq = pick('gameseq')
+    game_svr = pick('gamesvrentity', 'gamesvr', 'gamesvrid')
+    relay_svr = pick('relaysvrentity', 'relaysvr', 'relaysvrid')
+    battle_type = pick('battletype')
+    pvp_type = pick('pvptype')
+    role_id = pick('roleid', 'uniqueroleid', 'toapproleid')
+    acnt_camp = pick('acntcamp')
+    complete = bool(re.fullmatch(r'\d{3,20}', game_seq)
+                    and re.fullmatch(r'-?\d{1,20}', game_svr)
+                    and re.fullmatch(r'-?\d{1,20}', relay_svr))
+    return {
+        'userId': user_id if re.fullmatch(r'\d{5,15}', user_id) else '',
+        'gameSeq': game_seq,
+        'gameSvrId': game_svr,
+        'relaySvrId': relay_svr,
+        'battleType': battle_type if battle_type.isdigit() else '',
+        'pvpType': pvp_type if pvp_type.isdigit() else '',
+        'roleId': role_id if re.fullmatch(r'\d{3,20}', role_id) else '',
+        'acntCamp': acnt_camp if acnt_camp in ('1', '2') else '',
+        'complete': complete,
+    }
+
+
 def payload_for(link):
     payload = {'cSystem': 'unknown', 'h5Get': 1, 'gameSeq': link['gameSeq'],
                'gameSvr': link['gameSvr'], 'playerId': link['playerId'],

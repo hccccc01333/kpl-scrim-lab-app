@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import media_tools
 import mimo_ocr
 
 
@@ -26,8 +27,8 @@ def main():
 
     status = mimo_ocr.status()
     status['rapidocr'] = _module_available('rapidocr_onnxruntime')
-    status['ffmpeg'] = shutil.which('ffmpeg') or None
-    status['ffprobe'] = shutil.which('ffprobe') or None
+    status['ffmpeg'] = media_tools.ffmpeg() if media_tools.available() else None
+    status['ffprobe'] = media_tools.ffprobe() if media_tools.probe_available() else None
     if args.load or args.image:
         try:
             engine = mimo_ocr.get_engine().load()
