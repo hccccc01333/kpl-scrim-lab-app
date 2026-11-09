@@ -1013,7 +1013,8 @@ export function createCapture(h) {
       <div class="ocr-windows">
         <article class="ocr-window">
           <header><b>截图 OCR</b><i class="chip ${images.length ? 'is-ok' : 'is-idle'}">${esc(shotNote)}</i></header>
-          <p>七张赛后结算图：战绩（装备型）、战绩（KDA 占比）、数据、输出、生存、发育、团队。</p>
+          <p>七张赛后结算图：战绩（装备型）、战绩（KDA 占比）、数据、输出、生存、发育、团队。
+            传图用微信要勾「原图」或改用 QQ 发文件，被压缩的图识别时会被提示重传。</p>
           <div class="ocr-actions">
             <label class="control ocr-file">选择截图<input type="file" multiple
               accept="image/png,image/jpeg,image/webp" data-ingest-shots></label>
