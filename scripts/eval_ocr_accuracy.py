@@ -57,10 +57,34 @@ def close(a, b) -> bool:
         return False
 
 
+def edit_distance(a: str, b: str) -> int:
+    if len(a) < len(b):
+        a, b = b, a
+    previous = list(range(len(b) + 1))
+    for i, char_a in enumerate(a):
+        current = [i + 1]
+        for j, char_b in enumerate(b):
+            current.append(min(previous[j + 1] + 1, current[j] + 1,
+                               previous[j] + (char_a != char_b)))
+        previous = current
+    return previous[-1]
+
+
+def nickname_grade(read, expected) -> str:
+    """教练认领口径：exact=自动认领；offByOne=改一次名回灌存档；far=人工核对。"""
+    read, expected = str(read or '').strip(), str(expected or '').strip()
+    if not read:
+        return 'missing'
+    if read == expected:
+        return 'exact'
+    return 'offByOne' if edit_distance(read, expected) <= 1 else 'far'
+
+
 def evaluate(engine: str, images: dict, truth: dict, on_stage=None) -> dict:
     per_field = defaultdict(lambda: [0, 0])   # field -> [correct, total]
     problems = []
-    nick_total = nick_ok = 0
+    nick_grades = defaultdict(int)
+    nick_examples = defaultdict(list)
     for prefix, page in truth['pages'].items():
         data = images.get(prefix)
         if not data:
@@ -97,9 +121,11 @@ def evaluate(engine: str, images: dict, truth: dict, on_stage=None) -> dict:
                                          'raw': entry.get('raw') if isinstance(entry, dict) else None})
                 nick = page.get('nicknames', {}).get(side, [None] * 5)[slot]
                 if nick:
-                    nick_total += 1
-                    if str((player.get('nickname') or {}).get('value', '')).strip() == nick:
-                        nick_ok += 1
+                    grade = nickname_grade((player.get('nickname') or {}).get('value'), nick)
+                    nick_grades[grade] += 1
+                    if grade != 'exact':
+                        nick_examples[grade].append(
+                            f"{side}{slot} {nick} -> {(player.get('nickname') or {}).get('value')!r}")
     total = sum(v[1] for v in per_field.values())
     correct = sum(v[0] for v in per_field.values())
     return {'engine': engine, 'total': total, 'correct': correct,
@@ -107,7 +133,8 @@ def evaluate(engine: str, images: dict, truth: dict, on_stage=None) -> dict:
             'perField': {k: {'correct': v[0], 'total': v[1],
                              'acc': round(v[0] / max(v[1], 1), 4)}
                          for k, v in sorted(per_field.items())},
-            'nickname': {'correct': nick_ok, 'total': nick_total},
+            'nickname': {'grades': dict(nick_grades),
+                         'examples': {k: v[:6] for k, v in nick_examples.items()}},
             'problems': problems}
 
 
@@ -128,7 +155,7 @@ def evaluate_bundle(engine: str, images: dict, truth: dict, on_stage=None) -> di
     bundles = merge_pages(results)
     if len(bundles) != 1:
         return {'engine': f'{engine}(bundle)', 'total': 0, 'correct': 0, 'accuracy': 0,
-                'perField': {}, 'nickname': {'correct': 0, 'total': 0},
+                'perField': {}, 'nickname': {'grades': {}, 'examples': {}},
                 'problems': [{'page': '*', 'field': '*',
                               'expected': '1 个捆绑', 'got': f'{len(bundles)} 个捆绑'}]}
     bundle = bundles[0]
@@ -233,7 +260,9 @@ def main() -> None:
         report = evaluate_fn(engine, images, truth)
         reports.append(report)
         print(f"数值字段: {report['correct']}/{report['total']} = {report['accuracy']:.2%}")
-        print('昵称完全一致: {correct}/{total}'.format(**report['nickname']))
+        grades = report['nickname'].get('grades') or {}
+        print(f"昵称认领口径: 自动认领 {grades.get('exact', 0)} / 一字之差 {grades.get('offByOne', 0)}"
+              f" / 人工核对 {grades.get('far', 0)} / 漏读 {grades.get('missing', 0)}")
         for field, stats in report['perField'].items():
             flag = '' if stats['acc'] >= .99 else '  ← 低'
             print(f"  {field:<18} {stats['correct']}/{stats['total']} = {stats['acc']:.2%}{flag}")
