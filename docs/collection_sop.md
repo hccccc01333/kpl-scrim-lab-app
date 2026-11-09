@@ -60,7 +60,7 @@ https://camp.qq.com/h5/webdist/battle-replay/index.html?gameseq=对局编号&gam
 
 ## 标准表格（选填）
 
-使用[Excel 模板](http://127.0.0.1:8766/assets/capture-guide/match-template.xlsx)、[空白 CSV](http://127.0.0.1:8766/assets/capture-guide/match-template.csv)或[虚构示例 CSV](http://127.0.0.1:8766/assets/capture-guide/match-example.csv)。Excel 第一张是填写模板，第二张是虚构示例，第三张为字段说明；上传只读取第一张。
+使用[Excel 模板](http://127.0.0.1:8766/assets/capture-guide/match-template.xlsx)、[空白 CSV](http://127.0.0.1:8766/assets/capture-guide/match-template.csv)或[虚构示例 CSV](http://127.0.0.1:8766/assets/capture-guide/match-example.csv)。想先跑通导入流程，用[十人一局示例](http://127.0.0.1:8766/assets/capture-guide/match-sample.csv)：它填好了一整局十人数据，可直接上传；导入后只在「数据范围 → 表格导入」勾选时出现，正式记录不要用它。Excel 第一张是填写模板，第二张是虚构示例，第三张为字段说明；上传只读取第一张。
 
 保留所有表头，一局十行、每行一人，blue/red 各五行，每方五个分路各一人；不增加标题行、合计行、合并单元格。对局ID、日期、阵营、分路、选手、英雄的值必填；对手和数值未知可留空，不用零冒充缺失值。对局ID、日期、对手、时长在十行中保持一致。不能混入第二局、场均或赛季汇总。示例编号会被拒绝，必须替换成真实记录。
 

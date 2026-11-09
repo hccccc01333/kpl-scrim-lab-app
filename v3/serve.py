@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
 from bp_camp import merge_bp_sources
+from collection_contract import reject_example_table
 from match_review import PanoramaRepository
 from paths import data_root
 from studio_api import create_studio_router
@@ -1030,12 +1031,15 @@ async def preview_sheet(request: Request, name: str = ''):
         workbook = read_workbook(path)
         sheets = []
         for sheet in workbook.get('sheets') or []:
+            reject_example_table(sheet)
             profile = infer_profile(sheet)
             sheets.append({'name':sheet['name'], 'rows':len(sheet['rows']), 'header':sheet['header'],
                            'sample':sheet['rows'][:5], 'grain':profile.get('grain'),
                            'columns':profile.get('columns', []), 'warnings':profile.get('warnings', []),
                            'unmappedColumns':profile.get('unmappedColumns', [])})
         if not sheets: raise SheetImportError('表格没有可读取的工作表。')
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
     except SheetImportError as error:
         raise HTTPException(400, str(error)) from error
     return {'previewId':preview_id, 'name':Path(name).name, 'sheets':sheets}
@@ -1054,6 +1058,8 @@ async def commit_sheet(request: Request):
         if meta.get('suffix') not in ('.csv','.tsv','.xlsx','.xlsm'): raise ValueError('invalid suffix')
         workbook = read_workbook(folder/(preview_id+meta['suffix']))
         workbook['source']['name'] = meta.get('name') or '表格'
+        for sheet in workbook['sheets']:
+            reject_example_table(sheet)
         for manifest in IMPORTS.glob('*/manifest.json'):
             try:
                 existing=json.loads(manifest.read_text(encoding='utf-8'))
@@ -1064,7 +1070,9 @@ async def commit_sheet(request: Request):
         profiles={sheet['name']:infer_profile(sheet) for sheet in workbook['sheets']}
         destination=IMPORTS/('import-'+uuid.uuid4().hex[:16]); destination.mkdir(parents=True,exist_ok=False)
         manifest=write_staging(workbook['source'],workbook['sheets'],profiles,destination,'inferred')
-    except (OSError, ValueError, SheetImportError) as error:
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    except (OSError, SheetImportError) as error:
         raise HTTPException(400, '读取表格失败：'+str(error)) from error
     return {'ok':True,'id':destination.name,'quality':manifest.get('quality',{}),
             'warnings':manifest.get('warnings',[]),'sheets':manifest.get('sheets',[])}

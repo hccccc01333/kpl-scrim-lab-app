@@ -638,7 +638,9 @@ class AnalysisRepository:
                     'camp': keys.get('side') or dimensions.get('side') or 'unknown',
                     'side': keys.get('side') or dimensions.get('side') or 'unknown',
                     'slot': keys.get('slot'), 'hero': clean(keys.get('hero')),
-                    'position': lane_name(dimensions.get('position')),
+                    # 单局表的分路/对手/训练组由 infer_profile 归到 keys（模板 17 列都走 keys），
+                    # 只有胜负在 dimensions；这里两处都读，避免表格入库后分路和对手整列丢失。
+                    'position': lane_name(keys.get('position') or dimensions.get('position')),
                     'kills': metric('kills'), 'deaths': metric('deaths'), 'assists': metric('assists'),
                     'gold': metric('gold') or metric('avgGold'), 'damage': metric('damage') or metric('avgDamage'),
                     'taken': metric('taken') or metric('avgTaken'),
@@ -661,9 +663,9 @@ class AnalysisRepository:
                 'key': f'sheet-{import_id[:8]}-{sheet.get("name")}-{match_key}',
                 'dbId': None, 'bundleKey': None, 'sources': ['sheet'], 'source': 'sheet',
                 'date': keys.get('date') or dimensions.get('date'), 'dateText': keys.get('date') or dimensions.get('date'),
-                'duration': duration, 'opponent': dimensions.get('opponent') or '',
+                'duration': duration, 'opponent': keys.get('opponent') or dimensions.get('opponent') or '',
                 'session': dimensions.get('session') or keys.get('session') or '',
-                'version': dimensions.get('version') or '',
+                'version': dimensions.get('version') or keys.get('version') or '',
                 'mode': None, 'title': entry.get('source', {}).get('name'),
                 'ownSide': None, 'ownCamp': None, 'winner': None, 'scores': {},
                 'players': players, 'process': None,

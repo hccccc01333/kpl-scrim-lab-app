@@ -114,8 +114,8 @@ def write_sheet_import(root):
         match_rows.append({
             'rowNumber': slot + 2, 'grain': 'match_player', 'aggregated': False, 'raw': {},
             'keys': {'date': '2026-10-04', 'matchId': 'S1', 'player': f'纸面{slot + 1}',
-                     'hero': hero, 'side': 'blue'},
-            'dimensions': {'win': 1, 'opponent': '表格对手'},
+                     'hero': hero, 'side': 'blue', 'opponent': '表格对手', 'position': '对抗路'},
+            'dimensions': {'win': 1},
             'metrics': {key: {'value': value} for key, value in {
                 'kills': 4, 'deaths': 2, 'assists': 3, 'gold': 10000,
                 'damage': 25000, 'taken': 15000, 'participation': 55}.items()},
@@ -241,6 +241,10 @@ class AnalysisDataTests(unittest.TestCase):
         self.assertEqual(len(default['matches']), 4)
         with_sheet = self.repo.matches({'sources': ['db', 'bundle', 'sheet']})
         self.assertEqual(len(with_sheet['matches']), 5)
+        sheet_match = next(item for item in with_sheet['matches'] if item['source'] == 'sheet')
+        self.assertEqual(sheet_match['opponent'], '表格对手')
+        sheet_detail = self.repo.match_detail(sheet_match['key'])
+        self.assertEqual({player['position'] for player in sheet_detail['players']}, {'对抗路'})
         rows = self.repo.player_stats({'sources': ['sheet']})
         self.assertTrue(rows)
         self.assertTrue(any(player['label'].startswith('纸面') for player in rows))

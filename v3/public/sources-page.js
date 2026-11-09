@@ -871,12 +871,14 @@ export function createSources(h) {
         `<div class="table-wrap sv-spec-wrap"><table class="sv-spec-table"><thead><tr>
           <th>列名</th><th>字段</th><th>要求</th><th>规则</th>
         </tr></thead><tbody>${columnRows}</tbody></table></div>`)
-      + block('模板与示例', '直接用模板填，列名不要改；示例文件可以对照格式。',
+      + block('模板与示例', '模板列名不要改；示例可以对照格式，其中「十人一局」那份填好了完整数据，可以直接试导入。',
         `<div class="sv-downloads">
           <a class="control" href="/assets/capture-guide/match-template.xlsx" download>${icon('sources')} 下载 XLSX 模板</a>
           <a class="control" href="/assets/capture-guide/match-template.csv" download>${icon('sources')} 下载 CSV 模板</a>
-          <a class="control" href="/assets/capture-guide/match-example.csv" download>${icon('sources')} 下载示例</a>
-        </div>`)
+          <a class="control" href="/assets/capture-guide/match-example.csv" download>${icon('sources')} 下载示例（对照格式）</a>
+          <a class="control" href="/assets/capture-guide/match-sample.csv" download>${icon('sources')} 下载示例 · 十人一局（可直接试导入）</a>
+        </div>
+        <p class="capture-hint">示例是虚构数据。试导入后在「数据范围 → 表格导入」勾选才看得到；正式记录请换掉对局 ID、日期和十人数据。</p>`)
       + block('最常见的三个错', '导入失败的绝大多数都是这三种。',
         `<ul class="sv-pitfalls">
           <li><b>对局 ID 十行不一致</b> —— 同一局十行必须同一个 ID，且不能用示例里的编号。</li>

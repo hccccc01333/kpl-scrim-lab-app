@@ -8,6 +8,29 @@ from pathlib import Path
 CONTRACT = json.loads((Path(__file__).resolve().parent / 'web/capture-guide/requirements.json').read_text(encoding='utf-8'))
 PAGE_TYPES = tuple(item['type'] for item in CONTRACT['screenshotPages'])
 PAGE_NAMES = {item['type']: item['label'] for item in CONTRACT['screenshotPages']}
+TEMPLATE_COLUMNS = tuple(column['name'] for column in CONTRACT['sheet']['columns'])
+
+
+def is_example_match(value):
+    text = str(value or '').strip()
+    return text.upper().startswith('EXAMPLE') or text.startswith('示例')
+
+
+def reject_example_table(sheet):
+    """识别「原样上传示例表」：17 列模板，且所有对局 ID 还是示例编号。
+
+    批量导入端点不做严格十人校验，示例表会带着虚构数据直接进分析数据集；
+    这里只拦「整张表都是示例编号」的情况，混入真实记录的表不受影响。
+    """
+    header = sheet.get('header') or []
+    if len(header) != len(TEMPLATE_COLUMNS) or set(header) != set(TEMPLATE_COLUMNS):
+        return
+    index = header.index('对局ID')
+    ids = [str(row[index] or '').strip() for row in sheet.get('rows') or [] if index < len(row)]
+    ids = [value for value in ids if value]
+    if ids and all(is_example_match(value) for value in ids):
+        raise ValueError('表格里还是示例编号：请把「对局ID」替换成真实记录，再核对日期和十人数据；示例文件只用于对照格式。')
+
 
 
 def validate_sheet(sheet, match=None, existing_match_ids=()):

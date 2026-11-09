@@ -2,7 +2,7 @@ import copy
 import unittest
 from pathlib import Path
 import channel_store as c
-from collection_contract import validate_sheet, PAGE_TYPES
+from collection_contract import validate_sheet, PAGE_TYPES, reject_example_table
 from sheet_import import read_workbook
 from tests.collection_fixtures import complete_collection
 
@@ -46,6 +46,14 @@ class CollectionContractTests(unittest.TestCase):
         sheet=self.sheet();sheet['rows'].pop()
         with self.assertRaisesRegex(ValueError,'10 行'):
             validate_sheet(sheet)
+
+    def test_example_only_import_is_rejected(self):
+        source = Path(__file__).resolve().parents[1] / 'web/capture-guide/match-example.csv'
+        sheet = copy.deepcopy(read_workbook(source)['sheets'][0])
+        with self.assertRaisesRegex(ValueError, '示例编号'):
+            reject_example_table(sheet)
+        sheet['rows'][0][0] = 'real-match-1'
+        reject_example_table(sheet)
 
     def test_valid_template_normalizes_metrics(self):
         sheet=self.sheet();validate_sheet(sheet,{'date':'2026-11-04'})
