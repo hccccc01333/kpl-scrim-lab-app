@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from operator_stream import OperatorStreamError, summarize as summarize_operator_stream
 from replay_profiles import load_registry, profile_layout, resolve_profile
 
-PROFILE = 'observed-12.1.1.x-v2'
+PROFILE = 'observed-12.1.1.x-v3'
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_DECODED_BYTES = 8 * 1024 * 1024
 BLOCK_STRIDE = 1517

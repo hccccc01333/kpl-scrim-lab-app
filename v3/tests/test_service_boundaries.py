@@ -1,4 +1,4 @@
-"""Tests of V2 migration and reviewed V1 route boundaries."""
+"""Tests of V3 route boundaries and compatibility aliases."""
 import sqlite3
 import sys
 import unittest
@@ -18,18 +18,18 @@ class ServiceBoundaryTests(unittest.TestCase):
         self.assertNotIn('/api/studio/workspace', paths)
         self.assertNotIn('/api/studio/import/preview', paths)
         self.assertNotIn('/api/studio/import/commit', paths)
-        self.assertIn('/api/v2/import/preview', paths)
-        self.assertIn('/api/v2/workspace/overview', paths)
+        self.assertIn('/api/v3/import/preview', paths)
+        self.assertIn('/api/v3/workspace/overview', paths)
 
     def test_malformed_json_returns_400(self):
         from fastapi.testclient import TestClient
         client = TestClient(serve.app, base_url='http://127.0.0.1')
         endpoints = [
-            '/api/v2/research/reports',
-            '/api/v2/import/commit',
-            '/api/v2/identity/roster',
-            '/api/v2/identity/claim',
-            '/api/v2/identity/name',
+            '/api/v3/research/reports',
+            '/api/v3/import/commit',
+            '/api/v3/identity/roster',
+            '/api/v3/identity/claim',
+            '/api/v3/identity/name',
         ]
         for path in endpoints:
             with self.subTest(path=path):
@@ -42,7 +42,7 @@ class ServiceBoundaryTests(unittest.TestCase):
         if not matches:
             return
         key = matches[0]['key']
-        for path in (f'/api/v2/match-bp/{key}', f'/api/v2/match-meta/{key}'):
+        for path in (f'/api/v3/match-bp/{key}', f'/api/v3/match-meta/{key}'):
             with self.subTest(path=path):
                 response = client.post(path, content=b'{bad',
                                        headers={'Content-Type': 'application/json'})
@@ -50,7 +50,7 @@ class ServiceBoundaryTests(unittest.TestCase):
                                  (path, response.status_code, response.text[:120]))
 
     def test_migration_inserts_once_and_preserves_existing_manual_values(self):
-        uri = 'file:v2-test-' + uuid.uuid4().hex + '?mode=memory&cache=shared'
+        uri = 'file:boundary-test-' + uuid.uuid4().hex + '?mode=memory&cache=shared'
         keeper = sqlite3.connect(uri, uri=True)
         keeper.executescript(workspace_store.SCHEMA)
         class Workspace:

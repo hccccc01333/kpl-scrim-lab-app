@@ -28,10 +28,21 @@ def detect_tokens(image):
 
 
 def read_line(image):
-    """Read one tightly cropped line without running the detector again."""
+    """Read one tightly cropped line; 返回 [(text, confidence), ...]。
+
+    引擎原始结果是 (box, text, score) 三元组，这里统一成两元组：调用方
+    （ocr.read_crop_line / postgame_ocr 的紧裁读取）都按 (text, confidence) 取。
+    """
     with _lock:
         found, _ = get_engine()(np.array(image), use_det=False, use_cls=False)
-    return found or []
+    result = []
+    for item in found or []:
+        try:
+            text, confidence = str(item[1]), float(item[2])
+        except (TypeError, IndexError, ValueError):
+            continue
+        result.append((text, confidence))
+    return result
 
 
 def recognize(data, learned=None):
@@ -45,7 +56,7 @@ def recognize(data, learned=None):
     texts = ' '.join(t['text'] for t in tokens)
     kind = 'data' if '输出伤害' in texts and '承受伤害' in texts else 'score' if ('胜利' in texts or '失败' in texts or '/' in texts) else 'unknown'
     output = {'kind': kind, 'tokens': tokens, 'scores': {}, 'players': [], 'warnings': [], 'meta': {},
-              'version': OCR_VERSION, 'visuals': [], 'template': '赛后双列五行 v2', 'crop': crop}
+              'version': OCR_VERSION, 'visuals': [], 'template': '赛后双列五行', 'crop': crop}
     if kind == 'unknown' or not 1.65 < width / height < 2.7:
         output['kind'] = 'unknown'
         output['warnings'].append('未匹配赛后双列面板，保留原始文字供核对，不自动填表。')

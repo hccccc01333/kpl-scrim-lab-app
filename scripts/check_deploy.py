@@ -24,7 +24,7 @@ def main() -> int:
     os.environ['ANALYSIS_MATCHES'] = str(tmp / 'matches')
     os.environ['ANALYSIS_IMPORTS'] = str(tmp / 'imports')
     os.environ['ANALYSIS_OFFICIAL'] = str(tmp / 'official_replays')
-    os.environ['ANALYSIS_V2'] = str(tmp / 'v2')
+    os.environ['ANALYSIS_BUILDS'] = str(tmp / 'builds')
     os.environ.setdefault('TRAINING_ALLOWED_HOSTS', '127.0.0.1,localhost,::1')
 
     sys.path.insert(0, str(ROOT))

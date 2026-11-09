@@ -10,7 +10,8 @@
 1. **身份来自阵容签名**：把对面 5 个 playerId 排序后哈希，得到不可变的 cluster id。
    重导入、改名、合并都不会改变它；原始比赛数据一个字节都不动。
 2. **人工决策单独存放**：命名 / 教练 / 合并写进 team_clusters 表，覆盖层生效。
-3. **兜底显示名**：「待命名对手 #N」，N 按首次出现时间排序，只用于显示，不落库。
+3. **兜底显示名**：「待命名战队 #N」，N 按首次出现时间排序，只用于显示，不落库。
+   选手占位名是「待命名选手 #N」，两者前缀不同，避免混用。
    教练改完名立刻全量生效，历史对局不用批量改。
 4. **合并分两级**：5 人完全相同 → 自动同一 cluster；3–4 人重合 → 只给"建议合并"，
    必须人工确认，避免把轮换阵容误判成同一支队。
@@ -22,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from collections import Counter
 import unicodedata
 from pathlib import Path
 
@@ -46,7 +48,7 @@ def clean_name(value) -> str:
 
 
 def is_placeholder(name) -> bool:
-    """「待命名对手 #N」是显示兜底，不是主数据里的真实队名。"""
+    """「待命名战队 #N」是显示兜底，不是主数据里的真实队名。"""
     text = clean_name(name)
     return not text or text.startswith('待命名')
 
@@ -191,9 +193,7 @@ def build(panels) -> dict:
         totals = group['totals']
         totals['games'] += 1
         totals['seconds'] += minutes * 60
-        for player in panel['enemy_roster']:
-            for key in ('kills', 'deaths', 'assists', 'gold', 'damage', 'heroDamage', 'taken', 'control', 'heal', 'towers'):
-                totals[key] += player.get(key) or 0
+        _accumulate(totals, panel['enemy_roster'])
         group['matches'] += 1
         if panel['win'] is True:
             group['wins'] += 1
@@ -466,7 +466,7 @@ def list_teams(camp_dir, db_path, own_name='') -> dict:
         override_name = clean_name(override.get('name'))
         name = workspace_name if workspace_name and not is_placeholder(workspace_name) else override_name
         coach = clean_name(workspace_team.get('coach')) or clean_name(override.get('coach'))
-        display = name or f'待命名对手 #{index}'
+        display = name or f'待命名战队 #{index}'
         if not name:
             pending += 1
         decided = item['wins'] + item['losses']
@@ -518,9 +518,15 @@ def list_teams(camp_dir, db_path, own_name='') -> dict:
     pool = [value for value in metrics.values() if value]
     for item in teams:
         item['percentiles'] = _percentiles(item['metrics'], pool)
+    # 阵容：按面板逐局重算，合并多套阵容后才看得出轮换。
+    panel_index = {panel['seq']: panel for panel in panels}
+    for item in teams:
+        picked = [panel_index[seq] for seq in item.get('seqs') or [] if seq in panel_index]
+        item['roster'] = _team_roster(picked, 'enemy')
     own = {'name': clean_name(own_name), 'matches': len(panels), 'wins': wins, 'losses': losses,
            'winRate': round(wins / (wins + losses) * 100, 1) if wins + losses else None,
-           'metrics': own_metrics, 'percentiles': _percentiles(own_metrics, pool)}
+           'metrics': own_metrics, 'percentiles': _percentiles(own_metrics, pool),
+           'roster': _team_roster(panels, 'own')}
     return {
         'own': own,
         'teams': teams,
@@ -531,15 +537,85 @@ def list_teams(camp_dir, db_path, own_name='') -> dict:
     }
 
 
+def team_brief(camp_dir, db_path, team_id='', name='', limit=3) -> dict | None:
+    """训练课用的对手简报：最近交手、常用英雄、禁用习惯、关键选手。"""
+    data = list_teams(camp_dir, db_path)
+    team = next((item for item in data.get('teams', []) if item['id'] == team_id), None)
+    if team is None and name:
+        team = next((item for item in data.get('teams', [])
+                     if item.get('displayName') == name or item.get('name') == name), None)
+    if team is None:
+        return None
+    panels = {panel['seq']: panel for panel in load_panels(camp_dir)}
+    bans = Counter()
+    try:
+        from bp_camp import parse_camp_bp
+        for seq in team.get('seqs') or []:
+            panel = panels.get(seq)
+            path = Path(camp_dir) / f'{seq}.json'
+            if panel is None or not path.is_file():
+                continue
+            try:
+                detail = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            bp = parse_camp_bp(detail, seq)
+            if not bp:
+                continue
+            own_side = bp.get('ownSide')
+            if own_side not in ('left', 'right'):
+                own_side = 'left' if panel.get('own') == 'blue' else 'right'
+            enemy_side = 'right' if own_side == 'left' else 'left'
+            for entry in (bp.get('bans') or {}).get(enemy_side, []):
+                hero = clean_name(entry.get('name'))
+                if hero:
+                    bans[hero] += 1
+    except (ImportError, OSError, ValueError):
+        pass
+    lane_order = {lane: index for index, lane in enumerate(('对抗路', '打野', '中路', '发育路', '游走'))}
+    players = sorted(team.get('players') or [],
+                     key=lambda player: (lane_order.get(player.get('lane'), 99),
+                                         -(player.get('games') or 0), player.get('name') or ''))
+    recent = sorted(team.get('games') or [],
+                    key=lambda game: str(game.get('start') or ''), reverse=True)[:max(1, min(5, limit))]
+    return {
+        'id': team['id'],
+        'name': team.get('displayName') or team.get('name') or '未命名对手',
+        'named': bool(team.get('named')),
+        'matches': team.get('matches') or 0,
+        'wins': team.get('wins') or 0,
+        'losses': team.get('losses') or 0,
+        'winRate': team.get('winRate'),
+        'lastSeen': team.get('lastSeen') or '',
+        'recent': recent,
+        'players': players,
+        'heroes': (team.get('heroes') or [])[:5],
+        'bans': [{'hero': hero, 'games': count} for hero, count in bans.most_common(5)],
+    }
+
+
+def _accumulate(totals, roster) -> None:
+    """把一侧五人面板累加进队伍合计。
+
+    参团率是逐人百分比，先累加有值的样本再取平均；缺失不按 0 参与，
+    避免一个人没记录就把全队参团率拉低。
+    """
+    for player in roster or []:
+        for key in ('kills', 'deaths', 'assists', 'gold', 'damage', 'heroDamage', 'taken',
+                    'control', 'heal', 'towers'):
+            totals[key] += player.get(key) or 0
+        if player.get('participation') is not None:
+            totals['participation'] += player['participation']
+            totals['participationN'] += 1
+
+
 def _own_totals(panels) -> dict:
     totals = _new_record({})
     for panel in panels:
         minutes = (panel['duration'] or 0) / 60
         totals['games'] += 1
         totals['seconds'] += minutes * 60
-        for player in panel['own_roster']:
-            for key in ('kills', 'deaths', 'assists', 'gold', 'damage', 'heroDamage', 'taken', 'control', 'heal', 'towers'):
-                totals[key] += player.get(key) or 0
+        _accumulate(totals, panel['own_roster'])
         if panel['win'] is True:
             totals['wins'] += 1
             totals['decided'] += 1
@@ -556,6 +632,7 @@ def _team_metrics(item, totals) -> dict:
     deaths = totals['deaths']
     decided = totals['decided'] if item is None else (item['wins'] + item['losses'])
     wins = totals['wins'] if item is None else item['wins']
+    participation_n = totals.get('participationN') or 0
     return {
         'winRate': round(wins / decided * 100, 1) if decided else None,
         'gpm': round(totals['gold'] / minutes) if minutes else None,
@@ -563,6 +640,16 @@ def _team_metrics(item, totals) -> dict:
         'dtpm': round(totals['taken'] / minutes) if minutes else None,
         'kda': round((totals['kills'] + totals['assists']) / deaths, 2) if deaths else None,
         'towerPerGame': round(totals['towers'] / games, 2),
+        # 风格页要用的原始量：全部来自同一份营地合计，不引入新来源、不补猜。
+        'duration': round(totals['seconds'] / games) if games else None,
+        'killsPerGame': round(totals['kills'] / games, 1) if games else None,
+        'deathsPerGame': round(totals['deaths'] / games, 1) if games else None,
+        'assistsPerGame': round(totals['assists'] / games, 1) if games else None,
+        'killsPerMin': round(totals['kills'] / minutes, 3) if minutes else None,
+        'assistsPerMin': round(totals['assists'] / minutes, 3) if minutes else None,
+        'controlPerMin': round(totals['control'] / minutes, 1) if minutes else None,
+        'participation': round(totals['participation'] / participation_n * 100, 1) if participation_n else None,
+        'conversion': round(totals['heroDamage'] / totals['gold'] * 100, 1) if totals['gold'] else None,
     }
 
 
@@ -582,7 +669,7 @@ def _percentiles(metrics, pool) -> dict:
 
 # ---------------------------------------------------------------- 逐人 / 逐英雄
 _ACC = ('games', 'seconds', 'kills', 'deaths', 'assists', 'gold', 'damage', 'heroDamage', 'taken',
-        'control', 'heal', 'towers', 'participation', 'wins', 'decided')
+        'control', 'heal', 'towers', 'participation', 'participationN', 'wins', 'decided')
 
 
 def _new_record(base: dict) -> dict:
@@ -628,6 +715,97 @@ def _finish(record):
         'winRate': round(record['wins'] / record['decided'] * 100, 1) if record['decided'] else None,
     })
     return out
+
+
+# ---------------------------------------------------------------- 阵容
+def _team_roster(panels, side='enemy') -> dict:
+    """一套阵容的读法：位置池、五人组变体与稳定度。
+
+    同一 cluster 的五人组按定义固定；只有把多套阵容合并成一支队之后才会出现轮换，
+    所以这里按面板逐局重算，而不是复用聚合计数。字段缺失记 0，不补猜。
+    """
+    roster_key = f'{side}_roster'
+    lane_players: dict[tuple, dict] = {}
+    heroes: dict[tuple, Counter] = {}
+    lineups: dict[str, dict] = {}
+    lane_counts: dict[str, list] = {}
+    for panel in panels:
+        minutes = (panel['duration'] or 0) / 60
+        roster = panel.get(roster_key) or []
+        per_game = Counter(item.get('lane') or '' for item in roster)
+        for lane in LANES.values():
+            lane_counts.setdefault(lane, []).append(per_game.get(lane, 0))
+        ids = sorted(str(item['id']) for item in roster if item.get('id'))
+        lineup_key = '|'.join(ids) or panel['seq']
+        lineup = lineups.setdefault(lineup_key, {
+            'ids': ids, 'names': [], 'games': 0, 'wins': 0, 'losses': 0,
+            'firstSeen': None, 'lastSeen': None})
+        lineup['games'] += 1
+        if panel['win'] is True:
+            lineup['wins'] += 1
+        elif panel['win'] is False:
+            lineup['losses'] += 1
+        start = panel.get('start') or ''
+        if start:
+            if lineup['firstSeen'] is None or start < lineup['firstSeen']:
+                lineup['firstSeen'] = start
+            if lineup['lastSeen'] is None or start > lineup['lastSeen']:
+                lineup['lastSeen'] = start
+        if not lineup['names']:
+            lineup['names'] = [clean_name(item.get('name')) for item in roster]
+        for player in roster:
+            pid = str(player.get('id') or '')
+            if not pid:
+                continue
+            lane = player.get('lane') or ''
+            record = lane_players.get((pid, lane))
+            if record is None:
+                record = lane_players[(pid, lane)] = _new_record({
+                    'id': pid, 'name': clean_name(player.get('name')), 'lane': lane})
+                heroes[(pid, lane)] = Counter()
+            if not record['name'] and player.get('name'):
+                record['name'] = clean_name(player.get('name'))
+            _add(record, player, minutes, panel['win'])
+            if player.get('hero'):
+                heroes[(pid, lane)][clean_name(player['hero'])] += 1
+
+    lane_rows = []
+    for lane in LANES.values():
+        rows = []
+        for (pid, player_lane), record in lane_players.items():
+            if player_lane != lane:
+                continue
+            item = _finish(record)
+            rows.append({
+                'id': item['id'], 'name': item['name'], 'lane': lane,
+                'games': item['games'], 'wins': item['wins'], 'decided': item['decided'],
+                'winRate': item['winRate'], 'kills': item['kills'], 'deaths': item['deaths'],
+                'assists': item['assists'], 'kda': item['kda'], 'gpm': item['gpm'],
+                'dpm': item['dpm'], 'dtpm': item['dtpm'], 'participation': item['participation'],
+                'heroes': [{'hero': hero, 'games': count}
+                           for hero, count in heroes[(pid, lane)].most_common(4)],
+            })
+        rows.sort(key=lambda item: (-item['games'], item['name'] or ''))
+        lane_rows.append({'lane': lane, 'players': rows})
+
+    total = sum(item['games'] for item in lineups.values())
+    top = max((item['games'] for item in lineups.values()), default=0)
+    # 同一局同一个位置出现两人是营地位置字段的重复，不是轮换；单独标出来，不混进轮换数。
+    anomalies = [lane for lane, counts in lane_counts.items() if max(counts, default=0) > 1]
+    rotation = 0
+    for lane in LANES.values():
+        players = {pid for (pid, player_lane) in lane_players if player_lane == lane}
+        if len(players) > 1 and lane not in anomalies:
+            rotation += 1
+    return {
+        'games': len(panels),
+        'lanes': lane_rows,
+        'lineups': sorted(lineups.values(), key=lambda item: (-item['games'], item['firstSeen'] or '')),
+        'stability': round(top / total * 100) if total else None,
+        'rotation': rotation,
+        'anomalies': anomalies,
+        'players': len({pid for pid, _ in lane_players}),
+    }
 
 
 def compare(camp_dir, team_id=None, min_games=3) -> dict:
@@ -908,3 +1086,178 @@ def opponent_players(camp_dir, db_path):
         'total': len(seen),
         'warnings': teams.get('warnings') or [],
     }
+
+
+# ---------------------------------------------------------------- 按对手的训练台账
+def _match_index(matches_dir) -> dict:
+    """营地面板 seq → 对局档案里的完整日期。
+
+    营地详情只有「MM-DD HH:MM」，没有年份；对局档案里带完整日期。
+    能对上就用完整日期，对不上就退回营地日期，不猜年份。
+    """
+    index = {}
+    if not matches_dir:
+        return index
+    root = Path(matches_dir)
+    if not root.is_dir():
+        return index
+    for path in root.glob('*.json'):
+        try:
+            body = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        match = body.get('match') if isinstance(body, dict) else None
+        if not isinstance(match, dict):
+            continue
+        seq = str((match.get('campBp') or {}).get('gameSeq') or '')
+        if not seq:
+            continue
+        date = match.get('date') or {}
+        text = date.get('text') if isinstance(date, dict) else ''
+        index[seq] = {'date': str(text or ''), 'title': clean_name(match.get('title')),
+                      'session': clean_name(match.get('session')),
+                      'key': str(match.get('key') or path.stem)}
+    return index
+
+
+def _parse_goals(raw) -> list[dict]:
+    """训练目标在库里是 JSON 字符串：兼容纯字符串与 {label,target,status} 两种写法。"""
+    if isinstance(raw, list):
+        value = raw
+    else:
+        try:
+            value = json.loads(raw or '[]')
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(value, list):
+        return []
+    goals = []
+    for item in value:
+        if isinstance(item, dict) and clean_name(item.get('label')):
+            goals.append({'label': clean_name(item.get('label')),
+                          'target': clean_name(item.get('target')),
+                          'status': str(item.get('status') or 'pending')})
+        elif isinstance(item, str) and item.strip():
+            goals.append({'label': clean_name(item), 'target': '', 'status': 'pending'})
+    return goals
+
+
+def team_training(camp_dir, db_path, schedules=None, matches_dir=None) -> dict:
+    """按对手汇总训练台账。
+
+    - 「训练课」来自工作区 schedules：只有填了 opponent_team_id 才挂到对手，
+      带训练目标、复盘状态和赛制；
+    - 没有登记计划的交手日按「交手日」归集，只写日期、局数、胜负、时长，
+      不伪造训练目标，也不把交手日说成训练课。
+    """
+    data = list_teams(camp_dir, db_path)
+    teams = data.get('teams') or []
+    match_index = _match_index(matches_dir)
+
+    rows = [dict(item) for item in (schedules or []) if isinstance(item, dict)]
+    by_team: dict[str, list] = {}
+    unassigned = []
+    for row in rows:
+        team_id = str(row.get('opponent_team_id') or '').strip()
+        if team_id:
+            by_team.setdefault(team_id, []).append(row)
+        else:
+            unassigned.append({
+                'id': row.get('id') or '', 'date': str(row.get('date') or ''),
+                'startTime': row.get('start_time') or '', 'session': row.get('session') or '',
+                'format': row.get('format') or '', 'status': row.get('status') or 'planned',
+                'goals': _parse_goals(row.get('goals')),
+            })
+
+    def same_day(day, date) -> bool:
+        if not day or not date:
+            return False
+        if len(day) == 10 and len(date) == 10:
+            return day == date
+        return day[-5:] == date[-5:]
+
+    def summarize(games) -> dict:
+        wins = sum(1 for game in games if game['win'] is True)
+        losses = sum(1 for game in games if game['win'] is False)
+        durations = [game['duration'] for game in games
+                     if isinstance(game['duration'], (int, float)) and game['duration'] > 0]
+        return {'matches': len(games), 'wins': wins, 'losses': losses,
+                'duration': round(sum(durations) / len(durations)) if durations else None}
+
+    out_teams = []
+    for team in teams:
+        games = []
+        for game in team.get('games') or []:
+            seq = str(game.get('seq') or '')
+            info = match_index.get(seq) or {}
+            day = info.get('date') or str(game.get('start') or '')[:5]
+            games.append({'seq': seq, 'start': str(game.get('start') or ''), 'day': day,
+                          'win': game.get('win'), 'duration': game.get('duration'),
+                          'map': game.get('map') or '',
+                          'session': info.get('session') or '', 'matchKey': info.get('key') or ''})
+
+        sessions = []
+        used = set()
+        for plan in by_team.get(team['id'], []):
+            date = str(plan.get('date') or '')
+            picked = [game for game in games if same_day(game['day'], date)]
+            used.update(game['seq'] for game in picked)
+            sessions.append({
+                'id': str(plan.get('id') or ''), 'source': 'plan', 'date': date,
+                'time': plan.get('start_time') or '', 'session': plan.get('session') or '',
+                'format': plan.get('format') or '', 'rules': plan.get('rules') or '',
+                'version': plan.get('version') or '', 'status': plan.get('status') or 'planned',
+                'notes': plan.get('notes') or '', 'goals': _parse_goals(plan.get('goals')),
+                'reviewStatus': plan.get('review_status') or '',
+                'review': plan.get('review') or '',
+                'games': picked, **summarize(picked),
+            })
+
+        buckets: dict[str, list] = {}
+        for game in games:
+            if game['seq'] in used:
+                continue
+            buckets.setdefault(game['day'], []).append(game)
+        for day, group in buckets.items():
+            group.sort(key=lambda game: game['start'])
+            sessions.append({
+                'id': '', 'source': 'camp', 'date': day,
+                'time': group[0]['start'][6:] if group and len(group[0]['start']) > 6 else '',
+                'session': group[0].get('session') or '', 'format': '', 'rules': '', 'version': '',
+                'status': '', 'notes': '', 'goals': [], 'reviewStatus': '', 'review': '',
+                'games': group, **summarize(group),
+            })
+
+        sessions.sort(key=lambda item: (item['date'] if len(item['date']) == 10 else '0000-' + item['date'],
+                                        item['time'] or ''), reverse=True)
+        plans = [item for item in sessions if item['source'] == 'plan']
+        goals = [goal for item in plans for goal in item['goals']]
+        out_teams.append({
+            'id': team['id'], 'name': team.get('name') or '', 'displayName': team.get('displayName'),
+            'named': bool(team.get('named')), 'coach': team.get('coach') or '',
+            'matches': team.get('matches') or 0, 'wins': team.get('wins') or 0,
+            'losses': team.get('losses') or 0, 'winRate': team.get('winRate'),
+            'lastSeen': team.get('lastSeen') or '',
+            'sessions': sessions, 'sessionCount': len(sessions),
+            'planCount': len(plans), 'goalCount': len(goals),
+            'goalsDone': sum(1 for goal in goals if goal['status'] == 'achieved'),
+            'reviewed': sum(1 for item in plans if item['reviewStatus'] == 'done'),
+            'lastSession': sessions[0]['date'] if sessions else '',
+        })
+
+    # 有训练课的排前，其次按最近一次训练 / 交手日期；同一天的按队名稳定排序。
+    out_teams.sort(key=lambda item: (item['planCount'] > 0,
+                                     item['lastSession'] or item['lastSeen'] or '',
+                                     item['displayName'] or ''), reverse=True)
+    summary = {
+        'teams': len(out_teams),
+        'withPlans': sum(1 for item in out_teams if item['planCount']),
+        'plans': sum(item['planCount'] for item in out_teams),
+        'goals': sum(item['goalCount'] for item in out_teams),
+        'goalsDone': sum(item['goalsDone'] for item in out_teams),
+        'reviewed': sum(item['reviewed'] for item in out_teams),
+        'sessions': sum(item['sessionCount'] for item in out_teams),
+        'unassigned': len(unassigned),
+    }
+    return {'teams': out_teams, 'unassigned': unassigned, 'summary': summary,
+            'warnings': data.get('warnings') or []}

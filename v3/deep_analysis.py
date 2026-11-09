@@ -1,12 +1,12 @@
-"""Corrected V2 adapters for the existing replay-analysis modules."""
+"""V3 adapters for the existing replay-analysis modules."""
 from threading import Lock
 import importlib.util
 from pathlib import Path
 
 import analysis_economy
 # V1's analysis module has process-wide calibration state. Load a private
-# module instance so a concurrent legacy endpoint cannot change V2's units.
-_spec = importlib.util.spec_from_file_location('_v2_analysis_space', Path(__file__).resolve().parent.parent / 'analysis_space.py')
+# module instance so a concurrent legacy endpoint cannot change the app's units.
+_spec = importlib.util.spec_from_file_location('_analysis_space', Path(__file__).resolve().parent.parent / 'analysis_space.py')
 analysis_space = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(analysis_space)
 import map_calibration

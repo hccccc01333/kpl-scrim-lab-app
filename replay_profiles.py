@@ -21,7 +21,7 @@ CONFIG_PATH = ROOT / "resources" / "replay_profiles.json"
 # bootstrap so the app still starts when the config file is missing.
 BUILTIN_PROFILES = [
     {
-        "id": "observed-12.1.1.x-v2",
+        "id": "observed-12.1.1.x-v3",
         "label": "2026-11 12.1.1.x 观测档案",
         "versionPrefixes": ["12.1.1."],
         "builds": ["4989537", "5230306", "5247758"],

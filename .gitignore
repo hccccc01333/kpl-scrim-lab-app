@@ -47,7 +47,20 @@ oss-v5/
 # 官网构建产物（由 scripts/build_website.py 生成，勿提交）
 website/dist/
 
+# 安装版 EXE 启动器构建产物（由 packaging/make_launcher.py 生成，勿提交）
+packaging/launcher-dist/
+
 # 前端收口时隔离的旧代码（可随时删除，不影响运行）
 # 内含 frontend-v2 / 原 17 个样式表 / replay-review 等，见其中的 MANIFEST.md
 .archive/
 .audit-shots/
+
+# 本地截图 / 渲染 / 工具缓存（每个开发者本机生成，勿提交）
+.cache/
+.remotion/
+.zcode/
+
+# 编辑器临时文件
+*~RF*.TMP
+*.tmp
+

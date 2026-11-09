@@ -4,6 +4,7 @@
 * 版本 / 发布日期 / 发布名  -> version.py
 * 更新日志                -> CHANGELOG.md（默认不渲染「未发布」段）
 * 功能截图                -> docs/images/*.png（原样拷贝进 dist/assets/img）
+* 自托管字体等静态资源     -> website/src/assets/*（拷贝进 dist/assets）
 
 用法：
     python scripts/build_website.py                     # 只构建
@@ -16,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import html
 import re
 import shutil
@@ -28,6 +30,8 @@ SRC = ROOT / 'website' / 'src'
 DIST = ROOT / 'website' / 'dist'
 REPO_URL = 'https://github.com/hccccc01333/kpl-scrim-lab'
 DEFAULT_DOWNLOAD_URL = f'{REPO_URL}/releases/latest'
+SPONSOR_URL = 'https://afdian.com/a/kplscrim'
+PAGES = ('index.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
 
 
 def read_version() -> tuple[str, str, str]:
@@ -38,6 +42,19 @@ def read_version() -> tuple[str, str, str]:
         return m.group(1) if m else default
 
     return grab('VERSION'), grab('RELEASE_DATE'), grab('RELEASE_NAME')
+
+
+def asset_version() -> str:
+    """资源和样式的内容指纹：改 CSS / 换截图都会换 URL，绕开 Pages 缓存。"""
+    digest = hashlib.sha1()
+    files = [SRC / 'style.css']
+    assets = SRC / 'assets'
+    if assets.is_dir():
+        files.extend(sorted(p for p in assets.rglob('*') if p.is_file()))
+    for path in files:
+        digest.update(str(path.relative_to(SRC)).encode('utf-8'))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:10]
 
 
 def inline_md(text: str) -> str:
@@ -76,6 +93,27 @@ def parse_changelog() -> list[dict]:
     return sections
 
 
+def render_latest_notes(sections: list[dict], version: str,
+                        release_name: str, limit: int = 4) -> str:
+    """首页的「最新更新」卡片：取最近一个已发布版本的前几条。"""
+    for section in sections:
+        if section['version'] == '未发布':
+            continue
+        items = [item for _, group in section['blocks'] for item in group]
+        if not items:
+            continue
+        bullets = ''.join(f'<li>{item}</li>' for item in items[:limit])
+        meta = []
+        if section['version'] == version and release_name:
+            meta.append(f'<span class="tag">{html.escape(release_name)}</span>')
+        if section['date']:
+            meta.append(f'<span class="date">{section["date"]}</span>')
+        return ('<div class="cl-item"><div class="cl-top">'
+                f'<span class="ver">v{html.escape(section["version"])}</span>'
+                f'{"".join(meta)}</div><ul>{bullets}</ul></div>')
+    return '<div class="cl-item"><p>暂无更新记录。</p></div>'
+
+
 def render_sections(sections: list[dict], version: str, release_name: str,
                     include_unreleased: bool) -> str:
     out = []
@@ -112,20 +150,25 @@ def render_sections(sections: list[dict], version: str, release_name: str,
 
 def build(download_url: str, include_unreleased: bool) -> None:
     version, release_date, release_name = read_version()
+    sections = parse_changelog()
     tokens = {
         'VERSION': version,
         'RELEASE_DATE': release_date,
         'YEAR': release_date[:4] or '2026',
         'DOWNLOAD_URL': download_url,
+        'REPO_URL': REPO_URL,
+        'LICENSE_URL': f'{REPO_URL}/blob/main/LICENSE',
+        'LATEST_NOTES': render_latest_notes(sections, version, release_name),
+        'ASSET_VERSION': asset_version(),
+        'SPONSOR_URL': SPONSOR_URL,
     }
-    sections = parse_changelog()
     changelog_html = render_sections(sections, version, release_name, include_unreleased)
 
     # 只覆盖、不清空：本机预览服务可能正占用 dist（Windows 下 rmtree 会失败），
     # 产物文件名固定，覆盖写入不会留下旧文件。
     (DIST / 'assets' / 'img').mkdir(parents=True, exist_ok=True)
 
-    for name in ('index.html', 'changelog.html', 'guide.html'):
+    for name in PAGES:
         page = (SRC / name).read_text(encoding='utf-8')
         for key, value in tokens.items():
             page = page.replace('{{' + key + '}}', value)
@@ -133,10 +176,29 @@ def build(download_url: str, include_unreleased: bool) -> None:
         (DIST / name).write_text(page, encoding='utf-8')
 
     shutil.copyfile(SRC / 'style.css', DIST / 'assets' / 'style.css')
-    images = ROOT / 'docs' / 'images'
-    if images.is_dir():
-        for img in images.glob('*.png'):
-            shutil.copyfile(img, DIST / 'assets' / 'img' / img.name)
+    # SEO 文件（robots / sitemap）放在站点根目录
+    for name in ('robots.txt', 'sitemap.xml'):
+        f = SRC / name
+        if f.is_file():
+            shutil.copyfile(f, DIST / name)
+    # 自托管字体等静态资源（manrope.woff2 及其许可证），无外部请求
+    src_assets = SRC / 'assets'
+    if src_assets.is_dir():
+        for f in src_assets.iterdir():
+            if f.is_file():
+                shutil.copyfile(f, DIST / 'assets' / f.name)
+    # 官网截图只从 website/src/assets/img 发布（均为合成演示数据）；
+    # 不再拷贝 docs/images，避免未脱敏截图或未使用资产进入线上。
+    img_src = src_assets / 'img'
+    img_dst = DIST / 'assets' / 'img'
+    img_dst.mkdir(parents=True, exist_ok=True)
+    if img_src.is_dir():
+        wanted = {f.name for f in img_src.iterdir() if f.is_file()}
+        for name in wanted:
+            shutil.copyfile(img_src / name, img_dst / name)
+        for old in img_dst.iterdir():
+            if old.is_file() and old.name not in wanted:
+                old.unlink()
 
     print(f'构建完成: {DIST}')
     print(f'版本: v{version} ({release_date}) · 渲染了 {len(sections)} 个版本段')

@@ -95,7 +95,7 @@ class MatchReviewTest(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.matches = self.root / 'data' / 'matches'
         self.official = self.root / 'data' / 'official_replays'
-        self.v2 = self.root / 'data' / 'v2'
+        self.builds = self.root / 'data' / 'builds'
         self.matches.mkdir(parents=True)
         (self.root / 'resources').mkdir()
         (self.root / 'resources' / 'catalog.json').write_text(json.dumps({'entries': []}),
@@ -103,13 +103,13 @@ class MatchReviewTest(unittest.TestCase):
         (self.matches / 'm1.json').write_text(json.dumps(bundle(), ensure_ascii=False),
                                                encoding='utf-8')
         official_files(self.official / 'camp-1')
-        build_files(self.v2 / 'abc')
+        build_files(self.builds / 'abc')
 
     def tearDown(self):
         self.temp.cleanup()
 
     def test_joins_all_sources(self):
-        payload = build_panorama(self.matches, self.official, self.v2, 'm1', self.root)
+        payload = build_panorama(self.matches, self.official, self.builds, 'm1', self.root)
         self.assertIsNotNone(payload)
         self.assertEqual(payload['schema'], 'kpl-match-panorama-v1')
         self.assertEqual(len(payload['players']), 10)
@@ -127,7 +127,7 @@ class MatchReviewTest(unittest.TestCase):
         self.assertTrue(payload['positions']['players']['blue-0']['phases'][0]['heat'])
 
     def test_events_and_phase_metrics(self):
-        payload = build_panorama(self.matches, self.official, self.v2, 'm1', self.root)
+        payload = build_panorama(self.matches, self.official, self.builds, 'm1', self.root)
         events = payload['events']
         self.assertEqual([event['kind'] for event in events], ['resource', 'structure'])
         self.assertEqual(events[0]['zone'], 'red_half')
@@ -152,7 +152,7 @@ class MatchReviewTest(unittest.TestCase):
 
     def test_router(self):
         app = FastAPI()
-        app.include_router(create_review_router(self.matches, self.official, self.v2, self.root))
+        app.include_router(create_review_router(self.matches, self.official, self.builds, self.root))
         client = TestClient(app)
         self.assertEqual(client.get('/api/review/m1').status_code, 200)
         self.assertEqual(client.get('/api/review/unknown').status_code, 404)

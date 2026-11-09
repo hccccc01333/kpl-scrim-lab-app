@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-replay_codec / build_map.py  (v2)
+replay_codec / build_map.py
 
 生成「单局地图复刻 + 回放操作层」：一个可离线打开的单文件 HTML。
 

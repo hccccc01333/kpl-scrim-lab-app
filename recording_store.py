@@ -13,8 +13,10 @@ import time
 import uuid
 from pathlib import Path
 
+from paths import data_root
+
 ROOT = Path(__file__).resolve().parent
-LIBRARY = Path(os.environ.get('KPL_RECORDINGS', ROOT / 'data' / 'recordings'))
+LIBRARY = Path(os.environ.get('KPL_RECORDINGS', data_root() / 'recordings'))
 TEMP = LIBRARY / '.tmp'
 MAX_BYTES = int(os.environ.get('KPL_MAX_RECORDING_BYTES', 2 * 1024 * 1024 * 1024))
 ALLOWED_EXT = {'.mp4', '.mov', '.mkv', '.webm', '.avi', '.m4v'}

@@ -3201,7 +3201,7 @@ CommitCsBuffer()  -> SIGSEGV                      ← 仍崩
 - 但走 `CommitCsBuffer` 仍 **SIGSEGV**：`si_addr=0x10`、pc=0x460A3F8，
   寄存器显示 `x0=obj, x8=0`。故障形态像“把 x0 当对象、读空 vtable/首字段
   后 +0x10”，说明 Commit 跳板/对象契约仍不对，或该槽目标不是最终 Commit
-  实现。日志：`device/s3b_gc_fifo0_v2.log`。
+  实现。日志：`device/s3b_gc_fifo0.log`。
 - 结论：Push 契约已成立；Commit 需要继续定位真实实现（不是简单补
   +0x3C 锁），下一步应把 0x460A3E4 的跳板链和 0x49CC18C 的调用约定逐条
   对清，或从 `PushCsBuffer` 成功路径反推同族对象的完整 vtable。
@@ -3905,7 +3905,7 @@ fallback，fallback 会命中 UI 类型（如 `Equip.bytes` → `enPVEEquipFormW
 | 825 张表块已校验 | 825 |
 | 已解成 CSV（值） | 48 张 / 131 cell / 6,633 行 |
 | 可靠字段名（exact+Res+ResDT） | **533 张 / 10,363 字段** |
-| cell 模型布局已验证（v2） | **65 张 / 740 cell** |
+| cell 模型布局已验证（第二版） | **65 张 / 740 cell** |
 | 打包宽度布局已验证（v3） | **9 张 / 78 字段** |
 | 布局已验证并集 | **78 张** |
 | 字段名有、布局待解 | ~451 张（数组/结构体/布尔打包） |
@@ -5539,7 +5539,7 @@ cum_source`；`cum_total` 是该玩家累计金币，`cum_source` 是该来源
 → 残差里 1,708 已归到打野刀 +20%，508 仍是 source51 目标候选；
 source5 131–146 仍是辅助装/被动/团队金混合。
 
-**产物**：`datasets/normal5v5_reconciliation_v2.csv`（286 条修正版；
+**产物**：`datasets/normal5v5_reconciliation.csv`（286 条修正版；
 旧 `agent_normal5v5_reconciliation.csv` 是 281 条历史版）、
 `agent_normal5v5_reconciliation.md`、`tools/agent_normal5v5_reconcile.py`。
 
@@ -6897,7 +6897,7 @@ position+1 起可完整 raw inflate”的标记，旧样本与 5247758 均命中
 
 ### 5.105.4 解析器与产物
 
-`replay_parser.py` 已升级为 `observed-12.1.1.x-v2`：
+`replay_parser.py` 已升级为 `observed-12.1.1.x-v3`：
 
 - 玩家块：先尝试旧 1,517 B 布局，失败后尝试 5247758 变长十人块；
   报告新增 `blocksLayout`、`name`、`entityId`、`camp`、`position`、`bot`；
@@ -8129,7 +8129,7 @@ Android 原生截图确认离线选英雄页；点击取消后回到英雄练习
   ABS 文件，放入 `Replays`。官方页面目前跳转到
   https://tencentarena.com/aiarena/en/open-gamecore ，说明研究者提交承诺书/申请授权、
   审批后可下载 Windows Gamecore Server。这里只读取网页，未提交任何申请。
-- 直接查询官方仓库 Releases，v2.0.4/v2.0.3 没有上传的二进制附件；v2.0.1
+- 直接查询官方仓库 Releases，早期版本没有上传的二进制附件；更早版本
   附件是 3v3-level-0..6 训练 checkpoint，没有 ABSTOOL。自动生成的源码压缩包
   不等于工具运行包。本地 data/resources 中也未找到 ABSTOOL 或 ABS 样本。
 - 官方仓库 Issue 52 有缺少 SGame_Data 而无法启动工具的实际报告，后续回复要求
@@ -9300,13 +9300,13 @@ key 03/0x2c/02/84 victim/flag=90）。后续逐键与逐类型语义需要设备
 ### 0x1f（28B）= 两组拆分 i32 + 尾部计数 ✅ 结构
 
 ```text
-[1f][sub:u8][v1:3B符号扩展+1B值][0×4][v2:3B符号扩展+1B值][f14:u8][0×6][f21:u8][f22:u8][=1][0×4]
+[1f][sub:u8][s1:3B符号扩展+1B值][0×4][s2:3B符号扩展+1B值][f14:u8][0×6][f21:u8][f22:u8][=1][0×4]
 ```
 
 - sub ∈ {1, 2}（161129 两条 sub=1/243；163751 六条 sub=1/2）。
-- v1/v2 = 符号扩展字节（000000 或 ffffff）+ 低字节（值域 ±250 内）：
+- s1/s2 = 符号扩展字节（000000 或 ffffff）+ 低字节（值域 ±250 内）：
   **TDR 逐字节写出的拆分 i32**（非打包 i32）。
-- v1 样本：8、22、28…−16；v2 样本：−1、−5、…（小有符号量）。
+- s1 样本：8、22、28…−16；s2 样本：−1、−5、…（小有符号量）。
 - [14] ∈ {0, 4}；[21] ∈ {0,1,3}；[22] ∈ 67–218；[23] = 1 恒定；[24..27] = 0。
 
 ### 0x2c（17B）= 多 i16 字段 + 子类型 ✅ 结构 / 语义未解

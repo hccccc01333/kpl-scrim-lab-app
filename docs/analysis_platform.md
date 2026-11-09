@@ -88,7 +88,7 @@ POST /api/analysis/reload
 
 过滤参数：`from`、`to`、`source=db,bundle,sheet`、`player`、`hero`、`opponent`、`session`、`version`、`result`、`camp`、`includePartial=1`。
 
-单局全景单独走 `GET /api/review/{key}`，输入为 `data/matches/{key}.json` 数据包，可选关联 `data/official_replays/<camp-id>/` 的逐秒坐标与事件、`data/v2/<abc-sha>/builds.json` 的出装时间线。缺少官方回放或出装时仍返回终局数据，相关区块为空态。官方事件只覆盖资源/目标与建筑摧毁，不含英雄击杀，接口以 `coverage.heroKills=false` 标明，不会用资源事件补造击杀时间轴。
+单局全景单独走 `GET /api/review/{key}`，输入为 `data/matches/{key}.json` 数据包，可选关联 `data/official_replays/<camp-id>/` 的逐秒坐标与事件、`data/builds/<abc-sha>/builds.json` 的出装时间线。缺少官方回放或出装时仍返回终局数据，相关区块为空态。官方事件只覆盖资源/目标与建筑摧毁，不含英雄击杀，接口以 `coverage.heroKills=false` 标明，不会用资源事件补造击杀时间轴。
 
 ## 身份
 

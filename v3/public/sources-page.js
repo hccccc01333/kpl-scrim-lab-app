@@ -1,6 +1,6 @@
 /* 采集的三个素材来源页：截图 OCR / 录屏 / 回放。
  *
- * 全部走 V1 的根接口：
+ * 全部走工作台根接口：
  *   GET  /api/postgame/images        截图与其识别结果（images + groups）
  *   GET  /api/recordings             本机录屏及识别报告
  *   GET  /api/replays                回放解析结果
@@ -13,9 +13,9 @@
  * 录屏目前只读：挂载接口要求重新上传视频流，留在下一轮。
  */
 
-const V1_API = '/api/';
+const ROOT_API = '/api/';
 
-async function v1(path, { method = 'GET', body, signal, raw } = {}) {
+async function api(path, { method = 'GET', body, signal, raw } = {}) {
   const init = { method, cache: 'no-store', signal };
   if (raw) {
     init.body = raw;
@@ -23,12 +23,12 @@ async function v1(path, { method = 'GET', body, signal, raw } = {}) {
     init.headers = { 'Content-Type': 'application/json' };
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(V1_API + path, init);
+  const response = await fetch(ROOT_API + path, init);
   if (!response.ok) {
     let detail;
     try { detail = (await response.json()).detail; } catch { /* 非 JSON */ }
-    throw new Error(typeof detail === 'string' ? detail
-      : '采集接口不可用。素材页需要由 server.py 提供（V2 独立运行时不带采集）。');
+    const usable = typeof detail === 'string' && !/^Not Found$|^Internal Server Error$/i.test(detail);
+    throw new Error(usable ? detail : '素材数据暂时读不到，请稍后重试。');
   }
   return response.json();
 }
@@ -67,7 +67,8 @@ export function createSources(h) {
   const state = { name: '', value: null, busy: '', notice: null, openGroup: '',
     fps: localStorage.getItem('v3-recording-fps') || '1',
     engine: localStorage.getItem('v3-recording-engine') || 'mimo',
-    progress: '', poll: null };
+    progress: '', poll: null, pollFor: '', install: null, installWatch: null,
+    engineOpen: null };
   const PAGE_TITLE = { shots: '截图 OCR', videos: '录屏', replays: '回放' };
 
   // ---------------- 数据 ----------------
@@ -76,28 +77,32 @@ export function createSources(h) {
     state.name = name;
     let value;
     if (name === 'shots') {
-      const [images, channels] = await Promise.all([
-        v1('postgame/images', { signal }),
-        v1('channels', { signal }).catch(() => ({ channels: [] })),
+      const [images, channels, status, install] = await Promise.all([
+        api('postgame/images', { signal }),
+        api('channels', { signal }).catch(() => ({ channels: [] })),
+        api('ocr/status', { signal }).catch(() => ({})),
+        api('ocr/install', { signal }).catch(() => null),
       ]);
-      value = { images, channels };
+      value = { images, channels, status, install };
     } else if (name === 'videos') {
-      const [recordings, status] = await Promise.all([
-        v1('recordings', { signal }),
-        v1('ocr/status', { signal }).catch(() => ({})),
+      const [recordings, status, channels, install] = await Promise.all([
+        api('recordings', { signal }),
+        api('ocr/status', { signal }).catch(() => ({})),
+        api('channels', { signal }).catch(() => ({ channels: [] })),
+        api('ocr/install', { signal }).catch(() => null),
       ]);
-      value = { recordings, status };
+      value = { recordings, status, channels, install };
     } else if (name === 'capture') {
       const [spec, channels] = await Promise.all([
         fetch('/assets/capture-guide/requirements.json', { cache: 'no-store' })
           .then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        v1('channels', { signal }).catch(() => ({ channels: [] })),
+        api('channels', { signal }).catch(() => ({ channels: [] })),
       ]);
       value = { spec, channels };
     } else {
       const [replays, channels] = await Promise.all([
-        v1('replays', { signal }),
-        v1('channels', { signal }).catch(() => ({ channels: [] })),
+        api('replays', { signal }),
+        api('channels', { signal }).catch(() => ({ channels: [] })),
       ]);
       value = { replays, channels };
     }
@@ -131,25 +136,285 @@ export function createSources(h) {
     }).join('');
   }
 
+  /** 采集页「补录一局」新建的通道，带过来预选，省得在几十条里翻。 */
+  function pendingChannelId() {
+    try { return sessionStorage.getItem('cap-new-channel') || ''; } catch { return ''; }
+  }
+
+  function clearPendingChannel() {
+    try { sessionStorage.removeItem('cap-new-channel'); } catch { /* 无痕模式 */ }
+  }
+
+  // ---------------- 截图 / 录屏：共用的引导件 ----------------
+
+  /* 七个页签与 requirements.json 一一对应；页面里直接摆出来，教练不用再去翻采集规范。 */
+  const SHOT_PAGES = [
+    ['01', 'score', '战绩 · 装备型', '比分、胜负、时长、十人 KDA 与装备', '01-score-equipment.jpg'],
+    ['02', 'kda', '战绩 · KDA 占比', '击杀、死亡、助攻及各自占比', '02-score-kda.jpg'],
+    ['03', 'data', '数据', '输出、承伤、经济、参团率', '03-data.jpg'],
+    ['04', 'output', '输出', '输出伤害、伤害转化比', '04-output.jpg'],
+    ['05', 'survival', '生存', '承受伤害、每死承伤', '05-survival.jpg'],
+    ['06', 'farming', '发育', '总经济、野怪经济、补刀', '06-farming.jpg'],
+    ['07', 'team', '团队', '参团率、控制效果、治疗量、对塔', '07-team.jpg'],
+  ];
+  const SHOT_TYPES = SHOT_PAGES.map(([, type]) => type);
+
+  function steps(items, active) {
+    return `<ol class="src-steps">${items.map(([title, hint], index) => {
+      const cls = index < active ? 'is-done' : index === active ? 'is-on' : '';
+      return `<li class="${cls}"><i>${index < active ? '✓' : index + 1}</i>
+        <span><b>${esc(title)}</b><small>${esc(hint)}</small></span></li>`;
+    }).join('')}</ol>`;
+  }
+
+  function uploadZone({ id, accept, multiple, title, hint, note }) {
+    return `<label class="src-drop" for="${id}">
+      <input id="${id}" type="file" accept="${accept}" ${multiple ? 'multiple' : ''} data-source-file="${id === 'shot-files' ? 'images' : 'video'}">
+      <b>${esc(title)}</b><span>${esc(hint)}</span>
+      <small data-file-note>${esc(note || '还没有选择文件')}</small>
+    </label>`;
+  }
+
+  // ---------------- OCR 引擎：状态 + 一键安装 ----------------
+
+  function mimoState(value) {
+    const install = state.install || value?.install || null;
+    const status = value?.status || {};
+    const mimo = status.mimo || install?.mimo || {};
+    const rapid = status.rapid || {};
+    const ffmpeg = Boolean(status.ffmpeg && status.ffprobe);
+    const depsReady = Boolean(mimo.device) && mimo.device !== 'unavailable';
+    const modelReady = Boolean(mimo.available);
+    const freeBytes = Number(status.storage?.dbFreeBytes || 0);
+    const recordingsBytes = Number(status.recordings?.bytes || 0);
+    return {
+      install, mimo, rapid, ffmpeg, depsReady, modelReady, freeBytes, recordingsBytes,
+      diskEnough: !freeBytes || freeBytes >= 4 * 1024 ** 3,
+      running: Boolean(install?.running),
+      ready: depsReady && modelReady,
+    };
+  }
+
+  function enginePanel(value) {
+    const s = mimoState(value);
+    const install = s.install || {};
+    const percent = Math.max(0, Math.min(100, Number(install.percent) || 0));
+    const open = state.engineOpen === null ? !s.ready : Boolean(state.engineOpen);
+    const mimoLabel = s.ready ? '已安装' : s.running ? `安装中 ${percent}%` : '未安装';
+    const mimoChip = s.ready ? 'is-done' : s.running ? 'is-pending' : 'is-idle';
+
+    let mimoBody = '';
+    if (s.running) {
+      mimoBody = `<div class="src-engine-progress">
+        <div class="src-bar"><i style="width:${percent}%"></i></div>
+        <small>${esc(install.message || '正在安装…')}${percent ? ` · ${percent}%` : ''}</small>
+      </div>`;
+    } else if (install.phase === 'error') {
+      mimoBody = `<div class="src-engine-meta is-error">${esc(install.error || install.message || '安装失败')}</div>`;
+    } else if (s.ready) {
+      mimoBody = `<div class="src-engine-meta is-ok">已安装${s.mimo.device === 'cuda' ? '（CUDA 加速）' : '（CPU）'}，不用重启；数值和昵称比主 OCR 更准。</div>`;
+    } else {
+      mimoBody = `<div class="src-engine-meta">可选增强：数值和昵称更准，CPU 上整页约 2–3 分钟。装不装都不影响主 OCR。</div>`
+        + (s.diskEnough ? '' : `<div class="src-engine-meta is-error">磁盘只剩 ${bytes(s.freeBytes)}，安装至少要 4 GB。
+            ${s.recordingsBytes ? `录屏缓存占了 ${bytes(s.recordingsBytes)}，可以在录屏页删掉旧录像；` : ''}
+            也可以把工作台换到空间更大的盘再装。</div>`);
+    }
+    const installButton = s.ready || s.running ? ''
+      : `<button class="primary" data-source-action="install-mimo" ${s.diskEnough ? '' : 'disabled'}>${install.phase === 'error' ? '重试安装' : s.diskEnough ? '安装 Mimo' : '安装 Mimo（需 4 GB）'}</button>`;
+    const rapidButton = s.rapid.available || s.running ? ''
+      : `<button class="control" data-source-action="install-rapid" ${(!s.freeBytes || s.freeBytes >= 1024 ** 3) ? '' : 'disabled'}>安装主 OCR</button>`;
+
+    return `<section class="section src-engine${open ? ' is-open' : ''}" data-engine-panel>
+      <div class="src-engine-bar">
+        <b>识别引擎</b>
+        <span class="chip ${s.rapid.available ? 'is-done' : 'is-warn'}">主 OCR ${s.rapid.available ? '就绪' : '缺失'}</span>
+        <span class="chip ${mimoChip}">Mimo ${esc(mimoLabel)}</span>
+        <span class="chip ${s.ffmpeg ? 'is-done' : 'is-warn'}">ffmpeg ${s.ffmpeg ? '可用' : '未检测到'}</span>
+        <span class="src-engine-spacer"></span>
+        ${open ? '' : installButton}
+        <button class="control" data-source-action="engine-toggle">${open ? '收起' : '详情'}</button>
+      </div>
+      ${open ? `<div class="src-engine-body">
+        <div class="src-engine-row">
+          <b>主 OCR · rapidocr</b>
+          <i class="chip ${s.rapid.available ? 'is-done' : 'is-warn'}">${s.rapid.available ? '已就绪' : '缺失'}</i>
+          <small>随安装包发布，每页几秒；日常识别用它就够。</small>
+          ${rapidButton}
+        </div>
+        <div class="src-engine-row">
+          <b>Mimo 精读</b>
+          <i class="chip ${mimoChip}">${esc(mimoLabel)}</i>
+          <div class="src-engine-main">${mimoBody}</div>
+          ${installButton}
+        </div>
+        <div class="src-engine-row">
+          <b>ffmpeg</b>
+          <i class="chip ${s.ffmpeg ? 'is-done' : 'is-warn'}">${s.ffmpeg ? '可用' : '未检测到'}</i>
+          <div class="src-engine-main">${s.ffmpeg
+            ? '<small>录屏抽帧已可用。</small>'
+            : `<details class="src-ffmpeg"><summary>装好后点「重新检测」</summary>
+                <p>命令行执行 <code>winget install Gyan.FFmpeg</code>，或从 gyan.dev 下载解压，
+                把 <code>bin</code> 目录加进 PATH，然后回来点「重新检测」。</p></details>`}</div>
+        </div>
+      </div>` : ''}
+      <div class="src-engine-foot">
+        <button class="control" data-source-action="recheck-engine">重新检测</button>
+        <span>${s.running ? '安装可以切页面，装好后右下角会提示。'
+          : s.rapid.available
+            ? 'Mimo 约 2–4 GB（含模型），首次视网速 10–40 分钟；不装也不影响主 OCR。'
+            : `主 OCR 约 200 MB，装好就能识别；Mimo 另需 2–4 GB。当前磁盘剩余 ${bytes(s.freeBytes)}。`}</span>
+      </div>
+    </section>`;
+  }
+
+  // 安装进度挂在 body 上：切到对局、选手页也能看到，装完给提示。
+  let installWidget = null;
+
+  function ensureInstallWidget() {
+    if (installWidget && document.body.contains(installWidget)) return installWidget;
+    installWidget = document.createElement('div');
+    installWidget.id = 'ocr-install-widget';
+    installWidget.setAttribute('role', 'status');
+    installWidget.setAttribute('aria-live', 'polite');
+    installWidget.addEventListener('click', (event) => {
+      if (event.target.closest('[data-install-widget-close]')) renderInstallWidget(null);
+    });
+    document.body.appendChild(installWidget);
+    return installWidget;
+  }
+
+  function renderInstallWidget(status) {
+    const host = ensureInstallWidget();
+    if (!status || (!status.running && !['done', 'error'].includes(status.phase))) {
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+    const percent = Math.max(0, Math.min(100, Number(status.percent) || 0));
+    host.hidden = false;
+    if (status.running) {
+      const label = status.target === 'rapid' ? '主 OCR' : 'Mimo 精读';
+      host.innerHTML = `<div class="cap-progress-float is-live">
+        <div class="cap-progress-head"><b>正在安装${label}</b><span>${percent}%</span></div>
+        <div class="cap-progress-track"><i style="width:${percent}%"></i></div>
+        <small>${esc(status.message || '')}</small>
+        <p class="cap-widget-foot"><a href="#shots">回到截图 OCR</a><span>可以切页面</span></p>
+      </div>`;
+    } else if (status.phase === 'done') {
+      host.innerHTML = `<div class="cap-progress-float is-done">
+        <div class="cap-progress-head"><b>${status.target === 'rapid' ? '主 OCR 已装好' : 'Mimo 已装好'}</b>
+          <button type="button" class="cap-widget-x" data-install-widget-close aria-label="关闭">×</button></div>
+        <div class="cap-widget-text">不用重启，回到 OCR 页就能直接用。</div>
+        <p class="cap-widget-foot"><a href="#shots">去截图 OCR</a></p>
+      </div>`;
+    } else {
+      host.innerHTML = `<div class="cap-progress-float is-done is-error">
+        <div class="cap-progress-head"><b>安装失败</b>
+          <button type="button" class="cap-widget-x" data-install-widget-close aria-label="关闭">×</button></div>
+        <div class="cap-widget-text">${esc(status.error || status.message || '未知错误')}</div>
+        <p class="cap-widget-foot"><a href="#shots">回到 OCR 页重试</a></p>
+      </div>`;
+    }
+  }
+
+  function isOcrPage() {
+    return location.hash === '#shots' || location.hash === '#videos';
+  }
+
+  function paintEngine(status) {
+    const host = document.querySelector('[data-engine-panel]');
+    if (!host || !state.value) return;
+    const value = { ...state.value, install: status || state.install };
+    host.outerHTML = enginePanel(value);
+  }
+
+  function startInstallWatch() {
+    if (state.installWatch) return;
+    state.installWatch = setInterval(async () => {
+      let status;
+      try { status = await api('ocr/install'); } catch { return; }
+      state.install = status;
+      renderInstallWidget(status);
+      if (isOcrPage()) paintEngine(status);
+      if (status.running) return;
+      clearInterval(state.installWatch);
+      state.installWatch = null;
+      if (status.phase === 'done') {
+        setNotice(status.target === 'rapid'
+          ? '主 OCR 已安装完成，可以直接上传截图识别了。'
+          : 'Mimo 精读已安装完成，可以直接用，不用重启。');
+      }
+      if (status.phase === 'error') setNotice(`安装失败：${status.error || status.message}`, true);
+      setTimeout(() => renderInstallWidget(null), 15000);
+      if (isOcrPage()) { await refresh(); paint(); } else { paintEngine(status); }
+    }, 2000);
+  }
+
+  async function installOcr(target) {
+    try {
+      await api(`ocr/install?target=${encodeURIComponent(target)}`, { method: 'POST' });
+      state.install = await api('ocr/install');
+      setNotice(target === 'rapid'
+        ? '已开始安装主 OCR，可以切页面；装好后右下角会提示。'
+        : '已开始安装 Mimo，可以切页面；装好后右下角会提示。');
+      if (isOcrPage()) paint();
+      renderInstallWidget(state.install);
+      startInstallWatch();
+    } catch (error) {
+      setNotice(error.message, true);
+      paint();
+    }
+  }
+
+  function shotGuide() {
+    return `<section class="section src-guide" data-tour="shots-guide">
+      <div class="section-heading"><div><h2>一局要拍齐这七张</h2>
+        <p>同一个结算页把七个页签各截一张；「战绩」有两种显示方式，所以合计七张。少一张就不算齐。</p></div>
+        <div class="capture-actions"><a class="control" href="#videos">还要录屏 · 去录屏页 →</a></div>
+      </div>
+      <ol class="src-shots">${SHOT_PAGES.map(([no, , name, fields, file]) => `<li>
+        <a href="/assets/capture-guide/${file}" target="_blank" rel="noopener" title="点开看大图">
+          <img src="/assets/capture-guide/${file}" alt="${esc(name)}" loading="lazy"></a>
+        <b><i>${no}</i>${esc(name)}</b><small>${esc(fields)}</small>
+      </li>`).join('')}</ol>
+      <p class="src-note">示例图里昵称已经打码，只是教学用；<b>你上传的截图不要打码</b>——识别要靠昵称和数值，遮住反而要人工补十行。</p>
+      <ul class="src-rules">
+        <li><b>同一局</b>七张的日期、比分、十人阵容要一致</li>
+        <li><b>保留</b>顶部比分与日期、双方十人、列名、底部页签</li>
+        <li><b>不要</b>裁切、拼图、遮挡字段、加边框文字</li>
+        <li><b>原图</b>PNG / JPEG / WebP，别用聊天软件压过的图</li>
+      </ul>
+    </section>`;
+  }
+
+  /** 一组的七页覆盖度：缺哪页直接点名。 */
+  function groupCoverage(group, imageById) {
+    const present = new Set((group.imageIds || [])
+      .map((id) => imageById.get(id)?.pageType).filter(Boolean));
+    const missing = SHOT_PAGES.filter(([, type]) => !present.has(type));
+    return { present, missing, count: SHOT_TYPES.length - missing.length };
+  }
+
   // ---------------- 截图 ----------------
 
   function shotsPage(value) {
     const groups = value.images?.groups || [];
     const images = value.images?.images || [];
     const channels = value.channels?.channels || [];
-
     const imageById = new Map(images.map((image) => [image.id, image]));
-    const totalWarn = groups.reduce((sum, group) => sum + (group.warnings || []).length, 0);
-    const pages = groups.reduce((sum, group) => sum + (group.imageIds || []).length, 0);
-    const matched = groups.filter((group) => group.match?.date).length;
+    const identified = groups.reduce((sum, group) => sum + (group.imageIds || []).length, 0);
+    const complete = groups.filter((group) => groupCoverage(group, imageById).missing.length === 0).length;
+    const active = groups.length ? 2 : images.length ? 1 : 0;
 
     const cards = groups.map((group, index) => {
       const match = group.match || {};
       const open = state.openGroup === String(index);
       const ids = group.imageIds || [];
       const players = group.players || [];
-      const warned = (group.warnings || []).length;
-      const score = match.score ? `${match.score.left} : ${match.score.right}` : '—';
+      const { present, missing, count } = groupCoverage(group, imageById);
+      const score = match.score ? `${match.score.left} : ${match.score.right}` : '比分未识别';
+      const dots = SHOT_PAGES.map(([, type, name]) =>
+        `<i class="src-cov-dot ${present.has(type) ? 'is-on' : ''}" title="${esc(name)}${present.has(type) ? '' : '（缺）'}"></i>`).join('');
       const pageList = ids.map((id) => {
         const image = imageById.get(id);
         return `<li><b>${esc(image?.tab || image?.pageType || '页面')}</b>
@@ -160,51 +425,59 @@ export function createSources(h) {
         const side = player.side === 'left' ? '左' : '右';
         const nick = player.nickname?.value || player.nickname?.raw || '';
         const hero = player.hero?.value || player.hero?.raw || '';
-        return `<span class="shot-player"><small>${side}${(player.slot ?? 0) + 1}</small><b>${text(nick)}</b><i>${text(hero)}</i></span>`;
+        return `<span class="shot-player is-mini"><small>${side}${(player.slot ?? 0) + 1}</small><b>${text(nick)}</b><i>${text(hero)}</i></span>`;
       }).join('');
 
-      return `<article class="shot-card">
+      return `<article class="shot-card${missing.length ? ' is-warn' : ' is-ok'}">
         <header class="shot-head">
           <div><h3>${esc(match.date || '未归档的一局')}${match.time ? ` · ${esc(match.time)}` : ''}</h3>
             <p>${esc(match.mode || '模式未知')} · ${seconds(match.durationSec)} · ${esc(score)} · ${match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '结果未知'}</p></div>
-          <div class="shot-meta"><span>${ids.length} 页</span>${warned ? `<span class="result pending">${warned} 条提示</span>` : '<span class="result">无提示</span>'}</div>
+          <span class="src-badge ${missing.length ? 'is-warn' : 'is-ok'}">${count} / 7 页${missing.length ? ` · 缺 ${missing.map(([, , name]) => name).join('、')}` : ' · 齐了'}</span>
         </header>
+        <div class="src-cov">${dots}<small>${missing.length ? `还差 ${missing.length} 页` : '七页齐全'}</small></div>
         <div class="shot-players">${playerList || '<span class="capture-hint">这一组还没有识别出选手。</span>'}</div>
         <details class="shot-detail" ${open ? 'open' : ''} data-open-group="${index}">
-          <summary>查看 ${ids.length} 页明细与提示</summary>
+          <summary>${ids.length} 页明细${(group.warnings || []).length ? ` · ${group.warnings.length} 条提示` : ''}</summary>
           <ol class="shot-pages">${pageList}</ol>
           ${(group.warnings || []).length ? `<ul class="shot-warnings">${group.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
         </details>
         <footer class="shot-actions">
-          <select data-shot-channel="${index}"><option value="">选择采集通道…</option>${channelOptions(channels)}</select>
-          <button class="control" data-source-action="attach-shots" data-group="${index}" ${ids.length ? '' : 'disabled'}>挂到所选通道</button>
+          <select data-shot-channel="${index}"><option value="">挂到哪一局…</option>${channelOptions(channels, pendingChannelId())}</select>
+          <button class="primary" data-source-action="attach-shots" data-group="${index}" ${ids.length ? '' : 'disabled'}>挂到这一局</button>
         </footer>
       </article>`;
     }).join('');
 
-    return withPage('截图 OCR', '兜底路径：营地十人面板拿不到时才走这里 —— 七张截图 + 一段录屏，两者一起才能过审核门槛。纯本机识别，不联网。',
-      scopeNote()
-      + noticeBox()
-      + stats([
-        ['截图分组', fmt(groups.length), `${fmt(matched)} 组已识别出对局日期`],
-        ['截图页数', fmt(pages), `共 ${images.length} 张`],
-        ['待处理提示', fmt(totalWarn), totalWarn ? '展开各组查看具体条目' : '当前没有问题项'],
-        ['可挂载组', fmt(groups.filter((g) => (g.imageIds || []).length).length), '有页面才能挂到通道'],
-      ])
-      + uploadBlock()
-      + block('已识别的截图分组', '每组对应一局；挂载后该局的截图来源会标记为完成。',
-        `<div class="shot-grid">${cards || empty('还没有识别过赛后截图。')}</div>`)
-      , false);
-  }
-
-  function uploadBlock() {
-    return block('上传截图', '支持 PNG / JPEG / WebP，可一次多选；上传后自动排队识别。',
-      `<div class="capture-inline-form">
-        <label>选择截图<input type="file" multiple accept="image/png,image/jpeg,image/webp" data-source-file="images"></label>
-        <button class="primary" data-source-action="upload-shots" ${state.busy === 'upload' ? 'disabled' : ''}>${state.busy === 'upload' ? '正在上传…' : '上传并识别'}</button>
-       </div>
-       <p class="capture-hint">识别在本机完成；一页通常几秒，Mimo 精读在 CPU 上整页约 2–3 分钟。</p>`,
-      `<button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>`);
+    return withPage('截图 OCR', '营地拿不到的局走这条：同一局七张赛后截图。拍什么、传到哪、挂给谁，这一页里都能做完。',
+      `<div class="src-page">
+        ${noticeBox()}
+        ${steps([['拍齐七张', '同一局，七个页签'], ['上传识别', '本机识别，不联网'], ['挂到对局', '把分组挂到那一局']], active)}
+        ${enginePanel(value)}
+        ${shotGuide()}
+        <section class="section src-upload" data-tour="shots-upload">
+          <div class="section-heading"><div><h2>上传这七张</h2>
+            <p>可一次多选；上传后按日期和比分自动分组，识别完在下面挂到对应对局。</p></div>
+            <div class="capture-actions">
+              <span class="src-count">${fmt(images.length)} 张 · ${fmt(groups.length)} 组</span>
+              <button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>
+            </div>
+          </div>
+          <div class="src-upload-body">
+            ${uploadZone({ id: 'shot-files', accept: 'image/png,image/jpeg,image/webp', multiple: true,
+              title: '选择截图', hint: 'PNG / JPEG / WebP，可一次多选' })}
+            <button class="primary" data-source-action="upload-shots" ${state.busy === 'upload' ? 'disabled' : ''}>
+              ${state.busy === 'upload' ? '正在上传…' : '上传并识别'}</button>
+          </div>
+          <p class="capture-hint">识别在本机完成；一页通常几秒，Mimo 精读整页约 2–3 分钟，可以先去挂别的组。</p>
+        </section>
+        <section class="section src-results" data-tour="shots-results">
+          <div class="section-heading"><div><h2>识别结果</h2>
+            <p>${groups.length
+              ? `共 ${fmt(groups.length)} 组 · ${fmt(complete)} 组七页齐全；每组挂到一局后，这局的截图来源就算完成。`
+              : '上传后这里会按日期和比分自动分组，一组对应一局。'}</p></div></div>
+          <div class="shot-grid">${cards || `<p class="src-empty">还没有识别过赛后截图。先传一局的七张图。</p>`}</div>
+        </section>
+      </div>`, false);
   }
 
   // ---------------- 录屏 ----------------
@@ -217,11 +490,13 @@ export function createSources(h) {
 
   function stopPoll() {
     if (state.poll) { clearInterval(state.poll); state.poll = null; }
+    state.pollFor = '';
   }
 
   /** 有任务在跑时每 3 秒刷新一次；任务清空后自动停。 */
   function startPoll() {
     stopPoll();
+    state.pollFor = 'videos';
     state.poll = setInterval(async () => {
       try {
         const value = await load('videos', '', undefined);
@@ -236,28 +511,68 @@ export function createSources(h) {
     }, 3000);
   }
 
+  function videoGuide(maxBytes) {
+    return `<section class="section src-guide" data-tour="videos-guide">
+      <div class="section-heading"><div><h2>一局要录成这样</h2>
+        <p>从回放列表 / 加载页开始，到赛后结算页停；中间不剪辑、不拖进度、不开倍速。</p></div>
+        <div class="capture-actions"><a class="control" href="#shots">还要七张截图 · 去截图页 →</a></div>
+      </div>
+      <ol class="src-timeline">
+        <li><i>1</i><div><b>开始 · 约 5 秒</b><span>录到回放列表 / 加载页，双方十人英雄和昵称要清楚，再完整录到局内 00:00。</span></div></li>
+        <li><i>2</i><div><b>整局 · 1 倍速</b><span>保留顶部时钟、比分、双方团队金币；团队面板尽量全程开着。</span></div></li>
+        <li><i>3</i><div><b>结束 · 约 5 秒</b><span>录过水晶结束、胜负动画，停在赛后战绩页再停止。</span></div></li>
+      </ol>
+      <div class="src-examples">
+        <figure><a href="/assets/capture-guide/recording-loading.png" target="_blank" rel="noopener">
+          <img src="/assets/capture-guide/recording-loading.png" alt="加载页示例" loading="lazy"></a>
+          <figcaption>加载页：双方十人英雄 + 昵称</figcaption></figure>
+        <figure><a href="/assets/capture-guide/recording-panel.png" target="_blank" rel="noopener">
+          <img src="/assets/capture-guide/recording-panel.png" alt="团队面板示例" loading="lazy"></a>
+          <figcaption>团队面板：双方各五人 KDA + 累计金币</figcaption></figure>
+      </div>
+      <p class="src-note">示例里昵称已经打码，只是教学用；<b>你录的原片不用做任何处理</b>，直接上传完整录像即可。</p>
+      <ul class="src-rules">
+        <li><b>记分板</b>00:30、之后每 5 分钟、结束前，各开 ≥5 秒</li>
+        <li><b>格式</b>横屏 1080p / 30 fps；mp4、mov、mkv、webm</li>
+        <li><b>大小</b>单文件上限 ${bytes(maxBytes)}</li>
+        <li><b>不要</b>剪辑、倍速、单英雄可用金币代替累计经济</li>
+      </ul>
+    </section>`;
+  }
+
   function uploadVideosBlock(value) {
     const status = value.status || {};
     const statsInfo = value.recordings?.stats || {};
+    const recordings = value.recordings?.recordings || [];
     const ready = Boolean(status.ffmpeg && status.ffprobe);
     const maxBytes = Number(statsInfo.maxBytes || 0);
 
     const fpsOptions = FPS_OPTIONS.map(([v, label]) =>
       `<option value="${v}" ${state.fps === v ? 'selected' : ''}>${esc(label)}</option>`).join('');
-    const engineOptions = ENGINE_OPTIONS.map(([v, label]) =>
-      `<option value="${v}" ${state.engine === v ? 'selected' : ''}>${esc(label)}</option>`).join('');
+    const engineOptions = ENGINE_OPTIONS.map(([v, label]) => {
+      const usable = v !== 'mimo' || mimoState(value).ready;
+      const selected = state.engine === v && usable;
+      return `<option value="${v}" ${selected ? 'selected' : ''} ${usable ? '' : 'disabled'}>${esc(label)}${usable ? '' : '（未安装）'}</option>`;
+    }).join('');
 
-    const body = `<div class="capture-inline-form">
-        <label>录像文件<input type="file" accept="video/*,.mp4,.mov,.mkv,.webm,.avi" data-source-file="video" ${ready ? '' : 'disabled'}></label>
-        <label>采样帧率<select data-recording-fps>${fpsOptions}</select></label>
-        <label>识别方式<select data-recording-engine>${engineOptions}</select></label>
+    return `<section class="section src-upload" data-tour="videos-upload">
+      <div class="section-heading"><div><h2>上传录像</h2>
+        <p>一份完整录像即可；上传后自动排队抽帧识别，不用再手工触发。</p></div>
+        <div class="capture-actions">
+          <span class="src-count">${fmt(recordings.length)} 段 · ${bytes(statsInfo.bytes)} / ${bytes(maxBytes)}</span>
+        </div>
+      </div>
+      <div class="src-upload-body">
+        ${uploadZone({ id: 'video-file', accept: 'video/*,.mp4,.mov,.mkv,.webm,.avi', multiple: false,
+          title: '选择录像', hint: 'mp4 / mov / mkv / webm，上限 ' + bytes(maxBytes) })}
+        <label class="src-field">采样帧率<select data-recording-fps>${fpsOptions}</select></label>
+        <label class="src-field">识别方式<select data-recording-engine>${engineOptions}</select></label>
         <button class="primary" data-source-action="upload-recording" ${ready ? '' : 'disabled'}>
           ${state.busy === 'upload' ? '正在上传…' : '上传并识别'}</button>
       </div>
-      <p class="capture-hint" data-upload-progress>${esc(state.progress || '')}</p>
-      <p class="capture-hint">上限 ${bytes(maxBytes)} · 识别在本机完成；Mimo 精读在 CPU 上偏慢，只是看时间轴和金币可以选「仅快速布局」。</p>`;
-
-    return block('上传录屏', '一份完整录像即可；上传后自动排队识别，不需要再手工触发。', body);
+      <p class="src-progress" data-upload-progress>${esc(state.progress || '')}</p>
+      <p class="capture-hint">识别在本机完成。Mimo 精读更细但慢（CPU 上整段偏久）；只想看时间轴和金币，选「仅快速布局」。</p>
+    </section>`;
   }
 
   function uploadRecording() {
@@ -295,7 +610,7 @@ export function createSources(h) {
     };
     xhr.onerror = () => {
       state.busy = '';
-      setNotice('上传失败，请确认本地服务仍在运行。', true);
+      setNotice('这次上传没有完成，请重试一次。', true);
       paint();
     };
     xhr.onload = async () => {
@@ -308,14 +623,18 @@ export function createSources(h) {
         return;
       }
       setProgress('上传完成，正在排队识别…');
+      // 选了 Mimo 但没装：自动退回主 OCR，并说明原因，不让上传白等。
+      const engine = state.engine === 'mimo' && !mimoState(state.value).ready ? 'rapid' : state.engine;
       try {
-        await v1(`recordings/${encodeURIComponent(payload.id)}/ocr`
+        await api(`recordings/${encodeURIComponent(payload.id)}/ocr`
           + `?fps=${encodeURIComponent(state.fps)}`
-          + `&engine=${encodeURIComponent(state.engine)}`
+          + `&engine=${encodeURIComponent(engine)}`
           + '&force=false', { method: 'POST' });
         state.busy = '';
         state.progress = '';
-        setNotice('已开始识别，进度会自动刷新。');
+        setNotice(engine === 'mimo'
+          ? '已开始识别，进度会自动刷新。'
+          : '没装 Mimo，这次用主 OCR 识别；装好后可以点「重新识别」再跑一遍。');
         await refresh();
         paint();
         startPoll();
@@ -333,9 +652,10 @@ export function createSources(h) {
     setNotice('正在提交重新识别…');
     paint();
     try {
-      await v1(`recordings/${encodeURIComponent(id)}/ocr`
+      const engine = state.engine === 'mimo' && !mimoState(state.value).ready ? 'rapid' : state.engine;
+      await api(`recordings/${encodeURIComponent(id)}/ocr`
         + `?fps=${encodeURIComponent(state.fps)}`
-        + `&engine=${encodeURIComponent(state.engine)}`
+        + `&engine=${encodeURIComponent(engine)}`
         + '&force=true', { method: 'POST' });
       await refresh();
       setNotice('已重新提交识别。');
@@ -351,35 +671,45 @@ export function createSources(h) {
 
   function videosPage(value) {
     const recordings = value.recordings?.recordings || [];
+    const channels = value.channels?.channels || [];
     const statsInfo = value.recordings?.stats || {};
     const ocr = value.status || {};
     const ffmpegOk = Boolean(ocr.ffmpeg && ocr.ffprobe);
+    const done = recordings.filter((rec) => rec.report?.available).length;
+    const running = recordings.filter((rec) => rec.status && !['done', 'error', 'canceled'].includes(rec.status)).length;
+    const active = running ? 1 : recordings.length ? 2 : 0;
 
     const rows = recordings.map((recording) => {
       const report = recording.report || {};
       const coverage = report.coverage || {};
       const ratio = recording.status === 'done' ? 100 : Number(recording.progress || 0);
       const evidence = (recording.evidence || []).length;
-      return `<article class="shot-card">
+      const warningCount = Number(report.warnings || 0);
+      const statusText = recording.status === 'done' ? '识别完成'
+        : recording.status === 'error' ? '识别失败'
+          : recording.stage || '排队中';
+      return `<article class="shot-card${recording.status === 'done' ? ' is-ok' : ''}">
         <header class="shot-head">
           <div><h3>${text(recording.name)}</h3>
             <p>${seconds(recording.video?.duration)} · ${recording.video?.width || '—'}×${recording.video?.height || '—'} · ${recording.video?.fps || '—'} fps · ${bytes(recording.size)}</p></div>
-          <div class="shot-meta">
-            <span class="result ${recording.status === 'done' ? '' : 'pending'}">${esc(recording.stage || recording.status || '未知')}</span>
-            <span>${ratio}%</span>
-          </div>
+          <span class="src-badge ${recording.status === 'done' ? 'is-ok' : recording.status === 'error' ? 'is-warn' : 'is-doing'}">${esc(statusText)}</span>
         </header>
+        <div class="src-bar" aria-hidden="true"><i style="width:${Math.min(100, Math.max(0, ratio))}%"></i></div>
         <div class="shot-players">
-          <span class="shot-player"><small>采样</small><b>${fmt(coverage.samples)}</b><i>帧</i></span>
-          <span class="shot-player"><small>计时</small><b>${fmt(coverage.clock)}</b><i>帧</i></span>
-          <span class="shot-player"><small>蓝方击杀</small><b>${fmt(coverage.blueKills)}</b><i>次</i></span>
-          <span class="shot-player"><small>红方击杀</small><b>${fmt(coverage.redKills)}</b><i>次</i></span>
-          <span class="shot-player"><small>证据帧</small><b>${fmt(evidence)}</b><i>张</i></span>
-          <span class="shot-player"><small>提示</small><b>${fmt(report.warnings)}</b><i>条</i></span>
+          <span class="shot-player is-mini"><small>进度</small><b>${ratio}</b><i>%</i></span>
+          <span class="shot-player is-mini"><small>采样</small><b>${fmt(coverage.samples)}</b><i>帧</i></span>
+          <span class="shot-player is-mini"><small>计时</small><b>${fmt(coverage.clock)}</b><i>帧</i></span>
+          <span class="shot-player is-mini"><small>击杀</small><b>${fmt(coverage.blueKills)} : ${fmt(coverage.redKills)}</b><i>蓝 : 红</i></span>
+          <span class="shot-player is-mini"><small>证据帧</small><b>${fmt(evidence)}</b><i>张</i></span>
+          <span class="shot-player is-mini"><small>提示</small><b>${fmt(warningCount)}</b><i>条</i></span>
         </div>
         ${recording.error ? `<p class="capture-hint is-error">${esc(recording.error)}</p>` : ''}
         <footer class="shot-actions">
-          <span class="capture-hint">${report.available ? '识别报告已生成' : '还没有识别报告'} · 引擎 ${text(recording.engine)} · 采样 ${text(recording.sampleFps)} fps</span>
+          <select data-recording-channel="${esc(recording.id)}">
+            <option value="">挂到哪一局…</option>${channelOptions(channels)}
+          </select>
+          <button class="primary" data-source-action="attach-recording" data-recording="${esc(recording.id)}"
+            ${report.available ? '' : 'disabled'} title="${report.available ? '' : '先识别出报告才能挂载'}">把报告挂到这一局</button>
           <button class="control" data-source-action="rerun-recording" data-recording="${esc(recording.id)}"
             ${Number(recording.progress) > 0 && recording.status !== 'done' ? 'disabled' : ''}>
             ${state.busy === `rerun-${recording.id}` ? '正在提交…' : '重新识别'}</button>
@@ -387,20 +717,46 @@ export function createSources(h) {
       </article>`;
     }).join('');
 
-    return withPage('录屏', '兜底路径：与七张截图成对使用；已导入营地十人面板时不需要录屏。',
-      scopeNote()
-      + noticeBox()
-      + (ffmpegOk ? '' : `<div class="capture-notice is-error" role="status">未检测到 ffmpeg / ffprobe，录屏抽帧不可用。请先安装并加入 PATH。</div>`)
-      + stats([
-        ['本机录屏', fmt(recordings.length), `占用 ${bytes(statsInfo.bytes)} / 上限 ${bytes(statsInfo.maxBytes)}`],
-        ['已出报告', fmt(recordings.filter((r) => r.report?.available).length), '识别完成后可生成报告'],
-        ['识别中', fmt(recordings.filter((r) => r.status && r.status !== 'done').length), '按进度显示'],
-        ['剩余空间', bytes(statsInfo.freeBytes), '录屏目录所在磁盘'],
-      ])
-      + block('本机录屏', '一份录屏对应一次抽帧识别，不创建正式比赛，也不进入英雄胜率。',
-        `<div class="shot-grid">${rows || empty('还没有上传过录屏。')}</div>`)
-      + uploadVideosBlock(value)
-      , false);
+    return withPage('录屏 OCR', '与七张截图成对使用：每局一段完整录像。录什么、怎么传、挂到哪一局，这一页里都能做完。',
+      `<div class="src-page">
+        ${noticeBox()}
+        ${ffmpegOk ? '' : `<div class="capture-notice is-error" role="status">未检测到 ffmpeg / ffprobe，录屏抽帧不可用。请先安装并加入 PATH。</div>`}
+        ${steps([['录一局', '加载页 → 整局 → 结算'], ['上传识别', '本机抽帧，不联网'], ['挂到对局', '把报告挂到那一局']], active)}
+        ${enginePanel(value)}
+        ${videoGuide(Number(statsInfo.maxBytes || 0))}
+        ${uploadVideosBlock(value)}
+        <section class="section src-results" data-tour="videos-results">
+          <div class="section-heading"><div><h2>本机录屏</h2>
+            <p>${recordings.length
+              ? `共 ${fmt(recordings.length)} 段 · ${fmt(done)} 段已出报告${running ? ` · ${fmt(running)} 段识别中` : ''}；识别完成后把报告挂到对应对局。`
+              : '还没有上传过录屏。上传后这里按状态显示进度与报告。'}</p></div>
+            <div class="capture-actions"><button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button></div>
+          </div>
+          <div class="shot-grid">${rows || `<p class="src-empty">还没有上传过录屏。先按上面的三段录一局。</p>`}</div>
+        </section>
+      </div>`, false);
+  }
+
+  /** 把某段录屏的识别报告挂到一局（报告 JSON 直接作为请求体）。 */
+  async function attachRecording(id) {
+    const select = document.querySelector(`[data-recording-channel="${id}"]`);
+    const channelId = select?.value;
+    if (!channelId) { setNotice('先选要挂到哪一局。', true); paint(); return; }
+    state.busy = `attach-${id}`;
+    setNotice('正在挂载录屏报告…');
+    paint();
+    try {
+      const report = await api(`recordings/${encodeURIComponent(id)}/report`);
+      await api(`channels/${encodeURIComponent(channelId)}/video?name=${encodeURIComponent(`录像报告-${id}.json`)}`,
+        { method: 'POST', raw: JSON.stringify(report) });
+      await refresh();
+      setNotice('录屏报告已挂到这一局；和七张截图凑齐后就能在缺失值审查里保存。');
+    } catch (error) {
+      setNotice(`挂载失败：${error.message}`, true);
+    } finally {
+      state.busy = '';
+      paint();
+    }
   }
 
   // ---------------- 回放 ----------------
@@ -437,7 +793,7 @@ export function createSources(h) {
               fmt(block.score, 1), fmt(block.goldEvents), fmt(block.skillEvents)]))}
         </details>
         <footer class="shot-actions">
-          <select data-replay-channel="${index}"><option value="">选择采集通道…</option>${channelOptions(channels)}</select>
+          <select data-replay-channel="${index}"><option value="">选择要挂载的对局…</option>${channelOptions(channels, pendingChannelId())}</select>
           <button class="control" data-source-action="attach-replay" data-replay="${esc(abc.sha256 || '')}" data-index="${index}">挂到所选通道</button>
         </footer>
       </article>`;
@@ -450,7 +806,7 @@ export function createSources(h) {
         ['已解析回放', fmt(replays.length), '来自本机回放文件'],
         ['已配对的', fmt(replays.filter((r) => !r.pairingStatus).length), '没有配对冲突的'],
         ['十人齐全', fmt(replays.filter((r) => (r.blocks || []).length >= 10).length), '解析出完整名单'],
-        ['采集通道', fmt(channels.length), '可挂载到任一通道'],
+        ['对局通道', fmt(channels.length), '可挂载到任一审查记录'],
       ])
       + block('回放文件', '回放只补位置与指令，不补赛后统计；终局数值仍以截图或数据包为准。',
         `<div class="shot-grid">${cards || empty('还没有解析过回放文件。')}</div>`)
@@ -462,7 +818,7 @@ export function createSources(h) {
   }
 
   function scopeNote() {
-    return backLink() + '<div class="scope-note"><span>口径</span> 本页直接读 V1 的本机素材库，'
+    return backLink() + '<div class="scope-note"><span>口径</span> 本页直接读本机素材库，'
       + '不受顶部「数据范围」影响；素材可能包含非训练赛。</div>';
   }
 
@@ -553,9 +909,9 @@ export function createSources(h) {
     let done = 0;
     for (const file of files) {
       try {
-        const uploaded = await v1(`images?name=${encodeURIComponent(file.name)}`, { method: 'POST', raw: file });
+        const uploaded = await api(`images?name=${encodeURIComponent(file.name)}`, { method: 'POST', raw: file });
         if (uploaded?.id) {
-          await v1(`postgame/images/${encodeURIComponent(uploaded.id)}/ocr`, { method: 'POST' });
+          await api(`postgame/images/${encodeURIComponent(uploaded.id)}/ocr`, { method: 'POST' });
           done += 1;
         }
       } catch (error) {
@@ -565,15 +921,40 @@ export function createSources(h) {
     state.busy = '';
     await refresh();
     setNotice(failed.length
-      ? `已识别 ${done} 张，失败 ${failed.length} 张：${failed[0]}`
-      : `已上传并识别 ${done} 张截图。`, failed.length > 0);
+      ? `已上传 ${done} 张，失败 ${failed.length} 张：${failed[0]}`
+      : `已上传 ${done} 张截图，识别排队中；识别完会自动分组，不用手动刷新。`, failed.length > 0);
     paint();
+    startShotsPoll();
+  }
+
+  /** 截图 OCR 是排队跑的：上传后自动轮询，等所有图都进了分组就停。 */
+  function startShotsPoll() {
+    stopPoll();
+    state.pollFor = 'shots';
+    let ticks = 0;
+    state.poll = setInterval(async () => {
+      ticks += 1;
+      try {
+        const value = await load('shots', '', undefined);
+        if (state.name !== 'shots') { stopPoll(); return; }
+        paint();
+        const images = value.images?.images || [];
+        const groups = value.images?.groups || [];
+        const grouped = new Set(groups.flatMap((group) => group.imageIds || []));
+        const pending = images.filter((image) => !grouped.has(image.id)).length;
+        if (!pending || ticks >= 30) {
+          stopPoll();
+          if (!pending) setNotice(`七张截图已识别并分组（${groups.length} 组）。`);
+          paint();
+        }
+      } catch { /* 单次失败不打断轮询 */ }
+    }, 4000);
   }
 
   async function attachShots(index) {
     const select = document.querySelector(`[data-shot-channel="${index}"]`);
     const channelId = select?.value;
-    if (!channelId) { setNotice('先为这一组选择一个采集通道。', true); paint(); return; }
+    if (!channelId) { setNotice('先为这一组选择一个要挂载的对局。', true); paint(); return; }
     const groups = state.value?.images?.groups || [];
     const imageIds = groups[Number(index)]?.imageIds || [];
     if (!imageIds.length) { setNotice('这一组没有可挂载的截图。', true); paint(); return; }
@@ -581,8 +962,10 @@ export function createSources(h) {
     setNotice(`正在把 ${imageIds.length} 页截图挂到通道…`);
     paint();
     try {
-      await v1(`channels/${encodeURIComponent(channelId)}/screenshot`, { method: 'POST', body: { imageIds } });
+      await api(`channels/${encodeURIComponent(channelId)}/screenshot`, { method: 'POST', body: { imageIds } });
       await refresh();
+      // 补录过来的那局已经用上了，别再预选下一次。
+      if (pendingChannelId() === channelId) clearPendingChannel();
       setNotice(`已挂载 ${imageIds.length} 页截图到该通道。`);
     } catch (error) {
       setNotice(error.message, true);
@@ -595,12 +978,12 @@ export function createSources(h) {
   async function attachReplay(index, replayId) {
     const select = document.querySelector(`[data-replay-channel="${index}"]`);
     const channelId = select?.value;
-    if (!channelId) { setNotice('先为这份回放选择一个采集通道。', true); paint(); return; }
+    if (!channelId) { setNotice('先为这份回放选择一个要挂载的对局。', true); paint(); return; }
     state.busy = 'attach';
     setNotice('正在挂载回放…');
     paint();
     try {
-      await v1(`channels/${encodeURIComponent(channelId)}/replay`, { method: 'POST', body: { replayId } });
+      await api(`channels/${encodeURIComponent(channelId)}/replay`, { method: 'POST', body: { replayId } });
       await refresh();
       setNotice('回放已挂到该通道。');
     } catch (error) {
@@ -625,6 +1008,11 @@ export function createSources(h) {
     if (action === 'upload-recording') { uploadRecording(); return true; }
     if (action === 'rerun-recording') { await rerunRecording(button.dataset.recording); return true; }
     if (action === 'attach-shots') { await attachShots(button.dataset.group); return true; }
+    if (action === 'attach-recording') { await attachRecording(button.dataset.recording); return true; }
+    if (action === 'install-mimo') { await installOcr('mimo'); return true; }
+    if (action === 'install-rapid') { await installOcr('rapid'); return true; }
+    if (action === 'engine-toggle') { state.engineOpen = !(state.engineOpen ?? false); paint(); return true; }
+    if (action === 'recheck-engine') { await refresh(); setNotice('已重新检测引擎状态。'); paint(); return true; }
     if (action === 'attach-replay') {
       await attachReplay(button.dataset.index, button.dataset.replay);
       return true;
@@ -633,6 +1021,17 @@ export function createSources(h) {
   }
 
   function change(event) {
+    const files = event.target.closest('[data-source-file]');
+    if (files) {
+      const picked = files.files ? [...files.files] : [];
+      const note = files.closest('.src-drop')?.querySelector('[data-file-note]');
+      if (note) {
+        note.textContent = picked.length
+          ? `已选择 ${picked.length} 个：${picked.slice(0, 3).map((file) => file.name).join('、')}${picked.length > 3 ? '…' : ''}`
+          : '还没有选择文件';
+      }
+      return true;
+    }
     const fps = event.target.closest('[data-recording-fps]');
     if (fps) { state.fps = fps.value; localStorage.setItem('v3-recording-fps', fps.value); return true; }
     const engine = event.target.closest('[data-recording-engine]');
@@ -644,8 +1043,22 @@ export function createSources(h) {
     // 切换页签时清掉上一次的提示，避免串页
     if (!['#shots', '#videos', '#replays'].includes(location.hash)) state.notice = null;
     // 离开录屏页就停掉轮询，别继续打接口
-    if (location.hash !== '#videos') stopPoll();
+    if (state.pollFor && location.hash !== '#' + state.pollFor) stopPoll();
+    // 安装是服务端的活：回到 OCR 页发现还在装，就接着显示进度（切页面不会中断）。
+    const install = state.value?.install;
+    if (install && (install.running || install.phase === 'done' || install.phase === 'error')) {
+      state.install = install;
+      if (install.running) {
+        renderInstallWidget(install);
+        startInstallWatch();
+      }
+    }
   }
 
   return { load, render, click, change, afterRender };
 }
+
+
+
+
+

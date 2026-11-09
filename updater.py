@@ -28,6 +28,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from paths import data_root
 from update_client import (
     UpdateError,
     check_for_update,
@@ -269,7 +270,7 @@ def item_digest(files: list[dict], path: str) -> str:
 def _backup_files(target: Path, paths, current_version: str) -> Path:
     stamp = time.strftime('%Y%m%d-%H%M%S')
     safe_version = re.sub(r'[^0-9A-Za-z._-]+', '_', current_version)
-    backup = Path(target) / 'data' / 'backups' / f'code-{safe_version}-{stamp}'
+    backup = data_root(target) / 'backups' / f'code-{safe_version}-{stamp}'
     records = []
     for path in sorted(set(paths)):
         destination = Path(target) / path
@@ -305,7 +306,7 @@ def restore_backup(backup: Path, target: Path | None = None) -> None:
 
 
 def _prune_backups(target: Path) -> None:
-    root = Path(target) / 'data' / 'backups'
+    root = data_root(target) / 'backups'
     if not root.is_dir():
         return
     entries = sorted((item for item in root.iterdir()

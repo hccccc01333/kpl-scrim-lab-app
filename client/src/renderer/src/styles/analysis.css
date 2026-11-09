@@ -1,0 +1,1759 @@
+/* 单局深度分析。只使用 tokens.css 的变量，纸本 / 比赛房共用一套结构。 */
+
+:root {
+  --md-own: var(--gold);
+  --md-foe: var(--accent);
+  --md-own-rgb: 173, 125, 44;
+  --md-foe-rgb: 14, 101, 91;
+  --md-own-soft: color-mix(in srgb, var(--md-own) 14%, transparent);
+  --md-foe-soft: color-mix(in srgb, var(--md-foe) 13%, transparent);
+}
+
+:root[data-theme='dark'] {
+  --md-own-rgb: 224, 189, 122;
+  --md-foe-rgb: 94, 201, 190;
+}
+
+/* ── 结论与锚点 ─────────────────────────────────────────────────── */
+
+.md-page {
+  --md-gap: 22px;
+  gap: var(--md-gap);
+}
+
+.md-verdict {
+  display: grid;
+  gap: 6px;
+}
+
+.md-verdict h2 {
+  color: var(--ink-text);
+  font-family: var(--serif);
+  font-size: clamp(22px, 2.1vw, 30px);
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1.3;
+}
+
+.md-verdict p {
+  color: var(--ink-muted);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.md-jump {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: color-mix(in srgb, var(--bg) 97%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.md-jump button {
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .04em;
+}
+
+.md-jump button:hover {
+  border-color: var(--line);
+  color: var(--text);
+  background: var(--paper);
+}
+
+.md-section {
+  scroll-margin-top: 44px;
+}
+
+#match-verdict,
+.md-totals-band {
+  scroll-margin-top: 48px;
+}
+
+.md-scope-note {
+  margin-top: 12px;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  color: var(--quiet);
+  font-size: 9.5px;
+  line-height: 1.65;
+}
+
+/* ── 总量带 ─────────────────────────────────────────────────────── */
+
+.md-totals-band {
+  display: grid;
+  gap: 10px;
+  padding: 18px 24px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--paper-2);
+}
+
+.md-totals-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.md-totals-head span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+
+.md-totals-head small {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.md-totals {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+}
+
+.md-total {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px 10px;
+  background: var(--paper-2);
+}
+
+.md-total > span {
+  color: var(--quiet);
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+
+.md-total-pair {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  font-family: var(--mono);
+}
+
+.md-total-pair b {
+  color: var(--md-own);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -.03em;
+}
+
+.md-total-pair b.is-foe {
+  color: var(--md-foe);
+}
+
+.md-total-pair i {
+  color: var(--quiet);
+  font-style: normal;
+  font-size: 10px;
+}
+
+.md-total-bar {
+  height: 3px;
+  overflow: hidden;
+  background: var(--md-foe-soft);
+}
+
+.md-total-bar i {
+  display: block;
+  height: 100%;
+  background: var(--md-own);
+}
+
+/* ── 阶段对比 ───────────────────────────────────────────────────── */
+
+.md-phase-table,
+.md-node-table {
+  border-top: 1px solid var(--line);
+}
+
+.md-phase-row {
+  display: grid;
+  grid-template-columns: minmax(104px, 1.25fr) repeat(3, minmax(0, 1fr)) minmax(56px, .6fr) minmax(56px, .6fr) minmax(60px, .62fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
+  font-size: 10.5px;
+}
+
+.md-phase-row.is-head {
+  padding: 7px 4px;
+  border-bottom-color: var(--line);
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .07em;
+}
+
+.md-phase-tag {
+  display: grid;
+  gap: 2px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.md-phase-tag small {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 400;
+}
+
+.md-phase-gain {
+  display: grid;
+  gap: 3px;
+}
+
+.md-phase-gain b {
+  color: var(--md-own);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.md-phase-gain.is-foe b {
+  color: var(--md-foe);
+}
+
+.md-phase-gain i {
+  display: block;
+  height: 3px;
+  background: var(--surface);
+}
+
+.md-phase-gain em {
+  display: block;
+  height: 100%;
+  background: var(--md-own);
+}
+
+.md-phase-gain.is-foe em {
+  background: var(--md-foe);
+}
+
+.md-phase-net {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.md-phase-net.is-own {
+  color: var(--md-own);
+}
+
+.md-phase-net.is-foe {
+  color: var(--md-foe);
+}
+
+.md-phase-duo {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.md-phase-duo b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.md-phase-duo b.is-foe {
+  color: var(--md-foe);
+}
+
+.md-phase-duo i {
+  color: var(--quiet);
+  font-style: normal;
+}
+
+.md-phase-invade {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+/* ── 比赛脉搏 ───────────────────────────────────────────────────── */
+
+.md-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--quiet);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.md-legend .is-own {
+  color: var(--md-own);
+}
+
+.md-legend .is-foe {
+  color: var(--md-foe);
+}
+
+.md-shape::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 4px;
+  vertical-align: 0;
+  border: 1px solid currentColor;
+}
+
+.md-shape.is-diamond::before {
+  transform: rotate(45deg);
+}
+
+.md-pulse {
+  display: grid;
+  gap: 6px;
+}
+
+.md-pulse-readout {
+  display: grid;
+  grid-template-columns: auto repeat(3, minmax(0, auto)) minmax(0, 1fr);
+  align-items: end;
+  gap: 16px;
+  padding: 8px 4px 4px;
+}
+
+.md-pulse-readout > span {
+  display: grid;
+  gap: 2px;
+}
+
+.md-pulse-readout small {
+  color: var(--quiet);
+  font-size: 8px;
+  letter-spacing: .05em;
+}
+
+.md-pulse-readout b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.md-pulse-readout b.is-own {
+  color: var(--md-own);
+}
+
+.md-pulse-readout b.is-foe {
+  color: var(--md-foe);
+}
+
+.md-pulse-readout small.is-own {
+  color: var(--md-own);
+}
+
+.md-pulse-readout small.is-foe {
+  color: var(--md-foe);
+}
+
+.md-pulse-at {
+  color: var(--quiet);
+  font-size: 9px;
+  text-align: right;
+  line-height: 1.5;
+}
+
+.md-pulse-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: none;
+}
+
+.md-pulse-band {
+  fill: color-mix(in srgb, var(--surface) 26%, transparent);
+}
+
+.md-pulse-band.is-alt {
+  fill: color-mix(in srgb, var(--surface) 48%, transparent);
+}
+
+.md-band-label {
+  fill: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .05em;
+}
+
+.md-grid {
+  stroke: color-mix(in srgb, var(--line-strong) 62%, transparent);
+  stroke-width: .7;
+}
+
+.md-grid.is-mid {
+  stroke: var(--line-strong);
+  stroke-dasharray: 3 4;
+}
+
+.md-axis {
+  fill: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.md-pulse-stop-own {
+  stop-color: var(--md-own);
+}
+
+.md-pulse-curve {
+  fill: none;
+  stroke: var(--md-own);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.md-pulse-mark.is-blue {
+  fill: var(--md-own);
+  stroke: var(--paper-2);
+  stroke-width: .6;
+}
+
+.md-pulse-mark.is-red {
+  fill: var(--md-foe);
+  stroke: var(--paper-2);
+  stroke-width: .6;
+}
+
+.md-pulse-mark {
+  fill: var(--muted);
+  opacity: .85;
+}
+
+.md-pulse-end {
+  fill: var(--md-own);
+  stroke: var(--paper-2);
+  stroke-width: 1.4;
+}
+
+.md-pulse-cursor line {
+  stroke: var(--ink);
+  stroke-width: .7;
+  stroke-dasharray: 2 3;
+  opacity: .55;
+}
+
+.md-pulse-cursor circle {
+  fill: var(--ink);
+  stroke: var(--paper-2);
+  stroke-width: 1;
+}
+
+.md-pulse-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.md-pulse-axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 18px 0 52px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+/* ── 关键节点 ───────────────────────────────────────────────────── */
+
+.md-node-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1.5fr) 76px 76px 80px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
+  font-size: 10.5px;
+}
+
+.md-node-row.is-head {
+  padding: 7px 4px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .07em;
+}
+
+.md-node-time,
+.md-node-num {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.md-node-row b {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.md-node-dir {
+  font-size: 9px;
+}
+
+.md-node-dir.is-own {
+  color: var(--md-own);
+}
+
+.md-node-dir.is-foe {
+  color: var(--md-foe);
+}
+
+.md-node-dir.is-event {
+  color: var(--quiet);
+}
+
+/* ── 十人面板 ───────────────────────────────────────────────────── */
+
+.md-duels {
+  display: grid;
+  gap: 12px;
+}
+
+.md-duel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.md-duel-head {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-duel-lane {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: .06em;
+}
+
+.md-vs-id {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.md-vs-id.is-foe {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.md-vs-id > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.md-vs-id b {
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-vs-id small {
+  color: var(--quiet);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.md-vs-id.is-own b {
+  color: var(--md-own);
+}
+
+.md-vs-id.is-foe b {
+  color: var(--md-foe);
+}
+
+.md-vs-id.is-empty {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.md-duel-body {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px 10px;
+}
+
+.md-radar {
+  width: 132px;
+  height: 132px;
+}
+
+.md-radar-ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--line-strong) 55%, transparent);
+  stroke-width: .7;
+}
+
+.md-radar-spoke {
+  stroke: color-mix(in srgb, var(--line-strong) 42%, transparent);
+  stroke-width: .7;
+}
+
+.md-radar-area.is-own {
+  fill: var(--md-own-soft);
+  stroke: var(--md-own);
+  stroke-width: 1.2;
+}
+
+.md-radar-area.is-foe {
+  fill: var(--md-foe-soft);
+  stroke: var(--md-foe);
+  stroke-width: 1.2;
+}
+
+.md-radar-label {
+  fill: var(--quiet);
+  font-size: 7.5px;
+}
+
+.md-duel-metrics {
+  display: grid;
+  gap: 5px;
+}
+
+.md-duel-metric {
+  display: grid;
+  grid-template-columns: 34px 54px minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 7px;
+  font-size: 9px;
+}
+
+.md-duel-label {
+  color: var(--quiet);
+}
+
+.md-duel-num {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.md-duel-num.is-own {
+  color: var(--md-own);
+}
+
+.md-duel-num.is-foe {
+  color: var(--md-foe);
+  text-align: left;
+}
+
+.md-duel-track {
+  height: 3px;
+  overflow: hidden;
+  background: var(--md-foe-soft);
+}
+
+.md-duel-track i {
+  display: block;
+  height: 100%;
+  background: var(--md-own);
+}
+
+.md-duel-metric[data-lead='foe'] .md-duel-track i {
+  background: var(--md-own);
+}
+
+.md-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.md-team {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.md-team-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-team-top b {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.md-team.is-own .md-team-top b {
+  color: var(--md-own);
+}
+
+.md-team.is-foe .md-team-top b {
+  color: var(--md-foe);
+}
+
+.md-team-top span {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.md-team-grid {
+  display: grid;
+  align-items: center;
+  gap: 0;
+}
+
+.md-team-grid > span,
+.md-team-row > span {
+  padding: 7px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  font-size: 9px;
+  text-align: center;
+}
+
+.md-team-grid .is-head {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: .05em;
+}
+
+.md-team-grid .is-head:first-child,
+.md-team-who {
+  text-align: left;
+}
+
+.md-team-who {
+  display: grid;
+  gap: 1px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.md-team-who b {
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-team-who small {
+  color: var(--quiet);
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-team-cell {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+}
+
+.md-team-cell i {
+  display: block;
+  width: 80%;
+  height: 3px;
+  background: var(--surface);
+}
+
+.md-team-cell em {
+  display: block;
+  height: 100%;
+  background: var(--md-own);
+}
+
+.md-team.is-foe .md-team-cell em {
+  background: var(--md-foe);
+}
+
+.md-team-cell b {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+}
+
+.md-team-cell.is-empty {
+  color: var(--quiet);
+}
+
+.md-team-note {
+  padding: 8px 12px 10px;
+  color: var(--quiet);
+  font-size: 8.5px;
+  line-height: 1.6;
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+/* ── 中野辅 ─────────────────────────────────────────────────────── */
+
+.md-coh-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.md-coh {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--md-own);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.md-coh.is-foe {
+  border-left-color: var(--md-foe);
+}
+
+.md-coh header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.md-coh header b {
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.md-coh.is-own header b {
+  color: var(--md-own);
+}
+
+.md-coh.is-foe header b {
+  color: var(--md-foe);
+}
+
+.md-coh header span {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.md-coh-nums {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.md-coh-nums span {
+  display: grid;
+  gap: 3px;
+}
+
+.md-coh-nums small {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.md-coh-nums b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+
+.md-coh-invade {
+  margin-top: 11px;
+  padding-top: 9px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.md-coh-empty {
+  padding: 18px 0 8px;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+/* ── 战斗 ───────────────────────────────────────────────────────── */
+
+.md-hero-pick {
+  min-height: 28px;
+  max-width: 190px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.md-battle {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1.15fr) minmax(0, .85fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.md-battle-map {
+  position: relative;
+}
+
+.md-battle-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 24%, var(--paper-2));
+}
+
+.md-battle-grid {
+  stroke: color-mix(in srgb, var(--line-strong) 52%, transparent);
+  stroke-width: .7;
+}
+
+.md-battle-river {
+  stroke: color-mix(in srgb, var(--accent) 32%, transparent);
+  stroke-width: 5;
+}
+
+.md-battle-bases .is-blue {
+  fill: var(--accent);
+}
+
+.md-battle-bases .is-red {
+  fill: var(--coral);
+}
+
+.md-battle-base-label {
+  fill: var(--quiet);
+  font-size: 7px;
+}
+
+.md-battle-mark circle {
+  opacity: .42;
+  stroke-width: 1;
+}
+
+.md-battle-mark.is-own circle {
+  fill: var(--md-own);
+  stroke: var(--md-own);
+}
+
+.md-battle-mark.is-foe circle {
+  fill: var(--md-foe);
+  stroke: var(--md-foe);
+}
+
+.md-battle-mark.is-even circle {
+  fill: var(--muted);
+  stroke: var(--muted);
+}
+
+.md-battle-mark.is-off,
+.md-battle-death.is-off {
+  opacity: .12;
+  pointer-events: none;
+}
+
+.md-battle-death {
+  cursor: pointer;
+}
+
+.md-death-dot {
+  fill: var(--coral);
+  stroke: var(--paper-2);
+  stroke-width: .8;
+}
+
+.md-death-hit {
+  fill: transparent;
+}
+
+.md-battle-death.is-on .md-death-hit {
+  fill: color-mix(in srgb, var(--coral) 18%, transparent);
+  stroke: var(--coral);
+  stroke-width: 1;
+}
+
+.md-battle-death.is-own .md-death-dot {
+  fill: var(--md-own);
+}
+
+.md-battle-death.is-foe .md-death-dot {
+  fill: var(--md-foe);
+}
+
+.md-battle-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 6px;
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+.md-battle-legend .is-own {
+  color: var(--md-own);
+}
+
+.md-battle-legend .is-foe {
+  color: var(--md-foe);
+}
+
+.md-battle-legend i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+
+.md-battle-legend i.is-fight {
+  background: currentColor;
+  opacity: .6;
+}
+
+.md-battle-legend i.is-death {
+  background: var(--coral);
+}
+
+.md-death-card {
+  position: absolute;
+  right: 4px;
+  bottom: -6px;
+  z-index: 2;
+  width: 200px;
+  padding: 9px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+
+.md-death-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 9px;
+}
+
+.md-death-head b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 9.5px;
+}
+
+.md-death-head span {
+  color: var(--muted);
+}
+
+.md-death-tag {
+  color: var(--quiet);
+  font-style: normal;
+}
+
+.md-death-loss {
+  margin-top: 5px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -.03em;
+}
+
+.md-death-loss.is-foe {
+  color: var(--md-foe);
+}
+
+.md-death-loss.is-own {
+  color: var(--md-own);
+}
+
+.md-death-loss small {
+  margin-left: 5px;
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 8px;
+  letter-spacing: 0;
+}
+
+.md-death-rows {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+.md-death-rows b {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-weight: 500;
+}
+
+.md-death-card p {
+  margin-top: 5px;
+  color: var(--quiet);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.md-battle-block h4 {
+  margin-bottom: 7px;
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.md-battle-block h4 small {
+  margin-left: 4px;
+  color: var(--quiet);
+  font-size: 8px;
+  font-weight: 400;
+}
+
+.md-contrib {
+  display: grid;
+  border-top: 1px solid var(--line);
+  font-size: 9px;
+}
+
+.md-contrib > span,
+.md-contrib-row > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 27px;
+  padding: 0 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  text-align: center;
+}
+
+.md-contrib .is-head {
+  color: var(--quiet);
+  font-size: 7.5px;
+  letter-spacing: .04em;
+}
+
+.md-contrib-row.is-dim > span {
+  opacity: .3;
+}
+
+.md-contrib-name {
+  justify-content: flex-start !important;
+  color: var(--text) !important;
+  font-family: var(--sans) !important;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-contrib-share {
+  color: var(--text) !important;
+}
+
+.md-board-empty {
+  padding: 14px 0;
+  color: var(--quiet);
+  font-size: 9.5px;
+  line-height: 1.6;
+}
+
+.md-drop-list {
+  display: grid;
+  gap: 2px;
+}
+
+.md-drop {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 62px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 9.5px;
+  text-align: left;
+}
+
+.md-drop:hover,
+.md-drop.is-on {
+  border-color: var(--line-strong);
+  background: var(--paper-2);
+}
+
+.md-drop-time {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.md-drop-hero {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-drop-loss {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-align: right;
+}
+
+.md-drop-loss.is-down {
+  color: var(--coral);
+}
+
+.md-drop-loss.is-up {
+  color: var(--accent);
+}
+
+/* ── 阵线 ───────────────────────────────────────────────────────── */
+
+.md-front {
+  display: grid;
+  gap: 4px;
+}
+
+.md-front-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.md-front-band {
+  fill: color-mix(in srgb, var(--surface) 26%, transparent);
+}
+
+.md-front-band.is-alt {
+  fill: color-mix(in srgb, var(--surface) 48%, transparent);
+}
+
+.md-front-stop-own {
+  stop-color: var(--md-own);
+}
+
+.md-front-area {
+  stroke: none;
+}
+
+.md-front-line {
+  fill: none;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.md-front-line.is-own {
+  stroke: var(--md-own);
+}
+
+.md-front-line.is-foe {
+  stroke: var(--md-foe);
+}
+
+.md-front-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding-top: 6px;
+}
+
+.md-front-legend {
+  display: flex;
+  gap: 12px;
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+.md-front-legend .is-own {
+  color: var(--md-own);
+}
+
+.md-front-legend .is-foe {
+  color: var(--md-foe);
+}
+
+.md-front-legend i {
+  display: inline-block;
+  width: 12px;
+  height: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+  background: currentColor;
+}
+
+.md-front-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.md-front-stats span {
+  display: grid;
+  gap: 2px;
+}
+
+.md-front-stats small {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.md-front-stats b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ── 热区 ───────────────────────────────────────────────────────── */
+
+.md-heat-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-heat-controls input[type='range'] {
+  flex: 1 1 220px;
+  min-width: 160px;
+  accent-color: var(--md-own);
+}
+
+.md-heat-clock {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.md-heat-lane-pick {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+.md-heat-lane-pick select {
+  min-height: 26px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  color: var(--text);
+  font-size: 9px;
+}
+
+.md-heat-lanes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.md-heat-side {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr;
+  gap: 7px 14px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.md-heat-side.is-empty {
+  display: grid;
+  place-items: center;
+  color: var(--quiet);
+  font-size: 9.5px;
+}
+
+.md-heat-head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.md-heat-head i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--md-own);
+}
+
+.md-heat-head i.is-foe {
+  background: var(--md-foe);
+}
+
+.md-heat-head b {
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.md-heat-head span {
+  color: var(--quiet);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.md-heat-canvas {
+  grid-column: 1;
+  grid-row: 2 / 4;
+  width: 224px;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 4%, var(--paper-2));
+}
+
+.md-heat-meta {
+  grid-column: 2;
+  grid-row: 2 / 4;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+.md-heat-meta span {
+  display: grid;
+  gap: 2px;
+}
+
+.md-heat-meta b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -.02em;
+}
+
+.md-heat-meta small {
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+/* ── 对位纵深 ───────────────────────────────────────────────────── */
+
+.md-depth-head,
+.md-depth-phases,
+.md-depth-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.md-depth-head {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.md-depth-head .is-own {
+  color: var(--md-own);
+}
+
+.md-depth-head .is-foe {
+  color: var(--md-foe);
+}
+
+.md-depth-phases {
+  padding: 5px 0;
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.md-depth-phases > span {
+  display: flex;
+  justify-content: space-around;
+}
+
+.md-depth-phases i {
+  font-style: normal;
+}
+
+.md-depth-row {
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
+}
+
+.md-depth-lane {
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.md-depth-side {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.md-depth-cell {
+  display: grid;
+  gap: 3px;
+  justify-items: center;
+  padding: 4px 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--surface) 22%, transparent);
+}
+
+.md-depth-cell.is-empty {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.md-depth-cell b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.md-depth-cell b small {
+  margin-left: 1px;
+  color: var(--quiet);
+  font-size: 7px;
+  font-weight: 400;
+}
+
+.md-vox {
+  display: flex;
+  gap: 1px;
+  height: 10px;
+  align-items: flex-end;
+}
+
+.md-vox i {
+  width: 2px;
+  height: 8px;
+  background: var(--md-own);
+  opacity: .8;
+}
+
+.md-depth-cell.is-foe .md-vox i {
+  background: var(--md-foe);
+}
+
+.md-vox i.is-zero {
+  height: 2px;
+  background: var(--line-strong);
+}
+
+/* ── BP ─────────────────────────────────────────────────────────── */
+
+.md-bp {
+  display: grid;
+  gap: 10px;
+}
+
+.md-bp-head,
+.md-bp-row {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.md-bp-head {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: .06em;
+}
+
+.md-bp-row {
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--md-own);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.md-bp-row.is-foe {
+  border-left-color: var(--md-foe);
+}
+
+.md-bp-row > b {
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 650;
+}
+
+.md-bp-row.is-own > b {
+  color: var(--md-own);
+}
+
+.md-bp-row.is-foe > b {
+  color: var(--md-foe);
+}
+
+.md-bp-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.md-bp-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 5px 2px 2px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 8.5px;
+  white-space: nowrap;
+}
+
+.md-bp-slot em {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-style: normal;
+}
+
+.md-bp-slot .portrait {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  font-size: 7px;
+}
+
+.md-bp-slot.is-ban {
+  opacity: .68;
+}
+
+.md-bp-slot.is-empty {
+  border-style: dashed;
+  color: var(--quiet);
+  font-size: 8px;
+  padding: 4px 6px;
+}
+
+.md-bp-slot.is-empty em {
+  margin-right: 2px;
+}
+
+/* ── 窄屏 / 打印 ────────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  .md-battle {
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  }
+
+  .md-battle-block:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 900px) {
+  .md-totals,
+  .md-coh-grid,
+  .md-teams,
+  .md-heat-lanes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .md-duel-head {
+    grid-template-columns: 54px minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .md-battle {
+    grid-template-columns: 1fr;
+  }
+
+  .md-battle-block:last-child {
+    grid-column: auto;
+  }
+
+  .md-pulse-readout {
+    grid-template-columns: repeat(2, minmax(0, auto)) minmax(0, 1fr);
+  }
+
+  .md-pulse-at {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
+@media print {
+  .md-jump {
+    display: none;
+  }
+
+  .md-section,
+  .md-totals-band {
+    break-inside: avoid;
+  }
+
+  .md-pulse-cursor {
+    display: none;
+  }
+}

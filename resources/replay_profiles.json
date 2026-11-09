@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "profiles": [
     {
-      "id": "observed-12.1.1.x-v2",
+      "id": "observed-12.1.1.x-v3",
       "label": "2026-11 12.1.1.x 观测档案",
       "versionPrefixes": ["12.1.1."],
       "builds": ["4989537", "5230306", "5247758"],

@@ -68,7 +68,7 @@
 | 结论 | 级别 | 证据 | 边界 |
 |---|---|---|---|
 | `ModuleInit` 后 CS 数组 `0x52c3250 == 0` | ✅ | `e1_gc_sim0.log`、`e1b_gc_sim0b.log` | 说明上下文未安装；不是 FIFO 链不存在 |
-| `PushCsBuffer` 只读 `+0x18/+0x20/+0x24`，假对象可 Push | ✅ | `s3b_gc_fifo0_v2.log`：`PushCsBuffer(64) -> data OK, obj.len=64` | 只证明写入路径的字段契约 |
+| `PushCsBuffer` 只读 `+0x18/+0x20/+0x24`，假对象可 Push | ✅ | `s3b_gc_fifo0.log`：`PushCsBuffer(64) -> data OK, obj.len=64` | 只证明写入路径的字段契约 |
 | `CommitCsBuffer` 用假对象仍 SIGSEGV | ✅ | 同上：`CommitCsBuffer() -> SIG 11 addr=0x10 pc=0x2100a3f8 x0=obj` | 未定位完整缺失字段；不能据此说 Commit 永远不可用 |
 | 0x43D301C 是“上下文安装器” | ❌ | 5.35：反汇编显示是引用计数/弱引用赋值助手（+0x48/+0x50/+0xa8/+0xb0） | 5.29/`simulation_plan.md` 的旧说法需修正 |
 | 已有完整初始化命令流（S3） | ❌ | 5.34/5.35：443B 中 15 个变量未命名；KV 只到 key 值；无 TDR 命令封装 | 只有 KV 模板 + 标量分类表，不是可 Push 的命令流 |
@@ -207,7 +207,7 @@ thunk/共享入口标签表（5.39）。独立 IL2CPP 宿主在 MuMu/houdini 上
 | # | 条件 | 当前状态 | 判定依据 |
 |---|---|---|---|
 | G1 | 有真实 `CLevelContext`/`deskPool` 构造路径，不靠伪造字段 | ❌ | 0x43D301C 不是安装器；无构造函数/偏移；15 个标量变量未命名 |
-| G2 | 有真实 CS FIFO 上下文，`CommitCsBuffer` 不崩 | ❌（仅 Push 通过） | `s3b_gc_fifo0_v2.log` SIGSEGV |
+| G2 | 有真实 CS FIFO 上下文，`CommitCsBuffer` 不崩 | ❌（仅 Push 通过） | `s3b_gc_fifo0.log` SIGSEGV |
 | G3 | 有可 Push 的初始化命令流（S3），并能被 GameCore 消费 | ❌ | KV/443B 是数据，不是 TDR 命令流；无成功日志 |
 | G4 | 能推进至少一帧并读回状态 | ❌ | 无帧 tick/View buffer 成功记录 |
 | G5 | 全链路在真实回放/离线对局上对拍，不依赖登录 | ❌ | 离线 5V5 不产回放；context 释放；无安全账号 |

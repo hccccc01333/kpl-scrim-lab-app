@@ -16,6 +16,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
+from paths import data_root
+
 DEFAULT_MANIFEST_URLS = (
     'https://github.com/hccccc01333/kpl-scrim-lab/releases/latest/download/update.json',
     'https://raw.githubusercontent.com/hccccc01333/kpl-scrim-lab/main/update.json',
@@ -245,7 +247,7 @@ def fetch_manifest(urls=None, timeout: float = 3.0,
 
 
 def cache_file(root: Path) -> Path:
-    return Path(root) / 'data' / 'update_cache.json'
+    return data_root(root) / 'update_cache.json'
 
 
 def load_cache(root: Path) -> dict | None:

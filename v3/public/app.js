@@ -1,10 +1,12 @@
 import { groupFor } from './navigation.js';
 import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
+import { createCrossPage } from './cross-page.js';
 import { createTour } from './tour.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
+const CLIENT_DOWNLOAD_URL = 'https://github.com/hccccc01333/kpl-scrim-lab/releases/latest';
 const app = document.querySelector('#app');
 const nav = [
   ['overview', '首页'], ['ingest', '采集'], ['matches', '对局'], ['teams', '战队'], ['players', '选手'],
@@ -12,10 +14,10 @@ const nav = [
 ];
 const labels = Object.fromEntries(nav);
 for (const pages of Object.values(featureSections)) for (const [key, label] of pages) labels[key] = label;
-Object.assign(labels, { match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', topic: '分析详情', study: '分析详情', report: '分析报告', review: '逐项校对', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', h2h: '交手记录', profiles: '对手画像', teamcompare: '战队对比' });
+Object.assign(labels, { match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', identity: '选手认领', team: '战队详情', hero: '英雄详情', topic: '分析详情', study: '分析详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamstyle: '战队风格', teamroster: '战队阵容', teamtraining: '战队训练', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', weekly: '训练周报' });
 function sectionFor(name) {
   if (name === 'topic' || name === 'study') return groupFor(name, current().key);
-  const detail = { match: 'matches', player: 'players', playerdetail: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', h2h: 'teams', profiles: 'teams', teamcompare: 'teams' }[name] || name;
+  const detail = { match: 'matches', player: 'players', playerdetail: 'players', identity: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', weekly: 'setup' }[name] || name;
   return Object.keys(featureSections).find((section) => featureSections[section].some(([key]) => key === detail)) || detail;
 }
 const icons = {
@@ -38,7 +40,9 @@ const icons = {
   setup: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-12 4h3m-3 3h7"/>',
   sources: '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.7 2.7 0 0 1 5.2 1c0 1.8-2.7 2.2-2.7 4M12 17.4h.01"/>',
+  inbox: '<path d="M4 5h16v14H4z"/><path d="M4 13h4l2 3h4l2-3h4"/>',
   demo: '<path d="m8 5 11 7-11 7z"/>',
+  client: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
   ingest: '<path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icon = (name) => `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icons[name]}</svg>`;
@@ -55,6 +59,92 @@ const opposite = { blue: 'red', red: 'blue', left: 'right', right: 'left' };
 const mirror = { blue: 'left', red: 'right', left: 'blue', right: 'red' };
 const sourceName = { db: '本机记录', bundle: '对局数据包', sheet: '表格导入' };
 let request;
+/* 当前路由（用于判断是否换了页；连接恢复后据此加载当前页）。 */
+let loadRoute = '';
+/* 一次页面读取的世代编号：换页即作废，旧请求的结果与错误都不能写进新页面。
+   静态资源每次刷新都读磁盘，路由表只在进程启动时加载，两者可能短暂错配；
+   这里保证错配时只表现为「这一页在读」，不会出现上一页的错误框。 */
+let loadGeneration = 0;
+const routeKeyOf = (r) => `${r.name}/${r.key || ''}`;
+const isStale = (generation, routeKey) =>
+  generation !== loadGeneration || routeKeyOf(current()) !== routeKey;
+const isCancelled = (error, signal) =>
+  Boolean(signal?.aborted) || error?.name === 'AbortError';
+/* 同一路由短时失败先自动重试，别把一次 404 直接整页报错。 */
+const retryByRoute = new Map();
+/* 连接状态：网络层失败后进入自动重连，恢复后自动加载当前页。 */
+let offlineSince = 0;
+let reconnectTimer = null;
+let reconnectDelay = 1000;
+
+function ensureOfflineBanner() {
+  let node = document.querySelector('#offline-banner');
+  if (!node) {
+    node = document.createElement('div');
+    node.id = 'offline-banner';
+    node.className = 'offline-banner';
+    node.hidden = true;
+    node.innerHTML = '<span>连接中断</span><b>正在自动重连…</b>';
+    document.body.append(node);
+  }
+  return node;
+}
+function scheduleReconnect(delay) {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(probeServer, delay);
+}
+function setOffline(active) {
+  const banner = ensureOfflineBanner();
+  if (active) {
+    if (!offlineSince) { offlineSince = Date.now(); reconnectDelay = 1000; }
+    banner.hidden = false;
+    scheduleReconnect(reconnectDelay);
+    return;
+  }
+  offlineSince = 0;
+  banner.hidden = true;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectDelay = 1000;
+}
+async function probeServer() {
+  reconnectTimer = null;
+  if (!offlineSince) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
+  let reachable = false;
+  try {
+    /* 任何响应都算“服务在”，不要求 2xx：这一步只判断端口有没有起来。 */
+    await fetch(API_BASE + '/api/metadata?source=db', {cache: 'no-store', signal: controller.signal});
+    reachable = true;
+  } catch {
+    reachable = false;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!offlineSince) return;
+  if (reachable) { setOffline(false); load(); return; }
+  reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 8000);
+  scheduleReconnect(reconnectDelay);
+}
+function renderOffline(r = current()) {
+  const box = document.querySelector('#content');
+  if (!box) return;
+  box.innerHTML = `<div class="page"><section class="section"><div class="offline-card">
+    <b>${esc(labels[r.name] || '当前页面')}暂时读不到数据</b>
+    <p>与工作台的连接中断了，恢复后会<strong>自动加载这一页</strong>，也可以点下面的按钮立即重试。</p>
+    <div class="offline-actions"><button class="control" data-action="refresh">立即重试</button></div>
+  </div></section></div>`;
+}
+function renderDataNotice(r) {
+  const box = document.querySelector('#content');
+  if (!box) return;
+  box.innerHTML = `<div class="page"><section class="section"><div class="offline-card">
+    <b>${esc(labels[r.name] || '当前页面')}暂时读不到数据</b>
+    <p>这一页的数据还没返回，已经自动重试过；稍后再点一次读取即可。</p>
+    <div class="offline-actions"><button class="control" data-action="refresh">重新读取</button></div>
+  </div></section></div>`;
+}
 let metadata = {};
 let data;
 let view = {};
@@ -74,7 +164,9 @@ function current() {
   try { decoded = decodeURIComponent(key || ''); } catch {}
   let anchor = '';
   try { anchor = new URLSearchParams(search).get('match') || ''; } catch {}
-  return { name: Object.hasOwn(labels, name) ? name : 'overview', key: decoded, anchor };
+  /* 已下线的战队子页：旧链接回战队档案，不落到首页。 */
+  const retired = { teamcompare: 'teams', h2h: 'teams', profiles: 'teams' };
+  return { name: retired[name] || (Object.hasOwn(labels, name) ? name : 'overview'), key: decoded, anchor };
 }
 
 function score(match) {
@@ -93,15 +185,16 @@ function portrait(name, cls = '') {
   return `<span class="portrait portrait-placeholder ${cls}" aria-label="${esc(name || '未知英雄')}">${esc((name || '?')[0])}</span>`;
 }
 
+const navHref = (key) => key === 'setup' ? '#plan' : key === 'players' ? '#playerarchive' : '#' + key;
 function shell() {
   app.innerHTML = `<header class="masthead"><div class="masthead-inner">
     <a class="wordmark" href="#overview" aria-label="赛训数据首页"><span class="brand-symbol"><i></i><i></i><i></i></span>
       <span>赛训数据<small>TRAINING DATA</small></span></a>
-    <nav class="main-nav" aria-label="主导航">${nav.map(([key, label]) => `<a href="#${key}" data-nav="${key}"><span class="nav-icon">${icon(key)}</span>${label}</a>`).join('')}</nav>
-    <div class="head-actions"><button class="mode-button" data-action="demo">${icon('demo')}<span>演示数据</span></button><button class="head-button tour-button" data-action="tour" aria-label="使用教程">${icon('help')}</button><button class="head-button theme-button" data-action="theme" aria-label="切换主题"></button>
+    <nav class="main-nav" aria-label="主导航">${nav.map(([key, label]) => `<a href="${navHref(key)}" data-nav="${key}"><span class="nav-icon">${icon(key)}</span>${label}</a>`).join('')}</nav>
+    <div class="head-actions"><button type="button" class="head-button inbox-button" data-sx-inbox aria-label="待处理" title="待处理">${icon('inbox')}<span class="inbox-badge" data-inbox-badge hidden></span></button><a class="mode-button client-button" href="kpl-client://open" data-action="open-client" title="打开桌面客户端（需安装）" aria-label="打开桌面客户端">${icon('client')}<span>打开客户端</span></a><button class="head-button tour-button" data-action="tour" aria-label="使用教程" title="使用教程">${icon('help')}</button><button class="head-button theme-button" data-action="theme" aria-label="切换主题"></button>
       <button class="head-button menu-button" data-action="menu" aria-label="打开导航" aria-expanded="false">${icon('menu')}</button></div>
   </div></header>
-  <div class="mobile-menu" hidden><nav aria-label="移动导航">${nav.map(([key, label]) => `<a href="#${key}">${icon(key)}${label}</a>`).join('')}</nav></div>
+  <div class="mobile-menu" hidden><nav aria-label="移动导航">${nav.map(([key, label]) => `<a href="${navHref(key)}">${icon(key)}${label}</a>`).join('')}</nav></div>
   <div class="demo-banner" hidden><strong>演示模式</strong> 所有比赛、选手与分析均为虚构数据，仅供体验。<button data-action="demo">返回真实数据 →</button></div>
   <div class="secondary-wrap"><nav class="secondary-nav" aria-label="分类导航"></nav><nav class="analysis-rail" aria-label="板块分析"></nav></div>
   <main id="content" tabindex="-1"></main>
@@ -110,14 +203,62 @@ function shell() {
   applyTheme();
 }
 
+let inboxState = null;
+async function refreshInbox() {
+  const badge = document.querySelector('[data-inbox-badge]');
+  const link = document.querySelector('.inbox-button');
+  if (!badge || !link) return;
+  try {
+    const response = await fetch(API_BASE + '/api/studio/workspace/inbox', {cache:'no-store'});
+    if (!response.ok) throw new Error('inbox');
+    inboxState = await response.json();
+    const count = Number(inboxState.total || 0);
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.hidden = !count;
+    link.setAttribute('aria-label', count ? `待处理 ${count} 项` : '待处理');
+    link.title = count ? `待处理 ${count} 项` : '待处理';
+  } catch {
+    badge.hidden = true;
+  }
+}
+
+function openInbox() {
+  const data = inboxState;
+  if (!data) return;
+  let dialog = document.querySelector('#sx-inbox-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'sx-inbox-dialog';
+    dialog.className = 'sx-dialog sx-inbox-dialog';
+    document.body.append(dialog);
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+  }
+  const groups = (data.groups || []).map((group) => {
+    const items = group.items || [];
+    let body = '';
+    if (group.key === 'unmapped') {
+      body = items.map((item) => `<div class="sx-inbox-map" data-old-id="${esc(item.oldId)}">
+        <span><b>${esc(item.oldId)}</b><small>${fmt(item.matches)} 局</small></span>
+        <select aria-label="映射到战队">${(data.teams || []).map((team) => `<option value="${esc(team.id)}">${esc(team.name)}</option>`).join('')}</select>
+        <button type="button" class="control" data-sx-map-opponent>映射</button>
+      </div>`).join('');
+    } else if (items.length) {
+      body = `<div class="sx-inbox-items">${items.map((item) => `<a href="${esc(item.href)}" data-sx-inbox-link>${esc(item.label)}</a>`).join('')}</div>`;
+    }
+    return `<section class="sx-inbox-group">
+      <header><b>${esc(group.label)}</b><strong>${fmt(group.count)}</strong></header>
+      <p>${esc(group.note || '')}</p>${body}
+      ${group.key !== 'unmapped' ? `<a class="sx-inbox-go" href="${esc(group.href)}" data-sx-inbox-link>去处理 →</a>` : ''}
+    </section>`;
+  }).join('');
+  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">INBOX</span><h2>待处理 ${fmt(data.total || 0)} 项</h2></div><button type="button" class="sx-dialog-x" data-sx-inbox-close aria-label="关闭">×</button></div><p class="sx-dialog-note">先清数据，再看报告；这里只列需要人工判断的事项。</p><div class="sx-inbox-groups">${groups || '<p class="sx-empty">当前没有待处理项。</p>'}</div>`;
+  if (!dialog.open) dialog.showModal();
+}
+
 function updateMode() {
   const demo=!!metadata.demo;
-  const banner=document.querySelector('.demo-banner');banner.hidden=!demo;
-  const button=document.querySelector('.mode-button');
-  button.innerHTML=icon('demo')+`<span>${demo?'返回真实数据':'演示数据'}</span>`;
-  button.classList.toggle('is-demo',demo);
-  button.setAttribute('aria-label',demo?'返回真实数据':'进入演示数据');
-  button.title=demo?'返回真实数据':'进入演示数据';
+  const banner=document.querySelector('.demo-banner');
+  if (banner) banner.hidden=!demo;
 }
 
 function applyTheme() {
@@ -131,14 +272,21 @@ function query(fresh = false) {
   const q = new URLSearchParams({ source: filters.source.join(',') });
   if (filters.from) q.set('from', filters.from);
   if (filters.to) q.set('to', filters.to);
-  if (filters.validation) q.set('validation', '1');
+  /* 跨局分析的主体是「一批对局」：默认纳入全部已确认对局，
+     否则默认排除验证数据后只剩 1 局，整页对照会失去意义。 */
+  if (filters.validation || current().name === 'cross') q.set('validation', '1');
   if (fresh) q.set('fresh', '1');
   return '?' + q.toString();
 }
 
 async function get(path, fresh = false) {
   const response = await fetch(API_BASE + '/api/' + path + query(fresh), { signal: request.signal, cache: 'no-store' });
-  if (!response.ok) throw new Error(response.status === 404 ? '找不到这条记录。' : '无法读取数据，请刷新重试。');
+  if (!response.ok) {
+    /* 后端可能返回英文 detail（如 "Not Found"），不把它原样摆到教练面前。 */
+    const error = new Error(response.status === 404 ? '这一页的数据暂时读不到。' : '数据读取失败，稍后会自动重试。');
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
@@ -162,6 +310,7 @@ function chart(points, label, opts = {}) {
   const values = (points || []).filter((p) => has(p[0]) && has(p[1])).sort((a, b) => a[0] - b[0]);
   if (!values.length) return `<div class="chart-empty">暂无可用的经济时间轴</div>`;
   const max = Math.max(1, ...values.map((p) => Math.abs(p[1])));
+  /* 平均曲线要说明是几局折出来的，别让「25 个采样点」被读成 25 个点。 */
   const limit = Math.ceil(max / 5000) * 5000;
   const low = Math.min(0, ...values.map((p) => p[1])) < 0 ? -limit : 0;
   const high = limit;
@@ -218,7 +367,7 @@ function chart(points, label, opts = {}) {
     ${badge}
     ${phaseLabels}
     <text x="55" y="233" class="axis-text">${time(x0)}</text><text x="675" y="233" text-anchor="end" class="axis-text">${time(x1)}</text>
-    </svg><div class="chart-tooltip" role="status" hidden></div><div class="chart-foot"><span><i></i> 本队经济差</span><span>${values.length} 个采样点${eventLines ? ' · 金色虚线为关键节点' : ''}${rich && duration > 0 ? ' · 底色为前 / 中 / 后期' : ''}</span></div></div>`;
+    </svg><div class="chart-tooltip" role="status" hidden></div><div class="chart-foot"><span><i></i> 本队经济差</span><span>${opts.note || `${values.length} 个采样点`}${eventLines ? ' · 金色虚线为关键节点' : ''}${rich && duration > 0 ? ' · 底色为前 / 中 / 后期' : ''}</span></div></div>`;
 }
 
 function microChart(points, label) {
@@ -241,11 +390,176 @@ function matchRows(rows) {
     <span class="row-arrow">${icon('arrow')}</span></a>`).join('')}</div>`;
 }
 
+/* 第一次打开、库里还没有对局时，先给三条把数据拿进来的路。
+   这里不做「空状态」解释，教练此刻需要的是下一步动作。 */
+function welcomePage() {
+  return `<div class="page welcome-page">
+    <section class="welcome-hero">
+      <span class="welcome-eyebrow">第一次使用</span>
+      <h1>先把第一局拿进来</h1>
+      <p>这个工作台不自带比赛数据。三种方式任选一种，三分钟就能看到一场完整复盘；之后每天打开它，新对局会排到待处理。</p>
+    </section>
+    <div class="welcome-paths">
+      <a class="welcome-path is-primary" href="#ingest">
+        <span class="welcome-no">01 · 推荐</span>
+        <b>扫码采集</b>
+        <p>教练号扫码授权一次，之后每天拉取最近的训练赛。BP 与十人面板最完整。</p>
+        <em>适合已经在打训练赛</em>
+      </a>
+      <button class="welcome-path" data-action="open-client">
+        <span class="welcome-no">02 · 复盘</span>
+        <b>打开桌面客户端</b>
+        <p>工作台负责采集与缺失值审查，客户端负责逐分钟复盘；两边读同一套本机数据。</p>
+        <em>需要先安装客户端</em>
+      </button>
+      <a class="welcome-path" href="#capture">
+        <span class="welcome-no">03 · 兜底</span>
+        <b>导入表格 / 截图</b>
+        <p>已经有赛后表格、七张截图或录屏，直接从文件开始；没有营地授权也能用。</p>
+        <em>适合先补一局</em>
+      </a>
+    </div>
+    <section class="welcome-foot">
+      <div><span>数据目录</span><code data-welcome-dir>正在读取…</code></div>
+      <div class="welcome-actions">
+        <button class="control" data-action="open-data">打开数据目录</button>
+        <button class="control" data-action="refresh">我已经有数据</button>
+      </div>
+    </section>
+    <div class="welcome-legacy" data-welcome-legacy hidden></div>
+    <div class="welcome-migrate" data-migrate-progress hidden></div>
+    <details class="welcome-other">
+      <summary>旧数据在别的位置</summary>
+      <div class="welcome-other-row">
+        <input class="control" type="text" data-welcome-path spellcheck="false"
+          placeholder="粘贴旧数据目录，例如 D:\\KPL训练赛项目\\data">
+        <button class="control" data-action="migrate-path">搬到这台电脑</button>
+      </div>
+      <label class="welcome-check"><input type="checkbox" data-migrate-heavy checked> 连同回放与录屏一起搬（热区、深度分析要用）</label>
+      <p>只读取旧目录，不改动它；这台电脑的库里已经有对局时不会执行。</p>
+    </details>
+  </div>`;
+}
+
+/* 搬迁进度：字节 / 文件数都来自后端任务状态，页面只负责显示。 */
+let migrateTimer = null;
+
+function sizeText(bytes) {
+  if (!has(bytes) || bytes <= 0) return '';
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${Math.round(bytes / 1024 ** 2)} MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+const MIGRATE_LABELS = {
+  scanning: '正在清点旧文件…',
+  copying: '正在搬文件',
+  database: '正在合并比赛数据…',
+  upgrading: '正在升级数据结构…',
+  merging: '正在放进数据目录…',
+  done: '搬完了，正在重新读取…',
+  error: '没有搬完',
+};
+
+function paintMigration(job) {
+  const panel = document.querySelector('[data-migrate-progress]');
+  if (!panel) return;
+  panel.hidden = false;
+  panel.classList.toggle('is-error', job.state === 'error');
+  const total = Math.max(1, job.totalBytes || 0);
+  const ratio = (job.bytes || 0) / total;
+  const percent = job.state === 'done' ? 100 : Math.min(97, Math.round(ratio * 100));
+  const shown = percent === 0 && job.bytes ? '<1' : String(percent);
+  const label = job.state === 'copying'
+    ? `正在搬文件 ${fmt(job.copied || 0)} / ${fmt(job.totalFiles || 0)}`
+    : (MIGRATE_LABELS[job.state] || '正在搬…');
+  const amount = sizeText(job.bytes) && job.totalBytes ? ` · ${sizeText(job.bytes)} / ${sizeText(job.totalBytes)}` : '';
+  panel.innerHTML = `<div class="welcome-bar"><i style="width:${percent || (job.bytes ? 2 : 0)}%"></i></div>
+    <div class="welcome-migrate-line"><span>${esc(label + amount)}</span><em>${shown}%</em></div>
+    ${job.state === 'copying' && job.current ? `<code>${esc(job.current)}</code>` : ''}
+    ${job.state === 'error' ? `<p>${esc(job.error || '请再试一次；原来的数据没有被改动。')}</p>` : ''}`;
+}
+
+async function startMigration(path, includeReplays) {
+  if (migrateTimer) { clearTimeout(migrateTimer); migrateTimer = null; }
+  paintMigration({ state: 'scanning', bytes: 0, totalBytes: 0 });
+  try {
+    const response = await fetch(API_BASE + '/api/data/migrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, includeReplays: !!includeReplays }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : '搬迁没有开始，请重试。');
+  } catch (error) {
+    paintMigration({ state: 'error', error: error.message });
+    return;
+  }
+  const poll = async () => {
+    let job;
+    try {
+      job = await get('data/migrate');
+    } catch {
+      migrateTimer = setTimeout(poll, 1500);
+      return;
+    }
+    paintMigration(job);
+    if (job.state === 'done') { migrateTimer = null; await load(true); return; }
+    if (job.state === 'error') { migrateTimer = null; return; }
+    migrateTimer = setTimeout(poll, 600);
+  };
+  migrateTimer = setTimeout(poll, 400);
+}
+
+async function hydrateWelcome() {
+  const label = document.querySelector('[data-welcome-dir]');
+  if (!label) return;
+  try {
+    const info = await get('welcome');
+    if (!label.isConnected) return;
+    label.textContent = info.dataDir || 'data';
+    const box = document.querySelector('[data-welcome-legacy]');
+    if (box && Array.isArray(info.legacy) && info.legacy.length) {
+      box.hidden = false;
+      const old = info.legacy[0];
+      const when = old.modified ? new Date(old.modified * 1000).toLocaleDateString('zh-CN') : '';
+      box.innerHTML = `<div class="welcome-legacy-head"><b>发现旧数据</b>
+          <span>${fmt(old.matches || 0)} 局${when ? ` · 最后更新 ${esc(when)}` : ''}</span></div>
+        <p><code>${esc(old.path)}</code> 是之前那份训练数据，可以整库搬过来，不用自己复制文件夹。</p>
+        <div class="welcome-legacy-actions">
+          <button class="control is-primary" data-action="migrate-legacy" data-path="${esc(old.path)}">搬到这台电脑</button>
+          <label class="welcome-check"><input type="checkbox" data-migrate-heavy checked> 连同回放与录屏（热区、深度分析要用，体积大）</label>
+        </div>`;
+    }
+  } catch {
+    if (label.isConnected) label.textContent = 'data';
+  }
+}
+
 function overview(value) {
   const { summary, matches, team, process } = value;
+  /* 空库：首屏直接给三条路，不留一页「0 局」。 */
+  if (!summary.matches) return welcomePage();
   const latest = matches[0];
   const duration = matches.map((m) => m.duration).filter((value) => has(value) && value > 0);
   const avgDuration = duration.length ? duration.reduce((a, b) => a + b, 0) / duration.length : null;
+  /* 第一句就是结论：这批局打成什么样，数字直接进标题。 */
+  const decided = summary.decided || 0;
+  const wins = summary.wins || 0;
+  const losses = Math.max(0, decided - wins);
+  const goldDiff = team.avgGoldDiff;
+  /* 样本太少就别下「全胜」的结论，先如实报几胜几负。 */
+  const record = decided >= 3
+    ? (losses === 0 ? `${fmt(decided)} 局全胜` : `${fmt(decided)} 局 ${fmt(wins)} 胜 ${fmt(losses)} 负`)
+    : decided
+      ? `${fmt(summary.matches)} 局 ${fmt(wins)} 胜${losses ? ` ${fmt(losses)} 负` : ''}`
+      : `${fmt(summary.matches)} 局训练赛`;
+  const margin = has(goldDiff)
+    ? `，${decided > 1 ? '场均' : ''}${goldDiff >= 0 ? '领先' : '落后'} ${fmt(Math.abs(goldDiff))} 金`
+    : '';
+  const dates = [...new Set(matches.map((m) => m.date).filter(Boolean))].sort();
+  const range = dates.length > 1 ? `${dates[0]} → ${dates.at(-1)}` : `截至 ${dates[0] || '日期未知'}`;
+  const meta = `${range} · ${fmt(summary.matches)} 局 · 营地终局面板 + 回放时间轴`;
   const featured = latest ? `<article class="featured"><div class="featured-top"><span class="live-mark">最近对局</span>
     <span>${esc(latest.date || '日期未知')} &nbsp; / &nbsp; ${time(latest.duration)}</span></div>
     <div class="versus"><div class="versus-team"><small>${esc(sides[latest.ownCamp] || '本队')}</small><strong>${esc(summary.teamName || '本队')}</strong><span>本队</span></div>
@@ -264,17 +578,38 @@ function overview(value) {
       <div class="spotlight-details"><span><b>${fmt(hero.picks)}</b> 次出场</span><span><b>${pct(hero.winRate)}</b> 胜率 / ${hero.decided} 局</span></div></div></a>`
     : `<div class="spotlight no-hero"><div class="spotlight-copy"><span>英雄观察</span><h2>暂无出场数据</h2></div></div>`;
   const p = process.matches[0];
+  /* 首页看的是这一批，不是最后一局：按 30 秒对齐求平均。
+     后段只剩一两局在撑，样本不足就截断，免得尾巴把结论带偏。 */
+  const games = (process.matches || []).filter((game) => (game.points || []).length);
+  const buckets = new Map();
+  games.forEach((game) => (game.points || []).forEach(([t, v]) => {
+    if (!has(t) || !has(v)) return;
+    const key = Math.round(t / 30) * 30;
+    const cell = buckets.get(key) || { sum: 0, n: 0 };
+    cell.sum += v;
+    cell.n += 1;
+    buckets.set(key, cell);
+  }));
+  const grid = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
+  const enough = Math.max(3, Math.round(games.length * 0.45));
+  let last = grid.length - 1;
+  while (last >= 0 && grid[last][1].n < enough) last -= 1;
+  const avgCurve = last >= 1 ? grid.slice(0, last + 1).map(([t, cell]) => [t, Math.round(cell.sum / cell.n)]) : [];
+  const useAvg = games.length >= 3 && avgCurve.length >= 2;
+  const curve = useAvg ? avgCurve : (p?.points || []);
+  const curveNote = useAvg
+    ? `近 ${games.length} 局平均 · 每 30 秒一个点 · 截到 ${time(avgCurve.at(-1)[0])}（更长的局样本不足）`
+    : (p ? `${p.date || '日期未知'} · 对阵 ${p.opponent || '对手未标注'} · 最近一局` : '最近可用对局');
   return `<div class="page home">
-    ${pageIntro('赛训数据', '查看训练表现，回到每一场对局。')}
-    ${filters.validation ? `<div class="notice">当前范围包含验证数据，请结合样本来源查看。</div>` : ''}
+    ${pageIntro(`${record}${margin}`, meta, filters.validation ? '<span class="scope-chip">含验证数据</span>' : '')}
     <div class="feature-grid">${featured}${spotlight}</div>
-    <div class="stats-band"><div><span>对局总数</span><strong>${fmt(summary.matches)}<small>局</small></strong><p>${fmt(summary.coverage.timelineMatches)} 局有时间轴</p></div>
-      <div><span>本队胜率</span><strong>${pct(summary.winRate)}</strong><p>${summary.wins} 胜 / ${summary.decided} 局有胜负</p></div>
+    <div class="stats-band"><div><span>对局总数</span><strong>${fmt(summary.matches)}<small>局</small></strong><p>${fmt(summary.coverage.timelineMatches)} 局时间轴完整</p></div>
       <div><span>平均对局时长</span><strong>${time(avgDuration)}</strong><p>${duration.length} 局有时长</p></div>
-      <div><span>平均终局经济差</span><strong>${diff(team.avgGoldDiff)}</strong><p>本队减对手 / ${team.samples.goldDiff} 局</p></div></div>
+      <div><span>场均击杀</span><strong>${fmt(team.avgKills, 1)}</strong><p>本队五人合计</p></div>
+      <div><span>场均经济</span><strong>${fmt(team.avgGold)}</strong><p>本队五人终局合计</p></div></div>
     <div class="insight-grid"><section class="section curve-section"><div class="section-heading"><div><h2>经济走势</h2>
-      <p>${p ? esc((p.date || '日期未知') + '  ' + (p.opponent ? '对阵 ' + p.opponent : '对手未标注')) : '最近可用对局'}</p></div>
-      <a href="#tempo">查看节奏分析 ${icon('arrow')}</a></div>${chart(p?.points, '本队经济差')}</section>
+      <p>${esc(curveNote)}</p></div>
+      <a href="#tempo">查看节奏分析 ${icon('arrow')}</a></div>${chart(curve, useAvg ? '这批局的平均经济差' : '本队经济差', useAvg ? { note: `${games.length} 局平均 · ${curve.length} 个时间点` } : {})}</section>
       <section class="section heroes-section"><div class="section-heading"><div><h2>英雄出场</h2><p>本队当前样本</p></div>
         <a href="#bp">查看全部 ${icon('arrow')}</a></div>
         <div class="hero-rows">${(summary.topHeroes || []).slice(0,5).map((h) => `<a href="${esc(route('matches', 'hero=' + h.hero))}" class="hero-row">
@@ -338,7 +673,7 @@ function playersPage(value) {
     const lane = member ? member.position : (p.positions || []).join(' / ');
     return [`<a class="text-link" href="${esc(route('player', p.playerKey))}">${esc(p.label)}</a>`, esc(lane || '—'), fmt(p.matches), pct(p.winRate), fmt(p.kda, 2), fmt(p.gpm, 1), fmt(p.dpm, 1), pct(p.participation)];
   });
-  const emptyRoster = '<div class="empty">本队名单还没建立。先在「赛训 → 建档」登记选手，或在「选手认领」把对局昵称并入名单。</div>';
+  const emptyRoster = '<div class="empty">本队名单还没建立。先在「赛训 → 数据准备 → 建档」登记选手，或在「选手认领」把对局昵称并入名单。</div>';
   return `<div class="page">${pageIntro('名单与状态', '谁在打、谁状态在变、谁和谁能搭。名单取自建档，表现只统计已认领身份。')}
     <div class="analysis-observation"><span>结论</span><p>${esc(brief)}</p></div>
     ${unbound.length ? `<div class="scope-note"><span>身份待认领</span>还有 ${fmt(unbound.length)} 个昵称没有并入名单（${fmt(summary.unboundGames)} 局），不计入名单、状态与排名。命名入口在下方「待命名」。</div>` : ''}
@@ -498,7 +833,7 @@ async function hydratePlayer(label) {
     depthPayload('compare_baseline', (payload) => (payload.rows || []).length > 0),
     depthPayload('lane_matchup', (payload) => (payload.roads || []).length > 0),
     depthPayload('cs_conversion', (payload) => (payload.byPlayer || []).length > 0),
-    fetch(`${API_BASE}/api/v2/research/player_pairs${query()}`, { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).catch(() => null),
+    fetch(`${API_BASE}/api/v3/research/player_pairs${query()}`, { cache: 'no-store' }).then((response) => response.ok ? response.json() : null).catch(() => null),
   ]);
   fill('[data-analysis="baseline"]', baseline, playerBaseline);
   fill('[data-analysis="lane"]', lane, playerLanes);
@@ -708,7 +1043,7 @@ function matchPage(m) {
   const mdProfiles = `<section class="section" id="match-profiles"><div class="section-heading"><div><h2>十人面板</h2><p>对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比</p></div></div>
     ${deep.panel(m.players || [], own, m.positions, m.duration)}
   </section>`;
-  const mdHeat = `<section class="section" id="match-heat"><div class="section-heading"><div><h2>十人热区</h2><p>16 × 16 网格，窗口 90 秒随指针滚动；拖动时间轴或点播放，看队伍怎么移动。对位视图把同一路的两个人并排</p></div></div>
+  const mdHeat = `<section class="section" id="match-heat"><div class="section-heading"><div><h2>对位热区</h2><p>选一路，看这一路两个人在 90 秒窗口里怎么移动；可拖动时间轴或点播放。金为本队、青为对手</p></div></div>
     ${m.positions ? deep.heat(m.positions, m.players, own, m.duration) : '<div class="empty">正在读取营地的逐秒位置…</div>'}
   </section>`;
   const mdDuel = `<section class="section" id="match-duel"><div class="section-heading"><div><h2>对位纵深</h2><p>同一张表两种口径：深区＝推进进度 &gt; 66%，半区＝&gt; 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格</p></div></div>
@@ -724,7 +1059,7 @@ function matchPage(m) {
   const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
     <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
     <span class="md-bp-bans">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>`;
-  const mdBp = `<section class="section"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
+  const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
     ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>` : '<div class="empty">暂无禁选记录。</div>'}
   </section>`;
   /* 总量按十人面板逐人求和（详情接口不带 own/enemy 汇总）。 */
@@ -744,6 +1079,12 @@ function matchPage(m) {
   const mdCohesion = `<section class="section" id="match-cohesion"><div class="section-heading"><div><h2>中野辅与入侵</h2><p>集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济</p></div></div>
     ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : '<div class="empty">正在读取营地的逐秒位置…</div>'}
   </section>`;
+  const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒金差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
+    ${deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights) || '<div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div>'}
+  </section>`;
+  const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。竖虚线是前中后三期分界</p></div></div>
+    ${deep.frontline(m.positions, m.players, own, m.duration) || '<div class="empty">这局没有位置数据</div>'}
+  </section>`;
   return `<div class="page md-page">${mdCrumb}
     ${mdHero}
     ${mdTotals}
@@ -752,6 +1093,8 @@ function matchPage(m) {
     ${mdTimeline}
     ${mdProfiles}
     ${mdCohesion}
+    ${mdBattle}
+    ${mdFront}
     ${mdHeat}
     ${mdDuel}
     ${mdBp}
@@ -762,14 +1105,19 @@ function matchPage(m) {
 const tour = createTour();
 const features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table, pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true), currentQuery: () => query() });
 const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait });
+const crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
 deep.bindPanel(document);
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */
 let pulseState = null;
 const renderers = { overview, matches: matchesPage, opponents: opponentsPage, players: playersPage,
-  player: playerPage, tempo: tempoPage, sources: sourcesPage, match: matchPage };
-
-function render() {
-  const r = current();
+  player: playerPage, tempo: tempoPage, sources: sourcesPage, match: matchPage,
+  cross: (d) => (d && d.cross ? crossPage.render(d.cross, { total: d.crossTotal || d.cross.length, limit: d.crossLimit || CROSS_LIMIT, cohort: d.cohort }) : '<div class="page"><div class="loading">正在汇总各局数据…</div></div>') };
+let lastRenderedRoute = '';
+function render(r = current()) {
+  /* 换路由时回到顶部：从很长的单局页切到跨局分析，不重置会停在中段 */
+  const routeKey = `${r.name}/${r.key || ''}`;
+  const isNewRoute = routeKey !== lastRenderedRoute;
+  lastRenderedRoute = routeKey;
   document.querySelectorAll('[data-nav]').forEach((a) => {
     if (a.dataset.nav === sectionFor(r.name)) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -778,7 +1126,8 @@ function render() {
   const tabs = featureSections[sectionFor(r.name)] || [];
   const secondary = document.querySelector('.secondary-wrap');
   secondary.hidden = tabs.length < 2;
-  secondary.querySelector('nav').innerHTML = tabs.map(([key, label]) => `<a href="#${key}" ${key === r.name || ({match:'matches',player:'players',playerdetail:'players',team:'teams',hero:'heroes',report:'reports'}[r.name] === key) ? 'aria-current="page"' : ''}>${label}</a>`).join('');
+  const activeTab = {ownership:'setup', pending:'setup', effect:'reports', session:'plan', weekly:'reports', identity:'players'}[r.name] || r.name;
+  secondary.querySelector('nav').innerHTML = tabs.map(([key, label]) => `<a href="#${key}" ${key === activeTab || ({match:'matches',player:'players',playerdetail:'players',team:'teams',hero:'heroes',report:'reports'}[r.name] === key) ? 'aria-current="page"' : ''}>${label}</a>`).join('');
   document.querySelector('#content').innerHTML = features.has(r.name) ? features.render(r.name, data, r.key) : renderers[r.name](data, r.key);
   /* 分析专题不设平铺导航入口：跨局分析从页面内按需进入。
      #topic/* 与 #study/* 路由仍保留可达（labels / sectionFor 兜底），只是不再出现在导航条。 */
@@ -786,6 +1135,7 @@ function render() {
   analysisRail.innerHTML='';
   analysisRail.hidden=true;
   features.afterRender();
+  if (r.name === 'overview' && data && data.summary && !data.summary.matches) hydrateWelcome();
   if (r.name === 'player') {
     /* 选手不在当前数据范围时 stats 为 null，也要把四个子面板收尾，
        否则「正在读取…」会永久停留（2026-11-07 上线测评发现）。 */
@@ -794,52 +1144,142 @@ function render() {
   }
   if (r.name === 'match' && pulseState) deep.bindPulse(document, pulseState.series, pulseState.events);
   if (r.name === 'match') deep.bindHeat(document);
+  if (r.name === 'match') deep.bindBattle(document);
+  if (r.name === 'cross') crossPage.bind(document);
   updateMode();
+  if (isNewRoute) window.scrollTo(0, 0);
+  refreshInbox();
   tour.afterRender();
 }
 
+/* 跨局分析：按当前筛选范围，把每局的详情 / 位置 / 回放各取一次。
+   局数会持续增长，这里分批并发取回一个分析窗口（默认最近 200 局），
+   页面结论基于窗口内全量，渲染按页分批；总数单独带回用于写明口径。 */
+const CROSS_LIMIT = 200;
+async function hydrateCross(detail, signal) {
+  const all = detail.matches || [];
+  const list = all.slice(0, CROSS_LIMIT);
+  detail.crossTotal = all.length;
+  detail.crossLimit = CROSS_LIMIT;
+  /* 通用跨局分析的总体：一次请求拿到全量局的轻量向量，不随局数放大请求数。
+     逐局对照台仍取最近一个明细窗口，两者互不干扰。 */
+  try {
+    const response = await fetch(API_BASE + '/api/cross/vectors' + query(), { signal, cache: 'no-store' });
+    if (response.ok) detail.cohort = await response.json();
+  } catch {
+    detail.cohort = null;
+  }
+  const rows = new Array(list.length).fill(null);
+  let next = 0;
+  const take = async () => {
+    while (next < list.length && !signal.aborted) {
+      const index = next++;
+      const m = list[index];
+      const url = (path) => API_BASE + '/api/' + path + encodeURIComponent(m.key);
+      try {
+        const [d, pos, rep] = await Promise.all([
+          fetch(url('matches/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
+          fetch(url('positions/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch(url('replay/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        ]);
+        if (!d) continue;
+        rows[index] = {
+          key: m.key,
+          date: d.date || m.date || '',
+          opponent: d.opponent || m.opponent || '',
+          result: d.result || m.result || '',
+          duration: d.duration || m.duration || 0,
+          version: d.version || m.version || '',
+          session: d.session || m.session || '',
+          ownCamp: d.ownCamp,
+          players: d.players || [],
+          detail: d,
+          positions: pos,
+          replay: rep,
+        };
+      } catch {
+        /* 单局取数失败就跳过，不让一局拖垮整页 */
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, list.length) }, take));
+  detail.cross = rows.filter(Boolean);
+}
+
 async function load(fresh = false) {
+  const generation = ++loadGeneration;
   request?.abort();
   request = new AbortController();
   const currentRequest = request;
   const r = current();
-  const endpoint = r.name === 'players' ? 'v2/players/board'
-    : ({ match: 'matches/', player: 'players/', opponents: 'studio/teams' }[r.name] || r.name) + (['match','player'].includes(r.name) ? encodeURIComponent(r.key) : '');
+  const routeKey = routeKeyOf(r);
+  /* 换页归零重试计数；手动刷新也给一次全新的重试机会。 */
+  if (routeKey !== loadRoute) { loadRoute = routeKey; retryByRoute.clear(); }
+  if (fresh) retryByRoute.delete(routeKey);
+  const stale = () => isStale(generation, routeKey);
+  /* 离线期间：不逐页发请求，直接渲染占位；探活成功后会自动 load() 当前页。 */
+  if (offlineSince) { renderOffline(r); return; }
+  const endpoint = r.name === 'players' ? 'v3/players/board'
+    : ({ match: 'matches/', player: 'players/', opponents: 'studio/teams', cross: 'matches' }[r.name] || r.name) + (['match','player'].includes(r.name) ? encodeURIComponent(r.key) : '');
   document.querySelector('#content').innerHTML = '<div class="page"><div class="loading">正在读取赛训数据…</div></div>';
   try {
     const [result, meta] = await Promise.all([features.has(r.name) ? features.load(r.name, r.key, currentRequest.signal) : get(endpoint, fresh), metadata.icons ? Promise.resolve(metadata) : get('metadata')]);
-    if (currentRequest.signal.aborted) return;
+    if (stale()) return;
     metadata = meta;
     data = result;
+    retryByRoute.delete(routeKey);
     if (r.name === 'match') data.replayStatus = 'loading';
-    render();
+    render(r);
     if (r.name === 'match') {
       try {
         const [response, posResponse] = await Promise.all([
           fetch(API_BASE + '/api/replay/' + encodeURIComponent(r.key), { signal: currentRequest.signal, cache: 'no-store' }),
           fetch(API_BASE + '/api/positions/' + encodeURIComponent(r.key), { signal: currentRequest.signal, cache: 'no-store' }).catch(() => null),
         ]);
-        if (currentRequest.signal.aborted) return;
+        if (stale()) return;
         data.replayStatus = response.status === 404 ? 'unavailable' : response.ok ? 'ready' : 'error';
         if (response.ok) data.replay = await response.json();
         if (posResponse && posResponse.ok) data.positions = await posResponse.json();
       } catch {
-        if (currentRequest.signal.aborted) return;
+        if (stale()) return;
         data.replayStatus = 'error';
       }
-      if (!currentRequest.signal.aborted) {
+      if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
-        ['match-verdict','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-heat','match-duel'].forEach((id)=>{
+        ['match-verdict','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-front','match-heat','match-duel'].forEach((id)=>{
           const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
           if(existing&&updated)existing.replaceWith(updated);
         });
         if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events);
         deep.bindHeat(document);
+        deep.bindBattle(document);
       }
     }
+    if (r.name === 'cross') {
+      await hydrateCross(data, currentRequest.signal);
+      if (!stale()) render(r);
+    }
   } catch (error) {
-    if (currentRequest.signal.aborted) return;
-    document.querySelector('#content').innerHTML = `<div class="page"><div class="section empty">${esc(error.message)}<br><button class="control" data-action="refresh">重新读取</button></div></div>`;
+    /* 主动取消的请求、已经切走的页面：既不重试，也不把错误写进新页面。 */
+    if (stale() || isCancelled(error, currentRequest.signal)) return;
+    /* 网络层断开：进入自动重连，恢复后自动加载当前页。 */
+    const offline = error instanceof TypeError
+      || /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(String(error?.message || ''));
+    if (offline) {
+      setOffline(true);
+      renderOffline(r);
+      return;
+    }
+    /* 单次接口失败（含静态资源与路由表短暂错配）先静默重试，页面保持「正在读取」；
+       连续失败才给一页可读提示，绝不把英文 detail 或本地运维话术摆给教练。 */
+    const attempts = retryByRoute.get(routeKey) || 0;
+    if (attempts < 2) {
+      retryByRoute.set(routeKey, attempts + 1);
+      setTimeout(() => { if (!isStale(generation, routeKey)) load(fresh); }, 350 * (attempts + 1));
+      return;
+    }
+    retryByRoute.delete(routeKey);
+    renderDataNotice(r);
   }
 }
 
@@ -868,11 +1308,61 @@ function filterDialog() {
   dialog.showModal();
 }
 
+function clientMissingDialog() {
+  const dialog = document.querySelector('#filters');
+  dialog.innerHTML = `<div class="dialog-head"><div><h2>没有检测到客户端</h2>
+    <p>可能还没有安装，或系统没有注册 kpl-client://open 协议。</p></div>
+    <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
+    <div class="dialog-body"><p>下载安装后，再点「打开客户端」即可从这里直接进入客户端；当前页面会自动带过去。</p></div>
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">稍后</button>
+      <a class="primary" href="${CLIENT_DOWNLOAD_URL}" target="_blank" rel="noopener">去下载客户端</a></div>`;
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+}
+
 app.addEventListener('click', (event) => {
   if (features.click(event)) return;
+  if (event.target.closest('[data-sx-inbox]')) { openInbox(); return; }
+  if (event.target.closest('[data-sx-inbox-close]')) { document.querySelector('#sx-inbox-dialog')?.close(); return; }
+  if (event.target.closest('[data-sx-inbox-link]')) { document.querySelector('#sx-inbox-dialog')?.close(); return; }
+  if (event.target.closest('[data-sx-map-opponent]')) {
+    const row = event.target.closest('.sx-inbox-map');
+    const button = event.target.closest('button');
+    const teamId = row?.querySelector('select')?.value;
+    if (!row || !teamId) return;
+    button.disabled = true;
+    button.textContent = '映射中…';
+    fetch(API_BASE + '/api/studio/workspace/opponents/map', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({oldId:row.dataset.oldId, teamId}),
+    }).then(async (response) => {
+      if (!response.ok) {
+        let detail = '映射失败';
+        try { detail = (await response.json()).detail || detail; } catch {}
+        throw new Error(detail);
+      }
+      document.querySelector('#sx-inbox-dialog')?.close();
+      await load(true);
+    }).catch((error) => {
+      button.disabled = false;
+      button.textContent = '映射';
+      window.alert(error.message);
+    });
+    return;
+  }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
   if (action === 'tour') { tour.start(); return; }
+  if (action === 'open-client') {
+    event.preventDefault();
+    const started = Date.now();
+    try { window.location.href = 'kpl-client://open'; } catch { /* 交给下面的兜底提示 */ }
+    // 协议已注册时客户端会抢走焦点；页面仍有焦点说明多半没装。
+    setTimeout(() => {
+      if (document.hasFocus() && Date.now() - started < 6000) clientMissingDialog();
+    }, 1800);
+    return;
+  }
   if (action === 'demo') {
     if (metadata.demo) {
       let origin='http://127.0.0.1:8766';
@@ -880,12 +1370,45 @@ app.addEventListener('click', (event) => {
       location.assign(origin+'/#overview');
     } else {
       const button=event.target.closest('button'); button.disabled=true; const label=button.querySelector('span'); if(label)label.textContent='正在准备…';
-      fetch(API_BASE + '/api/v2/demo/start',{method:'POST'}).then(async response=>{const body=await response.json();if(!response.ok)throw Error(body.detail||'演示环境启动失败');const url=new URL(body.url);url.searchParams.set('return',location.origin);location.assign(url.href+'#overview')}).catch(error=>{button.disabled=false;if(label)label.textContent='演示数据';window.alert(error.message)});
+      const start = async () => {
+        const response = await fetch(API_BASE + '/api/demo/start',{method:'POST'});
+        const body = await response.json();
+        if (!response.ok) throw Error(body.detail||'演示环境启动失败');
+        return body;
+      };
+      start().then(body=>{const url=new URL(body.url);url.searchParams.set('return',location.origin);location.assign(url.href+'#overview')}).catch(error=>{button.disabled=false;if(label)label.textContent='演示数据';window.alert(error.message)});
     }
     return;
   }
   if (action === 'theme') { theme = theme === 'light' ? 'dark' : 'light'; localStorage.setItem('training-rebuild-theme', theme); applyTheme(); }
-  if (action === 'refresh') { metadata = {}; load(true); }
+  if (action === 'open-data') {
+    fetch(API_BASE + '/api/data/open', { method: 'POST' })
+      .then((response) => { if (!response.ok) throw new Error(); })
+      .catch(() => window.alert('没能打开数据目录，请手动打开安装目录下的 data 文件夹。'));
+    return;
+  }
+  if (action === 'migrate-legacy') {
+    const button = event.target.closest('[data-action]');
+    const heavy = document.querySelector('[data-welcome-legacy] [data-migrate-heavy]');
+    button.disabled = true;
+    startMigration(button.dataset.path, heavy ? heavy.checked : true);
+    return;
+  }
+  if (action === 'migrate-path') {
+    const input = document.querySelector('[data-welcome-path]');
+    const value = (input?.value || '').trim().replace(/^"|"$/g, '');
+    if (!value) { input?.focus(); return; }
+    const heavy = input.closest('details')?.querySelector('[data-migrate-heavy]');
+    event.target.closest('button').disabled = true;
+    startMigration(value, heavy ? heavy.checked : true);
+    return;
+  }
+  if (action === 'refresh') {
+    metadata = {};
+    /* 离线时点重试：立刻探活一次，服务回来了就自动加载当前页。 */
+    if (offlineSince) { reconnectDelay = 600; scheduleReconnect(0); }
+    load(true);
+  }
   if (action === 'filter') filterDialog();
   if (action === 'name-player') { namePlayerDialog(event.target.closest('[data-action]').dataset.label); return; }
   if (action === 'close') document.querySelector('#filters').close();
@@ -915,7 +1438,7 @@ app.addEventListener('submit', (event) => {
     if (error) return;
     const button = event.target.querySelector('button[type=submit]');
     button.disabled = true;
-    fetch(API_BASE + '/api/v2/identity/name', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    fetch(API_BASE + '/api/v3/identity/name', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(async (response) => { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.detail || '保存失败'); document.querySelector('#filters').close(); load(true); })
       .catch((err) => { button.disabled = false; event.target.querySelector('.filter-error').textContent = err.message; });
     return;

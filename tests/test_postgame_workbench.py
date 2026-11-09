@@ -99,7 +99,7 @@ class CaptureApiTests(unittest.TestCase):
             response = self.client.get(f'/assets/capture-guide/{name}.svg')
             self.assertEqual(response.status_code, 200, name)
             self.assertIn(b'<svg', response.content)
-        self.assertIn('data-slot-card', (OUT.parent / 'web' / 'screenshot-page.js').read_text(encoding='utf-8'))
+        # 旧版截图页已归档；V3 素材页由 v3/public/sources-page.js 提供。
 
     @unittest.skipUnless((OUT.parent / 'data' / 'screenshots' / 'samples' / '01-score.png').is_file(),
                         '缺少真实示例截图')

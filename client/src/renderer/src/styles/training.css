@@ -1,0 +1,880 @@
+/* M4：训练看板、训练课、训练效果、周报与报告快照。 */
+
+/* ── 赛训看板 ───────────────────────────────────────────────────── */
+
+.dash-goal-band {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.dash-goal-legend {
+  display: grid;
+  gap: 5px;
+  flex: 1;
+}
+
+.dash-goal-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.dash-goal-legend i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.dash-goal-legend i.is-achieved {
+  background: var(--md-own);
+}
+
+.dash-goal-legend i.is-partial {
+  background: var(--accent);
+}
+
+.dash-goal-legend i.is-missed {
+  background: var(--coral);
+}
+
+.dash-goal-legend b {
+  margin-left: auto;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.dash-heat {
+  display: grid;
+  gap: 5px;
+}
+
+.dash-heat-head,
+.dash-heat-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+}
+
+.dash-heat-head {
+  padding-left: 0;
+}
+
+.dash-heat-head span {
+  display: none;
+}
+
+.dash-heat-head i {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-style: normal;
+  text-align: center;
+}
+
+.dash-heat-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.dash-heat-foot .dash-heat-cell {
+  width: 9px;
+  height: 9px;
+}
+
+.dash-heat-cell {
+  display: block;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.dash-heat-cell.is-1 {
+  background: color-mix(in srgb, var(--md-own) 22%, var(--surface));
+}
+
+.dash-heat-cell.is-2 {
+  background: color-mix(in srgb, var(--md-own) 42%, var(--surface));
+}
+
+.dash-heat-cell.is-3 {
+  background: color-mix(in srgb, var(--md-own) 62%, var(--surface));
+}
+
+.dash-heat-cell.is-4 {
+  background: var(--md-own);
+}
+
+.dash-recent {
+  display: grid;
+  gap: 2px;
+}
+
+.dash-session {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 54px 14px;
+  gap: 7px;
+  align-items: center;
+  padding: 6px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+  font-size: 8.5px;
+}
+
+.dash-session > span:first-child {
+  color: var(--quiet);
+  font-family: var(--mono);
+}
+
+.dash-session > span:nth-child(2) {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dash-session b {
+  color: var(--text);
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-session small {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.dash-session > span:nth-child(3) {
+  color: var(--muted);
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.dash-session > i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+
+.dash-session > i.is-done {
+  background: var(--md-own);
+}
+
+/* ── 训练计划列表 ───────────────────────────────────────────────── */
+
+.plan-next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper-2));
+}
+
+.plan-next > span {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.plan-next b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.plan-next p {
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.plan-next a {
+  margin-left: auto;
+  color: var(--accent);
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+.plan-list {
+  display: grid;
+  gap: 2px;
+}
+
+.plan-row {
+  display: grid;
+  grid-template-columns: 84px minmax(120px, 1.2fr) 80px 64px minmax(108px, .8fr) 16px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+  font-size: 8.5px;
+}
+
+.plan-row:hover {
+  background: color-mix(in srgb, var(--surface) 26%, transparent);
+}
+
+.plan-row.is-cancelled {
+  opacity: .58;
+}
+
+.plan-date,
+.plan-opponent {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.plan-date b,
+.plan-opponent b {
+  color: var(--text);
+  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-date b {
+  font-family: var(--mono);
+}
+
+.plan-date small,
+.plan-opponent small {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.plan-goals {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.plan-go {
+  color: var(--quiet);
+  text-align: right;
+}
+
+/* ── 训练效果 ───────────────────────────────────────────────────── */
+
+.effect-list {
+  display: grid;
+  gap: 10px;
+}
+
+.effect-card {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.effect-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.effect-head .board-tag {
+  margin-left: auto;
+}
+
+.effect-card h3 {
+  margin-top: 5px;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.effect-method {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.effect-values {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+}
+
+.effect-values > span {
+  display: grid;
+  gap: 2px;
+}
+
+.effect-values small {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.effect-values b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.effect-values em {
+  color: var(--quiet);
+  font-size: 7.5px;
+  font-style: normal;
+}
+
+.effect-values > i {
+  color: var(--quiet);
+  font-style: normal;
+}
+
+.effect-review {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+  color: var(--muted);
+  font-size: 8.5px;
+  line-height: 1.6;
+}
+
+/* ── 训练课 ─────────────────────────────────────────────────────── */
+
+.goal-review-list {
+  display: grid;
+  gap: 4px;
+}
+
+.goal-review {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 4px 8px;
+  padding: 7px 8px;
+  border-left: 2px solid var(--line-strong);
+  background: var(--paper);
+}
+
+.goal-review.is-achieved {
+  border-left-color: var(--md-own);
+}
+
+.goal-review.is-partial {
+  border-left-color: var(--accent);
+}
+
+.goal-review.is-missed {
+  border-left-color: var(--coral);
+}
+
+.goal-review > span {
+  grid-row: 1 / 3;
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.goal-review b {
+  color: var(--text);
+  font-size: 9.5px;
+}
+
+.goal-review small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.session-review {
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.75;
+}
+
+.session-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.session-meta span {
+  display: grid;
+  gap: 2px;
+}
+
+.session-meta small {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.session-meta b {
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.brief-grid {
+  display: grid;
+  gap: 9px;
+}
+
+.brief-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brief-head b {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.brief-head span {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.brief-grid > div:not(.brief-head) {
+  display: grid;
+  gap: 3px;
+}
+
+.brief-grid small {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.brief-heroes,
+.brief-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.brief-heroes > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 5px 2px 2px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.brief-heroes .portrait {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  font-size: 7px;
+}
+
+.brief-players > span {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+/* ── 报告库 / 周报 / 快照 ──────────────────────────────────────── */
+
+.report-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.report-card {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.report-card > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 7px;
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.report-card h3 {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.report-card p {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.report-card em {
+  margin-top: 3px;
+  color: var(--accent);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.report-sheet {
+  display: grid;
+  gap: 16px;
+  padding: 26px 30px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+
+.report-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.report-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.report-brand > div {
+  display: grid;
+  gap: 0;
+}
+
+.report-brand b {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.report-brand small {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 6.5px;
+  letter-spacing: .12em;
+}
+
+.report-kind {
+  margin-left: auto;
+  padding: 2px 7px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 7.5px;
+}
+
+.report-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.report-eyebrow {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: .12em;
+}
+
+.report-title h1 {
+  margin-top: 3px;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 25px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1.3;
+}
+
+.report-title p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.report-stamp {
+  display: grid;
+  gap: 2px;
+  min-width: 84px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  text-align: right;
+}
+
+.report-stamp span {
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.report-stamp b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.report-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.report-kpis > div {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  background: var(--paper-2);
+}
+
+.report-kpis span {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.report-kpis strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.report-kpis small {
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.report-context {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 8.5px;
+  line-height: 1.6;
+}
+
+.report-context span {
+  margin-right: 7px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+  letter-spacing: .08em;
+}
+
+.report-compare {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.report-compare > div {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.report-compare span {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.report-compare b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.report-compare small {
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.report-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, .8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.report-main,
+.report-side {
+  display: grid;
+  gap: 12px;
+}
+
+.report-section h2 {
+  margin-bottom: 5px;
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8px;
+}
+
+.report-table th,
+.report-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  text-align: left;
+}
+
+.report-table th {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 500;
+}
+
+.report-table td {
+  color: var(--muted);
+}
+
+.report-table td a {
+  color: var(--accent);
+}
+
+.report-muted {
+  color: var(--quiet);
+  font-size: 8.5px;
+}
+
+.report-goals {
+  display: grid;
+  gap: 3px;
+  padding-left: 16px;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.report-review-item {
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+}
+
+.report-review-item b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.report-review-item p {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.6;
+}
+
+.report-effect {
+  display: grid;
+  gap: 2px;
+}
+
+.report-effect b {
+  color: var(--text);
+  font-size: 9px;
+}
+
+.report-effect span {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.report-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+@media (max-width: 960px) {
+  .report-columns,
+  .dash-goal-band {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .report-kpis,
+  .report-compare {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .plan-row {
+    grid-template-columns: 76px minmax(0, 1fr) 58px;
+  }
+
+  .plan-row > :nth-child(3),
+  .plan-row > :nth-child(5),
+  .plan-row > :nth-child(6) {
+    display: none;
+  }
+}
+
+@media print {
+  .session-page .module-tabs,
+  .session-page .page-actions,
+  .session-page .board-foot,
+  .report-page .module-tabs,
+  .report-page .board-toolbar,
+  .report-page .page-actions,
+  .report-page .board-foot {
+    display: none !important;
+  }
+
+  .report-sheet {
+    border: 0;
+    padding: 0;
+  }
+
+  .report-columns {
+    grid-template-columns: 1.5fr .8fr;
+  }
+}

@@ -88,7 +88,7 @@
     "abcSha256": "d74c2bed9dc12ec6d23118fbb87b2a372993b358f1fec542ee492d580e0e64f4",
     "pairing": "recorder-tag-matched",
     "scoreTableOffset": 482879,
-    "parserVersion": "observed-12.1.1.x-v2",
+    "parserVersion": "observed-12.1.1.x-v3",
     "opeStatus": "operator-stream-undecoded-at-0xEF"
   }
 }

@@ -62,21 +62,21 @@ def test_players_belong_to_team_and_alias(ws):
 
 def test_merge_moves_players_and_archives_source(ws):
     target = ws.upsert_team(name='青岚')
-    source = ws.upsert_team(name='待命名对手 #3')
+    source = ws.upsert_team(name='待命名战队 #3')
     ws.upsert_player(team_id=source, name='队员甲')
 
     ws.merge_teams(source, target)
 
     assert [player['team_id'] for player in ws.list_players()] == [target]
     active = {team['name'] for team in ws.list_teams()}
-    assert '青岚' in active and '待命名对手 #3' not in active
-    assert any(team['name'] == '待命名对手 #3' for team in ws.list_teams(include_archived=True))
+    assert '青岚' in active and '待命名战队 #3' not in active
+    assert any(team['name'] == '待命名战队 #3' for team in ws.list_teams(include_archived=True))
 
 
 def test_schedule_and_training_roundtrip(ws):
     team_id = ws.upsert_team(name='赤霄')
     schedule_id = ws.save_schedule(date='2026-11-08', start_time='19:00', opponent_team_id=team_id,
-                                    format='BO3', rules='全局BP', version='V2')
+                                    format='BO3', rules='全局BP', version='B')
     schedules = ws.list_schedules()
     assert schedules[0]['id'] == schedule_id and schedules[0]['opponent_team_id'] == team_id
 
@@ -128,6 +128,74 @@ def test_migrate_roster_creates_teams_and_skips_duplicates(ws):
     again = ws.migrate_roster(roster, own_team_name='本队')
     assert again['imported'] == 0
     assert len(ws.list_players()) == 2
+
+
+def test_migrate_roster_renames_player_placeholders(ws):
+    ws.upsert_team('team-own', name='本队')
+    roster = [
+        {'id': 'p-new-1', 'name': '新选手', 'team': '本队', 'position': '中路'},
+        {'id': 'p-new-2', 'name': '新选手', 'team': '本队', 'position': '打野'},
+        {'id': 'p-new-3', 'name': '待命名选手 #9', 'team': '本队', 'position': '游走'},
+    ]
+    report = ws.migrate_roster(roster, own_team_name='本队')
+    assert report['imported'] == 3
+    assert report['placeholders'] == 3
+    names = {player['id']: player['name'] for player in ws.list_players()}
+    assert names == {
+        'p-new-1': '待命名选手 #1',
+        'p-new-2': '待命名选手 #2',
+        'p-new-3': '待命名选手 #3',
+    }
+    assert report['renamed']['p-new-1'] == '待命名选手 #1'
+    # 与战队占位名严格分开
+    assert all(not name.startswith('待命名战队') for name in names.values())
+
+
+def test_inbox_and_opponent_alias(ws):
+    team_id = ws.upsert_team(name='青岚')
+    ws.upsert_match('old-opponent-match', date='2026-11-02', enemy_team_id='old-opponent-id')
+    inbox = ws.inbox()
+    assert any(group['key'] == 'unmapped' and group['count'] == 1 for group in inbox['groups'])
+    assert ws.unmapped_opponents()[0]['oldId'] == 'old-opponent-id'
+    mapped = ws.map_opponent('old-opponent-id', team_id)
+    assert mapped['updated'] == 1
+    row = ws.list_matches()[0]
+    assert row['enemy_team_id'] == team_id
+    assert ws.inbox()['total'] >= 0
+
+
+def test_session_manual_match_links(ws):
+    ws.upsert_match('link-a', date='2026-11-02', session='验证数据')
+    ws.upsert_match('link-b', date='2026-11-02', session='验证数据')
+    schedule_id = ws.save_schedule(date='2026-11-02', session='验证数据')
+    auto = ws.session_matches(ws.get_schedule(schedule_id))
+    assert {row['match_key'] for row in auto['matches']} == {'link-a', 'link-b'}
+    ws.save_session_links(schedule_id, ['link-b'])
+    manual = ws.session_matches(ws.get_schedule(schedule_id))
+    assert manual['reason'] == 'manual'
+    assert [row['match_key'] for row in manual['matches']] == ['link-b']
+    ws.save_session_links(schedule_id, [])
+    restored = ws.session_matches(ws.get_schedule(schedule_id))
+    assert restored['reason'] == 'date_session'
+    assert {row['match_key'] for row in restored['matches']} == {'link-a', 'link-b'}
+
+
+def test_session_matches_and_review_roundtrip(ws):
+    ws.upsert_match('session-match-1', date='2026-11-02', session='验证数据',
+                    enemy_team_id='team-x', winner='blue')
+    schedule_id = ws.save_schedule(date='2026-11-02', session='验证数据', format='BO3')
+    schedule = ws.get_schedule(schedule_id)
+    linked = ws.session_matches(schedule)
+    assert linked['reason'] == 'date_session'
+    assert [row['match_key'] for row in linked['matches']] == ['session-match-1']
+
+    saved = ws.save_session_review(
+        schedule_id, goals=['前 10 分钟经济领先'], review='前期节奏不错',
+        review_status='done', attendance=[])
+    assert saved['review_status'] == 'done'
+    assert saved['status'] == 'completed'
+    assert saved['goals'] == '["前 10 分钟经济领先"]'
+    assert saved['review'] == '前期节奏不错'
 
 
 def test_confirm_prefills_is_atomic(ws):

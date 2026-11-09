@@ -69,7 +69,7 @@ class VocabRouteTest(unittest.TestCase):
     def test_vocab_route_is_mounted(self):
         import serve
         paths = {getattr(route, 'path', '') for route in serve.router.routes}
-        self.assertIn('/api/v2/vocab', paths)
+        self.assertIn('/api/v3/vocab', paths)
 
 
 if __name__ == '__main__':

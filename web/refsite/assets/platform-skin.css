@@ -1,0 +1,17 @@
+/* 平台皮肤：把参考站内嵌页的配色对齐到 tokens.css 的设计系统。
+   只做变量映射 + 少量部件协调，不动参考站的版式与组件结构。 */
+html.v55.light-site {
+  --bg: #f4f6f9; --bg2: #eef1f5; --card: #ffffff; --card2: #f7f8fa; --inset: #f0f2f5;
+  --line: #e6e9ee; --line2: #d6dbe3;
+  --ink: #16181d; --ink2: #3f4652; --muted: #697080; --faint: #9aa1ae;
+  --brand: #2563eb; --brand-d: #1d4ed8; --gold: #2563eb; --gold-d: #1d4ed8;
+  --accent: #2563eb; --blue: #2563eb;
+  --red: #b42318; --teal: #0d7a5f; --purple: #7c5cc4;
+  color-scheme: light;
+}
+html.v55.light-site body { background: var(--bg) !important; }
+/* 数字统一等宽数字 */
+html.v55.light-site :is(td, th, .mono, b, strong) { font-variant-numeric: tabular-nums; }
+/* 表格行高与分隔线更贴近平台表格 */
+html.v55.light-site table { border-color: var(--line); }
+html.v55.light-site ::selection { background: #e0eaff; color: #16181d; }

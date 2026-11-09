@@ -421,7 +421,7 @@ python tools/gc_export_map.py --symbol PushCsBuffer --symbol DT_Count
 | # | 条件 | 当前 | 说明 |
 |---|---|---|---|
 | G1 | 真实 `CLevelContext/deskPool` 构造路径，不伪造字段/vtable | ❌ | 0x43D301C 不是安装器；15 个标量变量未命名 |
-| G2 | 真实 CS FIFO 上下文，`CommitCsBuffer` 不崩 | ❌ | 仅 Push 通；Commit SIGSEGV（`s3b_gc_fifo0_v2.log`） |
+| G2 | 真实 CS FIFO 上下文，`CommitCsBuffer` 不崩 | ❌ | 仅 Push 通；Commit SIGSEGV（`s3b_gc_fifo0.log`） |
 | G3 | 可 Push 的初始化命令流（S3），GameCore 能消费 | ❌ | KV/443B 是数据，不是 TDR 命令流 |
 | G4 | 至少推进一帧并读回状态 | ❌ | 无 tick/ViewBuffer 成功记录 |
 | G5 | 在真实回放/离线对局上对拍，不依赖登录 | ❌ | 离线 5V5 不产回放；context 释放；无安全账号 |

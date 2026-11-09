@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 import updater
 import update_client
+from paths import data_root
 
 MAX_UPLOAD_BYTES = updater.MAX_PATCH_BYTES
 _SAFE_NAME = re.compile(r'[^0-9A-Za-z._-]+')
@@ -90,7 +91,7 @@ def create_update_router(root: Path, current_version: str) -> APIRouter:
         if len(body) > MAX_UPLOAD_BYTES:
             raise HTTPException(413, '更新包超过大小限制')
         name = _SAFE_NAME.sub('_', request.headers.get('x-filename', 'patch.zip'))
-        upload_dir = root / 'data' / 'update' / 'uploads'
+        upload_dir = data_root(root) / 'update' / 'uploads'
         upload_dir.mkdir(parents=True, exist_ok=True)
         stamp = time.strftime('%Y%m%d-%H%M%S')
         target = upload_dir / f'{stamp}-{name}'
@@ -116,7 +117,7 @@ def create_update_router(root: Path, current_version: str) -> APIRouter:
         if not patch:
             raise ValueError('该版本未提供增量包，请下载完整包')
         url = update_client.resolve_url(result['source'], patch['url'])
-        destination = (root / 'data' / 'update' / 'downloads' /
+        destination = (data_root(root) / 'update' / 'downloads' /
                        f"patch-{result['latestVersion']}.zip")
         update_client.download_file(
             url, destination, expected_sha256=patch.get('sha256'),

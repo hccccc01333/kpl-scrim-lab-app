@@ -204,9 +204,10 @@ python scripts/make_release.py
 | `patch-<版本>.zip` | 老用户增量更新，只含变更文件 |
 | `update.json` | 更新清单：版本、说明、文件哈希 |
 
-安装版启动走 `launcher.py`（`pythonw`，无黑窗）：起服务 → 等 `/api/health` →
-打开浏览器，失败弹窗并写 `logs/launcher.log`。服务在后台运行，关掉浏览器不会停止；
-开始菜单的「停止工作台」会调用本机专用的 `/api/shutdown` 优雅退出。
+安装版双击 `KPLScrimLab.exe`（薄壳）→ 调 `runtime\pythonw.exe launcher.py`（无黑窗）：
+起服务 → 等 `/api/health` → 打开浏览器，失败弹窗并写 `logs/launcher.log`。
+服务在后台运行，关掉浏览器不会停止；开始菜单的「停止工作台」会调用本机专用的
+`/api/shutdown` 优雅退出。
 
 工作台启动后会在右下角静默检查 `update.json`，发现新版本时显示更新内容；
 点「立即更新」下载增量包、校验、替换程序文件、重启并做健康检查，失败自动回滚。

@@ -3,17 +3,17 @@
  * 定位：营地给的十人数据在这里核对与修改。不做跨来源冲突判定 ——
  * 营地是权威来源，其它渠道本来就可能出错，没必要让教练逐条仲裁。
  *
- * 接口（V1 根路径）：
+ * 接口（工作台根路径）：
  *   GET   /api/channels/{id}
  *   PATCH /api/channels/{id}/draft   {players:[{side,slot,hero?,fields:{...}}]}
  *   POST  /api/channels/{id}/review  {reviewedBy, notes}
  *   POST  /api/channels/{id}/save
  */
 
-const V1_API = '/api/';
+const ROOT_API = '/api/';
 
-async function v1(path, { method = 'GET', body, signal } = {}) {
-  const response = await fetch(V1_API + path, {
+async function api(path, { method = 'GET', body, signal } = {}) {
+  const response = await fetch(ROOT_API + path, {
     method,
     cache: 'no-store',
     signal,
@@ -73,13 +73,13 @@ export function createReview(h) {
   async function load(_name, key, signal) {
     state.id = key || '';
     if (!state.id) return { channel: null };
-    const channel = await v1(`channels/${encodeURIComponent(state.id)}`, { signal });
+    const channel = await api(`channels/${encodeURIComponent(state.id)}`, { signal });
     state.channel = channel;
     return { channel };
   }
 
   async function refresh() {
-    state.channel = await v1(`channels/${encodeURIComponent(state.id)}`);
+    state.channel = await api(`channels/${encodeURIComponent(state.id)}`);
   }
 
   function paint() {
@@ -107,7 +107,7 @@ export function createReview(h) {
 
   function table(channel) {
     const players = (channel.draft || {}).players || [];
-    if (!players.length) return empty('这个通道还没有草稿数据。');
+    if (!players.length) return empty('这局还没有营地十人面板。先补详情，再来核对。');
     let lastSide = null;
     const rows = players.map((player) => {
       const split = lastSide !== null && player.side !== lastSide;
@@ -141,7 +141,13 @@ export function createReview(h) {
     const saved = channel.saved || {};
     const reviewed = review.status === 'reviewed';
     const isSaved = saved.status === 'saved';
-    const score = match.scores ? `${match.scores.left} : ${match.scores.right}` : '—';
+    const hasPlayers = Boolean((channel.draft?.players || []).length);
+    const left = match.scores?.left;
+    const right = match.scores?.right;
+    // 营地列表先建、详情还没补上的局没有比分；不要显示成 null : null。
+    const score = left === null || left === undefined
+      ? (right === null || right === undefined ? '比分未记录' : `— : ${right}`)
+      : (right === null || right === undefined ? `${left} : —` : `${left} : ${right}`);
     const won = match.winner && match.ownSide ? match.winner === match.ownSide : null;
     const result = won === null ? '结果未知' : won ? '胜' : '负';
     const blocked = isSaved || !reviewed || state.busy;
@@ -152,15 +158,15 @@ export function createReview(h) {
         <div class="ed-score">
           <strong>${esc(score)}</strong>
           <span class="chip ${won === null ? 'is-idle' : won ? 'is-done' : 'is-warn'}">${esc(result)}</span>
-          ${isSaved ? '<span class="chip is-done">已入库</span>' : reviewed ? '<span class="chip is-ok">已复核</span>' : '<span class="chip is-pending">待复核</span>'}
+          ${isSaved ? '<span class="chip is-done">已进正式统计</span>' : reviewed ? '<span class="chip is-ok">已复核</span>' : '<span class="chip is-pending">缺失值审查</span>'}
         </div>
       </div>
       <div class="ed-top-actions">
-        <button class="control" data-review-action="save-draft" ${state.busy ? 'disabled' : ''}>
+        <button class="control" data-review-action="save-draft" ${state.busy || !hasPlayers ? 'disabled' : ''}>
           ${state.busy === 'draft' ? '正在保存…' : '保存修改'}</button>
         <button class="primary" data-review-action="save-formal" ${blocked ? 'disabled' : ''}
-          title="${isSaved ? '已经入库' : reviewed ? '写入正式统计' : '需要先在右侧标记复核'}">
-          ${state.busy === 'save' ? '正在入库…' : (isSaved ? '已入库' : '保存到正式统计')}</button>
+          title="${isSaved ? '已经进入正式统计' : reviewed ? '写入正式统计' : '需要先在右侧标记复核'}">
+          ${state.busy === 'save' ? '正在写入…' : (isSaved ? '已进正式统计' : '保存到正式统计')}</button>
       </div>
     </section>`;
   }
@@ -168,6 +174,7 @@ export function createReview(h) {
   function aside(channel) {
     const review = channel.review || {};
     const reviewed = review.status === 'reviewed';
+    const ready = Boolean((channel.draft?.players || []).length) && Boolean(channel.sourceStatus?.complete);
     const counts = channel.sourceStatus?.counts || {};
     const required = channel.sourceStatus?.requiredSources || [];
 
@@ -184,11 +191,13 @@ export function createReview(h) {
       <section class="ed-card"><h3>素材来源</h3><ul class="ed-sources">${sources}</ul></section>
       <section class="ed-card">
         <h3>复核</h3>
-        ${reviewed
-          ? `<p class="ed-hint">${text(review.reviewedBy)} · ${stamp(review.reviewedAt)}${review.notes ? `<br>${esc(review.notes)}` : ''}</p>`
-          : '<p class="ed-hint">改完数据后，填一句备注并标记复核，才能保存到正式统计。</p>'}
+        ${!ready
+          ? '<p class="ed-hint is-warn">这局还没有可核对的十人面板，先补详情。</p>'
+          : reviewed
+            ? `<p class="ed-hint">${text(review.reviewedBy)} · ${stamp(review.reviewedAt)}${review.notes ? `<br>${esc(review.notes)}` : ''}</p>`
+            : '<p class="ed-hint">改完数据后，填一句备注并标记复核，才能保存到正式统计。</p>'}
         <textarea data-review-notes rows="2" placeholder="例如：按营地十人面板核对，输出以营地总伤害为准">${esc(state.notes)}</textarea>
-        <button class="control ed-wide" data-review-action="review" ${state.busy ? 'disabled' : ''}>
+        <button class="control ed-wide" data-review-action="review" ${state.busy || !ready ? 'disabled' : ''}>
           ${state.busy === 'review' ? '正在标记…' : (reviewed ? '更新复核备注' : '标记为已复核')}</button>
       </section>
       <section class="ed-card"><h3>变更记录</h3>
@@ -199,7 +208,7 @@ export function createReview(h) {
   function view(id, value) {
     const channel = value?.channel;
     if (!channel) {
-      return `<div class="page"><p class="capture-notice is-error">通道 ${esc(id)} 不存在。</p>
+      return `<div class="page"><p class="capture-notice is-error">审查记录 ${esc(id)} 不存在。</p>
         <p><a class="control" href="#ingest">${icon('arrow')} 回到营地同步</a></p></div>`;
     }
     const notice = state.notice
@@ -208,14 +217,29 @@ export function createReview(h) {
     const stale = channel.saved?.status === 'saved' && channel.review?.status !== 'reviewed'
       ? `<div class="capture-notice is-error" role="status">草稿已改动，但正式统计里仍是上一版。重新标记复核并保存后才会更新。</div>`
       : '';
-    const title = `${channel.match?.session || '未命名训练组'} · 逐项校对`;
+    const missing = channel.draft?.missing || [];
+    const missingText = missing.map((item) => `${item.label}缺${item.missing}/10`).join('、');
+    const players = channel.draft?.players || [];
+    const gameSeq = channel.official?.source?.gameSeq || channel.match?.gameSeq || '';
+    const repairNote = players.length ? '' : `<div class="capture-notice is-error" role="status">
+      <b>这局还没有营地十人面板。</b>先补挂本机详情，或回采集页重新拉取并同步这一局。
+      <div class="notice-actions">
+        ${gameSeq ? `<button class="control" data-review-action="attach-camp" ${state.busy ? 'disabled' : ''}>${state.busy === 'attach' ? '正在补挂…' : '补挂本机详情'}</button>` : ''}
+        <a class="control" href="#ingest">回采集页重新同步</a>
+      </div></div>`;
+    const missingNote = missing.length
+      ? `<div class="capture-notice is-error" role="status"><b>仍有 ${missing.length} 项缺失：</b>${esc(missingText)}。补齐后可直接保存；确认保留缺失，也可标记复核后保存。</div>`
+      : '';
+    const title = `${channel.match?.session || '未命名训练组'} · 缺失值审查`;
 
     return `<div class="page">
       <div class="page-intro"><div><h1>${esc(title)}</h1>
         <p>数据以营地十人面板为准，可直接修改；保存后需要重新标记复核。</p></div>
-        <div class="intro-actions"><a class="control" href="#ingest">${icon('arrow')} 返回采集</a></div></div>
+        <div class="intro-actions"><a class="control" href="#ingest">${icon('arrow')} 返回缺失值审查</a></div></div>
       ${notice}
       ${stale}
+      ${repairNote}
+      ${missingNote}
       ${header(channel)}
       <div class="ed-layout">
         <section class="ed-main">
@@ -259,7 +283,7 @@ export function createReview(h) {
     setNotice('正在保存…');
     paint();
     try {
-      await v1(`channels/${encodeURIComponent(state.id)}/draft`, { method: 'PATCH', body: { players } });
+      await api(`channels/${encodeURIComponent(state.id)}/draft`, { method: 'PATCH', body: { players } });
       await refresh();
       setNotice('已保存。复核状态已失效，需要重新标记复核。');
     } catch (error) {
@@ -270,12 +294,46 @@ export function createReview(h) {
     }
   }
 
+  async function attachCamp() {
+    const gameSeq = state.channel?.official?.source?.gameSeq || state.channel?.match?.gameSeq || '';
+    if (!gameSeq) {
+      setNotice('这局没有营地对局号，请回采集页重新拉取。', true);
+      paint();
+      return;
+    }
+    state.busy = 'attach';
+    setNotice('正在补挂本机营地详情…');
+    paint();
+    try {
+      await api(`channels/${encodeURIComponent(state.id)}/camp`, {
+        method: 'POST', body: { gameSeq },
+      });
+      await refresh();
+      setNotice('已补挂营地十人面板。');
+    } catch (error) {
+      setNotice(`${error.message} 回采集页重新同步这一局。`, true);
+    } finally {
+      state.busy = '';
+      paint();
+    }
+  }
+
   async function markReviewed() {
+    if (!(state.channel?.draft?.players || []).length) {
+      setNotice('这局还没有十人面板，先补详情。', true);
+      paint();
+      return;
+    }
+    const missing = state.channel?.draft?.missing || [];
+    if (missing.length) {
+      const text = missing.map((item) => `${item.label}缺${item.missing}/10`).join('、');
+      if (!window.confirm(`这局仍有 ${missing.length} 项缺失：${text}。\n\n确认按当前数据标记复核吗？标记后仍可保存到正式统计。`)) return;
+    }
     state.busy = 'review';
     setNotice('正在标记复核…');
     paint();
     try {
-      await v1(`channels/${encodeURIComponent(state.id)}/review`, {
+      await api(`channels/${encodeURIComponent(state.id)}/review`, {
         method: 'POST', body: { reviewedBy: '本机复核', notes: state.notes },
       });
       await refresh();
@@ -289,17 +347,21 @@ export function createReview(h) {
   }
 
   async function saveFormal() {
-    if (!window.confirm('保存到正式统计？这会写入比赛记录。')) return;
+    const missing = state.channel?.draft?.missing || [];
+    const text = missing.length
+      ? `\n\n这局仍有 ${missing.length} 项缺失：${missing.map((item) => `${item.label}缺${item.missing}/10`).join('、')}。`
+      : '';
+    if (!window.confirm(`保存到正式统计？这会写入比赛记录。${text}`)) return;
     state.busy = 'save';
-    setNotice('正在入库…');
+    setNotice('正在写入正式统计…');
     paint();
     try {
-      const result = await v1(`channels/${encodeURIComponent(state.id)}/save`, { method: 'POST' });
+      const result = await api(`channels/${encodeURIComponent(state.id)}/save`, { method: 'POST' });
       await refresh();
       const key = result?.bundle?.key || result?.channel?.saved?.bundleKey || '';
-      setNotice(key ? `已入库，比赛标识 ${key}` : '已保存到正式统计。');
+      setNotice(key ? `已进入正式统计，比赛标识 ${key}` : '已保存到正式统计。');
     } catch (error) {
-      setNotice(`入库失败：${error.message}`, true);
+      setNotice(`保存失败：${error.message}`, true);
     } finally {
       state.busy = '';
       paint();
@@ -311,6 +373,7 @@ export function createReview(h) {
     if (!button) return false;
     const action = button.dataset.reviewAction;
     if (action === 'save-draft') { await saveDraft(); return true; }
+    if (action === 'attach-camp') { await attachCamp(); return true; }
     if (action === 'review') { await markReviewed(); return true; }
     if (action === 'save-formal') { await saveFormal(); return true; }
     return false;

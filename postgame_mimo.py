@@ -18,9 +18,9 @@ import postgame_ocr as fast_ocr
 from screenshot_schema import (FIELD_UNITS, MATCH_PAGE_FIELDS, PAGE_FIELDS,
                                PLAYER_FIELDS, SHARE_FIELDS, TABS)
 
-PROMPT_VERSION = 'postgame-rows-v2'
+PROMPT_VERSION = 'postgame-rows-v3'
 DEFAULT_MAX_TOKENS = 700
-MIMO_VERSION = 'mimo-postgame-v2'
+MIMO_VERSION = 'mimo-postgame-v3'
 
 def _json(value):
     import json

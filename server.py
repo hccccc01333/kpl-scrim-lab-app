@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -27,8 +28,8 @@ from analysis_api import create_analysis_router
 from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
-from replay_v2_api import create_v2_router
 from update_api import create_update_router
+from paths import DATA_DIR
 from version import VERSION, RELEASE_DATE, RELEASE_NAME
 import focus as focus_module
 import camp_replay
@@ -52,11 +53,11 @@ from runtime_data import MAX_BYTES as MAX_RUNTIME_BYTES, RuntimeDataError, analy
 from vision import OCR_VERSION, catalog, crop_box, descriptor, prepare_image
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get('TRAINING_DB', ROOT / 'data' / 'training.sqlite3'))
-MATCHES_DIR = Path(os.environ.get('ANALYSIS_MATCHES', ROOT / 'data' / 'matches'))
-IMPORTS_DIR = Path(os.environ.get('ANALYSIS_IMPORTS', ROOT / 'data' / 'imports'))
-OFFICIAL_DIR = Path(os.environ.get('ANALYSIS_OFFICIAL', ROOT / 'data' / 'official_replays'))
-V2_DIR = Path(os.environ.get('ANALYSIS_V2', ROOT / 'data' / 'v2'))
+DB_PATH = Path(os.environ.get('TRAINING_DB', DATA_DIR / 'training.sqlite3'))
+MATCHES_DIR = Path(os.environ.get('ANALYSIS_MATCHES', DATA_DIR / 'matches'))
+IMPORTS_DIR = Path(os.environ.get('ANALYSIS_IMPORTS', DATA_DIR / 'imports'))
+OFFICIAL_DIR = Path(os.environ.get('ANALYSIS_OFFICIAL', DATA_DIR / 'official_replays'))
+BUILDS_DIR = Path(os.environ.get('ANALYSIS_BUILDS') or (DATA_DIR / 'builds'))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 MAX_IMAGE = 12 * 1024 * 1024
 
@@ -114,8 +115,7 @@ V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
-app.include_router(create_v2_router(V2_DIR))
-app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, V2_DIR, ROOT))
+app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, BUILDS_DIR, ROOT))
 app.include_router(create_update_router(ROOT, VERSION))
 
 
@@ -740,7 +740,7 @@ POSTGAME_DEMO_FILES = (
 
 @app.post('/api/postgame/demo')
 def load_postgame_demo():
-    folder = ROOT / 'data' / 'screenshots' / 'samples'
+    folder = DATA_DIR / 'screenshots' / 'samples'
     paths = [folder / name for name in POSTGAME_DEMO_FILES]
     if not all(path.is_file() for path in paths):
         raise HTTPException(404, '缺少示例截图目录 data/screenshots/samples')
@@ -864,6 +864,182 @@ def ocr_status():
         'jobs': ocr_jobs.list_jobs(limit=12),
         'recordings': recording_store.library_stats(),
     }
+
+
+# ---------------- OCR 组件的一键安装 ----------------
+#
+# 主 OCR（rapidocr）与可选的 Mimo 精读都要额外装依赖，Mimo 还要约 2 GB 模型权重。
+# 做法统一成「检测 → 点安装 → 后台跑 → 完成提示」：安装是服务端线程，
+# 切页面不会中断；页面只轮询 /api/ocr/install 的进度。
+
+_OCR_INSTALL_LOCK = threading.Lock()
+_OCR_INSTALL_JOB = {
+    'running': False, 'target': '', 'phase': '', 'message': '', 'percent': 0,
+    'error': '', 'startedAt': None, 'finishedAt': None,
+    'bytes': 0, 'totalBytes': 0, 'log': [],
+}
+
+_OCR_INSTALL_TARGETS = {
+    'rapid': {'file': 'requirements-ocr.txt', 'label': '主 OCR'},
+    'mimo': {'file': 'requirements-mimo.txt', 'label': 'Mimo 精读'},
+}
+
+
+def _ocr_install_update(**fields) -> None:
+    with _OCR_INSTALL_LOCK:
+        _OCR_INSTALL_JOB.update(fields)
+        _OCR_INSTALL_JOB['log'] = (_OCR_INSTALL_JOB.get('log') or [])[-40:]
+
+
+def _pip_install(requirement_name: str) -> tuple[bool, str]:
+    requirement = ROOT / requirement_name
+    if not requirement.is_file():
+        return False, f'安装包里缺少 {requirement_name}'
+    base = [sys.executable, '-m', 'pip', 'install', '--disable-pip-version-check',
+            '--progress-bar', 'off', '-r', str(requirement)]
+    last = ''
+    seen = 0
+    for index, extra in enumerate((['-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'], [])):
+        if index:
+            _ocr_install_update(message='国内镜像失败，改用官方源重试…', phase='deps')
+        proc = subprocess.Popen(base + extra, cwd=str(ROOT), stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, encoding='utf-8',
+                                errors='replace', bufsize=1)
+        for raw in proc.stdout:
+            line = (raw or '').strip()
+            if not line:
+                continue
+            last = line
+            if line.startswith(('Collecting ', 'Downloading ', 'Installing ')):
+                seen += 1
+                _ocr_install_update(phase='deps', percent=min(58, 8 + seen * 4),
+                                    message=line[:120])
+            else:
+                _ocr_install_update(phase='deps', message=line[:120])
+        if proc.wait() == 0:
+            return True, last
+    return False, last
+
+
+def _download_mimo_model() -> None:
+    """把模型拉到 models/Xiaomi-OCR-0；官方源失败时切镜像再试一次。"""
+    target = ROOT / 'models' / 'Xiaomi-OCR-0'
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        from huggingface_hub import HfApi, snapshot_download
+    except Exception as error:  # noqa: BLE001
+        raise RuntimeError(f'依赖里缺少 huggingface_hub：{error}')
+
+    total = 0
+    try:
+        info = HfApi().model_info(mimo_ocr.MODEL_REPO, files_metadata=True)
+        total = sum(int(getattr(item, 'size', 0) or 0) for item in (info.siblings or []))
+    except Exception:
+        total = 0
+    _ocr_install_update(phase='model', percent=60, bytes=0, totalBytes=total,
+                        message='正在下载模型（首次较大，可以切页面，装完会提示）')
+
+    stop = threading.Event()
+
+    def watch() -> None:
+        while not stop.wait(2):
+            size = 0
+            for path in target.rglob('*'):
+                try:
+                    if path.is_file():
+                        size += path.stat().st_size
+                except OSError:
+                    continue
+            percent = 60 + int(35 * size / total) if total else 60
+            text = f'正在下载模型 {size / 1024 ** 3:.1f} GB'
+            if total:
+                text += f' / {total / 1024 ** 3:.1f} GB'
+            _ocr_install_update(bytes=size, percent=min(95, percent), message=text)
+
+    threading.Thread(target=watch, daemon=True, name='mimo-model-watch').start()
+    previous_endpoint = os.environ.get('HF_ENDPOINT')
+    last_error = ''
+    try:
+        for endpoint in (None, 'https://hf-mirror.com'):
+            if endpoint:
+                os.environ['HF_ENDPOINT'] = endpoint
+                _ocr_install_update(message=f'官方源失败，改用镜像 {endpoint} 重试…')
+            try:
+                snapshot_download(repo_id=mimo_ocr.MODEL_REPO, local_dir=str(target))
+                last_error = ''
+                break
+            except Exception as error:  # noqa: BLE001 - 换源之前先记下原因
+                last_error = f'{type(error).__name__}: {error}'
+        if last_error:
+            raise RuntimeError(last_error)
+    finally:
+        stop.set()
+        if previous_endpoint is None:
+            os.environ.pop('HF_ENDPOINT', None)
+        else:
+            os.environ['HF_ENDPOINT'] = previous_endpoint
+
+
+def _ocr_install_worker(target: str) -> None:
+    spec = _OCR_INSTALL_TARGETS[target]
+    try:
+        _ocr_install_update(phase='deps', percent=4,
+                            message=f'正在安装{spec["label"]}组件（首次较慢）…')
+        ok, last = _pip_install(spec['file'])
+        if not ok:
+            raise RuntimeError(f'{spec["label"]}安装失败：{last or "未知错误"}')
+        if target == 'mimo':
+            _ocr_install_update(phase='deps', percent=60, message='依赖装好了，检查模型…')
+            if mimo_ocr.model_path() is None:
+                _download_mimo_model()
+        _ocr_install_update(running=False, phase='done', percent=100,
+                            message=f'{spec["label"]}已就绪，不用重启', finishedAt=time.time())
+    except BaseException as error:  # noqa: BLE001 - 失败原因要原样回到页面
+        _ocr_install_update(running=False, phase='error', percent=0,
+                            error=f'{type(error).__name__}: {error}',
+                            message=str(error)[:200], finishedAt=time.time())
+
+
+@app.get('/api/ocr/install')
+def ocr_install_status():
+    with _OCR_INSTALL_LOCK:
+        job = dict(_OCR_INSTALL_JOB)
+    rapid = importlib.util.find_spec('rapidocr_onnxruntime') is not None
+    return {**job, 'rapid': {'available': rapid}, 'mimo': mimo_ocr.status()}
+
+
+@app.post('/api/ocr/install')
+def ocr_install_start(target: str = 'mimo'):
+    target = str(target or 'mimo').lower()
+    if target not in _OCR_INSTALL_TARGETS:
+        raise HTTPException(400, '安装目标需为 rapid 或 mimo')
+    requirement = _OCR_INSTALL_TARGETS[target]['file']
+    if not (ROOT / requirement).is_file():
+        raise HTTPException(400, f'安装包里缺少 {requirement}，请更新到最新版本')
+    if target == 'mimo':
+        try:
+            free = shutil.disk_usage(ROOT).free
+        except OSError:
+            free = 0
+        if free and free < 4 * 1024 ** 3:
+            raise HTTPException(400, f'磁盘剩余 {free / 1024 ** 3:.1f} GB，安装 Mimo 至少要 4 GB')
+    else:
+        try:
+            free = shutil.disk_usage(ROOT).free
+        except OSError:
+            free = 0
+        if free and free < 1024 ** 3:
+            raise HTTPException(400, f'磁盘剩余 {free / 1024 ** 3:.1f} GB，安装主 OCR 至少要 1 GB')
+    with _OCR_INSTALL_LOCK:
+        if _OCR_INSTALL_JOB['running']:
+            raise HTTPException(409, '正在进行安装，请稍候')
+        _OCR_INSTALL_JOB.update({'running': True, 'target': target, 'phase': 'prepare',
+                                 'percent': 2, 'message': '正在准备安装…', 'error': '',
+                                 'log': [], 'startedAt': time.time(), 'finishedAt': None,
+                                 'bytes': 0, 'totalBytes': 0})
+    threading.Thread(target=_ocr_install_worker, args=(target,), daemon=True,
+                     name='ocr-install').start()
+    return {'ok': True, 'target': target}
 
 
 @app.post('/api/postgame/images/{image_id}/refine')
@@ -1034,16 +1210,67 @@ def get_official_positions(replay_id: str):
 
 # ---- Camp login-state sync: an authorized coach account pulls per-player details ----
 
-CAMP_CONFIG_PATH = Path(os.environ.get('CAMP_CONFIG_FILE', ROOT / 'data' / 'camp_config.json'))
+CAMP_CONFIG_PATH = Path(os.environ.get('CAMP_CONFIG_FILE', DATA_DIR / 'camp_config.json'))
 _camp_sync_lock = threading.Lock()
 _camp_sync_job = {'running': False, 'result': None, 'error': None,
-                  'startedAt': None, 'finishedAt': None}
+                  'startedAt': None, 'finishedAt': None,
+                  'progress': {'done': 0, 'total': 0, 'current': '', 'phase': ''}}
 
 
 def _camp_tools():
     tools = ROOT / 'tools'
     if str(tools) not in sys.path:
         sys.path.insert(0, str(tools))
+
+
+def _camp_detail_path(game_seq: str) -> Path:
+    """营地详情落盘位置以 camp_sync 的 DETAIL_DIR 为准。
+
+    camp_sync 支持 CAMP_DETAIL_DIR，演示实例也可能用 KPL_DATA_DIR 指向隔离库；
+    写死 DATA_DIR/camp_details 会让同步写在一处、建通道读另一处。
+    """
+    _camp_tools()
+    import camp_sync
+    return camp_sync.DETAIL_DIR / f'{game_seq}.json'
+
+
+AUTO_REVIEWER = '营地自动同步'
+
+
+def _invalidate_v3_snapshot() -> None:
+    """自动入库发生在后台线程/GET 里，中间件不会替我们刷新 V3 快照。"""
+    if V3_MODULE is not None:
+        try:
+            V3_MODULE.invalidate_snapshot()
+        except Exception:
+            pass
+
+
+def _write_channel_bundle(channel: dict) -> dict:
+    """把通道写成正式比赛 bundle；调用方负责标记 review 与落库。"""
+    data = channel_store.bundle(channel)
+    folder = MATCHES_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f'channel-{channel["id"]}.json'
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+    channel['saved'] = {'status': 'saved', 'bundleKey': data['match']['key'],
+                        'savedAt': channel_store.now()}
+    return data
+
+
+def _approve_channel(channel: dict, reviewer: str = AUTO_REVIEWER, notes: str = '',
+                     allow_missing: bool = False) -> dict:
+    """复核并写入正式统计；有缺失值时默认拒绝，除非明确确认。"""
+    draft = channel.get('draft') or {}
+    missing = draft.get('missing') or []
+    if missing and not allow_missing:
+        return {'ok': False, 'missing': missing, 'error': '存在缺失值，需逐条确认'}
+    labels = '、'.join(f'{item.get("label")}缺{item.get("missing")}/10' for item in missing)
+    default_notes = ('营地数据完整，自动通过' if not missing
+                     else f'确认缺失后通过：{labels}')
+    channel_store.set_review(channel, reviewer or AUTO_REVIEWER, notes or default_notes)
+    data = _write_channel_bundle(channel)
+    return {'ok': True, 'bundleKey': data['match']['key'], 'missing': missing}
 
 
 def _clean_camp_players(players) -> list:
@@ -1094,24 +1321,396 @@ def _camp_auto_attach(game_seqs):
     return attached
 
 
+def _camp_entry_match(entry: dict, nickname: str) -> dict:
+    """把一条营地列表记录翻成采集通道的可读对局信息。
+
+    采集流水以前只有「对手未标注 / 没有更多字段」：入库只写了详情 JSON，
+    没建通道。这里把教练一眼要认的信息写进 match，让流水能直接讲清这把。
+    """
+    seq = str(entry.get('gameSeq') or '')
+    started = str(entry.get('startedAt') or '')
+    gametime = str(entry.get('gametime') or '')
+    date = str(entry.get('date') or (started[:10] if started else ''))
+    # gametime 是 "MM-DD HH:MM"，没有年份；补成 ISO 便于筛选与排序。
+    if not date and gametime:
+        date = f'{time.localtime().tm_year}-{gametime[:5]}'
+    result = int(entry.get('gameresult') or 0)
+    own_camp = str(entry.get('acntCamp') or '')
+    win_camp = str(entry.get('winCamp') or '')
+    own_side = {'1': 'left', '2': 'right'}.get(own_camp, '')
+    winner = {'1': 'left', '2': 'right'}.get(win_camp, '')
+    if not winner and result in (1, 2) and own_side:
+        other = 'right' if own_side == 'left' else 'left'
+        winner = own_side if result == 1 else other
+    try:
+        from hero_catalog import hero_name
+        hero = entry.get('heroName') or (hero_name(entry.get('heroId')) if entry.get('heroId') else None)
+    except Exception:
+        hero = entry.get('heroName')
+    kda = [entry.get('killcnt'), entry.get('deadcnt'), entry.get('assistcnt')]
+    return {
+        'date': date,
+        'opponent': str(entry.get('opponent') or ''),
+        'session': '', 'version': '',
+        'mode': str(entry.get('mapName') or ''),
+        'durationSec': int(entry.get('usedTime') or 0) or None,
+        'scores': {'left': None, 'right': None},
+        'ownSide': own_side, 'winner': winner,
+        'startedAt': started, 'gametime': gametime,
+        'gameSeq': seq, 'campUserId': str(entry.get('ownerCampUserId') or ''),
+        'ownerName': nickname or '', 'heroName': hero or '',
+        'heroIcon': entry.get('heroIcon') or '',
+        'kda': kda, 'gameresult': result,
+        'gradeGame': entry.get('gradeGame'),
+        'desc': str(entry.get('desc') or ''),
+        'roleJobName': str(entry.get('roleJobName') or ''),
+    }
+
+
+def _camp_ensure_channels(entries, nickname: str, progress=None) -> dict:
+    """每拉到一局详情就建/补一条采集通道，并挂上十人面板。
+
+    按 official.id = camp-<gameSeq> 去重；已有通道只补齐空字段，不覆盖教练
+    手工填的对手 / 训练组 / 版本。单个通道失败不影响其它局。
+    """
+    with db() as c:
+        rows = c.execute('SELECT id, body FROM channels').fetchall()
+    by_seq = {}
+    for row in rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        official_id = str((channel.get('official') or {}).get('id') or '')
+        if official_id.startswith('camp-'):
+            by_seq[official_id[5:]] = channel
+
+    report = {'created': 0, 'updated': 0, 'attached': 0, 'saved': 0,
+              'review': 0, 'failed': 0, 'skipped': 0, 'channelIds': [], 'items': []}
+    total = len(entries)
+    saved_any = False
+    for index, entry in enumerate(entries, 1):
+        seq = str((entry or {}).get('gameSeq') or '')
+        if not seq:
+            report['failed'] += 1
+            report['items'].append({'gameSeq': '', 'status': 'failed',
+                                    'error': '列表条目没有对局 ID'})
+            continue
+        if progress:
+            progress(index, total, seq, 'channel')
+        # 详情没拉到就不建审查记录：没有十人面板的通道只会把缺失值审查区堆满，
+        # 教练也补不出内容。这局继续留在拉取列表里，下次可以重试。
+        if not _camp_detail_path(seq).is_file():
+            report['skipped'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'skipped',
+                                    'error': '营地详情没拉到'})
+            continue
+        info = _camp_entry_match(entry, nickname)
+        channel = by_seq.get(seq)
+        if channel is None:
+            channel = channel_store.blank(info)
+            # blank() 的 match 只留白名单字段；把「这把是什么」的补充信息写回，
+            # 采集流水才不会只剩「对手未标注 / 没有更多字段」。
+            channel['match'].update({key: value for key, value in info.items()
+                                     if key not in ('scores', 'opponent', 'session', 'version')})
+            channel['id'] = uuid.uuid4().hex
+            channel['_createdAt'] = time.time()
+            channel['official'] = {
+                'id': f'camp-{seq}', 'schema': 'camp-replay-v1', 'kind': 'personal',
+                'source': {'gameSeq': seq,
+                           'gameSvr': str(entry.get('gameSvrId') or ''),
+                           'relaySvr': str(entry.get('relaySvrId') or ''),
+                           'playerId': str(entry.get('uniqueRoleId') or '')},
+            }
+            channel_store.append_log(channel, 'create', 'camp-sync', {'gameSeq': seq})
+            report['created'] += 1
+        else:
+            # 只补空字段；教练录入过的对手 / 训练组 / 版本一律保留。
+            match = channel.setdefault('match', {})
+            for key, value in info.items():
+                if key in ('opponent', 'session', 'version'):
+                    continue
+                if not match.get(key) and value not in (None, '', 0):
+                    match[key] = value
+            report['updated'] += 1
+        detail_path = _camp_detail_path(seq)
+        already_parsed = bool((channel.get('sources') or {}).get('camp', {}).get('players'))
+        if detail_path.is_file() and not already_parsed:
+            try:
+                detail = json.loads(detail_path.read_text(encoding='utf-8'))
+                channel_store.attach_camp_detail(channel, seq, detail, None, 'camp-sync')
+                report['attached'] += 1
+            except Exception:
+                # 详情结构不完整时仍保留通道与列表信息，后续可重试。
+                pass
+        try:
+            with db() as c:
+                _save_channel(c, channel, 'camp-sync')
+            report['channelIds'].append(channel.get('id'))
+            by_seq[seq] = channel
+        except Exception as error:
+            report['failed'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'failed',
+                                    'error': f'写入通道失败：{error}'})
+            continue
+        # 已经写入正式统计的局不再重复自动通过，避免覆盖教练的复核备注。
+        if (channel.get('saved') or {}).get('status') == 'saved':
+            report['items'].append({'gameSeq': seq, 'status': 'saved', 'error': '',
+                                    'alreadySaved': True})
+            continue
+        # 营地同步完成且十人面板无缺失：直接进入正式统计，不再强制人工复核。
+        missing = (channel.get('draft') or {}).get('missing') or []
+        if missing:
+            report['review'] += 1
+            labels = '、'.join(f'{item.get("label")}缺{item.get("missing")}/10' for item in missing)
+            report['items'].append({'gameSeq': seq, 'status': 'review',
+                                    'error': f'缺 {labels}'})
+            continue
+        try:
+            _approve_channel(channel, AUTO_REVIEWER)
+            with db() as c:
+                _save_channel(c, channel, AUTO_REVIEWER, 'auto-approve')
+            report['saved'] += 1
+            saved_any = True
+            report['items'].append({'gameSeq': seq, 'status': 'saved', 'error': ''})
+        except Exception as error:
+            # 缺必采材料等无法直接入库的情况仍留在审查区，不阻塞其它局。
+            report['review'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'review',
+                                    'error': f'没能写入正式统计：{error}'})
+    if saved_any:
+        _invalidate_v3_snapshot()
+    return report
+
+
+def _camp_entry_from_detail(game_seq: str, body: dict, nickname: str = '') -> dict:
+    """把已落盘的营地详情还原成列表条目，供旧数据补建采集通道。"""
+    data = body.get('data') or {}
+    head = data.get('head') or {}
+    entry = dict(body.get('_campEntry') or {})
+    entry['gameSeq'] = str(game_seq)
+    entry['mapName'] = entry.get('mapName') or head.get('mapName') or '营地对局'
+    times = camp_times(body)
+    if times:
+        entry.update({key: times[key] for key in ('startedAt', 'eventAt', 'date') if times.get(key)})
+    entry['killcnt'] = head.get('killCnt', entry.get('killcnt'))
+    entry['deadcnt'] = head.get('deadCnt', entry.get('deadcnt'))
+    entry['assistcnt'] = head.get('assistCnt', entry.get('assistcnt'))
+    entry['heroId'] = head.get('heroId')
+    entry['heroName'] = head.get('heroName')
+    entry['gradeGame'] = head.get('gradeGame')
+    entry['desc'] = head.get('matchDesc') or ''
+    own_camp = str(head.get('acntCamp') or '')
+    entry['AcntCamp'] = own_camp
+    entry['acntCamp'] = own_camp
+    result = head.get('gameResult')
+    if result is True or str(result).lower() in ('true', '1'):
+        entry['gameresult'] = 1
+    elif result is False or str(result).lower() in ('false', '0'):
+        entry['gameresult'] = 2
+    if own_camp in ('1', '2') and 'gameresult' in entry:
+        entry['winCamp'] = own_camp if entry['gameresult'] == 1 else ('2' if own_camp == '1' else '1')
+    entry['ownerCampUserId'] = str(head.get('userId') or '')
+    entry['uniqueRoleId'] = str(head.get('playerId') or head.get('roleId') or '')
+    entry['ownerName'] = nickname
+    # 本人英雄图标 / 分路从十人面板补；没有也不影响建通道。
+    player_id = str(head.get('playerId') or '')
+    for role in (data.get('blueRoles') or []) + (data.get('redRoles') or []):
+        basic = role.get('basicInfo') or {}
+        if str(basic.get('playerId') or '') != player_id:
+            continue
+        records = role.get('battleRecords') or {}
+        used = records.get('usedHero') or {}
+        entry['heroIcon'] = used.get('heroIcon') or ''
+        try:
+            from bp_camp import POSITION_LANES
+            entry['roleJobName'] = POSITION_LANES.get(int(records.get('position'))) or ''
+        except (TypeError, ValueError, KeyError, ImportError):
+            entry['roleJobName'] = ''
+        break
+    return entry
+
+
+_camp_backfill_lock = threading.Lock()
+_camp_backfill_state = {'at': 0.0}
+
+
+def _camp_backfill_channels() -> dict:
+    """为「只有详情、没有通道」的旧数据补建采集通道。
+
+    历史版本同步只落 camp_details/*.json，导致采集流水为空。这里在状态读取
+    时做一次幂等补建；通道已存在的局直接跳过，不覆盖教练录入的信息。
+    """
+    now = time.time()
+    if now - float(_camp_backfill_state.get('at') or 0) < 30:
+        return {'created': 0}
+    if not _camp_backfill_lock.acquire(blocking=False):
+        return {'created': 0}
+    try:
+        _camp_backfill_state['at'] = now
+        _camp_tools()
+        import camp_sync
+        detail_dir = camp_sync.DETAIL_DIR
+        if not detail_dir.is_dir():
+            return {'created': 0}
+        details = {path.stem: path for path in detail_dir.glob('*.json')}
+        if not details:
+            return {'created': 0}
+        with db() as c:
+            rows = c.execute('SELECT body FROM channels').fetchall()
+        channeled = set()
+        for row in rows:
+            try:
+                official_id = str((json.loads(row['body']).get('official') or {}).get('id') or '')
+            except (TypeError, ValueError):
+                continue
+            if official_id.startswith('camp-'):
+                channeled.add(official_id[5:])
+        missing = sorted(set(details) - channeled)
+        if not missing:
+            return {'created': 0}
+        nicknames = {player['campUserId']: player.get('nickname') or ''
+                     for player in _camp_config_read().get('players') or []}
+        groups = {}
+        for seq in missing:
+            try:
+                body = json.loads(details[seq].read_text(encoding='utf-8'))
+            except (OSError, ValueError):
+                continue
+            entry = _camp_entry_from_detail(seq, body)
+            owner = entry.get('ownerCampUserId') or ''
+            entry['ownerCampUserId'] = owner
+            groups.setdefault(owner, []).append((entry, body))
+        created = 0
+        saved = 0
+        review = 0
+        for owner, items in groups.items():
+            entries = [entry for entry, _body in items]
+            if any(entry.get('ownerName') for entry in entries):
+                nickname = next(entry['ownerName'] for entry in entries if entry.get('ownerName'))
+            else:
+                nickname = nicknames.get(owner, '')
+            report = _camp_ensure_channels(entries, nickname)
+            created += int(report.get('created') or 0)
+            saved += int(report.get('saved') or 0)
+            review += int(report.get('review') or 0)
+        return {'created': created, 'saved': saved, 'review': review,
+                'scanned': len(missing)}
+    except Exception:
+        return {'created': 0}
+    finally:
+        _camp_backfill_lock.release()
+
+
+_camp_finalize_lock = threading.Lock()
+_camp_finalize_state = {'at': 0.0}
+
+
+def _camp_auto_finalize_channels() -> dict:
+    """把营地通道里无缺失值的局补送进正式统计。
+
+    旧数据已经建了通道但还停在「待复核」；这里做一次幂等自动通过，
+    有缺失值的局保持不动，交给缺失值审查逐条确认。
+    """
+    now = time.time()
+    if now - float(_camp_finalize_state.get('at') or 0) < 15:
+        return {'passed': 0, 'skipped': 0}
+    if not _camp_finalize_lock.acquire(blocking=False):
+        return {'passed': 0, 'skipped': 0}
+    try:
+        _camp_finalize_state['at'] = now
+        with db() as c:
+            rows = c.execute('SELECT id, body FROM channels').fetchall()
+        passed, skipped = [], 0
+        for row in rows:
+            try:
+                channel = json.loads(row['body'])
+            except (TypeError, ValueError):
+                continue
+            official_id = str((channel.get('official') or {}).get('id') or '')
+            if not official_id.startswith('camp-'):
+                continue
+            if (channel.get('saved') or {}).get('status') == 'saved':
+                continue
+            try:
+                channel_store.rebuild(channel)
+            except Exception:
+                skipped += 1
+                continue
+            missing = (channel.get('draft') or {}).get('missing') or []
+            if missing:
+                skipped += 1
+                continue
+            try:
+                _approve_channel(channel, AUTO_REVIEWER)
+                with db() as c:
+                    _save_channel(c, channel, AUTO_REVIEWER, 'auto-approve')
+                passed.append(channel.get('id'))
+            except Exception:
+                skipped += 1
+        if passed:
+            _invalidate_v3_snapshot()
+        return {'passed': len(passed), 'skipped': skipped, 'channelIds': passed}
+    finally:
+        _camp_finalize_lock.release()
+
+
+def _camp_sync_entries(camp_sync, camp_user_id: str, entries, on_progress=None):
+    """调用 camp_sync 拉详情；兼容不带 on_progress 的旧版 tools。
+
+    升级包只覆盖主程序、tools/ 还是旧版时（现场就出现过），多传一个
+    on_progress 会抛 TypeError 直接把整批同步打断；这里退化成无进度拉取，
+    进度条退回到「按条目估算」，但数据照常入库。
+    """
+    try:
+        return camp_sync.sync_entries(camp_user_id, entries, on_progress=on_progress)
+    except TypeError as error:
+        if 'on_progress' not in str(error):
+            raise
+        return camp_sync.sync_entries(camp_user_id, entries)
+
+
 def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
     _camp_tools()
     import camp_sync
+
+    def progress(done, total, current, phase):
+        with _camp_sync_lock:
+            _camp_sync_job['progress'] = {'done': done, 'total': total,
+                                          'current': current, 'phase': phase}
+
+    summary = None
     try:
-        summary = camp_sync.sync_entries(camp_user_id, entries)
-        game_seqs = summary.get('gameSeqs') or []
+        summary = _camp_sync_entries(camp_sync, camp_user_id, entries, progress)
+        # 入库即建采集通道：以前只写 camp_details/*.json，采集流水与统计都是空的。
+        channels = _camp_ensure_channels(entries, nickname, progress)
+        with _camp_sync_lock:
+            _camp_sync_job['progress'] = {'done': max(1, len(entries)), 'total': max(1, len(entries)),
+                                          'current': '', 'phase': 'done'}
         result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
-                  'campUserId': camp_user_id, 'ok': True, 'summary': summary}
+                  'campUserId': camp_user_id, 'ok': True, 'summary': summary,
+                  'channels': channels}
     except BaseException as error:  # camp_sync 用 SystemExit 报致命错误
         auth_invalid = bool(getattr(error, 'auth_invalid', False))
+        # 已经拉到本机的详情照样入库：网络中途断掉不该让前面这些局白拉。
+        salvaged = None
+        if not auth_invalid:
+            try:
+                salvaged = _camp_ensure_channels(entries, nickname)
+            except Exception:
+                salvaged = None
+        with _camp_sync_lock:
+            _camp_sync_job['progress'] = {**(_camp_sync_job.get('progress') or {}),
+                                          'phase': 'error'}
         result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
                   'campUserId': camp_user_id, 'ok': False,
                   'authInvalid': auth_invalid,
                   'reason': getattr(error, 'reason', '') if auth_invalid else '',
-                  'error': f'{type(error).__name__}: {error}'}
-        return [result], []
-    auto_attached = _camp_auto_attach(game_seqs) if game_seqs else []
-    return [result], auto_attached
+                  'stage': 'channel' if summary is not None else 'detail',
+                  'error': f'{type(error).__name__}: {error}',
+                  'channels': salvaged}
+        return [result], (salvaged or {}).get('channelIds') or []
+    return [result], channels['channelIds']
 
 
 @app.get('/api/camp/auth')
@@ -1249,6 +1848,13 @@ def camp_sync_status():
     _camp_tools()
     import camp_sync
     import camp_auth
+    # 旧版本只落详情、不建通道：打开采集页时先幂等补建一次，
+    # 让历史对局立刻出现在采集流水里，不用教练再手动入库一遍。
+    backfill = {'created': 0}
+    finalize = {'passed': 0, 'skipped': 0}
+    if not _camp_sync_job.get('running'):
+        backfill = _camp_backfill_channels()
+        finalize = _camp_auto_finalize_channels()
     details = list(camp_sync.DETAIL_DIR.glob('*.json')) if camp_sync.DETAIL_DIR.is_dir() else []
     with db() as c:
         rows = c.execute('SELECT id, body FROM channels').fetchall()
@@ -1283,7 +1889,7 @@ def camp_sync_status():
             'channelId': channel_by_game_seq.get(path.stem),
         })
     return {**_camp_sync_job, 'detailsCount': len(details),
-            'details': detail_items,
+            'details': detail_items, 'backfill': backfill, 'finalize': finalize,
             'config': _camp_config_read(), 'auth': camp_auth.read_account()}
 
 
@@ -1302,7 +1908,7 @@ def camp_list(value: dict):
             'recommendPrivacy': 0, 'apiVersion': 5,
             'friendUserId': camp_user_id, 'option': 0})
     except camp_client.CampAuthError as error:
-        # detail 保持字符串：V1 采集页按字符串显示；V2 另外读 authInvalid 提前提示补充授权。
+        # detail 保持字符串：采集页按字符串显示，另外读 authInvalid 提前提示补充授权。
         return JSONResponse(status_code=401, content={
             'detail': str(error), 'authInvalid': True,
             'reason': getattr(error, 'reason', str(error)),
@@ -1315,21 +1921,81 @@ def camp_list(value: dict):
     data = body.get('data') or {}
     if data.get('invisible'):
         raise HTTPException(403, '该选手隐藏了战绩：请其在营地隐私设置里对教练可见（白名单）或恢复公开')
+    # 「库里已有」指采集流水里已有这条通道，而不是仅仅下载过详情：
+    # 早期版本入库只写 camp_details/*.json 不建通道，若按详情文件判断，
+    # 这些局会被禁用勾选，永远补不回采集流水。
+    with db() as c:
+        channel_rows = c.execute('SELECT body FROM channels').fetchall()
+    channeled_seqs = set()
+    ready_seqs = set()
+    saved_seqs = set()
+    for row in channel_rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        official_id = str((channel.get('official') or {}).get('id') or '')
+        if not official_id.startswith('camp-'):
+            continue
+        seq = official_id[5:]
+        channeled_seqs.add(seq)
+        # 通道建了但十人面板没挂上（详情下载失败/结构不完整）时，
+        # 仍允许重新勾选补详情，不能当成「已入库」把入口堵死。
+        if (channel.get('sources') or {}).get('camp', {}).get('players'):
+            ready_seqs.add(seq)
+        if (channel.get('saved') or {}).get('status') == 'saved':
+            saved_seqs.add(seq)
+
     entries = []
     for entry in data.get('list') or []:
         game_seq = str(entry.get('gameSeq') or '')
+        # 时间统一按项目口径：dtEventTime 是「记录发送时间」(epoch 秒)，
+        # 真实开赛时间 = 发送时间 − 本局时长，按北京时间输出。
+        # 营地的 gametime（如 "11-04 22:55"）是同一时刻的文本，作为直接显示值。
+        event_at, used = int(entry.get('dtEventTime') or 0), int(entry.get('usedTime') or 0)
+        times = camp_times({'_campEntry': {'dtEventTime': event_at, 'usedTime': used}})
+        result = int(entry.get('gameresult') or 0)
+        # gameresult: 1=胜 2=负（以被查选手视角）。缺失时用 winCamp/AcntCamp 兜底。
+        if result not in (1, 2):
+            win_camp = str(entry.get('winCamp') or '')
+            own_camp = str(entry.get('AcntCamp') or '')
+            if win_camp and own_camp:
+                result = 1 if win_camp == own_camp else 2
+        hero_id = entry.get('heroId')
+        try:
+            from hero_catalog import hero_name
+            hero = entry.get('heroName') or (hero_name(hero_id) if hero_id else None)
+        except Exception:
+            hero = entry.get('heroName')
         entries.append({
             'gameSeq': game_seq,
-            'dtEventTime': int(entry.get('dtEventTime') or 0),
-            'usedTime': int(entry.get('usedTime') or 0),
-            'mapName': entry.get('mapName'), 'gametime': entry.get('gametime'),
-            'battleType': entry.get('battleType'), 'winCamp': entry.get('winCamp'),
+            'dtEventTime': event_at,
+            'startedAt': times.get('startedAt'),
+            'eventAt': times.get('eventAt'),
+            'date': times.get('date'),
+            'gametime': entry.get('gametime'),
+            'usedTime': used,
+            'mapName': entry.get('mapName'), 'battleType': entry.get('battleType'),
+            'winCamp': entry.get('winCamp'), 'acntCamp': entry.get('AcntCamp'),
+            'gameresult': result,
             'killcnt': entry.get('killcnt'), 'deadcnt': entry.get('deadcnt'),
             'assistcnt': entry.get('assistcnt'),
+            'heroId': hero_id, 'heroName': hero, 'heroIcon': entry.get('heroIcon'),
+            'gradeGame': entry.get('gradeGame'), 'desc': entry.get('desc'),
+            'roleJobName': entry.get('roleJobName'),
             'gameSvrId': str(entry.get('gameSvrId') or ''),
             'relaySvrId': str(entry.get('relaySvrId') or ''),
             'uniqueRoleId': camp_sync.entry_role_id(entry),
-            'imported': (camp_sync.DETAIL_DIR / f'{game_seq}.json').is_file(),
+            # 「已进统计」只看正式 bundle；通道已建但等缺失值审查的局
+            # 不再重复拉详情，前端用 channelReady 单独标记。
+            'imported': game_seq in saved_seqs,
+            'channelExists': game_seq in channeled_seqs,
+            'channelReady': game_seq in ready_seqs,
+            'detailCached': (camp_sync.DETAIL_DIR / f'{game_seq}.json').is_file(),
+            # 营地只保留最近一个月的战局详情；更早的局前端直接标「营地无详情」，
+            # 不再让教练勾选后才发现拉不到（-30457）。
+            'campDetailAvailable': not camp_sync.detail_expired(
+                {'dtEventTime': event_at, 'usedTime': used}),
         })
     return {'entries': entries, 'hasMore': bool(data.get('hasMore')),
             'lastTime': data.get('lastTime'), 'gaming': data.get('gaming')}
@@ -1348,7 +2014,9 @@ def camp_sync_start(value: dict):
         if _camp_sync_job['running']:
             raise HTTPException(409, '同步已在进行中')
         _camp_sync_job.update({'running': True, 'result': None, 'error': None,
-                               'startedAt': time.time(), 'finishedAt': None})
+                               'startedAt': time.time(), 'finishedAt': None,
+                               'progress': {'done': 0, 'total': len(entries),
+                                            'current': '', 'phase': 'detail'}})
 
     def worker():
         try:
@@ -1371,7 +2039,7 @@ def _camp_attach_to_channel(channel: dict, game_seq: str, actor=None):
     官方十人（heroName）优先读本地 normalized 缓存（含 heroName 且不依赖网络）；
     公开接口的身份字段已脱敏，hero 按阵营+顺序在 attach_camp_detail 里对应。
     """
-    detail_path = ROOT / 'data' / 'camp_details' / f'{game_seq}.json'
+    detail_path = _camp_detail_path(game_seq)
     if not detail_path.is_file():
         raise ValueError('本机还没有这局的营地详情；请先在采集通道页完成同步')
     detail = json.loads(detail_path.read_text(encoding='utf-8'))
@@ -1422,6 +2090,14 @@ def channel_attach_camp(channel_id: str, value: dict):
         raise HTTPException(400, str(error))
     with db() as c:
         _save_channel(c, channel, value.get('actor'))
+    # 补挂详情后如果已经完整，按新策略直接进入正式统计。
+    if not (channel.get('draft') or {}).get('missing'):
+        try:
+            _approve_channel(channel, str(value.get('actor') or AUTO_REVIEWER))
+            with db() as c:
+                _save_channel(c, channel, value.get('actor'), 'auto-approve')
+        except Exception:
+            pass
     return channel
 
 
@@ -1800,21 +2476,86 @@ def channel_review(channel_id: str, value: dict):
 
 
 @app.post('/api/channels/{channel_id}/save')
-def channel_save(channel_id: str):
+def channel_save(channel_id: str, value: dict | None = None):
+    """写入正式统计。
+
+    客户端对「无缺失值」的局直接调这里，不再要求先人工标记复核；
+    有缺失值的局仍要已复核或显式 allowMissing，避免把缺字段的数据静默入库。
+    """
+    value = value or {}
     try:
         with db() as c:
             channel = _load_channel(c, channel_id)
-            data = channel_store.bundle(channel)
-            folder = MATCHES_DIR
-            folder.mkdir(parents=True, exist_ok=True)
-            path = folder / f'channel-{channel_id}.json'
-            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
-            channel['saved'] = {'status': 'saved', 'bundleKey': data['match']['key'],
-                                'savedAt': channel_store.now()}
-            _save_channel(c, channel, None, 'save')
+            draft = channel.get('draft') or {}
+            missing = draft.get('missing') or []
+            reviewed = (channel.get('review') or {}).get('status') == 'reviewed'
+            if missing and not reviewed and not bool(value.get('allowMissing')):
+                labels = '、'.join(f'{item.get("label")}缺{item.get("missing")}/10'
+                                   for item in missing)
+                raise HTTPException(400, f'这局还有缺失值：{labels}；请逐条确认后再保存。')
+            if not reviewed:
+                reviewer = str(value.get('reviewedBy') or AUTO_REVIEWER).strip() or AUTO_REVIEWER
+                channel_store.set_review(channel, reviewer, str(value.get('notes') or ''))
+            data = _write_channel_bundle(channel)
+            _save_channel(c, channel, value.get('actor') or value.get('reviewedBy'), 'save')
             return {'channel': channel, 'bundle': data}
+    except HTTPException:
+        raise
     except (ValueError, OSError) as error:
         raise HTTPException(400, str(error))
+
+
+@app.post('/api/channels/approve')
+def channels_approve(value: dict):
+    """批量通过无缺失通道；带缺失值的通道必须逐个明确确认。
+
+    - 不传 channelIds：只处理营地通道中无缺失值且尚未入库的局。
+    - 传 channelIds + allowMissing：逐条确认缺失后通过（界面会先二次确认）。
+    """
+    raw_ids = value.get('channelIds')
+    ids = {str(item) for item in raw_ids} if isinstance(raw_ids, list) else set()
+    allow_missing = bool(value.get('allowMissing'))
+    if allow_missing and not ids:
+        raise HTTPException(400, '确认缺失必须指定具体对局，不能整批通过')
+    reviewer = str(value.get('reviewedBy') or '本机一键通过').strip() or '本机一键通过'
+    notes = str(value.get('notes') or '').strip()
+
+    with db() as c:
+        rows = c.execute('SELECT id, body FROM channels').fetchall()
+    passed, skipped, failed = [], [], []
+    for row in rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        channel_id = str(channel.get('id') or row['id'])
+        if ids and channel_id not in ids:
+            continue
+        official_id = str((channel.get('official') or {}).get('id') or '')
+        if not ids and not official_id.startswith('camp-'):
+            continue
+        if (channel.get('saved') or {}).get('status') == 'saved':
+            continue
+        try:
+            channel_store.rebuild(channel)
+        except Exception as error:
+            failed.append({'id': channel_id, 'error': str(error)})
+            continue
+        result = _approve_channel(channel, reviewer, notes, allow_missing=allow_missing)
+        if not result.get('ok'):
+            skipped.append({'id': channel_id, 'missing': result.get('missing') or [],
+                            'error': result.get('error') or ''})
+            continue
+        try:
+            with db() as c:
+                _save_channel(c, channel, reviewer, 'approve')
+            passed.append({'id': channel_id, 'bundleKey': result.get('bundleKey'),
+                           'missing': result.get('missing') or []})
+        except Exception as error:
+            failed.append({'id': channel_id, 'error': str(error)})
+    if passed:
+        _invalidate_v3_snapshot()
+    return {'ok': True, 'passed': passed, 'skipped': skipped, 'failed': failed}
 
 
 @app.delete('/api/channels/{channel_id}')
@@ -2175,8 +2916,8 @@ async def upload_replay_file(request: Request):
     return {'id':file_id,'name':name,'kind':kind,'size':len(data)}
 
 
-def _ensure_v2_async(abc_file_id: str) -> None:
-    """按局生成 V2 时间轴；失败只记日志，不影响导入结果。"""
+def _ensure_builds_async(abc_file_id: str) -> None:
+    """按局生成出装时间轴；失败只记日志，不影响导入结果。"""
     def run() -> None:
         try:
             with db() as c:
@@ -2186,18 +2927,18 @@ def _ensure_v2_async(abc_file_id: str) -> None:
             if row is None:
                 return
             digest = hashlib.sha256(row["data"]).hexdigest()
-            if (V2_DIR / digest / "meta.json").exists():
+            if (BUILDS_DIR / digest / "meta.json").exists():
                 return
-            import replay_v2_build
-            replay_v2_build.build_from_abc_bytes(row["data"], V2_DIR, row["name"])
-            print(f"[v2] built {digest[:12]} {row['name']}", flush=True)
+            import replay_timeline_build
+            replay_timeline_build.build_from_abc_bytes(row["data"], BUILDS_DIR, row["name"])
+            print(f"[builds] built {digest[:12]} {row['name']}", flush=True)
         except Exception as error:  # 后台任务不能影响主流程
-            print(f"[v2] build failed for {abc_file_id}: {error}", flush=True)
+            print(f"[builds] build failed for {abc_file_id}: {error}", flush=True)
     threading.Thread(target=run, daemon=True).start()
 
 
-def _rebuild_v2_with_checkpoints(replay_id: str) -> None:
-    """检查点补传后重建 V2 时间轴；Tier 2 在这里闭环。"""
+def _rebuild_builds_with_checkpoints(replay_id: str) -> None:
+    """检查点补传后重建出装时间轴；Tier 2 在这里闭环。"""
     def run() -> None:
         try:
             with db() as c:
@@ -2224,13 +2965,13 @@ def _rebuild_v2_with_checkpoints(replay_id: str) -> None:
                     key = str(item.get('entity_id') or '')
                     if key:
                         points.setdefault(second, {})[key] = item
-            import replay_v2_build
-            meta = replay_v2_build.build_from_abc_bytes(
-                abc['data'], V2_DIR, abc['name'], points or None)
-            print(f"[v2] rebuilt {replay_id[:12]} tier={meta['tier']} "
+            import replay_timeline_build
+            meta = replay_timeline_build.build_from_abc_bytes(
+                abc['data'], BUILDS_DIR, abc['name'], points or None)
+            print(f"[builds] rebuilt {replay_id[:12]} tier={meta['tier']} "
                   f"checkpoint_seconds={len(points)}", flush=True)
         except Exception as error:
-            print(f"[v2] rebuild failed for {replay_id}: {error}", flush=True)
+            print(f"[builds] rebuild failed for {replay_id}: {error}", flush=True)
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -2243,7 +2984,7 @@ def import_replay(value: dict):
     except ValueError as error:
         raise HTTPException(422,str(error))
     if value.get('abcFileId'):
-        _ensure_v2_async(value['abcFileId'])
+        _ensure_builds_async(value['abcFileId'])
     return {'report':report,'changed':changed}
 
 
@@ -2371,7 +3112,7 @@ async def upload_replay_checkpoints(replay_id: str, request: Request):
         raise HTTPException(413, str(error))
     except CheckpointDataError as error:
         raise HTTPException(422, str(error))
-    _rebuild_v2_with_checkpoints(replay_id)
+    _rebuild_builds_with_checkpoints(replay_id)
     return summary
 
 
@@ -2635,17 +3376,64 @@ app.state.source_restore = restore
 
 @app.get('/studio')
 def studio_index():
-    # V1 工作台已退役：旧入口统一回 V3。
+    # 旧版入口统一回 V3。
     return RedirectResponse('/', status_code=302)
+
+
+_V3_INDEX_FALLBACK = """<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="面向教练的赛训数据平台">
+  <title>赛训数据</title>
+  <link rel="stylesheet" href="static/style.css">
+  <script type="module" src="static/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#content">跳至内容</a>
+  <div id="app"></div>
+</body>
+</html>
+"""
+
+
+def _v3_index_body() -> str:
+    """读 V3 外壳并做两件事：
+
+    1. 外壳被外部编辑器写坏（编码错乱 / 引号丢失）时回退到内置版本——
+       否则浏览器会把后面的 link/script 吞掉，整页空白且没有任何报错。
+    2. 资源版本按文件 mtime 注入，index.html 本身不必再手改 ?v=。
+    """
+    path = ROOT / 'v3' / 'public' / 'index.html'
+    try:
+        text = path.read_bytes().decode('utf-8-sig')
+    except (OSError, UnicodeDecodeError):
+        text = ''
+    broken = ('<script' not in text) or ('id="app"' not in text)
+    if not broken:
+        for tag in re.findall(r'<(?:meta|link|script)\b[^>]*>', text):
+            if tag.count('"') % 2:
+                broken = True
+                break
+    if broken:
+        text = _V3_INDEX_FALLBACK
+    try:
+        stamp = str(int(path.stat().st_mtime))
+    except OSError:
+        stamp = '0'
+    return re.sub(r'(static/(?:style\.css|app\.js))(\?v=[^"\']*)?',
+                  lambda match: f'{match.group(1)}?v={stamp}', text)
 
 
 @app.get('/')
 def index():
-    # V3 是默认界面：根路径直接返回 V2 的 index.html。
-    # /v3 保留给旧链接，/studio 仅用于回看 V1 旧界面。
+    # 根路径直接返回 V3 界面。
+    # /v3 与 /studio 只是旧链接兼容。
     v3_index = ROOT / 'v3' / 'public' / 'index.html'
     if v3_index.is_file():
-        return FileResponse(v3_index)
+        return Response(_v3_index_body(), media_type='text/html; charset=utf-8')
     return JSONResponse({'detail': 'V3 前端资源缺失，请重新安装完整包'}, status_code=503)
 
 
@@ -2660,6 +3448,25 @@ def health():
             'version': VERSION, 'releaseDate': RELEASE_DATE, 'releaseName': RELEASE_NAME}
 
 
+@app.post('/api/shutdown')
+def shutdown(request: Request):
+    """Graceful stop used by the launcher and the installer.
+
+    Loopback only: a remote client must never be able to kill the workbench,
+    even when ``TRAINING_ALLOW_REMOTE=1`` is set for LAN access.
+    """
+    client = request.client.host if request.client else ''
+    if client not in ('127.0.0.1', '::1', '::ffff:127.0.0.1'):
+        raise HTTPException(403, '只允许本机停止服务')
+
+    def exit_later() -> None:
+        time.sleep(0.4)
+        os._exit(0)
+
+    threading.Thread(target=exit_later, name='kpl-shutdown', daemon=True).start()
+    return {'ok': True, 'stopping': True, 'pid': os.getpid()}
+
+
 app.mount('/assets', StaticFiles(directory=ROOT / 'web'), name='assets')
 app.mount('/catalog', StaticFiles(directory=ROOT / 'resources', check_dir=False), name='catalog')
 
@@ -2667,14 +3474,14 @@ app.mount('/catalog', StaticFiles(directory=ROOT / 'resources', check_dir=False)
 # ---------------------------------------------------------------------------
 # V3：单应用入口
 #
-# 旧 V2 原本跑在自己的 serve.py（8771）上，和 V1 是两个端口、两套交付。
+# 历史上分析接口曾独立成第二个服务；现在全部并进同一个 app。
 # 现在 V3（v3/serve.py）的路由已改成 APIRouter，并进同一个 app：
-#   /          V3 默认界面（V2 的 index.html）
+#   /          V3 默认界面
 #   /static    V3 前端资源
-#   /api/*     V1 采集/校对接口 + V2 只读分析接口（同一张路由表）
+#   /api/*     采集/校对接口 + 分析接口（同一张路由表）
 #   /v3       旧链接 302 到根路径
-# V1 的 /api/* 注册在前，路径重复时优先命中；V2 的 /api/matches 是 GET，
-# V1 的同名路由是 POST，不会互相遮挡。
+# 采集接口注册在前，路径重复时优先命中；分析接口的 /api/matches 是 GET，
+# 采集侧的同名路由是 POST，不会互相遮挡。
 # ---------------------------------------------------------------------------
 def _mount_v3() -> bool:
     global V3_MODULE

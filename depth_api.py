@@ -30,6 +30,7 @@ from pathlib import Path
 
 from bp_camp import POSITION_LANES
 from camp_time import camp_times
+from paths import data_root
 from fastapi import APIRouter, HTTPException, Request
 
 DEPTH_SCALE = [
@@ -356,7 +357,7 @@ def build_facts(root: Path, camp_meta=None, profile=None):
         return anon[key]
 
     panel_lane = {}
-    for path in sorted((root / 'data' / 'camp_details').glob('*.json')):
+    for path in sorted((data_root(root) / 'camp_details').glob('*.json')):
         body = _safe_json(path)
         if not body:
             continue
@@ -442,13 +443,13 @@ def build_facts(root: Path, camp_meta=None, profile=None):
     kill_events, fight_facts, fight_rows, death_points = [], [], [], []
     drop_windows, drop_roster = [], []
     position_points = 0
-    for folder in sorted((root / 'data' / 'official_replays').glob('camp-*')):
+    for folder in sorted((data_root(root) / 'official_replays').glob('camp-*')):
         norm = _safe_json(folder / 'normalized.json')
         pos = _safe_json(folder / 'positions.json')
         if not norm:
             continue
         game_id = folder.name.replace('camp-', '')
-        has_panel = (root / 'data' / 'camp_details' / f'{game_id}.json').exists()
+        has_panel = (data_root(root) / 'camp_details' / f'{game_id}.json').exists()
         match_meta = norm.get('match') or {}
         duration = num(match_meta.get('durationSec'))
         economy = norm.get('economy') or {}

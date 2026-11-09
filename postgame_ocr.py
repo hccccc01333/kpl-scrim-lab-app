@@ -502,7 +502,12 @@ def _column_readings(image, source_image, rows):
             enlarged = area.resize((area.width * scale, area.height * scale), Image.Resampling.LANCZOS)
             for raw_box, text, confidence in ocr.detect_tokens(enlarged):
                 value = _compact(str(text))
-                if not (1 <= len(value) <= 8) or confidence < .4:
+                # 不同版本的 rapidocr 置信度类型不一致（float / numpy / str），统一转一次再比。
+                try:
+                    score = float(confidence)
+                except (TypeError, ValueError):
+                    score = 0.0
+                if not (1 <= len(value) <= 8) or score < .4:
                     continue
                 if INT_RE.match(value) or RATING_RE.match(value) or PERCENT_RE.match(value):
                     continue

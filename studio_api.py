@@ -1,4 +1,5 @@
 """Routes for the local analyst workspace and reproducible result snapshots."""
+import asyncio
 import hashlib
 import html
 import json
@@ -12,10 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from sheet_import import SheetImportError, infer_profile, read_workbook, rebuild_profile, write_staging
 from identity_auto import build_plan
+import metric_service
 import team_clusters
 import vocab
 from camp_time import camp_times
@@ -1314,6 +1316,14 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 roster, own_team_name=str(settings.get('teamName') or '').strip(), actor='coach')
         except ValueError as error:
             raise HTTPException(400, str(error))
+        renamed = report.get('renamed') or {}
+        if renamed:
+            # 旧名单里的「新选手」也改成「待命名选手 #N」，避免和「待命名战队 #N」混在一起。
+            for member in roster:
+                new_name = renamed.get(str(member.get('id') or ''))
+                if new_name:
+                    member['name'] = new_name
+            settings['roster'] = roster
         settings['rosterMigratedAt'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
         with sqlite3.connect(db_path) as connection:
             connection.execute('UPDATE settings SET body=? WHERE id=1',
@@ -1325,6 +1335,188 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.get('/workspace/schedules')
     def wb_schedules(status: str = ''):
         return {'schedules': workspace().list_schedules(status=status or None)}
+
+    @router.post('/workspace/reports/screenshot')
+    async def wb_report_screenshot(request: Request):
+        payload = await request.json()
+        path = str(payload.get('path') or '').strip().lstrip('#')
+        if not (path.startswith('session/') or path.startswith('weekly/')):
+            raise HTTPException(400, '只支持训练课或训练周报')
+        base = str(request.base_url).rstrip('/')
+        url = f'{base}/#{path}'
+        out_dir = Path(db_path).parent / 'reports' / 'images'
+        out_dir.mkdir(parents=True, exist_ok=True)
+        name = f'report-{uuid.uuid4().hex[:12]}.png'
+        target = out_dir / name
+
+        def render():
+            from playwright.sync_api import sync_playwright
+            with sync_playwright() as player:
+                browser = player.chromium.launch(channel='msedge', headless=True)
+                try:
+                    page = browser.new_page(viewport={'width': 1200, 'height': 1000},
+                                            device_scale_factor=2)
+                    page.goto(url, wait_until='networkidle', timeout=30000)
+                    page.locator('.report-sheet').wait_for(state='visible', timeout=15000)
+                    page.wait_for_timeout(500)
+                    page.locator('.report-sheet').screenshot(path=str(target))
+                finally:
+                    browser.close()
+            return name
+
+        try:
+            await asyncio.to_thread(render)
+        except Exception as error:  # noqa: BLE001
+            raise HTTPException(500, f'图片导出失败：{error}')
+        return {'ok': True, 'url': f'/api/studio/workspace/reports/image/{name}'}
+
+    @router.get('/workspace/reports/image/{name}')
+    def wb_report_image(name: str):
+        if not re.fullmatch(r'report-[a-f0-9]{12}\.png', name):
+            raise HTTPException(404, '图片不存在')
+        path = Path(db_path).parent / 'reports' / 'images' / name
+        if not path.is_file():
+            raise HTTPException(404, '图片不存在')
+        return FileResponse(path, media_type='image/png', filename=name)
+
+    @router.get('/workspace/matches')
+    def wb_matches(limit: int = 500):
+        return {'matches': workspace().available_matches(limit)}
+
+    @router.get('/workspace/dashboard')
+    def wb_dashboard(weeks: int = 8):
+        return metric_service.dashboard(workspace(), weeks)
+
+    @router.get('/workspace/metrics/week')
+    def wb_week_metrics(start: str = ''):
+        return metric_service.compute_week(workspace(), start)
+
+    @router.get('/workspace/metrics/registry')
+    def wb_metric_registry(entity: str = ''):
+        return {'metrics': metric_service.metrics_registry.list_metrics(entity or None)}
+
+    @router.get('/workspace/inbox')
+    def wb_inbox():
+        return workspace().inbox()
+
+    @router.get('/workspace/opponents/unmapped')
+    def wb_unmapped_opponents():
+        ws = workspace()
+        return {'opponents': ws.unmapped_opponents(), 'teams': ws.list_teams()}
+
+    @router.post('/workspace/opponents/map')
+    async def wb_map_opponent(request: Request):
+        payload = await request.json()
+        old_id = str(payload.get('oldId') or '').strip() if isinstance(payload, dict) else ''
+        team_id = str(payload.get('teamId') or '').strip() if isinstance(payload, dict) else ''
+        try:
+            return workspace().map_opponent(old_id, team_id, actor='coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    @router.get('/workspace/sessions/{schedule_id}')
+    def wb_session(schedule_id: str):
+        ws = workspace()
+        schedule = ws.get_schedule(schedule_id)
+        if not schedule:
+            raise HTTPException(404, '训练课不存在')
+        teams = {team['id']: team for team in ws.list_teams(include_archived=True)}
+        linked = ws.session_matches(schedule)
+        for match in linked['matches']:
+            team = teams.get(str(match.get('enemy_team_id') or ''))
+            match['enemyName'] = team.get('name') if team else ''
+        team = teams.get(str(schedule.get('opponent_team_id') or ''))
+        available = ws.available_matches(200)
+        for match in available:
+            opponent = teams.get(str(match.get('enemy_team_id') or ''))
+            match['enemyName'] = opponent.get('name') if opponent else ''
+        brief = None
+        try:
+            brief = team_clusters.team_brief(
+                camp_dir(), db_path, str(schedule.get('opponent_team_id') or ''),
+                (team or {}).get('name') or '', limit=3)
+        except Exception:  # noqa: BLE001 - 简报失败不能挡住训练课
+            brief = None
+        manual = ws.manual_session_keys(schedule_id)
+        schedule_view = metric_service.enrich_schedule(ws, schedule)
+        return {
+            'schedule': schedule_view,
+            'metrics': schedule_view.get('metrics') or {},
+            'goalMetrics': metric_service.goal_metrics(),
+            'team': {'id': team['id'], 'name': team['name']} if team else None,
+            'matches': linked['matches'],
+            'matchReason': linked['reason'],
+            'manualLinks': bool(manual),
+            'manualMatchKeys': manual,
+            'availableMatches': available,
+            'opponentBrief': brief,
+            'players': ws.list_players(),
+        }
+
+    @router.post('/workspace/sessions/{schedule_id}/links')
+    async def wb_session_links(schedule_id: str, request: Request):
+        payload = await request.json()
+        keys = payload.get('matchKeys') if isinstance(payload, dict) else None
+        if not isinstance(keys, list):
+            raise HTTPException(400, '请选择要关联的对局')
+        try:
+            saved = workspace().save_session_links(schedule_id, keys, actor='coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        return {'ok': True, 'matchKeys': saved, 'reason': 'manual' if saved else 'auto'}
+
+    @router.post('/workspace/sessions/{schedule_id}/review')
+    async def wb_session_review(schedule_id: str, request: Request):
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(400, '复盘内容无效')
+        goals = payload.get('goals')
+        if isinstance(goals, str):
+            goals = [line.strip() for line in goals.splitlines() if line.strip()]
+        if not isinstance(goals, list) or len(goals) > 12:
+            raise HTTPException(400, '训练目标最多 12 条')
+        clean_goals = []
+        for item in goals:
+            if isinstance(item, str):
+                label, target, status = item.strip(), '', 'pending'
+            elif isinstance(item, dict):
+                label = str(item.get('label') or '').strip()
+                target = str(item.get('target') or '').strip()[:80]
+                status = str(item.get('status') or 'pending').strip()
+            else:
+                continue
+            if not label:
+                continue
+            if status not in ('pending', 'achieved', 'partial', 'missed'):
+                status = 'pending'
+            metric_id = str(item.get('metricId') or '').strip() if isinstance(item, dict) else ''
+            comparator = str(item.get('comparator') or '').strip() if isinstance(item, dict) else ''
+            clean_goals.append({'label': label[:120], 'target': target, 'status': status,
+                                'metricId': metric_id, 'comparator': comparator})
+        goals = clean_goals
+        attendance = payload.get('attendance')
+        if isinstance(attendance, str):
+            attendance = [line.strip() for line in attendance.splitlines() if line.strip()]
+        if not isinstance(attendance, list) or len(attendance) > 30:
+            raise HTTPException(400, '出勤名单无效')
+        attendance = [str(item).strip()[:40] for item in attendance if str(item).strip()]
+        review_status = str(payload.get('reviewStatus') or 'pending')
+        ws = workspace()
+        values = metric_service.compute_session(ws, schedule_id, override={
+            'review_status': review_status,
+            'goals': json.dumps(goals, ensure_ascii=False),
+            'attendance': json.dumps(attendance, ensure_ascii=False),
+        })
+        goals = metric_service.enrich_goals(goals, values)
+        try:
+            schedule = ws.save_session_review(
+                schedule_id, goals=goals, review=str(payload.get('review') or '')[:4000],
+                review_status=review_status, attendance=attendance,
+                actor=payload.get('actor') or 'coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        schedule_view = metric_service.enrich_schedule(ws, schedule)
+        return {'ok': True, 'schedule': schedule_view, 'metrics': schedule_view.get('metrics') or {}}
 
     @router.post('/workspace/schedules')
     async def wb_save_schedule(request: Request):

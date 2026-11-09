@@ -22,10 +22,12 @@ from pathlib import Path
 
 from PIL import Image
 
+from paths import data_root
+
 ROOT = Path(__file__).resolve().parent
 ENGINE = 'mimo-ocr-0'
 MODEL_REPO = 'SeerRay-Lab/Xiaomi-OCR-0'
-CACHE_ROOT = Path(os.environ.get('MIMO_OCR_CACHE', ROOT / 'data' / 'ocr_cache'))
+CACHE_ROOT = Path(os.environ.get('MIMO_OCR_CACHE', data_root() / 'ocr_cache'))
 CACHE_DIR = CACHE_ROOT / 'mimo'
 DEFAULT_MAX_TOKENS = 768
 

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="v55 light-site">
+<head>
+<script src="assets/theme.js?v=20261030b"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>赛程中心 · KPL赛研</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%230A111C'/%3E%3Crect x='3' y='3' width='26' height='26' rx='4' fill='none' stroke='%23F6C021' stroke-width='2'/%3E%3Ctext x='16' y='22' font-family='Arial,sans-serif' font-size='16' font-weight='bold' fill='%23F6C021' text-anchor='middle'%3EK%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css?v=20261102-brand">
+<link rel="stylesheet" href="assets/pages.css?v=20261102-brand">
+<link rel="stylesheet" href="assets/v55.css?v=92">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="KPL赛研">
+<meta property="og:title" content="赛程中心 · KPL赛研">
+<meta property="og:description" content="KPL 赛事数据产品：赛程比分、战队/选手/英雄数据、BP 分析、逐局复盘与实时胜率预测。2016–2026 全历史。">
+<meta property="og:image" content="https://hccccc01333.github.io/KPLdata-site/assets/brand/kpl-research-social.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="assets/arena.css?v=1">
+<link rel="stylesheet" href="assets/light.css?v=20261030a">
+<link rel="stylesheet" href="assets/theme.css?v=20261030b">
+<link rel="stylesheet" href="assets/schedule.css?v=20261103h">
+</head>
+<body data-page="schedule.html" class="sch-page">
+<header id="siteHeader" class="topbar"></header>
+
+<header class="page-hero sch-hero">
+  <div class="wrap">
+    <div class="sch-hero-copy">
+      <div class="ph-kicker mono">SCHEDULE · 2016—2026</div>
+      <h1>赛程<span>中心</span></h1>
+      <p class="sch-hero-deck">从常规赛到总决赛。按年份、赛事、赛段和战队定位，直接进入回放或数据复盘。</p>
+      <div class="sch-kpis" aria-label="赛程数据概览">
+        <div class="sch-kpi"><b id="mTotal">—</b><span>大场</span></div>
+        <div class="sch-kpi"><b id="mDone">—</b><span>已结束</span></div>
+        <div class="sch-kpi"><b id="mDetail">—</b><span>可复盘</span></div>
+        <div class="sch-kpi"><b id="mVid">—</b><span>有视频</span></div>
+      </div>
+    </div>
+    <div class="sch-feature-wrap">
+      <div class="sch-feature" id="evPoster" aria-live="polite"></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap sch-main">
+  <section class="sch-toolbar" id="schToolbar" aria-label="赛程筛选">
+    <div class="sch-yearbar">
+      <div class="sch-years" id="yearRail" role="group" aria-label="按年份筛选"></div>
+      <button class="sch-railbtn" id="railPrev" type="button" aria-label="向前浏览年份">‹</button>
+      <button class="sch-railbtn" id="railNext" type="button" aria-label="向后浏览年份">›</button>
+    </div>
+    <div class="sch-filterbar">
+      <label class="sch-field sch-field-sel"><span>赛事</span><select id="fLeague" aria-label="选择赛事"></select></label>
+      <label class="sch-field sch-field-stage"><span>赛段</span><select id="fStage" aria-label="选择赛段"><option value="">全部赛段</option></select></label>
+      <div class="sch-field sch-field-seg"><span>状态</span>
+        <div class="sch-seg" id="statusSeg" role="group" aria-label="按比赛状态筛选">
+          <button type="button" data-st="" class="on">全部</button>
+          <button type="button" data-st="进行中">进行中</button>
+          <button type="button" data-st="未开始">未开始</button>
+          <button type="button" data-st="已结束">已结束</button>
+        </div>
+        <select id="fStatus" hidden aria-hidden="true" tabindex="-1">
+          <option value="">全部状态</option>
+          <option>进行中</option>
+          <option>未开始</option>
+          <option>已结束</option>
+        </select>
+      </div>
+      <label class="sch-field sch-search"><span>搜索战队</span>
+        <span class="sch-input"><input id="fTeam" type="search" placeholder="输入战队名，如 重庆狼队" autocomplete="off" aria-label="搜索战队"><button class="sch-clear" id="clearTeam" type="button" aria-label="清除搜索" hidden>×</button></span>
+      </label>
+      <div class="sch-filter-end">
+        <span class="sch-count" id="countNote">—</span>
+        <button class="sch-reset" id="resetBtn" type="button" hidden>重置筛选</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="sch-brief" id="brief"></div>
+  <div class="sch-stage-mini" id="stageMini"></div>
+
+  <div class="sch-layout">
+    <section class="sch-listcol">
+      <div class="sch-listhead">
+        <h2>赛程时间线</h2>
+        <span id="sortNote">今天 → 即将开始 → 最近结束</span>
+      </div>
+      <div id="list" class="sch-list" aria-live="polite"></div>
+      <div class="sch-more"><button class="btn ghost" id="moreBtn" style="display:none">显示更多（已显示 <span id="shownN">0</span> / <span id="totalN">0</span>）</button></div>
+    </section>
+
+    <aside class="sch-aside" aria-label="赛程辅助信息">
+      <section class="sch-card" id="stageBlock">
+        <div class="sch-cardhead"><h2>赛段进程</h2><span class="mono" id="stageNote">—</span></div>
+        <div class="sch-steps" id="stageTrack"></div>
+        <div class="sch-cardlinks">
+          <a class="sch-cardlink" href="bracket.html" id="stageMore">赛事进程与对阵 →</a>
+          <a class="sch-cardlink" href="bracket-forecast.html">冠军预测 →</a>
+        </div>
+      </section>
+
+      <section class="sch-card" id="recentBlock">
+        <div class="sch-cardhead"><h2>最近赛果</h2><a class="sch-cardlink" href="#list" id="recentAll">看全部 →</a></div>
+        <div class="sch-recent" id="recentRows"></div>
+      </section>
+
+      <section class="sch-card sch-legend">
+        <div class="sch-cardhead"><h2>数据徽标</h2></div>
+        <div class="sch-legend-grid">
+          <span><i class="sch-dot on"></i>比分</span>
+          <span><i class="sch-dot on"></i>BP</span>
+          <span><i class="sch-dot on"></i>选手</span>
+          <span><i class="sch-dot on"></i>分钟级</span>
+        </div>
+        <p>实心点表示该场有对应数据，灰点表示没有。分钟级包含逐分钟经济、资源与击杀序列，以及模型胜率曲线（估算）。</p>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<button class="sch-backtop" id="backTop" type="button" aria-label="回到顶部">↑</button>
+<footer id="siteFooter" class="footer"></footer>
+
+<script src="assets/data.js?v=85"></script>
+<script src="assets/seasons.js?v=85"></script>
+<script src="assets/schedule_all.js?v=85"></script>
+<script src="assets/coverage.js?v=85"></script>
+<script src="assets/common.js?v=20261102-brand"></script>
+<script src="assets/ours.js"></script>
+<script src="assets/schedule.js?v=20261103h"></script>
+</body>
+</html>

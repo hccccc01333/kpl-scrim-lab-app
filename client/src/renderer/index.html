@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: http: https:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>赛训台</title>
+  <script>
+    try {
+      var theme = localStorage.getItem('kpl-theme');
+      if (theme === 'dark' || theme === 'light') document.documentElement.dataset.theme = theme;
+      var density = localStorage.getItem('kpl-density');
+      if (density === 'compact' || density === 'comfortable') document.documentElement.dataset.density = density;
+    } catch (error) {}
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

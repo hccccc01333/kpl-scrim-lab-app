@@ -20,8 +20,10 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from paths import data_root
+
 ROOT = Path(__file__).resolve().parent
-STORE = Path(os.environ.get('CAMP_REPLAY_DIR', ROOT / 'data' / 'official_replays'))
+STORE = Path(os.environ.get('CAMP_REPLAY_DIR', data_root() / 'official_replays'))
 SCHEMA = 'camp-replay-v1'
 API_HOST = 'https://kohcamp.qq.com'
 ENDPOINTS = {

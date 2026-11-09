@@ -33,12 +33,18 @@ TEAMS = {
     'T1': dict(name='青岚', players=['青岚·辰', '青岚·野', '青岚·中', '青岚·射', '青岚·辅'], games=12),
     'T2': dict(name='赤霄', players=['赤霄·一', '赤霄·二', '赤霄·三', '赤霄·四', '赤霄·五'], games=7),
     'T3': dict(name='苍梧', players=['苍梧·林', '苍梧·山', '苍梧·风', '苍梧·月', '苍梧·雪'], games=5),
-    'T4': dict(name='', players=['路人甲', '路人乙', '路人丙', '路人丁', '路人戊'], games=3),
-    'T5': dict(name='', players=['白虎·刀', '白虎·枪', '白虎·剑', '白虎·弓', '白虎·盾'], games=2),
-    'T6': dict(name='', players=['散人A', '散人B', '散人C', '散人D', '散人E'], games=1),
-    'T7': dict(name='', players=['替补1', '替补2', '替补3', '替补4', '替补5'], games=1),
+    'T4': dict(name='', players=['白虎·刀', '白虎·枪', '白虎·剑', '白虎·弓', '白虎·盾'], games=3),
+    'T5': dict(name='', players=['流云·一', '流云·二', '流云·三', '流云·四', '流云·五'], games=2),
+    'T6': dict(name='', players=['惊蛰·A', '惊蛰·B', '惊蛰·C', '惊蛰·D', '惊蛰·E'], games=1),
+    'T7': dict(name='', players=['逐风·1', '逐风·2', '逐风·3', '逐风·4', '逐风·5'], games=1),
 }
 SUB = '苍梧·替补'
+
+# 数据包与战队档案里展示的队名（面板本身仍保留"待命名"以覆盖改名流程）。
+BUNDLE_NAMES = {
+    'T1': '青岚战队', 'T2': '赤霄战队', 'T3': '苍梧战队', 'T4': '白虎战队',
+    'T5': '流云战队', 'T6': '惊蛰战队', 'T7': '逐风战队',
+}
 
 # 固定体系：每队一套基础阵容（按路序：对抗路/打野/中路/发育路/游走）
 COMPS = {
@@ -143,6 +149,13 @@ def panel(seq, team_key, index, start, own_camp_code, own_win, subs):
     enemy_roles = [role(ids[i], names[i], LANES[i], enemy_heroes[i], enemy_camp,
                         stats_for(rng, LANES[i], minutes, strength)) for i in range(5)]
     blue, red = (own_roles, enemy_roles) if own_camp_code == 1 else (enemy_roles, own_roles)
+    # BP 页读的是 blueTeam / redTeam 的终局名单；缺了它 parse_camp_bp 会直接跳过这一局。
+    ban_rng = random.Random(f'bans-{team_key}-{seq}')
+    pool = [hero for heroes in HEROES.values() for hero in heroes]
+    used = set(own_heroes) | set(enemy_heroes)
+    ban_pool = [hero for hero in pool if hero not in used]
+    ban_rng.shuffle(ban_pool)
+    blue_picks, red_picks = (own_heroes, enemy_heroes) if own_camp_code == 1 else (enemy_heroes, own_heroes)
     return {
         'returnCode': 0,
         'data': {
@@ -151,13 +164,14 @@ def panel(seq, team_key, index, start, own_camp_code, own_win, subs):
             'battle': {'startTime': start, 'usedTime': seconds,
                        'mapName': '训练赛', 'gameType': 4},
             'blueRoles': blue, 'redRoles': red,
-            'blueTeam': {}, 'redTeam': {},
+            'blueTeam': {'pickHeros': list(blue_picks), 'banHeros': ban_pool[:4]},
+            'redTeam': {'pickHeros': list(red_picks), 'banHeros': ban_pool[4:9]},
         },
     }
 
 
 
-def write_bundles(out_dir, plan, team_name='1'):
+def write_bundles(out_dir, plan, team_name='1', names=None):
     """把同一批对局写成 kpl-match-data-v1 数据包。
 
     营地口径只认数据包（campBacked 来自 officialReplay.id），写 matches 表会被
@@ -229,7 +243,9 @@ def write_bundles(out_dir, plan, team_name='1'):
             'match': {
                 'key': f'mock-{seq}',
                 'date': {'year': 2026, 'month': 11, 'day': day, 'text': f'2026-11-{day:02d}'},
-                'duration': seconds, 'opponent': team['name'], 'session': '训练赛', 'mode': '训练赛',
+                'duration': seconds,
+                'opponent': (names or {}).get(team_key) or team['name'],
+                'session': '训练赛', 'mode': '训练赛',
                 'ownCamp': own_camp, 'ownSide': own_side,
                 'winner': winner_camp, 'winnerCamp': winner_camp,
                 'scores': {'left': left_score, 'right': right_score,
@@ -248,9 +264,12 @@ def write_bundles(out_dir, plan, team_name='1'):
     print(f'写入 {written} 个数据包 -> {out}')
 
 
-def main():
-    OUT.mkdir(parents=True, exist_ok=True)
-    for old in OUT.glob('*.json'):
+def generate(base: Path) -> dict:
+    """把一整套演示数据写到 ``base``：面板进 camp_details，数据包进 matches。"""
+    base = Path(base)
+    panels = base / 'camp_details'
+    panels.mkdir(parents=True, exist_ok=True)
+    for old in panels.glob('*.json'):
         old.unlink()
     plan = []
     for key, team in TEAMS.items():
@@ -269,12 +288,24 @@ def main():
         own_win = random.Random(index).random() < edge
         subs = key == 'T3' and index % 2 == 0
         payload = panel(seq, key, index, start, own_code, own_win, subs)
-        (OUT / f'{seq}.json').write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
+        (panels / f'{seq}.json').write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')
         own_heroes, enemy_heroes = compose_heroes(seq, key, own_code)
         entries.append((seq, key, start, own_code, own_win, own_heroes, enemy_heroes))
-    write_bundles(OUT.parent / 'matches', entries)
-    total = sum(t['games'] for t in TEAMS.values())
-    print(f'写入 {total} 局面板 -> {OUT}')
+    write_bundles(base / 'matches', entries, names=BUNDLE_NAMES)
+    return {'panels': panels, 'matches': base / 'matches',
+            'games': sum(team['games'] for team in TEAMS.values())}
+
+
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description='生成演示用营地数据')
+    parser.add_argument('--data-dir', default=str(ROOT / 'data' / '_mock'),
+                        help='写到哪个数据根（默认 data/_mock）')
+    args = parser.parse_args()
+    info = generate(Path(args.data_dir))
+    print(f"写入 {info['games']} 局面板 -> {info['panels']}")
+    print(f"写入数据包 -> {info['matches']}")
     for key, team in TEAMS.items():
         print(f"  {key} {team['name'] or '(待命名)':8} {team['games']:2} 局")
 

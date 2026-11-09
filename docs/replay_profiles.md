@@ -12,7 +12,7 @@
 - 解析器：`replay_parser.py`（容器/十人块/尾部流）
 - 命令解码：`tools/replay_frame_commands.py`（帧命令 selector → 字段）
 
-当前档案：`observed-12.1.1.x-v2`
+当前档案：`observed-12.1.1.x-v3`
 
 | 字段 | 值 |
 |---|---|

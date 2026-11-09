@@ -283,7 +283,7 @@
 | 对手档案 | 队/局 | 敌方 `playerId/roleName/usedHero/position/battleStats/gameResult` | 聚类、胜率、英雄池 | 无队名显示待命名 | `team_clusters.py` |
 | 身份认领 | 人 | `basicInfo.playerId/roleName/acntCamp`、`usedHero`、`aliases` | 换号合并 | 未绑定保留昵称 | `identity_auto.py` |
 | 训练重点 | 人/队/局 | `battleStats` 指标、日期/训练组、身份 | 目标达成率、近期均值 | 样本不足留空 | `focus.py` |
-| 回放 V2 | 秒/人 | 检查点金币/KDA/等级、`positions`、`equipmentEvents` | 时间轴、装备线 | 缺失显示 unknown | `replay_v2_api.py` |
+| 回放时间轴 | 秒/人 | 检查点金币/KDA/等级、`positions`、`equipmentEvents` | 时间轴、装备线 | 缺失显示 unknown | `replay_timeline_build.py` |
 
 ---
 
@@ -1249,7 +1249,7 @@ CREATE TABLE workspace_meta (
 - 本队 5 人：按分路把 32 局我方昵称映射到 5 个稳定 ID（`settings.aliases`）。
 - 对手：32 个 cluster → `验证对手 #1..#32`；B1 用 mock 7 队。
 - 训练组：6 个时间组 → `验证训练组 A-F`。
-- 版本：按日期 → `验证版本 V1/V2/V3`。
+- 版本：按日期 → `验证版本 A/B/C`。
 - BP 手序：部分合成，部分留空。
 - 训练干预：2–3 条合成干预。
 - 装备时序：5 局有事件，其余不可用。
@@ -1364,7 +1364,7 @@ imported → prefilled → reviewing → confirmed → analysis_ready
 │ 11-02 13:15  vs 待命名对手 #3              │
 │  对手   [青岚________] 推断·中   [确认]     │
 │  训练组 [11-02 下午__] 推断·低   [确认]     │
-│  版本   [V2 ▾]         待确认     [确认]     │
+│  版本   [B ▾]         待确认     [确认]     │
 ├────────────────────────────────────────────┤
 │ 11-02 13:32  vs 待命名对手 #4              │
 │  ...                                        │
@@ -1390,7 +1390,7 @@ imported → prefilled → reviewing → confirmed → analysis_ready
 │ 日期   2026-11-02   [编辑]  │
 │ 对手   青岚          [编辑]  │
 │ 训练组 11-02 下午    [编辑]  │
-│ 版本   V2            [编辑]  │
+│ 版本   B             [编辑]  │
 │ 规则   全局BP        [编辑]  │
 │ 复盘人 张教练        [编辑]  │
 │ 影响：对手画像 ✓ / 版本趋势 ✓│
@@ -1528,7 +1528,7 @@ imported → prefilled → reviewing → confirmed → analysis_ready
 #### 8.7.4 批量导入
 
 - 按日期/训练组/对手分组预览。
-- 支持“把这一组设为 11-03 晚训 · V2 · 全局BP”。
+- 支持“把这一组设为 11-03 晚训 · B 版 · 全局BP”。
 - 批量应用前显示影响局数；应用后可撤销。
 - 表格/截图批量导入复用同一套分组逻辑，不逐局重复填。
 
@@ -1609,7 +1609,7 @@ GET    /api/studio/coverage/summary
   "fields": {
     "opponent": "青岚",
     "session": "11-02 下午",
-    "version": "V2",
+    "version": "B",
     "rules": "全局BP"
   },
   "confirmed_by": "coach"
@@ -1621,7 +1621,7 @@ GET    /api/studio/coverage/summary
 ```json
 {
   "match_keys": ["camp:1793606215", "camp:1793606357"],
-  "fields": {"session": "11-02 下午", "version": "V2"},
+  "fields": {"session": "11-02 下午", "version": "B"},
   "confirmed_by": "coach"
 }
 ```
@@ -1977,7 +1977,7 @@ GET    /api/studio/schedules/suggest?date=&start_time=&opponent=
 | 战队 Team | 稳定的队伍身份 | 青岚 |
 | 选手 Player | 稳定的人，分析按这个聚合 | 青岚·辰 |
 | 账号 Account | 营地 `playerId` + 昵称；一个人可以有多个 | 1234、5678、9012 |
-| 阵容版本 RosterVersion | 某段时间队伍用的是哪 5 个人 | 青岚 v2：辰/野/中/射/辅 |
+| 阵容版本 RosterVersion | 某段时间队伍用的是哪 5 个人 | 青岚 B 版：辰/野/中/射/辅 |
 | 对局阵容 MatchRoster | 某局某位置具体用了哪个账号 | 3 号位：青岚·辰（账号 5678） |
 
 规则：
@@ -2106,7 +2106,7 @@ GET    /api/studio/schedules/suggest?date=&start_time=&opponent=
 ```text
 青岚
 v1  2026-10-01 — 2026-11-01  辰/野/中/射/辅
-v2  2026-11-02 — 至今        辰/野/中/射/辅
+B 版  2026-11-02 — 至今   辰/野/中/射/辅
     账号变化：辰 5678、野 6789
 ```
 
@@ -2131,7 +2131,7 @@ POST   /api/studio/opponents/detect?match_key=
     {"account_id": "5678", "nickname": "辰辰", "player_id": "p-chen", "is_primary": false},
     {"account_id": "6789", "nickname": "野王", "player_id": "p-ye", "is_primary": true}
   ],
-  "roster_version": {"name": "v2", "start_date": "2026-11-02"}
+  "roster_version": {"name": "B", "start_date": "2026-11-02"}
 }
 ```
 

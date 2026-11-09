@@ -158,10 +158,12 @@ export function createMatchDeep(h) {
   let panelMode = 'duel';
   let duelMode = 'deep';
   let panelBound = false;
-  let heatMode = 'ten';
+  let heatLane = LANES[0];
   let heatState = null;
   let heatBound = false;
   let heatTimer = null;
+  let battleState = null;
+  let battleBound = false;
   const HEAT_WINDOW = 90; // 热区时间窗（秒）
 
   /* 入侵：以对侧半区（推进进度 > 50%）为准；连续 2 个采样（≈4 秒）才算一次。
@@ -515,41 +517,33 @@ export function createMatchDeep(h) {
     const canvas = (p, size) => `<canvas class="md-heat-canvas" width="${GRID * size}" height="${GRID * size}"
       data-heat-card="${p.camp}-${p.slot}" data-camp="${p.camp}" data-side="${side(p)}"
       role="img" aria-label="${esc((p.info.label || p.info.hero || '') + ' 位置热区')}"></canvas>`;
-    const ten = list.map((p) => `<article class="md-heat ${side(p)}">
-        <div class="md-heat-top"><span><b>${esc(p.info.hero || '—')}</b><small>${esc(p.info.label || p.info.nickname || '—')}</small></span>
-          <em data-heat-share="${p.camp}-${p.slot}">—<small>敌方半区</small></em></div>
-        ${canvas(p, 7)}
-      </article>`).join('');
     const laneCards = LANES.map((lane) => {
       const own = list.find((p) => p.camp === ownCamp && laneOf(p.info) === lane);
       const foe = list.find((p) => p.camp !== ownCamp && laneOf(p.info) === lane);
       if (!own && !foe) return '';
-      const one = (p, kind) => (p ? `<div class="md-heat-pair-card">
-          ${canvas(p, 6)}
-          <span class="md-heat-pair-name"><i class="${kind}"></i>${esc(p.info.label || p.info.hero || '—')}</span>
-        </div>` : '<div class="md-heat-pair-card empty">—</div>');
-      return `<article class="md-heat md-heat-lane">
-        <div class="md-heat-top"><b>${lane}</b></div>
-        <div class="md-heat-pairs">${one(own, 'own')}${one(foe, 'foe')}</div>
+      const one = (p, kind) => (p ? `<div class="hl-side ${kind}">
+          <div class="hl-head"><i class="${kind}"></i><b>${esc(p.info.label || p.info.hero || '—')}</b><span>${esc(p.info.hero || '')}</span></div>
+          ${canvas(p, 14)}
+          <div class="hl-meta"><b data-heat-pct="${p.camp}-${p.slot}">—</b> 在对侧半区</div>
+        </div>` : '<div class="hl-side empty">没有对位数据</div>');
+      return `<article class="md-heat-lane" data-lane="${lane}"${lane === heatLane ? '' : ' hidden'}>
+        <div class="hl-pair">${one(own, 'own')}${one(foe, 'foe')}</div>
       </article>`;
     }).join('');
 
-    const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${heatMode === mode ? ' is-on' : ''}"
-      aria-selected="${heatMode === mode}" data-md-heat-mode="${mode}">${text}</button>`;
     return `<div class="md-heatwrap" data-md-heat>
       <div class="md-panel-bar">
         <button type="button" class="md-heat-play" data-heat-play aria-pressed="false">播放</button>
         <input type="range" class="md-heat-range" data-heat-range min="0" max="${Math.round(total)}" step="${step}" value="${Math.round(total)}" aria-label="热区时间轴">
         <span class="md-heat-clock" data-heat-clock>—</span>
-        <div class="md-seg" role="tablist" aria-label="热区视图">${tab('ten', '十人')}${tab('lane', '对位')}</div>
+        <label class="md-heat-pick"><span>分路</span>
+          <select data-heat-lane aria-label="选择分路">
+            ${LANES.map((lane) => `<option value="${lane}"${lane === heatLane ? ' selected' : ''}>${lane}</option>`).join('')}
+          </select>
+        </label>
       </div>
-      <div class="md-panel-view" data-md-heat-view="ten"${heatMode === 'ten' ? '' : ' hidden'}>
-        <div class="md-heats">${ten}</div>
-      </div>
-      <div class="md-panel-view" data-md-heat-view="lane"${heatMode === 'lane' ? '' : ' hidden'}>
-        <div class="md-heats md-heats-lane">${laneCards}</div>
-      </div>
-      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。对位视图把同一路的两个人并排放，金为本队、青为对手。</p>
+      <div class="md-heats md-heats-lane" data-heat-lanes>${laneCards}</div>
+      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。同一路的两个人并排，金为本队、青为对手。</p>
     </div>`;
   }
 
@@ -573,19 +567,62 @@ export function createMatchDeep(h) {
     return { out, max };
   }
 
+  let heatSprites = null;
+  function heatSprite(side) {
+    if (!heatSprites) {
+      const make = (rgb) => {
+        const c = document.createElement('canvas');
+        c.width = 64; c.height = 64;
+        const g = c.getContext('2d');
+        if (!g) return c;
+        const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+        grad.addColorStop(0, `rgba(${rgb},1)`);
+        grad.addColorStop(0.5, `rgba(${rgb},.5)`);
+        grad.addColorStop(1, `rgba(${rgb},0)`);
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 64, 64);
+        return c;
+      };
+      heatSprites = { own: make('216, 178, 106'), foe: make('94, 201, 190') };
+    }
+    return heatSprites[side === 'foe' ? 'foe' : 'own'];
+  }
+
   function drawHeat(canvas, counts, max, side) {
     const ctx = canvas.getContext && canvas.getContext('2d');
     if (!ctx) return;
-    const cell = canvas.width / GRID;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const rgb = side === 'foe' ? '94, 201, 190' : '216, 178, 106';
+    const size = canvas.width;
+    const cell = size / GRID;
+    ctx.clearRect(0, 0, size, size);
+
+    /* 底图：网格 / 河道 / 双方基地，让轨迹有参照 */
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, .05)';
+    ctx.lineWidth = 1;
+    for (let k = 1; k < 4; k++) {
+      const p = Math.round((k / 4) * size) + 0.5;
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(38, 74, 96, .42)';
+    ctx.lineWidth = size * 0.05;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(size, size); ctx.stroke();
+    ctx.restore();
+
+    /* 轨迹用径向渐变叠加，比一个个方块更像热区 */
+    const sprite = heatSprite(side);
+    ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < counts.length; i++) {
       const n = counts[i];
       if (!n) continue;
-      const alpha = 0.16 + Math.pow(n / max, 0.55) * 0.84;
-      ctx.fillStyle = `rgba(${rgb}, ${alpha.toFixed(3)})`;
-      ctx.fillRect((i % GRID) * cell, (GRID - 1 - Math.floor(i / GRID)) * cell, cell, cell);
+      const cx = ((i % GRID) + 0.5) * cell;
+      const cy = (GRID - Math.floor(i / GRID) - 0.5) * cell;
+      const r = cell * 0.82;
+      ctx.globalAlpha = Math.min(0.9, 0.12 + Math.pow(n / max, 0.8) * 0.72);
+      ctx.drawImage(sprite, cx - r, cy - r, r * 2, r * 2);
     }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
   }
 
   function paintHeat(t) {
@@ -609,6 +646,10 @@ export function createMatchDeep(h) {
     box.querySelectorAll('[data-heat-share]').forEach((el) => {
       const data = out.get(el.dataset.heatShare);
       if (data) el.innerHTML = `${pct(data.total ? data.enemy / data.total * 100 : 0)}<small>敌方半区</small>`;
+    });
+    box.querySelectorAll('[data-heat-pct]').forEach((el) => {
+      const data = out.get(el.dataset.heatPct);
+      if (data) el.textContent = pct(data.total ? data.enemy / data.total * 100 : 0);
     });
   }
 
@@ -648,26 +689,438 @@ export function createMatchDeep(h) {
         paintHeat(Number(slider.value));
       });
       root.addEventListener('click', (event) => {
-        const hit = event.target.closest ? event.target.closest('[data-heat-play],[data-md-heat-mode]') : null;
+        const hit = event.target.closest ? event.target.closest('[data-heat-play]') : null;
         if (!hit) return;
-        if (hit.hasAttribute('data-heat-play')) { toggleHeat(hit); return; }
-        const mode = hit.dataset.mdHeatMode;
-        const box = hit.closest('[data-md-heat]');
+        toggleHeat(hit);
+      });
+      root.addEventListener('change', (event) => {
+        const pick = event.target.closest && event.target.closest('[data-heat-lane]');
+        if (!pick) return;
+        heatLane = pick.value;
+        const box = pick.closest('[data-md-heat]');
         if (!box) return;
-        heatMode = mode;
-        box.querySelectorAll('[data-md-heat-mode]').forEach((b) => {
-          const on = b.dataset.mdHeatMode === mode;
-          b.classList.toggle('is-on', on);
-          b.setAttribute('aria-selected', String(on));
-        });
-        box.querySelectorAll('[data-md-heat-view]').forEach((view) => { view.hidden = view.dataset.mdHeatView !== mode; });
+        box.querySelectorAll('[data-lane]').forEach((row) => { row.hidden = row.dataset.lane !== heatLane; });
         paintHeat(Number(box.querySelector('[data-heat-range]')?.value || 0));
       });
     }
     const box = document.querySelector('[data-md-heat]');
     if (!box || !heatState) return;
+    box.querySelectorAll('[data-lane]').forEach((row) => { row.hidden = row.dataset.lane !== heatLane; });
+    const pick = box.querySelector('[data-heat-lane]');
+    if (pick) pick.value = heatLane;
     const slider = box.querySelector('[data-heat-range]');
     paintHeat(Number(slider ? slider.value : heatState.duration));
+  }
+
+  /* ── 战斗：团战地图 + 团战贡献 + 掉点损失 ───────────────────────── */
+  function battle(positions, players, ownCamp, duration, series, deaths, fights) {
+    const deathList = (deaths || []).filter((d) => num(d.t));
+    const fightList = (fights || []).filter((f) => num(f.t));
+    if (!deathList.length && !fightList.length) return '';
+    const foeCamp = ownCamp === 'blue' ? 'red' : 'blue';
+    const step = (positions && positions.step) || 2;
+    const srcs = (positions && positions.players) || [];
+
+    const slotOf = (camp, hero) => {
+      const p = players.find((x) => x.camp === camp && x.hero === hero);
+      return p ? p.slot : null;
+    };
+    const srcOf = (camp, hero) => {
+      const slot = slotOf(camp, hero);
+      if (slot == null) return null;
+      return srcs.find((s) => s.camp === camp && s.slot === slot) || null;
+    };
+    const pointAt = (camp, hero, t) => {
+      const src = srcOf(camp, hero);
+      if (!src || !src.points.length) return null;
+      return src.points[clamp(Math.round(t / step), 0, src.points.length - 1)];
+    };
+
+    /* 复活时刻用「位置冻结结束」反推：死亡后坐标不动，重新移动即复活 */
+    const reviveAt = (camp, hero, t0) => {
+      const src = srcOf(camp, hero);
+      if (!src || !src.points.length) return null;
+      let i = clamp(Math.floor(t0 / step), 0, src.points.length - 1);
+      const start = i;
+      while (i < src.points.length - 1) {
+        const [x, y] = src.points[i];
+        const [nx, ny] = src.points[i + 1];
+        if (nx !== x || ny !== y) break;
+        i += 1;
+      }
+      /* 至少要静止 8 秒才认作死亡窗口，否则退回默认 20 秒（防止「站定两帧就被判成复活」） */
+      return (i - start) * step >= 8 ? (i + 1) * step : null;
+    };
+
+    const interp = (t) => {
+      const pts = series || [];
+      if (!pts.length) return null;
+      if (t <= pts[0][0]) return pts[0][1];
+      if (t >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+      for (let i = 1; i < pts.length; i++) {
+        if (pts[i][0] >= t) {
+          const [ta, va] = pts[i - 1], [tb, vb] = pts[i];
+          return va + (vb - va) * (t - ta) / Math.max(1, tb - ta);
+        }
+      }
+      return null;
+    };
+
+    /* 反事实：用 [阵亡-120s, 阵亡-10s] 的金差做 Theil–Sen 中位斜率，外推到复活时刻；
+       损失 = 预期 − 实际。正数＝本队因这次掉点亏。中位斜率比最小二乘抗单点波动，
+       再夹在 ±60 金/秒以内，避免 30 秒采样里的一次大波动把外推拉飞。 */
+    const project = (t0, t1) => {
+      const base = (series || []).filter(([t]) => t >= t0 - 120 && t <= t0 - 10);
+      const actual = interp(t1);
+      const start = interp(t0);
+      const raw = num(actual) && num(start) ? actual - start : null;
+      if (base.length < 2 || !num(actual)) return { raw, loss: null, confident: false };
+      const slopes = [];
+      for (let i = 0; i < base.length; i++) {
+        for (let j = i + 1; j < base.length; j++) {
+          const dt = base[j][0] - base[i][0];
+          if (dt > 0) slopes.push((base[j][1] - base[i][1]) / dt);
+        }
+      }
+      slopes.sort((a, b) => a - b);
+      const slope = slopes.length ? clamp(slopes[Math.floor(slopes.length / 2)], -30, 30) : 0;
+      const last = base[base.length - 1];
+      const expected = last[1] + slope * (t1 - last[0]);
+      return { raw, loss: expected - actual, confident: base.length >= 3 && last[0] - base[0][0] >= 60 };
+    };
+
+    const SIZE = 320, PAD = 20;
+    const bx = (x) => PAD + (x + 57) / 114 * (SIZE - PAD * 2);
+    const by = (y) => SIZE - PAD - ((y + 57) / 114) * (SIZE - PAD * 2);
+
+    const marks = fightList.map((f, fi) => {
+      /* 团战中心取开团后 0/4/8 秒的均值：单个瞬间的站位噪声太大 */
+      const pts = (f.details || []).flatMap((d) => [0, 4, 8]
+        .map((offset) => pointAt(d.camp, d.hero, f.t + offset))
+        .filter(Boolean));
+      if (!pts.length) return '';
+      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+      const total = (f.camp1 || 0) + (f.camp2 || 0);
+      const mine = f[ownCamp] || 0;
+      const theirs = f[foeCamp] || 0;
+      const side = mine > theirs ? 'own' : theirs > mine ? 'foe' : 'even';
+      return `<g class="md-fight ${side}" data-fight="${fi}">
+        <circle cx="${bx(cx).toFixed(1)}" cy="${by(cy).toFixed(1)}" r="${(5 + Math.min(9, total * 0.9)).toFixed(1)}"/>
+        <title>${esc(`${time(f.t)} 团战 · ${f.camp1 || 0} v ${f.camp2 || 0} · 击杀 ${mine} : ${theirs}`)}</title></g>`;
+    }).join('');
+    const rows = [];
+    for (const d of deathList) {
+      if (!num(d.x) || !num(d.y)) continue;
+      const clipped = Math.min(reviveAt(d.camp, d.hero, d.t) || d.t + 20, duration || Infinity);
+      const t1 = Math.max(clipped, d.t + 1);
+      /* 窗口太短（临近终局 / 复活时间没测到）就不出反事实，免得拿一两个点外推 */
+      const info = t1 - d.t >= 8 ? project(d.t, t1) : { raw: null, loss: null, confident: false };
+      rows.push({ d, t1, info });
+    }
+    rows.sort((a, b) => (num(b.info.loss) ? b.info.loss : -1e9) - (num(a.info.loss) ? a.info.loss : -1e9));
+    /* 同队两人同时掉点，队级汇总会重复计入；这里只做标记，不改数 */
+    for (const row of rows) {
+      row.shared = rows.some((other) => other !== row && other.d.camp === row.d.camp
+        && Math.min(row.t1, other.t1) - Math.max(row.d.t, other.d.t) > 5);
+    }
+    const dotsHtml = rows.map((row, i) => {
+      const win = row.d.camp === ownCamp ? 'own' : 'foe';
+      return `<g class="md-death ${win}" data-death="${i}">
+        <circle class="dot" cx="${bx(row.d.x).toFixed(1)}" cy="${by(row.d.y).toFixed(1)}" r="3.2"/>
+        <circle class="hit" cx="${bx(row.d.x).toFixed(1)}" cy="${by(row.d.y).toFixed(1)}" r="9"/>
+      </g>`;
+    }).join('');
+    battleState = {
+      rows,
+      ownCamp,
+      fights: fightList.map((f) => ({ heroes: (f.details || []).map((d) => d.hero).filter(Boolean), t: f.t })),
+      players: players.map((p) => ({ camp: p.camp, hero: p.hero || '', label: p.label || p.hero || '' })),
+    };
+
+    const fightRows = fightList.map((f) => {
+      const details = f.details || [];
+      const byCamp = { blue: details.filter((x) => x.camp === 'blue'), red: details.filter((x) => x.camp === 'red') };
+      const sum = { blue: 0, red: 0 };
+      for (const camp of ['blue', 'red']) sum[camp] = byCamp[camp].reduce((s, x) => s + (x.hurt || 0), 0);
+      return { f, byCamp, sum };
+    });
+    const tableFor = (camp) => {
+      const team = LANES.map((lane) => players.find((p) => p.camp === camp && laneOf(p) === lane)).filter(Boolean);
+      const rows = team.map((p) => {
+        let joined = 0, hurt = 0, taken = 0, ctrl = 0, shareSum = 0, shareN = 0;
+        for (const row of fightRows) {
+          const hit = row.byCamp[camp].find((x) => x.hero === p.hero);
+          if (!hit) continue;
+          joined += 1;
+          hurt += hit.hurt || 0;
+          taken += hit.taken || 0;
+          ctrl += (hit.hardCtrl || 0) / 1000;
+          if (row.sum[camp]) { shareSum += (hit.hurt || 0) / row.sum[camp] * 100; shareN += 1; }
+        }
+        const share = shareN ? shareSum / shareN : null;
+        return `<div class="md-ft-row" data-player-row="${esc(p.hero || '')}">
+          <span class="md-ft-name">${esc(p.hero || p.label || '—')}</span>
+          <span>${fmt(joined)}</span>
+          <span>${fmt(hurt)}</span>
+          <span>${fmt(taken)}</span>
+          <span>${fmt(ctrl)}</span>
+          <span class="md-ft-cell"${num(share) ? ` style="background:rgba(216,178,106,${Math.min(0.34, share / 45 * 0.34).toFixed(3)})"` : ''}>${num(share) ? pct(share) : '—'}</span>
+        </div>`;
+      }).join('');
+      return `<div class="md-ft" data-team="${camp}"${camp === ownCamp ? '' : ' hidden'}>
+        <div class="md-ft-row head"><span>选手</span><span>参战</span><span>伤害</span><span>承伤</span><span>控制/秒</span><span>均占比</span></div>
+        ${rows}
+      </div>`;
+    };
+    const fightTable = fightRows.length
+      ? tableFor(ownCamp) + tableFor(foeCamp)
+      : `<p class="md-battle-empty">${fights === undefined ? '这一局的团战账本还在生成，稍后会自动补上' : '这局回放没有团战账本'}</p>`;
+
+    const dropList = rows.length ? `<div class="md-drop-list">
+      ${rows.slice(0, 8).map((row, i) => {
+        const loss = num(row.info.loss) ? -row.info.loss : null;
+        return `<button type="button" class="md-drop" data-death-row="${i}">
+          <span class="md-drop-time">${time(row.d.t)}</span>
+          <span class="md-drop-hero">${esc(row.d.hero || '—')}</span>
+          <span class="md-drop-loss ${num(loss) && loss < 0 ? 'down' : 'up'}">${num(loss) ? diff(loss) : '—'}</span>
+        </button>`;
+      }).join('')}
+    </div>` : '<p class="md-board-empty">这局没有死亡坐标</p>';
+
+    const picker = (() => {
+      const group = (camp, title) => {
+        const list = players.filter((p) => p.camp === camp && p.hero);
+        if (!list.length) return '';
+        return `<optgroup label="${title}">${list.map((p) => `<option value="${esc(p.hero || '')}">${esc(p.label || p.hero || '—')} · ${esc(p.hero || '')}</option>`).join('')}</optgroup>`;
+      };
+      return `<select class="md-battle-pick" data-battle-pick aria-label="只看某个选手">
+        <option value="">全部选手</option>
+        ${group(ownCamp, '本队')}${group(foeCamp, '对手')}
+      </select>`;
+    })();
+
+    const grid = [1, 2, 3].map((k) => {
+      const at = PAD + (k / 4) * (SIZE - PAD * 2);
+      return `<line class="md-battle-grid" x1="${at.toFixed(1)}" y1="${PAD}" x2="${at.toFixed(1)}" y2="${SIZE - PAD}"/>`
+        + `<line class="md-battle-grid" x1="${PAD}" y1="${at.toFixed(1)}" x2="${SIZE - PAD}" y2="${at.toFixed(1)}"/>`;
+    }).join('');
+
+    return `<div class="md-board" data-md-battle>
+      <div class="md-board-head">
+        <div class="md-board-title"><b>团战与掉点</b><span>${fmt(fightList.length)} 场团战 · ${fmt(rows.length)} 次阵亡</span></div>
+        ${picker}
+      </div>
+      <div class="md-board-body">
+        <div class="md-board-map">
+          <svg viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="团战与掉点分布">
+            ${grid}
+            <line class="md-battle-river" x1="${PAD}" y1="${PAD}" x2="${SIZE - PAD}" y2="${SIZE - PAD}"/>
+            <g class="md-battle-bases">
+              <circle class="base blue" cx="${bx(-49).toFixed(1)}" cy="${by(-49).toFixed(1)}" r="3.4"/>
+              <circle class="base red" cx="${bx(49).toFixed(1)}" cy="${by(49).toFixed(1)}" r="3.4"/>
+              <text class="base-label" x="${bx(-49).toFixed(1)}" y="${(by(-49) + 14).toFixed(1)}" text-anchor="middle">蓝</text>
+              <text class="base-label" x="${bx(49).toFixed(1)}" y="${(by(49) - 8).toFixed(1)}" text-anchor="middle">红</text>
+            </g>
+            ${marks}${dotsHtml}
+          </svg>
+          <div class="md-death-tip" data-death-tip hidden></div>
+          <p class="md-board-legend">
+            <span class="own"><i class="fight"></i>本队团战</span>
+            <span class="foe"><i class="fight"></i>对手团战</span>
+            <span><i class="death"></i>阵亡</span>
+          </p>
+        </div>
+        <div class="md-board-block">
+          <h4>团战贡献 <small>伤害占该队该团战</small></h4>
+          ${fightTable}
+        </div>
+        <div class="md-board-block">
+          <h4>掉点 <small>负数为亏 · 悬停看细节</small></h4>
+          ${dropList}
+          <p class="md-board-empty" data-drop-empty hidden>该选手这局没有掉点</p>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function deathCard(row) {
+    const loss = num(row.info.loss) ? -row.info.loss : null;
+    const tone = !num(loss) ? '' : loss < 0 ? 'foe' : 'own';
+    return `<div class="dc-head"><b>${time(row.d.t)}</b><span>${esc(row.d.hero || '—')} 阵亡</span>${row.shared ? '<i class="dc-tag" title="与队友同时掉点，队级汇总会重复计入">†</i>' : ''}</div>
+      <div class="dc-loss ${tone}">${num(loss) ? diff(loss) : '—'}<small>修正损失</small></div>
+      <div class="dc-rows">
+        <span>窗口 <b>${Math.round(row.t1 - row.d.t)} 秒</b></span>
+        <span>金差变化 <b>${num(row.info.raw) ? diff(row.info.raw) : '—'}</b></span>
+      </div>
+      <p class="dc-note">死前 120 秒金差走势外推到复活时刻的差额${row.info.confident ? '' : ' · 低置信'}</p>`;
+  }
+
+  function highlightDeath(index) {
+    const box = document.querySelector('[data-md-battle]');
+    if (!box) return;
+    box.querySelectorAll('[data-death]').forEach((g, i) => g.classList.toggle('is-on', i === index));
+    box.querySelectorAll('[data-death-row]').forEach((row, i) => row.classList.toggle('is-on', i === index));
+  }
+
+  /* 只看某个选手：地图上的团战点/阵亡点、掉点列表一起收窄 */
+  function applyBattleFilter(hero) {
+    const box = document.querySelector('[data-md-battle]');
+    if (!box || !battleState) return;
+    box.dataset.pick = hero || '';
+    box.querySelectorAll('[data-fight]').forEach((g) => {
+      const info = battleState.fights[Number(g.dataset.fight)];
+      g.classList.toggle('is-off', Boolean(hero) && !(info && info.heroes.includes(hero)));
+    });
+    box.querySelectorAll('[data-death]').forEach((g) => {
+      const row = battleState.rows[Number(g.dataset.death)];
+      g.classList.toggle('is-off', Boolean(hero) && !(row && row.d.hero === hero));
+    });
+    const camp = hero ? ((battleState.players.find((p) => p.hero === hero) || {}).camp || null) : null;
+    box.querySelectorAll('[data-team]').forEach((table) => {
+      table.hidden = (camp || battleState.ownCamp) !== table.dataset.team;
+    });
+    box.querySelectorAll('[data-player-row]').forEach((row) => {
+      row.classList.toggle('is-dim', Boolean(hero) && row.dataset.playerRow !== hero);
+    });
+    box.querySelectorAll('[data-death-row]').forEach((row, i) => {
+      const item = battleState.rows[i];
+      row.hidden = Boolean(hero) && !(item && item.d.hero === hero);
+    });
+    const visible = [...box.querySelectorAll('[data-death-row]')].filter((row) => !row.hidden);
+    const empty = box.querySelector('[data-drop-empty]');
+    if (empty) empty.hidden = visible.length > 0;
+  }
+
+  function bindBattle(root) {
+    if (!battleBound) {
+      battleBound = true;
+      root.addEventListener('change', (event) => {
+        const pick = event.target.closest && event.target.closest('[data-battle-pick]');
+        if (!pick) return;
+        applyBattleFilter(pick.value);
+      });
+      root.addEventListener('pointerover', (event) => {
+        const row = event.target.closest && event.target.closest('[data-death-row]');
+        if (!row) return;
+        highlightDeath(Number(row.dataset.deathRow));
+      });
+      root.addEventListener('pointermove', (event) => {
+        const box = document.querySelector('[data-md-battle]');
+        if (!box) return;
+        const tip = box.querySelector('[data-death-tip]');
+        if (!tip) return;
+        const dot = event.target.closest ? event.target.closest('[data-death]') : null;
+        if (!dot || !battleState) { tip.hidden = true; return; }
+        const row = battleState.rows[Number(dot.dataset.death)];
+        if (!row) { tip.hidden = true; return; }
+        tip.innerHTML = deathCard(row);
+        tip.hidden = false;
+        const rect = box.getBoundingClientRect();
+        tip.style.left = `${Math.max(0, Math.min(event.clientX - rect.left + 14, rect.width - 210))}px`;
+        tip.style.top = `${Math.max(0, Math.min(event.clientY - rect.top + 14, rect.height - 130))}px`;
+      });
+    }
+    const box = document.querySelector('[data-md-battle]');
+    if (!box || !battleState || !battleState.rows.length) return;
+    applyBattleFilter('');
+  }
+
+  /* ── 阵线：五人平均推进进度随时间（0＝己方基地，1＝对方基地） ───── */  function frontline(positions, players, ownCamp, duration) {
+    if (!positions || !positions.players?.length) return '';
+    const step = positions.step || 2;
+    const foeCamp = ownCamp === 'blue' ? 'red' : 'blue';
+    const prep = positions.players.map((src) => {
+      const mask = activeMask(src.points, step);
+      const forward = src.camp === 'blue' ? 1 : -1;
+      const advance = new Float32Array(src.points.length).fill(-1);
+      for (let i = 0; i < src.points.length; i++) {
+        if (!mask[i]) continue;
+        const [x, y] = src.points[i];
+        const p = progress(x, y);
+        advance[i] = forward > 0 ? p : 1 - p;
+      }
+      return { camp: src.camp, advance };
+    });
+    const len = Math.min(...prep.map((p) => p.advance.length));
+    if (len < 2) return '';
+    const total = Math.min(duration || Infinity, (len - 1) * step);
+    const SAMPLE = 10;
+    const rows = [];
+    for (let t = 0; t <= total; t += SAMPLE) {
+      const i = Math.min(len - 1, Math.round(t / step));
+      const mean = (camp) => {
+        const vals = prep.filter((p) => p.camp === camp).map((p) => p.advance[i]).filter((v) => v >= 0);
+        return vals.length >= 3 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      };
+      rows.push({ t, own: mean(ownCamp), foe: mean(foeCamp) });
+    }
+    if (rows.length < 2) return '';
+
+    /* 3 点滑动平均：五人平均本身的抖动不该被画成锯齿 */
+    const smooth = (key) => rows.map((row, i) => {
+      const win = [rows[i - 1], row, rows[i + 1]].filter((r) => r && num(r[key]));
+      return win.length ? win.reduce((s, r) => s + r[key], 0) / win.length : null;
+    });
+    const ownLine = smooth('own');
+    const foeLine = smooth('foe');
+
+    const W = 1000, H = 300, L = 48, R = 22, TOP = 28, BOT = H - 34;
+    const span = Math.max(1, total);
+    const x = (t) => L + (t / span) * (W - L - R);
+    const y = (v) => TOP + (1 - v) * (BOT - TOP);
+    const path = (vals) => {
+      let d = '', open = false;
+      vals.forEach((v, i) => {
+        if (!num(v)) { open = false; return; }
+        d += `${open ? 'L' : 'M'}${x(rows[i].t).toFixed(1)},${y(v).toFixed(1)}`;
+        open = true;
+      });
+      return d;
+    };
+    const ownPath = path(ownLine);
+    const lastOwn = ownLine.reduce((acc, v, i) => (num(v) ? i : acc), -1);
+    const firstOwn = ownLine.findIndex((v) => num(v));
+    const area = ownPath && lastOwn > firstOwn
+      ? `${ownPath}L${x(rows[lastOwn].t).toFixed(1)},${BOT}L${x(rows[firstOwn].t).toFixed(1)},${BOT}Z`
+      : '';
+    const own = rows.filter((r) => num(r.own));
+    const avg = own.length ? own.reduce((s, r) => s + r.own, 0) / own.length : null;
+    const ahead = own.length ? own.filter((r) => r.own > 0.5).length / own.length * 100 : null;
+
+    const phases = ['对线期', '转线期', '决胜期'].map((label, k) => {
+      const a = x(total * k / 3), b = x(total * (k + 1) / 3);
+      return `<rect class="fr-band${k % 2 ? ' alt' : ''}" x="${a.toFixed(1)}" y="${TOP}" width="${Math.max(0, b - a).toFixed(1)}" height="${BOT - TOP}"/>
+        <text class="fr-band-label" x="${((a + b) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle">${label}</text>`;
+    }).join('');
+    const grid = [0, 0.25, 0.5, 0.75, 1].map((v) => `<line class="fr-grid${v === 0.5 ? ' mid' : ''}" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>
+      <text class="fr-axis" x="${L - 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${Math.round(v * 100)}%</text>`).join('');
+    const ticks = [];
+    for (let t = 0; t <= total; t += 120) ticks.push(`<text class="fr-axis" x="${x(t).toFixed(1)}" y="${H - 12}" text-anchor="middle">${time(t)}</text>`);
+
+    return `<div class="md-front">
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="双方阵线随时间变化">
+        <defs><linearGradient id="fr-area" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" style="stop-color:var(--md-gold);stop-opacity:.26"/>
+          <stop offset="1" style="stop-color:var(--md-gold);stop-opacity:0"/>
+        </linearGradient></defs>
+        ${phases}${grid}${ticks.join('')}
+        <path class="fr-area" d="${area}"/>
+        <path class="fr-line foe" d="${path(foeLine)}"/>
+        <path class="fr-line own" d="${ownPath}"/>
+      </svg>
+      <div class="md-front-foot">
+        <div class="md-front-legend">
+          <span class="own"><i></i>本队</span>
+          <span class="foe"><i></i>对手</span>
+        </div>
+        <div class="md-front-stats">
+          <span><small>本队平均阵线</small><b>${num(avg) ? Math.round(avg * 100) + '%' : '—'}</b></span>
+          <span><small>压过中线的时间</small><b>${num(ahead) ? Math.round(ahead) + '%' : '—'}</b></span>
+          <span><small>口径</small><b>五人平均推进 · 3 点平滑</b></span>
+        </div>
+      </div>
+    </div>`;
   }
 
   /* ── 对位纵深：同一张表，深区（>66%）/ 半区（>50%，即入侵）双口径 ── */
@@ -780,5 +1233,5 @@ export function createMatchDeep(h) {
     svg.addEventListener('pointerleave', () => { cursor.setAttribute('hidden', ''); });
   }
 
-  return { totals, pulse, phaseTable, panel, heat, duel, cohesion, bindPulse, bindPanel, bindHeat };
+  return { totals, pulse, phaseTable, panel, heat, duel, cohesion, battle, frontline, bindPulse, bindPanel, bindHeat, bindBattle };
 }

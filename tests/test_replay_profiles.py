@@ -14,7 +14,7 @@ class ReplayProfileTests(unittest.TestCase):
     def test_builtin_profile_matches_observed_versions(self):
         profile = resolve_profile(['12.1.1.1', '12.1.1.26'], ['4989537', '5247758'])
         self.assertIsNotNone(profile)
-        self.assertEqual(profile['id'], 'observed-12.1.1.x-v2')
+        self.assertEqual(profile['id'], 'observed-12.1.1.x-v3')
         self.assertEqual(profile['layout']['blockStride'], 1517)
         self.assertEqual(profile['layout']['heroOffsets'], (771, 1415, 1445))
 
@@ -23,7 +23,7 @@ class ReplayProfileTests(unittest.TestCase):
 
     def test_config_overrides_builtin_profile(self):
         payload = {'schemaVersion': 1, 'profiles': [{
-            'id': 'observed-12.1.1.x-v2',
+            'id': 'observed-12.1.1.x-v3',
             'versionPrefixes': ['12.1.1.'],
             'layout': {'blockStride': 1600},
         }]}
@@ -43,7 +43,7 @@ class ReplayProfileTests(unittest.TestCase):
 
     def test_report_carries_profile_and_confidence(self):
         report = inspect_replay(abc_fixture())
-        self.assertEqual(report['profileId'], 'observed-12.1.1.x-v2')
+        self.assertEqual(report['profileId'], 'observed-12.1.1.x-v3')
         self.assertEqual(report['confidence']['events'], 'decoded')
         self.assertEqual(report['confidence']['positions'], 'estimated')
         self.assertEqual(report['provenance']['container']['source'], 'abc-container')

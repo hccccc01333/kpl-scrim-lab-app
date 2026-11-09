@@ -186,7 +186,7 @@ class DatasetStore:
             values = c.execute('SELECT id,title,created_at,body FROM prepared_datasets ORDER BY created_at DESC').fetchall()
         # 备份恢复只校验 schema/rows/after/fingerprint，不强制 exploratory；旧版或手工编辑的
         # 备份可能缺这个字段。这里容错取值，避免一条历史记录让 /api/studio/workspace 500，
-        # 进而使整个工作台只剩「无法连接本地服务」。
+        # 进而让整个工作台的数据页都读不出来。
         return [{'id': key, 'title': title, 'createdAt': created,
                  'after': body.get('after') or {},
                  'fingerprint': body.get('fingerprint') or '',

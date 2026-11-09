@@ -476,7 +476,7 @@ tbody tr{cursor:pointer}tbody tr:hover{background:#f1f5f9}
  background:#fcfdff;display:block;cursor:crosshair}
 .heat td{text-align:center;min-width:34px}
 .heat .v0{color:#cbd5e1}.heat .v1{background:#fee2e2;color:#991b1b;font-weight:600}
-.heat .v2{background:#fca5a5;color:#7f1d1d;font-weight:700}
+.heat .l2{background:#fca5a5;color:#7f1d1d;font-weight:700}
 footer{margin-top:24px;padding-top:10px;border-top:1px solid var(--line);
  font-size:10.5px;color:var(--muted)}
 code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11px}
@@ -1150,7 +1150,7 @@ def main():
     for z in A["heat"]:
         cells = []
         for v in z["row"]:
-            cls = "v0" if v == 0 else ("v1" if v == 1 else "v2")
+            cls = "v0" if v == 0 else ("v1" if v == 1 else "l2")
             cells.append('<td class="%s">%s</td>' % (cls, v if v else "·"))
         hr.append(["<td>%s</td>" % z["hero"], *cells,
                    "<td><b>%d</b></td>" % sum(z["row"])])

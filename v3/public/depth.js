@@ -2,7 +2,7 @@ import { groupFor, groupLabel } from './navigation.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
-/** V2 presentation for V1's source-backed depth analyses. */
+/** V3 presentation for source-backed depth analyses. */
 export function createDepth({esc,fmt,pct,table,icon}) {
   const safeTitles={cross_resource_output:'经济投入与输出分布',cross_lane_hero:'分路与英雄的补刀分布',cs_conversion:'补刀、经济与输出',space_heatmap:'位置热区与单局轨迹',space_deaths:'死亡位置分布',time_cross_match:'训练节奏与效率',time_events:'资源与事件分布',cross_teamfight_contribution:'团战贡献分布',death_point_economy:'掉点前后的经济变化',death_point_impact:'掉点窗口观察',equip_impact:'终局装备与表现对照',stability:'英雄表现波动',compare_baseline:'同位置数据参照',compare_camp:'蓝红阵营对照',resource_bp:'禁选与资源统计'};
   const labels={label:'对象',name:'名称',hero:'英雄',player:'选手',lane:'分路',n:'样本',games:'对局',count:'次数',value:'数值',mean:'均值',median:'中位数',p10:'P10',p25:'P25',p50:'P50',p75:'P75',p90:'P90',sd:'标准差',floor:'低值',blue:'蓝方',red:'红方',blueN:'蓝方样本',redN:'红方样本',deltaPct:'差异 %',depth:'推进深度',spread:'队形间距',crossings:'跨线次数',avgLoss:'平均差值',medianLoss:'中位差值',finalPct:'占比 %',phase:'阶段',pct:'占比 %',hurt:'输出',taken:'承伤',ctrl:'控制',kills:'击杀',deaths:'阵亡',assists:'助攻',start:'时间',duration:'时长',avgGpm:'平均分均经济',avgCs:'平均补刀',avgGold:'平均经济',withN:'携带样本',withoutN:'未携带样本',group:'分组',x:'横轴',y:'纵轴',t:'时间',id:'编号',camp:'阵营',result:'结果',towers:'防御塔',dragons:'资源',money:'经济',metric:'指标'};

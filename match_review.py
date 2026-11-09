@@ -1,4 +1,4 @@
-"""Single-match panorama: join a bundle with official positions, events and V2 builds.
+"""Single-match panorama: join a bundle with official positions, events and hero builds.
 
 The official replay event stream (``dragontower``) covers two things only:
 resource/monster kills (``dtType=1``) and structure destroys (``dtType=2``).
@@ -235,8 +235,8 @@ def _official_events(official):
     return events
 
 
-def _find_builds(v2_dir, players):
-    directory = Path(v2_dir)
+def _find_builds(builds_dir, players):
+    directory = Path(builds_dir)
     if not directory.is_dir():
         return {}
     heroes = {(player.get('camp'), player.get('hero'))
@@ -430,15 +430,16 @@ def _normalize_events(raw_events, players):
 
 
 def _battle_ledger(official):
-    """英雄击杀与死亡坐标：没有人头流，就按团战账本还原。
+    """英雄击杀、死亡坐标与团战账本。
 
-    ``normalized.battles.fights[].kills[]`` 逐次给出时间、击杀/被击杀对象与阵营；
-    ``battles.deaths[]`` 给出死亡坐标。对象 ID 的类型在不同版本里不一致（int/str），
-    所以查表时两种都试一次。
+    ``normalized.battles.fights[]`` 给出团战起止、参战人数与逐人明细，
+    ``fights[].kills[]`` 逐次给出击杀时间与击杀/被击杀对象，``battles.deaths[]``
+    给出死亡坐标。对象 ID 的类型在不同版本里不一致（int/str），所以查表两种都试。
     """
+    empty = {'kills': [], 'deaths': [], 'fights': []}
     battles = ((official or {}).get('normalized') or {}).get('battles') or {}
     if not isinstance(battles, dict):
-        return [], []
+        return empty
     player_map = battles.get('playerMap') or {}
 
     def lookup(obj_id):
@@ -448,19 +449,44 @@ def _battle_ledger(official):
         info = lookup(obj_id)
         return {'hero': info.get('hero') or '', 'camp': _camp(info.get('camp'))}
 
-    kills, deaths = [], []
+    kills, deaths, fights = [], [], []
     for fight in battles.get('fights') or []:
+        start = _num(fight.get('startSec'))
+        tally = {'blue': 0, 'red': 0}
+        details = []
+        for row in fight.get('details') or []:
+            who = info_of(row.get('objID'))
+            details.append({
+                'hero': who['hero'], 'camp': _camp(row.get('camp')) or who['camp'],
+                'hurt': _num(row.get('hurt')), 'taken': _num(row.get('taken')),
+                'hardCtrl': _num(row.get('hardCtrl')), 'softCtrl': _num(row.get('softCtrl')),
+                'ultimates': _num(row.get('ultimates')),
+            })
         for kill in fight.get('kills') or []:
             seconds = _num(kill.get('timeSec'))
-            if seconds is None:
-                continue
             killer = info_of(kill.get('killer'))
             victim = info_of(kill.get('victim'))
+            killer_camp = _camp(kill.get('killerCamp')) or killer['camp']
+            victim_camp = _camp(kill.get('victimCamp')) or victim['camp']
+            if killer_camp in tally:
+                tally[killer_camp] += 1
+            if seconds is None:
+                continue
             kills.append({
                 't': seconds, 'fight': str(fight.get('fightId') or ''),
-                'killer': killer['hero'], 'killerCamp': _camp(kill.get('killerCamp')) or killer['camp'],
-                'victim': victim['hero'], 'victimCamp': _camp(kill.get('victimCamp')) or victim['camp'],
+                'killer': killer['hero'], 'killerCamp': killer_camp,
+                'victim': victim['hero'], 'victimCamp': victim_camp,
             })
+        if start is None:
+            continue
+        fights.append({
+            'id': str(fight.get('fightId') or ''), 't': start,
+            'end': _num(fight.get('endSec')),
+            'camp1': _int(fight.get('camp1')), 'camp2': _int(fight.get('camp2')),
+            'first': _camp(fight.get('firstKillerCamp')),
+            'blue': tally['blue'], 'red': tally['red'],
+            'details': details,
+        })
     for death in battles.get('deaths') or []:
         seconds = _num(death.get('timeSec'))
         if seconds is None:
@@ -472,7 +498,8 @@ def _battle_ledger(official):
         })
     kills.sort(key=lambda value: value['t'])
     deaths.sort(key=lambda value: value['t'])
-    return kills, deaths
+    fights.sort(key=lambda value: value['t'])
+    return {'kills': kills, 'deaths': deaths, 'fights': fights}
 
 
 def _windows(events, gap=25, minimum=2):
@@ -629,7 +656,7 @@ def _insights(match, gold, events, phases, position_analysis, team, builds, play
     return insights[:7]
 
 
-def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
+def build_panorama(matches_dir, official_dir, builds_dir, key, root=None):
     bundle_path, bundle = _find_bundle(matches_dir, key)
     if not bundle:
         return None
@@ -679,12 +706,13 @@ def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
     else:
         positions = {}
     events = _normalize_events(_official_events(official), players) if official else []
-    kills, deaths = _battle_ledger(official) if official else ([], [])
+    ledger = _battle_ledger(official) if official else {'kills': [], 'deaths': [], 'fights': []}
+    kills, deaths, fights = ledger['kills'], ledger['deaths'], ledger['fights']
     gold = _gold_points(bundle)
     duration = _int(match.get('duration')) or (gold[-1]['t'] if gold else 0)
     phases = _phase_ranges(duration)
     analysis, team = _position_analysis(positions, players, phases)
-    builds_raw = _find_builds(v2_dir, players)
+    builds_raw = _find_builds(builds_dir, players)
     builds = _map_builds(builds_raw, players)
     for player in players:
         player['builds'] = (builds.get(player['key']) or {}).get('items') or []
@@ -713,6 +741,7 @@ def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
         'events': events,
         'kills': kills,
         'deaths': deaths,
+        'fights': fights,
         'windows': _windows(events),
         'phases': phase_stats,
         'positions': {
@@ -752,18 +781,18 @@ def build_panorama(matches_dir, official_dir, v2_dir, key, root=None):
 
 
 class PanoramaRepository:
-    def __init__(self, matches_dir, official_dir, v2_dir, root=None):
+    def __init__(self, matches_dir, official_dir, builds_dir, root=None):
         self.matches_dir = Path(matches_dir)
         self.official_dir = Path(official_dir)
-        self.v2_dir = Path(v2_dir)
+        self.builds_dir = Path(builds_dir)
         self.root = Path(root) if root else None
 
     def get(self, key):
-        return build_panorama(self.matches_dir, self.official_dir, self.v2_dir, key, self.root)
+        return build_panorama(self.matches_dir, self.official_dir, self.builds_dir, key, self.root)
 
 
-def create_review_router(matches_dir, official_dir, v2_dir, root=None):
-    repository = PanoramaRepository(matches_dir, official_dir, v2_dir, root)
+def create_review_router(matches_dir, official_dir, builds_dir, root=None):
+    repository = PanoramaRepository(matches_dir, official_dir, builds_dir, root)
     router = APIRouter(prefix='/api/review', tags=['review'])
 
     @router.get('/{key:path}')

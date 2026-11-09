@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hccccc01333.github.io/kpl-scrim-lab-site/sitemap.xml

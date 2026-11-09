@@ -109,11 +109,30 @@ CREATE TABLE IF NOT EXISTS schedules (
   version TEXT,
   status TEXT NOT NULL DEFAULT 'planned',
   notes TEXT,
+  goals TEXT NOT NULL DEFAULT '[]',
+  review TEXT,
+  review_status TEXT NOT NULL DEFAULT '',
+  attendance TEXT NOT NULL DEFAULT '[]',
   created_by TEXT,
   created_at REAL NOT NULL,
+  updated_at REAL,
   revision INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
+
+CREATE TABLE IF NOT EXISTS session_match_links (
+  schedule_id TEXT NOT NULL,
+  match_key TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  PRIMARY KEY(schedule_id, match_key)
+);
+CREATE INDEX IF NOT EXISTS idx_session_links_schedule ON session_match_links(schedule_id);
+
+CREATE TABLE IF NOT EXISTS team_aliases (
+  old_id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS matches (
   match_key TEXT PRIMARY KEY,
@@ -264,6 +283,16 @@ def _json(value, default):
     return json.dumps(value, ensure_ascii=False)
 
 
+PLAYER_PLACEHOLDER_PREFIX = '待命名选手 #'
+LEGACY_PLAYER_PLACEHOLDERS = {'新选手', '未命名', '未命名选手', '选手'}
+
+
+def is_placeholder_player(name) -> bool:
+    """选手占位名与战队占位名（待命名战队 #N）分开识别。"""
+    text = str(name or '').strip()
+    return text in LEGACY_PLAYER_PLACEHOLDERS or text.startswith(PLAYER_PLACEHOLDER_PREFIX)
+
+
 class Workspace:
     def __init__(self, db_path):
         self.db_path = Path(db_path)
@@ -289,6 +318,20 @@ class Workspace:
                     connection.execute(sql)
                 except sqlite3.Error as error:
                     self.schema_warnings.append(f'{error}: {sql.splitlines()[0][:60]}')
+            # 旧库的 schedules 没有训练课复盘字段：按需补列，不重建表。
+            try:
+                existing = {row[1] for row in connection.execute('PRAGMA table_info(schedules)')}
+                for column, ddl in {
+                    'goals': "TEXT NOT NULL DEFAULT '[]'",
+                    'review': 'TEXT',
+                    'review_status': "TEXT NOT NULL DEFAULT ''",
+                    'attendance': "TEXT NOT NULL DEFAULT '[]'",
+                    'updated_at': 'REAL',
+                }.items():
+                    if column not in existing:
+                        connection.execute(f'ALTER TABLE schedules ADD COLUMN {column} {ddl}')
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'schedules 迁移: {error}')
             connection.commit()
         finally:
             connection.close()
@@ -430,7 +473,8 @@ class Workspace:
         if not isinstance(roster, list):
             raise ValueError('旧名单格式无效')
         if not roster:
-            return {'found': 0, 'imported': 0, 'skipped': 0, 'teamsCreated': 0, 'warnings': []}
+            return {'found': 0, 'imported': 0, 'skipped': 0, 'teamsCreated': 0,
+                    'warnings': [], 'renamed': {}, 'placeholders': 0}
         connection = self.connect()
         try:
             connection.execute('BEGIN IMMEDIATE')
@@ -468,8 +512,18 @@ class Workspace:
             by_id = {row['id'] for row in existing}
             by_camp = {row['camp_user_id'] for row in existing if row['camp_user_id']}
             by_key = {(row['team_id'], row['name'], row['position'] or '') for row in existing}
+            placeholder_count = 0
+            for row in existing:
+                name = str(row['name'] or '')
+                if name.startswith(PLAYER_PLACEHOLDER_PREFIX):
+                    try:
+                        placeholder_count = max(placeholder_count,
+                                                int(name[len(PLAYER_PLACEHOLDER_PREFIX):].strip()))
+                    except ValueError:
+                        pass
 
-            imported, skipped, warnings = 0, 0, []
+            imported, skipped, warnings, placeholders = 0, 0, [], 0
+            renamed = {}
             positions = {'对抗路', '打野', '中路', '发育路', '游走'}
             for member in roster:
                 if not isinstance(member, dict):
@@ -479,8 +533,8 @@ class Workspace:
                     skipped += 1
                     continue
                 player_id = str(member.get('id') or '').strip()
-                name = str(member.get('name') or member.get('label') or '').strip()
-                if not player_id or not name:
+                original_name = str(member.get('name') or member.get('label') or '').strip()
+                if not player_id or not original_name:
                     skipped += 1
                     continue
                 raw_team = str(member.get('team') or '').strip()
@@ -489,22 +543,34 @@ class Workspace:
                 if position not in positions:
                     position = None
                 camp = str(member.get('campUserId') or '').strip()
-                key = (team_id, name, position or '')
+                key = (team_id, original_name, position or '')
                 if player_id in by_id or (camp and camp in by_camp) or key in by_key:
                     skipped += 1
                     continue
+                placeholder = is_placeholder_player(original_name)
+                display_name = original_name
+                if placeholder:
+                    placeholder_count += 1
+                    display_name = f'{PLAYER_PLACEHOLDER_PREFIX}{placeholder_count}'
+                    placeholders += 1
+                    renamed[player_id] = display_name
                 connection.execute(
                     'INSERT INTO players(id, team_id, name, position, camp_user_id, role) '
                     'VALUES(?,?,?,?,?,?)',
-                    (player_id, team_id, name, position, camp or None, 'main'))
-                self._log(connection, 'player', player_id, 'created', None, name, 'migrate-roster', actor)
+                    (player_id, team_id, display_name, position, camp or None, 'main'))
+                self._log(connection, 'player', player_id, 'created', None, display_name,
+                          'migrate-roster', actor)
                 by_id.add(player_id)
                 by_key.add(key)
+                by_key.add((team_id, display_name, position or ''))
                 if camp:
                     by_camp.add(camp)
                 imported += 1
             if skipped:
                 warnings.append(f'{skipped} 名旧成员因重复、已存在或缺少名称被跳过。')
+            if placeholders:
+                warnings.append(f'{placeholders} 名旧占位选手已改名为「{PLAYER_PLACEHOLDER_PREFIX}N」，'
+                                '与战队占位名分开。')
             connection.commit()
         except Exception:
             connection.rollback()
@@ -512,7 +578,8 @@ class Workspace:
         finally:
             connection.close()
         return {'found': len(roster), 'imported': imported, 'skipped': skipped,
-                'teamsCreated': teams_created, 'warnings': warnings}
+                'teamsCreated': teams_created, 'warnings': warnings,
+                'renamed': renamed, 'placeholders': placeholders}
 
     def alias_player(self, player_id, alias):
         """把一个昵称挂到选手名下（换号合并），返回是否新增。"""
@@ -658,6 +725,240 @@ class Workspace:
         finally:
             connection.close()
         return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def get_schedule(self, schedule_id):
+        connection = self.connect()
+        try:
+            row = connection.execute('SELECT * FROM schedules WHERE id=?', (schedule_id,)).fetchone()
+        finally:
+            connection.close()
+        return {key: row[key] for key in row.keys()} if row else None
+
+    def session_matches(self, schedule):
+        """按 schedule_id → 日期+对手 → 日期+训练组 → 日期 的顺序找这场训练课的对局。"""
+        if not schedule:
+            return {'matches': [], 'reason': 'none'}
+        schedule_id = str(schedule.get('id') or '').strip()
+        schedule_date = str(schedule.get('date') or '').strip()
+        opponent = str(schedule.get('opponent_team_id') or '').strip()
+        session = str(schedule.get('session') or '').strip()
+        connection = self.connect()
+        try:
+            def query(where, params):
+                rows = connection.execute(
+                    'SELECT match_key,date,session,enemy_team_id,own_side,winner,score,duration,status '
+                    'FROM match_records WHERE ' + where + ' ORDER BY date, match_key', params).fetchall()
+                return [{key: row[key] for key in row.keys()} for row in rows]
+
+            if schedule_id:
+                manual_keys = [row[0] for row in connection.execute(
+                    'SELECT match_key FROM session_match_links WHERE schedule_id=?', (schedule_id,))]
+                if manual_keys:
+                    marks = ','.join('?' for _ in manual_keys)
+                    rows = connection.execute(
+                        'SELECT match_key,date,session,enemy_team_id,own_side,winner,score,duration,status '
+                        f'FROM match_records WHERE match_key IN ({marks}) ORDER BY date, match_key',
+                        manual_keys).fetchall()
+                    return {'matches': [{key: row[key] for key in row.keys()} for row in rows],
+                            'reason': 'manual'}
+                rows = query('schedule_id=?', (schedule_id,))
+                if rows:
+                    return {'matches': rows, 'reason': 'schedule'}
+            if schedule_date and opponent:
+                rows = query('date=? AND enemy_team_id=?', (schedule_date, opponent))
+                if rows:
+                    return {'matches': rows, 'reason': 'date_opponent'}
+            if schedule_date and session:
+                rows = query('date=? AND session=?', (schedule_date, session))
+                if rows:
+                    return {'matches': rows, 'reason': 'date_session'}
+            if schedule_date:
+                rows = query('date=?', (schedule_date,))
+                if rows:
+                    return {'matches': rows, 'reason': 'date'}
+        finally:
+            connection.close()
+        return {'matches': [], 'reason': 'none'}
+
+    def available_matches(self, limit=200):
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                'SELECT match_key,date,session,enemy_team_id,own_side,winner,score,duration,status '
+                'FROM match_records ORDER BY date DESC, match_key LIMIT ?', (max(1, min(500, limit)),)).fetchall()
+        finally:
+            connection.close()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def manual_session_keys(self, schedule_id):
+        connection = self.connect()
+        try:
+            return [row[0] for row in connection.execute(
+                'SELECT match_key FROM session_match_links WHERE schedule_id=? ORDER BY match_key',
+                (schedule_id,))]
+        finally:
+            connection.close()
+
+    def save_session_links(self, schedule_id, match_keys, *, actor=None):
+        if not isinstance(match_keys, list) or len(match_keys) > 200:
+            raise ValueError('一次最多关联 200 局')
+        keys = []
+        for key in match_keys:
+            value = str(key or '').strip()
+            if value and value not in keys:
+                keys.append(value)
+        connection = self.connect()
+        try:
+            if connection.execute('SELECT 1 FROM schedules WHERE id=?', (schedule_id,)).fetchone() is None:
+                raise ValueError('训练课不存在')
+            known = {row[0] for row in connection.execute('SELECT match_key FROM match_records')}
+            keys = [key for key in keys if key in known]
+            connection.execute('DELETE FROM session_match_links WHERE schedule_id=?', (schedule_id,))
+            for key in keys:
+                connection.execute(
+                    'INSERT INTO session_match_links(schedule_id, match_key, created_at) VALUES(?,?,?)',
+                    (schedule_id, key, time.time()))
+            self._log(connection, 'schedule', schedule_id, 'session_match_links', None,
+                      json.dumps(keys, ensure_ascii=False), 'manual', actor)
+            connection.commit()
+        finally:
+            connection.close()
+        return keys
+
+    def unmapped_opponents(self):
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                'SELECT enemy_team_id, COUNT(*) AS matches, MIN(date) AS first_date, MAX(date) AS last_date '
+                'FROM match_records WHERE IFNULL(enemy_team_id, "") != "" '
+                'AND enemy_team_id NOT IN (SELECT id FROM teams) '
+                'GROUP BY enemy_team_id ORDER BY matches DESC, enemy_team_id').fetchall()
+        finally:
+            connection.close()
+        return [{'oldId': row['enemy_team_id'], 'matches': row['matches'],
+                 'firstDate': row['first_date'], 'lastDate': row['last_date']} for row in rows]
+
+    def map_opponent(self, old_id, team_id, *, actor=None):
+        old_id = str(old_id or '').strip()
+        team_id = str(team_id or '').strip()
+        if not old_id or not team_id:
+            raise ValueError('缺少旧对手 ID 或目标战队')
+        connection = self.connect()
+        try:
+            team = connection.execute(
+                "SELECT id, name FROM teams WHERE id=? AND status='active'", (team_id,)).fetchone()
+            if team is None:
+                raise ValueError('目标战队不存在')
+            connection.execute(
+                'INSERT INTO team_aliases(old_id, team_id, created_at) VALUES(?,?,?) '
+                'ON CONFLICT(old_id) DO UPDATE SET team_id=excluded.team_id, created_at=excluded.created_at',
+                (old_id, team_id, time.time()))
+            updated = connection.execute(
+                'UPDATE match_records SET enemy_team_id=? WHERE enemy_team_id=?',
+                (team_id, old_id)).rowcount
+            for table in ('matches', 'match_rosters'):
+                try:
+                    connection.execute(f'UPDATE {table} SET enemy_team_id=? WHERE enemy_team_id=?',
+                                       (team_id, old_id)) if table == 'matches' else \
+                        connection.execute(f'UPDATE {table} SET team_id=? WHERE team_id=?',
+                                           (team_id, old_id))
+                except sqlite3.Error:
+                    pass
+            self._log(connection, 'team', team_id, 'opponent_alias', old_id, team_id, 'manual', actor)
+            connection.commit()
+        finally:
+            connection.close()
+        return {'oldId': old_id, 'teamId': team_id, 'updated': updated}
+
+    def inbox(self):
+        today = time.strftime('%Y-%m-%d')
+        connection = self.connect()
+        try:
+            pending = connection.execute('SELECT COUNT(*) FROM prefill_fields').fetchone()[0]
+            unnamed = connection.execute(
+                "SELECT COUNT(*) FROM teams WHERE status='active' AND name LIKE '待命名%'").fetchone()[0]
+            unbound = connection.execute(
+                "SELECT COUNT(*) FROM players WHERE IFNULL(camp_user_id, '') = ''").fetchone()[0]
+            session_rows = connection.execute(
+                "SELECT id,date,opponent_team_id,review_status FROM schedules "
+                "WHERE date<=? AND IFNULL(status,'') NOT IN ('cancelled','completed') "
+                "AND IFNULL(review_status,'') != 'done' ORDER BY date, id LIMIT 8", (today,)).fetchall()
+            sessions = connection.execute(
+                "SELECT COUNT(*) FROM schedules WHERE date<=? AND IFNULL(status,'') NOT IN ('cancelled','completed') "
+                "AND IFNULL(review_status,'') != 'done'", (today,)).fetchone()[0]
+            teams = [{'id': row['id'], 'name': row['name']} for row in connection.execute(
+                "SELECT id,name FROM teams WHERE status='active' ORDER BY name")]
+            legacy = 0
+            try:
+                settings_row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+                if settings_row:
+                    roster = json.loads(settings_row[0]).get('roster') or []
+                    player_ids = {row[0] for row in connection.execute('SELECT id FROM players')}
+                    legacy = sum(1 for member in roster
+                                 if isinstance(member, dict) and not member.get('archived')
+                                 and str(member.get('id') or '') not in player_ids)
+            except (sqlite3.Error, TypeError, ValueError):
+                legacy = 0
+            unmapped = connection.execute(
+                'SELECT enemy_team_id, COUNT(*) AS matches FROM match_records '
+                'WHERE IFNULL(enemy_team_id, "") != "" AND enemy_team_id NOT IN (SELECT id FROM teams) '
+                'GROUP BY enemy_team_id ORDER BY matches DESC').fetchall()
+        finally:
+            connection.close()
+        groups = [
+            {'key': 'pending', 'label': '待确认字段', 'count': pending,
+             'note': '版本 / 规则 / 训练组等需要核实', 'href': '#pending'},
+            {'key': 'unnamed', 'label': '战队待命名', 'count': unnamed,
+             'note': '显示为「待命名战队 #N」', 'href': '#setup'},
+            {'key': 'legacy', 'label': '旧名单未迁移', 'count': legacy,
+             'note': '旧档案成员还没进入选手主数据', 'href': '#setup'},
+            {'key': 'sessions', 'label': '训练课待复盘', 'count': sessions,
+             'note': '已过日期但还没有标记已复盘', 'href': '#plan',
+             'items': [{'label': f"{row['date']} · {row['id']}", 'href': f'#session/{row["id"]}',
+                        'id': row['id'], 'date': row['date']} for row in session_rows]},
+            {'key': 'unmapped', 'label': '对局对手未映射', 'count': sum(row['matches'] for row in unmapped),
+             'note': '历史对手 ID 不在当前战队表，需要映射', 'href': '#matches',
+             'items': [{'oldId': row['enemy_team_id'], 'matches': row['matches']} for row in unmapped]},
+            {'key': 'unbound', 'label': '选手未绑定营地 ID', 'count': unbound,
+             'note': '未绑定的选手无法稳定归并个人数据', 'href': '#players'},
+        ]
+        groups = [group for group in groups if group['count']]
+        return {'total': sum(group['count'] for group in groups), 'groups': groups, 'teams': teams}
+
+    def save_session_review(self, schedule_id, *, goals=None, review=None, review_status=None,
+                            attendance=None, actor=None):
+        connection = self.connect()
+        try:
+            row = connection.execute('SELECT * FROM schedules WHERE id=?', (schedule_id,)).fetchone()
+            if row is None:
+                raise ValueError('训练课不存在')
+            if review_status not in (None, '', 'pending', 'done'):
+                raise ValueError('复盘状态无效')
+            patch = {}
+            if goals is not None:
+                patch['goals'] = _json(goals if isinstance(goals, list) else [], [])
+            if review is not None:
+                patch['review'] = str(review)
+            if review_status is not None:
+                patch['review_status'] = review_status
+            if attendance is not None:
+                patch['attendance'] = _json(attendance if isinstance(attendance, list) else [], [])
+            if not patch:
+                return self.get_schedule(schedule_id)
+            assignments = ', '.join(f'{key}=?' for key in patch)
+            connection.execute(
+                f'UPDATE schedules SET {assignments}, updated_at=?, revision=revision+1 WHERE id=?',
+                (*patch.values(), time.time(), schedule_id))
+            if review_status == 'done' and row['status'] not in ('cancelled', 'completed'):
+                connection.execute("UPDATE schedules SET status='completed' WHERE id=?", (schedule_id,))
+            changed = ', '.join(patch.keys())
+            self._log(connection, 'schedule', schedule_id, changed,
+                      None, json.dumps({k: patch[k] for k in patch}, ensure_ascii=False),
+                      'session-review', actor)
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_schedule(schedule_id)
 
     # ---------------------------------------------------------------- 训练干预
     def save_training(self, session_id=None, *, goal, intervention, start_date, end_date=None,

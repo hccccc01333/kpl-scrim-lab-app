@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from urllib import parse
 
@@ -137,36 +138,124 @@ def sync(friend_user_id: str, max_pages: int = 8) -> dict:
     return summary
 
 
-def sync_entries(camp_user_id: str, entries, interval: float = 2.0) -> dict:
+MAX_CONSECUTIVE_FAILURES = 5
+
+# 营地只提供最近一个月的战局详情：更早的局调用详情接口会返回
+# -30457「暂不支持查看一个月前的战绩详情」。这里的口径与前端 capture-page.js
+# 的 CAMP_DETAIL_TTL_DAYS 保持一致。
+DETAIL_TTL_DAYS = 31
+DETAIL_EXPIRED_CODE = '-30457'
+
+
+def detail_expired(entry: dict, now: float | None = None) -> bool:
+    """这局是否已超出营地的详情保留期（约一个月）。
+
+    先用 startedAt（北京时间 ISO），没有再用 dtEventTime - usedTime。
+    判断不出来时返回 False：宁可多问一次接口，也不凭空把局划成不可用。
+    """
+    started = str((entry or {}).get('startedAt') or '')
+    moment = 0.0
+    if len(started) >= 19:
+        try:
+            moment = datetime.strptime(started[:19], '%Y-%m-%dT%H:%M:%S').timestamp()
+        except ValueError:
+            moment = 0.0
+    if not moment:
+        event = int((entry or {}).get('dtEventTime') or 0)
+        used = int((entry or {}).get('usedTime') or 0)
+        moment = float(event - used) if event else 0.0
+    if not moment:
+        return False
+    return (now or time.time()) - moment > DETAIL_TTL_DAYS * 86400
+
+
+def _note_failure(summary: dict, seq: str, message: str) -> None:
+    """记录失败原因（最多留 20 条），让界面能说清「为什么没进去」。"""
+    errors = summary.setdefault('errors', [])
+    if len(errors) < 20:
+        errors.append({'gameSeq': seq, 'message': str(message)[:200]})
+
+
+def sync_entries(camp_user_id: str, entries, interval: float = 2.0, on_progress=None) -> dict:
     """按教练勾选的对局条目逐条拉取详情并落盘（两段式同步的第二段）。
 
     entries 是 /api/camp/list 返回的条目原样回传；已入库的局跳过；
     水位推进到已入库条目的最新 dtEventTime（未勾选的最新局下次仍会列出）。
+    on_progress(done, total, game_seq, phase) 可选，供界面显示真实入库进度。
+
+    单局失败（网络抖动、营地没这局详情）只记在该局的失败原因里，不打断整批；
+    连续失败 MAX_CONSECUTIVE_FAILURES 次才停下，避免对着坏接口空转。
+    登录态失效仍然整批中止，由上层提示重新扫码。
     """
     state = load_state()
     watermark = int(state.get(camp_user_id) or 0)
     newest = watermark
-    summary = {'fetched': 0, 'saved': 0, 'cached': 0, 'failed': 0, 'gameSeqs': []}
-    for entry in entries:
+    summary = {'fetched': 0, 'saved': 0, 'cached': 0, 'failed': 0, 'gameSeqs': [],
+               'errors': [], 'aborted': '', 'unsupported': 0, 'unsupportedSeqs': []}
+    total = len(entries)
+    streak = 0
+    for index, entry in enumerate(entries, 1):
         if not isinstance(entry, dict):
             continue
         seq = str(entry.get('gameSeq') or '')
         if not seq:
             summary['failed'] += 1
             continue
+        if on_progress:
+            try:
+                on_progress(index, total, seq, 'detail')
+            except Exception:
+                pass
         summary['fetched'] += 1
         event_time = int(entry.get('dtEventTime') or 0)
         out_path = DETAIL_DIR / f'{seq}.json'
         if out_path.is_file():
             summary['cached'] += 1
             newest = max(newest, event_time)
+            streak = 0
             continue
-        detail = battle_detail(
-            seq, str(entry.get('gameSvrId') or ''), str(entry.get('relaySvrId') or ''),
-            str(entry.get('battleType') or 0), str(entry.get('uniqueRoleId') or entry.get('roleId') or 0))
+        if detail_expired(entry):
+            # 超过一个月的局营地不给详情，直接标出来，不用再发请求。
+            summary['unsupported'] += 1
+            summary['unsupportedSeqs'].append(seq)
+            _note_failure(summary, seq, '营地只提供最近一个月的战局详情')
+            streak = 0
+            continue
+        try:
+            detail = battle_detail(
+                seq, str(entry.get('gameSvrId') or ''), str(entry.get('relaySvrId') or ''),
+                str(entry.get('battleType') or 0),
+                str(entry.get('uniqueRoleId') or entry.get('roleId') or 0))
+        except Exception as error:  # noqa: BLE001 - 单局网络异常不该作废整批
+            if getattr(error, 'auth_invalid', False):
+                raise
+            summary['failed'] += 1
+            streak += 1
+            _note_failure(summary, seq, f'{type(error).__name__}: {error}')
+            if streak >= MAX_CONSECUTIVE_FAILURES:
+                summary['aborted'] = f'连续 {streak} 局拉取失败，已停下：{error}'
+                break
+            time.sleep(interval)
+            continue
         detail_body = detail.get('body') or {}
+        code_text = str(detail_body.get('returnCode'))
+        if code_text == DETAIL_EXPIRED_CODE or '暂不支持查看' in str(detail_body.get('returnMsg')):
+            # 接口明确说这局不给详情：记成「营地无详情」，不算网络失败，也不重试。
+            summary['unsupported'] += 1
+            summary['unsupportedSeqs'].append(seq)
+            _note_failure(summary, seq, '营地只提供最近一个月的战局详情（-30457）')
+            streak = 0
+            continue
         if detail_body.get('returnCode') not in (0, '0'):
             summary['failed'] += 1
+            streak += 1
+            _note_failure(summary, seq, f"returnCode={detail_body.get('returnCode')} "
+                                        f"{str(detail_body.get('returnMsg'))[:60]}")
+            if streak >= MAX_CONSECUTIVE_FAILURES:
+                summary['aborted'] = (f'连续 {streak} 局拉取失败，已停下：'
+                                      f"returnCode={detail_body.get('returnCode')}")
+                break
+            time.sleep(interval)
             continue
         out_path.write_text(json.dumps({**detail_body,
                                         '_campEntry': {
@@ -185,6 +274,7 @@ def sync_entries(camp_user_id: str, entries, interval: float = 2.0) -> dict:
         summary['saved'] += 1
         summary['gameSeqs'].append(seq)
         newest = max(newest, event_time)
+        streak = 0
         time.sleep(interval)
     if newest > watermark:
         state[camp_user_id] = newest

@@ -9,8 +9,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+from paths import data_root
+
 ROOT = Path(__file__).resolve().parent
-CACHE_PATH = Path(os.environ.get('HERO_LIST_FILE', ROOT / 'data' / 'hero_list.json'))
+CACHE_PATH = Path(os.environ.get('HERO_LIST_FILE', data_root() / 'hero_list.json'))
 TTL = 7 * 24 * 3600
 URL = 'https://pvp.qq.com/web201605/js/herolist.json'
 _CACHE = {'data': None, 'loadedAt': 0.0}

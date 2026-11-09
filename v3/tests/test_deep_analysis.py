@@ -1,4 +1,4 @@
-"""Regression tests for V2 data-scope and replay analysis corrections."""
+"""Regression tests for V3 data-scope and replay analysis corrections."""
 import sys
 import unittest
 from pathlib import Path

@@ -44,8 +44,13 @@ export function createResearch({esc,fmt,table,icon,pageIntro}) {
   </section>`;
   const library=reports.length?`<section class="section"><div class="section-heading"><div><h2>已保存报告</h2><p>共 ${reports.length} 份，按保存时间倒序。</p></div></div><div class="profiles-grid sx-report-grid">${reportCards}</div></section>`:'';
   const templateSection=`<section class="section"><div class="section-heading"><div><h2>从这些分析开始</h2><p>打开分析后，在页面底部可以保存当前结果为报告。</p></div></div><div class="sx-report-templates">${templates.map(([id,title,note],i)=>`<a href="#study/${id}" class="sx-report-template"><span>${String(i+1).padStart(2,'0')}</span><b>${text(title)}</b><p>${text(note)}</p><em>打开分析 →</em></a>`).join('')}</div></section>`;
-  const reportHeader=`<div class="page-intro"><div><h1>分析报告</h1><p>已保存的分析快照；数据范围、结果与指纹一起留档。</p></div><div class="intro-actions"><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></div></div>`;
-  return `<div class="page feature-page sx-page sx-report-page">${reportHeader}${intro}${library}${templateSection}</div>`;
+  const reportHeader=`<div class="page-intro"><div><h1>复盘与报告</h1><p>训练效果与已保存的分析快照放在同一处；报告保留当时的数据范围和结果。</p></div><div class="intro-actions"><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></div></div>`;
+  const reviewNav=`<nav class="sx-subnav" aria-label="复盘子页面"><a href="#reports" aria-current="page">报告库</a><a href="#effect">训练效果</a></nav>`;
+  const now=new Date();
+  const monday=new Date(now); monday.setDate(now.getDate() - (now.getDay()+6)%7);
+  const today=`${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,'0')}-${String(monday.getDate()).padStart(2,'0')}`;
+  const weekBuilder=`<section class="section sx-week-builder"><div class="section-heading"><div><h2>生成训练周报</h2><p>默认从本周一开始，汇总 7 天内的训练课、对局、目标和复盘；打开后可以打印或保存 PDF。</p></div></div><div class="sx-week-form"><label>周报起始日<input type="date" data-sx-week-start value="${today}"></label><button type="button" class="primary" data-sx-week-go>生成周报 →</button></div></section>`;
+  return `<div class="page feature-page sx-page sx-report-page">${reportHeader}${reviewNav}${weekBuilder}${intro}${library}${templateSection}</div>`;
  }
  function report(data){return `<div class="page feature-page">${header(data.title,`保存于 ${data.createdAt}`)}<a class="depth-back" href="#reports">← 返回报告</a><div class="scope-note"><span>结果快照</span>以下内容为保存时的数据与口径，不会随源数据变化。</div>${body(data.result)}</div>`}
  return {study,reports,report};

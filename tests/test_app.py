@@ -180,7 +180,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.put('/api/settings', headers={'Origin': 'https://other.example'}, json={}).status_code, 403)
 
     def test_root_serves_v3_and_analysis_redirects(self):
-        # V3 是默认界面：根路径直接返回 V2 的 index.html，/analysis 旧别名回根路径。
+        # 根路径直接返回 V3 界面，/analysis 旧别名回根路径。
         index = self.client.get('/', follow_redirects=False)
         self.assertEqual(index.status_code, 200)
         self.assertIn('text/html', index.headers['content-type'])
@@ -317,7 +317,7 @@ class WorkflowTests(unittest.TestCase):
         hero = next(e for e in catalog()['entries'] if e['name'] == '妲己')
         region = {'side':'right','slot':0,'kind':'hero','index':0,'box':[.1,.1,.5,.5]}
         with db() as c:
-            c.execute('UPDATE images SET ocr=? WHERE id=?', (json.dumps({'version':'scoreboard-v2-icons','visuals':[region]}), image_id))
+            c.execute('UPDATE images SET ocr=? WHERE id=?', (json.dumps({'version':'scoreboard-v3-icons','visuals':[region]}), image_id))
         m = self.fixture()
         m['players'][5]['hero'] = hero['name']
         m['imageIds'] = [image_id]

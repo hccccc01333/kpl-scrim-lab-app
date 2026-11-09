@@ -72,7 +72,7 @@ def test_rename_and_merge_stay_consistent_with_workspace(tmp_path):
     ])
     db = tmp_path / 'db.sqlite3'
     result = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')
-    assert [team['displayName'] for team in result['teams']] == ['待命名对手 #1', '待命名对手 #2']
+    assert [team['displayName'] for team in result['teams']] == ['待命名战队 #1', '待命名战队 #2']
 
     team_clusters.rename_team(db, result['teams'][0]['id'], '青岚', '张教练')
     renamed = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')
@@ -96,8 +96,8 @@ def test_rename_and_merge_stay_consistent_with_workspace(tmp_path):
 def test_rename_many_writes_workspace_and_is_all_or_nothing(tmp_path):
     db = tmp_path / 'db.sqlite3'
     workspace = Workspace(db).ensure_schema()
-    workspace.upsert_team('cluster-a', name='待命名对手 #1')
-    workspace.upsert_team('cluster-b', name='待命名对手 #2')
+    workspace.upsert_team('cluster-a', name='待命名战队 #1')
+    workspace.upsert_team('cluster-b', name='待命名战队 #2')
     result = team_clusters.rename_many(db, [
         {'id': 'cluster-a', 'name': '青岚', 'coach': '张教练'},
         {'id': 'cluster-b', 'name': '白虎'},
@@ -240,3 +240,97 @@ def test_trio_combos_need_more_games(tmp_path):
     assert trios['enemy']['pairs'] == 10
     assert all(row['small'] for row in trios['enemy']['combos'])
     assert all(len(row['heroes']) == 3 for row in trios['enemy']['combos'])
+
+# ---------------------------------------------------------------- 阵容 / 风格 / 训练台账
+def test_roster_reports_lineups_stability_and_lanes(tmp_path):
+    write_panels(tmp_path / 'camp_details', [
+        ('1', panel(1, A, '11-02 12:00')),
+        ('2', panel(2, A, '11-02 13:00', win=False)),
+    ])
+    result = team_clusters.list_teams(tmp_path / 'camp_details', tmp_path / 'db.sqlite3', '本队')
+    roster = result['teams'][0]['roster']
+
+    assert roster['games'] == 2
+    assert roster['players'] == 5
+    assert len(roster['lineups']) == 1          # 五人组相同 → 一套
+    assert roster['lineups'][0]['games'] == 2
+    assert roster['stability'] == 100
+    assert roster['rotation'] == 0
+    assert roster['anomalies'] == []
+    lanes = {row['lane']: row['players'] for row in roster['lanes']}
+    assert len(lanes) == 5
+    assert all(len(players) == 1 for players in lanes.values())
+    assert lanes['对抗路'][0]['kda'] == 4.0     # (3+5)/2
+
+
+def test_roster_flags_duplicate_lane_without_calling_it_rotation(tmp_path):
+    duplicate = panel(1, A, '11-02 12:00')
+    roles = duplicate['data']['redRoles']
+    roles[0]['battleRecords']['position'] = 1   # 两人都在中路，没人游走
+    write_panels(tmp_path / 'camp_details', [('1', duplicate)])
+    result = team_clusters.list_teams(tmp_path / 'camp_details', tmp_path / 'db.sqlite3', '本队')
+    roster = result['teams'][0]['roster']
+
+    assert roster['anomalies'] == ['中路']
+    assert roster['rotation'] == 0
+    assert roster['lineups'][0]['games'] == 1
+
+
+def test_team_metrics_expose_style_inputs(tmp_path):
+    write_panels(tmp_path / 'camp_details', [
+        ('1', panel(1, A, '11-02 12:00')),
+        ('2', panel(2, B, '11-02 13:00', win=False)),
+    ])
+    result = team_clusters.list_teams(tmp_path / 'camp_details', tmp_path / 'db.sqlite3', '本队')
+    metrics = result['teams'][0]['metrics']
+
+    for key in ('duration', 'killsPerMin', 'assistsPerMin', 'controlPerMin', 'participation', 'conversion'):
+        assert key in metrics and metrics[key] is not None
+    assert metrics['duration'] == 900
+    assert metrics['participation'] == 60.0     # joinGamePercent 0.6
+    # 新指标同样进分位池，风格页据此换算
+    assert 'killsPerMin' in result['teams'][0]['percentiles']
+
+
+def test_team_training_merges_plans_and_camp_days(tmp_path):
+    write_panels(tmp_path / 'camp_details', [
+        ('1', panel(1, A, '11-02 12:00')),
+        ('2', panel(2, A, '11-03 12:00', win=False)),
+    ])
+    result = team_clusters.list_teams(tmp_path / 'camp_details', tmp_path / 'db.sqlite3', '本队')
+    team_id = result['teams'][0]['id']
+    schedules = [{
+        'id': 'sch-1', 'date': '2026-11-02', 'start_time': '12:00', 'opponent_team_id': team_id,
+        'session': '周中训练', 'format': 'BO3', 'status': 'completed',
+        'goals': json.dumps([{'label': '前 10 分钟领先', 'target': '+1000', 'status': 'achieved'},
+                             '控龙率'], ensure_ascii=False),
+        'review_status': 'done', 'review': '执行到位',
+    }]
+
+    ledger = team_clusters.team_training(
+        tmp_path / 'camp_details', tmp_path / 'db.sqlite3', schedules)
+    team = ledger['teams'][0]
+
+    assert ledger['summary']['plans'] == 1
+    assert ledger['summary']['goals'] == 2
+    assert team['planCount'] == 1 and team['reviewed'] == 1
+    plan = next(item for item in team['sessions'] if item['source'] == 'plan')
+    assert plan['date'] == '2026-11-02'
+    assert plan['goals'][0]['status'] == 'achieved'
+    assert plan['goals'][1] == {'label': '控龙率', 'target': '', 'status': 'pending'}
+    assert plan['matches'] == 1 and plan['wins'] == 1
+    # 没有计划的交手日单独归集，不伪造目标
+    camp = [item for item in team['sessions'] if item['source'] == 'camp']
+    assert len(camp) == 1 and camp[0]['date'] == '11-03'
+    assert camp[0]['goals'] == [] and camp[0]['losses'] == 1
+
+
+def test_team_training_keeps_unassigned_plans(tmp_path):
+    write_panels(tmp_path / 'camp_details', [('1', panel(1, A, '11-02 12:00'))])
+    ledger = team_clusters.team_training(
+        tmp_path / 'camp_details', tmp_path / 'db.sqlite3',
+        [{'id': 'sch-9', 'date': '2026-11-05', 'opponent_team_id': '', 'status': 'planned',
+          'goals': '[]'}])
+    assert ledger['summary']['unassigned'] == 1
+    assert ledger['unassigned'][0]['id'] == 'sch-9'
+    assert ledger['teams'][0]['planCount'] == 0

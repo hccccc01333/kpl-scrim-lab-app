@@ -55,11 +55,27 @@ DOCS_SHIP = [
     'ocr_engine.md',
     'camp_replay.md',
 ]
+# server.py 运行期会把 tools/ 插进 sys.path 再 import 营地同步模块；
+# 这几个文件必须随包发布，否则安装版一进采集就 ModuleNotFoundError。
+TOOLS_SHIP = [
+    'tools/camp_auth.py',
+    'tools/camp_client.py',
+    'tools/camp_sync.py',
+    'tools/xxtea_algo.py',
+    # replay_timeline_build 解码 .abc 时懒加载这几个（出装时间轴要用）。
+    'tools/full_abc_event_catalog.py',
+    'tools/replay_abc_event_windows.py',
+    'tools/replay_frame_commands.py',
+    'tools/replay_input_timeline.py',
+    'tools/replay_opening_packet.py',
+    'tools/replay_record_stream.py',
+]
 ROOT_FILES = [
     'CHANGELOG.md',
     'LICENSE',
     'requirements.txt',
     'requirements-ocr.txt',
+    'requirements-mimo.txt',
     '.env.example',
     'update_config.json',
 ]
@@ -72,20 +88,24 @@ cd /d "%~dp0"
 set PYTHONUTF8=1
 set PYTHONIOENCODING=utf-8
 if not exist data mkdir data
-if exist runtime\\python.exe (
-  runtime\\python.exe updater.py --apply-pending
-  echo KPL 赛训分析：http://127.0.0.1:8766/
-  echo 使用指南见「部署说明.txt」；请保持此窗口运行（关闭窗口即停止服务）。
-  runtime\\python.exe server.py
-) else (
-  echo 未找到内置 Python，请重新解压完整包。
+if exist runtime\\pythonw.exe (
+  rem 无窗口启动：由 launcher.py 起服务、等健康检查、再打开浏览器
+  start "" runtime\\pythonw.exe launcher.py
+  exit /b 0
 )
+echo 未找到内置 Python，请重新解压完整包。
 pause
 """
 
 STOP_BAT = """@echo off
 chcp 65001 >nul
-powershell -NoProfile -Command "$h=Invoke-RestMethod -Uri 'http://127.0.0.1:8766/api/health' -ErrorAction SilentlyContinue; if($h){Stop-Process -Id $h.pid -Force -ErrorAction SilentlyContinue; Write-Host ('已停止进程 ' + $h.pid)} else {Write-Host '未发现运行中的工作台'}"
+cd /d "%~dp0"
+set "PY=runtime\\python.exe"
+if not exist "%PY%" set "PY=python"
+echo 正在停止工作台…
+"%PY%" launcher.py --stop
+timeout /t 1 >nul
+echo 已停止。如果界面仍可访问，请稍等几秒后刷新。
 pause
 """
 
@@ -120,11 +140,13 @@ pause
 SOP = """KPL 赛训数据工具 · 部署说明
 ================================
 
-一、解压与启动
-  1. 解压到固定目录，例如 D:\\KPL赛训工具\\（不要放桌面或 Program Files）。
-  2. 双击「启动工作台.bat」。
-  3. 浏览器打开 http://127.0.0.1:8766/studio。
-     数据全部保存在本机 data 文件夹，不上传任何服务器。
+一、启动
+  安装版：双击桌面「KPL 赛训工具」；开始菜单同一文件夹里还有
+         「停止工作台」「检查更新」「打开数据目录」「打开日志目录」。
+  免安装版：解压到固定目录（例如 D:\\KPL赛训工具\\，不要放桌面或
+         Program Files），双击「启动工作台.bat」。
+  两种情况都会自动打开浏览器；服务在后台运行，关掉浏览器不会停止。
+  数据全部保存在本机 data 文件夹，不上传任何服务器。
 
 二、教练授权（一次性）
   1. 采集通道页 →「营地自动同步」→ 扫码授权。
@@ -143,9 +165,10 @@ SOP = """KPL 赛训数据工具 · 部署说明
 
 五、更新
   - 启动后工作台会自动检查新版本，右下角出现提示时点「立即更新」。
-  - 也可以双击「检查更新.bat」查看当前版本和更新内容。
+  - 也可以双击「检查更新.bat」或开始菜单的「检查更新」查看当前版本。
   - 更新只替换程序文件，不会修改 data 目录；失败会自动回滚。
   - 完全离线时，可以让作者发来 patch-版本号.zip，在提示里选「选择本地更新包」。
+  - 内置 Python 或依赖有变化的大版本会提供新安装包，直接覆盖安装即可，数据不丢。
 
 六、数据备份与迁移
   整个 data 文件夹拷走即完成备份；换电脑时把 data 放进新包即可延续全部数据。
@@ -155,10 +178,12 @@ SOP = """KPL 赛训数据工具 · 部署说明
   只用营地同步、不需要截图兜底的队伍可以不装。
 
 八、故障处理
+  - 双击图标没反应或提示启动失败 → 开始菜单「打开日志目录」，把
+    launcher.log 和 server.log 发给作者。
   - 提示登录态失效（-30003 / -30314）/ 安全参数被拒 → 工作台会显示「补充授权」，重新扫码即可。
   - 用户ID不存在 → 营地 ID 填错（应为分享链接 userId= 的数字）。
   - 列表为空但选手打过 → 该营地账号未绑定游戏大区角色。
-  - 启动失败 → 查看 logs 目录，把 update.log 或窗口报错发给作者。
+  - 端口被占用 → 关闭占用 8766 的程序，或设置环境变量 TRAINING_PORT 换端口。
 """
 
 AUTH_NOTE = """授权说明
@@ -190,6 +215,9 @@ def read_meta() -> dict:
             'releaseName': field('RELEASE_NAME')}
 
 
+SUMMARY_HEADINGS = ('更新摘要', '本次更新')
+
+
 def changelog_notes(version: str) -> list[str]:
     path = ROOT / 'CHANGELOG.md'
     if not path.is_file():
@@ -201,23 +229,39 @@ def changelog_notes(version: str) -> list[str]:
     if start is None:
         return [f'版本 {version}']
     notes = []
+    summary = []
+    in_summary = False
     for line in lines[start:]:
         stripped = line.strip()
         if stripped.startswith('## '):
             break
-        if not stripped or stripped.startswith('###') or stripped.startswith('---'):
+        if stripped.startswith('### '):
+            in_summary = stripped[4:].strip() in SUMMARY_HEADINGS
+            continue
+        if not stripped or stripped.startswith('#') or stripped.startswith('---'):
             continue
         if stripped.startswith('- '):
-            notes.append(stripped[2:].strip())
-        elif not stripped.startswith('#'):
+            item = stripped[2:].strip()
+            notes.append(item)
+            if in_summary:
+                summary.append(item)
+        else:
             notes.append(stripped)
-    return notes[:30] or [f'版本 {version}']
+    # 有「更新摘要」段时，更新弹窗只读摘要；完整明细仍留在 CHANGELOG / 官网。
+    return (summary[:12] or notes[:30]) or [f'版本 {version}']
+
+
+def _junk_file(name: str) -> bool:
+    """编辑器/系统留下的临时文件，永远不要进发布包。"""
+    return (name.startswith(('~$', '.tmp'))
+            or name.endswith(('.TMP', '.tmp', '.bak', '.swp', '~'))
+            or '~RF' in name)
 
 
 def ship_files() -> list[str]:
     files = []
     for path in sorted(ROOT.glob('*.py')):
-        if path.name.startswith('_'):
+        if path.name.startswith(('_', '.')) or _junk_file(path.name):
             continue
         files.append(path.name)
     for folder in ('web', 'resources'):
@@ -229,8 +273,10 @@ def ship_files() -> list[str]:
                 continue
             if '__pycache__' in path.parts or path.suffix in ('.pyc', '.map'):
                 continue
+            if _junk_file(path.name):
+                continue
             files.append(path.relative_to(ROOT).as_posix())
-    # V3 默认界面：V2 的 ASGI 应用随包发布，根路径才能正常打开。
+    # 单一 V3 应用：server.py 随包发布，根路径才能正常打开。
     v3 = ROOT / 'v3'
     if v3.is_dir():
         for name in ('serve.py', 'deep_analysis.py', 'demo_data.py'):
@@ -243,10 +289,15 @@ def ship_files() -> list[str]:
                     continue
                 if '__pycache__' in path.parts or path.suffix in ('.pyc', '.map'):
                     continue
+                if _junk_file(path.name):
+                    continue
                 files.append(path.relative_to(ROOT).as_posix())
     for name in DOCS_SHIP:
         if (ROOT / 'docs' / name).is_file():
             files.append(f'docs/{name}')
+    for name in TOOLS_SHIP:
+        if (ROOT / name).is_file():
+            files.append(name)
     for name in ROOT_FILES:
         if (ROOT / name).is_file():
             files.append(name)
@@ -464,7 +515,7 @@ def copy_ship_files(build: Path, paths: list[str]) -> None:
 def write_data_dirs(build: Path) -> None:
     for name in ('official_replays', 'camp_details', 'camp_lists', 'camp_reports',
                  'screenshots', 'recordings', 'replays', 'matches', 'imports',
-                 'v2', 'backups', 'update'):
+                 'builds', 'backups', 'update'):
         (build / 'data' / name).mkdir(parents=True, exist_ok=True)
 
 
@@ -491,15 +542,27 @@ def smoke_test(build: Path, runtime: Path | None, enabled: bool = True) -> None:
         'ANALYSIS_MATCHES': str(smoke / 'matches'),
         'ANALYSIS_IMPORTS': str(smoke / 'imports'),
         'ANALYSIS_OFFICIAL': str(smoke / 'official'),
-        'ANALYSIS_V2': str(smoke / 'v2'),
+        'ANALYSIS_BUILDS': str(smoke / 'builds'),
         'KPL_RECORDINGS': str(smoke / 'recordings'),
         'MIMO_OCR_CACHE': str(smoke / 'ocr_cache'),
         'PYTHONUTF8': '1',
         'PYTHONIOENCODING': 'utf-8',
     })
+    # 第二段检查 server.py 与 tools/ 的函数签名是否对得上：升级包只覆盖了一半文件时
+    # `import server` 照样成功，真正炸在教练点「同步」的那一刻（v1.1.0 丢过整批对局）。
+    script = '\n'.join([
+        'import sys, inspect',
+        f'sys.path.insert(0, {str(build)!r})',
+        f'sys.path.insert(0, {str(build / "tools")!r})',
+        'import server',
+        'import camp_sync',
+        '_sig = inspect.signature(camp_sync.sync_entries)',
+        'assert "on_progress" in _sig.parameters, (',
+        '    "tools/camp_sync.py 与 server.py 不同步：sync_entries 缺少 on_progress 参数，"',
+        '    "发布包会在同步营地时整批失败。签名：" + str(_sig))',
+    ])
     result = subprocess.run(
-        [str(python), '-c',
-         f'import sys; sys.path.insert(0, {str(build)!r}); import server'],
+        [str(python), '-c', script],
         cwd=str(build), env=env, capture_output=True, text=True,
         encoding='utf-8', errors='replace', timeout=180)
     shutil.rmtree(smoke, ignore_errors=True)
@@ -591,7 +654,8 @@ def main(argv=None) -> int:
     paths, removed = (ship, []) if args.all else diff_paths(since, ship)
     paths = [path for path in paths if path not in PATCH_EXCLUDE]
     removed = [path for path in removed if path not in PATCH_EXCLUDE]
-    if since and any(path in ('requirements.txt', 'requirements-ocr.txt') for path in paths):
+    if since and any(path in ('requirements.txt', 'requirements-ocr.txt', 'requirements-mimo.txt')
+                     for path in paths):
         print('注意：依赖文件有变化。增量包不会安装新依赖；'
               '如需升级依赖，请提供完整包并提高 --min-version。')
     if not paths and not args.no_patch:

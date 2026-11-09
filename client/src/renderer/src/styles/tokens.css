@@ -1,0 +1,95 @@
+:root {
+  color-scheme: light;
+
+  --bg: #f2ebdf;
+  --paper: #f8f3e9;
+  --paper-2: #fdfaf3;
+  --surface: #eae1d2;
+  --ink: #13272b;
+  --ink-text: #f4f7f1;
+  --ink-muted: #a8bdb5;
+  --text: #1b2b2e;
+  --muted: #5e6d69;
+  --quiet: #89938c;
+  --line: #ddd2c1;
+  --line-strong: #c8baa6;
+
+  --accent: #0e655b;
+  --accent-ink: #0a4b44;
+  --coral: #d45c3d;
+  --gold: #ad7d2c;
+  --soft: #e1ece5;
+  --focus: #0e655b;
+
+  --sans: 'Manrope', 'Microsoft YaHei UI', 'PingFang SC', sans-serif;
+  --serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+
+  --fs-display: clamp(34px, 3.2vw, 54px);
+  --fs-title: 22px;
+  --fs-section: 18px;
+  --fs-body: 14px;
+  --fs-small: 12px;
+  --fs-micro: 10px;
+
+  --sp-1: 6px;
+  --sp-2: 10px;
+  --sp-3: 14px;
+  --sp-4: 18px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+
+  --shadow: 0 1px 0 rgba(19, 39, 43, .03), 0 18px 50px rgba(31, 45, 42, .06);
+  --shadow-pop: 0 28px 80px rgba(16, 28, 26, .22);
+  --ease: cubic-bezier(.2, .7, .2, 1);
+
+  --topbar: 64px;
+  --rail: 84px;
+  --content: 1360px;
+  --window-controls: 146px;
+
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0a1316;
+  --paper: #0e1a1e;
+  --paper-2: #111f23;
+  --surface: #182a2e;
+  --ink: #071013;
+  --ink-text: #eff5ee;
+  --ink-muted: #9eb5ad;
+  --text: #e9f0e9;
+  --muted: #a8b9b1;
+  --quiet: #7d8f87;
+  --line: #263a3a;
+  --line-strong: #38514e;
+  --accent: #7fd8c8;
+  --accent-ink: #b6f2e7;
+  --coral: #f08a6c;
+  --gold: #e0bd7a;
+  --soft: #18302e;
+  --focus: #7fd8c8;
+  --shadow: 0 1px 0 rgba(0, 0, 0, .2), 0 18px 48px rgba(0, 0, 0, .22);
+  --shadow-pop: 0 32px 100px rgba(0, 0, 0, .55);
+}
+
+:root[data-density='compact'] {
+  --fs-display: clamp(30px, 2.7vw, 44px);
+  --fs-title: 19px;
+  --fs-section: 16px;
+  --fs-body: 13px;
+  --sp-4: 14px;
+  --sp-5: 20px;
+  --sp-6: 26px;
+}
+
+:root[data-density='comfortable'] {
+  --fs-body: 14px;
+}

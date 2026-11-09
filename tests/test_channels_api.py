@@ -35,8 +35,8 @@ def postgame_result():
                            'participation': field(50)},
                 'shares': {}, 'sources': ['data'],
             })
-    return {'schema': 'kpl-postgame-screenshot-v1', 'version': 'postgame-tabbed-v2',
-            'layout': 'postgame-tabbed-v2', 'file': 'data.png', 'pageType': 'data', 'tab': '数据',
+    return {'schema': 'kpl-postgame-screenshot-v1', 'version': 'postgame-tabbed-v3',
+            'layout': 'postgame-tabbed-v3', 'file': 'data.png', 'pageType': 'data', 'tab': '数据',
             'match': {'date': '2026-06-17', 'time': None, 'durationSec': 1132, 'mode': None,
                       'result': None, 'score': {'left': 14, 'right': 26}},
             'players': players, 'coverage': {}, 'warnings': []}

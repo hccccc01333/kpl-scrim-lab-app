@@ -3,10 +3,12 @@
 import argparse
 import json
 import re
+import shutil
 import sqlite3
 import os
 import sys
 import subprocess
+import time
 import uuid
 from urllib.request import urlopen
 from urllib.error import URLError
@@ -14,11 +16,11 @@ from collections import Counter, defaultdict
 from contextlib import closing
 from datetime import date
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from time import monotonic
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -30,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
 from bp_camp import merge_bp_sources
 from match_review import PanoramaRepository
+from paths import data_root
 from studio_api import create_studio_router
 from analysis_api import create_analysis_router
 from depth_api import create_depth_router
@@ -38,7 +41,10 @@ import vocab as vocab_store
 
 
 def data_path(variable, default):
-    return Path(os.environ.get(variable, ROOT / 'data' / default))
+    override = os.environ.get(variable)
+    if override:
+        return Path(override)
+    return data_root(ROOT) / default
 
 
 DB = data_path('TRAINING_DB', 'training.sqlite3')
@@ -47,7 +53,7 @@ DATA_DIR = DB.parent
 MATCHES = data_path('ANALYSIS_MATCHES', 'matches')
 IMPORTS = data_path('ANALYSIS_IMPORTS', 'imports')
 OFFICIAL = data_path('ANALYSIS_OFFICIAL', 'official_replays')
-BUILDS = data_path('ANALYSIS_V2', 'v2')
+BUILDS = data_path('ANALYSIS_BUILDS', 'builds')
 DEMO_ROOT = Path(os.environ['TRAINING_DEMO_ROOT']) if os.environ.get('TRAINING_DEMO_ROOT') else None
 POSITION_STEP = 2  # 位置降采样步长（秒），693 秒的局约 347 点/人
 IS_DEMO = DEMO_ROOT is not None
@@ -78,6 +84,18 @@ _STUDIO_ALLOWED = {
     '/api/studio/workspace/teams/reconcile',
     '/api/studio/workspace/players', '/api/studio/workspace/players/migrate-profile',
     '/api/studio/workspace/schedules',
+    '/api/studio/workspace/matches',
+    '/api/studio/workspace/reports/screenshot',
+    '/api/studio/workspace/reports/image/{name}',
+    '/api/studio/workspace/inbox',
+    '/api/studio/workspace/dashboard',
+    '/api/studio/workspace/metrics/week',
+    '/api/studio/workspace/metrics/registry',
+    '/api/studio/workspace/opponents/unmapped',
+    '/api/studio/workspace/opponents/map',
+    '/api/studio/workspace/sessions/{schedule_id}',
+    '/api/studio/workspace/sessions/{schedule_id}/review',
+    '/api/studio/workspace/sessions/{schedule_id}/links',
     '/api/studio/workspace/training', '/api/studio/workspace/prefill/run',
     '/api/studio/workspace/pending', '/api/studio/workspace/pending/confirm',
     '/api/studio/workspace/pending/confirm-batch',
@@ -101,7 +119,7 @@ def apply_bp_overrides(data):
     if not DB.is_file(): return
     try:
         with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
-            rows=connection.execute('SELECT match_key,body,revision FROM v2_bp_overrides').fetchall()
+            rows=connection.execute('SELECT match_key,body,revision FROM bp_overrides').fetchall()
     except sqlite3.Error:
         return
     overrides={}
@@ -113,13 +131,17 @@ def apply_bp_overrides(data):
             continue
     for match in data.get('matches',[]) + data.get('sheetMatches',[]):
         if match.get('key') in overrides:
-            match['bp'],match['v2BpRevision']=overrides[match['key']]
+            match['bp'],match['bpRevision']=overrides[match['key']]
 
 
 def invalidate_snapshot():
     global _snapshot, _loaded_at
     with _lock:
         _snapshot, _loaded_at = None, float('-inf')
+    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY'):
+        cache = globals().get(name)
+        if cache is not None:
+            cache.clear()
 
 
 def repository(request: Request):
@@ -171,6 +193,132 @@ async def prevent_data_caching(request, call_next):
 @router.get('/')
 def v3_index():
     return FileResponse(HERE / 'public' / 'index.html')
+
+
+_CROSS_LANES = ('对抗路', '打野', '中路', '发育路', '游走')
+_CROSS_VECTOR_CACHE = {}
+_CROSS_VECTOR_BY_KEY = {}
+
+
+def _cross_interp(series, t):
+    if not series:
+        return None
+    if t <= series[0][0]:
+        return series[0][1]
+    if t >= series[-1][0]:
+        return series[-1][1]
+    for i in range(1, len(series)):
+        t0, v0 = series[i - 1]
+        t1, v1 = series[i]
+        if t0 <= t <= t1:
+            return v1 if t1 == t0 else v0 + (v1 - v0) * (t - t0) / (t1 - t0)
+    return series[-1][1]
+
+
+def _cross_vector(repo, item, segments=8):
+    key = item['key']
+    cache_id = (key, segments)
+    cached = _CROSS_VECTOR_BY_KEY.get(cache_id)
+    if cached is not None:
+        return cached
+    d = repo.match_detail(key)
+    if not d:
+        return None
+    camp = d.get('ownCamp') or 'blue'
+    sign = 1 if camp == 'blue' else -1
+    duration = float(d.get('duration') or 0) or 0.0
+    econ = []
+    for point in (d.get('process') or {}).get('timeline') or []:
+        t = point.get('gameTime')
+        if not isinstance(t, (int, float)):
+            continue
+        if isinstance(point.get('blueGold'), (int, float)) and isinstance(point.get('redGold'), (int, float)):
+            value = (point['blueGold'] - point['redGold']) * sign
+        elif isinstance(point.get('goldDiff'), (int, float)):
+            value = point['goldDiff'] * sign
+        else:
+            continue
+        econ.append((float(t), float(value)))
+    econ.sort(key=lambda pair: pair[0])
+
+    g = [round(_cross_interp(econ, k * 300), 1) if econ and duration >= k * 300 else None for k in range(segments)]
+    w = []
+    for k in range(segments):
+        if econ and duration >= (k + 1) * 300:
+            a, b = _cross_interp(econ, k * 300), _cross_interp(econ, (k + 1) * 300)
+            w.append(round(b - a, 1) if a is not None and b is not None else None)
+        else:
+            w.append(None)
+    # 相对时长对齐的 6 点轨迹：短局与长局都能比较「形状」，不受绝对时长影响
+    shape = [round(_cross_interp(econ, duration * f), 1) for f in (0, .2, .4, .6, .8, 1.0)] if econ and duration else []
+    final = econ[-1][1] if econ else None
+    if final is None:
+        totals = d.get('teamTotals') or {}
+        mine = (totals.get(camp) or {}).get('totals') or {}
+        other = (totals.get('red' if camp == 'blue' else 'blue') or {}).get('totals') or {}
+        if isinstance(mine.get('gold'), (int, float)) and isinstance(other.get('gold'), (int, float)):
+            final = mine['gold'] - other['gold']
+
+    players = d.get('players') or []
+    own = [p for p in players if p.get('camp') == camp]
+    foe = [p for p in players if p.get('camp') in ('blue', 'red') and p.get('camp') != camp]
+    number = lambda x: float(x) if isinstance(x, (int, float)) else 0.0
+    lanes = {}
+    for lane in _CROSS_LANES:
+        p = next((x for x in own if x.get('position') == lane), None)
+        q = next((x for x in foe if x.get('position') == lane), None)
+        if p and q and duration:
+            lanes[lane] = {key: round((number(p.get(key)) - number(q.get(key))) / duration * 60, 1)
+                           for key in ('gold', 'damage', 'taken')}
+    heroes = [p.get('hero') for p in own if p.get('hero')][:5]
+    bp = d.get('campBp') or {}
+    bans = [x.get('name') for side in ('left', 'right') for x in ((bp.get('bans') or {}).get(side) or []) if x.get('name')]
+    scores = d.get('scores') or {}
+    kill_own, kill_foe = scores.get(camp), scores.get('red' if camp == 'blue' else 'blue')
+    start_text = str(bp.get('startTime') or '')
+    clock_match = re.search(r'(\d{1,2}:\d{2})', start_text)
+    clock = clock_match.group(1) if clock_match else ''
+    date_text = str(item.get('date') or d.get('date') or '')
+    vector = {
+        'key': key, 'date': date_text, 'clock': clock,
+        'order': f"{date_text} {clock}" if date_text else clock,
+        'session': d.get('session') or item.get('session') or '',
+        'version': d.get('version') or item.get('version') or '',
+        'opponent': d.get('opponent') or item.get('opponent') or '',
+        'result': d.get('result') or item.get('result') or '',
+        'duration': duration, 'camp': camp,
+        'at10': g[2], 'finalDiff': final, 'g': g, 'w': w, 's': shape,
+        'killsOwn': kill_own, 'killsFoe': kill_foe,
+        'lanes': lanes, 'heroes': heroes, 'bans': bans,
+    }
+    _CROSS_VECTOR_BY_KEY[cache_id] = vector
+    return vector
+
+
+@router.get('/api/cross/vectors')
+def cross_vectors(repo=Depends(repository), values=Depends(filters)):
+    """全量对局的轻量指标向量，供通用跨局分析一次取回。
+
+    每局只带聚合需要的标量（经济检查点、5 分钟净增、分路分均差、阵容、
+    BP、结果与分层标签），不含十人明细、位置序列和事件流；逐局明细仍由
+    /api/matches/{key} 按需取。局数上万时这里应换成预聚合表／物化视图，
+    接口契约（向量字段）保持不变，前端分析内核无需改动。
+    """
+    items = repo.matches(values)['matches']
+    max_duration = max((float(i.get('duration') or 0) for i in items), default=0.0)
+    segments = max(4, min(16, int(max_duration // 300) + 1)) if max_duration else 8
+    cache_key = (tuple(i['key'] for i in items), values['from'], values['to'],
+                 tuple(values['sources']), values['excludeSeeds'], segments)
+    hit = _CROSS_VECTOR_CACHE.get(cache_key)
+    if hit is not None:
+        return hit
+    vectors = [v for v in (_cross_vector(repo, item, segments) for item in items) if v]
+    payload = {'total': len(items), 'vectors': vectors, 'unit': 'cohort-vectors-v1',
+               'segments': segments, 'windowMin': 5}
+    if len(_CROSS_VECTOR_CACHE) > 4:
+        _CROSS_VECTOR_CACHE.clear()
+    _CROSS_VECTOR_CACHE[cache_key] = payload
+    return payload
 
 
 @router.get('/api/overview')
@@ -226,7 +374,7 @@ def replay(key: str, repo=Depends(repository)):
     result = panorama.get(detail['bundleKey']) if detail and detail.get('bundleKey') else None
     if result is None:
         raise HTTPException(404, '该局没有全景回放数据')
-    return {name: result[name] for name in ('events', 'kills', 'deaths', 'coverage', 'notes') if name in result}
+    return {name: result[name] for name in ('events', 'kills', 'deaths', 'fights', 'coverage', 'notes') if name in result}
 
 
 @router.get('/api/positions/{key:path}')
@@ -243,11 +391,23 @@ def match_positions(key: str):
             row = connection.execute('SELECT body FROM channels WHERE id=?', (channel_id,)).fetchone()
     except sqlite3.Error:
         row = None
-    if not row:
-        raise HTTPException(404, '找不到该局的采集通道')
-    channel = json.loads(row[0])
-    camp = (channel.get('sources') or {}).get('camp') or {}
-    seq = str(camp.get('gameSeq') or '')
+
+    camp, seq = {}, ''
+    bundle_players = []
+    if row:
+        channel = json.loads(row[0])
+        camp = (channel.get('sources') or {}).get('camp') or {}
+        seq = str(camp.get('gameSeq') or '')
+    else:
+        # 没有采集通道（例如演示数据包）时，直接按数据包里挂的 officialReplay 找位置
+        bundle_path = MATCHES / f'{key}.json'
+        if not bundle_path.is_file():
+            raise HTTPException(404, '找不到该局的采集通道')
+        bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
+        linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
+        if linked:
+            seq = linked[len('camp-'):] if linked.startswith('camp-') else linked
+            bundle_players = bundle.get('players') or []
     if not seq:
         raise HTTPException(404, '这一局没有营地回放')
     path = OFFICIAL / f'camp-{seq}' / 'positions.json'
@@ -257,8 +417,12 @@ def match_positions(key: str):
     roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
     step = POSITION_STEP
     players = []
-    for item in data.get('players') or []:
-        info = roster.get(str(item.get('playerId'))) or {}
+    for index, item in enumerate(data.get('players') or []):
+        info = roster.get(str(item.get('playerId')))
+        if not info and bundle_players:
+            # 数据包玩家按 blue0..4 / red0..4 顺序排列，与位置文件同序
+            info = bundle_players[index] if index < len(bundle_players) else None
+        info = info or {}
         arr = item.get('posArr') or []
         players.append({
             'camp': info.get('camp'), 'slot': info.get('slot'),
@@ -278,7 +442,7 @@ def players(repo=Depends(repository), values=Depends(filters)):
     return {'players': repo.player_stats(values)}
 
 
-@router.get('/api/v2/players/board')
+@router.get('/api/v3/players/board')
 def players_board(repo=Depends(repository), values=Depends(filters)):
     return repo.player_board(values)
 
@@ -359,32 +523,363 @@ def metadata(repo=Depends(repository)):
 
 
 _demo_lock = Lock()
+DEMO_APPLICATION = 'training-data-v3'
+DEMO_PORT = 8773
 
 
-@router.get('/api/v2/mode')
+def _demo_status_is_ours(status):
+    return bool(status and status.get('demo')
+                and status.get('application') == DEMO_APPLICATION)
+
+
+_LEGACY_FOLDER_NAMES = ('KPL赛训工具', 'KPL训练赛项目', 'KPL赛训工具-windows')
+
+
+def _legacy_candidates():
+    """免安装版常见的落点；只拼路径，不扫全盘。"""
+    home = Path.home()
+    bases = [home / 'Desktop', home / 'Downloads',
+             home / 'OneDrive' / 'Desktop', home / 'OneDrive' / 'Downloads']
+    return [base / name / 'data' for base in bases for name in _LEGACY_FOLDER_NAMES]
+
+
+def _bundle_count(directory):
+    try:
+        return sum(1 for path in (directory / 'matches').glob('*.json') if path.is_file())
+    except OSError:
+        return 0
+
+
+def _legacy_match_count(data_dir):
+    """旧库里有多少局；DB 记录与对局包取较大值，读不出来就当 0。"""
+    database = data_dir / 'training.sqlite3'
+    counted = _bundle_count(data_dir)
+    try:
+        with closing(sqlite3.connect(f'file:{database.as_posix()}?mode=ro', uri=True)) as connection:
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            for table in ('match_records', 'matches'):
+                if table in tables:
+                    counted = max(counted, int(connection.execute(
+                        f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]))
+    except sqlite3.Error:
+        return counted
+    return counted
+
+
+def _loopback(request):
+    client = request.client.host if request.client else ''
+    return client in ('127.0.0.1', '::1', '::ffff:127.0.0.1')
+
+
+@router.get('/api/welcome')
+def welcome_info():
+    """First-run facts for the empty home page.
+
+    The workbench ships without match data.  When the library is empty the UI
+    shows three ways to bring the first match in, plus the real data directory
+    and any old install it can see.  Reading directory names only; no file
+    contents are opened.
+    """
+    data_dir = data_root()
+    legacy = []
+    seen = set()
+    for candidate in _legacy_candidates():
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if resolved in seen or resolved == data_dir.resolve():
+            continue
+        seen.add(resolved)
+        database = resolved / 'training.sqlite3'
+        if not database.is_file():
+            continue
+        try:
+            stat = database.stat()
+        except OSError:
+            continue
+        legacy.append({'path': str(resolved), 'size': stat.st_size,
+                       'modified': int(stat.st_mtime),
+                       'matches': _legacy_match_count(resolved)})
+    return {
+        'dataDir': str(data_dir),
+        'campAuthorized': (data_dir / 'camp_auth.json').is_file(),
+        'legacy': legacy[:3],
+    }
+
+
+@router.post('/api/data/open')
+def open_data_dir(request: Request):
+    """Open the local data folder in Explorer (loopback only)."""
+    if not _loopback(request):
+        raise HTTPException(403, '只允许在本机打开数据目录。')
+    target = data_root()
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        if os.name == 'nt':
+            os.startfile(str(target))  # noqa: S606 - local Explorer
+        else:
+            subprocess.Popen(['xdg-open', str(target)])
+    except Exception as exc:  # noqa: BLE001 - 打不开时给可读原因
+        raise HTTPException(500, f'没能打开数据目录：{exc}') from exc
+    return {'ok': True, 'path': str(target)}
+
+
+# ------------------------------------------------------------------ 旧数据搬迁
+# 免安装版换成安装版后数据目录变了，不该让教练自己去资源管理器里复制 10 GB。
+# 这里做一次整库搬迁：SQLite 走 backup API（WAL 里未落盘的部分也带上），
+# 其余资产逐文件复制并给出进度；只在本机、且当前库还没有对局时允许执行。
+_MIGRATE_LOCK = Lock()
+_MIGRATE_JOB = {'state': 'idle'}
+# 缓存与一次性中间产物不进新库；旧版本留下的备份也不搬。
+_MIGRATE_SKIP = {'.studio-cache', '.migrate-staging', '_tmp', '_channel_work', '_mock',
+                 '_oss_probe', 'update', 'backups', 'watchdog.pid', 'ocr_cache'}
+# 回放与录屏占九成体积，允许教练选择跳过。
+_MIGRATE_HEAVY = {'replays', 'recordings'}
+
+
+def _migrate_status():
+    with _MIGRATE_LOCK:
+        return dict(_MIGRATE_JOB)
+
+
+def _migrate_update(**patch):
+    with _MIGRATE_LOCK:
+        _MIGRATE_JOB.update(patch)
+
+
+def _library_is_empty(database):
+    if _bundle_count(database.parent):
+        return False
+    if not database.is_file():
+        return True
+    try:
+        with closing(sqlite3.connect(f'file:{database.as_posix()}?mode=ro', uri=True)) as connection:
+            tables = {row[0] for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            for table in ('match_records', 'matches'):
+                if table in tables and connection.execute(
+                        f'SELECT COUNT(*) FROM "{table}"').fetchone()[0]:
+                    return False
+    except sqlite3.Error:
+        return False
+    return True
+
+
+def _migrate_sources(source, include_heavy):
+    for entry in source.iterdir():
+        name = entry.name
+        if name in _MIGRATE_SKIP or name.startswith(('_backup', '_archive')):
+            continue
+        # SQLite 的旁路文件随主库一起由 backup API 处理，单独复制会带进半写状态。
+        if name.endswith(('-wal', '-shm', '-journal')):
+            continue
+        if not include_heavy and name in _MIGRATE_HEAVY:
+            continue
+        if entry.is_dir():
+            for path in entry.rglob('*'):
+                if path.is_file():
+                    yield path
+        elif entry.is_file():
+            yield entry
+
+
+def _copy_with_progress(source, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with source.open('rb') as reader, destination.open('wb') as writer:
+        while True:
+            block = reader.read(4 * 1024 * 1024)
+            if not block:
+                break
+            writer.write(block)
+            with _MIGRATE_LOCK:
+                _MIGRATE_JOB['bytes'] = _MIGRATE_JOB.get('bytes', 0) + len(block)
+    try:
+        shutil.copystat(source, destination, follow_symlinks=False)
+    except OSError:
+        pass
+
+
+def _copy_sqlite(source, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source_connection = sqlite3.connect(f'file:{source.as_posix()}?mode=ro', uri=True)
+    try:
+        target_connection = sqlite3.connect(destination)
+        try:
+            source_connection.backup(target_connection)
+            target_connection.commit()
+        finally:
+            target_connection.close()
+    finally:
+        source_connection.close()
+    try:
+        with _MIGRATE_LOCK:
+            _MIGRATE_JOB['bytes'] = _MIGRATE_JOB.get('bytes', 0) + destination.stat().st_size
+    except OSError:
+        pass
+
+
+def _upgrade_migrated(destination):
+    """把旧库升级到当前结构：补缺失的表/列，旧命名归位。"""
+    database = destination / 'training.sqlite3'
+    if not database.is_file():
+        raise RuntimeError('搬迁后的库里没有 training.sqlite3')
+    with closing(sqlite3.connect(database)) as connection:
+        names = {row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'bp_overrides' not in names:
+            for name in names:
+                if name != 'bp_overrides' and name.endswith('_bp_overrides'):
+                    connection.execute(f'ALTER TABLE "{name}" RENAME TO bp_overrides')
+                    break
+        connection.commit()
+    import workspace_store
+    workspace_store.Workspace(database).ensure_schema()
+
+
+def _merge_staging(staging, destination):
+    """把暂存目录整体并进数据目录；同卷 rename，几乎不额外占空间。"""
+    for entry in list(staging.iterdir()):
+        target = destination / entry.name
+        if entry.is_dir() and target.is_dir():
+            for path in sorted(entry.rglob('*')):
+                if not path.is_file():
+                    continue
+                output = target / path.relative_to(entry)
+                output.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(path, output)
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            elif target.exists():
+                target.unlink()
+            os.replace(entry, target)
+
+
+def _run_migration(source, destination, include_heavy):
+    staging = destination / '.migrate-staging'
+    try:
+        _migrate_update(state='scanning', current='', error='', bytes=0, totalBytes=0,
+                        copied=0, totalFiles=0)
+        files = list(_migrate_sources(source, include_heavy))
+        total_bytes = 0
+        for path in files:
+            try:
+                total_bytes += path.stat().st_size
+            except OSError:
+                pass
+        databases = [path for path in files if path.suffix == '.sqlite3']
+        assets = [path for path in files if path.suffix != '.sqlite3']
+        _migrate_update(state='copying', totalBytes=total_bytes, totalFiles=len(files))
+
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir(parents=True)
+        for path in assets:
+            relative = path.relative_to(source)
+            _migrate_update(current=str(relative))
+            _copy_with_progress(path, staging / relative)
+            with _MIGRATE_LOCK:
+                _MIGRATE_JOB['copied'] = _MIGRATE_JOB.get('copied', 0) + 1
+
+        for path in databases:
+            if path.name == 'training.sqlite3':
+                name = 'training.sqlite3'
+            elif path.name.endswith('reports.sqlite3'):
+                name = 'reports.sqlite3'
+            else:
+                continue
+            _migrate_update(current=name, state='database')
+            _copy_sqlite(path, staging / name)
+
+        _migrate_update(state='upgrading', current='')
+        _upgrade_migrated(staging)
+        # 全部写完才落进数据目录：中途失败时新库保持为空，可以直接重试。
+        _migrate_update(state='merging', current='')
+        _merge_staging(staging, destination)
+        shutil.rmtree(staging, ignore_errors=True)
+        invalidate_snapshot()
+        _migrate_update(state='done', current='', finishedAt=time.time())
+    except Exception as exc:  # noqa: BLE001 - 迁移失败要原样告诉教练
+        shutil.rmtree(staging, ignore_errors=True)
+        _migrate_update(state='error', error=str(exc), finishedAt=time.time())
+
+
+@router.post('/api/data/migrate')
+def migrate_legacy(request: Request, payload: dict = Body(default={})):
+    """Copy an old portable library into this install (loopback only)."""
+    if not _loopback(request):
+        raise HTTPException(403, '只允许在本机搬迁数据。')
+    with _MIGRATE_LOCK:
+        if _MIGRATE_JOB.get('state') in ('scanning', 'copying', 'database', 'upgrading', 'merging'):
+            raise HTTPException(409, '已经有一次搬迁在进行中。')
+    raw = str(payload.get('path') or '').strip().strip('"')
+    if not raw:
+        raise HTTPException(400, '请先选择旧数据目录。')
+    try:
+        source = Path(raw).expanduser().resolve()
+    except OSError as exc:
+        raise HTTPException(400, f'这个路径读不到：{exc}') from exc
+    if not (source / 'training.sqlite3').is_file():
+        raise HTTPException(400, '这个目录里没有 training.sqlite3，不像是赛训数据目录。')
+    destination = data_root().resolve()
+    if source == destination or source in destination.parents or destination in source.parents:
+        raise HTTPException(400, '旧目录和当前数据目录是同一个，不需要搬迁。')
+    if not _library_is_empty(destination / 'training.sqlite3'):
+        raise HTTPException(409, '这台电脑的库里已经有对局了，为避免覆盖不再自动搬迁。')
+
+    include_heavy = bool(payload.get('includeReplays', True))
+    with _MIGRATE_LOCK:
+        _MIGRATE_JOB.clear()
+        _MIGRATE_JOB.update({'state': 'scanning', 'source': str(source),
+                             'startedAt': time.time(), 'bytes': 0, 'totalBytes': 0,
+                             'copied': 0, 'totalFiles': 0, 'current': '', 'error': ''})
+    Thread(target=_run_migration, args=(source, destination, include_heavy),
+           daemon=True, name='legacy-migrate').start()
+    return {'ok': True, 'job': _migrate_status()}
+
+
+@router.get('/api/data/migrate')
+def migrate_progress():
+    return _migrate_status()
+
+
+
+@router.get('/api/mode')
 def data_mode():
-    return {'demo': IS_DEMO, 'application': 'training-data-v2', 'synthetic': IS_DEMO}
+    return {'demo': IS_DEMO, 'application': DEMO_APPLICATION, 'synthetic': IS_DEMO}
 
 
-@router.post('/api/v2/demo/start')
+@router.post('/api/demo/start')
 def start_demo():
-    """Start a separate local V3 demo instance backed only by generated demo data."""
+    """Open the demo library in the same full single-app workbench.
+
+    Previously the demo spawned a stripped-down read-only module, so it lost
+    every capture/import route. V3 is one app: the demo now starts ``server.py`` with
+    KPL_DATA_DIR redirected to its own isolated directory. Same features as the
+    real workbench, and no write can reach the coach's real data.
+    """
+    demo_url = f'http://127.0.0.1:{DEMO_PORT}/'
     if IS_DEMO:
-        return {'url': 'http://127.0.0.1:8773/', 'demo': True}
+        return {'url': demo_url, 'demo': True}
     from urllib.error import HTTPError
+
     def existing():
         try:
-            with urlopen('http://127.0.0.1:8773/api/v2/mode', timeout=1) as response:
+            with urlopen(f'http://127.0.0.1:{DEMO_PORT}/api/mode', timeout=1) as response:
                 return json.load(response)
         except HTTPError:
             return {'occupied': True}
         except (OSError, ValueError):
             return None
+
     with _demo_lock:
         status = existing()
         if status:
-            if status.get('application') == 'training-data-v2' and status.get('demo'):
-                return {'url': 'http://127.0.0.1:8773/', 'demo': True}
+            if _demo_status_is_ours(status):
+                return {'url': demo_url, 'demo': True}
             raise HTTPException(409, '演示端口 8773 已被其他程序占用。')
         import demo_data
         demo_base = HERE / 'demo-data'
@@ -405,33 +900,41 @@ def start_demo():
             demo_data.create(demo_root)
             pointer.write_text(json.dumps({'directory':demo_root.name}), encoding='utf-8')
         data = demo_root / 'data'
+        # 复用旧演示库时补建统一的 builds/ 目录。
+        (data / 'builds').mkdir(parents=True, exist_ok=True)
         env = os.environ.copy()
-        # V1 permits global overrides; never let those point demo mode at real data.
-        env.pop('STUDIO_CAMP_DIR', None)
-        env.pop('STUDIO_RESULTS_DB', None)
-        env.update({'TRAINING_DEMO_ROOT':str(demo_root), 'TRAINING_DB':str(data/'training.sqlite3'),
+        # 清掉所有可能指回真实库的全局覆盖；演示只认自己这一套目录。
+        for key in ('STUDIO_CAMP_DIR', 'STUDIO_RESULTS_DB', 'TRAINING_HOST', 'TRAINING_DB',
+                    'TRAINING_PORT', 'ANALYSIS_MATCHES', 'ANALYSIS_IMPORTS', 'ANALYSIS_OFFICIAL',
+                    'ANALYSIS_BUILDS', 'KPL_DATA_DIR', 'KPL_RECORDINGS', 'MIMO_OCR_CACHE',
+                    'HERO_LIST_FILE', 'CAMP_CONFIG_FILE', 'CAMP_REPLAY_DIR'):
+            env.pop(key, None)
+        env.update({'TRAINING_DEMO_ROOT':str(demo_root), 'KPL_DATA_DIR':str(data),
+                    'TRAINING_PORT':str(DEMO_PORT), 'TRAINING_DB':str(data/'training.sqlite3'),
                     'ANALYSIS_MATCHES':str(data/'matches'), 'ANALYSIS_IMPORTS':str(data/'imports'),
-                    'ANALYSIS_OFFICIAL':str(data/'official_replays'), 'ANALYSIS_V2':str(data/'v2')})
-        subprocess.Popen([sys.executable, str(HERE/'serve.py'), '--port', '8773'], cwd=str(ROOT), env=env,
+                    'ANALYSIS_OFFICIAL':str(data/'official_replays'),
+                    'ANALYSIS_BUILDS':str(data/'builds')})
+        # 完整单应用：采集、导入、分析路由与真实工作台完全一致。
+        subprocess.Popen([sys.executable, str(ROOT/'server.py')], cwd=str(ROOT), env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         import time
-        for _ in range(60):
+        for _ in range(200):            # server.py 冷启动要加载 OCR / 图像模块，留足时间
             status = existing()
-            if status and status.get('demo') and status.get('application') == 'training-data-v2':
-                return {'url': 'http://127.0.0.1:8773/', 'demo': True}
+            if _demo_status_is_ours(status):
+                return {'url': demo_url, 'demo': True}
             if status and status.get('occupied'):
                 break
-            time.sleep(.1)
+            time.sleep(.15)
         raise HTTPException(503, '演示环境未能启动，请检查端口或重试。')
 
 
-@router.get('/api/v2/space')
+@router.get('/api/v3/space')
 def spatial_analysis():
     return deep_analysis.space(OFFICIAL, DB.parent / 'camp_details', DB.parent)
 
 
-@router.get('/api/v2/economy')
+@router.get('/api/v3/economy')
 def economy_analysis():
     return deep_analysis.economy(OFFICIAL, DB.parent / 'camp_details')
 
@@ -452,15 +955,15 @@ def research_result(topic, values):
     return result
 
 
-@router.get('/api/v2/research/catalog')
+@router.get('/api/v3/research/catalog')
 def research_catalog():
     from studio_research import TOPICS
     return {'topics': [{'id':key,'name':name,'description':desc} for key,name,desc in TOPICS]}
 
 
-@router.get('/api/v2/research/reports')
+@router.get('/api/v3/research/reports')
 def research_reports():
-    path = DB.with_name('v2-reports.sqlite3')
+    path = DB.with_name('reports.sqlite3')
     if not path.is_file(): return {'reports': []}
     with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as conn:
         try: rows = conn.execute('SELECT id,title,created_at,topic FROM reports ORDER BY created_at DESC').fetchall()
@@ -468,9 +971,9 @@ def research_reports():
     return {'reports': [{'id':r[0],'title':r[1],'createdAt':r[2],'topic':r[3]} for r in rows]}
 
 
-@router.get('/api/v2/research/reports/{report_id}')
+@router.get('/api/v3/research/reports/{report_id}')
 def research_report(report_id: str):
-    path = DB.with_name('v2-reports.sqlite3')
+    path = DB.with_name('reports.sqlite3')
     if not path.is_file(): raise HTTPException(404, '报告不存在')
     with sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True) as conn:
         row=conn.execute('SELECT title,created_at,body FROM reports WHERE id=?', (report_id,)).fetchone()
@@ -478,12 +981,12 @@ def research_report(report_id: str):
     return {'title':row[0],'createdAt':row[1],'result':json.loads(row[2])}
 
 
-@router.get('/api/v2/research/{topic}')
+@router.get('/api/v3/research/{topic}')
 def get_research(topic: str, values=Depends(filters)):
     return research_result(topic, values)
 
 
-@router.post('/api/v2/research/reports')
+@router.post('/api/v3/research/reports')
 async def save_research_report(request: Request):
     body=await read_json(request)
     title=str(body.get('title') or '').strip() if isinstance(body,dict) else ''
@@ -498,13 +1001,13 @@ async def save_research_report(request: Request):
     if result['fingerprint'] != body.get('fingerprint'): raise HTTPException(409, '数据已变化，请刷新后再保存。')
     from datetime import datetime, timezone
     report_id=uuid.uuid4().hex; created=datetime.now(timezone.utc).isoformat(timespec='seconds')
-    with sqlite3.connect(DB.with_name('v2-reports.sqlite3')) as conn:
+    with sqlite3.connect(DB.with_name('reports.sqlite3')) as conn:
         conn.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL)')
         conn.execute('INSERT INTO reports VALUES(?,?,?,?,?)',(report_id,title,created,body['topic'],json.dumps(result,ensure_ascii=False)))
     return {'id':report_id,'title':title,'createdAt':created}
 
 
-@router.post('/api/v2/import/preview')
+@router.post('/api/v3/import/preview')
 async def preview_sheet(request: Request, name: str = ''):
     """Preview an uploaded sheet without deleting or overwriting files."""
     from sheet_import import SheetImportError, infer_profile, read_workbook
@@ -514,7 +1017,7 @@ async def preview_sheet(request: Request, name: str = ''):
     content = await request.body()
     if not content or len(content) > 20 * 1024 * 1024:
         raise HTTPException(400, '文件为空或超过 20 MB。')
-    folder = IMPORTS / '_v2_previews'; folder.mkdir(parents=True, exist_ok=True)
+    folder = IMPORTS / '_import_previews'; folder.mkdir(parents=True, exist_ok=True)
     preview_id = uuid.uuid4().hex
     path = folder / (preview_id + suffix)
     with path.open('xb') as out:
@@ -536,14 +1039,14 @@ async def preview_sheet(request: Request, name: str = ''):
     return {'previewId':preview_id, 'name':Path(name).name, 'sheets':sheets}
 
 
-@router.post('/api/v2/import/commit')
+@router.post('/api/v3/import/commit')
 async def commit_sheet(request: Request):
     from sheet_import import SheetImportError, infer_profile, read_workbook, write_staging
     body = await read_json(request)
     preview_id = body.get('previewId', '') if isinstance(body, dict) else ''
     if len(preview_id) != 32 or any(c not in '0123456789abcdef' for c in preview_id):
         raise HTTPException(400, '预览标识无效。')
-    folder = IMPORTS / '_v2_previews'
+    folder = IMPORTS / '_import_previews'
     try:
         meta = json.loads((folder/(preview_id+'.meta.json')).read_text(encoding='utf-8'))
         if meta.get('suffix') not in ('.csv','.tsv','.xlsx','.xlsm'): raise ValueError('invalid suffix')
@@ -557,7 +1060,7 @@ async def commit_sheet(request: Request):
             except (OSError, ValueError, AttributeError):
                 continue
         profiles={sheet['name']:infer_profile(sheet) for sheet in workbook['sheets']}
-        destination=IMPORTS/('v2-'+uuid.uuid4().hex[:16]); destination.mkdir(parents=True,exist_ok=False)
+        destination=IMPORTS/('import-'+uuid.uuid4().hex[:16]); destination.mkdir(parents=True,exist_ok=False)
         manifest=write_staging(workbook['source'],workbook['sheets'],profiles,destination,'inferred')
     except (OSError, ValueError, SheetImportError) as error:
         raise HTTPException(400, '读取表格失败：'+str(error)) from error
@@ -565,7 +1068,7 @@ async def commit_sheet(request: Request):
             'warnings':manifest.get('warnings',[]),'sheets':manifest.get('sheets',[])}
 
 
-@router.get('/api/v2/identity')
+@router.get('/api/v3/identity')
 def identity_view(repo=Depends(repository), values=Depends(filters)):
     data=repo.get(); rows,_=repo._selected_rows(values)
     groups={}
@@ -583,7 +1086,7 @@ def identity_view(repo=Depends(repository), values=Depends(filters)):
     return {'entries':entries,'members':members,'aliases':data.get('aliases') or {},'teamName':team}
 
 
-@router.post('/api/v2/identity/roster')
+@router.post('/api/v3/identity/roster')
 async def add_roster_member(request: Request):
     import workspace_store
     value=await read_json(request); name=str(value.get('name') or '').strip() if isinstance(value,dict) else ''
@@ -611,7 +1114,7 @@ async def add_roster_member(request: Request):
     return {'ok':True,'id':player_id}
 
 
-@router.post('/api/v2/identity/claim')
+@router.post('/api/v3/identity/claim')
 async def claim_identity(request: Request, repo=Depends(repository)):
     import workspace_store
     body=await read_json(request)
@@ -638,7 +1141,7 @@ async def claim_identity(request: Request, repo=Depends(repository)):
     return {'ok':True,'playerId':player_id}
 
 
-@router.post('/api/v2/identity/name')
+@router.post('/api/v3/identity/name')
 async def name_identity(request: Request, repo=Depends(repository)):
     """教练给未命名的参赛标识命名，并归入战队；写入名单与别名。"""
     import workspace_store
@@ -706,7 +1209,7 @@ async def name_identity(request: Request, repo=Depends(repository)):
     return {'ok': True, 'playerId': player_id, 'team': team_name}
 
 
-@router.post('/api/v2/match-bp/{key:path}')
+@router.post('/api/v3/match-bp/{key:path}')
 
 async def update_match_bp(key: str, request: Request, repo=Depends(repository)):
     """Save only explicitly entered BP order in a V3-specific overlay."""
@@ -723,17 +1226,17 @@ async def update_match_bp(key: str, request: Request, repo=Depends(repository)):
     if not any(hero for kind in ('bans','picks') for side in ('left','right') for hero in bp[kind][side]):
         raise HTTPException(400, '请至少填写一项已确认的禁选。')
     with sqlite3.connect(DB) as connection:
-        connection.execute('CREATE TABLE IF NOT EXISTS v2_bp_overrides (match_key TEXT PRIMARY KEY,body TEXT NOT NULL,revision INTEGER NOT NULL,updated_at REAL NOT NULL)')
+        connection.execute('CREATE TABLE IF NOT EXISTS bp_overrides (match_key TEXT PRIMARY KEY,body TEXT NOT NULL,revision INTEGER NOT NULL,updated_at REAL NOT NULL)')
         connection.execute('BEGIN IMMEDIATE')
-        current=connection.execute('SELECT revision FROM v2_bp_overrides WHERE match_key=?',(key,)).fetchone()
+        current=connection.execute('SELECT revision FROM bp_overrides WHERE match_key=?',(key,)).fetchone()
         revision=current[0] if current else 0
         if revision != expected: raise HTTPException(409, 'BP 已被修改，请刷新后重新核对。')
-        connection.execute('INSERT INTO v2_bp_overrides VALUES(?,?,?,?) ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_at=excluded.updated_at',
+        connection.execute('INSERT INTO bp_overrides VALUES(?,?,?,?) ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,revision=excluded.revision,updated_at=excluded.updated_at',
                            (key,json.dumps(bp,ensure_ascii=False),revision+1,time.time()))
     return {'ok':True,'revision':revision+1}
 
 
-@router.post('/api/v2/match-meta/{key:path}')
+@router.post('/api/v3/match-meta/{key:path}')
 async def update_match_meta(key: str, request: Request, repo=Depends(repository)):
     """Write the verified match overlay without invoking V1 file cleanup."""
     import time
@@ -779,7 +1282,7 @@ async def update_match_meta(key: str, request: Request, repo=Depends(repository)
     return {'ok': True, 'meta': previous}
 
 
-@router.get('/api/v2/workspace/overview')
+@router.get('/api/v3/workspace/overview')
 def workspace_overview(repo=Depends(repository)):
     selection = {'sources': list(ALL_SOURCES), 'excludeSeeds': True, 'ownOnly': True}
     return {'overview': repo.overview(selection)}
@@ -798,14 +1301,14 @@ def migration_candidates(repo):
     return ws, counts, [m for m in matches if m.get('key') and m['key'] not in existing]
 
 
-@router.get('/api/v2/workspace/migration')
+@router.get('/api/v3/workspace/migration')
 def migration_preview(repo=Depends(repository)):
     _, counts, candidates = migration_candidates(repo)
     return {'counts': counts, 'candidates': len(candidates),
             'note': '仅新增未迁移的真实对局基本信息；不覆盖现有记录，不推测选手身份、对手归属及 BP 手序。'}
 
 
-@router.post('/api/v2/workspace/migration')
+@router.post('/api/v3/workspace/migration')
 def migrate_new_matches(repo=Depends(repository)):
     import time
     ws, _, candidates = migration_candidates(repo)
@@ -834,7 +1337,7 @@ def migrate_new_matches(repo=Depends(repository)):
     return {'ok': True, 'created': inserted}
 
 
-@router.get('/api/v2/team-bp')
+@router.get('/api/v3/team-bp')
 def team_bp():
     """Opponent picks and bans from recorded lineups, without inventing order."""
     import team_clusters
@@ -866,7 +1369,7 @@ def team_bp():
     return {'teams': teams}
 
 
-@router.get('/api/v2/bp-board')
+@router.get('/api/v3/bp-board')
 def bp_board():
     """BP 三页共用的全量聚合：营地面板终局名单 + 战队 / 教练档案。
 
@@ -925,6 +1428,10 @@ def bp_board():
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
             'players': {'own': [p.get('name') for p in panel['own_roster']],
                         'enemy': [p.get('name') for p in panel['enemy_roster']]},
+            # 终局面板的经济 / 击杀 / 推塔 / 龙，供教练档案与 BP 页做资源口径；
+            # 视角固定为「本队 = own」，前端按需要翻转成教练一方。
+            'stats': {'own': (bp.get('teamStats') or {}).get(own) or {},
+                      'enemy': (bp.get('teamStats') or {}).get(enemy) or {}},
         })
     games.sort(key=lambda g: g['start'], reverse=True)
     return {
@@ -937,11 +1444,21 @@ def bp_board():
     }
 
 
-@router.get('/api/v2/effect')
+@router.get('/api/v3/effect')
 def training_effect_analysis():
     import workspace_store
     workspace = workspace_store.Workspace(DB).ensure_schema()
     return deep_analysis.training_effects(DB.parent / 'camp_details', workspace)
+
+
+@router.get('/api/v3/team-training')
+def team_training_ledger():
+    """按对手的训练台账：训练计划里的排期 + 营地交手日自动归集。"""
+    import team_clusters
+    import workspace_store
+    workspace = workspace_store.Workspace(DB).ensure_schema()
+    return team_clusters.team_training(MATCHES.parent / 'camp_details', DB,
+                                       workspace.list_schedules(), MATCHES)
 
 
 # ── 选手看板：营地十人面板 → 逐人逐局记录 ──────────────────────────────
@@ -1164,7 +1681,7 @@ def _players_board():
             '_kda': [], '_gpm': [], '_dpm': [], '_dtpm': [], '_part': [], '_goldShare': [],
             '_damageShare': [], '_takenShare': [], '_rating': [], 'mvp': 0, '_cs': [],
             'lanes': Counter(), 'heroes': Counter(), 'heroWins': Counter(),
-            'heroDecided': Counter(), 'recent': []})
+            'heroDecided': Counter(), 'heroRating': defaultdict(list), 'heroKda': defaultdict(list), 'recent': []})
         bucket['games'] += 1
         if row['result'] in ('win', 'loss'):
             bucket['decided'] += 1
@@ -1185,6 +1702,9 @@ def _players_board():
             bucket['heroDecided'][row['hero']] += 1
             if row['result'] == 'win':
                 bucket['heroWins'][row['hero']] += 1
+        if row.get('rating') is not None:
+            bucket['heroRating'][row['hero']].append(row['rating'])
+        bucket['heroKda'][row['hero']].append(row['kda'])
         bucket['recent'].append(row)
 
     def mean(values, digits=1):
@@ -1192,6 +1712,36 @@ def _players_board():
         return round(sum(values) / len(values), digits) if values else None
 
     players = []
+    def split_of(rows, key):
+        """按对手 / 训练日切片的个人聚合；只统计该维度下的局，不跨切片平均。"""
+        out = {}
+        for row in rows:
+            name = str(row.get(key) or '').strip()
+            if not name:
+                continue
+            item = out.setdefault(name, {'games': 0, 'wins': 0, 'decided': 0, 'mvp': 0,
+                                         '_kda': [], '_gpm': [], '_dpm': [], '_part': [],
+                                         '_damageShare': [], '_rating': []})
+            item['games'] += 1
+            if row['result'] in ('win', 'loss'):
+                item['decided'] += 1
+                if row['result'] == 'win':
+                    item['wins'] += 1
+            if row.get('mvp'):
+                item['mvp'] += 1
+            for bucket_key, field in (('_kda', 'kda'), ('_gpm', 'gpm'), ('_dpm', 'dpm'),
+                                      ('_part', 'participation'), ('_damageShare', 'damageShare'),
+                                      ('_rating', 'rating')):
+                if row.get(field) is not None:
+                    item[bucket_key].append(row[field])
+        return {name: {
+            'games': item['games'], 'wins': item['wins'], 'decided': item['decided'],
+            'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None,
+            'kda': mean(item['_kda'], 2), 'gpm': mean(item['_gpm'], 0), 'dpm': mean(item['_dpm'], 0),
+            'participation': mean(item['_part'], 1), 'damageShare': mean(item['_damageShare'], 1),
+            'rating': mean(item['_rating'], 1), 'mvp': item['mvp'],
+        } for name, item in out.items()}
+
     for bucket in buckets.values():
         lane = bucket['lanes'].most_common(1)[0][0] if bucket['lanes'] else ''
         member = name_to_member.get(bucket['name'])
@@ -1206,9 +1756,13 @@ def _players_board():
             'goldShare': mean(bucket['_goldShare'], 1), 'damageShare': mean(bucket['_damageShare'], 1),
             'takenShare': mean(bucket['_takenShare'], 1), 'cs': mean(bucket['_cs'], 0),
             'rating': mean(bucket['_rating'], 1), 'mvp': bucket['mvp'],
+            'splits': {'opponent': split_of(bucket['recent'], 'opponent'),
+                       'day': split_of(bucket['recent'], 'day')},
             'heroes': [{'hero': hero, 'games': n,
                         'wins': bucket['heroWins'].get(hero, 0),
-                        'decided': bucket['heroDecided'].get(hero, 0)}
+                        'decided': bucket['heroDecided'].get(hero, 0),
+                        'rating': mean(bucket['heroRating'].get(hero), 1),
+                        'kda': mean(bucket['heroKda'].get(hero), 2)}
                        for hero, n in bucket['heroes'].most_common(6)],
             '_recent': sorted(bucket['recent'], key=lambda item: (item['sort'], item['gameId'])),
             '_ratings': [row['rating'] for row in sorted(bucket['recent'], key=lambda item: (item['sort'], item['gameId']))
@@ -1261,6 +1815,25 @@ def _players_board():
               'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None}
              for key, item in pair_map.items() if item['games'] >= 2]
     pairs.sort(key=lambda item: (-item['games'], -item['wins']))
+
+    # 搭档矩阵用：所有出现过的双人组合（含只同场 1 局的），前端只取前若干行。
+    duos = [{'a': key[0], 'b': key[1], 'games': item['games'], 'wins': item['wins'],
+             'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None}
+            for key, item in pair_map.items()]
+    duos.sort(key=lambda item: (-item['games'], -item['wins']))
+    # 稳定五人组：同阵营五人完全相同的组合，按出现次数排。
+    lineup_map = {}
+    for game in games:
+        names = tuple(sorted(item['name'] for item in game['own']))
+        if len(names) != 5:
+            continue
+        item = lineup_map.setdefault(names, {'games': 0, 'wins': 0})
+        item['games'] += 1
+        if game['result'] == 'win':
+            item['wins'] += 1
+    lineups = [{'names': list(names), 'games': item['games'], 'wins': item['wins']}
+               for names, item in lineup_map.items()]
+    lineups.sort(key=lambda item: (-item['games'], -item['wins']))
 
     # 位置对照：本队 / 对手在同一位置的分均与参团。
     lane_rows = []
@@ -1320,6 +1893,10 @@ def _players_board():
     board = {'games': sorted(games, key=lambda game: (game['sort'], game['id']), reverse=True),
              'players': sorted(players, key=lambda item: (-item['games'], -item['wins'], item['name'])),
              'lanes': lane_rows, 'pairs': pairs[:24], 'roster': roster,
+             'duos': duos[:40], 'lineups': lineups[:12],
+             'opponents': [{'name': name, 'games': n}
+                           for name, n in Counter(row['opponent'] for row in records if row.get('opponent')).most_common(20)],
+             'days': sorted({row['day'] for row in records if row.get('day')}, reverse=True),
              'unclaimed': [{'name': player['name'], 'games': player['games'], 'lane': player['lane'],
                             'winRate': player['winRate'], 'heroes': [item['hero'] for item in player['heroes'][:3]],
                             'teammates': []} for player in unclaimed[:24]],
@@ -1338,13 +1915,13 @@ def _players_board():
     return board
 
 
-@router.get('/api/v2/players-board')
-def players_board_v2():
+@router.get('/api/v3/players-board')
+def players_board():
     """选手板块四页共用聚合：逐人逐局记录、位置对照、搭档、认领状态。"""
     return _players_board()
 
 
-@router.get('/api/v2/vocab')
+@router.get('/api/v3/vocab')
 def vocab_board():
     """赛训词表：版本 / 规则 / 赛制 / 训练组。
 
@@ -1392,7 +1969,7 @@ def _hero_facts():
     return _hero_facts_cache
 
 
-@router.get('/api/v2/hero-detail/{hero}')
+@router.get('/api/v3/hero-detail/{hero}')
 def hero_detail(hero: str, repo=Depends(repository)):
     """英雄详情页的聚合数据：选手使用榜 / 战队使用 / 本队均值对照 / 成长曲线 / 选手出装。
 
@@ -1501,6 +2078,6 @@ app.include_router(router)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port', type=int, default=8771, help='V3 dev/demo port (default: 8771)')
+    parser.add_argument('--port', type=int, default=8771, help='V3 dev-only port (default: 8771)')
     uvicorn.run(app, host='127.0.0.1', port=parser.parse_args().port)
 

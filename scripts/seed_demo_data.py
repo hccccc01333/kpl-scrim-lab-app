@@ -15,8 +15,10 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 ROSTER = [
     ('demo-p1', '示例选手·一', '对抗路'),
@@ -111,11 +113,50 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base', default='http://127.0.0.1:8766')
     parser.add_argument('--games', type=int, default=12)
+    parser.add_argument('--with-camp', action='store_true',
+                        help='同时写营地阵容面板与数据包（战队档案 / 英雄榜 / BP 页需要）')
     args = parser.parse_args()
 
-    status, _ = call(args.base, '/api/health')
+    status, health = call(args.base, '/api/health')
     if status != 200:
         raise SystemExit('服务未启动：' + args.base)
+
+    if args.with_camp:
+        # 服务端在 /api/health 里报了真实数据目录，面板和 bundle 直接写进去。
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import make_mock_camps
+
+        data_dir = Path(health['matchesDir']).parent
+        info = make_mock_camps.generate(data_dir)
+        print(f"camp panels: {info['games']} 局 -> {info['panels']}")
+        print(f"bundles: {info['matches']}")
+
+        # 聚类出来的战队默认叫「待命名战队 #N」，给它们补上演示队名。
+        names = list(make_mock_camps.BUNDLE_NAMES.values())
+        status, listing = call(args.base, '/api/studio/teams')
+        renamed = 0
+        assigned = 0
+        for team in (listing or {}).get('teams') or []:
+            if str(team.get('name') or '').strip():
+                continue  # 已经命过名的战队不动
+            # 面板里的昵称带战队前缀（青岚·辰 / 白虎·刀），队名直接从它推出来；
+            # 推不出来的（替补簇等）按顺序补一个。
+            players = team.get('players') or []
+            first = players[0] if players else ''
+            raw = first.get('name') if isinstance(first, dict) else str(first)
+            prefix = raw.split('·')[0].strip() if raw and '·' in raw else ''
+            if prefix:
+                label = f'{prefix}战队'
+            elif assigned < len(names):
+                label = names[assigned]
+            else:
+                label = f'{names[assigned % len(names)]}{assigned - len(names) + 2}'
+            code, _ = call(args.base, '/api/studio/teams/rename',
+                           {'id': team['id'], 'name': label}, method='POST')
+            if code == 200:
+                renamed += 1
+            assigned += 1
+        print(f"teams renamed: {renamed}")
 
     rng = random.Random(20261105)
 
@@ -142,7 +183,9 @@ def main():
             'session': rng.choice(SESSIONS),
             'side': 'left', 'winner': 'left' if left_score > right_score else 'right',
             'scores': {'left': left_score, 'right': right_score},
-            'duration': rng.randint(1100, 1900),
+            # /api/matches 的 duration 单位是分钟（手动录入表单也是分钟），
+            # 后端会换算成秒；这里写秒会让首页显示「1805:00」这种离谱时长。
+            'duration': rng.randint(18, 32),
             'status': 'confirmed',
             'reviewed': True,
             'players': players,

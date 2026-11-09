@@ -1,7 +1,8 @@
-"""Create an isolated, clearly labelled demonstration dataset for V2.
+"""Create an isolated, clearly labelled demonstration dataset for the workbench.
 
-All records are synthetic; no real match, settings, or replay files are read or
-modified. Generation only writes into a new directory supplied by the caller.
+The demo runs the same single-app server as the real workbench. All records are
+synthetic; no real match, settings, or replay files are read or modified.
+Generation only writes into a new directory supplied by the caller.
 """
 import json
 import math
@@ -28,7 +29,7 @@ def create(root):
     root.mkdir(parents=True)
     data = root / 'data'; data.mkdir()
     matches, camp, replays = (data / name for name in ('matches', 'camp_details', 'official_replays'))
-    for folder in (matches, camp, replays, data / 'imports', data / 'v2'):
+    for folder in (matches, camp, replays, data / 'imports', data / 'builds'):
         folder.mkdir()
     db = data / 'training.sqlite3'
     with sqlite3.connect(db) as conn:
@@ -138,5 +139,5 @@ def create(root):
         team_key=next((key for key in opponent_names if any(str(pid).startswith(key+'-') for pid in ids)),None)
         if team_key: team_clusters.rename_team(db,team['id'],opponent_names[team_key],None)
     ws.save_training(goal='提升参团效率',intervention='联动专项与赛后复盘',start_date='2026-10-10',end_date='2026-10-20',metric='participation',target=65)
-    write_json(root/'DEMO.json',{'type':'synthetic-v2','matches':len(plan),'notice':'全部为虚构演示数据'})
+    write_json(root/'DEMO.json',{'type':'synthetic-v3','matches':len(plan),'notice':'全部为虚构演示数据'})
     return root

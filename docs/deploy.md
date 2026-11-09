@@ -24,7 +24,7 @@ python -m pip install -r requirements.txt
 python server.py
 ```
 
-打开 <http://127.0.0.1:8766/>（V3 界面；V1/V2 入口已退役）。
+打开 <http://127.0.0.1:8766/>（V3 界面）。
 
 ### Linux / macOS
 
@@ -61,7 +61,7 @@ export MIMO_OCR_MODEL=/srv/models/Xiaomi-OCR-0
 | `ANALYSIS_MATCHES` | `data/matches` | 分析比赛 JSON |
 | `ANALYSIS_IMPORTS` | `data/imports` | 导入数据 |
 | `ANALYSIS_OFFICIAL` | `data/official_replays` | 营地回放 |
-| `ANALYSIS_V2` | `data/v2` | V2 时间轴 |
+| `ANALYSIS_BUILDS` | `data/builds` | 出装时间轴 |
 | `KPL_RECORDINGS` | `data/recordings` | 录屏原文件 |
 | `TRAINING_ALLOWED_HOSTS` | `127.0.0.1,localhost,::1` | 允许的 Host |
 | `TRAINING_ALLOW_REMOTE` | 关闭 | 允许非本机 Host；仅可信局域网使用 |
@@ -88,7 +88,7 @@ python server.py
 docker compose up --build
 ```
 
-打开 <http://127.0.0.1:8766/>（V3 界面；V1/V2 入口已退役）。数据持久化在 `./data`。
+打开 <http://127.0.0.1:8766/>（V3 界面）。数据持久化在 `./data`。
 默认 compose 只映射到 `127.0.0.1`；需要局域网访问时修改端口映射并设置
 `TRAINING_ALLOW_REMOTE=1`。
 
@@ -116,7 +116,7 @@ python -m unittest tests.test_replay_checkpoints_api -v
 ## 6. 数据与备份
 
 - 业务数据：`data/training.sqlite3`
-- 分析/导入/营地/V2：各自的 `data/...` 目录
+- 分析/导入/营地/时间轴：各自的 `data/...` 目录
 - 录屏原文件：`KPL_RECORDINGS` 目录，默认 `data/recordings`
 - 备份：停服后复制整个 `data/`；或使用页面内的 JSON 备份（原图/识别记录）
 

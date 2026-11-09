@@ -137,7 +137,7 @@ def main():
     if not any(team['id'] == own_team_id for team in ws.list_teams(include_archived=True)):
         ws.upsert_team(own_team_id, name='我方战队', source='migration')
 
-    # 对手战队：按聚类结果建 teams（命名走覆盖层，未命名的用「待命名对手 #N」）
+    # 对手战队：按聚类结果建 teams（命名走覆盖层，未命名的用「待命名战队 #N」）
     clusters = team_clusters.list_teams(camp_dir, db_path, '我方战队')
     for team in clusters['teams']:
         ws.upsert_team(team['id'], name=team['displayName'], source='migration')
