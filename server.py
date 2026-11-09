@@ -16,7 +16,6 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta
 from pathlib import Path
 from urllib import parse as url_parse
 
@@ -36,7 +35,7 @@ from version import VERSION, RELEASE_DATE, RELEASE_NAME
 import media_tools
 import focus as focus_module
 import camp_replay
-from camp_time import CAMP_TZ, camp_times
+from camp_time import camp_times
 from collection_contract import validate_sheet
 import channel_store
 import mimo_ocr

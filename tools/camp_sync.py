@@ -23,7 +23,6 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from urllib import parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camp_client import battle_detail, battle_list, load_account  # noqa: E402
@@ -69,7 +68,7 @@ def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
     hasMore=false（上限 60 页），增量同步沿用 8 页。"""
     state = load_state()
     watermark = int(state.get(friend_user_id) or 0)
-    account = load_account()  # 提前校验凭证，避免跑到一半发现没登录
+    load_account()  # 提前校验凭证（无凭证直接抛错），避免跑到一半才发现没登录
     DETAIL_DIR.mkdir(parents=True, exist_ok=True)
 
     summary = {'fetched': 0, 'saved': 0, 'cached': 0, 'failed': 0, 'pages': 0,

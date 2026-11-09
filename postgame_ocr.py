@@ -565,7 +565,6 @@ def _column_readings(image, source_image, rows):
 
 def _read_hero(image, tokens, row, side, source_image=None, column_hero_readings=None):
     entries = catalog()['entries']
-    hero_names = {entry['name'] for entry in entries if entry['kind'] == 'hero'}
     low, high = (.0, .14) if side == 'left' else (.49, .63)
     readings = []
     for token in tokens:
@@ -1033,7 +1032,9 @@ def _read_columns_with_profile(image, row_tokens, all_tokens, row, side, profile
                             'confidence': probe[1], 'box': probe[2]}
             if cell is not None:
                 fields[column['field']] = cell
-            elif column['kind'] == 'int':
+            elif column['kind'] == 'int' and len(_compact(_text(token))) == 1:
+                # 只对单位数 token 做字形互核：多位数被重读成单位数属于重读失败，
+                # 不能当成翻转依据。
                 fields[column['field']] = _glyph_crosscheck_int(image, token, parsed)
             else:
                 fields[column['field']] = _field(token, parsed)
