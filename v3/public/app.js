@@ -1,4 +1,4 @@
-﻿import { groupFor } from './navigation.js';
+import { groupFor } from './navigation.js';
 import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
@@ -1334,12 +1334,19 @@ function matchPage(m) {
     };
     const ownCombos = collect('own', heroesOf(ownSideKey));
     const foeCombos = collect('enemy', heroesOf(enemySideKey));
-    const comboCard = (combo) => `<article class="md-combo-card">
+    const comboCard = (combo) => {
+      /* KPL 那一行是「这套组合职业赛场见得到吗」，自家那两行是「你们自己打得怎么样」——
+         两种口径分开写，不合成一个结论。 */
+      const kplRow = (m.bpFacts?.kpl?.comboIndex || {})[combo.heroes.join('+')];
+      return `<article class="md-combo-card">
       <div class="md-combo-heroes">${combo.heroes.map((hero) => portrait(hero)).join('<i>+</i>')}</div>
       <b>${esc(combo.heroes.join(' + '))}</b>
       <p>${fmt(combo.games)} 局 ${fmt(combo.wins)} 胜
         <span class="${combo.synergy >= 0 ? 'is-good' : 'is-bad'}" title="搭档加成 = 两人同场时的胜率 − 两名英雄各自平时胜率算出的预期值（${pct(combo.winRate)} − ${pct(combo.expected)}）">搭档加成 ${Math.abs(combo.synergy) < 0.05 ? '0' : diff(combo.synergy)} 点</span></p>
+      ${kplRow ? `<p class="md-combo-kpl">KPL ${fmt(kplRow.n)} 场 · 胜率 ${fmt(kplRow.wr, 1)}%${kplRow.year ? `（${kplRow.year}）` : ''}</p>`
+        : '<p class="md-combo-kpl is-quiet">KPL 没出现过</p>'}
     </article>`;
+    };
     const combos = (ownCombos.length || foeCombos.length) ? `<div class="md-bp-combos">
       <div class="md-bp-combo-side"><span>我方组合</span><div class="md-combo-grid">${ownCombos.map(comboCard).join('') || '<small>当前阵容没有历史组合样本</small>'}</div></div>
       <div class="md-bp-combo-side foe"><span>对手组合</span><div class="md-combo-grid">${foeCombos.map(comboCard).join('') || '<small>对手阵容没有历史组合样本</small>'}</div></div>
@@ -1373,7 +1380,11 @@ function matchPage(m) {
     const positiveCombos = ownCombos.filter((combo) => combo.synergy > 0).length;
     const parts = [];
     if (judged.length) {
-      parts.push(`巅峰千强五路可判 ${judged.length} 路：占优 ${ahead}、吃亏 ${behind}`);
+      const bits = [];
+      if (ahead) bits.push(`占优 ${ahead}`);
+      if (behind) bits.push(`吃亏 ${behind}`);
+      parts.push(bits.length ? `巅峰千强五路可判 ${judged.length} 路：${bits.join('、')}`
+        : `巅峰千强五路可判 ${judged.length} 路，都是打平`);
       if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路`);
     } else {
       parts.push('五路对位在巅峰千强都没有样本');

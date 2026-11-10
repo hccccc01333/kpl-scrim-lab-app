@@ -124,9 +124,19 @@ def for_match(detail):
     pair_hits.sort(key=lambda item: -item['n'])
     trio_hits.sort(key=lambda item: -item['n'])
 
+    # 双方阵容里所有双人组合的 KPL 战绩，供「联动组合」卡片直接查（自家 + 对手）
+    combo_index = {}
+    for group in (heroes, fh := sorted({h for h in foe_heroes if h})):
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                row = kpl_pairs.get((group[i], group[j]))
+                if row:
+                    combo_index[f'{group[i]}+{group[j]}'] = {
+                        'n': row['n'], 'wr': row['wr'], 'year': row.get('year')}
+                    combo_index[f'{group[j]}+{group[i]}'] = combo_index[f'{group[i]}+{group[j]}']
+
     # 对手侧的组合，给 BP 复盘做对照
     foe_pairs = []
-    fh = sorted({h for h in foe_heroes if h})
     for i in range(len(fh)):
         for j in range(i + 1, len(fh)):
             row = kpl_pairs.get((fh[i], fh[j]))
@@ -144,5 +154,6 @@ def for_match(detail):
                 'games': combo_data.get('games'), 'minGames': combo_data.get('minGames'),
                 'pairs': pair_hits[:6], 'trios': trio_hits[:6], 'foePairs': foe_pairs[:4],
                 'hitPairs': len(pair_hits), 'hitTrios': len(trio_hits),
-                'totalPairs': len(heroes) * (len(heroes) - 1) // 2},
+                'totalPairs': len(heroes) * (len(heroes) - 1) // 2,
+                'comboIndex': combo_index},
     }

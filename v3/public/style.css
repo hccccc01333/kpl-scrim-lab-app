@@ -7985,3 +7985,6 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-kplhit-row i { font-style: normal; color: var(--quiet); font-size: 10px; }
 .md-kplhit-row b { font-weight: 700; font-variant-numeric: tabular-nums; }
 .md-kplhit-row small { color: var(--quiet); }
+
+.md-combo-kpl { margin: 0; color: var(--accent); font-size: 11px; font-variant-numeric: tabular-nums; }
+.md-combo-kpl.is-quiet { color: var(--quiet); }
