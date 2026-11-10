@@ -7813,3 +7813,14 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .mp-legend-foot { padding: 2px var(--md-pad) 16px; justify-content: flex-start; color: var(--muted); }
 
 .mp-legend span { white-space: nowrap; flex: 0 0 auto; }
+
+/* 对位热区：离散分格 + 分期快捷键 */
+.md-heat-phases { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px var(--md-pad) 10px; }
+.md-heat-phase { padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--paper); color: var(--muted); font: 600 11.5px/1 var(--font); cursor: pointer; }
+.md-heat-phase:hover { color: var(--text); border-color: var(--accent); }
+.md-heat-phase[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: var(--soft); }
+.md-heat-canvas { image-rendering: pixelated; border-radius: 8px; }
+
+/* 网格线在浅色主题下要看得见（原来是 rgba(255,255,255,.05)，只适合深底） */
+.md-heat-canvas { background: color-mix(in srgb, var(--surface) 55%, transparent); border: 1px solid var(--line); }

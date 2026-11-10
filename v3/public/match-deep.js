@@ -1,4 +1,4 @@
-/* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
+﻿/* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
    全部为纯函数式构建，数据来自 /api/matches/<key>、/api/replay/<key>、/api/positions/<key>。
    视觉口径：深墨蓝底 + 金（本队）· 青（对手）+ 等宽数字 + 体素方块。 */
 
@@ -9,14 +9,23 @@ const HALF = 0.5;        // 半区阈值（越过中线即入侵）
 const STILL_SECONDS = 12; // 连续静止超过该秒数视为死亡/暂停，样本剔除（与全景页一致）
 const PROX_RADIUS = 22.5; // 集结半径：地图对角线 149.91 的 15%
 const PROX_SECONDS = 5;   // 集结需持续时长
-/* 并线（打野）：教练 2026-11-10 第四波点名的指标。营地没有这个字段，只能拿逐秒位置
-   近似——打野和某一路队友靠在一起停留够久记一次。阈值都在这里，改口径只改这一处。 */
-const JOIN_MATE = 20;     // 与该路队友的距离上限（与集结半径同量级）
-const JOIN_SIDE = 8;      // 边路半区：中路对角线把地图分成两半，y−x 超过该值算过了线
-const JOIN_MID = 10;      // 中路走廊：到对角线的垂直距离上限
-const JOIN_BASE = 34;     // 己方基地半径内不算（出生点就压在两条边路的延长线上）
-const JOIN_SECONDS = 6;   // 一次并线的最短停留
-const JOIN_MERGE = 10;    // 同一路两次之间的间隔小于该秒数并成一次（同一波兵）
+/* 并线（教练 2026-11-10 第四波口径）：兵线在的时候，同一条路上本队 2～3 个人一起吃
+   这波线。交汇点会随推塔前后移动（也可能被反推到自家二塔甚至高地前），所以只按
+   「这波兵已经出了」切窗口，不假定交汇位置；三路走廊用回放坐标里的定值折线。
+   阈值都收在这里，改口径只改这一处。 */
+const WAVE_FIRST = 10;        // 第一波兵线出发（docs/economy_rules.md §4.1：10+33(n−1)）
+const WAVE_GAP = 33;          // 波次间隔
+const LANE_CORRIDOR = 15;     // 到该路折线的距离上限（塔位内缩约 15）
+const LANE_CLUSTER = 20;      // 一起吃线的彼此距离上限
+const LANE_BASE = 34;         // 己方基地半径内不算（出生点压在边路延长线上）
+const LANE_HOLD = 4;          // 同处最短时长
+/* 三条路的折线（营地坐标 ±57，塔位内缩在各边 42 处）：
+   对抗路＝左侧竖段接上边横段，发育路＝下边横段接右侧竖段，中路＝对角线。 */
+const LANE_PATH = {
+  '对抗路': [[-42, -58], [-42, 42], [58, 42]],
+  '发育路': [[-58, -42], [42, -42], [42, 58]],
+  '中路': [[-58, -58], [58, 58]],
+};
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -41,87 +50,112 @@ function activeMask(points, step) {
   return mask;
 }
 
-/* 并线（打野）：营地没有这个字段，用逐秒位置近似。
-   一次并线 = 打野和某一路队友靠在一起（≤ JOIN_MATE）停留 ≥ JOIN_SECONDS，
-   同一路两次之间 ≤ JOIN_MERGE 视为同一波兵，不重复计。
-   分路靠中路对角线判：y−x > JOIN_SIDE 在对抗路半区、< −JOIN_SIDE 在发育路半区，
-   到对角线的垂直距离 ≤ JOIN_MID 算中路。己方基地 JOIN_BASE 内、坐标 (0,0) 占位、
-   静止样本（阵亡/暂停）都不计。
-   输出按「阵营-槽位」索引，口径写在页面上：近似值，只做同局两队横向比较，不进评级。
-   `laneOf` 由调用方注入（面板里是按 position 字段取分路的）。 */
+/* 并线（教练 2026-11-10 第四波口径）：兵线在的时候，同一条路上本队 2～3 个人一起吃
+   这波线。交汇点会随推塔前后移动（也可能被反推到自家二塔甚至高地前），所以只按
+   「这波兵已经出了」切窗口，不假定交汇位置：第 n 波在 10+33(n−1) 秒出发，
+   到第 n+1 波出发之间就是这一波的窗口。路用 LANE_PATH 折线上的距离判。
+   一次并线 = 同一波、同一条路上，本队 2～3 人聚成一组、组里有这条路的对线选手，
+   持续 ≥ LANE_HOLD 秒；一波一线最多记一次。5 人以上算团战/推进，不算并线。
+   己方基地内、坐标 (0,0) 占位、阵亡冻结样本都不计。
+   输出按「阵营-槽位」索引：{ total, lanes, waves: [{t, wave, lane, size}] }，
+   口径写在页面上：近似值，只做同局两队横向比较，不进评级。
+   `laneOf` 由调用方注入（面板里按 position 字段取分路）。 */
 export function joinLaneStats(positions, players, laneOf) {
   const out = new Map();
   if (!positions || !Array.isArray(positions.players) || !positions.players.length) return out;
   const step = positions.step || 2;
-  const srcOf = new Map();
   const laneBySlot = new Map();
   for (const p of players || []) {
     if (!p || p.slot === undefined || p.slot === null) continue;
-    const key = `${p.camp}-${p.slot}`;
     const lane = laneOf(p);
-    if (lane) laneBySlot.set(key, lane);
+    if (lane) laneBySlot.set(`${p.camp}-${p.slot}`, lane);
   }
-  for (const src of positions.players) srcOf.set(`${src.camp}-${src.slot}`, src);
-  /* 同一阵营的路友：对抗路 / 中路 / 发育路各一个（游走本身也在并线，不当作锚点） */
-  const matesByCamp = new Map();
-  for (const [key, lane] of laneBySlot.entries()) {
-    if (!['对抗路', '中路', '发育路'].includes(lane)) continue;
-    const src = srcOf.get(key);
-    if (!src || !Array.isArray(src.points) || !src.points.length) continue;
-    if (!matesByCamp.has(src.camp)) matesByCamp.set(src.camp, []);
-    matesByCamp.get(src.camp).push([lane, src]);
-  }
+  const crewByCamp = { blue: [], red: [] };
   for (const src of positions.players) {
-    if (laneBySlot.get(`${src.camp}-${src.slot}`) !== '打野') continue;
-    if (!Array.isArray(src.points) || src.points.length < 3) continue;
-    const mates = matesByCamp.get(src.camp) || [];
-    if (!mates.length) continue;
-    const mask = activeMask(src.points, step);
-    const base = src.camp === 'blue' ? [-58, -58] : [58, 58];
-    const lanes = {};
-    const times = [];
-    for (const [lane, mate] of mates) {
-      const starts = [];
-      let runStart = null;
-      let lastEnd = null;
-      const close = (index) => {
-        if (runStart !== null && index - runStart >= JOIN_SECONDS) starts.push(runStart * step);
-        runStart = null;
-        lastEnd = index;
-      };
-      for (let i = 0; i < src.points.length; i += 1) {
-        const here = src.points[i];
-        const mate_ = mate.points[i];
-        let ok = false;
-        if (mask[i] && Array.isArray(here) && Array.isArray(mate_)) {
-          const [x, y] = here;
-          const [tx, ty] = mate_;
-          ok = !(x === 0 && y === 0)
-            && Math.hypot(x - base[0], y - base[1]) > JOIN_BASE
-            && Math.hypot(x - tx, y - ty) <= JOIN_MATE
-            && (lane === '中路'
-              ? Math.abs(y - x) / Math.SQRT2 <= JOIN_MID
-              : (lane === '对抗路' ? y - x > JOIN_SIDE : y - x < -JOIN_SIDE));
+    const key = `${src.camp}-${src.slot}`;
+    const lane = laneBySlot.get(key) || '';
+    (crewByCamp[src.camp] || (crewByCamp[src.camp] = [])).push({
+      key, lane, points: src.points, camp: src.camp,
+    });
+  }
+  const laneDistance = (x, y, lane) => {
+    const path = LANE_PATH[lane];
+    let best = Infinity;
+    for (let i = 0; i < path.length - 1; i += 1) {
+      const [ax, ay] = path[i];
+      const [bx, by] = path[i + 1];
+      const dx = bx - ax;
+      const dy = by - ay;
+      const length = dx * dx + dy * dy;
+      const t = length ? clamp(((x - ax) * dx + (y - ay) * dy) / length, 0, 1) : 0;
+      best = Math.min(best, Math.hypot(x - (ax + t * dx), y - (ay + t * dy)));
+    }
+    return best;
+  };
+  const perPlayer = new Map();
+  const note = (key) => {
+    if (!perPlayer.has(key)) perPlayer.set(key, { total: 0, lanes: {}, waves: [] });
+    return perPlayer.get(key);
+  };
+  for (const camp of ['blue', 'red']) {
+    const crew = crewByCamp[camp] || [];
+    if (!crew.length) continue;
+    const base = camp === 'blue' ? [-58, -58] : [58, 58];
+    const masks = new Map(crew.map((item) => [item.key, activeMask(item.points || [], step)]));
+    for (const lane of Object.keys(LANE_PATH)) {
+      const owner = crew.find((item) => item.lane === lane);
+      const members = crew.filter((item) => Array.isArray(item.points) && item.points.length);
+      if (!owner || !Array.isArray(owner.points) || members.length < 2) continue;
+      const waves = new Map();
+      const length = Math.max(...members.map((item) => item.points.length));
+      for (let i = 0; i * step < length; i += 1) {
+        const second = i * step;
+        if (second < WAVE_FIRST) continue;
+        const wave = Math.floor((second - WAVE_FIRST) / WAVE_GAP) + 1;
+        const here = [];
+        for (const item of members) {
+          let point = item.points[i];
+          if (!Array.isArray(point)) continue;
+          if (point[0] === 0 && point[1] === 0) continue;
+          if (!(masks.get(item.key) || [])[i]) continue;
+          if (Math.hypot(point[0] - base[0], point[1] - base[1]) <= LANE_BASE) continue;
+          if (laneDistance(point[0], point[1], lane) > LANE_CORRIDOR) continue;
+          here.push({ item, point });
         }
-        if (ok) {
-          if (runStart === null) {
-            runStart = lastEnd !== null && i - lastEnd <= JOIN_MERGE / step ? lastEnd : i;
+        if (here.length < 2) continue;
+        /* 按彼此距离 ≤ LANE_CLUSTER 连通分组，取含该路对线选手的那一组 */
+        const groups = [];
+        for (const row of here) {
+          const hit = groups.filter((group) => group.some(
+            (other) => Math.hypot(row.point[0] - other.point[0], row.point[1] - other.point[1]) <= LANE_CLUSTER));
+          const merged = [row];
+          for (const group of hit) {
+            merged.push(...group);
+            groups.splice(groups.indexOf(group), 1);
           }
-        } else if (runStart !== null) {
-          close(i);
+          groups.push(merged);
+        }
+        const home = groups.find((group) => group.some((row) => row.item.key === owner.key));
+        if (!home || home.length < 2 || home.length > 3) continue;
+        const bucket = waves.get(wave) || { t: second, wave, lane, size: 0, who: [] };
+        bucket.size = Math.max(bucket.size, home.length);
+        const sec = (bucket.sec || 0) + step;
+        waves.set(wave, { ...bucket, sec, who: [...new Set([...bucket.who, ...home.map((row) => row.item.key)])] });
+      }
+      for (const bucket of waves.values()) {
+        if ((bucket.sec || 0) < LANE_HOLD) continue;
+        for (const key of bucket.who) {
+          const stat = note(key);
+          stat.total += 1;
+          stat.lanes[lane] = (stat.lanes[lane] || 0) + 1;
+          stat.waves.push({ t: bucket.t, wave: bucket.wave, lane: bucket.lane, size: bucket.size });
         }
       }
-      if (runStart !== null) close(src.points.length);
-      if (!starts.length) continue;
-      lanes[lane] = starts;
-      for (const at of starts) times.push({ t: at, lane });
     }
-    if (!times.length) {
-      out.set(`${src.camp}-${src.slot}`, { total: 0, lanes: {}, times: [] });
-      continue;
-    }
-    times.sort((a, b) => a.t - b.t);
-    out.set(`${src.camp}-${src.slot}`, { total: times.length, lanes, times });
+  }
+  for (const [key, stat] of perPlayer.entries()) {
+    stat.waves.sort((a, b) => a.t - b.t);
+    out.set(key, stat);
   }
   return out;
 }
@@ -414,11 +448,12 @@ export function createMatchDeep(h) {
   /* 对位比较口径（教练 2026-11-10 第二/三波）：每个位置只显示该位置
      该看的指标。分均经济带评级、经济转输出判断无效输出、死亡 >2 预警；
      切C = 击杀对方中路/发育路（回放 killInfo，见上）。 */
-  function metricPool(inv, duration, killStats, survival, roam) {
+  function metricPool(inv, duration, killStats, survival, roam, join) {
     const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
     const cutOf = (p) => (killStats ? killStats.get(`${p.camp}-${p.hero}`) : null);
     const surviveOf = (p) => (survival ? survival.get(`${p.camp}-${p.hero}`) : null);
     const roamOf = (p) => (roam ? roam.get(`${p.camp}-${p.hero}`) : null);
+    const joinOf = (p) => (join ? join.get(`${p.camp}-${p.slot}`) : null);
     return {
       gpm: { label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
         get: (p) => gpmOf(p, duration) },
@@ -465,6 +500,20 @@ export function createMatchDeep(h) {
           return num(v) ? `本局平均每分钟移动 ${fmt(v)} 个地图单位（位置数据累计）；用于同位置横向比较` : '';
         },
       } : null,
+      joinLane: join ? {
+        label: '并线', text: (v) => `${fmt(v)} 次`, noBar: true,
+        get: (p) => { const s = joinOf(p); return s ? s.total : null; },
+        tip: (p) => {
+          const s = joinOf(p);
+          if (!s) return '本局没有逐秒位置，算不了并线';
+          const parts = Object.keys(LANE_PATH)
+            .filter((lane) => s.lanes[lane])
+            .map((lane) => `${lane} ${s.lanes[lane]}`);
+          const first = s.waves.length ? time(s.waves[0].t) : null;
+          return [`本局参与并线 ${s.total} 次`, parts.join(' · '), first ? `第一次 ${first}` : '',
+            '口径：那波兵出发后，和该路队友在走廊里聚成 2～3 人并待满 4 秒，一波一线记一次'].filter(Boolean).join(' · ');
+        },
+      } : null,
       invade: inv ? {
         label: '入侵', text: (v) => pct(v), rate: true,
         get: (p) => { const s = entry(p); return s ? s.rate : null; },
@@ -480,10 +529,10 @@ export function createMatchDeep(h) {
      切C 只对对抗路/打野有意义（回放 killInfo 可算，其余分路按同口径也能出数）。 */
   const LANE_METRICS = {
     '对抗路': ['gpm', 'conversion', 'taken', 'tower', 'cutC', 'deaths', 'participation'],
-    '打野': ['gpm', 'jungle', 'damage', 'cutC', 'invade', 'deaths', 'participation'],
+    '打野': ['gpm', 'jungle', 'joinLane', 'damage', 'cutC', 'invade', 'deaths', 'participation'],
     '中路': ['gpm', 'conversion', 'damage', 'roam', 'control', 'deaths', 'participation'],
     '发育路': ['gpm', 'conversion', 'damage', 'survival', 'deaths', 'cs', 'participation'],
-    '游走': ['participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
+    '游走': ['joinLane', 'participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
   };
 
   /* 营地派生卡片（dataBehaviorV2）里，每个位置先亮一张教练点名的：
@@ -681,14 +730,16 @@ export function createMatchDeep(h) {
     const ownName = `本队 · ${camp === 'blue' ? '蓝方' : '红方'}`;
     const foeName = `对手 · ${foeCamp === 'blue' ? '蓝方' : '红方'}`;
     const inv = positions && positions.players && positions.players.length ? invasionStats(positions, players, duration) : null;
+    const join = positions && positions.players && positions.players.length
+      ? joinLaneStats(positions, players, laneOf) : null;
     const metrics = buildMetrics(inv);
     const pool = metricPool(inv, duration, killStatsFor(players, kills),
-      fightSurvival(players, fights, deaths), roamStats(positions, duration));
+      fightSurvival(players, fights, deaths), roamStats(positions, duration), join);
     const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${panelMode === mode ? ' is-on' : ''}"
       aria-selected="${panelMode === mode}" data-md-panel-mode="${mode}">${text}</button>`;
     const note = inv
-      ? '对位看同分路两人的形状差；同队看资源分配。入侵 = 进入对侧半区的时间占比，悬停可看次数与首次时间'
-      : '对位看同分路两人的形状差；同队看资源在本队内部的分配（本局没有位置数据，入侵列缺省）';
+      ? '对位看同分路两人的形状差；同队看资源分配。入侵 = 进入对侧半区的时间占比，悬停可看次数与首次时间；并线按兵线波次算（近似）'
+      : '对位看同分路两人的形状差；同队看资源在本队内部的分配（本局没有位置数据，入侵与并线缺省）';
     return `<div class="md-panel" data-md-panel>
       <div class="md-panel-bar">
         <div class="md-seg" role="tablist" aria-label="十人面板口径">${tab('duel', '对位比较')}${tab('team', '同队比较')}</div>
@@ -846,6 +897,13 @@ export function createMatchDeep(h) {
     });
     const total = duration || (list[0] ? list[0].points.length * step : 0);
     heatState = { step, duration: total, list };
+    /* 赛训组口径的三段：0–4 对线、4–10 发育、10 分钟以后到结束 */
+    const [label1, label2, label3] = (phaseWindows(total) || []).map((w) => w.label).concat(['后期']).slice(0, 3);
+    const phaseLabel = [
+      `${label1} 0–4`,
+      `${label2} 4–10`,
+      `${label3} 10+`,
+    ];
 
     const side = (p) => (p.camp === ownCamp ? 'own' : 'foe');
     const canvas = (p, size) => `<canvas class="md-heat-canvas" width="${GRID * size}" height="${GRID * size}"
@@ -876,8 +934,12 @@ export function createMatchDeep(h) {
           </select>
         </label>
       </div>
+      <div class="md-heat-phases" data-heat-phases>
+        ${phaseLabel.map((label, i) =>
+          `<button type="button" class="md-heat-phase" data-heat-phase="${[240, 600, Math.round(total)][i]}">${label}</button>`).join('')}
+      </div>
       <div class="md-heats md-heats-lane" data-heat-lanes>${laneCards}</div>
-      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。同一路的两个人并排，金为本队、青为对手。</p>
+      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久。分期按赛训组口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
     </div>`;
   }
 
@@ -927,36 +989,36 @@ export function createMatchDeep(h) {
     if (!ctx) return;
     const size = canvas.width;
     const cell = size / GRID;
+    const rgb = side === 'foe' ? '94, 201, 190' : '216, 178, 106';
     ctx.clearRect(0, 0, size, size);
 
-    /* 底图：网格 / 河道 / 双方基地，让轨迹有参照 */
+    /* 底图：细网格 + 河道斜带（河道是 x + y ≈ 0 那条对角线，也是中线方向） */
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, .05)';
+    ctx.strokeStyle = 'rgba(128, 152, 162, .22)';
     ctx.lineWidth = 1;
     for (let k = 1; k < 4; k++) {
       const p = Math.round((k / 4) * size) + 0.5;
       ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
     }
-    ctx.strokeStyle = 'rgba(38, 74, 96, .42)';
-    ctx.lineWidth = size * 0.05;
+    ctx.strokeStyle = 'rgba(38, 74, 96, .30)';
+    ctx.lineWidth = size * 0.075;
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(size, size); ctx.stroke();
     ctx.restore();
 
-    /* 轨迹用径向渐变叠加，比一个个方块更像热区 */
-    const sprite = heatSprite(side);
-    ctx.globalCompositeOperation = 'lighter';
+    /* 离散分格：每格按停留时长分 5 档填色。
+       原来是径向渐变叠加，2 秒一个采样点画出来是一团糊光斑，看不出走到哪。 */
+    const steps = 5;
     for (let i = 0; i < counts.length; i++) {
       const n = counts[i];
       if (!n) continue;
-      const cx = ((i % GRID) + 0.5) * cell;
-      const cy = (GRID - Math.floor(i / GRID) - 0.5) * cell;
-      const r = cell * 0.82;
-      ctx.globalAlpha = Math.min(0.9, 0.12 + Math.pow(n / max, 0.8) * 0.72);
-      ctx.drawImage(sprite, cx - r, cy - r, r * 2, r * 2);
+      const level = clamp(Math.ceil((n / max) * steps), 1, steps);
+      const alpha = 0.26 + (level / steps) * 0.66;
+      const gx = i % GRID;
+      const gy = Math.floor(i / GRID);
+      ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(2)})`;
+      ctx.fillRect(gx * cell + 0.5, (GRID - 1 - gy) * cell + 0.5, cell - 1, cell - 1);
     }
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = 'source-over';
   }
 
   function paintHeat(t) {
@@ -1023,6 +1085,13 @@ export function createMatchDeep(h) {
         paintHeat(Number(slider.value));
       });
       root.addEventListener('click', (event) => {
+        const phase = event.target.closest ? event.target.closest('[data-heat-phase]') : null;
+        if (phase) {
+          stopHeat();
+          root.querySelectorAll('[data-heat-phase]').forEach((b) => b.setAttribute('aria-pressed', String(b === phase)));
+          paintHeat(Number(phase.dataset.heatPhase));
+          return;
+        }
         const hit = event.target.closest ? event.target.closest('[data-heat-play]') : null;
         if (!hit) return;
         toggleHeat(hit);
