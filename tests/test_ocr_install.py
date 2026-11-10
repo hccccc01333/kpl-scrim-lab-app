@@ -122,5 +122,35 @@ class OcrInstallTests(unittest.TestCase):
         self.assertIn('requirements-ocr.txt', response.json()['detail'])
 
 
+class AutoInstallTests(unittest.TestCase):
+    """首次启动自动补装主 OCR：只装一次、失败每天重试一次、可关闭。"""
+
+    def test_skips_when_available(self):
+        called = []
+        result = server.maybe_auto_install_ocr(available=True, start=lambda: called.append(1))
+        self.assertEqual(result, {'started': False, 'reason': 'already-installed'})
+        self.assertEqual(called, [])
+
+    def test_disabled_by_env(self):
+        called = []
+        with mock.patch.dict(os.environ, {'KPL_OCR_AUTO_INSTALL': '0'}):
+            result = server.maybe_auto_install_ocr(available=False, start=lambda: called.append(1))
+        self.assertEqual(result, {'started': False, 'reason': 'disabled'})
+        self.assertEqual(called, [])
+
+    def test_starts_once_then_throttles(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            marker = pathlib.Path(folder) / 'ocr_auto_install.json'
+            called = []
+            first = server.maybe_auto_install_ocr(available=False, start=lambda: called.append(1), marker=marker)
+            self.assertEqual(first, {'started': True, 'reason': 'started'})
+            self.assertEqual(len(called), 1)
+            self.assertTrue(marker.is_file())
+            second = server.maybe_auto_install_ocr(available=False, start=lambda: called.append(1), marker=marker)
+            self.assertEqual(second, {'started': False, 'reason': 'throttled'})
+            self.assertEqual(len(called), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

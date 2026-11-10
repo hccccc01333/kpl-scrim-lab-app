@@ -29,7 +29,7 @@ from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
 from update_api import create_update_router
-from paths import DATA_DIR
+from paths import DATA_DIR, data_root
 from version import VERSION, RELEASE_DATE, RELEASE_NAME
 
 import media_tools
@@ -1054,6 +1054,53 @@ def _install_ffmpeg() -> None:
             _ocr_install_update(message=f'这个源不行，换下一个…（{error[:80]}）')
     if error:
         raise RuntimeError(f'ffmpeg 下载失败：{error}')
+
+
+_OCR_AUTO_INSTALL_RETRY_SECONDS = 24 * 3600
+
+
+def maybe_auto_install_ocr(*, available=None, start=None, marker=None) -> dict:
+    """首次启动静默补装主 OCR；失败后每天最多重试一次。
+
+    背景：Gitee 渠道完整包受附件 100MB 限制不含 OCR 运行时，用户装完打开
+    工作台不应再手动找安装入口。这里在服务启动后自动安装一次，进度显示在
+    「识别引擎」面板；KPL_OCR_AUTO_INSTALL=0 可关闭。参数可注入便于测试。
+    """
+    if os.environ.get('KPL_OCR_AUTO_INSTALL', '').strip().lower() in ('0', 'false', 'off', 'no'):
+        return {'started': False, 'reason': 'disabled'}
+    if available is None:
+        available = importlib.util.find_spec('rapidocr_onnxruntime') is not None
+    if available:
+        return {'started': False, 'reason': 'already-installed'}
+    marker = Path(marker) if marker is not None else data_root() / 'ocr_auto_install.json'
+    now = time.time()
+    try:
+        last = float((json.loads(marker.read_text(encoding='utf-8')) or {}).get('lastAttempt') or 0)
+    except (OSError, ValueError):
+        last = 0.0
+    if now - last < _OCR_AUTO_INSTALL_RETRY_SECONDS:
+        return {'started': False, 'reason': 'throttled'}
+    with _OCR_INSTALL_LOCK:
+        if _OCR_INSTALL_JOB.get('running'):
+            return {'started': False, 'reason': 'busy'}
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({'lastAttempt': now, 'reason': 'auto'}), encoding='utf-8')
+    except OSError:
+        pass
+
+    def _default_start():
+        threading.Thread(target=_ocr_install_worker, args=('rapid',), daemon=True).start()
+    (start or _default_start)()
+    return {'started': True, 'reason': 'started'}
+
+
+@app.on_event('startup')
+def _startup_auto_install_ocr():
+    try:
+        maybe_auto_install_ocr()
+    except Exception:  # noqa: BLE001 - 自动安装失败不影响服务启动
+        pass
 
 
 def _ocr_install_worker(target: str) -> None:
