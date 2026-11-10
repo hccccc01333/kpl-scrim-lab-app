@@ -1549,8 +1549,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .md-page .chart-foot { font-size: 11px; color: var(--muted); padding: 0 4px; }
 
 /* 顶部面包屑：只有一个 h1（结论），标题不再重复 */
-.md-crumb { display: flex; align-items: center; gap: 16px; min-height: 34px; }
-.md-back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+.md-crumb { display: flex; align-items: center; gap: 16px; min-height: 34px; }.md-back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
 .md-back:hover { color: var(--accent); }
 .md-back span { transition: transform .16s ease; }
 .md-back:hover span { transform: translateX(-3px); }
@@ -1558,6 +1557,26 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .md-crumb-meta i { font-style: normal; white-space: nowrap; }
 .md-crumb-meta i + i::before { content: '·'; margin-right: 10px; color: var(--line); }
 .md-crumb-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+
+/* 单局页签：把原来一屏 8000px 的复盘页拆成四段。
+   视觉沿用面板里的 segmented control，不新造一种按钮。 */
+.md-tabs { display: flex; gap: 4px; padding: 5px; border: 1px solid var(--line);
+  border-radius: 13px; background: var(--surface); overflow-x: auto; }
+.md-tab { display: grid; gap: 2px; padding: 8px 16px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--muted); text-align: left; cursor: pointer;
+  min-width: 116px; font-family: inherit; }
+.md-tab b { font-size: 12.5px; font-weight: 700; letter-spacing: -.005em; }
+.md-tab small { font-size: 10.5px; color: var(--quiet); white-space: nowrap; }
+.md-tab:hover { color: var(--text); }
+.md-tab[aria-selected="true"] { background: var(--paper); color: var(--text);
+  box-shadow: 0 1px 2px rgba(15, 30, 40, .14); }
+.md-tab[aria-selected="true"] small { color: var(--muted); }
+.md-tab:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.md-pane { display: grid; gap: 16px; min-width: 0; }
+.md-page[data-md-tab-active="review"] .md-pane:not([data-md-pane="review"]),
+.md-page[data-md-tab-active="data"] .md-pane:not([data-md-pane="data"]),
+.md-page[data-md-tab-active="events"] .md-pane:not([data-md-pane="events"]),
+.md-page[data-md-tab-active="map"] .md-pane:not([data-md-pane="map"]) { display: none; }
 
 /* 结论卡：kicker / 结论 / 记分牌 / 口径 四层 */
 .md-hero { position: relative; overflow: hidden; isolation: isolate; background: var(--md-ink); color: #eef4f6; border-radius: 16px; border: 1px solid #17303f; padding: 26px 30px 22px; display: grid; gap: 16px; }
@@ -2989,9 +3008,12 @@ a.hz-card { display: block; text-decoration: none; }
 .md-fl-area.foe { fill: rgba(94, 201, 190, .16); stroke: var(--md-teal); }
 .md-fl-label { fill: var(--quiet); font-size: 8.5px; font-family: var(--font); }
 .md-vs-metrics { display: grid; gap: 5px; }
-.md-vsm { display: grid; grid-template-columns: 32px 58px minmax(0, 1fr) 58px; gap: 8px; align-items: center; }
-.md-vsm-label { color: var(--muted); font-size: 11px; }
-.md-vsm-num { font: 700 11.5px/1 Manrope, var(--font); color: var(--quiet); font-variant-numeric: tabular-nums; text-align: right; }
+.md-vsm { display: grid; grid-template-columns: 64px 92px minmax(0, 1fr) 92px; gap: 8px; align-items: center; }
+.md-vsm-label { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.md-vsm-num { display: flex; align-items: center; justify-content: flex-end; gap: 4px;
+  font: 700 11.5px/1 Manrope, var(--font); color: var(--quiet); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.md-vsm-num .md-grade { flex: 0 0 46px; box-sizing: border-box; text-align: left; }
+.md-grade.is-blank { visibility: hidden; }
 .md-vsm-num.foe { text-align: left; }
 .md-vsm[data-lead="own"] .md-vsm-num.own { color: var(--md-own-ink); }
 .md-vsm[data-lead="foe"] .md-vsm-num.foe { color: var(--md-enemy-ink); }
@@ -3451,6 +3473,9 @@ a.hz-card { display: block; text-decoration: none; }
 .md-duel-lane { font-size: 12px; font-weight: 700; color: var(--muted); }
 .md-duel-side { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
 .md-duel-cell { display: grid; gap: 4px; justify-items: center; padding: 6px 4px; border-radius: 7px; background: var(--surface); }
+/* 0 秒的格子退成浅底细字：五路 × 三期全是「0 秒」时，满屏灰块比数据更显眼。 */
+.md-duel-cell.is-zero { background: transparent; border: 1px dashed var(--line); }
+.md-duel-cell.is-zero b { font-weight: 500; color: var(--quiet); }
 .md-duel-cell b { font: 700 13px/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
 .md-duel-cell b small { font-size: 9px; font-weight: 400; color: var(--quiet); margin-left: 2px; }
 .md-duel-cell.own b { color: var(--md-own-ink); }
@@ -7494,6 +7519,30 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-vsm-num.is-alert { color: var(--warn, #a54c46); font-weight: 700; }
 .md-vsm-track.is-flat { background: transparent; border-top: 1px dashed var(--line); height: 0; align-self: center; flex: 1; }
 
+/* 营地派生卡片（dataBehaviorV2）：先亮一张教练点名的，其余收进 details。 */
+.md-vsm-camp .md-vsm-label { color: var(--accent); }
+.md-vsm-camp .md-vsm-label::before { content: ''; display: inline-block; width: 4px; height: 4px;
+  margin-right: 5px; border-radius: 50%; background: var(--accent); vertical-align: middle; opacity: .7; }
+.md-vsm-camp .md-vsm-num { color: var(--text); }
+.md-camp { margin: 2px 4px 2px; }
+.md-camp > summary { cursor: pointer; color: var(--quiet); font-size: 11px; padding: 4px 0; list-style: none; }
+.md-camp > summary::-webkit-details-marker { display: none; }
+.md-camp > summary::before { content: '▸'; display: inline-block; margin-right: 5px; transition: transform .16s ease; }
+.md-camp[open] > summary::before { transform: rotate(90deg); }
+.md-camp > summary small { color: var(--quiet); margin-left: 6px; font-size: 10.5px; }
+.md-camp-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 6px 0 4px; }
+.md-camp-col { display: grid; gap: 6px; min-width: 0; }
+.md-camp-col > b { font-size: 11.5px; }
+.md-camp-col.own > b { color: var(--md-own-ink); }
+.md-camp-col.foe > b { color: var(--md-enemy-ink); }
+.md-camp-empty { margin: 0; color: var(--quiet); font-size: 11px; }
+.md-camp-group { display: grid; gap: 2px; }
+.md-camp-group > b { color: var(--quiet); font-size: 10px; font-weight: 700; letter-spacing: .06em; }
+.md-camp-group span { display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 2px 8px; border-radius: 5px; background: var(--surface); font-size: 11px; }
+.md-camp-group i { font-style: normal; color: var(--muted); }
+.md-camp-group em { font-style: normal; font-weight: 700; font-variant-numeric: tabular-nums; }
+
 .md-res { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
 .md-res-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .md-res-head b { font-size: 13.5px; }
@@ -7508,8 +7557,12 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-res-buff { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
 .md-res-buff b { color: var(--ink); }
 .md-res-buff small { margin-left: 6px; color: var(--quiet); }
-.md-ev-list { display: grid; gap: 12px; }
-.md-ev { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--paper); }
+.md-ev-list { display: grid; gap: 0; }
+/* 事件卡片不再各自套一个边框：外层 section 已经有边框，再套一层就是「框里框」，
+   和页面上其它列表（击杀账本 / 关键节点）的行风格也不一致。改成细分隔线。 */
+.md-ev { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 10px 2px; background: transparent; }
+.md-ev:first-child { border-top: 0; }
+.md-ev-note { margin: 10px 2px 0; color: var(--quiet); font-size: 11px; line-height: 1.6; }
 .md-ev-head { display: flex; align-items: baseline; gap: 10px; }
 .md-ev-head span { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.5px; }
 .md-ev-head b { font-size: 13.5px; }

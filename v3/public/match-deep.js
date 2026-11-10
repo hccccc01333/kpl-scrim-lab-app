@@ -382,6 +382,49 @@ export function createMatchDeep(h) {
     '游走': ['participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
   };
 
+  /* 营地派生卡片（dataBehaviorV2）里，每个位置先亮一张教练点名的：
+     辅助的视野价值、中单/射手的「经济转有效伤害」、打野的「反野总经济」、
+     对抗路的「对位经济差」。这些卡片营地按分路自适应下发，可能整局没有，
+     所以缺了就显示「—」并在悬停里说明，不补 0。 */
+  const LANE_TILE = {
+    '对抗路': '对位经济差',
+    '打野': '反野总经济',
+    '中路': '经济转有效伤害',
+    '发育路': '经济转有效伤害',
+    '游走': '视野价值',
+  };
+
+  function campTileOf(player, name) {
+    const list = (player && player.campTiles) || [];
+    return list.find((tile) => tile.name === name) || null;
+  }
+
+  function tileText(player, name) {
+    const hit = campTileOf(player, name);
+    if (!hit) return { text: '—', tip: `这一局营地没有给这个位置下发「${name}」` };
+    const note = hit.note ? ` · 营地同位置对比 ${hit.note}` : '';
+    return { text: hit.raw, tip: `${hit.hint || name}${note} · 营地口径未公开，只做同局参考` };
+  }
+
+  /* 两名选手的全部营地卡片：默认收起，展开才占高度。 */
+  function tileDetails(a, b) {
+    const total = ((a && a.campTiles) || []).length + ((b && b.campTiles) || []).length;
+    if (!total) return '';
+    const groups = [['lane', '分路表现'], ['team', '团队贡献'], ['fight', '战斗操作']];
+    const column = (player, side) => {
+      const list = (player && player.campTiles) || [];
+      if (!list.length) return `<div class="md-camp-col ${side}"><b>${esc(player?.label || player?.hero || '—')}</b><p class="md-camp-empty">没有下发卡片</p></div>`;
+      const body = groups.map(([key, label]) => {
+        const items = list.filter((tile) => tile.group === key);
+        if (!items.length) return '';
+        return `<div class="md-camp-group"><b>${label}</b>${items.map((tile) => `<span title="${esc(tile.hint || tile.name)}${tile.note ? ' · 营地同位置对比 ' + esc(tile.note) : ''}"><i>${esc(tile.name)}</i><em>${esc(tile.raw)}</em></span>`).join('')}</div>`;
+      }).join('');
+      return `<div class="md-camp-col ${side}"><b>${esc(player?.label || player?.hero || '—')}</b>${body}</div>`;
+    };
+    return `<details class="md-camp"><summary>营地卡片 ${total} 条 <small>分路表现 / 团队贡献 / 战斗操作，营地原文，口径未公开</small></summary>
+      <div class="md-camp-body">${column(a, 'own')}${column(b, 'foe')}</div></details>`;
+  }
+
   function buildMetrics(inv) {
     const metrics = METRIC_BASE.map((m) => ({ ...m, get: (p) => read(p, m.key) }));
     if (!inv) return metrics;
@@ -415,12 +458,10 @@ export function createMatchDeep(h) {
       const [x, y] = pt(i, R);
       return `<line class="md-fl-spoke" x1="${c}" y1="${c}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
     }).join('');
-    const labels = metrics.map((m, i) => {
-      const [x, y] = pt(i, R + 12);
-      return `<text class="md-fl-label" x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="middle">${m.label}</text>`;
-    }).join('');
+    /* 轴标签去掉：132px 里放 5 个中文标签会被 viewBox 裁掉一半，看起来像乱码。
+       右侧每一行就是同一顺序的轴，标签在那一边已经有了。 */
     const name = `${(a && (a.label || a.hero)) || '本队'} 与 ${(b && (b.label || b.hero)) || '对手'}`;
-    return `<svg class="md-fl" viewBox="0 0 ${size} ${size}" role="img" aria-label="对位雷达：${esc(name)}">${[0.34, 0.67, 1].map(ring).join('')}${spokes}${area(a, 'own')}${area(b, 'foe')}${labels}</svg>`;
+    return `<svg class="md-fl" viewBox="0 0 ${size} ${size}" role="img" aria-label="对位雷达：${esc(name)}">${[0.34, 0.67, 1].map(ring).join('')}${spokes}${area(a, 'own')}${area(b, 'foe')}</svg>`;
   }
 
   function duelView(players, ownCamp, pool) {
@@ -433,11 +474,11 @@ export function createMatchDeep(h) {
     const who = (p, side) => (p
       ? `<span class="md-vs-id ${side}">${portrait(p.hero)}<span><b>${esc(p.label || p.hero || '—')}</b><small>${esc(p.hero || '—')}</small></span></span>`
       : `<span class="md-vs-id ${side} empty">未匹配</span>`);
-    const gradeChip = (m, lane, value) => {
-      if (!m.grade || !num(value)) return '';
-      const grade = goldGrade(lane, value);
-      return grade ? ` <em class="md-grade ${grade.level}">${grade.label}</em>` : '';
-    };
+    /* 数值列固定给评级章留一格：不然带「优秀」的那一行数字会往左缩，
+       整列数字右边缘参差，看起来像没对齐。没评级也占位（空白）。 */
+    const numCell = (side, value, chip = '', extra = '') => `<b class="md-vsm-num ${side}${extra}">${
+      value === null || value === undefined ? '<span class="md-vsm-val">—</span>' : `<span class="md-vsm-val">${value}</span>`
+    }<em class="md-grade${chip ? ' ' + chip.level : ' is-blank'}">${chip ? chip.label : ''}</em></b>`;
     const rows = LANES.map((lane) => {
       const a = mine.get(lane), b = theirs.get(lane);
       const metrics = (LANE_METRICS[lane] || Object.keys(pool))
@@ -447,14 +488,16 @@ export function createMatchDeep(h) {
         const tip = m.tip
           ? [a, b].filter(Boolean).map((p) => `${p.label || p.hero || '—'}：${m.tip(p)}`).join(' / ')
           : '';
+        const chipX = m.grade && num(x) ? goldGrade(lane, x) : null;
+        const chipY = m.grade && num(y) ? goldGrade(lane, y) : null;
         if (m.noBar) {
           const alertX = m.alert && num(x) && m.alert(x);
           const alertY = m.alert && num(y) && m.alert(y);
           return `<div class="md-vsm" data-lead="tie"${tip ? ` title="${esc(tip)}"` : ''}>
             <span class="md-vsm-label">${m.label}</span>
-            <b class="md-vsm-num own${alertX ? ' is-alert' : ''}">${num(x) ? m.text(x) : '—'}</b>
+            ${numCell('own', num(x) ? m.text(x) : null, null, alertX ? ' is-alert' : '')}
             <span class="md-vsm-track is-flat"></span>
-            <b class="md-vsm-num foe${alertY ? ' is-alert' : ''}">${num(y) ? m.text(y) : '—'}</b>
+            ${numCell('foe', num(y) ? m.text(y) : null, null, alertY ? ' is-alert' : '')}
           </div>`;
         }
         const sum = (x || 0) + (y || 0);
@@ -462,14 +505,24 @@ export function createMatchDeep(h) {
         const lead = (x || 0) > (y || 0) ? 'own' : (x || 0) < (y || 0) ? 'foe' : 'tie';
         return `<div class="md-vsm" data-lead="${lead}"${tip ? ` title="${esc(tip)}"` : ''}>
           <span class="md-vsm-label">${m.label}</span>
-          <b class="md-vsm-num own">${num(x) ? m.text(x) + gradeChip(m, lane, x) : '—'}</b>
+          ${numCell('own', num(x) ? m.text(x) : null, chipX)}
           <span class="md-vsm-track"><i style="width:${share.toFixed(1)}%"></i></span>
-          <b class="md-vsm-num foe">${num(y) ? m.text(y) + gradeChip(m, lane, y) : '—'}</b>
+          ${numCell('foe', num(y) ? m.text(y) : null, chipY)}
         </div>`;
       }).join('');
+      const tileName = LANE_TILE[lane];
+      const ownTile = tileText(a, tileName);
+      const foeTile = tileText(b, tileName);
+      const tileRow = `<div class="md-vsm md-vsm-camp" data-lead="tie">
+        <span class="md-vsm-label" title="营地十人面板的分路派生卡片">${tileName}</span>
+        <b class="md-vsm-num own" title="${esc(ownTile.tip)}"><span class="md-vsm-val">${esc(ownTile.text)}</span><em class="md-grade is-blank"></em></b>
+        <span class="md-vsm-track is-flat"></span>
+        <b class="md-vsm-num foe" title="${esc(foeTile.tip)}"><span class="md-vsm-val">${esc(foeTile.text)}</span><em class="md-grade is-blank"></em></b>
+      </div>`;
       return `<article class="md-vs">
         <div class="md-vs-head"><span class="md-vs-lane">${lane}</span>${who(a, 'own')}${who(b, 'foe')}</div>
-        <div class="md-vs-body">${pairRadar(a, b, metrics)}<div class="md-vs-metrics">${bars}</div></div>
+        <div class="md-vs-body">${pairRadar(a, b, metrics)}<div class="md-vs-metrics">${bars}${tileRow}</div></div>
+        ${tileDetails(a, b)}
       </article>`;
     }).join('');
     return `<div class="md-duels">${rows}</div>`;
@@ -1334,10 +1387,12 @@ export function createMatchDeep(h) {
         const foe = index.get(`${foeCamp}-${lane}`);
         const cell = (entry, side) => {
           if (!entry) return `<span class="md-duel-cell ${side} empty">—</span>`;
-          return entry.seconds.map((sec) => `<span class="md-duel-cell ${side}">
+          return entry.seconds.map((sec) => (sec <= 0
+            ? `<span class="md-duel-cell ${side} is-zero"><b>0<small>秒</small></b></span>`
+            : `<span class="md-duel-cell ${side}">
             <b>${fmt(sec)}<small>秒</small></b>
-            <span class="md-vox">${'<i></i>'.repeat(clamp(Math.round(sec / 10), 0, 10)) || '<i class="zero"></i>'}</span>
-          </span>`).join('');
+            <span class="md-vox">${'<i></i>'.repeat(clamp(Math.round(sec / 10), 0, 10))}</span>
+          </span>`)).join('');
         };
         return `<div class="md-duel-row"><span class="md-duel-lane">${lane}</span>
           <div class="md-duel-side own">${cell(own, 'own')}</div>
@@ -1349,7 +1404,7 @@ export function createMatchDeep(h) {
     };
 
     const view = (mode, body, caption) => `<div class="md-panel-view" data-md-duel-view="${mode}"${duelMode === mode ? '' : ' hidden'}>
-      <p class="md-panel-note">${caption}</p>${body}</div>`;
+      ${caption ? `<p class="md-panel-note">${caption}</p>` : ''}${body}</div>`;
     const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${duelMode === mode ? ' is-on' : ''}"
       aria-selected="${duelMode === mode}" data-md-duel-mode="${mode}">${text}</button>`;
     return `<div class="md-depth" data-md-duel>
@@ -1357,8 +1412,7 @@ export function createMatchDeep(h) {
         <div class="md-seg" role="tablist" aria-label="纵深口径">${tab('deep', '深区 >66%')}${tab('half', '半区 >50%（入侵）')}</div>
         <p class="md-panel-note">静止 ≥12 秒的样本（阵亡停留等）已剔除，与全景页同口径</p>
       </div>
-      ${view('deep', table(DEEP, '本队 · 推进到对侧深区', '对手 · 推进到本队深区'),
-        '推进进度超过 66% 记为一侧深区；方块数表示停留时长，每格约 10 秒，最多 10 格')}
+      ${view('deep', table(DEEP, '本队 · 推进到对侧深区', '对手 · 推进到本队深区'), '')}
       ${view('half', table(HALF, '本队 · 进入对侧半区', '对手 · 进入本队半区'),
         '越过中线（推进进度 > 50%）即算进入对侧半区，也就是入侵；同一套采样，只换了阈值')}
     </div>`;

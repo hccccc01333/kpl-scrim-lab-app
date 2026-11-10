@@ -467,10 +467,59 @@ def _int(value):
         return 0
 
 
+def link_from_entry(entry, camp_user_id=''):
+    """营地战局列表的一条 → 官方回放链接参数。
+
+    列表接口 ``morebattlelist`` 自带 `gameSeq` / `gameSvrId` / `relaySvrId`，
+    另有一条 `analyseUrl`（查询串里有 `gameseq`、`relaysvrentity`、`playerid`，
+    但**没有** `gamesvrentity`）。所以从清单直接拼参数即可，不需要教练逐局
+    再粘一次回放链接——这正是「只给一个链接就该自动爬回放」缺的那一步。
+
+    `playerid` 取 analyseUrl 里的值（接口不校验它），取不到就退回营地账号 ID。
+    """
+    entry = entry if isinstance(entry, dict) else {}
+    game_seq = str(entry.get('gameSeq') or '').strip()
+    game_svr = str(entry.get('gameSvrId') or '').strip()
+    relay_svr = str(entry.get('relaySvrId') or '').strip()
+    if not re.fullmatch(r'\d{3,20}', game_seq):
+        raise CampReplayError('这条战局没有有效的 gameSeq，无法拉取官方回放')
+    if not re.fullmatch(r'-?\d{1,20}', game_svr) or not re.fullmatch(r'-?\d{1,20}', relay_svr):
+        raise CampReplayError('这条战局缺少 gameSvrId / relaySvrId，无法拉取官方回放')
+    player_id = ''
+    analyse = str(entry.get('analyseUrl') or '')
+    if analyse:
+        try:
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(analyse).query)
+            player_id = next((values[-1] for key, values in query.items()
+                              if key.lower() == 'playerid' and values), '')
+        except ValueError:
+            player_id = ''
+    player_id = str(player_id or camp_user_id or '').strip()
+    if not re.fullmatch(r'\d{5,20}', player_id):
+        raise CampReplayError('这条战局没有可用的 playerid，无法拉取官方回放')
+    kind = 'kpl' if str(entry.get('kplMatchFlag') or '') == '1' else 'personal'
+    return {'kind': kind, 'gameSeq': game_seq, 'gameSvr': game_svr,
+            'relaySvr': relay_svr, 'playerId': player_id,
+            'eId': None, 'mId': None,
+            # battleType / pvpType 只在列表里，接口返回里没有，随 meta 保存。
+            'battleType': str(entry.get('battleType') or '') or None,
+            'pvpType': str(entry.get('pvpType') or '') or None,
+            'url': analyse or ''}
+
+
+def import_entry(entry, force=False, camp_user_id=''):
+    """按战局列表条目直接导入官方回放（一条链接都不用给）。"""
+    return import_link_dict(link_from_entry(entry, camp_user_id), force=force)
+
+
 def import_link(url, force=False):
     if is_short_link(url):
         url = expand_short_link(url)
-    link = parse_link(url)
+    return import_link_dict(parse_link(url), force=force)
+
+
+def import_link_dict(link, force=False):
+    """解析好的链接 → 落盘；同一 gameseq 已存在且不 force 时走缓存。"""
     replay_id = f'camp-{link["gameSeq"]}'
     folder = STORE / replay_id
     meta_path = folder / 'meta.json'

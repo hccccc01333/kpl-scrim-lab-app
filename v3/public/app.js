@@ -197,14 +197,14 @@ try {
 
 function current() {
   const [path, search = ''] = location.hash.slice(1).split('?');
-  const [name, key] = path.split('/');
+  const [name, key, tab = ''] = path.split('/');
   let decoded = '';
   try { decoded = decodeURIComponent(key || ''); } catch {}
   let anchor = '';
   try { anchor = new URLSearchParams(search).get('match') || ''; } catch {}
   /* 已下线的战队子页：旧链接回战队档案，不落到首页。 */
   const retired = { teamcompare: 'teams', h2h: 'teams', profiles: 'teams' };
-  return { name: retired[name] || (Object.hasOwn(labels, name) ? name : 'overview'), key: decoded, anchor };
+  return { name: retired[name] || (Object.hasOwn(labels, name) ? name : 'overview'), key: decoded, anchor, tab };
 }
 
 function score(match) {
@@ -1281,12 +1281,19 @@ function matchPage(m) {
     const detail = (m.replay?.events || []).filter((e) => (e.participants || []).length);
     const narrations = m.replay?.narrations || [];
     if (!detail.length && !narrations.length) return '';
-    const damageText = (v) => !has(v) ? '—' : v >= 10000 ? `${(v / 10000).toFixed(1)}万` : fmt(v);
+    /* keyEventArr 的 hurtTotal 只在推塔类事件里和「伤害」一个量级；
+       野怪/暴君事件的取值会到千万级（同一份数据里 800 与 21005396 并存），
+       单位没有被证实。所以超过 10 万的绝对值不显示，只留占比——
+       占比是事件内的相对量，不受单位影响。 */
+    const TRUST_HURT = 100000;
+    const damageText = (v) => (!has(v) || v >= TRUST_HURT) ? '—' : fmt(v);
     const withShare = (list) => {
       const total = list.reduce((sum, p) => sum + (has(p.hurtTotal) ? p.hurtTotal : 0), 0);
       return list.slice().sort((a, b) => (b.hurtTotal || 0) - (a.hurtTotal || 0))
         .map((p) => ({ ...p, share: total ? Math.round((p.hurtTotal || 0) / total * 100) : null }));
     };
+    const anyUntrusted = detail.some((e) => (e.participants || [])
+      .some((p) => has(p.hurtTotal) && p.hurtTotal >= TRUST_HURT));
     /* 关键事件优先：暴君/主宰/防御塔/水晶；野怪 BUFF 只在没有关键事件时兜底。 */
     const keyEvents = detail.filter((e) => (e.kind === 'resource' || e.kind === 'structure')
       && e.name && !['野怪'].includes(e.name));
@@ -1300,27 +1307,31 @@ function matchPage(m) {
           <em>${esc(p.hero || p.name || '—')}</em><b>${damageText(p.hurtTotal)}</b><span class="md-ev-bar"><i style="width:${p.share === null ? 0 : p.share}%"></i></span><small>${p.share === null ? '—' : p.share + '%'}</small></span>`).join('')}</div>
       </article>`).join('')}</div>
       ${narrations.length ? `<div class="md-ev-narr"><b>营地复盘叙述</b>${narrations.slice(0, 10).map((n) => `<p><span>${time(n.t)}</span>${esc(plainNarration(n.text))}</p>`).join('')}</div>` : ''}
+      ${anyUntrusted ? '<p class="md-ev-note">事件内的绝对伤害营地没有给出可信单位（同一份回放里 800 与 2100 万并存），这里只显示占比。</p>' : ''}
     </section>`;
   })();
   const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。分段线是对线/发育/后期的分界</p></div></div>
     ${deep.frontline(m.positions, m.players, own, m.duration) || '<div class="empty">这局没有位置数据</div>'}
   </section>`;
-  return `<div class="page md-page">${mdCrumb}
-    ${mdHero}
-    ${mdBp}
-    ${mdTotals}
-    ${mdPhases}
-    ${mdPulse}
-    ${mdTimeline}
-    ${mdProfiles}
-    ${mdCohesion}
-    ${mdBattle}
-    ${mdKills}
-    ${mdEventDetail}
-    ${mdFront}
-    ${mdHeat}
-    ${mdDuel}
-    <p class="md-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与营地逐秒位置 · ${esc(m.date || '')} ${esc(m.opponent ? '对阵 ' + m.opponent : '')}</p>
+  const mdSource = `<p class="md-source">数据来源：王者营地面板（十人结算 / 经济采样 / 分路派生卡片）、官方回放事件与营地逐秒位置 · ${esc(m.date || '')} ${esc(m.opponent ? '对阵 ' + m.opponent : '')}</p>`;
+  /* 单局页原来一屏 8000px：复盘要往上翻很久才看得到十人面板。
+     按「看结论 / 看十人 / 看事件 / 看地图」拆成四个页签，
+     每页只保留自己那段，地址仍带页签，刷新后停在原处。 */
+  const mdTab = ['review', 'data', 'events', 'map'].includes(current().tab) ? current().tab : 'review';
+  const tabButton = (key, label, note) => `<button type="button" class="md-tab" data-md-tab="${key}"
+    role="tab" aria-selected="${key === mdTab}"><b>${label}</b><small>${note}</small></button>`;
+  const mdTabs = `<div class="md-tabs" role="tablist" aria-label="单局页签">
+    ${tabButton('review', '复盘', '结论 · BP · 阶段')}
+    ${tabButton('data', '十人数据', '对位 · 同队 · 营地卡片')}
+    ${tabButton('events', '事件', '击杀 · 资源 · 叙述')}
+    ${tabButton('map', '地图', '阵线 · 热区 · 纵深')}
+  </div>`;
+  return `<div class="page md-page" data-md-tab-active="${mdTab}">${mdCrumb}${mdTabs}
+    <div class="md-pane" data-md-pane="review">${mdHero}${mdBp}${mdTotals}${mdPhases}${mdPulse}${mdTimeline}</div>
+    <div class="md-pane" data-md-pane="data">${mdProfiles}${mdCohesion}</div>
+    <div class="md-pane" data-md-pane="events">${mdBattle}${mdKills}${mdEventDetail}</div>
+    <div class="md-pane" data-md-pane="map">${mdFront}${mdHeat}${mdDuel}</div>
+    ${mdSource}
     </div>`;
 }
 
@@ -1491,12 +1502,21 @@ async function load(fresh = false) {
       }
       if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
+        /* 单局页拆成四个页签后，后到的区块必须插回它自己的页签，
+           否则「事件」页里的击杀账本会被塞进隐藏的「地图」页。 */
+        const PANE_OF = {
+          'match-verdict': 'review', 'match-bp': 'review', 'match-phases': 'review',
+          'match-pulse': 'review', 'match-timeline': 'review',
+          'match-profiles': 'data', 'match-cohesion': 'data',
+          'match-battle': 'events', 'match-kills': 'events', 'match-events': 'events',
+          'match-front': 'map', 'match-heat': 'map', 'match-duel': 'map',
+        };
         ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-kills','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
           const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
           if(existing&&updated)existing.replaceWith(updated);
-          else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应位置 */
-            const anchor=document.getElementById('match-front')||document.querySelector('.md-page');
-            if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(updated,anchor);
+          else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应页签末尾 */
+            const pane=document.querySelector(`[data-md-pane="${PANE_OF[id] || 'review'}"]`);
+            if(pane) pane.append(updated);
           }
         });
         if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events);
@@ -1604,6 +1624,23 @@ app.addEventListener('click', (event) => {
       button.textContent = '映射';
       window.alert(error.message);
     });
+    return;
+  }
+  const mdTabHit = event.target.closest('[data-md-tab]');
+  if (mdTabHit) {
+    const page = mdTabHit.closest('.md-page');
+    const key = mdTabHit.dataset.mdTab;
+    if (!page || !key) return;
+    page.dataset.mdTabActive = key;
+    page.querySelectorAll('[data-md-tab]').forEach((node) => {
+      node.setAttribute('aria-selected', String(node.dataset.mdTab === key));
+    });
+    /* 换页签不重新取数：只切显示，地址用 replaceState 同步，刷新后停在原页签。 */
+    try {
+      const route = current();
+      history.replaceState(null, '', `#match/${encodeURIComponent(route.key)}/${key}`);
+    } catch { /* 某些嵌入式浏览器禁 replaceState，忽略 */ }
+    document.querySelector('#content')?.scrollIntoView({ block: 'start' });
     return;
   }
   const action = event.target.closest('[data-action]')?.dataset.action;

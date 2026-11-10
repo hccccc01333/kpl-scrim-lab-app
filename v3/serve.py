@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
 from bp_camp import merge_bp_sources
+import camp_tiles
 from collection_contract import reject_example_table, validate_table
 from match_review import PanoramaRepository
 from paths import data_root
@@ -361,6 +362,9 @@ def match(key: str, repo=Depends(repository)):
     if detail is None:
         raise HTTPException(404, '找不到该局对战记录')
     detail['draft'] = merge_bp_sources(detail.get('bp'), detail.get('campBp'), detail)
+    # 营地十人面板的派生卡片（视野价值 / 经济转有效伤害 / 反野总经济 / 控龙 / 勾中）。
+    # 这些字段一直在 camp_details 里，只是从没被读出来过。缺失就不写，前端据此留空。
+    camp_tiles.attach(detail, MATCHES.parent / 'camp_details')
     if not detail.get('version'):
         try:
             with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:

@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.5.27'
+VERSION = '1.5.28'
 RELEASE_DATE = '2026-11-10'
-RELEASE_NAME = '对位压制与打团存活'
+RELEASE_NAME = '营地卡片与官方回放自动补齐'

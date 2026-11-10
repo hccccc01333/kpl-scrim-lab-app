@@ -479,6 +479,10 @@ class AnalysisRepository:
                 # winnerCamp 是营地/官方回放自带的真实胜负，BP 聚合优先读它。
                 'winner': None, 'winnerCamp': match.get('winnerCamp'),
                 'campBp': match.get('campBp'),
+                # 营地官方回放的摘要（id / 胜负 / 团队金币）。单局详情要按 id 找回
+                # camp_details 里的派生卡片（视野价值、经济转有效伤害等），
+                # 所以这里随详情一并带出，而不是让前端再猜一次 gameSeq。
+                'officialReplay': official,
                 'scores': match.get('scores') or {},
                 'players': players, 'process': {
                     'timeline': timeline,

@@ -1326,6 +1326,62 @@ def list_official_replays():
     return {'schema': 'camp-replay-v1', 'replays': camp_replay.list_replays()}
 
 
+@app.get('/api/official/coverage')
+def official_coverage():
+    """官方回放覆盖面：通道里有多少局真的拿到了回放，清单里还能补多少局。
+
+    教练问的是「这些图为什么是空的」，答案几乎总是「这一局没有回放」。
+    把「本机清单里还能补」和「清单里也没有」分开报，空态才有下一步。
+    """
+    with db() as c:
+        rows = c.execute('SELECT body FROM channels').fetchall()
+    channels, with_replay, saved_without = 0, 0, 0
+    pending = []
+    for row in rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        channels += 1
+        official = channel.get('official') or {}
+        seq = str(official.get('id') or '')
+        seq = seq[5:] if seq.startswith('camp-') else ''
+        if seq and (camp_replay.STORE / f'camp-{seq}' / 'meta.json').is_file():
+            with_replay += 1
+            continue
+        saved = (channel.get('saved') or {}).get('status') == 'saved'
+        if saved:
+            saved_without += 1
+        if seq:
+            pending.append({'gameSeq': seq, 'channelId': channel.get('id'), 'saved': saved})
+    index = _camp_official_index()
+    fillable = [item for item in pending if item['gameSeq'] in index]
+    return {'channels': channels, 'withReplay': with_replay,
+            'savedWithoutReplay': saved_without,
+            'pending': len(pending), 'fillable': len(fillable),
+            'listed': len(index), 'sample': fillable[:20]}
+
+
+@app.post('/api/official/backfill')
+def official_backfill(value: dict):
+    """把清单里还能补的官方回放一次性拉下来（默认最多 20 局，按需调大）。"""
+    try:
+        limit = max(1, min(200, int((value or {}).get('limit') or 20)))
+    except (TypeError, ValueError):
+        limit = 20
+    coverage = official_coverage()
+    index = _camp_official_index()
+    entries = [index[item['gameSeq']] for item in coverage['sample']
+               if item['gameSeq'] in index]
+    if not entries:
+        return {'ok': True, 'report': {'tried': 0, 'imported': 0, 'attached': 0,
+                                       'skipped': 0, 'failed': 0, 'items': []},
+                'coverage': coverage}
+    report = _camp_auto_official(entries, limit=limit, actor='backfill')
+    _invalidate_v3_snapshot()
+    return {'ok': True, 'report': report, 'coverage': official_coverage()}
+
+
 @app.get('/api/official/replays/{replay_id}')
 def get_official_replay(replay_id: str):
     try:
@@ -1505,6 +1561,104 @@ def _camp_auto_attach(game_seqs):
         except Exception:
             continue  # 单通道失败不影响其他
     return attached
+
+
+def _camp_official_index():
+    """本地已同步的战局清单 → {gameSeq: 列表条目}，供补拉官方回放用。
+
+    `morebattlelist` 的每一条自带 gameSvrId / relaySvrId，够拼出
+    battleanalyze 的请求体；营地详情（battledetail）里没有这两个字段，
+    所以只能从清单取。清单每次同步都会覆盖，保留最近约 40 局。
+    """
+    index = {}
+    folder = DATA_DIR / 'camp_lists'
+    if not folder.is_dir():
+        return index
+    for path in folder.glob('*.json'):
+        try:
+            items = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(items, list):
+            continue
+        for entry in items:
+            if not isinstance(entry, dict):
+                continue
+            seq = str(entry.get('gameSeq') or '')
+            if seq and seq not in index:
+                index[seq] = entry
+    return index
+
+
+def _camp_auto_official(entries, limit=40, actor='camp-sync'):
+    """营地同步之后，用清单里的服务器参数直接把官方回放拉下来并挂到通道。
+
+    设计上「只给一个营地链接就该自动爬回放」，但这一步此前根本没接：
+    前端从未调用 `/api/official/replay`，同步流程也只写入口径里的
+    `official.source` 而没有真正下载。这里补上，失败只记原因，不打断同步。
+    """
+    index = _camp_official_index()
+    by_seq = {}
+    with db() as c:
+        rows = c.execute('SELECT id, body FROM channels').fetchall()
+    for row in rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        official_id = str((channel.get('official') or {}).get('id') or '')
+        if official_id.startswith('camp-'):
+            by_seq.setdefault(official_id[5:], channel)
+
+    report = {'tried': 0, 'imported': 0, 'attached': 0, 'skipped': 0,
+              'failed': 0, 'items': []}
+    for entry in entries or []:
+        if report['tried'] >= limit:
+            break
+        seq = str((entry or {}).get('gameSeq') or '')
+        if not seq:
+            continue
+        folder = camp_replay.STORE / f'camp-{seq}'
+        if (folder / 'meta.json').is_file():
+            report['skipped'] += 1
+            continue
+        source = index.get(seq) or entry
+        if not (source.get('gameSvrId') and source.get('relaySvrId')):
+            report['failed'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'failed',
+                                    'error': '清单里没有 gameSvrId / relaySvrId'})
+            continue
+        report['tried'] += 1
+        try:
+            result = camp_replay.import_entry(source, force=False)
+        except camp_replay.CampReplayError as error:
+            report['failed'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'failed', 'error': str(error)})
+            continue
+        except Exception as error:  # 网络/磁盘
+            report['failed'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'failed',
+                                    'error': f'{type(error).__name__}: {error}'})
+            continue
+        report['imported'] += 1
+        channel = by_seq.get(seq)
+        if channel is None:
+            report['items'].append({'gameSeq': seq, 'status': 'imported',
+                                    'error': '还没有对应的采集通道，回放已单独落盘'})
+            continue
+        try:
+            meta, normalized = camp_replay.read_normalized(result['id'])
+            with db() as c:
+                channel_store.attach_official(channel, result['id'], meta, normalized, actor)
+                _refresh_saved_bundle_official(channel)
+                _save_channel(c, channel, actor, 'official-auto')
+            report['attached'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'attached', 'error': ''})
+        except Exception as error:
+            report['failed'] += 1
+            report['items'].append({'gameSeq': seq, 'status': 'imported',
+                                    'error': f'回放已落盘但挂载失败：{error}'})
+    return report
 
 
 def _camp_entry_match(entry: dict, nickname: str) -> dict:
@@ -1870,6 +2024,13 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         summary = _camp_sync_entries(camp_sync, camp_user_id, entries, progress)
         # 入库即建采集通道：以前只写 camp_details/*.json，采集流水与统计都是空的。
         channels = _camp_ensure_channels(entries, nickname, progress)
+        # 只给一条营地链接 → 详情、通道、官方回放一起到位。回放拉取放在通道之后，
+        # 这样拉下来的经济曲线/事件/位置能立刻挂到通道上。
+        try:
+            channels['official'] = _camp_auto_official(entries, actor='camp-sync')
+        except Exception as error:
+            channels['official'] = {'failed': 1, 'items': [],
+                                    'error': f'{type(error).__name__}: {error}'}
         with _camp_sync_lock:
             _camp_sync_job['progress'] = {'done': max(1, len(entries)), 'total': max(1, len(entries)),
                                           'current': '', 'phase': 'done'}

@@ -78,6 +78,9 @@ def main():
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport=viewport)
+        # 教程遮罩会盖住首屏，截图前先标记「已看完」，否则每张图都拍到弹窗。
+        page.add_init_script(
+            "try{localStorage.setItem('training-tour-complete-v3','1');}catch(e){}")
         for name, route in targets:
             try:
                 shot(page, args.base, route, out, name, viewport)
