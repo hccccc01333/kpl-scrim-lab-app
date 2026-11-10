@@ -1130,7 +1130,7 @@ function matchPage(m) {
     <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
   </section>` : '';
   const mdProfiles = `<section class="section" id="match-profiles"><div class="section-heading"><div><h2>十人面板</h2><p>对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比</p></div></div>
-    ${deep.panel(m.players || [], own, m.positions, m.duration, m.replay?.kills)}
+    ${deep.panel(m.players || [], own, m.positions, m.duration, m.replay?.kills, m.replay?.fights, m.replay?.deaths)}
   </section>`;
   /* 位置数据请求过但没有：说明该局缺逐秒位置（未关联官方回放），不再无限转圈。 */
   const positionsEmpty = m.positionsRequested
@@ -1179,8 +1179,38 @@ function matchPage(m) {
       <div class="md-bp-combo-side foe"><span>对手组合</span>${foeCombos.map(card).join('') || '<small>对手阵容没有历史组合样本</small>'}</div>
     </div>`;
   })();
+  /* 对位压制：本局五路双方英雄 → 历史同分路对位（depth lane_matchup.heroes）。
+     历史样本 ≥3 局才判定；65%+ 胜率标「压制」，35%- 标「劣势」。 */
+  const matchupBlock = (() => {
+    const rows = m.laneMatchup?.payload?.heroes || [];
+    if (!rows.length || !draft) return '';
+    const byPair = new Map(rows.map((row) => [`${row.ownHero}|${row.enemyHero}`, row]));
+    const mine = new Map(), theirs = new Map();
+    for (const p of m.players || []) {
+      if (!p.position) continue;
+      (p.camp === own ? mine : theirs).set(p.position, p);
+    }
+    const order = ['对抗路', '打野', '中路', '发育路', '游走'];
+    const lanes = order.map((lane) => {
+      const a = mine.get(lane), b = theirs.get(lane);
+      if (!a && !b) return '';
+      const row = a && b ? byPair.get(`${a.hero}|${b.hero}`) : null;
+      const verdict = !row || row.n < 3 ? '样本不足'
+        : row.winRate >= 65 ? '压制' : row.winRate <= 35 ? '劣势' : '均势';
+      const cls = verdict === '压制' ? 'is-ahead' : verdict === '劣势' ? 'is-behind'
+        : verdict === '均势' ? 'is-even' : 'is-thin';
+      const note = row
+        ? `${fmt(row.n)} 局 · 胜率 ${pct(row.winRate)} · 经济差 ${diff(row.avgGoldDiff)}`
+        : '没有同分路对位样本';
+      return `<div class="md-mu-row"><span class="md-mu-lane">${lane}</span>
+        <b class="own">${esc(a?.hero || '—')}</b><i>vs</i><b class="foe">${esc(b?.hero || '—')}</b>
+        <em class="${cls}">${verdict}</em><small>${note}</small></div>`;
+    }).filter(Boolean).join('');
+    if (!lanes) return '';
+    return `<div class="md-matchup"><div class="md-matchup-head"><b>对位压制</b><small>历史同分路对位（本队视角）；样本 ≥3 局才判定</small></div>${lanes}</div>`;
+  })();
   const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
-    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${comboBlock}` : '<div class="empty">暂无禁选记录。</div>'}
+    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${comboBlock}${matchupBlock}` : '<div class="empty">暂无禁选记录。</div>'}
   </section>`;
   /* 总量按十人面板逐人求和（详情接口不带 own/enemy 汇总）。 */
   const teamAgg = (camp) => {
@@ -1451,6 +1481,10 @@ async function load(fresh = false) {
           const combosResponse = await fetch(API_BASE + '/api/studio/camp-combos?min=2', { signal: currentRequest.signal });
           if (combosResponse.ok) data.combosData = await combosResponse.json();
         } catch { /* 组合数据失败不影响主页面 */ }
+        try {
+          const matchupResponse = await fetch(API_BASE + '/api/depth/analysis/lane_matchup', { signal: currentRequest.signal });
+          if (matchupResponse.ok) data.laneMatchup = await matchupResponse.json();
+        } catch { /* 对位压制历史失败不影响主页面 */ }
       } catch {
         if (stale()) return;
         data.replayStatus = 'error';

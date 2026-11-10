@@ -264,12 +264,57 @@ export function createMatchDeep(h) {
     return stats;
   }
 
+  /* 打团存活：每场团战从开始到本人死亡（或团战结束）的秒数。
+     `fights[].details` 是参战者，`deaths[]` 是死亡时刻；死亡时间落在团战窗口内
+     才算这波阵亡，窗口外不算。 */
+  function fightSurvival(players, fights, deaths) {
+    const result = new Map();
+    const deathRows = (deaths || []).slice().sort((a, b) => a.t - b.t);
+    for (const fight of fights || []) {
+      const start = Number(fight.t), end = Number(fight.end);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
+      for (const row of fight.details || []) {
+        const key = `${row.camp}-${row.hero}`;
+        if (!row.hero) continue;
+        const stat = result.get(key) || { seconds: 0, fights: 0, survived: 0 };
+        const died = deathRows.find((d) => d.hero === row.hero && d.camp === row.camp
+          && d.t >= start - 1 && d.t <= end + 1);
+        stat.seconds += died ? Math.max(0, died.t - start) : end - start;
+        stat.fights += 1;
+        if (!died) stat.survived += 1;
+        result.set(key, stat);
+      }
+    }
+    return result;
+  }
+
+  /* 跑图（中单）：逐秒位置累计移动距离，换算成每分钟。位置数据是营地坐标，
+     单位与地图一致；这里只做相对比较，不当作真实米数。 */
+  function roamStats(positions, duration) {
+    const result = new Map();
+    const minutes = Number(duration) > 0 ? Number(duration) / 60 : null;
+    if (!minutes) return result;
+    for (const p of positions?.players || []) {
+      if (!p.hero || !Array.isArray(p.points) || p.points.length < 2) continue;
+      let distance = 0;
+      for (let i = 1; i < p.points.length; i += 1) {
+        const [x1, y1] = p.points[i - 1];
+        const [x2, y2] = p.points[i];
+        distance += Math.hypot(x2 - x1, y2 - y1);
+      }
+      result.set(`${p.camp}-${p.hero}`, distance / minutes);
+    }
+    return result;
+  }
+
   /* 对位比较口径（教练 2026-11-10 第二/三波）：每个位置只显示该位置
      该看的指标。分均经济带评级、经济转输出判断无效输出、死亡 >2 预警；
      切C = 击杀对方中路/发育路（回放 killInfo，见上）。 */
-  function metricPool(inv, duration, killStats) {
+  function metricPool(inv, duration, killStats, survival, roam) {
     const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
     const cutOf = (p) => (killStats ? killStats.get(`${p.camp}-${p.hero}`) : null);
+    const surviveOf = (p) => (survival ? survival.get(`${p.camp}-${p.hero}`) : null);
+    const roamOf = (p) => (roam ? roam.get(`${p.camp}-${p.hero}`) : null);
     return {
       gpm: { label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
         get: (p) => gpmOf(p, duration) },
@@ -299,6 +344,23 @@ export function createMatchDeep(h) {
             : `本局总击杀 ${s.kills}，没有击杀对方中路/发育路`;
         },
       } : null,
+      survival: survival ? {
+        label: '打团存活', text: (v) => `${fmt(v, 1)} 秒`, noBar: true,
+        get: (p) => { const s = surviveOf(p); return s && s.fights ? s.seconds / s.fights : null; },
+        tip: (p) => {
+          const s = surviveOf(p);
+          if (!s || !s.fights) return '本局没有参战记录';
+          return `${s.fights} 波团战，存活 ${s.survived} 波（${pct(s.survived / s.fights * 100)}），场均存活 ${fmt(s.seconds / s.fights, 1)} 秒`;
+        },
+      } : null,
+      roam: roam ? {
+        label: '跑图', text: (v) => `${fmt(v)}/分`, noBar: true,
+        get: (p) => { const v = roamOf(p); return num(v) ? v : null; },
+        tip: (p) => {
+          const v = roamOf(p);
+          return num(v) ? `本局平均每分钟移动 ${fmt(v)} 个地图单位（位置数据累计）；用于同位置横向比较` : '';
+        },
+      } : null,
       invade: inv ? {
         label: '入侵', text: (v) => pct(v), rate: true,
         get: (p) => { const s = entry(p); return s ? s.rate : null; },
@@ -315,8 +377,8 @@ export function createMatchDeep(h) {
   const LANE_METRICS = {
     '对抗路': ['gpm', 'conversion', 'taken', 'tower', 'cutC', 'deaths', 'participation'],
     '打野': ['gpm', 'jungle', 'damage', 'cutC', 'invade', 'deaths', 'participation'],
-    '中路': ['gpm', 'conversion', 'damage', 'control', 'deaths', 'participation'],
-    '发育路': ['gpm', 'conversion', 'damage', 'deaths', 'cs', 'participation'],
+    '中路': ['gpm', 'conversion', 'damage', 'roam', 'control', 'deaths', 'participation'],
+    '发育路': ['gpm', 'conversion', 'damage', 'survival', 'deaths', 'cs', 'participation'],
     '游走': ['participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
   };
 
@@ -453,7 +515,7 @@ export function createMatchDeep(h) {
     </div>`;
   }
 
-  function panel(players, ownCamp, positions, duration, kills) {
+  function panel(players, ownCamp, positions, duration, kills, fights, deaths) {
     if (!players || !players.length) return `<div class="empty">这场比赛还没有十人面板数据。</div>`;
     if (!ownCamp) return `<div class="empty">阵营未知，无法做对位比较。</div>`;
     /* 兼容 ownCamp 为 left / right 的历史写法 */
@@ -463,7 +525,8 @@ export function createMatchDeep(h) {
     const foeName = `对手 · ${foeCamp === 'blue' ? '蓝方' : '红方'}`;
     const inv = positions && positions.players && positions.players.length ? invasionStats(positions, players, duration) : null;
     const metrics = buildMetrics(inv);
-    const pool = metricPool(inv, duration, killStatsFor(players, kills));
+    const pool = metricPool(inv, duration, killStatsFor(players, kills),
+      fightSurvival(players, fights, deaths), roamStats(positions, duration));
     const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${panelMode === mode ? ' is-on' : ''}"
       aria-selected="${panelMode === mode}" data-md-panel-mode="${mode}">${text}</button>`;
     const note = inv

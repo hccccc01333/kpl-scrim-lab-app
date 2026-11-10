@@ -421,13 +421,41 @@ def match_positions(key: str):
         raise HTTPException(404, '缺少位置数据文件')
     data = json.loads(path.read_text(encoding='utf-8'))
     roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
+    # 位置文件的 playerId 是营地短 ID（与 raw.matchInfo.playerId 同源），通道名单里
+    # 存的是游戏内 playID（长 ID），两套 ID 对不上。用 matchInfo 的 heroName /
+    # acntcamp 做桥：短 ID → 英雄名 + 阵营 → 通道名单里的 camp+slot+昵称。
+    identity_by_short = {}
+    raw_path = OFFICIAL / f'camp-{seq}' / 'raw.json'
+    if raw_path.is_file():
+        try:
+            raw_value = json.loads(raw_path.read_text(encoding='utf-8'))
+            raw_body = raw_value.get('data') if isinstance(raw_value.get('data'), dict) else raw_value
+            for item in raw_body.get('matchInfo') or []:
+                short = str(item.get('playerId') or '')
+                if not short:
+                    continue
+                identity_by_short[short] = {
+                    'hero': str(item.get('heroName') or ''),
+                    'camp': 'blue' if str(item.get('acntcamp') or '1') == '1' else 'red',
+                }
+        except (OSError, json.JSONDecodeError):
+            identity_by_short = {}
+    roster_by_hero = {(str(p.get('camp')), str(p.get('hero'))): p
+                      for p in (camp.get('players') or []) if p.get('hero')}
     step = POSITION_STEP
     players = []
     for index, item in enumerate(data.get('players') or []):
-        info = roster.get(str(item.get('playerId')))
+        short_id = str(item.get('playerId') or '')
+        info = roster.get(short_id)
         if not info and bundle_players:
             # 数据包玩家按 blue0..4 / red0..4 顺序排列，与位置文件同序
             info = bundle_players[index] if index < len(bundle_players) else None
+        if not info:
+            identity = identity_by_short.get(short_id)
+            if identity:
+                info = roster_by_hero.get((identity['camp'], identity['hero']))
+                if not info:
+                    info = {'hero': identity['hero'], 'camp': identity['camp']}
         info = info or {}
         arr = item.get('posArr') or []
         players.append({
