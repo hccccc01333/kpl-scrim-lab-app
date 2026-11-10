@@ -65,7 +65,10 @@ export function createCrossPage(h) {
     const sign = ownCamp === 'blue' ? 1 : -1;
     const own = players.filter((p) => p.camp === ownCamp);
     const foe = players.filter((p) => p.camp === foeCamp);
-    const duration = Number(row.duration || d.duration || 0) || 0;
+    // 缺时长保持 null：以前缺省成 0 会让「最短一局」显示 0:00 并污染极值，
+    // 行内也显示成 0:00。显示端 num()/time() 会把 null 显示为「—」。
+    const duration = num(row.duration) && row.duration > 0 ? row.duration
+      : (num(d.duration) && d.duration > 0 ? d.duration : null);
 
     const scores = d.scores || {};
     let ownKills = num(scores[ownCamp]) ? scores[ownCamp] : sum(own.map((p) => p.kills));

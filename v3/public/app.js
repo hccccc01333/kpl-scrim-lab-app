@@ -1222,6 +1222,19 @@ async function load(fresh = false) {
   const endpoint = r.name === 'players' ? 'v3/players/board'
     : ({ match: 'matches/', player: 'players/', opponents: 'studio/teams', cross: 'matches' }[r.name] || r.name) + (['match','player'].includes(r.name) ? encodeURIComponent(r.key) : '');
   document.querySelector('#content').innerHTML = '<div class="page"><div class="loading">正在读取赛训数据…</div></div>';
+  /* 详情路由缺 ID（直接输入 #session / #match 等）：别去请求一个空 key，
+     那会 404 后落到"暂时读不到数据"的死循环。给出明确的返回入口。 */
+  const DETAIL_ROUTES = ['match', 'player', 'playerdetail', 'hero', 'team', 'session', 'report', 'topic', 'study', 'identity'];
+  if (DETAIL_ROUTES.includes(r.name) && !r.key) {
+    const section = sectionFor(r.name).name;
+    const label = labels[r.name] || '条目';
+    document.querySelector('#content').innerHTML = `<div class="page"><section class="section"><div class="offline-card">
+      <b>还没有选定${esc(label)}</b>
+      <p>这个页面需要一个具体的${esc(label)} ID。请从列表页打开，或先返回上一级。</p>
+      <div class="offline-actions"><a class="control" href="#${esc(section)}">返回${esc(labels[section] || '列表')}</a></div>
+    </div></section></div>`;
+    return;
+  }
   try {
     const [result, meta] = await Promise.all([features.has(r.name) ? features.load(r.name, r.key, currentRequest.signal) : get(endpoint, fresh), metadata.icons ? Promise.resolve(metadata) : get('metadata')]);
     if (stale()) return;
