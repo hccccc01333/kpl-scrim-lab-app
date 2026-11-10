@@ -39,6 +39,9 @@ def main():
     labels = None
     if H5.is_file():
         labels = camp_archive.write_frontend_labels(H5, ROOT / 'data' / 'camp_labels.json')
+        # 正本进仓库（前端包本身是第三方产物，不提交），便于评审与 diff
+        (ROOT / 'docs' / 'camp_frontend_labels.json').write_text(
+            json.dumps(labels, ensure_ascii=False, indent=1), encoding='utf-8')
     if args.labels_only:
         print(json.dumps({'labels': labels['count'] if labels else 0}, ensure_ascii=False))
         return 0

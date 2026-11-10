@@ -1343,7 +1343,7 @@ def official_archive(replay_id: str = '', limit: int = 0):
     if index is None:
         index = camp_archive.scan(store, limit=limit or None)
     summary = camp_replay_read_json(DATA_DIR / 'camp_fields_summary.json') or {}
-    labels = camp_replay_read_json(DATA_DIR / 'camp_labels.json') or {}
+    labels = camp_archive.load_labels(ROOT)
     return {'summary': summary, 'sources': index,
             'frontendLabels': {'count': labels.get('count', 0),
                                'labels': (labels.get('labels') or [])[:200]}}

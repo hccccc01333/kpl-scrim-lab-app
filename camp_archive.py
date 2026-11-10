@@ -183,3 +183,20 @@ def write_frontend_labels(source, out):
                'count': len(labels), 'labels': labels}
     Path(out).write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding='utf-8')
     return payload
+
+
+# 营地 H5 前端包是第三方产物，不进仓库；但**从它抽出来的文案**是我们的资料，
+# 所以正本放 docs/（可评审、可 diff），运行期副本放 data/。
+LABELS_RUNTIME = Path('data') / 'camp_labels.json'
+LABELS_DOC = Path('docs') / 'camp_frontend_labels.json'
+
+
+def load_labels(root=None):
+    """读前端文案：先看运行期副本，再退到仓库里的正本；都没有返回空表。"""
+    base = Path(root) if root else Path('.')
+    for path in (base / LABELS_RUNTIME, base / LABELS_DOC):
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+    return {'schema': 'camp-frontend-labels-v1', 'source': '', 'count': 0, 'labels': []}
