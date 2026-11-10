@@ -345,3 +345,18 @@ class LayoutTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class FrameStreamTests(unittest.TestCase):
+    """stderr 必须被后台排空：否则 ffmpeg 写满管道会卡死整个 OCR 队列。"""
+
+    def test_stderr_is_drained_while_stream_runs(self):
+        import sys
+        command = [sys.executable, '-c',
+                   "import sys; sys.stderr.write('E' * 300000); sys.stderr.flush(); "
+                   "sys.stdout.write('OUT'); sys.stdout.flush()"]
+        process, stderr_text = v._open_frame_stream(command)
+        self.assertEqual(process.stdout.read(3), b'OUT')
+        process.stdout.close()
+        process.wait(timeout=30)
+        self.assertEqual(len(stderr_text()), 300000)
+

@@ -255,3 +255,21 @@ class BundleTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class GameTimeMappingTests(unittest.TestCase):
+    """视频时间 → 游戏时间：倍速录屏不能用恒定 offset（会漂移数分钟）。"""
+
+    def test_doublespeed_uses_nearest_sample_extrapolation(self):
+        # 2 倍速：game = 30 + 2 * video
+        samples = [{'videoTime': 0, 'gameTime': 30},
+                   {'videoTime': 60, 'gameTime': 150},
+                   {'videoTime': 120, 'gameTime': 270}]
+        mapping = {'offset': 90, 'speed': 2.0}  # offset 是中位数，越早越偏
+        # 旧逻辑：game = 30 + offset = 120（真值 90，偏 30 秒）
+        self.assertEqual(m._game_time_at(samples, mapping, 30), 90)
+        self.assertEqual(m._game_time_at(samples, {'offset': 90, 'speed': 2.0}, 90), 210)
+
+    def test_falls_back_to_offset_without_clock_samples(self):
+        self.assertEqual(m._game_time_at([], {'offset': 12.5}, 100), 112.5)
+        self.assertIsNone(m._game_time_at([], {}, 100))
+

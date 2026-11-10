@@ -530,14 +530,36 @@ def _merge_scoreboard(reports, lineups):
     return snapshots, warnings
 
 
-def _pov_series(report, follow, offset):
+def _game_time_at(samples, mapping, video_time):
+    """视频时间 → 游戏时间：用最近时钟样本 + 播放速率外推。
+
+    恒定 offset（game = video + offset）只在 1 倍速录屏成立；2 倍速时
+    offset 随时间漂移，POV 片段的 gameStart/gameEnd 会偏出数分钟。
+    最近样本外推在倍速、暂停、跳变下都更接近真实值；没有时钟样本时
+    退回 offset。
+    """
+    if video_time is None:
+        return None
+    points = [(sample.get('videoTime'), sample.get('gameTime'))
+              for sample in samples or []
+              if sample.get('videoTime') is not None and sample.get('gameTime') is not None]
+    offset = (mapping or {}).get('offset')
+    if not points:
+        return round(video_time + offset, 1) if offset is not None else None
+    rate = (mapping or {}).get('speed') or 1.0
+    nearest_video, nearest_game = min(points, key=lambda pair: abs(pair[0] - video_time))
+    return round(nearest_game + (video_time - nearest_video) * rate, 1)
+
+
+def _pov_series(report, follow, mapping=None):
+    mapping = mapping or {}
     segments = (report.get('selection') or {}).get('segments', [])
     source = (report.get('video') or {}).get('sha256', '')[:16]
     pov = []
     for index, segment in enumerate(segments):
         start, end = segment.get('start'), segment.get('end')
-        game_start = round(start + offset, 1) if start is not None and offset is not None else None
-        game_end = round(end + offset, 1) if end is not None and offset is not None else None
+        game_start = _game_time_at(report.get('samples'), mapping, start)
+        game_end = _game_time_at(report.get('samples'), mapping, end)
         pov.append({
             'source': source, 'segment': index,
             'videoStart': start, 'videoEnd': end,
@@ -654,8 +676,8 @@ def build_match_data(video_reports, follows=None, postgames=None, match_id=None,
     video_sources = []
     for report, follow in zip(video_reports, follows):
         resolved = _resolve_follow(follow, lineups)
-        offset = (report.get('timeMapping') or {}).get('offset')
-        pov, series = _pov_series(report, bool(resolved), offset)
+        mapping = report.get('timeMapping') or {}
+        pov, series = _pov_series(report, bool(resolved), mapping)
         follow_player = None
         if resolved:
             follow_player = {'camp': resolved['camp'], 'hero': _hero_of(resolved['row']),

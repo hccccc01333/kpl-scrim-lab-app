@@ -1099,16 +1099,41 @@ def probe_video(path):
             'codec': stream.get('codec_name')}
 
 
+def _open_frame_stream(command):
+    """启动 ffmpeg 帧流子进程，并在后台线程持续读 stderr。
+
+    stderr 管道不排空时，损坏视频每秒都可能输出解码错误：管道写满后
+    ffmpeg 阻塞在写 stderr 上，调用方读 stdout 就永远等不到数据——
+    整个 OCR 单 worker 队列会永久卡死。返回 (process, stderr_text)。
+    """
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError as error:
+        raise VideoOCRError('需要 ffmpeg；请安装并加入 PATH') from error
+    chunks = []
+
+    def drain():
+        try:
+            for chunk in iter(lambda: process.stderr.read(65536), b''):
+                chunks.append(chunk)
+        except (OSError, ValueError):
+            pass
+
+    threading.Thread(target=drain, name='ffmpeg-stderr', daemon=True).start()
+
+    def stderr_text():
+        return b''.join(chunks).decode('utf-8', 'replace').strip()
+
+    return process, stderr_text
+
+
 def iter_frames(path, fps, info=None):
     info = info or probe_video(path)
     height = max(2, round(info['height'] * SAMPLE_WIDTH / info['width'] / 2) * 2)
     command = [media_tools.ffmpeg(), '-v', 'error', '-i', path,
                '-vf', f'fps={fps},scale={SAMPLE_WIDTH}:{height}',
                '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except FileNotFoundError as error:
-        raise VideoOCRError('需要 ffmpeg；请安装并加入 PATH') from error
+    process, stderr_text = _open_frame_stream(command)
     size = SAMPLE_WIDTH * height * 3
     index = 0
     try:
@@ -1121,10 +1146,10 @@ def iter_frames(path, fps, info=None):
             index += 1
     finally:
         process.stdout.close()
-        error = process.stderr.read().decode('utf-8', 'replace').strip()
         process.wait()
+        message = stderr_text()
         if index == 0 and process.returncode not in (0, 1):
-            raise VideoOCRError(f'ffmpeg 解码失败：{error[:200]}')
+            raise VideoOCRError(f'ffmpeg 解码失败：{message[:200]}')
 
 
 def _iter_window(path, start, duration, fps, info):
@@ -1133,7 +1158,7 @@ def _iter_window(path, start, duration, fps, info):
     command = [media_tools.ffmpeg(), '-v', 'error', '-ss', f'{max(0, start):.3f}', '-t', f'{duration:.3f}',
                '-i', path, '-vf', f'fps={fps},scale={SAMPLE_WIDTH}:{height}',
                '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process, stderr_text = _open_frame_stream(command)
     size = SAMPLE_WIDTH * height * 3
     index = 0
     try:
@@ -1146,8 +1171,8 @@ def _iter_window(path, start, duration, fps, info):
             index += 1
     finally:
         process.stdout.close()
-        process.stderr.read()
         process.wait()
+        stderr_text()
 
 
 def _scenes(points, duration):
