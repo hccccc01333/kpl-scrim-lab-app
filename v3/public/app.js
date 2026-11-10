@@ -308,7 +308,7 @@ function gameAnchorBar() {
 let chartSeq = 0;
 function chart(points, label, opts = {}) {
   const values = (points || []).filter((p) => has(p[0]) && has(p[1])).sort((a, b) => a[0] - b[0]);
-  if (!values.length) return `<div class="chart-empty">暂无可用的经济时间轴</div>`;
+  if (!values.length) return `<div class="chart-empty">暂无可用的经济时间轴 · 经济采样来自「官方回放」，需要在采集页的通道校对里关联本局官方回放链接（录屏时间轴亦可代替）</div>`;
   const max = Math.max(1, ...values.map((p) => Math.abs(p[1])));
   /* 平均曲线要说明是几局折出来的，别让「25 个采样点」被读成 25 个点。 */
   const limit = Math.ceil(max / 5000) * 5000;
@@ -329,6 +329,20 @@ function chart(points, label, opts = {}) {
     return [...new Set(out)].sort((a, b) => a - b);
   })();
   const tip = values.at(-1);
+  /* 时间轴刻度：每 5 分钟一个（长局 5 分钟、20 分钟以上仍按 5 分），首尾标签另画。 */
+  const xTicks = (() => {
+    const span = x1 - x0;
+    if (span < 120) return [];
+    const step = 300;
+    const out = [];
+    for (let tick = Math.ceil(x0 / step) * step; tick < x1; tick += step) {
+      if (tick - x0 < 40 || x1 - tick < 40) continue;
+      if (time(tick) === time(x0) || time(tick) === time(x1)) continue;
+      out.push(tick);
+      if (out.length >= 10) break;
+    }
+    return out;
+  })();
   const gid = 'chart-grad-' + (++chartSeq);
   const bands = rich && duration > 0 ? ['前期', '中期', '后期'].map((name, i) => {
     const xa = x(Math.max(duration * i / 3, x0)), xb = x(Math.min(duration * (i + 1) / 3, x1));
@@ -366,6 +380,7 @@ function chart(points, label, opts = {}) {
       data-point="${esc(time(point[0]) + '　' + diff(point[1]) + ' 金')}" aria-label="${esc(time(point[0]) + '，经济差 ' + diff(point[1]) + ' 金')}"><title>${time(point[0])}　${diff(point[1])} 金</title></circle>`).join('')}
     ${badge}
     ${phaseLabels}
+    ${xTicks.map((tick) => `<line x1="${x(tick).toFixed(1)}" x2="${x(tick).toFixed(1)}" y1="205" y2="209" class="grid-line"/><text x="${x(tick).toFixed(1)}" y="233" text-anchor="middle" class="axis-text">${time(tick)}</text>`).join('')}
     <text x="55" y="233" class="axis-text">${time(x0)}</text><text x="675" y="233" text-anchor="end" class="axis-text">${time(x1)}</text>
     </svg><div class="chart-tooltip" role="status" hidden></div><div class="chart-foot"><span><i></i> 本队经济差</span><span>${opts.note || `${values.length} 个采样点`}${eventLines ? ' · 金色虚线为关键节点' : ''}${rich && duration > 0 ? ' · 底色为前 / 中 / 后期' : ''}</span></div></div>`;
 }
@@ -381,13 +396,28 @@ function microChart(points, label) {
 
 function matchRows(rows) {
   if (!rows.length) return `<div class="empty">当前范围暂无对局。</div>`;
-  return `<div class="match-list">${rows.map((m) => `<a class="match-row" href="${esc(route('match', m.key))}">
+  return `<div class="match-list">${rows.map((m) => `<div class="match-row-wrap">
+    <a class="match-row" href="${esc(route('match', m.key))}">
     <div class="match-date"><b>${esc((m.date || '日期未知').slice(5))}</b><small>${esc((m.date || '').slice(0,4))}</small></div>
     <div class="match-opponent"><small>${m.isSeed ? '验证对局' : esc(m.mode || '对局记录')}</small><b>${esc(m.opponent ? '对阵 ' + m.opponent : '对手未标注')}</b></div>
     <span class="result ${esc(m.result)}">${esc(resultName[m.result] || '未知')}</span>
     <strong class="row-score">${score(m)}</strong><span class="match-duration">${time(m.duration)}</span>
     <div class="small-lineup">${(m.heroes || []).slice(0, 5).map((hero) => portrait(hero)).join('')}</div>
-    <span class="row-arrow">${icon('arrow')}</span></a>`).join('')}</div>`;
+    <span class="row-arrow">${icon('arrow')}</span></a>
+    <button type="button" class="match-edit" data-match-edit="${esc(m.key)}" data-opponent="${esc(m.opponent || '')}" title="编辑对手队名" aria-label="编辑对手队名">✎</button>
+  </div>`).join('')}</div>`;
+}
+
+/** 编辑对手队名：写 match_meta 覆盖层（不改原始数据包）。 */
+function opponentDialog(key, current) {
+  const dialog = document.querySelector('#filters');
+  dialog.innerHTML = `<form id="opponent-form" data-key="${esc(key)}"><div class="dialog-head"><div><h2>编辑对手队名</h2><p>只影响本机显示与统计，不改原始数据包；留空表示「对手未标注」。</p></div>
+    <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
+    <div class="dialog-body"><label>对手战队/队名<input name="opponent" maxlength="50" value="${esc(current)}" placeholder="例如：漂流网咖"></label>
+    <p class="filter-error" role="alert"></p></div>
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">保存</button></div></form>`;
+  dialog.showModal();
+  dialog.querySelector('input[name="opponent"]')?.focus();
 }
 
 /* 第一次打开、库里还没有对局时，先给三条把数据拿进来的路。
@@ -1019,14 +1049,14 @@ function matchPage(m) {
       <div class="md-line-mid">
         <strong><i class="${winSide === 'own' ? 'win' : ''}">${esc(scoreParts[0] || '—')}</i><span>:</span><i class="${winSide === 'rival' ? 'win' : ''}">${esc(scoreParts[1] || '—')}</i></strong>
         <div class="md-line-note"><em class="${m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : ''}">${esc(resultText)}</em><span>${time(m.duration)}</span></div>
-        <p class="md-line-diff"><b>${diff(finalDiff)}</b> 终局金差 · 本队视角</p>
+        <p class="md-line-diff"><b>${diff(finalDiff)}</b> 终局经济差 · 本队视角</p>
       </div>
       <div class="md-line-side rival">
         <span>对手 · ${esc(sides[opposite[own]] || '阵营未知')}</span>
         <b>${esc(m.opponent || '未标注')}</b>
       </div>
     </div>
-    <p>口径：营地面板经济采样（约 30 秒一点）与回放事件；金差为本队减对手，不做跨局推断。</p>
+    <p>口径：营地面板经济采样（约 30 秒一点）与回放事件；经济差为本队减对手，不做跨局推断。</p>
   </section>`;
   const mdPhases = `<section class="section" id="match-phases"><div class="section-heading"><div><h2>阶段对比</h2><p>经济差与阶段变化按营地采样；资源 / 建筑是回放事件计数；入侵是本队五人合计进入对侧半区的时间占比</p></div></div>
     ${deep.phaseTable(phaseTableRows)}
@@ -1037,7 +1067,7 @@ function matchPage(m) {
   ].sort((a, b) => (a.t || 0) - (b.t || 0)).slice(0, 8);
   const dirClass = (d) => d === '利于本队' ? 'own' : d === '利于对手' ? 'enemy' : 'event';
   const mdTimeline = nodeRows.length ? `<section class="section" id="match-timeline"><div class="section-heading"><div><h2>关键节点</h2><p>按时间排列，每个数字都能回到具体分钟；波动取绝对值最大的几次</p></div></div>
-    <div class="md-node-head"><span>时间</span><span>关键节点</span><span>金差变化</span><span>当时金差</span><span>方向 / 来源</span></div>
+    <div class="md-node-head"><span>时间</span><span>关键节点</span><span>经济差变化</span><span>当时经济差</span><span>方向 / 来源</span></div>
     <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
   </section>` : '';
   const mdProfiles = `<section class="section" id="match-profiles"><div class="section-heading"><div><h2>十人面板</h2><p>对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比</p></div></div>
@@ -1079,7 +1109,7 @@ function matchPage(m) {
   const mdCohesion = `<section class="section" id="match-cohesion"><div class="section-heading"><div><h2>中野辅与入侵</h2><p>集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济</p></div></div>
     ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : '<div class="empty">正在读取营地的逐秒位置…</div>'}
   </section>`;
-  const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒金差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
+  const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒经济差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
     ${deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights) || '<div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div>'}
   </section>`;
   const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。竖虚线是前中后三期分界</p></div></div>
@@ -1334,6 +1364,13 @@ function clientMissingDialog() {
 }
 
 app.addEventListener('click', (event) => {
+  const editOpponent = event.target.closest('[data-match-edit]');
+  if (editOpponent) {
+    event.preventDefault();
+    event.stopPropagation();
+    opponentDialog(editOpponent.dataset.matchEdit, editOpponent.dataset.opponent || '');
+    return;
+  }
   if (features.click(event)) return;
   if (event.target.closest('[data-sx-inbox]')) { openInbox(); return; }
   if (event.target.closest('[data-sx-inbox-close]')) { document.querySelector('#sx-inbox-dialog')?.close(); return; }
@@ -1442,6 +1479,26 @@ app.addEventListener('click', (event) => {
 
 app.addEventListener('submit', (event) => {
   if (features.submit(event)) return;
+  if (event.target.id === 'opponent-form') {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const payload = { opponent: String(form.get('opponent') || '').trim() };
+    const button = event.target.querySelector('button[type=submit]');
+    button.disabled = true;
+    fetch(API_BASE + '/api/v3/match-meta/' + encodeURIComponent(event.target.dataset.key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }).then(async (response) => {
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || '保存失败');
+      document.querySelector('#filters').close();
+      load(true);
+    }).catch((err) => {
+      button.disabled = false;
+      event.target.querySelector('.filter-error').textContent = err.message;
+    });
+    return;
+  }
+  if (event.target.name === 'opponent' && event.target.closest('#opponent-form')) return;
   if (event.target.id === 'name-form') {
     event.preventDefault();
     const form = new FormData(event.target);

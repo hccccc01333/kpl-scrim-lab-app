@@ -126,7 +126,7 @@ export function createCrossPage(h) {
     const startClock = st ? st[0] : '';
     const heroes = own.map((p) => p.hero).filter(Boolean);
 
-    /* 5 分钟窗口的金差净变化；预留 8 段覆盖长局，空段在汇总时按实际覆盖剔除 */
+    /* 5 分钟窗口的经济差净变化；预留 8 段覆盖长局，空段在汇总时按实际覆盖剔除 */
     const windows = [];
     for (let k = 0; k < 8; k++) {
       const t0 = k * 300, t1 = (k + 1) * 300;
@@ -181,8 +181,8 @@ export function createCrossPage(h) {
 
   /* ── 本批汇总：结论与参照都从这里取 ─────────────────────────── */
   const METRICS = [
-    { key: 'finalDiff', label: '终局金差', fmt: (v) => diff(Math.round(v)) },
-    { key: 'at10', label: '10′ 金差', fmt: (v) => diff(Math.round(v)) },
+    { key: 'finalDiff', label: '终局经济差', fmt: (v) => diff(Math.round(v)) },
+    { key: 'at10', label: '10′ 经济差', fmt: (v) => diff(Math.round(v)) },
     { key: 'killMargin', label: '人头差', fmt: (v) => diff(Math.round(v)) },
     { key: 'duration', label: '时长', fmt: (v) => time(v) },
     { key: 'frontEnd', label: '阵线终值', fmt: (v) => Math.round(v * 100) + '%' },
@@ -226,7 +226,7 @@ export function createCrossPage(h) {
     return { rank: vals.length - lo + 1, total: vals.length };
   }
 
-  /* ── 图形：金差迷你曲线（一局一条，不叠加） ─────────────────── */
+  /* ── 图形：经济差迷你曲线（一局一条，不叠加） ─────────────────── */
   function spark(m, cls = '') {
     const pts = m.econ;
     if (!pts || pts.length < 2) return '<span class="cx-spark-none">—</span>';
@@ -241,7 +241,7 @@ export function createCrossPage(h) {
     const area = `${line} L${x(pts[pts.length - 1][0]).toFixed(1)},${y(0).toFixed(1)} L${x(pts[0][0]).toFixed(1)},${y(0).toFixed(1)} Z`;
     const tone = (num(m.finalDiff) && m.finalDiff < 0) ? 'loss' : 'win';
     const mark = m.duration > 600 ? `<line class="cx-spark-mark" x1="${x(600).toFixed(1)}" x2="${x(600).toFixed(1)}" y1="${PAD}" y2="${H - PAD}"/>` : '';
-    return `<svg class="cx-spark ${tone} ${cls}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(m.date + ' 金差走势')}">
+    return `<svg class="cx-spark ${tone} ${cls}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(m.date + ' 经济差走势')}">
       <line class="cx-spark-zero" x1="${PAD}" x2="${W - PAD}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}"/>
       ${mark}<path class="cx-spark-area" d="${area}"/><path class="cx-spark-line" d="${line}"/>
     </svg>`;
@@ -253,8 +253,8 @@ export function createCrossPage(h) {
     const lead = num(a.at10Med) ? `${diff(Math.round(a.at10Med))} 金` : null;
     let claim;
     if (a.decided >= 2 && a.rate === 100) claim = `${n} 局全胜，10 分钟中位领先 <em>${lead || '—'}</em>`;
-    else if (a.decided >= 2) claim = `${n} 局 ${a.wins} 胜 ${a.losses} 负，10 分钟中位金差 <em>${lead || '—'}</em>`;
-    else claim = `${n} 局训练序列，10 分钟中位金差 <em>${lead || '—'}</em>`;
+    else if (a.decided >= 2) claim = `${n} 局 ${a.wins} 胜 ${a.losses} 负，10 分钟经济差 <em>${lead || '—'}</em>`;
+    else claim = `${n} 局训练序列，10 分钟经济差 <em>${lead || '—'}</em>`;
     return claim;
   }
 
@@ -262,15 +262,15 @@ export function createCrossPage(h) {
     const bits = [];
     if (num(a.durAvg)) bits.push(`平均 ${time(a.durAvg)} 结束`);
     if (num(a.killAvg)) bits.push(`场均净胜 ${fmt(a.killAvg, 1)} 个人头`);
-    if (num(a.finalMed)) bits.push(`终局金差中位 ${diff(Math.round(a.finalMed))} 金`);
+    if (num(a.finalMed)) bits.push(`终局经济差中位 ${diff(Math.round(a.finalMed))} 金`);
     bits.push(`本批 ${a.sessions} 个训练组`);
     return bits.join(' · ');
   }
 
   function heroCard(a, visible, total) {
     const metrics = [
-      ['10′ 中位金差', num(a.at10Med) ? diff(Math.round(a.at10Med)) : '—', `${a.list.filter((m) => num(m.at10)).length} 局可读`],
-      ['终局金差中位', num(a.finalMed) ? diff(Math.round(a.finalMed)) : '—', '本队 − 对手'],
+      ['10′ 经济差', num(a.at10Med) ? diff(Math.round(a.at10Med)) : '—', `${a.list.filter((m) => num(m.at10)).length} 局可读`],
+      ['终局经济差中位', num(a.finalMed) ? diff(Math.round(a.finalMed)) : '—', '本队 − 对手'],
       ['平均时长', num(a.durAvg) ? time(a.durAvg) : '—', '从开赛到结算'],
       ['场均人头差', num(a.killAvg) ? diff(Math.round(a.killAvg)) : '—', '十人结算面板'],
     ];
@@ -291,8 +291,8 @@ export function createCrossPage(h) {
       <h1 class="cx-claim">${headline(a)}</h1>
       <p class="cx-fact">${esc(factLine(a))}</p>
       <div class="cx-hero-metrics">${metrics.map(([k, v, note]) => `<div class="cx-hm"><small>${k}</small><b>${esc(v)}</b><i>${esc(note)}</i></div>`).join('')}</div>
-      <div class="cx-film"><span class="cx-film-label">逐局金差</span><div class="cx-film-cells">${film}</div><span class="cx-film-hint">${esc(filmHint)}</span></div>
-      <p class="cx-hero-source">口径：王者营地面板经济采样（约 30 秒一点）与官方回放事件；金差＝本队减对手。本页全部结论基于当前范围内的 ${fmt(a.count)} 局。</p>
+      <div class="cx-film"><span class="cx-film-label">逐局经济走势</span><div class="cx-film-cells">${film}</div><span class="cx-film-hint">${esc(filmHint)}</span></div>
+      <p class="cx-hero-source">口径：王者营地面板经济采样（约 30 秒一点）与官方回放事件；经济差＝本队减对手。本页全部结论基于当前范围内的 ${fmt(a.count)} 局。</p>
     </header>`;
   }
 
@@ -307,8 +307,8 @@ export function createCrossPage(h) {
         <input class="cx-search" type="search" data-cx-opp value="${esc(filterOpp)}" placeholder="搜对手 / 标题 / 日期" aria-label="搜索对局">
         <label class="cx-select"><span>排序</span><select data-cx-sort>
           <option value="date"${sortKey === 'date' ? ' selected' : ''}>按时间</option>
-          <option value="finalDiff"${sortKey === 'finalDiff' ? ' selected' : ''}>按终局金差</option>
-          <option value="at10"${sortKey === 'at10' ? ' selected' : ''}>按 10′ 金差</option>
+          <option value="finalDiff"${sortKey === 'finalDiff' ? ' selected' : ''}>按终局经济差</option>
+          <option value="at10"${sortKey === 'at10' ? ' selected' : ''}>按 10′ 经济差</option>
           <option value="duration"${sortKey === 'duration' ? ' selected' : ''}>按时长</option>
         </select></label>
         <label class="cx-select"><span>每页</span><select data-cx-page-size>
@@ -346,7 +346,7 @@ export function createCrossPage(h) {
   }
 
   function boardHtml(ordered, a, visible, offset, pages) {
-    const head = `<div class="cx-row cx-head"><span>编号</span><span>对局</span><span>比分</span><span>时长</span><span>金差走势</span><span>10′</span><span>终局金差</span><span>本批位次</span><span>本队阵容</span><span></span></div>`;
+    const head = `<div class="cx-row cx-head"><span>编号</span><span>对局</span><span>比分</span><span>时长</span><span>经济差走势</span><span>10′</span><span>终局经济差</span><span>本批位次</span><span>本队阵容</span><span></span></div>`;
     const pager = pages > 1
       ? `<div class="cx-pager">
           <button type="button" class="cx-page-btn" data-cx-page="prev"${page === 0 ? ' disabled' : ''}>← 上一页</button>
@@ -362,64 +362,6 @@ export function createCrossPage(h) {
   }
 
   /* ── 参照栏：跨局数字只出现在这里 ───────────────────────────── */
-  function refHtml(a, ordered) {
-    const focus = a.list.find((m) => m.key === focusKey) || a.list[0];
-    const idx = Math.max(1, ordered.findIndex((m) => m.key === focus.key) + 1);
-    /* 局数多时一人一点会糊成一片，自动切成密度分箱 */
-    const useBins = a.count > 30;
-    const metrics = METRICS.map((def) => {
-      const vals = a.list.map((m) => m[def.key]).filter(num);
-      const lo = vals.length ? Math.min(...vals) : 0;
-      const hi = vals.length ? Math.max(...vals) : 1;
-      const span = hi - lo || 1;
-      const med = median(vals);
-      const medLeft = num(med) ? clamp((med - lo) / span * 100, 2, 98) : 50;
-      let plot;
-      if (useBins) {
-        const B = 16;
-        const counts = new Array(B).fill(0);
-        vals.forEach((v) => { counts[clamp(Math.floor((v - lo) / span * B), 0, B - 1)] += 1; });
-        const peak = Math.max(1, ...counts);
-        const focusVal = focus ? focus[def.key] : null;
-        const focusBin = num(focusVal) ? clamp(Math.floor((focusVal - lo) / span * B), 0, B - 1) : -1;
-        const bars = counts.map((c, k) => `<i class="${k === focusBin ? 'is-focus' : ''}" style="height:${Math.max(6, c / peak * 100).toFixed(0)}%"><title>${esc(`${def.label} 第 ${k + 1} 档 · ${c} 局`)}</title></i>`).join('');
-        plot = `<div class="cx-bins">${bars}<i class="cx-med" style="left:${medLeft.toFixed(1)}%"></i></div>`;
-      } else {
-        const dots = a.list.map((m) => {
-          const v = m[def.key];
-          if (!num(v)) return '';
-          const left = clamp((v - lo) / span * 100, 2, 98);
-          return `<i class="cx-dot${m.key === focusKey ? ' is-focus' : ''}" style="left:${left.toFixed(1)}%" title="${esc(`${m.date || ''} ${def.label} ${def.fmt(v)}`)}"></i>`;
-        }).join('');
-        plot = `<div class="cx-dots">${dots}<i class="cx-med" style="left:${medLeft.toFixed(1)}%"></i></div>`;
-      }
-      const value = focus && num(focus[def.key]) ? def.fmt(focus[def.key]) : '—';
-      const rank = focus ? rankOf(a, def.key, focus[def.key]) : null;
-      return `<div class="cx-metric">
-        <div class="cx-metric-top"><span>${esc(def.label)}</span><b>${esc(value)}</b></div>
-        ${plot}
-        <div class="cx-metric-foot"><span>本批中位 ${num(med) ? esc(def.fmt(med)) : '—'}</span><span>${rank ? `第 ${rank.rank} / ${rank.total}` : '—'}</span></div>
-      </div>`;
-    }).join('');
-
-    const extremes = [
-      ['最大终局金差', 'finalDiff', 'max'],
-      ['最小终局金差', 'finalDiff', 'min'],
-      ['最长一局', 'duration', 'max'],
-      ['最短一局', 'duration', 'min'],
-    ].map(([label, key, dir]) => {
-      const pool = a.list.filter((m) => num(m[key]));
-      if (!pool.length) return '';
-      const m = pool.slice().sort((x, y) => dir === 'max' ? y[key] - x[key] : x[key] - y[key])[0];
-      const value = key === 'duration' ? time(m[key]) : diff(Math.round(m[key]));
-      return `<a class="cx-extreme" href="#match/${encodeURIComponent(m.key)}"><span>${esc(label)}</span><b>${esc(value)}</b><small>${esc(m.date || '')}</small></a>`;
-    }).join('');
-
-    return `<div class="cx-ref-head"><div><h2>本批参照</h2><p>金点＝当前聚焦的第 ${idx} 局；每行把它放回 ${fmt(a.count)} 局的分布里定位。</p></div><span class="cx-ref-badge">#${String(idx).padStart(2, '0')}</span></div>
-      <div class="cx-ref-metrics">${metrics}</div>
-      <div class="cx-extremes"><h3>本批极值</h3>${extremes}</div>`;
-  }
-
   /* ── 分路对位：体素板 ───────────────────────────────────────── */
   function laneBoard(list) {
     const cols = [['gold', '分均经济差'], ['damage', '分均输出差'], ['taken', '分均承伤差']];
@@ -465,7 +407,7 @@ export function createCrossPage(h) {
   let vizRows = [];
   const VIZ_META = {
     '01': ['典型水平', '按对手看'], '02': ['差别来自哪', '排个序'],
-    '03': ['最差的一成', '落后的局'], '04': ['一段段看', '差距稳不稳'],
+    '03': ['最差的10%对局', '落后的局'], '04': ['一段段看', '差距稳不稳'],
     '05': ['走势', '每段时间'], '06': ['几套打法', '哪套最稳'],
     '07': ['打谁用哪套', '排个序'], '08': ['赢在哪段', '赢在哪路'],
     '09': ['领先守得住吗', '各状态局数'], '10': ['先看哪类', '各类多少局'],
@@ -495,8 +437,8 @@ export function createCrossPage(h) {
     .replace(/分位数/g, '按局排序后的档位')
     .replace(/爆雷率/g, '落后的局占比')
     .replace(/中位(数)?/g, '典型水平')
-    .replace(/P10/g, '最差的一成').replace(/P25/g, '偏低的四分之一')
-    .replace(/P50/g, '典型水平').replace(/P75/g, '偏高的四分之一').replace(/P90/g, '最好的一成')
+    .replace(/P10/g, '最差的10%对局').replace(/P25/g, '偏低的四分之一')
+    .replace(/P50/g, '典型水平').replace(/P75/g, '偏高的四分之一').replace(/P90/g, '最好的10%对局')
     .replace(/10′/g, '10 分钟');
   const aesc = (v) => esc(String(v == null ? '' : v));
   const tipAttr = (text) => `data-cx-tip="${aesc(text)}"`;
@@ -563,6 +505,9 @@ export function createCrossPage(h) {
 
   function cohortCard(c) {
     cardActions.set(c.id, c.actKeys || []);
+    /* 覆盖不足 2 局时，曲线/分位/结论都不可靠：显示样本不足说明，不输出 +0 与空图。 */
+    const covered = Number((c.grade && c.grade.n) || 0);
+    const insufficient = covered < 2;
     const grade = `<span class="cx-grade g${c.grade.level}">${esc(c.grade.label)}</span>`;
     const repro = c.repro === null || c.repro === undefined ? '' : (c.repro ? '<span class="cx-repro ok">前后半可复现</span>' : '<span class="cx-repro no">前后半未复现</span>');
     const flag = c.flag ? `<span class="cx-repro ok">${esc(c.flag)}</span>` : '';
@@ -570,10 +515,14 @@ export function createCrossPage(h) {
     return `<article class="cx-find cx-cf" id="cx-analysis-${aesc(c.id)}">
       <div class="cx-cf-top"><span class="cx-find-kicker">${esc(c.id)} / ${esc(c.group)}</span><div class="cx-cf-flags">${grade}${repro}${flag}</div></div>
       <div class="cx-cf-name">${esc(c.name || '')}</div>
-      <h3 class="cx-cf-title">${c.title}</h3>
-      <div class="cx-cf-canvas">${renderViz(c.chart, c, { rows: vizRows, view: (id) => vizViews[id] || 'a' })}</div>
+      ${insufficient
+        ? '<h3 class="cx-cf-title cx-cf-title-muted">先攒够 2 局可用样本，再看这项结论</h3>'
+        : `<h3 class="cx-cf-title">${c.title}</h3>`}
+      <div class="cx-cf-canvas">${insufficient
+        ? `<div class="cx-cf-insufficient"><b>样本不足</b><p>这个分析至少需要 2 局可用样本，当前覆盖 ${covered} 局。先把对局补全（或在「采集」补挂官方回放），再看这项结论。</p></div>`
+        : renderViz(c.chart, c, { rows: vizRows, view: (id) => vizViews[id] || 'a' })}</div>
       <div class="cx-cf-foot">
-        <div class="cx-cf-train"><span>训练安排</span><p>${esc(c.train)}</p></div>
+        ${insufficient ? '' : `<div class="cx-cf-train"><span>训练安排</span><p>${esc(c.train)}</p></div>`}
         <button type="button" class="cx-act-btn" data-cx-act="${esc(c.id)}" ${count ? '' : 'disabled'}>${esc(c.review)} · 圈定 ${count} 局 <span>→</span></button>
       </div>
       <p class="cx-cf-method"><b>怎么算的</b> ${esc(coachMethod(c.method))} <span>覆盖 ${c.grade.n} 局</span></p>
@@ -688,11 +637,10 @@ export function createCrossPage(h) {
       ${scopeKeys ? `<div class="cx-scope-bar">已圈定 ${fmt(scopeKeys.size)} 局用于逐局对照；上方全部结论仍基于${cohort.total < cohortTotal ? '当前范围' : '全量'}总体 <button type="button" data-cx-unscope>清除圈定 →</button></div>` : ''}
       <div class="cx-main">
         ${boardHtml(ordered, a, visible, offset, pages)}
-        <aside class="cx-rail" data-cx-ref>${refHtml(a, ordered)}</aside>
       </div>
       ${cohortSection(cohort, cohortTotal, (lastMeta.cohort && lastMeta.cohort.vectors) || [])}
       ${laneBoard(list)}
-      <p class="cx-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与逐秒位置。阵线按五人平均推进归一化；金差一律为本队减对手。</p>
+      <p class="cx-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与逐秒位置。阵线按五人平均推进归一化；经济差一律为本队减对手。</p>
     </div>`;
   }
 
@@ -711,8 +659,6 @@ export function createCrossPage(h) {
     if (!rootEl || !lastView) return;
     rootEl.querySelectorAll('[data-cx-row]').forEach((el) => el.classList.toggle('is-focus', el.dataset.cxRow === focusKey));
     rootEl.querySelectorAll('[data-cx-focus].cx-film-cell').forEach((el) => el.classList.toggle('is-focus', el.dataset.cxFocus === focusKey));
-    const rail = rootEl.querySelector('[data-cx-ref]');
-    if (rail) rail.innerHTML = refHtml(lastView.a, lastView.ordered);
     if (scroll) {
       const target = rootEl.querySelector(`[data-cx-row="${CSS.escape(focusKey)}"]`);
       if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -721,7 +667,7 @@ export function createCrossPage(h) {
 
   function exportCsv() {
     if (!lastView) return;
-    const head = ['编号', '日期', '对局', '训练组', '胜负', '本队人头', '对手人头', '时长(秒)', '10分钟金差', '终局金差', '阵线终值'];
+    const head = ['编号', '日期', '对局', '训练组', '胜负', '本队人头', '对手人头', '时长(秒)', '10分钟经济差', '终局经济差', '阵线终值'];
     const lines = [head.join(',')];
     lastView.ordered.forEach((m, i) => {
       const cells = [i + 1, m.date, m.title, m.session,

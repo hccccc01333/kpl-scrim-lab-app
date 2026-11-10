@@ -158,7 +158,7 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     const at = (v) => clamp(((isNum(v) ? v : 0) - lo) / span * 100, 1, 99);
     const ra = rank('winRate', a.winRate), rb = rank('winRate', b.winRate);
     const B = view(big(ra ? `第 ${ra} / ${pool().length}` : '—', `${a.hero} 在全英雄的胜率位次`, 'gold'),
-      `<div class="hc-band-label"><span>最差的一成 ${pc(lo)}</span><b>全英雄 ${pool().length} 个</b><span>最好的一成 ${pc(hi)}</span></div>
+      `<div class="hc-band-label"><span>最差的10%对局 ${pc(lo)}</span><b>全英雄 ${pool().length} 个</b><span>最好的10%对局 ${pc(hi)}</span></div>
       <div class="hc-band"><i class="hc-band-fill" style="left:${at(q(.25)).toFixed(1)}%;width:${(at(q(.75)) - at(q(.25))).toFixed(1)}%"></i>
         <i class="hc-band-dot a" style="left:${at(a.winRate).toFixed(1)}%" ${tip(`${a.hero} ${pc(a.winRate)} · 第 ${ra} 名`)}></i>
         <i class="hc-band-dot b" style="left:${at(b.winRate).toFixed(1)}%" ${tip(`${b.hero} ${pc(b.winRate)} · 第 ${rb} 名`)}></i></div>
@@ -217,7 +217,7 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     const lo = quantile(vals, .1), hi = quantile(vals, .9), span = Math.max(1, hi - lo);
     const at = (v) => clamp(((isNum(v) ? v : 0) - lo) / span * 100, 1, 99);
     const B = view(big(n0(a.dpm), `${a.hero} 的分均输出`, 'teal'),
-      `<div class="hc-band-label"><span>最差的一成 ${n0(lo)}</span><b>全英雄分均输出</b><span>最好的一成 ${n0(hi)}</span></div>
+      `<div class="hc-band-label"><span>最差的10%对局 ${n0(lo)}</span><b>全英雄分均输出</b><span>最好的10%对局 ${n0(hi)}</span></div>
       <div class="hc-band"><i class="hc-band-fill" style="left:${at(quantile(vals, .25)).toFixed(1)}%;width:${(at(quantile(vals, .75)) - at(quantile(vals, .25))).toFixed(1)}%"></i>
         <i class="hc-band-dot a" style="left:${at(a.dpm).toFixed(1)}%" ${tip(`${a.hero} ${n0(a.dpm)}`)}></i>
         <i class="hc-band-dot b" style="left:${at(b.dpm).toFixed(1)}%" ${tip(`${b.hero} ${n0(b.dpm)}`)}></i></div>

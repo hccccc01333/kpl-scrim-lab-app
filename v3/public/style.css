@@ -7442,3 +7442,17 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
   .welcome-foot code { max-width: 78vw; }
   .welcome-other-row { flex-direction: column; }
 }
+
+.match-row-wrap { position: relative; }
+.match-edit { position: absolute; right: 34px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--paper); color: var(--muted); font-size: 13px; line-height: 1;
+  cursor: pointer; opacity: 0; transition: opacity .15s; }
+.match-row-wrap:hover .match-edit, .match-edit:focus-visible { opacity: 1; }
+.match-edit:hover { color: var(--accent); border-color: var(--accent); }
+.cx-cf-insufficient { margin: 14px 0; padding: 24px; border: 1px dashed var(--line);
+  border-radius: 12px; background: var(--paper); }
+.cx-cf-insufficient b { display: block; margin-bottom: 6px; font-size: 15px; color: var(--ink); }
+.cx-cf-insufficient p { color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+.cx-cf-title-muted { color: var(--muted); font-weight: 600; }

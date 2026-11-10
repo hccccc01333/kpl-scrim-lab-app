@@ -38,7 +38,7 @@ const short = (v) => SHORT[v] || String(v).slice(0, 5);
 const VIEWS = {
   '01': ['典型水平', '按对手看'],
   '02': ['差别来自哪', '排个序'],
-  '03': ['最差的一成', '哪路最常落后'],
+  '03': ['最差的10%对局', '哪路最常落后'],
   '04': ['一段段看', '分段对照'],
   '05': ['整段走势', '每段时间'],
   '06': ['几套打法', '哪套最稳'],
@@ -115,15 +115,15 @@ function bands(c, card, ctx) {
   const A = view(
     big(signed(c.p50), '这支队 10 分钟的典型领先', 'gold') + note('高于这条线算打得好，低于它先找原因'),
     `<div class="cxv-anchors">
-      <div><span>最差的一成</span><b>${signed(lo)}</b><small>${esc(tag(low))}</small></div>
+      <div><span>最差的10%对局</span><b>${signed(lo)}</b><small>${esc(tag(low))}</small></div>
       <div class="is-mid"><span>典型水平</span><b>${signed(c.p50)}</b><small>${esc(tag(mid))}</small></div>
-      <div><span>最好的一成</span><b>${signed(hi)}</b><small>${esc(tag(high))}</small></div>
+      <div><span>最好的10%对局</span><b>${signed(hi)}</b><small>${esc(tag(high))}</small></div>
     </div>
     <div class="cxv-scale" ${tip(`大多数局在 ${signed(c.p25)} ~ ${signed(c.p75)} 金之间，点这里圈出这批局`)} ${sel(`band:${c.p25}:${c.p75}`)}>
       <i class="cxv-fill" style="left:${at(c.p25).toFixed(1)}%;width:${(at(c.p75) - at(c.p25)).toFixed(1)}%"></i>
       <i class="cxv-mid" style="left:${at(c.p50).toFixed(1)}%"></i>
-      <i class="cxv-dot" style="left:${at(lo).toFixed(1)}%" ${tip(`最差的一成：${tag(low)} · ${signed(lo)} 金`)} ${sel(`band:${lo}:${c.p25}`)}></i>
-      <i class="cxv-dot alt" style="left:${at(hi).toFixed(1)}%" ${tip(`最好的一成：${tag(high)} · ${signed(hi)} 金`)} ${sel(`band:${c.p75}:${hi}`)}></i>
+      <i class="cxv-dot" style="left:${at(lo).toFixed(1)}%" ${tip(`最差的10%对局：${tag(low)} · ${signed(lo)} 金`)} ${sel(`band:${lo}:${c.p25}`)}></i>
+      <i class="cxv-dot alt" style="left:${at(hi).toFixed(1)}%" ${tip(`最好的10%对局：${tag(high)} · ${signed(hi)} 金`)} ${sel(`band:${c.p75}:${hi}`)}></i>
     </div>
     <div class="cxv-ticks"><span>${signed(lo)}</span><span>${signed(c.p25)}</span><span>${signed(c.p50)}</span><span>${signed(c.p75)}</span><span>${signed(hi)}</span></div>`
   );
@@ -131,7 +131,7 @@ function bands(c, card, ctx) {
   const strata = c.strata || [];
   const list = strata.length
     ? strata.slice(0, 6).map((s) => ({ label: s.label, value: s.p50, sub: `${s.n} 局`, selv: `val:opponent:${String(s.label).split('·').pop().trim()}` }))
-    : [['最差一成', c.lo, `band:${lo}:${c.p25}`], ['偏低', c.p25, `band:${c.p25}:${c.p50}`], ['典型', c.p50, `band:${c.p50}:${c.p75}`], ['偏高', c.p75, `band:${c.p75}:${hi}`], ['最好一成', c.hi, `band:${c.p75}:${hi}`]]
+    : [['最差10%对局', c.lo, `band:${lo}:${c.p25}`], ['偏低', c.p25, `band:${c.p25}:${c.p50}`], ['典型', c.p50, `band:${c.p50}:${c.p75}`], ['偏高', c.p75, `band:${c.p75}:${hi}`], ['最好10%对局', c.hi, `band:${c.p75}:${hi}`]]
       .map(([label, value, selv]) => ({ label, value, sub: '', selv }));
   const mx = maxOf(list, (x) => x.value);
   const B = view(
@@ -170,7 +170,7 @@ function stack(c, card, ctx) {
   const sorted = parts.slice().sort((a, b) => b.share - a.share);
   const mx = maxOf(sorted, (p) => p.share, 0.01);
   const B = view(
-    big(`${parts.length} 项`, '把金差起伏按来源拆开', 'gold') + note('占比越大，评价队员状态时越要先扣掉它'),
+    big(`${parts.length} 项`, '把经济差起伏按来源拆开', 'gold') + note('占比越大，评价队员状态时越要先扣掉它'),
     rows(sorted, (p) => barRow(human(p.label), pct(p.share), widthOf(p.share, mx), 'gold', `${human(p.label)}占 ${pct(p.share)}`, `dim:${p.label}`))
   );
   return shell(card, ctx, A, B);
@@ -183,14 +183,14 @@ function range(c, card, ctx) {
   const risky = items.slice().sort((a, b) => b.bad - a.bad)[0] || worst;
   const A = view(
     big(pct(risky.bad), `${risky.label} · 对线落后的局占比`, 'neg'),
-    rows(items.slice().sort((a, b) => b.bad - a.bad), (x) => barRow(x.label, pct(x.bad), widthOf(x.bad, 1), x.bad > 0.3 ? 'neg' : 'gold', `${x.label} · ${pct(x.bad)} 的局对线落后 · 最差一成 ${signed(x.p10)} 金`, `lane:${x.label}`, `最差一成 ${signed(x.p10)} 金`))
+    rows(items.slice().sort((a, b) => b.bad - a.bad), (x) => barRow(x.label, pct(x.bad), widthOf(x.bad, 1), x.bad > 0.3 ? 'neg' : 'gold', `${x.label} · ${pct(x.bad)} 的局对线落后 · 最差10%对局 ${signed(x.p10)} 金`, `lane:${x.label}`, `最差10%对局 ${signed(x.p10)} 金`))
     + `<div class="cxv-ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>`
   );
   const mx = maxOf(items.flatMap((x) => [x.p10, x.p90]), (v) => v);
   const B = view(
-    big(signed(worst.p10), `${worst.label} · 最差的一成局`, 'neg'),
+    big(signed(worst.p10), `${worst.label} · 最差10%对局`, 'neg'),
     `<div class="cxv-bipolars">${items.map((x) => `
-      <div class="cxv-bipolar" ${tip(`${x.label}：最差的一成 ${signed(x.p10)} 金、典型 ${signed(x.p50)} 金、最好 ${signed(x.p90)} 金；${pct(x.bad)} 的局对线落后`)} ${sel(`lane:${x.label}`)}>
+      <div class="cxv-bipolar" ${tip(`${x.label}：最差的10%对局 ${signed(x.p10)} 金、典型 ${signed(x.p50)} 金、最好 ${signed(x.p90)} 金；${pct(x.bad)} 的局对线落后`)} ${sel(`lane:${x.label}`)}>
         <span>${esc(x.label)}</span>
         <i class="cxv-bi-track"><em></em>
           <b class="neg" style="right:50%;width:${(Math.max(0, -(num(x.p10) ? x.p10 : 0)) / mx * 50).toFixed(1)}%"></b>
@@ -214,7 +214,7 @@ function segments(c, card, ctx) {
   let A;
   if (items.length < 3) {
     A = view(
-      big(signed(effect), '首段到末段的 10 分钟金差变化', effect >= 0 ? 'gold' : 'neg'),
+      big(signed(effect), '首段到末段的 10 分钟经济差变化', effect >= 0 ? 'gold' : 'neg'),
       `<div class="cxv-duo">
         <div class="cxv-duo-side"><span>最早一段</span><b>${signed(first ? first.value : 0)}</b><small>${esc((first && first.from) || '开赛')} 起 · ${first ? first.n : 0} 局</small></div>
         <i class="cxv-duo-arrow">→</i>
@@ -225,7 +225,7 @@ function segments(c, card, ctx) {
   } else {
     const band = `<path class="cxv-band-area" d="${items.map((s, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(num(s.hi) ? s.hi : s.value || 0).toFixed(1)}`).join(' ')} ${items.slice().reverse().map((s, j) => `L${x(items.length - 1 - j).toFixed(1)},${y(num(s.lo) ? s.lo : s.value || 0).toFixed(1)}`).join(' ')} Z"/>`;
     A = view(
-      big(signed(effect), '首段到末段的 10 分钟金差变化', effect >= 0 ? 'gold' : 'neg'),
+      big(signed(effect), '首段到末段的 10 分钟经济差变化', effect >= 0 ? 'gold' : 'neg'),
       `${chartSvg(H, `${gridLines(H)}${band}
         <line class="cxv-zero" x1="0" x2="1000" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" vector-effect="non-scaling-stroke"/>
         ${polyline(pts, 'gold', 3.5)}
@@ -286,7 +286,7 @@ function systems(c, card, ctx) {
   const legend = items.map((s, i) => `<div class="cxv-sys-row" ${tip(`${s.name} · ${s.n} 局 · 占比 ${pct(s.pct)} · 终局下限 ${signed(s.floor)}`)} ${sel(`sys:${i}`)}>
       <i class="${colors[i % 4]}"></i><span>${esc(s.name)}</span><b>${pct(s.pct)}</b><em>${s.n} 局</em></div>`).join('');
   const A = view(
-    big(`${items.length}`, '套可分辨的打法', 'gold') + note('每条线是一套打法从开局到收官的金差走势'),
+    big(`${items.length}`, '套可分辨的打法', 'gold') + note('每条线是一套打法从开局到收官的经济差走势'),
     `<div class="cxv-split chart-first">${chartSvg(H, `${gridLines(H)}<line class="cxv-zero" x1="0" x2="1000" y1="${H / 2}" y2="${H / 2}" vector-effect="non-scaling-stroke"/>${curves}`)}
       <div class="cxv-sys-legend">${legend}</div></div>
       <div class="cxv-ticks"><span>开局</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>收官</span></div>`
@@ -322,7 +322,7 @@ function matrix(c, card, ctx) {
     const hi = valid[0] || combos[0], lo = valid[valid.length - 1] || combos[combos.length - 1];
     const gap = hi && lo ? hi.v - lo.v : 0;
     A = view(
-      big(signed(gap), '组合之间的终局金差差距', 'gold'),
+      big(signed(gap), '组合之间的终局经济差差距', 'gold'),
       `<div class="cxv-duo">
         <div class="cxv-duo-side"><span>赢得最多的组合</span><b>${signed(hi ? hi.v : 0)}</b><small>${esc(hi ? hi.label : '—')} · ${hi ? hi.n : 0} 局</small></div>
         <i class="cxv-duo-arrow">→</i>

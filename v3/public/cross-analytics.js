@@ -255,8 +255,8 @@ function a01(ctx) {
   }))).slice(0, 8);
   const spread = strata.length > 1 ? Math.max(...strata.map((s) => s.p50)) - Math.min(...strata.map((s) => s.p50)) : null;
   const title = spread && Math.abs(spread) > 1500
-    ? `同一支队伍，换个对手/版本，10 分钟金差能差 <em>${sign(spread)}</em> 金`
-    : `这批 ${n} 局里，10 分钟金差一半在 <em>${sign(q50 || 0)}</em> 金以上`;
+    ? `同一支队伍，换个对手/版本，10 分钟经济差能差 <em>${sign(spread)}</em> 金`
+    : `这批 ${n} 局里，10 分钟经济差一半在 <em>${sign(q50 || 0)}</em> 金以上`;
   return {
     id: '01', name: '分层基准分析', group: '基准与稳定', ask: '我们这支队，正常水平到底在哪？',
     title,
@@ -267,7 +267,7 @@ function a01(ctx) {
     train: `把 ${sign(q25 || 0)} 金定成开局达标线，低于这条线的局单列复盘。`,
     review: '圈出低于达标线的局',
     actKeys: rows.filter((r) => num(r.at10) && r.at10 < (q25 || 0)).map((r) => r.key),
-    method: `10 分钟金差 P10/P25/P50/P75/P90；中位 95% 置信区间为 ${ci ? `${sign(ci[0])} ~ ${sign(ci[1])}` : '—'}；分层按版本/对手/训练组，仅列 ≥2 局的分层。`,
+    method: `10 分钟经济差 P10/P25/P50/P75/P90；中位 95% 置信区间为 ${ci ? `${sign(ci[0])} ~ ${sign(ci[1])}` : '—'}；分层按版本/对手/训练组，仅列 ≥2 局的分层。`,
     grade: grade(arr.length, ci, q50),
     repro: reproducible(rows.filter((r) => num(r.at10)), (s) => median(s.map((r) => r.at10))),
   };
@@ -282,8 +282,8 @@ function a02(ctx) {
   const env = sum(parts.slice(0, 4).map((p) => p.share));
   return {
     id: '02', name: '波动来源分析', group: '基准与稳定', ask: '成绩忽高忽低，是队员状态还是对手/版本？',
-    title: `终局金差的起伏，<em>${pct(env)}</em> 来自外部条件，其余是局内波动`,
-    plain: `其中主要是${top.label}差异（${pct(top.share)}）。${env > 0.3 ? '单看一局金差评价队员状态并不可靠。' : '说明这套打法本身输出比较稳定。'}`,
+    title: `终局经济差的起伏，<em>${pct(env)}</em> 来自外部条件，其余是局内波动`,
+    plain: `其中主要是${top.label}差异（${pct(top.share)}）。${env > 0.3 ? '单看一局经济差评价队员状态并不可靠。' : '说明这套打法本身输出比较稳定。'}`,
     chart: { type: 'stack', parts: parts.filter((p) => p.share > 0.005) },
     train: top.share > 0.3
       ? `状态评估改用「同${top.label}内比较」的口径，别再用跨对手的绝对值排名。`
@@ -310,10 +310,10 @@ function a03(ctx) {
   const riskKeys = worst ? rows.filter((r) => num((r.lanes[worst.label] || {}).gold) && r.lanes[worst.label].gold < worst.p10).map((r) => r.key) : [];
   return {
     id: '03', name: '下限风险分析', group: '基准与稳定', ask: '比赛日谁最稳、哪一路最可能掉链子？',
-    title: `<em>${worst ? worst.label : '—'}</em>下限最低：最差一成局分均 <em>${worst ? sign(worst.p10) : '—'}</em> 金，<em>${worst ? pct(worst.bad) : '—'}</em> 的局对线落后`,
+    title: `<em>${worst ? worst.label : '—'}</em>下限最低：最差10%对局分均 <em>${worst ? sign(worst.p10) : '—'}</em> 金，<em>${worst ? pct(worst.bad) : '—'}</em> 的局对线落后`,
     plain: `教练看的是下限不是均值：${best ? best.label : '—'}最可靠，${worst ? worst.label : '—'}需要预案。`,
     chart: { type: 'range', items },
-    train: worst ? `给${worst.label}安排对线专项，并准备轮换/换线预案；目标是让最差的一成局也不落后。` : '补齐分路数据。',
+    train: worst ? `给${worst.label}安排对线专项，并准备轮换/换线预案；目标是让最差10%对局也不落后。` : '补齐分路数据。',
     review: `回看${worst ? worst.label : ''}最差的 ${Math.min(riskKeys.length, 20)} 局`,
     actKeys: riskKeys,
     method: '按分路取「分均经济差」的 P10 / P50 / P90，爆雷率＝该路经济差为负的局占比；上下限用分位数，不受单局极值影响。',
@@ -371,7 +371,7 @@ function a04(ctx) {
     : unverifiable
       ? `整体后段高 <em>${sign(Math.abs(effect))}</em> 金，但${conf.label}也在换，先别算训练成效`
     : solid
-      ? `练到后段，10 分钟金差${effect > 0 ? '提高' : '回落'} <em>${sign(Math.abs(effect))}</em> 金，这个变化站得住`
+      ? `练到后段，10 分钟经济差${effect > 0 ? '提高' : '回落'} <em>${sign(Math.abs(effect))}</em> 金，这个变化站得住`
       : `前后段相差 <em>${sign(Math.abs(effect || 0))}</em> 金，还分不清是进步还是正常起伏`;
   return {
     id: '04', name: '训练效应分析', group: '进程与效应', ask: '这一阶段练下来，到底有没有变好？',
@@ -497,14 +497,14 @@ function a06(ctx) {
         : `按开局态势分出 <em>${items.length}</em> 组，<em>${steady ? steady.name : '—'}</em>下限更高`,
     plain: !items.length ? '分型会在局数足够后自动生效，不会拿几局硬凑出「体系」。'
       : clustered ? `占比最大的是「${top.name}」${pct(top.pct)}；比赛日优先用下限高的那套，不是平均赢最多的那套。`
-        : '这不是形状聚类，只是按 10 分钟金差分两组对照；局数够了会自动切成体系识别。',
+        : '这不是形状聚类，只是按 10 分钟经济差分两组对照；局数够了会自动切成体系识别。',
     chart: { type: 'systems', items: items.slice(0, 4).map(({ keys, ...x }) => x) },
     train: !items.length ? '继续积累同条件对局。'
       : clustered ? `下一阶段固定「${steady ? steady.name : '—'}」为主体系，其余只作针对性备选。`
         : '分组只作对照：把「开局受压」那组的开局处理列成训练项，下一批看这组占比是否下降。',
     review: !items.length ? '圈出偏离度最高的局' : clustered ? `回看「${steady ? steady.name : '—'}」的代表局` : `回看「${steady ? steady.name : '—'}」这一组`,
     actKeys: steady ? steady.keys.slice(0, 60) : [],
-    method: `${clustered ? '形状聚类' : '小样本降级：按 10′ 中位分组对照'}；取每局 0%/20%/40%/60%/80%/100% 时长处的金差并去基线（按时长对齐，长短局可比），固定上限 400 条拟合 k-means、按轮廓系数在 k=2..4 中选优，再把全部局按最近中心线性归类；每套给出占比、P10 下限与前后半方向复现。`,
+    method: `${clustered ? '形状聚类' : '小样本降级：按 10′ 中位分组对照'}；取每局 0%/20%/40%/60%/80%/100% 时长处的经济差并去基线（按时长对齐，长短局可比），固定上限 400 条拟合 k-means、按轮廓系数在 k=2..4 中选优，再把全部局按最近中心线性归类；每套给出占比、P10 下限与前后半方向复现。`,
     grade: grade(src.length),
     repro: items.length ? items.filter((x) => x.stable === true).length / items.length : null,
   };
@@ -532,14 +532,14 @@ function a07(ctx) {
   return {
     id: '07', name: '体系适配分析', group: '结构与归因', ask: '哪套打法，打哪类对手/版本更划算？',
     title: gap && Math.abs(gap) > 1500
-      ? `体系 × ${dim === 'opponent' ? '对手' : '版本'}的组合之间，终局金差最多差 <em>${sign(gap)}</em> 金`
+      ? `体系 × ${dim === 'opponent' ? '对手' : '版本'}的组合之间，终局经济差最多差 <em>${sign(gap)}</em> 金`
       : `各套打法在不同${dim === 'opponent' ? '对手' : '版本'}下表现接近，暂时不用按对手切体系`,
     plain: gap && Math.abs(gap) > 1500 ? '差得最多的是两种组合，赛前准备可以据此选体系，但先核对格子里的局数。' : '当前没有足够证据支持按对手换体系。',
     chart: { type: 'matrix', rows: scripts, cols, cells: cells.map((row) => row.map(({ keys, ...x }) => x)), dimLabel: dim === 'opponent' ? '对手' : '版本' },
     train: gap && Math.abs(gap) > 1500 ? '把「按对手选体系」写进赛前准备清单，并在下一批验证是否成立。' : '维持单一主体系，减少临场切换成本。',
     review: '圈出最优组合的局',
     actKeys: hi ? hi.keys.slice(0, 60) : [],
-    method: '按 10 分钟金差把局分为四类节奏，与对手/版本交叉取终局金差中位；每格标注覆盖局数，少于 2 局不参与极值比较。',
+    method: '按 10 分钟经济差把局分为四类节奏，与对手/版本交叉取终局经济差中位；每格标注覆盖局数，少于 2 局不参与极值比较。',
     grade: grade(flat.reduce((s, c) => s + c.n, 0)),
     repro: null,
   };
@@ -575,7 +575,7 @@ function a08(ctx) {
     train: peak ? `把 ${String(peak.label).replace('′', ' 分钟')} 的${lanePeak ? lanePeak.label : ''}联动设为主练项，下一批比较这一段的净增有没有提高。` : '保持均衡训练。',
     review: '圈出该段净增最高的局',
     actKeys: (() => { const wi = peak ? windows.indexOf(peak) : 0; return rows.filter((r) => num(r.w[wi])).sort((a, b) => (b.w[wi] || 0) - (a.w[wi] || 0)).slice(0, 30).map((r) => r.key); })(),
-    method: `窗口数按本批最长时长动态生成（当前 ${segCount} 段，覆盖到 ${segCount * WINDOW_MIN} 分钟，仅保留有 ≥2 局的段）；每局按 5 分钟窗口取金差净增，跨局取中位后做加性贡献分解；分路用「分均输出差」中位。经济为约 30 秒采样，故最小可信窗口为 5 分钟，不做分钟级因果。`,
+    method: `窗口数按本批最长时长动态生成（当前 ${segCount} 段，覆盖到 ${segCount * WINDOW_MIN} 分钟，仅保留有 ≥2 局的段）；每局按 5 分钟窗口取经济差净增，跨局取中位后做加性贡献分解；分路用「分均输出差」中位。经济为约 30 秒采样，故最小可信窗口为 5 分钟，不做分钟级因果。`,
     grade: grade(peak ? peak.n : 0),
     repro: reproducible(rows, (s) => { const a = vals(s.map((r) => r.w[2])); const b = vals(s.map((r) => r.w[3])); return median(b) - median(a); }),
   };
@@ -608,12 +608,12 @@ function a09(ctx) {
     title: bigLead.length
       ? `10 分钟大优的 <em>${bigLead.length}</em> 局里，<em>${shrunk.length}</em> 局后半程把优势打小`
       : '暂时没有足够的大优样本判断收官能力',
-    plain: `10 分钟落后的局，后半程金差中位变化 ${sign(recovered || 0)} 金；收官是能练的，不是天赋。`,
+    plain: `10 分钟落后的局，后半程经济差中位变化 ${sign(recovered || 0)} 金；收官是能练的，不是天赋。`,
     chart: { type: 'trans', states: names, m },
     train: shrunk.length && bigLead.length >= 3 ? '把「领先后的收官节奏」列为专项：推进节奏、资源交换与大龙决策。' : '继续积累领先局样本。',
     review: '回看优势被缩小的局',
     actKeys: shrunk.map((d) => d.r.key).slice(0, 60),
-    method: `按本批 10 分钟金差的 P25/中位/P75 把每局编为四态，统计到终局的状态转移；优势收窄比例用 Wilson 95% CI ${ci ? `${pct(ci[0])}~${pct(ci[1])}` : '—'}。全胜样本下用连续金差而非胜负，避免结果变量无方差。`,
+    method: `按本批 10 分钟经济差的 P25/中位/P75 把每局编为四态，统计到终局的状态转移；优势收窄比例用 Wilson 95% CI ${ci ? `${pct(ci[0])}~${pct(ci[1])}` : '—'}。全胜样本下用连续经济差而非胜负，避免结果变量无方差。`,
     grade: grade(bigLead.length, [ci[0] * 100, ci[1] * 100], shrunk.length / Math.max(1, bigLead.length) * 100),
     repro: null,
   };
@@ -651,7 +651,7 @@ function a10(ctx) {
   for (const x of odd) { const k = label(x); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
   const items = [...groups.entries()].map(([name, list]) => ({
     name, n: list.length, pct: list.length / Math.max(1, rows.length),
-    trait: name === '大优掉速' ? '10 分钟领先明显，终局优势收窄' : name === '慢热但翻盘' ? '开局落后，后程把金差追回' : name === '超长拉扯局' ? '时长明显长于这批局的典型水平' : '多项指标同时偏离本批常态',
+    trait: name === '大优掉速' ? '10 分钟领先明显，终局优势收窄' : name === '慢热但翻盘' ? '开局落后，后程把经济差追回' : name === '超长拉扯局' ? '时长明显长于这批局的典型水平' : '多项指标同时偏离本批常态',
     keys: list.map((x) => x.r.key), top: (list.slice().sort((a, b) => b.dist - a.dist)[0] || {}).r?.key || '',
   })).sort((a, b) => b.n - a.n).slice(0, 3);
   const first = items[0];
@@ -665,7 +665,7 @@ function a10(ctx) {
     train: first ? `把「${first.name}」的共性问题转成一条训练要求，下一批检查该类占比是否下降。` : '维持常规节奏。',
     review: first ? `把 ${first.n} 局排进明天复盘` : '圈出偏离度最高的局',
     actKeys: first ? first.keys.slice(0, 60) : scored.slice().sort((a, b) => b.dist - a.dist).slice(0, 10).map((x) => x.r.key),
-    method: '对终局金差 / 10′ 金差 / 时长 / 人头差做 MAD 稳健标准化，取距离前 20% 的局，按主导偏离方向归为类型；类型按占比排序，不给单例结论。',
+    method: '对终局经济差 / 10′ 经济差 / 时长 / 人头差做 MAD 稳健标准化，取距离前 20% 的局，按主导偏离方向归为类型；类型按占比排序，不给单例结论。',
     grade: grade(odd.length),
     repro: null,
   };
