@@ -400,6 +400,18 @@ def _landmark(points, seconds):
     return candidates[-1] if candidates and seconds - candidates[-1]['t'] <= 45 else None
 
 
+# dtType/dtID → 资源类型（营地 H5 前端 getDTInnerEventType 的映射，
+# 2026-11-10 从 team-analyzev2 前端包中核实）。
+RESOURCE_NAMES = {'8': '暗影主宰', '9': '暴君', '17': '暗影暴君'}
+CORE_IDS = {'10', '20'}
+
+
+def event_display_name(kind, dt_id):
+    if kind == 'resource':
+        return RESOURCE_NAMES.get(str(dt_id), '野怪')
+    return '水晶' if str(dt_id) in CORE_IDS else '防御塔'
+
+
 def _normalize_events(raw_events, players):
     by_entity = {str(player.get('entityId', player.get('replayEntityId'))): player
                  for player in players
@@ -413,12 +425,15 @@ def _normalize_events(raw_events, players):
             player = by_entity.get(str(item.get('killerId')))
             if player and player['key'] not in seen:
                 seen.add(player['key'])
+                hurt = item.get('hurtTotal')
                 participants.append({'key': player['key'], 'name': player.get('nickname'),
-                                     'hero': player.get('hero'), 'camp': player.get('camp')})
+                                     'hero': player.get('hero'), 'camp': player.get('camp'),
+                                     'hurtTotal': int(hurt) if str(hurt or '').isdigit() else None})
         x, y = event.get('x'), event.get('y')
         located = x is not None and y is not None and (abs(x) > 0.01 or abs(y) > 0.01)
         result.append({
             't': int(round(event['t'])), 'kind': kind, 'id': event['dtId'],
+            'name': event_display_name(kind, event['dtId']),
             'killerCamp': event['killerCamp'],
             'killer': killer.get('nickname') if killer else None,
             'killerHero': killer.get('hero') if killer else None,

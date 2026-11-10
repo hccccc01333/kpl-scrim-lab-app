@@ -1097,8 +1097,21 @@ function matchPage(m) {
     </div>
     <p>口径：营地面板经济采样（约 30 秒一点）与回放事件；经济差为本队减对手，不做跨局推断。</p>
   </section>`;
+  /* 资源控制（回放事件）：暴君/暗影暴君/暗影主宰/防御塔的双方击杀数，
+     与王者营地复盘页同口径；无回放事件时整块隐藏。 */
+  const resourceBand = (() => {
+    if (!events.length) return '';
+    const names = ['暴君', '暗影暴君', '暗影主宰', '防御塔'];
+    const count = (name, camp) => events.filter((e) => e.name === name && e.killerCamp === camp).length;
+    const rows = names.map((name) => ({ name, own: count(name, own), foe: count(name, opposite[own]) }));
+    const ownDragons = rows.slice(0, 3).reduce((sum, row) => sum + row.own, 0);
+    const foeDragons = rows.slice(0, 3).reduce((sum, row) => sum + row.foe, 0);
+    const rate = ownDragons + foeDragons ? Math.round(ownDragons / (ownDragons + foeDragons) * 100) : null;
+    return `<div class="md-res"><div class="md-res-head"><b>资源控制</b><span>龙/主宰控制率 ${rate === null ? '—' : rate + '%'} · 双方击杀数 · 来自官方回放事件</span></div>
+      <div class="md-res-grid">${rows.map((row) => `<span class="md-res-item"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>`).join('')}</div></div>`;
+  })();
   const mdPhases = `<section class="section" id="match-phases"><div class="section-heading"><div><h2>阶段对比</h2><p>经济差与阶段变化按营地采样；资源 / 建筑是回放事件计数；入侵是本队五人合计进入对侧半区的时间占比</p></div></div>
-    ${deep.phaseTable(phaseTableRows)}
+    ${deep.phaseTable(phaseTableRows)}${resourceBand}
   </section>`;
   const nodeRows = [
     ...[...swings].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 4).map((s) => ({ t: s.t, event: '经济差波动', delta: s.delta, value: diff(s.value), dir: (m.result === 'win' ? s.delta > 0 : s.delta < 0) ? '利于本队' : '利于对手' })),
