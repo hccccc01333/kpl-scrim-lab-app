@@ -63,6 +63,26 @@ def diff_points(normalized):
     return series(normalized)
 
 
+def duration_from_bundle(official_dir, bundle):
+    """按 bundle 的 ``match.officialReplay.id`` 读官方回放时长（秒）；失败返回 None。
+
+    营地数据包可能缺顶层 ``match.duration``（旧版入库只写了部分字段），
+    官方回放 normalized 里的 ``match.durationSec`` 是同一口径（秒）的兜底。
+    """
+    if not official_dir:
+        return None
+    replay_id = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
+    if not replay_id:
+        return None
+    path = Path(official_dir) / replay_id / 'normalized.json'
+    try:
+        normalized = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    seconds = _number((normalized.get('match') or {}).get('durationSec'))
+    return int(round(seconds)) if seconds and seconds > 0 else None
+
+
 def from_bundle(official_dir, bundle):
     """按 bundle 里的 ``match.officialReplay.id`` 读取官方经济；失败返回 []。"""
     if not official_dir:

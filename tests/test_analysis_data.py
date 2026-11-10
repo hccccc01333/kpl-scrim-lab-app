@@ -502,6 +502,56 @@ class DeepAnalyticsTests(unittest.TestCase):
         self.assertEqual(row['towerDiff'], 1)
 
 
+class BundleDurationTests(unittest.TestCase):
+    """营地包缺顶层 duration 时：官方回放兜底 + 分钟指标样本对齐。
+
+    线上真实故障：53/64 局 bundle 的 match.duration 为 null，GPM/DPM 把
+    「所有局的金币」除以「少数局的总分钟」，指标虚高 5-7 倍且无任何提示。
+    """
+
+    def test_official_replay_duration_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            db = root / 'training.sqlite3'
+            make_db(db)
+            matches = root / 'matches'
+            matches.mkdir()
+            value = bundle('E-bundle', '2026-10-06', None, OWN, ENEMY)
+            value['match']['officialReplay'] = {'id': 'camp-777'}
+            (matches / 'e.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+            official = root / 'official_replays' / 'camp-777'
+            official.mkdir(parents=True)
+            (official / 'normalized.json').write_text(
+                json.dumps({'match': {'durationSec': 900.0}}), encoding='utf-8')
+            imports = root / 'imports'
+            imports.mkdir()
+            repo = AnalysisRepository(db, matches, imports, official_dir=root / 'official_replays')
+            loaded = [match for match in repo.get()['matches'] if match['bundleKey'] == 'E-bundle'][0]
+            self.assertEqual(loaded['duration'], 900)
+
+    def test_minute_metrics_only_use_paired_rows(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            db = root / 'training.sqlite3'
+            make_db(db)
+            matches = root / 'matches'
+            matches.mkdir()
+            # 同一选手两局：一局有 10 分钟时长，另一局时长缺失但金币齐全。
+            paired = bundle('F1-bundle', '2026-10-06', 600, OWN, ENEMY)
+            (matches / 'f1.json').write_text(json.dumps(paired, ensure_ascii=False), encoding='utf-8')
+            missing = bundle('F2-bundle', '2026-10-07', None, OWN, ENEMY)
+            (matches / 'f2.json').write_text(json.dumps(missing, ensure_ascii=False), encoding='utf-8')
+            imports = root / 'imports'
+            imports.mkdir()
+            repo = AnalysisRepository(db, matches, imports)
+            players = repo.player_stats({'sources': ['bundle']})
+            player = next(item for item in players if item['label'] == OWN[0])
+            # 只统计「时长+金币都存在」的那局：11000 / 10 分钟 = 1100。
+            # 修复前会把两局金币 22000 都算进分子 → 2200。
+            self.assertAlmostEqual(player['gpm'], 1100, places=1)
+            self.assertAlmostEqual(player['gpmMinutes'], 10, places=1)
+
+
 if __name__ == '__main__':
     unittest.main()
 

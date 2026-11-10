@@ -468,7 +468,11 @@ class AnalysisRepository:
                 'sources': ['bundle'], 'source': 'bundle',
                 'campBacked': camp_backed,
                 'date': date.get('text'), 'dateText': date.get('text'),
-                'duration': match.get('duration'),
+                # 数据包可能缺顶层 duration；官方回放 normalized 有同口径的
+                # durationSec（秒），缺失时兜底，否则按分钟聚合的指标分母塌缩
+                # （GPM/DPM 曾因此虚高数倍且无任何提示）。
+                'duration': match.get('duration')
+                            or official_economy.duration_from_bundle(self.official_dir, value),
                 'opponent': match.get('opponent'), 'session': match.get('session'),
                 'version': None, 'mode': match.get('mode'),
                 'title': match.get('title'), 'ownSide': own_camp,
@@ -1003,15 +1007,20 @@ class AnalysisRepository:
             d = [item['deaths'] for item in items if item['deaths'] is not None]
             a = [item['assists'] for item in items if item['assists'] is not None]
             full_items = [item for item in items if item.get('full')]
-            gold = [item['gold'] for item in full_items if item['gold'] is not None]
-            damage = [item['damage'] for item in full_items if item['damage'] is not None]
-            taken = [item['taken'] for item in full_items if item['taken'] is not None]
-            minutes = sum(item['minutes'] for item in full_items
-                          if item['minutes'] and item['gold'] is not None)
-            minutes_damage = sum(item['minutes'] for item in full_items
-                                 if item['minutes'] and item['damage'] is not None)
-            minutes_taken = sum(item['minutes'] for item in full_items
-                                if item['minutes'] and item['taken'] is not None)
+            # 按分钟聚合的指标必须分子分母同样本：只统计「数值和时长都存在」的行，
+            # 否则时长缺失的局会把它们的数值摊进别人的分母里（GPM/DPM 曾因此虚高）。
+            gold_minutes = [(item['gold'], item['minutes']) for item in full_items
+                            if item['minutes'] and item['gold'] is not None]
+            damage_minutes = [(item['damage'], item['minutes']) for item in full_items
+                              if item['minutes'] and item['damage'] is not None]
+            taken_minutes = [(item['taken'], item['minutes']) for item in full_items
+                             if item['minutes'] and item['taken'] is not None]
+            gold = [g for g, _m in gold_minutes]
+            damage = [d for d, _m in damage_minutes]
+            taken = [v for v, _m in taken_minutes]
+            minutes = sum(m for _g, m in gold_minutes)
+            minutes_damage = sum(m for _d, m in damage_minutes)
+            minutes_taken = sum(m for _v, m in taken_minutes)
             shares = [item['goldShare'] for item in items if item['goldShare'] is not None]
             damage_shares = [item['damageShare'] for item in items if item['damageShare'] is not None]
             taken_shares = [item['takenShare'] for item in items if item['takenShare'] is not None]
@@ -1170,11 +1179,14 @@ class AnalysisRepository:
             d = [item['deaths'] for item in items if item['deaths'] is not None]
             a = [item['assists'] for item in items if item['assists'] is not None]
             full_items = [item for item in items if item.get('full')]
-            gold = [item['gold'] for item in full_items if item['gold'] is not None]
-            damage = [item['damage'] for item in full_items if item['damage'] is not None]
-            minutes = sum(item['minutes'] for item in full_items if item['minutes'] and item['gold'] is not None)
-            minutes_damage = sum(item['minutes'] for item in full_items
-                                 if item['minutes'] and item['damage'] is not None)
+            gold_minutes = [(item['gold'], item['minutes']) for item in full_items
+                            if item['minutes'] and item['gold'] is not None]
+            damage_minutes = [(item['damage'], item['minutes']) for item in full_items
+                              if item['minutes'] and item['damage'] is not None]
+            gold = [g for g, _m in gold_minutes]
+            damage = [d for d, _m in damage_minutes]
+            minutes = sum(m for _g, m in gold_minutes)
+            minutes_damage = sum(m for _d, m in damage_minutes)
             result.append({
                 'hero': hero, 'picks': len(items), 'wins': wins, 'decided': decided,
                 'winRate': round(wins / decided * 100, 1) if decided else None,
