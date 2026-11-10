@@ -9,6 +9,14 @@ const HALF = 0.5;        // 半区阈值（越过中线即入侵）
 const STILL_SECONDS = 12; // 连续静止超过该秒数视为死亡/暂停，样本剔除（与全景页一致）
 const PROX_RADIUS = 22.5; // 集结半径：地图对角线 149.91 的 15%
 const PROX_SECONDS = 5;   // 集结需持续时长
+/* 并线（打野）：教练 2026-11-10 第四波点名的指标。营地没有这个字段，只能拿逐秒位置
+   近似——打野和某一路队友靠在一起停留够久记一次。阈值都在这里，改口径只改这一处。 */
+const JOIN_MATE = 20;     // 与该路队友的距离上限（与集结半径同量级）
+const JOIN_SIDE = 8;      // 边路半区：中路对角线把地图分成两半，y−x 超过该值算过了线
+const JOIN_MID = 10;      // 中路走廊：到对角线的垂直距离上限
+const JOIN_BASE = 34;     // 己方基地半径内不算（出生点就压在两条边路的延长线上）
+const JOIN_SECONDS = 6;   // 一次并线的最短停留
+const JOIN_MERGE = 10;    // 同一路两次之间的间隔小于该秒数并成一次（同一波兵）
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -31,6 +39,91 @@ function activeMask(points, step) {
     mask.push(run < limit);
   }
   return mask;
+}
+
+/* 并线（打野）：营地没有这个字段，用逐秒位置近似。
+   一次并线 = 打野和某一路队友靠在一起（≤ JOIN_MATE）停留 ≥ JOIN_SECONDS，
+   同一路两次之间 ≤ JOIN_MERGE 视为同一波兵，不重复计。
+   分路靠中路对角线判：y−x > JOIN_SIDE 在对抗路半区、< −JOIN_SIDE 在发育路半区，
+   到对角线的垂直距离 ≤ JOIN_MID 算中路。己方基地 JOIN_BASE 内、坐标 (0,0) 占位、
+   静止样本（阵亡/暂停）都不计。
+   输出按「阵营-槽位」索引，口径写在页面上：近似值，只做同局两队横向比较，不进评级。
+   `laneOf` 由调用方注入（面板里是按 position 字段取分路的）。 */
+export function joinLaneStats(positions, players, laneOf) {
+  const out = new Map();
+  if (!positions || !Array.isArray(positions.players) || !positions.players.length) return out;
+  const step = positions.step || 2;
+  const srcOf = new Map();
+  const laneBySlot = new Map();
+  for (const p of players || []) {
+    if (!p || p.slot === undefined || p.slot === null) continue;
+    const key = `${p.camp}-${p.slot}`;
+    const lane = laneOf(p);
+    if (lane) laneBySlot.set(key, lane);
+  }
+  for (const src of positions.players) srcOf.set(`${src.camp}-${src.slot}`, src);
+  /* 同一阵营的路友：对抗路 / 中路 / 发育路各一个（游走本身也在并线，不当作锚点） */
+  const matesByCamp = new Map();
+  for (const [key, lane] of laneBySlot.entries()) {
+    if (!['对抗路', '中路', '发育路'].includes(lane)) continue;
+    const src = srcOf.get(key);
+    if (!src || !Array.isArray(src.points) || !src.points.length) continue;
+    if (!matesByCamp.has(src.camp)) matesByCamp.set(src.camp, []);
+    matesByCamp.get(src.camp).push([lane, src]);
+  }
+  for (const src of positions.players) {
+    if (laneBySlot.get(`${src.camp}-${src.slot}`) !== '打野') continue;
+    if (!Array.isArray(src.points) || src.points.length < 3) continue;
+    const mates = matesByCamp.get(src.camp) || [];
+    if (!mates.length) continue;
+    const mask = activeMask(src.points, step);
+    const base = src.camp === 'blue' ? [-58, -58] : [58, 58];
+    const lanes = {};
+    const times = [];
+    for (const [lane, mate] of mates) {
+      const starts = [];
+      let runStart = null;
+      let lastEnd = null;
+      const close = (index) => {
+        if (runStart !== null && index - runStart >= JOIN_SECONDS) starts.push(runStart * step);
+        runStart = null;
+        lastEnd = index;
+      };
+      for (let i = 0; i < src.points.length; i += 1) {
+        const here = src.points[i];
+        const mate_ = mate.points[i];
+        let ok = false;
+        if (mask[i] && Array.isArray(here) && Array.isArray(mate_)) {
+          const [x, y] = here;
+          const [tx, ty] = mate_;
+          ok = !(x === 0 && y === 0)
+            && Math.hypot(x - base[0], y - base[1]) > JOIN_BASE
+            && Math.hypot(x - tx, y - ty) <= JOIN_MATE
+            && (lane === '中路'
+              ? Math.abs(y - x) / Math.SQRT2 <= JOIN_MID
+              : (lane === '对抗路' ? y - x > JOIN_SIDE : y - x < -JOIN_SIDE));
+        }
+        if (ok) {
+          if (runStart === null) {
+            runStart = lastEnd !== null && i - lastEnd <= JOIN_MERGE / step ? lastEnd : i;
+          }
+        } else if (runStart !== null) {
+          close(i);
+        }
+      }
+      if (runStart !== null) close(src.points.length);
+      if (!starts.length) continue;
+      lanes[lane] = starts;
+      for (const at of starts) times.push({ t: at, lane });
+    }
+    if (!times.length) {
+      out.set(`${src.camp}-${src.slot}`, { total: 0, lanes: {}, times: [] });
+      continue;
+    }
+    times.sort((a, b) => a.t - b.t);
+    out.set(`${src.camp}-${src.slot}`, { total: times.length, lanes, times });
+  }
+  return out;
 }
 
 export function createMatchDeep(h) {
@@ -102,21 +195,31 @@ export function createMatchDeep(h) {
 
     const zero = low < 0 ? `<line x1="${L}" x2="${R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="mp-zero"/>` : '';
 
-    /* 事件标记：资源菱形、建筑方块，按阵营着色，落在曲线同一高度 */
+    /* 事件标记：龙/野怪/塔/水晶各有自己的形状，点位可点开看具体是什么。
+       形状区别是为了让教练不用悬停也能分出「这是红 BUFF 还是中路一塔」。 */
     const diffAt = (t) => {
       let best = series[0];
       for (const p of series) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
       return best.diff;
     };
-    const marks = (events || []).filter((e) => num(e.t) && e.t >= t0 && e.t <= t1 && (e.kind === 'resource' || e.kind === 'structure'))
-      .map((e) => {
-        const c = e.killerCamp === camps.own ? 'own' : 'foe';
-        const cy = y(diffAt(e.t)) - 13;
-        const shape = e.kind === 'structure'
-          ? `<rect x="${(x(e.t) - 4).toFixed(1)}" y="${(cy - 4).toFixed(1)}" width="8" height="8" rx="1.5"/>`
-          : `<path d="M${x(e.t).toFixed(1)},${(cy - 5).toFixed(1)} L${(x(e.t) + 5).toFixed(1)},${cy.toFixed(1)} L${x(e.t).toFixed(1)},${(cy + 5).toFixed(1)} L${(x(e.t) - 5).toFixed(1)},${cy.toFixed(1)} Z"/>`;
-        return `<g class="mp-mark ${c}"><title>${esc(time(e.t) + ' · ' + (e.kind === 'structure' ? '建筑' : '资源') + ' · ' + (e.killer || ''))}</title>${shape}</g>`;
-      }).join('');
+    const markKind = (e) => {
+      if (e.kind === 'structure') return /水晶/.test(e.label || '') ? 'core' : 'tower';
+      return /BUFF/.test(e.label || '') ? 'buff' : 'dragon';
+    };
+    const shapeOf = (kind, cx, cy) => {
+      if (kind === 'tower') return `<rect x="${(cx - 4).toFixed(1)}" y="${(cy - 4).toFixed(1)}" width="8" height="8" rx="1.5"/>`;
+      if (kind === 'core') return `<rect x="${(cx - 5.5).toFixed(1)}" y="${(cy - 5.5).toFixed(1)}" width="11" height="11" rx="2"/>`;
+      if (kind === 'buff') return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4"/>`;
+      return `<path d="M${cx.toFixed(1)},${(cy - 5.5).toFixed(1)} L${(cx + 5.5).toFixed(1)},${cy.toFixed(1)} L${cx.toFixed(1)},${(cy + 5.5).toFixed(1)} L${(cx - 5.5).toFixed(1)},${cy.toFixed(1)} Z"/>`;
+    };
+    const markList = (events || []).filter((e) => num(e.t) && e.t >= t0 && e.t <= t1
+      && (e.kind === 'resource' || e.kind === 'structure'));
+    const marks = markList.map((e, i) => {
+      const c = e.killerCamp === camps.own ? 'own' : 'foe';
+      const cx = x(e.t), cy = y(diffAt(e.t)) - 13;
+      return `<g class="mp-mark ${c} ${markKind(e)}" data-mark="${i}" tabindex="0" role="button"
+        aria-label="${esc(time(e.t) + ' ' + (e.label || ''))}"><title>${esc(time(e.t) + ' · ' + (e.label || '') + ' · ' + (e.killerHero || e.killer || ''))}</title>${shapeOf(markKind(e), cx, cy)}</g>`;
+    }).join('');
 
     return `<div class="mp" data-pulse data-t0="${t0}" data-t1="${t1}" data-duration="${duration}">
       <div class="mp-readout">
@@ -139,14 +242,15 @@ export function createMatchDeep(h) {
         ${zero}
         <path d="${line} L${x(tip.t).toFixed(1)},${y(0).toFixed(1)} L${x(t0).toFixed(1)},${y(0).toFixed(1)} Z" fill="url(#mp-area)"/>
         <path d="${line}" class="mp-curve"/>
+        <rect class="mp-hit" x="${L}" y="${TOP}" width="${R - L}" height="${BOT - TOP}"/>
         ${marks}
         <circle cx="${x(tip.t).toFixed(1)}" cy="${y(tip.diff).toFixed(1)}" r="4.5" class="mp-end"/>
         <g class="mp-cursor" hidden>
           <line x1="0" x2="0" y1="${TOP}" y2="${BOT}"/>
           <circle cx="0" cy="0" r="5"/>
         </g>
-        <rect class="mp-hit" x="${L}" y="${TOP}" width="${R - L}" height="${BOT - TOP}"/>
       </svg>
+      <div class="mp-card" data-pulse-card hidden></div>
       <div class="mp-axis-row"><span>${time(t0)}</span><span>${time(t1)}</span></div>
     </div>`;
   }
@@ -1419,7 +1523,7 @@ export function createMatchDeep(h) {
   }
 
   /* ── 交互：比赛脉搏指针 ─────────────────────────────────────────── */
-  function bindPulse(root, series, events) {
+  function bindPulse(root, series, events, ownCamp) {
     const box = root.querySelector('[data-pulse]');
     if (!box || !series.length) return;
     const svg = box.querySelector('.mp-svg');
@@ -1461,6 +1565,40 @@ export function createMatchDeep(h) {
         ? `${time(near.t)} ${near.kind === 'structure' ? '建筑' : near.kind === 'resource' ? '资源' : '击杀'} · ${near.killer || near.killerHero || ''}`
         : '该时刻附近没有记录事件';
     };
+    const card = box.querySelector('[data-pulse-card]');
+    const markList = (events || []).filter((e) => num(e.t) && (e.kind === 'resource' || e.kind === 'structure'));
+    const showCard = (index, event) => {
+      const item = markList[Number(index)];
+      if (!card || !item) return;
+      const side = item.killerCamp === ownCamp ? 'own' : 'foe';
+      const sideText = item.killerCamp ? (side === 'own' ? '我方' : '对手') : '';
+      card.innerHTML = `<b>${time(item.t)} · ${item.label || item.name || ''}</b>
+        <span class="mp-card-side ${side}">${sideText}${item.killerHero || item.killer ? ' · ' + (item.killerHero || item.killer) : ''}</span>
+        <small>${item.kind === 'structure' ? '建筑' : '资源'} · 官方回放事件</small>`;
+      const host = box.getBoundingClientRect();
+      const rect = event.currentTarget.getBoundingClientRect();
+      card.hidden = false;
+      const left = clamp(rect.left + rect.width / 2 - host.left, 8, host.width - card.offsetWidth - 8);
+      const top = rect.top - host.top - card.offsetHeight - 10;
+      card.style.left = `${left}px`;
+      card.style.top = `${Math.max(4, top)}px`;
+    };
+    svg.addEventListener('click', (event) => {
+      const mark = event.target.closest('.mp-mark');
+      if (!mark) return;
+      event.stopPropagation();
+      showCard(mark.dataset.mark, event);
+    });
+    svg.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const mark = event.target.closest('.mp-mark');
+      if (!mark) return;
+      event.preventDefault();
+      showCard(mark.dataset.mark, event);
+    });
+    document.addEventListener('pointerdown', (event) => {
+      if (!box.contains(event.target)) card && (card.hidden = true);
+    });
     svg.addEventListener('pointermove', move);
     svg.addEventListener('pointerdown', move);
     svg.addEventListener('pointerleave', () => { cursor.setAttribute('hidden', ''); });

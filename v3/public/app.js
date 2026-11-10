@@ -991,6 +991,34 @@ function gold10Grade(lane, value) {
 
 function matchPage(m) {
   const own = m.ownCamp;
+  /* 资源 / 建筑的具体名字。营地 H5 前端把 dtID 编成了「阵营 + 路 + 塔序」：
+     getTowerRoad(dtID) / getTowerIndex(dtID) 两个函数是它的原文（已存进
+     docs/camp_frontend_labels.json 的同一份前端包里）。路名按各自半区镜像：
+     蓝方的「一路」是上路，红方的「一路」是下路。 */
+  const TOWER_LANES = { blue: ['上路', '中路', '下路'], red: ['下路', '中路', '上路'] };
+  const RESOURCE_NAMES = { 8: '暗影主宰', 9: '暴君', 17: '暗影暴君', 10: '蓝 BUFF', 11: '红 BUFF' };
+  const towerName = (id, owner) => {
+    const n = Number(id);
+    if (n === 10 || n === 20) return '水晶';
+    if (!Number.isFinite(n) || n < 1) return '';
+    const road = Math.floor((n % 10 - 1) / 3);
+    const index = 3 - ((n % 10 - 1) % 3);      /* 1=高地 2=二塔 3=一塔 */
+    const lane = (TOWER_LANES[owner] || TOWER_LANES.blue)[road] || '';
+    return `${lane}${index === 1 ? '高地塔' : index === 2 ? '二塔' : '一塔'}`;
+  };
+  /* 事件的显示名：资源看 dtID，建筑看到底是哪一路哪一座。 */
+  const eventLabel = (e) => {
+    if (!e) return '';
+    if (e.kind === 'structure') {
+      const named = towerName(e.id, e.ownerCamp || e.killerCamp);
+      return named ? `${e.ownerCamp === own ? '我方' : '对方'}${named}` : (e.name || '建筑');
+    }
+    if (e.kind === 'resource') {
+      const named = RESOURCE_NAMES[Number(e.id)];
+      if (named) return named;
+    }
+    return e.name || (e.kind === 'resource' ? '资源' : '事件');
+  };
   const blue = { left: 'blue', right: 'red' }[own] || own;
   const points = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold) && (!has(m.duration) || x.gameTime <= m.duration))
     .map((x) => [x.gameTime, (x.blueGold - x.redGold) * (blue === 'red' ? -1 : 1)]);
@@ -1079,7 +1107,7 @@ function matchPage(m) {
       res: phaseEvents[i].res, struct: phaseEvents[i].struct, invade: invadeRates[i],
     };
   });
-  pulseState = { series, events };
+  pulseState = { series, events: events.map((e) => ({ ...e, label: eventLabel(e) })), own };
   const scoreParts = plainScore.split(' : ');
   const mdCrumb = `<div class="md-crumb">
     <a class="md-back" href="#matches"><span aria-hidden="true">←</span> 对局档案</a>
@@ -1117,34 +1145,6 @@ function matchPage(m) {
     </div>
     <p>口径：营地面板经济采样（约 30 秒一点）与回放事件；经济差为本队减对手，不做跨局推断。</p>
   </section>`;
-  /* 资源 / 建筑的具体名字。营地 H5 前端把 dtID 编成了「阵营 + 路 + 塔序」：
-     getTowerRoad(dtID) / getTowerIndex(dtID) 两个函数是它的原文（已存进
-     docs/camp_frontend_labels.json 的同一份前端包里）。路名按各自半区镜像：
-     蓝方的「一路」是上路，红方的「一路」是下路。 */
-  const TOWER_LANES = { blue: ['上路', '中路', '下路'], red: ['下路', '中路', '上路'] };
-  const RESOURCE_NAMES = { 8: '暗影主宰', 9: '暴君', 17: '暗影暴君', 10: '蓝 BUFF', 11: '红 BUFF' };
-  const towerName = (id, owner) => {
-    const n = Number(id);
-    if (n === 10 || n === 20) return '水晶';
-    if (!Number.isFinite(n) || n < 1) return '';
-    const road = Math.floor((n % 10 - 1) / 3);
-    const index = 3 - ((n % 10 - 1) % 3);      /* 1=高地 2=二塔 3=一塔 */
-    const lane = (TOWER_LANES[owner] || TOWER_LANES.blue)[road] || '';
-    return `${lane}${index === 1 ? '高地塔' : index === 2 ? '二塔' : '一塔'}`;
-  };
-  /* 事件的显示名：资源看 dtID，建筑看到底是哪一路哪一座。 */
-  const eventLabel = (e) => {
-    if (!e) return '';
-    if (e.kind === 'structure') {
-      const named = towerName(e.id, e.ownerCamp || e.killerCamp);
-      return named ? `${e.ownerCamp === own ? '我方' : '对方'}${named}` : (e.name || '建筑');
-    }
-    if (e.kind === 'resource') {
-      const named = RESOURCE_NAMES[Number(e.id)];
-      if (named) return named;
-    }
-    return e.name || (e.kind === 'resource' ? '资源' : '事件');
-  };
   const resourceBand = (() => {
     if (!events.length) return '';
     /* 龙/主宰按具体名字数（暗影主宰、暴君、暗影暴君），防御塔拆到「哪一路哪一座」，
@@ -1385,9 +1385,9 @@ function matchPage(m) {
     <div class="md-totals-head"><span>总量 · ${esc(metadata.teamName || '本队')} vs ${esc(m.opponent || '对手')}</span><small>营地十人面板五人合计；金色为本队，青色为对手</small></div>
     ${deep.totals({ own: teamAgg(own), enemy: teamAgg(opposite[own]) })}
   </div>`;
-  const mdPulse = `<section class="section md-pulse" id="match-pulse"><div class="section-heading"><div><h2>比赛脉搏</h2><p>经济差与本队视角一致 · ${series.length} 个采样点；菱形＝资源、方块＝建筑，拖动或点按查看任意时刻</p></div>
-      <div class="mp-legend"><span class="own">本队领先</span><span class="foe">对手领先</span><span class="shape dia">资源</span><span class="shape sq">建筑</span></div></div>
-    ${series.length ? deep.pulse(series, events, m.duration, { own, ownName: metadata.teamName || '本队', foeName: m.opponent || '对手' }) : '<div class="empty">阵营未知，无法展示本队视角的经济差。</div>'}
+  const mdPulse = `<section class="section md-pulse" id="match-pulse"><div class="section-heading"><div><h2>比赛脉搏</h2><p>经济差与本队视角一致 · ${series.length} 个采样点；菱形＝龙、圆点＝BUFF、方块＝防御塔、大方块＝水晶，点标记看具体是什么</p></div></div>
+    ${series.length ? deep.pulse(series, events.map((e) => ({ ...e, label: eventLabel(e) })), m.duration, { own, ownName: metadata.teamName || '本队', foeName: m.opponent || '对手' }) : '<div class="empty">阵营未知，无法展示本队视角的经济差。</div>'}
+    <div class="mp-legend mp-legend-foot"><span class="own">本队</span><span class="foe">对手</span><span class="shape dia">龙</span><span class="shape cir">BUFF</span><span class="shape sq">防御塔</span><span class="shape sq big">水晶</span></div>
   </section>`;
   const mdCohesion = `<section class="section" id="match-cohesion"><div class="section-heading"><div><h2>中野辅与入侵</h2><p>集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济</p></div></div>
     ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : positionsEmpty}
@@ -1562,7 +1562,7 @@ function render(r = current()) {
     const playerLabel = (data && ((data.stats && data.stats.label) || data.label)) || r.key || '';
     hydratePlayer(playerLabel);
   }
-  if (r.name === 'match' && pulseState) deep.bindPulse(document, pulseState.series, pulseState.events);
+  if (r.name === 'match' && pulseState) deep.bindPulse(document, pulseState.series, pulseState.events, pulseState.own);
   if (r.name === 'match') deep.bindHeat(document);
   if (r.name === 'match') deep.bindBattle(document);
   if (r.name === 'cross') crossPage.bind(document);
@@ -1705,7 +1705,7 @@ async function load(fresh = false) {
             if(pane) pane.append(updated);
           }
         });
-        if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events);
+        if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events, pulseState.own);
         deep.bindHeat(document);
         deep.bindBattle(document);
       }
