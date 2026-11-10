@@ -35,6 +35,16 @@ function activeMask(points, step) {
 
 export function createMatchDeep(h) {
   const { esc, fmt, pct, diff, time, portrait } = h;
+  /* 阶段口径由 app 注入（对线 0–4′、发育 4–10′、后期 10′+）。 */
+  const phaseWindows = h.phases || ((duration) => {
+    const total = Number(duration) > 0 ? Number(duration) : 0;
+    return [['对线期', 0, 240], ['发育期', 240, 600], ['后期', 600, Infinity]]
+      .map(([label, start, end]) => {
+        const a = Math.min(start, total);
+        const b = Math.min(end === Infinity ? total : end, total);
+        return { label, start: a, end: Math.max(a, b) };
+      });
+  });
 
   /* ── 总量：总经济 / 击杀 / 输出 / 承伤 ───────────────────────────── */
   function totals(m) {
@@ -76,12 +86,12 @@ export function createMatchDeep(h) {
     const stepSize = limit >= 20000 ? 10000 : 5000;
     for (let v = low; v <= high; v += stepSize) steps.push(v);
 
-    const bands = duration > 0 ? ['对线期', '转线期', '决胜期'].map((name, i) => {
-      const a = Math.max(duration * i / 3, t0), b = Math.min(duration * (i + 1) / 3, t1);
+    const bands = duration > 0 ? phaseWindows(duration).map((w, i) => {
+      const a = Math.max(w.start, t0), b = Math.min(w.end, t1);
       if (b <= a) return '';
       const xa = x(a), xb = x(b);
       return `<rect x="${xa.toFixed(1)}" y="${TOP}" width="${(xb - xa).toFixed(1)}" height="${BOT - TOP}" class="mp-band${i % 2 ? ' alt' : ''}"/>
-        <text x="${((xa + xb) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle" class="mp-band-label">${name}</text>`;
+        <text x="${((xa + xb) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle" class="mp-band-label">${w.label}</text>`;
     }).join('') : '';
 
     const zero = low < 0 ? `<line x1="${L}" x2="${R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="mp-zero"/>` : '';
@@ -171,7 +181,11 @@ export function createMatchDeep(h) {
   function invasionStats(positions, players, duration) {
     const step = positions.step || 2;
     const meta = new Map(players.map((p) => [`${p.camp}-${p.slot}`, p]));
-    const phaseOf = (t) => (duration > 0 ? Math.min(2, Math.floor(t / (duration / 3))) : 0);
+    const wins = phaseWindows(duration);
+    const phaseOf = (t) => {
+      for (let i = 0; i < wins.length; i++) if (t < wins[i].end) return i;
+      return Math.max(0, wins.length - 1);
+    };
     const out = new Map();
     for (const src of positions.players) {
       const info = meta.get(`${src.camp}-${src.slot}`) || {};
@@ -766,7 +780,7 @@ export function createMatchDeep(h) {
       return null;
     };
 
-    /* 反事实：用 [阵亡-120s, 阵亡-10s] 的金差做 Theil–Sen 中位斜率，外推到复活时刻；
+    /* 反事实：用 [阵亡-120s, 阵亡-10s] 的经济差做 Theil–Sen 中位斜率，外推到复活时刻；
        损失 = 预期 − 实际。正数＝本队因这次掉点亏。中位斜率比最小二乘抗单点波动，
        再夹在 ±60 金/秒以内，避免 30 秒采样里的一次大波动把外推拉飞。 */
     const project = (t0, t1) => {
@@ -951,9 +965,9 @@ export function createMatchDeep(h) {
       <div class="dc-loss ${tone}">${num(loss) ? diff(loss) : '—'}<small>修正损失</small></div>
       <div class="dc-rows">
         <span>窗口 <b>${Math.round(row.t1 - row.d.t)} 秒</b></span>
-        <span>金差变化 <b>${num(row.info.raw) ? diff(row.info.raw) : '—'}</b></span>
+        <span>经济差变化 <b>${num(row.info.raw) ? diff(row.info.raw) : '—'}</b></span>
       </div>
-      <p class="dc-note">死前 120 秒金差走势外推到复活时刻的差额${row.info.confident ? '' : ' · 低置信'}</p>`;
+      <p class="dc-note">死前 120 秒经济差走势外推到复活时刻的差额${row.info.confident ? '' : ' · 低置信'}</p>`;
   }
 
   function highlightDeath(index) {
@@ -1088,10 +1102,11 @@ export function createMatchDeep(h) {
     const avg = own.length ? own.reduce((s, r) => s + r.own, 0) / own.length : null;
     const ahead = own.length ? own.filter((r) => r.own > 0.5).length / own.length * 100 : null;
 
-    const phases = ['对线期', '转线期', '决胜期'].map((label, k) => {
-      const a = x(total * k / 3), b = x(total * (k + 1) / 3);
+    const phases = phaseWindows(total).map((w, k) => {
+      const a = x(w.start), b = x(w.end);
+      if (b <= a) return '';
       return `<rect class="fr-band${k % 2 ? ' alt' : ''}" x="${a.toFixed(1)}" y="${TOP}" width="${Math.max(0, b - a).toFixed(1)}" height="${BOT - TOP}"/>
-        <text class="fr-band-label" x="${((a + b) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle">${label}</text>`;
+        <text class="fr-band-label" x="${((a + b) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle">${w.label}</text>`;
     }).join('');
     const grid = [0, 0.25, 0.5, 0.75, 1].map((v) => `<line class="fr-grid${v === 0.5 ? ' mid' : ''}" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>
       <text class="fr-axis" x="${L - 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${Math.round(v * 100)}%</text>`).join('');
@@ -1126,6 +1141,7 @@ export function createMatchDeep(h) {
   /* ── 对位纵深：同一张表，深区（>66%）/ 半区（>50%，即入侵）双口径 ── */
   function duel(positions, players, ownCamp, duration) {
     if (!positions || !positions.players?.length) return '';
+    const wins = phaseWindows(duration);
     const step = positions.step || 2;
     const laneOfPlayer = (p) => (LANES.includes(p.position) ? p.position : '游走');
     const foeCamp = ownCamp === 'blue' ? 'red' : 'blue';
@@ -1145,8 +1161,8 @@ export function createMatchDeep(h) {
           const p = progress(x, y);
           const inside = src.camp === 'blue' ? p > threshold : p < 1 - threshold;
           if (!inside) continue;
-          const phase = duration > 0 ? Math.min(2, Math.floor(t / (duration / 3))) : 0;
-          seconds[phase] += step;
+          const phase = wins.findIndex((w) => t < w.end);
+          seconds[phase < 0 ? seconds.length - 1 : phase] += step;
         }
         index.set(`${src.camp}-${laneOfPlayer(info)}`, { info, seconds });
       }

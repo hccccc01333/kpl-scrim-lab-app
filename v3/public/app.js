@@ -52,6 +52,24 @@ const fmt = (n, digits = 0) => has(n) ? new Intl.NumberFormat('zh-CN', { maximum
 const pct = (n) => has(n) ? fmt(n, 1) + '%' : '—';
 const diff = (n) => has(n) ? (n > 0 ? '+' : '') + fmt(n === 0 ? 0 : n) : '—';
 const time = (n) => has(n) && n >= 0 ? `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}` : '—';
+/* 阶段口径（教练 2026-11-10 确认）：对线期 0–4 分钟，发育期 4–10 分钟，其后为后期。
+   所有阶段相关面板统一走这两个函数，避免各算各的三等分。始终返回 3 段
+   （短局的后段长度为 0，图表天然不绘制）。 */
+const PHASE_DEFS = [['对线期', 0, 240], ['发育期', 240, 600], ['后期', 600, Infinity]];
+function phaseWindows(duration) {
+  const total = has(duration) && duration > 0 ? duration : 0;
+  return PHASE_DEFS.map(([label, start, end]) => {
+    const a = Math.min(start, total);
+    const b = Math.min(end === Infinity ? total : end, total);
+    return { label, start: a, end: Math.max(a, b) };
+  });
+}
+function phaseIndexAt(t, duration) {
+  if (!has(duration) || duration <= 0) return 0;
+  if (t < 240) return 0;
+  if (t < 600) return 1;
+  return 2;
+}
 const route = (page, value = '') => '#' + page + (value ? '/' + encodeURIComponent(value) : '');
 const resultName = { win: '胜利', loss: '失利', draw: '平局', unknown: '未知' };
 const sides = { blue: '蓝方', red: '红方', left: '左侧', right: '右侧' };
@@ -953,10 +971,9 @@ function matchPage(m) {
     for (const p of points) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
     return best ? best[1] : null;
   };
-  const phaseRows = ['前期', '中期', '后期'].map((name, i) => {
-    const t0 = has(m.duration) ? m.duration * i / 3 : 0, t1 = has(m.duration) ? m.duration * (i + 1) / 3 : 0;
-    const a = goldAt(t0), b = goldAt(t1);
-    return [name, time(t0) + '–' + time(t1), has(a) && has(b) ? diff(b - a) : '—', has(b) ? diff(b) : '—'];
+  const phaseRows = phaseWindows(m.duration).map((w, i) => {
+    const a = goldAt(w.start), b = goldAt(w.end);
+    return [w.label, time(w.start) + '–' + time(w.end), has(a) && has(b) ? diff(b - a) : '—', has(b) ? diff(b) : '—'];
   });
   const resultText = resultName[m.result] || '未知';
   const absPoints = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold) && (!has(m.duration) || x.gameTime <= m.duration))
@@ -968,15 +985,17 @@ function matchPage(m) {
   };
   const ownKey = (own === 'red' || own === 'right') ? 'r' : 'b';
   const enemyKey = ownKey === 'b' ? 'r' : 'b';
+  const phaseWins = phaseWindows(m.duration);
   const phaseGain = (i, key) => {
-    if (!has(m.duration) || !m.duration) return null;
-    const a = absAt(m.duration * i / 3, key), b = absAt(m.duration * (i + 1) / 3, key);
+    const w = phaseWins[i];
+    if (!w || !has(m.duration) || !m.duration) return null;
+    const a = absAt(w.start, key), b = absAt(w.end, key);
     return has(a) && has(b) ? b - a : null;
   };
   const gains = [0, 1, 2].map((i) => ({ own: phaseGain(i, ownKey), enemy: phaseGain(i, enemyKey) }));
   const gainMax = Math.max(1, ...gains.flatMap((g) => [Math.abs(g.own || 0), Math.abs(g.enemy || 0)]));
-  const phaseLabels = ['对线期', '转线期', '决胜期'];
-  const phaseOf = (t) => !has(m.duration) || !m.duration ? 0 : Math.min(2, Math.floor(t / (m.duration / 3)));
+  const phaseLabels = phaseWins.map((w) => w.label);
+  const phaseOf = (t) => phaseIndexAt(t, m.duration);
   /* 比赛脉搏的序列：本队 / 对手经济绝对值 + 本队视角经济差 */
   const series = absPoints.filter((p) => !has(m.duration) || p.t <= m.duration)
     .map((p) => ({ t: p.t, own: ownKey === 'b' ? p.b : p.r, foe: ownKey === 'b' ? p.r : p.b, diff: ownKey === 'b' ? p.b - p.r : p.r - p.b }));
@@ -1073,11 +1092,15 @@ function matchPage(m) {
   const mdProfiles = `<section class="section" id="match-profiles"><div class="section-heading"><div><h2>十人面板</h2><p>对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比</p></div></div>
     ${deep.panel(m.players || [], own, m.positions, m.duration)}
   </section>`;
+  /* 位置数据请求过但没有：说明该局缺逐秒位置（未关联官方回放），不再无限转圈。 */
+  const positionsEmpty = m.positionsRequested
+    ? '<div class="empty">该局没有逐秒位置数据（需要在采集页的通道校对里关联本局官方回放）</div>'
+    : '<div class="empty">正在读取营地的逐秒位置…</div>';
   const mdHeat = `<section class="section" id="match-heat"><div class="section-heading"><div><h2>对位热区</h2><p>选一路，看这一路两个人在 90 秒窗口里怎么移动；可拖动时间轴或点播放。金为本队、青为对手</p></div></div>
-    ${m.positions ? deep.heat(m.positions, m.players, own, m.duration) : '<div class="empty">正在读取营地的逐秒位置…</div>'}
+    ${m.positions ? deep.heat(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
   const mdDuel = `<section class="section" id="match-duel"><div class="section-heading"><div><h2>对位纵深</h2><p>同一张表两种口径：深区＝推进进度 &gt; 66%，半区＝&gt; 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格</p></div></div>
-    ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : '<div class="empty">正在读取营地的逐秒位置…</div>'}
+    ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
@@ -1107,16 +1130,17 @@ function matchPage(m) {
     ${series.length ? deep.pulse(series, events, m.duration, { own, ownName: metadata.teamName || '本队', foeName: m.opponent || '对手' }) : '<div class="empty">阵营未知，无法展示本队视角的经济差。</div>'}
   </section>`;
   const mdCohesion = `<section class="section" id="match-cohesion"><div class="section-heading"><div><h2>中野辅与入侵</h2><p>集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济</p></div></div>
-    ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : '<div class="empty">正在读取营地的逐秒位置…</div>'}
+    ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : positionsEmpty}
   </section>`;
   const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒经济差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
     ${deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights) || '<div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div>'}
   </section>`;
-  const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。竖虚线是前中后三期分界</p></div></div>
+  const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。分段线是对线/发育/后期的分界</p></div></div>
     ${deep.frontline(m.positions, m.players, own, m.duration) || '<div class="empty">这局没有位置数据</div>'}
   </section>`;
   return `<div class="page md-page">${mdCrumb}
     ${mdHero}
+    ${mdBp}
     ${mdTotals}
     ${mdPhases}
     ${mdPulse}
@@ -1127,14 +1151,13 @@ function matchPage(m) {
     ${mdFront}
     ${mdHeat}
     ${mdDuel}
-    ${mdBp}
     <p class="md-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与营地逐秒位置 · ${esc(m.date || '')} ${esc(m.opponent ? '对阵 ' + m.opponent : '')}</p>
     </div>`;
 }
 
 const tour = createTour();
 const features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table, pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true), currentQuery: () => query() });
-const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait });
+const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait, phases: phaseWindows });
 const crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
 deep.bindPanel(document);
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */
@@ -1279,6 +1302,7 @@ async function load(fresh = false) {
           fetch(API_BASE + '/api/replay/' + encodeURIComponent(r.key), { signal: currentRequest.signal, cache: 'no-store' }),
           fetch(API_BASE + '/api/positions/' + encodeURIComponent(r.key), { signal: currentRequest.signal, cache: 'no-store' }).catch(() => null),
         ]);
+        data.positionsRequested = true;
         if (stale()) return;
         data.replayStatus = response.status === 404 ? 'unavailable' : response.ok ? 'ready' : 'error';
         if (response.ok) data.replay = await response.json();
