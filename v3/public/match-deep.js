@@ -1,4 +1,4 @@
-﻿/* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
+/* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
    全部为纯函数式构建，数据来自 /api/matches/<key>、/api/replay/<key>、/api/positions/<key>。
    视觉口径：深墨蓝底 + 金（本队）· 青（对手）+ 等宽数字 + 体素方块。 */
 
@@ -845,6 +845,148 @@ export function createMatchDeep(h) {
     return out;
   }
 
+  /* ── 打野并线：三段（0–4 / 4–10 / 10 分钟后）× 三路，两队对照 ────────
+     口径完全交给 joinLaneStats（那波兵出发后，打野和该路队友在走廊里聚成 2～3 人、
+     待满 4 秒算一次，一波一线一次）；这里只负责把它画清楚。 */
+  function jungleJoin(positions, players, ownCamp, duration) {
+    if (!positions || !positions.players?.length) return '';
+    const camp = ownCamp === 'left' ? 'blue' : ownCamp === 'right' ? 'red' : ownCamp;
+    if (camp !== 'blue' && camp !== 'red') return '';
+    const foeCamp = camp === 'blue' ? 'red' : 'blue';
+    const join = joinLaneStats(positions, players, laneOf);
+    const wins = phaseWindows(duration);
+    const phaseOf = (t) => {
+      const index = wins.findIndex((w) => t < w.end);
+      return index < 0 ? wins.length - 1 : index;
+    };
+    const jungler = (side) => {
+      const player = (players || []).find((p) => p.camp === side && laneOf(p) === '打野');
+      if (!player) return null;
+      const stat = join.get(`${player.camp}-${player.slot}`) || { total: 0, lanes: {}, waves: [] };
+      const phases = wins.map(() => 0);
+      const lanes = { '对抗路': 0, '中路': 0, '发育路': 0 };
+      const grid = wins.map(() => ({ '对抗路': 0, '中路': 0, '发育路': 0 }));
+      for (const wave of stat.waves) {
+        const index = phaseOf(wave.t);
+        phases[index] += 1;
+        lanes[wave.lane] = (lanes[wave.lane] || 0) + 1;
+        if (grid[index]) grid[index][wave.lane] = (grid[index][wave.lane] || 0) + 1;
+      }
+      return {
+        player, stat, phases, lanes, grid,
+        total: stat.waves.length,
+        triples: stat.waves.filter((wave) => wave.size >= 3).length,
+      };
+    };
+    const own = jungler(camp);
+    const foe = jungler(foeCamp);
+    if (!own && !foe) return '';
+    const total = duration && duration > 0 ? duration : 1;
+    const pctOf = (value) => `${clamp(value / total * 100, 0, 100).toFixed(2)}%`;
+
+    /* 每条路的点只画在该路上：把全量点按路分一次，避免三行重复画一遍 */
+    const laneDots = (side, lane) => {
+      const entry = side === 'own' ? own : foe;
+      if (!entry) return '';
+      return entry.stat.waves.filter((wave) => wave.lane === lane).map((wave) => {
+        const label = `${time(wave.t)} · ${wave.lane} · ${wave.size} 人`;
+        return `<i class="md-jg-dot ${side}${wave.size >= 3 ? ' is-trio' : ''}"`
+          + ` style="--x:${pctOf(wave.t)}" title="${esc(label)}"></i>`;
+      }).join('');
+    };
+    /* 三段分界：每条路的轨道里画一条竖虚线，横跨整条时间轴 */
+    const cuts = wins.slice(1).map((win) => `<span class="md-jg-cut" style="left:${pctOf(win.start)}"></span>`).join('');
+    const laneRow = (lane) => `<div class="md-jg-row">
+        <span class="md-jg-lane">${lane}</span>
+        <div class="md-jg-track">
+          ${cuts}
+          <div class="md-jg-marks own">${laneDots('own', lane)}</div>
+          <span class="md-jg-line"></span>
+          <div class="md-jg-marks foe">${laneDots('foe', lane)}</div>
+        </div>
+        <span class="md-jg-rowcount"><b class="own">${own ? own.lanes[lane] || 0 : 0}</b><em>/</em><b class="foe">${foe ? foe.lanes[lane] || 0 : 0}</b></span>
+      </div>`;
+
+    const bands = wins.map((win) => {
+      const left = clamp(win.start / total * 100, 0, 100);
+      const width = clamp((win.end - win.start) / total * 100, 0, 100);
+      return `<span class="md-jg-band" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">`
+        + `<em>${esc(win.label)}</em></span>`;
+    }).join('');
+
+    const card = (entry, side) => {
+      if (!entry) return `<div class="md-jg-card ${side} is-empty"><span class="md-jg-tag">${side === 'own' ? '本队' : '对手'}打野</span><p>这局没有这个位置的位置数据</p></div>`;
+      const player = entry.player;
+      const peak = Math.max(1, ...entry.phases);
+      const phases = wins.map((win, index) => `<span class="md-jg-phase">
+          <small>${esc(win.label)}</small><b>${entry.phases[index]}</b>
+          <i style="--v:${(entry.phases[index] / peak).toFixed(2)}"></i></span>`).join('');
+      return `<div class="md-jg-card ${side}">
+        <span class="md-jg-tag">${side === 'own' ? '本队' : '对手'}打野</span>
+        <div class="md-jg-who">${portrait(player.hero)}<span><b>${esc(player.label || player.hero || '—')}</b><small>${esc(player.hero || '—')}</small></span></div>
+        <div class="md-jg-big">${entry.total}<em>次并线</em></div>
+        <div class="md-jg-chips">
+          <span class="md-jg-chip is-trio">三人 <b>${entry.triples}</b></span>
+          <span class="md-jg-chip">双人 <b>${entry.total - entry.triples}</b></span>
+        </div>
+        <div class="md-jg-phases">${phases}</div>
+      </div>`;
+    };
+
+    const head = `<span>路</span>${wins.map((win) => `<span>${esc(win.label)}</span>`).join('')}<span>合计</span>`;
+    const body = ['对抗路', '中路', '发育路'].map((lane) => {
+      const cells = wins.map((_, index) => {
+        const ownValue = own ? own.grid[index][lane] || 0 : 0;
+        const foeValue = foe ? foe.grid[index][lane] || 0 : 0;
+        const heat = clamp((ownValue + foeValue) / 3, 0, 1);
+        const dim = ownValue + foeValue === 0;
+        return `<span class="md-jg-cell${dim ? ' is-zero' : ''}" style="--k:${heat.toFixed(2)}">`
+          + `<b class="own">${ownValue}</b><em>/</em><b class="foe">${foeValue}</b></span>`;
+      }).join('');
+      const ownTotal = own ? own.lanes[lane] || 0 : 0;
+      const foeTotal = foe ? foe.lanes[lane] || 0 : 0;
+      return `<div class="md-jg-trow"><span class="md-jg-tlane">${lane}</span>${cells}`
+        + `<span class="md-jg-total"><b class="own">${ownTotal}</b><em>/</em><b class="foe">${foeTotal}</b></span></div>`;
+    }).join('');
+
+    const best = (entry) => {
+      if (!entry) return '';
+      const top = ['对抗路', '中路', '发育路']
+        .map((lane) => [lane, entry.lanes[lane] || 0])
+        .sort((a, b) => b[1] - a[1])[0];
+      if (!top || !top[1]) return '';
+      const early = entry.phases[0] || 0;
+      return `${top[0]}最多（${top[1]} 次）· 对线期 ${early} 次`;
+    };
+    const line = (side, entry) => (entry
+      ? `<p class="md-jg-line-${side}">${side === 'own' ? '本队' : '对手'}打野 <b>${entry.total}</b> 次并线，${esc(best(entry))}</p>`
+      : '');
+    const gap = own && foe ? own.total - foe.total : null;
+    const verdict = gap === null
+      ? ''
+      : `${gap === 0 ? '两队打野并线次数持平' : `本队打野${gap > 0 ? '多' : '少'} ${Math.abs(gap)} 次`}`;
+
+    return `<div class="md-jg">
+      <div class="md-jg-cards">${card(own, 'own')}
+        <div class="md-jg-vs"><b>并线</b>
+          ${gap === null ? '' : `<strong class="${gap >= 0 ? 'own' : 'foe'}">${gap > 0 ? '+' : ''}${gap}</strong>`}
+          <span>${esc(verdict)}</span>
+          <i class="md-jg-key"><em class="md-jg-dot own"></em>本队<em class="md-jg-dot foe"></em>对手</i>
+          <i class="md-jg-key"><em class="md-jg-dot is-trio"></em>三人并线</i>
+        </div>
+        ${card(foe, 'foe')}</div>
+      <div class="md-jg-timeline">
+        <div class="md-jg-bands">${bands}</div>
+        <div class="md-jg-rows">${['对抗路', '中路', '发育路'].map(laneRow).join('')}</div>
+        <div class="md-jg-axis"><span>0:00</span>${wins.slice(1).map((win) => `<span>${time(win.start)}</span>`).join('')}<span>${time(total)}</span></div>
+      </div>
+      <div class="md-jg-table"><div class="md-jg-thead">${head}</div>${body}</div>
+      <p class="md-jg-tcap">表格读法：格子里 <b class="own">本队</b> / <b class="foe">对手</b> 的打野并线次数，底色越深＝两队在这条路这一段的并线越多。</p>
+      <p class="md-jg-note">${line('own', own)}${line('foe', foe)}
+        <span>怎么算：第 n 波兵 10+33(n−1) 秒出发，打野和该路队友在走廊里 2～3 人聚在一起满 4 秒算一次，一波一线最多一次；基地内、阵亡与 5 人推挤不计。近似值，只做同局横向比较。</span></p>
+    </div>`;
+  }
+
   /* ── 中野辅与入侵：两队对照 ─────────────────────────────────────── */
   function cohesion(positions, players, ownCamp, duration, events, kills) {
     if (!positions || !positions.players?.length) return '';
@@ -1673,5 +1815,5 @@ export function createMatchDeep(h) {
     svg.addEventListener('pointerleave', () => { cursor.setAttribute('hidden', ''); });
   }
 
-  return { totals, pulse, phaseTable, panel, heat, duel, cohesion, battle, frontline, bindPulse, bindPanel, bindHeat, bindBattle };
+  return { totals, pulse, phaseTable, panel, heat, duel, jungleJoin, cohesion, battle, frontline, bindPulse, bindPanel, bindHeat, bindBattle };
 }

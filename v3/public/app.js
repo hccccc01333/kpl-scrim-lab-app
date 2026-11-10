@@ -1256,6 +1256,9 @@ function matchPage(m) {
   const mdDuel = `<section class="section" id="match-duel"><div class="section-heading"><div><h2>对位纵深</h2><p>同一张表两种口径：深区＝推进进度 &gt; 66%，半区＝&gt; 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格</p></div></div>
     ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
+  const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>打野并线</h2><p>兵线到了，打野和这条路的队友一起吃这波线，算一次并线。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
+    ${m.positions ? deep.jungleJoin(m.positions, m.players, own, m.duration) : positionsEmpty}
+  </section>`;
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
   const slots = (list, kind) => Array.from({ length: 5 }, (_, i) => {
@@ -1514,7 +1517,7 @@ function matchPage(m) {
   </div>`;
   return `<div class="page md-page" data-md-tab-active="${mdTab}">${mdCrumb}${mdTabs}
     <div class="md-pane" data-md-pane="review">${mdHero}${mdBp}${mdTotals}${mdPhases}${mdPulse}${mdTimeline}</div>
-    <div class="md-pane" data-md-pane="data">${mdGold10}${mdProfiles}${mdCohesion}</div>
+    <div class="md-pane" data-md-pane="data">${mdGold10}${mdProfiles}${mdJungle}${mdCohesion}</div>
     <div class="md-pane" data-md-pane="events">${mdBattle}${mdKills}${mdEventDetail}</div>
     <div class="md-pane" data-md-pane="map">${mdFront}${mdHeat}${mdDuel}</div>
     ${mdSource}
