@@ -1368,29 +1368,52 @@ function matchPage(m) {
       if (!cur || k.t < cur.t) firstOfFight.set(k.fight, k);
     }
     const firstKeys = new Set([...firstOfFight.values()].map((k) => `${k.t}-${k.killer}-${k.victim}`));
-    const summary = (m.players || [])
-      .filter((p) => p.camp === own && ['对抗路', '打野'].includes(p.position))
-      .map((p) => {
-        const hits = rows.filter((k) => k.killerCamp === p.camp && k.killer === p.hero && isCut(k));
-        if (!hits.length) return '';
-        return `<span class="md-kill-sum"><b>${esc(p.label || p.hero)}</b> ${esc(p.position)} · 切C <em>${hits.length}</em><small>${esc([...new Set(hits.map((k) => k.victim))].join('、'))}</small></span>`;
-      }).filter(Boolean).join('');
+    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次先手。
+       账本本身收进折叠区，需要逐条核对时再展开。 */
+    const statOf = (p) => {
+      const mine = rows.filter((k) => k.killerCamp === p.camp && k.killer === p.hero);
+      const cuts = mine.filter(isCut);
+      return {
+        p, kills: mine.length,
+        cut: cuts.length,
+        cutTargets: [...new Set(cuts.map((k) => k.victim))],
+        first: mine.filter((k) => firstKeys.has(`${k.t}-${k.killer}-${k.victim}`)).length,
+      };
+    };
+    const stats = (m.players || []).filter((p) => p.camp === own).map(statOf)
+      .sort((a, b) => (b.cut - a.cut) || (b.first - a.first) || (b.kills - a.kills));
+    const cutTotal = stats.reduce((sum, s) => sum + s.cut, 0);
+    const firstTotal = stats.reduce((sum, s) => sum + s.first, 0);
+    const statCards = stats.map((s) => `<article class="md-cut-card${s.cut ? ' is-hot' : ''}">
+      <header><span class="md-cut-lane">${esc(s.p.position || '未标注')}</span><b>${esc(s.p.label || s.p.hero)}</b></header>
+      <div class="md-cut-nums">
+        <span><b>${s.cut}</b><small>切C</small></span>
+        <span><b>${s.first}</b><small>先手</small></span>
+        <span><b>${s.kills}</b><small>击杀</small></span>
+      </div>
+      ${s.cutTargets.length ? `<p class="md-cut-targets">切了 ${esc(s.cutTargets.join('、'))}</p>` : '<p class="md-cut-targets is-quiet">本局没有切到对方中路 / 发育路</p>'}
+    </article>`).join('');
     const row = (k) => {
       const cut = isCut(k);
       const first = firstKeys.has(`${k.t}-${k.killer}-${k.victim}`);
       const kl = laneOfKill(k.killerCamp, k.killer);
       const vl = laneOfKill(k.victimCamp, k.victim);
-      return `<div class="md-kill ${k.killerCamp === own ? 'own' : 'foe'}${cut ? ' is-cut' : ''}" title="团战 ${esc(k.fight || '—')} · ${esc(k.killerCamp)} 击杀 ${esc(k.victimCamp)}">
+      const ownKill = k.killerCamp === own;
+      return `<div class="md-kill ${ownKill ? 'own' : 'foe'}${cut ? ' is-cut' : ''}">
         <span class="md-kill-t">${time(k.t)}</span>
+        <span class="md-kill-camp ${ownKill ? 'own' : 'foe'}">${ownKill ? '我方' : '对方'}</span>
         <span class="md-kill-side"><em>${esc(k.killer)}</em>${first ? '<i class="md-kill-first">先手</i>' : ''}<small>${esc(kl || '—')}</small></span>
         <span class="md-kill-arrow">→</span>
         <span class="md-kill-side"><em>${esc(k.victim)}</em><small>${esc(vl || '—')}</small></span>
         <em class="md-kill-cut">${cut ? '切C' : ''}</em>
       </div>`;
     };
-    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>击杀账本</h2><p>官方回放 battle.killInfo 逐次击杀（击杀方 → 被击杀方），按时间排序；★ 切C＝我方对抗路/打野击杀对方中路或发育路</p></div></div>
-      ${summary ? `<div class="md-kill-sums">${summary}</div>` : ''}
-      <div class="md-kill-list">${rows.map(row).join('')}</div>
+    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与先手</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；先手＝该波团战里的第一次击杀。逐条账本收在下面</p></div></div>
+      <div class="md-cut-sum"><span>全队切C <b>${cutTotal}</b> 次</span><span>先手 <b>${firstTotal}</b> 次</span><span>总击杀 <b>${rows.filter((k) => k.killerCamp === own).length}</b></span></div>
+      <div class="md-cut-grid">${statCards}</div>
+      <details class="md-camp md-kill-fold"><summary>逐条击杀账本 ${rows.length} 条 <small>时间 · 阵营 · 击杀方 → 被击杀方</small></summary>
+        <div class="md-kill-list">${rows.map(row).join('')}</div>
+      </details>
     </section>`;
   })();
   /* 事件详情：资源/推塔事件的参战者与伤害占比（keyEventArr.hurtTotal），

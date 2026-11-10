@@ -1,4 +1,4 @@
-@font-face { font-family: Manrope; src: url('media/manrope.woff2') format('woff2'); font-style: normal; font-weight: 400 800; font-display: swap; }
+﻿@font-face { font-family: Manrope; src: url('media/manrope.woff2') format('woff2'); font-style: normal; font-weight: 400 800; font-display: swap; }
 :root {
   color-scheme: light;
   --bg: #f3f5f6; --paper: #fff; --surface: #e9eeef; --text: #192c31; --muted: #627478;
@@ -6527,6 +6527,38 @@ a.hz-card { display: block; text-decoration: none; }
 .cx-cf-method b { color: var(--muted); font-weight: 700; }
 .cx-cf-method span { margin-left: 10px; }
 
+/* ── 页签 / 导语 / 展开的局列表（跨局分析 · 赛训组版） ───────────── */
+.cx-tabs { margin: 2px 0; }
+.cx-page .cx-pane { display: grid; gap: 18px; }
+.cx-page .cx-pane[hidden] { display: none; }
+.cx-pane-lede { margin: 0; max-width: 900px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.cx-find-sample { flex: none; padding: 3px 9px; border-radius: 999px; background: var(--wash); color: var(--muted); font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
+.cx-cf-plain { margin: 12px 0 0; color: var(--text); font-size: 13px; line-height: 1.65; }
+
+.cx-act-list { margin-top: 12px; border: 1px solid var(--line); border-radius: 11px; overflow: hidden; background: var(--paper); }
+.cx-act-list[hidden] { display: none; }
+.cx-act-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 34px minmax(0, 168px) 18px; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--line); color: var(--text); text-decoration: none; font-size: 12px; }
+.cx-act-row:first-child { border-top: 0; }
+.cx-act-row:hover { background: var(--wash); }
+.cx-act-date { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cx-act-opp { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.cx-act-res { text-align: center; font-size: 11px; font-weight: 800; border-radius: 5px; padding: 2px 0; }
+.cx-act-res.win { color: #1f6f52; background: rgba(63, 143, 110, .14); }
+.cx-act-res.loss { color: #a3402f; background: rgba(180, 84, 60, .13); }
+.cx-act-res.na { color: var(--quiet); }
+.cx-act-read { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cx-act-go { color: var(--quiet); text-align: right; }
+.cx-act-row:hover .cx-act-go { color: var(--accent); }
+.cx-act-export { width: 100%; padding: 9px 14px; border: 0; border-top: 1px solid var(--line); background: var(--wash); color: var(--muted); font-size: 11.5px; font-weight: 700; cursor: pointer; font-family: inherit; }
+.cx-act-export:hover { color: var(--text); }
+.cx-act-more { margin: 0; padding: 8px 14px 0; color: var(--quiet); font-size: 10.5px; }
+.cxv-empty-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+@media (max-width: 720px) {
+  .cx-act-row { grid-template-columns: 48px minmax(0, 1fr) 30px 18px; }
+  .cx-act-read { display: none; }
+}
+
 /* 悬停读数气泡 */
 .cxv .cx-viz-tip { position: absolute; z-index: 9; max-width: 260px; padding: 8px 11px; border-radius: 7px; background: #17252f; color: #fff; font-size: 11.5px; line-height: 1.5; pointer-events: none; box-shadow: 0 6px 20px rgba(23, 37, 47, .2); }
 .cxv .cx-viz-tip[hidden] { display: none; }
@@ -7606,10 +7638,31 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-ev-narr p { font-size: 12.5px; color: var(--text); margin: 4px 0; }
 .md-ev-narr p span { color: var(--quiet); margin-right: 8px; font-variant-numeric: tabular-nums; }
 /* 击杀账本：逐次击杀（谁 → 谁），切C 用金色右标，敌方击杀用青色 */
-.md-kill-sums { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
-/* 和「资源控制」的计数格同一套小药丸，避免同样是「人名 + 数字」却两种长相 */
-.md-kill-sum { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 10px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+/* 切C / 先手：先给统计卡，账本收进 details */
+.md-cut-sum { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0 var(--md-pad) 10px; color: var(--muted); font-size: 12px; }
+.md-cut-sum b { color: var(--text); font: 700 14px/1 Manrope, var(--font); margin: 0 2px; }
+.md-cut-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; margin: 0 var(--md-pad); }
+.md-cut-card { display: grid; gap: 7px; padding: 11px 12px; border: 1px solid var(--line); border-top: 2px solid var(--line);
+  border-radius: 10px; background: var(--surface); }
+.md-cut-card.is-hot { border-top-color: var(--accent); }
+.md-cut-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.md-cut-card header b { font-size: 12.5px; }
+.md-cut-lane { color: var(--muted); font-size: 10.5px; }
+.md-cut-nums { display: flex; gap: 14px; }
+.md-cut-nums span { display: grid; gap: 2px; }
+.md-cut-nums b { font: 700 17px/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
+.md-cut-card.is-hot .md-cut-nums b:first-child { color: var(--accent); }
+.md-cut-nums small { color: var(--quiet); font-size: 10.5px; }
+.md-cut-targets { margin: 0; color: var(--muted); font-size: 11px; }
+.md-cut-targets.is-quiet { color: var(--quiet); }
+.md-kill-fold { margin: 12px var(--md-pad) 0; padding-top: 6px; border-top: 1px solid var(--line); }
+.md-kill-list { display: grid; gap: 3px; max-height: 460px; overflow: auto; padding-right: 4px; margin-top: 6px; }
+/* 最后一列吃掉剩余宽度：切C 贴右，不再挤在表格中段、右边留一大片空白 */
+.md-kill { display: grid; grid-template-columns: 52px 34px minmax(0, 200px) 24px minmax(0, 200px) minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; }
+.md-kill:nth-child(odd) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.md-kill-camp { font-size: 10px; font-weight: 700; text-align: center; border-radius: 4px; padding: 1px 0; }
+.md-kill-camp.own { color: var(--md-own-ink); background: color-mix(in srgb, var(--md-gold) 18%, transparent); }
+.md-kill-camp.foe { color: var(--md-enemy-ink); background: color-mix(in srgb, var(--md-teal) 16%, transparent); }
   font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .md-kill-sum b { color: var(--text); font-weight: 600; }
 .md-kill-sum em { font-style: normal; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
