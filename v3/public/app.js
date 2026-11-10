@@ -1,4 +1,4 @@
-import { groupFor } from './navigation.js';
+﻿import { groupFor } from './navigation.js';
 import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
@@ -1282,36 +1282,39 @@ function matchPage(m) {
       (p.camp === own ? mine : theirs).set(p.position, p);
     }
     const ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
+    /* 对位压制的主口径是**巅峰千强大盘**（带超额胜率），不是自家训练赛、更不是 KPL：
+       自家样本太薄；KPL 的英雄对位被「强队选强英雄」污染，冷门英雄几乎没有样本，
+       拿它判克制会把「英雄本来就弱」说成「被克制」。自家历史只作一行补充。 */
+    const ladderLanes = new Map((m.bpFacts?.ladder?.lanes || []).map((row) => [row.lane, row]));
     const lanes = ORDER.map((lane) => {
       const a = mine.get(lane), b = theirs.get(lane);
       if (!a || !b) return null;
-      const row = byPair.get(`${a.hero}|${b.hero}`) || null;
-      /* 「对位压制」看**对线**，不看胜负：领先率与平均经济差必须同向才算压制/劣势。 */
-      const verdict = !row || row.n < 3 ? '样本不足'
-        : (row.aheadRate >= 66.7 && row.avgGoldDiff > 0) ? '压制'
-        : (row.aheadRate <= 33.3 && row.avgGoldDiff < 0) ? '劣势' : '均势';
+      const facts = ladderLanes.get(lane) || null;
+      const scrim = byPair.get(`${a.hero}|${b.hero}`) || null;
       const nowDiff = has(a.gold) && has(b.gold) ? a.gold - b.gold : null;
+      const states = { ahead: '压制', behind: '劣势', even: '均势' };
+      const verdict = facts ? (states[facts.state] || '样本不足') : '样本不足';
       const judgeable = verdict !== '样本不足';
-      /* 兑现：历史说占优、本局经济也领先（或历史吃亏、本局也亏） */
+      /* 兑现：大盘说这对组合占优、本局经济也领先（反之亦然） */
       const realised = judgeable && has(nowDiff)
         ? (verdict === '压制' ? nowDiff > 0 : verdict === '劣势' ? nowDiff < 0 : null)
         : null;
-      return { lane, a, b, row, verdict, nowDiff, judgeable, realised };
+      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised };
     }).filter(Boolean);
 
     const verdictText = (lane) => lane.verdict === '压制' ? '我方占优'
-      : lane.verdict === '劣势' ? '我方吃亏' : lane.verdict === '均势' ? '打平'
-      : lane.row ? `待积累 ${fmt(lane.row.n)}/3` : '待积累';
+      : lane.verdict === '劣势' ? '我方吃亏' : lane.verdict === '均势' ? '打平' : '无大盘样本';
     const verdictCls = (lane) => lane.verdict === '压制' ? 'is-ahead'
       : lane.verdict === '劣势' ? 'is-behind' : lane.verdict === '均势' ? 'is-even' : 'is-thin';
     const laneCard = (lane) => `<article class="md-mu-card ${verdictCls(lane)}">
       <header><span class="md-mu-lane">${lane.lane}</span><em class="${verdictCls(lane)}">${verdictText(lane)}</em></header>
       <div class="md-mu-who"><b class="own">${esc(lane.a.hero || '—')}</b><i>vs</i><b class="foe">${esc(lane.b.hero || '—')}</b></div>
-      ${lane.row ? `<p class="md-mu-hist">历史 ${fmt(lane.row.n)} 局 · 领先 ${fmt(lane.row.aheadRate, 0)}% · 均差 ${diff(lane.row.avgGoldDiff)}</p>`
-        : '<p class="md-mu-hist">没有同分路同英雄的历史对位</p>'}
+      ${lane.facts && lane.facts.n ? `<p class="md-mu-hist">巅峰千强 ${fmt(lane.facts.n)} 局 · 实际 ${fmt(lane.facts.wr, 1)}% vs 预期 ${fmt(lane.facts.expected, 1)}% · 超额 <b>${diff(lane.facts.excess)}</b></p>`
+        : '<p class="md-mu-hist">巅峰千强没有这个对位样本（冷门英雄或使用率不足）</p>'}
+      ${lane.scrim && lane.scrim.n ? `<p class="md-mu-hist">自家 ${fmt(lane.scrim.n)} 局 · 对线领先 ${fmt(lane.scrim.aheadRate, 0)}%</p>` : ''}
       ${lane.nowDiff === null ? '<p class="md-mu-now">本局经济差 —</p>'
         : `<p class="md-mu-now">本局对位经济差 <b>${diff(lane.nowDiff)}</b>${lane.realised === null ? ''
-          : lane.realised ? ' · <i class="is-hit">与历史同向</i>' : ' · <i class="is-miss">与历史相反</i>'}</p>`}
+          : lane.realised ? ' · <i class="is-hit">与大盘同向</i>' : ' · <i class="is-miss">与大盘相反</i>'}</p>`}
     </article>`;
 
     /* 联动：把双方阵容对到历史组合样本 */
@@ -1342,6 +1345,26 @@ function matchPage(m) {
       <div class="md-bp-combo-side foe"><span>对手组合</span><div class="md-combo-grid">${foeCombos.map(comboCard).join('') || '<small>对手阵容没有历史组合样本</small>'}</div></div>
     </div>` : '';
 
+    /* 赛事命中：本局这套阵容里的双人 / 三人组合，KPL 赛场上出现过几次。
+       教练原话：「不需要具体说明是哪一局，有就行」。所以只报命中与场次，不报是哪场。 */
+    const kplBlock = (() => {
+      const facts = m.bpFacts?.kpl;
+      if (!facts) return '';
+      const since = facts.sinceYear ? `${facts.sinceYear} 年起` : '';
+      const rows = [...(facts.pairs || []).slice(0, 3).map((row) => ({ ...row, size: 2 })),
+        ...(facts.trios || []).slice(0, 2).map((row) => ({ ...row, size: 3 }))];
+      const hit = (facts.hitPairs || 0) + (facts.hitTrios || 0);
+      if (!hit) {
+        return `<div class="md-kplhit is-empty"><b>赛事命中</b><span>本局阵容的双人 / 三人组合在 KPL ${since}没有出现过</span></div>`;
+      }
+      return `<div class="md-kplhit"><div class="md-kplhit-head"><b>赛事命中</b>
+        <span>本队 ${facts.totalPairs} 组双人里 <b>${facts.hitPairs}</b> 组、三人里 <b>${facts.hitTrios}</b> 组在 KPL 出现过${since ? `（${since}）` : ''}</span></div>
+        <div class="md-kplhit-rows">${rows.map((row) => `<span class="md-kplhit-row">
+          <i>${row.size === 3 ? '三人' : '双人'}</i>${esc(row.heroes.join(' + '))}
+          <b>${fmt(row.n)} 场</b><small>胜率 ${fmt(row.wr, 1)}%</small></span>`).join('')}</div>
+      </div>`;
+    })();
+
     /* 结论句：只陈述能算的，样本薄就自己说薄。 */
     const judged = lanes.filter((lane) => lane.judgeable);
     const ahead = judged.filter((lane) => lane.verdict === '压制').length;
@@ -1350,10 +1373,14 @@ function matchPage(m) {
     const positiveCombos = ownCombos.filter((combo) => combo.synergy > 0).length;
     const parts = [];
     if (judged.length) {
-      parts.push(`五路对位可判 ${judged.length} 路：占优 ${ahead}、吃亏 ${behind}`);
+      parts.push(`巅峰千强五路可判 ${judged.length} 路：占优 ${ahead}、吃亏 ${behind}`);
       if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路`);
     } else {
-      parts.push('五路对位都还没攒够 3 局历史样本');
+      parts.push('五路对位在巅峰千强都没有样本');
+    }
+    if (m.bpFacts?.kpl) {
+      const hit = (m.bpFacts.kpl.hitPairs || 0) + (m.bpFacts.kpl.hitTrios || 0);
+      parts.push(hit ? `赛事命中 ${hit} 组（KPL 出现过）` : '赛事无命中');
     }
     if (ownCombos.length) parts.push(`我方 ${ownCombos.length} 组搭档里 ${positiveCombos} 组为正加成`);
     else parts.push('我方阵容没有历史组合样本');
@@ -1371,9 +1398,9 @@ function matchPage(m) {
       ${thin ? '<p class="md-bprev-note">对位样本还薄，这条结论只作参考；同一个英雄对位再打几局就会自动变成可判。</p>' : ''}
     </div>`;
     const matchup = lanes.length ? `<div class="md-matchup">
-      <div class="md-matchup-head"><b>对位压制</b><small>历史同分路、同英雄对战：满 3 局才判；领先率与平均经济差同向，才算「我方占优 / 我方吃亏」</small></div>
+      <div class="md-matchup-head"><b>对位压制</b><small>巅峰千强同分路对位：超额胜率（实际 − 两英雄基准期望）≥ +2 判我方占优、≤ −2 判吃亏；样本 ≥200 局且双方使用率 ≥3%</small></div>
       <div class="md-mu-grid">${lanes.map(laneCard).join('')}</div></div>` : '';
-    return { review, combos, matchup };
+    return { review, combos: `${kplBlock}${combos}`, matchup };
   })();
   const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
     ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${bpAnalysis.review}${bpAnalysis.combos}${bpAnalysis.matchup}` : '<div class="empty">暂无禁选记录。</div>'}

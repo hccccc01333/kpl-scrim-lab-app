@@ -7970,3 +7970,18 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-jg-track { height: 40px; }
 .md-jg-marks { height: 18px; }
 .md-jg-rows { gap: 11px; }
+
+/* 赛事命中：KPL 里这套阵容的双人 / 三人组合出现过几次 */
+.md-kplhit { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line);
+  border-left: 3px solid var(--accent); border-radius: 12px; background: var(--paper); }
+.md-kplhit.is-empty { border-left-color: var(--line); }
+.md-kplhit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.md-kplhit-head b { font-size: 13px; }
+.md-kplhit-head span { color: var(--muted); font-size: 11.5px; }
+.md-kplhit.is-empty span { color: var(--quiet); font-size: 12px; }
+.md-kplhit-rows { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+.md-kplhit-row { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 11.5px; }
+.md-kplhit-row i { font-style: normal; color: var(--quiet); font-size: 10px; }
+.md-kplhit-row b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.md-kplhit-row small { color: var(--quiet); }

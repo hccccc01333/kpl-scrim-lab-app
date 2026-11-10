@@ -76,3 +76,8 @@ _server_run.log
 _preview*.html
 _out.html
 _newblock.js
+
+# BP 外部事实表（离线生成，随仓库分发；其它 data/ 仍忽略）
+data/*
+!data/facts/
+!data/facts/**

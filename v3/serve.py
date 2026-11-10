@@ -1,4 +1,4 @@
-"""V3 route module: read training data and expose the analysis API."""
+﻿"""V3 route module: read training data and expose the analysis API."""
 
 import argparse
 import json
@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT))
 
 from analysis_data import ALL_SOURCES, DEFAULT_SOURCES, AnalysisRepository
 from bp_camp import merge_bp_sources
+import bp_facts
 import camp_tiles
 from collection_contract import reject_example_table, validate_table
 from match_review import PanoramaRepository
@@ -508,6 +509,11 @@ def match(key: str, repo=Depends(repository)):
     # 营地十人面板的派生卡片（视野价值 / 经济转有效伤害 / 反野总经济 / 控龙 / 勾中）。
     # 这些字段一直在 camp_details 里，只是从没被读出来过。缺失就不写，前端据此留空。
     camp_tiles.attach(detail, MATCHES.parent / 'camp_details')
+    # 外部 BP 事实：对位压制用巅峰千强大盘（带超额胜率），组合与赛事命中用 KPL。
+    try:
+        detail['bpFacts'] = bp_facts.for_match(detail)
+    except Exception:
+        detail['bpFacts'] = None
     if not detail.get('version'):
         try:
             with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
