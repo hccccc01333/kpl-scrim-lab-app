@@ -51,10 +51,12 @@ function activeMask(points, step) {
 }
 
 /* 并线（教练 2026-11-10 第四波口径）：兵线在的时候，同一条路上本队 2～3 个人一起吃
-   这波线。交汇点会随推塔前后移动（也可能被反推到自家二塔甚至高地前），所以只按
+   这波线。教练补充：**组里必须有打野**——射手 + 辅助这种固定搭档不算并线，
+   打野 + 对抗 / 打野 + 中路 / 打野 + 射手 / 打野 + 中路 + 辅助 才算。
+   交汇点会随推塔前后移动（也可能被反推到自家二塔甚至高地前），所以只按
    「这波兵已经出了」切窗口，不假定交汇位置：第 n 波在 10+33(n−1) 秒出发，
    到第 n+1 波出发之间就是这一波的窗口。路用 LANE_PATH 折线上的距离判。
-   一次并线 = 同一波、同一条路上，本队 2～3 人聚成一组、组里有这条路的对线选手，
+   一次并线 = 同一波、同一条路上，2～3 人聚成一组、组里有打野和这条路的对线选手，
    持续 ≥ LANE_HOLD 秒；一波一线最多记一次。5 人以上算团战/推进，不算并线。
    己方基地内、坐标 (0,0) 占位、阵亡冻结样本都不计。
    输出按「阵营-槽位」索引：{ total, lanes, waves: [{t, wave, lane, size}] }，
@@ -123,7 +125,8 @@ export function joinLaneStats(positions, players, laneOf) {
           here.push({ item, point });
         }
         if (here.length < 2) continue;
-        /* 按彼此距离 ≤ LANE_CLUSTER 连通分组，取含该路对线选手的那一组 */
+        /* 按彼此距离 ≤ LANE_CLUSTER 连通分组，取「含该路对线选手、且含打野」的那一组：
+           教练 2026-11-10 补的口径——射手 + 辅助这种固定搭档不算并线，并线要有打野参与。 */
         const groups = [];
         for (const row of here) {
           const hit = groups.filter((group) => group.some(
@@ -135,7 +138,8 @@ export function joinLaneStats(positions, players, laneOf) {
           }
           groups.push(merged);
         }
-        const home = groups.find((group) => group.some((row) => row.item.key === owner.key));
+        const home = groups.find((group) => group.some((row) => row.item.key === owner.key)
+          && group.some((row) => row.item.lane === '打野'));
         if (!home || home.length < 2 || home.length > 3) continue;
         const bucket = waves.get(wave) || { t: second, wave, lane, size: 0, who: [] };
         bucket.size = Math.max(bucket.size, home.length);
@@ -510,8 +514,8 @@ export function createMatchDeep(h) {
             .filter((lane) => s.lanes[lane])
             .map((lane) => `${lane} ${s.lanes[lane]}`);
           const first = s.waves.length ? time(s.waves[0].t) : null;
-          return [`本局参与并线 ${s.total} 次`, parts.join(' · '), first ? `第一次 ${first}` : '',
-            '口径：那波兵出发后，和该路队友在走廊里聚成 2～3 人并待满 4 秒，一波一线记一次'].filter(Boolean).join(' · ');
+          return [`本局并线 ${s.total} 次`, parts.join(' · '), first ? `第一次 ${first}` : '',
+            '口径：那波兵出发后，和打野在走廊里聚成 2～3 人并待满 4 秒，一波一线记一次；射手+辅助这种固定搭档不算'].filter(Boolean).join(' · ');
         },
       } : null,
       invade: inv ? {
@@ -532,7 +536,7 @@ export function createMatchDeep(h) {
     '打野': ['gpm', 'jungle', 'joinLane', 'damage', 'cutC', 'invade', 'deaths', 'participation'],
     '中路': ['gpm', 'conversion', 'damage', 'roam', 'control', 'deaths', 'participation'],
     '发育路': ['gpm', 'conversion', 'damage', 'survival', 'deaths', 'cs', 'participation'],
-    '游走': ['joinLane', 'participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
+    '游走': ['participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
   };
 
   /* 营地派生卡片（dataBehaviorV2）里，每个位置先亮一张教练点名的：
@@ -918,9 +922,18 @@ export function createMatchDeep(h) {
       if (!entry) return `<div class="md-jg-card ${side} is-empty"><span class="md-jg-tag">${side === 'own' ? '本队' : '对手'}打野</span><p>这局没有这个位置的位置数据</p></div>`;
       const player = entry.player;
       const peak = Math.max(1, ...entry.phases);
-      const phases = wins.map((win, index) => `<span class="md-jg-phase">
-          <small>${esc(win.label)}</small><b>${entry.phases[index]}</b>
-          <i style="--v:${(entry.phases[index] / peak).toFixed(2)}"></i></span>`).join('');
+      /* 最后一段时长每局不一样（10 分钟后到结束），只给这一段折算成「次 / 10 分钟」 */
+      const last = wins[wins.length - 1];
+      const lastSeconds = last ? Math.max(0, last.end - last.start) : 0;
+      const phases = wins.map((win, index) => {
+        const isLast = index === wins.length - 1;
+        const rate = isLast && lastSeconds >= 60
+          ? `<small class="md-jg-rate">${(entry.phases[index] / (lastSeconds / 600)).toFixed(1)}/10 分</small>`
+          : '';
+        return `<span class="md-jg-phase">
+          <small>${esc(win.label)}</small><b>${entry.phases[index]}</b>${rate}
+          <i style="--v:${(entry.phases[index] / peak).toFixed(2)}"></i></span>`;
+      }).join('');
       return `<div class="md-jg-card ${side}">
         <span class="md-jg-tag">${side === 'own' ? '本队' : '对手'}打野</span>
         <div class="md-jg-who">${portrait(player.hero)}<span><b>${esc(player.label || player.hero || '—')}</b><small>${esc(player.hero || '—')}</small></span></div>
@@ -983,7 +996,7 @@ export function createMatchDeep(h) {
       <div class="md-jg-table"><div class="md-jg-thead">${head}</div>${body}</div>
       <p class="md-jg-tcap">表格读法：格子里 <b class="own">本队</b> / <b class="foe">对手</b> 的打野并线次数，底色越深＝两队在这条路这一段的并线越多。</p>
       <p class="md-jg-note">${line('own', own)}${line('foe', foe)}
-        <span>怎么算：第 n 波兵 10+33(n−1) 秒出发，打野和该路队友在走廊里 2～3 人聚在一起满 4 秒算一次，一波一线最多一次；基地内、阵亡与 5 人推挤不计。近似值，只做同局横向比较。</span></p>
+        <span>怎么算：第 n 波兵 10+33(n−1) 秒出发，打野和该路队友在走廊里 2～3 人聚在一起满 4 秒算一次，一波一线最多一次；组里必须有打野——射手 + 辅助这种固定搭档不算；基地内、阵亡与 5 人推挤不计。最后一段按时长折算成「次 / 10 分钟」。近似值，只做同局横向比较。</span></p>
     </div>`;
   }
 

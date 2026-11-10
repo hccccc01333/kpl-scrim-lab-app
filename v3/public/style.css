@@ -6554,6 +6554,41 @@ a.hz-card { display: block; text-decoration: none; }
 .cx-act-more { margin: 0; padding: 8px 14px 0; color: var(--quiet); font-size: 10.5px; }
 .cxv-empty-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 
+/* ── 跨局：一局一格 / 最顺最难 / 赢输对比 ─────────────────────── */
+.cxv-strip { display: flex; flex-wrap: wrap; gap: 5px; }
+.cxv-cell { flex: 0 0 auto; width: 56px; padding: 5px 4px 4px; border-radius: 7px; border: 1px solid var(--line); display: grid; gap: 2px; text-align: center; text-decoration: none; color: var(--text); font-variant-numeric: tabular-nums; }
+.cxv-cell b { font-size: 10.5px; font-weight: 800; line-height: 1.1; }
+.cxv-cell small { font-size: 9px; color: var(--quiet); }
+.cxv-cell.pos { background: rgba(196, 154, 74, .14); border-color: rgba(196, 154, 74, .45); }
+.cxv-cell.neg { background: rgba(180, 84, 60, .12); border-color: rgba(180, 84, 60, .4); }
+.cxv-cell.na { background: var(--wash); }
+.cxv-cell.win { box-shadow: inset 0 -3px 0 rgba(47, 122, 94, .55); }
+.cxv-cell.loss { box-shadow: inset 0 -3px 0 rgba(163, 64, 47, .5); }
+
+.cxv-split2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cxv-split-head { margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 800; }
+.cxv-split-row { display: grid; grid-template-columns: 92px 1fr 64px; gap: 8px; align-items: center; padding: 5px 0; color: var(--text); font-size: 11.5px; text-decoration: none; }
+.cxv-split-row span { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.cxv-split-row i { height: 6px; overflow: hidden; border-radius: 3px; background: var(--wash); }
+.cxv-split-row i b { display: block; height: 100%; border-radius: 3px; background: #c49a4a; }
+.cxv-split-row em { font-style: normal; font-size: 11px; font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.cxv-split-row em.pos { color: #8a6a24; }
+.cxv-split-row em.neg { color: #a3402f; }
+
+.cxv-cmp { display: grid; gap: 2px; }
+.cxv-cmp-head, .cxv-cmp-row { display: grid; grid-template-columns: 124px 1fr 1fr; gap: 14px; align-items: center; }
+.cxv-cmp-head { padding-bottom: 6px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10.5px; font-weight: 800; }
+.cxv-cmp-head span:not(:first-child) { text-align: right; }
+.cxv-cmp-row { padding: 7px 0; border-bottom: 1px dashed var(--line); }
+.cxv-cmp-label { color: var(--muted); font-size: 11.5px; }
+.cxv-cmp-side { display: grid; gap: 4px; justify-items: end; }
+.cxv-cmp-side b { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cxv-cmp-side b.pos { color: #8a6a24; }
+.cxv-cmp-side b.neg { color: #a3402f; }
+.cxv-cmp-track { width: 100%; height: 6px; overflow: hidden; border-radius: 3px; background: var(--wash); }
+.cxv-cmp-bar { display: block; height: 100%; border-radius: 3px; background: #c49a4a; }
+.cxv-cmp-bar.neg { background: #b4543c; }
+
 /* ── 选手与位置：页签 + 统计范围 ───────────────────────────────── */
 .lv-tabs { margin: 4px 0 0; background: var(--wash); }
 .lv-page .lv-pane { display: grid; gap: 16px; }
@@ -7917,3 +7952,8 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-jg-phase i { min-width: 0; }
 .md-jg-marks .md-jg-dot.is-trio { width: 12px; height: 12px; margin-top: -6px; box-shadow: 0 0 0 2px var(--paper); }
 .md-jg-marks .md-jg-dot { box-shadow: 0 0 0 2px var(--paper); }
+.md-jg-rate { display: block; margin-top: 1px; font-size: 10px; color: var(--quiet); font-variant-numeric: tabular-nums; }
+/* 上线本队 / 下线对手：把轨道拉高一点，两种点分得更开 */
+.md-jg-track { height: 40px; }
+.md-jg-marks { height: 18px; }
+.md-jg-rows { gap: 11px; }
