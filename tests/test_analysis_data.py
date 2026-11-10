@@ -552,6 +552,39 @@ class BundleDurationTests(unittest.TestCase):
             self.assertAlmostEqual(player['gpmMinutes'], 10, places=1)
 
 
+class WinnerTruthTests(unittest.TestCase):
+    """补录本队阵营时不得按击杀数改写胜负。
+
+    王者荣耀的胜负由拆水晶决定：真实数据里存在 25:26 蓝方获胜的对局。
+    旧逻辑在应用 ownCamp 补录时按「击杀多的一方获胜」覆盖 winnerCamp，
+    会把这类局的结果静默翻转，污染胜率统计。
+    """
+
+    def test_own_camp_patch_keeps_official_winner(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            db = root / 'training.sqlite3'
+            make_db(db)
+            matches = root / 'matches'
+            matches.mkdir()
+            value = bundle('G-bundle', '2026-10-08', 900, OWN, ENEMY,
+                           scores={'blue': 25, 'red': 26})
+            value['match']['winnerCamp'] = 'blue'  # 营地真值：蓝方获胜，尽管击杀更少
+            (matches / 'g.json').write_text(json.dumps(value, ensure_ascii=False), encoding='utf-8')
+            with closing(sqlite3.connect(db)) as connection:
+                connection.execute('CREATE TABLE IF NOT EXISTS match_meta '
+                                   '(match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+                connection.execute('INSERT INTO match_meta VALUES(?,?,?)',
+                                   ('G-bundle', json.dumps({'ownCamp': 'blue'}), 0.0))
+                connection.commit()
+            imports = root / 'imports'
+            imports.mkdir()
+            repo = AnalysisRepository(db, matches, imports)
+            match = [item for item in repo.get()['matches'] if item['key'] == 'G-bundle'][0]
+            self.assertEqual(match['ownCamp'], 'blue')
+            self.assertEqual(match['winnerCamp'], 'blue')
+
+
 if __name__ == '__main__':
     unittest.main()
 

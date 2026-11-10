@@ -337,14 +337,12 @@ class AnalysisRepository:
                 match['duration'] = int(round(minutes * 60)) if minutes and minutes > 0 else None
             camp = patch.get('ownCamp')
             if camp in ('blue', 'red'):
-                # 教练可以指定本队这一局在蓝方还是红方；胜方随之按比分重算。
+                # 教练可以指定本队这一局在蓝方还是红方。胜负**不能**按比分（击杀数）
+                # 重算：王者荣耀的胜负由拆水晶决定，实测有 25:26 蓝方获胜这类局。
+                # winnerCamp 保持营地/官方回放的真值；缺失就留空，等教练在补录里
+                # 明确 win/loss（下方 result 分支）——缺失不捏造。
                 match['ownCamp'] = camp
                 match['ownSide'] = 'left' if camp == 'blue' else 'right'
-                scores = match.get('scores') or {}
-                blue = number(scores.get('blue')) if scores.get('blue') is not None else number(scores.get('left'))
-                red = number(scores.get('red')) if scores.get('red') is not None else number(scores.get('right'))
-                if blue is not None and red is not None and blue != red:
-                    match['winnerCamp'] = 'blue' if blue > red else 'red'
             result = patch.get('result')
             if result in ('win', 'loss', 'draw') and match.get('ownCamp') in ('blue', 'red'):
                 own = match['ownCamp']
