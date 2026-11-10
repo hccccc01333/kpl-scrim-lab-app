@@ -1152,8 +1152,35 @@ function matchPage(m) {
   const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
     <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
     <span class="md-bp-bans">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>`;
+  /* 本局组合：把双方阵容里的英雄组合对到历史样本（camp-combos），
+     显示场次 / 组合胜率 / 协同加成（相对单英雄基准，百分点）。 */
+  const comboBlock = (() => {
+    const combosData = m.combosData;
+    if (!combosData || !draft) return '';
+    const heroesOf = (key) => (draft?.picks?.[key] || []).map((row) => row && row.name).filter(Boolean);
+    const collect = (side, heroes) => {
+      if (!heroes.length) return [];
+      const out = [];
+      for (const list of [combosData.pairs, combosData.trios]) {
+        for (const combo of (list?.[side]?.combos || [])) {
+          if (combo.heroes.length >= 2 && combo.heroes.every((hero) => heroes.includes(hero))) {
+            out.push({ ...combo, size: combo.heroes.length });
+          }
+        }
+      }
+      return out.sort((a, b) => (b.games - a.games) || (b.synergy - a.synergy)).slice(0, 3);
+    };
+    const ownCombos = collect('own', heroesOf(ownSideKey));
+    const foeCombos = collect('enemy', heroesOf(enemySideKey));
+    if (!ownCombos.length && !foeCombos.length) return '';
+    const card = (combo) => `<span class="md-combo"><b>${esc(combo.heroes.join(' + '))}</b><small>${combo.games} 局 · 胜率 ${pct(combo.winRate)} · 协同 ${diff(combo.synergy)}pp${combo.small ? ' · 样本少' : ''}</small></span>`;
+    return `<div class="md-bp-combos">
+      <div class="md-bp-combo-side"><span>我方组合</span>${ownCombos.map(card).join('') || '<small>当前阵容没有历史组合样本</small>'}</div>
+      <div class="md-bp-combo-side foe"><span>对手组合</span>${foeCombos.map(card).join('') || '<small>对手阵容没有历史组合样本</small>'}</div>
+    </div>`;
+  })();
   const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
-    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>` : '<div class="empty">暂无禁选记录。</div>'}
+    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${comboBlock}` : '<div class="empty">暂无禁选记录。</div>'}
   </section>`;
   /* 总量按十人面板逐人求和（详情接口不带 own/enemy 汇总）。 */
   const teamAgg = (camp) => {
@@ -1376,13 +1403,17 @@ async function load(fresh = false) {
         data.replayStatus = response.status === 404 ? 'unavailable' : response.ok ? 'ready' : 'error';
         if (response.ok) data.replay = await response.json();
         if (posResponse && posResponse.ok) data.positions = await posResponse.json();
+        try {
+          const combosResponse = await fetch(API_BASE + '/api/studio/camp-combos?min=2', { signal: currentRequest.signal });
+          if (combosResponse.ok) data.combosData = await combosResponse.json();
+        } catch { /* 组合数据失败不影响主页面 */ }
       } catch {
         if (stale()) return;
         data.replayStatus = 'error';
       }
       if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
-        ['match-verdict','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
+        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
           const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
           if(existing&&updated)existing.replaceWith(updated);
           else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应位置 */
