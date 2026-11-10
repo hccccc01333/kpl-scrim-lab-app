@@ -4,7 +4,7 @@
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
 
   <p>
-    <img alt="版本" src="https://img.shields.io/badge/version-1.3.0-176B69?style=flat-square&labelColor=0F2E29">
+    <img alt="版本" src="https://img.shields.io/badge/version-1.5.14-176B69?style=flat-square&labelColor=0F2E29">
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
     <img alt="许可" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
@@ -12,7 +12,8 @@
   </p>
 
   <p>
-    <a href="https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases"><b>下载安装包（国内）</b></a>
+    <a href="https://hccccc01333.github.io/kpl-scrim-lab-site/"><b>官网</b></a>
+    &nbsp;·&nbsp; <a href="https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases"><b>下载安装包（国内）</b></a>
     &nbsp;·&nbsp; <a href="https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest">GitHub 备用</a>
     &nbsp;·&nbsp; <a href="#快速开始">快速开始</a>
     &nbsp;·&nbsp; <a href="#系统架构">系统架构</a>
