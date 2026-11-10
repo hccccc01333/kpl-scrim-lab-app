@@ -1188,7 +1188,11 @@ function matchPage(m) {
     const ownCombos = collect('own', heroesOf(ownSideKey));
     const foeCombos = collect('enemy', heroesOf(enemySideKey));
     if (!ownCombos.length && !foeCombos.length) return '';
-    const card = (combo) => `<span class="md-combo"><b>${esc(combo.heroes.join(' + '))}</b><small>${combo.games} 局 · 胜率 ${pct(combo.winRate)} · 协同 ${diff(combo.synergy)}pp${combo.small ? ' · 样本少' : ''}</small></span>`;
+    /* 卡片带头像：教练认组合是认脸，不是认一串名字。 */
+    const card = (combo) => `<span class="md-combo">
+      <span class="md-combo-heroes">${combo.heroes.map((hero) => portrait(hero)).join('<i>+</i>')}</span>
+      <b>${esc(combo.heroes.join(' + '))}</b>
+      <small>${combo.games} 局 · 胜率 ${pct(combo.winRate)} · 协同 ${diff(combo.synergy)}pp${combo.small ? ' · 样本少' : ''}</small></span>`;
     return `<div class="md-bp-combos">
       <div class="md-bp-combo-side"><span>我方组合</span>${ownCombos.map(card).join('') || '<small>当前阵容没有历史组合样本</small>'}</div>
       <div class="md-bp-combo-side foe"><span>对手组合</span>${foeCombos.map(card).join('') || '<small>对手阵容没有历史组合样本</small>'}</div>
@@ -1210,21 +1214,27 @@ function matchPage(m) {
       const a = mine.get(lane), b = theirs.get(lane);
       if (!a && !b) return '';
       const row = a && b ? byPair.get(`${a.hero}|${b.hero}`) : null;
+      /* 「对位压制」看**对线**，不看胜负：领先率与平均经济差必须同向才算压制/劣势。
+         只按胜率会出现「标着压制、经济差却是 -954」（赢球不等于对线赢）；
+         只看平均差又会被一局打爆拉翻（2 局领先、1 局 -3000，均值仍是负的）。 */
+      const rate = row ? row.aheadRate : null;
+      const diff_ = row ? row.avgGoldDiff : null;
       const verdict = !row || row.n < 3 ? '样本不足'
-        : row.winRate >= 65 ? '压制' : row.winRate <= 35 ? '劣势' : '均势';
+        : (rate >= 66.7 && diff_ > 0) ? '压制'
+        : (rate <= 33.3 && diff_ < 0) ? '劣势' : '均势';
       const cls = verdict === '压制' ? 'is-ahead' : verdict === '劣势' ? 'is-behind'
         : verdict === '均势' ? 'is-even' : 'is-thin';
-      /* 第一列已经写了「样本不足」，第二列不再重复一遍；
+      /* 第一列已经写了「样本不足」，第二列不再重复；
          有对位但不足 3 局时，把实际局数摆出来，教练才知道离门槛差多少。 */
       const note = !row ? ''
         : row.n < 3 ? `${fmt(row.n)} 局样本，未到 3 局门槛`
-        : `${fmt(row.n)} 局 · 胜率 ${pct(row.winRate)} · 经济差 ${diff(row.avgGoldDiff)}`;
-      return `<div class="md-mu-row"><span class="md-mu-lane">${lane}</span>
+        : `对线领先 ${fmt(rate, 0)}% · 均差 ${diff(row.avgGoldDiff)} · 战绩 ${row.winRate === null ? '—' : pct(row.winRate)}`;
+      return `<div class="md-mu-row"${row ? ` title="${esc(`${a.hero} 对 ${b.hero}：${row.n} 局，对线经济领先 ${fmt(rate, 0)}%，平均经济差 ${diff(row.avgGoldDiff)}，同分路同英雄历史对位的本队战绩 ${row.winRate === null ? '未知' : pct(row.winRate)}`)}"` : ''}><span class="md-mu-lane">${lane}</span>
         <b class="own">${esc(a?.hero || '—')}</b><i>vs</i><b class="foe">${esc(b?.hero || '—')}</b>
         <em class="${cls}">${verdict}</em><small>${note}</small></div>`;
     }).filter(Boolean).join('');
     if (!lanes) return '';
-    return `<div class="md-matchup"><div class="md-matchup-head"><b>对位压制</b><small>历史同分路对位（本队视角）；样本 ≥3 局才判定</small></div>${lanes}</div>`;
+    return `<div class="md-matchup"><div class="md-matchup-head"><b>对位压制</b><small>历史同分路、同英雄对位：领先率 ≥⅔ 且均差为正判压制，≤⅓ 且均差为负判劣势，样本 ≥3 局</small></div>${lanes}</div>`;
   })();
   const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
     ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${comboBlock}${matchupBlock}` : '<div class="empty">暂无禁选记录。</div>'}
