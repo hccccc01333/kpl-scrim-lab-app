@@ -78,3 +78,10 @@ def test_missing_economy_is_skipped(tmp_path):
     }), encoding='utf-8')
     assert ae.load_games(tmp_path / 'replays', tmp_path / 'camp_details') == []
     assert ae.advantage(tmp_path / 'replays', tmp_path / 'camp_details')['games'] == 0
+
+def test_value_at_clamps_short_games():
+    """短于取值时刻的对局（8 分钟投降）不能越界，取终局值。"""
+    diff = [value * 100 for value in range(17)]
+    assert ae._value_at(600, diff, 480) == diff[-1]
+    # 正常时长的插值保持不变
+    assert ae._value_at(300, [0, 1000], 600) == 500

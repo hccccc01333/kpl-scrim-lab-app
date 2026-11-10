@@ -105,7 +105,6 @@ def turning_points(replays_dir, camp_dir, *, min_delta=1000, limit=40):
                     moment = event.get('timeSec')
                     if not isinstance(moment, (int, float)):
                         continue
-                    lead = 0.0
                     if start - 60 <= moment <= end + 60:
                         candidates.append({
                             'type': event.get('eventType') or 'unknown',
@@ -173,7 +172,10 @@ def _value_at(seconds, diff, duration):
     if count == 1:
         return diff[0]
     position = seconds / duration * (count - 1)
-    low = int(math.floor(position))
+    # 短于取值时刻的对局（如 8 分钟投降局）position 会越过末点，必须夹住；
+    # 否则 diff[low] 索引越界，优势兑现分析整页 500。夹住后取终局值，
+    # 语义就是「该局在这个时刻已经结束」。
+    low = max(0, min(count - 1, int(math.floor(position))))
     high = min(count - 1, low + 1)
     ratio = position - low
     return diff[low] * (1 - ratio) + diff[high] * ratio
