@@ -46,6 +46,9 @@ CORE_DEPS = [
     'numpy>=1.26,<3',
     'openpyxl>=3.1,<4',
     'pycryptodome>=3.20,<4',
+    # 主 OCR 是日常识别的必需组件：随包内置，装完即用，不让用户再点安装。
+    # 代价是完整包约 +80–100 MB；可选增强（Mimo 模型、ffmpeg）仍按需一键装。
+    'rapidocr-onnxruntime>=1.4.4,<1.5',
 ]
 DOCS_SHIP = [
     'product_guide.md',
