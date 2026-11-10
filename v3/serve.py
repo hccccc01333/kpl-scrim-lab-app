@@ -376,7 +376,8 @@ def replay(key: str, repo=Depends(repository)):
     if result is None:
         raise HTTPException(404, '该局没有全景回放数据')
     return {name: result[name] for name in
-            ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage', 'notes')
+            ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage', 'notes',
+             'buffEvents', 'narrations')
             if name in result}
 
 

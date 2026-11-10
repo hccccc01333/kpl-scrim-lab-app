@@ -1107,8 +1107,15 @@ function matchPage(m) {
     const ownDragons = rows.slice(0, 3).reduce((sum, row) => sum + row.own, 0);
     const foeDragons = rows.slice(0, 3).reduce((sum, row) => sum + row.foe, 0);
     const rate = ownDragons + foeDragons ? Math.round(ownDragons / (ownDragons + foeDragons) * 100) : null;
+    const buffs = m.replay?.buffEvents || [];
+    const anti = buffs.filter((b) => b.owner && b.killer && b.owner !== own && b.killer === own).length;
+    const stolen = buffs.filter((b) => b.owner === own && b.killer && b.killer !== own).length;
+    const farmed = buffs.filter((b) => b.owner === own && b.killer === own).length;
+    const buffLine = buffs.length
+      ? `<div class="md-res-buff">BUFF：收己方野 <b>${farmed}</b> · <b>反野 ${anti}</b> 次 · <b>被反 ${stolen}</b> 次<small>（回放 killbuff 事件）</small></div>`
+      : '';
     return `<div class="md-res"><div class="md-res-head"><b>资源控制</b><span>龙/主宰控制率 ${rate === null ? '—' : rate + '%'} · 双方击杀数 · 来自官方回放事件</span></div>
-      <div class="md-res-grid">${rows.map((row) => `<span class="md-res-item"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>`).join('')}</div></div>`;
+      <div class="md-res-grid">${rows.map((row) => `<span class="md-res-item"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>`).join('')}</div>${buffLine}</div>`;
   })();
   const mdPhases = `<section class="section" id="match-phases"><div class="section-heading"><div><h2>阶段对比</h2><p>经济差与阶段变化按营地采样；资源 / 建筑是回放事件计数；入侵是本队五人合计进入对侧半区的时间占比</p></div></div>
     ${deep.phaseTable(phaseTableRows)}${resourceBand}
@@ -1168,6 +1175,33 @@ function matchPage(m) {
   const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒经济差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
     ${deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights) || '<div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div>'}
   </section>`;
+  /* 事件详情：资源/推塔事件的参战者与伤害占比（keyEventArr.hurtTotal），
+     以及营地复盘的中文叙述（adviceList）。仅官方回放存在时显示。 */
+  const mdEventDetail = (() => {
+    const detail = (m.replay?.events || []).filter((e) => (e.participants || []).length);
+    const narrations = m.replay?.narrations || [];
+    if (!detail.length && !narrations.length) return '';
+    const damageText = (v) => !has(v) ? '—' : v >= 10000 ? `${(v / 10000).toFixed(1)}万` : fmt(v);
+    const withShare = (list) => {
+      const total = list.reduce((sum, p) => sum + (has(p.hurtTotal) ? p.hurtTotal : 0), 0);
+      return list.slice().sort((a, b) => (b.hurtTotal || 0) - (a.hurtTotal || 0))
+        .map((p) => ({ ...p, share: total ? Math.round((p.hurtTotal || 0) / total * 100) : null }));
+    };
+    /* 关键事件优先：暴君/主宰/防御塔/水晶；野怪 BUFF 只在没有关键事件时兜底。 */
+    const keyEvents = detail.filter((e) => (e.kind === 'resource' || e.kind === 'structure')
+      && e.name && !['野怪'].includes(e.name));
+    const pick = (keyEvents.length ? keyEvents : detail).slice(0, 12);
+    /* 营地叙述里带的 <c="#颜色">…</c> 富文本标记转成纯文本。 */
+    const plainNarration = (text) => String(text || '').replace(/<c="[^"]*">/g, '').replace(/<\/c>/g, '');
+    return `<section class="section" id="match-events"><div class="section-heading"><div><h2>事件详情</h2><p>每个资源 / 推塔事件的参战者与伤害占比（官方回放 keyEventArr）；下方为营地复盘叙述（adviceList）</p></div></div>
+      <div class="md-ev-list">${pick.map((e) => `<article class="md-ev">
+        <div class="md-ev-head"><span>${time(e.t)}</span><b>${esc(e.name || (e.kind === 'structure' ? '建筑' : '资源'))}</b><i class="${e.killerCamp === own ? 'own' : 'foe'}">${e.killerCamp === own ? '我方击杀' : e.killerCamp ? '对手击杀' : ''}</i></div>
+        <div class="md-ev-rows">${withShare(e.participants || []).map((p) => `<span class="md-ev-row ${p.camp === own ? 'own' : 'foe'}" title="${esc((p.hero || p.name || '') + ' · 伤害 ' + damageText(p.hurtTotal))}">
+          <em>${esc(p.hero || p.name || '—')}</em><b>${damageText(p.hurtTotal)}</b><span class="md-ev-bar"><i style="width:${p.share === null ? 0 : p.share}%"></i></span><small>${p.share === null ? '—' : p.share + '%'}</small></span>`).join('')}</div>
+      </article>`).join('')}</div>
+      ${narrations.length ? `<div class="md-ev-narr"><b>营地复盘叙述</b>${narrations.slice(0, 10).map((n) => `<p><span>${time(n.t)}</span>${esc(plainNarration(n.text))}</p>`).join('')}</div>` : ''}
+    </section>`;
+  })();
   const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。分段线是对线/发育/后期的分界</p></div></div>
     ${deep.frontline(m.positions, m.players, own, m.duration) || '<div class="empty">这局没有位置数据</div>'}
   </section>`;
@@ -1181,6 +1215,7 @@ function matchPage(m) {
     ${mdProfiles}
     ${mdCohesion}
     ${mdBattle}
+    ${mdEventDetail}
     ${mdFront}
     ${mdHeat}
     ${mdDuel}
@@ -1347,9 +1382,13 @@ async function load(fresh = false) {
       }
       if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
-        ['match-verdict','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-front','match-heat','match-duel'].forEach((id)=>{
+        ['match-verdict','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
           const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
           if(existing&&updated)existing.replaceWith(updated);
+          else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应位置 */
+            const anchor=document.getElementById('match-front')||document.querySelector('.md-page');
+            if(anchor&&anchor.parentNode)anchor.parentNode.insertBefore(updated,anchor);
+          }
         });
         if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events);
         deep.bindHeat(document);

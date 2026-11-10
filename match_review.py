@@ -195,6 +195,75 @@ def _official_payload(official_dir, bundle):
             'raw': raw, 'positions': positions}
 
 
+def _official_buffs(official):
+    """红蓝 BUFF 击杀记录（extendEventArr/killbuff）：归属方 vs 击杀方 → 反野。
+
+    killbuff 事件带 dtID（10=蓝 buff / 11=红 buff）、dtCamp（BUFF 归属地）与
+    killerCamp（击杀方）。击杀方 != 归属地即视为反野；只用于有官方回放的局。
+    """
+    raw = (official or {}).get('raw') or {}
+    result = []
+    for item in (raw.get('data') or {}).get('extendEventArr') or []:
+        for event in item.get('eventList') or []:
+            if event.get('eventType') != 'killbuff':
+                continue
+            data = event.get('dtData') or {}
+            seconds = _num(event.get('eventTime')) or _num(data.get('killTime'))
+            if seconds is None or seconds <= 0:
+                continue
+            buff_id = str(data.get('dtID') or '')
+            result.append({
+                't': round(seconds / 1000.0, 1),
+                'name': {'10': '蓝 buff', '11': '红 buff'}.get(buff_id, f'野怪{buff_id}'),
+                'owner': _camp(data.get('dtCamp')),
+                'killer': _camp(data.get('killerCamp')),
+            })
+    result.sort(key=lambda row: row['t'])
+    return result
+
+
+def _official_narrations(official):
+    """营地复盘的中文叙述（reportData.adviceList，如「恭喜赢得团战…」）。"""
+    raw = (official or {}).get('raw') or {}
+    items = ((raw.get('data') or {}).get('reportData') or {}).get('adviceList') or []
+    result = []
+    for item in items:
+        seconds = _num(item.get('time'))
+        text = str(item.get('msg') or '').strip()
+        if seconds is None or not text:
+            continue
+        result.append({'t': round(seconds / 1000.0, 1), 'text': text[:120]})
+    result.sort(key=lambda row: row['t'])
+    return result
+
+
+def _official_entity_aliases(official, players):
+    """把击杀事件里的 inBattleObjID 映射到 bundle 的十人 key。
+
+    keyEventArr.kills 的 killerId 是「战斗对象 ID」，而 normalized 的 playerId
+    是另一套编号；playBaseInfoArr 同时带 inBattleObjID 与 (acntCamp, heroID)，
+    用它经「阵营 + 英雄」桥接到我们的 player，与营地 H5 的做法一致。
+    """
+    raw = (official or {}).get('raw') or {}
+    normalized = (official or {}).get('normalized') or {}
+    hero_by = {}
+    for item in normalized.get('players') or []:
+        camp = _camp(item.get('camp'))
+        if camp and item.get('heroId') is not None:
+            hero_by[(camp, str(item.get('heroId')))] = item.get('hero')
+    aliases = {}
+    for info in ((raw.get('data') or {}).get('playBaseInfoArr') or []):
+        camp = _camp(info.get('acntCamp'))
+        hero = hero_by.get((camp, str(info.get('heroID'))))
+        if not camp or not hero:
+            continue
+        match = next((player for player in players
+                      if player.get('camp') == camp and player.get('hero') == hero), None)
+        if match:
+            aliases[str(info.get('inBattleObjID'))] = match
+    return aliases
+
+
 def _official_events(official):
     """Prefer raw events because they keep viewX/viewY; fall back to normalized."""
     raw = (official or {}).get('raw') or {}
@@ -412,10 +481,12 @@ def event_display_name(kind, dt_id):
     return '水晶' if str(dt_id) in CORE_IDS else '防御塔'
 
 
-def _normalize_events(raw_events, players):
+def _normalize_events(raw_events, players, extra_entities=None):
     by_entity = {str(player.get('entityId', player.get('replayEntityId'))): player
                  for player in players
                  if player.get('entityId', player.get('replayEntityId')) is not None}
+    if extra_entities:
+        by_entity.update(extra_entities)
     result = []
     for event in raw_events:
         kind = 'resource' if event['dtType'] == '1' else 'structure'
@@ -722,7 +793,8 @@ def build_panorama(matches_dir, official_dir, builds_dir, key, root=None):
             }
     else:
         positions = {}
-    events = _normalize_events(_official_events(official), players) if official else []
+    aliases = _official_entity_aliases(official, players) if official else {}
+    events = _normalize_events(_official_events(official), players, aliases) if official else []
     ledger = _battle_ledger(official) if official else {'kills': [], 'deaths': [], 'fights': []}
     kills, deaths, fights = ledger['kills'], ledger['deaths'], ledger['fights']
     gold = _gold_points(bundle)
@@ -760,6 +832,8 @@ def build_panorama(matches_dir, official_dir, builds_dir, key, root=None):
                  'landmarks': {str(seconds): (_landmark(gold, seconds) or {}).get('diff')
                                for seconds in (300, 600, 900)}},
         'events': events,
+        'buffEvents': _official_buffs(official) if official else [],
+        'narrations': _official_narrations(official) if official else [],
         'kills': kills,
         'deaths': deaths,
         'fights': fights,

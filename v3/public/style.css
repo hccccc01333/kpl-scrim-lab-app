@@ -7477,3 +7477,27 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-res-item b { font-variant-numeric: tabular-nums; }
 .md-res-item b.foe { color: var(--md-enemy-ink, #9adcd2); }
 .md-res-item em { font-style: normal; color: var(--quiet); }
+
+.md-res-buff { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+.md-res-buff b { color: var(--ink); }
+.md-res-buff small { margin-left: 6px; color: var(--quiet); }
+.md-ev-list { display: grid; gap: 12px; }
+.md-ev { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--paper); }
+.md-ev-head { display: flex; align-items: baseline; gap: 10px; }
+.md-ev-head span { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12.5px; }
+.md-ev-head b { font-size: 13.5px; }
+.md-ev-head i { font-style: normal; font-size: 12px; }
+.md-ev-head i.own { color: var(--accent); }
+.md-ev-head i.foe { color: var(--warn, #a54c46); }
+.md-ev-rows { display: grid; gap: 6px; margin-top: 8px; }
+.md-ev-row { display: grid; grid-template-columns: 92px 70px 1fr 44px; align-items: center; gap: 8px; font-size: 12.5px; }
+.md-ev-row em { font-style: normal; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-ev-row b { font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); font-weight: 600; }
+.md-ev-row small { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.md-ev-bar { height: 6px; border-radius: 3px; background: var(--surface); overflow: hidden; }
+.md-ev-bar i { display: block; height: 100%; background: var(--accent); }
+.md-ev-row.foe .md-ev-bar i { background: #b96a5f; }
+.md-ev-narr { margin-top: 14px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; }
+.md-ev-narr > b { display: block; margin-bottom: 8px; font-size: 12.5px; color: var(--muted); }
+.md-ev-narr p { font-size: 12.5px; color: var(--text); margin: 4px 0; }
+.md-ev-narr p span { color: var(--quiet); margin-right: 8px; font-variant-numeric: tabular-nums; }
