@@ -1,42 +1,50 @@
 {
   "schema": 1,
-  "version": "1.5.30",
-  "publishedAt": "2026-11-10T20:03:28+08:00",
+  "version": "1.5.31",
+  "publishedAt": "2026-11-10T21:34:07+08:00",
   "channel": "stable",
   "minVersion": "1.5.15",
   "notes": [
-    "本局 BP 复盘补上两块外部事实：**对位压制改用巅峰千强大盘**（带超额胜率），",
-    "**新增赛事命中**（这套阵容在 KPL 出现过几次）。",
-    "原来用自家训练赛判「这个对位吃不吃亏」，样本只有几局；直接换成 KPL 又会被",
-    "「强队选强英雄」污染，冷门英雄几乎没有样本——两种做法都会把「英雄本来就弱」",
-    "错判成「被克制」。",
-    "现在的口径：",
-    "**数据**：巅峰千强同分路对位表（样本 ≥200 局、双方使用率 ≥3%）+ 同分段英雄基准胜率（近 90 天窗口）",
-    "**算法**：`超额胜率 = 实际对位胜率 − 按两个英雄各自基准胜率算出的期望胜率`（Bradley-Terry）。",
-    "伽罗在巅峰千强本来胜率就低，她对位 47% 可能是**超常发挥**，不是被克制——减去基准才看得出来。",
-    "**判定**：超额 ≥ +2 个点判「我方占优」，≤ −2 判「我方吃亏」，中间是「打平」；",
-    "没有样本就写「巅峰千强没有这个对位样本」，不硬给结论。",
-    "卡片同时保留两行参考：本局实际对位经济差（与大盘同向 / 相反）、自家训练赛的领先率。",
-    "本局阵容里的双人 / 三人组合，在 KPL 赛场上出现过几次。教练原话是「不需要具体说明是哪一局，有就行」，",
-    "所以只报命中组合与场次、胜率，不报是哪一场。",
-    "数据：KPL 2024 年起的 picks（本机 4,586 局可判定），双人 3,386 组、三人 10,495 组",
-    "展示：`本队 10 组双人里 3 组在 KPL 出现过`，下面列出命中的组合与场次 / 胜率",
-    "两张事实表由 `scripts/build_bp_facts.py` 离线生成，落在 `data/facts/`：",
-    "| 文件 | 内容 | 来源 |",
-    "| :-- | :-- | :-- |",
-    "| `lane_matchups.json` | 995 组同分路对位，含实际 / 预期 / 超额胜率 | 巅峰千强 `matchup_raw` + `hero_daily` |",
-    "| `kpl_combos.json` | 双人 3,386 / 三人 10,495 组的场次与胜率 | KPL `prematch_games_raw` |",
-    "**三张表永不合并成一个分**：大盘对位、KPL 组合、自家训练赛各标各的来源与样本，教练自己判断信几分。"
+    "身份主数据统一到一个写入口；BP 复盘的两块外部事实补全。",
+    "营地爬到的游戏ID、真实选手、所属战队之间，原来散在五处各写各的：营地白名单的「改名」",
+    "只改本机备注，选手认领写 `settings.aliases`（昵称字符串），建档写 `settings.roster`",
+    "和 `players`，对手归属写 `team_clusters` 覆盖层，战队命名同时写两张表。同一个人能叫五个",
+    "名字，删了也不会一起删。",
+    "现在只有一个写入口 `identity_service.py`，只落三张表：`player_accounts`（游戏账号 → 选手）",
+    "+ `players`（选手 → 战队）+ `teams`。读时解析，历史对局文件不改。",
+    "**「赛训 → 数据准备 → 建档」顶部新增「身份对照」**：一行一个游戏账号，列出游戏ID、",
+    "选手ID、战队与场次；命名、改名、解绑、删选手都在这一行完成。本队与对手都能命名。",
+    "可筛选 全部 / 待命名 / 已命名 / 本队 / 对手，也能按昵称、选手名或战队搜索。",
+    "**对手归属每名选手加「命名」**：命名后直接显示真人名与战队，不再是营地昵称；",
+    "战队命名与选手归队写的是同一份主数据。",
+    "**选手认领不再写昵称字符串**：认领、命名并归队都写同一条账号映射，`settings.aliases`",
+    "只作历史兜底读取；认领页的「已建立的映射」改成显示游戏ID → 选手。",
+    "**删除选手 = 选手 + 他的游戏账号映射一起删**：那些游戏ID回到「待命名」。不做转会、",
+    "不做离队状态；选手主数据列表也能直接删除。",
+    "**营地白名单的「改名」标注为本机备注**，真正的游戏ID → 选手ID 在身份对照里统一改。",
+    "修掉「选手认领」页直接打开提示「还没有选中选手认领」的路由判断（它是整页，不是详情页）。",
+    "回放文件（`.abc/.ope`）这条链路的清理：修掉已经跑不动的外围工具、把一次上传的",
+    "三次解析降到一次、把散在四个文件里的帧率常量收进一处（**产品口径不变**）。",
+    "**`scripts/replay_probe.py` 恢复可用**：字段早已从 `gold` 改名为 `buyEcho`，",
+    "探针还在读旧键，任何能解出事件的局都会 `KeyError` 崩掉；同时昵称里的",
+    "变体选择符（`U+FE0E`）在 GBK 控制台会触发 `UnicodeEncodeError`，解析成功",
+    "但打印崩溃。现在两处都修了，输出改 UTF-8。",
+    "**一次上传只解析一次**（原来三次）：上传校验、导入、建出装时间轴各解一遍。",
+    "现在 `inspect_abc()` 按 sha256 缓存（上限 8 局），导入直接复用上传的结果，",
+    "建时间轴复用导入的结果；`tools/full_abc_event_catalog.build_report()` 新增",
+    "可选 `info` 参数。单局 0.285 s 的解码省掉两次。",
+    "**上传不再堵事件循环**：`POST /api/replays/files` 的解析改走",
+    "`run_in_threadpool`。"
   ],
   "patch": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.30/patch-1.5.30.zip",
-    "sha256": "0f860869420f6490dea2fc9002695f129ab111c2a4e8f802cc14e9e4a3fbe4cd",
-    "size": 645945,
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.31/patch-1.5.31.zip",
+    "sha256": "3afec01236b4c6f191610b36048ae5c0e91c19c2358d6fc4d9f5b8b0890463f7",
+    "size": 746546,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "9522ea2cb057c5b735de2f9fdb6152713328ae49dd9674db7d02ea61026f2f8e",
-        "size": 72344
+        "sha256": "91e9f6236920148eb1f1f7a78d79924cec70bfd0c15d72bb37ebc3700dcc60f7",
+        "size": 74831
       },
       {
         "path": "analysis_data.py",
@@ -45,8 +53,8 @@
       },
       {
         "path": "bp_facts.py",
-        "sha256": "91984e5e78d7a64ae5440b8bf22c6fe86c72b55205a3396dadbf5283f1cf6b25",
-        "size": 6218
+        "sha256": "cf2809406ccb16c20ac89275f34075708f305ba9941fffcccf700e351e978f29",
+        "size": 7170
       },
       {
         "path": "camp_archive.py",
@@ -62,6 +70,16 @@
         "path": "camp_tiles.py",
         "sha256": "1467ad0abd9275b6264a148464e4ec1bc534978fe6978975d09afd3b750b3209",
         "size": 10496
+      },
+      {
+        "path": "docs/product_guide.md",
+        "sha256": "2a13dac18e9ad16afbedeb460bfd03650340aa1f08941f9b94ca1253b77a9f44",
+        "size": 7321
+      },
+      {
+        "path": "identity_service.py",
+        "sha256": "14918ae0e66af63d8ba354f62043f0c0353e3e3ee74a201c4a6e5256ad7c24a7",
+        "size": 13135
       },
       {
         "path": "match_data.py",
@@ -95,8 +113,13 @@
       },
       {
         "path": "studio_api.py",
-        "sha256": "9a4c1d1db691c270d32913dab66902f5f7c8ef17a8f7ccff91d319c2030f91e3",
-        "size": 90339
+        "sha256": "8a8d3b6c713f697b32febe92929c010104d3ec7046ff8f832724f3dc9221e184",
+        "size": 91479
+      },
+      {
+        "path": "team_clusters.py",
+        "sha256": "660aa0b4331b076b84c7635ebb7271f75f126f11fbf6f4f7da8a23e8cf097509",
+        "size": 60124
       },
       {
         "path": "tools/full_abc_event_catalog.py",
@@ -115,8 +138,13 @@
       },
       {
         "path": "v3/public/app.js",
-        "sha256": "8be111488b2d9bd1bf37ba99b266ae8001a5885cf6fda3c5a7aa587ea84087d5",
-        "size": 146272
+        "sha256": "7dcdcd56d2324431bbf81fdcd4575824ea12be7e995966943e0165860f9c968f",
+        "size": 147385
+      },
+      {
+        "path": "v3/public/capture-page.js",
+        "sha256": "354b2f56f398fb29e25f26f34ddfdb81180c13156c147bc9079501c533209cee",
+        "size": 99807
       },
       {
         "path": "v3/public/cross-analytics.js",
@@ -135,8 +163,8 @@
       },
       {
         "path": "v3/public/features.js",
-        "sha256": "13db79b8490ed15261d21fa0d1d09010c0505d67660584937b56568d3ee5d422",
-        "size": 311826
+        "sha256": "2ce171f34d75503be525d76cb34e75030c7bfb00bb66e05517c45b983d691c09",
+        "size": 329246
       },
       {
         "path": "v3/public/hero-compare.js",
@@ -154,24 +182,29 @@
         "size": 99501
       },
       {
+        "path": "v3/public/players-page.js",
+        "sha256": "8e35e62b8f27f4915a68d860b003f03f8aec1fd8cf6e4af2440432268bbbd2ba",
+        "size": 119480
+      },
+      {
         "path": "v3/public/style.css",
-        "sha256": "c45d96ff142e2fe2fe05905eb8375d8caba8b433c5b52b6d15285bfbc424a8eb",
-        "size": 652493
+        "sha256": "ee58eb8d4e966ddab3e480fb3633056e7e18706eca606e5a9bd2af9725f14dad",
+        "size": 654960
       },
       {
         "path": "v3/public/tour.js",
-        "sha256": "ecbd5f5a0af3dd2bafe4dc9ad62ab3dab76c95890947c82c7cae6b08a177d3f8",
-        "size": 32386
+        "sha256": "4d84dc09178f4b1b0aef994a49207b840d299b856567359baaa3bb3c0df0581c",
+        "size": 32430
       },
       {
         "path": "v3/serve.py",
-        "sha256": "3177e9d9523052cd841b9c519bb87ab032e38084a5c323e5fdf249e4d881cdf1",
-        "size": 115032
+        "sha256": "83425f7d375b485675269b74f4ee8bf2391508d66e6dd8c90c2eba379c75eebc",
+        "size": 125158
       },
       {
         "path": "version.py",
-        "sha256": "4e8b6b6c1a29f9a8de4c7aa855c6216f41d46a8640047c82690e48c9f42103a1",
-        "size": 363
+        "sha256": "ac79f8d7c1046430513cad514f9ec26bbe1d049a0127cedd8661f9a7e7dca369",
+        "size": 359
       },
       {
         "path": "video_ocr.py",
@@ -180,17 +213,17 @@
       },
       {
         "path": "workspace_store.py",
-        "sha256": "6c662cb6eb5b425e662b78fed8b99d2a1279f5583a43db2f5042031703d1dfdb",
-        "size": 58373
+        "sha256": "9506c4ab94289c7b0d1c02fae94c9ad7b26ce8eca3198e620495db2158464717",
+        "size": 69626
       }
     ],
     "remove": []
   },
-  "releaseName": "BP 命中：大盘对位与 KPL 赛事命中",
+  "releaseName": "身份主数据统一与 BP 口径补全",
   "releaseDate": "2026-11-10",
   "full": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.30/KPL-Scrim-Lab-1.5.30-full.zip",
-    "sha256": "679649727fc097b5a917af5a27fa527d2af23a91777ec17164afefd497cf0ad2",
-    "size": 82128395
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.31/KPL-Scrim-Lab-1.5.31-full.zip",
+    "sha256": "a8117798d8b24cab72246aead8faee5040758980daf7e68c93b6fc8a12f002f9",
+    "size": 82195622
   }
 }
