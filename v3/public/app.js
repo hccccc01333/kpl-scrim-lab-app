@@ -1,4 +1,4 @@
-﻿import { groupFor } from './navigation.js';
+import { groupFor } from './navigation.js';
 import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
@@ -1104,16 +1104,56 @@ function matchPage(m) {
     </div>
     <p>口径：营地面板经济采样（约 30 秒一点）与回放事件；经济差为本队减对手，不做跨局推断。</p>
   </section>`;
-  /* 资源控制（回放事件）：暴君/暗影暴君/暗影主宰/防御塔的双方击杀数，
-     与王者营地复盘页同口径；无回放事件时整块隐藏。 */
+  /* 资源 / 建筑的具体名字。营地 H5 前端把 dtID 编成了「阵营 + 路 + 塔序」：
+     getTowerRoad(dtID) / getTowerIndex(dtID) 两个函数是它的原文（已存进
+     docs/camp_frontend_labels.json 的同一份前端包里）。路名按各自半区镜像：
+     蓝方的「一路」是上路，红方的「一路」是下路。 */
+  const TOWER_LANES = { blue: ['上路', '中路', '下路'], red: ['下路', '中路', '上路'] };
+  const RESOURCE_NAMES = { 8: '暗影主宰', 9: '暴君', 17: '暗影暴君', 10: '蓝 BUFF', 11: '红 BUFF' };
+  const towerName = (id, owner) => {
+    const n = Number(id);
+    if (n === 10 || n === 20) return '水晶';
+    if (!Number.isFinite(n) || n < 1) return '';
+    const road = Math.floor((n % 10 - 1) / 3);
+    const index = 3 - ((n % 10 - 1) % 3);      /* 1=高地 2=二塔 3=一塔 */
+    const lane = (TOWER_LANES[owner] || TOWER_LANES.blue)[road] || '';
+    return `${lane}${index === 1 ? '高地塔' : index === 2 ? '二塔' : '一塔'}`;
+  };
+  /* 事件的显示名：资源看 dtID，建筑看到底是哪一路哪一座。 */
+  const eventLabel = (e) => {
+    if (!e) return '';
+    if (e.kind === 'structure') {
+      const named = towerName(e.id, e.ownerCamp || e.killerCamp);
+      return named ? `${e.ownerCamp === own ? '我方' : '对方'}${named}` : (e.name || '建筑');
+    }
+    if (e.kind === 'resource') {
+      const named = RESOURCE_NAMES[Number(e.id)];
+      if (named) return named;
+    }
+    return e.name || (e.kind === 'resource' ? '资源' : '事件');
+  };
   const resourceBand = (() => {
     if (!events.length) return '';
-    const names = ['暴君', '暗影暴君', '暗影主宰', '防御塔'];
-    const count = (name, camp) => events.filter((e) => e.name === name && e.killerCamp === camp).length;
+    /* 龙/主宰按具体名字数（暗影主宰、暴君、暗影暴君），防御塔拆到「哪一路哪一座」，
+       并把双方占比画成对向条——只写 1:0 看不出这一局资源是被谁控住的。 */
+    const names = ['暴君', '暗影暴君', '暗影主宰'];
+    const count = (name, camp) => events.filter((e) => eventLabel(e) === name && e.killerCamp === camp).length;
     const rows = names.map((name) => ({ name, own: count(name, own), foe: count(name, opposite[own]) }));
-    const ownDragons = rows.slice(0, 3).reduce((sum, row) => sum + row.own, 0);
-    const foeDragons = rows.slice(0, 3).reduce((sum, row) => sum + row.foe, 0);
+    const ownDragons = rows.reduce((sum, row) => sum + row.own, 0);
+    const foeDragons = rows.reduce((sum, row) => sum + row.foe, 0);
     const rate = ownDragons + foeDragons ? Math.round(ownDragons / (ownDragons + foeDragons) * 100) : null;
+    const towers = events.filter((e) => e.kind === 'structure');
+    const towerOf = (camp) => towers.filter((e) => e.killerCamp === camp);
+    const tierCount = (camp, tier) => towerOf(camp).filter((e) => (towerName(e.id, e.ownerCamp) || '').includes(tier)).length;
+    const coreOf = (camp) => towerOf(camp).filter((e) => towerName(e.id, e.ownerCamp) === '水晶').length;
+    const ownTowers = towerOf(own).filter((e) => towerName(e.id, e.ownerCamp) !== '水晶').length;
+    const foeTowers = towerOf(opposite[own]).filter((e) => towerName(e.id, e.ownerCamp) !== '水晶').length;
+    const tierLine = (camp) => {
+      const parts = ['一塔', '二塔', '高地塔'].map((tier) => `${tier} ${tierCount(camp, tier)}`);
+      const core = coreOf(camp);
+      if (core) parts.push(`水晶 ${core}`);
+      return parts.join(' · ');
+    };
     const buffs = m.replay?.buffEvents || [];
     const anti = buffs.filter((b) => b.owner && b.killer && b.owner !== own && b.killer === own).length;
     const stolen = buffs.filter((b) => b.owner === own && b.killer && b.killer !== own).length;
@@ -1121,14 +1161,28 @@ function matchPage(m) {
     const buffLine = buffs.length
       ? `<p class="md-res-buff">BUFF 收己方野 <b>${farmed}</b> · 反野 <b>${anti}</b> 次 · 被反 <b>${stolen}</b> 次<small>回放 killbuff 事件</small></p>`
       : '';
-    /* 控制率是这一局最该一眼看到的数，所以给它大字号；四项计数退成小格。 */
+    const item = (row) => {
+      const total = row.own + row.foe;
+      const pctOwn = total ? row.own / total * 100 : 50;
+      return `<div class="md-res-item">
+        <span class="md-res-item-top"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>
+        <span class="md-res-bar" title="${esc(row.name)} 我方 ${row.own} / 对方 ${row.foe}"><i style="width:${pctOwn.toFixed(1)}%"></i></span>
+      </div>`;
+    };
+    const towerTotal = ownTowers + foeTowers;
+    const towerItem = `<div class="md-res-item md-res-item-wide">
+      <span class="md-res-item-top"><i>防御塔</i><b>${ownTowers}</b><em>:</em><b class="foe">${foeTowers}</b></span>
+      <span class="md-res-bar" title="我方推掉 ${ownTowers} 座 / 对方推掉 ${foeTowers} 座"><i style="width:${(towerTotal ? ownTowers / towerTotal * 100 : 50).toFixed(1)}%"></i></span>
+      <small>我方推：${esc(tierLine(own))}<br>对方推：${esc(tierLine(opposite[own]))}</small>
+    </div>`;
     return `<div class="md-res">
       <div class="md-res-main">
         <span class="md-res-kicker">资源控制</span>
         <strong class="md-res-rate">${rate === null ? '—' : rate}<small>${rate === null ? '' : '%'}</small></strong>
-        <span class="md-res-caption">龙 / 主宰控制率</span>
+        <span class="md-res-caption">龙 / 主宰控制率（我方 ${ownDragons} : ${foeDragons} 对方）</span>
+        <span class="md-res-gauge"><i style="width:${rate === null ? 50 : rate}%"></i></span>
       </div>
-      <div class="md-res-items">${rows.map((row) => `<span class="md-res-item"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>`).join('')}</div>
+      <div class="md-res-items">${rows.map(item).join('')}${towerItem}</div>
       ${buffLine}
     </div>`;
   })();
@@ -1137,7 +1191,7 @@ function matchPage(m) {
   </section>`;
   const nodeRows = [
     ...[...swings].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 4).map((s) => ({ t: s.t, event: '经济差波动', delta: s.delta, value: diff(s.value), dir: (m.result === 'win' ? s.delta > 0 : s.delta < 0) ? '利于本队' : '利于对手' })),
-    ...events.filter((e) => /kill|death|resource|structure/i.test(e.kind || '')).slice(0, 4).map((e) => ({ t: e.t, event: `${eventNames[e.kind] || e.kind || '事件'} · ${e.killer || e.killerHero || '—'}`, delta: null, value: has(goldAt(e.t)) ? diff(goldAt(e.t)) : '—', dir: '回放事件' })),
+    ...events.filter((e) => /kill|death|resource|structure/i.test(e.kind || '')).slice(0, 4).map((e) => ({ t: e.t, event: `${eventLabel(e)} · ${e.killerHero || e.killer || '—'}`, delta: null, value: has(goldAt(e.t)) ? diff(goldAt(e.t)) : '—', dir: '回放事件' })),
   ].sort((a, b) => (a.t || 0) - (b.t || 0)).slice(0, 8);
   const dirClass = (d) => d === '利于本队' ? 'own' : d === '利于对手' ? 'enemy' : 'event';
   const mdTimeline = nodeRows.length ? `<section class="section" id="match-timeline"><div class="section-heading"><div><h2>关键节点</h2><p>按时间排列，每个数字都能回到具体分钟；波动取绝对值最大的几次</p></div></div>
@@ -1366,7 +1420,7 @@ function matchPage(m) {
     const plainNarration = (text) => String(text || '').replace(/<c="[^"]*">/g, '').replace(/<\/c>/g, '');
     return `<section class="section" id="match-events"><div class="section-heading"><div><h2>事件详情</h2><p>每个资源 / 推塔事件的参战者与伤害占比（官方回放 keyEventArr）；下方为营地复盘叙述（adviceList）</p></div></div>
       <div class="md-ev-list">${pick.map((e) => `<article class="md-ev">
-        <div class="md-ev-head"><span>${time(e.t)}</span><b>${esc(e.name || (e.kind === 'structure' ? '建筑' : '资源'))}</b><i class="${e.killerCamp === own ? 'own' : 'foe'}">${e.killerCamp === own ? '我方击杀' : e.killerCamp ? '对手击杀' : ''}</i></div>
+        <div class="md-ev-head"><span>${time(e.t)}</span><b>${esc(eventLabel(e))}</b><i class="${e.killerCamp === own ? 'own' : 'foe'}">${e.killerCamp === own ? '我方击杀' : e.killerCamp ? '对手击杀' : ''}</i></div>
         <div class="md-ev-rows">${withShare(e.participants || []).map((p) => `<span class="md-ev-row ${p.camp === own ? 'own' : 'foe'}" title="${esc((p.hero || p.name || '') + ' · 伤害 ' + damageText(p.hurtTotal))}">
           <em>${esc(p.hero || p.name || '—')}</em><b>${damageText(p.hurtTotal)}</b><span class="md-ev-bar"><i style="width:${p.share === null ? 0 : p.share}%"></i></span><small>${p.share === null ? '—' : p.share + '%'}</small></span>`).join('')}</div>
       </article>`).join('')}</div>

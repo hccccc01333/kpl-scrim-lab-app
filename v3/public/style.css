@@ -7566,13 +7566,18 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-res-rate { font: 800 24px/1.1 Manrope, var(--font); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
 .md-res-rate small { font-size: 13px; font-weight: 600; margin-left: 1px; color: var(--muted); }
 .md-res-caption { color: var(--quiet); font-size: 10.5px; }
-.md-res-items { display: flex; flex-wrap: wrap; gap: 6px 10px; }
-.md-res-item { display: inline-flex; align-items: baseline; gap: 3px; padding: 4px 9px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
-  font: 700 11.5px/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
-.md-res-item i { font-style: normal; color: var(--muted); font: 400 11px/1 var(--font); margin-right: 2px; }
-.md-res-item b.foe { color: var(--md-enemy-ink, #10635b); }
-.md-res-item em { font-style: normal; color: var(--quiet); font-weight: 400; }
+.md-res-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 14px; }
+.md-res-item { display: grid; gap: 5px; min-width: 0; }
+.md-res-item-top { display: flex; align-items: baseline; gap: 4px; font: 700 12px/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
+.md-res-item-top i { font-style: normal; color: var(--muted); font: 400 11px/1 var(--font); margin-right: 2px; }
+.md-res-item-top b.foe { color: var(--md-enemy-ink, #10635b); }
+.md-res-item-top em { font-style: normal; color: var(--quiet); font-weight: 400; }
+/* 对向条：左金右青，谁占得多一眼看出来 */
+.md-res-bar { position: relative; height: 6px; border-radius: 999px; background: rgba(94, 201, 190, .34); overflow: hidden; }
+.md-res-bar i { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, rgba(216, 178, 106, .55), var(--md-gold)); }
+.md-res-item-wide small { color: var(--quiet); font-size: 10.5px; line-height: 1.55; }
+.md-res-gauge { display: block; height: 6px; margin-top: 5px; border-radius: 999px; background: rgba(94, 201, 190, .34); overflow: hidden; }
+.md-res-gauge i { display: block; height: 100%; background: linear-gradient(90deg, rgba(216, 178, 106, .55), var(--md-gold)); }
 .md-res-buff { grid-column: 1 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
 .md-res-buff b { color: var(--text); font-variant-numeric: tabular-nums; }
 .md-res-buff small { margin-left: 8px; color: var(--quiet); font-size: 10.5px; }
