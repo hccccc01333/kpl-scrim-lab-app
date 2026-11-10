@@ -1310,7 +1310,9 @@ function matchPage(m) {
       <header><span class="md-mu-lane">${lane.lane}</span><em class="${verdictCls(lane)}">${verdictText(lane)}</em></header>
       <div class="md-mu-who"><b class="own">${esc(lane.a.hero || '—')}</b><i>vs</i><b class="foe">${esc(lane.b.hero || '—')}</b></div>
       ${lane.facts && lane.facts.n ? `<p class="md-mu-hist">巅峰千强 ${fmt(lane.facts.n)} 局 · 实际 ${fmt(lane.facts.wr, 1)}% vs 预期 ${fmt(lane.facts.expected, 1)}% · 超额 <b>${diff(lane.facts.excess)}</b></p>`
-        : '<p class="md-mu-hist">巅峰千强没有这个对位样本（冷门英雄或使用率不足）</p>'}
+        : `<p class="md-mu-hist">巅峰千强没有这个对位样本${lane.facts && (lane.facts.minePick || lane.facts.foePick)
+          ? `（使用率 ${lane.facts.minePick === null || lane.facts.minePick === undefined ? '—' : fmt(lane.facts.minePick, 2) + '%'}
+             / ${lane.facts.foePick === null || lane.facts.foePick === undefined ? '—' : fmt(lane.facts.foePick, 2) + '%'}，门槛 3%）` : ''}</p>`}
       ${lane.scrim && lane.scrim.n ? `<p class="md-mu-hist">自家 ${fmt(lane.scrim.n)} 局 · 对线领先 ${fmt(lane.scrim.aheadRate, 0)}%</p>` : ''}
       ${lane.nowDiff === null ? '<p class="md-mu-now">本局经济差 —</p>'
         : `<p class="md-mu-now">本局对位经济差 <b>${diff(lane.nowDiff)}</b>${lane.realised === null ? ''

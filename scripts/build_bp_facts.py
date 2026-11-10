@@ -190,6 +190,10 @@ def main():
         'minN': MIN_PAIR_N, 'minPickRate': MIN_PICK_RATE,
         'note': '超额胜率 = 实际对位胜率 − 按两个英雄各自基准胜率算出的期望；正数表示这对组合本身占优。',
         'pairs': lane_rows,
+        # 每个英雄在该分段的胜率与使用率：没有对位样本时，用它解释「为什么没有」
+        'heroes': {stat['name']: {'wr': round(stat['wr'] * 100, 1),
+                                  'pick': round(stat['pick'] * 100, 2)}
+                   for stat in hero_stats.values() if stat.get('name')},
     }
     (OUT / 'lane_matchups.json').write_text(json.dumps(ladder, ensure_ascii=False), encoding='utf-8')
 

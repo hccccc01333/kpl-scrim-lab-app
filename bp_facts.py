@@ -98,8 +98,12 @@ def for_match(detail):
             continue
         row = lane_table.get((mine.get('hero'), foe.get('hero')))
         if not row:
+            # 没对位样本时，把两个英雄在巅峰千强的使用率带出去，解释「为什么没有」
+            heroes = lane_data.get('heroes') or {}
             lanes.append({'lane': lane, 'mine': mine.get('hero'), 'foe': foe.get('hero'),
-                          'state': 'no-sample', 'n': 0})
+                          'state': 'no-sample', 'n': 0,
+                          'minePick': (heroes.get(mine.get('hero')) or {}).get('pick'),
+                          'foePick': (heroes.get(foe.get('hero')) or {}).get('pick')})
             continue
         excess = row['excess']
         state = 'ahead' if excess >= 2 else 'behind' if excess <= -2 else 'even'
