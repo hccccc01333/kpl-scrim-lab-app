@@ -3,13 +3,13 @@
 This parses containers and structural counts, not gameplay state or tactics.
 All offsets are a versioned research profile, not an official file contract.
 """
-from collections import Counter
+from collections import Counter, OrderedDict
+import copy
 import hashlib
 import re
 import threading
 import unicodedata
 import zlib
-from contextlib import contextmanager
 
 from operator_stream import OperatorStreamError, summarize as summarize_operator_stream
 from replay_profiles import load_registry, profile_layout, resolve_profile
@@ -30,43 +30,63 @@ ROSTER_BOT_POST_BYTES = 5
 ROSTER_MAX_HUMAN_BLOCK_BYTES = 0x2000
 FRAME_SCAN_LIMIT = 0x60000
 
-_LAYOUT_LOCK = threading.Lock()
-_LAYOUT_FIELDS = {
-    'blockStride': 'BLOCK_STRIDE',
-    'heroOffsets': 'HERO_OFFSETS',
-    'tlvStart': 'TLV_START',
-    'secondDeflateStart': 'SECOND_DEFLATE_START',
-    'rosterScanLimit': 'ROSTER_SCAN_LIMIT',
-    'rosterHeroOffset': 'ROSTER_HERO_OFFSET',
-    'rosterBotBlockBytes': 'ROSTER_BOT_BLOCK_BYTES',
-    'rosterFooterTail': 'ROSTER_FOOTER_TAIL',
-    'rosterHumanPostBytes': 'ROSTER_HUMAN_POST_BYTES',
-    'rosterBotPostBytes': 'ROSTER_BOT_POST_BYTES',
-    'rosterMaxHumanBlockBytes': 'ROSTER_MAX_HUMAN_BLOCK_BYTES',
-    'frameScanLimit': 'FRAME_SCAN_LIMIT',
+# The constants above are the built-in defaults.  A profile from
+# resources/replay_profiles.json overlays them for one parse; the resolved
+# layout is passed down as an argument, so two parses of different client
+# builds never share mutable module state.
+_DEFAULT_LAYOUT = {
+    'blockStride': BLOCK_STRIDE,
+    'heroOffsets': HERO_OFFSETS,
+    'tlvStart': TLV_START,
+    'secondDeflateStart': SECOND_DEFLATE_START,
+    'rosterScanLimit': ROSTER_SCAN_LIMIT,
+    'rosterHeroOffset': ROSTER_HERO_OFFSET,
+    'rosterBotBlockBytes': ROSTER_BOT_BLOCK_BYTES,
+    'rosterFooterTail': ROSTER_FOOTER_TAIL,
+    'rosterHumanPostBytes': ROSTER_HUMAN_POST_BYTES,
+    'rosterBotPostBytes': ROSTER_BOT_POST_BYTES,
+    'rosterMaxHumanBlockBytes': ROSTER_MAX_HUMAN_BLOCK_BYTES,
+    'frameScanLimit': FRAME_SCAN_LIMIT,
 }
 
 
-@contextmanager
-def _active_layout(profile):
-    """Temporarily apply a resolved profile's layout to the module globals.
+def layout_for(profile):
+    """Resolve a profile to a complete layout dict, defaults filled in."""
+    layout = dict(_DEFAULT_LAYOUT)
+    layout.update(profile_layout(profile))
+    return layout
 
-    Parsing itself is synchronous; the lock keeps concurrent uploads from
-    observing another profile's offsets while the globals are swapped.
-    """
-    layout = profile_layout(profile)
-    if not layout:
-        yield
-        return
-    mapping = {global_name: layout[key]
-               for key, global_name in _LAYOUT_FIELDS.items() if key in layout}
-    with _LAYOUT_LOCK:
-        previous = {name: globals()[name] for name in mapping}
-        globals().update(mapping)
-        try:
-            yield
-        finally:
-            globals().update(previous)
+
+# The upload endpoint validates a file by parsing it, then the import endpoint
+# parses it again; the sha256 that is already the file id makes that cacheable.
+# Bounded so a long session cannot pin every replay's event lists in memory.
+_CACHE_LOCK = threading.Lock()
+_CACHE = OrderedDict()
+_CACHE_MAX = 8
+
+
+def _cache_get(sha):
+    with _CACHE_LOCK:
+        report = _CACHE.get(sha)
+        if report is None:
+            return None
+        _CACHE.move_to_end(sha)
+    return copy.deepcopy(report)
+
+
+def _cache_put(report):
+    sha = report['abc']['sha256']
+    with _CACHE_LOCK:
+        _CACHE[sha] = copy.deepcopy(report)
+        _CACHE.move_to_end(sha)
+        while len(_CACHE) > _CACHE_MAX:
+            _CACHE.popitem(last=False)
+
+
+def cache_clear():
+    """Drop cached parses (tests and data-dir switches)."""
+    with _CACHE_LOCK:
+        _CACHE.clear()
 
 
 class ReplayFormatError(ValueError):
@@ -193,7 +213,10 @@ def parse_header(data):
             'profileSource': registry['source'] if supported else None}
 
 
-def _discover_legacy_blocks(data, hero_ids, local_hero=None):
+def _discover_legacy_blocks(data, hero_ids, local_hero=None, layout=None):
+    layout = layout or _DEFAULT_LAYOUT
+    stride = layout['blockStride']
+    hero_offsets = layout['heroOffsets']
     starts = set()
     # Only inspect the header area. A large payload cannot turn this into an
     # unbounded byte-by-byte scan or introduce distant accidental blocks.
@@ -202,22 +225,22 @@ def _discover_legacy_blocks(data, hero_ids, local_hero=None):
         pattern = int(hero_id).to_bytes(4,'big')
         position = header.find(pattern)
         while position != -1:
-            start = position-HERO_OFFSETS[0]
-            if start >= 0 and start+BLOCK_STRIDE <= len(header):
-                if all(header[start+o:start+o+4] == pattern for o in HERO_OFFSETS):
+            start = position-hero_offsets[0]
+            if start >= 0 and start+stride <= len(header):
+                if all(header[start+o:start+o+4] == pattern for o in hero_offsets):
                     starts.add(start)
             position = header.find(pattern,position+1)
     candidates = []
     for start in sorted(starts):
-        if start-BLOCK_STRIDE in starts:
+        if start-stride in starts:
             continue
         chain = []
-        while start+len(chain)*BLOCK_STRIDE in starts:
-            chain.append(start+len(chain)*BLOCK_STRIDE)
+        while start+len(chain)*stride in starts:
+            chain.append(start+len(chain)*stride)
         if len(chain) == 9:
-            first = chain[0]-BLOCK_STRIDE
+            first = chain[0]-stride
             if first >= 0:
-                hero = int.from_bytes(header[first+1445:first+1449],'big')
+                hero = int.from_bytes(header[first+hero_offsets[2]:first+hero_offsets[2]+4],'big')
                 if hero in hero_ids and (local_hero is None or hero == local_hero):
                     chain.insert(0,first)
         if len(chain) == 10:
@@ -226,7 +249,7 @@ def _discover_legacy_blocks(data, hero_ids, local_hero=None):
         return [], ['未找到唯一的十人连续玩家块；保留未知，不推断阵营或英雄。']
     blocks = []
     for index,start in enumerate(candidates[0]):
-        hero = int.from_bytes(header[start+1445:start+1449],'big')
+        hero = int.from_bytes(header[start+hero_offsets[2]:start+hero_offsets[2]+4],'big')
         blocks.append({'order':index,'start':start,'heroId':hero,'self':False,'camp':None,'position':None})
     matching = [b for b in blocks if b['heroId'] == local_hero]
     if len(matching) == 1:
@@ -282,30 +305,31 @@ def _roster_candidates(data, limit):
     return found
 
 
-def _roster_block_end(data, candidate, next_start=None):
+def _roster_block_end(data, candidate, next_start=None, layout=None):
+    layout = layout or _DEFAULT_LAYOUT
     if candidate['tag'] != 1:
-        end = candidate['start']+ROSTER_BOT_BLOCK_BYTES
+        end = candidate['start']+layout['rosterBotBlockBytes']
         return end if end <= len(data) else None
     name_end = candidate['start']+16+candidate['nameLen']
-    limit = min(len(data), candidate['start']+ROSTER_MAX_HUMAN_BLOCK_BYTES)
+    limit = min(len(data), candidate['start']+layout['rosterMaxHumanBlockBytes'])
     # Blue-side human blocks carry the 12-byte footer ending exactly at the
     # next block; red-side human blocks in 10-human games do not, and some
     # later blocks contain a footer pattern, so the next start wins unless
     # the footer itself lands there.
-    footer = data.find(ROSTER_FOOTER_TAIL, name_end, limit)
+    footer = data.find(layout['rosterFooterTail'], name_end, limit)
     if footer != -1:
-        end = footer+len(ROSTER_FOOTER_TAIL)
+        end = footer+len(layout['rosterFooterTail'])
         if end == next_start:
             return end
     if next_start is not None and name_end < next_start <= limit:
         return next_start
     if footer != -1:
-        end = footer+len(ROSTER_FOOTER_TAIL)
+        end = footer+len(layout['rosterFooterTail'])
         return end if end <= len(data) else None
     return None
 
 
-def _discover_roster_blocks(data, hero_ids, local_hero=None):
+def _discover_roster_blocks(data, hero_ids, local_hero=None, layout=None):
     """The 5247758 ten-block layout, with human and bot variants.
 
     Human blocks (tag 1) carry a 30-byte post record; blue-side human blocks
@@ -314,12 +338,13 @@ def _discover_roster_blocks(data, hero_ids, local_hero=None):
     5-byte post record. Hero IDs are u16BE at s+0x48, where
     s = start+0x10+nameLen+post.
     """
-    limit = min(len(data),ROSTER_SCAN_LIMIT)
+    layout = layout or _DEFAULT_LAYOUT
+    limit = min(len(data),layout['rosterScanLimit'])
     candidates = _roster_candidates(data,limit)
     ordered = sorted(candidates,key=lambda item:item['start'])
     for index,candidate in enumerate(ordered):
         following = ordered[index+1]['start'] if index+1 < len(ordered) else None
-        candidate['end'] = _roster_block_end(data,candidate,following)
+        candidate['end'] = _roster_block_end(data,candidate,following,layout)
     by_start = {candidate['start']:candidate for candidate in ordered}
     chains = []
     for candidate in ordered:
@@ -341,12 +366,14 @@ def _discover_roster_blocks(data, hero_ids, local_hero=None):
         return [], ['未找到唯一的十人连续玩家块；保留未知，不推断阵营或英雄。']
     chain = next(iter(unique.values()))
     blocks = []
+    hero_offset = layout['rosterHeroOffset']
     for order,candidate in enumerate(chain):
-        post = ROSTER_HUMAN_POST_BYTES if candidate['tag'] == 1 else ROSTER_BOT_POST_BYTES
+        post = (layout['rosterHumanPostBytes'] if candidate['tag'] == 1
+                else layout['rosterBotPostBytes'])
         start = candidate['start']+16+candidate['nameLen']+post
-        if start+ROSTER_HERO_OFFSET+2 > len(data):
+        if start+hero_offset+2 > len(data):
             return [], ['十人玩家块中的英雄字段被截断，未推断阵容。']
-        hero = int.from_bytes(data[start+ROSTER_HERO_OFFSET:start+ROSTER_HERO_OFFSET+2],'big')
+        hero = int.from_bytes(data[start+hero_offset:start+hero_offset+2],'big')
         if hero not in hero_ids:
             return [], ['十人玩家块中的英雄 ID 不在英雄表内，未推断阵容。']
         blocks.append({'order':order, 'start':candidate['start'], 'heroId':hero,
@@ -368,7 +395,7 @@ def _discover_roster_blocks(data, hero_ids, local_hero=None):
     return blocks,warnings
 
 
-def _discover_variable_human_blocks(data, hero_ids, local_hero=None):
+def _discover_variable_human_blocks(data, hero_ids, local_hero=None, layout=None):
     """2026-11 variable-stride ten-human layout.
 
     Blocks keep the legacy prefix (team/teamEcho/const1/slot/entity/level/
@@ -377,7 +404,8 @@ def _discover_variable_human_blocks(data, hero_ids, local_hero=None):
     for the prefix, validate hero IDs at s+0x48, then require exactly ten
     unique entities with five slots per team.
     """
-    limit = min(len(data), ROSTER_SCAN_LIMIT)
+    layout = layout or _DEFAULT_LAYOUT
+    limit = min(len(data), layout['rosterScanLimit'])
     starts = []
     index = 0x100
     while index + 16 <= limit:
@@ -440,14 +468,14 @@ def _discover_variable_human_blocks(data, hero_ids, local_hero=None):
     return blocks, warnings
 
 
-def discover_blocks(data, hero_ids, local_hero=None):
-    blocks,warnings = _discover_legacy_blocks(data,hero_ids,local_hero)
+def discover_blocks(data, hero_ids, local_hero=None, layout=None):
+    blocks,warnings = _discover_legacy_blocks(data,hero_ids,local_hero,layout)
     if len(blocks) == 10:
         return blocks,warnings
-    roster,roster_warnings = _discover_roster_blocks(data,hero_ids,local_hero)
+    roster,roster_warnings = _discover_roster_blocks(data,hero_ids,local_hero,layout)
     if len(roster) == 10:
         return roster,roster_warnings
-    variable,variable_warnings = _discover_variable_human_blocks(data,hero_ids,local_hero)
+    variable,variable_warnings = _discover_variable_human_blocks(data,hero_ids,local_hero,layout)
     if len(variable) == 10:
         return variable,variable_warnings
     return [], ['未找到唯一的十人连续玩家块；保留未知，不推断阵营或英雄。']
@@ -533,16 +561,18 @@ def parse_ope_bytes(raw):
             'note':'已验证两层解压并解析事件结构；字段语义多为推断，不构成十人状态、技能次数或局内时间。'}
 
 
-def inspect_tlv(data):
+def inspect_tlv(data, layout=None):
+    layout = layout or _DEFAULT_LAYOUT
+    tlv_start = layout['tlvStart']
     marker=b'\x29\x0e\x00\x00'
-    if data[TLV_START+3:TLV_START+7] != marker:
+    if data[tlv_start+3:tlv_start+7] != marker:
         return {'status':'not_matched','start':None,'records':0,'note':'未匹配样本中的尾部 TLV 起点。'}
-    cursor=TLV_START; types=Counter();keys=Counter();seq_min=seq_max=None;previous=None;retreats=0
+    cursor=tlv_start; types=Counter();keys=Counter();seq_min=seq_max=None;previous=None;retreats=0
     while len(data)-cursor >= 8 and data[cursor+3:cursor+7] == marker:
         length=data[cursor+7]
         end=cursor+8+length
         if end > len(data):
-            return {'status':'truncated','start':TLV_START,'records':sum(keys.values()),'end':cursor,'note':'TLV 负载被截断。'}
+            return {'status':'truncated','start':tlv_start,'records':sum(keys.values()),'end':cursor,'note':'TLV 负载被截断。'}
         keys[data[cursor:cursor+3].hex()]+=1
         payload=data[cursor+8:end]
         if len(payload)>=9 and payload[:5] == b'\0'*5:
@@ -554,7 +584,7 @@ def inspect_tlv(data):
             previous=seq
             types[f'{payload[7]:02x}/{payload[8]:02x}']+=1
         cursor=end
-    return {'status':'structural-prefix','start':TLV_START,'end':cursor,'records':sum(keys.values()),
+    return {'status':'structural-prefix','start':tlv_start,'end':cursor,'records':sum(keys.values()),
             'trailingBytes':len(data)-cursor,'keyKinds':len(keys),'topKeys':keys.most_common(5),
             'typeCounts':dict(sorted(types.items())),'sequenceMin':seq_min,'sequenceMax':seq_max,
             'sequenceRetreats':retreats,'note':'只统计容器结构；类型值未映射到击杀、经济、坐标或技能事件。'}
@@ -568,15 +598,20 @@ def _frame_record_end(data, position):
     return end if end <= len(data) else None
 
 
-def inspect_frame_stream(data):
+def inspect_frame_stream(data, layout=None):
     """Find the longest seq/pad/L/payload/a/5B/b record chain.
 
     5069040 samples start at seq 0x22; the 5247758 sample starts at seq 1.
     The 5 bytes between `a` and `b` are not always zero in the newer build,
     so only pad==0 and the stride grammar are required.
     Only the container grammar is counted; payload semantics are not decoded.
+
+    The sequence byte on the wire is 8 bits and wraps, so the reported
+    ``lastSequence`` is the unwrapped frame number (``firstSequence + records
+    - 1``); the raw field value is kept as ``lastSequenceByte``.
     """
-    limit = min(len(data),FRAME_SCAN_LIMIT)
+    layout = layout or _DEFAULT_LAYOUT
+    limit = min(len(data),layout['frameScanLimit'])
     best = None
     for start in range(0,min(limit,len(data)-10)):
         if data[start+1] != 0:
@@ -591,7 +626,7 @@ def inspect_frame_stream(data):
             position = end
         if best is None or count > best['records']:
             best = {'start':start, 'end':position, 'records':count,
-                    'firstSequence':data[start], 'lastSequence':(data[start]+count-1) & 0xff}
+                    'firstSequence':data[start]}
             # The scan walks forward, so the first long run is its earliest
             # start; later starts inside the same run are strictly shorter.
             if count >= 1000:
@@ -599,9 +634,13 @@ def inspect_frame_stream(data):
     if not best or best['records'] < 64:
         return {'status':'not_matched','start':None,'records':0,
                 'note':'未匹配 seq/pad/L/payload/a/5B/b 记录链。'}
+    first = best['firstSequence']
+    last = first + best['records'] - 1
     return {'status':'frame-stream','start':best['start'],'end':best['end'],
-            'records':best['records'],'firstSequence':best['firstSequence'],
-            'lastSequence':best['lastSequence'],'trailingBytes':len(data)-best['end'],
+            'records':best['records'],'firstSequence':first,
+            'lastSequence':last,'lastSequenceByte':last & 0xff,
+            'sequenceWraps':last > 255,
+            'trailingBytes':len(data)-best['end'],
             'note':'只统计记录容器；payload 尚未映射到坐标、经济或技能事件。'}
 
 
@@ -803,22 +842,31 @@ def inspect_mvp_score(data, blocks, score_table):
             'note': '1251 SCPKG_GAMEOVER_MVPSCORE：胜方 MVP + 十人评分 + 败方 MVP；胜负由 MVP 阵营反推。'}
 
 
-def inspect_replay(abc, ope=None, hero_names=None):
+def inspect_abc(abc, hero_names=None):
+    """Decode one .abc container (never its .ope).
+
+    Cached by content hash when the caller does not pass its own hero map, so
+    the upload check and the import parse share one decode.
+    """
     if not 39 <= len(abc) <= MAX_FILE_BYTES:
         raise ReplayFormatError('.abc 文件过短或超过 16 MB 上限')
-    if hero_names is None:
+    cacheable = hero_names is None
+    if cacheable:
+        cached = _cache_get(digest(abc))
+        if cached is not None:
+            return cached
         from vision import catalog
         hero_names={int(e['id'].split('-')[1]):e['name'] for e in catalog()['entries'] if e['kind']=='hero'}
     header=parse_header(abc)
     profile=resolve_profile(header['versions'],header['builds'])
     warnings=[]; frames=None; player_events=None
     if header['layoutSupported']:
-        with _active_layout(profile):
-            blocks, warnings=discover_blocks(abc,set(hero_names),header['localHeroId'])
-            tlv=inspect_tlv(abc)
-            if tlv['status'] != 'structural-prefix':
-                frames=inspect_frame_stream(abc)
-                player_events=inspect_player_events(abc,frames)
+        layout=layout_for(profile)
+        blocks, warnings=discover_blocks(abc,set(hero_names),header['localHeroId'],layout)
+        tlv=inspect_tlv(abc,layout)
+        if tlv['status'] != 'structural-prefix':
+            frames=inspect_frame_stream(abc,layout)
+            player_events=inspect_player_events(abc,frames)
     else:
         blocks=[];tlv={'status':'not_supported','records':0}
         warnings.append('仅头部版本可读；该版本未配置解析档案，'
@@ -826,26 +874,6 @@ def inspect_replay(abc, ope=None, hero_names=None):
     for block in blocks:
         block['heroName']=hero_names.get(block['heroId'])
     header['localHeroName']=hero_names.get(header['localHeroId'])
-    operator=parse_ope_bytes(ope) if ope is not None else None
-    if operator and operator['versions'] != header['versions']:
-        raise ReplayFormatError('.abc 与 .ope 的版本不一致，未作为配对回放保存')
-    pairing_status='user-selected-unverified'
-    if operator:
-        tag=operator.get('matchId')
-        matched=False
-        if tag:
-            raw=tag.encode()
-            candidates=[block for block in blocks if block.get('self')] or blocks
-            for block in candidates:
-                end=block.get('blockEnd') or len(abc)
-                if raw in abc[block['start']:end]:
-                    matched=True
-                    break
-        if matched:
-            pairing_status='recorder-tag-matched'
-            warnings.append('同局标签匹配：.abc 录制者块内出现与 .ope 相同的 32 位标签。')
-        else:
-            warnings.append('配对由用户指定；版本一致不证明属于同一局，尚未交叉核验对局 ID。')
     if frames and frames['status'] == 'frame-stream':
         if player_events and player_events['status'] == 'raw-events':
             warnings.append(f'帧流识别到 {frames["records"]} 条记录；0x85/0x87/0x82 已解析，其他标签未解。')
@@ -883,12 +911,13 @@ def inspect_replay(abc, ope=None, hero_names=None):
     if player_events and player_events['buyEcho']['unique']:
         warnings.append(f'尾部流购买镜像 {player_events["buyEcho"]["unique"]} 条，与 BUYEQUIP 命令一一对应；'
                         '尾部流没有金币收入事件，不能据此重建收入账本。')
-    return {'parserVersion':PROFILE,'profileId':header.get('profile'),
+    report = {'parserVersion':PROFILE,'profileId':header.get('profile'),
             'profileSource':header.get('profileSource'),
             'abc':{'size':len(abc),'sha256':digest(abc)},'header':header,
             'blocks':blocks,'blocksLayout':blocks_layout,'tlv':tlv,'frames':frames,
-            'scoreTable':score_table,'mvpScore':mvp_score,'playerEvents':player_events,'ope':operator,
-            'pairingStatus':pairing_status if operator else 'abc-only',
+            'scoreTable':score_table,'mvpScore':mvp_score,'playerEvents':player_events,
+            'ope':None,
+            'pairingStatus':'abc-only',
             'provenance':{
                 'container':{'source':'abc-container','confidence':'decoded'},
                 'playerBlocks':{'source':'abc-container','confidence':'decoded'},
@@ -900,3 +929,39 @@ def inspect_replay(abc, ope=None, hero_names=None):
                           'events':'decoded','positions':'estimated',
                           'gameplayState':'undecoded'},
             'warnings':warnings,'gameplayStateDecoded':False}
+    if cacheable:
+        _cache_put(report)
+    return report
+
+
+def inspect_replay(abc, ope=None, hero_names=None):
+    """Decode a .abc and, when given, pair it with its .ope."""
+    report = inspect_abc(abc, hero_names)
+    if ope is None:
+        return report
+    header = report['header']
+    blocks = report['blocks']
+    operator = parse_ope_bytes(ope)
+    if operator['versions'] != header['versions']:
+        raise ReplayFormatError('.abc 与 .ope 的版本不一致，未作为配对回放保存')
+    pairing_status = 'user-selected-unverified'
+    tag = operator.get('matchId')
+    matched = False
+    if tag:
+        raw = tag.encode()
+        candidates = [block for block in blocks if block.get('self')] or blocks
+        for block in candidates:
+            end = block.get('blockEnd') or len(abc)
+            if raw in abc[block['start']:end]:
+                matched = True
+                break
+    if matched:
+        pairing_status = 'recorder-tag-matched'
+        report['warnings'].append(
+            '同局标签匹配：.abc 录制者块内出现与 .ope 相同的 32 位标签。')
+    else:
+        report['warnings'].append(
+            '配对由用户指定；版本一致不证明属于同一局，尚未交叉核验对局 ID。')
+    report['ope'] = operator
+    report['pairingStatus'] = pairing_status
+    return report

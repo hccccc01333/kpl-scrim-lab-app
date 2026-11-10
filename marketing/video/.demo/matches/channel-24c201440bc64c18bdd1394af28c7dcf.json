@@ -1,0 +1,1242 @@
+{
+ "schema": "kpl-match-data-v1",
+ "generatedAt": "2026-11-10T08:12:36.436038+00:00",
+ "match": {
+  "key": "channel-24c201440bc64c18bdd1394af28c7dcf",
+  "title": "采集通道",
+  "mode": "排位赛",
+  "date": {
+   "year": null,
+   "month": null,
+   "day": null,
+   "text": null
+  },
+  "startTime": null,
+  "duration": null,
+  "scores": {
+   "left": 20,
+   "right": 8,
+   "blue": 20,
+   "red": 8
+  },
+  "ownSide": "left",
+  "ownCamp": "blue",
+  "winner": "blue",
+  "winnerCamp": "blue",
+  "identity": {
+   "confidence": "manual-review",
+   "checks": {},
+   "warnings": []
+  },
+  "videoCoverage": null,
+  "bp": null,
+  "campBp": {
+   "source": "camp-battledetail",
+   "gameSeq": "1793626443",
+   "mapName": "排位赛",
+   "duration": 718,
+   "startTime": "11-02 21:36",
+   "winnerSide": "left",
+   "ownSide": "left",
+   "bans": {
+    "left": [
+     {
+      "name": "李信",
+      "id": "507",
+      "icon": "/catalog/icons/hero-507.png",
+      "lane": null
+     },
+     {
+      "name": "虞姬",
+      "id": "174",
+      "icon": "/catalog/icons/hero-174.png",
+      "lane": null
+     },
+     {
+      "name": "芈月",
+      "id": "121",
+      "icon": "/catalog/icons/hero-121.png",
+      "lane": null
+     },
+     {
+      "name": "瑶",
+      "id": "505",
+      "icon": "/catalog/icons/hero-505.png",
+      "lane": null
+     },
+     {
+      "name": "盾山",
+      "id": "509",
+      "icon": "/catalog/icons/hero-509.png",
+      "lane": null
+     }
+    ],
+    "right": [
+     {
+      "name": "大乔",
+      "id": "191",
+      "icon": "/catalog/icons/hero-191.png",
+      "lane": null
+     },
+     {
+      "name": "吕布",
+      "id": "123",
+      "icon": "/catalog/icons/hero-123.png",
+      "lane": null
+     },
+     {
+      "name": "海月",
+      "id": "521",
+      "icon": "/catalog/icons/hero-521.png",
+      "lane": null
+     },
+     {
+      "name": "墨子",
+      "id": "108",
+      "icon": "/catalog/icons/hero-108.png",
+      "lane": null
+     },
+     {
+      "name": "刘禅",
+      "id": "114",
+      "icon": "/catalog/icons/hero-114.png",
+      "lane": null
+     }
+    ]
+   },
+   "picks": {
+    "left": [
+     {
+      "name": "杨玉环",
+      "id": "176",
+      "icon": "/catalog/icons/hero-176.png",
+      "lane": "游走"
+     },
+     {
+      "name": "项羽",
+      "id": "135",
+      "icon": "/catalog/icons/hero-135.png",
+      "lane": "对抗路"
+     },
+     {
+      "name": "貂蝉",
+      "id": "141",
+      "icon": "/catalog/icons/hero-141.png",
+      "lane": "中路"
+     },
+     {
+      "name": "敖隐",
+      "id": "519",
+      "icon": "/catalog/icons/hero-519.png",
+      "lane": "发育路"
+     },
+     {
+      "name": "曜",
+      "id": "522",
+      "icon": "/catalog/icons/hero-522.png",
+      "lane": "打野"
+     }
+    ],
+    "right": [
+     {
+      "name": "马可波罗",
+      "id": "132",
+      "icon": "/catalog/icons/hero-132.png",
+      "lane": "发育路"
+     },
+     {
+      "name": "妲己",
+      "id": "109",
+      "icon": "/catalog/icons/hero-109.png",
+      "lane": "中路"
+     },
+     {
+      "name": "庄周",
+      "id": "113",
+      "icon": "/catalog/icons/hero-113.png",
+      "lane": "游走"
+     },
+     {
+      "name": "铠",
+      "id": "193",
+      "icon": "/catalog/icons/hero-193.png",
+      "lane": "打野"
+     },
+     {
+      "name": "老夫子",
+      "id": "139",
+      "icon": "/catalog/icons/hero-139.png",
+      "lane": "对抗路"
+     }
+    ]
+   },
+   "lanes": {
+    "项羽": "对抗路",
+    "貂蝉": "中路",
+    "杨玉环": "游走",
+    "敖隐": "发育路",
+    "曜": "打野",
+    "马可波罗": "发育路",
+    "老夫子": "对抗路",
+    "铠": "打野",
+    "妲己": "中路",
+    "庄周": "游走"
+   },
+   "heroMeta": {
+    "李信": {
+     "id": "507",
+     "icon": "/catalog/icons/hero-507.png",
+     "lane": null
+    },
+    "虞姬": {
+     "id": "174",
+     "icon": "/catalog/icons/hero-174.png",
+     "lane": null
+    },
+    "芈月": {
+     "id": "121",
+     "icon": "/catalog/icons/hero-121.png",
+     "lane": null
+    },
+    "瑶": {
+     "id": "505",
+     "icon": "/catalog/icons/hero-505.png",
+     "lane": null
+    },
+    "盾山": {
+     "id": "509",
+     "icon": "/catalog/icons/hero-509.png",
+     "lane": null
+    },
+    "大乔": {
+     "id": "191",
+     "icon": "/catalog/icons/hero-191.png",
+     "lane": null
+    },
+    "吕布": {
+     "id": "123",
+     "icon": "/catalog/icons/hero-123.png",
+     "lane": null
+    },
+    "海月": {
+     "id": "521",
+     "icon": "/catalog/icons/hero-521.png",
+     "lane": null
+    },
+    "墨子": {
+     "id": "108",
+     "icon": "/catalog/icons/hero-108.png",
+     "lane": null
+    },
+    "刘禅": {
+     "id": "114",
+     "icon": "/catalog/icons/hero-114.png",
+     "lane": null
+    },
+    "杨玉环": {
+     "id": "176",
+     "icon": "/catalog/icons/hero-176.png",
+     "lane": "游走"
+    },
+    "项羽": {
+     "id": "135",
+     "icon": "/catalog/icons/hero-135.png",
+     "lane": "对抗路"
+    },
+    "貂蝉": {
+     "id": "141",
+     "icon": "/catalog/icons/hero-141.png",
+     "lane": "中路"
+    },
+    "敖隐": {
+     "id": "519",
+     "icon": "/catalog/icons/hero-519.png",
+     "lane": "发育路"
+    },
+    "曜": {
+     "id": "522",
+     "icon": "/catalog/icons/hero-522.png",
+     "lane": "打野"
+    },
+    "马可波罗": {
+     "id": "132",
+     "icon": "/catalog/icons/hero-132.png",
+     "lane": "发育路"
+    },
+    "妲己": {
+     "id": "109",
+     "icon": "/catalog/icons/hero-109.png",
+     "lane": "中路"
+    },
+    "庄周": {
+     "id": "113",
+     "icon": "/catalog/icons/hero-113.png",
+     "lane": "游走"
+    },
+    "铠": {
+     "id": "193",
+     "icon": "/catalog/icons/hero-193.png",
+     "lane": "打野"
+    },
+    "老夫子": {
+     "id": "139",
+     "icon": "/catalog/icons/hero-139.png",
+     "lane": "对抗路"
+    }
+   },
+   "teamStats": {
+    "left": {
+     "money": 42766,
+     "killCnt": 20,
+     "deadCnt": 9,
+     "assistCnt": 39,
+     "towerCnt": 7,
+     "ldragon1": 2,
+     "ldragon2": 0,
+     "bdragon1": 1,
+     "bdragon2": 0,
+     "bdragon3": 0,
+     "win": true
+    },
+    "right": {
+     "money": 34947,
+     "killCnt": 8,
+     "deadCnt": 20,
+     "assistCnt": 14,
+     "towerCnt": 0,
+     "ldragon1": 0,
+     "ldragon2": 0,
+     "bdragon1": 0,
+     "bdragon2": 0,
+     "bdragon3": 0,
+     "win": false
+    }
+   },
+   "banCount": {
+    "left": 5,
+    "right": 5
+   },
+   "pickOrderKnown": false,
+   "firstPick": null
+  },
+  "opponent": "",
+  "session": "",
+  "result": {
+   "winningCamp": "blue"
+  },
+  "officialReplay": {
+   "id": "camp-1793626443",
+   "kind": "personal",
+   "winCamp": null,
+   "teams": null,
+   "score": null,
+   "teamGold": null,
+   "goldPoints": null,
+   "goldIntervalSecApprox": null,
+   "events": null,
+   "positions": {
+    "perSecond": null,
+    "pointsPerPlayer": null,
+    "file": null
+   }
+  }
+ },
+ "sources": [
+  {
+   "kind": "channel",
+   "file": "channel-24c201440bc64c18bdd1394af28c7dcf",
+   "sha256": null,
+   "channelSources": {
+    "policyVersion": "collection-v3",
+    "statuses": {
+     "official": "completed",
+     "camp": "parsed",
+     "table": "missing",
+     "video": "missing",
+     "screenshot": "missing",
+     "replay": "missing"
+    },
+    "complete": true,
+    "counts": {
+     "official": 1,
+     "camp": 1,
+     "table": 0,
+     "video": 0,
+     "screenshot": 0,
+     "replay": 0
+    },
+    "required": {
+     "official": 1,
+     "camp": 0,
+     "table": 0,
+     "video": 0,
+     "screenshot": 0,
+     "replay": 0
+    },
+    "requiredSources": [
+     "official"
+    ],
+    "optionalSources": [
+     "screenshot",
+     "video",
+     "table",
+     "replay",
+     "camp"
+    ],
+    "missing": []
+   },
+   "followPlayer": {
+    "camp": "blue"
+   }
+  }
+ ],
+ "roster": {
+  "blue": [
+   {
+    "key": "blue-0",
+    "camp": "blue",
+    "side": "blue",
+    "slot": 0,
+    "panelSlot": 0,
+    "hero": "项羽",
+    "heroId": null,
+    "position": "对抗路",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·一",
+    "nicknameRaw": "示例选手·一",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 3,
+     "deaths": 2,
+     "assists": 9,
+     "totalGold": 7994,
+     "damage": 131206,
+     "taken": 109601,
+     "participation": 60.0,
+     "rating": 9.5,
+     "complete": true,
+     "cs": 23,
+     "jungleGold": 394,
+     "control": 43,
+     "healing": 45304,
+     "towerDamage": 2945,
+     "damageConversion": 0.7,
+     "takenPerDeath": 36476
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "blue-1",
+    "camp": "blue",
+    "side": "blue",
+    "slot": 1,
+    "panelSlot": 1,
+    "hero": "貂蝉",
+    "heroId": null,
+    "position": "中路",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·二",
+    "nicknameRaw": "示例选手·二",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 7,
+     "deaths": 3,
+     "assists": 3,
+     "totalGold": 9690,
+     "damage": 287862,
+     "taken": 57416,
+     "participation": 50.0,
+     "rating": 8.9,
+     "complete": true,
+     "cs": 48,
+     "jungleGold": 720,
+     "control": 2,
+     "healing": 25875,
+     "towerDamage": 1179,
+     "damageConversion": 1,
+     "takenPerDeath": 13645
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "blue-2",
+    "camp": "blue",
+    "side": "blue",
+    "slot": 2,
+    "panelSlot": 2,
+    "hero": "杨玉环",
+    "heroId": null,
+    "position": "游走",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·三",
+    "nicknameRaw": "示例选手·三",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 0,
+     "deaths": 2,
+     "assists": 14,
+     "totalGold": 6786,
+     "damage": 151320,
+     "taken": 78613,
+     "participation": 70.0,
+     "rating": 9.4,
+     "complete": true,
+     "cs": 16,
+     "jungleGold": 326,
+     "control": 19,
+     "healing": 90888,
+     "towerDamage": 5017,
+     "damageConversion": 1.1,
+     "takenPerDeath": 29877
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "blue-3",
+    "camp": "blue",
+    "side": "blue",
+    "slot": 3,
+    "panelSlot": 3,
+    "hero": "敖隐",
+    "heroId": null,
+    "position": "发育路",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·四",
+    "nicknameRaw": "示例选手·四",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 8,
+     "deaths": 1,
+     "assists": 7,
+     "totalGold": 9417,
+     "damage": 329463,
+     "taken": 60824,
+     "participation": 75.0,
+     "rating": 14.0,
+     "complete": true,
+     "cs": 33,
+     "jungleGold": 823,
+     "control": 6,
+     "healing": 28023,
+     "towerDamage": 24124,
+     "damageConversion": 1.7,
+     "takenPerDeath": 45794
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "blue-4",
+    "camp": "blue",
+    "side": "blue",
+    "slot": 4,
+    "panelSlot": 4,
+    "hero": "曜",
+    "heroId": null,
+    "position": "打野",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·五",
+    "nicknameRaw": "示例选手·五",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 2,
+     "deaths": 1,
+     "assists": 6,
+     "totalGold": 8879,
+     "damage": 507664,
+     "taken": 64670,
+     "participation": 40.0,
+     "rating": 6.6,
+     "complete": true,
+     "cs": 25,
+     "jungleGold": 3528,
+     "control": 2,
+     "healing": 37284,
+     "towerDamage": 0,
+     "damageConversion": 0.5,
+     "takenPerDeath": 31899
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   }
+  ],
+  "red": [
+   {
+    "key": "red-0",
+    "camp": "red",
+    "side": "red",
+    "slot": 0,
+    "panelSlot": 0,
+    "hero": "马可波罗",
+    "heroId": null,
+    "position": "发育路",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·六",
+    "nicknameRaw": "示例选手·六",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 2,
+     "deaths": 3,
+     "assists": 2,
+     "totalGold": 7744,
+     "damage": 192348,
+     "taken": 56264,
+     "participation": 50.0,
+     "rating": 6.4,
+     "complete": true,
+     "cs": 25,
+     "jungleGold": 403,
+     "control": 0,
+     "healing": 12775,
+     "towerDamage": 0,
+     "damageConversion": 1.2,
+     "takenPerDeath": 17328
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "red-1",
+    "camp": "red",
+    "side": "red",
+    "slot": 1,
+    "panelSlot": 1,
+    "hero": "老夫子",
+    "heroId": null,
+    "position": "对抗路",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·七",
+    "nicknameRaw": "示例选手·七",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 1,
+     "deaths": 5,
+     "assists": 1,
+     "totalGold": 6878,
+     "damage": 135020,
+     "taken": 81195,
+     "participation": 25.0,
+     "rating": 6.2,
+     "complete": true,
+     "cs": 35,
+     "jungleGold": 90,
+     "control": 9,
+     "healing": 12554,
+     "towerDamage": 2529,
+     "damageConversion": 0.6,
+     "takenPerDeath": 13551
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "red-2",
+    "camp": "red",
+    "side": "red",
+    "slot": 2,
+    "panelSlot": 2,
+    "hero": "铠",
+    "heroId": null,
+    "position": "打野",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·八",
+    "nicknameRaw": "示例选手·八",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 3,
+     "deaths": 4,
+     "assists": 3,
+     "totalGold": 7919,
+     "damage": 298268,
+     "taken": 80484,
+     "participation": 75.0,
+     "rating": 6.6,
+     "complete": true,
+     "cs": 18,
+     "jungleGold": 1933,
+     "control": 7,
+     "healing": 31915,
+     "towerDamage": 0,
+     "damageConversion": 1.1,
+     "takenPerDeath": 17817
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "red-3",
+    "camp": "red",
+    "side": "red",
+    "slot": 3,
+    "panelSlot": 3,
+    "hero": "妲己",
+    "heroId": null,
+    "position": "中路",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·九",
+    "nicknameRaw": "示例选手·九",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 2,
+     "deaths": 4,
+     "assists": 3,
+     "totalGold": 6649,
+     "damage": 152697,
+     "taken": 61646,
+     "participation": 62.5,
+     "rating": 7.1,
+     "complete": true,
+     "cs": 31,
+     "jungleGold": 30,
+     "control": 19,
+     "healing": 6847,
+     "towerDamage": 0,
+     "damageConversion": 1.4,
+     "takenPerDeath": 14821
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   },
+   {
+    "key": "red-4",
+    "camp": "red",
+    "side": "red",
+    "slot": 4,
+    "panelSlot": 4,
+    "hero": "庄周",
+    "heroId": null,
+    "position": "游走",
+    "heroStatus": "exact",
+    "heroSource": "camp",
+    "nickname": "示例选手·十",
+    "nicknameRaw": "示例选手·十",
+    "nicknameConfidence": null,
+    "replayEntityId": null,
+    "replayBot": null,
+    "final": {
+     "source": "channel",
+     "partial": false,
+     "kills": 0,
+     "deaths": 4,
+     "assists": 5,
+     "totalGold": 5757,
+     "damage": 76785,
+     "taken": 99208,
+     "participation": 62.5,
+     "rating": 4.8,
+     "complete": true,
+     "cs": 12,
+     "jungleGold": 84,
+     "control": 0,
+     "healing": 16009,
+     "towerDamage": 0,
+     "damageConversion": 0.6,
+     "takenPerDeath": 23382
+    },
+    "process": {},
+    "sources": [
+     "camp"
+    ]
+   }
+  ]
+ },
+ "team": {
+  "timeline": [],
+  "scoreboardSnapshots": [],
+  "killEvents": [],
+  "officialEvents": {},
+  "positions": {}
+ },
+ "players": [
+  {
+   "key": "blue-0",
+   "camp": "blue",
+   "side": "blue",
+   "slot": 0,
+   "panelSlot": 0,
+   "hero": "项羽",
+   "heroId": null,
+   "position": "对抗路",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·一",
+   "nicknameRaw": "示例选手·一",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 3,
+    "deaths": 2,
+    "assists": 9,
+    "totalGold": 7994,
+    "damage": 131206,
+    "taken": 109601,
+    "participation": 60.0,
+    "rating": 9.5,
+    "complete": true,
+    "cs": 23,
+    "jungleGold": 394,
+    "control": 43,
+    "healing": 45304,
+    "towerDamage": 2945,
+    "damageConversion": 0.7,
+    "takenPerDeath": 36476
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "blue-1",
+   "camp": "blue",
+   "side": "blue",
+   "slot": 1,
+   "panelSlot": 1,
+   "hero": "貂蝉",
+   "heroId": null,
+   "position": "中路",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·二",
+   "nicknameRaw": "示例选手·二",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 7,
+    "deaths": 3,
+    "assists": 3,
+    "totalGold": 9690,
+    "damage": 287862,
+    "taken": 57416,
+    "participation": 50.0,
+    "rating": 8.9,
+    "complete": true,
+    "cs": 48,
+    "jungleGold": 720,
+    "control": 2,
+    "healing": 25875,
+    "towerDamage": 1179,
+    "damageConversion": 1,
+    "takenPerDeath": 13645
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "blue-2",
+   "camp": "blue",
+   "side": "blue",
+   "slot": 2,
+   "panelSlot": 2,
+   "hero": "杨玉环",
+   "heroId": null,
+   "position": "游走",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·三",
+   "nicknameRaw": "示例选手·三",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 0,
+    "deaths": 2,
+    "assists": 14,
+    "totalGold": 6786,
+    "damage": 151320,
+    "taken": 78613,
+    "participation": 70.0,
+    "rating": 9.4,
+    "complete": true,
+    "cs": 16,
+    "jungleGold": 326,
+    "control": 19,
+    "healing": 90888,
+    "towerDamage": 5017,
+    "damageConversion": 1.1,
+    "takenPerDeath": 29877
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "blue-3",
+   "camp": "blue",
+   "side": "blue",
+   "slot": 3,
+   "panelSlot": 3,
+   "hero": "敖隐",
+   "heroId": null,
+   "position": "发育路",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·四",
+   "nicknameRaw": "示例选手·四",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 8,
+    "deaths": 1,
+    "assists": 7,
+    "totalGold": 9417,
+    "damage": 329463,
+    "taken": 60824,
+    "participation": 75.0,
+    "rating": 14.0,
+    "complete": true,
+    "cs": 33,
+    "jungleGold": 823,
+    "control": 6,
+    "healing": 28023,
+    "towerDamage": 24124,
+    "damageConversion": 1.7,
+    "takenPerDeath": 45794
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "blue-4",
+   "camp": "blue",
+   "side": "blue",
+   "slot": 4,
+   "panelSlot": 4,
+   "hero": "曜",
+   "heroId": null,
+   "position": "打野",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·五",
+   "nicknameRaw": "示例选手·五",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 2,
+    "deaths": 1,
+    "assists": 6,
+    "totalGold": 8879,
+    "damage": 507664,
+    "taken": 64670,
+    "participation": 40.0,
+    "rating": 6.6,
+    "complete": true,
+    "cs": 25,
+    "jungleGold": 3528,
+    "control": 2,
+    "healing": 37284,
+    "towerDamage": 0,
+    "damageConversion": 0.5,
+    "takenPerDeath": 31899
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "red-0",
+   "camp": "red",
+   "side": "red",
+   "slot": 0,
+   "panelSlot": 0,
+   "hero": "马可波罗",
+   "heroId": null,
+   "position": "发育路",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·六",
+   "nicknameRaw": "示例选手·六",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 2,
+    "deaths": 3,
+    "assists": 2,
+    "totalGold": 7744,
+    "damage": 192348,
+    "taken": 56264,
+    "participation": 50.0,
+    "rating": 6.4,
+    "complete": true,
+    "cs": 25,
+    "jungleGold": 403,
+    "control": 0,
+    "healing": 12775,
+    "towerDamage": 0,
+    "damageConversion": 1.2,
+    "takenPerDeath": 17328
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "red-1",
+   "camp": "red",
+   "side": "red",
+   "slot": 1,
+   "panelSlot": 1,
+   "hero": "老夫子",
+   "heroId": null,
+   "position": "对抗路",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·七",
+   "nicknameRaw": "示例选手·七",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 1,
+    "deaths": 5,
+    "assists": 1,
+    "totalGold": 6878,
+    "damage": 135020,
+    "taken": 81195,
+    "participation": 25.0,
+    "rating": 6.2,
+    "complete": true,
+    "cs": 35,
+    "jungleGold": 90,
+    "control": 9,
+    "healing": 12554,
+    "towerDamage": 2529,
+    "damageConversion": 0.6,
+    "takenPerDeath": 13551
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "red-2",
+   "camp": "red",
+   "side": "red",
+   "slot": 2,
+   "panelSlot": 2,
+   "hero": "铠",
+   "heroId": null,
+   "position": "打野",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·八",
+   "nicknameRaw": "示例选手·八",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 3,
+    "deaths": 4,
+    "assists": 3,
+    "totalGold": 7919,
+    "damage": 298268,
+    "taken": 80484,
+    "participation": 75.0,
+    "rating": 6.6,
+    "complete": true,
+    "cs": 18,
+    "jungleGold": 1933,
+    "control": 7,
+    "healing": 31915,
+    "towerDamage": 0,
+    "damageConversion": 1.1,
+    "takenPerDeath": 17817
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "red-3",
+   "camp": "red",
+   "side": "red",
+   "slot": 3,
+   "panelSlot": 3,
+   "hero": "妲己",
+   "heroId": null,
+   "position": "中路",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·九",
+   "nicknameRaw": "示例选手·九",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 2,
+    "deaths": 4,
+    "assists": 3,
+    "totalGold": 6649,
+    "damage": 152697,
+    "taken": 61646,
+    "participation": 62.5,
+    "rating": 7.1,
+    "complete": true,
+    "cs": 31,
+    "jungleGold": 30,
+    "control": 19,
+    "healing": 6847,
+    "towerDamage": 0,
+    "damageConversion": 1.4,
+    "takenPerDeath": 14821
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  },
+  {
+   "key": "red-4",
+   "camp": "red",
+   "side": "red",
+   "slot": 4,
+   "panelSlot": 4,
+   "hero": "庄周",
+   "heroId": null,
+   "position": "游走",
+   "heroStatus": "exact",
+   "heroSource": "camp",
+   "nickname": "示例选手·十",
+   "nicknameRaw": "示例选手·十",
+   "nicknameConfidence": null,
+   "replayEntityId": null,
+   "replayBot": null,
+   "final": {
+    "source": "channel",
+    "partial": false,
+    "kills": 0,
+    "deaths": 4,
+    "assists": 5,
+    "totalGold": 5757,
+    "damage": 76785,
+    "taken": 99208,
+    "participation": 62.5,
+    "rating": 4.8,
+    "complete": true,
+    "cs": 12,
+    "jungleGold": 84,
+    "control": 0,
+    "healing": 16009,
+    "towerDamage": 0,
+    "damageConversion": 0.6,
+    "takenPerDeath": 23382
+   },
+   "process": {},
+   "sources": [
+    "camp"
+   ]
+  }
+ ],
+ "coverage": {
+  "kills": 10,
+  "deaths": 10,
+  "assists": 10,
+  "gold": 10,
+  "damage": 10,
+  "taken": 10,
+  "participation": 10,
+  "rating": 10,
+  "hero": 10
+ },
+ "warnings": [
+  "本队阵营来自回放/录制 POV：blue = 截图左侧；截图本身只描述左右布局。"
+ ]
+}

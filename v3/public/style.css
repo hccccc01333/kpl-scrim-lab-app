@@ -6554,7 +6554,19 @@ a.hz-card { display: block; text-decoration: none; }
 .cx-act-more { margin: 0; padding: 8px 14px 0; color: var(--quiet); font-size: 10.5px; }
 .cxv-empty-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 
-/* ── 跨局：一局一格 / 最顺最难 / 赢输对比 ─────────────────────── */
+/* ── 跨局：散点 / 一局一格 / 最顺最难 / 赢输对比 ─────────────── */
+.cxv-sc { position: relative; height: 232px; margin: 10px 2px 26px 34px; }
+.cxv-sc-zero { position: absolute; left: 0; right: 0; bottom: 50%; border-top: 1px dashed var(--line); }
+.cxv-sc-lab { position: absolute; left: -34px; width: 30px; color: var(--quiet); font-size: 9.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.cxv-sc-lab.top { top: -4px; }
+.cxv-sc-lab.mid { bottom: calc(50% - 6px); }
+.cxv-sc-lab.bot { bottom: -4px; }
+.cxv-sc-dot { position: absolute; width: 12px; height: 12px; margin: 0 0 -6px -6px; border-radius: 50%; background: #c49a4a; box-shadow: 0 0 0 2px rgba(255, 255, 255, .8); }
+.cxv-sc-dot.neg { background: #b4543c; }
+.cxv-sc-dot:hover { transform: scale(1.35); z-index: 3; }
+.cxv-sc-dot i { display: block; width: 100%; height: 100%; }
+.cxv-sc-ticks { position: absolute; left: 0; right: 0; bottom: -22px; display: flex; justify-content: space-between; color: var(--quiet); font-size: 10px; }
+
 .cxv-strip { display: flex; flex-wrap: wrap; gap: 5px; }
 .cxv-cell { flex: 0 0 auto; width: 56px; padding: 5px 4px 4px; border-radius: 7px; border: 1px solid var(--line); display: grid; gap: 2px; text-align: center; text-decoration: none; color: var(--text); font-variant-numeric: tabular-nums; }
 .cxv-cell b { font-size: 10.5px; font-weight: 800; line-height: 1.1; }
@@ -6581,6 +6593,7 @@ a.hz-card { display: block; text-decoration: none; }
 .cxv-cmp-head span:not(:first-child) { text-align: right; }
 .cxv-cmp-row { padding: 7px 0; border-bottom: 1px dashed var(--line); }
 .cxv-cmp-label { color: var(--muted); font-size: 11.5px; }
+.cxv-row-val, .cxv-cmp-side b { white-space: nowrap; }
 .cxv-cmp-side { display: grid; gap: 4px; justify-items: end; }
 .cxv-cmp-side b { font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .cxv-cmp-side b.pos { color: #8a6a24; }

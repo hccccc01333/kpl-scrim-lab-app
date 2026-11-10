@@ -13,7 +13,9 @@ const n1 = (v) => (isNum(v) ? v.toFixed(1) : '—');
 const pc = (v) => (isNum(v) ? Math.round(v) + '%' : '—');
 const sg = (v) => { const r = Math.round(isNum(v) ? v : 0) || 0; return (r < 0 ? '−' : '+') + Math.abs(r).toLocaleString('zh-CN'); };
 const sg1 = (v) => (v < 0 ? '−' : '+') + Math.abs(isNum(v) ? v : 0).toFixed(1);
-const tip = (t) => `data-lv-tip="${es(t)}"`;
+/* 赛训组说「金币」，不说「金」 */
+const yuan = (t) => String(t == null ? '' : t).replace(/金(?!币)/g, '金币');
+const tip = (t) => `data-lv-tip="${es(yuan(t))}"`;
 const laneAttr = (l) => `data-lane="${es(l)}"`;
 const wOf = (v, max) => `${clamp((Math.abs(isNum(v) ? v : 0) / Math.max(1, max)) * 100, 0, 100).toFixed(1)}%`;
 const quant = (arr, p) => {
@@ -37,7 +39,7 @@ const VIEWS = {
 };
 
 export function createLaneBoard({ esc = es } = {}) {
-  const state = { board: null, views: {}, lane: '' };
+  const state = { board: null, views: {}, lane: '', tab: 'lanes', scope: 'roster' };
   const viewOf = (id) => state.views[id] || 'a';
 
   /* ── 通用零件 ─────────────────────────────────────────────── */
@@ -54,27 +56,32 @@ export function createLaneBoard({ esc = es } = {}) {
     </div>`;
   }
   const view = (hero, body) => `<div class="hcv-view"><div class="hcv-hero">${hero}</div><div class="hcv-body">${body}</div></div>`;
-  const big = (v, label, cls = '') => `<div class="hcv-figure ${cls}"><b>${esc(v)}</b><span>${esc(label)}</span></div>`;
+  const big = (v, label, cls = '') => `<div class="hcv-figure ${cls}"><b>${esc(yuan(v))}</b><span>${esc(yuan(label))}</span></div>`;
 
   function card(id, name, title, chart, action, method, href) {
     return `<article class="hc-card" id="lv-analysis-${id}">
       <div class="hc-card-top"><span class="hc-kicker">${id} / 选手与位置</span></div>
       <div class="hc-card-name">${es(name)}</div>
-      <h3 class="hc-card-title">${title}</h3>
+      <h3 class="hc-card-title">${yuan(title)}</h3>
       <div class="hc-card-canvas">${chart}</div>
-      <div class="hc-card-foot"><div class="hc-train"><span>怎么用</span><p>${es(action)}</p></div>
+      <div class="hc-card-foot"><div class="hc-train"><span>怎么用</span><p>${es(yuan(action))}</p></div>
         <a class="hc-open" href="${esc(href)}">${esc(name.replace('分析', ''))}明细 →</a></div>
-      <p class="hc-method"><b>怎么算的</b> ${es(method)}</p>
+      <p class="hc-method"><b>怎么算的</b> ${es(yuan(method))}</p>
     </article>`;
   }
   const pctBar = (v, cls, extra = '') => `<i class="pb-bar ${extra}"><b class="${cls}" style="width:${clamp(isNum(v) ? v : 0, 0, 100).toFixed(1)}%"></b></i>`;
 
   /* ── 数据准备 ─────────────────────────────────────────────── */
-  function prepare(board) {
+  function prepare(board, scopeMode = 'roster') {
     const games = (board.games || []).filter(Boolean);
     const lanes = (board.lanes || []).filter((x) => x && x.lane).slice()
       .sort((a, b) => laneRank(a.lane) - laneRank(b.lane));
-    const ownPlayers = (board.players || []).filter((p) => p && p.side === 'own');
+    /* 本队名单＝已认领的名单选手；全部出场＝我方阵营出现过的所有昵称（含未认领）。
+       一个都没认领时，本队名单没有意义，直接按全部出场算，并把这个状态说清楚。 */
+    const ownAll = (board.players || []).filter((p) => p && p.side === 'own');
+    const rostered = ownAll.filter((p) => p.bound || p.memberId);
+    const mode = scopeMode === 'roster' && !rostered.length ? 'all' : scopeMode;
+    const ownPlayers = mode === 'all' ? ownAll : rostered;
     const ownNames = new Set(ownPlayers.map((p) => p.name));
 
     const gap = (l) => (isNum(l.own?.gpm) && isNum(l.enemy?.gpm) ? l.own.gpm - l.enemy.gpm : null);
@@ -139,6 +146,10 @@ export function createLaneBoard({ esc = es } = {}) {
         games: games.length,
         slots: lanes.reduce((s, l) => s + (l.own?.games || 0), 0),
         players: ownPlayers.length,
+        roster: rostered.length,
+        all: ownAll.length,
+        mode,
+        unclaimed: !rostered.length,
       },
     };
   }
@@ -174,9 +185,10 @@ export function createLaneBoard({ esc = es } = {}) {
         </div>`;
       }).join('')}</div>`
     );
+    const aheadLanes = d.lanes.filter((l) => (l.own?.gpm || 0) > (l.enemy?.gpm || 0)).length;
     const title = d.meanGap >= 0
-      ? `五路合计分均领先 <em>${sg(d.meanGap)}</em> 金，${d.lanes.filter((l) => (l.own?.gpm || 0) > (l.enemy?.gpm || 0)).length} 条路压过对手`
-      : `五路合计分均落后 <em>${sg(Math.abs(d.meanGap))}</em> 金，只有 ${d.lanes.filter((l) => (l.own?.gpm || 0) > (l.enemy?.gpm || 0)).length} 条路顶得住`;
+      ? `五条路的钱加起来，每分钟比对手多 <em>${sg(d.meanGap)}</em> 金币，${aheadLanes} 条路压过对手`
+      : `五条路的钱加起来，每分钟比对手少 <em>${sg(Math.abs(d.meanGap))}</em> 金币，只有 ${aheadLanes} 条路顶得住`;
     return card('01', '分路经济分析', title, shell('01', A, B),
       '先看落后那条路的经济来源，再决定是换线、让资源还是改开局。',
       '分均值＝该路全部出场局的金币总量 ÷ 出场分钟；对手同口径，五路合计取有对位样本的均值。',
@@ -226,7 +238,7 @@ export function createLaneBoard({ esc = es } = {}) {
     const worst = d.worstMed;
     const worstMed = worst ? d.stats[worst.lane].med : null;
     const A = view(
-      big(worst ? sg(Math.round(worstMed)) : '—', worst ? `${worst.lane} · 同路终局经济中位 · 金` : '经济差中位', worstMed < 0 ? 'neg' : 'gold'),
+      big(worst ? sg(Math.round(worstMed)) : '—', worst ? `${worst.lane} · 同路终局经济差 · 金币` : '经济差', worstMed < 0 ? 'neg' : 'gold'),
       `<div class="pb-bands">${d.lanes.map((l) => {
         const s = d.stats[l.lane];
         const toX = (v) => clamp((v + pk) / (2 * pk) * 100, 0, 100);
@@ -267,11 +279,11 @@ export function createLaneBoard({ esc = es } = {}) {
       <div class="pb-hist-axis"><span>${sg(-pk)}</span><span>0</span><span>${sg(pk)}</span></div>`
     );
     const title = worst
-      ? `<em>${es(worst.lane)}</em> ${worstMed < 0 ? '对线最吃亏' : '对线领先最少'}：中位 <em>${sg(Math.round(worstMed))}</em> 金，${n0(d.stats[worst.lane].n)} 局里领先 ${n0(d.stats[worst.lane].ahead)} 局`
+      ? `<em>${es(worst.lane)}</em> ${worstMed < 0 ? '同路最吃亏' : '同路领先最少'}：终局经济差典型 <em>${sg(Math.round(worstMed))}</em> 金币，${n0(d.stats[worst.lane].n)} 局里领先 ${n0(d.stats[worst.lane].ahead)} 局`
       : '本期还没有同路对位样本';
     return card('03', '同路对位分析', title, shell('03', A, B),
-      '把中位为负的那条路单独拎出来看录像，先解决对线期的资源丢失。',
-      '逐局把本队与对手同分路的两人配对，取终局金币差；中位与上下缘按该路全部配对局计算。',
+      '把这条路单独拎出来看录像，先解决对线期的资源丢失。',
+      '逐局把本队与对手同分路的两人配对，取终局金币差；上下缘按该路全部配对局计算。',
       '#playerarchive?min=2');
   }
 
@@ -417,42 +429,57 @@ export function createLaneBoard({ esc = es } = {}) {
   }
 
   /* ── 组装页面 ─────────────────────────────────────────────── */
+  const TABS = [
+    { key: 'lanes', label: '五路强弱', note: '谁在赢、钱在哪' },
+    { key: 'roster', label: '轮换与人', note: '深度、补位、用人' },
+  ];
+
   function page(d) {
     const s = d.scope;
     const best = d.best;
     const worstMed = d.worstMed;
     const claim = best
-      ? `<em>${es(best.lane)}</em> 五路最能拉开差距：分均 <em>${sg((best.own?.gpm || 0) - (best.enemy?.gpm || 0))}</em> 金、胜率 <em>${pc(best.own.winRate)}</em>`
+      ? `<em>${es(best.lane)}</em> 五路最能拉开差距：分均多 <em>${sg((best.own?.gpm || 0) - (best.enemy?.gpm || 0))}</em> 金币、胜率 <em>${pc(best.own.winRate)}</em>`
       : '先补齐分路样本，再看五路强弱';
     const wm = worstMed ? d.stats[worstMed.lane].med : null;
     const fact = worstMed
-      ? `${es(worstMed.lane)} ${wm < 0 ? '最吃亏' : '领先最少'} —— 同路终局经济中位 <em>${sg(Math.round(wm))}</em> 金，${n0(d.stats[worstMed.lane].n)} 局里 <em>${n0(d.stats[worstMed.lane].ahead)}</em> 局领先；${es(d.thin?.lane || '—')} 人均 <em>${n1(d.thin?.per)}</em> 局，五路最薄。`
+      ? `${es(worstMed.lane)} ${wm < 0 ? '最吃亏' : '领先最少'}——同路终局经济差典型 <em>${sg(Math.round(wm))}</em> 金币，${n0(d.stats[worstMed.lane].n)} 局里 <em>${n0(d.stats[worstMed.lane].ahead)}</em> 局领先；${es(d.thin?.lane || '—')} 人均 <em>${n1(d.thin?.per)}</em> 局，五路最薄。`
       : '';
     const laneStrip = d.lanes.map((l) => {
       const g = (l.own?.gpm || 0) - (l.enemy?.gpm || 0);
-      return `<div class="pb-lane" ${laneAttr(l.lane)} ${tip(`${l.lane} · 胜率 ${pc(l.own?.winRate)} · 分均 ${n0(l.own?.gpm)} 金 · 差 ${sg(g)}`)}>
+      return `<div class="pb-lane" ${laneAttr(l.lane)} ${tip(`${l.lane} · 胜率 ${pc(l.own?.winRate)} · 分均 ${n0(l.own?.gpm)} 金币 · 差 ${sg(g)}`)}>
         <span class="pb-lane-name">${es(l.lane)}</span>
         <b class="pb-lane-wr">${pc(l.own?.winRate)}</b>
         <span class="pb-lane-gap ${g < 0 ? 'neg' : 'pos'}">${sg(g)}</span>
         <i class="pb-lane-bar"><b style="width:${clamp(l.own?.winRate || 0, 0, 100).toFixed(1)}%"></b></i>
       </div>`;
     }).join('');
-    const names = ['分路经济分析', '分路胜率分析', '同路对位分析', '位置深度分析', '轮换分析', '位置内选手分析', '团战参与分析'];
+    const scopeLabel = s.mode === 'all' ? '全部出场昵称' : '本队名单';
+    const scopeSwitch = `<div class="lv-scope" role="group" aria-label="统计范围">
+      <button type="button" data-lv-scope="roster" class="${s.mode === 'roster' ? 'is-on' : ''}" aria-pressed="${s.mode === 'roster'}"${s.unclaimed ? ' disabled title="还没有认领本队选手"' : ''}>本队名单 · ${n0(s.roster)} 人</button>
+      <button type="button" data-lv-scope="all" class="${s.mode === 'all' ? 'is-on' : ''}" aria-pressed="${s.mode === 'all'}">全部出场 · ${n0(s.all)} 个昵称</button>
+    </div>`;
+    const tabs = `<div class="md-tabs lv-tabs" role="tablist" aria-label="选手与位置页签">${TABS.map((t) => `<button type="button" class="md-tab" data-lv-tab="${t.key}" role="tab" aria-selected="${state.tab === t.key}"><b>${es(t.label)}</b><small>${es(t.note)}</small></button>`).join('')}</div>`;
+    const pane = (key, body) => `<div class="lv-pane" data-lv-pane="${key}"${state.tab === key ? '' : ' hidden'}>
+      <p class="lv-lede">${key === 'lanes'
+        ? '看五条路各自的分均金币、胜率、同路对位和团战参与：谁在赢、钱在哪、对线谁吃亏。'
+        : `看人：每路几个人、谁在补位、每路的第一人。当前按「${scopeLabel}」统计${s.unclaimed ? '；还没有认领本队选手，先按全部出场算，认领后会自动切回本队名单' : ''}。`}</p>
+      <section class="hc-cards">${body}</section>
+    </div>`;
     return `<div class="page pb-page lv-page">
-      <div class="page-intro pb-intro"><div><h1>选手与位置</h1><p>五条路分开看：谁在赢、钱从哪来、对线谁吃亏。</p></div>
-        <div class="intro-actions"><button class="control" data-action="refresh">刷新数据</button></div></div>
+      <div class="page-intro pb-intro"><div><h1>选手与位置</h1><p>五条路分开看：谁在赢、金币从哪来、对线谁吃亏。</p></div>
+        <div class="intro-actions">${scopeSwitch}<button class="control" data-action="refresh">刷新数据</button></div></div>
       <section class="pb-hero">
         <div class="pb-hero-top"><span class="pb-kicker">选手与位置 · 五路对照</span>
-          <span class="pb-scope">${n0(s.games)} 局 · ${n0(s.slots)} 人次 · ${n0(s.players)} 名本队选手</span></div>
+          <span class="pb-scope">${n0(s.games)} 局 · ${n0(s.slots)} 人次 · 按${scopeLabel}统计 ${n0(s.players)} 名选手</span></div>
         <h2 class="pb-claim">${claim}</h2>
         <p class="pb-fact">${fact}</p>
         <div class="pb-lanes">${laneStrip}</div>
       </section>
-      <div class="hc-index" role="group" aria-label="分析直达">${names.map((x, i) => `<button type="button" data-lv-jump="0${i + 1}">${es(x)}</button>`).join('')}</div>
-      <section class="hc-cards">
-        ${card01(d)}${card02(d)}${card03(d)}${card04(d)}${card05(d)}${card06(d)}${card07(d)}
-      </section>
-      <p class="hc-source">数据来源：王者营地十人结算逐局面板；同路对位按分路配对，未配对的面板不计入。</p>
+      ${tabs}
+      ${pane('lanes', card01(d) + card02(d) + card03(d) + card07(d))}
+      ${pane('roster', card04(d) + card05(d) + card06(d))}
+      <p class="hc-source">数据来源：王者营地十人结算逐局面板；同路对位按分路配对，未配对的面板不计入。「本队名单」只统计已认领的选手，「全部出场」把未认领的昵称也算进来。</p>
     </div>`;
   }
 
@@ -487,11 +514,30 @@ export function createLaneBoard({ esc = es } = {}) {
       el.classList.toggle('is-lane-off', !!state.lane && el.dataset.lane !== state.lane);
     });
   }
+  function redraw() {
+    if (!state.board) return;
+    const host = document.querySelector('.lv-page');
+    if (host) host.outerHTML = page(prepare(state.board, state.scope));
+  }
+
   document.addEventListener('click', (event) => {
     const t = event.target;
     if (!t.closest || !t.closest('.lv-page')) return;
-    const jump = t.closest('[data-lv-jump]');
-    if (jump) { const el = document.getElementById(`lv-analysis-${jump.dataset.lvJump}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+    const tabBtn = t.closest('[data-lv-tab]');
+    if (tabBtn) {
+      state.tab = tabBtn.dataset.lvTab;
+      document.querySelectorAll('.lv-page [data-lv-tab]').forEach((n) => n.setAttribute('aria-selected', String(n.dataset.lvTab === state.tab)));
+      document.querySelectorAll('.lv-page [data-lv-pane]').forEach((p) => { p.hidden = p.dataset.lvPane !== state.tab; });
+      return;
+    }
+    const scopeBtn = t.closest('[data-lv-scope]');
+    if (scopeBtn) {
+      if (state.scope === scopeBtn.dataset.lvScope) return;
+      state.scope = scopeBtn.dataset.lvScope;
+      state.lane = '';
+      redraw();
+      return;
+    }
     const vb = t.closest('[data-lv-view-btn]');
     if (vb) { switchView(vb.dataset.lvViz, vb.dataset.lvViewBtn); return; }
     if (t.closest('a')) return;
@@ -508,7 +554,7 @@ export function createLaneBoard({ esc = es } = {}) {
     if (value) state.board = value;
     const board = state.board;
     if (!board) return '<div class="page"><div class="loading">正在汇总位置样本…</div></div>';
-    const d = prepare(board);
+    const d = prepare(board, state.scope);
     if (!d.lanes.length) return '<div class="page"><div class="empty">当前范围没有位置样本。</div></div>';
     return page(d);
   }

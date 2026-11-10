@@ -262,6 +262,128 @@ def _cross_vector(repo, item, segments=8):
         other = (totals.get('red' if camp == 'blue' else 'blue') or {}).get('totals') or {}
         if isinstance(mine.get('gold'), (int, float)) and isinstance(other.get('gold'), (int, float)):
             final = mine['gold'] - other['gold']
+    # 教练口径的三段：0–4 对线 / 4–10 发育 / 10 分钟后（经济约 30 秒一点，按插值取）
+    base = _cross_interp(econ, 0) if econ else None
+    at4 = _cross_interp(econ, 240) if econ and duration >= 240 else None
+    at10 = _cross_interp(econ, 600) if econ and duration >= 600 else None
+    seg = {
+        'early': round(at4 - base, 1) if at4 is not None and base is not None else None,
+        'mid': round(at10 - at4, 1) if at10 is not None and at4 is not None else None,
+        'late': round(final - at10, 1) if final is not None and at10 is not None else None,
+    }
+
+    # 资源 / 推塔 / 死亡 / 团战 / BUFF / 切 C：读回放聚合；没有回放的局留 None，不补 0
+    obj = {'dragonOwn': None, 'dragonFoe': None, 'towerOwn': None, 'towerFoe': None}
+    death = {'own': None, 'foe': None}
+    fight = {'n': None, 'win': None}
+    buff = {'anti': None, 'stolen': None}
+    cut = {'n': None, 'first': None}
+    fk = None
+    fs = None
+    try:
+        replay = panorama.get(d.get('bundleKey') or '') if d.get('bundleKey') else None
+    except Exception:                                  # noqa: BLE001
+        replay = None
+    if replay:
+        other = 'red' if camp == 'blue' else 'blue'
+        events = [e for e in (replay.get('events') or []) if isinstance(e, dict)]
+        dragons = [e for e in events if e.get('name') in ('暴君', '暗影暴君', '暗影主宰', '主宰', '风暴龙王')]
+        towers = [e for e in events if e.get('name') in ('防御塔', '水晶')]
+        obj['dragonOwn'] = sum(1 for e in dragons if e.get('killerCamp') == camp)
+        obj['dragonFoe'] = sum(1 for e in dragons if e.get('killerCamp') == other)
+        obj['towerOwn'] = sum(1 for e in towers if e.get('killerCamp') == camp)
+        obj['towerFoe'] = sum(1 for e in towers if e.get('killerCamp') == other)
+        deaths = [x for x in (replay.get('deaths') or []) if isinstance(x, dict)]
+        death['own'] = sum(1 for x in deaths if x.get('camp') == camp)
+        death['foe'] = sum(1 for x in deaths if x.get('camp') == other)
+        fights = [f for f in (replay.get('fights') or []) if isinstance(f, dict)]
+        fight['n'] = len(fights)
+        fight['win'] = sum(1 for f in fights if (f.get(camp) or 0) > (f.get(other) or 0))
+        buffs = [b for b in (replay.get('buffEvents') or []) if isinstance(b, dict)]
+        buff['anti'] = sum(1 for b in buffs if b.get('owner') == other and b.get('killer') == camp)
+        buff['stolen'] = sum(1 for b in buffs if b.get('owner') == camp and b.get('killer') == other)
+        kills = [k for k in (replay.get('kills') or []) if isinstance(k, dict)]
+        pos_of = {p.get('hero'): p.get('position') for p in (d.get('players') or []) if p.get('hero')}
+        cut['n'] = sum(
+            1 for k in kills
+            if k.get('killerCamp') == camp
+            and pos_of.get(k.get('killer')) in ('对抗路', '打野')
+            and pos_of.get(k.get('victim')) in ('中路', '发育路')
+        )
+        if kills:
+            first_kill = min(kills, key=lambda k: k.get('t') or 0)
+            cut['first'] = 1 if first_kill.get('killerCamp') == camp else 0
+        buckets = {b: {'n': 0, 'win': 0} for b in ('adv', 'even', 'dis', 'first', 'firstAgainst')}
+        for f in fights:
+            people = {'blue': 0, 'red': 0}
+            for detail in (f.get('details') or []):
+                if isinstance(detail, dict) and detail.get('camp') in people:
+                    people[detail['camp']] += 1
+            ours, theirs = people[camp], people[other]
+            if not ours and not theirs:
+                continue
+            won = (f.get(camp) or 0) > (f.get(other) or 0)
+            key = 'adv' if ours > theirs else 'dis' if ours < theirs else 'even'
+            buckets[key]['n'] += 1
+            if won:
+                buckets[key]['win'] += 1
+            first_side = f.get('first')
+            if first_side == camp:
+                buckets['first']['n'] += 1
+                if won:
+                    buckets['first']['win'] += 1
+            elif first_side == other:
+                buckets['firstAgainst']['n'] += 1
+                if won:
+                    buckets['firstAgainst']['win'] += 1
+        fk = buckets
+        # 团战伤害结构：每波团我方十人的伤害/承伤占比，按分路汇总
+        hero_pos = {p.get('hero'): p.get('position') for p in (d.get('players') or []) if p.get('hero')}
+        acc = {}
+        for f in fights:
+            ours = [x for x in (f.get('details') or []) if isinstance(x, dict) and x.get('camp') == camp]
+            total_h = sum((x.get('hurt') or 0) for x in ours)
+            total_t = sum((x.get('taken') or 0) for x in ours)
+            if not total_h and not total_t:
+                continue
+            for x in ours:
+                pos = hero_pos.get(x.get('hero')) or '未知'
+                cell = acc.setdefault(pos, {'h': 0.0, 't': 0.0, 'n': 0})
+                if total_h:
+                    cell['h'] += (x.get('hurt') or 0) / total_h
+                if total_t:
+                    cell['t'] += (x.get('taken') or 0) / total_t
+                cell['n'] += 1
+        fs = {pos: {'hurtShare': round(v['h'] / v['n'], 3), 'takenShare': round(v['t'] / v['n'], 3), 'n': v['n']}
+              for pos, v in acc.items() if v['n']}
+    # 打野过河：0–10 分钟逐秒坐标，e>8 算过河、e>25 算深入（口径见 docs/jungle_position_spec.md）
+    jungle = {'crossSec': None, 'crossShare': None, 'firstCross': None, 'deepShare': None}
+    replay_id = str((d.get('officialReplay') or {}).get('id') or '')
+    if replay_id:
+        pos_path = OFFICIAL / replay_id / 'positions.json'
+        slots = []
+        if pos_path.is_file():
+            try:
+                slots = (json.loads(pos_path.read_text(encoding='utf-8')) or {}).get('players') or []
+            except (OSError, ValueError):
+                slots = []
+        jungle_idx = None
+        for i, p in enumerate(d.get('players') or []):
+            if p.get('camp') == camp and p.get('position') == '打野':
+                jungle_idx = i
+                break
+        if jungle_idx is not None and jungle_idx < len(slots):
+            arr = slots[jungle_idx].get('posArr') or []
+            facing = 1 if camp == 'blue' else -1
+            e_vals = [(q[0] + q[1]) / 2.0 * facing for q in arr[:600]
+                      if isinstance(q, (list, tuple)) and len(q) >= 2]
+            if e_vals:
+                cross_sec = sum(1 for v in e_vals if v > 8)
+                deep = sum(1 for v in e_vals if v > 25)
+                jungle['crossSec'] = cross_sec
+                jungle['crossShare'] = round(cross_sec / len(e_vals), 3)
+                jungle['deepShare'] = round(deep / len(e_vals), 3)
+                jungle['firstCross'] = next((i for i, v in enumerate(e_vals) if v > 8), None)
 
     players = d.get('players') or []
     own = [p for p in players if p.get('camp') == camp]
@@ -275,6 +397,22 @@ def _cross_vector(repo, item, segments=8):
             lanes[lane] = {key: round((number(p.get(key)) - number(q.get(key))) / duration * 60, 1)
                            for key in ('gold', 'damage', 'taken')}
     heroes = [p.get('hero') for p in own if p.get('hero')][:5]
+    # 逐人一行：选手榜与同位置对位都从这里取；没有时长的局分均留空
+    minutes = duration / 60.0 if duration else 0.0
+    pl = []
+    for p in players:
+        if not isinstance(p, dict) or not p.get('camp'):
+            continue
+        pl.append({
+            'name': str(p.get('label') or p.get('name') or ''),
+            'camp': p.get('camp'),
+            'pos': p.get('position') or '',
+            'hero': p.get('hero') or '',
+            'k': p.get('kills'), 'd': p.get('deaths'), 'a': p.get('assists'),
+            'gpm': round(number(p.get('gold')) / minutes, 1) if minutes and p.get('gold') is not None else None,
+            'dpm': round(number(p.get('damage')) / minutes, 1) if minutes and p.get('damage') is not None else None,
+            'part': p.get('participation'),
+        })
     bp = d.get('campBp') or {}
     bans = [x.get('name') for side in ('left', 'right') for x in ((bp.get('bans') or {}).get(side) or []) if x.get('name')]
     scores = d.get('scores') or {}
@@ -292,6 +430,11 @@ def _cross_vector(repo, item, segments=8):
         'result': d.get('result') or item.get('result') or '',
         'duration': duration, 'camp': camp,
         'at10': g[2], 'finalDiff': final, 'g': g, 'w': w, 's': shape,
+        'at4': round(at4, 1) if at4 is not None else None,
+        'seg': seg, 'ecoPoints': len(econ),
+        'obj': obj, 'death': death, 'fight': fight, 'buff': buff,
+        'cut': cut, 'fk': fk, 'jungle': jungle,
+        'pl': pl, 'fs': fs,
         'killsOwn': kill_own, 'killsFoe': kill_foe,
         'lanes': lanes, 'heroes': heroes, 'bans': bans,
     }

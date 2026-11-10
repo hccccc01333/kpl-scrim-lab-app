@@ -3278,7 +3278,8 @@ def store_runtime(c, replay_id, data):
 
 @app.post('/api/replays/files')
 async def upload_replay_file(request: Request):
-    from replay_parser import MAX_FILE_BYTES,inspect_replay,parse_ope_bytes
+    from replay_parser import MAX_FILE_BYTES,inspect_abc,parse_ope_bytes
+    from starlette.concurrency import run_in_threadpool
     name=request.query_params.get('name','').replace('\\','/').rsplit('/',1)[-1][:200]
     kind=Path(name).suffix.lower().lstrip('.')
     if kind not in ('abc','ope'):
@@ -3291,7 +3292,10 @@ async def upload_replay_file(request: Request):
         chunks.append(chunk)
     data=b''.join(chunks)
     try:
-        inspect_replay(data) if kind == 'abc' else parse_ope_bytes(data)
+        # Parsing is CPU-bound and takes ~0.3 s on a full match; keep it off the
+        # event loop.  For .abc this also fills the parse cache that
+        # /api/replays/import reuses, so one upload is decoded once.
+        await run_in_threadpool(inspect_abc if kind == 'abc' else parse_ope_bytes, data)
     except ValueError as error:
         raise HTTPException(422,str(error))
     file_id=hashlib.sha256(data).hexdigest()
@@ -3300,8 +3304,11 @@ async def upload_replay_file(request: Request):
     return {'id':file_id,'name':name,'kind':kind,'size':len(data)}
 
 
-def _ensure_builds_async(abc_file_id: str) -> None:
-    """按局生成出装时间轴；失败只记日志，不影响导入结果。"""
+def _ensure_builds_async(abc_file_id: str, report: dict | None = None) -> None:
+    """按局生成出装时间轴；失败只记日志，不影响导入结果。
+
+    ``report`` 是导入时已经解析过的那份 .abc 结果，传下去就不用再解一遍。
+    """
     def run() -> None:
         try:
             with db() as c:
@@ -3314,7 +3321,8 @@ def _ensure_builds_async(abc_file_id: str) -> None:
             if (BUILDS_DIR / digest / "meta.json").exists():
                 return
             import replay_timeline_build
-            replay_timeline_build.build_from_abc_bytes(row["data"], BUILDS_DIR, row["name"])
+            replay_timeline_build.build_from_abc_bytes(
+                row["data"], BUILDS_DIR, row["name"], None, report)
             print(f"[builds] built {digest[:12]} {row['name']}", flush=True)
         except Exception as error:  # 后台任务不能影响主流程
             print(f"[builds] build failed for {abc_file_id}: {error}", flush=True)
@@ -3368,7 +3376,7 @@ def import_replay(value: dict):
     except ValueError as error:
         raise HTTPException(422,str(error))
     if value.get('abcFileId'):
-        _ensure_builds_async(value['abcFileId'])
+        _ensure_builds_async(value['abcFileId'], report)
     return {'report':report,'changed':changed}
 
 
@@ -3422,17 +3430,19 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
                        **{k:ustats.get(k) for k in ('firstFrame','lastFrame','dirMin','dirMax')},
                        **{k:estats.get(k) or 0 for k in ('buys','learnSkill','skills','cc')}})
     from tools.replay_frame_commands import FRAME_RATE
+    import replay_time
     manual_buys=[row[0] for e in inputs['entities'].values() for row in e['buys'] if len(row)>3 and row[3] in (0,1)]
     last_manual=max(manual_buys) if manual_buys else None
     payload={'status':inputs['status'],'error':inputs.get('error'),
              'frameRecords':inputs['frameRecords'],'fullyParsedFrames':inputs['fullyParsedFrames'],
              'unresolvedFrames':inputs['unresolvedFrames'],'entryCounts':inputs['entryCounts'],
              'heroes':heroes,
-             'timeBase':{'framesPerSecond':FRAME_RATE,'battleStartFrame':[0,14],
+             'timeBase':{'framesPerSecond':FRAME_RATE,
+                         'battleStartFrame':list(replay_time.BATTLE_START_FRAME_APPROX),
                          'lastManualBuyFrame':last_manual,
                          'estimatedBattleSeconds':round(max(last_manual-7,0)/FRAME_RATE,1) if last_manual is not None else None,
                          'uncertaintySeconds':1,
-                         'note':'t ≈ (frame − battleStart)/15；校准依据 docs 5.129（±1s）'},
+                         'note':'t ≈ (frame − battleStart)/15；校准依据 docs 5.129（±1s）；帧率常量见 replay_time.py'},
              'provenance':{'moves':{'source':'abc-frame-commands','confidence':'decoded'},
                            'attacks':{'source':'abc-frame-commands','confidence':'decoded'},
                            'buys':{'source':'abc-frame-commands','confidence':'decoded'},

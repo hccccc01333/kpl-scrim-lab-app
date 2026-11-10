@@ -68,3 +68,11 @@ tools/ffmpeg/
 
 # 营地 H5 前端包：第三方产物，本地缓存用于抽文案，不提交
 _h5/
+
+# 运行期临时文件（进程号 / 登录二维码 / 服务日志），不进仓库
+_pid.txt
+_qr.json
+_server_run.log
+_preview*.html
+_out.html
+_newblock.js

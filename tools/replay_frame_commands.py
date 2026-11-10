@@ -18,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import replay_time  # noqa: E402
 from tools.replay_opening_packet import opening_packet  # noqa: E402
 from tools.replay_record_stream import iter_records  # noqa: E402
 
@@ -121,19 +122,17 @@ def compass_bearing(dir_deg: int) -> float:
     return (90.0 + dir_deg) % 360.0
 
 
-# Battle clock, calibrated in docs 5.129: the replay logic frame rate is
-# 15 frames per second. 20261102_161129 pairs with a postgame screenshot of
-# the same match (all ten 1251 ratings and heroes identical) whose results
-# page shows 11:33 = 693 s; 693*15 = 10395 lands inside [first input frame
-# 40, last manual buy 10409], the tail to 10509 is the victory animation.
-# The displayed clock floors to the second and the stream start offset F0 is
-# 1..15 frames, so absolute times carry ≈±1 s uncertainty.
-FRAME_RATE = 15
+# Frame→second calibration lives in replay_time.py so the product, the tools
+# and replay_codec/ cannot drift apart again.  FRAME_RATE stays the documented
+# §5.129 baseline (15 fps); the engine-measured 15.1515 fps is a separate
+# constant there and is not used here until the record-stream sequence is
+# proven to be the same counter as the engine frame number.
+FRAME_RATE = replay_time.FPS
 
 
 def battle_time(frame: int, first_frame: int = 1) -> float:
     """Approximate battle seconds for a record-stream frame number."""
-    return (frame - first_frame) / FRAME_RATE
+    return replay_time.relative(frame, first_frame)
 
 
 def decode_commands(data: bytes) -> list[dict]:

@@ -51,15 +51,18 @@ def print_report(report):
             label+=' · 本地英雄对应块'
         name=f" · {block['name']}" if block.get('name') else ''
         score=f" · 评分 {block['score']:.2f}" if block.get('score') is not None else ''
-        gold=f" · 回放金币 {block['goldTotal']}" if block.get('goldTotal') is not None else ''
+        buys=block.get('buyEvents') or 0
+        gold=f" · 购买事件 {buys}" if buys else ''
         print(f"  块 {block['order']+1}: {block['heroName'] or '未知'} ({block['heroId']}){name} · {label}{score}{gold}")
     if report.get('scoreTable'):
         print(f"赛后评分表: {report['scoreTable']['offset']}（汇总字段，不是原始流水）")
     player_events=report.get('playerEvents')
     if player_events:
-        gold=player_events['gold']; skills=player_events['skills']; positions=player_events['positions']
-        print(f"原始事件: 金币 {gold['unique']}/{gold['records']} 条 · {gold['total']}"
-              f"（重复 {gold['duplicates']}） · 技能升级 {skills['unique']} 条 · 坐标样本 {positions['records']} 条")
+        echo=player_events['buyEcho']; skills=player_events['skills']; positions=player_events['positions']
+        print(f"原始事件: 购买镜像 {echo['unique']}/{echo['records']} 条"
+              f"（重复 {echo['duplicates']}） · 技能升级 {skills['unique']} 条"
+              f" · 坐标样本 {positions['records']} 条")
+        print('  0x85 是 BUYEQUIP 的镜像，不含金币数额；不能据此重建收入账本。')
     frames=report.get('frames')
     if frames and frames.get('status')=='frame-stream':
         print(f"帧流记录: {frames['records']} 条（seq {frames['firstSequence']}–{frames['lastSequence']}，"
@@ -87,6 +90,11 @@ def print_report(report):
 
 
 def main():
+    # Player names carry zero-width and variation-selector code points, which a
+    # GBK console cannot encode; without this the whole report dies on a print.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
     parser=argparse.ArgumentParser(description='只读查看 .abc / .ope 的已验证容器结构。')
     parser.add_argument('replay',help='.abc 文件路径')
     parser.add_argument('--ope',help='配套 .ope；默认寻找同目录同名文件')

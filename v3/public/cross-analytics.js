@@ -8,7 +8,6 @@
  */
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
-const WINDOW_MIN = 5;
 
 /* ── 基础统计 ─────────────────────────────────────────────────── */
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -83,6 +82,10 @@ function grade(n, ci, effect) {
 const pct = (v) => `${Math.round(clamp(v, 0, 1) * 100)}%`;
 const byOrder = (a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0);
 const sign = (v) => (v >= 0 ? '+' : '−') + Math.abs(Math.round(v)).toLocaleString('zh-CN');
+const mmss = (s) => {
+  const v = Math.max(0, Math.round(num(s) ? s : 0));
+  return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`;
+};
 
 /* 按时间顺序切前后半，检验方向型结论能否复现 */
 function halves(rows) {
@@ -228,75 +231,99 @@ function silhouette(data, assign) {
 
 /* ── 10 个通用分析族 ───────────────────────────────────────────── */
 
-/* 01 分层基准带：什么叫「正常」 */
+/* 01 共性：把这一个月的局并在一起，反复出现的特征是什么 */
 function a01(ctx) {
-  const { rows, n } = ctx;
-  const arr = vals(rows.map((r) => r.at10));
-  const sorted = srt(arr);
-  const qat = (p) => {
-    if (!sorted.length) return null;
-    const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
-  };
-  const q10 = qat(0.1), q25 = qat(0.25), q50 = qat(0.5), q75 = qat(0.75), q90 = qat(0.9);
-  const ci = medianCi(arr);
-  const byDim = ['version', 'opponent', 'session'].map((dim) => {
-    const groups = new Map();
-    for (const r of rows) if (num(r.at10)) {
-      const k = String(r[dim] || '未标注');
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(r.at10);
-    }
-    const usable = [...groups.entries()].filter(([, v]) => v.length >= 2);
-    return { dim, groups: usable.length >= 2 ? usable.sort((a, b) => b[1].length - a[1].length).slice(0, 6) : [] };
-  });
-  const strata = byDim.flatMap(({ dim, groups }) => groups.map(([label, v]) => ({
-    label: `${({ version: '版本', opponent: '对手', session: '训练组' })[dim]} · ${label}`, p50: median(v), n: v.length,
-  }))).slice(0, 8);
-  const spread = strata.length > 1 ? Math.max(...strata.map((s) => s.p50)) - Math.min(...strata.map((s) => s.p50)) : null;
-  const title = spread && Math.abs(spread) > 1500
-    ? `同一支队伍，换个对手/版本，10 分钟经济差能差 <em>${sign(spread)}</em> 金`
-    : `这批 ${n} 局里，10 分钟经济差一半在 <em>${sign(q50 || 0)}</em> 金以上`;
-  return {
-    id: '01', name: '分层基准分析', group: '基准与稳定', ask: '我们这支队，正常水平到底在哪？',
-    title,
-    plain: spread && Math.abs(spread) > 1500
-      ? '所以别拿一个总平均数当标准，要看具体是哪个版本、打哪个对手。'
-      : '这条带子就是基线：高于它算打得好，低于它要先找原因。',
-    chart: { type: 'bands', lo: q10, p25: q25, p50: q50, p75: q75, hi: q90, strata, noStrata: !strata.length },
-    train: `把 ${sign(q25 || 0)} 金定成开局达标线，低于这条线的局单列复盘。`,
-    review: '圈出低于达标线的局',
-    actKeys: rows.filter((r) => num(r.at10) && r.at10 < (q25 || 0)).map((r) => r.key),
-    method: `10 分钟经济差 P10/P25/P50/P75/P90；中位 95% 置信区间为 ${ci ? `${sign(ci[0])} ~ ${sign(ci[1])}` : '—'}；分层按版本/对手/训练组，仅列 ≥2 局的分层。`,
-    grade: grade(arr.length, ci, q50),
-    repro: reproducible(rows.filter((r) => num(r.at10)), (s) => median(s.map((r) => r.at10))),
-  };
-}
-
-/* 02 波动来源：状态问题还是环境问题 */
-function a02(ctx) {
   const { rows } = ctx;
-  const parts = varianceParts(rows, 'final', ['version', 'opponent', 'session', 'camp']);
-  const top = parts.slice(0, 4).sort((a, b) => b.share - a.share)[0] || { label: '自然波动', share: 0 };
-  const natural = parts.find((p) => p.label === '同条件下的自然波动') || { share: 0 };
-  const env = sum(parts.slice(0, 4).map((p) => p.share));
+  const timed = rows.slice().sort(byOrder);
+  const withAt10 = rows.filter((r) => num(r.at10));
+  const lead = withAt10.filter((r) => r.at10 > 0).length;
+  const decided = rows.filter((r) => r.result === 'win' || r.result === 'loss');
+  const wins = decided.filter((r) => r.result === 'win').length;
+  const laneShare = LANES.map((lane) => {
+    const arr = rows.map((r) => (r.lanes[lane] || {}).gold).filter(num);
+    return { lane, n: arr.length, share: arr.length ? arr.filter((v) => v > 0).length / arr.length : null };
+  }).filter((x) => x.n >= 2 && x.share != null);
+  const best = laneShare.slice().sort((a, b) => b.share - a.share)[0];
+  const worst = laneShare.slice().sort((a, b) => a.share - b.share)[0];
+  const durMed = median(vals(rows.map((r) => r.duration)));
+  const items = timed.map((r, i) => ({
+    label: r.date ? String(r.date).slice(5) : (r.clock || ''),
+    value: num(r.at10) ? r.at10 : null,
+    result: r.result,
+    sub: String(r.opponent || '').trim(),
+    time: r.clock || '',
+    at: i + 1,
+    key: r.key,
+  }));
   return {
-    id: '02', name: '波动来源分析', group: '基准与稳定', ask: '成绩忽高忽低，是队员状态还是对手/版本？',
-    title: `终局经济差的起伏，<em>${pct(env)}</em> 来自外部条件，其余是局内波动`,
-    plain: `其中主要是${top.label}差异（${pct(top.share)}）。${env > 0.3 ? '单看一局经济差评价队员状态并不可靠。' : '说明这套打法本身输出比较稳定。'}`,
-    chart: { type: 'stack', parts: parts.filter((p) => p.share > 0.005) },
-    train: top.share > 0.3
-      ? `状态评估改用「同${top.label}内比较」的口径，别再用跨对手的绝对值排名。`
-      : '维持当前训练节奏，用同条件内的波动做状态监控。',
-    review: '按对手分层核对',
-    actKeys: rows.filter((r) => String(r.opponent || '未标注') === String(rows[0] && rows[0].opponent || '')).map((r) => r.key),
-    method: '单因素随机效应方差成分：σ²_组间 / (σ²_组间 + σ²_组内)，按调和平均组规模校正；四个分层各算一次后归一，余量归入局内波动。',
-    grade: grade(rows.filter((r) => num(r.final)).length),
+    id: '01', name: '共性', group: '这段时间', ask: '这一个月的局并在一起，反复出现的是什么？',
+    title: withAt10.length
+      ? `这 ${rows.length} 局里，<em>${withAt10.length}</em> 局有 10 分钟经济，其中 <em>${lead}</em> 局领先`
+      : `这 ${rows.length} 局还没有可读的 10 分钟经济`,
+    plain: best && worst
+      ? `五路里最稳的是${best.lane}（${pct(best.share)} 的局领先），最不稳的是${worst.lane}（${pct(worst.share)}）。典型一局打 ${mmss(durMed)}。`
+      : '分路样本还不够，先把对局补全。',
+    chart: { type: 'scatter', items },
+    train: worst ? `把「${worst.lane}领先率」定成这个月的训练指标：现在 ${pct(worst.share)}，下一批看能不能过 50%。` : '先把分路数据补齐。',
+    review: '按时间看这一批局',
+    actKeys: timed.slice(0, 60).map((r) => r.key),
+    method: '每局一格、按开赛时间排；格子颜色＝这一局 10 分钟经济差（本队减对手），灰＝这一局没有可读的经济曲线。五路领先率＝该路经济差为正的局占比。',
+    grade: grade(withAt10.length),
     repro: null,
   };
 }
 
-/* 03 下限风险：比赛日不能赌状态 */
+/* 02 赢输对比：赢的局和输的局，差在哪一项 */
+function a02(ctx) {
+  const { rows } = ctx;
+  const win = rows.filter((r) => r.result === 'win');
+  const loss = rows.filter((r) => r.result === 'loss');
+  const agg = (list, get) => median(vals(list.map(get)));
+  const laneGold = (list, lane) => agg(list, (r) => (r.lanes[lane] || {}).gold);
+  const killOf = (r) => (num(r.killsOwn) && num(r.killsFoe) ? r.killsOwn - r.killsFoe : null);
+  const fmt = (v, unit) => {
+    if (!num(v)) return '—';
+    if (unit === 'pm') return `${sign(v)} 金币/分`;
+    if (unit === 'gold') return `${sign(v)} 金币`;
+    return `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(Math.round(v))} 个`;
+  };
+  const item = (label, get, unit) => {
+    const w = agg(win, get), l = agg(loss, get);
+    return { label, win: w, loss: l, winText: fmt(w, unit), lossText: fmt(l, unit) };
+  };
+  const at10 = item('10 分钟经济差', (r) => r.at10, 'gold');
+  const items = [
+    at10,
+    item('终局经济差', (r) => r.finalDiff, 'gold'),
+    item('人头差', killOf, 'kill'),
+    ...LANES.map((lane) => item(`${lane}（每分钟）`, (r) => (r.lanes[lane] || {}).gold, 'pm')),
+  ];
+  const laneRows = LANES.map((lane) => ({ lane, win: laneGold(win, lane), loss: laneGold(loss, lane) }));
+  const worstLane = laneRows.slice().sort((a, b) => Math.abs((b.win || 0) - (b.loss || 0)) - Math.abs((a.win || 0) - (a.loss || 0)))[0];
+  const allNeg = laneRows.every((x) => num(x.loss) && x.loss < 0);
+  const allPos = laneRows.every((x) => num(x.win) && x.win > 0);
+  const decided = win.length + loss.length;
+  return {
+    id: '02', name: '赢输对比', group: '这段时间', ask: '赢的局和输的局，差在哪一项？',
+    title: decided
+      ? `赢的 ${win.length} 局，10 分钟就领先 <em>${sign(at10.win || 0)}</em> 金币；输的 ${loss.length} 局，10 分钟落后 <em>${Math.abs(Math.round(at10.loss || 0)).toLocaleString('zh-CN')}</em> 金币`
+      : '还没有标了胜负的局',
+    plain: decided
+      ? `${allNeg && allPos ? '赢的局五路金币全是正的，输的局五路全是负的' : '五路金币在赢、输两边互有正负'}；差得最多的是${worstLane ? worstLane.lane : '—'}${worstLane ? `（每分钟 ${sign(worstLane.win || 0)} 对 ${sign(worstLane.loss || 0)}）` : ''}。`
+      : '',
+    chart: { type: 'compare', items, winN: win.length, lossN: loss.length },
+    train: worstLane
+      ? `${worstLane.lane}是这一个月差得最多的一路，下一批先把它的开局和资源处理列成专项。`
+      : '先把胜负标全。',
+    review: `看输的 ${loss.length} 局`,
+    actKeys: loss.slice(0, 60).map((r) => r.key),
+    method: '把局按胜负分成两组，同一个项目左右并排比：取两组的典型值，金币一律是本队减对手。只算标了胜负的局，没标胜负的不进对比。',
+    grade: grade(decided),
+    repro: null,
+  };
+}
+
+/* 03 下限风险：比赛日谁最稳、哪一路最可能掉链子 */
 function a03(ctx) {
   const { rows } = ctx;
   const items = LANES.map((lane) => {
@@ -310,11 +337,11 @@ function a03(ctx) {
   const riskKeys = worst ? rows.filter((r) => num((r.lanes[worst.label] || {}).gold) && r.lanes[worst.label].gold < worst.p10).map((r) => r.key) : [];
   return {
     id: '03', name: '下限风险分析', group: '基准与稳定', ask: '比赛日谁最稳、哪一路最可能掉链子？',
-    title: `<em>${worst ? worst.label : '—'}</em>下限最低：最差10%对局分均 <em>${worst ? sign(worst.p10) : '—'}</em> 金，<em>${worst ? pct(worst.bad) : '—'}</em> 的局对线落后`,
-    plain: `教练看的是下限不是均值：${best ? best.label : '—'}最可靠，${worst ? worst.label : '—'}需要预案。`,
+    title: `<em>${worst ? worst.label : '—'}</em> 最容易崩：<em>${worst ? pct(worst.bad) : '—'}</em> 的局这条线落后，最差的几局到 <em>${worst ? sign(worst.p10) : '—'}</em> 金币/分钟`,
+    plain: `教练看的是下限不是平均：${best ? best.label : '—'}最稳，${worst ? worst.label : '—'}要提前准备预案。`,
     chart: { type: 'range', items },
     train: worst ? `给${worst.label}安排对线专项，并准备轮换/换线预案；目标是让最差10%对局也不落后。` : '补齐分路数据。',
-    review: `回看${worst ? worst.label : ''}最差的 ${Math.min(riskKeys.length, 20)} 局`,
+    review: `看${worst ? worst.label : ''}最差的 ${Math.min(riskKeys.length, 20)} 局`,
     actKeys: riskKeys,
     method: '按分路取「分均经济差」的 P10 / P50 / P90，爆雷率＝该路经济差为负的局占比；上下限用分位数，不受单局极值影响。',
     grade: grade(worst ? worst.n : 0),
@@ -322,114 +349,86 @@ function a03(ctx) {
   };
 }
 
-/* 04 训练段效应：练了有没有用 */
+/* 04 突出点：打得最顺和最难的局，差在哪一段 */
 function a04(ctx) {
   const { rows } = ctx;
-  const timed = rows.filter((r) => num(r.at10)).sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
-  const k = clamp(Math.floor(timed.length / 12) + 2, 2, 6);
-  const segs = Array.from({ length: k }, (_, i) => {
-    const part = timed.slice(Math.floor(i * timed.length / k), Math.floor((i + 1) * timed.length / k));
-    const arr = vals(part.map((r) => r.at10));
-    return { label: `第 ${i + 1} 段`, value: median(arr), lo: null, hi: null, n: arr.length, from: part[0] && part[0].clock, to: part[part.length - 1] && part[part.length - 1].clock, keys: part.map((r) => r.key) };
-  });
-  const segOf = new Map();
-  segs.forEach((s, i) => s.keys.forEach((k) => segOf.set(k, i)));
-  const buckets = Array.from({ length: k }, () => []);
-  for (const r of timed) { const i = segOf.get(r.key); if (i !== undefined && num(r.at10)) buckets[i].push(r.at10); }
-  buckets.forEach((arr, i) => { const ci = medianCi(arr); if (ci) { segs[i].lo = ci[0]; segs[i].hi = ci[1]; } });
-  const first = segs[0], last = segs[segs.length - 1];
-  const a = vals(timed.slice(0, Math.floor(timed.length / 3)).map((r) => r.at10));
-  const b = vals(timed.slice(-Math.floor(timed.length / 3)).map((r) => r.at10));
-  const effect = num(first.value) && num(last.value) ? last.value - first.value : null;
-  const ci = bootstrapDiff(b, a);
-  const delta = cliffs(b, a);
-  const conf = ctx.strata && ctx.strata.confounder;
-  let within = null;
-  if (conf) {
-    const layers = new Map();
-    for (const r of timed) {
-      const k = String(r[conf.dim] || '未标注');
-      if (!layers.has(k)) layers.set(k, []);
-      layers.get(k).push(r);
-    }
-    const effects = [];
-    for (const list of layers.values()) {
-      if (list.length < 6) continue;
-      const h = Math.floor(list.length / 3);
-      const x = vals(list.slice(0, h).map((r) => r.at10));
-      const y = vals(list.slice(-h).map((r) => r.at10));
-      if (x.length >= 2 && y.length >= 2) effects.push(median(y) - median(x));
-    }
-    if (effects.length) within = { effect: median(effects), n: effects.length,
-      consistent: effects.every((v) => v > 0) || effects.every((v) => v < 0) };
+  const scored = rows.filter((r) => num(r.at10)).sort((a, b) => b.at10 - a.at10);
+  if (scored.length < 6) {
+    return {
+      id: '04', name: '突出点', group: '这段时间', ask: '打得好和打不动的局差在哪？',
+      title: '局数还不够分出「最顺」和「最难」', plain: '至少要有 6 局可读的 10 分钟经济。',
+      chart: { type: 'timeline', items: [] }, train: '继续攒局。', review: '看这一批局', actKeys: [],
+      method: '按 10 分钟经济差排序，取前后各 5 局。', grade: grade(scored.length), repro: null,
+    };
   }
-  const confounded = !!(conf && within && num(effect) && Math.abs(within.effect) < Math.abs(effect) * 0.55);
-  const unverifiable = !!(conf && !within);
-  const solid = !confounded && !unverifiable && ci && (ci[0] > 0 || ci[1] < 0) && num(delta) && Math.abs(delta) >= 0.2;
-  const title = confounded
-    ? `整体后段高 <em>${sign(Math.abs(effect))}</em> 金，但同一${conf.label}内只差 <em>${sign(Math.abs(within.effect))}</em> 金`
-    : unverifiable
-      ? `整体后段高 <em>${sign(Math.abs(effect))}</em> 金，但${conf.label}也在换，先别算训练成效`
-    : solid
-      ? `练到后段，10 分钟经济差${effect > 0 ? '提高' : '回落'} <em>${sign(Math.abs(effect))}</em> 金，这个变化站得住`
-      : `前后段相差 <em>${sign(Math.abs(effect || 0))}</em> 金，还分不清是进步还是正常起伏`;
+  const k = Math.min(5, Math.max(2, Math.floor(scored.length / 4)));
+  const best = scored.slice(0, k);
+  const worst = scored.slice(-k).reverse();
+  const floorBest = best[best.length - 1].at10;
+  const ceilWorst = worst[0].at10;
+  const seg = (list, key) => median(list.map((r) => (r.seg || {})[key]).filter(num));
+  const bestEarly = seg(best, 'early'), bestMid = seg(best, 'mid');
+  const worstEarly = seg(worst, 'early'), worstMid = seg(worst, 'mid');
+  const pack = (list, tone) => list.map((r) => ({
+    label: `${r.date ? String(r.date).slice(5) : ''} ${String(r.opponent || '').trim() || '未填对手'}`.trim(),
+    value: Math.round(r.at10),
+    sub: r.result === 'win' ? '胜' : r.result === 'loss' ? '负' : '',
+    key: r.key, tone,
+  }));
   return {
-    id: '04', name: '训练效应分析', group: '进程与效应', ask: '这一阶段练下来，到底有没有变好？',
-    flag: (confounded || unverifiable) ? '已做分层校正' : '',
-    title,
-    plain: confounded
-      ? `前后段的${conf.label}构成变了（分布差 ${pct(conf.tvd)}${conf.share > 0.08 ? `、解释 ${pct(conf.share)} 的 10′ 波动` : ''}）；把${conf.label}固定后再比，差距主要来自更替，不能算训练效果。`
-      : unverifiable
-        ? `前后段的${conf.label}构成明显不同（分布差 ${pct(conf.tvd)}${conf.share > 0.08 ? `、解释 ${pct(conf.share)} 的 10′ 波动` : ''}），但每个${conf.label}内的局还不够做前后对比；先按同一${conf.label}攒局，别把更替记成进步。`
-      : solid ? '前后各三分之一对局，差距在统计上能站住，可以据此决定保留或调整这套训练。'
-        : '差距落在噪声范围内，别急着下「练有效/没用」的结论，先攒同条件的局。',
-    chart: { type: 'segments', items: segs.map(({ keys, ...x }) => x) },
-    train: confounded || unverifiable ? `先把${conf.label}固定再评估这套训练；用上方切片单独看同一${conf.label}的局，别把版本更替记成训练成效。`
-      : solid && effect > 0 ? '保留后段这套训练内容，下一批沿用同口径再验一次。'
-        : solid ? '后段回落，先排查训练强度/阵容变动，暂不推广。' : '继续按同一口径积累样本，下一批用同样方法复验。',
-    review: '回看最后一段的局',
-    actKeys: last ? last.keys : [],
-    method: `按真实开赛时刻均分 ${k} 段比较中位数；首/末三分之一用 Cliff's δ=${num(delta) ? delta.toFixed(2) : '—'} 与固定种子 bootstrap 95% CI ${ci ? `${sign(ci[0])} ~ ${sign(ci[1])}` : '—'} 判读。${conf ? `检测到混淆维度「${conf.label}」（前后半分布差 ${pct(conf.tvd)}${conf.share > 0.08 ? `、解释力 ${pct(conf.share)}` : ''}），${within ? `另在 ${within.n} 个层内各算一次首末差并取中位 ${sign(within.effect)} 金，避免把层间漂移当训练效应` : '但各层局数不足以做层内前后对比，因此不下训练有效结论'}。` : '已检查版本/训练组/对手分层结构，未检出混淆。'}`,
-    grade: grade(timed.length, ci, confounded ? (within ? within.effect : effect) : effect),
-    repro: reproducible(timed, (s) => { const x = vals(s.map((r) => r.at10)); const h = Math.floor(x.length / 2); return median(x.slice(h)) - median(x.slice(0, h)); }),
-  };
-}
-
-/* 05 水平变点：从哪一局开始不一样了 */
-function a05(ctx) {
-  const { rows } = ctx;
-  const timed = rows.filter((r) => num(r.at10)).sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
-  const buckets = 24;
-  const points = Array.from({ length: buckets }, (_, i) => {
-    const part = timed.slice(Math.floor(i * timed.length / buckets), Math.max(Math.floor((i + 1) * timed.length / buckets), Math.floor(i * timed.length / buckets) + 1));
-    const v = median(part.map((r) => r.at10));
-    return { i, v, n: part.length, label: part[0] && (part[0].clock || part[0].date) };
-  });
-  const vv = vals(points.map((p) => p.v));
-  const base = mean(vv), s = sd(vv) || 1;
-  let cusum = 0, best = 0, bestAbs = 0;
-  points.forEach((p, i) => {
-    cusum += num(p.v) ? (p.v - base) / s : 0;
-    if (Math.abs(cusum) > bestAbs) { bestAbs = Math.abs(cusum); best = i; }
-  });
-  const changed = timed.length >= 30 && bestAbs >= 2.2 && best >= 2 && best <= buckets - 3;
-  const at = points[best];
-  const around = timed.slice(Math.max(0, Math.floor(best / buckets * timed.length) - 3), Math.floor(best / buckets * timed.length) + 4);
-  return {
-    id: '05', name: '水平变点分析', group: '进程与效应', ask: '水平是从哪一局开始变的？',
-    title: changed
-      ? `在 <em>${at && (at.label || `第 ${best + 1} 个时间桶`)}</em> 附近出现一次水平${cusum > 0 ? '上移' : '下滑'}`
-      : '整批局没有出现稳定的水平跃迁，波动仍在正常范围内',
-    plain: changed ? `变点之后水平维持住了，值得回看那几天改了什么。${(ctx.strata && ctx.strata.confounder && ctx.strata.confounder.tvd > 0.3) ? `注意变点附近${ctx.strata.confounder.label}构成也变了，先排除${ctx.strata.confounder.label}因素。` : ''}` : (timed.length < 30 ? '这批局数还不足以区分水平跃迁和正常起伏，别从折线里硬挑转折点。' : '没有可靠变点，波动仍在正常范围内。'),
-    chart: { type: 'rolling', points, changeIndex: changed ? best : -1, from: points[0] && points[0].label, to: points[points.length - 1] && points[points.length - 1].label },
-    train: changed ? '把变点前后的训练内容做一次对照，确认是哪项调整带来了变化。' : '维持现有节奏，继续按开赛时刻积累，局数够了再看变点。',
-    review: changed ? '回看变点前后的 7 局' : '圈出波动最大的时间桶',
-    actKeys: changed ? around.map((r) => r.key) : around.map((r) => r.key),
-    method: '按开赛时刻压成 24 个等距时间桶（DOM 固定），每桶取中位；对标准化残差做 CUSUM，阈值 2.2 且排除首尾桶才判为变点。',
-    grade: grade(timed.length),
+    id: '04', name: '突出点', group: '这段时间', ask: '打得最顺和最难的局，差在哪一段？',
+    title: `最顺的 ${k} 局，10 分钟都在 <em>${sign(floorBest)}</em> 以上；最难的 ${k} 局，都在 <em>${sign(ceilWorst)}</em> 以下`,
+    plain: `最顺的一批，对线期就 ${sign(bestEarly)}、发育期再 ${sign(bestMid)}；最难的一批，对线期 ${sign(worstEarly)}、发育期 ${sign(worstMid)}。`,
+    chart: { type: 'split', left: { label: `最顺的 ${k} 局`, items: pack(best, 'pos') }, right: { label: `最难的 ${k} 局`, items: pack(worst, 'neg') } },
+    train: worstMid != null && worstMid < 0
+      ? '最难的一批主要输在发育期：把 4–10 分钟的资源交换列成专项，比换阵容更直接。'
+      : '把最顺那批的开局处理抄成模板，下一批复现。',
+    review: `看这 ${k * 2} 局`,
+    actKeys: [...best, ...worst].map((r) => r.key),
+    method: '按 10 分钟经济差排序取最顺/最难各几局（最多 5 局），再把每局拆成 0–4 / 4–10 / 10 分钟后三段的净增，看差在哪一段。',
+    grade: grade(scored.length),
     repro: null,
   };
 }
+
+/* 05 异常点：过程和结果对不上的局，最该先复盘 */
+function a05(ctx) {
+  const { rows } = ctx;
+  const durs = vals(rows.map((r) => r.duration));
+  const durQ3 = quantile(durs, 0.75);
+  const groups = [
+    { name: '逆风赢', trait: '10 分钟落后，最后赢了', test: (r) => r.result === 'win' && num(r.at10) && r.at10 < 0 },
+    { name: '领先被翻', trait: '10 分钟领先，最后输了', test: (r) => r.result === 'loss' && num(r.at10) && r.at10 > 0 },
+    { name: '超长', trait: '时长明显长于这批局', test: (r) => num(r.duration) && num(durQ3) && r.duration > durQ3 * 1.25 },
+  ];
+  const items = groups.map((g) => {
+    const list = rows.filter(g.test);
+    return { name: g.name, trait: g.trait, n: list.length, pct: rows.length ? list.length / rows.length : 0, keys: list.map((r) => r.key), top: list[0] ? list[0].key : '' };
+  }).filter((x) => x.n > 0).sort((a, b) => b.n - a.n);
+  const total = items.reduce((s, x) => s + x.n, 0);
+  const leadFlip = items.find((x) => x.name === '领先被翻');
+  const comeback = items.find((x) => x.name === '逆风赢');
+  return {
+    id: '05', name: '异常点', group: '这段时间', ask: '哪几局的走向和结果对不上？',
+    title: total
+      ? `有 <em>${total}</em> 局不正常：${items.map((x) => `${x.n} 局${x.name}`).join('、')}`
+      : '这批局没有明显不正常的局',
+    plain: total
+      ? `${items.map((x) => `${x.name} ${x.n} 局（${x.trait}）`).join('；')}。这几局最该先看。`
+      : '过程和结果一致，按常规复盘节奏走。',
+    chart: { type: 'types', items },
+    train: items[0] && items[0].name === '超长'
+      ? '超长局最多，先练收尾：推进节奏、大龙决策，别把优势拖成拉锯。'
+      : (leadFlip && leadFlip.n ? '把「领先后的 10 分钟」单列成一课：资源交换、大龙决策、推进节奏。' : '保持常规复盘。'),
+    review: '看这几局',
+    actKeys: items.flatMap((x) => x.keys).slice(0, 60),
+    method: '按胜负与 10 分钟经济差的方向判断背离：赢了但 10 分钟落后＝逆风赢；输了但 10 分钟领先＝领先被翻；时长超过这批局上四分位的 1.25 倍＝超长局。',
+    grade: grade(rows.length),
+    repro: null,
+  };
+}
+
+/* 03 下限风险：比赛日不能赌状态 */
 
 /* 06 打法体系：练了几套、哪套最稳 */
 function a06(ctx) {
@@ -492,17 +491,17 @@ function a06(ctx) {
   const steady = items.slice().sort((a, b) => (b.floor || 0) - (a.floor || 0))[0];
   return {
     id: '06', name: '打法体系分析', group: '结构与归因', ask: '我们到底在练几套打法，哪套最稳？',
-    title: !items.length ? '当前局数还不足以分型'
-      : clustered ? `${src.length >= 60 ? '稳定识别' : '初步分'}出 <em>${items.length}</em> 套打法，<em>${steady ? steady.name : '—'}</em>下限最高`
-        : `按开局态势分出 <em>${items.length}</em> 组，<em>${steady ? steady.name : '—'}</em>下限更高`,
-    plain: !items.length ? '分型会在局数足够后自动生效，不会拿几局硬凑出「体系」。'
-      : clustered ? `占比最大的是「${top.name}」${pct(top.pct)}；比赛日优先用下限高的那套，不是平均赢最多的那套。`
-        : '这不是形状聚类，只是按 10 分钟经济差分两组对照；局数够了会自动切成体系识别。',
+    title: !items.length ? '当前局数还不足以分类'
+      : clustered ? `按经济走势，这 ${src.length} 局分成 <em>${items.length}</em> 类，<em>${steady ? steady.name : '—'}</em> 的下限最高`
+        : `按开局态势分成 <em>${items.length}</em> 组，<em>${steady ? steady.name : '—'}</em> 的下限更高`,
+    plain: !items.length ? '局数够了会自动分类，不会拿几局硬凑出「体系」。'
+      : clustered ? `占比最大的是「${top.name}」${pct(top.pct)}。这一类是按经济曲线走向分的，不等于具体阵容；比赛日优先用下限高的那一类，不是平均赢得多的。`
+        : '这里只是按 10 分钟经济差分两组对照，不是分体系；局数够了会自动切成按走势分类。',
     chart: { type: 'systems', items: items.slice(0, 4).map(({ keys, ...x }) => x) },
     train: !items.length ? '继续积累同条件对局。'
-      : clustered ? `下一阶段固定「${steady ? steady.name : '—'}」为主体系，其余只作针对性备选。`
+      : clustered ? `下一阶段固定「${steady ? steady.name : '—'}」为主打法，其余只作针对性备选。`
         : '分组只作对照：把「开局受压」那组的开局处理列成训练项，下一批看这组占比是否下降。',
-    review: !items.length ? '圈出偏离度最高的局' : clustered ? `回看「${steady ? steady.name : '—'}」的代表局` : `回看「${steady ? steady.name : '—'}」这一组`,
+    review: !items.length ? '看偏离度最高的局' : clustered ? `看「${steady ? steady.name : '—'}」的代表局` : `看「${steady ? steady.name : '—'}」这一组`,
     actKeys: steady ? steady.keys.slice(0, 60) : [],
     method: `${clustered ? '形状聚类' : '小样本降级：按 10′ 中位分组对照'}；取每局 0%/20%/40%/60%/80%/100% 时长处的经济差并去基线（按时长对齐，长短局可比），固定上限 400 条拟合 k-means、按轮廓系数在 k=2..4 中选优，再把全部局按最近中心线性归类；每套给出占比、P10 下限与前后半方向复现。`,
     grade: grade(src.length),
@@ -532,9 +531,9 @@ function a07(ctx) {
   return {
     id: '07', name: '体系适配分析', group: '结构与归因', ask: '哪套打法，打哪类对手/版本更划算？',
     title: gap && Math.abs(gap) > 1500
-      ? `体系 × ${dim === 'opponent' ? '对手' : '版本'}的组合之间，终局经济差最多差 <em>${sign(gap)}</em> 金`
-      : `各套打法在不同${dim === 'opponent' ? '对手' : '版本'}下表现接近，暂时不用按对手切体系`,
-    plain: gap && Math.abs(gap) > 1500 ? '差得最多的是两种组合，赛前准备可以据此选体系，但先核对格子里的局数。' : '当前没有足够证据支持按对手换体系。',
+      ? `同样这套打法，打不同的${dim === 'opponent' ? '对手' : '版本'}，终局经济差最多差 <em>${sign(Math.abs(gap))}</em> 金币`
+      : `各套打法在不同${dim === 'opponent' ? '对手' : '版本'}下表现接近，暂时不用换`,
+    plain: gap && Math.abs(gap) > 1500 ? '差得最多的是两种打法，赛前准备可以据此排；先看格子里的局数够不够。' : '当前没有足够证据支持按对手换打法。',
     chart: { type: 'matrix', rows: scripts, cols, cells: cells.map((row) => row.map(({ keys, ...x }) => x)), dimLabel: dim === 'opponent' ? '对手' : '版本' },
     train: gap && Math.abs(gap) > 1500 ? '把「按对手选体系」写进赛前准备清单，并在下一批验证是否成立。' : '维持单一主体系，减少临场切换成本。',
     review: '圈出最优组合的局',
@@ -545,19 +544,22 @@ function a07(ctx) {
   };
 }
 
-/* 08 优势归因：赢下的优势从哪一段、哪一路来 */
+/* 08 优势归因：优势是哪一段、哪一路挣来的 —— 段用教练口径 0–4 / 4–10 / 10+ */
+const PHASES = [
+  { key: 'early', label: '0–4 对线期' },
+  { key: 'mid', label: '4–10 发育期' },
+  { key: 'late', label: '10 分钟后' },
+];
 function a08(ctx) {
   const { rows } = ctx;
-  let segCount = 0;
-  for (const r of rows) if (r.w && r.w.length > segCount) segCount = r.w.length;
-  segCount = segCount || 8;
-  const segs = Array.from({ length: segCount }, (_, k) => {
-    const arr = vals(rows.map((r) => r.w[k]));
-    return { label: `${k * WINDOW_MIN}–${(k + 1) * WINDOW_MIN}′`, value: median(arr), n: arr.length };
+  const segs = PHASES.map((p) => {
+    const arr = vals(rows.map((r) => (r.seg || {})[p.key]));
+    return { key: p.key, label: p.label, value: arr.length ? median(arr) : null, n: arr.length };
   }).filter((s) => s.n >= 2 && num(s.value));
   const total = sum(segs.map((s) => Math.abs(s.value)));
   const windows = segs.map((s) => ({ ...s, pct: total ? Math.abs(s.value) / total : 0 }));
   const peak = windows.slice().sort((a, b) => b.value - a.value)[0];
+  const worst = windows.slice().sort((a, b) => a.value - b.value)[0];
   const lanes = LANES.map((lane) => {
     const arr = vals(rows.map((r) => (r.lanes[lane] || {}).damage));
     return { label: lane, pct: arr.length ? median(arr) : 0, n: arr.length };
@@ -565,19 +567,27 @@ function a08(ctx) {
   const lanePeak = lanes.slice().sort((a, b) => b.pct - a.pct)[0];
   const laneTotal = sum(lanes.map((l) => Math.abs(l.pct)));
   const laneChart = lanes.map((l) => ({ ...l, pct: laneTotal ? Math.abs(l.pct) / laneTotal : 0 }));
+  const early = windows.find((w) => w.key === 'early');
+  const late = windows.find((w) => w.key === 'late');
   return {
-    id: '08', name: '优势归因分析', group: '结构与归因', ask: '优势主要是哪一段、哪一路挣来的？',
+    id: '08', name: '优势归因分析', group: '结构与归因', ask: '优势是哪一段、哪一路挣来的？',
     title: peak
-      ? `<em>${peak.label}</em> 贡献最大，单段净增 <em>${sign(peak.value)}</em> 金`
-      : '各时段贡献接近，没有明显的主胜源',
-    plain: peak ? `输出差最突出的是${lanePeak ? lanePeak.label : '—'}，训练资源优先投到这段时间与这条路。` : '别把训练押在单一时段。',
+      ? `${peak.label} 拉开最多：这段平均多 <em>${sign(peak.value)}</em> 金币${worst && worst.value < 0 ? `；${worst.label} 反而被追回 <em>${sign(Math.abs(worst.value))}</em>` : ''}`
+      : '三个阶段贡献接近，没有明显的主胜段',
+    plain: peak
+      ? `${early && late ? `对线期${early.value >= 0 ? '小赚' : '吃亏'} ${sign(early.value)}、后期${late.value >= 0 ? '继续扩大' : '被追回'} ${sign(late.value)}。` : ''}输出差最突出的是${lanePeak ? lanePeak.label : '—'}。`
+      : '别把训练押在单一时段。',
     chart: { type: 'contrib', windows, lanes: laneChart },
-    train: peak ? `把 ${String(peak.label).replace('′', ' 分钟')} 的${lanePeak ? lanePeak.label : ''}联动设为主练项，下一批比较这一段的净增有没有提高。` : '保持均衡训练。',
-    review: '圈出该段净增最高的局',
-    actKeys: (() => { const wi = peak ? windows.indexOf(peak) : 0; return rows.filter((r) => num(r.w[wi])).sort((a, b) => (b.w[wi] || 0) - (a.w[wi] || 0)).slice(0, 30).map((r) => r.key); })(),
-    method: `窗口数按本批最长时长动态生成（当前 ${segCount} 段，覆盖到 ${segCount * WINDOW_MIN} 分钟，仅保留有 ≥2 局的段）；每局按 5 分钟窗口取经济差净增，跨局取中位后做加性贡献分解；分路用「分均输出差」中位。经济为约 30 秒采样，故最小可信窗口为 5 分钟，不做分钟级因果。`,
+    train: peak ? `把「${peak.label}」的${lanePeak ? lanePeak.label : ''}处理设为主练项，下一批比较这一段净增有没有提高。` : '保持均衡训练。',
+    review: '看这一段净增最高的局',
+    actKeys: (() => { const k = peak ? peak.key : 'early'; return rows.filter((r) => num((r.seg || {})[k])).sort((a, b) => ((b.seg || {})[k] || 0) - ((a.seg || {})[k] || 0)).slice(0, 30).map((r) => r.key); })(),
+    method: '按教练口径切三段：0–4 对线、4–10 发育、10 分钟后；每局取三段的经济差净增，跨局取典型值。营地经济序列约 30 秒一点，240 秒与 600 秒的值由插值得到，误差约 ±15 秒，所以只说「这一段」不说具体哪一分钟。分路用「分均输出差」的典型值。',
     grade: grade(peak ? peak.n : 0),
-    repro: reproducible(rows, (s) => { const a = vals(s.map((r) => r.w[2])); const b = vals(s.map((r) => r.w[3])); return median(b) - median(a); }),
+    repro: reproducible(rows, (s) => {
+      const a = vals(s.map((r) => (r.seg || {}).mid));
+      const b = vals(s.map((r) => (r.seg || {}).late));
+      return median(b) - median(a);
+    }),
   };
 }
 
@@ -608,7 +618,7 @@ function a09(ctx) {
     title: bigLead.length
       ? `10 分钟大优的 <em>${bigLead.length}</em> 局里，<em>${shrunk.length}</em> 局后半程把优势打小`
       : '暂时没有足够的大优样本判断收官能力',
-    plain: `10 分钟落后的局，后半程经济差中位变化 ${sign(recovered || 0)} 金；收官是能练的，不是天赋。`,
+    plain: `10 分钟落后的局，后半程经济差典型变化 ${sign(recovered || 0)} 金币；收官是能练的，不是天赋。`,
     chart: { type: 'trans', states: names, m },
     train: shrunk.length && bigLead.length >= 3 ? '把「领先后的收官节奏」列为专项：推进节奏、资源交换与大龙决策。' : '继续积累领先局样本。',
     review: '回看优势被缩小的局',
@@ -645,7 +655,7 @@ function a10(ctx) {
     if (z('at10') < -0.8 && z('final') > 0) return '慢热但翻盘';
     if (z('at10') > 0.8 && z('final') < 0) return '大优掉速';
     if (z('km') < -1) return '人头吃亏但赢下';
-    return '多维反常局';
+    return '整体偏离';
   };
   const groups = new Map();
   for (const x of odd) { const k = label(x); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
@@ -671,10 +681,557 @@ function a10(ctx) {
   };
 }
 
+/* 11 英雄账本：我们选过的英雄，哪个真赢 */
+function a11(ctx) {
+  const { rows } = ctx;
+  const map = new Map();
+  for (const r of rows) {
+    for (const hero of (Array.isArray(r.heroes) ? r.heroes : [])) {
+      const e = map.get(hero) || { hero, games: 0, wins: 0, decided: 0, at10: [], keys: [] };
+      e.games += 1;
+      e.keys.push(r.key);
+      if (r.result === 'win') e.wins += 1;
+      if (r.result === 'win' || r.result === 'loss') e.decided += 1;
+      if (num(r.at10)) e.at10.push(r.at10);
+      map.set(hero, e);
+    }
+  }
+  const items = [...map.values()]
+    .sort((a, b) => b.games - a.games || b.wins - a.wins)
+    .slice(0, 8)
+    .map((e) => ({
+      label: e.hero, games: e.games, wins: e.wins, decided: e.decided,
+      rate: e.decided ? e.wins / e.decided : null,
+      at10: e.at10.length ? median(e.at10) : null, keys: e.keys,
+    }));
+  const top = items[0];
+  const ranked = items.filter((x) => x.decided >= 2).sort((a, b) => (b.rate || 0) - (a.rate || 0));
+  const best = ranked[0], worst = ranked[ranked.length - 1];
+  const noWin = items.filter((x) => x.decided >= 2 && x.wins === 0);
+  const played = map.size;
+  return {
+    id: '11', name: '英雄账本', group: 'BP 与阵容', ask: '我们选过的英雄，哪个真赢、哪个白选？',
+    title: top
+      ? `选得最多的是 <em>${top.label}</em>（${top.games} 局 ${top.wins} 胜）${best && best.label !== top.label ? `，最能赢的是 <em>${best.label}</em> ${best.wins}/${best.decided}` : ''}`
+      : '这批局还没记到阵容',
+    plain: noWin.length
+      ? `「${noWin.map((x) => x.label).join('、')}」一局没赢，要么换 pick，要么先看是不是被这套阵容克制。`
+      : ranked.length ? `胜率从 ${pct(best.rate)} 到 ${pct(worst.rate)}，pick 之间的差距是实打实的。` : '有胜负的样本还少，先别用这张表定死 pick。',
+    chart: { type: 'ledger', items: items.map(({ keys, ...x }) => x), total: played },
+    train: best ? `把「${best.label}」排进主练体系；「${worst ? worst.label : '—'}」先查是不是被克制，别直接弃用。` : '继续攒局。',
+    review: '看这些局的阵容',
+    actKeys: top ? top.keys : [],
+    method: '按我方五人阵容里的英雄计局；胜负只算有结果的局，没标胜负的局只进场次不进胜率。',
+    grade: grade(items.length ? items.reduce((s, x) => s + x.games, 0) / items.length : 0),
+    repro: null,
+  };
+}
+
+/* 12 对手账本：对谁打得顺、对谁吃力 */
+function a12(ctx) {
+  const { rows } = ctx;
+  const map = new Map();
+  for (const r of rows) {
+    const name = String(r.opponent || '').trim() || '未标注对手';
+    const e = map.get(name) || { name, games: 0, wins: 0, decided: 0, at10: [], dur: [], keys: [] };
+    e.games += 1;
+    e.keys.push(r.key);
+    if (r.result === 'win') e.wins += 1;
+    if (r.result === 'win' || r.result === 'loss') e.decided += 1;
+    if (num(r.at10)) e.at10.push(r.at10);
+    if (num(r.duration)) e.dur.push(r.duration);
+    map.set(name, e);
+  }
+  const items = [...map.values()]
+    .sort((a, b) => b.games - a.games)
+    .slice(0, 8)
+    .map((e) => ({
+      label: e.name, games: e.games, wins: e.wins, decided: e.decided,
+      rate: e.decided ? e.wins / e.decided : null,
+      at10: e.at10.length ? median(e.at10) : null, dur: e.dur.length ? mean(e.dur) : null,
+      keys: e.keys,
+    }));
+  const ranked = items.filter((x) => x.decided >= 2).sort((a, b) => (b.rate || 0) - (a.rate || 0));
+  const easy = ranked[0], hard = ranked[ranked.length - 1];
+  const unknown = items.find((x) => x.label === '未标注对手');
+  return {
+    id: '12', name: '对手账本', group: '对手', ask: '我们对谁打得顺、对谁一直吃力？',
+    title: easy && hard && easy.label !== hard.label
+      ? `对 <em>${easy.label}</em> 最顺（${easy.wins}/${easy.decided} 胜）${easy.at10 != null ? `、10 分钟 ${sign(easy.at10)} 金币` : ''}；对 <em>${hard.label}</em> 最吃力（${hard.wins}/${hard.decided} 胜）`
+      : `这批对局来自 ${items.length} 个对手，样本还没拉开差距`,
+    plain: unknown
+      ? `有 ${unknown.games} 局还没填对手名，那部分进不了账本——在「对局档案」补上队名就能算进来。`
+      : '同一个对手打得多了，这张表就能看出他们的惯用打法。',
+    chart: { type: 'ledger', items: items.map(({ keys, ...x }) => x), total: items.length },
+    train: hard ? `下一场准备先按「打 ${hard.label}」做针对性 BP；对 ${easy.label} 保持现有方案。` : '继续补对手名。',
+    review: hard ? `看对 ${hard.label} 的局` : '看这批对局',
+    actKeys: hard ? hard.keys : [],
+    method: '按对手名分组；胜负只算有结果的局，10 分钟经济差取中位，时长为平均值。',
+    grade: grade(rows.filter((r) => String(r.opponent || '').trim()).length),
+    repro: null,
+  };
+}
+
 /* ── 对外入口 ─────────────────────────────────────────────────── */
+/* 13 资源与推塔：控龙、推塔，赢的局和输的局差多少 */
+function a13(ctx) {
+  const { rows } = ctx;
+  const withObj = rows.filter((r) => r.obj && num(r.obj.dragonOwn) && num(r.obj.dragonFoe));
+  const win = withObj.filter((r) => r.result === 'win');
+  const loss = withObj.filter((r) => r.result === 'loss');
+  const rateOf = (r) => {
+    const t = (r.obj ? r.obj.dragonOwn + r.obj.dragonFoe : 0);
+    return t ? r.obj.dragonOwn / t : null;
+  };
+  const avg = (list, get) => {
+    const a = vals(list.map(get));
+    return a.length ? mean(a) : null;
+  };
+  const fmtV = (v, unit) => (!num(v) ? '—' : unit === '%' ? `${Math.round(v)}%` : unit === '座' || unit === '条' ? `${v.toFixed(1)} ${unit}` : `${v.toFixed(1)} ${unit}`);
+  const mk = (label, get, unit) => ({
+    label,
+    win: avg(win, get),
+    loss: avg(loss, get),
+    winText: fmtV(avg(win, get), unit),
+    lossText: fmtV(avg(loss, get), unit),
+  });
+  const rate = (r) => {
+    const v = rateOf(r);
+    return v == null ? null : v * 100;
+  };
+  const rateGroup = (list) => {
+    const o = sum(list.map((r) => (r.obj ? r.obj.dragonOwn : 0)));
+    const f = sum(list.map((r) => (r.obj ? r.obj.dragonFoe : 0)));
+    return o + f ? o / (o + f) * 100 : null;
+  };
+  const items = [
+    { label: '控龙率', win: rateGroup(win), loss: rateGroup(loss), winText: fmtV(rateGroup(win), '%'), lossText: fmtV(rateGroup(loss), '%') },
+    mk('场均拿龙', (r) => (r.obj ? r.obj.dragonOwn : null), '条'),
+    mk('场均丢龙', (r) => (r.obj ? r.obj.dragonFoe : null), '条'),
+    mk('场均推塔', (r) => (r.obj ? r.obj.towerOwn : null), '座'),
+    mk('场均被推塔', (r) => (r.obj ? r.obj.towerFoe : null), '座'),
+  ];
+  const allRate = vals(withObj.map((r) => rateGroup([r])));
+  const ownSum = sum(withObj.map((r) => r.obj.dragonOwn));
+  const foeSum = sum(withObj.map((r) => r.obj.dragonFoe));
+  const overallRate = rateGroup(withObj);
+  const towerAvg = avg(withObj, (r) => r.obj.towerOwn);
+  return {
+    id: '13', name: '资源与推塔', group: '资源与团战', ask: '龙和塔，我们控得住吗？',
+    title: num(overallRate)
+      ? `控龙率 <em>${Math.round(overallRate)}%</em>：这 ${withObj.length} 局拿了 <em>${ownSum}</em> 条龙、丢了 <em>${foeSum}</em> 条`
+      : '还没有可读的资源数据（需要关联官方回放）',
+    plain: num(overallRate)
+      ? `赢的局控龙 ${items[0].winText}、推 ${items[3].winText}；输的局控龙 ${items[0].lossText}、推 ${items[3].lossText}。`
+      : '在「采集 → 通道校对」里给对局挂上官方回放，这项才有数。',
+    chart: { type: 'compare', hero: { value: num(overallRate) ? `${Math.round(overallRate)}%` : '—', label: '控龙率', cls: 'gold' }, items, winN: win.length, lossN: loss.length },
+    train: num(overallRate) && overallRate >= 60
+      ? `控龙率已经 ${Math.round(overallRate)}%，下一批守住这个数；重点转到「优势转推进」：场均 ${num(towerAvg) ? towerAvg.toFixed(1) : '—'} 座塔还能再多。`
+      : `控龙率 ${num(overallRate) ? Math.round(overallRate) : '—'}% 偏低：把开局 2 分钟第一条龙前的站位和惩戒伤害列成专项。`,
+    review: '看输的局',
+    actKeys: loss.slice(0, 60).map((r) => r.key),
+    method: '从回放事件里数龙和塔：暴君/暗影暴君/暗影主宰/风暴龙王算龙，防御塔和水晶算塔，按拿到的一方计。只算有回放的局。',
+    grade: grade(withObj.length),
+    repro: null,
+  };
+}
+
+/* 14 死亡与团战：死多少、打几波团、团战赢几波 */
+function a14(ctx) {
+  const { rows } = ctx;
+  const withDeath = rows.filter((r) => r.death && num(r.death.own));
+  const withFight = rows.filter((r) => r.fight && num(r.fight.n));
+  const win = rows.filter((r) => r.result === 'win');
+  const loss = rows.filter((r) => r.result === 'loss');
+  const avg = (list, get) => {
+    const a = vals(list.map(get));
+    return a.length ? mean(a) : null;
+  };
+  const fmtV = (v, unit) => (!num(v) ? '—' : unit === '%' ? `${Math.round(v)}%` : `${v.toFixed(1)} ${unit}`);
+  const mk = (label, get, unit) => ({
+    label,
+    win: avg(win, get),
+    loss: avg(loss, get),
+    winText: fmtV(avg(win, get), unit),
+    lossText: fmtV(avg(loss, get), unit),
+  });
+  const fightRate = (r) => (r.fight && num(r.fight.n) && num(r.fight.win) ? r.fight.win / r.fight.n * 100 : null);
+  const fightGroup = (list) => {
+    const n = sum(list.map((r) => (r.fight ? r.fight.n : 0)));
+    const w = sum(list.map((r) => (r.fight ? r.fight.win : 0)));
+    return n ? w / n * 100 : null;
+  };
+  const items = [
+    mk('场均死亡', (r) => (r.death ? r.death.own : null), '次'),
+    mk('场均击杀', (r) => (r.death ? r.death.foe : null), '次'),
+    mk('场均团战', (r) => (r.fight ? r.fight.n : null), '波'),
+    { label: '团战胜率', win: fightGroup(win), loss: fightGroup(loss), winText: fmtV(fightGroup(win), '%'), lossText: fmtV(fightGroup(loss), '%') },
+    mk('反野', (r) => (r.buff ? r.buff.anti : null), '次'),
+    mk('被反野', (r) => (r.buff ? r.buff.stolen : null), '次'),
+  ];
+  const deathAvg = avg(withDeath, (r) => r.death.own);
+  const winDeath = avg(win, (r) => (r.death ? r.death.own : null));
+  const lossDeath = avg(loss, (r) => (r.death ? r.death.own : null));
+  const overallFight = fightGroup(withFight);
+  return {
+    id: '14', name: '死亡与团战', group: '资源与团战', ask: '死得多不多、团战打得赢吗？',
+    title: num(deathAvg)
+      ? `场均死 <em>${deathAvg.toFixed(1)}</em> 次；${num(overallFight) ? `团战胜率 <em>${Math.round(overallFight)}%</em>` : '团战胜率暂时算不出'}`
+      : '还没有可读的死亡数据（需要关联官方回放）',
+    plain: num(winDeath) && num(lossDeath)
+      ? `赢的局场均死 ${winDeath.toFixed(1)} 次，输的局 ${lossDeath.toFixed(1)} 次，差 ${Math.abs(lossDeath - winDeath).toFixed(1)} 次。`
+      : '在「采集 → 通道校对」里给对局挂上官方回放，这项才有数。',
+    chart: { type: 'compare', hero: { value: num(deathAvg) ? deathAvg.toFixed(1) : '—', label: '场均死亡', cls: 'gold' }, items, winN: win.length, lossN: loss.length },
+    train: num(lossDeath) && num(winDeath) && lossDeath - winDeath > 2
+      ? '输的局比赢的局多死这么多：先把「无谓掉点」列成一课，比练团战更直接。'
+      : '保持现在的团战节奏，下一批看团战胜率有没有提高。',
+    review: '看输的局',
+    actKeys: loss.slice(0, 60).map((r) => r.key),
+    method: '死亡和团战都来自回放：死亡数按阵营计，团战按回放里的团战段计，击杀多的一方算赢。只算有回放的局。',
+    grade: grade(rows.filter((r) => r.death && num(r.death.own)).length),
+    repro: null,
+  };
+}
+
+/* 15 切 C 与首杀：抓到几次对方后排、开局谁先见血 */
+function a15(ctx) {
+  const { rows } = ctx;
+  const withCut = rows.filter((r) => r.cut && num(r.cut.n));
+  const win = withCut.filter((r) => r.result === 'win');
+  const loss = withCut.filter((r) => r.result === 'loss');
+  const avg = (list, get) => {
+    const a = vals(list.map(get));
+    return a.length ? mean(a) : null;
+  };
+  const firstRate = (list) => {
+    const known = list.filter((r) => num(r.cut.first));
+    return known.length ? sum(list.map((r) => (num(r.cut.first) ? r.cut.first : 0))) / known.length * 100 : null;
+  };
+  const fmtV = (v, unit) => (!num(v) ? '—' : unit === '%' ? `${Math.round(v)}%` : `${v.toFixed(1)} ${unit}`);
+  const mk = (label, get, unit) => ({
+    label, win: avg(win, get), loss: avg(loss, get), winText: fmtV(avg(win, get), unit), lossText: fmtV(avg(loss, get), unit),
+  });
+  const items = [
+    mk('场均切 C', (r) => (r.cut ? r.cut.n : null), '次'),
+    { label: '先拿首杀', win: firstRate(win), loss: firstRate(loss), winText: fmtV(firstRate(win), '%'), lossText: fmtV(firstRate(loss), '%') },
+  ];
+  const cutAvg = avg(withCut, (r) => r.cut.n);
+  const fr = firstRate(withCut);
+  return {
+    id: '15', name: '切 C 与首杀', group: '资源与团战', ask: '抓得到对方后排吗？开局谁先见血？',
+    title: num(cutAvg)
+      ? `场均切 C <em>${cutAvg.toFixed(1)}</em> 次；${num(fr) ? `<em>${Math.round(fr)}%</em> 的局我们先拿到首杀` : '首杀暂时算不出'}`
+      : '还没有可读的击杀数据（需要关联官方回放）',
+    plain: num(cutAvg)
+      ? `赢的局场均切 C ${items[0].winText}、先拿首杀 ${items[1].winText}；输的局 ${items[0].lossText}、${items[1].lossText}。`
+      : '在「采集 → 通道校对」里挂上官方回放，这项才有数。',
+    chart: { type: 'compare', hero: { value: num(cutAvg) ? cutAvg.toFixed(1) : '—', label: '场均切 C', cls: 'gold' }, items, winN: win.length, lossN: loss.length },
+    train: num(cutAvg) && cutAvg < 1
+      ? '场均切 C 不到 1 次：把「对抗路/打野绕后切后排」的路线和时机单列一节课。'
+      : '保持现在的抓后排节奏，下一批看首杀率能不能过 55%。',
+    review: '看输的局',
+    actKeys: loss.slice(0, 60).map((r) => r.key),
+    method: '切 C＝我方对抗路或打野击杀对方中路/发育路；首杀＝这一局第一次击杀是谁拿的。都来自回放击杀记录，只算有回放的局。',
+    grade: grade(withCut.length),
+    repro: null,
+  };
+}
+
+/* 16 英雄组合：哪两个英雄一起上最稳 */
+function a16(ctx) {
+  const { rows } = ctx;
+  const map = new Map();
+  for (const r of rows) {
+    const hs = (r.heroes || []).filter(Boolean).slice(0, 5);
+    if (hs.length < 2) continue;
+    for (let i = 0; i < hs.length; i++) {
+      for (let j = i + 1; j < hs.length; j++) {
+        const key = [hs[i], hs[j]].sort().join('+');
+        const e = map.get(key) || { heroes: [hs[i], hs[j]], games: 0, wins: 0, decided: 0, keys: [] };
+        e.games += 1;
+        e.keys.push(r.key);
+        if (r.result === 'win') e.wins += 1;
+        if (r.result === 'win' || r.result === 'loss') e.decided += 1;
+        map.set(key, e);
+      }
+    }
+  }
+  const all = [...map.values()];
+  const items = all.filter((e) => e.games >= 2 && e.decided >= 2)
+    .sort((a, b) => (b.wins / b.decided) - (a.wins / a.decided) || b.games - a.games)
+    .slice(0, 8)
+    .map((e) => ({
+      label: e.heroes.join(' + '), games: e.games, wins: e.wins, decided: e.decided,
+      rate: e.decided ? e.wins / e.decided : null, keys: e.keys,
+    }));
+  const solid = items.filter((x) => x.games >= 3);
+  const best = solid[0] || items[0];
+  const worst = items.slice().sort((a, b) => (a.rate || 0) - (b.rate || 0))[0];
+  return {
+    id: '16', name: '英雄组合', group: 'BP 与阵容', ask: '哪两个英雄一起上最稳？',
+    title: best
+      ? `「<em>${best.label}</em>」${best.games} 局 ${best.wins} 胜${worst && worst.label !== best.label ? `；「${worst.label}」${worst.decided} 局只赢 ${worst.wins} 局` : ''}`
+      : '组合样本还不够，至少要有 2 局同组合',
+    plain: best
+      ? `这里只算一起上场的次数，不等于这俩有配合；但同一个组合反复出现还一直赢，就值得固定下来。`
+      : '继续攒局。',
+    chart: { type: 'ledger', items: items.map(({ keys, ...x }) => x), total: all.length },
+    train: best ? `把「${best.label}」固定成主选组合，下一批看它遇到强队还成不成立。` : '继续攒局。',
+    review: '看这些局的阵容',
+    actKeys: best ? best.keys.slice(0, 60) : [],
+    method: '把每局我方五人两两配对，统计同一对英雄一起上场的局数与胜负；只列一起上过 2 局以上、且至少有 2 局分出胜负的组合。',
+    grade: grade(rows.length),
+    repro: null,
+  };
+}
+
+/* 17 团战账本：以多打少、以少打多、谁先开团 */
+function a17(ctx) {
+  const { rows } = ctx;
+  const withFk = rows.filter((r) => r.fk);
+  const sumKey = (key) => withFk.reduce((acc, r) => {
+    const b = (r.fk || {})[key];
+    if (b) { acc.n += b.n || 0; acc.win += b.win || 0; }
+    return acc;
+  }, { n: 0, win: 0 });
+  const defs = [
+    ['adv', '多打少'],
+    ['even', '人数相同'],
+    ['dis', '少打多'],
+    ['first', '我们先拿到首杀'],
+    ['firstAgainst', '对方先拿到首杀'],
+  ];
+  const items = defs.map(([key, label]) => {
+    const s = sumKey(key);
+    return { label, games: s.n, wins: s.win, decided: s.n, rate: s.n ? s.win / s.n : null };
+  }).filter((x) => x.games > 0 && x.rate != null);
+  const get = (label) => items.find((x) => x.label === label) || { games: 0, wins: 0, rate: null };
+  const adv = get('多打少');
+  const dis = get('少打多');
+  const first = get('我们先拿到首杀');
+  const back = get('对方先拿到首杀');
+  const totalBattles = items.reduce((s, x) => s + x.games, 0);
+  return {
+    id: '17', name: '团战账本', group: '资源与团战', ask: '以多打少的团赢没赢？谁先开团？',
+    title: totalBattles
+      ? `以多打少的 ${adv.games} 波团赢了 <em>${adv.wins}</em> 波${dis.games ? `；以少打多的 ${dis.games} 波只赢 <em>${dis.wins}</em> 波` : ''}`
+      : '还没有可读的团战数据（需要关联官方回放）',
+    plain: totalBattles
+      ? `我们先拿到这一波团首杀的 ${first.games} 波，胜率 ${num(first.rate) ? pct(first.rate) : '—'}；对方先拿到的 ${back.games} 波，胜率 ${num(back.rate) ? pct(back.rate) : '—'}。`
+      : '在「采集 → 通道校对」里挂上官方回放，这项才有数。',
+    chart: { type: 'ledger', items: items.map(({ ...x }) => x), total: totalBattles },
+    train: num(dis.rate) && dis.rate < 0.4
+      ? '少打多的团胜率太低：先把「不接少打多」写进纪律，比练操作见效快。'
+      : '团战结构还算健康，下一批看以多打少的胜率能不能过 80%。',
+    review: '看输的局',
+    actKeys: withFk.filter((r) => r.result === 'loss').slice(0, 60).map((r) => r.key),
+    method: '按每波团双方参战人数分桶：我方人多＝多打少，人少＝少打多；「先拿到首杀」按这一波团第一次击杀归谁判断（不是谁先动手，回放里没有开团时刻）。只算有回放的局。',
+    grade: grade(withFk.length),
+    repro: null,
+  };
+}
+
+/* 18 打野节奏：前 10 分钟在不在对方半区 */
+function a18(ctx) {
+  const { rows } = ctx;
+  const withJ = rows.filter((r) => r.jungle && num(r.jungle.crossShare));
+  const win = withJ.filter((r) => r.result === 'win');
+  const loss = withJ.filter((r) => r.result === 'loss');
+  const avg = (list, get) => {
+    const a = vals(list.map(get));
+    return a.length ? mean(a) : null;
+  };
+  const fmt = (v, kind) => {
+    if (!num(v)) return '—';
+    if (kind === 'pct') return `${Math.round(v * 100)}%`;
+    if (kind === 'sec') return `${Math.round(v)} 秒`;
+    return `${v.toFixed(1)} 次`;
+  };
+  const mk = (label, get, kind) => ({
+    label, win: avg(win, get), loss: avg(loss, get),
+    winText: fmt(avg(win, get), kind), lossText: fmt(avg(loss, get), kind),
+  });
+  const items = [
+    mk('过河时间占比', (r) => (r.jungle ? r.jungle.crossShare : null), 'pct'),
+    mk('首次过河', (r) => (r.jungle ? r.jungle.firstCross : null), 'sec'),
+    mk('深入野区占比', (r) => (r.jungle ? r.jungle.deepShare : null), 'pct'),
+    mk('反野次数', (r) => (r.buff ? r.buff.anti : null), 'n'),
+    mk('被反野次数', (r) => (r.buff ? r.buff.stolen : null), 'n'),
+  ];
+  const share = avg(withJ, (r) => r.jungle.crossShare);
+  const firstCross = avg(withJ, (r) => r.jungle.firstCross);
+  const anti = avg(withJ, (r) => (r.buff ? r.buff.anti : null));
+  const deep = avg(withJ, (r) => r.jungle.deepShare);
+  return {
+    id: '18', name: '打野节奏', group: '资源与团战', ask: '打野前期在不在对方半区？是在反野还是在跑？',
+    title: num(share)
+      ? `打野前 10 分钟有 <em>${Math.round(share * 100)}%</em> 的时间在对方半区${num(firstCross) ? `，第一次过河在第 <em>${Math.round(firstCross)}</em> 秒` : ''}`
+      : '还没有逐秒位置数据（需要按通道校对挂上官方回放）',
+    plain: num(share)
+      ? `其中真正进到野区腹地的只有 ${num(deep) ? Math.round(deep * 100) : '—'}%；反野场均 ${num(anti) ? anti.toFixed(1) : '—'} 次。过河多、反野少，说明是在跑路线，不是在反野。`
+      : '位置数据来自官方回放，一局一个文件；缺了就整张卡留空，不补 0。',
+    chart: { type: 'compare', hero: { value: num(share) ? `${Math.round(share * 100)}%` : '—', label: '过河时间占比', cls: 'gold' }, items, winN: win.length, lossN: loss.length },
+    train: num(share) && num(anti) && share > 0.15 && anti < 2
+      ? '过河时间不低、反野却少：把「过河去干什么」写清楚——是抓边还是进野区，两条路线分开练。'
+      : num(share) && share < 0.08
+        ? '打野前期基本不过河：先练「第一次过河的时机」，再看反野。'
+        : '保持现在的打野路线，下一批看反野次数有没有提高。',
+    review: '看输的局',
+    actKeys: loss.slice(0, 60).map((r) => r.key),
+    method: '取 0–10 分钟逐秒坐标（1 Hz），按 x+y 投影到「己方—对方」轴：越过河道 8 个单位算过河，超过 25 算深入野区。反野次数来自 BUFF 击杀事件，不由位置推算。口径见 docs/jungle_position_spec.md。',
+    grade: grade(withJ.length),
+    repro: null,
+  };
+}
+
+/* 19 选手榜：逐人场均死亡、参团、分均经济 */
+function a19(ctx) {
+  const { rows } = ctx;
+  const map = new Map();
+  for (const r of rows) {
+    for (const p of (r.pl || [])) {
+      if (p.camp !== r.camp || !p.name) continue;
+      const e = map.get(p.name) || { name: p.name, pos: p.pos, games: 0, d: [], part: [], gpm: [] };
+      e.games += 1;
+      if (num(p.d)) e.d.push(p.d);
+      if (num(p.part)) e.part.push(p.part);
+      if (num(p.gpm)) e.gpm.push(p.gpm);
+      map.set(p.name, e);
+    }
+  }
+  const all = [...map.values()].filter((e) => e.games >= 3 && e.d.length);
+  const pool = all.length >= 3 ? all : [...map.values()].filter((e) => e.games >= 2 && e.d.length);
+  const items = pool.map((e) => {
+    const dd = mean(e.d);
+    const pp = e.part.length ? mean(e.part) : null;
+    const gg = e.gpm.length ? mean(e.gpm) : null;
+    return {
+      name: e.name, pos: e.pos, games: e.games, value: dd,
+      label: `${e.name}${e.pos ? ' · ' + e.pos : ''}`, text: `${dd.toFixed(1)} 次`,
+      sub: `${num(pp) ? Math.round(pp) + '% 参团' : '参团 —'} · ${num(gg) ? Math.round(gg) : '—'} 金币/分 · ${e.games} 局`,
+    };
+  }).sort((a, b) => b.value - a.value);
+  const top = items[0];
+  const low = items.slice().sort((a, b) => a.value - b.value)[0];
+  const adcOver = items.filter((x) => x.pos === '发育路' && x.value > 2);
+  return {
+    id: '19', name: '选手榜', group: '五路与人', ask: '谁死得多、谁活得稳？',
+    title: top
+      ? `${top.name} 场均死 <em>${top.value.toFixed(1)}</em> 次最多（${top.games} 局）${adcOver.length ? `；${adcOver.length} 名发育路超过 2 次` : ''}`
+      : '还没有选手样本（至少要有 2 局）',
+    plain: top && low
+      ? `${low.name} 最稳，场均 ${low.value.toFixed(1)} 次。死亡按局算，只统计出场 2 局以上的人。`
+      : '继续攒局。',
+    chart: { type: 'bars', hero: top ? { value: top.value.toFixed(1), label: `场均死亡最多 · ${top.name}`, cls: 'neg' } : null, items },
+    train: adcOver.length
+      ? `发育路有 ${adcOver.length} 人场均死亡超过 2 次：先看是不是站位和保护问题，再谈输出。`
+      : '按常规节奏走，下一批看场均死亡有没有下降。',
+    review: '看这些人的局',
+    actKeys: rows.filter((r) => (r.pl || []).some((p) => p.camp === r.camp && p.name === (top ? top.name : ''))).slice(0, 60).map((r) => r.key),
+    method: '按昵称汇总我方每一局的表现：场均死亡＝总死亡 ÷ 出场局数；参团率与分均经济取营地十人面板的原值。只统计出场 2 局以上的人。',
+    grade: grade(all.length),
+    repro: null,
+  };
+}
+
+/* 20 位置对位：同一条路，我们的人和对面的人差多少 */
+function a20(ctx) {
+  const { rows } = ctx;
+  const lanes = LANES.map((lane) => {
+    const g = [], dm = [], dd = [];
+    for (const r of rows) {
+      const own = (r.pl || []).find((p) => p.camp === r.camp && p.pos === lane);
+      const foe = (r.pl || []).find((p) => p.camp !== r.camp && p.pos === lane);
+      if (!own || !foe) continue;
+      if (num(own.gpm) && num(foe.gpm)) g.push(own.gpm - foe.gpm);
+      if (num(own.dpm) && num(foe.dpm)) dm.push(own.dpm - foe.dpm);
+      if (num(own.d) && num(foe.d)) dd.push(own.d - foe.d);
+    }
+    return { lane, g: g.length ? median(g) : null, d: dm.length ? median(dm) : null, dd: dd.length ? median(dd) : null, n: g.length };
+  }).filter((x) => x.n);
+  if (!lanes.length) {
+    return {
+      id: '20', name: '位置对位', group: '五路与人', ask: '同一条路，我们和对面差多少？',
+      title: '还没有同位置对位样本', plain: '需要双方同一条路都有数据的局。',
+      chart: { type: 'bars', items: [] }, train: '继续攒局。', review: '看这批局', actKeys: [],
+      method: '每局把双方同分路的人配对，比较分均经济、分均输出和死亡。', grade: grade(0), repro: null,
+    };
+  }
+  const items = lanes.map((x) => ({
+    label: x.lane, value: x.g, text: `${sign(x.g)} 金币/分`,
+    sub: `输出 ${num(x.d) ? sign(x.d) : '—'} · 死亡 ${num(x.dd) ? sign(x.dd) : '—'} · ${x.n} 组`,
+  }));
+  const best = lanes.slice().sort((a, b) => b.g - a.g)[0];
+  const worst = lanes.slice().sort((a, b) => a.g - b.g)[0];
+  const dmgTop = lanes.slice().sort((a, b) => (b.d || 0) - (a.d || 0))[0];
+  return {
+    id: '20', name: '位置对位', group: '五路与人', ask: '同一条路，我们和对面差多少？',
+    title: worst.g < 0
+      ? `<em>${best.lane}</em> 同位置领先最多（<em>${sign(best.g)}</em> 金币/分），<em>${worst.lane}</em> 落后最多（<em>${sign(worst.g)}</em>）`
+      : `五路同位置都领先：<em>${best.lane}</em> 最多（<em>${sign(best.g)}</em> 金币/分），<em>${worst.lane}</em> 最少（<em>${sign(worst.g)}</em>）`,
+    plain: `输出差最大的是${dmgTop ? dmgTop.lane : '—'}（${dmgTop && num(dmgTop.d) ? sign(dmgTop.d) : '—'} 伤害/分）。每局同一条路两个人配对，只算双方都有数的局。`,
+    chart: { type: 'bars', hero: { value: `${sign(best.g)}`, label: `${best.lane} · 同位置分均领先`, cls: 'gold' }, items },
+    train: best.g < 0
+      ? '五条路对位都不占优：先把每条路的开局处理拆开，别只练团战。'
+      : `把${worst.lane}的对线单列出来练：同位置差 ${sign(worst.g)} 金币/分。`,
+    review: '看落后的局',
+    actKeys: rows.filter((r) => (r.pl || []).some((p) => p.pos === worst.lane)).slice(0, 60).map((r) => r.key),
+    method: '每局把双方同分路的人配对，分别算分均经济差、分均输出差、场均死亡差；金币和伤害都是本队减对手，按局取典型值。',
+    grade: grade(lanes.reduce((s, x) => s + x.n, 0)),
+    repro: null,
+  };
+}
+
+/* 21 团战伤害结构：每波团里，谁在打、谁在扛 */
+function a21(ctx) {
+  const { rows } = ctx;
+  const withFs = rows.filter((r) => r.fs && Object.keys(r.fs).length);
+  const acc = {};
+  for (const r of withFs) {
+    for (const pos of LANES) {
+      const cell = r.fs[pos];
+      if (!cell || !num(cell.n) || !cell.n) continue;
+      const e = acc[pos] || { h: 0, t: 0, n: 0 };
+      e.h += (cell.hurtShare || 0) * cell.n;
+      e.t += (cell.takenShare || 0) * cell.n;
+      e.n += cell.n;
+      acc[pos] = e;
+    }
+  }
+  const items = LANES.filter((p) => acc[p]).map((pos) => {
+    const e = acc[pos];
+    const h = e.h / e.n, t = e.t / e.n;
+    return { label: pos, win: h * 100, loss: t * 100, winText: `${Math.round(h * 100)}%`, lossText: `${Math.round(t * 100)}%` };
+  });
+  if (!items.length) {
+    return {
+      id: '21', name: '团战伤害结构', group: '资源与团战', ask: '每波团谁在打、谁在扛？',
+      title: '还没有团战明细（需要关联官方回放）', plain: '在「采集 → 通道校对」里挂上官方回放，这项才有数。',
+      chart: { type: 'bars', items: [] }, train: '先把回放挂上。', review: '看这批局', actKeys: [],
+      method: '从每波团的十人明细算我方各分路的伤害占比与承伤占比。', grade: grade(0), repro: null,
+    };
+  }
+  const topHurt = items.slice().sort((a, b) => b.win - a.win)[0];
+  const topTaken = items.slice().sort((a, b) => b.loss - a.loss)[0];
+  return {
+    id: '21', name: '团战伤害结构', group: '资源与团战', ask: '每波团谁在打、谁在扛？',
+    title: `<em>${topHurt.label}</em> 打伤害最多（<em>${topHurt.winText}</em>），<em>${topTaken.label}</em> 扛伤最多（<em>${topTaken.lossText}</em>）`,
+    plain: '占比是同一条路在每波团里占我方总伤害/总承伤的平均值；每条路占比独立算，不能相加。',
+    chart: { type: 'compare', headers: ['伤害占比', '承伤占比'], hero: { value: topHurt.winText, label: `${topHurt.label} · 团战伤害占比`, cls: 'gold' }, items, winN: 0, lossN: 0 },
+    train: topTaken && topHurt && topTaken.label === topHurt.label
+      ? '同一个位置又打又扛：先看是不是前排没人接，别只夸他。'
+      : `把${topTaken ? topTaken.label : '前排'}的承伤和${topHurt ? topHurt.label : '后排'}的伤害对起来看，确认是不是在替他扛。`,
+    review: '看这些局的团战',
+    actKeys: withFs.slice(0, 60).map((r) => r.key),
+    method: '每波团先算我方总伤害/总承伤，再看每条路占多少，最后按分路取平均。只算有回放、且我方有人参战的团。',
+    grade: grade(withFs.length),
+    repro: null,
+  };
+}
+
 export function analyzeCohort(vectors) {
   const ctx = prepare(vectors);
-  const cards = ctx.n ? [a01, a02, a03, a04, a05, a06, a07, a08, a09, a10].map((f) => {
+  const cards = ctx.n ? [a01, a02, a03, a04, a05, a06, a07, a08, a09, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21].map((f) => {
     try { return f(ctx); } catch { return null; }
   }).filter(Boolean) : [];
   const checked = cards.filter((c) => c.repro !== null && c.repro !== undefined);

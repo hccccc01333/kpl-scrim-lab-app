@@ -99,9 +99,13 @@ class CatalogError(RuntimeError):
     pass
 
 
-def roster(data: bytes):
-    """Return (inspect_replay info, {unit: hero}, {entityId: unit})."""
-    info = inspect_replay(data)
+def roster(data: bytes, info: dict | None = None):
+    """Return (inspect_replay info, {unit: hero}, {entityId: unit}).
+
+    ``info`` lets a caller that already parsed this .abc (the workspace does,
+    at import time) skip a second full decode.
+    """
+    info = info or inspect_replay(data)
     blocks = info.get("blocks") or []
     if len(blocks) != 10:
         raise CatalogError(f"expected 10 roster blocks, got {len(blocks)}")
@@ -927,10 +931,10 @@ def render_readme(report) -> str:
     return "\n".join(lines)
 
 
-def build_report(path: Path, out_dir: Path):
+def build_report(path: Path, out_dir: Path, info: dict | None = None):
     data = path.read_bytes()
     header = opening_packet(data)
-    _info, units, by_entity = roster(data)
+    _info, units, by_entity = roster(data, info)
     prices = load_prices()
     out_dir.mkdir(parents=True, exist_ok=True)
 

@@ -37,12 +37,17 @@ import json
 import math
 import statistics
 import struct
+import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+import replay_time  # noqa: E402
+
 LIVE_DIR = ROOT / "data" / "replays" / "_analysis" / "live_20261104"
 DEFAULT_OUT = LIVE_DIR / "interpolated_state"
 ABC_TIMELINE = DEFAULT_OUT / "abc_input_timeline.json"
@@ -56,7 +61,7 @@ OFFICIAL_TEAM_GOLD = (
     ROOT / "data" / "replays" / "_analysis" / "datasets" / "20261102_official_team_gold.csv"
 )
 
-FPS = 15.1515
+FPS = replay_time.FPS_ENGINE
 END_S = 693.0
 FRAME_COUNT = int(round(END_S * FPS))
 

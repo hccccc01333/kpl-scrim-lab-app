@@ -35,26 +35,17 @@ function interpSeries(pts, t) {
 
 export function createCrossPage(h) {
   const { esc, fmt, pct, diff, time, portrait } = h;
-  let focusKey = '';
   let sortKey = 'date';
   let sliceSession = '';
   let sliceVersion = '';
   let filterResult = '';
   let filterOpp = '';
-  let pageSize = 20;
-  let page = 0;
   let lastRows = [];
   let lastMeta = { total: 0, limit: 200 };
-  let lastView = null;
-  let scopeKeys = null;
+  let lastCards = new Map();
+  let lastRowIndex = new Map();
 
-  const heroIcon = (name, cls = '') => {
-    if (!name) return '<span class="cx-portrait-blank">?</span>';
-    const html = portrait
-      ? portrait(name, cls)
-      : `<span class="portrait portrait-placeholder ${cls}">${esc(name.slice(0, 1))}</span>`;
-    return html.replace('loading="lazy"', 'loading="eager"');
-  };
+  const heroIcon = null;
 
   /* ── 单局：把一局所需的读数一次性算齐 ───────────────────────── */
   function buildMatch(row) {
@@ -188,8 +179,6 @@ export function createCrossPage(h) {
     { key: 'frontEnd', label: '阵线终值', fmt: (v) => Math.round(v * 100) + '%' },
   ];
 
-  const RANK_KEYS = ['finalDiff', 'at10', 'killMargin', 'duration', 'frontEnd', 'fights'];
-
   function summarize(list) {
     const decided = list.filter((m) => m.result === 'win' || m.result === 'loss');
     const wins = decided.filter((m) => m.result === 'win').length;
@@ -198,9 +187,6 @@ export function createCrossPage(h) {
     const dates = list.map((m) => m.date).filter(Boolean).sort();
     const sessions = new Set(list.map((m) => m.session).filter(Boolean));
     const opponents = new Set(list.map((m) => m.opponent).filter(Boolean));
-    /* 排名用预排序数组 + 二分，逐局渲染不再 O(N²) */
-    const rankIndex = {};
-    for (const key of RANK_KEYS) rankIndex[key] = values(key);
     return {
       list, count: list.length, decided: decided.length, wins,
       losses: decided.length - wins,
@@ -209,21 +195,8 @@ export function createCrossPage(h) {
       durAvg: avg(values('duration')),
       killAvg: avg(values('killMargin')),
       span: dates.length ? (dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]}`) : '—',
-      sessions: sessions.size, opponents: opponents.size, rankIndex,
+      sessions: sessions.size, opponents: opponents.size,
     };
-  }
-
-  function rankOf(a, key, value) {
-    if (!num(value)) return null;
-    const vals = a.rankIndex[key] || [];
-    if (!vals.length) return null;
-    let lo = 0, hi = vals.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (vals[mid] <= value) lo = mid + 1;
-      else hi = mid;
-    }
-    return { rank: vals.length - lo + 1, total: vals.length };
   }
 
   /* ── 图形：经济差迷你曲线（一局一条，不叠加） ─────────────────── */
@@ -248,9 +221,12 @@ export function createCrossPage(h) {
   }
 
   /* ── 结论卡 ─────────────────────────────────────────────────── */
+  /* 赛训组说「金币」，不说「金」 */
+  const yuan = (t) => String(t == null ? '' : t).replace(/金(?!币)/g, '金币');
+
   function headline(a) {
     const n = a.count;
-    const lead = num(a.at10Med) ? `${diff(Math.round(a.at10Med))} 金` : null;
+    const lead = num(a.at10Med) ? `${diff(Math.round(a.at10Med))} 金币` : null;
     let claim;
     if (a.decided >= 2 && a.rate === 100) claim = `${n} 局全胜，10 分钟中位领先 <em>${lead || '—'}</em>`;
     else if (a.decided >= 2) claim = `${n} 局 ${a.wins} 胜 ${a.losses} 负，10 分钟经济差 <em>${lead || '—'}</em>`;
@@ -262,104 +238,69 @@ export function createCrossPage(h) {
     const bits = [];
     if (num(a.durAvg)) bits.push(`平均 ${time(a.durAvg)} 结束`);
     if (num(a.killAvg)) bits.push(`场均净胜 ${fmt(a.killAvg, 1)} 个人头`);
-    if (num(a.finalMed)) bits.push(`终局经济差中位 ${diff(Math.round(a.finalMed))} 金`);
+    if (num(a.finalMed)) bits.push(`终局经济差典型 ${diff(Math.round(a.finalMed))} 金币`);
     bits.push(`本批 ${a.sessions} 个训练组`);
     return bits.join(' · ');
   }
 
-  function heroCard(a, visible, total) {
+  function heroCard(a, ordered, total) {
     const metrics = [
-      ['10′ 经济差', num(a.at10Med) ? diff(Math.round(a.at10Med)) : '—', `${a.list.filter((m) => num(m.at10)).length} 局可读`],
-      ['终局经济差中位', num(a.finalMed) ? diff(Math.round(a.finalMed)) : '—', '本队 − 对手'],
+      ['10 分钟经济差', num(a.at10Med) ? diff(Math.round(a.at10Med)) : '—', `${a.list.filter((m) => num(m.at10)).length} 局可读`],
+      ['终局经济差', num(a.finalMed) ? diff(Math.round(a.finalMed)) : '—', '本队减对手'],
       ['平均时长', num(a.durAvg) ? time(a.durAvg) : '—', '从开赛到结算'],
       ['场均人头差', num(a.killAvg) ? diff(Math.round(a.killAvg)) : '—', '十人结算面板'],
     ];
-    /* 缩略带只承担一个可视窗口：当前页前 24 格，横向滚动，不随 N 局撑爆 */
-    const filmList = visible.slice(0, 24);
+    /* 每局一格：一局点一下直接进那局复盘，不在这里做对照表 */
+    const filmList = ordered.slice(0, 40);
     const film = filmList.map((m, i) => {
       const tone = m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : 'na';
-      return `<button type="button" class="cx-film-cell ${tone}${m.key === focusKey ? ' is-focus' : ''}" data-cx-focus="${esc(m.key)}" title="${esc(`${m.date || ''} ${m.title} · ${m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '未标注'}`)}">
-        <span>${String(i + 1).padStart(2, '0')}</span>${spark(m)}</button>`;
+      const label = `${m.date || ''} ${m.title || ''} · ${m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '未标胜负'}`;
+      return `<a class="cx-film-cell ${tone}" href="#match/${encodeURIComponent(m.key)}" title="${esc(label)}">
+        <span>${String(i + 1).padStart(2, '0')}</span>${spark(m)}</a>`;
     }).join('');
-    const filmHint = total > filmList.length ? `本页 ${filmList.length} 格 / 共 ${fmt(total)} 局` : '点一格聚焦';
+    const filmHint = total > filmList.length ? `先放 ${filmList.length} 格 / 共 ${fmt(total)} 局` : '点一格进那局复盘';
     const score = `${a.wins}<i>:</i>${a.losses}`;
     return `<header class="cx-hero">
       <div class="cx-hero-top">
-        <div class="cx-kicker">训练序列 <span>/ 逐局对照</span><small>${fmt(a.count)} 局 · ${esc(a.span)} · ${fmt(a.opponents)} 个对手</small></div>
+        <div class="cx-kicker">这段时间 <span>/ 每局一格</span><small>${fmt(a.count)} 局 · ${esc(a.span)} · ${fmt(a.opponents)} 个对手</small></div>
         <div class="cx-hero-score"><b>${score}</b><small>胜 : 负${num(a.rate) ? ` · ${Math.round(a.rate)}% 胜率` : ''}</small></div>
       </div>
       <h1 class="cx-claim">${headline(a)}</h1>
       <p class="cx-fact">${esc(factLine(a))}</p>
       <div class="cx-hero-metrics">${metrics.map(([k, v, note]) => `<div class="cx-hm"><small>${k}</small><b>${esc(v)}</b><i>${esc(note)}</i></div>`).join('')}</div>
       <div class="cx-film"><span class="cx-film-label">逐局经济走势</span><div class="cx-film-cells">${film}</div><span class="cx-film-hint">${esc(filmHint)}</span></div>
-      <p class="cx-hero-source">口径：王者营地面板经济采样（约 30 秒一点）与官方回放事件；经济差＝本队减对手。本页全部结论基于当前范围内的 ${fmt(a.count)} 局。</p>
+      <p class="cx-hero-source">口径：王者营地面板经济采样（约 30 秒一点）与官方回放事件；经济差＝本队减对手。这一页全部结论都基于当前范围内的 ${fmt(a.count)} 局。</p>
     </header>`;
   }
 
-  /* ── 工具行：范围、筛选、排序、每页条数 ─────────────────────── */
-  function toolbar(allRows, a, meta) {
+  /* ── 范围条：版本 / 训练组 / 对手 / 胜负 + 一句样本说明 ───────── */
+  function scopeBar(allRows, a, meta, options) {
+    const { versions = [], sessions = [], opponents = [] } = options || {};
+    const active = !!(sliceVersion || sliceSession || filterOpp || filterResult);
+    const sel = (key, label, list, value) => `<label class="cx-select cx-filter"><span>${label}</span><select data-cx-filter="${key}">
+      <option value="">全部</option>${list.map((v) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
     const widthNote = meta.total > allRows.length
-      ? `共 ${fmt(meta.total)} 局，分析窗口取最近 ${fmt(allRows.length)} 局`
+      ? `共 ${fmt(meta.total)} 局，这一页按最近 ${fmt(allRows.length)} 局算`
       : `共 ${fmt(meta.total)} 局`;
     return `<div class="cx-toolbar">
-      <div class="cx-lede"><b>当前范围 ${fmt(a.count)} 局</b><span>${esc(widthNote)} · 一局一块，一块一行</span></div>
+      <div class="cx-lede"><b>当前范围 ${fmt(a.count)} 局</b><span>${esc(widthNote)} · 下面所有结论都按这个范围重算</span></div>
       <div class="cx-controls">
-        <input class="cx-search" type="search" data-cx-opp value="${esc(filterOpp)}" placeholder="搜对手 / 标题 / 日期" aria-label="搜索对局">
-        <label class="cx-select"><span>排序</span><select data-cx-sort>
-          <option value="date"${sortKey === 'date' ? ' selected' : ''}>按时间</option>
-          <option value="finalDiff"${sortKey === 'finalDiff' ? ' selected' : ''}>按终局经济差</option>
-          <option value="at10"${sortKey === 'at10' ? ' selected' : ''}>按 10′ 经济差</option>
-          <option value="duration"${sortKey === 'duration' ? ' selected' : ''}>按时长</option>
+        <input class="cx-search" type="search" data-cx-opp value="${esc(filterOpp)}" placeholder="搜对手 / 日期" aria-label="搜索对局">
+        ${sel('version', '版本', versions, sliceVersion)}
+        ${sel('session', '训练组', sessions, sliceSession)}
+        ${sel('opponent', '对手', opponents, filterOpp)}
+        <label class="cx-select cx-filter"><span>胜负</span><select data-cx-filter="result">
+          <option value="">全部</option>
+          <option value="win"${filterResult === 'win' ? ' selected' : ''}>只看胜</option>
+          <option value="loss"${filterResult === 'loss' ? ' selected' : ''}>只看负</option>
         </select></label>
-        <label class="cx-select"><span>每页</span><select data-cx-page-size>
-          <option value="20"${pageSize === 20 ? ' selected' : ''}>20 局</option>
-          <option value="50"${pageSize === 50 ? ' selected' : ''}>50 局</option>
-          <option value="0"${pageSize === 0 ? ' selected' : ''}>全部</option>
-        </select></label>
-        <button type="button" class="cx-export" data-cx-export>导出 CSV</button>
+        ${active ? '<button type="button" class="cx-filter-clear" data-cx-clear-filters>清除筛选</button>' : ''}
       </div>
     </div>`;
   }
 
-  /* ── 对照台：一行一局 ───────────────────────────────────────── */
-  function rowHtml(m, i, a) {
-    const tone = m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : 'na';
-    const rank = rankOf(a, 'finalDiff', m.finalDiff);
-    const lineup = m.lineup.slice(0, 5).map((p) => `<span class="cx-lineup-item" title="${esc(`${p.position || ''} ${p.label || ''} ${p.hero || ''}`)}">${heroIcon(p.hero, 'cx-portrait')}</span>`).join('');
-    const bits = [`${m.fights} 次团战`, `本队 ${m.deathsOwn} / 对手 ${m.deathsFoe} 次阵亡`];
-    if (num(m.frontEnd)) bits.push(`阵线终值 ${Math.round(m.frontEnd * 100)}%`);
-    if (m.mvp && m.mvp.hero) bits.push(`最高经济 ${m.mvp.hero}`);
-    const story = bits.join(' · ');
-    return `<div class="cx-row${m.key === focusKey ? ' is-focus' : ''}" data-cx-row="${esc(m.key)}" data-cx-focus="${esc(m.key)}">
-      <span class="cx-num">${String(i + 1).padStart(2, '0')}</span>
-      <span class="cx-match"><b>${esc(m.title)}</b><small>${esc(m.date || '—')} · ${esc(m.session || '训练赛')} · ${m.ownCamp === 'blue' ? '蓝方' : '红方'}</small></span>
-      <span class="cx-score ${tone}"><b>${num(m.ownKills) ? fmt(m.ownKills) : '—'}</b><i>:</i><b>${num(m.foeKills) ? fmt(m.foeKills) : '—'}</b><small>${tone === 'win' ? '胜' : tone === 'loss' ? '负' : '—'}</small></span>
-      <span class="cx-dur">${time(m.duration)}</span>
-      <span class="cx-curve">${spark(m)}</span>
-      <span class="cx-check"><small>10′</small><b class="${num(m.at10) && m.at10 >= 0 ? 'pos' : 'neg'}">${num(m.at10) ? diff(Math.round(m.at10)) : '—'}</b></span>
-      <span class="cx-check"><small>终局</small><b class="${num(m.finalDiff) && m.finalDiff >= 0 ? 'pos' : 'neg'}">${num(m.finalDiff) ? diff(Math.round(m.finalDiff)) : '—'}</b></span>
-      <span class="cx-rank">${rank ? `<b>${rank.rank}</b><small>/ ${rank.total} 局</small>` : '<b>—</b><small>—</small>'}</span>
-      <span class="cx-lineup">${lineup}</span>
-      <a class="cx-open" href="#match/${encodeURIComponent(m.key)}" aria-label="复盘这一局">→</a>
-      <span class="cx-story">${esc(story)}</span>
-    </div>`;
-  }
-
-  function boardHtml(ordered, a, visible, offset, pages) {
-    const head = `<div class="cx-row cx-head"><span>编号</span><span>对局</span><span>比分</span><span>时长</span><span>经济差走势</span><span>10′</span><span>终局经济差</span><span>本批位次</span><span>本队阵容</span><span></span></div>`;
-    const pager = pages > 1
-      ? `<div class="cx-pager">
-          <button type="button" class="cx-page-btn" data-cx-page="prev"${page === 0 ? ' disabled' : ''}>← 上一页</button>
-          <span>第 <b>${page + 1}</b> / ${pages} 页 · 本页 ${visible.length} 局 · 共 ${fmt(ordered.length)} 局</span>
-          <button type="button" class="cx-page-btn" data-cx-page="next"${page >= pages - 1 ? ' disabled' : ''}>下一页 →</button>
-        </div>`
-      : `<div class="cx-pager"><span>共 ${fmt(ordered.length)} 局，已全部列出</span></div>`;
-    return `<section class="cx-board">
-      <div class="cx-board-head"><h2>逐局对照</h2><p>一局一块、一块一行；点一块设为聚焦，下方参照块跟着变，点箭头进入这一局复盘。</p></div>
-      <div class="cx-rows">${head}${visible.map((m, i) => rowHtml(m, offset + i, a)).join('')}</div>
-      ${pager}
-    </section>`;
-  }
+  /* 逐局对照台已按赛训组反馈移除：一局一局的对照交给单局复盘，
+     跨局这一页只留结论卡与「按钮展开的局列表」。 */
 
   /* ── 参照栏：跨局数字只出现在这里 ───────────────────────────── */
   /* ── 分路对位：体素板 ───────────────────────────────────────── */
@@ -451,28 +392,6 @@ export function createCrossPage(h) {
     <span>${aesc(label)}</span><i><b class="${cls || ''}" style="width:${width}"></b></i><em>${aesc(value)}</em></div>`;
   const vsize = (arr, get, fallback = 1) => Math.max(fallback, ...arr.map((x) => Math.abs(num(get(x)) ? get(x) : 0)));
 
-  /* 点选图形元素 → 圈定对应的一批局；sel 是紧凑语义描述，不随局数膨胀 */
-  function probeKeys(sel, vectors) {
-    const bits = String(sel || '').split(':');
-    const kind = bits[0];
-    const take = (arr, n = 60) => arr.slice(0, n).map((v) => v.key).filter(Boolean);
-    const byValue = (get, desc = true) => vectors.slice().filter((v) => num(get(v)))
-      .sort((a, b) => desc ? get(b) - get(a) : get(a) - get(b));
-    const timed = () => vectors.slice().sort((a, b) => String(a.order || '') < String(b.order || '') ? -1 : 1);
-    switch (kind) {
-      case 'band': { const lo = Number(bits[1]), hi = Number(bits[2]); return take(vectors.filter((v) => num(v.at10) && v.at10 >= lo && v.at10 <= hi)); }
-      case 'val': { const dim = bits[1], value = bits.slice(2).join(':'); return take(vectors.filter((v) => String(v[dim] || '未标注') === value)); }
-      case 'dim': { const label = bits[1] || ''; const dim = label.indexOf('对手') >= 0 ? 'opponent' : label.indexOf('训练') >= 0 ? 'session' : 'version'; const counts = new Map(); for (const v of vectors) { const k = String(v[dim] || '未标注'); counts.set(k, (counts.get(k) || 0) + 1); } const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]; return top ? take(vectors.filter((v) => String(v[dim] || '未标注') === top[0])) : []; }
-      case 'lane': { const name = bits[1]; return take(byValue((v) => v.lanes && v.lanes[name] ? v.lanes[name].gold : null, false)); }
-      case 'win': { const k = Number(bits[1]); return take(byValue((v) => v.w && v.w[k])); }
-      case 'seg': case 'bucket': { const i = Number(bits[1]), n = kind === 'seg' ? 6 : 24; const t = timed(); const start = Math.floor(i * t.length / n), end = kind === 'seg' ? Math.floor((i + 1) * t.length / n) : start + Math.max(1, Math.ceil(t.length / n)); return take(t.slice(start, end)); }
-      case 'sys': { const i = Number(bits[1]); const ats = vectors.map((v) => v.at10).filter(num).sort((a, b) => a - b); const cut = ats[Math.floor(ats.length / 2)] || 0; return take(vectors.filter((v) => num(v.at10) && (i % 2 === 0 ? v.at10 >= cut : v.at10 < cut))); }
-      case 'state': { const i = Number(bits[1]); const ats = vectors.map((v) => v.at10).filter(num).sort((a, b) => a - b); const q = (p) => ats[Math.floor((ats.length - 1) * p)] || 0; const q1 = q(.25), q2 = q(.5), q3 = q(.75); return take(vectors.filter((v) => num(v.at10) && (i === 0 ? v.at10 <= q1 : i === 1 ? v.at10 > q1 && v.at10 <= q2 : i === 2 ? v.at10 > q2 && v.at10 <= q3 : v.at10 > q3))); }
-      case 'key': return [bits.slice(1).join(':')].filter(Boolean);
-      default: return [];
-    }
-  }
-
   function switchViz(id, key) {
     vizViews[id] = key;
     const wrap = [...document.querySelectorAll('[data-cx-viz]')].find((el) => el.dataset.cxViz === id);
@@ -503,64 +422,84 @@ export function createCrossPage(h) {
     document.querySelectorAll('.cx-viz-tip').forEach((t) => { t.hidden = true; });
   }
 
-  function cohortCard(c) {
-    cardActions.set(c.id, c.actKeys || []);
-    /* 覆盖不足 2 局时，曲线/分位/结论都不可靠：显示样本不足说明，不输出 +0 与空图。 */
+  /* ── 页签：按赛训组的问法分四块 ─────────────────────────────── */
+  const CARD_NAMES = {
+    '01': '共性', '02': '赢的局和输的局差在哪', '03': '哪条路最容易崩',
+    '04': '突出点', '05': '异常点', '06': '我们练的几套打法',
+    '07': '这套打谁更划算', '08': '优势是哪一段挣来的', '09': '领先以后守得住吗',
+    '10': '明天先看哪几局', '11': '英雄账本', '12': '对手账本',
+    '13': '资源与推塔', '14': '死亡与团战', '15': '切 C 与首杀', '16': '英雄组合', '17': '团战账本', '18': '打野节奏',
+    '19': '选手榜', '20': '位置对位', '21': '团战伤害结构',
+  };
+  const TABS = [
+    { key: 'trend', label: '这段时间', note: '变好还是变差', ids: ['01', '02', '08', '04', '05'],
+      lede: '把这一个月的局并在一起看三件事：反复出现的（共性）、最顺和最难的（突出）、过程和结果对不上的（异常）。' },
+    { key: 'bp', label: 'BP 与阵容', note: '下一场怎么选', ids: ['11', '16', '06', '07'],
+      lede: '把「选过的英雄、两人一起上最稳的组合、打过的几套阵容、这套打谁划算」攒成一本账，赛前直接翻。' },
+    { key: 'lanes', label: '五路与人', note: '谁该练什么', ids: ['03', '20', '09', '19'],
+      lede: '五条路分开看：同位置对位谁占优、哪条路的下限最低、领先守不守得住、谁死得最多。' },
+    { key: 'res', label: '资源与团战', note: '龙、塔、团战', ids: ['13', '14', '15', '17', '18', '21'],
+      lede: '龙和塔控不控得住、每局死几次、团战赢几波、抓不抓得到对方后排、打野在不在对方半区、团战里谁在打谁在扛。' },
+    { key: 'opponents', label: '对手', note: '下次打谁怎么打', ids: ['12'],
+      lede: '同一个对手打得多了，就能看出他们的惯用打法，和我们一贯吃亏的地方。' },
+  ];
+
+  /* ── 结论卡：一句人话 + 一张图 + 按钮展开的局列表 ─────────────── */
+  function cardHtml(c, rowIndex) {
+    const name = CARD_NAMES[c.id] || c.name || '';
     const covered = Number((c.grade && c.grade.n) || 0);
     const insufficient = covered < 2;
-    const grade = `<span class="cx-grade g${c.grade.level}">${esc(c.grade.label)}</span>`;
-    const repro = c.repro === null || c.repro === undefined ? '' : (c.repro ? '<span class="cx-repro ok">前后半可复现</span>' : '<span class="cx-repro no">前后半未复现</span>');
-    const flag = c.flag ? `<span class="cx-repro ok">${esc(c.flag)}</span>` : '';
-    const count = (c.actKeys || []).length;
+    const keys = (c.actKeys || []).filter(Boolean);
+    const listHtml = keys.slice(0, 80).map((key) => {
+      const v = rowIndex.get(key) || {};
+      const res = v.result === 'win' ? 'win' : v.result === 'loss' ? 'loss' : 'na';
+      const read = num(v.at10) ? `10 分钟 ${diff(Math.round(v.at10))} 金币`
+        : num(v.finalDiff) ? `终局 ${diff(Math.round(v.finalDiff))} 金币` : '—';
+      return `<a class="cx-act-row" href="#match/${encodeURIComponent(key)}">
+        <span class="cx-act-date">${esc(String(v.date || '—').slice(5) || '—')}</span>
+        <span class="cx-act-opp">${esc(v.opponent || '未填对手')}</span>
+        <span class="cx-act-res ${res}">${res === 'win' ? '胜' : res === 'loss' ? '负' : '—'}</span>
+        <span class="cx-act-read">${esc(read)}</span>
+        <span class="cx-act-go">→</span>
+      </a>`;
+    }).join('');
+    const more = keys.length > 80 ? '<p class="cx-act-more">只列前 80 局，整批请用下面的导出。</p>' : '';
     return `<article class="cx-find cx-cf" id="cx-analysis-${aesc(c.id)}">
-      <div class="cx-cf-top"><span class="cx-find-kicker">${esc(c.id)} / ${esc(c.group)}</span><div class="cx-cf-flags">${grade}${repro}${flag}</div></div>
-      <div class="cx-cf-name">${esc(c.name || '')}</div>
+      <div class="cx-cf-top"><span class="cx-find-kicker">${esc(name)}</span><span class="cx-find-sample">覆盖 ${covered} 局</span></div>
       ${insufficient
         ? '<h3 class="cx-cf-title cx-cf-title-muted">先攒够 2 局可用样本，再看这项结论</h3>'
-        : `<h3 class="cx-cf-title">${c.title}</h3>`}
+        : `<h3 class="cx-cf-title">${yuan(c.title)}</h3>`}
       <div class="cx-cf-canvas">${insufficient
         ? `<div class="cx-cf-insufficient"><b>样本不足</b><p>这个分析至少需要 2 局可用样本，当前覆盖 ${covered} 局。先把对局补全（或在「采集」补挂官方回放），再看这项结论。</p></div>`
         : renderViz(c.chart, c, { rows: vizRows, view: (id) => vizViews[id] || 'a' })}</div>
+      ${insufficient ? '' : `<p class="cx-cf-plain">${esc(yuan(c.plain || ''))}</p>`}
       <div class="cx-cf-foot">
-        ${insufficient ? '' : `<div class="cx-cf-train"><span>训练安排</span><p>${esc(c.train)}</p></div>`}
-        <button type="button" class="cx-act-btn" data-cx-act="${esc(c.id)}" ${count ? '' : 'disabled'}>${esc(c.review)} · 圈定 ${count} 局 <span>→</span></button>
+        ${insufficient ? '' : `<div class="cx-cf-train"><span>怎么用</span><p>${esc(yuan(c.train))}</p></div>`}
+        ${keys.length ? `<button type="button" class="cx-act-btn" data-cx-act="${aesc(c.id)}" aria-expanded="false" aria-controls="cx-act-list-${aesc(c.id)}">看这 ${keys.length} 局 <span>↓</span></button>` : ''}
       </div>
-      <p class="cx-cf-method"><b>怎么算的</b> ${esc(coachMethod(c.method))} <span>覆盖 ${c.grade.n} 局</span></p>
+      ${keys.length ? `<div class="cx-act-list" id="cx-act-list-${aesc(c.id)}" data-cx-act-list="${aesc(c.id)}" hidden>
+        ${listHtml}${more}
+        <button type="button" class="cx-act-export" data-cx-export-keys="${aesc(c.id)}">导出这 ${keys.length} 局 CSV</button>
+      </div>` : ''}
+      <p class="cx-cf-method"><b>怎么算的</b> ${esc(yuan(coachMethod(c.method)))}</p>
     </article>`;
   }
 
-  function cohortSection(result, totalAll, vectors) {
-    if (!result || !result.cards.length) return '';
-    const a = result.audit;
-    const all = vectors || [];
-    const uniq = (key, cap) => [...new Set(all.map((v) => String(v[key] || '').trim()).filter(Boolean))].sort().slice(0, cap);
-    const versions = uniq('version', 30);
-    const sessions = uniq('session', 30);
-    const opponents = uniq('opponent', 50);
-    const sel = (key, label, list, value) => `<label class="cx-select cx-filter"><span>${label}</span><select data-cx-filter="${key}">
-      <option value="">全部</option>${list.map((v) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
-    const resultSel = `<label class="cx-select cx-filter"><span>结果</span><select data-cx-filter="result">
-      <option value=""${filterResult ? '' : ' selected'}>全部</option>
-      <option value="win"${filterResult === 'win' ? ' selected' : ''}>胜</option>
-      <option value="loss"${filterResult === 'loss' ? ' selected' : ''}>负</option>
-    </select></label>`;
-    const active = !!(sliceVersion || sliceSession || filterOpp || filterResult);
-    return `<section class="cx-cohort">
-      <div class="cx-cohort-head">
-        <div class="cx-cohort-heading"><h2>通用跨局分析</h2><span class="cx-cohort-scope">当前 ${fmt(result.total)} 局 / 共 ${fmt(totalAll)} 局</span></div>
-        <div class="cx-audit">证据充分 ${a.strong} 条 · 前后半一致 ${a.held}/${a.checked}</div>
-      </div>
-      <div class="cx-cohort-filters">
-        ${sel('version', '版本', versions, sliceVersion)}
-        ${sel('session', '训练组', sessions, sliceSession)}
-        ${sel('opponent', '对手', opponents, filterOpp)}
-        ${resultSel}
-        ${active ? '<button type="button" class="cx-filter-clear" data-cx-clear-filters>清除筛选</button>' : ''}
-      </div>
-      <div class="cx-viz-index" role="group" aria-label="分析直达">${result.cards.map((c) => `<button type="button" data-cx-jump="${aesc(c.id)}">${aesc(c.name)}</button>`).join('')}</div>
-      <div class="cx-finds-grid">${result.cards.map(cohortCard).join('')}</div>
-    </section>`;
+  function tabsHtml(active) {
+    return `<div class="md-tabs cx-tabs" role="tablist" aria-label="跨局分析页签">
+      ${TABS.map((t) => `<button type="button" class="md-tab" data-cx-tab="${t.key}" role="tab" aria-selected="${t.key === active}">
+        <b>${esc(t.label)}</b><small>${esc(t.note)}</small></button>`).join('')}
+    </div>`;
   }
+
+  function paneHtml(tab, cards, rowIndex, active, laneHtml) {
+    const list = tab.ids.map((id) => cards.get(id)).filter(Boolean);
+    const body = list.length ? `<div class="cx-finds-grid">${list.map((c) => cardHtml(c, rowIndex)).join('')}</div>` : '';
+    return `<div class="cx-pane" data-cx-pane="${tab.key}"${tab.key === active ? '' : ' hidden'}>
+      <p class="cx-pane-lede">${esc(tab.lede)}</p>${body}${tab.key === 'lanes' ? laneHtml : ''}
+    </div>`;
+  }
+
 
   /* ── 页面 ───────────────────────────────────────────────────── */
   function sortList(list) {
@@ -574,7 +513,6 @@ export function createCrossPage(h) {
   function scopedRows(allRows) {
     const q = filterOpp.trim().toLowerCase();
     return allRows.filter((r) => {
-      if (scopeKeys && !scopeKeys.has(r.key)) return false;
       if (sliceVersion && (r.version || '') !== sliceVersion) return false;
       if (sliceSession && (r.session || '') !== sliceSession) return false;
       if (filterResult && r.result !== filterResult) return false;
@@ -597,6 +535,13 @@ export function createCrossPage(h) {
     });
   }
 
+  /* 页签存在地址里：#cross/<tab>，刷新与分享都停在原页 */
+  function activeTab() {
+    const parts = String(location.hash || '').replace(/^#/, '').split('?')[0].split('/');
+    const key = parts[0] === 'cross' ? parts[1] : parts[2];
+    return TABS.some((t) => t.key === key) ? key : 'trend';
+  }
+
   function render(allRows, meta = {}) {
     if (!allRows || !allRows.length) {
       return '<div class="page cx-page"><section class="section cx-blank"><h1>还没有已确认的对局</h1><p>先到「对局档案」完成一局归档，跨局对照会自动排开。</p><a class="primary" href="#matches">去对局档案 →</a></section></div>';
@@ -615,73 +560,56 @@ export function createCrossPage(h) {
       rows = scopedRows(allRows);
     }
     if (!rows.length) {
-      return '<div class="page cx-page"><section class="section cx-blank"><h1>当前范围没有对局</h1><p>换一个结果、对手关键词或训练组，全部结论会按新范围重算。</p><button type="button" class="primary" data-cx-clear>清除筛选 →</button></section></div>';
+      return '<div class="page cx-page"><section class="section cx-blank"><h1>当前范围没有对局</h1><p>换一个对手、版本或胜负，全部结论会按新范围重算。</p><button type="button" class="primary" data-cx-clear>清除筛选 →</button></section></div>';
     }
     const list = rows.map(buildMatch);
     const a = summarize(list);
     const ordered = sortList(list);
-    const size = pageSize > 0 ? pageSize : ordered.length;
-    const pages = Math.max(1, Math.ceil(ordered.length / size));
-    page = clamp(page, 0, pages - 1);
-    const offset = page * size;
-    const visible = ordered.slice(offset, offset + size);
-    if (!focusKey || !list.some((m) => m.key === focusKey)) focusKey = ordered[0].key;
-    lastView = { a, ordered, visible };
     const vectors = filterVectors((lastMeta.cohort && lastMeta.cohort.vectors) || []);
     vizRows = vectors;
-    const cohort = analyzeCohort(vectors);
-    const cohortTotal = (lastMeta.cohort && lastMeta.cohort.total) || allRows.length;
-    return `<div class="page cx-page">
-      ${heroCard(a, visible, ordered.length)}
-      ${toolbar(allRows, a, lastMeta)}
-      ${scopeKeys ? `<div class="cx-scope-bar">已圈定 ${fmt(scopeKeys.size)} 局用于逐局对照；上方全部结论仍基于${cohort.total < cohortTotal ? '当前范围' : '全量'}总体 <button type="button" data-cx-unscope>清除圈定 →</button></div>` : ''}
-      <div class="cx-main">
-        ${boardHtml(ordered, a, visible, offset, pages)}
-      </div>
-      ${cohortSection(cohort, cohortTotal, (lastMeta.cohort && lastMeta.cohort.vectors) || [])}
-      ${laneBoard(list)}
-      <p class="cx-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与逐秒位置。阵线按五人平均推进归一化；经济差一律为本队减对手。</p>
+    const result = analyzeCohort(vectors);
+    const rowIndex = new Map(vectors.map((v) => [v.key, v]));
+    const cards = new Map();
+    for (const c of result.cards) cards.set(c.id, c);
+    lastCards = cards;
+    lastRowIndex = rowIndex;
+    const uniq = (key, cap) => [...new Set(vectors.map((v) => String(v[key] || '').trim()).filter(Boolean))].sort().slice(0, cap);
+    const tab = activeTab();
+    const lanes = laneBoard(list);
+    return `<div class="page cx-page" data-cx-tab-active="${tab}">
+      ${heroCard(a, ordered, ordered.length)}
+      ${tabsHtml(tab)}
+      ${scopeBar(allRows, a, lastMeta, { versions: uniq('version', 30), sessions: uniq('session', 30), opponents: uniq('opponent', 50) })}
+      ${TABS.map((t) => paneHtml(t, cards, rowIndex, tab, lanes)).join('')}
+      <p class="cx-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与逐秒位置。经济差一律为本队减对手，负数是落后。</p>
     </div>`;
   }
 
   /* ── 交互 ───────────────────────────────────────────────────── */
-  function rerender(toBoard) {
+  function rerender() {
     const host = document.querySelector('#content');
     if (host && lastRows.length) host.innerHTML = render(lastRows, lastMeta);
-    if (toBoard) {
-      const board = document.querySelector('.cx-board');
-      if (board) board.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    }
   }
 
-  function paintFocus(scroll) {
-    const rootEl = document.querySelector('.cx-page');
-    if (!rootEl || !lastView) return;
-    rootEl.querySelectorAll('[data-cx-row]').forEach((el) => el.classList.toggle('is-focus', el.dataset.cxRow === focusKey));
-    rootEl.querySelectorAll('[data-cx-focus].cx-film-cell').forEach((el) => el.classList.toggle('is-focus', el.dataset.cxFocus === focusKey));
-    if (scroll) {
-      const target = rootEl.querySelector(`[data-cx-row="${CSS.escape(focusKey)}"]`);
-      if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
-  }
-
-  function exportCsv() {
-    if (!lastView) return;
-    const head = ['编号', '日期', '对局', '训练组', '胜负', '本队人头', '对手人头', '时长(秒)', '10分钟经济差', '终局经济差', '阵线终值'];
+  /* 导出范围跟着按钮走：卡片展开的那几十局，就是导出的那几十局 */
+  function exportCsv(id) {
+    const keys = (lastCards.get(id) || []).filter(Boolean);
+    if (!keys.length) return;
+    const head = ['日期', '对手', '胜负', '时长(秒)', '10分钟经济差', '终局经济差'];
     const lines = [head.join(',')];
-    lastView.ordered.forEach((m, i) => {
-      const cells = [i + 1, m.date, m.title, m.session,
-        m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '',
-        num(m.ownKills) ? m.ownKills : '', num(m.foeKills) ? m.foeKills : '',
-        m.duration || '', num(m.at10) ? Math.round(m.at10) : '',
-        num(m.finalDiff) ? Math.round(m.finalDiff) : '',
-        num(m.frontEnd) ? (m.frontEnd * 100).toFixed(1) + '%' : ''];
-      lines.push(cells.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
+    keys.forEach((key) => {
+      const v = lastRowIndex.get(key) || {};
+      const cells = [v.date || '', v.opponent || '',
+        v.result === 'win' ? '胜' : v.result === 'loss' ? '负' : '',
+        num(v.duration) ? Math.round(v.duration) : '',
+        num(v.at10) ? Math.round(v.at10) : '',
+        num(v.finalDiff) ? Math.round(v.finalDiff) : ''];
+      lines.push(cells.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(','));
     });
     const blob = new Blob([`\ufeff${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = '跨局逐局对照.csv';
+    a.download = '跨局分析-这批局.csv';
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -691,50 +619,40 @@ export function createCrossPage(h) {
     if (bind.done) return;
     bind.done = true;
     root.addEventListener('click', (event) => {
-      if (event.target.closest && event.target.closest('.cx-open')) return;
-      const jump = event.target.closest ? event.target.closest('[data-cx-jump]') : null;
-      if (jump) { const el = document.getElementById(`cx-analysis-${jump.dataset.cxJump}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-      const viewBtn = event.target.closest ? event.target.closest('[data-cx-view-btn]') : null;
+      if (!event.target.closest) return;
+      /* 局列表整行是链接，交给路由处理 */
+      if (event.target.closest('.cx-open') || event.target.closest('.cx-act-row')) return;
+      const tabBtn = event.target.closest('[data-cx-tab]');
+      if (tabBtn) {
+        const page = tabBtn.closest('.cx-page');
+        const key = tabBtn.dataset.cxTab;
+        if (!page || !key) return;
+        page.dataset.cxTabActive = key;
+        page.querySelectorAll('[data-cx-tab]').forEach((n) => n.setAttribute('aria-selected', String(n.dataset.cxTab === key)));
+        page.querySelectorAll('[data-cx-pane]').forEach((p) => { p.hidden = p.dataset.cxPane !== key; });
+        try { history.replaceState(null, '', `#cross/${key}`); } catch { /* 嵌入式浏览器禁 replaceState，忽略 */ }
+        const tabs = page.querySelector('.cx-tabs');
+        if (tabs) tabs.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return;
+      }
+      const actBtn = event.target.closest('[data-cx-act]');
+      if (actBtn) {
+        const id = actBtn.dataset.cxAct;
+        const list = document.querySelector(`[data-cx-act-list="${CSS.escape(id)}"]`);
+        if (!list) return;
+        const open = list.hidden;
+        list.hidden = !open;
+        actBtn.setAttribute('aria-expanded', String(open));
+        actBtn.innerHTML = actBtn.innerHTML.replace(open ? '↓' : '↑', open ? '↑' : '↓');
+        return;
+      }
+      const exportBtn = event.target.closest('[data-cx-export-keys]');
+      if (exportBtn) { exportCsv(exportBtn.dataset.cxExportKeys); return; }
+      const viewBtn = event.target.closest('[data-cx-view-btn]');
       if (viewBtn) { switchViz(viewBtn.dataset.cxVizId, viewBtn.dataset.cxViewBtn); return; }
-      const probe = event.target.closest ? event.target.closest('[data-cx-sel]') : null;
-      if (probe && probe.dataset.cxSel) {
-        const keys = probeKeys(probe.dataset.cxSel, (lastMeta.cohort && lastMeta.cohort.vectors) || []);
-        if (keys.length) { scopeKeys = new Set(keys); page = 0; hideVizTips(); rerender(true); }
-        return;
-      }
-      const node = event.target.closest
-        ? event.target.closest('[data-cx-focus],[data-cx-export],[data-cx-result],[data-cx-page],[data-cx-clear],[data-cx-clear-filters],[data-cx-act],[data-cx-unscope]')
-        : null;
-      if (!node) return;
-      if (node.hasAttribute('data-cx-export')) { exportCsv(); return; }
-      if (node.hasAttribute('data-cx-unscope')) { scopeKeys = null; page = 0; rerender(false); return; }
-      if (node.hasAttribute('data-cx-act')) {
-        const keys = (cardActions.get(node.dataset.cxAct) || []).filter(Boolean);
-        scopeKeys = keys.length ? new Set(keys) : null;
-        page = 0;
-        rerender(true);
-        return;
-      }
-      if (node.hasAttribute('data-cx-clear')) {
-        filterResult = ''; filterOpp = ''; sliceVersion = ''; sliceSession = ''; scopeKeys = null; page = 0;
-        rerender(false); return;
-      }
-      if (node.hasAttribute('data-cx-clear-filters')) {
-        filterResult = ''; filterOpp = ''; sliceVersion = ''; sliceSession = ''; scopeKeys = null; page = 0;
-        rerender(false); return;
-      }
-      if (node.hasAttribute('data-cx-result')) {
-        filterResult = node.dataset.cxResult; page = 0;
-        rerender(false); return;
-      }
-      if (node.hasAttribute('data-cx-page')) {
-        if (node.disabled) return;
-        page = Math.max(0, page + (node.dataset.cxPage === 'next' ? 1 : -1));
-        rerender(true); return;
-      }
-      if (node.dataset.cxFocus) {
-        focusKey = node.dataset.cxFocus;
-        paintFocus(node.classList.contains('cx-film-cell'));
+      if (event.target.closest('[data-cx-clear-filters]') || event.target.closest('[data-cx-clear]')) {
+        filterResult = ''; filterOpp = ''; sliceVersion = ''; sliceSession = '';
+        rerender(); return;
       }
     });
     root.addEventListener('mousemove', (event) => {
@@ -743,9 +661,7 @@ export function createCrossPage(h) {
     });
     root.addEventListener('mouseleave', hideVizTips);
     root.addEventListener('change', (event) => {
-      const node = event.target.closest
-        ? event.target.closest('[data-cx-sort],[data-cx-slice],[data-cx-page-size],[data-cx-opp],[data-cx-filter]')
-        : null;
+      const node = event.target.closest ? event.target.closest('[data-cx-opp],[data-cx-filter]') : null;
       if (!node) return;
       if (node.dataset.cxFilter) {
         const key = node.dataset.cxFilter, value = node.value;
@@ -753,15 +669,10 @@ export function createCrossPage(h) {
         else if (key === 'session') sliceSession = value;
         else if (key === 'opponent') filterOpp = value;
         else if (key === 'result') filterResult = value;
-        scopeKeys = null; page = 0;
-        rerender(false); return;
+        rerender(); return;
       }
-      if (node.hasAttribute('data-cx-sort')) sortKey = node.value;
-      else if (node.hasAttribute('data-cx-page-size')) { pageSize = Number(node.value); page = 0; }
-      else if (node.hasAttribute('data-cx-opp')) { filterOpp = node.value; page = 0; }
-      else if (node.dataset.cxSlice === 'version') sliceVersion = node.value;
-      else sliceSession = node.value;
-      rerender(false);
+      filterOpp = node.value;
+      rerender();
     });
   }
 

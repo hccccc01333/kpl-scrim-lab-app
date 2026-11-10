@@ -20,14 +20,19 @@ import argparse
 import csv
 import json
 import os
+import sys
 from collections import defaultdict
+
+# 时间基准的常量只有一处：主项目的 replay_time.py。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import replay_time  # noqa: E402
 
 SAMPLE = "20261102_161129"
 
-# 回放帧 → 营地秒号。引擎锚定 battle time = (frame-31.4)/15.1515；
-# +3s 为 138 条位置锚点实测的最佳对齐偏移（见 build_map.py 的 calibrate）。
-FPS_ENGINE = 15.1515
-F0 = 31.4
+# 回放帧 → 营地秒号。这里沿用引擎实测时钟 replay_time.FPS_ENGINE（15.1515，
+# F0 = 31.4）；+3s 是「对齐营地逐秒位置数组下标」的实测偏移（138 条位置锚点，
+# 见 build_map.py 的 calibrate），属于位置对齐，不是时间基准的一部分。
+# 产品侧仍用 docs 5.129 的 15 fps，两者差异与未验证环节见 replay_time.py。
 ALIGN_DT = 3
 
 EVENT_FIELDS = ["frame", "t_sec", "name", "entity", "hero", "camp",
@@ -171,7 +176,7 @@ def main():
                 continue
             hero, camp = meta[e]
             fd = x.get("fields") or {}
-            t = int(round((x["frame"] - F0) / FPS_ENGINE + ALIGN_DT))
+            t = int(round(replay_time.engine_seconds(x["frame"]) + ALIGN_DT))
             if t < 0 or t > 692:
                 continue
             name = x["name"]

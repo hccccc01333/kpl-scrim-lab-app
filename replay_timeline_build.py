@@ -44,13 +44,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _catalog(abc_path: Path) -> Path:
-    """Decode the .abc into events.csv using the tested catalog generator."""
+def _catalog(abc_path: Path, info: dict | None = None) -> Path:
+    """Decode the .abc into events.csv using the tested catalog generator.
+
+    ``info`` is the already-parsed report when the caller has one; without it
+    the generator decodes the roster itself.
+    """
     sys.path.insert(0, str(ROOT / "tools"))
     from full_abc_event_catalog import build_report  # noqa: WPS433
 
     tmp = Path(tempfile.mkdtemp(prefix="timeline-build_"))
-    build_report(abc_path, tmp)
+    build_report(abc_path, tmp, info)
     return tmp / "events.csv"
 
 
@@ -230,14 +234,15 @@ def build(events_csv: Path, sha: str, out_root: Path,
 
 def build_from_abc_bytes(data: bytes, out_root: Path,
                          name: str = "replay.abc",
-                         checkpoints: dict | None = None) -> dict:
+                         checkpoints: dict | None = None,
+                         info: dict | None = None) -> dict:
     """按局构建：上传接口拿到的字节流直接产出时间轴文件（后台线程用）。"""
     sha = hashlib.sha256(data).hexdigest()
     tmp = Path(tempfile.mkdtemp(prefix="timeline-abc_"))
     try:
         abc = tmp / (name or "replay.abc")
         abc.write_bytes(data)
-        events = _catalog(abc)
+        events = _catalog(abc, info)
         return build(events, sha, out_root, checkpoints,
                      {"source_abc": abc.name})
     finally:

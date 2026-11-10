@@ -58,6 +58,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import replay_time  # noqa: E402
 from tools.replay_frame_commands import events  # noqa: E402
 
 # --------------------------------------------------------------------------
@@ -112,9 +113,9 @@ MINIMAP_LABELS = {
     "matrix_t1_screen.png": "07:32",
 }
 
-# Engine-derived defaults.
-FPS = 15.1515          # replay logic clock (engine +0x1664/+0x1668)
-F0 = 31.4              # frame index of battle second 0 (07:29 dump calibration)
+# Engine-derived defaults; the clock itself lives in replay_time.py.
+FPS = replay_time.FPS_ENGINE          # replay logic clock (engine +0x1664/+0x1668)
+F0 = replay_time.BATTLE_START_FRAME_ENGINE  # frame index of battle second 0
 MAP_HALF_SPAN = 60000  # docs: map ~+/-60k, spawns at the four corners +/-55k
 ENGINE_SPEED_PRIOR = 3700  # +0x2B4 field 360-390 (cm/s) in mm/s coordinate units
 

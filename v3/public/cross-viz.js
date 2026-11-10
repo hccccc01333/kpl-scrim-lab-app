@@ -12,8 +12,10 @@ const esc = (v) => String(v == null ? '' : v)
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const signed = (v) => (v < 0 ? '−' : '+') + Math.round(Math.abs(num(v) ? v : 0)).toLocaleString('zh-CN');
 const pct = (v) => `${Math.round((num(v) ? v : 0) * 100)}%`;
+/* 赛训组说「金币」，不说「金」 */
+const yuan = (t) => String(t == null ? '' : t).replace(/金(?!币)/g, '金币');
 const signedCls = (v) => (num(v) && v < 0 ? 'neg' : 'pos');
-const tip = (t) => `data-cx-tip="${esc(t)}"`;
+const tip = (t) => `data-cx-tip="${esc(yuan(t))}"`;
 const sel = (s) => `data-cx-sel="${esc(s || '')}"`;
 const maxOf = (arr, get, fb = 1) => Math.max(fb, ...arr.map((x) => Math.abs(num(get(x)) ? get(x) : 0)));
 const widthOf = (v, max) => `${clamp(Math.abs(num(v) ? v : 0) / Math.max(1, max) * 100, 1.5, 100).toFixed(1)}%`;
@@ -36,7 +38,9 @@ const human = (v) => HUMAN[v] || v;
 const short = (v) => SHORT[v] || String(v).slice(0, 5);
 
 const VIEWS = {
-  '01': ['典型水平', '按对手看'],
+  '01': ['经济差散点', '领先 / 落后局数'],
+  '02': ['左右对比', '哪项差最多'],
+  '04': ['最顺 / 最难', '按日期看'],
   '02': ['差别来自哪', '排个序'],
   '03': ['最差的10%对局', '哪路最常落后'],
   '04': ['一段段看', '分段对照'],
@@ -46,6 +50,15 @@ const VIEWS = {
   '08': ['赢在哪段', '赢在哪路'],
   '09': ['领先守得住吗', '各状态局数'],
   '10': ['先看哪类', '各类多少局'],
+  '11': ['按出场', '按胜率'],
+  '12': ['按出场', '按胜率'],
+  '15': ['左右对比', '哪项差最多'],
+  '16': ['按出场', '按胜率'],
+  '17': ['按波数', '按胜率'],
+  '18': ['左右对比', '哪项差最多'],
+  '19': ['场均死亡', '按大小'],
+  '20': ['按位置', '按大小'],
+  '21': ['伤害 / 承伤', '按大小'],
 };
 
 /* ── 通用零件 ─────────────────────────────────────────────────── */
@@ -70,7 +83,7 @@ function view(hero, body) {
 }
 
 function big(value, label, cls = '') {
-  return `<div class="cxv-figure ${cls}"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
+  return `<div class="cxv-figure ${cls}"><b>${esc(yuan(value))}</b><span>${esc(yuan(label))}</span></div>`;
 }
 
 function note() {
@@ -83,9 +96,9 @@ function rows(items, render) {
 
 function barRow(label, value, width, cls, tipText, selText, sub = '') {
   return `<div class="cxv-row" ${tip(tipText)} ${sel(selText)}>
-    <span class="cxv-row-label">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</span>
+    <span class="cxv-row-label">${esc(yuan(label))}${sub ? `<small>${esc(yuan(sub))}</small>` : ''}</span>
     <i class="cxv-track"><b class="${cls}" style="width:${width}"></b></i>
-    <em class="cxv-row-val ${cls}">${esc(value)}</em>
+    <em class="cxv-row-val ${cls}">${esc(yuan(value))}</em>
   </div>`;
 }
 
@@ -286,7 +299,7 @@ function systems(c, card, ctx) {
   const legend = items.map((s, i) => `<div class="cxv-sys-row" ${tip(`${s.name} · ${s.n} 局 · 占比 ${pct(s.pct)} · 终局下限 ${signed(s.floor)}`)} ${sel(`sys:${i}`)}>
       <i class="${colors[i % 4]}"></i><span>${esc(s.name)}</span><b>${pct(s.pct)}</b><em>${s.n} 局</em></div>`).join('');
   const A = view(
-    big(`${items.length}`, '套可分辨的打法', 'gold') + note('每条线是一套打法从开局到收官的经济差走势'),
+    big(`${items.length}`, '类不同的经济走势', 'gold') + note('每条线是一类局从开局到收官的经济差走势'),
     `<div class="cxv-split chart-first">${chartSvg(H, `${gridLines(H)}<line class="cxv-zero" x1="0" x2="1000" y1="${H / 2}" y2="${H / 2}" vector-effect="non-scaling-stroke"/>${curves}`)}
       <div class="cxv-sys-legend">${legend}</div></div>
       <div class="cxv-ticks"><span>开局</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>收官</span></div>`
@@ -331,10 +344,11 @@ function matrix(c, card, ctx) {
       </div>`
     );
   } else {
+    const colName = (x) => (String(x) === '未标注' ? '对手未填' : String(x).slice(0, 8));
     A = view(
       big(best ? signed(best.v) : '—', '表现最好的一个组合', 'gold') + note(),
       `<div class="cxv-mtx" style="grid-template-columns:110px repeat(${Math.max(1, cols.length)},minmax(0,1fr))">
-        <span></span>${cols.map((x) => `<span class="cxv-mtx-col">${esc(String(x).slice(0, 8))}</span>`).join('')}
+        <span></span>${cols.map((x) => `<span class="cxv-mtx-col">${esc(colName(x))}</span>`).join('')}
         ${rs.map((r, i) => `<span class="cxv-mtx-row">${esc(r)}</span>${use.map((src) => (cells[i] || [])[src] || { n: 0 }).map((cell, j) => `<span class="cxv-mtx-cell ${cell.n < 2 ? 'thin' : signedCls(cell.v)}" style="--w:${(num(cell.v) ? Math.abs(cell.v) / mx * .55 + .08 : .05).toFixed(2)}" ${tip(`${r} 打 ${cols[j]} · ${cell.n} 局${cell.n >= 2 ? ' · 平均赢 ' + signed(cell.v) + ' 金' : ''}`)} ${sel(`val:${dimKey}:${cols[j]}`)}>
           <b>${cell.n < 2 ? (cell.n ? '样本少' : '—') : signed(cell.v)}</b><small>${cell.n} 局</small></span>`).join('')}`).join('')}
       </div>`
@@ -350,15 +364,18 @@ function matrix(c, card, ctx) {
 function contrib(c, card, ctx) {
   const w = (c.windows || []).slice(0, 10), l = (c.lanes || []).slice(0, 5);
   const peak = w.slice().sort((a, b) => (num(b.value) ? b.value : 0) - (num(a.value) ? a.value : 0))[0];
-  const H = 170;
+  const H = 190;
+  const mid = H / 2;
   const mx = maxOf(w, (x) => x.value);
   const bw = 1000 / Math.max(1, w.length);
   const colW = Math.min(bw * .62, 96);
-  const y = (v) => H - 16 - Math.abs(v) / mx * (H - 44);
+  /* 零线放中间：正收益往上、掉经济往下，负数不会被画成正的 */
+  const scale = (H / 2 - 16) / mx;
+  const y = (v) => mid - (num(v) ? v : 0) * scale;
   const A = view(
-    big(signed(peak ? peak.value : 0), `${peak ? String(peak.label).replace('′', ' 分钟') : '—'} 是主要胜源`, 'gold') + note('每根柱是这一段时间平均拉开的经济'),
-    `${chartSvg(H, `${gridLines(H)}<line class="cxv-zero" x1="0" x2="1000" y1="${H - 16}" y2="${H - 16}" vector-effect="non-scaling-stroke"/>
-      ${w.map((x, i) => { const v = num(x.value) ? x.value : 0; return `<rect class="cxv-col${i === w.indexOf(peak) ? ' is-peak' : ''}${v < 0 ? ' neg' : ''}" x="${(i * bw + (bw - colW) / 2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${colW.toFixed(1)}" height="${Math.max(3, H - 16 - y(v)).toFixed(1)}" rx="3" ${tip(`${String(x.label).replace('′', ' 分钟')} · ${x.n} 局 · 平均拉开 ${signed(x.value)} 金`)} ${sel(`win:${i}`)}/>`; }).join('')}`)}
+    big(signed(peak ? peak.value : 0), `${peak ? String(peak.label).replace('′', ' 分钟') : '—'} 是主要胜源`, 'gold') + note('往上是这段挣到的经济，往下是这段被对手追回的'),
+    `${chartSvg(H, `${gridLines(H)}<line class="cxv-zero" x1="0" x2="1000" y1="${mid.toFixed(1)}" y2="${mid.toFixed(1)}" vector-effect="non-scaling-stroke"/>
+      ${w.map((x, i) => { const v = num(x.value) ? x.value : 0; const top = Math.min(y(v), mid); return `<rect class="cxv-col${i === w.indexOf(peak) ? ' is-peak' : ''}${v < 0 ? ' neg' : ''}" x="${(i * bw + (bw - colW) / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${colW.toFixed(1)}" height="${Math.max(3, Math.abs(mid - y(v))).toFixed(1)}" rx="3" ${tip(`${String(x.label).replace('′', ' 分钟')} · ${x.n} 局 · 平均拉开 ${signed(x.value)} 金`)} ${sel(`win:${i}`)}/>`; }).join('')}`)}
       <div class="cxv-ticks cols" style="grid-template-columns:repeat(${Math.max(1, w.length)},minmax(0,1fr))">${w.map((x) => `<span>${esc(String(x.label).replace('′', ' 分钟'))}<b>${signed(x.value)}</b></span>`).join('')}</div>`
   );
   const lmx = maxOf(l, (x) => x.pct, 0.01);
@@ -415,7 +432,7 @@ function types(c, card, ctx) {
     `<div class="cxv-tiles ${items.length === 1 ? 'one' : items.length === 2 ? 'two' : ''}" style="grid-template-columns:repeat(${Math.max(1, items.length)},minmax(0,1fr))">${items.map((x) => `<div class="cxv-tile" ${tip(`${x.name} · ${x.n} 局 · ${pct(x.pct)} · ${x.trait}`)} ${sel(x.top ? `key:${x.top}` : '')}>
       <span class="cxv-tile-num">${x.n}<small>局</small></span>
       <b>${esc(x.name)}</b><p>${esc(x.trait)}</p>
-      ${x.top ? `<a class="cx-open" href="#match/${encodeURIComponent(x.top)}">打开代表局 →</a>` : '<span class="cxv-tile-hint">点卡片圈定这批局</span>'}
+      ${x.top ? `<a class="cx-open" href="#match/${encodeURIComponent(x.top)}">打开代表局 →</a>` : '<span class="cxv-tile-hint">看下面展开的局</span>'}
     </div>`).join('')}</div>`
   );
   const mx = maxOf(items, (x) => x.n);
@@ -426,8 +443,201 @@ function types(c, card, ctx) {
   return shell(card, ctx, A, B);
 }
 
+/* ── 11/12 账本：出场与胜率两栏 ──────────────────────────────── */
+function ledger(c, card, ctx) {
+  const items = (c.items || []).filter((x) => x && x.label);
+  const noun = card && card.id === '12' ? '对手' : '英雄';
+  if (!items.length) {
+    return shell(card, ctx, view(big('—', `还没有${noun}样本`, 'neg'), ''), view(big('—', '换不了角度', 'neg'), ''));
+  }
+  const byGames = items.slice().sort((a, b) => b.games - a.games);
+  const byRate = items.filter((x) => (x.decided || 0) >= 2).slice().sort((a, b) => (b.rate || 0) - (a.rate || 0));
+  const lead = byGames[0];
+  const maxG = Math.max(1, ...byGames.map((x) => x.games));
+  const A = view(
+    big(`${lead.games}`, `${lead.label} · 出场最多`, 'gold') + note('条长＝出场局数，右边写的是这批局里的胜负'),
+    rows(byGames, (x) => barRow(x.label, `${x.games} 局`, widthOf(x.games, maxG), x.rate != null && x.rate < 0.5 ? 'neg' : 'gold',
+      `${x.label} · ${x.games} 局 · ${x.wins} 胜${x.decided ? ' · 胜率 ' + pct(x.rate) : ''}`, '',
+      x.decided ? `${x.wins} 胜 · ${pct(x.rate)}` : '还没分胜负'))
+  );
+  const best = byRate[0];
+  const B = byRate.length >= 2
+    ? view(
+      big(pct(best.rate), `${best.label} · 胜率最高`, 'teal') + note('只算有胜负的局；局数少的先当线索'),
+      rows(byRate, (x) => barRow(x.label, pct(x.rate), widthOf(x.rate, 1), x.rate < 0.5 ? 'neg' : 'gold',
+        `${x.label} · ${x.wins} 胜 ${Math.max(0, x.decided - x.wins)} 负`, '', `${x.wins}/${x.decided} 局`))
+    )
+    : view(big('—', '有胜负的样本还不够', 'neg'),
+      '<p class="cxv-empty-note">至少要有 2 局分出胜负，才排得动胜率。先把对局的结果补上。</p>');
+  return shell(card, ctx, A, B);
+}
+
+/* ── 01 一局一格：按时间把局排开 ─────────────────────────────── */
+function timeline(c, card, ctx) {
+  const items = c.items || [];
+  if (!items.length) {
+    return shell(card, ctx, view(big('0', '局，按时间排开', 'neg'), ''), view(big('—', '还没有样本', 'neg'), ''));
+  }
+  const known = items.filter((x) => num(x.value));
+  const lead = known.filter((x) => x.value > 0).length;
+  const A = view(
+    big(`${items.length}`, '局，按时间排开', 'gold') + note('金＝这一局 10 分钟领先，红＝落后，灰＝这局没有经济曲线；点一格进复盘'),
+    `<div class="cxv-strip">${items.map((x) => {
+      const v = num(x.value) ? x.value : null;
+      const cls = v == null ? 'na' : v > 0 ? 'pos' : 'neg';
+      const res = x.result === 'win' ? 'win' : x.result === 'loss' ? 'loss' : 'na';
+      const resText = res === 'win' ? '胜' : res === 'loss' ? '负' : '未标胜负';
+      return `<a class="cxv-cell ${cls} ${res}" href="#match/${encodeURIComponent(x.key)}" ${tip(`${x.label}${x.sub ? ' ' + x.sub : ''} · ${resText} · ${v == null ? '没有经济曲线' : '10 分钟 ' + signed(v) + ' 金币'}`)}>
+        <b>${v == null ? '—' : signed(v)}</b><small>${esc(x.label)}</small></a>`;
+    }).join('')}</div>`
+  );
+  const groups = new Map();
+  for (const x of items) {
+    const k = x.label || '未标日期';
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(x);
+  }
+  const dayRows = [...groups.entries()].slice(0, 10).map(([label, list]) => {
+    const k = list.filter((x) => num(x.value));
+    return { label, n: list.length, lead: k.filter((x) => x.value > 0).length, known: k.length };
+  });
+  const B = view(
+    big(`${known.length ? pct(lead / known.length) : '—'}`, '有经济曲线的局里，10 分钟领先的比例', 'teal') + note('按训练日分组，看是哪几天领先'),
+    rows(dayRows, (x) => barRow(x.label, `${x.lead}/${x.n} 局`, widthOf(x.known ? x.lead / x.known : 0, 1), 'gold',
+      `${x.label} · ${x.n} 局里 ${x.lead} 局领先`, '', x.known ? `领先 ${pct(x.lead / x.known)}` : '无经济曲线'))
+  );
+  return shell(card, ctx, A, B);
+}
+
+/* ── 01 散点：一局一个点，按时间排 ───────────────────────────── */
+function scatter(c, card, ctx) {
+  const all = c.items || [];
+  const items = all.filter((x) => num(x.value));
+  if (!items.length) {
+    return shell(card, ctx, view(big('0', '局有 10 分钟经济', 'neg'), ''), view(big('—', '还没有样本', 'neg'), ''));
+  }
+  const max = Math.max(500, ...items.map((x) => Math.abs(x.value)));
+  const n = items.length;
+  const xOf = (i) => (n === 1 ? 50 : 8 + (i / (n - 1)) * 84);
+  const yOf = (v) => 50 + (v / max) * 40;
+  const lead = items.filter((x) => x.value > 0).length;
+  const first = items[0], last = items[items.length - 1];
+  const A = view(
+    big(`${n}`, '局，一局一个点', 'gold') + note('金点＝这局 10 分钟领先，红点＝落后；左边早、右边晚；点一下进复盘'),
+    `<div class="cxv-sc">
+      <i class="cxv-sc-zero"></i>
+      <span class="cxv-sc-lab top">${signed(max)}</span>
+      <span class="cxv-sc-lab mid">0</span>
+      <span class="cxv-sc-lab bot">${signed(-max)}</span>
+      ${items.map((x, i) => {
+        const res = x.result === 'win' ? '胜' : x.result === 'loss' ? '负' : '未标胜负';
+        const tipText = `${x.label} ${x.time || ''}${x.sub ? ' · ' + x.sub : ''} · ${res} · 10 分钟 ${signed(x.value)} 金币`;
+        return `<a class="cxv-sc-dot ${x.value >= 0 ? 'pos' : 'neg'}" style="left:${xOf(i).toFixed(2)}%;bottom:${yOf(x.value).toFixed(2)}%" href="#match/${encodeURIComponent(x.key)}" ${tip(tipText)}><i></i></a>`;
+      }).join('')}
+      <div class="cxv-sc-ticks"><span>${esc(first.label)}${first.time ? ' ' + esc(first.time) : ''}</span><span>按开赛时间 →</span><span>${esc(last.label)}${last.time ? ' ' + esc(last.time) : ''}</span></div>
+    </div>`
+  );
+  const noData = all.length - items.length;
+  const B = view(
+    big(`${pct(lead / items.length)}`, '有经济的局里，10 分钟领先的比例', 'teal'),
+    rows([
+      { label: '10 分钟领先', n: lead, cls: 'gold' },
+      { label: '10 分钟落后', n: items.length - lead, cls: 'neg' },
+      { label: '没有经济曲线', n: noData, cls: '' },
+    ], (x) => barRow(x.label, `${x.n} 局`, widthOf(x.n, all.length), x.cls, `${x.label} · ${x.n} 局`, '', all.length ? pct(x.n / all.length) : ''))
+  );
+  return shell(card, ctx, A, B);
+}
+
+/* ── 04 突出点：最顺的一批 vs 最难的一批 ─────────────────────── */
+function split(c, card, ctx) {
+  const left = c.left || { label: '最顺', items: [] };
+  const right = c.right || { label: '最难', items: [] };
+  const all = [...(left.items || []), ...(right.items || [])];
+  if (!all.length) {
+    return shell(card, ctx, view(big('—', '还没有样本', 'neg'), ''), view(big('—', '换不了角度', 'neg'), ''));
+  }
+  const max = Math.max(1, ...all.map((x) => Math.abs(num(x.value) ? x.value : 0)));
+  const col = (side, cls) => `<div class="cxv-split-col">
+      <div class="cxv-split-head">${esc(side.label)}</div>
+      ${(side.items || []).map((x) => `<a class="cxv-split-row" href="#match/${encodeURIComponent(x.key)}" ${tip(`${x.label} · ${signed(x.value)} 金币`)}>
+        <span>${esc(x.label)}</span><i><b class="${cls}" style="width:${widthOf(x.value, max)}"></b></i><em class="${cls}">${signed(x.value)}</em></a>`).join('')}
+    </div>`;
+  const A = view(
+    big(`${all.length}`, '局：最顺的一批 vs 最难的一批', 'gold') + note('左边最顺、右边最难，条长是 10 分钟经济差'),
+    `<div class="cxv-split2">${col(left, 'pos')}${col(right, 'neg')}</div>`
+  );
+  const byDate = all.slice().sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  const B = view(
+    big(`${byDate.length}`, '局按日期排', 'teal') + note('同一批局换个顺序看：最顺和最难的局分别落在哪天'),
+    rows(byDate, (x) => barRow(x.label, signed(x.value), widthOf(x.value, max), num(x.value) < 0 ? 'neg' : 'gold',
+      `${x.label} · ${signed(x.value)} 金币`, '', x.sub || ''))
+  );
+  return shell(card, ctx, A, B);
+}
+
+/* ── 02 赢输对比：左右两栏，同一项目对齐 ─────────────────────── */
+function compare(c, card, ctx) {
+  const items = (c.items || []).filter((x) => x && x.label);
+  const winN = num(c.winN) ? c.winN : 0;
+  const lossN = num(c.lossN) ? c.lossN : 0;
+  if (!items.length) {
+    return shell(card, ctx, view(big('—', '还没有胜负样本', 'neg'), ''), view(big('—', '换不了角度', 'neg'), ''));
+  }
+  const max = Math.max(1, ...items.flatMap((x) => [Math.abs(num(x.win) ? x.win : 0), Math.abs(num(x.loss) ? x.loss : 0)]));
+  /* 每一行按自己这一行的最大值缩放：不同单位（次 / 条 / % / 座）不能共用一把尺 */
+  const wOf = (v, rowMax) => `${clamp(Math.abs(num(v) ? v : 0) / Math.max(1, rowMax) * 100, 2, 100).toFixed(1)}%`;
+  const toneOf = (v) => (num(v) && v < 0 ? 'neg' : 'pos');
+  const hero = c.hero || { value: `${winN} : ${lossN}`, label: '赢的局 : 输的局', cls: 'gold' };
+  const heads = c.headers || [`赢的 ${winN} 局`, `输的 ${lossN} 局`];
+  const A = view(
+    big(hero.value, hero.label, hero.cls || 'gold') + note('左栏是赢的局，右栏是输的局，同一个项目上下对齐；每行按自己这一行缩放'),
+    `<div class="cxv-cmp">
+      <div class="cxv-cmp-head"><span></span><span>${esc(heads[0])}</span><span>${esc(heads[1])}</span></div>
+      ${items.map((x) => {
+        const rowMax = Math.max(1, Math.abs(num(x.win) ? x.win : 0), Math.abs(num(x.loss) ? x.loss : 0));
+        return `<div class="cxv-cmp-row">
+        <span class="cxv-cmp-label">${esc(yuan(x.label))}</span>
+        <span class="cxv-cmp-side"><b class="${toneOf(x.win)}">${esc(yuan(x.winText))}</b><span class="cxv-cmp-track"><i class="cxv-cmp-bar ${toneOf(x.win)}" style="width:${wOf(x.win, rowMax)}"></i></span></span>
+        <span class="cxv-cmp-side"><b class="${toneOf(x.loss)}">${esc(yuan(x.lossText))}</b><span class="cxv-cmp-track"><i class="cxv-cmp-bar ${toneOf(x.loss)}" style="width:${wOf(x.loss, rowMax)}"></i></span></span>
+      </div>`; }).join('')}
+    </div>`
+  );
+  const gapOf = (x) => Math.abs((num(x.win) ? x.win : 0) - (num(x.loss) ? x.loss : 0));
+  const ranked = items.slice().sort((a, b) => gapOf(b) - gapOf(a));
+  const gmax = Math.max(1, ...items.map(gapOf));
+  const B = view(
+    big(`${ranked[0] ? ranked[0].label : '—'}`, '差得最多的一项', 'teal') + note('条越长，赢的局和输的局差得越多'),
+    rows(ranked, (x) => barRow(x.label, gapOf(x).toLocaleString('zh-CN'), widthOf(gapOf(x), gmax), 'gold',
+      `${x.label} · 赢的局 ${x.winText}，输的局 ${x.lossText}`, '', `${x.winText} → ${x.lossText}`))
+  );
+  return shell(card, ctx, A, B);
+}
+
+/* ── 通用条形榜：一行一项，可带副标题 ───────────────────────── */
+function bars(c, card, ctx) {
+  const items = (c.items || []).filter((x) => x && x.label);
+  if (!items.length) {
+    return shell(card, ctx, view(big('—', '还没有样本', 'neg'), ''), view(big('—', '换不了角度', 'neg'), ''));
+  }
+  const max = Math.max(1, ...items.map((x) => Math.abs(num(x.value) ? x.value : 0)));
+  const hero = c.hero || { value: `${items.length}`, label: '项', cls: 'gold' };
+  const A = view(
+    big(hero.value, hero.label, hero.cls || 'gold') + note(c.note || '条长＝这一项的大小，右边是数值'),
+    rows(items, (x) => barRow(x.label, x.text, widthOf(x.value, max), num(x.value) < 0 ? 'neg' : 'gold',
+      `${x.label} · ${x.text}${x.sub ? ' · ' + x.sub : ''}`, '', x.sub || ''))
+  );
+  const sorted = items.slice().sort((a, b) => Math.abs(num(b.value) ? b.value : 0) - Math.abs(num(a.value) ? a.value : 0));
+  const B = view(
+    big(`${sorted.length}`, '项按大小排', 'teal'),
+    rows(sorted, (x) => barRow(x.label, x.text, widthOf(x.value, max), num(x.value) < 0 ? 'neg' : 'gold',
+      `${x.label} · ${x.text}`, '', x.sub || ''))
+  );
+  return shell(card, ctx, A, B);
+}
+
 const RENDERERS = {
-  bands, stack, range, segments, rolling, systems, matrix, contrib, trans, types,
+  bands, stack, range, segments, rolling, systems, matrix, contrib, trans, types, ledger, compare, timeline, split, scatter, bars,
 };
 
 export function renderViz(chart, card, ctx) {

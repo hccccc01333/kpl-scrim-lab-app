@@ -18,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+import replay_time  # noqa: E402
 from replay_parser import (  # noqa: E402
     PLAYER_EVENT_BODY_LENGTHS,
     inspect_replay,
@@ -211,9 +212,11 @@ def single_game_timeline(abc: bytes) -> dict:
                                        d["value"], d["cmd_seq"]])
     return {"route": 1051,
             "builds": header["builds"],
-            "timeBase": {"framesPerSecond": FRAME_RATE, "battleStartFrame": [0, 14],
+            "timeBase": {"framesPerSecond": FRAME_RATE,
+                         "battleStartFrame": list(replay_time.BATTLE_START_FRAME_APPROX),
                          "lastEntryFrame": last_seq,
-                         "note": "t ≈ (frame − battleStart)/15；校准依据 docs 5.129（±1s）"},
+                         "note": "t ≈ (frame − battleStart)/15；校准依据 docs 5.129（±1s）。"
+                                 "帧率常量见 replay_time.py，引擎实测的 15.1515 尚未并入。"},
             "skillLevelups": skill_levelups,
             "buys": buys,
             "facingAngles": facing,
@@ -314,6 +317,9 @@ def timeline(abc: bytes) -> dict:
     # Battle 0:00 sits within the first second of the stream (docs 5.129):
     # last manual buy happens before input locks at victory, so victory frame
     # >= lastManualBuy and the displayed duration pins F0 to [0..14].
+    # The engine dump measures 15.1515 fps, but the record-stream sequence has
+    # not been proven to be that same counter, so this stays on the documented
+    # baseline (replay_time.FPS).
     last_manual = max(manual_buys) if manual_buys else None
     estimated_duration = round(max(last_manual - 7, 0) / FRAME_RATE, 1) if last_manual is not None else None
     return {"abc": {"sha256": digest(abc), "size": len(abc)},
@@ -326,7 +332,7 @@ def timeline(abc: bytes) -> dict:
                       "unresolvedFrames": inputs["unresolvedFrames"],
                       "entryCounts": inputs["entryCounts"]},
             "timeBase": {"framesPerSecond": FRAME_RATE,
-                         "battleStartFrame": [0, 14],
+                         "battleStartFrame": list(replay_time.BATTLE_START_FRAME_APPROX),
                          "firstInputFrame": first_input,
                          "lastActivityFrame": last_activity,
                          "lastManualBuyFrame": last_manual,
@@ -336,7 +342,9 @@ def timeline(abc: bytes) -> dict:
                          "note": "t ≈ (frame − battleStart)/15 s，battleStart ∈ [0..14] 帧，误差 ≤ ±1s。"
                                  "校准依据 docs 5.129：某局样本与赛后截图同局（十人 1251 评分"
                                  "与英雄逐一一致），页面时长 11:33 = 693s，最后手动购买帧 10409 → "
-                                 "(10409−[0..14])/15 = 692.9-693.9s ✓；流末尾为胜利动画（输入已锁定）。",
+                                 "(10409−[0..14])/15 = 692.9-693.9s ✓；流末尾为胜利动画（输入已锁定）。"
+                                 "引擎 dump 实测 15.1515 fps（57 帧/3762 ms），但回放 seq 是否同一计数器"
+                                 "未验证，故未并入；见 replay_time.py。",
                          "verifiedFor": "5247758 样本；未逐构建验证"},
             "moveSchema": "[frame, dir_deg, mag, sign, seq]; dir_deg 与方向技能瞄准同角度系，世界向量 = (cos dir°, sin dir°)（native 轴 +y 向南），罗盘 = (90+dir)%360，见 docs 5.128",
             "attackSchema": "[frame, hasTarget, target_object_id, seq, flag]",

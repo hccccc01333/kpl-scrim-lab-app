@@ -1,11 +1,14 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 from replay_fixtures import (HERO_IDS,NORMAL_5V5_HERO_IDS,NORMAL_5V5_NAMES,abc_fixture,
                              deflate,normal_5v5_fixture,ope_fixture)
-from replay_parser import ReplayFormatError,inflate_raw,inspect_replay,parse_ope_bytes
+import replay_parser
+from replay_parser import (ReplayFormatError,inflate_raw,inspect_abc,inspect_replay,
+                           parse_ope_bytes)
 
 NEW_ABC=Path('data/replays/samples/abc_batch/20261101_182452_-1723849936_94263_1793527939_CBDD358E761B15A4DF526A179E8119E2.abc')
 NEW_OPE=NEW_ABC.with_suffix('.ope')
@@ -13,6 +16,51 @@ NORMAL_ABC=Path('data/replays/samples/20261102_161129/20261102_161129_870343216_
 NORMAL_OPE=NORMAL_ABC.with_suffix('.ope')
 NORMAL2_ABC=Path('data/replays/samples/20261102_163751/20261102_163751_-1996438720_96420_1793607470_2B9FAA08A7AD40D09ABDA364F9C1E804.abc')
 NORMAL2_OPE=NORMAL2_ABC.with_suffix('.ope')
+
+
+class ParseCacheTests(unittest.TestCase):
+    """One upload must not be parsed twice (upload check + import)."""
+
+    def setUp(self):
+        replay_parser.cache_clear()
+
+    def test_second_parse_reuses_the_cached_report(self):
+        data = normal_5v5_fixture()
+        calls = []
+        original = replay_parser.parse_header
+
+        def counting(payload):
+            calls.append(1)
+            return original(payload)
+
+        with mock.patch.object(replay_parser, 'parse_header', counting):
+            replay_parser.inspect_abc(data)
+            replay_parser.inspect_abc(data)
+        self.assertEqual(len(calls), 1)
+
+    def test_callers_cannot_mutate_the_cached_report(self):
+        data = normal_5v5_fixture()
+        first = replay_parser.inspect_abc(data)
+        first['blocks'][0]['heroName'] = 'MUTATED'
+        first['warnings'].append('MUTATED')
+        second = replay_parser.inspect_abc(data)
+        self.assertNotEqual(second['blocks'][0]['heroName'], 'MUTATED')
+        self.assertNotIn('MUTATED', second['warnings'])
+
+    def test_explicit_hero_map_bypasses_the_cache(self):
+        data = normal_5v5_fixture()
+        calls = []
+        original = replay_parser.parse_header
+
+        def counting(payload):
+            calls.append(1)
+            return original(payload)
+
+        heroes = {hero: f'h{hero}' for hero in NORMAL_5V5_HERO_IDS}
+        with mock.patch.object(replay_parser, 'parse_header', counting):
+            replay_parser.inspect_abc(data, heroes)
+            replay_parser.inspect_abc(data, heroes)
+        self.assertEqual(len(calls), 2)
 
 
 class ReplayParserTests(unittest.TestCase):
@@ -117,7 +165,11 @@ class ReplayParserTests(unittest.TestCase):
         self.assertEqual(r['frames']['start'],32783)
         self.assertEqual(r['frames']['records'],9900)
         self.assertEqual(r['frames']['firstSequence'],1)
-        self.assertEqual(r['frames']['lastSequence'],172)
+        # The wire field is a u8 that wraps every 256 records; the report
+        # carries the unwrapped frame number plus the raw byte.
+        self.assertEqual(r['frames']['lastSequence'],9900)
+        self.assertEqual(r['frames']['lastSequenceByte'],172)
+        self.assertTrue(r['frames']['sequenceWraps'])
         self.assertEqual(r['scoreTable']['status'],'score-table')
         self.assertEqual(r['scoreTable']['offset'],201226)
         self.assertEqual(r['header']['totalFrameNum'],10063)
