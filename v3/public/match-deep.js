@@ -244,35 +244,47 @@ export function createMatchDeep(h) {
     { key: 'cs', label: '发育', text: (v) => fmt(v) },
   ];
 
-  /* 对位比较口径（教练 2026-11-10）：分均经济带评级、经济转输出、死亡 >2 预警。 */
-  function duelMetrics(inv, duration) {
-    const list = [
-      { key: 'gpm', label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
+  /* 对位比较口径（教练 2026-11-10 第二/三波）：每个位置只显示该位置
+     该看的指标。分均经济带评级、经济转输出判断无效输出、死亡 >2 预警。 */
+  function metricPool(inv, duration) {
+    const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
+    return {
+      gpm: { label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
         get: (p) => gpmOf(p, duration) },
-      { key: 'damageConversion', label: '经济转输出', text: (v) => fmt(v, 2),
+      conversion: { label: '经济转输出', text: (v) => fmt(v, 2),
         get: (p) => read(p, 'damageConversion') },
-      { key: 'damage', label: '输出', text: (v) => fmt(v), get: (p) => read(p, 'damage') },
-      { key: 'taken', label: '承伤', text: (v) => fmt(v), get: (p) => read(p, 'taken') },
-      { key: 'participation', label: '参团', text: (v) => pct(v), rate: true,
+      damage: { label: '输出', text: (v) => fmt(v), get: (p) => read(p, 'damage') },
+      taken: { label: '承伤', text: (v) => fmt(v), get: (p) => read(p, 'taken') },
+      participation: { label: '参团', text: (v) => pct(v), rate: true,
         get: (p) => read(p, 'participation') },
-      { key: 'deaths', label: '死亡', text: (v) => fmt(v), noBar: true,
+      deaths: { label: '死亡', text: (v) => fmt(v), noBar: true,
         get: (p) => read(p, 'deaths'), alert: (v) => v > 2 },
-      { key: 'cs', label: '发育', text: (v) => fmt(v), get: (p) => read(p, 'cs') },
-    ];
-    if (inv) {
-      const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
-      list.push({
-        key: 'invade', label: '入侵', text: (v) => pct(v), rate: true,
+      cs: { label: '发育', text: (v) => fmt(v), get: (p) => read(p, 'cs') },
+      jungle: { label: '野怪经济', text: (v) => fmt(v), get: (p) => read(p, 'jungleGold') },
+      control: { label: '控制时长', text: (v) => fmt(v), get: (p) => read(p, 'control') },
+      healing: { label: '治疗量', text: (v) => fmt(v), get: (p) => read(p, 'healing') },
+      takenPerDeath: { label: '每死承伤', text: (v) => fmt(v), get: (p) => read(p, 'takenPerDeath') },
+      tower: { label: '对塔伤害', text: (v) => fmt(v), get: (p) => read(p, 'towerDamage') },
+      rating: { label: '评分', text: (v) => fmt(v, 1), get: (p) => read(p, 'rating') },
+      invade: inv ? {
+        label: '入侵', text: (v) => pct(v), rate: true,
         get: (p) => { const s = entry(p); return s ? s.rate : null; },
         tip: (p) => {
           const s = entry(p);
           if (!s) return '';
           return `前 ${pct(s.phases[0])} / 中 ${pct(s.phases[1])} / 后 ${pct(s.phases[2])} · ${s.episodes} 次 · 首次 ${s.first === null ? '—' : time(s.first)} · 最长 ${fmt(s.longest)} 秒 · 纵深峰值 ${pct(s.peak)}`;
         },
-      });
-    }
-    return list;
+      } : null,
+    };
   }
+  /* 分路关注的指标（来自教练第三波；视野价值/控龙率等待数据源）。 */
+  const LANE_METRICS = {
+    '对抗路': ['gpm', 'conversion', 'taken', 'tower', 'deaths', 'participation'],
+    '打野': ['gpm', 'jungle', 'damage', 'invade', 'deaths', 'participation'],
+    '中路': ['gpm', 'conversion', 'damage', 'control', 'deaths', 'participation'],
+    '发育路': ['gpm', 'conversion', 'damage', 'deaths', 'cs', 'participation'],
+    '游走': ['participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
+  };
 
   function buildMetrics(inv) {
     const metrics = METRIC_BASE.map((m) => ({ ...m, get: (p) => read(p, m.key) }));
@@ -315,7 +327,7 @@ export function createMatchDeep(h) {
     return `<svg class="md-fl" viewBox="0 0 ${size} ${size}" role="img" aria-label="对位雷达：${esc(name)}">${[0.34, 0.67, 1].map(ring).join('')}${spokes}${area(a, 'own')}${area(b, 'foe')}${labels}</svg>`;
   }
 
-  function duelView(players, ownCamp, metrics) {
+  function duelView(players, ownCamp, pool) {
     const pick = (camp) => {
       const map = new Map();
       for (const p of players) if (p.camp === camp) map.set(laneOf(p), p);
@@ -332,6 +344,8 @@ export function createMatchDeep(h) {
     };
     const rows = LANES.map((lane) => {
       const a = mine.get(lane), b = theirs.get(lane);
+      const metrics = (LANE_METRICS[lane] || Object.keys(pool))
+        .map((key) => pool[key]).filter(Boolean);
       const bars = metrics.map((m) => {
         const x = m.get(a), y = m.get(b);
         const tip = m.tip
@@ -415,7 +429,7 @@ export function createMatchDeep(h) {
     const foeName = `对手 · ${foeCamp === 'blue' ? '蓝方' : '红方'}`;
     const inv = positions && positions.players && positions.players.length ? invasionStats(positions, players, duration) : null;
     const metrics = buildMetrics(inv);
-    const duelSet = duelMetrics(inv, duration);
+    const pool = metricPool(inv, duration);
     const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${panelMode === mode ? ' is-on' : ''}"
       aria-selected="${panelMode === mode}" data-md-panel-mode="${mode}">${text}</button>`;
     const note = inv
@@ -426,7 +440,7 @@ export function createMatchDeep(h) {
         <div class="md-seg" role="tablist" aria-label="十人面板口径">${tab('duel', '对位比较')}${tab('team', '同队比较')}</div>
         <p class="md-panel-note">${note}</p>
       </div>
-      <div class="md-panel-view" data-md-view="duel"${panelMode === 'duel' ? '' : ' hidden'}>${duelView(players, camp, duelSet)}</div>
+      <div class="md-panel-view" data-md-view="duel"${panelMode === 'duel' ? '' : ' hidden'}>${duelView(players, camp, pool)}</div>
       <div class="md-panel-view" data-md-view="team"${panelMode === 'team' ? '' : ' hidden'}>
         <div class="md-teams">${teamTable(players, camp, ownName, 'own', metrics, inv)}${teamTable(players, foeCamp, foeName, 'foe', metrics, inv)}</div>
       </div>
