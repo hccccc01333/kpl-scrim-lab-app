@@ -1332,6 +1332,26 @@ async def update_match_meta(key: str, request: Request, repo=Depends(repository)
         raise HTTPException(400, '阵营无效')
     if 'ownCamp' in body:
         patch['ownCamp'] = camp or None
+    # 10 分钟经济：营地没有逐人金币时间轴，只能手填。键是「阵营-槽位」，值是整数金币。
+    gold10 = body.get('gold10')
+    if gold10 is not None:
+        if not isinstance(gold10, dict) or len(gold10) > 10:
+            raise HTTPException(400, '10 分钟经济格式无效')
+        cleaned = {}
+        for name, value in gold10.items():
+            text = str(name or '').strip()
+            if not text or len(text) > 40:
+                raise HTTPException(400, '10 分钟经济的选手标识无效')
+            if value in (None, ''):
+                continue
+            try:
+                number = int(float(value))
+            except (TypeError, ValueError):
+                raise HTTPException(400, f'{text} 的 10 分钟经济不是数字')
+            if not 0 <= number <= 100000:
+                raise HTTPException(400, f'{text} 的 10 分钟经济超出合理范围')
+            cleaned[text] = number
+        patch['gold10'] = cleaned
     result = body.get('result')
     if result not in ('win','loss','draw','unknown',None):
         raise HTTPException(400, '赛果无效')

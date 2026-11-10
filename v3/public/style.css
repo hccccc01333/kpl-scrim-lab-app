@@ -1,4 +1,4 @@
-﻿@font-face { font-family: Manrope; src: url('media/manrope.woff2') format('woff2'); font-style: normal; font-weight: 400 800; font-display: swap; }
+@font-face { font-family: Manrope; src: url('media/manrope.woff2') format('woff2'); font-style: normal; font-weight: 400 800; font-display: swap; }
 :root {
   color-scheme: light;
   --bg: #f3f5f6; --paper: #fff; --surface: #e9eeef; --text: #192c31; --muted: #627478;
@@ -6528,7 +6528,7 @@ a.hz-card { display: block; text-decoration: none; }
 .cx-cf-method span { margin-left: 10px; }
 
 /* ── 页签 / 导语 / 展开的局列表（跨局分析 · 赛训组版） ───────────── */
-.cx-tabs { margin: 2px 0; }
+.cx-tabs { margin: 2px 0; background: var(--wash); }
 .cx-page .cx-pane { display: grid; gap: 18px; }
 .cx-page .cx-pane[hidden] { display: none; }
 .cx-pane-lede { margin: 0; max-width: 900px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
@@ -6553,6 +6553,17 @@ a.hz-card { display: block; text-decoration: none; }
 .cx-act-export:hover { color: var(--text); }
 .cx-act-more { margin: 0; padding: 8px 14px 0; color: var(--quiet); font-size: 10.5px; }
 .cxv-empty-note { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+/* ── 选手与位置：页签 + 统计范围 ───────────────────────────────── */
+.lv-tabs { margin: 4px 0 0; background: var(--wash); }
+.lv-page .lv-pane { display: grid; gap: 16px; }
+.lv-page .lv-pane[hidden] { display: none; }
+.lv-lede { margin: 0; max-width: 900px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.lv-scope { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.lv-scope button { padding: 6px 11px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11.5px; font-weight: 700; font-family: inherit; cursor: pointer; }
+.lv-scope button.is-on { background: var(--paper); color: var(--text); box-shadow: 0 1px 2px rgba(15, 30, 40, .14); }
+.lv-scope button:disabled { opacity: .45; cursor: default; }
+.pb-intro .intro-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
 @media (max-width: 720px) {
   .cx-act-row { grid-template-columns: 48px minmax(0, 1fr) 30px 18px; }
@@ -7745,3 +7756,24 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-mu-now i { font-style: normal; font-weight: 700; }
 .md-mu-now i.is-hit { color: var(--accent); }
 .md-mu-now i.is-miss { color: var(--warn, #a54c46); }
+
+/* 10 分钟经济：教练手填的覆盖层 */
+.md-g10-count { color: var(--muted); font-size: 12px; }
+.md-g10-count b { color: var(--text); font: 700 15px/1 Manrope, var(--font); margin: 0 2px; }
+.md-g10-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; padding: 0 var(--md-pad); }
+.md-g10-side { display: grid; gap: 6px; align-content: start; }
+.md-g10-side-label { font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.md-g10-side-label.own { color: var(--md-own-ink); }
+.md-g10-side-label.foe { color: var(--md-enemy-ink); }
+.md-g10-row { display: grid; grid-template-columns: 54px minmax(0, 1fr) 96px 46px; align-items: center; gap: 8px;
+  padding: 5px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.md-g10-lane { color: var(--muted); font-size: 11px; }
+.md-g10-hero { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-g10-row input { width: 100%; height: 28px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--paper); color: var(--text); font: 700 12px/1 Manrope, var(--font);
+  font-variant-numeric: tabular-nums; text-align: right; }
+.md-g10-row input::placeholder { color: var(--quiet); font: 400 10.5px/1 var(--font); }
+.md-g10-row input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.md-g10-row input.is-bad { border-color: var(--warn, #a54c46); }
+.md-g10-note { margin: 10px var(--md-pad) 0; color: var(--quiet); font-size: 11px; }
+@media (max-width: 820px) { .md-g10-grid { grid-template-columns: 1fr; } }

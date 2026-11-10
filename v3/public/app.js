@@ -976,6 +976,19 @@ function sourcesPage(value) {
     <div class="source-grid">${[['本机记录', inventory.dbMatches], ['对局数据包', inventory.bundleMatches], ['导入表格对局', inventory.sheetMatches], ['未确认草稿', inventory.drafts]].map(([name,count])=>`<div><span>${esc(name)}</span><strong>${fmt(count)}</strong><small>条记录</small></div>`).join('')}</div>${table(['来源', '局数'], rows)}</section></div>`;
 }
 
+/* 10 分钟经济的分路阈值（教练给的：对抗路 / 发育路 6800 及格、7000 良好、7400 优秀）。
+   放在模块级，是因为保存后要就地重画评级，不想整页刷新。 */
+const GOLD10_GRADES = {
+  '对抗路': [[7400, '优秀', 'good'], [7000, '良好', 'ok'], [6800, '及格', 'pass'], [0, '待提升', 'low']],
+  '发育路': [[7400, '优秀', 'good'], [7000, '良好', 'ok'], [6800, '及格', 'pass'], [0, '待提升', 'low']],
+};
+function gold10Grade(lane, value) {
+  const defs = GOLD10_GRADES[lane];
+  if (!defs || !has(value)) return null;
+  for (const [need, label, level] of defs) if (value >= need) return { label, level };
+  return null;
+}
+
 function matchPage(m) {
   const own = m.ownCamp;
   const blue = { left: 'blue', right: 'red' }[own] || own;
@@ -1198,6 +1211,38 @@ function matchPage(m) {
     <div class="md-node-head"><span>时间</span><span>关键节点</span><span>经济差变化</span><span>当时经济差</span><span>方向 / 来源</span></div>
     <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
   </section>` : '';
+  /* 10 分钟经济：营地接口只有团队金币（30 秒一个点），没有逐人；回放的金币流水
+     对不上账（残差 17.5%，个别 43%）。所以这一格只能由教练手填，填在覆盖层里，
+     不动原始数据包；不填就留空，不估。 */
+  const mdGold10 = (() => {
+    const saved = m.gold10 || {};
+    const byPos = { 对抗路: 0, 打野: 1, 中路: 2, 发育路: 3, 游走: 4 };
+    const people = (m.players || []).filter((p) => p.camp === own || p.camp === opposite[own]);
+    if (people.length < 2) return '';
+    const side = (camp) => people.filter((p) => p.camp === camp)
+      .sort((a, b) => (byPos[a.position] ?? 9) - (byPos[b.position] ?? 9))
+      .map((p) => {
+        const key = `${p.camp}-${p.slot}`;
+        const value = has(saved[key]) ? saved[key] : null;
+        const grade = value === null ? null : gold10Grade(p.position, value);
+        return `<label class="md-g10-row">
+          <span class="md-g10-lane">${esc(p.position || '未标注')}</span>
+          <span class="md-g10-hero">${esc(p.hero || '—')}</span>
+          <input type="number" inputmode="numeric" min="0" max="100000" step="1"
+                 data-gold10="${esc(key)}" value="${value === null ? '' : value}" placeholder="填 10 分钟金币">
+          ${grade ? `<em class="md-grade ${grade.level}">${grade.label}</em>` : '<em class="md-grade is-blank"></em>'}
+        </label>`;
+      }).join('');
+    const filled = people.filter((p) => has(saved[`${p.camp}-${p.slot}`])).length;
+    return `<section class="section" id="match-gold10"><div class="section-heading"><div><h2>10 分钟经济</h2><p>营地与回放都没有逐人金币时间轴（回放只有团队经济，逐人流水对不上账），所以这格只能手填。填完立刻按分路出评级：对抗路 / 发育路 6800 及格、7000 良好、7400 优秀</p></div>
+      <span class="md-g10-count">已填 <b>${filled}</b> / ${people.length}</span></div>
+      <div class="md-g10-grid">
+        <div class="md-g10-side"><span class="md-g10-side-label own">本队</span>${side(own)}</div>
+        <div class="md-g10-side"><span class="md-g10-side-label foe">对手</span>${side(opposite[own])}</div>
+      </div>
+      <p class="md-g10-note">填在覆盖层里，不改原始数据包；不填就留空，不估算、不补齐。</p>
+    </section>`;
+  })();
   const mdProfiles = `<section class="section" id="match-profiles"><div class="section-heading"><div><h2>十人面板</h2><p>对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比</p></div></div>
     ${deep.panel(m.players || [], own, m.positions, m.duration, m.replay?.kills, m.replay?.fights, m.replay?.deaths)}
   </section>`;
@@ -1469,7 +1514,7 @@ function matchPage(m) {
   </div>`;
   return `<div class="page md-page" data-md-tab-active="${mdTab}">${mdCrumb}${mdTabs}
     <div class="md-pane" data-md-pane="review">${mdHero}${mdBp}${mdTotals}${mdPhases}${mdPulse}${mdTimeline}</div>
-    <div class="md-pane" data-md-pane="data">${mdProfiles}${mdCohesion}</div>
+    <div class="md-pane" data-md-pane="data">${mdGold10}${mdProfiles}${mdCohesion}</div>
     <div class="md-pane" data-md-pane="events">${mdBattle}${mdKills}${mdEventDetail}</div>
     <div class="md-pane" data-md-pane="map">${mdFront}${mdHeat}${mdDuel}</div>
     ${mdSource}
@@ -1924,6 +1969,43 @@ app.addEventListener('input', (event) => {
   const summary=document.querySelector('.match-overview');if(summary)summary.innerHTML=temp.querySelector('.match-overview')?.innerHTML||'';
 });
 
+app.addEventListener('change', async (event) => {
+  const input = event.target.closest('[data-gold10]');
+  if (!input) return;
+  const card = document.querySelector('#match-gold10');
+  if (!card) return;
+  const gold10 = {};
+  card.querySelectorAll('[data-gold10]').forEach((el) => {
+    const raw = String(el.value || '').trim();
+    if (raw !== '' && Number.isFinite(Number(raw))) gold10[el.dataset.gold10] = Number(raw);
+  });
+  const key = current().key;
+  input.classList.remove('is-bad');
+  try {
+    const response = await fetch(API_BASE + '/api/v3/match-meta/' + encodeURIComponent(key), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ gold10 }),
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.detail || '保存失败');
+    }
+    /* 就地重画这一格的评级和计数，不整页刷新：教练通常要连着填五个人。 */
+    card.querySelectorAll('[data-gold10]').forEach((el) => {
+      const lane = el.closest('.md-g10-row')?.querySelector('.md-g10-lane')?.textContent || '';
+      const grade = el.value === '' ? null : gold10Grade(lane, Number(el.value));
+      const chip = el.parentElement.querySelector('.md-grade');
+      if (!chip) return;
+      chip.className = `md-grade ${grade ? grade.level : 'is-blank'}`;
+      chip.textContent = grade ? grade.label : '';
+    });
+    const count = card.querySelector('.md-g10-count b');
+    if (count) count.textContent = String(Object.keys(gold10).length);
+  } catch (error) {
+    input.classList.add('is-bad');
+    window.alert(error.message || '保存失败');
+  }
+});
 app.addEventListener('change', (event) => features.change(event));
 
 function showChartPoint(event) {

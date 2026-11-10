@@ -348,6 +348,20 @@ class AnalysisRepository:
                 own = match['ownCamp']
                 match['winnerCamp'] = {'win': own, 'loss': 'red' if own == 'blue' else 'blue',
                                        'draw': None}[result]
+            # 10 分钟经济：营地那条链路拿不到逐人金币，只能由教练在工作台手填。
+            # 存在覆盖层里（不动原始数据包），键是「阵营-槽位」，值为整数金币。
+            gold10 = patch.get('gold10')
+            if isinstance(gold10, dict):
+                cleaned = {}
+                for name, value in gold10.items():
+                    try:
+                        number = int(float(value))
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 <= number <= 100000:
+                        cleaned[str(name)] = number
+                if cleaned:
+                    match['gold10'] = cleaned
             match['metaFields'] = sorted(patch.keys())
 
     def _db_match(self, body, roster):
