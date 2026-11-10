@@ -7456,3 +7456,13 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .cx-cf-insufficient p { color: var(--muted); font-size: 13px; line-height: 1.6; }
 
 .cx-cf-title-muted { color: var(--muted); font-weight: 600; }
+
+/* 分均经济评级徽标 + 死亡率预警（教练 2026-11-10 口径） */
+.md-grade { font-style: normal; font-size: 10.5px; font-weight: 600; padding: 1px 5px;
+  border-radius: 6px; margin-left: 4px; white-space: nowrap; }
+.md-grade.good { background: var(--soft); color: var(--accent); }
+.md-grade.ok { background: #e8f0f4; color: #3d6a78; }
+.md-grade.pass { background: #f2efe2; color: #8a6d2f; }
+.md-grade.low { background: #f6e5e2; color: var(--warn, #a54c46); }
+.md-vsm-num.is-alert { color: var(--warn, #a54c46); font-weight: 700; }
+.md-vsm-track.is-flat { background: transparent; border-top: 1px dashed var(--line); height: 0; align-self: center; flex: 1; }

@@ -64,6 +64,26 @@ function phaseWindows(duration) {
     return { label, start: a, end: Math.max(a, b) };
   });
 }
+/* 分均经济评级（教练 2026-11-10 口径，单位金/分钟）：
+   对抗路/发育路 = 10 分钟基准 ÷10：6800 及格 / 7000 良好 / 7400 优秀；
+   打野（野核）：700 及格 / 750 良好 / 800 优秀；
+   中单/游走暂无阈值，只显示数值。 */
+const GOLD_GRADES = {
+  '对抗路': [[740, '优秀', 'good'], [700, '良好', 'ok'], [680, '及格', 'pass'], [0, '待提升', 'low']],
+  '发育路': [[740, '优秀', 'good'], [700, '良好', 'ok'], [680, '及格', 'pass'], [0, '待提升', 'low']],
+  '打野': [[800, '优秀', 'good'], [750, '良好', 'ok'], [700, '及格', 'pass'], [0, '待提升', 'low']],
+};
+function goldGrade(lane, gpm) {
+  const defs = GOLD_GRADES[lane];
+  if (!defs || !has(gpm)) return null;
+  for (const [need, label, level] of defs) if (gpm >= need) return { label, level };
+  return null;
+}
+function gpmOf(player, duration) {
+  if (!player || !has(player.gold)) return null;
+  const minutes = has(duration) && duration > 0 ? duration / 60 : null;
+  return minutes ? player.gold / minutes : null;
+}
 function phaseIndexAt(t, duration) {
   if (!has(duration) || duration <= 0) return 0;
   if (t < 240) return 0;
@@ -1157,7 +1177,8 @@ function matchPage(m) {
 
 const tour = createTour();
 const features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table, pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true), currentQuery: () => query() });
-const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait, phases: phaseWindows });
+const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait, phases: phaseWindows,
+  gpmOf, goldGrade });
 const crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
 deep.bindPanel(document);
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */

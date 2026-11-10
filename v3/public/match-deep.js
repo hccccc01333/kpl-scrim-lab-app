@@ -36,6 +36,12 @@ function activeMask(points, step) {
 export function createMatchDeep(h) {
   const { esc, fmt, pct, diff, time, portrait } = h;
   /* 阶段口径由 app 注入（对线 0–4′、发育 4–10′、后期 10′+）。 */
+  const gpmOf = h.gpmOf || ((player, duration) => {
+    if (!player || !Number.isFinite(player.gold)) return null;
+    const minutes = Number(duration) > 0 ? duration / 60 : null;
+    return minutes ? player.gold / minutes : null;
+  });
+  const goldGrade = h.goldGrade || (() => null);
   const phaseWindows = h.phases || ((duration) => {
     const total = Number(duration) > 0 ? Number(duration) : 0;
     return [['对线期', 0, 240], ['发育期', 240, 600], ['后期', 600, Infinity]]
@@ -238,6 +244,36 @@ export function createMatchDeep(h) {
     { key: 'cs', label: '发育', text: (v) => fmt(v) },
   ];
 
+  /* 对位比较口径（教练 2026-11-10）：分均经济带评级、经济转输出、死亡 >2 预警。 */
+  function duelMetrics(inv, duration) {
+    const list = [
+      { key: 'gpm', label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
+        get: (p) => gpmOf(p, duration) },
+      { key: 'damageConversion', label: '经济转输出', text: (v) => fmt(v, 2),
+        get: (p) => read(p, 'damageConversion') },
+      { key: 'damage', label: '输出', text: (v) => fmt(v), get: (p) => read(p, 'damage') },
+      { key: 'taken', label: '承伤', text: (v) => fmt(v), get: (p) => read(p, 'taken') },
+      { key: 'participation', label: '参团', text: (v) => pct(v), rate: true,
+        get: (p) => read(p, 'participation') },
+      { key: 'deaths', label: '死亡', text: (v) => fmt(v), noBar: true,
+        get: (p) => read(p, 'deaths'), alert: (v) => v > 2 },
+      { key: 'cs', label: '发育', text: (v) => fmt(v), get: (p) => read(p, 'cs') },
+    ];
+    if (inv) {
+      const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
+      list.push({
+        key: 'invade', label: '入侵', text: (v) => pct(v), rate: true,
+        get: (p) => { const s = entry(p); return s ? s.rate : null; },
+        tip: (p) => {
+          const s = entry(p);
+          if (!s) return '';
+          return `前 ${pct(s.phases[0])} / 中 ${pct(s.phases[1])} / 后 ${pct(s.phases[2])} · ${s.episodes} 次 · 首次 ${s.first === null ? '—' : time(s.first)} · 最长 ${fmt(s.longest)} 秒 · 纵深峰值 ${pct(s.peak)}`;
+        },
+      });
+    }
+    return list;
+  }
+
   function buildMetrics(inv) {
     const metrics = METRIC_BASE.map((m) => ({ ...m, get: (p) => read(p, m.key) }));
     if (!inv) return metrics;
@@ -289,21 +325,36 @@ export function createMatchDeep(h) {
     const who = (p, side) => (p
       ? `<span class="md-vs-id ${side}">${portrait(p.hero)}<span><b>${esc(p.label || p.hero || '—')}</b><small>${esc(p.hero || '—')}</small></span></span>`
       : `<span class="md-vs-id ${side} empty">未匹配</span>`);
+    const gradeChip = (m, lane, value) => {
+      if (!m.grade || !num(value)) return '';
+      const grade = goldGrade(lane, value);
+      return grade ? ` <em class="md-grade ${grade.level}">${grade.label}</em>` : '';
+    };
     const rows = LANES.map((lane) => {
       const a = mine.get(lane), b = theirs.get(lane);
       const bars = metrics.map((m) => {
         const x = m.get(a), y = m.get(b);
-        const sum = (x || 0) + (y || 0);
-        const share = sum > 0 ? (x || 0) / sum * 100 : 50;
-        const lead = (x || 0) > (y || 0) ? 'own' : (x || 0) < (y || 0) ? 'foe' : 'tie';
         const tip = m.tip
           ? [a, b].filter(Boolean).map((p) => `${p.label || p.hero || '—'}：${m.tip(p)}`).join(' / ')
           : '';
+        if (m.noBar) {
+          const alertX = m.alert && num(x) && m.alert(x);
+          const alertY = m.alert && num(y) && m.alert(y);
+          return `<div class="md-vsm" data-lead="tie"${tip ? ` title="${esc(tip)}"` : ''}>
+            <span class="md-vsm-label">${m.label}</span>
+            <b class="md-vsm-num own${alertX ? ' is-alert' : ''}">${num(x) ? m.text(x) : '—'}</b>
+            <span class="md-vsm-track is-flat"></span>
+            <b class="md-vsm-num foe${alertY ? ' is-alert' : ''}">${num(y) ? m.text(y) : '—'}</b>
+          </div>`;
+        }
+        const sum = (x || 0) + (y || 0);
+        const share = sum > 0 ? (x || 0) / sum * 100 : 50;
+        const lead = (x || 0) > (y || 0) ? 'own' : (x || 0) < (y || 0) ? 'foe' : 'tie';
         return `<div class="md-vsm" data-lead="${lead}"${tip ? ` title="${esc(tip)}"` : ''}>
           <span class="md-vsm-label">${m.label}</span>
-          <b class="md-vsm-num own">${num(x) ? m.text(x) : '—'}</b>
+          <b class="md-vsm-num own">${num(x) ? m.text(x) + gradeChip(m, lane, x) : '—'}</b>
           <span class="md-vsm-track"><i style="width:${share.toFixed(1)}%"></i></span>
-          <b class="md-vsm-num foe">${num(y) ? m.text(y) : '—'}</b>
+          <b class="md-vsm-num foe">${num(y) ? m.text(y) + gradeChip(m, lane, y) : '—'}</b>
         </div>`;
       }).join('');
       return `<article class="md-vs">
@@ -364,6 +415,7 @@ export function createMatchDeep(h) {
     const foeName = `对手 · ${foeCamp === 'blue' ? '蓝方' : '红方'}`;
     const inv = positions && positions.players && positions.players.length ? invasionStats(positions, players, duration) : null;
     const metrics = buildMetrics(inv);
+    const duelSet = duelMetrics(inv, duration);
     const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${panelMode === mode ? ' is-on' : ''}"
       aria-selected="${panelMode === mode}" data-md-panel-mode="${mode}">${text}</button>`;
     const note = inv
@@ -374,7 +426,7 @@ export function createMatchDeep(h) {
         <div class="md-seg" role="tablist" aria-label="十人面板口径">${tab('duel', '对位比较')}${tab('team', '同队比较')}</div>
         <p class="md-panel-note">${note}</p>
       </div>
-      <div class="md-panel-view" data-md-view="duel"${panelMode === 'duel' ? '' : ' hidden'}>${duelView(players, camp, metrics)}</div>
+      <div class="md-panel-view" data-md-view="duel"${panelMode === 'duel' ? '' : ' hidden'}>${duelView(players, camp, duelSet)}</div>
       <div class="md-panel-view" data-md-view="team"${panelMode === 'team' ? '' : ' hidden'}>
         <div class="md-teams">${teamTable(players, camp, ownName, 'own', metrics, inv)}${teamTable(players, foeCamp, foeName, 'foe', metrics, inv)}</div>
       </div>
