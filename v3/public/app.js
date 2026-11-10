@@ -1,4 +1,4 @@
-import { groupFor } from './navigation.js';
+﻿import { groupFor } from './navigation.js';
 import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
@@ -1167,14 +1167,56 @@ function matchPage(m) {
   const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
     <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
     <span class="md-bp-bans">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>`;
-  /* 本局组合：把双方阵容里的英雄组合对到历史样本（camp-combos），
-     显示场次 / 组合胜率 / 协同加成（相对单英雄基准，百分点）。 */
-  const comboBlock = (() => {
-    const combosData = m.combosData;
-    if (!combosData || !draft) return '';
+  /* ── BP 复盘：把「历史对位」「历史联动」两个库对到本局，回答「这把 BP 打得怎么样」──
+     只报算得出来的：算不了的写「待积累」，不给总分，也不拿胜负倒推 BP 好坏。 */
+  const bpAnalysis = (() => {
+    const empty = { review: '', combos: '', matchup: '' };
+    if (!draft) return empty;
+    const lmRows = m.laneMatchup?.payload?.heroes || [];
+    const byPair = new Map(lmRows.map((row) => [`${row.ownHero}|${row.enemyHero}`, row]));
+    const mine = new Map(), theirs = new Map();
+    for (const p of m.players || []) {
+      if (!p.position) continue;
+      (p.camp === own ? mine : theirs).set(p.position, p);
+    }
+    const ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
+    const lanes = ORDER.map((lane) => {
+      const a = mine.get(lane), b = theirs.get(lane);
+      if (!a || !b) return null;
+      const row = byPair.get(`${a.hero}|${b.hero}`) || null;
+      /* 「对位压制」看**对线**，不看胜负：领先率与平均经济差必须同向才算压制/劣势。 */
+      const verdict = !row || row.n < 3 ? '样本不足'
+        : (row.aheadRate >= 66.7 && row.avgGoldDiff > 0) ? '压制'
+        : (row.aheadRate <= 33.3 && row.avgGoldDiff < 0) ? '劣势' : '均势';
+      const nowDiff = has(a.gold) && has(b.gold) ? a.gold - b.gold : null;
+      const judgeable = verdict !== '样本不足';
+      /* 兑现：历史说占优、本局经济也领先（或历史吃亏、本局也亏） */
+      const realised = judgeable && has(nowDiff)
+        ? (verdict === '压制' ? nowDiff > 0 : verdict === '劣势' ? nowDiff < 0 : null)
+        : null;
+      return { lane, a, b, row, verdict, nowDiff, judgeable, realised };
+    }).filter(Boolean);
+
+    const verdictText = (lane) => lane.verdict === '压制' ? '我方占优'
+      : lane.verdict === '劣势' ? '我方吃亏' : lane.verdict === '均势' ? '打平'
+      : lane.row ? `待积累 ${fmt(lane.row.n)}/3` : '待积累';
+    const verdictCls = (lane) => lane.verdict === '压制' ? 'is-ahead'
+      : lane.verdict === '劣势' ? 'is-behind' : lane.verdict === '均势' ? 'is-even' : 'is-thin';
+    const laneCard = (lane) => `<article class="md-mu-card ${verdictCls(lane)}">
+      <header><span class="md-mu-lane">${lane.lane}</span><em class="${verdictCls(lane)}">${verdictText(lane)}</em></header>
+      <div class="md-mu-who"><b class="own">${esc(lane.a.hero || '—')}</b><i>vs</i><b class="foe">${esc(lane.b.hero || '—')}</b></div>
+      ${lane.row ? `<p class="md-mu-hist">历史 ${fmt(lane.row.n)} 局 · 领先 ${fmt(lane.row.aheadRate, 0)}% · 均差 ${diff(lane.row.avgGoldDiff)}</p>`
+        : '<p class="md-mu-hist">没有同分路同英雄的历史对位</p>'}
+      ${lane.nowDiff === null ? '<p class="md-mu-now">本局经济差 —</p>'
+        : `<p class="md-mu-now">本局对位经济差 <b>${diff(lane.nowDiff)}</b>${lane.realised === null ? ''
+          : lane.realised ? ' · <i class="is-hit">与历史同向</i>' : ' · <i class="is-miss">与历史相反</i>'}</p>`}
+    </article>`;
+
+    /* 联动：把双方阵容对到历史组合样本 */
     const heroesOf = (key) => (draft?.picks?.[key] || []).map((row) => row && row.name).filter(Boolean);
     const collect = (side, heroes) => {
-      if (!heroes.length) return [];
+      const combosData = m.combosData;
+      if (!combosData || !heroes.length) return [];
       const out = [];
       for (const list of [combosData.pairs, combosData.trios]) {
         for (const combo of (list?.[side]?.combos || [])) {
@@ -1183,61 +1225,56 @@ function matchPage(m) {
           }
         }
       }
-      return out.sort((a, b) => (b.games - a.games) || (b.synergy - a.synergy)).slice(0, 3);
+      return out.sort((x, y) => (y.games - x.games) || (y.synergy - x.synergy)).slice(0, 3);
     };
     const ownCombos = collect('own', heroesOf(ownSideKey));
     const foeCombos = collect('enemy', heroesOf(enemySideKey));
-    if (!ownCombos.length && !foeCombos.length) return '';
-    /* 卡片带头像：教练认组合是认脸，不是认一串名字。 */
-    const card = (combo) => `<span class="md-combo">
-      <span class="md-combo-heroes">${combo.heroes.map((hero) => portrait(hero)).join('<i>+</i>')}</span>
+    const comboCard = (combo) => `<article class="md-combo-card">
+      <div class="md-combo-heroes">${combo.heroes.map((hero) => portrait(hero)).join('<i>+</i>')}</div>
       <b>${esc(combo.heroes.join(' + '))}</b>
-      <small>${combo.games} 局 · 胜率 ${pct(combo.winRate)} · 协同 ${diff(combo.synergy)}pp${combo.small ? ' · 样本少' : ''}</small></span>`;
-    return `<div class="md-bp-combos">
-      <div class="md-bp-combo-side"><span>我方组合</span>${ownCombos.map(card).join('') || '<small>当前阵容没有历史组合样本</small>'}</div>
-      <div class="md-bp-combo-side foe"><span>对手组合</span>${foeCombos.map(card).join('') || '<small>对手阵容没有历史组合样本</small>'}</div>
-    </div>`;
-  })();
-  /* 对位压制：本局五路双方英雄 → 历史同分路对位（depth lane_matchup.heroes）。
-     历史样本 ≥3 局才判定；65%+ 胜率标「压制」，35%- 标「劣势」。 */
-  const matchupBlock = (() => {
-    const rows = m.laneMatchup?.payload?.heroes || [];
-    if (!rows.length || !draft) return '';
-    const byPair = new Map(rows.map((row) => [`${row.ownHero}|${row.enemyHero}`, row]));
-    const mine = new Map(), theirs = new Map();
-    for (const p of m.players || []) {
-      if (!p.position) continue;
-      (p.camp === own ? mine : theirs).set(p.position, p);
+      <p>${fmt(combo.games)} 局 ${fmt(combo.wins)} 胜
+        <span class="${combo.synergy >= 0 ? 'is-good' : 'is-bad'}" title="搭档加成 = 两人同场时的胜率 − 两名英雄各自平时胜率算出的预期值（${pct(combo.winRate)} − ${pct(combo.expected)}）">搭档加成 ${Math.abs(combo.synergy) < 0.05 ? '0' : diff(combo.synergy)} 点</span></p>
+    </article>`;
+    const combos = (ownCombos.length || foeCombos.length) ? `<div class="md-bp-combos">
+      <div class="md-bp-combo-side"><span>我方组合</span><div class="md-combo-grid">${ownCombos.map(comboCard).join('') || '<small>当前阵容没有历史组合样本</small>'}</div></div>
+      <div class="md-bp-combo-side foe"><span>对手组合</span><div class="md-combo-grid">${foeCombos.map(comboCard).join('') || '<small>对手阵容没有历史组合样本</small>'}</div></div>
+    </div>` : '';
+
+    /* 结论句：只陈述能算的，样本薄就自己说薄。 */
+    const judged = lanes.filter((lane) => lane.judgeable);
+    const ahead = judged.filter((lane) => lane.verdict === '压制').length;
+    const behind = judged.filter((lane) => lane.verdict === '劣势').length;
+    const realised = judged.filter((lane) => lane.realised === true).length;
+    const positiveCombos = ownCombos.filter((combo) => combo.synergy > 0).length;
+    const parts = [];
+    if (judged.length) {
+      parts.push(`五路对位可判 ${judged.length} 路：占优 ${ahead}、吃亏 ${behind}`);
+      if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路`);
+    } else {
+      parts.push('五路对位都还没攒够 3 局历史样本');
     }
-    const order = ['对抗路', '打野', '中路', '发育路', '游走'];
-    const lanes = order.map((lane) => {
-      const a = mine.get(lane), b = theirs.get(lane);
-      if (!a && !b) return '';
-      const row = a && b ? byPair.get(`${a.hero}|${b.hero}`) : null;
-      /* 「对位压制」看**对线**，不看胜负：领先率与平均经济差必须同向才算压制/劣势。
-         只按胜率会出现「标着压制、经济差却是 -954」（赢球不等于对线赢）；
-         只看平均差又会被一局打爆拉翻（2 局领先、1 局 -3000，均值仍是负的）。 */
-      const rate = row ? row.aheadRate : null;
-      const diff_ = row ? row.avgGoldDiff : null;
-      const verdict = !row || row.n < 3 ? '样本不足'
-        : (rate >= 66.7 && diff_ > 0) ? '压制'
-        : (rate <= 33.3 && diff_ < 0) ? '劣势' : '均势';
-      const cls = verdict === '压制' ? 'is-ahead' : verdict === '劣势' ? 'is-behind'
-        : verdict === '均势' ? 'is-even' : 'is-thin';
-      /* 第一列已经写了「样本不足」，第二列不再重复；
-         有对位但不足 3 局时，把实际局数摆出来，教练才知道离门槛差多少。 */
-      const note = !row ? ''
-        : row.n < 3 ? `${fmt(row.n)} 局样本，未到 3 局门槛`
-        : `对线领先 ${fmt(rate, 0)}% · 均差 ${diff(row.avgGoldDiff)} · 战绩 ${row.winRate === null ? '—' : pct(row.winRate)}`;
-      return `<div class="md-mu-row"${row ? ` title="${esc(`${a.hero} 对 ${b.hero}：${row.n} 局，对线经济领先 ${fmt(rate, 0)}%，平均经济差 ${diff(row.avgGoldDiff)}，同分路同英雄历史对位的本队战绩 ${row.winRate === null ? '未知' : pct(row.winRate)}`)}"` : ''}><span class="md-mu-lane">${lane}</span>
-        <b class="own">${esc(a?.hero || '—')}</b><i>vs</i><b class="foe">${esc(b?.hero || '—')}</b>
-        <em class="${cls}">${verdict}</em><small>${note}</small></div>`;
-    }).filter(Boolean).join('');
-    if (!lanes) return '';
-    return `<div class="md-matchup"><div class="md-matchup-head"><b>对位压制</b><small>历史同分路、同英雄对位：领先率 ≥⅔ 且均差为正判压制，≤⅓ 且均差为负判劣势，样本 ≥3 局</small></div>${lanes}</div>`;
+    if (ownCombos.length) parts.push(`我方 ${ownCombos.length} 组搭档里 ${positiveCombos} 组为正加成`);
+    else parts.push('我方阵容没有历史组合样本');
+    const thin = judged.length < 3;
+    /* 可判不足 3 路时不给「占优 / 吃亏」的结论，只写「样本偏薄」——
+       1 路对位就下总体判断，等于替教练过度解读。 */
+    const tone = (!judged.length && !ownCombos.length) || thin ? 'is-thin'
+      : ahead > behind ? 'is-good' : behind > ahead ? 'is-bad' : 'is-thin';
+    const badge = !judged.length && !ownCombos.length ? '证据不足'
+      : thin ? '样本偏薄'
+      : ahead > behind ? 'BP 端占优' : behind > ahead ? 'BP 端吃亏' : '五五开';
+    const review = `<div class="md-bprev ${tone}">
+      <div class="md-bprev-head"><b>本局 BP 复盘</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
+      <p class="md-bprev-line">${parts.join('；')}。</p>
+      ${thin ? '<p class="md-bprev-note">对位样本还薄，这条结论只作参考；同一个英雄对位再打几局就会自动变成可判。</p>' : ''}
+    </div>`;
+    const matchup = lanes.length ? `<div class="md-matchup">
+      <div class="md-matchup-head"><b>对位压制</b><small>历史同分路、同英雄对战：满 3 局才判；领先率与平均经济差同向，才算「我方占优 / 我方吃亏」</small></div>
+      <div class="md-mu-grid">${lanes.map(laneCard).join('')}</div></div>` : '';
+    return { review, combos, matchup };
   })();
   const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
-    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${comboBlock}${matchupBlock}` : '<div class="empty">暂无禁选记录。</div>'}
+    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${bpAnalysis.review}${bpAnalysis.combos}${bpAnalysis.matchup}` : '<div class="empty">暂无禁选记录。</div>'}
   </section>`;
   /* 总量按十人面板逐人求和（详情接口不带 own/enemy 汇总）。 */
   const teamAgg = (camp) => {

@@ -7625,38 +7625,65 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-kill.is-cut .md-kill-cut { color: var(--accent); font-weight: 700; }
 .md-kill.is-cut .md-kill-arrow { color: var(--accent); }
 
-/* 联动组合：和「对位压制」用同一套面板（浅底 + 虚线分隔），
-   不再是一排各自带边框的小盒子叠在同一个区块里 */
-.md-bp-combos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-top: 14px;
-  padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.md-bp-combo-side { display: grid; gap: 0; align-content: start; min-width: 0; }
-.md-bp-combo-side > span { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .04em; padding-bottom: 2px; }
-.md-bp-combo-side > small { font-size: 12px; color: var(--quiet); padding-top: 4px; }
-.md-combo { display: flex; align-items: center; gap: 10px; padding: 8px 0; border: 0;
-  border-top: 1px dashed var(--line); border-radius: 0; background: transparent; font-size: 12.5px; }
-.md-combo:first-of-type { border-top: none; }
-.md-combo-heroes { display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; }
-.md-combo-heroes .portrait { width: 28px; height: 28px; border-radius: 7px; }
+/* ── BP 复盘 / 组合 / 对位：统一成白色卡片 ───────────────────────────
+   教练要的是「一张一张卡」，不是一行一行表格；底色统一白，靠边框分层。 */
+.md-bprev { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line);
+  border-left: 3px solid var(--line); border-radius: 12px; background: var(--paper); }
+.md-bprev.is-good { border-left-color: var(--accent); }
+.md-bprev.is-bad { border-left-color: var(--warn, #a54c46); }
+.md-bprev.is-thin { border-left-color: var(--line); }
+.md-bprev-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.md-bprev-head b { font-size: 13.5px; }
+.md-bprev-badge { padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+.md-bprev-badge.is-good { color: var(--accent); background: var(--soft); }
+.md-bprev-badge.is-bad { color: var(--warn, #a54c46); background: #f6e5e2; }
+.md-bprev-badge.is-thin { color: var(--quiet); background: var(--surface); }
+.md-bprev-line { margin: 8px 0 0; font-size: 13px; line-height: 1.65; }
+.md-bprev-note { margin: 6px 0 0; color: var(--quiet); font-size: 11.5px; line-height: 1.6; }
+
+.md-bp-combos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 22px; margin-top: 14px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.md-bp-combo-side { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.md-bp-combo-side > span { font-size: 11.5px; color: var(--muted); font-weight: 700; letter-spacing: .04em; }
+.md-bp-combo-side > small, .md-combo-grid > small { color: var(--quiet); font-size: 12px; }
+.md-combo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
+.md-combo-card { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); box-shadow: 0 1px 1px rgba(15,30,40,.03); }
+.md-combo-heroes { display: flex; align-items: center; gap: 3px; }
+.md-combo-heroes .portrait { width: 30px; height: 30px; border-radius: 8px; }
 .md-combo-heroes i { font-style: normal; color: var(--quiet); font-size: 10px; }
-.md-combo b { flex: 0 0 auto; }
-.md-combo small { margin-left: auto; text-align: right; }
-.md-combo b { font-size: 12.5px; }
-.md-combo small { color: var(--muted); }
-/* 对位压制：五路英雄对位 + 历史压制判定 */
-.md-matchup { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.md-matchup-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.md-matchup-head b { font-size: 13px; }
-.md-matchup-head small { color: var(--quiet); font-size: 11px; }
-.md-mu-row { display: grid; grid-template-columns: 54px minmax(0,1fr) 22px minmax(0,1fr) 62px minmax(0,1.1fr); align-items: center; gap: 8px; padding: 5px 0; border-top: 1px dashed var(--line); font-size: 12.5px; }
-.md-mu-row:first-of-type { border-top: none; }
-.md-mu-lane { color: var(--muted); font-size: 11.5px; }
-.md-mu-row b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.md-mu-row b.own { color: var(--text); }
-.md-mu-row b.foe { color: #5c8fa3; }
-.md-mu-row i { color: var(--quiet); font-style: normal; text-align: center; font-size: 10.5px; }
-.md-mu-row em { font-style: normal; font-size: 11.5px; font-weight: 700; text-align: center; }
-.md-mu-row em.is-ahead { color: var(--accent); }
-.md-mu-row em.is-behind { color: var(--warn, #a54c46); }
-.md-mu-row em.is-even { color: var(--muted); }
-.md-mu-row em.is-thin { color: var(--quiet); font-weight: 600; }
-.md-mu-row small { color: var(--quiet); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.md-combo-card > b { font-size: 12.5px; font-weight: 700; }
+.md-combo-card > p { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 10px;
+  color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.md-combo-card p .is-good { color: var(--accent); font-weight: 700; }
+.md-combo-card p .is-bad { color: var(--warn, #a54c46); font-weight: 700; }
+
+.md-matchup { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--paper); }
+.md-matchup-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.md-matchup-head b { font-size: 13.5px; }
+.md-matchup-head small { color: var(--quiet); font-size: 11px; text-align: right; }
+.md-mu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 10px; }
+.md-mu-card { display: grid; gap: 5px; padding: 11px 12px; border: 1px solid var(--line);
+  border-top: 2px solid var(--line); border-radius: 10px; background: var(--surface); min-width: 0; }
+.md-mu-card.is-ahead { border-top-color: var(--accent); }
+.md-mu-card.is-behind { border-top-color: var(--warn, #a54c46); }
+.md-mu-card.is-even { border-top-color: var(--muted); }
+.md-mu-card header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.md-mu-lane { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .03em; }
+.md-mu-card header em { font-style: normal; font-size: 11px; font-weight: 700; }
+.md-mu-card header em.is-ahead { color: var(--accent); }
+.md-mu-card header em.is-behind { color: var(--warn, #a54c46); }
+.md-mu-card header em.is-even { color: var(--muted); }
+.md-mu-card header em.is-thin { color: var(--quiet); }
+.md-mu-who { display: flex; align-items: baseline; gap: 6px; font-size: 13px; min-width: 0; }
+.md-mu-who b { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-mu-who b.own { color: var(--md-own-ink); }
+.md-mu-who b.foe { color: var(--md-enemy-ink); }
+.md-mu-who i { font-style: normal; color: var(--quiet); font-size: 10.5px; }
+.md-mu-hist { margin: 0; color: var(--quiet); font-size: 11px; font-variant-numeric: tabular-nums; }
+.md-mu-now { margin: 0; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.md-mu-now b { color: var(--text); }
+.md-mu-now i { font-style: normal; font-weight: 700; }
+.md-mu-now i.is-hit { color: var(--accent); }
+.md-mu-now i.is-miss { color: var(--warn, #a54c46); }
