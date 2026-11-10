@@ -7501,6 +7501,26 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-ev-narr > b { display: block; margin-bottom: 8px; font-size: 12.5px; color: var(--muted); }
 .md-ev-narr p { font-size: 12.5px; color: var(--text); margin: 4px 0; }
 .md-ev-narr p span { color: var(--quiet); margin-right: 8px; font-variant-numeric: tabular-nums; }
+/* 击杀账本：逐次击杀（谁 → 谁），切C 用金色右标，敌方击杀用青色 */
+.md-kill-sums { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.md-kill-sum { font-size: 12.5px; color: var(--muted); }
+.md-kill-sum b { color: var(--text); font-weight: 600; }
+.md-kill-sum em { font-style: normal; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+.md-kill-sum small { margin-left: 8px; color: var(--quiet); }
+.md-kill-list { display: grid; gap: 3px; max-height: 460px; overflow: auto; padding-right: 4px; }
+.md-kill { display: grid; grid-template-columns: 52px minmax(0, 230px) 24px minmax(0, 230px) 40px; align-items: center; justify-content: start; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; }
+.md-kill:nth-child(odd) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.md-kill-t { color: var(--quiet); font-variant-numeric: tabular-nums; }
+.md-kill-side { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.md-kill-side em { font-style: normal; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-kill-side small { color: var(--quiet); font-size: 11.5px; white-space: nowrap; }
+.md-kill-first { font-style: normal; font-size: 10.5px; color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 4px; padding: 0 3px; white-space: nowrap; }
+.md-kill.foe .md-kill-side em { color: #b96a5f; }
+.md-kill-arrow { color: var(--quiet); text-align: center; }
+.md-kill-cut { grid-column: 5; font-style: normal; font-size: 11px; color: transparent; text-align: right; white-space: nowrap; }
+.md-kill.is-cut { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.md-kill.is-cut .md-kill-cut { color: var(--accent); font-weight: 700; }
+.md-kill.is-cut .md-kill-arrow { color: var(--accent); }
 
 .md-bp-combos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
 .md-bp-combo-side { display: grid; gap: 6px; }

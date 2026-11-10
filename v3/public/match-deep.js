@@ -244,10 +244,32 @@ export function createMatchDeep(h) {
     { key: 'cs', label: '发育', text: (v) => fmt(v) },
   ];
 
+  /* 击杀账本：官方回放 battle.killInfo 逐次记录 killerObjID → objID。
+     切C口径 = 击杀者分路为对抗路/打野，且被击杀者是对方中路/发育路。 */
+  function killStatsFor(players, kills) {
+    const stats = new Map();
+    const laneOfHero = new Map();
+    for (const p of players || []) laneOfHero.set(`${p.camp}-${p.hero}`, laneOf(p));
+    for (const k of kills || []) {
+      const key = `${k.killerCamp}-${k.killer}`;
+      const row = stats.get(key) || { kills: 0, cutC: 0, targets: [] };
+      row.kills += 1;
+      const victimLane = laneOfHero.get(`${k.victimCamp}-${k.victim}`) || '';
+      if (['中路', '发育路'].includes(victimLane)) {
+        row.cutC += 1;
+        if (!row.targets.includes(k.victim)) row.targets.push(k.victim);
+      }
+      stats.set(key, row);
+    }
+    return stats;
+  }
+
   /* 对位比较口径（教练 2026-11-10 第二/三波）：每个位置只显示该位置
-     该看的指标。分均经济带评级、经济转输出判断无效输出、死亡 >2 预警。 */
-  function metricPool(inv, duration) {
+     该看的指标。分均经济带评级、经济转输出判断无效输出、死亡 >2 预警；
+     切C = 击杀对方中路/发育路（回放 killInfo，见上）。 */
+  function metricPool(inv, duration, killStats) {
     const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
+    const cutOf = (p) => (killStats ? killStats.get(`${p.camp}-${p.hero}`) : null);
     return {
       gpm: { label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
         get: (p) => gpmOf(p, duration) },
@@ -266,6 +288,17 @@ export function createMatchDeep(h) {
       takenPerDeath: { label: '每死承伤', text: (v) => fmt(v), get: (p) => read(p, 'takenPerDeath') },
       tower: { label: '对塔伤害', text: (v) => fmt(v), get: (p) => read(p, 'towerDamage') },
       rating: { label: '评分', text: (v) => fmt(v, 1), get: (p) => read(p, 'rating') },
+      cutC: killStats ? {
+        label: '切C', text: (v) => fmt(v), noBar: true,
+        get: (p) => { const s = cutOf(p); return s ? s.cutC : 0; },
+        tip: (p) => {
+          const s = cutOf(p);
+          if (!s) return '';
+          return s.cutC
+            ? `击杀对方中路/发育路 ${s.cutC} 次${s.targets.length ? '：' + s.targets.join('、') : ''} · 本局总击杀 ${s.kills}`
+            : `本局总击杀 ${s.kills}，没有击杀对方中路/发育路`;
+        },
+      } : null,
       invade: inv ? {
         label: '入侵', text: (v) => pct(v), rate: true,
         get: (p) => { const s = entry(p); return s ? s.rate : null; },
@@ -277,10 +310,11 @@ export function createMatchDeep(h) {
       } : null,
     };
   }
-  /* 分路关注的指标（来自教练第三波；视野价值/控龙率等待数据源）。 */
+  /* 分路关注的指标（来自教练第三波；视野价值/控龙率等待数据源）。
+     切C 只对对抗路/打野有意义（回放 killInfo 可算，其余分路按同口径也能出数）。 */
   const LANE_METRICS = {
-    '对抗路': ['gpm', 'conversion', 'taken', 'tower', 'deaths', 'participation'],
-    '打野': ['gpm', 'jungle', 'damage', 'invade', 'deaths', 'participation'],
+    '对抗路': ['gpm', 'conversion', 'taken', 'tower', 'cutC', 'deaths', 'participation'],
+    '打野': ['gpm', 'jungle', 'damage', 'cutC', 'invade', 'deaths', 'participation'],
     '中路': ['gpm', 'conversion', 'damage', 'control', 'deaths', 'participation'],
     '发育路': ['gpm', 'conversion', 'damage', 'deaths', 'cs', 'participation'],
     '游走': ['participation', 'control', 'healing', 'takenPerDeath', 'taken', 'deaths'],
@@ -419,7 +453,7 @@ export function createMatchDeep(h) {
     </div>`;
   }
 
-  function panel(players, ownCamp, positions, duration) {
+  function panel(players, ownCamp, positions, duration, kills) {
     if (!players || !players.length) return `<div class="empty">这场比赛还没有十人面板数据。</div>`;
     if (!ownCamp) return `<div class="empty">阵营未知，无法做对位比较。</div>`;
     /* 兼容 ownCamp 为 left / right 的历史写法 */
@@ -429,7 +463,7 @@ export function createMatchDeep(h) {
     const foeName = `对手 · ${foeCamp === 'blue' ? '蓝方' : '红方'}`;
     const inv = positions && positions.players && positions.players.length ? invasionStats(positions, players, duration) : null;
     const metrics = buildMetrics(inv);
-    const pool = metricPool(inv, duration);
+    const pool = metricPool(inv, duration, killStatsFor(players, kills));
     const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${panelMode === mode ? ' is-on' : ''}"
       aria-selected="${panelMode === mode}" data-md-panel-mode="${mode}">${text}</button>`;
     const note = inv

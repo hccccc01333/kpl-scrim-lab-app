@@ -1130,7 +1130,7 @@ function matchPage(m) {
     <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
   </section>` : '';
   const mdProfiles = `<section class="section" id="match-profiles"><div class="section-heading"><div><h2>十人面板</h2><p>对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比</p></div></div>
-    ${deep.panel(m.players || [], own, m.positions, m.duration)}
+    ${deep.panel(m.players || [], own, m.positions, m.duration, m.replay?.kills)}
   </section>`;
   /* 位置数据请求过但没有：说明该局缺逐秒位置（未关联官方回放），不再无限转圈。 */
   const positionsEmpty = m.positionsRequested
@@ -1202,6 +1202,49 @@ function matchPage(m) {
   const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒经济差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
     ${deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights) || '<div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div>'}
   </section>`;
+  /* 击杀账本：官方回放 battle.killInfo 逐次记录 killerObjID → objID。
+     切C = 我方对抗路/打野击杀对方中路/发育路（教练第三波明确要的指标）。 */
+  const mdKills = (() => {
+    const kills = m.replay?.kills || [];
+    if (!kills.length) return '';
+    const byHero = new Map((m.players || []).map((p) => [`${p.camp}-${p.hero}`, p]));
+    const laneOfKill = (camp, hero) => (byHero.get(`${camp}-${hero}`) || {}).position || '';
+    const isCut = (k) => ['对抗路', '打野'].includes(laneOfKill(k.killerCamp, k.killer))
+      && ['中路', '发育路'].includes(laneOfKill(k.victimCamp, k.victim));
+    const rows = kills.slice().sort((a, b) => a.t - b.t);
+    /* 每场团战的先手击杀 = 该团战最早的一次击杀（与 firstKillerCamp 同源）。 */
+    const firstOfFight = new Map();
+    for (const k of rows) {
+      if (!k.fight) continue;
+      const cur = firstOfFight.get(k.fight);
+      if (!cur || k.t < cur.t) firstOfFight.set(k.fight, k);
+    }
+    const firstKeys = new Set([...firstOfFight.values()].map((k) => `${k.t}-${k.killer}-${k.victim}`));
+    const summary = (m.players || [])
+      .filter((p) => p.camp === own && ['对抗路', '打野'].includes(p.position))
+      .map((p) => {
+        const hits = rows.filter((k) => k.killerCamp === p.camp && k.killer === p.hero && isCut(k));
+        if (!hits.length) return '';
+        return `<span class="md-kill-sum"><b>${esc(p.label || p.hero)}</b> ${esc(p.position)} · 切C <em>${hits.length}</em><small>${esc([...new Set(hits.map((k) => k.victim))].join('、'))}</small></span>`;
+      }).filter(Boolean).join('');
+    const row = (k) => {
+      const cut = isCut(k);
+      const first = firstKeys.has(`${k.t}-${k.killer}-${k.victim}`);
+      const kl = laneOfKill(k.killerCamp, k.killer);
+      const vl = laneOfKill(k.victimCamp, k.victim);
+      return `<div class="md-kill ${k.killerCamp === own ? 'own' : 'foe'}${cut ? ' is-cut' : ''}" title="团战 ${esc(k.fight || '—')} · ${esc(k.killerCamp)} 击杀 ${esc(k.victimCamp)}">
+        <span class="md-kill-t">${time(k.t)}</span>
+        <span class="md-kill-side"><em>${esc(k.killer)}</em>${first ? '<i class="md-kill-first">先手</i>' : ''}<small>${esc(kl || '—')}</small></span>
+        <span class="md-kill-arrow">→</span>
+        <span class="md-kill-side"><em>${esc(k.victim)}</em><small>${esc(vl || '—')}</small></span>
+        <em class="md-kill-cut">${cut ? '切C' : ''}</em>
+      </div>`;
+    };
+    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>击杀账本</h2><p>官方回放 battle.killInfo 逐次击杀（击杀方 → 被击杀方），按时间排序；★ 切C＝我方对抗路/打野击杀对方中路或发育路</p></div></div>
+      ${summary ? `<div class="md-kill-sums">${summary}</div>` : ''}
+      <div class="md-kill-list">${rows.map(row).join('')}</div>
+    </section>`;
+  })();
   /* 事件详情：资源/推塔事件的参战者与伤害占比（keyEventArr.hurtTotal），
      以及营地复盘的中文叙述（adviceList）。仅官方回放存在时显示。 */
   const mdEventDetail = (() => {
@@ -1242,6 +1285,7 @@ function matchPage(m) {
     ${mdProfiles}
     ${mdCohesion}
     ${mdBattle}
+    ${mdKills}
     ${mdEventDetail}
     ${mdFront}
     ${mdHeat}
@@ -1413,7 +1457,7 @@ async function load(fresh = false) {
       }
       if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
-        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
+        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-kills','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
           const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
           if(existing&&updated)existing.replaceWith(updated);
           else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应位置 */

@@ -1851,7 +1851,7 @@ export function createFeatures(h) {
     return withPage('导入表格','上传训练赛数据，先预览识别结果，再确认导入。',block('选择文件','支持 CSV、TSV、XLSX 与 XLSM，单个文件不超过 20 MB。',`<div class="upload-area"><span class="upload-icon">${icon('sources')}</span><h2>将比赛数据带入平台</h2><p>先选择文件，检查工作表、字段和数据粒度。预览文件会保留，原始文件不会被修改。</p><label class="primary upload-button">选择表格<input type="file" data-import-file accept=".csv,.tsv,.xlsx,.xlsm"></label><p data-import-status role="status"></p></div><div data-import-preview></div>`),false);
   }
   /* ─── 对局子页（智能找局 / 精选对局 / 训练纪录 / 版本对比）─────────────
-     四页统一成「一行一局」的读法：编号 → 对局 → 比分 → 时长 → 金差 → 结果。
+     四页统一成「一行一局」的读法：编号 → 对局 → 比分 → 时长 → 经济差 → 结果。
      筛选、排序、分组都在前端按已加载数据完成，不改后端口径。 */
   const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
   const matchIndex = (matches) => {
@@ -1888,7 +1888,7 @@ export function createFeatures(h) {
       <span class="fj-main"><b>${esc(m.opponent ? '对阵 ' + m.opponent : '对手未标注')}</b><small>${esc(meta)}</small></span>
       <span class="fj-score">${isNum(sc.own) && isNum(sc.enemy) ? `<b class="${m.result === 'win' ? 'lead' : ''}">${fmt(sc.own)}</b><i>:</i><b class="${m.result === 'loss' ? 'lead' : ''}">${fmt(sc.enemy)}</b>` : '<em>未记录</em>'}</span>
       <span class="fj-num"><small>时长</small>${time(m.duration)}</span>
-      <span class="fj-num"><small>终局金差</small>${diff(m.goldDiff)}</span>
+      <span class="fj-num"><small>终局经济差</small>${diff(m.goldDiff)}</span>
       ${heroStrip(m.heroes)}
       <span class="fj-go" aria-hidden="true">→</span>
     </a>`;
@@ -1911,7 +1911,7 @@ export function createFeatures(h) {
         <button type="button" class="fj-chip" data-result-chip="win" aria-pressed="false">胜</button>
         <button type="button" class="fj-chip" data-result-chip="loss" aria-pressed="false">负</button>
       </div></div>
-      <label class="fj-field"><span>排序</span><select data-match-sort><option value="new">最新在前</option><option value="old">最早在前</option><option value="duration">时长最长</option><option value="gold">金差最大</option></select></label>
+      <label class="fj-field"><span>排序</span><select data-match-sort><option value="new">最新在前</option><option value="old">最早在前</option><option value="duration">时长最长</option><option value="gold">经济差最大</option></select></label>
       <p class="fj-count" data-result-count>共 ${fmt(matches.length)} 局</p>
     </div>
     <datalist id="fj-foes">${foes.map((x) => `<option value="${esc(x)}"></option>`).join('')}</datalist>
@@ -1981,7 +1981,7 @@ export function createFeatures(h) {
     return withPage('精选对局', '按复盘价值排一遍，先看最值得回看的那几局。',
       lede([['有完整时间轴', `${fmt(games.length)} 局`],
         ['最值得回看', bestMatch ? `第 ${index.get(bestMatch.key)} 局` : '—', best ? best.reason : ''],
-        ['平均终局金差', diff(meanOf(games, (g) => g.finalDiff)), '本队减对手'],
+        ['平均终局经济差', diff(meanOf(games, (g) => g.finalDiff)), '本队减对手'],
         ['平均正负切换', `${fmt(meanOf(games, (g) => g.signFlips || 0), 1)} 次`]])
       + `<div class="fj-cards">${cards || empty('当前范围没有可用的经济时间轴。')}</div>`, false);
   }
@@ -1996,8 +1996,8 @@ export function createFeatures(h) {
     const records = [
       ['最长对局', duration, (m) => time(m.duration), 'max', '按营地记录时长'],
       ['最短对局', duration, (m) => time(m.duration), 'min', '按营地记录时长'],
-      ['最大终局金差', (m) => m.goldDiff, (m) => diff(m.goldDiff), 'max', '本队减对手'],
-      ['最小终局金差', (m) => m.goldDiff, (m) => diff(m.goldDiff), 'min', '本队减对手'],
+      ['最大终局经济差', (m) => m.goldDiff, (m) => diff(m.goldDiff), 'max', '本队减对手'],
+      ['最小终局经济差', (m) => m.goldDiff, (m) => diff(m.goldDiff), 'min', '本队减对手'],
       ['最高击杀', (m) => m.own?.kills, (m) => fmt(m.own?.kills), 'max', '本队五人击杀合计'],
       ['最高 KDA', (m) => m.own?.kda, (m) => fmt(m.own?.kda, 1), 'max', '(击杀 + 助攻) / 死亡'],
       ['经济最反复', flips, (m) => `${fmt(flips(m))} 次`, 'max', '经济差正负切换次数'],
@@ -2018,7 +2018,7 @@ export function createFeatures(h) {
     return withPage('训练纪录', '这批局的极值在哪一场，和均值差多少。',
       lede([['对局', `${fmt(all.length)} 局`],
         ['平均时长', time(meanOf(all, duration))],
-        ['平均终局金差', diff(meanOf(all, (m) => m.goldDiff)), '本队减对手'],
+        ['平均终局经济差', diff(meanOf(all, (m) => m.goldDiff)), '本队减对手'],
         ['平均击杀', fmt(meanOf(all, (m) => m.own?.kills), 1), '本队五人和']])
       + `<div class="fj-recs">${cards || empty('当前范围没有可计算的记录。')}</div>`, false);
   }
@@ -2065,7 +2065,7 @@ export function createFeatures(h) {
         <span class="fj-group-bar"><i style="width:${(g.n / max * 100).toFixed(1)}%"></i></span>
         <span class="fj-group-stat"><small>胜率</small>${g.d ? pct(g.w / g.d * 100) : '—'}</span>
         <span class="fj-group-stat"><small>平均时长</small>${g.durs ? time(g.seconds / g.durs) : '—'}</span>
-        <span class="fj-group-stat"><small>平均金差</small>${g.golds ? diff(g.gold / g.golds) : '—'}</span>
+        <span class="fj-group-stat"><small>平均经济差</small>${g.golds ? diff(g.gold / g.golds) : '—'}</span>
       </div>`).join('');
     };
     const note = covered ? '' : `<p class="fj-note">${fmt(matches.length)} 局都还没有记录版本，先按训练组看；在单局里补录版本后，这里会自动按版本分组。</p>`;
@@ -2075,7 +2075,7 @@ export function createFeatures(h) {
       lede([['对局', `${fmt(matches.length)} 局`],
         ['版本覆盖', `${fmt(covered)} / ${fmt(matches.length)}`],
         ['训练组', `${fmt(new Set(matches.map((m) => m.session).filter(Boolean)).size)} 个`]])
-      + block('分组对比', '胜率只以有胜负的对局为分母；平均金差为本队减对手。', `<div class="fj-dims">${chips}</div>${note}${panels}`), false);
+      + block('分组对比', '胜率只以有胜负的对局为分母；平均经济差为本队减对手。', `<div class="fj-dims">${chips}</div>${note}${panels}`), false);
   }
   function setup(value, teams, players, pending, migration, clusters) {
     const o = value.overview || {}, profile = o.profile || {};
