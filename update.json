@@ -1,50 +1,34 @@
 {
   "schema": 1,
-  "version": "1.5.31",
-  "publishedAt": "2026-11-10T21:34:07+08:00",
+  "version": "1.5.32",
+  "publishedAt": "2026-11-10T23:09:22+08:00",
   "channel": "stable",
   "minVersion": "1.5.15",
   "notes": [
-    "身份主数据统一到一个写入口；BP 复盘的两块外部事实补全。",
-    "营地爬到的游戏ID、真实选手、所属战队之间，原来散在五处各写各的：营地白名单的「改名」",
-    "只改本机备注，选手认领写 `settings.aliases`（昵称字符串），建档写 `settings.roster`",
-    "和 `players`，对手归属写 `team_clusters` 覆盖层，战队命名同时写两张表。同一个人能叫五个",
-    "名字，删了也不会一起删。",
-    "现在只有一个写入口 `identity_service.py`，只落三张表：`player_accounts`（游戏账号 → 选手）",
-    "+ `players`（选手 → 战队）+ `teams`。读时解析，历史对局文件不改。",
-    "**「赛训 → 数据准备 → 建档」顶部新增「身份对照」**：一行一个游戏账号，列出游戏ID、",
-    "选手ID、战队与场次；命名、改名、解绑、删选手都在这一行完成。本队与对手都能命名。",
-    "可筛选 全部 / 待命名 / 已命名 / 本队 / 对手，也能按昵称、选手名或战队搜索。",
-    "**对手归属每名选手加「命名」**：命名后直接显示真人名与战队，不再是营地昵称；",
-    "战队命名与选手归队写的是同一份主数据。",
-    "**选手认领不再写昵称字符串**：认领、命名并归队都写同一条账号映射，`settings.aliases`",
-    "只作历史兜底读取；认领页的「已建立的映射」改成显示游戏ID → 选手。",
-    "**删除选手 = 选手 + 他的游戏账号映射一起删**：那些游戏ID回到「待命名」。不做转会、",
-    "不做离队状态；选手主数据列表也能直接删除。",
-    "**营地白名单的「改名」标注为本机备注**，真正的游戏ID → 选手ID 在身份对照里统一改。",
-    "修掉「选手认领」页直接打开提示「还没有选中选手认领」的路由判断（它是整页，不是详情页）。",
-    "回放文件（`.abc/.ope`）这条链路的清理：修掉已经跑不动的外围工具、把一次上传的",
-    "三次解析降到一次、把散在四个文件里的帧率常量收进一处（**产品口径不变**）。",
-    "**`scripts/replay_probe.py` 恢复可用**：字段早已从 `gold` 改名为 `buyEcho`，",
-    "探针还在读旧键，任何能解出事件的局都会 `KeyError` 崩掉；同时昵称里的",
-    "变体选择符（`U+FE0E`）在 GBK 控制台会触发 `UnicodeEncodeError`，解析成功",
-    "但打印崩溃。现在两处都修了，输出改 UTF-8。",
-    "**一次上传只解析一次**（原来三次）：上传校验、导入、建出装时间轴各解一遍。",
-    "现在 `inspect_abc()` 按 sha256 缓存（上限 8 局），导入直接复用上传的结果，",
-    "建时间轴复用导入的结果；`tools/full_abc_event_catalog.build_report()` 新增",
-    "可选 `info` 参数。单局 0.285 s 的解码省掉两次。",
-    "**上传不再堵事件循环**：`POST /api/replays/files` 的解析改走",
-    "`run_in_threadpool`。"
+    "跨局分析补完最后两块：领先之后换成了什么、对手爱用哪些人。",
+    "**优势兑现**（资源与团战）：先筛「10 分钟领先且分出胜负」的局，再看这些局里",
+    "有没有拿到龙、推塔是否多于对手，逐级算胜率——领先 + 龙 + 塔都做到的局赢多少，",
+    "和只有经济领先的局差多少。同时给 10 分钟落后局的翻盘率。",
+    "**对手阵容**（对手）：按对手名分组，把他们每局五人两两配对，取出现次数最多的一组，",
+    "并给出我们对着这套组合的战绩；没有对手名的局单独归到「未填对手」。",
+    "向量新增 `heroesFoe`（对手五人阵容）。",
+    "**`scripts/verify_identity_flow.py` 现在能在空实例上自跑**：身份对照的账号来自",
+    "进程数据目录里的 `camp_details/*.json`，空实例一个都没有，脚本原来会卡在",
+    "`.sx-own-group` 超时（看起来像产品坏了，其实是准备步骤没到位）。现在脚本会先读",
+    "`/api/health` 定位实例数据目录，再从 `--seed-from` 拷 3 个最小的营地详情过去；",
+    "仍拿不到账号就明确退出码 2 并说明原因。",
+    "对手账号命名补上「归队」这一步（产品口径要求命名时必须归队），并在保存没成功时",
+    "把对话框里的提示写进巡检报告，不再只是超时。"
   ],
   "patch": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.31/patch-1.5.31.zip",
-    "sha256": "3afec01236b4c6f191610b36048ae5c0e91c19c2358d6fc4d9f5b8b0890463f7",
-    "size": 746546,
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.32/patch-1.5.32.zip",
+    "sha256": "c83f5e5e4a2571d09ebd11dd2a4a83d6b07bd91404db7765d373afa7a492224f",
+    "size": 747860,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "91e9f6236920148eb1f1f7a78d79924cec70bfd0c15d72bb37ebc3700dcc60f7",
-        "size": 74831
+        "sha256": "27e09cbf759e599806df974367d5d365dbf2236ed31ad2a16ecd829bd3b7e285",
+        "size": 76247
       },
       {
         "path": "analysis_data.py",
@@ -148,18 +132,18 @@
       },
       {
         "path": "v3/public/cross-analytics.js",
-        "sha256": "ded1b2e621b543387d130074449f238bbdf96b4e7168b02e8fbc20c8b30d9b51",
-        "size": 70327
+        "sha256": "827b3b1e95f89479738cb657bfc6d75e30955389617d9b83f088153ef7eecf1b",
+        "size": 76029
       },
       {
         "path": "v3/public/cross-page.js",
-        "sha256": "db15e07a812f79caf97b04981fc9c8399f3d5ed26f44bed72ef9bd186ed58216",
-        "size": 39445
+        "sha256": "299df94fe2d19c28f879bc0305c473aa714766beae9ffb1c88a0339bd4dabbc3",
+        "size": 39549
       },
       {
         "path": "v3/public/cross-viz.js",
-        "sha256": "663df3d998ef6a2f5b0ca07c44fdeae2580dcb4d8d30d85c5aa2cd4ce6f5e234",
-        "size": 43174
+        "sha256": "1e9d1cd05f5c9199194809564fcd2b29cbe35ee4d0cd31db1ebaeeaa3a027f39",
+        "size": 43248
       },
       {
         "path": "v3/public/features.js",
@@ -198,13 +182,13 @@
       },
       {
         "path": "v3/serve.py",
-        "sha256": "83425f7d375b485675269b74f4ee8bf2391508d66e6dd8c90c2eba379c75eebc",
-        "size": 125158
+        "sha256": "0eba2e23d8f80f7db16854bf66c680684ab48d5aa22cabdf85c8af5e842cf1c9",
+        "size": 125250
       },
       {
         "path": "version.py",
-        "sha256": "ac79f8d7c1046430513cad514f9ec26bbe1d049a0127cedd8661f9a7e7dca369",
-        "size": 359
+        "sha256": "f675a9e8aa1a32097952c798ca3b895fb153b1a796dd064c13913e3bdfb0a8b8",
+        "size": 343
       },
       {
         "path": "video_ocr.py",
@@ -219,11 +203,11 @@
     ],
     "remove": []
   },
-  "releaseName": "身份主数据统一与 BP 口径补全",
+  "releaseName": "优势兑现与对手阵容",
   "releaseDate": "2026-11-10",
   "full": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.31/KPL-Scrim-Lab-1.5.31-full.zip",
-    "sha256": "a8117798d8b24cab72246aead8faee5040758980daf7e68c93b6fc8a12f002f9",
-    "size": 82195622
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.32/KPL-Scrim-Lab-1.5.32-full.zip",
+    "sha256": "774725ff90742bd33d10afb9e3bb2748b67655dacfaf414128f81cb533c6ff42",
+    "size": 82198797
   }
 }

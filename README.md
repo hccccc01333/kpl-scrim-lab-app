@@ -4,7 +4,7 @@
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
 
   <p>
-    <img alt="版本" src="https://img.shields.io/badge/version-1.5.31-176B69?style=flat-square&labelColor=0F2E29">
+    <img alt="版本" src="https://img.shields.io/badge/version-1.5.32-176B69?style=flat-square&labelColor=0F2E29">
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
     <img alt="许可" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
@@ -44,7 +44,7 @@
 
 ---
 
-## v1.5.31 更新了什么
+## v1.5.32 更新了什么
 
 一句话：**单局复盘拆成四页、跨局分析按赛训组的问法分页、营地拿不到的数可以自己填。**
 
