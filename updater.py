@@ -204,6 +204,11 @@ def stage_patch(zip_path: Path, target: Path | None = None,
     current = read_installed_version(target)
     if not force and compare_versions(manifest['version'], current) <= 0:
         raise ValueError(f"更新包版本 {manifest['version']} 不高于当前版本 {current}")
+    min_version = manifest.get('minVersion')
+    if min_version and compare_versions(current, min_version) < 0:
+        # 增量包只包含基线版本之后的差分：装到更老的版本上会得到
+        # 「版本号新、内容缺」的混合安装。这里兜底拦截（含手动上传）。
+        raise ValueError(f'当前版本 {current} 低于补丁最低要求 {min_version}，请下载完整包升级')
 
     patch = manifest.get('patch')
     if not patch:

@@ -636,7 +636,9 @@ def parse_args(argv=None):
     parser.add_argument('--no-smoke', action='store_true', help='跳过冒烟测试')
     parser.add_argument('--base-url', help='更新资产的下载前缀；默认使用相对路径')
     parser.add_argument('--channel', default='stable', help='更新通道')
-    parser.add_argument('--min-version', default='1.0.0', help='允许增量更新的最低版本')
+    parser.add_argument('--min-version', default=None,
+                        help='允许增量更新的最低版本；默认=补丁基线版本'
+                             '（--all 打全量补丁时为 1.0.0）')
     parser.add_argument('--plan', action='store_true', help='只打印发布内容，不构建')
     args = parser.parse_args(argv)
     return args
@@ -655,6 +657,11 @@ def main(argv=None) -> int:
     since = args.since
     if since is None:
         since = previous_tag(version)
+    if args.min_version is None:
+        # 增量包只是 since 之后的差分。门槛默认设成补丁基线版本：更老的
+        # 客户端必须走完整包，否则装完后版本号是新的、内容却缺一截
+        #（1.0-1.3 的用户曾能通过 1.0.0 门槛装上只含 1.4→1.5.12 差异的补丁）。
+        args.min_version = '1.0.0' if args.all or not since else since.lstrip('v')
     paths, removed = (ship, []) if args.all else diff_paths(since, ship)
     paths = [path for path in paths if path not in PATCH_EXCLUDE]
     removed = [path for path in removed if path not in PATCH_EXCLUDE]

@@ -21,7 +21,8 @@ def write(path: Path, text: str) -> None:
 
 def make_patch(directory: Path, version: str, files: dict[str, str],
                remove: list[str] | None = None,
-               manifest_paths: list[str] | None = None) -> Path:
+               manifest_paths: list[str] | None = None,
+               min_version: str | None = None) -> Path:
     entries = []
     for path, text in files.items():
         digest = hashlib.sha256(text.encode('utf-8')).hexdigest()
@@ -35,6 +36,8 @@ def make_patch(directory: Path, version: str, files: dict[str, str],
         'notes': ['测试更新'],
         'patch': {'url': 'patch.zip', 'files': entries, 'remove': remove or []},
     }
+    if min_version:
+        manifest['minVersion'] = min_version
     archive = directory / f'patch-{version}.zip'
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as handle:
         handle.writestr('update.json', json.dumps(manifest, ensure_ascii=False))
@@ -127,6 +130,35 @@ class StageApplyTests(unittest.TestCase):
         self.assertEqual((self.app / 'server.py').read_text(encoding='utf-8'), 'old server\n')
         self.assertTrue((self.app / 'obsolete.py').is_file())
         self.assertFalse((self.app / 'web' / 'new.js').exists())
+
+    def test_tools_runtime_modules_are_updatable(self):
+        """tools/ 下随包发布的运行期模块必须可被补丁更新（v1.4.0 曾整体禁写）。"""
+        from update_client import normalize_rel_path
+        self.assertEqual(normalize_rel_path('tools/camp_sync.py'), 'tools/camp_sync.py')
+        with self.assertRaises(ValueError):
+            normalize_rel_path('tools/ffmpeg/bin/ffmpeg.exe')
+        with self.assertRaises(ValueError):
+            normalize_rel_path('data/training.sqlite3')
+
+    def test_reject_patch_below_min_version(self):
+        """增量包只含基线之后的差分：低于 minVersion 的安装必须拒装，走完整包。"""
+        archive = make_patch(self.root, '1.0.1', {
+            'version.py': "VERSION = '1.0.1'\n",
+            'server.py': 'new\n',
+        }, min_version='1.4.0')
+        with self.assertRaises(ValueError) as caught:
+            updater.stage_patch(archive, self.app)
+        self.assertIn('完整包', str(caught.exception))
+        self.assertIsNone(updater.read_pending(self.app))
+
+    def test_accept_patch_at_min_version(self):
+        write(self.app / 'version.py', "VERSION = '1.4.0'\n")
+        archive = make_patch(self.root, '1.4.1', {
+            'version.py': "VERSION = '1.4.1'\n",
+            'server.py': 'new\n',
+        }, min_version='1.4.0')
+        pending = updater.stage_patch(archive, self.app)
+        self.assertEqual(pending['version'], '1.4.1')
 
     def test_reject_downgrade(self):
         archive = make_patch(self.root, '0.9.9', {
