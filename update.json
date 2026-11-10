@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "version": "1.5.15",
+  "publishedAt": "2026-11-10T09:54:56+08:00",
+  "channel": "stable",
+  "minVersion": "1.5.14",
+  "notes": [
+    "Gitee 渠道为 78 MB 精简包：首次启动会自动安装主 OCR（进度见「识别引擎」面板，约 30 秒）；需要装完即用可到 GitHub Release 下载 155 MB 内置版。",
+    "精简包零操作体验 + 增量更新通道恢复。",
+    "**首次启动自动安装主 OCR**：Gitee 渠道完整包（78 MB，受附件 100 MB 限制不含",
+    "OCR 运行时）第一次打开工作台会自动安装识别组件，进度显示在「识别引擎」面板，",
+    "装完直接可用、不用重启；失败自动重试每天最多一次（`KPL_OCR_AUTO_INSTALL=0` 可关闭）。",
+    "**增量包恢复可用**：1.5.13 修好的更新器（tools/ 放行、门槛校验）从本版起生效——",
+    "1.5.14 及以上版本可以走增量包升级（本次仅 version/CHANGELOG/server.py 三个文件），",
+    "更老版本仍走完整包。",
+    "修复 Gitee Release 页面说明的编码问题（此前误存为双重 URL 编码）。"
+  ],
+  "patch": {
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.15/patch-1.5.15.zip",
+    "sha256": "c77ee5a0d27f0d1a78cc7e6fd29521d4bf1c1f9b97c2165d29f2131f8859ff58",
+    "size": 66705,
+    "files": [
+      {
+        "path": "CHANGELOG.md",
+        "sha256": "f4cfdb1ffa03a39509d8f5ad04f99c24e2c653fbfb9d195faf40c704bca70177",
+        "size": 41134
+      },
+      {
+        "path": "server.py",
+        "sha256": "d5d7d8f5e3baab3fc796ddd945c7210ffcd6ffcb98696887509a633d4f33c370",
+        "size": 176641
+      },
+      {
+        "path": "version.py",
+        "sha256": "78dc1cf64a2de25863e1d74b129498d1e5b8a676bd55255c191348e2ca9f9667",
+        "size": 337
+      }
+    ],
+    "remove": []
+  },
+  "releaseName": "截图识别准确度",
+  "releaseDate": "2026-11-10",
+  "full": {
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.15/KPL-Scrim-Lab-1.5.15-full.zip",
+    "sha256": "c02775702fdd4c033362ac28e95bdca452d29eb89911756affcd2b342082d73b",
+    "size": 82014416
+  }
+}
