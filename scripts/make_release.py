@@ -456,7 +456,7 @@ def download_runtime(build: Path, archive_override: str | None = None) -> Path:
 
 
 def install_deps(runtime: Path, index_url: str | None = None,
-                 deps_dir: str | None = None) -> None:
+                 deps_dir: str | None = None, with_ocr: bool = True) -> None:
     target = runtime / 'Lib' / 'site-packages'
     if deps_dir:
         source = Path(deps_dir)
@@ -465,13 +465,16 @@ def install_deps(runtime: Path, index_url: str | None = None,
         print(f'复用本地依赖：{source}')
         shutil.copytree(source, target, dirs_exist_ok=True)
         return
-    print('安装核心依赖（fastapi/uvicorn/Pillow/numpy/openpyxl/pycryptodome）…')
+    deps = list(CORE_DEPS) if with_ocr else [
+        item for item in CORE_DEPS if not item.lower().startswith('rapidocr')]
+    print('安装核心依赖' + ('（含主 OCR 运行时）' if with_ocr else '（精简：不含主 OCR，'
+          '首次打开用「安装主 OCR」一键补装）') + '…')
     # 构建机可能是 3.13，而内置运行时固定 3.12：不指定 ABI 的话 pip 会装
     # cp313 的二进制轮子，装进 3.12 后 import pydantic_core 直接失败。
     target_python = '.'.join(PY_VER.split('.')[:2])
     base = [sys.executable, '-m', 'pip', 'install', '--target', str(target),
             '--disable-pip-version-check', '--only-binary=:all:',
-            '--python-version', target_python, '--platform', 'win_amd64', *CORE_DEPS]
+            '--python-version', target_python, '--platform', 'win_amd64', *deps]
     if index_url:
         try:
             subprocess.run([*base, '-i', index_url], check=True)
@@ -600,7 +603,8 @@ def build_full(version: str, manifest: dict, args) -> dict:
         runtime = None
         if not args.skip_runtime:
             runtime = download_runtime(build, args.python_archive)
-            install_deps(runtime, args.pip_index_url, args.deps_dir)
+            install_deps(runtime, args.pip_index_url, args.deps_dir,
+                     with_ocr=not args.no_ocr_runtime)
             ensure_pip(runtime)
         paths = ship_files()
         copy_ship_files(build, paths)
@@ -628,6 +632,8 @@ def parse_args(argv=None):
     parser.add_argument('--all', action='store_true', help='补丁包含全部程序文件')
     parser.add_argument('--no-patch', action='store_true', help='不生成增量包')
     parser.add_argument('--no-full', action='store_true', help='不生成完整包')
+    parser.add_argument('--no-ocr-runtime', action='store_true',
+                        help='精简包：不内置主 OCR 运行时（Gitee 通道 100MB 附件限制时使用）')
     parser.add_argument('--skip-runtime', action='store_true',
                         help='完整包不内置 Python（仅用于本地验证）')
     parser.add_argument('--python-archive',
