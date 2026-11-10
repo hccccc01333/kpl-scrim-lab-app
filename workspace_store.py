@@ -458,9 +458,15 @@ class Workspace:
         player_id = player_id or 'player-' + uuid.uuid4().hex[:10]
         connection = self.connect()
         try:
+            if aliases is None:
+                # 不传别名就保留原样：改名/改位置不该把换号合并的别名冲掉。
+                row = connection.execute('SELECT aliases FROM players WHERE id=?',
+                                         (player_id,)).fetchone()
+                if row is not None:
+                    aliases = json.loads(row['aliases'] or '[]')
             connection.execute(
-                'INSERT INTO players(id, team_id, name, match_name, position, aliases, camp_user_id, role) '
-                'VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET team_id=excluded.team_id, '
+                'INSERT INTO players(id, team_id, name, match_name, position, aliases, camp_user_id, role)'
+                ' VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET team_id=excluded.team_id, '
                 'name=excluded.name, match_name=COALESCE(excluded.match_name, players.match_name), '
                 'position=COALESCE(excluded.position, players.position), aliases=excluded.aliases, '
                 'camp_user_id=COALESCE(excluded.camp_user_id, players.camp_user_id), role=excluded.role, '
@@ -623,6 +629,209 @@ class Workspace:
         finally:
             connection.close()
         return True
+
+    # ---------------------------------------------------------------- 游戏账号 ↔ 选手
+    # 营地爬到的十人面板只有 playerId + 游戏昵称（roleName）；教练把它对上真实选手后，
+    # 这条映射写进 player_accounts，之后同一账号再出现就直接认人，不用重复命名。
+    ACCOUNT_PLATFORM = 'camp'
+
+    def _account_rows(self, connection, *, account_id=None, player_id=None, team_id=None):
+        query = ('SELECT a.id, a.player_id, a.platform, a.account_id, a.nickname, a.camp_user_id,'
+                 ' a.first_seen, a.last_seen, a.is_primary, a.shared, a.source, a.confidence,'
+                 ' p.name AS player_name, p.position AS player_position,'
+                 ' p.team_id AS team_id, t.name AS team_name'
+                 ' FROM player_accounts a LEFT JOIN players p ON p.id = a.player_id'
+                 ' LEFT JOIN teams t ON t.id = p.team_id')
+        clauses, params = [], []
+        if account_id:
+            clauses.append('a.account_id = ?')
+            params.append(str(account_id))
+        if player_id:
+            clauses.append('a.player_id = ?')
+            params.append(str(player_id))
+        if team_id:
+            clauses.append('p.team_id = ?')
+            params.append(str(team_id))
+        if clauses:
+            query += ' WHERE ' + ' AND '.join(clauses)
+        rows = connection.execute(query, params).fetchall()
+        out = [{key: row[key] for key in row.keys()} for row in rows]
+        out.sort(key=lambda item: (item.get('team_name') or '', item.get('player_name') or ''))
+        return out
+
+    def list_accounts(self, *, account_id=None, player_id=None, team_id=None):
+        """游戏账号映射表：一条记录 = 一个营地账号（游戏 ID）挂在哪名选手、哪支战队。"""
+        connection = self.connect()
+        try:
+            return self._account_rows(connection, account_id=account_id, player_id=player_id,
+                                      team_id=team_id)
+        finally:
+            connection.close()
+
+    def account_index(self, platform=ACCOUNT_PLATFORM):
+        """账号 ID → {playerId, name, position, teamId, teamName, nickname}。
+
+        读取侧（营地面板、对手归属）用它一次解析全部映射，避免逐条查库。
+        """
+        connection = self.connect()
+        try:
+            rows = self._account_rows(connection)
+        finally:
+            connection.close()
+        index = {}
+        for row in rows:
+            if row.get('platform') != platform:
+                continue
+            index[str(row['account_id'])] = {
+                'accountId': str(row['account_id']), 'nickname': row.get('nickname') or '',
+                'playerId': row.get('player_id') or '', 'name': row.get('player_name') or '',
+                'position': row.get('player_position') or '', 'teamId': row.get('team_id') or '',
+                'teamName': row.get('team_name') or '', 'source': row.get('source') or 'manual',
+            }
+        return index
+
+    def map_account(self, account_id, *, player_id, nickname=None, platform=ACCOUNT_PLATFORM,
+                    source='manual', confidence='high', camp_user_id=None, seen_at=None,
+                    actor=None):
+        """把一个营地账号挂到选手名下；换绑时旧账号关系被覆盖并留痕。
+
+        同一账号只能属于一名选手（UNIQUE(platform, account_id)），重绑是显式操作，
+        不会自动猜测；解绑走 :meth:`unmap_account`。
+        """
+        account_id = str(account_id or '').strip()
+        player_id = str(player_id or '').strip()
+        if not account_id:
+            raise ValueError('缺少游戏账号 ID')
+        if not player_id:
+            raise ValueError('缺少选手 ID')
+        stamp = str(seen_at or time.strftime('%Y-%m-%d'))
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            player = connection.execute(
+                'SELECT id, name, team_id FROM players WHERE id=?', (player_id,)).fetchone()
+            if player is None:
+                raise ValueError('选手不存在')
+            previous = connection.execute(
+                'SELECT id, player_id, nickname FROM player_accounts WHERE platform=? AND account_id=?',
+                (platform, account_id)).fetchone()
+            if previous is None:
+                primary = connection.execute(
+                    'SELECT COUNT(*) FROM player_accounts WHERE player_id=? AND platform=? AND is_primary=1',
+                    (player_id, platform)).fetchone()[0]
+                connection.execute(
+                    'INSERT INTO player_accounts(id, player_id, platform, account_id, nickname,'
+                    ' camp_user_id, first_seen, last_seen, is_primary, shared, source, confidence,'
+                    ' created_at) VALUES(?,?,?,?,?,?,?,?,?,0,?,?,?)',
+                    (uuid.uuid4().hex[:16], player_id, platform, account_id,
+                     str(nickname or '').strip() or None, camp_user_id or None,
+                     stamp, stamp, 0 if primary else 1, source, confidence, time.time()))
+                self._log(connection, 'player', player_id, 'account:' + account_id, None,
+                          str(nickname or account_id), source, actor)
+            else:
+                connection.execute(
+                    'UPDATE player_accounts SET player_id=?, nickname=COALESCE(?, nickname),'
+                    ' camp_user_id=COALESCE(?, camp_user_id), last_seen=? WHERE id=?',
+                    (player_id, str(nickname or '').strip() or None, camp_user_id or None,
+                     stamp, previous['id']))
+                if previous['player_id'] != player_id:
+                    self._log(connection, 'player', player_id, 'account:' + account_id,
+                              previous['player_id'], player_id, source, actor)
+            connection.commit()
+            return {'accountId': account_id, 'playerId': player_id,
+                    'teamId': player['team_id'], 'name': player['name']}
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def unmap_account(self, account_id, *, platform=ACCOUNT_PLATFORM, actor=None):
+        """解除账号绑定（认错人 / 换号）。选手记录与历史对局都不动。"""
+        account_id = str(account_id or '').strip()
+        if not account_id:
+            raise ValueError('缺少游戏账号 ID')
+        connection = self.connect()
+        try:
+            row = connection.execute(
+                'SELECT id, player_id FROM player_accounts WHERE platform=? AND account_id=?',
+                (platform, account_id)).fetchone()
+            if row is None:
+                return {'accountId': account_id, 'removed': False}
+            connection.execute('DELETE FROM player_accounts WHERE id=?', (row['id'],))
+            self._log(connection, 'player', row['player_id'], 'account:' + account_id,
+                      row['player_id'], None, 'manual', actor)
+            connection.commit()
+            return {'accountId': account_id, 'removed': True, 'playerId': row['player_id']}
+        finally:
+            connection.close()
+
+    def delete_player(self, player_id, *, actor=None):
+        """删除选手：连同他的游戏账号映射一起删掉，之后同名游戏 ID 回到「待命名」。
+
+        历史对局是只读的原始营地文件，不会被改写；重命名/删人的影响只落在身份层。
+        """
+        player_id = str(player_id or '').strip()
+        if not player_id:
+            raise ValueError('缺少选手 ID')
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute(
+                'SELECT name, team_id FROM players WHERE id=?', (player_id,)).fetchone()
+            if row is None:
+                raise ValueError('选手不存在')
+            accounts = connection.execute(
+                'SELECT account_id FROM player_accounts WHERE player_id=?', (player_id,)).fetchall()
+            connection.execute('DELETE FROM player_accounts WHERE player_id=?', (player_id,))
+            connection.execute('DELETE FROM players WHERE id=?', (player_id,))
+            self._log(connection, 'player', player_id, 'deleted', row['name'], None, 'manual', actor)
+            for account in accounts:
+                self._log(connection, 'player', player_id, 'account:' + account['account_id'],
+                          account['account_id'], None, 'manual', actor)
+            connection.commit()
+            return {'playerId': player_id, 'name': row['name'], 'accounts': len(accounts)}
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def find_player(self, name, *, team_id=None):
+        """按选手名找一条记录（可限定战队）；用于命名时复用已有选手，不重复建。"""
+        name = str(name or '').strip()
+        if not name:
+            return None
+        connection = self.connect()
+        try:
+            if team_id:
+                row = connection.execute(
+                    'SELECT id, name, team_id, position FROM players'
+                    ' WHERE name=? AND team_id=? ORDER BY id LIMIT 1',
+                    (name, team_id)).fetchone()
+            else:
+                row = connection.execute(
+                    'SELECT id, name, team_id, position FROM players WHERE name=? ORDER BY id LIMIT 1',
+                    (name,)).fetchone()
+            return {key: row[key] for key in row.keys()} if row else None
+        finally:
+            connection.close()
+
+    def ensure_team_named(self, name, *, aliases=None, coach=None, actor=None):
+        """按队名找到或新建一支战队，返回 team_id（命名选手时顺手落战队主数据）。"""
+        name = str(name or '').strip()
+        if not name:
+            raise ValueError('请填写战队名称')
+        connection = self.connect()
+        try:
+            row = connection.execute(
+                "SELECT id FROM teams WHERE name=? AND status='active' ORDER BY id LIMIT 1",
+                (name,)).fetchone()
+            if row is not None:
+                return row['id']
+        finally:
+            connection.close()
+        return self.upsert_team(None, name=name, aliases=aliases, coach=coach, source='manual', actor=actor)
 
     # ---------------------------------------------------------------- 结构化对局
     def upsert_match(self, match_key, *, date=None, session=None, series_id=None, game_no=None,
@@ -977,8 +1186,14 @@ class Workspace:
             pending = connection.execute('SELECT COUNT(*) FROM prefill_fields').fetchone()[0]
             unnamed = connection.execute(
                 "SELECT COUNT(*) FROM teams WHERE status='active' AND name LIKE '待命名%'").fetchone()[0]
-            unbound = connection.execute(
-                "SELECT COUNT(*) FROM players WHERE IFNULL(camp_user_id, '') = ''").fetchone()[0]
+            try:
+                # 没有游戏账号映射的选手，营地爬到了也认不出人。
+                unbound = connection.execute(
+                    'SELECT COUNT(*) FROM players p WHERE NOT EXISTS '
+                    '(SELECT 1 FROM player_accounts a WHERE a.player_id = p.id)').fetchone()[0]
+            except sqlite3.Error:
+                unbound = connection.execute(
+                    "SELECT COUNT(*) FROM players WHERE IFNULL(camp_user_id, '') = ''").fetchone()[0]
             session_rows = connection.execute(
                 "SELECT id,date,opponent_team_id,review_status FROM schedules "
                 "WHERE date<=? AND IFNULL(status,'') NOT IN ('cancelled','completed') "
@@ -1019,8 +1234,8 @@ class Workspace:
             {'key': 'unmapped', 'label': '对局对手未映射', 'count': sum(row['matches'] for row in unmapped),
              'note': '历史对手 ID 不在当前战队表，需要映射', 'href': '#matches',
              'items': [{'oldId': row['enemy_team_id'], 'matches': row['matches']} for row in unmapped]},
-            {'key': 'unbound', 'label': '选手未绑定营地 ID', 'count': unbound,
-             'note': '未绑定的选手无法稳定归并个人数据', 'href': '#players'},
+            {'key': 'unbound', 'label': '选手未绑定游戏ID', 'count': unbound,
+             'note': '没有游戏ID映射的选手，营地再爬到也认不出人', 'href': '#setup'},
         ]
         groups = [group for group in groups if group['count']]
         return {'total': sum(group['count'] for group in groups), 'groups': groups, 'teams': teams}

@@ -81,3 +81,6 @@ _newblock.js
 data/*
 !data/facts/
 !data/facts/**
+
+dist-gitee/
+

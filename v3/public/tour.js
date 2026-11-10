@@ -341,7 +341,7 @@ const LESSONS = [
         route: '#plan',
         click: true,
         title: '把人和队补齐',
-        text: '「数据准备」里录本队资料、战队主数据、选手主数据。名字补齐后，所有分析显示真人名，不再显示昵称。',
+        text: '「数据准备」里先给营地的游戏ID起名、归队（身份对照），再录本队资料与战队主数据。名字补齐后，所有分析显示真人名，不再显示昵称。',
       },
       {
         target: '.secondary-nav a[href="#reports"]',

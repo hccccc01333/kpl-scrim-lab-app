@@ -1255,17 +1255,16 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.post('/workspace/teams')
     async def wb_save_team(request: Request):
         payload = await request.json()
-        ws = workspace()
-        team_id = ws.upsert_team(payload.get('id'), name=payload.get('name') or '',
-                                 short_name=payload.get('shortName'), aliases=payload.get('aliases'),
-                                 league=payload.get('league'), coach=payload.get('coach'),
-                                 analyst=payload.get('analyst'), notes=payload.get('notes'),
-                                 first_seen=payload.get('firstSeen'), status=payload.get('status') or 'active')
-        # 工作区是权威来源，这里同步兼容覆盖层；旧页面/旧脚本读覆盖层时也能拿到同一个名字。
-        if payload.get('name'):
-            team_clusters.save_override(db_path, team_id,
-                                        {'name': payload.get('name'), 'coach': payload.get('coach')})
-        return {'ok': True, 'id': team_id}
+        import identity_service
+        try:
+            saved = identity_service.save_team(
+                db_path, team_id=payload.get('id'), name=payload.get('name') or '',
+                short_name=payload.get('shortName'), aliases=payload.get('aliases'),
+                league=payload.get('league'), coach=payload.get('coach'),
+                first_seen=payload.get('firstSeen'), status=payload.get('status') or 'active')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        return {'ok': True, 'id': saved['id']}
 
     @router.post('/workspace/teams/merge')
     async def wb_merge_team(request: Request):
@@ -1290,12 +1289,30 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.post('/workspace/players')
     async def wb_save_player(request: Request):
         payload = await request.json()
-        ws = workspace()
-        player_id = ws.upsert_player(payload.get('id'), team_id=payload.get('teamId') or '',
-                                     name=payload.get('name') or '', position=payload.get('position'),
-                                     aliases=payload.get('aliases'), camp_user_id=payload.get('campUserId'),
-                                     role=payload.get('role') or 'main', match_name=payload.get('matchName'))
-        return {'ok': True, 'id': player_id}
+        import identity_service
+        try:
+            saved = identity_service.save_player(
+                db_path, player_id=payload.get('id'), name=payload.get('name') or '',
+                position=payload.get('position'), team_id=payload.get('teamId') or '',
+                team_name=payload.get('team') or payload.get('teamName') or '',
+                camp_user_id=payload.get('campUserId'), role=payload.get('role') or 'main',
+                aliases=payload.get('aliases'), actor='coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        return {'ok': True, 'id': saved['playerId'], **saved}
+
+    @router.post('/workspace/players/delete')
+    async def wb_delete_player(request: Request):
+        payload = await request.json()
+        import identity_service
+        player_id = str(payload.get('id') or payload.get('playerId') or '').strip()
+        if not player_id:
+            raise HTTPException(400, '缺少选手 id')
+        try:
+            removed = identity_service.delete_player(db_path, player_id, actor='coach')
+        except ValueError as error:
+            raise HTTPException(404, str(error))
+        return {'ok': True, **removed}
 
     @router.post('/workspace/players/migrate-profile')
     def wb_migrate_profile_players():
@@ -1679,13 +1696,28 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.post('/opponents/assign')
     async def assign_opponent_player(request: Request):
+        """把已命名的对手选手挪到另一支战队。
+
+        未命名的账号没有选手记录可挪 —— 先命名再归队，避免覆盖层和主数据两套归属。
+        """
+        import identity_service
         payload = await request.json()
-        player_id = str(payload.get('playerId') or '').strip()
-        team_id = payload.get('teamId')
-        if not player_id:
+        account_id = str(payload.get('playerId') or '').strip()
+        team_id = str(payload.get('teamId') or '').strip()
+        if not account_id:
             raise HTTPException(400, '缺少选手 id')
-        team_clusters.assign_player(db_path, player_id, str(team_id).strip() if team_id else None)
-        return {'ok': True, 'playerId': player_id, 'teamId': team_id}
+        if not team_id:
+            raise HTTPException(400, '请选择目标战队')
+        ws = workspace()
+        rows = ws.list_accounts(account_id=account_id)
+        if not rows:
+            raise HTTPException(400, '这个游戏账号还没命名，请先命名并归队')
+        try:
+            saved = identity_service.name_account(
+                db_path, account_id=account_id, player_id=rows[0]['player_id'], team_id=team_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        return {'ok': True, 'playerId': account_id, 'teamId': saved['teamId']}
 
     @router.get('/camp-compare')
     def camp_compare(team: str = ''):
@@ -1716,15 +1748,16 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.post('/teams/rename')
     async def rename_team(request: Request):
+        import identity_service
         payload = await request.json()
         key = str(payload.get('id') or '').strip()
-        name = payload.get('name')
-        coach = payload.get('coach')
         if not key:
             raise HTTPException(400, '缺少战队 id')
-        if name is not None and len(str(name)) > 40:
-            raise HTTPException(400, '战队名过长')
-        team_clusters.rename_team(db_path, key, name, coach)
+        try:
+            identity_service.rename_team(db_path, key, name=payload.get('name'),
+                                         coach=payload.get('coach'))
+        except ValueError as error:
+            raise HTTPException(400, str(error))
         return {'ok': True, 'id': key}
 
     @router.post('/teams/merge')

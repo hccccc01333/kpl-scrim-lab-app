@@ -37,7 +37,7 @@ export function createFeatures(h) {
     combos:['studio/camp-combos?min=3'], topic:['depth/catalog'], study:['v3/research/catalog'], reports:['v3/research/reports'], report:['v3/research/reports'], economy:['v3/economy'],
     effect:['v3/effect', 'studio/workspace/players'], versions:['matches'], session:['studio/workspace/sessions'],
     weekly:['studio/workspace/schedules','studio/workspace/matches','v3/effect','v3/workspace/overview','studio/workspace/teams'],
-    setup:['v3/workspace/overview','studio/workspace/teams','studio/workspace/players','studio/workspace/pending','v3/workspace/migration','studio/teams'],
+    setup:['v3/workspace/overview','studio/workspace/teams','studio/workspace/players','studio/workspace/pending','v3/workspace/migration','studio/teams','v3/identity/accounts'],
     pending:['studio/workspace/pending','studio/workspace/teams','v3/vocab'], plan:['studio/workspace/schedules','studio/workspace/teams','v3/vocab','studio/workspace/dashboard','studio/workspace/competitions'],
     competition:['studio/workspace/competitions','v3/players-board'],
   };
@@ -1218,17 +1218,24 @@ export function createFeatures(h) {
   }
   function ownership(value) {
     const teams = value.teams || [];
+    identityTeamOptions = teams.map((t) => ({id: t.id, name: t.displayName}));
+    const teamNameOf = (id) => (teams.find((t) => t.id === id) || {}).displayName || '';
     const loose = value.unassigned || [];
     const members = [...loose, ...teams.flatMap((t) => t.players || [])];
     const named = teams.filter((t) => t.named).length;
     const unassigned = members.filter((p) => !p.teamId).length;
-    const manual = members.filter((p) => p.manual).length;
-    const playerLine = (p) => `<div class="sx-own-player">
+    const manual = members.filter((p) => p.mapped).length;
+    const playerLine = (p) => {
+      const mapped = !!p.mapped;
+      const nickname = p.nickname && p.nickname !== p.name ? `游戏ID ${p.nickname} · ` : '';
+      return `<div class="sx-own-player">
       <span class="sx-own-avatar">${esc((p.name || '?').slice(0, 1))}</span>
-      <span class="sx-own-pname"><b>${text(p.name)}</b><small>${text((p.lanes || []).join(' / ') || '位置未记录')} · ${fmt(p.games)} 场</small></span>
-      <span class="sx-own-source ${p.manual ? 'is-manual' : ''}">${p.manual ? '手动确认' : p.teamId ? '阵容推断' : '未归属'}</span>
-      <button type="button" class="control sx-own-action" data-sx-player-assign="${esc(p.id)}" data-player-name="${esc(p.name)}" data-team-id="${esc(p.teamId || '')}">调整</button>
+      <span class="sx-own-pname"><b>${text(p.name)}</b><small>${nickname}${text((p.lanes || []).join(' / ') || p.position || '位置未记录')} · ${fmt(p.games)} 场</small></span>
+      <span class="sx-own-source ${mapped ? 'is-manual' : 'is-pending'}">${mapped ? '已命名' : '待命名'}</span>
+      <button type="button" class="control sx-own-action" data-sx-id-open="${esc(p.id)}" data-id-account="${esc(p.id)}" data-id-nickname="${esc(p.nickname || p.name)}" data-id-name="${mapped ? esc(p.name) : ''}" data-id-position="${esc(p.position || (p.lanes || [])[0] || '')}" data-id-team="${esc(p.teamId || '')}" data-id-teamname="${esc(teamNameOf(p.teamId))}" data-id-games="${fmt(p.games)}" data-id-player="${esc(p.playerId || '')}">${mapped ? '改名' : '命名'}</button>
+      ${mapped ? `<button type="button" class="control sx-own-action" data-sx-player-assign="${esc(p.id)}" data-player-name="${esc(p.name)}" data-team-id="${esc(p.teamId || '')}">调整</button>` : ''}
     </div>`;
+    };
     const groups = [];
     if (loose.length) groups.push({
       name:'未归属选手', named:false, unassigned:loose.length,
@@ -2078,8 +2085,21 @@ export function createFeatures(h) {
         ['训练组', `${fmt(new Set(matches.map((m) => m.session).filter(Boolean)).size)} 个`]])
       + block('分组对比', '胜率只以有胜负的对局为分母；平均经济差为本队减对手。', `<div class="fj-dims">${chips}</div>${note}${panels}`), false);
   }
-  function setup(value, teams, players, pending, migration, clusters) {
+  function setup(value, teams, players, pending, migration, clusters, identity) {
     const o = value.overview || {}, profile = o.profile || {};
+    identity = identity || {};
+    const identityRows = identity.rows || [];
+    const identityCount = identity.counters || {};
+    identityTeamOptions = (identity.teams || []).map((t) => ({id: t.id, name: t.name}));
+    if (!identityTeamOptions.length) identityTeamOptions = (teams.teams || []).map((t) => ({id: t.id, name: t.name}));
+    const ownTeam = identity.ownTeam || {};
+    const idState = {
+      all: identityRows.length,
+      unmapped: identityRows.filter((r) => !r.mapped).length,
+      mapped: identityRows.filter((r) => r.mapped).length,
+      own: identityRows.filter((r) => r.side === 'own').length,
+      enemy: identityRows.filter((r) => r.side === 'enemy').length,
+    };
     const teamList = (teams.teams || []).map((t) => ({...t, name:canonicalTeamName(t.name)}));
     const playerList = [...(players.players || [])].sort((a, b) => {
       const pa = isPlaceholderPlayer(a.name) ? 0 : 1;
@@ -2106,6 +2126,7 @@ export function createFeatures(h) {
     const steps = [
       {name:'本队资料', ok:!!profile.teamName, meta:profile.teamName ? `${profile.teamName}${profile.coach ? ' · ' + profile.coach : ''}` : '填写战队名与主教练', href:'#setup', jump:'profile'},
       {name:'战队主数据', ok:teamReady, meta:opponentTeams.length ? `${namedTeams.length} / ${opponentTeams.length} 支对手已命名` : (teamList.length ? '只有本队档案' : '还没有战队主数据'), href:'#setup', jump:'teams'},
+      {name:'游戏ID命名', ok:idState.all > 0 && idState.unmapped === 0, meta:idState.all ? `${idState.mapped} / ${idState.all} 个游戏ID已对上选手` : '还没有营地游戏ID', href:'#setup', jump:'identity'},
       {name:'选手主数据', ok:playerReady, meta:playerList.length ? (realPlayers.length ? `${realPlayers.length} 名已登记${placeholderPlayers ? ` · ${placeholderPlayers} 名待命名` : ''}` : `仅有 ${placeholderPlayers} 名占位选手`) : '还没有本队选手', href:'#setup', jump:'players'},
       {name:'结构化对局', ok:matchCount > 0, meta:`${matchCount} 局已迁移`, href:'#matches'},
       {name:'待确认字段', ok:pending.fields === 0, meta:pending.fields ? `${pending.fields} 项待确认` : '没有待确认字段', href:'#pending'},
@@ -2116,6 +2137,7 @@ export function createFeatures(h) {
     if (!profile.teamName) next = {title:'先补齐本队资料', note:'战队名与主教练会进入报告署名、教练档案和平台展示。', cta:'填写本队资料', href:'#setup', jump:'profile'};
     else if (!teamList.length) next = {title:'添加第一支战队', note:'战队是选手归属、交手记录和 BP 分析的挂载点。', cta:'添加战队', href:'#setup', jump:'teams'};
     else if (!teamReady) next = {title:`给 ${unnamedTeams.length} 支对手战队命名`, note:'命名后，对局、BP、报告和对手页会显示真实队名，而不是「待命名战队 #N」。', cta:'开始命名', href:'#setup', jump:'teams'};
+    else if (idState.unmapped > 0) next = {title:`命名 ${idState.unmapped} 个游戏ID`, note:'营地爬到的游戏ID对上选手与战队后，以后同一账号自动认人，分析按选手累计。', cta:'去命名', href:'#setup', jump:'identity'};
     else if (!playerList.length) next = {title:'登记第一名本队选手', note:'选手主数据决定个人分析能否跨局对比。', cta:'添加选手', href:'#setup', jump:'players'};
     else if (!playerReady) next = {title:`给 ${placeholderPlayers} 名占位选手改名`, note:'「待命名选手 #N」只是迁移占位，不会和战队的「待命名战队 #N」混用；改成真实 ID 后才算进入选手主数据。', cta:'去改名', href:'#setup', jump:'players'};
     else if (pending.fields > 0) next = {title:`核对 ${pending.fields} 项待确认字段`, note:'版本、规则与训练组确认后，复盘才会归到正确的口径。', cta:'去待确认', href:'#pending'};
@@ -2170,6 +2192,40 @@ export function createFeatures(h) {
       field('组织','organization',profile.organization||'', 'placeholder="如：AG 电子竞技俱乐部"'),
       '保存本队资料');
     const profileBlock = block('本队资料','平台展示、教练档案与报告署名都会用到这一组信息。',profileForm,profile.teamName?'<span class="sx-done-badge">已保存</span>':'','data-sx-anchor="profile"');
+    /* ── 身份对照：游戏ID → 选手 → 战队（一处命名，处处生效） ─────────── */
+    const idChip = (key, label, count, pressed = false) =>
+      `<button type="button" class="fj-chip" data-sx-id-chip="${key}" aria-pressed="${pressed}">${esc(label)} ${fmt(count)}</button>`;
+    const idTeamName = (id) => (identityTeamOptions.find((t) => t.id === id) || {}).name || '';
+    const idRow = (row, index) => {
+      const mapped = !!row.mapped;
+      const teamLabel = row.teamName || idTeamName(row.teamId) || '';
+      const suggest = row.suggestTeamName || idTeamName(row.suggestTeamId) || '';
+      const openAttrs = `data-sx-id-open="${esc(row.accountId)}" data-id-account="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}" data-id-name="${esc(row.name || '')}" data-id-position="${esc(row.position || row.lane || '')}" data-id-team="${esc(row.teamId || row.suggestTeamId || '')}" data-id-teamname="${esc(teamLabel || suggest)}" data-id-games="${fmt(row.games)}" data-id-player="${esc(row.playerId || '')}"`;
+      return `<div class="sx-id-row ${mapped ? 'is-mapped' : 'is-pending'}" data-sx-id-row data-side="${esc(row.side)}" data-state="${mapped ? 'mapped' : 'unmapped'}" data-search="${esc((row.nickname + ' ' + (row.name || '') + ' ' + teamLabel).toLowerCase())}" ${index >= 20 ? 'hidden' : ''}>
+        <span class="sx-id-gid"><b>${text(row.nickname || '未知昵称')}</b><small>${esc(row.lane || '位置未记录')} · ${fmt(row.games)} 局${row.lastSeen ? ' · ' + esc(row.lastSeen) : ''}</small></span>
+        <span class="sx-id-arrow" aria-hidden="true">→</span>
+        <span class="sx-id-player">${mapped ? `<b>${text(row.name)}</b><small>${text(row.position || row.lane || '位置未填')}</small>` : '<b class="is-wait">待命名</b><small>还没有选手ID</small>'}</span>
+        <span class="sx-id-team">${mapped ? `<b>${text(teamLabel || '未归队')}</b>` : (suggest ? `<small>建议 ${esc(suggest)}</small>` : '<small>战队未识别</small>')}</span>
+        <span class="sx-id-side">${row.side === 'own' ? '本队' : '对手'}</span>
+        <span class="sx-id-actions">
+          <button type="button" class="sx-inline-btn" ${openAttrs}>${mapped ? '改名' : '命名'}</button>
+          ${mapped ? `<button type="button" class="sx-inline-btn is-quiet" data-sx-id-unmap="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}">解绑</button><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(row.playerId)}" data-id-name="${esc(row.name)}">删除</button>` : ''}
+        </span>
+      </div>`;
+    };
+    const idHead = `<div class="sx-id-row is-head" aria-hidden="true"><span>游戏ID（营地昵称）</span><span></span><span>选手ID</span><span>战队</span><span>阵营</span><span></span></div>`;
+    const idToolbar = `<div class="sx-toolbar">
+      <label class="sx-search">${icon('search')}<input data-sx-id-search placeholder="搜索游戏ID、选手或战队" aria-label="搜索身份"></label>
+      <div class="sx-chips">${idChip('all', '全部', idState.all, true)}${idChip('unmapped', '待命名', idState.unmapped)}${idChip('mapped', '已命名', idState.mapped)}${idChip('own', '本队', idState.own)}${idChip('enemy', '对手', idState.enemy)}</div>
+      <span class="sx-toolbar-count" data-sx-id-count>共 ${fmt(idState.all)} 个游戏ID</span>
+    </div>`;
+    const identityBlock = block('身份对照 · 游戏ID → 选手 → 战队',
+      '营地爬到的每个游戏ID都在这里。命名一次，建档、对手归属、名单与状态、个人页都按这个名字显示；以后同一账号自动认人。',
+      `<p class="sx-id-hint">游戏ID 指营地昵称，选手ID 是你给这个人起的真名（如「小义」）。命名时顺手选战队；战队还没有就写个新队名，会一起建出来。删选手会连他的游戏ID映射一起删，那些ID回到「待命名」。</p>`
+      + idToolbar
+      + `<div class="sx-id-list" data-sx-id-list>${idHead}${identityRows.map(idRow).join('') || empty('还没有可命名的游戏账号。先在「采集 → 营地同步」拉一场。')}<p class="sx-empty" data-sx-id-empty hidden>没有符合条件的游戏ID。</p></div>`
+      + `<button class="sx-more" type="button" data-sx-id-more ${identityRows.length <= 20 ? 'hidden' : ''}>显示全部 ${fmt(identityRows.length)} 个</button>`,
+      `<span class="sx-count">${fmt(idState.unmapped)} 个待命名</span>`, 'data-sx-anchor="identity"');
     const quickOptions = unnamedTeams.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
     const quickForm = unnamedTeams.length ? `<div class="sx-quick">
       <div class="sx-quick-copy"><b>命名队列</b><p>${unnamedTeams.length} 支战队还是占位名。命名会同步到对局、BP、报告与对手归属。</p></div>
@@ -2225,7 +2281,8 @@ export function createFeatures(h) {
     const playerRows = playerList.map((p) => {
       const team = teamList.find((t) => t.id === p.team_id)?.name || '未指定战队';
       const placeholder = isPlaceholderPlayer(p.name);
-      return `<div class="sx-player-row ${placeholder ? 'is-placeholder' : ''}"><span class="sx-player-mark">${esc((p.name || '?').slice(0, 1))}</span><span class="sx-player-main"><b>${text(p.name)}</b><small>${placeholder ? '选手占位名 · ' : ''}${text(team)} · ${text(p.position || '位置未填')}</small></span><span class="sx-player-state ${placeholder ? 'is-pending' : p.role === 'main' ? 'is-main' : ''}">${placeholder ? '待命名' : p.role === 'main' ? '主力' : '替补'}</span></div>`;
+      const accounts = (identityRows || []).filter((row) => row.playerId === p.id).length;
+      return `<div class="sx-player-row ${placeholder ? 'is-placeholder' : ''}"><span class="sx-player-mark">${esc((p.name || '?').slice(0, 1))}</span><span class="sx-player-main"><b>${text(p.name)}</b><small>${placeholder ? '选手占位名 · ' : ''}${text(team)} · ${text(p.position || '位置未填')}${accounts ? ` · ${fmt(accounts)} 个游戏ID` : ' · 没有游戏ID'}</small></span><span class="sx-player-state ${placeholder ? 'is-pending' : p.role === 'main' ? 'is-main' : ''}">${placeholder ? '待命名' : p.role === 'main' ? '主力' : '替补'}</span><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(p.id)}" data-id-name="${esc(p.name)}">删除</button></div>`;
     }).join('');
     const editPlayers = playerList.map((p) => `<details class="sx-manage"><summary>${text(p.name)} · 编辑</summary><div class="sx-manage-body">${form('masterPlayer',`<input type="hidden" name="id" value="${esc(p.id)}"><input type="hidden" name="aliases" value="${esc(JSON.stringify(p.aliases||[]))}"><input type="hidden" name="role" value="${esc(p.role||'main')}">`+select('所属战队','teamId',options(teamList,p.team_id))+field('选手名称','name',p.name,'required maxlength="40"')+select('位置','position','<option value="">待确认</option>'+['对抗路','打野','中路','发育路','游走'].map((x) => `<option value="${x}" ${p.position === x ? 'selected' : ''}>${x}</option>`).join(''))+field('营地 ID','campUserId',p.camp_user_id||''),'保存修改')}</div></details>`).join('');
     const playerBlock = block('选手主数据','选手占位名是「待命名选手 #N」，战队占位名是「待命名战队 #N」，两者分开统计。先有战队再登记选手，营地 ID 用于绑定昵称。',playerForm+(playerRows?`<div class="sx-player-list">${playerRows}</div>`:'')+editPlayers,`<span class="sx-count">${fmt(realPlayers.length)} 名${placeholderPlayers ? ` · ${fmt(placeholderPlayers)} 待命名` : ''}</span>`,'data-sx-anchor="players"');
@@ -2239,7 +2296,7 @@ export function createFeatures(h) {
         <p class="migration-status" role="status"></p>
       </div>`,'','data-sx-anchor="migration"');
     return withPage('数据准备',`本队资料、战队与选手主数据是后续识别的前提 · 当前 ${done} / ${steps.length} 项已完成。`,
-      dataPrepNav('setup')+cockpit+quality+legacyBanner+profileBlock+teamBlock+playerBlock+migrationBlock,false,nextCta,false,true);
+      dataPrepNav('setup')+cockpit+quality+legacyBanner+identityBlock+profileBlock+teamBlock+playerBlock+migrationBlock,false,nextCta,false,true);
   }
   function pending(value, teams, vocab) {
     const rows = value.rows || [];
@@ -2964,6 +3021,134 @@ export function createFeatures(h) {
     const empty = root.querySelector('[data-sx-pending-empty]');
     if (empty) empty.hidden = shown > 0;
   }
+  /* ── 身份：游戏ID → 选手 → 战队 ──────────────────────────────────────
+     建档页的身份对照表、对手归属页的「命名」、选手页的「命名并归队」
+     共用这一个弹窗和同一个写接口 /api/v3/identity/name：一处命名，处处生效。 */
+  const POSITION_OPTIONS = ['对抗路', '打野', '中路', '发育路', '游走'];
+  let identityTeamOptions = [];
+
+  function syncIdentityTeamField(dialog) {
+    if (!dialog) return;
+    const select = dialog.querySelector('[data-sx-identity-team]');
+    const field = dialog.querySelector('[data-sx-identity-newteam]');
+    if (select && field) field.hidden = select.value !== '';
+  }
+
+  function identityDialog() {
+    let dialog = document.querySelector('#sx-identity-dialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'sx-identity-dialog';
+    dialog.className = 'sx-dialog sx-identity-dialog';
+    dialog.innerHTML = `<form data-sx-identity-form>
+      <div class="sx-dialog-head"><div><span class="sx-eyebrow">身份对照</span><h2 data-sx-identity-title>命名游戏 ID</h2></div><button type="button" class="sx-dialog-x" data-sx-identity-close aria-label="关闭">×</button></div>
+      <div class="sx-dialog-panel">
+        <p class="sx-dialog-subject" data-sx-identity-subject></p>
+        <label>选手名称<input name="name" maxlength="40" required placeholder="真实 ID 或常用名，不要填游戏 ID"></label>
+        <label>位置<select name="position"><option value="">待确认</option>${POSITION_OPTIONS.map((x) => `<option value="${x}">${x}</option>`).join('')}</select></label>
+        <label>所属战队<select name="teamId" data-sx-identity-team></select></label>
+        <label data-sx-identity-newteam hidden>新战队名<input name="teamName" maxlength="40" placeholder="如：重庆狼队"></label>
+        <p class="sx-dialog-note">保存后，这个游戏 ID 以后自动显示这名选手和这支战队；分析按选手累计，历史对局不改。</p>
+      </div>
+      <p class="form-status" role="status"></p>
+      <div class="sx-dialog-actions"><button type="button" class="control" data-sx-identity-close>取消</button><button class="primary" type="submit">保存</button></div>
+    </form>`;
+    document.body.appendChild(dialog);
+    dialog.querySelectorAll('[data-sx-identity-close]').forEach((button) => {
+      button.addEventListener('click', () => dialog.close());
+    });
+    dialog.querySelector('[data-sx-identity-team]').addEventListener('change', () => syncIdentityTeamField(dialog));
+    dialog.querySelector('form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      submitIdentityDialog(dialog);
+    });
+    return dialog;
+  }
+
+  function openIdentityDialog(data = {}) {
+    const dialog = identityDialog();
+    const teams = data.teams || identityTeamOptions || [];
+    const select = dialog.querySelector('[data-sx-identity-team]');
+    const current = String(data.teamId || '');
+    const known = teams.some((team) => team.id === current);
+    select.innerHTML = '<option value="">写新队名…</option>' + teams.map((team) =>
+      `<option value="${esc(team.id)}" ${team.id === current ? 'selected' : ''}>${esc(team.name || team.displayName || '未命名战队')}</option>`).join('')
+      + (current && !known ? `<option value="${esc(current)}" selected>${esc(data.teamName || '当前战队')}</option>` : '');
+    dialog.dataset.accountId = data.accountId || '';
+    dialog.dataset.nickname = data.nickname || '';
+    dialog.querySelector('[data-sx-identity-title]').textContent = data.playerId ? '调整选手身份' : '命名游戏 ID';
+    dialog.querySelector('[data-sx-identity-subject]').textContent =
+      `${data.nickname || '未知游戏 ID'}${data.accountId ? ' · 账号 ' + data.accountId : ''}${data.games ? ' · ' + data.games + ' 局' : ''}`;
+    dialog.querySelector('[name="name"]').value = data.name || '';
+    dialog.querySelector('[name="position"]').value = POSITION_OPTIONS.includes(data.position) ? data.position : '';
+    dialog.querySelector('[name="teamName"]').value = '';
+    syncIdentityTeamField(dialog);
+    dialog.querySelector('.form-status').textContent = '';
+    const submit = dialog.querySelector('button[type=submit]');
+    if (submit) submit.disabled = false;
+    if (!dialog.open) dialog.showModal();
+    setTimeout(() => dialog.querySelector('[name="name"]')?.focus(), 30);
+  }
+
+  function submitIdentityDialog(dialog) {
+    const form = dialog.querySelector('form');
+    const status = form.querySelector('.form-status');
+    const button = form.querySelector('button[type=submit]');
+    const payload = {
+      accountId: dialog.dataset.accountId || '',
+      nickname: dialog.dataset.nickname || '',
+      name: form.querySelector('[name="name"]').value.trim(),
+      position: form.querySelector('[name="position"]').value,
+    };
+    const teamId = form.querySelector('[name="teamId"]').value;
+    if (teamId) payload.teamId = teamId;
+    else payload.team = form.querySelector('[name="teamName"]').value.trim();
+    if (!payload.name) {
+      status.textContent = '请填写选手名称；游戏 ID 不能直接当选手 ID。';
+      return;
+    }
+    if (!payload.teamId && !payload.team) {
+      status.textContent = '请选择战队，或写一个新队名。';
+      return;
+    }
+    button.disabled = true;
+    status.textContent = '正在保存…';
+    api('v3/identity/name', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(() => { button.disabled = false; dialog.close(); reload(); })
+      .catch((error) => { status.textContent = error.message; button.disabled = false; });
+  }
+
+  function syncIdentityRows(root) {
+    if (!root) return;
+    const rows = [...root.querySelectorAll('[data-sx-id-row]')];
+    if (!rows.length) return;
+    const q = (root.querySelector('[data-sx-id-search]')?.value || '').trim().toLowerCase();
+    const filter = root.dataset.sxIdFilter || 'all';
+    const expanded = root.dataset.sxIdExpanded === '1';
+    let matched = 0, visible = 0;
+    rows.forEach((row) => {
+      const mapped = row.dataset.state === 'mapped';
+      const side = row.dataset.side;
+      const okFilter = filter === 'all' || (filter === 'unmapped' && !mapped)
+        || (filter === 'mapped' && mapped) || (filter === 'own' && side === 'own')
+        || (filter === 'enemy' && side === 'enemy');
+      const hit = !q || String(row.dataset.search || '').includes(q);
+      const limited = !expanded && filter === 'all' && !q && visible >= 20;
+      row.hidden = !(okFilter && hit) || limited;
+      if (okFilter && hit) matched++;
+      if (okFilter && hit && !limited) visible++;
+    });
+    const counter = root.querySelector('[data-sx-id-count]');
+    if (counter) counter.textContent = q || filter !== 'all' ? `找到 ${fmt(matched)} 个` : `共 ${fmt(matched)} 个游戏ID`;
+    const more = root.querySelector('[data-sx-id-more]');
+    if (more) {
+      more.hidden = expanded || !!q || filter !== 'all' || matched <= 20;
+      more.textContent = expanded ? '收起列表' : `显示全部 ${fmt(matched)} 个`;
+    }
+    const empty = root.querySelector('[data-sx-id-empty]');
+    if (empty) empty.hidden = matched > 0;
+  }
+
   function openSxTeamDialog(mode, data = {}) {
     const dialog = document.querySelector('#sx-team-dialog');
     if (!dialog) return;
@@ -3195,6 +3380,7 @@ export function createFeatures(h) {
   }
   function change(event) {
     if (event.target.matches('[data-sx-team-search]')) { syncSetupTeams(event.target.closest('.section')); return true; }
+    if (event.target.matches('[data-sx-id-search]')) { syncIdentityRows(event.target.closest('.section')); return true; }
     if (event.target.matches('[data-sx-own-search]')) { syncOwnershipGroups(event.target.closest('.section')); return true; }
     if (event.target.matches('[data-sx-pending-search]')) { syncPendingQueue(event.target.closest('.section')); return true; }
     if (event.target.matches('[data-sx-link-search]')) {
@@ -3438,6 +3624,62 @@ if(captureIngestPage.change(event))return;
         root.dataset.sxTeamExpanded = root.dataset.sxTeamExpanded === '1' ? '0' : '1';
         syncSetupTeams(root);
       }
+      return true;
+    }
+    /* ── 身份对照：筛 / 展开 / 命名 / 解绑 / 删选手 ───────────────────── */
+    const idChipButton = event.target.closest('[data-sx-id-chip]');
+    if (idChipButton) {
+      const root = idChipButton.closest('.section');
+      if (root) {
+        root.dataset.sxIdFilter = idChipButton.dataset.sxIdChip;
+        root.dataset.sxIdExpanded = '0';
+        root.querySelectorAll('[data-sx-id-chip]').forEach((chip) => chip.setAttribute('aria-pressed', String(chip === idChipButton)));
+        syncIdentityRows(root);
+      }
+      return true;
+    }
+    if (event.target.closest('[data-sx-id-more]')) {
+      const root = event.target.closest('.section');
+      if (root) {
+        root.dataset.sxIdExpanded = root.dataset.sxIdExpanded === '1' ? '0' : '1';
+        syncIdentityRows(root);
+      }
+      return true;
+    }
+    const identityOpen = event.target.closest('[data-sx-id-open]');
+    if (identityOpen) {
+      openIdentityDialog({
+        accountId: identityOpen.dataset.sxIdOpen,
+        nickname: identityOpen.dataset.idNickname,
+        name: identityOpen.dataset.idName,
+        position: identityOpen.dataset.idPosition,
+        teamId: identityOpen.dataset.idTeam,
+        teamName: identityOpen.dataset.idTeamname,
+        games: identityOpen.dataset.idGames,
+        playerId: identityOpen.dataset.idPlayer,
+      });
+      return true;
+    }
+    const identityUnmap = event.target.closest('[data-sx-id-unmap]');
+    if (identityUnmap) {
+      const label = identityUnmap.dataset.idNickname || identityUnmap.dataset.sxIdUnmap;
+      if (!window.confirm(`把「${label}」从这名选手身上解绑？选手与战队记录都保留，这个游戏ID回到「待命名」。`)) return true;
+      identityUnmap.disabled = true;
+      api('v3/identity/accounts/unmap', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({accountId: identityUnmap.dataset.sxIdUnmap})})
+        .then(() => reload())
+        .catch((error) => { window.alert(error.message); identityUnmap.disabled = false; });
+      return true;
+    }
+    const identityDelete = event.target.closest('[data-sx-id-delete]');
+    if (identityDelete) {
+      const name = identityDelete.dataset.idName || '这名选手';
+      if (!window.confirm(`删除「${name}」？会连他的游戏ID映射一起删掉，那些游戏ID回到「待命名」；历史对局不改。`)) return true;
+      identityDelete.disabled = true;
+      api('v3/identity/players/delete', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({playerId: identityDelete.dataset.sxIdDelete})})
+        .then(() => reload())
+        .catch((error) => { window.alert(error.message); identityDelete.disabled = false; });
       return true;
     }
     const ownChip = event.target.closest('[data-sx-own-chip]');

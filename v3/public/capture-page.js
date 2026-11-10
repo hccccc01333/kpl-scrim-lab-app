@@ -791,6 +791,7 @@ export function createCapture(h) {
       <div class="conn-keytip">
         <div><b>只绑一个每场都上的号就够</b><span>一局详情自带双方十人面板，不用每个选手都绑。</span></div>
         <div><b>看不到某位选手的战绩？</b><span>让他在王者营地「隐私设置」里把教练加入白名单，否则拉不到他的对局。</span></div>
+        <div><b>这里的「改名」只是本机备注</b><span>比赛里的游戏ID → 选手ID 在「赛训 → 数据准备 → 身份对照」里统一改，一处命名处处生效。</span></div>
       </div>
       ${players.length ? '' : '<p class="conn-empty">还没有绑定选手 —— 填好下面这一栏，拉取就有东西可读了。</p>'}
       <details class="camp-link-help" data-tour="camp-link">

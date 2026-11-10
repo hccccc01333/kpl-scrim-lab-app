@@ -657,7 +657,7 @@ export function createPlayers(h) {
       ['已认领昵称', `${fmt(entries.length - unclaimed.length)} 个`, `共 ${fmt(entries.length)} 个本队侧昵称`],
       ['待认领', `${fmt(unclaimed.length)} 个`, '按出场排序'],
       ['认领覆盖', pct(totalGames ? claimedGames / totalGames * 100 : null), `${fmt(claimedGames)} / ${fmt(totalGames)} 人次`],
-      ['映射记录', `${fmt(Object.keys(aliases).length)} 条`, '人工确认的昵称 → 选手'],
+      ['映射记录', `${fmt(entries.reduce((n, x) => n + (x.accountIds || []).length, 0))} 条`, '游戏ID → 选手'],
       ['前五覆盖', `${fmt(top.reduce((n, x) => n + x.matches, 0))} 人次`, '待认领里出场最多的五个'],
     ]), '<a class="control" href="#players">← 名单与状态</a>');
     const summaryLine = brief(unclaimed.length
@@ -674,15 +674,17 @@ export function createPlayers(h) {
       <label>位置<select name="position"><option value="">待确认</option>${LANES.map(x => `<option value="${x}">${x}</option>`).join('')}</select></label>
       <div class="form-footer"><p class="form-status" role="status"></p><button class="primary" type="submit">添加本队选手</button></div></form>`;
     const membersHtml = members.length
-      ? `<div class="pl-members">${members.map(m => `<div class="pl-member">${mono(m.label || m.name)}<span><b>${esc(m.label || m.name)}</b><small>${esc(m.position || '位置待填')} · ${fmt(Object.values(aliases).filter(id => id === m.id).length)} 个昵称</small></span></div>`).join('')}</div>`
+      ? `<div class="pl-members">${members.map(m => `<div class="pl-member">${mono(m.label || m.name)}<span><b>${esc(m.label || m.name)}</b><small>${esc(m.position || '位置待填')} · ${fmt(entries.filter(x => x.memberId === m.id).reduce((n, x) => n + (x.accountIds || []).length, 0))} 个游戏ID</small></span></div>`).join('')}</div>`
       : '<p class="pl-note">名单还是空的：先添加本队选手，再回到上面对昵称做认领。</p>';
-    const aliasHtml = Object.keys(aliases).length
-      ? `<div class="pl-maps">${Object.entries(aliases).map(([label, id]) => {
-        const member = members.find(m => m.id === id);
-        const entry = entries.find(x => x.label === label);
-        return `<div class="pl-map">${mono(label)}<b>${esc(label)}</b><i>→</i><span>${esc(member ? (member.label || member.name) : '已删除的选手')}</span><small>${fmt(entry?.matches || 0)} 局</small></div>`;
+    /* 映射只认账号表：游戏ID → 选手。旧版按昵称字符串写的 aliases 只作兜底。 */
+    const mappedRows = entries.filter(x => x.bound && (x.nicknames || []).length);
+    const aliasHtml = mappedRows.length
+      ? `<div class="pl-maps">${mappedRows.map((x) => {
+        const nicknames = (x.nicknames || []).join(' / ');
+        const member = members.find(m => m.id === x.memberId);
+        return `<div class="pl-map">${mono(nicknames)}<b>${esc(nicknames)}</b><i>→</i><span>${esc(member ? (member.label || member.name) : (x.name || x.label))}</span><small>${fmt(x.matches)} 局${(x.accountIds || []).length > 1 ? ` · ${(x.accountIds || []).length} 个账号` : ''}</small></div>`;
       }).join('')}</div>`
-      : '<p class="pl-note">还没有人工映射。认领会写进建档，下一次同步仍然有效。</p>';
+      : '<p class="pl-note">还没有命名过的游戏ID。到「赛训 → 数据准备 → 身份对照」给游戏ID起名，这里就会显示映射。</p>';
     /* 待认领名单不再重复渲染一份：档案页有「认领 = 待认领」筛选，点进去直接命名。 */
     const topUnclaimed = unclaimed.slice(0, 3);
     const candidateBlock = block('待认领昵称', '名单页的昵称列表已并进档案页：按「认领 = 待认领」筛选，点任意选手即可命名。',
@@ -706,7 +708,7 @@ export function createPlayers(h) {
     const panels = [block('本队名单', '名单是认领的前提；位置用于位置名册与同位置分位。', `<div class="pl-forms">${membersHtml}${rosterForm}</div>`),
       block('命名并归队', '昵称还没有对应选手时用这里：起名、选位置、填战队，一次写入名单与昵称映射；之后名单、状态与对比都按这名选手累计。', `<div class="pl-forms">${nameForm}</div>`),
       block('认领一个昵称', '确认该昵称确属这名本队选手后保存；同一昵称只能属于一名选手。', `<div class="pl-forms">${claimForm}</div>`),
-      candidateBlock, block('已建立的映射', '人工确认过的昵称映射，来自建档设置。', aliasHtml), impact];
+      candidateBlock, block('已建立的映射', '游戏ID → 选手的唯一映射（player_accounts）；删掉映射这里也就没了，历史对局不改。', aliasHtml), impact];
     return `<div class="page hero-detail-page page-wide" data-pl-page="identity">${head}${summaryLine}${anchors(['本队名单', '命名归队', '认领昵称', '待认领', '映射', '影响'])}<div class="hero-detail-grid">${panels.join('')}</div></div>`;
   }
 

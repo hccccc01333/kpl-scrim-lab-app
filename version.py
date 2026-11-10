@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.5.30'
+VERSION = '1.5.31'
 RELEASE_DATE = '2026-11-10'
-RELEASE_NAME = 'BP 命中：大盘对位与 KPL 赛事命中'
+RELEASE_NAME = '身份主数据统一与 BP 口径补全'

@@ -1028,14 +1028,49 @@ def assign_player(db_path, player_id, team_id):
     return save_override(db_path, player_key(player_id), {'teamId': team_id or None})
 
 
+def account_team_index(camp_dir, db_path) -> dict:
+    """敌方账号 → 聚类战队 id（含合并）。
+
+    身份对照页用它在命名前显示「这个号当时属于哪支队」，只读、不比战绩，
+    所以不走 list_teams 那套完整指标计算。
+    """
+    overrides = load_overrides(db_path)
+    index = {}
+    for panel in load_panels(camp_dir):
+        team_id = signature(panel)
+        merged = overrides.get(team_id, {}).get('mergedInto')
+        if merged:
+            team_id = merged
+        for player in panel['enemy_roster']:
+            if player['id']:
+                index.setdefault(player['id'], team_id)
+    for key, body in overrides.items():
+        if key.startswith('player:'):
+            team_id = body.get('teamId')
+            if team_id:
+                index[key.split(':', 1)[1]] = team_id
+    return index
+
+
+def _mapped_accounts(db_path) -> dict:
+    """账号 → 选手/战队的已命名映射；读不到就按未命名处理。"""
+    try:
+        from workspace_store import Workspace
+        return Workspace(db_path).account_index()
+    except Exception:
+        return {}
+
+
 def opponent_players(camp_dir, db_path):
     """列出所有对手选手及其当前归属。
 
-    默认归属来自阵营签名聚类；教练手动指派过则以覆盖层为准。
+    命名过的账号显示真实选手名与战队（`player_accounts` 是唯一口径），
+    未命名的仍按阵营签名聚类归组，名字就用营地昵称。
     返回 {teams:[{id,displayName,players:[...]}], unassigned:[...], players:[...]}
     """
     panels = load_panels(camp_dir)
     overrides = load_overrides(db_path)
+    accounts = _mapped_accounts(db_path)
     teams = list_teams(camp_dir, db_path)
 
     seen = {}
@@ -1057,18 +1092,34 @@ def opponent_players(camp_dir, db_path):
     buckets = {team['id']: [] for team in teams['teams']}
     unassigned = []
 
+    # 命名过的选手可能已经挂在工作区新建的战队上：这些队不在聚类结果里，补进来。
+    extras = {}
+    for mapped in accounts.values():
+        team_id = mapped.get('teamId')
+        if team_id and team_id not in by_id:
+            extras[team_id] = {'id': team_id,
+                               'displayName': mapped.get('teamName') or '未命名战队',
+                               'named': bool(mapped.get('teamName'))}
+            buckets.setdefault(team_id, [])
+
     for player_id, record in seen.items():
+        mapped = accounts.get(player_id) or {}
         override = overrides.get(player_key(player_id), {})
-        team_id = override.get('teamId') or record['defaultTeam']
+        team_id = mapped.get('teamId') or override.get('teamId') or record['defaultTeam']
         # 战队被合并走时，跟随到目标战队
-        if team_id not in by_id:
+        if team_id not in by_id and team_id not in extras:
             merged = overrides.get(team_id, {}).get('mergedInto')
             team_id = merged if merged in by_id else None
         item = {
-            'id': player_id, 'name': record['name'] or player_id,
+            'id': player_id,
+            'name': mapped.get('name') or record['name'] or player_id,
+            'nickname': record['name'],
+            'mapped': bool(mapped),
+            'playerId': mapped.get('playerId') or '',
+            'position': mapped.get('position') or '',
             'games': record['games'], 'lanes': sorted(record['lanes']),
             'defaultTeam': record['defaultTeam'], 'teamId': team_id,
-            'manual': bool(override.get('teamId')),
+            'manual': bool(mapped or override.get('teamId')),
         }
         if team_id and team_id in buckets:
             buckets[team_id].append(item)
@@ -1078,12 +1129,17 @@ def opponent_players(camp_dir, db_path):
     for group in buckets.values():
         group.sort(key=lambda row: (-row['games'], row['name']))
 
+    order = [{'id': team['id'], 'displayName': team['displayName'],
+              'named': team['named'], 'players': buckets[team['id']]} for team in teams['teams']]
+    order += [{'id': item['id'], 'displayName': item['displayName'], 'named': item['named'],
+               'players': buckets[item['id']]}
+              for item in extras.values() if buckets.get(item['id'])]
+    order.sort(key=lambda group: (not group['named'], group['displayName']))
     return {
-        'teams': [{'id': team['id'], 'displayName': team['displayName'],
-                   'named': team['named'], 'players': buckets[team['id']]}
-                  for team in teams['teams']],
+        'teams': order,
         'unassigned': unassigned,
         'total': len(seen),
+        'named': sum(1 for mapped in accounts.values() if mapped.get('teamId')),
         'warnings': teams.get('warnings') or [],
     }
 

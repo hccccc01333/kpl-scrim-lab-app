@@ -1687,7 +1687,8 @@ async function load(fresh = false) {
   document.querySelector('#content').innerHTML = '<div class="page"><div class="loading">正在读取赛训数据…</div></div>';
   /* 详情路由缺 ID（直接输入 #session / #match 等）：别去请求一个空 key，
      那会 404 后落到"暂时读不到数据"的死循环。给出明确的返回入口。 */
-  const DETAIL_ROUTES = ['match', 'player', 'playerdetail', 'hero', 'team', 'session', 'competition', 'report', 'topic', 'study', 'identity'];
+  /* 「选手认领」是整页不是详情页：它没有单条 ID，缺 key 也应该正常渲染。 */
+  const DETAIL_ROUTES = ['match', 'player', 'playerdetail', 'hero', 'team', 'session', 'competition', 'report', 'topic', 'study'];
   if (DETAIL_ROUTES.includes(r.name) && !r.key) {
     const section = sectionFor(r.name).name;
     const label = labels[r.name] || '条目';

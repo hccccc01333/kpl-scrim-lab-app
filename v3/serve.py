@@ -1,4 +1,4 @@
-﻿"""V3 route module: read training data and expose the analysis API."""
+"""V3 route module: read training data and expose the analysis API."""
 
 import argparse
 import json
@@ -40,6 +40,7 @@ from studio_api import create_studio_router
 from analysis_api import create_analysis_router
 from depth_api import create_depth_router
 import deep_analysis
+import identity_service
 import vocab as vocab_store
 
 
@@ -86,6 +87,7 @@ _STUDIO_ALLOWED = {
     '/api/studio/workspace/teams', '/api/studio/workspace/teams/merge',
     '/api/studio/workspace/teams/reconcile',
     '/api/studio/workspace/players', '/api/studio/workspace/players/migrate-profile',
+    '/api/studio/workspace/players/delete',
     '/api/studio/workspace/schedules',
     '/api/studio/workspace/competitions',
     '/api/studio/workspace/competitions/{competition_id}',
@@ -1293,145 +1295,350 @@ async def commit_sheet(request: Request):
             'warnings':manifest.get('warnings',[]),'sheets':manifest.get('sheets',[])}
 
 
+def _settings():
+    """本机设置（本队资料 / 旧名单 / 旧别名）；读不到就当空。"""
+    if not DB.is_file():
+        return {}
+    try:
+        with closing(sqlite3.connect(DB)) as connection:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+    except sqlite3.Error:
+        return {}
+    try:
+        value = json.loads(row[0]) if row else {}
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def own_team():
+    """本队档案：settings.teamName 对应的战队，其次 team-own。命名选手时的默认战队。"""
+    settings = _settings()
+    name = str(settings.get('teamName') or '').strip()
+    if DB.is_file():
+        try:
+            with closing(sqlite3.connect(DB)) as connection:
+                if name:
+                    row = connection.execute(
+                        "SELECT id, name FROM teams WHERE name=? AND status='active' ORDER BY id LIMIT 1",
+                        (name,)).fetchone()
+                    if row:
+                        return {'id': row[0], 'name': row[1]}
+                row = connection.execute("SELECT id, name FROM teams WHERE id='team-own'").fetchone()
+                if row:
+                    return {'id': row[0], 'name': row[1]}
+        except sqlite3.Error:
+            pass
+    return {'id': 'team-own', 'name': name or '我方战队'}
+
+
+def _identity_teams():
+    """命名字段里可选的战队：工作区主数据，待命名的排在后面。"""
+    import workspace_store
+    try:
+        teams = workspace_store.Workspace(DB).list_teams()
+    except sqlite3.Error:
+        return []
+    rows = [{'id': team['id'], 'name': team['name'], 'coach': team.get('coach') or '',
+             'named': not str(team['name']).startswith('待命名')} for team in teams]
+    rows.sort(key=lambda item: (not item['named'], item['name']))
+    return rows
+
+
+def _label_accounts(label, side='own'):
+    """昵称 → 该昵称在营地面板里出现过的账号（供旧版认领接口定位账号）。"""
+    label = str(label or '').strip()
+    found = []
+    for row in _camp_records()['records']:
+        if side and row.get('side') != side:
+            continue
+        if (row.get('nickname') or '') == label and row.get('accountId'):
+            if row['accountId'] not in found:
+                found.append(row['accountId'])
+    return found
+
+
+@router.get('/api/v3/identity/accounts')
+def identity_accounts(side: str = '', state: str = '', q: str = ''):
+    """身份对照：一行一个游戏账号，游戏 ID → 选手 → 战队。
+
+    读的是同一份口径：账号出现在哪几局、当时在哪支队、现在挂在谁名下。
+    改映射不影响历史对局，这里只负责显示当前状态。
+    """
+    facts = _camp_records()
+    mapping = camp_accounts()
+    teams = _identity_teams()
+    team_names = {team['id']: team['name'] for team in teams}
+    try:
+        import team_clusters
+        cluster_team = team_clusters.account_team_index(MATCHES.parent / 'camp_details', DB)
+    except Exception:
+        cluster_team = {}
+    home = own_team()
+
+    buckets = {}
+    for row in facts['records']:
+        account_id = row.get('accountId') or ''
+        key = account_id or 'nick:' + (row.get('nickname') or row.get('name') or '')
+        item = buckets.get(key)
+        if item is None:
+            item = buckets[key] = {
+                'accountId': account_id,
+                'nickname': row.get('nickname') or row.get('name') or '',
+                'games': 0, 'own': 0, 'enemy': 0, 'wins': 0, 'decided': 0,
+                'lanes': Counter(), 'heroes': Counter(), 'opponents': Counter(),
+                'days': set(), 'lastSeen': '',
+            }
+        item['games'] += 1
+        item['own' if row.get('side') == 'own' else 'enemy'] += 1
+        if row.get('result') in ('win', 'loss'):
+            item['decided'] += 1
+            if row['result'] == 'win':
+                item['wins'] += 1
+        if row.get('lane'):
+            item['lanes'][row['lane']] += 1
+        if row.get('hero'):
+            item['heroes'][row['hero']] += 1
+        if row.get('opponent'):
+            item['opponents'][row['opponent']] += 1
+        if row.get('day'):
+            item['days'].add(row['day'])
+        stamp = str(row.get('at') or row.get('day') or '')
+        if stamp > item['lastSeen']:
+            item['lastSeen'] = stamp
+
+    rows = []
+    for item in buckets.values():
+        account_id = item['accountId']
+        mapped = mapping.get(account_id) if account_id else None
+        own_side = item['own'] >= item['enemy']
+        default_team = home['id'] if own_side else (cluster_team.get(account_id) or '')
+        if mapped:
+            default_team = mapped.get('teamId') or default_team
+        rows.append({
+            'accountId': account_id,
+            'nickname': item['nickname'],
+            'side': 'own' if own_side else 'enemy',
+            'games': item['games'], 'own': item['own'], 'enemy': item['enemy'],
+            'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None,
+            'lane': (item['lanes'].most_common(1)[0][0] if item['lanes'] else ''),
+            'lanes': [lane for lane, _ in item['lanes'].most_common()],
+            'heroes': [hero for hero, _ in item['heroes'].most_common(3)],
+            'opponents': [name for name, _ in item['opponents'].most_common(2)],
+            'days': len(item['days']), 'lastSeen': item['lastSeen'],
+            'mapped': bool(mapped),
+            'playerId': (mapped or {}).get('playerId') or '',
+            'name': (mapped or {}).get('name') or '',
+            'position': (mapped or {}).get('position') or '',
+            'teamId': (mapped or {}).get('teamId') or '',
+            'teamName': (mapped or {}).get('teamName') or '',
+            'suggestTeamId': default_team,
+            'suggestTeamName': team_names.get(default_team, ''),
+        })
+
+    query = str(q or '').strip().lower()
+    if side in ('own', 'enemy'):
+        rows = [row for row in rows if row['side'] == side]
+    if state == 'mapped':
+        rows = [row for row in rows if row['mapped']]
+    elif state == 'unmapped':
+        rows = [row for row in rows if not row['mapped']]
+    if query:
+        rows = [row for row in rows
+                if query in (row['nickname'] + ' ' + row['name'] + ' ' + row['teamName']).lower()]
+    rows.sort(key=lambda row: (row['mapped'], -row['games'], row['nickname']))
+
+    counters = {
+        'total': len(rows), 'mapped': sum(1 for row in rows if row['mapped']),
+        'unmapped': sum(1 for row in rows if not row['mapped']),
+        'own': sum(1 for row in rows if row['side'] == 'own'),
+        'enemy': sum(1 for row in rows if row['side'] == 'enemy'),
+    }
+    return {'rows': rows, 'teams': teams, 'ownTeam': home, 'counters': counters}
+
+
 @router.get('/api/v3/identity')
 def identity_view(repo=Depends(repository), values=Depends(filters)):
-    data=repo.get(); rows,_=repo._selected_rows(values)
-    groups={}
+    data = repo.get()
+    rows, _ = repo._selected_rows(values)
+    settings = _settings()
+    aliases = {str(key): str(value) for key, value in (settings.get('aliases') or {}).items()}
+    mapping = camp_accounts()
+    # 名单以选手主数据为准；旧 settings.roster 只在还没迁移时兜底显示。
+    try:
+        import workspace_store
+        members = workspace_store.Workspace(DB).list_players()
+    except sqlite3.Error:
+        members = []
+    if not members:
+        team_name = str(settings.get('teamName') or '').strip()
+        members = [dict(member, label=member.get('name') or '')
+                   for member in (settings.get('members') or settings.get('roster') or [])
+                   if not member.get('archived')
+                   and (not member.get('team') or member.get('team') == team_name)]
+    by_name = {}
+    for member in members:
+        for label in (member.get('name'), member.get('label')):
+            if label:
+                by_name[str(label)] = member
+    groups = {}
     for row in rows:
-        label=row.get('rawLabel') or row.get('label')
-        if not row.get('isOwn') or not label: continue
-        item=groups.setdefault(label, {'label':label,'matches':set(),'heroes':set(),'bound':False})
-        if row.get('matchKey'): item['matches'].add(row['matchKey'])
-        if row.get('hero'): item['heroes'].add(row['hero'])
+        label = row.get('rawLabel') or row.get('label')
+        if not row.get('isOwn') or not label:
+            continue
+        item = groups.setdefault(label, {'label': label, 'matches': set(), 'heroes': set(),
+                                         'accountIds': set(), 'bound': False})
+        if row.get('matchKey'):
+            item['matches'].add(row['matchKey'])
+        if row.get('hero'):
+            item['heroes'].add(row['hero'])
+        if row.get('accountId'):
+            item['accountIds'].add(str(row['accountId']))
         item['bound'] = item['bound'] or bool(row.get('bound'))
-    entries=[{'label':x['label'],'matches':len(x['matches']),'heroes':sorted(x['heroes']),'bound':x['bound']} for x in groups.values()]
-    entries.sort(key=lambda x:(x['bound'],-x['matches'],x['label']))
-    profile=data.get('profile') or {}; team=profile.get('teamName') or ''
-    members=[m for m in profile.get('members',[]) if not m.get('archived') and (not m.get('team') or m.get('team')==team)]
-    return {'entries':entries,'members':members,'aliases':data.get('aliases') or {},'teamName':team}
+    entries = []
+    for item in groups.values():
+        mapped = next((mapping[account] for account in item['accountIds'] if account in mapping), None)
+        member = mapped or by_name.get(item['label']) or (
+            members[0] if aliases.get(item['label']) else None)
+        entries.append({'label': item['label'], 'matches': len(item['matches']),
+                        'heroes': sorted(item['heroes']),
+                        'accountIds': sorted(item['accountIds']),
+                        'bound': bool(mapped or member),
+                        'memberId': (member or {}).get('id'),
+                        'name': (mapped or {}).get('name') or ''})
+    entries.sort(key=lambda x: (x['bound'], -x['matches'], x['label']))
+    return {'entries': entries, 'members': members, 'aliases': aliases,
+            'teamName': str(settings.get('teamName') or '')}
+
+
+@router.post('/api/v3/identity/name')
+async def name_identity(request: Request):
+    """唯一的命名写入口：游戏账号 → 选手 → 战队。建档 / 对手归属 / 选手页都走这里。"""
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise HTTPException(400, '命名信息无效。')
+    account_id = str(body.get('accountId') or '').strip()
+    label = str(body.get('label') or '').strip()
+    nickname = str(body.get('nickname') or label or '').strip()
+    account_ids = [account_id] if account_id else (_label_accounts(label) if label else [])
+    if not account_ids and not body.get('playerId'):
+        raise HTTPException(400, '请选择要命名的游戏账号。')
+    name = str(body.get('name') or '').strip()
+    position = str(body.get('position') or '').strip()
+    team_id = str(body.get('teamId') or '').strip()
+    team_name = str(body.get('team') or body.get('teamName') or '').strip()
+    if not name:
+        raise HTTPException(400, '请填写选手名称。')
+    if len(name) > 40 or len(team_name) > 40:
+        raise HTTPException(400, '选手名称或战队名称过长。')
+    # 本队侧的号不填战队就落到本队档案；对手侧必须显式选队，不替教练猜。
+    default_team_id = ''
+    if not team_id and not team_name:
+        side = next((row['side'] for row in _camp_records()['records']
+                     if row.get('accountId') and row['accountId'] in account_ids), '')
+        if side == 'own':
+            default_team_id = own_team()['id']
+    saved = []
+    try:
+        for index, account in enumerate(account_ids or ['']):
+            saved.append(identity_service.name_account(
+                DB, account_id=account, nickname=nickname,
+                player_id=body.get('playerId') if index == 0 else None,
+                name=name, position=position,
+                team_id=team_id if index == 0 else '', team_name=team_name,
+                default_team_id=default_team_id if index == 0 else '', actor='coach'))
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    invalidate_players_cache()
+    return {'ok': True, 'saved': saved, 'count': len(saved)}
+
+
+@router.post('/api/v3/identity/players')
+async def save_identity_player(request: Request):
+    """建档页的「添加 / 编辑选手」：不涉及游戏账号。"""
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise HTTPException(400, '选手信息无效。')
+    try:
+        saved = identity_service.save_player(
+            DB, player_id=body.get('id') or None, name=body.get('name') or '',
+            position=body.get('position') or '', team_id=body.get('teamId') or '',
+            team_name=body.get('team') or body.get('teamName') or '',
+            camp_user_id=body.get('campUserId') or None, actor='coach')
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    invalidate_players_cache()
+    return {'ok': True, 'id': saved['playerId'], **saved}
+
+
+@router.post('/api/v3/identity/players/delete')
+async def delete_identity_player(request: Request):
+    """删除选手：连他的游戏账号映射一起删，这些账号回到「待命名」。"""
+    body = await read_json(request)
+    player_id = str(body.get('playerId') or body.get('id') or '').strip() if isinstance(body, dict) else ''
+    if not player_id:
+        raise HTTPException(400, '缺少选手 ID。')
+    try:
+        removed = identity_service.delete_player(DB, player_id, actor='coach')
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from error
+    invalidate_players_cache()
+    return {'ok': True, **removed}
+
+
+@router.post('/api/v3/identity/accounts/unmap')
+async def unmap_identity_account(request: Request):
+    """解除一个游戏账号的绑定（认错人 / 换号），选手其它账号不动。"""
+    body = await read_json(request)
+    account_id = str(body.get('accountId') or '').strip() if isinstance(body, dict) else ''
+    if not account_id:
+        raise HTTPException(400, '缺少游戏账号 ID。')
+    try:
+        result = identity_service.unmap_account(DB, account_id, actor='coach')
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    invalidate_players_cache()
+    return {'ok': True, **result}
 
 
 @router.post('/api/v3/identity/roster')
 async def add_roster_member(request: Request):
-    import workspace_store
-    value=await read_json(request); name=str(value.get('name') or '').strip() if isinstance(value,dict) else ''
-    position=str(value.get('position') or '').strip() if isinstance(value,dict) else ''
-    if not name or len(name)>40 or position not in ('','对抗路','打野','中路','发育路','游走'):
+    """兼容旧入口：把「添加本队选手」转给同一份 save_player。"""
+    body = await read_json(request)
+    if not isinstance(body, dict):
         raise HTTPException(400, '请填写选手名称并选择有效位置。')
-    ws=workspace_store.Workspace(DB).ensure_schema(); player_id='p-'+uuid.uuid4().hex[:12]
-    with closing(ws.connect()) as connection, connection:
-        connection.execute('BEGIN IMMEDIATE')
-        row=connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
-        if not row: raise HTTPException(400, '请先在建档页设置本队资料。')
-        settings=json.loads(row[0]); roster=settings.get('roster')
-        if not isinstance(roster,list): raise HTTPException(400, '本队名单格式异常，请先检查已有资料。')
-        if any(str(p.get('name') or '').strip()==name and not p.get('archived') for p in roster):
-            raise HTTPException(409, '名单中已有同名选手，请先核对。')
-        team_name=str(settings.get('teamName') or '').strip()
-        if not team_name: raise HTTPException(400, '请先填写本队名称。')
-        team=connection.execute("SELECT id FROM teams WHERE name=? AND status='active' ORDER BY id LIMIT 1",(team_name,)).fetchone()
-        team_id=team[0] if team else 'team-'+uuid.uuid4().hex[:10]
-        if not team: connection.execute('INSERT INTO teams(id,name) VALUES(?,?)',(team_id,team_name))
-        connection.execute('INSERT INTO players(id,team_id,name,position) VALUES(?,?,?,?)',(player_id,team_id,name,position or None))
-        roster.append({'id':player_id,'name':name,'position':position,'team':team_name,'archived':False})
-        connection.execute('UPDATE settings SET body=? WHERE id=1',(json.dumps(settings,ensure_ascii=False),))
-        ws._log(connection,'player',player_id,'created',None,name,'manual','coach')
-    return {'ok':True,'id':player_id}
+    home = own_team()
+    try:
+        saved = identity_service.save_player(
+            DB, name=body.get('name') or '', position=body.get('position') or '',
+            team_id=home['id'], actor='coach')
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    invalidate_players_cache()
+    return {'ok': True, 'id': saved['playerId'], 'playerId': saved['playerId']}
 
 
 @router.post('/api/v3/identity/claim')
-async def claim_identity(request: Request, repo=Depends(repository)):
-    import workspace_store
-    body=await read_json(request)
-    if not isinstance(body,dict): raise HTTPException(400, '认领信息无效。')
-    label=str(body.get('label') or '').strip(); player_id=str(body.get('playerId') or '').strip(); expected=str(body.get('expected') or '')
-    if not label or not player_id or len(label)>100: raise HTTPException(400, '请选择昵称和本队选手。')
-    if not any((r.get('rawLabel') or r.get('label'))==label and r.get('isOwn') for r in repo.get()['rows']+repo.get()['sheetRows']):
-        raise HTTPException(400, '该昵称不在本队记录中，请先确认阵营。')
-    ws=workspace_store.Workspace(DB).ensure_schema()
-    with closing(ws.connect()) as connection, connection:
-        connection.execute('BEGIN IMMEDIATE'); row=connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
-        if not row: raise HTTPException(400, '本队资料不存在。')
-        settings=json.loads(row[0]); team=settings.get('teamName') or ''
-        if not any(str(p.get('id'))==player_id and not p.get('archived') and (not p.get('team') or p.get('team')==team) for p in settings.get('roster',[])):
-            raise HTTPException(400, '请选择本队名单中的有效选手。')
-        aliases=settings.get('aliases')
-        if aliases is None: aliases={}; settings['aliases']=aliases
-        if not isinstance(aliases,dict): raise HTTPException(400, '选手认领资料格式异常，请先检查已有资料。')
-        previous=str(aliases.get(label) or '')
-        if previous != expected: raise HTTPException(409, '认领状态已改变，请刷新后重试。')
-        aliases[label]=player_id
-        connection.execute('UPDATE settings SET body=? WHERE id=1',(json.dumps(settings,ensure_ascii=False),))
-        ws._log(connection,'player',player_id,'alias:'+label,previous,player_id,'manual','coach')
-    return {'ok':True,'playerId':player_id}
-
-
-@router.post('/api/v3/identity/name')
-async def name_identity(request: Request, repo=Depends(repository)):
-    """教练给未命名的参赛标识命名，并归入战队；写入名单与别名。"""
-    import workspace_store
+async def claim_identity(request: Request):
+    """兼容旧入口：按昵称认领到本队选手，写的是同一条账号映射。"""
     body = await read_json(request)
     if not isinstance(body, dict):
-        raise HTTPException(400, '命名信息无效。')
+        raise HTTPException(400, '认领信息无效。')
     label = str(body.get('label') or '').strip()
-    name = str(body.get('name') or '').strip()
-    position = str(body.get('position') or '').strip()
-    team = str(body.get('team') or '').strip()
-    if not label or not name or len(label) > 100 or len(name) > 40:
-        raise HTTPException(400, '请填写昵称与选手名称。')
-    if position not in ('', '对抗路', '打野', '中路', '发育路', '游走'):
-        raise HTTPException(400, '请选择有效位置。')
-    if len(team) > 40:
-        raise HTTPException(400, '战队名称过长。')
-    if not any((r.get('rawLabel') or r.get('label')) == label and r.get('isOwn')
-               for r in repo.get()['rows'] + repo.get()['sheetRows']):
+    player_id = str(body.get('playerId') or '').strip()
+    if not label or not player_id or len(label) > 100:
+        raise HTTPException(400, '请选择昵称和本队选手。')
+    account_ids = _label_accounts(label, side='own')
+    if not account_ids:
         raise HTTPException(400, '该昵称不在本队记录中，请先确认阵营。')
-    ws = workspace_store.Workspace(DB).ensure_schema()
-    with closing(ws.connect()) as connection, connection:
-        connection.execute('BEGIN IMMEDIATE')
-        row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
-        if not row:
-            raise HTTPException(400, '请先在「赛训 → 建档」填写本队资料。')
-        settings = json.loads(row[0])
-        roster = settings.get('roster')
-        if not isinstance(roster, list):
-            raise HTTPException(400, '本队名单格式异常，请先检查已有资料。')
-        aliases = settings.get('aliases')
-        if aliases is None:
-            aliases = {}
-            settings['aliases'] = aliases
-        if not isinstance(aliases, dict):
-            raise HTTPException(400, '选手认领资料格式异常，请先检查已有资料。')
-        own_team = str(settings.get('teamName') or '').strip()
-        team_name = team or own_team
-        if not team_name:
-            raise HTTPException(400, '请填写所属战队，或先在建档页填写本队名称。')
-        member = next((p for p in roster if not p.get('archived')
-                       and str(p.get('name') or '').strip() == name
-                       and str(p.get('team') or '').strip() == team_name), None)
-        if member is None:
-            player_id = 'p-' + uuid.uuid4().hex[:12]
-            member = {'id': player_id, 'name': name, 'position': position,
-                      'team': team_name, 'archived': False}
-            roster.append(member)
-        else:
-            player_id = member['id']
-            if position:
-                member['position'] = position
-        team_row = connection.execute(
-            "SELECT id FROM teams WHERE name=? AND status='active' ORDER BY id LIMIT 1",
-            (team_name,)).fetchone()
-        team_id = team_row[0] if team_row else 'team-' + uuid.uuid4().hex[:10]
-        if not team_row:
-            connection.execute('INSERT INTO teams(id,name) VALUES(?,?)', (team_id, team_name))
-        existing = connection.execute('SELECT id FROM players WHERE id=?', (player_id,)).fetchone()
-        if not existing:
-            connection.execute('INSERT INTO players(id,team_id,name,position) VALUES(?,?,?,?)',
-                               (player_id, team_id, name, position or None))
-        aliases[label] = player_id
-        connection.execute('UPDATE settings SET body=?', (json.dumps(settings, ensure_ascii=False),))
-        ws._log(connection, 'player', player_id, 'named:' + label, '', team_name, 'manual', 'coach')
-    return {'ok': True, 'playerId': player_id, 'team': team_name}
+    try:
+        for account in account_ids:
+            identity_service.name_account(DB, account_id=account, nickname=label,
+                                          player_id=player_id, actor='coach')
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    invalidate_players_cache()
+    return {'ok': True, 'playerId': player_id, 'accounts': len(account_ids)}
 
 
 @router.post('/api/v3/match-bp/{key:path}')
@@ -1738,6 +1945,38 @@ def _camp_name(value):
     return str(value or '').translate(_CAMP_ALIASES).strip()
 
 
+def camp_accounts():
+    """游戏账号（营地 playerId）→ 选手 / 战队映射；表还没建或没库时返回空表。
+
+    一次读全表，供给十人面板解析、选手看板与身份对照页；单条查询会拖慢 32 局的全量解析。
+    """
+    if not DB.is_file():
+        return {}
+    try:
+        with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as connection:
+            rows = connection.execute(
+                'SELECT a.account_id, a.nickname, p.id AS player_id, p.name, p.position,'
+                ' p.team_id, t.name AS team_name'
+                ' FROM player_accounts a JOIN players p ON p.id = a.player_id'
+                ' LEFT JOIN teams t ON t.id = p.team_id WHERE a.platform = ?', ('camp',)).fetchall()
+    except sqlite3.Error:
+        return {}
+    index = {}
+    for account_id, nickname, player_id, name, position, team_id, team_name in rows:
+        index[str(account_id)] = {
+            'accountId': str(account_id), 'nickname': nickname or '', 'playerId': player_id or '',
+            'name': name or '', 'position': position or '', 'teamId': team_id or '',
+            'teamName': team_name or '',
+        }
+    return index
+
+
+def invalidate_players_cache():
+    """身份 / 战队改名后清掉选手看板缓存，页面刷新立即按新名字聚合。"""
+    global _players_cache, _players_at
+    _players_cache, _players_at = None, 0.0
+
+
 def _panel_games():
     """营地面板 id → 对局标题 / 对手 / 日期，用于把面板挂回训练赛。"""
     index = {}
@@ -1776,6 +2015,7 @@ def _camp_records():
         return _players_cache
     from camp_time import camp_times
     linked = _panel_games()
+    accounts = camp_accounts()
     games, records = [], []
     for path in sorted((ROOT / 'data' / 'camp_details').glob('*.json')):
         try:
@@ -1831,9 +2071,13 @@ def _camp_records():
             team_taken = sum(item['taken'] for item in parsed) or 1
             for item in parsed:
                 stats = item['stats']
-                name = _camp_name(item['basic'].get('roleName'))
+                nickname = _camp_name(item['basic'].get('roleName'))
+                account_id = str(item['basic'].get('playerId') or '').strip()
                 lane = _CAMP_LANES.get(_camp_number(item['record'].get('position')))
                 hero = (item['record'].get('usedHero') or {}).get('heroName') or ''
+                # 游戏 ID 已经被教练命名过，就直接用真实选手名；否则沿用营地昵称。
+                mapped = accounts.get(account_id) if account_id else None
+                name = (mapped.get('name') if mapped else '') or nickname
                 if not name or not lane:
                     continue
                 side = 'own' if camp == own_camp else 'enemy'
@@ -1846,6 +2090,10 @@ def _camp_records():
                     'gameId': path.stem, 'day': day, 'at': at, 'sort': stamp_key or path.stem,
                     'opponent': opponent, 'map': map_name,
                     'side': side, 'camp': '蓝方' if camp == 1 else '红方',
+                    'accountId': account_id, 'nickname': nickname,
+                    'bound': bool(mapped), 'playerId': (mapped or {}).get('playerId') or '',
+                    'teamId': (mapped or {}).get('teamId') or '',
+                    'teamName': (mapped or {}).get('teamName') or '',
                     'result': result if side == 'own' else
                               ('loss' if result == 'win' else 'win' if result == 'loss' else 'unknown'),
                     'name': name, 'hero': hero, 'lane': lane,
@@ -1865,7 +2113,8 @@ def _camp_records():
                     'mvp': bool(stats.get('mvp')),
                 }
                 records.append(row)
-                game[side].append({'name': name, 'hero': hero, 'lane': lane,
+                game[side].append({'name': name, 'hero': hero, 'lane': lane, 'accountId': account_id,
+                                   'nickname': nickname, 'bound': row['bound'],
                                    'kda': row['kda'], 'gold': item['gold']})
         if game['own'] and game['enemy']:
             games.append(game)
@@ -1900,14 +2149,23 @@ def _players_board():
     except (sqlite3.Error, ValueError):
         profile = {}
     team_name = str(profile.get('teamName') or '').strip()
-    members = []
-    for member in (profile.get('members') or profile.get('roster') or []):
-        if member.get('archived') or (member.get('team') and member.get('team') != team_name):
-            continue
-        item = dict(member)
-        item['label'] = item.get('label') or item.get('name') or ''
-        item['position'] = item.get('position') or ''
-        members.append(item)
+    home = own_team()
+    accounts = camp_accounts()
+    # 名单只认选手主数据（players 表）；还没迁移旧名单时才退回 settings。
+    try:
+        import workspace_store
+        members = [dict(player, label=player.get('name') or '')
+                   for player in workspace_store.Workspace(DB).list_players(team_id=home['id'])]
+    except sqlite3.Error:
+        members = []
+    if not members:
+        for member in (profile.get('members') or profile.get('roster') or []):
+            if member.get('archived') or (member.get('team') and member.get('team') != team_name):
+                continue
+            item = dict(member)
+            item['label'] = item.get('label') or item.get('name') or ''
+            item['position'] = item.get('position') or ''
+            members.append(item)
     aliases = {str(key): str(value) for key, value in (profile.get('aliases') or {}).items()}
     member_by_id = {member['id']: member for member in members}
     name_to_member = {}
@@ -1925,9 +2183,14 @@ def _players_board():
             'name': row['name'], 'side': row['side'], 'games': 0, 'wins': 0, 'decided': 0,
             '_kda': [], '_gpm': [], '_dpm': [], '_dtpm': [], '_part': [], '_goldShare': [],
             '_damageShare': [], '_takenShare': [], '_rating': [], 'mvp': 0, '_cs': [],
+            '_accounts': [], '_nicknames': Counter(),
             'lanes': Counter(), 'heroes': Counter(), 'heroWins': Counter(),
             'heroDecided': Counter(), 'heroRating': defaultdict(list), 'heroKda': defaultdict(list), 'recent': []})
         bucket['games'] += 1
+        if row.get('accountId') and row['accountId'] not in bucket['_accounts']:
+            bucket['_accounts'].append(row['accountId'])
+        if row.get('nickname'):
+            bucket['_nicknames'][row['nickname']] += 1
         if row['result'] in ('win', 'loss'):
             bucket['decided'] += 1
             if row['result'] == 'win':
@@ -1989,11 +2252,16 @@ def _players_board():
 
     for bucket in buckets.values():
         lane = bucket['lanes'].most_common(1)[0][0] if bucket['lanes'] else ''
-        member = name_to_member.get(bucket['name'])
+        mapped = next((accounts[account] for account in bucket['_accounts'] if account in accounts), None)
+        member = mapped or name_to_member.get(bucket['name'])
+        member_id = (member or {}).get('id') or (member or {}).get('playerId') or None
         players.append({
             'name': bucket['name'], 'lane': lane,
             'laneMix': [{'lane': name, 'games': n} for name, n in bucket['lanes'].most_common()],
-            'side': bucket['side'], 'bound': bool(member), 'memberId': member['id'] if member else None,
+            'side': bucket['side'], 'bound': bool(member), 'memberId': member_id,
+            'accountIds': bucket['_accounts'],
+            'nicknames': [nick for nick, _ in bucket['_nicknames'].most_common(3)],
+            'teamName': (mapped or {}).get('teamName') or '',
             'games': bucket['games'], 'wins': bucket['wins'], 'decided': bucket['decided'],
             'winRate': round(bucket['wins'] / bucket['decided'] * 100, 1) if bucket['decided'] else None,
             'kda': mean(bucket['_kda'], 2), 'gpm': mean(bucket['_gpm'], 0), 'dpm': mean(bucket['_dpm'], 0),
@@ -2118,7 +2386,9 @@ def _players_board():
     entries = [{'label': player['name'], 'matches': player['games'], 'lane': player['lane'],
                 'heroes': [item['hero'] for item in player['heroes'][:3]],
                 'winRate': player['winRate'], 'bound': player['bound'],
-                'memberId': player['memberId']} for player in own]
+                'memberId': player['memberId'], 'teamName': player['teamName'],
+                'accountIds': player['accountIds'], 'nicknames': player['nicknames']}
+               for player in own]
     entries.sort(key=lambda item: (item['bound'], -item['matches'], item['label']))
     decided_games = [game for game in games if game['result'] in ('win', 'loss')]
     summary = {
