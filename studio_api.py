@@ -1336,6 +1336,35 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     def wb_schedules(status: str = ''):
         return {'schedules': workspace().list_schedules(status=status or None)}
 
+    @router.get('/workspace/competitions')
+    def wb_competitions():
+        return {'competitions': workspace().list_competitions()}
+
+    @router.get('/workspace/competitions/{competition_id}')
+    def wb_competition_detail(competition_id: str):
+        value = workspace().competition_detail(competition_id)
+        if value is None:
+            raise HTTPException(404, '找不到这场比赛')
+        return value
+
+    @router.post('/workspace/competitions')
+    async def wb_save_competition(request: Request):
+        payload = await request.json()
+        ws = workspace()
+        try:
+            competition_id = ws.save_competition(
+                payload.get('id'), name=payload.get('name') or '',
+                date=payload.get('date') or '',
+                opponent_team_id=payload.get('opponentTeamId') or None,
+                stage=payload.get('stage') or None,
+                format=payload.get('format') or None,
+                status=payload.get('status') or 'planned',
+                owner=payload.get('owner') or None,
+                notes=payload.get('notes') or None)
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        return {'ok': True, 'id': competition_id}
+
     @router.post('/workspace/reports/screenshot')
     async def wb_report_screenshot(request: Request):
         payload = await request.json()
@@ -1530,7 +1559,8 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             rules=vocab.prepare('rules', payload.get('rules'), vocab_dir),
             version=vocab.prepare('versions', payload.get('version'), vocab_dir),
             status=payload.get('status') or 'planned', notes=payload.get('notes'),
-            created_by=payload.get('createdBy'))
+            created_by=payload.get('createdBy'),
+            competition_id=payload.get('competitionId') or None)
         return {'ok': True, 'id': schedule_id}
 
     @router.get('/workspace/training')

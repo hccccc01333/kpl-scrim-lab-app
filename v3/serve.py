@@ -85,6 +85,8 @@ _STUDIO_ALLOWED = {
     '/api/studio/workspace/teams/reconcile',
     '/api/studio/workspace/players', '/api/studio/workspace/players/migrate-profile',
     '/api/studio/workspace/schedules',
+    '/api/studio/workspace/competitions',
+    '/api/studio/workspace/competitions/{competition_id}',
     '/api/studio/workspace/matches',
     '/api/studio/workspace/reports/screenshot',
     '/api/studio/workspace/reports/image/{name}',

@@ -14,10 +14,10 @@ const nav = [
 ];
 const labels = Object.fromEntries(nav);
 for (const pages of Object.values(featureSections)) for (const [key, label] of pages) labels[key] = label;
-Object.assign(labels, { match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', identity: '选手认领', team: '战队详情', hero: '英雄详情', topic: '分析详情', study: '分析详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamstyle: '战队风格', teamroster: '战队阵容', teamtraining: '战队训练', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', weekly: '训练周报' });
+Object.assign(labels, { match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', identity: '选手认领', team: '战队详情', hero: '英雄详情', topic: '分析详情', study: '分析详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamstyle: '战队风格', teamroster: '战队阵容', teamtraining: '战队训练', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', competition: '比赛详情', weekly: '训练周报' });
 function sectionFor(name) {
   if (name === 'topic' || name === 'study') return groupFor(name, current().key);
-  const detail = { match: 'matches', player: 'players', playerdetail: 'players', identity: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', weekly: 'setup' }[name] || name;
+  const detail = { match: 'matches', player: 'players', playerdetail: 'players', identity: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', competition: 'setup', weekly: 'setup' }[name] || name;
   return Object.keys(featureSections).find((section) => featureSections[section].some(([key]) => key === detail)) || detail;
 }
 const icons = {
@@ -1417,7 +1417,7 @@ async function load(fresh = false) {
   document.querySelector('#content').innerHTML = '<div class="page"><div class="loading">正在读取赛训数据…</div></div>';
   /* 详情路由缺 ID（直接输入 #session / #match 等）：别去请求一个空 key，
      那会 404 后落到"暂时读不到数据"的死循环。给出明确的返回入口。 */
-  const DETAIL_ROUTES = ['match', 'player', 'playerdetail', 'hero', 'team', 'session', 'report', 'topic', 'study', 'identity'];
+  const DETAIL_ROUTES = ['match', 'player', 'playerdetail', 'hero', 'team', 'session', 'competition', 'report', 'topic', 'study', 'identity'];
   if (DETAIL_ROUTES.includes(r.name) && !r.key) {
     const section = sectionFor(r.name).name;
     const label = labels[r.name] || '条目';

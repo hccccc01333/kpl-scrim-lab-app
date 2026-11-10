@@ -3791,6 +3791,33 @@ a.hz-card { display: block; text-decoration: none; }
 .sx-plan-edit { justify-self: end; color: var(--accent); font-size: 10px; font-weight: 700; }
 .sx-plan-row .feature-form { grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 10px; padding: 11px; }
 .sx-plan-form .feature-form { grid-template-columns: 1fr; }
+/* 比赛（赛事）为赛训中心：列表行加宽数量列与详情入口 */
+.sx-comp-row > summary { grid-template-columns: 96px minmax(0,1.4fr) 92px 76px 76px; }
+.sx-comp-row .sx-plan-format { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.page-head-actions { display: flex; gap: 8px; margin-bottom: 10px; }
+.comp-hero { display: grid; grid-template-columns: repeat(auto-fit,minmax(140px,1fr)); gap: 10px; margin: 4px 0 12px; }
+.comp-hero > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+.comp-hero span { display: block; color: var(--quiet); font-size: 9.5px; letter-spacing: .04em; }
+.comp-hero b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.comp-note { margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+.comp-roster { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; padding: 0 var(--sp-5) var(--sp-5); }
+.comp-player { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
+.comp-lane { color: var(--accent); font-size: 9.5px; font-weight: 800; letter-spacing: .06em; }
+.comp-player b { font-size: 13px; }
+.comp-player small { color: var(--quiet); font-size: 10.5px; }
+.comp-rows { display: grid; gap: 5px; padding: 0 var(--sp-5) var(--sp-5); }
+.comp-row { display: grid; grid-template-columns: 116px minmax(0,1.5fr) minmax(0,.9fr) 58px; gap: 10px; align-items: center; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); text-decoration: none; color: inherit; }
+.comp-row:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.comp-row-date { display: grid; gap: 1px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.comp-row-date small { color: var(--quiet); font-size: 9.5px; }
+.comp-row b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.comp-row > i { font-style: normal; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.comp-row > em { justify-self: end; color: var(--quiet); font-size: 10.5px; font-style: normal; font-variant-numeric: tabular-nums; }
+.comp-result.win { color: var(--accent); font-weight: 700; }
+.comp-result.loss { color: var(--warn, #a54c46); font-weight: 700; }
+.comp-state { justify-self: start; padding: 2px 8px; border-radius: 999px; background: var(--surface); }
+.comp-state.is-done { background: var(--soft); color: var(--accent); }
+.comp-state.is-pending { color: var(--muted); }
 
 /* 训练效果 */
 .sx-effect-layout { display: grid; grid-template-columns: minmax(0,1.22fr) minmax(310px,.86fr); gap: var(--sp-4); align-items: start; }

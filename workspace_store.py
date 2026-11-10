@@ -113,12 +113,32 @@ CREATE TABLE IF NOT EXISTS schedules (
   review TEXT,
   review_status TEXT NOT NULL DEFAULT '',
   attendance TEXT NOT NULL DEFAULT '[]',
+  competition_id TEXT,
   created_by TEXT,
   created_at REAL NOT NULL,
   updated_at REAL,
   revision INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_schedules_date ON schedules(date);
+CREATE INDEX IF NOT EXISTS idx_schedules_competition ON schedules(competition_id);
+
+/* 比赛（赛事）是赛训的中心：训练计划、训练课、对局都挂在比赛下。
+   与 schedules 分开建表，避免把「一场比赛」和「一次训练」混成同一种记录。 */
+CREATE TABLE IF NOT EXISTS competitions (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  date TEXT NOT NULL,
+  opponent_team_id TEXT,
+  stage TEXT,
+  format TEXT,
+  status TEXT NOT NULL DEFAULT 'planned',
+  owner TEXT,
+  notes TEXT,
+  created_at REAL NOT NULL,
+  updated_at REAL,
+  revision INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_competitions_date ON competitions(date);
 
 CREATE TABLE IF NOT EXISTS session_match_links (
   schedule_id TEXT NOT NULL,
@@ -326,6 +346,7 @@ class Workspace:
                     'review': 'TEXT',
                     'review_status': "TEXT NOT NULL DEFAULT ''",
                     'attendance': "TEXT NOT NULL DEFAULT '[]'",
+                    'competition_id': 'TEXT',
                     'updated_at': 'REAL',
                 }.items():
                     if column not in existing:
@@ -694,7 +715,7 @@ class Workspace:
     # ---------------------------------------------------------------- 约训
     def save_schedule(self, schedule_id=None, *, date, start_time=None, opponent_team_id=None,
                       session=None, format=None, rules=None, version=None, status='planned',
-                      notes=None, created_by=None):
+                      notes=None, created_by=None, competition_id=None):
         if not date:
             raise ValueError('约训必须有日期')
         schedule_id = schedule_id or 'sch-' + uuid.uuid4().hex[:10]
@@ -702,17 +723,96 @@ class Workspace:
         try:
             connection.execute(
                 'INSERT INTO schedules(id, date, start_time, opponent_team_id, session, format, rules, '
-                'version, status, notes, created_by, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) '
+                'version, status, notes, competition_id, created_by, created_at) '
+                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) '
                 'ON CONFLICT(id) DO UPDATE SET date=excluded.date, start_time=excluded.start_time, '
                 'opponent_team_id=excluded.opponent_team_id, session=excluded.session, '
                 'format=excluded.format, rules=excluded.rules, version=excluded.version, '
-                'status=excluded.status, notes=excluded.notes, revision=schedules.revision+1',
+                'status=excluded.status, notes=excluded.notes, '
+                'competition_id=excluded.competition_id, revision=schedules.revision+1',
                 (schedule_id, date, start_time, opponent_team_id, session, format, rules, version,
-                 status, notes, created_by, time.time()))
+                 status, notes, competition_id, created_by, time.time()))
             connection.commit()
         finally:
             connection.close()
         return schedule_id
+
+    # ---------------------------------------------------------------- 比赛
+    def save_competition(self, competition_id=None, *, name, date, opponent_team_id=None,
+                         stage=None, format=None, status='planned', owner=None, notes=None):
+        name = str(name or '').strip()
+        if not name:
+            raise ValueError('比赛必须有名称')
+        if not date:
+            raise ValueError('比赛必须有日期')
+        competition_id = competition_id or 'comp-' + uuid.uuid4().hex[:10]
+        connection = self.connect()
+        try:
+            connection.execute(
+                'INSERT INTO competitions(id, name, date, opponent_team_id, stage, format, status, '
+                'owner, notes, created_at) VALUES(?,?,?,?,?,?,?,?,?,?) '
+                'ON CONFLICT(id) DO UPDATE SET name=excluded.name, date=excluded.date, '
+                'opponent_team_id=excluded.opponent_team_id, stage=excluded.stage, '
+                'format=excluded.format, status=excluded.status, owner=excluded.owner, '
+                'notes=excluded.notes, updated_at=?, revision=competitions.revision+1',
+                (competition_id, name, date, opponent_team_id, stage, format, status,
+                 owner, notes, time.time(), time.time()))
+            connection.commit()
+        finally:
+            connection.close()
+        return competition_id
+
+    def list_competitions(self):
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                'SELECT c.*, '
+                ' (SELECT COUNT(*) FROM schedules s WHERE s.competition_id=c.id) AS session_count, '
+                ' (SELECT COUNT(DISTINCT l.match_key) FROM schedules s '
+                '    JOIN session_match_links l ON l.schedule_id=s.id '
+                '    WHERE s.competition_id=c.id) AS linked_count '
+                'FROM competitions c ORDER BY c.date DESC, c.created_at DESC').fetchall()
+        finally:
+            connection.close()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    def get_competition(self, competition_id):
+        connection = self.connect()
+        try:
+            row = connection.execute('SELECT * FROM competitions WHERE id=?',
+                                     (competition_id,)).fetchone()
+        finally:
+            connection.close()
+        return {key: row[key] for key in row.keys()} if row else None
+
+    def competition_detail(self, competition_id):
+        """比赛聚合：比赛本身 + 挂在其下的训练课 + 这些训练课关联的对局。
+
+        对局匹配沿用 session_matches（手工关联 → 日期+对手 → 日期+训练组 → 日期），
+        与训练课页同口径。返回原始 team/player 列表供前端显示对手与选手信息。
+        """
+        competition = self.get_competition(competition_id)
+        if not competition:
+            return None
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                'SELECT * FROM schedules WHERE competition_id=? ORDER BY date, start_time',
+                (competition_id,)).fetchall()
+        finally:
+            connection.close()
+        schedules = [{key: row[key] for key in row.keys()} for row in rows]
+        matches, seen = [], set()
+        for schedule in schedules:
+            for match in self.session_matches(schedule)['matches']:
+                key = match.get('match_key')
+                if key in seen:
+                    continue
+                seen.add(key)
+                matches.append(match)
+        matches.sort(key=lambda item: (str(item.get('date') or ''), str(item.get('match_key') or '')))
+        return {'competition': competition, 'schedules': schedules, 'matches': matches,
+                'teams': self.list_teams(), 'players': self.list_players()}
 
     def list_schedules(self, *, status=None):
         connection = self.connect()

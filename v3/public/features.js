@@ -20,7 +20,7 @@ export const featureSections = {
   players: [['playerarchive','选手档案'], ['players','名单与状态'], ['compare','选手与位置'], ['playercompare','选手对比']],
   heroes: [['heroes','英雄榜'], ['herocompare','英雄对比'], ['combos','英雄组合']],
   bp: [['bp','BP 概览'], ['teambp','战队 BP'], ['coach','教练档案']],
-  setup: [['plan','训练计划'], ['setup','数据准备'], ['reports','复盘与报告']],
+  setup: [['plan','比赛与训练'], ['setup','数据准备'], ['reports','复盘与报告']],
 };
 
 export function createFeatures(h) {
@@ -38,7 +38,8 @@ export function createFeatures(h) {
     effect:['v3/effect', 'studio/workspace/players'], versions:['matches'], session:['studio/workspace/sessions'],
     weekly:['studio/workspace/schedules','studio/workspace/matches','v3/effect','v3/workspace/overview','studio/workspace/teams'],
     setup:['v3/workspace/overview','studio/workspace/teams','studio/workspace/players','studio/workspace/pending','v3/workspace/migration','studio/teams'],
-    pending:['studio/workspace/pending','studio/workspace/teams','v3/vocab'], plan:['studio/workspace/schedules','studio/workspace/teams','v3/vocab','studio/workspace/dashboard'],
+    pending:['studio/workspace/pending','studio/workspace/teams','v3/vocab'], plan:['studio/workspace/schedules','studio/workspace/teams','v3/vocab','studio/workspace/dashboard','studio/workspace/competitions'],
+    competition:['studio/workspace/competitions','v3/players-board'],
   };
   const scope = '<div class="scope-note"><span>数据口径</span> 本页使用全部营地面板及关联回放，可能包含非训练赛；首页的日期、来源与验证数据筛选不适用于此处。</div>';
   const block = (title, subtitle, body, right='', attrs='') => body ? `<section class="section" ${attrs}><div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(subtitle || '')}</p></div>${right}</div>${body}</section>` : '';
@@ -2283,14 +2284,17 @@ export function createFeatures(h) {
         toolbar+`<div class="sx-pending-grid">${cards || '<p class="sx-empty">当前没有待确认字段。</p>'}</div><p class="sx-empty" data-sx-pending-empty hidden>没有匹配的待确认字段。</p>`,
         `<button class="control" data-feature-action="prefill">重新扫描</button>`,'data-sx-scope="pending"'),false,'',false,true);
   }
-  function plan(value, teams, vocab, dashboard) {
+  function plan(value, teams, vocab, dashboard, competitionData) {
     const schedules = value.schedules || [];
+    const competitions = (competitionData && competitionData.competitions) || [];
     const today = localDate();
     const foeTeams = (teams.teams || []).filter((t) => t.id !== 'team-own');
     const statusOptions = (current) => ['planned','confirmed','completed','cancelled'].map((v) => `<option value="${v}" ${current === v ? 'selected' : ''}>${statusLabels[v]}</option>`).join('');
+    const compOptions = (current) => `<option value="">不关联比赛</option>${competitions.map((c) => `<option value="${esc(c.id)}" ${current === c.id ? 'selected' : ''}>${esc(c.name)} · ${esc(c.date || '')}</option>`).join('')}`;
     const schedFields = (x = {}) => field('日期','date',x.date||today,'type="date" required')+
       field('开始时间','startTime',x.start_time||'','type="time"')+
       select('约战对手','opponentTeamId',options(foeTeams,x.opponent_team_id))+
+      `<label>比赛<select name="competitionId">${compOptions(x.competition_id)}</select></label>`+
       vocabCombo('训练组','session',vocabList(vocab,'session'),x.session||'')+
       vocabSelect('赛制','format',vocabList(vocab,'format'),x.format||'',{empty:'待定'})+
       vocabSelect('规则','rules',vocabList(vocab,'rules'),x.rules||'',{empty:'待定'})+
@@ -2302,12 +2306,14 @@ export function createFeatures(h) {
     const past = ordered.filter((x) => String(x.date || '') < today).reverse();
     const next = upcoming.find((x) => x.status !== 'cancelled' && x.status !== 'completed');
     const opponentOf = (x) => teams.teams.find((t) => t.id === x.opponent_team_id)?.name || '未指定对手';
+    const compOf = (id) => competitions.find((c) => c.id === id) || null;
+    const compName = (id) => compOf(id)?.name || '';
     const rowOf = (x) => {
       const status = x.status || 'planned';
       return `<details class="sx-plan-row is-${esc(status)}">
         <summary>
           <span class="sx-plan-date"><b>${text(x.date)}</b><small>${text(x.start_time || '时间未定')}</small></span>
-          <span class="sx-plan-opponent"><b>${text(opponentOf(x))}</b><small>${text(x.session || '训练组未定')}</small></span>
+          <span class="sx-plan-opponent"><b>${text(opponentOf(x))}</b><small>${text(x.session || '训练组未定')}${x.competition_id ? ' · ' + text(compName(x.competition_id)) : ''}</small></span>
           <span class="sx-plan-format">${text(x.format || '赛制未定')}</span>
           <span class="sx-plan-state is-${esc(status)}">${statusLabels[status] || status}</span>
           <span class="sx-plan-edit"><a href="#session/${encodeURIComponent(x.id)}">训练课 →</a></span>
@@ -2321,6 +2327,40 @@ export function createFeatures(h) {
     const valid = schedules.filter((x) => x.status !== 'cancelled').length;
     const planSection = block('训练赛排期','按日期查看；点开一行可以修改时间、对手和状态。',list,`<span class="sx-count">${fmt(schedules.length)} 条</span>`,'data-sx-anchor="plan-list"');
     const formSection = block('添加计划','登记后，当天训练赛的采集与复盘会自动挂到这局上。',form('schedule',schedFields(),'添加计划'),'','data-sx-anchor="plan-form"');
+
+    /* ── 比赛：赛训的中心实体。先有比赛，训练计划/训练课/对局都挂在比赛下 ── */
+    const compFields = (x = {}) => field('赛事名','name',x.name||'','required maxlength="60" placeholder="如 KPL 2026 春季赛"')+
+      field('比赛日期','date',x.date||today,'type="date" required')+
+      select('对手','opponentTeamId',options(foeTeams,x.opponent_team_id))+
+      field('赛段','stage',x.stage||'','placeholder="如 常规赛第 3 轮"')+
+      vocabSelect('赛制','format',vocabList(vocab,'format'),x.format||'',{empty:'待定'})+
+      field('负责教练','owner',x.owner||'','placeholder="谁负责这场比赛"')+
+      select('状态','status',statusOptions(x.status||'planned'))+
+      field('备注','notes',x.notes||'','placeholder="目标、重点对手等"');
+    const compOrdered = [...competitions].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    const compUpcoming = compOrdered.filter((c) => String(c.date || '') >= today);
+    const compPast = compOrdered.filter((c) => String(c.date || '') < today).reverse();
+    const nextComp = compUpcoming.find((c) => c.status !== 'cancelled' && c.status !== 'completed');
+    const compRow = (c) => {
+      const status = c.status || 'planned';
+      const foe = teams.teams.find((t) => t.id === c.opponent_team_id)?.name || '对手未指定';
+      return `<details class="sx-plan-row sx-comp-row is-${esc(status)}">
+        <summary>
+          <span class="sx-plan-date"><b>${text(c.date)}</b><small>${text(c.stage || '赛段未定')}</small></span>
+          <span class="sx-plan-opponent"><b>${text(c.name)}</b><small>${text(foe)} · ${text(c.format || '赛制未定')} · ${text(c.owner ? '负责人 ' + c.owner : '未指定负责人')}</small></span>
+          <span class="sx-plan-format">${fmt(c.session_count || 0)} 课 · ${fmt(c.linked_count || 0)} 局</span>
+          <span class="sx-plan-state is-${esc(status)}">${statusLabels[status] || status}</span>
+          <span class="sx-plan-edit"><a href="#competition/${encodeURIComponent(c.id)}">比赛详情 →</a></span>
+        </summary>
+        ${form('competition',`<input type="hidden" name="id" value="${esc(c.id)}">`+compFields(c),'保存修改')}
+      </details>`;
+    };
+    const compBanner = nextComp ? `<div class="sx-plan-next"><span>下一场比赛</span><b>${text(nextComp.date)} · ${text(nextComp.name)}</b><p>对阵 ${text(teams.teams.find((t) => t.id === nextComp.opponent_team_id)?.name || '待定')} · ${text(nextComp.stage || '赛段未定')} · ${text(nextComp.owner ? '负责人 ' + nextComp.owner : '负责人未定')}</p><a href="#competition/${encodeURIComponent(nextComp.id)}">打开比赛 →</a></div>` : '';
+    const compList = competitions.length
+      ? `<div class="sx-plan-list">${compBanner}${[...compUpcoming, ...compPast].map(compRow).join('')}</div>`
+      : `<div class="sx-empty sx-empty-inline"><b>还没有登记比赛</b><p>先添加比赛（日期 + 对手 + 赛事名），再把训练计划挂到这场比赛下；比赛详情会自动汇总训练课、对局与选手。</p><button type="button" class="control" data-sx-jump="competition-form">添加第一场比赛 ↓</button></div>`;
+    const compSection = block('比赛','赛训以比赛为中心：先登记比赛，训练计划与对局都会汇总到比赛详情。',compList,`<span class="sx-count">${fmt(competitions.length)} 场</span>`,'data-sx-anchor="competition-list"');
+    const compFormSection = block('添加比赛','填写比赛日期、对手与赛事名；训练计划可以在下面直接关联这场比赛。',form('competition',compFields(),'添加比赛'),'','data-sx-anchor="competition-form"');
 
     const dash = dashboard || {};
     const dashWeeks = dash.weeks || [];
@@ -2430,13 +2470,81 @@ export function createFeatures(h) {
         <div class="dash-panel is-recent"><div class="dash-panel-head"><div><span>RECENT</span><h3>最近训练课</h3></div><a href="#plan" data-sx-jump="plan-list">全部 →</a></div><div class="dash-recent">${recentRows || '<p class="dash-empty">还没有训练课。</p>'}</div></div>
       </div>
     </section>`;
-    return withPage('训练计划',`登记训练赛时间、对手与赛制 · 已登记 ${fmt(schedules.length)} 条，其中 ${fmt(valid)} 条有效。`,
-      lede([['已登记',`${fmt(schedules.length)} 条`,'训练赛排期'],['下一场',next?`${next.date} ${next.start_time||''}`:'—',next?'已排期':'还没有未来计划'],['有效计划',`${fmt(valid)} 条`,'未取消'],['训练组',`${fmt(new Set(schedules.map((x) => x.session).filter(Boolean)).size)} 个`,'按 session 归组']])
+    return withPage('比赛与训练计划',`以比赛为中心：先登记比赛，训练计划挂到比赛下 · 已登记 ${fmt(competitions.length)} 场比赛、${fmt(schedules.length)} 条训练计划（${fmt(valid)} 条有效）。`,
+      lede([['比赛',`${fmt(competitions.length)} 场`,nextComp?`下一场 ${nextComp.date}`:'还没有比赛'],['已登记训练',`${fmt(schedules.length)} 条`,'训练赛排期'],['下一场训练',next?`${next.date} ${next.start_time||''}`:'—',next?'已排期':'还没有未来计划'],['训练组',`${fmt(new Set(schedules.map((x) => x.session).filter(Boolean)).size)} 个`,'按 session 归组']])
+      + `<div class="sx-plan-layout">${compSection}${compFormSection}</div>`
       + dashHtml
       + vocabDatalist(vocabList(vocab, 'session'))
       + `<div class="sx-plan-layout">${planSection}${formSection}</div>`,false,
-      `<a class="control sx-head-cta" href="#plan" data-sx-jump="plan-form">添加计划</a>`,false,true);
+      `<a class="control sx-head-cta" href="#plan" data-sx-jump="competition-form">添加比赛</a>`,false,true);
   }
+  /* 比赛详情：一名教练负责的一场比赛，把训练课、对局、选手聚合到一页。
+     数据来自 /api/studio/workspace/competitions/<id>（schedules + session_matches）
+     与 /api/v3/players-board（本队分路名单）。 */
+  function competitionPage(value) {
+    const detail = (Array.isArray(value) ? value[0] : value) || {};
+    const board = (Array.isArray(value) ? value[1] : null) || {};
+    const c = detail.competition || {};
+    const schedules = detail.schedules || [];
+    const matches = detail.matches || [];
+    const teams = detail.teams || [];
+    const roster = board.roster || [];
+    const status = c.status || 'planned';
+    const foe = teams.find((t) => t.id === c.opponent_team_id)?.name || '对手未指定';
+    const resultLabel = (m) => (m.own_side && m.winner ? (m.winner === m.own_side ? 'win' : 'loss') : '');
+    const scoreOf = (m) => {
+      let score = m.score;
+      if (typeof score === 'string') { try { score = JSON.parse(score); } catch { score = null; } }
+      if (!score || typeof score !== 'object') return '';
+      const own = m.own_side === 'red' ? 'red' : 'blue';
+      const a = score[own], b = score[own === 'blue' ? 'red' : 'blue'];
+      return Number.isFinite(Number(a)) && Number.isFinite(Number(b)) ? `${fmt(Number(a))} : ${fmt(Number(b))}` : '';
+    };
+    const reviewed = schedules.filter((s) => s.review_status === 'done').length;
+    const kpis = stats([
+      ['训练课', `${fmt(schedules.length)} 场`, reviewed ? `已复盘 ${fmt(reviewed)} 场` : '还没有复盘'],
+      ['关联对局', `${fmt(matches.length)} 局`, '训练课自动归集'],
+      ['本队选手', `${fmt(roster.length)} 人`, '按分路名单'],
+      ['赛事状态', statusLabels[status] || status, c.owner ? `负责人 ${c.owner}` : '负责人未定'],
+    ]);
+    const hero = `<div class="comp-hero">
+      <div><span>比赛日期</span><b>${text(c.date)}</b></div>
+      <div><span>对手</span><b>${text(foe)}</b></div>
+      <div><span>赛段</span><b>${text(c.stage || '未填写')}</b></div>
+      <div><span>赛制</span><b>${text(c.format || '未填写')}</b></div>
+      <div><span>负责教练</span><b>${text(c.owner || '未指定')}</b></div>
+    </div>${c.notes ? `<p class="comp-note">${text(c.notes)}</p>` : ''}`;
+    const rosterRows = roster.length ? `<div class="comp-roster">${roster.map((p) => `<article class="comp-player">
+      <span class="comp-lane">${text(p.lane || '分路未定')}</span>
+      <b>${text(p.member || p.player || '未命名')}</b>
+      <small>${text(p.player || '—')} · ${fmt(p.games || 0)} 局 · 胜率 ${p.winRate != null ? pct(p.winRate) : '—'}${p.bound ? '' : ' · 未认领'}</small>
+    </article>`).join('')}</div>` : '<div class="empty">还没有本队分路名单；先在「选手」里认领对局昵称。</div>';
+    const schedRows = schedules.length ? `<div class="comp-rows">${schedules.map((s) => `<a class="comp-row" href="#session/${encodeURIComponent(s.id)}">
+      <span class="comp-row-date">${text(s.date)}<small>${text(s.start_time || '时间未定')}</small></span>
+      <b>${text(s.session || '训练组未定')}</b>
+      <i>${text(s.format || '赛制未定')}</i>
+      <em class="comp-state is-${s.review_status === 'done' ? 'done' : 'pending'}">${s.review_status === 'done' ? '已复盘' : '待复盘'}</em>
+    </a>`).join('')}</div>` : '<div class="empty">这场比赛还没有关联训练课；在训练计划里把训练课的「比赛」选成本场即可。</div>';
+    const matchRows = matches.length ? `<div class="comp-rows">${matches.map((m) => {
+      const result = resultLabel(m);
+      const score = scoreOf(m);
+      return `<a class="comp-row" href="#match/${encodeURIComponent(m.match_key)}">
+        <span class="comp-row-date">${text(m.date)}<small>${text(m.session || '训练赛')}</small></span>
+        <b>对阵 ${text(teams.find((t) => t.id === m.enemy_team_id)?.name || '对手未标注')}</b>
+        <i class="comp-result ${result}">${result === 'win' ? '胜' : result === 'loss' ? '负' : '—'}${score ? ' ' + score : ''}</i>
+        <em>${m.duration ? time(Number(m.duration)) : '—'}</em>
+      </a>`;
+    }).join('')}</div>` : '<div class="empty">还没有归集到对局；采集后按日期/对手自动关联，或在训练课里手动挂局。</div>';
+    return withPage('比赛详情', `${c.name || '比赛'} · ${c.date || ''} · 对阵 ${foe} · 训练课 ${fmt(schedules.length)} 场 / 对局 ${fmt(matches.length)} 局`,
+      `<div class="page-head-actions"><a class="control" href="#plan">← 全部比赛</a></div>`
+      + `<section class="section"><div class="section-heading"><div><h2>${text(c.name || '未命名比赛')}</h2><p>${text(c.stage || '赛段未填写')} · ${text(c.format || '赛制未填写')} · ${statusLabels[status] || status}</p></div></div>${hero}${kpis}</section>`
+      + block('本队选手', '按分路列出本队名单与近期胜率；点「选手」可查看个人档案。', rosterRows)
+      + block('训练课', '挂在这场比赛下的训练计划与训练课；点击进入训练课复盘。', schedRows, `<a class="control" href="#plan" data-sx-jump="plan-form">添加训练课</a>`)
+      + block('关联对局', '训练课按「手工关联 → 日期+对手 → 日期+训练组 → 日期」归集到的对局。', matchRows),
+      false,
+      `<a class="control sx-head-cta" href="#plan">全部比赛</a>`, false, true);
+  }
+
   function sessionReport(value) {
     const s = value.schedule || {};
     const team = value.team || null;
@@ -2759,7 +2867,7 @@ export function createFeatures(h) {
         </div>
       </div>`+linkDialog, false, `<a class="control" href="#session/${encodeURIComponent(s.id || '')}?report=1">导出报告</a><a class="control" href="#plan">编辑计划</a>`, false, true);
   }
-  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),identity:v=>playerPages.identityPage(v[0]), players:v=>playerPages.playersPage(v[0]),playerarchive:v=>playerPages.archivePage(v[0]),study:(v,k)=>research.study(v[1],v[0],k),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),topic:v=>depth.topic(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],v[5],v[6],k),teambp:v=>teamBp(v[0]),query:v=>queryPage(v[0]),featured:v=>featuredPage(v[0],v[1]),records:v=>recordsPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2]),teamstyle:v=>teamStyle(v[0]),teamroster:v=>teamRoster(v[0]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),compare:v=>laneBoard.render(v[0]),heroes:v=>heroes(v[0]),bp:v=>bpBoard(v[0]),combos:v=>combos(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:v=>versions(v[0]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3]),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
+  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),identity:v=>playerPages.identityPage(v[0]), players:v=>playerPages.playersPage(v[0]),playerarchive:v=>playerPages.archivePage(v[0]),study:(v,k)=>research.study(v[1],v[0],k),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),topic:v=>depth.topic(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],v[5],v[6],k),teambp:v=>teamBp(v[0]),query:v=>queryPage(v[0]),featured:v=>featuredPage(v[0],v[1]),records:v=>recordsPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2]),teamstyle:v=>teamStyle(v[0]),teamroster:v=>teamRoster(v[0]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),compare:v=>laneBoard.render(v[0]),heroes:v=>heroes(v[0]),bp:v=>bpBoard(v[0]),combos:v=>combos(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:v=>versions(v[0]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
   async function api(path, options={}) {
     const r=await fetch(API_BASE + '/api/'+path,{cache:'no-store',...options});
     if(!r.ok){
@@ -2771,7 +2879,7 @@ export function createFeatures(h) {
     }
     return r.json();
   }
-  const targets={rename:'studio/teams/rename',merge:'studio/teams/merge',assign:'studio/opponents/assign',coach:'studio/coach',training:'studio/workspace/training',profile:'studio/profile',masterTeam:'studio/workspace/teams',masterMerge:'studio/workspace/teams/merge',masterPlayer:'studio/workspace/players',confirm:'studio/workspace/pending/confirm',schedule:'studio/workspace/schedules'};
+  const targets={rename:'studio/teams/rename',merge:'studio/teams/merge',assign:'studio/opponents/assign',coach:'studio/coach',training:'studio/workspace/training',profile:'studio/profile',masterTeam:'studio/workspace/teams',masterMerge:'studio/workspace/teams/merge',masterPlayer:'studio/workspace/players',confirm:'studio/workspace/pending/confirm',schedule:'studio/workspace/schedules',competition:'studio/workspace/competitions'};
   function syncSetupTeams(root) {
     if (!root) return;
     const list = root.querySelector('[data-sx-team-list]');
@@ -3496,5 +3604,5 @@ if(captureIngestPage.change(event))return;
     if(!items.length)return '';
     return `<span class="analysis-rail-label">${esc(groupLabel[group])}分析</span>${items.map(item=>`<a href="${item.href}" ${item.active?'aria-current="page"':''}>${esc(item.title)}</a>`).join('')}`;
   }
-  return {analysisNavigation,has:name=>Object.hasOwn(endpoints,name)||['ingest','shots','videos','replays','review'].includes(name),load:(name,key,signal)=>name==='ingest'?captureIngestPage.load(name,key,signal):name==='capture'?sourcePages.load(name,key,signal):'review'===name?reviewPage.load(name,key,signal):['shots','videos','replays'].includes(name)?sourcePages.load(name,key,signal):Promise.all((name==='topic'?[...endpoints[name],'depth/analysis/'+encodeURIComponent(key)]:name==='study'?[...endpoints[name],'v3/research/'+encodeURIComponent(key)+currentQuery()]:name==='report'?[...endpoints[name],'v3/research/reports/'+encodeURIComponent(key)]:name==='hero'?[...endpoints[name],'studio/camp-partners?hero='+encodeURIComponent(key),'matches','depth/analysis/lane_matchup','depth/analysis/equip_matrix?hero='+encodeURIComponent(key),'depth/analysis/equip_impact?hero='+encodeURIComponent(key),'v3/hero-detail/'+encodeURIComponent(key)]:name==='session'?['studio/workspace/sessions/'+encodeURIComponent(key)]:name==='team'?[...endpoints[name],'studio/camp-compare?team='+encodeURIComponent(key),'v3/team-bp']:endpoints[name]).map(p=>api(p==='matches'||p==='tempo'||p==='v3/identity'?p+currentQuery():p,{signal}))).then(data=>name==='weekly'?Promise.all([...data,api('studio/workspace/metrics/week?start='+encodeURIComponent(key||''),{signal})]):data),render:(name,data,key)=>renders[name](data,key),submit,click,change,afterRender:()=>{updatePairs();updateAnchorNav();const tmJumpButtons=[...document.querySelectorAll('.tm-jump [data-tm-jump]')];if(tmJumpButtons.length){const tmBasicButton=tmJumpButtons.find(b=>b.dataset.tmJump==='tm-basic');const tmGroups=[{button:tmBasicButton,target:document.getElementById('tm-score')},...tmJumpButtons.filter(b=>b.dataset.tmJump!=='tm-basic').map(b=>({button:b,target:document.getElementById(b.dataset.tmJump)}))].filter(g=>g.button&&g.target);if(tmGroups.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);window.__tmJumpScroll=()=>{let active=tmGroups[0];for(const group of tmGroups){if(group.target.getBoundingClientRect().top<=180)active=group;}if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)active=tmGroups[tmGroups.length-1];tmJumpButtons.forEach(b=>b.setAttribute('aria-current',String(b===active.button)));};window.addEventListener('scroll',window.__tmJumpScroll,{passive:true});window.__tmJumpScroll();}}captureIngestPage.afterRender();sourcePages.afterRender();reviewPage.afterRender();bindSxDialogs();const setupRoot=document.querySelector('[data-sx-anchor="teams"]');if(setupRoot)syncSetupTeams(setupRoot);const ownRoot=document.querySelector('[data-sx-scope="ownership"]');if(ownRoot)syncOwnershipGroups(ownRoot);const pendingRoot=document.querySelector('[data-sx-scope="pending"]');if(pendingRoot)syncPendingQueue(pendingRoot)}};
+  return {analysisNavigation,has:name=>Object.hasOwn(endpoints,name)||['ingest','shots','videos','replays','review'].includes(name),load:(name,key,signal)=>name==='ingest'?captureIngestPage.load(name,key,signal):name==='capture'?sourcePages.load(name,key,signal):'review'===name?reviewPage.load(name,key,signal):['shots','videos','replays'].includes(name)?sourcePages.load(name,key,signal):Promise.all((name==='topic'?[...endpoints[name],'depth/analysis/'+encodeURIComponent(key)]:name==='study'?[...endpoints[name],'v3/research/'+encodeURIComponent(key)+currentQuery()]:name==='report'?[...endpoints[name],'v3/research/reports/'+encodeURIComponent(key)]:name==='hero'?[...endpoints[name],'studio/camp-partners?hero='+encodeURIComponent(key),'matches','depth/analysis/lane_matchup','depth/analysis/equip_matrix?hero='+encodeURIComponent(key),'depth/analysis/equip_impact?hero='+encodeURIComponent(key),'v3/hero-detail/'+encodeURIComponent(key)]:name==='session'?['studio/workspace/sessions/'+encodeURIComponent(key)]:name==='competition'?['studio/workspace/competitions/'+encodeURIComponent(key),'v3/players-board']:name==='team'?[...endpoints[name],'studio/camp-compare?team='+encodeURIComponent(key),'v3/team-bp']:endpoints[name]).map(p=>api(p==='matches'||p==='tempo'||p==='v3/identity'?p+currentQuery():p,{signal}))).then(data=>name==='weekly'?Promise.all([...data,api('studio/workspace/metrics/week?start='+encodeURIComponent(key||''),{signal})]):data),render:(name,data,key)=>renders[name](data,key),submit,click,change,afterRender:()=>{updatePairs();updateAnchorNav();const tmJumpButtons=[...document.querySelectorAll('.tm-jump [data-tm-jump]')];if(tmJumpButtons.length){const tmBasicButton=tmJumpButtons.find(b=>b.dataset.tmJump==='tm-basic');const tmGroups=[{button:tmBasicButton,target:document.getElementById('tm-score')},...tmJumpButtons.filter(b=>b.dataset.tmJump!=='tm-basic').map(b=>({button:b,target:document.getElementById(b.dataset.tmJump)}))].filter(g=>g.button&&g.target);if(tmGroups.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);window.__tmJumpScroll=()=>{let active=tmGroups[0];for(const group of tmGroups){if(group.target.getBoundingClientRect().top<=180)active=group;}if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)active=tmGroups[tmGroups.length-1];tmJumpButtons.forEach(b=>b.setAttribute('aria-current',String(b===active.button)));};window.addEventListener('scroll',window.__tmJumpScroll,{passive:true});window.__tmJumpScroll();}}captureIngestPage.afterRender();sourcePages.afterRender();reviewPage.afterRender();bindSxDialogs();const setupRoot=document.querySelector('[data-sx-anchor="teams"]');if(setupRoot)syncSetupTeams(setupRoot);const ownRoot=document.querySelector('[data-sx-scope="ownership"]');if(ownRoot)syncOwnershipGroups(ownRoot);const pendingRoot=document.querySelector('[data-sx-scope="pending"]');if(pendingRoot)syncPendingQueue(pendingRoot)}};
 }

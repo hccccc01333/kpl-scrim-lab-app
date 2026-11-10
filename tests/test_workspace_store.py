@@ -28,7 +28,7 @@ def test_schema_is_idempotent(tmp_path):
             "SELECT name FROM sqlite_master WHERE type='table'")}
     finally:
         connection.close()
-    for table in ('teams', 'players', 'schedules', 'matches', 'match_rosters', 'bp',
+    for table in ('teams', 'players', 'schedules', 'competitions', 'matches', 'match_rosters', 'bp',
                   'training', 'provenance', 'change_log'):
         assert table in names
 
@@ -87,6 +87,35 @@ def test_schedule_and_training_roundtrip(ws):
                                    start_date='2026-11-01', metric='goldDiff10', target=500,
                                    player_ids=['player-a'])
     assert ws.list_training()[0]['session_id'] == training_id
+
+
+def test_competition_aggregates_schedules_and_matches(ws):
+    """比赛是赛训中心：训练计划挂到比赛下，详情聚合训练课与对局。"""
+    foe = ws.upsert_team(name='青岚')
+    competition_id = ws.save_competition(
+        name='KPL 2026 春季赛', date='2026-11-15', opponent_team_id=foe,
+        stage='常规赛第 1 轮', format='BO7', owner='张教练')
+    competition = ws.get_competition(competition_id)
+    assert competition['name'] == 'KPL 2026 春季赛' and competition['owner'] == '张教练'
+
+    schedule_id = ws.save_schedule(date='2026-11-08', opponent_team_id=foe,
+                                   session='赛前冲刺', competition_id=competition_id)
+    ws.upsert_match('comp-match-1', date='2026-11-08', session='赛前冲刺',
+                    enemy_team_id=foe, own_side='blue', winner='blue', duration=900)
+    listed = ws.list_competitions()
+    assert listed[0]['session_count'] == 1
+
+    detail = ws.competition_detail(competition_id)
+    assert detail['competition']['id'] == competition_id
+    assert [row['id'] for row in detail['schedules']] == [schedule_id]
+    assert [row['match_key'] for row in detail['matches']] == ['comp-match-1']
+    assert ws.competition_detail('missing') is None
+
+    # 取消关联后，比赛列表与详情都不再包含这条训练计划
+    ws.save_schedule(schedule_id, date='2026-11-08', opponent_team_id=foe,
+                     session='赛前冲刺', competition_id=None)
+    assert ws.list_competitions()[0]['session_count'] == 0
+    assert ws.competition_detail(competition_id)['schedules'] == []
 
 
 def test_missing_fields_stay_null(ws):
