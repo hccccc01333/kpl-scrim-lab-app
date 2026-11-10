@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "1.5.29",
-  "publishedAt": "2026-11-10T18:55:00+08:00",
+  "publishedAt": "2026-11-10T18:51:56+08:00",
   "channel": "stable",
   "minVersion": "1.5.15",
   "notes": [
@@ -37,7 +37,7 @@
     "——**过河不等于入侵**，所以这张卡只叫过河，反野交给 BUFF 事件。"
   ],
   "patch": {
-    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v1.5.29/patch-1.5.29.zip",
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.29/patch-1.5.29.zip",
     "sha256": "bbdafc8354febc7be46e1adbae6742c12a668584fe475193be3664c1cb5a5b75",
     "size": 641932,
     "files": [
@@ -192,8 +192,8 @@
   "releaseName": "跨局分析与选手位置按赛训组口径重排",
   "releaseDate": "2026-11-10",
   "full": {
-    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v1.5.29/KPL-Scrim-Lab-1.5.29-full.zip",
-    "sha256": "b8336bd7cc50376916c2f1d7aa823e628a81fe615f17e0d6169991545401786c",
-    "size": 162238494
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.29/KPL-Scrim-Lab-1.5.29-full.zip",
+    "sha256": "65447c64b70cdb65a9f2c40b21d1c922cfd0ba04acb356c5394503648a5b3eac",
+    "size": 82120599
   }
 }
