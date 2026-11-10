@@ -400,6 +400,7 @@ def _cross_vector(repo, item, segments=8):
             lanes[lane] = {key: round((number(p.get(key)) - number(q.get(key))) / duration * 60, 1)
                            for key in ('gold', 'damage', 'taken')}
     heroes = [p.get('hero') for p in own if p.get('hero')][:5]
+    heroes_foe = [p.get('hero') for p in foe if p.get('hero')][:5]
     # 逐人一行：选手榜与同位置对位都从这里取；没有时长的局分均留空
     minutes = duration / 60.0 if duration else 0.0
     pl = []
@@ -439,7 +440,7 @@ def _cross_vector(repo, item, segments=8):
         'cut': cut, 'fk': fk, 'jungle': jungle,
         'pl': pl, 'fs': fs,
         'killsOwn': kill_own, 'killsFoe': kill_foe,
-        'lanes': lanes, 'heroes': heroes, 'bans': bans,
+        'lanes': lanes, 'heroes': heroes, 'heroesFoe': heroes_foe, 'bans': bans,
     }
     _CROSS_VECTOR_BY_KEY[cache_id] = vector
     return vector

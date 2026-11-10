@@ -19,6 +19,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 def open_setup(page, base, filter_key=None):
     page.goto(f'{base}/#setup')
@@ -28,6 +30,44 @@ def open_setup(page, base, filter_key=None):
         page.click(f'[data-sx-id-chip="{filter_key}"]')
         page.wait_for_timeout(250)
     page.locator('[data-sx-anchor="identity"]').scroll_into_view_if_needed()
+
+
+def seed_accounts(base, source_dir):
+    """给空实例补几个营地详情，让「身份对照」有账号可命名。
+
+    身份对照的账号来自 `<data>/camp_details/*.json`，空实例里一个都没有，脚本
+    原来会卡在 `.sx-own-group` 超时。这里从 `--seed-from`（默认本仓库的
+    `data/camp_details`）拷 3 个最小的文件过去——只写测试实例，不动源目录。
+    """
+    import json
+    import shutil
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f'{base}/api/health', timeout=10) as response:
+            health = json.loads(response.read().decode('utf-8'))
+    except Exception as error:  # noqa: BLE001
+        print(f'读不到 {base}/api/health：{error}')
+        return False
+    data_dir = Path(health.get('dbPath') or '').parent
+    if not str(data_dir):
+        print('健康检查没有返回 dbPath，无法定位实例的数据目录')
+        return False
+    target = data_dir / 'camp_details'
+    target.mkdir(parents=True, exist_ok=True)
+    if any(target.glob('*.json')):
+        return True
+    source = Path(source_dir) if source_dir else ROOT / 'data' / 'camp_details'
+    if not source.is_dir():
+        print(f'找不到种子数据目录：{source}')
+        return False
+    files = sorted(source.glob('*.json'), key=lambda p: p.stat().st_size)[:3]
+    if not files:
+        print(f'种子目录里没有 JSON：{source}')
+        return False
+    for path in files:
+        shutil.copy2(path, target / path.name)
+    print(f'已给实例补 {len(files)} 个营地详情 → {target}')
+    return True
 
 
 def run(base, out_dir):
@@ -97,8 +137,17 @@ def run(base, out_dir):
         page.wait_for_selector('#sx-identity-dialog[open]')
         page.fill('#sx-identity-dialog [name="name"]', '巡检对手甲')
         page.select_option('#sx-identity-dialog [name="position"]', '打野')
+        # 产品口径：命名时必须归队（对手也一样），否则保存会被拦下
+        try:
+            page.select_option('#sx-identity-dialog [name="teamId"]', index=0)
+        except Exception:
+            pass
+        page.fill('#sx-identity-dialog [name="teamName"]', '巡检对手队')
         page.click('#sx-identity-dialog button[type=submit]')
         page.wait_for_timeout(1300)
+        if page.locator('#sx-identity-dialog[open]').count():
+            detail = page.locator('#sx-identity-dialog').inner_text().replace('\n', ' ')[:160]
+            errors.append(f'对手命名没有保存成功：{detail}')
 
         page.goto(f'{base}/#ownership', wait_until='networkidle')
         page.wait_for_selector('.sx-own-group')
@@ -127,8 +176,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='身份对照端到端巡检（跑在隔离实例上）')
     parser.add_argument('--base', default='http://127.0.0.1:8772')
     parser.add_argument('--out', default='.screenshots/identity')
+    parser.add_argument('--seed-from', default=str(ROOT / 'data' / 'camp_details'),
+                        help='空实例时从这里拷 3 个营地详情，让「身份对照」有账号可命名')
     args = parser.parse_args()
-    problems = run(args.base.rstrip('/'), Path(args.out))
+    base_url = args.base.rstrip('/')
+    if not seed_accounts(base_url, args.seed_from):
+        print('实例没有可命名的游戏账号，巡检无法进行（这不是产品报错，是准备步骤没到位）。')
+        sys.exit(2)
+    problems = run(base_url, Path(args.out))
     print('\n控制台 / 5xx 报错:', len(problems))
     for item in problems[:12]:
         print(' ', item)

@@ -1229,9 +1229,107 @@ function a21(ctx) {
   };
 }
 
+/* 22 优势兑现：10 分钟领先之后，把优势换成资源、再换成胜负 */
+function a22(ctx) {
+  const { rows } = ctx;
+  const decided = rows.filter((r) => num(r.at10) && (r.result === 'win' || r.result === 'loss'));
+  const lead = decided.filter((r) => r.at10 > 0);
+  const behind = decided.filter((r) => r.at10 <= 0);
+  const hasDragon = (r) => !!(r.obj && num(r.obj.dragonOwn) && r.obj.dragonOwn > 0);
+  const hasTower = (r) => !!(r.obj && num(r.obj.towerOwn) && num(r.obj.towerFoe) && r.obj.towerOwn > r.obj.towerFoe);
+  const stat = (list) => {
+    const w = list.filter((r) => r.result === 'win').length;
+    return { n: list.length, w, rate: list.length ? w / list.length : null };
+  };
+  const steps = [
+    { label: '10 分钟领先', ...stat(lead) },
+    { label: '领先 + 拿到龙', ...stat(lead.filter(hasDragon)) },
+    { label: '领先 + 推塔占优', ...stat(lead.filter(hasTower)) },
+    { label: '领先 + 龙和塔都做到', ...stat(lead.filter((r) => hasDragon(r) && hasTower(r))) },
+  ].filter((s) => s.n > 0).sort((a, b) => (a.rate || 0) - (b.rate || 0));
+  const base = stat(lead);
+  const best = steps.slice().sort((a, b) => (b.rate || 0) - (a.rate || 0))[0];
+  const comeback = stat(behind.filter((r) => r.result === 'win'));
+  const items = steps.map((s) => ({
+    label: s.label, value: (s.rate || 0) * 100,
+    text: `${Math.round((s.rate || 0) * 100)}%`,
+    sub: `${s.w}/${s.n} 局`,
+  }));
+  return {
+    id: '22', name: '优势兑现', group: '资源与团战', ask: '10 分钟领先之后，优势换成了什么？',
+    title: base.n
+      ? `10 分钟领先的 ${base.n} 局赢下 <em>${base.w}</em> 局（${pct(base.rate)}）${best && best.label !== '10 分钟领先' ? `；做到「${best.label.replace('领先 + ', '')}」的 ${best.n} 局赢 <em>${best.w}</em> 局` : ''}`
+      : '还没有可读的领先局面（需要 10 分钟经济差与胜负）',
+    plain: base.n
+      ? `10 分钟落后的 ${behind.length} 局翻回 ${comeback.w} 局（${pct(comeback.rate)}）。领先不只是看经济差，要看有没有换成龙和塔。`
+      : '先补齐 10 分钟经济差。',
+    chart: { type: 'bars', hero: { value: base.n ? pct(base.rate) : '—', label: '10 分钟领先的兑现率', cls: 'gold' }, items },
+    train: best && base.rate != null && (best.rate || 0) - base.rate > 0.05
+      ? `领先之后补上「${best.label.replace('领先 + ', '')}」，胜率能从 ${pct(base.rate)} 提到 ${pct(best.rate)}——把它写进领先局的打法要求。`
+      : '领先局的兑现已经比较稳，下一批看落后局能不能翻回更多。',
+    review: '看领先没赢的局',
+    actKeys: lead.filter((r) => r.result === 'loss').slice(0, 60).map((r) => r.key),
+    method: '先筛 10 分钟经济差为正且分出胜负的局，再看这些局里有没有拿到龙、推塔是否多于对手；每一步都单独算胜率，不是因果链。',
+    grade: grade(base.n),
+    repro: null,
+  };
+}
+
+/* 23 对手阵容：同一个对手反复用哪几个人 */
+function a23(ctx) {
+  const { rows } = ctx;
+  const withFoe = rows.filter((r) => Array.isArray(r.heroesFoe) && r.heroesFoe.length >= 2);
+  const oppMap = new Map();
+  for (const r of withFoe) {
+    const opp = String(r.opponent || '').trim() || '未填对手';
+    const e = oppMap.get(opp) || { games: 0, combos: new Map() };
+    e.games += 1;
+    const hs = r.heroesFoe;
+    for (let i = 0; i < hs.length; i++) {
+      for (let j = i + 1; j < hs.length; j++) {
+        const key = [hs[i], hs[j]].sort().join('+');
+        const c = e.combos.get(key) || { heroes: [hs[i], hs[j]], games: 0, ourWins: 0 };
+        c.games += 1;
+        if (r.result === 'win') c.ourWins += 1;
+        e.combos.set(key, c);
+      }
+    }
+    oppMap.set(opp, e);
+  }
+  const items = [...oppMap.entries()].map(([opp, e]) => {
+    const top = [...e.combos.values()].sort((a, b) => b.games - a.games)[0];
+    if (!top) return null;
+    return {
+      label: `${opp} · ${top.heroes.join(' + ')}`,
+      opp, games: top.games, wins: top.ourWins, decided: top.games,
+      rate: top.games ? top.ourWins / top.games : null, oppGames: e.games,
+    };
+  }).filter(Boolean).sort((a, b) => b.games - a.games);
+  const top = items[0];
+  const worst = items.slice().filter((x) => x.decided >= 2).sort((a, b) => (a.rate || 0) - (b.rate || 0))[0];
+  return {
+    id: '23', name: '对手阵容', group: '对手', ask: '同一个对手反复用哪几个人？',
+    title: top
+      ? `对 ${top.opp}（${top.oppGames} 局），他们最常用「<em>${top.label.split(' · ')[1]}</em>」，出现 ${top.games} 次`
+      : '对手阵容还读不到（需要十人面板）',
+    plain: top
+      ? `我们对着这套组合 ${top.games} 局赢 ${top.wins} 局${worst && worst.label !== top.label ? `；最吃亏的是「${worst.label.split(' · ')[1]}」${worst.decided} 局只赢 ${worst.wins} 局` : ''}。`
+      : '先把对手名补上，这张表才有意义。',
+    chart: { type: 'ledger', items: items.map(({ opp, oppGames, ...x }) => x), total: oppMap.size },
+    train: worst && worst.rate != null && worst.rate < 0.4
+      ? `对手这套「${worst.label.split(' · ')[1]}」我们只赢 ${worst.decided} 局里的 ${worst.wins} 局：赛前准备要单独准备破解。`
+      : '继续补对手名，样本够了再谈针对性 BP。',
+    review: '看这些局',
+    actKeys: withFoe.slice(0, 60).map((r) => r.key),
+    method: '按对手名分组，把他们每局五人两两配对，取出现次数最多的一组；胜率是按我们视角算的（我们赢的比例），只统计有对手阵容的局。',
+    grade: grade(withFoe.length),
+    repro: null,
+  };
+}
+
 export function analyzeCohort(vectors) {
   const ctx = prepare(vectors);
-  const cards = ctx.n ? [a01, a02, a03, a04, a05, a06, a07, a08, a09, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21].map((f) => {
+  const cards = ctx.n ? [a01, a02, a03, a04, a05, a06, a07, a08, a09, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23].map((f) => {
     try { return f(ctx); } catch { return null; }
   }).filter(Boolean) : [];
   const checked = cards.filter((c) => c.repro !== null && c.repro !== undefined);
