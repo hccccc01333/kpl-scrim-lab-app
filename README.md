@@ -4,7 +4,7 @@
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
 
   <p>
-    <img alt="版本" src="https://img.shields.io/badge/version-1.5.29-176B69?style=flat-square&labelColor=0F2E29">
+    <img alt="版本" src="https://img.shields.io/badge/version-1.5.30-176B69?style=flat-square&labelColor=0F2E29">
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
     <img alt="许可" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
@@ -44,7 +44,7 @@
 
 ---
 
-## v1.5.29 更新了什么
+## v1.5.30 更新了什么
 
 一句话：**单局复盘拆成四页、跨局分析按赛训组的问法分页、营地拿不到的数可以自己填。**
 
@@ -57,8 +57,9 @@
 | **阶段口径** | 全站锁死赛训组定义：0–4 对线、4–10 发育、10 分钟后；热区、脉搏、阶段对比、优势归因共用一处 |
 | **事件与地图** | 比赛脉搏点位可点（龙 / BUFF / 塔 / 水晶分形分色）、塔名具体到「中路高地塔」、对位热区改离散分格、打野并线三段 × 三路 |
 | **采集** | 一条营地链接自动补拉官方回放；营地载荷全量归档（字段表 + 前端文案），改版后可 diff |
+| **BP 命中**（v1.5.30） | 对位压制改用**巅峰千强大盘**并做基准调整（减去英雄本身强弱，避免把「冷门英雄」误判成「被克制」）；新增**赛事命中**——本局阵容的组合在 KPL 出现过几次 |
 
-完整说明见 [v1.5.29 版本说明](docs/release_1.5.29.md)。
+完整说明见 [v1.5.29 版本说明](docs/release_1.5.29.md)、[v1.5.30 CHANGELOG](CHANGELOG.md)。
 
 ---
 
