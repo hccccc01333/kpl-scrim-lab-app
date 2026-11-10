@@ -432,9 +432,10 @@ function microChart(points, label) {
   return `<svg class="micro-chart" viewBox="0 0 300 80" role="img" aria-label="${esc(label)}，${data.length} 个采样点，最后经济差 ${diff(data.at(-1)[1])}"><line x1="4" y1="40" x2="296" y2="40" class="grid-line"/><path d="${d}" class="curve"/><circle cx="${x(data.at(-1)[0])}" cy="${y(data.at(-1)[1])}" r="3" class="depth-dot"/></svg>`;
 }
 
+const MATCH_ROWS_OPEN = 24;
 function matchRows(rows) {
   if (!rows.length) return `<div class="empty">当前范围暂无对局。</div>`;
-  return `<div class="match-list">${rows.map((m) => `<div class="match-row-wrap">
+  const item = (m) => `<div class="match-row-wrap">
     <a class="match-row" href="${esc(route('match', m.key))}">
     <div class="match-date"><b>${esc((m.date || '日期未知').slice(5))}</b><small>${esc((m.date || '').slice(0,4))}</small></div>
     <div class="match-opponent"><small>${m.isSeed ? '验证对局' : esc(m.mode || '对局记录')}</small><b>${esc(m.opponent ? '对阵 ' + m.opponent : '对手未标注')}</b></div>
@@ -443,7 +444,13 @@ function matchRows(rows) {
     <div class="small-lineup">${(m.heroes || []).slice(0, 5).map((hero) => portrait(hero)).join('')}</div>
     <span class="row-arrow">${icon('arrow')}</span></a>
     <button type="button" class="match-edit" data-match-edit="${esc(m.key)}" data-opponent="${esc(m.opponent || '')}" title="编辑对手队名" aria-label="编辑对手队名">✎</button>
-  </div>`).join('')}</div>`;
+  </div>`;
+  /* 一屏只铺 24 行：54 场的档案页会拉到 4000px 高，而教练真正要找的
+     往往是最近几局。其余收进折叠区，搜索仍走同一套渲染。 */
+  const head = rows.slice(0, MATCH_ROWS_OPEN), rest = rows.slice(MATCH_ROWS_OPEN);
+  return `<div class="match-list">${head.map(item).join('')}</div>
+    ${rest.length ? `<details class="match-more"><summary>还有 ${rest.length} 场，展开</summary>
+      <div class="match-list">${rest.map(item).join('')}</div></details>` : ''}`;
 }
 
 /** 编辑对手队名：写 match_meta 覆盖层（不改原始数据包）。 */
@@ -1112,10 +1119,18 @@ function matchPage(m) {
     const stolen = buffs.filter((b) => b.owner === own && b.killer && b.killer !== own).length;
     const farmed = buffs.filter((b) => b.owner === own && b.killer === own).length;
     const buffLine = buffs.length
-      ? `<div class="md-res-buff">BUFF：收己方野 <b>${farmed}</b> · <b>反野 ${anti}</b> 次 · <b>被反 ${stolen}</b> 次<small>（回放 killbuff 事件）</small></div>`
+      ? `<p class="md-res-buff">BUFF 收己方野 <b>${farmed}</b> · 反野 <b>${anti}</b> 次 · 被反 <b>${stolen}</b> 次<small>回放 killbuff 事件</small></p>`
       : '';
-    return `<div class="md-res"><div class="md-res-head"><b>资源控制</b><span>龙/主宰控制率 ${rate === null ? '—' : rate + '%'} · 双方击杀数 · 来自官方回放事件</span></div>
-      <div class="md-res-grid">${rows.map((row) => `<span class="md-res-item"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>`).join('')}</div>${buffLine}</div>`;
+    /* 控制率是这一局最该一眼看到的数，所以给它大字号；四项计数退成小格。 */
+    return `<div class="md-res">
+      <div class="md-res-main">
+        <span class="md-res-kicker">资源控制</span>
+        <strong class="md-res-rate">${rate === null ? '—' : rate}<small>${rate === null ? '' : '%'}</small></strong>
+        <span class="md-res-caption">龙 / 主宰控制率</span>
+      </div>
+      <div class="md-res-items">${rows.map((row) => `<span class="md-res-item"><i>${esc(row.name)}</i><b>${row.own}</b><em>:</em><b class="foe">${row.foe}</b></span>`).join('')}</div>
+      ${buffLine}
+    </div>`;
   })();
   const mdPhases = `<section class="section" id="match-phases"><div class="section-heading"><div><h2>阶段对比</h2><p>经济差与阶段变化按营地采样；资源 / 建筑是回放事件计数；入侵是本队五人合计进入对侧半区的时间占比</p></div></div>
     ${deep.phaseTable(phaseTableRows)}${resourceBand}
@@ -1199,9 +1214,11 @@ function matchPage(m) {
         : row.winRate >= 65 ? '压制' : row.winRate <= 35 ? '劣势' : '均势';
       const cls = verdict === '压制' ? 'is-ahead' : verdict === '劣势' ? 'is-behind'
         : verdict === '均势' ? 'is-even' : 'is-thin';
-      const note = row
-        ? `${fmt(row.n)} 局 · 胜率 ${pct(row.winRate)} · 经济差 ${diff(row.avgGoldDiff)}`
-        : '没有同分路对位样本';
+      /* 第一列已经写了「样本不足」，第二列不再重复一遍；
+         有对位但不足 3 局时，把实际局数摆出来，教练才知道离门槛差多少。 */
+      const note = !row ? ''
+        : row.n < 3 ? `${fmt(row.n)} 局样本，未到 3 局门槛`
+        : `${fmt(row.n)} 局 · 胜率 ${pct(row.winRate)} · 经济差 ${diff(row.avgGoldDiff)}`;
       return `<div class="md-mu-row"><span class="md-mu-lane">${lane}</span>
         <b class="own">${esc(a?.hero || '—')}</b><i>vs</i><b class="foe">${esc(b?.hero || '—')}</b>
         <em class="${cls}">${verdict}</em><small>${note}</small></div>`;

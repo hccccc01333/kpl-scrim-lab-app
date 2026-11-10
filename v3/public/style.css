@@ -131,6 +131,17 @@ a.hero-row:hover b { color: var(--accent); }
 .hero-row > span:not(.portrait) { min-width: 48px; text-align: right; font-size: 13px; font-weight: 700; }
 .hero-row > span small { font-weight: 400; }
 .match-list { padding: 0 24px 12px; }
+/* 对局档案超过 24 行折起来：折叠条与其它 details 用同一套小字语言 */
+.match-more { margin: 0 24px 14px; }
+.match-more > summary { display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 0 14px;
+  border: 1px dashed var(--line); border-radius: 9px; color: var(--muted);
+  font-size: 12px; font-weight: 700; cursor: pointer; list-style: none; }
+.match-more > summary::-webkit-details-marker { display: none; }
+.match-more > summary::before { content: '▸'; font-size: 10px; transition: transform .16s ease; }
+.match-more[open] > summary::before { transform: rotate(90deg); }
+.match-more > summary:hover { color: var(--accent); border-color: var(--accent); }
+.match-more[open] > summary { border-style: solid; }
+.match-more .match-list { padding: 10px 0 0; }
 .match-row { display: grid; grid-template-columns: 65px minmax(130px,1fr) 64px 95px 55px 210px 20px; align-items: center; gap: 12px; border-top: 1px solid var(--line); min-height: 76px; }
 .match-row:hover .match-opponent b { color: var(--accent); }
 .match-date b { display: block; font-size: 16px; }
@@ -7543,20 +7554,25 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-camp-group i { font-style: normal; color: var(--muted); }
 .md-camp-group em { font-style: normal; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-.md-res { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
-.md-res-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.md-res-head b { font-size: 13.5px; }
-.md-res-head span { color: var(--muted); font-size: 12px; }
-.md-res-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
-.md-res-item { display: flex; align-items: baseline; gap: 4px; font-size: 13px; }
-.md-res-item i { font-style: normal; color: var(--muted); font-size: 12px; margin-right: 2px; }
-.md-res-item b { font-variant-numeric: tabular-nums; }
-.md-res-item b.foe { color: var(--md-enemy-ink, #9adcd2); }
-.md-res-item em { font-style: normal; color: var(--quiet); }
-
-.md-res-buff { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
-.md-res-buff b { color: var(--ink); }
-.md-res-buff small { margin-left: 6px; color: var(--quiet); }
+/* 资源控制：控制率当主数字，四项计数退成小格；与「总量」卡同一套字号梯度 */
+.md-res { display: grid; grid-template-columns: 176px minmax(0, 1fr); gap: 6px 22px;
+  margin-top: 14px; padding: 14px 18px 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--surface); align-items: center; }
+.md-res-main { display: grid; gap: 1px; }
+.md-res-kicker { color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; }
+.md-res-rate { font: 800 24px/1.1 Manrope, var(--font); letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.md-res-rate small { font-size: 13px; font-weight: 600; margin-left: 1px; color: var(--muted); }
+.md-res-caption { color: var(--quiet); font-size: 10.5px; }
+.md-res-items { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.md-res-item { display: inline-flex; align-items: baseline; gap: 3px; padding: 4px 9px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--paper);
+  font: 700 11.5px/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
+.md-res-item i { font-style: normal; color: var(--muted); font: 400 11px/1 var(--font); margin-right: 2px; }
+.md-res-item b.foe { color: var(--md-enemy-ink, #10635b); }
+.md-res-item em { font-style: normal; color: var(--quiet); font-weight: 400; }
+.md-res-buff { grid-column: 1 / -1; margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
+.md-res-buff b { color: var(--text); font-variant-numeric: tabular-nums; }
+.md-res-buff small { margin-left: 8px; color: var(--quiet); font-size: 10.5px; }
 .md-ev-list { display: grid; gap: 0; }
 /* 事件卡片不再各自套一个边框：外层 section 已经有边框，再套一层就是「框里框」，
    和页面上其它列表（击杀账本 / 关键节点）的行风格也不一致。改成细分隔线。 */
@@ -7582,13 +7598,17 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-ev-narr p { font-size: 12.5px; color: var(--text); margin: 4px 0; }
 .md-ev-narr p span { color: var(--quiet); margin-right: 8px; font-variant-numeric: tabular-nums; }
 /* 击杀账本：逐次击杀（谁 → 谁），切C 用金色右标，敌方击杀用青色 */
-.md-kill-sums { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.md-kill-sum { font-size: 12.5px; color: var(--muted); }
+.md-kill-sums { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+/* 和「资源控制」的计数格同一套小药丸，避免同样是「人名 + 数字」却两种长相 */
+.md-kill-sum { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 .md-kill-sum b { color: var(--text); font-weight: 600; }
 .md-kill-sum em { font-style: normal; color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
 .md-kill-sum small { margin-left: 8px; color: var(--quiet); }
 .md-kill-list { display: grid; gap: 3px; max-height: 460px; overflow: auto; padding-right: 4px; }
-.md-kill { display: grid; grid-template-columns: 52px minmax(0, 230px) 24px minmax(0, 230px) 40px; align-items: center; justify-content: start; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; }
+/* 最后一列吃掉剩余宽度：切C 贴右，不再挤在表格中段、右边留一大片空白 */
+.md-kill { display: grid; grid-template-columns: 52px minmax(0, 220px) 24px minmax(0, 220px) minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 12.5px; }
 .md-kill:nth-child(odd) { background: color-mix(in srgb, var(--surface) 55%, transparent); }
 .md-kill-t { color: var(--quiet); font-variant-numeric: tabular-nums; }
 .md-kill-side { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
@@ -7602,12 +7622,16 @@ a.hcv-row, a.hcv-row:hover { color: inherit; text-decoration: none; }
 .md-kill.is-cut .md-kill-cut { color: var(--accent); font-weight: 700; }
 .md-kill.is-cut .md-kill-arrow { color: var(--accent); }
 
-.md-bp-combos { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
-.md-bp-combo-side { display: grid; gap: 6px; }
-.md-bp-combo-side > span { font-size: 12px; color: var(--muted); }
-.md-bp-combo-side > small { font-size: 12px; color: var(--quiet); }
-.md-combo { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border: 1px solid var(--line);
-  border-radius: 10px; background: var(--paper); font-size: 12.5px; }
+/* 联动组合：和「对位压制」用同一套面板（浅底 + 虚线分隔），
+   不再是一排各自带边框的小盒子叠在同一个区块里 */
+.md-bp-combos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-top: 14px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.md-bp-combo-side { display: grid; gap: 0; align-content: start; min-width: 0; }
+.md-bp-combo-side > span { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: .04em; padding-bottom: 2px; }
+.md-bp-combo-side > small { font-size: 12px; color: var(--quiet); padding-top: 4px; }
+.md-combo { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border: 0;
+  border-top: 1px dashed var(--line); border-radius: 0; background: transparent; font-size: 12.5px; }
+.md-combo:first-of-type { border-top: none; }
 .md-combo b { font-size: 12.5px; }
 .md-combo small { color: var(--muted); }
 /* 对位压制：五路英雄对位 + 历史压制判定 */

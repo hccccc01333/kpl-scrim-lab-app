@@ -1321,6 +1321,41 @@ def import_official_replays_batch(value: dict):
             'imported': imported, 'failed': len(items) - imported, 'items': items}
 
 
+@app.get('/api/official/archive')
+def official_archive(replay_id: str = '', limit: int = 0):
+    """营地载荷的字段档案：训练赛组问「你们到底爬了什么」，答案在这里。
+
+    不带 `replay_id` 返回跨局索引；带 `replay_id` 返回那一条回放的完整字段表
+    与中文文案。档案是 `scripts/archive_camp_fields.py` 落盘的只读产物。
+    """
+    import camp_archive
+    store = camp_replay.STORE
+    if replay_id:
+        path = store / replay_id / 'fields.json'
+        payload = camp_replay_read_json(path)
+        if payload is None:
+            raw = camp_replay_read_json(store / replay_id / 'raw.json')
+            if raw is None:
+                raise HTTPException(404, '这条回放没有字段档案')
+            payload = camp_archive.build_for_replay(replay_id, store=store)
+        return payload
+    index = camp_replay_read_json(store / '_fields-index.json')
+    if index is None:
+        index = camp_archive.scan(store, limit=limit or None)
+    summary = camp_replay_read_json(DATA_DIR / 'camp_fields_summary.json') or {}
+    labels = camp_replay_read_json(DATA_DIR / 'camp_labels.json') or {}
+    return {'summary': summary, 'sources': index,
+            'frontendLabels': {'count': labels.get('count', 0),
+                               'labels': (labels.get('labels') or [])[:200]}}
+
+
+def camp_replay_read_json(path):
+    try:
+        return json.loads(Path(path).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+
+
 @app.get('/api/official/replays')
 def list_official_replays():
     return {'schema': 'camp-replay-v1', 'replays': camp_replay.list_replays()}

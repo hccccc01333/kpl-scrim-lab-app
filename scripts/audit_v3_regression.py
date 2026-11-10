@@ -63,7 +63,10 @@ def main() -> int:
                         const box = document.querySelector('#content');
                         const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
                         const visible = (el) => el.getClientRects().length > 0;
-                        const texts = box ? [...box.querySelectorAll('.empty')]
+                        /* 详情路由（#identity / #match 等）没带 ID 时渲染的是
+                           .offline-card「需要…ID」，那也是一种正常空态，
+                           不算页面挂掉。 */
+                        const texts = box ? [...box.querySelectorAll('.empty, .offline-card')]
                             .filter(visible).map((el) => clean(el.textContent)).filter(Boolean) : [];
                         const loading = texts.filter((text) => /^(正在|加载)/.test(text));
                         const empties = texts.filter((text) => !/^(正在|加载)/.test(text));
