@@ -1381,7 +1381,6 @@ class AnalysisRepository:
             own_camp = {'blue': 'left', 'red': 'right'}.get(match.get('ownCamp'), match.get('ownCamp'))
             if match.get('source') not in ('db', 'bundle') or own_camp not in ('left', 'right'):
                 continue
-            enemy_camp = 'right' if own_camp == 'left' else 'left'
             own_players, enemy_players = {}, {}
             for player in match['players']:
                 lane = player.get('position')

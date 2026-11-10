@@ -10,7 +10,6 @@
 """
 from __future__ import annotations
 
-import bisect
 import json
 import math
 import statistics
@@ -147,7 +146,6 @@ def _normalize_all(series, calibration):
     """把逐秒坐标整体映射到 0–1；无定标时原样返回。"""
     if not calibration or not calibration.get('calibrated'):
         return series
-    import map_calibration
     bounds = calibration['bounds']
     width = bounds['xMax'] - bounds['xMin']
     height = bounds['yMax'] - bounds['yMin']
@@ -339,12 +337,17 @@ def death_isolation(games):
                 if hero_camp == camp and obj_id == str(death.get('objID')):
                     victim = game['objToPlayer'].get(obj_id)
                     break
-            death_point = (death.get('x'), death.get('y'))
+            # 死亡点必须校验坐标：缺失时 math.dist 会抛 TypeError 让整页 500。
+            # 注意 (0,0) 对死亡点不按占位处理（玩家轨迹的 _point 才跳过原点）。
+            death_x, death_y = death.get('x'), death.get('y')
+            if not isinstance(death_x, (int, float)) or not isinstance(death_y, (int, float)):
+                continue
+            death_point = (float(death_x), float(death_y))
             if _CAL['active']:
                 import map_calibration
                 death_point = map_calibration.normalize(death_point, _CAL['data'])
-            if death_point is None:
-                continue
+                if death_point is None:
+                    continue
             mates = [pid for pid in by_camp.get(camp, []) if pid != victim]
             distances = []
             for pid in mates:
@@ -361,7 +364,9 @@ def death_isolation(games):
                 'camp': camp,
                 'hero': game['heroes'].get(victim) if victim else None,
                 'nearest': round(nearest, 1),
-                'nearCount': sum(1 for value in distances if value <= R_NEAR),
+                # 定标后距离是 0-1 比例，必须用缩放后的半径；用原始 R_NEAR
+                # 会让定标模式下近身人数恒为 0。
+                'nearCount': sum(1 for value in distances if value <= _near()),
                 'isolated': nearest > _near(),
                 'teammatesSeen': len(distances),
             })

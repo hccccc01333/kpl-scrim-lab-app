@@ -110,3 +110,11 @@ def test_death_isolation_uses_teammate_distance(tmp_path):
     assert row['nearCount'] == 1
     assert row['isolated'] is False
     assert row['nearest'] == 2.0
+
+def test_death_without_coordinates_is_skipped(tmp_path):
+    """死亡事件缺坐标时跳过；修复前 math.dist((None,None), point) 抛 TypeError。"""
+    positions = {'p1': [[10, 10]] * 60, 'p2': [[12, 10]] * 60, 'p3': [[90, 10]] * 60}
+    deaths = [{'objID': 'obj0', 'camp': '1', 'heroId': 1, 'timeSec': 30}]
+    write_game(tmp_path, '5', positions=positions, deaths=deaths)
+    result = sp.death_isolation(sp.load_games(tmp_path / 'replays', tmp_path / 'camp_details'))
+    assert result['deaths'] == 0
