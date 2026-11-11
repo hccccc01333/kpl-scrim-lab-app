@@ -64,7 +64,7 @@
 .btn-sm {
   min-height: 30px;
   padding: 0 9px;
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .btn-block {
@@ -108,7 +108,7 @@
   border-radius: 2px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .06em;
   white-space: nowrap;
 }
@@ -219,7 +219,7 @@
   padding: 12px 24px 16px;
   border-top: 1px solid var(--line);
   color: var(--quiet);
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.6;
 }
 
@@ -259,7 +259,7 @@
 .ledger-label {
   display: block;
   color: var(--quiet);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -288,7 +288,7 @@
 .ledger-note {
   margin-top: 7px;
   color: var(--quiet);
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.5;
 }
 
@@ -327,7 +327,7 @@
 .ink-kicker {
   color: var(--gold);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   font-weight: 500;
   letter-spacing: .18em;
   text-transform: uppercase;
@@ -336,7 +336,7 @@
 .ink-meta {
   color: var(--ink-muted);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
   letter-spacing: .05em;
 }
 
@@ -380,13 +380,13 @@
   margin-top: 2px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .match-opponent small {
   display: block;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .04em;
 }
 
@@ -467,7 +467,7 @@
 .portrait-sm {
   width: 24px;
   height: 24px;
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .hero-line {
@@ -553,7 +553,7 @@
   display: block;
   margin-top: 3px;
   color: var(--quiet);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .player-card-arrow {
@@ -582,7 +582,7 @@
 .player-metric small {
   display: block;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .05em;
 }
 
@@ -606,7 +606,7 @@
 .player-heroes small {
   margin-left: auto;
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 /* ── tables ──────────────────────────────────────────────────────── */
@@ -626,7 +626,7 @@
   border-bottom: 1px solid var(--line);
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   font-weight: 500;
   letter-spacing: .08em;
   text-align: left;

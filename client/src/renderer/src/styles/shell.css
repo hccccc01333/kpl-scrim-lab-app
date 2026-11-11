@@ -86,7 +86,7 @@
 
 .brand-copy small {
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
   font-weight: 500;
   letter-spacing: .2em;
   color: var(--quiet);
@@ -110,7 +110,7 @@
   background: var(--paper-2);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .07em;
   white-space: nowrap;
   -webkit-app-region: no-drag;
@@ -173,7 +173,7 @@
   border-radius: 3px;
   background: var(--paper);
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
   letter-spacing: .05em;
 }
 
@@ -246,7 +246,7 @@
   padding: 0 4px;
   border-radius: var(--r-sm);
   color: var(--muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 600;
   letter-spacing: .05em;
   line-height: 1;
@@ -309,7 +309,7 @@
   text-align: center;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
   letter-spacing: .08em;
 }
 
@@ -389,7 +389,7 @@
   margin-top: 13px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .04em;
 }
 
@@ -501,7 +501,7 @@
   border: 1px solid var(--line);
   border-radius: 3px;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cmdk-list {
@@ -514,7 +514,7 @@
   padding: 10px 10px 5px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
   letter-spacing: .18em;
   text-transform: uppercase;
 }
@@ -562,7 +562,7 @@
 .cmdk-item small {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .03em;
 }
 
@@ -570,7 +570,7 @@
   opacity: 0;
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cmdk-item.is-active .cmdk-enter {
@@ -592,7 +592,7 @@
   border-top: 1px solid var(--line);
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .04em;
 }
 
@@ -647,7 +647,7 @@
   display: block;
   margin-top: 4px;
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
   letter-spacing: .22em;
   color: var(--quiet);
 }
@@ -692,7 +692,7 @@
 
 .connect-point b {
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   font-weight: 500;
   color: var(--coral);
   letter-spacing: .05em;
@@ -716,7 +716,7 @@
   gap: 12px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
   letter-spacing: .04em;
 }
 
@@ -825,7 +825,7 @@
   background: transparent;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
   letter-spacing: .02em;
 }
 
@@ -881,6 +881,6 @@
   height: 44px;
   flex-direction: row;
   gap: 7px;
-  font-size: 9px;
+  font-size: 10px;
 }
 .rail-workbench svg { width: 15px; height: 15px; }

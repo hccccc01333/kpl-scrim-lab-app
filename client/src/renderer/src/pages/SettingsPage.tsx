@@ -61,7 +61,8 @@ export function SettingsPage() {
         meta={[
           `工作台 ${live?.version ? `v${live.version}` : '未连接'}`,
           settings.theme === 'light' ? '纸本' : '比赛房',
-          settings.density === 'comfortable' ? '舒适密度' : '紧凑密度'
+          settings.density === 'comfortable' ? '舒适密度' : '紧凑密度',
+          `界面 ${Math.round((settings.zoom ?? 1.15) * 100)}%`
         ].map((text) => <span key={text}>{text}</span>)}
         actions={<button type="button" className="btn" onClick={openWorkbench}>打开工作台 <Icon name="external" /></button>}
       />
@@ -108,6 +109,19 @@ export function SettingsPage() {
             <div className="segmented">
               <button type="button" className={settings.density === 'comfortable' ? 'is-active' : ''} onClick={() => void update({ density: 'comfortable' })}>舒适</button>
               <button type="button" className={settings.density === 'compact' ? 'is-active' : ''} onClick={() => void update({ density: 'compact' })}>紧凑</button>
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-copy"><b>界面大小</b><small>默认 115%。字太小或屏幕较远时调大；Ctrl + 加号/减号可随时调整，Ctrl + 0 回到 115%。</small></div>
+            <div className="segmented">
+              {[100, 110, 115, 125, 140].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={Math.round((settings.zoom ?? 1.15) * 100) === value ? 'is-active' : ''}
+                  onClick={() => void update({ zoom: value / 100 })}
+                >{value}%</button>
+              ))}
             </div>
           </div>
           <div className="settings-row">

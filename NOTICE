@@ -18,7 +18,10 @@ https://github.com/hccccc01333
    - Python 运行时依赖：见 requirements.txt / requirements-dev.txt，各自遵循其原协议（MIT / BSD / Apache-2.0 等）。
    - 前端依赖（桌面客户端）：见 client/package.json，各自遵循其原协议。
    - OCR 组件与浏览器自动化：Tesseract、Playwright 等，各自遵循其原协议。
-   - 字体：Manrope，许可文本见 v3/public/media/manrope-license.txt。
+   - 字体：Manrope（OFL），许可文本见 v3/public/media/manrope-license.txt 与
+     client/src/renderer/src/assets/fonts/manrope-license.txt；Noto Serif SC 子集（OFL，
+     来自 Noto CJK 项目，由 scripts/build_client_fonts.py 生成），许可文本见
+     client/src/renderer/src/assets/fonts/noto-serif-sc-OFL.txt。
 
 4. 数据
    用户导入或采集的对局、回放、截图与数据库归使用者所有，不在本仓库内，也不随代码协议授权。

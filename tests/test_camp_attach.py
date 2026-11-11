@@ -26,8 +26,14 @@ def sample_detail():
     def stats(kills, deaths, assists, money, hurt, taken, join, grade):
         # 真实 battledetail 的数值全是字符串，且含小数（hurtTransRate 0.5）。
         # 保留这些格式，防止映射层把小数当字符串塞进统计口径。
+        # 营地同时给「总伤害」和「对英雄伤害」：契约的 damage/taken 用后者，
+        # 与赛后截图的输出/承伤同口径（见 docs/metric_registry.md）。
+        total_hurt, hero_hurt = int(hurt), int(hurt) - 8000
+        total_taken, hero_taken = int(taken), int(taken) - 500
         return {'killCnt': kills, 'deadCnt': deaths, 'assistCnt': assists, 'money': money,
-                'totalHurtCnt': hurt, 'totalBehurtCnt': taken, 'joinGamePercent': join,
+                'totalHurtCnt': total_hurt, 'totalHeroHurtCnt': hero_hurt,
+                'totalBehurtCnt': total_taken, 'totalBeheroHurtCnt': hero_taken,
+                'joinGamePercent': join,
                 'gradeGame': grade, 'killSoldier': '13', 'ctrlTime': '22', 'healCnt': '100',
                 'buildingDamage': '0', 'monsterCoin': '270',
                 'hurtTransRate': '0.5', 'behurtPerDeath': '26792.5'}
@@ -114,6 +120,78 @@ class AttachCampDetailTests(unittest.TestCase):
         conflict = next(c for c in player['conflicts'] if c['field'] == 'kills')
         self.assertEqual(conflict['screenshot'], 999)
         self.assertEqual(conflict['camp'], 5)
+
+    def test_camp_damage_uses_hero_damage(self):
+        """契约的 damage/taken 是对英雄口径：营地 totalHurtCnt 不能顶替。"""
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(self.channel, '1793795458', sample_detail(),
+                                             OFFICIAL_PLAYERS, '测试')
+        sun = next(p for p in self.channel['draft']['players'] if p.get('hero') == '孙悟空')
+        # sample_detail：蓝方1 总伤害 30000 / 总承伤 20000；对英雄 -8000 / -500
+        self.assertEqual(sun['fields']['damage']['value'], 22000)
+        self.assertEqual(sun['fields']['taken']['value'], 19500)
+        self.assertEqual(sun['fields']['damage']['source'], 'camp')
+
+    def test_display_precision_is_not_a_conflict(self):
+        """截图只有显示精度（66.1k / 25.7k / 48% / 9k）时，与营地原值不算冲突。"""
+        channel = self.channel
+        detail = sample_detail()
+        stats = detail['data']['blueRoles'][0]['battleStats']
+        stats.update({'money': 9000, 'totalHeroHurtCnt': '66056',
+                      'totalBeheroHurtCnt': '25746', 'joinGamePercent': '0.481'})
+        group = {'players': [{'side': 'left', 'slot': 0,
+                              'nickname': {'value': '蓝方选手1'},
+                              'hero': {'value': '孙悟空'},
+                              'heroStatus': 'exact',
+                              'rating': {'value': 8.1},
+                              'fields': {'kills': {'value': 5, 'raw': '5'},
+                                         'damageDealt': {'value': 66100, 'raw': '66.1k'},
+                                         'damageTaken': {'value': 25700, 'raw': '25.7k'},
+                                         'participation': {'value': 48.0, 'raw': '48%'},
+                                         'gold': {'value': 9000, 'raw': '9k'}}}],
+                 'match': {}, 'pages': [], 'coverage': {}, 'warnings': []}
+        channel_store.attach_screenshot(channel, group, [str(i) for i in range(7)], '测试')
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(channel, '1793795458', detail,
+                                             OFFICIAL_PLAYERS, '测试')
+        self.assertEqual(channel['draft']['conflicts'], [])
+        sun = next(p for p in channel['draft']['players'] if p.get('hero') == '孙悟空')
+        self.assertEqual(sun['fields']['damage']['value'], 66056)
+        self.assertEqual(sun['fields']['participation']['value'], 48.1)
+
+    def test_table_percent_precision_is_not_a_conflict(self):
+        """表格里参团率抄成整数（48）时，营地面板 48.1 不算冲突。"""
+        channel = self.channel
+        detail = sample_detail()
+        detail['data']['blueRoles'][0]['battleStats']['joinGamePercent'] = '0.481'
+        channel_store.attach_table(channel, {'name': 'x.csv', 'size': 1, 'sha256': 'x'},
+                                   {'grain': 'match_player', 'quality': {}, 'warnings': [],
+                                    'rows': [{'keys': {'player': '蓝方选手1', 'hero': '孙悟空'},
+                                              'metrics': {'participation': {'valid': True, 'value': 48,
+                                                                            'raw': 48}}}]},
+                                   '测试')
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(channel, '1793795458', detail,
+                                             OFFICIAL_PLAYERS, '测试')
+        self.assertFalse(any(c['field'] == 'participation' for c in channel['draft']['conflicts']))
+
+    def test_exact_value_mismatch_still_conflicts(self):
+        """差一个档位以上是真不一致，仍然留痕，不静默覆盖。"""
+        channel = self.channel
+        group = {'players': [{'side': 'left', 'slot': 0,
+                              'nickname': {'value': '蓝方选手1'},
+                              'hero': {'value': '孙悟空'},
+                              'heroStatus': 'exact',
+                              'rating': {'value': 8.1},
+                              'fields': {'damageDealt': {'value': 120000, 'raw': '120.0k'}}}],
+                 'match': {}, 'pages': [], 'coverage': {}, 'warnings': []}
+        channel_store.attach_screenshot(channel, group, [str(i) for i in range(7)], '测试')
+        with mock.patch('hero_catalog._load', return_value={}):
+            channel_store.attach_camp_detail(channel, '1793795458', sample_detail(),
+                                             OFFICIAL_PLAYERS, '测试')
+        conflict = next(c for c in channel['draft']['conflicts'] if c['field'] == 'damage')
+        self.assertEqual(conflict['screenshot'], 120000)
+        self.assertEqual(conflict['camp'], 22000)
 
     def _reviewable_channel(self, detail=None):
         """凑齐唯一必采 official + 营地十人面板，使通道可审核。"""

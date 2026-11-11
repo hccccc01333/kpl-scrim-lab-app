@@ -62,7 +62,7 @@
 .latest-side small {
   color: var(--ink-muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .14em;
 }
 
@@ -77,7 +77,7 @@
 
 .latest-side span {
   color: var(--ink-muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: .06em;
 }
 
@@ -108,7 +108,7 @@
   border-radius: 2px;
   color: var(--gold);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .08em;
 }
 
@@ -137,7 +137,7 @@
   margin-right: 4px;
   color: var(--ink-muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .1em;
   white-space: nowrap;
 }
@@ -162,7 +162,7 @@
   max-width: 44px;
   overflow: hidden;
   color: var(--ink-muted);
-  font-size: 8px;
+  font-size: 9.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -238,7 +238,7 @@
 
 .hero-watch-body small {
   color: var(--ink-muted);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .06em;
 }
 
@@ -255,7 +255,7 @@
   flex-wrap: wrap;
   gap: 16px;
   color: var(--ink-muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .hero-watch-stats b {
@@ -288,7 +288,7 @@
 .overview-note-row b {
   color: var(--coral);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   font-weight: 500;
   letter-spacing: .05em;
 }
@@ -301,7 +301,7 @@
 
 .overview-note-row small {
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
   line-height: 1.5;
   text-align: right;
 }
@@ -312,7 +312,7 @@
   justify-content: space-between;
   gap: 16px;
   color: var(--quiet);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .overview-foot span {
@@ -396,7 +396,7 @@
   gap: 10px;
   padding: 8px 4px 0;
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -444,7 +444,7 @@
   gap: 10px;
   color: var(--ink-muted);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
   letter-spacing: .04em;
 }
 
@@ -474,7 +474,7 @@
 .match-hero-team small {
   color: var(--ink-muted);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .14em;
 }
 
@@ -489,7 +489,7 @@
 
 .match-hero-team span {
   color: var(--ink-muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .match-hero-middle {
@@ -520,7 +520,7 @@
   border-radius: 2px;
   color: var(--gold);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-style: normal;
   letter-spacing: .08em;
 }
@@ -538,7 +538,7 @@
   padding-top: 13px;
   border-top: 1px solid color-mix(in srgb, var(--ink-text) 14%, transparent);
   color: var(--ink-muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.6;
 }
 
@@ -573,7 +573,7 @@
 .match-kpi span {
   display: block;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -594,7 +594,7 @@
   display: block;
   margin-top: 5px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .match-section-grid {
@@ -620,7 +620,7 @@
 
 .phase-cell span {
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .06em;
 }
 
@@ -637,7 +637,7 @@
   display: block;
   margin-top: 4px;
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .bp-board {
@@ -671,7 +671,7 @@
 .bp-row-head span {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   letter-spacing: .06em;
 }
 
@@ -689,30 +689,18 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .bp-hero .portrait {
   width: 20px;
   height: 20px;
   border: 0;
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .bp-hero.is-ban {
   opacity: .6;
-}
-
-.match-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  border-left: 2px solid var(--gold);
-  background: color-mix(in srgb, var(--gold) 6%, var(--paper-2));
-  color: var(--muted);
-  font-size: 10.5px;
-  line-height: 1.65;
 }
 
 /* ── players ─────────────────────────────────────────────────────── */
@@ -734,7 +722,7 @@
   gap: 8px 18px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: .04em;
 }
 
@@ -803,7 +791,7 @@
 .player-identity-stat small {
   display: block;
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
   letter-spacing: .05em;
 }
 
@@ -841,7 +829,7 @@
 .player-history-row > span:first-child {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .player-history-row b {
@@ -851,7 +839,7 @@
 
 .player-history-row small {
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .player-history-row strong {
@@ -865,7 +853,7 @@
 .player-history-row strong i {
   color: var(--quiet);
   font-family: var(--sans);
-  font-size: 8px;
+  font-size: 9.5px;
   font-style: normal;
 }
 
@@ -927,7 +915,7 @@
   display: block;
   margin-top: 3px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .team-record {
@@ -946,7 +934,7 @@
 .team-record small {
   color: var(--quiet);
   font-family: var(--sans);
-  font-size: 9px;
+  font-size: 10px;
   letter-spacing: 0;
 }
 
@@ -963,7 +951,7 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .team-heroes {
@@ -1050,7 +1038,7 @@
   display: block;
   margin-top: 3px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .hero-card-stats {
@@ -1061,7 +1049,7 @@
   border-top: 1px solid var(--line);
   padding-top: 9px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .hero-card-stats strong {
@@ -1074,7 +1062,7 @@
 .hero-card-stats em {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-style: normal;
 }
 
@@ -1101,7 +1089,7 @@
 .week-bar span {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .week-bar div {
@@ -1120,7 +1108,7 @@
 .week-bar b {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   text-align: right;
 }
@@ -1149,7 +1137,7 @@
   display: block;
   margin-top: 3px;
   color: var(--quiet);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .goal-row > span {
@@ -1200,7 +1188,7 @@
   display: block;
   margin-top: 4px;
   color: var(--quiet);
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.6;
 }
 
@@ -1219,7 +1207,7 @@
   border-radius: 3px;
   background: transparent;
   color: var(--muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 600;
 }
 
@@ -1302,7 +1290,7 @@
   margin-top: 3px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
   letter-spacing: .16em;
 }
 

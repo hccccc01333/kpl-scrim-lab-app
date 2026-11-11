@@ -253,7 +253,7 @@ def stage_patch(zip_path: Path, target: Path | None = None,
 
     pending = {
         'version': manifest['version'],
-        'stagedDir': str(staging.relative_to(target)).replace('\\', '/'),
+        'stagedDir': _display_path(target, staging),
         'files': files,
         'remove': patch.get('remove', []),
         'notes': manifest.get('notes', []),
@@ -270,6 +270,19 @@ def item_digest(files: list[dict], path: str) -> str:
         if item['path'] == path:
             return str(item['sha256']).lower()
     raise KeyError(path)
+
+
+def _display_path(target: Path, path: Path) -> str:
+    """尽量显示相对应用根目录的路径；``KPL_DATA_DIR`` 指到应用外时退回绝对路径。
+
+    更新器的数据目录可以被环境变量指到应用目录之外（多实例 / 演示实例）。
+    这种时候 ``path.relative_to(target)`` 会抛 ``ValueError``；旧实现会让已替换
+    完文件的更新在写结果时崩掉、服务不再重启，所以这里必须容错。
+    """
+    try:
+        return str(Path(path).relative_to(Path(target))).replace('\\', '/')
+    except ValueError:
+        return str(Path(path))
 
 
 def _backup_files(target: Path, paths, current_version: str) -> Path:
@@ -367,7 +380,7 @@ def apply_pending(target: Path | None = None) -> dict:
             message = f'更新失败且回滚失败：{exc}；{rollback_error}'
         clear_pending(target)
         _write_result(target, False, message,
-                      version=current, backupDir=str(backup.relative_to(target)))
+                      version=current, backupDir=_display_path(target, backup))
         raise ValueError(message) from exc
 
     clear_pending(target)
@@ -376,7 +389,7 @@ def apply_pending(target: Path | None = None) -> dict:
     result = _write_result(
         target, True, f"已更新到 {pending['version']}",
         version=pending['version'], previousVersion=current,
-        backupDir=str(backup.relative_to(target)),
+        backupDir=_display_path(target, backup),
         files=len(pending['files']), removed=len(pending['remove']))
     return {'ok': True, 'skipped': False, 'version': pending['version'],
             'previousVersion': current, 'backupDir': str(backup),

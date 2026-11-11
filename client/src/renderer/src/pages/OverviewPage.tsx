@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom'
 import { useConnection } from '../lib/app-context'
 import { useOverview } from '../lib/hooks'
+import { useBriefing, type DecisionBriefingItem } from '../lib/decision'
 import { dateRange, duration as fmtDuration, number, percent, signed, scoreText, resultLabel, resultTone, shortDate } from '../lib/format'
+import { matchPath } from '../lib/routes'
 import type { Overview, ProcessMatch } from '../lib/types'
 import { useAppMeta } from '../lib/meta-context'
 import { EconomyChart } from '../components/EconomyChart'
@@ -83,6 +85,8 @@ export function OverviewPage() {
         ].map((text) => <span key={text}>{text}</span>)}
         actions={<><button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" />打印</button><Link className="btn" to="/matches">全部比赛 <Icon name="arrow" /></Link></>}
       />
+
+      <OverviewBriefing baseUrl={baseUrl} />
 
       <div className="overview-grid">
         <div className="overview-lead">
@@ -196,6 +200,63 @@ export function OverviewPage() {
       <div className="overview-foot">
         <span>SOURCE · 营地终局面板 / 回放时间轴 / 表格导入</span>
         <span>数据只留在本机 · {shortDate(latest?.date) || '—'}</span>
+      </div>
+    </div>
+  )
+}
+
+function OverviewBriefing({ baseUrl }: { baseUrl: string }) {
+  const query = useBriefing(baseUrl, { limit: 5 })
+  const items = (query.data?.items || []).slice(0, 5)
+  return (
+    <section className="card decision-overview-card">
+      <div className="card-head">
+        <div>
+          <h2 className="card-title">今天先看这几件事</h2>
+          <div className="card-sub">从完整回放里自动挑出值得复盘的问题；每条都能回到具体对局证据。</div>
+        </div>
+        <Link className="card-link" to="/decision">进入决策台 <Icon name="arrow" /></Link>
+      </div>
+      <div className="card-body">
+        {query.isLoading ? (
+          <div className="decision-loading" aria-busy="true">
+            <i /><i /><i />
+            <span>正在挑问题…</span>
+          </div>
+        ) : items.length ? (
+          <div className="decision-overview-list">
+            {items.map((item) => <BriefingBite key={item.id} item={item} />)}
+          </div>
+        ) : (
+          <div className="decision-overview-empty">
+            <b>暂时没有足够证据的问题</b>
+            <span>{query.data?.reason || (query.isError ? '问题清单暂时读不到，概览其余内容不受影响。' : '当前数据还不足以形成可行动的问题卡。')}</span>
+            {query.isError ? <button type="button" className="btn btn-sm" onClick={() => void query.refetch()}>重新读取</button> : null}
+            <Link className="btn btn-sm" to="/decision">进入决策台</Link>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function BriefingBite({ item }: { item: DecisionBriefingItem }) {
+  const severity = ['high', 'medium', 'low'].includes(String(item.severity)) ? String(item.severity) : 'low'
+  const n = typeof item.n === 'number' && Number.isFinite(item.n) ? item.n : null
+  const target = item.link && item.link.startsWith('/decision') ? item.link : '/decision'
+  return (
+    <div className={`decision-overview-item tone-${severity}`}>
+      <div className="decision-overview-item-head">
+        <b>{item.title}</b>
+        <small>{n === null ? 'n=—' : `n=${n}`}{item.caveat ? ' · 待复核' : ''}</small>
+      </div>
+      <div className="decision-overview-item-foot">
+        {(item.evidence || []).slice(0, 2).map((evidence, index) => evidence.game ? (
+          <Link className="decision-chip" key={`${evidence.game}-${index}`} to={matchPath(evidence.game)}>
+            {evidence.label || evidence.game}
+          </Link>
+        ) : null)}
+        <Link className="decision-overview-more" to={target}>进入决策台 →</Link>
       </div>
     </div>
   )

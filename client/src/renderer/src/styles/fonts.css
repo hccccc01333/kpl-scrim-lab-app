@@ -1,3 +1,7 @@
+/* 中文衬线：Noto Serif SC 子集（OFL，字体许可见同目录 noto-serif-sc-OFL.txt）。
+   子集由 scripts/build_client_fonts.py 生成，覆盖 GB2312 一级汉字 + 全站文案 +
+   ASCII/标点/箭头；400/700 两个真实字重，避免浏览器对标题做合成粗体。
+   修改了客户端中文文案后，重跑该脚本即可补齐新字形。 */
 @font-face {
   font-family: 'Manrope';
   src: url('../assets/fonts/manrope.woff2') format('woff2');
@@ -8,8 +12,16 @@
 
 @font-face {
   font-family: 'Noto Serif SC';
-  src: url('../assets/fonts/noto-serif-sc.woff2') format('woff2');
+  src: url('../assets/fonts/noto-serif-sc-regular.woff2') format('woff2');
   font-style: normal;
   font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Serif SC';
+  src: url('../assets/fonts/noto-serif-sc-bold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
   font-display: swap;
 }

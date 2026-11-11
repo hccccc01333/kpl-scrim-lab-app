@@ -47,6 +47,31 @@ python scripts/make_release.py --python-archive D:\cache\python-3.12.10-embed-am
    （`Rainfun42/kpl-scrim-lab-app`），并把 `update.json` 提交到仓库根目录，
    客户端用 `raw/main/update.json` 做稳定清单地址。
 
+### 1.6.3 的增量包基线（重要）
+
+当前仓库里 `v1.5.29`～`v1.5.32` 这几个 tag 的树和 `main` 历史对不上
+（`git tag --merged HEAD` 里没有它们，`git describe` 停在 `v1.5.15`），所以
+`make_release.py` 自动选起点会退到 `v1.5.15`。1.6.3 的增量包因此是拿
+`dist/KPL-Scrim-Lab-1.5.32-full.zip` **实际发布包**逐文件比对生成的（39 个文件，
+`minVersion=1.5.32`）；完整包用 1.6.2 发布包的 runtime 覆盖当前程序文件生成，
+并用内置 Python 做过 `import server` 冒烟与「1.6.2 安装包 → 一键更新到 1.6.3」端到端验证。
+
+以后发版前先把 tag 打在 `main` 的发布提交上（例如 `git tag v1.6.3 && git push gitee v1.6.3`），
+`make_release.py` 的自动基线就会正常；否则继续按「包对包」的方式生成增量包。
+
+### 启用匿名统计（可选）
+
+按 `stats/README.md` 部署好统计服务后，把地址写进 `update.json` 再上传即可，
+不用重打客户端包（客户端最迟 6 小时清单缓存后开始上报）：
+
+```bash
+python -c "import json,pathlib; p=pathlib.Path('dist/update.json'); d=json.loads(p.read_text(encoding='utf-8')); d['stats']={'url':'https://<你的域名>/api/ping','periodHours':20}; p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')"
+```
+
+也可以在发版时给 `make_release.py` 加 `--stats-url https://…/api/ping`，让增量包内嵌清单
+和外层清单一起带上。查看数据用 `python scripts/usage_report.py --url https://… --token …`
+或统计服务的网页仪表盘；字段与隐私说明见 `docs/usage_stats.md`。
+
 GitHub Release 的 `releases/latest/download/update.json` 是海外稳定地址；
 清单里的相对 `patch-*.zip` 会自然解析到同一个 Release。
 国内镜像不要在清单里用相对路径：清单在 Gitee raw、包在 Releases 时会解析到错误目录。
@@ -82,15 +107,29 @@ python scripts/make_installer.py --rebuild  # 依赖或内置 Python 变了才�
 安装包与增量更新并存：日常代码变更仍然发 `patch-*.zip`（几 MB），
 只有换内置 Python、增删核心依赖或需要改快捷方式时才发新安装包。
 
-## 客户端行为
+## 客户端行为（1.6.3 起）
 
-- 启动后延迟检查，结果缓存 6 小时；网络失败静默，不阻塞工作台。
-- 发现新版本时右下角显示版本、更新说明和“立即更新 / 选择本地更新包 / 稍后”。
-- 立即更新：服务端下载增量包 → 校验 SHA-256 → 暂存 → 退出 → 独立更新进程替换文件 →
-  重启 → 轮询 `/api/health`。启动失败自动回滚到上一版本并重启。
-- 本地更新包：离线时把 `patch-*.zip` 发给教练，在提示里选择文件即可。
+- 打开工作台后自动检查：页面加载完约 1.5 秒请求 `/api/update/check`（前端 30 分钟节流，
+  服务端清单缓存 6 小时）；离线静默，不阻塞工作台。
+- 发现新版本时右下角弹出卡片：当前版本 / 新版本 / 增量包大小 / 更新摘要，按钮
+  「立即更新 / 选择本地更新包 / 稍后」。
+- 立即更新：服务端下载增量包 → 校验 SHA-256 → 暂存 → 服务退出 → 独立更新进程替换文件 →
+  重启 → 前端轮询 `/api/health`，以新版本回来后自动刷新页面；启动失败自动回滚到上一版本。
+- 选择本地更新包：完全离线时把 `patch-<版本>.zip` 发给教练，在卡片里选文件上传，
+  同样走校验 → 应用 → 重启。
+- 稍后：本次会话内不再打扰（同一标签刷新也不弹），下次打开工作台再提示。
+- 版本过旧（低于清单 `minVersion`）不提供增量更新，卡片引导下载完整包 / 安装包。
+- 页脚「检查更新」随时可手动检查；已是最新、检查失败都会在底部给一行提示。
+- 源码目录（根目录有 `.git`）不弹自动更新，`/api/update/stage|apply` 也会拒绝：
+  请运行 `更新代码.bat`（= `git pull --ff-only` + 装依赖）。
 - 旧代码备份在 `data/backups/code-<旧版本>-<时间>/`，默认保留最近 5 份。
 - 更新日志：`logs/update.log`、`logs/update-server.log`、`data/update/last_result.json`。
+
+匿名使用统计（可选，作者侧看到安装数与活跃数）见 `docs/usage_stats.md`：
+只上报随机安装 UUID、版本、系统类型，不含对局、战队、账号或路径信息，
+可用环境变量 `KPL_TELEMETRY=0` 或 `data/usage/optout` 文件关闭。首次打开工作台会弹
+一次「匿名使用统计」说明（会上报 / 不会上报、本机匿名 ID、如何关闭），页脚「匿名统计」
+随时可以查看状态或关闭；第一条心跳延迟到启动约 75 秒，先说明再上报。
 
 ## 配置
 
@@ -125,4 +164,5 @@ git pull --ff-only
 python -m pip install -r requirements.txt
 ```
 
-增量包只面向免安装包，文件布局和依赖安装方式不同。
+增量包只面向免安装包，文件布局和依赖安装方式不同。源码目录里工作台不会自动提示更新
+（`/api/update/check` 会返回 `sourceMode: true`），更新接口也会拒绝覆盖。

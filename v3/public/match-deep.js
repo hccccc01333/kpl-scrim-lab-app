@@ -1270,14 +1270,26 @@ export function createMatchDeep(h) {
     paintHeat(Number(slider ? slider.value : heatState.duration));
   }
 
-  /* ── 战斗：团战地图 + 团战贡献 + 掉点损失 ───────────────────────── */
+  /* ── 战斗拆成两块：团战（点地图看本波）与掉点（筛选/点选看单次） ──────
+     原来团战和掉点挤在同一块板子里：地图混点、列表混队、结论也混。
+     现在各自一块：
+       团战 = 团战地图 + 本波伤害/承伤/控制 + 全队团战贡献 + 团战分析；
+       掉点 = 掉点地图 + 掉点列表 + 选中掉点详情 + 掉点分析。
+     两块共用官方回放的 battles/deaths 与逐秒位置，口径一致、互不遮挡。 */
+  const PHASE_LABELS = ['对线期', '发育期', '后期'];
   function battle(positions, players, ownCamp, duration, series, deaths, fights) {
     const deathList = (deaths || []).filter((d) => num(d.t));
     const fightList = (fights || []).filter((f) => num(f.t));
-    if (!deathList.length && !fightList.length) return '';
+    battleState = null;
+    if (!deathList.length && !fightList.length) return null;
     const foeCamp = ownCamp === 'blue' ? 'red' : 'blue';
     const step = (positions && positions.step) || 2;
     const srcs = (positions && positions.players) || [];
+    const phases = phaseWindows(duration);
+    const phaseIndex = (t) => {
+      const index = phases.findIndex((p) => t >= p.start && t < p.end);
+      return index < 0 ? phases.length - 1 : index;
+    };
 
     const slotOf = (camp, hero) => {
       const p = players.find((x) => x.camp === camp && x.hero === hero);
@@ -1326,7 +1338,7 @@ export function createMatchDeep(h) {
 
     /* 反事实：用 [阵亡-120s, 阵亡-10s] 的经济差做 Theil–Sen 中位斜率，外推到复活时刻；
        损失 = 预期 − 实际。正数＝本队因这次掉点亏。中位斜率比最小二乘抗单点波动，
-       再夹在 ±60 金/秒以内，避免 30 秒采样里的一次大波动把外推拉飞。 */
+       再夹在 ±30 金/秒以内，避免 30 秒采样里的一次大波动把外推拉飞。 */
     const project = (t0, t1) => {
       const base = (series || []).filter(([t]) => t >= t0 - 120 && t <= t0 - 10);
       const actual = interp(t1);
@@ -1350,71 +1362,185 @@ export function createMatchDeep(h) {
     const SIZE = 320, PAD = 20;
     const bx = (x) => PAD + (x + 57) / 114 * (SIZE - PAD * 2);
     const by = (y) => SIZE - PAD - ((y + 57) / 114) * (SIZE - PAD * 2);
+    const grid = [1, 2, 3].map((k) => {
+      const at = PAD + (k / 4) * (SIZE - PAD * 2);
+      return `<line class="md-battle-grid" x1="${at.toFixed(1)}" y1="${PAD}" x2="${at.toFixed(1)}" y2="${SIZE - PAD}"/>`
+        + `<line class="md-battle-grid" x1="${PAD}" y1="${at.toFixed(1)}" x2="${SIZE - PAD}" y2="${at.toFixed(1)}"/>`;
+    }).join('');
+    const mapBase = `<line class="md-battle-river" x1="${PAD}" y1="${PAD}" x2="${SIZE - PAD}" y2="${SIZE - PAD}"/>
+      <g class="md-battle-bases">
+        <circle class="base blue" cx="${bx(-49).toFixed(1)}" cy="${by(-49).toFixed(1)}" r="3.4"/>
+        <circle class="base red" cx="${bx(49).toFixed(1)}" cy="${by(49).toFixed(1)}" r="3.4"/>
+        <text class="base-label" x="${bx(-49).toFixed(1)}" y="${(by(-49) + 14).toFixed(1)}" text-anchor="middle">蓝</text>
+        <text class="base-label" x="${bx(49).toFixed(1)}" y="${(by(49) - 8).toFixed(1)}" text-anchor="middle">红</text>
+      </g>`;
 
-    const marks = fightList.map((f, fi) => {
-      /* 团战中心取开团后 0/4/8 秒的均值：单个瞬间的站位噪声太大 */
+    /* 点位防叠：同一片区域常有多波团战 / 多次掉点，按原坐标直接画圆会叠在一起，
+       既看不清也点不准。这里做一次轻量排斥（圆点互推 + 向真实位置回弹），
+       把重叠点错开；偏移超过 3px 的用一条细引线连回真实位置，位置仍然诚实。 */
+    const spreadMarkers = (items) => {
+      const nodes = items.filter((item) => item.center).map((item) => {
+        const ax = bx(item.center[0]);
+        const ay = by(item.center[1]);
+        return { item, ax, ay, x: ax, y: ay, r: item.radius || 6 };
+      });
+      if (nodes.length < 2) {
+        return nodes.map((node) => ({ ...node, moved: false }));
+      }
+      const inner = 12;
+      for (let step = 0; step < 240; step++) {
+        for (let i = 0; i < nodes.length; i++) {
+          const a = nodes[i];
+          for (let j = i + 1; j < nodes.length; j++) {
+            const b = nodes[j];
+            const need = a.r + b.r + 3.5;
+            let dx = b.x - a.x;
+            let dy = b.y - a.y;
+            let dist = Math.hypot(dx, dy);
+            if (dist >= need) continue;
+            if (dist < 0.001) {
+              const angle = ((i * 7 + j * 13) % 24) / 24 * Math.PI * 2;
+              dx = Math.cos(angle) * 0.01;
+              dy = Math.sin(angle) * 0.01;
+              dist = 0.01;
+            }
+            const push = (need - dist) / 2;
+            const ux = dx / dist;
+            const uy = dy / dist;
+            a.x -= ux * push;
+            a.y -= uy * push;
+            b.x += ux * push;
+            b.y += uy * push;
+          }
+        }
+        for (const node of nodes) {
+          node.x += (node.ax - node.x) * 0.015;
+          node.y += (node.ay - node.y) * 0.015;
+          node.x = clamp(node.x, inner, SIZE - inner);
+          node.y = clamp(node.y, inner, SIZE - inner);
+        }
+      }
+      return nodes.map((node) => ({
+        ...node,
+        moved: Math.hypot(node.x - node.ax, node.y - node.ay) > 3,
+        x: Number(node.x.toFixed(1)),
+        y: Number(node.y.toFixed(1)),
+      }));
+    };
+
+    /* ── 团战 ───────────────────────────────────────────────────────── */
+    const fightCenter = (f) => {
       const pts = (f.details || []).flatMap((d) => [0, 4, 8]
         .map((offset) => pointAt(d.camp, d.hero, f.t + offset))
         .filter(Boolean));
-      if (!pts.length) return '';
-      const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-      const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-      const total = (f.camp1 || 0) + (f.camp2 || 0);
-      const mine = f[ownCamp] || 0;
-      const theirs = f[foeCamp] || 0;
-      const side = mine > theirs ? 'own' : theirs > mine ? 'foe' : 'even';
-      return `<g class="md-fight ${side}" data-fight="${fi}">
-        <circle cx="${bx(cx).toFixed(1)}" cy="${by(cy).toFixed(1)}" r="${(5 + Math.min(9, total * 0.9)).toFixed(1)}"/>
-        <title>${esc(`${time(f.t)} 团战 · ${f.camp1 || 0} v ${f.camp2 || 0} · 击杀 ${mine} : ${theirs}`)}</title></g>`;
-    }).join('');
-    const rows = [];
-    for (const d of deathList) {
-      if (!num(d.x) || !num(d.y)) continue;
-      const clipped = Math.min(reviveAt(d.camp, d.hero, d.t) || d.t + 20, duration || Infinity);
-      const t1 = Math.max(clipped, d.t + 1);
-      /* 窗口太短（临近终局 / 复活时间没测到）就不出反事实，免得拿一两个点外推 */
-      const info = t1 - d.t >= 8 ? project(d.t, t1) : { raw: null, loss: null, confident: false };
-      rows.push({ d, t1, info });
+      if (!pts.length) return null;
+      return [pts.reduce((s, p) => s + p[0], 0) / pts.length,
+        pts.reduce((s, p) => s + p[1], 0) / pts.length];
+    };
+    const fightsInfo = fightList.map((f, index) => {
+      const details = (f.details || []).filter((d) => d.hero);
+      const ownParts = details.filter((d) => d.camp === ownCamp);
+      const foeParts = details.filter((d) => d.camp === foeCamp);
+      const ownHurt = ownParts.reduce((s, d) => s + (num(d.hurt) ? d.hurt : 0), 0);
+      const foeHurt = foeParts.reduce((s, d) => s + (num(d.hurt) ? d.hurt : 0), 0);
+      const ownKills = num(f[ownCamp]) ? f[ownCamp] : 0;
+      const foeKills = num(f[foeCamp]) ? f[foeCamp] : 0;
+      const result = ownKills > foeKills ? 'win' : ownKills < foeKills ? 'loss' : 'even';
+      const tEnd = num(f.end) ? f.end : f.t + 20;
+      const before = interp(Math.max(0, f.t - 30));
+      const after = interp(Math.min(duration || (tEnd + 30), tEnd + 30));
+      const swing = num(before) && num(after) ? after - before : null;
+      return {
+        index, f, t: f.t, end: tEnd, ownParts, foeParts, details,
+        ownHurt, foeHurt, ownKills, foeKills, result,
+        first: f.first === ownCamp ? 'own' : f.first ? 'foe' : '',
+        total: details.length, center: fightCenter(f), swing,
+        phase: phaseIndex(f.t),
+      };
+    });
+    const fightLayout = spreadMarkers(fightsInfo.map((item) => ({
+      center: item.center,
+      radius: 3.5 + Math.min(4, (item.total || 0) * 0.4),
+      ref: item,
+    })));
+    for (const node of fightLayout) {
+      node.item.ref.layout = { x: node.x, y: node.y, r: node.r, moved: node.moved };
     }
-    rows.sort((a, b) => (num(b.info.loss) ? b.info.loss : -1e9) - (num(a.info.loss) ? a.info.loss : -1e9));
-    /* 同队两人同时掉点，队级汇总会重复计入；这里只做标记，不改数 */
-    for (const row of rows) {
-      row.shared = rows.some((other) => other !== row && other.d.camp === row.d.camp
-        && Math.min(row.t1, other.t1) - Math.max(row.d.t, other.d.t) > 5);
-    }
-    const dotsHtml = rows.map((row, i) => {
-      const win = row.d.camp === ownCamp ? 'own' : 'foe';
-      return `<g class="md-death ${win}" data-death="${i}">
-        <circle class="dot" cx="${bx(row.d.x).toFixed(1)}" cy="${by(row.d.y).toFixed(1)}" r="3.2"/>
-        <circle class="hit" cx="${bx(row.d.x).toFixed(1)}" cy="${by(row.d.y).toFixed(1)}" r="9"/>
-      </g>`;
-    }).join('');
-    battleState = {
-      rows,
-      ownCamp,
-      fights: fightList.map((f) => ({ heroes: (f.details || []).map((d) => d.hero).filter(Boolean), t: f.t })),
-      players: players.map((p) => ({ camp: p.camp, hero: p.hero || '', label: p.label || p.hero || '' })),
+    const fightCount = fightsInfo.length;
+    const fightWins = fightsInfo.filter((x) => x.result === 'win').length;
+    const fightLosses = fightsInfo.filter((x) => x.result === 'loss').length;
+    const fightDraws = fightCount - fightWins - fightLosses;
+    const firstFights = fightsInfo.filter((x) => x.first === 'own');
+    const firstWins = firstFights.filter((x) => x.result === 'win').length;
+    const foeFirst = fightsInfo.filter((x) => x.first === 'foe');
+    const foeFirstWins = foeFirst.filter((x) => x.result === 'win').length;
+    const swingFights = fightsInfo.filter((x) => num(x.swing));
+    const bestFight = swingFights.slice().sort((a, b) => Math.abs(b.swing) - Math.abs(a.swing))[0] || null;
+    const keyFights = swingFights.slice().sort((a, b) => Math.abs(b.swing) - Math.abs(a.swing)).slice(0, 3);
+    const avgTotal = fightCount ? fightsInfo.reduce((s, x) => s + x.total, 0) / fightCount : null;
+    const avgEnd = fightCount ? fightsInfo.reduce((s, x) => s + Math.max(1, x.end - x.t), 0) / fightCount : null;
+    const fiveVfive = fightsInfo.filter((x) => x.ownParts.length === 5 && x.foeParts.length === 5);
+    const fiveWins = fiveVfive.filter((x) => x.result === 'win').length;
+    const sizeBuckets = [
+      { key: 'small', label: '小团（≤4 人）', list: fightsInfo.filter((x) => x.total <= 4) },
+      { key: 'mid', label: '中团（5–7 人）', list: fightsInfo.filter((x) => x.total >= 5 && x.total <= 7) },
+      { key: 'big', label: '大团（≥8 人）', list: fightsInfo.filter((x) => x.total >= 8) },
+    ].map((b) => ({ ...b, n: b.list.length, wins: b.list.filter((x) => x.result === 'win').length }));
+    const phaseFights = PHASE_LABELS.map((label, i) => ({
+      label, list: fightsInfo.filter((x) => x.phase === i),
+    })).map((b) => ({ ...b, n: b.list.length, wins: b.list.filter((x) => x.result === 'win').length }));
+
+    const resultTone = (r) => r === 'win' ? 'own' : r === 'loss' ? 'foe' : 'even';
+    const resultText = (r) => r === 'win' ? '我方赢' : r === 'loss' ? '我方负' : '打平';
+    const fightCard = (item) => {
+      const teamBlock = (camp) => {
+        const isOwn = camp === ownCamp;
+        const list = (item.details || []).filter((d) => d.camp === camp)
+          .sort((a, b) => (b.hurt || 0) - (a.hurt || 0));
+        const teamSum = list.reduce((s, d) => s + (num(d.hurt) ? d.hurt : 0), 0);
+        const rows = list.map((d) => {
+          const share = teamSum ? (num(d.hurt) ? d.hurt : 0) / teamSum * 100 : null;
+          return `<div class="md-fd-row ${isOwn ? 'own' : 'foe'}">
+            <span class="md-fd-hero">${portrait(d.hero, 'md-fd-face')}${esc(d.hero)}</span>
+            <span class="md-fd-num">${fmt(d.hurt)}</span>
+            <span class="md-fd-num">${fmt(d.taken)}</span>
+            <span class="md-fd-num">${fmt(num(d.hardCtrl) ? d.hardCtrl / 1000 : null, 1)}</span>
+            <span class="md-fd-share"><i style="width:${share === null ? 0 : share.toFixed(0)}%"></i><small>${share === null ? '—' : pct(share)}</small></span>
+          </div>`;
+        }).join('');
+        return `<div class="md-fd-team ${isOwn ? 'own' : 'foe'}">
+          <div class="md-fd-team-head"><b>${isOwn ? '我方' : '对手'}</b><span>${list.length} 人 · 总伤害 ${fmt(teamSum)}</span></div>
+          <div class="md-fd-row head"><span>英雄</span><span>伤害</span><span>承伤</span><span>控制/秒</span><span>占比</span></div>
+          ${rows || '<p class="md-fd-empty">这波没有参战明细</p>'}
+        </div>`;
+      };
+      return `<div class="md-fd">
+        <div class="md-fd-head">
+          <b>${time(item.t)} · 第 ${item.index + 1} 波</b>
+          <span class="md-fd-tag ${resultTone(item.result)}">${resultText(item.result)}</span>
+          <span class="md-fd-tag">${item.ownParts.length}v${item.foeParts.length}</span>
+          <span class="md-fd-tag ${item.first === 'own' ? 'own' : item.first === 'foe' ? 'foe' : ''}">${item.first === 'own' ? '我方先手' : item.first === 'foe' ? '对方先手' : '先手未记录'}</span>
+          <span class="md-fd-kills">击杀 <i>${item.ownKills}</i> : ${item.foeKills}</span>
+        </div>
+        <div class="md-fd-swing">经济差 <b class="${num(item.swing) ? (item.swing >= 0 ? 'up' : 'down') : ''}">${num(item.swing) ? diff(item.swing) : '—'}</b><small>开团前 30 秒 → 结束后 30 秒（本队视角）</small></div>
+        <div class="md-fd-teams">${teamBlock(ownCamp)}${teamBlock(foeCamp)}</div>
+        <p class="md-fd-note">伤害 / 承伤 / 控制为回放事件内数值；占比＝该队本波伤害占比。</p>
+      </div>`;
     };
 
-    const fightRows = fightList.map((f) => {
-      const details = f.details || [];
-      const byCamp = { blue: details.filter((x) => x.camp === 'blue'), red: details.filter((x) => x.camp === 'red') };
-      const sum = { blue: 0, red: 0 };
-      for (const camp of ['blue', 'red']) sum[camp] = byCamp[camp].reduce((s, x) => s + (x.hurt || 0), 0);
-      return { f, byCamp, sum };
-    });
-    const tableFor = (camp) => {
+    const fightTable = (camp) => {
       const team = LANES.map((lane) => players.find((p) => p.camp === camp && laneOf(p) === lane)).filter(Boolean);
-      const rows = team.map((p) => {
+      const body = team.map((p) => {
         let joined = 0, hurt = 0, taken = 0, ctrl = 0, shareSum = 0, shareN = 0;
-        for (const row of fightRows) {
-          const hit = row.byCamp[camp].find((x) => x.hero === p.hero);
+        for (const item of fightsInfo) {
+          const hit = (item.details || []).find((x) => x.camp === camp && x.hero === p.hero);
           if (!hit) continue;
           joined += 1;
-          hurt += hit.hurt || 0;
-          taken += hit.taken || 0;
-          ctrl += (hit.hardCtrl || 0) / 1000;
-          if (row.sum[camp]) { shareSum += (hit.hurt || 0) / row.sum[camp] * 100; shareN += 1; }
+          hurt += num(hit.hurt) ? hit.hurt : 0;
+          taken += num(hit.taken) ? hit.taken : 0;
+          ctrl += num(hit.hardCtrl) ? hit.hardCtrl / 1000 : 0;
+          const teamSum = camp === ownCamp ? item.ownHurt : item.foeHurt;
+          if (teamSum) { shareSum += (num(hit.hurt) ? hit.hurt : 0) / teamSum * 100; shareN += 1; }
         }
         const share = shareN ? shareSum / shareN : null;
         return `<div class="md-ft-row" data-player-row="${esc(p.hero || '')}">
@@ -1422,166 +1548,555 @@ export function createMatchDeep(h) {
           <span>${fmt(joined)}</span>
           <span>${fmt(hurt)}</span>
           <span>${fmt(taken)}</span>
-          <span>${fmt(ctrl)}</span>
+          <span>${fmt(ctrl, 1)}</span>
           <span class="md-ft-cell"${num(share) ? ` style="background:rgba(216,178,106,${Math.min(0.34, share / 45 * 0.34).toFixed(3)})"` : ''}>${num(share) ? pct(share) : '—'}</span>
         </div>`;
       }).join('');
-      return `<div class="md-ft" data-team="${camp}"${camp === ownCamp ? '' : ' hidden'}>
+      if (!team.length) return '<p class="md-board-empty">没有该队十人面板</p>';
+      return `<div class="md-ft">
         <div class="md-ft-row head"><span>选手</span><span>参战</span><span>伤害</span><span>承伤</span><span>控制/秒</span><span>均占比</span></div>
-        ${rows}
+        ${body}
       </div>`;
     };
-    const fightTable = fightRows.length
-      ? tableFor(ownCamp) + tableFor(foeCamp)
-      : `<p class="md-battle-empty">${fights === undefined ? '这一局的团战账本还在生成，稍后会自动补上' : '这局回放没有团战账本'}</p>`;
 
-    const dropList = rows.length ? `<div class="md-drop-list">
-      ${rows.slice(0, 8).map((row, i) => {
-        const loss = num(row.info.loss) ? -row.info.loss : null;
-        return `<button type="button" class="md-drop" data-death-row="${i}">
-          <span class="md-drop-time">${time(row.d.t)}</span>
-          <span class="md-drop-hero">${esc(row.d.hero || '—')}</span>
-          <span class="md-drop-loss ${num(loss) && loss < 0 ? 'down' : 'up'}">${num(loss) ? diff(loss) : '—'}</span>
-        </button>`;
-      }).join('')}
-    </div>` : '<p class="md-board-empty">这局没有死亡坐标</p>';
+    const fightDefaultIndex = bestFight ? bestFight.index : Math.max(0, fightCount - 1);
+    const fightMarks = fightLayout.map((node) => {
+      const item = node.item.ref;
+      const tone = resultTone(item.result);
+      return `<g class="md-fight ${tone}${item.index === fightDefaultIndex ? ' is-on' : ''}"
+        data-fight="${item.index}" tabindex="0" role="button"
+        aria-label="${esc(`${time(item.t)} 团战 ${item.ownParts.length} 对 ${item.foeParts.length} ${resultText(item.result)}`)}">
+        <circle class="dot" cx="${node.x}" cy="${node.y}" r="${node.r.toFixed(1)}"/>
+        <circle class="hit" cx="${node.x}" cy="${node.y}" r="${(node.r + 2).toFixed(1)}"/>
+        <title>${esc(`${time(item.t)} · ${item.ownParts.length}v${item.foeParts.length} · 击杀 ${item.ownKills}:${item.foeKills} · ${num(item.swing) ? `经济差 ${diff(item.swing)}` : '经济差 —'}`)}</title>
+      </g>`;
+    }).join('');
+    const fightLeaders = fightLayout.filter((node) => node.moved).map((node) => {
+      const item = node.item.ref;
+      return `<line class="md-fight-leader" x1="${node.ax.toFixed(1)}" y1="${node.ay.toFixed(1)}" x2="${node.x}" y2="${node.y}"><title>${esc(`${time(item.t)} 实测位置`)}</title></line>`;
+    }).join('');
+    /* 选中环单独画在最上层：团战点会互相压叠，靠描边加深看不清 */
+    const fightHalo = (() => {
+      const item = fightsInfo[fightDefaultIndex];
+      if (!item || !item.layout) return '';
+      return `<circle class="md-fight-halo" data-fight-halo cx="${item.layout.x}" cy="${item.layout.y}" r="${(item.layout.r + 4).toFixed(1)}"/>`;
+    })();
+    const fightTimeline = fightCount ? `<div class="md-fight-timeline">
+      <div class="md-ftl-head"><b>团战时间线</b><span>${fmt(fightCount)} 波 · 点一条选中；地图上叠在一起的点可从这里直接选</span></div>
+      <div class="md-ftl">${fightsInfo.map((item) => `<button type="button" class="md-ftl-chip ${resultTone(item.result)}${item.index === fightDefaultIndex ? ' is-on' : ''}" data-fight-chip="${item.index}" title="${esc(`${time(item.t)} · ${item.ownParts.length}v${item.foeParts.length} · 击杀 ${item.ownKills}:${item.foeKills}`)}">
+        <span>${time(item.t)}</span><i></i><em>${item.ownKills}:${item.foeKills}</em><small>${num(item.swing) ? diff(item.swing) : '—'}</small>
+      </button>`).join('')}</div>
+    </div>` : '';
+    const mapReady = fightsInfo.some((x) => x.center);
+    const fightBoard = !fightCount ? '' : `<div class="md-board md-board-fight" data-md-fights>
+      <div class="md-board-head">
+        <div class="md-board-title"><b>团战地图</b><span>${fmt(fightCount)} 场团战 · 点地图上的点，看这一波的伤害 / 承伤 / 控制</span></div>
+        <p class="md-board-legend">
+          <span class="own"><i class="fight"></i>我方赢</span>
+          <span class="foe"><i class="fight"></i>对手赢</span>
+          <span class="even"><i class="fight"></i>打平</span>
+          <span><i class="size"></i>点越大，参战人数越多</span>
+        </p>
+      </div>
+      <div class="md-board-body">
+        <div class="md-board-map">
+          ${mapReady ? `<svg viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="团战位置分布">${grid}${mapBase}${fightLeaders}${fightMarks}${fightHalo}</svg>`
+            : '<div class="md-map-empty">这局没有逐秒位置，团战点无法落图；右侧仍可逐波查看。</div>'}
+          <p class="md-board-legend"><span class="own"><i class="fight"></i>我方赢</span><span class="foe"><i class="fight"></i>对手赢</span>${fightsInfo.filter((x) => x.center).length < fightCount ? `<span>仅 ${fightsInfo.filter((x) => x.center).length}/${fightCount} 波有位置</span>` : ''}</p>
+          <p class="md-board-hint">重叠的点已自动错开，细线指回实测位置；同一处压着多波时，连点可轮换。</p>
+          <p class="md-board-hint is-hot" data-fight-hint hidden></p>
+        </div>
+        <div class="md-fight-panel" data-fight-panel>
+          ${fightCard(bestFight || fightsInfo[fightCount - 1])}
+        </div>
+      </div>
+      ${fightTimeline}
+      <div class="md-ft-split">
+        <div class="md-board-block"><h4>我方团战贡献 <small>各波累计 · 伤害占比按队内</small></h4>${fightTable(ownCamp)}</div>
+        <div class="md-board-block"><h4>对手团战贡献</h4>${fightTable(foeCamp)}</div>
+      </div>
+    </div>`;
 
+    const fightBadge = fightCount ? fightWins / fightCount >= 0.7 ? ['团战占优', 'is-good']
+      : fightWins / fightCount >= 0.45 ? ['五五开', 'is-thin'] : ['团战吃亏', 'is-bad'] : ['无团战数据', 'is-thin'];
+    const fightLede = (() => {
+      const parts = [];
+      const fullFights = fiveVfive.length ? fiveVfive : fightsInfo.filter((x) => x.total >= 8);
+      if (fightCount) {
+        parts.push(`本局 ${fightCount} 波团战我方 ${fightWins} 胜 ${fightLosses} 负${fightDraws ? ` ${fightDraws} 平` : ''}`);
+        if (firstFights.length) parts.push(`我方先手的 ${firstFights.length} 波 ${firstWins} 胜`);
+        if (foeFirst.length) parts.push(`对方先手 ${foeFirst.length} 波，我方 ${foeFirstWins} 胜`);
+        if (fiveVfive.length) parts.push(`5v5 团战 ${fiveVfive.length} 波、赢下 ${fiveWins} 波`);
+        else if (fullFights.length) parts.push(`大团（≥8 人）${fullFights.length} 波、赢下 ${fullFights.filter((x) => x.result === 'win').length} 波`);
+        if (bestFight && num(bestFight.swing)) {
+          parts.push(`${bestFight.swing >= 0 ? '最大收益' : '最大回撤'} ${diff(bestFight.swing)}（${time(bestFight.t)}）`);
+        }
+        if (num(avgTotal)) parts.push(`平均每波 ${avgTotal.toFixed(1)} 人参战`);
+        if (num(avgEnd)) parts.push(`平均 ${avgEnd.toFixed(0)} 秒一波`);
+      }
+      return parts.join('；');
+    })();
+    const fullFights = fiveVfive.length ? fiveVfive : fightsInfo.filter((x) => x.total >= 8);
+    const fullWins = fullFights.filter((x) => x.result === 'win').length;
+    const fightTiles = [
+      ['团战', `${fightCount}<small>波</small>`, `${fightWins} 胜 · ${fightLosses} 负${fightDraws ? ` · ${fightDraws} 平` : ''}`],
+      ['先手团战', `${firstWins}<i>/</i>${firstFights.length || 0}`, firstFights.length ? `先手后赢下` : '没有我方先手记录'],
+      [fiveVfive.length ? '5v5 团战' : '大团（≥8 人）', `${fullWins}<i>/</i>${fullFights.length || 0}`,
+        fullFights.length ? (fiveVfive.length ? '满编团战胜率' : '大团团战胜率') : '本局没有大团'],
+      ['最大单波', `${bestFight && num(bestFight.swing) ? diff(bestFight.swing) : '—'}`, bestFight ? `${time(bestFight.t)} · ${resultText(bestFight.result)}` : '没有经济差采样'],
+    ];
+    const fightSizes = [
+      ...sizeBuckets.filter((b) => b.n).map((b) => `<span class="md-fight-size"><b>${b.label}</b><i>${b.n} 波</i><em>${b.wins} 胜</em></span>`),
+      ...phaseFights.filter((b) => b.n).map((b) => `<span class="md-fight-size is-phase"><b>${b.label}</b><i>${b.n} 波</i><em>${b.wins} 胜</em></span>`),
+    ].join('');
+    const fightKeys = keyFights.length ? `<div class="md-fight-keys"><b>关键团战</b>${keyFights.map((item) => `<button type="button" data-fight-jump="${item.index}">
+      <span>${time(item.t)}</span>
+      <i class="${resultTone(item.result)}">${resultText(item.result)}</i>
+      <em>${num(item.swing) ? diff(item.swing) : '—'}</em>
+    </button>`).join('')}</div>` : '';
+    const fightAnalysis = `<div class="md-viz-analysis md-bprev ${fightBadge[1]}">
+      <div class="md-bprev-head"><b>团战分析</b><span class="md-bprev-badge ${fightBadge[1]}">${fightBadge[0]}</span></div>
+      <p class="md-bprev-lede">${fightLede || '这局回放没有团战账本'}。</p>
+      <div class="md-bprev-stats">${fightTiles.map(([label, value, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}</span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
+      ${fightSizes ? `<div class="md-fight-splits">${fightSizes}</div>` : ''}
+      ${fightKeys}
+      <p class="md-bprev-thin">口径：团战点来自官方回放 battles，点大小＝参战人数，颜色＝该波击杀差；胜负按该波击杀数，经济差取开团前 30 秒到结束后 30 秒的变化（本队视角，已扣自然涨跌）。</p>
+    </div>`;
+
+    /* ── 掉点 ───────────────────────────────────────────────────────── */
+    const rows = [];
+    for (const d of deathList) {
+      const hasPos = num(d.x) && num(d.y);
+      const clipped = hasPos ? Math.min(reviveAt(d.camp, d.hero, d.t) || d.t + 20, duration || Infinity) : null;
+      const t1 = hasPos ? Math.max(clipped, d.t + 1) : null;
+      const info = hasPos && t1 - d.t >= 8 ? project(d.t, t1) : { raw: null, loss: null, confident: false };
+      const impact = num(info.loss) ? -info.loss : null;
+      let near = null;
+      if (hasPos) {
+        const me = pointAt(d.camp, d.hero, d.t);
+        if (me) {
+          let ally = null, enemies = 0, nearestEnemy = null;
+          for (const p of players) {
+            if (!p.hero || p.hero === d.hero && p.camp === d.camp) continue;
+            const pt = pointAt(p.camp, p.hero, d.t);
+            if (!pt) continue;
+            const dist = Math.hypot(pt[0] - me[0], pt[1] - me[1]);
+            if (p.camp === d.camp) {
+              if (ally == null || dist < ally) ally = dist;
+            } else {
+              if (dist <= 12) enemies += 1;
+              if (nearestEnemy == null || dist < nearestEnemy) nearestEnemy = dist;
+            }
+          }
+          near = { ally, enemies, nearestEnemy };
+        }
+      }
+      const adv = hasPos ? (ownCamp === 'blue' ? progress(d.x, d.y) : 1 - progress(d.x, d.y)) : null;
+      const zone = adv == null ? '' : adv < 0.42 ? '己方半区' : adv < 0.58 ? '河道 / 中线' : '对方半区';
+      const inFight = fightsInfo.some((item) => d.t >= item.t - 5 && d.t <= item.end + 8);
+      rows.push({ d, t1, info, impact, near, zone, inFight, hasPos, shared: false });
+    }
+    /* 同队两人同时掉点，队级汇总会重复计入；这里只做标记，不改数 */
+    for (const row of rows) {
+      row.shared = rows.some((other) => other !== row && other.d.camp === row.d.camp && other.t1 != null && row.t1 != null
+        && Math.min(row.t1, other.t1) - Math.max(row.d.t, other.d.t) > 5);
+    }
+    const deathFor = (camp) => rows.filter((row) => row.d.camp === camp);
+    const ownDeaths = deathFor(ownCamp);
+    const foeDeaths = deathFor(foeCamp);
+    const impactSum = (list) => list.reduce((s, row) => s + (num(row.impact) ? row.impact : 0), 0);
+    const ownImpact = impactSum(ownDeaths);
+    const foeImpact = impactSum(foeDeaths);
+    const netImpact = ownImpact + foeImpact;
+    const biggest = rows.filter((row) => num(row.impact)).slice()
+      .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))[0] || null;
+    const heroCountText = (list, all = false) => {
+      const map = new Map();
+      for (const row of list) map.set(row.d.hero, (map.get(row.d.hero) || 0) + 1);
+      const groups = new Map();
+      for (const [hero, n] of map) groups.set(n, [...(groups.get(n) || []), hero]);
+      const entries = [...groups.entries()].sort((a, b) => b[0] - a[0]);
+      return (all ? entries : entries.slice(0, 2))
+        .map(([n, heroes]) => `${heroes.join(' / ')} ${n} 次`).join('、');
+    };
+    const phaseDeaths = PHASE_LABELS.map((label, i) => ({
+      label,
+      own: ownDeaths.filter((row) => phaseIndex(row.d.t) === i).length,
+      foe: foeDeaths.filter((row) => phaseIndex(row.d.t) === i).length,
+    }));
+    const ownInFight = ownDeaths.filter((row) => row.inFight).length;
+    const ownFarAlly = ownDeaths.filter((row) => row.near && row.near.ally != null && row.near.ally > 15).length;
+    const ownCaught = ownDeaths.filter((row) => row.near && row.near.ally != null && row.near.ally > 15 && row.near.enemies >= 1).length;
+    const sortedOwn = ownDeaths.slice().sort((a, b) => a.d.t - b.d.t);
+    let clusters = 0, clustered = 0;
+    for (let i = 1; i < sortedOwn.length; i++) {
+      if (sortedOwn[i].d.t - sortedOwn[i - 1].d.t <= 45) {
+        clusters += 1;
+        clustered += i === 1 || sortedOwn[i - 1].d.t - sortedOwn[i - 2].d.t > 45 ? 2 : 1;
+      }
+    }
+    const defaultDeath = (() => {
+      const target = ownDeaths.length ? ownDeaths : rows;
+      return target.filter((row) => num(row.impact)).sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact))[0] || target[0] || null;
+    })();
+    const deathCard = (row) => {
+      const tone = num(row.impact) ? (row.impact < 0 ? 'down' : 'up') : '';
+      const allyText = row.near && row.near.ally != null
+        ? (row.near.ally <= 6 ? '在旁' : row.near.ally <= 15 ? '稍远' : '很远') : '无数据';
+      const enemyText = row.near ? `${row.near.enemies} 人` : '无数据';
+      return `<div class="md-dd">
+        <div class="md-dd-head"><b>${time(row.d.t)}</b><span class="md-dd-hero">${portrait(row.d.hero, 'md-dd-face')}${esc(row.d.hero || '—')}</span><span class="md-dd-tag ${row.d.camp === ownCamp ? 'own' : 'foe'}">${row.d.camp === ownCamp ? '我方' : '对方'}</span></div>
+        <div class="md-dd-impact ${tone}">${num(row.impact) ? diff(row.impact) : '—'}<small>本队经济影响 · 负亏正赚</small></div>
+        <div class="md-dd-grid">
+          <span>位置 <b>${row.zone || '—'}</b></span>
+          <span>场景 <b>${row.inFight ? '团战内' : '团战外'}</b></span>
+          <span>最近队友 <b>${allyText}</b></span>
+          <span>附近对手 <b>${enemyText}</b></span>
+          <span>修正窗口 <b>${row.t1 != null ? `${Math.round(row.t1 - row.d.t)} 秒` : '—'}</b></span>
+          <span>同时掉点 <b>${row.shared ? '是' : '否'}</b></span>
+        </div>
+        <p class="md-dd-note">损失＝死前 120 秒经济差走势外推到复活时刻的差额，已扣自然涨跌${row.info.confident ? '' : '；低置信'}${row.shared ? '；与队友同时掉点，队级汇总会重复计入' : ''}</p>
+      </div>`;
+    };
+    const deathTip = (row) => `<div class="dc-head"><b>${time(row.d.t)}</b><span>${esc(row.d.hero || '—')} · ${row.d.camp === ownCamp ? '我方' : '对方'}</span></div>
+      <div class="dc-loss ${num(row.impact) ? (row.impact < 0 ? 'down' : 'up') : ''}">${num(row.impact) ? diff(row.impact) : '—'}<small>本队经济影响</small></div>`;
+    const deathLayout = spreadMarkers(rows.map((row) => ({
+      center: row.hasPos ? [row.d.x, row.d.y] : null,
+      radius: 2.6 + Math.min(3.4, num(row.impact) ? Math.abs(row.impact) / 600 : 0),
+      ref: row,
+    })));
+    for (const node of deathLayout) {
+      node.item.ref.layout = { x: node.x, y: node.y, r: node.r, moved: node.moved };
+    }
+    const deathDots = deathLayout.map((node) => {
+      const row = node.item.ref;
+      const index = rows.indexOf(row);
+      const tone = row.d.camp === ownCamp ? 'own' : 'foe';
+      return `<g class="md-death ${tone}" data-death="${index}" tabindex="0" role="button" aria-label="${esc(`${time(row.d.t)} ${row.d.hero} 阵亡`)}">
+        <circle class="dot" cx="${node.x}" cy="${node.y}" r="${node.r.toFixed(1)}"/>
+        <circle class="hit" cx="${node.x}" cy="${node.y}" r="${(node.r + 2).toFixed(1)}"/>
+        <title>${esc(`${time(row.d.t)} ${row.d.hero}（${row.d.camp === ownCamp ? '我方' : '对方'}）${num(row.impact) ? ` · 本队经济影响 ${diff(row.impact)}` : ''}`)}</title>
+      </g>`;
+    }).join('');
+    const deathLeaders = deathLayout.filter((node) => node.moved).map((node) => {
+      const row = node.item.ref;
+      return `<line class="md-death-leader" x1="${node.ax.toFixed(1)}" y1="${node.ay.toFixed(1)}" x2="${node.x}" y2="${node.y}"><title>${esc(`${time(row.d.t)} ${row.d.hero} 实测位置`)}</title></line>`;
+    }).join('');
+    const deathHalo = (() => {
+      if (!defaultDeath || !defaultDeath.layout) return '';
+      return `<circle class="md-death-halo" data-death-halo cx="${defaultDeath.layout.x}" cy="${defaultDeath.layout.y}" r="${(defaultDeath.layout.r + 4).toFixed(1)}"/>`;
+    })();
+    const deathRowsHtml = rows.map((row, i) => {
+      const tone = num(row.impact) ? (row.impact < 0 ? 'down' : 'up') : '';
+      const own = row.d.camp === ownCamp;
+      return `<button type="button" class="md-dr${own ? ' own' : ' foe'}${i === (defaultDeath ? rows.indexOf(defaultDeath) : -1) ? ' is-on' : ''}" data-death-row="${i}">
+        <span class="md-dr-time">${time(row.d.t)}</span>
+        <span class="md-dr-hero"><i></i>${esc(row.d.hero || '—')}<small>${own ? '我方' : '对方'}</small></span>
+        <span class="md-dr-impact ${tone}">${num(row.impact) ? diff(row.impact) : '—'}</span>
+      </button>`;
+    }).join('');
     const picker = (() => {
       const group = (camp, title) => {
-        const list = players.filter((p) => p.camp === camp && p.hero);
+        const list = players.filter((p) => p.camp === camp && p.hero && rows.some((row) => row.d.hero === p.hero && row.d.camp === camp));
         if (!list.length) return '';
         return `<optgroup label="${title}">${list.map((p) => `<option value="${esc(p.hero || '')}">${esc(p.label || p.hero || '—')} · ${esc(p.hero || '')}</option>`).join('')}</optgroup>`;
       };
-      return `<select class="md-battle-pick" data-battle-pick aria-label="只看某个选手">
-        <option value="">全部选手</option>
-        ${group(ownCamp, '本队')}${group(foeCamp, '对手')}
+      return `<select class="md-battle-pick" data-battle-pick aria-label="只看某个选手的掉点">
+        <option value="">全部选手（${rows.length} 次）</option>
+        ${group(ownCamp, `我方（${ownDeaths.length} 次）`)}${group(foeCamp, `对手（${foeDeaths.length} 次）`)}
       </select>`;
     })();
-
-    const grid = [1, 2, 3].map((k) => {
-      const at = PAD + (k / 4) * (SIZE - PAD * 2);
-      return `<line class="md-battle-grid" x1="${at.toFixed(1)}" y1="${PAD}" x2="${at.toFixed(1)}" y2="${SIZE - PAD}"/>`
-        + `<line class="md-battle-grid" x1="${PAD}" y1="${at.toFixed(1)}" x2="${SIZE - PAD}" y2="${at.toFixed(1)}"/>`;
-    }).join('');
-
-    return `<div class="md-board" data-md-battle>
+    const deathBoard = `<div class="md-board md-board-death" data-md-deaths>
       <div class="md-board-head">
-        <div class="md-board-title"><b>团战与掉点</b><span>${fmt(fightList.length)} 场团战 · ${fmt(rows.length)} 次阵亡</span></div>
+        <div class="md-board-title"><b>掉点地图</b><span>${fmt(rows.length)} 次阵亡 · 我方 ${fmt(ownDeaths.length)} / 对手 ${fmt(foeDeaths.length)} · 点圆点或右侧列表固定选中</span></div>
         ${picker}
       </div>
       <div class="md-board-body">
         <div class="md-board-map">
-          <svg viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="团战与掉点分布">
-            ${grid}
-            <line class="md-battle-river" x1="${PAD}" y1="${PAD}" x2="${SIZE - PAD}" y2="${SIZE - PAD}"/>
-            <g class="md-battle-bases">
-              <circle class="base blue" cx="${bx(-49).toFixed(1)}" cy="${by(-49).toFixed(1)}" r="3.4"/>
-              <circle class="base red" cx="${bx(49).toFixed(1)}" cy="${by(49).toFixed(1)}" r="3.4"/>
-              <text class="base-label" x="${bx(-49).toFixed(1)}" y="${(by(-49) + 14).toFixed(1)}" text-anchor="middle">蓝</text>
-              <text class="base-label" x="${bx(49).toFixed(1)}" y="${(by(49) - 8).toFixed(1)}" text-anchor="middle">红</text>
-            </g>
-            ${marks}${dotsHtml}
-          </svg>
+          ${rows.some((row) => row.hasPos) ? `<svg viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="掉点位置分布">${grid}${mapBase}${deathLeaders}${deathDots}${deathHalo}</svg>`
+            : '<div class="md-map-empty">这局没有逐秒位置，掉点无法落图；右侧列表与详情仍可用。</div>'}
           <div class="md-death-tip" data-death-tip hidden></div>
-          <p class="md-board-legend">
-            <span class="own"><i class="fight"></i>本队团战</span>
-            <span class="foe"><i class="fight"></i>对手团战</span>
-            <span><i class="death"></i>阵亡</span>
-          </p>
+          <p class="md-board-legend"><span class="own"><i class="death"></i>我方阵亡</span><span class="foe"><i class="death"></i>对手阵亡</span><span><i class="size"></i>点越大，经济影响越大</span>${rows.filter((row) => row.hasPos).length < rows.length ? `<span>仅 ${rows.filter((row) => row.hasPos).length}/${rows.length} 次有位置</span>` : ''}</p>
+          <p class="md-board-hint">重叠的点已自动错开，细线指回实测位置；同一处多次掉点可连点轮换，或直接用右侧列表精确选。</p>
         </div>
-        <div class="md-board-block">
-          <h4>团战贡献 <small>伤害占该队该团战</small></h4>
-          ${fightTable}
+        <div class="md-board-block md-dr-block">
+          <h4>掉点列表 <small>按时间排 · 数值＝本队经济影响（负亏 / 正赚）</small></h4>
+          <div class="md-dr-list" data-death-list>${deathRowsHtml}</div>
+          <p class="md-board-empty" data-death-empty hidden>该选手这局没有掉点</p>
         </div>
-        <div class="md-board-block">
-          <h4>掉点 <small>负数为亏 · 悬停看细节</small></h4>
-          ${dropList}
-          <p class="md-board-empty" data-drop-empty hidden>该选手这局没有掉点</p>
+        <div class="md-board-block md-dd-block">
+          <h4>选中掉点 <small>本队视角经济影响</small></h4>
+          <div data-death-detail>${defaultDeath ? deathCard(defaultDeath) : '<p class="md-board-empty">这局没有可定位的掉点</p>'}</div>
         </div>
       </div>
     </div>`;
-  }
 
-  function deathCard(row) {
-    const loss = num(row.info.loss) ? -row.info.loss : null;
-    const tone = !num(loss) ? '' : loss < 0 ? 'foe' : 'own';
-    return `<div class="dc-head"><b>${time(row.d.t)}</b><span>${esc(row.d.hero || '—')} 阵亡</span>${row.shared ? '<i class="dc-tag" title="与队友同时掉点，队级汇总会重复计入">†</i>' : ''}</div>
-      <div class="dc-loss ${tone}">${num(loss) ? diff(loss) : '—'}<small>修正损失</small></div>
-      <div class="dc-rows">
-        <span>窗口 <b>${Math.round(row.t1 - row.d.t)} 秒</b></span>
-        <span>经济差变化 <b>${num(row.info.raw) ? diff(row.info.raw) : '—'}</b></span>
+    const deathBadge = !num(ownImpact) && !num(foeImpact) ? ['没有损失数据', 'is-thin']
+      : netImpact >= 300 ? ['掉点端占优', 'is-good'] : netImpact <= -300 ? ['掉点端吃亏', 'is-bad'] : ['掉点互有往来', 'is-thin'];
+    const deathLede = (() => {
+      const parts = [];
+      parts.push(`本局我方 ${ownDeaths.length} 次阵亡${num(ownImpact) ? `，合计影响 ${diff(ownImpact)}` : ''}`);
+      if (foeDeaths.length) parts.push(`对方 ${foeDeaths.length} 次阵亡${num(foeImpact) ? `，我方获得 ${diff(foeImpact)}` : ''}`);
+      if (ownDeaths.length) {
+        parts.push(ownInFight === ownDeaths.length ? '全部死在团战里'
+          : `${ownInFight} 次死在团战里、${ownDeaths.length - ownInFight} 次在团战外`);
+        if (ownCaught) parts.push(`其中 ${ownCaught} 次队友不在附近、附近有对手（被抓单）`);
+        parts.push(`按人看：${heroCountText(ownDeaths, true)}`);
+      }
+      if (biggest && num(biggest.impact)) parts.push(`最大一笔 ${time(biggest.d.t)} ${biggest.d.hero} ${diff(biggest.impact)}`);
+      return parts.join('；');
+    })();
+    const deathTiles = [
+      ['我方掉点', `${ownDeaths.length}<small>次</small>`, num(ownImpact) ? `合计 ${diff(ownImpact)}` : '没有损失估算'],
+      ['对方掉点', `${foeDeaths.length}<small>次</small>`, num(foeImpact) ? `我方 ${diff(foeImpact)}` : '没有损失估算'],
+      ['净收益', `${num(netImpact) ? diff(netImpact) : '—'}`, '对方掉点 − 我方掉点'],
+      ['最大单笔', `${biggest && num(biggest.impact) ? diff(biggest.impact) : '—'}`, biggest ? `${time(biggest.d.t)} · ${biggest.d.hero}` : '没有可估算的掉点'],
+    ];
+    const phaseBars = phaseDeaths.map((p) => `<span class="md-death-phase"><b>${p.label}</b><i class="own" style="width:${Math.max(4, p.own / Math.max(1, ownDeaths.length) * 100)}%"></i><i class="foe" style="width:${Math.max(4, p.foe / Math.max(1, foeDeaths.length) * 100)}%"></i><em>我 ${p.own} · 对 ${p.foe}</em></span>`).join('');
+    const zoneCounts = (list) => {
+      const map = new Map();
+      for (const row of list) {
+        if (!row.zone) continue;
+        map.set(row.zone, (map.get(row.zone) || 0) + 1);
+      }
+      return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([zone, n]) => `${zone} ${n}`).join(' · ');
+    };
+    const ownPlaced = ownDeaths.filter((row) => row.zone).length;
+    const deathExtra = [
+      { label: '团战内 / 外', text: `我方 ${ownInFight} / ${ownDeaths.length - ownInFight} 次` },
+      { label: '队友不在附近', text: ownFarAlly ? `${ownFarAlly} 次${ownCaught ? `（其中 ${ownCaught} 次被抓单）` : ''}` : '每次身边都有队友' },
+      { label: '连续掉点', text: clusters ? `${clusters} 组 · ${clustered} 次 · 间隔≤45 秒` : '没有连续掉点' },
+      { label: '掉点落点', text: zoneCounts(ownDeaths) ? `${zoneCounts(ownDeaths)}（有位置 ${ownPlaced}/${ownDeaths.length} 次）` : '没有位置数据' },
+      { label: '掉点最多', text: ownDeaths.length ? heroCountText(ownDeaths) : '—' },
+      { label: '对方掉点最多', text: foeDeaths.length ? heroCountText(foeDeaths) : '—' },
+    ];
+    const deathAnalysis = `<div class="md-viz-analysis md-bprev ${deathBadge[1]}">
+      <div class="md-bprev-head"><b>掉点分析</b><span class="md-bprev-badge ${deathBadge[1]}">${deathBadge[0]}</span></div>
+      <p class="md-bprev-lede">${deathLede || '这局回放没有掉点数据'}。</p>
+      <div class="md-bprev-stats">${deathTiles.map(([label, value, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}</span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
+      <div class="md-death-splits">
+        <div class="md-death-phases"><b>阶段分布</b>${phaseBars}</div>
+        <div class="md-death-extra">${deathExtra.map((item) => `<span><b>${item.label}</b><em>${item.text}</em></span>`).join('')}</div>
       </div>
-      <p class="dc-note">死前 120 秒经济差走势外推到复活时刻的差额${row.info.confident ? '' : ' · 低置信'}</p>`;
+      <p class="md-bprev-thin">口径：掉点＝一次阵亡；经济影响＝死前 120 秒经济差走势外推到复活时刻的差额（本队视角，负＝我方亏、正＝我方赚），已扣自然涨跌；位置与「身边队友/对手」取阵亡时刻的逐秒位置（12 格内算附近）。低置信的估算在详情里标注。</p>
+    </div>`;
+
+    battleState = {
+      ownCamp,
+      fights: fightsInfo.map((item) => ({
+        index: item.index, html: fightCard(item), time: item.t,
+        layout: item.layout, heroList: item.details.map((d) => d.hero),
+      })),
+      deaths: rows.map((row, i) => ({
+        index: i, html: deathCard(row), tip: deathTip(row),
+        hero: row.d.hero, camp: row.d.camp, hasPos: row.hasPos, layout: row.layout,
+      })),
+      selectedFight: bestFight ? bestFight.index : Math.max(0, fightCount - 1),
+      selectedDeath: defaultDeath ? rows.indexOf(defaultDeath) : null,
+      pick: '',
+    };
+    return {
+      fights: fightCount ? `${fightBoard}${fightAnalysis}` : '',
+      deaths: rows.length ? `${deathBoard}${deathAnalysis}` : '',
+    };
   }
 
-  function highlightDeath(index) {
-    const box = document.querySelector('[data-md-battle]');
+  /* 团战 / 掉点交互：点地图或列表固定选中；切换选手只看他的掉点。
+     事件委托挂在 document 上一次，重渲染/换页签后仍然生效。 */
+  function selectFight(index, jump = false) {
+    if (!battleState || !battleState.fights[index]) return;
+    battleState.selectedFight = index;
+    const box = document.querySelector('[data-md-fights]');
     if (!box) return;
-    box.querySelectorAll('[data-death]').forEach((g, i) => g.classList.toggle('is-on', i === index));
-    box.querySelectorAll('[data-death-row]').forEach((row, i) => row.classList.toggle('is-on', i === index));
+    box.querySelectorAll('[data-fight]').forEach((g) => {
+      g.classList.toggle('is-on', Number(g.dataset.fight) === index);
+    });
+    const panel = box.querySelector('[data-fight-panel]');
+    if (panel) panel.innerHTML = battleState.fights[index].html;
+    box.querySelectorAll('[data-fight-chip]').forEach((chip) => {
+      chip.classList.toggle('is-on', Number(chip.dataset.fightChip) === index);
+    });
+    /* 同一处压着多波时提示可以连点轮换 */
+    const hint = box.querySelector('[data-fight-hint]');
+    if (hint) {
+      const item = battleState.fights[index];
+      const near = item && item.layout
+        ? battleState.fights.filter((other) => other !== item && other.layout
+          && Math.hypot(other.layout.x - item.layout.x, other.layout.y - item.layout.y) < item.layout.r + other.layout.r + 8).length
+        : 0;
+      hint.hidden = !near;
+      hint.textContent = near ? `这一处还压着 ${near} 波团战，再点一次切换` : '';
+    }
+    /* 选中环跟着走，保证压在别的圆点下面时也看得见 */
+    const halo = box.querySelector('[data-fight-halo]');
+    const dot = box.querySelector(`[data-fight="${index}"] .dot`);
+    if (halo && dot) {
+      halo.setAttribute('cx', dot.getAttribute('cx'));
+      halo.setAttribute('cy', dot.getAttribute('cy'));
+      halo.setAttribute('r', (Number(dot.getAttribute('r')) + 4).toFixed(1));
+    }
+    if (jump) {
+      const node = box.querySelector(`[data-fight="${index}"]`);
+      if (node) node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
   }
 
-  /* 只看某个选手：地图上的团战点/阵亡点、掉点列表一起收窄 */
-  function applyBattleFilter(hero) {
-    const box = document.querySelector('[data-md-battle]');
-    if (!box || !battleState) return;
-    box.dataset.pick = hero || '';
-    box.querySelectorAll('[data-fight]').forEach((g) => {
-      const info = battleState.fights[Number(g.dataset.fight)];
-      g.classList.toggle('is-off', Boolean(hero) && !(info && info.heroes.includes(hero)));
-    });
+  function selectDeath(index, jump = false) {
+    if (!battleState || !battleState.deaths[index]) return;
+    battleState.selectedDeath = index;
+    const box = document.querySelector('[data-md-deaths]');
+    if (!box) return;
     box.querySelectorAll('[data-death]').forEach((g) => {
-      const row = battleState.rows[Number(g.dataset.death)];
-      g.classList.toggle('is-off', Boolean(hero) && !(row && row.d.hero === hero));
+      g.classList.toggle('is-on', Number(g.dataset.death) === index);
     });
-    const camp = hero ? ((battleState.players.find((p) => p.hero === hero) || {}).camp || null) : null;
-    box.querySelectorAll('[data-team]').forEach((table) => {
-      table.hidden = (camp || battleState.ownCamp) !== table.dataset.team;
+    box.querySelectorAll('[data-death-row]').forEach((row) => {
+      row.classList.toggle('is-on', Number(row.dataset.deathRow) === index);
     });
-    box.querySelectorAll('[data-player-row]').forEach((row) => {
-      row.classList.toggle('is-dim', Boolean(hero) && row.dataset.playerRow !== hero);
+    const detail = box.querySelector('[data-death-detail]');
+    if (detail) detail.innerHTML = battleState.deaths[index].html;
+    const halo = box.querySelector('[data-death-halo]');
+    const dot = box.querySelector(`[data-death="${index}"] .dot`);
+    if (halo) {
+      if (dot) {
+        halo.removeAttribute('hidden');
+        halo.setAttribute('cx', dot.getAttribute('cx'));
+        halo.setAttribute('cy', dot.getAttribute('cy'));
+        halo.setAttribute('r', (Number(dot.getAttribute('r')) + 4).toFixed(1));
+      } else {
+        halo.setAttribute('hidden', '');
+      }
+    }
+    if (jump) {
+      const node = box.querySelector(`[data-death="${index}"]`);
+      if (node) node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
+
+  /* 只看某个选手：地图圆点与列表一起收窄；选中挪到第一个可见掉点 */
+  function filterDeaths(hero) {
+    const box = document.querySelector('[data-md-deaths]');
+    if (!box || !battleState) return;
+    battleState.pick = hero || '';
+    box.dataset.pick = hero || '';
+    const dotVisible = [];
+    box.querySelectorAll('[data-death]').forEach((g) => {
+      const info = battleState.deaths[Number(g.dataset.death)];
+      const off = Boolean(hero) && !(info && info.hero === hero);
+      g.classList.toggle('is-off', off);
+      if (!off) dotVisible.push(Number(g.dataset.death));
     });
-    box.querySelectorAll('[data-death-row]').forEach((row, i) => {
-      const item = battleState.rows[i];
-      row.hidden = Boolean(hero) && !(item && item.d.hero === hero);
+    const rowVisible = [];
+    box.querySelectorAll('[data-death-row]').forEach((row) => {
+      const info = battleState.deaths[Number(row.dataset.deathRow)];
+      const off = Boolean(hero) && !(info && info.hero === hero);
+      row.hidden = off;
+      if (!off) rowVisible.push(Number(row.dataset.deathRow));
     });
-    const visible = [...box.querySelectorAll('[data-death-row]')].filter((row) => !row.hidden);
-    const empty = box.querySelector('[data-drop-empty]');
-    if (empty) empty.hidden = visible.length > 0;
+    const empty = box.querySelector('[data-death-empty]');
+    if (empty) empty.hidden = rowVisible.length > 0;
+    const candidates = rowVisible.length ? rowVisible : dotVisible;
+    if (!candidates.length) {
+      const detail = box.querySelector('[data-death-detail]');
+      if (detail) detail.innerHTML = '<p class="md-board-empty">该选手这局没有掉点</p>';
+      return;
+    }
+    const keep = candidates.includes(battleState.selectedDeath) ? battleState.selectedDeath : candidates[0];
+    selectDeath(keep);
+  }
+
+  /* 点地图：取点击位置附近的所有圆点（按距离排），用于「吸附 + 重叠时轮换」 */
+  function marksNear(svg, event, selector, extra = 8) {
+    if (!svg) return [];
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return [];
+    const px = (event.clientX - rect.left) / rect.width * 320;
+    const py = (event.clientY - rect.top) / rect.height * 320;
+    const list = [];
+    svg.querySelectorAll(selector).forEach((node) => {
+      const dot = node.querySelector('.dot');
+      if (!dot) return;
+      const cx = Number(dot.getAttribute('cx'));
+      const cy = Number(dot.getAttribute('cy'));
+      const radius = Number(dot.getAttribute('r')) || 6;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+      const dist = Math.hypot(cx - px, cy - py);
+      if (dist <= radius + extra) list.push({ node, dist });
+    });
+    return list.sort((a, b) => a.dist - b.dist);
   }
 
   function bindBattle(root) {
     if (!battleBound) {
       battleBound = true;
+      root.addEventListener('click', (event) => {
+        const chip = event.target.closest && event.target.closest('[data-fight-chip]');
+        if (chip) { selectFight(Number(chip.dataset.fightChip)); return; }
+        const jump = event.target.closest && event.target.closest('[data-fight-jump]');
+        if (jump) { selectFight(Number(jump.dataset.fightJump), true); return; }
+        const deathRow = event.target.closest && event.target.closest('[data-death-row]');
+        if (deathRow) { selectDeath(Number(deathRow.dataset.deathRow)); return; }
+        /* 地图点：先吸附最近一个；如果点中的就是当前选中、且附近还有别的点，就轮换到下一个 */
+        const svg = event.target.closest && event.target.closest('[data-md-fights] svg, [data-md-deaths] svg');
+        if (svg) {
+          const isFight = Boolean(svg.closest('[data-md-fights]'));
+          const selector = isFight ? '[data-fight]' : '[data-death]';
+          const near = marksNear(svg, event, selector, isFight ? 6 : 5);
+          const list = isFight ? battleState.fights : battleState.deaths;
+          const neighborsOf = (index) => {
+            const item = list[index];
+            if (!item || !item.layout) return [];
+            return list.filter((other) => other.index !== index && other.layout
+              && Math.hypot(other.layout.x - item.layout.x, other.layout.y - item.layout.y)
+                < item.layout.r + other.layout.r + 8).map((other) => other.index);
+          };
+          if (near.length) {
+            const current = isFight ? battleState.selectedFight : battleState.selectedDeath;
+            const indices = near.map(({ node }) => Number(isFight ? node.dataset.fight : node.dataset.death));
+            const clicked = event.target.closest && event.target.closest(selector);
+            const clickedIndex = clicked ? Number(isFight ? clicked.dataset.fight : clicked.dataset.death) : null;
+            let pick = null;
+            if (clickedIndex !== null) {
+              const neighbors = neighborsOf(clickedIndex);
+              pick = clickedIndex === current && neighbors.length ? neighbors[0] : clickedIndex;
+            } else if (indices.includes(current) && indices.length > 1) {
+              pick = indices[(indices.indexOf(current) + 1) % indices.length];
+            } else {
+              pick = indices[0];
+            }
+            if (isFight) selectFight(pick); else selectDeath(pick);
+          }
+          return;
+        }
+      });
       root.addEventListener('change', (event) => {
         const pick = event.target.closest && event.target.closest('[data-battle-pick]');
         if (!pick) return;
-        applyBattleFilter(pick.value);
-      });
-      root.addEventListener('pointerover', (event) => {
-        const row = event.target.closest && event.target.closest('[data-death-row]');
-        if (!row) return;
-        highlightDeath(Number(row.dataset.deathRow));
+        filterDeaths(pick.value);
       });
       root.addEventListener('pointermove', (event) => {
-        const box = document.querySelector('[data-md-battle]');
-        if (!box) return;
+        const box = document.querySelector('[data-md-deaths]');
+        if (!box || !battleState) return;
         const tip = box.querySelector('[data-death-tip]');
         if (!tip) return;
         const dot = event.target.closest ? event.target.closest('[data-death]') : null;
-        if (!dot || !battleState) { tip.hidden = true; return; }
-        const row = battleState.rows[Number(dot.dataset.death)];
-        if (!row) { tip.hidden = true; return; }
-        tip.innerHTML = deathCard(row);
+        const area = box.querySelector('.md-board-map');
+        if (!dot || !area) { tip.hidden = true; return; }
+        const info = battleState.deaths[Number(dot.dataset.death)];
+        if (!info) { tip.hidden = true; return; }
+        tip.innerHTML = info.tip;
         tip.hidden = false;
-        const rect = box.getBoundingClientRect();
-        tip.style.left = `${Math.max(0, Math.min(event.clientX - rect.left + 14, rect.width - 210))}px`;
-        tip.style.top = `${Math.max(0, Math.min(event.clientY - rect.top + 14, rect.height - 130))}px`;
+        const rect = area.getBoundingClientRect();
+        tip.style.left = `${Math.max(0, Math.min(event.clientX - rect.left + 14, rect.width - 215))}px`;
+        tip.style.top = `${Math.max(0, Math.min(event.clientY - rect.top + 14, Math.max(0, rect.height - 110)))}px`;
       });
     }
-    const box = document.querySelector('[data-md-battle]');
-    if (!box || !battleState || !battleState.rows.length) return;
-    applyBattleFilter('');
+    const fightsBox = document.querySelector('[data-md-fights]');
+    if (fightsBox && battleState) selectFight(battleState.selectedFight);
+    const deathsBox = document.querySelector('[data-md-deaths]');
+    if (deathsBox && battleState) {
+      filterDeaths(battleState.pick || '');
+      if (battleState.selectedDeath != null) selectDeath(battleState.selectedDeath);
+    }
   }
 
   /* ── 阵线：五人平均推进进度随时间（0＝己方基地，1＝对方基地） ───── */  function frontline(positions, players, ownCamp, duration) {

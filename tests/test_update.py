@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -130,6 +131,26 @@ class StageApplyTests(unittest.TestCase):
         self.assertEqual((self.app / 'server.py').read_text(encoding='utf-8'), 'old server\n')
         self.assertTrue((self.app / 'obsolete.py').is_file())
         self.assertFalse((self.app / 'web' / 'new.js').exists())
+
+    def test_apply_with_external_data_dir(self):
+        """KPL_DATA_DIR 指到应用目录外时，应用更新不能因相对路径转换而崩掉。"""
+        external = self.root / 'external-data'
+        archive = make_patch(self.root, '1.0.1', {
+            'version.py': "VERSION = '1.0.1'\n",
+            'server.py': 'new server\n',
+        })
+        with mock.patch.dict(os.environ, {'KPL_DATA_DIR': str(external)}):
+            pending = updater.stage_patch(archive, self.app)
+            self.assertEqual(pending['version'], '1.0.1')
+            # 暂存/待应用清单固定在应用目录内；只有备份目录跟随 KPL_DATA_DIR。
+            self.assertTrue((self.app / 'data' / 'update' / 'pending.json').is_file())
+            result = updater.apply_pending(self.app)
+        self.assertTrue(result['ok'])
+        self.assertEqual(updater.read_installed_version(self.app), '1.0.1')
+        self.assertEqual((self.app / 'server.py').read_text(encoding='utf-8'), 'new server\n')
+        backup = Path(result['backupDir'])
+        self.assertTrue(backup.is_dir())
+        self.assertEqual(backup.parent, external / 'backups')
 
     def test_tools_runtime_modules_are_updatable(self):
         """tools/ 下随包发布的运行期模块必须可被补丁更新（v1.4.0 曾整体禁写）。"""

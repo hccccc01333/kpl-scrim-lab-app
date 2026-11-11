@@ -33,6 +33,64 @@ def screenshot_group():
             'coverage': {}, 'warnings': []}
 
 
+EXTENDED_EXPECTED = {'cs': 120, 'jungleGold': 6800, 'control': 27, 'healing': 8700,
+                     'towerDamage': 117, 'damageConversion': 1.3, 'takenPerDeath': 26792.5}
+
+
+def extended_stats(offset=0):
+    """截图扩展字段（与 postgame_ocr 字段同名）：发育/团队/输出/生存页。"""
+    return {
+        'cs': field(120 + offset, str(120 + offset)),
+        'jungleGold': field(6800 + offset, f'{(6800 + offset) / 1000:.1f}k'),
+        'control': field(27 + offset, str(27 + offset)),
+        'healing': field(8700 + offset, f'{(8700 + offset) / 1000:.1f}k'),
+        'towerDamage': field(117 + offset, str(117 + offset)),
+        'damageConversion': field(1.3, '1.3'),
+        'takenPerDeath': field(26792.5, '26792.5'),
+    }
+
+
+def extended_screenshot_group():
+    """带扩展字段的七页合并结果（十人都有值，用于 coverage=10 断言）。"""
+    group = screenshot_group()
+    for row in group['players']:
+        offset = (0 if row['side'] == 'left' else 5) + row['slot']
+        row['fields'].update(extended_stats(offset))
+    return group
+
+
+def camp_detail_with_extended():
+    """营地详情：扩展字段故意与截图不同值，验证 camp 覆盖 + 冲突留痕。"""
+    def role(index, camp, nickname, hero, stats):
+        return {'basicInfo': {'roleId': f'role-{camp}-{index}', 'roleName': nickname,
+                              'playerId': f'9000000000000000{index:02d}', 'acntCamp': camp},
+                'battleStats': stats,
+                'battleRecords': {'usedHero': {'heroId': 100 + index, 'heroName': hero},
+                                  'finalEquips': []},
+                'heroBehavior': {}, 'dataBehavior': []}
+
+    heroes = ('虞姬', '夏侯惇', '妲己', '阿古朵', '钟馗',
+              '后羿', '关羽', '兰陵王', '张良', '公孙离')
+    names = ('甲', '乙', '丙', '丁', '戊', 'R0', 'R1', 'R2', 'R3', 'R4')
+
+    def stats(offset):
+        return {'killCnt': '3', 'deadCnt': '2', 'assistCnt': '5', 'money': '9000',
+                'totalHeroHurtCnt': '50000', 'totalBeheroHurtCnt': '30000',
+                'joinGamePercent': '0.5', 'gradeGame': '8.0',
+                'killSoldier': str(99 + offset), 'monsterCoin': str(7000 + offset),
+                'ctrlTime': str(30 + offset), 'healCnt': str(9000 + offset),
+                'buildingDamage': str(200 + offset),
+                'hurtTransRate': '0.5', 'behurtPerDeath': '20000'}
+
+    blue = [role(i, '1', names[i], heroes[i], stats(i)) for i in range(5)]
+    red = [role(i + 5, '2', names[i + 5], heroes[i + 5], stats(i + 5)) for i in range(5)]
+    return {'result': 0, 'returnCode': 0,
+            'data': {'head': {'gameResult': True, 'acntCamp': '1', 'mapName': '排位赛'},
+                     'blueTeam': {'money': 41021, 'banHeros': []},
+                     'redTeam': {'money': 29266, 'banHeros': []},
+                     'blueRoles': blue, 'redRoles': red}}
+
+
 class ChannelStoreTests(unittest.TestCase):
     def test_blank_and_required_source_status(self):
         channel = c.blank({'date': '2026-06-17', 'opponent': '对手'})
@@ -142,6 +200,61 @@ class ChannelStoreTests(unittest.TestCase):
         self.assertEqual(channel['review']['reviewedBy'], '教练甲')
         self.assertTrue(any(log['action'] == 'review' for log in channel['changeLog']))
         self.assertEqual(data['match']['key'], 'channel-test')
+
+    def test_screenshot_extended_fields_mapped_into_draft_and_bundle(self):
+        """七页截图里的扩展指标要进草稿（校对页可见）和正式数据包。"""
+        channel = c.blank({'date': '2026-06-17'})
+        channel['id'] = 'extended-shot'
+        c.attach_screenshot(channel, extended_screenshot_group(), ['a'])
+        first = channel['draft']['players'][0]
+        for key, value in EXTENDED_EXPECTED.items():
+            field = first['fields'][key]
+            self.assertEqual(field['value'], value, key)
+            self.assertEqual(field['source'], 'screenshot', key)
+            self.assertEqual(field['confidence'], .9, key)
+        self.assertEqual(first['fields']['cs']['raw'], '120')
+        self.assertEqual(first['fields']['jungleGold']['raw'], '6.8k')
+        for key in c.CAMP_EXTENDED_FIELDS:
+            self.assertEqual(channel['draft']['coverage'][key], 10, key)
+        # 扩展字段不参与缺失清单：截图缺核心字段时 missing 仍只列 hero+core。
+        self.assertFalse(any(item['field'] in c.CAMP_EXTENDED_FIELDS
+                             for item in channel['draft']['missing']))
+
+        complete_collection(channel)
+        c.set_review(channel, '教练甲', '已核对')
+        data = c.bundle(channel)
+        final = data['players'][0]['final']
+        for key, value in EXTENDED_EXPECTED.items():
+            self.assertEqual(final[key], value, key)
+        self.assertEqual(data['coverage']['cs'], 10)
+
+    def test_camp_extended_fields_override_screenshot_and_keep_conflicts(self):
+        """营地扩展值和截图同名字段冲突时按现有规则：camp 覆盖并留痕。"""
+        channel = c.blank({'date': '2026-06-17'})
+        channel['id'] = 'extended-camp'
+        c.attach_screenshot(channel, extended_screenshot_group(), ['a'])
+        c.attach_camp_detail(channel, 'camp-extended', camp_detail_with_extended(), None, '测试')
+        first = channel['draft']['players'][0]
+        expected = {'cs': 99, 'jungleGold': 7000, 'control': 30, 'healing': 9000,
+                    'towerDamage': 200, 'damageConversion': 0.5, 'takenPerDeath': 20000}
+        for key, value in expected.items():
+            self.assertEqual(first['fields'][key]['value'], value, key)
+            self.assertEqual(first['fields'][key]['source'], 'camp', key)
+        conflict = next(item for item in first['conflicts'] if item['field'] == 'cs')
+        self.assertEqual(conflict['screenshot'], 120)
+        self.assertEqual(conflict['camp'], 99)
+
+        c.attach_official(
+            channel, 'camp-extended',
+            {'gameSeq': 'camp-extended', 'gameSvr': '1', 'relaySvr': '2',
+             'playerId': '540599032'},
+            {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
+             'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
+            '测试')
+        c.set_review(channel, '教练甲', '已核对')
+        final = c.bundle(channel)['players'][0]['final']
+        for key, value in expected.items():
+            self.assertEqual(final[key], value, key)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,13 @@
+{
+  "name": "kpl-scrim-stats",
+  "version": "1.0.0",
+  "private": true,
+  "description": "KPL 赛训工作台匿名使用统计云函数（作者自用，不随客户端发布）",
+  "main": "index.js",
+  "engines": {
+    "node": ">=16"
+  },
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.0.0"
+  }
+}

@@ -281,6 +281,64 @@ def public(meta):
     return value
 
 
+def identity(meta):
+    """一段录像的身份三线索：id / 视频 sha256 / 旧流程挂载时的报告文件名。
+
+    「已补采」判断不能只看视频 sha256：旧流程是人工导出报告 JSON 再上传挂载，
+    通道里存的是报告 JSON 的 sha/name，与录屏 meta 的视频 sha 天然不同；
+    只能靠文件名（视频名 stem + 报告后缀）反查回录像。
+    """
+    meta = meta or {}
+    recording_id = str(meta.get('id') or '').strip()
+    name = Path(str(meta.get('name') or '')).name.strip()
+    stem = Path(name).stem if name else ''
+    names = []
+    if recording_id:
+        # 当前前端 attachRecording 的命名。
+        names.append(f'录像报告-{recording_id}.json')
+    if stem:
+        # 真实旧数据：20261102_27-6_录屏.mp4 → 20261102_27-6_录屏报告.json
+        names.extend([f'{stem}报告.json', f'{stem}_录屏报告.json', f'{stem}.json'])
+    return {'id': recording_id,
+            'sha256': str(meta.get('sha256') or '').strip(),
+            'names': list(dict.fromkeys(names))}
+
+
+def identities(metas=None):
+    """批量生成录像身份；不传 metas 时读一遍本地录像库。"""
+    metas = list_recordings() if metas is None else metas
+    return [identity(meta) for meta in metas]
+
+
+def match_file(file_info, known=None):
+    """把通道 sources.video.files 里的一条挂载记录映射回录像 id。
+
+    三线索（任一命中）：
+    - file.recordingId：新版录入时写入的显式录像 id；
+    - file.sha256：视频文件摘要（新流程挂的就是 meta 的 name/size/sha256）；
+    - file.name：旧流程人工导出的报告 JSON 文件名。
+    名称线索只在录像库里唯一对应一段录像时采用，避免同名录屏互相误判。
+    """
+    if not isinstance(file_info, dict):
+        return ''
+    known = identities() if known is None else list(known)
+    explicit = str(file_info.get('recordingId') or '').strip()
+    known_ids = {item['id'] for item in known if item['id']}
+    if explicit and explicit in known_ids:
+        return explicit
+    sha = str(file_info.get('sha256') or '').strip()
+    if sha:
+        for item in known:
+            if item.get('sha256') and item['sha256'] == sha:
+                return item['id']
+    name = Path(str(file_info.get('name') or '')).name.strip()
+    if name:
+        matches = {item['id'] for item in known if name in (item.get('names') or [])}
+        if len(matches) == 1:
+            return next(iter(matches))
+    return ''
+
+
 def free_bytes():
     try:
         return shutil.disk_usage(LIBRARY if LIBRARY.exists() else LIBRARY.parent).free

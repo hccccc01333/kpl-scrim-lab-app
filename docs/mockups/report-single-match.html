@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<title>单局复盘 · 2026-11-02</title>
+<style>
+  @page { size: A4; margin: 14mm 13mm; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18mm 15mm; background: #eceeef; color: #1d2a2e;
+         font: 12.5px/1.65 "Microsoft YaHei", "PingFang SC", "Noto Sans SC", sans-serif;
+         -webkit-font-smoothing: antialiased; }
+  .page { width: 210mm; min-height: 297mm; margin: 0 auto; padding: 15mm 14mm;
+           background: #fff; box-shadow: 0 10px 40px rgba(15,46,41,.14); }
+  .brand { display: flex; justify-content: space-between; align-items: baseline;
+            border-bottom: 2px solid #176B69; padding-bottom: 7px; }
+  .brand b { color: #0F2E29; letter-spacing: .04em; }
+  .brand span { color: #7d8c8f; font-size: 11px; }
+  h1 { font-size: 25px; line-height: 1.3; margin: 14px 0 6px; color: #0F2E29; letter-spacing: .01em; }
+  .meta { color: #6b7b7e; font-size: 12px; }
+  .meta i { font-style: normal; margin: 0 8px; color: #b9c4c6; }
+  .win { color: #176B69; font-weight: 700; }
+  .kpis { display: flex; gap: 10px; margin: 16px 0 4px; }
+  .kpi { flex: 1; border: 1px solid #e3e8e8; border-radius: 6px; padding: 9px 11px; }
+  .kpi span { display: block; color: #7d8c8f; font-size: 10.5px; }
+  .kpi b { display: block; font-size: 21px; color: #0F2E29; letter-spacing: -.01em;
+            font-variant-numeric: tabular-nums; }
+  .kpi small { color: #98a6a8; font-size: 10px; }
+  h2 { font-size: 13.5px; margin: 20px 0 8px; color: #0F2E29; display: flex; align-items: center; gap: 8px; }
+  h2:before { content: ""; width: 3px; height: 14px; background: #176B69; border-radius: 2px; }
+  h2 small { color: #98a6a8; font-weight: 400; font-size: 10.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  th { text-align: left; color: #7d8c8f; font-weight: 500; font-size: 10.5px;
+        border-bottom: 1px solid #dfe4e5; padding: 5px 6px; }
+  td { padding: 6px; border-bottom: 1px solid #f0f3f3; vertical-align: top; }
+  td.lane { color: #176B69; font-weight: 600; white-space: nowrap; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 10px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .tag.ok { background: #e7f2f0; color: #176B69; }
+  .tag.bad { background: #fbeceb; color: #b4453c; }
+  .tag.flat { background: #eef1f2; color: #5d6f73; }
+  .tag.muted { background: #f6f7f7; color: #98a6a8; }
+  .note { color: #7d8c8f; font-size: 10.5px; }
+  .bp { display: flex; gap: 10px; }
+  .bp > div { flex: 1; border: 1px solid #e3e8e8; border-radius: 6px; padding: 9px 11px; }
+  .bp .side { font-size: 10.5px; color: #7d8c8f; margin-bottom: 4px; }
+  .bp .heroes { font-size: 12.5px; color: #1d2a2e; }
+  ol.nodes { list-style: none; margin: 0; padding: 0; }
+  ol.nodes li { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px dashed #edf0f0; font-size: 11.5px; }
+  ol.nodes .t { color: #176B69; font-variant-numeric: tabular-nums; width: 42px; flex: none; }
+  ol.nodes .n { color: #1d2a2e; width: 120px; flex: none; }
+  ol.nodes .d { color: #6b7b7e; }
+  .foot { margin-top: 18px; padding-top: 9px; border-top: 1px solid #e3e8e8;
+           color: #98a6a8; font-size: 10px; display: flex; justify-content: space-between; gap: 14px; }
+  .foot b { color: #6b7b7e; font-weight: 500; }
+  .src { color: #7d8c8f; font-size: 10.5px; margin-top: 6px; }
+  .tag-src { display: inline-block; border: 1px solid #dfe4e5; border-radius: 3px;
+              padding: 0 5px; margin-right: 5px; font-size: 9.5px; color: #7d8c8f; }
+</style></head>
+<body><div class="page">
+  <div class="brand"><b>KPL 赛训工作台 · 单局复盘</b><span>样张 v0 · 未接入产品</span></div>
+
+  <h1>11/02 训练赛 <span class="win">· 胜利</span></h1>
+  <p class="meta">2026-11-02<i>·</i>对阵 5<i>·</i>5v5排位<i>·</i>11:33</p>
+
+  <h2>一句话结论</h2>
+  <p class="src">10 分钟经济差 <b>+8,493</b>，击杀 <b>27 : 6</b>，巅峰千强五路对位可判 2 路，其中 <b>2</b> 路打平。</p>
+
+  <div class="kpis"><div class="kpi"><span>10 分钟经济差</span><b>+8,493</b><small>第 10:00 读取</small></div><div class="kpi"><span>终局经济差</span><b>+11,752</b><small>十人结算面板</small></div><div class="kpi"><span>击杀</span><b>27 : 6</b><small>本局</small></div><div class="kpi"><span>时长</span><b>11:33</b><small>从开局到结算</small></div></div>
+
+  <h2>BP 与对位 <small>对位判定用巅峰千强大盘，超额 = 实际 − 两英雄基准期望</small></h2>
+  <div class="bp">
+    <div><div class="side">我方（蓝方）</div><div class="heroes">钟馗 · 妲己 · 孙悟空 · 关羽 · 百里守约</div></div>
+    <div><div class="side">对手（红方）</div><div class="heroes">公孙离 · 吕布 · 兰陵王 · 貂蝉 · 张良</div></div>
+  </div>
+  <table style="margin-top:10px"><thead><tr><th>分路</th><th>对位</th><th>结论</th><th>依据</th></tr></thead>
+  <tbody><tr><td class="lane">对抗路</td>
+      <td>关羽 <i>vs</i> 吕布</td>
+      <td><span class="tag muted">无样本</span></td>
+      <td class="note">我方使用率 12.99%、对手使用率 2.08%，低于 3% 门槛</td></tr><tr><td class="lane">打野</td>
+      <td>孙悟空 <i>vs</i> 兰陵王</td>
+      <td><span class="tag muted">无样本</span></td>
+      <td class="note">我方使用率 9.63%、对手使用率 1.06%，低于 3% 门槛</td></tr><tr><td class="lane">中路</td>
+      <td>妲己 <i>vs</i> 貂蝉</td>
+      <td><span class="tag muted">无样本</span></td>
+      <td class="note">我方使用率 1.08%、对手使用率 6.72%，低于 3% 门槛</td></tr><tr><td class="lane">发育路</td>
+      <td>百里守约 <i>vs</i> 公孙离</td>
+      <td><span class="tag flat">打平</span></td>
+      <td class="note">巅峰千强 3,385 局 · 实际 47.9% vs 预期 47.4% · 超额 +0.5</td></tr><tr><td class="lane">游走</td>
+      <td>钟馗 <i>vs</i> 张良</td>
+      <td><span class="tag flat">打平</span></td>
+      <td class="note">巅峰千强 278 局 · 实际 46.0% vs 预期 45.2% · 超额 +0.9</td></tr></tbody></table>
+  <p class="src">赛事命中：关羽 + 百里守约（45 场） · 关羽 + 钟馗（17 场） · 关羽 + 百里守约 + 钟馗（3 场）</p>
+
+  <h2>关键节点 <small>经济时间轴上的拐点（约 30 秒一点，官方回放）</small></h2>
+  <ol class="nodes"><li><span class="t">1:30</span><span class="n">拉开到 +1,000</span><span class="d">经济差首次越过这条线</span></li><li><span class="t">5:30</span><span class="n">拉开到 +3,000</span><span class="d">经济差首次越过这条线</span></li><li><span class="t">9:30</span><span class="n">拉开到 +6,000</span><span class="d">经济差首次越过这条线</span></li><li><span class="t">11:30</span><span class="n">终局 +11,755</span><span class="d">本局经济差最高点，也是最后一次采样</span></li></ol>
+
+  <h2>五人数据 <small>分均经济与输出占比来自营地十人面板</small></h2>
+  <table><thead><tr><th>分路</th><th>英雄</th><th class="num">分均经济</th><th class="num">输出占比</th><th class="num">参团</th><th class="num">K/D/A</th></tr></thead>
+  <tbody><tr><td class="lane">对抗路</td>
+      <td><b>关羽</b></td>
+      <td class="num">800</td>
+      <td class="num">20.3%</td>
+      <td class="num">55%</td>
+      <td class="num">8 / 1 / 7</td></tr><tr><td class="lane">打野</td>
+      <td><b>孙悟空</b></td>
+      <td class="num">723</td>
+      <td class="num">16.7%</td>
+      <td class="num">37%</td>
+      <td class="num">5 / 1 / 5</td></tr><tr><td class="lane">中路</td>
+      <td><b>妲己</b></td>
+      <td class="num">707</td>
+      <td class="num">22.3%</td>
+      <td class="num">48%</td>
+      <td class="num">6 / 1 / 7</td></tr><tr><td class="lane">发育路</td>
+      <td><b>百里守约</b></td>
+      <td class="num">753</td>
+      <td class="num">25.5%</td>
+      <td class="num">48%</td>
+      <td class="num">5 / 0 / 8</td></tr><tr><td class="lane">游走</td>
+      <td><b>钟馗</b></td>
+      <td class="num">566</td>
+      <td class="num">15.3%</td>
+      <td class="num">44%</td>
+      <td class="num">3 / 3 / 9</td></tr></tbody></table>
+
+  <div class="foot"><span>数据范围：本局 · 生成于 2026-11-11 10:40 · 工作台 v1.5.33</span>
+  <span>赛训组内部使用</span></div>
+  <p class="src"><span class="tag-src">营地十人面板</span><span class="tag-src">官方回放事件</span><span class="tag-src">巅峰千强对位</span><span class="tag-src">KPL 组合</span>
+  每个数字都标了来源；缺的数据留空，不估算。</p>
+</div></body></html>

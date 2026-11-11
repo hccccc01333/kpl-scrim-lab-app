@@ -40,7 +40,8 @@ const FALLBACK_SETTINGS: Settings = {
   theme: 'light',
   density: 'comfortable',
   minimizeToTray: false,
-  workbenchPath: ''
+  workbenchPath: '',
+  zoom: 1.15
 }
 
 function applyDocumentPreferences(settings: Settings): void {

@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.6.0'
+VERSION = '1.6.3'
 RELEASE_DATE = '2026-11-11'
-RELEASE_NAME = '开源协议切换（AGPL-3.0 + 商业授权）'
+RELEASE_NAME = '工作台内自动更新：打开就提示，一键升级到最新版'

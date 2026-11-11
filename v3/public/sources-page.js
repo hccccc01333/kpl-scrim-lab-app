@@ -7,10 +7,15 @@
  *   GET  /api/channels               挂载时的通道候选
  *   POST /api/images?name=<文件名>    上传截图原始文件（body 即文件）
  *   POST /api/postgame/images/{id}/ocr  重新识别一张截图
- *   POST /api/channels/{id}/screenshot  {imageIds:[...]}
+ *   POST /api/channels/{id}/screenshot  {imageIds:[...]}        补采：把截图挂到已有对局
+ *   POST /api/channels/from-screenshots {imageIds:[...]}        新录入：截图直接新建一局
+ *   POST /api/channels/from-recording   {recordingId}           新录入：录屏直接新建一局
+ *   POST /api/channels/{id}/video       {报告 JSON}             补采：把录屏报告挂到已有对局
  *   POST /api/channels/{id}/replay      {replayId}
  *
- * 录屏目前只读：挂载接口要求重新上传视频流，留在下一轮。
+ * 营地只保留最近一个月的对局详情：一个月内、已有对局缺素材的走「补采」；
+ * 超过一个月或营地根本没有的老局，用「新录入」直接新建一局再录入。
+ * 录屏的挂载接口要求重新上传视频流，留在下一轮。
  */
 
 const ROOT_API = '/api/';
@@ -68,12 +73,16 @@ export function createSources(h) {
     fps: localStorage.getItem('v3-recording-fps') || '1',
     engine: localStorage.getItem('v3-recording-engine') || 'mimo',
     progress: '', poll: null, pollFor: '', install: null, installWatch: null,
-    engineOpen: null };
+    engineOpen: null,
+    // 「新录入一局」内联表单当前的归属：'shots:<组下标>' / 'video:<录屏 id>'；同一时间只开一张。
+    entryFor: '', entryBusy: '' };
   const PAGE_TITLE = { shots: '截图 OCR', videos: '录屏', replays: '回放' };
 
   // ---------------- 数据 ----------------
 
   async function load(name, _key, signal) {
+    // 换页面/刷新后收起「新录入」内联表单，避免把上次没提交的输入带回来。
+    if (state.name && state.name !== name) { state.entryFor = ''; state.entryBusy = ''; }
     state.name = name;
     let value;
     if (name === 'shots') {
@@ -112,7 +121,32 @@ export function createSources(h) {
 
   function paint() {
     const root = document.querySelector('#content');
-    if (root && state.value) root.innerHTML = render(state.name, state.value);
+    if (!root || !state.value) return;
+    // 轮询/安装进度会整页重绘：开着的新录入表单要先记下已填内容，重绘后填回去。
+    const draft = captureEntryDraft();
+    root.innerHTML = render(state.name, state.value);
+    restoreEntryDraft(draft);
+  }
+
+  function captureEntryDraft() {
+    if (!state.entryFor) return null;
+    const form = document.querySelector(`[data-entry-form="${state.entryFor}"]`);
+    if (!form) return null;
+    const draft = {};
+    form.querySelectorAll('[data-entry-field]').forEach((input) => {
+      draft[input.dataset.entryField] = input.value;
+    });
+    return { key: state.entryFor, values: draft };
+  }
+
+  function restoreEntryDraft(draft) {
+    if (!draft) return;
+    const form = document.querySelector(`[data-entry-form="${draft.key}"]`);
+    if (!form) return;
+    for (const [field, value] of Object.entries(draft.values)) {
+      const input = form.querySelector(`[data-entry-field="${field}"]`);
+      if (input) input.value = value;
+    }
   }
 
   function setNotice(message, isError = false) {
@@ -136,13 +170,152 @@ export function createSources(h) {
     }).join('');
   }
 
-  /** 采集页「补录一局」新建的通道，带过来预选，省得在几十条里翻。 */
+  /** 采集页「新录入一局」新建的通道，带过来预选，省得在几十条里翻。 */
   function pendingChannelId() {
     try { return sessionStorage.getItem('cap-new-channel') || ''; } catch { return ''; }
   }
 
   function clearPendingChannel() {
     try { sessionStorage.removeItem('cap-new-channel'); } catch { /* 无痕模式 */ }
+  }
+
+  // ---------------- 补采 / 新录入：已挂载判断 + 内联表单 ----------------
+
+  /* 后端 /api/channels 的 summary 会带 screenshotImageIds / recordingIds / recordingShas：
+     用来标出「这组素材已经补采过」，避免同一组素材重复建档。 */
+  function channelsUsingShots(channels, imageIds) {
+    const ids = (imageIds || []).filter(Boolean);
+    if (!ids.length) return null;
+    return (channels || []).find((channel) => {
+      const used = Array.isArray(channel.screenshotImageIds) ? channel.screenshotImageIds : [];
+      return used.length >= ids.length && ids.every((id) => used.includes(id));
+    }) || null;
+  }
+
+  /** 这段录屏是否已经补采到某条通道：三种线索任一命中即算已补采。
+   *
+   *  1) recordingIds：后端按录像报告解析出的录像 id（旧流程挂载的报告 sha/name 与
+   *     录像文件不一致，只有 sha 匹配会漏）；
+   *  2) recordingShas：录像文件的 sha256（新流程 / 旧 summary 都有）；
+   *  3) 旧 summary 只有 recordingShas 时自然走第 2 条，不需要额外字段。
+   */
+  function channelUsingRecording(channels, recording) {
+    const recordingId = String(recording?.id || '');
+    const digest = String(recording?.sha256 || '');
+    if (!recordingId && !digest) return null;
+    return (channels || []).find((channel) => {
+      const ids = Array.isArray(channel.recordingIds) ? channel.recordingIds : [];
+      if (recordingId && ids.includes(recordingId)) return true;
+      const shas = Array.isArray(channel.recordingShas) ? channel.recordingShas : [];
+      return Boolean(digest) && shas.includes(digest);
+    }) || null;
+  }
+
+  function channelLabel(channel) {
+    const match = channel?.match || {};
+    return [match.date, match.session].filter(Boolean).join(' · ') || '已有对局';
+  }
+
+  function attachedBadge(channel, title) {
+    if (!channel) return '';
+    return `<span class="src-badge is-ok" title="${esc(title || '这组素材已经补采到已有对局')}">已补采到 ${esc(channelLabel(channel))}</span>`;
+  }
+
+  /** OCR 出来的日期文本 → <input type="date"> 认得的 YYYY-MM-DD；识别不出就留空。 */
+  function isoDate(text) {
+    const value = String(text || '').trim();
+    if (!value) return '';
+    const full = value.match(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+    if (full) {
+      const month = Number(full[2]);
+      const day = Number(full[3]);
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return `${full[1]}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+    }
+    const short = value.match(/(\d{1,2})[-/.月](\d{1,2})/);
+    if (!short) return '';
+    const month = Number(short[1]);
+    const day = Number(short[2]);
+    if (!(month >= 1 && month <= 12 && day >= 1 && day <= 31)) return '';
+    // 只有月日：按当前年份补全；算出来在未来一天以上，说明是去年的跨年局。
+    const today = new Date();
+    let year = today.getFullYear();
+    if (new Date(year, month - 1, day).getTime() > today.getTime() + 86400000) year -= 1;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function ownSideOptions(selected) {
+    return [['left', '左列 = 我方'], ['right', '右列 = 我方']].map(([value, label]) =>
+      `<option value="${value}" ${value === selected ? 'selected' : ''}>${esc(label)}</option>`).join('');
+  }
+
+  /** 截图卡右侧「新录入」表单：日期/训练组按识别结果预填，提交给 from-screenshots。 */
+  function shotsEntryForm(group, index) {
+    const match = group.match || {};
+    const score = match.score
+      ? `${match.score.left === null || match.score.left === undefined ? '—' : match.score.left} : ${match.score.right === null || match.score.right === undefined ? '—' : match.score.right}`
+      : '比分未识别';
+    const result = match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '结果未知';
+    const key = `shots:${index}`;
+    const busy = state.entryBusy === key;
+    return `<div class="src-entry-form" data-entry-form="${key}">
+      <div class="src-entry-lead"><b>新建一局并录入</b>
+        <span>这组截图会新建一条通道（不是补采）；建好后先去校对页核对，再保存到正式统计。</span></div>
+      <div class="src-entry-fields">
+        <label>比赛日期<input type="date" data-entry-field="date" value="${esc(isoDate(match.date))}"></label>
+        <label>训练组 / 对手<input type="text" data-entry-field="session" maxlength="40" autocomplete="off"
+          placeholder="如 0917 训练赛 / 对手名"></label>
+        <label>我方在<select data-entry-field="ownSide">${ownSideOptions('left')}</select></label>
+      </div>
+      <div class="src-entry-meta">
+        <span>识别比分 <b>${esc(score)}</b> · <b>${esc(result)}</b></span>
+        <span>营地只保留最近一个月；更早的老局没有可补采的通道，用这里直接建档。</span>
+      </div>
+      <div class="src-entry-actions">
+        <button class="primary" data-source-action="create-shots" data-group="${index}"
+          ${busy ? 'disabled' : ''}>${busy ? '正在新建…' : '建好并录入'}</button>
+        <button class="control" data-source-action="cancel-entry" ${busy ? 'disabled' : ''}>取消</button>
+      </div>
+    </div>`;
+  }
+
+  /** 录屏卡右侧「新录入」表单：日期按报告预填，视角换成左/右列，提交给 from-recording。 */
+  function recordingEntryForm(recording) {
+    const report = recording.report || {};
+    const povCamp = report.pov?.camp;
+    const ownSide = povCamp === 'red' ? 'right' : 'left';
+    const dateText = report.match?.date?.value?.text || report.match?.date?.raw || '';
+    const modeText = report.match?.mode?.value || '';
+    const campText = povCamp === 'blue' ? '画面视角在蓝方，按「左列 = 我方」录入'
+      : povCamp === 'red' ? '画面视角在红方，按「右列 = 我方」录入'
+        : '没识别出画面视角，默认左列 = 我方，可按实际改';
+    const key = `video:${recording.id}`;
+    const busy = state.entryBusy === key;
+    return `<div class="src-entry-form" data-entry-form="${key}">
+      <div class="src-entry-lead"><b>新建一局并录入</b>
+        <span>这段录屏会新建一条通道（不是补采）；建好后先去校对页补胜负、核对数据。</span></div>
+      <div class="src-entry-fields">
+        <label>比赛日期<input type="date" data-entry-field="date" value="${esc(isoDate(dateText))}"></label>
+        <label>训练组 / 对手<input type="text" data-entry-field="session" maxlength="40" autocomplete="off"
+          placeholder="如 0917 训练赛 / 对手名"></label>
+        <label>我方在<select data-entry-field="ownSide">${ownSideOptions(ownSide)}</select></label>
+      </div>
+      <div class="src-entry-meta">
+        <span>${esc(campText)}</span>
+        <span>${modeText ? `识别模式 ${esc(modeText)} · ` : ''}录像没有胜负，进校对页补填后再保存。</span>
+      </div>
+      <div class="src-entry-actions">
+        <button class="primary" data-source-action="create-recording" data-recording="${esc(recording.id)}"
+          ${busy ? 'disabled' : ''}>${busy ? '正在新建…' : '建好并录入'}</button>
+        <button class="control" data-source-action="cancel-entry" ${busy ? 'disabled' : ''}>取消</button>
+      </div>
+    </div>`;
+  }
+
+  function entryFieldValue(key, field) {
+    const form = document.querySelector(`[data-entry-form="${key}"]`);
+    return form?.querySelector(`[data-entry-field="${field}"]`)?.value || '';
   }
 
   // ---------------- 截图 / 录屏：共用的引导件 ----------------
@@ -420,6 +593,15 @@ export function createSources(h) {
       const players = group.players || [];
       const { present, missing, count } = groupCoverage(group, imageById);
       const score = match.score ? `${match.score.left} : ${match.score.right}` : '比分未识别';
+      const attached = channelsUsingShots(channels, ids);
+      const canEntry = missing.length === 0 && players.length >= 10;
+      const entryKey = `shots:${index}`;
+      const entryOpen = state.entryFor === entryKey;
+      const entryTitle = attached
+        ? '这组截图已经补采到已有对局，避免重复建档'
+        : canEntry
+          ? '营地一个月窗口外的老局：用这组截图新建一局并录入'
+          : `七页齐全且有十人数据才能新建一局${missing.length ? `；还缺 ${missing.map(([, , name]) => name).join('、')}` : '；还缺十人数据'}`;
       const dots = SHOT_PAGES.map(([, type, name]) =>
         `<i class="src-cov-dot ${present.has(type) ? 'is-on' : ''}" title="${esc(name)}${present.has(type) ? '' : '（缺）'}"></i>`).join('');
       const pageList = ids.map((id) => {
@@ -448,22 +630,41 @@ export function createSources(h) {
           <ol class="shot-pages">${pageList}</ol>
           ${(group.warnings || []).length ? `<ul class="shot-warnings">${group.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
         </details>
-        <footer class="shot-actions">
-          <select data-shot-channel="${index}"><option value="">挂到哪一局…</option>${channelOptions(channels, pendingChannelId())}</select>
-          <button class="primary" data-source-action="attach-shots" data-group="${index}" ${ids.length ? '' : 'disabled'}>挂到这一局</button>
+        <footer class="shot-split">
+          <div class="shot-action">
+            <div class="shot-action-head"><b>补采到已有对局</b>
+              <small>营地一个月内、已有这一局但缺素材</small></div>
+            <div class="shot-action-controls">
+              <select data-shot-channel="${index}"><option value="">选已有对局…</option>${channelOptions(channels, pendingChannelId())}</select>
+              <button class="primary" data-source-action="attach-shots" data-group="${index}" ${ids.length ? '' : 'disabled'}>补到这一局</button>
+            </div>
+          </div>
+          <div class="shot-action is-entry${entryOpen ? ' is-open' : ''}">
+            <div class="shot-action-head"><b>营地窗口外 · 新录入</b>
+              <small>超过一个月或营地没有的老局，直接新建一局</small></div>
+            ${attached
+              ? `<div class="shot-action-controls">${attachedBadge(attached, '这组截图已经补采到已有对局，避免重复建档')}</div>`
+              : ''}
+            ${entryOpen
+              ? shotsEntryForm(group, index)
+              : `<div class="shot-action-controls">
+                  <button class="control" data-source-action="new-entry-shots" data-group="${index}"
+                    ${attached || !canEntry ? 'disabled' : ''} title="${esc(entryTitle)}">新建一局并录入</button>
+                </div>`}
+          </div>
         </footer>
       </article>`;
     }).join('');
 
-    return withPage('截图 OCR', '营地拿不到的局走这条：同一局七张赛后截图。拍什么、传到哪、挂给谁，这一页里都能做完。',
+    return withPage('截图 OCR', '营地只保留最近一个月的对局详情：一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。拍什么、传到哪，这一页里都能做完。',
       `<div class="src-page">
         ${noticeBox()}
-        ${steps([['拍齐七张', '同一局，七个页签'], ['上传识别', '本机识别，不联网'], ['挂到对局', '把分组挂到那一局']], active)}
+        ${steps([['拍齐七张', '同一局，七个页签'], ['上传识别', '本机识别，不联网'], ['补采 或 新录入', '缺素材补采；老局直接建档']], active)}
         ${enginePanel(value)}
         ${shotGuide()}
         <section class="section src-upload" data-tour="shots-upload">
           <div class="section-heading"><div><h2>上传这七张</h2>
-            <p>可一次多选；上传后按日期和比分自动分组，识别完在下面挂到对应对局。</p></div>
+            <p>可一次多选；上传后按日期和比分自动分组。识别完可以补到已有对局，也可以直接新建一局。</p></div>
             <div class="capture-actions">
               <span class="src-count">${fmt(images.length)} 张 · ${fmt(groups.length)} 组</span>
               <button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>
@@ -480,7 +681,7 @@ export function createSources(h) {
         <section class="section src-results" data-tour="shots-results">
           <div class="section-heading"><div><h2>识别结果</h2>
             <p>${groups.length
-              ? `共 ${fmt(groups.length)} 组 · ${fmt(complete)} 组七页齐全；每组挂到一局后，这局的截图来源就算完成。`
+              ? `共 ${fmt(groups.length)} 组 · ${fmt(complete)} 组七页齐全；每张卡片分两条路：营地一个月内缺素材的「补采到已有对局」，超过一个月 / 营地没有的老局「新录入一局」。`
               : '上传后这里会按日期和比分自动分组，一组对应一局。'}</p></div></div>
           <div class="shot-grid">${cards || `<p class="src-empty">还没有识别过赛后截图。先传一局的七张图。</p>`}</div>
         </section>
@@ -692,6 +893,15 @@ export function createSources(h) {
       const ratio = recording.status === 'done' ? 100 : Number(recording.progress || 0);
       const evidence = (recording.evidence || []).length;
       const warningCount = Number(report.warnings || 0);
+      const attached = channelUsingRecording(channels, recording);
+      const entryKey = `video:${recording.id}`;
+      const entryOpen = state.entryFor === entryKey;
+      const canEntry = Boolean(report.available) && !attached;
+      const entryTitle = attached
+        ? '这段录屏已经补采到已有对局，避免重复建档'
+        : report.available
+          ? '营地一个月窗口外的老局：用这段录屏新建一局并录入'
+          : '先识别出报告，才能用这段录屏新建一局';
       const statusText = recording.status === 'done' ? '识别完成'
         : recording.status === 'error' ? '识别失败'
           : recording.stage || '排队中';
@@ -711,31 +921,50 @@ export function createSources(h) {
           <span class="shot-player is-mini"><small>提示</small><b>${fmt(warningCount)}</b><i>条</i></span>
         </div>
         ${recording.error ? `<p class="capture-hint is-error">${esc(recording.error)}</p>` : ''}
-        <footer class="shot-actions">
-          <select data-recording-channel="${esc(recording.id)}">
-            <option value="">挂到哪一局…</option>${channelOptions(channels)}
-          </select>
-          <button class="primary" data-source-action="attach-recording" data-recording="${esc(recording.id)}"
-            ${report.available ? '' : 'disabled'} title="${report.available ? '' : '先识别出报告才能挂载'}">把报告挂到这一局</button>
-          <button class="control" data-source-action="rerun-recording" data-recording="${esc(recording.id)}"
-            ${Number(recording.progress) > 0 && recording.status !== 'done' ? 'disabled' : ''}>
-            ${state.busy === `rerun-${recording.id}` ? '正在提交…' : '重新识别'}</button>
+        <footer class="shot-split">
+          <div class="shot-action">
+            <div class="shot-action-head"><b>补采到已有对局</b>
+              <small>营地一个月内、已有这一局但缺素材</small></div>
+            <div class="shot-action-controls">
+              <select data-recording-channel="${esc(recording.id)}">
+                <option value="">选已有对局…</option>${channelOptions(channels, pendingChannelId())}
+              </select>
+              <button class="primary" data-source-action="attach-recording" data-recording="${esc(recording.id)}"
+                ${report.available ? '' : 'disabled'} title="${report.available ? '' : '先识别出报告才能补采'}">补到这一局</button>
+              <button class="control" data-source-action="rerun-recording" data-recording="${esc(recording.id)}"
+                ${Number(recording.progress) > 0 && recording.status !== 'done' ? 'disabled' : ''}>
+                ${state.busy === `rerun-${recording.id}` ? '正在提交…' : '重新识别'}</button>
+            </div>
+          </div>
+          <div class="shot-action is-entry${entryOpen ? ' is-open' : ''}">
+            <div class="shot-action-head"><b>营地窗口外 · 新录入</b>
+              <small>超过一个月或营地没有的老局，直接新建一局</small></div>
+            ${attached
+              ? `<div class="shot-action-controls">${attachedBadge(attached, '这段录屏已经补采到已有对局，避免重复建档')}</div>`
+              : ''}
+            ${entryOpen
+              ? recordingEntryForm(recording)
+              : `<div class="shot-action-controls">
+                  <button class="control" data-source-action="new-entry-recording" data-recording="${esc(recording.id)}"
+                    ${canEntry ? '' : 'disabled'} title="${esc(entryTitle)}">新建一局并录入</button>
+                </div>`}
+          </div>
         </footer>
       </article>`;
     }).join('');
 
-    return withPage('录屏 OCR', '与七张截图成对使用：每局一段完整录像。录什么、怎么传、挂到哪一局，这一页里都能做完。',
+    return withPage('录屏 OCR', '与七张截图配合使用：每局一段完整录像。营地一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。',
       `<div class="src-page">
         ${noticeBox()}
         ${ffmpegOk ? '' : `<div class="capture-notice is-error" role="status">未检测到 ffmpeg / ffprobe，录屏抽帧不可用。请先安装并加入 PATH。</div>`}
-        ${steps([['录一局', '加载页 → 整局 → 结算'], ['上传识别', '本机抽帧，不联网'], ['挂到对局', '把报告挂到那一局']], active)}
+        ${steps([['录一局', '加载页 → 整局 → 结算'], ['上传识别', '本机抽帧，不联网'], ['补采 或 新录入', '缺素材补采；老局直接建档']], active)}
         ${enginePanel(value)}
         ${videoGuide(Number(statsInfo.maxBytes || 0))}
         ${uploadVideosBlock(value)}
         <section class="section src-results" data-tour="videos-results">
           <div class="section-heading"><div><h2>本机录屏</h2>
             <p>${recordings.length
-              ? `共 ${fmt(recordings.length)} 段 · ${fmt(done)} 段已出报告${running ? ` · ${fmt(running)} 段识别中` : ''}；识别完成后把报告挂到对应对局。`
+              ? `共 ${fmt(recordings.length)} 段 · ${fmt(done)} 段已出报告${running ? ` · ${fmt(running)} 段识别中` : ''}；每张卡片分两条路：营地一个月内缺素材的「补采到已有对局」，超过一个月 / 营地没有的老局「新录入一局」。`
               : '还没有上传过录屏。上传后这里按状态显示进度与报告。'}</p></div>
             <div class="capture-actions"><button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button></div>
           </div>
@@ -744,22 +973,24 @@ export function createSources(h) {
       </div>`, false);
   }
 
-  /** 把某段录屏的识别报告挂到一局（报告 JSON 直接作为请求体）。 */
+  /** 把某段录屏的识别报告补采到一局（报告 JSON 直接作为请求体）。 */
   async function attachRecording(id) {
     const select = document.querySelector(`[data-recording-channel="${id}"]`);
     const channelId = select?.value;
-    if (!channelId) { setNotice('先选要挂到哪一局。', true); paint(); return; }
+    if (!channelId) { setNotice('先选要补采到哪一局。', true); paint(); return; }
     state.busy = `attach-${id}`;
-    setNotice('正在挂载录屏报告…');
+    setNotice('正在把录屏报告补采到该对局…');
     paint();
     try {
       const report = await api(`recordings/${encodeURIComponent(id)}/report`);
       await api(`channels/${encodeURIComponent(channelId)}/video?name=${encodeURIComponent(`录像报告-${id}.json`)}`,
         { method: 'POST', raw: JSON.stringify(report) });
       await refresh();
-      setNotice('录屏报告已挂到这一局；和七张截图凑齐后就能在缺失值审查里保存。');
+      // 新录入过来的那局已经用上了，别再预选下一次。
+      if (pendingChannelId() === channelId) clearPendingChannel();
+      setNotice('录屏报告已补采到这一局；缺的字段可以在校对页补，齐了就能保存到正式统计。');
     } catch (error) {
-      setNotice(`挂载失败：${error.message}`, true);
+      setNotice(`补采失败：${error.message}`, true);
     } finally {
       state.busy = '';
       paint();
@@ -964,19 +1195,19 @@ export function createSources(h) {
   async function attachShots(index) {
     const select = document.querySelector(`[data-shot-channel="${index}"]`);
     const channelId = select?.value;
-    if (!channelId) { setNotice('先为这一组选择一个要挂载的对局。', true); paint(); return; }
+    if (!channelId) { setNotice('先为这一组选择一个要补采到的对局。', true); paint(); return; }
     const groups = state.value?.images?.groups || [];
     const imageIds = groups[Number(index)]?.imageIds || [];
-    if (!imageIds.length) { setNotice('这一组没有可挂载的截图。', true); paint(); return; }
+    if (!imageIds.length) { setNotice('这一组没有可补采的截图。', true); paint(); return; }
     state.busy = 'attach';
-    setNotice(`正在把 ${imageIds.length} 页截图挂到通道…`);
+    setNotice(`正在把这 ${imageIds.length} 页截图补采到该对局…`);
     paint();
     try {
       await api(`channels/${encodeURIComponent(channelId)}/screenshot`, { method: 'POST', body: { imageIds } });
       await refresh();
-      // 补录过来的那局已经用上了，别再预选下一次。
+      // 新录入过来的那局已经用上了，别再预选下一次。
       if (pendingChannelId() === channelId) clearPendingChannel();
-      setNotice(`已挂载 ${imageIds.length} 页截图到该通道。`);
+      setNotice(`已把这 ${imageIds.length} 页截图补采到该对局。`);
     } catch (error) {
       setNotice(error.message, true);
     } finally {
@@ -1004,6 +1235,76 @@ export function createSources(h) {
     }
   }
 
+  /** 截图「新录入」：一组七页齐全的截图直接新建一局，成功后去校对页核对保存。 */
+  async function createShotsEntry(index) {
+    const groups = state.value?.images?.groups || [];
+    const group = groups[Number(index)];
+    if (!group) { setNotice('这组截图已经不在了，刷新后重试。', true); paint(); return; }
+    const imageIds = group.imageIds || [];
+    if (!imageIds.length) { setNotice('这一组没有可录入的截图。', true); paint(); return; }
+    const key = `shots:${index}`;
+    const date = entryFieldValue(key, 'date').trim();
+    const session = entryFieldValue(key, 'session').trim();
+    const ownSide = entryFieldValue(key, 'ownSide') || 'left';
+    if (!date && !session) { setNotice('至少填比赛日期或训练组 / 对手。', true); paint(); return; }
+
+    state.entryBusy = key;
+    setNotice('正在新建一局并录入这组截图…');
+    paint();
+    try {
+      const channel = await api('channels/from-screenshots', {
+        method: 'POST',
+        body: { imageIds, date, session, ownSide, actor: '截图录入' },
+      });
+      state.entryBusy = '';
+      state.entryFor = '';
+      await refresh();
+      const match = channel?.match || {};
+      const label = [match.date || date, match.session || session].filter(Boolean).join(' · ');
+      setNotice(`已新建一局：${label || '未命名对局'}`);
+      paint();
+      location.hash = `#review/${channel.id}`;
+    } catch (error) {
+      state.entryBusy = '';
+      setNotice(`新建失败：${error.message}`, true);
+      paint();
+    }
+  }
+
+  /** 录屏「新录入」：一段已出报告的录屏直接新建一局，成功后去校对页补胜负再保存。 */
+  async function createRecordingEntry(id) {
+    const recordings = state.value?.recordings?.recordings || [];
+    const recording = recordings.find((item) => item.id === id);
+    if (!recording) { setNotice('这段录屏已经不在了，刷新后重试。', true); paint(); return; }
+    const key = `video:${id}`;
+    const date = entryFieldValue(key, 'date').trim();
+    const session = entryFieldValue(key, 'session').trim();
+    const ownSide = entryFieldValue(key, 'ownSide') || 'left';
+    if (!date && !session) { setNotice('至少填比赛日期或训练组 / 对手。', true); paint(); return; }
+
+    state.entryBusy = key;
+    setNotice('正在新建一局并录入这段录屏…');
+    paint();
+    try {
+      const channel = await api('channels/from-recording', {
+        method: 'POST',
+        body: { recordingId: id, date, session, ownSide, actor: '录屏录入' },
+      });
+      state.entryBusy = '';
+      state.entryFor = '';
+      await refresh();
+      const match = channel?.match || {};
+      const label = [match.date || date, match.session || session].filter(Boolean).join(' · ');
+      setNotice(`已新建一局：${label || '未命名对局'}`);
+      paint();
+      location.hash = `#review/${channel.id}`;
+    } catch (error) {
+      state.entryBusy = '';
+      setNotice(`新建失败：${error.message}`, true);
+      paint();
+    }
+  }
+
   async function click(event) {
     const button = event.target.closest('[data-source-action]');
     if (!button) return false;
@@ -1019,6 +1320,30 @@ export function createSources(h) {
     if (action === 'rerun-recording') { await rerunRecording(button.dataset.recording); return true; }
     if (action === 'attach-shots') { await attachShots(button.dataset.group); return true; }
     if (action === 'attach-recording') { await attachRecording(button.dataset.recording); return true; }
+    if (action === 'new-entry-shots') {
+      // 同一时间只开一张内联表单：再点一次收起。
+      const key = `shots:${button.dataset.group}`;
+      state.entryFor = state.entryFor === key ? '' : key;
+      state.notice = null;
+      paint();
+      return true;
+    }
+    if (action === 'new-entry-recording') {
+      const key = `video:${button.dataset.recording}`;
+      state.entryFor = state.entryFor === key ? '' : key;
+      state.notice = null;
+      paint();
+      return true;
+    }
+    if (action === 'cancel-entry') {
+      state.entryFor = '';
+      state.entryBusy = '';
+      state.notice = null;
+      paint();
+      return true;
+    }
+    if (action === 'create-shots') { await createShotsEntry(button.dataset.group); return true; }
+    if (action === 'create-recording') { await createRecordingEntry(button.dataset.recording); return true; }
     if (action === 'install-mimo') { await installOcr('mimo'); return true; }
     if (action === 'install-rapid') { await installOcr('rapid'); return true; }
     if (action === 'install-ffmpeg') { await installOcr('ffmpeg'); return true; }
@@ -1053,6 +1378,11 @@ export function createSources(h) {
   function afterRender() {
     // 切换页签时清掉上一次的提示，避免串页
     if (!['#shots', '#videos', '#replays'].includes(location.hash)) state.notice = null;
+    // 离开所属页面后收起「新录入」表单，避免从别的页回来还挂着上次没提交的输入。
+    if (state.entryFor) {
+      const owner = state.entryFor.startsWith('video:') ? '#videos' : '#shots';
+      if (location.hash !== owner) { state.entryFor = ''; state.entryBusy = ''; }
+    }
     // 离开录屏页就停掉轮询，别继续打接口
     if (state.pollFor && location.hash !== '#' + state.pollFor) stopPoll();
     // 安装是服务端的活：回到 OCR 页发现还在装，就接着显示进度（切页面不会中断）。

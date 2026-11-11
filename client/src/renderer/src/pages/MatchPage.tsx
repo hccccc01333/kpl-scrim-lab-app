@@ -245,7 +245,6 @@ export function MatchPage() {
     ? '正在读取官方回放事件…'
     : '这一局没有官方回放事件（需要营地回放）。团战、掉点与资源建筑标记不可用。'
   const ownScore = scoreText(match.scores, match.ownCamp).split(' : ')
-  const warnings = Array.isArray(match.warnings) ? match.warnings : []
   const outcome = match.result === 'win' ? '收下这一局' : match.result === 'loss' ? '交出这一局' : '结束这一局'
   const score = scoreText(match.scores, match.ownCamp)
   const heroClaim = series.length >= 2 && turn
@@ -740,10 +739,6 @@ export function MatchPage() {
           </div>
         ) : <EmptyState title="暂无禁选记录">这一局没有营地禁选名单；可在工作台补录。</EmptyState>}
       </AnalysisSection>
-
-      {warnings.length ? (
-        <div className="match-warning"><Icon name="alert" size={15} /><span>{warnings.join(' · ')}</span></div>
-      ) : null}
 
       <div className="overview-foot">
         <span>SOURCE · 营地十人面板 / 官方回放 / 营地逐秒位置</span>

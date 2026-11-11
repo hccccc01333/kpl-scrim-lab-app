@@ -21,6 +21,7 @@ export interface Settings {
   density: 'comfortable' | 'compact'
   minimizeToTray: boolean
   workbenchPath: string
+  zoom?: number
   windowBounds?: {
     x?: number
     y?: number

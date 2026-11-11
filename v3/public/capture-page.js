@@ -25,10 +25,10 @@ const ROOT_API = '/api/';
 /* 采集来源档位 —— 与 web/capture-guide/requirements.json、
    web/collection-guide.js 里的既有措辞保持一致，不要另造词。 */
 const SOURCE_TIERS = [
-  ['官方回放链接', { label: '唯一必采', key: 'must' }, '每局都要有；在通道校对里关联本局网页回放', ''],
-  ['营地数据自动采集', { label: '推荐主路径', key: 'primary' }, '教练号授权后每天增量拉取，BP 与十人面板都能覆盖', '#ingest'],
-  ['七张赛后截图', { label: '兜底路径', key: 'fallback' }, '营地拿不到十人面板时使用，需与录屏成对', '#shots'],
-  ['完整录屏', { label: '兜底路径', key: 'fallback' }, '与七张截图一起凑齐审核门槛', '#videos'],
+  ['官方回放链接', { label: '营地路径必采', key: 'must' }, '营地通道必须有；截图/录屏新录入通道不要求', ''],
+  ['营地数据自动采集', { label: '推荐主路径', key: 'primary' }, '教练号授权后每天增量拉取，BP 与十人面板都能覆盖；营地只保留约一个月', '#ingest'],
+  ['七张赛后截图', { label: '补采 / 新录入', key: 'fallback' }, '已有对局缺素材时补采；超过一个月的老局直接新录入一局', '#shots'],
+  ['完整录屏', { label: '补采 / 新录入', key: 'fallback' }, '同上；十人阵容清楚即可新录入', '#videos'],
   ['标准表格', { label: '选填 · 补充', key: 'extra' }, '手填补充或校正字段，需要按模板列结构', '#capture'],
 ];
 
@@ -70,7 +70,7 @@ function stamp(iso) {
   return value.length >= 16 ? `${value.slice(5, 10)} ${value.slice(11, 16)}` : '';
 }
 
-/** 本地日期 YYYY-MM-DD，供补录表单默认值。 */
+/** 本地日期 YYYY-MM-DD，供新录入表单默认值。 */
 function today() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -160,7 +160,7 @@ export function createCapture(h) {
     widgetTimer: null,
     // 营地连接默认收起（授权正常且有选手时），点「展开管理」才铺开。
     connOpen: false,
-    // 「补录一局」表单：营地拿不到的老对局走截图 + 录屏。
+    // 「新录入一局」表单：营地拿不到的老对局走截图 / 录屏，直接新建一局并录入（不是补采）。
     backfillOpen: false,
     pullCursor: null,
     pullHasMore: false,
@@ -521,7 +521,7 @@ export function createCapture(h) {
     const ocrHost = document.querySelector('[data-ingest-list="ocr"]');
     if (ocrHost) {
       ocrHost.innerHTML = renderChannelList(filterChannels(ocr), lookups(), filtering,
-        '还没有截图 / 录屏补录的局。营地里拿不到的局在这里补。');
+        '还没有截图 / 录屏新录入的局。营地一个月窗口外的老局在这里新录入。');
     }
     const clear = document.querySelector('[data-capture-action="clear-filter"]');
     if (clear) clear.hidden = !(state.query || state.fromDate || state.toDate
@@ -929,7 +929,7 @@ export function createCapture(h) {
       const extra = [entry.ownerName || entry.owner || '', `对局 ${seq}`].filter(Boolean).join(' · ');
       const stateChip = already ? '<i class="chip is-in">已进统计</i>'
         : inReview ? '<i class="chip is-warn" title="十人面板已挂上，等缺失值审查处理">待审查</i>'
-          : expired ? '<i class="chip is-idle" title="营地只提供最近一个月的战局详情；这局请用截图或录屏兜底">营地无详情</i>'
+          : expired ? '<i class="chip is-idle" title="营地只提供最近一个月的战局详情；这局要走截图或录屏「新录入一局」">营地无详情</i>'
             : needsDetail ? '<i class="chip is-warn" title="审查记录已建，但十人面板还没挂上；同步会补详情">通道待补详情</i>'
               : needsChannel ? '<i class="chip is-warn" title="详情已缓存，同步时不用重新下载，只补建审查记录">补建记录</i>'
                 : '<i class="chip is-pending">待同步</i>';
@@ -964,10 +964,10 @@ export function createCapture(h) {
     const expiredCallout = expiredRows.length ? `<div class="ingest-callout" role="status">
       <div class="ingest-callout-copy">
         <b>${fmt(expiredRows.length)} 局营地无详情</b>
-        <span>营地只保留最近一个月的对局详情（手机营地 App 里也打不开）。这些局改用截图 + 录屏补录。</span>
+        <span>营地只保留最近一个月的对局详情（手机营地 App 里也打不开）。这些局不是补采，要用截图或录屏「新录入一局」直接建档。</span>
       </div>
       <div class="capture-actions">
-        <button class="control" data-capture-action="backfill-open">补录一局</button>
+        <button class="control" data-capture-action="backfill-open">新录入一局</button>
         <button class="control" data-capture-action="jump-ocr">去截图 / 录屏 →</button>
       </div>
     </div>` : '';
@@ -1009,7 +1009,7 @@ export function createCapture(h) {
       : '还没有上传过录屏';
     return `<section class="section cap-ocr" id="ocr-windows" data-tour="camp-ocr">
       <div class="section-heading"><div><h2>截图 / 录屏 OCR</h2>
-        <p>营地拿不到的局走这条：同一局七张赛后截图 + 一段完整录屏，两者成对才能过审；OCR 出来的字段要人工审核一遍。</p></div>
+        <p>营地窗口外的老局走这条：同一局七张赛后截图，或一段完整录屏（十人阵容清楚）。识别完可以补到已有对局，也可以直接「新录入一局」；OCR 出来的字段要人工审核一遍。</p></div>
       </div>
       <div class="ocr-windows">
         <article class="ocr-window">
@@ -1038,12 +1038,12 @@ export function createCapture(h) {
     </section>`;
   }
 
-  /** 营地拿不到的老对局：先建一条审查记录，再去截图/录屏页补材料。 */
+  /** 营地拿不到的老对局：先新录入一局（建通道），再去截图/录屏页把识别结果录入到这一局。 */
   function backfillPanel() {
     if (!state.backfillOpen) return '';
     return `<section class="section backfill-panel" data-tour="camp-backfill">
-      <div class="section-heading"><div><h2>补录一局</h2>
-        <p>营地拿不到的局（超过一个月、选手隐藏战绩等）：先建记录，再传同一局的七张截图和一段录屏。</p></div>
+      <div class="section-heading"><div><h2>新录入一局</h2>
+        <p>营地一个月窗口外的历史数据（超过一个月、选手隐藏战绩等）：营地没有可补采的通道，先建一局，再到截图 / 录屏页把识别结果录入到这一局。</p></div>
         <div class="capture-actions"><button class="control" data-capture-action="backfill-close">取消</button></div></div>
       <div class="backfill-fields">
         <label>比赛日期<input type="date" data-backfill="date" value="${today()}"></label>
@@ -1051,7 +1051,7 @@ export function createCapture(h) {
         <button class="primary" data-capture-action="backfill-create" ${state.busy ? 'disabled' : ''}>
           ${state.busy === 'backfill' ? '正在建…' : '建好这局，去传截图'}</button>
       </div>
-      <p class="capture-hint">建好后会跳到「截图 OCR」：七张截图传完并挂到这一局，再到「录屏」补一段完整录像，两边齐了才能保存。
+      <p class="capture-hint">建好后会跳到「截图 OCR」：七张截图识别完，在卡片左侧「补采到已有对局」里选中这一局（已预选）补进去；也可以在录屏页用「补采到已有对局」补一段完整录像。补完再去校对页核对保存。
         <a class="cap-guide-link" href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">先看拍摄要求 →</a></p>
     </section>`;
   }
@@ -1162,7 +1162,7 @@ export function createCapture(h) {
     const passableChannels = ocrChannels.filter((channel) => !(channel.missing || []).length);
 
     const reviewActions = `<div class="capture-actions">
-      <button class="control" data-capture-action="backfill-open">补录一局（截图/录屏）</button>
+      <button class="control" data-capture-action="backfill-open">新录入一局（截图/录屏）</button>
       ${passableChannels.length ? `<button class="primary" data-capture-action="approve-clean" ${state.busy ? 'disabled' : ''}>
         ${state.busy === 'approve' ? '正在通过…' : `一键通过无缺失 ${passableChannels.length} 条`}</button>` : ''}
     </div>`;
@@ -1203,10 +1203,10 @@ export function createCapture(h) {
       <header>
         <b>截图 / 录屏 OCR</b>
         <i class="chip ${ocrChannels.length ? 'is-warn' : 'is-idle'}">${fmt(ocrChannels.length)} 条待审核</i>
-        <small>OCR 补出来的字段可能有缺，逐条确认后才能保存。</small>
+        <small>OCR 出来的字段可能有缺，逐条确认后才能保存。</small>
       </header>
       ${''}<div data-ingest-list="ocr">${renderChannelList(filterChannels(ocrChannels), lookups(), filtering,
-        '还没有截图 / 录屏补录的局。营地里拿不到的局在这里补。')}</div>
+        '还没有截图 / 录屏新录入的局。营地一个月窗口外的老局在这里新录入。')}</div>
     </section>`;
 
     const reviewBlock = block('对局审查',
@@ -1217,7 +1217,7 @@ export function createCapture(h) {
     const connection = connectionBlock(auth, players);
     const work = players.length ? pullBlock(players) : '';
 
-    return withPage('营地同步', '授权一次，之后每天增量拉取；营地覆盖不了的局用截图 + 录屏补。',
+    return withPage('营地同步', '授权一次，之后每天增量拉取；营地一个月窗口外的老局用截图 / 录屏新录入。',
       `<div class="cap-page">
         ${notice}
         ${compact ? '' : heroCard({
@@ -1229,7 +1229,7 @@ export function createCapture(h) {
         ${backfillPanel()}
         ${ocrWindows(value?.shots, value?.recordings)}
         ${reviewBlock}
-        <details class="tier-fold"><summary>采集来源档位 —— 营地拿不到时才需要走其它来源</summary>
+        <details class="tier-fold"><summary>采集来源档位 —— 营地窗口内走同步，窗口外 / 缺素材走截图 / 录屏</summary>
           <div class="sv-tiers">${SOURCE_TIERS.map(([name, tier, note, href]) => `<div class="sv-tier is-${tier.key}">
             <span class="sv-tier-tag">${esc(tier.label)}</span>
             <b>${esc(name)}</b>
@@ -1582,7 +1582,7 @@ export function createCapture(h) {
             problems.push(`${summary.failed} 局详情没拉到${first ? `（${first.message}）` : ''}`);
           }
           if (unsupported.size) {
-            problems.push(`${unsupported.size} 局早于一个月，营地不提供详情，需用截图/录屏兜底`);
+            problems.push(`${unsupported.size} 局早于一个月，营地不提供详情，需用截图/录屏新录入一局`);
           }
           // 逐局回填状态：写好/待审/营地无详情的局不再勾选，没拉到的继续留着可以重试。
           for (const row of report.items || []) {
@@ -1628,7 +1628,7 @@ export function createCapture(h) {
       await reloadValue();
       const tail = [
         reviewTotal ? `${reviewTotal} 局待缺失值审查` : '',
-        unsupportedTotal ? `${unsupportedTotal} 局营地无详情（早于一个月），请用截图/录屏兜底` : '',
+        unsupportedTotal ? `${unsupportedTotal} 局营地无详情（早于一个月），请用截图/录屏新录入一局` : '',
         left ? `${left} 局没拉全，仍留在列表里可以重试` : '',
       ].filter(Boolean).join('；');
       setNotice(`本次同步 ${chosen.length} 局：${savedTotal} 局进入正式统计${tail ? `；${tail}` : '，全部无缺失值'}。`,
@@ -1723,22 +1723,25 @@ export function createCapture(h) {
     await reloadValue();
     setNotice(failed.length
       ? `已上传识别 ${done} 张，失败 ${failed.length} 张：${failed[0]}`
-      : `已上传并识别 ${done} 张截图；识别完去「截图完整页」挂到对应对局。`, failed.length > 0);
+      : `已上传并识别 ${done} 张截图；识别完去「截图完整页」补到已有对局，或新录入一局。`, failed.length > 0);
     paint();
   }
 
-  /** 建一条空审查记录，并把新建的通道带到截图页（sessionStorage 里交给它预选）。 */
+  /** 新录入一局：先建一条 OCR 录入通道，并把通道 id 带到截图页预选「补采到已有对局」。 */
   async function createBackfillMatch() {
     const date = String(document.querySelector('[data-backfill="date"]')?.value || '').trim();
     const session = String(document.querySelector('[data-backfill="session"]')?.value || '').trim();
     if (!date && !session) { setNotice('至少填比赛日期或训练组。', true); paint(); return; }
     state.busy = 'backfill';
     try {
-      const channel = await api('channels', { method: 'POST', body: { match: { date, session } } });
+      const channel = await api('channels', {
+        method: 'POST',
+        body: { match: { date, session }, entry: { mode: 'ocr', primary: '' } },
+      });
       try { sessionStorage.setItem('cap-new-channel', channel.id); } catch { /* 无痕模式 */ }
       state.backfillOpen = false;
       await reloadValue();
-      setNotice(`已建好 ${date || session} 这一局：去传七张截图，再补一段录屏。`);
+      setNotice(`已新建一局（录像/截图录入）：${date || session}。去传七张截图或一段录屏，补采到这一局。`);
       location.hash = '#shots';
     } catch (error) {
       setNotice(`建局失败：${error.message}`, true);

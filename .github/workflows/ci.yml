@@ -39,6 +39,9 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    env:
+      # 巡检/截图实例不发匿名心跳，也不弹首次统计说明。
+      KPL_TELEMETRY: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -73,3 +76,5 @@ jobs:
           exit 1
       - name: V3 route audit
         run: python scripts/audit_v3_regression.py http://127.0.0.1:8766
+      - name: Update panel regression
+        run: python scripts/verify_update_panel.py --base http://127.0.0.1:8766

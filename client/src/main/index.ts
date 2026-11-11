@@ -30,6 +30,8 @@ interface Settings {
   density: Density
   minimizeToTray: boolean
   workbenchPath: string
+  /** 界面缩放：1 = 100%。默认 1.15，让 1080p/2K 100% 缩放下的正文与图例更大。 */
+  zoom?: number
   windowBounds?: WindowBounds
 }
 
@@ -38,7 +40,19 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'light',
   density: 'comfortable',
   minimizeToTray: false,
-  workbenchPath: ''
+  workbenchPath: '',
+  zoom: 1.15
+}
+
+const ZOOM_MIN = 0.85
+const ZOOM_MAX = 1.6
+const ZOOM_STEP = 0.05
+const ZOOM_DEFAULT = 1.15
+
+function normalizeZoom(value: unknown): number {
+  const zoom = Number(value)
+  if (!Number.isFinite(zoom)) return ZOOM_DEFAULT
+  return Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)) * 100) / 100
 }
 
 const APP_ID = 'com.kpl.scrimdesk'
@@ -87,7 +101,8 @@ function readSettings(): Settings {
       density: raw?.density === 'compact' ? 'compact' : 'comfortable',
       minimizeToTray: Boolean(raw?.minimizeToTray),
       baseUrl: typeof raw?.baseUrl === 'string' && raw.baseUrl ? raw.baseUrl : DEFAULT_SETTINGS.baseUrl,
-      workbenchPath: typeof raw?.workbenchPath === 'string' ? raw.workbenchPath : ''
+      workbenchPath: typeof raw?.workbenchPath === 'string' ? raw.workbenchPath : '',
+      zoom: normalizeZoom(raw?.zoom)
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
@@ -104,6 +119,21 @@ function writeSettings(patch: Partial<Settings>): Settings {
     log(`write settings failed: ${String(error)}`)
   }
   return settings
+}
+
+function applyZoom(zoom = settings.zoom): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  try {
+    mainWindow.webContents.setZoomFactor(normalizeZoom(zoom))
+  } catch (error) {
+    log(`apply zoom failed: ${String(error)}`)
+  }
+}
+
+function changeZoom(delta: number): void {
+  const next = normalizeZoom(normalizeZoom(settings.zoom) + delta)
+  writeSettings({ zoom: next })
+  applyZoom(next)
 }
 
 function assetPath(name: string): string {
@@ -178,11 +208,29 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      zoomFactor: normalizeZoom(settings.zoom)
     }
   })
 
   if (bounds.maximized) mainWindow.maximize()
+  /* 界面缩放快捷键：Ctrl + 加号/减号调整，Ctrl + 0 回到默认 115%。
+     设置页里也有同样选项，值写进 settings.json，下次启动保留。 */
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || !input.control) return
+    const key = input.key
+    if (key === '+' || key === '=' || key === 'Add') {
+      event.preventDefault()
+      changeZoom(ZOOM_STEP)
+    } else if (key === '-' || key === '_' || key === 'Subtract') {
+      event.preventDefault()
+      changeZoom(-ZOOM_STEP)
+    } else if (key === '0') {
+      event.preventDefault()
+      writeSettings({ zoom: ZOOM_DEFAULT })
+      applyZoom(ZOOM_DEFAULT)
+    }
+  })
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show()
     applyTitleBarTheme(settings.theme)
@@ -221,6 +269,56 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  if (pendingHref) {
+    const target = pendingHref
+    pendingHref = ''
+    mainWindow.webContents.once('did-finish-load', () => {
+      void mainWindow?.webContents.executeJavaScript(`location.hash = ${JSON.stringify(target)}`).catch(() => {})
+    })
+  }
+}
+
+/* 工作台网页可以通过 kpl-client://open?tab=review&game=... 把客户端拉到指定决策页。
+   这里只接受白名单 tab，不把任意 URL/JS 拼进 hash，避免协议被滥用。 */
+const CLIENT_TABS: Record<string, string> = {
+  review: 'review',
+  prep: 'prep',
+  player: 'player',
+  training: 'training'
+}
+
+function routeFromProtocol(raw: string): string {
+  try {
+    const url = new URL(raw)
+    if (url.protocol !== `${PROTOCOL}:`) return ''
+    const tab = CLIENT_TABS[url.searchParams.get('tab') || ''] || ''
+    if (!tab) return ''
+    const game = (url.searchParams.get('game') || '').trim()
+    return `#/decision?tab=${tab}${game ? `&game=${encodeURIComponent(game)}` : ''}`
+  } catch {
+    return ''
+  }
+}
+
+let pendingHref = ''
+
+function openProtocolTarget(raw: string): void {
+  const target = routeFromProtocol(raw)
+  if (!target) {
+    showWindow()
+    return
+  }
+  if (!mainWindow) {
+    pendingHref = target
+    createWindow()
+    return
+  }
+  showWindow()
+  const apply = () => {
+    void mainWindow?.webContents.executeJavaScript(`location.hash = ${JSON.stringify(target)}`).catch(() => {})
+  }
+  if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', apply)
+  else apply()
 }
 
 function showWindow(): void {
@@ -325,6 +423,7 @@ function registerIpc(): void {
   ipcMain.handle('settings:set', (_event, patch: Partial<Settings>) => {
     const next = writeSettings(patch)
     if (patch.theme) applyTitleBarTheme(next.theme)
+    if (patch.zoom !== undefined) applyZoom(next.zoom)
     return next
   })
   ipcMain.handle('api:request', async (_event, payload: {
@@ -439,16 +538,19 @@ function registerIpc(): void {
 }
 
 const gotLock = app.requestSingleInstanceLock()
+/* 首次启动也可能带着 kpl-client://... 参数（工作台里点「在赛训台查看」）。 */
+const startupProtocol = process.argv.find((arg) => arg.startsWith(`${PROTOCOL}://`)) || ''
 if (!gotLock) {
   app.quit()
 } else {
   app.on('second-instance', (_event, argv) => {
-    if (argv.some((arg) => arg.startsWith(`${PROTOCOL}://`))) showWindow()
+    const target = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`))
+    if (target) openProtocolTarget(target)
     else showWindow()
   })
   app.on('open-url', (event, url) => {
     event.preventDefault()
-    if (url.startsWith(`${PROTOCOL}://`)) showWindow()
+    openProtocolTarget(url)
   })
   app.whenReady().then(() => {
     log(`app ready ${app.getVersion()} packaged=${app.isPackaged}`)
@@ -456,6 +558,7 @@ if (!gotLock) {
     Menu.setApplicationMenu(null)
     createWindow()
     createTray()
+    if (startupProtocol) openProtocolTarget(startupProtocol)
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow()
       else showWindow()

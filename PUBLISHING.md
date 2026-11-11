@@ -23,8 +23,10 @@
 | `resources/icons/` | 王者荣耀英雄/装备图片,权利归原权利人,不随代码分发 |
 | `_qr.json`、`_pid.txt`、`*.log` | 登录二维码、进程号、运行日志 |
 | `data/`、`*.sqlite3`、`*.abc`、`*.ope` | 对局数据、数据库、回放文件 |
-| `data/facts/`（`kpl_combos.json`、`lane_matchups.json`） | 由私有 KPL 数据集生成，公开仓库不带 |
-| `scripts/build_bp_facts.py`、`scripts/build_refsite_css.py` | 依赖私有数据集/参考项目，留在本地 |
+| `data/facts/lane_matchups.json` | 由私有 KPL 数据集生成，公开仓库不带 |
+| `data/kpl/bp_games.jsonl` | 本项目爬虫从 KPL 官方公开接口抓的逐局 BP，可随时重抓，**可公开** |
+| `data/facts/kpl_combos.json` | 由 `data/kpl/bp_games.jsonl` 生成，公开仓库可不带（一条命令重算） |
+| `scripts/build_bp_facts.py` 的巅峰千强部分 | 依赖私有数据集，留在本地；KPL 部分已改为自抓管线 |
 | `tools/agent_*.py`、`docs/agent_*.md` | 逆向研究过程脚本与笔记，不公开 |
 | 用户目录绝对路径(本机用户名目录) | 暴露本机用户名与目录结构 |
 | 分发渠道与安全运营细节 | 签名状态、分发方式、安装链路、内部端点等，只写在本机运维笔记里 |

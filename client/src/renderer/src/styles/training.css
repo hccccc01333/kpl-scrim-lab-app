@@ -19,7 +19,7 @@
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .dash-goal-legend i {
@@ -45,7 +45,7 @@
   margin-left: auto;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
 }
 
@@ -72,7 +72,7 @@
 .dash-heat-head i {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
   font-style: normal;
   text-align: center;
 }
@@ -83,7 +83,7 @@
   justify-content: flex-end;
   gap: 3px;
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .dash-heat-foot .dash-heat-cell {
@@ -126,7 +126,7 @@
   align-items: center;
   padding: 6px 4px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .dash-session > span:first-child {
@@ -142,7 +142,7 @@
 
 .dash-session b {
   color: var(--text);
-  font-size: 9px;
+  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -150,7 +150,7 @@
 
 .dash-session small {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .dash-session > span:nth-child(3) {
@@ -186,7 +186,7 @@
 
 .plan-next > span {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .plan-next b {
@@ -197,13 +197,13 @@
 
 .plan-next p {
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .plan-next a {
   margin-left: auto;
   color: var(--accent);
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -219,7 +219,7 @@
   align-items: center;
   padding: 8px 5px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .plan-row:hover {
@@ -240,7 +240,7 @@
 .plan-date b,
 .plan-opponent b {
   color: var(--text);
-  font-size: 9px;
+  font-size: 10px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -253,12 +253,12 @@
 .plan-date small,
 .plan-opponent small {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .plan-goals {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .plan-go {
@@ -288,7 +288,7 @@
   gap: 7px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .effect-head .board-tag {
@@ -306,7 +306,7 @@
 .effect-method {
   margin-top: 3px;
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .effect-values {
@@ -325,7 +325,7 @@
 
 .effect-values small {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .effect-values b {
@@ -337,7 +337,7 @@
 
 .effect-values em {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
   font-style: normal;
 }
 
@@ -351,7 +351,7 @@
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
   line-height: 1.6;
 }
 
@@ -386,23 +386,23 @@
 .goal-review > span {
   grid-row: 1 / 3;
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .goal-review b {
   color: var(--text);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .goal-review small {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .session-review {
   white-space: pre-wrap;
   color: var(--muted);
-  font-size: 9.5px;
+  font-size: 10.5px;
   line-height: 1.75;
 }
 
@@ -422,12 +422,12 @@
 
 .session-meta small {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .session-meta b {
   color: var(--text);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -455,7 +455,7 @@
 .brief-head span {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .brief-grid > div:not(.brief-head) {
@@ -465,7 +465,7 @@
 
 .brief-grid small {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .brief-heroes,
@@ -483,14 +483,14 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .brief-heroes .portrait {
   width: 18px;
   height: 18px;
   border: 0;
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .brief-players > span {
@@ -498,7 +498,7 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 /* ── 报告库 / 周报 / 快照 ──────────────────────────────────────── */
@@ -523,7 +523,7 @@
   justify-content: space-between;
   gap: 7px;
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .report-card h3 {
@@ -536,13 +536,13 @@
 
 .report-card p {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .report-card em {
   margin-top: 3px;
   color: var(--accent);
-  font-size: 8px;
+  font-size: 9.5px;
   font-style: normal;
   font-weight: 700;
 }
@@ -588,7 +588,7 @@
 .report-brand small {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 6.5px;
+  font-size: 8px;
   letter-spacing: .12em;
 }
 
@@ -598,7 +598,7 @@
   border: 1px solid var(--line-strong);
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .report-title {
@@ -611,7 +611,7 @@
 .report-eyebrow {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
   letter-spacing: .12em;
 }
 
@@ -628,7 +628,7 @@
 .report-title p {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .report-stamp {
@@ -642,13 +642,13 @@
 
 .report-stamp span {
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .report-stamp b {
   color: var(--text);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .report-kpis {
@@ -668,7 +668,7 @@
 
 .report-kpis span {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .report-kpis strong {
@@ -680,14 +680,14 @@
 
 .report-kpis small {
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .report-context {
   padding: 7px 9px;
   border: 1px solid var(--line);
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
   line-height: 1.6;
 }
 
@@ -695,7 +695,7 @@
   margin-right: 7px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
   letter-spacing: .08em;
 }
 
@@ -715,7 +715,7 @@
 
 .report-compare span {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .report-compare b {
@@ -727,7 +727,7 @@
 
 .report-compare small {
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .report-columns {
@@ -754,7 +754,7 @@
 .report-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .report-table th,
@@ -767,7 +767,7 @@
 .report-table th {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
   font-weight: 500;
 }
 
@@ -781,7 +781,7 @@
 
 .report-muted {
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .report-goals {
@@ -789,7 +789,7 @@
   gap: 3px;
   padding-left: 16px;
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .report-review-item {
@@ -800,14 +800,14 @@
 .report-review-item b {
   color: var(--text);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .report-review-item p {
   margin-top: 2px;
   white-space: pre-wrap;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9.5px;
   line-height: 1.6;
 }
 
@@ -818,12 +818,12 @@
 
 .report-effect b {
   color: var(--text);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .report-effect span {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .report-footer {
@@ -833,7 +833,7 @@
   padding-top: 8px;
   border-top: 1px solid var(--line);
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 @media (max-width: 960px) {

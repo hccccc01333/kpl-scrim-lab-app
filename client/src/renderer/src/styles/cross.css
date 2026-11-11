@@ -24,7 +24,7 @@
   gap: 7px;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
   letter-spacing: .03em;
 }
 
@@ -34,7 +34,7 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   font-family: var(--sans);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .cross-grade.is-2 {
@@ -67,7 +67,7 @@
 
 .cross-card-name span {
   color: var(--quiet);
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 400;
 }
 
@@ -86,7 +86,7 @@
 
 .cross-card-plain {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1.65;
 }
 
@@ -107,12 +107,12 @@
 
 .cross-card-foot span {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .cross-card-foot p {
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
   line-height: 1.5;
 }
 
@@ -122,7 +122,7 @@
 
 .cross-method {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cross-method summary {
@@ -175,7 +175,7 @@
   justify-content: space-between;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .cx-strata {
@@ -189,7 +189,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 56px 36px;
   gap: 6px;
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cx-strata span {
@@ -202,14 +202,14 @@
 .cx-strata b {
   color: var(--text);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
   text-align: right;
 }
 
 .cx-strata small {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
   text-align: right;
 }
 
@@ -229,7 +229,7 @@
 
 .cx-range-row > span {
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .cx-range-row > i {
@@ -258,7 +258,7 @@
   grid-column: 2;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 /* systems */
@@ -286,14 +286,14 @@
 
 .cx-system b {
   color: var(--text);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .cx-system span,
 .cx-system small {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 /* matrix / trans */
@@ -312,7 +312,7 @@
 
 .cx-trans-row span {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cx-trans-row b {
@@ -322,7 +322,7 @@
   border: 1px solid var(--line);
   color: var(--text);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
 }
 
@@ -348,12 +348,12 @@
 .cx-lane-row.is-head {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .cx-lane-name {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .cx-lane-cell {
@@ -364,7 +364,7 @@
 .cx-lane-cell b {
   color: var(--md-own);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
 }
 
@@ -434,7 +434,7 @@
 .cross-row-main b {
   overflow: hidden;
   color: var(--text);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -442,19 +442,19 @@
 
 .cross-row-main small {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cross-row-result {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   text-align: center;
 }
 
 .cross-row-duration {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .cross-row-spark {
@@ -469,19 +469,19 @@
 
 .cross-row-metric small {
   color: var(--quiet);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .cross-row-metric b {
   color: var(--text);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 500;
 }
 
 .cross-row-link {
   color: var(--accent);
-  font-size: 8px;
+  font-size: 9.5px;
   text-align: right;
 }
 
@@ -502,7 +502,7 @@
 
 .cross-ref > p {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cx-dist {
@@ -516,13 +516,13 @@
   justify-content: space-between;
   gap: 6px;
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .cx-dist-head b {
   color: var(--text);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 500;
 }
 
@@ -555,7 +555,7 @@
   justify-content: space-between;
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .cross-ref-spark {
@@ -567,7 +567,7 @@
 
 .cross-ref-spark > span {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 /* ── Sparkline ─────────────────────────────────────────────────── */
@@ -621,7 +621,7 @@
 .spark-none {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 /* ── 智能找局 ──────────────────────────────────────────────────── */
@@ -647,7 +647,7 @@
 .query-index {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .query-main {
@@ -658,7 +658,7 @@
 
 .query-main b {
   color: var(--text);
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -667,7 +667,7 @@
 
 .query-main small {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .query-metric {
@@ -676,13 +676,13 @@
   gap: 4px;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .query-metric small {
   color: var(--quiet);
   font-family: var(--sans);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .query-heroes {
@@ -694,7 +694,7 @@
   width: 20px;
   height: 20px;
   border: 0;
-  font-size: 7px;
+  font-size: 8.5px;
 }
 
 .query-go {
@@ -738,12 +738,12 @@
 .featured-rank {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .featured-meta {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .featured-head .board-tag {
@@ -760,7 +760,7 @@
 
 .featured-card > p {
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .featured-card .sparkline {
@@ -775,7 +775,7 @@
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .featured-foot a {
@@ -797,13 +797,13 @@
   border: 1px solid var(--line);
   border-radius: 2px;
   color: var(--muted);
-  font-size: 8.5px;
+  font-size: 10px;
 }
 
 .featured-method b {
   color: var(--md-own);
   font-family: var(--mono);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 /* ── 训练纪录 ──────────────────────────────────────────────────── */
@@ -825,7 +825,7 @@
 
 .record-card > span {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .record-card strong {
@@ -838,7 +838,7 @@
 
 .record-card p {
   color: var(--quiet);
-  font-size: 8px;
+  font-size: 9.5px;
   line-height: 1.5;
 }
 
@@ -850,7 +850,7 @@
   padding-top: 6px;
   border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
   color: var(--muted);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 .record-card a b {
@@ -872,13 +872,13 @@
   align-items: center;
   padding: 8px 4px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .version-row.is-head {
   color: var(--quiet);
   font-family: var(--mono);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .version-name {
@@ -888,12 +888,12 @@
 
 .version-name b {
   color: var(--text);
-  font-size: 9.5px;
+  font-size: 10.5px;
 }
 
 .version-name small {
   color: var(--quiet);
-  font-size: 7.5px;
+  font-size: 9px;
 }
 
 .version-count {
@@ -904,7 +904,7 @@
 .version-count b {
   color: var(--text);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
 }
 
@@ -931,7 +931,7 @@
 
 .version-link a {
   color: var(--accent);
-  font-size: 8px;
+  font-size: 9.5px;
 }
 
 @media (max-width: 1100px) {

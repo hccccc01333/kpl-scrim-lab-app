@@ -168,7 +168,9 @@ class CampListImportedTests(unittest.TestCase):
         self._write_detail(self.SEQ, {
             'killCnt': '3', 'deadCnt': '1', 'assistCnt': '8',
             'gradeGame': '9.2', 'money': '9000',
-            'totalHurtCnt': '30000', 'totalBehurtCnt': '20000',
+            # 契约的 damage/taken 取对英雄口径；面板同时给总伤害，二者不混用。
+            'totalHurtCnt': '30000', 'totalHeroHurtCnt': '22000',
+            'totalBehurtCnt': '20000', 'totalBeheroHurtCnt': '19500',
             'joinGamePercent': '0.6',
         })
 
