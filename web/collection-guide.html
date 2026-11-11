@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>采集规范 · 老对局补录（七张截图 + 录屏）</title>
+<style>
+  :root {
+    --bg: #f3f5f6; --paper: #fff; --text: #192c31; --muted: #627478; --quiet: #7b8b8e;
+    --line: #dde4e5; --accent: #176b69; --soft: #dcefeb; --warn: #a54c46; --warn-bg: #fdf1ef;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.7 "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 22px 72px; }
+  header.top { margin-bottom: 22px; }
+  header.top h1 { margin: 0 0 6px; font-size: 27px; letter-spacing: -.02em; }
+  header.top p { margin: 0; color: var(--muted); font-size: 13.5px; }
+  nav.toc { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px;
+    margin: 18px 0 24px; padding: 12px 0; background: var(--bg); border-bottom: 1px solid var(--line); }
+  nav.toc a { padding: 6px 12px; border: 1px solid var(--line); border-radius: 99px;
+    background: var(--paper); color: var(--accent); text-decoration: none; font-size: 13px; }
+  nav.toc a:hover { background: var(--soft); }
+  section.card { background: var(--paper); border: 1px solid var(--line); border-radius: 12px;
+    padding: 24px 26px; margin: 0 0 18px; }
+  section.card h2 { margin: 0 0 4px; font-size: 20px; letter-spacing: -.01em; }
+  section.card > p.lede { margin: 6px 0 16px; color: var(--muted); font-size: 13.5px; }
+  .callout { border: 1px solid var(--line); border-left: 3px solid var(--warn);
+    background: var(--warn-bg); border-radius: 8px; padding: 12px 15px; margin: 0 0 16px; font-size: 13.5px; }
+  .callout b { color: var(--warn); }
+  ol, ul { padding-left: 22px; margin: 8px 0 14px; }
+  li { margin: 5px 0; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin: 12px 0 6px; }
+  figure.shot { margin: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; }
+  figure.shot a { display: block; line-height: 0; }
+  figure.shot img { width: 100%; height: auto; aspect-ratio: 20 / 9; object-fit: cover; display: block; background: #0b1518; }
+  figure.shot figcaption { padding: 9px 11px 11px; font-size: 12.5px; color: var(--muted); }
+  figure.shot figcaption b { display: block; color: var(--text); font-size: 13.5px; margin-bottom: 2px; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--soft);
+    color: var(--accent); font-size: 11px; font-weight: 700; margin-left: 6px; vertical-align: 1px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .example { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .example img { width: 100%; display: block; }
+  .example figcaption { padding: 8px 11px; font-size: 12.5px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 10px 0 4px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  .do { color: #227a68; font-weight: 600; }
+  .dont { color: var(--warn); font-weight: 600; }
+  a.inline { color: var(--accent); font-weight: 600; }
+  .entry { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .entry a { padding: 9px 16px; border-radius: 8px; background: var(--accent); color: #fff;
+    text-decoration: none; font-size: 13.5px; }
+  .entry a.ghost { background: #fff; color: var(--accent); border: 1px solid var(--accent); }
+  footer { margin-top: 26px; color: var(--quiet); font-size: 12px; }
+  @media (max-width: 720px) {
+    .two { grid-template-columns: 1fr; }
+    section.card { padding: 18px; }
+  }
+  @media print {
+    nav.toc { display: none; }
+    body { background: #fff; }
+    section.card { break-inside: avoid; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>老对局怎么补：七张赛后截图 + 一段录屏</h1>
+    <p>用于王者营地已不再提供详情的对局（一般是超过一个月的局）。一个月内的对局直接走「营地同步」，不需要看这一页。</p>
+  </header>
+
+  <nav class="toc">
+    <a href="#why">为什么拉不到</a>
+    <a href="#screenshots">七张截图</a>
+    <a href="#video">一段录屏</a>
+    <a href="#upload">上传与审核</a>
+    <a href="#faq">常见问题</a>
+  </nav>
+
+  <section class="card" id="why">
+    <h2>为什么这些局拉不到</h2>
+    <p class="lede">不是软件坏了，是营地只保留最近一个月的对局详情。</p>
+    <div class="callout">
+      <b>实测结论：</b>超过一个月的对局，营地的详情接口返回
+      <code>-30457 暂不支持查看一个月前的战绩详情</code>；换成手机营地 App 打开同一局，同样看不到十人面板。
+      也就是说，这条数据在营地侧已经没有了，工作台再怎么拉也拉不到。
+    </div>
+    <p>所以采集只有两条路，<b>二选一</b>即可过审：</p>
+    <ul>
+      <li><b>营地十人面板</b>（推荐，最省事）：对局结束一个月内在工作台点「拉取对局 → 同步所选」，自动带出 BP 与十人面板。</li>
+      <li><b>七张赛后截图 + 一段录屏</b>（兜底）：营地拿不到的局（超过一个月、选手隐藏战绩等），靠当场留下的截图和录屏补。</li>
+    </ul>
+    <p><b>关键习惯：</b>赛后截图和录屏要当天存。超过一个月再想补，营地已经没有入口，没存就补不回来了。</p>
+  </section>
+
+  <section class="card" id="screenshots">
+    <h2>一、七张赛后截图<span class="pill">同一局，每页一张</span></h2>
+    <p class="lede">在赛后结算页把七个页签各截一张；「战绩」页有两种显示方式，合计七张，缺一不可。</p>
+    <div class="shots">
+      <figure class="shot"><a href="capture-guide/01-score-equipment.jpg" target="_blank" rel="noopener"><img src="capture-guide/01-score-equipment.jpg" alt="战绩·装备型"></a><figcaption><b>1. 战绩 · 装备型</b>比分、胜负、时长、十人 KDA 与装备</figcaption></figure>
+      <figure class="shot"><a href="capture-guide/02-score-kda.jpg" target="_blank" rel="noopener"><img src="capture-guide/02-score-kda.jpg" alt="战绩·KDA 占比型"></a><figcaption><b>2. 战绩 · KDA 占比型</b>击杀、死亡、助攻及各自占比</figcaption></figure>
+      <figure class="shot"><a href="capture-guide/03-data.jpg" target="_blank" rel="noopener"><img src="capture-guide/03-data.jpg" alt="数据"></a><figcaption><b>3. 数据</b>输出、承伤、经济、参团率</figcaption></figure>
+      <figure class="shot"><a href="capture-guide/04-output.jpg" target="_blank" rel="noopener"><img src="capture-guide/04-output.jpg" alt="输出"></a><figcaption><b>4. 输出</b>输出伤害与伤害转化比</figcaption></figure>
+      <figure class="shot"><a href="capture-guide/05-survival.jpg" target="_blank" rel="noopener"><img src="capture-guide/05-survival.jpg" alt="生存"></a><figcaption><b>5. 生存</b>承受伤害与每死承伤</figcaption></figure>
+      <figure class="shot"><a href="capture-guide/06-farming.jpg" target="_blank" rel="noopener"><img src="capture-guide/06-farming.jpg" alt="发育"></a><figcaption><b>6. 发育</b>总经济、野怪经济、补刀数</figcaption></figure>
+      <figure class="shot"><a href="capture-guide/07-team.jpg" target="_blank" rel="noopener"><img src="capture-guide/07-team.jpg" alt="团队"></a><figcaption><b>7. 团队</b>参团率、控制效果、治疗量、对塔伤害</figcaption></figure>
+    </div>
+    <p style="color:var(--quiet);font-size:12.5px;margin:6px 0 16px">上图为教学示例：真实数值保留，昵称已打码；<b>你自己上传的截图不要打码</b>——识别要靠昵称和数值。</p>
+
+    <h3>拍摄要求</h3>
+    <table>
+      <thead><tr><th style="width:110px">项</th><th>要求</th></tr></thead>
+      <tbody>
+        <tr><td>同一局</td><td>七张必须来自同一局，不能拿不同局的图凑；七张的日期、比分、十人阵容要一致。</td></tr>
+        <tr><td class="do">要保留</td><td>顶部比分与日期、双方十人、列名、底部页签。</td></tr>
+        <tr><td class="dont">不要做</td><td>不裁切、不拼图、不遮挡字段、不加边框/文字、不压缩到看不清数字。</td></tr>
+        <tr><td>命名（可选）</td><td><code>01-战绩装备.png</code> 一直到 <code>07-团队.png</code>，方便系统自动分组。</td></tr>
+        <tr><td>格式</td><td>PNG / JPEG / WebP 原图；不要用聊天软件压缩过的「模糊图」。</td></tr>
+        <tr><td>传到电脑</td><td><b>推荐</b>：数据线拷贝，或 QQ 选「发送文件」（文件方式不压缩）。
+          用微信发图<b>必须勾「原图」</b>再发送——不勾原图微信会按画质约 70-80 重压缩，小字直接发糊。
+          系统识别到压缩图时会在审查警告里提示重传。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card" id="video">
+    <h2>二、一段录屏<span class="pill">与七张截图成对使用</span></h2>
+    <p class="lede">每局一段完整录屏，从加载页到赛后结算，不剪辑、不加速。</p>
+    <div class="two">
+      <figure class="example"><a href="capture-guide/recording-loading.png" target="_blank" rel="noopener"><img src="capture-guide/recording-loading.png" alt="加载页示例"></a><figcaption>加载页：双方十人英雄 + 昵称，停留约 5 秒</figcaption></figure>
+      <figure class="example"><a href="capture-guide/recording-panel.png" target="_blank" rel="noopener"><img src="capture-guide/recording-panel.png" alt="团队面板示例"></a><figcaption>团队面板：双方各五人 KDA + 累计金币，尽量全程开着</figcaption></figure>
+    </div>
+    <h3>录制顺序</h3>
+    <ol>
+      <li><b>开始：</b>进回放前就开录，录到回放列表 / 加载页十人阵容，停留约 5 秒，并完整录到局内 00:00。</li>
+      <li><b>过程：</b>原始横屏、1 倍速、连续；保留顶部时钟、比分、双方团队金币，不裁切、不拖进度跳过。</li>
+      <li><b>团队面板：</b>显示双方各五人 K/D/A 和<b>累计金币</b>的面板尽量全程打开。单英雄的可用金币不能替代累计经济。</li>
+      <li><b>记分板：</b>约 00:30、之后每 5 分钟、结束前，各打开完整十人记分板停留至少 5 秒再关掉。</li>
+      <li><b>结束：</b>录过水晶结束、胜利/失败动画，进入赛后战绩页停约 5 秒再停止。</li>
+    </ol>
+    <table>
+      <thead><tr><th style="width:110px">项</th><th>要求</th></tr></thead>
+      <tbody>
+        <tr><td>画质</td><td>横屏 1080p、30 fps 起；16:9 或 20:9 均可。</td></tr>
+        <tr><td>时长</td><td>覆盖整局，从加载页到结算页，中途不剪切。</td></tr>
+        <tr><td>格式</td><td>mp4 / mov / mkv / webm，单文件不超过 2 GB。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card" id="upload">
+    <h2>三、上传与审核</h2>
+    <p class="lede">七张截图和录屏都传完，这一局的兜底材料才算齐。</p>
+    <ol>
+      <li>截图：工作台「采集 → 截图 OCR」一次多选七张上传，系统自动按日期和比分分组。</li>
+      <li>录屏：同一页的「录屏」上传当天的完整录像，等抽帧识别完成。</li>
+      <li>回到「采集 → 营地同步」的「缺失值审查」，把这局的截图分组和录屏挂到同一局，确认十人后保存。</li>
+    </ol>
+    <p>审核只看两件事：<b>营地十人面板</b> 或 <b>七张截图 + 一段录屏</b>，二者有一组就够；缺哪一组，页面会直接列出来。</p>
+    <div class="entry">
+      <a href="/#shots">去传七张截图</a>
+      <a class="ghost" href="/#videos">去传录屏</a>
+      <a class="ghost" href="/#ingest">回到营地同步</a>
+    </div>
+  </section>
+
+  <section class="card" id="faq">
+    <h2>常见问题</h2>
+    <table>
+      <tbody>
+        <tr><th style="width:42%">营地里还能看到这局，为什么工作台拉不到？</th>
+          <td>能看到「战绩列表」不等于能看到「对局详情」。营地对超过一个月的局只保留列表，点进去没有十人面板，接口也返回 -30457。</td></tr>
+        <tr><th>找选手重新分享一个链接行不行？</th>
+          <td>不行。拿到的还是同一局，营地侧没有详情，换谁分享都一样。</td></tr>
+        <tr><th>当时没截图，现在还能补吗？</th>
+          <td>补不了。赛后结算页只在打完那局后的一段时间内能看到；超过一个月，营地和工作台都没有入口。</td></tr>
+        <tr><th>能不能只传七张截图、不传录屏？</th>
+          <td>不能。兜底路径要求七张截图 + 一段录屏成对提交。</td></tr>
+        <tr><th>训练赛（开房间）也能用吗？</th>
+          <td>可以，七张截图和录屏与模式无关；营地同步对开房间的覆盖要看营地是否提供该局详情。</td></tr>
+        <tr><th>截图要不要打码？</th>
+          <td>不用。教学示例里的马赛克只是为了让示例更干净；你上传的原图请保留昵称和数值，否则识别要多花人工。</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer>赛训数据 · 采集规范（老对局补录） · 与「采集 → 截图 OCR / 录屏」页面配套使用</footer>
+</div>
+<script>
+  // 支持 ?section=screenshots|video|table 直接跳到对应段落（旧文档里的链接格式）
+  (function () {
+    const section = new URLSearchParams(location.search).get('section');
+    if (!section) return;
+    const target = document.getElementById(section);
+    if (target) requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+  })();
+</script>
+</body>
+</html>
+
+
+
+
+
+
+

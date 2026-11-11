@@ -1,0 +1,213 @@
+{
+  "schema": 1,
+  "version": "1.5.32",
+  "publishedAt": "2026-11-10T23:09:22+08:00",
+  "channel": "stable",
+  "minVersion": "1.5.15",
+  "notes": [
+    "跨局分析补完最后两块：领先之后换成了什么、对手爱用哪些人。",
+    "**优势兑现**（资源与团战）：先筛「10 分钟领先且分出胜负」的局，再看这些局里",
+    "有没有拿到龙、推塔是否多于对手，逐级算胜率——领先 + 龙 + 塔都做到的局赢多少，",
+    "和只有经济领先的局差多少。同时给 10 分钟落后局的翻盘率。",
+    "**对手阵容**（对手）：按对手名分组，把他们每局五人两两配对，取出现次数最多的一组，",
+    "并给出我们对着这套组合的战绩；没有对手名的局单独归到「未填对手」。",
+    "向量新增 `heroesFoe`（对手五人阵容）。",
+    "**`scripts/verify_identity_flow.py` 现在能在空实例上自跑**：身份对照的账号来自",
+    "进程数据目录里的 `camp_details/*.json`，空实例一个都没有，脚本原来会卡在",
+    "`.sx-own-group` 超时（看起来像产品坏了，其实是准备步骤没到位）。现在脚本会先读",
+    "`/api/health` 定位实例数据目录，再从 `--seed-from` 拷 3 个最小的营地详情过去；",
+    "仍拿不到账号就明确退出码 2 并说明原因。",
+    "对手账号命名补上「归队」这一步（产品口径要求命名时必须归队），并在保存没成功时",
+    "把对话框里的提示写进巡检报告，不再只是超时。"
+  ],
+  "patch": {
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.32/patch-1.5.32.zip",
+    "sha256": "c83f5e5e4a2571d09ebd11dd2a4a83d6b07bd91404db7765d373afa7a492224f",
+    "size": 747860,
+    "files": [
+      {
+        "path": "CHANGELOG.md",
+        "sha256": "27e09cbf759e599806df974367d5d365dbf2236ed31ad2a16ecd829bd3b7e285",
+        "size": 76247
+      },
+      {
+        "path": "analysis_data.py",
+        "sha256": "50bd536a44b0ab14760084fc6cafa70094c353c4a13a95a49ece68f89c1158a8",
+        "size": 119968
+      },
+      {
+        "path": "bp_facts.py",
+        "sha256": "cf2809406ccb16c20ac89275f34075708f305ba9941fffcccf700e351e978f29",
+        "size": 7170
+      },
+      {
+        "path": "camp_archive.py",
+        "sha256": "4f0ac7c861ad899b1da1a0634ac2c66ae441efb8e6547438dc3949cdfff969b5",
+        "size": 7934
+      },
+      {
+        "path": "camp_replay.py",
+        "sha256": "68a956bc6427ea13fac63fa5c9395f0a1297beeffa9f0a6a02cc3d150bb9625d",
+        "size": 28027
+      },
+      {
+        "path": "camp_tiles.py",
+        "sha256": "1467ad0abd9275b6264a148464e4ec1bc534978fe6978975d09afd3b750b3209",
+        "size": 10496
+      },
+      {
+        "path": "docs/product_guide.md",
+        "sha256": "2a13dac18e9ad16afbedeb460bfd03650340aa1f08941f9b94ca1253b77a9f44",
+        "size": 7321
+      },
+      {
+        "path": "identity_service.py",
+        "sha256": "14918ae0e66af63d8ba354f62043f0c0353e3e3ee74a201c4a6e5256ad7c24a7",
+        "size": 13135
+      },
+      {
+        "path": "match_data.py",
+        "sha256": "43b2f79710700d622f4163635d24c4baaaa1415a743b02f7fa75f60071679f84",
+        "size": 39693
+      },
+      {
+        "path": "match_review.py",
+        "sha256": "263376575e20e45e3e158e859ac0909602b817c8e734d5bdc5be33ddd951f435",
+        "size": 42265
+      },
+      {
+        "path": "replay_parser.py",
+        "sha256": "42ae88e4c16c4440f4ba223c34ada7651c15ea5bd3a61eb55a83f4a9a08a0b94",
+        "size": 43950
+      },
+      {
+        "path": "replay_time.py",
+        "sha256": "e745e22386bf9410bf04941d0781b87823c008575a5c0fa373086ef6da8726f1",
+        "size": 2519
+      },
+      {
+        "path": "replay_timeline_build.py",
+        "sha256": "a14f701d376391b08bd48108eb99fa3b900635d31875e411df62ccc22f713c6f",
+        "size": 12112
+      },
+      {
+        "path": "server.py",
+        "sha256": "6cb0cdea65e5d1a24733c8a2e74421b172da99cd58517fe07b064efdc2526a95",
+        "size": 186076
+      },
+      {
+        "path": "studio_api.py",
+        "sha256": "8a8d3b6c713f697b32febe92929c010104d3ec7046ff8f832724f3dc9221e184",
+        "size": 91479
+      },
+      {
+        "path": "team_clusters.py",
+        "sha256": "660aa0b4331b076b84c7635ebb7271f75f126f11fbf6f4f7da8a23e8cf097509",
+        "size": 60124
+      },
+      {
+        "path": "tools/full_abc_event_catalog.py",
+        "sha256": "5fe4052e48a11c236a7161326c20dbe7857766109b2527c4d6991cb8851ccce8",
+        "size": 48801
+      },
+      {
+        "path": "tools/replay_frame_commands.py",
+        "sha256": "713187da33f4b561728ed4243d1b26d17558c4023eb40f731beceb2874ac3768",
+        "size": 17433
+      },
+      {
+        "path": "tools/replay_input_timeline.py",
+        "sha256": "db26ed0d52436ec2c96f2e75ed48480fa33166d135a8e64f1d72dabee8c6d20f",
+        "size": 19287
+      },
+      {
+        "path": "v3/public/app.js",
+        "sha256": "7dcdcd56d2324431bbf81fdcd4575824ea12be7e995966943e0165860f9c968f",
+        "size": 147385
+      },
+      {
+        "path": "v3/public/capture-page.js",
+        "sha256": "354b2f56f398fb29e25f26f34ddfdb81180c13156c147bc9079501c533209cee",
+        "size": 99807
+      },
+      {
+        "path": "v3/public/cross-analytics.js",
+        "sha256": "827b3b1e95f89479738cb657bfc6d75e30955389617d9b83f088153ef7eecf1b",
+        "size": 76029
+      },
+      {
+        "path": "v3/public/cross-page.js",
+        "sha256": "299df94fe2d19c28f879bc0305c473aa714766beae9ffb1c88a0339bd4dabbc3",
+        "size": 39549
+      },
+      {
+        "path": "v3/public/cross-viz.js",
+        "sha256": "1e9d1cd05f5c9199194809564fcd2b29cbe35ee4d0cd31db1ebaeeaa3a027f39",
+        "size": 43248
+      },
+      {
+        "path": "v3/public/features.js",
+        "sha256": "2ce171f34d75503be525d76cb34e75030c7bfb00bb66e05517c45b983d691c09",
+        "size": 329246
+      },
+      {
+        "path": "v3/public/hero-compare.js",
+        "sha256": "3ac2c1c93fbadbcdfb1c24e532dde73e6ce51c59be550aa3c273a9d8276bb2d7",
+        "size": 27418
+      },
+      {
+        "path": "v3/public/lane-viz.js",
+        "sha256": "9a3690c563e41eb1a8ef3885993359123f1c726ba49cd4f93256ab38a69e21b4",
+        "size": 34873
+      },
+      {
+        "path": "v3/public/match-deep.js",
+        "sha256": "f5951bf6b4df8ec0f38d14750b68b0b8f07cf2c47c24d5d6f3ca94ff96223a6c",
+        "size": 99501
+      },
+      {
+        "path": "v3/public/players-page.js",
+        "sha256": "8e35e62b8f27f4915a68d860b003f03f8aec1fd8cf6e4af2440432268bbbd2ba",
+        "size": 119480
+      },
+      {
+        "path": "v3/public/style.css",
+        "sha256": "ee58eb8d4e966ddab3e480fb3633056e7e18706eca606e5a9bd2af9725f14dad",
+        "size": 654960
+      },
+      {
+        "path": "v3/public/tour.js",
+        "sha256": "4d84dc09178f4b1b0aef994a49207b840d299b856567359baaa3bb3c0df0581c",
+        "size": 32430
+      },
+      {
+        "path": "v3/serve.py",
+        "sha256": "0eba2e23d8f80f7db16854bf66c680684ab48d5aa22cabdf85c8af5e842cf1c9",
+        "size": 125250
+      },
+      {
+        "path": "version.py",
+        "sha256": "f675a9e8aa1a32097952c798ca3b895fb153b1a796dd064c13913e3bdfb0a8b8",
+        "size": 343
+      },
+      {
+        "path": "video_ocr.py",
+        "sha256": "040da9033590176384d488ab64ae5a4d23e2b6e705616b5759b4316a5f8a5c80",
+        "size": 92319
+      },
+      {
+        "path": "workspace_store.py",
+        "sha256": "9506c4ab94289c7b0d1c02fae94c9ad7b26ce8eca3198e620495db2158464717",
+        "size": 69626
+      }
+    ],
+    "remove": []
+  },
+  "releaseName": "优势兑现与对手阵容",
+  "releaseDate": "2026-11-10",
+  "full": {
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.5.32/KPL-Scrim-Lab-1.5.32-full.zip",
+    "sha256": "774725ff90742bd33d10afb9e3bb2748b67655dacfaf414128f81cb533c6ff42",
+    "size": 82198797
+  }
+}

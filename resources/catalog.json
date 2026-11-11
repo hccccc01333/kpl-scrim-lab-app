@@ -1,0 +1,2750 @@
+{
+  "updatedAt": "2026-10-28T03:58:54.633130+00:00",
+  "sources": [
+    "https://pvp.qq.com/web201605/js/herolist.json",
+    "https://pvp.qq.com/web201605/js/item.json"
+  ],
+  "notice": "英雄与装备名称、图标来自王者荣耀官方公开资源，权利归原权利人；仅作为本地识别参照。默认头像不覆盖所有皮肤。",
+  "entries": [
+    {
+      "id": "hero-105",
+      "kind": "hero",
+      "name": "廉颇",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/105/105.jpg",
+      "icon": "/catalog/icons/hero-105.png",
+      "sha256": "592d9feb3e1b0b173cdd0ba561c3e8ce0636bcf5cf405160857451ef71365ff8"
+    },
+    {
+      "id": "hero-106",
+      "kind": "hero",
+      "name": "小乔",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/106/106.jpg",
+      "icon": "/catalog/icons/hero-106.png",
+      "sha256": "3e92aede85bc84e2bf854c5158088b2a81b94c308e253bb9e4574c3d3ad0c114"
+    },
+    {
+      "id": "hero-107",
+      "kind": "hero",
+      "name": "赵云",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/107/107.jpg",
+      "icon": "/catalog/icons/hero-107.png",
+      "sha256": "8e64c264ab0d7b632747c7da7b506545787760f3b506251c8a58681baac14c07"
+    },
+    {
+      "id": "hero-108",
+      "kind": "hero",
+      "name": "墨子",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/108/108.jpg",
+      "icon": "/catalog/icons/hero-108.png",
+      "sha256": "f71afbbbb67d5165723943e3ed5f2a4ef824998066a09458768cba68023ef21f"
+    },
+    {
+      "id": "hero-109",
+      "kind": "hero",
+      "name": "妲己",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/109/109.jpg",
+      "icon": "/catalog/icons/hero-109.png",
+      "sha256": "dc09e9f2bdee1092a30c12d4aead36dd8ce960cf3c850f201fce8e042de3fc69"
+    },
+    {
+      "id": "hero-110",
+      "kind": "hero",
+      "name": "嬴政",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/110/110.jpg",
+      "icon": "/catalog/icons/hero-110.png",
+      "sha256": "ce64959be3ef3a24a1a20c81f82b8fd1c99ca02b55546d1128b4ff07d7915658"
+    },
+    {
+      "id": "hero-111",
+      "kind": "hero",
+      "name": "孙尚香",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/111/111.jpg",
+      "icon": "/catalog/icons/hero-111.png",
+      "sha256": "968225035b9d7f82c019bedb810a24dc6b18b2d6c365155bdea84f67e9dab176"
+    },
+    {
+      "id": "hero-112",
+      "kind": "hero",
+      "name": "鲁班七号",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/112/112.jpg",
+      "icon": "/catalog/icons/hero-112.png",
+      "sha256": "668710d3f6ade80d9af387aa4f2cf027a974602fbb12ed1754e50dcb973d0a60"
+    },
+    {
+      "id": "hero-113",
+      "kind": "hero",
+      "name": "庄周",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/113/113.jpg",
+      "icon": "/catalog/icons/hero-113.png",
+      "sha256": "92ad8312d2c01e0514614df1a466d0083c0d1f0e68e6664aa4336f824e3f9d9b"
+    },
+    {
+      "id": "hero-114",
+      "kind": "hero",
+      "name": "刘禅",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/114/114.jpg",
+      "icon": "/catalog/icons/hero-114.png",
+      "sha256": "8ef86b653cf748859683cc2c96e82d31a6ca934481a093d23318fecde89abcfd"
+    },
+    {
+      "id": "hero-115",
+      "kind": "hero",
+      "name": "高渐离",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/115/115.jpg",
+      "icon": "/catalog/icons/hero-115.png",
+      "sha256": "979ed0233fb3983e21058c8046347e886100fc6d2756470d50d3288e83be1e71"
+    },
+    {
+      "id": "hero-116",
+      "kind": "hero",
+      "name": "阿轲",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/116/116.jpg",
+      "icon": "/catalog/icons/hero-116.png",
+      "sha256": "e1b9c6c71a1f10c7c2b0e53efb36fd2479ee377be9bf3f957923b308cf3501a6"
+    },
+    {
+      "id": "hero-117",
+      "kind": "hero",
+      "name": "钟无艳",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/117/117.jpg",
+      "icon": "/catalog/icons/hero-117.png",
+      "sha256": "eb3532d62fde8b8555c8d7ef99e1e5bf0c8e5a0748d6aeb6d50da55a0a58eb50"
+    },
+    {
+      "id": "hero-118",
+      "kind": "hero",
+      "name": "孙膑",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/118/118.jpg",
+      "icon": "/catalog/icons/hero-118.png",
+      "sha256": "471578d970ab1ac83b445970df4d2aa6affb591222a7861d0401a526f8aac678"
+    },
+    {
+      "id": "hero-119",
+      "kind": "hero",
+      "name": "扁鹊",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/119/119.jpg",
+      "icon": "/catalog/icons/hero-119.png",
+      "sha256": "599bd0e3af7e48355c63051712e3ebef8850c888514bd3f598c871295a0a5a5e"
+    },
+    {
+      "id": "hero-167",
+      "kind": "hero",
+      "name": "孙悟空",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/167/167.jpg",
+      "icon": "/catalog/icons/hero-167.png",
+      "sha256": "58b4346e3eaaf166c2341d427ad35740e4edd30f6ab8a650481dbd4dfe72eb84"
+    },
+    {
+      "id": "hero-549",
+      "kind": "hero",
+      "name": "心魔六耳",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/549/549.jpg",
+      "icon": "/catalog/icons/hero-549.png",
+      "sha256": "113e5da76c04c5f4938fa90cfa8fd9c153f117791e82d1cb7f845e4b0d654ac2"
+    },
+    {
+      "id": "hero-120",
+      "kind": "hero",
+      "name": "白起",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/120/120.jpg",
+      "icon": "/catalog/icons/hero-120.png",
+      "sha256": "8b9bbd96eca4b317cb618862123b1a635ed49b2f0e2115778bd893cff95b0da4"
+    },
+    {
+      "id": "hero-121",
+      "kind": "hero",
+      "name": "芈月",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/121/121.jpg",
+      "icon": "/catalog/icons/hero-121.png",
+      "sha256": "c54704422617afff4c6db9b330cee101d3589fdc3ae7145a672dd29ea950fa64"
+    },
+    {
+      "id": "hero-123",
+      "kind": "hero",
+      "name": "吕布",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/123/123.jpg",
+      "icon": "/catalog/icons/hero-123.png",
+      "sha256": "b8b999c1ba16073e97f7ff695da4def6225c235af408f5e545961ca80ec38311"
+    },
+    {
+      "id": "hero-124",
+      "kind": "hero",
+      "name": "周瑜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/124/124.jpg",
+      "icon": "/catalog/icons/hero-124.png",
+      "sha256": "be0a42c06e27a47d03192750f260adbe5e0c7c00c6e37c481bd1d7d529d59a2a"
+    },
+    {
+      "id": "hero-126",
+      "kind": "hero",
+      "name": "夏侯惇",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/126/126.jpg",
+      "icon": "/catalog/icons/hero-126.png",
+      "sha256": "9a11f3f5cb45b5e62e1867c2a1dad0e0398d59b04e20ecead0173f6d5f7cf286"
+    },
+    {
+      "id": "hero-127",
+      "kind": "hero",
+      "name": "甄姬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/127/127.jpg",
+      "icon": "/catalog/icons/hero-127.png",
+      "sha256": "fa33ca5aebd9c81cb4fb617b9e19587bbd9992cda6206c9e7df31dfe298680b4"
+    },
+    {
+      "id": "hero-128",
+      "kind": "hero",
+      "name": "曹操",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/128/128.jpg",
+      "icon": "/catalog/icons/hero-128.png",
+      "sha256": "e7b3187f52ae6055f3e3c5703d4dce283b781eff3cf42a53583d9e7a3c9e0d65"
+    },
+    {
+      "id": "hero-129",
+      "kind": "hero",
+      "name": "典韦",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/129/129.jpg",
+      "icon": "/catalog/icons/hero-129.png",
+      "sha256": "6c42e481b3d10fd02211004659220b8146bfdd0cf974913ea2fce0682a8fec27"
+    },
+    {
+      "id": "hero-130",
+      "kind": "hero",
+      "name": "宫本武藏",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/130/130.jpg",
+      "icon": "/catalog/icons/hero-130.png",
+      "sha256": "2e021bc5e2cc5549fc1809ccfefeab4d167623465170579a1b4db72e3ddbc808"
+    },
+    {
+      "id": "hero-131",
+      "kind": "hero",
+      "name": "李白",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/131/131.jpg",
+      "icon": "/catalog/icons/hero-131.png",
+      "sha256": "4a95057b4a553936e229e62cdf159713920400b07c787e496980a33ae495db67"
+    },
+    {
+      "id": "hero-132",
+      "kind": "hero",
+      "name": "马可波罗",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/132/132.jpg",
+      "icon": "/catalog/icons/hero-132.png",
+      "sha256": "acc7dabcde2aa2718ee70d898caa9736531202bbe39c6a427cfc1d7651991f42"
+    },
+    {
+      "id": "hero-133",
+      "kind": "hero",
+      "name": "狄仁杰",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/133/133.jpg",
+      "icon": "/catalog/icons/hero-133.png",
+      "sha256": "885218851a1033d810b6d1ab2a82303f0fa120e6e95ef48fe1ae8561307cc47d"
+    },
+    {
+      "id": "hero-134",
+      "kind": "hero",
+      "name": "达摩",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/134/134.jpg",
+      "icon": "/catalog/icons/hero-134.png",
+      "sha256": "4a52bd9a13b9d7a2f7de8646abbc0fbc46d229e48660a21676d95685107d91a5"
+    },
+    {
+      "id": "hero-135",
+      "kind": "hero",
+      "name": "项羽",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/135/135.jpg",
+      "icon": "/catalog/icons/hero-135.png",
+      "sha256": "fc80c75943993426fff07b982df66c7daa4f41fc228dd1fc65e95633199bf9da"
+    },
+    {
+      "id": "hero-136",
+      "kind": "hero",
+      "name": "武则天",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/136/136.jpg",
+      "icon": "/catalog/icons/hero-136.png",
+      "sha256": "749a642e8bd4248c04c81b9aac7032ddf30d0012b61d0594974e575cf68066a2"
+    },
+    {
+      "id": "hero-139",
+      "kind": "hero",
+      "name": "老夫子",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/139/139.jpg",
+      "icon": "/catalog/icons/hero-139.png",
+      "sha256": "50e57712616521e5e0cb3b420736a5ac66b715080c76d0ff49aa43f684d252a6"
+    },
+    {
+      "id": "hero-140",
+      "kind": "hero",
+      "name": "关羽",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/140/140.jpg",
+      "icon": "/catalog/icons/hero-140.png",
+      "sha256": "fb1565339bc3a7efbcf5706d25308d622ff2af18197dfeff90591e193d9b4c91"
+    },
+    {
+      "id": "hero-141",
+      "kind": "hero",
+      "name": "貂蝉",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/141/141.jpg",
+      "icon": "/catalog/icons/hero-141.png",
+      "sha256": "ad22ac783de22a8c2bb46c0da90a95ec0dde0821e491a6166cf7cb0927551320"
+    },
+    {
+      "id": "hero-142",
+      "kind": "hero",
+      "name": "安琪拉",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/142/142.jpg",
+      "icon": "/catalog/icons/hero-142.png",
+      "sha256": "1286038c767cde36dffe5d8fb5807a4c2cd2f71ea74125992c3c0375d267c850"
+    },
+    {
+      "id": "hero-144",
+      "kind": "hero",
+      "name": "程咬金",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/144/144.jpg",
+      "icon": "/catalog/icons/hero-144.png",
+      "sha256": "7b25984e7aeab6c6c8264cbd40c8478e902697d154a03ff80c9343c0978892d5"
+    },
+    {
+      "id": "hero-146",
+      "kind": "hero",
+      "name": "露娜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/146/146.jpg",
+      "icon": "/catalog/icons/hero-146.png",
+      "sha256": "b8026d87d7cc688fe57512ce0e386076da8b3665f4dcf956f105b30e5d6e12ba"
+    },
+    {
+      "id": "hero-148",
+      "kind": "hero",
+      "name": "姜子牙",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/148/148.jpg",
+      "icon": "/catalog/icons/hero-148.png",
+      "sha256": "132d9382224854cdc5d157bb3dfefd905d73600c52368fa4f91e9c362452fedc"
+    },
+    {
+      "id": "hero-149",
+      "kind": "hero",
+      "name": "刘邦",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/149/149.jpg",
+      "icon": "/catalog/icons/hero-149.png",
+      "sha256": "b70f55c445f6255fec3cd6beaefe1473bb9783c14fb6a6663dc1dc1eda660718"
+    },
+    {
+      "id": "hero-150",
+      "kind": "hero",
+      "name": "韩信",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/150/150.jpg",
+      "icon": "/catalog/icons/hero-150.png",
+      "sha256": "7cc4149148fa59621cfbf6327472bfb735c224d4e91b34df5fd94866765c1945"
+    },
+    {
+      "id": "hero-152",
+      "kind": "hero",
+      "name": "王昭君",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/152/152.jpg",
+      "icon": "/catalog/icons/hero-152.png",
+      "sha256": "048915d97e984ea50ad2ea7a9bc016cf2341fc4a903275750c61aca20ee17d8c"
+    },
+    {
+      "id": "hero-153",
+      "kind": "hero",
+      "name": "兰陵王",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/153/153.jpg",
+      "icon": "/catalog/icons/hero-153.png",
+      "sha256": "6c4e4cb54dc3f5153a1926815a791e6990699dcf270f5b211aad4803e63c40f9"
+    },
+    {
+      "id": "hero-154",
+      "kind": "hero",
+      "name": "花木兰",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/154/154.jpg",
+      "icon": "/catalog/icons/hero-154.png",
+      "sha256": "4e60b7bcb53f2801b33c1e393916326ff0d8c36d3795f8846383e1e010f4eac7"
+    },
+    {
+      "id": "hero-156",
+      "kind": "hero",
+      "name": "张良",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/156/156.jpg",
+      "icon": "/catalog/icons/hero-156.png",
+      "sha256": "032b2b633a35a33815be53fe46f5677c3ef52e85c62432d7263c16b90e08575b"
+    },
+    {
+      "id": "hero-157",
+      "kind": "hero",
+      "name": "不知火舞",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/157/157.jpg",
+      "icon": "/catalog/icons/hero-157.png",
+      "sha256": "a21920f3e83a4c9364604220ce2a0d2ec509c5c764f173834a0d22a0fe754489"
+    },
+    {
+      "id": "hero-162",
+      "kind": "hero",
+      "name": "娜可露露",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/162/162.jpg",
+      "icon": "/catalog/icons/hero-162.png",
+      "sha256": "015c3d0bc8553dc3341e96d38407ce7c13aaed8d12a9875a09fa161e214d9a35"
+    },
+    {
+      "id": "hero-163",
+      "kind": "hero",
+      "name": "橘右京",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/163/163.jpg",
+      "icon": "/catalog/icons/hero-163.png",
+      "sha256": "8017fda5dc0fc37a170b07ac705307fb0fd0aec35c84e64edccd7e73f16fc9d2"
+    },
+    {
+      "id": "hero-166",
+      "kind": "hero",
+      "name": "亚瑟",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/166/166.jpg",
+      "icon": "/catalog/icons/hero-166.png",
+      "sha256": "bb989c224e0fc0f79f33d2b7fe53a45b657d1ce1362c45eef09df7daca76d955"
+    },
+    {
+      "id": "hero-168",
+      "kind": "hero",
+      "name": "牛魔",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/168/168.jpg",
+      "icon": "/catalog/icons/hero-168.png",
+      "sha256": "c28a72d2890d7f98f1d84e80d40767733bf367c5720f424318af334471b5b3f6"
+    },
+    {
+      "id": "hero-169",
+      "kind": "hero",
+      "name": "后羿",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/169/169.jpg",
+      "icon": "/catalog/icons/hero-169.png",
+      "sha256": "6a0ffb4bef3ee1921acc96b3d97dd6f0f4719857541505866a60017d8816b5ea"
+    },
+    {
+      "id": "hero-170",
+      "kind": "hero",
+      "name": "刘备",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/170/170.jpg",
+      "icon": "/catalog/icons/hero-170.png",
+      "sha256": "43e10718040bb7c76779e74f01b63adfb201cf250605d43af118693acba4107b"
+    },
+    {
+      "id": "hero-171",
+      "kind": "hero",
+      "name": "张飞",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/171/171.jpg",
+      "icon": "/catalog/icons/hero-171.png",
+      "sha256": "ef10b8c498acad34533bf341c0cc937aca713386fce7bcbbfd53c9bbc7b7cd6a"
+    },
+    {
+      "id": "hero-173",
+      "kind": "hero",
+      "name": "李元芳",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/173/173.jpg",
+      "icon": "/catalog/icons/hero-173.png",
+      "sha256": "a5219f6311a404093e0de243aa12d525eaabfcc40f1f9fda3f3ca54b2397fea2"
+    },
+    {
+      "id": "hero-174",
+      "kind": "hero",
+      "name": "虞姬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/174/174.jpg",
+      "icon": "/catalog/icons/hero-174.png",
+      "sha256": "4ddf151a431c1796ff80558962e691b8f7ef5479a0a0e1dcade2d7b9e96e72b2"
+    },
+    {
+      "id": "hero-175",
+      "kind": "hero",
+      "name": "钟馗",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/175/175.jpg",
+      "icon": "/catalog/icons/hero-175.png",
+      "sha256": "6cc3330bb6e065957aecc15a7b9da7a2283c413c3e4f9288135194f78789f355"
+    },
+    {
+      "id": "hero-178",
+      "kind": "hero",
+      "name": "杨戬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/178/178.jpg",
+      "icon": "/catalog/icons/hero-178.png",
+      "sha256": "a350043d1e7b9ab30481a34e9a3addc3391f84611bde347843ad3b4e2b7f3db7"
+    },
+    {
+      "id": "hero-183",
+      "kind": "hero",
+      "name": "雅典娜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/183/183.jpg",
+      "icon": "/catalog/icons/hero-183.png",
+      "sha256": "e25df7ab46ca4330292de3ddbc083bd3a5a8c82d0ec77c895f208716ddd27de2"
+    },
+    {
+      "id": "hero-184",
+      "kind": "hero",
+      "name": "蔡文姬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/184/184.jpg",
+      "icon": "/catalog/icons/hero-184.png",
+      "sha256": "c3510778b09c3a3687f01b1f37ac802996c7a1faa18eaf5c9b465d1e18161cee"
+    },
+    {
+      "id": "hero-186",
+      "kind": "hero",
+      "name": "太乙真人",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/186/186.jpg",
+      "icon": "/catalog/icons/hero-186.png",
+      "sha256": "fce2f0babdfe29f008c1d1bd27f64ff474e4a4dc393afc8f93f494fd8ce93a07"
+    },
+    {
+      "id": "hero-180",
+      "kind": "hero",
+      "name": "哪吒",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/180/180.jpg",
+      "icon": "/catalog/icons/hero-180.png",
+      "sha256": "215db85a1ed874f96a7fae67d03705b88badcc8ddfc9b9cca6c1afbf75a26eca"
+    },
+    {
+      "id": "hero-190",
+      "kind": "hero",
+      "name": "诸葛亮",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/190/190.jpg",
+      "icon": "/catalog/icons/hero-190.png",
+      "sha256": "fce1ab09b44bf351fdecf877c1eff7f0309d1c22311c439731d504f58b1e27d8"
+    },
+    {
+      "id": "hero-192",
+      "kind": "hero",
+      "name": "黄忠",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/192/192.jpg",
+      "icon": "/catalog/icons/hero-192.png",
+      "sha256": "7c62213f56ce34de6805facdcc6c6bf81d7d289fd1843703f2ea1a98e0226553"
+    },
+    {
+      "id": "hero-191",
+      "kind": "hero",
+      "name": "大乔",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/191/191.jpg",
+      "icon": "/catalog/icons/hero-191.png",
+      "sha256": "6e31365959457f0331bbb64b6e134513aaaf8121ebb60ec0268e02aa6d526b05"
+    },
+    {
+      "id": "hero-187",
+      "kind": "hero",
+      "name": "东皇太一",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/187/187.jpg",
+      "icon": "/catalog/icons/hero-187.png",
+      "sha256": "f750b6f239a8c88df746c509eb032a9439475a981770dd7d416e0f4bcbab3a94"
+    },
+    {
+      "id": "hero-182",
+      "kind": "hero",
+      "name": "干将莫邪",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/182/182.jpg",
+      "icon": "/catalog/icons/hero-182.png",
+      "sha256": "513b364c53817533406c5d7076f35316e7c2b9399ef54ee8a4d086de1f1ff2e2"
+    },
+    {
+      "id": "hero-189",
+      "kind": "hero",
+      "name": "鬼谷子",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/189/189.jpg",
+      "icon": "/catalog/icons/hero-189.png",
+      "sha256": "41b23a4643691d0b3f638c3ae4a9f517a6e74e2532295779eedeb8d22e5b0d4f"
+    },
+    {
+      "id": "hero-193",
+      "kind": "hero",
+      "name": "铠",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/193/193.jpg",
+      "icon": "/catalog/icons/hero-193.png",
+      "sha256": "70bbea7aabe3167760f8708a259f81501781cf873b6932dc777084838b6280ce"
+    },
+    {
+      "id": "hero-196",
+      "kind": "hero",
+      "name": "百里守约",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/196/196.jpg",
+      "icon": "/catalog/icons/hero-196.png",
+      "sha256": "4b672a356ad065b77dee005df017f3d7b5066032cf8b1bf4058705862f872569"
+    },
+    {
+      "id": "hero-195",
+      "kind": "hero",
+      "name": "百里玄策",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/195/195.jpg",
+      "icon": "/catalog/icons/hero-195.png",
+      "sha256": "70fc74fc8b0a31d366ca5e6e084a19ca23c5649f40988a832141bf6a873e5758"
+    },
+    {
+      "id": "hero-194",
+      "kind": "hero",
+      "name": "苏烈",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/194/194.jpg",
+      "icon": "/catalog/icons/hero-194.png",
+      "sha256": "22a2c52a3dd10e33bbdc3b12fb07e92cb19a0507b75533c94ffc76efd3f175d7"
+    },
+    {
+      "id": "hero-198",
+      "kind": "hero",
+      "name": "梦奇",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/198/198.jpg",
+      "icon": "/catalog/icons/hero-198.png",
+      "sha256": "7798b1bc6615d2f80ff628e53c65131a5125cd12fff5c5b480317a8067f08676"
+    },
+    {
+      "id": "hero-179",
+      "kind": "hero",
+      "name": "女娲",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/179/179.jpg",
+      "icon": "/catalog/icons/hero-179.png",
+      "sha256": "a63c93e1c03d710babb9e9d26c1abf83f4d23ec19df4a54e48579bb2e9ea9735"
+    },
+    {
+      "id": "hero-501",
+      "kind": "hero",
+      "name": "明世隐",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/501/501.jpg",
+      "icon": "/catalog/icons/hero-501.png",
+      "sha256": "cb90d7ee1329c3403a0be0c0d0730cbdd7a8181b40b8b620226f4cfbe9549fec"
+    },
+    {
+      "id": "hero-199",
+      "kind": "hero",
+      "name": "公孙离",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/199/199.jpg",
+      "icon": "/catalog/icons/hero-199.png",
+      "sha256": "ab28a97c95b93ba00b38bbce1e77a6260694ab51401e9a55d91a7a565358befb"
+    },
+    {
+      "id": "hero-176",
+      "kind": "hero",
+      "name": "杨玉环",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/176/176.jpg",
+      "icon": "/catalog/icons/hero-176.png",
+      "sha256": "231bc7a24a8217afc827275813c555d1119d52fe465d4277e51969e1e467c644"
+    },
+    {
+      "id": "hero-502",
+      "kind": "hero",
+      "name": "裴擒虎",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/502/502.jpg",
+      "icon": "/catalog/icons/hero-502.png",
+      "sha256": "9472ddf692a6d9bcc01c10a4b5f34efa8b00ecfec931431f90c44f4394194536"
+    },
+    {
+      "id": "hero-197",
+      "kind": "hero",
+      "name": "弈星",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/197/197.jpg",
+      "icon": "/catalog/icons/hero-197.png",
+      "sha256": "c7c93fa9b77c0bde91c732a1bf93bb46bc84a615c3b841fd2a33cb57c91e6129"
+    },
+    {
+      "id": "hero-503",
+      "kind": "hero",
+      "name": "狂铁",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/503/503.jpg",
+      "icon": "/catalog/icons/hero-503.png",
+      "sha256": "f81f6561de11f5c56f4a1a6caf7e8e9494e029742ad06ee8a854cf41b2260e60"
+    },
+    {
+      "id": "hero-504",
+      "kind": "hero",
+      "name": "米莱狄",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/504/504.jpg",
+      "icon": "/catalog/icons/hero-504.png",
+      "sha256": "8f8ade61bd360a2a40fb4356bea717a8446dcd401efd751f7199c4f126604398"
+    },
+    {
+      "id": "hero-125",
+      "kind": "hero",
+      "name": "元歌",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/125/125.jpg",
+      "icon": "/catalog/icons/hero-125.png",
+      "sha256": "a3cf890d69f6b21ccc5e2fcbccc4bbb4eb029ea01803a5a3c303b669b3801583"
+    },
+    {
+      "id": "hero-510",
+      "kind": "hero",
+      "name": "孙策",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/510/510.jpg",
+      "icon": "/catalog/icons/hero-510.png",
+      "sha256": "d5fba591fc0064f8964568cd585ed393fb7038114465f5ceb2650ed44fb665dc"
+    },
+    {
+      "id": "hero-137",
+      "kind": "hero",
+      "name": "司马懿",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/137/137.jpg",
+      "icon": "/catalog/icons/hero-137.png",
+      "sha256": "b0e551835e1698a632c70462172e991492deb65654836b6182079e74b450eab5"
+    },
+    {
+      "id": "hero-509",
+      "kind": "hero",
+      "name": "盾山",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/509/509.jpg",
+      "icon": "/catalog/icons/hero-509.png",
+      "sha256": "455a21433b223c8ccbe73af14d881a19ae33452abf5657e08cfc3b7cb0e6acca"
+    },
+    {
+      "id": "hero-508",
+      "kind": "hero",
+      "name": "伽罗",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/508/508.jpg",
+      "icon": "/catalog/icons/hero-508.png",
+      "sha256": "1355686382307e9f65bb8ed817870f5bcafe18fa91fbae6f29b5bfed358e33d3"
+    },
+    {
+      "id": "hero-312",
+      "kind": "hero",
+      "name": "沈梦溪",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/312/312.jpg",
+      "icon": "/catalog/icons/hero-312.png",
+      "sha256": "1d1fe65d6bbcc100259f58f27929ed993b067cd2ba54ec0e33a57dfe735459ec"
+    },
+    {
+      "id": "hero-507",
+      "kind": "hero",
+      "name": "李信",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/507/507.jpg",
+      "icon": "/catalog/icons/hero-507.png",
+      "sha256": "b46a5ef9a2177929558b27b9776bc1a32218387f42d247cb6e5594fd78bf25da"
+    },
+    {
+      "id": "hero-513",
+      "kind": "hero",
+      "name": "上官婉儿",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/513/513.jpg",
+      "icon": "/catalog/icons/hero-513.png",
+      "sha256": "40d76e5bfc119c6d203e1463efc42d7ac4cab7d2b71c4385b7dcabe3bdd320da"
+    },
+    {
+      "id": "hero-515",
+      "kind": "hero",
+      "name": "嫦娥",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/515/515.jpg",
+      "icon": "/catalog/icons/hero-515.png",
+      "sha256": "49e5acb1858463eab60eff7289b055be1da6223283a4526b6a1b303604338121"
+    },
+    {
+      "id": "hero-511",
+      "kind": "hero",
+      "name": "猪八戒",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/511/511.jpg",
+      "icon": "/catalog/icons/hero-511.png",
+      "sha256": "c209e64384959d577914909bb2f9d86694d7ce0a8987f5ca984684dde82682e5"
+    },
+    {
+      "id": "hero-529",
+      "kind": "hero",
+      "name": "盘古",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/529/529.jpg",
+      "icon": "/catalog/icons/hero-529.png",
+      "sha256": "5f77528bb971e195937ddc6768f52452c3bc6ba5cce4be8a49fb08cd1b2a0bef"
+    },
+    {
+      "id": "hero-505",
+      "kind": "hero",
+      "name": "瑶",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/505/505.jpg",
+      "icon": "/catalog/icons/hero-505.png",
+      "sha256": "07f4ee9f19965895d073bf9c6a75c0b147f328c94b9fcb53bd32c310a7558f76"
+    },
+    {
+      "id": "hero-506",
+      "kind": "hero",
+      "name": "云中君",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/506/506.jpg",
+      "icon": "/catalog/icons/hero-506.png",
+      "sha256": "2210286d078cf9f699f20366293e6c3b97f44a8ec247ece8e50abeea9aa0fc46"
+    },
+    {
+      "id": "hero-522",
+      "kind": "hero",
+      "name": "曜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/522/522.jpg",
+      "icon": "/catalog/icons/hero-522.png",
+      "sha256": "378f7a5b2b100867f0cbcb2dc3e4f19f6e175b87b787ce8b2e43d0016852f665"
+    },
+    {
+      "id": "hero-518",
+      "kind": "hero",
+      "name": "马超",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/518/518.jpg",
+      "icon": "/catalog/icons/hero-518.png",
+      "sha256": "e43e114afdc71e9e74bc7d7646dc194333fa4c97d3231aec3c258c1d8003465f"
+    },
+    {
+      "id": "hero-523",
+      "kind": "hero",
+      "name": "西施",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/523/523.jpg",
+      "icon": "/catalog/icons/hero-523.png",
+      "sha256": "e6cbb0c8eb112f5d7122754195df8f399829877c625132f75f946138d9e1144a"
+    },
+    {
+      "id": "hero-525",
+      "kind": "hero",
+      "name": "鲁班大师",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/525/525.jpg",
+      "icon": "/catalog/icons/hero-525.png",
+      "sha256": "a238428b0ae940e553dae756189050ba79d4cae115b73b55bf83ded42cd5aa71"
+    },
+    {
+      "id": "hero-524",
+      "kind": "hero",
+      "name": "蒙犽",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/524/524.jpg",
+      "icon": "/catalog/icons/hero-524.png",
+      "sha256": "3d6fc0c8d156aded5182a9eef3a878af73f40bf0e04eac8c30ddd57d72c71e80"
+    },
+    {
+      "id": "hero-531",
+      "kind": "hero",
+      "name": "镜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/531/531.jpg",
+      "icon": "/catalog/icons/hero-531.png",
+      "sha256": "9d7d895db1cd873f1c3ed544dac31063eb44c7540bdb386cc043c873bd901673"
+    },
+    {
+      "id": "hero-527",
+      "kind": "hero",
+      "name": "蒙恬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/527/527.jpg",
+      "icon": "/catalog/icons/hero-527.png",
+      "sha256": "bbc6676a3b18ba051be9ce2a13c7d0436f90da61ea7126d1714e52e069390ad2"
+    },
+    {
+      "id": "hero-533",
+      "kind": "hero",
+      "name": "阿古朵",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/533/533.jpg",
+      "icon": "/catalog/icons/hero-533.png",
+      "sha256": "365f672a9a8bac851dbcc6adbf65bede05734756a2e5ea0198caaa24c7b1ded5"
+    },
+    {
+      "id": "hero-536",
+      "kind": "hero",
+      "name": "夏洛特",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/536/536.jpg",
+      "icon": "/catalog/icons/hero-536.png",
+      "sha256": "edb9008c145b15ea8b8cec6df7f7792c9531ca3aa75017b14c7ba2c40affa9e4"
+    },
+    {
+      "id": "hero-528",
+      "kind": "hero",
+      "name": "澜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/528/528.jpg",
+      "icon": "/catalog/icons/hero-528.png",
+      "sha256": "467b127419c217f2d1baf94cfbde3db9b810949debb040ed47488e8ddbbc10f3"
+    },
+    {
+      "id": "hero-537",
+      "kind": "hero",
+      "name": "司空震",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/537/537.jpg",
+      "icon": "/catalog/icons/hero-537.png",
+      "sha256": "34d5148d5b199edce1683001575d1fd9f772d612cb43de76e9b715325b444094"
+    },
+    {
+      "id": "hero-155",
+      "kind": "hero",
+      "name": "艾琳",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/155/155.jpg",
+      "icon": "/catalog/icons/hero-155.png",
+      "sha256": "190bf8940529040898cc8110d9867f61a71e73b2e24be28cc34ec27b476e19b4"
+    },
+    {
+      "id": "hero-538",
+      "kind": "hero",
+      "name": "云缨",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/538/538.jpg",
+      "icon": "/catalog/icons/hero-538.png",
+      "sha256": "476a0ed21bddfb55ec3254bc7a5e04d68e759e2a622cf16256cae1462765017b"
+    },
+    {
+      "id": "hero-540",
+      "kind": "hero",
+      "name": "金蝉",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/540/540.jpg",
+      "icon": "/catalog/icons/hero-540.png",
+      "sha256": "8fc694959aeddf7efe23f72f7f52bb9544353a2da790cdd5f3c06100a03a18e9"
+    },
+    {
+      "id": "hero-542",
+      "kind": "hero",
+      "name": "暃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/542/542.jpg",
+      "icon": "/catalog/icons/hero-542.png",
+      "sha256": "5ef62b6b799b10017e04cf748a9a53ca1d68671c12408c28740939c00f3ebc15"
+    },
+    {
+      "id": "hero-534",
+      "kind": "hero",
+      "name": "桑启",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/534/534.jpg",
+      "icon": "/catalog/icons/hero-534.png",
+      "sha256": "0aff51b2ae189b9fd68f2597c93463bccdc56926ae03de7e494841cbf1800025"
+    },
+    {
+      "id": "hero-548",
+      "kind": "hero",
+      "name": "戈娅",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/548/548.jpg",
+      "icon": "/catalog/icons/hero-548.png",
+      "sha256": "ef00a8a4ae656535c9b6a9827e850491d5bea8b5e0ea08ddf785de57a868cc56"
+    },
+    {
+      "id": "hero-521",
+      "kind": "hero",
+      "name": "海月",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/521/521.jpg",
+      "icon": "/catalog/icons/hero-521.png",
+      "sha256": "791ea5344ff60e4945d447d3bc816599cfd4b854e25839de87ebf7c10b59f8c5"
+    },
+    {
+      "id": "hero-544",
+      "kind": "hero",
+      "name": "赵怀真",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/544/544.jpg",
+      "icon": "/catalog/icons/hero-544.png",
+      "sha256": "3fd2f5cd03afe643e53528b1cf88ac36df5e76c12e627652f3748e3e99f529a6"
+    },
+    {
+      "id": "hero-545",
+      "kind": "hero",
+      "name": "莱西奥",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/545/545.jpg",
+      "icon": "/catalog/icons/hero-545.png",
+      "sha256": "7eef2bfcb8f9191c684f16a3e3e8e121bba5b99d4db264b457ebe21cf6755fb0"
+    },
+    {
+      "id": "hero-564",
+      "kind": "hero",
+      "name": "姬小满",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/564/564.jpg",
+      "icon": "/catalog/icons/hero-564.png",
+      "sha256": "c908f9a6f7ff17f95ba410ef094f59e7345e603a209a8267428aa5df9573b2a2"
+    },
+    {
+      "id": "hero-514",
+      "kind": "hero",
+      "name": "亚连",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/514/514.jpg",
+      "icon": "/catalog/icons/hero-514.png",
+      "sha256": "47187ce816fb4e6427ed679d43002e52008ad6bcb00a36c8f82d6fcd8c3b713a"
+    },
+    {
+      "id": "hero-159",
+      "kind": "hero",
+      "name": "朵莉亚",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/159/159.jpg",
+      "icon": "/catalog/icons/hero-159.png",
+      "sha256": "52e6520ec0fbafb206b97c60c15da0cd302602dee1415a3d03368697be7f5817"
+    },
+    {
+      "id": "hero-563",
+      "kind": "hero",
+      "name": "海诺",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/563/563.jpg",
+      "icon": "/catalog/icons/hero-563.png",
+      "sha256": "a65368f3089fe4765c05d983bafb2a7e3150a2c147acebe66539fdd5c1db5593"
+    },
+    {
+      "id": "hero-519",
+      "kind": "hero",
+      "name": "敖隐",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/519/519.jpg",
+      "icon": "/catalog/icons/hero-519.png",
+      "sha256": "6f5e4e3129b534ffe9897b986229bb3dda6011d4dcf85bbf0e02cdc3f5d41c44"
+    },
+    {
+      "id": "hero-517",
+      "kind": "hero",
+      "name": "大司命",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/517/517.jpg",
+      "icon": "/catalog/icons/hero-517.png",
+      "sha256": "468c99c22f05a7cf0509ffe01491886d685fe2336aa6e43d9c7467da229348a1"
+    },
+    {
+      "id": "hero-582",
+      "kind": "hero",
+      "name": "元流之子(法师)",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/582/582.jpg",
+      "icon": "/catalog/icons/hero-582.png",
+      "sha256": "8f42a6e314c9c128b18e3ef8128bee02cd8f548896d121329b8a675213b0c5c0"
+    },
+    {
+      "id": "hero-581",
+      "kind": "hero",
+      "name": "元流之子(坦克)",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/581/581.jpg",
+      "icon": "/catalog/icons/hero-581.png",
+      "sha256": "ad74683d3d49a74caa7bee023d4fa5884c75a81f84cdbde9eea6fb1cd2149adf"
+    },
+    {
+      "id": "hero-577",
+      "kind": "hero",
+      "name": "少司缘",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/577/577.jpg",
+      "icon": "/catalog/icons/hero-577.png",
+      "sha256": "a54e6c5e9423f255a84781a252a82a7550549409a3cf2eb80b8bac4dd7fce411"
+    },
+    {
+      "id": "hero-558",
+      "kind": "hero",
+      "name": "影",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/558/558.jpg",
+      "icon": "/catalog/icons/hero-558.png",
+      "sha256": "3f43ff57e5db3c75bf391bf06b190f28ef2c8c6692985f4acd6ecb061ad1d9f7"
+    },
+    {
+      "id": "hero-177",
+      "kind": "hero",
+      "name": "苍",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/177/177.jpg",
+      "icon": "/catalog/icons/hero-177.png",
+      "sha256": "04a323834840fdc852bcba8e401080e8241de3104ccfeeceb66d86383c8af240"
+    },
+    {
+      "id": "hero-550",
+      "kind": "hero",
+      "name": "空空儿",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/550/550.jpg",
+      "icon": "/catalog/icons/hero-550.png",
+      "sha256": "f007363379e1fff5ed74d5f5706a5e5330d209ac21c656067ed346bf1c73c2c7"
+    },
+    {
+      "id": "hero-584",
+      "kind": "hero",
+      "name": "元流之子(射手)",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/584/584.jpg",
+      "icon": "/catalog/icons/hero-584.png",
+      "sha256": "a7ab4447da845b58ae18428efae3b2e055c1bd9dcbdeb60c5fcae93404d16698"
+    },
+    {
+      "id": "hero-151",
+      "kind": "hero",
+      "name": "孙权",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/151/151.jpg",
+      "icon": "/catalog/icons/hero-151.png",
+      "sha256": "1902fb9b0c367b7aa06d756a56891416aaadf29b3d9c522e53b1f25b7a36fb04"
+    },
+    {
+      "id": "hero-172",
+      "kind": "hero",
+      "name": "蚩奼",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/172/172.jpg",
+      "icon": "/catalog/icons/hero-172.png",
+      "sha256": "c0c587d2a979c29b669a7da4c786d68d872e746f20820d5d7536be11fdf984d3"
+    },
+    {
+      "id": "hero-585",
+      "kind": "hero",
+      "name": "元流之子(辅助)",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/585/585.jpg",
+      "icon": "/catalog/icons/hero-585.png",
+      "sha256": "1dea3d31a2b1ebe1d8fe90751153477cd5ae44202b5ffca69846305dfdc7478a"
+    },
+    {
+      "id": "hero-188",
+      "kind": "hero",
+      "name": "大禹",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/188/188.jpg",
+      "icon": "/catalog/icons/hero-188.png",
+      "sha256": "f8616438fccf4355743294e67e73e7accb00278f889843e4d13443e3a1a29e7a"
+    },
+    {
+      "id": "hero-583",
+      "kind": "hero",
+      "name": "元流之子(刺客)",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/583/583.jpg",
+      "icon": "/catalog/icons/hero-583.png",
+      "sha256": "09996417b84331843ec1a1f59f3afbd20f11b353f003a0949f9c80c913b73ec1"
+    },
+    {
+      "id": "hero-547",
+      "kind": "hero",
+      "name": "卢雅那",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/547/547.jpg",
+      "icon": "/catalog/icons/hero-547.png",
+      "sha256": "8156045c960c4c7fd76e4d887ee354077b7a477ab70bef9e68af23911efaa6fb"
+    },
+    {
+      "id": "hero-138",
+      "kind": "hero",
+      "name": "王维",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/138/138.jpg",
+      "icon": "/catalog/icons/hero-138.png",
+      "sha256": "6933da77fdb6ad41098acd63d5c0a851d509ee6f8e2d3c5567c57e1d34fbc01a"
+    },
+    {
+      "id": "equipment-1111",
+      "kind": "equipment",
+      "name": "铁剑",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1111.jpg",
+      "icon": "/catalog/icons/equipment-1111.png",
+      "sha256": "1aca9f509e55ceb0b370a06f36ad18675510a9e829a8b34719543faa7d2d02a9",
+      "variants": [
+        "/catalog/icons/equipment-1111.png",
+        "/catalog/icons/equipment-1111-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1111.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1112",
+      "kind": "equipment",
+      "name": "匕首",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1112.jpg",
+      "icon": "/catalog/icons/equipment-1112.png",
+      "sha256": "e64f183532ceba364de1e0b05c34ef61ba722978ceb2a8fb40ad06cf201e453f",
+      "variants": [
+        "/catalog/icons/equipment-1112.png",
+        "/catalog/icons/equipment-1112-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1112.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1113",
+      "kind": "equipment",
+      "name": "搏击拳套",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1113.jpg",
+      "icon": "/catalog/icons/equipment-1113.png",
+      "sha256": "db678a4a2265ea66d84398e69118dac699dd25fd69bd364a9d0998e44c323a69",
+      "variants": [
+        "/catalog/icons/equipment-1113.png",
+        "/catalog/icons/equipment-1113-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1113.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1114",
+      "kind": "equipment",
+      "name": "吸血之镰",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1114.jpg",
+      "icon": "/catalog/icons/equipment-1114.png",
+      "sha256": "512e4f05007931b5d2392a9376fa1e118690e476e16ac7c666bbbd220360c4c3",
+      "variants": [
+        "/catalog/icons/equipment-1114.png",
+        "/catalog/icons/equipment-1114-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1114.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1116",
+      "kind": "equipment",
+      "name": "雷鸣刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1116.jpg",
+      "icon": "/catalog/icons/equipment-1116.png",
+      "sha256": "b8dbe45161a9a108b76756f5471fe067421047ce2c858f1c12a01349a7a5301e",
+      "variants": [
+        "/catalog/icons/equipment-1116.png",
+        "/catalog/icons/equipment-1116-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1116.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1121",
+      "kind": "equipment",
+      "name": "风暴巨剑",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1121.jpg",
+      "icon": "/catalog/icons/equipment-1121.png",
+      "sha256": "fc81a25d25c342c1b6e4de986af1597b1b907025b11260263e12770adbc09591",
+      "variants": [
+        "/catalog/icons/equipment-1121.png",
+        "/catalog/icons/equipment-1121-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1121.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1122",
+      "kind": "equipment",
+      "name": "日冕",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1122.jpg",
+      "icon": "/catalog/icons/equipment-1122.png",
+      "sha256": "b57adacfef58b9c7d4d86a6de4b2289ba68ed6a63bf29f8da1cee1d558f389a7",
+      "variants": [
+        "/catalog/icons/equipment-1122.png",
+        "/catalog/icons/equipment-1122-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1122.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1123",
+      "kind": "equipment",
+      "name": "狂暴双刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1123.jpg",
+      "icon": "/catalog/icons/equipment-1123.png",
+      "sha256": "5fc9543171e92dff369fed14d27ee99640603c64ea902599d218455cd7b60de6",
+      "variants": [
+        "/catalog/icons/equipment-1123.png",
+        "/catalog/icons/equipment-1123-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1123.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1124",
+      "kind": "equipment",
+      "name": "陨星",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1124.jpg",
+      "icon": "/catalog/icons/equipment-1124.png",
+      "sha256": "182d87d2c73b40f5f908332deb873bd3eca24ccc0e98cee6078009115b7aa002",
+      "variants": [
+        "/catalog/icons/equipment-1124.png",
+        "/catalog/icons/equipment-1124-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1124.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1131",
+      "kind": "equipment",
+      "name": "碎星锤",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1131.jpg",
+      "icon": "/catalog/icons/equipment-1131.png",
+      "sha256": "fa81b30a27632c06b8ef9a59f07315c85dedd52fa34924307796951695ca8914",
+      "variants": [
+        "/catalog/icons/equipment-1131.png",
+        "/catalog/icons/equipment-1131-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1131.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1126",
+      "kind": "equipment",
+      "name": "末世",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1126.jpg",
+      "icon": "/catalog/icons/equipment-1126.png",
+      "sha256": "ac20c48e03f29e11016c7c98ca781e164aee6cd8f652b83971869022838435da",
+      "variants": [
+        "/catalog/icons/equipment-1126.png",
+        "/catalog/icons/equipment-1126-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1126.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1127",
+      "kind": "equipment",
+      "name": "名刀·司命",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1127.jpg",
+      "icon": "/catalog/icons/equipment-1127.png",
+      "sha256": "73a4cec30c26bef0314ba4698e60a23cb1b3be1d032c000792b6b5d38404f980",
+      "variants": [
+        "/catalog/icons/equipment-1127.png",
+        "/catalog/icons/equipment-1127-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1127.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1128",
+      "kind": "equipment",
+      "name": "寒霜袭侵",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1128.jpg",
+      "icon": "/catalog/icons/equipment-1128.png",
+      "sha256": "6a4f28a7290bc638d4fac4f0877a00ddcbeacd82de23c4b8d38d4358a59f10c0",
+      "variants": [
+        "/catalog/icons/equipment-1128.png",
+        "/catalog/icons/equipment-1128-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1128.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1129",
+      "kind": "equipment",
+      "name": "速击之枪",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1129.jpg",
+      "icon": "/catalog/icons/equipment-1129.png",
+      "sha256": "0af19f9848c2e1a1eae33ef30c57ed7ad2e7526a6e59e8d74a6acc31c20cc4f9",
+      "variants": [
+        "/catalog/icons/equipment-1129.png",
+        "/catalog/icons/equipment-1129-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1129.jpg"
+      ]
+    },
+    {
+      "id": "equipment-11210",
+      "kind": "equipment",
+      "name": "制裁之刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/11210.jpg",
+      "icon": "/catalog/icons/equipment-11210.png",
+      "sha256": "2fd15afd95ccd006477613d5cff17f8aec6e2ea69ac55bd51f20be9debc6a115",
+      "variants": [
+        "/catalog/icons/equipment-11210.png",
+        "/catalog/icons/equipment-11210-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/11210.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1132",
+      "kind": "equipment",
+      "name": "泣血之刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1132.jpg",
+      "icon": "/catalog/icons/equipment-1132.png",
+      "sha256": "f462c4634ae01d598307c397e5605c9656c6dd9d340fa26e177d96ab3c026a88",
+      "variants": [
+        "/catalog/icons/equipment-1132.png",
+        "/catalog/icons/equipment-1132-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1132.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1133",
+      "kind": "equipment",
+      "name": "无尽战刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1133.jpg",
+      "icon": "/catalog/icons/equipment-1133.png",
+      "sha256": "13170788f927f4ba50762bcf861444644c60015fa5afda785c643850b3657602",
+      "variants": [
+        "/catalog/icons/equipment-1133.png",
+        "/catalog/icons/equipment-1133-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1133.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1134",
+      "kind": "equipment",
+      "name": "宗师之力",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1134.jpg",
+      "icon": "/catalog/icons/equipment-1134.png",
+      "sha256": "4c494988fe33f22c61389c629c7320cd31bd4ac2a1bcaa72355536072e2bd9e8",
+      "variants": [
+        "/catalog/icons/equipment-1134.png",
+        "/catalog/icons/equipment-1134-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1134.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1135",
+      "kind": "equipment",
+      "name": "闪电匕首",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1135.jpg",
+      "icon": "/catalog/icons/equipment-1135.png",
+      "sha256": "44b4d2bf3473a65b39f3e468155238d09a024f9436848fceebe23c1746b2b9fd",
+      "variants": [
+        "/catalog/icons/equipment-1135.png",
+        "/catalog/icons/equipment-1135-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1135.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1136",
+      "kind": "equipment",
+      "name": "影刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1136.jpg",
+      "icon": "/catalog/icons/equipment-1136.png",
+      "sha256": "73ec57e9b710eaa41792bf16cef478e3ae651f2c163f7fefaac276ab5a3cde06",
+      "variants": [
+        "/catalog/icons/equipment-1136.png",
+        "/catalog/icons/equipment-1136-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1136.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1137",
+      "kind": "equipment",
+      "name": "暗影战斧",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1137.jpg",
+      "icon": "/catalog/icons/equipment-1137.png",
+      "sha256": "cc5769b4133c1ffe126af7167eb01d8e5e64dbcbe1e9388bbefedc0649c4a6af",
+      "variants": [
+        "/catalog/icons/equipment-1137.png",
+        "/catalog/icons/equipment-1137-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1137.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1138",
+      "kind": "equipment",
+      "name": "强者破军",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1138.jpg",
+      "icon": "/catalog/icons/equipment-1138.png",
+      "sha256": "e4013aef516fc067c4ec929428ea3693b5196ca3be3e4704ff547488b91f676b",
+      "variants": [
+        "/catalog/icons/equipment-1138.png",
+        "/catalog/icons/equipment-1138-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1138.jpg"
+      ]
+    },
+    {
+      "id": "equipment-11311",
+      "kind": "equipment",
+      "name": "纯净苍穹",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/11311.jpg",
+      "icon": "/catalog/icons/equipment-11311.png",
+      "sha256": "d5ddff3ab64bbc5612e562e040242721eda6451eae8a0615ccd6bf2929aefcae",
+      "variants": [
+        "/catalog/icons/equipment-11311.png",
+        "/catalog/icons/equipment-11311-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/11311.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1141",
+      "kind": "equipment",
+      "name": "逐日之弓",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1141.jpg",
+      "icon": "/catalog/icons/equipment-1141.png",
+      "sha256": "ca2fc5d8830f9cfb4527d135336d6d65fa9d4aac660bd122dd064eda653540bd",
+      "variants": [
+        "/catalog/icons/equipment-1141.png",
+        "/catalog/icons/equipment-1141-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1141.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1125",
+      "kind": "equipment",
+      "name": "破魔刀",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1125.jpg",
+      "icon": "/catalog/icons/equipment-1125.png",
+      "sha256": "b1de9f655fe14dc2069abfcbe51e5c167b4b17c0440145a2011b1fe0ba822766",
+      "variants": [
+        "/catalog/icons/equipment-1125.png",
+        "/catalog/icons/equipment-1125-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1125.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1154",
+      "kind": "equipment",
+      "name": "穿云弓",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1154.jpg",
+      "icon": "/catalog/icons/equipment-1154.png",
+      "sha256": "388337af63f83cd9194f86ed79c25fbbe80757751fbcfc97cbf0307c497b2ce7",
+      "variants": [
+        "/catalog/icons/equipment-1154.png",
+        "/catalog/icons/equipment-1154-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1154.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1155",
+      "kind": "equipment",
+      "name": "仁者破晓",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1155.jpg",
+      "icon": "/catalog/icons/equipment-1155.png",
+      "sha256": "f0bf7c0e636959472ecba70403e30b49f9d1fba21d5662285124f456859690dc",
+      "variants": [
+        "/catalog/icons/equipment-1155.png",
+        "/catalog/icons/equipment-1155-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1155.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1211",
+      "kind": "equipment",
+      "name": "咒术典籍",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1211.jpg",
+      "icon": "/catalog/icons/equipment-1211.png",
+      "sha256": "793790ddcfde9dc4698328d5ee4a050b19ea09aafda0d21993e4b5f60dfb54f5",
+      "variants": [
+        "/catalog/icons/equipment-1211.png",
+        "/catalog/icons/equipment-1211-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1211.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1212",
+      "kind": "equipment",
+      "name": "蓝宝石",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1212.jpg",
+      "icon": "/catalog/icons/equipment-1212.png",
+      "sha256": "83202fc85b927c619096da289b205734d7a4f17ab309b00f51ace213a227a076",
+      "variants": [
+        "/catalog/icons/equipment-1212.png",
+        "/catalog/icons/equipment-1212-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1212.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1214",
+      "kind": "equipment",
+      "name": "圣者法典",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1214.jpg",
+      "icon": "/catalog/icons/equipment-1214.png",
+      "sha256": "b1c576e42c2161bc493f56bd3e8a225057bc085c0645418ceacfc9251162051e",
+      "variants": [
+        "/catalog/icons/equipment-1214.png",
+        "/catalog/icons/equipment-1214-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1214.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1221",
+      "kind": "equipment",
+      "name": "大棒",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1221.jpg",
+      "icon": "/catalog/icons/equipment-1221.png",
+      "sha256": "a3adf3c671e1372b75a0834c56119f5e8da3aee190b14c1a16e49615218dc523",
+      "variants": [
+        "/catalog/icons/equipment-1221.png",
+        "/catalog/icons/equipment-1221-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1221.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1222",
+      "kind": "equipment",
+      "name": "血族之书",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1222.jpg",
+      "icon": "/catalog/icons/equipment-1222.png",
+      "sha256": "da1509f2456794a46feb58dc25f635ab0dacc800ed15d9b9e5ecbcd19e9f94b0",
+      "variants": [
+        "/catalog/icons/equipment-1222.png",
+        "/catalog/icons/equipment-1222-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1222.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1227",
+      "kind": "equipment",
+      "name": "炽热支配",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1227.jpg",
+      "icon": "/catalog/icons/equipment-1227.png",
+      "sha256": "c0ad653c0e2ee78fdc479869099ab1d3bf8985fb3b352b048859706a5c6b43e2",
+      "variants": [
+        "/catalog/icons/equipment-1227.png",
+        "/catalog/icons/equipment-1227-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1227.jpg"
+      ]
+    },
+    {
+      "id": "equipment-12211",
+      "kind": "equipment",
+      "name": "梦魇之牙",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/12211.jpg",
+      "icon": "/catalog/icons/equipment-12211.png",
+      "sha256": "2040c4ae7a57596917f0cfe92b2dac529f3eea9ec4740ecec74626cb0510d8d9",
+      "variants": [
+        "/catalog/icons/equipment-12211.png",
+        "/catalog/icons/equipment-12211-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/12211.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1231",
+      "kind": "equipment",
+      "name": "虚无法杖",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1231.jpg",
+      "icon": "/catalog/icons/equipment-1231.png",
+      "sha256": "223393bc81ecfd322e894a27829971b8d98778a8a0eb97a7b7d819d5595a2918",
+      "variants": [
+        "/catalog/icons/equipment-1231.png",
+        "/catalog/icons/equipment-1231-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1231.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1232",
+      "kind": "equipment",
+      "name": "博学者之怒",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1232.jpg",
+      "icon": "/catalog/icons/equipment-1232.png",
+      "sha256": "58f382a6e248ca34eb1a2d913e61c03cf9a30c9846241116752bd01bf673802f",
+      "variants": [
+        "/catalog/icons/equipment-1232.png",
+        "/catalog/icons/equipment-1232-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1232.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1239",
+      "kind": "equipment",
+      "name": "辉月",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1239.jpg",
+      "icon": "/catalog/icons/equipment-1239.png",
+      "sha256": "2f7b1a3745a6e8c4197ae789e4f96b470e25e502178a939c08486a0121ef6058",
+      "variants": [
+        "/catalog/icons/equipment-1239.png",
+        "/catalog/icons/equipment-1239-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1239.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1233",
+      "kind": "equipment",
+      "name": "回响之杖",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1233.jpg",
+      "icon": "/catalog/icons/equipment-1233.png",
+      "sha256": "8c903fc345512f93df51896d24b57abe1732fc052a410e2a1b4f4e9b34cb5fad",
+      "variants": [
+        "/catalog/icons/equipment-1233.png",
+        "/catalog/icons/equipment-1233-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1233.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1234",
+      "kind": "equipment",
+      "name": "凝冰之息",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1234.jpg",
+      "icon": "/catalog/icons/equipment-1234.png",
+      "sha256": "9a61d2758a9e32527eda88d662fdb9c2ac6204b251c04409609dfc2f055b0a98",
+      "variants": [
+        "/catalog/icons/equipment-1234.png",
+        "/catalog/icons/equipment-1234-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1234.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1235",
+      "kind": "equipment",
+      "name": "痛苦面具",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1235.jpg",
+      "icon": "/catalog/icons/equipment-1235.png",
+      "sha256": "82a4407cfaa99cbf40c78a7853729f6165c8851a697736e3539bceb93b9badc1",
+      "variants": [
+        "/catalog/icons/equipment-1235.png",
+        "/catalog/icons/equipment-1235-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1235.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1236",
+      "kind": "equipment",
+      "name": "巫术法杖",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1236.jpg",
+      "icon": "/catalog/icons/equipment-1236.png",
+      "sha256": "d7f253a9df299288f3cc910a88e57c2875e41c9245dcb36a156770327d9417bd",
+      "variants": [
+        "/catalog/icons/equipment-1236.png",
+        "/catalog/icons/equipment-1236-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1236.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1226",
+      "kind": "equipment",
+      "name": "圣杯",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1226.jpg",
+      "icon": "/catalog/icons/equipment-1226.png",
+      "sha256": "e6526309398478eb7ec2ee217dce488155b9a720a1fc29faab9c17838e16891c",
+      "variants": [
+        "/catalog/icons/equipment-1226.png",
+        "/catalog/icons/equipment-1226-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1226.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1237",
+      "kind": "equipment",
+      "name": "时之预言",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1237.jpg",
+      "icon": "/catalog/icons/equipment-1237.png",
+      "sha256": "3f7026f780f10e9ed0f57fd56fd07126961c1c1ec6bc30ade49bcefa20cfb081",
+      "variants": [
+        "/catalog/icons/equipment-1237.png",
+        "/catalog/icons/equipment-1237-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1237.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1238",
+      "kind": "equipment",
+      "name": "贤者天书",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1238.jpg",
+      "icon": "/catalog/icons/equipment-1238.png",
+      "sha256": "d18bbe0e392e88aab17044ed09131a31965d3d395e048aecf640491434b96c72",
+      "variants": [
+        "/catalog/icons/equipment-1238.png",
+        "/catalog/icons/equipment-1238-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1238.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1240",
+      "kind": "equipment",
+      "name": "噬神之书",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1240.jpg",
+      "icon": "/catalog/icons/equipment-1240.png",
+      "sha256": "4c87ab72ed6a090d4d1ffaed26aef1badfd63658e7d5c6a91ea8430cb8f554d2",
+      "variants": [
+        "/catalog/icons/equipment-1240.png",
+        "/catalog/icons/equipment-1240-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1240.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1311",
+      "kind": "equipment",
+      "name": "红玛瑙",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1311.jpg",
+      "icon": "/catalog/icons/equipment-1311.png",
+      "sha256": "61e79bedba2b46f4248d7f008281ec0af416a243e4688e8b3c6f0dc71c986530",
+      "variants": [
+        "/catalog/icons/equipment-1311.png",
+        "/catalog/icons/equipment-1311-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1311.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1312",
+      "kind": "equipment",
+      "name": "布甲",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1312.jpg",
+      "icon": "/catalog/icons/equipment-1312.png",
+      "sha256": "90c9529cb0b43709b31c743c20f19786d2cba09fdf1f7ffc44a2a139a44334dc",
+      "variants": [
+        "/catalog/icons/equipment-1312.png",
+        "/catalog/icons/equipment-1312-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1312.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1313",
+      "kind": "equipment",
+      "name": "抗魔披风",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1313.jpg",
+      "icon": "/catalog/icons/equipment-1313.png",
+      "sha256": "8f3ddb9e2f9c3ef81f4dc3dd1e31eac632562630e30bafd2d6c9a7d1674af0bf",
+      "variants": [
+        "/catalog/icons/equipment-1313.png",
+        "/catalog/icons/equipment-1313-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1313.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1321",
+      "kind": "equipment",
+      "name": "力量腰带",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1321.jpg",
+      "icon": "/catalog/icons/equipment-1321.png",
+      "sha256": "3c282fc319f58e386bc53892c2c09f834e6111c50ddf03413e0b72a34c72e972",
+      "variants": [
+        "/catalog/icons/equipment-1321.png",
+        "/catalog/icons/equipment-1321-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1321.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1323",
+      "kind": "equipment",
+      "name": "神隐斗篷",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1323.jpg",
+      "icon": "/catalog/icons/equipment-1323.png",
+      "sha256": "f6a970634aa070f7cf13303d973379e3b3e5e8022045341219b6f9ea9e56c699",
+      "variants": [
+        "/catalog/icons/equipment-1323.png",
+        "/catalog/icons/equipment-1323-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1323.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1324",
+      "kind": "equipment",
+      "name": "雪山圆盾",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1324.jpg",
+      "icon": "/catalog/icons/equipment-1324.png",
+      "sha256": "dbea7c5bf5a589622e8d4e7b185e3a5fc850654446657bfc9cdd1f3e02c0ffa8",
+      "variants": [
+        "/catalog/icons/equipment-1324.png",
+        "/catalog/icons/equipment-1324-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1324.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1325",
+      "kind": "equipment",
+      "name": "守护者之铠",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1325.jpg",
+      "icon": "/catalog/icons/equipment-1325.png",
+      "sha256": "a8de12ce92b7bbe2e40c25a9cdb047a23c3ce3e13af153195a04760604970547",
+      "variants": [
+        "/catalog/icons/equipment-1325.png",
+        "/catalog/icons/equipment-1325-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1325.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1327",
+      "kind": "equipment",
+      "name": "反伤刺甲",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1327.jpg",
+      "icon": "/catalog/icons/equipment-1327.png",
+      "sha256": "1110d2fcea93eedb302584d6c720494963457ff5d3f589aa3e8167fc69089d1b",
+      "variants": [
+        "/catalog/icons/equipment-1327.png",
+        "/catalog/icons/equipment-1327-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1327.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1328",
+      "kind": "equipment",
+      "name": "血魔之怒",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1328.jpg",
+      "icon": "/catalog/icons/equipment-1328.png",
+      "sha256": "268d4bea3056cab03ac7cc168a56890018e07974aeb7112820bbc648b17239de",
+      "variants": [
+        "/catalog/icons/equipment-1328.png",
+        "/catalog/icons/equipment-1328-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1328.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1331",
+      "kind": "equipment",
+      "name": "红莲斗篷",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1331.jpg",
+      "icon": "/catalog/icons/equipment-1331.png",
+      "sha256": "2b5d5f972ba3317bdfb04147efdf77556e4bd4d940a5b5259f868eea9eedf765",
+      "variants": [
+        "/catalog/icons/equipment-1331.png",
+        "/catalog/icons/equipment-1331-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1331.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1332",
+      "kind": "equipment",
+      "name": "霸者重装",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1332.jpg",
+      "icon": "/catalog/icons/equipment-1332.png",
+      "sha256": "67628b6b9bd391a95f0d68102cf3e56f6c275a3c6cea64269b15c15b8ca4c6d9",
+      "variants": [
+        "/catalog/icons/equipment-1332.png",
+        "/catalog/icons/equipment-1332-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1332.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1341",
+      "kind": "equipment",
+      "name": "冰霜冲击",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1341.jpg",
+      "icon": "/catalog/icons/equipment-1341.png",
+      "sha256": "61dca14e241f97a7fcfe41511e03876d9ffaab78e4290960422665b05a2c0817",
+      "variants": [
+        "/catalog/icons/equipment-1341.png",
+        "/catalog/icons/equipment-1341-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1341.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1333",
+      "kind": "equipment",
+      "name": "不祥征兆",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1333.jpg",
+      "icon": "/catalog/icons/equipment-1333.png",
+      "sha256": "31b256ce188cfd1d24816496a4ee160e40a59947547c32a0be58e8c80bbbb780",
+      "variants": [
+        "/catalog/icons/equipment-1333.png",
+        "/catalog/icons/equipment-1333-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1333.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1334",
+      "kind": "equipment",
+      "name": "不死鸟之眼",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1334.jpg",
+      "icon": "/catalog/icons/equipment-1334.png",
+      "sha256": "cf8da6d599b272bc95a7e475c5c9a1cff54aadd187c0e070f726b5bf08f9dd26",
+      "variants": [
+        "/catalog/icons/equipment-1334.png",
+        "/catalog/icons/equipment-1334-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1334.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1335",
+      "kind": "equipment",
+      "name": "魔女斗篷",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1335.jpg",
+      "icon": "/catalog/icons/equipment-1335.png",
+      "sha256": "b63b40ad256a1c37d082fa00de5c1c5dcfbd78c8938967a3751777358d7c16ce",
+      "variants": [
+        "/catalog/icons/equipment-1335.png",
+        "/catalog/icons/equipment-1335-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1335.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1336",
+      "kind": "equipment",
+      "name": "极寒风暴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1336.jpg",
+      "icon": "/catalog/icons/equipment-1336.png",
+      "sha256": "dad4447b2a5040c5ae445647c1726fd0fc2ebd711dd7d1293ff8abe19dfc940e",
+      "variants": [
+        "/catalog/icons/equipment-1336.png",
+        "/catalog/icons/equipment-1336-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1336.jpg"
+      ]
+    },
+    {
+      "id": "equipment-13310",
+      "kind": "equipment",
+      "name": "冰痕之握",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/13310.jpg",
+      "icon": "/catalog/icons/equipment-13310.png",
+      "sha256": "15e433771e23bc60ce05b03f849286c4e5467bd497f1572fb9c592994642aff7",
+      "variants": [
+        "/catalog/icons/equipment-13310.png",
+        "/catalog/icons/equipment-13310-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/13310.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1337",
+      "kind": "equipment",
+      "name": "贤者的庇护",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1337.jpg",
+      "icon": "/catalog/icons/equipment-1337.png",
+      "sha256": "364d16b65718b7c3721ab0d15f8490f513959fec483332fc30c187d40f2dba27",
+      "variants": [
+        "/catalog/icons/equipment-1337.png",
+        "/catalog/icons/equipment-1337-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1337.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1338",
+      "kind": "equipment",
+      "name": "暴烈之甲",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1338.jpg",
+      "icon": "/catalog/icons/equipment-1338.png",
+      "sha256": "91cbad41c3c900f91aed80413e660a4d379f1dc33591e05b841e1e62680f3227",
+      "variants": [
+        "/catalog/icons/equipment-1338.png",
+        "/catalog/icons/equipment-1338-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1338.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1411",
+      "kind": "equipment",
+      "name": "神速之靴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1411.jpg",
+      "icon": "/catalog/icons/equipment-1411.png",
+      "sha256": "e5d5d57bc5c1acb6428750c4a6eac73638a7082d9122249ee2f5e26c81ccfd74",
+      "variants": [
+        "/catalog/icons/equipment-1411.png",
+        "/catalog/icons/equipment-1411-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1411.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1421",
+      "kind": "equipment",
+      "name": "影忍之足",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1421.jpg",
+      "icon": "/catalog/icons/equipment-1421.png",
+      "sha256": "cd6dc085cbcef0015ec54ce48cbbb892966cdf05157385a60ee80ec73bcdcb55",
+      "variants": [
+        "/catalog/icons/equipment-1421.png",
+        "/catalog/icons/equipment-1421-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1421.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1422",
+      "kind": "equipment",
+      "name": "抵抗之靴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1422.jpg",
+      "icon": "/catalog/icons/equipment-1422.png",
+      "sha256": "d5de6723ed66cfd61357f9658314f62307b62f2c02f0144c64a91db79dd2512a",
+      "variants": [
+        "/catalog/icons/equipment-1422.png",
+        "/catalog/icons/equipment-1422-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1422.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1423",
+      "kind": "equipment",
+      "name": "冷静之靴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1423.jpg",
+      "icon": "/catalog/icons/equipment-1423.png",
+      "sha256": "b5149b4a0ca14c21bbfc09447bdb69b3e4a1e1522f2a63bdfd720b8448c17778",
+      "variants": [
+        "/catalog/icons/equipment-1423.png",
+        "/catalog/icons/equipment-1423-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1423.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1424",
+      "kind": "equipment",
+      "name": "秘法之靴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1424.jpg",
+      "icon": "/catalog/icons/equipment-1424.png",
+      "sha256": "ceaf1a14e358a78baedbeec130f98108a60401017933c5d9f692202651394b69",
+      "variants": [
+        "/catalog/icons/equipment-1424.png",
+        "/catalog/icons/equipment-1424-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1424.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1425",
+      "kind": "equipment",
+      "name": "急速战靴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1425.jpg",
+      "icon": "/catalog/icons/equipment-1425.png",
+      "sha256": "81569c36c0dcbc1c3ebf8ed2da6181c39450e4a75dd14ceaee2654013cc671c5",
+      "variants": [
+        "/catalog/icons/equipment-1425.png",
+        "/catalog/icons/equipment-1425-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1425.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1426",
+      "kind": "equipment",
+      "name": "疾步之靴",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1426.jpg",
+      "icon": "/catalog/icons/equipment-1426.png",
+      "sha256": "9307cbc3e9a4be431345895f2cf03928c3cf831c7cbc760e377a4da2f48c8b06",
+      "variants": [
+        "/catalog/icons/equipment-1426.png",
+        "/catalog/icons/equipment-1426-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1426.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1511",
+      "kind": "equipment",
+      "name": "狩猎宽刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1511.jpg",
+      "icon": "/catalog/icons/equipment-1511.png",
+      "sha256": "1abc3b862eb253566bcbe921c884bf0d9abe14b68dc86faff906bad8c5860c5a",
+      "variants": [
+        "/catalog/icons/equipment-1511.png",
+        "/catalog/icons/equipment-1511-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1511.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1521",
+      "kind": "equipment",
+      "name": "游击弯刀",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1521.jpg",
+      "icon": "/catalog/icons/equipment-1521.png",
+      "sha256": "ba1e95ac37b0240c9be4dfb0150d7272aa751982bc064725622ed214311cfbc0",
+      "variants": [
+        "/catalog/icons/equipment-1521.png",
+        "/catalog/icons/equipment-1521-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1521.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1522",
+      "kind": "equipment",
+      "name": "巡守利斧",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1522.jpg",
+      "icon": "/catalog/icons/equipment-1522.png",
+      "sha256": "cfe7a3bdd8af23c3c508dac0acf8629a4b0897361d2c597c5045f98e52b95e96",
+      "variants": [
+        "/catalog/icons/equipment-1522.png",
+        "/catalog/icons/equipment-1522-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1522.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1523",
+      "kind": "equipment",
+      "name": "追击刀锋",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1523.jpg",
+      "icon": "/catalog/icons/equipment-1523.png",
+      "sha256": "196acb716a83de4093ca07fc1495f16a1f51fa41231baa05d33c0b770a9e30c8",
+      "variants": [
+        "/catalog/icons/equipment-1523.png",
+        "/catalog/icons/equipment-1523-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1523.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1531",
+      "kind": "equipment",
+      "name": "符文大剑",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1531.jpg",
+      "icon": "/catalog/icons/equipment-1531.png",
+      "sha256": "4716da40e83359404776be1874fc628ca49dad4faecda3c4efdc79ac5760c65d",
+      "variants": [
+        "/catalog/icons/equipment-1531.png",
+        "/catalog/icons/equipment-1531-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1531.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1532",
+      "kind": "equipment",
+      "name": "巨人之握",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1532.jpg",
+      "icon": "/catalog/icons/equipment-1532.png",
+      "sha256": "f0605d0117c4f290a1ffef91c53866f7fa3ecfdcbeff18ef8ad1d3ca88aecd42",
+      "variants": [
+        "/catalog/icons/equipment-1532.png",
+        "/catalog/icons/equipment-1532-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1532.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1533",
+      "kind": "equipment",
+      "name": "贪婪之噬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1533.jpg",
+      "icon": "/catalog/icons/equipment-1533.png",
+      "sha256": "9d6dd6de5dbd9d2f004c74655d61563208d7029d60418677b2ae5adc3198c02d",
+      "variants": [
+        "/catalog/icons/equipment-1533.png",
+        "/catalog/icons/equipment-1533-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1533.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1727",
+      "kind": "equipment",
+      "name": "日暮之流",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1727.jpg",
+      "icon": "/catalog/icons/equipment-1727.png",
+      "sha256": "efc1735e23aea12966de8ea6da9f924d8add87b2580b1c02189d411319c4f1af",
+      "variants": [
+        "/catalog/icons/equipment-1727.png",
+        "/catalog/icons/equipment-1727-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1727.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1728",
+      "kind": "equipment",
+      "name": "金色圣剑",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1728.jpg",
+      "icon": "/catalog/icons/equipment-1728.png",
+      "sha256": "1bbebc2b4b0ea525c8f61014242bf012ea4862d260d98bf615cdefc17ecdcc39",
+      "variants": [
+        "/catalog/icons/equipment-1728.png",
+        "/catalog/icons/equipment-1728-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1728.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1534",
+      "kind": "equipment",
+      "name": "怒龙剑盾",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1534.jpg",
+      "icon": "/catalog/icons/equipment-1534.png",
+      "sha256": "bac9c130a1ae0edb5696f94f33e906c06a4479dd665854796912c2c965f36b86",
+      "variants": [
+        "/catalog/icons/equipment-1534.png",
+        "/catalog/icons/equipment-1534-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1534.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1345",
+      "kind": "equipment",
+      "name": "荆棘护手",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1345.jpg",
+      "icon": "/catalog/icons/equipment-1345.png",
+      "sha256": "c3703f86a1f08f4ed41d59588c3aad1170cfcc59bda3ea9340638610ca5428cb",
+      "variants": [
+        "/catalog/icons/equipment-1345.png",
+        "/catalog/icons/equipment-1345-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1345.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1347",
+      "kind": "equipment",
+      "name": "永夜守护",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1347.jpg",
+      "icon": "/catalog/icons/equipment-1347.png",
+      "sha256": "68f13d102a1632bde7de035071f74593758b1c4c2cfb48b7ea515593d16eb023",
+      "variants": [
+        "/catalog/icons/equipment-1347.png",
+        "/catalog/icons/equipment-1347-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1347.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1349",
+      "kind": "equipment",
+      "name": "原初遗珠",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1349.jpg",
+      "icon": "/catalog/icons/equipment-1349.png",
+      "sha256": "5e6c46d7b1331da991facc308d646853a1f69989d638b6ed03c59420db6ab020",
+      "variants": [
+        "/catalog/icons/equipment-1349.png",
+        "/catalog/icons/equipment-1349-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1349.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1350",
+      "kind": "equipment",
+      "name": "侵掠·怒魂",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1350.jpg",
+      "icon": "/catalog/icons/equipment-1350.png",
+      "sha256": "4b59b6d13071fbd397ae63c3451afc59cc2abbcc53993f59654f1279b5057b0d",
+      "variants": [
+        "/catalog/icons/equipment-1350.png",
+        "/catalog/icons/equipment-1350-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1350.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1351",
+      "kind": "equipment",
+      "name": "徐行·凛冬",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1351.jpg",
+      "icon": "/catalog/icons/equipment-1351.png",
+      "sha256": "26797661df69ae60cd1c8320d624c8c281bd83c4c3a686c29ad62896756f74ae",
+      "variants": [
+        "/catalog/icons/equipment-1351.png",
+        "/catalog/icons/equipment-1351-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1351.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1156",
+      "kind": "equipment",
+      "name": "迅疾·日渊",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1156.jpg",
+      "icon": "/catalog/icons/equipment-1156.png",
+      "sha256": "ce56a4690d54bdbecc6174cfba0ffacce3aaefcd64d30be5577c19f0874b44e8",
+      "variants": [
+        "/catalog/icons/equipment-1156.png",
+        "/catalog/icons/equipment-1156-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1156.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1157",
+      "kind": "equipment",
+      "name": "不动·天穹",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1157.jpg",
+      "icon": "/catalog/icons/equipment-1157.png",
+      "sha256": "354e692c90e54fa8a0f5dbd76835a2c993fc61891d3062f3d13b4dec584680c5",
+      "variants": [
+        "/catalog/icons/equipment-1157.png",
+        "/catalog/icons/equipment-1157-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1157.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1242",
+      "kind": "equipment",
+      "name": "难知·月神",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1242.jpg",
+      "icon": "/catalog/icons/equipment-1242.png",
+      "sha256": "2ea8115582081ea8474297738819ce848d917f93f9c82c3ae59a3cd218331163",
+      "variants": [
+        "/catalog/icons/equipment-1242.png",
+        "/catalog/icons/equipment-1242-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1242.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1224",
+      "kind": "equipment",
+      "name": "魔道之石",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1224.jpg",
+      "icon": "/catalog/icons/equipment-1224.png",
+      "sha256": "e8c5d0c285d9186a3b8cb2c8dea8b5eb0c4c58cc5906b2f8c9866dba025610cd",
+      "variants": [
+        "/catalog/icons/equipment-1224.png",
+        "/catalog/icons/equipment-1224-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1224.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1243",
+      "kind": "equipment",
+      "name": "云灵木",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1243.jpg",
+      "icon": "/catalog/icons/equipment-1243.png",
+      "sha256": "5c5907766717b394f1a951cad75a6dc726b36a291ad61897aa9f079714e0e270",
+      "variants": [
+        "/catalog/icons/equipment-1243.png",
+        "/catalog/icons/equipment-1243-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1243.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1115",
+      "kind": "equipment",
+      "name": "迅捷长矛",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1115.jpg",
+      "icon": "/catalog/icons/equipment-1115.png",
+      "sha256": "a00fc077aab55b4b99e3f38003aaae6ce43f0e54602562419883c0bc5ceb7dab",
+      "variants": [
+        "/catalog/icons/equipment-1115.png",
+        "/catalog/icons/equipment-1115-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1115.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1244",
+      "kind": "equipment",
+      "name": "破茧之衣",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1244.jpg",
+      "icon": "/catalog/icons/equipment-1244.png",
+      "sha256": "c03ba34df731e40958eb699d2c3fd593c8a77db88c8fb7198f85c939d34aae98",
+      "variants": [
+        "/catalog/icons/equipment-1244.png",
+        "/catalog/icons/equipment-1244-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1244.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1158",
+      "kind": "equipment",
+      "name": "血魂刃",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1158.jpg",
+      "icon": "/catalog/icons/equipment-1158.png",
+      "sha256": "9bc3812d1dcd942f901ba98c03897ab264c51676dbee475c21e7668fa6b43ecf",
+      "variants": [
+        "/catalog/icons/equipment-1158.png",
+        "/catalog/icons/equipment-1158-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1158.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1159",
+      "kind": "equipment",
+      "name": "逐风",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1159.jpg",
+      "icon": "/catalog/icons/equipment-1159.png",
+      "sha256": "908ffc687adb6f29b45048ef5dc30aec21d76a0929dba12deab7154ae2b6cc7f",
+      "variants": [
+        "/catalog/icons/equipment-1159.png",
+        "/catalog/icons/equipment-1159-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1159.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1353",
+      "kind": "equipment",
+      "name": "旭日初光",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1353.jpg",
+      "icon": "/catalog/icons/equipment-1353.png",
+      "sha256": "7b8ddbf00fc7bbe2ffcc31e9fd773e5a92e6dabb76fbdc3baf6bc5b1b7679bb3",
+      "variants": [
+        "/catalog/icons/equipment-1353.png",
+        "/catalog/icons/equipment-1353-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1353.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1701",
+      "kind": "equipment",
+      "name": "学识宝石",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1701.jpg",
+      "icon": "/catalog/icons/equipment-1701.png",
+      "sha256": "c0df56c3e9326bc735343242224306cbe442f51ccbd73dcb74ae2988d8491cd7",
+      "variants": [
+        "/catalog/icons/equipment-1701.png",
+        "/catalog/icons/equipment-1701-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1701.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1711",
+      "kind": "equipment",
+      "name": "极影",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1711.jpg",
+      "icon": "/catalog/icons/equipment-1711.png",
+      "sha256": "f1dec5f9dc59e2f813c5b21b089eb55738bfe4dc4c7b5677abc901d79df09fd5",
+      "variants": [
+        "/catalog/icons/equipment-1711.png",
+        "/catalog/icons/equipment-1711-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1711.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1714",
+      "kind": "equipment",
+      "name": "近卫",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1714.jpg",
+      "icon": "/catalog/icons/equipment-1714.png",
+      "sha256": "bc3c97a7323315ba2cfd9742092297ce013a0292a469082a39b74e12dbd3ee0c",
+      "variants": [
+        "/catalog/icons/equipment-1714.png",
+        "/catalog/icons/equipment-1714-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1714.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1721",
+      "kind": "equipment",
+      "name": "极影·救赎",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1721.jpg",
+      "icon": "/catalog/icons/equipment-1721.png",
+      "sha256": "d6a2f8c323052eabc391f2e3eed7f7bb5a2b885e690d72782e6ba10f4df96c3e",
+      "variants": [
+        "/catalog/icons/equipment-1721.png",
+        "/catalog/icons/equipment-1721-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1721.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1747",
+      "kind": "equipment",
+      "name": "极影·星泉",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1747.jpg",
+      "icon": "/catalog/icons/equipment-1747.png",
+      "sha256": "17c7625ba29b6c54b1badf6f979c401ee8e1c905eb72e9a57d38ff22dd2c4551",
+      "variants": [
+        "/catalog/icons/equipment-1747.png",
+        "/catalog/icons/equipment-1747-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1747.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1723",
+      "kind": "equipment",
+      "name": "极影·奔狼",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1723.jpg",
+      "icon": "/catalog/icons/equipment-1723.png",
+      "sha256": "98b2c42f2fd3d13f8bd439b54da80b0be642c452dcdf31b9363336e0f8f4e0f7",
+      "variants": [
+        "/catalog/icons/equipment-1723.png",
+        "/catalog/icons/equipment-1723-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1723.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1737",
+      "kind": "equipment",
+      "name": "极影·形昭",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1737.jpg",
+      "icon": "/catalog/icons/equipment-1737.png",
+      "sha256": "587aad5bc55239b1462128b434528a3ba3ccb10a60fb04775691e34634e17230",
+      "variants": [
+        "/catalog/icons/equipment-1737.png",
+        "/catalog/icons/equipment-1737-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1737.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1724",
+      "kind": "equipment",
+      "name": "近卫·救赎",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1724.jpg",
+      "icon": "/catalog/icons/equipment-1724.png",
+      "sha256": "220555e5f90c98dec5d6dc9cd172881cc32b0ace39654f0b94e7fdb7eb56794b",
+      "variants": [
+        "/catalog/icons/equipment-1724.png",
+        "/catalog/icons/equipment-1724-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1724.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1725",
+      "kind": "equipment",
+      "name": "近卫·星泉",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1725.jpg",
+      "icon": "/catalog/icons/equipment-1725.png",
+      "sha256": "ce778073d895e448ec9c250494eca5ec2732aea34d9f24f74e0abb56a6c12a96",
+      "variants": [
+        "/catalog/icons/equipment-1725.png",
+        "/catalog/icons/equipment-1725-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1725.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1753",
+      "kind": "equipment",
+      "name": "近卫·奔狼",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1753.jpg",
+      "icon": "/catalog/icons/equipment-1753.png",
+      "sha256": "9c1e043e9a1eac8c1c31039b2f5af4baa8439d31c7271b5af5bf08a76cdbec1a",
+      "variants": [
+        "/catalog/icons/equipment-1753.png",
+        "/catalog/icons/equipment-1753-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1753.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1754",
+      "kind": "equipment",
+      "name": "近卫·形昭",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1754.jpg",
+      "icon": "/catalog/icons/equipment-1754.png",
+      "sha256": "229756b14f42f5021120afe8c58b892d5967dc4e76055091766179ef3d422c4f",
+      "variants": [
+        "/catalog/icons/equipment-1754.png",
+        "/catalog/icons/equipment-1754-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1754.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1317",
+      "kind": "equipment",
+      "name": "急速铠甲",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1317.jpg",
+      "icon": "/catalog/icons/equipment-1317.png",
+      "sha256": "68d4b8bdfe71eacf1654d694f877a2ad6741a374bb1a02a2eab14295234bde84",
+      "variants": [
+        "/catalog/icons/equipment-1317.png",
+        "/catalog/icons/equipment-1317-esports.png"
+      ],
+      "variantSources": [
+        "https://res.edata.qq.com/sgame/static/images/equipment/1317.jpg"
+      ]
+    },
+    {
+      "id": "equipment-1217",
+      "kind": "equipment",
+      "name": "秘法残页",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1217.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    },
+    {
+      "id": "equipment-11110",
+      "kind": "equipment",
+      "name": "附魔之羽",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/11110.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    },
+    {
+      "id": "equipment-1218",
+      "kind": "equipment",
+      "name": "元流结晶",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1218.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    },
+    {
+      "id": "equipment-13212",
+      "kind": "equipment",
+      "name": "天地石",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/13212.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    },
+    {
+      "id": "equipment-11211",
+      "kind": "equipment",
+      "name": "精钢锻刀",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/11211.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    },
+    {
+      "id": "equipment-13211",
+      "kind": "equipment",
+      "name": "玛瑙护心镜",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/13211.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    },
+    {
+      "id": "equipment-1161",
+      "kind": "equipment",
+      "name": "幽影袖箭",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1161.jpg",
+      "icon": null,
+      "error": "HTTPError"
+    }
+  ]
+}
