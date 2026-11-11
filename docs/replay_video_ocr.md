@@ -36,7 +36,7 @@ python scripts/replay_video_ocr.py "C:\path\to\录屏.mp4" --fps 1
 本次样本：
 
 ```powershell
-python scripts/replay_video_ocr.py "C:\Users\Hzz\OneDrive\桌面\王者荣耀(1).mp4" `
+python scripts/replay_video_ocr.py "<录像目录>\王者荣耀(1).mp4" `
   --fps 1 --abc data/replays/samples/20261028_135516.abc --evidence data/replays/video_ocr/evidence
 ```
 

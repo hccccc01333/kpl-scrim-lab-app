@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
   <img src="docs/images/logo.svg" width="74" height="74" alt="KPL 赛训数据平台">
   <h1>KPL 赛训数据平台</h1>
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
@@ -6,7 +6,7 @@
   <p>
     <img alt="版本" src="https://img.shields.io/badge/version-1.5.32-176B69?style=flat-square&labelColor=0F2E29">
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
-    <img alt="许可" src="https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-F08A6C?style=flat-square&labelColor=0F2E29">
+    <img alt="许可" src="https://img.shields.io/badge/license-AGPL--3.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
     <img alt="运行方式" src="https://img.shields.io/badge/runtime-100%25%20local-7A8FA6?style=flat-square&labelColor=0F2E29">
   </p>
@@ -266,7 +266,7 @@ Windows 也可以直接双击：
 | `安装依赖.bat` | 建虚拟环境并装依赖 |
 | `启动工作台.bat` | 起服务并打开浏览器 |
 | `启动工作台-守护.bat` / `启动工作台-后台.vbs` | 常驻运行，不占终端窗口 |
-| `停止工作台.bat` | 调本机 `/api/shutdown` 优雅退出 |
+| `停止工作台.bat` | 优雅退出工作台 |
 
 ### 先看看它长什么样
 
@@ -390,15 +390,10 @@ CI 分两条流水线：**test** 在 3.11 / 3.12 上跑全量用例与部署自�
 | `patch-<版本>.zip` | 老用户增量更新，只含变更文件 |
 | `update.json` | 更新清单：版本、说明、文件哈希 |
 
-启动链路：桌面快捷方式 → `KPLScrimLab.exe`（薄壳）→ `runtime\pythonw.exe launcher.py`（无黑窗）→
-起服务 → 等 `/api/health` → 打开浏览器；失败则弹窗并写 `logs/launcher.log`。
-关掉浏览器不会停服务，开始菜单的「停止工作台」走本机专用的 `/api/shutdown`。
+启动后在本机起一个服务，用浏览器打开工作台；关掉浏览器不影响数据，下次打开接着用。
 
 更新在后台静默检查：下载增量包 → 校验哈希 → 替换程序文件 → 重启 → 健康检查，失败自动回滚。
 `data/`、`.env`、`camp_auth.json` 永远不在更新范围内。
-
-> 安装包未做代码签名。给教练组**用微信 / 网盘发 zip，不要发浏览器下载链接**——经浏览器下载的 exe
-> 会带网络标记并触发 SmartScreen。同时发一份 `.sha256` 供对方核对。
 
 ---
 
@@ -425,7 +420,6 @@ CI 分两条流水线：**test** 在 3.11 / 3.12 上跑全量用例与部署自�
 - **回放文件解析的界面入口按功能开关收起**，后端与工具链保留；营地回放的位置与事件不受影响。
 - **营地详情只保留最近一个月**，更早的对局只能走七图 + 录屏补录，界面会直接标「营地无详情」。
 - **单战队、单机**：多战队权限、账号体系与云端协作未实现；复核人是本机文本，不是登录账号。
-- **安装包没有代码签名**，首次运行会被 SmartScreen 拦一下，这是已知成本。
 - 界面上仍有个别旧版流程在往 V3 迁移；迁移只补基本信息，不猜阵容、对手与手序。
 
 ---
@@ -443,15 +437,18 @@ CI 分两条流水线：**test** 在 3.11 / 3.12 上跑全量用例与部署自�
 
 ## 许可与免责
 
-本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE)，**仅限非商业用途**：
-个人学习、学术研究、非营利组织与教学场景可自由使用、修改与再分发。
+本项目自 **1.6.0** 起采用 **AGPL-3.0-or-later + 商业授权** 双轨（详见 [LICENSING.md](LICENSING.md)）：
 
-**商业使用需要单独授权**，包括但不限于：俱乐部与训练机构内部采购、把本项目或其衍生版本作为付费服务提供、
-在商业产品中集成。请联系 [hccccc01333](https://github.com/hccccc01333)
-（`rainfun446 at gmail dot com`），或[提 Issue](https://github.com/hccccc01333/kpl-scrim-lab-app/issues) 说明使用场景。
+- **免费使用**：个人、教学、研究、非营利组织，以及俱乐部/训练机构内部使用，都可以直接用、直接改。
+- **开源义务**：如果修改后作为网络服务提供给他人，修改部分需要以 AGPL-3.0 公开。
+- **商业授权**：要闭源集成、OEM 或不想开源，联系 [hccccc01333](https://github.com/hccccc01333)
+  （`rainfun446 at gmail dot com`），或[提 Issue](https://github.com/hccccc01333/kpl-scrim-lab-app/issues) 说明场景。
+- **历史版本**：1.5.x 及以前为 PolyForm Noncommercial 1.0.0，协议文本存档在
+  [LICENSES/PolyForm-Noncommercial-1.0.0.txt](LICENSES/PolyForm-Noncommercial-1.0.0.txt)。
 
-游戏相关的英雄名称、形象与装备图片归原权利人所有。仓库不再分发这些素材，
-由 `scripts/sync_catalog.py` 在本地按需获取，仅作识别参照。
+**素材与数据不在代码协议内**：英雄与装备图片归原权利人所有，仓库不分发，
+由 `scripts/sync_catalog.py` 在本机按需获取；`data/` 下的对局与回放归使用者自己。
+第三方依赖与字体许可见 [NOTICE](NOTICE)。
 
 本项目是赛事训练分析工具，与游戏开发商及任何赛事组织方无关联，不对数据准确性作绝对保证。
 请遵守游戏用户协议与所在地区的数据合规要求。

@@ -34,6 +34,7 @@ python -m playwright install chromium
 ```bash
 python -m pytest tests -q          # 单元测试
 python scripts/check_deploy.py     # 部署自检
+python scripts/check_publish.py --strict   # 开源发布自检（禁止路径/个人信息）
 python scripts/verify_frontend.py  # 前端全站巡检（需要 playwright）
 ```
 
@@ -77,6 +78,23 @@ python scripts/verify_ui_pages.py
 - 附上截图（前后对比效果类改动）或测试输出（行为变更类改动）。
 - 涉及界面的改动，确认过窄屏（375px）不横向溢出。
 - 补充 `CHANGELOG.md` 的 `Unreleased` 段落。
+
+## 协议与贡献者授权
+
+本项目自 1.6.0 起为 **AGPL-3.0-or-later + 商业授权** 双轨（见 [LICENSING.md](LICENSING.md)）。
+提交 PR 即表示你同意两件事：
+
+1. 你的贡献以 **AGPL-3.0-or-later** 授权给本项目；
+2. 同时授权维护者以**其他协议（含商业授权）**分发你的贡献——这是双轨授权能成立的前提。
+
+提交时请带签署行（`git commit -s` 会自动加上）：
+
+```
+Signed-off-by: 你的名字 <你的邮箱>
+```
+
+这是 DCO（Developer Certificate of Origin）的轻量方式。不同意这两条请不要提交 PR，
+可以改用 Issue 提建议或提供复现步骤。
 
 ## Issue
 

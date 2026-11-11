@@ -11,6 +11,7 @@ import { CommandPalette } from './CommandPalette'
 import { ToastHost } from './ToastHost'
 import { Icon } from './Icon'
 import { OverviewPage } from '../pages/OverviewPage'
+import { DecisionPage } from '../pages/DecisionPage'
 import { MatchesPage } from '../pages/MatchesPage'
 import { MatchPage } from '../pages/MatchPage'
 import { CrossPage } from '../pages/CrossPage'
@@ -48,6 +49,7 @@ import { ReviewPage } from '../pages/ReviewPage'
 
 const navItems = [
   { to: '/', label: '概览', icon: 'overview' },
+  { to: '/decision', label: '决策台', icon: 'decision' },
   { to: '/collect', label: '采集', icon: 'ingest' },
   { to: '/matches', label: '比赛', icon: 'matches' },
   { to: '/players', label: '选手', icon: 'players' },
@@ -60,6 +62,7 @@ const navItems = [
 
 const pageTitles: Record<string, string> = {
   '/': '概览',
+  '/decision': '决策台',
   '/collect': '营地采集',
   '/matches': '比赛',
   '/matches/cross': '跨局分析',
@@ -282,6 +285,7 @@ export function AppShell() {
           <ModuleTabs />
           <Routes>
             <Route path="/" element={<OverviewPage />} />
+            <Route path="/decision" element={<DecisionPage />} />
             <Route path="/collect" element={<CollectPage />} />
             <Route path="/collect/:id" element={<ReviewPage />} />
             <Route path="/matches" element={<MatchesPage />} />

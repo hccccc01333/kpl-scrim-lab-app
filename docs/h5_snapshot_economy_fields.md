@@ -434,7 +434,7 @@ owner 后写死。上表只证明快照包含这些终局金币值。
 # 1) 复核 P 与 CS 槽
 python - <<'PY'
 import sys
-sys.path.insert(0, r'C:\Users\Hzz\AppData\Local\Temp\kpl_a1_econ')
+sys.path.insert(0, r'<临时目录>\kpl_a1_econ')
 from mem import Mem
 m = Mem()
 P = 0x75d7ea4e99f0
@@ -445,7 +445,7 @@ PY
 # 2) 复核索引表
 python - <<'PY'
 import sys, struct
-sys.path.insert(0, r'C:\Users\Hzz\AppData\Local\Temp\kpl_a1_econ')
+sys.path.insert(0, r'<临时目录>\kpl_a1_econ')
 from mem import Mem
 m = Mem()
 for i in range(10):
@@ -456,7 +456,7 @@ PY
 # 3) 复核名册表与容器
 python - <<'PY'
 import sys, struct
-sys.path.insert(0, r'C:\Users\Hzz\AppData\Local\Temp\kpl_a1_econ')
+sys.path.insert(0, r'<临时目录>\kpl_a1_econ')
 from mem import Mem
 m = Mem()
 print(hex(m.u64(0x75d7ea4c2238)), 'cap?', m.u32(0x75d7ea4c2250), 'count', m.u32(0x75d7ea4c2254))

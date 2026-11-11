@@ -44,6 +44,27 @@ dist/
 oss-v4/
 oss-v5/
 
+# 开源发布不分发的第三方素材：英雄/装备图与参考站副本由本地脚本获取
+resources/icons/
+web/refsite/
+
+# 不进入开源仓库：个人资料、运营素材、设备派生数据、营地界面截图
+内部资料/
+marketing/
+datasets/
+docs/afdian/
+web/capture-guide/*.jpg
+web/capture-guide/*.png
+_rewrite_research.py
+
+# 依赖私有数据集才能跑的生成脚本：留在本地，不进公开仓库
+scripts/build_bp_facts.py
+scripts/build_refsite_css.py
+
+# 逆向研究过程脚本与笔记：保留本地，不公开
+tools/agent_*.py
+docs/agent_*.md
+
 # 官网构建产物（由 scripts/build_website.py 生成，勿提交）
 website/dist/
 
@@ -84,3 +105,8 @@ data/*
 
 dist-gitee/
 
+
+# 临时探针脚本（研究/调试用，不进公开仓库）
+_*.py
+
+docs/feedback-*.md

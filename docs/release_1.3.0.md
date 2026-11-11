@@ -68,4 +68,3 @@ SHA256  KPL-Scrim-Lab-1.3.0-setup.exe  b3356c25d06cadd6d1c9d821061f5d456acd2ad5b
 SHA256  patch-1.3.0.zip                d06c647afc39e2c0aab6180ceeb15566587e85d5341d52226bcb8123d29c3147
 ```
 
-安装包未做代码签名，首次运行可能被 SmartScreen 拦一下，点「更多信息 → 仍要运行」即可。

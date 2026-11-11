@@ -1,0 +1,29 @@
+KPL 赛训数据平台
+Copyright (C) 2026 hccccc01333
+https://github.com/hccccc01333
+
+本文件按 AGPL-3.0 第 7 段要求，汇总版权声明与第三方内容归属。
+
+1. 源代码
+   除本文件另有说明外，本仓库源代码以 AGPL-3.0-or-later 授权，
+   完整协议见 LICENSE，双轨授权说明见 LICENSING.md。
+
+2. 游戏素材（不分发）
+   王者荣耀英雄名称、英雄形象、装备名称与图片归腾讯及其关联方所有。
+   本仓库不包含这些图片；需要时由 scripts/sync_catalog.py 在本机从官方公开地址拉取，
+   仅用于本机识别参照，不代表官方授权或认可。
+   历史版本（如 1.5.x 及更早）曾随仓库分发过部分图片，其权利仍归原权利人。
+
+3. 第三方软件
+   - Python 运行时依赖：见 requirements.txt / requirements-dev.txt，各自遵循其原协议（MIT / BSD / Apache-2.0 等）。
+   - 前端依赖（桌面客户端）：见 client/package.json，各自遵循其原协议。
+   - OCR 组件与浏览器自动化：Tesseract、Playwright 等，各自遵循其原协议。
+   - 字体：Manrope，许可文本见 v3/public/media/manrope-license.txt。
+
+4. 数据
+   用户导入或采集的对局、回放、截图与数据库归使用者所有，不在本仓库内，也不随代码协议授权。
+   仓库内的演示数据为合成数据，标注 synthetic，仅用于界面展示。
+
+5. 非官方声明
+   本项目是训练赛分析工具，与游戏开发商、KPL 联盟及任何赛事组织方无隶属或合作关系，
+   不代表官方评级或认可。

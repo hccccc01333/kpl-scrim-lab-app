@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 
 from analysis_api import create_analysis_router
+from decision_api import create_decision_router
 from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
@@ -116,6 +117,8 @@ app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
 # V3 的路由模块在 _mount_v3() 里加载；中间件用它刷新分析快照缓存。
 V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR, OFFICIAL_DIR))
+app.include_router(create_decision_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
+                                          DATA_DIR, DB_PATH))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, BUILDS_DIR, ROOT))

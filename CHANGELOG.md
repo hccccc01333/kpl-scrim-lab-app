@@ -1,6 +1,26 @@
-﻿# 更新日志
+# 更新日志
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## [1.6.0] - 2026-11-11
+
+开源协议切换：AGPL-3.0-or-later + 商业授权；仓库不再分发第三方素材。
+
+- **协议双轨**：代码改为 AGPL-3.0-or-later。个人、教学、俱乐部内部使用免费；
+  修改后作为网络服务提供需开源；闭源集成需商业授权。详见 `LICENSING.md`。
+- **历史版本存档**：1.5.x 及以前的 PolyForm Noncommercial 文本移到
+  `LICENSES/PolyForm-Noncommercial-1.0.0.txt`，对已发布旧版本继续有效。
+- **素材与个人资料移出版本库**：取消跟踪 **961 个文件**——`resources/icons`（349 张英雄/装备图）、
+  `web/refsite`（103MB 参考站副本）、`内部资料`（15 张截图）、`marketing`（197 个投放素材）、
+  `datasets`、`docs/afdian`、`data/facts`、营地界面截图、两份依赖私有数据的生成脚本、
+  27 份逆向研究脚本与 1 份研究笔记。本地文件保留，只是不再进版本库。
+- **新增发布自检** `scripts/check_publish.py`：扫描禁止路径、本机用户名/用户目录、
+  外部项目名与邮箱；`--strict` 模式可挂到 pre-push 或 CI。规则与原因见 `PUBLISHING.md`。
+- **清理**：两份技术文档里的本机用户目录绝对路径改为占位符。
+- **新增 `NOTICE`**：第三方依赖、字体与游戏素材归属；`client/package.json`、
+  README 徽章与许可段落同步。
+- **注意**：Git 历史里仍含这些素材与参考站副本。首次公开前如要彻底干净，
+  需用 `git filter-repo` 重写历史，或另起一个 squashed 的开源首发分支。
 
 ## [1.5.33] - 2026-11-11
 

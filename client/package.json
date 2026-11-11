@@ -4,7 +4,7 @@
   "description": "赛训台 · KPL 赛训分析客户端",
   "main": "./out/main/index.js",
   "author": "hccccc01333",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",

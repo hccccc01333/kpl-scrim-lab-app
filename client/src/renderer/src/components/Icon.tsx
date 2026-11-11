@@ -2,6 +2,7 @@ import type { ReactNode, SVGProps } from 'react'
 
 const paths: Record<string, ReactNode> = {
   overview: <><rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="7" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /><rect x="13.5" y="13.5" width="7" height="7" rx="1" /></>,
+  decision: <><path d="M4.5 5h9m-9 4.5h6m-6 4.5h4" /><path d="M14 15.5h5.5m-2.8-2.8 2.8 2.8-2.8 2.8" /></>,
   matches: <><rect x="4" y="3.5" width="16" height="17" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
   players: <><circle cx="9" cy="8" r="3" /><path d="M3.5 20v-1.5a5.5 5.5 0 0 1 11 0V20M16 5a3 3 0 0 1 0 6m1 4a4.5 4.5 0 0 1 3.5 4.4V20" /></>,
   teams: <><path d="M12 3 4 6.5v5.8c0 4.3 3.1 7.1 8 8.7 4.9-1.6 8-4.4 8-8.7V6.5z" /><path d="m8.8 12 2 2 4.4-4.4" /></>,
