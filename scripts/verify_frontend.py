@@ -187,8 +187,7 @@ def main():
         base = 'http://127.0.0.1:8771'
         db = OUT / ('frontend-audit-%s.sqlite3' % uuid.uuid4().hex[:10])
         env = dict(os.environ, TRAINING_PORT='8771', TRAINING_DB=str(db),
-                   TRAINING_ALLOW_REMOTE='', PYTHONIOENCODING='utf-8',
-                   KPL_TELEMETRY='0')
+                   TRAINING_ALLOW_REMOTE='', PYTHONIOENCODING='utf-8')
         server = subprocess.Popen(
             [sys.executable, str(ROOT / 'server.py')], cwd=str(ROOT), env=env,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

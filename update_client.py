@@ -27,11 +27,6 @@ DEFAULT_MANIFEST_URLS = (
 MAX_MANIFEST_BYTES = 256 * 1024
 CACHE_MAX_AGE = 6 * 3600
 USER_AGENT = 'KPL-Scrim-Lab-Updater/1.0'
-# 匿名统计清单块：``"stats": {"url": "https://...", "periodHours": 20}``。
-# 旧客户端会忽略这个未知字段；新客户端从清单读取地址，因此以后开启/更换
-# 统计服务都不需要再发版。
-DEFAULT_STATS_PERIOD_HOURS = 20
-MAX_STATS_URL_LENGTH = 512
 
 # Paths an update patch may never write to.  Business data, credentials and
 # build artefacts stay outside the update surface.
@@ -180,26 +175,6 @@ def _normalize_hashes(items, label: str) -> list[dict]:
     return result
 
 
-def _normalize_stats(value) -> dict | None:
-    """校验可选的 ``stats`` 清单块；缺省返回 ``None``（不启用统计）。"""
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise ValueError('stats 必须是对象')
-    url = str(value.get('url', '') or '').strip()
-    if not url:
-        raise ValueError('stats.url 为空')
-    if len(url) > MAX_STATS_URL_LENGTH:
-        raise ValueError('stats.url 过长')
-    parsed = urlparse(url)
-    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
-        raise ValueError(f'stats.url 必须是 http(s) 地址：{url}')
-    period = value.get('periodHours', DEFAULT_STATS_PERIOD_HOURS)
-    if isinstance(period, bool) or not isinstance(period, int) or not 1 <= period <= 168:
-        raise ValueError('stats.periodHours 必须是 1-168 的整数')
-    return {'url': url, 'periodHours': period}
-
-
 def normalize_manifest(data) -> dict:
     if not isinstance(data, dict):
         raise ValueError('更新清单不是 JSON 对象')
@@ -223,10 +198,6 @@ def normalize_manifest(data) -> dict:
     if data.get('minVersion'):
         parse_version(str(data['minVersion']))
         result['minVersion'] = str(data['minVersion'])
-
-    stats = _normalize_stats(data.get('stats'))
-    if stats is not None:
-        result['stats'] = stats
 
     patch = data.get('patch')
     if patch:
@@ -345,7 +316,6 @@ def check_for_update(root: Path, current_version: str, force: bool = False,
         'channel': manifest.get('channel', 'stable'),
         'publishedAt': manifest.get('publishedAt', ''),
         'notes': manifest.get('notes', []),
-        'stats': manifest.get('stats'),
         'patch': manifest.get('patch'),
         'full': manifest.get('full'),
         'source': source,

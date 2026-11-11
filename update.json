@@ -1,26 +1,24 @@
 {
   "schema": 1,
-  "version": "1.6.3",
-  "publishedAt": "2026-11-11T20:52:56+08:00",
+  "version": "1.6.4",
+  "publishedAt": "2026-11-11T22:39:42+08:00",
   "channel": "stable",
   "minVersion": "1.5.32",
   "notes": [
-    "打开工作台自动检查新版本，右下角弹出更新卡片：立即更新 / 选择本地更新包 / 稍后",
-    "立即更新：服务端下载增量包 → 校验 SHA-256 → 替换程序文件 → 自动重启；启动失败自动回滚",
-    "更新只替换程序文件，`data/`、`.env`、营地授权不受影响；源码目录不弹更新（走 `更新代码.bat`）",
-    "新增匿名使用统计：只上报随机安装 ID、版本与系统类型，可用 `KPL_TELEMETRY=0` 关闭",
-    "首次打开会主动说明统计内容与本机匿名 ID，页脚「匿名统计」可随时关闭或重新开启",
-    "页脚新增「检查更新」，随时手动检查"
+    "移除匿名使用统计：删掉客户端心跳、首启说明弹窗与页脚「匿名统计」入口",
+    "移除 `telemetry.py`、`stats/` 统计服务、`/api/usage/*` 接口与配套文档、测试",
+    "工作台内自动更新保持不变：打开就提示、一键升级",
+    "升级不受影响：`data/`、`.env`、营地授权与既有对局数据全部保留"
   ],
   "patch": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.3/patch-1.6.3.zip",
-    "sha256": "3046a823542ee9903067fc34e453968654f36938cb8788dfffe809177cb2ca2a",
-    "size": 718079,
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.4/patch-1.6.4.zip",
+    "sha256": "e32fc0b015beaf8cd609adb90433f97838b9597309c83f26944d21ed1d93974f",
+    "size": 737698,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "69221eefb899c90a6ca20c38fd342c818558aca3f79225506bd1787440fe6007",
-        "size": 103653
+        "sha256": "11c031c223abb926508d038f97dd875f9eae77a3d0ed5990d59e1eec05ee84f0",
+        "size": 104565
       },
       {
         "path": "LICENSE",
@@ -109,23 +107,13 @@
       },
       {
         "path": "server.py",
-        "sha256": "9a3d1acead2e4761304079819feb2abe477ce6bce5a8778f0cb73f145183f6a4",
-        "size": 203279
-      },
-      {
-        "path": "telemetry.py",
-        "sha256": "abe5a2460eed3cf82c47eada5e269e47d8edde4d930253c0764bc2c646332b58",
-        "size": 13507
+        "sha256": "5b6f1f0b285dac1e7d94fe5046fc17bb7a13d0778a85a3e1d3879bbcdc7293e8",
+        "size": 202916
       },
       {
         "path": "update_api.py",
-        "sha256": "e21fe6c2413fa527da22930b8a2fa9811de1d3a24af82e2d40580ce640fa5357",
-        "size": 8267
-      },
-      {
-        "path": "update_client.py",
-        "sha256": "c89a23c1f8d9ed8d7fb35c95162e727741d2cc7364fdf07b6c8514103906baa5",
-        "size": 15844
+        "sha256": "69f783d3095cfd025b9d858bd5b1a8d7ea29245d3a037b585351e2cf6a9dbea9",
+        "size": 5835
       },
       {
         "path": "updater.py",
@@ -134,8 +122,8 @@
       },
       {
         "path": "v3/public/app.js",
-        "sha256": "2528f9444b98fa191d7af8ecf273deec41b5989b92aeb814a1bd4d20a876d206",
-        "size": 174296
+        "sha256": "acd27446d82c8390e6ffc163724e9d3993d73ae81cef164b4ade2ba9384caf96",
+        "size": 174361
       },
       {
         "path": "v3/public/bp-counter.js",
@@ -168,6 +156,11 @@
         "size": 132134
       },
       {
+        "path": "v3/public/players-page.js",
+        "sha256": "631e24f7903cbc61d495ec1ddfe284ec7d207a05723b7b470d21cbc45844c8ee",
+        "size": 121373
+      },
+      {
         "path": "v3/public/review-page.js",
         "sha256": "4b0452b219ed8c6c4d1c8f024895dbce9936e49c28acb5c151d2c4b279501e14",
         "size": 28034
@@ -179,13 +172,8 @@
       },
       {
         "path": "v3/public/style.css",
-        "sha256": "b12f66f1f8ff6e2a8e797738a18c413bb4c5109f61682dcec997560a9b587712",
-        "size": 737912
-      },
-      {
-        "path": "v3/public/telemetry-notice.js",
-        "sha256": "d1a19c99ed6f678d8e0f5dcfb895714c986da7d8e157b9cb20d022afac43b117",
-        "size": 7516
+        "sha256": "062987721b39952e8dcc00ec2d4323829fdbf90c3208b5f788c96baf7a468b62",
+        "size": 734273
       },
       {
         "path": "v3/public/update-banner.js",
@@ -199,8 +187,8 @@
       },
       {
         "path": "version.py",
-        "sha256": "695b24bdda697047172b267fa22645039cfaf5cb311f428a2b1b78890033d0d1",
-        "size": 384
+        "sha256": "f324f089f73375df4bf593f0ab14d7ba9239c388cf92494e8ebd8e99aacb5c67",
+        "size": 381
       },
       {
         "path": "web/collection-guide.html",
@@ -213,13 +201,16 @@
         "size": 71777
       }
     ],
-    "remove": []
+    "remove": [
+      "telemetry.py",
+      "v3/public/telemetry-notice.js"
+    ]
   },
-  "releaseName": "工作台内自动更新：打开就提示，一键升级到最新版",
+  "releaseName": "移除匿名统计：不再上报，只保留采集与自动更新",
   "releaseDate": "2026-11-11",
   "full": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.3/KPL-Scrim-Lab-1.6.3-full.zip",
-    "sha256": "40512081a5203259f3b56b38fa8e4c3921da8c4c01c423d974b99fe86c0b6d29",
-    "size": 82466506
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.4/KPL-Scrim-Lab-1.6.4-full.zip",
+    "sha256": "c44266194a9221a89ead900ca50c36ddc65f6830c199f49e60524f49373cc299",
+    "size": 82447060
   }
 }

@@ -45,7 +45,6 @@ import ocr_jobs
 import official_economy
 import postgame_mimo
 import recording_store
-import telemetry
 import video_mimo
 import video_ocr
 from domain import summarize, validate_match
@@ -4238,9 +4237,5 @@ _mount_v3()
 
 if __name__ == '__main__':
     import uvicorn
-    # 匿名使用统计：起 daemon 线程发心跳，不阻塞、离线静默；
-    # 是否启用由 update.json 的可选 stats 字段决定，详见 docs/usage_stats.md。
-    # 延迟 75 秒：先让工作台把「匿名统计说明」展示给使用者，再发第一条心跳。
-    telemetry.maybe_ping(ROOT, VERSION, delay=75.0)
     uvicorn.run(app, host=os.environ.get('TRAINING_HOST', '127.0.0.1'),
                 port=int(os.environ.get('TRAINING_PORT', '8766')))

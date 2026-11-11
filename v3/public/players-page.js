@@ -1496,7 +1496,8 @@ export function createPlayers(h) {
     dialog.innerHTML = `<form><div class="dialog-head"><div><h2>命名并归队</h2><p>把「${esc(label)}」归到一名选手和一支战队；保存后这些记录并入该选手。</p></div><button type="button" class="head-button" data-pl-name-close aria-label="关闭">×</button></div>
       <div class="dialog-body">
         <div class="date-fields"><label>对局昵称<input value="${esc(label)}" readonly></label><label>选手名称<input name="name" required maxlength="40" value="${esc(label)}"></label></div>
-        <div class="date-fields"><label>位置<select name="position"><option value="">待确认</option>${LANES.map(x => `<option>${x}</option>`).join('')}</select></label><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
+        <div class="date-fields"><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
+        <fieldset class="sx-pos-field"><legend>位置（可多选，第一个勾的是主位置）</legend><div class="sx-pos-chips">${LANES.map(x => `<label class="sx-pos-chip"><input type="checkbox" name="position" value="${x}"><span>${x}</span></label>`).join('')}</div></fieldset>
         <p class="filter-error" role="alert"></p></div>
       <div class="dialog-actions"><button type="button" class="control" data-pl-name-close>取消</button><button class="primary" type="submit">保存并归队</button></div></form>`;
     const form = dialog.querySelector('form');
@@ -1505,7 +1506,8 @@ export function createPlayers(h) {
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       const data = new FormData(form);
-      const payload = {label, name: data.get('name'), position: data.get('position'), team: data.get('team')};
+      const positions = data.getAll('position').map((value) => String(value || '')).filter(Boolean);
+      const payload = {label, name: data.get('name'), positions, position: positions[0] || '', team: data.get('team')};
       if (!String(payload.name || '').trim()) { error.textContent = '请填写选手名称。'; return; }
       const button = form.querySelector('button[type=submit]');
       button.disabled = true;

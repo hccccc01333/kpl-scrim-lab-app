@@ -46,7 +46,7 @@ AVAILABLE = {
     'blocked': False,
     'minVersion': '1.5.32',
     'releaseDate': '2026-11-12',
-    'notes': ['修复更新提示在刷新后重复出现的问题', '统计只采集匿名安装 ID'],
+    'notes': ['修复更新提示在刷新后重复出现的问题', '更新只替换程序文件'],
     'patch': {'url': PATCH_URL, 'sha256': 'a' * 64, 'size': 700000},
     'full': {'url': FULL_URL, 'sha256': 'b' * 64, 'size': 82 * 1024 * 1024},
     'sourceMode': False,
@@ -55,20 +55,12 @@ AVAILABLE = {
 LATEST = dict(AVAILABLE, latestVersion='1.6.2', updateAvailable=False, patch=None, full=None)
 BLOCKED = dict(AVAILABLE, latestVersion='1.7.0', blocked=True, minVersion='1.6.3')
 SOURCE_MODE = dict(AVAILABLE, sourceMode=True)
-USAGE_ENABLED = {
-    'ok': True, 'enabled': True, 'envDisabled': False, 'optout': False,
-    'installId': '0123456789abcdef0123456789abcdef',
-    'lastPingAt': '2026-11-11T08:00:00+00:00', 'periodHours': 20,
-}
-USAGE_DISABLED = dict(USAGE_ENABLED, enabled=False, optout=True)
 TOUR_INIT = "localStorage.setItem('training-tour-complete-v3', '1');"
-NOTICE_INIT = "localStorage.setItem('kpl-telemetry-notice-v1', '1');"
 
 
 class Case:
     def __init__(self, name: str):
         self.name = name
-        self.suppress_notice = True
         self.state = {
             'check': None,
             'apply': None,
@@ -76,11 +68,7 @@ class Case:
             'restart': None,
             'status': None,
             'health': None,
-            'usageStatus': None,
-            'usageOptout': None,
-            'usageOptin': None,
             'calls': [],
-            'usageCalls': [],
             'healthCalls': 0,
             'checkCalls': 0,
         }
@@ -109,25 +97,6 @@ def install_routes(page, case: Case) -> None:
 
     def on_update(route):
         path = urlsplit(route.request.url).path
-        if path.startswith('/api/usage/'):
-            state['usageCalls'].append(path)
-            if path == '/api/usage/status':
-                payload = state.get('usageStatus')
-            elif path == '/api/usage/optout':
-                payload = state.get('usageOptout') or state.get('usageStatus')
-                if payload:
-                    state['usageStatus'] = payload
-            elif path == '/api/usage/optin':
-                payload = state.get('usageOptin') or state.get('usageStatus')
-                if payload:
-                    state['usageStatus'] = payload
-            else:
-                payload = {'ok': False}
-            if payload is None:
-                _json(route, {'ok': False, 'detail': 'unexpected'}, 404)
-            else:
-                _json(route, payload)
-            return
         state['calls'].append(path)
         if path == '/api/update/check':
             state['checkCalls'] += 1
@@ -152,7 +121,6 @@ def install_routes(page, case: Case) -> None:
         _json(route, _health_payload(state))
 
     page.route('**/api/update/**', on_update)
-    page.route('**/api/usage/**', on_update)
     page.route('**/api/health', on_health)
 
 
@@ -171,9 +139,7 @@ def card_text(page) -> str:
 def run_case(browser, base: str, case: Case, shots: bool) -> None:
     context = browser.new_context(viewport={'width': 1360, 'height': 900})
     page = context.new_page()
-    script = TOUR_INIT + (NOTICE_INIT if getattr(case, 'suppress_notice', True)
-                          else "Object.defineProperty(navigator, 'webdriver', {get: () => false});")
-    page.add_init_script(script)
+    page.add_init_script(TOUR_INIT)
     errors: list[str] = []
     page.on('pageerror', lambda exc: errors.append(str(exc)))
     install_routes(page, case)
@@ -239,7 +205,7 @@ def case_dismiss(browser, base: str, shots: bool) -> Case:
         fresh = browser.new_context(viewport={'width': 1360, 'height': 900})
         try:
             probe = fresh.new_page()
-            probe.add_init_script(TOUR_INIT + NOTICE_INIT)
+            probe.add_init_script(TOUR_INIT)
             install_routes(probe, case)
             probe.goto(base, wait_until='domcontentloaded')
             if not wait_banner(probe):
@@ -384,7 +350,7 @@ def case_offline(browser, base: str, shots: bool) -> Case:
     # 该用例需要把 check 也改成 503，单独装路由
     context = browser.new_context(viewport={'width': 1360, 'height': 900})
     page = context.new_page()
-    page.add_init_script(TOUR_INIT + NOTICE_INIT)
+    page.add_init_script(TOUR_INIT)
     errors: list[str] = []
     page.on('pageerror', lambda exc: errors.append(str(exc)))
     page.route('**/api/update/**', on_update)
@@ -426,87 +392,8 @@ def case_source_mode(browser, base: str, shots: bool) -> Case:
     return case
 
 
-def case_usage_notice(browser, base: str, shots: bool) -> Case:
-    """首次打开必须看到匿名统计说明；点「保持开启」后本次不再弹，刷新也不再弹。"""
-    case = Case('usage-notice')
-    case.suppress_notice = False
-    case.state['usageStatus'] = USAGE_ENABLED
-
-    def run(page):
-        try:
-            page.wait_for_selector('.usage-dialog[open]', timeout=12000)
-        except Exception:  # noqa: BLE001
-            case.fail('首次打开没有出现匿名使用统计说明')
-            return
-        text = page.locator('.usage-card').inner_text()
-        for needle in ('匿名使用统计', '会上报', '不会上报', '安装 ID', '关闭匿名统计'):
-            if needle not in text:
-                case.fail(f'说明里缺少「{needle}」')
-        if shots:
-            SHOTS.mkdir(parents=True, exist_ok=True)
-            page.screenshot(path=str(SHOTS / 'usage-notice.png'))
-        page.click('[data-usage="keep"]')
-        page.wait_for_timeout(300)
-        if page.locator('.usage-dialog[open]').count():
-            case.fail('点「继续使用」后说明没有关闭')
-        stored = page.evaluate("() => localStorage.getItem('kpl-telemetry-notice-v1')")
-        if stored != '1':
-            case.fail('没有记住「已看过说明」')
-        page.reload(wait_until='domcontentloaded')
-        page.wait_for_timeout(2800)
-        if page.locator('.usage-dialog[open]').count():
-            case.fail('刷新后又重复弹出说明')
-
-    case.run = run
-    run_case(browser, base, case, shots)
-    return case
-
-
-def case_usage_optout(browser, base: str, shots: bool) -> Case:
-    """关闭 / 重新开启匿名统计：按钮要真的打到接口，页脚入口随时可再打开。"""
-    case = Case('usage-optout')
-    case.suppress_notice = False
-    case.state['usageStatus'] = USAGE_ENABLED
-    case.state['usageOptout'] = USAGE_DISABLED
-    case.state['usageOptin'] = USAGE_ENABLED
-
-    def run(page):
-        try:
-            page.wait_for_selector('.usage-dialog[open]', timeout=12000)
-        except Exception:  # noqa: BLE001
-            case.fail('首次打开没有出现匿名使用统计说明')
-            return
-        page.click('[data-usage="toggle"]')
-        page.wait_for_timeout(700)
-        if '/api/usage/optout' not in case.state['usageCalls']:
-            case.fail('关闭统计没有请求 /api/usage/optout')
-        if '已关闭' not in page.locator('[data-usage-state]').inner_text():
-            case.fail('关闭后状态没有变成已关闭')
-        page.click('[data-usage="close"]')
-        page.wait_for_timeout(300)
-        page.click('[data-action="usage-info"]')
-        try:
-            page.wait_for_selector('.usage-dialog[open]', timeout=5000)
-        except Exception:  # noqa: BLE001
-            case.fail('页脚「匿名统计」没有重新打开说明')
-            return
-        if '重新开启匿名统计' not in page.locator('.usage-card').inner_text():
-            case.fail('关闭后没有提供重新开启入口')
-        page.click('[data-usage="toggle"]')
-        page.wait_for_timeout(700)
-        if '/api/usage/optin' not in case.state['usageCalls']:
-            case.fail('重新开启没有请求 /api/usage/optin')
-        if '已开启' not in page.locator('[data-usage-state]').inner_text():
-            case.fail('重新开启后状态没有变成已开启')
-
-    case.run = run
-    run_case(browser, base, case, shots)
-    return case
-
-
 CASES = [case_available, case_dismiss, case_blocked, case_apply,
-         case_local_package, case_latest, case_offline, case_source_mode,
-         case_usage_notice, case_usage_optout]
+         case_local_package, case_latest, case_offline, case_source_mode]
 
 
 def main(argv=None) -> int:

@@ -39,9 +39,6 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
-    env:
-      # 巡检/截图实例不发匿名心跳，也不弹首次统计说明。
-      KPL_TELEMETRY: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

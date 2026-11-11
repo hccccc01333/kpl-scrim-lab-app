@@ -7,7 +7,6 @@ import { createHomeDecision } from './home-decision.js';
 import { createDecisionPage } from './decision-page.js';
 import { createBpCounter } from './bp-counter.js';
 import { initUpdateBanner } from './update-banner.js';
-import { initTelemetryNotice } from './telemetry-notice.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -242,7 +241,7 @@ function shell() {
   <div class="demo-banner" hidden><strong>演示模式</strong> 所有比赛、选手与分析均为虚构数据，仅供体验。<button data-action="demo">返回真实数据 →</button></div>
   <div class="secondary-wrap"><nav class="secondary-nav" aria-label="分类导航"></nav><nav class="analysis-rail" aria-label="板块分析"></nav></div>
   <main id="content" tabindex="-1"></main>
-  <footer class="footer"><span>赛训数据</span><span class="footer-actions"><button type="button" class="footer-update" data-action="check-update">检查更新</button><button type="button" class="footer-update" data-action="usage-info">匿名统计</button></span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
+  <footer class="footer"><span>赛训数据</span><span class="footer-actions"><button type="button" class="footer-update" data-action="check-update">检查更新</button></span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
   <dialog id="filters"></dialog>`;
   applyTheme();
 }
@@ -2164,7 +2163,8 @@ function namePlayerDialog(label) {
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body">
       <div class="date-fields"><label>对局昵称<input value="${esc(label)}" readonly></label><label>选手名称<input name="name" required maxlength="40" value="${esc(label)}"></label></div>
-      <div class="date-fields"><label>位置<select name="position"><option value="">待确认</option>${['对抗路', '打野', '中路', '发育路', '游走'].map((x) => `<option>${x}</option>`).join('')}</select></label><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
+      <div class="date-fields"><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
+      <fieldset class="sx-pos-field"><legend>位置（可多选，第一个勾的是主位置）</legend><div class="sx-pos-chips">${['对抗路', '打野', '中路', '发育路', '游走'].map((x) => `<label class="sx-pos-chip"><input type="checkbox" name="position" value="${x}"><span>${x}</span></label>`).join('')}</div></fieldset>
       <p class="filter-error" role="alert"></p></div>
     <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">保存并归队</button></div></form>`;
   dialog.showModal();
@@ -2350,7 +2350,8 @@ app.addEventListener('submit', (event) => {
   if (event.target.id === 'name-form') {
     event.preventDefault();
     const form = new FormData(event.target);
-    const payload = { label: event.target.querySelector('input[readonly]').value, name: form.get('name'), position: form.get('position'), team: form.get('team') };
+    const positions = form.getAll('position').map((value) => String(value || '')).filter(Boolean);
+    const payload = { label: event.target.querySelector('input[readonly]').value, name: form.get('name'), positions, position: positions[0] || '', team: form.get('team') };
     const error = !String(payload.name || '').trim() ? '请填写选手名称。' : '';
     event.target.querySelector('.filter-error').textContent = error;
     if (error) return;
@@ -2458,5 +2459,4 @@ window.addEventListener('hashchange', () => {
 document.querySelector('.skip').addEventListener('click', (event) => { event.preventDefault(); document.querySelector('#content').focus(); });
 shell();
 initUpdateBanner({ API_BASE });
-initTelemetryNotice({ API_BASE });
 load();

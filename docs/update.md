@@ -59,19 +59,6 @@ python scripts/make_release.py --python-archive D:\cache\python-3.12.10-embed-am
 以后发版前先把 tag 打在 `main` 的发布提交上（例如 `git tag v1.6.3 && git push gitee v1.6.3`），
 `make_release.py` 的自动基线就会正常；否则继续按「包对包」的方式生成增量包。
 
-### 启用匿名统计（可选）
-
-按 `stats/README.md` 部署好统计服务后，把地址写进 `update.json` 再上传即可，
-不用重打客户端包（客户端最迟 6 小时清单缓存后开始上报）：
-
-```bash
-python -c "import json,pathlib; p=pathlib.Path('dist/update.json'); d=json.loads(p.read_text(encoding='utf-8')); d['stats']={'url':'https://<你的域名>/api/ping','periodHours':20}; p.write_text(json.dumps(d,ensure_ascii=False,indent=2),encoding='utf-8')"
-```
-
-也可以在发版时给 `make_release.py` 加 `--stats-url https://…/api/ping`，让增量包内嵌清单
-和外层清单一起带上。查看数据用 `python scripts/usage_report.py --url https://… --token …`
-或统计服务的网页仪表盘；字段与隐私说明见 `docs/usage_stats.md`。
-
 GitHub Release 的 `releases/latest/download/update.json` 是海外稳定地址；
 清单里的相对 `patch-*.zip` 会自然解析到同一个 Release。
 国内镜像不要在清单里用相对路径：清单在 Gitee raw、包在 Releases 时会解析到错误目录。
@@ -124,12 +111,6 @@ python scripts/make_installer.py --rebuild  # 依赖或内置 Python 变了才�
   请运行 `更新代码.bat`（= `git pull --ff-only` + 装依赖）。
 - 旧代码备份在 `data/backups/code-<旧版本>-<时间>/`，默认保留最近 5 份。
 - 更新日志：`logs/update.log`、`logs/update-server.log`、`data/update/last_result.json`。
-
-匿名使用统计（可选，作者侧看到安装数与活跃数）见 `docs/usage_stats.md`：
-只上报随机安装 UUID、版本、系统类型，不含对局、战队、账号或路径信息，
-可用环境变量 `KPL_TELEMETRY=0` 或 `data/usage/optout` 文件关闭。首次打开工作台会弹
-一次「匿名使用统计」说明（会上报 / 不会上报、本机匿名 ID、如何关闭），页脚「匿名统计」
-随时可以查看状态或关闭；第一条心跳延迟到启动约 75 秒，先说明再上报。
 
 ## 配置
 

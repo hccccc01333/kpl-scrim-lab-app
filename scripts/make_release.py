@@ -387,10 +387,6 @@ def build_patch(version: str, paths: list[str], removed: list[str],
         'notes': notes,
         'patch': {'url': patch_name, 'files': entries, 'remove': removed},
     }
-    if getattr(args, 'stats_url', None):
-        # 统计地址进 update.json（补丁内嵌清单与外层清单保持一致）：
-        # 客户端读到 stats.url 才会发匿名心跳，见 telemetry.py。
-        embedded['stats'] = {'url': args.stats_url}
     with zipfile.ZipFile(patch_path, 'w', zipfile.ZIP_DEFLATED,
                          compresslevel=6) as archive:
         archive.writestr('update.json',
@@ -649,9 +645,6 @@ def parse_args(argv=None):
     parser.add_argument('--no-smoke', action='store_true', help='跳过冒烟测试')
     parser.add_argument('--base-url', help='更新资产的下载前缀；默认使用相对路径')
     parser.add_argument('--channel', default='stable', help='更新通道')
-    parser.add_argument('--stats-url',
-                        help='匿名使用统计地址（写入 update.json 的 stats.url）；'
-                             '不传则本次清单不启用统计')
     parser.add_argument('--min-version', default=None,
                         help='允许增量更新的最低版本；默认=补丁基线版本'
                              '（--all 打全量补丁时为 1.0.0）')
@@ -663,10 +656,6 @@ def parse_args(argv=None):
 def main(argv=None) -> int:
     global DIST
     args = parse_args(argv)
-    if args.stats_url:
-        args.stats_url = str(args.stats_url).strip()
-        if not re.match(r'^https?://', args.stats_url):
-            raise SystemExit('--stats-url 必须是 http(s) 地址')
     DIST = Path(args.output).resolve()
     DIST.mkdir(parents=True, exist_ok=True)
     meta = read_meta()
@@ -698,7 +687,6 @@ def main(argv=None) -> int:
         print(f"程序文件：{len(ship)} 个")
         print(f"补丁文件：{len(paths)} 个，删除 {len(removed)} 个")
         print(f"更新说明：{len(notes)} 条")
-        print(f"统计地址：{args.stats_url or '未启用'}")
         for path in paths:
             print(f'  + {path}')
         for path in removed:
@@ -715,8 +703,6 @@ def main(argv=None) -> int:
         'releaseName': meta.get('releaseName', ''),
         'releaseDate': meta.get('releaseDate', ''),
     }
-    if args.stats_url:
-        manifest['stats'] = {'url': args.stats_url}
     if not args.no_patch:
         manifest, _ = build_patch(version, paths, removed, notes, args)
         manifest['releaseName'] = meta.get('releaseName', '')
