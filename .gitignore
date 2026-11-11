@@ -1,0 +1,112 @@
+__pycache__/
+data/
+logs/
+.venv/
+test-results/
+.env
+.env.*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*backup*.json
+*备份*.json
+.pytest_cache/
+.idea/
+.vscode/
+.screenshots/
+*.abc
+*.ope
+
+# host probe build artifacts
+host/build/
+host/fixtures/
+frida-server*
+*.stackdump
+bash.exe.stackdump
+.workbuddy/
+
+# generated / research-only datasets (device-derived game data)
+datasets/agent_qts_replay_files.csv
+datasets/agent_qts_replay_files.json
+datasets/agent_qts_replay_files.md
+datasets/agent_replay_ui_binding.csv
+datasets/agent_replay_ui_binding.md
+
+# local Mimo weights
+models/
+
+camp_auth.json
+
+dist/
+
+# open-source export scratch copies (own .git, virtualenv and build output)
+oss-v4/
+oss-v5/
+
+# 开源发布不分发的第三方素材：英雄/装备图与参考站副本由本地脚本获取
+resources/icons/
+web/refsite/
+
+# 不进入开源仓库：个人资料、运营素材、设备派生数据、营地界面截图
+内部资料/
+marketing/
+datasets/
+docs/afdian/
+web/capture-guide/*.jpg
+web/capture-guide/*.png
+_rewrite_research.py
+
+# 依赖私有数据集才能跑的生成脚本：留在本地，不进公开仓库
+scripts/build_bp_facts.py
+scripts/build_refsite_css.py
+
+# 逆向研究过程脚本与笔记：保留本地，不公开
+tools/agent_*.py
+docs/agent_*.md
+
+# 官网构建产物（由 scripts/build_website.py 生成，勿提交）
+website/dist/
+
+# 安装版 EXE 启动器构建产物（由 packaging/make_launcher.py 生成，勿提交）
+packaging/launcher-dist/
+
+# 前端收口时隔离的旧代码（可随时删除，不影响运行）
+# 内含 frontend-v2 / 原 17 个样式表 / replay-review 等，见其中的 MANIFEST.md
+.archive/
+.audit-shots/
+
+# 本地截图 / 渲染 / 工具缓存（每个开发者本机生成，勿提交）
+.cache/
+.remotion/
+.zcode/
+
+# 编辑器临时文件
+*~RF*.TMP
+*.tmp
+
+tools/ffmpeg/
+
+# 营地 H5 前端包：第三方产物，本地缓存用于抽文案，不提交
+_h5/
+
+# 运行期临时文件（进程号 / 登录二维码 / 服务日志），不进仓库
+_pid.txt
+_qr.json
+_server_run.log
+_preview*.html
+_out.html
+_newblock.js
+
+# BP 外部事实表（离线生成，随仓库分发；其它 data/ 仍忽略）
+data/*
+!data/facts/
+!data/facts/**
+
+dist-gitee/
+
+
+# 临时探针脚本（研究/调试用，不进公开仓库）
+_*.py
+
+docs/feedback-*.md

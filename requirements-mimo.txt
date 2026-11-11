@@ -1,0 +1,14 @@
+# 可选增强：Mimo 精读 OCR
+#
+# 主 OCR（赛后截图面板识别）由 rapidocr-onnxruntime 提供，已在
+# requirements.txt 中。Mimo 用于对同一张图做二次精读，提升数值与昵称
+# 的准确率，需要额外的模型权重（约数 GB），按需安装：
+#
+#     pip install -r requirements-mimo.txt
+#
+# 权重不随本仓库分发，需自行准备后设置 MIMO_OCR_MODEL，或放入本地模型目录。
+# 未安装或未配置时，平台自动跳过精读，仅使用主 OCR 结果。
+
+torch>=2.14,<2.15
+torchvision>=0.29,<0.30
+transformers>=5.17,<5.18

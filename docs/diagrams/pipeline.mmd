@@ -1,0 +1,27 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter", "fontSize": "15px", "background": "#ffffff", "primaryColor": "#EAF5F0", "primaryTextColor": "#10241F", "primaryBorderColor": "#2E8B76", "lineColor": "#8FB3A7", "edgeLabelBackground": "#FFFFFF"}, "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 40, "rankSpacing": 34, "padding": 14}}}%%
+flowchart TB
+    A1["教练号扫码授权"]
+    A2["按选手增量拉取<br/>十人面板 battledetail"]
+    A3["BP + 十人终局<br/>+ 扩展指标"]
+
+    B1["七页结算截图<br/>+ 整局录屏"]
+    B2["分页 OCR + 抽帧 OCR<br/>全部在本机"]
+    B3["十人终局<br/>+ 团队时间轴"]
+
+    C["跨来源草稿<br/>值 + 来源 + 置信度 + 冲突"]
+    R["人工审核<br/>复核人 · 时间 · 修改日志"]
+    D["单局数据包<br/>kpl-match-data-v1"]
+
+    A1 --> A2 --> A3 --> C
+    B1 --> B2 --> B3 --> C
+    C --> R --> D
+
+    classDef main fill:#E8F5F0,stroke:#41A087,stroke-width:1.3px,color:#0F3A30
+    classDef fallback fill:#FDF5F1,stroke:#D8967A,stroke-width:1.3px,color:#5A2C1B
+    classDef gate fill:#FFF8E8,stroke:#D9B36A,stroke-width:1.3px,color:#4A3A12
+    classDef store fill:#F2F6FA,stroke:#B9C9D9,stroke-width:1.3px,color:#1F2C38
+
+    class A1,A2,A3 main
+    class B1,B2,B3 fallback
+    class C,R gate
+    class D store

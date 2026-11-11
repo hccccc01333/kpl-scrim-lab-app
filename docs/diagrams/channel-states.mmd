@@ -1,0 +1,20 @@
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Inter", "fontSize": "15px", "background": "#ffffff", "primaryColor": "#EAF5F0", "primaryTextColor": "#10241F", "primaryBorderColor": "#2E8B76", "lineColor": "#8FB3A7", "edgeLabelBackground": "#FFFFFF", "labelColor": "#10241F", "transitionColor": "#8FB3A7", "transitionLabelColor": "#3C5A52", "stateBkg": "#F4FAF7", "stateBorder": "#BBDACD", "stateLabelColor": "#123029"}}}%%
+stateDiagram-v2
+    direction TB
+    [*] --> draft
+
+    state "草稿 · 材料未齐" as draft
+    state "有材料 · 仍缺必采" as partial
+    state "可审核 · 必采齐全" as ready
+    state "已审核" as reviewed
+    state "已保存到分析" as saved
+
+    draft --> partial: 放入一类来源
+    partial --> partial: 补齐 / 解析失败重试
+    partial --> ready: 必采齐全
+    ready --> reviewed: 人工审核通过
+    reviewed --> saved: 保存数据包
+    saved --> [*]
+
+    ready --> partial: 材料被删除
+    reviewed --> ready: 变更即失效

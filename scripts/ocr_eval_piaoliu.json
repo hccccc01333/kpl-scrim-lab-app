@@ -1,0 +1,105 @@
+{
+  "comment": "漂流网咖对局 7 张结算截图的人工标注真值（2026-11-02 排位 27:6）。value 为屏幕显示值的解析结果；k 后缀按显示精度展开（66.1k -> 66100）。图片 id 为 postgame_images 表 id 的 8 位前缀。",
+  "match": {"date": "2026-11-02", "mode": "排位赛", "duration": "11:33", "score": [27, 6], "winner": "left"},
+  "pages": {
+    "84e80cda": {"page": "score", "fields": ["kills", "deaths", "assists", "gold"],
+      "players": {
+        "left": [
+          {"raw": "5 / 0 / 8", "values": [5, 0, 8], "gold": 8697},
+          {"raw": "8 / 1 / 7", "values": [8, 1, 7], "gold": 9243},
+          {"raw": "6 / 1 / 7", "values": [6, 1, 7], "gold": 8168},
+          {"raw": "5 / 1 / 5", "values": [5, 1, 5], "gold": 8352},
+          {"raw": "3 / 3 / 9", "values": [3, 3, 9], "gold": 6540}
+        ],
+        "right": [
+          {"raw": "1 / 5 / 2", "values": [1, 5, 2], "gold": 6191},
+          {"raw": "2 / 7 / 2", "values": [2, 7, 2], "gold": 5828},
+          {"raw": "2 / 3 / 3", "values": [2, 3, 3], "gold": 5778},
+          {"raw": "1 / 6 / 2", "values": [1, 6, 2], "gold": 5977},
+          {"raw": "0 / 6 / 4", "values": [0, 6, 4], "gold": 5474}
+        ]
+      },
+      "nicknames": {
+        "left": ["漂流网咖", "狂傲自由魂Z.", "自诩一棵葱", "别吃香菜吖a", "胡不喜#"],
+        "right": ["麻巫咕", "翳灵崽", "③一风舞", "扁鹊耳垂", "谜语星海"]
+      }},
+    "213463db": {"page": "kda", "fields": ["kills", "deaths", "assists"],
+      "players": {
+        "left": [
+          {"values": [5, 0, 8]}, {"values": [8, 1, 7]}, {"values": [6, 1, 7]},
+          {"values": [5, 1, 5]}, {"values": [3, 3, 9]}
+        ],
+        "right": [
+          {"values": [1, 5, 2]}, {"values": [2, 7, 2]}, {"values": [2, 3, 3]},
+          {"values": [1, 6, 2]}, {"values": [0, 6, 4]}
+        ]
+      }},
+    "f8f32cb7": {"page": "data", "fields": ["damageDealt", "damageTaken", "gold", "participation"],
+      "players": {
+        "left": [
+          {"values": [66100, 25700, 8700, 48]},
+          {"values": [52600, 33900, 9200, 55]},
+          {"values": [57900, 26800, 8200, 48]},
+          {"values": [43200, 20000, 8400, 37]},
+          {"values": [39600, 59500, 6500, 44]}
+        ],
+        "right": [
+          {"values": [43800, 52200, 6200, 50]},
+          {"values": [32700, 63500, 5800, 66]},
+          {"values": [34600, 48200, 5800, 83]},
+          {"values": [17900, 42400, 6000, 50]},
+          {"values": [36900, 53100, 5500, 66]}
+        ]
+      },
+      "rawHint": "66.1k/25.7k/8.7k/48% 格式；left3 damageTaken 显示 20.0k"},
+    "9d89d2f2": {"page": "output", "fields": ["damageDealt", "damageConversion"],
+      "players": {
+        "left": [
+          {"values": [66100, 1.2]}, {"values": [52600, 0.9]}, {"values": [57900, 1.1]},
+          {"values": [43200, 0.8]}, {"values": [39600, 1.0]}
+        ],
+        "right": [
+          {"values": [43800, 1.2]}, {"values": [32700, 1.0]}, {"values": [34600, 1]},
+          {"values": [17900, 0.5]}, {"values": [36900, 1.2]}
+        ]
+      },
+      "rawHint": "right2 伤害转化比屏幕显示为「1」（无小数）"},
+    "d41f70c9": {"page": "survival", "fields": ["damageTaken", "takenPerDeath"],
+      "players": {
+        "left": [
+          {"values": [25700, 25700]}, {"values": [33900, 33900]}, {"values": [26800, 26800]},
+          {"values": [20000, 20000]}, {"values": [59500, 19800]}
+        ],
+        "right": [
+          {"values": [52200, 10400]}, {"values": [63500, 9100]}, {"values": [48200, 16100]},
+          {"values": [42400, 7100]}, {"values": [53100, 8800]}
+        ]
+      }},
+    "f8d4f29f": {"page": "farming", "fields": ["gold", "jungleGold", "cs"],
+      "players": {
+        "left": [
+          {"values": [8700, 542, 38]}, {"values": [9200, 322, 34]}, {"values": [8200, 201, 40]},
+          {"values": [8400, 2800, 16]}, {"values": [6500, 183, 6]}
+        ],
+        "right": [
+          {"values": [6200, 348, 17]}, {"values": [5800, 117, 24]}, {"values": [5800, 249, 26]},
+          {"values": [6000, 1800, 11]}, {"values": [5500, 89, 15]}
+        ]
+      },
+      "rawHint": "野怪经济混合格式：542 与 2.8k 并存（>=1000 显示 k）"},
+    "09f7bfc0": {"page": "team", "fields": ["participation", "control", "healing", "towerDamage"],
+      "players": {
+        "left": [
+          {"values": [48, 1, 12100, 20200]}, {"values": [55, 32, 19900, 5500]},
+          {"values": [48, 14, 11500, 918]}, {"values": [37, 8, 5500, 18400]},
+          {"values": [44, 49, 7900, 220]}
+        ],
+        "right": [
+          {"values": [50, 2, 12200, 0]}, {"values": [66, 7, 12500, 0]},
+          {"values": [83, 1, 18900, 0]}, {"values": [50, 7, 8500, 0]},
+          {"values": [66, 34, 5300, 0]}
+        ]
+      },
+      "rawHint": "治疗量/对塔伤害 k 混合格式：12.1k 与 918 并存；对塔伤害 0 显示为 0"}
+  }
+}

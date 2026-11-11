@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "observed-12.1.1.x-v3",
+      "label": "2026-11 12.1.1.x 观测档案",
+      "versionPrefixes": ["12.1.1."],
+      "builds": ["4989537", "5230306", "5247758"],
+      "requireBuilds": false,
+      "layout": {
+        "blockStride": 1517,
+        "heroOffsets": [771, 1415, 1445],
+        "tlvStart": 17652,
+        "secondDeflateStart": 139,
+        "rosterScanLimit": 131072,
+        "rosterHeroOffset": 72,
+        "rosterBotBlockBytes": 2782,
+        "rosterFooterTail": "000000000004b000000000",
+        "rosterHumanPostBytes": 30,
+        "rosterBotPostBytes": 5,
+        "rosterMaxHumanBlockBytes": 8192,
+        "frameScanLimit": 393216
+      }
+    }
+  ]
+}

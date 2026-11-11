@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安装与升级 — KPL 赛训工具</title>
+<meta name="description" content="KPL 赛训工具安装、首次配置与增量更新的完整说明。Windows 10 / 11，内置运行时，不需要另装环境。">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="canonical" href="{{SITE_URL}}/guide.html">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f1c31'/%3E%3Crect x='6' y='13' width='5' height='12' rx='2' fill='%232a8f8b'/%3E%3Crect x='13.5' y='7' width='5' height='18' rx='2' fill='%23f08a6c'/%3E%3Crect x='21' y='15' width='5' height='10' rx='2' fill='%232a8f8b'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="shell topbar-inner">
+    <a class="brand" href="index.html" aria-label="KPL 赛训工具 首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#0f1c31"/><rect x="6" y="13" width="5" height="12" rx="2" fill="#2a8f8b"/><rect x="13.5" y="7" width="5" height="18" rx="2" fill="#f08a6c"/><rect x="21" y="15" width="5" height="10" rx="2" fill="#2a8f8b"/></svg>
+      </span>
+      <span class="brand-name">KPL 赛训工具</span>
+      <span class="brand-edition">V3</span>
+    </a>
+    <nav class="topnav" aria-label="主导航">
+      <a href="index.html#features">能力</a>
+      <a href="index.html#workflow">工作流</a>
+      <a href="guide.html" class="active">安装说明</a>
+      <a href="changelog.html">更新日志</a>
+    </nav>
+    <a class="top-cta" href="download.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15 7.5 10.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+      <span>下载</span>
+    </a>
+  </div>
+</header>
+
+<main class="doc">
+  <header>
+    <h1>安装与升级</h1>
+    <p>Windows 10 / 11，全程约 5 分钟。安装包和免安装包都内置 Python 运行时与依赖，不需要另外装环境。</p>
+  </header>
+
+  <h2>两种装法，选一个</h2>
+  <table class="doc-table">
+    <tr><th>方式</th><th>适合</th><th>怎么用</th></tr>
+    <tr>
+      <td><strong>安装包</strong>（推荐）</td>
+      <td>日常使用、给教练组部署</td>
+      <td>双击 <code>KPL-Scrim-Lab-{{VERSION}}-setup.exe</code>，按提示装到当前用户目录（不需要管理员权限）</td>
+    </tr>
+    <tr>
+      <td><strong>免安装包</strong></td>
+      <td>不想写注册表、放 U 盘带走</td>
+      <td>解压 <code>KPL-Scrim-Lab-{{VERSION}}-full.zip</code> 到固定目录，双击 <code>启动工作台.bat</code></td>
+    </tr>
+  </table>
+
+  <h2>装完第一次启动</h2>
+  <ol class="steps">
+    <li>
+      <h3>启动</h3>
+      <p>安装版双击桌面「KPL 赛训工具」；免安装版双击 <code>启动工作台.bat</code>。</p>
+      <p>服务在后台启动，就绪后自动打开浏览器，地址是 <code>127.0.0.1:8766</code>。没有控制台窗口，也不会因为关掉浏览器而停止。</p>
+      <p>第一次打开如果还没有对局，首屏会给三条路：<strong>扫码采集</strong>（推荐）、<strong>看一场示例</strong>、<strong>导入表格 / 截图</strong>；选一条就能开始，不需要先看懂所有页面。</p>
+      <p>如果之前用的是免安装版，首页会自动发现旧数据目录，显示局数与更新时间，点「搬到这台电脑」就把整个库搬过来（回放与录屏可选）。旧目录不会被改动，当前库已有对局时不会执行。</p>
+    </li>
+    <li>
+      <h3>绑定营地（只用截图和表格可以跳过）</h3>
+      <p>进「采集通道」→「营地自动同步」→ 用打过训练赛的教练微信扫码授权。授权凭证存在 <code>data/camp_auth.json</code>，等同于账号登录态，不要外传。</p>
+    </li>
+    <li>
+      <h3>加入选手</h3>
+      <p>让选手在王者营地分享任意一局，把链接粘进「加入清单」；系统会从链接里识别营地 ID。一个稳定上场的选手就能覆盖全队每局。</p>
+    </li>
+    <li>
+      <h3>开始采集</h3>
+      <p>选选手 →「获取对局列表」→ 勾选要的局 →「拉取选中」。或者直接导入赛后截图、xlsx 表格。</p>
+    </li>
+  </ol>
+
+  <h2>以后怎么升级</h2>
+  <p>启动后工作台会在右下角静默检查新版本，发现更新时点「立即更新」：下载增量包 → 校验 SHA-256 → 暂存 → 重启替换 → 健康检查，失败自动回滚到上一版本。<code>data</code>、<code>.env</code>、营地授权不在更新范围内。</p>
+  <p>国内网络会优先从 Gitee 镜像检查更新，GitHub 只作为海外备用；更新包和清单都带 SHA-256，下载不完整不会替换程序。</p>
+  <p>完全离线的机器，可以让作者把 <code>patch-版本号.zip</code> 发过来，在更新提示里选「选择本地更新包」。</p>
+
+  <div class="note warn">
+    <strong>Windows 提示「未知发布者」？</strong>
+    项目没有购买代码签名证书。点「更多信息 → 仍要运行」，或右键安装包 → 属性 → 勾选「解除锁定」再双击。
+    经微信、U 盘传过去的文件通常不会触发这个提示。安装器不申请管理员权限，不会弹 UAC。
+  </div>
+
+  <h2>目录里的文件</h2>
+  <table class="doc-table">
+    <tr><th>文件</th><th>用途</th></tr>
+    <tr><td><code>启动工作台.bat</code></td><td>无窗口启动本地服务，就绪后打开浏览器</td></tr>
+    <tr><td><code>停止工作台.bat</code></td><td>平滑停止后台服务</td></tr>
+    <tr><td><code>检查更新.bat</code></td><td>手动检查版本与更新说明（离线可选本地 patch 包）</td></tr>
+    <tr><td><code>安装OCR组件.bat</code></td><td>安装可选 OCR 组件，提升截图 / 录屏识别准确率</td></tr>
+    <tr><td><code>部署说明.txt</code></td><td>面向教练组的操作手册</td></tr>
+  </table>
+  <p style="margin-top:14px; font-size:13.5px; color:var(--ink-4);">源码运行用户额外需要 <code>安装依赖.bat</code> 与 <code>更新代码.bat</code>；免安装包用户用不到。</p>
+
+  <h2>数据、备份与迁移</h2>
+  <p>所有数据保存在安装目录的 <code>data</code> 文件夹：数据库、比赛记录、导入文件、授权、备份都在里面。</p>
+  <ul class="steps">
+    <li>
+      <h3>备份</h3>
+      <p>整个 <code>data</code> 文件夹拷走即可，不需要额外的导出步骤。</p>
+    </li>
+    <li>
+      <h3>迁移</h3>
+      <p>新电脑装好后，把旧机器的 <code>data</code> 覆盖过去，重启工作台即可延续全部记录。</p>
+    </li>
+    <li>
+      <h3>卸载</h3>
+      <p>从「应用和功能」卸载会删除程序文件，但保留 <code>data</code>；确认不再需要时手动删除整个安装目录。</p>
+    </li>
+  </ul>
+
+  <div class="note">
+    <strong>出了问题先看日志。</strong>安装版开始菜单里有「打开日志目录」，<code>launcher.log</code> 记录启动过程，
+    <code>server.log</code> 记录服务输出。把这两个文件发给支持人员，比描述「打不开」有用得多。
+  </div>
+
+  <h2 id="faq">常见问题</h2>
+  <div class="faq">
+    <details>
+      <summary>数据会上传到你们的服务器吗？</summary>
+      <p>不会。平台没有云端服务，识别、入库、分析都在本机完成，数据只写在本地 data 目录。唯一的外部请求是你主动发起的营地同步与更新检查。</p>
+    </details>
+    <details>
+      <summary>需要先装 Python 或者配置环境吗？</summary>
+      <p>不需要。安装包和免安装包都内置了 Python 运行时与依赖，解压或安装后直接双击即可。源码运行才需要 Python 3.11 / 3.12（3.13 暂不支持）。</p>
+    </details>
+    <details>
+      <summary>支持 macOS、平板或手机吗？</summary>
+      <p>目前只提供 Windows 10 / 11 桌面端。界面是自适应的，局域网内可以用平板浏览器访问同一台电脑上的服务（默认关闭，需要显式开启）。</p>
+    </details>
+    <details>
+      <summary>更新会覆盖我的比赛数据吗？</summary>
+      <p>不会。增量更新只替换程序文件，data、.env 与营地授权不在更新范围内；更新失败会自动回滚到上一版本。卸载程序也不会删除 data。</p>
+    </details>
+    <details>
+      <summary>安装时 Windows 提示「未知发布者」怎么办？</summary>
+      <p>项目没有购买代码签名证书。点「更多信息 → 仍要运行」即可，或右键安装包 → 属性 → 勾选「解除锁定」。经微信、U 盘传过去的文件通常不会触发提示。</p>
+    </details>
+    <details>
+      <summary>收费吗？俱乐部用需要授权吗？</summary>
+      <p>个人学习、学术研究与非营利组织可以免费使用。职业俱乐部、训练机构等商业场景需要单独授权，见 <a href="{{LICENSE_URL}}">LICENSE</a> 或直接联系作者。</p>
+    </details>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="shell footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="index.html">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#0f1c31"/><rect x="6" y="13" width="5" height="12" rx="2" fill="#2a8f8b"/><rect x="13.5" y="7" width="5" height="18" rx="2" fill="#f08a6c"/><rect x="21" y="15" width="5" height="10" rx="2" fill="#2a8f8b"/></svg>
+        </span>
+        <span class="brand-name">KPL 赛训工具</span>
+      </a>
+      <p>为赛训组做的本机数据分析工作台。</p>
+    </div>
+    <nav class="footer-links" aria-label="页脚">
+      <a href="index.html#features">能力</a>
+      <a href="index.html#workflow">工作流</a>
+      <a href="guide.html">安装说明</a>
+      <a href="changelog.html">更新日志</a>
+      <a href="guide.html#faq">常见问题</a>
+      <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者 · 爱发电</a>
+      <a href="{{REPO_URL}}">GitHub</a>
+      <a href="{{REPO_URL}}/issues">反馈问题</a>
+    </nav>
+    <div class="footer-meta">
+      <span>© {{YEAR}} KPL 赛训工具 · PolyForm Noncommercial 1.0.0</span>
+      <span>与游戏开发商及赛事组织方无关联</span>
+      <span>截图为合成演示数据</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

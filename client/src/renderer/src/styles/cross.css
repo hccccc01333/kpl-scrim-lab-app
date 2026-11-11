@@ -1,0 +1,974 @@
+/* M3：跨局、智能找局、精选、训练纪录、版本对比。 */
+
+/* ── 跨局结论卡 ─────────────────────────────────────────────────── */
+
+.cross-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.cross-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+
+.cross-card-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  letter-spacing: .03em;
+}
+
+.cross-grade,
+.cross-repro {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--sans);
+  font-size: 7.5px;
+}
+
+.cross-grade.is-2 {
+  border-color: color-mix(in srgb, var(--md-own) 50%, transparent);
+  color: var(--md-own);
+}
+
+.cross-grade.is-1 {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  color: var(--accent);
+}
+
+.cross-grade.is-0 {
+  color: var(--quiet);
+}
+
+.cross-repro.is-ok {
+  color: var(--accent);
+}
+
+.cross-repro.is-no {
+  color: var(--coral);
+}
+
+.cross-card-name {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.cross-card-name span {
+  color: var(--quiet);
+  font-size: 8.5px;
+  font-weight: 400;
+}
+
+.cross-card h3 {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.cross-card h3 em {
+  color: var(--md-own);
+  font-style: normal;
+}
+
+.cross-card-plain {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.65;
+}
+
+.cross-card-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+}
+
+.cross-card-foot > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cross-card-foot span {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.cross-card-foot p {
+  color: var(--muted);
+  font-size: 8.5px;
+  line-height: 1.5;
+}
+
+.cross-card-foot .btn {
+  flex: 0 0 auto;
+}
+
+.cross-method {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.cross-method summary {
+  cursor: pointer;
+  color: var(--quiet);
+}
+
+.cross-method p {
+  margin-top: 4px;
+  line-height: 1.65;
+}
+
+/* bands */
+.cx-bands {
+  display: grid;
+  gap: 7px;
+  padding: 8px 0 4px;
+}
+
+.cx-band-track {
+  position: relative;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--surface);
+}
+
+.cx-band-outer,
+.cx-band-inner {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.cx-band-inner {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+}
+
+.cx-band-med {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 18px;
+  background: var(--md-own);
+  transform: translateX(-1px);
+}
+
+.cx-band-labels {
+  display: flex;
+  justify-content: space-between;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+}
+
+.cx-strata {
+  display: grid;
+  gap: 2px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+}
+
+.cx-strata > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px 36px;
+  gap: 6px;
+  font-size: 8px;
+}
+
+.cx-strata span {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cx-strata b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 8px;
+  text-align: right;
+}
+
+.cx-strata small {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+  text-align: right;
+}
+
+/* range */
+.cx-range {
+  display: grid;
+  gap: 5px;
+  padding: 4px 0;
+}
+
+.cx-range-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.cx-range-row > span {
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.cx-range-row > i {
+  position: relative;
+  display: block;
+  height: 8px;
+  background: var(--surface);
+}
+
+.cx-range-row em {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.cx-range-row b {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 12px;
+  background: var(--md-own);
+}
+
+.cx-range-row small {
+  grid-column: 2;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+}
+
+/* systems */
+.cx-systems {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.cx-system {
+  display: grid;
+  gap: 3px;
+  padding: 7px;
+  border: 1px solid color-mix(in srgb, var(--line) 65%, transparent);
+  border-radius: 2px;
+  background: var(--paper);
+}
+
+.cx-system > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+.cx-system b {
+  color: var(--text);
+  font-size: 8.5px;
+}
+
+.cx-system span,
+.cx-system small {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+/* matrix / trans */
+.cx-trans {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.cx-trans-row {
+  display: grid;
+  grid-template-columns: 52px repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  align-items: center;
+}
+
+.cx-trans-row span {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.cx-trans-row b {
+  display: grid;
+  place-items: center;
+  min-height: 22px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.cx-trans-row.is-head span {
+  text-align: center;
+}
+
+/* lane board */
+.cx-lane-board {
+  display: grid;
+  gap: 2px;
+}
+
+.cx-lane-row {
+  display: grid;
+  grid-template-columns: 68px repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  align-items: center;
+  padding: 6px 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+}
+
+.cx-lane-row.is-head {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+}
+
+.cx-lane-name {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.cx-lane-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.cx-lane-cell b {
+  color: var(--md-own);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.cx-lane-cell.is-foe b {
+  color: var(--md-foe);
+}
+
+.cx-lane-cell i {
+  display: block;
+  height: 4px;
+  background: var(--surface);
+}
+
+.cx-lane-cell em {
+  display: block;
+  height: 100%;
+  background: var(--md-own);
+}
+
+.cx-lane-cell.is-foe em {
+  background: var(--md-foe);
+}
+
+.cx-lane-cell.is-empty b {
+  color: var(--quiet);
+}
+
+/* ── 跨局逐局对照 ──────────────────────────────────────────────── */
+
+.cross-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 18px;
+  align-items: start;
+}
+
+.cross-board-list {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cross-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.2fr) 28px 48px 120px 58px 62px 48px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 6px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  text-align: left;
+}
+
+.cross-row:hover,
+.cross-row.is-focus {
+  border-color: var(--line);
+  background: var(--paper-2);
+}
+
+.cross-row-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.cross-row-main b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cross-row-main small {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.cross-row-result {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-align: center;
+}
+
+.cross-row-duration {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.cross-row-spark {
+  display: block;
+  height: 30px;
+}
+
+.cross-row-metric {
+  display: grid;
+  gap: 1px;
+}
+
+.cross-row-metric small {
+  color: var(--quiet);
+  font-size: 7px;
+}
+
+.cross-row-metric b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+}
+
+.cross-row-link {
+  color: var(--accent);
+  font-size: 8px;
+  text-align: right;
+}
+
+.cross-ref {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.cross-ref h3 {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+.cross-ref > p {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.cx-dist {
+  display: grid;
+  gap: 3px;
+}
+
+.cx-dist-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.cx-dist-head b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  font-weight: 500;
+}
+
+.cx-dist-track {
+  position: relative;
+  height: 10px;
+  background: var(--surface);
+}
+
+.cx-dist-track i {
+  position: absolute;
+  top: 2px;
+  width: 5px;
+  height: 6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  transform: translateX(-2px);
+}
+
+.cx-dist-track b {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 16px;
+  background: var(--md-own);
+}
+
+.cx-dist-foot {
+  display: flex;
+  justify-content: space-between;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7px;
+}
+
+.cross-ref-spark {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.cross-ref-spark > span {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+/* ── Sparkline ─────────────────────────────────────────────────── */
+
+.sparkline {
+  width: 100%;
+  height: 100%;
+  min-height: 24px;
+  overflow: visible;
+}
+
+.spark-zero {
+  stroke: color-mix(in srgb, var(--line-strong) 70%, transparent);
+  stroke-width: .7;
+}
+
+.spark-mark {
+  stroke: color-mix(in srgb, var(--ink) 30%, transparent);
+  stroke-dasharray: 2 2;
+  stroke-width: .7;
+}
+
+.spark-area {
+  fill: var(--md-own-soft);
+}
+
+.spark-path {
+  fill: none;
+  stroke: var(--md-own);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.3;
+}
+
+.sparkline.is-loss .spark-area {
+  fill: var(--md-foe-soft);
+}
+
+.sparkline.is-loss .spark-path {
+  stroke: var(--md-foe);
+}
+
+.sparkline.is-foe .spark-area {
+  fill: var(--md-foe-soft);
+}
+
+.sparkline.is-foe .spark-path {
+  stroke: var(--md-foe);
+}
+
+.spark-none {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+/* ── 智能找局 ──────────────────────────────────────────────────── */
+
+.query-list {
+  display: grid;
+  gap: 2px;
+}
+
+.query-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1.5fr) 36px 54px 80px 126px 24px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+}
+
+.query-row:hover {
+  background: color-mix(in srgb, var(--surface) 26%, transparent);
+}
+
+.query-index {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.query-main {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.query-main b {
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.query-main small {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.query-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 8.5px;
+}
+
+.query-metric small {
+  color: var(--quiet);
+  font-family: var(--sans);
+  font-size: 7.5px;
+}
+
+.query-heroes {
+  display: flex;
+  gap: 2px;
+}
+
+.query-heroes .portrait {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  font-size: 7px;
+}
+
+.query-go {
+  color: var(--quiet);
+  text-align: right;
+}
+
+/* ── 精选对局 ──────────────────────────────────────────────────── */
+
+.featured-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.featured-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--md-own);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+
+.featured-card.tone-foe {
+  border-left-color: var(--md-foe);
+}
+
+.featured-card:only-child {
+  grid-column: 1 / -1;
+}
+
+.featured-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.featured-rank {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+.featured-meta {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.featured-head .board-tag {
+  margin-left: auto;
+}
+
+.featured-card h2 {
+  color: var(--text);
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.featured-card > p {
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.featured-card .sparkline {
+  height: 110px;
+}
+
+.featured-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.featured-foot a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.featured-method {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.featured-method span {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.featured-method b {
+  color: var(--md-own);
+  font-family: var(--mono);
+  font-size: 8px;
+}
+
+/* ── 训练纪录 ──────────────────────────────────────────────────── */
+
+.record-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.record-card {
+  display: grid;
+  gap: 5px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.record-card > span {
+  color: var(--quiet);
+  font-size: 8px;
+}
+
+.record-card strong {
+  color: var(--md-own);
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -.03em;
+}
+
+.record-card p {
+  color: var(--quiet);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.record-card a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.record-card a b {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* ── 版本对比 ──────────────────────────────────────────────────── */
+
+.version-list {
+  display: grid;
+  gap: 0;
+}
+
+.version-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.6fr) minmax(80px, 1fr) 56px 70px 76px 54px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 54%, transparent);
+  font-size: 9px;
+}
+
+.version-row.is-head {
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 7.5px;
+}
+
+.version-name {
+  display: grid;
+  gap: 1px;
+}
+
+.version-name b {
+  color: var(--text);
+  font-size: 9.5px;
+}
+
+.version-name small {
+  color: var(--quiet);
+  font-size: 7.5px;
+}
+
+.version-count {
+  display: grid;
+  gap: 3px;
+}
+
+.version-count b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.version-count i {
+  display: block;
+  height: 4px;
+  background: var(--surface);
+}
+
+.version-count em {
+  display: block;
+  height: 100%;
+  background: var(--md-own);
+}
+
+.version-row > .is-num {
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.version-link {
+  text-align: right;
+}
+
+.version-link a {
+  color: var(--accent);
+  font-size: 8px;
+}
+
+@media (max-width: 1100px) {
+  .cross-cards,
+  .featured-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cross-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .record-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cross-row {
+    grid-template-columns: minmax(120px, 1.2fr) 26px 44px 100px 54px 58px 44px;
+  }
+}
+
+@media (max-width: 900px) {
+  .query-row {
+    grid-template-columns: 50px minmax(0, 1fr) 34px 50px 70px;
+  }
+
+  .query-heroes,
+  .query-go {
+    display: none;
+  }
+
+  .version-row {
+    grid-template-columns: minmax(120px, 1.4fr) 70px 50px 64px;
+  }
+
+  .version-row > :nth-child(5),
+  .version-row > :nth-child(6) {
+    display: none;
+  }
+}

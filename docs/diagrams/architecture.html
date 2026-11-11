@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>architecture</title>
+<style>
+  :root {
+    --ink: #10241F;
+    --muted: #7C948D;
+    --line: #E1ECE7;
+    --canvas: #F7FAF8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #ffffff; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage {
+    width: 1100px;
+    padding: 30px;
+    background:
+      radial-gradient(900px 320px at 6% -10%, rgba(23,107,105,.10), transparent 62%),
+      radial-gradient(700px 300px at 104% 110%, rgba(240,138,108,.10), transparent 58%),
+      var(--canvas);
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: 0 22px 44px -30px rgba(16,49,44,.5);
+    overflow: hidden;
+  }
+
+  /* ── header ─────────────────────────────────────────── */
+  .head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 26px 18px;
+    background:
+      radial-gradient(520px 160px at 0% 0%, rgba(240,138,108,.16), transparent 60%),
+      linear-gradient(120deg, #0E2B26 0%, #123B33 52%, #0F312B 100%);
+    color: #EAF5F0;
+  }
+  .head .left { display: flex; align-items: center; gap: 14px; }
+  .mark { display: flex; align-items: flex-end; gap: 4px; height: 28px; }
+  .mark i { display: block; width: 7px; border-radius: 3px; background: #4FC3A8; }
+  .mark i:nth-child(1) { height: 17px; }
+  .mark i:nth-child(2) { height: 28px; background: #F08A6C; }
+  .mark i:nth-child(3) { height: 22px; }
+  .head h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: .01em; }
+  .head .kicker { font-size: 10.5px; letter-spacing: .22em; color: #8FC4B5; margin-top: 3px; }
+  .head .right {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    font-size: 11px; letter-spacing: .14em; color: #7FB6A7; text-align: right; line-height: 1.7;
+  }
+
+  /* ── rows ───────────────────────────────────────────── */
+  .body { padding: 6px 26px 16px; }
+  .row {
+    display: grid;
+    grid-template-columns: 186px 1fr;
+    gap: 24px;
+    align-items: center;
+    padding: 14px 0 13px;
+  }
+  .row + .row { border-top: 1px solid #F1F6F3; }
+  .label { display: flex; gap: 12px; align-items: flex-start; }
+  .idx {
+    flex: none;
+    width: 26px; height: 26px; border-radius: 8px;
+    display: grid; place-items: center;
+    font: 600 11.5px/1 "Cascadia Mono", Consolas, monospace;
+  }
+  .label .name { font-size: 15px; font-weight: 650; letter-spacing: .01em; line-height: 1.1; }
+  .label .note { font-size: 11px; color: var(--muted); margin-top: 5px; letter-spacing: .02em; white-space: nowrap; }
+
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .chip {
+    border-radius: 10px;
+    padding: 8px 11px 8px 10px;
+    border: 1px solid transparent;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; margin-top: 5px; }
+  .chip .txt { min-width: 0; }
+  .chip b { display: block; font-size: 12.8px; font-weight: 600; line-height: 1.3; white-space: nowrap; }
+  .chip em {
+    display: block; font-style: normal; font-size: 11px; line-height: 1.35;
+    opacity: .68; margin-top: 2px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ── per-layer palette ──────────────────────────────── */
+  .l1 .idx { background: #FBEDE7; color: #93472C; }
+  .l1 .chip { background: #FDF6F2; border-color: #F1D3C7; }
+  .l1 .chip b { color: #5E2E1D; }
+  .l1 .dot { background: #D8886A; }
+
+  .l2 .idx { background: #E4F4EF; color: #16644F; }
+  .l2 .chip { background: #F2FAF7; border-color: #C7E5DB; }
+  .l2 .chip b { color: #14483B; }
+  .l2 .dot { background: #2E8B76; }
+
+  .l3 .idx { background: #FBF3E0; color: #7C5A15; }
+  .l3 .chip { background: #FDF9F0; border-color: #ECDCB4; }
+  .l3 .chip b { color: #51400F; }
+  .l3 .dot { background: #C79A46; }
+
+  .l4 .idx { background: #EDF1F5; color: #40566B; }
+  .l4 .chip { background: #F6F8FA; border-color: #D5DFE7; }
+  .l4 .chip b { color: #26333F; }
+  .l4 .dot { background: #7A8FA6; }
+
+  .l5 .idx { background: #E1F2E8; color: #1F6247; }
+  .l5 .chip { background: #F1F9F5; border-color: #C3E2D1; }
+  .l5 .chip b { color: #173C2B; }
+  .l5 .dot { background: #3E8F6E; }
+
+  .l6 .idx { background: #E8EDF6; color: #3A4E79; }
+  .l6 .chip { background: #F5F7FB; border-color: #CED8E9; }
+  .l6 .chip b { color: #1F2B45; }
+  .l6 .dot { background: #5B74A8; }
+
+  /* ── flow arrows ────────────────────────────────────── */
+  .flow { position: relative; height: 14px; }
+  .flow::before {
+    content: ""; position: absolute; left: 12.5px; top: 0; width: 1px; height: 9px;
+    background: linear-gradient(#D3E3DD, #BFD5CD);
+  }
+  .flow::after {
+    content: ""; position: absolute; left: 9.5px; top: 8px;
+    width: 6px; height: 6px;
+    border-right: 1.3px solid #A6C5BA;
+    border-bottom: 1.3px solid #A6C5BA;
+    transform: rotate(45deg);
+  }
+
+  /* ── footer ─────────────────────────────────────────── */
+  .foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 26px 15px;
+    border-top: 1px dashed #DCE8E2;
+    background: #FBFDFC;
+    font-size: 11px; color: var(--muted); letter-spacing: .02em;
+  }
+  .foot .facts { display: flex; gap: 16px; }
+  .foot .facts i { font-style: normal; color: #A9BDB6; margin-right: 5px; }
+  .foot .tag {
+    font-family: "Cascadia Mono", Consolas, monospace;
+    color: #8AA39B; letter-spacing: .1em; font-size: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card">
+    <div class="head">
+      <div class="left">
+        <div class="mark"><i></i><i></i><i></i></div>
+        <div>
+          <h1>系统架构</h1>
+          <div class="kicker">KPL SCRIM LAB · ARCHITECTURE</div>
+        </div>
+      </div>
+      <div class="right">ONE PROCESS · ONE API<br>ONE NAMING CONVENTION</div>
+    </div>
+
+    <div class="body">
+      <div class="row l1">
+        <div class="label">
+          <div class="idx">01</div>
+          <div><div class="name">采集接入</div><div class="note">一局一个通道</div></div>
+        </div>
+        <div class="chips">
+          <div class="chip"><i class="dot"></i><div class="txt"><b>营地分享链接</b><em>贴入链接即解析</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>营地十人面板</b><em>扫码授权 · 增量拉取</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>赛后截图 × 7</b><em>七页结算面板</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>录屏</b><em>整局 1 倍速</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>表格</b><em>xlsx · csv</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>回放</b><em>.abc · .ope</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>采集指引</b><em>七页各拍什么</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>补录一局</b><em>营地撤掉的老局</em></div></div>
+        </div>
+      </div>
+
+      <div class="flow"></div>
+
+      <div class="row l2">
+        <div class="label">
+          <div class="idx">02</div>
+          <div><div class="name">解析识别</div><div class="note">全部在本机完成</div></div>
+        </div>
+        <div class="chips">
+          <div class="chip"><i class="dot"></i><div class="txt"><b>截图 OCR</b><em>分页契约 + 置信度</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>Mimo 精读</b><em>可选二次识别</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>录屏抽帧</b><em>逐帧 OCR</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>回放解码</b><em>记录流 · 帧指令</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>表格校验</b><em>字段契约</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>英雄图像匹配</b><em>相似度只做排序</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>版本档案</b><em>回放布局按版本</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>引擎自检</b><em>缺什么装什么</em></div></div>
+        </div>
+      </div>
+
+      <div class="flow"></div>
+
+      <div class="row l3">
+        <div class="label">
+          <div class="idx">03</div>
+          <div><div class="name">通道校对</div><div class="note">不静默写库</div></div>
+        </div>
+        <div class="chips">
+          <div class="chip"><i class="dot"></i><div class="txt"><b>跨来源草稿</b><em>值 + 来源 + 置信度</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>冲突留痕</b><em>不覆盖 · 不猜</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>身份三态</b><em>未认领 · 已绑定 · 冲突</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>人工审核</b><em>复核人 · 时间 · 日志</em></div></div>
+        </div>
+      </div>
+
+      <div class="flow"></div>
+
+      <div class="row l4">
+        <div class="label">
+          <div class="idx">04</div>
+          <div><div class="name">数据落盘</div><div class="note">单一数据根 data/</div></div>
+        </div>
+        <div class="chips">
+          <div class="chip"><i class="dot"></i><div class="txt"><b>SQLite</b><em>记录与原始附件</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>单局数据包</b><em>kpl-match-data-v1</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>回放 · 坐标</b><em>经济 · 位置 · 出装</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>录屏证据帧</b><em>原片可回看</em></div></div>
+        </div>
+      </div>
+
+      <div class="flow"></div>
+
+      <div class="row l5">
+        <div class="label">
+          <div class="idx">05</div>
+          <div><div class="name">只读分析</div><div class="note">口径先于图表</div></div>
+        </div>
+        <div class="chips">
+          <div class="chip"><i class="dot"></i><div class="txt"><b>单局复盘</b><em>时间线 · 经济 · 掉点</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>队员 · 英雄 · 战队</b><em>分英雄 · 分位置</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>深度分析</b><em>空间 · 节奏 · 对位</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>专题研究</b><em>相关 · 共现 · 提升度</em></div></div>
+        </div>
+      </div>
+
+      <div class="flow"></div>
+
+      <div class="row l6">
+        <div class="label">
+          <div class="idx">06</div>
+          <div><div class="name">呈现交付</div><div class="note">一个进程，一套接口</div></div>
+        </div>
+        <div class="chips">
+          <div class="chip"><i class="dot"></i><div class="txt"><b>V3 工作台</b><em>原生 ESM · 无打包器</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>报告导出</b><em>HTML · PDF · CSV</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>安装包与更新</b><em>安装版 / 免安装 / 增量包</em></div></div>
+          <div class="chip"><i class="dot"></i><div class="txt"><b>官网与文档</b><em>Pages 自动发布</em></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <div class="facts">
+        <span><i>●</i>全链路本机运行</span>
+        <span><i>●</i>不依赖云端</span>
+        <span><i>●</i>每个数字带来源</span>
+      </div>
+      <div class="tag">127.0.0.1:8766</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
