@@ -1,4 +1,4 @@
-﻿"""V3 route module: read training data and expose the analysis API."""
+"""V3 route module: read training data and expose the analysis API."""
 
 import argparse
 import json
@@ -2597,6 +2597,50 @@ def hero_detail(hero: str, repo=Depends(repository)):
             'teams': group(hero_rows, 'opponent'), 'league': league,
             'growth': growth, 'curveGames': len(curves),
             'playerBuilds': player_builds[:8]}
+
+
+# ── 数据迁移：把本机爬到的对局数据打包带走 ────────────────────────────
+# 王者营地只留约一个月滚动窗口，滑出窗口的数据只存在于本机 data/ 里，
+# 换机器/备份只能靠这个包，不能指望重新爬。
+@router.get('/api/data/transfer/info')
+def transfer_info():
+    import data_transfer
+    data_dir = MATCHES.parent
+    counts = data_transfer._db_counts(DB)
+    total = 0
+    for name in data_transfer.BASE_DIRS:
+        folder = data_dir / name
+        if folder.is_dir():
+            total += sum(item.stat().st_size for item in folder.rglob('*') if item.is_file())
+    return {'ok': True, 'dataDir': str(data_dir), 'counts': counts,
+            'estimatedBytes': total, 'dirs': list(data_transfer.BASE_DIRS)}
+
+
+@router.post('/api/data/transfer/export')
+async def transfer_export(request: Request):
+    import data_transfer
+    body = await read_json(request)
+    body = body if isinstance(body, dict) else {}
+    data_dir = MATCHES.parent
+    out_dir = data_dir / 'export'
+    stamp = time.strftime('%Y%m%d-%H%M')
+    out = out_dir / f'赛训数据-{stamp}.zip'
+    try:
+        import version as _version
+        _app_version = str(getattr(_version, 'VERSION', '') or '')
+    except Exception:  # noqa: BLE001
+        _app_version = ''
+    try:
+        manifest = data_transfer.export_bundle(
+            data_dir, out,
+            with_screenshots=bool(body.get('withScreenshots')),
+            with_replays=bool(body.get('withReplays')),
+            app_version=_app_version)
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(500, f'导出失败：{error}')
+    return {'ok': True, 'path': str(out), 'name': out.name,
+            'size': manifest.get('bundleSize') or out.stat().st_size,
+            'counts': manifest.get('counts') or {}, 'dataDir': str(data_dir)}
 
 
 app.include_router(router)
