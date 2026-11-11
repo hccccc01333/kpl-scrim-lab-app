@@ -1,10 +1,10 @@
-"""Single source of truth for the application version.
+﻿"""Single source of truth for the application version.
 
 The version is exposed through `/api/health` and rendered in the page
 footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.5.32'
+VERSION = '1.5.33'
 RELEASE_DATE = '2026-11-10'
-RELEASE_NAME = '优势兑现与对手阵容'
+RELEASE_NAME = '位置多选与身份编辑'

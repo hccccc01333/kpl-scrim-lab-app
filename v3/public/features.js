@@ -1232,7 +1232,7 @@ export function createFeatures(h) {
       <span class="sx-own-avatar">${esc((p.name || '?').slice(0, 1))}</span>
       <span class="sx-own-pname"><b>${text(p.name)}</b><small>${nickname}${text((p.lanes || []).join(' / ') || p.position || '位置未记录')} · ${fmt(p.games)} 场</small></span>
       <span class="sx-own-source ${mapped ? 'is-manual' : 'is-pending'}">${mapped ? '已命名' : '待命名'}</span>
-      <button type="button" class="control sx-own-action" data-sx-id-open="${esc(p.id)}" data-id-account="${esc(p.id)}" data-id-nickname="${esc(p.nickname || p.name)}" data-id-name="${mapped ? esc(p.name) : ''}" data-id-position="${esc(p.position || (p.lanes || [])[0] || '')}" data-id-team="${esc(p.teamId || '')}" data-id-teamname="${esc(teamNameOf(p.teamId))}" data-id-games="${fmt(p.games)}" data-id-player="${esc(p.playerId || '')}">${mapped ? '改名' : '命名'}</button>
+      <button type="button" class="control sx-own-action" data-sx-id-open="${esc(p.id)}" data-id-account="${esc(p.id)}" data-id-nickname="${esc(p.nickname || p.name)}" data-id-name="${mapped ? esc(p.name) : ''}" data-id-position="${esc(p.position || (p.lanes || [])[0] || '')}" data-id-positions="${esc((p.positions || []).join(','))}" data-id-team="${esc(p.teamId || '')}" data-id-teamname="${esc(teamNameOf(p.teamId))}" data-id-games="${fmt(p.games)}" data-id-player="${esc(p.playerId || '')}">${mapped ? '编辑' : '命名'}</button>
       ${mapped ? `<button type="button" class="control sx-own-action" data-sx-player-assign="${esc(p.id)}" data-player-name="${esc(p.name)}" data-team-id="${esc(p.teamId || '')}">调整</button>` : ''}
     </div>`;
     };
@@ -2200,15 +2200,15 @@ export function createFeatures(h) {
       const mapped = !!row.mapped;
       const teamLabel = row.teamName || idTeamName(row.teamId) || '';
       const suggest = row.suggestTeamName || idTeamName(row.suggestTeamId) || '';
-      const openAttrs = `data-sx-id-open="${esc(row.accountId)}" data-id-account="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}" data-id-name="${esc(row.name || '')}" data-id-position="${esc(row.position || row.lane || '')}" data-id-team="${esc(row.teamId || row.suggestTeamId || '')}" data-id-teamname="${esc(teamLabel || suggest)}" data-id-games="${fmt(row.games)}" data-id-player="${esc(row.playerId || '')}"`;
+      const openAttrs = `data-sx-id-open="${esc(row.accountId)}" data-id-account="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}" data-id-name="${esc(row.name || '')}" data-id-position="${esc(row.position || row.lane || '')}" data-id-positions="${esc((row.positions || []).join(','))}" data-id-team="${esc(row.teamId || row.suggestTeamId || '')}" data-id-teamname="${esc(teamLabel || suggest)}" data-id-games="${fmt(row.games)}" data-id-player="${esc(row.playerId || '')}"`;
       return `<div class="sx-id-row ${mapped ? 'is-mapped' : 'is-pending'}" data-sx-id-row data-side="${esc(row.side)}" data-state="${mapped ? 'mapped' : 'unmapped'}" data-search="${esc((row.nickname + ' ' + (row.name || '') + ' ' + teamLabel).toLowerCase())}" ${index >= 20 ? 'hidden' : ''}>
         <span class="sx-id-gid"><b>${text(row.nickname || '未知昵称')}</b><small>${esc(row.lane || '位置未记录')} · ${fmt(row.games)} 局${row.lastSeen ? ' · ' + esc(row.lastSeen) : ''}</small></span>
         <span class="sx-id-arrow" aria-hidden="true">→</span>
-        <span class="sx-id-player">${mapped ? `<b>${text(row.name)}</b><small>${text(row.position || row.lane || '位置未填')}</small>` : '<b class="is-wait">待命名</b><small>还没有选手ID</small>'}</span>
+        <span class="sx-id-player">${mapped ? `<b>${text(row.name)}</b><small>${text((row.positions && row.positions.length ? row.positions.join(' / ') : (row.position || row.lane || '位置未填')))}</small>` : '<b class="is-wait">待命名</b><small>还没有选手ID</small>'}</span>
         <span class="sx-id-team">${mapped ? `<b>${text(teamLabel || '未归队')}</b>` : (suggest ? `<small>建议 ${esc(suggest)}</small>` : '<small>战队未识别</small>')}</span>
         <span class="sx-id-side">${row.side === 'own' ? '本队' : '对手'}</span>
         <span class="sx-id-actions">
-          <button type="button" class="sx-inline-btn" ${openAttrs}>${mapped ? '改名' : '命名'}</button>
+          <button type="button" class="sx-inline-btn" ${openAttrs}>${mapped ? '编辑' : '命名'}</button>
           ${mapped ? `<button type="button" class="sx-inline-btn is-quiet" data-sx-id-unmap="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}">解绑</button><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(row.playerId)}" data-id-name="${esc(row.name)}">删除</button>` : ''}
         </span>
       </div>`;
@@ -3045,7 +3045,7 @@ export function createFeatures(h) {
       <div class="sx-dialog-panel">
         <p class="sx-dialog-subject" data-sx-identity-subject></p>
         <label>选手名称<input name="name" maxlength="40" required placeholder="真实 ID 或常用名，不要填游戏 ID"></label>
-        <label>位置<select name="position"><option value="">待确认</option>${POSITION_OPTIONS.map((x) => `<option value="${x}">${x}</option>`).join('')}</select></label>
+        <fieldset class="sx-pos-field"><legend>位置（可多选，第一个勾的是主位置）</legend><div class="sx-pos-chips">${POSITION_OPTIONS.map((x) => `<label class="sx-pos-chip"><input type="checkbox" name="position" value="${x}"><span>${x}</span></label>`).join('')}</div></fieldset>
         <label>所属战队<select name="teamId" data-sx-identity-team></select></label>
         <label data-sx-identity-newteam hidden>新战队名<input name="teamName" maxlength="40" placeholder="如：重庆狼队"></label>
         <p class="sx-dialog-note">保存后，这个游戏 ID 以后自动显示这名选手和这支战队；分析按选手累计，历史对局不改。</p>
@@ -3080,7 +3080,13 @@ export function createFeatures(h) {
     dialog.querySelector('[data-sx-identity-subject]').textContent =
       `${data.nickname || '未知游戏 ID'}${data.accountId ? ' · 账号 ' + data.accountId : ''}${data.games ? ' · ' + data.games + ' 局' : ''}`;
     dialog.querySelector('[name="name"]').value = data.name || '';
-    dialog.querySelector('[name="position"]').value = POSITION_OPTIONS.includes(data.position) ? data.position : '';
+    /* 位置可多选：优先用 positions；老数据只有单个 position 时也认 */
+    const currentPositions = Array.isArray(data.positions) && data.positions.length
+      ? data.positions
+      : (POSITION_OPTIONS.includes(data.position) ? [data.position] : []);
+    dialog.querySelectorAll('[name="position"]').forEach((box) => {
+      box.checked = currentPositions.includes(box.value);
+    });
     dialog.querySelector('[name="teamName"]').value = '';
     syncIdentityTeamField(dialog);
     dialog.querySelector('.form-status').textContent = '';
@@ -3094,11 +3100,13 @@ export function createFeatures(h) {
     const form = dialog.querySelector('form');
     const status = form.querySelector('.form-status');
     const button = form.querySelector('button[type=submit]');
+    const checkedPositions = Array.from(form.querySelectorAll('[name="position"]:checked')).map((box) => box.value);
     const payload = {
       accountId: dialog.dataset.accountId || '',
       nickname: dialog.dataset.nickname || '',
       name: form.querySelector('[name="name"]').value.trim(),
-      position: form.querySelector('[name="position"]').value,
+      position: checkedPositions[0] || '',
+      positions: checkedPositions,
     };
     const teamId = form.querySelector('[name="teamId"]').value;
     if (teamId) payload.teamId = teamId;
@@ -3653,6 +3661,7 @@ if(captureIngestPage.change(event))return;
         nickname: identityOpen.dataset.idNickname,
         name: identityOpen.dataset.idName,
         position: identityOpen.dataset.idPosition,
+        positions: (identityOpen.dataset.idPositions || '').split(',').filter(Boolean),
         teamId: identityOpen.dataset.idTeam,
         teamName: identityOpen.dataset.idTeamname,
         games: identityOpen.dataset.idGames,

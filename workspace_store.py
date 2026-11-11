@@ -1,4 +1,4 @@
-"""工作区数据模型：按 docs/analysis_fields_matrix.md 第 4 节建表。
+﻿"""工作区数据模型：按 docs/analysis_fields_matrix.md 第 4 节建表。
 
 设计约束（与规格一致）：
 - 主键用稳定 ID，不用名称；改名/合并只写覆盖层，历史不动。
@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS players (
   name TEXT NOT NULL,
   match_name TEXT,
   position TEXT,
+  positions TEXT NOT NULL DEFAULT '[]',
   aliases TEXT NOT NULL DEFAULT '[]',
   camp_user_id TEXT,
   role TEXT NOT NULL DEFAULT 'main',
@@ -303,6 +304,14 @@ def _json(value, default):
     return json.dumps(value, ensure_ascii=False)
 
 
+def _loads(value, default=None):
+    """把库里存的 JSON 文本读回 Python 值；坏数据退回 default，不抛。"""
+    try:
+        return json.loads(value) if value else ([] if default is None else default)
+    except (TypeError, ValueError):
+        return [] if default is None else default
+
+
 PLAYER_PLACEHOLDER_PREFIX = '待命名选手 #'
 LEGACY_PLAYER_PLACEHOLDERS = {'新选手', '未命名', '未命名选手', '选手'}
 
@@ -353,6 +362,13 @@ class Workspace:
                         connection.execute(f'ALTER TABLE schedules ADD COLUMN {column} {ddl}')
             except sqlite3.Error as error:
                 self.schema_warnings.append(f'schedules 迁移: {error}')
+            # 选手位置多选：position 仍存主位置（下游按单值用），positions 存全部位置。
+            try:
+                existing = {row[1] for row in connection.execute('PRAGMA table_info(players)')}
+                if 'positions' not in existing:
+                    connection.execute("ALTER TABLE players ADD COLUMN positions TEXT NOT NULL DEFAULT '[]'")
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'players 迁移: {error}')
             connection.commit()
         finally:
             connection.close()
@@ -449,12 +465,17 @@ class Workspace:
         return target_id
 
     # ---------------------------------------------------------------- 选手
-    def upsert_player(self, player_id=None, *, team_id, name, position=None, aliases=None,
-                      camp_user_id=None, role='main', match_name=None, source='manual', actor=None):
+    def upsert_player(self, player_id=None, *, team_id, name, position=None, positions=None,
+                      aliases=None, camp_user_id=None, role='main', match_name=None,
+                      source='manual', actor=None):
         if not team_id:
             raise ValueError('选手必须归属战队')
         if not name or not str(name).strip():
             raise ValueError('选手名不能为空')
+        # 位置可多选：第一个是主位置，写进 position（下游仍按单值用），全量进 positions。
+        slots = [str(x).strip() for x in (positions or []) if str(x).strip()]
+        if slots:
+            position = slots[0]
         player_id = player_id or 'player-' + uuid.uuid4().hex[:10]
         connection = self.connect()
         try:
@@ -464,15 +485,27 @@ class Workspace:
                                          (player_id,)).fetchone()
                 if row is not None:
                     aliases = json.loads(row['aliases'] or '[]')
+            if positions is None:
+                # 没传就沿用库里已有的；新选手退回「只有主位置」。
+                row = connection.execute('SELECT positions FROM players WHERE id=?',
+                                         (player_id,)).fetchone()
+                if row is not None and (row['positions'] or '').strip() not in ('', '[]'):
+                    try:
+                        slots = json.loads(row['positions'])
+                    except (TypeError, ValueError):
+                        slots = [position] if position else []
+                else:
+                    slots = [position] if position else []
             connection.execute(
-                'INSERT INTO players(id, team_id, name, match_name, position, aliases, camp_user_id, role)'
-                ' VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET team_id=excluded.team_id, '
+                'INSERT INTO players(id, team_id, name, match_name, position, positions, aliases, camp_user_id, role)'
+                ' VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET team_id=excluded.team_id, '
                 'name=excluded.name, match_name=COALESCE(excluded.match_name, players.match_name), '
-                'position=COALESCE(excluded.position, players.position), aliases=excluded.aliases, '
+                'position=COALESCE(excluded.position, players.position), positions=excluded.positions, '
+                'aliases=excluded.aliases, '
                 'camp_user_id=COALESCE(excluded.camp_user_id, players.camp_user_id), role=excluded.role, '
                 'revision=players.revision+1',
-                (player_id, team_id, name.strip(), match_name, position, _json(aliases, []),
-                 camp_user_id, role))
+                (player_id, team_id, name.strip(), match_name, position, _json(slots, []),
+                 _json(aliases, []), camp_user_id, role))
             connection.commit()
         finally:
             connection.close()
@@ -492,6 +525,10 @@ class Workspace:
         for row in rows:
             item = {key: row[key] for key in row.keys()}
             item['aliases'] = json.loads(item.get('aliases') or '[]')
+            try:
+                item['positions'] = json.loads(item.get('positions') or '[]')
+            except (TypeError, ValueError):
+                item['positions'] = []
             out.append(item)
         return out
 
@@ -638,7 +675,7 @@ class Workspace:
     def _account_rows(self, connection, *, account_id=None, player_id=None, team_id=None):
         query = ('SELECT a.id, a.player_id, a.platform, a.account_id, a.nickname, a.camp_user_id,'
                  ' a.first_seen, a.last_seen, a.is_primary, a.shared, a.source, a.confidence,'
-                 ' p.name AS player_name, p.position AS player_position,'
+                 ' p.name AS player_name, p.position AS player_position, p.positions AS player_positions,'
                  ' p.team_id AS team_id, t.name AS team_name'
                  ' FROM player_accounts a LEFT JOIN players p ON p.id = a.player_id'
                  ' LEFT JOIN teams t ON t.id = p.team_id')
@@ -685,7 +722,8 @@ class Workspace:
             index[str(row['account_id'])] = {
                 'accountId': str(row['account_id']), 'nickname': row.get('nickname') or '',
                 'playerId': row.get('player_id') or '', 'name': row.get('player_name') or '',
-                'position': row.get('player_position') or '', 'teamId': row.get('team_id') or '',
+                'position': row.get('player_position') or '',
+                'positions': _loads(row.get('player_positions') or '[]'), 'teamId': row.get('team_id') or '',
                 'teamName': row.get('team_name') or '', 'source': row.get('source') or 'manual',
             }
         return index

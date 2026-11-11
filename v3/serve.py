@@ -1,4 +1,4 @@
-"""V3 route module: read training data and expose the analysis API."""
+﻿"""V3 route module: read training data and expose the analysis API."""
 
 import argparse
 import json
@@ -1431,6 +1431,7 @@ def identity_accounts(side: str = '', state: str = '', q: str = ''):
             'playerId': (mapped or {}).get('playerId') or '',
             'name': (mapped or {}).get('name') or '',
             'position': (mapped or {}).get('position') or '',
+            'positions': (mapped or {}).get('positions') or [],
             'teamId': (mapped or {}).get('teamId') or '',
             'teamName': (mapped or {}).get('teamName') or '',
             'suggestTeamId': default_team,
@@ -1447,7 +1448,8 @@ def identity_accounts(side: str = '', state: str = '', q: str = ''):
     if query:
         rows = [row for row in rows
                 if query in (row['nickname'] + ' ' + row['name'] + ' ' + row['teamName']).lower()]
-    rows.sort(key=lambda row: (row['mapped'], -row['games'], row['nickname']))
+    # 已命名的排前面：命名完这一行要还在原地，不能沉到几百个待命名后面去。
+    rows.sort(key=lambda row: (not row['mapped'], -row['games'], row['nickname']))
 
     counters = {
         'total': len(rows), 'mapped': sum(1 for row in rows if row['mapped']),
@@ -1526,6 +1528,10 @@ async def name_identity(request: Request):
         raise HTTPException(400, '请选择要命名的游戏账号。')
     name = str(body.get('name') or '').strip()
     position = str(body.get('position') or '').strip()
+    raw_positions = body.get('positions')
+    if isinstance(raw_positions, str):
+        raw_positions = [raw_positions]
+    positions = [str(item).strip() for item in (raw_positions or []) if str(item).strip()]
     team_id = str(body.get('teamId') or '').strip()
     team_name = str(body.get('team') or body.get('teamName') or '').strip()
     if not name:
@@ -1543,7 +1549,7 @@ async def name_identity(request: Request):
     try:
         for index, account in enumerate(account_ids or ['']):
             saved.append(identity_service.name_account(
-                DB, account_id=account, nickname=nickname,
+                DB, account_id=account, nickname=nickname, positions=positions or None,
                 player_id=body.get('playerId') if index == 0 else None,
                 name=name, position=position,
                 team_id=team_id if index == 0 else '', team_name=team_name,
@@ -1957,17 +1963,21 @@ def camp_accounts():
         with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as connection:
             rows = connection.execute(
                 'SELECT a.account_id, a.nickname, p.id AS player_id, p.name, p.position,'
-                ' p.team_id, t.name AS team_name'
+                ' p.positions, p.team_id, t.name AS team_name'
                 ' FROM player_accounts a JOIN players p ON p.id = a.player_id'
                 ' LEFT JOIN teams t ON t.id = p.team_id WHERE a.platform = ?', ('camp',)).fetchall()
     except sqlite3.Error:
         return {}
     index = {}
-    for account_id, nickname, player_id, name, position, team_id, team_name in rows:
+    for account_id, nickname, player_id, name, position, positions, team_id, team_name in rows:
+        try:
+            slots = json.loads(positions or '[]')
+        except (TypeError, ValueError):
+            slots = []
         index[str(account_id)] = {
             'accountId': str(account_id), 'nickname': nickname or '', 'playerId': player_id or '',
-            'name': name or '', 'position': position or '', 'teamId': team_id or '',
-            'teamName': team_name or '',
+            'name': name or '', 'position': position or '', 'positions': slots or [],
+            'teamId': team_id or '', 'teamName': team_name or '',
         }
     return index
 

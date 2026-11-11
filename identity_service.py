@@ -1,4 +1,4 @@
-"""身份唯一的写入口：游戏账号 → 选手 → 战队。
+﻿"""身份唯一的写入口：游戏账号 → 选手 → 战队。
 
 为什么要单独一个模块：这块以前散在五处——营地白名单写 `camp_config.json`、
 选手认领写 `settings.aliases`（昵称字符串）、建档写 `settings.roster` + `players`、
@@ -38,6 +38,20 @@ def _check_position(position):
     return position
 
 
+def _check_positions(positions):
+    """位置可多选：去重保序，第一个就是主位置；空值忽略。"""
+    if positions is None:
+        return None
+    if isinstance(positions, str):
+        positions = [positions]
+    slots = []
+    for item in positions or []:
+        value = _check_position(item)
+        if value and value not in slots:
+            slots.append(value)
+    return slots
+
+
 def _fetch_player(ws, player_id):
     with closing(ws.connect()) as connection:
         row = connection.execute(
@@ -75,15 +89,16 @@ def resolve_team(ws, *, team_id=None, team_name=None, coach=None):
     return {'id': ws.ensure_team_named(team_name, coach=coach), 'name': team_name}
 
 
-def save_player(db_path, *, player_id=None, name, position=None, team_id=None, team_name=None,
-                camp_user_id=None, role='main', aliases=None, actor='coach'):
+def save_player(db_path, *, player_id=None, name, position=None, positions=None, team_id=None,
+                team_name=None, camp_user_id=None, role='main', aliases=None, actor='coach'):
     """新增或编辑一名选手（不涉及游戏账号时用；建档页「添加选手」走这里）。"""
     name = _text(name)
     if not name:
         raise ValueError('请填写选手名称')
     if is_placeholder_player(name):
         raise ValueError('「待命名选手」不是真名，请填写选手 ID 或常用名')
-    position = _check_position(position)
+    slots = _check_positions(positions)
+    position = (slots[0] if slots else _check_position(position))
     ws = Workspace(db_path).ensure_schema()
     existing = _fetch_player(ws, _text(player_id, 60)) if player_id else None
     if existing is not None:
@@ -93,7 +108,8 @@ def save_player(db_path, *, player_id=None, name, position=None, team_id=None, t
             row = _fetch_team(ws, existing['team_id'])
             target = {'id': existing['team_id'], 'name': _text(row['name']) if row else ''}
         ws.upsert_player(existing['id'], team_id=target['id'], name=name,
-                         position=position or existing['position'], camp_user_id=camp_user_id,
+                         position=position or existing['position'], positions=slots,
+                         camp_user_id=camp_user_id,
                          aliases=aliases, role=role or 'main', actor=actor)
         return {'ok': True, 'playerId': existing['id'], 'name': name, 'teamId': target['id'],
                 'teamName': target['name'], 'created': False}
@@ -102,19 +118,22 @@ def save_player(db_path, *, player_id=None, name, position=None, team_id=None, t
     if found is not None:
         # 同队同名就是同一个人：只补位置，不重复建。
         ws.upsert_player(found['id'], team_id=target['id'], name=name,
-                         position=position or found['position'], camp_user_id=camp_user_id,
+                         position=position or found['position'], positions=slots,
+                         camp_user_id=camp_user_id,
                          aliases=aliases, role=role or 'main', actor=actor)
         return {'ok': True, 'playerId': found['id'], 'name': name, 'teamId': target['id'],
                 'teamName': target['name'], 'created': False}
     new_id = ws.upsert_player(None, team_id=target['id'], name=name, position=position,
-                              camp_user_id=camp_user_id, aliases=aliases, role=role or 'main',
+                              positions=slots, camp_user_id=camp_user_id, aliases=aliases,
+                              role=role or 'main',
                               actor=actor)
     return {'ok': True, 'playerId': new_id, 'name': name, 'teamId': target['id'],
             'teamName': target['name'], 'created': True}
 
 
 def name_account(db_path, *, account_id=None, nickname='', player_id=None, name=None, position=None,
-                 team_id=None, team_name=None, coach=None, default_team_id=None, actor='coach'):
+                 positions=None, team_id=None, team_name=None, coach=None, default_team_id=None,
+                 actor='coach'):
     """给一个游戏账号命名 / 改名 / 归队——所有页面的「命名」都调这一个。
 
     - 账号已经绑过选手：就地改这名选手的名字、位置、战队（同一选手的其它账号一起生效）。
@@ -125,7 +144,8 @@ def name_account(db_path, *, account_id=None, nickname='', player_id=None, name=
     account_id = _text(account_id, 40)
     nickname = _text(nickname, 60)
     name = _text(name)
-    position = _check_position(position)
+    slots = _check_positions(positions)
+    position = (slots[0] if slots else _check_position(position))
     ws = Workspace(db_path).ensure_schema()
 
     existing_account = None
@@ -153,7 +173,8 @@ def name_account(db_path, *, account_id=None, nickname='', player_id=None, name=
         target = resolve_team(ws, team_id=team_id, team_name=team_name, coach=coach) \
             if (team_id or team_name) else None
         ws.upsert_player(current['id'], team_id=(target['id'] if target else current['team_id']),
-                         name=name, position=position or current['position'], actor=actor)
+                         name=name, position=position or current['position'], positions=slots,
+                         actor=actor)
         player_id = current['id']
         team_id_final = target['id'] if target else current['team_id']
     else:
@@ -166,10 +187,10 @@ def name_account(db_path, *, account_id=None, nickname='', player_id=None, name=
         if found is not None:
             player_id = found['id']
             ws.upsert_player(player_id, team_id=target['id'], name=name,
-                             position=position or found['position'], actor=actor)
+                             position=position or found['position'], positions=slots, actor=actor)
         else:
             player_id = ws.upsert_player(None, team_id=target['id'], name=name, position=position,
-                                         actor=actor)
+                                         positions=slots, actor=actor)
             created = True
         team_id_final = target['id']
 
