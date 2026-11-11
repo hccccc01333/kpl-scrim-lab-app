@@ -19,7 +19,7 @@ export const featureSections = {
   teams: [['teams','战队档案'], ['teamstyle','战队风格'], ['teamroster','战队阵容'], ['teamtraining','战队训练']],
   players: [['playerarchive','选手档案'], ['players','名单与状态'], ['compare','选手与位置'], ['playercompare','选手对比']],
   heroes: [['heroes','英雄榜'], ['herocompare','英雄对比'], ['combos','英雄组合']],
-  bp: [['bp','BP 概览'], ['teambp','战队 BP'], ['coach','教练档案']],
+  bp: [['bp','BP 概览'], ['teambp','战队 BP'], ['bpcounter','BP 抗针对'], ['coach','教练档案']],
   setup: [['plan','比赛与训练'], ['setup','数据准备'], ['reports','复盘与报告']],
 };
 

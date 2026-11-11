@@ -4,7 +4,8 @@
 
 * `lane_matchups.json` —— 巅峰千强同分路对位，带**超额胜率**
   （实际对位胜率 − 按两个英雄各自基准算出的期望）。正数＝这对组合本身占优。
-* `kpl_combos.json` —— KPL 赛事里同队双人 / 三人组合的场次与胜率。
+* `kpl_combos.json` —— KPL 赛事里同队双人 / 三人 / 整阵容组合的场次与胜率
+  （由本项目 `scripts/crawl_kpl_bp.py` 从 KPL 官方接口自抓生成，带 `teams` 归属）。
 
 口径纪律：
 * 对位只用**大盘**（巅峰千强），绝不用 KPL——KPL 的英雄对位被「强队选强英雄」污染，
@@ -55,12 +56,45 @@ def _lane_pairs():
 
 def _kpl_combos():
     data = _load('kpl_combos.json') or {}
-    pairs, trios = {}, {}
+    pairs, trios, lineups = {}, {}, {}
     for row in data.get('pairs') or []:
         pairs[tuple(row['heroes'])] = row
     for row in data.get('trios') or []:
         trios[tuple(row['heroes'])] = row
-    return data, pairs, trios
+    # 整阵容：key 是 5 个英雄名排序后的元组（老文件没有 lineups 时就是空表）
+    for row in data.get('lineups') or []:
+        heroes = row.get('heroes') or []
+        if len(heroes) == 5:
+            lineups[tuple(sorted(heroes))] = row
+    return data, pairs, trios, lineups
+
+
+def _latest_year(data, *groups):
+    """最近一个赛季年份：组合行里的最大 year，退化为窗口结束年份。"""
+    years = []
+    for group in groups:
+        for row in group:
+            try:
+                years.append(int(row.get('year') or 0))
+            except (TypeError, ValueError):
+                continue
+    years = [year for year in years if year]
+    if years:
+        return max(years)
+    window_end = str(data.get('windowEnd') or '')
+    return int(window_end[:4]) if window_end[:4].isdigit() else None
+
+
+def _lineup_of(heroes, kpl_lineups):
+    """本队 5 人整阵容命中：排序后去 lineups 里查；不足 5 人视为没命中。"""
+    if len(heroes) != 5:
+        return None
+    row = kpl_lineups.get(tuple(heroes))
+    if not row:
+        return None
+    return {'heroes': row.get('heroes') or list(heroes),
+            'n': row.get('n'), 'wins': row.get('wins'), 'wr': row.get('wr'),
+            'year': row.get('year'), 'teams': row.get('teams') or []}
 
 
 def _own_side(detail):
@@ -80,7 +114,7 @@ def for_match(detail):
     if not own_heroes:
         return None
     lane_data, lane_table = _lane_pairs()
-    combo_data, kpl_pairs, kpl_trios = _kpl_combos()
+    combo_data, kpl_pairs, kpl_trios, kpl_lineups = _kpl_combos()
 
     # 1) 对位压制：用营地面板里的位置对齐五路
     by_lane = {}
@@ -119,12 +153,15 @@ def for_match(detail):
             row = kpl_pairs.get((heroes[i], heroes[j]))
             if row:
                 pair_hits.append({'heroes': [heroes[i], heroes[j]], 'n': row['n'],
-                                  'wr': row['wr'], 'year': row.get('year')})
+                                  'wr': row['wr'], 'year': row.get('year'),
+                                  'teams': row.get('teams') or []})
             for k in range(j + 1, len(heroes)):
                 trow = kpl_trios.get((heroes[i], heroes[j], heroes[k]))
                 if trow:
                     trio_hits.append({'heroes': [heroes[i], heroes[j], heroes[k]],
-                                      'n': trow['n'], 'wr': trow['wr'], 'year': trow.get('year')})
+                                      'n': trow['n'], 'wr': trow['wr'],
+                                      'year': trow.get('year'),
+                                      'teams': trow.get('teams') or []})
     pair_hits.sort(key=lambda item: -item['n'])
     trio_hits.sort(key=lambda item: -item['n'])
 
@@ -136,7 +173,8 @@ def for_match(detail):
                 row = kpl_pairs.get((group[i], group[j]))
                 if row:
                     combo_index[f'{group[i]}+{group[j]}'] = {
-                        'n': row['n'], 'wr': row['wr'], 'year': row.get('year')}
+                        'n': row['n'], 'wr': row['wr'], 'year': row.get('year'),
+                        'teams': row.get('teams') or []}
                     combo_index[f'{group[j]}+{group[i]}'] = combo_index[f'{group[i]}+{group[j]}']
 
     # 对手侧的组合，给 BP 复盘做对照
@@ -145,8 +183,15 @@ def for_match(detail):
         for j in range(i + 1, len(fh)):
             row = kpl_pairs.get((fh[i], fh[j]))
             if row:
-                foe_pairs.append({'heroes': [fh[i], fh[j]], 'n': row['n'], 'wr': row['wr']})
+                foe_pairs.append({'heroes': [fh[i], fh[j]], 'n': row['n'],
+                                  'wr': row['wr'], 'teams': row.get('teams') or []})
     foe_pairs.sort(key=lambda item: -item['n'])
+
+    # 3) 整阵容命中：本队 5 个 pick 排序后整套查（顺序不同算同一套）
+    lineup = _lineup_of(heroes, kpl_lineups)
+    latest_year = _latest_year(combo_data, kpl_pairs.values(), kpl_trios.values(),
+                               kpl_lineups.values())
+    total_trios = len(heroes) * (len(heroes) - 1) * (len(heroes) - 2) // 6 if len(heroes) >= 3 else 0
 
     return {
         'schema': 'bp-match-facts-v1',
@@ -156,8 +201,16 @@ def for_match(detail):
                    'lanes': lanes},
         'kpl': {'source': 'kpl', 'sinceYear': combo_data.get('sinceYear'),
                 'games': combo_data.get('games'), 'minGames': combo_data.get('minGames'),
+                'updatedAt': combo_data.get('updatedAt'),
+                'sourceLabel': 'KPL 官方赛事',
+                'windowStart': combo_data.get('windowStart'),
+                'windowEnd': combo_data.get('windowEnd'),
+                'leagueCount': combo_data.get('leagueCount'),
+                'latestYear': latest_year,
                 'pairs': pair_hits[:6], 'trios': trio_hits[:6], 'foePairs': foe_pairs[:4],
                 'hitPairs': len(pair_hits), 'hitTrios': len(trio_hits),
                 'totalPairs': len(heroes) * (len(heroes) - 1) // 2,
-                'comboIndex': combo_index},
+                'totalTrios': total_trios,
+                'comboIndex': combo_index,
+                'lineup': lineup, 'lineupSeen': lineup is not None},
     }

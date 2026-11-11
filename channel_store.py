@@ -16,18 +16,27 @@ SCHEMA = 'kpl-collection-channel-v1'
 BUNDLE_SCHEMA = 'kpl-match-data-v1'
 SOURCES = ('table', 'video', 'screenshot', 'replay', 'camp')
 CORE_FIELDS = ('kills', 'deaths', 'assists', 'gold', 'damage', 'taken', 'participation', 'rating')
-# 营地 battledetail 的 battleStats 已带 B 组终局扩展指标。键名沿用
-# docs/screenshot_fields.md 契约与 studio_analysis.METRICS，不用营地原名，
-# 保证下游跨局聚合能直接消费。这些是「增强字段」：缺失不阻止审核、
-# 不计入 complete/partial，也不参与 coverage 的必填缺项统计。
+# B 组终局扩展指标。键名沿用 docs/screenshot_fields.md 契约与
+# studio_analysis.METRICS，不用营地原名，保证下游跨局聚合能直接消费。
+# 来源有两条，同口径合并：
+# - 营地 battledetail 的 battleStats（killSoldier / monsterCoin / ...）；
+# - 赛后截图对应页的识别结果（输出=damageConversion、生存=takenPerDeath、
+#   发育=jungleGold/cs、团队=control/healing/towerDamage），字段名与截图同名。
+# 这些是「增强字段」：缺失不阻止审核、不计入 complete/partial 与 missing，
+# 但会进 draft.coverage 供采集覆盖展示；bundle.final 的键保持不变。
 CAMP_EXTENDED_FIELDS = ('cs', 'jungleGold', 'control', 'healing',
                         'towerDamage', 'damageConversion', 'takenPerDeath')
 ALL_FIELDS = CORE_FIELDS + CAMP_EXTENDED_FIELDS
 # 营地原生键 → 契约键。hurtTransRate / behurtPerDeath 可能是小数，
 # 统一走 _camp_number 解析，不能按整数处理。
+# 「输出 / 承伤」在契约里的口径是**对英雄输出 / 对英雄承伤**（见 docs/metric_registry.md），
+# 与赛后截图「输出 / 承伤」页、本局十人表一致；营地 totalHurtCnt / totalBehurtCnt
+# 含兵线野怪，拿它进 damage / taken 会让每个选手都和截图/表格对不上。
+# 总伤害仍保留在 camp_details 原始数据里，决策台等直接读营地面板的地方自己取 totalHurtCnt。
 CAMP_STAT_MAP = {
     'killCnt': 'kills', 'deadCnt': 'deaths', 'assistCnt': 'assists',
-    'money': 'gold', 'totalHurtCnt': 'damage', 'totalBehurtCnt': 'taken',
+    'money': 'gold',
+    'totalHeroHurtCnt': 'damage', 'totalBeheroHurtCnt': 'taken',
     'killSoldier': 'cs', 'monsterCoin': 'jungleGold', 'ctrlTime': 'control',
     'healCnt': 'healing', 'buildingDamage': 'towerDamage',
     'hurtTransRate': 'damageConversion', 'behurtPerDeath': 'takenPerDeath',
@@ -62,6 +71,57 @@ def _camp_number(value):
     return int(number) if number.is_integer() else number
 
 
+_DISPLAY_UNIT_RE = re.compile(r'^(-?\d+(?:\.\d+)?)\s*([kK千万wW])\s*$')
+_DISPLAY_PERCENT_RE = re.compile(r'^(-?\d+(?:\.\d+)?)\s*%\s*$')
+
+
+def _display_tolerance(field):
+    """画面读数只保证到显示精度；返回允许的误差（显示档位的半步长/截断宽度）。
+
+    截图和表格草稿保留 ``raw`` 原文，这里只看原文判断精度：
+
+    - ``66.1k`` → 100 一档，四舍五入 → 半步长 50；``1.2万`` → 1000 一档 → 500；
+    - ``48%`` → 整数百分比，既可能四舍五入也可能截断 → 允许 1 个百分点；
+      ``48.5%`` → 允许 0.1；
+    - ``8697`` 这种精确值不设容忍，差 1 仍然算冲突。
+    """
+    raw = str((field or {}).get('raw') or '').strip().replace(',', '')
+    match = _DISPLAY_UNIT_RE.match(raw)
+    if match:
+        number, unit = match.group(1), match.group(2)
+        scale = 1000 if unit in ('k', 'K') else 10000
+        decimals = len(number.split('.')[1]) if '.' in number else 0
+        return scale / (10 ** decimals) / 2
+    match = _DISPLAY_PERCENT_RE.match(raw)
+    if match:
+        number = match.group(1)
+        decimals = len(number.split('.')[1]) if '.' in number else 0
+        return 1 / (10 ** decimals)
+    return 0.0
+
+
+def _same_as_displayed(field, value, key=None):
+    """两个来源是否是同一个数：完全相等，或差距落在画面显示精度内。
+
+    例：截图读 ``66.1k``（66100）与营地面板 ``66056``、``48%`` 与 ``48.1``、
+    ``6.2k`` 与 ``6191`` 都是同一个读数，不记冲突；差一个档位以上才算真不一致。
+    参团率不论原文带不带 ``%``，1 个百分点以内都按同一读数处理。
+    """
+    current = (field or {}).get('value')
+    if current == value:
+        return True
+    if current is None or value is None:
+        return False
+    try:
+        current_number, incoming_number = float(current), float(value)
+    except (TypeError, ValueError):
+        return False
+    tolerance = _display_tolerance(field)
+    if key == 'participation':
+        tolerance = max(tolerance, 1.0)
+    return tolerance > 0 and abs(current_number - incoming_number) <= tolerance
+
+
 def now():
     return datetime.now(timezone.utc).isoformat()
 
@@ -73,6 +133,9 @@ def blank(match=None):
         'id': None,
         'createdAt': now(),
         'updatedAt': now(),
+        # 录入方式：camp = 王者营地链接/同步；ocr = 赛后截图/录屏识别新录入。
+        # 旧通道没有这个键，由 entry_mode() 按已挂素材推断，保持兼容。
+        'entry': {'mode': '', 'primary': ''},
         'match': {
             'date': str(match.get('date') or ''), 'opponent': str(match.get('opponent') or ''),
             'session': str(match.get('session') or ''), 'version': str(match.get('version') or ''),
@@ -102,14 +165,62 @@ def append_log(channel, action, actor=None, detail=None):
     channel['updatedAt'] = now()
 
 
+ENTRY_MODES = ('camp', 'ocr')
+OCR_MISSING = '截图/录屏：七页截图或一段完整录屏，至少先齐一样'
+
+
+def entry_mode(channel):
+    """这条通道走「营地同步」还是「截图/录屏 OCR 新录入」。
+
+    显式 ``entry.mode`` 优先；旧通道没有这个键，按素材推断：有 official 链接
+    就是营地通道，否则已挂截图/录屏就视为 OCR 录入（这样没有营地链接的存量
+    通道不会再被「必采王者营地链接」卡死）。
+    """
+    entry = channel.get('entry') or {}
+    explicit = str(entry.get('mode') or '').strip().lower()
+    if explicit in ENTRY_MODES:
+        return explicit
+    if (channel.get('official') or {}).get('id'):
+        return 'camp'
+    sources = channel.get('sources') or {}
+    screenshot = sources.get('screenshot') or {}
+    video = sources.get('video') or {}
+    if screenshot.get('imageIds') or video.get('files'):
+        return 'ocr'
+    return 'camp'
+
+
+def _ocr_complete_condition(video, page_types):
+    """OCR 录入两条一级素材路径：七页截图齐全，或一段能读出十人阵容的录屏。"""
+    screenshot_ok = len(page_types) >= 7
+    video_ok = len(video.get('files') or []) > 0 and len(video.get('roster') or []) >= 10
+    return screenshot_ok, video_ok
+
+
+def _ocr_missing_message(shot_count, page_types, video):
+    """OCR 通道缺素材时给出下一步动作；缺页时点名缺哪几页。"""
+    if shot_count:
+        detail = f'（截图当前 {min(shot_count, 7)}/7 页'
+        missing_pages = [PAGE_NAMES[page] for page in PAGE_TYPES if page not in page_types]
+        if missing_pages:
+            detail += '，缺：' + '、'.join(missing_pages)
+        detail += '）'
+    elif video.get('files'):
+        detail = f'（录屏只识别出 {len(video.get("roster") or [])}/10 人阵容）'
+    else:
+        detail = ''
+    return OCR_MISSING + detail
+
+
 def source_status(channel):
-    """必采只看营地链接；截图/录屏已降级为选填兜底（营地同步提供同批终局数值）。"""
+    """素材齐备度。营地通道以 official 链接为必采；OCR 录入通道不要求链接。"""
     sources = channel.get('sources') or {}
     table, video, screenshot, replay, camp = [sources.get(key) or {} for key in SOURCES]
     files_video = len(video.get('files') or [])
     page_types = {page.get('pageType') for page in (screenshot.get('group') or {}).get('pages') or []}
     shot_count = len(screenshot.get('imageIds') or [])
     official = bool((channel.get('official') or {}).get('id'))
+    mode = entry_mode(channel)
     statuses = {
         'official': 'completed' if official else 'missing',
         'camp': camp.get('status') or 'missing',
@@ -120,25 +231,36 @@ def source_status(channel):
         'replay': replay.get('status') or 'missing',
     }
     missing = []
-    # 表格按王者营地赛后口径人工抄录，可以单独作为本局的十人面板来源：
-    # 旧局（营地只保留一个月回放）拿不到回放时，不再强制要求 official。
-    table_ok = statuses['table'] in ('parsed', 'completed') and len(table.get('rows') or []) >= 10
-    if not official and not table_ok:
-        missing.append('王者营地：请提取并关联本局网页回放链接')
+    if mode == 'ocr':
+        # OCR 新录入是独立的一等路径：不要求营地链接，截图七页或十人录屏任一即可。
+        screenshot_ok, video_ok = _ocr_complete_condition(video, page_types)
+        if not (screenshot_ok or video_ok):
+            missing.append(_ocr_missing_message(shot_count, page_types, video))
+        required = {key: 0 for key in ('official', 'camp', 'table', 'video', 'screenshot', 'replay')}
+        required_sources = []
     else:
-        # 双合规路径：营地自动流（camp 详情）或传统手动流（七图+录屏）任一即可审核；
-        # 本局十人表校验通过时同样算齐。
-        camp_ok = statuses['camp'] == 'parsed'
-        legacy_ok = statuses['screenshot'] == 'completed' and files_video
-        if not camp_ok and not legacy_ok and not table_ok:
-            missing.append('营地十人面板：在「营地自动同步」后于本页导入；'
-                           '或补齐七张截图与一段录屏，或导入本局十人表')
+        # 表格按王者营地赛后口径人工抄录，可以单独作为本局的十人面板来源：
+        # 旧局（营地只保留一个月回放）拿不到回放时，不再强制要求 official。
+        table_ok = statuses['table'] in ('parsed', 'completed') and len(table.get('rows') or []) >= 10
+        if not official and not table_ok:
+            missing.append('王者营地：请提取并关联本局网页回放链接')
+        else:
+            # 双合规路径：营地自动流（camp 详情）或传统手动流（七图+录屏）任一即可审核；
+            # 本局十人表校验通过时同样算齐。
+            camp_ok = statuses['camp'] == 'parsed'
+            legacy_ok = statuses['screenshot'] == 'completed' and files_video
+            if not camp_ok and not legacy_ok and not table_ok:
+                missing.append('营地十人面板：在「营地自动同步」后于本页导入；'
+                               '或补齐七张截图与一段录屏，或导入本局十人表')
+        required = {'official':1,'camp':0,'table':0,'video':0,'screenshot':0,'replay':0}
+        required_sources = CONTRACT['requiredSources']
     return {'policyVersion': CONTRACT['version'], 'statuses': statuses, 'complete': not missing,
+            'mode': mode,
             'counts': {'official': int(official), 'camp': int(bool(camp.get('gameSeq'))),
                        'table':len(table.get('files') or []), 'video':files_video,
                        'screenshot':shot_count, 'replay':int(bool(replay.get('replayId')))},
-            'required': {'official':1,'camp':0,'table':0,'video':0,'screenshot':0,'replay':0},
-            'requiredSources': CONTRACT['requiredSources'], 'optionalSources': CONTRACT['optionalSources'],
+            'required': required,
+            'requiredSources': required_sources, 'optionalSources': CONTRACT['optionalSources'],
             'missing':missing}
 
 
@@ -172,6 +294,37 @@ def update_match(channel, values, actor=None):
     rebuild(channel)
 
 
+def _side_opposite(side):
+    return 'right' if side == 'left' else 'left' if side == 'right' else ''
+
+
+def derive_winner(own_side, result):
+    """按「我方阵营 + 赛后页胜负」推出胜方：win→我方，loss→对面。"""
+    result = str(result or '').strip().lower()
+    if own_side not in ('left', 'right') or result not in ('win', 'loss'):
+        return ''
+    return own_side if result == 'win' else _side_opposite(own_side)
+
+
+def _match_gametime(match, group_match):
+    """采集页行展示兼容键 gametime：'MM-DD HH:MM'（没读到时间就只写日期）。"""
+    date = str((match or {}).get('date') or (group_match or {}).get('date') or '').strip()
+    clock = str((group_match or {}).get('time') or '').strip()
+    full = re.fullmatch(r'(\d{4})-(\d{2})-(\d{2})', date)
+    month_day = f'{full.group(2)}-{full.group(3)}' if full else date
+    if not month_day:
+        return clock
+    return f'{month_day} {clock}' if clock else month_day
+
+
+def _match_gameresult(match):
+    """采集页行展示兼容键 gameresult：我方胜=1、我方负=2、未知=0。"""
+    own_side, winner = (match or {}).get('ownSide'), (match or {}).get('winner')
+    if own_side in ('left', 'right') and winner in ('left', 'right'):
+        return 1 if winner == own_side else 2
+    return 0
+
+
 def attach_screenshot(channel, group, image_ids, actor=None):
     invalidate_review(channel, actor)
     ids = [str(value) for value in image_ids]
@@ -181,13 +334,36 @@ def attach_screenshot(channel, group, image_ids, actor=None):
     source.update({'status': 'parsed', 'imageIds': ids, 'group': group,
                    'summary': _screenshot_summary(group), 'uploadedAt': now(), 'parsedAt': now()})
     match = group.get('match') or {}
-    if match.get('date') and not channel['match'].get('date'):
-        channel['match']['date'] = match['date']
-    if match.get('durationSec') and not channel['match'].get('durationSec'):
-        channel['match']['durationSec'] = match['durationSec']
-    scores = channel['match'].get('scores') or {}
-    if match.get('scores') and not any(scores.get(key) is not None for key in ('left', 'right')):
-        channel['match']['scores'] = match['scores']
+    channel_match = channel.setdefault('match', {})
+    if match.get('date') and not channel_match.get('date'):
+        channel_match['date'] = match['date']
+    if match.get('durationSec') and not channel_match.get('durationSec'):
+        channel_match['durationSec'] = match['durationSec']
+    if match.get('mode') and not channel_match.get('mode'):
+        channel_match['mode'] = str(match['mode'])
+    # 赛后截图合并结果的比分键是 score（左/右双列），此前误读成 scores，
+    # 导致比分从来没写进 channel.match.scores。
+    score = match.get('score') or {}
+    scores = channel_match.get('scores') or {}
+    if (score.get('left') is not None or score.get('right') is not None) \
+            and not any(scores.get(key) is not None for key in ('left', 'right')):
+        channel_match['scores'] = {'left': score.get('left'), 'right': score.get('right')}
+    if entry_mode(channel) == 'ocr':
+        # 王者营地赛后截图左列 = 我方。没显式指定时按左列补 POV，再按胜负推胜方；
+        # 只补空值，不覆盖人工/营地已写的阵营与胜负。
+        if not channel_match.get('ownSide'):
+            channel_match['ownSide'] = 'left'
+        if not channel_match.get('winner'):
+            winner = derive_winner(channel_match.get('ownSide'), match.get('result'))
+            if winner:
+                channel_match['winner'] = winner
+    # 采集流水按 gametime / gameresult 展示每行；只补空值。
+    if not channel_match.get('gametime'):
+        gametime = _match_gametime(channel_match, match)
+        if gametime:
+            channel_match['gametime'] = gametime
+    if channel_match.get('gameresult') in (None, ''):
+        channel_match['gameresult'] = _match_gameresult(channel_match)
     append_log(channel, 'attach-screenshot', actor, {'imageIds': ids, 'pages': len(group.get('pages') or [])})
     rebuild(channel)
 
@@ -312,10 +488,13 @@ def attach_video(channel, file_info, report, actor=None):
     lineups = report.get('lineups') or {}
     roster = []
     for camp in ('blue', 'red'):
-        for player in lineups.get(camp, []):
-            if player.get('hero'):
-                roster.append({'hero': player['hero'], 'nickname': player.get('nickname'),
-                               'camp': camp, 'slot': player.get('slot')})
+        for index, player in enumerate(lineups.get(camp) or []):
+            if not player.get('hero'):
+                continue
+            # 部分引擎不给 slot：按加载页行序（阵营内 0–4）保留槽位，草稿才能对齐。
+            slot = player.get('slot')
+            roster.append({'hero': player['hero'], 'nickname': player.get('nickname'),
+                           'camp': camp, 'slot': slot if slot is not None else index})
     source.update({'status': 'completed', 'required': 1,
                    'roster': roster,
                    'process': {
@@ -327,6 +506,12 @@ def attach_video(channel, file_info, report, actor=None):
                    'warnings': report.get('warnings') or [],
                    'summary': {'files': len(files), 'required': 1,
                                'heroes': len(roster), 'coverage': report.get('coverage') or {}}})
+    # 录屏 POV 阵营 = 本队阵营：blue → 截图左侧，red → 右侧。只补空值，
+    # 不覆盖营地/人工已确认的 ownSide。
+    pov = report.get('pov') or {}
+    camp = str(pov.get('camp') or '').strip().lower()
+    if camp in ('blue', 'red') and not channel.setdefault('match', {}).get('ownSide'):
+        channel['match']['ownSide'] = 'left' if camp == 'blue' else 'right'
     append_log(channel, 'attach-video', actor, {'file': file_info.get('name'), 'files': len(files)})
     rebuild(channel)
 
@@ -449,11 +634,14 @@ def _build_draft(channel):
     players = []
     for row in group.get('players') or []:
         fields = {}
-        for key in CORE_FIELDS:
+        for key in ALL_FIELDS:
             if key == 'rating':
                 # Ratings live at player level in postgame_ocr, not in fields.
                 field = row.get('rating')
             else:
+                # 截图字段名与契约键：damage/taken 对应输出页/生存页的
+                # damageDealt/damageTaken，其余扩展指标（cs/jungleGold/...）
+                # 截图直接同名。
                 source_key = {'damage': 'damageDealt', 'taken': 'damageTaken'}.get(key, key)
                 field = (row.get('fields') or {}).get(source_key)
             if field and field.get('value') is not None:
@@ -497,7 +685,9 @@ def _build_draft(channel):
     conflicts = []
     for player in players:
         conflicts.extend(player.get('conflicts') or [])
-    coverage = {key: sum(1 for player in players if player['fields'].get(key)) for key in CORE_FIELDS}
+    # 覆盖统计含扩展指标（截图/营地任一来源有值即计入）；缺失清单仍只看
+    # hero + 核心必填，扩展字段缺了不挡审核。
+    coverage = {key: sum(1 for player in players if player['fields'].get(key)) for key in ALL_FIELDS}
     coverage['hero'] = sum(1 for player in players if player.get('hero'))
     missing = []
     for key in ('hero',) + CORE_FIELDS:
@@ -720,7 +910,10 @@ def _merge_camp(players, channel):
             if key not in ALL_FIELDS or value is None:
                 continue
             current = target['fields'].get(key)
-            if current and current.get('value') != value and current.get('source') in ('screenshot', 'table'):
+            # 显示精度内的差异（66.1k ↔ 66056、48% ↔ 48.1）不是冲突；
+            # 真不一致才留痕，并把来源值都写明（营地值原先没带来源标签）。
+            if (current and current.get('source') in ('screenshot', 'table')
+                    and not _same_as_displayed(current, value, key)):
                 conflict = {'side': target['side'], 'slot': target['slot'], 'field': key,
                             'camp': value}
                 conflict[current.get('source')] = current.get('value')
@@ -757,21 +950,55 @@ def _merge_table(players, channel):
                 target['fields'][key] = {'value': value, 'raw': metric.get('raw'),
                                          'source': 'table', 'confidence': None}
                 target['sources'] = list(dict.fromkeys(target['sources'] + ['table']))
-            elif current.get('value') != value:
+            elif not _same_as_displayed(current, value, key):
+                # 表格是精确值，截图可能只有 8.7k / 48% 的显示精度；同屏读数不算冲突。
                 target['conflicts'].append({'side': target['side'], 'slot': target['slot'], 'field': key,
                                             'screenshot': current.get('value'), 'table': value})
 
 
+def _video_roster_slots(roster):
+    """录屏十人 roster 的阵营内槽位：优先行自带 slot，缺省按该阵营出现顺序。"""
+    counters = {'blue': 0, 'red': 0}
+    result = []
+    for item in roster:
+        camp = item.get('camp')
+        order = counters.get(camp, 0)
+        counters[camp] = order + 1
+        slot = item.get('slot')
+        result.append((item, slot if slot is not None else order))
+    return result
+
+
 def _merge_video_identity(players, channel):
     roster = (channel['sources'].get('video') or {}).get('roster') or []
+    # 1) 已有英雄、缺昵称的行：按英雄名从 roster 补昵称（截图/表格补采场景）。
     for player in players:
-        if player.get('nickname'):
+        if player.get('nickname') or not player.get('hero'):
             continue
         match = next((item for item in roster if item.get('hero')
                       and _normalize_name(item['hero']) == _normalize_name(player.get('hero'))), None)
         if match and match.get('nickname'):
             player['nickname'] = match['nickname']
             player['sources'] = list(dict.fromkeys(player['sources'] + ['video']))
+    # 2) 完全没有身份的空行（录屏新录入时没有截图组）：按 roster 的阵营 + 槽位
+    #    补英雄/昵称。只填空行，不覆盖截图/表格/阵容页已确认的身份。
+    by_side_slot = {}
+    for item, slot in _video_roster_slots(roster):
+        side = _side_from_camp(item.get('camp'))
+        if side and item.get('hero') and (side, slot) not in by_side_slot:
+            by_side_slot[(side, slot)] = item
+    for player in players:
+        if player.get('hero') or player.get('nickname'):
+            continue
+        item = by_side_slot.get((player.get('side'), player.get('slot')))
+        if item is None:
+            continue
+        player['hero'] = item['hero']
+        player['heroStatus'] = 'exact'
+        player['heroSource'] = 'video'
+        if item.get('nickname'):
+            player['nickname'] = item['nickname']
+        player['sources'] = list(dict.fromkeys(player['sources'] + ['video']))
 
 
 def _replay_target(players, item, side):
@@ -1027,11 +1254,15 @@ def bundle(channel):
 
 
 def _bundle_warnings(channel):
+    """已入库比赛只留「字段缺失」这类复核可见性提示。
+
+    跨来源冲突是采集/复核阶段的事（草稿 ``draft.conflicts`` 仍保留在通道里，
+    供工作台核对），不再写进单局数据包：入库后的对局页只做复盘，不重复展示
+    采集阶段的来源冲突。显示精度的差异（66.1k ↔ 66056）此前被误报成冲突，
+    根因已在 ``_merge_camp`` / ``_merge_table`` 里修掉。
+    """
     warnings = []
     draft = channel.get('draft') or {}
-    for item in draft.get('conflicts') or []:
-        warnings.append(f'{item.get("side")}{int(item.get("slot") or 0) + 1} {item.get("field")} 冲突：'
-                        f'截图 {item.get("screenshot")} / 表格 {item.get("table")}')
     for item in draft.get('missing') or []:
         warnings.append(f'{item.get("label")} 缺失 {item.get("missing")}/10')
     return warnings

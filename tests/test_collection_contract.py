@@ -111,7 +111,14 @@ class CollectionContractTests(unittest.TestCase):
     def test_direct_save_cannot_bypass_source_gate(self):
         channel=complete_collection(c.blank());channel['id']='test'
         c.set_review(channel,'tester')
+        # 去掉营地来源，并把截图/录屏也清空：剩下一条没有任何合规材料的 camp 通道，
+        # bundle 必须仍然拒绝（save 不能绕过必采门禁）。
+        # 注意：只 pop official 而不清素材，现在会按 OCR 新录入通道识别为合规，
+        # 那是另一条路径的正常行为，见 tests/test_channel_entry_api.py。
         channel.pop('official')
+        channel['sources']['screenshot'].update({'imageIds': [], 'group': None, 'status': 'missing'})
+        channel['sources']['video'].update({'files': [], 'roster': [], 'status': 'missing'})
+        c.rebuild(channel)
         with self.assertRaisesRegex(ValueError,'王者营地'):
             c.bundle(channel)
 

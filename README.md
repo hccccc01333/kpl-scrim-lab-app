@@ -1,10 +1,10 @@
-<div align="center">
+﻿<div align="center">
   <img src="docs/images/logo.svg" width="74" height="74" alt="KPL 赛训数据平台">
   <h1>KPL 赛训数据平台</h1>
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
 
   <p>
-    <img alt="版本" src="https://img.shields.io/badge/version-1.5.32-176B69?style=flat-square&labelColor=0F2E29">
+    <img alt="版本" src="https://img.shields.io/badge/version-1.6.2-176B69?style=flat-square&labelColor=0F2E29">
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
     <img alt="许可" src="https://img.shields.io/badge/license-AGPL--3.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
@@ -142,12 +142,12 @@
 ### 两条合规路径
 
 <p align="center">
-  <img src="docs/images/pipeline.png" width="700" alt="营地主路径与截图录屏兜底路径汇合到同一份草稿">
+  <img src="docs/images/pipeline.png" width="700" alt="营地主路径与截图录屏路径汇合到同一份草稿">
 </p>
 
-- **营地路径（主）**：教练号扫码授权后，按选手增量拉取十人面板 `battledetail`。BP、十人 KDA / 经济 / 输出 / 承伤 / 参团，以及补刀、野怪经济、治疗、控制等扩展指标直接进草稿，不经过 OCR。
-- **兜底路径**：七页结算截图 + 一段整局录屏，走本机 OCR。适合营地撤掉详情的老对局，或暂时没有授权的情况。
-- **唯一必采**是本局营地链接；审核门槛二选一：营地面板 **或** 七图 + 录屏报告。表格与回放文件始终选填。
+- **营地路径（窗口内主路径）**：教练号扫码授权后，按选手增量拉取十人面板 `battledetail`。BP、十人 KDA / 经济 / 输出 / 承伤 / 参团，以及补刀、野怪经济、治疗、控制等扩展指标直接进草稿，不经过 OCR。必须关联本局营地链接。
+- **截图 / 录屏路径（OCR 新录入）**：王者营地只保留约一个月对局详情，更早的局没有通道可挂——在截图 OCR / 录屏 OCR 页直接从一组七页截图或一段录屏报告**新建一局并录入**。七页截图齐全，或一段十人阵容完整的录屏报告，任一即可建档、审核、保存；不要求营地链接。
+- **补采**是另一件事：通道已经存在（通常是营地同步建的），只是缺截图 / 录屏素材，在同一个页面把素材补到已有对局即可。表格与回放文件始终选填。
 
 两条路径汇合在同一份草稿上，审核通过后写入单局数据包 `kpl-match-data-v1`；分析页只读它，不再回头改通道。
 
@@ -155,7 +155,7 @@
 
 一个通道能不能保存，只看两件事：
 
-- **必采齐没齐**：营地链接 + 双合规之一。缺什么，缺失清单点明到「缺几位、缺哪页」。
+- **必采齐没齐**：营地通道要求营地链接 + 双合规之一；OCR 新录入的通道要求七页截图或一段完整录屏之一。缺什么，缺失清单点明到「缺几位、缺哪页」。
 - **审没审**：审核带复核人、时间与 `before/after` 日志；**任何来源变更都会让审核失效**，必须重审。
 
 来源级状态是 `missing / parsed / partial / completed / failed`。这条规则没有例外——
@@ -207,8 +207,8 @@
 | 模块 | 入口 | 能做什么 |
 | :-- | :-- | :-- |
 | 首页 | `#overview` | 最近一局、胜负与时长、经济走势、英雄出场；右上角切换浅色 / 深色 |
-| 采集 | `#ingest` | 营地连接与增量拉取、待审查列表、缺失值审查、老对局补录 |
-| 截图 / 录屏 | `#capture` | 七页截图规范与逐页识别、录屏抽帧识别、识别结果挂到某一局 |
+| 采集 | `#ingest` | 营地连接与增量拉取、待审查列表、缺失值审查、老局新录入一局 |
+| 截图 / 录屏 | `#capture` | 七页截图规范与逐页识别、录屏抽帧识别；补采到已有对局或直接新建一局 |
 | 对局 | `#matches` | 对局档案、跨局分析、智能找局、精选对局、训练纪录、版本对比 |
 | 战队 | `#teams` | 战队档案、战队风格、战队阵容、战队训练 |
 | 选手 | `#players` | 选手档案、名单与状态、选手与位置、选手对比 |
@@ -284,7 +284,7 @@ python scripts/seed_demo_data.py   # 另一个终端：灌入 12 场合成演示
 3. **对局 → 对局档案**：点开刚保存的那局，先看结论卡，再看阶段经济与掉点。
 4. **选手 / 英雄**：按位置或英雄看趋势，用「对比」把两名选手并排摆。
 
-营地拿不到的老对局，走「补录一局（截图 / 录屏）」，路径同上，只是识别改在本机做。
+营地拿不到的老对局（超过一个月、选手隐藏战绩等），走「截图 OCR / 录屏 OCR → 新建一局并录入」，路径同上，只是识别改在本机做、不要求营地链接。已有对局缺素材时用「补采到已有对局」，两者不是一回事。
 
 ### 可选组件
 
@@ -408,7 +408,7 @@ CI 分两条流水线：**test** 在 3.11 / 3.12 上跑全量用例与部署自�
 | [CHANGELOG.md](CHANGELOG.md) | 逐版本改动：修了什么、加了什么 |
 | [SECURITY.md](SECURITY.md) | 安全问题怎么报 |
 | [v3/README.md](v3/README.md) | V3 前端入口、页面组织与当前边界 |
-| [采集规范（离线页）](web/collection-guide.html) | 老对局补录：七页截图 + 录屏怎么拍 |
+| [采集规范（离线页）](web/collection-guide.html) | 补采 vs 新录入、老局七页截图或录屏怎么拍 |
 | [七页截图说明](web/capture-guide/README.md) | 每张截图提供哪些字段、哪些读不出来 |
 | [素材来源](resources/SOURCES.md) | 英雄与装备素材的来源、许可与使用边界 |
 

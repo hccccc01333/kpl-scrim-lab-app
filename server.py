@@ -16,6 +16,7 @@ import threading
 import time
 import uuid
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from urllib import parse as url_parse
 
@@ -37,7 +38,7 @@ import media_tools
 import focus as focus_module
 import camp_replay
 from camp_time import camp_times
-from collection_contract import validate_sheet
+from collection_contract import PAGE_NAMES, PAGE_TYPES, validate_sheet
 import channel_store
 import mimo_ocr
 import ocr_jobs
@@ -2660,19 +2661,40 @@ def _save_channel(c, channel, actor=None, action=None):
     return channel
 
 
-def _channel_summary(channel):
+def _channel_summary(channel, recordings=None):
+    sources = channel.get('sources') or {}
+    screenshot = sources.get('screenshot') or {}
+    video = sources.get('video') or {}
+    entry = channel.get('entry') or {}
+    # 录像身份不能只看视频 sha：旧流程挂的是报告 JSON 的 sha/name，
+    # 这里按 id/sha/文件名三线索映射回本地录像，页面才能标「已补采」。
+    known_recordings = recording_store.identities(recordings)
+    recording_ids = []
+    for file in video.get('files') or []:
+        matched = recording_store.match_file(file, known_recordings)
+        if matched and matched not in recording_ids:
+            recording_ids.append(matched)
     return {
         'id': channel.get('id'), 'revision': channel.get('revision'),
+        # 录入方式与已用素材，供前端标记「这组素材已经补采过」、避免重复建档。
+        'entry': {'mode': channel_store.entry_mode(channel),
+                  'primary': str(entry.get('primary') or '')},
         'match': channel.get('match') or {}, 'sourceStatus': channel_store.source_status(channel),
         'coverage': (channel.get('draft') or {}).get('coverage') or {},
         'missing': (channel.get('draft') or {}).get('missing') or [],
         'review': channel.get('review') or {}, 'saved': channel.get('saved') or {},
+        'screenshotImageIds': [str(value) for value in screenshot.get('imageIds') or []],
+        'recordingShas': [str(file.get('sha256')) for file in video.get('files') or []
+                          if file.get('sha256')],
+        'recordingIds': recording_ids,
         'updatedAt': channel.get('updatedAt'), 'changeLog': channel.get('changeLog') or [],
     }
 
 
 @app.get('/api/channels')
 def channels_list():
+    # 录像库只读一遍，避免每条通道都重复扫盘。
+    recordings = recording_store.list_recordings()
     with db() as c:
         rows = c.execute('SELECT * FROM channels ORDER BY updated_at DESC').fetchall()
     result = []
@@ -2682,7 +2704,7 @@ def channels_list():
         except (TypeError, ValueError):
             continue
         channel['revision'] = row['revision']
-        result.append(_channel_summary(channel))
+        result.append(_channel_summary(channel, recordings))
     return {'schema': channel_store.SCHEMA, 'channels': result}
 
 
@@ -2691,7 +2713,15 @@ def channel_create(value: dict):
     match = value.get('match') if isinstance(value.get('match'), dict) else value
     if not any(str(match.get(key) or '').strip() for key in ('date', 'opponent', 'session')):
         raise HTTPException(400, '请至少填写比赛日期、对手或训练分组')
+    entry = value.get('entry')
     channel = channel_store.blank(match)
+    if entry is not None:
+        if not isinstance(entry, dict):
+            raise HTTPException(400, '录入方式格式错误：应为 {"mode": "camp" 或 "ocr"}')
+        mode = str(entry.get('mode') or '').strip().lower()
+        if mode not in channel_store.ENTRY_MODES:
+            raise HTTPException(400, '录入方式只能是 camp（王者营地同步）或 ocr（截图/录屏录入）')
+        channel['entry'] = {'mode': mode, 'primary': str(entry.get('primary') or '').strip()}
     channel['id'] = uuid.uuid4().hex
     channel['_createdAt'] = time.time()
     channel_store.append_log(channel, 'create', value.get('actor'), {'match': channel.get('match')})
@@ -2722,30 +2752,324 @@ def channel_update(channel_id: str, value: dict):
         raise HTTPException(400, str(error))
 
 
-@app.post('/api/channels/{channel_id}/screenshot')
-def channel_attach_screenshot(channel_id: str, value: dict):
-    image_ids = value.get('imageIds')
-    if not isinstance(image_ids, list) or not image_ids:
-        raise HTTPException(400, '请选择同一组截图')
+def _postgame_results(c, image_ids):
+    """按选定顺序取分页识别结果；缺结果的图片给可操作提示。"""
+    ids = [str(value) for value in image_ids]
+    if not ids:
+        raise HTTPException(400, '请选择同一组赛后截图')
+    placeholders = ','.join('?' for _ in ids)
+    rows = c.execute(f'SELECT * FROM postgame_images WHERE id IN ({placeholders})', tuple(ids)).fetchall()
+    found = {str(row['id']): row for row in rows}
+    missing = [image_id for image_id in ids if image_id not in found]
+    if missing:
+        raise HTTPException(400, f'部分截图还没有分页识别结果（{len(missing)} 张未识别）；'
+                                 '请先完成截图分页识别，再重新选择')
+    results = []
+    for image_id in ids:
+        row = found[image_id]
+        result = json.loads(row['result'])
+        result['imageId'] = row['id']
+        result['imageName'] = None
+        results.append(result)
+    return results
+
+
+def _channel_bodies(c):
+    rows = c.execute('SELECT id, body FROM channels').fetchall()
+    channels = []
+    for row in rows:
+        try:
+            channel = json.loads(row['body'])
+        except (TypeError, ValueError):
+            continue
+        if isinstance(channel, dict):
+            channels.append(channel)
+    return channels
+
+
+def _channel_using_images(c, image_ids):
+    """已把「全部」所选截图挂进 screenshot.imageIds 的通道。
+
+    只拦「整组都已被同一条通道用过」的重复录入；部分重叠允许（新组可能复用
+    个别截图），避免把替换重传误判成重复。
+    """
+    wanted = {str(value) for value in image_ids}
+    if not wanted:
+        return None
+    for channel in _channel_bodies(c):
+        used = {str(value) for value in
+                ((channel.get('sources') or {}).get('screenshot') or {}).get('imageIds') or []}
+        if wanted <= used:
+            return channel
+    return None
+
+
+def _channel_using_recording(c, identities, recording_id):
+    """通道里是否已经挂过这段录像。
+
+    三线索：file.recordingId / file.sha256（视频）/ file.name（旧流程导出的
+    报告 JSON 文件名）。旧数据只有文件名能和录像 meta 对上。
+    """
+    if not recording_id:
+        return None
+    for channel in _channel_bodies(c):
+        for file in ((channel.get('sources') or {}).get('video') or {}).get('files') or []:
+            if recording_store.match_file(file, identities) == recording_id:
+                return channel
+    return None
+
+
+def _describe_channel(channel):
+    """409 提示里带上对方是哪一局，方便教练直接找过去补采。"""
+    match = channel.get('match') or {}
+    labels = [str(match.get(key) or '').strip() for key in ('date', 'session', 'opponent')]
+    label = ' · '.join(value for value in labels if value)
+    if not label:
+        label = '已有对局'
+    return f'{label}（通道 {channel.get("id")}）'
+
+
+def _screenshot_entry_match(value, group):
+    """新建 OCR 通道时的比赛级字段：body 优先，其次截图「战绩」页。"""
+    group_match = group.get('match') or {}
+    date = str(value.get('date') or '').strip() or str(group_match.get('date') or '').strip()
+    session = str(value.get('session') or '').strip()
+    opponent = str(value.get('opponent') or '').strip()
+    if not (date or session or opponent):
+        raise HTTPException(400, '请至少填写比赛日期、对手或训练分组')
+    own_side = str(value.get('ownSide') or '').strip().lower()
+    if own_side not in ('left', 'right'):
+        own_side = 'left'  # 王者营地赛后截图左列 = 我方
+    winner = str(value.get('winner') or '').strip().lower()
+    if winner not in ('left', 'right'):
+        winner = channel_store.derive_winner(own_side, group_match.get('result'))
+    score = group_match.get('score') or {}
+    return {'date': date, 'session': session, 'opponent': opponent,
+            'scores': {'left': score.get('left'), 'right': score.get('right')},
+            'durationSec': group_match.get('durationSec'),
+            'mode': group_match.get('mode') or '',
+            'ownSide': own_side, 'winner': winner or ''}
+
+
+def _recording_match_date(report):
+    """录屏报告里的日期 → YYYY-MM-DD。
+
+    回放列表只显示 MM-DD HH:MM（没有年份），按当前年份补全；1 月录到 12 月的
+    局会把年份回退一年，避免出现未来的日期。
+    """
+    match = report.get('match') or {}
+    field = match.get('date') or {}
+    value = field.get('value') if isinstance(field, dict) else field
+    text, month, day = '', None, None
+    if isinstance(value, dict):
+        text = str(value.get('text') or '').strip()
+        month, day = value.get('month'), value.get('day')
+    elif value:
+        text = str(value).strip()
+    full = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})', text)
+    if full:
+        return f'{int(full.group(1)):04d}-{int(full.group(2)):02d}-{int(full.group(3)):02d}'
+    if not (month and day):
+        partial = re.search(r'(\d{1,2})-(\d{1,2})', text)
+        if partial:
+            month, day = int(partial.group(1)), int(partial.group(2))
+    try:
+        month, day = int(month), int(day)
+    except (TypeError, ValueError):
+        return ''
+    today = datetime.now()
+    try:
+        moment = datetime(today.year, month, day)
+    except ValueError:
+        return ''
+    if (moment - today).days > 1:
+        try:
+            moment = datetime(today.year - 1, month, day)
+        except ValueError:
+            return ''
+    return moment.strftime('%Y-%m-%d')
+
+
+def _recording_mode(report):
+    match = report.get('match') or {}
+    field = match.get('mode') or {}
+    value = field.get('value') if isinstance(field, dict) else field
+    return str(value or '').strip()
+
+
+def _recording_duration(report):
+    try:
+        number = float(report.get('replayDuration'))
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or not 0 < number <= 24 * 3600:
+        return None
+    return int(round(number))
+
+
+def _recording_own_side(report):
+    pov = report.get('pov') or {}
+    camp = str(pov.get('camp') or '').strip().lower()
+    return {'blue': 'left', 'red': 'right'}.get(camp, '')
+
+
+def _recording_file_info(meta, recording_id):
+    return {'name': str(meta.get('name') or '录屏.mp4'),
+            'size': meta.get('size'),
+            'sha256': str(meta.get('sha256') or ''),
+            'recordingId': str(recording_id)}
+
+
+@app.post('/api/channels/from-screenshots')
+def channel_from_screenshots(value: dict):
+    """用一整组七页赛后截图「新录入一局」（不挂靠已有营地通道）。"""
+    raw_ids = value.get('imageIds')
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(400, '请选择同一局的七张赛后截图')
+    image_ids = [str(item) for item in raw_ids]
+    if len(set(image_ids)) != len(image_ids):
+        raise HTTPException(400, '这批截图有重复，请重新选择')
     with db() as c:
-        channel = _load_channel(c, channel_id)
-        placeholders = ','.join('?' for _ in image_ids)
-        rows = c.execute(f'SELECT * FROM postgame_images WHERE id IN ({placeholders})', tuple(image_ids)).fetchall()
-        if len(rows) != len(set(image_ids)):
-            raise HTTPException(400, '部分截图还没有分页识别结果')
-        results = []
-        for row in rows:
-            result = json.loads(row['result'])
-            result['imageId'] = row['id']
-            result['imageName'] = None
-            results.append(result)
+        results = _postgame_results(c, image_ids)
         groups = merge_postgame_pages(results)
         if len(groups) != 1:
-            raise HTTPException(400, '所选截图属于不同比赛组，请只选同一局')
+            raise HTTPException(400, f'所选截图不是同一局（识别结果分成 {len(groups)} 组）；'
+                                     '请只选同一局的七页截图')
         group = groups[0]
+        present = {page.get('pageType') for page in group.get('pages') or []}
+        missing_pages = [PAGE_NAMES[page] for page in PAGE_TYPES if page not in present]
+        if missing_pages:
+            raise HTTPException(400, '七页齐全才能新建一局；缺：' + '、'.join(missing_pages))
         if len(group.get('players') or []) != 10:
-            raise HTTPException(400, '该截图组不足 10 人')
-        channel_store.attach_screenshot(channel, group, image_ids, value.get('actor'))
+            raise HTTPException(400, f'这组截图识别出 {len(group.get("players") or [])} 人，'
+                                     '不是完整十人；请检查是否漏页或截图中断')
+        used = _channel_using_images(c, image_ids)
+        if used is not None:
+            raise HTTPException(409, f'这些截图已经全部挂到 {_describe_channel(used)}，'
+                                     '不能重复新建；如需补采请直接在该局继续上传。')
+        match_info = _screenshot_entry_match(value, group)
+        channel = channel_store.blank(match_info)
+        channel['entry'] = {'mode': 'ocr', 'primary': 'screenshot'}
+        channel['id'] = uuid.uuid4().hex
+        channel['_createdAt'] = time.time()
+        channel_store.append_log(channel, 'create', value.get('actor'),
+                                 {'entry': 'ocr', 'primary': 'screenshot'})
+        try:
+            channel_store.attach_screenshot(channel, group, image_ids, value.get('actor'))
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        _save_channel(c, channel)
+        return channel
+
+
+@app.post('/api/channels/from-recording')
+def channel_from_recording(value: dict):
+    """用一段已识别的录屏「新录入一局」（不挂靠已有营地通道）。"""
+    recording_id = str(value.get('recordingId') or '').strip()
+    if not recording_id:
+        raise HTTPException(400, '请选择要新建对局的录屏')
+    try:
+        meta = recording_store.read_meta(recording_id)
+    except recording_store.RecordingError as error:
+        raise HTTPException(404, str(error))
+    try:
+        report = recording_store.read_report(recording_id)
+    except recording_store.RecordingError:
+        raise HTTPException(409, '这段录屏还没有识别报告：请先在「录屏识别」里完成识别，再新建对局')
+    roster = [row for camp in ('blue', 'red')
+              for row in ((report.get('lineups') or {}).get(camp) or [])
+              if row.get('hero')]
+    if len(roster) < 10:
+        raise HTTPException(400, f'录像没有识别出完整十人阵容（当前 {len(roster)} 人）；'
+                                 '请重新识别录屏，或改用七张赛后截图新建一局')
+    date = str(value.get('date') or '').strip() or _recording_match_date(report)
+    session = str(value.get('session') or '').strip()
+    opponent = str(value.get('opponent') or '').strip()
+    if not (date or session or opponent):
+        raise HTTPException(400, '请至少填写比赛日期、对手或训练分组')
+    own_side = str(value.get('ownSide') or '').strip().lower()
+    if own_side not in ('left', 'right'):
+        own_side = _recording_own_side(report)
+    winner = str(value.get('winner') or '').strip().lower()
+    if winner not in ('left', 'right'):
+        winner = ''  # 录像没有终局胜负，只能由教练在 body 里指定
+    with db() as c:
+        known = recording_store.identities(recording_store.list_recordings())
+        used = _channel_using_recording(c, known, recording_id)
+        if used is not None:
+            raise HTTPException(409, f'这段录屏已经补采到 {_describe_channel(used)}，'
+                                     '不能重复新建；如需补采请直接在该局继续上传。')
+        match_info = {'date': date, 'session': session, 'opponent': opponent,
+                      'scores': {'left': None, 'right': None},
+                      'mode': _recording_mode(report),
+                      'durationSec': _recording_duration(report),
+                      'ownSide': own_side, 'winner': winner}
+        channel = channel_store.blank(match_info)
+        channel['entry'] = {'mode': 'ocr', 'primary': 'video'}
+        channel['id'] = uuid.uuid4().hex
+        channel['_createdAt'] = time.time()
+        channel_store.append_log(channel, 'create', value.get('actor'),
+                                 {'entry': 'ocr', 'primary': 'video',
+                                  'recordingId': recording_id})
+        channel_store.attach_video(channel, _recording_file_info(meta, recording_id),
+                                   report, value.get('actor'))
+        _save_channel(c, channel)
+        return channel
+
+
+@app.post('/api/channels/{channel_id}/screenshot')
+def channel_attach_screenshot(channel_id: str, value: dict):
+    """补采截图：默认把已有 imageIds 与本次选择做并集后整体重新识别/合并。
+
+    教练可以先传 3 页、再传剩下 4 页；body.replace=true 时只用本次选择替换
+    （整组重传）。并集跨了两局时，如果「仅本次选择」能组成完整十人局，按
+    替换处理；否则提示改用 replace=true。
+    """
+    raw_ids = value.get('imageIds')
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(400, '请选择同一组截图')
+    incoming = [str(item) for item in raw_ids]
+    if len(set(incoming)) != len(incoming):
+        raise HTTPException(400, '本次选择的截图有重复，请重新选择')
+    replace = bool(value.get('replace'))
+    with db() as c:
+        channel = _load_channel(c, channel_id)
+        existing = [str(item) for item in
+                    ((channel.get('sources') or {}).get('screenshot') or {}).get('imageIds') or []]
+        # 本次选择排前面：postgame_ocr 合并同页型字段是「先到先得」，重拍/重传的
+        # 新图必须盖过旧值，否则补采看起来成功、数据却没更新。
+        ids = incoming if replace else list(dict.fromkeys(incoming + existing))
+        results = _postgame_results(c, ids)
+        groups = merge_postgame_pages(results)
+        if len(groups) == 1 and len(groups[0].get('players') or []) == 10:
+            group = groups[0]
+        elif not replace:
+            incoming_groups = merge_postgame_pages(_postgame_results(c, incoming))
+            if len(incoming_groups) != 1:
+                raise HTTPException(400, '本次选择的截图属于不同对局，请只选同一局')
+            incoming_group = incoming_groups[0]
+            incoming_pages = {page.get('pageType') for page in incoming_group.get('pages') or []}
+            # 只有「本次选择本身也是完整七页十人组」才自动按替换处理，避免只补
+            # 几页时把已挂的整组截图意外清掉。
+            if len(incoming_group.get('players') or []) == 10 and len(incoming_pages) >= 7:
+                ids, group = incoming, incoming_group
+            elif len(groups) != 1:
+                raise HTTPException(400, '已挂的截图和本次上传不是同一局；'
+                                         '如确认整组替换请用 replace=true')
+            else:
+                raise HTTPException(400, f'合并后识别出 {len(groups[0].get("players") or [])} 人，'
+                                         '不是完整十人；请检查是否漏页或截图中断；'
+                                         '如确认整组替换请用 replace=true')
+        else:
+            if len(groups) != 1:
+                raise HTTPException(400, f'本次选择的截图属于不同对局（{len(groups)} 组），'
+                                         '请只选同一局')
+            raise HTTPException(400, f'这批截图识别出 {len(groups[0].get("players") or [])} 人，'
+                                     '不是完整十人；请检查是否漏页或截图中断')
+        try:
+            channel_store.attach_screenshot(channel, group, ids, value.get('actor'))
+        except ValueError as error:
+            raise HTTPException(400, str(error))
         _save_channel(c, channel, value.get('actor'))
         return channel
 
@@ -2881,7 +3205,10 @@ def channel_save(channel_id: str, value: dict | None = None):
                                    for item in missing)
                 raise HTTPException(400, f'这局还有缺失值：{labels}；请逐条确认后再保存。')
             if not reviewed:
-                reviewer = str(value.get('reviewedBy') or AUTO_REVIEWER).strip() or AUTO_REVIEWER
+                # OCR 新录入没有营地自动同步，复核人默认写成「截图/录屏录入」，方便追溯。
+                default_reviewer = ('截图/录屏录入' if channel_store.entry_mode(channel) == 'ocr'
+                                    else AUTO_REVIEWER)
+                reviewer = str(value.get('reviewedBy') or default_reviewer).strip() or default_reviewer
                 channel_store.set_review(channel, reviewer, str(value.get('notes') or ''))
             data = _write_channel_bundle(channel)
             _save_channel(c, channel, value.get('actor') or value.get('reviewedBy'), 'save')

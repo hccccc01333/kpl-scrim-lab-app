@@ -3,18 +3,21 @@ import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
 import { createTour } from './tour.js';
+import { createHomeDecision } from './home-decision.js';
+import { createDecisionPage } from './decision-page.js';
+import { createBpCounter } from './bp-counter.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CLIENT_DOWNLOAD_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest';
 const app = document.querySelector('#app');
 const nav = [
-  ['overview', '首页'], ['ingest', '采集'], ['matches', '对局'], ['teams', '战队'], ['players', '选手'],
+  ['overview', '首页'], ['decision', '决策'], ['ingest', '采集'], ['matches', '对局'], ['teams', '战队'], ['players', '选手'],
   ['heroes', '英雄'], ['bp', 'BP'], ['setup', '赛训'], ['sources', '数据来源'],
 ];
 const labels = Object.fromEntries(nav);
 for (const pages of Object.values(featureSections)) for (const [key, label] of pages) labels[key] = label;
-Object.assign(labels, { match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', identity: '选手认领', team: '战队详情', hero: '英雄详情', topic: '分析详情', study: '分析详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamstyle: '战队风格', teamroster: '战队阵容', teamtraining: '战队训练', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', competition: '比赛详情', weekly: '训练周报' });
+Object.assign(labels, { decision: '决策台', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', identity: '选手认领', team: '战队详情', hero: '英雄详情', topic: '分析详情', study: '分析详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamstyle: '战队风格', teamroster: '战队阵容', teamtraining: '战队训练', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', competition: '比赛详情', weekly: '训练周报' });
 function sectionFor(name) {
   if (name === 'topic' || name === 'study') return groupFor(name, current().key);
   const detail = { match: 'matches', player: 'players', playerdetail: 'players', identity: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', competition: 'setup', weekly: 'setup' }[name] || name;
@@ -31,6 +34,7 @@ const icons = {
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4 4"/>',
   overview: '<path d="M3.5 10.5 12 3l8.5 7.5V20H14v-6h-4v6H3.5z"/>',
+  decision: '<path d="M12 3v18M12 6h7l2.4 3L19 12h-7M12 12H5L2.6 15 5 18h7"/>',
   matches: '<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   teams: '<path d="M12 3 4 6.5v5.8c0 4.3 3.1 7.1 8 8.7 4.9-1.6 8-4.4 8-8.7V6.5z"/><path d="m8.8 12 2 2 4.4-4.4"/>',
   players: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20v-1.5a5.5 5.5 0 0 1 11 0V20M16 5a3 3 0 0 1 0 6m1 4a4.5 4.5 0 0 1 3.5 4.4V20"/>',
@@ -677,6 +681,7 @@ function overview(value) {
     : (p ? `${p.date || '日期未知'} · 对阵 ${p.opponent || '对手未标注'} · 最近一局` : '最近可用对局');
   return `<div class="page home">
     ${pageIntro(`${record}${margin}`, meta, filters.validation ? '<span class="scope-chip">含验证数据</span>' : '')}
+    <div class="home-decision" id="home-decision" data-home-decision></div>
     <div class="feature-grid">${featured}${spotlight}</div>
     <div class="stats-band"><div><span>对局总数</span><strong>${fmt(summary.matches)}<small>局</small></strong><p>${fmt(summary.coverage.timelineMatches)} 局时间轴完整</p></div>
       <div><span>平均对局时长</span><strong>${time(avgDuration)}</strong><p>${duration.length} 局有时长</p></div>
@@ -1354,23 +1359,121 @@ function matchPage(m) {
       <div class="md-bp-combo-side foe"><span>对手组合</span><div class="md-combo-grid">${foeCombos.map(comboCard).join('') || '<small>对手阵容没有历史组合样本</small>'}</div></div>
     </div>` : '';
 
-    /* 赛事命中：本局这套阵容里的双人 / 三人组合，KPL 赛场上出现过几次。
-       教练原话：「不需要具体说明是哪一局，有就行」。所以只报命中与场次，不报是哪场。 */
+    /* 赛事命中：先回答教练真正问的「我们这套 5 人整阵容，KPL 那边见过没有」，再拆到
+       双人 / 三人组合。教练原话：「不需要具体说明是哪一局，有就行」——所以只报命中、
+       场次、胜率和用过这套的队，不报是哪一场。
+       整阵容（lineup / lineupSeen）是新增字段：老数据没有时退化成只看组合层，
+       不硬编「没见过」，也不显示空字段。 */
     const kplBlock = (() => {
       const facts = m.bpFacts?.kpl;
       if (!facts) return '';
-      const since = facts.sinceYear ? `${facts.sinceYear} 年起` : '';
-      const rows = [...(facts.pairs || []).slice(0, 3).map((row) => ({ ...row, size: 2 })),
-        ...(facts.trios || []).slice(0, 2).map((row) => ({ ...row, size: 3 }))];
-      const hit = (facts.hitPairs || 0) + (facts.hitTrios || 0);
-      if (!hit) {
-        return `<div class="md-kplhit is-empty"><b>赛事命中</b><span>本局阵容的双人 / 三人组合在 KPL ${since}没有出现过</span></div>`;
-      }
-      return `<div class="md-kplhit"><div class="md-kplhit-head"><b>赛事命中</b>
-        <span>本队 ${facts.totalPairs} 组双人里 <b>${facts.hitPairs}</b> 组、三人里 <b>${facts.hitTrios}</b> 组在 KPL 出现过${since ? `（${since}）` : ''}</span></div>
-        <div class="md-kplhit-rows">${rows.map((row) => `<span class="md-kplhit-row">
-          <i>${row.size === 3 ? '三人' : '双人'}</i>${esc(row.heroes.join(' + '))}
-          <b>${fmt(row.n)} 场</b><small>胜率 ${fmt(row.wr, 1)}%</small></span>`).join('')}</div>
+      const ownHeroes = heroesOf(ownSideKey);
+      const hitPairs = has(facts.hitPairs) ? facts.hitPairs : 0;
+      const hitTrios = has(facts.hitTrios) ? facts.hitTrios : 0;
+      const totalPairs = has(facts.totalPairs) ? facts.totalPairs
+        : ownHeroes.length >= 2 ? ownHeroes.length * (ownHeroes.length - 1) / 2 : null;
+      const totalTrios = has(facts.totalTrios) ? facts.totalTrios
+        : ownHeroes.length >= 3 ? ownHeroes.length * (ownHeroes.length - 1) * (ownHeroes.length - 2) / 6 : null;
+      const dateOnly = (value) => {
+        const date = String(value ?? '').trim().slice(0, 10);
+        return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+      };
+      /* 胜率统一保留 1 位小数：同一块里不出现 70% / 44.4% 混排。 */
+      const wrText = (value) => has(value) ? `${value.toFixed(1)}%` : '—';
+      /* 「哪些队用过」：最多 3 支，多出的写 +N；没有 teams 就整行不出。 */
+      const teamChips = (teams) => {
+        const list = (Array.isArray(teams) ? teams : []).filter((row) => row && row.team);
+        if (!list.length) return '';
+        const shown = list.slice(0, 3);
+        const rest = list.length - shown.length;
+        const detail = list.map((row) => `${row.team} ${fmt(row.n)} 场 ${fmt(row.wins)} 胜`).join(' · ');
+        return `<span class="md-kplhit-teams" title="${esc(detail)}"><em>用过</em>${shown.map((row) => `<span class="md-kplhit-team">${esc(row.team)}</span>`).join('')}${rest > 0 ? `<span class="md-kplhit-team is-more">+${rest}</span>` : ''}</span>`;
+      };
+
+      /* 第一层：整阵容结论，字号最大，是这块的主结论。 */
+      const lineup = facts.lineup && typeof facts.lineup === 'object' ? facts.lineup : null;
+      const lineupKnown = typeof facts.lineupSeen === 'boolean' || Object.prototype.hasOwnProperty.call(facts, 'lineup');
+      const lineupSeen = lineupKnown
+        ? (typeof facts.lineupSeen === 'boolean' ? facts.lineupSeen : Boolean(lineup)) : false;
+      const isEmpty = !hitPairs && !hitTrios && !(lineupKnown && lineupSeen);
+      const lineupMeta = lineup
+        ? `${teamChips(lineup.teams)}
+          ${has(lineup.wr) ? `<span>胜率 <b>${wrText(lineup.wr)}</b></span>` : ''}
+          ${has(lineup.year) ? `<span>最近出现 ${lineup.year} 年</span>` : ''}`
+        : '';
+      const missScope = [has(facts.leagueCount) ? `${fmt(facts.leagueCount)} 个赛季` : '',
+        has(facts.games) ? `${fmt(facts.games)} 局` : ''].filter(Boolean).join('、');
+      const missNote = missScope
+        ? `完整的 5 人阵容在 KPL 已收录的 ${missScope}里没有同队同场记录，这是正常结论。`
+        : '完整的 5 人阵容在 KPL 统计窗口内还没有同队同场记录，这是正常结论。';
+      const lineupHtml = !lineupKnown ? '' : lineupSeen
+        ? `<div class="md-kplhit-lineup is-seen">
+            <p class="md-kplhit-verdict">本队 5 人整阵容 KPL ${has(lineup?.n) ? `见过 <b>${fmt(lineup.n)}</b> 次` : '出现过'}${has(lineup?.wins) ? `（<b>${fmt(lineup.wins)}</b> 胜）` : ''}</p>
+            ${lineupMeta.trim() ? `<div class="md-kplhit-lineup-meta">${lineupMeta}</div>` : ''}
+          </div>`
+        : `<div class="md-kplhit-lineup is-miss">
+            <p class="md-kplhit-verdict">本队 5 人整阵容 KPL 没出现过</p>
+            <p class="md-kplhit-lineup-note">${missNote}</p>
+          </div>`;
+      /* 整阵容字段还没落地时，用组合层结论补一句，别让这块只剩两个进度条。 */
+      const comboSummary = !lineupKnown && !isEmpty
+        ? `<p class="md-kplhit-summary">本队 ${has(totalPairs) ? fmt(totalPairs) : '—'} 组双人里 <b>${fmt(hitPairs)}</b> 组见过${has(totalTrios) ? `，${fmt(totalTrios)} 组三人里 <b>${fmt(hitTrios)}</b> 组见过` : ''}</p>`
+        : '';
+
+      /* 第二层：组合命中率，数字块 + 进度条。 */
+      const rateBar = (label, hit, total) => {
+        const ratio = has(total) && total > 0 ? Math.min(100, hit / total * 100) : null;
+        return `<div class="md-kplhit-rate">
+          <span class="md-kplhit-rate-label">${label}</span>
+          <span class="md-kplhit-rate-num"><b>${fmt(hit)}</b><i>/</i>${has(total) ? fmt(total) : '—'}</span>
+          ${ratio === null ? '' : `<span class="md-kplhit-bar${hit ? '' : ' is-zero'}" title="${label}命中 ${fmt(hit)} / ${fmt(total)}"><i style="width:${ratio.toFixed(1)}%"></i></span>`}
+        </div>`;
+      };
+      const rates = `<div class="md-kplhit-rates">
+        ${rateBar('双人组合', hitPairs, totalPairs)}${rateBar('三人组合', hitTrios, totalTrios)}
+      </div>`;
+
+      /* 第三层：命中组合逐条（沿用 3 双人 + 2 三人的截断）。 */
+      const comboRow = (row, size) => {
+        const heroes = Array.isArray(row?.heroes) ? row.heroes.filter(Boolean) : [];
+        if (!heroes.length) return '';
+        return `<div class="md-kplhit-row">
+          <span class="md-kplhit-tag">${size === 3 ? '三人' : '双人'}</span>
+          <div class="md-kplhit-body">
+            <div class="md-kplhit-heroes"><span class="md-kplhit-faces">${heroes.map((hero) => portrait(hero)).join('<i>+</i>')}</span><b>${esc(heroes.join(' + '))}</b></div>
+            ${teamChips(row.teams)}
+          </div>
+          <div class="md-kplhit-stat">${has(row.n) ? `<span><b>${fmt(row.n)}</b> 场</span>` : ''}${has(row.wr) ? `<span>胜率 <b>${wrText(row.wr)}</b></span>` : ''}</div>
+        </div>`;
+      };
+      const rows = [
+        ...(Array.isArray(facts.pairs) ? facts.pairs.slice(0, 3) : []).map((row) => ({ row, size: 2 })),
+        ...(Array.isArray(facts.trios) ? facts.trios.slice(0, 2) : []).map((row) => ({ row, size: 3 })),
+      ].map((item) => comboRow(item.row, item.size)).filter(Boolean);
+      const list = rows.length ? `<div class="md-kplhit-list">
+        <div class="md-kplhit-list-head"><span>命中组合</span><span>同队同场同时选用过，≥1 场即算命中</span></div>
+        ${rows.join('')}
+      </div>` : '';
+      const isEmptyNote = isEmpty ? `<div class="md-kplhit-empty">
+        ${lineupKnown ? '' : '<p class="md-kplhit-empty-line">本队双人 / 三人组合在 KPL 统计窗口内都没有命中</p>'}
+        <small>这不是坏消息：KPL 统计的是同队同场同时选用过的组合，新阵容或冷门搭配本来就不容易命中。</small>
+      </div>` : '';
+
+      /* 第四层：口径脚注，缺字段就不显示对应片段。 */
+      const footBits = [];
+      if (facts.sourceLabel) footBits.push(esc(String(facts.sourceLabel)));
+      const start = dateOnly(facts.windowStart), end = dateOnly(facts.windowEnd);
+      if (start && end) footBits.push(`${start} – ${end}`);
+      else if (start) footBits.push(`${start} 起`);
+      else if (end) footBits.push(`截至 ${end}`);
+      const updated = dateOnly(facts.updatedAt);
+      if (updated) footBits.push(`更新于 ${updated}`);
+      const foot = footBits.length ? `<p class="md-kplhit-foot">${footBits.join('<i>·</i>')}</p>` : '';
+
+      const cls = `md-kplhit${isEmpty ? ' is-empty' : ''}${lineupKnown && lineupSeen ? ' is-seen' : ''}`;
+      return `<div class="${cls}">
+        <div class="md-kplhit-head"><b>赛事命中</b>${facts.sourceLabel ? `<span class="md-kplhit-src">${esc(String(facts.sourceLabel))}</span>` : ''}</div>
+        ${comboSummary}${lineupHtml}${rates}${list}${isEmptyNote}${foot}
       </div>`;
     })();
 
@@ -1407,8 +1510,23 @@ function matchPage(m) {
       : ahead > behind ? 'BP 端占优' : behind > ahead ? 'BP 端吃亏' : '五五开';
     const review = `<div class="md-bprev ${tone}">
       <div class="md-bprev-head"><b>本局 BP 复盘</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
-      <p class="md-bprev-line">${parts.join('；')}。</p>
-      ${thin ? '<p class="md-bprev-note">对位样本还薄，这条结论只作参考；同一个英雄对位再打几局就会自动变成可判。</p>' : ''}
+      <p class="md-bprev-lede">${parts.join('；')}。</p>
+      <div class="md-bprev-stats">
+        <div class="md-bprev-stat"><span class="md-bprev-stat-label">对位</span>
+          <span class="md-bprev-stat-value">${judged.length}<i>/</i>${lanes.length}<small>路可判</small></span>
+          <span class="md-bprev-stat-note">${judged.length
+            ? `占优 ${ahead} · 吃亏 ${behind}${judged.some((lane) => lane.realised !== null) ? ` · 兑现 ${realised}` : ''}`
+            : '巅峰千强没有可判对位'}</span></div>
+        <div class="md-bprev-stat"><span class="md-bprev-stat-label">赛事</span>
+          <span class="md-bprev-stat-value">${m.bpFacts?.kpl ? `${(m.bpFacts.kpl.hitPairs || 0) + (m.bpFacts.kpl.hitTrios || 0)}<small>组命中</small>` : '—'}</span>
+          <span class="md-bprev-stat-note">${m.bpFacts?.kpl
+            ? `双人 ${fmt(m.bpFacts.kpl.hitPairs)} · 三人 ${fmt(m.bpFacts.kpl.hitTrios)}`
+            : '暂无 KPL 数据'}</span></div>
+        <div class="md-bprev-stat"><span class="md-bprev-stat-label">组合</span>
+          <span class="md-bprev-stat-value">${ownCombos.length ? `${positiveCombos}<i>/</i>${ownCombos.length}<small>组</small>` : '—'}</span>
+          <span class="md-bprev-stat-note">${ownCombos.length ? '搭档加成为正' : '阵容没有历史组合样本'}</span></div>
+      </div>
+      ${thin ? '<p class="md-bprev-thin">对位样本还薄，这条结论只作参考；同一个英雄对位再打几局就会自动变成可判。</p>' : ''}
     </div>`;
     const matchup = lanes.length ? `<div class="md-matchup">
       <div class="md-matchup-head"><b>对位压制</b><small>巅峰千强同分路对位：超额胜率（实际 − 两英雄基准期望）≥ +2 判我方占优、≤ −2 判吃亏；样本 ≥200 局且双方使用率 ≥3%</small></div>
@@ -1435,11 +1553,19 @@ function matchPage(m) {
   const mdCohesion = `<section class="section" id="match-cohesion"><div class="section-heading"><div><h2>中野辅与入侵</h2><p>集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济</p></div></div>
     ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : positionsEmpty}
   </section>`;
-  const mdBattle = `<section class="section" id="match-battle"><div class="section-heading"><div><h2>战斗</h2><p>团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒经济差走势外推到复活时刻的差额，已扣掉自然涨跌</p></div></div>
-    ${deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights) || '<div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div>'}
-  </section>`;
+  /* 战斗拆成两块：团战（点地图看本波）与掉点（筛选/点选看单次），各自带分析。 */
+  const battle = deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights);
+  const mdFights = battle && battle.fights
+    ? `<section class="section" id="match-battle"><div class="section-heading"><div><h2>团战</h2><p>团战点大小＝参战人数，颜色＝该波击杀差（本队金 / 对手青）；点地图上的点看这一波的伤害、承伤与控制，下方为团战分析</p></div></div>${battle.fights}</section>`
+    : battle ? ''
+      : '<section class="section" id="match-battle"><div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div></section>';
+  const mdDeaths = battle && battle.deaths
+    ? `<section class="section" id="match-deaths"><div class="section-heading"><div><h2>掉点</h2><p>掉点＝一次阵亡；损失＝死前 120 秒经济差走势外推到复活时刻的差额（本队视角，负＝我方亏、正＝我方赚）。点圆点或列表固定选中，切换选手看他这局全部掉点</p></div></div>${battle.deaths}</section>`
+    : '';
   /* 击杀账本：官方回放 battle.killInfo 逐次记录 killerObjID → objID。
-     切C = 我方对抗路/打野击杀对方中路/发育路（教练第三波明确要的指标）。 */
+     切C = 我方对抗路/打野击杀对方中路/发育路（教练第三波明确要的指标）。
+     页面分三层：五路统计卡（先手/击杀用条、切C 用目标 chips）→ 开团分析
+     （先手与团战结果、团战节奏条）→ 逐条账本（折叠）。三块同源，口径不另算。 */
   const mdKills = (() => {
     const kills = m.replay?.kills || [];
     if (!kills.length) return '';
@@ -1447,6 +1573,7 @@ function matchPage(m) {
     const laneOfKill = (camp, hero) => (byHero.get(`${camp}-${hero}`) || {}).position || '';
     const isCut = (k) => ['对抗路', '打野'].includes(laneOfKill(k.killerCamp, k.killer))
       && ['中路', '发育路'].includes(laneOfKill(k.victimCamp, k.victim));
+    const keyOf = (k) => `${k.t}-${k.killer}-${k.victim}`;
     const rows = kills.slice().sort((a, b) => a.t - b.t);
     /* 每场团战的先手击杀 = 该团战最早的一次击杀（与 firstKillerCamp 同源）。 */
     const firstOfFight = new Map();
@@ -1455,9 +1582,8 @@ function matchPage(m) {
       const cur = firstOfFight.get(k.fight);
       if (!cur || k.t < cur.t) firstOfFight.set(k.fight, k);
     }
-    const firstKeys = new Set([...firstOfFight.values()].map((k) => `${k.t}-${k.killer}-${k.victim}`));
-    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次先手。
-       账本本身收进折叠区，需要逐条核对时再展开。 */
+    const firstKeys = new Set([...firstOfFight.values()].map(keyOf));
+    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次先手。 */
     const statOf = (p) => {
       const mine = rows.filter((k) => k.killerCamp === p.camp && k.killer === p.hero);
       const cuts = mine.filter(isCut);
@@ -1465,25 +1591,104 @@ function matchPage(m) {
         p, kills: mine.length,
         cut: cuts.length,
         cutTargets: [...new Set(cuts.map((k) => k.victim))],
-        first: mine.filter((k) => firstKeys.has(`${k.t}-${k.killer}-${k.victim}`)).length,
+        cutFirsts: cuts.filter((k) => firstKeys.has(keyOf(k))).length,
+        first: mine.filter((k) => firstKeys.has(keyOf(k))).length,
       };
     };
+    /* 五路按固定顺序排（对抗路 / 打野 / 中路 / 发育路 / 游走），跨局对比时位置不跳动；
+       谁切了 C、谁先手多由卡片高亮和数字表达。未知分路排最后。 */
+    const LANE_ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
     const stats = (m.players || []).filter((p) => p.camp === own).map(statOf)
-      .sort((a, b) => (b.cut - a.cut) || (b.first - a.first) || (b.kills - a.kills));
+      .sort((a, b) => {
+        const ai = LANE_ORDER.indexOf(a.p.position), bi = LANE_ORDER.indexOf(b.p.position);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
     const cutTotal = stats.reduce((sum, s) => sum + s.cut, 0);
     const firstTotal = stats.reduce((sum, s) => sum + s.first, 0);
+    const ownKills = rows.filter((k) => k.killerCamp === own).length;
+    const firstRate = ownKills ? Math.round(firstTotal / ownKills * 100) : null;
+    const maxFirst = Math.max(1, ...stats.map((s) => s.first));
+    const maxKills = Math.max(1, ...stats.map((s) => s.kills));
+    /* 团战结果：先手方 + 该波击杀差。fights 缺失时只讲击杀账本，不编团战结果。 */
+    const ownSide = own === 'red' ? 'red' : 'blue';
+    const foeSide = ownSide === 'blue' ? 'red' : 'blue';
+    const fights = (m.replay?.fights || [])
+      .filter((f) => has(f.t) && has(f.blue) && has(f.red))
+      .sort((a, b) => a.t - b.t);
+    const fightFirst = (f) => {
+      if (f.first) return f.first;
+      const k = firstOfFight.get(String(f.id));
+      return k ? k.killerCamp : '';
+    };
+    const fightKills = (f, side) => (side === 'red' ? f.red : f.blue);
+    const ownWonFight = (f) => fightKills(f, ownSide) > fightKills(f, foeSide);
+    const ownFights = fights.filter((f) => fightFirst(f) === ownSide);
+    const foeFights = fights.filter((f) => fightFirst(f) && fightFirst(f) !== ownSide);
+    const ownFightWins = ownFights.filter(ownWonFight).length;
+    const foeFightLosses = foeFights.filter((f) => !ownWonFight(f)).length;
+    /* 团战节奏条：一个小方块＝一波团战；金/青 = 谁先手，实心/空心 = 赢/输。 */
+    const fightStrip = fights.length ? `<div class="md-fight-strip">
+      <div class="md-fight-dots" role="img" aria-label="团战先手与结果时间轴">${fights.map((f) => {
+        const side = fightFirst(f);
+        const ownTag = side === ownSide;
+        const won = ownWonFight(f);
+        const score = `${fightKills(f, ownSide)}:${fightKills(f, foeSide)}`;
+        return `<i class="md-fight-dot ${ownTag ? 'is-own' : side ? 'is-foe' : 'is-unknown'}${won ? ' is-win' : ' is-loss'}" title="${esc(time(f.t))} · ${ownTag ? '我方' : side ? '对方' : '未记录'}先手 · 击杀 ${score}"></i>`;
+      }).join('')}</div>
+      <div class="md-fight-legend"><span class="own">我方先手</span><span class="foe">对方先手</span><em>实心＝赢下，空心＝失利</em></div>
+    </div>` : '';
+    /* 开团分析：先手方和团战结果放在一句话里，后面才是五路分布。 */
+    const topFirst = stats.slice().sort((a, b) => b.first - a.first)[0];
+    const cutTargetCounts = new Map();
+    for (const s of stats) for (const target of s.cutTargets) cutTargetCounts.set(target, (cutTargetCounts.get(target) || 0) + 1);
+    const cutTargetText = [...cutTargetCounts.entries()].map(([target, n]) => `${target}${n > 1 ? ` ×${n}` : ''}`).join('、');
+    const cutAllFirst = cutTotal > 0 && stats.every((s) => s.cutFirsts === s.cut);
+    const parts = [];
+    if (ownFights.length) {
+      parts.push(`本局 ${fights.length} 波团战里我方先手 ${ownFights.length} 波、赢下 ${ownFightWins} 波`);
+      if (foeFights.length) parts.push(`对方先手 ${foeFights.length} 波，我方 ${foeFights.length - foeFightLosses} 胜 ${foeFightLosses} 负`);
+    } else if (firstTotal) {
+      parts.push(`本局我方先手 ${firstTotal} 次${firstRate !== null ? `，占我方击杀 ${pct(firstRate)}` : ''}`);
+    }
+    if (topFirst && topFirst.first) {
+      parts.push(`${topFirst.p.position || '未知分路'}·${topFirst.p.label || topFirst.p.hero} 先手 ${topFirst.first} 次最多`);
+    }
+    if (cutTotal) {
+      parts.push(`切 C ${cutTotal} 次${cutTargetText ? `，目标 ${cutTargetText}` : ''}${cutAllFirst ? '，且都是该波团战的第一击' : ''}`);
+    } else {
+      parts.push('本局没有形成对对方中路 / 发育路的切 C');
+    }
+    const ownFirstRate = ownFights.length ? ownFightWins / ownFights.length : null;
+    const tone = ownFirstRate === null ? 'is-thin'
+      : (ownFightWins === ownFights.length && ownFights.length >= 2) || ownFirstRate >= 0.7 ? 'is-good'
+        : ownFirstRate >= 0.5 ? 'is-thin' : 'is-bad';
+    const badge = ownFirstRate === null ? '样本不足'
+      : ownFightWins === ownFights.length && ownFights.length >= 2 ? '先手全胜'
+        : ownFirstRate >= 0.7 ? '先手占优' : ownFirstRate >= 0.5 ? '先手一般' : '先手吃亏';
+    const tiles = [
+      ['先手', `${firstTotal}<small>次</small>`, '',
+        firstRate !== null ? `占我方击杀 ${pct(firstRate)}` : '按击杀账本统计'],
+      ['先手团战', ownFights.length ? `${ownFightWins}<i>/</i>${ownFights.length}` : '—', '赢下',
+        ownFights.length ? `对方先手 ${foeFights.length} 波` : '回放没有团战段'],
+      ['被先手', `${foeFights.length}`, '波',
+        foeFights.length ? `我方 ${foeFights.length - foeFightLosses} 胜 ${foeFightLosses} 负` : '没有被对方先手'],
+      ['切C', `${cutTotal}`, '次',
+        cutTotal ? (cutTargetText || '已形成切C') : '未形成切C'],
+    ];
     const statCards = stats.map((s) => `<article class="md-cut-card${s.cut ? ' is-hot' : ''}">
-      <header><span class="md-cut-lane">${esc(s.p.position || '未标注')}</span><b>${esc(s.p.label || s.p.hero)}</b></header>
-      <div class="md-cut-nums">
-        <span><b>${s.cut}</b><small>切C</small></span>
-        <span><b>${s.first}</b><small>先手</small></span>
-        <span><b>${s.kills}</b><small>击杀</small></span>
+      <header><span class="md-cut-lane">${esc(s.p.position || '未标注')}</span><b>${esc(s.p.label || s.p.hero)}</b>${portrait(s.p.hero || '', 'md-cut-face')}</header>
+      <div class="md-cut-rows">
+        <div class="md-cut-row is-first"><span class="md-cut-row-label">先手</span><span class="md-cut-track"><i style="width:${Math.round(s.first / maxFirst * 100)}%"></i></span><b>${s.first}</b><small>${firstTotal ? Math.round(s.first / firstTotal * 100) + '%' : '—'}</small></div>
+        <div class="md-cut-row"><span class="md-cut-row-label">击杀</span><span class="md-cut-track"><i style="width:${Math.round(s.kills / maxKills * 100)}%"></i></span><b>${s.kills}</b><small>${ownKills ? Math.round(s.kills / ownKills * 100) + '%' : '—'}</small></div>
       </div>
-      ${s.cutTargets.length ? `<p class="md-cut-targets">切了 ${esc(s.cutTargets.join('、'))}</p>` : '<p class="md-cut-targets is-quiet">本局没有切到对方中路 / 发育路</p>'}
+      <div class="md-cut-foot">
+        <span class="md-cut-badge${s.cut ? ' is-live' : ''}">切C <b>${s.cut}</b></span>
+        ${s.cutTargets.length ? `<span class="md-cut-targets">切了 ${s.cutTargets.map((target) => `<i>${esc(target)}</i>`).join('、')}</span>` : '<span class="md-cut-targets is-quiet">未形成切C</span>'}
+      </div>
     </article>`).join('');
     const row = (k) => {
       const cut = isCut(k);
-      const first = firstKeys.has(`${k.t}-${k.killer}-${k.victim}`);
+      const first = firstKeys.has(keyOf(k));
       const kl = laneOfKill(k.killerCamp, k.killer);
       const vl = laneOfKill(k.victimCamp, k.victim);
       const ownKill = k.killerCamp === own;
@@ -1496,47 +1701,180 @@ function matchPage(m) {
         <em class="md-kill-cut">${cut ? '切C' : ''}</em>
       </div>`;
     };
-    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与先手</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；先手＝该波团战里的第一次击杀。逐条账本收在下面</p></div></div>
-      <div class="md-cut-sum"><span>全队切C <b>${cutTotal}</b> 次</span><span>先手 <b>${firstTotal}</b> 次</span><span>总击杀 <b>${rows.filter((k) => k.killerCamp === own).length}</b></span></div>
+    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与先手</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；先手＝该波团战里的第一次击杀。五路统计在上，开团分析居中，逐条账本收在折叠区</p></div></div>
       <div class="md-cut-grid">${statCards}</div>
-      <details class="md-camp md-kill-fold"><summary>逐条击杀账本 ${rows.length} 条 <small>时间 · 阵营 · 击杀方 → 被击杀方</small></summary>
+      <div class="md-viz-analysis md-bprev ${tone}">
+        <div class="md-bprev-head"><b>开团分析</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
+        <p class="md-bprev-lede">${parts.join('；')}。</p>
+        <div class="md-bprev-stats">${tiles.map(([label, value, unit, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}<small>${unit}</small></span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
+        ${fightStrip}
+        <p class="md-bprev-thin">口径：先手＝该波团战第一次击杀；切C＝对抗路 / 打野击杀对方中路、发育路；团战结果取官方回放 fights 的双方击杀数。</p>
+      </div>
+      <details class="md-camp md-kill-fold"><summary>逐条击杀账本 <b>${rows.length}</b> 条 <small>时间 · 阵营 · 击杀方 → 被击杀方</small></summary>
         <div class="md-kill-list">${rows.map(row).join('')}</div>
       </details>
     </section>`;
   })();
   /* 事件详情：资源/推塔事件的参战者与伤害占比（keyEventArr.hurtTotal），
-     以及营地复盘的中文叙述（adviceList）。仅官方回放存在时显示。 */
+     以及营地复盘的中文叙述（adviceList）。仅官方回放存在时显示。
+     重排：资源与推塔分两组卡片，多参战者用分段占比条，单参战者不画 100% 长条；
+     下方给一条事件分析（控图、推塔节奏、参战与伤害集中度）。 */
   const mdEventDetail = (() => {
-    const detail = (m.replay?.events || []).filter((e) => (e.participants || []).length);
-    const narrations = m.replay?.narrations || [];
-    if (!detail.length && !narrations.length) return '';
+    const replay = m.replay || {};
+    const all = (replay.events || []).filter((e) => e.kind === 'resource' || e.kind === 'structure');
+    const narrations = replay.narrations || [];
     /* keyEventArr 的 hurtTotal 只在推塔类事件里和「伤害」一个量级；
        野怪/暴君事件的取值会到千万级（同一份数据里 800 与 21005396 并存），
-       单位没有被证实。所以超过 10 万的绝对值不显示，只留占比——
-       占比是事件内的相对量，不受单位影响。 */
+       单位没有被证实。所以超过 10 万的绝对值不显示，也不参与占比计算。 */
     const TRUST_HURT = 100000;
-    const damageText = (v) => (!has(v) || v >= TRUST_HURT) ? '—' : fmt(v);
-    const withShare = (list) => {
-      const total = list.reduce((sum, p) => sum + (has(p.hurtTotal) ? p.hurtTotal : 0), 0);
-      return list.slice().sort((a, b) => (b.hurtTotal || 0) - (a.hurtTotal || 0))
-        .map((p) => ({ ...p, share: total ? Math.round((p.hurtTotal || 0) / total * 100) : null }));
+    const trustedValue = (v) => has(v) && v < TRUST_HURT;
+    const reliable = (e) => (e.participants || []).every((p) => !has(p.hurtTotal) || p.hurtTotal < TRUST_HURT);
+    const keyEvents = all.filter((e) => e.name && e.name !== '野怪')
+      .slice().sort((a, b) => a.t - b.t);
+    if (!keyEvents.length && !narrations.length) return '';
+    const resources = keyEvents.filter((e) => e.kind === 'resource');
+    const structures = keyEvents.filter((e) => e.kind === 'structure');
+    const sideOf = (e) => (e.killerCamp === own ? 'own' : e.killerCamp ? 'foe' : '');
+    const tierOf = (label) => /水晶/.test(label) ? '水晶'
+      : /高地塔/.test(label) ? '高地塔' : /二塔/.test(label) ? '二塔' : /一塔/.test(label) ? '一塔' : '建筑';
+    /* 参战与「可核单位」伤害的集中度：单位不可信的事件不参与伤害汇总。 */
+    const participated = keyEvents.filter((e) => (e.participants || []).length);
+    const heroTally = new Map();
+    const damageTally = new Map();
+    for (const e of participated) {
+      for (const p of e.participants || []) {
+        const hero = p.hero || p.name;
+        if (!hero) continue;
+        const row = heroTally.get(hero) || { hero, events: 0, structures: 0, resources: 0 };
+        row.events += 1;
+        if (e.kind === 'structure') row.structures += 1; else row.resources += 1;
+        heroTally.set(hero, row);
+      }
+      if (!reliable(e)) continue;
+      const total = (e.participants || []).reduce((sum, p) => sum + (has(p.hurtTotal) ? p.hurtTotal : 0), 0);
+      if (!total) continue;
+      for (const p of e.participants || []) {
+        const hero = p.hero || p.name;
+        if (!hero || !has(p.hurtTotal) || !p.hurtTotal) continue;
+        const row = damageTally.get(hero) || { hero, damage: 0 };
+        row.damage += p.hurtTotal;
+        damageTally.set(hero, row);
+      }
+    }
+    const trustTotal = [...damageTally.values()].reduce((sum, row) => sum + row.damage, 0);
+    const damageRank = [...damageTally.values()].sort((a, b) => b.damage - a.damage);
+    const participateRank = [...heroTally.values()].sort((a, b) => b.events - a.events);
+    const topParticipant = participateRank[0] || null;
+    const topDamage = trustTotal ? { ...damageRank[0], share: Math.round(damageRank[0].damage / trustTotal * 100) } : null;
+    const ownEvents = keyEvents.filter((e) => sideOf(e) === 'own');
+    const foeEvents = keyEvents.filter((e) => sideOf(e) === 'foe');
+    const ownResources = resources.filter((e) => sideOf(e) === 'own');
+    const ownStructures = structures.filter((e) => sideOf(e) === 'own');
+    const foeStructures = structures.filter((e) => sideOf(e) === 'foe');
+    const foeTowers = foeStructures.filter((e) => tierOf(eventLabel(e)) !== '水晶').length;
+    const foeCrystal = foeStructures.find((e) => tierOf(eventLabel(e)) === '水晶');
+    const crystal = ownStructures.find((e) => tierOf(eventLabel(e)) === '水晶');
+    const towerCount = ownStructures.filter((e) => tierOf(eventLabel(e)) !== '水晶').length;
+    const firstStructure = structures[0] || null;
+    const resourceNames = [...new Set(resources.map((e) => eventLabel(e)))];
+    const ownResourceNames = [...new Set(ownResources.map((e) => eventLabel(e)))];
+    /* 事件分析一句话：先讲结果，再讲推塔节奏与参战集中度。 */
+    const parts = [];
+    parts.push(`本局 ${keyEvents.length} 个关键事件，我方拿下 ${ownEvents.length} 个${foeEvents.length ? `、对手 ${foeEvents.length} 个` : ''}`);
+    if (resources.length) {
+      parts.push(ownResources.length
+        ? `我方拿下 ${ownResourceNames.join('、')} ${ownResources.length} 条`
+        : `${resourceNames.join('、')} 全被对手拿走`);
+    }
+    if (structures.length) {
+      parts.push(`我方推塔 ${towerCount} 座${crystal ? ` + 水晶（${time(crystal.t)}）` : ''}${firstStructure ? `，首推 ${time(firstStructure.t)}` : ''}`);
+      if (foeTowers || foeCrystal) parts.push(`对手推掉我方 ${foeTowers} 座${foeCrystal ? ' + 水晶' : ''}`);
+    }
+    if (topParticipant) parts.push(`${topParticipant.hero} 参战 ${topParticipant.events} 次最多`);
+    if (topDamage && topDamage.damage) parts.push(`可核建筑伤害里 ${topDamage.hero} 占 ${pct(topDamage.share)}`);
+    const tone = ownEvents.length > foeEvents.length ? 'is-good' : ownEvents.length < foeEvents.length ? 'is-bad' : 'is-thin';
+    const badge = ownEvents.length > foeEvents.length ? '我方控图'
+      : ownEvents.length < foeEvents.length ? '对手控图' : '势均力敌';
+    const eventCard = (e) => {
+      const side = sideOf(e);
+      const label = eventLabel(e);
+      const participants = (e.participants || []).slice()
+        .sort((a, b) => (b.hurtTotal || 0) - (a.hurtTotal || 0));
+      const ok = reliable(e);
+      const total = participants.reduce((sum, p) => sum + (has(p.hurtTotal) ? p.hurtTotal : 0), 0);
+      const shareOf = (p) => (ok && total && has(p.hurtTotal) ? Math.round(p.hurtTotal / total * 100) : null);
+      const segments = ok && total && participants.length > 1
+        ? `<div class="md-ev-seg">${participants.map((p) => {
+            const share = shareOf(p);
+            return `<i class="is-${p.camp === own ? 'own' : 'foe'}" style="width:${share}%" title="${esc((p.hero || p.name || '') + ' ' + share + '%')}"></i>`;
+          }).join('')}</div>`
+        : '';
+      const chips = participants.length
+        ? `<div class="md-ev-parts">${participants.map((p) => {
+            const name = p.hero || p.name || '—';
+            /* 单参战者不显示 100%；单位不可信的事件只列参战者，不显示占比和数值。 */
+            const share = participants.length > 1 && ok ? shareOf(p) : null;
+            const showValue = trustedValue(p.hurtTotal) && (participants.length === 1 || ok);
+            return `<span class="md-ev-part is-${p.camp === own ? 'own' : 'foe'}">${portrait(name, 'md-ev-face')}<em>${esc(name)}</em>${share !== null ? `<b>${share}%</b>` : ''}${showValue ? `<small>${fmt(p.hurtTotal)}</small>` : ''}</span>`;
+          }).join('')}</div>`
+        : '<p class="md-ev-empty">回放未记录参战者，只按结果计入</p>';
+      const tag = side ? (e.kind === 'structure'
+        ? (side === 'own' ? '我方推掉' : '对手推掉')
+        : (side === 'own' ? '我方拿下' : '对手拿下')) : '归属未记录';
+      /* 卡片名本身已带「对方 / 我方 + 路 + 塔序」，这里只标事件类别。 */
+      const kind = e.kind === 'resource' ? '资源' : '推塔';
+      return `<article class="md-ev-card${side ? ' is-' + side : ''}">
+        <header class="md-ev-head">
+          <span class="md-ev-t">${time(e.t)}</span>
+          <span class="md-ev-kind">${kind}</span>
+          <b class="md-ev-name">${esc(label)}</b>
+          <span class="md-ev-tag ${side || 'is-unknown'}">${tag}</span>
+          <small class="md-ev-meta">${participants.length ? `${participants.length} 人参与` : '仅记结果'}</small>
+        </header>
+        ${segments}${chips}
+      </article>`;
     };
-    const anyUntrusted = detail.some((e) => (e.participants || [])
-      .some((p) => has(p.hurtTotal) && p.hurtTotal >= TRUST_HURT));
-    /* 关键事件优先：暴君/主宰/防御塔/水晶；野怪 BUFF 只在没有关键事件时兜底。 */
-    const keyEvents = detail.filter((e) => (e.kind === 'resource' || e.kind === 'structure')
-      && e.name && !['野怪'].includes(e.name));
-    const pick = (keyEvents.length ? keyEvents : detail).slice(0, 12);
+    const eventGroup = (title, list, towerMode) => {
+      if (!list.length) return '';
+      const ownCount = list.filter((e) => sideOf(e) === 'own').length;
+      const foeCount = list.filter((e) => sideOf(e) === 'foe').length;
+      return `<div class="md-ev-group">
+        <div class="md-ev-group-head"><b>${title}</b><span>${list.length} 个 · 我方 ${ownCount}${foeCount ? ` / 对手 ${foeCount}` : ''}</span></div>
+        <div class="md-ev-cards${towerMode ? ' is-towers' : ''}">${list.map(eventCard).join('')}</div>
+      </div>`;
+    };
+    const notes = [];
+    if (participated.length < keyEvents.length) {
+      notes.push(`${keyEvents.length - participated.length} 个事件回放未记录参战者，只按结果计入`);
+    }
+    if (participated.some((e) => !reliable(e))) {
+      notes.push('资源类事件的伤害单位营地未证实（同一份回放里 800 与 2100 万并存），这类事件只列参战者、不显示数值');
+    }
     /* 营地叙述里带的 <c="#颜色">…</c> 富文本标记转成纯文本。 */
     const plainNarration = (text) => String(text || '').replace(/<c="[^"]*">/g, '').replace(/<\/c>/g, '');
-    return `<section class="section" id="match-events"><div class="section-heading"><div><h2>事件详情</h2><p>每个资源 / 推塔事件的参战者与伤害占比（官方回放 keyEventArr）；下方为营地复盘叙述（adviceList）</p></div></div>
-      <div class="md-ev-list">${pick.map((e) => `<article class="md-ev">
-        <div class="md-ev-head"><span>${time(e.t)}</span><b>${esc(eventLabel(e))}</b><i class="${e.killerCamp === own ? 'own' : 'foe'}">${e.killerCamp === own ? '我方击杀' : e.killerCamp ? '对手击杀' : ''}</i></div>
-        <div class="md-ev-rows">${withShare(e.participants || []).map((p) => `<span class="md-ev-row ${p.camp === own ? 'own' : 'foe'}" title="${esc((p.hero || p.name || '') + ' · 伤害 ' + damageText(p.hurtTotal))}">
-          <em>${esc(p.hero || p.name || '—')}</em><b>${damageText(p.hurtTotal)}</b><span class="md-ev-bar"><i style="width:${p.share === null ? 0 : p.share}%"></i></span><small>${p.share === null ? '—' : p.share + '%'}</small></span>`).join('')}</div>
-      </article>`).join('')}</div>
-      ${narrations.length ? `<div class="md-ev-narr"><b>营地复盘叙述</b>${narrations.slice(0, 10).map((n) => `<p><span>${time(n.t)}</span>${esc(plainNarration(n.text))}</p>`).join('')}</div>` : ''}
-      ${anyUntrusted ? '<p class="md-ev-note">事件内的绝对伤害营地没有给出可信单位（同一份回放里 800 与 2100 万并存），这里只显示占比。</p>' : ''}
+    const resTiles = [
+      ['关键事件', `${keyEvents.length}<small>个</small>`, `资源 ${resources.length} · 建筑 ${structures.length}`],
+      ['资源控制', `${ownResources.length}<i>/</i>${resources.length}`,
+        ownResourceNames.length ? `${ownResourceNames.join('、')} · 我方拿下`
+          : resources.length ? '资源全被对手拿走' : '本局没有资源事件'],
+      ['推塔', `${towerCount}<small>座</small>${crystal ? '<i>+</i><small>水晶</small>' : ''}`, firstStructure ? `首推 ${time(firstStructure.t)}` : '回放没有建筑事件'],
+      ['参战最多', `${topParticipant ? topParticipant.events : 0}<small>次</small>`, topParticipant ? topParticipant.hero : '回放没有参战记录'],
+    ];
+    /* 只有叙述、没有关键事件的对局：不渲染空分组和空分析，只留叙述。 */
+    const eventHtml = keyEvents.length ? `<div class="md-ev-groups">
+        ${eventGroup('关键资源', resources, false)}
+        ${eventGroup('推塔与水晶', structures, true)}
+      </div>
+      <div class="md-viz-analysis md-bprev ${tone}">
+        <div class="md-bprev-head"><b>事件分析</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
+        <p class="md-bprev-lede">${parts.join('；')}。</p>
+        <div class="md-bprev-stats">${resTiles.map(([label, value, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}</span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
+        <p class="md-bprev-thin">口径：只统计官方回放 keyEventArr 的资源与建筑事件，归属按 killerCamp；伤害占比只在单位可信的事件内计算。</p>
+      </div>` : '';
+    return `<section class="section" id="match-events"><div class="section-heading"><div><h2>事件详情</h2><p>官方回放 keyEventArr：资源 / 推塔事件按时间排成卡片，参战者用分段占比；单位不可信时只列参战。下方附事件分析与营地复盘叙述</p></div></div>
+      ${eventHtml}
+      ${narrations.length ? `<details class="md-ev-narr"><summary>营地复盘叙述 <b>${narrations.length}</b> 条 <small>官方回放 adviceList</small></summary>${narrations.slice(0, 20).map((n) => `<p><span>${time(n.t)}</span>${esc(plainNarration(n.text))}</p>`).join('')}</details>` : ''}
+      ${notes.length ? `<p class="md-ev-note">${notes.join('；')}。</p>` : ''}
     </section>`;
   })();
   const mdFront = `<section class="section" id="match-front"><div class="section-heading"><div><h2>阵线</h2><p>五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。分段线是对线/发育/后期的分界</p></div></div>
@@ -1558,13 +1896,20 @@ function matchPage(m) {
   return `<div class="page md-page" data-md-tab-active="${mdTab}">${mdCrumb}${mdTabs}
     <div class="md-pane" data-md-pane="review">${mdHero}${mdBp}${mdTotals}${mdPhases}${mdPulse}${mdTimeline}</div>
     <div class="md-pane" data-md-pane="data">${mdGold10}${mdProfiles}${mdJungle}${mdCohesion}</div>
-    <div class="md-pane" data-md-pane="events">${mdBattle}${mdKills}${mdEventDetail}</div>
+    <div class="md-pane" data-md-pane="events">${mdFights}${mdDeaths}${mdKills}${mdEventDetail}</div>
     <div class="md-pane" data-md-pane="map">${mdFront}${mdHeat}${mdDuel}</div>
     ${mdSource}
     </div>`;
 }
 
 const tour = createTour();
+/* 首页决策入口：只接管 #home-decision 容器，数据单独异步取，失败不阻塞首页。 */
+const homeDecision = createHomeDecision({ esc, fmt, time, icon, route });
+/* 决策台：四个工作区在网页端直接可看。数据域独立（/api/decision/*），
+   自带取数、abort 与重试，因此 load() 对它跳过常规 endpoint。 */
+const decisionPage = createDecisionPage({ esc, fmt, pct, diff, time, table, icon, route, API_BASE, currentQuery: () => query() });
+/* BP 抗针对放在 BP 模块自己的子页（#bpcounter），决策台赛前备战只放摘要入口。 */
+const bpCounter = createBpCounter({ esc, fmt, pct, icon });
 const features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table, pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true), currentQuery: () => query() });
 const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait, phases: phaseWindows,
   gpmOf, goldGrade });
@@ -1572,7 +1917,8 @@ const crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
 deep.bindPanel(document);
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */
 let pulseState = null;
-const renderers = { overview, matches: matchesPage, opponents: opponentsPage, players: playersPage,
+const renderers = { overview, decision: () => '<div id="decision-root" class="decision-root"></div>', bpcounter: () => '<div id="bpcounter-root"></div>',
+  matches: matchesPage, opponents: opponentsPage, players: playersPage,
   player: playerPage, tempo: tempoPage, sources: sourcesPage, match: matchPage,
   cross: (d) => (d && d.cross ? crossPage.render(d.cross, { total: d.crossTotal || d.cross.length, limit: d.crossLimit || CROSS_LIMIT, cohort: d.cohort }) : '<div class="page"><div class="loading">正在汇总各局数据…</div></div>') };
 let lastRenderedRoute = '';
@@ -1598,6 +1944,24 @@ function render(r = current()) {
   analysisRail.innerHTML='';
   analysisRail.hidden=true;
   features.afterRender();
+  /* 决策台自己挂载：#decision-root 里再拉 /api/decision/*，失败只影响本页，不触发全站重试。 */
+  if (r.name === 'decision') {
+    const root = document.querySelector('#decision-root');
+    if (root) decisionPage.mount(root, r);
+  }
+  if (r.name === 'bpcounter') {
+    const root = document.querySelector('#bpcounter-root');
+    if (root) bpCounter.mount(root);
+  }
+  /* 决策卡在 overview 渲染成功后才挂载：welcomePage（空库）没有这个容器，自动跳过；
+     接口慢或失败只影响这一块，首页其余区块照常显示。 */
+  if (r.name === 'overview') {
+    const box = document.querySelector('#home-decision');
+    if (box) {
+      homeDecision.hydrate(box, { from: filters.from || '', to: filters.to || '' });
+      homeDecision.bind(box);
+    }
+  }
   if (r.name === 'overview' && data && data.summary && !data.summary.matches) hydrateWelcome();
   if (r.name === 'player') {
     /* 选手不在当前数据范围时 stats 为 null，也要把四个子面板收尾，
@@ -1682,6 +2046,13 @@ async function load(fresh = false) {
   const stale = () => isStale(generation, routeKey);
   /* 离线期间：不逐页发请求，直接渲染占位；探活成功后会自动 load() 当前页。 */
   if (offlineSince) { renderOffline(r); return; }
+  /* 决策台自带取数 / abort / 页面内重试：这里不请求页面 endpoint，直接渲染并挂载。
+     这样即便 /api/decision 暂时失败，也不会被 load() 的静默重试和整页报错逻辑吃掉。 */
+  if (r.name === 'decision' || r.name === 'bpcounter') {
+    data = null;
+    render(r);
+    return;
+  }
   const endpoint = r.name === 'players' ? 'v3/players/board'
     : ({ match: 'matches/', player: 'players/', opponents: 'studio/teams', cross: 'matches' }[r.name] || r.name) + (['match','player'].includes(r.name) ? encodeURIComponent(r.key) : '');
   document.querySelector('#content').innerHTML = '<div class="page"><div class="loading">正在读取赛训数据…</div></div>';
@@ -1738,16 +2109,18 @@ async function load(fresh = false) {
           'match-verdict': 'review', 'match-bp': 'review', 'match-phases': 'review',
           'match-pulse': 'review', 'match-timeline': 'review',
           'match-profiles': 'data', 'match-cohesion': 'data',
-          'match-battle': 'events', 'match-kills': 'events', 'match-events': 'events',
+          'match-battle': 'events', 'match-deaths': 'events', 'match-kills': 'events', 'match-events': 'events',
           'match-front': 'map', 'match-heat': 'map', 'match-duel': 'map',
         };
-        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-kills','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
+        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-deaths','match-kills','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
           const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
           if(existing&&updated)existing.replaceWith(updated);
           else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应页签末尾 */
             const pane=document.querySelector(`[data-md-pane="${PANE_OF[id] || 'review'}"]`);
             if(pane) pane.append(updated);
           }
+          /* 回放后到、后来渲染出正式区块时，把首屏的「没有团战数据」占位删掉 */
+          else if(existing && (id === 'match-battle' || id === 'match-deaths')) existing.remove();
         });
         if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events, pulseState.own);
         deep.bindHeat(document);
