@@ -22,6 +22,24 @@
 - 排序改成已命名在前（原来 `sorted(False, True)` 把待命名排到了最上面）
 - 「改名」按钮统一改成「编辑」——它本来就能改位置和战队，叫「改名」把人劝退了
 - 行里显示全部位置：`对抗路 / 打野 / 发育路`
+### 数据可以搬到另一台机器
+
+王者营地只保留约一个月滚动窗口，教练在 A 机爬过的历史数据一旦滑出窗口就再也爬不回来。
+新增 `data_transfer.py` + `scripts/transfer_data.py`：
+
+- **导出**：`python scripts/transfer_data.py export --out 赛训数据-20261111.zip`
+  打包 `training.sqlite3`（用 SQLite 备份接口做一致性快照）+ `matches/` + `camp_details/`
+  + `official_replays/` + `facts/` 等，附 `manifest.json`（版本、行数、每文件 sha256）。
+  实测本机 64 个对局文件 + 32 份营地详情 + 122 份回放 = 原始 39 MB，压缩后 **9.2 MB**。
+- **导入**：`python scripts/transfer_data.py import --bundle xxx.zip`
+  - 空机器：直接采用包里的库，对局、选手、覆盖层、10 分钟经济全部就位
+  - 已有数据：`INSERT OR IGNORE` 逐表补缺，**不动本机已有记录**；文件只补没有的
+  - 导入前自动备份到 `data/backups/pre-import-<时间>.sqlite3`，并写一条 `change_log`
+- `--dry-run` 先预演，`--with-screenshots` / `--with-replays` 按需带上大文件
+
+实测：A 机导出 → B 机导入 → B 机启动后 `/api/matches` 与 A 机一致（都是 54 局），
+`#matches #players #setup` 渲染正常、0 报错；重复导入 0 新增行、0 复制文件；B 机独有的
+战队记录在导入后仍在。
 ## [1.5.32] - 2026-11-10
 
 跨局分析补完最后两块：领先之后换成了什么、对手爱用哪些人。
