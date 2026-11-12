@@ -1,74 +1,43 @@
 {
   "schema": 1,
-  "version": "1.6.5",
-  "publishedAt": "2026-11-12T19:29:33+08:00",
+  "version": "1.6.6",
+  "publishedAt": "2026-11-12T23:04:59+08:00",
   "channel": "stable",
-  "minVersion": "1.6.4",
+  "minVersion": "1.6.5",
   "notes": [
-    "修营地同步成功后回放仍然为空：同步时把营地账号 ID 一起带上，自动导入才拿得到 `playerid`",
-    "修覆盖安装后打开仍是旧界面：启动器发现 8766 上跑着旧版本，先停旧进程再起新版本",
-    "修升级后浏览器仍用旧页面：前端资源地址改成「版本号 + 前端最新修改时间」，每次发版都换",
-    "页面发现自己是旧版本时，会提示按 Ctrl+F5 刷新，不再无声地停在旧界面",
-    "新增按需解码的技能台账接口 `/api/replays/<id>/skill-ledger`"
+    "修「同步成功但回放为空」：`/api/camp/list` 的每条记录补回归属信息",
+    "后端再加一层兜底：调用方漏传营地 ID 时，从条目自带的 `ownerCampUserId` 取",
+    "新增「全部取消勾选」：拉取完自动勾上的局可以一键清空，列表顶部和底部各有一个入口",
+    "勾选单局不再整页重绘：列表不会因为点一下复选框就跳回顶部"
   ],
   "patch": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.5/patch-1.6.5.zip",
-    "sha256": "c18c9157cc35e4113ed40b1ef4583895713fedfebb2dddcb96c200ab84aacb32",
-    "size": 279544,
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.6/patch-1.6.6.zip",
+    "sha256": "e88ba1cf58ed8a17df2d5921040aaf792a54c13e9abda3660c72038d04124bfa",
+    "size": 189717,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "fc7cf99e7b3f3134aa3195ff22469a035c1729d8ca558af7b1f76ace4cf9aa66",
-        "size": 105776
-      },
-      {
-        "path": "analysis_data.py",
-        "sha256": "c865c863abbe86ead55d193375d200cc82874739b96e1cdf3df368d5a48af728",
-        "size": 120071
-      },
-      {
-        "path": "bp_camp.py",
-        "sha256": "f3ff1dd2dd4a57c435a8d703c1d26d1e0d2667cdb10c4c5e03fe28e49a2b10eb",
-        "size": 13138
-      },
-      {
-        "path": "launcher.py",
-        "sha256": "f04ddecb695583d505a70f1f9cc62b5f5170e38c2ad53565892cc51eacc5e174",
-        "size": 13103
+        "sha256": "3704c13970286bd2674655a0d813a0da86819a5f6c530536051d36cb14a930ee",
+        "size": 107048
       },
       {
         "path": "server.py",
-        "sha256": "c974fa593d46c696452ab336a5ec83abb4565389b0dc6b211f030566c06c8f41",
-        "size": 207233
+        "sha256": "514e0681c7b46f170c8e37c877a8de76448c3e9c2c319a28bad5fffe1cc12eed",
+        "size": 208089
       },
       {
-        "path": "tools/replay_skill_ledger.py",
-        "sha256": "bf7e5e26750dbc16081b7c9cdea0627ed11eea6728951a9b087f12e48c9fa08b",
-        "size": 43124
+        "path": "v3/public/app.js",
+        "sha256": "a7cd7dab5a6c3a2a1498b356d5ed680690bddc3d15f4c84ba2c8b4cc973ba251",
+        "size": 174417
       },
       {
         "path": "v3/public/capture-page.js",
-        "sha256": "e9c8a5d207fa4860942c7f9d2436d502c3b822ec1e918697aa05cedf18ebcc87",
-        "size": 103884
-      },
-      {
-        "path": "v3/public/features.js",
-        "sha256": "4e62a1de896829c0c3c4bd6db685e9314e03c2797891abfa04181c3e76354590",
-        "size": 330330
-      },
-      {
-        "path": "v3/public/index.html",
-        "sha256": "de502aa99184f3d7e47781e208c68bb14e386673a1412ffdd2739309bfe0eee1",
-        "size": 606
-      },
-      {
-        "path": "v3/public/update-banner.js",
-        "sha256": "277d94ed1143582b118caafdc02717b894c00d8b2e514ac94c31a16c524bbc1a",
-        "size": 17240
+        "sha256": "208ccc5635143b866ea3e790ed28da6ba4cf34fd129eb18b0d5b13a730866ef0",
+        "size": 104817
       },
       {
         "path": "version.py",
-        "sha256": "cf3443e9dd3fdbdad6a44b5d8296898a8aba6b32118f3784ed5813bfb1cf4abc",
+        "sha256": "f95e763c31dc70bfaf244e50a4d99ee183de2a08da397dd9f75d4b1e21821d8c",
         "size": 372
       }
     ],
@@ -77,8 +46,8 @@
   "releaseName": "修复营地同步回放为空、升级后仍是旧界面",
   "releaseDate": "2026-11-12",
   "full": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.5/KPL-Scrim-Lab-1.6.5-full.zip",
-    "sha256": "be57dc9f981e961a84226f00d755382584ed1d75c61e6bc5b0caf351cd2d0d97",
-    "size": 161722939
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.6/KPL-Scrim-Lab-1.6.6-full.zip",
+    "sha256": "08b1abf1e2acd86d8230b0c5d91c831009907a79db21a20fecc7fad33fac29ab",
+    "size": 81079714
   }
 }
