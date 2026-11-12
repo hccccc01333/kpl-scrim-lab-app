@@ -97,6 +97,24 @@ export function initUpdateBanner({ API_BASE }) {
   };
   const state = { data: null, working: false, timer: 0 };
 
+  /* 页面自己加载时的版本（服务端注入的 meta）。服务端已经换成新版本、页面
+   * 还是旧的时候要明确说出来：覆盖安装/手动替换程序文件后，旧标签页不会
+   * 自动变新，教练会以为「某些页面还是旧页面」。 */
+  const loadedVersion = (() => {
+    const meta = document.querySelector('meta[name="app-version"]');
+    return meta && meta.content ? String(meta.content).trim() : '';
+  })();
+  let driftNotified = false;
+
+  function noticeVersionDrift(serverVersion) {
+    const running = String(serverVersion || '').trim();
+    if (driftNotified || !loadedVersion || !running) return;
+    if (compareVersion(running, loadedVersion) === 0) return;
+    driftNotified = true;
+    showToast(`工作台已升级到 v${running}，当前页面还是 v${loadedVersion} 的旧页面；`
+      + '按 Ctrl+F5（或重新打开工作台）刷新后即可看到新界面。', 15000);
+  }
+
   let toastTimer = 0;
   function showToast(message, duration = 4500) {
     toast.textContent = message;
@@ -357,7 +375,9 @@ export function initUpdateBanner({ API_BASE }) {
 
   async function autoCheck() {
     try {
-      handleCheck(await checkNow(), { auto: true });
+      const data = await checkNow();
+      noticeVersionDrift(data && data.currentVersion);
+      handleCheck(data, { auto: true });
     } catch (error) { /* 没网就静默，不打扰工作台 */ }
   }
 
@@ -389,6 +409,7 @@ export function initUpdateBanner({ API_BASE }) {
     checkNow({ force: true })
       .then((data) => {
         setFooterVersion(data && data.currentVersion);
+        noticeVersionDrift(data && data.currentVersion);
         handleCheck(data, { auto: false, forceShow: true });
       })
       .catch(() => showToast('检查更新失败：请确认这台电脑能联网后再试。'))

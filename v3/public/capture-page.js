@@ -875,6 +875,8 @@ export function createCapture(h) {
     const right = `<div class="capture-actions">
       ${blocked ? '<button class="primary" data-capture-action="auth-start">补充授权</button>' : ''}
       ${moreAction}
+      <button class="control" data-capture-action="check-all" ${list && list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
+      <button class="control" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消全选</button>
       <button class="control" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : list ? '重新拉取' : '拉取对局'}</button>
       <button class="${checked ? 'primary' : 'control'}" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button></div>`;
 
@@ -1571,6 +1573,17 @@ export function createCapture(h) {
           const report = item.channels || {};
           savedTotal += Number(report.saved) || 0;
           reviewTotal += Number(report.review) || 0;
+          // 官方回放（经济曲线 / 事件 / 团战 / 逐秒位置）是同步后单独补拉的：
+          // 失败以前完全不显示，通道看着「同步完成」，分析页却全是空图。
+          const official = report.official || {};
+          const officialFailed = Number(official.failed) || 0;
+          if (official.error) {
+            problems.push(`官方回放没拉全：${official.error}`);
+          } else if (officialFailed > 0) {
+            const first = (official.items || []).find(
+              (row) => row.status === 'failed' && row.error);
+            problems.push(`${officialFailed} 局官方回放没拉到${first ? `（${first.error}）` : ''}`);
+          }
           const summary = item.summary || {};
           // 营地超过一个月就不再提供战局详情（-30457）：这批局只能走截图/录屏，
           // 不算「拉取失败」，也不再让它们反复勾选重试。
@@ -1808,6 +1821,19 @@ export function createCapture(h) {
         // 区块顺序会随「营地连接」折叠而变，按标记找，别用下标。
         const host = document.querySelector('[data-tour="camp-flow"]');
         if (host) host.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        return true;
+      }
+      if (action === 'check-all') {
+        const list = state.list || [];
+        state.checked = Object.fromEntries(list
+          .filter((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry))
+          .map((entry) => [entry.gameSeq, true]));
+        paint();
+        return true;
+      }
+      if (action === 'check-none') {
+        state.checked = {};
+        paint();
         return true;
       }
       if (action === 'auth-check') { await checkAuth(true); return true; }

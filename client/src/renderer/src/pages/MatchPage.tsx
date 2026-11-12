@@ -56,6 +56,7 @@ import { HeatCanvas } from '../components/charts/HeatCanvas'
 import { BattleMap } from '../components/charts/BattleMap'
 import { EmptyState, ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const JUMP_ITEMS = [
   { id: 'match-verdict', label: '结论' },
@@ -339,406 +340,428 @@ export function MatchPage() {
         </div>
       </section>
 
-      <AnalysisSection
-        id="match-phases"
-        title="阶段对比"
-        note="经济差与阶段变化按营地采样；资源 / 建筑是回放事件计数；入侵是本队五人合计进入对侧半区的时间占比"
-      >
-        <div className="md-phase-table">
-          <div className="md-phase-row is-head">
-            <span>阶段</span><span>本队增长</span><span>对手增长</span><span>净差</span><span>资源</span><span>建筑</span><span>入侵</span>
-          </div>
-          {phases.map((row) => (
-            <div className="md-phase-row" key={row.label}>
-              <span className="md-phase-tag">{row.label}<small>{clock(row.start)}–{clock(row.end)}</small></span>
-              <span className="md-phase-gain is-own"><b>{signed(row.ownGain)}</b><i><em style={{ width: `${(row.ownPct * 100).toFixed(1)}%` }} /></i></span>
-              <span className="md-phase-gain is-foe"><b>{signed(row.foeGain)}</b><i><em style={{ width: `${(row.foePct * 100).toFixed(1)}%` }} /></i></span>
-              <span className={`md-phase-net ${(row.net ?? 0) >= 0 ? 'is-own' : 'is-foe'}`}>{signed(row.net)}</span>
-              <span className="md-phase-duo"><b>{number(row.res.own)}</b><i>:</i><b className="is-foe">{number(row.res.foe)}</b></span>
-              <span className="md-phase-duo"><b>{number(row.struct.own)}</b><i>:</i><b className="is-foe">{number(row.struct.foe)}</b></span>
-              <span className="md-phase-invade">{row.invade === null ? '—' : percent(row.invade)}</span>
-            </div>
-          ))}
-        </div>
-      </AnalysisSection>
-
-      <AnalysisSection
-        id="match-pulse"
-        title="比赛脉搏"
-        note={series.length
-          ? `经济差与本队视角一致 · ${series.length} 个采样点；菱形＝资源、方块＝建筑，拖动或点按查看任意时刻`
-          : '这一局没有经济采样时间轴；阶段表里的经济增长会显示为「—」'}
-        action={series.length ? <div className="md-legend"><span className="is-own">本队领先</span><span className="is-foe">对手领先</span><span className="md-shape is-diamond">资源</span><span className="md-shape is-square">建筑</span></div> : undefined}
-      >
-        {series.length
-          ? <PulseChart series={series} events={events} duration={duration} ownName={teamName} foeName={match.opponent || '对手'} />
-          : <EmptyState title="没有可用的经济时间轴">这一局缺少营地经济采样，无法绘制比赛脉搏。阶段表里的经济增长也会显示为「—」。</EmptyState>}
-        <ScopeNote>口径：营地面板经济采样（约 30 秒一点）与回放事件；金差为本队减对手，不做跨局推断。</ScopeNote>
-      </AnalysisSection>
-
-      <AnalysisSection
-        id="match-nodes"
-        title="关键节点"
-        note="按时间排列，每个数字都能回到具体分钟；波动取绝对值最大的几次"
-      >
-        {nodes.length ? (
-          <div className="md-node-table">
-            <div className="md-node-row is-head"><span>时间</span><span>关键节点</span><span>金差变化</span><span>当时金差</span><span>方向 / 来源</span></div>
-            {nodes.map((node, index) => (
-              <div className="md-node-row" key={`${node.t}-${index}`}>
-                <span className="md-node-time">{clock(node.t)}</span>
-                <b>{node.event}</b>
-                <span className="md-node-num">{node.delta === null ? '—' : signed(node.delta)}</span>
-                <span className="md-node-num">{signed(node.value)}</span>
-                <span className={`md-node-dir ${node.dir === '利于本队' ? 'is-own' : node.dir === '利于对手' ? 'is-foe' : 'is-event'}`}>{node.dir}</span>
+      <BlockBoard page="match">
+        <Block id="match-phases" title="阶段对比">
+          <AnalysisSection
+            id="match-phases"
+            title="阶段对比"
+            note="经济差与阶段变化按营地采样；资源 / 建筑是回放事件计数；入侵是本队五人合计进入对侧半区的时间占比"
+          >
+            <div className="md-phase-table">
+              <div className="md-phase-row is-head">
+                <span>阶段</span><span>本队增长</span><span>对手增长</span><span>净差</span><span>资源</span><span>建筑</span><span>入侵</span>
               </div>
-            ))}
-          </div>
-        ) : <EmptyState title="没有可定位的关键节点">这一局既没有经济采样波动，也没有回放事件。</EmptyState>}
-      </AnalysisSection>
-
-      <AnalysisSection
-        id="match-profiles"
-        title="十人面板"
-        note="对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比"
-        action={<div className="segmented">
-          <button type="button" className={panelMode === 'duel' ? 'is-active' : ''} onClick={() => setPanelMode('duel')}>对位比较</button>
-          <button type="button" className={panelMode === 'team' ? 'is-active' : ''} onClick={() => setPanelMode('team')}>同队比较</button>
-        </div>}
-      >
-        {!players.length
-          ? <EmptyState title="没有十人面板数据">这一局还没有营地十人结算。</EmptyState>
-          : panelMode === 'duel' ? (
-            <div className="md-duels">
-              {pairs.map((pair) => (
-                <article className="md-duel" key={pair.lane}>
-                  <div className="md-duel-head">
-                    <span className="md-duel-lane">{pair.lane}</span>
-                    <PlayerIdentity player={pair.own} side="own" />
-                    <PlayerIdentity player={pair.foe} side="foe" />
-                  </div>
-                  <div className="md-duel-body">
-                    <RadarChart metrics={metrics} own={pair.own} foe={pair.foe} ownLabel={teamName} foeLabel={match.opponent || '对手'} />
-                    <div className="md-duel-metrics">
-                      {metrics.map((metric) => {
-                        const ownValue = metric.get(pair.own)
-                        const foeValue = metric.get(pair.foe)
-                        const sum = (ownValue || 0) + (foeValue || 0)
-                        const share = sum > 0 ? (ownValue || 0) / sum * 100 : 50
-                        const lead = (ownValue || 0) > (foeValue || 0) ? 'own' : (ownValue || 0) < (foeValue || 0) ? 'foe' : 'tie'
-                        return (
-                          <div className="md-duel-metric" data-lead={lead} key={metric.key}>
-                            <span className="md-duel-label">{metric.label}</span>
-                            <b className="md-duel-num is-own">{isNum(ownValue) ? (metric.rate ? percent(ownValue) : number(ownValue)) : '—'}</b>
-                            <span className="md-duel-track"><i style={{ width: `${share.toFixed(1)}%` }} /></span>
-                            <b className="md-duel-num is-foe">{isNum(foeValue) ? (metric.rate ? percent(foeValue) : number(foeValue)) : '—'}</b>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </article>
+              {phases.map((row) => (
+                <div className="md-phase-row" key={row.label}>
+                  <span className="md-phase-tag">{row.label}<small>{clock(row.start)}–{clock(row.end)}</small></span>
+                  <span className="md-phase-gain is-own"><b>{signed(row.ownGain)}</b><i><em style={{ width: `${(row.ownPct * 100).toFixed(1)}%` }} /></i></span>
+                  <span className="md-phase-gain is-foe"><b>{signed(row.foeGain)}</b><i><em style={{ width: `${(row.foePct * 100).toFixed(1)}%` }} /></i></span>
+                  <span className={`md-phase-net ${(row.net ?? 0) >= 0 ? 'is-own' : 'is-foe'}`}>{signed(row.net)}</span>
+                  <span className="md-phase-duo"><b>{number(row.res.own)}</b><i>:</i><b className="is-foe">{number(row.res.foe)}</b></span>
+                  <span className="md-phase-duo"><b>{number(row.struct.own)}</b><i>:</i><b className="is-foe">{number(row.struct.foe)}</b></span>
+                  <span className="md-phase-invade">{row.invade === null ? '—' : percent(row.invade)}</span>
+                </div>
               ))}
             </div>
-          ) : (
-            <div className="md-teams">
-              <TeamShareTable camp={ownCamp} label={`本队 · ${sideLabel(ownCamp)}`} side="own" players={players} metrics={metrics} invasion={invasion} teamName={teamName} />
-              <TeamShareTable camp={enemyCamp} label={`对手 · ${sideLabel(enemyCamp)}`} side="foe" players={players} metrics={metrics} invasion={invasion} teamName={match.opponent || '对手'} />
-            </div>
-          )}
-        <ScopeNote>{invasion
-          ? '对位看同分路两人的形状差；同队看资源分配。入侵 = 进入对侧半区的时间占比，悬停可看次数与首次时间。'
-          : '对位看同分路两人的形状差；同队看资源在本队内部的分配（本局没有位置数据，入侵列缺省）。'}</ScopeNote>
-      </AnalysisSection>
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection
-        id="match-cohesion"
-        title="中野辅与入侵"
-        note="集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济"
-      >
-        {!positions ? <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState> : (
-          <div className="md-coh-grid">
-            {([ownCamp, enemyCamp] as Camp[]).map((camp) => {
-              const item = prox.get(camp)
-              const invade = invasionByCamp.get(camp)
-              const title = `${camp === ownCamp ? '本队' : '对手'} · ${sideLabel(camp)}`
-              if (!item) {
-                return (
-                  <article className={`md-coh is-${camp === ownCamp ? 'own' : 'foe'}`} key={camp}>
-                    <header><b>{title}</b><span>中野辅</span></header>
-                    <p className="md-coh-empty">缺少中 / 野 / 辅位置数据</p>
-                  </article>
-                )
-              }
-              return (
-                <article className={`md-coh is-${camp === ownCamp ? 'own' : 'foe'}`} key={camp}>
-                  <header><b>{title}</b><span>中野辅集结</span></header>
-                  <div className="md-coh-nums">
-                    <span><small>集结率</small><b>{percent(item.rate)}</b></span>
-                    <span><small>集结次数</small><b>{number(item.count)}</b></span>
-                    <span><small>最长集结</small><b>{item.longest ? `${number(item.longest)} 秒` : '—'}</b></span>
-                    <span><small>平均间距</small><b>{isNum(item.gap) ? number(item.gap, 1) : '—'}</b></span>
+        <Block id="match-pulse" title="比赛脉搏">
+          <AnalysisSection
+            id="match-pulse"
+            title="比赛脉搏"
+            note={series.length
+              ? `经济差与本队视角一致 · ${series.length} 个采样点；菱形＝资源、方块＝建筑，拖动或点按查看任意时刻`
+              : '这一局没有经济采样时间轴；阶段表里的经济增长会显示为「—」'}
+            action={series.length ? <div className="md-legend"><span className="is-own">本队领先</span><span className="is-foe">对手领先</span><span className="md-shape is-diamond">资源</span><span className="md-shape is-square">建筑</span></div> : undefined}
+          >
+            {series.length
+              ? <PulseChart series={series} events={events} duration={duration} ownName={teamName} foeName={match.opponent || '对手'} />
+              : <EmptyState title="没有可用的经济时间轴">这一局缺少营地经济采样，无法绘制比赛脉搏。阶段表里的经济增长也会显示为「—」。</EmptyState>}
+            <ScopeNote>口径：营地面板经济采样（约 30 秒一点）与回放事件；金差为本队减对手，不做跨局推断。</ScopeNote>
+          </AnalysisSection>
+        </Block>
+
+        <Block id="match-nodes" title="关键节点">
+          <AnalysisSection
+            id="match-nodes"
+            title="关键节点"
+            note="按时间排列，每个数字都能回到具体分钟；波动取绝对值最大的几次"
+          >
+            {nodes.length ? (
+              <div className="md-node-table">
+                <div className="md-node-row is-head"><span>时间</span><span>关键节点</span><span>金差变化</span><span>当时金差</span><span>方向 / 来源</span></div>
+                {nodes.map((node, index) => (
+                  <div className="md-node-row" key={`${node.t}-${index}`}>
+                    <span className="md-node-time">{clock(node.t)}</span>
+                    <b>{node.event}</b>
+                    <span className="md-node-num">{node.delta === null ? '—' : signed(node.delta)}</span>
+                    <span className="md-node-num">{signed(node.value)}</span>
+                    <span className={`md-node-dir ${node.dir === '利于本队' ? 'is-own' : node.dir === '利于对手' ? 'is-foe' : 'is-event'}`}>{node.dir}</span>
                   </div>
-                  <p className="md-coh-invade">
-                    入侵 {number(invade?.episodes ?? 0)} 次 · 期间击杀 {number(invade?.kills ?? 0)} / 阵亡 {number(invade?.lost ?? 0)} · 资源·建筑 {number(invade?.objects ?? 0)}
-                  </p>
-                </article>
-              )
-            })}
-          </div>
-        )}
-      </AnalysisSection>
+                ))}
+              </div>
+            ) : <EmptyState title="没有可定位的关键节点">这一局既没有经济采样波动，也没有回放事件。</EmptyState>}
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection
-        id="match-battle"
-        title="团战与掉点"
-        note="团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒金差走势外推到复活时刻的差额，已扣掉自然涨跌"
-        action={battle.rows.length || battle.hasFightData ? (
-          <select className="md-hero-pick" value={selectedHero} onChange={(event) => setSelectedHero(event.target.value)} aria-label="只看某个选手">
-            <option value="">全部选手</option>
-            <optgroup label="本队">
-              {heroOptions.filter((player) => player.camp === ownCamp).map((player) => (
-                <option value={player.hero} key={`own-${player.slot}`}>{player.label || player.hero} · {player.hero}</option>
-              ))}
-            </optgroup>
-            <optgroup label="对手">
-              {heroOptions.filter((player) => player.camp === enemyCamp).map((player) => (
-                <option value={player.hero} key={`foe-${player.slot}`}>{player.label || player.hero} · {player.hero}</option>
-              ))}
-            </optgroup>
-          </select>
-        ) : undefined}
-      >
-        {!battle.rows.length && !battle.hasFightData ? (
-          <EmptyState title="这局没有团战或掉点数据">{replayMissing}</EmptyState>
-        ) : (
-          <div className="md-battle">
-            <div className="md-battle-map">
-              <BattleMap
-                marks={battle.marks}
-                rows={battle.rows}
-                ownCamp={ownCamp}
-                selectedHero={selectedHero || null}
-                selectedDeath={hoverDeath}
-                onPickDeath={setHoverDeath}
-              />
-              <p className="md-battle-legend">
-                <span className="is-own"><i className="is-fight" />本队团战</span>
-                <span className="is-foe"><i className="is-fight" />对手团战</span>
-                <span><i className="is-death" />阵亡</span>
-              </p>
-              {hoverDeath !== null && battle.rows[hoverDeath] ? (
-                <DeathDetail row={battle.rows[hoverDeath]} />
-              ) : null}
-            </div>
-            <div className="md-battle-block">
-              <h4>团战贡献 <small>伤害占该队该团战</small></h4>
-              {battle.hasFightData ? (
-                <div className="md-contrib" style={{ gridTemplateColumns: `92px repeat(5, minmax(0, 1fr))` }}>
-                  <span className="is-head">选手</span><span className="is-head">参战</span><span className="is-head">伤害</span><span className="is-head">承伤</span><span className="is-head">控制/秒</span><span className="is-head">均占比</span>
-                  {battle.contributions[focusCamp].map((row) => (
-                    <div className={`md-contrib-row${selectedHero && row.player.hero !== selectedHero ? ' is-dim' : ''}`} key={row.player.slot}
-                      style={{ display: 'contents' }}>
-                      <span className="md-contrib-name" title={row.player.label}>{row.player.hero || row.player.label}</span>
-                      <span>{number(row.joined)}</span>
-                      <span>{number(row.hurt)}</span>
-                      <span>{number(row.taken)}</span>
-                      <span>{number(row.ctrl)}</span>
-                      <span className="md-contrib-share" style={isNum(row.share) ? { background: `color-mix(in srgb, var(--md-own) ${Math.min(34, (row.share / 45) * 34).toFixed(1)}%, transparent)` } : undefined}>
-                        {isNum(row.share) ? percent(row.share) : '—'}
-                      </span>
-                    </div>
+        <Block id="match-profiles" title="十人面板">
+          <AnalysisSection
+            id="match-profiles"
+            title="十人面板"
+            note="对位比较按同分路两人归一，条形为本队占两人的比重；同队比较看队内份额。有位置数据时多一列「入侵」＝在对方半区的停留占比"
+            action={<div className="segmented">
+              <button type="button" className={panelMode === 'duel' ? 'is-active' : ''} onClick={() => setPanelMode('duel')}>对位比较</button>
+              <button type="button" className={panelMode === 'team' ? 'is-active' : ''} onClick={() => setPanelMode('team')}>同队比较</button>
+            </div>}
+          >
+            {!players.length
+              ? <EmptyState title="没有十人面板数据">这一局还没有营地十人结算。</EmptyState>
+              : panelMode === 'duel' ? (
+                <div className="md-duels">
+                  {pairs.map((pair) => (
+                    <article className="md-duel" key={pair.lane}>
+                      <div className="md-duel-head">
+                        <span className="md-duel-lane">{pair.lane}</span>
+                        <PlayerIdentity player={pair.own} side="own" />
+                        <PlayerIdentity player={pair.foe} side="foe" />
+                      </div>
+                      <div className="md-duel-body">
+                        <RadarChart metrics={metrics} own={pair.own} foe={pair.foe} ownLabel={teamName} foeLabel={match.opponent || '对手'} />
+                        <div className="md-duel-metrics">
+                          {metrics.map((metric) => {
+                            const ownValue = metric.get(pair.own)
+                            const foeValue = metric.get(pair.foe)
+                            const sum = (ownValue || 0) + (foeValue || 0)
+                            const share = sum > 0 ? (ownValue || 0) / sum * 100 : 50
+                            const lead = (ownValue || 0) > (foeValue || 0) ? 'own' : (ownValue || 0) < (foeValue || 0) ? 'foe' : 'tie'
+                            return (
+                              <div className="md-duel-metric" data-lead={lead} key={metric.key}>
+                                <span className="md-duel-label">{metric.label}</span>
+                                <b className="md-duel-num is-own">{isNum(ownValue) ? (metric.rate ? percent(ownValue) : number(ownValue)) : '—'}</b>
+                                <span className="md-duel-track"><i style={{ width: `${share.toFixed(1)}%` }} /></span>
+                                <b className="md-duel-num is-foe">{isNum(foeValue) ? (metric.rate ? percent(foeValue) : number(foeValue)) : '—'}</b>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </article>
                   ))}
                 </div>
-              ) : <p className="md-board-empty">这局回放没有团战账本。</p>}
-            </div>
-            <div className="md-battle-block">
-              <h4>掉点 <small>负数为亏 · 悬停看细节</small></h4>
-              {battle.rows.length ? (
-                <div className="md-drop-list">
-                  {battle.rows.map((row, index) => {
-                    if (selectedHero && row.death.hero !== selectedHero) return null
-                    if (!selectedHero && index >= 8) return null
-                    const loss = isNum(row.loss) ? -(row.loss as number) : null
+              ) : (
+                <div className="md-teams">
+                  <TeamShareTable camp={ownCamp} label={`本队 · ${sideLabel(ownCamp)}`} side="own" players={players} metrics={metrics} invasion={invasion} teamName={teamName} />
+                  <TeamShareTable camp={enemyCamp} label={`对手 · ${sideLabel(enemyCamp)}`} side="foe" players={players} metrics={metrics} invasion={invasion} teamName={match.opponent || '对手'} />
+                </div>
+              )}
+            <ScopeNote>{invasion
+              ? '对位看同分路两人的形状差；同队看资源分配。入侵 = 进入对侧半区的时间占比，悬停可看次数与首次时间。'
+              : '对位看同分路两人的形状差；同队看资源在本队内部的分配（本局没有位置数据，入侵列缺省）。'}</ScopeNote>
+          </AnalysisSection>
+        </Block>
+
+        <Block id="match-cohesion" title="中野辅与入侵">
+          <AnalysisSection
+            id="match-cohesion"
+            title="中野辅与入侵"
+            note="集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济"
+          >
+            {!positions ? <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState> : (
+              <div className="md-coh-grid">
+                {([ownCamp, enemyCamp] as Camp[]).map((camp) => {
+                  const item = prox.get(camp)
+                  const invade = invasionByCamp.get(camp)
+                  const title = `${camp === ownCamp ? '本队' : '对手'} · ${sideLabel(camp)}`
+                  if (!item) {
                     return (
-                      <button
-                        type="button"
-                        className={`md-drop${hoverDeath === index ? ' is-on' : ''}`}
-                        key={`${row.death.t}-${index}`}
-                        onPointerEnter={() => setHoverDeath(index)}
-                        onFocus={() => setHoverDeath(index)}
-                        onClick={() => setHoverDeath(index)}
-                      >
-                        <span className="md-drop-time">{clock(row.death.t)}</span>
-                        <span className="md-drop-hero">{row.death.hero || '—'}</span>
-                        <span className={`md-drop-loss ${isNum(loss) && loss < 0 ? 'is-down' : 'is-up'}`}>
-                          {isNum(loss) ? signed(loss) : '—'}
-                        </span>
-                      </button>
+                      <article className={`md-coh is-${camp === ownCamp ? 'own' : 'foe'}`} key={camp}>
+                        <header><b>{title}</b><span>中野辅</span></header>
+                        <p className="md-coh-empty">缺少中 / 野 / 辅位置数据</p>
+                      </article>
+                    )
+                  }
+                  return (
+                    <article className={`md-coh is-${camp === ownCamp ? 'own' : 'foe'}`} key={camp}>
+                      <header><b>{title}</b><span>中野辅集结</span></header>
+                      <div className="md-coh-nums">
+                        <span><small>集结率</small><b>{percent(item.rate)}</b></span>
+                        <span><small>集结次数</small><b>{number(item.count)}</b></span>
+                        <span><small>最长集结</small><b>{item.longest ? `${number(item.longest)} 秒` : '—'}</b></span>
+                        <span><small>平均间距</small><b>{isNum(item.gap) ? number(item.gap, 1) : '—'}</b></span>
+                      </div>
+                      <p className="md-coh-invade">
+                        入侵 {number(invade?.episodes ?? 0)} 次 · 期间击杀 {number(invade?.kills ?? 0)} / 阵亡 {number(invade?.lost ?? 0)} · 资源·建筑 {number(invade?.objects ?? 0)}
+                      </p>
+                    </article>
+                  )
+                })}
+              </div>
+            )}
+          </AnalysisSection>
+        </Block>
+
+        <Block id="match-battle" title="团战与掉点">
+          <AnalysisSection
+            id="match-battle"
+            title="团战与掉点"
+            note="团战点大小＝参战人数，颜色＝本队（金）/ 对手（青）；掉点损失＝死前 120 秒金差走势外推到复活时刻的差额，已扣掉自然涨跌"
+            action={battle.rows.length || battle.hasFightData ? (
+              <select className="md-hero-pick" value={selectedHero} onChange={(event) => setSelectedHero(event.target.value)} aria-label="只看某个选手">
+                <option value="">全部选手</option>
+                <optgroup label="本队">
+                  {heroOptions.filter((player) => player.camp === ownCamp).map((player) => (
+                    <option value={player.hero} key={`own-${player.slot}`}>{player.label || player.hero} · {player.hero}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="对手">
+                  {heroOptions.filter((player) => player.camp === enemyCamp).map((player) => (
+                    <option value={player.hero} key={`foe-${player.slot}`}>{player.label || player.hero} · {player.hero}</option>
+                  ))}
+                </optgroup>
+              </select>
+            ) : undefined}
+          >
+            {!battle.rows.length && !battle.hasFightData ? (
+              <EmptyState title="这局没有团战或掉点数据">{replayMissing}</EmptyState>
+            ) : (
+              <div className="md-battle">
+                <div className="md-battle-map">
+                  <BattleMap
+                    marks={battle.marks}
+                    rows={battle.rows}
+                    ownCamp={ownCamp}
+                    selectedHero={selectedHero || null}
+                    selectedDeath={hoverDeath}
+                    onPickDeath={setHoverDeath}
+                  />
+                  <p className="md-battle-legend">
+                    <span className="is-own"><i className="is-fight" />本队团战</span>
+                    <span className="is-foe"><i className="is-fight" />对手团战</span>
+                    <span><i className="is-death" />阵亡</span>
+                  </p>
+                  {hoverDeath !== null && battle.rows[hoverDeath] ? (
+                    <DeathDetail row={battle.rows[hoverDeath]} />
+                  ) : null}
+                </div>
+                <div className="md-battle-block">
+                  <h4>团战贡献 <small>伤害占该队该团战</small></h4>
+                  {battle.hasFightData ? (
+                    <div className="md-contrib" style={{ gridTemplateColumns: `92px repeat(5, minmax(0, 1fr))` }}>
+                      <span className="is-head">选手</span><span className="is-head">参战</span><span className="is-head">伤害</span><span className="is-head">承伤</span><span className="is-head">控制/秒</span><span className="is-head">均占比</span>
+                      {battle.contributions[focusCamp].map((row) => (
+                        <div className={`md-contrib-row${selectedHero && row.player.hero !== selectedHero ? ' is-dim' : ''}`} key={row.player.slot}
+                          style={{ display: 'contents' }}>
+                          <span className="md-contrib-name" title={row.player.label}>{row.player.hero || row.player.label}</span>
+                          <span>{number(row.joined)}</span>
+                          <span>{number(row.hurt)}</span>
+                          <span>{number(row.taken)}</span>
+                          <span>{number(row.ctrl)}</span>
+                          <span className="md-contrib-share" style={isNum(row.share) ? { background: `color-mix(in srgb, var(--md-own) ${Math.min(34, (row.share / 45) * 34).toFixed(1)}%, transparent)` } : undefined}>
+                            {isNum(row.share) ? percent(row.share) : '—'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <p className="md-board-empty">这局回放没有团战账本。</p>}
+                </div>
+                <div className="md-battle-block">
+                  <h4>掉点 <small>负数为亏 · 悬停看细节</small></h4>
+                  {battle.rows.length ? (
+                    <div className="md-drop-list">
+                      {battle.rows.map((row, index) => {
+                        if (selectedHero && row.death.hero !== selectedHero) return null
+                        if (!selectedHero && index >= 8) return null
+                        const loss = isNum(row.loss) ? -(row.loss as number) : null
+                        return (
+                          <button
+                            type="button"
+                            className={`md-drop${hoverDeath === index ? ' is-on' : ''}`}
+                            key={`${row.death.t}-${index}`}
+                            onPointerEnter={() => setHoverDeath(index)}
+                            onFocus={() => setHoverDeath(index)}
+                            onClick={() => setHoverDeath(index)}
+                          >
+                            <span className="md-drop-time">{clock(row.death.t)}</span>
+                            <span className="md-drop-hero">{row.death.hero || '—'}</span>
+                            <span className={`md-drop-loss ${isNum(loss) && loss < 0 ? 'is-down' : 'is-up'}`}>
+                              {isNum(loss) ? signed(loss) : '—'}
+                            </span>
+                          </button>
+                        )
+                      })}
+                      {selectedHero && !battle.rows.some((row) => row.death.hero === selectedHero)
+                        ? <p className="md-board-empty">该选手这局没有掉点。</p>
+                        : null}
+                    </div>
+                  ) : <p className="md-board-empty">这局没有死亡坐标。</p>}
+                </div>
+              </div>
+            )}
+          </AnalysisSection>
+        </Block>
+
+        <Block id="match-front" title="阵线">
+          <AnalysisSection
+            id="match-front"
+            title="阵线"
+            note="五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。竖带是前中后三期分界"
+          >
+            {front ? (
+              <div className="md-front">
+                <FrontlineChart data={front} />
+                <div className="md-front-foot">
+                  <div className="md-front-legend"><span className="is-own"><i />本队</span><span className="is-foe"><i />对手</span></div>
+                  <div className="md-front-stats">
+                    <span><small>本队平均阵线</small><b>{isNum(front.avg) ? `${Math.round((front.avg as number) * 100)}%` : '—'}</b></span>
+                    <span><small>压过中线的时间</small><b>{isNum(front.ahead) ? `${Math.round(front.ahead as number)}%` : '—'}</b></span>
+                    <span><small>口径</small><b>五人平均推进 · 3 点平滑</b></span>
+                  </div>
+                </div>
+              </div>
+            ) : <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState>}
+          </AnalysisSection>
+        </Block>
+
+        <Block id="match-heat" title="对位热区">
+          <AnalysisSection
+            id="match-heat"
+            title="对位热区"
+            note="选一路，看这一路两个人在 90 秒窗口里怎么移动；可拖动时间轴或点播放。金为本队、青为对手"
+          >
+            {!heat ? <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState> : (
+              <div className="md-heat">
+                <div className="md-heat-controls">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      if (playing) {
+                        setPlaying(false)
+                        return
+                      }
+                      if (heatAt >= heat.duration - heat.step) setHeatTime(0)
+                      setPlaying(true)
+                    }}
+                  >
+                    <Icon name={playing ? 'clock' : 'play'} />{playing ? '暂停' : '播放'}
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max={Math.round(heat.duration)}
+                    step={heat.step}
+                    value={Math.round(heatAt)}
+                    onChange={(event) => {
+                      setPlaying(false)
+                      setHeatTime(Number(event.target.value))
+                    }}
+                    aria-label="热区时间轴"
+                  />
+                  <span className="md-heat-clock">{clock(Math.max(0, heatAt - HEAT_WINDOW))} – {clock(heatAt)}</span>
+                  <label className="md-heat-lane-pick">
+                    <span>分路</span>
+                    <select value={heatLane} onChange={(event) => setHeatLane(event.target.value as Lane)} aria-label="选择分路">
+                      {LANES.map((lane) => <option value={lane} key={lane}>{lane}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <div className="md-heat-lanes">
+                  {[ownCamp, enemyCamp].map((camp) => {
+                    const entry = heat.list.find((player) => player.camp === camp && laneOf(player.info) === heatLane)
+                    if (!entry) {
+                      return <div className="md-heat-side is-empty" key={camp}>这一路没有{camp === ownCamp ? '本队' : '对手'}位置数据</div>
+                    }
+                    const data = heatFrame?.out.get(playerKey(entry.camp, entry.slot))
+                    return (
+                      <div className={`md-heat-side is-${camp === ownCamp ? 'own' : 'foe'}`} key={camp}>
+                        <div className="md-heat-head">
+                          <i className={`is-${camp === ownCamp ? 'own' : 'foe'}`} />
+                          <b>{entry.info.label || entry.info.hero || '—'}</b>
+                          <span>{entry.info.hero || ''}</span>
+                        </div>
+                        <HeatCanvas
+                          counts={data?.counts || null}
+                          max={heatFrame?.max || 1}
+                          side={camp === ownCamp ? 'own' : 'foe'}
+                          label={entry.info.label || entry.info.hero || ''}
+                          theme={settings.theme}
+                        />
+                        <div className="md-heat-meta">
+                          <span>
+                            <b>{percent(data && data.total ? data.enemy / data.total * 100 : 0)}</b>
+                            <small>在对侧半区</small>
+                          </span>
+                          <span>
+                            <b>{number(data?.total ?? 0)}</b>
+                            <small>窗口内有效样本</small>
+                          </span>
+                        </div>
+                      </div>
                     )
                   })}
-                  {selectedHero && !battle.rows.some((row) => row.death.hero === selectedHero)
-                    ? <p className="md-board-empty">该选手这局没有掉点。</p>
-                    : null}
                 </div>
-              ) : <p className="md-board-empty">这局没有死亡坐标。</p>}
-            </div>
-          </div>
-        )}
-      </AnalysisSection>
-
-      <AnalysisSection
-        id="match-front"
-        title="阵线"
-        note="五人平均推进进度：0 是己方基地、100% 是对方基地；线越过中线说明压过去了。竖带是前中后三期分界"
-      >
-        {front ? (
-          <div className="md-front">
-            <FrontlineChart data={front} />
-            <div className="md-front-foot">
-              <div className="md-front-legend"><span className="is-own"><i />本队</span><span className="is-foe"><i />对手</span></div>
-              <div className="md-front-stats">
-                <span><small>本队平均阵线</small><b>{isNum(front.avg) ? `${Math.round((front.avg as number) * 100)}%` : '—'}</b></span>
-                <span><small>压过中线的时间</small><b>{isNum(front.ahead) ? `${Math.round(front.ahead as number)}%` : '—'}</b></span>
-                <span><small>口径</small><b>五人平均推进 · 3 点平滑</b></span>
+                <ScopeNote>窗口 {HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。同一路的两个人并排，金为本队、青为对手。</ScopeNote>
               </div>
-            </div>
-          </div>
-        ) : <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState>}
-      </AnalysisSection>
+            )}
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection
-        id="match-heat"
-        title="对位热区"
-        note="选一路，看这一路两个人在 90 秒窗口里怎么移动；可拖动时间轴或点播放。金为本队、青为对手"
-      >
-        {!heat ? <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState> : (
-          <div className="md-heat">
-            <div className="md-heat-controls">
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => {
-                  if (playing) {
-                    setPlaying(false)
-                    return
-                  }
-                  if (heatAt >= heat.duration - heat.step) setHeatTime(0)
-                  setPlaying(true)
-                }}
-              >
-                <Icon name={playing ? 'clock' : 'play'} />{playing ? '暂停' : '播放'}
-              </button>
-              <input
-                type="range"
-                min="0"
-                max={Math.round(heat.duration)}
-                step={heat.step}
-                value={Math.round(heatAt)}
-                onChange={(event) => {
-                  setPlaying(false)
-                  setHeatTime(Number(event.target.value))
-                }}
-                aria-label="热区时间轴"
-              />
-              <span className="md-heat-clock">{clock(Math.max(0, heatAt - HEAT_WINDOW))} – {clock(heatAt)}</span>
-              <label className="md-heat-lane-pick">
-                <span>分路</span>
-                <select value={heatLane} onChange={(event) => setHeatLane(event.target.value as Lane)} aria-label="选择分路">
-                  {LANES.map((lane) => <option value={lane} key={lane}>{lane}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="md-heat-lanes">
-              {[ownCamp, enemyCamp].map((camp) => {
-                const entry = heat.list.find((player) => player.camp === camp && laneOf(player.info) === heatLane)
-                if (!entry) {
-                  return <div className="md-heat-side is-empty" key={camp}>这一路没有{camp === ownCamp ? '本队' : '对手'}位置数据</div>
-                }
-                const data = heatFrame?.out.get(playerKey(entry.camp, entry.slot))
-                return (
-                  <div className={`md-heat-side is-${camp === ownCamp ? 'own' : 'foe'}`} key={camp}>
-                    <div className="md-heat-head">
-                      <i className={`is-${camp === ownCamp ? 'own' : 'foe'}`} />
-                      <b>{entry.info.label || entry.info.hero || '—'}</b>
-                      <span>{entry.info.hero || ''}</span>
+        <Block id="match-depth" title="对位纵深">
+          <AnalysisSection
+            id="match-depth"
+            title="对位纵深"
+            note="同一张表两种口径：深区＝推进进度 > 66%，半区＝> 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格"
+            action={positions ? <div className="segmented">
+              <button type="button" className={depthMode === 'deep' ? 'is-active' : ''} onClick={() => setDepthMode('deep')}>深区 &gt;66%</button>
+              <button type="button" className={depthMode === 'half' ? 'is-active' : ''} onClick={() => setDepthMode('half')}>半区 &gt;50%（入侵）</button>
+            </div> : undefined}
+          >
+            {!positions ? <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState> : (
+              <div className="md-depth">
+                <div className="md-depth-head">
+                  <span />
+                  <span className="is-own">{depthMode === 'deep' ? '本队 · 推进到对侧深区' : '本队 · 进入对侧半区'}</span>
+                  <span className="is-foe">{depthMode === 'deep' ? '对手 · 推进到本队深区' : '对手 · 进入本队半区'}</span>
+                </div>
+                <div className="md-depth-phases">
+                  <span />
+                  <span className="is-own"><i>前期</i><i>中期</i><i>后期</i></span>
+                  <span className="is-foe"><i>前期</i><i>中期</i><i>后期</i></span>
+                </div>
+                {depth.map((row) => (
+                  <div className="md-depth-row" key={row.lane}>
+                    <span className="md-depth-lane">{row.lane}</span>
+                    <div className="md-depth-side is-own">
+                      {row.own ? row.own.seconds.map((seconds, index) => <DepthCell seconds={seconds} side="own" key={index} />) : <span className="md-depth-cell is-empty">—</span>}
                     </div>
-                    <HeatCanvas
-                      counts={data?.counts || null}
-                      max={heatFrame?.max || 1}
-                      side={camp === ownCamp ? 'own' : 'foe'}
-                      label={entry.info.label || entry.info.hero || ''}
-                      theme={settings.theme}
-                    />
-                    <div className="md-heat-meta">
-                      <span>
-                        <b>{percent(data && data.total ? data.enemy / data.total * 100 : 0)}</b>
-                        <small>在对侧半区</small>
-                      </span>
-                      <span>
-                        <b>{number(data?.total ?? 0)}</b>
-                        <small>窗口内有效样本</small>
-                      </span>
+                    <div className="md-depth-side is-foe">
+                      {row.foe ? row.foe.seconds.map((seconds, index) => <DepthCell seconds={seconds} side="foe" key={index} />) : <span className="md-depth-cell is-empty">—</span>}
                     </div>
                   </div>
-                )
-              })}
-            </div>
-            <ScopeNote>窗口 {HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。同一路的两个人并排，金为本队、青为对手。</ScopeNote>
-          </div>
-        )}
-      </AnalysisSection>
-
-      <AnalysisSection
-        id="match-depth"
-        title="对位纵深"
-        note="同一张表两种口径：深区＝推进进度 > 66%，半区＝> 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格"
-        action={positions ? <div className="segmented">
-          <button type="button" className={depthMode === 'deep' ? 'is-active' : ''} onClick={() => setDepthMode('deep')}>深区 &gt;66%</button>
-          <button type="button" className={depthMode === 'half' ? 'is-active' : ''} onClick={() => setDepthMode('half')}>半区 &gt;50%（入侵）</button>
-        </div> : undefined}
-      >
-        {!positions ? <EmptyState title="缺少逐秒位置">{positionsMissing}</EmptyState> : (
-          <div className="md-depth">
-            <div className="md-depth-head">
-              <span />
-              <span className="is-own">{depthMode === 'deep' ? '本队 · 推进到对侧深区' : '本队 · 进入对侧半区'}</span>
-              <span className="is-foe">{depthMode === 'deep' ? '对手 · 推进到本队深区' : '对手 · 进入本队半区'}</span>
-            </div>
-            <div className="md-depth-phases">
-              <span />
-              <span className="is-own"><i>前期</i><i>中期</i><i>后期</i></span>
-              <span className="is-foe"><i>前期</i><i>中期</i><i>后期</i></span>
-            </div>
-            {depth.map((row) => (
-              <div className="md-depth-row" key={row.lane}>
-                <span className="md-depth-lane">{row.lane}</span>
-                <div className="md-depth-side is-own">
-                  {row.own ? row.own.seconds.map((seconds, index) => <DepthCell seconds={seconds} side="own" key={index} />) : <span className="md-depth-cell is-empty">—</span>}
-                </div>
-                <div className="md-depth-side is-foe">
-                  {row.foe ? row.foe.seconds.map((seconds, index) => <DepthCell seconds={seconds} side="foe" key={index} />) : <span className="md-depth-cell is-empty">—</span>}
-                </div>
+                ))}
+                <ScopeNote>静止 ≥12 秒的样本（阵亡停留等）已剔除，与全景页同口径。</ScopeNote>
               </div>
-            ))}
-            <ScopeNote>静止 ≥12 秒的样本（阵亡停留等）已剔除，与全景页同口径。</ScopeNote>
-          </div>
-        )}
-      </AnalysisSection>
+            )}
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection
-        id="match-bp"
-        title="本局 BP"
-        note={`营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}`}
-      >
-        {draft ? (
-          <div className="md-bp">
-            <div className="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div>
-            <BpRow title={`本队 · ${sideLabel(ownCamp)}`} side="own" picks={draft.picks?.[ownSideKey]} bans={draft.bans?.[ownSideKey]} />
-            <BpRow title={`对手 · ${sideLabel(enemyCamp)}`} side="foe" picks={draft.picks?.[enemySideKey]} bans={draft.bans?.[enemySideKey]} />
-          </div>
-        ) : <EmptyState title="暂无禁选记录">这一局没有营地禁选名单；可在工作台补录。</EmptyState>}
-      </AnalysisSection>
+        <Block id="match-bp" title="本局 BP">
+          <AnalysisSection
+            id="match-bp"
+            title="本局 BP"
+            note={`营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}`}
+          >
+            {draft ? (
+              <div className="md-bp">
+                <div className="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div>
+                <BpRow title={`本队 · ${sideLabel(ownCamp)}`} side="own" picks={draft.picks?.[ownSideKey]} bans={draft.bans?.[ownSideKey]} />
+                <BpRow title={`对手 · ${sideLabel(enemyCamp)}`} side="foe" picks={draft.picks?.[enemySideKey]} bans={draft.bans?.[enemySideKey]} />
+              </div>
+            ) : <EmptyState title="暂无禁选记录">这一局没有营地禁选名单；可在工作台补录。</EmptyState>}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="overview-foot">
         <span>SOURCE · 营地十人面板 / 官方回放 / 营地逐秒位置</span>

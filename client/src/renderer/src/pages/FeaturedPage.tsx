@@ -9,6 +9,7 @@ import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { Sparkline } from '../components/charts/Sparkline'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import type { MatchSummary, TempoMatch } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function FeaturedPage() {
   const { baseUrl } = useConnection()
@@ -116,14 +117,18 @@ export function FeaturedPage() {
         )}
       </div>
 
-      <AnalysisSection title="为什么是这几局" note="按复盘价值排序：正负切换、落后翻盘、终局胶着、领先被缩、时长与时间轴完整度。">
-        <div className="featured-method">
-          <span><b>01</b> 正负切换最多：看经济差反复的原因</span>
-          <span><b>02</b> 终局最接近：看最后一波决策</span>
-          <span><b>03</b> 10 分钟落后但赢下：看翻盘窗口</span>
-          <span><b>04</b> 终局差距最悬殊：看体系或对位崩点</span>
-        </div>
-      </AnalysisSection>
+      <BlockBoard page="featured">
+        <Block id="feat-method" title="入选标准">
+          <AnalysisSection title="为什么是这几局" note="按复盘价值排序：正负切换、落后翻盘、终局胶着、领先被缩、时长与时间轴完整度。">
+            <div className="featured-method">
+              <span><b>01</b> 正负切换最多：看经济差反复的原因</span>
+              <span><b>02</b> 终局最接近：看最后一波决策</span>
+              <span><b>03</b> 10 分钟落后但赢下：看翻盘窗口</span>
+              <span><b>04</b> 终局差距最悬殊：看体系或对位崩点</span>
+            </div>
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">只从有经济时间轴的局里挑选；没有时间轴的局不会用终局读数硬编故事。</div>
     </div>

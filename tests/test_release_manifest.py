@@ -99,6 +99,30 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertLessEqual(len(shipped), 12, sorted(shipped))
         self.assertFalse(any('agent_' in name for name in shipped), sorted(shipped))
 
+    def test_shell_referenced_assets_are_shipped(self):
+        """index.html 引用的资源必须都在清单里，否则安装版直接 404。
+
+        server.py 把 ``/static`` 挂到 ``v3/public`` 目录本身，所以外壳里的
+        ``static/app.js`` 对应发布路径 ``v3/public/app.js``。
+        godmode.js 这类「先不随包」的文件一旦被重新引回外壳却忘了从
+        NEVER_SHIP 删掉，这条会拦住。
+        """
+        import re
+        shipped = set(ship_files())
+        html = (ROOT / 'v3' / 'public' / 'index.html').read_text(encoding='utf-8-sig')
+        refs = re.findall(r'(?:src|href)="static/([^"?#]+)', html)
+        self.assertTrue(refs, '外壳里没解析到任何 static 引用')
+        for ref in refs:
+            with self.subTest(asset=ref):
+                self.assertIn(f'v3/public/{ref}', shipped)
+
+    def test_never_ship_files_stay_out(self):
+        from make_release import NEVER_SHIP
+        shipped = set(ship_files())
+        for name in sorted(NEVER_SHIP):
+            with self.subTest(file=name):
+                self.assertNotIn(name, shipped)
+
 
 if __name__ == '__main__':
     unittest.main()

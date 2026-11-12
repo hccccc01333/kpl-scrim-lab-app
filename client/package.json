@@ -1,6 +1,6 @@
 {
   "name": "kpl-scrim-desk",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "赛训台 · KPL 赛训分析客户端",
   "main": "./out/main/index.js",
   "author": "hccccc01333",

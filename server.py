@@ -1629,12 +1629,18 @@ def _camp_official_index():
     return index
 
 
-def _camp_auto_official(entries, limit=40, actor='camp-sync'):
+def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
     """营地同步之后，用清单里的服务器参数直接把官方回放拉下来并挂到通道。
 
     设计上「只给一个营地链接就该自动爬回放」，但这一步此前根本没接：
     前端从未调用 `/api/official/replay`，同步流程也只写入口径里的
     `official.source` 而没有真正下载。这里补上，失败只记原因，不打断同步。
+
+    `playerid` 的来源只有两处：`data/camp_lists/` 里原始列表条目的
+    `analyseUrl`，或调用方传进来的营地账号 ID（`camp_user_id`）。
+    采集页同步回的条目是 `/api/camp/list` 裁剪过的，没有 `analyseUrl`；
+    清单缓存又只有命令行工具会写，所以这里必须把账号 ID 带上，否则
+    每条都会以「没有可用的 playerid」失败（营地同步成功、回放永远为空）。
     """
     index = _camp_official_index()
     by_seq = {}
@@ -1669,7 +1675,8 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync'):
             continue
         report['tried'] += 1
         try:
-            result = camp_replay.import_entry(source, force=False)
+            result = camp_replay.import_entry(source, force=False,
+                                              camp_user_id=camp_user_id)
         except camp_replay.CampReplayError as error:
             report['failed'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'failed', 'error': str(error)})
@@ -2066,7 +2073,8 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         # 只给一条营地链接 → 详情、通道、官方回放一起到位。回放拉取放在通道之后，
         # 这样拉下来的经济曲线/事件/位置能立刻挂到通道上。
         try:
-            channels['official'] = _camp_auto_official(entries, actor='camp-sync')
+            channels['official'] = _camp_auto_official(
+                entries, actor='camp-sync', camp_user_id=camp_user_id)
         except Exception as error:
             channels['official'] = {'failed': 1, 'items': [],
                                     'error': f'{type(error).__name__}: {error}'}
@@ -3811,6 +3819,47 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
     return payload
 
 
+@app.get('/api/replays/{replay_id}/skill-ledger')
+def replay_skill_ledger(replay_id: str, unit: int = None, stride: int = 1):
+    """Per-cast skill ledger decoded on demand from the stored .abc.
+
+    Source tier is file-decode: cast attempts from the input stream, never hits.
+    Engine-measured outcomes (paused-frame client-memory reads) are a separate
+    optional tier: when attached they appear per cast under ``engine`` and in
+    ``provenance.engine``; without them every ``engine`` stays null and the
+    endpoint behaviour is unchanged.
+    """
+    from tools.replay_skill_ledger import engine_outcomes_summary, skill_ledger
+    with db() as c:
+        row=c.execute('SELECT body FROM replays WHERE id=?',(replay_id,)).fetchone()
+        if not row:
+            raise HTTPException(404,'回放记录不存在')
+        source=c.execute('SELECT data FROM replay_files WHERE id=? AND kind=?',(replay_id,'abc')).fetchone()
+    if not source:
+        raise HTTPException(404,'回放主体文件不存在')
+    ledger=skill_ledger(bytes(source['data']))
+    engine_provenance=engine_outcomes_summary(ledger)
+    if unit is not None:
+        hero=next((item for item in ledger.get('heroes') or [] if item['unit']==unit),None)
+        if hero is None:
+            raise HTTPException(404,f'unit {unit} 不在十人槽位映射内')
+        casts=[cast for cast in ledger['casts'] if cast['unit']==unit]
+        cap=4000
+        step=max(int(stride or 1),(len(casts)+cap-1)//cap if len(casts)>cap else 1)
+        ledger={'status':ledger['status'],'tier':ledger['tier'],
+                'frameRecords':ledger['frameRecords'],
+                'unresolvedFrames':ledger['unresolvedFrames'],
+                'timeBase':ledger['timeBase'],'hero':hero,
+                'castsTotal':len(casts),'strideApplied':step,
+                'casts':casts[::step],'limitations':ledger['limitations']}
+    ledger=dict(ledger,provenance={
+        'casts':{'source':'abc-frame-commands','tier':'file-decode','confidence':'decoded'},
+        'targets':{'source':'abc-learnskill-object-pool','tier':'file-decode','confidence':'decoded'},
+        'engine':engine_provenance,
+        'notes':ledger.get('limitations') or []})
+    return ledger
+
+
 @app.post('/api/replays/{replay_id}/checkpoints')
 async def upload_replay_checkpoints(replay_id: str, request: Request):
     """Import engine checkpoint rows (state.jsonl) without touching the report."""
@@ -4123,12 +4172,34 @@ _V3_INDEX_FALLBACK = """<!doctype html>
 """
 
 
+def _v3_asset_stamp() -> str:
+    """V3 外壳引用 app.js / style.css 的 ``?v=`` 值。
+
+    以前只用 index.html 自己的 mtime：index.html 从 1.5.x 起就没再变过，
+    所以 1.6.0–1.6.4 每个版本生成的 URL 完全一样（``app.js?v=1794271492``）。
+    覆盖安装后只要浏览器、标签页或中间层还留着这个 URL 的旧响应，看起来就是
+    「某些页面还是旧页面」，普通刷新也救不回来。改成版本号 + public 下最新
+    文件 mtime：每次发版、每次改前端文件都会换 URL，旧缓存自然失效。
+    """
+    newest = 0
+    public = ROOT / 'v3' / 'public'
+    try:
+        for item in public.rglob('*'):
+            if item.is_file() and '__pycache__' not in item.parts:
+                newest = max(newest, int(item.stat().st_mtime))
+    except OSError:
+        newest = 0
+    return f'{VERSION}-{newest}'
+
+
 def _v3_index_body() -> str:
-    """读 V3 外壳并做两件事：
+    """读 V3 外壳并做三件事：
 
     1. 外壳被外部编辑器写坏（编码错乱 / 引号丢失）时回退到内置版本——
        否则浏览器会把后面的 link/script 吞掉，整页空白且没有任何报错。
-    2. 资源版本按文件 mtime 注入，index.html 本身不必再手改 ?v=。
+    2. 资源版本按版本号 + public 最新 mtime 注入，index.html 本身不必再手改 ?v=。
+    3. 注入 ``<meta name="app-version">``：页面据此判断自己是不是旧版本，
+       服务端已经换成新版本时提示教练刷新（见 update-banner.js）。
     """
     path = ROOT / 'v3' / 'public' / 'index.html'
     try:
@@ -4143,12 +4214,16 @@ def _v3_index_body() -> str:
                 break
     if broken:
         text = _V3_INDEX_FALLBACK
-    try:
-        stamp = str(int(path.stat().st_mtime))
-    except OSError:
-        stamp = '0'
-    return re.sub(r'(static/(?:style\.css|app\.js))(\?v=[^"\']*)?',
+    stamp = _v3_asset_stamp()
+    # godmode.js 也要吃同一个戳：它以前把 ?v=8.0.0 写死在 index.html 里，
+    # 升级后 URL 不变，浏览器会一直用旧副本，改了也看不到。
+    text = re.sub(r'(static/(?:style\.css|app\.js|godmode\.js))(\?v=[^"\']*)?',
                   lambda match: f'{match.group(1)}?v={stamp}', text)
+    if 'name="app-version"' not in text:
+        text = re.sub(r'<head>',
+                      f'<head>\n  <meta name="app-version" content="{VERSION}">',
+                      text, count=1)
+    return text
 
 
 @app.get('/')

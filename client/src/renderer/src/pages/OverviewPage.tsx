@@ -10,6 +10,7 @@ import { EconomyChart } from '../components/EconomyChart'
 import { MatchRow } from '../components/MatchRow'
 import { ErrorState, Ledger, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 function averageCurve(process: Overview['process']): { points: [number, number][]; games: number; note: string } {
   const games = (process.matches || []).filter((game: ProcessMatch) => (game.points || []).length)
@@ -86,9 +87,13 @@ export function OverviewPage() {
         actions={<><button type="button" className="btn" onClick={() => window.print()}><Icon name="printer" />打印</button><Link className="btn" to="/matches">全部比赛 <Icon name="arrow" /></Link></>}
       />
 
-      <OverviewBriefing baseUrl={baseUrl} />
+      <BlockBoard page="overview">
+        <Block id="overview-briefing" title="今天先看">
+          <OverviewBriefing baseUrl={baseUrl} />
+        </Block>
 
-      <div className="overview-grid">
+        <Block id="overview-latest" title="最近对局 / 数据">
+        <div className="overview-grid">
         <div className="overview-lead">
           {latest ? (
             <article className="ink-card latest-card">
@@ -165,7 +170,9 @@ export function OverviewPage() {
           </section>
         </div>
       </div>
+      </Block>
 
+      <Block id="overview-economy-heroes" title="经济走势 / 英雄出场">
       <div className="overview-analysis">
         <section className="card">
           <div className="card-head">
@@ -188,7 +195,9 @@ export function OverviewPage() {
           </div>
         </section>
       </div>
+      </Block>
 
+      <Block id="overview-recent" title="最近比赛">
       <section className="card">
         <div className="card-head"><div><h2 className="card-title">最近比赛</h2><div className="card-sub">比分、阵容与复盘详情</div></div><Link className="card-link" to="/matches">全部比赛 <Icon name="arrow" /></Link></div>
         <div className="match-ledger">
@@ -196,6 +205,8 @@ export function OverviewPage() {
           {!matches.length ? <div className="empty-state"><b>还没有比赛</b><p>工作台导入数据后，这里会自动出现。</p></div> : null}
         </div>
       </section>
+      </Block>
+      </BlockBoard>
 
       <div className="overview-foot">
         <span>SOURCE · 营地终局面板 / 回放时间轴 / 表格导入</span>

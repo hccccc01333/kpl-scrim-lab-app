@@ -10,6 +10,7 @@ import { BoardEmpty, StatGrid, TierBadge } from '../components/analysis/BoardBit
 import { ScatterChart } from '../components/charts/ScatterChart'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import type { StudioTeam } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const AXIS_KEYS = ['pace', 'fight', 'macro', 'late'] as const
 
@@ -76,52 +77,60 @@ export function TeamStylePage() {
 
       {lowSample === data.teams.length ? <div className="board-banner">当前 {data.teams.length} 支对手都少于 3 局，四轴只作观察；继续积累交手后再看强弱。</div> : null}
 
-      <AnalysisSection title="风格分布" note="四轴取同池分位均值；强项 ≥65、弱项 ≤35。">
-        <div className="style-axis-summary">
-          {averages.map((axis) => (
-            <div className="axis-row" key={axis.key}>
-              <span>{axis.label}</span>
-              <i><em style={{ width: `${axis.value ?? 0}%` }} /></i>
-              <b>{axis.value === null ? '—' : Math.round(axis.value)}</b>
+      <BlockBoard page="team-style">
+        <Block id="style-dist" title="风格分布">
+          <AnalysisSection title="风格分布" note="四轴取同池分位均值；强项 ≥65、弱项 ≤35。">
+            <div className="style-axis-summary">
+              {averages.map((axis) => (
+                <div className="axis-row" key={axis.key}>
+                  <span>{axis.label}</span>
+                  <i><em style={{ width: `${axis.value ?? 0}%` }} /></i>
+                  <b>{axis.value === null ? '—' : Math.round(axis.value)}</b>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </AnalysisSection>
+          </AnalysisSection>
+        </Block>
 
-      <div className="board-grid-2">
-        <AnalysisSection title="节奏 × 团战" note="右上快攻团战、左上慢节奏团战、右下快攻运营、左下慢节奏运营；点名字进档案。">
-          <ScatterChart points={scatter} xLabel="节奏分位" yLabel="团战分位" height={280} />
-        </AnalysisSection>
+        <Block id="style-scatter" title="节奏象限">
+          <div className="board-grid-2">
+            <AnalysisSection title="节奏 × 团战" note="右上快攻团战、左上慢节奏团战、右下快攻运营、左下慢节奏运营；点名字进档案。">
+              <ScatterChart points={scatter} xLabel="节奏分位" yLabel="团战分位" height={280} />
+            </AnalysisSection>
 
-        <AnalysisSection title="四象限读法" note="只描述分位位置，不判断强弱。">
-          <div className="quadrant-notes">
-            <div><b>右上 · 快攻团战</b><span>节奏与团战都高，通常更愿意接团、推进快。</span></div>
-            <div><b>左上 · 慢节奏团战</b><span>团战高、节奏低，偏向等关键资源和团战窗口。</span></div>
-            <div><b>右下 · 快攻运营</b><span>节奏高、团战低，更依赖兵线与资源转换。</span></div>
-            <div><b>左下 · 慢节奏运营</b><span>两项都低，样本常少，需结合具体对局看。</span></div>
+            <AnalysisSection title="四象限读法" note="只描述分位位置，不判断强弱。">
+              <div className="quadrant-notes">
+                <div><b>右上 · 快攻团战</b><span>节奏与团战都高，通常更愿意接团、推进快。</span></div>
+                <div><b>左上 · 慢节奏团战</b><span>团战高、节奏低，偏向等关键资源和团战窗口。</span></div>
+                <div><b>右下 · 快攻运营</b><span>节奏高、团战低，更依赖兵线与资源转换。</span></div>
+                <div><b>左下 · 慢节奏运营</b><span>两项都低，样本常少，需结合具体对局看。</span></div>
+              </div>
+            </AnalysisSection>
           </div>
-        </AnalysisSection>
-      </div>
+        </Block>
 
-      <div className="board-toolbar">
-        <input className="board-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索战队" aria-label="搜索战队" />
-        <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="排序">
-          <option value="pace">按节奏</option>
-          <option value="fight">按团战</option>
-          <option value="macro">按运营</option>
-          <option value="late">按后期</option>
-          <option value="recent">按最近交手</option>
-          <option value="name">按队名</option>
-        </select>
-      </div>
-
-      <AnalysisSection title={`战队风格榜 · ${rows.length} 支`} note="每张卡四轴分数与强弱标签；样本不足会标注。">
-        {rows.length ? (
-          <div className="style-team-grid">
-            {rows.map(({ team, axes }) => <StyleCard team={team} axes={axes} key={team.id} />)}
+        <Block id="style-ranking" title="战队风格榜">
+          <div className="board-toolbar">
+            <input className="board-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索战队" aria-label="搜索战队" />
+            <select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)} aria-label="排序">
+              <option value="pace">按节奏</option>
+              <option value="fight">按团战</option>
+              <option value="macro">按运营</option>
+              <option value="late">按后期</option>
+              <option value="recent">按最近交手</option>
+              <option value="name">按队名</option>
+            </select>
           </div>
-        ) : <BoardEmpty title="没有符合搜索的战队" />}
-      </AnalysisSection>
+
+          <AnalysisSection title={`战队风格榜 · ${rows.length} 支`} note="每张卡四轴分数与强弱标签；样本不足会标注。">
+            {rows.length ? (
+              <div className="style-team-grid">
+                {rows.map(({ team, axes }) => <StyleCard team={team} axes={axes} key={team.id} />)}
+              </div>
+            ) : <BoardEmpty title="没有符合搜索的战队" />}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">风格轴由同池分位合成：节奏 = 分均击杀 + 短时长；团战 = 助攻 + 击杀 + 控制；运营 = 分均经济 + 推塔 + 少死；后期 = 场均时长。本页使用全部营地样本。</div>
     </div>

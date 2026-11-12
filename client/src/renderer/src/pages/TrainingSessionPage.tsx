@@ -9,6 +9,7 @@ import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const GOAL_LABEL: Record<string, string> = { pending: '未评估', achieved: '达成', partial: '部分达成', missed: '未达成' }
 
@@ -68,66 +69,74 @@ export function TrainingSessionPage() {
         { label: '出勤', value: attendanceNames.length ? `${attendanceNames.length} 人` : '未记录', note: '按名单' }
       ]} />
 
-      <div className="board-grid-2">
-        <AnalysisSection title="训练目标" note="目标状态来自工作台指标层；缺数据不按 0 计算。">
-          {goals.length ? (
-            <div className="goal-review-list">
-              {goals.map((goal, index) => (
-                <div className={`goal-review is-${goal.status || 'pending'}`} key={index}>
-                  <span>{GOAL_LABEL[goal.status || 'pending'] || goal.status}</span>
-                  <b>{goal.label || '未命名目标'}</b>
-                  {goal.target || goal.actual !== null && goal.actual !== undefined ? (
-                    <small>{[goal.target ? `目标 ${goal.target}` : '', goal.actual !== null && goal.actual !== undefined ? `实际 ${goal.actual}` : ''].filter(Boolean).join(' · ')}</small>
-                  ) : null}
+      <BlockBoard page="training-session">
+        <Block id="session-goals-review" title="目标与复盘">
+          <div className="board-grid-2">
+            <AnalysisSection title="训练目标" note="目标状态来自工作台指标层；缺数据不按 0 计算。">
+              {goals.length ? (
+                <div className="goal-review-list">
+                  {goals.map((goal, index) => (
+                    <div className={`goal-review is-${goal.status || 'pending'}`} key={index}>
+                      <span>{GOAL_LABEL[goal.status || 'pending'] || goal.status}</span>
+                      <b>{goal.label || '未命名目标'}</b>
+                      {goal.target || goal.actual !== null && goal.actual !== undefined ? (
+                        <small>{[goal.target ? `目标 ${goal.target}` : '', goal.actual !== null && goal.actual !== undefined ? `实际 ${goal.actual}` : ''].filter(Boolean).join(' · ')}</small>
+                      ) : null}
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : <BoardEmpty title="本场未填写训练目标" />}
-        </AnalysisSection>
+              ) : <BoardEmpty title="本场未填写训练目标" />}
+            </AnalysisSection>
 
-        <AnalysisSection title="赛后复盘" note="只读展示；复盘编辑仍在工作台。">
-          {schedule.review ? <p className="session-review">{schedule.review}</p> : <BoardEmpty title="还没有填写赛后复盘" />}
-          <div className="session-meta">
-            <span><small>赛制</small><b>{schedule.format || '未定'}</b></span>
-            <span><small>规则</small><b>{schedule.rules || '未定'}</b></span>
-            <span><small>版本</small><b>{schedule.version || '未记录'}</b></span>
-            <span><small>出勤</small><b>{attendanceNames.length ? attendanceNames.join(' · ') : '未记录'}</b></span>
+            <AnalysisSection title="赛后复盘" note="只读展示；复盘编辑仍在工作台。">
+              {schedule.review ? <p className="session-review">{schedule.review}</p> : <BoardEmpty title="还没有填写赛后复盘" />}
+              <div className="session-meta">
+                <span><small>赛制</small><b>{schedule.format || '未定'}</b></span>
+                <span><small>规则</small><b>{schedule.rules || '未定'}</b></span>
+                <span><small>版本</small><b>{schedule.version || '未记录'}</b></span>
+                <span><small>出勤</small><b>{attendanceNames.length ? attendanceNames.join(' · ') : '未记录'}</b></span>
+              </div>
+            </AnalysisSection>
           </div>
-        </AnalysisSection>
-      </div>
+        </Block>
 
-      <AnalysisSection title={`关联对局 · ${matches.length} 局`} note={`关联依据：${session.matchReason || '未知'}。点对局进入单局深度。`}>
-        {matches.length ? (
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>日期</th><th>对手</th><th>比分</th><th>结果</th><th>时长</th><th>对局</th></tr></thead>
-              <tbody>
-                {matches.map((match) => (
-                  <tr key={match.key}>
-                    <td>{match.date || '—'}</td>
-                    <td>{match.enemyName || teamName}</td>
-                    <td className="is-num">{scoreOf(match.score)}</td>
-                    <td><span className={`board-tag tone-${resultOf(match) === 'win' ? 'own' : resultOf(match) === 'loss' ? 'foe' : 'muted'}`}>{resultOf(match) === 'win' ? '胜' : resultOf(match) === 'loss' ? '负' : '—'}</span></td>
-                    <td className="is-num">{fmtDuration(match.duration)}</td>
-                    <td><Link className="text-link" to={matchPath(match.key)}>复盘 →</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <BoardEmpty title="本场没有关联对局">工作台可按日期、对手或训练组关联。</BoardEmpty>}
-      </AnalysisSection>
+        <Block id="session-matches" title="关联对局">
+          <AnalysisSection title={`关联对局 · ${matches.length} 局`} note={`关联依据：${session.matchReason || '未知'}。点对局进入单局深度。`}>
+            {matches.length ? (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>日期</th><th>对手</th><th>比分</th><th>结果</th><th>时长</th><th>对局</th></tr></thead>
+                  <tbody>
+                    {matches.map((match) => (
+                      <tr key={match.key}>
+                        <td>{match.date || '—'}</td>
+                        <td>{match.enemyName || teamName}</td>
+                        <td className="is-num">{scoreOf(match.score)}</td>
+                        <td><span className={`board-tag tone-${resultOf(match) === 'win' ? 'own' : resultOf(match) === 'loss' ? 'foe' : 'muted'}`}>{resultOf(match) === 'win' ? '胜' : resultOf(match) === 'loss' ? '负' : '—'}</span></td>
+                        <td className="is-num">{fmtDuration(match.duration)}</td>
+                        <td><Link className="text-link" to={matchPath(match.key)}>复盘 →</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <BoardEmpty title="本场没有关联对局">工作台可按日期、对手或训练组关联。</BoardEmpty>}
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection title="对手简报" note="来自对手最近交手；只读。">
-        {brief ? (
-          <div className="brief-grid">
-            <div className="brief-head"><b>{brief.name}</b><span>{number(brief.matches)} 局 · 胜率 {percent(brief.winRate)}</span></div>
-            <div><small>常用英雄</small><span className="brief-heroes">{(brief.heroes || []).map((item) => <span key={item.hero}><Portrait name={item.hero} size="sm" />{item.hero} {number(item.games)}</span>) || '—'}</span></div>
-            <div><small>禁用习惯</small><span className="brief-heroes">{(brief.bans || []).map((item) => <span key={item.hero}><Portrait name={item.hero} size="sm" />{item.hero} {number(item.games)}</span>) || '—'}</span></div>
-            <div><small>关键选手</small><span className="brief-players">{(brief.players || []).slice(0, 5).map((player) => <span key={player.name}>{player.lane || '位置未知'} · {player.name}</span>)}</span></div>
-          </div>
-        ) : <BoardEmpty title="未指定对手或没有简报" />}
-      </AnalysisSection>
+        <Block id="session-opponent-brief" title="对手简报">
+          <AnalysisSection title="对手简报" note="来自对手最近交手；只读。">
+            {brief ? (
+              <div className="brief-grid">
+                <div className="brief-head"><b>{brief.name}</b><span>{number(brief.matches)} 局 · 胜率 {percent(brief.winRate)}</span></div>
+                <div><small>常用英雄</small><span className="brief-heroes">{(brief.heroes || []).map((item) => <span key={item.hero}><Portrait name={item.hero} size="sm" />{item.hero} {number(item.games)}</span>) || '—'}</span></div>
+                <div><small>禁用习惯</small><span className="brief-heroes">{(brief.bans || []).map((item) => <span key={item.hero}><Portrait name={item.hero} size="sm" />{item.hero} {number(item.games)}</span>) || '—'}</span></div>
+                <div><small>关键选手</small><span className="brief-players">{(brief.players || []).slice(0, 5).map((player) => <span key={player.name}>{player.lane || '位置未知'} · {player.name}</span>)}</span></div>
+              </div>
+            ) : <BoardEmpty title="未指定对手或没有简报" />}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">训练课编辑、出勤与复盘写回仍在工作台；客户端只读展示。</div>
     </div>

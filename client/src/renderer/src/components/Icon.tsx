@@ -33,7 +33,14 @@ const paths: Record<string, ReactNode> = {
   closeCircle: <><circle cx="12" cy="12" r="9" /><path d="m9 9 6 6m0-6-6 6" /></>,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6m0-9h.01" /></>,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
-  printer: <><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" rx="1" /></>
+  printer: <><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="7" rx="1" /></>,
+  layout: <><rect x="3.5" y="4" width="17" height="16" rx="2" /><path d="M3.5 9h17M9 9v11" /></>,
+  grip: <><circle cx="9" cy="7" r="1" /><circle cx="15" cy="7" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="9" cy="17" r="1" /><circle cx="15" cy="17" r="1" /></>,
+  eye: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.6" /></>,
+  eyeOff: <><path d="M4 4l16 16" /><path d="M9.9 5.5A10.6 10.6 0 0 1 12 5c6 0 9.5 6 9.5 6a17 17 0 0 1-3.2 3.9M6.1 7.3A17 17 0 0 0 2.5 11s3.5 6 9.5 6a10 10 0 0 0 4-.8" /></>,
+  share: <><circle cx="6" cy="12" r="2.5" /><circle cx="17" cy="6" r="2.5" /><circle cx="17" cy="18" r="2.5" /><path d="m8.3 10.8 6.4-3.6m-6.4 6 6.4 3.6" /></>,
+  up: <><path d="m6 15 6-6 6 6" /></>,
+  down: <><path d="m6 9 6 6 6-6" /></>
 }
 
 interface IconProps extends SVGProps<SVGSVGElement> {

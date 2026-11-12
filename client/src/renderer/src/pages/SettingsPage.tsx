@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useConnection, useSettings } from '../lib/app-context'
 import { useHealth } from '../lib/hooks'
 import { isLoopback } from '../lib/api'
 import { PageHeader } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { ShareDialog } from '../blocks/ShareDialog'
+import { MODE_LABELS, getSnapshot, resetAll, setMode, subscribe } from '../blocks/layout-store'
 
 export function SettingsPage() {
   const { baseUrl, health, disconnect, connect, busy, error } = useConnection()
@@ -14,6 +16,10 @@ export function SettingsPage() {
   const [workbenchPath, setWorkbenchPath] = useState(settings.workbenchPath)
   const [pathNotice, setPathNotice] = useState('')
   const [info, setInfo] = useState<{ version: string; electron: string; platform: string; packaged: boolean; userData: string; settingsPath: string } | null>(null)
+  const [layoutDialog, setLayoutDialog] = useState<'share' | 'import' | null>(null)
+  const [layoutNotice, setLayoutNotice] = useState('')
+  const layoutStore = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const customizedPages = Object.keys(layoutStore.pages).length
 
   useEffect(() => {
     setUrl(settings.baseUrl)
@@ -133,6 +139,32 @@ export function SettingsPage() {
 
       <div className="settings-grid">
         <section className="card settings-card">
+          <div className="card-head"><div><h2 className="card-title">版面（上帝模式）</h2><div className="card-sub">每个分析页都能「自定义布局」：勾选显隐、拖动排序、按页保存；隐藏的块不会删除。版面分享只带顺序与显隐，不含任何比赛数据。</div></div></div>
+          <div className="settings-row">
+            <div className="settings-row-copy"><b>界面模式</b><small>全面：全部超块自己挑；专业：赛训组预设版面（可直接用）；自定义：个人稿。三套布局各存各的，切换只换布局，不换数据。</small></div>
+            <div className="segmented">
+              {(['public', 'pro', 'custom'] as const).map((item) => (
+                <button key={item} type="button" className={layoutStore.mode === item ? 'is-active' : ''} onClick={() => setMode(item)}>{MODE_LABELS[item]}模式</button>
+              ))}
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-copy"><b>已自定义页面</b><small>{customizedPages} 页 · 版面只存在本机，不会上传；分享码与密钥由本机加解密。</small></div>
+            <div className="settings-actions" style={{ margin: 0, padding: 0, borderTop: 0 }}>
+              <button type="button" className="btn btn-sm" onClick={() => setLayoutDialog('share')}><Icon name="share" size={14} /> 分享版面</button>
+              <button type="button" className="btn btn-sm" onClick={() => setLayoutDialog('import')}>导入版面</button>
+            </div>
+          </div>
+          <div className="settings-row">
+            <div className="settings-row-copy"><b>恢复默认</b><small>清掉所有页面的自定义顺序与隐藏，回到出厂布局。</small></div>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { resetAll(); setLayoutNotice('已恢复所有页面默认布局。') }}>恢复全部页面</button>
+          </div>
+          {layoutNotice ? <div className="connect-status is-ok">{layoutNotice}</div> : null}
+        </section>
+      </div>
+
+      <div className="settings-grid">
+        <section className="card settings-card">
           <div className="card-head"><div><h2 className="card-title">工作台</h2><div className="card-sub">采集、导入、校对、选手认领与训练计划在工作台完成，客户端会自动读到最新结果。</div></div></div>
           <div className="settings-row">
             <div className="settings-row-copy"><b>网页版地址</b><small>{baseUrl}</small></div>
@@ -170,6 +202,13 @@ export function SettingsPage() {
           </div>
         </section>
       </div>
+
+      <ShareDialog
+        open={layoutDialog !== null}
+        initialTab={layoutDialog || 'share'}
+        onClose={() => setLayoutDialog(null)}
+        onImported={(pages) => setLayoutNotice(`已导入 ${pages} 页版面。`)}
+      />
     </div>
   )
 }

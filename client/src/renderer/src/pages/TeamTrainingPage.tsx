@@ -7,6 +7,7 @@ import { teamPath } from '../lib/routes'
 import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function TeamTrainingPage() {
   const { baseUrl } = useConnection()
@@ -84,38 +85,42 @@ export function TeamTrainingPage() {
                 </div>
               </div>
 
-              <AnalysisSection title={`训练时间线 · ${sessions.length} 节`} note="计划训练课在前，营地交手日自动补在后面；只读展示。">
-                {sessions.length ? (
-                  <div className="session-timeline">
-                    {sessions.map((session, index) => (
-                      <div className={`session-card is-${session.source === 'plan' ? 'plan' : 'camp'}`} key={`${session.id || session.date}-${index}`}>
-                        <div className="session-head">
-                          <b>{session.date}{session.time ? ` ${session.time}` : ''}</b>
-                          <span className={`board-tag tone-${session.source === 'plan' ? 'accent' : 'muted'}`}>{session.source === 'plan' ? '训练课' : '交手日'}</span>
-                          <span>{session.matches} 局 · {session.wins} 胜 {session.losses} 负</span>
-                          {session.duration ? <span>{Math.round(session.duration / 60)} 分</span> : null}
-                        </div>
-                        {session.session || session.notes ? <p className="session-note">{[session.session, session.format, session.notes].filter(Boolean).join(' · ')}</p> : null}
-                        {session.goals.length ? (
-                          <div className="session-goals">
-                            {session.goals.map((goal, goalIndex) => (
-                              <span key={goalIndex}><small>{goal.label}</small><b>{String(goal.target ?? '—')}</b><em className={`tone-${goal.status === 'done' ? 'own' : goal.status === 'partial' ? 'accent' : 'muted'}`}>{goal.status === 'done' ? '达成' : goal.status === 'partial' ? '部分' : goal.status || '未判定'}</em></span>
-                            ))}
+              <BlockBoard page="team-training">
+                <Block id="training-timeline" title="训练时间线">
+                  <AnalysisSection title={`训练时间线 · ${sessions.length} 节`} note="计划训练课在前，营地交手日自动补在后面；只读展示。">
+                    {sessions.length ? (
+                      <div className="session-timeline">
+                        {sessions.map((session, index) => (
+                          <div className={`session-card is-${session.source === 'plan' ? 'plan' : 'camp'}`} key={`${session.id || session.date}-${index}`}>
+                            <div className="session-head">
+                              <b>{session.date}{session.time ? ` ${session.time}` : ''}</b>
+                              <span className={`board-tag tone-${session.source === 'plan' ? 'accent' : 'muted'}`}>{session.source === 'plan' ? '训练课' : '交手日'}</span>
+                              <span>{session.matches} 局 · {session.wins} 胜 {session.losses} 负</span>
+                              {session.duration ? <span>{Math.round(session.duration / 60)} 分</span> : null}
+                            </div>
+                            {session.session || session.notes ? <p className="session-note">{[session.session, session.format, session.notes].filter(Boolean).join(' · ')}</p> : null}
+                            {session.goals.length ? (
+                              <div className="session-goals">
+                                {session.goals.map((goal, goalIndex) => (
+                                  <span key={goalIndex}><small>{goal.label}</small><b>{String(goal.target ?? '—')}</b><em className={`tone-${goal.status === 'done' ? 'own' : goal.status === 'partial' ? 'accent' : 'muted'}`}>{goal.status === 'done' ? '达成' : goal.status === 'partial' ? '部分' : goal.status || '未判定'}</em></span>
+                                ))}
+                              </div>
+                            ) : null}
+                            <div className="session-games">
+                              {session.games.slice(0, 6).map((game) => {
+                                const row = <><span>{game.start}</span><b>{game.win ? '胜' : '负'}</b><small>{game.map || ''}</small></>
+                                return game.matchKey
+                                  ? <Link key={game.seq} to={`/matches/${encodeURIComponent(game.matchKey)}`} className={`session-game${game.win ? ' is-win' : ''}`}>{row}</Link>
+                                  : <span key={game.seq} className={`session-game${game.win ? ' is-win' : ''}`}>{row}</span>
+                              })}
+                            </div>
                           </div>
-                        ) : null}
-                        <div className="session-games">
-                          {session.games.slice(0, 6).map((game) => {
-                            const row = <><span>{game.start}</span><b>{game.win ? '胜' : '负'}</b><small>{game.map || ''}</small></>
-                            return game.matchKey
-                              ? <Link key={game.seq} to={`/matches/${encodeURIComponent(game.matchKey)}`} className={`session-game${game.win ? ' is-win' : ''}`}>{row}</Link>
-                              : <span key={game.seq} className={`session-game${game.win ? ' is-win' : ''}`}>{row}</span>
-                          })}
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : <BoardEmpty title="还没有训练记录">训练计划或营地交手日后会自动出现在这里。</BoardEmpty>}
-              </AnalysisSection>
+                    ) : <BoardEmpty title="还没有训练记录">训练计划或营地交手日后会自动出现在这里。</BoardEmpty>}
+                  </AnalysisSection>
+                </Block>
+              </BlockBoard>
             </>
           ) : <BoardEmpty title="没有可展示的对手" />}
         </div>

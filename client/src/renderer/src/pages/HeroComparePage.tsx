@@ -22,6 +22,7 @@ import { ScatterChart } from '../components/charts/ScatterChart'
 import { BarList } from '../components/charts/BarList'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import type { CampHeroRow } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function HeroComparePage() {
   const { baseUrl } = useConnection()
@@ -119,75 +120,85 @@ export function HeroComparePage() {
         <HeroIdentity row={b} align="right" />
       </div>
 
-      <AnalysisSection title="六项对位" note="出场、胜率、KDA、分均经济、分均输出、参团率；原始值并列。">
-        <VersusBars
-          rows={HERO_COMPARE_METRICS.map((metric) => ({
-            label: metric.label,
-            own: heroMetric(a, metric.key),
-            foe: heroMetric(b, metric.key),
-            digits: metric.digits,
-            suffix: metric.suffix
-          }))}
-          ownTitle={`${a.hero} · ${a.lane}`}
-          foeTitle={`${b.hero} · ${b.lane}`}
-        />
-      </AnalysisSection>
+      <BlockBoard page="hero-compare">
+        <Block id="hc-metrics" title="六项对位">
+          <AnalysisSection title="六项对位" note="出场、胜率、KDA、分均经济、分均输出、参团率；原始值并列。">
+            <VersusBars
+              rows={HERO_COMPARE_METRICS.map((metric) => ({
+                label: metric.label,
+                own: heroMetric(a, metric.key),
+                foe: heroMetric(b, metric.key),
+                digits: metric.digits,
+                suffix: metric.suffix
+              }))}
+              ownTitle={`${a.hero} · ${a.lane}`}
+              foeTitle={`${b.hero} · ${b.lane}`}
+            />
+          </AnalysisSection>
+        </Block>
 
-      <div className="board-grid-2">
-        <AnalysisSection title="胜率可信度" note="环内为胜率；分布带为同阵营英雄的 P10–P90，深色为 P25–P75。">
-          <div className="hero-ring-row">
-            <div><WinRing value={a.winRate} label={a.hero} /><span>全英雄第 {rankA ?? '—'} / {winRates.length}</span></div>
-            <div><WinRing value={b.winRate} label={b.hero} /><span>全英雄第 {rankB ?? '—'} / {winRates.length}</span></div>
+        <Block id="hc-winrate-output" title="胜率与产出">
+          <div className="board-grid-2">
+            <AnalysisSection title="胜率可信度" note="环内为胜率；分布带为同阵营英雄的 P10–P90，深色为 P25–P75。">
+              <div className="hero-ring-row">
+                <div><WinRing value={a.winRate} label={a.hero} /><span>全英雄第 {rankA ?? '—'} / {winRates.length}</span></div>
+                <div><WinRing value={b.winRate} label={b.hero} /><span>全英雄第 {rankB ?? '—'} / {winRates.length}</span></div>
+              </div>
+              <div className="dist-compare">
+                <div className="dist-band">
+                  <span>{percent(p10)}</span><i><em style={{ left: `${p10 ?? 0}%`, width: `${Math.max(0, (p75 ?? 0) - (p25 ?? 0))}%` }} /></i><span>{percent(p90)}</span>
+                </div>
+                <div className="dist-points">
+                  <span className="is-own" style={{ left: `${a.winRate ?? 0}%` }}>{a.hero}</span>
+                  <span className="is-foe" style={{ left: `${b.winRate ?? 0}%` }}>{b.hero}</span>
+                </div>
+                <p className="board-note">P25–P75 {percent(p25)}–{percent(p75)}；样本 {winRates.length} 个英雄。</p>
+              </div>
+            </AnalysisSection>
+
+            <AnalysisSection title="分均产出" note="分均经济、输出与承伤；输出 ÷ 承伤 = 每点承伤换来的输出。">
+              <VersusBars
+                rows={[
+                  { label: '分均经济', own: a.gpm, foe: b.gpm, digits: 0 },
+                  { label: '分均输出', own: a.dpmTotal, foe: b.dpmTotal, digits: 0 },
+                  { label: '分均承伤', own: a.dtpm, foe: b.dtpm, digits: 0 },
+                  { label: '输出/承伤', own: a.dtpm ? (a.dpmTotal || 0) / a.dtpm : null, foe: b.dtpm ? (b.dpmTotal || 0) / b.dtpm : null, digits: 2 }
+                ]}
+                ownTitle={a.hero}
+                foeTitle={b.hero}
+              />
+            </AnalysisSection>
           </div>
-          <div className="dist-compare">
-            <div className="dist-band">
-              <span>{percent(p10)}</span><i><em style={{ left: `${p10 ?? 0}%`, width: `${Math.max(0, (p75 ?? 0) - (p25 ?? 0))}%` }} /></i><span>{percent(p90)}</span>
-            </div>
-            <div className="dist-points">
-              <span className="is-own" style={{ left: `${a.winRate ?? 0}%` }}>{a.hero}</span>
-              <span className="is-foe" style={{ left: `${b.winRate ?? 0}%` }}>{b.hero}</span>
-            </div>
-            <p className="board-note">P25–P75 {percent(p25)}–{percent(p75)}；样本 {winRates.length} 个英雄。</p>
+        </Block>
+
+        <Block id="hc-scatter" title="全英雄坐标">
+          <AnalysisSection title="全英雄坐标" note="横轴分均经济、纵轴分均输出；点选一个英雄替换 B。">
+            <ScatterChart
+              points={scatter}
+              xLabel="分均经济"
+              yLabel="分均输出"
+              selected={heroKey(b)}
+              onPick={(label) => setBKey(label)}
+              height={300}
+            />
+          </AnalysisSection>
+        </Block>
+
+        <Block id="hc-games-rank" title="出场与排行">
+          <div className="board-grid-2">
+            <AnalysisSection title="出场与胜率" note="按出场局数分箱；组均胜率为简单平均，不按场次加权。">
+              <BarList items={bins.map((bin) => ({ label: bin.label, value: bin.heroes, note: `${percent(bin.winRate)} 组均胜率` }))} digits={0} />
+            </AnalysisSection>
+
+            <AnalysisSection title="出场排行" note="同阵营出场最多的前 8 个英雄。">
+              <BarList
+                items={[...candidates].slice(0, 8).map((row) => ({ label: `${row.hero} · ${row.lane}`, value: row.games, note: percent(row.winRate), tone: heroKey(row) === heroKey(a) ? 'own' : heroKey(row) === heroKey(b) ? 'foe' : 'muted' }))}
+                digits={0}
+              />
+            </AnalysisSection>
           </div>
-        </AnalysisSection>
-
-        <AnalysisSection title="分均产出" note="分均经济、输出与承伤；输出 ÷ 承伤 = 每点承伤换来的输出。">
-          <VersusBars
-            rows={[
-              { label: '分均经济', own: a.gpm, foe: b.gpm, digits: 0 },
-              { label: '分均输出', own: a.dpmTotal, foe: b.dpmTotal, digits: 0 },
-              { label: '分均承伤', own: a.dtpm, foe: b.dtpm, digits: 0 },
-              { label: '输出/承伤', own: a.dtpm ? (a.dpmTotal || 0) / a.dtpm : null, foe: b.dtpm ? (b.dpmTotal || 0) / b.dtpm : null, digits: 2 }
-            ]}
-            ownTitle={a.hero}
-            foeTitle={b.hero}
-          />
-        </AnalysisSection>
-      </div>
-
-      <AnalysisSection title="全英雄坐标" note="横轴分均经济、纵轴分均输出；点选一个英雄替换 B。">
-        <ScatterChart
-          points={scatter}
-          xLabel="分均经济"
-          yLabel="分均输出"
-          selected={heroKey(b)}
-          onPick={(label) => setBKey(label)}
-          height={300}
-        />
-      </AnalysisSection>
-
-      <div className="board-grid-2">
-        <AnalysisSection title="出场与胜率" note="按出场局数分箱；组均胜率为简单平均，不按场次加权。">
-          <BarList items={bins.map((bin) => ({ label: bin.label, value: bin.heroes, note: `${percent(bin.winRate)} 组均胜率` }))} digits={0} />
-        </AnalysisSection>
-
-        <AnalysisSection title="出场排行" note="同阵营出场最多的前 8 个英雄。">
-          <BarList
-            items={[...candidates].slice(0, 8).map((row) => ({ label: `${row.hero} · ${row.lane}`, value: row.games, note: percent(row.winRate), tone: heroKey(row) === heroKey(a) ? 'own' : heroKey(row) === heroKey(b) ? 'foe' : 'muted' }))}
-            digits={0}
-          />
-        </AnalysisSection>
-      </div>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">分位与排名只在当前阵营的英雄池内计算；样本少的英雄不进入可信度结论。本页使用全部营地面板及关联回放。</div>
     </div>

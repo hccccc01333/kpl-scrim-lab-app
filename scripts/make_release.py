@@ -72,6 +72,8 @@ TOOLS_SHIP = [
     'tools/replay_input_timeline.py',
     'tools/replay_opening_packet.py',
     'tools/replay_record_stream.py',
+    # /api/v3/replay/<id>/skill-ledger 懒加载（server.py 里按需 import）。
+    'tools/replay_skill_ledger.py',
 ]
 ROOT_FILES = [
     'CHANGELOG.md',
@@ -261,6 +263,16 @@ def _junk_file(name: str) -> bool:
             or '~RF' in name)
 
 
+# 只留在源码里、不随正式包发布的文件（相对仓库根）。
+# godmode.js 是页面「自定义」编辑器：右下角常驻按钮，能让教练改块顺序/宽度/
+# 显隐/块内文字（只写 localStorage）。产品形态还没定，且和更新提示卡片抢右下角，
+# 先不进安装包——index.html 里的引用也已摘掉。将来要用，从 index.html 引回去
+# 并从这里删掉即可（资源戳会自动覆盖它）。
+NEVER_SHIP = {
+    'v3/public/godmode.js',
+}
+
+
 def ship_files() -> list[str]:
     files = []
     for path in sorted(ROOT.glob('*.py')):
@@ -304,7 +316,7 @@ def ship_files() -> list[str]:
     for name in ROOT_FILES:
         if (ROOT / name).is_file():
             files.append(name)
-    return sorted(dict.fromkeys(files))
+    return sorted(name for name in dict.fromkeys(files) if name not in NEVER_SHIP)
 
 
 def _git(*args: str) -> list[str]:

@@ -111,6 +111,7 @@ static int g_nregions;
 static uintptr_t g_slot0;
 static int g_push_mode = 1, g_consumer_mode = 1, g_reuse_slot0 = 0, g_stock_init = 0;
 static int g_init_slot1 = 0;
+static int g_no_snapshot = 0;
 static int g_tick = 0;
 static float g_tick_delta = 0.033f;
 static int g_split_consumer = 1;
@@ -1064,6 +1065,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--context") && i + 1 < argc) g_context = (uintptr_t)parse_u64(argv[++i]);
         else if (!strcmp(a, "--binder") && i + 1 < argc) g_binder = (uintptr_t)parse_u64(argv[++i]);
         else if (!strcmp(a, "--no-publish-context")) g_no_publish_context = 1;
+        else if (!strcmp(a, "--no-snapshot")) g_no_snapshot = 1;
         else if (!strcmp(a, "--consumer") && i + 1 < argc) consumer = (uintptr_t)parse_u64(argv[++i]);
         else if (!strcmp(a, "--core-state") && i + 1 < argc) core_state = (uintptr_t)parse_u64(argv[++i]);
         else if (!strcmp(a, "--start") && i + 1 < argc) start = atoi(argv[++i]);
@@ -1090,7 +1092,7 @@ int main(int argc, char **argv) {
                    "[--ring-size HEX] [--start N] [--limit N] [--stride N] "
                    "[--skip-empty] [--reuse-slot0] [--stock-init] [--init-slot1] "
                    "[--trace-dispatch] [--trace-print] [--diff-context] "
-                   "[--monolithic-consumer] [--no-push] [--no-consumer] "
+                   "[--monolithic-consumer] [--no-push] [--no-consumer] [--no-snapshot] "
                    "[--timeout SEC] [--quiet]\n", argv[0]);
             return 0;
         } else {
@@ -1125,16 +1127,25 @@ int main(int argc, char **argv) {
     say("base=%#lx ModuleInit=%d pid=%d", (unsigned long)g_base, rc, getpid());
 
     int mapped = 0, failed = 0;
-    if (map_snapshot(snapshot, &mapped, &failed) != 0) return 30;
     g_old_end = g_old_base + LIB_END;
-    say("snapshot mapped=%d failed=%d", mapped, failed);
-    if (failed) return 40;
-    relocate_snapshot(g_old_base, g_old_end, g_base);
-    if (globals && load_lib_globals(globals) != 0) return 31;
+    if (!g_no_snapshot) {
+        if (map_snapshot(snapshot, &mapped, &failed) != 0) return 30;
+        say("snapshot mapped=%d failed=%d", mapped, failed);
+        if (failed) return 40;
+        relocate_snapshot(g_old_base, g_old_end, g_base);
+        if (globals && load_lib_globals(globals) != 0) return 31;
+    } else {
+        say("no-snapshot mode: captured regions/context unavailable; "
+            "using fresh slot0 + host consumer");
+        g_context = 0;
+        g_binder = 0;
+        consumer = 0;
+        core_state = 0;
+    }
     /* Active-context fixture: [0x4FF57C8] is in the page immediately below
      * the captured data segment and is not part of the globals file.  It must
      * point at the rebased slot array at 0x52488C0 (slot0/1/... addresses). */
-    if (g_init_slot1) {
+    if (g_init_slot1 && !g_no_snapshot) {
         uintptr_t slot_ptr = g_base + 0x4FF57C8ULL;
         if (mprotect((void *)(slot_ptr & ~0xFFFULL), 0x1000,
                      PROT_READ | PROT_WRITE) == 0) {
@@ -1150,7 +1161,7 @@ int main(int argc, char **argv) {
 
     /* Publish the captured context exactly as A1 did. */
     uintptr_t holder_slot = *(uintptr_t *)(g_base + 0x51EA4D0ULL);
-    if (holder_slot && g_context && !g_no_publish_context) {
+    if (!g_no_snapshot && holder_slot && g_context && !g_no_publish_context) {
         *(uintptr_t *)holder_slot = g_context;
         say("published context at [%#lx]=%#lx", (unsigned long)holder_slot,
             (unsigned long)g_context);
@@ -1174,6 +1185,16 @@ int main(int argc, char **argv) {
     if (consumer) {
         *(uintptr_t *)(g_base + 0x544CC40ULL) = consumer;
         say("consumer [0x544CC40]=%#lx", (unsigned long)consumer);
+    }
+    if (g_no_snapshot && g_consumer_mode) {
+        unsigned char *buf = calloc(1, 0x40000);
+        void *cons = calloc(1, 0x10);
+        if (!buf || !cons) { say("host consumer alloc failed"); return 43; }
+        *(uintptr_t *)cons = (uintptr_t)buf;
+        *(uint32_t *)((char *)cons + 8) = 0x40000;
+        *(uint32_t *)((char *)cons + 0xc) = 0;
+        *(void **)(g_base + 0x544CC40ULL) = cons;
+        say("host consumer=%p buf=%p cap=%#x", cons, buf, 0x40000);
     }
 
     const char *slot0_source = "captured";

@@ -7,6 +7,7 @@ import { goldDiffOf } from '../lib/analysis/matches'
 import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 import type { MatchSummary } from '../lib/types'
 
 type Dim = 'version' | 'session'
@@ -55,23 +56,27 @@ export function VersionsPage() {
 
       {note ? <div className="board-banner">{note}</div> : null}
 
-      <AnalysisSection title={active === 'version' ? '按版本对比' : '按训练组对比'} note={`${groups.length} 组 · ${matches.length} 局`}>
-        {groups.length ? (
-          <div className="version-list">
-            <div className="version-row is-head"><span>分组</span><span>局数</span><span>胜率</span><span>平均时长</span><span>平均金差</span><span /></div>
-            {groups.map((group) => (
-              <div className="version-row" key={group.name}>
-                <span className="version-name"><b>{group.name}</b><small>{group.decided} 局有胜负</small></span>
-                <span className="version-count"><b>{group.games}</b><i><em style={{ width: `${group.games / maxGames * 100}%` }} /></i></span>
-                <span className="is-num">{percent(group.winRate)}</span>
-                <span className="is-num">{fmtDuration(group.avgDuration)}</span>
-                <span className={`is-num ${(group.avgGold || 0) >= 0 ? 'tone-text-own' : 'tone-text-foe'}`}>{signed(group.avgGold)}</span>
-                <span className="version-link">{group.keys[0] ? <Link to={`/matches/${encodeURIComponent(group.keys[0])}`}>看一局 →</Link> : null}</span>
+      <BlockBoard page="versions">
+        <Block id="versions-groups" title="分组对比">
+          <AnalysisSection title={active === 'version' ? '按版本对比' : '按训练组对比'} note={`${groups.length} 组 · ${matches.length} 局`}>
+            {groups.length ? (
+              <div className="version-list">
+                <div className="version-row is-head"><span>分组</span><span>局数</span><span>胜率</span><span>平均时长</span><span>平均金差</span><span /></div>
+                {groups.map((group) => (
+                  <div className="version-row" key={group.name}>
+                    <span className="version-name"><b>{group.name}</b><small>{group.decided} 局有胜负</small></span>
+                    <span className="version-count"><b>{group.games}</b><i><em style={{ width: `${group.games / maxGames * 100}%` }} /></i></span>
+                    <span className="is-num">{percent(group.winRate)}</span>
+                    <span className="is-num">{fmtDuration(group.avgDuration)}</span>
+                    <span className={`is-num ${(group.avgGold || 0) >= 0 ? 'tone-text-own' : 'tone-text-foe'}`}>{signed(group.avgGold)}</span>
+                    <span className="version-link">{group.keys[0] ? <Link to={`/matches/${encodeURIComponent(group.keys[0])}`}>看一局 →</Link> : null}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        ) : <BoardEmpty title="当前没有可分组的数据" />}
-      </AnalysisSection>
+            ) : <BoardEmpty title="当前没有可分组的数据" />}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">版本按数字段排序（S42 → S41 → …），避免字典序把 S9 排在 S40 前面；训练组按局数排序。</div>
     </div>

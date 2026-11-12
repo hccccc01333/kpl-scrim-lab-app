@@ -1,0 +1,638 @@
+/* ── 上帝模式：块容器 / 编辑工具栏 / 分享弹窗 ─────────────────────── */
+
+.god-board {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.god-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.god-toolbar.is-quiet {
+  margin-bottom: -8px;
+}
+
+.god-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--quiet);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  opacity: .55;
+  transition: opacity .18s var(--ease), color .18s var(--ease);
+}
+
+.god-board:hover .god-edit-btn,
+.god-edit-btn:focus-visible {
+  opacity: 1;
+  color: var(--accent);
+}
+
+.god-toolbar.is-editing {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow);
+}
+
+.god-hint {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+}
+
+.god-notice {
+  color: var(--accent);
+  font-size: var(--fs-micro);
+}
+
+.god-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.god-block {
+  position: relative;
+  min-width: 0;
+}
+
+.god-block.is-editing {
+  padding: 4px 0 0;
+  border: 1px dashed color-mix(in srgb, var(--line-strong) 80%, transparent);
+  border-radius: var(--r-md);
+}
+
+.god-block.is-editing.is-hidden {
+  opacity: .45;
+  border-style: dotted;
+  background: color-mix(in srgb, var(--surface) 35%, transparent);
+}
+
+.god-block.is-editing.is-dragging {
+  opacity: .35;
+}
+
+.god-block.is-editing.is-drop {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.god-block-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 8px 6px;
+}
+
+.god-grip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: grab;
+  border-radius: var(--r-sm);
+}
+
+.god-grip:active {
+  cursor: grabbing;
+}
+
+.god-grip b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.god-block-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.god-block-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.god-block-actions button:hover:not(:disabled) {
+  border-color: var(--line);
+  color: var(--accent);
+  background: var(--paper-2);
+}
+
+.god-block-actions button:disabled {
+  opacity: .25;
+  cursor: default;
+}
+
+.god-block-actions button.is-off {
+  color: var(--coral);
+}
+
+.god-block-body {
+  min-width: 0;
+}
+
+/* ── 分享弹窗 ─────────────────────────────────────────────────────── */
+
+.god-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.god-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 16, 15, .45);
+  backdrop-filter: blur(2px);
+}
+
+.god-modal-card {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: min(82vh, 720px);
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+  padding: 20px 22px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  box-shadow: var(--shadow-pop);
+}
+
+.god-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.god-modal-head b {
+  display: block;
+  font-family: var(--serif);
+  font-size: 17px;
+  letter-spacing: .04em;
+}
+
+.god-modal-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+}
+
+.god-modal-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.god-modal-close:hover {
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+
+.god-seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  justify-self: start;
+}
+
+.god-seg button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.god-seg button.is-active {
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.god-modal-body {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.god-field {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+}
+
+.god-field span {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+}
+
+.god-field textarea,
+.god-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.god-field textarea:focus,
+.god-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.god-modal-note {
+  margin: 0;
+  color: var(--quiet);
+  font-size: var(--fs-micro);
+  line-height: 1.7;
+}
+
+.god-modal-error {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--coral) 40%, transparent);
+  border-radius: var(--r-sm);
+  color: var(--coral);
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+}
+
+@media (max-width: 880px) {
+  .god-toolbar.is-editing {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .god-hint {
+    display: none;
+  }
+}
+
+/* ── 模式芯片 / 块级筛选 ─────────────────────────────────────────── */
+
+.mode-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-micro);
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: color .18s var(--ease), border-color .18s var(--ease);
+}
+
+.mode-chip:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.god-mode-tag {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 7px;
+  border-radius: var(--r-sm);
+  background: var(--soft);
+  color: var(--accent-ink);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.god-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 0 2px 8px;
+}
+
+.god-filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--quiet);
+  font-size: var(--fs-micro);
+}
+
+.god-filter-field select {
+  height: 24px;
+  padding: 0 22px 0 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.god-filter-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.god-date-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--quiet);
+}
+
+.god-date-pair input {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-micro);
+}
+
+.god-date-pair input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.god-filter-clear {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.god-filter-badge {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--soft);
+  color: var(--accent-ink);
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: .04em;
+}
+
+/* ── 我的看板 / 分析库 ───────────────────────────────────────────── */
+
+.god-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 52px 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.god-empty b {
+  font-family: var(--serif);
+  font-size: 18px;
+  letter-spacing: .04em;
+}
+
+.god-empty p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.7;
+}
+
+.god-library-card {
+  width: min(700px, 100%);
+}
+
+.god-library-body {
+  display: grid;
+  gap: 18px;
+}
+
+.god-library-group h4 {
+  margin: 0 0 2px;
+  color: var(--quiet);
+  font-size: var(--fs-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.god-library-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.god-library-copy {
+  min-width: 0;
+}
+
+.god-library-copy b {
+  display: block;
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+
+.god-library-copy small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+}
+
+.god-library-filters {
+  display: inline-block;
+  margin-top: 5px;
+  color: var(--quiet);
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+
+.god-library-variants {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ── BP 纸（征召模式：5 ban + 10 选）──────────────────────────────── */
+
+.draft-paper {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.draft-paper-label {
+  color: var(--quiet);
+  font-size: var(--fs-micro);
+  letter-spacing: .08em;
+}
+
+.draft-segment {
+  display: grid;
+  gap: 6px;
+}
+
+.draft-paper-row {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.draft-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 56px;
+  padding: 9px 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper-2);
+}
+
+.draft-cell b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.draft-cell small {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.draft-cell-order {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 9px;
+}
+
+.draft-cell.side-blue {
+  border-color: color-mix(in srgb, #3d7bd6 42%, var(--line));
+}
+
+.draft-cell.side-red {
+  border-color: color-mix(in srgb, #c65a3d 42%, var(--line));
+}
+
+.draft-cell.is-own {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.draft-cell.is-empty b {
+  color: var(--quiet);
+  font-weight: 500;
+}
+
+/* 超块：英雄胜率条 */
+.super-hero-cell { display: inline-flex; align-items: center; gap: 8px; min-width: 140px; }
+.super-hero-cell b { font-weight: 600; }
+.super-bar { display: inline-block; width: 84px; height: 5px; border-radius: 3px; background: rgba(14, 101, 91, .12); overflow: hidden; }
+.super-bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+
+/* 超块：BP 率小方框 */
+.super-squares { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.super-square { display: grid; grid-template-rows: 34px auto auto; justify-items: center; gap: 3px; padding: 8px 6px 7px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper-2, #f7f7f5); }
+.super-square img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
+.super-square-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: var(--accent-soft, #e1ece5); color: var(--accent); font-weight: 700; }
+.super-square b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.super-square em { display: flex; gap: 6px; font-style: normal; font-size: 10px; color: var(--quiet); }
+.super-square em span { padding: 1px 5px; border-radius: 4px; background: rgba(14, 101, 91, .08); color: var(--accent); font-weight: 700; }
+
+/* 超块配置面板 */
+.god-config-backdrop { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(12, 24, 22, .28); }
+.god-config-panel { width: min(420px, calc(100vw - 40px)); max-height: 78vh; overflow: auto; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); box-shadow: 0 24px 60px rgba(16, 28, 26, .26); }
+.god-config-panel header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.god-config-panel header button { min-height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.god-config-note { margin: 8px 0 12px; color: var(--quiet); font-size: 11px; line-height: 1.6; }
+.god-config-fields { display: grid; gap: 10px; }
+.god-config-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+.god-config-row select, .god-config-row input[type="number"] { min-width: 140px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: inherit; font: inherit; }
+.god-config-row input[type="checkbox"] { width: 16px; height: 16px; }
+.board-subhead { margin: 4px 0 8px; font-size: 12px; font-weight: 700; color: var(--muted); }

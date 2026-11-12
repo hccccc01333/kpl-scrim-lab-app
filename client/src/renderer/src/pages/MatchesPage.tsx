@@ -5,6 +5,7 @@ import { dateRange, number, percent } from '../lib/format'
 import { MatchRow } from '../components/MatchRow'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 type Filter = 'all' | 'win' | 'loss'
 
@@ -53,6 +54,8 @@ export function MatchesPage() {
         ].map((text) => <span key={text}>{text}</span>)}
       />
 
+      <BlockBoard page="matches" allowEmpty>
+      <Block id="matches.toolbar" title="筛选">
       <div className="players-toolbar">
         <div className="row" style={{ flexWrap: 'wrap' }}>
           {([['all', '全部'], ['win', '胜利'], ['loss', '失利']] as [Filter, string][]).map(([value, label]) => (
@@ -72,7 +75,9 @@ export function MatchesPage() {
           />
         </label>
       </div>
+      </Block>
 
+      <Block id="matches.ledger" title="对局记录">
       <section className="card">
         <div className="card-head">
           <div><h2 className="card-title">对局记录</h2><div className="card-sub">{number(matches.length)} 场符合当前筛选 · 按时间倒序</div></div>
@@ -82,6 +87,8 @@ export function MatchesPage() {
           {!matches.length ? <div className="empty-state"><b>没有符合条件的比赛</b><p>换一个关键词或筛选条件试试。</p></div> : null}
         </div>
       </section>
+      </Block>
+      </BlockBoard>
     </div>
   )
 }

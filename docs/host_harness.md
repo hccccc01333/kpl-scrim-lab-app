@@ -282,3 +282,53 @@ GCHOST_PROFILE_BUILD = 5247758
 - `host/fixtures/20261102_161129/`：当前 golden fixture
 - `docs/gamecore_host.md`：总体计划与 H0–H7 里程碑
 - `data/replays/_analysis/_host/`：原始探针源码与二进制（保留不动）
+
+## 10. 非 root ARM64 平板验证（2026-11-12）
+
+**结论：宿主路线的 H0–H2 不依赖 root，已在未 root 的量产平板上跑通。**
+
+| 项 | 值 |
+|---|---|
+| 设备 | REDMI Pad 2（`25040RP0AC`，serial `nrmne6q8m7eigqpf`） |
+| 系统 | Android 15（SDK 35），`arm64-v8a`，`ro.build.type=user` |
+| root | 无（`su` 不存在；未解锁、未刷机） |
+| 游戏 | 平板上**未安装**王者荣耀；未登录、未启动游戏 |
+| 库来源 | MuMu 实例 0（`NCO_AL00`）里的游戏安装，`adb root` 一次性拉取 |
+| 构建一致性 | `libGameCore.so` md5 `133db4411e77ed2af567a4a3bbd3dc6a`、`libil2cpp.so` md5 `43bc62bd0947e10a0ccf2ff1ac23cdd9`，与本地副本、设备安装三方一致（build 5247758 / 12.1.1.26） |
+
+设备侧步骤（全部通过 `adb shell` 的 shell 用户执行，未用 root）：
+
+```bash
+adb -s <tablet> shell "mkdir -p /data/local/tmp/gc"
+adb push host/build/gchost /data/local/tmp/gc/
+# 4 个依赖库 + libGameCore.so（sha 与 MuMu 安装一致）
+adb push <game_libs>/libpandora.so <game_libs>/libpixuiCurl.so \
+         <game_libs>/libPixUI_Unity.so <game_libs>/libpuerts.so \
+         data/replays/_analysis/libGameCore.so  /data/local/tmp/gc/
+adb push host/fixtures/20261102_161129 /data/local/tmp/gc/
+adb push data/replays/_analysis/device/dtab_blocks /data/local/tmp/gc/
+adb -s <tablet> shell "cd /data/local/tmp/gc && chmod 755 gchost && \
+  ./gchost --lib-dir /data/local/tmp/gc \
+           --fixture /data/local/tmp/gc/20261102_161129 \
+           --replay-id 20261102_161129 \
+           --databin-dir /data/local/tmp/gc/dtab_blocks --verify samples"
+```
+
+结果（exit 0）：
+
+```text
+deps: 4 个依赖 + libGameCore 全部 dlopen OK
+module-init: libGameCore base=0x7aee335000, ModuleInit offset=0x46ad0e0（与 profile 一致）
+fixture: replay_id / build 5247758 / totalFrameNum 10674 校验 OK
+databin RESULT installed=825 verified=825 count_bad=0 row_bad=0 total_rows=205149
+implemented stages completed OK
+```
+
+说明与边界：
+
+- root 在此前方案里的作用只是「读游戏进程内存」和「从 `/data/app` 取库/取证」；**宿主化本身不需要 root**，它只在自己进程里加载引擎，不 attach 游戏。
+- 平板上的 host 只用了 `shell` 用户与 `/data/local/tmp`，未改系统、未装游戏、未碰游戏数据。
+- 本验证只覆盖 H0–H2（依赖加载 / `ModuleInit` / fixture / databin）。**H4 context-init、H5 frame-tick、H6 state-output 仍是未实现的墙**（见 §1）。
+- 同一台平板上另做了两组非 root 验证：`gc_consumer_test`（真实 ring + `PushCsBuffer/CommitCsBuffer` + 真实 consumer 分派，exit 0）和 `h5_probe --no-snapshot`（200 个真实 `.abc` 帧，push/drain 200/200 字节一致，12 帧进入 parser、2 帧返回、10 帧因缺 context 崩溃）。详见 `docs/h5_consumer_probe.md` §11。这些仍**不推进帧、不输出状态**。
+- 库文件仍来自商业客户端安装（build 5247758）；许可与 ToS 边界见 `docs/replay_data_contract.md` 与 `GAMECORE.LICENSE` 讨论，宿主化只用于内部研究，不作为交付物分发。
+- 复现时库的来源必须是**同一 build**（`ModuleInit` 偏移与 databin 块都绑定 5247758）；换版本要先重跑偏移与表验证。

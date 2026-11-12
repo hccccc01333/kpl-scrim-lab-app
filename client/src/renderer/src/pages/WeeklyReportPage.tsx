@@ -8,6 +8,7 @@ import { duration as fmtDuration, number, percent } from '../lib/format'
 import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function WeeklyReportPage() {
   const { baseUrl } = useConnection()
@@ -158,9 +159,13 @@ export function WeeklyReportPage() {
         <footer className="report-footer"><span>数据来源：训练计划、对局档案与训练效果</span><span>赛训数据 · {new Date().toISOString().slice(0, 10)} · 内部资料</span></footer>
       </article>
 
-      <AnalysisSection title="这周怎么读" note="周报只汇总过程与结果，不把胜率当成训练质量。">
-        <p className="board-note">训练课与目标来自训练计划；对局来自已确认的营地记录；训练效果只统计有完整年份、且两侧样本足够的干预记录。</p>
-      </AnalysisSection>
+      <BlockBoard page="weekly-report">
+        <Block id="weekly-report-reading" title="周报导读">
+          <AnalysisSection title="这周怎么读" note="周报只汇总过程与结果，不把胜率当成训练质量。">
+            <p className="board-note">训练课与目标来自训练计划；对局来自已确认的营地记录；训练效果只统计有完整年份、且两侧样本足够的干预记录。</p>
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
     </div>
   )
 }

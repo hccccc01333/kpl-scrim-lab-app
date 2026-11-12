@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.6.4'
-RELEASE_DATE = '2026-11-11'
-RELEASE_NAME = '移除匿名统计：不再上报，只保留采集与自动更新'
+VERSION = '1.6.5'
+RELEASE_DATE = '2026-11-12'
+RELEASE_NAME = '修复营地同步回放为空、升级后仍是旧界面'

@@ -170,3 +170,109 @@ libil2cpp.so    → 0xd909518: blr x8 改为 mov w0,#1 ; nop
 GameCore 本身不依赖 libtprt（DT_NEEDED 无此项），所以空壳只影响 il2cpp 的
 保护层。下一步：确认 `il2cpp_init` 返回 0、枚举到 `Scripts.GameCore.dll`、
 解析 `GameLogicHelper.AdvanceFrameCommands`，再把 frame-0 context 接进来。
+
+## 6. 原生 ARM64 平板复测（2026-11-12）——闸门不止一处
+
+环境终于满足 B0 的第 1 条：REDMI Pad 2（Android 15，arm64-v8a，`user` 版，
+无 root），不是 MuMu/houdini。
+
+部署（全部在平板 `/data/local/tmp/gc/sim/`，用 shell 用户，无 root）：
+
+```text
+libtprt.so        = host/build/stub/libtprt.so（空壳，表项返回 0）
+libil2cpp.so      = host/build/libil2cpp_pass.so（0xd909518: blr x8 → mov w0,#1 ; nop）
+global-metadata.dat（60,322,264 B）
+il2cpp_host + 依赖（libpandora/libpixuiCurl/libPixUI_Unity/libpuerts/libGameCore）
+```
+
+结果：
+
+```text
+dlopen 6 个依赖全部 OK（原生 ARM64，无翻译层）
+dlopen libil2cpp.so → 进程 exit_group(25)，未打印 "dlopen libil2cpp.so OK"
+```
+
+- 空壳表项改成返回奇数 1 也无效（注意重建空壳必须带 `-Wl,-soname,libtprt.so`，
+  否则 libil2cpp 的 DT_NEEDED 找不到它）。
+- 反汇编 `libil2cpp_pass.so` 的检查区（capstone）：`exit_group(25)`
+  （`mov w0,#0x19; mov x8,#0x5e; svc #0`）有 **5 处**
+  `0xd9094b4 / 0xd909520 / 0xd9095b8 / 0xd909668 / 0xd9096a4`；
+  `0xd9094xx–0xd90a4xx` 内共 9 处 `svc` 退出模式。
+  **只补 0xd909518 一个调用点不够**——检查函数其它分支仍会自杀。
+
+**结论**：原生 ARM64 环境不再是门槛，门槛是 libil2cpp 的**多处反作弊退出分支**。
+要继续 B 路线，必须对 `libil2cpp` 副本做多点补丁（绕检查），即 2026-11-04
+审计里标为红线的“改 libil2cpp.so 字节”；且这只能用于内部研究，不能进入产品/
+交付物。是否破例需要明确决策；不破例则 B 路线到此为止，改走原版客户端只读
+旁路（A）或官方合作。
+
+## 7. 破例后的结论：libil2cpp 依赖 tprt 运行期打补丁，独立宿主不可行（2026-11-12）
+
+用户破例后继续推进，拿到两段关键证据，最终判定 B 路线需要**重写 tprt 运行期
+保护层**，不是补丁几个字节能解决的：
+
+### 7.1 反作弊退出点已绕过，`dlopen libil2cpp.so` 成功
+
+修正 11-04 补丁的 bug（它把 `0xd909518` 的 `blr`→`mov w0,#1`、又把通过分支
+`tbnz`→`nop`，等于必掉 `exit_group(25)`）。正确补丁：只把 5 处 exit(25) 块
+`0xd9094b4/520/5b8/668/6a4` 跳到各自 +0x20 的正常路径（保留 tprt 调用/分支）。
+在此补丁下，**`dlopen libil2cpp.so` 在原生 ARM64 平板上成功**。
+
+### 7.2 但 `il2cpp_init` 立刻撞上“tprt 钩子占位代码”
+
+- 崩溃点：RVA `0x3AA3BAC`（经 `0xba55794` 长跳 veneer → PLT → `strcpy`），
+  以 `x0=6` 崩溃（`addr=0x6`）。
+- 跳过该调用（11-04 的 `patch_nop(base+0x3AA3BC8)`）后，会在后续 C++/locale
+  初始化里 `operator new → memset` 巨型长度崩溃（x2≈0x7f…）。
+- 原因：`libil2cpp` 的 `.data`（如 `0xe56ec28` 一带）有一张 **tprt 钩子清单**：
+  每条 32 B，形如 `{meta:u64, target_rva:u64, size:u64, ...}`；例如
+  `meta=0x000f00120000097f, target=0x3aa3bac, size=0x34`。`.data`/`.rodata`
+  里还有大量类似条目。这些 target 在文件里是**占位/诱饵代码**，真实实现由
+  `libtprt` 在加载时按清单打补丁（inline hook）后才有意义。
+- 旁证：`.rodata` 字符串是 **逐字节 XOR 0xE3** 加密的（解密后是
+  `VersionBranch_v121_publish_20260828/Escher/il2cpp/...` 之类构建路径），
+  说明数据/字符串也依赖 tprt/加载期解密。
+
+### 7.3 判定
+
+- 独立 il2cpp 宿主 = 需要复刻 tprt 的**加载期解密 + 数百个 inline hook +
+  反作弊检查**；这不是“补几个 exit”能完成的，且属于对反作弊层的实质性绕过。
+- 即使做出来，也只能内部研究、不能进产品；预计周级到月级工作量，收益与
+  产品目标不符。
+- **建议：B 路线到此终止，结论记为“合规前提下的独立引擎重演不可行”。**
+
+### 7.4 复现材料
+
+- 补丁脚本：`data/replays/_analysis/live_20261112/patch_il2cpp_anticheat.py`
+  （data/ 忽略，不入产品）；
+- 平板 `/data/local/tmp/gc/sim/`（patched libil2cpp + stub libtprt + metadata）；
+- 崩溃日志：`run4.log`/`run5.log`/`run6.log`；
+- 反作弊退出点扫描、钩子清单/加密字符串证据见本轮记录。
+
+### 7.5 换“真实 libtprt”再试：tprt 本体是 VMP 混淆（2026-11-12 晚）
+
+既然钩子实现都在 libtprt，最后一次尝试是**加载真实 libtprt**（替换空壳）让
+它自己做解密/hook/检查。结果：6 个依赖全部 `dlopen` OK，但在 `dlopen
+libil2cpp` 的 DT_INIT 里进入 libtprt 检查函数后 **SIGBUS**：
+
+```text
+lr = libtprt.so +0x6dea4   (检查/调度函数内部)
+frame[0] lr = libil2cpp.so +0xe56151c   (DT_INIT 的 tprt 调用点)
+sig=7 (SIGBUS), pc 落在 libtprt 的间接跳转链上
+```
+
+反汇编 `libtprt.so` 的检查区（`0x6c3f0`/`0x6dd80`）：大量
+
+```text
+ldr x17, [x28, xN, lsl #3]
+add x17, x17, x19
+br  x17
+```
+
+形态 + 大量用 `mov/movk` 拼出的混淆常量（如 `0x6e5c40f1`、`0x83a9af56`），
+是**控制流展平的 VM/混淆器**，不是普通函数。空壳会让占位代码跑飞，真库又会在
+VM 调度里 SIGBUS（其运行前提是完整游戏进程状态）。
+
+**最终判定**：B 路线的复刻对象不是“几百个 inline hook + 解密”，而是
+**VMP 混淆的 tprt 保护层**；这属于专业加固逆向，周级到月级、只适用于内部研究，
+与产品目标不符。**B 路线终止，结论记为“独立引擎重演不可行”。**

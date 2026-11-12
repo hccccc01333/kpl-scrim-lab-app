@@ -367,3 +367,54 @@ H5 的“context 依赖”已补：active context `P=0x730fe87fcff0` +
 
 详见 `docs/h5_active_context_slot0.md`。原 §8 第 1、2 条的 context/BSS
 缺口已闭合；第 4 条（命令流语义）和“不是帧推进/状态输出”的界限仍成立。
+
+## 11. 非 root 平板 + 无快照模式（2026-11-12）
+
+`client_probe_20261103/process_snapshot_2052` 快照已不在本机，默认 H5 路径
+（`map_snapshot`）无法复跑。为在**未 root 的 REDMI Pad 2（`25040RP0AC`，
+Android 15 / SDK 35，`arm64-v8a`，无 `su`）**上验证 H5 通道，给
+`host/src/h5_probe.c` 增加 `--no-snapshot` 模式：
+
+- 跳过 snapshot region 映射 / `relocate_snapshot` / context 发布 / binder
+  slot 写入；
+- 改用真实 ring ctor+init（`0x49CBD88` / `0x49CBEEC`）、宿主 consumer
+  （16 B `{data, cap, used}`，cap `0x40000`）、KCMD v1 命令表
+  （`host/fixtures/20261102_161129/consumer/cmd_table.bin`，count=857）、
+  frames fixture（`host/build/frames/20261102_161129`，10,509 帧）。
+
+运行（平板 `/data/local/tmp/gc/`，普通 `adb shell` 用户，无 root）：
+
+```bash
+./h5_probe_nosnap --lib-dir /data/local/tmp/gc --no-snapshot \
+  --frames /data/local/tmp/gc/20261102_161129 \
+  --cmd-table /data/local/tmp/gc/cmd_table.bin \
+  --mode isolated --limit 200 --skip-empty --timeout 3 \
+  --jsonl /data/local/tmp/gc/h5_nosnap_200.jsonl
+```
+
+结果（exit 0）：
+
+| 项 | 结果 |
+|---|---|
+| 命令表安装 | `count=857 slots=1362 zero=5 conflict=0 skipped=1` |
+| 选中帧 | 200 个非空帧 |
+| push/commit/drain | `drain == bytes` 200/200；consumer `bytes_match` 200/200 |
+| parser 命中 | 12 帧（`opcode < 857`） |
+| handler 结果 | 2 帧正常返回；10 帧在 context/battle 解引用处 SIGSEGV（预期墙） |
+
+产物：`data/replays/_analysis/live_20261112/h5_nosnap_200.jsonl`
+（`data/` 忽略）；编译用 NDK r28b：
+
+```bash
+NDK=/d/android-ndk-r28b \
+  SRC="$PWD/host/src/h5_probe.c" OUT_BIN="$PWD/host/build/h5_probe_nosnap" \
+  bash host/scripts/build_host.sh   # 也可直接用 aarch64-linux-android28-clang
+```
+
+边界：
+
+- `--no-snapshot` 没有 active context / globals / slot1，所以拿不到 §10 的
+  200/200 ok；§10 依赖 2026-11-04 的 active-context 快照与 globals（本机已不在），
+  要复现需重新从 live 回放抓取。
+- 本模式只证明「真实 `.abc` 帧字节 → 真实 slot0 → 真实 consumer 排空 +
+  parser 分派」在非 root 平板上成立；**不推进帧、不产生状态输出**。

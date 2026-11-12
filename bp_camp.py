@@ -111,6 +111,19 @@ def normalize_entries(items, lanes=None):
     return result
 
 
+def slot_entries(items, lanes=None):
+    """保留槽位的规范化：空 ban 占位为 None，不压缩后面的位置。
+
+    营地 banHeros / pickHeros 数组下标就是该侧手序；排位赛会有空 ban，
+    解析层必须保留空位，否则首 ban、第几手 ban 会整体前移。
+    """
+    result = []
+    for item in items or []:
+        entry = normalize_entries([item], lanes)
+        result.append(entry[0] if entry else None)
+    return result
+
+
 def _data_of(detail):
     if not isinstance(detail, dict):
         return {}
@@ -183,6 +196,10 @@ def parse_camp_bp(detail, game_seq=None):
             'right': normalize_entries(red.get('banHeros'), lanes)}
     picks = {'left': normalize_entries(blue.get('pickHeros'), lanes),
              'right': normalize_entries(red.get('pickHeros'), lanes)}
+    ban_slots = {'left': slot_entries(blue.get('banHeros'), lanes),
+                 'right': slot_entries(red.get('banHeros'), lanes)}
+    pick_slots = {'left': slot_entries(blue.get('pickHeros'), lanes),
+                  'right': slot_entries(red.get('pickHeros'), lanes)}
     if not any(bans.values()) and not any(picks.values()):
         return None
     heroes = {}
@@ -208,6 +225,8 @@ def parse_camp_bp(detail, game_seq=None):
         'ownSide': _own_side(data),
         'bans': bans,
         'picks': picks,
+        'banSlots': ban_slots,
+        'pickSlots': pick_slots,
         'lanes': lanes,
         'heroMeta': heroes,
         'teamStats': {'left': _team_stats(blue), 'right': _team_stats(red)},
@@ -232,6 +251,7 @@ def merge_bp_sources(manual, camp, match=None):
 
     if has_heroes(manual):
         names = structured_names(manual)
+        raw_names = names
         bp = {
             'bans': {side: normalize_entries(names['bans'][side]) for side in ('left', 'right')},
             'picks': {side: normalize_entries(names['picks'][side]) for side in ('left', 'right')},
@@ -239,6 +259,7 @@ def merge_bp_sources(manual, camp, match=None):
         source, order_known = 'manual', True
         first_pick = manual.get('firstPick') or None
     elif has_heroes(camp):
+        raw_names = structured_names(camp)
         bp = {
             'bans': {side: normalize_entries((camp.get('bans') or {}).get(side),
                                              camp.get('lanes'))
@@ -251,6 +272,23 @@ def merge_bp_sources(manual, camp, match=None):
         first_pick = None
     else:
         return None
+
+    lanes_map = (camp.get('lanes') or {}) if isinstance(camp, dict) else {}
+
+    def slot_from_names(items):
+        result = []
+        for name in items or []:
+            text = str(name or '').strip()
+            result.append(hero_entry(text, lane=lanes_map.get(text)) if text else None)
+        return result
+
+    camp_slots = isinstance(camp, dict) and isinstance(camp.get('banSlots'), dict)
+    if source == 'camp' and camp_slots:
+        ban_slots = camp.get('banSlots') or {}
+        pick_slots = camp.get('pickSlots') or {}
+    else:
+        ban_slots = {side: slot_from_names(raw_names['bans'][side]) for side in ('left', 'right')}
+        pick_slots = {side: slot_from_names(raw_names['picks'][side]) for side in ('left', 'right')}
 
     meta = {}
     for group in (bp['bans'], bp['picks']):
@@ -270,6 +308,7 @@ def merge_bp_sources(manual, camp, match=None):
     return {
         'source': source,
         'bans': bp['bans'], 'picks': bp['picks'],
+        'banSlots': ban_slots, 'pickSlots': pick_slots,
         'pickOrderKnown': order_known, 'firstPick': first_pick,
         'heroMeta': meta,
         'lanes': (camp.get('lanes') or {}) if isinstance(camp, dict) else {},

@@ -8,6 +8,8 @@ import { goldDiffOf } from '../lib/analysis/matches'
 import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
+import { dateInBlockRange, type BlockFilterValues } from '../blocks/filters'
 
 type SortKey = 'new' | 'old' | 'duration' | 'gold'
 
@@ -109,28 +111,43 @@ export function QueryPage() {
         <span className="board-muted">共 {rows.length} 局</span>
       </div>
 
-      <AnalysisSection title={`对局列表 · ${rows.length} 局`} note="筛选与排序只影响当前视图，不改变数据口径。">
-        {rows.length ? (
-          <div className="query-list">
-            {rows.map((match) => (
-              <Link to={matchPath(match.key)} className="query-row" key={match.key}>
-                <span className="query-index">第 {index.get(match.key)} 局</span>
-                <span className="query-main">
-                  <b>{match.opponent ? `对阵 ${match.opponent}` : '对手未标注'}</b>
-                  <small>{match.date} · {match.session || match.mode || '对局'} · {match.version || '版本未记录'}</small>
-                </span>
-                <span className={`board-tag tone-${match.result === 'win' ? 'own' : match.result === 'loss' ? 'foe' : 'muted'}`}>
-                  {match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '—'}
-                </span>
-                <span className="query-metric"><small>时长</small>{fmtDuration(match.duration)}</span>
-                <span className="query-metric"><small>终局金差</small>{signed(goldDiffOf(match))}</span>
-                <span className="query-heroes">{(match.heroes || []).slice(0, 5).map((item) => <Portrait name={item} size="sm" key={item} />)}</span>
-                <span className="query-go">→</span>
-              </Link>
-            ))}
-          </div>
-        ) : <BoardEmpty title="没有符合当前条件的对局">清空筛选再试。</BoardEmpty>}
-      </AnalysisSection>
+      <BlockBoard page="query" filterOptions={{ opponents: foes, heroes }}>
+        <Block id="query-list" title="对局列表" filters={['range', 'opponent', 'hero', 'result']}>
+          {(f: BlockFilterValues) => {
+            const list = rows.filter((match) => {
+              if (!dateInBlockRange(match.date, f)) return false
+              if (f.opponent && match.opponent !== f.opponent) return false
+              if (f.hero && !(match.heroes || []).includes(f.hero)) return false
+              if (f.result && match.result !== f.result) return false
+              return true
+            })
+            return (
+              <AnalysisSection title={`对局列表 · ${list.length} 局`} note="页面筛选之外，每个块还可以单独按时间 / 对手 / 英雄 / 赛果再筛。">
+                {list.length ? (
+                  <div className="query-list">
+                    {list.map((match) => (
+                      <Link to={matchPath(match.key)} className="query-row" key={match.key}>
+                        <span className="query-index">第 {index.get(match.key)} 局</span>
+                        <span className="query-main">
+                          <b>{match.opponent ? `对阵 ${match.opponent}` : '对手未标注'}</b>
+                          <small>{match.date} · {match.session || match.mode || '对局'} · {match.version || '版本未记录'}</small>
+                        </span>
+                        <span className={`board-tag tone-${match.result === 'win' ? 'own' : match.result === 'loss' ? 'foe' : 'muted'}`}>
+                          {match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '—'}
+                        </span>
+                        <span className="query-metric"><small>时长</small>{fmtDuration(match.duration)}</span>
+                        <span className="query-metric"><small>终局金差</small>{signed(goldDiffOf(match))}</span>
+                        <span className="query-heroes">{(match.heroes || []).slice(0, 5).map((item) => <Portrait name={item} size="sm" key={item} />)}</span>
+                        <span className="query-go">→</span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : <BoardEmpty title="没有符合当前条件的对局">清空页面筛选或块筛选再试。</BoardEmpty>}
+              </AnalysisSection>
+            )
+          }}
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">搜索与排序只作用于当前列表；所有对局仍来自同一份已确认样本。</div>
     </div>

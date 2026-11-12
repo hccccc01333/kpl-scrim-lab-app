@@ -8,6 +8,7 @@ import { heroPool, heroRows, heroTier, heroTone } from '../lib/analysis/heroes'
 import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid, TierBadge } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function HeroesPage() {
   const { baseUrl } = useConnection()
@@ -70,33 +71,37 @@ export function HeroesPage() {
         <span className="board-muted">{rows.length} / {all.length} 个英雄</span>
       </div>
 
-      <AnalysisSection title="英雄卡片" note="点卡片看各位置、搭档、三人组合、选手使用、均值对照与时间表现。">
-        {rows.length ? (
-          <div className="hero-card-grid">
-            {rows.map((row) => {
-              const tierValue = heroTier(row.winRate)
-              return (
-                <Link to={heroPath(row.hero)} className={`hero-card ${heroTone(tierValue)}`} key={`${row.hero}-${row.lane}`}>
-                  <div className="hero-card-head">
-                    <Portrait name={row.hero} size="lg" />
-                    <span><b>{row.hero}</b><small>{row.lane} · {row.games} 局</small></span>
-                    <TierBadge tier={tierValue} />
-                  </div>
-                  <div className="hero-card-rate">
-                    <strong>{percent(row.winRate)}</strong>
-                    <span><small>胜率</small><em>{row.decided} 局决出</em></span>
-                  </div>
-                  <div className="hero-card-metrics">
-                    <span><small>KDA</small><b>{number(row.kda, 2)}</b></span>
-                    <span><small>分均经济</small><b>{number(row.gpm)}</b></span>
-                    <span><small>分均输出</small><b>{number(row.dpmTotal)}</b></span>
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        ) : <BoardEmpty title="没有符合筛选的英雄">换搜索词或档位再试。</BoardEmpty>}
-      </AnalysisSection>
+      <BlockBoard page="heroes">
+        <Block id="heroes-cards" title="英雄卡片">
+          <AnalysisSection title="英雄卡片" note="点卡片看各位置、搭档、三人组合、选手使用、均值对照与时间表现。">
+            {rows.length ? (
+              <div className="hero-card-grid">
+                {rows.map((row) => {
+                  const tierValue = heroTier(row.winRate)
+                  return (
+                    <Link to={heroPath(row.hero)} className={`hero-card ${heroTone(tierValue)}`} key={`${row.hero}-${row.lane}`}>
+                      <div className="hero-card-head">
+                        <Portrait name={row.hero} size="lg" />
+                        <span><b>{row.hero}</b><small>{row.lane} · {row.games} 局</small></span>
+                        <TierBadge tier={tierValue} />
+                      </div>
+                      <div className="hero-card-rate">
+                        <strong>{percent(row.winRate)}</strong>
+                        <span><small>胜率</small><em>{row.decided} 局决出</em></span>
+                      </div>
+                      <div className="hero-card-metrics">
+                        <span><small>KDA</small><b>{number(row.kda, 2)}</b></span>
+                        <span><small>分均经济</small><b>{number(row.gpm)}</b></span>
+                        <span><small>分均输出</small><b>{number(row.dpmTotal)}</b></span>
+                      </div>
+                    </Link>
+                  )
+                })}
+              </div>
+            ) : <BoardEmpty title="没有符合筛选的英雄">换搜索词或档位再试。</BoardEmpty>}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">档位：胜率 ≥55 S / ≥50 A / ≥45 B / 其余 C；使用率请到 BP 概览看选禁占比。</div>
     </div>

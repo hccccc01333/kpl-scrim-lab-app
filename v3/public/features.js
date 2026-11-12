@@ -42,7 +42,8 @@ export function createFeatures(h) {
     competition:['studio/workspace/competitions','v3/players-board'],
   };
   const scope = '<div class="scope-note"><span>数据口径</span> 本页使用全部营地面板及关联回放，可能包含非训练赛；首页的日期、来源与验证数据筛选不适用于此处。</div>';
-  const block = (title, subtitle, body, right='', attrs='') => body ? `<section class="section" ${attrs}><div class="section-heading"><div><h2>${esc(title)}</h2><p>${esc(subtitle || '')}</p></div>${right}</div>${body}</section>` : '';
+  const gmId = (title) => 'gm-' + String(title || '').replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  const block = (title, subtitle, body, right='', attrs='') => body ? `<section class="section" data-gm-id="${gmId(title)}" ${attrs}><div class="section-heading" data-gm-part="标题"><div><h2>${esc(title)}</h2><p>${esc(subtitle || '')}</p></div><div class="gm-inline-actions">${right}</div></div>${body}</section>` : '';
   const stats = (items) => `<div class="stats-band">${items.map(([label,value,detail]) => `<div><span>${esc(label)}</span><strong>${value}</strong><p>${esc(detail || '')}</p></div>`).join('')}</div>`;
   const empty = (s) => `<div class="empty">${esc(s)}</div>`;
   const form = (id, fields, button='保存') => `<form class="feature-form" data-feature-form="${id}">${fields}<div class="form-footer"><p class="form-status" role="status"></p><button class="primary" type="submit">${button}</button></div></form>`;

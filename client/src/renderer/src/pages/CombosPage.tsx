@@ -8,6 +8,7 @@ import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import type { CampCombo } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function CombosPage() {
   const { baseUrl } = useConnection()
@@ -54,15 +55,21 @@ export function CombosPage() {
         <span className="board-muted">协同 = 组合胜率 − 成员单英雄胜率均值；达阈值才进入榜单。</span>
       </div>
 
-      <AnalysisSection title={`双人组合 · ${pairs.length} 组`} note="最多 9 张卡；卡片下方表格给完整口径。">
-        <ComboCards combos={pairs.slice(0, 9)} />
-        <ComboTable combos={pairs.slice(0, 40)} />
-      </AnalysisSection>
+      <BlockBoard page="hero-combos">
+        <Block id="combos-pairs" title="双人组合">
+          <AnalysisSection title={`双人组合 · ${pairs.length} 组`} note="最多 9 张卡；卡片下方表格给完整口径。">
+            <ComboCards combos={pairs.slice(0, 9)} />
+            <ComboTable combos={pairs.slice(0, 40)} />
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection title={`三人组合 · ${trios.length} 组`} note="三人组样本通常更少，小样本会标注。">
-        <ComboCards combos={trios.slice(0, 9)} />
-        <ComboTable combos={trios.slice(0, 40)} />
-      </AnalysisSection>
+        <Block id="combos-trios" title="三人组合">
+          <AnalysisSection title={`三人组合 · ${trios.length} 组`} note="三人组样本通常更少，小样本会标注。">
+            <ComboCards combos={trios.slice(0, 9)} />
+            <ComboTable combos={trios.slice(0, 40)} />
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">组合来自同一局同阵营同时出场；不含禁选顺序，也不推断因果。本页使用全部营地面板。</div>
     </div>

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useConnection, useSettings } from '../lib/app-context'
 import { isLoopback } from '../lib/api'
 import { pushToast } from '../lib/toast'
+import { MODE_LABELS, getSnapshot, setMode, subscribe, type LayoutMode } from '../blocks/layout-store'
 import { useHealth, useMatches, useMetadata, usePlayerBoard } from '../lib/hooks'
 import { MODULE_TABS } from '../lib/routes'
 import { AppMetaProvider } from '../lib/meta-context'
@@ -11,7 +12,6 @@ import { CommandPalette } from './CommandPalette'
 import { ToastHost } from './ToastHost'
 import { Icon } from './Icon'
 import { OverviewPage } from '../pages/OverviewPage'
-import { DecisionPage } from '../pages/DecisionPage'
 import { MatchesPage } from '../pages/MatchesPage'
 import { MatchPage } from '../pages/MatchPage'
 import { CrossPage } from '../pages/CrossPage'
@@ -46,10 +46,11 @@ import { SettingsPage } from '../pages/SettingsPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { CollectPage } from '../pages/CollectPage'
 import { ReviewPage } from '../pages/ReviewPage'
+import { StudioPage } from '../pages/StudioPage'
 
 const navItems = [
   { to: '/', label: '概览', icon: 'overview' },
-  { to: '/decision', label: '决策台', icon: 'decision' },
+  { to: '/studio', label: '看板', icon: 'layout' },
   { to: '/collect', label: '采集', icon: 'ingest' },
   { to: '/matches', label: '比赛', icon: 'matches' },
   { to: '/players', label: '选手', icon: 'players' },
@@ -62,7 +63,7 @@ const navItems = [
 
 const pageTitles: Record<string, string> = {
   '/': '概览',
-  '/decision': '决策台',
+  '/studio': '我的看板',
   '/collect': '营地采集',
   '/matches': '比赛',
   '/matches/cross': '跨局分析',
@@ -90,9 +91,12 @@ const pageTitles: Record<string, string> = {
   '/settings': '设置'
 }
 
+const MODE_ORDER: LayoutMode[] = ['public', 'pro', 'custom']
+
 export function AppShell() {
   const { baseUrl, health, disconnect, retry } = useConnection()
   const { settings, update } = useSettings()
+  const layoutStore = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
   const location = useLocation()
   const queryClient = useQueryClient()
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -187,6 +191,12 @@ export function AppShell() {
     void update({ density: settings.density === 'comfortable' ? 'compact' : 'comfortable' })
   }
 
+  const cycleMode = () => {
+    const next = MODE_ORDER[(MODE_ORDER.indexOf(layoutStore.mode) + 1) % MODE_ORDER.length]
+    setMode(next)
+    pushToast(`已切换到${MODE_LABELS[next]}模式`, 'success')
+  }
+
   const refresh = () => {
     void queryClient.invalidateQueries()
     void healthQuery.refetch()
@@ -236,6 +246,9 @@ export function AppShell() {
             <kbd>CTRL K</kbd>
           </button>
           <div className="titlebar-actions">
+            <button type="button" className="mode-chip" title="切换布局模式：全面 / 专业 / 自定义" onClick={cycleMode}>
+              {MODE_LABELS[layoutStore.mode]}模式
+            </button>
             <button type="button" className="icon-btn" onClick={refresh} title="刷新数据" aria-label="刷新数据">
               <Icon name="refresh" />
             </button>
@@ -285,7 +298,7 @@ export function AppShell() {
           <ModuleTabs />
           <Routes>
             <Route path="/" element={<OverviewPage />} />
-            <Route path="/decision" element={<DecisionPage />} />
+            <Route path="/studio" element={<StudioPage />} />
             <Route path="/collect" element={<CollectPage />} />
             <Route path="/collect/:id" element={<ReviewPage />} />
             <Route path="/matches" element={<MatchesPage />} />

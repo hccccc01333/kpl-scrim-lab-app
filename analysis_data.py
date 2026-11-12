@@ -1889,6 +1889,7 @@ class AnalysisRepository:
                 'winnerSide': winner,
                 'result': ('win' if win else 'loss') if win is not None else 'unknown',
                 'bans': record['bans'], 'picks': record['picks'],
+                'banSlots': record.get('banSlots') or {}, 'pickSlots': record.get('pickSlots') or {},
                 'teamStats': record['teamStats'], 'scores': match.get('scores') or {},
             })
 

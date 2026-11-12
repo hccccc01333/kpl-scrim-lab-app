@@ -119,7 +119,7 @@ static void on_fault(int sig, siginfo_t *si, void *ctx) {
 static void *open_global(const char *dir, const char *name) {
     char path[1024];
     snprintf(path, sizeof path, "%s/%s", dir, name);
-    void *h = dlopen(path, RTLD_LAZY | RTLD_GLOBAL);
+    void *h = dlopen(path, RTLD_NOW | RTLD_GLOBAL);
     if (!h) {
         fprintf(stderr, "dlopen %s: %s\n", path, dlerror());
         return NULL;
@@ -194,6 +194,28 @@ int main(int argc, char **argv) {
     void *il2 = open_global(dir, "libil2cpp.so");
     if (!il2) return 11;
 
+    /* Runtime probe: identify the imported function behind libil2cpp's PLT
+     * thunk used inside il2cpp_init (IL2CPP_DUMP_GOT=1). */
+    if (getenv("IL2CPP_DUMP_GOT")) {
+        Dl_info di;
+        memset(&di, 0, sizeof di);
+        unsigned long il2base = 0;
+        void *anchor = dlsym(il2, "il2cpp_init");
+        if (anchor && dladdr(anchor, &di)) il2base = (unsigned long)di.dli_fbase;
+        printf("il2cpp base=%#lx\n", il2base);
+        unsigned long slots[] = {0xd2724e0UL, 0xd2724f0UL, 0xd272500UL, 0xd272510UL};
+        for (unsigned i = 0; i < sizeof(slots)/sizeof(slots[0]); i++) {
+            unsigned long addr = il2base + slots[i];
+            unsigned long val = *(unsigned long *)addr;
+            Dl_info d2;
+            memset(&d2, 0, sizeof d2);
+            dladdr((void *)val, &d2);
+            printf("got[%#lx] = %#lx -> %s +%#lx\n", slots[i], val,
+                   d2.dli_fname ? d2.dli_fname : "?",
+                   d2.dli_fbase ? val - (unsigned long)d2.dli_fbase : 0);
+        }
+    }
+
     void (*set_data_dir)(const char *) = (void (*)(const char *))dlsym(il2, "il2cpp_set_data_dir");
     int (*init)(const char *) = (int (*)(const char *))dlsym(il2, "il2cpp_init");
     Il2CppDomain (*domain_get)(void) = (Il2CppDomain (*)(void))dlsym(il2, "il2cpp_domain_get");
@@ -237,8 +259,11 @@ int main(int argc, char **argv) {
     }
 
     /* Always skip the anti-cheat call inside il2cpp_init; it blocks on a
-     * libtprt semaphore that only the real game process signals. */
-    patch_nop((void *)init, 0x3AA3BC8ULL);
+     * libtprt semaphore that only the real game process signals.  NOTE: with
+     * the multi-site patched copy (libil2cpp_pass.so) this extra NOP corrupts
+     * il2cpp_init, so it is opt-in via IL2CPP_NOP_INIT_GUARD=1. */
+    if (getenv("IL2CPP_NOP_INIT_GUARD"))
+        patch_nop((void *)init, 0x3AA3BC8ULL);
     const char *loc = setlocale(LC_ALL, "C");
     printf("setlocale(LC_ALL,C) -> %s\n", loc ? loc : "(null)");
     int rc;

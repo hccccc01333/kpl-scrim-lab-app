@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import sys
+import tempfile
 import unittest
 import uuid
 from pathlib import Path
@@ -288,6 +289,32 @@ class CampSyncWorkerResilienceTests(unittest.TestCase):
         self.assertTrue(results[0]['ok'], results[0])
         self.assertEqual(calls, [('540599032', 1)])
 
+    def test_auto_official_gets_camp_user_id(self):
+        """自动补拉官方回放必须拿到营地账号 ID：采集页回传的条目没有 analyseUrl。"""
+        captured = {}
+
+        class OkCampSync:
+            @staticmethod
+            def sync_entries(camp_user_id, entries, on_progress=None):
+                return {'fetched': 1, 'saved': 1, 'cached': 0, 'failed': 0, 'gameSeqs': []}
+
+        def fake_auto(entries, **kwargs):
+            captured.update(kwargs)
+            return {'tried': 0, 'imported': 0, 'attached': 0, 'skipped': 0,
+                    'failed': 0, 'items': []}
+
+        stub = {'created': 0, 'updated': 0, 'attached': 0, 'saved': 0, 'review': 0,
+                'failed': 0, 'skipped': 0, 'channelIds': [], 'items': []}
+        with mock.patch.dict(sys.modules, {'camp_sync': OkCampSync}), \
+                mock.patch.object(server, '_camp_tools', lambda: None), \
+                mock.patch.object(server, '_camp_ensure_channels',
+                                  lambda entries, nickname, progress=None: dict(stub)), \
+                mock.patch.object(server, '_camp_auto_official', side_effect=fake_auto):
+            results, _ids = server._camp_sync_worker(
+                '540599032', '队长', [{'gameSeq': '1793900009'}])
+        self.assertTrue(results[0]['ok'], results[0])
+        self.assertEqual(captured.get('camp_user_id'), '540599032', captured)
+
     def test_sync_error_is_reported_not_swallowed(self):
         def boom(camp_user_id, entries, on_progress=None):
             raise RuntimeError('营地接口 502')
@@ -482,6 +509,86 @@ class CampResolveModeAgnosticTests(unittest.TestCase):
                     'https://example.com/?userId=361061394'):
             with self.subTest(url=url):
                 self.assertEqual(self._resolve(url).status_code, 400)
+
+
+class CampAutoOfficialTests(unittest.TestCase):
+    """营地同步后自动补拉官方回放（经济曲线 / 事件 / 团战 / 逐秒位置）。
+
+    现场问题：同步能建通道、十人面板也在，但官方回放一局都没拉下来。
+    采集页回传的条目来自 /api/camp/list，已被裁剪成前端字段（有
+    gameSvrId / relaySvrId / uniqueRoleId，没有 analyseUrl），而
+    `_camp_auto_official` 原先没把 camp_user_id 传给 `import_entry`，
+    于是每局都以「这条战局没有可用的 playerid」失败；清单缓存
+    data/camp_lists 又只有命令行工具会写，装好的工作台上是空的。
+    """
+
+    SEQ = '1793999001'
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.store = Path(self.temp.name) / 'official_replays'
+        self.data = Path(self.temp.name) / 'data'
+        self.data.mkdir(parents=True, exist_ok=True)
+        self.calls = []
+
+        def fake_fetch(link, timeout=30):
+            self.calls.append(link)
+            value = {'returnCode': 0, 'data': {
+                'winCamp': '1', 'camp1GoldArr': [1], 'camp2GoldArr': [2],
+                'teamMatchInfo': {}, 'keyEventArr': [], 'extendEventArr': [],
+                'matchInfo': [], 'reportData': {},
+            }}
+            return value, value['data']
+
+        self.patches = [
+            mock.patch.object(server, 'DATA_DIR', self.data),
+            mock.patch.object(camp_replay, 'STORE', self.store),
+            mock.patch.object(camp_replay, 'fetch', side_effect=fake_fetch),
+        ]
+        for patch in self.patches:
+            patch.start()
+        self.addCleanup(self._stop)
+
+    def _stop(self):
+        for patch in reversed(self.patches):
+            patch.stop()
+        self.temp.cleanup()
+
+    def _entry(self, seq=None, **extra):
+        entry = {
+            'gameSeq': seq or self.SEQ, 'gameSvrId': '120245',
+            'relaySvrId': '-1656708288', 'uniqueRoleId': '2081911312',
+            'battleType': 12, 'mapName': '排位赛', 'winCamp': 1,
+        }
+        entry.update(extra)
+        return entry
+
+    def test_entry_without_analyse_url_uses_camp_user_id(self):
+        """回归：没有 analyseUrl 时用营地账号 ID 兜底，回放必须真的拉下来。"""
+        report = server._camp_auto_official([self._entry()], camp_user_id='540599032')
+        self.assertEqual(report['failed'], 0, report)
+        self.assertEqual(report['imported'], 1, report)
+        self.assertEqual(len(self.calls), 1, report)
+        self.assertEqual(self.calls[0]['playerId'], '540599032')
+        self.assertTrue((self.store / f'camp-{self.SEQ}' / 'meta.json').is_file())
+
+    def test_missing_player_id_still_fails_with_actionable_reason(self):
+        """既没有 analyseUrl 也没有账号 ID 时，要报具体原因而不是静默。"""
+        report = server._camp_auto_official([self._entry()])
+        self.assertEqual(report['imported'], 0, report)
+        self.assertEqual(report['failed'], 1, report)
+        self.assertIn('playerid', report['items'][0]['error'])
+
+    def test_analyse_url_keeps_its_own_player_id(self):
+        """有 analyseUrl 时仍以列表里的 playerid 为准，不被账号 ID 覆盖。"""
+        entry = self._entry(
+            seq='1793999002',
+            analyseUrl='https://camp.qq.com/h5/webdist/team-analyzev2.html?'
+                       'gameseq=1793999002&relaysvrentity=-1656708288'
+                       '&gamesvrentity=120245&playerid=1085983157')
+        report = server._camp_auto_official([entry], camp_user_id='540599032')
+        self.assertEqual(report['imported'], 1, report)
+        self.assertEqual(self.calls[0]['playerId'], '1085983157')
 
 
 if __name__ == '__main__':

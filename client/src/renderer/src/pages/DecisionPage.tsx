@@ -35,6 +35,7 @@ import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 import {
   ArrivalBars,
   BandChart,
@@ -570,288 +571,27 @@ export function DecisionPage() {
       <DecisionTabBar tab={tab} onChange={selectTab} />
 
       {tab === 'review' ? (
-        <>
-          <section className="card decision-toolbar-card">
-            <div className="decision-toolbar-body">
-              <label className="decision-field">
-                <span>对局</span>
-                <select value={reviewGame} onChange={(event) => selectGame(event.target.value)} aria-label="选择复盘对局">
-                  {games.map((game) => (
-                    <option value={game.id} key={game.id}>
-                      {game.label || game.id} · {resultText(game.result)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {reviewGameInfo ? (
-                <span className="decision-toolbar-meta">
-                  {reviewGameInfo.date || '日期未知'} · {reviewGameInfo.opponent || '对手待命名'} · {fmtDuration(reviewGameInfo.duration)} · 回放{reviewGameInfo.hasEconomy ? '含经济点' : '缺经济点'}
-                </span>
-              ) : null}
-              <Link className="btn btn-sm" to={matchPath(reviewGame)}>打开单局复盘 <Icon name="arrow" /></Link>
-              <span className="board-muted">时间轴与关键链联动：点事件标记跳到对应链卡。</span>
-            </div>
-          </section>
-
-          <AnalysisSection
-            title="经济差时间轴"
-            note={reviewGameInfo ? `${reviewGameInfo.label || reviewGame} · 我方视角；阴影为候选损失窗口，可点标记跳到链卡。` : '我方视角经济差'}
-          >
-            {lossQuery.isLoading ? <LoadingBlock label="读取经济曲线与候选事件" />
-              : lossQuery.isError ? <ErrorState error={lossQuery.error} onRetry={() => void lossQuery.refetch()} />
-                : !loss?.available ? <BoardEmpty title="这一局没有可用的经济时间轴">{loss?.reason || '缺官方回放或经济采样。'}</BoardEmpty>
-                  : (
-                    <EconomyTimeline
-                      points={timelinePoints}
-                      duration={lossGame?.duration ?? reviewGameInfo?.duration}
-                      approx
-                      events={timelineEvents}
-                      windows={timelineWindows}
-                      selectedId={selectedChain !== null ? `chain-${selectedChain}` : null}
-                      onPickEvent={pickTimelineEvent}
-                      note={loss?.note}
-                      empty="这一局的经济采样点不足 2 个，暂不画曲线。"
-                    />
-                  )}
-          </AnalysisSection>
-
-          <AnalysisSection
-            title={`关键链候选 · ${lossChains.length} 段`}
-            note="按经济损失窗口挑出的候选事件：只说明同期发生了什么，不证明因果。"
-          >
-            {lossQuery.isLoading ? <LoadingBlock label="整理候选事件" />
-              : lossQuery.isError ? <ErrorState error={lossQuery.error} onRetry={() => void lossQuery.refetch()} />
-                : !loss?.available ? <BoardEmpty title="当前范围没有失利链">{loss?.reason || '缺经济点或没有达到阈值的负向窗口。'}</BoardEmpty>
-                  : lossChains.length ? (
-                    <div className="decision-chain-grid">
-                      {lossChains.map((chain, index) => (
-                        <ChainCard
-                          key={`chain-${index}`}
-                          chain={chain}
-                          index={index}
-                          game={chain.game || reviewGame}
-                          active={selectedChain === index}
-                          onSelect={() => setSelectedChain(index)}
-                        />
-                      ))}
-                    </div>
-                  ) : <BoardEmpty title="这一局没有达到阈值的损失窗口">经济差没有出现显著下滑，或者缺经济采样。</BoardEmpty>}
-          </AnalysisSection>
-
-          <AnalysisSection
-            title="优势保持与回撤"
-            note="最大领先、峰值后回撤、领先时长与首次兑现时间；不足 10 局只做观察，不给稳定预测。"
-          >
-            {advantageQuery.isLoading ? <LoadingBlock label="计算优势保持指标" />
-              : advantageQuery.isError ? <ErrorState error={advantageQuery.error} onRetry={() => void advantageQuery.refetch()} />
-                : !advantage?.available ? <BoardEmpty title="当前范围没有可用的优势分析">{advantage?.reason || '缺胜负面板或经济点。'}</BoardEmpty>
-                  : (
-                    <>
-                      <StatGrid items={[
-                        { label: '最大领先', value: signed(advantageGame?.maxLead), note: num(advantageGame?.maxLeadAt) !== null ? `首次见顶 ≈${fmtDuration(advantageGame?.maxLeadAt)}` : '本队视角最高经济差', tone: 'own' },
-                        { label: '峰值后回撤', value: number(advantageGame?.drawdown), note: '从最高点回落到最低点（幅度，不带正负）', tone: 'foe' },
-                        { label: '领先时长', value: fmtDuration(advantageGame?.leadDurationSec), note: '经济差 ≥ +500 的累计时长' },
-                        { label: '首次兑现', value: num(advantageGame?.conversionSec) === null ? '—' : fmtDuration(advantageGame?.conversionSec), note: '领先≥1000 到下一个我方资源/塔' },
-                        { label: '10 分钟经济差', value: signed(advantageGame?.leadAt10), note: '不足 10 分钟的局不给该指标' },
-                        { label: '结局', value: advantageGame?.comeback ? '被翻盘' : resultText(advantageGame?.result), note: advantageGame?.comeback ? '曾领先 ≥1000 且最终告负' : '描述性结果，不评价指挥' }
-                      ]} />
-                      <div className="decision-summary-line">
-                        <span>曾领先 ≥1000：{number(advantage.summary?.ledGames)} 局</span>
-                        <span>
-                          其中翻盘：{number(advantage.summary?.comebacks)} 局 · 翻盘率 {percent(advantage.summary?.comebackRate)}
-                          {num(advantage.summary?.comebackCiLow) !== null || num(advantage.summary?.comebackCiHigh) !== null || advantage.summary?.comebackCi
-                            ? `（Wilson ${formatCi(advantage.summary?.comebackCi, advantage.summary?.comebackCiLow, advantage.summary?.comebackCiHigh)}）`
-                            : ''}
-                        </span>
-                        <span>平均最大回撤：{number(advantage.summary?.avgDrawdown)}</span>
-                        <span>平均兑现：{fmtDuration(advantage.summary?.avgConversionSec)}</span>
-                        {advantage.summary?.enough === false ? <span className="decision-sample-badge is-warn">样本不足（n={number(advantage.summary?.ledGames)}）</span> : null}
-                      </div>
-                      <div className="board-grid-2 decision-split">
-                        <div>
-                          <h3 className="decision-subtitle">10 分钟分桶</h3>
-                          {(advantage.buckets || []).length ? (
-                            <div className="decision-table-wrap">
-                              <table className="decision-table">
-                                <thead>
-                                  <tr><th>分桶</th><th>n</th><th>胜</th><th>胜率</th><th>样本</th></tr>
-                                </thead>
-                                <tbody>
-                                  {(advantage.buckets || []).map((bucket, index) => (
-                                    <tr key={`${bucket.bucket || bucket.label || index}`}>
-                                      <td>{bucket.bucket || bucket.label || `${number(bucket.low)} ~ ${number(bucket.high)}`}</td>
-                                      <td>{number(bucket.n)}</td>
-                                      <td>{number(bucket.wins)}</td>
-                                      <td>{percent(bucket.winRate)}</td>
-                                      <td>{bucket.enough === false ? <span className="decision-sample-badge is-warn">样本不足</span> : '可用'}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : <p className="board-muted">当前范围没有 10 分钟分桶样本。</p>}
-                        </div>
-                        <div>
-                          <h3 className="decision-subtitle">回撤排行</h3>
-                          {drawdownRows.length ? (
-                            <div className="decision-table-wrap">
-                              <table className="decision-table">
-                                <thead>
-                                  <tr><th>对局</th><th>结果</th><th>最大领先</th><th>回撤</th><th>翻盘</th></tr>
-                                </thead>
-                                <tbody>
-                                  {drawdownRows.map((game, index) => {
-                                    const id = game.id || game.game || ''
-                                    return (
-                                      <tr
-                                        key={`${id}-${index}`}
-                                        className={id === reviewGame ? 'is-active' : ''}
-                                        tabIndex={0}
-                                        onClick={() => id && selectGame(id)}
-                                        onKeyDown={(event) => { if (event.key === 'Enter' && id) selectGame(id) }}
-                                      >
-                                        <td>{game.label || id || '—'}</td>
-                                        <td><span className={`board-tag tone-${resultTagTone(game.result)}`}>{resultText(game.result)}</span></td>
-                                        <td>{signed(game.maxLead)}</td>
-                                        <td>{number(game.drawdown)}</td>
-                                        <td>{game.comeback ? <span className="board-tag tone-warn">被翻盘</span> : '—'}</td>
-                                      </tr>
-                                    )
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          ) : <p className="board-muted">当前范围没有可算回撤的对局。</p>}
-                        </div>
-                      </div>
-                      <p className="decision-chart-note">{advantage.note || '经济点约 30 秒一个；回撤与兑现时间为近似值。'}</p>
-                    </>
-                  )}
-          </AnalysisSection>
-
-          <AnalysisSection
-            title="经济分位带（胜 / 负 / 全部）"
-            note="按分钟插值我方经济差的分位；n=0 的档不画，样本数在图例里。"
-          >
-            {advantageQuery.isLoading ? <LoadingBlock label="汇总分位带" />
-              : advantageQuery.isError ? <ErrorState error={advantageQuery.error} onRetry={() => void advantageQuery.refetch()} />
-                : !advantage?.available ? <BoardEmpty title="当前范围没有可用的分位带">{advantage?.reason || '缺胜负面板或经济点。'}</BoardEmpty>
-                  : (
-                    <BandChart
-                      series={bandSeries}
-                      note={advantage.note}
-                      empty="当前范围的胜局/负局样本还不足以画分位带。"
-                    />
-                  )}
-          </AnalysisSection>
-
-          <AnalysisSection
-            title="团战执行与到位"
-            note="按我方视角：开局 3 秒内到达人数差、击杀交换与成员到位延迟；只做复盘描述。"
-          >
-            {fightsQuery.isLoading ? <LoadingBlock label="读取团战明细" />
-              : fightsQuery.isError ? <ErrorState error={fightsQuery.error} onRetry={() => void fightsQuery.refetch()} />
-                : !fights?.available ? <BoardEmpty title="这一局没有可复盘的团战">{fights?.reason || '缺团战段或参战时间。'}</BoardEmpty>
-                  : (
-                    <>
-                      <div className="decision-summary-line">
-                        <span>分析团战：{number(fightSummary?.fights)} 场</span>
-                        <span>平均到位延迟：{num(fightSummary?.avgArrivalLagSec) === null ? '—' : `${number(fightSummary?.avgArrivalLagSec, 1)} 秒`}</span>
-                        <span>迟到率：{percent(fightSummary?.lateJoinRate)}</span>
-                        <span>先手击杀：我方 {number(fightSummary?.firstKiller?.own)} / 对手 {number(fightSummary?.firstKiller?.enemy)}</span>
-                        <span>beginner 标记：我方 {number(fightSummary?.beginner?.own)} / 对手 {number(fightSummary?.beginner?.enemy)}</span>
-                        {fightSummary?.wipeSides ? <span>团灭：我方 {number(fightSummary.wipeSides.own)} 次 / 对手 {number(fightSummary.wipeSides.enemy)} 次</span> : null}
-                      </div>
-                      {fightSummary?.firstArrivalNote ? (
-                        <p className="decision-chart-note">先到/先手口径：{fightSummary.firstArrivalNote}</p>
-                      ) : null}
-                      <div className="decision-fight-layout">
-                        <div className="decision-fight-list">
-                          <h3 className="decision-subtitle">损失优先团战</h3>
-                          {fightRows.length ? (
-                            <>
-                              <div className="decision-table-wrap">
-                                <table className="decision-table decision-fight-table">
-                                  <thead>
-                                    <tr><th>时间</th><th>参战 / 人数差</th><th>击杀差</th><th>结果</th></tr>
-                                  </thead>
-                                  <tbody>
-                                    {fightRows.map((row, index) => {
-                                      const id = String(row.fightId ?? index)
-                                      const selected = fights?.selected?.fightId !== undefined && String(fights.selected.fightId) === String(row.fightId)
-                                      const advance = num(row.advStart)
-                                      const killDiff = num(row.killDiff)
-                                      return (
-                                        <tr
-                                          key={`${id}-${index}`}
-                                          className={selected ? 'is-active' : ''}
-                                          tabIndex={0}
-                                          onClick={() => setFightId(id)}
-                                          onKeyDown={(event) => { if (event.key === 'Enter') setFightId(id) }}
-                                        >
-                                          <td className="decision-time">{row.timeLabel || fmtDuration(row.startSec)}</td>
-                                          <td>
-                                            <span>我方 {number(row.ownParticipants)} × 对手 {number(row.enemyParticipants)}</span>
-                                            {advance === null ? null : (
-                                              <small className={`decision-adv ${advance < 0 ? 'is-foe' : advance > 0 ? 'is-own' : ''}`}>{signed(advance)} 人</small>
-                                            )}
-                                          </td>
-                                          <td>
-                                            {killDiff === null
-                                              ? '0 击杀'
-                                              : <><span>{number(row.ownKills)} : {number(row.enemyKills)}</span><small className={killDiff > 0 ? 'is-own' : killDiff < 0 ? 'is-foe' : ''}>{signed(killDiff)}</small></>}
-                                          </td>
-                                          <td>{row.won === null || row.won === undefined ? '—' : row.won ? '胜' : '负'}</td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                              {fightRowsAll.length > 6 ? (
-                                <button type="button" className="btn btn-sm decision-more" onClick={() => setShowAllFights((value) => !value)}>
-                                  {showAllFights ? `收起，只看最伤 6 场` : `显示全部 ${Math.min(12, fightRowsAll.length)} 场`}
-                                </button>
-                              ) : null}
-                            </>
-                          ) : <p className="board-muted">当前范围没有可列出的团战。</p>}
-                        </div>
-                        <div className="decision-fight-arrival">
-                          <h3 className="decision-subtitle">本场到位（损失最优先）</h3>
-                          <ArrivalBars items={fightArrivalItems} empty="没有可展示的成员到位明细。" />
-                          {(fights?.selected?.missingParticipants || 0) > 0 ? (
-                            <p className="decision-chart-note is-warn">有 {number(fights?.selected?.missingParticipants)} 名参战者缺少参战时间，未补成 0。</p>
-                          ) : null}
-                        </div>
-                        {openingGroups.length ? (
-                          <div className="decision-fight-buckets">
-                            <h3 className="decision-subtitle">开局人数差 → 团战结果</h3>
-                            <div className="decision-table-wrap">
-                              <table className="decision-table">
-                                <thead>
-                                  <tr><th>场景</th><th>场次</th><th>胜</th><th>胜率</th><th>样本</th></tr>
-                                </thead>
-                                <tbody>
-                                  {openingGroups.map((group) => (
-                                    <tr key={group.label}>
-                                      <td>{group.label}</td>
-                                      <td>{number(group.n)}</td>
-                                      <td>{number(group.wins)}</td>
-                                      <td>{percent(group.winRate)}</td>
-                                      <td>{group.enough ? '可用' : <span className="decision-sample-badge is-warn">样本不足</span>}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                      <p className="decision-chart-note">{fights.note || '团战人数差为开始 3 秒内的到达人数；迟到指开始 5 秒后才到。'}</p>
-                    </>
-                  )}
-          </AnalysisSection>
-        </>
+        <section className="card decision-toolbar-card">
+          <div className="decision-toolbar-body">
+            <label className="decision-field">
+              <span>对局</span>
+              <select value={reviewGame} onChange={(event) => selectGame(event.target.value)} aria-label="选择复盘对局">
+                {games.map((game) => (
+                  <option value={game.id} key={game.id}>
+                    {game.label || game.id} · {resultText(game.result)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {reviewGameInfo ? (
+              <span className="decision-toolbar-meta">
+                {reviewGameInfo.date || '日期未知'} · {reviewGameInfo.opponent || '对手待命名'} · {fmtDuration(reviewGameInfo.duration)} · 回放{reviewGameInfo.hasEconomy ? '含经济点' : '缺经济点'}
+              </span>
+            ) : null}
+            <Link className="btn btn-sm" to={matchPath(reviewGame)}>打开单局复盘 <Icon name="arrow" /></Link>
+            <span className="board-muted">时间轴与关键链联动：点事件标记跳到对应链卡。</span>
+          </div>
+        </section>
       ) : null}
 
       {tab === 'prep' ? (
@@ -902,66 +642,6 @@ export function DecisionPage() {
                         ? <span className="decision-sample-badge is-warn">样本不足，仅单局观察</span>
                         : null}
                     </div>
-                    <AnalysisSection
-                      title={`开局热区（0–4 分钟 · ${opening.filters?.side === 'enemy' ? '对手' : '我方'}视角）`}
-                      note="底图为 20×20 位置计数，折线为路线簇的代表路线；点路线卡可在地图上高亮。"
-                    >
-                      <div className="decision-heat-layout">
-                        <OpeningHeat
-                          cells={heatCells}
-                          max={num(opening.heat?.max) ?? undefined}
-                          routes={heatRoutes}
-                          highlightId={prepRoute}
-                          calibrated={openingCalibrated}
-                          caption={!openingCalibrated
-                            ? '坐标未定标：位置为回放相对坐标并归一化到 0–1，只用于同批对局之间的相对比较。'
-                            : '坐标按本批位置分位定标；九宫格只是方位描述，不代表草丛或视野。'}
-                          empty="这一批对局缺少可用的位置采样，暂不画热区。"
-                        />
-                        <div className="decision-route-list">
-                          {openingRoutes.length ? openingRoutes.map((route, index) => {
-                            const routeId = `route-${index}`
-                            const active = prepRoute === routeId
-                            const count = num(route.count) ?? 0
-                            const points = routePoints(route)
-                            return (
-                              <button
-                                type="button"
-                                key={routeId}
-                                className={`decision-route-card${active ? ' is-active' : ''}`}
-                                onClick={() => setPrepRoute(active ? null : routeId)}
-                              >
-                                <span className="decision-route-head">
-                                  <b>{route.lane || '分路未知'}</b>
-                                  <span className="board-tag tone-foe">{count} 次</span>
-                                  {route.enough === false || count < 3 ? <span className="decision-sample-badge is-warn">样本不足</span> : null}
-                                </span>
-                                <span className="decision-route-zone">
-                                  {route.zoneSequence?.length ? route.zoneSequence.join(' → ') : '路线分区未提供'}
-                                </span>
-                                {route.representative ? (
-                                  <span className="decision-route-meta">
-                                    代表路线：{route.representative.name || route.representative.player || '选手'} · {route.representative.hero || '英雄未标注'}
-                                    {route.representative.label ? ` · ${route.representative.label}` : ''}
-                                  </span>
-                                ) : null}
-                                <span className="decision-route-meta">
-                                  后续首个资源：{route.nextObjective?.name || '—'}
-                                  {num(route.nextObjective?.minutes) !== null ? ` · ${number(route.nextObjective?.minutes, 1)} 分` : ''}
-                                  {route.nextObjective?.count ? `（${route.nextObjective.count} 局）` : ''}
-                                </span>
-                                <span className="decision-route-foot">
-                                  {points.length ? `路线点 ${points.length} 个` : '无路线折线'} · {active ? '点击取消高亮' : '点击在地图上高亮'}
-                                </span>
-                              </button>
-                            )
-                          }) : <BoardEmpty title="没有可展示的路线样本">当前筛选下还没有成簇的路线。</BoardEmpty>}
-                        </div>
-                      </div>
-                      <p className="decision-chart-note">
-                        {(opening.notes || []).join(' ') || '仅收录本批回放；每名对手样本不足时只做单局观察。'}
-                      </p>
-                    </AnalysisSection>
                   </>
                 )}
         </>
@@ -995,100 +675,6 @@ export function DecisionPage() {
                       <span>象限分界：{resource.quadrantBasis === 'fixed' ? '20/20 固定分界' : `中位数（${number(resource.quadrant?.xSplit, 1)} / ${number(resource.quadrant?.ySplit, 1)}）`}</span>
                       {resource.summary?.smallSample ? <span className="decision-sample-badge is-warn">样本不足，仅供观察</span> : null}
                     </div>
-                    <AnalysisSection
-                      title="经济占比 × 英雄伤害占比"
-                      note="中位线按当前样本计算；n<10 时用 20/20 固定分界。悬浮看英雄、GPM、死亡与来源，点击选中。"
-                    >
-                      <QuadrantChart
-                        points={quadrantPoints}
-                        xMid={num(resource.quadrant?.xSplit)}
-                        yMid={num(resource.quadrant?.ySplit)}
-                        selected={selectedPoint}
-                        onPick={(id) => setSelectedPoint((current) => current === id ? null : id)}
-                        note={resource.note || '只用于发现待复核的资源分配，不评价选手。'}
-                        empty="当前筛选没有同时具备经济占比与伤害占比的样本。"
-                      />
-                      {selectedPlayer ? (
-                        <div className="decision-player-detail">
-                          <div>
-                            <b>{selectedPlayer.name || selectedPlayer.playerId || '选手'}</b>
-                            <span>{selectedPlayer.lane || '分路未标注'} · {selectedPlayer.hero || '英雄未标注'} · {selectedPlayer.result ? resultText(selectedPlayer.result) : '结果未知'}</span>
-                          </div>
-                          <div>
-                            <span>经济占比 {percent(selectedPlayer.goldShare)}</span>
-                            <span>伤害占比 {percent(selectedPlayer.heroDamageShare)}</span>
-                            <span>GPM {number(selectedPlayer.gpm, 1)}</span>
-                            <span>死亡 {number(selectedPlayer.deaths)}</span>
-                            <span>推塔 {number(selectedPlayer.towerDamage)}</span>
-                            <span>象限 {selectedPlayer.quadrant || '—'}</span>
-                          </div>
-                          {selectedPlayer.seq ? <Link className="btn btn-sm" to={matchPath(selectedPlayer.seq)}>打开这一局 <Icon name="arrow" /></Link> : null}
-                        </div>
-                      ) : null}
-                    </AnalysisSection>
-
-                    <AnalysisSection
-                      title={`异常清单 · ${anomalies.length} 条`}
-                      note="只列「高经济低输出」或「发育路死亡偏多」的条目；不排名、不评价选手。"
-                    >
-                      {anomalies.length ? (
-                        <div className="decision-anomaly-list">
-                          {anomalies.map((anomaly, index) => (
-                            <div className="decision-anomaly" key={`${anomaly.seq || '-'}-${anomaly.playerId || anomaly.name || index}`}>
-                              <div className="decision-anomaly-head">
-                                <b>{anomaly.name || anomaly.playerId || '选手'}</b>
-                                <span>{anomaly.lane || '分路未标注'} · {anomaly.hero || '英雄未标注'}</span>
-                                <span className="board-tag tone-warn">{anomaly.kind?.includes('death') ? '发育路死亡' : '高经济低输出'}</span>
-                              </div>
-                              <p>{anomaly.text || '—'}</p>
-                              <div className="decision-anomaly-foot">
-                                <span>{anomaly.date || '日期未知'} · {anomaly.opponentName || '对手待命名'} · {anomaly.result ? resultText(anomaly.result) : '结果未知'}</span>
-                                {anomaly.seq ? <Link className="card-link" to={matchPath(anomaly.seq)}>回到对局 <Icon name="arrow" /></Link> : null}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : <BoardEmpty title="当前范围没有达到复核线的条目">高经济低输出与发育路死亡都未触发复核线。</BoardEmpty>}
-                    </AnalysisSection>
-
-                    <AnalysisSection
-                      title="分路均值与效率"
-                      note="分路均值只看当前筛选；经济→输出 = 英雄伤害占比 / 经济占比，用于横向看分路职责差异。"
-                    >
-                      <div className="decision-table-wrap">
-                        <table className="decision-table">
-                          <thead>
-                            <tr>
-                              <th>分路</th><th>n</th><th>经济占比</th><th>伤害占比</th><th>推塔占比</th>
-                              <th>控制占比</th><th>治疗占比</th><th>死亡</th><th>GPM</th><th>经济→输出</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {(resource.byLane || []).map((row) => {
-                              const efficiency = (resource.efficiency || []).find((item) => item.lane === row.lane)
-                              return (
-                                <tr key={row.lane || '未知'}>
-                                  <td>{row.lane || '分路未标注'}</td>
-                                  <td>{number(row.n)}</td>
-                                  <td>{percent(row.goldShare)}</td>
-                                  <td>{percent(row.heroDamageShare)}</td>
-                                  <td>{percent(row.towerShare)}</td>
-                                  <td>{percent(row.controlShare)}</td>
-                                  <td>{percent(row.healShare)}</td>
-                                  <td>{number(row.deaths, 1)}</td>
-                                  <td>{number(row.gpm, 1)}</td>
-                                  <td>{number(efficiency?.ratio, 2)}</td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      <p className="decision-chart-note">
-                        口径：经济=营地 battleStats.money；英雄伤害=battleStats.totalHeroHurtCnt；推塔=buildingDamage；
-                        总伤害与英雄伤害分开保留，不混用。{resource.efficiencyNote || ''}
-                      </p>
-                    </AnalysisSection>
                   </>
                 )}
         </>
@@ -1109,48 +695,504 @@ export function DecisionPage() {
                     { label: '平均效应量', value: trainingMeanEffect === null ? '—' : number(trainingMeanEffect, 2), note: 'Cohen’s d · 描述性对比', tone: 'accent' },
                     { label: '最近一条', value: trainingResults[0]?.start_date || '—', note: trainingResults[0]?.goal || '' }
                   ]} />
-                  <AnalysisSection
-                    title="干预前后对照"
-                    note="每侧至少 5 条有效人次才计算效应量；样本不足会写明原因。"
-                    action={<Link className="card-link" to="/training/effect">训练效果页 <Icon name="arrow" /></Link>}
-                  >
-                    {trainingResults.length ? (
-                      <div className="decision-effect-list">
-                        {trainingResults.map((result) => {
-                          const effect = result.effect
-                          return (
-                            <article className="decision-effect-card" key={result.id}>
-                              <div className="decision-effect-head">
-                                <span>{result.start_date || '日期未知'}</span>
-                                <small>{effect?.label || result.metric || '观察指标'}</small>
-                                <b className={`board-tag tone-${effect?.available ? 'own' : 'muted'}`}>{effect?.available ? '可对比' : '样本不足'}</b>
-                              </div>
-                              <h3>{result.goal}</h3>
-                              {result.intervention ? <p className="decision-effect-method">{result.intervention}</p> : null}
-                              {effect?.available ? (
-                                <div className="decision-effect-values">
-                                  <span><small>干预前</small><b>{number(effect.preMean, 2)}</b><em>{number(effect.nPre)} 人次</em></span>
-                                  <i>→</i>
-                                  <span><small>干预后</small><b>{number(effect.postMean, 2)}</b><em>{number(effect.nPost)} 人次</em></span>
-                                  <span><small>效应量 d</small><b>{number(effect.effectSize, 2)}</b><em>描述性对比</em></span>
-                                </div>
-                              ) : <p className="board-muted">{effect?.reason || '样本不足，暂不计算。'}</p>}
-                              {result.review ? <p className="decision-effect-review">{result.review}</p> : null}
-                            </article>
-                          )
-                        })}
-                      </div>
-                    ) : (
-                      <BoardEmpty title="还没有训练干预记录">
-                        工作台登记训练目标后，系统会把干预前后各至少 5 条本队营地记录放在一起比较。
-                      </BoardEmpty>
-                    )}
-                    <p className="decision-chart-note">{trainingQuery.data?.dateNote || '只有来源包含完整年份的营地记录才参与前后对比；缺年份不会自行补全。'}</p>
-                  </AnalysisSection>
                 </>
               )}
         </>
       ) : null}
+
+      <BlockBoard page="decision">
+        {tab === 'review' ? (
+          <>
+            <Block id="decision-review-timeline" title="经济时间轴">
+              <AnalysisSection
+                title="经济差时间轴"
+                note={reviewGameInfo ? `${reviewGameInfo.label || reviewGame} · 我方视角；阴影为候选损失窗口，可点标记跳到链卡。` : '我方视角经济差'}
+              >
+                {lossQuery.isLoading ? <LoadingBlock label="读取经济曲线与候选事件" />
+                  : lossQuery.isError ? <ErrorState error={lossQuery.error} onRetry={() => void lossQuery.refetch()} />
+                    : !loss?.available ? <BoardEmpty title="这一局没有可用的经济时间轴">{loss?.reason || '缺官方回放或经济采样。'}</BoardEmpty>
+                      : (
+                        <EconomyTimeline
+                          points={timelinePoints}
+                          duration={lossGame?.duration ?? reviewGameInfo?.duration}
+                          approx
+                          events={timelineEvents}
+                          windows={timelineWindows}
+                          selectedId={selectedChain !== null ? `chain-${selectedChain}` : null}
+                          onPickEvent={pickTimelineEvent}
+                          note={loss?.note}
+                          empty="这一局的经济采样点不足 2 个，暂不画曲线。"
+                        />
+                      )}
+              </AnalysisSection>
+            </Block>
+
+            <Block id="decision-review-chains" title="关键链候选">
+              <AnalysisSection
+                title={`关键链候选 · ${lossChains.length} 段`}
+                note="按经济损失窗口挑出的候选事件：只说明同期发生了什么，不证明因果。"
+              >
+                {lossQuery.isLoading ? <LoadingBlock label="整理候选事件" />
+                  : lossQuery.isError ? <ErrorState error={lossQuery.error} onRetry={() => void lossQuery.refetch()} />
+                    : !loss?.available ? <BoardEmpty title="当前范围没有失利链">{loss?.reason || '缺经济点或没有达到阈值的负向窗口。'}</BoardEmpty>
+                      : lossChains.length ? (
+                        <div className="decision-chain-grid">
+                          {lossChains.map((chain, index) => (
+                            <ChainCard
+                              key={`chain-${index}`}
+                              chain={chain}
+                              index={index}
+                              game={chain.game || reviewGame}
+                              active={selectedChain === index}
+                              onSelect={() => setSelectedChain(index)}
+                            />
+                          ))}
+                        </div>
+                      ) : <BoardEmpty title="这一局没有达到阈值的损失窗口">经济差没有出现显著下滑，或者缺经济采样。</BoardEmpty>}
+              </AnalysisSection>
+            </Block>
+
+            <Block id="decision-review-advantage" title="优势保持">
+              <AnalysisSection
+                title="优势保持与回撤"
+                note="最大领先、峰值后回撤、领先时长与首次兑现时间；不足 10 局只做观察，不给稳定预测。"
+              >
+                {advantageQuery.isLoading ? <LoadingBlock label="计算优势保持指标" />
+                  : advantageQuery.isError ? <ErrorState error={advantageQuery.error} onRetry={() => void advantageQuery.refetch()} />
+                    : !advantage?.available ? <BoardEmpty title="当前范围没有可用的优势分析">{advantage?.reason || '缺胜负面板或经济点。'}</BoardEmpty>
+                      : (
+                        <>
+                          <StatGrid items={[
+                            { label: '最大领先', value: signed(advantageGame?.maxLead), note: num(advantageGame?.maxLeadAt) !== null ? `首次见顶 ≈${fmtDuration(advantageGame?.maxLeadAt)}` : '本队视角最高经济差', tone: 'own' },
+                            { label: '峰值后回撤', value: number(advantageGame?.drawdown), note: '从最高点回落到最低点（幅度，不带正负）', tone: 'foe' },
+                            { label: '领先时长', value: fmtDuration(advantageGame?.leadDurationSec), note: '经济差 ≥ +500 的累计时长' },
+                            { label: '首次兑现', value: num(advantageGame?.conversionSec) === null ? '—' : fmtDuration(advantageGame?.conversionSec), note: '领先≥1000 到下一个我方资源/塔' },
+                            { label: '10 分钟经济差', value: signed(advantageGame?.leadAt10), note: '不足 10 分钟的局不给该指标' },
+                            { label: '结局', value: advantageGame?.comeback ? '被翻盘' : resultText(advantageGame?.result), note: advantageGame?.comeback ? '曾领先 ≥1000 且最终告负' : '描述性结果，不评价指挥' }
+                          ]} />
+                          <div className="decision-summary-line">
+                            <span>曾领先 ≥1000：{number(advantage.summary?.ledGames)} 局</span>
+                            <span>
+                              其中翻盘：{number(advantage.summary?.comebacks)} 局 · 翻盘率 {percent(advantage.summary?.comebackRate)}
+                              {num(advantage.summary?.comebackCiLow) !== null || num(advantage.summary?.comebackCiHigh) !== null || advantage.summary?.comebackCi
+                                ? `（Wilson ${formatCi(advantage.summary?.comebackCi, advantage.summary?.comebackCiLow, advantage.summary?.comebackCiHigh)}）`
+                                : ''}
+                            </span>
+                            <span>平均最大回撤：{number(advantage.summary?.avgDrawdown)}</span>
+                            <span>平均兑现：{fmtDuration(advantage.summary?.avgConversionSec)}</span>
+                            {advantage.summary?.enough === false ? <span className="decision-sample-badge is-warn">样本不足（n={number(advantage.summary?.ledGames)}）</span> : null}
+                          </div>
+                          <div className="board-grid-2 decision-split">
+                            <div>
+                              <h3 className="decision-subtitle">10 分钟分桶</h3>
+                              {(advantage.buckets || []).length ? (
+                                <div className="decision-table-wrap">
+                                  <table className="decision-table">
+                                    <thead>
+                                      <tr><th>分桶</th><th>n</th><th>胜</th><th>胜率</th><th>样本</th></tr>
+                                    </thead>
+                                    <tbody>
+                                      {(advantage.buckets || []).map((bucket, index) => (
+                                        <tr key={`${bucket.bucket || bucket.label || index}`}>
+                                          <td>{bucket.bucket || bucket.label || `${number(bucket.low)} ~ ${number(bucket.high)}`}</td>
+                                          <td>{number(bucket.n)}</td>
+                                          <td>{number(bucket.wins)}</td>
+                                          <td>{percent(bucket.winRate)}</td>
+                                          <td>{bucket.enough === false ? <span className="decision-sample-badge is-warn">样本不足</span> : '可用'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : <p className="board-muted">当前范围没有 10 分钟分桶样本。</p>}
+                            </div>
+                            <div>
+                              <h3 className="decision-subtitle">回撤排行</h3>
+                              {drawdownRows.length ? (
+                                <div className="decision-table-wrap">
+                                  <table className="decision-table">
+                                    <thead>
+                                      <tr><th>对局</th><th>结果</th><th>最大领先</th><th>回撤</th><th>翻盘</th></tr>
+                                    </thead>
+                                    <tbody>
+                                      {drawdownRows.map((game, index) => {
+                                        const id = game.id || game.game || ''
+                                        return (
+                                          <tr
+                                            key={`${id}-${index}`}
+                                            className={id === reviewGame ? 'is-active' : ''}
+                                            tabIndex={0}
+                                            onClick={() => id && selectGame(id)}
+                                            onKeyDown={(event) => { if (event.key === 'Enter' && id) selectGame(id) }}
+                                          >
+                                            <td>{game.label || id || '—'}</td>
+                                            <td><span className={`board-tag tone-${resultTagTone(game.result)}`}>{resultText(game.result)}</span></td>
+                                            <td>{signed(game.maxLead)}</td>
+                                            <td>{number(game.drawdown)}</td>
+                                            <td>{game.comeback ? <span className="board-tag tone-warn">被翻盘</span> : '—'}</td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : <p className="board-muted">当前范围没有可算回撤的对局。</p>}
+                            </div>
+                          </div>
+                          <p className="decision-chart-note">{advantage.note || '经济点约 30 秒一个；回撤与兑现时间为近似值。'}</p>
+                        </>
+                      )}
+              </AnalysisSection>
+            </Block>
+
+            <Block id="decision-review-bands" title="经济分位带">
+              <AnalysisSection
+                title="经济分位带（胜 / 负 / 全部）"
+                note="按分钟插值我方经济差的分位；n=0 的档不画，样本数在图例里。"
+              >
+                {advantageQuery.isLoading ? <LoadingBlock label="汇总分位带" />
+                  : advantageQuery.isError ? <ErrorState error={advantageQuery.error} onRetry={() => void advantageQuery.refetch()} />
+                    : !advantage?.available ? <BoardEmpty title="当前范围没有可用的分位带">{advantage?.reason || '缺胜负面板或经济点。'}</BoardEmpty>
+                      : (
+                        <BandChart
+                          series={bandSeries}
+                          note={advantage.note}
+                          empty="当前范围的胜局/负局样本还不足以画分位带。"
+                        />
+                      )}
+              </AnalysisSection>
+            </Block>
+
+            <Block id="decision-review-fights" title="团战执行">
+              <AnalysisSection
+                title="团战执行与到位"
+                note="按我方视角：开局 3 秒内到达人数差、击杀交换与成员到位延迟；只做复盘描述。"
+              >
+                {fightsQuery.isLoading ? <LoadingBlock label="读取团战明细" />
+                  : fightsQuery.isError ? <ErrorState error={fightsQuery.error} onRetry={() => void fightsQuery.refetch()} />
+                    : !fights?.available ? <BoardEmpty title="这一局没有可复盘的团战">{fights?.reason || '缺团战段或参战时间。'}</BoardEmpty>
+                      : (
+                        <>
+                          <div className="decision-summary-line">
+                            <span>分析团战：{number(fightSummary?.fights)} 场</span>
+                            <span>平均到位延迟：{num(fightSummary?.avgArrivalLagSec) === null ? '—' : `${number(fightSummary?.avgArrivalLagSec, 1)} 秒`}</span>
+                            <span>迟到率：{percent(fightSummary?.lateJoinRate)}</span>
+                            <span>先手击杀：我方 {number(fightSummary?.firstKiller?.own)} / 对手 {number(fightSummary?.firstKiller?.enemy)}</span>
+                            <span>beginner 标记：我方 {number(fightSummary?.beginner?.own)} / 对手 {number(fightSummary?.beginner?.enemy)}</span>
+                            {fightSummary?.wipeSides ? <span>团灭：我方 {number(fightSummary.wipeSides.own)} 次 / 对手 {number(fightSummary.wipeSides.enemy)} 次</span> : null}
+                          </div>
+                          {fightSummary?.firstArrivalNote ? (
+                            <p className="decision-chart-note">先到/先手口径：{fightSummary.firstArrivalNote}</p>
+                          ) : null}
+                          <div className="decision-fight-layout">
+                            <div className="decision-fight-list">
+                              <h3 className="decision-subtitle">损失优先团战</h3>
+                              {fightRows.length ? (
+                                <>
+                                  <div className="decision-table-wrap">
+                                    <table className="decision-table decision-fight-table">
+                                      <thead>
+                                        <tr><th>时间</th><th>参战 / 人数差</th><th>击杀差</th><th>结果</th></tr>
+                                      </thead>
+                                      <tbody>
+                                        {fightRows.map((row, index) => {
+                                          const id = String(row.fightId ?? index)
+                                          const selected = fights?.selected?.fightId !== undefined && String(fights.selected.fightId) === String(row.fightId)
+                                          const advance = num(row.advStart)
+                                          const killDiff = num(row.killDiff)
+                                          return (
+                                            <tr
+                                              key={`${id}-${index}`}
+                                              className={selected ? 'is-active' : ''}
+                                              tabIndex={0}
+                                              onClick={() => setFightId(id)}
+                                              onKeyDown={(event) => { if (event.key === 'Enter') setFightId(id) }}
+                                            >
+                                              <td className="decision-time">{row.timeLabel || fmtDuration(row.startSec)}</td>
+                                              <td>
+                                                <span>我方 {number(row.ownParticipants)} × 对手 {number(row.enemyParticipants)}</span>
+                                                {advance === null ? null : (
+                                                  <small className={`decision-adv ${advance < 0 ? 'is-foe' : advance > 0 ? 'is-own' : ''}`}>{signed(advance)} 人</small>
+                                                )}
+                                              </td>
+                                              <td>
+                                                {killDiff === null
+                                                  ? '0 击杀'
+                                                  : <><span>{number(row.ownKills)} : {number(row.enemyKills)}</span><small className={killDiff > 0 ? 'is-own' : killDiff < 0 ? 'is-foe' : ''}>{signed(killDiff)}</small></>}
+                                              </td>
+                                              <td>{row.won === null || row.won === undefined ? '—' : row.won ? '胜' : '负'}</td>
+                                            </tr>
+                                          )
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                  {fightRowsAll.length > 6 ? (
+                                    <button type="button" className="btn btn-sm decision-more" onClick={() => setShowAllFights((value) => !value)}>
+                                      {showAllFights ? `收起，只看最伤 6 场` : `显示全部 ${Math.min(12, fightRowsAll.length)} 场`}
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : <p className="board-muted">当前范围没有可列出的团战。</p>}
+                            </div>
+                            <div className="decision-fight-arrival">
+                              <h3 className="decision-subtitle">本场到位（损失最优先）</h3>
+                              <ArrivalBars items={fightArrivalItems} empty="没有可展示的成员到位明细。" />
+                              {(fights?.selected?.missingParticipants || 0) > 0 ? (
+                                <p className="decision-chart-note is-warn">有 {number(fights?.selected?.missingParticipants)} 名参战者缺少参战时间，未补成 0。</p>
+                              ) : null}
+                            </div>
+                            {openingGroups.length ? (
+                              <div className="decision-fight-buckets">
+                                <h3 className="decision-subtitle">开局人数差 → 团战结果</h3>
+                                <div className="decision-table-wrap">
+                                  <table className="decision-table">
+                                    <thead>
+                                      <tr><th>场景</th><th>场次</th><th>胜</th><th>胜率</th><th>样本</th></tr>
+                                    </thead>
+                                    <tbody>
+                                      {openingGroups.map((group) => (
+                                        <tr key={group.label}>
+                                          <td>{group.label}</td>
+                                          <td>{number(group.n)}</td>
+                                          <td>{number(group.wins)}</td>
+                                          <td>{percent(group.winRate)}</td>
+                                          <td>{group.enough ? '可用' : <span className="decision-sample-badge is-warn">样本不足</span>}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          <p className="decision-chart-note">{fights.note || '团战人数差为开始 3 秒内的到达人数；迟到指开始 5 秒后才到。'}</p>
+                        </>
+                      )}
+              </AnalysisSection>
+            </Block>
+          </>
+        ) : null}
+
+        {tab === 'prep' ? (
+          openingQuery.isLoading || openingQuery.isError || !opening?.available ? null : (
+            <Block id="decision-prep-heat" title="开局热区">
+              <AnalysisSection
+                title={`开局热区（0–4 分钟 · ${opening.filters?.side === 'enemy' ? '对手' : '我方'}视角）`}
+                note="底图为 20×20 位置计数，折线为路线簇的代表路线；点路线卡可在地图上高亮。"
+              >
+                <div className="decision-heat-layout">
+                  <OpeningHeat
+                    cells={heatCells}
+                    max={num(opening.heat?.max) ?? undefined}
+                    routes={heatRoutes}
+                    highlightId={prepRoute}
+                    calibrated={openingCalibrated}
+                    caption={!openingCalibrated
+                      ? '坐标未定标：位置为回放相对坐标并归一化到 0–1，只用于同批对局之间的相对比较。'
+                      : '坐标按本批位置分位定标；九宫格只是方位描述，不代表草丛或视野。'}
+                    empty="这一批对局缺少可用的位置采样，暂不画热区。"
+                  />
+                  <div className="decision-route-list">
+                    {openingRoutes.length ? openingRoutes.map((route, index) => {
+                      const routeId = `route-${index}`
+                      const active = prepRoute === routeId
+                      const count = num(route.count) ?? 0
+                      const points = routePoints(route)
+                      return (
+                        <button
+                          type="button"
+                          key={routeId}
+                          className={`decision-route-card${active ? ' is-active' : ''}`}
+                          onClick={() => setPrepRoute(active ? null : routeId)}
+                        >
+                          <span className="decision-route-head">
+                            <b>{route.lane || '分路未知'}</b>
+                            <span className="board-tag tone-foe">{count} 次</span>
+                            {route.enough === false || count < 3 ? <span className="decision-sample-badge is-warn">样本不足</span> : null}
+                          </span>
+                          <span className="decision-route-zone">
+                            {route.zoneSequence?.length ? route.zoneSequence.join(' → ') : '路线分区未提供'}
+                          </span>
+                          {route.representative ? (
+                            <span className="decision-route-meta">
+                              代表路线：{route.representative.name || route.representative.player || '选手'} · {route.representative.hero || '英雄未标注'}
+                              {route.representative.label ? ` · ${route.representative.label}` : ''}
+                            </span>
+                          ) : null}
+                          <span className="decision-route-meta">
+                            后续首个资源：{route.nextObjective?.name || '—'}
+                            {num(route.nextObjective?.minutes) !== null ? ` · ${number(route.nextObjective?.minutes, 1)} 分` : ''}
+                            {route.nextObjective?.count ? `（${route.nextObjective.count} 局）` : ''}
+                          </span>
+                          <span className="decision-route-foot">
+                            {points.length ? `路线点 ${points.length} 个` : '无路线折线'} · {active ? '点击取消高亮' : '点击在地图上高亮'}
+                          </span>
+                        </button>
+                      )
+                    }) : <BoardEmpty title="没有可展示的路线样本">当前筛选下还没有成簇的路线。</BoardEmpty>}
+                  </div>
+                </div>
+                <p className="decision-chart-note">
+                  {(opening.notes || []).join(' ') || '仅收录本批回放；每名对手样本不足时只做单局观察。'}
+                </p>
+              </AnalysisSection>
+            </Block>
+          )
+        ) : null}
+
+        {tab === 'player' ? (
+          resourceQuery.isLoading || resourceQuery.isError || !resource?.available ? null : (
+            <>
+              <Block id="decision-player-quadrant" title="资源象限">
+                <AnalysisSection
+                  title="经济占比 × 英雄伤害占比"
+                  note="中位线按当前样本计算；n<10 时用 20/20 固定分界。悬浮看英雄、GPM、死亡与来源，点击选中。"
+                >
+                  <QuadrantChart
+                    points={quadrantPoints}
+                    xMid={num(resource.quadrant?.xSplit)}
+                    yMid={num(resource.quadrant?.ySplit)}
+                    selected={selectedPoint}
+                    onPick={(id) => setSelectedPoint((current) => current === id ? null : id)}
+                    note={resource.note || '只用于发现待复核的资源分配，不评价选手。'}
+                    empty="当前筛选没有同时具备经济占比与伤害占比的样本。"
+                  />
+                  {selectedPlayer ? (
+                    <div className="decision-player-detail">
+                      <div>
+                        <b>{selectedPlayer.name || selectedPlayer.playerId || '选手'}</b>
+                        <span>{selectedPlayer.lane || '分路未标注'} · {selectedPlayer.hero || '英雄未标注'} · {selectedPlayer.result ? resultText(selectedPlayer.result) : '结果未知'}</span>
+                      </div>
+                      <div>
+                        <span>经济占比 {percent(selectedPlayer.goldShare)}</span>
+                        <span>伤害占比 {percent(selectedPlayer.heroDamageShare)}</span>
+                        <span>GPM {number(selectedPlayer.gpm, 1)}</span>
+                        <span>死亡 {number(selectedPlayer.deaths)}</span>
+                        <span>推塔 {number(selectedPlayer.towerDamage)}</span>
+                        <span>象限 {selectedPlayer.quadrant || '—'}</span>
+                      </div>
+                      {selectedPlayer.seq ? <Link className="btn btn-sm" to={matchPath(selectedPlayer.seq)}>打开这一局 <Icon name="arrow" /></Link> : null}
+                    </div>
+                  ) : null}
+                </AnalysisSection>
+              </Block>
+
+              <Block id="decision-player-anomalies" title="异常清单">
+                <AnalysisSection
+                  title={`异常清单 · ${anomalies.length} 条`}
+                  note="只列「高经济低输出」或「发育路死亡偏多」的条目；不排名、不评价选手。"
+                >
+                  {anomalies.length ? (
+                    <div className="decision-anomaly-list">
+                      {anomalies.map((anomaly, index) => (
+                        <div className="decision-anomaly" key={`${anomaly.seq || '-'}-${anomaly.playerId || anomaly.name || index}`}>
+                          <div className="decision-anomaly-head">
+                            <b>{anomaly.name || anomaly.playerId || '选手'}</b>
+                            <span>{anomaly.lane || '分路未标注'} · {anomaly.hero || '英雄未标注'}</span>
+                            <span className="board-tag tone-warn">{anomaly.kind?.includes('death') ? '发育路死亡' : '高经济低输出'}</span>
+                          </div>
+                          <p>{anomaly.text || '—'}</p>
+                          <div className="decision-anomaly-foot">
+                            <span>{anomaly.date || '日期未知'} · {anomaly.opponentName || '对手待命名'} · {anomaly.result ? resultText(anomaly.result) : '结果未知'}</span>
+                            {anomaly.seq ? <Link className="card-link" to={matchPath(anomaly.seq)}>回到对局 <Icon name="arrow" /></Link> : null}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : <BoardEmpty title="当前范围没有达到复核线的条目">高经济低输出与发育路死亡都未触发复核线。</BoardEmpty>}
+                </AnalysisSection>
+              </Block>
+
+              <Block id="decision-player-lanes" title="分路效率">
+                <AnalysisSection
+                  title="分路均值与效率"
+                  note="分路均值只看当前筛选；经济→输出 = 英雄伤害占比 / 经济占比，用于横向看分路职责差异。"
+                >
+                  <div className="decision-table-wrap">
+                    <table className="decision-table">
+                      <thead>
+                        <tr>
+                          <th>分路</th><th>n</th><th>经济占比</th><th>伤害占比</th><th>推塔占比</th>
+                          <th>控制占比</th><th>治疗占比</th><th>死亡</th><th>GPM</th><th>经济→输出</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(resource.byLane || []).map((row) => {
+                          const efficiency = (resource.efficiency || []).find((item) => item.lane === row.lane)
+                          return (
+                            <tr key={row.lane || '未知'}>
+                              <td>{row.lane || '分路未标注'}</td>
+                              <td>{number(row.n)}</td>
+                              <td>{percent(row.goldShare)}</td>
+                              <td>{percent(row.heroDamageShare)}</td>
+                              <td>{percent(row.towerShare)}</td>
+                              <td>{percent(row.controlShare)}</td>
+                              <td>{percent(row.healShare)}</td>
+                              <td>{number(row.deaths, 1)}</td>
+                              <td>{number(row.gpm, 1)}</td>
+                              <td>{number(efficiency?.ratio, 2)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="decision-chart-note">
+                    口径：经济=营地 battleStats.money；英雄伤害=battleStats.totalHeroHurtCnt；推塔=buildingDamage；
+                    总伤害与英雄伤害分开保留，不混用。{resource.efficiencyNote || ''}
+                  </p>
+                </AnalysisSection>
+              </Block>
+            </>
+          )
+        ) : null}
+
+        {tab === 'training' ? (
+          trainingQuery.isLoading || trainingQuery.isError ? null : (
+            <Block id="decision-training-effect" title="干预对照">
+              <AnalysisSection
+                title="干预前后对照"
+                note="每侧至少 5 条有效人次才计算效应量；样本不足会写明原因。"
+                action={<Link className="card-link" to="/training/effect">训练效果页 <Icon name="arrow" /></Link>}
+              >
+                {trainingResults.length ? (
+                  <div className="decision-effect-list">
+                    {trainingResults.map((result) => {
+                      const effect = result.effect
+                      return (
+                        <article className="decision-effect-card" key={result.id}>
+                          <div className="decision-effect-head">
+                            <span>{result.start_date || '日期未知'}</span>
+                            <small>{effect?.label || result.metric || '观察指标'}</small>
+                            <b className={`board-tag tone-${effect?.available ? 'own' : 'muted'}`}>{effect?.available ? '可对比' : '样本不足'}</b>
+                          </div>
+                          <h3>{result.goal}</h3>
+                          {result.intervention ? <p className="decision-effect-method">{result.intervention}</p> : null}
+                          {effect?.available ? (
+                            <div className="decision-effect-values">
+                              <span><small>干预前</small><b>{number(effect.preMean, 2)}</b><em>{number(effect.nPre)} 人次</em></span>
+                              <i>→</i>
+                              <span><small>干预后</small><b>{number(effect.postMean, 2)}</b><em>{number(effect.nPost)} 人次</em></span>
+                              <span><small>效应量 d</small><b>{number(effect.effectSize, 2)}</b><em>描述性对比</em></span>
+                            </div>
+                          ) : <p className="board-muted">{effect?.reason || '样本不足，暂不计算。'}</p>}
+                          {result.review ? <p className="decision-effect-review">{result.review}</p> : null}
+                        </article>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <BoardEmpty title="还没有训练干预记录">
+                    工作台登记训练目标后，系统会把干预前后各至少 5 条本队营地记录放在一起比较。
+                  </BoardEmpty>
+                )}
+                <p className="decision-chart-note">{trainingQuery.data?.dateNote || '只有来源包含完整年份的营地记录才参与前后对比；缺年份不会自行补全。'}</p>
+              </AnalysisSection>
+            </Block>
+          )
+        ) : null}
+      </BlockBoard>
 
       <div className="board-foot">
         口径：{catalog.notes?.join(' ')} 所有「为什么输」都是候选事件，不宣称因果；n 永远可见，小样本只做观察。

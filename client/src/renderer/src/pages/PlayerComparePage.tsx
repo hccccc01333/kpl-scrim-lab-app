@@ -22,6 +22,7 @@ import { PercentileRadar } from '../components/charts/PercentileRadar'
 import { VersusBars } from '../components/charts/VersusBars'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import type { BoardPlayer } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function PlayerComparePage() {
   const { baseUrl } = useConnection()
@@ -120,103 +121,113 @@ export function PlayerComparePage() {
         <PlayerIdentity player={b} align="right" />
       </div>
 
-      <AnalysisSection title="指标对位" note="八项原始值并列；分均数据来自营地十人面板。">
-        <VersusBars
-          rows={COMPARE_METRICS.map((metric) => ({
-            label: metric.label,
-            own: playerValue(a, metric.key),
-            foe: playerValue(b, metric.key),
-            digits: metric.digits,
-            suffix: metric.suffix
-          }))}
-          ownTitle={a.name}
-          foeTitle={b.name}
-        />
-      </AnalysisSection>
-
-      <div className="board-grid-2">
-        <AnalysisSection title="分位雷达" note="各自分路内的同池分位；形状差异比原始值更能说明风格。">
-          <div className="pct-radar-wrap">
-            <PercentileRadar
-              axes={PERCENT_METRICS.slice(0, 6).map((metric) => metric.label)}
-              series={[
-                { label: a.name, tone: 'own', values: PERCENT_METRICS.slice(0, 6).map((metric) => playerPercent(a, metric.key)) },
-                { label: b.name, tone: 'foe', values: PERCENT_METRICS.slice(0, 6).map((metric) => playerPercent(b, metric.key)) }
-              ]}
-              size={220}
+      <BlockBoard page="player-compare">
+        <Block id="pcomp-metrics" title="指标对位">
+          <AnalysisSection title="指标对位" note="八项原始值并列；分均数据来自营地十人面板。">
+            <VersusBars
+              rows={COMPARE_METRICS.map((metric) => ({
+                label: metric.label,
+                own: playerValue(a, metric.key),
+                foe: playerValue(b, metric.key),
+                digits: metric.digits,
+                suffix: metric.suffix
+              }))}
+              ownTitle={a.name}
+              foeTitle={b.name}
             />
-            <div className="pct-list">
-              {diffRows.map((row) => (
-                <div className="pct-row" key={row.label}>
-                  <span>{row.label}</span>
-                  <PercentBar value={row.a} />
-                  <b className="is-foe">{row.b === null ? '—' : `${Math.round(row.b)}%`}</b>
+          </AnalysisSection>
+        </Block>
+
+        <Block id="pcomp-radar-pool" title="雷达与英雄池">
+          <div className="board-grid-2">
+            <AnalysisSection title="分位雷达" note="各自分路内的同池分位；形状差异比原始值更能说明风格。">
+              <div className="pct-radar-wrap">
+                <PercentileRadar
+                  axes={PERCENT_METRICS.slice(0, 6).map((metric) => metric.label)}
+                  series={[
+                    { label: a.name, tone: 'own', values: PERCENT_METRICS.slice(0, 6).map((metric) => playerPercent(a, metric.key)) },
+                    { label: b.name, tone: 'foe', values: PERCENT_METRICS.slice(0, 6).map((metric) => playerPercent(b, metric.key)) }
+                  ]}
+                  size={220}
+                />
+                <div className="pct-list">
+                  {diffRows.map((row) => (
+                    <div className="pct-row" key={row.label}>
+                      <span>{row.label}</span>
+                      <PercentBar value={row.a} />
+                      <b className="is-foe">{row.b === null ? '—' : `${Math.round(row.b)}%`}</b>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        </AnalysisSection>
-
-        <AnalysisSection title="英雄池" note="仅 A / 共用 / 仅 B；集中度 = 该英雄局数 / 本人总出场。">
-          {poolKeys.length ? (
-            <div className="hero-diff">
-              {poolKeys.slice(0, 10).map((hero) => {
-                const av = poolA.get(hero) || 0
-                const bv = poolB.get(hero) || 0
-                return (
-                  <div className="hero-diff-row" key={hero}>
-                    <b className={av ? 'is-own' : ''}>{av || '—'}</b>
-                    <Link to={`/heroes/${encodeURIComponent(hero)}`}>{hero}</Link>
-                    <b className={bv ? 'is-foe' : ''}>{bv || '—'}</b>
-                  </div>
-                )
-              })}
-            </div>
-          ) : <BoardEmpty title="两人都没有英雄记录" />}
-        </AnalysisSection>
-      </div>
-
-      <AnalysisSection title="同场记录" note={`同队 ${shared.sameTeam} 局 · 对位 ${shared.versus} 局；A 在同队局 ${shared.sameTeamWins} 胜，对位 ${shared.aWins} 胜。`}>
-        {shared.rows.length ? (
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>日期</th><th>对手</th><th>关系</th><th>结果</th><th>对局</th></tr></thead>
-              <tbody>
-                {shared.rows.map((row) => (
-                  <tr key={row.game.id}>
-                    <td>{row.game.day}</td>
-                    <td>{row.game.opponent || '—'}</td>
-                    <td>{row.mode === 'team' ? '同队' : '对位'}</td>
-                    <td>{row.aWin ? `${a.name} 胜` : `${a.name} 负`}</td>
-                    <td><Link className="text-link" to={`/matches/${encodeURIComponent(row.game.match)}`}>查看</Link></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <BoardEmpty title="两人还没有同场记录" />}
-      </AnalysisSection>
-
-      <div className="board-grid-2">
-        <AnalysisSection title="逐局评分" note="最近至多 12 局；曲线只示意波动，不插值。">
-          <CompareTrend player={a} />
-          <CompareTrend player={b} />
-        </AnalysisSection>
-
-        <AnalysisSection title="稳定性" note="评分均值、波动与区间；样本不足 2 局不给标准差。">
-          <div className="stability-grid">
-            {[{ player: a, stats: stabilityA }, { player: b, stats: stabilityB }].map(({ player, stats }) => (
-              <div className="stability-card" key={player.name}>
-                <b>{player.name}</b>
-                <span><small>均值</small>{number(stats.mean, 2)}</span>
-                <span><small>中位</small>{number(stats.median, 2)}</span>
-                <span><small>标准差</small>{number(stats.sd, 2)}</span>
-                <span><small>区间</small>{stats.min === null ? '—' : `${number(stats.min, 1)} – ${number(stats.max, 1)}`}</span>
               </div>
-            ))}
+            </AnalysisSection>
+
+            <AnalysisSection title="英雄池" note="仅 A / 共用 / 仅 B；集中度 = 该英雄局数 / 本人总出场。">
+              {poolKeys.length ? (
+                <div className="hero-diff">
+                  {poolKeys.slice(0, 10).map((hero) => {
+                    const av = poolA.get(hero) || 0
+                    const bv = poolB.get(hero) || 0
+                    return (
+                      <div className="hero-diff-row" key={hero}>
+                        <b className={av ? 'is-own' : ''}>{av || '—'}</b>
+                        <Link to={`/heroes/${encodeURIComponent(hero)}`}>{hero}</Link>
+                        <b className={bv ? 'is-foe' : ''}>{bv || '—'}</b>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : <BoardEmpty title="两人都没有英雄记录" />}
+            </AnalysisSection>
           </div>
-        </AnalysisSection>
-      </div>
+        </Block>
+
+        <Block id="pcomp-shared" title="同场记录">
+          <AnalysisSection title="同场记录" note={`同队 ${shared.sameTeam} 局 · 对位 ${shared.versus} 局；A 在同队局 ${shared.sameTeamWins} 胜，对位 ${shared.aWins} 胜。`}>
+            {shared.rows.length ? (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>日期</th><th>对手</th><th>关系</th><th>结果</th><th>对局</th></tr></thead>
+                  <tbody>
+                    {shared.rows.map((row) => (
+                      <tr key={row.game.id}>
+                        <td>{row.game.day}</td>
+                        <td>{row.game.opponent || '—'}</td>
+                        <td>{row.mode === 'team' ? '同队' : '对位'}</td>
+                        <td>{row.aWin ? `${a.name} 胜` : `${a.name} 负`}</td>
+                        <td><Link className="text-link" to={`/matches/${encodeURIComponent(row.game.match)}`}>查看</Link></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <BoardEmpty title="两人还没有同场记录" />}
+          </AnalysisSection>
+        </Block>
+
+        <Block id="pcomp-trend-stability" title="评分与稳定性">
+          <div className="board-grid-2">
+            <AnalysisSection title="逐局评分" note="最近至多 12 局；曲线只示意波动，不插值。">
+              <CompareTrend player={a} />
+              <CompareTrend player={b} />
+            </AnalysisSection>
+
+            <AnalysisSection title="稳定性" note="评分均值、波动与区间；样本不足 2 局不给标准差。">
+              <div className="stability-grid">
+                {[{ player: a, stats: stabilityA }, { player: b, stats: stabilityB }].map(({ player, stats }) => (
+                  <div className="stability-card" key={player.name}>
+                    <b>{player.name}</b>
+                    <span><small>均值</small>{number(stats.mean, 2)}</span>
+                    <span><small>中位</small>{number(stats.median, 2)}</span>
+                    <span><small>标准差</small>{number(stats.sd, 2)}</span>
+                    <span><small>区间</small>{stats.min === null ? '—' : `${number(stats.min, 1)} – ${number(stats.max, 1)}`}</span>
+                  </div>
+                ))}
+              </div>
+            </AnalysisSection>
+          </div>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">对比只做并列与描述，不推断因果；分位与表现分来自各自分路的同池样本。</div>
     </div>

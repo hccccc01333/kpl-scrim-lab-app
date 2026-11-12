@@ -28,6 +28,7 @@ import { VersusBars } from '../components/charts/VersusBars'
 import { ScatterChart } from '../components/charts/ScatterChart'
 import { BarList } from '../components/charts/BarList'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const JUMP = [
   { id: 'tm-score', label: '得分构成' },
@@ -125,213 +126,229 @@ export function TeamPage() {
 
       <JumpNav items={JUMP} />
 
-      <div className="board-grid-2" id="tm-score">
-        <AnalysisSection title="得分构成" note="胜率 30% / 分均经济 20% / KDA 20% / 分均输出 15% / 场均推塔 15%，按同池分位加权。">
-          <div className="score-panel">
-            <div className="score-big"><strong>{score ?? '—'}</strong><span>/ 100</span><TierBadge tier={tier} /></div>
-            <div className="pct-list">
-              {[
-                ['winRate', '胜率'],
-                ['gpm', '分均经济'],
-                ['kda', 'KDA'],
-                ['dpm', '分均输出'],
-                ['towerPerGame', '场均推塔']
-              ].map(([key, label]) => (
-                <div className="pct-row" key={key}>
-                  <span>{label}</span>
-                  <PercentBar value={team.percentiles[key]} />
+      <BlockBoard page="team-detail">
+        <Block id="tm-score-contrast" title="得分对照">
+          <div className="board-grid-2" id="tm-score">
+            <AnalysisSection title="得分构成" note="胜率 30% / 分均经济 20% / KDA 20% / 分均输出 15% / 场均推塔 15%，按同池分位加权。">
+              <div className="score-panel">
+                <div className="score-big"><strong>{score ?? '—'}</strong><span>/ 100</span><TierBadge tier={tier} /></div>
+                <div className="pct-list">
+                  {[
+                    ['winRate', '胜率'],
+                    ['gpm', '分均经济'],
+                    ['kda', 'KDA'],
+                    ['dpm', '分均输出'],
+                    ['towerPerGame', '场均推塔']
+                  ].map(([key, label]) => (
+                    <div className="pct-row" key={key}>
+                      <span>{label}</span>
+                      <PercentBar value={team.percentiles[key]} />
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+              <div className="team-radar-wrap">
+                <PercentileRadar
+                  axes={['胜率', '经济', 'KDA', '输出', '推塔', '时长']}
+                  series={[{
+                    label: team.displayName,
+                    tone: 'own',
+                    values: ['winRate', 'gpm', 'kda', 'dpm', 'towerPerGame', 'duration'].map((key) => team.percentiles[key] ?? null)
+                  }]}
+                  size={200}
+                />
+              </div>
+            </AnalysisSection>
+
+            <AnalysisSection title="数据对照" note="本队与对手的绝对值并列；差值为对手 − 本队。">
+              <VersusBars
+                rows={contrast.map((row) => ({
+                  label: row.label,
+                  own: row.own,
+                  foe: row.foe,
+                  digits: row.digits,
+                  suffix: row.suffix
+                }))}
+                ownTitle={team.displayName}
+                foeTitle={data.own.name}
+              />
+            </AnalysisSection>
+          </div>
+        </Block>
+
+        <Block id="tm-resource" title="位置资源">
+          <AnalysisSection
+            id="tm-resource"
+            title="位置资源结构"
+            note="按分路统计经济 / 输出 / 承伤的 100% 堆叠；上为对手，下为本队，左右对照看倾斜。"
+          >
+            <div className="stacked-compare">
+              <div>
+                <h4>{team.displayName} · 对手</h4>
+                <StackedBars rows={[
+                  { label: '经济', segments: resourceOpponent.map((row) => ({ key: row.lane, label: row.lane, value: row.gold, tone: 'foe' })) },
+                  { label: '输出', segments: resourceOpponent.map((row) => ({ key: row.lane, label: row.lane, value: row.damage, tone: 'foe' })) },
+                  { label: '承伤', segments: resourceOpponent.map((row) => ({ key: row.lane, label: row.lane, value: row.taken, tone: 'foe' })) }
+                ]} />
+              </div>
+              <div>
+                <h4>{data.own.name} · 本队</h4>
+                <StackedBars rows={[
+                  { label: '经济', segments: resourceOwn.map((row) => ({ key: row.lane, label: row.lane, value: row.gold, tone: 'own' })) },
+                  { label: '输出', segments: resourceOwn.map((row) => ({ key: row.lane, label: row.lane, value: row.damage, tone: 'own' })) },
+                  { label: '承伤', segments: resourceOwn.map((row) => ({ key: row.lane, label: row.lane, value: row.taken, tone: 'own' })) }
+                ]} />
+              </div>
             </div>
-          </div>
-          <div className="team-radar-wrap">
-            <PercentileRadar
-              axes={['胜率', '经济', 'KDA', '输出', '推塔', '时长']}
-              series={[{
-                label: team.displayName,
-                tone: 'own',
-                values: ['winRate', 'gpm', 'kda', 'dpm', 'towerPerGame', 'duration'].map((key) => team.percentiles[key] ?? null)
-              }]}
-              size={200}
-            />
-          </div>
-        </AnalysisSection>
+          </AnalysisSection>
+        </Block>
 
-        <AnalysisSection title="数据对照" note="本队与对手的绝对值并列；差值为对手 − 本队。">
-          <VersusBars
-            rows={contrast.map((row) => ({
-              label: row.label,
-              own: row.own,
-              foe: row.foe,
-              digits: row.digits,
-              suffix: row.suffix
-            }))}
-            ownTitle={team.displayName}
-            foeTitle={data.own.name}
-          />
-        </AnalysisSection>
-      </div>
+        <Block id="tm-lanes" title="分路对位">
+          <AnalysisSection title="分路对位" note="同分路双方选手的 KDA 与分均经济；只统计能判定分边的局。">
+            {pressure.length ? (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>分路</th><th>对手选手</th><th>对手 KDA</th><th>对手分均经济</th><th>本队选手</th><th>本队分均经济</th><th>经济差（本队−对手）</th></tr></thead>
+                  <tbody>
+                    {pressure.map((row) => (
+                      <tr key={row.lane}>
+                        <td>{row.lane}</td>
+                        <td>{row.enemyName || '—'}</td>
+                        <td className="is-num">{number(row.enemyKda, 2)}</td>
+                        <td className="is-num">{number(row.enemyGpm)}</td>
+                        <td>{row.ownName || '—'}</td>
+                        <td className="is-num">{number(row.ownGpm)}</td>
+                        <td className={`is-num ${(row.diff || 0) >= 0 ? 'tone-text-own' : 'tone-text-foe'}`}>{signed(row.diff)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <BoardEmpty title="没有可判定的分路对位" />}
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection
-        id="tm-resource"
-        title="位置资源结构"
-        note="按分路统计经济 / 输出 / 承伤的 100% 堆叠；上为对手，下为本队，左右对照看倾斜。"
-      >
-        <div className="stacked-compare">
-          <div>
-            <h4>{team.displayName} · 对手</h4>
-            <StackedBars rows={[
-              { label: '经济', segments: resourceOpponent.map((row) => ({ key: row.lane, label: row.lane, value: row.gold, tone: 'foe' })) },
-              { label: '输出', segments: resourceOpponent.map((row) => ({ key: row.lane, label: row.lane, value: row.damage, tone: 'foe' })) },
-              { label: '承伤', segments: resourceOpponent.map((row) => ({ key: row.lane, label: row.lane, value: row.taken, tone: 'foe' })) }
-            ]} />
-          </div>
-          <div>
-            <h4>{data.own.name} · 本队</h4>
-            <StackedBars rows={[
-              { label: '经济', segments: resourceOwn.map((row) => ({ key: row.lane, label: row.lane, value: row.gold, tone: 'own' })) },
-              { label: '输出', segments: resourceOwn.map((row) => ({ key: row.lane, label: row.lane, value: row.damage, tone: 'own' })) },
-              { label: '承伤', segments: resourceOwn.map((row) => ({ key: row.lane, label: row.lane, value: row.taken, tone: 'own' })) }
-            ]} />
-          </div>
-        </div>
-      </AnalysisSection>
-
-      <AnalysisSection title="分路对位" note="同分路双方选手的 KDA 与分均经济；只统计能判定分边的局。">
-        {pressure.length ? (
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>分路</th><th>对手选手</th><th>对手 KDA</th><th>对手分均经济</th><th>本队选手</th><th>本队分均经济</th><th>经济差（本队−对手）</th></tr></thead>
-              <tbody>
-                {pressure.map((row) => (
-                  <tr key={row.lane}>
-                    <td>{row.lane}</td>
-                    <td>{row.enemyName || '—'}</td>
-                    <td className="is-num">{number(row.enemyKda, 2)}</td>
-                    <td className="is-num">{number(row.enemyGpm)}</td>
-                    <td>{row.ownName || '—'}</td>
-                    <td className="is-num">{number(row.ownGpm)}</td>
-                    <td className={`is-num ${(row.diff || 0) >= 0 ? 'tone-text-own' : 'tone-text-foe'}`}>{signed(row.diff)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <BoardEmpty title="没有可判定的分路对位" />}
-      </AnalysisSection>
-
-      <div className="board-grid-2" id="tm-heroes">
-        <AnalysisSection title="英雄池" note="按交手局数排序；对手胜率与个人 KDA 只描述这批样本。">
-          {heroRows.length ? (
-            <div className="hero-pool-list">
-              {heroRows.map((row) => (
-                <div className="hero-pool-row" key={row.hero}>
-                  <Portrait name={row.hero} size="sm" />
-                  <Link to={`/heroes/${encodeURIComponent(row.hero)}`}>{row.hero}</Link>
-                  <span>{row.games} 局</span>
-                  <span>{percent(row.winRate)}</span>
-                  <b>{number(row.kda, 2)}</b>
+        <Block id="tm-heroes-bp" title="英雄 / BP">
+          <div className="board-grid-2" id="tm-heroes">
+            <AnalysisSection title="英雄池" note="按交手局数排序；对手胜率与个人 KDA 只描述这批样本。">
+              {heroRows.length ? (
+                <div className="hero-pool-list">
+                  {heroRows.map((row) => (
+                    <div className="hero-pool-row" key={row.hero}>
+                      <Portrait name={row.hero} size="sm" />
+                      <Link to={`/heroes/${encodeURIComponent(row.hero)}`}>{row.hero}</Link>
+                      <span>{row.games} 局</span>
+                      <span>{percent(row.winRate)}</span>
+                      <b>{number(row.kda, 2)}</b>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          ) : <BoardEmpty title="还没有英雄样本" />}
-        </AnalysisSection>
+              ) : <BoardEmpty title="还没有英雄样本" />}
+            </AnalysisSection>
 
-        <AnalysisSection title="BP 偏好" note="营地终局名单口径，不推断禁选顺序；只统计有名单的交手。">
-          {profile ? (
-            <>
-              <div className="bp-mini-grid">
-                <div><h4>常选</h4><BarList items={pickRows.map((row) => ({ label: row.hero, value: row.count, note: percent(row.winRate), tone: 'foe' }))} digits={0} /></div>
-                <div><h4>常禁</h4><BarList items={banRows.map((row) => ({ label: row.hero, value: row.count, tone: 'muted' }))} digits={0} /></div>
-              </div>
-              <p className="board-note">覆盖 {profile.games.length} 局 · 池深 {profile.poolHeroes} 个英雄 · 有效英雄 {number(profile.poolEffective, 1)}（1/HHI）。</p>
-            </>
-          ) : <BoardEmpty title="还没有 BP 名单" />}
-        </AnalysisSection>
-      </div>
-
-      <div className="board-grid-2" id="tm-combos">
-        <AnalysisSection title="阵容组合" note="对手双人 / 三人组合；协同是与单英雄基准的差值，小样本仅供观察。">
-          <div className="combo-mini">
-            <h4>双人</h4>
-            {combos2.length ? combos2.map((combo) => (
-              <div className="combo-row" key={combo.heroes.join('|')}>
-                <span>{combo.heroes.join(' + ')}</span>
-                <b>{combo.games} 局</b>
-                <span>{percent(combo.winRate)}</span>
-                <small>{combo.synergy === null ? '—' : `${combo.synergy > 0 ? '+' : ''}${combo.synergy.toFixed(1)} pp`}</small>
-              </div>
-            )) : <p className="board-muted">暂无三人样本</p>}
-            <h4>三人</h4>
-            {combos3.length ? combos3.map((combo) => (
-              <div className="combo-row" key={combo.heroes.join('|')}>
-                <span>{combo.heroes.join(' + ')}</span>
-                <b>{combo.games} 局</b>
-                <span>{percent(combo.winRate)}</span>
-                <small>{combo.synergy === null ? '—' : `${combo.synergy > 0 ? '+' : ''}${combo.synergy.toFixed(1)} pp`}</small>
-              </div>
-            )) : <p className="board-muted">暂无三人样本</p>}
+            <AnalysisSection title="BP 偏好" note="营地终局名单口径，不推断禁选顺序；只统计有名单的交手。">
+              {profile ? (
+                <>
+                  <div className="bp-mini-grid">
+                    <div><h4>常选</h4><BarList items={pickRows.map((row) => ({ label: row.hero, value: row.count, note: percent(row.winRate), tone: 'foe' }))} digits={0} /></div>
+                    <div><h4>常禁</h4><BarList items={banRows.map((row) => ({ label: row.hero, value: row.count, tone: 'muted' }))} digits={0} /></div>
+                  </div>
+                  <p className="board-note">覆盖 {profile.games.length} 局 · 池深 {profile.poolHeroes} 个英雄 · 有效英雄 {number(profile.poolEffective, 1)}（1/HHI）。</p>
+                </>
+              ) : <BoardEmpty title="还没有 BP 名单" />}
+            </AnalysisSection>
           </div>
-        </AnalysisSection>
+        </Block>
 
-        <AnalysisSection title="节奏与终结" note="时长分桶与连胜/连败；样本不足时只作观察。">
-          <div className="rhythm-list">
-            {buckets.map((bucket) => (
-              <div className="rhythm-row" key={bucket.label}>
-                <span>{bucket.label}</span>
-                <i><em style={{ width: `${bucket.games ? bucket.wins / bucket.games * 100 : 0}%` }} /></i>
-                <b>{bucket.games} 局 · {bucket.wins} 胜</b>
+        <Block id="tm-combos-rhythm" title="组合节奏">
+          <div className="board-grid-2" id="tm-combos">
+            <AnalysisSection title="阵容组合" note="对手双人 / 三人组合；协同是与单英雄基准的差值，小样本仅供观察。">
+              <div className="combo-mini">
+                <h4>双人</h4>
+                {combos2.length ? combos2.map((combo) => (
+                  <div className="combo-row" key={combo.heroes.join('|')}>
+                    <span>{combo.heroes.join(' + ')}</span>
+                    <b>{combo.games} 局</b>
+                    <span>{percent(combo.winRate)}</span>
+                    <small>{combo.synergy === null ? '—' : `${combo.synergy > 0 ? '+' : ''}${combo.synergy.toFixed(1)} pp`}</small>
+                  </div>
+                )) : <p className="board-muted">暂无三人样本</p>}
+                <h4>三人</h4>
+                {combos3.length ? combos3.map((combo) => (
+                  <div className="combo-row" key={combo.heroes.join('|')}>
+                    <span>{combo.heroes.join(' + ')}</span>
+                    <b>{combo.games} 局</b>
+                    <span>{percent(combo.winRate)}</span>
+                    <small>{combo.synergy === null ? '—' : `${combo.synergy > 0 ? '+' : ''}${combo.synergy.toFixed(1)} pp`}</small>
+                  </div>
+                )) : <p className="board-muted">暂无三人样本</p>}
               </div>
-            ))}
-          </div>
-          <div className="style-notes">
-            <span><small>最强轴</small><b>{strongest ? `${strongest.label} ${Math.round(strongest.value || 0)}` : '—'}</b></span>
-            <span><small>最弱轴</small><b>{weakest ? `${weakest.label} ${Math.round(weakest.value || 0)}` : '—'}</b></span>
-            <span><small>压力路</small><b>{pressureLane ? `${pressureLane.lane} · ${number(pressureLane.diff, 0)} 金` : '—'}</b></span>
-          </div>
-        </AnalysisSection>
-      </div>
+            </AnalysisSection>
 
-      <div className="board-grid-2" id="tm-quadrant">
-        <AnalysisSection title="赛前洞察" note="只从分位与分路差提炼，不给因果判断。">
-          <div className="insight-list">
-            <div><b>强项</b><span>{strongest ? `${strongest.label}处于同池第 ${Math.round(strongest.value || 0)} 分位` : '样本不足'}</span></div>
-            <div><b>短板</b><span>{weakest ? `${weakest.label}处于同池第 ${Math.round(weakest.value || 0)} 分位` : '样本不足'}</span></div>
-            <div><b>对位压力</b><span>{pressureLane?.diff != null ? `${pressureLane.lane} 对手场均领先 ${number(Math.max(0, pressureLane.diff), 0)} 金` : '无可用对位'}</span></div>
-            <div><b>比赛计划</b><span>{team.winRate !== null && team.winRate >= 50 ? '对手胜率偏高，优先压前期资源与视野。' : '对手胜率一般，按正常节奏打分路优势。'}</span></div>
-          </div>
-        </AnalysisSection>
-
-        <AnalysisSection title="团队风格四象限" note="横轴分均经济分位，纵轴伤害/经济转化分位；点大小在当前版本不编码。">
-          <ScatterChart
-            points={scatter}
-            xLabel="分均经济分位"
-            yLabel="伤害转化分位"
-            selected={team.displayName}
-            height={240}
-          />
-        </AnalysisSection>
-      </div>
-
-      <AnalysisSection title="交手走势" note="最近 10 局；胜负为对手视角，时长与地图来自营地。">
-        {team.games?.length ? (
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>日期</th><th>地图</th><th>结果</th><th>时长</th></tr></thead>
-              <tbody>
-                {[...(team.games || [])].slice(-10).reverse().map((game) => (
-                  <tr key={game.seq}>
-                    <td>{game.start}</td>
-                    <td>{game.map || '—'}</td>
-                    <td><span className={`board-tag tone-${game.win ? 'foe' : 'own'}`}>{game.win ? '对手胜' : '本队胜'}</span></td>
-                    <td className="is-num">{fmtDuration(game.duration)}</td>
-                  </tr>
+            <AnalysisSection title="节奏与终结" note="时长分桶与连胜/连败；样本不足时只作观察。">
+              <div className="rhythm-list">
+                {buckets.map((bucket) => (
+                  <div className="rhythm-row" key={bucket.label}>
+                    <span>{bucket.label}</span>
+                    <i><em style={{ width: `${bucket.games ? bucket.wins / bucket.games * 100 : 0}%` }} /></i>
+                    <b>{bucket.games} 局 · {bucket.wins} 胜</b>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+              <div className="style-notes">
+                <span><small>最强轴</small><b>{strongest ? `${strongest.label} ${Math.round(strongest.value || 0)}` : '—'}</b></span>
+                <span><small>最弱轴</small><b>{weakest ? `${weakest.label} ${Math.round(weakest.value || 0)}` : '—'}</b></span>
+                <span><small>压力路</small><b>{pressureLane ? `${pressureLane.lane} · ${number(pressureLane.diff, 0)} 金` : '—'}</b></span>
+              </div>
+            </AnalysisSection>
           </div>
-        ) : <BoardEmpty title="没有交手明细" />}
-      </AnalysisSection>
+        </Block>
+
+        <Block id="tm-quadrant" title="洞察象限">
+          <div className="board-grid-2" id="tm-quadrant">
+            <AnalysisSection title="赛前洞察" note="只从分位与分路差提炼，不给因果判断。">
+              <div className="insight-list">
+                <div><b>强项</b><span>{strongest ? `${strongest.label}处于同池第 ${Math.round(strongest.value || 0)} 分位` : '样本不足'}</span></div>
+                <div><b>短板</b><span>{weakest ? `${weakest.label}处于同池第 ${Math.round(weakest.value || 0)} 分位` : '样本不足'}</span></div>
+                <div><b>对位压力</b><span>{pressureLane?.diff != null ? `${pressureLane.lane} 对手场均领先 ${number(Math.max(0, pressureLane.diff), 0)} 金` : '无可用对位'}</span></div>
+                <div><b>比赛计划</b><span>{team.winRate !== null && team.winRate >= 50 ? '对手胜率偏高，优先压前期资源与视野。' : '对手胜率一般，按正常节奏打分路优势。'}</span></div>
+              </div>
+            </AnalysisSection>
+
+            <AnalysisSection title="团队风格四象限" note="横轴分均经济分位，纵轴伤害/经济转化分位；点大小在当前版本不编码。">
+              <ScatterChart
+                points={scatter}
+                xLabel="分均经济分位"
+                yLabel="伤害转化分位"
+                selected={team.displayName}
+                height={240}
+              />
+            </AnalysisSection>
+          </div>
+        </Block>
+
+        <Block id="tm-games" title="交手走势">
+          <AnalysisSection title="交手走势" note="最近 10 局；胜负为对手视角，时长与地图来自营地。">
+            {team.games?.length ? (
+              <div className="data-table-wrap">
+                <table className="data-table">
+                  <thead><tr><th>日期</th><th>地图</th><th>结果</th><th>时长</th></tr></thead>
+                  <tbody>
+                    {[...(team.games || [])].slice(-10).reverse().map((game) => (
+                      <tr key={game.seq}>
+                        <td>{game.start}</td>
+                        <td>{game.map || '—'}</td>
+                        <td><span className={`board-tag tone-${game.win ? 'foe' : 'own'}`}>{game.win ? '对手胜' : '本队胜'}</span></td>
+                        <td className="is-num">{fmtDuration(game.duration)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <BoardEmpty title="没有交手明细" />}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">对比与分位只作横向读法；待命名战队可在工作台改名，客户端只读。{compareQuery.isError ? ' 分路与英雄数据读取失败。' : ''}</div>
     </div>

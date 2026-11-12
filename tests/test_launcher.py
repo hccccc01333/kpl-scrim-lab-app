@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -65,6 +66,44 @@ class HealthTests(unittest.TestCase):
     def test_closed_port_is_not_ready(self):
         with mock.patch.dict(os.environ, {'TRAINING_PORT': '9'}):
             self.assertIsNone(launcher.health(timeout=0.3))
+
+
+class VersionDriftTests(unittest.TestCase):
+    """覆盖安装后旧服务还占着端口时，启动器要先停掉旧服务。
+
+    现场问题：程序文件已经被覆盖成新版，但 8766 上还是旧进程（Python 代码
+    在内存里不会跟着文件更新）。启动器原来只看 /api/health 有没有响应，
+    有响应就直接开浏览器，界面于是还是旧版本。
+    """
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.addCleanup(self.temp.cleanup)
+        patch = mock.patch.object(launcher, 'ROOT', self.root)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def _write_version(self, version: str) -> None:
+        (self.root / 'version.py').write_text(
+            f"VERSION = '{version}'\nRELEASE_DATE = '2026-11-11'\n", encoding='utf-8')
+
+    def test_same_version_is_not_stale(self):
+        self._write_version('1.6.4')
+        self.assertEqual(launcher.installed_version(), '1.6.4')
+        self.assertEqual(launcher.stale_running_version({'version': '1.6.4'}), '')
+
+    def test_older_running_service_is_stale(self):
+        self._write_version('1.6.4')
+        self.assertEqual(launcher.stale_running_version({'version': '1.6.2'}), '1.6.2')
+
+    def test_unknown_version_never_triggers_restart(self):
+        self._write_version('1.6.4')
+        self.assertEqual(launcher.stale_running_version({}), '')
+        self.assertEqual(launcher.stale_running_version(None), '')
+        (self.root / 'version.py').unlink()
+        self.assertEqual(launcher.installed_version(), '')
+        self.assertEqual(launcher.stale_running_version({'version': '1.6.2'}), '')
 
 
 class PackagingTests(unittest.TestCase):

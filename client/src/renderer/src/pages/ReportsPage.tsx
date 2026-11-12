@@ -6,6 +6,7 @@ import { number } from '../lib/format'
 import { AnalysisSection } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, StatGrid } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 export function ReportsPage() {
   const { baseUrl } = useConnection()
@@ -41,33 +42,39 @@ export function ReportsPage() {
         { label: '训练周报', value: '按周生成', note: '健康过程汇总' }
       ]} />
 
-      <AnalysisSection title="生成训练周报" note="默认从本周一开始，汇总 7 天内的训练课、对局、目标和复盘；打开后可打印或保存 PDF。">
-        <div className="board-toolbar">
-          <label className="board-muted">周报起始日</label>
-          <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
-          <button type="button" className="btn btn-sm" onClick={() => navigate(`/training/weekly/${start}`)}>生成周报 →</button>
-          <Link className="btn btn-sm" to="/training/effect">看训练效果</Link>
-        </div>
-      </AnalysisSection>
+      <BlockBoard page="reports">
+        <Block id="reports-generate-weekly" title="生成周报">
+          <AnalysisSection title="生成训练周报" note="默认从本周一开始，汇总 7 天内的训练课、对局、目标和复盘；打开后可打印或保存 PDF。">
+            <div className="board-toolbar">
+              <label className="board-muted">周报起始日</label>
+              <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
+              <button type="button" className="btn btn-sm" onClick={() => navigate(`/training/weekly/${start}`)}>生成周报 →</button>
+              <Link className="btn btn-sm" to="/training/effect">看训练效果</Link>
+            </div>
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection title={`已保存报告 · ${reports.length} 份`} note="按保存时间倒序；报告是保存时的结果快照，源数据变化后仍按当时口径回看。">
-        {reports.length ? (
-          <div className="report-card-grid">
-            {reports.map((report) => (
-              <Link to={`/training/reports/${encodeURIComponent(report.id)}`} className="report-card" key={report.id}>
-                <div><span>{topicLabel(report.topic)}</span><b>{report.createdAt?.slice(0, 10) || '—'}</b></div>
-                <h3>{report.title || '未命名报告'}</h3>
-                <p>{topicLabel(report.topic)} · 保存时的结果与口径</p>
-                <em>查看报告 →</em>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <BoardEmpty title="还没有保存报告">
-            报告库当前为空。训练课报告与周报可以直接生成并打印；分析型快照仍在工作台保存。
-          </BoardEmpty>
-        )}
-      </AnalysisSection>
+        <Block id="reports-saved" title="已保存报告">
+          <AnalysisSection title={`已保存报告 · ${reports.length} 份`} note="按保存时间倒序；报告是保存时的结果快照，源数据变化后仍按当时口径回看。">
+            {reports.length ? (
+              <div className="report-card-grid">
+                {reports.map((report) => (
+                  <Link to={`/training/reports/${encodeURIComponent(report.id)}`} className="report-card" key={report.id}>
+                    <div><span>{topicLabel(report.topic)}</span><b>{report.createdAt?.slice(0, 10) || '—'}</b></div>
+                    <h3>{report.title || '未命名报告'}</h3>
+                    <p>{topicLabel(report.topic)} · 保存时的结果与口径</p>
+                    <em>查看报告 →</em>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <BoardEmpty title="还没有保存报告">
+                报告库当前为空。训练课报告与周报可以直接生成并打印；分析型快照仍在工作台保存。
+              </BoardEmpty>
+            )}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">报告库只读；分析快照与训练周报的生成入口仍按 V3 当前可见范围保留。隐藏的研究专题不进入客户端。</div>
     </div>

@@ -19,6 +19,7 @@ import { BoardEmpty, StatGrid, TierBadge } from '../components/analysis/BoardBit
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
 import type { BoardPlayer } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const SORTS = [
   { key: 'score', label: '表现分' },
@@ -157,43 +158,47 @@ export function PlayerArchivePage() {
         </div>
       </div>
 
-      <AnalysisSection title={`档案 · ${filtered.length} 人`} note="分位与表现分来自同分路同阵营样本；对手选手也可查，但不参与本队分位。">
-        {!visible.length ? <BoardEmpty title="没有符合筛选的选手">放宽阵营、分路或最少局数再试。</BoardEmpty>
-          : layout === 'grid' ? (
-            <div className="player-card-grid">
-              {visible.map((player) => <PlayerCard player={player} key={player.name} />)}
-            </div>
-          ) : (
-            <div className="data-table-wrap">
-              <table className="data-table">
-                <thead><tr><th>选手</th><th>阵营</th><th>分路</th><th>局数</th><th>胜率</th><th>KDA</th><th>MVP</th><th>参团</th><th>输出</th><th>表现</th></tr></thead>
-                <tbody>
-                  {visible.map((player) => (
-                    <tr key={player.name}>
-                      <td><Link className="text-link" to={playerPath(player.name)}>{player.name}</Link></td>
-                      <td>{sideName(player.side)}</td>
-                      <td>{player.lane}</td>
-                      <td className="is-num">{player.games}</td>
-                      <td className="is-num">{percent(player.winRate)}</td>
-                      <td className="is-num">{number(player.kda, 2)}</td>
-                      <td className="is-num">{player.mvp}</td>
-                      <td className="is-num">{percent(player.participation)}</td>
-                      <td className="is-num">{percent(player.damageShare)}</td>
-                      <td className="is-num">{number(player.score, 1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        {pages > 1 ? (
-          <div className="board-pager">
-            <button type="button" className="btn btn-sm" disabled={safePage <= 0} onClick={() => setPage(safePage - 1)}>上一页</button>
-            <span>{safePage + 1} / {pages}</span>
-            <button type="button" className="btn btn-sm" disabled={safePage >= pages - 1} onClick={() => setPage(safePage + 1)}>下一页</button>
-          </div>
-        ) : null}
-      </AnalysisSection>
+      <BlockBoard page="player-archive">
+        <Block id="pa-list" title="选手档案">
+          <AnalysisSection title={`档案 · ${filtered.length} 人`} note="分位与表现分来自同分路同阵营样本；对手选手也可查，但不参与本队分位。">
+            {!visible.length ? <BoardEmpty title="没有符合筛选的选手">放宽阵营、分路或最少局数再试。</BoardEmpty>
+              : layout === 'grid' ? (
+                <div className="player-card-grid">
+                  {visible.map((player) => <PlayerCard player={player} key={player.name} />)}
+                </div>
+              ) : (
+                <div className="data-table-wrap">
+                  <table className="data-table">
+                    <thead><tr><th>选手</th><th>阵营</th><th>分路</th><th>局数</th><th>胜率</th><th>KDA</th><th>MVP</th><th>参团</th><th>输出</th><th>表现</th></tr></thead>
+                    <tbody>
+                      {visible.map((player) => (
+                        <tr key={player.name}>
+                          <td><Link className="text-link" to={playerPath(player.name)}>{player.name}</Link></td>
+                          <td>{sideName(player.side)}</td>
+                          <td>{player.lane}</td>
+                          <td className="is-num">{player.games}</td>
+                          <td className="is-num">{percent(player.winRate)}</td>
+                          <td className="is-num">{number(player.kda, 2)}</td>
+                          <td className="is-num">{player.mvp}</td>
+                          <td className="is-num">{percent(player.participation)}</td>
+                          <td className="is-num">{percent(player.damageShare)}</td>
+                          <td className="is-num">{number(player.score, 1)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            {pages > 1 ? (
+              <div className="board-pager">
+                <button type="button" className="btn btn-sm" disabled={safePage <= 0} onClick={() => setPage(safePage - 1)}>上一页</button>
+                <span>{safePage + 1} / {pages}</span>
+                <button type="button" className="btn btn-sm" disabled={safePage >= pages - 1} onClick={() => setPage(safePage + 1)}>下一页</button>
+              </div>
+            ) : null}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">CSV 导出当前筛选结果；表现分 = KDA / 分均经济 / 分均输出 / 参团四项分位均值。</div>
     </div>

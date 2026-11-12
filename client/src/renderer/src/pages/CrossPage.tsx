@@ -16,6 +16,7 @@ import { StackedBars } from '../components/charts/StackedBars'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
 import type { CrossVector } from '../lib/types'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const EMPTY = { version: '', session: '', opponent: '', result: '' }
 
@@ -151,59 +152,65 @@ export function CrossPage() {
         ))}
       </section>
 
-      <AnalysisSection title="分路对位" note="同分路本队减对手，按局时长折算成每分钟；方块/条长表示差距大小。">
-        <LaneBoard vectors={filtered} />
-      </AnalysisSection>
+      <BlockBoard page="cross">
+        <Block id="cx-lanes" title="分路对位">
+          <AnalysisSection title="分路对位" note="同分路本队减对手，按局时长折算成每分钟；方块/条长表示差距大小。">
+            <LaneBoard vectors={filtered} />
+          </AnalysisSection>
+        </Block>
 
-      <AnalysisSection
-        title={scopeKeys ? `逐局对照 · 已圈定 ${scoped.length} 局` : '逐局对照'}
-        note="金差走势＝本队减对手；10 分钟与终局读数来自营地采样。点一行设为参照。"
-        action={scopeKeys ? <button type="button" className="btn btn-sm" onClick={() => setScopeKeys(null)}>清除圈定</button> : undefined}
-      >
-        <div className="cross-board">
-          <div className="cross-board-list">
-            {scoped.length ? scoped.map((vector) => {
-              const tempo = tempoByKey.get(vector.key)
-              const points = (tempo?.points || []).filter((point) => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1])) as [number, number][]
-              const match = matchByKey.get(vector.key)
-              return (
-                <button
-                  type="button"
-                  key={vector.key}
-                  className={`cross-row${focus?.key === vector.key ? ' is-focus' : ''}`}
-                  onClick={() => setFocusKey(vector.key)}
-                >
-                  <span className="cross-row-main">
-                    <b>{match?.opponent || vector.opponent || '对手未标注'}</b>
-                    <small>{vector.date || '—'} · {match?.mode || vector.session || '对局'} · {vector.version || '版本未记录'}</small>
-                  </span>
-                  <span className={`cross-row-result tone-${vector.result === 'win' ? 'own' : 'foe'}`}>
-                    {vector.result === 'win' ? '胜' : vector.result === 'loss' ? '负' : '—'}
-                  </span>
-                  <span className="cross-row-duration">{fmtDuration(vector.duration)}</span>
-                  <span className="cross-row-spark"><Sparkline points={points} duration={vector.duration} markAt={600} /></span>
-                  <span className="cross-row-metric"><small>10′</small><b>{signed(vector.at10)}</b></span>
-                  <span className="cross-row-metric"><small>终局</small><b>{signed(vector.finalDiff)}</b></span>
-                  <Link className="cross-row-link" to={matchPath(vector.key)} onClick={(event) => event.stopPropagation()}>复盘 →</Link>
-                </button>
-              )
-            }) : <BoardEmpty title="当前范围没有对局">换一个筛选条件再试。</BoardEmpty>}
-          </div>
-          <aside className="cross-ref">
-            <h3>本批参照</h3>
-            <p>{focus ? `聚焦 ${focus.date || ''} ${focus.opponent || ''}` : '选择一局查看它在分布里的位置'}</p>
-            <Distribution label="10 分钟金差" values={values('at10')} active={focus?.at10} />
-            <Distribution label="终局金差" values={values('finalDiff')} active={focus?.finalDiff} />
-            <Distribution label="时长（分）" values={values('duration').map((value) => value / 60)} active={focus ? focus.duration / 60 : null} />
-            {focus && focusPoints.length ? (
-              <div className="cross-ref-spark">
-                <span>聚焦局金差走势</span>
-                <Sparkline points={focusPoints} width={220} height={70} duration={focus.duration} markAt={600} />
+        <Block id="cx-ledger" title="逐局对照">
+          <AnalysisSection
+            title={scopeKeys ? `逐局对照 · 已圈定 ${scoped.length} 局` : '逐局对照'}
+            note="金差走势＝本队减对手；10 分钟与终局读数来自营地采样。点一行设为参照。"
+            action={scopeKeys ? <button type="button" className="btn btn-sm" onClick={() => setScopeKeys(null)}>清除圈定</button> : undefined}
+          >
+            <div className="cross-board">
+              <div className="cross-board-list">
+                {scoped.length ? scoped.map((vector) => {
+                  const tempo = tempoByKey.get(vector.key)
+                  const points = (tempo?.points || []).filter((point) => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1])) as [number, number][]
+                  const match = matchByKey.get(vector.key)
+                  return (
+                    <button
+                      type="button"
+                      key={vector.key}
+                      className={`cross-row${focus?.key === vector.key ? ' is-focus' : ''}`}
+                      onClick={() => setFocusKey(vector.key)}
+                    >
+                      <span className="cross-row-main">
+                        <b>{match?.opponent || vector.opponent || '对手未标注'}</b>
+                        <small>{vector.date || '—'} · {match?.mode || vector.session || '对局'} · {vector.version || '版本未记录'}</small>
+                      </span>
+                      <span className={`cross-row-result tone-${vector.result === 'win' ? 'own' : 'foe'}`}>
+                        {vector.result === 'win' ? '胜' : vector.result === 'loss' ? '负' : '—'}
+                      </span>
+                      <span className="cross-row-duration">{fmtDuration(vector.duration)}</span>
+                      <span className="cross-row-spark"><Sparkline points={points} duration={vector.duration} markAt={600} /></span>
+                      <span className="cross-row-metric"><small>10′</small><b>{signed(vector.at10)}</b></span>
+                      <span className="cross-row-metric"><small>终局</small><b>{signed(vector.finalDiff)}</b></span>
+                      <Link className="cross-row-link" to={matchPath(vector.key)} onClick={(event) => event.stopPropagation()}>复盘 →</Link>
+                    </button>
+                  )
+                }) : <BoardEmpty title="当前范围没有对局">换一个筛选条件再试。</BoardEmpty>}
               </div>
-            ) : null}
-          </aside>
-        </div>
-      </AnalysisSection>
+              <aside className="cross-ref">
+                <h3>本批参照</h3>
+                <p>{focus ? `聚焦 ${focus.date || ''} ${focus.opponent || ''}` : '选择一局查看它在分布里的位置'}</p>
+                <Distribution label="10 分钟金差" values={values('at10')} active={focus?.at10} />
+                <Distribution label="终局金差" values={values('finalDiff')} active={focus?.finalDiff} />
+                <Distribution label="时长（分）" values={values('duration').map((value) => value / 60)} active={focus ? focus.duration / 60 : null} />
+                {focus && focusPoints.length ? (
+                  <div className="cross-ref-spark">
+                    <span>聚焦局金差走势</span>
+                    <Sparkline points={focusPoints} width={220} height={70} duration={focus.duration} markAt={600} />
+                  </div>
+                ) : null}
+              </aside>
+            </div>
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">口径：营地十人面板与官方回放事件；金差一律为本队减对手。当前库官方回放 {number(vectors.length)} 局向量中可读时间轴 {number(tempoMatches.length)} 局；缺时间轴的局只看终局读数。</div>
     </div>

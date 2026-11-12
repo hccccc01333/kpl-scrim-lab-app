@@ -18,6 +18,7 @@ import { BoardEmpty, StatGrid, TierBadge } from '../components/analysis/BoardBit
 import { PercentBar } from '../components/analysis/BoardBits'
 import { ErrorState, PageHeader, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
+import { Block, BlockBoard } from '../blocks/BlockBoard'
 
 const SORTS = [
   { key: 'score', label: '评分' },
@@ -91,52 +92,58 @@ export function TeamsPage() {
         { label: '时间跨度', value: dates.length ? `${dates[0]} → ${dates[dates.length - 1]}` : '—', note: '首个与最近交手' }
       ]} />
 
-      <AnalysisSection title="本队基准" note="本队不进对手榜；这里只展示同池分位与四轴，作为读对手的参照。">
-        <div className="own-team-band">
-          <div className="own-team-id">
-            <TierBadge tier={teamTier(ownScore)} />
-            <b>{data.own.name}</b>
-            <span>{data.own.matches} 局 · {percent(data.own.winRate)}</span>
-          </div>
-          <div className="own-team-metrics">
-            {TEAM_METRICS.slice(0, 5).map((metric) => (
-              <span key={metric.key}><small>{metric.label}</small><b>{metricText(data.own.metrics[metric.key], metric)}</b></span>
-            ))}
-          </div>
-          <div className="own-team-axes">
-            {teamAxes(data.own.percentiles).map((axis) => (
-              <div className="axis-row" key={axis.key}>
-                <span>{axis.label}</span>
-                <i><em style={{ width: `${axis.value ?? 0}%` }} /></i>
-                <b>{axis.value === null ? '—' : Math.round(axis.value)}</b>
+      <BlockBoard page="teams">
+        <Block id="teams-bench" title="本队基准">
+          <AnalysisSection title="本队基准" note="本队不进对手榜；这里只展示同池分位与四轴，作为读对手的参照。">
+            <div className="own-team-band">
+              <div className="own-team-id">
+                <TierBadge tier={teamTier(ownScore)} />
+                <b>{data.own.name}</b>
+                <span>{data.own.matches} 局 · {percent(data.own.winRate)}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      </AnalysisSection>
+              <div className="own-team-metrics">
+                {TEAM_METRICS.slice(0, 5).map((metric) => (
+                  <span key={metric.key}><small>{metric.label}</small><b>{metricText(data.own.metrics[metric.key], metric)}</b></span>
+                ))}
+              </div>
+              <div className="own-team-axes">
+                {teamAxes(data.own.percentiles).map((axis) => (
+                  <div className="axis-row" key={axis.key}>
+                    <span>{axis.label}</span>
+                    <i><em style={{ width: `${axis.value ?? 0}%` }} /></i>
+                    <b>{axis.value === null ? '—' : Math.round(axis.value)}</b>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </AnalysisSection>
+        </Block>
 
-      <div className="board-toolbar">
-        <input className="board-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索队名、教练或选手" aria-label="搜索战队" />
-        <div className="segmented">
-          {(['all', 'named', 'pending'] as const).map((value) => (
-            <button type="button" key={value} className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)}>
-              {value === 'all' ? '全部' : value === 'named' ? '已命名' : '待命名'}
-            </button>
-          ))}
-        </div>
-        <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)} aria-label="排序">
-          {SORTS.map((item) => <option value={item.key} key={item.key}>按{item.label}</option>)}
-        </select>
-        <span className="board-muted">{rows.length} 支</span>
-      </div>
-
-      <AnalysisSection title="对手战力榜" note="评分 = 胜率 30% + 分均经济 20% + KDA 20% + 分均输出 15% + 场均推塔 15%，按同池分位加权。">
-        {rows.length ? (
-          <div className="team-card-grid">
-            {rows.map((team, index) => <TeamCard team={team} rank={index + 1} key={team.id} />)}
+        <Block id="teams-rank" title="对手战力榜">
+          <div className="board-toolbar">
+            <input className="board-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索队名、教练或选手" aria-label="搜索战队" />
+            <div className="segmented">
+              {(['all', 'named', 'pending'] as const).map((value) => (
+                <button type="button" key={value} className={status === value ? 'is-active' : ''} onClick={() => setStatus(value)}>
+                  {value === 'all' ? '全部' : value === 'named' ? '已命名' : '待命名'}
+                </button>
+              ))}
+            </div>
+            <select value={sort} onChange={(event) => setSort(event.target.value as SortKey)} aria-label="排序">
+              {SORTS.map((item) => <option value={item.key} key={item.key}>按{item.label}</option>)}
+            </select>
+            <span className="board-muted">{rows.length} 支</span>
           </div>
-        ) : <BoardEmpty title="没有符合筛选的战队">放宽状态或搜索条件再试。</BoardEmpty>}
-      </AnalysisSection>
+
+          <AnalysisSection title="对手战力榜" note="评分 = 胜率 30% + 分均经济 20% + KDA 20% + 分均输出 15% + 场均推塔 15%，按同池分位加权。">
+            {rows.length ? (
+              <div className="team-card-grid">
+                {rows.map((team, index) => <TeamCard team={team} rank={index + 1} key={team.id} />)}
+              </div>
+            ) : <BoardEmpty title="没有符合筛选的战队">放宽状态或搜索条件再试。</BoardEmpty>}
+          </AnalysisSection>
+        </Block>
+      </BlockBoard>
 
       <div className="board-foot">S ≥ 80 / A ≥ 60 / B ≥ 40；分位缺失项按剩余权重归一。本页使用全部营地面板及关联回放，首页的日期 / 来源筛选不适用；待命名战队可在工作台改名，客户端只读。</div>
     </div>
