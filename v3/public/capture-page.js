@@ -224,13 +224,16 @@ export function createCapture(h) {
     host.hidden = !html;
   }
 
-  function paint() {
+  function paint(keepScroll = false) {
     const root = document.querySelector('#content');
     // 同步在后台跑的时候用户可能已经切走：这时只更新右下角，别把别的页面重绘成采集页。
     if (!location.hash.startsWith('#ingest')) { renderWidget(); return; }
     if (root && state.value) {
+      // 勾选一局就把整页换掉会让列表跳回原处，逐个取消勾选时要保持当前位置。
+      const anchor = keepScroll ? window.scrollY : null;
       root.innerHTML = view(state.value);
       bindFilter();
+      if (anchor !== null) window.scrollTo(0, anchor);
     }
     renderWidget();
   }
@@ -876,7 +879,7 @@ export function createCapture(h) {
       ${blocked ? '<button class="primary" data-capture-action="auth-start">补充授权</button>' : ''}
       ${moreAction}
       <button class="control" data-capture-action="check-all" ${list && list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
-      <button class="control" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消全选</button>
+      <button class="control" data-capture-action="check-none">全部取消勾选</button>
       <button class="control" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : list ? '重新拉取' : '拉取对局'}</button>
       <button class="${checked ? 'primary' : 'control'}" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button></div>`;
 
@@ -980,12 +983,20 @@ export function createCapture(h) {
         ? '没有待同步的新局；下面的折叠里有已进统计和营地无详情的局。'
         : '没有可同步的新局。'}</p>`;
 
+    // 列表一长，顶部的「全部取消勾选」要滚回去才点得到；底下再放一条同样的出口。
+    const clearBar = checked
+      ? `<div class="capture-actions ingest-clear">
+          <span class="capture-hint">已勾选 ${fmt(checked)} 局</span>
+          <button class="control" data-capture-action="check-none">全部取消勾选</button>
+        </div>`
+      : '';
+
     return block('拉取对局',
       `待同步 ${fmt(pendingRows.length)} · 已进统计 ${fmt(importedRows.length)}`
       + `${expiredRows.length ? ` · 营地无详情 ${fmt(expiredRows.length)}` : ''}`
       + `${reviewRows.length ? ` · 待审查 ${fmt(reviewRows.length)}` : ''}`
       + ` · 已勾选 ${fmt(checked)}。${moreHint}`,
-      `<div class="cap-body">${flow}${expiredCallout}${pendingList}`
+      `<div class="cap-body">${flow}${expiredCallout}${pendingList}${clearBar}`
       + fold(importedRows, '已进正式统计')
       + fold(expiredRows, '营地无详情（超过一个月）', ' is-warn')
       + fold(reviewRows, '已在缺失值审查')
@@ -1291,7 +1302,7 @@ export function createCapture(h) {
     const box = event.target.closest('[data-capture-check]');
     if (!box) return false;
     setChecked(box.dataset.captureCheck, box.checked);
-    paint();
+    paint(true);
     return true;
   }
 
@@ -1832,8 +1843,11 @@ export function createCapture(h) {
         return true;
       }
       if (action === 'check-none') {
+        // 拉取完会自动勾上所有待同步的局；这里必须一次清空，不能逼教练逐个点。
+        const dropped = Object.keys(state.checked).length;
         state.checked = {};
-        paint();
+        setNotice(dropped ? `已取消全部 ${dropped} 局的勾选。` : '当前没有勾选的对局。');
+        paint(true);
         return true;
       }
       if (action === 'auth-check') { await checkAuth(true); return true; }

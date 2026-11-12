@@ -1,216 +1,84 @@
 {
   "schema": 1,
-  "version": "1.6.4",
-  "publishedAt": "2026-11-11T22:39:42+08:00",
+  "version": "1.6.5",
+  "publishedAt": "2026-11-12T19:29:33+08:00",
   "channel": "stable",
-  "minVersion": "1.5.32",
+  "minVersion": "1.6.4",
   "notes": [
-    "移除匿名使用统计：删掉客户端心跳、首启说明弹窗与页脚「匿名统计」入口",
-    "移除 `telemetry.py`、`stats/` 统计服务、`/api/usage/*` 接口与配套文档、测试",
-    "工作台内自动更新保持不变：打开就提示、一键升级",
-    "升级不受影响：`data/`、`.env`、营地授权与既有对局数据全部保留"
+    "修营地同步成功后回放仍然为空：同步时把营地账号 ID 一起带上，自动导入才拿得到 `playerid`",
+    "修覆盖安装后打开仍是旧界面：启动器发现 8766 上跑着旧版本，先停旧进程再起新版本",
+    "修升级后浏览器仍用旧页面：前端资源地址改成「版本号 + 前端最新修改时间」，每次发版都换",
+    "页面发现自己是旧版本时，会提示按 Ctrl+F5 刷新，不再无声地停在旧界面",
+    "新增按需解码的技能台账接口 `/api/replays/<id>/skill-ledger`"
   ],
   "patch": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.4/patch-1.6.4.zip",
-    "sha256": "e32fc0b015beaf8cd609adb90433f97838b9597309c83f26944d21ed1d93974f",
-    "size": 737698,
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.5/patch-1.6.5.zip",
+    "sha256": "c18c9157cc35e4113ed40b1ef4583895713fedfebb2dddcb96c200ab84aacb32",
+    "size": 279544,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "11c031c223abb926508d038f97dd875f9eae77a3d0ed5990d59e1eec05ee84f0",
-        "size": 104565
+        "sha256": "fc7cf99e7b3f3134aa3195ff22469a035c1729d8ca558af7b1f76ace4cf9aa66",
+        "size": 105776
       },
       {
-        "path": "LICENSE",
-        "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
-        "size": 34523
+        "path": "analysis_data.py",
+        "sha256": "c865c863abbe86ead55d193375d200cc82874739b96e1cdf3df368d5a48af728",
+        "size": 120071
       },
       {
-        "path": "bp_facts.py",
-        "sha256": "94ee4581687c88c04e663a10eff838cc7841fc3d6b9d4e3cf22dd7978cba00ab",
-        "size": 9717
+        "path": "bp_camp.py",
+        "sha256": "f3ff1dd2dd4a57c435a8d703c1d26d1e0d2667cdb10c4c5e03fe28e49a2b10eb",
+        "size": 13138
       },
       {
-        "path": "channel_store.py",
-        "sha256": "f6c22bfdd7738e188f9832b62edcf4f11d83bd3dc251a74e1a5b7e46a52eedb4",
-        "size": 64095
-      },
-      {
-        "path": "data_transfer.py",
-        "sha256": "090c7393ac242946257f8e641baca859a3364ff1185e4d5134fdfa83d6fd94a7",
-        "size": 12409
-      },
-      {
-        "path": "decision_api.py",
-        "sha256": "9b6d2f377e433f7d746e50f16e1332ebf1452eb471b88b215c967c3e7ed01168",
-        "size": 11598
-      },
-      {
-        "path": "decision_bp.py",
-        "sha256": "226e7954ffbd929e53bc4a1d92e375caec74d30a737215236be678738238fc2f",
-        "size": 11496
-      },
-      {
-        "path": "decision_briefing.py",
-        "sha256": "12438797c7de5c43c70d03c0871768a142f48b93afd94f035b3386ef286997f5",
-        "size": 25237
-      },
-      {
-        "path": "decision_facts.py",
-        "sha256": "8d7cf7bcfe19f21439baae1c92b97a19c7cfdf50d5fabbc2aa6ee6df9a58f297",
-        "size": 34412
-      },
-      {
-        "path": "decision_fights.py",
-        "sha256": "250c483b736af5d5e684b843c96fd54fc5cc46946d2e82f485ee0b28116b60e4",
-        "size": 17851
-      },
-      {
-        "path": "decision_loss.py",
-        "sha256": "070e9c0456704230bb99ad7c786bc8d76ee23a1bb10e0d321ae49a9508f61f13",
-        "size": 39928
-      },
-      {
-        "path": "decision_opening.py",
-        "sha256": "ff300f3ea9dfc99e40bbf997fe66080d6978360c8da7d540534d233295ffb9c5",
-        "size": 23266
-      },
-      {
-        "path": "decision_resource.py",
-        "sha256": "47ee54243710c4c09511b654106d6dbcfaa7ee5950fab3ea8e081df44870cf0f",
-        "size": 24525
-      },
-      {
-        "path": "docs/collection_sop.md",
-        "sha256": "a2918edb037975a6db0a0b272fe5d9db39cae6caa7320af3467c20a1a19f9c06",
-        "size": 9075
-      },
-      {
-        "path": "docs/product_guide.md",
-        "sha256": "5872bfc70536e970471fca6e51c452c57fe4ab7073c76fa1f819d73b5dcbbd90",
-        "size": 7758
-      },
-      {
-        "path": "identity_service.py",
-        "sha256": "4beccf61ef2bdb3b2cf82c856120389e7b80760fdc11c44bb3da77dd11f2f8af",
-        "size": 13934
-      },
-      {
-        "path": "kpl_bp.py",
-        "sha256": "f1ee6c06add8d8a5c9126210379fc7f9a9164e20883f1587f8256d4cc8365739",
-        "size": 41041
-      },
-      {
-        "path": "recording_store.py",
-        "sha256": "a2037910a53104e189ca4305effd0c7fa3b031f68729df1c7fe7f2a5cb0a1b06",
-        "size": 12105
+        "path": "launcher.py",
+        "sha256": "f04ddecb695583d505a70f1f9cc62b5f5170e38c2ad53565892cc51eacc5e174",
+        "size": 13103
       },
       {
         "path": "server.py",
-        "sha256": "5b6f1f0b285dac1e7d94fe5046fc17bb7a13d0778a85a3e1d3879bbcdc7293e8",
-        "size": 202916
+        "sha256": "c974fa593d46c696452ab336a5ec83abb4565389b0dc6b211f030566c06c8f41",
+        "size": 207233
       },
       {
-        "path": "update_api.py",
-        "sha256": "69f783d3095cfd025b9d858bd5b1a8d7ea29245d3a037b585351e2cf6a9dbea9",
-        "size": 5835
-      },
-      {
-        "path": "updater.py",
-        "sha256": "689248d3ec2f55def6a0fd24b9f65982c2a466be57dd78dad901452a0685d01f",
-        "size": 24173
-      },
-      {
-        "path": "v3/public/app.js",
-        "sha256": "acd27446d82c8390e6ffc163724e9d3993d73ae81cef164b4ade2ba9384caf96",
-        "size": 174361
-      },
-      {
-        "path": "v3/public/bp-counter.js",
-        "sha256": "5cc237001f0fd97fe2d96bb8ebde5d7983c68097db91d3c0d9cd98c454893296",
-        "size": 10405
+        "path": "tools/replay_skill_ledger.py",
+        "sha256": "bf7e5e26750dbc16081b7c9cdea0627ed11eea6728951a9b087f12e48c9fa08b",
+        "size": 43124
       },
       {
         "path": "v3/public/capture-page.js",
-        "sha256": "be1431e443476f52156a4a34a8a6deb7f2ec3a38e01c81c7dec217e04943f5a6",
-        "size": 100509
-      },
-      {
-        "path": "v3/public/decision-page.js",
-        "sha256": "257453de29f939bfc029360c60702d700f636bec0f1242ed3e0a0264006915c8",
-        "size": 89677
+        "sha256": "e9c8a5d207fa4860942c7f9d2436d502c3b822ec1e918697aa05cedf18ebcc87",
+        "size": 103884
       },
       {
         "path": "v3/public/features.js",
-        "sha256": "c16e7658fe33ee3b3ff8642a44e9256bdfb651b8498a39369aaf6b903204fa9d",
-        "size": 330108
+        "sha256": "4e62a1de896829c0c3c4bd6db685e9314e03c2797891abfa04181c3e76354590",
+        "size": 330330
       },
       {
-        "path": "v3/public/home-decision.js",
-        "sha256": "880c6384ae787e34965ebdf7ad1aa0ce6396c5f67ec1f342be6e142f3ef908cd",
-        "size": 11989
-      },
-      {
-        "path": "v3/public/match-deep.js",
-        "sha256": "07f9857ccafb81b5b2231b99b0f14093e14229a684a3b6cd960b508e62968efe",
-        "size": 132134
-      },
-      {
-        "path": "v3/public/players-page.js",
-        "sha256": "631e24f7903cbc61d495ec1ddfe284ec7d207a05723b7b470d21cbc45844c8ee",
-        "size": 121373
-      },
-      {
-        "path": "v3/public/review-page.js",
-        "sha256": "4b0452b219ed8c6c4d1c8f024895dbce9936e49c28acb5c151d2c4b279501e14",
-        "size": 28034
-      },
-      {
-        "path": "v3/public/sources-page.js",
-        "sha256": "eec66cedf58aab63d846a8d08c1519b50997888bafa48b35bc23d9982a3454cd",
-        "size": 73965
-      },
-      {
-        "path": "v3/public/style.css",
-        "sha256": "062987721b39952e8dcc00ec2d4323829fdbf90c3208b5f788c96baf7a468b62",
-        "size": 734273
+        "path": "v3/public/index.html",
+        "sha256": "de502aa99184f3d7e47781e208c68bb14e386673a1412ffdd2739309bfe0eee1",
+        "size": 606
       },
       {
         "path": "v3/public/update-banner.js",
-        "sha256": "c1a99cfcf41ad30e982bbb45b754ab04bd8217a786e319bb1f69e81e1bea9e69",
-        "size": 16151
-      },
-      {
-        "path": "v3/serve.py",
-        "sha256": "ba254f8b9b669fcca41bb0192253d4eeab4ce4f0064004385e1d230b79f77e52",
-        "size": 127758
+        "sha256": "277d94ed1143582b118caafdc02717b894c00d8b2e514ac94c31a16c524bbc1a",
+        "size": 17240
       },
       {
         "path": "version.py",
-        "sha256": "f324f089f73375df4bf593f0ab14d7ba9239c388cf92494e8ebd8e99aacb5c67",
-        "size": 381
-      },
-      {
-        "path": "web/collection-guide.html",
-        "sha256": "aa82a54929d99832650826928ec9194ac4f2fb0796386cf7a4c2f0dc89efda69",
-        "size": 16063
-      },
-      {
-        "path": "workspace_store.py",
-        "sha256": "d5548faa9e9fa7007d55d3ed61289c65446ddff6949385050fc910fa6b20084e",
-        "size": 71777
+        "sha256": "cf3443e9dd3fdbdad6a44b5d8296898a8aba6b32118f3784ed5813bfb1cf4abc",
+        "size": 372
       }
     ],
-    "remove": [
-      "telemetry.py",
-      "v3/public/telemetry-notice.js"
-    ]
+    "remove": []
   },
-  "releaseName": "移除匿名统计：不再上报，只保留采集与自动更新",
-  "releaseDate": "2026-11-11",
+  "releaseName": "修复营地同步回放为空、升级后仍是旧界面",
+  "releaseDate": "2026-11-12",
   "full": {
-    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.4/KPL-Scrim-Lab-1.6.4-full.zip",
-    "sha256": "c44266194a9221a89ead900ca50c36ddc65f6830c199f49e60524f49373cc299",
-    "size": 82447060
+    "url": "https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/download/v1.6.5/KPL-Scrim-Lab-1.6.5-full.zip",
+    "sha256": "be57dc9f981e961a84226f00d755382584ed1d75c61e6bc5b0caf351cd2d0d97",
+    "size": 161722939
   }
 }

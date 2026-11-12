@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.6.5'
+VERSION = '1.6.6'
 RELEASE_DATE = '2026-11-12'
 RELEASE_NAME = '修复营地同步回放为空、升级后仍是旧界面'

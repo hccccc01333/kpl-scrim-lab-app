@@ -1674,9 +1674,11 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
                                     'error': '清单里没有 gameSvrId / relaySvrId'})
             continue
         report['tried'] += 1
+        # 兜底：调用方漏传营地 ID 时，从条目自带的归属 ID 取（前端按它分组）。
+        owner_id = camp_user_id or str(source.get('ownerCampUserId') or '')
         try:
             result = camp_replay.import_entry(source, force=False,
-                                              camp_user_id=camp_user_id)
+                                              camp_user_id=owner_id)
         except camp_replay.CampReplayError as error:
             report['failed'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'failed', 'error': str(error)})
@@ -2296,6 +2298,12 @@ def camp_list(value: dict):
     camp_user_id = str(value.get('campUserId') or '').strip()
     if not camp_user_id.isdigit():
         raise HTTPException(400, '营地 ID 需为 5–15 位数字')
+    # 每条都带上「这局是谁的」：前端同步时按 ownerCampUserId 分组，再把它作为
+    # campUserId 传给 /api/camp/sync；缺了它自动补拉官方回放就拿不到 playerid，
+    # 结果是「同步成功、进统计，但回放一直空」。
+    nickname = next((player.get('nickname') or ''
+                     for player in _camp_config_read().get('players', [])
+                     if player.get('campUserId') == camp_user_id), '')
     try:
         result = camp_client.call('/game/morebattlelist', {
             'lastTime': int(value.get('lastTime') or 0),
@@ -2363,6 +2371,9 @@ def camp_list(value: dict):
             hero = entry.get('heroName')
         entries.append({
             'gameSeq': game_seq,
+            # 归属信息：前端据此分组并把营地 ID 传给同步接口（自动补拉回放要用）。
+            'ownerCampUserId': camp_user_id,
+            'ownerName': nickname,
             'dtEventTime': event_at,
             'startedAt': times.get('startedAt'),
             'eventAt': times.get('eventAt'),

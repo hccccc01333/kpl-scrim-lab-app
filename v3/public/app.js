@@ -1263,7 +1263,7 @@ function matchPage(m) {
     ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
   const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>打野并线</h2><p>兵线到了，打野和这条路的队友一起吃这波线，算一次并线。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
-    ${m.positions ? deep.jungleJoin(m.positions, m.players, own, m.duration) : positionsEmpty}
+    ${m.positions ? (deep.jungleJoin(m.positions, m.players, own, m.duration) || '<div class="empty">这局的位置名单里没有打野，并线统计不成立</div>') : positionsEmpty}
   </section>`;
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
@@ -2105,24 +2105,25 @@ async function load(fresh = false) {
       if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
         /* 单局页拆成四个页签后，后到的区块必须插回它自己的页签，
-           否则「事件」页里的击杀账本会被塞进隐藏的「地图」页。 */
-        const PANE_OF = {
-          'match-verdict': 'review', 'match-bp': 'review', 'match-phases': 'review',
-          'match-pulse': 'review', 'match-timeline': 'review',
-          'match-profiles': 'data', 'match-cohesion': 'data',
-          'match-battle': 'events', 'match-deaths': 'events', 'match-kills': 'events', 'match-events': 'events',
-          'match-front': 'map', 'match-heat': 'map', 'match-duel': 'map',
-        };
-        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-deaths','match-kills','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
-          const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
-          if(existing&&updated)existing.replaceWith(updated);
-          else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应页签末尾 */
-            const pane=document.querySelector(`[data-md-pane="${PANE_OF[id] || 'review'}"]`);
-            if(pane) pane.append(updated);
-          }
-          /* 回放后到、后来渲染出正式区块时，把首屏的「没有团战数据」占位删掉 */
-          else if(existing && (id === 'match-battle' || id === 'match-deaths')) existing.remove();
-        });
+           否则「事件」页里的击杀账本会被塞进隐藏的「地图」页。
+           这里不再写死 id 清单：按 temp 里实际的 `.md-pane > section.section[id]` 遍历，
+           新加的区块（如「打野并线」）自动跟着走，不会因为漏登记而永远停在「正在读取…」。 */
+        const incoming = [...temp.querySelectorAll('.md-pane > section.section[id]')];
+        /* 手填的「10 分钟经济」靠输入框活着，不参与异步替换，免得冲掉正在输入的数值。 */
+        const keepInPlace = new Set(['match-gold10']);
+        const keep = new Set(incoming.map((node) => node.id));
+        for (const updated of incoming) {
+          const existing = document.getElementById(updated.id);
+          if (existing && keepInPlace.has(updated.id)) continue;
+          if (existing) { existing.replaceWith(updated); continue; }
+          const paneKey = updated.closest('[data-md-pane]')?.dataset.mdPane || 'review';
+          const pane = document.querySelector(`[data-md-pane="${paneKey}"]`);
+          if (pane) pane.append(updated);
+        }
+        /* 新版不再渲染的区块（首屏的「没有团战数据」占位等）直接撤掉 */
+        for (const old of document.querySelectorAll('.md-pane > section.section[id]')) {
+          if (!keep.has(old.id)) old.remove();
+        }
         if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events, pulseState.own);
         deep.bindHeat(document);
         deep.bindBattle(document);

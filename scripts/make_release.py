@@ -605,6 +605,23 @@ def zip_dir(build: Path, out: Path, root_name: str) -> None:
                 archive.write(path, arcname)
 
 
+def _cleanup_build(build: Path) -> None:
+    """清理构建临时目录；文件太多时不自动删。
+
+    构建目录里有上万个文件，批量删除会被删除守卫拦下来——拦的时候整个
+    构建流程会提前结束，连 ``dist/update.json`` 都写不出来。所以这里只在
+    文件少的时候自动清，多了就打一行提示留给人清。
+    """
+    try:
+        count = sum(1 for _ in build.rglob('*')) if build.is_dir() else 0
+    except OSError:
+        count = 0
+    if count > 200:
+        print(f'提示：{build.name} 有 {count} 个文件，未自动清理（批量删除会被拦）。')
+        return
+    shutil.rmtree(build, ignore_errors=True)
+
+
 def build_full(version: str, manifest: dict, args) -> dict:
     stamp = time.strftime('%Y%m%d-%H%M%S')
     build = DIST / f'build-{stamp}'
@@ -633,7 +650,7 @@ def build_full(version: str, manifest: dict, args) -> dict:
         return {'url': asset_url(args.base_url, out.name),
                 'sha256': sha256_file(out), 'size': out.stat().st_size}
     finally:
-        shutil.rmtree(build, ignore_errors=True)
+        _cleanup_build(build)
 
 
 def parse_args(argv=None):
