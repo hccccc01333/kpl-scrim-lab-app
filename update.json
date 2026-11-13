@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "1.6.7",
-  "publishedAt": "2026-11-13T15:55:40+08:00",
+  "publishedAt": "2026-11-13T16:00:26+08:00",
   "channel": "stable",
   "minVersion": "1.6.6",
   "notes": [
@@ -219,6 +219,11 @@
       "decision_opening.py",
       "decision_resource.py"
     ]
+  },
+  "full": {
+    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v1.6.7/KPL-Scrim-Lab-1.6.7-full.zip",
+    "sha256": "36c023dfbf81baabff8103b399a9f5ba6efa0e1e477df868831132454cd47dcd",
+    "size": 162689391
   },
   "releaseName": "分析师工作首页：每块信息直接点进对应业务页",
   "releaseDate": "2026-11-13"
