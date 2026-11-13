@@ -376,6 +376,33 @@ def _matchups(games):
     return sorted(result, key=lambda x: -x["games"])[:20]
 
 
+def _series_adjustments(games):
+    """Observe sequential BP changes within the same official BO series."""
+    groups = defaultdict(list)
+    for g in games:
+        if g["source"] != "kpl" or not g.get("matchId"):
+            continue
+        if not isinstance(g.get("gameSeq"), int) or g["gameSeq"] <= 0:
+            continue
+        groups[(g["team"], g["matchId"])].append(g)
+    changes = []
+    for (_, series_id), rows in groups.items():
+        ordered = sorted(rows, key=lambda g: g["gameSeq"])
+        for before, after in zip(ordered, ordered[1:]):
+            if after["gameSeq"] != before["gameSeq"] + 1:
+                continue
+            fresh = [h for h in after["picks"] if h not in before["picks"]]
+            bans = [h for h in after["bans"] if h not in before["bans"]]
+            changes.append({
+                "seriesId": series_id, "team": after["team"],
+                "previous": before["gameSeq"], "current": after["gameSeq"],
+                "previousResult": before["result"], "currentResult": after["result"],
+                "newPicks": fresh, "newBans": bans,
+                "evidence": _evidence([before, after]),
+            })
+    return sorted(changes, key=lambda x: (x["seriesId"], x["current"]), reverse=True)[:20]
+
+
 def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end=""):
     if source not in ("scrim", "kpl"):
         raise ValueError("未知比赛来源")
@@ -441,6 +468,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
             "picks": picks[:24], "bans": bans[:24],
             "pairs": combos, "trios": trios, "players": players, "changes": changes,
             "responses": responses, "matchups": _matchups(team_games),
+            "seriesAdjustments": _series_adjustments(team_games),
             "findings": findings[:5], "evidence": _evidence(team_games, max_items=30),
             "limitations": [
                 "训练赛与正式比赛分别计算，不直接混合胜率。",
