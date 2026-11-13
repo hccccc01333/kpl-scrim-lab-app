@@ -4113,6 +4113,7 @@ _V3_INDEX_FALLBACK = """<!doctype html>
   <meta name="description" content="面向教练的赛训数据平台">
   <title>赛训数据</title>
   <link rel="stylesheet" href="static/style.css">
+  <link rel="stylesheet" href="static/workspace-home.css">
   <script type="module" src="static/app.js"></script>
 </head>
 <body>
@@ -4147,7 +4148,7 @@ def _v3_index_body() -> str:
         stamp = str(int(path.stat().st_mtime))
     except OSError:
         stamp = '0'
-    return re.sub(r'(static/(?:style\.css|app\.js))(\?v=[^"\']*)?',
+    return re.sub(r'(static/(?:style\.css|workspace-home\.css|app\.js))(\?v=[^"\']*)?',
                   lambda match: f'{match.group(1)}?v={stamp}', text)
 
 
