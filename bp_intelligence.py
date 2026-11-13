@@ -258,7 +258,7 @@ def _combos(games, baseline, size):
                        "winRate": _percent(wins, len(valid)),
                        "reference": round(100 * expected, 1),
                        "relativeSignal": (round(100 * (shrunk - expected), 1)
-                                          if shrunk is not None else None),
+                                          if shrunk is not None and len(valid) >= 3 else None),
                        "evidence": _evidence(records)})
     return sorted(result, key=lambda x: (-x["games"], -abs(x["relativeSignal"] or 0)))[:18]
 
@@ -292,7 +292,8 @@ def _players(games, baseline):
                        "heroDamagePer1000Gold": avg_efficiency,
                        "wins": wins, "winRate": _percent(wins, len(valid)),
                        "reference": round(base_rate * 100, 1),
-                       "relativeSignal": round((posterior - base_rate) * 100, 1),
+                       "relativeSignal": (round((posterior - base_rate) * 100, 1)
+                                          if len(valid) >= 3 and len(base) >= 3 else None),
                        "evidence": _evidence(rows)})
     return sorted(output, key=lambda x: (-x["games"], -abs(x["relativeSignal"])))[:28]
 
@@ -318,6 +319,8 @@ def _changes(games):
             continue
         p = _percent(previous, len(before))
         q = _percent(current, len(after))
+        if abs(q - p) < 10:
+            continue
         changes.append({"hero": hero, "before": previous, "after": current,
                         "beforeGames": len(before), "afterGames": len(after),
                         "previousShare": p, "recentShare": q, "changePP": round(q-p, 1),
