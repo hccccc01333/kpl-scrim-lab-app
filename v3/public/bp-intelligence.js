@@ -232,10 +232,28 @@ function changeView(report) {
   </section>`;
 }
 
+function counterCards(rows,icons) {
+  const list=(rows||[]).slice(0,8);
+  return `<section class="bpi-counter-history">
+    <h4 class="bpi-section-sub">历史交手时，曾使用哪些英雄应对？</h4>
+    <p class="bpi-explain">统计同一局中我方选用与敌方指定英雄的共现。不能据此证明克制或预测更换英雄后的赛果。</p>
+    ${list.length ? `<div class="bpi-response-grid">${list.map(r=>`<article class="bpi-response">
+      <div class="bpi-response-heroes">${heroBadge(r.candidateHero,icons)}
+      <span class="bpi-arrow">对方 ${heroBadge(r.enemyHero,icons)}</span></div>
+      <div class="bpi-response-bottom"><strong>${count(r.games)} / ${count(r.againstGames)} 局</strong>
+      <span>实际赛果 ${pct(r.winRate)}</span></div>
+      <p class="bpi-subtle">${r.decided ? `历史胜率的区间参考：${pct(r.interval[0])}–${pct(r.interval[1])}` : '没有可判断的赛果'}</p>
+      ${evidenceDetails(r.evidence,'查看曾经的对抗')}
+    </article>`).join('')}</div>`
+    :note('没有足够的同英雄历史交手','当前来源与战队的历史样本不足，不能凭英雄印象给出反制结论。')}
+  </section>`;
+}
+
 function sandboxView(report, trigger) {
-  const choices = [...new Set((report.responses || []).map(x=>x.trigger))].sort((a,b)=>a.localeCompare(b,'zh'));
+  const choices = [...new Set([...(report.responses || []).map(x=>x.trigger), ...(report.counterCandidates || []).map(x=>x.enemyHero)])].sort((a,b)=>a.localeCompare(b,'zh'));
   const picked = choices.includes(trigger) ? trigger : (choices[0] || '');
   const rows = (report.responses || []).filter(x=>x.trigger===picked);
+  const counters=(report.counterCandidates || []).filter(x=>x.enemyHero===picked);
   return `<section class="bpi-panel bpi-sandbox">
     <header><h3>BP 历史回应推演</h3><span>基于真实选禁顺序</span></header>
     <p class="bpi-explain">选择对方已经选出的英雄，查看所选战队过去在看到它之后的首次选用。这里不是最优阵容推荐，也没有模拟尚未打过的比赛胜率。</p>
@@ -248,6 +266,7 @@ function sandboxView(report, trigger) {
        <span class="bpi-sandbox-link">我们此前的选择</span>
        <div class="bpi-sandbox-options">${responseRows(rows,report.icons)}</div></div>` :
        note('暂无可分析的历史回应','请切换到拥有完整逐手 BP 记录的赛事或战队。')}
+    ${picked ? counterCards(counters,report.icons) : ""}
     <div class="bpi-research-alert"><b>下一步可用来做什么？</b><p>先看对手条件回应，再比较我方选手英雄池与阵容组合；如果没有足够相近的历史 BP 局面，必须保持“待验证”，不能捏造一条最优解。</p></div>
   </section>`;
 }
