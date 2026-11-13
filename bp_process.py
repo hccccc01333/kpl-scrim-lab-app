@@ -203,6 +203,11 @@ def link_scrim_process(bp_rows, match_rows):
     for match in match_rows or []:
         if not isinstance(match, dict):
             continue
+        process = match.get("process") or {}
+        # Imported final panels without a timeline or individual snapshots are
+        # not competing replay candidates; they cannot support process research.
+        if not (process.get("timeline") or process.get("scoreboardSnapshots")):
+            continue
         key = _match_key(match)
         if not key or not match.get("key"):
             continue
