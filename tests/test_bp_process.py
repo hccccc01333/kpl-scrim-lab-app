@@ -117,7 +117,9 @@ def test_conflicting_equal_distance_snapshots_are_rejected():
 
 def test_frontend_evidence_uses_replay_key_not_scrim_seq():
     bps = [bp_row(i, day="2026-11-02" if i<4 else "2026-11-03") for i in range(1, 8)]
-    linked = link_scrim_process([bps[0]], [replay()])
+    for row in bps[1:]:
+        row["duration"] = 1400
+    linked = link_scrim_process(bps, [replay()])
     report = build_report(bps, [], source="scrim", team="本队", process_map=linked)
     assert report["scope"]["games"] == 7
     assert report["processStudy"]["linkedGames"] == 1
@@ -129,6 +131,8 @@ def test_frontend_evidence_uses_replay_key_not_scrim_seq():
 
 def test_process_coverage_avoids_team_gold_as_player_laning():
     bps = [bp_row(i, day="2026-11-02") for i in range(1, 5)]
+    for row in bps[1:]:
+        row["duration"] = 1400
     item = replay()
     item["process"]["scoreboardSnapshots"] = []
     linked = link_scrim_process([bps[0]], [item])
@@ -214,3 +218,13 @@ def test_whole_league_view_does_not_assign_one_team_laning_or_trend():
     report = build_report(rows, [], source="scrim", team="")
     assert report["processStudy"]["linkedGames"] == 0
     assert report["heroWinShifts"] == []
+
+
+def test_two_drafts_matching_one_replay_never_duplicate_process_evidence():
+    # Same two lineups on the same day: the sole replay cannot be assigned
+    # to both games, even though each draft individually has one candidate.
+    assert link_scrim_process([bp_row(1), bp_row(2)], [replay()]) == {}
+    first, second = bp_row(1), bp_row(2)
+    second["duration"] = 1400
+    linked = link_scrim_process([first, second], [replay()])
+    assert list(linked) == ["1"]
