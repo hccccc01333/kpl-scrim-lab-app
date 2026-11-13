@@ -430,6 +430,35 @@ def _matchups(games):
     return sorted(result, key=lambda x: -x["games"])[:20]
 
 
+def _counter_candidates(games):
+    """Observed own hero choices against an opposing hero, NOT a causal counter rating."""
+    buckets = defaultdict(list)
+    enemy_exposure = Counter()
+    for g in games:
+        if len(g["picks"]) != 5 or len(g["enemyPicks"]) != 5:
+            continue
+        for enemy in g["enemyPicks"]:
+            enemy_exposure[enemy] += 1
+            for own in g["picks"]:
+                buckets[(enemy, own)].append(g)
+    selected_enemies = {hero for hero, _ in enemy_exposure.most_common(40)}
+    results = defaultdict(list)
+    for (enemy, own), records in buckets.items():
+        if enemy not in selected_enemies or len(records) < 2:
+            continue
+        decided = [g for g in records if g["result"] is not None]
+        wins = sum(g["result"] is True for g in decided)
+        results[enemy].append({
+            "enemyHero": enemy, "candidateHero": own, "games": len(records),
+            "againstGames": enemy_exposure[enemy], "wins": wins,
+            "decided": len(decided), "winRate": _percent(wins, len(decided)),
+            "interval": _wilson(wins, len(decided)),
+            "evidence": _evidence(records, max_items=6),
+        })
+    return [row for hero in sorted(results) for row in
+            sorted(results[hero], key=lambda r: (-r["games"], r["candidateHero"]))[:8]]
+
+
 def _series_adjustments(games):
     """Observe sequential BP changes within the same official BO series."""
     groups = defaultdict(list)
@@ -523,6 +552,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
             "pairs": combos, "trios": trios, "players": players, "changes": changes,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
+            "counterCandidates": _counter_candidates(team_games),
             "validation": _temporal_validation(team_games),
             "findings": findings[:5], "evidence": _evidence(team_games, max_items=30),
             "limitations": [
