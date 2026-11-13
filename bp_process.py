@@ -207,7 +207,9 @@ def link_scrim_process(bp_rows, match_rows):
         if not key or not match.get("key"):
             continue
         candidates[key].append(match)
-    linked = {}
+    # Uniqueness must hold in both directions. Two scrims with identical
+    # lineups/day/side may otherwise silently attach the same single replay.
+    proposals = defaultdict(list)
     for bp in bp_rows or []:
         if not isinstance(bp, dict):
             continue
@@ -216,9 +218,15 @@ def link_scrim_process(bp_rows, match_rows):
             continue
         found = [match for match in candidates.get(key, ())
                  if _duration_agrees(bp, match)]
-        if len(found) != 1:
+        if len(found) == 1:
+            proposals[str(found[0]["key"])].append((identity, found[0]))
+    linked = {}
+    for proposals_for_match in proposals.values():
+        unique_ids = {identity for identity, _ in proposals_for_match}
+        if len(unique_ids) != 1:
             continue
-        result = process_match(found[0])
+        identity, match = proposals_for_match[0]
+        result = process_match(match)
         if result:
             linked[identity] = result
     return linked
