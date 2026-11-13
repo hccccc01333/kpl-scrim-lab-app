@@ -120,6 +120,31 @@ function validationPanel(v) {
   </section>`;
 }
 
+
+function banResponseRows(items,icons) {
+  if (!items?.length)return note('被禁用后的选人样本不足',
+    '需要有完整 BP 顺序且同一禁用条件至少出现两局；不能根据终局名单猜测对手想拿哪个英雄。');
+  return `<div class="bpi-response-grid">${items.slice(0,10).map(r=>`<article class="bpi-response">
+    <div class="bpi-response-heroes">${heroBadge(r.trigger,icons)}
+      <span class="bpi-arrow">对方禁用 →</span>${heroBadge(r.response,icons)}</div>
+    <div class="bpi-response-bottom"><strong>${count(r.games)} / ${count(r.opportunities)} 局</strong>
+      <span>出现占比 ${pct(r.share)}</span></div>
+    ${shareBar(r.share)}
+    ${evidenceDetails(r.evidence,'查看实际 BP')}
+  </article>`).join('')}</div>`;
+}
+
+function fullLineupRows(rows,icons) {
+  if(!rows?.length)return note('没有完整五人阵容','只有双方选人身份完整、胜负已记录的比赛才可研究整套阵容。');
+  return `<div class="bpi-lineups">${rows.slice(0,10).map(r=>`<article class="bpi-lineup">
+    <div class="bpi-combo-heroes">${r.heroes.map(h=>heroBadge(h,icons)).join('')}</div>
+    <div class="bpi-lineup-metrics"><strong>${count(r.games)} 局</strong>
+      <span>历史胜率 ${pct(r.winRate)} · ${count(r.wins)} / ${count(r.decided)} 胜</span>
+      ${r.decided? `<small>95% 区间 ${pct(r.interval?.[0])}–${pct(r.interval?.[1])}</small>`:''}
+    </div>${evidenceDetails(r.evidence,'查看完整阵容的对局')}
+  </article>`).join('')}</div>`;
+}
+
 function habitView(report) {
   return `<div class="bpi-cols">
     <section class="bpi-panel"><header><h3>最常选择的英雄</h3><span>本队或所选战队</span></header>
@@ -131,6 +156,11 @@ function habitView(report) {
     <section class="bpi-panel">
       <header><h3>对手先选后，我们如何回应？</h3><span>仅使用完整选禁事件</span></header>
       ${responseRows(report.responses,report.icons)}
+    </section>
+    <section class="bpi-panel"><header><h3>对手禁掉某英雄后，我们第一时间拿了谁？</h3>
+      <span>真实选禁事件 · 不能推断意图</span></header>
+      <p class="bpi-explain">只展示禁用发生后下一次实际选用的英雄，不把它叫作唯一替代英雄。</p>
+      ${banResponseRows(report.banResponses,report.icons)}
     </section>${validationPanel(report.validation)}`;
 }
 
@@ -201,6 +231,9 @@ function comboView(report) {
     <p class="bpi-explain">“偏离”表示组合历史表现相对单英雄基准的收缩后差异，不等于这套组合产生了同等因果收益，也不能只凭胜率判断克制。</p>
     <h4 class="bpi-section-sub">双人组合</h4>${comboTiles(report.pairs,report.icons,'两英雄')}
     <h4 class="bpi-section-sub">三人核心</h4>${comboTiles(report.trios,report.icons,'三英雄')}
+    <h4 class="bpi-section-sub">完整五人阵容的实战表现</h4>
+    <p class="bpi-explain">列出真实出现过的五人阵容、胜负与小样本区间，不把一次胜利当作稳定强势。</p>
+    ${fullLineupRows(report.fullLineups,report.icons)}
   </div>`;
 }
 
