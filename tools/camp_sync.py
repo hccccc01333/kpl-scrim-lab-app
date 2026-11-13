@@ -28,6 +28,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camp_client import battle_detail, battle_list, load_account  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+
+_SEQ_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
+
+
+def _safe_seq(value):
+    """对局 ID 只允许单段安全字符，避免拼路径时穿越到其它目录。"""
+    text = str(value or '').strip()
+    if not text or text in ('.', '..') or not _SEQ_RE.match(text):
+        return ''
+    return text
 STATE_PATH = Path(os.environ['CAMP_SYNC_STATE']) if 'CAMP_SYNC_STATE' in os.environ \
     else ROOT / 'data' / 'camp_sync_state.json'
 DETAIL_DIR = Path(os.environ.get('CAMP_DETAIL_DIR', ROOT / 'data' / 'camp_details'))
@@ -105,7 +115,7 @@ def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
             break
 
         for entry in new_entries:
-            seq = str(entry.get('gameSeq') or '')
+            seq = _safe_seq(entry.get('gameSeq'))
             event_time = int(entry.get('dtEventTime') or 0)
             newest = max(newest, event_time)
             summary['fetched'] += 1
@@ -217,7 +227,7 @@ def sync_entries(camp_user_id: str, entries, interval: float = 2.0, on_progress=
     for index, entry in enumerate(entries, 1):
         if not isinstance(entry, dict):
             continue
-        seq = str(entry.get('gameSeq') or '')
+        seq = _safe_seq(entry.get('gameSeq'))
         if not seq:
             summary['failed'] += 1
             continue

@@ -72,3 +72,11 @@ class ServiceBoundaryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SafeKeyTests(unittest.TestCase):
+    def test_safe_key_rejects_path_traversal(self):
+        for bad in ('../x', 'a/b', 'a\\b', '..', '.', '', 'a..b/c'):
+            self.assertEqual(serve._safe_key(bad), '', bad)
+        for good in ('channel-abc', 'camp:1793606215', 'a.b-c_d'):
+            self.assertEqual(serve._safe_key(good), good)

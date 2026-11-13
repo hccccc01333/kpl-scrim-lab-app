@@ -60,7 +60,7 @@ def main(argv=None):
     for channel_id, channel in channels:
         camp = (channel.get('sources') or {}).get('camp') or {}
         seq = str(camp.get('gameSeq') or '')
-        if not seq:
+        if not seq or seq in ('.', '..') or '/' in seq or '\\' in seq:
             continue
         report['withCamp'] += 1
         detail_path = DETAIL_DIR / f'{seq}.json'

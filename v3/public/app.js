@@ -1933,7 +1933,7 @@ async function hydrateCross(detail, signal) {
       const url = (path) => API_BASE + '/api/' + path + encodeURIComponent(m.key);
       try {
         const [d, pos, rep] = await Promise.all([
-          fetch(url('matches/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
+          fetch(url('matches/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
           fetch(url('positions/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
           fetch(url('replay/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         ]);

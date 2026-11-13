@@ -126,3 +126,14 @@ class DeathWindowApiTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_missing_samples_keep_their_time_slot():
+    """None 样本不能删掉重排：后面的经济点必须留在原来的时间位置。"""
+    diff = [0, 1000, None, 3000]
+    duration = 900            # 每点 300 秒：(0,0) (300,1000) (600,None) (900,3000)
+    assert _diff_interp(diff, duration, 450) == 1500
+    assert _diff_interp(diff, duration, 750) == 2500
+    # 有效点两侧的行为不变
+    assert _diff_interp(diff, duration, 300) == 1000
+    assert _diff_interp(diff, duration, 900) == 3000

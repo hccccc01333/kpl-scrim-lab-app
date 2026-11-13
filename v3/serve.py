@@ -397,7 +397,7 @@ def _cross_vector(repo, item, segments=8):
               for pos, v in acc.items() if v['n']}
     # 打野过河：0–10 分钟逐秒坐标，e>8 算过河、e>25 算深入（口径见 docs/jungle_position_spec.md）
     jungle = {'crossSec': None, 'crossShare': None, 'firstCross': None, 'deepShare': None}
-    replay_id = str((d.get('officialReplay') or {}).get('id') or '')
+    replay_id = _safe_key((d.get('officialReplay') or {}).get('id'))
     if replay_id:
         pos_path = OFFICIAL / replay_id / 'positions.json'
         slots = []
@@ -575,6 +575,17 @@ def replay(key: str, repo=Depends(repository)):
             if name in result}
 
 
+_SAFE_KEY_RE = re.compile(r'^[A-Za-z0-9_:.\-]+$')
+
+
+def _safe_key(value):
+    """只允许单段文件名安全的 key，避免 `{key:path}` 造成路径穿越。"""
+    text = str(value or '')
+    if not text or text in ('.', '..') or not _SAFE_KEY_RE.match(text):
+        return ''
+    return text
+
+
 @router.get('/api/positions/{key:path}')
 def match_positions(key: str):
     """营地回放的逐秒位置（十人）。用于单局的热区与对位深区。
@@ -598,14 +609,16 @@ def match_positions(key: str):
         seq = str(camp.get('gameSeq') or '')
     else:
         # 没有采集通道（例如演示数据包）时，直接按数据包里挂的 officialReplay 找位置
-        bundle_path = MATCHES / f'{key}.json'
-        if not bundle_path.is_file():
+        safe_key = _safe_key(key)
+        bundle_path = MATCHES / f'{safe_key}.json' if safe_key else None
+        if bundle_path is None or not bundle_path.is_file():
             raise HTTPException(404, '找不到该局的采集通道')
         bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
         linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
         if linked:
             seq = linked[len('camp-'):] if linked.startswith('camp-') else linked
             bundle_players = bundle.get('players') or []
+    seq = _safe_key(seq)
     if not seq:
         raise HTTPException(404, '这一局没有营地回放')
     path = OFFICIAL / f'camp-{seq}' / 'positions.json'
@@ -1907,7 +1920,7 @@ def bp_board():
             result = bp['winnerSide'] == own
         hero_meta.update(bp.get('heroMeta') or {})
 
-        def entries(kind, side):
+        def entries(kind, side, bp=bp):
             return [{'name': e.get('name'), 'icon': e.get('icon'), 'lane': e.get('lane')}
                     for e in (bp.get(kind) or {}).get(side, []) if e.get('name')]
 

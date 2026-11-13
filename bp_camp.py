@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -23,14 +22,31 @@ POSITION_LANES = {0: '对抗路', 1: '中路', 2: '发育路', 3: '打野', 4: '
 SOURCE = 'camp-battledetail'
 
 
-@lru_cache(maxsize=1)
+_CATALOG_CACHE = {'stamp': object(), 'value': ({}, {})}
+_LANES_CACHE = {'stamp': object(), 'value': {}}
+
+
+def _stamp(path):
+    """文件 mtime；不存在时返回 None（不是 0，避免与「刚写入」混淆）。"""
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
 def catalog_index():
-    """({name → {id, icon}}, {id → name})，让人工名与只有 heroId 的营地条目互通。"""
+    """({name → {id, icon}}, {id → name})，让人工名与只有 heroId 的营地条目互通。
+
+    按文件 mtime 缓存：catalog.json 更新后不必重启进程就能读到新英雄。
+    """
+    stamp = _stamp(CATALOG_PATH)
+    if stamp is not None and _CATALOG_CACHE['stamp'] == stamp:
+        return _CATALOG_CACHE['value']
     meta, by_id = {}, {}
     try:
         entries = json.loads(CATALOG_PATH.read_text(encoding='utf-8')).get('entries') or []
     except (OSError, ValueError):
-        return meta, by_id
+        entries = []
     for entry in entries:
         if entry.get('kind') != 'hero' or not entry.get('name'):
             continue
@@ -39,6 +55,8 @@ def catalog_index():
         meta[name] = {'id': hid, 'icon': entry.get('icon') or None}
         if hid:
             by_id[hid] = name
+    if stamp is not None:
+        _CATALOG_CACHE.update({'stamp': stamp, 'value': (meta, by_id)})
     return meta, by_id
 
 
@@ -50,9 +68,14 @@ def catalog_name(hero_id):
     return catalog_index()[1].get(str(hero_id))
 
 
-@lru_cache(maxsize=1)
 def static_lanes():
-    """复用前端 BP 录入的「英雄→主分路」参考表，给从未出场的禁用英雄补分路。"""
+    """复用前端 BP 录入的「英雄→主分路」参考表，给从未出场的禁用英雄补分路。
+
+    同样按 mtime 缓存：hero-lanes.js 改完立即生效。
+    """
+    stamp = _stamp(LANES_JS)
+    if stamp is not None and _LANES_CACHE['stamp'] == stamp:
+        return _LANES_CACHE['value']
     try:
         text = LANES_JS.read_text(encoding='utf-8')
     except OSError:
@@ -62,6 +85,8 @@ def static_lanes():
         lanes = re.findall(r"'([^']+)'", values)
         if lanes:
             result[name] = lanes[0]
+    if stamp is not None:
+        _LANES_CACHE.update({'stamp': stamp, 'value': result})
     return result
 
 

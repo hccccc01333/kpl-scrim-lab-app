@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import collections
 import csv
 import hashlib
@@ -44,16 +45,27 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _catalog(abc_path: Path, info: dict | None = None) -> Path:
+def _catalog(abc_path: Path, info: dict | None = None,
+             out_dir: Path | None = None) -> Path:
     """Decode the .abc into events.csv using the tested catalog generator.
 
     ``info`` is the already-parsed report when the caller has one; without it
     the generator decodes the roster itself.
+
+    ``out_dir`` lets the caller own the temporary directory and its cleanup.
+    Without it a directory is created here and removed at process exit, so a
+    long-lived process that calls the helper directly does not accumulate
+    ``timeline-build_*`` directories.
     """
     sys.path.insert(0, str(ROOT / "tools"))
     from full_abc_event_catalog import build_report  # noqa: WPS433
 
-    tmp = Path(tempfile.mkdtemp(prefix="timeline-build_"))
+    if out_dir is None:
+        tmp = Path(tempfile.mkdtemp(prefix="timeline-build_"))
+        atexit.register(shutil.rmtree, tmp, True)
+    else:
+        tmp = Path(out_dir)
+        tmp.mkdir(parents=True, exist_ok=True)
     build_report(abc_path, tmp, info)
     return tmp / "events.csv"
 
@@ -74,6 +86,19 @@ def _load_checkpoints(path: Path) -> dict[int, dict[str, dict]]:
             if key != "|":
                 out[second][key] = row
     return out
+
+
+def _check_int(row, key):
+    """Checkpoint 数值：0 是合法读数，不能按 truthiness 丢掉。"""
+    if not row:
+        return None
+    value = row.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def build(events_csv: Path, sha: str, out_root: Path,
@@ -131,6 +156,11 @@ def build(events_csv: Path, sha: str, out_root: Path,
                 if key and key in per_second:
                     check = per_second[key]
                     break
+            gold = _check_int(check, "gold")
+            kills = _check_int(check, "kills")
+            deaths = _check_int(check, "deaths")
+            assists = _check_int(check, "assists")
+            level = _check_int(check, "level")
             rows.append({
             "second": second,
             "time_mmss": f"{second // 60:02d}:{second % 60:02d}",
@@ -140,15 +170,15 @@ def build(events_csv: Path, sha: str, out_root: Path,
             "team": {1: "blue", 2: "red"}.get(info["camp"], ""),
             "entity_id": entity_id,
             "unit": info["unit"],
-            "gold": int(check["gold"]) if check and check.get("gold") else None,
-            "gold_confidence": "engine" if check else "unknown",
-            "gold_source": "checkpoint" if check else "",
-            "kills": int(check["kills"]) if check and check.get("kills") else None,
-            "deaths": int(check["deaths"]) if check and check.get("deaths") else None,
-            "assists": int(check["assists"]) if check and check.get("assists") else None,
-            "kda_confidence": "engine" if check else "unknown",
-            "level": int(check["level"]) if check and check.get("level") else None,
-            "level_confidence": "engine" if check else "unknown",
+            "gold": gold,
+            "gold_confidence": "engine" if gold is not None else "unknown",
+            "gold_source": "checkpoint" if gold is not None else "",
+            "kills": kills,
+            "deaths": deaths,
+            "assists": assists,
+            "kda_confidence": "engine" if None not in (kills, deaths, assists) else "unknown",
+            "level": level,
+            "level_confidence": "engine" if level is not None else "unknown",
             "hp_ratio": None, "hp_abs": None, "hp_confidence": "unknown",
             "x": None, "z": None, "pos_confidence": "unknown",
             "pos_note": "Tier 0: events only; positions need engine capture",
@@ -242,7 +272,7 @@ def build_from_abc_bytes(data: bytes, out_root: Path,
     try:
         abc = tmp / (name or "replay.abc")
         abc.write_bytes(data)
-        events = _catalog(abc, info)
+        events = _catalog(abc, info, out_dir=tmp)
         return build(events, sha, out_root, checkpoints,
                      {"source_abc": abc.name})
     finally:
@@ -264,19 +294,19 @@ def main() -> int:
         sha = args.sha or _sha256(args.events)
     elif args.abc:
         sha = _sha256(args.abc)
-        events_csv = _catalog(args.abc)
-        tmp_dir = events_csv.parent
+        tmp_dir = Path(tempfile.mkdtemp(prefix="timeline-build_"))
+        events_csv = _catalog(args.abc, out_dir=tmp_dir)
     else:
         parser.error("需要 --abc 或 --events")
 
-    checkpoints = _load_checkpoints(args.checkpoints) if args.checkpoints else None
-    meta = build(events_csv, sha, args.out, checkpoints,
-                 {"source_abc": args.abc.name if args.abc else "",
-                  "checkpoints_csv": args.checkpoints.name if args.checkpoints else ""})
-    if tmp_dir:
-        for leftover in tmp_dir.glob("*"):
-            leftover.unlink()
-        tmp_dir.rmdir()
+    try:
+        checkpoints = _load_checkpoints(args.checkpoints) if args.checkpoints else None
+        meta = build(events_csv, sha, args.out, checkpoints,
+                     {"source_abc": args.abc.name if args.abc else "",
+                      "checkpoints_csv": args.checkpoints.name if args.checkpoints else ""})
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
     print(json.dumps(meta, ensure_ascii=False))
     return 0
 

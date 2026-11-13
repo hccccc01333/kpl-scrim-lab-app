@@ -197,3 +197,28 @@ class BpSummaryTwoSourcesTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_catalog_index_reloads_after_file_change(tmp_path):
+    """catalog.json 改完后不重启进程也要读到新英雄（按 mtime 失效）。"""
+    import bp_camp
+
+    catalog = tmp_path / 'catalog.json'
+    catalog.write_text(json.dumps({'entries': [
+        {'kind': 'hero', 'name': '旧英雄', 'id': 'hero-1', 'icon': None}]},
+        ensure_ascii=False), encoding='utf-8')
+    original = bp_camp.CATALOG_PATH
+    bp_camp.CATALOG_PATH = catalog
+    bp_camp._CATALOG_CACHE.update({'stamp': object(), 'value': ({}, {})})
+    try:
+        assert bp_camp.catalog_name('1') == '旧英雄'
+        catalog.write_text(json.dumps({'entries': [
+            {'kind': 'hero', 'name': '新英雄', 'id': 'hero-2', 'icon': None}]},
+            ensure_ascii=False), encoding='utf-8')
+        import os
+        os.utime(catalog, ns=(catalog.stat().st_atime_ns, catalog.stat().st_mtime_ns + 10_000_000))
+        assert bp_camp.catalog_name('2') == '新英雄'
+        assert bp_camp.catalog_name('1') is None
+    finally:
+        bp_camp.CATALOG_PATH = original
+        bp_camp._CATALOG_CACHE.update({'stamp': object(), 'value': ({}, {})})
