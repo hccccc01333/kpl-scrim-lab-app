@@ -221,6 +221,41 @@ def split_bp(bp_list):
     return picks, bans
 
 
+def draft_events(bp_list):
+    events = []
+    order = 0
+    for index, item in enumerate(bp_list or []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            camp = int(item.get('camp') or 0)
+            kind = int(item.get('is_ban_or_pick'))
+        except (TypeError, ValueError):
+            continue
+        if camp not in (1, 2):
+            continue
+        hero = str(item.get('hero_name') or '').strip()
+        if not hero:
+            continue
+        if kind not in (0, PICK_FLAG):
+            continue
+        order += 1
+        phase = item.get('phase')
+        if phase is None:
+            phase = item.get('stage')
+        events.append({
+            'index': index,
+            'order': order,
+            'camp': str(camp),
+            'side': 'blue' if camp == 1 else 'red',
+            'action': 'pick' if kind == PICK_FLAG else 'ban',
+            'hero': hero,
+            'phase': phase,
+            'source': 'bp_list',
+        })
+    return events
+
+
 def _battle_data(payload):
     """把接口信封 / data 字典 / 裸快照统一成 data 字典。"""
     if not isinstance(payload, dict):
@@ -447,6 +482,7 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         'pickOrderKnown': pick_order_known,
         'picks': picks,
         'bans': bans,
+        'draftEvents': draft_events(data.get('bp_list')),
         'players': players,
         'fetchedAt': fetched_at or now_iso(),
     }

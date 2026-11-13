@@ -96,13 +96,23 @@ class OperatorStreamTests(unittest.TestCase):
         with self.assertRaises(OperatorStreamError):
             parse_stream(self.build(b'\xfe\x01\x00\x8c\x01'))
 
-    def test_truncated_varint_raises(self):
-        with self.assertRaises(OperatorStreamError):
-            parse_stream(self.build(b'\x05\x7e\x00\x00\x10\xd3'))
+    def test_truncated_varint_tail_is_marked_not_invented(self):
+        # A recorder that stops mid-record (11/2b ends `06 88 01 5c 98 09`)
+        # leaves a suffix that starts a valid type but cannot complete.  The
+        # parser ends with one explicitly marked truncated record carrying no
+        # invented fields, instead of raising or guessing field values.
+        records, _ = parse_stream(self.build(b'\x05\x7e\x00\x00\x10\xd3'))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['typeName'], 'TouchOpe')
+        self.assertTrue(records[0]['truncated'])
+        self.assertEqual(records[0]['fields'], {})
+        self.assertEqual(records[0]['hex'], '05 7e 00 00 10 d3')
 
-    def test_missing_tail_raises(self):
-        with self.assertRaises(OperatorStreamError):
-            parse_stream(self.build(b'\x13\xae\x01'))
+    def test_missing_tail_is_marked_not_invented(self):
+        records, _ = parse_stream(self.build(b'\x13\xae\x01'))
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]['typeName'], 'SkillSlotOpe')
+        self.assertTrue(records[0]['truncated'])
 
     def test_layout_payload_size_from_header(self):
         # Legacy raw-payload fallback still works when the header length is
@@ -252,10 +262,13 @@ class OperatorStreamTests(unittest.TestCase):
 
     @unittest.skipUnless(Path('data/replays/samples/20261028_135516.ope').exists(),
                          'Local research sample unavailable')
-    def test_research_sample_reports_remaining_walls(self):
+    def test_research_sample_decodes_to_end(self):
+        # 135516 used to wall at 0x3556 (type 0xb9 = a varint tail the
+        # SkillUse/DirSkill layouts under-consumed).  With the 2-varint
+        # SkillUse and 3-varint DirSkill forms it parses to end-of-stream.
         from replay_parser import parse_ope_bytes
         ope = Path('data/replays/samples/20261028_135516.ope').read_bytes()
         report = parse_ope_bytes(ope)
         events = report['operatorEvents']
-        self.assertFalse(events['decoded'])
-        self.assertIn('无法', events['note'])
+        self.assertTrue(events['decoded'])
+        self.assertEqual(events['streamEnd'], events['streamBytes'])

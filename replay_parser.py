@@ -13,6 +13,7 @@ import zlib
 
 from operator_stream import OperatorStreamError, summarize as summarize_operator_stream
 from replay_profiles import load_registry, profile_layout, resolve_profile
+import roster_tail
 
 PROFILE = 'observed-12.1.1.x-v3'
 MAX_FILE_BYTES = 16 * 1024 * 1024
@@ -558,7 +559,9 @@ def parse_ope_bytes(raw):
             'declaredRemainingBytes':remaining, 'operatorStreamBytes':len(operator_stream),
             'operatorStreamSha256':digest(operator_stream), 'operatorHeaderBytes':events.get('streamStart',27),
             'operatorEventsDecoded':events_decoded, 'operatorEvents':events, 'scope':'local-player-operations-candidate',
-            'note':'已验证两层解压并解析事件结构；字段语义多为推断，不构成十人状态、技能次数或局内时间。'}
+            'note':'已验证两层解压；操作流按 0x00–0x19 记录布局解码到流尾（尾部截断记录会显式标记）。'
+                   '记录边界与类型字节为解码事实，payload 字段名多为推断；这是本地 POV 操作日志，'
+                   '不构成十人状态、技能次数或局内时间。'}
 
 
 def inspect_tlv(data, layout=None):
@@ -881,6 +884,12 @@ def inspect_abc(abc, hero_names=None):
             warnings.append(f'帧流按容器结构识别到 {frames["records"]} 条记录；payload 语义尚未解码。')
     blocks_layout = ('roster-5247758' if blocks and 'name' in blocks[0]
                      else 'legacy-1517' if blocks else None)
+    if blocks_layout == 'roster-5247758':
+        frames_start = (frames or {}).get('start') or len(abc)
+        for block in blocks:
+            end = block.get('blockEnd') or frames_start
+            blob = abc[block['start']:end]
+            block['tail'] = roster_tail.parse_tail(blob)
     score_table = None
     if blocks_layout == 'roster-5247758':
         score_table = inspect_score_table(abc,[block['entityId'] for block in blocks])

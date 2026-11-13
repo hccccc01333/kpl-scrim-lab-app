@@ -228,10 +228,14 @@ class ReplayParserTests(unittest.TestCase):
         self.assertEqual(r['mvpScore']['winMvpEntityId'],538)
         self.assertEqual(r['mvpScore']['loseMvpEntityIds'],[1031])
         self.assertEqual(r['mvpScore']['winningCamp'],'blue')
-        self.assertFalse(r['ope']['operatorEventsDecoded'])
-        # 30,116-byte "MemoryData" was a false DP jump; the real linear wall is
-        # the Common/SendMsg boundary at 0xECDA (see tools/ope_11_2_walls.py).
-        self.assertIn('0xecda',r['ope']['operatorEvents']['note'])
+        self.assertTrue(r['ope']['operatorEventsDecoded'])
+        # The 0xECDA wall was the Common/SendMsg boundary; with the Common-2B
+        # and SendMsg u32+flag forms (operator_stream.py LAYOUTS) the stream
+        # decodes to end-of-stream.
+        events=r['ope']['operatorEvents']
+        self.assertEqual(events['streamBytes'],237556)
+        self.assertEqual(events['streamEnd'],237556)
+        self.assertIsNone(events['truncatedTail'])
         self.assertEqual(r['pairingStatus'],'recorder-tag-matched')
 
     @unittest.skipUnless(NORMAL2_ABC.exists() and NORMAL2_OPE.exists(),'Local 2026-11-02 sample unavailable')

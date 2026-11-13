@@ -16,7 +16,13 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
+
+try:
+    import hero_roles
+except Exception:  # pragma: no cover
+    hero_roles = None
 
 ROOT = Path(__file__).resolve().parent
 FACTS = ROOT / 'data' / 'facts'
@@ -108,6 +114,65 @@ def _own_side(detail):
     return names(own_key), names(foe_key)
 
 
+_SHRINK_K = 40.0
+_Z95 = 1.959963984540054
+
+
+def _lane_reliability(n, ci_low, ci_high):
+    if not n or n < 200:
+        return 'low'
+    rating = 'high' if n >= 1000 else 'medium'
+    if ci_low is None or ci_high is None or (ci_low <= 0 <= ci_high):
+        rating = 'medium' if rating == 'high' else 'low'
+    return rating
+
+
+def _lane_stats(row):
+    n = row.get('n') or 0
+    wr = row.get('wr')
+    expected = row.get('expected')
+    excess = row.get('excess')
+    if not n or wr is None:
+        return {'excessCI': None, 'reliability': 'low',
+                'shrunkExcess': excess, 'shrunkWr': wr}
+    p = max(0.0, min(1.0, float(wr) / 100.0))
+    se = math.sqrt(p * (1 - p) / n)
+    lo = p - _Z95 * se
+    hi = p + _Z95 * se
+    exp = (float(expected) / 100.0) if expected is not None else 0.5
+    ci_low = (lo - exp) * 100.0
+    ci_high = (hi - exp) * 100.0
+    wins = p * n
+    alpha = _SHRINK_K * exp
+    beta = _SHRINK_K * (1 - exp)
+    shrunk_p = (wins + alpha) / (n + alpha + beta)
+    shrunk_wr = shrunk_p * 100.0
+    base = (expected if expected is not None else 50.0)
+    shrunk_excess = shrunk_wr - base
+    reliability = _lane_reliability(n, ci_low, ci_high)
+    return {
+        'excessCI': [round(ci_low, 2), round(ci_high, 2)],
+        'reliability': reliability,
+        'shrunkExcess': round(shrunk_excess, 2),
+        'shrunkWr': round(shrunk_wr, 2),
+    }
+
+
+def _team_gold_at(detail, target_sec):
+    """从 detail 的 ownDiff/times 序列取最接近 target_sec 的队伍经济差。"""
+    own_diff = detail.get('ownDiff') or []
+    times = detail.get('times') or []
+    if not own_diff or not times:
+        return None
+    best = None
+    for t, v in zip(times, own_diff):
+        if t is None or v is None:
+            continue
+        if best is None or abs(t - target_sec) < abs(best[0] - target_sec):
+            best = (t, v)
+    return best[1] if best else None
+
+
 def for_match(detail):
     """本局三块结论：对位压制（大盘） / 赛事命中 / 联动组合（KPL）。"""
     own_heroes, foe_heroes = _own_side(detail)
@@ -137,13 +202,58 @@ def for_match(detail):
             lanes.append({'lane': lane, 'mine': mine.get('hero'), 'foe': foe.get('hero'),
                           'state': 'no-sample', 'n': 0,
                           'minePick': (heroes.get(mine.get('hero')) or {}).get('pick'),
-                          'foePick': (heroes.get(foe.get('hero')) or {}).get('pick')})
+                          'foePick': (heroes.get(foe.get('hero')) or {}).get('pick'),
+                          'excessCI': None, 'reliability': 'low',
+                          'shrunkExcess': None, 'shrunkWr': None,
+                          'hypothesis': 'no-sample',
+                          'realisedEarly': None, 'realisedFinal': None,
+                          'attribution': '证据不足',
+                          'earlyDiff': _team_gold_at(detail, 240),
+                          'finalDiff': _team_gold_at(detail, detail.get('duration') or 0)})
             continue
         excess = row['excess']
-        state = 'ahead' if excess >= 2 else 'behind' if excess <= -2 else 'even'
+        stats = _lane_stats(row)
+        ci = stats['excessCI']
+        if stats['reliability'] == 'low':
+            state = 'even'
+        elif ci is not None and ci[0] > 0 and excess is not None and excess >= 2:
+            state = 'ahead'
+        elif ci is not None and ci[1] < 0 and excess is not None and excess <= -2:
+            state = 'behind'
+        else:
+            state = 'even'
+        # BP 预期与执行验证：假设（verdict）vs 证据（队伍/个人经济差）
+        early_diff = _team_gold_at(detail, 240)
+        realised_early = None
+        if state in ('ahead', 'behind') and early_diff is not None:
+            realised_early = (early_diff > 0) if state == 'ahead' else (early_diff < 0)
+        now_diff = None
+        # now_diff 由调用方（frontend）的 per-player gold 提供；此处用队伍终局经济差兜底
+        final_diff = _team_gold_at(detail, detail.get('duration') or 0)
+        realised_final = None
+        if state in ('ahead', 'behind') and final_diff is not None:
+            realised_final = (final_diff > 0) if state == 'ahead' else (final_diff < 0)
+        if state not in ('ahead', 'behind'):
+            attribution = '证据不足'
+        elif realised_final is True:
+            attribution = 'BP兑现'
+        elif realised_final is False:
+            attribution = 'BP未兑现'
+        else:
+            attribution = '证据不足'
         lanes.append({'lane': lane, 'mine': mine.get('hero'), 'foe': foe.get('hero'),
                       'state': state, 'n': row['n'], 'wr': row['wr'],
-                      'expected': row['expected'], 'excess': excess})
+                      'expected': row['expected'], 'excess': excess,
+                      'excessCI': stats['excessCI'],
+                      'reliability': stats['reliability'],
+                      'shrunkExcess': stats['shrunkExcess'],
+                      'shrunkWr': stats['shrunkWr'],
+                      'hypothesis': state,
+                      'realisedEarly': realised_early,
+                      'realisedFinal': realised_final,
+                      'attribution': attribution,
+                      'earlyDiff': early_diff,
+                      'finalDiff': final_diff})
 
     # 2) 赛事命中：本队 5 人里的双人 / 三人组合，在 KPL 出现过几次
     heroes = sorted({h for h in own_heroes if h})
@@ -193,12 +303,32 @@ def for_match(detail):
                                kpl_lineups.values())
     total_trios = len(heroes) * (len(heroes) - 1) * (len(heroes) - 2) // 6 if len(heroes) >= 3 else 0
 
+    # 阵容结构分析（英雄能力标签种子表）
+    structure = None
+    if hero_roles is not None:
+        structure = hero_roles.lineup_structure(heroes)
+        structure['source'] = 'hero_roles_seed'
+
+    # BP 预期与执行验证汇总
+    attribution_counts = {}
+    for ln in lanes:
+        attribution_counts[ln.get('attribution', '证据不足')] = attribution_counts.get(ln.get('attribution', '证据不足'), 0) + 1
+    hypothesis = {
+        'lanes': [{'lane': ln['lane'], 'hypothesis': ln.get('hypothesis'),
+                   'attribution': ln.get('attribution'),
+                   'realisedEarly': ln.get('realisedEarly'),
+                   'realisedFinal': ln.get('realisedFinal')} for ln in lanes],
+        'attributionCounts': attribution_counts,
+    }
+
     return {
         'schema': 'bp-match-facts-v1',
         'ladder': {'source': 'ladder', 'bracket': lane_data.get('bracket'),
                    'windowEnd': lane_data.get('windowEnd'),
                    'minN': lane_data.get('minN'), 'minPickRate': lane_data.get('minPickRate'),
                    'lanes': lanes},
+        'hypothesis': hypothesis,
+        'structure': structure,
         'kpl': {'source': 'kpl', 'sinceYear': combo_data.get('sinceYear'),
                 'games': combo_data.get('games'), 'minGames': combo_data.get('minGames'),
                 'updatedAt': combo_data.get('updatedAt'),
