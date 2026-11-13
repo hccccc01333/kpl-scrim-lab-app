@@ -1878,7 +1878,7 @@ const crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
 deep.bindPanel(document);
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */
 let pulseState = null;
-const renderers = { overview, decision: () => '<div id="decision-root" class="decision-root"></div>', bpcounter: () => '<div id="bpcounter-root"></div>',
+const renderers = { overview, decision: () => '<div id="decision-root" class="decision-root"></div>', bpcounter: () => '<div class="page bp-page"><div class="bpi-root" data-bpi-root data-bpi-mode="counter"></div><details class="bpi-archive"><summary>展开原有抗针对英雄池和补练统计</summary><div id="bpcounter-root"></div></details></div>',
   matches: matchesPage, opponents: opponentsPage, players: playersPage,
   player: playerPage, tempo: tempoPage, sources: sourcesPage, match: matchPage,
   cross: (d) => (d && d.cross ? crossPage.render(d.cross, { total: d.crossTotal || d.cross.length, limit: d.crossLimit || CROSS_LIMIT, cohort: d.cohort }) : '<div class="page"><div class="loading">正在汇总各局数据…</div></div>') };
