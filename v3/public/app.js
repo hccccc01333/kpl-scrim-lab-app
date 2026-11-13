@@ -4,6 +4,7 @@ import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
 import { createTour } from './tour.js';
 import { createHomeDecision } from './home-decision.js';
+import { renderWorkspaceHome } from './workspace-home.js';
 import { createDecisionPage } from './decision-page.js';
 import { createBpCounter } from './bp-counter.js';
 
@@ -257,10 +258,14 @@ async function refreshInbox() {
     const count = Number(inboxState.total || 0);
     badge.textContent = count > 99 ? '99+' : String(count);
     badge.hidden = !count;
+    const homeInbox = document.querySelector('[data-wh-inbox-count]');
+    if (homeInbox) homeInbox.textContent = count ? `${count} 项待处理 · 查看详情` : '暂无待办 · 查看数据准备';
     link.setAttribute('aria-label', count ? `待处理 ${count} 项` : '待处理');
     link.title = count ? `待处理 ${count} 项` : '待处理';
   } catch {
     badge.hidden = true;
+    const homeInbox = document.querySelector('[data-wh-inbox-count]');
+    if (homeInbox) homeInbox.textContent = '查看待办';
   }
 }
 
@@ -616,88 +621,10 @@ async function hydrateWelcome() {
 }
 
 function overview(value) {
-  const { summary, matches, team, process } = value;
-  /* 空库：首屏直接给三条路，不留一页「0 局」。 */
-  if (!summary.matches) return welcomePage();
-  const latest = matches[0];
-  const duration = matches.map((m) => m.duration).filter((value) => has(value) && value > 0);
-  const avgDuration = duration.length ? duration.reduce((a, b) => a + b, 0) / duration.length : null;
-  /* 第一句就是结论：这批局打成什么样，数字直接进标题。 */
-  const decided = summary.decided || 0;
-  const wins = summary.wins || 0;
-  const losses = Math.max(0, decided - wins);
-  const goldDiff = team.avgGoldDiff;
-  /* 样本太少就别下「全胜」的结论，先如实报几胜几负。 */
-  const record = decided >= 3
-    ? (losses === 0 ? `${fmt(decided)} 局全胜` : `${fmt(decided)} 局 ${fmt(wins)} 胜 ${fmt(losses)} 负`)
-    : decided
-      ? `${fmt(summary.matches)} 局 ${fmt(wins)} 胜${losses ? ` ${fmt(losses)} 负` : ''}`
-      : `${fmt(summary.matches)} 局训练赛`;
-  const margin = has(goldDiff)
-    ? `，${decided > 1 ? '场均' : ''}${goldDiff >= 0 ? '领先' : '落后'} ${fmt(Math.abs(goldDiff))} 金`
-    : '';
-  const dates = [...new Set(matches.map((m) => m.date).filter(Boolean))].sort();
-  const range = dates.length > 1 ? `${dates[0]} → ${dates.at(-1)}` : `截至 ${dates[0] || '日期未知'}`;
-  const meta = `${range} · ${fmt(summary.matches)} 局 · 营地终局面板 + 回放时间轴`;
-  const featured = latest ? `<article class="featured"><div class="featured-top"><span class="live-mark">最近对局</span>
-    <span>${esc(latest.date || '日期未知')} &nbsp; / &nbsp; ${time(latest.duration)}</span></div>
-    <div class="versus"><div class="versus-team"><small>${esc(sides[latest.ownCamp] || '本队')}</small><strong>${esc(summary.teamName || '本队')}</strong><span>本队</span></div>
-    <div class="versus-score"><small class="${esc(latest.result)}">${esc(resultName[latest.result] || '未知')}</small><b>${score(latest)}</b></div>
-    <div class="versus-team rival"><small>对手</small><strong>${esc(latest.opponent || '未标注')}</strong><span>对方战队</span></div></div>
-    <div class="featured-bottom"><div class="lineup"><span class="lineup-label">本队阵容</span>${(latest.heroes || []).slice(0,5).map((hero) => `<div class="lineup-person">${portrait(hero)}<small>${esc(hero)}</small></div>`).join('') || '—'}</div>
-      <a class="featured-link" href="${esc(route('match', latest.key))}">查看对局 ${icon('arrow')}</a></div></article>`
-    : `<article class="featured featured-empty"><h2>暂无对局记录</h2><p>导入训练赛后，这里会显示最近一场对局。</p></article>`;
-  const hero = summary.topHeroes?.[0];
-  const heroId = hero && /^\/catalog\/icons\/hero-(\d+)\.png$/.exec(metadata.icons?.[hero.hero] || '')?.[1];
-  const art = heroId === '140' ? API_BASE + '/static/media/hero-140.jpg'
-    : heroId ? `https://game.gtimg.cn/images/yxzj/img201606/skin/hero-info/${heroId}/${heroId}-bigskin-1.jpg` : '';
-  const spotlight = hero ? `<a class="spotlight" href="${esc(route('matches', 'hero=' + hero.hero))}"${art ? ` style="background-image:linear-gradient(180deg,rgba(10,18,28,.03) 5%,rgba(10,18,28,.22) 45%,rgba(10,18,28,.95) 100%),url('${art}')"` : ''}>
-    <div class="spotlight-head"><span>英雄观察</span><span>${icon('arrow')}</span></div>
-    <div class="spotlight-copy"><span>本队出场最多</span><h2>${esc(hero.hero)}</h2>
-      <div class="spotlight-details"><span><b>${fmt(hero.picks)}</b> 次出场</span><span><b>${pct(hero.winRate)}</b> 胜率 / ${hero.decided} 局</span></div></div></a>`
-    : `<div class="spotlight no-hero"><div class="spotlight-copy"><span>英雄观察</span><h2>暂无出场数据</h2></div></div>`;
-  const p = process.matches[0];
-  /* 首页看的是这一批，不是最后一局：按 30 秒对齐求平均。
-     后段只剩一两局在撑，样本不足就截断，免得尾巴把结论带偏。 */
-  const games = (process.matches || []).filter((game) => (game.points || []).length);
-  const buckets = new Map();
-  games.forEach((game) => (game.points || []).forEach(([t, v]) => {
-    if (!has(t) || !has(v)) return;
-    const key = Math.round(t / 30) * 30;
-    const cell = buckets.get(key) || { sum: 0, n: 0 };
-    cell.sum += v;
-    cell.n += 1;
-    buckets.set(key, cell);
-  }));
-  const grid = [...buckets.entries()].sort((a, b) => a[0] - b[0]);
-  const enough = Math.max(3, Math.round(games.length * 0.45));
-  let last = grid.length - 1;
-  while (last >= 0 && grid[last][1].n < enough) last -= 1;
-  const avgCurve = last >= 1 ? grid.slice(0, last + 1).map(([t, cell]) => [t, Math.round(cell.sum / cell.n)]) : [];
-  const useAvg = games.length >= 3 && avgCurve.length >= 2;
-  const curve = useAvg ? avgCurve : (p?.points || []);
-  const curveNote = useAvg
-    ? `近 ${games.length} 局平均 · 每 30 秒一个点 · 截到 ${time(avgCurve.at(-1)[0])}（更长的局样本不足）`
-    : (p ? `${p.date || '日期未知'} · 对阵 ${p.opponent || '对手未标注'} · 最近一局` : '最近可用对局');
-  return `<div class="page home">
-    ${pageIntro(`${record}${margin}`, meta, filters.validation ? '<span class="scope-chip">含验证数据</span>' : '')}
-    <div class="home-decision" id="home-decision" data-home-decision></div>
-    <div class="feature-grid">${featured}${spotlight}</div>
-    <div class="stats-band"><div><span>对局总数</span><strong>${fmt(summary.matches)}<small>局</small></strong><p>${fmt(summary.coverage.timelineMatches)} 局时间轴完整</p></div>
-      <div><span>平均对局时长</span><strong>${time(avgDuration)}</strong><p>${duration.length} 局有时长</p></div>
-      <div><span>场均击杀</span><strong>${fmt(team.avgKills, 1)}</strong><p>本队五人合计</p></div>
-      <div><span>场均经济</span><strong>${fmt(team.avgGold)}</strong><p>本队五人终局合计</p></div></div>
-    <div class="insight-grid"><section class="section curve-section"><div class="section-heading"><div><h2>经济走势</h2>
-      <p>${esc(curveNote)}</p></div>
-      <a href="#tempo">查看节奏分析 ${icon('arrow')}</a></div>${chart(curve, useAvg ? '这批局的平均经济差' : '本队经济差', useAvg ? { note: `${games.length} 局平均 · ${curve.length} 个时间点` } : {})}</section>
-      <section class="section heroes-section"><div class="section-heading"><div><h2>英雄出场</h2><p>本队当前样本</p></div>
-        <a href="#bp">查看全部 ${icon('arrow')}</a></div>
-        <div class="hero-rows">${(summary.topHeroes || []).slice(0,5).map((h) => `<a href="${esc(route('matches', 'hero=' + h.hero))}" class="hero-row">
-          ${portrait(h.hero)}<div><b>${esc(h.hero)}</b><small>${esc((h.positions || []).join(' / ') || '分路未知')}</small></div>
-          <span>${fmt(h.picks)}<small>次出场</small></span><span>${pct(h.winRate)}<small>${h.wins} / ${h.decided} 局</small></span></a>`).join('') || '<div class="empty">暂无英雄数据。</div>'}</div></section></div>
-    <section class="section matches-section"><div class="section-heading"><div><h2>对局记录</h2><p>查看比分、阵容与复盘详情</p></div>
-      <a href="#matches">全部对局 ${icon('arrow')}</a></div>${matchRows(matches.slice(0,5))}</section>
-  </div>`;
+  /* 空库保留完整的首次采集引导；有数据时切换到分析师工作首页。 */
+  if (!value?.summary?.matches) return welcomePage();
+  return renderWorkspaceHome(value, { esc, fmt, pct, time, portrait, route,
+    icon, chart, score, resultName, sides, filters });
 }
 
 /* 数据明细折叠已按产品要求全站下线；保留函数签名以兼容既有调用点。 */
