@@ -91,6 +91,27 @@ class V3IndexShellTests(unittest.TestCase):
         self.assertTrue(gm.startswith('9.9.9-'), gm)
         self.assertEqual(gm, version_of(body, 'app.js'))
 
+    def test_workspace_home_css_is_versioned_and_in_fallback(self):
+        # 首页样式表是独立文件；漏掉它首页会「能用但没样式」，
+        # 而且 ?v= 不覆盖它时升级后浏览器还会拿旧 CSS。
+        (self.public / 'workspace-home.css').write_text('/* home */\n', encoding='utf-8')
+        (self.public / 'index.html').write_text(
+            INDEX.replace(
+                '<link rel="stylesheet" href="static/style.css">',
+                '<link rel="stylesheet" href="static/style.css">\n'
+                '  <link rel="stylesheet" href="static/workspace-home.css">'),
+            encoding='utf-8')
+        body = server._v3_index_body()
+        home = version_of(body, 'workspace-home.css')
+        self.assertTrue(home.startswith('9.9.9-'), home)
+        self.assertEqual(home, version_of(body, 'app.js'))
+
+        # 兜底外壳同样要带首页样式，且同样换成统一版本戳。
+        (self.public / 'index.html').write_text('<html><body>坏了</body></html>',
+                                                encoding='utf-8')
+        fallback = server._v3_index_body()
+        self.assertIn('static/workspace-home.css?v=9.9.9-', fallback)
+
     def test_broken_shell_falls_back_but_keeps_version_markup(self):
         (self.public / 'index.html').write_text('<html><body>坏了</body></html>',
                                                 encoding='utf-8')

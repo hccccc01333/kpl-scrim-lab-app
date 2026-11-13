@@ -88,7 +88,7 @@ export function createHomeDecision({ esc, fmt, time, icon, route }) {
     const workbench = workbenchLink(item);
     const anchor = 'hd-ev-' + safeId(item.id);
     const evidenceCount = listOf(item.evidence).length;
-    return `<li class="hd-row" data-sev="${esc(sev)}" data-id="${esc(item.id || '')}">
+    return `<li class="hd-row" data-sev="${esc(sev)}" data-id="${esc(item.id || '')}" data-hd-destination="${esc(workbench)}" tabindex="0" aria-label="打开${esc(item.title || '未命名问题')}的分析">
       <span class="hd-no">${String(index + 1).padStart(2, '0')}</span>
       <div class="hd-row-main">
         <a class="hd-row-title" href="${esc(workbench)}" title="在工作台决策台打开这条分析">${esc(item.title || '未命名问题')}</a>
@@ -235,6 +235,12 @@ export function createHomeDecision({ esc, fmt, time, icon, route }) {
         if (other !== row) setRowOpen(other, false);
       });
       if (row) setRowOpen(row, Boolean(willOpen));
+      return;
+    }
+    const row = event.target.closest('.hd-row[data-hd-destination]');
+    if (row && !event.target.closest('a,button,summary,.hd-ev,[role="button"]')) {
+      const destination = row.dataset.hdDestination || '';
+      if (destination.startsWith('#decision/')) window.location.hash = destination;
     }
   }
 
@@ -242,6 +248,13 @@ export function createHomeDecision({ esc, fmt, time, icon, route }) {
     if (!box || box.dataset.hdBound === '1') return;
     box.dataset.hdBound = '1';
     box.addEventListener('click', onClick);
+    box.addEventListener('keydown', (event) => {
+      const row = event.target.closest('.hd-row[data-hd-destination]');
+      if (row !== event.target || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      const destination = row.dataset.hdDestination || '';
+      if (destination.startsWith('#decision/')) window.location.hash = destination;
+    });
   }
 
   return { render, hydrate, bind };

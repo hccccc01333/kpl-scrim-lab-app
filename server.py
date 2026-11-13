@@ -4173,6 +4173,7 @@ _V3_INDEX_FALLBACK = """<!doctype html>
   <meta name="description" content="面向教练的赛训数据平台">
   <title>赛训数据</title>
   <link rel="stylesheet" href="static/style.css">
+  <link rel="stylesheet" href="static/workspace-home.css">
   <script type="module" src="static/app.js"></script>
 </head>
 <body>
@@ -4228,7 +4229,7 @@ def _v3_index_body() -> str:
     stamp = _v3_asset_stamp()
     # godmode.js 也要吃同一个戳：它以前把 ?v=8.0.0 写死在 index.html 里，
     # 升级后 URL 不变，浏览器会一直用旧副本，改了也看不到。
-    text = re.sub(r'(static/(?:style\.css|app\.js|godmode\.js))(\?v=[^"\']*)?',
+    text = re.sub(r'(static/(?:style\.css|workspace-home\.css|app\.js|godmode\.js))(\?v=[^"\']*)?',
                   lambda match: f'{match.group(1)}?v={stamp}', text)
     if 'name="app-version"' not in text:
         text = re.sub(r'<head>',
