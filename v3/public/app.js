@@ -1137,7 +1137,7 @@ function matchPage(m) {
   const dirClass = (d) => d === '利于本队' ? 'own' : d === '利于对手' ? 'enemy' : 'event';
   const mdTimeline = nodeRows.length ? `<section class="section" id="match-timeline"><div class="section-heading"><div><h2>关键节点</h2><p>按时间排列，每个数字都能回到具体分钟；波动取绝对值最大的几次</p></div></div>
     <div class="md-node-head"><span>时间</span><span>关键节点</span><span>经济差变化</span><span>当时经济差</span><span>方向 / 来源</span></div>
-    <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
+    <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num" data-label="变化">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num" data-label="当时经济差">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
   </section>` : '';
   /* 10 分钟经济：营地接口只有团队金币（30 秒一个点），没有逐人；回放的金币流水
      对不上账（残差 17.5%，个别 43%）。所以这一格只能由教练手填，填在覆盖层里，
@@ -1184,7 +1184,7 @@ function matchPage(m) {
   const mdDuel = `<section class="section" id="match-duel"><div class="section-heading"><div><h2>对位纵深</h2><p>同一张表两种口径：深区＝推进进度 &gt; 66%，半区＝&gt; 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格</p></div></div>
     ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
-  const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>打野并线</h2><p>兵线到了，打野和这条路的队友一起吃这波线，算一次并线。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
+  const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>疑似打野并线</h2><p>按出兵时间窗口、分路走廊与打野/队友聚集近似识别；不代表实际补刀或吃到兵线经济。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
     ${m.positions ? (deep.jungleJoin(m.positions, m.players, own, m.duration) || '<div class="empty">这局的位置名单里没有打野，并线统计不成立</div>') : positionsEmpty}
   </section>`;
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
@@ -1229,7 +1229,7 @@ function matchPage(m) {
       const states = { ahead: '压制', behind: '劣势', even: '均势' };
       const verdict = facts ? (states[facts.state] || '样本不足') : '样本不足';
       const judgeable = verdict !== '样本不足';
-      /* 兑现：大盘说这对组合占优、本局经济也领先（反之亦然） */
+      /* 终局经济与历史对位方向一致不等于前期对线兑现。 */
       // Team gold at 4'/10' cannot establish individual lane realisation.
       const realised = judgeable ? laneRealisation(verdict, nowDiff) : null;
       return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised };
@@ -1454,7 +1454,7 @@ function matchPage(m) {
         <div class="md-bprev-stat"><span class="md-bprev-stat-label">对位</span>
           <span class="md-bprev-stat-value">${judged.length}<i>/</i>${lanes.length}<small>路可判</small></span>
           <span class="md-bprev-stat-note">${judged.length
-            ? `占优 ${ahead} · 吃亏 ${behind}${judged.some((lane) => lane.realised !== null) ? ` · 兑现 ${realised}` : ''}`
+            ? `占优 ${ahead} · 吃亏 ${behind}${judged.some((lane) => lane.realised !== null) ? ` · 终局同向 ${realised}` : ''}`
             : '巅峰千强没有可判对位'}</span></div>
         <div class="md-bprev-stat"><span class="md-bprev-stat-label">赛事</span>
           <span class="md-bprev-stat-value">${m.bpFacts?.kpl ? `${(m.bpFacts.kpl.hitPairs || 0) + (m.bpFacts.kpl.hitTrios || 0)}<small>组命中</small>` : '—'}</span>
@@ -1513,7 +1513,7 @@ function matchPage(m) {
       && ['中路', '发育路'].includes(laneOfKill(k.victimCamp, k.victim));
     const keyOf = (k) => `${k.t}-${k.killer}-${k.victim}`;
     const rows = kills.slice().sort((a, b) => a.t - b.t);
-    /* 每场团战的先手击杀 = 该团战最早的一次击杀（与 firstKillerCamp 同源）。 */
+    /* 每场团战的首杀击杀 = 该团战最早的一次击杀（与 firstKillerCamp 同源）。 */
     const firstOfFight = new Map();
     for (const k of rows) {
       if (!k.fight) continue;
@@ -1521,7 +1521,7 @@ function matchPage(m) {
       if (!cur || k.t < cur.t) firstOfFight.set(k.fight, k);
     }
     const firstKeys = new Set([...firstOfFight.values()].map(keyOf));
-    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次先手。 */
+    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次首杀。 */
     const statOf = (p) => {
       const mine = rows.filter((k) => k.killerCamp === p.camp && k.killer === p.hero);
       const cuts = mine.filter(isCut);
@@ -1534,7 +1534,7 @@ function matchPage(m) {
       };
     };
     /* 五路按固定顺序排（对抗路 / 打野 / 中路 / 发育路 / 游走），跨局对比时位置不跳动；
-       谁切了 C、谁先手多由卡片高亮和数字表达。未知分路排最后。 */
+       谁切了 C、谁首杀多由卡片高亮和数字表达。未知分路排最后。 */
     const LANE_ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
     const stats = (m.players || []).filter((p) => p.camp === own).map(statOf)
       .sort((a, b) => {
@@ -1547,7 +1547,7 @@ function matchPage(m) {
     const firstRate = ownKills ? Math.round(firstTotal / ownKills * 100) : null;
     const maxFirst = Math.max(1, ...stats.map((s) => s.first));
     const maxKills = Math.max(1, ...stats.map((s) => s.kills));
-    /* 团战结果：先手方 + 该波击杀差。fights 缺失时只讲击杀账本，不编团战结果。 */
+    /* 团战结果：首杀方 + 该波击杀差。fights 缺失时只讲击杀账本，不编团战结果。 */
     const ownSide = own === 'red' ? 'red' : 'blue';
     const foeSide = ownSide === 'blue' ? 'red' : 'blue';
     const fights = (m.replay?.fights || [])
@@ -1563,19 +1563,20 @@ function matchPage(m) {
     const ownFights = fights.filter((f) => fightFirst(f) === ownSide);
     const foeFights = fights.filter((f) => fightFirst(f) && fightFirst(f) !== ownSide);
     const ownFightWins = ownFights.filter(ownWonFight).length;
-    const foeFightLosses = foeFights.filter((f) => !ownWonFight(f)).length;
-    /* 团战节奏条：一个小方块＝一波团战；金/青 = 谁先手，实心/空心 = 赢/输。 */
+    const foeFightLosses = foeFights.filter((f) => fightKills(f, ownSide) < fightKills(f, foeSide)).length;
+    const foeFirstDraws = foeFights.filter((f) => fightKills(f, ownSide) === fightKills(f, foeSide)).length;
+    /* 团战节奏条：一个小方块＝一波团战；金/青 = 谁首杀，实心/空心 = 赢/输。 */
     const fightStrip = fights.length ? `<div class="md-fight-strip">
-      <div class="md-fight-dots" role="img" aria-label="团战先手与结果时间轴">${fights.map((f) => {
+      <div class="md-fight-dots" role="img" aria-label="团战首杀与结果时间轴">${fights.map((f) => {
         const side = fightFirst(f);
         const ownTag = side === ownSide;
         const won = ownWonFight(f);
         const score = `${fightKills(f, ownSide)}:${fightKills(f, foeSide)}`;
-        return `<i class="md-fight-dot ${ownTag ? 'is-own' : side ? 'is-foe' : 'is-unknown'}${won ? ' is-win' : ' is-loss'}" title="${esc(time(f.t))} · ${ownTag ? '我方' : side ? '对方' : '未记录'}先手 · 击杀 ${score}"></i>`;
+        return `<i class="md-fight-dot ${ownTag ? 'is-own' : side ? 'is-foe' : 'is-unknown'}${won ? ' is-win' : ' is-loss'}" title="${esc(time(f.t))} · ${ownTag ? '我方' : side ? '对方' : '未记录'}首杀 · 击杀 ${score}"></i>`;
       }).join('')}</div>
-      <div class="md-fight-legend"><span class="own">我方先手</span><span class="foe">对方先手</span><em>实心＝赢下，空心＝失利</em></div>
+      <div class="md-fight-legend"><span class="own">我方首杀</span><span class="foe">对方首杀</span><em>实心＝赢下，空心＝未赢（含平局）</em></div>
     </div>` : '';
-    /* 开团分析：先手方和团战结果放在一句话里，后面才是五路分布。 */
+    /* 首杀分析：首杀方和团战结果放在一句话里，后面才是五路分布。 */
     const topFirst = stats.slice().sort((a, b) => b.first - a.first)[0];
     const cutTargetCounts = new Map();
     for (const s of stats) for (const target of s.cutTargets) cutTargetCounts.set(target, (cutTargetCounts.get(target) || 0) + 1);
@@ -1583,13 +1584,13 @@ function matchPage(m) {
     const cutAllFirst = cutTotal > 0 && stats.every((s) => s.cutFirsts === s.cut);
     const parts = [];
     if (ownFights.length) {
-      parts.push(`本局 ${fights.length} 波团战里我方先手 ${ownFights.length} 波、赢下 ${ownFightWins} 波`);
-      if (foeFights.length) parts.push(`对方先手 ${foeFights.length} 波，我方 ${foeFights.length - foeFightLosses} 胜 ${foeFightLosses} 负`);
+      parts.push(`本局 ${fights.length} 波团战里我方首杀 ${ownFights.length} 波、赢下 ${ownFightWins} 波`);
+      if (foeFights.length) parts.push(`对方首杀 ${foeFights.length} 波，我方 ${foeFights.length - foeFightLosses - foeFirstDraws} 胜 ${foeFightLosses} 负${foeFirstDraws ? ` ${foeFirstDraws} 平` : ''}`);
     } else if (firstTotal) {
-      parts.push(`本局我方先手 ${firstTotal} 次${firstRate !== null ? `，占我方击杀 ${pct(firstRate)}` : ''}`);
+      parts.push(`本局我方首杀 ${firstTotal} 次${firstRate !== null ? `，占我方击杀 ${pct(firstRate)}` : ''}`);
     }
     if (topFirst && topFirst.first) {
-      parts.push(`${topFirst.p.position || '未知分路'}·${topFirst.p.label || topFirst.p.hero} 先手 ${topFirst.first} 次最多`);
+      parts.push(`${topFirst.p.position || '未知分路'}·${topFirst.p.label || topFirst.p.hero} 首杀 ${topFirst.first} 次最多`);
     }
     if (cutTotal) {
       parts.push(`切 C ${cutTotal} 次${cutTargetText ? `，目标 ${cutTargetText}` : ''}${cutAllFirst ? '，且都是该波团战的第一击' : ''}`);
@@ -1601,22 +1602,22 @@ function matchPage(m) {
       : (ownFightWins === ownFights.length && ownFights.length >= 2) || ownFirstRate >= 0.7 ? 'is-good'
         : ownFirstRate >= 0.5 ? 'is-thin' : 'is-bad';
     const badge = ownFirstRate === null ? '样本不足'
-      : ownFightWins === ownFights.length && ownFights.length >= 2 ? '先手全胜'
-        : ownFirstRate >= 0.7 ? '先手占优' : ownFirstRate >= 0.5 ? '先手一般' : '先手吃亏';
+      : ownFightWins === ownFights.length && ownFights.length >= 2 ? '首杀全胜'
+        : ownFirstRate >= 0.7 ? '首杀占优' : ownFirstRate >= 0.5 ? '首杀一般' : '首杀吃亏';
     const tiles = [
-      ['先手', `${firstTotal}<small>次</small>`, '',
+      ['首杀', `${firstTotal}<small>次</small>`, '',
         firstRate !== null ? `占我方击杀 ${pct(firstRate)}` : '按击杀账本统计'],
-      ['先手团战', ownFights.length ? `${ownFightWins}<i>/</i>${ownFights.length}` : '—', '赢下',
-        ownFights.length ? `对方先手 ${foeFights.length} 波` : '回放没有团战段'],
-      ['被先手', `${foeFights.length}`, '波',
-        foeFights.length ? `我方 ${foeFights.length - foeFightLosses} 胜 ${foeFightLosses} 负` : '没有被对方先手'],
+      ['首杀团战', ownFights.length ? `${ownFightWins}<i>/</i>${ownFights.length}` : '—', '赢下',
+        ownFights.length ? `对方首杀 ${foeFights.length} 波` : '回放没有团战段'],
+      ['被首杀', `${foeFights.length}`, '波',
+        foeFights.length ? `我方 ${foeFights.length - foeFightLosses - foeFirstDraws} 胜 ${foeFightLosses} 负${foeFirstDraws ? ` ${foeFirstDraws} 平` : ''}` : '没有被对方首杀'],
       ['切C', `${cutTotal}`, '次',
         cutTotal ? (cutTargetText || '已形成切C') : '未形成切C'],
     ];
     const statCards = stats.map((s) => `<article class="md-cut-card${s.cut ? ' is-hot' : ''}">
       <header><span class="md-cut-lane">${esc(s.p.position || '未标注')}</span><b>${esc(s.p.label || s.p.hero)}</b>${portrait(s.p.hero || '', 'md-cut-face')}</header>
       <div class="md-cut-rows">
-        <div class="md-cut-row is-first"><span class="md-cut-row-label">先手</span><span class="md-cut-track"><i style="width:${Math.round(s.first / maxFirst * 100)}%"></i></span><b>${s.first}</b><small>${firstTotal ? Math.round(s.first / firstTotal * 100) + '%' : '—'}</small></div>
+        <div class="md-cut-row is-first"><span class="md-cut-row-label">首杀</span><span class="md-cut-track"><i style="width:${Math.round(s.first / maxFirst * 100)}%"></i></span><b>${s.first}</b><small>${firstTotal ? Math.round(s.first / firstTotal * 100) + '%' : '—'}</small></div>
         <div class="md-cut-row"><span class="md-cut-row-label">击杀</span><span class="md-cut-track"><i style="width:${Math.round(s.kills / maxKills * 100)}%"></i></span><b>${s.kills}</b><small>${ownKills ? Math.round(s.kills / ownKills * 100) + '%' : '—'}</small></div>
       </div>
       <div class="md-cut-foot">
@@ -1633,20 +1634,20 @@ function matchPage(m) {
       return `<div class="md-kill ${ownKill ? 'own' : 'foe'}${cut ? ' is-cut' : ''}">
         <span class="md-kill-t">${time(k.t)}</span>
         <span class="md-kill-camp ${ownKill ? 'own' : 'foe'}">${ownKill ? '我方' : '对方'}</span>
-        <span class="md-kill-side"><em>${esc(k.killer)}</em>${first ? '<i class="md-kill-first">先手</i>' : ''}<small>${esc(kl || '—')}</small></span>
+        <span class="md-kill-side"><em>${esc(k.killer)}</em>${first ? '<i class="md-kill-first">首杀</i>' : ''}<small>${esc(kl || '—')}</small></span>
         <span class="md-kill-arrow">→</span>
         <span class="md-kill-side"><em>${esc(k.victim)}</em><small>${esc(vl || '—')}</small></span>
         <em class="md-kill-cut">${cut ? '切C' : ''}</em>
       </div>`;
     };
-    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与先手</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；先手＝该波团战里的第一次击杀。五路统计在上，开团分析居中，逐条账本收在折叠区</p></div></div>
+    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与首杀</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；首杀＝该波团战里的第一次击杀。五路统计在上，首杀分析居中，逐条账本收在折叠区</p></div></div>
       <div class="md-cut-grid">${statCards}</div>
       <div class="md-viz-analysis md-bprev ${tone}">
-        <div class="md-bprev-head"><b>开团分析</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
+        <div class="md-bprev-head"><b>首杀分析</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
         <p class="md-bprev-lede">${parts.join('；')}。</p>
         <div class="md-bprev-stats">${tiles.map(([label, value, unit, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}<small>${unit}</small></span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
         ${fightStrip}
-        <p class="md-bprev-thin">口径：先手＝该波团战第一次击杀；切C＝对抗路 / 打野击杀对方中路、发育路；团战结果取官方回放 fights 的双方击杀数。</p>
+        <p class="md-bprev-thin">口径：首杀＝该波团战第一次击杀；切C＝对抗路 / 打野击杀对方中路、发育路；团战结果取官方回放 fights 的双方击杀数。</p>
       </div>
       <details class="md-camp md-kill-fold"><summary>逐条击杀账本 <b>${rows.length}</b> 条 <small>时间 · 阵营 · 击杀方 → 被击杀方</small></summary>
         <div class="md-kill-list">${rows.map(row).join('')}</div>
