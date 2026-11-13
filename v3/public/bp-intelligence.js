@@ -125,6 +125,20 @@ function responseRows(responses, icons) {
   </article>`).join('')}</div>`;
 }
 
+function matchupHtml(rows, icons) {
+  const selected=(rows||[]).slice(0,8);
+  if(!selected.length)return '';
+  return `<section class="bpi-matchup-section"><h4 class="bpi-section-sub">历史英雄对位</h4>
+    <p class="bpi-explain">同一分路的双方英雄交手记录。胜负不能直接说明对线单挑强弱。</p>
+    <div class="bpi-response-grid">${selected.map(r=>`<article class="bpi-response">
+      <div class="bpi-response-heroes">${heroBadge(r.hero,icons)}
+      <span class="bpi-arrow">对位</span>${heroBadge(r.enemy,icons)}</div>
+      <div class="bpi-response-bottom"><strong>${count(r.games)} 局</strong><span>历史赛果 ${pct(r.winRate)}</span></div>
+      ${evidenceDetails(r.evidence)}
+    </article>`).join('')}</div>
+  </section>`;
+}
+
 function playerView(report) {
   const players = (report.players || []).slice(0, 18);
   return `<div class="bpi-panel"><header><h3>选手 · 英雄特长研究</h3><span>比较同英雄使用者</span></header>
@@ -135,9 +149,12 @@ function playerView(report) {
       <div class="bpi-player-signal"><span>${count(p.games)} 局 · 历史胜率 ${pct(p.winRate)}</span>
         <b class="${p.relativeSignal>0?'is-up':p.relativeSignal<0?'is-down':''}">${sign(p.relativeSignal)}</b></div>
       <p>与同英雄参照的收缩后差异 · 参照胜率 ${pct(p.reference)}</p>
+      ${n(p.heroDamagePer1000Gold)!==null
+        ? `<p class="bpi-player-output">终局对英雄伤害 / 千经济：<b>${count(p.heroDamagePer1000Gold)}</b>（仅做产出参考，不等于团战能力）</p>` : ''}
       ${evidenceDetails(p.evidence,'查看选手对局')}
     </article>`).join('')}</div>` :
       note('选手与英雄的身份数据不足','需要准确的选手—英雄—分路映射；不按终局五个英雄的排列猜测使用者。')}
+    ${matchupHtml(report.matchups,report.icons)}
     <div class="bpi-research-alert"><b>进一步判断绝活强在哪里</b>
       <p>对线经济、补刀、转线、团战进场与资源争夺必须来自对应比赛过程。当前没有逐项真实过程证据时，不生成“对线强”“打团强”的断言。</p></div>
     </div>`;
@@ -164,6 +181,20 @@ function comboView(report) {
   </div>`;
 }
 
+function seriesHtml(rows,icons) {
+  if(!rows?.length)return '';
+  return `<div class="bpi-series"><h4 class="bpi-section-sub">BO 系列赛：连续两局如何调整 BP？</h4>
+    <p class="bpi-explain">只比较同一系列赛内相邻局的真实阵容和禁用变化；不是模型推测出的教练意图。</p>
+    <div class="bpi-response-grid">${rows.slice(0,8).map(r=>`<article class="bpi-response">
+      <strong>第 ${r.previous} 局 → 第 ${r.current} 局</strong>
+      <div class="bpi-series-note">替换选用英雄 · ${count(r.newPicks.length)} 个</div>
+      <div class="bpi-combo-heroes">${r.newPicks.map(x=>heroBadge(x,icons)).join('') || '<small>未更换</small>'}</div>
+      <div class="bpi-series-note">变化禁用 · ${count(r.newBans.length)} 个</div>
+      ${evidenceDetails(r.evidence,'查看两局比赛')}
+    </article>`).join('')}</div>
+  </div>`;
+}
+
 function changeView(report) {
   const changes = report.changes || [];
   return `<section class="bpi-panel"><header><h3>近期英雄选择发生了什么变化？</h3>
@@ -178,6 +209,7 @@ function changeView(report) {
       </div>${evidenceDetails(r.evidence,'查看近期比赛')}
     </article>`).join('')}</div>` :
     note('当前比赛数量不足以进行周期对照','至少需要八局可按日期排序的记录；更少时只展示原始选禁，不绘制变化趋势。')}
+    ${seriesHtml(report.seriesAdjustments,report.icons)}
   </section>`;
 }
 
