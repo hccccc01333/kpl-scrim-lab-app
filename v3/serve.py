@@ -1936,6 +1936,18 @@ def bp_board():
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
             'players': {'own': [p.get('name') for p in panel['own_roster']],
                         'enemy': [p.get('name') for p in panel['enemy_roster']]},
+            # 选手与英雄仅以营地逐人 usedHero 的事实映射为依据，不按 Pick 顺序猜测。
+            'roster': {
+                'own': [{'name': p.get('name'), 'hero': p.get('hero'),
+                         'lane': p.get('lane')} for p in panel['own_roster']],
+                'enemy': [{'name': p.get('name'), 'hero': p.get('hero'),
+                           'lane': p.get('lane')} for p in panel['enemy_roster']],
+            },
+            # 本地版本若已提供完整 BP 事件，原样透传供研究引擎严格校验；
+            # 旧营地面板没有顺序时不得根据最终名单补造。
+            'draftEvents': (bp.get('draftEvents') or
+                            detail.get('draftEvents') or
+                            (detail.get('data') or {}).get('draftEvents') or []),
             # 终局面板的经济 / 击杀 / 推塔 / 龙，供教练档案与 BP 页做资源口径；
             # 视角固定为「本队 = own」，前端按需要翻转成教练一方。
             'stats': {'own': (bp.get('teamStats') or {}).get(own) or {},
@@ -1950,6 +1962,25 @@ def bp_board():
         'heroMeta': hero_meta,
         'source': '营地终局名单 · 不推断禁选先后顺序',
     }
+
+
+@router.get('/api/v3/bp-intelligence')
+def bp_intelligence_report(request: Request):
+    """BP 内置研究：训练赛/KPL 两类来源分开，结论均可追溯真实对局。"""
+    from bp_intelligence import build_report
+    import kpl_bp
+    values = request.query_params
+    try:
+        return build_report(
+            bp_board()['games'] if values.get('source', 'scrim') == 'scrim' else [],
+            kpl_bp.load_games() if values.get('source') == 'kpl' else [],
+            source=values.get('source', 'scrim'),
+            team=str(values.get('team') or '').strip(),
+            start=str(values.get('from') or '').strip(),
+            end=str(values.get('to') or '').strip(),
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
 
 
 @router.get('/api/v3/effect')
