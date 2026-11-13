@@ -190,3 +190,7 @@
 @media (prefers-reduced-motion: reduce) {
   .wh-home .wh-link,.wh-home .wh-link svg { transition: none !important; transform: none !important; }
 }
+
+.wh-home .hd-row[data-hd-destination] { cursor: pointer; transition: background .16s ease; }
+.wh-home .hd-row[data-hd-destination]:hover { background: var(--soft); }
+.wh-home .hd-row[data-hd-destination]:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
