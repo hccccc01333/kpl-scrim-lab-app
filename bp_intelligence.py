@@ -94,6 +94,14 @@ def normalize_kpl(raw_games):
                 if hero and name and hero in picks:
                     players.append({"name": name, "hero": hero,
                                     "lane": str(entry.get("position") or "")})
+            enemy_players = []
+            for entry in (item.get("players") or {}).get(opposite, []):
+                if not isinstance(entry, dict):
+                    continue
+                h, name = _hero(entry.get("hero")), str(entry.get("player") or "").strip()
+                if h and name and h in enemy_picks:
+                    enemy_players.append({"name": name, "hero": h,
+                                          "lane": str(entry.get("position") or "")})
             ordered = bool(item.get("pickOrderKnown") and item.get("bansKnown"))
             events = _normalize_events(item.get("draftEvents"), side) if ordered else []
             # Do not accept partial sequences as complete draft evidence.
@@ -102,7 +110,7 @@ def normalize_kpl(raw_games):
             games.append({"id": identity, "date": _period(item.get("date") or item.get("startTime")),
                           "team": team, "enemy": foe, "side": side,
                           "picks": picks, "bans": bans, "enemyPicks": enemy_picks,
-                          "enemyBans": enemy_bans, "players": players,
+                          "enemyBans": enemy_bans, "players": players, "enemyPlayers": enemy_players,
                           "result": (winner == side) if winner in ("1", "2") else None,
                           "events": events, "source": "kpl", "matchId": str(item.get("matchId") or ""),
                           "league": str(item.get("leagueName") or ""),
@@ -156,6 +164,7 @@ def normalize_scrims(raw_games):
                           "picks": own_picks, "bans": own_bans,
                           "enemyPicks": enemy_picks, "enemyBans": _heroes(bans.get(other)),
                           "players": _scrim_players(item, side, own_picks),
+                          "enemyPlayers": _scrim_players(item, other, enemy_picks),
                           "result": won, "events": events, "source": "scrim",
                           "matchId": identity, "league": "训练赛", "gameSeq": None})
     return games
