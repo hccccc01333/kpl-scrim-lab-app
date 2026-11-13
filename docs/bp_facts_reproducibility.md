@@ -18,7 +18,7 @@ python scripts/build_bp_facts.py --kpl data/kpl/bp_games.jsonl
 
 # 同时重建巅峰千强对位（依赖外部 bp-project 数据集，授权受限，不随仓库分发）
 python scripts/build_bp_facts.py \
-  --bp-project "D:/Projects/KPLBPagentRL" \
+  --bp-project "<本地 bp-project 数据集目录>" \
   --kpl data/kpl/bp_games.jsonl
 ```
 
