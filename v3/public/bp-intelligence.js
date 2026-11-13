@@ -3,7 +3,8 @@
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const views = [
   ['focus', '赛训重点'], ['habits', '选禁习惯'], ['players', '选手绝活'],
-  ['combos', '阵容协同'], ['changes', '近期变化'], ['sandbox', 'BP 推演']
+  ['combos', '阵容协同'], ['tempo', '比赛节奏'],
+  ['changes', '近期变化'], ['diagnostics', '异常研判'], ['sandbox', 'BP 推演']
 ];
 const safe = (value) => String(value == null ? '' : value)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -20,7 +21,9 @@ function evidenceRows(records) {
   return `<ol class="bpi-evidence-list">${list.map(g => {
     const title = [g.date, g.team, g.enemy ? '对阵 ' + g.enemy : '',
       g.result === null ? '胜负未知' : g.result ? '胜利' : '失利'].filter(Boolean).join(' · ');
-    const href = g.source === 'scrim' ? '#match/' + encodeURIComponent(g.id) : '';
+    // BP 原始营地编号未必是对局路由 ID；只有完成严格数据关联才生成下钻。
+    const href = g.source === 'scrim' && g.processMatchKey
+      ? '#match/' + encodeURIComponent(g.processMatchKey) : '';
     return `<li>${href
       ? `<a href="${safe(href)}">${safe(title)}</a>`
       : `<span>${safe(title)} · 比赛 ${safe(g.matchId || g.id)}</span>`}
@@ -70,7 +73,8 @@ function headline(report) {
 function findingCards(report) {
   if (!report.findings?.length) return note('当前没有足够证据生成重点结论',
     '可以切换对手或正式比赛数据查看；系统不会用零星胜率编造规律。');
-  const labels = {preference:'英雄偏好', response:'条件回应', change:'周期变化', combo:'阵容组合'};
+  const labels = {preference:'英雄偏好', response:'条件回应', change:'周期变化',
+    combo:'阵容组合', process:'比赛节奏', 'hero-outcome':'战绩异动'};
   return `<div class="bpi-finding-grid">${report.findings.map((f,i)=>
     `<article class="bpi-finding">
       <div class="bpi-card-top"><span>${String(i+1).padStart(2,'0')}</span><em>${safe(labels[f.kind] || '比赛发现')}</em></div>
@@ -232,6 +236,109 @@ function changeView(report) {
   </section>`;
 }
 
+
+function goldDiff(value) {
+  return n(value) === null ? '暂无可用数据' :
+    (value > 0 ? '+' : '') + Math.round(value).toLocaleString('zh-CN');
+}
+
+function processView(report) {
+  const x=report.processStudy || {};
+  const at=x.checkpoints || {};
+  const timeline=[['120','2 分钟'],['240','4 分钟'],['600','10 分钟']];
+  const hasData=timeline.some(([key])=>(at[key]?.games||0)>0);
+  const cells=timeline.map(([key,name])=>{
+    const row=at[key] || {};
+    return `<article class="bpi-stage">
+      <span class="bpi-stage-title">${name} · 双方队伍经济差</span>
+      <strong class="bpi-stage-value ${row.meanDiff>0?'is-up':row.meanDiff<0?'is-down':''}">
+        ${goldDiff(row.meanDiff)}</strong>
+      <div class="bpi-stage-meta">有效 ${count(row.games)} 局 · 领先占比 ${pct(row.aheadRate)}</div>
+      ${row.aheadDecided ? `<div class="bpi-stage-meta">领先的 ${count(row.aheadDecided)} 局里，
+        ${count(row.aheadWins)} 局最终获胜（${pct(row.leadConversion)}）</div>`:''}
+      ${shareBar(row.aheadRate)}
+      ${evidenceDetails(row.evidence,'查看阶段经济对应比赛')}
+    </article>`;
+  }).join('');
+  const players=(x.playerLanes || []).filter(v=>v.n4||v.n10).slice(0,18);
+  const heroTempo=(x.heroTempo || []).slice(0,10);
+  return `<div class="bpi-panel">
+    <header><h3>一套阵容拿到后，前中期怎么打？</h3><span>BP × 回放经济时间轴</span></header>
+    <p class="bpi-explain">只统计完成双方阵容和回放身份校验的对局。匹配成功 ${count(x.linkedGames)} /
+      ${count(report.scope?.games)} 局；经济差为所选战队减对方战队。</p>
+    ${hasData ? `<div class="bpi-stage-grid">${cells}</div>` :
+      note('没有足够可信的比赛过程数据',
+        '比赛阵容能统计，但必须匹配到同日、同阵营、十个英雄相同的唯一回放后，才能展示 2/4/10 分钟经济差。')}
+    <h4 class="bpi-section-sub">选手对位：究竟在哪个阶段经济落后？</h4>
+    <p class="bpi-explain">只有明确双方同路英雄，并存在同一时点的个人经济快照，才计算同路经济差。
+      对线经济落后也可能来自换线和支援，不能直接贴“对线弱”标签。</p>
+    ${players.length ? `<div class="bpi-lane-grid">${players.map(row=>`<article class="bpi-lane">
+      <div class="bpi-lane-head">${heroBadge(row.hero,report.icons)}
+         <strong>${safe(row.player)}</strong><small>${safe(row.lane)}</small></div>
+      <div class="bpi-lane-metrics">
+        <div><span>4 分钟同路经济差</span><strong>${goldDiff(row.diff4)}</strong>
+             <small>有效 ${count(row.n4)} 局</small></div>
+        <div><span>10 分钟同路经济差</span><strong>${goldDiff(row.diff10)}</strong>
+             <small>有效 ${count(row.n10)} 局</small></div>
+      </div>
+      ${evidenceDetails(row.evidence,'查看同路对位比赛')}
+    </article>`).join('')}</div>` :
+    note('尚无可以核验的个人经济快照','需要同时确认选手、英雄、分路和双方个人经济；不会用队伍经济推算个人经济。')}
+    <h4 class="bpi-section-sub">不同英雄阵容的 10 分钟节奏</h4>
+    ${heroTempo.length ? `<div class="bpi-tempo-list">${heroTempo.map(row=>`<div class="bpi-tempo-row">
+      ${heroBadge(row.hero,report.icons)}<strong>${goldDiff(row.avgTeamDiff10)}</strong>
+      <small>${count(row.processGames)} 局过程 / ${count(row.games)} 局选用</small>
+      ${evidenceDetails(row.evidence,'过程证据')}
+    </div>`).join('')}</div>` :
+    note('暂无能比较的阵容过程样本','此处至少需要两个拥有 10 分钟完整经济证据的同英雄阵容。')}
+    <div class="bpi-research-alert"><b>如何使用这些数据？</b>
+      <p>先观察阵容和队伍节奏的对应关系，再打开具体比赛，核查对位、换线、支援和资源争夺。当前仅是描述性比较，不自动推出因果结论。</p></div>
+  </div>`;
+}
+
+function diagnosticView(report) {
+  const rows=(report.heroWinShifts || []).slice(0,10);
+  if(!rows.length) return `<div class="bpi-panel"><header><h3>英雄战绩异动研究</h3><span>前后周期条件对照</span></header>
+    ${note('近期没有达到研究门槛的战绩异动',
+      '需至少两个不同训练日，前后时间段各有三局以上该英雄的有效赛果，且胜率变化超过 15 个百分点；此时不强行归因。')}</div>`;
+  function drift(items,icons){
+    return `<div class="bpi-drift-list">${(items||[]).filter(v=>Math.abs(v.changePP)>=10).slice(0,4).map(v=>`<div>
+      ${heroBadge(v.hero,icons)}<span>前 ${count(v.previousGames)} 次 → 近 ${count(v.recentGames)} 次</span>
+      <strong class="${v.changePP>0?'is-up':v.changePP<0?'is-down':''}">${sign(v.changePP)}</strong>
+    </div>`).join('') || '<span class="bpi-subtle">未发现达到展示阈值的搭配比例变化</span>'}</div>`;
+  }
+  return `<div class="bpi-panel">
+    <header><h3>英雄胜率变化：到底哪些条件一起变了？</h3>
+      <span>前后周期 · 仅比较已知赛果</span></header>
+    <p class="bpi-explain">先检查样本和区间，再对照队友英雄、敌方英雄及 10 分钟经济变化。下列条件可能同时变化，不能自动断言哪项造成了胜率变化。</p>
+    <div class="bpi-diagnostics">${rows.map(row=>`<article class="bpi-diagnostic">
+      <header><div>${heroBadge(row.hero,report.icons)}<small>切分日期 ${safe(row.cutDate)}</small></div>
+        <strong class="${row.changePP>0?'is-up':row.changePP<0?'is-down':''}">${sign(row.changePP)}</strong></header>
+      <div class="bpi-period-grid">
+        <div><span>较早比赛</span><strong>${pct(row.previousWinRate)}</strong>
+          <small>${count(row.previousWins)} / ${count(row.previousGames)} 胜 · 区间
+             ${pct(row.previousInterval?.[0])}–${pct(row.previousInterval?.[1])}</small></div>
+        <div><span>近期比赛</span><strong>${pct(row.recentWinRate)}</strong>
+          <small>${count(row.recentWins)} / ${count(row.recentGames)} 胜 · 区间
+             ${pct(row.recentInterval?.[0])}–${pct(row.recentInterval?.[1])}</small></div>
+      </div>
+      <div class="bpi-context-grid">
+        <div><h4>队友搭配的变化</h4>${drift(row.partnerChanges,report.icons)}</div>
+        <div><h4>面对的英雄变化</h4>${drift(row.enemyChanges,report.icons)}</div>
+      </div>
+      <div class="bpi-diff-context"><b>10 分钟队伍经济差</b>
+        <span>较早：${goldDiff(row.previousTeamDiff10)}</span>
+        <span>近期：${goldDiff(row.recentTeamDiff10)}</span></div>
+      <div class="bpi-diagnostic-evidence">
+        ${evidenceDetails(row.previousEvidence,'查看较早比赛')}
+        ${evidenceDetails(row.recentEvidence,'查看近期比赛')}
+      </div>
+    </article>`).join('')}</div>
+    <div class="bpi-research-alert"><b>这是候选解释，而不是确定归因</b>
+      <p>对照显示队友、对位、赛程变化线索；要判定“换某英雄造成了变化”，仍需控制选手、版本和对手强度，且历史数据必须有足够可比比赛。</p></div>
+  </div>`;
+}
+
 function counterCards(rows,icons) {
   const list=(rows||[]).slice(0,8);
   return `<section class="bpi-counter-history">
@@ -285,6 +392,8 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       case 'players': return playerView(report);
       case 'combos': return comboView(report);
       case 'changes': return changeView(report);
+      case 'tempo': return processView(report);
+      case 'diagnostics': return diagnosticView(report);
       case 'sandbox': return sandboxView(report,state.trigger);
       default: return `<section class="bpi-intro-brief">
           <h3>这段时间最值得关注的 BP 现象</h3>
@@ -292,7 +401,9 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
         </section>${findingCards(report)}
         <div class="bpi-shortcuts"><button type="button" data-bpi-view="habits">查看选禁路径</button>
         <button type="button" data-bpi-view="players">研究选手绝活</button>
-        <button type="button" data-bpi-view="combos">研究阵容协同</button></div>`;
+        <button type="button" data-bpi-view="combos">研究阵容协同</button>
+        <button type="button" data-bpi-view="tempo">查看比赛节奏</button>
+        <button type="button" data-bpi-view="diagnostics">研究战绩异动</button></div>`;
     }
   }
 
