@@ -18,7 +18,7 @@
 `bp_list[].is_ban_or_pick == 1` 是**选用（pick）**，`== 0` 是**禁用（ban）**，顺序即 BP 顺序。
 契约文档第一版曾把这两个值写反，代码以实测为准。
 
-BP 完整性（契约 v1.1，见 `docs/kpl_bp_pipeline.md` §1）：
+BP 完整性（契约 v1.1，见 `README.md` §1）：
 * `bpMode="full"`：`bp_list` 完整（两侧各 5 pick + 同数 ban），picks 用 BP 顺序，bans 可用；
 * `bpMode="blind"`：**巅峰对决盲选**——系列赛打满的最后一局按规则盲选，官方 `bp_list` 为空或不完整，
   这不是数据缺失。picks 取十人面板，`bansKnown=false`、`pickOrderKnown=false`，照常进组合统计；
@@ -219,6 +219,41 @@ def split_bp(bp_list):
         bucket = picks if kind == PICK_FLAG else bans
         bucket[str(camp)].append(hero)
     return picks, bans
+
+
+def draft_events(bp_list):
+    events = []
+    order = 0
+    for index, item in enumerate(bp_list or []):
+        if not isinstance(item, dict):
+            continue
+        try:
+            camp = int(item.get('camp') or 0)
+            kind = int(item.get('is_ban_or_pick'))
+        except (TypeError, ValueError):
+            continue
+        if camp not in (1, 2):
+            continue
+        hero = str(item.get('hero_name') or '').strip()
+        if not hero:
+            continue
+        if kind not in (0, PICK_FLAG):
+            continue
+        order += 1
+        phase = item.get('phase')
+        if phase is None:
+            phase = item.get('stage')
+        events.append({
+            'index': index,
+            'order': order,
+            'camp': str(camp),
+            'side': 'blue' if camp == 1 else 'red',
+            'action': 'pick' if kind == PICK_FLAG else 'ban',
+            'hero': hero,
+            'phase': phase,
+            'source': 'bp_list',
+        })
+    return events
 
 
 def _battle_data(payload):
@@ -447,6 +482,7 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         'pickOrderKnown': pick_order_known,
         'picks': picks,
         'bans': bans,
+        'draftEvents': draft_events(data.get('bp_list')),
         'players': players,
         'fetchedAt': fetched_at or now_iso(),
     }

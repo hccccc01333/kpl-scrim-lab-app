@@ -28,6 +28,7 @@ from __future__ import annotations
 import ctypes
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -65,6 +66,36 @@ def _base_url() -> str:
     if host in ('0.0.0.0', '::'):
         host = '127.0.0.1'
     return f'http://{host}:{_port()}'
+
+
+_VERSION_RE = re.compile(r"^VERSION\s*=\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
+
+
+def installed_version() -> str:
+    """应用目录里 version.py 声明的版本；读不到时返回空串。"""
+    try:
+        text = (ROOT / 'version.py').read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return ''
+    match = _VERSION_RE.search(text)
+    return match.group(1).strip() if match else ''
+
+
+def stale_running_version(payload: dict | None) -> str:
+    """8766 上跑着的服务如果和已安装版本不一致，返回它的版本号。
+
+    覆盖安装/手动替换文件时，如果旧服务进程没退出，Python 还在内存里跑
+    旧代码；启动器这时看到 /api/health 有响应就直接开浏览器，界面就还是
+    旧版本（「某些页面还是旧的」）。这里让启动器先停掉旧服务再起新的。
+    任何一边版本读不出来时返回空串：宁可不动，也不要误杀正常服务。
+    """
+    if not isinstance(payload, dict):
+        return ''
+    running = str(payload.get('version') or '').strip()
+    expected = installed_version()
+    if running and expected and running != expected:
+        return running
+    return ''
 
 
 def log(message: str) -> None:
@@ -274,11 +305,23 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if health() else 1
 
     log('启动器启动')
-    if health():
-        log('服务已在运行，直接打开界面')
-        if not quiet:
-            open_ui()
-        return 0
+    payload = health()
+    if payload:
+        stale = stale_running_version(payload)
+        if not stale:
+            log('服务已在运行，直接打开界面')
+            if not quiet:
+                open_ui()
+            return 0
+        # 程序文件已经换成新版本，但旧服务进程还占着 8766：先停掉再重启。
+        # 旧进程的 Python 代码在内存里不会跟着文件更新，直接开浏览器就是旧界面。
+        log(f'旧版本服务 v{stale} 仍在运行，先停止再启动 v{installed_version()}')
+        if not stop_server() and port_open(_port()):
+            if not quiet:
+                message_box(f'旧版本工作台（v{stale}）没有停下，新版本无法启动。\n\n'
+                            '请从开始菜单打开「停止工作台」后重试，或重启电脑。')
+            log('旧服务未能停止')
+            return 1
 
     if not single_instance():
         log('已有启动器在跑，等待服务就绪')

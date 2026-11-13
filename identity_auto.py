@@ -64,13 +64,20 @@ def _nicks(match, camp):
 
 
 def eligible(data, limit=MAX_MATCHES):
-    """只处理标准 5v5（每边 3–6 人、蓝红齐全）且带 key 的对局。"""
+    """只处理标准 5v5（每边 3–6 人、蓝红齐全）且带 key 的对局。
+
+    先过滤再截断：limit 是「最多返回多少局可用对局」，不是「只检查最近的
+    limit 局」——否则前面若有一批不完整局，会把后面合格的局直接挤掉。
+    """
     items = [m for m in (data.get('matches') or []) + (data.get('sheetMatches') or [])
              if m.get('key')]
     items.sort(key=lambda m: (str(m.get('date') or m.get('dateKey') or ''),
                               len(m.get('players') or [])), reverse=True)
+    cap = max(1, min(limit, 200))
     out = []
-    for match in items[:max(1, min(limit, 200))]:
+    for match in items:
+        if len(out) >= cap:
+            break
         blue = _nicks(match, 'blue')
         red = _nicks(match, 'red')
         camps = {_camp_of(p) for p in (match.get('players') or [])}

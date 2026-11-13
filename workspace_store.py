@@ -1,4 +1,4 @@
-﻿"""工作区数据模型：按 docs/analysis_fields_matrix.md 第 4 节建表。
+"""工作区数据模型：按 README.md 第 4 节建表。
 
 设计约束（与规格一致）：
 - 主键用稳定 ID，不用名称；改名/合并只写覆盖层，历史不动。
@@ -385,8 +385,9 @@ class Workspace:
 
     # ---------------------------------------------------------------- 战队
     def upsert_team(self, team_id=None, *, name, short_name=None, aliases=None, league=None,
-                    coach=None, analyst=None, notes=None, status='active', first_seen=None,
+                    coach=None, analyst=None, notes=None, status=None, first_seen=None,
                     parent_team_id=None, source='manual', actor=None):
+        """写入/合并战队。status 传 None 表示「本次不改」，避免改名把归档队重新激活。"""
         if not name or not str(name).strip():
             raise ValueError('战队名不能为空')
         team_id = team_id or 'team-' + uuid.uuid4().hex[:10]
@@ -396,7 +397,8 @@ class Workspace:
             if row is None:
                 connection.execute(
                     'INSERT INTO teams(id, name, short_name, aliases, league, coach, analyst, notes, '
-                    'status, first_seen, parent_team_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                    'status, first_seen, parent_team_id) '
+                    'VALUES(?,?,?,?,?,?,?,?,COALESCE(?,\'active\'),?,?)',
                     (team_id, name.strip(), short_name, _json(aliases, []), league, coach, analyst,
                      notes, status, first_seen, parent_team_id))
             else:
@@ -409,7 +411,7 @@ class Workspace:
                 connection.execute(
                     'UPDATE teams SET name=?, short_name=COALESCE(?,short_name), '
                     'aliases=COALESCE(?,aliases), league=COALESCE(?,league), coach=COALESCE(?,coach), '
-                    'analyst=COALESCE(?,analyst), notes=COALESCE(?,notes), status=?, '
+                    'analyst=COALESCE(?,analyst), notes=COALESCE(?,notes), status=COALESCE(?,status), '
                     'first_seen=COALESCE(?,first_seen), parent_team_id=COALESCE(?,parent_team_id), '
                     'revision=revision+1 WHERE id=?',
                     (name.strip(), short_name, _json(aliases, None) if aliases is not None else None,
@@ -875,8 +877,13 @@ class Workspace:
     def upsert_match(self, match_key, *, date=None, session=None, series_id=None, game_no=None,
                      mode=None, rules=None, version=None, own_team_id=None, enemy_team_id=None,
                      enemy_cluster_id=None, schedule_id=None, own_side=None, winner=None,
-                     score=None, duration=None, reviewer=None, status='draft', tags=None,
+                     score=None, duration=None, reviewer=None, status=None, tags=None,
                      notes=None, source='camp'):
+        """写入/合并一局记录。status/tags 传 None 表示「本次不改」。
+
+        部分更新（例如营地只回填日期与胜负）不能把人工确认过的 status 重置回
+        draft，也不能清空 tags，所以 ON CONFLICT 分支用 COALESCE 保留旧值。
+        """
         if not match_key:
             raise ValueError('缺少 match_key')
         connection = self.connect()
@@ -885,7 +892,7 @@ class Workspace:
                 'INSERT INTO match_records(match_key, date, session, series_id, game_no, mode, rules, '
                 'version, own_team_id, enemy_team_id, enemy_cluster_id, schedule_id, own_side, winner, '
                 'score, duration, reviewer, status, tags, notes, source) '
-                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) '
+                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,\'draft\'),COALESCE(?,\'[]\'),?,?) '
                 'ON CONFLICT(match_key) DO UPDATE SET '
                 'date=COALESCE(excluded.date, match_records.date), '
                 'session=COALESCE(excluded.session, match_records.session), '
@@ -903,13 +910,15 @@ class Workspace:
                 'score=COALESCE(excluded.score, match_records.score), '
                 'duration=COALESCE(excluded.duration, match_records.duration), '
                 'reviewer=COALESCE(excluded.reviewer, match_records.reviewer), '
-                'status=excluded.status, tags=excluded.tags, '
+                'status=COALESCE(?, match_records.status), '
+                'tags=COALESCE(?, match_records.tags), '
                 'notes=COALESCE(excluded.notes, match_records.notes), '
                 'revision=match_records.revision+1',
                 (match_key, date, session, series_id, game_no, mode, rules, version, own_team_id,
                  enemy_team_id, enemy_cluster_id, schedule_id, own_side, winner,
                  _json(score, None) if score is not None else None, duration, reviewer, status,
-                 _json(tags, []), notes, source))
+                 _json(tags, None) if tags is not None else None, notes, source,
+                 status, _json(tags, None) if tags is not None else None))
             connection.commit()
         finally:
             connection.close()
@@ -961,8 +970,9 @@ class Workspace:
 
     # ---------------------------------------------------------------- 约训
     def save_schedule(self, schedule_id=None, *, date, start_time=None, opponent_team_id=None,
-                      session=None, format=None, rules=None, version=None, status='planned',
+                      session=None, format=None, rules=None, version=None, status=None,
                       notes=None, created_by=None, competition_id=None):
+        """写入/合并约训。status 传 None 表示保留原状态，不重置回 planned。"""
         if not date:
             raise ValueError('约训必须有日期')
         schedule_id = schedule_id or 'sch-' + uuid.uuid4().hex[:10]
@@ -971,14 +981,14 @@ class Workspace:
             connection.execute(
                 'INSERT INTO schedules(id, date, start_time, opponent_team_id, session, format, rules, '
                 'version, status, notes, competition_id, created_by, created_at) '
-                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) '
+                'VALUES(?,?,?,?,?,?,?,?,COALESCE(?,\'planned\'),?,?,?,?) '
                 'ON CONFLICT(id) DO UPDATE SET date=excluded.date, start_time=excluded.start_time, '
                 'opponent_team_id=excluded.opponent_team_id, session=excluded.session, '
                 'format=excluded.format, rules=excluded.rules, version=excluded.version, '
-                'status=excluded.status, notes=excluded.notes, '
+                'status=COALESCE(?,schedules.status), notes=excluded.notes, '
                 'competition_id=excluded.competition_id, revision=schedules.revision+1',
                 (schedule_id, date, start_time, opponent_team_id, session, format, rules, version,
-                 status, notes, competition_id, created_by, time.time()))
+                 status, notes, competition_id, created_by, time.time(), status))
             connection.commit()
         finally:
             connection.close()
@@ -986,7 +996,8 @@ class Workspace:
 
     # ---------------------------------------------------------------- 比赛
     def save_competition(self, competition_id=None, *, name, date, opponent_team_id=None,
-                         stage=None, format=None, status='planned', owner=None, notes=None):
+                         stage=None, format=None, status=None, owner=None, notes=None):
+        """写入/合并比赛。status 传 None 表示保留原状态，不重置回 planned。"""
         name = str(name or '').strip()
         if not name:
             raise ValueError('比赛必须有名称')
@@ -997,13 +1008,13 @@ class Workspace:
         try:
             connection.execute(
                 'INSERT INTO competitions(id, name, date, opponent_team_id, stage, format, status, '
-                'owner, notes, created_at) VALUES(?,?,?,?,?,?,?,?,?,?) '
+                'owner, notes, created_at) VALUES(?,?,?,?,?,?,COALESCE(?,\'planned\'),?,?,?) '
                 'ON CONFLICT(id) DO UPDATE SET name=excluded.name, date=excluded.date, '
                 'opponent_team_id=excluded.opponent_team_id, stage=excluded.stage, '
-                'format=excluded.format, status=excluded.status, owner=excluded.owner, '
+                'format=excluded.format, status=COALESCE(?,competitions.status), owner=excluded.owner, '
                 'notes=excluded.notes, updated_at=?, revision=competitions.revision+1',
                 (competition_id, name, date, opponent_team_id, stage, format, status,
-                 owner, notes, time.time(), time.time()))
+                 owner, notes, time.time(), status, time.time()))
             connection.commit()
         finally:
             connection.close()

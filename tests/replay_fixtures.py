@@ -4,8 +4,8 @@ import zlib
 
 HERO_IDS=[118,196,548,558,193,112,144,172,195,148]
 NORMAL_5V5_HERO_IDS=[166,538,108,152,196,175,107,142,123,132]
-NORMAL_5V5_NAMES=['信则\u2060\u2061有\u2062','深藏功与名','憨熊笨拳','冷静宝宝',
-                 '漂流网咖','南巷转转儿','西行感怀录','野心蓝图','蟹谢谢礼','别再浪']
+NORMAL_5V5_NAMES=['信则\u2060\u2061有\u2062','深藏功与名','测试选手196','冷静宝宝',
+                 '漂流网咖','南巷转转儿','测试选手110','野心蓝图','测试选手223','别再浪']
 
 
 def text(value):
@@ -82,7 +82,7 @@ def single_game_1051_fixture(entries=((1, b"\x01\x00\x02\x23\x01\x03\x13\x00\x00
     """Single-game header + ID1051 packet + per-entry [len][seq][payload] records.
 
     `entries` are (frame, payload) pairs; the payload length is the i32 length
-    and the frame number repeats across entries of one frame (docs 5.133).
+    and the frame number repeats across entries of one frame (既有校准).
     """
     header = b''.join(text(v) for v in ('12.1.1.1', '12.1.1.23', '4989537', '5230306'))
     raw = bytearray(header)

@@ -16,7 +16,7 @@ SCHEMA = 'kpl-collection-channel-v1'
 BUNDLE_SCHEMA = 'kpl-match-data-v1'
 SOURCES = ('table', 'video', 'screenshot', 'replay', 'camp')
 CORE_FIELDS = ('kills', 'deaths', 'assists', 'gold', 'damage', 'taken', 'participation', 'rating')
-# B 组终局扩展指标。键名沿用 docs/screenshot_fields.md 契约与
+# B 组终局扩展指标。键名沿用 README.md 契约与
 # studio_analysis.METRICS，不用营地原名，保证下游跨局聚合能直接消费。
 # 来源有两条，同口径合并：
 # - 营地 battledetail 的 battleStats（killSoldier / monsterCoin / ...）；
@@ -29,7 +29,7 @@ CAMP_EXTENDED_FIELDS = ('cs', 'jungleGold', 'control', 'healing',
 ALL_FIELDS = CORE_FIELDS + CAMP_EXTENDED_FIELDS
 # 营地原生键 → 契约键。hurtTransRate / behurtPerDeath 可能是小数，
 # 统一走 _camp_number 解析，不能按整数处理。
-# 「输出 / 承伤」在契约里的口径是**对英雄输出 / 对英雄承伤**（见 docs/metric_registry.md），
+# 「输出 / 承伤」在契约里的口径是**对英雄输出 / 对英雄承伤**（见 README.md），
 # 与赛后截图「输出 / 承伤」页、本局十人表一致；营地 totalHurtCnt / totalBehurtCnt
 # 含兵线野怪，拿它进 damage / taken 会让每个选手都和截图/表格对不上。
 # 总伤害仍保留在 camp_details 原始数据里，决策台等直接读营地面板的地方自己取 totalHurtCnt。

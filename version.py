@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '1.6.2'
-RELEASE_DATE = '2026-11-11'
-RELEASE_NAME = '截图 / 录屏新录入：营地一个月窗口外的老局也能建档'
+VERSION = '1.6.7'
+RELEASE_DATE = '2026-11-13'
+RELEASE_NAME = '分析师工作首页：每块信息直接点进对应业务页'

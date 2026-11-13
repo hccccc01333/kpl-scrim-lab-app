@@ -25,11 +25,15 @@ jobs:
           python -m pip install -r requirements-dev.txt
       - name: Deploy smoke test
         run: python scripts/check_deploy.py
-      - name: Replay helpers tests
+      - name: Replay and checkpoint tests
         run: |
-          # 公开仓库只带运行时可复现的回放辅助测试；依赖私有样本/编码器的
-          # 用例留在源码工作区，不随开源仓库分发。
-          python -m unittest tests.test_replay_profiles tests.test_replay_frame_commands -v
+          # checkpoints 用例只随源码发行版发布；公开仓库里跳过，避免整体失败。
+          suite="tests.test_replay_inputs_api tests.test_replay_profiles \
+            tests.test_state_series_checkpoints tests.test_replay_frame_commands"
+          if [ -f tests/test_replay_checkpoints_api.py ]; then
+            suite="tests.test_replay_checkpoints_api $suite"
+          fi
+          python -m unittest $suite -v
       - name: Full Python test suite
         run: python -m pytest tests -q --disable-warnings
 
@@ -37,15 +41,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
       - name: Frontend syntax check
         run: |
           shopt -s nullglob
           files=(web/*.js v3/public/*.js)
           printf 'checking %d files\n' "${#files[@]}"
           for f in "${files[@]}"; do node --experimental-default-type=module --check "$f"; done
-
       - name: Analyst homepage navigation regression
         run: node scripts/test_workspace_home.mjs
+      - name: Install browser test dependencies
+        run: |
+          python -m playwright install chromium --with-deps
+      - name: Frontend route audit (desktop and mobile)
+        run: python scripts/verify_frontend.py --no-shots
+      - name: Start V3 server
+        run: |
+          python server.py &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8766/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: V3 route audit
+        run: python scripts/audit_v3_regression.py http://127.0.0.1:8766
+      - name: Update panel regression
+        run: python scripts/verify_update_panel.py --base http://127.0.0.1:8766

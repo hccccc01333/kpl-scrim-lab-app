@@ -6,8 +6,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import decision_bp as bp  # noqa: E402
-import decision_fixtures as fx  # noqa: E402
+import bp_camp as bp  # noqa: E402
+import facts_fixtures as fx  # noqa: E402
 
 
 def add_bans(root, *, enemy_bans, own_bans=None):

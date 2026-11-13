@@ -184,6 +184,9 @@ def restore_layout(saved):
 
 _engine = None
 _engine_lock = threading.Lock()
+# 布局是模块级全局量；两次 analyze_video 并发会互相覆盖坐标。
+# 这里用一把锁把「选布局 → 分析 → 还原」串行化，宁可慢一点也不能读错裁剪框。
+_layout_lock = threading.RLock()
 
 
 class VideoOCRError(ValueError):
@@ -1558,11 +1561,12 @@ def analyze_video(path, fps=1.0, progress=None, evidence_dir=None):
     if not 0.2 <= fps <= 10:
         raise VideoOCRError('采样帧率需在 0.2–10 之间')
     info = probe_video(path)
-    saved = set_layout(info['width'], info['height'])
-    try:
-        return _analyze_video(path, fps, progress, evidence_dir, info)
-    finally:
-        restore_layout(saved)
+    with _layout_lock:
+        saved = set_layout(info['width'], info['height'])
+        try:
+            return _analyze_video(path, fps, progress, evidence_dir, info)
+        finally:
+            restore_layout(saved)
 
 
 def _analyze_video(path, fps, progress, evidence_dir, info):

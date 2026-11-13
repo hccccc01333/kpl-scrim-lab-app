@@ -42,7 +42,7 @@ FORBIDDEN_PREFIXES = (
     # 会 import）；整体禁写会让所有含 tools/ 修复的增量包装不上。只保护
     # 应用内安装的 ffmpeg 二进制目录，避免被补丁覆盖。
     'tools/ffmpeg/',
-    '内部资料/',
+    '内部素材/',
 )
 FORBIDDEN_FILES = {'.env', 'camp_auth.json', 'camp_config.json'}
 

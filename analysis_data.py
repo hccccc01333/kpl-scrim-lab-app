@@ -7,6 +7,7 @@ import json
 import math
 import re
 import sqlite3
+import threading
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -158,14 +159,22 @@ class AnalysisRepository:
         self.official_dir = (Path(official_dir) if official_dir
                              else self.matches_dir.parent / 'official_replays')
         self._data = None
+        # 单进程内多个线程可能同时走 v3 的 TTL 刷新与 /api/reload；
+        # 双检锁保证只构建一次，也不会读到半成品缓存。
+        self._lock = threading.Lock()
 
     def get(self):
-        if self._data is None:
-            self._data = self._load()
-        return self._data
+        data = self._data
+        if data is not None:
+            return data
+        with self._lock:
+            if self._data is None:
+                self._data = self._load()
+            return self._data
 
     def invalidate(self):
-        self._data = None
+        with self._lock:
+            self._data = None
 
     # ---------- loading ----------
     def _load(self):
@@ -355,11 +364,13 @@ class AnalysisRepository:
                 cleaned = {}
                 for name, value in gold10.items():
                     try:
-                        number = int(float(value))
+                        # 不能叫 number：那会遮蔽模块级的 number()，导致上面的
+                        # 时长换算（minutes = number(...)）抛 UnboundLocalError。
+                        gold_value = int(float(value))
                     except (TypeError, ValueError):
                         continue
-                    if 0 <= number <= 100000:
-                        cleaned[str(name)] = number
+                    if 0 <= gold_value <= 100000:
+                        cleaned[str(name)] = gold_value
                 if cleaned:
                     match['gold10'] = cleaned
             match['metaFields'] = sorted(patch.keys())
@@ -1374,7 +1385,7 @@ class AnalysisRepository:
         return None
 
     # ---------- 深度分析：对位 / 画像 / 协同 / 过程 ----------
-    # 口径见 docs/metric_registry.md；缺数据保持缺省，不做估算。
+    # 口径见 README.md；缺数据保持缺省，不做估算。
 
     @staticmethod
     def _series_stats(values):
@@ -1889,6 +1900,7 @@ class AnalysisRepository:
                 'winnerSide': winner,
                 'result': ('win' if win else 'loss') if win is not None else 'unknown',
                 'bans': record['bans'], 'picks': record['picks'],
+                'banSlots': record.get('banSlots') or {}, 'pickSlots': record.get('pickSlots') or {},
                 'teamStats': record['teamStats'], 'scores': match.get('scores') or {},
             })
 

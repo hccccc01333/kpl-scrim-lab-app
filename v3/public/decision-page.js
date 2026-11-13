@@ -1208,7 +1208,7 @@ export function createDecisionPage({ esc, fmt, pct, diff, time, icon, route, API
   function updateHash({ replace = false } = {}) {
     const params = new URLSearchParams();
     if (state.tab === 'review' && state.game) params.set('game', state.game);
-    /* 只有用户明确指定过对手才把 opponent 写进 URL；切 tab 时保持 #decision/prep 干净。 */
+    /* 只有显式指定过对手才把 opponent 写进 URL；切 tab 时保持 #decision/prep 干净。 */
     if (state.tab === 'prep' && state.prepOpponent && state.prepOpponentInUrl) params.set('opponent', state.prepOpponent);
     const search = params.toString();
     const hash = '#decision/' + state.tab + (search ? '?' + search : '');

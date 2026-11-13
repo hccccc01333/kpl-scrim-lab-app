@@ -151,14 +151,49 @@ def invalidate_snapshot():
             cache.clear()
 
 
+def _dataset_stamp():
+    """数据文件的廉价指纹（数量 + 最大 mtime），给跨局向量缓存做失效判断。
+
+    只在快照重建时算一次（15 秒一次），不用每次都扫全目录；比「每 15 秒清空
+    缓存」好：数据没变就继续命中，改了 bundle / 库才重算。
+    """
+    try:
+        count, latest = 0, 0.0
+        for path in MATCHES.glob('*.json'):
+            try:
+                latest = max(latest, path.stat().st_mtime)
+            except OSError:
+                continue
+            count += 1
+        matches = (count, round(latest, 3))
+    except OSError:
+        matches = (0, 0.0)
+    try:
+        db = round(DB.stat().st_mtime, 3) if DB.is_file() else 0.0
+    except OSError:
+        db = 0.0
+    return (matches, db)
+
+
+_data_stamp = (0, 0.0)
+
+
 def repository(request: Request):
-    global _snapshot, _loaded_at
+    global _snapshot, _loaded_at, _data_stamp
     with _lock:
         if request.query_params.get('fresh') == '1' or monotonic() - _loaded_at >= 15:
             snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
             data = snapshot.get()
             apply_bp_overrides(data)
             _snapshot, _loaded_at = snapshot, monotonic()
+            # 数据指纹进缓存 key：数据没变就命中旧向量，变了自然换 key。
+            # 只有指纹真的变了才清缓存（顺便回收旧指纹的条目），不会像
+            # 「每次快照刷新都清空」那样每 15 秒重算一遍全量向量。
+            stamp = _dataset_stamp()
+            if stamp != _data_stamp:
+                _CROSS_VECTOR_CACHE.clear()
+                _CROSS_VECTOR_BY_KEY.clear()
+                _data_stamp = stamp
         return _snapshot
 
 
@@ -224,7 +259,8 @@ def _cross_interp(series, t):
 
 def _cross_vector(repo, item, segments=8):
     key = item['key']
-    cache_id = (key, segments)
+    # 数据指纹进 key：bundle / 库文件变了才重算，否则一直复用。
+    cache_id = (_data_stamp, key, segments)
     cached = _CROSS_VECTOR_BY_KEY.get(cache_id)
     if cached is not None:
         return cached
@@ -359,9 +395,9 @@ def _cross_vector(repo, item, segments=8):
                 cell['n'] += 1
         fs = {pos: {'hurtShare': round(v['h'] / v['n'], 3), 'takenShare': round(v['t'] / v['n'], 3), 'n': v['n']}
               for pos, v in acc.items() if v['n']}
-    # 打野过河：0–10 分钟逐秒坐标，e>8 算过河、e>25 算深入（口径见 docs/jungle_position_spec.md）
+    # 打野过河：0–10 分钟逐秒坐标，e>8 算过河、e>25 算深入（口径见 README.md）
     jungle = {'crossSec': None, 'crossShare': None, 'firstCross': None, 'deepShare': None}
-    replay_id = str((d.get('officialReplay') or {}).get('id') or '')
+    replay_id = _safe_key((d.get('officialReplay') or {}).get('id'))
     if replay_id:
         pos_path = OFFICIAL / replay_id / 'positions.json'
         slots = []
@@ -458,7 +494,7 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
     items = repo.matches(values)['matches']
     max_duration = max((float(i.get('duration') or 0) for i in items), default=0.0)
     segments = max(4, min(16, int(max_duration // 300) + 1)) if max_duration else 8
-    cache_key = (tuple(i['key'] for i in items), values['from'], values['to'],
+    cache_key = (_data_stamp, tuple(i['key'] for i in items), values['from'], values['to'],
                  tuple(values['sources']), values['excludeSeeds'], segments)
     hit = _CROSS_VECTOR_CACHE.get(cache_key)
     if hit is not None:
@@ -539,6 +575,17 @@ def replay(key: str, repo=Depends(repository)):
             if name in result}
 
 
+_SAFE_KEY_RE = re.compile(r'^[A-Za-z0-9_:.\-]+$')
+
+
+def _safe_key(value):
+    """只允许单段文件名安全的 key，避免 `{key:path}` 造成路径穿越。"""
+    text = str(value or '')
+    if not text or text in ('.', '..') or not _SAFE_KEY_RE.match(text):
+        return ''
+    return text
+
+
 @router.get('/api/positions/{key:path}')
 def match_positions(key: str):
     """营地回放的逐秒位置（十人）。用于单局的热区与对位深区。
@@ -562,14 +609,16 @@ def match_positions(key: str):
         seq = str(camp.get('gameSeq') or '')
     else:
         # 没有采集通道（例如演示数据包）时，直接按数据包里挂的 officialReplay 找位置
-        bundle_path = MATCHES / f'{key}.json'
-        if not bundle_path.is_file():
+        safe_key = _safe_key(key)
+        bundle_path = MATCHES / f'{safe_key}.json' if safe_key else None
+        if bundle_path is None or not bundle_path.is_file():
             raise HTTPException(404, '找不到该局的采集通道')
         bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
         linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
         if linked:
             seq = linked[len('camp-'):] if linked.startswith('camp-') else linked
             bundle_players = bundle.get('players') or []
+    seq = _safe_key(seq)
     if not seq:
         raise HTTPException(404, '这一局没有营地回放')
     path = OFFICIAL / f'camp-{seq}' / 'positions.json'
@@ -1871,7 +1920,7 @@ def bp_board():
             result = bp['winnerSide'] == own
         hero_meta.update(bp.get('heroMeta') or {})
 
-        def entries(kind, side):
+        def entries(kind, side, bp=bp):
             return [{'name': e.get('name'), 'icon': e.get('icon'), 'lane': e.get('lane')}
                     for e in (bp.get(kind) or {}).get(side, []) if e.get('name')]
 

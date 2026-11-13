@@ -73,7 +73,7 @@ def _sha256(data: bytes) -> str:
 def parse_match_key(path: Path) -> dict:
     """Read game identifiers from the client's replay file name.
 
-    ``20261102_161129_870343216_95868_1793606215_<hash>.abc``
+    ``20260101_000000_870343216_95868_1793606215_<hash>.abc``
       date, time, relaySvr, gameSvr, gameSeq
     """
     match = re.match(

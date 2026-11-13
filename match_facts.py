@@ -6,7 +6,7 @@
   官方回放  data/official_replays/camp-*/     → Game（经济/事件/团战/死亡/位置，B 级）
   对手身份  team_clusters / workspace DB      → Opponent（按对面五人签名聚合）
 
-口径（与 docs/decision_workbench_contract.md 一致）：
+口径（与 README.md 一致）：
 
 - 只有「能判定我方阵营」的回放局进入 ``order``；其余只计入覆盖计数，不参与分析。
 - 经济点按索引均匀铺到时间轴（约 30 秒），标 ``approx``，不假装精确。
@@ -416,10 +416,13 @@ def _load_replay(folder, panel, panels, opponent_names, calibration, seq_to_oppo
     win_camp = CAMP_CODE.get(str(match.get('winCamp') or ''))
     result = None if win_camp is None else ('win' if win_camp == own_camp else 'loss')
 
-    diff = [_float(value) for value in ((normalized.get('economy') or {}).get('diff') or [])]
-    diff = [value for value in diff if value is not None]
-    own_diff = [value if own_camp == 'blue' else -value for value in diff]
-    times = [round(time_at(index, len(diff), duration), 1) for index in range(len(diff))]
+    raw_diff = [_float(value) for value in ((normalized.get('economy') or {}).get('diff') or [])]
+    # 采样索引 → 时间轴。缺失点保留原来的时间位置（不能删掉后重排，
+    # 否则后面的经济点会整体前移，掉点窗口的经济差会算错时间段）。
+    samples = [(round(time_at(index, len(raw_diff), duration), 1), value)
+               for index, value in enumerate(raw_diff) if value is not None]
+    own_diff = [value if own_camp == 'blue' else -value for _, value in samples]
+    times = [moment for moment, _ in samples]
 
     events = (normalized.get('events') or {})
     key_events = events.get('key') if isinstance(events.get('key'), list) else []
@@ -455,7 +458,7 @@ def _load_replay(folder, panel, panels, opponent_names, calibration, seq_to_oppo
         'winner': win_camp,
         'result': result,
         'duration': duration,
-        'diff': diff,
+        'diff': [value for value in raw_diff if value is not None],
         'ownDiff': own_diff,
         'times': times,
         'approx': True,
@@ -475,7 +478,7 @@ def _load_replay(folder, panel, panels, opponent_names, calibration, seq_to_oppo
         'hasPositions': has_positions,
         'hasFights': bool(fights),
         'hasEvents': bool(key_events),
-        'hasEconomy': bool(diff),
+        'hasEconomy': bool(own_diff),
         'mapWidth': _float((calibration or {}).get('width')),
         'fightsNote': None if fights else '本局没有团战段（battles.fights 为空）',
     }, None
@@ -484,8 +487,12 @@ def _load_replay(folder, panel, panels, opponent_names, calibration, seq_to_oppo
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
-def data_signature(replays_dir, camp_dir, db_path=None):
-    """扫盘签名：目录内文件数量 + 最大 mtime。用于 API 缓存。"""
+def data_signature(replays_dir, camp_dir, db_path=None, data_dir=None):
+    """扫盘签名：目录内文件数量 + 最大 mtime。用于 API 缓存。
+
+    positions.json 与地图定标文件都参与签名——否则只改位置/定标时，
+    /api/decision/* 会一直返回旧 facts。
+    """
     def scan(directory, pattern):
         path = Path(directory)
         if not path.is_dir():
@@ -501,13 +508,22 @@ def data_signature(replays_dir, camp_dir, db_path=None):
 
     camp = scan(camp_dir, '*.json')
     replay_files = scan(replays_dir, 'camp-*/normalized.json')
+    positions = scan(replays_dir, 'camp-*/positions.json')
+    calibration = (0, 0.0)
+    if data_dir:
+        file_path = Path(data_dir) / map_calibration.CALIBRATION_FILE
+        if file_path.is_file():
+            try:
+                calibration = (1, round(file_path.stat().st_mtime, 3))
+            except OSError:
+                calibration = (1, 0.0)
     db = (0, 0.0)
     if db_path and Path(db_path).is_file():
         try:
             db = (1, round(Path(db_path).stat().st_mtime, 3))
         except OSError:
             db = (1, 0.0)
-    return (camp, replay_files, db)
+    return (camp, replay_files, positions, calibration, db)
 
 
 def load_facts(replays_dir, camp_dir, data_dir=None, db_path=None, *, now=None):

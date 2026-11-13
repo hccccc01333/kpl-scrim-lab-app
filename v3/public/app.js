@@ -7,6 +7,7 @@ import { createHomeDecision } from './home-decision.js';
 import { renderWorkspaceHome } from './workspace-home.js';
 import { createDecisionPage } from './decision-page.js';
 import { createBpCounter } from './bp-counter.js';
+import { initUpdateBanner } from './update-banner.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -241,7 +242,7 @@ function shell() {
   <div class="demo-banner" hidden><strong>演示模式</strong> 所有比赛、选手与分析均为虚构数据，仅供体验。<button data-action="demo">返回真实数据 →</button></div>
   <div class="secondary-wrap"><nav class="secondary-nav" aria-label="分类导航"></nav><nav class="analysis-rail" aria-label="板块分析"></nav></div>
   <main id="content" tabindex="-1"></main>
-  <footer class="footer"><span>赛训数据</span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
+  <footer class="footer"><span>赛训数据</span><span class="footer-actions"><button type="button" class="footer-update" data-action="check-update">检查更新</button></span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
   <dialog id="filters"></dialog>`;
   applyTheme();
 }
@@ -1189,14 +1190,19 @@ function matchPage(m) {
     ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
   const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>打野并线</h2><p>兵线到了，打野和这条路的队友一起吃这波线，算一次并线。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
-    ${m.positions ? deep.jungleJoin(m.positions, m.players, own, m.duration) : positionsEmpty}
+    ${m.positions ? (deep.jungleJoin(m.positions, m.players, own, m.duration) || '<div class="empty">这局的位置名单里没有打野，并线统计不成立</div>') : positionsEmpty}
   </section>`;
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
   const slots = (list, kind) => Array.from({ length: 5 }, (_, i) => {
     const h = list[i];
-    return h ? `<span>${kind === 'picks' ? `<em>${i + 1}</em>` : ''}${portrait(h.name)}${esc(h.name)}</span>`
-             : `<span class="md-bp-empty"><em>${kind === 'bans' ? '空 BAN' : '空位'}</em></span>`;
+    const showOrder = kind === 'picks' && draft?.pickOrderKnown;
+    const iconUrl = h?.icon || metadata.icons?.[h?.name];
+    const portraitHtml = iconUrl && /^\/catalog\/icons\/hero-\d+\.png$/.test(iconUrl)
+      ? `<img class="portrait" src="${esc(iconUrl)}" alt="${esc(h?.name)}" loading="lazy">`
+      : portrait(h?.name);
+    return h ? `<span>${showOrder ? `<em>${i + 1}</em>` : ''}${portraitHtml}<a class="bp-hero-link" href="${esc(route('matches', 'hero=' + h.name))}">${esc(h.name)}</a></span>`
+             : `<span class="md-bp-empty"><em>${kind === 'bans' ? '空 BAN' : (draft?.pickOrderKnown ? '空位' : '顺序未知')}</em></span>`;
   }).join('');
   const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
     <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
@@ -1213,6 +1219,18 @@ function matchPage(m) {
       if (!p.position) continue;
       (p.camp === own ? mine : theirs).set(p.position, p);
     }
+     const teamGoldAt = (t) => {
+       const pts = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold));
+       let best = null;
+       for (const p of pts) if (!best || Math.abs(p.gameTime - t) < Math.abs(best.gameTime - t)) best = p;
+       if (!best) return null;
+       const ownIsBlue = (own === 'blue' || own === 'left');
+       const ownGold = ownIsBlue ? best.blueGold : best.redGold;
+       const foeGold = ownIsBlue ? best.redGold : best.blueGold;
+       return ownGold - foeGold;
+     };
+     const earlyDiff = teamGoldAt(240);
+     const midDiff = teamGoldAt(600);
     const ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
     /* 对位压制的主口径是**巅峰千强大盘**（带超额胜率），不是自家训练赛、更不是 KPL：
        自家样本太薄；KPL 的英雄对位被「强队选强英雄」污染，冷门英雄几乎没有样本，
@@ -1228,10 +1246,15 @@ function matchPage(m) {
       const verdict = facts ? (states[facts.state] || '样本不足') : '样本不足';
       const judgeable = verdict !== '样本不足';
       /* 兑现：大盘说这对组合占优、本局经济也领先（反之亦然） */
-      const realised = judgeable && has(nowDiff)
+      const realisedEarly = judgeable && has(earlyDiff)
+        ? (verdict === '压制' ? earlyDiff > 0 : verdict === '劣势' ? earlyDiff < 0 : null)
+        : null;
+      const realisedFinal = judgeable && has(nowDiff)
         ? (verdict === '压制' ? nowDiff > 0 : verdict === '劣势' ? nowDiff < 0 : null)
         : null;
-      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised };
+      const realised = realisedFinal;
+      const realisedPhases = { early: realisedEarly, final: realisedFinal };
+      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised, realisedPhases, earlyDiff, midDiff };
     }).filter(Boolean);
 
     const verdictText = (lane) => lane.verdict === '压制' ? '我方占优'
@@ -1240,8 +1263,8 @@ function matchPage(m) {
       : lane.verdict === '劣势' ? 'is-behind' : lane.verdict === '均势' ? 'is-even' : 'is-thin';
     const laneCard = (lane) => `<article class="md-mu-card ${verdictCls(lane)}">
       <header><span class="md-mu-lane">${lane.lane}</span><em class="${verdictCls(lane)}">${verdictText(lane)}</em></header>
-      <div class="md-mu-who"><b class="own">${esc(lane.a.hero || '—')}</b><i>vs</i><b class="foe">${esc(lane.b.hero || '—')}</b></div>
-      ${lane.facts && lane.facts.n ? `<p class="md-mu-hist">巅峰千强 ${fmt(lane.facts.n)} 局 · 实际 ${fmt(lane.facts.wr, 1)}% vs 预期 ${fmt(lane.facts.expected, 1)}% · 超额 <b>${diff(lane.facts.excess)}</b></p>`
+      <div class="md-mu-who"><b class="own"><a class="bp-hero-link" href="${esc(route('matches', 'hero=' + (lane.a.hero || '')))}">${esc(lane.a.hero || '—')}</a></b><i>vs</i><b class="foe"><a class="bp-hero-link" href="${esc(route('matches', 'hero=' + (lane.b.hero || '')))}">${esc(lane.b.hero || '—')}</a></b></div>
+      ${lane.facts && lane.facts.n ? `<p class="md-mu-hist">巅峰千强 ${fmt(lane.facts.n)} 局 · 实际 ${fmt(lane.facts.wr, 1)}% vs 预期 ${fmt(lane.facts.expected, 1)}% · 超额 <b>${diff(lane.facts.excess)}</b>${lane.facts.excessCI ? `（95% CI ${diff(lane.facts.excessCI[0])} ~ ${diff(lane.facts.excessCI[1])}）` : ''}</p>`
         : `<p class="md-mu-hist">巅峰千强没有这个对位样本${lane.facts && (lane.facts.minePick || lane.facts.foePick)
           ? `（使用率 ${lane.facts.minePick === null || lane.facts.minePick === undefined ? '—' : fmt(lane.facts.minePick, 2) + '%'}
              / ${lane.facts.foePick === null || lane.facts.foePick === undefined ? '—' : fmt(lane.facts.foePick, 2) + '%'}，门槛 3%）` : ''}</p>`}
@@ -1417,7 +1440,7 @@ function matchPage(m) {
       if (behind) bits.push(`吃亏 ${behind}`);
       parts.push(bits.length ? `巅峰千强五路可判 ${judged.length} 路：${bits.join('、')}`
         : `巅峰千强五路可判 ${judged.length} 路，都是打平`);
-      if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路`);
+      if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路（终局个人经济）`);
     } else {
       parts.push('五路对位在巅峰千强都没有样本');
     }
@@ -1425,8 +1448,19 @@ function matchPage(m) {
       const hit = (m.bpFacts.kpl.hitPairs || 0) + (m.bpFacts.kpl.hitTrios || 0);
       parts.push(hit ? `赛事命中 ${hit} 组（KPL 出现过）` : '赛事无命中');
     }
-    if (ownCombos.length) parts.push(`我方 ${ownCombos.length} 组搭档里 ${positiveCombos} 组为正加成`);
-    else parts.push('我方阵容没有历史组合样本');
+    if (m.bpFacts?.structure) {
+      const st = m.bpFacts.structure;
+      const gaps = Array.isArray(st.gaps) ? st.gaps : [];
+      if (gaps.length) {
+        const subs = st.substitutes && Object.keys(st.substitutes).length
+          ? Object.values(st.substitutes).flat().slice(0, 4)
+          : [];
+        const subsHtml = subs.length
+          ? `（可补：${subs.map((h) => `<a class="bp-hero-link" href="${esc(route('matches', 'hero=' + h))}">${portrait(h)}${esc(h)}</a>`).join('、')}）`
+          : '';
+        parts.push(`阵容短板：${gaps.join('、')}${subsHtml}`);
+      } else parts.push('阵容能力覆盖完整');
+    }
     const thin = judged.length < 3;
     /* 可判不足 3 路时不给「占优 / 吃亏」的结论，只写「样本偏薄」——
        1 路对位就下总体判断，等于替教练过度解读。 */
@@ -1434,7 +1468,7 @@ function matchPage(m) {
       : ahead > behind ? 'is-good' : behind > ahead ? 'is-bad' : 'is-thin';
     const badge = !judged.length && !ownCombos.length ? '证据不足'
       : thin ? '样本偏薄'
-      : ahead > behind ? 'BP 端占优' : behind > ahead ? 'BP 端吃亏' : '五五开';
+       : ahead > behind ? '对位端占优' : behind > ahead ? '对位端吃亏' : '五五开';
     const review = `<div class="md-bprev ${tone}">
       <div class="md-bprev-head"><b>本局 BP 复盘</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
       <p class="md-bprev-lede">${parts.join('；')}。</p>
@@ -1932,7 +1966,7 @@ async function hydrateCross(detail, signal) {
       const url = (path) => API_BASE + '/api/' + path + encodeURIComponent(m.key);
       try {
         const [d, pos, rep] = await Promise.all([
-          fetch(url('matches/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)),
+          fetch(url('matches/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
           fetch(url('positions/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
           fetch(url('replay/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
         ]);
@@ -2031,24 +2065,25 @@ async function load(fresh = false) {
       if (!stale()) {
         const temp=document.createElement('div');temp.innerHTML=matchPage(data);
         /* 单局页拆成四个页签后，后到的区块必须插回它自己的页签，
-           否则「事件」页里的击杀账本会被塞进隐藏的「地图」页。 */
-        const PANE_OF = {
-          'match-verdict': 'review', 'match-bp': 'review', 'match-phases': 'review',
-          'match-pulse': 'review', 'match-timeline': 'review',
-          'match-profiles': 'data', 'match-cohesion': 'data',
-          'match-battle': 'events', 'match-deaths': 'events', 'match-kills': 'events', 'match-events': 'events',
-          'match-front': 'map', 'match-heat': 'map', 'match-duel': 'map',
-        };
-        ['match-verdict','match-bp','match-phases','match-pulse','match-timeline','match-profiles','match-cohesion','match-battle','match-deaths','match-kills','match-events','match-front','match-heat','match-duel'].forEach((id)=>{
-          const existing=document.getElementById(id),updated=temp.querySelector('#'+id);
-          if(existing&&updated)existing.replaceWith(updated);
-          else if(updated){ /* 首次渲染没有该区块（如依赖回放的事件详情）：插到对应页签末尾 */
-            const pane=document.querySelector(`[data-md-pane="${PANE_OF[id] || 'review'}"]`);
-            if(pane) pane.append(updated);
-          }
-          /* 回放后到、后来渲染出正式区块时，把首屏的「没有团战数据」占位删掉 */
-          else if(existing && (id === 'match-battle' || id === 'match-deaths')) existing.remove();
-        });
+           否则「事件」页里的击杀账本会被塞进隐藏的「地图」页。
+           这里不再写死 id 清单：按 temp 里实际的 `.md-pane > section.section[id]` 遍历，
+           新加的区块（如「打野并线」）自动跟着走，不会因为漏登记而永远停在「正在读取…」。 */
+        const incoming = [...temp.querySelectorAll('.md-pane > section.section[id]')];
+        /* 手填的「10 分钟经济」靠输入框活着，不参与异步替换，免得冲掉正在输入的数值。 */
+        const keepInPlace = new Set(['match-gold10']);
+        const keep = new Set(incoming.map((node) => node.id));
+        for (const updated of incoming) {
+          const existing = document.getElementById(updated.id);
+          if (existing && keepInPlace.has(updated.id)) continue;
+          if (existing) { existing.replaceWith(updated); continue; }
+          const paneKey = updated.closest('[data-md-pane]')?.dataset.mdPane || 'review';
+          const pane = document.querySelector(`[data-md-pane="${paneKey}"]`);
+          if (pane) pane.append(updated);
+        }
+        /* 新版不再渲染的区块（首屏的「没有团战数据」占位等）直接撤掉 */
+        for (const old of document.querySelectorAll('.md-pane > section.section[id]')) {
+          if (!keep.has(old.id)) old.remove();
+        }
         if (pulseState) deep.bindPulse(document, pulseState.series, pulseState.events, pulseState.own);
         deep.bindHeat(document);
         deep.bindBattle(document);
@@ -2089,7 +2124,8 @@ function namePlayerDialog(label) {
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body">
       <div class="date-fields"><label>对局昵称<input value="${esc(label)}" readonly></label><label>选手名称<input name="name" required maxlength="40" value="${esc(label)}"></label></div>
-      <div class="date-fields"><label>位置<select name="position"><option value="">待确认</option>${['对抗路', '打野', '中路', '发育路', '游走'].map((x) => `<option>${x}</option>`).join('')}</select></label><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
+      <div class="date-fields"><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
+      <fieldset class="sx-pos-field"><legend>位置（可多选，第一个勾的是主位置）</legend><div class="sx-pos-chips">${['对抗路', '打野', '中路', '发育路', '游走'].map((x) => `<label class="sx-pos-chip"><input type="checkbox" name="position" value="${x}"><span>${x}</span></label>`).join('')}</div></fieldset>
       <p class="filter-error" role="alert"></p></div>
     <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">保存并归队</button></div></form>`;
   dialog.showModal();
@@ -2275,7 +2311,8 @@ app.addEventListener('submit', (event) => {
   if (event.target.id === 'name-form') {
     event.preventDefault();
     const form = new FormData(event.target);
-    const payload = { label: event.target.querySelector('input[readonly]').value, name: form.get('name'), position: form.get('position'), team: form.get('team') };
+    const positions = form.getAll('position').map((value) => String(value || '')).filter(Boolean);
+    const payload = { label: event.target.querySelector('input[readonly]').value, name: form.get('name'), positions, position: positions[0] || '', team: form.get('team') };
     const error = !String(payload.name || '').trim() ? '请填写选手名称。' : '';
     event.target.querySelector('.filter-error').textContent = error;
     if (error) return;
@@ -2382,4 +2419,5 @@ window.addEventListener('hashchange', () => {
 });
 document.querySelector('.skip').addEventListener('click', (event) => { event.preventDefault(); document.querySelector('#content').focus(); });
 shell();
+initUpdateBanner({ API_BASE });
 load();

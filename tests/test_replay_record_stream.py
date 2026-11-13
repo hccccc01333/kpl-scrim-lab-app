@@ -53,7 +53,7 @@ class RecordStreamTests(unittest.TestCase):
 
 
 class SingleGame1051Tests(unittest.TestCase):
-    """Container indexing of the single-game route (docs 5.133)."""
+    """Container indexing of the single-game route (既有校准)."""
 
     def test_entries_index_to_eof_with_frame_numbers(self):
         data = single_game_1051_fixture((

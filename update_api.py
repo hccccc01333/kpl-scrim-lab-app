@@ -64,6 +64,10 @@ def create_update_router(root: Path, current_version: str) -> APIRouter:
     router = APIRouter()
     lock = threading.Lock()
 
+    def source_checkout() -> bool:
+        """源码目录（有 .git）不能用增量包覆盖，更新走 git pull。"""
+        return (root / '.git').is_dir()
+
     @router.get('/api/update/check')
     def check(force: int = 0):
         result = update_client.check_for_update(
@@ -72,6 +76,7 @@ def create_update_router(root: Path, current_version: str) -> APIRouter:
             result = _absolute_assets(result)
             result.pop('manifest', None)
         result['pending'] = _public_pending(updater.read_pending(root))
+        result['sourceMode'] = source_checkout()
         return result
 
     @router.get('/api/update/status')
@@ -85,6 +90,8 @@ def create_update_router(root: Path, current_version: str) -> APIRouter:
 
     @router.post('/api/update/stage')
     async def stage(request: Request):
+        if source_checkout():
+            raise HTTPException(400, '源码模式请用「更新代码.bat」（git pull）更新')
         body = await request.body()
         if not body:
             raise HTTPException(400, '更新包为空')
@@ -105,6 +112,8 @@ def create_update_router(root: Path, current_version: str) -> APIRouter:
         return {'ok': True, 'pending': _public_pending(pending)}
 
     def _download_and_stage() -> dict:
+        if source_checkout():
+            raise ValueError('源码模式请用「更新代码.bat」（git pull）更新')
         result = update_client.check_for_update(
             root, current_version, force=True)
         if not result.get('ok'):

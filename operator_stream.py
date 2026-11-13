@@ -59,10 +59,11 @@ class OperatorStreamError(ValueError):
     pass
 
 
-# Field ops: ('frame',), ('varint', name), ('u8', name), ('u16', name),
-# ('u24', name), ('u32', name), ('raw', size), ('len8', name) = u8 length +
-# bytes, ('lenvar', name) = varint length + bytes, ('varints', name, count) =
-# exactly ``count`` varints, ('frame_in', lo, hi) / ('frame_not_in', lo, hi) =
+# Field ops: ('frame',), ('frame_varint',), ('varint', name), ('u8', name),
+# ('u16', name), ('u24', name), ('u32', name), ('raw', size), ('len8', name) =
+# u8 length + bytes, ('lenvar', name) = varint length + bytes,
+# ('varints', name, count) = exactly ``count`` varints,
+# ('frame_in', lo, hi) / ('frame_not_in', lo, hi) =
 # value gates on the already parsed ``frame`` (the plan returns None when the
 # frame is outside/inside the range), used to keep same-type subtypes apart.
 # Multiple layouts per type are candidates; the DP
@@ -71,8 +72,14 @@ class OperatorStreamError(ValueError):
 # `confirmed` ones were observed repeatedly.
 CONFIRMED, TENTATIVE = 0, 1
 LAYOUTS = {
+    # Common also has a 2-byte form `00 <frame:varint>`.  Verified at the
+    # 11/2a wall 0xECDA: `00 13 18 b6 01 …` — the u16LE reading
+    # Common(frame=6163, unity=182) absorbs the SendMsg type byte and walls,
+    # while Common(19) + SendMsg continues with a monotone unity clock.
     0x00: [(CONFIRMED, [('frame',)]),
-           (CONFIRMED, [('frame',), ('varint', 'unityFrame')])],
+           (CONFIRMED, [('frame',), ('varint', 'unityFrame')]),
+           (TENTATIVE, [('frame_varint',)]),
+           (TENTATIVE, [('frame_varint',), ('varint', 'unityFrame')])],
     0x01: [(CONFIRMED, [('varint', 'unityFrame')])],
     0x02: [(CONFIRMED, [('frame',), ('varint', 'unityFrame')]),
            (CONFIRMED, [('frame',)])],
@@ -80,6 +87,10 @@ LAYOUTS = {
                         ('varint', 'skillSeq'), ('varint', 'unityFrame')]),
            (CONFIRMED, [('frame',), ('varint', 'slotType'), ('varint', 'skillId'),
                         ('varint', 'skillSeq')]),
+           # 135516 wall 0x3556: `03 6e 01 a2 5c 08 02 b8 08 …` — two varints
+           # then a GameCore record whose frame sequence (2232→2235) stays
+           # monotone only with this reading.
+           (TENTATIVE, [('frame',), ('varint', 'x1'), ('varint', 'x2')]),
            (TENTATIVE, [('frame',), ('varint', 'x1'), ('varint', 'x2'), ('varint', 'x3'),
                         ('varint', 'x4'), ('varint', 'x5')]),
            (TENTATIVE, [('frame',), ('varint', 'x1'), ('varint', 'x2'), ('varint', 'x3'),
@@ -158,7 +169,15 @@ LAYOUTS = {
            # that the DP cut one varint short.  Treating them as 30 KB payloads
            # created the fake walls at 0x1991E/0x38D26; the linear parse reads
            # the same bytes as records instead.
-           (CONFIRMED, [('frame',), ('frame_not_in', 256, 267),
+           #
+           # The payload form is TENTATIVE: a mis-cut record elsewhere turns
+           # the following bytes into a "payload" that silently swallows
+           # hundreds of real records (11/2b 0x13E78 "379 B" contained a full
+           # Common+SendMsg+UnityFrame+MoveOpe run).  Penalising the payload
+           # form makes the DP prefer reading those bytes as records; genuine
+           # dumps (mem blobs with ASCII "null") do not parse as records, so
+           # they still win where no record path exists.
+           (TENTATIVE, [('frame',), ('frame_not_in', 256, 267),
                         ('lenvar', 'data')])],
     0x11: [(TENTATIVE, [('frame',), ('len8', 'log')]),
            (TENTATIVE, [('frame',), ('lenvar', 'log')])],
@@ -182,9 +201,14 @@ LAYOUTS = {
            (TENTATIVE, [('frame',), ('varint', 'skillId'), ('varint', 'seq'),
                         ('varint', 'param1'), ('varint', 'param2'),
                         ('varint', 'extra')]),
+           # 135516 wall 0x3556: `15 6f 01 a2 5c 08 8e f9 02 b9 08 …` — the
+           # varint tail `8e f9` closes a 3-varint DirSkill and `02 b9 08` is
+           # the GameCore(2233) that keeps 2232→2235 monotone.
+           (TENTATIVE, [('frame',), ('varint', 'skillId'), ('varint', 'seq'),
+                        ('varint', 'param1')]),
            # 11/2: every `15 6f 02 …` block is followed by CppEventOpe
            # `0c 04 02 00 <seq>`; the four varints end exactly on that
-           # boundary (e.g., 0x1B41 and 39 repeats in 20261102_161129).
+           # boundary (e.g., 0x1B41 and 39 repeats in 20260101_000000).
            (TENTATIVE, [('frame',), ('varint', 'degree')])],
     0x16: [(CONFIRMED, [('u16', 'tag'), ('varints', 'layout', 75)]),
            # Legacy fallback: a raw u16-length payload.  The length was read
@@ -195,7 +219,16 @@ LAYOUTS = {
     0x17: [(TENTATIVE, [('frame',), ('varint', 'iParam1'), ('varint', 'iParam2'),
                         ('varint', 'byteParam')]),
            (TENTATIVE, [('frame',), ('varint', 'iParam1'), ('varint', 'iParam2')])],
-    0x18: [(TENTATIVE, [('frame',), ('u16', 'csMsgId'), ('u8', 'result')]),
+    # SendMsgToServerOpe: the observed record is
+    # `18 <csMsgId:u16LE=438> <payload:u32LE> <flag:u8=1>` (8 bytes).  11/2a/b
+    # emit 599/887 byte-identical `18 b6 01 6d 9d 00 00 01` heartbeats; 11/1
+    # emits `18 b6 01 4a 04 00 00 01` followed by GameCore(15033) — only the
+    # 8-byte form lets the following GameCore/UnityFrame chain parse, so it is
+    # the confirmed layout and the shorter readings stay tentative fallbacks.
+    0x18: [(CONFIRMED, [('frame',), ('u16', 'csMsgId'), ('u32', 'payload'),
+                        ('u8', 'flag')]),
+           (TENTATIVE, [('frame',), ('u16', 'csMsgId'), ('u32', 'payload')]),
+           (TENTATIVE, [('frame',), ('u16', 'csMsgId'), ('u8', 'result')]),
            (TENTATIVE, [('frame',), ('varint', 'csMsgId'), ('varint', 'result')]),
            (TENTATIVE, [('frame',), ('u8', 'csMsgId'), ('u8', 'result')])],
     0x19: [(TENTATIVE, [('frame',), ('varint', 'hostPlayerId'), ('varint', 'curPlayerId'),
@@ -234,6 +267,8 @@ def _consume(data, pos, layout_payload_size, plan):
             if kind == 'frame':
                 fields['frame'] = int.from_bytes(data[pos:pos + 2], 'little')
                 pos += 2
+            elif kind == 'frame_varint':
+                fields['frame'], pos = _varint(data, pos)
             elif kind == 'varint':
                 fields[op[1]], pos = _varint(data, pos)
             elif kind == 'u8':
@@ -368,7 +403,15 @@ def _parse_with_start(stream, starts=None):
     try:
         records, ambiguities = _resolve(stream, reachable, layout_payload_size, start)
     except OperatorStreamError as error:
-        raise OperatorStreamError(f'{error}；起点 offset={start:#x}') from error
+        # A recorder that stops mid-record leaves a valid-type tail no layout
+        # can complete; resolve to the tail start and account the remainder
+        # as an explicitly marked truncated record instead of failing.
+        found = _truncated_tail_start(stream, reachable, layout_payload_size,
+                                      start)
+        if found is None:
+            raise OperatorStreamError(f'{error}；起点 offset={start:#x}') from error
+        records, ambiguities, tail = found
+        records = records + [tail]
     return records, ambiguities, start
 
 
@@ -385,14 +428,69 @@ def parse_stream(stream, start=None):
     return records, ambiguities
 
 
-def _resolve(stream, reachable, layout_payload_size, start=None):
+TRUNCATED_SCAN_BYTES = 24
+
+
+def _truncated_tail_start(stream, reachable, layout_payload_size, start=0):
+    """Find where a final, wire-truncated record begins, if one does.
+
+    A recorder that stops mid-record leaves bytes that start a valid type but
+    cannot complete (11/2b ends `06 88 01 5c 98 09` — a MoveOpe cut after two
+    varints).  Returns the largest such start position whose prefix chain
+    still parses to it, or None.
+    """
+    limit = max(0, len(stream) - TRUNCATED_SCAN_BYTES)
+    # A record cut by the recorder stops reading because bytes are missing:
+    # it completes once the stream is extended, and fails as-is.  A layout a
+    # gate rejects (e.g. the MemoryData frame 256..267 guard) fails either
+    # way, which keeps mid-stream unknowns raising instead of masking them.
+    pad = bytes(TRUNCATED_SCAN_BYTES)
+    extended = stream + pad
+    for pos in range(len(stream) - 1, limit - 1, -1):
+        if pos not in reachable or stream[pos] not in LAYOUTS:
+            continue
+        truncated_here = False
+        for _tier, plan in LAYOUTS[stream[pos]]:
+            if _consume(stream, pos, layout_payload_size, plan) is None:
+                record = _consume(extended, pos, layout_payload_size, plan)
+                if record is not None and record['end'] > len(stream):
+                    truncated_here = True
+        if not truncated_here:
+            continue
+        try:
+            records, ambiguities = _resolve(stream, reachable,
+                                            layout_payload_size, start, target=pos)
+        except OperatorStreamError:
+            continue
+        tail = {
+            'type': stream[pos],
+            'typeName': TYPE_NAMES.get(stream[pos], f'{stream[pos]:#04x}'),
+            'offset': pos,
+            'size': len(stream) - pos,
+            'tentative': True,
+            'fields': {},
+            'truncated': True,
+            'hex': stream[pos:].hex(' '),
+        }
+        return records, ambiguities, tail
+    return None
+
+
+def _resolve(stream, reachable, layout_payload_size, start=None, target=None):
     """Minimum-uncertainty DP. Cost is (tentative bytes, tentative segments,
     record count) in lexicographic order: keep bytes on confirmed layouts,
-    avoid tentative layouts, then prefer fewer records."""
+    avoid tentative layouts, then prefer fewer records.
+
+    `target` defaults to end-of-stream.  The repair pass passes the current
+    wall instead, so it can recover the best path up to that wall without
+    pretending the stream continues.
+    """
     if start is None:
         start = HEADER_BYTES
-    order = sorted(reachable)
-    best = {len(stream): (0, 0, 0)}
+    if target is None:
+        target = len(stream)
+    order = sorted(pos for pos in reachable if pos <= target)
+    best = {target: (0, 0, 0)}
     choice = {}
     for pos in reversed(order):
         type_byte = stream[pos]
@@ -416,7 +514,7 @@ def _resolve(stream, reachable, layout_payload_size, start=None):
     records = []
     ambiguities = 0
     pos = start
-    while pos < len(stream):
+    while pos < target:
         if pos not in choice:
             frontier = max(reachable)
             raise OperatorStreamError(
@@ -438,8 +536,128 @@ def _resolve(stream, reachable, layout_payload_size, start=None):
     return records, ambiguities
 
 
+REPAIR_MAX_SHIFT = 16
+REPAIR_MAX_POINTS = 64
+REPAIR_CHAIN_PROBE = 256
+
+
+def _resync_dp(stream, layout_payload_size, wall):
+    """Pick the next record start around a wall using DP reachability.
+
+    Candidates are positions in [-4, +REPAIR_MAX_SHIFT] that start a known type.
+    The winner is the one whose minimum-uncertainty parse reaches furthest; ties
+    prefer the smaller displacement, then the forward direction.  Every accepted
+    shift is reported, never applied silently.
+    """
+    if wall >= len(stream):
+        return None
+    best = None
+    for shift in range(-4, REPAIR_MAX_SHIFT + 1):
+        if shift == 0:
+            continue
+        pos = wall + shift
+        if not 0 <= pos < len(stream) or stream[pos] not in LAYOUTS:
+            continue
+        reachable = _reachable(stream, layout_payload_size, pos)
+        if not reachable:
+            continue
+        far = max(reachable)
+        if far <= wall:
+            continue
+        key = (-far, abs(shift), 0 if shift > 0 else 1)
+        if best is None or key < best[0]:
+            best = (key, pos, far)
+    if best is None:
+        return None
+    _key, pos, far = best
+    return pos, far
+
+
+def parse_with_repair(stream, start=0, max_points=REPAIR_MAX_POINTS):
+    """DP parse that records every boundary repair instead of guessing.
+
+    Returns `(records, repairs, end)`.  `repairs` holds one dict per resync:
+    the wall offset, the chosen new start, the shift, how far the DP reached
+    before and after.  A stream that parses cleanly yields an empty repair list;
+    anything else is explicitly marked, which is the difference between
+    "decoded" and "structurally consumed".
+
+    End-of-stream is checked by running the DP itself: `_reachable` lists the
+    positions a record may *start* on, so it never contains the end offset.
+    """
+    layout_payload_size = _layout_payload_size(stream)
+    records: list = []
+    repairs: list = []
+    pos = start
+    while pos < len(stream):
+        reachable = _reachable(stream, layout_payload_size, pos)
+        if not reachable:
+            break
+        try:
+            chunk, _ambiguities = _resolve(stream, reachable, layout_payload_size, pos)
+            records.extend(chunk)
+            return records, repairs, len(stream)
+        except OperatorStreamError:
+            pass
+        far = max(reachable)
+        try:
+            chunk, _ambiguities = _resolve(stream, reachable, layout_payload_size,
+                                           pos, target=far)
+        except OperatorStreamError:
+            break
+        records.extend(chunk)
+        if len(repairs) >= max_points:
+            return records, repairs, far
+        picked = _resync_dp(stream, layout_payload_size, far)
+        if picked is None:
+            return records, repairs, far
+        new_pos, new_far = picked
+        repairs.append({
+            'wall': far,
+            'resume': new_pos,
+            'shift': new_pos - far,
+            'skippedBytes': max(0, new_pos - far),
+            'dpReachBefore': far,
+            'dpReachAfter': new_far,
+        })
+        pos = new_pos
+    return records, repairs, pos
+
+
+def repair_summary(stream, start=0):
+    """Counts and clock audit for the repaired DP segmentation."""
+    records, repairs, end = parse_with_repair(stream, start)
+    # Clock audit uses the same filter as README.md: only confirmed
+    # UnityFrameOpe values >= 1000, so small frame numbers are not mistaken for
+    # clock regressions.
+    unity = [record['fields']['unityFrame'] for record in records
+             if record['typeName'] == 'UnityFrameOpe'
+             and not record['tentative']
+             and record['fields'].get('unityFrame', 0) >= 1000]
+    regressions = sum(1 for a, b in zip(unity, unity[1:]) if b < a)
+    frames = [record['fields']['frame'] for record in records
+              if 'frame' in record['fields']]
+    return {
+        'profile': PROFILE,
+        'mode': 'dp-with-repair',
+        'reachedEnd': end >= len(stream),
+        'endOffset': end,
+        'streamBytes': len(stream),
+        'coveragePct': round(100.0 * end / len(stream), 3) if stream else 0.0,
+        'trailingBytes': max(0, len(stream) - end),
+        'recordCount': len(records),
+        'typeCounts': dict(sorted(Counter(
+            record['typeName'] for record in records).items())),
+        'repairCount': len(repairs),
+        'repairs': repairs,
+        'frameRange': [min(frames), max(frames)] if frames else None,
+        'unitySamples': len(unity),
+        'unityRegressions': regressions,
+        'note': '修复点是结构对齐记账，不是语义确认：每个跳过/回退的字节都在 repairs 里。',
+    }
+
+
 def summarize(stream, start=None):
-    """Aggregate summary for the workspace report (no raw record dump)."""
     starts = None if start is None else (start,)
     records, ambiguities, start = _parse_with_start(stream, starts)
     type_counts = Counter(record['typeName'] for record in records)
@@ -453,10 +671,16 @@ def summarize(stream, start=None):
     def count(name):
         return sum(1 for record in confirmed if record['typeName'] == name)
 
+    stream_end = max((record['offset'] + record['size'] for record in records),
+                     default=start)
     return {
         'profile': PROFILE,
         'decoded': True,
         'streamStart': start,
+        'streamBytes': len(stream),
+        'streamEnd': stream_end,
+        'truncatedTail': next((record for record in records
+                               if record.get('truncated')), None),
         'recordCount': len(records),
         'confirmedCount': len(confirmed),
         'tentativeCount': len(unresolved),

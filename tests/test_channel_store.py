@@ -129,31 +129,31 @@ class ChannelStoreTests(unittest.TestCase):
         channel = c.blank({})
         channel['id'] = 'replay-test'
         rows = [
-            (1, 0, 1168, '胡不喜#', '钟馗', 175, 8.4),
-            (1, 1, 1613, '自诩一棵葱', '妲己', 109, 10.4),
-            (1, 2, 750, '别吃窝线吖a', '孙悟空', 167, 9.1),
-            (1, 3, 538, '狂傲自由魂Z.', '关羽', 140, 13.1),
-            (1, 4, 1611, '漂流网咖︎', '百里守约', 196, 10.6),
-            (2, 0, 1031, '麻巫喵', '公孙离', 199, 5.9),
-            (2, 1, 296, '翳灵崽', '吕布', 123, 5.4),
-            (2, 2, 551, '一风舞', '貂蝉', 141, 5.5),
-            (2, 3, 1799, '扁鹊耳垂', '兰陵王', 153, 3.6),
-            (2, 4, 1760, '谜语星海', '张良', 156, 4.9),
+            (1, 0, 1168, '测试选手201', '钟馗', 175, 8.4),
+            (1, 1, 1613, '测试选手123', '妲己', 109, 10.4),
+            (1, 2, 750, '测试选手103', '孙悟空', 167, 9.1),
+            (1, 3, 538, '测试选手24', '关羽', 140, 13.1),
+            (1, 4, 1611, '测试选手179', '百里守约', 196, 10.6),
+            (2, 0, 1031, '测试选手256', '公孙离', 199, 5.9),
+            (2, 1, 296, '测试选手253', '吕布', 123, 5.4),
+            (2, 2, 551, '测试选手259', '貂蝉', 141, 5.5),
+            (2, 3, 1799, '测试选手215', '兰陵王', 153, 3.6),
+            (2, 4, 1760, '测试选手195', '张良', 156, 4.9),
         ]
         report = {
             'header': {'versions': ['12.1.1.1', '12.1.1.26'],
                        'builds': ['4989537', '5247758'],
                        'mapType': 3, 'mapId': 20111,
-                       'nickname': '漂流网咖︎', 'localHeroName': '百里守约',
+                       'nickname': '测试选手179', 'localHeroName': '百里守约',
                        'totalFrameNum': 10674},
             'blocks': [{'camp': camp, 'position': slot, 'order': index,
                         'entityId': entity, 'name': nickname, 'heroName': hero,
                         'heroId': hero_id, 'bot': False, 'score': score}
                        for index, (camp, slot, entity, nickname, hero, hero_id, score) in enumerate(rows)],
             'mvpScore': {'winningCamp': 'blue',
-                         'winMvp': {'entityId': 538, 'nickname': '狂傲自由魂Z.',
+                         'winMvp': {'entityId': 538, 'nickname': '测试选手24',
                                     'hero': '关羽', 'rating': 13.1},
-                         'loseMvp': [{'entityId': 1031, 'nickname': '麻巫喵',
+                         'loseMvp': [{'entityId': 1031, 'nickname': '测试选手256',
                                       'hero': '公孙离', 'rating': 5.9}]},
             'frames': {'records': 10509},
             'abcFileName': '20261102_161129_870343216_95868_1793606215_2B9FAA08A7AD40D09ABDA364F9C1E804.abc',
@@ -161,17 +161,17 @@ class ChannelStoreTests(unittest.TestCase):
         c.attach_replay(channel, 'replay-1', report)
         players = channel['draft']['players']
         self.assertEqual(players[0]['hero'], '钟馗')
-        self.assertEqual(players[0]['nickname'], '胡不喜#')
+        self.assertEqual(players[0]['nickname'], '测试选手201')
         self.assertEqual(players[0]['replayEntityId'], 1168)
         self.assertEqual(players[0]['fields']['rating']['value'], 8.4)
         self.assertEqual(players[0]['fields']['rating']['source'], 'replay')
         self.assertEqual(players[5]['hero'], '公孙离')
-        self.assertEqual(players[5]['nickname'], '麻巫喵')
+        self.assertEqual(players[5]['nickname'], '测试选手256')
         self.assertEqual(channel['draft']['coverage']['rating'], 10)
         self.assertEqual(channel['match']['date'], '2026-11-02')
         self.assertIn('5247758', channel['match']['version'])
         self.assertEqual(channel['sources']['replay']['result']['winningCamp'], 'blue')
-        self.assertEqual(channel['draft']['match']['result']['winMvp']['nickname'], '狂傲自由魂Z.')
+        self.assertEqual(channel['draft']['match']['result']['winMvp']['nickname'], '测试选手24')
         complete_collection(channel)
         c.set_review(channel, '教练甲', '已核对')
         data = c.bundle(channel)
@@ -247,7 +247,7 @@ class ChannelStoreTests(unittest.TestCase):
         c.attach_official(
             channel, 'camp-extended',
             {'gameSeq': 'camp-extended', 'gameSvr': '1', 'relaySvr': '2',
-             'playerId': '540599032'},
+             'playerId': '100000001'},
             {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
              'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
             '测试')

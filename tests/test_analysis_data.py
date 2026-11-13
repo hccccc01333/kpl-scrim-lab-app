@@ -588,3 +588,22 @@ class WinnerTruthTests(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
 
+
+
+    def test_match_meta_duration_and_gold10_do_not_shadow_number(self):
+        """meta 覆盖层同时含 duration 与 gold10 时不能因为变量遮蔽抛 UnboundLocalError。"""
+        imports = self.root / 'imports_meta2'
+        imports.mkdir()
+        key = write_single_match_import(imports)
+        with closing(sqlite3.connect(self.db)) as connection:
+            connection.execute('CREATE TABLE IF NOT EXISTS match_meta '
+                               '(match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+            connection.execute('INSERT INTO match_meta VALUES(?,?,?)',
+                               (key, json.dumps({'duration': 12.5,
+                                                 'gold10': {'blue-1': 7000}},
+                                                ensure_ascii=False), 0.0))
+            connection.commit()
+        repo = AnalysisRepository(self.db, self.matches, imports)
+        match = repo.matches({'sources': ['sheet']})['matches'][0]
+        self.assertEqual(match['duration'], 750)
+        self.assertEqual(match['gold10'], {'blue-1': 7000})

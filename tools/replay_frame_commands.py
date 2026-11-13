@@ -54,7 +54,7 @@ class UnsupportedCommand(ValueError):
 
 
 # Packed hero fields (BOOTFRAP 18/19/20), validated on 5247758 samples
-# 20261101_182452 (2 human movers), 20261102_161129 and 20261102_163751
+# 20260101_000000 (2 human movers), 20260101_000000 and 20260101_000000
 # (10 movers each): u16 = unit:5 | seq:2 | sign:1 | magnitude:8. The
 # magnitude never exceeded 180 in 158k entries; larger values mean the
 # layout does not hold for that sample and must stop the parse.
@@ -98,9 +98,9 @@ def unit_roster_slot(unit: int):
     return None
 
 
-# dir_deg shares the client's directional-skill angle frame (docs 5.128:
+# dir_deg shares the client's directional-skill angle frame (既有校准:
 # paired cast-vs-move median delta ≈ 0° over 400+ pairs, two matches) and the
-# world frame is screen-like with +y pointing down (docs 5.128: 0x82 kind-2
+# world frame is screen-like with +y pointing down (既有校准: 0x82 kind-2
 # displacement bearings match move headings under (cos d, sin d), r≈0.5-0.58).
 def world_vector(dir_deg: int) -> tuple[float, float]:
     """Unit world vector of an input direction, in native replay axes.
@@ -117,7 +117,7 @@ def compass_bearing(dir_deg: int) -> float:
 
     Blue base sits bottom-left of the minimap and the camera is unmirrored,
     so blue walking to lanes spans compass [0..90] and red [180..270]
-    (docs 5.128 camp-arc evidence).
+    (既有校准 camp-arc evidence).
     """
     return (90.0 + dir_deg) % 360.0
 
@@ -244,7 +244,7 @@ def hero_inputs(data: bytes) -> dict:
                 "entryCounts": {}, "errors": {}, "units": {}, "entities": {}}
     if header["message_id"] == 1051:
         return {"status": "unsupported-route",
-                "error": "ID1051 单局路线：容器已索引（docs 5.133），旧构建条目命令语义未解码",
+                "error": "ID1051 单局路线：容器已索引（既有校准），旧构建条目命令语义未解码",
                 "frameRecords": 0, "fullyParsedFrames": 0, "unresolvedFrames": 0,
                 "entryCounts": {}, "errors": {}, "units": {}, "entities": {}}
     from replay_profiles import resolve_profile
@@ -255,7 +255,7 @@ def hero_inputs(data: bytes) -> dict:
         return {"status": "unsupported-version",
                 "error": (f"未配置解析档案：versions={versions} builds={builds}；"
                           "请在 resources/replay_profiles.json 增加版本，并按 "
-                          "docs/replay_profiles.md 重跑 selector 映射后验证"),
+                          "README.md 重跑 selector 映射后验证"),
                 "frameRecords": 0, "fullyParsedFrames": 0, "unresolvedFrames": 0,
                 "entryCounts": {}, "errors": {}, "units": {}, "entities": {}}
     units: dict[int, dict] = {}

@@ -12,7 +12,7 @@ const esc = (v) => String(v == null ? '' : v)
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const signed = (v) => (v < 0 ? '−' : '+') + Math.round(Math.abs(num(v) ? v : 0)).toLocaleString('zh-CN');
 const pct = (v) => `${Math.round((num(v) ? v : 0) * 100)}%`;
-/* 赛训组说「金币」，不说「金」 */
+/* 战队说「金币」，不说「金」 */
 const yuan = (t) => String(t == null ? '' : t).replace(/金(?!币)/g, '金币');
 const signedCls = (v) => (num(v) && v < 0 ? 'neg' : 'pos');
 const tip = (t) => `data-cx-tip="${esc(yuan(t))}"`;

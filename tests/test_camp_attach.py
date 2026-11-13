@@ -27,7 +27,7 @@ def sample_detail():
         # 真实 battledetail 的数值全是字符串，且含小数（hurtTransRate 0.5）。
         # 保留这些格式，防止映射层把小数当字符串塞进统计口径。
         # 营地同时给「总伤害」和「对英雄伤害」：契约的 damage/taken 用后者，
-        # 与赛后截图的输出/承伤同口径（见 docs/metric_registry.md）。
+        # 与赛后截图的输出/承伤同口径（见 README.md）。
         total_hurt, hero_hurt = int(hurt), int(hurt) - 8000
         total_taken, hero_taken = int(taken), int(taken) - 500
         return {'killCnt': kills, 'deadCnt': deaths, 'assistCnt': assists, 'money': money,
@@ -201,7 +201,7 @@ class AttachCampDetailTests(unittest.TestCase):
         channel_store.attach_official(
             self.channel, 'camp-1793795458',
             {'gameSeq': '1793795458', 'gameSvr': '1', 'relaySvr': '2',
-             'playerId': '540599032'},
+             'playerId': '100000001'},
             {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
              'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
             '测试')
@@ -306,7 +306,7 @@ class AttachCampDetailTests(unittest.TestCase):
                          '2026-11-04T23:08:58+08:00')
         channel_store.attach_official(channel, 'camp-1793804938',
                                       {'gameSeq': '1793804938', 'gameSvr': '1', 'relaySvr': '2',
-                                       'playerId': '540599032'},
+                                       'playerId': '100000001'},
                                       {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
                                        'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
                                       '测试')
@@ -330,7 +330,7 @@ class AttachCampDetailTests(unittest.TestCase):
         self.assertFalse(self.channel['sourceStatus']['complete'])  # 还差 official
         channel_store.attach_official(self.channel, 'camp-1793795458',
                                       {'gameSeq': '1793795458', 'gameSvr': '1', 'relaySvr': '2',
-                                       'playerId': '540599032'},
+                                       'playerId': '100000001'},
                                       {'match': {}, 'economy': {}, 'events': {}, 'positions': {},
                                        'players': [], 'warnings': [], 'source': {'kind': 'personal'}},
                                       '测试')

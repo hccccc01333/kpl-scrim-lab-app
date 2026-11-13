@@ -5,8 +5,8 @@ its own assumptions.  These tests validate it against captured files, and they
 skip (rather than fail) on machines that do not have them, because the samples
 are coach data and are not in the repository.
 
-Every expected value below is also recorded in ``docs/replay_binary_format.md``
-§5.129 (roster, ratings) or ``docs/evidence_audit.md`` (frame counts), so a
+Every expected value below is also recorded in ``README.md``
+§5.129 (roster, ratings) or ``README.md`` (frame counts), so a
 change here means the parser or the format moved, not that the number was
 arbitrary.
 """
@@ -19,9 +19,9 @@ import replay_parser  # noqa: E402
 
 SAMPLE_DIR = ROOT / 'data' / 'replays' / 'samples' / '20261102_161129'
 ABC = SAMPLE_DIR / ('20261102_161129_870343216_95868_1793606215_'
-                    '2B9FAA08A7AD40D09ABDA364F9C1E804.abc')
+                    '00000000000000000000000000000000.abc')
 
-# Ten ratings read off the results page for the same match (docs 5.129), in
+# Ten ratings read off the results page for the same match (既有校准), in
 # roster order: blue 钟馗 妲己 孙悟空 关羽 百里守约, red 公孙离 吕布 貂蝉 兰陵王 张良.
 HEROES = ['钟馗', '妲己', '孙悟空', '关羽', '百里守约',
           '公孙离', '吕布', '貂蝉', '兰陵王', '张良']

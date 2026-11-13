@@ -1,6 +1,6 @@
-"""decision_resource.resource_report 单元测试。
+"""analysis_profile.resource_report 单元测试。
 
-全部用 tests/decision_fixtures.py 的合成终局面板（不依赖真实赛训库），
+全部用 tests/facts_fixtures.py 的合成终局面板（不依赖真实赛训库），
 断言具体数值/关系：占比合计、象限分界、quadrantFlag 规则、异常、分路均值、
 效率、own/enemy、过滤与空数据降级。
 """
@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import decision_fixtures as fx  # noqa: E402
-import decision_resource  # noqa: E402
+import facts_fixtures as fx  # noqa: E402
+import analysis_profile  # noqa: E402
 
 LANES = ['对抗路', '中路', '发育路', '打野', '游走']
 SHARE_KEYS = ('goldShare', 'heroDamageShare', 'towerShare',
@@ -58,7 +58,7 @@ def player_of(report, lane):
 # ---------------------------------------------------------------------------
 def test_shares_gpm_and_basis(tmp_path):
     facts = make_facts(tmp_path)
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
 
     assert report['available'] is True
     assert report['reason'] is None
@@ -116,7 +116,7 @@ def test_shares_gpm_and_basis(tmp_path):
 # ---------------------------------------------------------------------------
 def test_quadrant_fixed_basis_single_game(tmp_path):
     facts = make_facts(tmp_path)
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
     lanes = {point['lane']: point for point in report['players']}
 
     assert lanes['中路']['quadrant'] == '高经济·高输出'      # 20.6 / 33.8
@@ -128,7 +128,7 @@ def test_quadrant_fixed_basis_single_game(tmp_path):
 
 def test_quadrant_median_basis_multi_game(tmp_path):
     facts = make_facts(tmp_path, [{'seq': '2001'}, {'seq': '2002'}, {'seq': '2003'}])
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
 
     assert report['quadrantBasis'] == 'median'
     assert report['quadrant']['n'] == 15
@@ -148,7 +148,7 @@ def test_quadrant_median_basis_multi_game(tmp_path):
 # ---------------------------------------------------------------------------
 def test_quadrant_flag_default_rows(tmp_path):
     facts = make_facts(tmp_path)
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
     flags = {point['lane']: point['quadrantFlag'] for point in report['players']}
 
     assert flags['打野'] is True                       # 22.6 − 16.2 = 6.4pp，且 22.6 ≥ 20
@@ -165,7 +165,7 @@ def test_quadrant_flag_needs_gold_threshold(tmp_path):
     row = own_row(facts, '对抗路')
     row['gold'] = 7000       # 占比 17.9% < 20
     row['heroDamage'] = 1000  # 占比 0.4%：差 17.5pp，但经济不够高
-    report = decision_resource.resource_report(facts, lane='对抗路')
+    report = analysis_profile.resource_report(facts, lane='对抗路')
     point = report['players'][0]
     assert point['goldShare'] == pytest.approx(17.9, abs=0.05)
     assert point['goldDamageGap'] >= 5.0
@@ -177,7 +177,7 @@ def test_quadrant_flag_catches_high_gold_low_damage_mid(tmp_path):
     row = own_row(facts, '中路')
     row['gold'] = 12000
     row['heroDamage'] = 10000
-    report = decision_resource.resource_report(facts, lane='中路')
+    report = analysis_profile.resource_report(facts, lane='中路')
     point = report['players'][0]
     assert point['goldShare'] == pytest.approx(27.5, abs=0.05)       # 12000 / 43600
     assert point['heroDamageShare'] == pytest.approx(5.5, abs=0.05)  # 10000 / 182000
@@ -190,7 +190,7 @@ def test_support_lane_never_uses_output_rule(tmp_path):
     row = own_row(facts, '游走')
     row['gold'] = 16000        # 占比 32.3%，全队最高
     row['heroDamage'] = 2000   # 占比 0.8%
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
 
     support = player_of(report, '游走')
     assert support['goldShare'] >= 30.0
@@ -205,7 +205,7 @@ def test_support_lane_never_uses_output_rule(tmp_path):
 # ---------------------------------------------------------------------------
 def test_anomalies_high_gold_low_damage(tmp_path):
     facts = make_facts(tmp_path)
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
 
     assert len(report['anomalies']) == 1
     item = report['anomalies'][0]
@@ -225,10 +225,10 @@ def test_anomalies_farm_lane_deaths(tmp_path):
     row = own_row(facts, '发育路', seq='1001')
 
     row['deaths'] = 2
-    assert decision_resource.resource_report(facts, lane='发育路')['anomalies'] == []
+    assert analysis_profile.resource_report(facts, lane='发育路')['anomalies'] == []
 
     row['deaths'] = 3
-    report = decision_resource.resource_report(facts, lane='发育路')
+    report = analysis_profile.resource_report(facts, lane='发育路')
     assert len(report['anomalies']) == 1
     item = report['anomalies'][0]
     assert item['kind'] == 'farm_lane_deaths'
@@ -240,7 +240,7 @@ def test_anomalies_combined_reason(tmp_path):
     facts = make_facts(tmp_path)
     row = own_row(facts, '发育路')
     row.update({'gold': 12000, 'heroDamage': 10000, 'deaths': 3})
-    report = decision_resource.resource_report(facts, lane='发育路')
+    report = analysis_profile.resource_report(facts, lane='发育路')
 
     assert len(report['anomalies']) == 1  # 同一行只出一条，不重复列
     item = report['anomalies'][0]
@@ -254,7 +254,7 @@ def test_anomalies_combined_reason(tmp_path):
 # ---------------------------------------------------------------------------
 def test_by_lane_means(tmp_path):
     facts = make_facts(tmp_path, [{'seq': '2001'}, {'seq': '2002'}, {'seq': '2003'}])
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
 
     assert [item['lane'] for item in report['byLane']] == LANES
     assert all(item['n'] == 3 for item in report['byLane'])
@@ -269,7 +269,7 @@ def test_by_lane_means(tmp_path):
 
 def test_by_lane_respects_lane_filter(tmp_path):
     facts = make_facts(tmp_path, [{'seq': '2001'}, {'seq': '2002'}, {'seq': '2003'}])
-    report = decision_resource.resource_report(facts, lane='打野')
+    report = analysis_profile.resource_report(facts, lane='打野')
     assert [item['lane'] for item in report['byLane']] == ['打野']
     assert report['byLane'][0]['n'] == 3
     assert report['coverage']['rows'] == 3
@@ -278,7 +278,7 @@ def test_by_lane_respects_lane_filter(tmp_path):
 
 def test_efficiency_ratios(tmp_path):
     facts = make_facts(tmp_path, [{'seq': '2001'}, {'seq': '2002'}, {'seq': '2003'}])
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
     efficiency = {item['lane']: item for item in report['efficiency']}
 
     assert set(efficiency) == set(LANES)
@@ -297,8 +297,8 @@ def test_efficiency_ratios(tmp_path):
 # ---------------------------------------------------------------------------
 def test_side_enemy_is_reference_only(tmp_path):
     facts = make_facts(tmp_path)
-    own = decision_resource.resource_report(facts)
-    enemy = decision_resource.resource_report(facts, side='enemy')
+    own = analysis_profile.resource_report(facts)
+    enemy = analysis_profile.resource_report(facts, side='enemy')
 
     assert enemy['available'] is True
     assert enemy['filters']['side'] == 'enemy'
@@ -319,7 +319,7 @@ def test_side_enemy_is_reference_only(tmp_path):
 def test_invalid_side_rejected(tmp_path):
     facts = make_facts(tmp_path)
     with pytest.raises(ValueError):
-        decision_resource.resource_report(facts, side='both')
+        analysis_profile.resource_report(facts, side='both')
 
 
 # ---------------------------------------------------------------------------
@@ -339,29 +339,29 @@ def test_filters_and_varied_results(tmp_path):
     dates = sorted({row['date'] for row in facts['rows'] if row['side'] == 'own'})
     assert len(dates) == 3
 
-    loss = decision_resource.resource_report(facts, result='loss')
+    loss = analysis_profile.resource_report(facts, result='loss')
     assert {point['seq'] for point in loss['players']} == {'3002'}
     assert all(point['result'] == 'loss' and point['won'] is False
                for point in loss['players'])
     assert loss['coverage']['panelGames'] == 1
 
-    wins = decision_resource.resource_report(facts, result='win')
+    wins = analysis_profile.resource_report(facts, result='win')
     assert {point['seq'] for point in wins['players']} == {'3001', '3003'}
 
-    ranged = decision_resource.resource_report(facts, date_from=dates[1])
+    ranged = analysis_profile.resource_report(facts, date_from=dates[1])
     assert {point['seq'] for point in ranged['players']} == {'3002', '3003'}
-    single = decision_resource.resource_report(facts, date_from=dates[1], date_to=dates[1])
+    single = analysis_profile.resource_report(facts, date_from=dates[1], date_to=dates[1])
     assert {point['seq'] for point in single['players']} == {'3002'}
-    assert decision_resource.resource_report(
+    assert analysis_profile.resource_report(
         facts, date_from=dates[2], date_to=dates[0])['available'] is False
 
-    custom = decision_resource.resource_report(facts, opponent='测试战队B')
+    custom = analysis_profile.resource_report(facts, opponent='测试战队B')
     assert {point['seq'] for point in custom['players']} == {'3003'}
     original_id = next(row['opponentId'] for row in facts['rows'] if row['seq'] == '3001')
-    original = decision_resource.resource_report(facts, opponent=original_id)
+    original = analysis_profile.resource_report(facts, opponent=original_id)
     assert {point['seq'] for point in original['players']} == {'3001', '3002'}
 
-    lane = decision_resource.resource_report(facts, lane='打野')
+    lane = analysis_profile.resource_report(facts, lane='打野')
     assert len(lane['players']) == 3
     assert {point['lane'] for point in lane['players']} == {'打野'}
 
@@ -370,14 +370,14 @@ def test_filters_and_varied_results(tmp_path):
                if row['side'] == 'own' and row['lane'] == '中路')
     name = next(row['name'] for row in facts['rows']
                 if row['side'] == 'own' and row['lane'] == '中路')
-    by_id = decision_resource.resource_report(facts, player=pid)
+    by_id = analysis_profile.resource_report(facts, player=pid)
     assert len(by_id['players']) == 3
     assert {point['playerId'] for point in by_id['players']} == {pid}
-    by_name = decision_resource.resource_report(facts, player=name)
+    by_name = analysis_profile.resource_report(facts, player=name)
     assert {point['playerId'] for point in by_name['players']} == {pid}
 
     for kwargs in ({'opponent': '不存在'}, {'lane': '不存在'}, {'player': '不存在'}):
-        empty = decision_resource.resource_report(facts, **kwargs)
+        empty = analysis_profile.resource_report(facts, **kwargs)
         assert empty['available'] is False
         assert empty['reason']
         assert empty['players'] == [] and empty['byLane'] == []
@@ -385,10 +385,10 @@ def test_filters_and_varied_results(tmp_path):
 
 def test_lane_aliases(tmp_path):
     facts = make_facts(tmp_path)
-    mid = decision_resource.resource_report(facts, lane='中单')
+    mid = analysis_profile.resource_report(facts, lane='中单')
     assert len(mid['players']) == 1
     assert mid['players'][0]['lane'] == '中路'
-    support = decision_resource.resource_report(facts, lane='辅助')
+    support = analysis_profile.resource_report(facts, lane='辅助')
     assert len(support['players']) == 1
     assert support['players'][0]['lane'] == '游走'
 
@@ -397,14 +397,14 @@ def test_rows_only_facts_supported(tmp_path):
     """只有 rows（无 games/panels）的事实表也能跑；result 从行内 won 反推。"""
     facts = make_facts(tmp_path)
     slim = {'rows': [dict(row) for row in facts['rows'] if row['side'] == 'own']}
-    report = decision_resource.resource_report(slim)
+    report = analysis_profile.resource_report(slim)
     assert report['available'] is True
     assert len(report['players']) == 5
     assert report['coverage']['panelGames'] == 1
     assert all(point['result'] == 'win' and point['won'] is True
                for point in report['players'])
-    assert decision_resource.resource_report(slim, result='loss')['available'] is False
-    assert decision_resource.resource_report(
+    assert analysis_profile.resource_report(slim, result='loss')['available'] is False
+    assert analysis_profile.resource_report(
         slim, result='loss')['coverage']['panelGames'] == 0
 
 
@@ -413,7 +413,7 @@ def test_rows_only_facts_supported(tmp_path):
 # ---------------------------------------------------------------------------
 def test_empty_facts_degrades(tmp_path):
     for facts in ({}, None):
-        report = decision_resource.resource_report(facts)
+        report = analysis_profile.resource_report(facts)
         assert report['available'] is False
         assert report['reason']
         assert report['players'] == []
@@ -426,7 +426,7 @@ def test_empty_facts_degrades(tmp_path):
     empty_root = tmp_path / 'empty'
     (empty_root / 'camp_details').mkdir(parents=True)
     (empty_root / 'official_replays').mkdir(parents=True)
-    empty = decision_resource.resource_report(fx.load_fixture_facts(empty_root))
+    empty = analysis_profile.resource_report(fx.load_fixture_facts(empty_root))
     assert empty['available'] is False
     assert empty['reason']
 
@@ -436,7 +436,7 @@ def test_missing_gold_degrades(tmp_path):
     for row in facts['rows']:
         if row['side'] == 'own':
             row['gold'] = None
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
     assert report['available'] is False
     assert 'money' in report['reason']
     assert report['players'] == []
@@ -447,7 +447,7 @@ def test_missing_gold_degrades(tmp_path):
 def test_partial_missing_gold_is_not_zero_filled(tmp_path):
     facts = make_facts(tmp_path)
     own_row(facts, '对抗路')['gold'] = None
-    report = decision_resource.resource_report(facts)
+    report = analysis_profile.resource_report(facts)
 
     assert report['available'] is True
     top = player_of(report, '对抗路')

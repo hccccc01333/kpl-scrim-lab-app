@@ -201,3 +201,21 @@ class AutoClaimTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_eligible_filters_before_limit():
+    """limit 是「最多返回几局可用对局」，不能先截断再过滤把合格局挤掉。"""
+    import identity_auto
+
+    def incomplete(index):
+        return {'key': f'bad-{index}', 'date': '2026-11-10',
+                'players': [{'label': f'x{index}', 'camp': 'blue'}]}
+
+    def complete(index):
+        return {'key': f'ok-{index}', 'date': '2026-11-01',
+                'players': ([{'label': f'b{index}{slot}', 'camp': 'blue'} for slot in range(5)]
+                            + [{'label': f'r{index}{slot}', 'camp': 'red'} for slot in range(5)])}
+
+    data = {'matches': [incomplete(index) for index in range(10)] + [complete(0)]}
+    picked = identity_auto.eligible(data, limit=1)
+    assert [match['key'] for match in picked] == ['ok-0']

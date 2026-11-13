@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 
 from analysis_api import create_analysis_router
-from decision_api import create_decision_router
+from workbench_api import create_workbench_router
 from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
@@ -118,7 +118,7 @@ app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
 # V3 的路由模块在 _mount_v3() 里加载；中间件用它刷新分析快照缓存。
 V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR, OFFICIAL_DIR))
-app.include_router(create_decision_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
+app.include_router(create_workbench_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
                                           DATA_DIR, DB_PATH))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
@@ -1456,6 +1456,17 @@ def _camp_tools():
         sys.path.insert(0, str(tools))
 
 
+_GAME_SEQ_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
+
+
+def _safe_game_seq(value) -> str:
+    """营地对局 ID 只允许单段安全字符，避免拼路径时穿越到其它目录。"""
+    text = str(value or '').strip()
+    if not text or text in ('.', '..') or not _GAME_SEQ_RE.match(text):
+        return ''
+    return text
+
+
 def _camp_detail_path(game_seq: str) -> Path:
     """营地详情落盘位置以 camp_sync 的 DETAIL_DIR 为准。
 
@@ -1464,7 +1475,10 @@ def _camp_detail_path(game_seq: str) -> Path:
     """
     _camp_tools()
     import camp_sync
-    return camp_sync.DETAIL_DIR / f'{game_seq}.json'
+    seq = _safe_game_seq(game_seq)
+    if not seq:
+        raise ValueError(f'营地对局 ID 非法：{game_seq!r}')
+    return camp_sync.DETAIL_DIR / f'{seq}.json'
 
 
 AUTO_REVIEWER = '营地自动同步'
@@ -1629,12 +1643,18 @@ def _camp_official_index():
     return index
 
 
-def _camp_auto_official(entries, limit=40, actor='camp-sync'):
+def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
     """营地同步之后，用清单里的服务器参数直接把官方回放拉下来并挂到通道。
 
     设计上「只给一个营地链接就该自动爬回放」，但这一步此前根本没接：
     前端从未调用 `/api/official/replay`，同步流程也只写入口径里的
     `official.source` 而没有真正下载。这里补上，失败只记原因，不打断同步。
+
+    `playerid` 的来源只有两处：`data/camp_lists/` 里原始列表条目的
+    `analyseUrl`，或调用方传进来的营地账号 ID（`camp_user_id`）。
+    采集页同步回的条目是 `/api/camp/list` 裁剪过的，没有 `analyseUrl`；
+    清单缓存又只有命令行工具会写，所以这里必须把账号 ID 带上，否则
+    每条都会以「没有可用的 playerid」失败（营地同步成功、回放永远为空）。
     """
     index = _camp_official_index()
     by_seq = {}
@@ -1668,8 +1688,11 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync'):
                                     'error': '清单里没有 gameSvrId / relaySvrId'})
             continue
         report['tried'] += 1
+        # 兜底：调用方漏传营地 ID 时，从条目自带的归属 ID 取（前端按它分组）。
+        owner_id = camp_user_id or str(source.get('ownerCampUserId') or '')
         try:
-            result = camp_replay.import_entry(source, force=False)
+            result = camp_replay.import_entry(source, force=False,
+                                              camp_user_id=owner_id)
         except camp_replay.CampReplayError as error:
             report['failed'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'failed', 'error': str(error)})
@@ -1769,11 +1792,12 @@ def _camp_ensure_channels(entries, nickname: str, progress=None) -> dict:
     total = len(entries)
     saved_any = False
     for index, entry in enumerate(entries, 1):
-        seq = str((entry or {}).get('gameSeq') or '')
+        seq = _safe_game_seq((entry or {}).get('gameSeq'))
         if not seq:
             report['failed'] += 1
-            report['items'].append({'gameSeq': '', 'status': 'failed',
-                                    'error': '列表条目没有对局 ID'})
+            report['items'].append({'gameSeq': str((entry or {}).get('gameSeq') or ''),
+                                    'status': 'failed',
+                                    'error': '列表条目没有合法对局 ID'})
             continue
         if progress:
             progress(index, total, seq, 'channel')
@@ -2066,7 +2090,8 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         # 只给一条营地链接 → 详情、通道、官方回放一起到位。回放拉取放在通道之后，
         # 这样拉下来的经济曲线/事件/位置能立刻挂到通道上。
         try:
-            channels['official'] = _camp_auto_official(entries, actor='camp-sync')
+            channels['official'] = _camp_auto_official(
+                entries, actor='camp-sync', camp_user_id=camp_user_id)
         except Exception as error:
             channels['official'] = {'failed': 1, 'items': [],
                                     'error': f'{type(error).__name__}: {error}'}
@@ -2288,6 +2313,12 @@ def camp_list(value: dict):
     camp_user_id = str(value.get('campUserId') or '').strip()
     if not camp_user_id.isdigit():
         raise HTTPException(400, '营地 ID 需为 5–15 位数字')
+    # 每条都带上「这局是谁的」：前端同步时按 ownerCampUserId 分组，再把它作为
+    # campUserId 传给 /api/camp/sync；缺了它自动补拉官方回放就拿不到 playerid，
+    # 结果是「同步成功、进统计，但回放一直空」。
+    nickname = next((player.get('nickname') or ''
+                     for player in _camp_config_read().get('players', [])
+                     if player.get('campUserId') == camp_user_id), '')
     try:
         result = camp_client.call('/game/morebattlelist', {
             'lastTime': int(value.get('lastTime') or 0),
@@ -2355,6 +2386,9 @@ def camp_list(value: dict):
             hero = entry.get('heroName')
         entries.append({
             'gameSeq': game_seq,
+            # 归属信息：前端据此分组并把营地 ID 传给同步接口（自动补拉回放要用）。
+            'ownerCampUserId': camp_user_id,
+            'ownerName': nickname,
             'dtEventTime': event_at,
             'startedAt': times.get('startedAt'),
             'eventAt': times.get('eventAt'),
@@ -2377,7 +2411,7 @@ def camp_list(value: dict):
             'imported': game_seq in saved_seqs,
             'channelExists': game_seq in channeled_seqs,
             'channelReady': game_seq in ready_seqs,
-            'detailCached': (camp_sync.DETAIL_DIR / f'{game_seq}.json').is_file(),
+            'detailCached': bool(_safe_game_seq(game_seq) and _camp_detail_path(game_seq).is_file()),
             # 营地只保留最近一个月的战局详情；更早的局前端直接标「营地无详情」，
             # 不再让教练勾选后才发现拉不到（-30457）。
             'campDetailAvailable': not camp_sync.detail_expired(
@@ -2392,6 +2426,8 @@ def camp_sync_start(value: dict):
     """两段式同步第二段：按教练勾选的对局条目拉取详情并落盘，随后自动挂载通道。"""
     entries = value.get('entries') if isinstance(value.get('entries'), list) else []
     entries = [entry for entry in entries if isinstance(entry, dict) and entry.get('gameSeq')]
+    if any(not _safe_game_seq(entry.get('gameSeq')) for entry in entries):
+        raise HTTPException(400, '对局 ID 非法')
     camp_user_id = str(value.get('campUserId') or '').strip()
     nickname = str(value.get('nickname') or '').strip()
     if not entries:
@@ -2467,7 +2503,9 @@ def _camp_attach_to_channel(channel: dict, game_seq: str, actor=None):
 
 @app.post('/api/channels/{channel_id}/camp')
 def channel_attach_camp(channel_id: str, value: dict):
-    game_seq = str(value.get('gameSeq') or '').strip()
+    game_seq = _safe_game_seq(value.get('gameSeq'))
+    if not game_seq:
+        raise HTTPException(400, '缺少或非法的对局 ID')
     with db() as c:
         channel = _load_channel(c, channel_id)
     try:
@@ -3099,7 +3137,7 @@ async def channel_attach_table(channel_id: str, request: Request):
             raise HTTPException(413, '表格请小于 64 MB')
         chunks.append(chunk)
     data = b''.join(chunks)
-    name = request.query_params.get('name', '赛训表.xlsx')[:200]
+    name = request.query_params.get('name', '数据表.xlsx')[:200]
     suffix = Path(name).suffix.lower()
     if suffix not in ('.csv', '.tsv', '.txt', '.xlsx', '.xlsm'):
         raise HTTPException(400, '仅支持 CSV/TSV/XLSX/XLSM')
@@ -3772,7 +3810,7 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
                          'lastManualBuyFrame':last_manual,
                          'estimatedBattleSeconds':round(max(last_manual-7,0)/FRAME_RATE,1) if last_manual is not None else None,
                          'uncertaintySeconds':1,
-                         'note':'t ≈ (frame − battleStart)/15；校准依据 docs 5.129（±1s）；帧率常量见 replay_time.py'},
+                         'note':'t ≈ (frame − battleStart)/15；校准依据 既有校准（±1s）；帧率常量见 replay_time.py'},
              'provenance':{'moves':{'source':'abc-frame-commands','confidence':'decoded'},
                            'attacks':{'source':'abc-frame-commands','confidence':'decoded'},
                            'buys':{'source':'abc-frame-commands','confidence':'decoded'},
@@ -3806,9 +3844,93 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
                          'cc':edata.get('cc') or [],
                          'angleSamples':angles,
                          'pathEstimate':integrate_path(udata.get('moves') or []),
-                         'pathNote':'方向积分形状估算：漂移严重（锚点残差 1.8万-6.5万），仅示意转向历史，绝非位置；docs 5.132',
+                         'pathNote':'方向积分形状估算：漂移严重（锚点残差 1.8万-6.5万），仅示意转向历史，绝非位置；既有校准',
                          'positionAnchors':anchors}
     return payload
+
+
+_REPLAY_STATE_CACHE: dict = {}
+_REPLAY_STATE_LOCK = threading.Lock()
+
+
+@app.get('/api/replays/{replay_id}/state')
+def replay_state(replay_id: str, rebuild: bool = False):
+    """Per-second replay state decoded from the stored ``.abc``.
+
+    Only the file-decode tier is produced here: roster, win/MVP/rating, the
+    frame-precise purchase and skill-point ledgers, derived level and derived
+    cumulative gold spent, plus per-second action counts.  Combat outcomes
+    (kills, deaths, gold income, HP, continuous positions) are absent from the
+    container and stay null with a reason in ``missing``; nothing is estimated.
+    """
+    from replay_state_engine import build_from_bytes
+    with db() as c:
+        row = c.execute('SELECT abc_file_id, ope_file_id FROM replays WHERE id=?',
+                        (replay_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, '回放记录不存在')
+        abc = c.execute('SELECT data FROM replay_files WHERE id=? AND kind=?',
+                        (row['abc_file_id'], 'abc')).fetchone()
+        ope = c.execute('SELECT data FROM replay_files WHERE id=? AND kind=?',
+                        (row['ope_file_id'], 'ope')).fetchone() if row['ope_file_id'] else None
+    if not abc:
+        raise HTTPException(404, '回放主体文件不存在')
+    abc_bytes = bytes(abc['data'])
+    ope_bytes = bytes(ope['data']) if ope else None
+    key = (replay_id, hashlib.sha256(abc_bytes).hexdigest(),
+           hashlib.sha256(ope_bytes).hexdigest() if ope_bytes else None)
+    if not rebuild:
+        with _REPLAY_STATE_LOCK:
+            cached = _REPLAY_STATE_CACHE.get(key)
+        if cached is not None:
+            return cached
+    document = build_from_bytes(abc_bytes, ope_bytes)
+    with _REPLAY_STATE_LOCK:
+        _REPLAY_STATE_CACHE[key] = document
+        while len(_REPLAY_STATE_CACHE) > 6:
+            _REPLAY_STATE_CACHE.pop(next(iter(_REPLAY_STATE_CACHE)))
+    return document
+
+
+@app.get('/api/replays/{replay_id}/skill-ledger')
+def replay_skill_ledger(replay_id: str, unit: int = None, stride: int = 1):
+    """Per-cast skill ledger decoded on demand from the stored .abc.
+
+    Source tier is file-decode: cast attempts from the input stream, never hits.
+    Engine-measured outcomes (paused-frame client-memory reads) are a separate
+    optional tier: when attached they appear per cast under ``engine`` and in
+    ``provenance.engine``; without them every ``engine`` stays null and the
+    endpoint behaviour is unchanged.
+    """
+    from tools.replay_skill_ledger import engine_outcomes_summary, skill_ledger
+    with db() as c:
+        row=c.execute('SELECT body FROM replays WHERE id=?',(replay_id,)).fetchone()
+        if not row:
+            raise HTTPException(404,'回放记录不存在')
+        source=c.execute('SELECT data FROM replay_files WHERE id=? AND kind=?',(replay_id,'abc')).fetchone()
+    if not source:
+        raise HTTPException(404,'回放主体文件不存在')
+    ledger=skill_ledger(bytes(source['data']))
+    engine_provenance=engine_outcomes_summary(ledger)
+    if unit is not None:
+        hero=next((item for item in ledger.get('heroes') or [] if item['unit']==unit),None)
+        if hero is None:
+            raise HTTPException(404,f'unit {unit} 不在十人槽位映射内')
+        casts=[cast for cast in ledger['casts'] if cast['unit']==unit]
+        cap=4000
+        step=max(int(stride or 1),(len(casts)+cap-1)//cap if len(casts)>cap else 1)
+        ledger={'status':ledger['status'],'tier':ledger['tier'],
+                'frameRecords':ledger['frameRecords'],
+                'unresolvedFrames':ledger['unresolvedFrames'],
+                'timeBase':ledger['timeBase'],'hero':hero,
+                'castsTotal':len(casts),'strideApplied':step,
+                'casts':casts[::step],'limitations':ledger['limitations']}
+    ledger=dict(ledger,provenance={
+        'casts':{'source':'abc-frame-commands','tier':'file-decode','confidence':'decoded'},
+        'targets':{'source':'abc-learnskill-object-pool','tier':'file-decode','confidence':'decoded'},
+        'engine':engine_provenance,
+        'notes':ledger.get('limitations') or []})
+    return ledger
 
 
 @app.post('/api/replays/{replay_id}/checkpoints')
@@ -4124,12 +4246,34 @@ _V3_INDEX_FALLBACK = """<!doctype html>
 """
 
 
+def _v3_asset_stamp() -> str:
+    """V3 外壳引用 app.js / style.css 的 ``?v=`` 值。
+
+    以前只用 index.html 自己的 mtime：index.html 从 1.5.x 起就没再变过，
+    所以 1.6.0–1.6.4 每个版本生成的 URL 完全一样（``app.js?v=1794271492``）。
+    覆盖安装后只要浏览器、标签页或中间层还留着这个 URL 的旧响应，看起来就是
+    「某些页面还是旧页面」，普通刷新也救不回来。改成版本号 + public 下最新
+    文件 mtime：每次发版、每次改前端文件都会换 URL，旧缓存自然失效。
+    """
+    newest = 0
+    public = ROOT / 'v3' / 'public'
+    try:
+        for item in public.rglob('*'):
+            if item.is_file() and '__pycache__' not in item.parts:
+                newest = max(newest, int(item.stat().st_mtime))
+    except OSError:
+        newest = 0
+    return f'{VERSION}-{newest}'
+
+
 def _v3_index_body() -> str:
-    """读 V3 外壳并做两件事：
+    """读 V3 外壳并做三件事：
 
     1. 外壳被外部编辑器写坏（编码错乱 / 引号丢失）时回退到内置版本——
        否则浏览器会把后面的 link/script 吞掉，整页空白且没有任何报错。
-    2. 资源版本按文件 mtime 注入，index.html 本身不必再手改 ?v=。
+    2. 资源版本按版本号 + public 最新 mtime 注入，index.html 本身不必再手改 ?v=。
+    3. 注入 ``<meta name="app-version">``：页面据此判断自己是不是旧版本，
+       服务端已经换成新版本时提示教练刷新（见 update-banner.js）。
     """
     path = ROOT / 'v3' / 'public' / 'index.html'
     try:
@@ -4144,12 +4288,16 @@ def _v3_index_body() -> str:
                 break
     if broken:
         text = _V3_INDEX_FALLBACK
-    try:
-        stamp = str(int(path.stat().st_mtime))
-    except OSError:
-        stamp = '0'
-    return re.sub(r'(static/(?:style\.css|workspace-home\.css|app\.js))(\?v=[^"\']*)?',
+    stamp = _v3_asset_stamp()
+    # godmode.js 也要吃同一个戳：它以前把 ?v=8.0.0 写死在 index.html 里，
+    # 升级后 URL 不变，浏览器会一直用旧副本，改了也看不到。
+    text = re.sub(r'(static/(?:style\.css|workspace-home\.css|app\.js|godmode\.js))(\?v=[^"\']*)?',
                   lambda match: f'{match.group(1)}?v={stamp}', text)
+    if 'name="app-version"' not in text:
+        text = re.sub(r'<head>',
+                      f'<head>\n  <meta name="app-version" content="{VERSION}">',
+                      text, count=1)
+    return text
 
 
 @app.get('/')

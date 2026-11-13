@@ -95,7 +95,7 @@ class CampAuthHealthTests(unittest.TestCase):
         import camp_sync
         with mock.patch.object(camp_sync, 'sync_entries',
                                side_effect=self.camp_client.CampAuthError('登录态失效', '-30003')):
-            results, attached = server._camp_sync_worker('540599032', '队长', [{'gameSeq': '1'}])
+            results, attached = server._camp_sync_worker('100000001', '队长', [{'gameSeq': '1'}])
         self.assertEqual(attached, [])
         self.assertFalse(results[0]['ok'])
         self.assertTrue(results[0]['authInvalid'])
@@ -132,7 +132,7 @@ class CampAuthApiTests(unittest.TestCase):
         def fail(*args, **kwargs):
             raise self.camp_client.CampAuthError('营地登录态已失效（-30003），请重新扫码授权。', '-30003')
         with mock.patch.object(self.camp_client, 'call', side_effect=fail):
-            response = self.client.post('/api/camp/list', json={'campUserId': '540599032'})
+            response = self.client.post('/api/camp/list', json={'campUserId': '100000001'})
         self.assertEqual(response.status_code, 401)
         payload = response.json()
         self.assertTrue(payload['authInvalid'])

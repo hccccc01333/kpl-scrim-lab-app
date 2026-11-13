@@ -685,15 +685,30 @@ def _diff_interp(diff, duration, seconds):
     and end inside the same sample bucket, so nearest-point lookup would hide
     the whole effect.  Interpolated values are rounded to 10 gold and must be
     labelled as approximate; nothing here is a per-player gold ledger.
+
+    缺失样本保留它在时间轴上的位置：先按原始下标换成时间，再只在有效点之间
+    插值，不能把 None 直接删掉再重排（那样会把后面的经济点整体提前）。
     """
-    clean = [v for v in diff if v is not None]
-    if not clean or not duration:
+    if not diff or not duration:
         return None
-    step = duration / max(1, len(clean) - 1)
-    x = min(len(clean) - 1, max(0.0, seconds / step))
-    i = int(x)
-    j = min(len(clean) - 1, i + 1)
-    value = clean[i] + (clean[j] - clean[i]) * (x - i)
+    count = len(diff)
+    step = duration / max(1, count - 1)
+    points = [(index * step, value) for index, value in enumerate(diff)
+              if value is not None]
+    if not points:
+        return None
+    if seconds <= points[0][0]:
+        value = points[0][1]
+    elif seconds >= points[-1][0]:
+        value = points[-1][1]
+    else:
+        value = points[-1][1]
+        for index in range(1, len(points)):
+            t0, v0 = points[index - 1]
+            t1, v1 = points[index]
+            if t0 <= seconds <= t1:
+                value = v0 if t1 == t0 else v0 + (v1 - v0) * (seconds - t0) / (t1 - t0)
+                break
     return int(round(value / 10.0) * 10)
 
 

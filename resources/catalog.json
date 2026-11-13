@@ -4,7 +4,7 @@
     "https://pvp.qq.com/web201605/js/herolist.json",
     "https://pvp.qq.com/web201605/js/item.json"
   ],
-  "notice": "英雄与装备名称、图标来自王者荣耀官方公开资源，权利归原权利人；仅作为本地识别参照。默认头像不覆盖所有皮肤。",
+  "notice": "英雄与装备名称、图标来自王者荣耀官方公开资源，权利归原权利人；仅作为本地识别参照。图片素材不随仓库分发，运行 python scripts/sync_catalog.py 可在本地拉取。",
   "entries": [
     {
       "id": "hero-105",

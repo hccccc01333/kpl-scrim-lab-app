@@ -63,12 +63,12 @@ class FrameCommandTests(unittest.TestCase):
 
 class PackedHeroFieldTests(unittest.TestCase):
     def test_move_info_fields_from_real_samples(self):
-        # 20261101_182452 first move: unit 8 (camp1 slot0), dir +60.
+        # 某次回放 first move: unit 8 (camp1 slot0), dir +60.
         self.assertEqual(decode_move_info(0x403C),
                          {"unit": 8, "seq": 0, "sign": 0, "mag": 60, "dir_deg": 60})
         # Same sample, second entry layout with seq bits: 0x441B -> unit 8, seq 2.
         self.assertEqual(decode_move_info(0x441B)["seq"], 2)
-        # 20261102_161129 frame 155: 0x4933 -> unit 9, signed direction -51.
+        # 某次回放 frame 155: 0x4933 -> unit 9, signed direction -51.
         self.assertEqual(decode_move_info(0x4933),
                          {"unit": 9, "seq": 0, "sign": 1, "mag": 51, "dir_deg": -51})
 
@@ -105,7 +105,7 @@ class PackedHeroFieldTests(unittest.TestCase):
 
 
 class WorldBearingTests(unittest.TestCase):
-    """Compass/world mapping calibrated in docs 5.128."""
+    """Compass/world mapping calibrated in 既有校准."""
 
     def test_world_vector_uses_native_y_down_axes(self):
         # dir -30 = northeast on screen: east + north(-y).
@@ -124,7 +124,7 @@ class WorldBearingTests(unittest.TestCase):
 
 
 class BattleTimeTests(unittest.TestCase):
-    """Frame-to-seconds clock calibrated in docs 5.129."""
+    """Frame-to-seconds clock calibrated in 既有校准."""
 
     def test_frame_rate_and_conversion(self):
         self.assertEqual(FRAME_RATE, 15)
@@ -132,7 +132,7 @@ class BattleTimeTests(unittest.TestCase):
         self.assertEqual(battle_time(10409, first_frame=1), (10409 - 1) / 15)
 
     def test_calibrated_match_window(self):
-        # 20261102_161129 pairs with a results page showing 693 s; the last
+        # 某次回放 pairs with a results page showing 693 s; the last
         # manual buy (frame 10409) must land at 692.9-693.9 s for F0 in [0..14].
         for f0 in range(0, 15):
             t = battle_time(10409, first_frame=f0)

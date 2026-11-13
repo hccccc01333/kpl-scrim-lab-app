@@ -13,7 +13,7 @@ const n1 = (v) => (isNum(v) ? v.toFixed(1) : '—');
 const pc = (v) => (isNum(v) ? Math.round(v) + '%' : '—');
 const sg = (v) => { const r = Math.round(isNum(v) ? v : 0) || 0; return (r < 0 ? '−' : '+') + Math.abs(r).toLocaleString('zh-CN'); };
 const sg1 = (v) => (v < 0 ? '−' : '+') + Math.abs(isNum(v) ? v : 0).toFixed(1);
-/* 赛训组说「金币」，不说「金」 */
+/* 战队说「金币」，不说「金」 */
 const yuan = (t) => String(t == null ? '' : t).replace(/金(?!币)/g, '金币');
 const tip = (t) => `data-lv-tip="${es(yuan(t))}"`;
 const laneAttr = (l) => `data-lane="${es(l)}"`;

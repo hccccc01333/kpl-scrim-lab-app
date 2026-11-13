@@ -36,7 +36,7 @@ QR_PATH = ROOT / 'test-results' / 'camp-login-qr.png'
 CAMP_BASE = 'https://ssl.kohsocialapp.qq.com:10001'
 WX_QR_URL = 'https://open.weixin.qq.com/connect/sdk/qrconnect'
 WX_POLL_URL = 'https://long.open.weixin.qq.com/connect/l/qrconnect'
-WX_APPID = 'wxf4b1e8a3e9aaf978'
+WX_APPID = os.environ.get('WX_APPID', '')  # 用自己的微信开放平台 AppID
 
 # 营地返回的 RSA 公钥（base64，DER），用于解开登录响应里的 encodeRes
 RSA_PUBLIC_B64 = (

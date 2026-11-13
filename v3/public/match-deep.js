@@ -13,7 +13,7 @@ const PROX_SECONDS = 5;   // 集结需持续时长
    这波线。交汇点会随推塔前后移动（也可能被反推到自家二塔甚至高地前），所以只按
    「这波兵已经出了」切窗口，不假定交汇位置；三路走廊用回放坐标里的定值折线。
    阈值都收在这里，改口径只改这一处。 */
-const WAVE_FIRST = 10;        // 第一波兵线出发（docs/economy_rules.md §4.1：10+33(n−1)）
+const WAVE_FIRST = 10;        // 第一波兵线出发（README.md §4.1：10+33(n−1)）
 const WAVE_GAP = 33;          // 波次间隔
 const LANE_CORRIDOR = 15;     // 到该路折线的距离上限（塔位内缩约 15）
 const LANE_CLUSTER = 20;      // 一起吃线的彼此距离上限
@@ -1052,7 +1052,7 @@ export function createMatchDeep(h) {
     });
     const total = duration || (list[0] ? list[0].points.length * step : 0);
     heatState = { step, duration: total, list };
-    /* 赛训组口径的三段：0–4 对线、4–10 发育、10 分钟以后到结束 */
+    /* 战队口径的三段：0–4 对线、4–10 发育、10 分钟以后到结束 */
     const [label1, label2, label3] = (phaseWindows(total) || []).map((w) => w.label).concat(['后期']).slice(0, 3);
     const phaseLabel = [
       `${label1} 0–4`,
@@ -1094,7 +1094,7 @@ export function createMatchDeep(h) {
           `<button type="button" class="md-heat-phase" data-heat-phase="${[240, 600, Math.round(total)][i]}">${label}</button>`).join('')}
       </div>
       <div class="md-heats md-heats-lane" data-heat-lanes>${laneCards}</div>
-      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久。分期按赛训组口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
+      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久。分期按战队口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
     </div>`;
   }
 

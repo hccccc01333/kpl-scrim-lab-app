@@ -268,3 +268,32 @@ def test_rosters_and_bp_replaced(ws):
                                   ('camp:2',)).fetchone()[0] == 1
     finally:
         connection.close()
+
+
+def test_partial_match_update_keeps_status_and_tags(ws):
+    """营地只回填部分字段时，不能把人工确认的 status 重置回 draft、也不能清空 tags。"""
+    ws.upsert_match('camp:keep', date='2026-11-02', status='confirmed', tags=['复盘'])
+    ws.upsert_match('camp:keep', date='2026-11-03', notes='补一句')
+    row = ws.list_matches()[0]
+    assert row['status'] == 'confirmed'
+    assert row['tags'] == '["复盘"]'
+    assert row['date'] == '2026-11-03'
+    ws.upsert_match('camp:keep', status='draft', tags=[])
+    row = ws.list_matches()[0]
+    assert row['status'] == 'draft' and row['tags'] == '[]'
+
+
+def test_team_rename_keeps_archived_status(ws):
+    team_id = ws.upsert_team(name='旧队名')
+    with sqlite3.connect(str(ws.db_path)) as connection:
+        connection.execute("UPDATE teams SET status='archived' WHERE id=?", (team_id,))
+    ws.upsert_team(team_id, name='新队名')
+    teams = {team['id']: team for team in ws.list_teams(include_archived=True)}
+    assert teams[team_id]['name'] == '新队名'
+    assert teams[team_id]['status'] == 'archived'
+
+
+def test_schedule_edit_keeps_status(ws):
+    schedule_id = ws.save_schedule(date='2026-11-08', status='completed')
+    ws.save_schedule(schedule_id, date='2026-11-09')
+    assert ws.get_schedule(schedule_id)['status'] == 'completed'

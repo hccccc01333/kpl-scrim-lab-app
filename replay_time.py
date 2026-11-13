@@ -13,13 +13,13 @@ Two clocks, both real, not yet proven to be the same counter
 
     frame 6838 @ 449,228 ms  →  frame 6895 @ 452,990 ms
 
-``FPS = 15`` — the value in ``docs/replay_binary_format.md`` §5.129, derived
-from the results page of replay ``20261102_161129`` (11:33 = 693 s) assuming
+``FPS = 15`` — the value in ``README.md`` §5.129, derived
+from the results page of replay ``20260101_000000`` (11:33 = 693 s) assuming
 the last manual buy (frame 10,409) lands at the end of the match.
 
 The open link: the engine measurement is about the *engine's* frame counter.
 Nothing in this repository yet proves that the ``sequence`` field of the .abc
-record stream is that same counter (``docs/replay_binary_format.md`` §5.133
+record stream is that same counter (``README.md`` §5.133
 asserts "条目 seq = 帧号" but does not compare the two on one replay).  Until
 that comparison exists, the product keeps the documented 15 fps and the
 measured 15.1515 is used only where a research tool already relied on it.

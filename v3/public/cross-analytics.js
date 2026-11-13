@@ -1078,7 +1078,7 @@ function a18(ctx) {
         : '保持现在的打野路线，下一批看反野次数有没有提高。',
     review: '看输的局',
     actKeys: loss.slice(0, 60).map((r) => r.key),
-    method: '取 0–10 分钟逐秒坐标（1 Hz），按 x+y 投影到「己方—对方」轴：越过河道 8 个单位算过河，超过 25 算深入野区。反野次数来自 BUFF 击杀事件，不由位置推算。口径见 docs/jungle_position_spec.md。',
+    method: '取 0–10 分钟逐秒坐标（1 Hz），按 x+y 投影到「己方—对方」轴：越过河道 8 个单位算过河，超过 25 算深入野区。反野次数来自 BUFF 击杀事件，不由位置推算。口径见 README.md。',
     grade: grade(withJ.length),
     repro: null,
   };

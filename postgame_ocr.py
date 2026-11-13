@@ -120,7 +120,7 @@ def recognize(data, name=None, include_tokens=False, engine='rapid', on_stage=No
     if match.get('score') and page in ('data', 'output', 'survival', 'farming'):
         warnings.append('该页提供比分，但日期、时长和胜负只在战绩页；不能单独归档。')
     if page == 'kda' and not match.get('date'):
-        warnings.append('该战绩页没有日期/时长，需与同一局战绩页或赛训表关联。')
+        warnings.append('该战绩页没有日期/时长，需与同一局战绩页或数据表关联。')
     if page == 'score':
         warnings.append('新版战绩页装备图标未纳入 v1；装备名称需人工核对。')
     _validate_scores(match, players, page, warnings)

@@ -4,7 +4,7 @@ ID1075 (multiplayer): signed i32 LE lengths; negative for CSPkg, positive for
 frame records with a BE u32 sequence and BE u16 size, one record per game
 frame.
 
-ID1051 (single game, docs 5.133): the opening CSPkg is followed by per-entry
+ID1051 (single game, 既有校准): the opening CSPkg is followed by per-entry
 records `[i32 len][u32 seq][payload = len bytes]`; the u32 is the game frame
 number (repeats across the entries of one frame; max matches the header's
 totalFrameNum on every sample). Entry-level command semantics for the old
@@ -70,7 +70,7 @@ EVENT_SUBTYPES = {
 
 
 def _decode_cc_states(buffer: bytes):
-    """`02 key val` repeated = a key-value state broadcast; else None (docs 5.135)."""
+    """`02 key val` repeated = a key-value state broadcast; else None (既有校准)."""
     if len(buffer) < 3 or len(buffer) % 3 or buffer[0] != 0x02:
         return None
     states = {}
@@ -82,17 +82,17 @@ def _decode_cc_states(buffer: bytes):
 
 
 def decode_1051_entry(payload: bytes) -> dict:
-    """Decode one ID1051 entry payload into its command-layer shape (docs 5.134-5.136).
+    """Decode one ID1051 entry payload into its command-layer shape (既有校准-5.136).
 
     Every payload = [message][const:u32BE] where the trailing u32 is a
     per-file constant. Messages: `01 00 <cc-buffer>` (the CC/TLV family also
     seen in ID1075 BOOTFRAP1, obj 0x0100; `02 key val ...` chains decode to a
     key-value state broadcast) or `02 <subtype> <data>` with the 0x02-channel
-    subtypes of the docs 5.93 dictionary. Structured fields: 0x83 = POV hero
+    subtypes of the 既有校准 dictionary. Structured fields: 0x83 = POV hero
     facing angle (signed i16BE degrees + rolling index), 0x87 = skill level-up
     (actor u16BE + skill slot + level index), 0x85 = the same buy echo as
-    docs 5.130 (equip u16BE + pad + object + flag), 0x82 = aim position with
-    an i32BE world-coordinate pair (docs 5.145; the former "mid" i16 was y's
+    既有校准 (equip u16BE + pad + object + flag), 0x82 = aim position with
+    an i32BE world-coordinate pair (既有校准; the former "mid" i16 was y's
     high half). Unmatched shapes return kind unknown instead of guessing.
     """
     if len(payload) < 5:
@@ -130,7 +130,7 @@ def decode_1051_entry(payload: bytes) -> dict:
             entry["y"] = int.from_bytes(data[5:9], "big", signed=True)
             entry["counter"] = int.from_bytes(data[9:11], "big")
         elif subtype == 0x80 and len(data) >= 12:
-            # Old-build hero-action command (docs 5.111): cmdType is a
+            # Old-build hero-action command (既有校准): cmdType is a
             # hero-specific action id, not a global move/attack/skill enum.
             entry["cmd_type"] = int.from_bytes(data[0:2], "little")
             entry["value"] = int.from_bytes(data[2:4], "little")
@@ -214,7 +214,7 @@ def audit(data: bytes) -> dict:
                        "limitations": "Record boundaries and sequence only; commands, world state and playback unverified. Header totalFrame may differ from record count."})
     else:
         result.update({"entry_records": entries, "entry_types": dict(event_types),
-                       "limitations": "Container and entry-shape indexing (docs 5.134): entries decode to "
+                       "limitations": "Container and entry-shape indexing (既有校准): entries decode to "
                                       "the 0x02-channel event family (0x80 frame commands, 0x84 kill notices, "
                                       "0x85 buy, ...) and 01/00 CC buffers; per-event field semantics for the "
                                       "old builds stay raw. No playback."})

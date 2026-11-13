@@ -25,7 +25,7 @@ def selected_sheets(workbook, names):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='预览并导入赛训组已有的 CSV/Excel 表格。')
+    parser = argparse.ArgumentParser(description='预览并导入战队已有的 CSV/Excel 表格。')
     parser.add_argument('file', help='CSV/TSV/XLSX/XLSM 文件')
     parser.add_argument('--sheet', action='append', default=[], help='只处理指定工作表；可重复')
     parser.add_argument('--profile', action='append', default=[], help='映射 profile JSON；可重复')
