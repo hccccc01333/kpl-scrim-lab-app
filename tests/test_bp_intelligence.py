@@ -175,3 +175,15 @@ def test_no_leakage_when_ordered_bp_dates_are_insufficient():
     rows = [game(i, "2026-11-02") for i in range(25)]
     report = build_report([], rows, source="kpl", team="战队A")
     assert report["validation"] is None
+
+
+def test_counter_candidate_is_historical_evidence_not_unobserved_prediction():
+    games = [game(i, "2026-10-01") for i in range(6)]
+    report = build_report([], games, source="kpl", team="战队A")
+    candidate = next(x for x in report["counterCandidates"]
+                     if x["enemyHero"] == "马超" and x["candidateHero"] == "夏洛特")
+    assert candidate["games"] == 6
+    assert candidate["againstGames"] == 6
+    assert candidate["winRate"] == 100
+    assert candidate["interval"][0] < 100
+    assert candidate["evidence"] and candidate["evidence"][0]["source"] == "kpl"
