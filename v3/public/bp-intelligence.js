@@ -97,6 +97,25 @@ function rankRows(items, icons, type) {
   </article>`).join('')}</div>`;
 }
 
+function validationPanel(v) {
+  if(!v)return `<div class="bpi-research-alert"><b>历史预测效果尚待验证</b>
+    <p>需要足够多、跨多个日期的完整 BP 对局，才能用后续未参与建模的比赛检验预测是否有用。目前只展示实际历史回应。</p></div>`;
+  const better=v.changePP>0;
+  return `<section class="bpi-panel bpi-validation">
+    <header><h3>这套规律能预测后续比赛吗？</h3><span>历史时间外验证</span></header>
+    <div class="bpi-check-figures">
+      <div><span>根据对手历史回应</span><strong>${pct(v.conditionalTop3)}</strong></div>
+      <div><span>只按常用英雄猜测</span><strong>${pct(v.baselineTop3)}</strong></div>
+      <div><span>额外提升</span><strong class="${better?'is-up':v.changePP<0?'is-down':''}">${sign(v.changePP)}</strong></div>
+    </div>
+    <p class="bpi-explain">先用 ${count(v.trainGames)} 局早期比赛学习，再用 ${count(v.testGames)} 局后续比赛检验；
+       共 ${count(v.testCases)} 次真实选人决策，其中 ${count(v.conditionCases)} 次有足够的同条件历史记录。</p>
+    <p class="bpi-subtle">${better
+      ? '历史测试中条件回应比简单频率更有参考价值，但并不保证下一场命中。'
+      : '本次测试尚未证明条件回应优于常用英雄频率，不能把它当成稳定预判。'}</p>
+  </section>`;
+}
+
 function habitView(report) {
   return `<div class="bpi-cols">
     <section class="bpi-panel"><header><h3>最常选择的英雄</h3><span>本队或所选战队</span></header>
@@ -108,7 +127,7 @@ function habitView(report) {
     <section class="bpi-panel">
       <header><h3>对手先选后，我们如何回应？</h3><span>仅使用完整选禁事件</span></header>
       ${responseRows(report.responses,report.icons)}
-    </section>`;
+    </section>${validationPanel(report.validation)}`;
 }
 
 function responseRows(responses, icons) {
