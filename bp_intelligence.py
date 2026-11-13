@@ -469,6 +469,54 @@ def _hero_win_shifts(games):
     return sorted(out, key=lambda x: (-abs(x["changePP"]), x["hero"]))[:12]
 
 
+
+def _lineups(games):
+    """Actual five-hero lineups, independent of displayed ordering."""
+    buckets = defaultdict(list)
+    for g in games:
+        if len(g["picks"]) == 5:
+            buckets[tuple(sorted(g["picks"]))].append(g)
+    result = []
+    for heroes, records in buckets.items():
+        decided = [g for g in records if g["result"] is not None]
+        wins = sum(g["result"] is True for g in decided)
+        result.append({"heroes": list(heroes), "games": len(records),
+                       "wins": wins, "decided": len(decided),
+                       "winRate": _percent(wins, len(decided)),
+                       "interval": _wilson(wins, len(decided)),
+                       "evidence": _evidence(records)})
+    return sorted(result, key=lambda x: (-x["games"], x["heroes"]))[:18]
+
+
+def _ban_responses(games):
+    """Observed next own pick after opponent ban, not presumed hero substitution."""
+    opportunities = defaultdict(set)
+    found = defaultdict(dict)
+    for game in games:
+        pending, used = set(), set()
+        for event in game["events"]:
+            if event["actor"] == "enemy" and event["action"] == "ban":
+                if event["hero"] not in used:
+                    pending.add(event["hero"])
+            elif event["actor"] == "team" and event["action"] == "pick":
+                for hero in pending:
+                    opportunities[hero].add(game["id"])
+                    found[(hero, event["hero"])][game["id"]] = game
+                    used.add(hero)
+                pending.clear()
+    output = []
+    for (ban, picked), records in found.items():
+        denominator = len(opportunities[ban])
+        if denominator < 2:
+            continue
+        output.append({"trigger": ban, "response": picked,
+                       "games": len(records), "opportunities": denominator,
+                       "share": _percent(len(records), denominator),
+                       "evidence": _evidence(records.values())})
+    return sorted(output, key=lambda row: (-row["games"], -row["share"],
+                                           row["trigger"], row["response"]))[:20]
+
+
 def _response_samples(g):
     """(trigger, actual pick, unavailable-at-decision) using only past BP events."""
     latest, used, unavailable, rows = None, set(), set(), []
@@ -651,11 +699,15 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     bans = _counts(team_games, "bans", source_games)
     combos = _combos(team_games, source_games, 2)
     trios = _combos(team_games, source_games, 3)
+    full_lineups = _lineups(team_games)
+    ban_responses = _ban_responses(team_games)
     players = _players(team_games, source_games)
     changes = _changes(team_games)
     responses = _transitions(team_games)
-    process_study = _process_analysis(team_games)
-    hero_shifts = _hero_win_shifts(team_games)
+    # League/whole-dataset views include both sides of the same game; assigning
+    # a team advantage or a single-team win-rate trend is meaningless there.
+    process_study = _process_analysis(team_games if team else [])
+    hero_shifts = _hero_win_shifts(team_games if team else [])
     findings = []
     if hero_shifts:
         change = hero_shifts[0]
@@ -706,7 +758,9 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                       "orderedGames": len({g["id"] for g in full}),
                       "playerGames": len({g["id"] for g in team_games if g["players"]})},
             "picks": picks[:24], "bans": bans[:24],
-            "pairs": combos, "trios": trios, "players": players, "changes": changes,
+            "pairs": combos, "trios": trios, "fullLineups": full_lineups,
+            "banResponses": ban_responses,
+            "players": players, "changes": changes,
             "processStudy": process_study, "heroWinShifts": hero_shifts,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
