@@ -152,7 +152,7 @@ def _scrim_players(row, side, picks):
     return players
 
 
-def normalize_scrims(raw_games):
+def normalize_scrims(raw_games, process_map=None):
     games = []
     for item in raw_games or []:
         if not isinstance(item, dict):
@@ -163,6 +163,7 @@ def normalize_scrims(raw_games):
         picks = item.get("picks") or {}
         bans = item.get("bans") or {}
         source_events = item.get("draftEvents") or []
+        process = (process_map or {}).get(identity) or {}
         perspective = [("own", "enemy", "本队", str(item.get("opponent") or "").strip()),
                        ("enemy", "own", str(item.get("opponent") or "").strip(), "本队")]
         for side, other, team, foe in perspective:
@@ -180,6 +181,10 @@ def normalize_scrims(raw_games):
             won = (result == "win") if result in ("win", "loss") else None
             if side == "enemy" and won is not None:
                 won = not won
+            own_diff = process.get("teamDiffOwn") or {}
+            flip = 1 if side == "own" else -1
+            team_diff = {stamp: (round(value * flip, 1) if isinstance(value, (int, float))
+                                 else None) for stamp, value in own_diff.items()}
             games.append({"id": identity, "date": _period(item.get("day") or item.get("start")),
                           "team": team, "enemy": foe, "side": camp,
                           "picks": own_picks, "bans": own_bans,
@@ -187,7 +192,10 @@ def normalize_scrims(raw_games):
                           "players": _scrim_players(item, side, own_picks),
                           "enemyPlayers": _scrim_players(item, other, enemy_picks),
                           "result": won, "events": events, "source": "scrim",
-                          "matchId": identity, "league": "训练赛", "gameSeq": None})
+                          "matchId": identity, "league": "训练赛", "gameSeq": None,
+                          "processMatchKey": process.get("matchKey") or "",
+                          "teamGoldDiff": team_diff,
+                          "laneGoldDiffByHero": process.get("laneDiffByHero") or {}})
     return games
 
 
@@ -199,7 +207,8 @@ def _evidence(games, max_items=8):
         seen.add(g["id"])
         rows.append({"id": g["id"], "date": g["date"], "team": g["team"],
                      "enemy": g["enemy"], "source": g["source"],
-                     "result": g["result"], "matchId": g["matchId"]})
+                     "result": g["result"], "matchId": g["matchId"],
+                     "processMatchKey": g.get("processMatchKey") or ""})
         if len(rows) >= max_items:
             break
     return rows
@@ -326,6 +335,138 @@ def _changes(games):
                         "previousShare": p, "recentShare": q, "changePP": round(q-p, 1),
                         "evidence": _evidence([g for g in after if hero in g["picks"]])})
     return sorted(changes, key=lambda x: -abs(x["changePP"]))[:12]
+
+
+
+def _average(values):
+    values = [v for v in values if isinstance(v, (int, float))
+              and not isinstance(v, bool)]
+    return round(sum(values) / len(values), 1) if values else None
+
+
+def _process_analysis(games):
+    """Descriptive BP-linked team tempo and per-player lane economy; no inferred CS."""
+    available = [g for g in games if g.get("processMatchKey")]
+    valid_at = lambda stamp: [g for g in games
+                              if isinstance((g.get("teamGoldDiff") or {}).get(stamp),
+                                            (int, float))]
+    by_checkpoint = {}
+    for stamp in ("120", "240", "600"):
+        rows = valid_at(stamp)
+        ahead = [g for g in rows if g["teamGoldDiff"][stamp] > 0]
+        decided = [g for g in ahead if g["result"] is not None]
+        by_checkpoint[stamp] = {
+            "games": len(rows),
+            "meanDiff": _average([g["teamGoldDiff"][stamp] for g in rows]),
+            "aheadGames": len(ahead), "aheadRate": _percent(len(ahead), len(rows)),
+            "aheadWins": sum(g["result"] is True for g in decided),
+            "aheadDecided": len(decided),
+            "leadConversion": _percent(sum(g["result"] is True for g in decided),
+                                       len(decided)),
+            "evidence": _evidence(rows, 8),
+        }
+    stages = defaultdict(lambda: {"games": [], "240": [], "600": []})
+    for game in games:
+        lane_gold = game.get("laneGoldDiffByHero") or {}
+        for player in game["players"]:
+            if not player.get("hero") or not player.get("name"):
+                continue
+            key = game["team"], player["name"], player["hero"], player.get("lane") or ""
+            stage = stages[key]
+            if game.get("processMatchKey"):
+                stage["games"].append(game)
+            for stamp in ("240", "600"):
+                diff = (lane_gold.get(stamp) or {}).get(player["hero"])
+                if isinstance(diff, (int, float)) and not isinstance(diff, bool):
+                    stage[stamp].append((game, diff))
+    player_rows = []
+    for (team, name, hero, lane), values in stages.items():
+        total = len({g["id"] for g in values["games"]})
+        n4, n10 = len(values["240"]), len(values["600"])
+        if not n4 and not n10:
+            continue
+        player_rows.append({
+            "team": team, "player": name, "hero": hero, "lane": lane,
+            "linkedGames": total, "n4": n4, "n10": n10,
+            "diff4": _average([value for _, value in values["240"]]),
+            "diff10": _average([value for _, value in values["600"]]),
+            "ahead4": _percent(sum(v > 0 for _, v in values["240"]), n4),
+            "ahead10": _percent(sum(v > 0 for _, v in values["600"]), n10),
+            "evidence": _evidence([g for g, _ in values["240"] + values["600"]]),
+        })
+    player_rows.sort(key=lambda r: (-max(r["n4"], r["n10"]), r["player"], r["hero"]))
+    per_hero = []
+    for hero in sorted({hero for g in games for hero in g["picks"]}):
+        rows = [g for g in games if hero in g["picks"]]
+        values = [(g, (g.get("teamGoldDiff") or {}).get("600")) for g in rows]
+        checked = [(g, v) for g, v in values if isinstance(v, (int, float))]
+        if len(checked) < 2:
+            continue
+        per_hero.append({"hero": hero, "games": len(rows), "processGames": len(checked),
+                         "avgTeamDiff10": _average([v for _, v in checked]),
+                         "evidence": _evidence([g for g, _ in checked])})
+    per_hero.sort(key=lambda r: (-r["processGames"], r["hero"]))
+    return {"linkedGames": len({g["id"] for g in available}),
+            "checkpoints": by_checkpoint, "playerLanes": player_rows[:25],
+            "heroTempo": per_hero[:20],
+            "limitations": [
+                "阶段经济来自已匹配录像/回放的双方经济时间轴；过稀或不连续的时间点不插值。",
+                "选手对位经济差仅在相同分路、对应英雄身份及个人记分板快照可验证时计算。",
+                "队伍经济优势不等于某位选手对线能力，经济差也不等于补刀数量。",
+            ]}
+
+
+def _hero_win_shifts(games):
+    """Observed win-rate changes with condition drift, never asserted as causal."""
+    dated = sorted((g for g in games if g["date"]), key=lambda g: (g["date"], g["id"]))
+    days = sorted({g["date"] for g in dated})
+    if len(dated) < 12 or len(days) < 2:
+        return []
+    cut = days[len(days) // 2]
+    before, after = [g for g in dated if g["date"] < cut], [g for g in dated if g["date"] >= cut]
+    if min(len(before), len(after)) < 5:
+        return []
+    heroes = sorted({hero for g in dated for hero in g["picks"]})
+    out = []
+    for hero in heroes:
+        early = [g for g in before if hero in g["picks"] and g["result"] is not None]
+        recent = [g for g in after if hero in g["picks"] and g["result"] is not None]
+        if min(len(early), len(recent)) < 3:
+            continue
+        early_win = sum(g["result"] is True for g in early)
+        recent_win = sum(g["result"] is True for g in recent)
+        prev_rate, new_rate = _percent(early_win, len(early)), _percent(recent_win, len(recent))
+        change = round(new_rate - prev_rate, 1)
+        if abs(change) < 15:
+            continue
+        partner_before = Counter(h for g in early for h in g["picks"] if h != hero)
+        partner_after = Counter(h for g in recent for h in g["picks"] if h != hero)
+        enemy_before = Counter(h for g in early for h in g["enemyPicks"])
+        enemy_after = Counter(h for g in recent for h in g["enemyPicks"])
+        def drift(old, new):
+            return sorted([{"hero": h, "previousGames": old[h], "recentGames": new[h],
+                            "previousShare": _percent(old[h], len(early)),
+                            "recentShare": _percent(new[h], len(recent)),
+                            "changePP": round(_percent(new[h], len(recent)) -
+                                              _percent(old[h], len(early)), 1)}
+                           for h in old.keys() | new.keys()],
+                          key=lambda v: (-abs(v["changePP"]), v["hero"]))[:4]
+        def average_diff(rows):
+            return _average([(g.get("teamGoldDiff") or {}).get("600") for g in rows])
+        out.append({
+            "hero": hero, "cutDate": cut,
+            "previousGames": len(early), "recentGames": len(recent),
+            "previousWins": early_win, "recentWins": recent_win,
+            "previousWinRate": prev_rate, "recentWinRate": new_rate,
+            "changePP": change, "previousInterval": _wilson(early_win, len(early)),
+            "recentInterval": _wilson(recent_win, len(recent)),
+            "previousTeamDiff10": average_diff(early),
+            "recentTeamDiff10": average_diff(recent),
+            "partnerChanges": drift(partner_before, partner_after),
+            "enemyChanges": drift(enemy_before, enemy_after),
+            "previousEvidence": _evidence(early), "recentEvidence": _evidence(recent),
+        })
+    return sorted(out, key=lambda x: (-abs(x["changePP"]), x["hero"]))[:12]
 
 
 def _response_samples(g):
@@ -486,14 +627,16 @@ def _series_adjustments(games):
     return sorted(changes, key=lambda x: (x["seriesId"], x["current"]), reverse=True)[:20]
 
 
-def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end=""):
+def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end="",
+                 process_map=None):
     if source not in ("scrim", "kpl"):
         raise ValueError("未知比赛来源")
     if start:
         date.fromisoformat(start)
     if end:
         date.fromisoformat(end)
-    all_games = normalize_scrims(scrim_rows) if source == "scrim" else normalize_kpl(kpl_rows)
+    all_games = (normalize_scrims(scrim_rows, process_map=process_map)
+                 if source == "scrim" else normalize_kpl(kpl_rows))
     dedup = {(g["id"], g["team"]): g for g in all_games}
     source_games = [g for g in dedup.values()
                     if (not start or g["date"] >= start) and (not end or g["date"] <= end)]
@@ -511,7 +654,21 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     players = _players(team_games, source_games)
     changes = _changes(team_games)
     responses = _transitions(team_games)
+    process_study = _process_analysis(team_games)
+    hero_shifts = _hero_win_shifts(team_games)
     findings = []
+    if hero_shifts:
+        change = hero_shifts[0]
+        findings.append({"kind": "hero-outcome", "title": "英雄近期战绩波动：" + change["hero"],
+                         "detail": f"较早 {change['previousWins']}/{change['previousGames']} 胜，近期 {change['recentWins']}/{change['recentGames']} 胜（变化 {change['changePP']:+.1f} 个百分点）。",
+                         "note": "先比较阵容搭配、对位和队伍经济；波动不能直接当作原因。",
+                         "evidence": change["recentEvidence"]})
+    if process_study["checkpoints"]["600"]["games"] >= 3:
+        checkpoint = process_study["checkpoints"]["600"]
+        findings.append({"kind": "process", "title": "10 分钟比赛节奏",
+                         "detail": f"在 {checkpoint['games']} 局有过程证据的比赛中，平均队伍经济差 {checkpoint['meanDiff']:+,.0f}。",
+                         "note": "仅反映双方队伍经济，不能直接定义单人对线强弱。",
+                         "evidence": checkpoint["evidence"]})
     if picks and len(team_games) >= 3:
         top = picks[0]
         diff = (top["share"] - top["baselineShare"]) if top["baselineShare"] is not None else None
@@ -550,6 +707,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                       "playerGames": len({g["id"] for g in team_games if g["players"]})},
             "picks": picks[:24], "bans": bans[:24],
             "pairs": combos, "trios": trios, "players": players, "changes": changes,
+            "processStudy": process_study, "heroWinShifts": hero_shifts,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
             "counterCandidates": _counter_candidates(team_games),
@@ -560,4 +718,6 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                 "BP 顺序仅来自完整且已核验的实际选禁事件；未取得事件的比赛仍可用于阵容统计。",
                 "选手英雄相对表现经分层收缩，但不能据此直接判定对线、团战或因果克制。",
                 "组合超额表现为探索性信号，不是可直接证明的协同效果。",
+                "胜率异动中阵容与对位变化仅是相关条件，不构成自动因果归因。",
+                "分路经济只有在真实逐人快照及明确对位身份可用时才计算；缺失绝不插补。",
             ]}
