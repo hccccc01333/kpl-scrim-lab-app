@@ -150,3 +150,23 @@ def test_wilson_small_samples_are_not_certainty():
     lo, hi = _wilson(1, 1)
     assert lo < 100 and hi == 100
     assert _wilson(0, 0) == [None, None]
+
+
+def test_draft_prediction_validation_only_uses_earlier_dates():
+    rows = [game(i, f"2026-10-{(i // 4 + 1):02d}") for i in range(24)]
+    report = build_report([], rows, source="kpl", team="战队A")
+    evaluation = report["validation"]
+    assert evaluation is not None
+    assert evaluation["trainGames"] == 16
+    assert evaluation["testGames"] == 8
+    assert evaluation["testCases"] >= 8
+    assert evaluation["splitDate"] == "2026-10-05"
+    assert evaluation["conditionalTop3"] == 100
+    assert evaluation["baselineTop3"] == 100
+    assert evaluation["changePP"] == 0
+
+
+def test_no_leakage_when_ordered_bp_dates_are_insufficient():
+    rows = [game(i, "2026-11-02") for i in range(25)]
+    report = build_report([], rows, source="kpl", team="战队A")
+    assert report["validation"] is None
