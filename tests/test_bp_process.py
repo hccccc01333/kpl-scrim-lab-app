@@ -163,3 +163,54 @@ def test_unverified_replay_stays_unlinked_and_does_not_create_misleading_values(
     assert report["processStudy"]["linkedGames"] == 0
     assert report["processStudy"]["checkpoints"]["240"]["meanDiff"] is None
     assert not report["processStudy"]["playerLanes"]
+
+
+def test_complete_five_hero_lineup_has_count_and_wilson_interval():
+    data = [bp_row(i, result="win" if i < 3 else "loss") for i in range(1, 5)]
+    report = build_report(data, [], source="scrim", team="本队")
+    lineup = next(row for row in report["fullLineups"]
+                  if set(row["heroes"]) == set(OWN))
+    assert lineup["games"] == 4 and lineup["wins"] == 2
+    assert lineup["interval"][0] < 50 < lineup["interval"][1]
+    assert lineup["evidence"][0]["id"] == "4"
+
+
+def test_ban_followup_uses_only_actual_ordered_actions():
+    bans_a = ["吕布", "亚连"]
+    bans_b = ["关羽", "朵莉亚"]
+    events = []
+    draft = [
+        ("1", "ban", bans_a[0]), ("2", "ban", bans_b[0]),
+        ("1", "ban", bans_a[1]), ("2", "ban", bans_b[1]),
+        ("2", "pick", FOE[0]), ("1", "pick", OWN[0]),
+        ("1", "pick", OWN[1]), ("2", "pick", FOE[1]),
+        ("1", "pick", OWN[2]), ("2", "pick", FOE[2]),
+        ("1", "pick", OWN[3]), ("2", "pick", FOE[3]),
+        ("1", "pick", OWN[4]), ("2", "pick", FOE[4]),
+    ]
+    for order, (camp, action, hero) in enumerate(draft, 1):
+        events.append({"order": order, "camp": camp, "action": action, "hero": hero})
+    games = []
+    for i in range(3):
+        games.append({
+            "battleId": "battle-" + str(i), "date": "2026-11-02",
+            "camp1": {"team": "战队A"}, "camp2": {"team": "战队B"},
+            "picks": {"1": OWN, "2": FOE},
+            "bans": {"1": bans_a, "2": bans_b},
+            "bansKnown": True, "pickOrderKnown": True,
+            "draftEvents": events, "winCamp": 1,
+        })
+    report = build_report([], games, source="kpl", team="战队A")
+    assert next(x for x in report["banResponses"] if x["trigger"] == bans_b[0])[
+        "response"] == OWN[0]
+    assert report["banResponses"][0]["games"] == 3
+    games[0]["pickOrderKnown"] = False
+    report = build_report([], games, source="kpl", team="战队A")
+    assert report["banResponses"][0]["games"] == 2
+
+
+def test_whole_league_view_does_not_assign_one_team_laning_or_trend():
+    rows = [bp_row(i) for i in range(1, 15)]
+    report = build_report(rows, [], source="scrim", team="")
+    assert report["processStudy"]["linkedGames"] == 0
+    assert report["heroWinShifts"] == []
