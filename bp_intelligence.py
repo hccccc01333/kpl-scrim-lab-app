@@ -49,9 +49,10 @@ def _normalize_events(raw, side):
     for idx, entry in enumerate(raw):
         if not isinstance(entry, dict):
             continue
-        action = str(entry.get("action") or "").lower()
-        hero = _hero(entry.get("hero"))
-        camp = str(entry.get("camp") or "")
+        action = str(entry.get("action") or entry.get("type") or "").lower()
+        hero = _hero(entry.get("hero") or entry.get("heroName") or entry.get("name"))
+        camp = str(entry.get("camp") or entry.get("side") or "").lower()
+        camp = {"left": "1", "blue": "1", "right": "2", "red": "2"}.get(camp, camp)
         if action not in ("pick", "ban") or camp not in ("1", "2") or not hero:
             continue
         try:
@@ -66,6 +67,25 @@ def _normalize_events(raw, side):
     if len(set(orders)) != len(orders):
         return []
     return sorted(events, key=lambda e: e["order"])
+
+
+def _checked_events(raw, side, picks, bans, enemy_picks, enemy_bans):
+    """Reject partial/inconsistent draft data instead of inferring the missing actions."""
+    events = _normalize_events(raw, side)
+    if not events:
+        return []
+    expected = {
+        ("team", "pick"): sorted(picks),
+        ("team", "ban"): sorted(bans),
+        ("enemy", "pick"): sorted(enemy_picks),
+        ("enemy", "ban"): sorted(enemy_bans),
+    }
+    for (actor, action), heroes in expected.items():
+        observed = sorted(e["hero"] for e in events
+                          if e["actor"] == actor and e["action"] == action)
+        if observed != heroes:
+            return []
+    return events
 
 
 def normalize_kpl(raw_games):
@@ -103,9 +123,8 @@ def normalize_kpl(raw_games):
                     enemy_players.append({"name": name, "hero": h,
                                           "lane": str(entry.get("position") or "")})
             ordered = bool(item.get("pickOrderKnown") and item.get("bansKnown"))
-            events = _normalize_events(item.get("draftEvents"), side) if ordered else []
-            # Do not accept partial sequences as complete draft evidence.
-            events = events if len([e for e in events if e["action"] == "pick"]) == 10 else []
+            events = (_checked_events(item.get("draftEvents"), side, picks, bans,
+                                     enemy_picks, enemy_bans) if ordered else [])
             winner = str(item.get("winCamp") or "")
             games.append({"id": identity, "date": _period(item.get("date") or item.get("startTime")),
                           "team": team, "enemy": foe, "side": side,
@@ -127,7 +146,9 @@ def _scrim_players(row, side, picks):
             continue
         name, hero = str(entry.get("name") or "").strip(), _hero(entry.get("hero"))
         if name and hero and hero in picks:
-            players.append({"name": name, "hero": hero, "lane": str(entry.get("lane") or "")})
+            players.append({"name": name, "hero": hero, "lane": str(entry.get("lane") or ""),
+                            "gold": entry.get("gold"), "heroDamage": entry.get("heroDamage"),
+                            "deaths": entry.get("deaths"), "participation": entry.get("participation")})
     return players
 
 
@@ -153,8 +174,8 @@ def normalize_scrims(raw_games):
                 continue
             # Scrim event contract: actual ordered events must carry camp 1/2.
             camp = "1" if ((side == "own") == (item.get("ownSide") == "left")) else "2"
-            events = _normalize_events(source_events, camp)
-            events = events if len([e for e in events if e["action"] == "pick"]) == 10 else []
+            events = _checked_events(source_events, camp, own_picks, own_bans,
+                                     enemy_picks, _heroes(bans.get(other)))
             result = item.get("result")
             won = (result == "win") if result in ("win", "loss") else None
             if side == "enemy" and won is not None:
@@ -260,7 +281,15 @@ def _players(games, baseline):
         base_rate = (sum(g["result"] is True for g in base) + 2) / (len(base) + 4)
         wins = sum(g["result"] is True for g in valid)
         posterior = (wins + base_rate * 6) / (len(valid) + 6)
+        samples = [p for g in rows for p in g["players"]
+                   if p["name"] == name and p["hero"] == hero]
+        damage_gold = [1000 * p["heroDamage"] / p["gold"] for p in samples
+                       if isinstance(p.get("heroDamage"), (int, float))
+                       and isinstance(p.get("gold"), (int, float)) and p["gold"] > 0]
+        avg_efficiency = (round(sum(damage_gold) / len(damage_gold), 1)
+                          if damage_gold else None)
         output.append({"player": name, "hero": hero, "lane": lane, "games": len(rows),
+                       "heroDamagePer1000Gold": avg_efficiency,
                        "wins": wins, "winRate": _percent(wins, len(valid)),
                        "reference": round(base_rate * 100, 1),
                        "relativeSignal": round((posterior - base_rate) * 100, 1),
@@ -272,8 +301,14 @@ def _changes(games):
     ordered = sorted((g for g in games if g["date"]), key=lambda g: (g["date"], g["id"]))
     if len(ordered) < 8:
         return []
-    middle = len(ordered) // 2
-    before, after = ordered[:middle], ordered[middle:]
+    distinct_days = sorted({g["date"] for g in ordered})
+    if len(distinct_days) < 2:
+        return []
+    cut = distinct_days[len(distinct_days) // 2]
+    before = [g for g in ordered if g["date"] < cut]
+    after = [g for g in ordered if g["date"] >= cut]
+    if min(len(before), len(after)) < 3:
+        return []
     counts_before = Counter(h for g in before for h in g["picks"])
     counts_after = Counter(h for g in after for h in g["picks"])
     changes = []
