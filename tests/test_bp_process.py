@@ -228,3 +228,10 @@ def test_two_drafts_matching_one_replay_never_duplicate_process_evidence():
     second["duration"] = 1400
     linked = link_scrim_process([first, second], [replay()])
     assert list(linked) == ["1"]
+
+
+def test_final_only_duplicate_does_not_block_real_replay_process_link():
+    final_only = replay("db-final-only")
+    final_only["process"] = None
+    linked = link_scrim_process([bp_row(1)], [final_only, replay("channel-good")])
+    assert linked["1"]["matchKey"] == "channel-good"
