@@ -170,7 +170,7 @@ def normalize_scrims(raw_games):
                 continue
             own_picks, own_bans = _heroes(picks.get(side)), _heroes(bans.get(side))
             enemy_picks = _heroes(picks.get(other))
-            if not own_picks:
+            if len(own_picks) != 5 or len(enemy_picks) != 5:
                 continue
             # Scrim event contract: actual ordered events must carry camp 1/2.
             camp = "1" if ((side == "own") == (item.get("ownSide") == "left")) else "2"
@@ -271,9 +271,9 @@ def _players(games, baseline):
     groups = defaultdict(list)
     for g in games:
         for p in g["players"]:
-            groups[(p["name"], p["hero"], p["lane"])].append(g)
+            groups[(g["team"], p["name"], p["hero"], p["lane"])].append(g)
     output = []
-    for (name, hero, lane), rows in groups.items():
+    for (team, name, hero, lane), rows in groups.items():
         valid = [g for g in rows if g["result"] is not None]
         base = [g for g in hero_base.get(hero, []) if g["result"] is not None]
         if not valid or not base:
@@ -288,7 +288,7 @@ def _players(games, baseline):
                        and isinstance(p.get("gold"), (int, float)) and p["gold"] > 0]
         avg_efficiency = (round(sum(damage_gold) / len(damage_gold), 1)
                           if damage_gold else None)
-        output.append({"player": name, "hero": hero, "lane": lane, "games": len(rows),
+        output.append({"player": name, "team": team, "hero": hero, "lane": lane, "games": len(rows),
                        "heroDamagePer1000Gold": avg_efficiency,
                        "wins": wins, "winRate": _percent(wins, len(valid)),
                        "reference": round(base_rate * 100, 1),
