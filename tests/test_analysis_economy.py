@@ -85,3 +85,15 @@ def test_value_at_clamps_short_games():
     assert ae._value_at(600, diff, 480) == diff[-1]
     # 正常时长的插值保持不变
     assert ae._value_at(300, [0, 1000], 600) == 500
+
+
+def test_short_games_do_not_enter_advantage_buckets(tmp_path):
+    """8 分钟投降局没有十分钟采样点：不能把终局经济差当成十分钟经济差。"""
+    make_game(tmp_path, 'short', diff=[0, 4000], duration=480, win_camp='1', own_camp='1')
+    make_game(tmp_path, 'long', diff=[0, 4000], duration=1200, win_camp='1', own_camp='1')
+    result = ae.advantage(tmp_path / 'replays', tmp_path / 'camp_details')
+    assert result['usableGames'] == 1
+    assert result['excludedShortGames'] == 1
+    assert [row['game'] for row in result['rows']] == ['long']
+    buckets = {item['bucket']: item for item in result['buckets']}
+    assert buckets['大优']['n'] == 1

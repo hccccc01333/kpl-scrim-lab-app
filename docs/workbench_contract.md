@@ -391,7 +391,7 @@ briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None, lim
 
 | 所有者 | 文件 |
 |---|---|
-| Lead | `docs/decision_workbench_contract.md`, `decision_facts.py`, `decision_briefing.py`, `decision_api.py`, `tests/decision_fixtures.py`, `tests/test_decision_api.py`, `docs/decision_workbench.md`, `CHANGELOG.md`, `server.py`（仅 mount 一处） |
+| Lead | `docs/workbench_contract.md`, `decision_facts.py`, `decision_briefing.py`, `decision_api.py`, `tests/decision_fixtures.py`, `tests/test_decision_api.py`, `docs/workbench.md`, `CHANGELOG.md`, `server.py`（仅 mount 一处） |
 | loss-analyst | `decision_loss.py`, `tests/test_decision_loss.py` |
 | fight-analyst | `decision_fights.py`, `decision_opening.py`, `tests/test_decision_fights.py`, `tests/test_decision_opening.py` |
 | resource-analyst | `decision_resource.py`, `tests/test_decision_resource.py` |

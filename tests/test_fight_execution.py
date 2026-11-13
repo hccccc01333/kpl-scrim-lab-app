@@ -1,4 +1,4 @@
-"""团战执行（decision_fights）测试：我方视角、到位差、人数差、热力格、团灭、缺失参与者。"""
+"""团战执行（analysis_space (fight_execution)）测试：我方视角、到位差、人数差、热力格、团灭、缺失参与者。"""
 import json
 import sys
 from pathlib import Path
@@ -10,9 +10,9 @@ TESTS = Path(__file__).resolve().parent
 if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
 
-import decision_facts  # noqa: E402
-import decision_fights  # noqa: E402
-import decision_fixtures as fx  # noqa: E402
+import match_facts  # noqa: E402
+import analysis_space  # noqa: E402
+import facts_fixtures as fx  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -83,7 +83,7 @@ def retag_enemy(root, seq, tag):
 # ---------------------------------------------------------------------------
 def test_default_fight_own_blue_perspective(tmp_path):
     facts = write_game(tmp_path)
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
 
     assert report['available'] is True
     assert report['filters']['limit'] == 120
@@ -143,7 +143,7 @@ def test_default_fight_own_blue_perspective(tmp_path):
 
 def test_selected_members_and_arrival_bars(tmp_path):
     facts = write_game(tmp_path)
-    selected = decision_fights.fight_report(facts)['selected']
+    selected = analysis_space.fight_report(facts)['selected']
 
     assert selected['fightId'] == 'f1'
     assert len(selected['members']) == 10
@@ -199,7 +199,7 @@ def test_selected_members_and_arrival_bars(tmp_path):
 # ---------------------------------------------------------------------------
 def test_own_red_perspective_flips_arrival_and_kill_diff(tmp_path):
     facts = write_game(tmp_path, own_camp='2', own_win=False, win_camp='2')
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
 
     assert report['available'] is True
     row = report['rows'][0]
@@ -222,7 +222,7 @@ def test_own_red_perspective_flips_arrival_and_kill_diff(tmp_path):
 # ---------------------------------------------------------------------------
 def test_zero_kill_fight_is_not_decided_and_skipped_in_heat(tmp_path):
     facts = write_game(tmp_path, seq='1101', fights=[fight('f1', kills=[])])
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
 
     row = report['rows'][0]
     assert row['killDiff'] is None
@@ -251,7 +251,7 @@ def test_heat_buckets_and_late_joins(tmp_path):
     fights.append(fight('f10', 500.0, own_times=[500] * 5, enemy_times=[500] * 5, kills=[]))
 
     facts = write_game(tmp_path, seq='1201', fights=fights)
-    summary = decision_fights.fight_report(facts)['summary']
+    summary = analysis_space.fight_report(facts)['summary']
 
     assert summary['fights'] == 10
     buckets = {item['advStart']: item for item in summary['openingBuckets']}
@@ -282,7 +282,7 @@ def test_heat_buckets_and_late_joins(tmp_path):
     # 平均到位延迟：(21×8 + 16 + 0) / 50 = 3.68
     assert summary['avgArrivalLagSec'] == 3.7
     # 行按损失优先：先 8 场 killDiff=-2，最后是 0 击杀的 None
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
     assert report['rows'][0]['killDiff'] == -2
     assert report['rows'][0]['advStart'] == -2
     assert report['rows'][-1]['killDiff'] is None
@@ -296,7 +296,7 @@ def test_missing_participant_time_counted(tmp_path):
     payload = fight('f1', own_times=[300, 300, 300, 302, None],
                     enemy_times=[301, 301, 301, 301, 303], own_kills=2, enemy_kills=1)
     facts = write_game(tmp_path, seq='1301', fights=[payload])
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
 
     row = report['rows'][0]
     assert row['ownParticipants'] == 4
@@ -311,7 +311,7 @@ def test_missing_participant_time_counted(tmp_path):
 def test_all_participant_times_missing_is_unavailable(tmp_path):
     payload = fight('f1', own_times=[None] * 5, enemy_times=[None] * 5)
     facts = write_game(tmp_path, seq='1302', fights=[payload])
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
 
     assert report['available'] is False
     assert '缺少参战时间' in report['reason']
@@ -327,7 +327,7 @@ def test_wipe_counts_enemy_side(tmp_path):
     payload = fight('f1', 320.0, own_deaths=[0, 0, 0, 0, 0],
                     enemy_deaths=[1, 2, 1, 1, 1], own_kills=0, enemy_kills=0)
     facts = write_game(tmp_path, seq='1401', fights=[payload])
-    summary = decision_fights.fight_report(facts)['summary']
+    summary = analysis_space.fight_report(facts)['summary']
 
     assert summary['wipes'] == 1
     assert summary['wipeSides'] == {'own': 0, 'enemy': 1}
@@ -345,34 +345,34 @@ def test_game_result_and_opponent_filters(tmp_path):
     retag_enemy(tmp_path, '3002', 'other')
     facts = fx.load_fixture_facts(tmp_path)
 
-    game_scoped = decision_fights.fight_report(facts, game='3001')
+    game_scoped = analysis_space.fight_report(facts, game='3001')
     assert game_scoped['summary']['fights'] == 1
     assert {row['game'] for row in game_scoped['rows']} == {'3001'}
 
-    loss_scoped = decision_fights.fight_report(facts, result='loss')
+    loss_scoped = analysis_space.fight_report(facts, result='loss')
     assert loss_scoped['summary']['fights'] == 1
     assert {row['game'] for row in loss_scoped['rows']} == {'3002'}
     assert {row['result'] for row in loss_scoped['rows']} == {'loss'}
 
-    win_scoped = decision_fights.fight_report(facts, result='win')
+    win_scoped = analysis_space.fight_report(facts, result='win')
     assert {row['game'] for row in win_scoped['rows']} == {'3001'}
 
     opponent_id = facts['games']['3002']['opponentId']
-    opponent_scoped = decision_fights.fight_report(facts, opponent=opponent_id)
+    opponent_scoped = analysis_space.fight_report(facts, opponent=opponent_id)
     assert opponent_scoped['summary']['fights'] == 1
     assert {row['game'] for row in opponent_scoped['rows']} == {'3002'}
 
-    empty = decision_fights.fight_report(facts, opponent='no-such-opponent')
+    empty = analysis_space.fight_report(facts, opponent='no-such-opponent')
     assert empty['available'] is False
     assert empty['rows'] == []
 
-    date_empty = decision_fights.fight_report(facts, date_from='2027-01-01')
+    date_empty = analysis_space.fight_report(facts, date_from='2027-01-01')
     assert date_empty['available'] is False
 
 
 def test_no_fights_available_false(tmp_path):
     facts = write_game(tmp_path, seq='1501', fights=[])
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
     assert report['available'] is False
     assert '团战' in report['reason']
     assert report['coverage']['fights'] == 0
@@ -381,9 +381,9 @@ def test_no_fights_available_false(tmp_path):
 
 
 def test_empty_dataset_available_false(tmp_path):
-    facts = decision_facts.load_facts(tmp_path / 'official_replays',
+    facts = match_facts.load_facts(tmp_path / 'official_replays',
                                       tmp_path / 'camp_details', tmp_path, None)
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
     assert report['available'] is False
     assert report['coverage']['games'] == 0
 
@@ -399,16 +399,16 @@ def test_selected_by_game_and_fight_reference(tmp_path):
     ]
     facts = write_game(tmp_path, seq='1601', fights=fights)
 
-    default_report = decision_fights.fight_report(facts)
+    default_report = analysis_space.fight_report(facts)
     assert default_report['selected']['fightId'] == 'f2'   # rows[0]：killDiff=-2
     assert default_report['selectedReason'] is None
 
-    picked = decision_fights.fight_report(facts, game='1601::f3')['selected']
+    picked = analysis_space.fight_report(facts, game='1601::f3')['selected']
     assert picked['fightId'] == 'f3'
     assert picked['killDiff'] == 0
     assert picked['won'] is False
 
-    bad = decision_fights.fight_report(facts, game='1601::nope')
+    bad = analysis_space.fight_report(facts, game='1601::nope')
     assert bad['available'] is True
     assert bad['selected'] is None
     assert 'nope' in bad['selectedReason']
@@ -421,13 +421,13 @@ def test_rows_sorted_by_loss_then_limit(tmp_path):
         fight('f3', 500.0, own_kills=1, enemy_kills=1),   # killDiff 0
     ]
     facts = write_game(tmp_path, seq='1701', fights=fights)
-    report = decision_fights.fight_report(facts)
+    report = analysis_space.fight_report(facts)
 
     assert [row['killDiff'] for row in report['rows']] == [-2, 0, 3]
     assert [row['fightId'] for row in report['rows']] == ['f2', 'f3', 'f1']
     assert report['selected']['fightId'] == 'f2'
 
-    limited = decision_fights.fight_report(facts, limit=2)
+    limited = analysis_space.fight_report(facts, limit=2)
     assert len(limited['rows']) == 2
     assert limited['filters']['limit'] == 2
     assert limited['coverage']['analyzedFights'] == 3
@@ -435,6 +435,6 @@ def test_rows_sorted_by_loss_then_limit(tmp_path):
 
 def test_fight_start_phase_and_clock(tmp_path):
     facts = write_game(tmp_path, seq='1801', fights=[fight('f1', 650.0)])
-    row = decision_fights.fight_report(facts)['rows'][0]
+    row = analysis_space.fight_report(facts)['rows'][0]
     assert row['phase'] == '后期'
     assert row['timeLabel'] == '10:50'

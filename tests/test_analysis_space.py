@@ -118,3 +118,23 @@ def test_death_without_coordinates_is_skipped(tmp_path):
     write_game(tmp_path, '5', positions=positions, deaths=deaths)
     result = sp.death_isolation(sp.load_games(tmp_path / 'replays', tmp_path / 'camp_details'))
     assert result['deaths'] == 0
+
+
+def test_zero_kill_fight_is_not_in_win_rate_denominator(tmp_path):
+    """空团战（0 击杀）只进 n，不进胜率分母。"""
+    positions = {'p1': [[0, 0]] * 60}
+    fight = {
+        'fightId': '9', 'startSec': 10, 'endSec': 16,
+        'participants': [
+            {'objID': 'obj0', 'camp': '1', 'timeSec': 10},
+            {'objID': 'obj1', 'camp': '2', 'timeSec': 10},
+        ],
+        'kills': [],
+        'details': [],
+    }
+    write_game(tmp_path, '9', positions=positions, fights=[fight])
+    result = sp.fight_arrival(sp.load_games(tmp_path / 'replays', tmp_path / 'camp_details'))
+    bucket = result['buckets'][0]
+    assert bucket['n'] == 1
+    assert bucket['decided'] == 0
+    assert bucket['winRate'] is None

@@ -1,6 +1,6 @@
 """赛训决策台 API（/api/decision/*）。
 
-只读路由：把 decision_facts 的统一事实表接到五类决策分析上，并为教练首页提供
+只读路由：把 facts 的统一事实表接到五类决策分析上，并为教练首页提供
 「今天先看这几个问题」的 briefing。
 
 - 结果按数据签名缓存，谱系变化（新对局/新回放/改名）自动失效。
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
-import decision_facts
+import match_facts
 
 ANALYSES = (
     {
@@ -70,10 +70,10 @@ def _router_facts(replays_dir, camp_dir, data_dir, db_path):
     lock = threading.Lock()
 
     def get():
-        key = decision_facts.data_signature(replays_dir, camp_dir, db_path)
+        key = match_facts.data_signature(replays_dir, camp_dir, db_path)
         with lock:
             if cache['key'] != key or cache['facts'] is None:
-                cache['facts'] = decision_facts.load_facts(
+                cache['facts'] = match_facts.load_facts(
                     replays_dir, camp_dir, data_dir, db_path)
                 cache['key'] = key
             return cache['facts']
@@ -194,7 +194,7 @@ def _catalog(facts):
     }
 
 
-def create_decision_router(replays_dir, camp_dir, data_dir=None, db_path=None):
+def create_workbench_router(replays_dir, camp_dir, data_dir=None, db_path=None):
     replays_dir = Path(replays_dir)
     camp_dir = Path(camp_dir)
     facts_of = _router_facts(replays_dir, camp_dir, data_dir, db_path)
@@ -207,16 +207,16 @@ def create_decision_router(replays_dir, camp_dir, data_dir=None, db_path=None):
     @router.get('/briefing')
     def briefing(request: Request):
         values = _filters(request)
-        import decision_briefing
-        return decision_briefing.briefing(
+        import briefing
+        return briefing.briefing(
             facts_of(), opponent=values['opponent'], date_from=values['date_from'],
             date_to=values['date_to'], result=values['result'], limit=_limit(values, 5))
 
     @router.get('/loss')
     def loss(request: Request):
         values = _filters(request)
-        import decision_loss
-        return decision_loss.loss_report(
+        import analysis_economy
+        return analysis_economy.loss_report(
             facts_of(), game=values['game'], opponent=values['opponent'],
             date_from=values['date_from'], date_to=values['date_to'],
             result=values['result'], limit=_limit(values, 80))
@@ -224,16 +224,16 @@ def create_decision_router(replays_dir, camp_dir, data_dir=None, db_path=None):
     @router.get('/advantage')
     def advantage(request: Request):
         values = _filters(request)
-        import decision_loss
-        return decision_loss.advantage_report(
+        import analysis_economy
+        return analysis_economy.advantage_report(
             facts_of(), opponent=values['opponent'], date_from=values['date_from'],
             date_to=values['date_to'], result=values['result'])
 
     @router.get('/fights')
     def fights(request: Request):
         values = _filters(request)
-        import decision_fights
-        return decision_fights.fight_report(
+        import analysis_space
+        return analysis_space.fight_report(
             facts_of(), game=values['game'], opponent=values['opponent'],
             date_from=values['date_from'], date_to=values['date_to'],
             result=values['result'], side=values['side'], limit=_limit(values, 120))
@@ -241,8 +241,8 @@ def create_decision_router(replays_dir, camp_dir, data_dir=None, db_path=None):
     @router.get('/opening')
     def opening(request: Request):
         values = _filters(request)
-        import decision_opening
-        return decision_opening.opening_report(
+        import analysis_space
+        return analysis_space.opening_report(
             facts_of(), opponent=values['opponent'], lane=values['lane'],
             date_from=values['date_from'], date_to=values['date_to'],
             side=values['side'] or 'enemy')
@@ -250,8 +250,8 @@ def create_decision_router(replays_dir, camp_dir, data_dir=None, db_path=None):
     @router.get('/resource')
     def resource(request: Request):
         values = _filters(request)
-        import decision_resource
-        return decision_resource.resource_report(
+        import analysis_profile
+        return analysis_profile.resource_report(
             facts_of(), lane=values['lane'], player=values['player'],
             opponent=values['opponent'], date_from=values['date_from'],
             date_to=values['date_to'], result=values['result'],
@@ -260,8 +260,8 @@ def create_decision_router(replays_dir, camp_dir, data_dir=None, db_path=None):
     @router.get('/bp')
     def bp(request: Request):
         values = _filters(request)
-        import decision_bp
-        return decision_bp.bp_report(
+        import bp_camp
+        return bp_camp.bp_report(
             facts_of(), opponent=values['opponent'], date_from=values['date_from'],
             date_to=values['date_to'])
 

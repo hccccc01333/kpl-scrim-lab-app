@@ -1,6 +1,6 @@
-"""decision_loss 失利关键链 / 优势保持：契约 2.2 的窗口、分类、排序、分位带与样本不足。
+"""analysis_economy (loss_chain) 失利关键链 / 优势保持：契约 2.2 的窗口、分类、排序、分位带与样本不足。
 
-全部用 ``tests/decision_fixtures.py`` 的合成数据，不依赖真实赛训库；断言尽量用
+全部用 ``tests/facts_fixtures.py`` 的合成数据，不依赖真实赛训库；断言尽量用
 手算的具体数值（合成 diff 刻意做成单点跳变，窗口可人工推导）。
 """
 import json
@@ -14,8 +14,8 @@ for _path in (str(ROOT), str(TESTS_DIR)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-import decision_loss as dl  # noqa: E402
-from decision_fixtures import load_fixture_facts, write_dataset  # noqa: E402
+import analysis_economy as dl  # noqa: E402
+from facts_fixtures import load_fixture_facts, write_dataset  # noqa: E402
 
 YEAR = datetime.now().year
 

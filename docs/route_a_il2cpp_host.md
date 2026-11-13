@@ -127,7 +127,7 @@ libc `+0xC87D0`（x0=0），说明后面还有其它未初始化的 C++ 静态�
 逐条 NOP 是 whack-a-mole，不能作为路线；必须补静态初始化或走真实引擎加载。
 
 
-### 5.2 复现
+#### 5.2.1 复现
 
 ```bash
 adb -s 10CEB60NHS001DX shell \
@@ -141,49 +141,29 @@ adb -s 10CEB60NHS001DX shell \
   "cd /data/local/tmp/gc/sim_orig && ./il2cpp_host ."
 ```
 
-## 3. 2026-11-04 晚：反作弊是唯一闸门（原生 ARM64 实测）
+## 6. 真机 backtrace 定位：DT_INIT 里的 tprt 检查（2026-11-04 晚）
 
-MuMu 的挂起与 ARM64 真机的挂起**不是同一个原因**。真机 backtrace：
+MuMu 的挂起与 ARM64 真机的挂起**不是同一个原因**。真机 backtrace 显示
+`DT_INIT` 的间接调用进入 libtprt 注册的检查函数后停在 `sem_wait`——它在
+私有进程里永远等不到只有真实游戏进程才会 signal 的 semaphore；检查不通过时
+进程直接 `exit_group(25)`，这解释了所有 `rc=25`。
 
-```text
-#02 libc  sem_wait
-#03 libtprt.so +0x6c454
-#04 libtprt.so +0x6c2c0
-#05 libtprt.so +0x6dea0
-#06 libil2cpp.so (mapping 0xd908000) +0x1518
-```
+当时的判断（"反作弊是唯一闸门"）与单点补丁方案**均被 §7/§8 的后续实测推翻**：
+闸门不止一处，退出分支全部中和后 `dlopen` 能过，`il2cpp_init` 仍撞 tprt
+钩子占位层。检查逻辑、返回值约定与补丁细节一律不入库。
 
-- `DT_INIT` 里的 `blr x8` 调用的是 libtprt 注册进去的检查函数，它在私有进程里
-  永远等一个只有真实游戏进程才会 signal 的 semaphore。
-- 直接 NOP 掉调用会走到 `0xd909520`：`mov w0,#0x19; mov x8,#0x5e; svc #0`
-  —— **`exit_group(25)`**。检查函数必须返回**奇数**（`tbnz w0,#0` 才跳过退出），
-  返回 0/偶数即自杀。这解释了所有 `rc=25`。
+事实保留：GameCore 本身不依赖 libtprt（DT_NEEDED 无此项），tprt 只护航
+il2cpp 加载路径。
 
-当前做法（待真机复测）：
-
-```text
-libtprt.so      → 空壳：只导出 g_tprt_pfn_array/g_tprt_ori_array/
-                  unwind_xx_*/JNI_OnLoad，构造函数把表填成 ret0
-libil2cpp.so    → 0xd909518: blr x8 改为 mov w0,#1 ; nop
-```
-
-GameCore 本身不依赖 libtprt（DT_NEEDED 无此项），所以空壳只影响 il2cpp 的
-保护层。下一步：确认 `il2cpp_init` 返回 0、枚举到 `Scripts.GameCore.dll`、
-解析 `GameLogicHelper.AdvanceFrameCommands`，再把 frame-0 context 接进来。
-
-## 6. 原生 ARM64 平板复测（2026-11-12）——闸门不止一处
+## 7. 原生 ARM64 平板复测（2026-11-12）——闸门不止一处
 
 环境终于满足 B0 的第 1 条：REDMI Pad 2（Android 15，arm64-v8a，`user` 版，
 无 root），不是 MuMu/houdini。
 
-部署（全部在平板 `/data/local/tmp/gc/sim/`，用 shell 用户，无 root）：
+部署（平板 `/data/local/tmp/gc/sim/`，shell 用户，无 root）：
 
-```text
-libtprt.so        = host/build/stub/libtprt.so（空壳，表项返回 0）
-libil2cpp.so      = host/build/libil2cpp_pass.so（0xd909518: blr x8 → mov w0,#1 ; nop）
-global-metadata.dat（60,322,264 B）
-il2cpp_host + 依赖（libpandora/libpixuiCurl/libPixUI_Unity/libpuerts/libGameCore）
-```
+宿主 + 依赖 + metadata；libtprt 用空壳替换、libil2cpp 用补丁副本
+（构造与补丁细节一律不入库）。
 
 结果：
 
@@ -192,48 +172,37 @@ dlopen 6 个依赖全部 OK（原生 ARM64，无翻译层）
 dlopen libil2cpp.so → 进程 exit_group(25)，未打印 "dlopen libil2cpp.so OK"
 ```
 
-- 空壳表项改成返回奇数 1 也无效（注意重建空壳必须带 `-Wl,-soname,libtprt.so`，
-  否则 libil2cpp 的 DT_NEEDED 找不到它）。
-- 反汇编 `libil2cpp_pass.so` 的检查区（capstone）：`exit_group(25)`
-  （`mov w0,#0x19; mov x8,#0x5e; svc #0`）有 **5 处**
-  `0xd9094b4 / 0xd909520 / 0xd9095b8 / 0xd909668 / 0xd9096a4`；
-  `0xd9094xx–0xd90a4xx` 内共 9 处 `svc` 退出模式。
-  **只补 0xd909518 一个调用点不够**——检查函数其它分支仍会自杀。
+- 空壳表项改成返回奇数 1 也无效。
+- 检查区存在**多处**退出分支（不止 11-04 定位的那一处），单点补丁无效——
+  其它分支仍会让进程退出。
 
-**结论**：原生 ARM64 环境不再是门槛，门槛是 libil2cpp 的**多处反作弊退出分支**。
-要继续 B 路线，必须对 `libil2cpp` 副本做多点补丁（绕检查），即 2026-11-04
-审计里标为红线的“改 libil2cpp.so 字节”；且这只能用于内部研究，不能进入产品/
-交付物。是否破例需要明确决策；不破例则 B 路线到此为止，改走原版客户端只读
-旁路（A）或官方合作。
+**当时结论（已被 §8 修正）**：原生 ARM64 环境不再是门槛，卡点在 libil2cpp
+内部、不止一处。是否走"改副本字节"的路线是当时的决策点；后续按 §8 推进
+并终止。
 
-## 7. 破例后的结论：libil2cpp 依赖 tprt 运行期打补丁，独立宿主不可行（2026-11-12）
+## 8. 破例后的最终判定：libil2cpp 依赖 tprt 运行期保护层，独立宿主不可行（2026-11-12）
 
 用户破例后继续推进，拿到两段关键证据，最终判定 B 路线需要**重写 tprt 运行期
-保护层**，不是补丁几个字节能解决的：
+保护层**，不是补几个字节能解决的：
 
-### 7.1 反作弊退出点已绕过，`dlopen libil2cpp.so` 成功
+### 8.1 修正补丁后 `dlopen libil2cpp.so` 成功（仅此而已）
 
-修正 11-04 补丁的 bug（它把 `0xd909518` 的 `blr`→`mov w0,#1`、又把通过分支
-`tbnz`→`nop`，等于必掉 `exit_group(25)`）。正确补丁：只把 5 处 exit(25) 块
-`0xd9094b4/520/5b8/668/6a4` 跳到各自 +0x20 的正常路径（保留 tprt 调用/分支）。
-在此补丁下，**`dlopen libil2cpp.so` 在原生 ARM64 平板上成功**。
+11-04 的补丁自相矛盾（放行分支同时被关掉，等于必然触发退出）。改为只中和
+退出分支、保留 tprt 调用/分支结构后，**`dlopen libil2cpp.so` 在原生 ARM64
+平板上成功**——说明加载器层面可行。补丁细节不入库。
 
-### 7.2 但 `il2cpp_init` 立刻撞上“tprt 钩子占位代码”
+### 8.2 但 `il2cpp_init` 立刻撞上“tprt 钩子占位代码”
 
-- 崩溃点：RVA `0x3AA3BAC`（经 `0xba55794` 长跳 veneer → PLT → `strcpy`），
-  以 `x0=6` 崩溃（`addr=0x6`）。
-- 跳过该调用（11-04 的 `patch_nop(base+0x3AA3BC8)`）后，会在后续 C++/locale
-  初始化里 `operator new → memset` 巨型长度崩溃（x2≈0x7f…）。
-- 原因：`libil2cpp` 的 `.data`（如 `0xe56ec28` 一带）有一张 **tprt 钩子清单**：
-  每条 32 B，形如 `{meta:u64, target_rva:u64, size:u64, ...}`；例如
-  `meta=0x000f00120000097f, target=0x3aa3bac, size=0x34`。`.data`/`.rodata`
-  里还有大量类似条目。这些 target 在文件里是**占位/诱饵代码**，真实实现由
-  `libtprt` 在加载时按清单打补丁（inline hook）后才有意义。
-- 旁证：`.rodata` 字符串是 **逐字节 XOR 0xE3** 加密的（解密后是
-  `VersionBranch_v121_publish_20260828/Escher/il2cpp/...` 之类构建路径），
-  说明数据/字符串也依赖 tprt/加载期解密。
+- 崩溃发生在 tprt 钩子占位代码上（经 veneer/PLT 间接跳转链）；跳过单个调用
+  只会在后续 C++/locale 初始化里换一个崩溃点（`operator new → memset`
+  巨型长度）。
+- 根因：`libil2cpp` 的 `.data`/`.rodata` 里有一张 **tprt 钩子清单**与大量
+  加载期解密数据。这些 target 在文件里是**占位/诱饵代码**，真实实现由
+  `libtprt` 在加载时按清单 inline hook/解密后才有效——独立宿主无论如何跳过
+  单个崩溃点，都会撞上下一个未初始化的占位。
+- 清单格式、示例条目与解密细节一律不入库。
 
-### 7.3 判定
+### 8.3 判定
 
 - 独立 il2cpp 宿主 = 需要复刻 tprt 的**加载期解密 + 数百个 inline hook +
   反作弊检查**；这不是“补几个 exit”能完成的，且属于对反作弊层的实质性绕过。
@@ -241,37 +210,22 @@ dlopen libil2cpp.so → 进程 exit_group(25)，未打印 "dlopen libil2cpp.so O
   产品目标不符。
 - **建议：B 路线到此终止，结论记为“合规前提下的独立引擎重演不可行”。**
 
-### 7.4 复现材料
+### 8.4 复现材料
 
-- 补丁脚本：`data/replays/_analysis/live_20261112/patch_il2cpp_anticheat.py`
-  （data/ 忽略，不入产品）；
-- 平板 `/data/local/tmp/gc/sim/`（patched libil2cpp + stub libtprt + metadata）；
-- 崩溃日志：`run4.log`/`run5.log`/`run6.log`；
-- 反作弊退出点扫描、钩子清单/加密字符串证据见本轮记录。
+- 补丁脚本与崩溃日志在 `data/replays/_analysis/live_20261112/`
+  （data/ 忽略，不入库）；
+- 钩子清单/加密字符串证据见本轮记录，细节不入库。
 
-### 7.5 换“真实 libtprt”再试：tprt 本体是 VMP 混淆（2026-11-12 晚）
+### 8.5 换“真实 libtprt”再试：tprt 本体是 VMP 混淆（2026-11-12 晚）
 
 既然钩子实现都在 libtprt，最后一次尝试是**加载真实 libtprt**（替换空壳）让
 它自己做解密/hook/检查。结果：6 个依赖全部 `dlopen` OK，但在 `dlopen
-libil2cpp` 的 DT_INIT 里进入 libtprt 检查函数后 **SIGBUS**：
+libil2cpp` 的 DT_INIT 里进入 libtprt 检查函数后 **SIGBUS**（sig=7，pc 落在
+libtprt 的间接跳转链上）。
 
-```text
-lr = libtprt.so +0x6dea4   (检查/调度函数内部)
-frame[0] lr = libil2cpp.so +0xe56151c   (DT_INIT 的 tprt 调用点)
-sig=7 (SIGBUS), pc 落在 libtprt 的间接跳转链上
-```
-
-反汇编 `libtprt.so` 的检查区（`0x6c3f0`/`0x6dd80`）：大量
-
-```text
-ldr x17, [x28, xN, lsl #3]
-add x17, x17, x19
-br  x17
-```
-
-形态 + 大量用 `mov/movk` 拼出的混淆常量（如 `0x6e5c40f1`、`0x83a9af56`），
-是**控制流展平的 VM/混淆器**，不是普通函数。空壳会让占位代码跑飞，真库又会在
-VM 调度里 SIGBUS（其运行前提是完整游戏进程状态）。
+反汇编显示检查区是**控制流展平的 VM/混淆器**（VMP 形态），不是普通函数。
+空壳会让占位代码跑飞，真库又会在 VM 调度里 SIGBUS（其运行前提是完整游戏
+进程状态）。
 
 **最终判定**：B 路线的复刻对象不是“几百个 inline hook + 解密”，而是
 **VMP 混淆的 tprt 保护层**；这属于专业加固逆向，周级到月级、只适用于内部研究，

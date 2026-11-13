@@ -116,8 +116,8 @@ def route_stats():
     decision = 0
     try:
         sys.path.insert(0, str(ROOT))
-        import decision_api  # noqa: WPS433
-        decision = len(decision_api.ANALYSES) + 2  # 5 个分析 + catalog + briefing
+        import workbench_api  # noqa: WPS433
+        decision = len(workbench_api.ANALYSES) + 2  # 5 个分析 + catalog + briefing
     except Exception:
         decision = 7
     return {'routeDecorators': sum(by_file.values()),
@@ -141,8 +141,8 @@ def test_stats():
 def data_stats():
     try:
         sys.path.insert(0, str(ROOT))
-        import decision_facts  # noqa: WPS433
-        facts = decision_facts.load_facts(ROOT / 'data' / 'official_replays',
+        import match_facts  # noqa: WPS433
+        facts = match_facts.load_facts(ROOT / 'data' / 'official_replays',
                                           ROOT / 'data' / 'camp_details',
                                           ROOT / 'data', ROOT / 'data' / 'training.sqlite3')
         return {'coverage': facts['coverage'], 'opponents': len(facts['opponents'])}

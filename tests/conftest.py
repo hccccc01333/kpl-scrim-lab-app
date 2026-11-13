@@ -1,4 +1,4 @@
-"""共享 pytest 配置：让 tests/ 下的 helper（decision_fixtures）可直接 import。"""
+"""共享 pytest 配置：让 tests/ 下的 helper（facts_fixtures）可直接 import。"""
 import sys
 from pathlib import Path
 

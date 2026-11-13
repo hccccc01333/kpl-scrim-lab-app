@@ -1,4 +1,4 @@
-"""对手开局路线与热区（decision_opening）测试。"""
+"""对手开局路线与热区（analysis_space (opening_routes)）测试。"""
 import json
 import sys
 from pathlib import Path
@@ -12,9 +12,9 @@ TESTS = Path(__file__).resolve().parent
 if str(TESTS) not in sys.path:
     sys.path.insert(0, str(TESTS))
 
-import decision_facts  # noqa: E402
-import decision_opening  # noqa: E402
-import decision_fixtures as fx  # noqa: E402
+import match_facts  # noqa: E402
+import analysis_space  # noqa: E402
+import facts_fixtures as fx  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +56,7 @@ def test_single_game_route_sample_points_and_relative_heat(tmp_path):
     fx.write_case(tmp_path, '2001', positions_payload=positions)
     facts = fx.load_fixture_facts(tmp_path)
 
-    report = decision_opening.opening_report(facts)
+    report = analysis_space.opening_report(facts)
     assert report['available'] is True
     assert report['filters'] == {'opponent': None, 'lane': None, 'dateFrom': None,
                                  'dateTo': None, 'side': 'enemy'}
@@ -137,7 +137,7 @@ def test_calibrated_positions_use_unit_space(tmp_path):
     fx.write_case(tmp_path, '2101', positions_payload=positions, calibration=True)
     facts = fx.load_fixture_facts(tmp_path)
 
-    report = decision_opening.opening_report(facts)
+    report = analysis_space.opening_report(facts)
     coverage = report['coverage']
     assert coverage['calibrated'] is True
     assert coverage['relative'] is False
@@ -168,7 +168,7 @@ def test_missing_position_seconds_are_skipped_and_counted(tmp_path):
     fx.write_case(tmp_path, '2201', positions_payload=positions)
     facts = fx.load_fixture_facts(tmp_path)
 
-    report = decision_opening.opening_report(facts)
+    report = analysis_space.opening_report(facts)
     assert report['coverage']['skippedRoutes'] == 4
     route = report['routes'][0]
     assert route['representative']['times'] == [float(second) for second in range(0, 120, 5)]
@@ -187,7 +187,7 @@ def test_three_games_same_opponent_cluster_and_next_objective(tmp_path):
     assert facts['games']['2302']['opponentId'] == opponent_id
     assert facts['games']['2303']['opponentId'] == opponent_id
 
-    report = decision_opening.opening_report(facts, opponent=opponent_id)
+    report = analysis_space.opening_report(facts, opponent=opponent_id)
     coverage = report['coverage']
     assert coverage['games'] == 3
     assert coverage['routes'] == 15              # 3 局 × 5 名对手选手
@@ -227,7 +227,7 @@ def test_three_games_same_opponent_cluster_and_next_objective(tmp_path):
     assert set(lanes) == {'对抗路', '中路', '发育路', '打野', '游走'}
     assert all(item['enough'] for item in lanes.values())
 
-    own_side = decision_opening.opening_report(facts, side='own')
+    own_side = analysis_space.opening_report(facts, side='own')
     assert len(own_side['routes']) == 5
     for route in own_side['routes']:
         assert route['side'] == 'own'
@@ -241,7 +241,7 @@ def test_three_games_same_opponent_cluster_and_next_objective(tmp_path):
 def test_two_games_do_not_cluster(tmp_path):
     fx.write_dataset(tmp_path, [{'seq': '2401'}, {'seq': '2402'}])
     facts = fx.load_fixture_facts(tmp_path)
-    report = decision_opening.opening_report(facts)
+    report = analysis_space.opening_report(facts)
 
     assert report['coverage']['routes'] == 10
     assert report['coverage']['clusters'] == 10
@@ -254,7 +254,7 @@ def test_two_games_do_not_cluster(tmp_path):
 def test_next_objective_none_without_events(tmp_path):
     fx.write_case(tmp_path, '2501', events=[])
     facts = fx.load_fixture_facts(tmp_path)
-    route = decision_opening.opening_report(facts)['routes'][0]
+    route = analysis_space.opening_report(facts)['routes'][0]
     assert route['nextObjective'] is None
 
 
@@ -270,7 +270,7 @@ def test_lane_and_side_filters(tmp_path):
     fx.write_case(tmp_path, '2601', positions_payload=positions)
     facts = fx.load_fixture_facts(tmp_path)
 
-    mid_only = decision_opening.opening_report(facts, lane='中路')
+    mid_only = analysis_space.opening_report(facts, lane='中路')
     assert mid_only['available'] is True
     assert [route['lane'] for route in mid_only['routes']] == ['中路']
     assert mid_only['routes'][0]['representative']['player'] == '2-1'
@@ -278,13 +278,13 @@ def test_lane_and_side_filters(tmp_path):
     assert mid_only['lanes'] == [{'lane': '中路', 'routes': 1, 'clusters': 1,
                                   'enough': False}]
 
-    own_side = decision_opening.opening_report(facts, side='own')
+    own_side = analysis_space.opening_report(facts, side='own')
     assert [route['lane'] for route in own_side['routes']] == ['对抗路']
     assert own_side['routes'][0]['representative']['player'] == '1-0'
     assert own_side['routes'][0]['representative']['hero'] == '关羽'
     assert own_side['heat']['total'] == 240
 
-    own_mid = decision_opening.opening_report(facts, side='own', lane='中路')
+    own_mid = analysis_space.opening_report(facts, side='own', lane='中路')
     assert own_mid['available'] is False
     assert '中路' in own_mid['reason']
 
@@ -295,7 +295,7 @@ def test_opponent_and_date_filters(tmp_path):
     retag_enemy(tmp_path, '2702', 'other')
     facts = fx.load_fixture_facts(tmp_path)
 
-    everything = decision_opening.opening_report(facts)
+    everything = analysis_space.opening_report(facts)
     assert everything['coverage']['games'] == 2
     assert len(everything['opponents']) == 2
     assert everything['selected']['name'] == '全部对手（本批）'
@@ -303,7 +303,7 @@ def test_opponent_and_date_filters(tmp_path):
     assert everything['heat']['total'] == 2400
 
     target_id = facts['games']['2702']['opponentId']
-    scoped = decision_opening.opening_report(facts, opponent=target_id)
+    scoped = analysis_space.opening_report(facts, opponent=target_id)
     assert scoped['coverage']['games'] == 1
     assert scoped['selected']['id'] == target_id
     assert scoped['selected']['games'] == 1
@@ -311,11 +311,11 @@ def test_opponent_and_date_filters(tmp_path):
     assert {route['representative']['game'] for route in scoped['routes']} == {'2702'}
     assert scoped['heat']['total'] == 1200
 
-    narrowed = decision_opening.opening_report(facts, date_from='2026-11-03')
+    narrowed = analysis_space.opening_report(facts, date_from='2026-11-03')
     assert narrowed['coverage']['games'] == 1
     assert {route['representative']['game'] for route in narrowed['routes']} == {'2702'}
 
-    future = decision_opening.opening_report(facts, date_from='2027-01-01')
+    future = analysis_space.opening_report(facts, date_from='2027-01-01')
     assert future['available'] is False
 
 
@@ -326,7 +326,7 @@ def test_no_positions_available_false(tmp_path):
     fx.write_case(tmp_path, '2801', positions=False)
     facts = fx.load_fixture_facts(tmp_path)
 
-    report = decision_opening.opening_report(facts)
+    report = analysis_space.opening_report(facts)
     assert report['available'] is False
     assert '位置' in report['reason']
     assert report['routes'] == []
@@ -339,7 +339,7 @@ def test_unknown_opponent_available_false(tmp_path):
     fx.write_case(tmp_path, '2901')
     facts = fx.load_fixture_facts(tmp_path)
 
-    report = decision_opening.opening_report(facts, opponent='no-such-team')
+    report = analysis_space.opening_report(facts, opponent='no-such-team')
     assert report['available'] is False
     assert report['coverage']['games'] == 0
     assert report['selected']['id'] == 'no-such-team'
@@ -348,9 +348,9 @@ def test_unknown_opponent_available_false(tmp_path):
 
 
 def test_empty_dataset_available_false(tmp_path):
-    facts = decision_facts.load_facts(tmp_path / 'official_replays',
+    facts = match_facts.load_facts(tmp_path / 'official_replays',
                                       tmp_path / 'camp_details', tmp_path, None)
-    report = decision_opening.opening_report(facts)
+    report = analysis_space.opening_report(facts)
     assert report['available'] is False
     assert report['coverage']['games'] == 0
     assert '仅收录本批 0 局回放' in report['notes'][0]

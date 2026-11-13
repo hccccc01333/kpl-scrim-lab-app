@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import decision_api  # noqa: E402
-import decision_fixtures as fx  # noqa: E402
+import workbench_api  # noqa: E402
+import facts_fixtures as fx  # noqa: E402
 
 
 def make_client(tmp_path, *, calibration=True):
@@ -23,7 +23,7 @@ def make_client(tmp_path, *, calibration=True):
          'win_camp': '1'},
     ], calibration=calibration)
     app = FastAPI()
-    app.include_router(decision_api.create_decision_router(
+    app.include_router(workbench_api.create_workbench_router(
         tmp_path / 'official_replays', tmp_path / 'camp_details', tmp_path, None))
     return TestClient(app)
 
@@ -32,7 +32,7 @@ def empty_client(tmp_path):
     (tmp_path / 'official_replays').mkdir(parents=True, exist_ok=True)
     (tmp_path / 'camp_details').mkdir(parents=True, exist_ok=True)
     app = FastAPI()
-    app.include_router(decision_api.create_decision_router(
+    app.include_router(workbench_api.create_workbench_router(
         tmp_path / 'official_replays', tmp_path / 'camp_details', tmp_path, None))
     return TestClient(app)
 
@@ -127,13 +127,13 @@ def test_empty_dataset_degrades(tmp_path):
 
 def test_catalog_cached(monkeypatch, tmp_path):
     calls = {'count': 0}
-    original = decision_api.decision_facts.load_facts
+    original = workbench_api.match_facts.load_facts
 
     def counting(*args, **kwargs):
         calls['count'] += 1
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(decision_api.decision_facts, 'load_facts', counting)
+    monkeypatch.setattr(workbench_api.match_facts, 'load_facts', counting)
     client = make_client(tmp_path)
     client.get('/api/decision/catalog')
     client.get('/api/decision/catalog')

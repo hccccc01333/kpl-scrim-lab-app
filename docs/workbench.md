@@ -1,7 +1,7 @@
 # 赛训决策台：数据挖掘与教练端可视化（v1.6.x）
 
 本文记录「从教练可以查看哪些数据，升级为教练今天该研究哪些问题」这一轮的落地内容。
-设计契约见 [decision_workbench_contract.md](decision_workbench_contract.md)。
+设计契约见 [workbench_contract.md](workbench_contract.md)。
 
 ## 一句话
 
@@ -233,7 +233,7 @@ cd client; npm run typecheck; npm run build
 | `v3/public/decision-page.js` | 工作台 `#decision` 四工作区 |
 | `v3/public/bp-counter.js` | 工作台 BP 模块 `#bpcounter` |
 | `scripts/shot_client_decision.mjs` | 客户端冒烟/截图 |
-| `docs/decision_workbench_contract.md` | 实现契约 |
+| `docs/workbench_contract.md` | 实现契约 |
 
 ## 已知限制与下一步
 

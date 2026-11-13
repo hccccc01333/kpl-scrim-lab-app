@@ -12,9 +12,9 @@
 ## 开发与验证
 
 - [设计系统](design_system.md)：布局、颜色、交互规范与数据展示要求。
-- [赛训决策台](decision_workbench.md)：P0 五项分析（失利关键链 / 优势回撤 / 团战执行 / 资源分配 / 对手开局）、
+- [赛训决策台](workbench.md)：P0 五项分析（失利关键链 / 优势回撤 / 团战执行 / 资源分配 / 对手开局）、
   赛训首页问题卡、`/api/decision/*` 与教练端四个工作区；实现契约见
-  [decision_workbench_contract.md](decision_workbench_contract.md)。
+  [workbench_contract.md](workbench_contract.md)。
 - [分析平台](analysis_platform.md)：分析数据组织与扩展说明。
 - [赛事命中口径](kpl_hit_logic.md)：本局 BP 在 KPL 赛场「命不命中」怎么判、三层结论怎么读、
   它不是什么；数据更新方式见同文。抓取与落盘契约见 [kpl_bp_pipeline.md](kpl_bp_pipeline.md)。

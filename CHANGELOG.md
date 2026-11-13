@@ -241,7 +241,7 @@
 ## [1.6.1] - 2026-11-11
 
 赛训决策台：把已有字段组合成教练真正要做的决策，首页自动挑出「今天先看这几个问题」。
-设计契约见 `docs/decision_workbench_contract.md`，使用说明见 `docs/decision_workbench.md`。
+设计契约见 `docs/decision_workbench_contract.md`，使用说明见 `docs/workbench.md`。
 
 ### 新增分析层 `/api/decision/*`
 
@@ -311,7 +311,7 @@
 ### 分析归属调整：模块优先
 
 - 决策台不再承载全部分析。对象模块是主分析所在地，决策台只做跨对局任务汇总与入口；
-  归属表见 `docs/decision_workbench.md`「分析归属」。
+  归属表见 `docs/workbench.md`「分析归属」。
 - 第一批落地：**BP 阵容抗针对**放在 BP 模块 `#bpcounter`，赛前备战只保留补练建议摘要和入口。
 - 新增 `decision_bp.py` + `/api/decision/bp`：对手禁选排行、我方分路英雄池、被常禁后的
   可用池深度、稳定选手（≥3 局）样本、弱点英雄与补练建议；本批 32 局面板、117 个轮换昵称单独计数，

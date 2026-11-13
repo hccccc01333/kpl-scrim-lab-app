@@ -420,8 +420,8 @@ def _coverage_item(facts):
 def briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None, limit=5):
     """返回 {available, coverage, items, skipped, scope, ...}；最多 limit 条。"""
     order = facts.get('order') or []
-    import decision_facts
-    scoped = decision_facts.filter_games(
+    import match_facts
+    scoped = match_facts.filter_games(
         facts, opponent=opponent, date_from=date_from, date_to=date_to, result=result)
     coverage = {
         'games': len(scoped),
@@ -450,31 +450,31 @@ def briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None,
     skipped = []
     items = []
     try:
-        import decision_loss
-        advantage = _safe(decision_loss.advantage_report(facts, **date_args),
+        import analysis_economy
+        advantage = _safe(analysis_economy.advantage_report(facts, **date_args),
                           skipped, 'advantage_retention', '优势保持分析')
-        loss = _safe(decision_loss.loss_report(facts, **date_args),
+        loss = _safe(analysis_economy.loss_report(facts, **date_args),
                      skipped, 'loss_chain', '失利关键链')
     except Exception as error:  # pragma: no cover - 模块未就绪或数据异常时降级
         advantage, loss = None, None
         skipped.append({'analysis': 'loss_chain', 'reason': f'分析不可用：{error}'})
     try:
-        import decision_fights
-        fights = _safe(decision_fights.fight_report(facts, **date_args),
+        import analysis_space
+        fights = _safe(analysis_space.fight_report(facts, **date_args),
                        skipped, 'fight_execution', '团战执行分析')
     except Exception as error:  # pragma: no cover
         fights = None
         skipped.append({'analysis': 'fight_execution', 'reason': f'分析不可用：{error}'})
     try:
-        import decision_resource
-        resource = _safe(decision_resource.resource_report(facts, **date_args),
+        import analysis_profile
+        resource = _safe(analysis_profile.resource_report(facts, **date_args),
                          skipped, 'resource_allocation', '资源分配分析')
     except Exception as error:  # pragma: no cover
         resource = None
         skipped.append({'analysis': 'resource_allocation', 'reason': f'分析不可用：{error}'})
     try:
-        import decision_opening
-        opening = _safe(decision_opening.opening_report(facts, opponent=opponent),
+        import analysis_space
+        opening = _safe(analysis_space.opening_report(facts, opponent=opponent),
                         skipped, 'opening_routes', '对手开局分析')
     except Exception as error:  # pragma: no cover
         opening = None

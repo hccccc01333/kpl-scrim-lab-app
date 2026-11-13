@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, UnidentifiedImageError
 
 from analysis_api import create_analysis_router
-from decision_api import create_decision_router
+from workbench_api import create_workbench_router
 from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
@@ -118,7 +118,7 @@ app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
 # V3 的路由模块在 _mount_v3() 里加载；中间件用它刷新分析快照缓存。
 V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR, OFFICIAL_DIR))
-app.include_router(create_decision_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
+app.include_router(create_workbench_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
                                           DATA_DIR, DB_PATH))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
@@ -1456,6 +1456,17 @@ def _camp_tools():
         sys.path.insert(0, str(tools))
 
 
+_GAME_SEQ_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
+
+
+def _safe_game_seq(value) -> str:
+    """营地对局 ID 只允许单段安全字符，避免拼路径时穿越到其它目录。"""
+    text = str(value or '').strip()
+    if not text or text in ('.', '..') or not _GAME_SEQ_RE.match(text):
+        return ''
+    return text
+
+
 def _camp_detail_path(game_seq: str) -> Path:
     """营地详情落盘位置以 camp_sync 的 DETAIL_DIR 为准。
 
@@ -1464,7 +1475,10 @@ def _camp_detail_path(game_seq: str) -> Path:
     """
     _camp_tools()
     import camp_sync
-    return camp_sync.DETAIL_DIR / f'{game_seq}.json'
+    seq = _safe_game_seq(game_seq)
+    if not seq:
+        raise ValueError(f'营地对局 ID 非法：{game_seq!r}')
+    return camp_sync.DETAIL_DIR / f'{seq}.json'
 
 
 AUTO_REVIEWER = '营地自动同步'
@@ -1778,11 +1792,12 @@ def _camp_ensure_channels(entries, nickname: str, progress=None) -> dict:
     total = len(entries)
     saved_any = False
     for index, entry in enumerate(entries, 1):
-        seq = str((entry or {}).get('gameSeq') or '')
+        seq = _safe_game_seq((entry or {}).get('gameSeq'))
         if not seq:
             report['failed'] += 1
-            report['items'].append({'gameSeq': '', 'status': 'failed',
-                                    'error': '列表条目没有对局 ID'})
+            report['items'].append({'gameSeq': str((entry or {}).get('gameSeq') or ''),
+                                    'status': 'failed',
+                                    'error': '列表条目没有合法对局 ID'})
             continue
         if progress:
             progress(index, total, seq, 'channel')
@@ -2396,7 +2411,7 @@ def camp_list(value: dict):
             'imported': game_seq in saved_seqs,
             'channelExists': game_seq in channeled_seqs,
             'channelReady': game_seq in ready_seqs,
-            'detailCached': (camp_sync.DETAIL_DIR / f'{game_seq}.json').is_file(),
+            'detailCached': bool(_safe_game_seq(game_seq) and _camp_detail_path(game_seq).is_file()),
             # 营地只保留最近一个月的战局详情；更早的局前端直接标「营地无详情」，
             # 不再让教练勾选后才发现拉不到（-30457）。
             'campDetailAvailable': not camp_sync.detail_expired(
@@ -2411,6 +2426,8 @@ def camp_sync_start(value: dict):
     """两段式同步第二段：按教练勾选的对局条目拉取详情并落盘，随后自动挂载通道。"""
     entries = value.get('entries') if isinstance(value.get('entries'), list) else []
     entries = [entry for entry in entries if isinstance(entry, dict) and entry.get('gameSeq')]
+    if any(not _safe_game_seq(entry.get('gameSeq')) for entry in entries):
+        raise HTTPException(400, '对局 ID 非法')
     camp_user_id = str(value.get('campUserId') or '').strip()
     nickname = str(value.get('nickname') or '').strip()
     if not entries:
@@ -2486,7 +2503,9 @@ def _camp_attach_to_channel(channel: dict, game_seq: str, actor=None):
 
 @app.post('/api/channels/{channel_id}/camp')
 def channel_attach_camp(channel_id: str, value: dict):
-    game_seq = str(value.get('gameSeq') or '').strip()
+    game_seq = _safe_game_seq(value.get('gameSeq'))
+    if not game_seq:
+        raise HTTPException(400, '缺少或非法的对局 ID')
     with db() as c:
         channel = _load_channel(c, channel_id)
     try:
@@ -3828,6 +3847,49 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
                          'pathNote':'方向积分形状估算：漂移严重（锚点残差 1.8万-6.5万），仅示意转向历史，绝非位置；docs 5.132',
                          'positionAnchors':anchors}
     return payload
+
+
+_REPLAY_STATE_CACHE: dict = {}
+_REPLAY_STATE_LOCK = threading.Lock()
+
+
+@app.get('/api/replays/{replay_id}/state')
+def replay_state(replay_id: str, rebuild: bool = False):
+    """Per-second replay state decoded from the stored ``.abc``.
+
+    Only the file-decode tier is produced here: roster, win/MVP/rating, the
+    frame-precise purchase and skill-point ledgers, derived level and derived
+    cumulative gold spent, plus per-second action counts.  Combat outcomes
+    (kills, deaths, gold income, HP, continuous positions) are absent from the
+    container and stay null with a reason in ``missing``; nothing is estimated.
+    """
+    from replay_state_engine import build_from_bytes
+    with db() as c:
+        row = c.execute('SELECT abc_file_id, ope_file_id FROM replays WHERE id=?',
+                        (replay_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, '回放记录不存在')
+        abc = c.execute('SELECT data FROM replay_files WHERE id=? AND kind=?',
+                        (row['abc_file_id'], 'abc')).fetchone()
+        ope = c.execute('SELECT data FROM replay_files WHERE id=? AND kind=?',
+                        (row['ope_file_id'], 'ope')).fetchone() if row['ope_file_id'] else None
+    if not abc:
+        raise HTTPException(404, '回放主体文件不存在')
+    abc_bytes = bytes(abc['data'])
+    ope_bytes = bytes(ope['data']) if ope else None
+    key = (replay_id, hashlib.sha256(abc_bytes).hexdigest(),
+           hashlib.sha256(ope_bytes).hexdigest() if ope_bytes else None)
+    if not rebuild:
+        with _REPLAY_STATE_LOCK:
+            cached = _REPLAY_STATE_CACHE.get(key)
+        if cached is not None:
+            return cached
+    document = build_from_bytes(abc_bytes, ope_bytes)
+    with _REPLAY_STATE_LOCK:
+        _REPLAY_STATE_CACHE[key] = document
+        while len(_REPLAY_STATE_CACHE) > 6:
+            _REPLAY_STATE_CACHE.pop(next(iter(_REPLAY_STATE_CACHE)))
+    return document
 
 
 @app.get('/api/replays/{replay_id}/skill-ledger')

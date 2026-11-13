@@ -1196,8 +1196,13 @@ function matchPage(m) {
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
   const slots = (list, kind) => Array.from({ length: 5 }, (_, i) => {
     const h = list[i];
-    return h ? `<span>${kind === 'picks' ? `<em>${i + 1}</em>` : ''}${portrait(h.name)}${esc(h.name)}</span>`
-             : `<span class="md-bp-empty"><em>${kind === 'bans' ? '空 BAN' : '空位'}</em></span>`;
+    const showOrder = kind === 'picks' && draft?.pickOrderKnown;
+    const iconUrl = h?.icon || metadata.icons?.[h?.name];
+    const portraitHtml = iconUrl && /^\/catalog\/icons\/hero-\d+\.png$/.test(iconUrl)
+      ? `<img class="portrait" src="${esc(iconUrl)}" alt="${esc(h?.name)}" loading="lazy">`
+      : portrait(h?.name);
+    return h ? `<span>${showOrder ? `<em>${i + 1}</em>` : ''}${portraitHtml}<a class="bp-hero-link" href="${esc(route('matches', 'hero=' + h.name))}">${esc(h.name)}</a></span>`
+             : `<span class="md-bp-empty"><em>${kind === 'bans' ? '空 BAN' : (draft?.pickOrderKnown ? '空位' : '顺序未知')}</em></span>`;
   }).join('');
   const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
     <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
@@ -1214,6 +1219,18 @@ function matchPage(m) {
       if (!p.position) continue;
       (p.camp === own ? mine : theirs).set(p.position, p);
     }
+     const teamGoldAt = (t) => {
+       const pts = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold));
+       let best = null;
+       for (const p of pts) if (!best || Math.abs(p.gameTime - t) < Math.abs(best.gameTime - t)) best = p;
+       if (!best) return null;
+       const ownIsBlue = (own === 'blue' || own === 'left');
+       const ownGold = ownIsBlue ? best.blueGold : best.redGold;
+       const foeGold = ownIsBlue ? best.redGold : best.blueGold;
+       return ownGold - foeGold;
+     };
+     const earlyDiff = teamGoldAt(240);
+     const midDiff = teamGoldAt(600);
     const ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
     /* 对位压制的主口径是**巅峰千强大盘**（带超额胜率），不是自家训练赛、更不是 KPL：
        自家样本太薄；KPL 的英雄对位被「强队选强英雄」污染，冷门英雄几乎没有样本，
@@ -1229,10 +1246,15 @@ function matchPage(m) {
       const verdict = facts ? (states[facts.state] || '样本不足') : '样本不足';
       const judgeable = verdict !== '样本不足';
       /* 兑现：大盘说这对组合占优、本局经济也领先（反之亦然） */
-      const realised = judgeable && has(nowDiff)
+      const realisedEarly = judgeable && has(earlyDiff)
+        ? (verdict === '压制' ? earlyDiff > 0 : verdict === '劣势' ? earlyDiff < 0 : null)
+        : null;
+      const realisedFinal = judgeable && has(nowDiff)
         ? (verdict === '压制' ? nowDiff > 0 : verdict === '劣势' ? nowDiff < 0 : null)
         : null;
-      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised };
+      const realised = realisedFinal;
+      const realisedPhases = { early: realisedEarly, final: realisedFinal };
+      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised, realisedPhases, earlyDiff, midDiff };
     }).filter(Boolean);
 
     const verdictText = (lane) => lane.verdict === '压制' ? '我方占优'
@@ -1241,8 +1263,8 @@ function matchPage(m) {
       : lane.verdict === '劣势' ? 'is-behind' : lane.verdict === '均势' ? 'is-even' : 'is-thin';
     const laneCard = (lane) => `<article class="md-mu-card ${verdictCls(lane)}">
       <header><span class="md-mu-lane">${lane.lane}</span><em class="${verdictCls(lane)}">${verdictText(lane)}</em></header>
-      <div class="md-mu-who"><b class="own">${esc(lane.a.hero || '—')}</b><i>vs</i><b class="foe">${esc(lane.b.hero || '—')}</b></div>
-      ${lane.facts && lane.facts.n ? `<p class="md-mu-hist">巅峰千强 ${fmt(lane.facts.n)} 局 · 实际 ${fmt(lane.facts.wr, 1)}% vs 预期 ${fmt(lane.facts.expected, 1)}% · 超额 <b>${diff(lane.facts.excess)}</b></p>`
+      <div class="md-mu-who"><b class="own"><a class="bp-hero-link" href="${esc(route('matches', 'hero=' + (lane.a.hero || '')))}">${esc(lane.a.hero || '—')}</a></b><i>vs</i><b class="foe"><a class="bp-hero-link" href="${esc(route('matches', 'hero=' + (lane.b.hero || '')))}">${esc(lane.b.hero || '—')}</a></b></div>
+      ${lane.facts && lane.facts.n ? `<p class="md-mu-hist">巅峰千强 ${fmt(lane.facts.n)} 局 · 实际 ${fmt(lane.facts.wr, 1)}% vs 预期 ${fmt(lane.facts.expected, 1)}% · 超额 <b>${diff(lane.facts.excess)}</b>${lane.facts.excessCI ? `（95% CI ${diff(lane.facts.excessCI[0])} ~ ${diff(lane.facts.excessCI[1])}）` : ''}</p>`
         : `<p class="md-mu-hist">巅峰千强没有这个对位样本${lane.facts && (lane.facts.minePick || lane.facts.foePick)
           ? `（使用率 ${lane.facts.minePick === null || lane.facts.minePick === undefined ? '—' : fmt(lane.facts.minePick, 2) + '%'}
              / ${lane.facts.foePick === null || lane.facts.foePick === undefined ? '—' : fmt(lane.facts.foePick, 2) + '%'}，门槛 3%）` : ''}</p>`}
@@ -1418,7 +1440,7 @@ function matchPage(m) {
       if (behind) bits.push(`吃亏 ${behind}`);
       parts.push(bits.length ? `巅峰千强五路可判 ${judged.length} 路：${bits.join('、')}`
         : `巅峰千强五路可判 ${judged.length} 路，都是打平`);
-      if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路`);
+      if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路（终局个人经济）`);
     } else {
       parts.push('五路对位在巅峰千强都没有样本');
     }
@@ -1426,8 +1448,19 @@ function matchPage(m) {
       const hit = (m.bpFacts.kpl.hitPairs || 0) + (m.bpFacts.kpl.hitTrios || 0);
       parts.push(hit ? `赛事命中 ${hit} 组（KPL 出现过）` : '赛事无命中');
     }
-    if (ownCombos.length) parts.push(`我方 ${ownCombos.length} 组搭档里 ${positiveCombos} 组为正加成`);
-    else parts.push('我方阵容没有历史组合样本');
+    if (m.bpFacts?.structure) {
+      const st = m.bpFacts.structure;
+      const gaps = Array.isArray(st.gaps) ? st.gaps : [];
+      if (gaps.length) {
+        const subs = st.substitutes && Object.keys(st.substitutes).length
+          ? Object.values(st.substitutes).flat().slice(0, 4)
+          : [];
+        const subsHtml = subs.length
+          ? `（可补：${subs.map((h) => `<a class="bp-hero-link" href="${esc(route('matches', 'hero=' + h))}">${portrait(h)}${esc(h)}</a>`).join('、')}）`
+          : '';
+        parts.push(`阵容短板：${gaps.join('、')}${subsHtml}`);
+      } else parts.push('阵容能力覆盖完整');
+    }
     const thin = judged.length < 3;
     /* 可判不足 3 路时不给「占优 / 吃亏」的结论，只写「样本偏薄」——
        1 路对位就下总体判断，等于替教练过度解读。 */
@@ -1435,7 +1468,7 @@ function matchPage(m) {
       : ahead > behind ? 'is-good' : behind > ahead ? 'is-bad' : 'is-thin';
     const badge = !judged.length && !ownCombos.length ? '证据不足'
       : thin ? '样本偏薄'
-      : ahead > behind ? 'BP 端占优' : behind > ahead ? 'BP 端吃亏' : '五五开';
+       : ahead > behind ? '对位端占优' : behind > ahead ? '对位端吃亏' : '五五开';
     const review = `<div class="md-bprev ${tone}">
       <div class="md-bprev-head"><b>本局 BP 复盘</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
       <p class="md-bprev-lede">${parts.join('；')}。</p>

@@ -593,3 +593,25 @@ class CampAutoOfficialTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GameSeqTraversalTests(unittest.TestCase):
+    """营地对局 ID 来自客户端，拼路径前必须挡住 ../ 之类的穿越。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app, base_url='http://localhost')
+
+    def test_sync_rejects_traversal_game_seq(self):
+        self.client.post('/api/camp/config', json={'players': [
+            {'nickname': '队长', 'campUserId': '540599032'}]})
+        response = self.client.post('/api/camp/sync', json={'entries': [
+            {'gameSeq': '../evil', 'gameSvrId': '1', 'relaySvrId': '2',
+             'dtEventTime': 1793804938, 'usedTime': 900}]})
+        self.assertEqual(response.status_code, 400)
+
+    def test_detail_path_rejects_traversal(self):
+        with self.assertRaises(ValueError):
+            server._camp_detail_path('../evil')
+        self.assertEqual(server._safe_game_seq('1793606215'), '1793606215')
+        self.assertEqual(server._safe_game_seq('../evil'), '')

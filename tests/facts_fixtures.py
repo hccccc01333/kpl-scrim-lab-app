@@ -7,7 +7,7 @@
 
 用法::
 
-    from decision_fixtures import write_dataset, load_fixture_facts
+    from facts_fixtures import write_dataset, load_fixture_facts
     root = write_dataset(tmp_path)                  # 一局默认数据
     facts = load_fixture_facts(root)
 """
@@ -282,9 +282,9 @@ def write_dataset(root, cases=None, *, calibration=False):
 
 
 def load_fixture_facts(root, *, db_path=None):
-    import decision_facts
+    import match_facts
     root = Path(root)
-    return decision_facts.load_facts(root / 'official_replays', root / 'camp_details',
+    return match_facts.load_facts(root / 'official_replays', root / 'camp_details',
                                      root, db_path=db_path)
 
 
