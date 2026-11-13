@@ -295,7 +295,7 @@ def _players(games, baseline):
                        "relativeSignal": (round((posterior - base_rate) * 100, 1)
                                           if len(valid) >= 3 and len(base) >= 3 else None),
                        "evidence": _evidence(rows)})
-    return sorted(output, key=lambda x: (-x["games"], -abs(x["relativeSignal"])))[:28]
+    return sorted(output, key=lambda x: (-x["games"], -abs(x["relativeSignal"] or 0), x["player"]))[:28]
 
 
 def _changes(games):
