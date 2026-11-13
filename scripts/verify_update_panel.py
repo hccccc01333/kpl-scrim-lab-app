@@ -302,22 +302,35 @@ def case_local_package(browser, base: str, shots: bool) -> Case:
     return case
 
 
+def manual_check_toast(page, case: Case, needle: str, label: str, timeout: int = 8000) -> str:
+    """点页脚「检查更新」，等提示出现并校验文案；失败时把实际文案带进报告。
+
+    打开页面时自动检查可能先写过一次提示（源码模式 / 版本漂移），单看
+    「有没有提示」会误判；这里等的是**文案变成期望值**，而不是元素出现。
+    """
+    page.wait_for_timeout(3200)
+    page.click('[data-action="check-update"]')
+    deadline = time.time() + timeout / 1000
+    text = ''
+    while time.time() < deadline:
+        locator = page.locator('.update-toast')
+        if locator.count() and locator.first.is_visible():
+            text = locator.first.inner_text()
+            if needle in text:
+                return text
+        page.wait_for_timeout(200)
+    case.fail(f'{label}（实际提示：{text[:120] or "无"}；check 调用 {case.state["checkCalls"]} 次）')
+    return text
+
+
 def case_latest(browser, base: str, shots: bool) -> Case:
     case = Case('latest')
     case.state['check'] = LATEST
 
     def run(page):
-        page.wait_for_timeout(2600)
         if page.locator('.update-card').is_visible():
             case.fail('已是最新时不应弹卡片')
-        page.click('[data-action="check-update"]')
-        try:
-            page.wait_for_selector('.update-toast', state='visible', timeout=5000)
-        except Exception:  # noqa: BLE001
-            case.fail('手动检查没有提示结果')
-            return
-        if '已是最新版本' not in page.locator('.update-toast').inner_text():
-            case.fail('手动检查提示不正确')
+        manual_check_toast(page, case, '已是最新版本', '手动检查提示不正确')
 
     case.run = run
     run_case(browser, base, case, shots)
@@ -375,17 +388,9 @@ def case_source_mode(browser, base: str, shots: bool) -> Case:
     case.state['check'] = SOURCE_MODE
 
     def run(page):
-        page.wait_for_timeout(2600)
         if page.locator('.update-card').is_visible():
             case.fail('源码模式不应自动弹更新卡片')
-        page.click('[data-action="check-update"]')
-        try:
-            page.wait_for_selector('.update-toast', state='visible', timeout=5000)
-        except Exception:  # noqa: BLE001
-            case.fail('源码模式手动检查没有提示')
-            return
-        if '源码模式' not in page.locator('.update-toast').inner_text():
-            case.fail('源码模式提示不正确')
+        manual_check_toast(page, case, '源码模式', '源码模式提示不正确')
 
     case.run = run
     run_case(browser, base, case, shots)
