@@ -325,32 +325,83 @@ def _changes(games):
     return sorted(changes, key=lambda x: -abs(x["changePP"]))[:12]
 
 
+def _response_samples(g):
+    """(trigger, actual pick, unavailable-at-decision) using only past BP events."""
+    latest, used, unavailable, rows = None, set(), set(), []
+    for event in g["events"]:
+        hero = event["hero"]
+        if event["actor"] == "enemy" and event["action"] == "pick":
+            latest = hero
+        elif event["actor"] == "team" and event["action"] == "pick" and latest:
+            if latest not in used:
+                rows.append((latest, hero, frozenset(unavailable)))
+                used.add(latest)
+        unavailable.add(hero)
+    return rows
+
+
 def _transitions(games):
-    """Observed first team pick after an enemy pick, without using future actions."""
+    """Actual conditional opponent response; no information from future draft moves."""
     condition_games = defaultdict(set)
     response_games = defaultdict(dict)
     for g in games:
-        if not g["events"]:
-            continue
-        latest_foe, used = None, set()
-        for event in g["events"]:
-            if event["actor"] == "enemy" and event["action"] == "pick":
-                latest_foe = event["hero"]
-            elif event["actor"] == "team" and event["action"] == "pick" and latest_foe:
-                if latest_foe not in used:
-                    condition_games[latest_foe].add(g["id"])
-                    response_games[(latest_foe, event["hero"])][g["id"]] = g
-                    used.add(latest_foe)
+        for trigger, response, _ in _response_samples(g):
+            condition_games[trigger].add(g["id"])
+            response_games[(trigger, response)][g["id"]] = g
     rows = []
     for (trigger, response), matches in response_games.items():
-        den = len(condition_games[trigger])
-        n = len(matches)
+        den, amount = len(condition_games[trigger]), len(matches)
         if den < 2:
             continue
-        rows.append({"trigger": trigger, "response": response, "games": n,
-                     "opportunities": den, "share": _percent(n, den),
+        rows.append({"trigger": trigger, "response": response, "games": amount,
+                     "opportunities": den, "share": _percent(amount, den),
                      "evidence": _evidence(list(matches.values()))})
     return sorted(rows, key=lambda x: (-x["games"], -x["share"], x["trigger"]))[:24]
+
+
+def _temporal_validation(games):
+    """Evaluate historical BP response tendencies on later *unseen dates*."""
+    observed = sorted((g for g in games if g["events"] and g["date"]),
+                      key=lambda g: (g["date"], g["id"]))
+    days = sorted({g["date"] for g in observed})
+    if len(observed) < 12 or len(days) < 4:
+        return None
+    cutoff = days[max(1, int(len(days) * 0.7))]
+    train = [g for g in observed if g["date"] < cutoff]
+    test = [g for g in observed if g["date"] >= cutoff]
+    if len(train) < 8 or len(test) < 3:
+        return None
+    general, conditional = Counter(), defaultdict(Counter)
+    for g in train:
+        for trigger, response, _ in _response_samples(g):
+            general[response] += 1
+            conditional[trigger][response] += 1
+    if not general:
+        return None
+    cases, model_hits, base_hits, covered = 0, 0, 0, 0
+    for g in test:
+        for trigger, actual, unavailable in _response_samples(g):
+            baseline = [hero for hero, _ in general.most_common()
+                        if hero not in unavailable][:3]
+            bucket = conditional.get(trigger)
+            used_context = bool(bucket and sum(bucket.values()) >= 3)
+            preferred = bucket if used_context else general
+            predicted = [hero for hero, _ in preferred.most_common()
+                         if hero not in unavailable][:3]
+            cases += 1
+            covered += int(used_context)
+            base_hits += int(actual in baseline)
+            model_hits += int(actual in predicted)
+    if cases < 6:
+        return None
+    return {
+        "trainGames": len(train), "testGames": len(test), "testCases": cases,
+        "baselineTop3": _percent(base_hits, cases),
+        "conditionalTop3": _percent(model_hits, cases),
+        "changePP": round(100 * (model_hits - base_hits) / cases, 1),
+        "conditionCases": covered,
+        "splitDate": cutoff,
+    }
 
 
 def _matchups(games):
@@ -469,6 +520,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
             "pairs": combos, "trios": trios, "players": players, "changes": changes,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
+            "validation": _temporal_validation(team_games),
             "findings": findings[:5], "evidence": _evidence(team_games, max_items=30),
             "limitations": [
                 "训练赛与正式比赛分别计算，不直接混合胜率。",
