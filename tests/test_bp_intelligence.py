@@ -136,11 +136,16 @@ def test_duplicate_games_and_dates_and_sources():
 def test_temporal_changes_and_pair_counts():
     games = [game(i, "2026-10-01" if i < 5 else "2026-11-01")
              for i in range(10)]
+    for item in games[5:]:
+        item["picks"]["1"] = ["兰陵王" if h == "镜" else h for h in H1]
+        for event in item["draftEvents"]:
+            if event["hero"] == "镜" and event["camp"] == "1":
+                event["hero"] = "兰陵王"
     report = build_report([], games, source="kpl", team="战队A")
     assert report["scope"]["games"] == 10
     assert report["changes"]  # descriptive before/after, not a causal claim
     assert report["pairs"]
-    pair = next(row for row in report["pairs"] if "夏洛特" in row["heroes"])
+    pair = next(row for row in report["pairs"] if set(row["heroes"]) == {"夏洛特", "小乔"})
     assert pair["games"] == 10
     assert pair["decided"] == 10
     assert pair["relativeSignal"] is not None
