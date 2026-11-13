@@ -1965,9 +1965,10 @@ def bp_board():
 
 
 @router.get('/api/v3/bp-intelligence')
-def bp_intelligence_report(request: Request):
-    """BP 内置研究；训练赛与正式赛事独立计算，并保留逐局证据。"""
+def bp_intelligence_report(request: Request, repo=Depends(repository)):
+    """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""
     from bp_intelligence import build_report
+    from bp_process import link_scrim_process
     from bp_camp import hero_entry
     import kpl_bp
     import re
@@ -1976,6 +1977,10 @@ def bp_intelligence_report(request: Request):
     source = values.get('source', 'scrim')
     try:
         panel_board = bp_board() if source == 'scrim' else None
+        # 只按完整日期、双方 10 英雄、阵营与唯一匹配连接；对不上就留空。
+        # 仅读仓库已有快照，绝不重新抓取回放或把队伍经济当个人对线经济。
+        process_map = (link_scrim_process(panel_board['games'], repo.get()['matches'])
+                       if panel_board else {})
         report = build_report(
             panel_board['games'] if panel_board else [],
             kpl_bp.load_games() if source == 'kpl' else [],
@@ -1983,6 +1988,7 @@ def bp_intelligence_report(request: Request):
             team=str(values.get('team') or '').strip(),
             start=str(values.get('from') or '').strip(),
             end=str(values.get('to') or '').strip(),
+            process_map=process_map,
         )
         # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。
         heroes = set()
