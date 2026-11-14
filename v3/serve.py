@@ -1973,6 +1973,54 @@ def bp_board():
     }
 
 
+def _local_scrim_hero_catalog():
+    """Repo-pinned hero names; no network or inferred hero identities."""
+    path = ROOT / 'resources' / 'catalog.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise HTTPException(503, '本地英雄词表不可用，无法校验 BP 候选。') from error
+    items = payload.get('entries') or []
+    heroes, icons = [], {}
+    seen = set()
+    for entry in items:
+        if not isinstance(entry, dict) or entry.get('kind') != 'hero':
+            continue
+        name = str(entry.get('name') or '').strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        heroes.append(name)
+        icon = str(entry.get('icon') or '')
+        if re.fullmatch(r'/catalog/icons/hero-\d+\.png', icon):
+            icons[name] = icon
+    return {'heroes': heroes, 'icons': icons,
+            'catalogUpdatedAt': payload.get('updatedAt') or ''}
+
+
+@router.get('/api/v3/bp-scrim/catalog')
+def bp_scrim_catalog():
+    """Full local hero roster for the scrim 15-turn manual planner."""
+    from bp_rules import SCRIM_GLOBAL_15
+    data = _local_scrim_hero_catalog()
+    return {**data, 'rule': SCRIM_GLOBAL_15.id}
+
+
+@router.post('/api/v3/bp-scrim/next')
+async def bp_scrim_next(request: Request):
+    """Pure 15-action rule check; never applies user scrim rules to KPL."""
+    from bp_rules import scrim_state_payload
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 请求必须是对象')
+    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
+        raise HTTPException(413, 'BP 请求过大')
+    try:
+        return scrim_state_payload(payload, _local_scrim_hero_catalog()['heroes'])
+    except (ValueError, TypeError, KeyError) as error:
+        raise HTTPException(400, str(error)) from error
+
+
 @router.get('/api/v3/bp-intelligence')
 def bp_intelligence_report(request: Request, repo=Depends(repository)):
     """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""
