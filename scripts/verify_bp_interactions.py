@@ -68,6 +68,7 @@ def check(width, height):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": width, "height": height})
+        page.add_init_script("localStorage.setItem('training-tour-complete-v3', '1')")
         errors = []
         page.on("pageerror", lambda err: errors.append(str(err)))
         sample = fixture()
