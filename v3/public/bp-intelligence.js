@@ -88,6 +88,108 @@ function priorityView(report) {
   </section>`;
 }
 
+
+function scrimPreviousHistory(planner){
+  if(planner.game===1)return [];
+  const lines=text=>text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const own=lines(planner.historyOwn),enemy=lines(planner.historyEnemy);
+  if(own.length!==planner.game-1||enemy.length!==planner.game-1){
+    throw new Error('第 '+planner.game+' 局需要双方此前 '+(planner.game-1)+' 局的完整选人记录（一行一局）。');
+  }
+  const parse=line=>line.split(/[，,、\s]+/).filter(Boolean);
+  return own.map((line,i)=>{
+    const a=parse(line),b=parse(enemy[i]);
+    if(a.length!==5||b.length!==5){
+      throw new Error('第 '+(i+1)+' 局双方每行都必须各有 5 个英雄，以逗号分隔。');
+    }
+    return {game:i+1,picks:{'本队':a,'对手':b}};
+  });
+}
+
+function scrimHeroButtons(planner){
+  const snap=planner.snapshot;
+  if(!snap?.nextAction)return '';
+  const all=snap.legalCandidates||[];
+  const query=planner.search.trim().toLowerCase();
+  const matched=query?all.filter(h=>h.toLowerCase().includes(query)):all;
+  const visible=matched.slice(0,36);
+  const icons=planner.catalog?.icons||{};
+  return `<div class="bpi-scrim-result-count">合法候选 ${count(all.length)} 个
+     ${query?' · 匹配 '+count(matched.length)+' 个':''}，${matched.length>36?'显示前 36 个，搜索可查看更多':''}</div>
+    <div class="bpi-scrim-herolist">${visible.map(hero=>`<button type="button"
+      data-bpi-scrim-hero="${safe(hero)}">${heroBadge(hero,icons)}</button>`).join('')}</div>
+    ${!matched.length?'<p class="bpi-subtle">没有匹配的合法英雄；请调整搜索或上一手选择。</p>':''}`;
+}
+
+function scrimPlannerView(planner){
+ const next=planner.snapshot?.nextAction;
+ const maxGames={BO3:3,BO5:5,BO7:7}[planner.bo]||3;
+ const ownSide=planner.side==='blue'?'1':'2';
+ const acting=next?(next.camp===ownSide?'本队':'对手'):'';
+ const previous=planner.snapshot?.historyPickCounts;
+ return `<section class="bpi-panel bpi-scrim-panel">
+   <header><h3>训练赛 · BO 全局 BP 合法选禁沙盘</h3><span>15 手 · 仅训练赛规则</span></header>
+   <p class="bpi-explain">每局先 Ban：蓝 → 红 → 蓝 → 红 → 蓝（共 5 个 Ban）；
+     再 Pick：蓝 1 → 红 2 → 蓝 2 → 红 2 → 蓝 2 → 红 1（共 10 个 Pick）。
+     BO3 / BO5 / BO7 中，两队分别不能重复选择自己本系列赛此前已经 Pick 的英雄；换边后继续生效。</p>
+   <div class="bpi-scrim-settings">
+     <label>系列赛制<select data-bpi-scrim-bo>
+       ${['BO3','BO5','BO7'].map(x=>`<option value="${x}" ${x===planner.bo?'selected':''}>${x}</option>`).join('')}
+     </select></label>
+     <label>第几局<select data-bpi-scrim-game>
+       ${Array.from({length:maxGames},(_,i)=>i+1).map(i=>`<option value="${i}" ${i===planner.game?'selected':''}>第 ${i} 局</option>`).join('')}
+     </select></label>
+     <label>本队阵营<select data-bpi-scrim-side>
+       <option value="blue" ${planner.side==='blue'?'selected':''}>蓝方</option>
+       <option value="red" ${planner.side==='red'?'selected':''}>红方</option>
+     </select></label>
+   </div>
+   ${planner.game>1?`<div class="bpi-scrim-history">
+     <strong>此前已完成的 ${planner.game-1} 局选人</strong>
+     <p class="bpi-explain">一行对应一局，每行 5 个英雄，用逗号分隔。按稳定战队身份填写，换蓝红方也不要交换这两个输入框。</p>
+     <div class="bpi-scrim-history-columns">
+       <label>本队此前 Pick 英雄
+         <textarea data-bpi-scrim-history-own rows="3" placeholder="例如：花木兰，镜，小乔，公孙离，张飞">${safe(planner.historyOwn)}</textarea></label>
+       <label>对手此前 Pick 英雄
+         <textarea data-bpi-scrim-history-enemy rows="3" placeholder="例如：马超，赵云，沈梦溪，孙尚香，太乙真人">${safe(planner.historyEnemy)}</textarea></label>
+     </div>
+     <button class="bpi-scrim-apply" type="button" data-bpi-scrim-validate>校验系列赛历史</button>
+     ${previous?`<span class="bpi-scrim-proof">已核验此前英雄：本队 ${count(previous['本队'])} 个 · 对手 ${count(previous['对手'])} 个</span>`:''}
+   </div>`:''}
+   ${planner.error?`<div class="bpi-scrim-error" role="alert">${safe(planner.error)}</div>`:''}
+   <div class="bpi-scrim-stage">
+      <div><span>本局已完成 ${planner.events.length} / 15 手</span>
+        <b>${next?`第 ${next.order} 手 · ${acting}（${next.camp==='1'?'蓝方':'红方'}）${next.action==='ban'?'Ban':'Pick'}`:
+           planner.snapshot?'本局 BP 已完成':'需要校验后继续'}</b></div>
+      <div class="bpi-scrim-progress"><i style="width:${planner.events.length/15*100}%"></i></div>
+   </div>
+   <div class="bpi-scrim-history-steps">
+      ${planner.events.map(ev=>`<span><b>${ev.order}.</b> ${ev.camp==='1'?'蓝':'红'}${ev.action==='ban'?'禁':'选'} ${safe(ev.hero)}</span>`).join('')||
+        '<p class="bpi-subtle">本局还没有选禁操作，准备开始第一手 Ban。</p>'}
+   </div>
+   <div class="bpi-scrim-actionbar">
+     <button type="button" data-bpi-scrim-back ${!planner.events.length?'disabled':''}>撤回上一步</button>
+     <button type="button" data-bpi-scrim-reset ${!planner.events.length?'disabled':''}>重置本局</button>
+     ${planner.snapshot&&!next&&planner.game<maxGames?
+       '<button type="button" data-bpi-scrim-next-game>保存本局选人并进入下一局</button>':''}
+     ${planner.loading?'<span>正在校验合法动作…</span>':''}
+   </div>
+   ${next?`<div class="bpi-scrim-picklist">
+      <div class="bpi-scrim-pickhead"><strong>选择这一手的合法英雄</strong>
+        <span>当前所有已禁/已选英雄不可再次操作</span></div>
+      <input type="search" data-bpi-scrim-search value="${safe(planner.search)}"
+       placeholder="搜索英雄名称…" aria-label="搜索合法 BP 英雄">
+      <div data-bpi-scrim-candidates>${scrimHeroButtons(planner)}</div>
+   </div>`:
+     planner.snapshot?`<div class="bpi-scrim-finished">双方各完成 5 次 Pick，本局选禁结束。
+       ${planner.game===maxGames?'BO 系列赛所有可选局次已到达上限。':'可将这一局的选人加入全局历史后开始下一局。'}</div>`:
+     '<p class="bpi-subtle">完成系列赛历史校验后，将显示下一手的合法英雄。</p>'}
+   <div class="bpi-research-alert"><b>规则校验 ≠ 最优阵容建议</b>
+     <p>这是训练赛专属的合法动作校验与全局 BP 交互工具。目前尚未绑定选手个人英雄池时，候选只代表规则允许，不代表选手熟练；也不把当前搜索结果称作 MCTS 最优 BP。</p>
+   </div>
+ </section>`;
+}
+
 function fullDraftView(report, nodeId) {
   const d=report.bpStudies?.draftTree||{};
   const nodes=d.nodes||[];
@@ -683,12 +785,15 @@ function sandboxView(report, trigger) {
 
 export function createBpIntelligence({currentQuery=()=>''} = {}) {
   const state = {root:null, controller:null, source:'scrim', team:'本队',
-    mode:'overview', view:'focus', trigger:'', side:'1', version:'',treeNode:0,report:null, error:''};
+    mode:'overview', view:'focus', trigger:'', side:'1', version:'',treeNode:0,report:null, error:'',
+    scrim:{bo:'BO3',game:1,side:'blue',historyOwn:'',historyEnemy:'',events:[],
+      snapshot:null,catalog:null,loading:false,error:'',search:'',serial:0}};
 
   function body() {
     const report=state.report;
     if (!report) return '<div class="bpi-loading">正在读取 BP 研究结果…</div>';
-    if (!report.scope?.games) return note('当前范围没有可分析的 BP 比赛',
+    if (!report.scope?.games && !(state.source==='scrim' && state.view==='sandbox'))
+      return note('当前范围没有可分析的 BP 比赛',
       '可切换正式比赛 / 训练赛，或选择其他战队。无比赛时不会显示伪造的胜率与阵容建议。');
     switch (state.view) {
       case 'habits': return habitView(report,state.side);
@@ -699,7 +804,8 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       case 'changes': return changeView(report) + diagnosticView(report);
       case 'tempo': return processView(report);
       case 'diagnostics': return diagnosticView(report);
-      case 'sandbox': return fullDraftView(report,state.treeNode)
+      case 'sandbox': return (state.source==='scrim'?scrimPlannerView(state.scrim):'')
+        +fullDraftView(report,state.treeNode)
         +'<details class="bpi-archive"><summary>补充：按英雄查看跨不同局面的历史两步回应</summary>'
         +twoStepView(report,state.trigger)+'</details>';
       default: return `<section class="bpi-intro-brief">
