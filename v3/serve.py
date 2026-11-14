@@ -1930,6 +1930,11 @@ def bp_board():
             'version': (bp.get('version') or detail.get('version') or
                         (detail.get('data') or {}).get('version') or ''),
             'stage': bp.get('stage') or '',
+            # Optional explicit scrim-only rule label from capture. Do not
+            # attach this metadata to KPL games.
+            'ruleProfile': (bp.get('ruleProfile') or
+                            detail.get('ruleProfile') or
+                            (detail.get('data') or {}).get('ruleProfile') or ''),
             'picks': {'own': entries('picks', own), 'enemy': entries('picks', enemy)},
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
             'players': {'own': [p.get('name') for p in panel['own_roster']],
