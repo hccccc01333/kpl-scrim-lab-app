@@ -2609,7 +2609,9 @@ def monitor_report(request: Request):
         raise HTTPException(400, '监控窗口必须是 day / week / month')
     player = str(values.get('player') or '').strip()
     camp_dir = MATCHES.parent / 'camp_details'
-    stamp = _camp_dir_stamp(camp_dir)
+    # 指纹同时覆盖营地文件与 DB：对手命名/合并写的是 DB，不改营地文件，
+    # 缓存键必须跟着变，否则归属完成后页面还会显示旧的「待命名战队」。
+    stamp = (_camp_dir_stamp(camp_dir), _dataset_stamp())
     cache_key = (stamp, unit, player, values.get('from') or '', values.get('to') or '')
     cached = _MONITOR_CACHE.get(cache_key)
     if cached is not None:
