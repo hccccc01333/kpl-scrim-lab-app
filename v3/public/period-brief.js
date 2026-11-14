@@ -14,12 +14,14 @@ const PERIOD_TEXT = { today: '今日', week: '本周', month: '本月', custom: 
 const PERIOD_ORDER = ['today', 'week', 'month', 'custom'];
 const DEFAULT_KIND = 'week';
 const METRIC_LIMIT = 8;
-const FINDING_LIMIT = 3;
 const EVIDENCE_LIMIT = 2;
 const NUMBER_LIMIT = 4;
 /* 复盘卡「显示字段」：最多 4 项、最少 1 项；用户选择只存在控制器里。 */
 const DISPLAY_LIMIT = 4;
 const DISPLAY_KEY = 'pbr-watch-display-fields';
+/* 关注（收藏）：只存 {id: ISO}，具体时间展示由渲染层格式化。 */
+const FINDING_FAV_KEY = 'pbr-finding-favs';
+const WATCH_FAV_KEY = 'pbr-watch-favs';
 const KIND_TEXT = {
   advantage: '领先兑现', fight: '团战', objective: '资源', comp: '阵容',
   roster: '分路', coverage: '数据', training: '训练安排',
@@ -182,6 +184,9 @@ function metricsHtml(data, ctx) {
     const arrow = tone === 'up' ? '↑' : tone === 'down' ? '↓' : '';
     const rank = metric.rank && plain(metric.rank.text) ? metric.rank : null;
     if (rank && plain(rank.tier) === 'lead') leadCount += 1;
+    /* 有排名的指标：大数字跟「领先/中等/落后」同色，扫一眼就知道这项是优势还是短板。 */
+    const tier = rank ? plain(rank.tier) : '';
+    const valueTier = ['lead', 'mid', 'behind'].includes(tier) ? ` is-${tier}` : '';
     /* 百分率已经带着分母了，右侧就不再重复「19/19 局」；没排名的才退回收数。 */
     const chip = rank ? rankHtml(rank, esc)
       : (!sub && coverage ? `<small class="pbr-metric-coverage">${esc(coverage)}</small>` : '');
@@ -197,7 +202,7 @@ function metricsHtml(data, ctx) {
       <div class="pbr-metric-line">
         <span class="pbr-metric-label">${esc(label)}</span>
         ${chip}
-        <span class="pbr-metric-value">${esc(textOf(metric.valueText))}${sub
+        <span class="pbr-metric-value${valueTier}">${esc(textOf(metric.valueText))}${sub
           ? `<em class="pbr-metric-pct">（${esc(sub)}）</em>` : ''}</span>
       </div>
       ${foot}
@@ -353,6 +358,57 @@ const valueText = (item) => {
   return text && text !== '—' && text !== '-' ? text : '';
 };
 
+/* ── 关注（收藏）────────────────────────────────────────────────
+ * 纯渲染只读 view.findingFavs / view.watchFavs（{id: ISO}），
+ * localStorage 只在控制器里读写；关注项排在前面、其余保持后端顺序。 */
+const findingKey = (finding) => plain(finding && finding.id) || plain(finding && finding.title);
+
+function watchCardKey(card) {
+  const evidence = listOf(card && card.evidence);
+  const game = plain(evidence[0] && evidence[0].game);
+  return game || plain(card && card.id) || plain(card && card.title);
+}
+
+/* 关注时间：同年 MM-DD HH:mm，跨年 YYYY-MM-DD HH:mm（localStorage 里存 ISO）。 */
+function favTimeText(iso) {
+  const date = new Date(iso);
+  if (!iso || Number.isNaN(date.getTime())) return '';
+  const pad = (value) => String(value).padStart(2, '0');
+  const clock = `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return date.getFullYear() === new Date().getFullYear() ? clock : `${date.getFullYear()}-${clock}`;
+}
+
+function favButtonHtml(attr, key, favs, esc, label) {
+  const iso = plain(favs && favs[key]);
+  const on = Boolean(iso);
+  const text = on ? `已关注 · ${favTimeText(iso)}` : (label || '关注');
+  return `<button type="button" class="pbr-fav${on ? ' is-on' : ''}" ${attr}="${esc(key)}"
+    aria-pressed="${String(on)}" title="${esc(on ? '取消关注' : '关注')}"><i class="pbr-fav-star" aria-hidden="true">${on ? '★' : '☆'}</i><span class="pbr-fav-text">${esc(text)}</span></button>`;
+}
+
+function sortedByFav(items, keyOf, favs) {
+  if (!favs || !Object.keys(favs).length) return items;
+  const fav = [];
+  const rest = [];
+  items.forEach((item) => (favs[keyOf(item)] ? fav : rest).push(item));
+  return fav.concat(rest);
+}
+
+/* 重点发现的每一行（供渲染与控制器局部重画共用）。 */
+function findingRowsHtml(findings, favs, esc) {
+  return sortedByFav(findings, findingKey, favs)
+    .map((finding, index) => findingHtml(finding, index, esc, { favType: 'finding', favs }))
+    .join('');
+}
+
+/* 某组复盘卡（供渲染与控制器局部重画共用）。 */
+function watchCardsHtml(field, options, esc) {
+  const opts = options || {};
+  return sortedByFav(watchItems(field), watchCardKey, opts.favs)
+    .map((item, index) => findingHtml(item, index, esc, { ...opts, favType: 'watch' }))
+    .join('');
+}
+
 /* 复盘卡数字：按「显示字段」顺序，从 card.values 里按 id 取；缺什么就写「—」。
    老报文没有 values 时退回 numbers 的同位置字段（顺序由后端保证）。 */
 function displayNumbersHtml(card, options, esc) {
@@ -386,25 +442,30 @@ function displayNumbersHtml(card, options, esc) {
 function findingHtml(finding, index, esc, options) {
   const conclusion = trimCompare(finding.conclusion);
   const opts = options || {};
+  const favs = opts.favs || {};
   const evidence = listOf(finding.evidence)
     .filter((item) => item && (plain(item.label) || plain(item.game)))
     .slice(0, EVIDENCE_LIMIT);
 
-  /* 复盘卡：一句这局发生了什么 + 显示字段数字 + 五人阵容 + 一个动作。 */
-  if (['win', 'loss'].includes(plain(finding.kind))) {
+  /* 复盘卡：一句这局发生了什么 + 显示字段数字 + 五人阵容 + 一个动作 + 关注。
+     重点发现行即使 kind 是 win/loss 也按「行」渲染（用 favType 区分上下文）。 */
+  if (opts.favType !== 'finding' && ['win', 'loss'].includes(plain(finding.kind))) {
     const game = evidence.length ? plain(evidence[0].game) : '';
+    const cardKey = watchCardKey(finding);
+    const isFav = opts.favType === 'watch' && Boolean(favs[cardKey]);
+    const fav = opts.favType === 'watch' ? favButtonHtml('data-pbr-fav-watch', cardKey, favs, esc, '关注') : '';
     /* 老报文（单组）没有「显示字段」，仍按后端给的 numbers 顺序出 4 个数字。 */
     const numbersPart = listOf(opts.displayIds).length
       ? displayNumbersHtml(finding, opts, esc)
       : numbersHtml(finding, esc);
-    return `<article class="pbr-finding is-watch">
+    return `<article class="pbr-finding is-watch${isFav ? ' is-fav' : ''}">
       ${findingHead(finding, index, esc)}
       <p class="pbr-conclusion">${esc(conclusion)}</p>
       ${numbersPart}
       ${rosterHtml(finding, esc)}
       <div class="pbr-watch-link">${game
         ? `<a href="#match/${encodeURIComponent(game)}">查看这局完整过程 →</a>`
-        : ''}</div>
+        : '<span></span>'}${fav}</div>
     </article>`;
   }
 
@@ -412,7 +473,10 @@ function findingHtml(finding, index, esc, options) {
   const numbers = listOf(finding.numbers)
     .filter((item) => valueText(item))
     .slice(0, NUMBER_LIMIT);
-  return `<article class="pbr-finding">
+  const key = findingKey(finding);
+  const isFav = opts.favType === 'finding' && Boolean(favs[key]);
+  const fav = opts.favType === 'finding' ? favButtonHtml('data-pbr-fav-finding', key, favs, esc, '关注') : '';
+  return `<article class="pbr-finding${isFav ? ' is-fav' : ''}" data-finding-id="${esc(key)}">
     <div class="pbr-finding-main">
       ${findingHead(finding, index, esc, { tagFirst: true })}
       <p class="pbr-conclusion">${esc(conclusion)}</p>
@@ -420,7 +484,7 @@ function findingHtml(finding, index, esc, options) {
         ? `<ul class="pbr-evidence is-inline">${evidence.map((item) => evidenceInlineHtml(item, esc)).join('')}</ul>`
         : ''}
     </div>
-    <div class="pbr-finding-side">${statHtml(finding, numbers, esc)}</div>
+    <div class="pbr-finding-side">${statHtml(finding, numbers, esc)}${fav ? `<div class="pbr-finding-fav">${fav}</div>` : ''}</div>
   </article>`;
 }
 
@@ -436,11 +500,14 @@ function sectionHeadHtml(title, countText, esc, note) {
   </div>`;
 }
 
-function findingsHtml(data, ctx) {
+function collectFindings(data) {
+  return listOf(data.findings)
+    .filter((finding) => finding && (plain(finding.title) || plain(finding.conclusion)));
+}
+
+function findingsHtml(data, view, ctx) {
   const { esc } = ctx;
-  const findings = listOf(data.findings)
-    .filter((finding) => finding && (plain(finding.title) || plain(finding.conclusion)))
-    .slice(0, FINDING_LIMIT);
+  const findings = collectFindings(data);
   /* 首页这块是「先看哪几局」的入口；标题/计数/空态由后端按本期口径给，
      旧数据没有这些字段时回退到原来的「变化」文案。 */
   const title = plain(data.findingsTitle) || '本周期最值得关注的变化';
@@ -455,16 +522,17 @@ function findingsHtml(data, ctx) {
       <p class="pbr-findings-empty">${esc(emptyText)}</p>
     </section>`;
   }
+  const favs = (view && view.findingFavs) || {};
+  /* 不限条数：条数以后端为准（最多约 8 条），块内上下滚动，滚轮/键盘都能用。 */
   return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
-    <div class="pbr-finding-list">${findings.map((finding, index) => findingHtml(finding, index, esc)).join('')}</div>
+    <div class="pbr-finding-list is-scroll" tabindex="0" role="region" aria-label="${esc(title)}列表">${findingRowsHtml(findings, favs, esc)}</div>
   </section>`;
 }
 
-/* ── 最值得复盘的比赛（10 个字段各排一组；另有「显示字段」控件） ── */
+/* ── 最值得复盘的比赛（10 个字段各排一组；横向滑动 + 排序/字段控件） ── */
 function watchItems(field) {
   return listOf(field && field.items)
-    .filter((item) => item && (plain(item.title) || plain(item.conclusion)))
-    .slice(0, FINDING_LIMIT);
+    .filter((item) => item && (plain(item.title) || plain(item.conclusion)));
 }
 
 /* 显示字段目录：以后端 watchFields 的固定顺序为准，缺的 id 再从卡片的 values 里补。 */
@@ -555,7 +623,7 @@ function fieldsPopHtml(catalog, picked, open, esc) {
   </div>`;
 }
 
-/* 区头右侧的文本工具条：排序 + 字段两个按钮，各自的弹层挂在同一容器里。 */
+/* 区头右侧的文本工具条：左右滚动 + 排序 + 字段，各自的弹层挂在同一容器里。 */
 function watchToolsHtml(fields, catalog, picked, active, openPop, esc) {
   const activeId = plain(active.id);
   const activeLabel = plain(active.label) || activeId;
@@ -563,6 +631,10 @@ function watchToolsHtml(fields, catalog, picked, active, openPop, esc) {
   const sortOpen = openPop === 'sort';
   const fieldsOpen = openPop === 'fields';
   return `<div class="pbr-watch-tools">
+    <div class="pbr-watch-arrows">
+      <button type="button" class="pbr-arrow" data-pbr-watch-prev aria-label="上一屏复盘对局" title="向左看" disabled>‹</button>
+      <button type="button" class="pbr-arrow" data-pbr-watch-next aria-label="下一屏复盘对局" title="向右看" disabled>›</button>
+    </div>
     <button type="button" class="pbr-tool" data-pbr-sort-toggle aria-haspopup="listbox" aria-controls="pbr-sort-pop" aria-expanded="${String(sortOpen)}">
       <span class="pbr-tool-label">排序</span>
       <span class="pbr-tool-value" data-pbr-sort-value>${esc(activeLabel)} · ${esc(`${activeCount} 局`)}</span>
@@ -587,6 +659,7 @@ function watchGroupHtml(field, activeId, options, esc) {
     displayIds: options && options.displayIds,
     catalog: options && options.catalog,
     focusId: options && options.focusId,
+    favs: options && options.favs,
   };
   if (!items.length) {
     return `<div class="pbr-finding-list is-empty" data-pbr-watch-group="${esc(id)}"
@@ -594,9 +667,10 @@ function watchGroupHtml(field, activeId, options, esc) {
       <p class="pbr-findings-empty">${esc(plain(field.empty) || `本期没有${label}的局。`)}</p>
     </div>`;
   }
-  return `<div class="pbr-finding-list" data-pbr-watch-group="${esc(id)}"
-    data-watch-count="${items.length}"${hidden}>
-    ${items.map((item, index) => findingHtml(item, index, esc, cardOptions)).join('')}
+  /* 每组是横向滑动的轨道：卡片自带边框，不再用整体面板分隔线。 */
+  return `<div class="pbr-finding-list is-rail" data-pbr-watch-group="${esc(id)}"
+    data-watch-count="${items.length}" tabindex="0"${hidden}>
+    ${watchCardsHtml(field, cardOptions, esc)}
   </div>`;
 }
 
@@ -604,13 +678,12 @@ function watchHtml(data, view, ctx) {
   const { esc } = ctx;
   const fields = listOf(data.watchFields).filter((field) => field && plain(field.id));
   const legacy = listOf(data.watch)
-    .filter((item) => item && (plain(item.title) || plain(item.conclusion)))
-    .slice(0, FINDING_LIMIT);
+    .filter((item) => item && (plain(item.title) || plain(item.conclusion)));
   /* 旧报文没有 watch 字段时整块不渲染，避免首页多出一个空板块。 */
   if (!fields.length && !legacy.length && !plain(data.watchTitle)) return '';
   const title = plain(data.watchTitle) || '本期最值得复盘的比赛';
 
-  /* 老报文（单组）：维持原样，不再强行造工具条/弹层。 */
+  /* 老报文（单组）：维持原样，不再强行造工具条/弹层/关注。 */
   if (!fields.length) {
     const head = sectionHeadHtml(title,
       plain(data.watchCountText) || `${legacy.length} 局`, esc,
@@ -621,7 +694,7 @@ function watchHtml(data, view, ctx) {
         <p class="pbr-findings-empty">${esc(empty)}</p></section>`;
     }
     return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">${head}
-      <div class="pbr-finding-list">${legacy.map((item, index) => findingHtml(item, index, esc)).join('')}</div>
+      <div class="pbr-finding-list is-rail" tabindex="0">${legacy.map((item, index) => findingHtml(item, index, esc)).join('')}</div>
     </section>`;
   }
 
@@ -631,15 +704,18 @@ function watchHtml(data, view, ctx) {
   const activeId = plain(active.id);
   const picked = orderedDisplay(displayPick(data, view, catalog), catalog);
   const openPop = plain(view && view.openPop);
+  const favs = (view && view.watchFavs) || {};
   const activeItems = watchItems(active);
+  /* 区头「N 局」用后端 count（该字段本期总局数），不是这组实际渲染的条数。 */
+  const activeCount = has(active.count) ? active.count : activeItems.length;
   const head = `<div class="pbr-section-head">
     <div class="pbr-section-title">
       <h2>${esc(title)}</h2>
-      <span class="pbr-section-chip" data-pbr-watch-count>${activeItems.length ? `${activeItems.length} 局` : '本期暂无'}</span>
+      <span class="pbr-section-chip" data-pbr-watch-count>${activeCount > 0 ? `${activeCount} 局` : '本期暂无'}</span>
     </div>
     ${watchToolsHtml(fields, catalog, picked, active, openPop, esc)}
   </div>`;
-  const groups = fields.map((field) => watchGroupHtml(field, activeId, { displayIds: picked, catalog, focusId: activeId }, esc)).join('');
+  const groups = fields.map((field) => watchGroupHtml(field, activeId, { displayIds: picked, catalog, focusId: activeId, favs }, esc)).join('');
   return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">${head}
     ${groups}
   </section>`;
@@ -748,7 +824,7 @@ function errorHtml(view, ctx) {
 function dataHtml(data, view, ctx) {
   return `${summaryHtml(data, ctx)}
     ${metricsHtml(data, ctx)}
-    ${findingsHtml(data, ctx)}
+    ${findingsHtml(data, view, ctx)}
     ${watchHtml(data, view, ctx)}
     <section class="pbr-foot" aria-label="约训与数据覆盖">
       <div class="pbr-foot-row">
@@ -790,6 +866,10 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
   let displayChoice = null;
   let watchActive = null;
   let openPop = null;
+  /* 关注收藏：纯渲染只读，localStorage 只在这里读写。 */
+  let findingFavs = {};
+  let watchFavs = {};
+  let favsLoaded = false;
 
   const filters = () => {
     try { return getFilters() || {}; } catch { return {}; }
@@ -836,6 +916,47 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
       const store = localStorage;
       store.setItem(DISPLAY_KEY, JSON.stringify(ids));
     } catch {}
+  }
+
+  /* ── 关注收藏：{id: ISO} 映射，读一次缓存，改了就写回 ── */
+  function readFavMap(key) {
+    try {
+      if (typeof localStorage === 'undefined') return {};
+      const raw = localStorage.getItem(key);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const map = {};
+      Object.keys(parsed).forEach((id) => {
+        const iso = plain(parsed[id]);
+        if (id && iso) map[id] = iso;
+      });
+      return map;
+    } catch {
+      return {};
+    }
+  }
+
+  function writeFavMap(key, map) {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const store = localStorage;
+      store.setItem(key, JSON.stringify(map));
+    } catch {}
+  }
+
+  function ensureFavs() {
+    if (favsLoaded) return;
+    favsLoaded = true;
+    findingFavs = readFavMap(FINDING_FAV_KEY);
+    watchFavs = readFavMap(WATCH_FAV_KEY);
+  }
+
+  /* 点一次：没关注就记当前时间，已关注就删掉（回到原位置）。 */
+  function toggleFavMap(map, key) {
+    const next = { ...map };
+    if (next[key]) delete next[key];
+    else next[key] = new Date().toISOString();
+    return next;
   }
 
   /* 用户选择 > localStorage > payload 默认 > 目录前 4 项；每次都过滤掉目录里没有的 id。 */
@@ -920,12 +1041,66 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
 
   function paint() {
     if (!root || !root.isConnected) return;
+    ensureFavs();
     const current = filters();
     const scope = Boolean(plain(current.from) || plain(current.to));
     const data = view.data || null;
     const displayFields = data && listOf(data.watchFields).length ? resolveDisplay(data) : null;
-    root.innerHTML = renderBrief({ ...view, hasDateScope: scope, displayFields, watchActive, openPop }, ctx);
+    root.innerHTML = renderBrief({
+      ...view,
+      hasDateScope: scope,
+      displayFields,
+      watchActive,
+      openPop,
+      findingFavs,
+      watchFavs,
+    }, ctx);
     root.setAttribute('aria-busy', String(Boolean(view.loading)));
+    syncArrows();
+  }
+
+  /* 左右滚动箭头：只控制当前可见分组的横向轨道，到两端就禁用。 */
+  function watchRail() {
+    return root ? root.querySelector('.pbr-watch [data-pbr-watch-group]:not([hidden])') : null;
+  }
+
+  function syncArrows() {
+    if (!root) return;
+    const prev = root.querySelector('[data-pbr-watch-prev]');
+    const next = root.querySelector('[data-pbr-watch-next]');
+    if (!prev || !next) return;
+    const rail = watchRail();
+    if (!rail) {
+      prev.disabled = true;
+      next.disabled = true;
+      return;
+    }
+    const max = rail.scrollWidth - rail.clientWidth;
+    prev.disabled = rail.scrollLeft <= 1;
+    next.disabled = max <= 1 || rail.scrollLeft >= max - 1;
+  }
+
+  function scrollWatch(direction) {
+    const rail = watchRail();
+    if (!rail) return;
+    const amount = Math.max(220, Math.round(rail.clientWidth * 0.9));
+    const reduce = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const target = rail.scrollLeft + direction * amount;
+    try {
+      rail.scrollTo({ left: target, behavior: reduce ? 'auto' : 'smooth' });
+    } catch {
+      rail.scrollLeft = target;
+    }
+  }
+
+  /* 横向滚动时同步箭头禁用态（scroll 不冒泡，用捕获监听）。 */
+  function onScroll(event) {
+    const rail = event.target;
+    if (!rail || !rail.matches || !rail.matches('[data-pbr-watch-group]')) return;
+    if (rail.hasAttribute('hidden')) return;
+    syncArrows();
   }
 
   /* 重画整块但不让键盘/滚动跳走：还原滚动位置，再把焦点放回同一个控件。 */
@@ -1102,6 +1277,54 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     focusKeep(root && root.querySelector('[data-pbr-display-reset]'));
   }
 
+  /* 关注一条发现：只重画发现列表（不整页 paint），保持 scrollTop、焦点回到同一按钮。 */
+  function toggleFindingFav(button) {
+    const id = plain(button.dataset.pbrFavFinding);
+    if (!id) return;
+    ensureFavs();
+    findingFavs = toggleFavMap(findingFavs, id);
+    writeFavMap(FINDING_FAV_KEY, findingFavs);
+    const list = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
+    if (!list) return;
+    const top = list.scrollTop;
+    list.innerHTML = findingRowsHtml(collectFindings(view.data || {}), findingFavs, ctx);
+    list.scrollTop = top;
+    const next = Array.from(root.querySelectorAll('[data-pbr-fav-finding]'))
+      .find((node) => node.dataset.pbrFavFinding === id);
+    focusKeep(next);
+  }
+
+  /* 关注一局复盘：重画所有分组的卡片（跨组共享关注态），逐个恢复 scrollLeft、焦点回按钮。 */
+  function toggleWatchFav(button) {
+    const key = plain(button.dataset.pbrFavWatch);
+    if (!key) return;
+    ensureFavs();
+    watchFavs = toggleFavMap(watchFavs, key);
+    writeFavMap(WATCH_FAV_KEY, watchFavs);
+    const data = view.data || {};
+    const fields = listOf(data.watchFields).filter((field) => field && plain(field.id));
+    if (!fields.length) return;
+    const catalog = watchCatalog(data);
+    const wanted = watchActive || plain(data.watchField) || plain(fields[0].id);
+    const active = fields.find((field) => plain(field.id) === wanted) || fields[0];
+    const picked = orderedDisplay(displayPick(data, { displayFields: resolveDisplay(data) }, catalog), catalog);
+    const options = { displayIds: picked, catalog, focusId: plain(active.id), favs: watchFavs };
+    const rails = Array.from(root.querySelectorAll('.pbr-watch [data-pbr-watch-group]'));
+    const lefts = new Map();
+    rails.forEach((rail) => lefts.set(rail.dataset.pbrWatchGroup, rail.scrollLeft));
+    rails.forEach((rail) => {
+      const field = fields.find((item) => plain(item.id) === rail.dataset.pbrWatchGroup);
+      if (!field || !watchItems(field).length) return;
+      rail.innerHTML = watchCardsHtml(field, options, ctx);
+    });
+    rails.forEach((rail) => { rail.scrollLeft = lefts.get(rail.dataset.pbrWatchGroup) || 0; });
+    syncArrows();
+    const rail = watchRail();
+    const next = rail && Array.from(rail.querySelectorAll('[data-pbr-fav-watch]'))
+      .find((node) => node.dataset.pbrFavWatch === key);
+    focusKeep(next);
+  }
+
   function onFieldChange(event) {
     const input = event.target.closest('[data-pbr-field-option]');
     if (!input) return;
@@ -1128,6 +1351,24 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
 
   function onClick(event) {
     const target = event.target;
+    const favFinding = target.closest('[data-pbr-fav-finding]');
+    if (favFinding) {
+      toggleFindingFav(favFinding);
+      return;
+    }
+    const favWatch = target.closest('[data-pbr-fav-watch]');
+    if (favWatch) {
+      toggleWatchFav(favWatch);
+      return;
+    }
+    if (target.closest('[data-pbr-watch-prev]')) {
+      scrollWatch(-1);
+      return;
+    }
+    if (target.closest('[data-pbr-watch-next]')) {
+      scrollWatch(1);
+      return;
+    }
     if (target.closest('[data-pbr-sort-toggle]')) {
       togglePop('sort');
       return;
@@ -1189,6 +1430,8 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
         root.dataset.pbrBound = '1';
         root.addEventListener('click', onClick);
         root.addEventListener('change', onFieldChange);
+        /* scroll 不冒泡，用捕获监听同步横向轨道两端箭头。 */
+        root.addEventListener('scroll', onScroll, true);
       }
       bindDocument();
       syncWithFilters();
@@ -1198,6 +1441,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
       generation += 1;
       stopRequest();
       unbindDocument();
+      if (root) root.removeEventListener('scroll', onScroll, true);
       openPop = null;
       root = null;
     },

@@ -124,53 +124,66 @@ WATCH_ROSTER = (
     ('李白', '打野', '/catalog/icons/hero-108.png'),
     ('朵莉亚', '游走', '/catalog/icons/hero-109.png'),
 )
-# 4 局合成对局：故意让部分卡缺字段（at10 / giveback / dragon …），用来验「—」与缺失场景。
+# 8 局合成对局：故意让部分卡缺字段（at10 / giveback / dragon …），用来验「—」与缺失场景。
+# game 'a' 同时出现在所有分组，用来验「同一局跨分组共享关注」。
 MOCK_GAMES = {
-    'watch_a': {
-        'date': '11-04', 'label': '11-04 · 对阵 #29', 'result': 'loss',
-        'conclusion': '本期最长的一局，打了 27 分钟，10 分钟落后 2,500 金币，先看开局。',
-        'values': {'deficit': '-4,500 金币', 'deaths': '32 次', 'giveback': '-3,100 金币',
-                   'fight': '4 波', 'at10': '-2,500 金币', 'duration': '27:08',
-                   'dragon': '3 条', 'tower': '6 座', 'gold': '-12,400 金币', 'damage': '38.2%'},
-    },
-    'watch_b': {
-        'date': '11-03', 'label': '11-03 · 对阵 #20', 'result': 'loss',
-        'conclusion': '中期一波龙团被打出 0 换 4，经济差一路被拉开。',
-        'values': {'deficit': '-3,900 金币', 'deaths': '28 次', 'fight': '3 波',
-                   'duration': '22:41', 'dragon': '2 条', 'tower': '5 座',
-                   'gold': '-8,700 金币', 'damage': '41.5%'},   # at10 / giveback 缺失
-    },
-    'watch_c': {
-        'date': '11-02', 'label': '11-02 · 对阵 #18', 'result': 'win',
-        'conclusion': '开局领先一路兑现，19 分钟推平，可当作优势局的参照。',
-        'values': {'deaths': '18 次', 'at10': '+1,600 金币', 'duration': '19:02',
-                   'dragon': '4 条', 'gold': '+6,200 金币', 'damage': '52.0%'},
-    },
-    'watch_d': {
-        'date': '11-02', 'label': '11-02 · 对阵 #17', 'result': 'loss',
-        'conclusion': '10 分钟还咬着，最后 18 分钟被推掉两座高地。',
-        'values': {'deficit': '-2,100 金币', 'deaths': '22 次', 'at10': '-800 金币',
-                   'duration': '18:30', 'tower': '3 座', 'gold': '-5,300 金币',
-                   'damage': '44.1%'},
-    },
+    'a': {'date': '11-04', 'label': '11-04 · 对阵 #29', 'result': 'loss',
+          'conclusion': '本期最长的一局，打了 27 分钟，10 分钟落后 2,500 金币，先看开局。',
+          'values': {'deficit': '-4,500 金币', 'deaths': '32 次', 'giveback': '-3,100 金币',
+                     'fight': '4 波', 'at10': '-2,500 金币', 'duration': '27:08',
+                     'dragon': '3 条', 'tower': '6 座', 'gold': '-12,400 金币', 'damage': '38.2%'}},
+    'b': {'date': '11-03', 'label': '11-03 · 对阵 #20', 'result': 'loss',
+          'conclusion': '中期一波龙团被打出 0 换 4，经济差一路被拉开。',
+          'values': {'deficit': '-3,900 金币', 'deaths': '28 次', 'giveback': '-2,600 金币',
+                     'fight': '3 波', 'duration': '22:41', 'dragon': '2 条', 'tower': '5 座',
+                     'gold': '-8,700 金币', 'damage': '41.5%'}},   # at10 缺失
+    'c': {'date': '11-02', 'label': '11-02 · 对阵 #18', 'result': 'win',
+          'conclusion': '开局领先一路兑现，19 分钟推平，可当作优势局的参照。',
+          'values': {'deaths': '18 次', 'at10': '+1,600 金币', 'duration': '19:02',
+                     'dragon': '4 条', 'gold': '+6,200 金币', 'damage': '52.0%'}},   # deficit/fight/tower/giveback 缺失
+    'd': {'date': '11-02', 'label': '11-02 · 对阵 #17', 'result': 'loss',
+          'conclusion': '10 分钟还咬着，最后 18 分钟被推掉两座高地。',
+          'values': {'deficit': '-2,100 金币', 'deaths': '22 次', 'giveback': '-1,200 金币',
+                     'fight': '2 波', 'at10': '-800 金币', 'duration': '18:30',
+                     'tower': '3 座', 'gold': '-5,300 金币', 'damage': '44.1%'}},   # dragon 缺失
+    'e': {'date': '11-03', 'label': '11-03 · 对阵 #22', 'result': 'loss',
+          'conclusion': '前中期两波团战打输，经济差被滚到 9,000 金币。',
+          'values': {'deficit': '-1,800 金币', 'deaths': '35 次', 'giveback': '-2,400 金币',
+                     'fight': '5 波', 'at10': '-1,100 金币', 'duration': '24:12',
+                     'dragon': '5 条', 'tower': '7 座', 'gold': '-9,200 金币', 'damage': '36.0%'}},
+    'f': {'date': '11-04', 'label': '11-04 · 对阵 #31', 'result': 'loss',
+          'conclusion': '对线期就落后，20 分钟被推平，可作为开局问题的参照。',
+          'values': {'deficit': '-3,300 金币', 'deaths': '25 次', 'giveback': '-1,600 金币',
+                     'fight': '4 波', 'at10': '-1,500 金币', 'duration': '20:40',
+                     'tower': '4 座', 'gold': '-6,800 金币', 'damage': '39.4%'}},   # dragon 缺失
+    'g': {'date': '11-03', 'label': '11-03 · 对阵 #13', 'result': 'win',
+          'conclusion': '打野前期带起节奏，23 分钟结束比赛。',
+          'values': {'deaths': '30 次', 'giveback': '-900 金币', 'fight': '2 波',
+                     'at10': '-900 金币', 'duration': '23:15', 'dragon': '3 条',
+                     'tower': '6 座', 'gold': '-7,400 金币', 'damage': '40.0%'}},   # deficit 缺失
+    'h': {'date': '11-02', 'label': '11-02 · 对阵 #8', 'result': 'loss',
+          'conclusion': '掉点太多，后期无力回天。',
+          'values': {'deaths': '21 次', 'giveback': '-2,000 金币', 'fight': '1 波',
+                     'duration': '21:05', 'dragon': '1 条', 'tower': '5 座',
+                     'gold': '-3,900 金币', 'damage': '47.5%'}},   # deficit/at10 缺失
 }
-# 每个字段各排各的前 1–3 局（deficit 3 张、deaths 2 张，用来验切组后计数/说明会变）。
+# 每个字段各排 5 局（后端每组最多 30 局，前端不再截 3 张）；game 'a' 跨多个分组。
 WATCH_GROUPS = {
-    'deficit': ['watch_a', 'watch_b', 'watch_d'],
-    'deaths': ['watch_a', 'watch_c'],
-    'giveback': ['watch_a'],
-    'fight': ['watch_a', 'watch_d'],
-    'at10': ['watch_a', 'watch_b', 'watch_c'],
-    'duration': ['watch_a', 'watch_b', 'watch_c'],
-    'dragon': ['watch_a', 'watch_c'],
-    'tower': ['watch_a', 'watch_b', 'watch_d'],
-    'gold': ['watch_a', 'watch_b', 'watch_c'],
-    'damage': ['watch_a', 'watch_b', 'watch_c'],
+    'deficit': ['a', 'b', 'd', 'e', 'f'],
+    'deaths': ['a', 'c', 'e', 'g', 'h'],
+    'giveback': ['a', 'b', 'd', 'e', 'f'],
+    'fight': ['a', 'b', 'e', 'f', 'g'],
+    'at10': ['a', 'c', 'd', 'e', 'g'],
+    'duration': ['a', 'b', 'c', 'd', 'e'],
+    'dragon': ['a', 'b', 'c', 'e', 'g'],
+    'tower': ['a', 'b', 'd', 'e', 'g'],
+    'gold': ['a', 'b', 'c', 'd', 'e'],
+    'damage': ['a', 'b', 'c', 'd', 'e'],
 }
 
 
-def watch_card(game, field, key):
-    """一张复盘卡：新增 values[]（该局所有有值字段），同时保留旧 numbers[] 兼容。"""
+def watch_card(game_id, game, field):
+    """一张复盘卡：values[]（该局所有有值字段）+ 旧 numbers[] 兼容 + 合成 game key（跨组共享用）。"""
     values = [{'id': field_id, 'label': label, 'value': game['values'][field_id]}
               for field_id, label, _note, _unit in WATCH_META if field_id in game['values']]
     numbers = []
@@ -183,8 +196,9 @@ def watch_card(game, field, key):
         numbers.append({'label': item['label'], 'value': item['value']})
         if len(numbers) >= 4:
             break
+    game_key = f'channel-mock-{game_id}'
     return {
-        'id': f"watch_{game['label'].split('·')[0].strip()}_{field}",
+        'id': f'watch_{game_id}_{field}',
         'kind': game['result'],
         'field': field,
         'title': game['label'],
@@ -194,18 +208,19 @@ def watch_card(game, field, key):
         'rosterText': ' · '.join(name for name, _lane, _icon in WATCH_ROSTER),
         'rosterPlayers': [{'name': name, 'lane': lane, 'icon': icon}
                           for name, lane, icon in WATCH_ROSTER],
-        'evidence': [{'game': key, 'label': '这局过程', 'note': ''}],
-        'primary_destination': f'#match/{key}',
+        'evidence': [{'game': game_key, 'label': '这局过程', 'note': ''}],
+        'primary_destination': f'#match/{game_key}',
         'n': 1, 'enough': True, 'counterexamples': [],
         'deep_destination': '', 'limitation': '',
     }
 
 
 def watch_payload(key):
-    """10 个字段目录 + 默认组（deficit）与 4 个默认显示字段。"""
+    """10 个字段目录（每组 5 局）+ 默认组（deficit）+ 4 个默认显示字段。"""
     groups = []
     for field_id, label, note, unit in WATCH_META:
-        items = [watch_card(MOCK_GAMES[seq], field_id, key) for seq in WATCH_GROUPS[field_id]]
+        items = [watch_card(game_id, MOCK_GAMES[game_id], field_id)
+                 for game_id in WATCH_GROUPS[field_id]]
         groups.append({'id': field_id, 'label': label, 'note': note, 'unit': unit,
                        'count': WATCH_COUNTS[field_id], 'empty': f'本期没有{label}的局。',
                        'items': items})
@@ -335,11 +350,41 @@ def payload(period, frm='', to='', key=FALLBACK_KEY, cover='6', sentence=None):
                 'deep_destination': f'{DEEP_ROUTE}?from={from_}&to={to_}',
                 'limitation': '按终局面板统计。',
             },
+            {
+                'id': 'comp_concentrated', 'kind': 'comp', 'title': '阵容更集中在中野',
+                'conclusion': '本周 5 局用同一套中野双人组，上周用了 8 套不同组合。',
+                'numbers': [{'label': '本期', 'value': '5 套'}, {'label': '上期', 'value': '8 套'}],
+                'n': 6, 'enough': True,
+                'evidence': [{'game': 'channel-find-4', 'label': '11-03 · 对阵 #22', 'note': '同一套中野组合'}],
+                'primary_destination': '#match/channel-find-4',
+                'deep_destination': f'{DEEP_ROUTE}?from={from_}&to={to_}',
+                'limitation': '',
+            },
+            {
+                'id': 'roster_death_up', 'kind': 'roster', 'title': '发育路一局死 3 次以上的情况变多了',
+                'conclusion': '本周 23 局里有 7 局发育路一局死 3 次以上，上周 21 局里 4 局。',
+                'numbers': [{'label': '本期', 'value': '7/23 局'}, {'label': '上期', 'value': '4/21 局'}],
+                'n': 23, 'enough': True,
+                'evidence': [{'game': 'channel-find-5', 'label': '11-04 · 对阵 #29', 'note': '发育路 0/5/2'}],
+                'primary_destination': '#match/channel-find-5',
+                'deep_destination': f'{DEEP_ROUTE}?from={from_}&to={to_}',
+                'limitation': '',
+            },
+            {
+                'id': 'opening_death', 'kind': 'training', 'title': '开局 5 分钟内掉点的情况变多了',
+                'conclusion': '本周 6 局里有 4 局开局 5 分钟就掉点，上周 2 局。',
+                'numbers': [{'label': '本期', 'value': '4/6'}, {'label': '上期', 'value': '2/6'}],
+                'n': 6, 'enough': True,
+                'evidence': [{'game': 'channel-find-6', 'label': '11-02 · 对阵 #17', 'note': '2:40 掉点'}],
+                'primary_destination': '#match/channel-find-6',
+                'deep_destination': f'{DEEP_ROUTE}?from={from_}&to={to_}',
+                'limitation': '',
+            },
         ],
         'findingsTitle': '本期重点发现',
-        'findingsCountText': '3 条',
+        'findingsCountText': '6 条',
         'watchTitle': '本期最值得复盘的比赛',
-        'watchCountText': '3 局',
+        'watchCountText': '5 局',
         'watch': watch_items,
         'watchField': 'deficit',
         'watchFields': watch_fields,
@@ -668,6 +713,164 @@ def focus_watch_section(page):
     page.wait_for_timeout(150)
 
 
+def metric_tiers(page):
+    """指标大数字的等级配色：有 rank 的指标 value 上应有 is-lead/is-mid/is-behind。"""
+    return page.evaluate("""() => {
+      const text = (node) => node ? (node.textContent || '').replace(/\\s+/g, ' ').trim() : '';
+      const nodes = [...document.querySelectorAll('.pbr-metric')];
+      return nodes.map((node) => {
+        const value = node.querySelector('.pbr-metric-value');
+        const rank = node.querySelector('.pbr-rank');
+        let tier = null;
+        if (rank) {
+          if (rank.classList.contains('is-lead')) tier = 'lead';
+          else if (rank.classList.contains('is-mid')) tier = 'mid';
+          else if (rank.classList.contains('is-behind')) tier = 'behind';
+        }
+        return {
+          label: text(node.querySelector('.pbr-metric-label')),
+          hasRank: Boolean(rank),
+          tier,
+          valueClasses: value ? [...value.classList].filter((name) => /^is-(lead|mid|behind)$/.test(name)) : [],
+          valueColor: value ? getComputedStyle(value).color : null,
+          rankColor: rank ? getComputedStyle(rank).color : null,
+          valueText: text(value),
+        };
+      });
+    }""")
+
+
+def findings_state(page):
+    """重点发现区：滚动容器尺寸、行顺序、关注按钮与关注态、边框颜色。"""
+    return page.evaluate("""() => {
+      const list = document.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
+      const rows = list ? [...list.querySelectorAll('.pbr-finding')] : [];
+      const text = (node) => node ? (node.textContent || '').replace(/\\s+/g, ' ').trim() : '';
+      return {
+        exists: Boolean(list),
+        overflowY: list ? getComputedStyle(list).overflowY : null,
+        scrollHeight: list ? list.scrollHeight : 0,
+        clientHeight: list ? list.clientHeight : 0,
+        scrollTop: list ? Math.round(list.scrollTop) : 0,
+        focusable: list ? (list.tabIndex >= 0 || list.hasAttribute('tabindex')) : false,
+        favCount: list ? list.querySelectorAll('[data-pbr-fav-finding]').length : 0,
+        rows: rows.map((row) => {
+          const button = row.querySelector('[data-pbr-fav-finding]');
+          const style = getComputedStyle(row);
+          return {
+            id: button ? button.getAttribute('data-pbr-fav-finding') : '',
+            title: text(row.querySelector('h3')),
+            isFav: row.classList.contains('is-fav'),
+            favText: text(button),
+            borderColor: style.borderColor,
+            borderLeftColor: style.borderLeftColor,
+            hasFavButton: Boolean(button),
+          };
+        }),
+      };
+    }""")
+
+
+def watch_hscroll_state(page):
+    """复盘区：可见分组的横向滚动容器、每卡关注按钮/关注态、左右箭头按钮。"""
+    return page.evaluate("""() => {
+      const text = (node) => node ? (node.textContent || '').replace(/\\s+/g, ' ').trim() : '';
+      const section = document.querySelector('.pbr-watch');
+      if (!section) return null;
+      const groups = [...section.querySelectorAll('[data-pbr-watch-group]')];
+      const visible = groups.find((node) => !node.hasAttribute('hidden')) || null;
+      const isScroller = (node) => {
+        if (!node) return false;
+        const style = getComputedStyle(node);
+        return (style.overflowX === 'auto' || style.overflowX === 'scroll')
+          && node.scrollWidth > node.clientWidth + 1;
+      };
+      let scroller = null;
+      if (visible) {
+        if (isScroller(visible)) scroller = visible;
+        else scroller = [...visible.querySelectorAll('*')].find(isScroller) || null;
+      }
+      const cards = visible ? [...visible.querySelectorAll('.pbr-finding')] : [];
+      const readCard = (card) => {
+        const button = card.querySelector('[data-pbr-fav-watch]');
+        let gameKey = button ? button.getAttribute('data-pbr-fav-watch') : '';
+        if (!gameKey) {
+          const link = card.querySelector('a[href^="#match/"]');
+          gameKey = link ? decodeURIComponent(link.getAttribute('href').replace('#match/', '')) : '';
+        }
+        const style = getComputedStyle(card);
+        return {
+          key: gameKey,
+          title: text(card.querySelector('h3')),
+          isFav: card.classList.contains('is-fav'),
+          favText: text(button),
+          borderColor: style.borderColor,
+          hasFavButton: Boolean(button),
+        };
+      };
+      const buttonOf = (selectors, glyphs) => {
+        for (const selector of selectors) {
+          const node = section.querySelector(selector);
+          if (node) return node;
+        }
+        return [...section.querySelectorAll('button')].find((node) => glyphs.includes(text(node))) || null;
+      };
+      const info = (node) => node ? {
+        exists: true, text: text(node),
+        disabled: Boolean(node.disabled) || node.hasAttribute('disabled')
+          || node.getAttribute('aria-disabled') === 'true',
+        visible: node.getBoundingClientRect().width > 0,
+      } : { exists: false };
+      const prev = buttonOf(['[data-pbr-watch-prev]', '[data-pbr-watch-scroll-prev]',
+                             '[data-pbr-scroll-prev]', '[aria-label*="上一"]'], ['‹', '←', '上一屏']);
+      const next = buttonOf(['[data-pbr-watch-next]', '[data-pbr-watch-scroll-next]',
+                             '[data-pbr-scroll-next]', '[aria-label*="下一"]'], ['›', '→', '下一屏']);
+      return {
+        group: visible ? visible.getAttribute('data-pbr-watch-group') : null,
+        groupCount: groups.length,
+        cards: cards.map(readCard),
+        cardCount: cards.length,
+        scroller: scroller ? {
+          tag: scroller.tagName.toLowerCase(),
+          className: scroller.className,
+          scrollWidth: scroller.scrollWidth,
+          clientWidth: scroller.clientWidth,
+          scrollLeft: Math.round(scroller.scrollLeft),
+          overflowX: getComputedStyle(scroller).overflowX,
+        } : null,
+        prev: info(prev),
+        next: info(next),
+        sectionWidth: section.clientWidth,
+      };
+    }""")
+
+
+def arrow_locator(page, kind):
+    """左右箭头按钮：data 属性名与实现一致（[data-pbr-watch-prev/next]），其余做兼容兜底。"""
+    selectors = (['[data-pbr-watch-prev]', '[data-pbr-watch-scroll-prev]', '[data-pbr-scroll-prev]']
+                 if kind == 'prev' else
+                 ['[data-pbr-watch-next]', '[data-pbr-watch-scroll-next]', '[data-pbr-scroll-next]'])
+    for selector in selectors:
+        locator = page.locator(selector)
+        if locator.count():
+            return locator.first
+    glyph = '‹' if kind == 'prev' else '›'
+    for search in (glyph, '上一屏', '下一屏'):
+        locator = page.locator('.pbr-watch button', has_text=search)
+        if locator.count():
+            return locator.first
+    return None
+
+
+def set_scroll(page, selector, value, axis='top'):
+    page.evaluate("""([sel, amount, axisName]) => {
+      const node = document.querySelector(sel);
+      if (!node) return;
+      if (axisName === 'left') node.scrollLeft = amount;
+      else node.scrollTop = amount;
+    }""", [selector, value, axis])
+
+
 def read_storage(page, key):
     raw = page.evaluate("(key) => { try { return localStorage.getItem(key); } catch (e) { return null; } }", key)
     if not raw:
@@ -715,8 +918,8 @@ def run_mock(base, browser, key, mocker):
     check('本期重点发现' in text, '缺少「本期重点发现」')
     check('本期最值得复盘的比赛' in text, '缺少「本期最值得复盘的比赛」')
     findings = page.locator('.pbr-findings:not(.pbr-watch) .pbr-finding')
-    check(findings.count() == 3, '发现区行数不对：' + str(findings.count()))
-    check(findings.locator('.pbr-stat').count() == 3, '每条发现行应恰好 1 个 .pbr-stat（右栏数字块），实际 '
+    check(findings.count() == 6, '发现区应渲染全部 6 条（不再截 3 条），实际 ' + str(findings.count()))
+    check(findings.locator('.pbr-stat').count() == 6, '每条发现行应恰好 1 个 .pbr-stat（右栏数字块），实际 '
           + str(findings.locator('.pbr-stat').count()))
     titles = findings_title_lines(page)
     broken = [item for item in titles if not item.get('found') or item.get('lines') != 1]
@@ -756,7 +959,8 @@ def run_mock(base, browser, key, mocker):
         # 旧的长说明「按「X」从差到好排 · 点开看完整过程」应已删除（排序按钮本身表达）
         check('从差到好排 · 点开' not in watch['sectionNote'],
               '旧的长排序说明应移除：' + watch['sectionNote'])
-        check(watch['cardCount'] == 3, '默认分组（deficit）应有 3 张卡，实际 ' + str(watch['cardCount']))
+        check(watch['cardCount'] == 5, '默认分组（deficit）应渲染 5 张卡（不再截 3 张），实际 '
+              + str(watch['cardCount']))
         check(all(card['count'] == 4 for card in watch['cards']),
               '每张卡数字数应 == 用户选的显示字段数 4：' + str([card['count'] for card in watch['cards']]))
         first = watch['cards'][0]['values'] if watch['cards'] else []
@@ -768,7 +972,9 @@ def run_mock(base, browser, key, mocker):
         missing = [item for card in watch['cards'] for item in card['values']
                    if item['id'] == 'at10' and item['value'] in ('—', '-', '')]
         check(len(missing), '卡片缺失字段应显示「—」（watch_b 没有 at10）')
-        check(watch['countText'] == '3 局', '区头计数应为 3 局：' + watch['countText'])
+        # 区头「N 局」用后端 count（该字段本期总局数），不是渲染条数：deficit 17 局 / 渲染 5 张
+        check(watch['countText'] == '17 局',
+              '区头计数应为后端 count（17 局，不是渲染 5 张）：' + watch['countText'])
         check(watch['cards'] and watch['cards'][0]['roster'] == 5, '复盘卡应有五个英雄链接')
         check((watch['cards'][0]['rosterHref'] if watch['cards'] else '').startswith('#hero/'),
               '英雄头像应链到 #hero/<英雄名>')
@@ -785,13 +991,13 @@ def run_mock(base, browser, key, mocker):
     check(overflow <= 1, f'1440 宽度出现横向滚动（溢出 {overflow}px）')
     check(boxes_fit(page, '.pbr-finding'), '1440 宽度下发现行超出可视区域')
     check(boxes_fit(page, '.pbr-stat'), '1440 宽度下发现区数字块超出可视区域')
-    page.screenshot(path=str(OUT / '20-overview-week-mock-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '30-overview-week-mock-1440.png'), full_page=False)
     notes.append(f'[mock] 首页本周：指标 {page.locator(".pbr-metric").count()} 个，'
                  f'发现 {findings.count()} 行，复盘可见 {len(watch["cards"]) if watch else 0} 局，正文 {len(text)} 字')
 
     # 中等宽度（1180 简报限宽 / 1024 三列折行）也要标题单行、不溢出。
-    for width, shot in ((1180, '20b-overview-week-mock-1180.png'),
-                        (1024, '20c-overview-week-mock-1024.png')):
+    for width, shot in ((1180, '30b-overview-week-mock-1180.png'),
+                        (1024, '30c-overview-week-mock-1024.png')):
         page.set_viewport_size({'width': width, 'height': 980})
         page.wait_for_timeout(250)
         settle(page)
@@ -814,7 +1020,7 @@ def run_mock(base, browser, key, mocker):
         if width in (1180, 1024):
             focus_watch_section(page)
             settle(page)
-            page.screenshot(path=str(OUT / (f'20{"b" if width == 1180 else "c"}2-watch-toolbar-{width}.png')),
+            page.screenshot(path=str(OUT / (f'30{"b" if width == 1180 else "c"}2-watch-toolbar-{width}.png')),
                             full_page=False)
     page.set_viewport_size({'width': 1440, 'height': 980})
     page.wait_for_timeout(150)
@@ -859,7 +1065,7 @@ def run_mock(base, browser, key, mocker):
     check(page.locator('[data-pbr-period="month"]').get_attribute('aria-pressed') == 'true',
           '切到本月后按钮没有高亮')
     check(mocker.seen and mocker.seen[-1]['period'] == 'month', '切周期没有重新请求 /api/briefing')
-    page.screenshot(path=str(OUT / '20d-overview-month-mock-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '30d-overview-month-mock-1440.png'), full_page=False)
     notes.append('[mock] 本月：' + page.locator('.pbr-sub').inner_text())
 
     # ── 4) 键盘可达：聚焦周期按钮按 Enter 切换 ──
@@ -884,7 +1090,7 @@ def run_mock(base, browser, key, mocker):
     check('查看最近一批（11-02 ~ 11-02）' in text, '空态缺少最近一批入口')
     check('本周 6 局 4 胜 2 负' not in text, '空态仍残留上一周期结论')
     check(not page.locator('.pbr-finding').count(), '空态仍渲染变化卡')
-    page.screenshot(path=str(OUT / '20e-overview-today-empty-mock-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '30e-overview-today-empty-mock-1440.png'), full_page=False)
     notes.append('[mock] 今日空态 + 最近一批入口正常')
     page.click('[data-pbr-fallback]')
     page.wait_for_function("() => document.body.innerText.includes('自定义赛训表现')", timeout=15000)
@@ -959,14 +1165,14 @@ def run_mock(base, browser, key, mocker):
                            ensure_ascii=False))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '21-watch-sort-pop-1440.png'), full_page=False)
+        page.screenshot(path=str(OUT / '31-watch-sort-pop-1440.png'), full_page=False)
         page.locator('[data-pbr-sort-option="deaths"]').click()
         page.wait_for_timeout(250)
         picked = watch_state(page)
         check(picked['visibleGroups'] == ['deaths'],
               '点排序选项后分组没切换：' + str(picked['visibleGroups']))
-        check(picked['countText'] == '2 局',
-              '区头计数没有跟着排序字段更新（deaths 2 局）：' + picked['countText'])
+        check(picked['countText'] == '23 局',
+              '区头计数没有跟着排序字段更新（deaths 后端 count 23 局）：' + picked['countText'])
         check(picked['sortToggle']['expanded'] == 'false', '选完排序项后弹层应收起')
         check(not picked['sortPop']['visible'], '选完排序项后弹层仍可见')
         check('我方掉点' in picked['sortToggle']['text'] and '23 局' in picked['sortToggle']['text'],
@@ -1023,7 +1229,7 @@ def run_mock(base, browser, key, mocker):
                            ensure_ascii=False))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '22-watch-fields-pop-1440.png'), full_page=False)
+        page.screenshot(path=str(OUT / '32-watch-fields-pop-1440.png'), full_page=False)
 
         # 取消 duration → 3 项：弹层保持打开、卡片数字即时变 3、未选不再禁用
         page.locator('[data-pbr-field-option="duration"]').click()
@@ -1149,6 +1355,223 @@ def run_mock(base, browser, key, mocker):
     check(not errors, '复盘区工具栏/弹层出现控制台报错：' + ' | '.join(errors[:3]))
     page.close()
 
+    # ── 6.7) 指标大数字按等级配色：lead / mid / behind 三类都有，颜色与 .pbr-rank 同色 ──
+    page = new_page({'width': 1440, 'height': 980})
+    errors = []
+    collect_errors(page, errors)
+    page.goto(base + '/#overview', wait_until='load')
+    wait_brief(page)
+    metrics = metric_tiers(page)
+    check(len(metrics) == 8, '指标应为 8 项：' + str(len(metrics)))
+    ranked = [item for item in metrics if item['hasRank']]
+    check(len(ranked) == 6, '带排名的指标应有 6 项：' + str(len(ranked)))
+    for tier in ('lead', 'mid', 'behind'):
+        items = [item for item in ranked if item['tier'] == tier]
+        check(len(items) >= 1, '指标缺少 ' + tier + ' 等级：'
+              + json.dumps([{'label': item['label'], 'tier': item['tier']} for item in ranked],
+                           ensure_ascii=False))
+        for item in items:
+            check(item['valueClasses'] == ['is-' + tier],
+                  '指标「%s」大数字 class 应为 is-%s，实际 %s'
+                  % (item['label'], tier, item['valueClasses']))
+            check(item['valueColor'] == item['rankColor'],
+                  '指标「%s」大数字颜色 %s 与 .pbr-rank 的 %s 不一致'
+                  % (item['label'], item['valueColor'], item['rankColor']))
+    for item in metrics:
+        if item['hasRank']:
+            continue
+        check(not item['valueClasses'],
+              '无排名指标不应上色：%s %s' % (item['label'], item['valueClasses']))
+    settle(page)
+    page.screenshot(path=str(OUT / '30f-metrics-tiers-1440.png'), full_page=False)
+    notes.append('[mock] 指标等级配色：' + json.dumps(
+        [{'label': item['label'], 'tier': item['tier']} for item in ranked], ensure_ascii=False))
+    check(not errors, '指标配色出现控制台报错：' + ' | '.join(errors[:3]))
+    page.close()
+
+    # ── 6.8) 重点发现：不限条数 + 区块内上下滚动 + 关注（变色/置顶/时间/localStorage/reload/取消）──
+    page = new_page({'width': 1440, 'height': 980})
+    errors = []
+    collect_errors(page, errors)
+    page.goto(base + '/#overview', wait_until='load')
+    wait_brief(page)
+    state = findings_state(page)
+    check(state['exists'], '发现区列表没有渲染')
+    check(len(state['rows']) == 6, '发现区应渲染全部 6 条（不截 3 条）：' + str(len(state['rows'])))
+    check(state['overflowY'] in ('auto', 'scroll'),
+          '发现区应是区块内滚动容器（overflow-y:auto），实际 ' + str(state['overflowY']))
+    check(state['scrollHeight'] > state['clientHeight'] + 1,
+          '发现 6 条时应出现内部滚动：scrollHeight=%s clientHeight=%s'
+          % (state['scrollHeight'], state['clientHeight']))
+    check(state['focusable'], '发现区滚动容器应可键盘聚焦（tabindex=0）')
+    check(state['favCount'] == 6, '每条发现都应有 [data-pbr-fav-finding] 关注按钮：' + str(state['favCount']))
+    check(all(row['hasFavButton'] for row in state['rows']), '有发现行缺少关注按钮')
+    if state['favCount'] == 6 and len(state['rows']) == 6:
+        ids_in_order = [row['id'] for row in state['rows']]
+        first_id = ids_in_order[0]
+        target = ids_in_order[2]
+        set_scroll(page, '.pbr-findings:not(.pbr-watch) .pbr-finding-list', 120)
+        page.wait_for_timeout(120)
+        settle(page)
+        page.screenshot(path=str(OUT / '40-findings-scroll-1440.png'), full_page=False)
+        before_scroll = findings_state(page)['scrollTop']
+        page.locator(f'[data-pbr-fav-finding="{target}"]').click()
+        page.wait_for_timeout(300)
+        fav = findings_state(page)
+        check(fav['rows'][0]['id'] == target,
+              '关注的发现应排到第一条：' + str([row['id'] for row in fav['rows']]))
+        check(fav['rows'][0]['isFav'], '关注的发现行应加 is-fav')
+        check('已关注' in fav['rows'][0]['favText'],
+              '关注按钮文案应变成「已关注 · 时间」：' + fav['rows'][0]['favText'])
+        check(bool(re.search(r'\d{2}-\d{2} \d{2}:\d{2}', fav['rows'][0]['favText'])),
+              '关注时间格式应为 MM-DD HH:mm：' + fav['rows'][0]['favText'])
+        stored = read_storage(page, 'pbr-finding-favs')
+        check(isinstance(stored, dict) and target in stored and 'T' in str(stored[target]),
+              'localStorage[pbr-finding-favs] 没写入 ISO 时间：'
+              + json.dumps(stored, ensure_ascii=False))
+        check(abs(fav['scrollTop'] - before_scroll) <= 8,
+              '关注后上下滚动位置跳了：%s → %s' % (before_scroll, fav['scrollTop']))
+        focused = page.evaluate(
+            "() => document.activeElement ? document.activeElement.getAttribute('data-pbr-fav-finding') : null")
+        check(focused == target, '关注后焦点没有留在同一个关注按钮：' + str(focused))
+        settle(page)
+        page.screenshot(path=str(OUT / '41-findings-fav-1440.png'), full_page=False)
+        notes.append('[mock] 发现关注：' + target + ' → 第一条（' + fav['rows'][0]['favText'] + '）')
+        # reload 保持
+        page.reload(wait_until='load')
+        wait_brief(page)
+        reloaded = findings_state(page)
+        check(reloaded['rows'][0]['id'] == target, 'reload 后关注的发现没有保持置顶')
+        check(reloaded['rows'][0]['isFav'] and '已关注' in reloaded['rows'][0]['favText'],
+              'reload 后关注态/时间丢失')
+        # 取消关注 → 恢复原顺序
+        page.locator(f'[data-pbr-fav-finding="{target}"]').click()
+        page.wait_for_timeout(300)
+        unfav = findings_state(page)
+        check(unfav['rows'][0]['id'] == first_id,
+              '取消关注后应恢复原顺序（第一条应回到 %s）：%s'
+              % (first_id, [row['id'] for row in unfav['rows']]))
+        check(not any(row['isFav'] for row in unfav['rows']), '取消关注后不应有 is-fav 行')
+        stored = read_storage(page, 'pbr-finding-favs')
+        check(not isinstance(stored, dict) or target not in stored,
+              '取消关注后 localStorage 应删掉该 id：'
+              + json.dumps(stored, ensure_ascii=False))
+        notes.append('[mock] 发现关注：reload 保持 / 取消恢复顺序')
+    check(not errors, '发现区关注出现控制台报错：' + ' | '.join(errors[:3]))
+    page.close()
+
+    # ── 6.9) 复盘比赛：不限条数 + 横向滑动 + 左右箭头 + 关注（同 key 跨分组共享）──
+    page = new_page({'width': 1440, 'height': 980})
+    errors = []
+    collect_errors(page, errors)
+    page.goto(base + '/#overview', wait_until='load')
+    wait_brief(page)
+    shared_key = 'channel-mock-a'   # game a 出现在所有分组
+    state = watch_hscroll_state(page)
+    check(state and state['scroller'], '复盘分组应是横向滚动容器（scrollWidth > clientWidth）')
+    check(state and state['cardCount'] == 5,
+          '每个分组应渲染 5 张卡（不截 3 张）：' + str(state and state['cardCount']))
+    check(state and all(card['hasFavButton'] for card in state['cards']), '有复盘卡缺少关注按钮')
+    check(state and any(card['key'] == shared_key for card in state['cards']),
+          '默认分组应包含用于跨组共享关注的 game key：' + shared_key)
+    check(state and state['prev']['exists'] and state['next']['exists'],
+          '区头缺少左右滚动箭头 [data-pbr-watch-prev/next]')
+    check(state and state['prev']['disabled'], '初始在最左端时 ‹ 应 disabled')
+    check(state and not state['next']['disabled'], '有溢出时 › 应可用')
+    focus_watch_section(page)
+    settle(page)
+    page.screenshot(path=str(OUT / '42-watch-hscroll-1440.png'), full_page=False)
+    if state and state['scroller']:
+        # 点 › 向右滚一屏
+        before_left = state['scroller']['scrollLeft']
+        next_button = arrow_locator(page, 'next')
+        check(next_button is not None, '找不到 › 滚动按钮')
+        if next_button is not None:
+            next_button.click()
+            page.wait_for_timeout(450)
+            scrolled = watch_hscroll_state(page)
+            check(scrolled['scroller']['scrollLeft'] > before_left + 10,
+                  '点 › 后没有向右滚动：%s → %s'
+                  % (before_left, scrolled['scroller']['scrollLeft']))
+            # 一直滚到最右：› disabled、‹ 可用
+            for _ in range(8):
+                button = arrow_locator(page, 'next')
+                if button is None or button.is_disabled():
+                    break
+                button.click()
+                page.wait_for_timeout(450)
+            at_end = watch_hscroll_state(page)
+            span = at_end['scroller']['scrollWidth'] - at_end['scroller']['clientWidth']
+            check(at_end['scroller']['scrollLeft'] >= span - 6,
+                  '没有滚到最右端：scrollLeft=%s span=%s'
+                  % (at_end['scroller']['scrollLeft'], span))
+            check(at_end['next']['disabled'], '滚到最右端后 › 应 disabled')
+            check(not at_end['prev']['disabled'], '最右端时 ‹ 应可用')
+            # 回到最左：‹ disabled
+            for _ in range(10):
+                button = arrow_locator(page, 'prev')
+                if button is None or button.is_disabled():
+                    break
+                button.click()
+                page.wait_for_timeout(450)
+            at_start = watch_hscroll_state(page)
+            check(at_start['scroller']['scrollLeft'] <= 4,
+                  '没有回到最左端：' + str(at_start['scroller']['scrollLeft']))
+            check(at_start['prev']['disabled'], '回到最左端后 ‹ 应 disabled')
+        # 关注第一张卡（game a）：横向位置保持
+        state = watch_hscroll_state(page)
+        before_left = state['scroller']['scrollLeft']
+        page.locator('.pbr-watch [data-pbr-watch-group]:not([hidden]) '
+                    f'[data-pbr-fav-watch="{shared_key}"]').click()
+        page.wait_for_timeout(350)
+        fav = watch_hscroll_state(page)
+        check(fav['cards'][0]['key'] == shared_key, '关注的复盘卡应排到组内第一张：'
+              + str([card['key'] for card in fav['cards']]))
+        check(fav['cards'][0]['isFav'], '关注的复盘卡应加 is-fav')
+        check('已关注' in fav['cards'][0]['favText'],
+              '复盘卡关注文案应含「已关注」：' + fav['cards'][0]['favText'])
+        check(bool(re.search(r'\d{2}-\d{2} \d{2}:\d{2}', fav['cards'][0]['favText'])),
+              '复盘卡关注时间格式应为 MM-DD HH:mm：' + fav['cards'][0]['favText'])
+        check(fav['cards'][0]['borderColor'] != state['cards'][0]['borderColor'],
+              '关注卡边框应变色：%s → %s'
+              % (state['cards'][0]['borderColor'], fav['cards'][0]['borderColor']))
+        stored = read_storage(page, 'pbr-watch-favs')
+        check(isinstance(stored, dict) and shared_key in stored and 'T' in str(stored[shared_key]),
+              'localStorage[pbr-watch-favs] 没写入 ISO 时间：'
+              + json.dumps(stored, ensure_ascii=False))
+        check(abs(fav['scroller']['scrollLeft'] - before_left) <= 8,
+              '关注卡片后横向滚动位置跳了：%s → %s'
+              % (before_left, fav['scroller']['scrollLeft']))
+        settle(page)
+        page.screenshot(path=str(OUT / '43-watch-fav-1440.png'), full_page=False)
+        notes.append('[mock] 复盘关注：' + shared_key + ' 置顶（' + fav['cards'][0]['favText'] + '）')
+        # reload 后切到 deaths 分组：同一 game key 在其它分组也关注 + 置顶
+        page.reload(wait_until='load')
+        wait_brief(page)
+        page.locator('[data-pbr-sort-toggle]').click()
+        page.wait_for_timeout(250)
+        page.locator('[data-pbr-sort-option="deaths"]').click()
+        page.wait_for_timeout(350)
+        shared = watch_hscroll_state(page)
+        check(shared['group'] == 'deaths', '没有切到 deaths 分组：' + str(shared['group']))
+        check(shared['cards'] and shared['cards'][0]['key'] == shared_key,
+              '同一局在其它分组也应置顶关注：' + str([card['key'] for card in shared['cards'][:3]]))
+        check(shared['cards'][0]['isFav'], '同一局在其它分组丢失关注态')
+        # 取消关注 → 同 key 各分组都取消
+        page.locator('.pbr-watch [data-pbr-watch-group]:not([hidden]) '
+                    f'[data-pbr-fav-watch="{shared_key}"]').click()
+        page.wait_for_timeout(350)
+        unfav = watch_hscroll_state(page)
+        check(not any(card['isFav'] for card in unfav['cards']),
+              '取消关注后不应再有 is-fav 卡')
+        stored = read_storage(page, 'pbr-watch-favs')
+        check(not isinstance(stored, dict) or shared_key not in stored,
+              '取消关注后 localStorage 应删掉该 key：'
+              + json.dumps(stored, ensure_ascii=False))
+        notes.append('[mock] 复盘关注：同 key 跨分组共享 / 取消生效')
+    check(not errors, '复盘横滑/关注出现控制台报错：' + ' | '.join(errors[:3]))
+    page.close()
+
     # ── 6.6) 深色主题：工具栏/两个弹层文字可读、无横向滚动 ──
     page = browser.new_page(viewport={'width': 1440, 'height': 980})
     seed(page)
@@ -1177,7 +1600,7 @@ def run_mock(base, browser, key, mocker):
                            ensure_ascii=False))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '23-watch-sort-pop-dark-1440.png'), full_page=False)
+        page.screenshot(path=str(OUT / '33-watch-sort-pop-dark-1440.png'), full_page=False)
         page.keyboard.press('Escape')
         page.wait_for_timeout(200)
         page.locator('[data-pbr-fields-toggle]').click()
@@ -1191,13 +1614,30 @@ def run_mock(base, browser, key, mocker):
                            ensure_ascii=False))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '23b-watch-fields-pop-dark-1440.png'), full_page=False)
+        page.screenshot(path=str(OUT / '33b-watch-fields-pop-dark-1440.png'), full_page=False)
         page.keyboard.press('Escape')
         page.wait_for_timeout(150)
+        # 暗色关注态：发现区关注一条 + 复盘卡关注一张
+        page.evaluate("() => { const node = document.querySelector('.pbr-findings:not(.pbr-watch)'); if (node) window.scrollTo(0, Math.max(0, node.getBoundingClientRect().top + window.scrollY - 90)); }")
+        page.wait_for_timeout(150)
+        dark_finding_btn = page.locator('[data-pbr-fav-finding]').first
+        if dark_finding_btn.count():
+            dark_finding_btn.click()
+            page.wait_for_timeout(250)
+        settle(page)
+        page.screenshot(path=str(OUT / '44-findings-fav-dark-1440.png'), full_page=False)
+        focus_watch_section(page)
+        page.wait_for_timeout(150)
+        dark_watch_btn = page.locator('[data-pbr-fav-watch]').first
+        if dark_watch_btn.count():
+            dark_watch_btn.click()
+            page.wait_for_timeout(250)
+        settle(page)
+        page.screenshot(path=str(OUT / '44b-watch-fav-dark-1440.png'), full_page=False)
         blur_active(page)
     overflow = overflow_px(page)
     check(overflow <= 1, f'深色主题 1440 宽度出现横向滚动（溢出 {overflow}px）')
-    page.screenshot(path=str(OUT / '23-overview-dark-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '33c-overview-dark-1440.png'), full_page=False)
     notes.append('[mock] 深色主题：工具栏/两个弹层文字可读、无横向滚动')
     check(not errors, '深色主题出现控制台报错：' + ' | '.join(errors[:3]))
     page.close()
@@ -1242,7 +1682,7 @@ def run_mock(base, browser, key, mocker):
               '390 宽度下排序弹层溢出可视区：' + json.dumps(rect, ensure_ascii=False))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '24c-watch-sort-pop-390.png'), full_page=False)
+        page.screenshot(path=str(OUT / '34c-watch-sort-pop-390.png'), full_page=False)
         page.keyboard.press('Escape')
         page.wait_for_timeout(200)
         page.locator('[data-pbr-fields-toggle]').click()
@@ -1254,15 +1694,41 @@ def run_mock(base, browser, key, mocker):
               '390 宽度下字段弹层溢出可视区：' + json.dumps(rect, ensure_ascii=False))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '24d-watch-fields-pop-390.png'), full_page=False)
+        page.screenshot(path=str(OUT / '34d-watch-fields-pop-390.png'), full_page=False)
         page.keyboard.press('Escape')
         page.wait_for_timeout(200)
         blur_active(page)
+        # 390 横滑 + 左右箭头 + 关注
+        mobile = watch_hscroll_state(page)
+        check(mobile and mobile['scroller'], '390 宽度下复盘分组应可横向滑动')
+        check(mobile and mobile['cardCount'] == 5, '390 下每组仍应渲染 5 张卡：'
+              + str(mobile and mobile['cardCount']))
+        check(mobile and mobile['prev']['exists'] and mobile['next']['exists'],
+              '390 宽度下缺少左右滚动箭头')
+        before_left = mobile['scroller']['scrollLeft'] if mobile and mobile['scroller'] else 0
+        mobile_next = arrow_locator(page, 'next')
+        if mobile_next is not None:
+            mobile_next.click()
+            page.wait_for_timeout(450)
+            moved = watch_hscroll_state(page)
+            check(moved['scroller']['scrollLeft'] > before_left + 10,
+                  '390 宽度下点 › 没有横向滑动')
+            settle(page)
+            page.screenshot(path=str(OUT / '45-watch-hscroll-390.png'), full_page=False)
+        mobile_fav = page.locator('[data-pbr-fav-watch]').first
+        if mobile_fav.count():
+            mobile_fav.click()
+            page.wait_for_timeout(300)
+            mobile_fav_state = watch_hscroll_state(page)
+            check(mobile_fav_state['cards'][0]['isFav'],
+                  '390 宽度下关注的复盘卡没有置顶/变色')
+            settle(page)
+            page.screenshot(path=str(OUT / '46-watch-fav-390.png'), full_page=False)
     overflow = overflow_px(page)
     check(overflow <= 1, f'390 宽度打开过弹层后出现横向滚动（溢出 {overflow}px）')
     check(not errors, '390 宽度出现控制台报错：' + ' | '.join(errors[:3]))
-    page.screenshot(path=str(OUT / '24-overview-week-mock-390.png'), full_page=False)
-    page.screenshot(path=str(OUT / '24b-overview-week-mock-390-full.png'), full_page=True)
+    page.screenshot(path=str(OUT / '34-overview-week-mock-390.png'), full_page=False)
+    page.screenshot(path=str(OUT / '34b-overview-week-mock-390-full.png'), full_page=True)
     notes.append(f'[mock] 390 宽度：工具栏换行、两弹层不溢出、指标 {page.locator(".pbr-metric").count()} 个')
     page.close()
 
@@ -1278,7 +1744,7 @@ def run_mock(base, browser, key, mocker):
     check('这个工作台不自带比赛数据' in dialog, '空库弹窗缺少首次使用说明')
     check(page.locator('[data-pbr-root]').count() == 1, '空库时首页整页被换掉了（没有简报容器）')
     check('赛训总览' in page.inner_text('#content'), '空库时首页标题丢了')
-    page.screenshot(path=str(OUT / '25-empty-library-dialog-mock-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '35-empty-library-dialog-mock-1440.png'), full_page=False)
     notes.append('[mock] 空库：弹窗 + 首页外壳保留')
     mocker.mode = 'periods'
     page.close()
@@ -1303,7 +1769,7 @@ def run_mock(base, browser, key, mocker):
     check('本期简报没读出来' in error_text, '取数失败没有模块内错误：' + error_text[:60])
     check(page.locator('[data-pbr-retry]').count() == 1, '取数失败没有重试按钮')
     check(page.locator('[data-pbr-root]').count() == 1, '取数失败把整页换掉了')
-    page.screenshot(path=str(OUT / '26-error-retry-mock-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '36-error-retry-mock-1440.png'), full_page=False)
     page.click('[data-pbr-retry]')
     page.wait_for_selector('[data-pbr-root] .pbr-summary', timeout=15000)
     check('本周 6 局 4 胜 2 负' in page.inner_text('#content'), '重试后没有恢复简报')
@@ -1327,8 +1793,8 @@ def run_real(base, browser):
     available = page.locator('.pbr-summary').count() > 0
     overflow = overflow_px(page)
     check(overflow <= 1, f'[real] 1440 宽度出现横向滚动（溢出 {overflow}px）')
-    page.screenshot(path=str(OUT / ('27-overview-real-week-1440.png' if not available
-                                    else '27-overview-real-1440.png')), full_page=False)
+    page.screenshot(path=str(OUT / ('37-overview-real-week-1440.png' if not available
+                                    else '37-overview-real-1440.png')), full_page=False)
     notes.append('[real] 本周：' + ('有数据' if available else '0 局（空态 + 最近一批入口）'))
     if not available:
         fallback = page.locator('[data-pbr-fallback]')
@@ -1392,7 +1858,7 @@ def run_real(base, browser):
         before = selected[0] if selected else None
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '28a-real-sort-pop-1440.png'), full_page=False)
+        page.screenshot(path=str(OUT / '38a-real-sort-pop-1440.png'), full_page=False)
         catalog_ids = [item[0] for item in WATCH_META]
         target = next((fid for fid in catalog_ids if fid != before), None)
         if target:
@@ -1423,7 +1889,7 @@ def run_real(base, browser):
               '[real] 满 4 项时未选项应禁用：' + str(fstate['disabledIds']))
         focus_watch_section(page)
         settle(page)
-        page.screenshot(path=str(OUT / '28b-real-fields-pop-1440.png'), full_page=False)
+        page.screenshot(path=str(OUT / '38b-real-fields-pop-1440.png'), full_page=False)
         victim = fstate['checkedIds'][0] if fstate['checkedIds'] else None
         if victim:
             page.locator(f'[data-pbr-field-option="{victim}"]').click()
@@ -1457,6 +1923,49 @@ def run_real(base, browser):
         notes.append('[real] 字段弹层：默认 4 / 即时生效 / 恢复默认 / Esc 关闭')
         blur_active(page)
 
+    # 第 3 轮：发现不限条数 + 关注；复盘横滑 + 箭头 + 关注（真实数据）
+    real_findings = findings_state(page)
+    check(real_findings['exists'], '[real] 发现区没有渲染')
+    check(real_findings['favCount'] == len(real_findings['rows']),
+          '[real] 每条发现都应有「关注」按钮：%s vs %s'
+          % (real_findings['favCount'], len(real_findings['rows'])))
+    check(real_findings['overflowY'] in ('auto', 'scroll'),
+          '[real] 发现区应是内部滚动容器：' + str(real_findings['overflowY']))
+    real_watch = watch_hscroll_state(page)
+    check(real_watch and real_watch['scroller'], '[real] 复盘分组应可横向滑动')
+    check(real_watch and real_watch['cardCount'] >= 4,
+          '[real] 复盘分组渲染条数异常（应 >=4）：' + str(real_watch and real_watch['cardCount']))
+    check(real_watch and real_watch['prev']['exists'] and real_watch['next']['exists'],
+          '[real] 缺少左右滚动箭头')
+    if real_watch and real_watch['cards']:
+        first_key = real_watch['cards'][0]['key']
+        page.locator('.pbr-watch [data-pbr-watch-group]:not([hidden]) '
+                    f'[data-pbr-fav-watch="{first_key}"]').click()
+        page.wait_for_timeout(300)
+        fav_real = watch_hscroll_state(page)
+        check(fav_real['cards'][0]['key'] == first_key and fav_real['cards'][0]['isFav'],
+              '[real] 关注复盘卡没有置顶/变色：%s / %s'
+              % (fav_real['cards'][0]['key'], fav_real['cards'][0]['isFav']))
+        stored = read_storage(page, 'pbr-watch-favs')
+        check(isinstance(stored, dict) and first_key in stored,
+              '[real] localStorage[pbr-watch-favs] 没写入：'
+              + json.dumps(stored, ensure_ascii=False))
+        page.locator('.pbr-watch [data-pbr-watch-group]:not([hidden]) '
+                    f'[data-pbr-fav-watch="{first_key}"]').click()
+        page.wait_for_timeout(250)
+    if real_watch and real_watch['scroller']:
+        before_left = real_watch['scroller']['scrollLeft']
+        arrow = arrow_locator(page, 'next')
+        if arrow is not None and not arrow.is_disabled():
+            arrow.click()
+            page.wait_for_timeout(450)
+            moved = watch_hscroll_state(page)
+            check(moved['scroller']['scrollLeft'] > before_left + 10,
+                  '[real] 点 › 没有横向滑动')
+    settle(page)
+    page.screenshot(path=str(OUT / '38c-real-watch-hscroll-1440.png'), full_page=False)
+    notes.append('[real] 第3轮：发现关注按钮 / 复盘横滑 / 左右箭头 / 关注均正常')
+
     watch_href = href_of(page, '.pbr-watch .pbr-watch-link a')
     if watch_href:
         check(not re.fullmatch(r'#match/\d+', watch_href),
@@ -1470,7 +1979,7 @@ def run_real(base, browser):
     overflow = overflow_px(page)
     check(overflow <= 1, f'[real] 有数据时 1440 宽度出现横向滚动（溢出 {overflow}px）')
     check(boxes_fit(page, '.pbr-finding, .pbr-stat'), '[real] 有数据时发现行/数字块超出可视区')
-    page.screenshot(path=str(OUT / '28-overview-real-data-1440.png'), full_page=False)
+    page.screenshot(path=str(OUT / '38-overview-real-data-1440.png'), full_page=False)
     notes.append(f'[real] 有数据：指标 {page.locator(".pbr-metric").count()} 个，'
                  f'发现 {findings_rows.count()} 条，'
                  f'复盘可见 {len((watch_state(page) or {}).get("cards") or [])} 局，'
@@ -1485,6 +1994,11 @@ def run_real(base, browser):
     check(boxes_fit(page, '.pbr-finding, .pbr-stat'), '[real] 390 宽度下发现行 / 数字块超出可视区')
     check(boxes_fit(page, '[data-pbr-sort-toggle], [data-pbr-fields-toggle]'),
           '[real] 390 宽度下复盘工具按钮超出可视区')
+    real_mobile = watch_hscroll_state(page)
+    check(real_mobile and real_mobile['scroller'],
+          '[real] 390 宽度下复盘分组应可横向滑动')
+    check(real_mobile and real_mobile['cards'] and real_mobile['next']['exists'],
+          '[real] 390 宽度下缺少横滑卡片/箭头')
     state390 = watch_state(page)
     if state390 and state390['sortToggle'].get('exists'):
         check(state390['sortTop'] is not None and state390['titleBottom'] is not None
@@ -1507,8 +2021,8 @@ def run_real(base, browser):
         page.keyboard.press('Escape')
         page.wait_for_timeout(200)
         blur_active(page)
-    page.screenshot(path=str(OUT / '29-overview-real-390.png'), full_page=False)
-    page.screenshot(path=str(OUT / '29b-overview-real-390-full.png'), full_page=True)
+    page.screenshot(path=str(OUT / '39-overview-real-390.png'), full_page=False)
+    page.screenshot(path=str(OUT / '39b-overview-real-390-full.png'), full_page=True)
     notes.append('[real] 390 宽度无横向滚动，工具按钮/两个弹层不溢出')
 
     # 真实数据下点一次证据对局：key 必须能被站内单局页认出来（不是另一套数据源的 id）。

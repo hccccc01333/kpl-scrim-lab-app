@@ -5,6 +5,7 @@ import { createCrossPage } from './cross-page.js';
 import { createTour } from './tour.js';
 import { createPeriodBrief } from './period-brief.js';
 import { createBpCounter } from './bp-counter.js';
+import { createComboQuery } from './combo-query.js';
 import { initUpdateBanner } from './update-banner.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
@@ -205,8 +206,8 @@ function current() {
   try { decoded = decodeURIComponent(key || ''); } catch {}
   let anchor = '';
   try { anchor = new URLSearchParams(search).get('match') || ''; } catch {}
-  /* 已下线的战队子页：旧链接回战队档案，不落到首页。 */
-  const retired = { teamcompare: 'teams', h2h: 'teams', profiles: 'teams' };
+  /* 已下线的子页：旧链接回所在模块的主页，不落到首页。 */
+  const retired = { teamcompare: 'teams', h2h: 'teams', profiles: 'teams', records: 'featured' };
   return { name: retired[name] || (Object.hasOwn(labels, name) ? name : 'overview'), key: decoded, anchor, tab };
 }
 
@@ -1497,20 +1498,31 @@ function matchPage(m) {
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
   const banSlotCount = Math.max((draft?.bans?.left || []).length, (draft?.bans?.right || []).length);
+  /* 阵容槽位：固定列网格（见 CSS），头像+名字整卡可点跳英雄详情页。
+     BP 顺序只有人工录入过才显示（P=选用楼层 / B=禁用楼层）；营地名单没有顺序，
+     不猜——行头标「顺序未知」。 */
   const slots = (list, kind) => Array.from({ length: kind === 'bans' ? Math.max(1, banSlotCount) : 5 }, (_, i) => {
     const h = list[i];
-    const showOrder = kind === 'picks' && draft?.pickOrderKnown;
+    const showOrder = draft?.pickOrderKnown;
+    const orderBadge = showOrder ? `<i class="md-slot-order">${kind === 'bans' ? 'B' : 'P'}${i + 1}</i>` : '';
     const iconUrl = h?.icon || metadata.icons?.[h?.name];
     const portraitHtml = iconUrl && /^\/catalog\/icons\/hero-\d+\.png$/.test(iconUrl)
       ? `<img class="portrait" src="${esc(iconUrl)}" alt="${esc(h?.name)}" loading="lazy">`
       : portrait(h?.name);
-    /* 英雄跳到英雄详情页（#hero/<名字>），不再落到对局筛选。 */
-    return h ? `<span>${showOrder ? `<em>${i + 1}</em>` : ''}<a class="bp-hero-link" href="${esc(route('hero', h.name))}" title="查看 ${esc(h.name)} 详情">${portraitHtml}<b>${esc(h.name)}</b></a></span>`
-             : `<span class="md-bp-empty"><em>${kind === 'bans' ? (banSlotCount ? '空 BAN' : '禁用未录入') : (draft?.pickOrderKnown ? '空位' : '顺序未知')}</em></span>`;
+    return h ? `<span class="md-slot">${orderBadge}<a class="bp-hero-link" href="${esc(route('hero', h.name))}" title="查看 ${esc(h.name)} 详情">${portraitHtml}<b>${esc(h.name)}</b></a></span>`
+             : `<span class="md-slot md-slot-empty">${orderBadge}<em>${kind === 'bans' ? (banSlotCount ? '空 BAN' : '禁用未录入') : (draft?.pickOrderKnown ? '空位' : '顺序未知')}</em></span>`;
   }).join('');
-  const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
-    <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
-    <span class="md-bp-bans" style="--bp-slots:${Math.max(1, banSlotCount)}">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>`;
+  const bpRow = (key, title, side) => `<div class="md-bp-row ${side}">
+    <b>${esc(title)}${draft && !draft.pickOrderKnown ? '<em class="md-bp-noorder">顺序未知</em>' : ''}</b>
+    <div class="md-bp-seg"><span class="md-bp-seg-label">选用</span>
+      <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span></div>
+    <div class="md-bp-seg"><span class="md-bp-seg-label">禁用</span>
+      <span class="md-bp-bans">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>
+  </div>`;
+  /* 头像 + 名字一起跳英雄详情页；大屏各区块（对位 / 克制 / 组合）共用。 */
+  const heroFace = (hero, cls) => hero
+    ? `<a class="bp-hero-link md-mu-face ${cls}" href="${esc(route('hero', hero))}" title="查看 ${esc(hero)} 详情">${portrait(hero)}<b>${esc(hero)}</b></a>`
+    : '<span class="md-mu-face is-none">—</span>';
   /* ── BP 复盘：把「历史对位」「历史联动」两个库对到本局，回答「这把 BP 打得怎么样」──
      只报算得出来的：算不了的写「待积累」，不给总分，也不拿胜负倒推 BP 好坏。 */
   const bpAnalysis = (() => {
@@ -1547,10 +1559,7 @@ function matchPage(m) {
       return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised };
     }).filter(Boolean);
 
-    /* 头像 + 名字一起跳英雄详情页；没有英雄就留占位。 */
-    const heroFace = (hero, cls) => hero
-      ? `<a class="bp-hero-link md-mu-face ${cls}" href="${esc(route('hero', hero))}" title="查看 ${esc(hero)} 详情">${portrait(hero)}<b>${esc(hero)}</b></a>`
-      : '<span class="md-mu-face is-none">—</span>';
+    /* 头像 + 名字一起跳英雄详情页（heroFace 定义在 bpRow 一层，大屏各区块共用）。 */
     const verdictText = (lane) => lane.verdict === '优势' ? '优势'
       : lane.verdict === '劣势' ? '劣势' : lane.verdict === '打平' ? '打平' : '样本不足';
     const verdictCls = (lane) => lane.verdict === '优势' ? 'is-ahead'
@@ -1756,7 +1765,15 @@ function matchPage(m) {
     }
     if (m.bpFacts?.structure) {
       const st = m.bpFacts.structure;
-      const gaps = Array.isArray(st.gaps) ? st.gaps : [];
+      /* 能力维度是英文键，页面翻成教练看得懂的中文；口径＝人工能力标签种子表。 */
+      const CAP_INK = { engage: '开团', peel: '保护', burst: '爆发', sustained: '持续输出',
+        frontline: '前排承伤', waveclear: '清线', roam: '游走支援', macro: '运营控图',
+        resilience: '容错反打' };
+      const gaps = (Array.isArray(st.gaps) ? st.gaps : []).map((cap) => CAP_INK[cap] || cap);
+      const untagged = Array.isArray(st.untaggedHeroes) ? st.untaggedHeroes : [];
+      const untaggedNote = untagged.length
+        ? `<em class="md-seed-note" title="这些英雄不在人工能力标签种子里，覆盖判断只按已收录英雄算">${esc(untagged.join('、'))} 未在能力标签库</em>`
+        : '';
       if (gaps.length) {
         const subs = st.substitutes && Object.keys(st.substitutes).length
           ? Object.values(st.substitutes).flat().slice(0, 4)
@@ -1764,8 +1781,12 @@ function matchPage(m) {
         const subsHtml = subs.length
           ? `（可补：${subs.map((h) => `<a class="bp-hero-link" href="${esc(route('hero', h))}">${portrait(h)}${esc(h)}</a>`).join('、')}）`
           : '';
-        parts.push(`阵容短板：${gaps.join('、')}${subsHtml}`);
-      } else parts.push('阵容能力覆盖完整');
+        parts.push(`阵容短板：${gaps.join('、')}${subsHtml}${untaggedNote}`);
+      } else {
+        parts.push(untagged.length
+          ? `已收录英雄能力覆盖完整${untaggedNote}`
+          : '阵容能力覆盖完整');
+      }
     }
     /* 有大盘样本的路不足 3 时不给「优势 / 劣势」的总体结论，只写「样本偏薄」——
        1 路对位就下总体判断，等于替教练过度解读。五五开才是打平。 */
@@ -1828,7 +1849,7 @@ function matchPage(m) {
   /* 复盘大屏的区块：每个区块仍是 section.section（后到的回放数据按 id 替换），
      但由下面的一组整行容器拼成宽屏版式，不再一列堆到底。 */
   const mdOvLineup = `<section class="section md-ov" id="match-ov-lineup">
-      <div class="section-heading"><div><h2>双方阵容</h2><p>营地终局名单 · 前 5 位为选用（按序号），其后为禁用（按本局录入槽位显示，未知不补足）${draft?.pickOrderKnown ? '，选用顺序已人工校对' : ''}</p></div></div>
+      <div class="section-heading"><div><h2>双方阵容</h2><p>营地终局名单 · 选用 / 禁用各自按槽位对齐${draft?.pickOrderKnown ? '，BP 顺序已人工校对（P＝选用楼层，B＝禁用楼层）' : '；营地名单不记 BP 顺序，标「顺序未知」，人工校对后显示楼层'}${draft ? ` · 本局录入 ${banSlotCount} 个禁用槽` : ''}</p></div></div>
       <div class="md-ov-lineup">${draft ? `${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}` : '<div class="md-ov-empty">暂无禁选记录。</div>'}</div>
     </section>`;
   const mdOvBp = `<section class="section md-ov" id="match-ov-bp">
@@ -1839,10 +1860,81 @@ function matchPage(m) {
       <div class="section-heading"><div><h2>对位压制</h2><p>今日巅峰千强同分路对位胜率：超额胜率＝实际 − 两英雄基准期望，≥ +2 判优势、≤ −2 判劣势，其余打平；单条对位最好 3000 局样本，不足会标注</p></div></div>
       <div class="md-ov-pad">${bpAnalysis.matchup || '<div class="md-ov-empty">五路对位在巅峰千强都没有可判样本。</div>'}</div>
     </section>`;
+  const mdOvCounters = `<section class="section md-ov" id="match-ov-counters">
+      <div class="section-heading"><div><h2>克制命中</h2><p>KPL 自抓赛事的跨阵营对位与营地 App 英雄关系，两源分开列、不合成一个分；五路对位为主，重点交叉提示放最后</p></div></div>
+      <div class="md-ov-pad">${ovCounters}</div>
+    </section>`;
   const mdOvCombos = `<section class="section md-ov" id="match-ov-combos">
       <div class="section-heading"><div><h2>联动组合</h2><p>双方阵容对到历史组合样本：几局、几胜、搭档加成，以及这套组合 KPL 见没见过</p></div></div>
       <div class="md-ov-pad">${ovCombos}</div>
     </section>`;
+  /* KPL 组合查询：全库（双人/三人/四人）按 1–4 个英雄筛选，组件在 combo-query.js。 */
+  const mdOvKq = `<section class="section md-ov" id="match-ov-kq">
+      <div class="section-heading"><div><h2>KPL 组合查询</h2><p>全库组合按 1–4 个英雄筛选：几局几胜、最近谁用、使用时间；不限本局阵容，备赛查套路用</p></div></div>
+      <div class="md-ov-pad">${comboQuery.render(m.kplCombos)}</div>
+    </section>`;
+  /* 克制命中：两个证据源分开列、不合成一个分（与对位压制同一口径纪律）。
+     KPL＝自抓赛事的跨阵营有向对位（有样本量，n≥10 且胜率≥55% 记命中）；
+     营地＝营地 App 英雄关系指数（≥2.5 记命中）。命中与否由后端标好（*Hit 字段）。 */
+  const ovCounters = (() => {
+    const facts = m.bpFacts?.counters;
+    if (!facts) return '<div class="md-ov-empty">这局没有克制事实数据（KPL / 营地两源都没加载）。</div>';
+    const wrText = (value) => has(value) ? `${Number(value).toFixed(1)}%` : '—';
+    const chip = (kind, text, title) => text
+      ? `<span class="md-ct-chip ${kind}" title="${esc(title || text)}">${esc(text)}</span>` : '';
+    /* KPL 证据 chip：fwd＝我方英雄的胜率，rev＝对方英雄的胜率（我方被克时展示）。 */
+    const kplChip = (row, hit, dir) => {
+      if (!row || !has(row.n)) return '';
+      const who = dir === 'rev' ? '对方' : '我方';
+      const when = row.lastDate ? `，最近 ${row.lastDate}` : '';
+      return chip(hit ? 'is-hit' : 'is-quiet',
+        `KPL ${fmt(row.n)} 场 · ${who}胜率 ${wrText(row.wr)}`,
+        `${who}英雄的对位胜率 ${wrText(row.wr)}（${fmt(row.n)} 场${when}）`);
+    };
+    const campChip = (index, hit, countered) => {
+      if (index === null || index === undefined) return '';
+      const text = countered ? `被克制 ${fmt(Number(index), 1)}` : `营地克制 ${fmt(Number(index), 1)}`;
+      return chip(hit ? (countered ? 'is-miss' : 'is-hit') : 'is-quiet', text,
+        `营地 App 英雄关系指数 ${fmt(Number(index), 1)}${countered ? '（对方克我方）' : '（我方克对方）'}`);
+    };
+    const laneRow = (entry) => {
+      const chips = [
+        kplChip(entry.kpl, entry.kplHit, 'fwd'),
+        campChip(entry.campCounter, entry.campHit, false),
+        campChip(entry.campCountered, entry.campCounteredHit, true),
+        kplChip(entry.kplReverse, entry.kplReverseHit, 'rev'),
+      ].filter(Boolean).join('');
+      return `<div class="md-ct-row">
+        <span class="md-ct-lane">${esc(entry.lane)}</span>
+        <span class="md-ct-who">${heroFace(entry.mine, 'own')}<i>vs</i>${heroFace(entry.foe, 'foe')}</span>
+        <span class="md-ct-chips">${chips || '<em class="md-ct-none">两源均无克制记录</em>'}</span>
+      </div>`;
+    };
+    const notableRow = (entry) => {
+      const good = entry.verdict === '我方克制';
+      const chips = [
+        chip(good ? 'is-hit' : 'is-miss', entry.verdict),
+        kplChip(entry.kpl, entry.kplHit, good ? 'fwd' : 'rev'),
+        campChip(entry.camp, entry.campHit, !good),
+        entry.conflict ? chip('is-quiet', '两源方向不一致', 'KPL 与营地对这对组合的方向判断不同，各看各的，不下单方结论') : '',
+      ].filter(Boolean).join('');
+      return `<div class="md-ct-row is-notable">
+        <span class="md-ct-lane">交叉</span>
+        <span class="md-ct-who">${heroFace(entry.mine, 'own')}<i>vs</i>${heroFace(entry.foe, 'foe')}</span>
+        <span class="md-ct-chips">${chips}</span>
+      </div>`;
+    };
+    const laneList = (facts.lanes || []).map(laneRow).join('');
+    const notableList = (facts.notable || []).map(notableRow).join('');
+    const foot = `<p class="md-ct-foot">口径：KPL＝本项目自抓赛事的跨阵营有向对位（样本 ≥10 局且胜率 ≥55% 记命中，库里 ${fmt(facts.kpl?.pairs)} 条）；营地＝营地 App 英雄关系指数（≥ 2.5 记命中${facts.camp?.capturedAt ? `，抓取于 ${esc(facts.camp.capturedAt)}` : ''}）。两源分开列，不合成一个分。</p>`;
+    return `<div class="md-counters">
+      <div class="md-ct-head"><b>五路对位</b><span>我方克对方 / 我方被克，证据分别来自 KPL 与营地</span></div>
+      <div class="md-ct-list">${laneList || '<div class="md-ov-empty">五路对位没有配齐，克制不成立。</div>'}</div>
+      ${notableList ? `<div class="md-ct-head"><b>重点交叉提示</b><span>非同路对位中证据较强的组合</span></div>
+      <div class="md-ct-list">${notableList}</div>` : ''}
+      ${foot}
+    </div>`;
+  })();
   const mdCohesion = `<section class="section" id="match-cohesion"><div class="section-heading"><div><h2>中野辅与入侵</h2><p>集结＝中/野/辅三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒；入侵结果按团战账本的击杀与官方事件里的资源/建筑归因，不插值经济</p></div></div>
     ${m.positions ? deep.cohesion(m.positions, m.players, own, m.duration, events, m.replay?.kills) : positionsEmpty}
   </section>`;
@@ -2194,7 +2286,9 @@ function matchPage(m) {
       ${mdOvLineup}
       ${mdOvBp}
       ${mdOvMatchup}
+      ${mdOvCounters}
       ${mdOvCombos}
+      ${mdOvKq}
       <div class="md-pane-row">${mdPhases}${mdTimeline}</div>
     </div>
     <div class="md-pane" data-md-pane="data">${mdGold10}${mdProfiles}${mdJungle}${mdCohesion}</div>
@@ -2211,6 +2305,13 @@ const features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, ta
 const deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait, phases: phaseWindows,
   gpmOf, goldGrade });
 const crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
+/* KPL 组合查询（单局页 #match-ov-kq）：英雄池用图标目录的全量英雄名，
+   事件委托绑一次，状态在模块内活过页面重渲染。 */
+const comboQuery = createComboQuery({
+  esc, fmt, portrait, route,
+  getHeroes: () => Object.keys(metadata.icons || {}),
+});
+comboQuery.bind();
 /* 首页简报：模块自己请求 /api/briefing，外壳只提供挂载点、筛选与两个跳转动作。
    「全部对局」要把本期区间写成全局筛选，对局页才只列这几局。 */
 const brief = createPeriodBrief({
@@ -2271,9 +2372,9 @@ function render(r = current()) {
   tour.afterRender();
 }
 
-/* 跨局分析：按当前筛选范围，把每局的详情 / 位置 / 回放各取一次。
-   局数会持续增长，这里分批并发取回一个分析窗口（默认最近 200 局），
-   页面结论基于窗口内全量，渲染按页分批；总数单独带回用于写明口径。 */
+/* 跨局分析：按当前筛选范围取回一个分析窗口（默认最近 200 局）的
+   详情 / 位置 / 回放摘要，页面结论基于窗口内全量；总数单独带回用于写明口径。
+   向量（/api/cross/vectors）一到就先渲染一版通用分析卡，这里随后补明细。 */
 const CROSS_LIMIT = 200;
 async function hydrateCross(detail, signal, onCohort) {
   const all = detail.matches || [];
@@ -2292,39 +2393,46 @@ async function hydrateCross(detail, signal, onCohort) {
     detail.cohort = null;
   }
   const rows = new Array(list.length).fill(null);
-  let next = 0;
+  const keyIndex = new Map(list.map((m, i) => [m.key, i]));
+  /* 逐局明细走批量接口：一次带回一批「详情 + 位置 + 回放摘要」，省掉
+     每局 3 个请求的固定开销（600 个请求排队收发要 20 秒以上）。 */
+  const size = 25;
+  const batches = Math.ceil(list.length / size);
+  let nextBatch = 0;
   const take = async () => {
-    while (next < list.length && !signal.aborted) {
-      const index = next++;
-      const m = list[index];
-      const url = (path) => API_BASE + '/api/' + path + encodeURIComponent(m.key);
+    while (nextBatch < batches && !signal.aborted) {
+      const b = nextBatch++;
+      const url = API_BASE + `/api/cross/window${query()}&batch=${b}&size=${size}&limit=${CROSS_LIMIT}`;
       try {
-        const [d, pos, rep] = await Promise.all([
-          fetch(url('matches/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-          fetch(url('positions/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-          fetch(url('replay/'), { signal, cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        ]);
-        if (!d) continue;
-        rows[index] = {
-          key: m.key,
-          date: d.date || m.date || '',
-          opponent: d.opponent || m.opponent || '',
-          result: d.result || m.result || '',
-          duration: d.duration || m.duration || 0,
-          version: d.version || m.version || '',
-          session: d.session || m.session || '',
-          ownCamp: d.ownCamp,
-          players: d.players || [],
-          detail: d,
-          positions: pos,
-          replay: rep,
-        };
+        const response = await fetch(url, { signal, cache: 'no-store' });
+        if (!response.ok) continue;
+        const payload = await response.json();
+        for (const row of payload.rows || []) {
+          const idx = keyIndex.get(row.key);
+          const d = row.detail;
+          if (idx == null || !d) continue;
+          const m = list[idx];
+          rows[idx] = {
+            key: row.key,
+            date: d.date || m.date || '',
+            opponent: d.opponent || m.opponent || '',
+            result: d.result || m.result || '',
+            duration: d.duration || m.duration || 0,
+            version: d.version || m.version || '',
+            session: d.session || m.session || '',
+            ownCamp: d.ownCamp,
+            players: d.players || [],
+            detail: d,
+            positions: row.positions,
+            replay: row.replay,
+          };
+        }
       } catch {
-        /* 单局取数失败就跳过，不让一局拖垮整页 */
+        /* 一批取数失败就跳过，不让一批拖垮整页 */
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(6, list.length) }, take));
+  await Promise.all(Array.from({ length: Math.min(4, batches) }, take));
   detail.cross = rows.filter(Boolean);
 }
 
@@ -2397,6 +2505,11 @@ async function load(fresh = false) {
           const matchupResponse = await fetch(API_BASE + '/api/v3/facts/lane_matchup', { signal: currentRequest.signal });
           if (matchupResponse.ok) data.laneMatchup = await matchupResponse.json();
         } catch { /* 对位压制历史失败不影响主页面 */ }
+        /* KPL 组合全库：组合查询块用；失败就留占位，不挡大屏其它区块。 */
+        try {
+          const kqResponse = await fetch(API_BASE + '/api/v3/kpl/combos', { signal: currentRequest.signal });
+          if (kqResponse.ok) data.kplCombos = await kqResponse.json();
+        } catch { /* 组合查询库失败不影响主页面 */ }
       } catch {
         if (stale()) return;
         data.replayStatus = 'error';

@@ -13,7 +13,6 @@ import uuid
 from urllib.request import urlopen
 from urllib.error import URLError
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import date
 from pathlib import Path
@@ -57,6 +56,8 @@ def data_path(variable, default):
 DB = data_path('TRAINING_DB', 'training.sqlite3')
 # 词表与写入归一化共用数据目录；版本 / 规则 / 赛制 / 训练组都落在这里。
 DATA_DIR = DB.parent
+# 版本记录（版本名 + 起止日期），教练自己填，全局一份。
+VERSIONS_SCHEMA = 'version-records-v1'
 MATCHES = data_path('ANALYSIS_MATCHES', 'matches')
 IMPORTS = data_path('ANALYSIS_IMPORTS', 'imports')
 OFFICIAL = data_path('ANALYSIS_OFFICIAL', 'official_replays')
@@ -280,23 +281,81 @@ _POSITIONS_FILE_CACHE = {}
 _REPLAY_FIELDS = ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage',
                   'notes', 'buffEvents', 'narrations')
 
+# 全景的磁盘缓存：build_panorama 单局约 350ms 且大头是逐秒坐标的纯计算，
+# 进程重启后内存缓存全空，首次进跨局页要重算两百多局（半分钟以上）。
+# 落盘一份九字段子集（每局几十 KB），按 bundle + 官方回放目录的 mtime 失效。
+_PANORAMA_DISK = DATA_DIR / '.cache' / 'panorama'
+
+
+def _panorama_sig(key):
+    """缓存新鲜度指纹：bundle 文件 mtime + 官方回放目录 mtime。"""
+    bundle_path = MATCHES / f'{key}.json'
+    try:
+        bundle_mtime = bundle_path.stat().st_mtime
+    except OSError:
+        return None
+    try:
+        bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
+        linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
+        folder = OFFICIAL / linked
+        official_mtime = folder.stat().st_mtime if folder.is_dir() else 0.0
+    except (OSError, ValueError):
+        official_mtime = 0.0
+    return (round(bundle_mtime, 3), round(official_mtime, 3))
+
+
+def _panorama_from_disk(key):
+    sig = _panorama_sig(key)
+    if sig is None:
+        return None
+    path = _PANORAMA_DISK / f'{_safe_key(key)}.json'
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or payload.get('sig') != sig:
+        return None
+    body = payload.get('replay')
+    return body if isinstance(body, dict) else None
+
+
+def _panorama_to_disk(key, subset):
+    sig = _panorama_sig(key)
+    if sig is None:
+        return
+    try:
+        _PANORAMA_DISK.mkdir(parents=True, exist_ok=True)
+        path = _PANORAMA_DISK / f'{_safe_key(key)}.json'
+        tmp = path.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'sig': sig, 'replay': subset}, ensure_ascii=False,
+                                  separators=(',', ':')), encoding='utf-8')
+        os.replace(tmp, path)
+    except (OSError, TypeError, ValueError):
+        pass                                  # 磁盘缓存失败不影响主流程
+
 
 def _panorama_cached(key):
-    """全景回放按局缓存：数据指纹没变就直接复用重建结果。
+    """全景回放按局缓存：内存一次命中，磁盘跨重启复用，miss 才重建。
 
-    build_panorama 单次约 117ms（读 bundle、规范化事件、逐秒位置分析），
-    跨局页每局都要取一次，没缓存时 200 局就是 20 秒以上的重复计算。
-    缓存随 _data_stamp 一并失效（数据目录或库文件变化时重建）。
+    build_panorama 单次约 350ms（读 bundle、规范化事件、逐秒位置分析），
+    跨局页每局都要取一次，没缓存时 200 局就是半分钟以上的重复计算。
     """
     cached = _PANORAMA_CACHE.get(key)
     if cached is not None and cached[0] == _data_stamp:
         return cached[1]
-    result = panorama.get(key)
-    if result is not None:
-        if len(_PANORAMA_CACHE) > 600:
-            _PANORAMA_CACHE.clear()
-        _PANORAMA_CACHE[key] = (_data_stamp, result)
-    return result
+    subset = _panorama_from_disk(key)
+    if subset is None:
+        result = panorama.get(key)
+        if result is None:
+            return None
+        subset = {name: result[name] for name in _REPLAY_FIELDS if name in result}
+        _panorama_to_disk(key, subset)
+    if len(_PANORAMA_CACHE) > 600:
+        _PANORAMA_CACHE.clear()
+    _PANORAMA_CACHE[key] = (_data_stamp, subset)
+    return subset
 
 
 def _cross_interp(series, t):
@@ -556,10 +615,10 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
     hit = _CROSS_VECTOR_CACHE.get(cache_key)
     if hit is not None:
         return hit
-    # 各局互不依赖、纯读文件与内存计算：线程池并行构建，首次全量从
-    # 三四十秒压到几秒；命中缓存的请求不受影响。
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        vectors = [v for v in pool.map(lambda item: _cross_vector(repo, item, segments), items) if v]
+    # 注：试过线程池并行构建（各局独立、纯读），但在 Windows 上会让进程
+    # 硬崩（无 Python 异常，疑似底层库非线程安全），保持串行——冷启动靠
+    # panorama 按局缓存与 _find_bundle 直取提速，且前端向量一到就先渲染。
+    vectors = [v for v in (_cross_vector(repo, item, segments) for item in items) if v]
     payload = {'total': len(items), 'vectors': vectors, 'unit': 'cohort-vectors-v1',
                'segments': segments, 'windowMin': 5}
     if len(_CROSS_VECTOR_CACHE) > 4:
@@ -628,6 +687,89 @@ def match(key: str, repo=Depends(repository)):
     return detail
 
 
+@router.get('/api/v3/versions')
+def version_records():
+    """赛训版本记录：版本名 + 起止日期。
+
+    教练在这里填 S40 / S41 各自的时间段；对局本身带日期，前端据此把每局
+    归到版本里，不用再一局一局手填版本。
+    """
+    return {'schema': VERSIONS_SCHEMA, 'versions': _read_version_records()}
+
+
+@router.post('/api/v3/versions')
+def save_version_records(value: dict = Body(...)):
+    """整表覆盖保存（前端一次提交「版本名 / 开始 / 结束」全部行）。"""
+    rows = value.get('versions')
+    if not isinstance(rows, list):
+        raise HTTPException(400, 'versions 必须是数组')
+    if len(rows) > 40:
+        raise HTTPException(400, '最多 40 条版本记录')
+    cleaned, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        if len(name) > 20:
+            raise HTTPException(400, f'版本名过长：{name[:20]}…')
+        if name in seen:
+            raise HTTPException(400, f'版本名重复：{name}')
+        seen.add(name)
+        start = _iso_day(row.get('start'))
+        end = _iso_day(row.get('end'))
+        if start and end and start > end:
+            raise HTTPException(400, f'{name} 的结束日期早于开始日期')
+        cleaned.append({'name': name, 'start': start, 'end': end})
+    # 有开始日期的按日期排，没填日期的放最后，顺序稳定（页面直接按这个顺序显示）
+    cleaned.sort(key=lambda item: (item['start'] or '9999-99-99', item['name']))
+    payload = {'schema': VERSIONS_SCHEMA, 'versions': cleaned, 'updatedAt': int(time.time())}
+    path = DATA_DIR / 'versions.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding='utf-8')
+    tmp.replace(path)
+    return payload
+
+
+def _iso_day(value):
+    """只接受 YYYY-MM-DD；空值表示不限（开区间）。"""
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    match = re.fullmatch(r'(\d{4})-(\d{2})-(\d{2})', text)
+    if not match:
+        raise HTTPException(400, f'日期格式应为 YYYY-MM-DD：{text}')
+    try:
+        date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        raise HTTPException(400, f'日期不存在：{text}') from None
+    return text
+
+
+def _read_version_records():
+    path = DATA_DIR / 'versions.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    rows = payload.get('versions') if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        out.append({'name': name,
+                    'start': str(row.get('start') or '').strip(),
+                    'end': str(row.get('end') or '').strip()})
+    return out
+
+
 @router.get('/api/v3/peak/status')
 def peak_status():
     """巅峰千强大盘爬取状态：进度、数据窗口、是否自动启用。"""
@@ -652,6 +794,44 @@ def peak_refresh():
 def start_peak_auto() -> bool:
     """由 server.py 的真实服务入口调用：启动每日自动刷新线程（导入 / 测试不触发）。"""
     return peak_crawl.start_auto()
+
+
+@router.get('/api/v3/kpl/combos')
+def kpl_combos():
+    """KPL 组合全库（双人 / 三人 / 四人），供复盘大屏的组合查询块筛选。
+
+    行做过精简：只留查询块要展示的字段；整阵容（lineups）不进这块——它只在
+    赛事命中里按本局阵容查，不参与自由组合查询。
+    """
+    index = bp_facts.kpl_index()
+
+    def slim(row):
+        return {'heroes': row.get('heroes') or [], 'n': row.get('n'),
+                'wins': row.get('wins'), 'wr': row.get('wr'),
+                'year': row.get('year'), 'lastDate': row.get('lastDate'),
+                'teams': (row.get('teams') or [])[:3]}
+
+    return {
+        'source': index.get('source'),
+        'games': index.get('games'),
+        'sinceYear': index.get('sinceYear'),
+        'windowStart': index.get('windowStart'),
+        'windowEnd': index.get('windowEnd'),
+        'updatedAt': index.get('updatedAt'),
+        'pairs': [slim(row) for row in index['pairs'].values()],
+        'trios': [slim(row) for row in index['trios'].values()],
+        'quads': [slim(row) for row in index['quads'].values()],
+    }
+
+
+@router.get('/api/v3/camp/counters')
+def camp_counters():
+    """营地英雄克制 / 双排 / 三排关系（查询块用；克制命中卡走 bpFacts.counters）。"""
+    data = bp_facts._camp_counters()
+    if not data:
+        return {'source': '', 'capturedAt': '', 'heroes': {}}
+    return {'source': data.get('source'), 'capturedAt': data.get('capturedAt'),
+            'heroes': data.get('heroes') or {}}
 
 
 @router.get('/api/replay/{key:path}')
@@ -718,12 +898,11 @@ def _load_camp_files(seq):
     return data, identity_by_short
 
 
-@router.get('/api/positions/{key:path}')
-def match_positions(key: str):
-    """营地回放的逐秒位置（十人）。用于单局的热区与对位深区。
+def _positions_for_key(key):
+    """一局的十人逐秒位置（降采样后）。取不到返回 None，不抛错。
 
     通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
-    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `STEP` 秒一点。
+    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `POSITION_STEP` 秒一点。
     """
     # 对局 key 带 channel- 前缀，channels 表的 id 不带。
     channel_id = key[len('channel-'):] if key.startswith('channel-') else key
@@ -744,7 +923,7 @@ def match_positions(key: str):
         safe_key = _safe_key(key)
         bundle_path = MATCHES / f'{safe_key}.json' if safe_key else None
         if bundle_path is None or not bundle_path.is_file():
-            raise HTTPException(404, '找不到该局的采集通道')
+            return None
         bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
         linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
         if linked:
@@ -752,10 +931,10 @@ def match_positions(key: str):
             bundle_players = bundle.get('players') or []
     seq = _safe_key(seq)
     if not seq:
-        raise HTTPException(404, '这一局没有营地回放')
+        return None
     path = OFFICIAL / f'camp-{seq}' / 'positions.json'
     if not path.is_file():
-        raise HTTPException(404, '缺少位置数据文件')
+        return None
     data, identity_by_short = _load_camp_files(seq)
     roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
     # 位置文件的 playerId 是营地短 ID（与 raw.matchInfo.playerId 同源），通道名单里
@@ -791,6 +970,42 @@ def match_positions(key: str):
         'duration': int(max((len(item.get('posArr') or []) for item in data.get('players') or []), default=0)),
         'players': players,
     }
+
+
+@router.get('/api/positions/{key:path}')
+def match_positions(key: str):
+    result = _positions_for_key(key)
+    if result is None:
+        raise HTTPException(404, '这一局没有可用的位置数据')
+    return result
+
+
+@router.get('/api/cross/window')
+def cross_window(batch: int = 0, size: int = 25, limit: int = 200,
+                 repo=Depends(repository), values=Depends(filters)):
+    """跨局页逐局明细的批量取数：一次带回一批「详情 + 位置 + 回放摘要」。
+
+    逐局三接口各带 40ms 左右的请求开销，200 局就是 600 个请求、20 秒以上
+    的排队收发；这里按批合并成十来个请求，取数逻辑与单局接口完全一致。
+    """
+    size = max(1, min(60, size))
+    limit = max(1, min(400, limit))
+    items = repo.matches(values)['matches'][:limit]
+    part = items[batch * size:(batch + 1) * size]
+    rows = []
+    for item in part:
+        key = item['key']
+        detail = repo.match_detail(key)
+        if not detail:
+            continue
+        replay = _panorama_cached(detail.get('bundleKey') or '') if detail.get('bundleKey') else None
+        rows.append({
+            'key': key,
+            'detail': detail,
+            'replay': {name: replay[name] for name in _REPLAY_FIELDS if name in replay} if replay else None,
+            'positions': _positions_for_key(key),
+        })
+    return {'total': len(items), 'batch': batch, 'rows': rows}
 
 
 @router.get('/api/players')
@@ -2014,6 +2229,7 @@ def bp_board():
     """
     import team_clusters
     from bp_camp import parse_camp_bp
+    import team_style
     camp_dir = MATCHES.parent / 'camp_details'
     clusters = team_clusters.list_teams(camp_dir, DB)
     teams = clusters['teams']
@@ -2021,8 +2237,13 @@ def bp_board():
     # 缺失时留空，不使用开发期的随机姓名填充。
     coach_of = {t['id']: (t.get('coach') or '') for t in teams}
     seq_team = {seq: team for team in teams for seq in team.get('seqs', [])}
+    # 营地 startTime 只有「MM-DD HH:MM」；按 team_style.resolve_days 推断年份
+    # 补成 ISO 日期，才能与回放/DB 的 YYYY-MM-DD 做 BP↔过程匹配、时间过滤与
+    # 前后段切分。推断不出时留空，绝不编造日期。
+    panels = list(team_clusters.load_panels(camp_dir))
+    day_of = team_style.resolve_days([p.get('start') or '' for p in panels])
     games, hero_meta = [], {}
-    for panel in team_clusters.load_panels(camp_dir):
+    for panel in panels:
         seq = panel['seq']
         try:
             detail = json.loads((camp_dir / (seq + '.json')).read_text(encoding='utf-8'))
@@ -2036,7 +2257,8 @@ def bp_board():
         enemy = 'right' if own == 'left' else 'left'
         team = seq_team.get(seq) or {}
         start = panel.get('start') or ''
-        day = start.split(' ')[0]
+        resolved = day_of.get(start)
+        day = resolved.isoformat() if resolved else ''
         result = panel.get('win')
         if result is None and bp.get('winnerSide'):
             result = bp['winnerSide'] == own
@@ -2149,6 +2371,21 @@ async def bp_scrim_next(request: Request):
         raise HTTPException(400, str(error)) from error
 
 
+# KPL 源的情报报告按（数据指纹, 过滤参数）缓存：bp_games.jsonl 没变且参数相同
+# 就复用上次完整研究结论，避免每次请求对 4702 局全量重算。训练赛源不缓存——
+# 它依赖 repo 快照（15 秒窗口）与 camp_details 实时状态，必须反映最新录入。
+_BP_INTEL_KPL_CACHE = {}
+_BP_INTEL_KPL_CACHE_MAX = 8
+
+
+def _kpl_source_stamp(kpl_bp):
+    try:
+        stat = kpl_bp.GAMES_PATH.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
 @router.get('/api/v3/bp-intelligence')
 def bp_intelligence_report(request: Request, repo=Depends(repository)):
     """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""
@@ -2160,22 +2397,39 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
 
     values = request.query_params
     source = values.get('source', 'scrim')
+    team = str(values.get('team') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    version = str(values.get('version') or '').strip()
     try:
         panel_board = bp_board() if source == 'scrim' else None
         # 只按完整日期、双方 10 英雄、阵营与唯一匹配连接；对不上就留空。
         # 仅读仓库已有快照，绝不重新抓取回放或把队伍经济当个人对线经济。
         process_map = (link_scrim_process(panel_board['games'], repo.get()['matches'])
                        if panel_board else {})
-        report = build_report(
-            panel_board['games'] if panel_board else [],
-            kpl_bp.load_games() if source == 'kpl' else [],
-            source=source,
-            team=str(values.get('team') or '').strip(),
-            start=str(values.get('from') or '').strip(),
-            end=str(values.get('to') or '').strip(),
-            version=str(values.get('version') or '').strip(),
-            process_map=process_map,
-        )
+        if source == 'kpl':
+            stamp = _kpl_source_stamp(kpl_bp)
+            cache_key = (stamp, team, start, end, version)
+            report = _BP_INTEL_KPL_CACHE.get(cache_key)
+            if report is None:
+                report = build_report([], kpl_bp.load_games(), source=source,
+                                      team=team, start=start, end=end,
+                                      version=version, process_map={})
+                if stamp is not None:
+                    if len(_BP_INTEL_KPL_CACHE) >= _BP_INTEL_KPL_CACHE_MAX:
+                        _BP_INTEL_KPL_CACHE.pop(next(iter(_BP_INTEL_KPL_CACHE)))
+                    _BP_INTEL_KPL_CACHE[cache_key] = report
+        else:
+            report = build_report(
+                panel_board['games'] if panel_board else [],
+                [],
+                source=source,
+                team=team,
+                start=start,
+                end=end,
+                version=version,
+                process_map=process_map,
+            )
         # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。
         heroes = set()
         for key in ('picks', 'bans'):

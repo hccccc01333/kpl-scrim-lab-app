@@ -60,6 +60,114 @@ def _lane_pairs():
     return data, table
 
 
+def _camp_counters():
+    """营地英雄克制事实表：hero → {counters / counteredBy / duo / trio}。"""
+    return _load('camp_counters.json') or {}
+
+
+def _kpl_counters():
+    """KPL 跨阵营有向对位表：(a, b) → {n, wins, wr, lastDate, teams}。"""
+    data = _load('kpl_counters.json') or {}
+    table = {}
+    for row in data.get('pairs') or []:
+        try:
+            table[(str(row['a']), str(row['b']))] = row
+        except (KeyError, TypeError):
+            continue
+    return data, table
+
+
+def _counter_block(lane_pairs, own_heroes, foe_heroes):
+    """克制命中：五路对位逐对的两个证据源 + 非同路的重点交叉提示。
+
+    口径纪律（与对位压制同源）：两个来源**永不合并成一个分**——
+    * 营地 = 王者营地 App 英雄关系指数（官方编辑口径，无样本量概念）；
+    * KPL = 自抓赛事数据的跨阵营有向对位（有样本量，按 n / 胜率判定命中）。
+    """
+    camp = _camp_counters()
+    kpl_data, kpl = _kpl_counters()
+
+    def camp_index(hero, key, other):
+        for item in (camp.get(hero) or {}).get(key) or []:
+            if item.get('hero') == other:
+                return item.get('index')
+        return None
+
+    def kpl_of(a, b):
+        row = kpl.get((a, b))
+        if not row:
+            return None
+        return {'n': row.get('n'), 'wins': row.get('wins'), 'wr': row.get('wr'),
+                'lastDate': row.get('lastDate'), 'teams': row.get('teams') or []}
+
+    lanes = []
+    for lane, mine, foe in lane_pairs:
+        if not mine or not foe:
+            continue
+        lanes.append({'lane': lane, 'mine': mine, 'foe': foe,
+                      'kpl': kpl_of(mine, foe), 'kplReverse': kpl_of(foe, mine),
+                      'campCounter': camp_index(mine, 'counters', foe),
+                      'campCountered': camp_index(mine, 'counteredBy', foe),
+                      'kplHit': _kpl_hit(kpl_of(mine, foe)),
+                      'kplReverseHit': _kpl_hit(kpl_of(foe, mine)),
+                      'campHit': _camp_hit(camp_index(mine, 'counters', foe)),
+                      'campCounteredHit': _camp_hit(camp_index(mine, 'counteredBy', foe))})
+
+    # 重点交叉：非同路对位里证据强的（任一源达标），按强度排、限量 6 条
+    same_lane = {(mine, foe) for lane, mine, foe in lane_pairs}
+    notable = []
+    for mine in own_heroes:
+        for foe in foe_heroes:
+            if not mine or not foe or (mine, foe) in same_lane:
+                continue
+            fwd, rev = kpl_of(mine, foe), kpl_of(foe, mine)
+            fwd_hit, rev_hit = _kpl_hit(fwd), _kpl_hit(rev)
+            counter_idx = camp_index(mine, 'counters', foe)
+            countered_idx = camp_index(mine, 'counteredBy', foe)
+            fwd_camp_hit = _camp_hit(counter_idx)
+            rev_camp_hit = _camp_hit(countered_idx)
+            mine_wins = sum(bool(x) for x in (fwd_hit, fwd_camp_hit))
+            foe_wins = sum(bool(x) for x in (rev_hit, rev_camp_hit))
+            if not mine_wins and not foe_wins:
+                continue
+            verdict = '我方克制' if mine_wins >= foe_wins else '我方被克'
+            hit = fwd if mine_wins >= foe_wins else rev
+            notable.append({
+                'mine': mine, 'foe': foe, 'verdict': verdict,
+                'kpl': hit, 'kplHit': _kpl_hit(hit),
+                'camp': counter_idx if (verdict == '我方克制') else countered_idx,
+                'campHit': fwd_camp_hit if (verdict == '我方克制') else rev_camp_hit,
+                'conflict': bool(mine_wins and foe_wins),
+            })
+    notable.sort(key=lambda item: (
+        -(1 if item['campHit'] else 0),
+        -(item['camp'] or 0),
+        -(item['kpl']['n'] if item['kpl'] and item['kplHit'] else 0),
+    ))
+    return {
+        'schema': 'bp-counter-facts-v1',
+        'camp': {'source': camp.get('source') or '王者营地 App 英雄关系',
+                 'capturedAt': camp.get('capturedAt'), 'heroes': len(camp.get('heroes') or {})},
+        'kpl': {'source': 'KPL 官方赛事（本项目自抓）', 'games': kpl_data.get('games'),
+                'windowStart': kpl_data.get('windowStart'),
+                'windowEnd': kpl_data.get('windowEnd'), 'minN': kpl_data.get('minN'),
+                'pairs': len(kpl_data.get('pairs') or [])},
+        'lanes': lanes, 'notable': notable[:6],
+    }
+
+
+def _camp_hit(index):
+    return index is not None and CAMP_HIT_INDEX is not None \
+        and isinstance(index, (int, float)) and index >= CAMP_HIT_INDEX
+
+
+def _kpl_hit(row):
+    if not row:
+        return False
+    n, wr = row.get('n'), row.get('wr')
+    return bool(n and wr and n >= KPL_HIT_N and wr >= KPL_HIT_WR)
+
+
 def _kpl_combos():
     data = _load('kpl_combos.json') or {}
     pairs, trios, quads, lineups = {}, {}, {}, {}
@@ -154,6 +262,11 @@ def _own_side(detail):
 _SHRINK_K = 40.0
 _Z95 = 1.959963984540054
 
+# 克制命中的展示门槛（口径见 _counter_block；数据表存全量，判定在展示层）。
+CAMP_HIT_INDEX = 2.5      # 营地克制指数 ≥ 2.5 算「营地克制命中」
+KPL_HIT_N = 10            # KPL 跨阵营对位样本 ≥ 10 局
+KPL_HIT_WR = 55.0         # 且胜率 ≥ 55% 算「KPL 克制命中」
+
 
 def _lane_reliability(n, ci_low, ci_high):
     if not n or n < 200:
@@ -217,7 +330,7 @@ def for_match(detail):
     if not own_heroes:
         return None
     lane_data, lane_table = _lane_pairs()
-    combo_data, kpl_pairs, kpl_trios, kpl_lineups = _kpl_combos()
+    combo_data, kpl_pairs, kpl_trios, kpl_quads, kpl_lineups = _kpl_combos()
 
     # 1) 对位压制：用营地面板里的位置对齐五路
     by_lane = {}
@@ -228,11 +341,13 @@ def for_match(detail):
     own_camp = detail.get('ownCamp') or 'blue'
     foe_camp = 'red' if own_camp == 'blue' else 'blue'
     lanes = []
+    lane_pairs = []          # (lane, 我方英雄, 对方英雄)——克制命中按同样五路取对
     for lane in LANES:
         pair = by_lane.get(lane) or {}
         mine, foe = pair.get(own_camp), pair.get(foe_camp)
         if not mine or not foe:
             continue
+        lane_pairs.append((lane, mine.get('hero'), foe.get('hero')))
         row = lane_table.get((mine.get('hero'), foe.get('hero')))
         if not row:
             # 没对位样本时，把两个英雄在巅峰千强的使用率带出去，解释「为什么没有」
@@ -346,11 +461,15 @@ def for_match(detail):
                                kpl_lineups.values())
     total_trios = len(heroes) * (len(heroes) - 1) * (len(heroes) - 2) // 6 if len(heroes) >= 3 else 0
 
-    # 阵容结构分析（英雄能力标签种子表）
+    # 阵容结构分析（英雄能力标签种子表）；未收录英雄如实带出，页面据此降级结论
     structure = None
     if hero_roles is not None:
         structure = hero_roles.lineup_structure(heroes)
         structure['source'] = 'hero_roles_seed'
+        structure['untaggedHeroes'] = [h for h in heroes if h not in hero_roles.HERO_ROLES]
+
+    # 4) 克制命中：KPL 跨阵营对位 + 营地英雄关系，两源分开不合并
+    counters = _counter_block(lane_pairs, heroes, fh)
 
     # BP 预期与执行验证汇总
     attribution_counts = {}
@@ -372,6 +491,7 @@ def for_match(detail):
                    'lanes': lanes},
         'hypothesis': hypothesis,
         'structure': structure,
+        'counters': counters,
         'kpl': {'source': 'kpl', 'sinceYear': combo_data.get('sinceYear'),
                 'games': combo_data.get('games'), 'minGames': combo_data.get('minGames'),
                 'updatedAt': combo_data.get('updatedAt'),
