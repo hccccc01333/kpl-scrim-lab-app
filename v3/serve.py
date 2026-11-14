@@ -2433,6 +2433,22 @@ def _kpl_source_stamp(kpl_bp):
     return (stat.st_mtime_ns, stat.st_size)
 
 
+@router.get('/api/v3/monitor')
+def monitor_report(request: Request):
+    """周期异常监控：英雄/组合/选手/体系的窗口突变清单。"""
+    from monitor import monitor as run_monitor, UNITS
+    values = request.query_params
+    unit = values.get('unit', 'week')
+    if unit not in UNITS:
+        raise HTTPException(400, '监控窗口必须是 day / week / month')
+    try:
+        return run_monitor(bp_board()['games'], unit=unit,
+                           date_from=(values.get('from') or '').strip() or None,
+                           date_to=(values.get('to') or '').strip() or None)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
 @router.get('/api/v3/team-behavior')
 def team_behavior(repo=Depends(repository)):
     """对手打法习惯：阵容/阵营统计 + 对手视角经济检查点；证据缺失留空。"""
