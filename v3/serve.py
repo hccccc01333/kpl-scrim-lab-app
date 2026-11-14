@@ -2021,6 +2021,11 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
             heroes.add(row['hero'])
         for row in (report.get('bpStudies') or {}).get('version', {}).get('changes', []):
             heroes.add(row['hero'])
+        # Multi-round explorer includes long-tail Ban/Pick heroes beyond the
+        # top-24 aggregate tables; resolve their local icons as well.
+        for node in (report.get('bpStudies') or {}).get('draftTree', {}).get('nodes', []):
+            if node.get('hero'):
+                heroes.add(node['hero'])
         icons = {}
         if panel_board:
             for hero, item in (panel_board.get('heroMeta') or {}).items():
