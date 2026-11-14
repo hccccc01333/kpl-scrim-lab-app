@@ -614,3 +614,65 @@ def bp_report(facts, *, opponent=None, date_from=None, date_to=None, top=8):
             'BP 手序仅部分对局有记录，本页不推断先后手。',
         ],
     }
+
+
+def normalize_camp_events(detail, events, seq=''):
+    """校验并规范逐手 BP 事件（训练赛 15 手），与终局名单交叉核对。
+
+    事件形状：{order: 从 1 连续递增, action: 'pick'|'ban',
+    hero: 英雄名, camp: '1'(蓝/left)|'2'(红/right)}。返回 (clean, warnings)；
+    任何不一致都抛 ValueError——不一致的顺序数据比没有更危险，
+    绝不静默丢弃、也绝不由终局名单反推顺序。
+    """
+    from bp_rules import validate_scrim_prefix
+    if not isinstance(events, list) or not events:
+        raise ValueError('缺少逐手选禁事件')
+    clean = []
+    for idx, event in enumerate(events):
+        if not isinstance(event, dict):
+            raise ValueError('逐手事件必须是对象')
+        action = str(event.get('action') or '').lower()
+        hero = str(event.get('hero') or '').strip()
+        camp = str(event.get('camp') or '').lower()
+        camp = {'left': '1', 'blue': '1', 'right': '2', 'red': '2'}.get(camp, camp)
+        raw_order = event.get('order', idx + 1)
+        if isinstance(raw_order, bool):
+            raise ValueError('order 不能是布尔值')
+        try:
+            order = int(raw_order)
+        except (TypeError, ValueError) as error:
+            raise ValueError('order 必须是整数') from error
+        if action not in ('pick', 'ban') or camp not in ('1', '2') or not hero:
+            raise ValueError('事件缺少 action/hero/camp 或取值非法')
+        clean.append({'order': order, 'action': action, 'hero': hero, 'camp': camp})
+    clean.sort(key=lambda event: event['order'])
+    if any(event['order'] != idx + 1 for idx, event in enumerate(clean)):
+        raise ValueError('order 必须从 1 连续递增')
+    if not validate_scrim_prefix(clean, full=True):
+        raise ValueError('BP 顺序不符合训练赛 15 手规则'
+                         '（蓝红蓝红蓝 Ban → B1 R2 B2 R2 B2 R1 Pick），或有英雄重复')
+    bp = parse_camp_bp(detail, seq)
+    if not bp:
+        raise ValueError('该面板没有可解析的终局 BP 名单，无法做一致性核对')
+
+    def names(rows):
+        return sorted({row.get('name') for row in rows or []
+                       if isinstance(row, dict) and row.get('name')})
+
+    pick_expected = {'1': names(bp['picks'].get('left')), '2': names(bp['picks'].get('right'))}
+    ban_expected = {'1': names(bp['bans'].get('left')), '2': names(bp['bans'].get('right'))}
+    observed = {'1': {'pick': [], 'ban': []}, '2': {'pick': [], 'ban': []}}
+    for event in clean:
+        observed[event['camp']][event['action']].append(event['hero'])
+    for camp, label in (('1', '蓝方'), ('2', '红方')):
+        if sorted(observed[camp]['pick']) != pick_expected[camp]:
+            raise ValueError(f'{label} Pick 与营地终局名单不一致——'
+                             '顺序数据必须与终局名单完全一致，不一致的记录比没有更危险')
+        if ban_expected[camp] and not set(observed[camp]['ban']).issubset(set(ban_expected[camp])):
+            raise ValueError(f'{label} Ban 超出了营地终局禁用名单')
+    warnings = []
+    for camp, label in (('1', '蓝方'), ('2', '红方')):
+        if ban_expected[camp] and len(observed[camp]['ban']) != len(ban_expected[camp]):
+            warnings.append(f'{label}记录 Ban {len(observed[camp]["ban"])} 个，'
+                            f'面板名单 {len(ban_expected[camp])} 个（面板可能含空槽/旧规则 5 Ban）')
+    return clean, warnings

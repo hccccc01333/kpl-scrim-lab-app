@@ -2371,6 +2371,53 @@ async def bp_scrim_next(request: Request):
         raise HTTPException(400, str(error)) from error
 
 
+@router.post('/api/v3/camp-bp-events/{seq}')
+async def save_camp_bp_events(seq: str, request: Request):
+    """把逐手 BP 顺序（沙盘 15 手）与版本/规则标签补录进 camp_details/<seq>.json。
+
+    只保存通过训练赛 15 手规则校验、且与终局名单一致的顺序；写前整文件备份到
+    data/bp-history/，原子替换。绝不由终局名单反推顺序，缺证据就拒绝保存。
+    """
+    from bp_camp import normalize_camp_events
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 录入必须是对象')
+    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
+        raise HTTPException(413, 'BP 录入过大')
+    path = (MATCHES.parent / 'camp_details') / (seq + '.json')
+    if not path.is_file():
+        raise HTTPException(404, '训练赛营地面板不存在')
+    try:
+        detail = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise HTTPException(400, '营地面板 JSON 无法解析') from error
+    try:
+        clean, warnings = normalize_camp_events(detail, payload.get('events'), seq)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+    version = str(payload.get('version') or '').strip()[:40]
+    rule_label = str(payload.get('ruleProfile') or '').strip()[:40]
+    container = detail.get('data') if isinstance(detail.get('data'), dict) else {}
+    container['draftEvents'] = clean
+    if version:
+        container['version'] = version
+    if rule_label:
+        container['ruleProfile'] = rule_label
+    detail['data'] = container
+
+    history_dir = DB.parent / 'bp-history'
+    history_dir.mkdir(parents=True, exist_ok=True)
+    backup = history_dir / f'camp-{seq}-{int(time.time())}.json'
+    backup.write_bytes(path.read_bytes())
+    temporary = path.with_suffix('.events-tmp')
+    temporary.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(path)
+    return {'ok': True, 'seq': seq, 'saved': len(clean),
+            'version': version, 'ruleProfile': rule_label,
+            'warnings': warnings, 'backup': backup.name}
+
+
 # KPL 源的情报报告按（数据指纹, 过滤参数）缓存：bp_games.jsonl 没变且参数相同
 # 就复用上次完整研究结论，避免每次请求对 4702 局全量重算。训练赛源不缓存——
 # 它依赖 repo 快照（15 秒窗口）与 camp_details 实时状态，必须反映最新录入。

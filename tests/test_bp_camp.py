@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis_data import AnalysisRepository  # noqa: E402
-from bp_camp import merge_bp_sources, parse_camp_bp, structured_names  # noqa: E402
+from bp_camp import merge_bp_sources, normalize_camp_events, parse_camp_bp, structured_names  # noqa: E402
 import channel_store  # noqa: E402
 from test_analysis_data import OWN, ENEMY, ROSTER, bundle, db_match  # noqa: E402
 
@@ -222,3 +222,85 @@ def test_catalog_index_reloads_after_file_change(tmp_path):
     finally:
         bp_camp.CATALOG_PATH = original
         bp_camp._CATALOG_CACHE.update({'stamp': object(), 'value': ({}, {})})
+
+
+def scrim_events(blue_picks=None, red_picks=None, *, red_bans=None):
+    """按训练赛 15 手排程构造事件：蓝红蓝红蓝 Ban → B1 R2 B2 R2 B2 R1 Pick。"""
+    blue = blue_picks or ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽']
+    red = red_picks or ['瑶', '阿轲', '安琪拉', '虞姬', '钟无艳']
+    ban_blue = ['盾山', '芈月', '海月']
+    ban_red = red_bans or ['孙悟空', '庄周']
+    pick_order = [('1', blue[0]), ('2', red[0]), ('2', red[1]), ('1', blue[1]), ('1', blue[2]),
+                  ('2', red[2]), ('2', red[3]), ('1', blue[3]), ('1', blue[4]), ('2', red[4])]
+    events, order = [], 1
+    # Ban 排程 B R B R B：蓝方 3 个（第 1/3/5 手），红方 2 个（第 2/4 手）。
+    ban_sequence = [('1', ban_blue[0]), ('2', ban_red[0]), ('1', ban_blue[1]),
+                    ('2', ban_red[1]), ('1', ban_blue[2])]
+    for camp, hero in ban_sequence:
+        events.append({'order': order, 'action': 'ban', 'hero': hero, 'camp': camp})
+        order += 1
+    for camp, hero in pick_order:
+        events.append({'order': order, 'action': 'pick', 'hero': hero, 'camp': camp})
+        order += 1
+    return events
+
+
+class CampEventTests(unittest.TestCase):
+    """normalize_camp_events：逐手 BP 录入的规则与终局名单一致性守卫。"""
+
+    def test_valid_events_pass_with_ban_count_warning(self):
+        clean, warnings = normalize_camp_events(camp_detail(), scrim_events(), 'seq-1')
+        self.assertEqual(len(clean), 15)
+        self.assertEqual([e['order'] for e in clean], list(range(1, 16)))
+        # 面板红方 3 个 Ban，15 手规则只允许红方 2 个 → 提示而非报错
+        self.assertTrue(any('红方记录 Ban 2 个' in w for w in warnings))
+
+    def test_camp_alias_blue_left_accepted(self):
+        events = scrim_events()
+        for event in events:
+            event['camp'] = {'1': 'blue', '2': 'red'}[event['camp']]
+        clean, _ = normalize_camp_events(camp_detail(), events, 'seq-1')
+        self.assertEqual(clean[0]['camp'], '1')
+
+    def test_wrong_action_schedule_rejected(self):
+        events = scrim_events()
+        events[5]['action'] = 'ban'  # 第 6 手必须是 Pick
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), events, 'seq-1')
+
+    def test_duplicate_hero_rejected(self):
+        events = scrim_events()
+        events[14]['hero'] = '瑶'
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), events, 'seq-1')
+
+    def test_pick_mismatch_rejected(self):
+        events = scrim_events(blue_picks=['鲁班七号', '嫦娥', '刘禅', '李元芳', '盾山'])
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), events, 'seq-1')
+
+    def test_ban_outside_panel_rejected(self):
+        events = scrim_events(red_bans=['孙悟空', '盘古'])
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), events, 'seq-1')
+
+    def test_nonsequential_order_rejected(self):
+        events = scrim_events()
+        events[3]['order'] = 9
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), events, 'seq-1')
+
+    def test_empty_or_invalid_events_rejected(self):
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), [], 'seq-1')
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail(), [{'order': 1}], 'seq-1')
+
+    def test_panel_without_bp_rejected(self):
+        with self.assertRaises(ValueError):
+            normalize_camp_events({'data': {'blueTeam': {}, 'redTeam': {}}},
+                                  scrim_events(), 'seq-2')
+
+    def test_import_in_bp_camp_exports(self):
+        from bp_camp import normalize_camp_events as fn  # noqa: F401
+        self.assertTrue(callable(fn))

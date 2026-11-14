@@ -184,10 +184,31 @@ function scrimPlannerView(planner){
      planner.snapshot?`<div class="bpi-scrim-finished">双方各完成 5 次 Pick，本局选禁结束。
        ${planner.game===maxGames?'BO 系列赛所有可选局次已到达上限。':'可将这一局的选人加入全局历史后开始下一局。'}</div>`:
      '<p class="bpi-subtle">完成系列赛历史校验后，将显示下一手的合法英雄。</p>'}
+   ${planner.snapshot&&!planner.snapshot.nextAction?scrimSaveView(planner):''}
    <div class="bpi-research-alert"><b>规则校验 ≠ 最优阵容建议</b>
      <p>这是训练赛专属的合法动作校验与全局 BP 交互工具。目前尚未绑定选手个人英雄池时，候选只代表规则允许，不代表选手熟练；也不把当前搜索结果称作 MCTS 最优 BP。</p>
    </div>
  </section>`;
+}
+
+function scrimSaveView(planner){
+ const games=planner.saveGames||[];
+ const options=['<option value="">选择训练营地面板…</option>'].concat(games.map(g=>{
+   const done=planner.savedSeqs.has(g.key)?' · 已录':''; const ver=g.version?` · v${g.version}`:'';
+   return `<option value="${safe(g.key)}" ${g.key===planner.saveSeq?'selected':''}>#${safe(g.key)} · ${safe(g.day)} vs ${safe(g.opponent)}（本队${g.side==='blue'?'蓝':'红'}）${ver}${done}</option>`;
+ })).join('');
+ return `<details class="bpi-scrim-save" data-bpi-save-block open>
+   <summary>把这一局的 15 手顺序补录进训练赛记录</summary>
+   <p class="bpi-explain">选择一局训练营地面板，保存前服务端会校验顺序合法性并与终局名单核对（Pick 必须与终局完全一致），不一致会被拒绝。请按真实比赛回放顺序录入；版本号只接受真实 patch 标识，绝不从日期推断。</p>
+   <div class="bpi-scrim-save-row">
+     <label>训练赛局<select data-bpi-save-game>${options}</select></label>
+     <label>游戏版本<input type="text" data-bpi-save-version value="${safe(planner.saveVersion)}" placeholder="如 1.53.1.2（可留空）"></label>
+     <button class="bpi-scrim-apply" type="button" data-bpi-scrim-save
+       ${planner.saving||!planner.saveSeq?'disabled':''}>${planner.saving?'正在保存…':'保存 BP 顺序'}</button>
+   </div>
+   ${planner.saveStatus?`<span class="bpi-scrim-proof">${safe(planner.saveStatus)}</span>`:''}
+   ${planner.saveError?`<div class="bpi-scrim-error" role="alert">${safe(planner.saveError)}</div>`:''}
+ </details>`;
 }
 
 function fullDraftView(report, nodeId) {
@@ -787,7 +808,9 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
   const state = {root:null, controller:null, source:'scrim', team:'本队',
     mode:'overview', view:'focus', trigger:'', side:'1', version:'',treeNode:0,report:null, error:'',
     scrim:{bo:'BO3',game:1,side:'blue',historyOwn:'',historyEnemy:'',events:[],
-      snapshot:null,catalog:null,loading:false,error:'',search:'',serial:0}};
+      snapshot:null,catalog:null,loading:false,error:'',search:'',serial:0,
+      saveGames:null,saveSeq:'',saveVersion:'',saveStatus:'',saveError:'',saving:false,
+      savedSeqs:new Set()}};
 
   function body() {
     const report=state.report;
@@ -894,7 +917,7 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       const report=await response.json();
       if(controller.signal.aborted || root!==state.root) return;
       state.report=report; paint();
-      if(state.view==='sandbox'&&state.source==='scrim')void refreshScrim();
+      if(state.view==='sandbox'&&state.source==='scrim'){void refreshScrim();void ensureScrimGames();}
     } catch(error) {
       if(controller.signal.aborted || root!==state.root)return;
       state.error=error.message || '数据读取失败';paint();
@@ -954,6 +977,48 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     void refreshScrim();
   }
 
+  async function ensureScrimGames(){
+    const planner=state.scrim;
+    if(planner.saveGames)return;
+    try {
+      const response=await fetch(API_BASE+'/api/v3/bp-board',
+        {cache:'no-store',headers:{Accept:'application/json'}});
+      if(!response.ok)throw new Error('无法读取训练营地面板列表');
+      const board=await response.json();
+      planner.saveGames=(board.games||[]).map(g=>({
+        key:String(g.key),day:g.day||'',opponent:g.opponent||'',
+        side:g.side||'blue',version:g.version||''}));
+    } catch(error) {
+      planner.saveGames=[];planner.saveError=error.message||'训练营地面板列表读取失败';
+    }
+    paint();
+  }
+
+  async function saveScrimGame(){
+    const planner=state.scrim;
+    if(planner.saving||!planner.saveSeq)return;
+    if(planner.events.length!==15){planner.saveError='本局 15 手未完成，不能保存';paint();return;}
+    planner.saving=true;planner.saveError='';planner.saveStatus='';paint();
+    try {
+      const response=await fetch(API_BASE+'/api/v3/camp-bp-events/'
+        +encodeURIComponent(planner.saveSeq),{
+        method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify({events:planner.events,
+          version:planner.saveVersion.trim()})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(result.detail||'保存失败');
+      planner.savedSeqs.add(planner.saveSeq);
+      planner.saveStatus=`已保存 ${result.saved} 手到 #${planner.saveSeq}`
+        +(result.warnings&&result.warnings.length?`；提示：${result.warnings.join('；')}`:'');
+      void load();
+    } catch(error) {
+      planner.saveError=error.message||'保存失败';
+    }finally {
+      planner.saving=false;paint();
+    }
+  }
+
   function bind(root) {
     if(root.dataset.bpiBound)return;
     root.dataset.bpiBound='1';
@@ -982,6 +1047,9 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       }
       if(event.target.closest('[data-bpi-scrim-validate]')){
         state.scrim.events=[];void refreshScrim();return;
+      }
+      if(event.target.closest('[data-bpi-scrim-save]')){
+        void saveScrimGame();return;
       }
       const tree=event.target.closest('[data-bpi-tree-node]');
       if(tree){
@@ -1030,6 +1098,10 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
         planner.side=event.target.value;planner.events=[];planner.search='';
         void refreshScrim();return;
       }
+      if(event.target.matches('[data-bpi-save-game]')){
+        planner.saveSeq=event.target.value;planner.saveStatus='';planner.saveError='';paint();
+        return;
+      }
       if(event.target.matches('[data-bpi-team]')){
         state.team=event.target.value;state.trigger='';state.treeNode=0;void load();
       }
@@ -1044,6 +1116,8 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       const planner=state.scrim;
       if(event.target.matches('[data-bpi-scrim-history-own]')){
         planner.historyOwn=event.target.value;
+      }else if(event.target.matches('[data-bpi-save-version]')){
+        planner.saveVersion=event.target.value;
       }else if(event.target.matches('[data-bpi-scrim-history-enemy]')){
         planner.historyEnemy=event.target.value;
       }else if(event.target.matches('[data-bpi-scrim-search]')){
