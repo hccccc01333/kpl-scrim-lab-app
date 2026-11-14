@@ -97,6 +97,8 @@ def version_study(games, all_games, selected=""):
     versions = []
     for version in sorted(options):
         rows = [g for g in games if g.get("version") == version]
+        if not rows:
+            continue
         versions.append({"name": version, "games": len(rows),
                          "lastDate": max([g["date"] for g in rows] or [""])})
     versions.sort(key=lambda r: (r["lastDate"], r["name"]), reverse=True)
@@ -120,8 +122,22 @@ def version_study(games, all_games, selected=""):
                     continue
                 a = _pct(oldcount[hero],len(old))
                 b = _pct(curcount[hero],len(cur))
+                previous_records = [g for g in old if hero in
+                                    (g["picks"] if action=="pick" else g["bans"])]
+                recent_records = [g for g in cur if hero in
+                                  (g["picks"] if action=="pick" else g["bans"])]
+                old_decided = [g for g in previous_records if g["result"] is not None]
+                new_decided = [g for g in recent_records if g["result"] is not None]
+                old_wins = sum(g["result"] is True for g in old_decided)
+                new_wins = sum(g["result"] is True for g in new_decided)
                 changes.append({"hero":hero,"action":action,
                                 "before":previous,"after":chosen,
+                                "oldWinRate":_pct(old_wins,len(old_decided)),
+                                "newWinRate":_pct(new_wins,len(new_decided)),
+                                "oldDecided":len(old_decided),
+                                "newDecided":len(new_decided),
+                                "oldInterval":_uncertainty(old_wins,len(old_decided)),
+                                "newInterval":_uncertainty(new_wins,len(new_decided)),
                                 "oldGames":len(old),"newGames":len(cur),
                                 "oldCount":oldcount[hero],"newCount":curcount[hero],
                                 "oldShare":a,"newShare":b,"changePP":round(b-a,1),
