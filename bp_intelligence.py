@@ -183,20 +183,18 @@ def normalize_scrims(raw_games, process_map=None):
             camp = "1" if ((side == "own") == (item.get("ownSide") == "left")) else "2"
             events = _checked_events(source_events, camp, own_picks, own_bans,
                                      enemy_picks, _heroes(bans.get(other)))
-            from bp_rules import SCRIM_STAGED_18, validate_scrim_prefix
-            # Validation is based on *absolute* left/blue and right/red camps,
-            # not the selected team perspective.
-            absolute = [{"action": e["action"],
+            from bp_rules import SCRIM_GLOBAL_15, validate_scrim_prefix
+            # Absolute camp (blue/red) is not the research team's POV.
+            absolute = [{"order": e["order"], "action": e["action"],
                          "camp": camp if e["actor"] == "team"
                                  else ("2" if camp == "1" else "1"),
                          "hero": e["hero"]} for e in events]
-            explicit_profile = str(item.get("ruleProfile") or "").strip()
-            is_scrim_18 = bool(events and validate_scrim_prefix(absolute, full=True))
-            if explicit_profile == SCRIM_STAGED_18.id and not is_scrim_18:
-                # Explicitly labelled scrim schedule must match before it can
-                # be treated as ordered evidence.
+            is_scrim_15 = bool(events and validate_scrim_prefix(absolute, full=True))
+            # Legacy or malformed 18/14-turn records still support final
+            # lineup statistics, but MUST NOT train scrim order predictions.
+            if not is_scrim_15:
                 events = []
-            rule_profile = SCRIM_STAGED_18.id if is_scrim_18 else "scrim-unconfirmed"
+            rule_profile = SCRIM_GLOBAL_15.id if is_scrim_15 else "scrim-unconfirmed"
             result = item.get("result")
             won = (result == "win") if result in ("win", "loss") else None
             if side == "enemy" and won is not None:
@@ -216,7 +214,7 @@ def normalize_scrims(raw_games, process_map=None):
                           "version": str(item.get("version") or "").strip(),
                           "stage": str(item.get("stage") or "").strip(),
                           "ruleProfile": rule_profile,
-                          "ruleValidated": is_scrim_18,
+                          "ruleValidated": is_scrim_15,
                           "gameSeq": None,
                           "processMatchKey": process.get("matchKey") or "",
                           "teamGoldDiff": team_diff,
@@ -762,14 +760,14 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
     from bp_draft_tree import draft_tree, priority_brief
     bp_studies["ruleCoverage"] = {
-        "scrim18": sum(g.get("ruleValidated", False) for g in team_games)
+        "scrim15": sum(g.get("ruleValidated", False) for g in team_games)
                    if source == "scrim" else 0,
         "scrimUnknown": sum(not g.get("ruleValidated", False) for g in team_games)
                         if source == "scrim" else 0,
         "kplRecorded": sum(bool(g["events"]) for g in team_games)
                        if source == "kpl" else 0,
-        "profile": ("scrim-staged-18" if source == "scrim" else "kpl-recorded"),
-        "note": ("训练赛只将符合四阶段 18 手模板的完整事件用于规则化搜索；"
+        "profile": ("scrim-global-15" if source == "scrim" else "kpl-recorded"),
+        "note": ("训练赛只将符合 5 Ban + 10 Pick 的 15 手模板的完整事件用于顺序研究；"
                  "不符合该模板的旧记录仍可作基础阵容统计。"
                  if source == "scrim" else
                  "KPL 只校验真实历史 BP 事件，不应用训练赛的四阶段规则。")
