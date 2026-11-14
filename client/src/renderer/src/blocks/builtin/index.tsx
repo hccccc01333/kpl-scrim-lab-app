@@ -39,7 +39,6 @@ import { POOL_RESULT_BLOCKS } from './domains15'
 import { DECISION_MISC_BLOCKS } from './domains16'
 import { DECISION_RESOURCE_OBJECTIVE_BLOCKS } from './domains17'
 import { DECISION_FIGHT_OPENING_BLOCKS } from './domains18'
-import { DECISION_CATALOG_BLOCKS } from './domains19'
 import { COMPARE_BLOCKS } from './domains20'
 import { POSITION_REPORT_BLOCKS } from './domains21'
 import { SUPER_BLOCKS } from './super'
@@ -301,7 +300,6 @@ export const BUILTIN_BLOCKS: RegisteredBlock[] = [
   ...DECISION_MISC_BLOCKS,
   ...DECISION_RESOURCE_OBJECTIVE_BLOCKS,
   ...DECISION_FIGHT_OPENING_BLOCKS,
-  ...DECISION_CATALOG_BLOCKS,
   ...COMPARE_BLOCKS,
   ...POSITION_REPORT_BLOCKS,
   ...SUPER_BLOCKS

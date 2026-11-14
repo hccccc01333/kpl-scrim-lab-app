@@ -118,12 +118,12 @@ export function createCoachBoard({ esc = es } = {}) {
     const byCoach = new Map();
     for (const g of all) {
       if (!g.teamId) continue;
-      const cur = byCoach.get(g.teamId) || { teamId: g.teamId, name: g.coach || teamName.get(g.teamId) || '未命名', team: g.team, games: 0, wins: 0, losses: 0, pickSum: 0, pickN: 0, banSum: 0, banN: 0 };
+      const cur = byCoach.get(g.teamId) || { teamId: g.teamId, name: g.coach || teamName.get(g.teamId) || '未命名', team: g.team, games: 0, wins: 0, losses: 0, pickSum: 0, pickN: 0, banSum: 0, banN: 0, pickMap: new Map(), banMap: new Map() };
       cur.games += 1;
       if (g.won === true) cur.wins += 1;
       if (g.won === false) cur.losses += 1;
-      for (const p of g.picks) { cur.pickSum += (pickHeat.get(p.name)?.n || 1); cur.pickN += 1; }
-      for (const b of g.bans) { cur.banSum += (banHeat.get(b.name)?.n || 1); cur.banN += 1; }
+      for (const p of g.picks) { cur.pickSum += (pickHeat.get(p.name)?.n || 1); cur.pickN += 1; cur.pickMap.set(p.name, (cur.pickMap.get(p.name) || 0) + 1); }
+      for (const b of g.bans) { cur.banSum += (banHeat.get(b.name)?.n || 1); cur.banN += 1; cur.banMap.set(b.name, (cur.banMap.get(b.name) || 0) + 1); }
       byCoach.set(g.teamId, cur);
     }
     const coaches = [...byCoach.values()].map((c) => ({
@@ -131,6 +131,8 @@ export function createCoachBoard({ esc = es } = {}) {
       winRate: c.wins + c.losses ? c.wins / (c.wins + c.losses) * 100 : null,
       pickHeat: c.pickN ? c.pickSum / c.pickN : null,
       banHeat: c.banN ? c.banSum / c.banN : null,
+      topPicks: [...c.pickMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, n]) => ({ name, n })),
+      topBans: [...c.banMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, n]) => ({ name, n })),
     })).sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1) || (b.pickHeat || 0) - (a.pickHeat || 0));
 
     const sideStats = ['blue', 'red'].map((side) => {
@@ -353,6 +355,8 @@ export function createCoachBoard({ esc = es } = {}) {
         <div class="hcv-row" ${tip('禁用热度越高，越倾向跟版本 ban')}><span class="hcv-row-label">禁用热度<small>全场第 ${n0(banRank)}</small></span><i class="hcv-track"><b class="teal" style="width:${wOf(self?.banHeat, yMax)}"></b></i><em class="hcv-row-val">${n1(self?.banHeat)}</em></div>
         <div class="hcv-row" ${tip('最近一局的分路覆盖')}><span class="hcv-row-label">分路覆盖<small>最近一局</small></span><i class="hcv-track"><b style="width:${wOf(laneCount, 5)}"></b></i><em class="hcv-row-val">${n0(laneCount)} / 5</em></div>
         <div class="hcv-row" ${tip('最近一局的边位')}><span class="hcv-row-label">最近边位<small>${esc(sideName(d.last?.side))}</small></span><i class="hcv-track"><b style="width:${d.last?.side === 'blue' ? 100 : 0}%;background:var(--blue)"></b></i><em class="hcv-row-val">${esc(sideName(d.last?.side))}</em></div>
+        ${self?.topPicks?.length ? `<div class="hcv-row" ${tip('该教练自己最常选用的英雄（条件频率，非全场热度）')}><span class="hcv-row-label">教练常用<small>本队 ${n0(self.games)} 局</small></span><em class="hcv-row-val">${self.topPicks.map((p) => `${esc(p.name)}×${n0(p.n)}`).join('、')}</em></div>` : ''}
+        ${self?.topBans?.length ? `<div class="hcv-row" ${tip('该教练自己最常禁用的英雄（条件频率，非全场热度）')}><span class="hcv-row-label">教练常禁<small>本队 ${n0(self.games)} 局</small></span><em class="hcv-row-val">${self.topBans.map((p) => `${esc(p.name)}×${n0(p.n)}`).join('、')}</em></div>` : ''}
       </div>`
     );
     const title = self
@@ -360,7 +364,7 @@ export function createCoachBoard({ esc = es } = {}) {
       : '还没有这位教练的 BP 记录';
     return card('06', '教练画像分析', title, shell('06', A, B),
       '偏热的教练按版本准备；偏冷的教练要给冷门英雄单独留训练位。',
-      '选用 / 禁用热度＝该教练每局五个英雄（或五个禁用）在全部对局里的平均出场次数。');
+      '选用 / 禁用热度＝该教练英雄在全部对局里的平均出场次数（与版本热门的接近程度）；教练个人常用/常禁英雄见下方条件频率。');
   }
 
   /* ── 组装页面 ─────────────────────────────────────────────── */

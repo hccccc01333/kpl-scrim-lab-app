@@ -16,6 +16,7 @@ import { BarList } from '../components/charts/BarList'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { Block, BlockBoard } from '../blocks/BlockBoard'
+import { DecisionResourceBlock } from '../blocks/builtin/domains17'
 
 export function PlayersPage() {
   const { baseUrl } = useConnection()
@@ -202,6 +203,10 @@ export function PlayersPage() {
               </div>
             ) : <BoardEmpty title="还没有对局记录" />}
           </AnalysisSection>
+        </Block>
+
+        <Block id="pl-resource" title="资源异常">
+          <DecisionResourceBlock />
         </Block>
       </BlockBoard>
 

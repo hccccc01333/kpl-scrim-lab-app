@@ -1,9 +1,36 @@
 # 赛训决策台 · 实现契约（v1.6.x）
 
+> **2026-11-13 变更：独立的「决策台」已下线。**
+> 本文件保留为分析口径与 `/api/decision/*` 接口的历史契约（第 1–3 节中未被删除的分析仍然有效），
+> 但第 4 节描述的前端独立页面不再存在：
+>
+> - 网页工作台不再有 `#decision` 与顶部「决策」入口；保留的分析改挂到对象模块的分析入口
+>   （选手：资源分配与四象限；BP：`#bpcounter`；选手该分析已于同日整页删除）。
+> - **选手 / BP 十个分析已整页删除（2026-11-13）**：补刀与产出、经济投入与输出、同位置参照、
+>   分路对位、蓝红阵营对照、资源分配与四象限、选手状态、选手搭档、经济与产出、禁选与资源，
+>   连同 `/api/decision/resource`、五个 `/api/depth/analysis/*`、三个 `/api/v3/research/*`
+>   接口与 `v3/public/analysis-pages.js` 页面文件一并移除；只保留 BP `#bpcounter`。
+> - 赛训台客户端不再有 `/decision` 页面与概览页「今天先看这几件事」问题卡；
+>   保留的分析以块的形式落在战队 / 选手页面。
+> - 首页不再自动生成问题清单。
+> - **对局分析三页已整页删除（2026-11-13）**：网页对局分析 rail 的「失利关键链 / 团战执行与到位 /
+>   优势保持与回撤」入口、客户端跨局分析三块与 `/api/decision/loss`、`/api/decision/advantage`、
+>   `/api/decision/fights` 接口一并移除；`/api/decision/briefing`（问题清单）接口同样删除。
+>   本文件第 2.2 / 2.3 / 2.6 节与 API 表相应行已删除，不再实现；其余涉及上述接口的 as-built
+>   细节、测试与所有权清单仅作历史记录。
+> - **「对手开局路线与热区」已整页删除（2026-11-13）**：网页 `#topic/opening_routes`、
+>   客户端「开局与路线」块与 `/api/decision/opening` 接口一并移除；本文件第 2.4 节与
+>   API 表中的该行仅作历史记录，不再实现。
+> - 除上述删除项外，分析口径、字段与接口路径未改变，见 [workbench.md](workbench.md)。
+
 本文件是「数据挖掘与教练端可视化扩展方案」的落地契约。所有模块、API、前端页面按本文件实现，
-不另起口径。方案里的 P0 五项 + 赛训首页「今天先看这几个问题」是本轮交付范围；P1/P2 只保留入口或空态。
+不另起口径。方案里的 P0 五项 + 赛训首页「今天先看这几个问题」是本轮交付范围
+（其中对局三项与首页问题卡已于 2026-11-13 删除）；P1/P2 只保留入口或空态。
 
 ## 0. 目标与边界
+
+> 2026-11-13 更新：本节第 1、2、4、5 项对应的分析（失利关键链 / 优势流失、团战执行、
+> 对手开局路线、问题清单）已整页删除，此处仅保留当时的设计目标。
 
 **目标**：把已有字段组合成教练真正要做的决策：
 
@@ -27,8 +54,8 @@
 | 终局面板 | `data/camp_details/*.json` | 32 局 × 10 人 = 320 行 | 资源分配（A 级，不依赖回放） |
 | 官方回放（规范化） | `data/official_replays/camp-*/normalized.json` | 24 局，其中 23 局能配到面板 | 经济/事件/团战/死亡（B 级） |
 | 位置 | `data/official_replays/camp-*/positions.json` | 23 局 × 10 人 × 1 Hz | 开局路线热区（B 级） |
-| 团战 | `normalized.battles.fights` | 518 场 | 团战执行 |
-| 死亡 | `normalized.battles.deaths` | 831 次 | 人员协同/掉点 |
+| 团战 | `normalized.battles.fights` | 518 场 | 单局复盘的团战（地图 / 贡献） |
+| 死亡 | `normalized.battles.deaths` | 831 次 | 单局复盘的掉点与死亡 |
 | 地图事件 | `normalized.events.key/extended` | 1407 条 | 资源/推塔/击杀链 |
 | 地图定标 | `data/map_calibration.json` | calibrated，bounds ±53 | 位置→地图宽度比例 |
 | 对战身份 | `team_clusters` / workspace | 32 个对手，每个 1 局 | 对手名（全部待命名） |
@@ -142,83 +169,6 @@ def format_objective(event) -> {"name": ..., "kind": "resource|building|kill|fig
 坐标口径：`positions` 在 `calibration.calibrated` 时已换算到 0–1（每单位 = 地图宽度），否则保持原值且 `Game.relative=True`。
 经济时间：`times[i] = i * duration / max(1, n-1)`，页面一律显示「≈」并注明约 30 秒采样。
 
-### 2.2 `decision_loss.py`（teammate: loss-analyst）
-
-```python
-loss_report(facts, *, game=None, opponent=None, date_from=None, date_to=None, result=None, limit=80) -> dict
-advantage_report(facts, *, opponent=None, date_from=None, date_to=None, result=None) -> dict
-```
-
-**loss_report 算法**（按 A8 升级，不宣称因果）：
-
-1. 对每局：用 30/60/120 秒窗口找 `ownDiff` 显著变化窗口，阈值 = max(1000, |Δ| P90)。
-2. 取`负向`窗口（我方视角 Δ < 0）为「失利关键链」候选。
-3. 窗口内/±60 秒内关联：
-   - 死亡：`battles.deaths` 按 `timeSec`；用 `positions` 找同阵营最近队友距离（未定标用相对单位），
-     `near_count` / `isolated` 仅作描述。
-   - 团战：`fights.startSec/endSec` 有交集；按击杀差、开局人数差、参战人数描述。
-   - 资源/建筑：`events.key` 中 `dtType=1` 资源、`dtType=2` 建筑；标 `camp=own|enemy`。
-   - 类别判定（按优先级取一个主类，同时保留全部候选）：
-     `wipe`（我方 ≥4 人阵亡）→ `multi_death`（窗口内我方 ≥2 人阵亡）→
-     `teamfight_loss`（有团战且我方击杀差 ≤ -2）→ `objective_lost`（敌方拿到资源/建筑且我方 0）→
-     `no_trade`（窗口内无我方收益事件）→ `unclassified`。
-   - `cost = delta`（负值，越小越伤）。
-4. 跨局汇总 `patterns`：按主类统计窗口数、涉及局数、平均损失、代表证据；
-   按阶段（对线/发育/后期）统计。
-5. `game` 参数给单局详情：返回 `series`（times/ownDiff/rawDiff/approx）与 `chains`（按 cost 排序）。
-6. 所有窗口 `confidence="candidate"`，输出 `note` 说明「候选事件，不证明因果」。
-7. 过滤后无对局/无经济点：返回 `available=false` + `reason`，不返回空图假象。
-
-输出顶层：`{"available", "filters", "summary", "rows", "game", "coverage", "note"}`；
-`summary.patterns[].evidence` 最多 5 条，元素 `{game,label,start,end,cost,text}`。
-`rows[]` 每条含 `game/label/opponent/result/ownCamp/phase/start/end/delta/type/typeLabel/candidates/evidence/confidence`。
-
-**advantage_report 算法**（A9 升级）：
-
-按局（我方视角 ownDiff）：
-- `maxLead` = max(ownDiff)；`maxLeadAt` 对应时间。
-- `drawdown` = 峰值之后（含峰值点）到终局的最小 ownDiff 与峰值之差（≥0）；记录最低点时间。
-- `leadDurationSec` = ownDiff ≥ +500 的累计采样时长（相邻点间隔按 duration/(n-1)）。
-- `conversionSec` = 首次 ownDiff ≥ +1000 之后，到下一次我方资源/建筑事件的时间差；
-  没有则 null（`conversionN` 计数）。
-- `postLead2mDelta` = 首次跨越 +1000 后 120 秒的 ownDiff − 跨越时 ownDiff；不足 120 秒/无跨越 → null。
-- `comeback` = maxLead ≥ +1000 且最终告负。
-- `leadAt10` = value_at(600, ownDiff, duration)（duration<600 排除该局指标，不补 0）。
-
-汇总：
-- `ledGames`（maxLead≥1000）与 `comebacks`、`comebackRate`（Wilson 区间）；`ledGames<10` → `enough=false`。
-- `avgMaxLead/medianMaxLead/avgDrawdown/avgLeadDurationSec/avgConversionSec/avgPostLead2mDelta`（各自 n 显式给出）。
-- `buckets`：沿用 `analysis_economy.BUCKETS` 的 10 分钟分桶，给 n/wins/winRate/CI/enough。
-- `bands`：按分钟 0..min(30, ceil(maxDuration/60)) 插值 ownDiff，分别对 win/loss/all 求 P25/P50/P75，
-  每档给 n；n=0 给 null，不画线。
-- `games[]`：每局上述指标 + `candidates`（回撤/翻盘窗口附近的事件，最多 3 条）。
-- `paths`：首次领先 ≥1000 后，取「下一个我方资源/建筑事件 → 是否推塔 → 最终胜负」的简化路径计数；
-  n<3 的路径不展示（返回但标 `enough=false`）。
-- 无任何胜负面板/经济点的局：`available=false`。
-
-### 2.3 `decision_fights.py`（teammate: fight-analyst）
-
-```python
-fight_report(facts, *, game=None, opponent=None, date_from=None, date_to=None, result=None, side=None, limit=120) -> dict
-```
-
-1. 每场团战按我方视角整理：
-   - `ownParticipants` / `enemyParticipants`（participants 按 camp 计数，缺失计入 `missingParticipants`）。
-   - `arrivalLagSec` = participant.timeSec − startSec（保留 1 位小数）。
-   - `arrivalDiff` = 我方最早到达 − 敌方最早到达（秒，负=我方先到）。
-   - `advStart` = 开局 3 秒内（timeSec ≤ start+3）双方到达人数差（我方−敌方）。
-   - `killDiff` = 我方击杀数 − 敌方击杀数；`won` = killDiff>0（0 击杀 → null）。
-   - `lateJoins` = 我方 timeSec > start+5 的人数；`beginnerSide`（beginner=1 的阵营）。
-   - `members[]`：objId/player/hero/lane/camp/arrivalLagSec/joinOrder/beginner/kills/deaths/assists/
-     hurt/taken/heal/hardCtrl/softCtrl/beginHP/endHP/ultimates。
-2. 汇总：fights 数、平均到位延迟、迟到率、先到方计数、`openingBuckets`（advStart −5..+5 分桶，n/wins/winRate/enough）、
-   `heat.cells`（x=advStart, y=killDiff，count/ownWins；击杀差 null 的团战不进热力图并计数 `skippedKillDiff`）、
-   团灭数（一方 5 人全灭；同秒歧义不推断，沿用 A5 口径）。
-3. `rows` 按「损失优先」排序：killDiff 升序、advStart 升序、start 升序；limit 默认 120。
-4. `selected`：game+fid 或 rows[0] 的详细成员条（含 `arrivalBars`：每人 `[startOffset, arrivalOffset]` 便于画到位图）。
-5. 无战斗/无参与者：`available=false` + `reason`；参战时间缺失时明确 `missingParticipants` 数量。
-6. 输出 `{"available","filters","summary","rows","selected","coverage","note"}`。
-
 ### 2.4 `decision_opening.py`（teammate: fight-analyst）
 
 ```python
@@ -259,30 +209,10 @@ resource_report(facts, *, lane=None, player=None, opponent=None, date_from=None,
    `towerBasis=battleStats.buildingDamage`；`damage`/`totalHurtCnt` 与英雄伤害分开保留，不混用。
 8. 无面板行/过滤后为 0：`available=false` + `reason`。
 
-### 2.6 `decision_briefing.py`（Lead 所有）
-
-```python
-briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None, limit=5) -> dict
-```
-
-调用 2.2–2.5 的报告，按以下规则挑 3–5 条（不足 3 条就少给，不硬凑）：
-
-| kind | 触发条件（示例） | severity |
-|---|---|---|
-| `comeback_leak` | ledGames≥3 且 comebacks≥2；标题含比率与最大回撤局 | high |
-| `loss_pattern` | 某类损失窗口 ≥3 且涉及 ≥2 局 | high/medium |
-| `slow_conversion` | 有 conversion 数据的局中 ≥50% 超过 120 秒 | medium |
-| `fight_arrival` | advStart≤−2 的团战胜率明显低于 advStart≥0（n 各自≥8） | high |
-| `resource_mismatch` | quadrantFlag 条目 ≥2 | medium |
-| `opening_habit` | 同一路线簇 ≥3 局（本批每对手 1 局时**不产生**，只写入 skipped） | low |
-| `training_gap` | 训练效果接口不可用/样本不足 | low（skipped 里说明） |
-
-每条 item：`{id,kind,severity,title,detail,n,confidence,caveat,analysis,evidence[],link}`；
-`evidence` 元素 `{game,label,t,kind,text}`，最多 4 条。
-规则：只陈述观察到的事实与比率；`n<10` 时 `confidence<=low` 且 `caveat` 必填；
-排序 severity(h/m/l) → n 降序；`link` 指向 `/decision?tab=...&game=...`。
-
 ### 2.7 as-built 返回结构补充（实现后以本节为准）
+
+> 2026-11-13 更新：以下 advantage / loss / fights / briefing 的 as-built 细节仅对应已删除接口，
+> 保留作历史记录；resource / opening 相关仍然有效。
 
 实现与前端联调后确认的细节，均不影响上面的字段语义：
 
@@ -318,12 +248,11 @@ briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None, lim
 | 方法 | 路径 | 参数 | 返回 |
 |---|---|---|---|
 | GET | `/api/decision/catalog` | — | 覆盖、层、分析清单、对局列表、对手列表 |
-| GET | `/api/decision/briefing` | from,to,opponent,result,limit | briefing |
-| GET | `/api/decision/loss` | game,opponent,from,to,result,limit | loss_report |
-| GET | `/api/decision/advantage` | opponent,from,to,result | advantage_report |
-| GET | `/api/decision/fights` | game,opponent,from,to,result,side,limit | fight_report |
 | GET | `/api/decision/opening` | opponent,lane,from,to,side | opening_report |
 | GET | `/api/decision/resource` | lane,player,opponent,from,to,result,side | resource_report |
+
+> 2026-11-13 起 `/api/decision/briefing`、`/api/decision/loss`、`/api/decision/advantage`、
+> `/api/decision/fights` 四行已删除（见顶部变更说明）；`opening` 行仅作历史记录。
 
 - 参数非法 → 400（日期格式 `YYYY-MM-DD`，from > to）。
 - 无数据 → 200 + `available=false` + `reason`，不 500。
@@ -331,6 +260,9 @@ briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None, lim
   （放在 V3 挂载之前；与现有路由不冲突）。
 
 ## 4. 前端（client 赛训台，teammate: client-ux）
+
+> **已作废（2026-11-13）**：本节描述的 `/decision` 一级导航、概览页问题卡与四工作区页面均已下线，
+> 实际落位见 [workbench.md](workbench.md) 的「分析落位」一节。保留本节只为追溯当时的实现约定。
 
 ### 4.1 路由与导航
 - `AppShell.tsx`：左侧一级导航新增 `{ to: '/decision', label: '决策台', icon: 'decision' }`，放在「概览」之后；
@@ -374,6 +306,9 @@ briefing(facts, *, opponent=None, date_from=None, date_to=None, result=None, lim
 - 小样本（n<10）数字旁显示 `样本不足` 标签；无数据不给 0 或空图，显示原因。
 
 ## 5. 测试与验收
+
+> 2026-11-13 更新：`test_decision_loss.py` / `test_decision_fights.py` 及 briefing 相关测试
+> 已随对应接口删除，以下清单仅作历史记录。
 
 - 后端每个模块一个 pytest 文件，使用 `tests/decision_fixtures.py` 合成数据（Lead 提供）：
   - `test_decision_loss.py`：窗口/分类/损失排序/优势回撤/翻盘率/样本不足。

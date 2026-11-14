@@ -5,8 +5,6 @@ import {
   useCampCompare,
   useCampCombos,
   useCampPartners,
-  useEquipImpact,
-  useEquipMatrix,
   useHeroDetail,
   useLaneMatchup,
   useMatches
@@ -27,7 +25,6 @@ import {
 } from '../lib/analysis/heroes'
 import { AnalysisSection, JumpNav } from '../components/analysis/AnalysisSection'
 import { BoardEmpty, MiniLine, PercentBar, StatGrid, TierBadge } from '../components/analysis/BoardBits'
-import { BarList } from '../components/charts/BarList'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import type { CampHeroRow } from '../lib/types'
 import { Block, BlockBoard } from '../blocks/BlockBoard'
@@ -36,9 +33,7 @@ const JUMP = [
   { id: 'hd-lanes', label: '各位置' },
   { id: 'hd-partners', label: '常用搭档' },
   { id: 'hd-trios', label: '三人组合' },
-  { id: 'hd-equips', label: '常见出装' },
   { id: 'hd-builds', label: '选手出装' },
-  { id: 'hd-impact', label: '出装表现' },
   { id: 'hd-players', label: '选手使用' },
   { id: 'hd-teams', label: '战队使用' },
   { id: 'hd-league', label: '均值对照' },
@@ -48,12 +43,6 @@ const JUMP = [
   { id: 'hd-matchup', label: '同位置对位' }
 ]
 
-const METRIC_LABELS: Record<string, string> = {
-  conversion: '伤害转化',
-  gpm: '分均经济',
-  takenPerDeath: '每死承伤'
-}
-
 export function HeroDetailPage() {
   const { baseUrl } = useConnection()
   const { hero = '' } = useParams()
@@ -62,8 +51,6 @@ export function HeroDetailPage() {
   const partnersQuery = useCampPartners(baseUrl, hero)
   const combosQuery = useCampCombos(baseUrl, 3)
   const matchupQuery = useLaneMatchup(baseUrl)
-  const matrixQuery = useEquipMatrix(baseUrl, hero)
-  const impactQuery = useEquipImpact(baseUrl, hero)
   const matchesQuery = useMatches(baseUrl)
   const [timeMode, setTimeMode] = useState<'week' | 'month' | 'year'>('month')
   const detail = detailQuery.data
@@ -94,8 +81,6 @@ export function HeroDetailPage() {
   const trios = (combosQuery.data?.trios?.own?.combos || [])
     .filter((combo) => combo.heroes.includes(hero))
     .slice(0, 6)
-  const equipItems = (matrixQuery.data?.payload.items || []).slice(0, 12)
-  const impactRows = (impactQuery.data?.payload.rows || []).slice(0, 8)
   const league = leagueRows(detail)
   const recentMatches = heroRecent(matchesQuery.data || [], hero)
   const buckets = timeBuckets(matchesQuery.data || [], hero, timeMode)
@@ -175,34 +160,6 @@ export function HeroDetailPage() {
                   ))}
                 </div>
               ) : <BoardEmpty title="还没有三人组合" />}
-            </AnalysisSection>
-          </div>
-        </Block>
-
-        <Block id="hd-equips-impact" title="出装与表现">
-          <div className="board-grid-2" id="hd-equips">
-            <AnalysisSection title="常见出装" note="终局六格携带率；看不出出装顺序。">
-              <BarList items={equipItems.map((item) => ({ label: item.label, value: item.pct, note: `${item.count} 次`, tone: 'accent' }))} digits={1} suffix="%" />
-              {matrixQuery.isError ? <p className="board-note">装备矩阵读取失败。</p> : null}
-            </AnalysisSection>
-
-            <AnalysisSection id="hd-impact" title="出装与表现" note="带 / 不带该装备的中位数差；样本未控制局势，只作对照读数。">
-              {impactRows.length ? (
-                <div className="impact-list">
-                  {impactRows.map((row) => (
-                    <div className="impact-row" key={row.label}>
-                      <b>{row.label}</b>
-                      <span>{row.withN} / {row.withoutN} 局</span>
-                      {Object.entries(row.deltas).slice(0, 3).map(([key, delta]) => (
-                        <span key={key} className={`tone-${(delta.delta || 0) >= 0 ? 'own' : 'foe'}`}>
-                          <small>{METRIC_LABELS[key] || key}</small>
-                          {delta.delta === null ? '—' : `${delta.delta > 0 ? '+' : ''}${number(delta.delta, 2)}`}
-                        </span>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              ) : <BoardEmpty title="没有可对照的装备样本">需要同一英雄带与不带该装备的局。</BoardEmpty>}
             </AnalysisSection>
           </div>
         </Block>

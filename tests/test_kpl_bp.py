@@ -359,8 +359,10 @@ def test_build_combos_counts_wins_year_and_teams():
     assert pair['wr'] == 33.3
     assert pair['year'] == 2026
     assert pair['size'] == 2
-    assert pair['teams'] == [{'team': '队A', 'n': 2, 'wins': 1},
-                             {'team': '队B', 'n': 1, 'wins': 0}]
+    # teams 按最近使用日期倒序（「最近 KPL 谁用了」排最前）
+    assert pair['teams'] == [{'team': '队B', 'n': 1, 'wins': 0, 'lastDate': '2026-04-01'},
+                             {'team': '队A', 'n': 2, 'wins': 1, 'lastDate': '2026-03-01'}]
+    assert pair['lastDate'] == '2026-04-01'   # 组合行的最近使用时间 = 最新一场比赛日期
     trio = next(row for row in combos['trios'] if set(row['heroes']) == {'关羽', '百里守约', '钟馗'})
     assert trio['n'] == 3 and trio['wins'] == 1 and trio['size'] == 3
 
@@ -410,12 +412,12 @@ def test_lineups_ignore_order_and_keep_single_occurrence():
     assert lineup['heroes'] == sorted(order_a)
     assert lineup['n'] == 2 and lineup['wins'] == 1 and lineup['wr'] == 50.0
     assert 'size' not in lineup
-    # teams 按 n 倒序；n 相同时按队名排序（确定性输出）
-    assert lineup['teams'] == [{'team': '广州TTG', 'n': 1, 'wins': 0},
-                               {'team': '成都AG超玩会', 'n': 1, 'wins': 1}]
+    # teams 按最近使用日期倒序；日期相同时按队名排序（确定性输出）
+    assert lineup['teams'] == [{'team': '成都AG超玩会', 'n': 1, 'wins': 1, 'lastDate': '2026-10-02'},
+                               {'team': '广州TTG', 'n': 1, 'wins': 0, 'lastDate': '2026-10-02'}]
     # 对手那套也各自成组（整阵容按 pick 方队伍分别统计）
     foe = next(row for row in combos['lineups'] if set(row['heroes']) == set(PICKS_2))
-    assert foe['n'] == 2 and foe['teams'] == [{'team': '队B', 'n': 2, 'wins': 1}]
+    assert foe['n'] == 2 and foe['teams'] == [{'team': '队B', 'n': 2, 'wins': 1, 'lastDate': '2026-10-02'}]
 
 
 def test_build_facts_top_level_fields():

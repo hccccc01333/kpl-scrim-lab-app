@@ -27,6 +27,7 @@ from PIL import Image, UnidentifiedImageError
 
 from analysis_api import create_analysis_router
 from workbench_api import create_workbench_router
+from briefing_api import create_briefing_router
 from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
@@ -120,6 +121,8 @@ V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR, OFFICIAL_DIR))
 app.include_router(create_workbench_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
                                           DATA_DIR, DB_PATH))
+app.include_router(create_briefing_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
+                                          DATA_DIR, DB_PATH, matches_dir=MATCHES_DIR))
 app.include_router(create_depth_router(ROOT, DB_PATH))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, BUILDS_DIR, ROOT))
@@ -4386,5 +4389,12 @@ _mount_v3()
 
 if __name__ == '__main__':
     import uvicorn
+    # 真实服务入口才开巅峰千强每日自动刷新；模块导入 / 测试客户端不会触发爬取。
+    os.environ.setdefault('PEAK_AUTO_CRAWL', '1')
+    if V3_MODULE is not None and hasattr(V3_MODULE, 'start_peak_auto'):
+        try:
+            V3_MODULE.start_peak_auto()
+        except Exception as exc:                   # noqa: BLE001
+            print(f'[peak] 自动刷新线程启动失败：{exc}')
     uvicorn.run(app, host=os.environ.get('TRAINING_HOST', '127.0.0.1'),
                 port=int(os.environ.get('TRAINING_PORT', '8766')))

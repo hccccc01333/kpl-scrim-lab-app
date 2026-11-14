@@ -109,7 +109,7 @@ def collect_routes(page, base):
     # 导航项与几个常有问题的固定入口兜底
     for extra in ('#overview', '#capture', '#channels', '#bp', '#lab', '#models',
                   '#clean', '#sources', '#compare/player', '#compare/hero',
-                  '#topics/hero_pool', '#topics/player_form', '#topics/tempo'):
+                  ):
         if extra not in routes:
             routes.append(extra)
     return routes

@@ -1,13 +1,10 @@
 /**
- * 上帝模式 · 第四批注册块（概览 / 决策台）
+ * 上帝模式 · 第四批注册块（概览）
  */
-import { Link } from 'react-router-dom'
 import { useConnection } from '../../lib/app-context'
 import { useOverview } from '../../lib/hooks'
-import { useBriefing, type DecisionBriefingItem } from '../../lib/decision'
 import { number, percent, signed } from '../../lib/format'
 import { AnalysisSection } from '../../components/analysis/AnalysisSection'
-import { BoardEmpty } from '../../components/analysis/BoardBits'
 import { ErrorState } from '../../components/ui'
 import type { RegisteredBlock } from '../registry'
 
@@ -35,34 +32,6 @@ function OverviewRecordBlock() {
   )
 }
 
-/** 今天先看：决策台自动挑出的问题清单。 */
-function BriefingBlock() {
-  const { baseUrl } = useConnection()
-  const query = useBriefing(baseUrl, { limit: 6 })
-  const items: DecisionBriefingItem[] = query.data?.items || []
-  return (
-    <AnalysisSection title="今天先看" note="块库 · 从完整回放里挑出的可行动问题；点进决策台看证据。">
-      {query.isLoading ? <Loading label="正在挑问题…" />
-        : query.isError ? <ErrorState error={query.error} onRetry={() => void query.refetch()} />
-          : items.length ? (
-            <div className="decision-overview-list">
-              {items.slice(0, 6).map((item) => (
-                <div className={`decision-overview-item tone-${['high', 'medium', 'low'].includes(String(item.severity)) ? String(item.severity) : 'low'}`} key={item.id}>
-                  <div className="decision-overview-item-head"><b>{item.title}</b>{item.caveat ? <small>待复核</small> : null}</div>
-                  <div className="decision-overview-item-foot">
-                    {(item.evidence || []).slice(0, 2).map((evidence, index) => (
-                      evidence.game ? <Link className="decision-chip" key={`${evidence.game}-${index}`} to={`/matches/${encodeURIComponent(evidence.game)}`}>{evidence.label || evidence.game}</Link> : null
-                    ))}
-                    <Link className="decision-overview-more" to="/decision">进入决策台 →</Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : <BoardEmpty title="暂时没有足够证据的问题" />}
-    </AnalysisSection>
-  )
-}
-
 export const HOME_BLOCKS: RegisteredBlock[] = [
   {
     id: 'overview.record',
@@ -73,15 +42,5 @@ export const HOME_BLOCKS: RegisteredBlock[] = [
     question: '当前样本总共多少局、胜率多少、场均金差多少？',
     filters: [],
     Component: OverviewRecordBlock
-  },
-  {
-    id: 'decision.briefing',
-    base: 'decision.briefing',
-    variant: '问题清单',
-    domain: 'team',
-    title: '今天先看',
-    question: '这批数据里最值得先复盘的问题是什么？',
-    filters: [],
-    Component: BriefingBlock
   }
 ]

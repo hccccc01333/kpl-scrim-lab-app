@@ -117,9 +117,9 @@ def route_stats():
     try:
         sys.path.insert(0, str(ROOT))
         import workbench_api  # noqa: WPS433
-        decision = len(workbench_api.ANALYSES) + 2  # 5 个分析 + catalog + briefing
+        decision = len(workbench_api.ANALYSES) + 1  # 2 个分析 + catalog
     except Exception:
-        decision = 7
+        decision = 3
     return {'routeDecorators': sum(by_file.values()),
             'byFile': dict(by_file.most_common()), 'decisionEndpoints': decision}
 
@@ -251,7 +251,7 @@ def markdown(stats):
         f"- 源码：{source_lines:,} 行（" +
         '、'.join(f'{lang} {n:,}' for lang, n in code['byLanguage'].items() if lang != 'Markdown') +
         f"）；文档 {docs_lines:,} 行", 
-        f"- 后端路由：{stats['routes']['routeDecorators']} 个 · 决策台 API {stats['routes']['decisionEndpoints']} 个",
+        f"- 后端路由：{stats['routes']['routeDecorators']} 个 · 赛训分析 API {stats['routes']['decisionEndpoints']} 个",
         f"- 测试：{tests['testFiles']} 个测试文件 / {tests['testFunctions']} 个测试函数",
     ]
     if coverage:

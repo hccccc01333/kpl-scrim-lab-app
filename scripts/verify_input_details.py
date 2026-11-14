@@ -93,7 +93,7 @@ try:
   check('失败提供反馈且按钮可重试',page.locator('#prepare-run').is_enabled())
   page.unroute('**/api/studio/clean/preview');page.locator('#prepare-run').click();page.wait_for_function("!document.querySelector('#prepare-run').disabled && !document.querySelector('#prepare-status').classList.contains('error')")
   check('清洗失败后可恢复',True)
-  for topic,group in [('hero_benchmark','对比'),('hero_pool','选手'),('hero_combos','BP'),('player_form','选手'),('player_pairs','选手'),('resource_efficiency','选手'),('tempo','战队'),('swing_windows','战队'),('session_summary','战队')]:
+  for topic,group in [('hero_benchmark','对比'),('hero_pool','选手'),('tempo','战队'),('swing_windows','战队'),('session_summary','战队')]:
    go('topics/'+topic);check('直达功能 '+topic,page.locator('.topic-card').count()==0 and page.locator('#navigation .nav-item.active').inner_text()==group)
   go('compare/player')
   source=page.get_by_label('纳入其他来源')

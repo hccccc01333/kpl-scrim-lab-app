@@ -1,0 +1,683 @@
+/* ============================================================
+   单局复盘页（#match/*）视觉收敛层 · 2026-11-14
+   ------------------------------------------------------------
+   为什么要单独一层：style.css 现在有 9600 行、十几轮历史叠加，
+   页面里同时存在 10 / 10.5 / 11 / 11.5 / 12.5px 五档碎字号、三种圆角、
+   三种「卡片套卡片」的盒模型。这一层只做三件事：
+
+     1. 对齐：所有数字列用等宽数字 + 右对齐，同构区块用同一套网格；
+     2. 节奏：字号只留 5 档、圆角 3 档、留白靠 gap 不靠 padding 叠 padding；
+     3. 去壳：复盘大屏里不再「卡片套卡片」，靠细分隔线分层。
+
+   只在 .md-page 下生效，不影响其他页面；加载顺序排在 style.css 之后。
+   写法上用近年的 CSS：自定义属性、color-mix()、:has()、text-wrap、
+   grid 的对齐能力、逻辑属性；不引入框架、不引入网络字体。
+   ============================================================ */
+
+.md-page {
+  /* 本页局部尺度：只在这里改，不外溢到全站 */
+  --mr-r: 14px;          /* 卡片圆角 */
+  --mr-r-sm: 10px;       /* 内部小块圆角 */
+  --mr-pad: 20px;        /* 卡片左右内边距（同时供旧的 --md-pad 使用） */
+  --mr-gap: 14px;        /* 卡片之间的竖向节奏 */
+  --mr-hair: color-mix(in oklab, var(--line) 76%, transparent);
+  --mr-fill: color-mix(in oklab, var(--surface) 52%, var(--paper));
+  --mr-shadow: 0 1px 2px rgb(15 30 40 / .04), 0 10px 26px -16px rgb(15 30 40 / .18);
+  --mr-ease: cubic-bezier(.2, .7, .3, 1);
+  --md-pad: var(--mr-pad);
+
+  /* 字体：拉丁走本地可变字重 Manrope，中文走系统字体（不引外链、不阻塞首屏） */
+  --font: Manrope, "Segoe UI Variable Text", system-ui, -apple-system, "PingFang SC",
+          "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+  font-family: var(--font);
+
+  gap: var(--mr-gap);
+  font-optical-sizing: auto;
+  font-variant-numeric: tabular-nums;   /* 数字等宽，换行/刷新不跳动 */
+}
+
+/* ── 文字：标题求平衡，正文求不出现孤字 ───────────────────────────── */
+.md-page h1, .md-page h2, .md-page h3 { text-wrap: balance; }
+.md-page p { text-wrap: pretty; }
+
+/* ── 面包屑：把「日期 · 模式 · 时长」排成一条可换行的元信息行 ───────── */
+.md-crumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 40px;
+  padding: 0 2px;
+}
+.md-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-left: -8px;
+  padding: 0 10px 0 8px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  transition: background var(--mr-ease), color var(--mr-ease);
+}
+.md-back:hover { background: var(--surface); color: var(--text); }
+.md-crumb-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0; font-size: 12.5px; color: var(--muted); }
+.md-crumb-meta i { font-style: normal; white-space: nowrap; }
+.md-crumb-meta i + i::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin: 0 10px;
+  border-radius: 50%;
+  background: var(--line);
+  vertical-align: middle;
+}
+.md-crumb-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.md-page .md-crumb .control { min-height: 34px; border-radius: 9px; }
+
+/* ── 页签：四段平分整行，不再是「左边挤一坨、右边空一片」 ───────────── */
+.md-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--mr-hair);
+  border-radius: var(--mr-r);
+  background: var(--mr-fill);
+  overflow: visible;
+}
+.md-tab {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: var(--mr-r-sm);
+  background: transparent;
+  color: var(--muted);
+  text-align: center;          /* 四段平分整行后，内容居中才不显得右边空 */
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--mr-ease), color var(--mr-ease), box-shadow var(--mr-ease);
+}
+.md-tab b { font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
+.md-tab small,
+.md-tab > span {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.md-tab:hover { background: color-mix(in oklab, var(--paper) 55%, transparent); color: var(--text); }
+.md-tab[aria-selected="true"] {
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: 0 1px 1px rgb(15 30 40 / .05), 0 6px 16px -10px rgb(15 30 40 / .35),
+              inset 0 0 0 1px var(--mr-hair);
+}
+.md-tab[aria-selected="true"] b { color: var(--accent); }
+.md-tab[aria-selected="true"] small { color: var(--muted); }
+
+/* ── 结论卡：标题 → 记分牌 → 口径 → 脉搏，四层降噪并居中收窄 ────────── */
+.md-hero {
+  gap: 14px;
+  padding: 22px 26px 18px;
+  border: 1px solid color-mix(in oklab, #17303f 88%, #5f8ba0);
+  border-radius: var(--mr-r);
+  box-shadow: 0 24px 48px -32px rgb(6 20 32 / .65);
+}
+.md-hero-head { align-items: center; }
+.md-hero-kicker { font-size: 10.5px; letter-spacing: .16em; }
+.md-hero-meta { color: #8fa8b7; font-size: 11.5px; letter-spacing: .02em; }
+.md-hero h1 {
+  max-width: 46ch;
+  gap: 6px;
+  font-size: clamp(18px, 1.5vw, 22px);
+  line-height: 1.35;
+  letter-spacing: -.01em;
+}
+.md-hero h1 span { color: #a9bec9; font-size: 13px; font-weight: 550; }
+
+/* 记分牌：整卡通栏一条横幅，两侧队名贴着比分，标题与口径用通栏细线分隔 */
+.md-line {
+  justify-self: stretch;
+  width: 100%;
+  max-width: none;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 14px 20px;
+  align-items: center;
+  padding: 16px 0;
+  border-block: 1px solid rgb(255 255 255 / .075);
+}
+.md-line-side { gap: 4px; }
+.md-line-side.own { justify-self: end; justify-items: end; margin-right: 10px; text-align: right; }
+.md-line-side.rival { justify-self: start; justify-items: start; margin-left: 10px; text-align: left; }
+.md-line-side > span { color: #8ba4b3; font-size: 11.5px; letter-spacing: .04em; }
+.md-line-side b { color: #eef5f8; font-size: 18px; font-weight: 700; letter-spacing: -.015em; }
+.md-line-mid { display: grid; justify-items: center; gap: 8px; }
+.md-line-mid strong {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-family: Manrope, var(--font);
+  font-size: clamp(34px, 3.2vw, 46px);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -.045em;
+  font-variant-numeric: tabular-nums;
+}
+.md-line-mid strong span { color: #5d7b8d; font-size: .42em; font-weight: 600; letter-spacing: 0; }
+.md-line-note { gap: 9px; }
+.md-line-note em { padding: 3px 10px; font-size: 10.5px; letter-spacing: .06em; }
+.md-line-note span { color: #8ea6b5; font-size: 11.5px; }
+.md-line-diff { color: #8ba4b3; font-size: 11.5px; }
+.md-line-diff b { color: #f2f8fa; font-size: 12.5px; }
+
+.md-hero > p {
+  padding-top: 2px;
+  border-top: 0;
+  color: #8299a8;
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+
+/* 脉搏：标题与说明分两行，六项图例不再被挤到右侧出界 */
+.md-hero-pulse { gap: 10px; padding-top: 14px; border-top: 1px solid rgb(255 255 255 / .075); }
+.md-hero-pulse-head { display: grid; gap: 4px; }
+.md-hero-pulse-head > span { font-size: 10.5px; letter-spacing: .14em; }
+.md-hero-pulse-head small { max-width: 88ch; color: #7d95a5; font-size: 10.5px; line-height: 1.6; text-align: left; }
+
+/* ── 总量带：一条四列数据尺，列间用细线，不再各自为政 ───────────────── */
+.md-totals-band {
+  gap: 12px;
+  padding: 16px var(--mr-pad) 18px;
+  border: 1px solid var(--mr-hair);
+  border-radius: var(--mr-r);
+  box-shadow: var(--mr-shadow);
+}
+.md-totals-head {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--mr-hair);
+}
+.md-totals-head > span { color: var(--text); font-size: 12.5px; font-weight: 700; letter-spacing: .01em; }
+.md-totals-head small { color: var(--quiet); font-size: 11px; line-height: 1.5; }
+.md-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; }
+.md-total { gap: 7px; padding: 0 20px; }
+.md-total:first-child { padding-left: 0; }
+.md-total + .md-total { border-left: 1px solid var(--mr-hair); }
+.md-total > span { color: var(--quiet); font-size: 11px; font-weight: 600; letter-spacing: .05em; }
+.md-total-pair {
+  gap: 5px;
+  font-family: Manrope, var(--font);
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+.md-total-pair i { font-size: 13px; color: var(--quiet); }
+.md-total-bar { height: 3px; background: color-mix(in oklab, var(--md-teal) 30%, var(--surface)); }
+
+/* ── 卡片与区头：一层阴影、一套内边距 ─────────────────────────────── */
+.md-page .section {
+  border: 1px solid var(--mr-hair);
+  border-radius: var(--mr-r);
+  box-shadow: var(--mr-shadow);
+}
+.md-page .section-heading {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px var(--mr-pad) 10px;
+}
+.md-page .section-heading > div { min-width: 0; }
+.md-page .section-heading h2 { font-size: 16px; font-weight: 700; letter-spacing: -.012em; }
+.md-page .section-heading p { max-width: 100ch; color: var(--quiet); font-size: 11px; line-height: 1.65; }
+
+/* ── 双方阵容：5 个选用槽按列对齐，禁用压暗、退成次要信息 ───────────── */
+.md-ov-lineup { gap: 10px; padding: 0 var(--mr-pad) 16px; }
+.md-ov-lineup .md-bp-row {
+  grid-template-columns: 104px minmax(0, 1.5fr) minmax(0, 1.2fr);
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--mr-hair);
+  border-left: 3px solid transparent;
+  border-radius: var(--mr-r-sm);
+}
+.md-ov-lineup .md-bp-row > b { font-size: 13px; font-weight: 700; letter-spacing: -.005em; }
+.md-ov-lineup .md-bp-picks,
+.md-ov-lineup .md-bp-bans {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.md-ov-lineup .md-bp-bans { grid-template-columns: repeat(var(--bp-slots, 5), minmax(0, 1fr)); }
+.md-ov-lineup .md-bp-picks > span,
+.md-ov-lineup .md-bp-bans > span {
+  min-width: 0;
+  border-radius: 8px;
+}
+.md-bp-picks .bp-hero-link,
+.md-bp-bans .bp-hero-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.md-bp-picks .bp-hero-link b,
+.md-bp-bans .bp-hero-link b {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.md-bp-row .portrait { width: 32px; height: 32px; border-radius: 8px; flex: none; }
+.md-bp-picks em { font-size: 11px; font-variant-numeric: tabular-nums; }
+/* 禁用是次要信息：只降不藏（名字还在，方便核对） */
+.md-ov-lineup .md-bp-bans { opacity: .68; transition: opacity var(--mr-ease); }
+.md-ov-lineup .md-bp-row:hover .md-bp-bans { opacity: .92; }
+.md-ov-lineup .md-bp-bans .bp-hero-link b { color: var(--muted); font-weight: 550; }
+.md-ov-lineup .md-bp-empty { min-width: 0; height: 32px; }
+
+/* ── BP 复盘：结论一句话 + 三块等宽指标；不再卡片套卡片 ─────────────── */
+.md-ov .section-heading { padding-bottom: 8px; }
+.md-ov-pad { display: grid; gap: 14px; padding: 0 var(--mr-pad) 16px; }
+.md-ov .md-bprev { margin: 0; padding: 0; border: 0; background: transparent; }
+.md-ov .md-bprev-head { justify-content: flex-start; min-height: 0; }
+.md-ov .md-bprev-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 10.5px;
+  letter-spacing: .04em;
+}
+.md-ov .md-bprev-badge::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .8;
+}
+.md-ov .md-bprev-lede {
+  margin: 9px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.7;
+  letter-spacing: .005em;
+}
+.md-ov .md-bprev-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+.md-ov .md-bprev-stat {
+  gap: 5px;
+  padding: 12px 14px;
+  border: 1px solid var(--mr-hair);
+  border-radius: var(--mr-r-sm);
+  background: var(--mr-fill);
+}
+.md-ov .md-bprev-stat:first-child,
+.md-ov .md-bprev-stat + .md-bprev-stat { border-left: 1px solid var(--mr-hair); }
+.md-ov .md-bprev-stat-label { font-size: 10.5px; letter-spacing: .08em; }
+.md-ov .md-bprev-stat-value { font-size: 19px; font-weight: 800; line-height: 1.15; }
+.md-ov .md-bprev-stat-value small { font-size: 11px; font-weight: 600; }
+.md-ov .md-bprev-stat-note { color: var(--quiet); font-size: 11px; line-height: 1.5; }
+.md-ov .md-bprev-thin {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--mr-r-sm);
+  background: var(--mr-fill);
+  color: var(--muted);
+  font-size: 11px;
+}
+.md-ov .md-bprev-thin::before { margin-top: 5px; }
+
+/* ── 赛事命中：从「独立卡片」降成 BP 复盘里的一段，用细线分隔 ───────── */
+.md-ov .md-kplhit {
+  margin: 0;
+  padding: 18px 0 0;
+  border: 0;
+  border-top: 1px solid var(--mr-hair);
+  border-radius: 0;
+  background: transparent;
+}
+.md-ov .md-kplhit-head > b { font-size: 13px; letter-spacing: -.005em; }
+.md-ov .md-kplhit-src { font-size: 10px; }
+.md-ov .md-kplhit-summary { margin-top: 8px; font-size: 14px; }
+.md-ov .md-kplhit-lineup {
+  margin-top: 10px;
+  border: 1px solid var(--mr-hair);
+  border-left: 3px solid var(--line);
+  border-radius: var(--mr-r-sm);
+  background: var(--mr-fill);
+}
+.md-ov .md-kplhit-lineup.is-seen { border-left-color: var(--accent); }
+.md-ov .md-kplhit-verdict { font-size: 15.5px; }
+.md-ov .md-kplhit-rates { gap: 0 24px; margin-top: 12px; }
+.md-ov .md-kplhit-rate {
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.md-ov .md-kplhit-bar { flex: 0 1 220px; height: 5px; background: color-mix(in oklab, var(--accent) 14%, var(--surface)); }
+.md-ov .md-kplhit-list { gap: 0; margin-top: 16px; }
+.md-ov .md-kplhit-list-head { padding-bottom: 6px; border-bottom: 1px solid var(--mr-hair); }
+.md-ov .md-kplhit-row {
+  gap: 12px;
+  padding: 10px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--mr-hair);
+  border-radius: 0;
+  background: transparent;
+}
+.md-ov .md-kplhit-row:last-child { border-bottom: 0; }
+.md-ov .md-kplhit-tag { border-radius: 6px; background: var(--surface); }
+.md-ov .md-kplhit-team { background: var(--mr-fill); }
+.md-ov .md-kplhit-foot { margin-top: 14px; padding-top: 10px; }
+
+/* ── 对位压制：五路五列，行内部件对齐（底部结论行拉到同一条基线）──────── */
+.md-ov .md-matchup { margin: 0; padding: 0; border: 0; background: transparent; }
+.md-mu-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.md-mu-card {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+  padding: 12px 13px 13px;
+  border: 1px solid var(--mr-hair);
+  border-top: 2px solid var(--line);
+  border-radius: var(--mr-r-sm);
+  background: var(--mr-fill);
+  transition: border-color var(--mr-ease), background var(--mr-ease);
+}
+.md-mu-card:hover { background: var(--paper); }
+.md-mu-card header { align-items: center; gap: 6px; }
+.md-mu-lane { color: var(--muted); font-size: 11.5px; font-weight: 700; letter-spacing: .04em; }
+.md-mu-card header em {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.md-mu-card.is-ahead header em { background: color-mix(in oklab, var(--accent) 14%, var(--paper)); }
+.md-mu-card.is-behind header em { background: color-mix(in oklab, var(--warn, #a54c46) 12%, var(--paper)); }
+.md-mu-who { align-items: center; gap: 8px; font-size: 12.5px; }
+.md-mu-face { gap: 5px; }
+.md-mu-face .portrait { width: 28px; height: 28px; border-radius: 7px; }
+.md-mu-face b { font-size: 12.5px; font-weight: 650; }
+.md-mu-who > i { color: var(--quiet); font-size: 10px; }
+.md-mu-hist { color: var(--quiet); font-size: 10.5px; line-height: 1.55; }
+.md-mu-hist b { color: var(--muted); font-weight: 700; }
+.md-mu-now {
+  align-self: end;
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--mr-hair);
+  color: var(--muted);
+  font-size: 11px;
+}
+.md-mu-now b { font-size: 12.5px; }
+
+/* ── 联动组合：我方一组、对手一组上下排，组头带基线，卡片三列对齐 ──────── */
+.md-ov-combos { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.md-ov-combos .md-bp-combo-side { display: grid; gap: 10px; align-content: start; }
+.md-bp-combo-side > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--mr-hair);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+.md-bp-combo-side > span::before {
+  content: '';
+  width: 3px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--md-gold);
+}
+.md-ov-combos .md-bp-combo-side.foe > span::before { background: var(--md-teal); }
+.md-combo-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.md-combo-card {
+  gap: 7px;
+  padding: 12px 13px;
+  border: 1px solid var(--mr-hair);
+  border-radius: var(--mr-r-sm);
+  background: var(--mr-fill);
+}
+/* 卡横过来用：左边两张脸，右边两行字，400px 宽的卡不再空半张 */
+.md-ov-combos .md-combo-card {
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 3px;
+  align-content: center;
+}
+.md-ov-combos .md-combo-heroes { grid-row: 1 / span 2; }
+.md-ov-combos .md-combo-card > p { grid-column: 2; }
+.md-combo-heroes { gap: 7px; }
+.md-combo-heroes .portrait { width: 26px; height: 26px; border-radius: 7px; }
+.md-combo-card > p { gap: 3px 10px; font-size: 11px; line-height: 1.55; }
+.md-combo-kpl { font-size: 10.5px; }
+.md-bp-combo-side > small,
+.md-combo-grid > small { padding: 10px 0; color: var(--quiet); font-size: 11.5px; }
+
+/* ── 阶段对比：一张表、行间细线；增长改成「数字 + 底部细条」不再画灰药丸 ── */
+.md-pane-row { gap: var(--mr-gap); }
+.md-pane-row > .section:only-child { grid-column: 1 / -1; }   /* 只有一张卡时不再留半屏空栏 */
+.md-phase-table { gap: 0; padding: 0 var(--mr-pad) 16px; }
+.md-phase-head,
+.md-phase-line {
+  grid-template-columns: 132px minmax(0, 1fr) minmax(0, 1fr) 88px 82px 82px 76px;
+  gap: 14px;
+}
+.md-phase-head {
+  margin-bottom: 2px;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--mr-hair);
+  color: var(--quiet);
+  font-size: 10.5px;
+  letter-spacing: .04em;
+}
+/* 表头与数值同一条右基准线：数字列表头一律右对齐 */
+.md-phase-head span:not(:first-child) { text-align: right; }
+.md-phase-line {
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--mr-hair);
+  border-radius: 0;
+  background: transparent;
+  transition: background var(--mr-ease);
+}
+.md-phase-line:last-child { border-bottom: 0; }
+.md-phase-line:hover { background: color-mix(in oklab, var(--surface) 46%, transparent); }
+.md-phase-tag { font-size: 12.5px; font-weight: 700; }
+.md-phase-tag small { color: var(--quiet); font-size: 10.5px; }
+.md-phase-gain {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 2px 0 8px;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+.md-phase-gain::before {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--surface) 84%, var(--line));
+}
+.md-phase-gain i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: calc(var(--v, 0) * 100%);
+  height: 3px;
+  border-radius: 999px;
+}
+.md-phase-gain.own i { background: color-mix(in oklab, var(--md-gold) 82%, var(--text)); }
+.md-phase-gain.foe i { background: color-mix(in oklab, var(--md-teal) 86%, var(--text)); }
+.md-phase-gain b { font-family: Manrope, var(--font); font-size: 13.5px; font-weight: 700; line-height: 1.2; }
+.md-phase-gain.is-empty::before { opacity: 0; }   /* 没采样就不画空轨道，避免整表像骨架屏 */
+.md-phase-net { font-size: 13px; }
+.md-phase-duo,
+.md-phase-inv { font-size: 12.5px; }
+
+/* ── 关键节点：数值列右对齐、行悬停，和阶段表同一套语言 ──────────────── */
+.md-node-head {
+  min-height: 32px;
+  border-radius: 8px;
+  background: var(--mr-fill);
+  color: var(--quiet);
+  font-size: 10.5px;
+  letter-spacing: .04em;
+}
+.md-node-row { min-height: 42px; transition: background var(--mr-ease); }
+.md-node-row:hover { background: color-mix(in oklab, var(--surface) 44%, transparent); }
+.md-node-num { font-variant-numeric: tabular-nums; }
+
+/* ── 10 分钟经济：手填行改成「标签 → 英雄 → 输入框」紧凑表单，输入框不再飘到最右 ── */
+.md-g10-grid { gap: 10px 28px; padding: 0 var(--mr-pad); }
+.md-g10-row {
+  grid-template-columns: 56px minmax(0, 128px) 132px 44px;
+  justify-content: start;
+  gap: 10px;
+  padding: 6px 10px;
+  border-color: var(--mr-hair);
+  border-radius: var(--mr-r-sm);
+  background: var(--mr-fill);
+}
+.md-g10-hero { font-size: 12px; }
+.md-g10-row input { height: 30px; border-color: var(--mr-hair); border-radius: 7px; }
+.md-g10-note { margin-top: 12px; }
+
+/* ── 页脚口径 ─────────────────────────────────────────────────────── */
+.md-source { padding-top: 2px; color: var(--quiet); font-size: 10.5px; }
+
+/* ── 窄屏：先保对齐，再让步信息 ─────────────────────────────────────── */
+@media (max-width: 1240px) {
+  .md-mu-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .md-ov-combos .md-combo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 1080px) {
+  .md-pane-row { grid-template-columns: 1fr; }
+  .md-ov-lineup .md-bp-row { grid-template-columns: 96px minmax(0, 1fr); }
+  .md-ov-lineup .md-bp-bans { grid-column: 2; }
+}
+
+@media (max-width: 900px) {
+  .md-hero { padding: 20px 18px 16px; }
+  .md-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md-crumb-actions { margin-left: 0; }
+  .md-line { gap: 12px 16px; padding: 14px 0; }
+  .md-line-mid strong { font-size: 34px; }
+  .md-line-side b { font-size: 15px; }
+  .md-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 16px; }
+  .md-total { padding: 0 16px; }
+  .md-total:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .md-ov .md-bprev-stats { grid-template-columns: 1fr; gap: 8px; }
+  .md-ov .md-bprev-stat:first-child,
+  .md-ov .md-bprev-stat + .md-bprev-stat { border-left: 1px solid var(--mr-hair); }
+  .md-mu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md-ov-combos .md-combo-grid { grid-template-columns: 1fr; }
+  .md-phase-head { display: none; }
+  .md-phase-line { grid-template-columns: 92px minmax(0, 1fr) minmax(0, 1fr); gap: 10px 12px; }
+  .md-phase-line > [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 3px;
+    color: var(--quiet);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .04em;
+  }
+  .md-phase-net,
+  .md-phase-duo,
+  .md-phase-inv { text-align: left; }
+}
+
+@media (max-width: 620px) {
+  .md-page { --mr-pad: 15px; --mr-gap: 12px; }
+
+  /* 记分牌：窄屏两侧只留队名，坐标标签可能贴边换行，强制一行 */
+  .md-line-side > span { font-size: 10.5px; letter-spacing: 0; white-space: nowrap; }
+  .md-line-side b {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 13.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .md-line-mid strong { font-size: 28px; }
+  .md-line-side.own { margin-right: 4px; }
+  .md-line-side.rival { margin-left: 4px; }
+
+  /* 总量：四列数字在手机上放不下，改成「标签 + 数值」的行，条拉满整行 */
+  .md-totals { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .md-total {
+    grid-template-columns: 82px minmax(0, 1fr);
+    align-items: baseline;
+    padding: 9px 0;
+    border-top: 1px solid var(--mr-hair);
+    border-left: 0;
+  }
+  .md-total:first-child { border-top: 0; padding-top: 0; }
+  .md-total:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .md-total-pair { justify-content: flex-end; font-size: 17px; }
+  .md-total-bar { grid-column: 1 / -1; }
+
+  /* 阵容：窄屏把队名单独一行，5 个选用 / 禁用各占一行，像 BP 板一样一眼扫完 */
+  .md-ov-lineup .md-bp-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px 13px; }
+  .md-ov-lineup .md-bp-bans { grid-column: auto; }
+  .md-ov-lineup .md-bp-picks,
+  .md-ov-lineup .md-bp-bans { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 4px; }
+  .md-ov-lineup .bp-hero-link { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .md-ov-lineup .md-bp-row .portrait { width: 28px; height: 28px; }
+  .md-ov-lineup .md-bp-picks .bp-hero-link b,
+  .md-ov-lineup .md-bp-bans .bp-hero-link b { max-width: 100%; font-size: 10px; }
+
+  /* 组合卡：窄屏回到上下排，右边那一列没有宽度了 */
+  .md-ov-combos .md-combo-card { grid-template-columns: minmax(0, 1fr); row-gap: 5px; }
+  .md-ov-combos .md-combo-heroes { grid-row: auto; }
+  .md-ov-combos .md-combo-card > p { grid-column: auto; }
+  .md-combo-grid { grid-template-columns: 1fr; }
+
+  .md-mu-grid { grid-template-columns: 1fr; }
+  .md-totals-head small { font-size: 10.5px; }
+  .md-ov .md-bprev-stat-value { font-size: 18px; }
+}
+
+/* ── 深色主题：阴影退场，用描边和底色分层（深底上阴影看不出来）────────── */
+:root[data-theme="dark"] .md-page { --mr-shadow: none; }
+:root[data-theme="dark"] .md-page .section { box-shadow: none; }
+:root[data-theme="dark"] .md-tab[aria-selected="true"] {
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+:root[data-theme="dark"] .md-hero {
+  border-color: color-mix(in oklab, #17303f 60%, #4b7186);
+  box-shadow: none;
+}

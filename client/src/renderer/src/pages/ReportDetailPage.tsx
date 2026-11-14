@@ -101,9 +101,9 @@ const FIELD_LABELS: Record<string, string> = {
 }
 
 const TOPIC_LABELS: Record<string, string> = {
-  session_summary: '训练组汇总', player_form: '选手状态', hero_pool: '选手英雄池', hero_combos: '阵容组合',
-  player_pairs: '双人搭档', tempo: '前期与优势转化', swing_windows: '经济转折窗口',
-  hero_benchmark: '选手 × 英雄参照', resource_efficiency: '资源与产出'
+  session_summary: '训练组汇总', hero_pool: '选手英雄池', hero_combos: '阵容组合',
+  tempo: '前期与优势转化', swing_windows: '经济转折窗口',
+  hero_benchmark: '选手 × 英雄参照'
 }
 
 function topicLabel(topic?: string | null): string {

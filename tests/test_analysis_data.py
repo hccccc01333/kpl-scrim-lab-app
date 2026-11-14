@@ -6,7 +6,7 @@ from contextlib import closing
 from pathlib import Path
 
 from analysis_api import create_analysis_router
-from analysis_data import AnalysisRepository
+from analysis_data import AnalysisRepository, hero_lineup
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -583,6 +583,41 @@ class WinnerTruthTests(unittest.TestCase):
             match = [item for item in repo.get()['matches'] if item['key'] == 'G-bundle'][0]
             self.assertEqual(match['ownCamp'], 'blue')
             self.assertEqual(match['winnerCamp'], 'blue')
+
+
+class HeroLineupTests(unittest.TestCase):
+    """对局列表的十人阵容：同一行左右两组必须按同分路配对。"""
+
+    def test_pairs_same_lane_across_both_sides(self):
+        match = {'players': [
+            {'camp': 'blue', 'hero': '关羽', 'position': '对抗路'},
+            {'camp': 'blue', 'hero': '孙悟空', 'position': '打野'},
+            {'camp': 'blue', 'hero': '妲己', 'position': '中路'},
+            {'camp': 'blue', 'hero': '百里守约', 'position': '发育路'},
+            {'camp': 'blue', 'hero': '钟馗', 'position': '游走'},
+            {'camp': 'red', 'hero': '公孙离', 'position': '发育路'},
+            {'camp': 'red', 'hero': '张良', 'position': '游走'},
+            {'camp': 'red', 'hero': '貂蝉', 'position': '中路'},
+            {'camp': 'red', 'hero': '吕布', 'position': '对抗路'},
+            {'camp': 'red', 'hero': '兰陵王', 'position': '打野'},
+        ]}
+        pairs = hero_lineup(match, 'blue')
+        self.assertEqual([p['lane'] for p in pairs], ['对抗路', '打野', '中路', '发育路', '游走'])
+        self.assertEqual([(p['own'], p['enemy']) for p in pairs],
+                         [('关羽', '吕布'), ('孙悟空', '兰陵王'), ('妲己', '貂蝉'),
+                          ('百里守约', '公孙离'), ('钟馗', '张良')])
+
+    def test_falls_back_to_slot_order_without_lanes(self):
+        match = {'players': [
+            {'camp': 'blue', 'hero': '关羽'}, {'camp': 'blue', 'hero': '孙悟空'},
+            {'camp': 'red', 'hero': '吕布'}, {'camp': 'red', 'hero': '兰陵王'},
+        ]}
+        pairs = hero_lineup(match, 'blue')
+        self.assertEqual([(p['own'], p['enemy']) for p in pairs],
+                         [('关羽', '吕布'), ('孙悟空', '兰陵王')])
+
+    def test_empty_without_any_side(self):
+        self.assertEqual(hero_lineup({'players': []}, None), [])
 
 
 if __name__ == '__main__':

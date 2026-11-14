@@ -295,11 +295,14 @@ export function createMatchDeep(h) {
   /* ── 阶段对比：经济差 / 阶段变化 / 资源 / 建筑 / 入侵 ─────────────── */
   function phaseTable(rows) {
     if (!rows.length) return '';
+    /* 增长条只在有采样时画：缺数据时画一条空轨道，整张表看起来像骨架屏（2026-11-14）。 */
+    const gain = (side, value, pct) => `<span class="md-phase-gain ${side}${num(value) ? '' : ' is-empty'}"
+      data-label="${side === 'own' ? '本队增长' : '对手增长'}"><b>${diff(value)}</b>${num(value) ? `<i style="--v:${pct}"></i>` : ''}</span>`;
     const head = `<div class="md-phase-head"><span>阶段</span><span>本队增长</span><span>对手增长</span><span>净差</span><span>资源</span><span>建筑</span><span>入侵</span></div>`;
     const body = rows.map((r) => `<div class="md-phase-line">
       <span class="md-phase-tag">${esc(r.label)}<small>${esc(r.range)}</small></span>
-      <span class="md-phase-gain own" data-label="本队增长"><b>${diff(r.ownGain)}</b><i style="--v:${r.ownPct}"></i></span>
-      <span class="md-phase-gain foe" data-label="对手增长"><b>${diff(r.foeGain)}</b><i style="--v:${r.foePct}"></i></span>
+      ${gain('own', r.ownGain, r.ownPct)}
+      ${gain('foe', r.foeGain, r.foePct)}
       <span class="md-phase-net ${r.net >= 0 ? 'own' : 'foe'}" data-label="差距变化">${diff(r.net)}</span>
       <span class="md-phase-duo" data-label="资源 本队:对手"><b>${fmt(r.res.own)}</b><i>:</i><b class="foe">${fmt(r.res.foe)}</b></span>
       <span class="md-phase-duo" data-label="建筑 本队:对手"><b>${fmt(r.struct.own)}</b><i>:</i><b class="foe">${fmt(r.struct.foe)}</b></span>
@@ -453,10 +456,12 @@ export function createMatchDeep(h) {
      切C = 击杀对方中路/发育路（回放 killInfo，见上）。 */
   function metricPool(inv, duration, killStats, survival, roam, join) {
     const entry = (p) => (p ? inv.get(`${p.camp}-${p.slot}`) : null);
-    const cutOf = (p) => (killStats ? killStats.get(`${p.camp}-${p.hero}`) : null);
-    const surviveOf = (p) => (survival ? survival.get(`${p.camp}-${p.hero}`) : null);
-    const roamOf = (p) => (roam ? roam.get(`${p.camp}-${p.hero}`) : null);
-    const joinOf = (p) => (join ? join.get(`${p.camp}-${p.slot}`) : null);
+    /* 分路名单可能缺人 / 重复（营地 position 字段偶发异常），
+       duelView 会给缺员分路传 undefined；这里统一判空，避免整局页被一个空选手打断。 */
+    const cutOf = (p) => (p && killStats ? killStats.get(`${p.camp}-${p.hero}`) : null);
+    const surviveOf = (p) => (p && survival ? survival.get(`${p.camp}-${p.hero}`) : null);
+    const roamOf = (p) => (p && roam ? roam.get(`${p.camp}-${p.hero}`) : null);
+    const joinOf = (p) => (p && join ? join.get(`${p.camp}-${p.slot}`) : null);
     return {
       gpm: { label: '分均经济', text: (v) => fmt(Math.round(v)), grade: true,
         get: (p) => gpmOf(p, duration) },
@@ -2105,104 +2110,6 @@ export function createMatchDeep(h) {
     }
   }
 
-  /* ── 阵线：五人平均推进进度随时间（0＝己方基地，1＝对方基地） ───── */  function frontline(positions, players, ownCamp, duration) {
-    if (!positions || !positions.players?.length) return '';
-    const step = positions.step || 2;
-    const foeCamp = ownCamp === 'blue' ? 'red' : 'blue';
-    const prep = positions.players.map((src) => {
-      const mask = activeMask(src.points, step);
-      const forward = src.camp === 'blue' ? 1 : -1;
-      const advance = new Float32Array(src.points.length).fill(-1);
-      for (let i = 0; i < src.points.length; i++) {
-        if (!mask[i]) continue;
-        const [x, y] = src.points[i];
-        const p = progress(x, y);
-        advance[i] = forward > 0 ? p : 1 - p;
-      }
-      return { camp: src.camp, advance };
-    });
-    const len = Math.min(...prep.map((p) => p.advance.length));
-    if (len < 2) return '';
-    const total = Math.min(duration || Infinity, (len - 1) * step);
-    const SAMPLE = 10;
-    const rows = [];
-    for (let t = 0; t <= total; t += SAMPLE) {
-      const i = Math.min(len - 1, Math.round(t / step));
-      const mean = (camp) => {
-        const vals = prep.filter((p) => p.camp === camp).map((p) => p.advance[i]).filter((v) => v >= 0);
-        return vals.length >= 3 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-      };
-      rows.push({ t, own: mean(ownCamp), foe: mean(foeCamp) });
-    }
-    if (rows.length < 2) return '';
-
-    /* 3 点滑动平均：五人平均本身的抖动不该被画成锯齿 */
-    const smooth = (key) => rows.map((row, i) => {
-      const win = [rows[i - 1], row, rows[i + 1]].filter((r) => r && num(r[key]));
-      return win.length ? win.reduce((s, r) => s + r[key], 0) / win.length : null;
-    });
-    const ownLine = smooth('own');
-    const foeLine = smooth('foe');
-
-    const W = 1000, H = 300, L = 48, R = 22, TOP = 28, BOT = H - 34;
-    const span = Math.max(1, total);
-    const x = (t) => L + (t / span) * (W - L - R);
-    const y = (v) => TOP + (1 - v) * (BOT - TOP);
-    const path = (vals) => {
-      let d = '', open = false;
-      vals.forEach((v, i) => {
-        if (!num(v)) { open = false; return; }
-        d += `${open ? 'L' : 'M'}${x(rows[i].t).toFixed(1)},${y(v).toFixed(1)}`;
-        open = true;
-      });
-      return d;
-    };
-    const ownPath = path(ownLine);
-    const lastOwn = ownLine.reduce((acc, v, i) => (num(v) ? i : acc), -1);
-    const firstOwn = ownLine.findIndex((v) => num(v));
-    const area = ownPath && lastOwn > firstOwn
-      ? `${ownPath}L${x(rows[lastOwn].t).toFixed(1)},${BOT}L${x(rows[firstOwn].t).toFixed(1)},${BOT}Z`
-      : '';
-    const own = rows.filter((r) => num(r.own));
-    const avg = own.length ? own.reduce((s, r) => s + r.own, 0) / own.length : null;
-    const ahead = own.length ? own.filter((r) => r.own > 0.5).length / own.length * 100 : null;
-
-    const phases = phaseWindows(total).map((w, k) => {
-      const a = x(w.start), b = x(w.end);
-      if (b <= a) return '';
-      return `<rect class="fr-band${k % 2 ? ' alt' : ''}" x="${a.toFixed(1)}" y="${TOP}" width="${Math.max(0, b - a).toFixed(1)}" height="${BOT - TOP}"/>
-        <text class="fr-band-label" x="${((a + b) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle">${w.label}</text>`;
-    }).join('');
-    const grid = [0, 0.25, 0.5, 0.75, 1].map((v) => `<line class="fr-grid${v === 0.5 ? ' mid' : ''}" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>
-      <text class="fr-axis" x="${L - 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${Math.round(v * 100)}%</text>`).join('');
-    const ticks = [];
-    for (let t = 0; t <= total; t += 120) ticks.push(`<text class="fr-axis" x="${x(t).toFixed(1)}" y="${H - 12}" text-anchor="middle">${time(t)}</text>`);
-
-    return `<div class="md-front">
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="双方阵线随时间变化">
-        <defs><linearGradient id="fr-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" style="stop-color:var(--md-gold);stop-opacity:.26"/>
-          <stop offset="1" style="stop-color:var(--md-gold);stop-opacity:0"/>
-        </linearGradient></defs>
-        ${phases}${grid}${ticks.join('')}
-        <path class="fr-area" d="${area}"/>
-        <path class="fr-line foe" d="${path(foeLine)}"/>
-        <path class="fr-line own" d="${ownPath}"/>
-      </svg>
-      <div class="md-front-foot">
-        <div class="md-front-legend">
-          <span class="own"><i></i>本队</span>
-          <span class="foe"><i></i>对手</span>
-        </div>
-        <div class="md-front-stats">
-          <span><small>本队平均阵线</small><b>${num(avg) ? Math.round(avg * 100) + '%' : '—'}</b></span>
-          <span><small>压过中线的时间</small><b>${num(ahead) ? Math.round(ahead) + '%' : '—'}</b></span>
-          <span><small>口径</small><b>五人平均推进 · 3 点平滑</b></span>
-        </div>
-      </div>
-    </div>`;
-  }
-
   /* ── 对位纵深：同一张表，深区（>66%）/ 半区（>50%，即入侵）双口径 ── */
   function duel(positions, players, ownCamp, duration) {
     if (!positions || !positions.players?.length) return '';
@@ -2349,5 +2256,5 @@ export function createMatchDeep(h) {
     svg.addEventListener('pointerleave', () => { cursor.setAttribute('hidden', ''); });
   }
 
-  return { totals, pulse, phaseTable, panel, heat, duel, jungleJoin, cohesion, battle, frontline, bindPulse, bindPanel, bindHeat, bindBattle };
+  return { totals, pulse, phaseTable, panel, heat, duel, jungleJoin, cohesion, battle, bindPulse, bindPanel, bindHeat, bindBattle };
 }

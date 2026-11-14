@@ -27,6 +27,8 @@ from collections import Counter
 import unicodedata
 from pathlib import Path
 
+import team_style
+
 # 重合几个人才提示"可能是同一支队"（整队 5 人，3 人以上才给建议）
 SUGGEST_OVERLAP = 3
 
@@ -107,6 +109,13 @@ def load_panels(camp_dir) -> list[dict]:
         # 胜负：head.gameResult 是「本人这一局是否获胜」，营地详情没有独立的 match 段
         result = head.get('gameResult')
         win = result if isinstance(result, bool) else None
+        enemy_win = (not win) if isinstance(win, bool) else None
+        own_roster = _roster(own_roles)
+        enemy_roster = _roster(enemy_roles)
+        # 队伍口径的终局合计（击杀/经济/推塔/控龙/胜负）在 blueTeam / redTeam 里；
+        # 缺这段时退回十人面板求和，控龙没有来源就留 None，不拿 0 冒充。
+        own_stats = _camp_team_stats(data.get(f'{own}Team')) or _roster_stats(own_roster, win)
+        enemy_stats = _camp_team_stats(data.get(f'{enemy}Team')) or _roster_stats(enemy_roster, enemy_win)
         panels.append({
             'seq': path.stem,
             'own': own,
@@ -115,8 +124,10 @@ def load_panels(camp_dir) -> list[dict]:
             'duration': battle.get('usedTime') or head.get('durationSec'),
             'map': clean_name(battle.get('mapName')),
             'win': win,
-            'own_roster': _roster(own_roles),
-            'enemy_roster': _roster(enemy_roles),
+            'own_roster': own_roster,
+            'enemy_roster': enemy_roster,
+            'own_stats': own_stats,
+            'enemy_stats': enemy_stats,
         })
     panels.sort(key=lambda item: (item['start'] or '', item['seq']))
     return panels
@@ -164,6 +175,47 @@ def _float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+# 营地 blueTeam / redTeam 的五个龙字段；口径见 team_style：控龙 = 五项之和
+DRAGON_KEYS = ('ldragon1', 'ldragon2', 'bdragon1', 'bdragon2', 'bdragon3')
+
+
+def _camp_team_stats(team) -> dict | None:
+    """blueTeam / redTeam → 队伍终局合计；字段缺失返回 None（不是 0）。"""
+    if not isinstance(team, dict) or not team:
+        return None
+    kills = _int(team.get('killCnt'))
+    deaths = _int(team.get('deadCnt'))
+    assists = _int(team.get('assistCnt'))
+    gold = _int(team.get('money'))
+    towers = _int(team.get('towerCnt'))
+    # 控龙必须 5 个字段齐全才相加：少一个就宁可空着，不让分母少一条龙。
+    dragons = None
+    if all(key in team and team.get(key) is not None for key in DRAGON_KEYS):
+        dragons = sum(_int(team.get(key)) or 0 for key in DRAGON_KEYS)
+    win = team.get('gameResult')
+    return {
+        'kills': kills, 'deaths': deaths, 'assists': assists, 'gold': gold,
+        'towers': towers, 'dragons': dragons,
+        'win': win if isinstance(win, bool) else None,
+    }
+
+
+def _roster_stats(roster, win) -> dict | None:
+    """没有 blueTeam / redTeam 时的兜底：用十人面板求和，控龙留 None。"""
+    if not roster:
+        return None
+
+    def total(key):
+        values = [player.get(key) for player in roster if player.get(key) is not None]
+        return sum(values) if values else None
+
+    return {
+        'kills': total('kills'), 'deaths': total('deaths'), 'assists': total('assists'),
+        'gold': total('gold'), 'towers': total('towers'), 'dragons': None,
+        'win': win if isinstance(win, bool) else None,
+    }
 
 
 # ---------------------------------------------------------------- 聚类
@@ -430,7 +482,11 @@ def reconcile_workspace(db_path, *, dry_run=False) -> dict:
 
 # ---------------------------------------------------------------- 对外组装
 def list_teams(camp_dir, db_path, own_name='') -> dict:
-    panels = load_panels(camp_dir)
+    """对手战队列表：既有字段保持不变，额外挂 `style`（§2.1）。"""
+    return _list_teams(load_panels(camp_dir), db_path, own_name)
+
+
+def _list_teams(panels, db_path, own_name='') -> dict:
     built = build(panels)
     overrides = load_overrides(db_path)
     workspace_index = load_workspace_teams(db_path)
@@ -523,10 +579,18 @@ def list_teams(camp_dir, db_path, own_name='') -> dict:
     for item in teams:
         picked = [panel_index[seq] for seq in item.get('seqs') or [] if seq in panel_index]
         item['roster'] = _team_roster(picked, 'enemy')
+    # 风格：与 team_deep 共用 team_style 的同一套算法（含同池 33/66 分位），
+    # 逐局双向进池，所以列表页与详情页的点位不会互相打架。
+    style_index = team_style.build_index(panels)
+    for item in teams:
+        records = [style_index['enemy'][seq] for seq in item.get('seqs') or []
+                   if seq in style_index['enemy']]
+        item['style'] = team_style.style(records, style_index)
     own = {'name': clean_name(own_name), 'matches': len(panels), 'wins': wins, 'losses': losses,
            'winRate': round(wins / (wins + losses) * 100, 1) if wins + losses else None,
            'metrics': own_metrics, 'percentiles': _percentiles(own_metrics, pool),
-           'roster': _team_roster(panels, 'own')}
+           'roster': _team_roster(panels, 'own'),
+           'style': team_style.style(style_index['own'], style_index)}
     return {
         'own': own,
         'teams': teams,
@@ -1317,3 +1381,310 @@ def team_training(camp_dir, db_path, schedules=None, matches_dir=None) -> dict:
     }
     return {'teams': out_teams, 'unassigned': unassigned, 'summary': summary,
             'warnings': data.get('warnings') or []}
+
+
+# ---------------------------------------------------------------- 战队详情（逐局）
+# 契约见 docs/team_page_v2.md §2.2：一屏给前端六段分析要的全部原料。
+# 只读营地面板 + 已有的 BP 解析，不补猜禁选顺序，也不给逐局加时间轴。
+def _hero_label(hero, lane) -> dict:
+    """英雄 + 实际分路 → 打法类型；表的语义见 hero_archetypes。"""
+    import hero_archetypes
+    return hero_archetypes.describe(hero, lane)
+
+
+def _deep_players(roster, minutes) -> list:
+    """十人面板 → 前端逐人卡；经济占比按「已记录的队友经济合计」算，缺谁不补 0。"""
+    known = [player for player in roster or [] if player.get('gold') is not None]
+    gold_total = sum(player['gold'] for player in known)
+    rows = []
+    for player in roster or []:
+        label = _hero_label(player.get('hero'), player.get('lane'))
+        gold = player.get('gold')
+        rows.append({
+            'id': player.get('id') or '',
+            'name': player.get('name') or '',
+            'lane': player.get('lane') or label.get('lane') or '',
+            'hero': player.get('hero') or '',
+            'archetype': label.get('archetype'),
+            'kills': player.get('kills'),
+            'deaths': player.get('deaths'),
+            'assists': player.get('assists'),
+            'gold': gold,
+            'heroDamage': player.get('heroDamage'),
+            'taken': player.get('taken'),
+            'control': player.get('control'),
+            'heal': player.get('heal'),
+            'participation': player.get('participation'),
+            'towers': player.get('towers'),
+            'goldShare': (round(gold / gold_total * 100, 1)
+                          if gold is not None and gold_total else None),
+            'minutes': minutes,
+        })
+    return rows
+
+
+def _deep_picks(roster, hero_meta) -> list:
+    """出场阵容：英雄 + 十人面板里的真实分路（不是营地 ban/pick 名单里的默认分路）。"""
+    rows, seen = [], set()
+    for player in roster or []:
+        hero = player.get('hero')
+        if not hero or hero in seen:
+            continue
+        seen.add(hero)
+        label = _hero_label(hero, player.get('lane'))
+        rows.append({
+            'name': hero,
+            'lane': label.get('lane') or player.get('lane') or '',
+            'archetype': label.get('archetype'),
+            'icon': (hero_meta.get(hero) or {}).get('icon'),
+        })
+    return rows
+
+
+def _deep_bans(entries) -> list:
+    rows, seen = [], set()
+    for entry in entries or []:
+        entry = entry or {}
+        name = entry.get('name')
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        label = _hero_label(name, entry.get('lane'))
+        rows.append({'name': name, 'lane': label.get('lane') or '',
+                     'archetype': label.get('archetype'), 'icon': entry.get('icon')})
+    return rows
+
+
+def _deep_stats(stats) -> dict:
+    stats = stats or {}
+    return {key: stats.get(key) for key in
+            ('kills', 'deaths', 'assists', 'gold', 'towers', 'dragons', 'win')}
+
+
+def _deep_game(camp_dir, panel, style_index) -> dict:
+    seq = str(panel.get('seq') or '')
+    try:
+        detail = json.loads((Path(camp_dir) / f'{seq}.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        detail = {}
+    try:
+        from bp_camp import parse_camp_bp
+        bp = parse_camp_bp(detail, seq) or {}
+    except (ImportError, ValueError):
+        bp = {}
+    own_side = bp.get('ownSide')
+    if own_side not in ('left', 'right'):
+        own_side = 'left' if panel.get('own') == 'blue' else 'right'
+    enemy_side = 'right' if own_side == 'left' else 'left'
+    hero_meta = bp.get('heroMeta') or {}
+    duration = panel.get('duration')
+    minutes = round(duration / 60, 1) if isinstance(duration, (int, float)) and duration else None
+    own_stats, enemy_stats = panel.get('own_stats'), panel.get('enemy_stats')
+    win = panel.get('win')
+    opponent_win = (enemy_stats or {}).get('win')
+    if opponent_win is None and isinstance(win, bool):
+        opponent_win = not win
+    start = panel.get('start') or ''
+    return {
+        'seq': seq, 'start': start, 'day': team_style.day_label(start),
+        'duration': duration, 'map': panel.get('map') or '',
+        'win': win, 'opponentWin': opponent_win, 'ownSide': panel.get('own'),
+        'sides': {
+            'own': {'players': _deep_players(panel.get('own_roster'), minutes),
+                    'picks': _deep_picks(panel.get('own_roster'), hero_meta),
+                    'bans': _deep_bans((bp.get('bans') or {}).get(own_side)),
+                    'stats': _deep_stats(own_stats)},
+            'enemy': {'players': _deep_players(panel.get('enemy_roster'), minutes),
+                      'picks': _deep_picks(panel.get('enemy_roster'), hero_meta),
+                      'bans': _deep_bans((bp.get('bans') or {}).get(enemy_side)),
+                      'stats': _deep_stats(enemy_stats)},
+        },
+        'style': team_style.game_style(style_index['enemy'].get(seq),
+                                       style_index['thresholds']),
+    }
+
+
+def _kpl_hit(kind, heroes, row, record) -> dict:
+    opp_games = record.get('oppGames') or 0
+    opp_wins = record.get('oppWins') or 0
+    return {
+        'kind': kind, 'heroes': list(heroes),
+        'n': row.get('n'), 'wins': row.get('wins'), 'wr': row.get('wr'),
+        'year': row.get('year'), 'teams': row.get('teams') or [],
+        # 交手口径：我们与该队交手时这组英雄出现的场数 / 该对手赢下的场数
+        'oppGames': opp_games, 'oppWins': opp_wins,
+        'oppWinRate': round(opp_wins / opp_games * 100, 1) if opp_games else None,
+    }
+
+
+def _kpl_section(games) -> dict:
+    """对手实际拿过的组合命中 KPL 组合表：双人 / 三人 / 整套阵容。"""
+    import bp_facts
+    from itertools import combinations
+    index = bp_facts.kpl_index()
+    pair_games, trio_games, lineup_games = {}, {}, {}
+    for game in games:
+        picks = ((game.get('sides') or {}).get('enemy') or {}).get('picks') or []
+        heroes = sorted({pick.get('name') for pick in picks if pick.get('name')})
+        enemy_win = game.get('opponentWin')
+        for size, bucket in ((2, pair_games), (3, trio_games)):
+            for group in combinations(heroes, size):
+                record = bucket.setdefault(group, {'oppGames': 0, 'oppWins': 0})
+                record['oppGames'] += 1
+                if enemy_win is True:
+                    record['oppWins'] += 1
+        if len(heroes) == 5:
+            record = lineup_games.setdefault(tuple(heroes), {'oppGames': 0, 'oppWins': 0})
+            record['oppGames'] += 1
+            if enemy_win is True:
+                record['oppWins'] += 1
+
+    hits = []
+    for kind, bucket, table in (('pair', pair_games, index['pairs']),
+                                ('trio', trio_games, index['trios'])):
+        for heroes, record in bucket.items():
+            row = table.get(heroes)
+            if not row:
+                continue
+            hits.append(_kpl_hit(kind, heroes, row, record))
+    hits.sort(key=lambda hit: (-hit['oppGames'], -(hit['n'] or 0), -len(hit['heroes'])))
+
+    lineup = None
+    best = None
+    for heroes, record in lineup_games.items():
+        row = index['lineups'].get(heroes)
+        if not row:
+            continue
+        score = (record['oppGames'], row.get('n') or 0)
+        if best is None or score > best[0]:
+            best = (score, row, record, heroes)
+    if best:
+        lineup = _kpl_hit('lineup', best[3], best[1], best[2])
+        lineup.pop('kind', None)
+    else:
+        lineup = {'heroes': [], 'n': None, 'wins': None, 'wr': None, 'year': None,
+                  'teams': [], 'oppGames': 0, 'oppWins': None, 'oppWinRate': None}
+
+    return {
+        'source': index.get('source') or 'KPL 官方赛事',
+        'games': index.get('games'),
+        'sinceYear': index.get('sinceYear'),
+        'updatedAt': index.get('updatedAt'),
+        'windowStart': index.get('windowStart'),
+        'windowEnd': index.get('windowEnd'),
+        'hits': hits,
+        'lineup': lineup,
+    }
+
+
+def _own_lane_players(panels) -> list:
+    """本队五路名册：按「选手 + 分路」聚合全部面板，每路取局数最多的人。
+
+    给「分路对位」用：name / lane / games 必有，另附 §2.4 需要的分均经济、
+    分均输出、分均承伤、参团率、场均推塔、分均控制/治疗与 raw 累计值。
+    """
+    records: dict[tuple, dict] = {}
+    heroes: dict[tuple, Counter] = {}
+    for panel in panels or []:
+        minutes = (panel.get('duration') or 0) / 60
+        for player in panel.get('own_roster') or []:
+            pid = str(player.get('id') or '')
+            if not pid:
+                continue
+            group = (pid, player.get('lane') or '')
+            record = records.get(group)
+            if record is None:
+                record = records[group] = _new_record({
+                    'id': pid, 'name': clean_name(player.get('name')),
+                    'lane': player.get('lane') or ''})
+                heroes[group] = Counter()
+            if not record['name'] and player.get('name'):
+                record['name'] = clean_name(player['name'])
+            _add(record, player, minutes, panel.get('win'))
+            if player.get('hero'):
+                heroes[group][clean_name(player['hero'])] += 1
+
+    totals_keys = ('seconds', 'gold', 'kills', 'deaths', 'assists', 'damage',
+                   'heroDamage', 'taken', 'control', 'heal', 'towers')
+    rows = []
+    for group, record in records.items():
+        item = _finish(record)
+        rows.append({
+            'id': item['id'], 'name': item['name'], 'lane': item['lane'],
+            'games': item['games'], 'winRate': item['winRate'],
+            'kills': item['kills'], 'deaths': item['deaths'], 'assists': item['assists'],
+            'kda': item['kda'], 'gpm': item['gpm'], 'dpm': item['dpm'], 'dtpm': item['dtpm'],
+            'participation': item['participation'],
+            'controlPerMin': item['controlPerMin'], 'healPerMin': item['healPerMin'],
+            'towerPerGame': round(item['towers'] / item['games'], 2) if item['games'] else None,
+            'heroes': [{'hero': hero, 'games': count}
+                       for hero, count in heroes[group].most_common(4)],
+            'totals': {name: record.get(name) for name in totals_keys},
+        })
+
+    # 每路只留出场最多的人：轮换/补位不会把同路两个人混进一张对位卡。
+    # 输出顺序用页面展示顺序（对抗路 / 打野 / 中路 / 发育路 / 游走）。
+    lane_order = {lane: index for index, lane in enumerate(
+        ('对抗路', '打野', '中路', '发育路', '游走'))}
+    best: dict[str, dict] = {}
+    for row in rows:
+        lane = row['lane'] or ''
+        current = best.get(lane)
+        if current is None or row['games'] > current['games'] or (
+                row['games'] == current['games']
+                and (row['name'] or '') < (current['name'] or '')):
+            best[lane] = row
+    return sorted(best.values(),
+                  key=lambda row: (lane_order.get(row['lane'], 99), -row['games'],
+                                   row['name'] or ''))
+
+
+def team_deep(camp_dir, db_path, team_id) -> dict | None:
+    """战队详情全量结构（§2.2）。
+
+    战队不存在（聚类里没有这个 id）返回 None，由路由转 404；
+    能读到战队但缺字段时照常返回结构，值一律 None，让前端显示「证据不足」。
+    """
+    camp_dir = Path(camp_dir)
+    panels = load_panels(camp_dir)
+    data = _list_teams(panels, db_path)
+    team = next((item for item in data.get('teams') or [] if item['id'] == team_id), None)
+    if team is None:
+        return None
+    style_index = team_style.build_index(panels)
+    panel_index = {str(panel.get('seq')): panel for panel in panels}
+    games = [_deep_game(camp_dir, panel_index[seq], style_index)
+             for seq in team.get('seqs') or [] if seq in panel_index]
+    games.sort(key=lambda game: game.get('start') or '', reverse=True)
+    import hero_archetypes
+    own = data.get('own') or {}
+    warnings = list(data.get('warnings') or [])
+    if not games:
+        warnings.append('没有读到该战队的营地终局面板。')
+    empty_style = team_style.style([], style_index)
+    return {
+        'team': {key: team.get(key) for key in (
+            'id', 'displayName', 'name', 'named', 'coach', 'matches', 'wins', 'losses',
+            'winRate', 'firstSeen', 'lastSeen', 'players', 'heroes', 'metrics',
+            'percentiles', 'style')},
+        'own': {'name': own.get('name') or '', 'matches': own.get('matches') or 0,
+                'wins': own.get('wins') or 0, 'losses': own.get('losses') or 0,
+                'winRate': own.get('winRate'),
+                'players': _own_lane_players(panels),
+                'metrics': own.get('metrics') or {},
+                'percentiles': own.get('percentiles') or {},
+                'style': own.get('style') or empty_style},
+        'games': games,
+        'style': team.get('style') or empty_style,
+        'taxonomy': hero_archetypes.taxonomy(),
+        'kpl': _kpl_section(games),
+        'meta': {
+            'source': '营地终局面板',
+            'days': 30,
+            'thresholds': {'sample': team_style.SAMPLE_MIN,
+                           'quadrantShare': team_style.QUADRANT_SHARE},
+            'warnings': warnings,
+            'limits': list(team_style.MISSING),
+        },
+    }
+

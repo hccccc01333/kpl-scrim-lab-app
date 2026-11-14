@@ -12,17 +12,20 @@
 ## 开发与验证
 
 - [设计系统](design_system.md)：布局、颜色、交互规范与数据展示要求。
-- [赛训决策台](workbench.md)：P0 五项分析（失利关键链 / 优势回撤 / 团战执行 / 资源分配 / 对手开局）、
-  赛训首页问题卡、`/api/decision/*` 与教练端四个工作区；实现契约见
-  [workbench_contract.md](workbench_contract.md)。
+- [赛训分析](workbench.md)：P0 剩余分析（资源分配 / BP 等）的口径与落位（选手 / BP 模块的
+  分析入口）、`/api/decision/*`；独立「决策台」已于 2026-11-13 下线，对局分析三页
+  （失利关键链 / 团战执行与到位 / 优势保持与回撤）已整页删除。实现契约见 [workbench_contract.md](workbench_contract.md)。
+- [赛训周期简报](period_brief.md)：默认首页（`#overview`）的信息组织：周期切换、一句战况、
+  本期最值得关注的 1–3 条变化、下一场约训、数据覆盖；含 `GET /api/briefing` 契约与口径、空态规则。
 - [分析平台](analysis_platform.md)：分析数据组织与扩展说明。
 - [赛事命中口径](kpl_hit_logic.md)：本局 BP 在 KPL 赛场「命不命中」怎么判、三层结论怎么读、
   它不是什么；数据更新方式见同文。抓取与落盘契约见 [kpl_bp_pipeline.md](kpl_bp_pipeline.md)。
 - `../v3/`：V3 页面、原生 JavaScript 模块与样式（`../web/` 仅保留采集规范资料与参考快照）；`../server.py`：本机 API；`../tests/`：后端测试；`../scripts/`：运行、评测和浏览器验收脚本。
 - `python scripts/audit_v3_regression.py http://127.0.0.1:8766`：V3 的 26 条路由逐条渲染、JS 异常和空页检查。
 - `python scripts/verify_frontend.py --no-shots`：从导航动态抓路由，跑桌面/手机视口、横向溢出和失败请求。
-- `node scripts/shot_client_decision.mjs`：启动 Electron 客户端（需先 `cd client && npm run build`），
-  截取概览「今天先看这几件事」与决策台四个 tab，并检查控制台错误；`KPL_BASE` 指定工作台地址。
+- `node scripts/test_workspace_home.mjs`：首页（赛训看板）静态回归：路由、挂载点与样式约束。
+- `python scripts/verify_module_analyses.py`：已下线分析的删除回归：选手 / BP 十个分析的
+  入口、页面与接口零残留，其他模块入口仍在。
 - `node scripts/test_analysis_math.mjs`：缺失值、滚动窗口、并列分位、Wilson 区间及时间轴分段计算。
 - `python -m unittest tests.test_analysis_timeline tests.test_analysis_data tests.test_studio -v`：分析统计与时间轴口径回归。
 - `python scripts/verify_analysis_visuals.py`：当前本机样本的可视化交互验收；合成边界数据仅挂在测试浏览器，不写入项目数据。

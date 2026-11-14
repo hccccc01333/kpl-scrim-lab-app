@@ -34,7 +34,8 @@ export function eventSide(killerCamp, ownCamp) {
 
 export function laneRealisation(verdict, laneGoldDiff) {
   if (!Number.isFinite(laneGoldDiff)) return null;
-  if (verdict === '压制') return laneGoldDiff > 0;
+  // 压制＝公开仓口径；优势＝训练赛标签口径（教练 2026-11-13）。
+  if (verdict === '压制' || verdict === '优势') return laneGoldDiff > 0;
   if (verdict === '劣势') return laneGoldDiff < 0;
   return null;
 }

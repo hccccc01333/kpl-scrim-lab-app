@@ -9,6 +9,7 @@ import re
 import sqlite3
 import threading
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
 import official_economy
@@ -63,6 +64,87 @@ def lane_name(value):
     if text.endswith('.0'):
         text = text[:-2]
     return _LANE_BY_CODE.get(text, text)
+
+
+def _side_by_lane(players, camp):
+    """取一方五人，按分路顺序排；分路缺失的人排在后面，不丢人。"""
+    rows = [p for p in (players or [])
+            if camp and (p.get('camp') or p.get('side')) == camp and p.get('hero')]
+    by_lane = {}
+    for player in rows:
+        lane = player.get('position')
+        if lane and lane not in by_lane:
+            by_lane[lane] = player
+    ordered = [by_lane[lane] for lane in LANES if lane in by_lane]
+    return ordered + [p for p in rows if not any(p is x for x in ordered)]
+
+
+def hero_lineup(match, own_camp):
+    """本局双方五人按分路配对，供对局列表上下两行头像使用。
+
+    同一列是我方与对面的同分路，读出来就是五个对位；对局缺对面数据时
+    只返回我方五列，前端据此退回单排，不硬凑空格。
+    """
+    players = match.get('players') or []
+    enemy_camp = {'blue': 'red', 'red': 'blue'}.get(own_camp)
+    own = _side_by_lane(players, own_camp)
+    foe = _side_by_lane(players, enemy_camp)
+    if not own and not foe:
+        return []
+    foe_by_lane = {}
+    for player in foe:
+        lane = player.get('position')
+        if lane and lane not in foe_by_lane:
+            foe_by_lane[lane] = player
+    used = set()
+    pairs = []
+    for player in own:
+        lane = player.get('position') or ''
+        mate = foe_by_lane.get(lane) if lane else None
+        if mate is not None and id(mate) in used:
+            mate = None
+        if mate is None:
+            mate = next((x for x in foe if id(x) not in used), None)
+        if mate is not None:
+            used.add(id(mate))
+        pairs.append({'lane': lane or (mate or {}).get('position') or '',
+                      'own': player.get('hero') or '', 'enemy': (mate or {}).get('hero') or ''})
+    for player in foe:
+        if id(player) not in used:
+            pairs.append({'lane': player.get('position') or '',
+                          'own': '', 'enemy': player.get('hero') or ''})
+    return pairs
+
+
+def _bundle_date(match, path):
+    """数据包的日期：优先顶层 date.text；采集包常缺，退回营地 BP 自带的 startTime。
+
+    营地 startTime 形如「11-02 13:32」，只有月日；年份取包文件修改时间，
+    拼出来的日期若比文件时间晚半年以上（跨年入库），按上一年算。
+    """
+    raw = match.get('date')
+    text = clean(raw.get('text')) if isinstance(raw, dict) else clean(raw)
+    if text:
+        return text
+    start = clean((match.get('campBp') or {}).get('startTime'))
+    found = re.match(r'(\d{1,2})-(\d{1,2})', start)
+    if not found:
+        return None
+    try:
+        modified = datetime.fromtimestamp(path.stat().st_mtime)
+    except OSError:
+        modified = datetime.now()
+    month, day = int(found.group(1)), int(found.group(2))
+    try:
+        candidate = datetime(modified.year, month, day)
+    except ValueError:
+        return None
+    if (candidate - modified).days > 180:
+        try:
+            candidate = datetime(modified.year - 1, month, day)
+        except ValueError:
+            pass
+    return candidate.strftime('%Y-%m-%d')
 
 
 def _cjk(text):
@@ -438,7 +520,7 @@ class AnalysisRepository:
             if not isinstance(value, dict) or value.get('schema') != MATCH_SCHEMA:
                 continue
             match = value.get('match') or {}
-            date = match.get('date') or {}
+            date_text = _bundle_date(match, path)
             players = []
             raw_players = value.get('players', [])
             hero_counts = Counter(clean(player.get('hero')) for player in raw_players)
@@ -490,7 +572,9 @@ class AnalysisRepository:
                 'dbId': None, 'bundleKey': match.get('key') or path.stem,
                 'sources': ['bundle'], 'source': 'bundle',
                 'campBacked': camp_backed,
-                'date': date.get('text'), 'dateText': date.get('text'),
+                'date': date_text, 'dateText': date_text,
+                # 营地开局时间「11-02 13:32」：同日多局靠它排先后，列表局号才对得上。
+                'startTime': clean((match.get('campBp') or {}).get('startTime')),
                 # 数据包可能缺顶层 duration；官方回放 normalized 有同口径的
                 # durationSec（秒），缺失时兜底，否则按分钟聚合的指标分母塌缩
                 # （GPM/DPM 曾因此虚高数倍且无任何提示）。
@@ -859,6 +943,8 @@ class AnalysisRepository:
                 return False
             if filters.get('to') and row.get('dateKey') and row['dateKey'] > filters['to']:
                 return False
+            if (filters.get('from') or filters.get('to')) and not row.get('dateKey'):
+                return False
             if filters.get('player') and filters['player'] not in (row.get('playerKey'), row.get('playerId'), row.get('label')):
                 return False
             if filters.get('hero') and row.get('hero') != filters['hero']:
@@ -935,6 +1021,36 @@ class AnalysisRepository:
                                if match['players'] and all(_complete(player) and not player.get('partial')
                                                            for player in match['players']))
         partial_rows = sum(1 for row in rows if row.get('partial'))
+        ten_led = 0
+        ten_won = 0
+        for match in matches:
+            process = match.get('process') or {}
+            timeline = process.get('timeline') or []
+            own = match.get('ownCamp') or match.get('ownSide') or 'blue'
+            sign = 1 if own in ('blue', 'left') else -1
+            series = []
+            for point in timeline:
+                t = point.get('gameTime')
+                if not isinstance(t, (int, float)):
+                    continue
+                if isinstance(point.get('blueGold'), (int, float)) and isinstance(point.get('redGold'), (int, float)):
+                    value = (point['blueGold'] - point['redGold']) * sign
+                elif isinstance(point.get('goldDiff'), (int, float)):
+                    value = point['goldDiff'] * sign
+                else:
+                    continue
+                series.append((float(t), float(value)))
+            series.sort()
+            at10 = None
+            if series:
+                prior = [p for p in series if p[0] <= 600]
+                if prior and (match.get('duration') or 0) >= 600:
+                    at10 = prior[-1][1]
+            if at10 is not None and at10 > 0:
+                ten_led += 1
+                if match.get('result') == 'win':
+                    ten_won += 1
+        ten_min_lead = f'{ten_won}/{ten_led}' if ten_led else None
         unknown_opponent = sum(1 for match in matches if not match.get('opponent'))
         if partial_rows and not filters.get('includePartial'):
             filter_warnings.append(f'{partial_rows} 行是过程/部分数据，未计入队员/英雄/团队统计；'
@@ -945,6 +1061,7 @@ class AnalysisRepository:
             'season': (self.get().get('profile') or {}).get('season') or '',
             'matches': len(matches), 'decided': decided, 'wins': wins,
             'winRate': round(wins / decided * 100, 1) if decided else None,
+            'tenMinLead': ten_min_lead,
             'players': len(players), 'heroes': len(heroes),
             # 本队口径：首页和英雄页要的是「我们自己的」，不含对手。
             'ownPlayers': len({row['label'] for row in rows if row.get('isOwn') and row.get('label')}),
@@ -964,6 +1081,27 @@ class AnalysisRepository:
             'profile': self.get().get('profile') or {},
             'warnings': list(dict.fromkeys(self.get()['warnings'] + filter_warnings)),
         }
+        lanes = ('对抗路', '打野', '中路', '发育路', '游走')
+        lane_compare = []
+        for lane in lanes:
+            def agg(is_own):
+                subset = [row for row in rows if row.get('isOwn') == is_own and row.get('position') == lane and row.get('hero')]
+                if not subset:
+                    return None
+                player_counts = Counter(row.get('label') or row.get('playerKey') for row in subset)
+                player = player_counts.most_common(1)[0][0]
+                p_rows = [row for row in subset if (row.get('label') or row.get('playerKey')) == player]
+                hero_counts = Counter(row.get('hero') for row in p_rows)
+                hero = hero_counts.most_common(1)[0][0]
+                h_rows = [row for row in p_rows if row.get('hero') == hero]
+                games = len(h_rows)
+                wins = sum(1 for row in h_rows if row.get('result') == 'win')
+                return {
+                    'player': player, 'hero': hero, 'games': games,
+                    'wins': wins, 'winRate': round(wins / games * 100, 1) if games else None,
+                }
+            lane_compare.append({'lane': lane, 'own': agg(True), 'foe': agg(False)})
+        result['laneCompare'] = lane_compare
         if include_top:
             result['topPlayers'] = self.player_stats(filters)[:5]
             result['topHeroes'] = self.hero_stats(filters)[:5]
@@ -1290,7 +1428,7 @@ class AnalysisRepository:
             own, enemy = self._camp_totals(match, own_camp)
             result.append({
                 'key': match['key'], 'date': match.get('date'), 'dateText': match.get('dateText'),
-                'opponent': match.get('opponent'), 'session': match.get('session'),
+                'startTime': match.get('startTime'), 'opponent': match.get('opponent'), 'session': match.get('session'),
                 'version': match.get('version'), 'duration': match.get('duration'),
                 'mode': match.get('mode'), 'title': match.get('title'),
                 'sources': match.get('sources'), 'source': match.get('source'),
@@ -1308,6 +1446,7 @@ class AnalysisRepository:
                 'missing': self._match_gaps(match),
                 'heroes': [player.get('hero') for player in match.get('players', [])
                            if player.get('hero') and (player.get('camp') or player.get('side')) == own_camp][:5],
+                'lineup': hero_lineup(match, own_camp),
             })
         return {'matches': result, 'warnings': warnings}
 

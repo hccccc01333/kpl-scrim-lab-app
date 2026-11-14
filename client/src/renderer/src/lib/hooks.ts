@@ -8,8 +8,6 @@ import type {
   CoachBoard,
   CrossVectors,
   DepthAnalysis,
-  EquipImpactPayload,
-  EquipMatrixPayload,
   HeroDetailData,
   LaneMatchupPayload,
   CampSync,
@@ -263,28 +261,8 @@ export function useHeroDetail(baseUrl: string, hero: string) {
 export function useLaneMatchup(baseUrl: string) {
   return useQuery({
     queryKey: ['depth-lane-matchup', baseUrl],
-    queryFn: () => api<DepthAnalysis<LaneMatchupPayload>>(baseUrl, '/api/depth/analysis/lane_matchup', { timeout: 60_000 }),
+    queryFn: () => api<DepthAnalysis<LaneMatchupPayload>>(baseUrl, '/api/v3/facts/lane_matchup', { timeout: 60_000 }),
     enabled: Boolean(baseUrl),
-    ...common,
-    staleTime: 5 * 60_000
-  })
-}
-
-export function useEquipMatrix(baseUrl: string, hero: string) {
-  return useQuery({
-    queryKey: ['depth-equip-matrix', baseUrl, hero],
-    queryFn: () => api<DepthAnalysis<EquipMatrixPayload>>(baseUrl, `/api/depth/analysis/equip_matrix${queryString({ hero })}`, { timeout: 60_000 }),
-    enabled: Boolean(baseUrl && hero),
-    ...common,
-    staleTime: 5 * 60_000
-  })
-}
-
-export function useEquipImpact(baseUrl: string, hero: string) {
-  return useQuery({
-    queryKey: ['depth-equip-impact', baseUrl, hero],
-    queryFn: () => api<DepthAnalysis<EquipImpactPayload>>(baseUrl, `/api/depth/analysis/equip_impact${queryString({ hero })}`, { timeout: 60_000 }),
-    enabled: Boolean(baseUrl && hero),
     ...common,
     staleTime: 5 * 60_000
   })

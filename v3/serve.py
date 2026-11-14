@@ -13,6 +13,7 @@ import uuid
 from urllib.request import urlopen
 from urllib.error import URLError
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import date
 from pathlib import Path
@@ -38,9 +39,11 @@ from match_review import PanoramaRepository
 from paths import data_root
 from studio_api import create_studio_router
 from analysis_api import create_analysis_router
+from briefing_api import create_briefing_router
 from depth_api import create_depth_router
 import deep_analysis
 import identity_service
+import peak_crawl
 import vocab as vocab_store
 
 
@@ -112,6 +115,10 @@ _studio.routes = [route for route in _studio.routes if route.path in _STUDIO_ALL
 app.include_router(_studio)
 app.include_router(create_analysis_router(DB, MATCHES, IMPORTS, OFFICIAL))
 app.include_router(create_depth_router(DEMO_ROOT or ROOT, DB))
+# 首页简报在正式入口 server.py 上由 /api/briefing 提供。独立验收服务（8771，
+# 或临时占用 8766）也要挂同一张路由，否则首页拿到 404，只显示「简报服务暂时不可用」。
+app.include_router(create_briefing_router(
+    OFFICIAL, DATA_DIR / 'camp_details', DATA_DIR, DB, matches_dir=MATCHES))
 app.mount('/static', StaticFiles(directory=HERE / 'public'), name='frontend')
 app.mount('/catalog/icons', StaticFiles(directory=ROOT / 'resources' / 'icons', check_dir=False),
           name='icons')
@@ -145,7 +152,7 @@ def invalidate_snapshot():
     global _snapshot, _loaded_at
     with _lock:
         _snapshot, _loaded_at = None, float('-inf')
-    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY'):
+    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY', '_PANORAMA_CACHE', '_POSITIONS_FILE_CACHE'):
         cache = globals().get(name)
         if cache is not None:
             cache.clear()
@@ -176,25 +183,48 @@ def _dataset_stamp():
 
 
 _data_stamp = (0, 0.0)
+_refresh_lock = Lock()
+
+
+def _rebuild_snapshot():
+    """重建快照并提交。重建本身不持状态锁，撞上的请求拿旧快照先走。"""
+    global _snapshot, _loaded_at, _data_stamp
+    snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
+    data = snapshot.get()
+    apply_bp_overrides(data)
+    stamp = _dataset_stamp()
+    with _lock:
+        # 数据指纹进缓存 key：数据没变就命中旧向量，变了自然换 key。
+        # 只有指纹真的变了才清缓存（顺便回收旧指纹的条目），不会像
+        # 「每次快照刷新都清空」那样每 15 秒重算一遍全量向量。
+        if stamp != _data_stamp:
+            _CROSS_VECTOR_CACHE.clear()
+            _CROSS_VECTOR_BY_KEY.clear()
+            _PANORAMA_CACHE.clear()
+            _POSITIONS_FILE_CACHE.clear()
+            _data_stamp = stamp
+        _snapshot, _loaded_at = snapshot, monotonic()
 
 
 def repository(request: Request):
-    global _snapshot, _loaded_at, _data_stamp
-    with _lock:
-        if request.query_params.get('fresh') == '1' or monotonic() - _loaded_at >= 15:
-            snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
-            data = snapshot.get()
-            apply_bp_overrides(data)
-            _snapshot, _loaded_at = snapshot, monotonic()
-            # 数据指纹进缓存 key：数据没变就命中旧向量，变了自然换 key。
-            # 只有指纹真的变了才清缓存（顺便回收旧指纹的条目），不会像
-            # 「每次快照刷新都清空」那样每 15 秒重算一遍全量向量。
-            stamp = _dataset_stamp()
-            if stamp != _data_stamp:
-                _CROSS_VECTOR_CACHE.clear()
-                _CROSS_VECTOR_BY_KEY.clear()
-                _data_stamp = stamp
-        return _snapshot
+    global _snapshot, _loaded_at
+    fresh = request.query_params.get('fresh') == '1'
+    if fresh or _snapshot is None or monotonic() - _loaded_at >= 15:
+        # 快照重建约 1.8 秒：没在重建时才动手，其他请求直接用旧快照返回
+        # （快照本来就是 15 秒粒度，旧一点可接受），不再排队堵住整页。
+        got = _refresh_lock.acquire(blocking=False)
+        if not got and _snapshot is None:
+            # 快照不可用（刚被写接口 invalidate）：等正在进行的重建完成，
+            # 不能把 None 快照发出去。
+            with _refresh_lock:
+                pass
+            return _snapshot
+        if got:
+            try:
+                _rebuild_snapshot()
+            finally:
+                _refresh_lock.release()
+    return _snapshot
 
 
 def filters(request: Request):
@@ -240,6 +270,33 @@ def v3_index():
 _CROSS_LANES = ('对抗路', '打野', '中路', '发育路', '游走')
 _CROSS_VECTOR_CACHE = {}
 _CROSS_VECTOR_BY_KEY = {}
+# 全景回放按局缓存：数据指纹没变就直接复用，replay 接口与跨局向量都从这里取。
+# 存的是 replay 端点输出的九字段子集（约 40–57KB/局），不存整包 positions。
+_PANORAMA_CACHE = {}
+# positions.json / raw.json 的解析缓存：文件 mtime 变了才重读。
+_POSITIONS_FILE_CACHE = {}
+
+
+_REPLAY_FIELDS = ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage',
+                  'notes', 'buffEvents', 'narrations')
+
+
+def _panorama_cached(key):
+    """全景回放按局缓存：数据指纹没变就直接复用重建结果。
+
+    build_panorama 单次约 117ms（读 bundle、规范化事件、逐秒位置分析），
+    跨局页每局都要取一次，没缓存时 200 局就是 20 秒以上的重复计算。
+    缓存随 _data_stamp 一并失效（数据目录或库文件变化时重建）。
+    """
+    cached = _PANORAMA_CACHE.get(key)
+    if cached is not None and cached[0] == _data_stamp:
+        return cached[1]
+    result = panorama.get(key)
+    if result is not None:
+        if len(_PANORAMA_CACHE) > 600:
+            _PANORAMA_CACHE.clear()
+        _PANORAMA_CACHE[key] = (_data_stamp, result)
+    return result
 
 
 def _cross_interp(series, t):
@@ -320,7 +377,7 @@ def _cross_vector(repo, item, segments=8):
     fk = None
     fs = None
     try:
-        replay = panorama.get(d.get('bundleKey') or '') if d.get('bundleKey') else None
+        replay = _panorama_cached(d.get('bundleKey') or '') if d.get('bundleKey') else None
     except Exception:                                  # noqa: BLE001
         replay = None
     if replay:
@@ -499,7 +556,10 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
     hit = _CROSS_VECTOR_CACHE.get(cache_key)
     if hit is not None:
         return hit
-    vectors = [v for v in (_cross_vector(repo, item, segments) for item in items) if v]
+    # 各局互不依赖、纯读文件与内存计算：线程池并行构建，首次全量从
+    # 三四十秒压到几秒；命中缓存的请求不受影响。
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        vectors = [v for v in pool.map(lambda item: _cross_vector(repo, item, segments), items) if v]
     payload = {'total': len(items), 'vectors': vectors, 'unit': 'cohort-vectors-v1',
                'segments': segments, 'windowMin': 5}
     if len(_CROSS_VECTOR_CACHE) > 4:
@@ -511,9 +571,14 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
 @router.get('/api/overview')
 def overview(repo=Depends(repository), values=Depends(filters)):
     summary = repo.overview(values)
-    matches = sorted(repo.matches(values)['matches'], key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    matches = sorted(repo.matches(values)['matches'], key=lambda item: (bool(item.get('date')), item.get('date') or '', item.get('startTime') or ''), reverse=True)
     process = repo.process(values)
-    process['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    process['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or '', item.get('startTime') or ''), reverse=True)
+    # 十分钟领先兑现：process 已算好 leadAt10 / win
+    led = sum(1 for g in (process.get('matches') or []) if g.get('leadAt10'))
+    won = sum(1 for g in (process.get('matches') or []) if g.get('leadAt10') and g.get('win'))
+    if led:
+        summary['tenMinLead'] = f'{won}/{led}'
     return {
         'summary': {key: value for key, value in summary.items() if key != 'profile'},
         'team': repo.team_stats(values),
@@ -535,7 +600,7 @@ def matches(repo=Depends(repository), values=Depends(filters)):
                 item['version'] = versions[item['key']]
     except sqlite3.Error:
         pass
-    result['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    result['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or '', item.get('startTime') or ''), reverse=True)
     return result
 
 
@@ -563,16 +628,39 @@ def match(key: str, repo=Depends(repository)):
     return detail
 
 
+@router.get('/api/v3/peak/status')
+def peak_status():
+    """巅峰千强大盘爬取状态：进度、数据窗口、是否自动启用。"""
+    return peak_crawl.status()
+
+
+@router.post('/api/v3/peak/refresh')
+def peak_refresh():
+    """手动触发一轮巅峰千强刷新（后台线程执行，接口立即返回；同一时间只跑一轮）。"""
+    if IS_DEMO:
+        raise HTTPException(403, '演示数据包环境不联网爬取。')
+    if os.environ.get('PEAK_CRAWL') == '0':
+        raise HTTPException(403, '巅峰千强爬取已被 PEAK_CRAWL=0 关闭。')
+    snapshot = peak_crawl.status()
+    if snapshot.get('running'):
+        return {'ok': False, 'running': True, 'phase': snapshot.get('phase') or '',
+                'message': '已有一轮刷新在跑，请稍后。'}
+    Thread(target=peak_crawl.refresh, kwargs={'reason': 'api'}, daemon=True).start()
+    return {'ok': True, 'running': True, 'message': '刷新已开始，进度看 /api/v3/peak/status。'}
+
+
+def start_peak_auto() -> bool:
+    """由 server.py 的真实服务入口调用：启动每日自动刷新线程（导入 / 测试不触发）。"""
+    return peak_crawl.start_auto()
+
+
 @router.get('/api/replay/{key:path}')
 def replay(key: str, repo=Depends(repository)):
     detail = repo.match_detail(key)
-    result = panorama.get(detail['bundleKey']) if detail and detail.get('bundleKey') else None
+    result = _panorama_cached(detail['bundleKey']) if detail and detail.get('bundleKey') else None
     if result is None:
         raise HTTPException(404, '该局没有全景回放数据')
-    return {name: result[name] for name in
-            ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage', 'notes',
-             'buffEvents', 'narrations')
-            if name in result}
+    return {name: result[name] for name in _REPLAY_FIELDS if name in result}
 
 
 _SAFE_KEY_RE = re.compile(r'^[A-Za-z0-9_:.\-]+$')
@@ -584,6 +672,50 @@ def _safe_key(value):
     if not text or text in ('.', '..') or not _SAFE_KEY_RE.match(text):
         return ''
     return text
+
+
+def _load_camp_files(seq):
+    """读营地回放的 positions.json / raw.json，带 mtime 缓存。
+
+    跨局页每局都取一次位置：逐秒坐标文件几十 KB、raw.json 更大，没缓存时
+    200 局就是几百次重复读盘解析。返回 (positions 解析结果, 短ID身份映射)。
+    """
+    folder = OFFICIAL / f'camp-{seq}'
+    path = folder / 'positions.json'
+    raw_path = folder / 'raw.json'
+    try:
+        sig = (path.stat().st_mtime if path.is_file() else 0.0,
+               raw_path.stat().st_mtime if raw_path.is_file() else 0.0)
+    except OSError:
+        sig = (0.0, 0.0)
+    cached = _POSITIONS_FILE_CACHE.get(seq)
+    if cached is not None and cached[0] == sig:
+        return cached[1], cached[2]
+    data = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            data = {}
+    identity_by_short = {}
+    if raw_path.is_file():
+        try:
+            raw_value = json.loads(raw_path.read_text(encoding='utf-8'))
+            raw_body = raw_value.get('data') if isinstance(raw_value.get('data'), dict) else raw_value
+            for item in raw_body.get('matchInfo') or []:
+                short = str(item.get('playerId') or '')
+                if not short:
+                    continue
+                identity_by_short[short] = {
+                    'hero': str(item.get('heroName') or ''),
+                    'camp': 'blue' if str(item.get('acntcamp') or '1') == '1' else 'red',
+                }
+        except (OSError, ValueError):
+            identity_by_short = {}
+    if len(_POSITIONS_FILE_CACHE) > 600:
+        _POSITIONS_FILE_CACHE.clear()
+    _POSITIONS_FILE_CACHE[seq] = (sig, data, identity_by_short)
+    return data, identity_by_short
 
 
 @router.get('/api/positions/{key:path}')
@@ -624,27 +756,12 @@ def match_positions(key: str):
     path = OFFICIAL / f'camp-{seq}' / 'positions.json'
     if not path.is_file():
         raise HTTPException(404, '缺少位置数据文件')
-    data = json.loads(path.read_text(encoding='utf-8'))
+    data, identity_by_short = _load_camp_files(seq)
     roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
     # 位置文件的 playerId 是营地短 ID（与 raw.matchInfo.playerId 同源），通道名单里
     # 存的是游戏内 playID（长 ID），两套 ID 对不上。用 matchInfo 的 heroName /
     # acntcamp 做桥：短 ID → 英雄名 + 阵营 → 通道名单里的 camp+slot+昵称。
-    identity_by_short = {}
-    raw_path = OFFICIAL / f'camp-{seq}' / 'raw.json'
-    if raw_path.is_file():
-        try:
-            raw_value = json.loads(raw_path.read_text(encoding='utf-8'))
-            raw_body = raw_value.get('data') if isinstance(raw_value.get('data'), dict) else raw_value
-            for item in raw_body.get('matchInfo') or []:
-                short = str(item.get('playerId') or '')
-                if not short:
-                    continue
-                identity_by_short[short] = {
-                    'hero': str(item.get('heroName') or ''),
-                    'camp': 'blue' if str(item.get('acntcamp') or '1') == '1' else 'red',
-                }
-        except (OSError, json.JSONDecodeError):
-            identity_by_short = {}
+    # （raw.json 的解析在 _load_camp_files 里带 mtime 缓存。）
     roster_by_hero = {(str(p.get('camp')), str(p.get('hero'))): p
                       for p in (camp.get('players') or []) if p.get('hero')}
     step = POSITION_STEP
@@ -1178,28 +1295,6 @@ def economy_analysis():
     return deep_analysis.economy(OFFICIAL, DB.parent / 'camp_details')
 
 
-def research_result(topic, values):
-    from studio_analysis import StudioRepository, extract_rows, fingerprint
-    from studio_research import TOPICS, research
-    if topic not in {item[0] for item in TOPICS}:
-        raise HTTPException(404, '专题不存在')
-    source = StudioRepository(DB, MATCHES, IMPORTS)
-    rows, warnings = extract_rows(source, values)
-    rows = [row for row in rows if row.get('isOwn') and row.get('full')]
-    result = research(rows, topic, 'damage', source.get()['matches'] + source.get()['sheetMatches'])
-    result['fingerprint'] = fingerprint(rows)
-    result['warnings'] = warnings
-    result['sourceRows'] = len(rows)
-    result['filters'] = values
-    return result
-
-
-@router.get('/api/v3/research/catalog')
-def research_catalog():
-    from studio_research import TOPICS
-    return {'topics': [{'id':key,'name':name,'description':desc} for key,name,desc in TOPICS]}
-
-
 @router.get('/api/v3/research/reports')
 def research_reports():
     path = DB.with_name('reports.sqlite3')
@@ -1218,32 +1313,6 @@ def research_report(report_id: str):
         row=conn.execute('SELECT title,created_at,body FROM reports WHERE id=?', (report_id,)).fetchone()
     if not row: raise HTTPException(404, '报告不存在')
     return {'title':row[0],'createdAt':row[1],'result':json.loads(row[2])}
-
-
-@router.get('/api/v3/research/{topic}')
-def get_research(topic: str, values=Depends(filters)):
-    return research_result(topic, values)
-
-
-@router.post('/api/v3/research/reports')
-async def save_research_report(request: Request):
-    body=await read_json(request)
-    title=str(body.get('title') or '').strip() if isinstance(body,dict) else ''
-    if not title or len(title)>120: raise HTTPException(400, '请填写 1–120 字的报告标题。')
-    values=body.get('filters')
-    if not isinstance(values,dict): raise HTTPException(400, '数据范围无效。')
-    values={k:v for k,v in values.items() if k in ('sources','from','to','hero','opponent','excludeSeeds','ownOnly')}
-    if not isinstance(values.get('sources'),list) or any(x not in ALL_SOURCES for x in values['sources']):
-        raise HTTPException(400, '来源无效。')
-    result=research_result(body.get('topic',''), values)
-    if not result['rows']: raise HTTPException(400, '当前没有可保存的专题结果。')
-    if result['fingerprint'] != body.get('fingerprint'): raise HTTPException(409, '数据已变化，请刷新后再保存。')
-    from datetime import datetime, timezone
-    report_id=uuid.uuid4().hex; created=datetime.now(timezone.utc).isoformat(timespec='seconds')
-    with sqlite3.connect(DB.with_name('reports.sqlite3')) as conn:
-        conn.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL)')
-        conn.execute('INSERT INTO reports VALUES(?,?,?,?,?)',(report_id,title,created,body['topic'],json.dumps(result,ensure_ascii=False)))
-    return {'id':report_id,'title':title,'createdAt':created}
 
 
 @router.post('/api/v3/import/preview')
@@ -1790,6 +1859,51 @@ async def update_match_meta(key: str, request: Request, repo=Depends(repository)
     return {'ok': True, 'meta': previous}
 
 
+@router.post('/api/v3/match-meta-bulk')
+async def update_match_meta_bulk(request: Request, repo=Depends(repository)):
+    """批量写对手队名：给一批局的覆盖层补同一个字段。
+
+    教练的真实流程是「今天打的这一批都是同一个对手」——逐局点铅笔要 105 次。
+    只支持 opponent 一个字段，其余补录仍走单局接口，避免误伤。
+    """
+    import time
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise HTTPException(400, '数据格式无效')
+    keys = body.get('keys')
+    if not isinstance(keys, list) or not keys or len(keys) > 600:
+        raise HTTPException(400, '对局列表无效')
+    if not all(isinstance(key, str) and 0 < len(key) <= 200 for key in keys):
+        raise HTTPException(400, '对局列表无效')
+    opponent = body.get('opponent')
+    if not isinstance(opponent, str) or len(opponent.strip()) > 50:
+        raise HTTPException(400, '队名格式或长度不正确')
+    opponent = opponent.strip()
+    if not opponent:
+        raise HTTPException(400, '请填写对手队名；要清空请逐局编辑')
+    existing = {m.get('key') for m in repo.matches({'sources': [], 'excludeSeeds': False}).get('matches', [])}
+    targets = [key for key in dict.fromkeys(keys) if key in existing]
+    if not targets:
+        raise HTTPException(404, '这些对局都不在当前数据里')
+    stamp = time.time()
+    updated = 0
+    with sqlite3.connect(DB) as connection:
+        connection.execute('CREATE TABLE IF NOT EXISTS match_meta (match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+        connection.execute('BEGIN IMMEDIATE')
+        for key in targets:
+            row = connection.execute('SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+            try:
+                previous = json.loads(row[0]) if row else {}
+                if not isinstance(previous, dict): previous = {}
+            except (ValueError, TypeError):
+                previous = {}
+            previous['opponent'] = opponent
+            connection.execute('INSERT INTO match_meta(match_key,body,updated_at) VALUES(?,?,?) ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at',
+                               (key, json.dumps(previous, ensure_ascii=False), stamp))
+            updated += 1
+    return {'ok': True, 'updated': updated, 'skipped': len(keys) - updated}
+
+
 @router.get('/api/v3/workspace/overview')
 def workspace_overview(repo=Depends(repository)):
     selection = {'sources': list(ALL_SOURCES), 'excludeSeeds': True, 'ownOnly': True}
@@ -1875,6 +1989,20 @@ def team_bp():
                       'picks': [{'hero': k, 'count': v} for k, v in picks.most_common()],
                       'bans': [{'hero': k, 'count': v} for k, v in bans.most_common()]})
     return {'teams': teams}
+
+
+@router.get('/api/v3/team-deep')
+def team_deep(team: str = ''):
+    """战队页 v2 的逐局全量数据（docs/team_page_v2.md §2.2）。
+
+    战队 id 来自 studio/teams 的聚类结果；不存在给 404，不返回空壳让前端误以为有数据。
+    """
+    import team_clusters
+    camp_dir = MATCHES.parent / 'camp_details'
+    deep = team_clusters.team_deep(camp_dir, DB, team)
+    if deep is None:
+        raise HTTPException(404, '战队不存在：没有匹配的营地十人面板。')
+    return deep
 
 
 @router.get('/api/v3/bp-board')
@@ -2846,5 +2974,11 @@ app.include_router(router)
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8771, help='V3 dev-only port (default: 8771)')
+    # 独立跑 v3 服务时同样启用巅峰千强自动刷新（导入 / 测试不会触发）。
+    os.environ.setdefault('PEAK_AUTO_CRAWL', '1')
+    try:
+        start_peak_auto()
+    except Exception as exc:                       # noqa: BLE001
+        print(f'[peak] 自动刷新线程启动失败：{exc}')
     uvicorn.run(app, host='127.0.0.1', port=parser.parse_args().port)
 

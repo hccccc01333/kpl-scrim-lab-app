@@ -62,17 +62,19 @@ def _lane_pairs():
 
 def _kpl_combos():
     data = _load('kpl_combos.json') or {}
-    pairs, trios, lineups = {}, {}, {}
+    pairs, trios, quads, lineups = {}, {}, {}, {}
     for row in data.get('pairs') or []:
         pairs[tuple(row['heroes'])] = row
     for row in data.get('trios') or []:
         trios[tuple(row['heroes'])] = row
+    for row in data.get('quads') or []:
+        quads[tuple(row['heroes'])] = row
     # 整阵容：key 是 5 个英雄名排序后的元组（老文件没有 lineups 时就是空表）
     for row in data.get('lineups') or []:
         heroes = row.get('heroes') or []
         if len(heroes) == 5:
             lineups[tuple(sorted(heroes))] = row
-    return data, pairs, trios, lineups
+    return data, pairs, trios, quads, lineups
 
 
 def _latest_year(data, *groups):
@@ -100,7 +102,42 @@ def _lineup_of(heroes, kpl_lineups):
         return None
     return {'heroes': row.get('heroes') or list(heroes),
             'n': row.get('n'), 'wins': row.get('wins'), 'wr': row.get('wr'),
-            'year': row.get('year'), 'teams': row.get('teams') or []}
+            'year': row.get('year'), 'lastDate': row.get('lastDate'),
+            'teams': row.get('teams') or []}
+
+
+def kpl_index() -> dict:
+    """公开读取 KPL 组合事实表，供战队页「阵容组合（KPL 命中）」做查表。
+
+    `pairs` / `trios` / `quads` / `lineups` 的 key 都是英雄名排序后的元组，
+    查表时不用关心原始行里的英雄顺序。文件读不到时返回空表（页面显示「无命中」），
+    不猜组合。
+    """
+    data, pairs, trios, quads, lineups = _kpl_combos()
+
+    def normalized(table):
+        out = {}
+        for heroes, row in (table or {}).items():
+            try:
+                out[tuple(sorted(heroes))] = row
+            except TypeError:  # pragma: no cover - 数据表结构异常时跳过，不猜
+                continue
+        return out
+
+    return {
+        'source': 'KPL 官方赛事',
+        'games': data.get('games'),
+        'sinceYear': data.get('sinceYear'),
+        'updatedAt': data.get('updatedAt'),
+        'windowStart': data.get('windowStart'),
+        'windowEnd': data.get('windowEnd'),
+        'latestYear': _latest_year(data, pairs.values(), trios.values(),
+                                   quads.values(), lineups.values()),
+        'pairs': normalized(pairs),
+        'trios': normalized(trios),
+        'quads': normalized(quads),
+        'lineups': lineups,
+    }
 
 
 def _own_side(detail):
@@ -121,7 +158,8 @@ _Z95 = 1.959963984540054
 def _lane_reliability(n, ci_low, ci_high):
     if not n or n < 200:
         return 'low'
-    rating = 'high' if n >= 1000 else 'medium'
+    # 单条对位最好有 3000 局样本（教练口径）；200~3000 算「中等」，CI 跨 0 再降级。
+    rating = 'high' if n >= 3000 else 'medium'
     if ci_low is None or ci_high is None or (ci_low <= 0 <= ci_high):
         rating = 'medium' if rating == 'high' else 'low'
     return rating
@@ -264,6 +302,7 @@ def for_match(detail):
             if row:
                 pair_hits.append({'heroes': [heroes[i], heroes[j]], 'n': row['n'],
                                   'wr': row['wr'], 'year': row.get('year'),
+                                  'lastDate': row.get('lastDate'),
                                   'teams': row.get('teams') or []})
             for k in range(j + 1, len(heroes)):
                 trow = kpl_trios.get((heroes[i], heroes[j], heroes[k]))
@@ -271,6 +310,7 @@ def for_match(detail):
                     trio_hits.append({'heroes': [heroes[i], heroes[j], heroes[k]],
                                       'n': trow['n'], 'wr': trow['wr'],
                                       'year': trow.get('year'),
+                                      'lastDate': trow.get('lastDate'),
                                       'teams': trow.get('teams') or []})
     pair_hits.sort(key=lambda item: -item['n'])
     trio_hits.sort(key=lambda item: -item['n'])
@@ -284,6 +324,7 @@ def for_match(detail):
                 if row:
                     combo_index[f'{group[i]}+{group[j]}'] = {
                         'n': row['n'], 'wr': row['wr'], 'year': row.get('year'),
+                        'lastDate': row.get('lastDate'),
                         'teams': row.get('teams') or []}
                     combo_index[f'{group[j]}+{group[i]}'] = combo_index[f'{group[i]}+{group[j]}']
 
@@ -294,7 +335,9 @@ def for_match(detail):
             row = kpl_pairs.get((fh[i], fh[j]))
             if row:
                 foe_pairs.append({'heroes': [fh[i], fh[j]], 'n': row['n'],
-                                  'wr': row['wr'], 'teams': row.get('teams') or []})
+                                  'wr': row['wr'], 'year': row.get('year'),
+                                  'lastDate': row.get('lastDate'),
+                                  'teams': row.get('teams') or []})
     foe_pairs.sort(key=lambda item: -item['n'])
 
     # 3) 整阵容命中：本队 5 个 pick 排序后整套查（顺序不同算同一套）

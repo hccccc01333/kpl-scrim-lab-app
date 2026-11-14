@@ -261,7 +261,7 @@ export function BlockBoard({
   // 没接入任何块的普通页面：原样渲染，避免迁移期间白屏。
   if (!blocks.length && !allowEmpty) return <>{children}</>
 
-  // 保存顺序时保留其它页签/未挂载块的顺序记录（决策台等页签页共用同一 page slug）。
+  // 保存顺序时保留其它页签/未挂载块的顺序记录（同一 page slug 的页签页共用一份顺序）。
   const commitOrder = (next: string[]) => {
     const mounted = new Set(ids)
     const preserved = (layout?.order || []).filter((id) => !mounted.has(id))

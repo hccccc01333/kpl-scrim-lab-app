@@ -4,7 +4,6 @@ Reference: hccccc01333/kpl-research @ 59f776c, hero_perf_app.js,
 team_bp_app.js, player_deep.js and analysis/series.py. Calculations consume
 local scrim records, never the reference repository's published results.
 """
-import itertools
 import math
 from collections import Counter, defaultdict
 
@@ -14,11 +13,8 @@ from studio_analysis import METRICS, deduplicate, finite, rounded
 
 TOPICS = [
     ('hero_benchmark', '选手 × 英雄参照', '同位置、同英雄，列出中位、较高、高位水平与当前分位。'),
-    ('player_form', '近期状态与稳定性', '逐个选手比较近期均值、全期分布、地板与上限。'),
     ('hero_pool', '英雄池与使用集中度', '查看出场分布、头部英雄占比、英雄集中度与有效英雄数。'),
-    ('resource_efficiency', '资源与产出', '对照经济占比、输出占比与伤害转化，保留每局证据。'),
     ('hero_combos', '阵容组合与 Lift', '比较完整阵容中的实际共现与独立选用基线。'),
-    ('player_pairs', '双人搭档', '基于稳定选手 ID 查看同队搭档的出场与胜负。'),
     ('tempo', '前期与优势转化', '按王者三段口径（0–4 前期 / 4–10 中期 / 10+ 后期）读取段末与段内经济差。'),
     ('swing_windows', '经济转折窗口', '连续经济差变化合并为窗口，提供回看起止时间。'),
     ('session_summary', '训练组证据汇总', '按日期、训练组、对手汇总比赛与数据覆盖。'),
@@ -54,89 +50,25 @@ def research(rows, topic, metric='damage', matches=None):
                         'p90': rounded(np.quantile(values, .9))})
         columns = ['label','hero','position','n','value','referenceRows','referencePlayers','percentile','p50','p75','p90']
         note = '只使用已填写的实际分路。参考池少于 5 行时不显示分位；分位定义沿用参考仓库的低于当前值数量 / (n−1)。'
-    elif topic in ('player_form', 'hero_pool'):
+    elif topic == 'hero_pool':
         groups = defaultdict(list)
         for r in rows:
             groups[r['playerKey']].append(r)
         out = []
         for key, group in groups.items():
-            if topic == 'hero_pool':
-                counts = Counter(r['hero'] for r in group if r.get('hero'))
-                total = sum(counts.values())
-                if not total:
-                    continue
-                hhi = sum((count/total)**2 for count in counts.values())
-                entropy = -sum(count/total*math.log(count/total) for count in counts.values())
-                out.append({'label': group[0]['label'], 'bound': group[0].get('bound'), 'n': total,
-                            'heroes': len(counts), 'topHero': counts.most_common(1)[0][0],
-                            'topShare': rounded(counts.most_common(1)[0][1]/total*100),
-                            'hhi': rounded(hhi), 'effectiveHeroes': rounded(1/hhi), 'entropy': rounded(entropy)})
-            else:
-                valid = sorted([r for r in group if finite(r.get(metric)) is not None],key=lambda r:(r.get('date') or '',r['matchKey']))
-                if not valid:
-                    continue
-                values = np.array([r[metric] for r in valid])
-                dated = [r for r in valid if r.get('date') and len(str(r['date'])) == 10]
-                recent = [r[metric] for r in dated[-5:]]
-                out.append({'label': group[0]['label'], 'bound': group[0].get('bound'), 'n': len(values),
-                            'mean': rounded(values.mean()), 'recentMean': rounded(np.mean(recent)) if recent else None,
-                            'recentN': len(recent), 'std': rounded(values.std(ddof=1)) if len(values)>1 else None,
-                            'p10': rounded(np.quantile(values,.1)), 'p90': rounded(np.quantile(values,.9)),
-                            'iqr': rounded(np.quantile(values,.75)-np.quantile(values,.25)),
-                            'change': rounded(np.mean(recent)-values.mean()) if recent else None})
-        columns = ['label','bound','n','heroes','topHero','topShare','hhi','effectiveHeroes','entropy'] if topic=='hero_pool' else ['label','bound','n','mean','recentMean','recentN','change','std','p10','p90','iqr']
-        note = '有效英雄数 = 1 / 英雄集中度；集中度越高，英雄池越集中。' if topic=='hero_pool' else '近期为有完整日期的最近 5 局；低水平/高水平是分布位置，不是能力上下限。'
+            counts = Counter(r['hero'] for r in group if r.get('hero'))
+            total = sum(counts.values())
+            if not total:
+                continue
+            hhi = sum((count/total)**2 for count in counts.values())
+            entropy = -sum(count/total*math.log(count/total) for count in counts.values())
+            out.append({'label': group[0]['label'], 'bound': group[0].get('bound'), 'n': total,
+                        'heroes': len(counts), 'topHero': counts.most_common(1)[0][0],
+                        'topShare': rounded(counts.most_common(1)[0][1]/total*100),
+                        'hhi': rounded(hhi), 'effectiveHeroes': rounded(1/hhi), 'entropy': rounded(entropy)})
+        columns = ['label','bound','n','heroes','topHero','topShare','hhi','effectiveHeroes','entropy']
+        note = '有效英雄数 = 1 / 英雄集中度；集中度越高，英雄池越集中。'
         note += ' 未绑定记录只按来源昵称分组，不能视为同一选手的长期档案。'
-    elif topic == 'resource_efficiency':
-        out = []
-        for r in rows:
-            if r.get('goldShare') is not None and r.get('damageShare') is not None:
-                out.append({'label':r['label'],'hero':r['hero'],'position':r.get('position'),'date':r.get('date'),
-                            'goldShare':r['goldShare'],'damageShare':r['damageShare'],
-                            'shareGap':rounded(r['damageShare']-r['goldShare']),
-                            'damageConversion':rounded(r.get('damageConversion')),'matchKey':r['matchKey']})
-        columns=['label','hero','position','date','goldShare','damageShare','shareGap','damageConversion','matchKey']
-        note='占比差 = 输出占比 − 经济占比。职责、英雄与局势不同，不能直接据此评价选手贡献。'
-    elif topic in ('hero_combos','player_pairs'):
-        teams=defaultdict(list)
-        for r in rows:
-            if r.get('camp') not in (None,'','unknown'):
-                teams[(r['matchKey'],r['camp'])].append(r)
-        units=[]
-        for members in teams.values():
-            if len(members)!=5:
-                continue
-            # 只看本队阵容：对手的五个英雄不是我们的英雄池。
-            if not all(r.get('isOwn') for r in members):
-                continue
-            if topic=='player_pairs' and not all(r.get('bound') for r in members):
-                continue
-            ids={r['hero'] if topic=='hero_combos' else r['playerKey'] for r in members}
-            if len(ids)!=5 or '' in ids:
-                continue
-            outcomes={r['result'] for r in members}
-            units.append((ids, next(iter(outcomes)) if len(outcomes)==1 else 'unknown', {r['playerKey']:r['label'] for r in members}))
-        singles,combos=Counter(),defaultdict(list)
-        labels={}
-        for ids,outcome,names in units:
-            singles.update(ids);labels.update(names)
-            for pair in itertools.combinations(sorted(ids),2):
-                combos[pair].append(outcome)
-        out=[]
-        for (a,b),outcomes in combos.items():
-            count=len(outcomes)
-            if count<3:
-                continue
-            decided=sum(o in ('win','loss') for o in outcomes)
-            observed=count/len(units)
-            expected=singles[a]/len(units)*singles[b]/len(units)
-            out.append({'a':labels.get(a,a),'b':labels.get(b,b),'n':count,
-                        'cooccurrence':rounded(observed*100),'expectedRate':rounded(expected*100),
-                        'lift':rounded(observed/expected),'decided':decided,
-                        'winRate':rounded(outcomes.count('win')/decided*100) if decided else None})
-        out.sort(key=lambda r:(-r['n'],-r['lift']))
-        columns=['a','b','n','cooccurrence','expectedRate','lift','decided','winRate']
-        note='只统计本队完整五人阵容，至少共现 3 次；Lift 仅描述共现，不代表协同因果或 BP 优势。双人专题要求稳定选手身份。'
     elif topic in ('tempo','swing_windows'):
         out=[]
         selected={r['matchKey'] for r in rows}

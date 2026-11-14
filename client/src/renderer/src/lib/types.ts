@@ -1325,29 +1325,6 @@ export interface LaneMatchupPayload {
   note?: string
 }
 
-export interface EquipMatrixPayload {
-  viz: string
-  rows: string[]
-  cols: string[]
-  cells: { value: number; n: number }[]
-  unit: string
-  items: { label: string; count: number; pct: number }[]
-  note?: string
-}
-
-export interface EquipImpactPayload {
-  viz: string
-  rows: {
-    label: string
-    withN: number
-    withoutN: number
-    deltas: Record<string, { with: number | null; without: number | null; delta: number | null }>
-  }[]
-  metricLabels: string[]
-  note?: string
-}
-
-
 /* ── M3：跨局向量与节奏 ─────────────────────────────────────────── */
 
 export interface CrossLaneDiff {

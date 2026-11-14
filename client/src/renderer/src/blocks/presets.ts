@@ -16,16 +16,8 @@ function preset(extras: string[], configs: PageLayout['configs'] = {}): PageLayo
   }
 }
 
-/** 在原页面内容后面追加分析块（不隐藏原块）。 */
-function addBlocks(extras: string[], configs: PageLayout['configs'] = {}): PageLayout {
-  return {
-    order: extras.map((id) => `lib:${id}`),
-    hidden: [],
-    extras,
-    configs
-  }
-}
-
+/* 决策分析块（资源异常等）已内联到选手页等页面，默认可见；专业模式不再重复追加，
+   需要时用户仍可从「分析库」把它们加回当前页。 */
 export const PRO_PRESETS: Record<string, PageLayout> = {
   heroes: preset(['super.hero-winrate'], {
     'lib:super.hero-winrate': { side: 'own', sort: 'winRate', topN: '20', display: 'table', minGames: 1 }
@@ -33,11 +25,7 @@ export const PRO_PRESETS: Record<string, PageLayout> = {
   bp: preset(['super.bp-rate'], {
     'lib:super.bp-rate': { side: 'own', sort: 'total', display: 'squares', topN: '30' }
   }),
-  matches: preset(['super.match-list']),
-  // 决策台已拆掉：结论摘要留在概览，证据块回单局/选手页（专业模式追加在原内容之后）
-  overview: addBlocks(['decision.briefing']),
-  match: addBlocks(['decision.loss', 'decision.fights', 'decision.advantage', 'decision.opening']),
-  players: addBlocks(['decision.resource'])
+  matches: preset(['super.match-list'])
 }
 
 export function getPresetLayout(page: string): PageLayout | undefined {

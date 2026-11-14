@@ -22,9 +22,6 @@ PAGES = {
     'players': '#players',
     'bp': '#bp',
     'compare': '#compare/player',
-    'analysis-economy': '#depth/time_economy',
-    'analysis-tempo': '#topics/tempo',
-    'analysis-kill': '#depth/time_kill_rhythm',
     'datasets': '#datasets',
     'identity': '#identity',
 }

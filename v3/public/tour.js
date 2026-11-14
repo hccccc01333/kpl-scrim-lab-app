@@ -258,7 +258,7 @@ const LESSONS = [
         target: '.hero-insight-card',
         click: true,
         title: '点一个英雄进去',
-        text: '里面是这个英雄的各位置表现、常用搭档、常见出装、同位置对位和最近出场，一块一行。',
+        text: '里面是这个英雄的各位置表现、常用搭档、同位置对位和最近出场，一块一行。',
       },
       {
         target: navTarget('bp'),

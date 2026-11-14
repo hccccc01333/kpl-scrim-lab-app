@@ -348,6 +348,7 @@ export function TeamPage() {
             ) : <BoardEmpty title="没有交手明细" />}
           </AnalysisSection>
         </Block>
+
       </BlockBoard>
 
       <div className="board-foot">对比与分位只作横向读法；待命名战队可在工作台改名，客户端只读。{compareQuery.isError ? ' 分路与英雄数据读取失败。' : ''}</div>

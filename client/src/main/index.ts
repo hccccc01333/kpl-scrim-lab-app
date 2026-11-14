@@ -278,23 +278,21 @@ function createWindow(): void {
   }
 }
 
-/* 工作台网页可以通过 kpl-client://open?tab=review&game=... 把客户端拉到指定决策页。
-   这里只接受白名单 tab，不把任意 URL/JS 拼进 hash，避免协议被滥用。 */
+/* 工作台网页可以通过 kpl-client://open?tab=review&game=... 把客户端拉到对应页面。
+   旧决策页签已下线，这里把白名单 tab 映射到现有的前端入口（不再拼 game 参数），
+   只接受白名单值、不把任意 URL/JS 拼进 hash，避免协议被滥用。 */
 const CLIENT_TABS: Record<string, string> = {
-  review: 'review',
-  prep: 'prep',
-  player: 'player',
-  training: 'training'
+  review: '#/matches',
+  prep: '#/bp',
+  player: '#/players',
+  training: '#/training'
 }
 
 function routeFromProtocol(raw: string): string {
   try {
     const url = new URL(raw)
     if (url.protocol !== `${PROTOCOL}:`) return ''
-    const tab = CLIENT_TABS[url.searchParams.get('tab') || ''] || ''
-    if (!tab) return ''
-    const game = (url.searchParams.get('game') || '').trim()
-    return `#/decision?tab=${tab}${game ? `&game=${encodeURIComponent(game)}` : ''}`
+    return CLIENT_TABS[url.searchParams.get('tab') || ''] || ''
   } catch {
     return ''
   }

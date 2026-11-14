@@ -3,11 +3,10 @@
    本页只做赛前补练与阵容准备建议，不推断英雄强度、不把少量胜率当结论。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const BP_URL = API_BASE + '/api/decision/bp';
-const CATALOG_URL = API_BASE + '/api/decision/catalog';
 const FETCH_TIMEOUT = 8000;
 
 export function createBpCounter({ esc, fmt, pct, icon }) {
-  const state = { box: null, controller: null, opponent: '', data: null, catalog: null, error: '' };
+  const state = { box: null, controller: null, opponent: '', data: null, error: '' };
 
   const listOf = (value) => (Array.isArray(value) ? value : []);
   const num = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
@@ -24,8 +23,8 @@ export function createBpCounter({ esc, fmt, pct, icon }) {
   }
 
   function opponentSelect() {
-    const opponents = listOf(state.catalog && state.catalog.opponents);
-    const options = opponents.map((item) => `<option value="${esc(item.id)}"${item.id === state.opponent ? ' selected' : ''}>${esc(item.name || item.id)}（回放 ${fmt(item.replayGames)} 局）</option>`).join('');
+    const opponents = listOf(state.data && state.data.bans && state.data.bans.byOpponent);
+    const options = opponents.map((item) => `<option value="${esc(item.id)}"${item.id === state.opponent ? ' selected' : ''}>${esc(item.opponent || item.id)}（回放 ${fmt(item.replayGames)} 局）</option>`).join('');
     return `<label class="bpc-field"><span>研究对手</span>
       <select data-bpc-opponent aria-label="选择对手">
         <option value="">全部对手（本批汇总）</option>${options}
@@ -116,7 +115,7 @@ export function createBpCounter({ esc, fmt, pct, icon }) {
         </div>
         <div class="intro-actions"><button class="control" type="button" data-bpc-refresh>${icon('refresh')} 刷新数据</button></div>
       </div>
-      <div class="bpc-toolbar">${state.catalog ? opponentSelect() : ''}</div>
+      <div class="bpc-toolbar">${opponentSelect()}</div>
       <div data-bpc-body>${content}</div>
     </div>`;
   }
@@ -133,13 +132,9 @@ export function createBpCounter({ esc, fmt, pct, icon }) {
     box.setAttribute('aria-busy', 'true');
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
     try {
-      const [data, catalog] = await Promise.all([
-        request(BP_URL + query(), controller.signal),
-        request(CATALOG_URL, controller.signal).catch(() => null),
-      ]);
+      const data = await request(BP_URL + query(), controller.signal);
       if (!state.box || controller.signal.aborted) return;
       state.data = data;
-      state.catalog = catalog;
       state.error = '';
       box.innerHTML = shell(data && data.available === false
         ? `<div class="empty">${esc(data.reason || '当前范围没有可分析的 BP 数据。')}</div>`

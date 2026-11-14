@@ -124,10 +124,9 @@ function varianceParts(rows, key, dims) {
     const vb = Math.max(0, (msb - msw) / k);
     parts.push({ dim, share: vb / (vb + msw) });
   }
-  const explained = sum(parts.map((p) => p.share));
-  const scale = explained > 1 ? 1 / explained : 1;
-  const out = parts.map((p) => ({ label: ({ version: '版本', opponent: '对手', session: '训练组', camp: '阵营' })[p.dim] || p.dim, share: p.share * scale }));
-  out.push({ label: '同条件下的自然波动', share: Math.max(0, 1 - sum(out.map((p) => p.share))) });
+  const out = parts.map((p) => ({ label: ({ version: '版本', opponent: '对手', session: '训练组', camp: '阵营' })[p.dim] || p.dim, share: p.share }));
+  /* 各维度独立估计，不归一化为互斥分摊；残差仅作余量参考。 */
+  out.push({ label: '同条件下的自然波动', share: Math.max(0, 1 - Math.min(1, sum(out.map((p) => p.share)))) });
   return out;
 }
 
@@ -218,9 +217,9 @@ function silhouette(data, assign) {
   let total = 0, count = 0;
   data.forEach((row, i) => {
     const dist = (j) => {
-      const g2 = data.filter((_, q) => assign[q] === j);
-      if (!g2.length) return Infinity;
-      return mean(g2.filter((_, q) => q !== i).map((m) => Math.sqrt(sum(row.map((v, z) => (v - m[z]) ** 2)))));
+      const others = data.map((_, q) => q).filter((q) => assign[q] === j && q !== i);
+      if (!others.length) return Infinity;
+      return mean(others.map((q) => Math.sqrt(sum(row.map((v, z) => (v - data[q][z]) ** 2)))));
     };
     const a = dist(assign[i]);
     const b = Math.min(...Array.from({ length: k }, (_, j) => j).filter((j) => j !== assign[i]).map(dist));
@@ -463,9 +462,10 @@ function a06(ctx) {
       if (!members.length) continue;
       const curve = best.centers[j];
       const finals = vals(members.map((m) => m.final));
+      const winRate = members.length ? members.filter((m) => m.result === 'win').length / members.length : 0;
       const early = num(curve[2]) ? curve[2] : 0;
       items.push({
-        name: early > 1200 ? '开局压制' : early < -800 ? '逆风翻盘' : curve[curve.length - 1] - curve[2] > 2500 ? '后程发力' : '均势拉扯',
+        name: early > 1200 ? '开局压制' : early < -800 ? (winRate >= 0.5 ? '逆风翻盘' : '开局受压') : curve[curve.length - 1] - curve[2] > 2500 ? '后程发力' : '均势拉扯',
         pct: members.length / src.length, n: members.length,
         curve, floor: quantile(finals, 0.1), final: median(finals),
         keys: members.map((m) => m.key), stable: reproducible(members, (s) => median(s.map((r) => r.final))),

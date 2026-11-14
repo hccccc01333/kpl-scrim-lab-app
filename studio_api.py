@@ -604,7 +604,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.post('/research')
     def topical_research(value: dict):
         try:
-            return calculate({**value, 'topic': value.get('topic', 'hero_pool')})
+            return calculate({**value, 'topic': value.get('topic', 'tempo')})
         except (ValueError, TypeError) as error:
             raise HTTPException(400, str(error)) from error
 
@@ -980,7 +980,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             for key, limit in [('id', 80), ('title', 120), ('note', 4000), ('createdAt', 80)]:
                 if not isinstance(report.get(key), str) or len(report[key]) > limit or (key != 'note' and not report[key]):
                     raise HTTPException(400, '备份记录字段无效')
-            if (result.get('meta') or {}).get('method') not in ({m[0] for m in METHODS} | {'topic:'+t[0] for t in TOPICS}) or not isinstance(result.get('rows'), list) or not isinstance(result.get('columns'), list):
+            if (result.get('meta') or {}).get('method') not in ({m[0] for m in METHODS} | {'topic:'+t[0] for t in TOPICS} | {'topic:hero_benchmark', 'topic:hero_pool'}) or not isinstance(result.get('rows'), list) or not isinstance(result.get('columns'), list):
                 raise HTTPException(400, '备份结果结构无效')
             meta = result['meta']
             if not isinstance(meta.get('matches'), int) or meta['matches'] < 0 or not isinstance(meta.get('fingerprint'), str):

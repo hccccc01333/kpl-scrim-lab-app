@@ -243,22 +243,46 @@ export function createCrossPage(h) {
     return bits.join(' · ');
   }
 
-  function heroCard(a, ordered, total) {
+  /* cohort 向量先到、逐局明细没到时的过渡态汇总：与 summarize 同口径 */
+  function cohortSummary(vectors) {
+    const decided = vectors.filter((v) => v.result === 'win' || v.result === 'loss');
+    const wins = decided.filter((v) => v.result === 'win').length;
+    const dates = vectors.map((v) => v.date).filter(Boolean).sort();
+    const sessions = new Set(vectors.map((v) => v.session).filter(Boolean));
+    const opponents = new Set(vectors.map((v) => v.opponent).filter(Boolean));
+    const killMargins = vectors.map((v) => (num(v.killsOwn) && num(v.killsFoe) ? v.killsOwn - v.killsFoe : null)).filter(num);
+    return {
+      list: [], count: vectors.length, decided: decided.length, wins,
+      losses: decided.length - wins,
+      rate: decided.length ? wins / decided.length * 100 : null,
+      at10Med: median(vectors.map((v) => v.at10).filter(num)),
+      finalMed: median(vectors.map((v) => v.finalDiff).filter(num)),
+      durAvg: avg(vectors.map((v) => v.duration).filter(num)),
+      killAvg: killMargins.length ? avg(killMargins) : null,
+      span: dates.length ? (dates[0] === dates[dates.length - 1] ? dates[0] : `${dates[0]} → ${dates[dates.length - 1]}`) : '—',
+      sessions: sessions.size, opponents: opponents.size,
+      at10N: vectors.filter((v) => num(v.at10)).length,
+    };
+  }
+
+  function heroCard(a, ordered, total, pending) {
     const metrics = [
-      ['10 分钟经济差', num(a.at10Med) ? diff(Math.round(a.at10Med)) : '—', `${a.list.filter((m) => num(m.at10)).length} 局可读`],
+      ['10 分钟经济差', num(a.at10Med) ? diff(Math.round(a.at10Med)) : '—', `${a.list.length ? a.list.filter((m) => num(m.at10)).length : a.at10N || 0} 局可读`],
       ['终局经济差', num(a.finalMed) ? diff(Math.round(a.finalMed)) : '—', '本队减对手'],
       ['平均时长', num(a.durAvg) ? time(a.durAvg) : '—', '从开赛到结算'],
       ['场均人头差', num(a.killAvg) ? diff(Math.round(a.killAvg)) : '—', '十人结算面板'],
     ];
     /* 每局一格：一局点一下直接进那局复盘，不在这里做对照表 */
     const filmList = ordered.slice(0, 40);
-    const film = filmList.map((m, i) => {
-      const tone = m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : 'na';
-      const label = `${m.date || ''} ${m.title || ''} · ${m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '未标胜负'}`;
-      return `<a class="cx-film-cell ${tone}" href="#match/${encodeURIComponent(m.key)}" title="${esc(label)}">
+    const film = pending ? '<span class="cx-film-pending">正在读取逐局明细…</span>'
+      : filmList.map((m, i) => {
+        const tone = m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : 'na';
+        const label = `${m.date || ''} ${m.title || ''} · ${m.result === 'win' ? '胜' : m.result === 'loss' ? '负' : '未标胜负'}`;
+        return `<a class="cx-film-cell ${tone}" href="#match/${encodeURIComponent(m.key)}" title="${esc(label)}">
         <span>${String(i + 1).padStart(2, '0')}</span>${spark(m)}</a>`;
-    }).join('');
-    const filmHint = total > filmList.length ? `先放 ${filmList.length} 格 / 共 ${fmt(total)} 局` : '点一格进那局复盘';
+      }).join('');
+    const filmHint = pending ? '读完自动补上'
+      : total > filmList.length ? `先放 ${filmList.length} 格 / 共 ${fmt(total)} 局` : '点一格进那局复盘';
     const score = `${a.wins}<i>:</i>${a.losses}`;
     return `<header class="cx-hero">
       <div class="cx-hero-top">
@@ -543,8 +567,36 @@ export function createCrossPage(h) {
   }
 
   function render(allRows, meta = {}) {
-    if (!allRows || !allRows.length) {
+    const vectorsAll = (meta.cohort && meta.cohort.vectors) || [];
+    if ((!allRows || !allRows.length) && !vectorsAll.length) {
       return '<div class="page cx-page"><section class="section cx-blank"><h1>还没有已确认的对局</h1><p>先到「对局档案」完成一局归档，跨局对照会自动排开。</p><a class="primary" href="#matches">去对局档案 →</a></section></div>';
+    }
+    /* 明细还没取完时先出一版：通用分析卡吃 cohort 向量，不用等 200 局回来 */
+    if (meta.pendingDetail) {
+      lastRows = [];
+      lastMeta = {
+        total: num(meta.total) ? meta.total : vectorsAll.length,
+        limit: num(meta.limit) ? meta.limit : vectorsAll.length,
+        cohort: meta.cohort || null,
+      };
+      const vectors = filterVectors(vectorsAll);
+      vizRows = vectors;
+      const result = analyzeCohort(vectors);
+      const rowIndex = new Map(vectors.map((v) => [v.key, v]));
+      const cards = new Map();
+      for (const c of result.cards) cards.set(c.id, c);
+      lastCards = cards;
+      lastRowIndex = rowIndex;
+      const uniq = (key, cap) => [...new Set(vectors.map((v) => String(v[key] || '').trim()).filter(Boolean))].sort().slice(0, cap);
+      const tab = activeTab();
+      const lanesPending = `<section class="cx-lanes"><div class="cx-lanes-head"><div><h2>分路对位</h2><p>正在读取各局明细，读完自动补上…</p></div></div></section>`;
+      return `<div class="page cx-page" data-cx-tab-active="${tab}">
+      ${heroCard(cohortSummary(vectors), [], vectors.length, true)}
+      ${tabsHtml(tab)}
+      ${scopeBar([], cohortSummary(vectors), lastMeta, { versions: uniq('version', 30), sessions: uniq('session', 30), opponents: uniq('opponent', 50) })}
+      ${TABS.map((t) => paneHtml(t, cards, rowIndex, tab, lanesPending)).join('')}
+      <p class="cx-source">数据来源：王者营地面板（十人结算 / 经济采样）、官方回放事件与逐秒位置。经济差一律为本队减对手，负数是落后。</p>
+    </div>`;
     }
     lastRows = allRows;
     lastMeta = {
