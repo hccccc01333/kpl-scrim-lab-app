@@ -195,8 +195,23 @@ def legal_scrim_candidates(
     if game_number > 1 and series_used_by_team is None:
         raise ValueError("第 2 局起必须提供已验证的全局 BP 历史英雄集合")
     used = series_used_by_team or {}
-    if any(not isinstance(h, str) for heroes in used.values() for h in heroes):
-        raise ValueError("已选英雄历史格式错误")
+    if not isinstance(used, dict):
+        raise ValueError("历史英雄必须按战队身份组织")
+    for team in (blue_team, red_team):
+        history = used.get(team, ())
+        if (not isinstance(history, (set, frozenset, tuple, list)) or
+                len(set(history)) != 5 * (game_number - 1) or
+                len(history) != 5 * (game_number - 1) or
+                any(not isinstance(h, str) or not h for h in history)):
+            raise ValueError("全局历史不完整：需要双方此前每局各 5 个真实选人")
+    # A previously picked hero cannot appear again in this TEAM's picks,
+    # even if someone supplied an already-illegal in-progress prefix.
+    for row in events:
+        if row["action"] != "pick":
+            continue
+        team = blue_team if str(row["camp"]) == "1" else red_team
+        if row["hero"] in used.get(team, ()):
+            raise ValueError("当前 BP 已违反全局禁复用限制")
     blocked = taken.copy()
     if nxt["action"] == "pick":
         blocked.update(used.get(actor_team, ()))
