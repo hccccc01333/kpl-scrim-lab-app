@@ -994,6 +994,251 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
                          '经济差 = 我方 − 对方终局金币，KDA 差 = 我方 − 对方。'
                          '这是对线结果对照，不等于个人能力评价，也不能推断因果。')}
 
+    if analysis_id == 'lane_profile':
+        # 05 选手对线画像：终局对位差 / CS 对位差 / 同路 1v1 击杀被单杀 /
+        # 对线期死亡时间点 / 团战参与（支援代理）/ 掉点损失。
+        # 只陈列条件与事实，不下「对线强弱」的结论；逐人分钟级经济快照
+        # 覆盖率为 0，绝不插值补造。
+        grouped = defaultdict(list)
+        for p in facts.get('players') or []:
+            lane = _lane_of(p)
+            if lane == '未标注' or not p.get('hero'):
+                continue
+            grouped[(p['match'], p['camp'], lane)].append(p)
+        win_camp = {str(g.get('id')): str(g.get('winCamp') or '')
+                    for g in facts.get('replayGames') or []}
+        for team in facts.get('teams') or []:
+            if team.get('result') in (True, 1, '1', 'true'):
+                win_camp.setdefault(str(team.get('match')),
+                                    '1' if team.get('camp') == '蓝' else '2')
+        kills_by_game = defaultdict(list)
+        for k in facts.get('killEvents') or []:
+            kills_by_game[k['game']].append(k)
+        deaths_by_player = defaultdict(list)
+        for d in facts.get('deathPoints') or []:
+            if d.get('player'):
+                deaths_by_player[d['player']].append(d)
+        drops_by_player = defaultdict(list)
+        for w in facts.get('dropWindows') or []:
+            if w.get('player'):
+                drops_by_player[w['player']].append(w)
+        fights_by_game = defaultdict(list)
+        for f in facts.get('fightFacts') or []:
+            fights_by_game[f['game']].append(f)
+        fight_rows_by_game = defaultdict(list)
+        for fr in facts.get('fightRows') or []:
+            fight_rows_by_game[fr['game']].append(fr)
+        opponents = facts.get('opponents') or {}
+
+        def won(camp, game):
+            winner = win_camp.get(str(game)) or ''
+            if not winner:
+                return None
+            return (winner == '1') if camp == '蓝' else (winner == '2')
+
+        per_player = defaultdict(lambda: {'rows': [], 'soloKills': 0, 'soloDeaths': 0,
+                                          'soloGames': set(), 'earlyDeaths': [], 'drops': [],
+                                          'teamFights': 0, 'joinedFights': 0,
+                                          'fightAssists': []})
+        game_lanes = defaultdict(dict)
+        for (game, camp, lane), people in grouped.items():
+            if people:
+                game_lanes[(game, lane)][camp] = people[0]
+        for (game, lane), camps in game_lanes.items():
+            for camp in ('蓝', '红'):
+                enemy_camp = '红' if camp == '蓝' else '蓝'
+                me, rival = camps.get(camp), camps.get(enemy_camp)
+                if not me or not rival:
+                    continue
+                if me.get('gold') is None or rival.get('gold') is None:
+                    continue
+                o, e = me, rival
+                sign = 1
+                enemy_laner_hero, enemy_laner_label = e.get('hero') or '', _player_label(e)
+                label = _player_label(o)
+                if not label:
+                    continue
+                info = per_player[label]
+                win = won(o['camp'], game)
+                info['rows'].append({
+                    'match': game, 'label': game_label(game),
+                    'opponent': opponents.get(game) or '',
+                    'lane': lane, 'hero': o.get('hero') or '', 'enemyHero': e.get('hero') or '',
+                    'goldDiff': o['gold'] - e['gold'],
+                    'csDiff': (round((o.get('cs') or 0) - (e.get('cs') or 0))
+                               if o.get('cs') is not None and e.get('cs') is not None else None),
+                    'win': win, 'start': o.get('start') or ''})
+                info['soloGames'].add(game)
+                for k in kills_by_game.get(game, []):
+                    t = k.get('t')
+                    if t is None or t > 480:
+                        continue  # 只看对线期内的 1v1
+                    if k.get('killerCamp') == o.get('camp') and k.get('killer') == o.get('hero') \
+                            and k.get('victim') == enemy_laner_hero:
+                        info['soloKills'] += 1
+                    if k.get('killerCamp') == enemy_camp and k.get('killer') == enemy_laner_hero \
+                            and k.get('victim') == o.get('hero'):
+                        info['soloDeaths'] += 1
+        for label, info in per_player.items():
+            for death in deaths_by_player.get(label, []):
+                if death.get('t') is not None and death['t'] <= 240:
+                    info['earlyDeaths'].append({'match': death['game'], 't': death['t']})
+            info['drops'] = drops_by_player.get(label, [])
+            for game in {row['match'] for row in info['rows']}:
+                my_camp = None
+                for row in facts.get('players') or []:
+                    if row['match'] == game and _player_label(row) == label:
+                        my_camp = row['camp']
+                        break
+                if not my_camp:
+                    continue
+                team_fights = [f for f in fights_by_game.get(game, [])
+                               if (f.get('camp1') == 1 and my_camp == '蓝')
+                               or (f.get('camp1') == 2 and my_camp == '红')]
+                joined = [fr for fr in fight_rows_by_game.get(game, [])
+                          if _player_label(fr) == label]
+                info['teamFights'] += len(team_fights)
+                info['joinedFights'] += len(joined)
+                info['fightAssists'].extend(
+                    fr.get('assists') for fr in joined if fr.get('assists') is not None)
+
+        players_out = []
+        for label, info in per_player.items():
+            rows = info['rows']
+            if not rows:
+                continue
+            with_result = [r for r in rows if r['win'] is not None]
+            cs_rows = [r for r in rows if r['csDiff'] is not None]
+            recent = sorted(rows, key=lambda r: r['start'], reverse=True)[:3]
+            players_out.append({
+                'player': label, 'games': len(rows),
+                'lanes': sorted({r['lane'] for r in rows}),
+                'heroes': sorted({r['hero'] for r in rows}),
+                'avgGoldDiff': round(statistics.mean(r['goldDiff'] for r in rows)),
+                'avgCsDiff': (round(statistics.mean(r['csDiff'] for r in cs_rows))
+                              if cs_rows else None),
+                'aheadRate': round(sum(1 for r in rows if r['goldDiff'] > 0) / len(rows) * 100, 1),
+                'winRate': (round(sum(1 for r in with_result if r['win']) / len(with_result) * 100, 1)
+                            if with_result else None),
+                'recentAvgGoldDiff': round(statistics.mean(r['goldDiff'] for r in recent)),
+                'soloKills': info['soloKills'], 'soloDeaths': info['soloDeaths'],
+                'earlyDeaths': len(info['earlyDeaths']),
+                'earlyDeathMinutes': sorted({f"{int(d['t'] // 60)}:{int(d['t'] % 60):02d}"
+                                             for d in info['earlyDeaths']})[:12],
+                'teamFightRate': (round(info['joinedFights'] / info['teamFights'] * 100, 1)
+                                  if info['teamFights'] else None),
+                'avgFightAssists': (round(statistics.mean(info['fightAssists']), 2)
+                                    if info['fightAssists'] else None),
+                'dropCount': len(info['drops']),
+                'dropAvgLoss': (round(statistics.mean(
+                    abs(w.get('swing') or 0) for w in info['drops'] if w.get('swing') is not None))
+                    if any(w.get('swing') is not None for w in info['drops']) else None),
+                'dropFinal': sum(1 for w in info['drops'] if w.get('final')),
+            })
+        players_out.sort(key=lambda item: -item['games'])
+        detail_rows = ([r for p in players_out if p['player'] == player
+                        for r in per_player[p['player']]['rows']] if player else [])
+        detail_rows.sort(key=lambda r: r['start'], reverse=True)
+        return {'viz': 'laneProfile', 'players': players_out,
+                'detail': detail_rows[:40],
+                'note': ('对线画像只陈列条件与事实：终局对位经济差、补刀差、对线期 1v1 与死亡时间点、'
+                         '团战参与与掉点损失。不定义「对线强弱」；逐人分钟级经济快照覆盖率 0，'
+                         '不插值补造；支援到场用团战参与率代理，分钟级到位时间需要位置序列。')}
+
+    if analysis_id == 'mastery':
+        # 06 绝活研究：选手×英雄的指标矩阵 + 七类画像（对线/支援/团战/开团/
+        # 运营/野区/后期核心）+ 同英雄他人参照。数据缺失的画像如实标注。
+        rows = facts.get('players') or []
+        hero_pool = defaultdict(list)
+        for p in rows:
+            if p.get('hero'):
+                hero_pool[p['hero']].append(p)
+        hero_to_label = {}
+        for p in rows:
+            if p.get('hero') and p.get('match'):
+                hero_to_label[(p['match'], p.get('camp'), p['hero'])] = _player_label(p)
+        first_by_fight = {}
+        for k in facts.get('killEvents') or []:
+            fid = (k['game'], k.get('fight'))
+            prev = first_by_fight.get(fid)
+            if prev is None or (k.get('t') is not None and prev.get('t') is not None
+                                and k['t'] < prev['t']):
+                first_by_fight[fid] = k
+        first_by_game_hero = Counter()
+        for (game, _fight), kill in first_by_fight.items():
+            label = hero_to_label.get((str(game), str(kill.get('killerCamp') or '')
+                                       .replace('1', '蓝').replace('2', '红'), kill.get('killer') or ''))
+            if label:
+                first_by_game_hero[(label, kill.get('killer') or '')] += 1
+        groups = defaultdict(list)
+        for p in rows:
+            label, hero = _player_label(p), p.get('hero')
+            if label and hero:
+                groups[(label, hero)].append(p)
+
+        def mean(items):
+            values = [v for v in items if v is not None]
+            return round(statistics.mean(values), 2) if values else None
+
+        mastery = []
+        for (label, hero), records in groups.items():
+            if not records:
+                continue
+            wins = sum(1 for r in records if r.get('win') is True)
+            decided = [r for r in records if r.get('win') is not None]
+            bench = [r for r in hero_pool.get(hero, []) if _player_label(r) != label]
+            bench_win = (round(sum(1 for r in bench if r.get('win') is True)
+                               / len(bench) * 100, 1) if bench else None)
+            bench_cs = mean([r.get('csPerMin') for r in bench])
+            team_hero_damage = defaultdict(int)
+            for r in rows:
+                if r.get('heroDamage') is not None:
+                    team_hero_damage[(r['match'], r['camp'])] += r['heroDamage']
+            damage_shares = [r['heroDamage'] / team_hero_damage[(r['match'], r['camp'])] * 100
+                             for r in records
+                             if r.get('heroDamage') is not None
+                             and team_hero_damage.get((r['match'], r['camp']))]
+            entry = {
+                'player': label, 'hero': hero, 'games': len(records),
+                'winRate': (round(wins / len(decided) * 100, 1) if decided else None),
+                'decided': len(decided), 'avgKda': mean([r.get('kda') for r in records]),
+                'csPerMin': mean([r.get('csPerMin') for r in records]),
+                'goldShare': mean([r.get('goldShare') for r in records]),
+                'participation': mean([r.get('participation') for r in records]),
+                'deathsPerGame': (round(sum(r.get('deaths') or 0 for r in records) / len(records), 2)),
+                'jungleGold': mean([r.get('jungleGold') for r in records]),
+                'towerDamage': mean([r.get('towerDamage') for r in records]),
+                'towerCnt': sum(r.get('towerCnt') or 0 for r in records),
+                'control': mean([r.get('control') for r in records]),
+                'healing': mean([r.get('healing') for r in records]),
+                'damageShare': (round(statistics.mean(damage_shares), 1) if damage_shares else None),
+                'teamFightFirst': sum(count for (p, h), count in first_by_game_hero.items()
+                                      if p == label and h == hero),
+                'benchWinRate': bench_win, 'benchCsPerMin': bench_cs,
+            }
+            entry['winDelta'] = (round(entry['winRate'] - bench_win, 1)
+                                 if entry['winRate'] is not None and bench_win is not None else None)
+            entry['csDelta'] = (round(entry['csPerMin'] - bench_cs, 2)
+                                if entry['csPerMin'] is not None and bench_cs is not None else None)
+            mastery.append(entry)
+        mastery.sort(key=lambda item: (-item['games'], -abs(item['winDelta'] or 0)))
+        types_note = {
+            '对线型': '对线期经济差与死亡时间点在「对线画像」分析里（需要分路映射）。',
+            '支援型': '支援到场用团战参与率代理；分钟级到位时间需要位置序列，未实现。',
+            '团战型': '参团率 / 对英雄输出占比 / 承伤已有；关键击杀（clutch）无采集定义，未实现。',
+            '开团型': '开团＝该波团战第一次击杀（与官方回放 firstKillerCamp 同源）。',
+            '运营型': '推塔伤害 / 推塔数已有；转线与带线牵制无对应事件，未实现。',
+            '野区节奏型': '野怪经济已有；控龙是团队口径，入侵事件未跨局聚合。',
+            '后期核心型': '终局经济占比 + 对英雄输出占比作代理；逐人分钟级经济快照覆盖 0，前期对比缺失。',
+        }
+        if player:
+            mastery = [m for m in mastery if m['player'] == player]
+        return {'viz': 'mastery', 'players': mastery[:60],
+                'typesNote': types_note,
+                'note': ('绝活判断需要四向对照：同选手其他英雄、同英雄其他选手（已给基准差）、'
+                         '同英雄不同对位（见对位画像）、同选手不同体系（未实现）。'
+                         '常用与高胜率不能直接定义绝活。')}
+
     raise HTTPException(status_code=404, detail='未知分析')
 
 
@@ -1002,7 +1247,7 @@ def create_depth_router(root, db_path=None, profile_loader=None):
     root = Path(root)
     router = APIRouter(prefix='/api/v3/facts', tags=['facts'])
     cache = {'key': None, 'facts': None}
-    facts_kinds = ('lane_matchup', 'equip_matrix', 'equip_impact')
+    facts_kinds = ('lane_matchup', 'equip_matrix', 'equip_impact', 'lane_profile', 'mastery')
 
     def facts():
         profile = profile_loader() if profile_loader else None

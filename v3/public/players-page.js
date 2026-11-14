@@ -966,7 +966,7 @@ export function createPlayers(h) {
     ['goldShare', '经济份额'],
   ];
 
-  function soloPage(board, name) {
+  function soloPage(board, name, laneProfile, mastery) {
     st.board = board;
     const players = board.players || [];
     const player = players.find(p => p.name === name);
@@ -1222,7 +1222,37 @@ export function createPlayers(h) {
     const peerBlock = block('同位置选手', `同一位置共 ${fmt(peers.length)} 人（本队 ${fmt(ownPeers)} · 对手 ${fmt(enemyPeers)}），按表现分排。`,
       peerRows ? `<div class="pls-peers">${peerRows}</div><p class="pl-note">表现分只对跨 2 局以上的样本有意义；1 局样本的名次会随单场波动。</p>` : empty('这个位置没有其他选手。'));
 
-    const panels = [percentileBlock, styleBlock, gameBlock, matchupBlock, keyBlock, partnerBlock, heroBlock, peerBlock];
+    /* 对线画像（05）：终局对位差 / CS 差 / 对线期 1v1 / 早期死亡 / 团战参与 / 掉点 */
+    const lp = (laneProfile?.players || []).find(p => p.player === name);
+    const laneProfileBlock = block('对线画像', '终局对位经济差、补刀差、对线期 1v1 与死亡时间点、团战参与、掉点损失；只陈列事实，不下「对线强弱」结论。',
+      lp ? `<div class="pl-kpi" role="group">${kpi([
+        ['对位经济差', num(lp.avgGoldDiff), '我方 − 对方（终局）'],
+        ['领先局占比', num(lp.aheadRate, 1) + '%', `${fmt(lp.games)} 局对位`],
+        ['胜率', lp.winRate == null ? '—' : num(lp.winRate, 1) + '%', `${fmt(lp.games)} 局对位`],
+        ['补刀差', num(lp.avgCsDiff, 1), '同分路对手'],
+        ['对线期 1v1', `${fmt(lp.soloKills)} / ${fmt(lp.soloDeaths)}`, '击杀 / 被单杀（≤8 分钟）'],
+        ['对线期死亡', fmt(lp.earlyDeaths), '≤4 分钟死亡次数'],
+        ['团战参与', lp.teamFightRate == null ? '—' : num(lp.teamFightRate, 1) + '%', '支援到场代理'],
+        ['掉点', fmt(lp.dropCount), lp.dropAvgLoss == null ? '次' : `次 · 均损 ${num(lp.dropAvgLoss)} 经济`],
+      ])}</div>
+      ${lp.earlyDeathMinutes?.length ? `<p class="pl-note">对线期死亡时间点：${esc(lp.earlyDeathMinutes.join('、'))}</p>` : ''}
+      ${lp.recentAvgGoldDiff != null ? `<p class="pl-note">最近 3 局对位经济差 ${num(lp.recentAvgGoldDiff)}（整体 ${num(lp.avgGoldDiff)}）。</p>` : ''}
+      <p class="pl-note">逐人分钟级经济快照覆盖 0，不提供过程对位曲线；支援到场用团战参与率代理。</p>` :
+      empty('该选手没有可判定的同分路对位记录（需要分路映射与对手同分路各一人）。'));
+
+    /* 绝活对照（06）：选手×英雄 vs 同英雄其他选手基准；数据缺失的画像如实说明 */
+    const masteryRows = (mastery?.players || []).slice(0, 6);
+    const masteryNote = mastery?.note ? `<p class="pl-note">${esc(mastery.note)}</p>` : '';
+    const masteryBlock = block('绝活对照', '选手×英雄相对「同英雄其他选手」的胜率与分均补刀差；团战首杀＝该波团战第一次击杀。常用与高胜率不能直接定义绝活。',
+      masteryRows.length ? masteryRows.map(m => `<div class="pls-hero">
+        <i class="pl-hp">${portrait(m.hero)}</i>
+        <span class="pls-hero-main"><b>${esc(m.hero)}</b><small>${fmt(m.games)} 局 · 胜率 ${m.winRate == null ? '—' : num(m.winRate, 1) + '%'} · 参团 ${m.participation == null ? '—' : num(m.participation, 1)} · 场均死亡 ${num(m.deathsPerGame, 2)}${m.teamFightFirst ? ` · 团战首杀 ${fmt(m.teamFightFirst)}` : ''}${m.towerCnt ? ` · 推塔 ${fmt(m.towerCnt)}` : ''}${m.jungleGold ? ` · 野区经济 ${fmt(m.jungleGold)}` : ''}</small></span>
+        <span class="pls-peer-score">${m.winDelta == null ? '—' : (m.winDelta > 0 ? '+' : '') + num(m.winDelta, 1)}</span>
+        <small class="pl-note">${m.benchWinRate == null ? '同英雄无其他选手样本' : `vs 同英雄基准 ${num(m.benchWinRate, 1)}%`}${m.csDelta != null ? ` · 分均补刀差 ${m.csDelta > 0 ? '+' : ''}${num(m.csDelta, 2)}` : ''}</small>
+      </div>`).join('') + masteryNote :
+      empty('该选手还没有可对照的英雄记录。'));
+
+    const panels = [percentileBlock, styleBlock, gameBlock, matchupBlock, laneProfileBlock, masteryBlock, keyBlock, partnerBlock, heroBlock, peerBlock];
     return `<div class="page hero-detail-page page-wide" data-pl-page="solo">${head}${briefHtml}${anchors(['同位置分位', '打法画像', '逐局表现', '同局对位', '关键局', '搭档', '英雄池', '同位置选手'])}<div class="hero-detail-grid">${panels.join('')}</div></div>`;
   }
 
