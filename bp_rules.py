@@ -235,3 +235,59 @@ def append_legal_scrim_action(events, hero, hero_pool, **kwargs):
         raise ValueError("该英雄在当前 BP 与系列赛状态下不可选择")
     return list(events) + [{"order": nxt["order"], "action": nxt["action"],
                             "camp": nxt["camp"], "hero": hero}]
+
+
+
+def scrim_state_payload(payload, catalog):
+    """Read-only legal move service used by the existing BP interface.
+
+    Caller supplies previous completed games, not just claimed blocked heroes.
+    The authoritative hero list is the repository's local catalog, not user
+    controlled data. No requests to external services are made.
+    """
+    if not isinstance(payload, dict) or payload.get("source", "scrim") != "scrim":
+        raise ValueError("该规则仅用于训练赛，不能用于 KPL")
+    bo = payload.get("bo", "BO3")
+    game_number = payload.get("gameNumber", 1)
+    validate_series_context(bo, game_number)
+    blue_team = payload.get("blueTeam", "本队")
+    red_team = payload.get("redTeam", "对手")
+    if (not isinstance(blue_team, str) or not isinstance(red_team, str) or
+            not 0 < len(blue_team) <= 60 or not 0 < len(red_team) <= 60 or
+            blue_team == red_team):
+        raise ValueError("蓝红方必须对应两支不同战队")
+    events = payload.get("events", [])
+    if not validate_scrim_prefix(events):
+        raise ValueError("训练赛选禁记录不符合当前 15 手规则")
+    history = payload.get("history", [])
+    used = build_series_used(history, bo=bo, game_number=game_number,
+                             teams=(blue_team, red_team))
+    candidates = legal_scrim_candidates(
+        events, catalog, bo=bo, game_number=game_number,
+        blue_team=blue_team, red_team=red_team,
+        series_used_by_team=used,
+        blue_player_pools=payload.get("bluePlayerPools"),
+        red_player_pools=payload.get("redPlayerPools"),
+    )
+    nxt = next_scrim_action(events)
+    return {
+        "rule": SCRIM_GLOBAL_15.id,
+        "bo": bo, "gameNumber": game_number,
+        "totalGames": SERIES_LENGTHS[bo],
+        "blueTeam": blue_team, "redTeam": red_team,
+        "schedule": [{"order": i + 1, "action": action, "camp": camp}
+                     for i, (action, camp) in enumerate(SCRIM_15_SCHEDULE)],
+        "nextAction": nxt,
+        "legalCandidates": candidates,
+        "completedActions": len(events),
+        "historyPickCounts": {team: len(heroes) for team, heroes in used.items()},
+        "playerPoolsVerified": bool(
+            payload.get("bluePlayerPools") is not None and
+            payload.get("redPlayerPools") is not None),
+        "notes": [
+            "5 次 Ban（蓝红蓝红蓝），然后 10 次 Pick（蓝1红2蓝2红2蓝2红1）。",
+            "BO3/BO5/BO7：战队本系列赛已选英雄不能再由该队 Pick，换边也不重置。",
+            "上一局 Ban 不自动延续；本局双方已 Ban/Pick 英雄均不可再选择。",
+            "未提供五名选手的真实英雄池时，只校验规则合法性，不代表选手一定会用。",
+        ],
+    }
