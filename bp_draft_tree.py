@@ -115,7 +115,13 @@ def priority_brief(games, all_games, existing=None):
         return []
     from bp_strategy import _evidence, _pct, _uncertainty
     from collections import Counter, defaultdict
-    others = [g for g in all_games if g["team"] not in {x["team"] for x in current}]
+    # Both perspectives of one game are correlated observations. Remove the
+    # target team's own match IDs from reference teams to avoid comparing a
+    # team against the opposite perspective of its very same games.
+    names = {g["team"] for g in current}
+    target_match_ids = {g["id"] for g in current}
+    others = [g for g in all_games if g["team"] not in names
+              and g["id"] not in target_match_ids]
     subject = "本队" if current[0]["team"] == "本队" else "对手"
     heroes = Counter(h for g in current for h in g["picks"])
     other = Counter(h for g in others for h in g["picks"])
