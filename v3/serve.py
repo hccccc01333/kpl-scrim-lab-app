@@ -2026,6 +2026,9 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
         for node in (report.get('bpStudies') or {}).get('draftTree', {}).get('nodes', []):
             if node.get('hero'):
                 heroes.add(node['hero'])
+        for context in (report.get('bpStudies') or {}).get('nextPickPolicy', {}).get('contexts', []):
+            heroes.add(context['opponentHero'])
+            heroes.update(pick['hero'] for pick in context['options'])
         icons = {}
         if panel_board:
             for hero, item in (panel_board.get('heroMeta') or {}).items():
