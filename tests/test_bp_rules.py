@@ -5,7 +5,7 @@ from bp_rules import (
     SCRIM_15_SCHEDULE, SERIES_LENGTHS,
     append_legal_scrim_action, build_series_used, can_assign_to_players,
     legal_scrim_candidates, next_scrim_action, profile_for,
-    validate_scrim_prefix, validate_series_context,
+    validate_scrim_prefix, validate_series_context, scrim_state_payload,
 )
 from bp_intelligence import build_report, normalize_kpl, normalize_scrims
 
@@ -228,3 +228,55 @@ def test_invalid_candidate_rejected_during_transition():
         append_legal_scrim_action(
             full_scrim_actions()[:5], "大乔",
             ["大乔", "镜"])
+
+
+
+def test_scrim_15_turn_api_payload_and_next_action():
+    heroes = BLUE_BANS + RED_BANS + BLUE_PICKS + RED_PICKS + ["后羿"]
+    snapshot = scrim_state_payload({"source": "scrim", "bo": "BO5",
+                                    "gameNumber": 1, "events": []}, heroes)
+    assert snapshot["rule"] == "scrim-global-15"
+    assert snapshot["nextAction"] == {
+        "order": 1, "action": "ban", "camp": "1", "phase": "ban"}
+    assert len(snapshot["schedule"]) == 15
+    after_ban = scrim_state_payload({
+        "bo": "BO5", "gameNumber": 1,
+        "events": full_scrim_actions()[:5]}, heroes)
+    assert after_ban["nextAction"]["order"] == 6
+    assert after_ban["nextAction"]["action"] == "pick"
+    assert "大乔" not in after_ban["legalCandidates"]
+    assert "花木兰" in after_ban["legalCandidates"]
+    ended = scrim_state_payload({
+        "bo": "BO5", "gameNumber": 1,
+        "events": full_scrim_actions()}, heroes)
+    assert ended["nextAction"] is None
+    assert ended["legalCandidates"] == []
+
+
+def test_scrim_api_global_bp_from_verified_history():
+    hero_a = "甲1-0"
+    hero_b = "乙1-0"
+    history = [_previous(1)]
+    data = {"source": "scrim", "bo": "BO3", "gameNumber": 2,
+            "blueTeam": "乙", "redTeam": "甲", "history": history,
+            "events": full_scrim_actions()[:5]}
+    catalog = ["新英雄", hero_a, hero_b, "张飞"]
+    snap = scrim_state_payload(data, catalog)
+    assert snap["nextAction"]["camp"] == "1"
+    assert hero_a in snap["legalCandidates"]
+    assert hero_b not in snap["legalCandidates"]
+    assert snap["historyPickCounts"] == {"乙": 5, "甲": 5}
+    with pytest.raises(ValueError):
+        scrim_state_payload({**data, "history": []}, catalog)
+    with pytest.raises(ValueError):
+        scrim_state_payload({**data, "source": "kpl"}, catalog)
+
+
+def test_scrim_api_rejects_game_two_repick_already_in_progress():
+    history = [_previous(1)]
+    data = {"bo": "BO3", "gameNumber": 2,
+            "blueTeam": "甲", "redTeam": "乙",
+            "history": history, "events": full_scrim_actions()[:5] +
+            [{"order": 6, "action": "pick", "camp": "1", "hero": "甲1-0"}]}
+    with pytest.raises(ValueError, match="禁复用"):
+        scrim_state_payload(data, ["甲1-0", "后羿"])
