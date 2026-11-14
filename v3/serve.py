@@ -21,8 +21,9 @@ from time import monotonic
 
 import uvicorn
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 HERE = Path(__file__).resolve().parent
@@ -40,6 +41,7 @@ from studio_api import create_studio_router
 from analysis_api import create_analysis_router
 from briefing_api import create_briefing_router
 from depth_api import create_depth_router
+from series_api import create_series_router
 import deep_analysis
 import identity_service
 import peak_crawl
@@ -79,6 +81,8 @@ async def read_json(request: Request):
 
 app = FastAPI(title='峡谷棱镜 · 赛训数据平台', docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost'])
+# 跨局明细一次带回几十 MB 的坐标与事件流，gzip 把传输量压到 1/8 左右。
+app.add_middleware(GZipMiddleware, minimum_size=4096)
 # Expose only reviewed studio endpoints. Several other V1 routes automatically
 # unlink cache/upload files, so they are not mounted here.
 _studio = create_studio_router(DB, MATCHES, IMPORTS)
@@ -120,6 +124,35 @@ app.include_router(create_depth_router(DEMO_ROOT or ROOT, DB))
 # 或临时占用 8766）也要挂同一张路由，否则首页拿到 404，只显示「简报服务暂时不可用」。
 app.include_router(create_briefing_router(
     OFFICIAL, DATA_DIR / 'camp_details', DATA_DIR, DB, matches_dir=MATCHES))
+
+
+def _series_vectors(repo, values=None):
+    """系列赛侧全量向量（V2.0）：不依赖跨局页的 200 局明细窗口，编组候选
+    先由全部合格对局确定，选定系列赛再按需取明细。"""
+    query = {'sources': list(DEFAULT_SOURCES), 'from': None, 'to': None, 'hero': None,
+             'opponent': None, 'excludeSeeds': False, 'ownOnly': True}
+    if values:
+        for key in ('sources', 'from', 'to', 'hero', 'opponent', 'excludeSeeds', 'ownOnly'):
+            if values.get(key) is not None:
+                query[key] = values[key]
+    items = repo.matches(query)['matches']
+    return [v for v in (_cross_vector(repo, item, 8) for item in items) if v]
+
+
+def _series_detail(repo, key):
+    return repo.match_detail(key)
+
+
+# 系列赛编组与分析路由（V2.0）：独立关系实体，不走 studio 白名单。
+# 生产入口 server.py 只挂本模块的 router（见 _mount_v3），独立运行走 app；
+# 同一组路由在两处都注册，测试用隔离 FastAPI 时直接用工厂。
+_series_router = create_series_router(DB, {
+    'repo': lambda request: repository(request),
+    'vectors': _series_vectors,
+    'detail': _series_detail,
+})
+app.include_router(_series_router)
+router.include_router(_series_router)
 app.mount('/static', StaticFiles(directory=HERE / 'public'), name='frontend')
 app.mount('/catalog/icons', StaticFiles(directory=ROOT / 'resources' / 'icons', check_dir=False),
           name='icons')
@@ -153,7 +186,8 @@ def invalidate_snapshot():
     global _snapshot, _loaded_at
     with _lock:
         _snapshot, _loaded_at = None, float('-inf')
-    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY', '_PANORAMA_CACHE', '_POSITIONS_FILE_CACHE'):
+    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY', '_PANORAMA_CACHE',
+                 '_POSITIONS_FILE_CACHE', '_CHANNELS_CACHE'):
         cache = globals().get(name)
         if cache is not None:
             cache.clear()
@@ -285,53 +319,101 @@ _REPLAY_FIELDS = ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage',
 # 进程重启后内存缓存全空，首次进跨局页要重算两百多局（半分钟以上）。
 # 落盘一份九字段子集（每局几十 KB），按 bundle + 官方回放目录的 mtime 失效。
 _PANORAMA_DISK = DATA_DIR / '.cache' / 'panorama'
+_PANORAMA_DISK_FILE = _PANORAMA_DISK / 'all.json'
+# 全景九字段子集合成一个磁盘文件：294 个小文件逐个读写会被实时扫描拖慢
+# （实测每文件 100–200ms），单文件整存整取只扫一次。
+_panorama_disk_data = None                    # 惰性加载 {key: {'sig': mtime, 'replay': {...}}}
+_panorama_disk_dirty = False
+_panorama_disk_last_write = 0.0
+# build 互斥：miss 时只重建一次；缓存命中路径不进锁。并发重建曾让进程硬崩，
+# 这里也保证任何时刻至多一个 build 在跑。
+_PANORAMA_BUILD_LOCK = Lock()
+# channels 表的 body 可能几百 KB，逐局查询+解析不便宜：按代际缓存解析结果。
+_CHANNELS_CACHE = {}
+# positions 的最终输出（十人降采样点，每局两万上下）也按局缓存：构造要
+# 遍历全部点，跨局页每局都要取一次，没有缓存就是每批几十毫秒的重复劳动。
+_POSITIONS_OUT_CACHE = {}
+
+
+def _channel_camp(channel_id):
+    """采集通道里的营地源数据（gameSeq / 玩家名单），带代际缓存。"""
+    cached = _CHANNELS_CACHE.get(channel_id)
+    if cached is not None and cached[0] == _data_stamp:
+        return cached[1]
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            row = connection.execute('SELECT body FROM channels WHERE id=?', (channel_id,)).fetchone()
+    except sqlite3.Error:
+        row = None
+    camp = {}
+    if row:
+        try:
+            channel = json.loads(row[0])
+            camp = (channel.get('sources') or {}).get('camp') or {}
+        except (ValueError, TypeError):
+            camp = {}
+    if len(_CHANNELS_CACHE) > 600:
+        _CHANNELS_CACHE.clear()
+    _CHANNELS_CACHE[channel_id] = (_data_stamp, camp)
+    return camp
 
 
 def _panorama_sig(key):
-    """缓存新鲜度指纹：bundle 文件 mtime + 官方回放目录 mtime。"""
-    bundle_path = MATCHES / f'{key}.json'
+    """缓存新鲜度指纹：bundle 文件 mtime。bundle 变了（重采 / 挂回放）才重建。"""
     try:
-        bundle_mtime = bundle_path.stat().st_mtime
+        return round((MATCHES / f'{key}.json').stat().st_mtime, 3)
     except OSError:
         return None
-    try:
-        bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
-        linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
-        folder = OFFICIAL / linked
-        official_mtime = folder.stat().st_mtime if folder.is_dir() else 0.0
-    except (OSError, ValueError):
-        official_mtime = 0.0
-    return (round(bundle_mtime, 3), round(official_mtime, 3))
+
+
+def _panorama_disk_load():
+    global _panorama_disk_data
+    if _panorama_disk_data is None:
+        try:
+            data = json.loads(_PANORAMA_DISK_FILE.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            data = {}
+        _panorama_disk_data = data if isinstance(data, dict) else {}
+    return _panorama_disk_data
 
 
 def _panorama_from_disk(key):
     sig = _panorama_sig(key)
     if sig is None:
         return None
-    path = _PANORAMA_DISK / f'{_safe_key(key)}.json'
-    if not path.is_file():
+    entry = _panorama_disk_load().get(key)
+    if not isinstance(entry, dict) or entry.get('sig') != sig:
         return None
-    try:
-        payload = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(payload, dict) or payload.get('sig') != sig:
-        return None
-    body = payload.get('replay')
+    body = entry.get('replay')
     return body if isinstance(body, dict) else None
 
 
 def _panorama_to_disk(key, subset):
+    """更新磁盘缓存内容；实际写盘有 15 秒节流，攒一批 miss 合并写一次。"""
+    global _panorama_disk_dirty
     sig = _panorama_sig(key)
     if sig is None:
         return
+    _panorama_disk_load()[key] = {'sig': sig, 'replay': subset}
+    _panorama_disk_dirty = True
+
+
+def _panorama_disk_flush():
+    """把攒下的全景缓存写回磁盘（有 15 秒节流，避免冷启动期间反复整写）。"""
+    global _panorama_disk_dirty, _panorama_disk_last_write
+    if not _panorama_disk_dirty:
+        return
+    now = monotonic()
+    if now - _panorama_disk_last_write < 15:
+        return
+    _panorama_disk_last_write = now
+    _panorama_disk_dirty = False
     try:
         _PANORAMA_DISK.mkdir(parents=True, exist_ok=True)
-        path = _PANORAMA_DISK / f'{_safe_key(key)}.json'
-        tmp = path.with_suffix('.tmp')
-        tmp.write_text(json.dumps({'sig': sig, 'replay': subset}, ensure_ascii=False,
+        tmp = _PANORAMA_DISK_FILE.with_suffix('.tmp')
+        tmp.write_text(json.dumps(_panorama_disk_load(), ensure_ascii=False,
                                   separators=(',', ':')), encoding='utf-8')
-        os.replace(tmp, path)
+        os.replace(tmp, _PANORAMA_DISK_FILE)
     except (OSError, TypeError, ValueError):
         pass                                  # 磁盘缓存失败不影响主流程
 
@@ -345,17 +427,47 @@ def _panorama_cached(key):
     cached = _PANORAMA_CACHE.get(key)
     if cached is not None and cached[0] == _data_stamp:
         return cached[1]
-    subset = _panorama_from_disk(key)
-    if subset is None:
-        result = panorama.get(key)
-        if result is None:
-            return None
-        subset = {name: result[name] for name in _REPLAY_FIELDS if name in result}
-        _panorama_to_disk(key, subset)
-    if len(_PANORAMA_CACHE) > 600:
-        _PANORAMA_CACHE.clear()
-    _PANORAMA_CACHE[key] = (_data_stamp, subset)
-    return subset
+    with _PANORAMA_BUILD_LOCK:
+        # 拿到锁后再查一次：刚才等锁期间别的线程可能已经把这局建好。
+        cached = _PANORAMA_CACHE.get(key)
+        if cached is not None and cached[0] == _data_stamp:
+            return cached[1]
+        subset = _panorama_from_disk(key)
+        if subset is None:
+            result = panorama.get(key)
+            if result is None:
+                return None
+            subset = {name: result[name] for name in _REPLAY_FIELDS if name in result}
+            _panorama_to_disk(key, subset)
+        if len(_PANORAMA_CACHE) > 600:
+            _PANORAMA_CACHE.clear()
+        _PANORAMA_CACHE[key] = (_data_stamp, subset)
+        _panorama_disk_flush()
+        return subset
+
+
+def _panorama_prewarm():
+    """后台预热全景缓存：启动后逐局构建并落盘，教练首次进跨局页不再撞冷启动。
+
+    单线程串行、与请求共享 build 锁：预热期间教练正常使用，最多为一局的
+    重建等几百毫秒。失败静默，预热不是正确性的前提。
+    """
+    time.sleep(45)                            # 让启动期的快照重建 / 巅峰刷新先跑
+    if IS_DEMO or not MATCHES.is_dir():
+        return
+    try:
+        snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
+        keys = [m['key'] for m in snapshot.get().get('matches') or [] if m.get('key')]
+    except Exception:                         # noqa: BLE001
+        return
+    for key in keys:
+        try:
+            _panorama_cached(key)
+        except Exception:                     # noqa: BLE001
+            continue
+
+
+Thread(target=_panorama_prewarm, daemon=True).start()
 
 
 def _cross_interp(series, t):
@@ -478,10 +590,13 @@ def _cross_vector(repo, item, segments=8):
             if not ours and not theirs:
                 continue
             won = (f.get(camp) or 0) > (f.get(other) or 0)
-            key = 'adv' if ours > theirs else 'dis' if ours < theirs else 'even'
-            buckets[key]['n'] += 1
+            # 注意：这里不能用 key（外层 key 是对局 match_key，最后要进 vector），
+            # 改名 bucket。此前覆盖曾让 330/386 个有团战回放的向量 key 变成
+            # adv/even/dis，跨局分析按局链接与系列赛索引全部错位（2026-11-14 修复）。
+            bucket = 'adv' if ours > theirs else 'dis' if ours < theirs else 'even'
+            buckets[bucket]['n'] += 1
             if won:
-                buckets[key]['win'] += 1
+                buckets[bucket]['win'] += 1
             first_side = f.get('first')
             if first_side == camp:
                 buckets['first']['n'] += 1
@@ -610,7 +725,9 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
     items = repo.matches(values)['matches']
     max_duration = max((float(i.get('duration') or 0) for i in items), default=0.0)
     segments = max(4, min(16, int(max_duration // 300) + 1)) if max_duration else 8
-    cache_key = (_data_stamp, tuple(i['key'] for i in items), values['from'], values['to'],
+    # 不把 keys 序列放进 key：快照重建后列表顺序若变，序列不同会让缓存
+    # 永远 miss；数据变化由 _data_stamp 兜底（bundle / 库 mtime 变才失效）。
+    cache_key = (_data_stamp, values['from'], values['to'],
                  tuple(values['sources']), values['excludeSeeds'], segments)
     hit = _CROSS_VECTOR_CACHE.get(cache_key)
     if hit is not None:
@@ -624,7 +741,9 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
     if len(_CROSS_VECTOR_CACHE) > 4:
         _CROSS_VECTOR_CACHE.clear()
     _CROSS_VECTOR_CACHE[cache_key] = payload
-    return payload
+    # 直接 dumps 返回：绕过 jsonable_encoder（vector 数量上千字段时明显慢）。
+    return Response(content=json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                    media_type='application/json')
 
 
 @router.get('/api/overview')
@@ -903,22 +1022,33 @@ def _positions_for_key(key):
 
     通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
     玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `POSITION_STEP` 秒一点。
+    输出按局缓存（数据代际失效），跨局页 200 局各取一次不再重复构造。
+    """
+    cached = _POSITIONS_OUT_CACHE.get(key)
+    if cached is not None and cached[0] == _data_stamp:
+        return cached[1]
+    result = _positions_for_key_uncached(key)
+    if result is not None:
+        if len(_POSITIONS_OUT_CACHE) > 600:
+            _POSITIONS_OUT_CACHE.clear()
+        _POSITIONS_OUT_CACHE[key] = (_data_stamp, result)
+    return result
+
+
+def _positions_for_key_uncached(key):
+    """一局的十人逐秒位置（降采样后）。取不到返回 None，不抛错。
+
+    通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
+    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `POSITION_STEP` 秒一点。
     """
     # 对局 key 带 channel- 前缀，channels 表的 id 不带。
     channel_id = key[len('channel-'):] if key.startswith('channel-') else key
-    try:
-        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
-            row = connection.execute('SELECT body FROM channels WHERE id=?', (channel_id,)).fetchone()
-    except sqlite3.Error:
-        row = None
-
     camp, seq = {}, ''
     bundle_players = []
-    if row:
-        channel = json.loads(row[0])
-        camp = (channel.get('sources') or {}).get('camp') or {}
+    if DB.is_file():
+        camp = _channel_camp(channel_id)
         seq = str(camp.get('gameSeq') or '')
-    else:
+    if not seq:
         # 没有采集通道（例如演示数据包）时，直接按数据包里挂的 officialReplay 找位置
         safe_key = _safe_key(key)
         bundle_path = MATCHES / f'{safe_key}.json' if safe_key else None
@@ -992,20 +1122,29 @@ def cross_window(batch: int = 0, size: int = 25, limit: int = 200,
     limit = max(1, min(400, limit))
     items = repo.matches(values)['matches'][:limit]
     part = items[batch * size:(batch + 1) * size]
-    rows = []
-    for item in part:
+
+    def one(item):
         key = item['key']
         detail = repo.match_detail(key)
         if not detail:
-            continue
+            return None
         replay = _panorama_cached(detail.get('bundleKey') or '') if detail.get('bundleKey') else None
-        rows.append({
+        return {
             'key': key,
             'detail': detail,
             'replay': {name: replay[name] for name in _REPLAY_FIELDS if name in replay} if replay else None,
             'positions': _positions_for_key(key),
-        })
-    return {'total': len(items), 'batch': batch, 'rows': rows}
+        }
+
+    # 保持串行：试过批内并行，在 Windows 上会让进程硬崩（原因未明，表现为
+    # 连接被重置、无 Python 异常）；缓存全热时串行一局约 35ms，一批 25 局
+    # 一秒内，配合磁盘缓存与预热线程，热路径足够快。
+    rows = [row for row in (one(item) for item in part) if row]
+    payload = {'total': len(items), 'batch': batch, 'rows': rows}
+    # 直接 dumps 返回：FastAPI 默认的 jsonable_encoder 会递归转换几十万个
+    # 坐标点（每批 3–4 MB），比 dumps 本身慢一个数量级。
+    return Response(content=json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                    media_type='application/json')
 
 
 @router.get('/api/players')
@@ -1086,10 +1225,23 @@ def sources(repo=Depends(repository), values=Depends(filters)):
 def metadata(repo=Depends(repository)):
     path = ROOT / 'resources' / 'catalog.json'
     entries = json.loads(path.read_text(encoding='utf-8')).get('entries', []) if path.is_file() else []
+    # 赛训组英雄标签（resources/hero_tags.json，scripts/import_hero_tags.py 产物）：
+    # 英雄 × 实际分路 → 该位置建议分类。十人面板的 10 分钟经济评级按它给打野
+    # 分野核（800/分钟）与坦野（6800 总量）两套口径。
+    hero_types = {}
+    tags_path = ROOT / 'resources' / 'hero_tags.json'
+    if tags_path.is_file():
+        try:
+            tags_doc = json.loads(tags_path.read_text(encoding='utf-8'))
+            hero_types = {name: hero.get('lanes') or {}
+                          for name, hero in (tags_doc.get('heroes') or {}).items()}
+        except (OSError, ValueError):
+            hero_types = {}
     return {
         'teamName': repo.get()['teamName'], 'options': repo.filters(), 'demo': IS_DEMO,
         'icons': {entry['name']: entry['icon'] for entry in entries
                   if entry.get('kind') == 'hero' and entry.get('name') and entry.get('icon')},
+        'heroTypes': hero_types,
     }
 
 
@@ -2433,6 +2585,20 @@ def _kpl_source_stamp(kpl_bp):
     return (stat.st_mtime_ns, stat.st_size)
 
 
+# 监控报告按（camp_details 指纹, 过滤参数）缓存：教练反复切窗口/刷新时
+# 不必每次重读全部营地面板。营地目录有新增/修改（指纹变化）自动失效。
+_MONITOR_CACHE = {}
+_MONITOR_CACHE_MAX = 12
+
+
+def _camp_dir_stamp(camp_dir):
+    try:
+        return max((p.stat().st_mtime_ns for p in camp_dir.glob('*.json')),
+                   default=0.0)
+    except OSError:
+        return None
+
+
 @router.get('/api/v3/monitor')
 def monitor_report(request: Request):
     """周期异常监控：英雄/组合/选手/体系的窗口突变清单。"""
@@ -2441,12 +2607,23 @@ def monitor_report(request: Request):
     unit = values.get('unit', 'week')
     if unit not in UNITS:
         raise HTTPException(400, '监控窗口必须是 day / week / month')
+    camp_dir = MATCHES.parent / 'camp_details'
+    stamp = _camp_dir_stamp(camp_dir)
+    cache_key = (stamp, unit, values.get('from') or '', values.get('to') or '')
+    cached = _MONITOR_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return run_monitor(bp_board()['games'], unit=unit,
-                           date_from=(values.get('from') or '').strip() or None,
-                           date_to=(values.get('to') or '').strip() or None)
+        report = run_monitor(bp_board()['games'], unit=unit,
+                             date_from=(values.get('from') or '').strip() or None,
+                             date_to=(values.get('to') or '').strip() or None)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    if stamp is not None:
+        if len(_MONITOR_CACHE) >= _MONITOR_CACHE_MAX:
+            _MONITOR_CACHE.pop(next(iter(_MONITOR_CACHE)))
+        _MONITOR_CACHE[cache_key] = report
+    return report
 
 
 @router.get('/api/v3/team-behavior')
