@@ -743,8 +743,16 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
             ${(report?.bpStudies?.version?.options||[]).map(row=>`<option value="${safe(row.name)}"
               ${state.version===row.name?'selected':''}>${safe(row.name)} · ${count(row.games)} 局</option>`).join('')}
           </select></label>
-        <span class="bpi-data-note">${report?`完整 BP ${count(report.scope?.orderedGames)} 局 · 数据不跨来源混算`:'正在读取…'}</span>
+        <span class="bpi-data-note">${report?`逐手 BP 记录 ${count(report.scope?.orderedGames)} 局 · 不跨来源混算`:'正在读取…'}</span>
       </div>
+      ${report?.bpStudies?.ruleCoverage ? `<div class="bpi-rules-caption">
+        <strong>${state.source==='scrim'?'训练赛 · 四阶段 18 手规则':'KPL · 赛事原始 BP 顺序'}</strong>
+        <span>${state.source==='scrim'?
+          `符合这套训练赛规则 ${count(report.bpStudies.ruleCoverage.scrim18)} 局；
+          其他训练赛 ${count(report.bpStudies.ruleCoverage.scrimUnknown)} 局，尚未按该模板确认`:
+          `历史逐手记录 ${count(report.bpStudies.ruleCoverage.kplRecorded)} 局；
+          不套用训练赛规则，后续合法动作依赛事赛制决定`}</span>
+      </div>`:''}
       ${report ? headline(report) : ''}
       <div class="bpi-view-tabs" role="group" aria-label="BP 研究内容">
         ${views.map(([id,label])=>`<button type="button" data-bpi-view="${id}" aria-pressed="${id===state.view}">${label}</button>`).join('')}
