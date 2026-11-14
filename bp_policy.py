@@ -82,15 +82,19 @@ def next_pick_policy(games):
         return result
     score_a = _pct(base_hits, test_decisions)
     score_b = _pct(context_hits, test_decisions)
+    gain = round(score_b - score_a, 1)
+    # Correlated within-game choices and small samples are common. Treat a
+    # tiny apparent improvement as exploratory, not a validated new policy.
+    supported = gain >= 5 and context_used >= 8 and test_decisions >= 20
     result.update({
         "status": "tested", "trainGames": len(train), "testGames": len(holdout),
         "testDecisions": test_decisions, "splitDate": split,
         "baselineTop3": score_a, "conditionTop3": score_b,
-        "gainPP": round(score_b - score_a, 1), "coverage": _pct(context_used, test_decisions),
-        "supported": score_b > score_a,
-        "reason": ("条件预测优于只按蓝红方和轮次统计的基线。"
-                   if score_b > score_a else
-                   "条件预测没有超过基线，暂不视为稳定的额外规律。")
+        "gainPP": gain, "coverage": _pct(context_used, test_decisions),
+        "supported": supported,
+        "reason": ("条件预测在未见日期上的 Top-3 命中率有一定增量；还需要更多比赛确认稳健性。"
+                   if supported else
+                   "目前增量、条件覆盖或后续样本不足，尚不能认定条件预测稳定优于基线。")
     })
     # These descriptive conditional patterns are sampled solely from training
     # games. No future holdout information influences the displayed rankings.
