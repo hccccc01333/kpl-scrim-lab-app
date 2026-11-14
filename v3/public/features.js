@@ -14,8 +14,8 @@ import { createPlayerCompare } from './player-compare.js';
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 export const featureSections = {
   ingest: [['ingest','营地同步']],
-  matches: [['matches','对局档案'], ['cross','跨局分析'], ['query','智能找局'], ['featured','精选对局'], ['records','训练纪录'], ['versions','版本对比']],
-  teams: [['teams','战队档案'], ['teamstyle','战队风格'], ['teamroster','战队阵容'], ['teamtraining','战队训练']],
+  matches: [['matches','对局档案'], ['cross','跨局分析'], ['query','智能找局'], ['featured','精选对局'], ['versions','版本对比']],
+  teams: [['teams','战队档案'], ['behavior','对手打法'], ['teamstyle','战队风格'], ['teamroster','战队阵容'], ['teamtraining','战队训练']],
   players: [['playerarchive','选手档案'], ['players','名单与状态'], ['compare','选手与位置'], ['playercompare','选手对比']],
   heroes: [['heroes','英雄榜'], ['herocompare','英雄对比'], ['combos','英雄组合']],
   bp: [['bp','BP 概览'], ['teambp','战队 BP'], ['bpcounter','BP 抗针对'], ['coach','教练档案']],
@@ -32,9 +32,9 @@ export function createFeatures(h) {
   const bpIntelligence = createBpIntelligence({currentQuery});
   const endpoints = {
     teams:['studio/teams'], team:['studio/teams'], teamstyle:['studio/teams'], teamroster:['studio/teams'], teamtraining:['v3/team-training'],
-    capture:['sources'], identity:['v3/players-board'], players:['v3/players-board'], playerarchive:['v3/players-board'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], compare:['v3/players-board'], playercompare:['v3/players-board'], playerdetail:['v3/players-board'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], teambp:['v3/bp-board'], bp:['v3/bp-board'], herocompare:['studio/camp-compare'], query:['matches'], featured:['matches','tempo'], records:['matches','tempo'],
+    capture:['sources'], identity:['v3/players-board'], players:['v3/players-board'], playerarchive:['v3/players-board'], ownership:['studio/opponents'], behavior:['v3/team-behavior'], coach:['v3/bp-board','studio/coach'], compare:['v3/players-board'], playercompare:['v3/players-board'], playerdetail:['v3/players-board'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], teambp:['v3/bp-board'], bp:['v3/bp-board'], herocompare:['studio/camp-compare'], query:['matches'], featured:['matches','tempo'],
     combos:['studio/camp-combos?min=3'], reports:['v3/research/reports'], report:['v3/research/reports'], economy:['v3/economy'],
-    effect:['v3/effect', 'studio/workspace/players'], versions:['matches'], session:['studio/workspace/sessions'],
+    effect:['v3/effect', 'studio/workspace/players'], versions:['matches','v3/versions'], session:['studio/workspace/sessions'],
     weekly:['studio/workspace/schedules','studio/workspace/matches','v3/effect','v3/workspace/overview','studio/workspace/teams'],
     setup:['v3/workspace/overview','studio/workspace/teams','studio/workspace/players','studio/workspace/pending','v3/workspace/migration','studio/teams','v3/identity/accounts'],
     pending:['studio/workspace/pending','studio/workspace/teams','v3/vocab'], plan:['studio/workspace/schedules','studio/workspace/teams','v3/vocab','studio/workspace/dashboard','studio/workspace/competitions'],
@@ -1105,6 +1105,33 @@ export function createFeatures(h) {
     const hint = root.querySelector('[data-tst-empty]');
     if (hint) hint.hidden = shown > 0;
   }
+  /* 对手打法（需求 08）：阵营/阵容统计 + 对手视角经济检查点；证据缺失留空。 */
+  function behaviorPage(data) {
+    const teams = data.teams || [];
+    const head = `<header class="hero-masthead"><div class="page-intro"><div>
+      <h1>对手打法习惯</h1><p>把对手的历史阵容与真实比赛过程关联：蓝红方分布、常用英雄、对手视角的经济检查点与领先兑现。相关条件并排呈现，不写成因果结论。</p></div></div></header>`;
+    const body = teams.length ? teams.map(t => {
+      const cp = t.checkpoints || {};
+      const cell = (stamp) => {
+        const c = cp[stamp] || {};
+        return `<td>${c.games ? `${fmt(c.games)} 局 · 均差 ${num(c.meanDiff, 0)}` : '—'}<small>${c.games
+          ? `领先 ${num(c.leadRate, 1)}% · 兑现 ${c.leadConversion == null ? '—' : num(c.leadConversion, 1) + '%'}`
+          : '无过程证据'}</small></td>`;
+      };
+      return `<details class="behavior-team"><summary><b>${esc(t.opponent)}</b>
+        <span>${fmt(t.games)} 局 · 胜率 ${t.winRate == null ? '—' : num(t.winRate, 1) + '%'} · 蓝方 ${fmt(t.blueGames)} / 红方 ${fmt(t.redGames)}</span></summary>
+        <div class="behavior-body">
+          <table class="behavior-cp"><thead><tr><th>对手视角检查点</th><th>4 分钟</th><th>10 分钟</th></tr></thead>
+            <tbody><tr><td>经济差 / 领先 / 兑现</td>${cell('240')}${cell('600')}</tr></tbody></table>
+          ${t.topPicks?.length ? `<p class="pl-note">常用英雄：${t.topPicks.map(p => `${esc(p.hero)}×${fmt(p.games)}`).join('、')}</p>` : ''}
+          ${t.evidence?.length ? `<details class="bpi-archive"><summary>最近对局证据</summary><p class="pl-note">${t.evidence.map(e => `${esc(e.day || '')} ${esc(e.result === 'win' ? '负' : e.result === 'loss' ? '胜' : '—')}`).join('；')}</p></details>` : ''}
+        </div>
+      </details>`;
+    }).join('') + `<div class="hero-brief">${(data.limitations || []).map(l => `<p class="pl-note">${esc(l)}</p>`).join('')}</div>` :
+      `<section class="section"><p class="pl-note">还没有可归属的对手训练赛记录。</p></section>`;
+    return `<div class="page">${head}${body}</div>`;
+  }
+
   function teamStyle(value) {
     const teams = value.teams || [];
     /* 有逐局点位就归一个「单局参考」象限；main.quadrant 只有样本够 3 局才会给。 */
@@ -3096,7 +3123,7 @@ export function createFeatures(h) {
         </div>
       </div>`+linkDialog, false, `<a class="control" href="#session/${encodeURIComponent(s.id || '')}?report=1">导出报告</a><a class="control" href="#plan">编辑计划</a>`, false, true);
   }
-  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),identity:v=>playerPages.identityPage(v[0]), players:v=>playerPages.playersPage(v[0]),playerarchive:v=>playerPages.archivePage(v[0]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),teambp:v=>teamBp(v[0]),query:v=>queryPage(v[0]),featured:v=>featuredPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[1],v[2]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3]),teamstyle:v=>teamStyle(v[0]),teamroster:v=>teamRoster(v[0]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),compare:v=>laneBoard.render(v[0]),heroes:v=>heroes(v[0]),bp:v=>bpBoard(v[0]),combos:v=>combos(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:(v)=>versions(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
+  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),identity:v=>playerPages.identityPage(v[0]), players:v=>playerPages.playersPage(v[0]),playerarchive:v=>playerPages.archivePage(v[0]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),teambp:v=>teamBp(v[0]),query:v=>queryPage(v[0]),featured:v=>featuredPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[1],v[2]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3]),behavior:v=>behaviorPage(v[0]),teamstyle:v=>teamStyle(v[0]),teamroster:v=>teamRoster(v[0]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),compare:v=>laneBoard.render(v[0]),heroes:v=>heroes(v[0]),bp:v=>bpBoard(v[0]),combos:v=>combos(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:(v)=>versions(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
   async function api(path, options={}) {
     const r=await fetch(API_BASE + '/api/'+path,{cache:'no-store',...options});
     if(!r.ok){

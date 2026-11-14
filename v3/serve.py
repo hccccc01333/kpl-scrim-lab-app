@@ -2433,6 +2433,16 @@ def _kpl_source_stamp(kpl_bp):
     return (stat.st_mtime_ns, stat.st_size)
 
 
+@router.get('/api/v3/team-behavior')
+def team_behavior(repo=Depends(repository)):
+    """对手打法习惯：阵容/阵营统计 + 对手视角经济检查点；证据缺失留空。"""
+    from bp_process import link_scrim_process
+    from opponent_behavior import opponent_behavior
+    rows = bp_board()['games']
+    process_map = link_scrim_process(rows, repo.get()['matches'])
+    return opponent_behavior(rows, process_map)
+
+
 @router.get('/api/v3/bp-intelligence')
 def bp_intelligence_report(request: Request, repo=Depends(repository)):
     """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""

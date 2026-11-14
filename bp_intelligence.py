@@ -515,19 +515,61 @@ def _hero_win_shifts(games):
 
 
 def _lineups(games):
-    """Actual five-hero lineups, independent of displayed ordering."""
+    """Actual five-hero lineups, independent of displayed ordering.
+
+    goldCore：该阵容里经济第一名的英雄与其占比（营地逐人 gold 事实，非推断）；
+    tempo：挂上了过程证据的局在 600 秒检查点的本队视角经济差与领先兑现。
+    缺证据时两项为 None，不插值补造。"""
     buckets = defaultdict(list)
     for g in games:
         if len(g["picks"]) == 5:
             buckets[tuple(sorted(g["picks"]))].append(g)
+    lane_names = {"打野": "野核", "发育路": "射核", "中路": "中核"}
     result = []
     for heroes, records in buckets.items():
         decided = [g for g in records if g["result"] is not None]
         wins = sum(g["result"] is True for g in decided)
+        cores = []
+        for g in records:
+            players = [p for p in (g.get("players") or [])
+                       if isinstance(p.get("gold"), (int, float)) and p["gold"] > 0
+                       and p.get("hero") in heroes]
+            if len(players) != 5:
+                continue
+            total = sum(p["gold"] for p in players)
+            if total <= 0:
+                continue
+            top = max(players, key=lambda p: p["gold"])
+            cores.append({"hero": top["hero"], "share": top["gold"] / total * 100,
+                          "system": lane_names.get(str(top.get("lane") or ""), "其他单核")})
+        gold_core = None
+        if cores:
+            hero_counts = Counter(c["hero"] for c in cores)
+            core_hero, core_n = hero_counts.most_common(1)[0]
+            gold_core = {"hero": core_hero, "games": core_n,
+                         "share": round(sum(c["share"] for c in cores
+                                            if c["hero"] == core_hero) / core_n, 1),
+                         "system": Counter(c["system"] for c in cores
+                                           if c["hero"] == core_hero).most_common(1)[0][0],
+                         "sampled": len(cores)}
+        diffs600 = [g["teamGoldDiff"]["600"] for g in records
+                    if isinstance((g.get("teamGoldDiff") or {}).get("600"), (int, float))]
+        tempo = None
+        if diffs600:
+            lead = [d for d in diffs600 if d > 0]
+            lead_decided = [g for g, d in zip(records, [g["teamGoldDiff"]["600"] for g in records])
+                            if isinstance((g.get("teamGoldDiff") or {}).get("600"), (int, float))
+                            and g["result"] is not None and g["teamGoldDiff"]["600"] > 0]
+            tempo = {"games": len(diffs600),
+                     "meanDiff600": round(sum(diffs600) / len(diffs600), 1),
+                     "leadRate": _percent(len(lead), len(diffs600)),
+                     "leadWinRate": _percent(sum(g["result"] is True for g in lead_decided),
+                                             len(lead_decided))}
         result.append({"heroes": list(heroes), "games": len(records),
                        "wins": wins, "decided": len(decided),
                        "winRate": _percent(wins, len(decided)),
                        "interval": _wilson(wins, len(decided)),
+                       "goldCore": gold_core, "tempo": tempo,
                        "evidence": _evidence(records)})
     return sorted(result, key=lambda x: (-x["games"], x["heroes"]))[:18]
 
