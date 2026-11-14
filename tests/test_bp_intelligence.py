@@ -98,9 +98,11 @@ def test_scrim_verified_player_hero_and_performance_without_inventing_phase():
     own = next(g for g in records if g["team"] == "本队")
     assert own["players"][0]["hero"] == "夏洛特"
     assert own["enemyPlayers"][0]["hero"] == "马超"
-    assert len(own["events"]) == len(draft())
+    # The 14-turn fixture models a KPL-style historical record. It cannot
+    # be promoted into the user's new 15-turn training-scrim schedule.
+    assert own["events"] == []
     report = build_report([raw], [], source="scrim", team="本队")
-    assert report["scope"]["orderedGames"] == 1
+    assert report["scope"]["orderedGames"] == 0
     assert report["players"][0]["heroDamagePer1000Gold"] == 2400.0
     assert report["players"][0]["player"] == "实训选手"
 
