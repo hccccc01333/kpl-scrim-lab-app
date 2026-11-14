@@ -746,10 +746,11 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
         <span class="bpi-data-note">${report?`逐手 BP 记录 ${count(report.scope?.orderedGames)} 局 · 不跨来源混算`:'正在读取…'}</span>
       </div>
       ${report?.bpStudies?.ruleCoverage ? `<div class="bpi-rules-caption">
-        <strong>${state.source==='scrim'?'训练赛 · 四阶段 18 手规则':'KPL · 赛事原始 BP 顺序'}</strong>
+        <strong>${state.source==='scrim'?'训练赛 · 5 Ban + 10 Pick · 全局 BP':'KPL · 赛事原始 BP 顺序'}</strong>
         <span>${state.source==='scrim'?
-          `符合这套训练赛规则 ${count(report.bpStudies.ruleCoverage.scrim18)} 局；
-          其他训练赛 ${count(report.bpStudies.ruleCoverage.scrimUnknown)} 局，尚未按该模板确认`:
+          `符合训练赛 15 手顺序 ${count(report.bpStudies.ruleCoverage.scrim15)} 局；
+          其他训练赛 ${count(report.bpStudies.ruleCoverage.scrimUnknown)} 局缺少新规则核验；
+          BO3/BO5/BO7 跨局已选英雄还需完整系列赛历史`:
           `历史逐手记录 ${count(report.bpStudies.ruleCoverage.kplRecorded)} 局；
           不套用训练赛规则，后续合法动作依赛事赛制决定`}</span>
       </div>`:''}
