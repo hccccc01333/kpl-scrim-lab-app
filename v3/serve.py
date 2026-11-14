@@ -1879,25 +1879,19 @@ def team_bp():
 
 @router.get('/api/v3/bp-board')
 def bp_board():
-    """BP 三页共用的全量聚合：营地面板终局名单 + 战队 / 教练档案。
+    """BP 模块基础数据：终局名单、已知选手，以及经过验证的 BP 顺序事件。
 
-    营地只给「谁上场 / 谁被禁」的终局名单，没有禁选先后顺序，也不含一手方。
-    这里只输出逐局名单与元数据；筛选、画像、风格指标由前端按局实时重算，
-    这样 BP 概览 / 战队 BP / 教练档案三页用的是同一份口径，不会混算。
+    旧营地记录可能只有最终选禁名单；新采集流程若提供 draftEvents，
+    透传给研究引擎逐手校验后使用，不从名单反推顺序。
     """
     import team_clusters
     from bp_camp import parse_camp_bp
     camp_dir = MATCHES.parent / 'camp_details'
     clusters = team_clusters.list_teams(camp_dir, DB)
     teams = clusters['teams']
-    # 教练由使用者在战队档案里录入；开发期按「已补好」的默认状态在展示层预置一组
-    # 稳定姓名，录入真名后自动覆盖。只影响展示，不改写档案数据库。
-    preset_coaches = ('陈昱', '林澈', '周砚', '吴珂', '郑霖', '孙骁', '赵衡', '钱越',
-                      '李牧', '王铮', '刘屿', '黄铮', '徐墨', '何川', '高岩', '马骁',
-                      '沈砚', '许澈', '韩昱', '唐珂', '冯霖', '曹衡', '彭越', '董牧',
-                      '袁铮', '邓屿', '傅墨', '苏川', '蒋岩', '卢骁', '余澈', '叶昱')
-    coach_of = {t['id']: (t.get('coach') or preset_coaches[i % len(preset_coaches)])
-                for i, t in enumerate(teams)}
+    # 只有人工录入并核实的教练姓名才能用于执教档案。
+    # 缺失时留空，不使用开发期的随机姓名填充。
+    coach_of = {t['id']: (t.get('coach') or '') for t in teams}
     seq_team = {seq: team for team in teams for seq in team.get('seqs', [])}
     games, hero_meta = [], {}
     for panel in team_clusters.load_panels(camp_dir):
@@ -1932,10 +1926,37 @@ def bp_board():
             'result': 'win' if result else ('loss' if result is False else None),
             'side': panel['own'], 'ownSide': own,
             'duration': bp.get('duration'), 'mapName': bp.get('mapName'),
+            # Only actual patch labels, never derive version from calendar date.
+            'version': (bp.get('version') or detail.get('version') or
+                        (detail.get('data') or {}).get('version') or ''),
+            'stage': bp.get('stage') or '',
+            # Optional explicit scrim-only rule label from capture. Do not
+            # attach this metadata to KPL games.
+            'ruleProfile': (bp.get('ruleProfile') or
+                            detail.get('ruleProfile') or
+                            (detail.get('data') or {}).get('ruleProfile') or ''),
             'picks': {'own': entries('picks', own), 'enemy': entries('picks', enemy)},
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
             'players': {'own': [p.get('name') for p in panel['own_roster']],
                         'enemy': [p.get('name') for p in panel['enemy_roster']]},
+            # 选手与英雄仅以营地逐人 usedHero 的事实映射为依据，不按 Pick 顺序猜测。
+            'roster': {
+                'own': [{'name': p.get('name'), 'hero': p.get('hero'),
+                         'lane': p.get('lane'), 'gold': p.get('gold'),
+                         'heroDamage': p.get('heroDamage'), 'deaths': p.get('deaths'),
+                         'participation': p.get('participation')} for p in panel['own_roster']],
+                'enemy': [{'name': p.get('name'), 'hero': p.get('hero'),
+                           'lane': p.get('lane'), 'gold': p.get('gold'),
+                           'heroDamage': p.get('heroDamage'), 'deaths': p.get('deaths'),
+                           'participation': p.get('participation')} for p in panel['enemy_roster']],
+            },
+            # 本地版本若已提供完整 BP 事件，原样透传供研究引擎严格校验；
+            # 旧营地面板没有顺序时不得根据最终名单补造。
+            'draftEvents': (bp.get('draftEvents') or
+                            bp.get('bpSequence') or
+                            detail.get('draftEvents') or
+                            (detail.get('data') or {}).get('draftEvents') or
+                            (detail.get('data') or {}).get('bpSequence') or []),
             # 终局面板的经济 / 击杀 / 推塔 / 龙，供教练档案与 BP 页做资源口径；
             # 视角固定为「本队 = own」，前端按需要翻转成教练一方。
             'stats': {'own': (bp.get('teamStats') or {}).get(own) or {},
@@ -1950,6 +1971,133 @@ def bp_board():
         'heroMeta': hero_meta,
         'source': '营地终局名单 · 不推断禁选先后顺序',
     }
+
+
+def _local_scrim_hero_catalog():
+    """Repo-pinned hero names; no network or inferred hero identities."""
+    path = ROOT / 'resources' / 'catalog.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise HTTPException(503, '本地英雄词表不可用，无法校验 BP 候选。') from error
+    items = payload.get('entries') or []
+    heroes, icons = [], {}
+    seen = set()
+    for entry in items:
+        if not isinstance(entry, dict) or entry.get('kind') != 'hero':
+            continue
+        name = str(entry.get('name') or '').strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        heroes.append(name)
+        icon = str(entry.get('icon') or '')
+        if re.fullmatch(r'/catalog/icons/hero-\d+\.png', icon):
+            icons[name] = icon
+    return {'heroes': heroes, 'icons': icons,
+            'catalogUpdatedAt': payload.get('updatedAt') or ''}
+
+
+@router.get('/api/v3/bp-scrim/catalog')
+def bp_scrim_catalog():
+    """Full local hero roster for the scrim 15-turn manual planner."""
+    from bp_rules import SCRIM_GLOBAL_15
+    data = _local_scrim_hero_catalog()
+    return {**data, 'rule': SCRIM_GLOBAL_15.id}
+
+
+@router.post('/api/v3/bp-scrim/next')
+async def bp_scrim_next(request: Request):
+    """Pure 15-action rule check; never applies user scrim rules to KPL."""
+    from bp_rules import scrim_state_payload
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 请求必须是对象')
+    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
+        raise HTTPException(413, 'BP 请求过大')
+    try:
+        return scrim_state_payload(payload, _local_scrim_hero_catalog()['heroes'])
+    except (ValueError, TypeError, KeyError) as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@router.get('/api/v3/bp-intelligence')
+def bp_intelligence_report(request: Request, repo=Depends(repository)):
+    """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""
+    from bp_intelligence import build_report
+    from bp_process import link_scrim_process
+    from bp_camp import hero_entry
+    import kpl_bp
+    import re
+
+    values = request.query_params
+    source = values.get('source', 'scrim')
+    try:
+        panel_board = bp_board() if source == 'scrim' else None
+        # 只按完整日期、双方 10 英雄、阵营与唯一匹配连接；对不上就留空。
+        # 仅读仓库已有快照，绝不重新抓取回放或把队伍经济当个人对线经济。
+        process_map = (link_scrim_process(panel_board['games'], repo.get()['matches'])
+                       if panel_board else {})
+        report = build_report(
+            panel_board['games'] if panel_board else [],
+            kpl_bp.load_games() if source == 'kpl' else [],
+            source=source,
+            team=str(values.get('team') or '').strip(),
+            start=str(values.get('from') or '').strip(),
+            end=str(values.get('to') or '').strip(),
+            version=str(values.get('version') or '').strip(),
+            process_map=process_map,
+        )
+        # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。
+        heroes = set()
+        for key in ('picks', 'bans'):
+            heroes.update(row['hero'] for row in report[key])
+        for key in ('pairs', 'trios'):
+            for row in report[key]:
+                heroes.update(row['heroes'])
+        for row in report['players']:
+            heroes.add(row['hero'])
+        for row in report['responses']:
+            heroes.add(row['trigger'])
+            heroes.add(row['response'])
+        for section in ('matchups', 'twoStep'):
+            for row in (report.get('bpStudies') or {}).get(section) or []:
+                if section == 'matchups':
+                    heroes.update(row['enemyCore'])
+                    heroes.add(row['candidate'])
+                else:
+                    heroes.add(row['trigger'])
+                    for branch in row['branches']:
+                        heroes.add(branch['ownPick'])
+                        heroes.add(branch['enemyNext'])
+        for row in (report.get('bpStudies') or {}).get('draft', {}).get('rounds', []):
+            heroes.add(row['hero'])
+        for row in (report.get('bpStudies') or {}).get('version', {}).get('changes', []):
+            heroes.add(row['hero'])
+        # Multi-round explorer includes long-tail Ban/Pick heroes beyond the
+        # top-24 aggregate tables; resolve their local icons as well.
+        for node in (report.get('bpStudies') or {}).get('draftTree', {}).get('nodes', []):
+            if node.get('hero'):
+                heroes.add(node['hero'])
+        for context in (report.get('bpStudies') or {}).get('nextPickPolicy', {}).get('contexts', []):
+            heroes.add(context['opponentHero'])
+            heroes.update(pick['hero'] for pick in context['options'])
+        icons = {}
+        if panel_board:
+            for hero, item in (panel_board.get('heroMeta') or {}).items():
+                url = (item or {}).get('icon') or ''
+                if hero in heroes and re.fullmatch(r'/catalog/icons/hero-\d+\.png', url):
+                    icons[hero] = url
+        for hero in heroes:
+            if hero in icons:
+                continue
+            url = (hero_entry(hero) or {}).get('icon') or ''
+            if re.fullmatch(r'/catalog/icons/hero-\d+\.png', url):
+                icons[hero] = url
+        report['icons'] = icons
+        return report
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
 
 
 @router.get('/api/v3/effect')

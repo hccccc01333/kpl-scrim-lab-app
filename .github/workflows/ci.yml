@@ -75,5 +75,9 @@ jobs:
           exit 1
       - name: V3 route audit
         run: python scripts/audit_v3_regression.py http://127.0.0.1:8766
+      - name: BP coach interaction regression (desktop and mobile)
+        run: python scripts/verify_bp_interactions.py http://127.0.0.1:8766
+      - name: Scrim BO3/BO5/BO7 global BP regression (desktop and mobile)
+        run: python scripts/verify_scrim_global_bp.py http://127.0.0.1:8766
       - name: Update panel regression
         run: python scripts/verify_update_panel.py --base http://127.0.0.1:8766
