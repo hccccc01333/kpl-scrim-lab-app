@@ -70,6 +70,75 @@ function headline(report) {
   </div>`;
 }
 
+
+function priorityView(report) {
+  const rows=report.bpStudies?.priorities||[];
+  if(!rows.length)return '';
+  return `<section class="bpi-priorities">
+    <div class="bpi-priority-title"><h3>赛前关注优先级</h3>
+      <span>真实对局 · 条件对照 · 谨慎判断</span></div>
+    <div class="bpi-priority-grid">${rows.map((r,i)=>`<article class="bpi-priority">
+      <div class="bpi-card-top"><span>${String(i+1).padStart(2,'0')}</span>
+        <em class="${r.level==='重点'?'is-up':''}">${safe(r.level)}</em></div>
+      <h4>${safe(r.title)}</h4>
+      <p>${safe(r.detail)}</p>
+      <div class="bpi-priority-action"><strong>赛前怎么用</strong><span>${safe(r.action)}</span></div>
+      ${evidenceDetails(r.evidence, '核查实际比赛')}
+    </article>`).join('')}</div>
+  </section>`;
+}
+
+function fullDraftView(report, nodeId) {
+  const d=report.bpStudies?.draftTree||{};
+  const nodes=d.nodes||[];
+  if(!nodes.length||!report.team)return note('请先选择具有完整逐手 BP 记录的战队',
+     '从真实逐手选禁中构造决策树；没有顺序的终局名单不会生成推演分支。');
+  const ids=new Map(nodes.map(n=>[n.id,n]));
+  let cur=ids.get(nodeId)||ids.get(0);
+  if(!cur)return note('当前数据无法生成决策树','请选择其他版本或对手。');
+  const chain=[];
+  let cursor=cur;
+  while(cursor && cursor.id!==0){
+    chain.unshift(cursor);
+    cursor=ids.get(cursor.parent);
+  }
+  const next=nodes.filter(n=>n.parent===cur.id).sort((a,b)=>b.games-a.games).slice(0,15);
+  const explored=d.indexedGames||0;
+  const actorName=actor=>actor==='team'?'目标战队':'对方战队';
+  const stepName=(n)=>`${actorName(n.actor)}${n.action==='pick'?'选择':'禁用'}`;
+  return `<section class="bpi-panel bpi-tree-panel">
+    <header><h3>完整 BP 历史决策树</h3>
+      <span>${count(explored)} 局索引 · ${count(d.orderedGames)} 局完整顺序</span></header>
+    <p class="bpi-explain">从实际第一手开始逐轮点击，直到整套 BP 完成。每条路径均存在于历史数据；${d.limited?'为控制页面体积，仅取近期一部分完整比赛。':'按当前战队和筛选范围展示。'}</p>
+    <div class="bpi-tree-toolbar">
+      <button type="button" data-bpi-tree-reset ${cur.id===0?'disabled':''}>回到第一手</button>
+      <button type="button" data-bpi-tree-back ${cur.id===0?'disabled':''}>上一步</button>
+      <span>当前分支包含 ${count(cur.games)} 场真实比赛</span>
+    </div>
+    <div class="bpi-tree-path">
+      <span>起点</span>
+      ${chain.map((n,i)=>`<button type="button" data-bpi-tree-node="${n.id}" title="查看该步的后续选择">
+        <small>${i+1} · ${safe(actorName(n.actor))}</small>
+        <span>${heroBadge(n.hero,report.icons)}</span>
+        <small>${n.action==='pick'?'Pick':'Ban'}</small>
+      </button>`).join('')}
+    </div>
+    <div class="bpi-tree-current">
+      <div><strong>${next.length?'历史下一手选择':'这一分支的 BP 已结束'}</strong>
+        <span>${next.length?'点击任一实际出现过的选禁，继续研究后续分支。':'可打开比赛依据或返回上一步比较其他选择。'}</span></div>
+      ${next.length?`<div class="bpi-tree-options">${next.map(n=>`<button type="button" data-bpi-tree-node="${n.id}">
+        <span class="bpi-tree-option-top">${safe(stepName(n))}<b>${count(n.games)} 场</b></span>
+        ${heroBadge(n.hero,report.icons)}
+        ${shareBar(cur.games?Math.round(n.games/cur.games*1000)/10:0)}
+        <small>占当前历史分支 ${cur.games?pct(n.games*100/cur.games):'—'}</small>
+      </button>`).join('')}</div>`:''}
+    </div>
+    ${evidenceDetails(cur.evidence, '查看当前 BP 路径对应比赛')}
+    <div class="bpi-research-alert"><b>这是多轮历史推演，不是自动求解最优 BP</b>
+      <p>只能沿真实比赛出现过的分支前进，不能给未观察到的英雄组合编造胜率。分支频率反映过去的选择习惯；样本数量越少，结论越不稳定。</p></div>
+  </section>`;
+}
+
 function findingCards(report) {
   if (!report.findings?.length) return note('当前没有足够证据生成重点结论',
     '可以切换对手或正式比赛数据查看；系统不会用零星胜率编造规律。');
@@ -584,7 +653,7 @@ function sandboxView(report, trigger) {
 
 export function createBpIntelligence({currentQuery=()=>''} = {}) {
   const state = {root:null, controller:null, source:'scrim', team:'本队',
-    mode:'overview', view:'focus', trigger:'', side:'1', version:'',report:null, error:''};
+    mode:'overview', view:'focus', trigger:'', side:'1', version:'',treeNode:0,report:null, error:''};
 
   function body() {
     const report=state.report;
@@ -600,11 +669,13 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       case 'changes': return changeView(report) + diagnosticView(report);
       case 'tempo': return processView(report);
       case 'diagnostics': return diagnosticView(report);
-      case 'sandbox': return twoStepView(report,state.trigger);
+      case 'sandbox': return fullDraftView(report,state.treeNode)
+        +'<details class="bpi-archive"><summary>补充：按英雄查看跨不同局面的历史两步回应</summary>'
+        +twoStepView(report,state.trigger)+'</details>';
       default: return `<section class="bpi-intro-brief">
           <h3>这段时间最值得关注的 BP 现象</h3>
           <p>从选禁频率、真实 BP 回应、阵容组合和周期变化中选出有比赛证据的发现。</p>
-        </section>${findingCards(report)}
+        </section>${priorityView(report)}${findingCards(report)}
         <div class="bpi-shortcuts"><button type="button" data-bpi-view="habits">查看选禁路径</button>
         <button type="button" data-bpi-view="players">研究选手绝活</button>
         <button type="button" data-bpi-view="combos">研究阵容协同</button>
@@ -688,13 +759,28 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     if(root.dataset.bpiBound)return;
     root.dataset.bpiBound='1';
     root.addEventListener('click', event=>{
+      const tree=event.target.closest('[data-bpi-tree-node]');
+      if(tree){
+        const next=Number(tree.dataset.bpiTreeNode);
+        if(Number.isInteger(next)&&state.report?.bpStudies?.draftTree?.nodes?.some(n=>n.id===next)){
+          state.treeNode=next;paint();
+        }
+        return;
+      }
+      if(event.target.closest('[data-bpi-tree-reset]')){
+        state.treeNode=0;paint();return;
+      }
+      if(event.target.closest('[data-bpi-tree-back]')){
+        const cur=state.report?.bpStudies?.draftTree?.nodes?.find(n=>n.id===state.treeNode);
+        state.treeNode=cur?.parent??0;paint();return;
+      }
       const side=event.target.closest('[data-bpi-side]');
       if(side){state.side=side.dataset.bpiSide;paint();return;}
       const source=event.target.closest('[data-bpi-source]');
       if(source){
         const next=source.dataset.bpiSource;
         if(next===state.source)return;
-        state.source=next;state.team=next==='scrim'?'本队':'';state.version='';state.trigger='';
+        state.source=next;state.team=next==='scrim'?'本队':'';state.version='';state.trigger='';state.treeNode=0;
         void load();return;
       }
       const view=event.target.closest('[data-bpi-view]');
@@ -706,10 +792,10 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     });
     root.addEventListener('change', event=>{
       if(event.target.matches('[data-bpi-team]')){
-        state.team=event.target.value;state.trigger='';void load();
+        state.team=event.target.value;state.trigger='';state.treeNode=0;void load();
       }
       if(event.target.matches('[data-bpi-version]')){
-        state.version=event.target.value;state.trigger='';void load();
+        state.version=event.target.value;state.trigger='';state.treeNode=0;void load();
       }
       if(event.target.matches('[data-bpi-trigger]')){
         state.trigger=event.target.value;paint();
@@ -724,7 +810,7 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     state.source='scrim';
     state.team=team==null ? '本队' : team;
     state.view=mode==='team'?'habits':mode==='counter'?'sandbox':'focus';
-    state.trigger='';state.side='1';state.version='';state.report=null;state.error='';
+    state.trigger='';state.side='1';state.version='';state.treeNode=0;state.report=null;state.error='';
     bind(root);void load();
   }
   return {mount};
