@@ -1926,6 +1926,10 @@ def bp_board():
             'result': 'win' if result else ('loss' if result is False else None),
             'side': panel['own'], 'ownSide': own,
             'duration': bp.get('duration'), 'mapName': bp.get('mapName'),
+            # Only actual patch labels, never derive version from calendar date.
+            'version': (bp.get('version') or detail.get('version') or
+                        (detail.get('data') or {}).get('version') or ''),
+            'stage': bp.get('stage') or '',
             'picks': {'own': entries('picks', own), 'enemy': entries('picks', enemy)},
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
             'players': {'own': [p.get('name') for p in panel['own_roster']],
@@ -1988,6 +1992,7 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
             team=str(values.get('team') or '').strip(),
             start=str(values.get('from') or '').strip(),
             end=str(values.get('to') or '').strip(),
+            version=str(values.get('version') or '').strip(),
             process_map=process_map,
         )
         # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。
@@ -2002,6 +2007,20 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
         for row in report['responses']:
             heroes.add(row['trigger'])
             heroes.add(row['response'])
+        for section in ('matchups', 'twoStep'):
+            for row in (report.get('bpStudies') or {}).get(section) or []:
+                if section == 'matchups':
+                    heroes.update(row['enemyCore'])
+                    heroes.add(row['candidate'])
+                else:
+                    heroes.add(row['trigger'])
+                    for branch in row['branches']:
+                        heroes.add(branch['ownPick'])
+                        heroes.add(branch['enemyNext'])
+        for row in (report.get('bpStudies') or {}).get('draft', {}).get('rounds', []):
+            heroes.add(row['hero'])
+        for row in (report.get('bpStudies') or {}).get('version', {}).get('changes', []):
+            heroes.add(row['hero'])
         icons = {}
         if panel_board:
             for hero, item in (panel_board.get('heroMeta') or {}).items():
