@@ -746,6 +746,11 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                                  "nodes": [], "description": "请先选择一支战队。"})
     bp_studies["priorities"] = (priority_brief(team_games, source_games, bp_studies["brief"])
                                  if team else [])
+    from bp_policy import next_pick_policy
+    bp_studies["nextPickPolicy"] = next_pick_policy(team_games) if team else {
+        "status": "not-applicable", "reason": "请先选择要研究的战队。",
+        "contexts": [], "supported": False,
+    }
     from bp_interactions import interaction_study
     # Only compare own-side match outcomes for one team, never opposite labels
     # duplicated from all-league perspective rows.
