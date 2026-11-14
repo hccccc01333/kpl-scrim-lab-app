@@ -146,15 +146,15 @@ function scrimPlannerView(planner){
    </div>
    ${planner.game>1?`<div class="bpi-scrim-history">
      <strong>此前已完成的 ${planner.game-1} 局选人</strong>
-     <p class="bpi-explain">一行对应一局，每行 5 个英雄，用逗号分隔。按稳定战队身份填写，换蓝红方也不要交换这两个输入框。</p>
+     <p class="bpi-explain">一行对应一局，每行 5 个英雄，用逗号分隔。按稳定战队身份填写，换边也不要交换输入框。此处只核对录入的一致性，尚未自动与比赛 ID 比对。</p>
      <div class="bpi-scrim-history-columns">
        <label>本队此前 Pick 英雄
          <textarea data-bpi-scrim-history-own rows="3" placeholder="例如：花木兰，镜，小乔，公孙离，张飞">${safe(planner.historyOwn)}</textarea></label>
        <label>对手此前 Pick 英雄
          <textarea data-bpi-scrim-history-enemy rows="3" placeholder="例如：马超，赵云，沈梦溪，孙尚香，太乙真人">${safe(planner.historyEnemy)}</textarea></label>
      </div>
-     <button class="bpi-scrim-apply" type="button" data-bpi-scrim-validate>校验系列赛历史</button>
-     ${previous?`<span class="bpi-scrim-proof">已核验此前英雄：本队 ${count(previous['本队'])} 个 · 对手 ${count(previous['对手'])} 个</span>`:''}
+     <button class="bpi-scrim-apply" type="button" data-bpi-scrim-validate>校验录入历史的格式与禁复用</button>
+     ${previous?`<span class="bpi-scrim-proof">已通过录入一致性检查：本队 ${count(previous['本队'])} 个 · 对手 ${count(previous['对手'])} 个（不代表已与真实比赛匹配）</span>`:''}
    </div>`:''}
    ${planner.error?`<div class="bpi-scrim-error" role="alert">${safe(planner.error)}</div>`:''}
    <div class="bpi-scrim-stage">
