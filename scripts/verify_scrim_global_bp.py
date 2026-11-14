@@ -36,7 +36,7 @@ def check(width, height):
             page.locator(".bpi-scrim-herolist button").first.click()
             page.wait_for_function(
                 "(n) => document.querySelectorAll('.bpi-scrim-history-steps > span').length === n",
-                turn + 1, timeout=12000)
+                arg=turn + 1, timeout=12000)
         page.locator(".bpi-scrim-finished").wait_for(timeout=12000)
         assert page.locator(".bpi-scrim-history-steps > span").count() == 15
 
@@ -57,7 +57,7 @@ def check(width, height):
             page.locator(".bpi-scrim-herolist button").last.click()
             page.wait_for_function(
                 "(n) => document.querySelectorAll('.bpi-scrim-history-steps > span').length === n",
-                turn + 1, timeout=12000)
+                arg=turn + 1, timeout=12000)
         page.locator(".bpi-scrim-herolist button").first.wait_for(timeout=12000)
         page.locator("[data-bpi-scrim-search]").fill(used_own)
         assert page.locator(".bpi-scrim-herolist button").count() == 0
