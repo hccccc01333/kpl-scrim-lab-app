@@ -2634,14 +2634,28 @@ def monitor_report(request: Request):
     return report
 
 
+# 对手打法按（营地指纹 + DB 指纹）缓存：对手命名/合并写 DB 会自动失效。
+_TEAM_BEHAVIOR_CACHE = {}
+_TEAM_BEHAVIOR_CACHE_MAX = 8
+
+
 @router.get('/api/v3/team-behavior')
 def team_behavior(repo=Depends(repository)):
     """对手打法习惯：阵容/阵营统计 + 对手视角经济检查点；证据缺失留空。"""
     from bp_process import link_scrim_process
     from opponent_behavior import opponent_behavior
+    stamp = (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
+    cached = _TEAM_BEHAVIOR_CACHE.get(stamp)
+    if cached is not None:
+        return cached
     rows = bp_board()['games']
     process_map = link_scrim_process(rows, repo.get()['matches'])
-    return opponent_behavior(rows, process_map)
+    report = opponent_behavior(rows, process_map)
+    if stamp[0] is not None or stamp[1]:
+        if len(_TEAM_BEHAVIOR_CACHE) >= _TEAM_BEHAVIOR_CACHE_MAX:
+            _TEAM_BEHAVIOR_CACHE.pop(next(iter(_TEAM_BEHAVIOR_CACHE)))
+        _TEAM_BEHAVIOR_CACHE[stamp] = report
+    return report
 
 
 @router.get('/api/v3/bp-intelligence')
