@@ -1,3 +1,5 @@
+import { normalizedCamp, sampleNear } from './match-recap-metrics.js';
+
 /* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
    全部为纯函数式构建，数据来自 /api/matches/<key>、/api/replay/<key>、/api/positions/<key>。
    视觉口径：深墨蓝底 + 金（本队）· 青（对手）+ 等宽数字 + 体素方块。 */
@@ -190,15 +192,15 @@ export function createMatchDeep(h) {
       ['总经济', own.gold, foe.gold, (v) => fmt(v)],
       ['击杀', own.kills, foe.kills, (v) => fmt(v)],
       ['输出', own.damage, foe.damage, (v) => fmt(v)],
-      ['承伤', own.taken ?? foe.damage, foe.taken ?? own.damage, (v) => fmt(v)],
+      ['承伤', own.taken, foe.taken, (v) => fmt(v)],
     ];
     const cells = items.map(([label, a, b, show]) => {
       const total = (num(a) ? a : 0) + (num(b) ? b : 0);
-      const share = total > 0 && num(a) ? a / total * 100 : 50;
+      const share = num(a) && num(b) && total > 0 ? a / total * 100 : null;
       return `<div class="md-total">
         <span>${esc(label)}</span>
         <div class="md-total-pair"><b>${show(a)}</b><i>:</i><b class="foe">${show(b)}</b></div>
-        <div class="md-total-bar"><i style="width:${share.toFixed(1)}%"></i></div>
+        <div class="md-total-bar">${share === null ? "" : `<i style="width:${share.toFixed(1)}%"></i>`}</div>
       </div>`;
     }).join('');
     return `<div class="md-totals">${cells}</div>`;
@@ -235,11 +237,7 @@ export function createMatchDeep(h) {
 
     /* 事件标记：龙/野怪/塔/水晶各有自己的形状，点位可点开看具体是什么。
        形状区别是为了让教练不用悬停也能分出「这是红 BUFF 还是中路一塔」。 */
-    const diffAt = (t) => {
-      let best = series[0];
-      for (const p of series) if (Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
-      return best.diff;
-    };
+    const diffAt = (t) => sampleNear(series, t)?.diff ?? null;
     const markKind = (e) => {
       if (e.kind === 'structure') return /水晶/.test(e.label || '') ? 'core' : 'tower';
       return /BUFF/.test(e.label || '') ? 'buff' : 'dragon';
@@ -251,9 +249,10 @@ export function createMatchDeep(h) {
       return `<path d="M${cx.toFixed(1)},${(cy - 5.5).toFixed(1)} L${(cx + 5.5).toFixed(1)},${cy.toFixed(1)} L${cx.toFixed(1)},${(cy + 5.5).toFixed(1)} L${(cx - 5.5).toFixed(1)},${cy.toFixed(1)} Z"/>`;
     };
     const markList = (events || []).filter((e) => num(e.t) && e.t >= t0 && e.t <= t1
-      && (e.kind === 'resource' || e.kind === 'structure'));
+      && (e.kind === 'resource' || e.kind === 'structure') && num(diffAt(e.t)));
     const marks = markList.map((e, i) => {
-      const c = e.killerCamp === camps.own ? 'own' : 'foe';
+      const killer = normalizedCamp(e.killerCamp);
+      const c = !['blue', 'red'].includes(killer) ? 'unknown' : killer === normalizedCamp(camps.own) ? 'own' : 'foe';
       const cx = x(e.t), cy = y(diffAt(e.t)) - 13;
       return `<g class="mp-mark ${c} ${markKind(e)}" data-mark="${i}" tabindex="0" role="button"
         aria-label="${esc(time(e.t) + ' ' + (e.label || ''))}"><title>${esc(time(e.t) + ' · ' + (e.label || '') + ' · ' + (e.killerHero || e.killer || ''))}</title>${shapeOf(markKind(e), cx, cy)}</g>`;
@@ -299,12 +298,12 @@ export function createMatchDeep(h) {
     const head = `<div class="md-phase-head"><span>阶段</span><span>本队增长</span><span>对手增长</span><span>净差</span><span>资源</span><span>建筑</span><span>入侵</span></div>`;
     const body = rows.map((r) => `<div class="md-phase-line">
       <span class="md-phase-tag">${esc(r.label)}<small>${esc(r.range)}</small></span>
-      <span class="md-phase-gain own"><b>${diff(r.ownGain)}</b><i style="--v:${r.ownPct}"></i></span>
-      <span class="md-phase-gain foe"><b>${diff(r.foeGain)}</b><i style="--v:${r.foePct}"></i></span>
-      <span class="md-phase-net ${r.net >= 0 ? 'own' : 'foe'}">${diff(r.net)}</span>
-      <span class="md-phase-duo"><b>${fmt(r.res.own)}</b><i>:</i><b class="foe">${fmt(r.res.foe)}</b></span>
-      <span class="md-phase-duo"><b>${fmt(r.struct.own)}</b><i>:</i><b class="foe">${fmt(r.struct.foe)}</b></span>
-      <span class="md-phase-inv">${r.invade === null ? '—' : pct(r.invade)}</span>
+      <span class="md-phase-gain own" data-label="本队增长"><b>${diff(r.ownGain)}</b><i style="--v:${r.ownPct}"></i></span>
+      <span class="md-phase-gain foe" data-label="对手增长"><b>${diff(r.foeGain)}</b><i style="--v:${r.foePct}"></i></span>
+      <span class="md-phase-net ${r.net >= 0 ? 'own' : 'foe'}" data-label="差距变化">${diff(r.net)}</span>
+      <span class="md-phase-duo" data-label="资源 本队:对手"><b>${fmt(r.res.own)}</b><i>:</i><b class="foe">${fmt(r.res.foe)}</b></span>
+      <span class="md-phase-duo" data-label="建筑 本队:对手"><b>${fmt(r.struct.own)}</b><i>:</i><b class="foe">${fmt(r.struct.foe)}</b></span>
+      <span class="md-phase-inv" data-label="本队入侵">${r.invade === null ? '—' : pct(r.invade)}</span>
     </div>`).join('');
     return `<div class="md-phase-table">${head}${body}</div>`;
   }
@@ -600,18 +599,21 @@ export function createMatchDeep(h) {
 
   /* 一张雷达同时画两人：每个轴按两人最大值归一，形状差就是同分路的差 */
   function pairRadar(a, b, metrics) {
-    const n = metrics.length;
+    // Do not draw missing dimensions as zero-length radar spokes.
+    const plotMetrics = metrics.filter((m) => num(m.get(a)) && num(m.get(b)));
+    const n = plotMetrics.length;
+    if (n < 3) return '<div class="md-fl-empty">可比较指标不足</div>';
     const size = 132, c = size / 2, R = 44;
     const angle = (i) => -Math.PI / 2 + i * Math.PI * 2 / n;
     const pt = (i, r) => [c + Math.cos(angle(i)) * r, c + Math.sin(angle(i)) * r];
-    const scale = metrics.map((m) => Math.max(1, m.get(a) || 0, m.get(b) || 0));
+    const scale = plotMetrics.map((m) => Math.max(1, m.get(a), m.get(b)));
     const area = (p, side) => {
       if (!p) return '';
-      const points = metrics.map((m, i) => pt(i, Math.max(2.5, clamp((m.get(p) || 0) / scale[i], 0, 1) * R)));
+      const points = plotMetrics.map((m, i) => pt(i, Math.max(2.5, clamp(m.get(p) / scale[i], 0, 1) * R)));
       return `<polygon class="md-fl-area ${side}" points="${points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}"/>`;
     };
-    const ring = (k) => `<polygon class="md-fl-ring" points="${metrics.map((_, i) => pt(i, R * k).map((v) => v.toFixed(1)).join(',')).join(' ')}"/>`;
-    const spokes = metrics.map((_, i) => {
+    const ring = (k) => `<polygon class="md-fl-ring" points="${plotMetrics.map((_, i) => pt(i, R * k).map((v) => v.toFixed(1)).join(',')).join(' ')}"/>`;
+    const spokes = plotMetrics.map((_, i) => {
       const [x, y] = pt(i, R);
       return `<line class="md-fl-spoke" x1="${c}" y1="${c}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`;
     }).join('');
@@ -657,13 +659,14 @@ export function createMatchDeep(h) {
             ${numCell('foe', num(y) ? m.text(y) : null, null, alertY ? ' is-alert' : '')}
           </div>`;
         }
-        const sum = (x || 0) + (y || 0);
-        const share = sum > 0 ? (x || 0) / sum * 100 : 50;
-        const lead = (x || 0) > (y || 0) ? 'own' : (x || 0) < (y || 0) ? 'foe' : 'tie';
+        const comparable = num(x) && num(y);
+        const sum = comparable ? x + y : 0;
+        const share = comparable && sum > 0 ? x / sum * 100 : null;
+        const lead = !comparable ? 'unknown' : x > y ? 'own' : x < y ? 'foe' : 'tie';
         return `<div class="md-vsm" data-lead="${lead}"${tip ? ` title="${esc(tip)}"` : ''}>
           <span class="md-vsm-label">${m.label}</span>
           ${numCell('own', num(x) ? m.text(x) : null, chipX)}
-          <span class="md-vsm-track"><i style="width:${share.toFixed(1)}%"></i></span>
+          <span class="md-vsm-track${share === null ? " is-flat" : ""}">${share === null ? "" : `<i style="width:${share.toFixed(1)}%"></i>`}</span>
           ${numCell('foe', num(y) ? m.text(y) : null, chipY)}
         </div>`;
       }).join('');
@@ -690,11 +693,14 @@ export function createMatchDeep(h) {
       .sort((a, b) => LANES.indexOf(laneOf(a)) - LANES.indexOf(laneOf(b))).slice(0, 5);
     if (!team.length) return '';
     const cols = `grid-template-columns:92px repeat(${metrics.length}, minmax(0, 1fr))`;
-    const totals = metrics.map((m) => team.reduce((sum, p) => sum + (m.get(p) || 0), 0));
+    const totals = metrics.map((m) => team.length === 5 && team.every((p) => num(m.get(p)))
+      ? team.reduce((sum, p) => sum + m.get(p), 0) : null);
     const values = team.map((p) => metrics.map((m, i) => {
       const v = m.get(p);
       if (!num(v)) return null;
-      return m.rate ? v : (totals[i] ? v / totals[i] * 100 : 0);
+      if (m.rate) return v;
+      if (totals[i] === null || totals[i] <= 0) return null;
+      return v / totals[i] * 100;
     }));
     const scale = metrics.map((_, i) => Math.max(1, ...values.map((row) => row[i] ?? 0)));
     const head = `<div class="md-tg-row md-tg-head" style="${cols}"><span>选手</span>${metrics.map((m) => `<span>${m.label}</span>`).join('')}</div>`;
@@ -1624,15 +1630,15 @@ export function createMatchDeep(h) {
       const fullFights = fiveVfive.length ? fiveVfive : fightsInfo.filter((x) => x.total >= 8);
       if (fightCount) {
         parts.push(`本局 ${fightCount} 波团战我方 ${fightWins} 胜 ${fightLosses} 负${fightDraws ? ` ${fightDraws} 平` : ''}`);
-        if (firstFights.length) parts.push(`我方先手的 ${firstFights.length} 波 ${firstWins} 胜`);
-        if (foeFirst.length) parts.push(`对方先手 ${foeFirst.length} 波，我方 ${foeFirstWins} 胜`);
+        if (firstFights.length) parts.push(`我方首杀的 ${firstFights.length} 波 ${firstWins} 胜`);
+        if (foeFirst.length) parts.push(`对方首杀 ${foeFirst.length} 波，我方 ${foeFirstWins} 胜`);
         if (fiveVfive.length) parts.push(`5v5 团战 ${fiveVfive.length} 波、赢下 ${fiveWins} 波`);
         else if (fullFights.length) parts.push(`大团（≥8 人）${fullFights.length} 波、赢下 ${fullFights.filter((x) => x.result === 'win').length} 波`);
         if (bestFight && num(bestFight.swing)) {
-          parts.push(`${bestFight.swing >= 0 ? '最大收益' : '最大回撤'} ${diff(bestFight.swing)}（${time(bestFight.t)}）`);
+          parts.push(`最大单波经济差变化 ${diff(bestFight.swing)}（${time(bestFight.t)}）`);
         }
         if (num(avgTotal)) parts.push(`平均每波 ${avgTotal.toFixed(1)} 人参战`);
-        if (num(avgEnd)) parts.push(`平均 ${avgEnd.toFixed(0)} 秒一波`);
+        if (num(avgEnd)) parts.push(`平均每波持续 ${avgEnd.toFixed(0)} 秒`);
       }
       return parts.join('；');
     })();
@@ -1640,7 +1646,7 @@ export function createMatchDeep(h) {
     const fullWins = fullFights.filter((x) => x.result === 'win').length;
     const fightTiles = [
       ['团战', `${fightCount}<small>波</small>`, `${fightWins} 胜 · ${fightLosses} 负${fightDraws ? ` · ${fightDraws} 平` : ''}`],
-      ['先手团战', `${firstWins}<i>/</i>${firstFights.length || 0}`, firstFights.length ? `先手后赢下` : '没有我方先手记录'],
+      ['首杀团战', `${firstWins}<i>/</i>${firstFights.length || 0}`, firstFights.length ? `首杀后赢下` : '没有我方首杀记录'],
       [fiveVfive.length ? '5v5 团战' : '大团（≥8 人）', `${fullWins}<i>/</i>${fullFights.length || 0}`,
         fullFights.length ? (fiveVfive.length ? '满编团战胜率' : '大团团战胜率') : '本局没有大团'],
       ['最大单波', `${bestFight && num(bestFight.swing) ? diff(bestFight.swing) : '—'}`, bestFight ? `${time(bestFight.t)} · ${resultText(bestFight.result)}` : '没有经济差采样'],
@@ -1660,7 +1666,7 @@ export function createMatchDeep(h) {
       <div class="md-bprev-stats">${fightTiles.map(([label, value, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}</span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
       ${fightSizes ? `<div class="md-fight-splits">${fightSizes}</div>` : ''}
       ${fightKeys}
-      <p class="md-bprev-thin">口径：团战点来自官方回放 battles，点大小＝参战人数，颜色＝该波击杀差；胜负按该波击杀数，经济差取开团前 30 秒到结束后 30 秒的变化（本队视角，已扣自然涨跌）。</p>
+      <p class="md-bprev-thin">口径：团战点来自官方回放 battles，点大小＝参战人数，颜色＝该波击杀差；胜负按该波击杀数，经济差取开团前 30 秒到结束后 30 秒的变化（本队视角，未经自然增长或其他事件校正）。</p>
     </div>`;
 
     /* ── 掉点 ───────────────────────────────────────────────────────── */
