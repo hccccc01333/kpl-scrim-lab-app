@@ -218,3 +218,10 @@ def test_ban_order_and_systems_studies_wire_through():
     # KPL fixture 没有逐人经济 → 体系标签如实为 0
     assert report["bpStudies"]["systems"]["taggedGames"] == 0
     assert report["bpStudies"]["systems"]["reason"]
+
+
+def test_monitor_window_passthrough():
+    report = build_report([], [game(i) for i in range(8)], source="kpl", team="战队A",
+                          monitor_window={"windows": 2, "anomalies": [{"kind": "usage"}]})
+    assert report["monitorWindow"]["windows"] == 2
+    assert report["monitorWindow"]["anomalies"][0]["kind"] == "usage"

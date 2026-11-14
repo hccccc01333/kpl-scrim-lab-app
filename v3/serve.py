@@ -2607,9 +2607,10 @@ def monitor_report(request: Request):
     unit = values.get('unit', 'week')
     if unit not in UNITS:
         raise HTTPException(400, '监控窗口必须是 day / week / month')
+    player = str(values.get('player') or '').strip()
     camp_dir = MATCHES.parent / 'camp_details'
     stamp = _camp_dir_stamp(camp_dir)
-    cache_key = (stamp, unit, values.get('from') or '', values.get('to') or '')
+    cache_key = (stamp, unit, player, values.get('from') or '', values.get('to') or '')
     cached = _MONITOR_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -2619,6 +2620,11 @@ def monitor_report(request: Request):
                              date_to=(values.get('to') or '').strip() or None)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    if player:
+        # 选手个人页只要自己的英雄池变化条目，其余异常不必下发
+        report['anomalies'] = [a for a in report['anomalies']
+                               if a.get('kind') == 'player-pool' and a.get('object') == player]
+        report['player'] = player
     if stamp is not None:
         if len(_MONITOR_CACHE) >= _MONITOR_CACHE_MAX:
             _MONITOR_CACHE.pop(next(iter(_MONITOR_CACHE)))
@@ -2640,6 +2646,7 @@ def team_behavior(repo=Depends(repository)):
 def bp_intelligence_report(request: Request, repo=Depends(repository)):
     """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""
     from bp_intelligence import build_report
+    from monitor import monitor as run_monitor
     from bp_process import link_scrim_process
     from bp_camp import hero_entry
     import kpl_bp
@@ -2658,6 +2665,7 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
         # 仅读仓库已有快照，绝不重新抓取回放或把队伍经济当个人对线经济。
         process_map = (link_scrim_process(panel_board['games'], repo.get()['matches'])
                        if panel_board else {})
+        monitor_window = (run_monitor(panel_board['games'], unit='week') if panel_board else None)
         if source == 'kpl':
             stamp = _kpl_source_stamp(kpl_bp)
             cache_key = (stamp, team, start, end, version, stage)
@@ -2681,6 +2689,7 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
                 version=version,
                 stage=stage,
                 process_map=process_map,
+                monitor_window=monitor_window,
             )
         # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。
         heroes = set()

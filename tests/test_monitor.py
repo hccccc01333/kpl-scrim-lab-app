@@ -62,3 +62,15 @@ def test_date_range_filter():
             row("b2", "2026-11-12", "夏洛特")]
     out = monitor(rows, unit="week", date_from="2026-11-10")
     assert out["windows"] == 1 and out["games"] == 2
+
+
+def test_monitor_api_player_filter_and_cache_key():
+    """serve 路由的 player 过滤：个人页只拿自己的英雄池变化条目。"""
+    from fastapi.testclient import TestClient
+    from server import app
+    client = TestClient(app, base_url='http://localhost')
+    resp = client.get('/api/v3/monitor?unit=week&player=不存在的选手')
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get('player') == '不存在的选手'
+    assert body['anomalies'] == []

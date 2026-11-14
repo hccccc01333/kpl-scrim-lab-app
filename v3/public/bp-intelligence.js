@@ -544,7 +544,7 @@ function systemsSection(report){
       ${evidenceDetails(r.evidence,'核查体系对局')}
     </article>`).join('')}</div>`:
     note('体系标签暂缺',v.reason||'缺少逐人经济时不打标签。')}
-  </section>`;
+  </section>` + monitorAnomalySection(report, 'system', '新体系尝试（按周对照）', null);
 }
 
 function banOrderSection(report){
@@ -797,6 +797,21 @@ function diagnosticView(report) {
   </div>`;
 }
 
+function monitorAnomalySection(report, kind, title, matchFn, emptyText){
+  const window_data = report.monitorWindow || {};
+  const rows = (window_data.anomalies || []).filter(a => a.kind === kind && (!matchFn || matchFn(a)));
+  if (!rows.length) return '';
+  return `<section class="bpi-panel"><header><h3>${title}</h3>
+    <span>自然周对照 · ${count(window_data.windows || 0)} 个窗口 · ${count(window_data.games || 0)} 局</span></header>
+    <p class="bpi-explain">按周对照出现的统计突变；只提示需要人工核对的线索，不是结论。</p>
+    <div class="bpi-system-grid">${rows.slice(0, 6).map(a => `<article class="bpi-system">
+      <b>${safe(a.object)}</b><span>${safe(a.window)}</span>
+      <em>${safe(a.previous)} → ${safe(a.current)}</em>
+      <p class="bpi-subtle">${safe(a.note)}</p>
+    </article>`).join('')}</div>
+  </section>`;
+}
+
 function counterCards(rows,icons) {
   const list=(rows||[]).slice(0,8);
   return `<section class="bpi-counter-history">
@@ -969,9 +984,9 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       case 'brief': return briefView(report);
       case 'version': return versionView(report);
       case 'players': return poolView(report) + playerView(report);
-      case 'combos': return comboView(report);
+      case 'combos': return comboView(report) + monitorAnomalySection(report, 'pair-replaced', '常用组合被替换（按周对照）', null);
       case 'counter': return matchupsView(report);
-      case 'changes': return changeView(report) + diagnosticView(report);
+      case 'changes': return changeView(report) + diagnosticView(report) + monitorAnomalySection(report, 'usage', '英雄使用率突变（按周对照）', null) + monitorAnomalySection(report, 'winrate', '英雄胜率突变（按周对照）', null);
       case 'tempo': return processView(report);
       case 'diagnostics': return diagnosticView(report);
       case 'sandbox': return (state.source==='scrim'?scrimPlannerView(state.scrim):'')

@@ -966,7 +966,7 @@ export function createPlayers(h) {
     ['goldShare', '经济份额'],
   ];
 
-  function soloPage(board, name, laneProfile, mastery) {
+  function soloPage(board, name, laneProfile, mastery, monitor) {
     st.board = board;
     const players = board.players || [];
     const player = players.find(p => p.name === name);
@@ -1252,7 +1252,15 @@ export function createPlayers(h) {
       </div>`).join('') + masteryNote :
       empty('该选手还没有可对照的英雄记录。'));
 
-    const panels = [percentileBlock, styleBlock, gameBlock, matchupBlock, laneProfileBlock, masteryBlock, keyBlock, partnerBlock, heroBlock, peerBlock];
+    /* 英雄池变化（09 归位）：按周对照该选手的英雄增减，只描述事实。 */
+    const poolAnomalies = ((monitor || {}).anomalies || [])
+      .filter(a => a.kind === 'player-pool' && a.object === name).slice(0, 4);
+    const poolChangeBlock = poolAnomalies.length ? block('英雄池变化', '按自然周对照出现的英雄增减；只描述事实，是否轮换需人工确认。',
+      poolAnomalies.map(a => `<div class="pls-hero"><span class="pls-hero-main">
+        <b>${esc(a.window)}</b><small>${esc(a.previous)} → ${esc(a.current)}</small></span>
+      </div>`).join('')) : '';
+
+    const panels = [percentileBlock, styleBlock, gameBlock, matchupBlock, laneProfileBlock, masteryBlock, poolChangeBlock, keyBlock, partnerBlock, heroBlock, peerBlock];
     return `<div class="page hero-detail-page page-wide" data-pl-page="solo">${head}${briefHtml}${anchors(['同位置分位', '打法画像', '逐局表现', '同局对位', '关键局', '搭档', '英雄池', '同位置选手'])}<div class="hero-detail-grid">${panels.join('')}</div></div>`;
   }
 
