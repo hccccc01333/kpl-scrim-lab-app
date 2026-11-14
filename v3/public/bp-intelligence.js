@@ -356,6 +356,32 @@ function comboTiles(rows, icons, type) {
   </article>`).join('')}</div>`;
 }
 
+
+function interactionPanel(study) {
+  const m=study||{};
+  const tested=m.status==='tested';
+  return `<section class="bpi-panel">
+    <header><h3>英雄组合是否真的提供额外信息？</h3><span>复杂模型必须经过未来比赛验证</span></header>
+    <p class="bpi-explain">同时比较基础模型（蓝红方、单英雄、对手、已知版本）与增加双英雄、三英雄及敌我英雄交互的模型；严格按比赛日期切分训练和测试，不把全部历史训练结果当验证结果。</p>
+    ${tested ? `<div class="bpi-model-compare">
+      <div><small>普通英雄模型 · Brier</small><strong>${Number(m.baseline?.brier).toFixed(4)}</strong></div>
+      <div><small>加入组合交互 · Brier</small><strong>${Number(m.extended?.brier).toFixed(4)}</strong></div>
+      <div><small>历史时间外评估</small><strong class="${m.improved?'is-up':'is-down'}">${m.improved?'得到增量支持':'尚未超越基线'}</strong></div>
+    </div>
+    <p class="bpi-subtle">训练 ${count(m.train)} 局，后续测试 ${count(m.test)} 局；只有 Brier 和 Log Loss 均改善时才显示交互信号。${safe(m.reason)}</p>`:
+      note('样本不足，暂不显示高阶英雄协同排名',m.reason||
+        '需要足够的已知胜负与不同日期对局，否则高阶模型可能只记住历史阵容。')}
+    ${m.improved && m.signals?.length ? `<div class="bpi-signal-grid">${m.signals.slice(0,12).map(r=>`<article class="bpi-signal">
+      <span>${r.type==='pair'?'双英雄组合':r.type==='trio'?'三英雄组合':'敌我英雄交互'}</span>
+      <div>${r.heroes.map(h=>heroBadge(h,null)).join('')}</div>
+      <strong class="${r.coefficient>0?'is-up':'is-down'}">${safe(r.interpretation)}</strong>
+      <small>训练集出现 ${count(r.trainGames)} 局 · 正则化系数 ${Number(r.coefficient).toFixed(3)}</small>
+    </article>`).join('')}</div>`:''}
+    <div class="bpi-research-alert"><b>这些不是确定的英雄克制关系</b>
+      <p>模型的交互系数代表在已知记录及当前模型结构下的额外相关信号；不能直接推算更换英雄后的获胜概率。测试失败或样本不足时，系统不输出“强协同”结论。</p></div>
+  </section>`;
+}
+
 function comboView(report) {
   return `<div class="bpi-panel">
     <header><h3>双人 / 三人阵容协同</h3><span>控制小样本的探索性比较</span></header>
@@ -365,7 +391,7 @@ function comboView(report) {
     <h4 class="bpi-section-sub">完整五人阵容的实战表现</h4>
     <p class="bpi-explain">列出真实出现过的五人阵容、胜负与小样本区间，不把一次胜利当作稳定强势。</p>
     ${fullLineupRows(report.fullLineups,report.icons)}
-  </div>`;
+  </div>${interactionPanel(report.bpStudies?.interactions)}`;
 }
 
 function seriesHtml(rows,icons) {
@@ -557,10 +583,10 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       case 'players': return poolView(report) + playerView(report);
       case 'combos': return comboView(report);
       case 'counter': return matchupsView(report);
-      case 'changes': return versionView(report) + changeView(report) + diagnosticView(report);
+      case 'changes': return changeView(report) + diagnosticView(report);
       case 'tempo': return processView(report);
       case 'diagnostics': return diagnosticView(report);
-      case 'sandbox': return twoStepView(report,state.trigger) + sandboxView(report,state.trigger);
+      case 'sandbox': return twoStepView(report,state.trigger);
       default: return `<section class="bpi-intro-brief">
           <h3>这段时间最值得关注的 BP 现象</h3>
           <p>从选禁频率、真实 BP 回应、阵容组合和周期变化中选出有比赛证据的发现。</p>
