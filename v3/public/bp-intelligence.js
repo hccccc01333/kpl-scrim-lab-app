@@ -894,16 +894,95 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       const report=await response.json();
       if(controller.signal.aborted || root!==state.root) return;
       state.report=report; paint();
+      if(state.view==='sandbox'&&state.source==='scrim')void refreshScrim();
     } catch(error) {
       if(controller.signal.aborted || root!==state.root)return;
       state.error=error.message || '数据读取失败';paint();
     }
   }
 
+  async function refreshScrim(){
+    const planner=state.scrim;
+    const serial=++planner.serial;
+    planner.snapshot=null;planner.loading=true;planner.error='';
+    paint();
+    try {
+      const history=scrimPreviousHistory(planner);
+      if(!planner.catalog) {
+        const catRes=await fetch(API_BASE+'/api/v3/bp-scrim/catalog',
+          {cache:'no-store',headers:{Accept:'application/json'}});
+        if(!catRes.ok)throw new Error('无法载入本地训练赛英雄词表');
+        const cat=await catRes.json();
+        if(serial!==planner.serial)return;
+        planner.catalog=cat;
+      }
+      const blueTeam=planner.side==='blue'?'本队':'对手';
+      const redTeam=planner.side==='red'?'本队':'对手';
+      const data={source:'scrim',bo:planner.bo,gameNumber:planner.game,
+        blueTeam,redTeam,history,events:planner.events};
+      const response=await fetch(API_BASE+'/api/v3/bp-scrim/next',{
+        method:'POST',cache:'no-store',
+        headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify(data)});
+      if(!response.ok) {
+        const error=await response.json().catch(()=>({}));
+        throw new Error(error.detail||'训练赛合法动作校验失败');
+      }
+      const result=await response.json();
+      if(serial!==planner.serial)return;
+      planner.snapshot=result;
+    }catch(error) {
+      if(serial!==planner.serial)return;
+      planner.error=error.message||'训练赛 BP 状态校验失败';
+    }finally {
+      if(serial===planner.serial){planner.loading=false;paint();}
+    }
+  }
+
+  function finishScrimGame(){
+    const planner=state.scrim;
+    if(planner.events.length!==15||planner.snapshot?.nextAction ||
+       planner.game>=({BO3:3,BO5:5,BO7:7}[planner.bo]||3))return;
+    const picks=camp=>planner.events.filter(e=>e.action==='pick'&&e.camp===camp)
+      .map(e=>e.hero);
+    const own=picks(planner.side==='blue'?'1':'2');
+    const enemy=picks(planner.side==='blue'?'2':'1');
+    if(own.length!==5||enemy.length!==5)return;
+    planner.historyOwn+=(planner.historyOwn.trim()?'\n':'')+own.join('，');
+    planner.historyEnemy+=(planner.historyEnemy.trim()?'\n':'')+enemy.join('，');
+    planner.game+=1;planner.events=[];planner.snapshot=null;planner.search='';
+    void refreshScrim();
+  }
+
   function bind(root) {
     if(root.dataset.bpiBound)return;
     root.dataset.bpiBound='1';
     root.addEventListener('click', event=>{
+      const choose=event.target.closest('[data-bpi-scrim-hero]');
+      if(choose){
+        const planner=state.scrim;
+        const hero=choose.dataset.bpiScrimHero;
+        const next=planner.snapshot?.nextAction;
+        if(next && !planner.loading && planner.snapshot.legalCandidates.includes(hero)){
+          planner.events.push({order:next.order,action:next.action,
+            camp:next.camp,hero});
+          planner.search='';void refreshScrim();
+        }
+        return;
+      }
+      if(event.target.closest('[data-bpi-scrim-back]')){
+        if(state.scrim.events.length){state.scrim.events.pop();void refreshScrim();}
+        return;
+      }
+      if(event.target.closest('[data-bpi-scrim-reset]')){
+        state.scrim.events=[];void refreshScrim();return;
+      }
+      if(event.target.closest('[data-bpi-scrim-next-game]')){
+        finishScrimGame();return;
+      }
+      if(event.target.closest('[data-bpi-scrim-validate]')){
+        state.scrim.events=[];void refreshScrim();return;
+      }
       const tree=event.target.closest('[data-bpi-tree-node]');
       if(tree){
         const next=Number(tree.dataset.bpiTreeNode);
@@ -933,9 +1012,24 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
         state.view=view.dataset.bpiView;
         if(state.view==='sandbox')state.trigger='';
         paint();
+        if(state.view==='sandbox'&&state.source==='scrim')void refreshScrim();
       }
     });
     root.addEventListener('change', event=>{
+      const planner=state.scrim;
+      if(event.target.matches('[data-bpi-scrim-bo]')){
+        planner.bo=event.target.value;planner.game=1;planner.events=[];
+        planner.historyOwn='';planner.historyEnemy='';planner.search='';
+        void refreshScrim();return;
+      }
+      if(event.target.matches('[data-bpi-scrim-game]')){
+        planner.game=Number(event.target.value);planner.events=[];planner.search='';
+        void refreshScrim();return;
+      }
+      if(event.target.matches('[data-bpi-scrim-side]')){
+        planner.side=event.target.value;planner.events=[];planner.search='';
+        void refreshScrim();return;
+      }
       if(event.target.matches('[data-bpi-team]')){
         state.team=event.target.value;state.trigger='';state.treeNode=0;void load();
       }
@@ -944,6 +1038,18 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       }
       if(event.target.matches('[data-bpi-trigger]')){
         state.trigger=event.target.value;paint();
+      }
+    });
+    root.addEventListener('input', event=>{
+      const planner=state.scrim;
+      if(event.target.matches('[data-bpi-scrim-history-own]')){
+        planner.historyOwn=event.target.value;
+      }else if(event.target.matches('[data-bpi-scrim-history-enemy]')){
+        planner.historyEnemy=event.target.value;
+      }else if(event.target.matches('[data-bpi-scrim-search]')){
+        planner.search=event.target.value;
+        const target=root.querySelector('[data-bpi-scrim-candidates]');
+        if(target)target.innerHTML=scrimHeroButtons(planner);
       }
     });
   }
