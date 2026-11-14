@@ -469,6 +469,10 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         'leagueId': _league_id(match, league),
         'leagueName': str(league.get('league_name') or ''),
         'year': _league_year(match, league),
+        # Store the exact game-patch label if the upstream API provides it.
+        # A league season, tournament name or date is never substituted for it.
+        'version': str(data.get('game_version') or data.get('gameVersion') or
+                       data.get('patch_version') or '').strip(),
         'stage': str(match.get('match_stage_desc') or match.get('match_stage_name') or ''),
         'startTime': start_time,
         'date': start_time[:10],
