@@ -723,6 +723,13 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
         "twoStep": draft_two_step_study(team_games),
     }
     bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
+    from bp_interactions import interaction_study
+    # Only compare own-side match outcomes for one team, never opposite labels
+    # duplicated from all-league perspective rows.
+    bp_studies["interactions"] = interaction_study(team_games) if team else {
+        "status": "not-applicable", "reason": "请选择具体战队以研究交互效果。",
+        "improved": False, "signals": [],
+    }
     # League/whole-dataset views include both sides of the same game; assigning
     # a team advantage or a single-team win-rate trend is meaningless there.
     process_study = _process_analysis(team_games if team else [])
