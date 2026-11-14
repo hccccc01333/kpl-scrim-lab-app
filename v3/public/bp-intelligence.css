@@ -381,3 +381,10 @@
 .bpi-policy-option>b{margin-left:auto;font-size:11px}
 .bpi-policy-option>span:not(.bpi-hero){font-size:11px;color:var(--bpi-muted)}
 @media(max-width:840px){.bpi-policy-contexts{grid-template-columns:1fr}}
+
+/* Source-specific BP rules: scrim four-stage schedule ≠ KPL tournament rules. */
+.bpi-rules-caption{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 13px;
+  margin:-3px 0 16px;padding:10px 13px;border-radius:8px;
+  background:var(--bpi-soft);border:1px solid var(--bpi-line);}
+.bpi-rules-caption strong{font-size:12px;font-weight:720;color:var(--bpi-text)}
+.bpi-rules-caption span{font-size:11px;line-height:1.6;color:var(--bpi-muted)}
