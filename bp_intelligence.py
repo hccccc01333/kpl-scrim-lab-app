@@ -740,6 +740,12 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                    "暂无可验证的本队对该对手历史训练赛，不生成个性化反制推荐。")
     }
     bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
+    from bp_draft_tree import draft_tree, priority_brief
+    bp_studies["draftTree"] = (draft_tree(team_games) if team else
+                                {"orderedGames": 0, "indexedGames": 0, "limited": False,
+                                 "nodes": [], "description": "请先选择一支战队。"})
+    bp_studies["priorities"] = (priority_brief(team_games, source_games, bp_studies["brief"])
+                                 if team else [])
     from bp_interactions import interaction_study
     # Only compare own-side match outcomes for one team, never opposite labels
     # duplicated from all-league perspective rows.
