@@ -456,3 +456,40 @@
   .bpi-scrim-progress{width:100%}
   .bpi-scrim-stage>div:first-child{width:100%}
 }
+
+/* 大盘 / 体系 / Ban 位 / 赛前简报（Phase 1 新增视图） */
+.bpi-board-list{display:grid;gap:4px}
+.bpi-board-head,.bpi-board-row{display:grid;grid-template-columns:96px 64px minmax(0,1.4fr) minmax(0,1fr) 96px;gap:10px;align-items:center;padding:6px 4px}
+.bpi-board-head{color:var(--bpi-muted);font-size:12px}
+.bpi-board-row{border-top:1px solid var(--bpi-line);font-size:13px}
+.bpi-board-row small,.bpi-board-head small{display:block;color:var(--bpi-muted);font-size:11px}
+.bpi-board-bar{display:flex;flex-direction:column;gap:2px;min-width:0}
+.bpi-lane-block{margin-top:10px}
+.bpi-lane-block .bpi-board-row{grid-template-columns:96px 64px minmax(0,1fr)}
+.bpi-system-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:8px}
+.bpi-system{border:1px solid var(--bpi-line);border-radius:8px;padding:10px;display:grid;gap:4px}
+.bpi-system b{font-size:14px}
+.bpi-system span{color:var(--bpi-muted);font-size:12px}
+.bpi-system em{font-style:normal;font-size:12px}
+.bpi-scrim-save{margin-top:10px;border:1px dashed var(--bpi-line);border-radius:8px;padding:8px 10px}
+.bpi-scrim-save summary{cursor:pointer;font-size:13px}
+.bpi-scrim-save-row{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-top:8px}
+.bpi-scrim-save-row label{display:grid;gap:4px;font-size:12px;color:var(--bpi-muted)}
+.bpi-scrim-save-row select,.bpi-scrim-save-row input{min-width:200px;padding:6px 8px;border:1px solid var(--bpi-line);border-radius:6px;background:var(--bpi-panel);color:var(--bpi-text)}
+.bpi-brief .bpi-brief-section{border-top:1px solid var(--bpi-line);padding:12px 0;margin-top:8px}
+.bpi-brief-head{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.bpi-brief-head b{font-size:14px}
+.bpi-tier{font-style:normal;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--bpi-line)}
+.bpi-tier.is-up{color:#1a8a4a;border-color:#1a8a4a}
+.bpi-tier.is-thin{color:#a06a00;border-color:#a06a00}
+.bpi-tier.is-bad{color:#a03030;border-color:#a03030}
+.bpi-brief-line{margin:4px 0;font-size:13px;line-height:1.6}
+.bpi-brief-line.is-empty{color:var(--bpi-muted)}
+.bpi-scrim-panel .bpi-scrim-apply{cursor:pointer}
+
+@media (max-width:760px){
+  .bpi-board-head{display:none}
+  .bpi-board-row{grid-template-columns:96px minmax(0,1fr);row-gap:4px}
+  .bpi-scrim-save-row{flex-direction:column;align-items:stretch}
+  .bpi-scrim-save-row select,.bpi-scrim-save-row input{min-width:0}
+}

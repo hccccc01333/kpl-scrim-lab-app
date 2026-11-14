@@ -2448,6 +2448,7 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
     start = str(values.get('from') or '').strip()
     end = str(values.get('to') or '').strip()
     version = str(values.get('version') or '').strip()
+    stage = str(values.get('stage') or '').strip()
     try:
         panel_board = bp_board() if source == 'scrim' else None
         # 只按完整日期、双方 10 英雄、阵营与唯一匹配连接；对不上就留空。
@@ -2456,12 +2457,12 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
                        if panel_board else {})
         if source == 'kpl':
             stamp = _kpl_source_stamp(kpl_bp)
-            cache_key = (stamp, team, start, end, version)
+            cache_key = (stamp, team, start, end, version, stage)
             report = _BP_INTEL_KPL_CACHE.get(cache_key)
             if report is None:
                 report = build_report([], kpl_bp.load_games(), source=source,
                                       team=team, start=start, end=end,
-                                      version=version, process_map={})
+                                      version=version, stage=stage, process_map={})
                 if stamp is not None:
                     if len(_BP_INTEL_KPL_CACHE) >= _BP_INTEL_KPL_CACHE_MAX:
                         _BP_INTEL_KPL_CACHE.pop(next(iter(_BP_INTEL_KPL_CACHE)))
@@ -2475,6 +2476,7 @@ def bp_intelligence_report(request: Request, repo=Depends(repository)):
                 start=start,
                 end=end,
                 version=version,
+                stage=stage,
                 process_map=process_map,
             )
         # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。

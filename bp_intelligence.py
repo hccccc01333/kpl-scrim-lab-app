@@ -330,6 +330,27 @@ def _players(games, baseline):
     return sorted(output, key=lambda x: (-x["games"], -abs(x["relativeSignal"] or 0), x["player"]))[:28]
 
 
+def _lane_board(games):
+    """大盘的分路 × 英雄聚合。lane 来自营地逐人 usedHero 映射（事实映射，
+    不按 Pick 顺序推断）；没有分路信息的英雄不出现在分路榜。"""
+    bucket = defaultdict(list)
+    for g in games:
+        for p in g.get("players") or []:
+            lane = str(p.get("lane") or "").strip()
+            if lane:
+                bucket[(lane, p["hero"])].append(g)
+    rows = []
+    for (lane, hero), records in bucket.items():
+        valid = [g for g in records if g["result"] is not None]
+        wins = sum(g["result"] is True for g in valid)
+        rows.append({"lane": lane, "hero": hero, "games": len(records),
+                     "wins": wins, "decided": len(valid),
+                     "winRate": _percent(wins, len(valid)),
+                     "interval": _wilson(wins, len(valid)),
+                     "evidence": _evidence(records)})
+    return sorted(rows, key=lambda x: (x["lane"], -x["games"], x["hero"]))
+
+
 def _changes(games):
     ordered = sorted((g for g in games if g["date"]), key=lambda g: (g["date"], g["id"]))
     if len(ordered) < 8:
@@ -699,7 +720,7 @@ def _series_adjustments(games):
 
 
 def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end="",
-                 version="", process_map=None):
+                 version="", stage="", process_map=None):
     if source not in ("scrim", "kpl"):
         raise ValueError("未知比赛来源")
     if start:
@@ -710,11 +731,13 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                  if source == "scrim" else normalize_kpl(kpl_rows))
     dedup = {(g["id"], g["team"]): g for g in all_games}
     source_games = [g for g in dedup.values()
-                    if (not start or g["date"] >= start) and (not end or g["date"] <= end)]
+                    if (not start or g["date"] >= start) and (not end or g["date"] <= end)
+                    and (not stage or g.get("stage") == stage)]
     source_games.sort(key=lambda g: (g["date"], g["id"]), reverse=True)
     unfiltered_team_games = [g for g in source_games if not team or g["team"] == team]
     from bp_strategy import (side_round_study, version_study, player_pool_study,
-                             matchup_study, draft_two_step_study, coach_brief)
+                             matchup_study, draft_two_step_study, coach_brief,
+                             ban_position_study, lineup_system_study)
     versions = version_study(unfiltered_team_games, source_games, selected=version)
     if version:
         source_games = [g for g in source_games if g.get("version") == version]
@@ -739,6 +762,8 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
         "players": player_pool_study(team_games),
         "matchups": matchup_study(team_games),
         "twoStep": draft_two_step_study(team_games),
+        "banOrder": ban_position_study(team_games),
+        "systems": lineup_system_study(team_games),
     }
     # Looking at an opponent in scrim data? Keep the user's own historical
     # responses separate from that opponent's own lineup choices.
@@ -838,6 +863,12 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                              "detail": f"共同出场 {top['games']} 局；实际胜率 {top['winRate']}%。",
                              "note": "组合表现受选手、版本和对手影响，不直接判定克制或因果协同。",
                              "evidence": top["evidence"]})
+    counter_candidates = _counter_candidates(team_games)
+    # 本队英雄池符合度：只认本队在当前范围内真实 Pick 过的英雄；KPL 源无本队池。
+    own_pool = ({hero for g in source_games if g["team"] == "本队" for hero in g["picks"]}
+                if source == "scrim" else set())
+    for row in counter_candidates:
+        row["inOwnPool"] = (row["candidateHero"] in own_pool) if own_pool else None
     return {"schema": "bp-research-v1", "source": source, "team": team,
             "teams": [{"name": name, "games": count} for name, count in
                       sorted(teams.items(), key=lambda x: (-x[1], x[0]))],
@@ -847,6 +878,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                       "orderedGames": len({g["id"] for g in full}),
                       "playerGames": len({g["id"] for g in team_games if g["players"]})},
             "picks": picks[:24], "bans": bans[:24],
+            "laneBoard": _lane_board(source_games),
             "pairs": combos, "trios": trios, "fullLineups": full_lineups,
             "banResponses": ban_responses,
             "players": players, "changes": changes,
@@ -854,7 +886,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
             "bpStudies": bp_studies,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
-            "counterCandidates": _counter_candidates(team_games),
+            "counterCandidates": counter_candidates,
             "validation": _temporal_validation(team_games),
             "findings": findings[:5], "evidence": _evidence(team_games, max_items=30),
             "limitations": [

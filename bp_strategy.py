@@ -283,3 +283,78 @@ def coach_brief(studies, games):
                              "evidence":h["evidence"]})
     # Coach brief is intentionally concise; never infer causes or winning counters.
     return messages[:3]
+
+
+def ban_position_study(games):
+    """Ban 位顺序与首轮 Pick 统计。只认经校验的有序事件（draftEvents）；
+    没有顺序数据时如实返回空态，绝不由终局名单反推 Ban 位。"""
+    events_games = [g for g in games if g.get("events")]
+    if not events_games:
+        return {"games": len(games), "orderedGames": 0, "banSlots": [], "firstPicks": [],
+                "reason": "当前范围没有已录入逐手顺序的对局；Ban 位与首轮统计需要先在沙盘补录 draftEvents。"}
+    slots = defaultdict(lambda: defaultdict(int))
+    first = defaultdict(int)
+    first_games = 0
+    for g in events_games:
+        seen_first = False
+        for event in g["events"]:
+            if event.get("action") == "ban":
+                slots[event["order"]][event["hero"]] += 1
+            elif not seen_first and event.get("action") == "pick":
+                # 15 手排程里 Ban 占 1–5；本局第一个 Pick 即首轮。
+                first[(event.get("actor") or "team", event["hero"])] += 1
+                seen_first = True
+        if seen_first:
+            first_games += 1
+    ban_slots = []
+    for position in sorted(slots):
+        heroes = sorted(slots[position].items(), key=lambda kv: (-kv[1], kv[0]))[:6]
+        ban_slots.append({"position": position,
+                          "total": sum(count for _, count in heroes),
+                          "heroes": [{"hero": hero, "count": count}
+                                     for hero, count in heroes]})
+    first_picks = [{"actor": actor, "hero": hero, "count": count}
+                   for (actor, hero), count in
+                   sorted(first.items(), key=lambda kv: -kv[1])[:10]]
+    return {"games": len(games), "orderedGames": len(events_games),
+            "firstPickGames": first_games, "banSlots": ban_slots,
+            "firstPicks": first_picks, "reason": ""}
+
+
+def lineup_system_study(games):
+    """体系标签：仅按逐人经济占比做描述性划分（野核 / 射核 / 中核 / 其他单核 / 多核均衡）。
+
+    经济第一名占比 ≥28% 且领先第二名 ≥6pp 判「单核（按其分路命名）」，
+    否则归「多核/均衡」。这是阵容结构的观察口径：不推断战术意图，
+    不构成强弱结论；逐人经济缺失的对局不打标签（营地缺 gold 时不猜）。"""
+    tagged = defaultdict(list)
+    n_tagged = 0
+    for g in games:
+        players = [p for p in g.get("players") or []
+                   if isinstance(p.get("gold"), (int, float)) and p["gold"] > 0]
+        if len(players) != 5:
+            continue
+        total = sum(p["gold"] for p in players)
+        ranked = sorted(players, key=lambda p: -p["gold"])
+        top, second = ranked[0], ranked[1]
+        top_share = top["gold"] / total * 100
+        second_share = second["gold"] / total * 100
+        lane_names = {"打野": "野核", "发育路": "射核", "中路": "中核"}
+        if top_share >= 28 and top_share - second_share >= 6:
+            system = lane_names.get(str(top.get("lane") or ""), "其他单核")
+        else:
+            system = "多核/均衡"
+        tagged[system].append(g)
+        n_tagged += 1
+    systems = []
+    for system, records in sorted(tagged.items(), key=lambda kv: -len(kv[1])):
+        valid = [g for g in records if g["result"] is not None]
+        wins = sum(g["result"] is True for g in valid)
+        systems.append({"system": system, "games": len(records), "wins": wins,
+                        "decided": len(valid), "winRate": _pct(wins, len(valid)),
+                        "interval": _uncertainty(wins, len(valid)),
+                        "evidence": _evidence(records)})
+    return {"games": len(games), "taggedGames": n_tagged,
+            "reason": ("" if n_tagged else
+                       "当前范围的对局缺少逐人经济（营地十人面板缺 gold 时不猜），无法打体系标签。"),
+            "systems": systems}

@@ -189,3 +189,32 @@ def test_counter_candidate_is_historical_evidence_not_unobserved_prediction():
     assert candidate["winRate"] == 100
     assert candidate["interval"][0] < 100
     assert candidate["evidence"] and candidate["evidence"][0]["source"] == "kpl"
+
+
+def test_lane_board_aggregates_and_stage_filter():
+    raw_games = [game(i) for i in range(8)]
+    report = build_report([], raw_games, source="kpl", team="战队A")
+    lanes = {(r["lane"], r["hero"]): r for r in report["laneBoard"]}
+    assert ("对抗路", "夏洛特") in lanes
+    cell = lanes[("对抗路", "夏洛特")]
+    assert cell["games"] == 8 and cell["decided"] == 8
+    # stage 筛选：只保留标注了该阶段的对局（stage 在原始行上，normalize 透传）
+    staged = [dict(game(i), stage="季后赛" if i % 2 else "常规赛") for i in range(8)]
+    with_stage = build_report([], [g for g in staged if g["stage"] == "季后赛"],
+                              source="kpl", team="战队A")
+    assert with_stage["scope"]["games"] == 4  # 8 局中奇数位标注为季后赛
+
+
+def test_counter_candidates_annotated_with_own_pool():
+    report = build_report([], [game(i) for i in range(8)], source="kpl", team="战队A")
+    for row in report["counterCandidates"]:
+        assert row["inOwnPool"] is None  # KPL 源没有「本队池」，标注为未知
+
+
+def test_ban_order_and_systems_studies_wire_through():
+    report = build_report([], [game(i) for i in range(8)], source="kpl", team="战队A")
+    assert report["bpStudies"]["banOrder"]["orderedGames"] == 8
+    assert report["bpStudies"]["banOrder"]["banSlots"][0]["position"] == 1
+    # KPL fixture 没有逐人经济 → 体系标签如实为 0
+    assert report["bpStudies"]["systems"]["taggedGames"] == 0
+    assert report["bpStudies"]["systems"]["reason"]

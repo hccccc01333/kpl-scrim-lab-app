@@ -2,9 +2,9 @@
    只消费后端可复现事实；不用前端凭终局名单编造选禁顺序。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const views = [
-  ['focus', '赛前重点'], ['habits', '选禁习惯'], ['version', '版本环境'],
+  ['focus', '赛前重点'], ['board', '大盘'], ['habits', '选禁习惯'], ['version', '版本环境'],
   ['players', '选手英雄池'], ['combos', '阵容协同'], ['counter', '阵容反制'],
-  ['changes', '策略变化'], ['sandbox', 'BP 分支']
+  ['changes', '策略变化'], ['sandbox', 'BP 分支'], ['brief', '赛前简报']
 ];
 const safe = (value) => String(value == null ? '' : value)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -528,7 +528,39 @@ function habitView(report, activeSide) {
       <span>真实选禁事件 · 不能推断意图</span></header>
       <p class="bpi-explain">只展示禁用发生后下一次实际选用的英雄，不把它叫作唯一替代英雄。</p>
       ${banResponseRows(report.banResponses,report.icons)}
-    </section>${conditionalPolicyView(report)}${validationPanel(report.validation)}`;
+    </section>
+    ${systemsSection(report)}${banOrderSection(report)}${conditionalPolicyView(report)}${validationPanel(report.validation)}`;
+}
+
+function systemsSection(report){
+  const v=report.bpStudies?.systems||{};
+  const rows=v.systems||[];
+  return `<section class="bpi-panel"><header><h3>阵容体系分布（经济占比口径）</h3>
+    <span>${count(v.taggedGames)} / ${count(v.games)} 局可打标</span></header>
+    <p class="bpi-explain">按营地逐人经济判断：经济第一名占比 ≥28% 且领先第二名 ≥6pp 记为单核（按其分路命名：野核/射核/中核），否则记为多核/均衡。这是结构观察，不代表战术意图，更不是强弱结论。</p>
+    ${rows.length?`<div class="bpi-system-grid">${rows.map(r=>`<article class="bpi-system">
+      <b>${safe(r.system)}</b><span>${count(r.games)} 局</span>
+      <em>胜率 ${pct(r.winRate)}（${count(r.decided)} 局可判${r.interval?` · 区间 ${pct(r.interval[0])}–${pct(r.interval[1])}`:''}）</em>
+      ${evidenceDetails(r.evidence,'核查体系对局')}
+    </article>`).join('')}</div>`:
+    note('体系标签暂缺',v.reason||'缺少逐人经济时不打标签。')}
+  </section>`;
+}
+
+function banOrderSection(report){
+  const v=report.bpStudies?.banOrder||{};
+  if(!v.orderedGames)return '';
+  return `<section class="bpi-panel"><header><h3>Ban 位顺序与首轮 Pick</h3>
+    <span>已录顺序 ${count(v.orderedGames)} 局</span></header>
+    <p class="bpi-explain">Ban 位＝该英雄在 15 手排程中第几手被禁；首轮＝Ban 结束后的第一次 Pick。都只统计已补录 draftEvents 的对局。</p>
+    <div class="bpi-system-grid">
+      ${(v.banSlots||[]).map(s=>`<article class="bpi-system"><b>第 ${count(s.position)} 手 Ban</b>
+        <span>${count(s.total)} 次</span>
+        <em>${s.heroes.map(h=>`${safe(h.hero)}×${count(h.count)}`).join(' · ')||'—'}</em></article>`).join('')}
+      ${(v.firstPicks||[]).slice(0,3).map(f=>`<article class="bpi-system"><b>首轮 Pick（${f.actor==='team'?'本队':'对手'}）</b>
+        ${heroBadge(f.hero,report.icons)}<span>${count(f.count)} 次</span></article>`).join('')}
+    </div>
+  </section>`;
 }
 
 function responseRows(responses, icons) {
@@ -774,12 +806,125 @@ function counterCards(rows,icons) {
       <div class="bpi-response-heroes">${heroBadge(r.candidateHero,icons)}
       <span class="bpi-arrow">对方 ${heroBadge(r.enemyHero,icons)}</span></div>
       <div class="bpi-response-bottom"><strong>${count(r.games)} / ${count(r.againstGames)} 局</strong>
-      <span>实际赛果 ${pct(r.winRate)}</span></div>
+      <span>实际赛果 ${pct(r.winRate)}${r.inOwnPool===true?' · 本队用过的英雄':r.inOwnPool===false?' · 本队没用过':''}</span></div>
       <p class="bpi-subtle">${r.decided ? `历史胜率的区间参考：${pct(r.interval[0])}–${pct(r.interval[1])}` : '没有可判断的赛果'}</p>
       ${evidenceDetails(r.evidence,'查看曾经的对抗')}
     </article>`).join('')}</div>`
     :note('没有足够的同英雄历史交手','当前来源与战队的历史样本不足，不能凭英雄印象给出反制结论。')}
   </section>`;
+}
+
+function boardView(report){
+  const scope=report.scope||{};
+  const bans=new Map((report.bans||[]).map(r=>[r.hero,r]));
+  const rows=(report.picks||[]).map(r=>{
+    const ban=bans.get(r.hero);
+    return {...r,banGames:ban?ban.games:0,banShare:ban?ban.share:null};
+  });
+  const lanes=new Map();
+  (report.laneBoard||[]).forEach(r=>{
+    if(!lanes.has(r.lane))lanes.set(r.lane,[]);
+    lanes.get(r.lane).push(r);
+  });
+  return `<section class="bpi-panel">
+    <header><h3>联盟大盘 · 英雄出场与禁用</h3>
+      <span>${count(scope.games)} 局 · 整体胜率 ${pct(scope.winRate)}（${count(scope.decided)} 局可判）</span></header>
+    <p class="bpi-explain">出场率＝该英雄被选用的局数占比；Ban 率＝被禁用的局数占比。训练赛与 KPL 分源计算；小样本英雄请看区间，不排强度名次。</p>
+    ${rows.length?`<div class="bpi-board-list">
+      <div class="bpi-board-head"><span>英雄</span><span>出场</span><span>出场率</span><span>胜率</span><span>Ban</span></div>
+      ${rows.slice(0,18).map(r=>`<div class="bpi-board-row">
+        ${heroBadge(r.hero,report.icons)}
+        <span>${count(r.games)} 局</span>
+        <span class="bpi-board-bar">${shareBar(r.share)}<small>${pct(r.share)}</small></span>
+        <span>${pct(r.winRate)}<small>${count(r.decided)} 局可判</small></span>
+        <span>${count(r.banGames)} 次 · ${pct(r.banShare)}</span>
+      </div>`).join('')}</div>`:
+      note('当前范围没有英雄出场记录','选择其他战队、版本或扩大日期范围。')}
+  </section>
+  <section class="bpi-panel">
+    <header><h3>分路英雄榜</h3><span>按营地逐人分路映射聚合</span></header>
+    <p class="bpi-explain">只统计面板里明确写了分路的选手—英雄对应；没有分路信息的英雄不出现在这里。</p>
+    ${lanes.size?[...lanes.entries()].map(([lane,list])=>`<div class="bpi-lane-block">
+      <h4 class="bpi-section-sub">${safe(lane)}</h4>
+      ${list.slice(0,6).map(r=>`<div class="bpi-board-row">
+        ${heroBadge(r.hero,report.icons)}<span>${count(r.games)} 局</span>
+        <span>${pct(r.winRate)}<small>${count(r.decided)} 局可判${r.interval?` · 区间 ${pct(r.interval[0])}–${pct(r.interval[1])}`:''}</small></span></div>`).join('')}
+    </div>`).join(''):
+      note('暂无分路聚合数据','营地逐人分路映射缺失时不猜测分路。')}
+  </section>`;
+}
+
+function briefTier(games){
+  return games>=6?['有历史支持','is-up']:games>=2?['需继续验证','is-thin']:['数据不足','is-bad'];
+}
+
+function briefData(report){
+  const picks=(report.picks||[]).slice(0,4).filter(r=>r.games>=2);
+  const lineups=(report.fullLineups||[]).slice(0,2).filter(r=>r.games>=2);
+  const systems=((report.bpStudies?.systems||{}).systems||[]).slice(0,3);
+  const banOrder=report.bpStudies?.banOrder||{};
+  const changes=(report.changes||[]).slice(0,3);
+  const players=(report.players||[]).slice(0,4).filter(r=>r.games>=3);
+  const matchups=(report.bpStudies?.matchups||[]).slice(0,2);
+  const own=report.bpStudies?.ownVsTarget||{};
+  const counters=(report.counterCandidates||[]).slice(0,5).filter(r=>r.games>=2);
+  const policy=report.bpStudies?.nextPickPolicy||{};
+  const draftSides=(report.bpStudies?.draft?.sides||[]);
+  const sections=[];
+  const sample=[...picks,...lineups,...counters].map(r=>r.games);
+  sections.push({title:'一 · 对手最需要关注的英雄与阵容',
+    tier:briefTier(sample.length?Math.min(...sample):0),
+    lines:picks.map(r=>`${r.hero}：出场 ${r.games} 局 · 胜率 ${pct(r.winRate)}（${r.decided} 局可判）`)
+      .concat(lineups.map(r=>`完整阵容 ${r.heroes.join(' + ')}：${r.games} 局 · 胜率 ${pct(r.winRate)}`)),
+    note:'出场与胜率是事实陈述，不构成禁用或选用建议。'});
+  sections.push({title:'二 · 对手 BP 习惯及最近变化',
+    tier:briefTier(banOrder.orderedGames||(draftSides.length?4:0)),
+    lines:[draftSides.map(s=>`${s.side==='1'?'蓝方':'红方'} ${s.games} 局 · 胜率 ${pct(s.winRate)}`).join('；'),
+      systems.map(r=>`${r.system} ${r.games} 局 · 胜率 ${pct(r.winRate)}`).join('；'),
+      banOrder.orderedGames?`已录顺序 ${banOrder.orderedGames} 局：`+(banOrder.banSlots||[]).map(s=>`第 ${s.position} 手常禁 ${s.heroes[0]?.hero||'—'}`).join('；'):'逐手顺序尚未补录：Ban 位顺序 / 首轮统计待 draftEvents',
+      ...changes.map(c=>`${c.hero} 使用率 ${c.changePP>0?'+':''}${c.changePP}pp（前 ${c.beforeGames} 局 vs 后 ${c.afterGames} 局）`)].filter(Boolean),
+    note:'习惯统计只描述历史选择；变化是分段观察，不自动归因于版本或状态。'});
+  sections.push({title:'三 · 对手选手的绝活、强势点与可观察弱点',
+    tier:briefTier(players.length?Math.min(...players.map(p=>p.games)):0),
+    lines:players.map(r=>`${r.player}（${safe(r.lane||'分路未知')}）· ${r.hero}：${r.games} 局 · 胜率 ${pct(r.winRate)}`)
+      .concat(matchups.map(r=>`对方核心 ${r.enemyCore.join(' + ')} → 曾用 ${r.candidate}：${r.games} 局 · ${pct(r.winRate)}`)),
+    note:'常用与高胜率不能直接定义绝活；对线弱点需要看经济差与死亡时间点，不能只凭账面。'});
+  sections.push({title:'四 · 我方可选阵容与历史表现',
+    tier:briefTier(own.candidates?.length?Math.min(...own.candidates.map(r=>r.games)):(own.ownPool||[]).length?4:0),
+    lines:(own.candidates||[]).slice(0,3).map(r=>`本队曾用 ${r.candidate} 应对对方核心 ${r.enemyCore.join(' + ')}：${r.games} 局 · ${pct(r.winRate)}`)
+      .concat((own.ownPool||[]).slice(0,5).map(r=>`本队常选 ${r.hero}：${r.games} 局 · 胜率 ${pct(r.winRate)}`)),
+    note:(own.reason||'')+' 历史选择不能冒充新 BP 的胜率预测。'});
+  sections.push({title:'五 · 值得验证的反制候选',
+    tier:briefTier(counters.length?Math.min(...counters.map(r=>r.games)):0),
+    lines:counters.map(r=>`对方 ${r.enemyHero} → 曾选 ${r.candidate}：${r.games}/${r.againstGames} 局 · 胜率 ${pct(r.winRate)}（区间 ${r.interval?pct(r.interval[0])+'–'+pct(r.interval[1]):'—'}）${r.inOwnPool===true?'（本队池内）':r.inOwnPool===false?'（本队池外）':''}`)
+      .concat([policy.supported?'条件选人预测在时间外回测中优于普通基线（可作为预判参考，不是收益保证）':'条件选人预测尚无足够数据支持（需要更多完整逐手 BP）。']),
+    note:'历史共现不是克制；反制候选必须先核对选手英雄池与版本。'});
+  return sections;
+}
+
+function briefView(report){
+  const sections=briefData(report);
+  return `<section class="bpi-panel bpi-brief">
+    <header><h3>赛前 BP 情报简报</h3>
+      <span>${safe(report.team||'全部战队')} · ${safe(report.source==='kpl'?'KPL 正式比赛':'训练赛')}</span>
+      <button class="bpi-scrim-apply" type="button" data-bpi-copy-brief>复制纯文本简报</button></header>
+    <p class="bpi-explain">按「对手英雄 → 习惯变化 → 选手 → 我方阵容 → 反制候选」组装；每段标注证据等级：有历史支持 / 需继续验证 / 数据不足。简报是观察清单，不是决策指令。</p>
+    ${sections.map(s=>`<div class="bpi-brief-section">
+      <div class="bpi-brief-head"><b>${safe(s.title)}</b>
+        <em class="bpi-tier ${s.tier[1]}">${s.tier[0]}</em></div>
+      ${s.lines.length?s.lines.map(l=>`<p class="bpi-brief-line">${safe(l)}</p>`).join(''):'<p class="bpi-brief-line is-empty">（本段暂无可呈现的历史证据）</p>'}
+      <p class="bpi-subtle">${safe(s.note)}</p>
+    </div>`).join('')}
+  </section>`;
+}
+
+function briefText(report){
+  const sections=briefData(report);
+  const head=`赛前 BP 情报简报 · ${report.team||'全部战队'} · ${report.source==='kpl'?'KPL 正式比赛':'训练赛'}`
+    +` · ${report.scope?.games||0} 局（${report.scope?.decided||0} 局可判）`;
+  const body=sections.map(s=>`\n${s.title}【${s.tier[0]}】\n`+
+    (s.lines.length?s.lines.map(l=>`- ${l}`).join('\n'):'- （本段暂无可呈现的历史证据）')+`\n（${s.note}）`).join('\n');
+  return head+body+'\n\n来源：训练赛与正式比赛分源计算；历史证据不替代赛前判断。';
 }
 
 function sandboxView(report, trigger) {
@@ -820,6 +965,8 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       '可切换正式比赛 / 训练赛，或选择其他战队。无比赛时不会显示伪造的胜率与阵容建议。');
     switch (state.view) {
       case 'habits': return habitView(report,state.side);
+      case 'board': return boardView(report);
+      case 'brief': return briefView(report);
       case 'version': return versionView(report);
       case 'players': return poolView(report) + playerView(report);
       case 'combos': return comboView(report);
@@ -1050,6 +1197,16 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
       }
       if(event.target.closest('[data-bpi-scrim-save]')){
         void saveScrimGame();return;
+      }
+      if(event.target.closest('[data-bpi-copy-brief]')){
+        const button=event.target;
+        navigator.clipboard?.writeText(briefText(state.report)).then(()=>{
+          button.textContent='已复制到剪贴板';
+          setTimeout(()=>{button.textContent='复制纯文本简报';},2500);
+        }).catch(()=>{
+          button.textContent='复制失败，请手动选择文本';
+        });
+        return;
       }
       const tree=event.target.closest('[data-bpi-tree-node]');
       if(tree){
