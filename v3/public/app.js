@@ -1,4 +1,5 @@
 import { groupFor } from './navigation.js';
+import { normalizedCamp, sampleNear, teamTotal, economyDirection, eventSide, laneRealisation } from './match-recap-metrics.js';
 import { createFeatures, featureSections } from './features.js';
 import { createMatchDeep } from './match-deep.js';
 import { createCrossPage } from './cross-page.js';
@@ -954,7 +955,8 @@ function matchPage(m) {
   };
   const blue = { left: 'blue', right: 'red' }[own] || own;
   const points = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold) && (!has(m.duration) || x.gameTime <= m.duration))
-    .map((x) => [x.gameTime, (x.blueGold - x.redGold) * (blue === 'red' ? -1 : 1)]);
+    .map((x) => [x.gameTime, (x.blueGold - x.redGold) * (blue === 'red' ? -1 : 1)])
+    .sort((a, b) => a[0] - b[0]);
   const draft = m.draft;
   const eventNames = { resource: '资源', structure: '建筑', kill: '击杀', heroKill: '击杀' };
   const events = m.replay?.events || [];
@@ -966,24 +968,16 @@ function matchPage(m) {
   const turn = swings.length ? swings.reduce((a, b) => Math.abs(b.delta) > Math.abs(a.delta) ? b : a) : null;
   const finalDiff = points.length ? points.at(-1)[1] : null;
   const plainScore = score(m).replace(/<[^>]+>/g, '');
-  const goldAt = (t) => {
-    if (!has(t)) return null;
-    let best = null;
-    for (const p of points) if (!best || Math.abs(p[0] - t) < Math.abs(best[0] - t)) best = p;
-    return best ? best[1] : null;
-  };
+  const goldAt = (t) => sampleNear(points, t, (p) => p[0])?.[1] ?? null;
   const phaseRows = phaseWindows(m.duration).map((w, i) => {
     const a = goldAt(w.start), b = goldAt(w.end);
     return [w.label, time(w.start) + '–' + time(w.end), has(a) && has(b) ? diff(b - a) : '—', has(b) ? diff(b) : '—'];
   });
   const resultText = resultName[m.result] || '未知';
   const absPoints = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold) && (!has(m.duration) || x.gameTime <= m.duration))
-    .map((x) => ({ t: x.gameTime, b: x.blueGold, r: x.redGold }));
-  const absAt = (t, key) => {
-    let best = null;
-    for (const p of absPoints) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p;
-    return best ? best[key] : null;
-  };
+    .map((x) => ({ t: x.gameTime, b: x.blueGold, r: x.redGold }))
+    .sort((a, b) => a.t - b.t);
+  const absAt = (t, key) => sampleNear(absPoints, t)?.[key] ?? null;
   const ownKey = (own === 'red' || own === 'right') ? 'r' : 'b';
   const enemyKey = ownKey === 'b' ? 'r' : 'b';
   const phaseWins = phaseWindows(m.duration);
@@ -1005,7 +999,8 @@ function matchPage(m) {
     const res = { own: 0, foe: 0 }, struct = { own: 0, foe: 0 };
     for (const e of events) {
       if (!has(e.t) || phaseOf(e.t) !== i) continue;
-      const side = e.killerCamp === own ? 'own' : 'foe';
+      const side = eventSide(e.killerCamp, own);
+      if (!side) continue; // Unknown owner is not the opponent.
       if (e.kind === 'resource') res[side] += 1;
       else if (e.kind === 'structure') struct[side] += 1;
     }
@@ -1049,10 +1044,10 @@ function matchPage(m) {
   </div>`;
   const outcome = m.result === 'win' ? '收下这一局' : m.result === 'loss' ? '交出这一局' : '结束这一局';
   const heroClaim = points.length >= 2 && turn
-    ? `${time(turn.t)} 一波 ${diff(turn.delta)} 后经济差${finalDiff >= 0 ? '再没回落' : '始终没能翻正'}`
+    ? `${time(turn.t)} 附近经济差变化 ${diff(turn.delta)} · ${turn.delta > 0 ? '本队改善' : '对手改善'}`
     : `本队 ${time(m.duration)} 以 ${plainScore} ${outcome}`;
   const heroFact = points.length >= 2 && turn
-    ? `本队 ${time(m.duration)} 以 ${plainScore} ${outcome}`
+    ? `本队 ${time(m.duration)} 以 ${plainScore} ${outcome} · 最大相邻采样变化，不等于胜负转折`
     : `回放记录 ${events.length} 条事件`;
   const winSide = m.result === 'win' ? 'own' : m.result === 'loss' ? 'rival' : '';
   const mdHero = `<section class="md-hero" id="match-verdict">
@@ -1069,7 +1064,7 @@ function matchPage(m) {
       <div class="md-line-mid">
         <strong><i class="${winSide === 'own' ? 'win' : ''}">${esc(scoreParts[0] || '—')}</i><span>:</span><i class="${winSide === 'rival' ? 'win' : ''}">${esc(scoreParts[1] || '—')}</i></strong>
         <div class="md-line-note"><em class="${m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : ''}">${esc(resultText)}</em><span>${time(m.duration)}</span></div>
-        <p class="md-line-diff"><b>${diff(finalDiff)}</b> 终局经济差 · 本队视角</p>
+        <p class="md-line-diff"><b>${diff(finalDiff)}</b> 末次采样经济差 · 本队视角</p>
       </div>
       <div class="md-line-side rival">
         <span>对手 · ${esc(sides[opposite[own]] || '阵营未知')}</span>
@@ -1136,13 +1131,13 @@ function matchPage(m) {
     ${deep.phaseTable(phaseTableRows)}${resourceBand}
   </section>`;
   const nodeRows = [
-    ...[...swings].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 4).map((s) => ({ t: s.t, event: '经济差波动', delta: s.delta, value: diff(s.value), dir: (m.result === 'win' ? s.delta > 0 : s.delta < 0) ? '利于本队' : '利于对手' })),
+    ...[...swings].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 4).map((s) => ({ t: s.t, event: '经济差波动', delta: s.delta, value: diff(s.value), dir: economyDirection(s.delta) })),
     ...events.filter((e) => /kill|death|resource|structure/i.test(e.kind || '')).slice(0, 4).map((e) => ({ t: e.t, event: `${eventLabel(e)} · ${e.killerHero || e.killer || '—'}`, delta: null, value: has(goldAt(e.t)) ? diff(goldAt(e.t)) : '—', dir: '回放事件' })),
   ].sort((a, b) => (a.t || 0) - (b.t || 0)).slice(0, 8);
   const dirClass = (d) => d === '利于本队' ? 'own' : d === '利于对手' ? 'enemy' : 'event';
   const mdTimeline = nodeRows.length ? `<section class="section" id="match-timeline"><div class="section-heading"><div><h2>关键节点</h2><p>按时间排列，每个数字都能回到具体分钟；波动取绝对值最大的几次</p></div></div>
     <div class="md-node-head"><span>时间</span><span>关键节点</span><span>经济差变化</span><span>当时经济差</span><span>方向 / 来源</span></div>
-    <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
+    <div class="md-node-list">${nodeRows.map((n) => `<div class="md-node-row"><span class="md-node-time">${time(n.t)}</span><b>${esc(n.event)}</b><span class="md-node-num" data-label="变化">${n.delta === null ? '—' : diff(n.delta)}</span><span class="md-node-num" data-label="当时经济差">${esc(n.value)}</span><span class="md-node-dir ${dirClass(n.dir)}">${esc(n.dir)}</span></div>`).join('')}</div>
   </section>` : '';
   /* 10 分钟经济：营地接口只有团队金币（30 秒一个点），没有逐人；回放的金币流水
      对不上账（残差 17.5%，个别 43%）。所以这一格只能由教练手填，填在覆盖层里，
@@ -1189,12 +1184,13 @@ function matchPage(m) {
   const mdDuel = `<section class="section" id="match-duel"><div class="section-heading"><div><h2>对位纵深</h2><p>同一张表两种口径：深区＝推进进度 &gt; 66%，半区＝&gt; 50%（即入侵）；方块数表示停留时长，每格约 10 秒，最多 10 格</p></div></div>
     ${m.positions ? deep.duel(m.positions, m.players, own, m.duration) : positionsEmpty}
   </section>`;
-  const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>打野并线</h2><p>兵线到了，打野和这条路的队友一起吃这波线，算一次并线。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
+  const mdJungle = `<section class="section" id="match-jungle"><div class="section-heading"><div><h2>疑似打野并线</h2><p>按出兵时间窗口、分路走廊与打野/队友聚集近似识别；不代表实际补刀或吃到兵线经济。三段按 KPL 口径切：0–4 对线 / 4–10 发育 / 10 分钟后；时间轴上线是本队打野、下线是对手，大点＝三人并线，悬停看时刻</p></div></div>
     ${m.positions ? (deep.jungleJoin(m.positions, m.players, own, m.duration) || '<div class="empty">这局的位置名单里没有打野，并线统计不成立</div>') : positionsEmpty}
   </section>`;
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
-  const slots = (list, kind) => Array.from({ length: 5 }, (_, i) => {
+  const banSlotCount = Math.max((draft?.bans?.left || []).length, (draft?.bans?.right || []).length);
+  const slots = (list, kind) => Array.from({ length: kind === 'bans' ? Math.max(1, banSlotCount) : 5 }, (_, i) => {
     const h = list[i];
     const showOrder = kind === 'picks' && draft?.pickOrderKnown;
     const iconUrl = h?.icon || metadata.icons?.[h?.name];
@@ -1202,11 +1198,11 @@ function matchPage(m) {
       ? `<img class="portrait" src="${esc(iconUrl)}" alt="${esc(h?.name)}" loading="lazy">`
       : portrait(h?.name);
     return h ? `<span>${showOrder ? `<em>${i + 1}</em>` : ''}${portraitHtml}<a class="bp-hero-link" href="${esc(route('matches', 'hero=' + h.name))}">${esc(h.name)}</a></span>`
-             : `<span class="md-bp-empty"><em>${kind === 'bans' ? '空 BAN' : (draft?.pickOrderKnown ? '空位' : '顺序未知')}</em></span>`;
+             : `<span class="md-bp-empty"><em>${kind === 'bans' ? (banSlotCount ? '空 BAN' : '禁用未录入') : (draft?.pickOrderKnown ? '空位' : '顺序未知')}</em></span>`;
   }).join('');
   const bpRow = (key, title, side) => `<div class="md-bp-row ${side}"><b>${esc(title)}</b>
     <span class="md-bp-picks">${slots(draft?.picks?.[key] || [], 'picks')}</span>
-    <span class="md-bp-bans">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>`;
+    <span class="md-bp-bans" style="--bp-slots:${Math.max(1, banSlotCount)}">${slots(draft?.bans?.[key] || [], 'bans')}</span></div>`;
   /* ── BP 复盘：把「历史对位」「历史联动」两个库对到本局，回答「这把 BP 打得怎么样」──
      只报算得出来的：算不了的写「待积累」，不给总分，也不拿胜负倒推 BP 好坏。 */
   const bpAnalysis = (() => {
@@ -1219,18 +1215,6 @@ function matchPage(m) {
       if (!p.position) continue;
       (p.camp === own ? mine : theirs).set(p.position, p);
     }
-     const teamGoldAt = (t) => {
-       const pts = (m.process?.timeline || []).filter((x) => has(x.gameTime) && has(x.blueGold) && has(x.redGold));
-       let best = null;
-       for (const p of pts) if (!best || Math.abs(p.gameTime - t) < Math.abs(best.gameTime - t)) best = p;
-       if (!best) return null;
-       const ownIsBlue = (own === 'blue' || own === 'left');
-       const ownGold = ownIsBlue ? best.blueGold : best.redGold;
-       const foeGold = ownIsBlue ? best.redGold : best.blueGold;
-       return ownGold - foeGold;
-     };
-     const earlyDiff = teamGoldAt(240);
-     const midDiff = teamGoldAt(600);
     const ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
     /* 对位压制的主口径是**巅峰千强大盘**（带超额胜率），不是自家训练赛、更不是 KPL：
        自家样本太薄；KPL 的英雄对位被「强队选强英雄」污染，冷门英雄几乎没有样本，
@@ -1245,16 +1229,10 @@ function matchPage(m) {
       const states = { ahead: '压制', behind: '劣势', even: '均势' };
       const verdict = facts ? (states[facts.state] || '样本不足') : '样本不足';
       const judgeable = verdict !== '样本不足';
-      /* 兑现：大盘说这对组合占优、本局经济也领先（反之亦然） */
-      const realisedEarly = judgeable && has(earlyDiff)
-        ? (verdict === '压制' ? earlyDiff > 0 : verdict === '劣势' ? earlyDiff < 0 : null)
-        : null;
-      const realisedFinal = judgeable && has(nowDiff)
-        ? (verdict === '压制' ? nowDiff > 0 : verdict === '劣势' ? nowDiff < 0 : null)
-        : null;
-      const realised = realisedFinal;
-      const realisedPhases = { early: realisedEarly, final: realisedFinal };
-      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised, realisedPhases, earlyDiff, midDiff };
+      /* 终局经济与历史对位方向一致不等于前期对线兑现。 */
+      // Team gold at 4'/10' cannot establish individual lane realisation.
+      const realised = judgeable ? laneRealisation(verdict, nowDiff) : null;
+      return { lane, a, b, facts, scrim, verdict, nowDiff, judgeable, realised };
     }).filter(Boolean);
 
     const verdictText = (lane) => lane.verdict === '压制' ? '我方占优'
@@ -1271,7 +1249,7 @@ function matchPage(m) {
       ${lane.scrim && lane.scrim.n ? `<p class="md-mu-hist">自家 ${fmt(lane.scrim.n)} 局 · 对线领先 ${fmt(lane.scrim.aheadRate, 0)}%</p>` : ''}
       ${lane.nowDiff === null ? '<p class="md-mu-now">本局经济差 —</p>'
         : `<p class="md-mu-now">本局对位经济差 <b>${diff(lane.nowDiff)}</b>${lane.realised === null ? ''
-          : lane.realised ? ' · <i class="is-hit">与大盘同向</i>' : ' · <i class="is-miss">与大盘相反</i>'}</p>`}
+          : lane.realised ? ' · <i class="is-hit">终局同向</i>' : ' · <i class="is-miss">终局反向</i>'}</p>`}
     </article>`;
 
     /* 联动：把双方阵容对到历史组合样本 */
@@ -1440,7 +1418,7 @@ function matchPage(m) {
       if (behind) bits.push(`吃亏 ${behind}`);
       parts.push(bits.length ? `巅峰千强五路可判 ${judged.length} 路：${bits.join('、')}`
         : `巅峰千强五路可判 ${judged.length} 路，都是打平`);
-      if (judged.some((lane) => lane.realised !== null)) parts.push(`本局兑现 ${realised} 路（终局个人经济）`);
+      if (judged.some((lane) => lane.realised !== null)) parts.push(`终局经济同向 ${realised} 路（非对线期验证）`);
     } else {
       parts.push('五路对位在巅峰千强都没有样本');
     }
@@ -1476,7 +1454,7 @@ function matchPage(m) {
         <div class="md-bprev-stat"><span class="md-bprev-stat-label">对位</span>
           <span class="md-bprev-stat-value">${judged.length}<i>/</i>${lanes.length}<small>路可判</small></span>
           <span class="md-bprev-stat-note">${judged.length
-            ? `占优 ${ahead} · 吃亏 ${behind}${judged.some((lane) => lane.realised !== null) ? ` · 兑现 ${realised}` : ''}`
+            ? `占优 ${ahead} · 吃亏 ${behind}${judged.some((lane) => lane.realised !== null) ? ` · 终局同向 ${realised}` : ''}`
             : '巅峰千强没有可判对位'}</span></div>
         <div class="md-bprev-stat"><span class="md-bprev-stat-label">赛事</span>
           <span class="md-bprev-stat-value">${m.bpFacts?.kpl ? `${(m.bpFacts.kpl.hitPairs || 0) + (m.bpFacts.kpl.hitTrios || 0)}<small>组命中</small>` : '—'}</span>
@@ -1494,17 +1472,16 @@ function matchPage(m) {
       <div class="md-mu-grid">${lanes.map(laneCard).join('')}</div></div>` : '';
     return { review, combos: `${kplBlock}${combos}`, matchup };
   })();
-  const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
-    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${bpAnalysis.review}${bpAnalysis.combos}${bpAnalysis.matchup}` : '<div class="empty">暂无禁选记录。</div>'}
+  const mdBp = `<section class="section" id="match-bp"><div class="section-heading"><div><h2>本局 BP</h2><p>营地终局名单 · 禁用按本局录入槽位显示，未知不补足；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}</p></div></div>
+    ${draft ? `<div class="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 本局槽位</span></div><div class="md-bp-list">${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}</div>${bpAnalysis.review}${bpAnalysis.combos}${bpAnalysis.matchup}` : '<div class="empty">暂无禁选记录。</div>'}
   </section>`;
   /* 总量按十人面板逐人求和（详情接口不带 own/enemy 汇总）。 */
-  const teamAgg = (camp) => {
-    const list = (m.players || []).filter((p) => p.camp === camp);
-    const sum = (key) => list.reduce((a, p) => a + (has(p[key]) ? p[key] : 0), 0);
-    return { gold: sum('gold'), kills: sum('kills'), damage: sum('damage'), taken: sum('taken') };
-  };
+  const teamAgg = (camp) => ({
+    gold: teamTotal(m.players, camp, 'gold'), kills: teamTotal(m.players, camp, 'kills'),
+    damage: teamTotal(m.players, camp, 'damage'), taken: teamTotal(m.players, camp, 'taken'),
+  });
   const mdTotals = `<div class="md-totals-band" id="match-totals">
-    <div class="md-totals-head"><span>总量 · ${esc(metadata.teamName || '本队')} vs ${esc(m.opponent || '对手')}</span><small>营地十人面板五人合计；金色为本队，青色为对手</small></div>
+    <div class="md-totals-head"><span>总量 · ${esc(metadata.teamName || '本队')} vs ${esc(m.opponent || '对手')}</span><small>五人对应字段完整才合计（缺失显示—）；金色为本队，青色为对手</small></div>
     ${deep.totals({ own: teamAgg(own), enemy: teamAgg(opposite[own]) })}
   </div>`;
   const mdPulse = `<section class="section md-pulse" id="match-pulse"><div class="section-heading"><div><h2>比赛脉搏</h2><p>经济差与本队视角一致 · ${series.length} 个采样点；菱形＝龙、圆点＝BUFF、方块＝防御塔、大方块＝水晶，点标记看具体是什么</p></div></div>
@@ -1536,7 +1513,7 @@ function matchPage(m) {
       && ['中路', '发育路'].includes(laneOfKill(k.victimCamp, k.victim));
     const keyOf = (k) => `${k.t}-${k.killer}-${k.victim}`;
     const rows = kills.slice().sort((a, b) => a.t - b.t);
-    /* 每场团战的先手击杀 = 该团战最早的一次击杀（与 firstKillerCamp 同源）。 */
+    /* 每场团战的首杀击杀 = 该团战最早的一次击杀（与 firstKillerCamp 同源）。 */
     const firstOfFight = new Map();
     for (const k of rows) {
       if (!k.fight) continue;
@@ -1544,7 +1521,7 @@ function matchPage(m) {
       if (!cur || k.t < cur.t) firstOfFight.set(k.fight, k);
     }
     const firstKeys = new Set([...firstOfFight.values()].map(keyOf));
-    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次先手。 */
+    /* 教练要的不是账本，是统计：每人切了几次 C、开了几次首杀。 */
     const statOf = (p) => {
       const mine = rows.filter((k) => k.killerCamp === p.camp && k.killer === p.hero);
       const cuts = mine.filter(isCut);
@@ -1557,7 +1534,7 @@ function matchPage(m) {
       };
     };
     /* 五路按固定顺序排（对抗路 / 打野 / 中路 / 发育路 / 游走），跨局对比时位置不跳动；
-       谁切了 C、谁先手多由卡片高亮和数字表达。未知分路排最后。 */
+       谁切了 C、谁首杀多由卡片高亮和数字表达。未知分路排最后。 */
     const LANE_ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
     const stats = (m.players || []).filter((p) => p.camp === own).map(statOf)
       .sort((a, b) => {
@@ -1570,7 +1547,7 @@ function matchPage(m) {
     const firstRate = ownKills ? Math.round(firstTotal / ownKills * 100) : null;
     const maxFirst = Math.max(1, ...stats.map((s) => s.first));
     const maxKills = Math.max(1, ...stats.map((s) => s.kills));
-    /* 团战结果：先手方 + 该波击杀差。fights 缺失时只讲击杀账本，不编团战结果。 */
+    /* 团战结果：首杀方 + 该波击杀差。fights 缺失时只讲击杀账本，不编团战结果。 */
     const ownSide = own === 'red' ? 'red' : 'blue';
     const foeSide = ownSide === 'blue' ? 'red' : 'blue';
     const fights = (m.replay?.fights || [])
@@ -1586,19 +1563,20 @@ function matchPage(m) {
     const ownFights = fights.filter((f) => fightFirst(f) === ownSide);
     const foeFights = fights.filter((f) => fightFirst(f) && fightFirst(f) !== ownSide);
     const ownFightWins = ownFights.filter(ownWonFight).length;
-    const foeFightLosses = foeFights.filter((f) => !ownWonFight(f)).length;
-    /* 团战节奏条：一个小方块＝一波团战；金/青 = 谁先手，实心/空心 = 赢/输。 */
+    const foeFightLosses = foeFights.filter((f) => fightKills(f, ownSide) < fightKills(f, foeSide)).length;
+    const foeFirstDraws = foeFights.filter((f) => fightKills(f, ownSide) === fightKills(f, foeSide)).length;
+    /* 团战节奏条：一个小方块＝一波团战；金/青 = 谁首杀，实心/空心 = 赢/输。 */
     const fightStrip = fights.length ? `<div class="md-fight-strip">
-      <div class="md-fight-dots" role="img" aria-label="团战先手与结果时间轴">${fights.map((f) => {
+      <div class="md-fight-dots" role="img" aria-label="团战首杀与结果时间轴">${fights.map((f) => {
         const side = fightFirst(f);
         const ownTag = side === ownSide;
         const won = ownWonFight(f);
         const score = `${fightKills(f, ownSide)}:${fightKills(f, foeSide)}`;
-        return `<i class="md-fight-dot ${ownTag ? 'is-own' : side ? 'is-foe' : 'is-unknown'}${won ? ' is-win' : ' is-loss'}" title="${esc(time(f.t))} · ${ownTag ? '我方' : side ? '对方' : '未记录'}先手 · 击杀 ${score}"></i>`;
+        return `<i class="md-fight-dot ${ownTag ? 'is-own' : side ? 'is-foe' : 'is-unknown'}${won ? ' is-win' : ' is-loss'}" title="${esc(time(f.t))} · ${ownTag ? '我方' : side ? '对方' : '未记录'}首杀 · 击杀 ${score}"></i>`;
       }).join('')}</div>
-      <div class="md-fight-legend"><span class="own">我方先手</span><span class="foe">对方先手</span><em>实心＝赢下，空心＝失利</em></div>
+      <div class="md-fight-legend"><span class="own">我方首杀</span><span class="foe">对方首杀</span><em>实心＝赢下，空心＝未赢（含平局）</em></div>
     </div>` : '';
-    /* 开团分析：先手方和团战结果放在一句话里，后面才是五路分布。 */
+    /* 首杀分析：首杀方和团战结果放在一句话里，后面才是五路分布。 */
     const topFirst = stats.slice().sort((a, b) => b.first - a.first)[0];
     const cutTargetCounts = new Map();
     for (const s of stats) for (const target of s.cutTargets) cutTargetCounts.set(target, (cutTargetCounts.get(target) || 0) + 1);
@@ -1606,13 +1584,13 @@ function matchPage(m) {
     const cutAllFirst = cutTotal > 0 && stats.every((s) => s.cutFirsts === s.cut);
     const parts = [];
     if (ownFights.length) {
-      parts.push(`本局 ${fights.length} 波团战里我方先手 ${ownFights.length} 波、赢下 ${ownFightWins} 波`);
-      if (foeFights.length) parts.push(`对方先手 ${foeFights.length} 波，我方 ${foeFights.length - foeFightLosses} 胜 ${foeFightLosses} 负`);
+      parts.push(`本局 ${fights.length} 波团战里我方首杀 ${ownFights.length} 波、赢下 ${ownFightWins} 波`);
+      if (foeFights.length) parts.push(`对方首杀 ${foeFights.length} 波，我方 ${foeFights.length - foeFightLosses - foeFirstDraws} 胜 ${foeFightLosses} 负${foeFirstDraws ? ` ${foeFirstDraws} 平` : ''}`);
     } else if (firstTotal) {
-      parts.push(`本局我方先手 ${firstTotal} 次${firstRate !== null ? `，占我方击杀 ${pct(firstRate)}` : ''}`);
+      parts.push(`本局我方首杀 ${firstTotal} 次${firstRate !== null ? `，占我方击杀 ${pct(firstRate)}` : ''}`);
     }
     if (topFirst && topFirst.first) {
-      parts.push(`${topFirst.p.position || '未知分路'}·${topFirst.p.label || topFirst.p.hero} 先手 ${topFirst.first} 次最多`);
+      parts.push(`${topFirst.p.position || '未知分路'}·${topFirst.p.label || topFirst.p.hero} 首杀 ${topFirst.first} 次最多`);
     }
     if (cutTotal) {
       parts.push(`切 C ${cutTotal} 次${cutTargetText ? `，目标 ${cutTargetText}` : ''}${cutAllFirst ? '，且都是该波团战的第一击' : ''}`);
@@ -1624,22 +1602,22 @@ function matchPage(m) {
       : (ownFightWins === ownFights.length && ownFights.length >= 2) || ownFirstRate >= 0.7 ? 'is-good'
         : ownFirstRate >= 0.5 ? 'is-thin' : 'is-bad';
     const badge = ownFirstRate === null ? '样本不足'
-      : ownFightWins === ownFights.length && ownFights.length >= 2 ? '先手全胜'
-        : ownFirstRate >= 0.7 ? '先手占优' : ownFirstRate >= 0.5 ? '先手一般' : '先手吃亏';
+      : ownFightWins === ownFights.length && ownFights.length >= 2 ? '首杀全胜'
+        : ownFirstRate >= 0.7 ? '首杀占优' : ownFirstRate >= 0.5 ? '首杀一般' : '首杀吃亏';
     const tiles = [
-      ['先手', `${firstTotal}<small>次</small>`, '',
+      ['首杀', `${firstTotal}<small>次</small>`, '',
         firstRate !== null ? `占我方击杀 ${pct(firstRate)}` : '按击杀账本统计'],
-      ['先手团战', ownFights.length ? `${ownFightWins}<i>/</i>${ownFights.length}` : '—', '赢下',
-        ownFights.length ? `对方先手 ${foeFights.length} 波` : '回放没有团战段'],
-      ['被先手', `${foeFights.length}`, '波',
-        foeFights.length ? `我方 ${foeFights.length - foeFightLosses} 胜 ${foeFightLosses} 负` : '没有被对方先手'],
+      ['首杀团战', ownFights.length ? `${ownFightWins}<i>/</i>${ownFights.length}` : '—', '赢下',
+        ownFights.length ? `对方首杀 ${foeFights.length} 波` : '回放没有团战段'],
+      ['被首杀', `${foeFights.length}`, '波',
+        foeFights.length ? `我方 ${foeFights.length - foeFightLosses - foeFirstDraws} 胜 ${foeFightLosses} 负${foeFirstDraws ? ` ${foeFirstDraws} 平` : ''}` : '没有被对方首杀'],
       ['切C', `${cutTotal}`, '次',
         cutTotal ? (cutTargetText || '已形成切C') : '未形成切C'],
     ];
     const statCards = stats.map((s) => `<article class="md-cut-card${s.cut ? ' is-hot' : ''}">
       <header><span class="md-cut-lane">${esc(s.p.position || '未标注')}</span><b>${esc(s.p.label || s.p.hero)}</b>${portrait(s.p.hero || '', 'md-cut-face')}</header>
       <div class="md-cut-rows">
-        <div class="md-cut-row is-first"><span class="md-cut-row-label">先手</span><span class="md-cut-track"><i style="width:${Math.round(s.first / maxFirst * 100)}%"></i></span><b>${s.first}</b><small>${firstTotal ? Math.round(s.first / firstTotal * 100) + '%' : '—'}</small></div>
+        <div class="md-cut-row is-first"><span class="md-cut-row-label">首杀</span><span class="md-cut-track"><i style="width:${Math.round(s.first / maxFirst * 100)}%"></i></span><b>${s.first}</b><small>${firstTotal ? Math.round(s.first / firstTotal * 100) + '%' : '—'}</small></div>
         <div class="md-cut-row"><span class="md-cut-row-label">击杀</span><span class="md-cut-track"><i style="width:${Math.round(s.kills / maxKills * 100)}%"></i></span><b>${s.kills}</b><small>${ownKills ? Math.round(s.kills / ownKills * 100) + '%' : '—'}</small></div>
       </div>
       <div class="md-cut-foot">
@@ -1656,20 +1634,20 @@ function matchPage(m) {
       return `<div class="md-kill ${ownKill ? 'own' : 'foe'}${cut ? ' is-cut' : ''}">
         <span class="md-kill-t">${time(k.t)}</span>
         <span class="md-kill-camp ${ownKill ? 'own' : 'foe'}">${ownKill ? '我方' : '对方'}</span>
-        <span class="md-kill-side"><em>${esc(k.killer)}</em>${first ? '<i class="md-kill-first">先手</i>' : ''}<small>${esc(kl || '—')}</small></span>
+        <span class="md-kill-side"><em>${esc(k.killer)}</em>${first ? '<i class="md-kill-first">首杀</i>' : ''}<small>${esc(kl || '—')}</small></span>
         <span class="md-kill-arrow">→</span>
         <span class="md-kill-side"><em>${esc(k.victim)}</em><small>${esc(vl || '—')}</small></span>
         <em class="md-kill-cut">${cut ? '切C' : ''}</em>
       </div>`;
     };
-    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与先手</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；先手＝该波团战里的第一次击杀。五路统计在上，开团分析居中，逐条账本收在折叠区</p></div></div>
+    return `<section class="section" id="match-kills"><div class="section-heading"><div><h2>切C 与首杀</h2><p>只算我方：切C＝我方对抗路 / 打野击杀对方中路或发育路；首杀＝该波团战里的第一次击杀。五路统计在上，首杀分析居中，逐条账本收在折叠区</p></div></div>
       <div class="md-cut-grid">${statCards}</div>
       <div class="md-viz-analysis md-bprev ${tone}">
-        <div class="md-bprev-head"><b>开团分析</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
+        <div class="md-bprev-head"><b>首杀分析</b><span class="md-bprev-badge ${tone}">${badge}</span></div>
         <p class="md-bprev-lede">${parts.join('；')}。</p>
         <div class="md-bprev-stats">${tiles.map(([label, value, unit, note]) => `<div class="md-bprev-stat"><span class="md-bprev-stat-label">${label}</span><span class="md-bprev-stat-value">${value}<small>${unit}</small></span><span class="md-bprev-stat-note">${note}</span></div>`).join('')}</div>
         ${fightStrip}
-        <p class="md-bprev-thin">口径：先手＝该波团战第一次击杀；切C＝对抗路 / 打野击杀对方中路、发育路；团战结果取官方回放 fights 的双方击杀数。</p>
+        <p class="md-bprev-thin">口径：首杀＝该波团战第一次击杀；切C＝对抗路 / 打野击杀对方中路、发育路；团战结果取官方回放 fights 的双方击杀数。</p>
       </div>
       <details class="md-camp md-kill-fold"><summary>逐条击杀账本 <b>${rows.length}</b> 条 <small>时间 · 阵营 · 击杀方 → 被击杀方</small></summary>
         <div class="md-kill-list">${rows.map(row).join('')}</div>
