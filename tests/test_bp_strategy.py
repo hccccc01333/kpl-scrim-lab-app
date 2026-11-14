@@ -135,3 +135,24 @@ def test_version_filter_keeps_patch_comparison_and_selected_scope():
     assert report["bpStudies"]["version"]["before"]=="V1"
     assert report["bpStudies"]["version"]["after"]=="V2"
     assert all(x["hero"] not in ("小乔",) for x in report["picks"])
+
+
+def test_opponent_analysis_separates_our_real_scrim_choices():
+    games=[]
+    for i in range(3):
+        games.append({
+            "key":"scrim-"+str(i),"day":"2026-11-04",
+            "ownSide":"left","opponent":"对手X","result":"win",
+            "picks":{"own":OWN,"enemy":ENEMY},
+            "bans":{"own":[],"enemy":[]},
+        })
+    report=build_report(games,[],source="scrim",team="对手X")
+    ours=report["bpStudies"]["ownVsTarget"]
+    assert ours["games"]==3
+    assert any(x["candidate"]=="夏洛特" and x["games"]==3
+               for x in ours["candidates"])
+    assert report["team"]=="对手X"
+    assert all(x["team"]=="对手X" for x in report["evidence"])
+    league=build_report([],[],source="kpl",team="战队A")
+    assert league["bpStudies"]["ownVsTarget"]["games"]==0
+    assert not league["bpStudies"]["ownVsTarget"]["candidates"]
