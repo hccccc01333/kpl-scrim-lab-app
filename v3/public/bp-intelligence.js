@@ -238,11 +238,12 @@ function poolView(report){
 
 function matchupsView(report){
  const rows=report.bpStudies?.matchups || [];
- const bySize=(size)=>rows.filter(r=>r.size===size).slice(0,size===5?5:8);
- const section=(size,title)=>`<section class="bpi-panel">
+ const own=report.bpStudies?.ownVsTarget || {};
+ const bySize=(size,data=rows)=>(data||[]).filter(r=>r.size===size).slice(0,size===5?5:8);
+ const section=(size,title,data=rows)=>`<section class="bpi-panel">
    <header><h3>${title}</h3><span>真实对局 · ${size} 英雄对方核心</span></header>
    <p class="bpi-explain">仅统计对方阵容包含这些英雄时，我方实际使用过的应对英雄和历史胜负。没有发生过的 BP 选择不能据此预测效果。</p>
-   ${bySize(size).length?`<div class="bpi-matchups-grid">${bySize(size).map(r=>`<article class="bpi-matchup">
+   ${bySize(size,data).length?`<div class="bpi-matchups-grid">${bySize(size,data).map(r=>`<article class="bpi-matchup">
      <div class="bpi-matchup-core">${r.enemyCore.map(h=>heroBadge(h,report.icons)).join('')}
        <span>对方核心</span></div>
      <div class="bpi-matchup-response"><span>曾选用</span>${heroBadge(r.candidate,report.icons)}</div>
@@ -252,7 +253,17 @@ function matchupsView(report){
    </article>`).join('')}</div>`:
    note('目前没有足够的同阵容对抗记录','需要更多真实交手；未发生过的阵容不能给出假胜率。')}
  </section>`;
- return section(2,'双英雄体系应对')+section(3,'三英雄核心应对')+section(5,'完整阵容交手');
+ const ourPreview=(report.source==='scrim'&&report.team!=='本队'&&report.team) ?
+   `<section class="bpi-panel"><header><h3>本队面对 ${safe(report.team)} 时，曾怎样应对？</h3>
+      <span>本队真实训练赛 · ${count(own.games)} 局</span></header>
+      <p class="bpi-explain">${safe(own.reason||'')}
+        本队英雄池已知 ${count(own.ownPool?.length)} 个常见英雄，历史选择不能冒充新 BP 的胜率预测。</p>
+      ${own.games<2?note('目前对抗样本不足','不足两局时仅保留对局事实，不生成成套反制排序。'):
+        section(2,'本队曾用的英雄，应对对方双英雄核心',own.candidates)}
+     </section>`:'' ;
+ return ourPreview+section(2,'该战队历史对阵双英雄核心的选择')+
+   section(3,'该战队历史对阵三英雄核心的选择')+
+   section(5,'该战队历史完整阵容交手');
 }
 
 function twoStepView(report, trigger){
