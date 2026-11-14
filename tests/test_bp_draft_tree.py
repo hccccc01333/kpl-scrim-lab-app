@@ -126,3 +126,10 @@ def test_priority_multiple_testing_correction_keeps_strong_findings():
                  if row["kind"]=="relative-preference" and "马超" in row["title"])
     assert finding["level"] == "重点"
     assert finding["fdrQ"] <= 0.1
+
+
+def test_opposing_perspective_of_same_game_is_not_an_independent_baseline():
+    focus=[record(i) for i in range(12)]
+    mirror=[record(i, team="战队乙", hero="花木兰") for i in range(12)]
+    report=priority_brief(focus, focus+mirror)
+    assert not any(x["kind"]=="relative-preference" for x in report)
