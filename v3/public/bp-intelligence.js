@@ -359,6 +359,36 @@ function twoStepView(report, trigger){
  </section>`;
 }
 
+
+function conditionalPolicyView(report){
+ const v=report.bpStudies?.nextPickPolicy||{};
+ return `<section class="bpi-panel">
+   <header><h3>对手下一手，真的能预测得更准吗？</h3>
+     <span>蓝红方 × 选人轮次 × 对手已选英雄</span></header>
+   <p class="bpi-explain">将历史比赛按日期分为学习与测试两段：普通基线只看蓝红方和第几次选人，条件模型额外考虑对手之前已经选出的英雄。两者只预测当时尚未被选禁的英雄。</p>
+   ${v.status==='tested' ? `<div class="bpi-model-compare">
+     <div><small>普通选人预测 · Top-3</small><strong>${pct(v.baselineTop3)}</strong></div>
+     <div><small>条件选人预测 · Top-3</small><strong>${pct(v.conditionTop3)}</strong></div>
+     <div><small>未见比赛差异</small><strong class="${v.supported?'is-up':''}">${sign(v.gainPP)}</strong></div>
+   </div><p class="bpi-subtle">前期训练 ${count(v.trainGames)} 局，后期测试 ${count(v.testGames)} 局 ·
+     测试 ${count(v.testDecisions)} 次实际选择 · 有条件样本覆盖 ${pct(v.coverage)}。
+     ${safe(v.reason)}</p>` :
+     note('条件预测暂无足够数据',v.reason||'需要足够多的完整逐手 BP 和多个不同日期。')}
+   ${v.contexts?.length ? `<h4 class="bpi-section-sub">历史上出现过的条件选人规律</h4>
+     <div class="bpi-policy-contexts">${v.contexts.slice(0,10).map(r=>`<article class="bpi-policy-context">
+       <div class="bpi-card-top"><span>${r.side==='1'?'蓝方':'红方'} · 第 ${count(r.slot)} 次选用</span>
+         <em>样本 ${count(r.decisions)} 次</em></div>
+       <p class="bpi-policy-premise">对方之前选过 ${heroBadge(r.opponentHero,report.icons)}</p>
+       ${r.options.map(opt=>`<div class="bpi-policy-option">
+         ${heroBadge(opt.hero,report.icons)}<b>${count(opt.games)} / ${count(r.decisions)} 次</b>
+         <span>${pct(opt.share)}</span></div>`).join('')}
+       ${evidenceDetails(r.evidence,'查看训练集比赛')}
+     </article>`).join('')}</div>`:''}
+   <div class="bpi-research-alert"><b>预测能力不是 BP 方案收益</b>
+     <p>即便下一手命中率更高，也不表示这些英雄就是我方最好的选择；只有后续日期的测试结果才能用于判断对手行为模型是否有效。</p></div>
+ </section>`;
+}
+
 function habitView(report, activeSide) {
   return sideRoundView(report.bpStudies?.draft,report.icons,activeSide) + `<div class="bpi-cols">
     <section class="bpi-panel"><header><h3>最常选择的英雄</h3><span>本队或所选战队</span></header>
@@ -375,7 +405,7 @@ function habitView(report, activeSide) {
       <span>真实选禁事件 · 不能推断意图</span></header>
       <p class="bpi-explain">只展示禁用发生后下一次实际选用的英雄，不把它叫作唯一替代英雄。</p>
       ${banResponseRows(report.banResponses,report.icons)}
-    </section>${validationPanel(report.validation)}`;
+    </section>${conditionalPolicyView(report)}${validationPanel(report.validation)}`;
 }
 
 function responseRows(responses, icons) {
