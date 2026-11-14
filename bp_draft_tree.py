@@ -7,6 +7,35 @@ Its goal is to let a coach step through multiple rounds and inspect evidence.
 from __future__ import annotations
 
 from collections import defaultdict
+from math import exp, fsum, lgamma
+
+
+def _fisher_greater(a, n_a, b, n_b):
+    """One-sided Fisher exact test: is target-team pick share higher?"""
+    successes, total = a + b, n_a + n_b
+    if not total or a > n_a or b > n_b:
+        return 1.0
+    def log_choose(n, k):
+        return lgamma(n + 1) - lgamma(k + 1) - lgamma(n - k + 1)
+    upper = min(n_a, successes)
+    tail = [exp(log_choose(successes, x)
+                + log_choose(total - successes, n_a - x)
+                - log_choose(total, n_a))
+            for x in range(a, upper + 1)
+            if n_a - x <= total - successes]
+    return min(1.0, fsum(tail))
+
+
+def _bh_adjust(p_values):
+    """Benjamini-Hochberg FDR correction across all explored hero hypotheses."""
+    count = len(p_values)
+    adjusted = [1.0] * count
+    next_q = 1.0
+    for rank, index in reversed(list(enumerate(sorted(
+            range(count), key=lambda i: p_values[i]), start=1))):
+        next_q = min(next_q, p_values[index] * count / rank)
+        adjusted[index] = next_q
+    return adjusted
 
 
 def draft_tree(games, *, max_games=160, max_nodes=3500):
@@ -91,6 +120,10 @@ def priority_brief(games, all_games, existing=None):
     heroes = Counter(h for g in current for h in g["picks"])
     other = Counter(h for g in others for h in g["picks"])
     result = []
+    tested = sorted(set(heroes) | set(other))
+    pvals = [_fisher_greater(heroes[hero], len(current), other[hero], len(others))
+             for hero in tested] if current and others else []
+    qvals = dict(zip(tested, _bh_adjust(pvals)))
     for hero, n in heroes.items():
         if n < 4 or len(current) < 7 or len(others) < 12:
             continue
@@ -102,14 +135,21 @@ def priority_brief(games, all_games, existing=None):
         low = _uncertainty(n, len(current))[0] / 100
         if gap < 0.15 or low <= base_rate + 0.05:
             continue
+        # Do not call a hero "重点" merely because one of many searches
+        # happened to yield an impressive historical win/use ratio.
+        q = qvals.get(hero, 1.0)
+        level = "重点" if q <= 0.10 and n >= 7 else "观察"
         matches = [g for g in current if hero in g["picks"]]
         result.append({
-            "kind": "relative-preference", "level": "重点" if n >= 8 else "观察",
+            "kind": "relative-preference", "level": level,
+            "fdrQ": round(q, 6),
             "title": subject + "特别偏爱：" + hero,
             "detail": (f"该战队使用 {n}/{len(current)} 局（{_pct(n,len(current))}%）；"
                        f"其他战队使用 {other[hero]}/{len(others)} 局"
                        f"（{_pct(other[hero],len(others))}%）。"),
-            "action": "复核版本、蓝红方与选手英雄池；准备放出或限制时的后续 BP。",
+            "action": ("多英雄同时筛查已做 FDR 校正；再复核版本、蓝红方与选手英雄池。"
+                       if level == "重点" else
+                       "选人差异尚未通过多重比较校正；建议只作观察，继续收集对局。"),
             "n": n, "referenceGames": len(others),
             "evidence": _evidence(matches),
         })
