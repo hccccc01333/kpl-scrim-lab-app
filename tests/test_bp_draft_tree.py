@@ -1,5 +1,5 @@
 """Complete historical BP traversal and conservative pre-match priorities."""
-from bp_draft_tree import draft_tree, priority_brief
+from bp_draft_tree import draft_tree, priority_brief, _fisher_greater, _bh_adjust
 from bp_intelligence import build_report
 
 
@@ -111,3 +111,18 @@ def test_report_keeps_a_replayable_tree_for_selected_team_only():
     assert all(x["team"]=="战队甲" for x in tree["nodes"][0]["evidence"])
     league=build_report([],games,source="kpl",team="")
     assert league["bpStudies"]["draftTree"]["nodes"]==[]
+
+
+def test_priority_multiple_testing_correction_keeps_strong_findings():
+    assert _fisher_greater(12, 12, 2, 40) < 1e-6
+    q = _bh_adjust([0.001, 0.04, 0.20])
+    assert round(q[0], 3) == 0.003
+    assert round(q[1], 3) == 0.06
+    assert round(q[2], 3) == 0.20
+    focus=[record(i) for i in range(12)]
+    other=[record(i+60, team="战队乙", hero="马超" if i<2 else "花木兰")
+           for i in range(40)]
+    finding=next(row for row in priority_brief(focus,focus+other)
+                 if row["kind"]=="relative-preference" and "马超" in row["title"])
+    assert finding["level"] == "重点"
+    assert finding["fdrQ"] <= 0.1
