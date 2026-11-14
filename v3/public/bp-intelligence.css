@@ -257,3 +257,80 @@
 .bpi-lineup-metrics span{font-size:11px;color:var(--bpi-text)}
 .bpi-lineup-metrics small{font-size:10px;color:var(--bpi-muted)}
 @media(max-width:900px){.bpi-lineups{grid-template-columns:1fr}}
+
+
+/* BP tactical comparison: side/round, patch, player pool, counter and model. */
+.bpi-side-tiles,.bpi-pool-grid,.bpi-matchups-grid,.bpi-signal-grid,
+.bpi-branches,.bpi-model-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin:12px 0 17px}
+.bpi-side-card{background:var(--bpi-soft);border:1px solid var(--bpi-line);border-radius:10px;padding:15px;min-width:0}
+.bpi-side-card>div{display:flex;align-items:center;justify-content:space-between;gap:9px;font-size:12px}
+.bpi-side-card>div span{color:var(--bpi-muted)}
+.bpi-side-card>strong{font-size:25px;line-height:1.4;display:block;margin:5px 0;font-weight:780}
+.bpi-side-card>small{display:block;font-size:10px;color:var(--bpi-muted)}
+.bpi-round-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px}
+.bpi-round-head h4{font-size:14px;margin:0}
+.bpi-round-toggle{display:inline-flex;gap:3px;background:var(--bpi-soft);padding:3px;border-radius:9px}
+.bpi-round-toggle button{border:0;background:transparent;padding:7px 12px;border-radius:7px;font:inherit;font-size:12px;cursor:pointer;color:var(--bpi-muted)}
+.bpi-round-toggle button[aria-pressed="true"]{background:var(--bpi-panel);color:var(--bpi-text);box-shadow:0 1px 3px rgba(0,0,0,.09)}
+.bpi-round-list{display:flex;flex-direction:column;gap:12px;margin:14px 0}
+.bpi-round-block{display:grid;grid-template-columns:110px minmax(0,1fr);gap:13px;align-items:start;border-bottom:1px solid var(--bpi-line);padding-bottom:12px}
+.bpi-round-label{font-size:12px;font-weight:720;color:var(--bpi-text);padding-top:6px}
+.bpi-round-entries{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;min-width:0}
+.bpi-round-entries article{padding:10px;border:1px solid var(--bpi-line);border-radius:8px;min-width:0}
+.bpi-round-entries article>div:first-child{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:7px}
+.bpi-round-entries article b{font-size:11px}
+.bpi-round-entries article small{font-size:10px;color:var(--bpi-muted)}
+.bpi-version-list{display:flex;align-items:stretch;flex-wrap:wrap;gap:9px;margin:14px 0}
+.bpi-version-chip{border:1px solid var(--bpi-line);border-radius:9px;padding:10px 13px;display:flex;gap:5px 12px;align-items:center;flex-wrap:wrap}
+.bpi-version-chip b{font-size:12px}
+.bpi-version-chip span,.bpi-version-chip small{font-size:10px;color:var(--bpi-muted)}
+.bpi-version-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bpi-version-row{padding:13px;border:1px solid var(--bpi-line);border-radius:10px}
+.bpi-version-row>div:first-child{display:flex;align-items:center;gap:10px}
+.bpi-version-row>div:first-child>span:not(.bpi-hero){font-size:10px;color:var(--bpi-muted)}
+.bpi-version-row>div:first-child>b{margin-left:auto;font-size:15px}
+.bpi-period-bar{margin-top:9px}
+.bpi-period-bar small{font-size:10px;color:var(--bpi-muted)}
+.bpi-pool{background:var(--bpi-panel);border:1px solid var(--bpi-line);border-radius:11px;padding:14px;min-width:0}
+.bpi-pool header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.bpi-pool header h4{font-size:15px;margin:0}
+.bpi-pool header small,.bpi-pool header>span{font-size:10px;color:var(--bpi-muted)}
+.bpi-pool-row{display:flex;align-items:center;gap:10px;border-top:1px solid var(--bpi-line);padding:9px 0;min-width:0}
+.bpi-pool-row>.bpi-hero{min-width:120px}
+.bpi-pool-row>div{min-width:65px;flex:1}
+.bpi-pool-row small{font-size:10px;color:var(--bpi-muted);display:block}
+.bpi-pool-row>.bpi-evidence{margin:0;padding:0;border:0;flex:0 0 auto}
+.bpi-pool-row>.bpi-evidence summary{font-size:10px}
+.bpi-matchup,.bpi-signal,.bpi-branch{background:var(--bpi-panel);border:1px solid var(--bpi-line);border-radius:11px;padding:14px;min-width:0}
+.bpi-matchup-core{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-bottom:8px}
+.bpi-matchup-core>span:last-child:not(.bpi-hero){font-size:10px;color:var(--bpi-muted)}
+.bpi-matchup-response{display:flex;gap:9px;align-items:center;border-top:1px solid var(--bpi-line);padding:8px 0}
+.bpi-matchup-response>span:first-child{font-size:11px;color:var(--bpi-muted)}
+.bpi-matchup-stats{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap}
+.bpi-matchup-stats strong{font-size:14px}
+.bpi-matchup-stats span{font-size:11px;color:var(--bpi-muted)}
+.bpi-branch-trigger{display:flex;align-items:center;flex-wrap:wrap;gap:11px;padding:14px;background:var(--bpi-soft);border-radius:10px;margin:12px 0}
+.bpi-branch-trigger>span:not(.bpi-hero),.bpi-branch-trigger>small{font-size:11px;color:var(--bpi-muted)}
+.bpi-branch>div:first-child{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.bpi-branch>div:first-child>span:not(.bpi-hero){color:var(--bpi-muted)}
+.bpi-branch strong{display:block;font-size:15px;margin:12px 0 3px}
+.bpi-branch small{font-size:10px;color:var(--bpi-muted)}
+.bpi-model-compare{grid-template-columns:repeat(3,minmax(0,1fr))}
+.bpi-model-compare>div{background:var(--bpi-soft);border:1px solid var(--bpi-line);border-radius:10px;padding:13px}
+.bpi-model-compare small{font-size:10px;color:var(--bpi-muted);display:block}
+.bpi-model-compare strong{font-size:16px;line-height:1.4;display:block;margin-top:8px}
+.bpi-signal>span{font-size:11px;color:var(--bpi-muted)}
+.bpi-signal>div{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.bpi-signal strong{display:block;font-size:13px;margin-bottom:6px}
+.bpi-signal small{font-size:10px;color:var(--bpi-muted)}
+@media(max-width:1000px){
+ .bpi-version-rows,.bpi-pool-grid,.bpi-matchups-grid,.bpi-signal-grid{grid-template-columns:1fr}
+}
+@media(max-width:690px){
+ .bpi-side-tiles,.bpi-branches,.bpi-model-compare{grid-template-columns:1fr}
+ .bpi-round-block{grid-template-columns:1fr;gap:7px}
+ .bpi-round-entries{grid-template-columns:1fr}
+ .bpi-side-card>strong{font-size:21px}
+ .bpi-pool-row>.bpi-hero{min-width:95px}
+ .bpi-branch-trigger{padding:11px}
+}
