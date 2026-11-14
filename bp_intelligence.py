@@ -722,6 +722,23 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
         "matchups": matchup_study(team_games),
         "twoStep": draft_two_step_study(team_games),
     }
+    # Looking at an opponent in scrim data? Keep the user's own historical
+    # responses separate from that opponent's own lineup choices.
+    # Never merge official KPL and private scrim win rates.
+    own_vs_target = ([g for g in source_games
+                      if g["team"] == "本队" and g["enemy"] == team]
+                     if source == "scrim" and team and team != "本队" else [])
+    own_pool_games = ([g for g in source_games if g["team"] == "本队"]
+                      if source == "scrim" else [])
+    bp_studies["ownVsTarget"] = {
+        "games": len(own_vs_target),
+        "candidates": matchup_study(own_vs_target) if own_vs_target else [],
+        "ownPool": _counts(own_pool_games, "picks", own_pool_games)[:24]
+                   if own_pool_games else [],
+        "reason": ("本队对该对手的真实训练赛应对；不存在的阵容未估计效果。"
+                   if own_vs_target else
+                   "暂无可验证的本队对该对手历史训练赛，不生成个性化反制推荐。")
+    }
     bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
     from bp_interactions import interaction_study
     # Only compare own-side match outcomes for one team, never opposite labels
