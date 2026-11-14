@@ -133,6 +133,8 @@ def normalize_kpl(raw_games):
                           "result": (winner == side) if winner in ("1", "2") else None,
                           "events": events, "source": "kpl", "matchId": str(item.get("matchId") or ""),
                           "league": str(item.get("leagueName") or ""),
+                          "version": str(item.get("version") or item.get("gameVersion") or "").strip(),
+                          "stage": str(item.get("stage") or "").strip(),
                           "gameSeq": item.get("gameSeq")})
     return games
 
@@ -192,7 +194,10 @@ def normalize_scrims(raw_games, process_map=None):
                           "players": _scrim_players(item, side, own_picks),
                           "enemyPlayers": _scrim_players(item, other, enemy_picks),
                           "result": won, "events": events, "source": "scrim",
-                          "matchId": identity, "league": "训练赛", "gameSeq": None,
+                          "matchId": identity, "league": "训练赛",
+                          "version": str(item.get("version") or "").strip(),
+                          "stage": str(item.get("stage") or "").strip(),
+                          "gameSeq": None,
                           "processMatchKey": process.get("matchKey") or "",
                           "teamGoldDiff": team_diff,
                           "laneGoldDiffByHero": process.get("laneDiffByHero") or {}})
@@ -676,7 +681,7 @@ def _series_adjustments(games):
 
 
 def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end="",
-                 process_map=None):
+                 version="", process_map=None):
     if source not in ("scrim", "kpl"):
         raise ValueError("未知比赛来源")
     if start:
@@ -689,6 +694,12 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     source_games = [g for g in dedup.values()
                     if (not start or g["date"] >= start) and (not end or g["date"] <= end)]
     source_games.sort(key=lambda g: (g["date"], g["id"]), reverse=True)
+    unfiltered_team_games = [g for g in source_games if not team or g["team"] == team]
+    from bp_strategy import (side_round_study, version_study, player_pool_study,
+                             matchup_study, draft_two_step_study, coach_brief)
+    versions = version_study(unfiltered_team_games, source_games, selected=version)
+    if version:
+        source_games = [g for g in source_games if g.get("version") == version]
     teams = Counter(g["team"] for g in source_games)
     team_games = [g for g in source_games if not team or g["team"] == team]
     matches = {g["id"] for g in team_games}
@@ -704,11 +715,23 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     players = _players(team_games, source_games)
     changes = _changes(team_games)
     responses = _transitions(team_games)
+    bp_studies = {
+        "draft": side_round_study(team_games),
+        "version": versions,
+        "players": player_pool_study(team_games),
+        "matchups": matchup_study(team_games),
+        "twoStep": draft_two_step_study(team_games),
+    }
+    bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
     # League/whole-dataset views include both sides of the same game; assigning
     # a team advantage or a single-team win-rate trend is meaningless there.
     process_study = _process_analysis(team_games if team else [])
     hero_shifts = _hero_win_shifts(team_games if team else [])
     findings = []
+    for item in bp_studies["brief"]:
+        findings.append({"kind": item["kind"], "title": item["title"],
+                         "detail": item["detail"], "note": item["action"],
+                         "evidence": item["evidence"]})
     if hero_shifts:
         change = hero_shifts[0]
         findings.append({"kind": "hero-outcome", "title": "英雄近期战绩波动：" + change["hero"],
@@ -762,6 +785,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
             "banResponses": ban_responses,
             "players": players, "changes": changes,
             "processStudy": process_study, "heroWinShifts": hero_shifts,
+            "bpStudies": bp_studies,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
             "counterCandidates": _counter_candidates(team_games),
@@ -774,4 +798,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
                 "组合超额表现为探索性信号，不是可直接证明的协同效果。",
                 "胜率异动中阵容与对位变化仅是相关条件，不构成自动因果归因。",
                 "分路经济只有在真实逐人快照及明确对位身份可用时才计算；缺失绝不插补。",
+                "蓝红方/轮次仅以有效 BP 事件为依据；使用率对比只说明选择习惯。",
+                "版本对照只使用明确标注的真实游戏版本，不以年份或日期推断补齐。",
+                "历史两步回应是可复查的已发生分支，不是最优博弈策略或模拟胜率。",
             ]}
