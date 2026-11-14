@@ -2,9 +2,9 @@
    只消费后端可复现事实；不用前端凭终局名单编造选禁顺序。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const views = [
-  ['focus', '赛训重点'], ['habits', '选禁习惯'], ['players', '选手绝活'],
-  ['combos', '阵容协同'], ['tempo', '比赛节奏'],
-  ['changes', '近期变化'], ['diagnostics', '异常研判'], ['sandbox', 'BP 推演']
+  ['focus', '赛前重点'], ['habits', '选禁习惯'], ['version', '版本环境'],
+  ['players', '选手英雄池'], ['combos', '阵容协同'], ['counter', '阵容反制'],
+  ['changes', '策略变化'], ['sandbox', 'BP 分支']
 ];
 const safe = (value) => String(value == null ? '' : value)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -74,7 +74,8 @@ function findingCards(report) {
   if (!report.findings?.length) return note('当前没有足够证据生成重点结论',
     '可以切换对手或正式比赛数据查看；系统不会用零星胜率编造规律。');
   const labels = {preference:'英雄偏好', response:'条件回应', change:'周期变化',
-    combo:'阵容组合', process:'比赛节奏', 'hero-outcome':'战绩异动'};
+    combo:'阵容组合', process:'比赛节奏', 'hero-outcome':'战绩异动',
+    patch:'版本变化', priority:'首手优先级', pool:'选手英雄集中'};
   return `<div class="bpi-finding-grid">${report.findings.map((f,i)=>
     `<article class="bpi-finding">
       <div class="bpi-card-top"><span>${String(i+1).padStart(2,'0')}</span><em>${safe(labels[f.kind] || '比赛发现')}</em></div>
@@ -145,8 +146,138 @@ function fullLineupRows(rows,icons) {
   </article>`).join('')}</div>`;
 }
 
-function habitView(report) {
-  return `<div class="bpi-cols">
+
+function sideRoundView(study, icons, activeSide) {
+  const sides=study?.sides || [];
+  if(!sides.length)return note('暂无蓝红方对照','请选择有真实 BP 记录的战队。');
+  const rounds=(study?.rounds || []).filter(r=>r.side===activeSide);
+  const stage=[...new Set(rounds.filter(r=>r.action==='pick').map(r=>r.round))];
+  return `<section class="bpi-panel">
+    <header><h3>蓝方和红方，选禁习惯一样吗？</h3><span>只比较当前战队</span></header>
+    <div class="bpi-side-tiles">${sides.map(row=>`<div class="bpi-side-card">
+      <div><b>${safe(row.label)}</b><span>${count(row.games)} 局</span></div>
+      <strong>${pct(row.winRate)}</strong>
+      <small>${count(row.wins)} / ${count(row.decided)} 胜 · 胜率区间 ${row.interval ? pct(row.interval[0]) + '–' + pct(row.interval[1]) : '—'}</small>
+      ${evidenceDetails(row.evidence, '查看该侧比赛')}
+    </div>`).join('')}</div>
+    <p class="bpi-explain">不同边的胜率可能受阵容、对手和场次影响，不代表蓝红方本身造成了胜率差。</p>
+    <div class="bpi-round-head">
+      <h4>逐轮英雄优先级</h4>
+      <div class="bpi-round-toggle" role="group" aria-label="蓝红方筛选">
+        <button type="button" data-bpi-side="1" aria-pressed="${activeSide==='1'}">蓝方</button>
+        <button type="button" data-bpi-side="2" aria-pressed="${activeSide==='2'}">红方</button>
+      </div>
+    </div>
+    ${stage.length ? `<div class="bpi-round-list">${stage.map(step=>{
+       const picks=rounds.filter(r=>r.action==='pick'&&r.round===step)
+         .sort((a,b)=>b.games-a.games).slice(0,4);
+       return `<div class="bpi-round-block">
+         <div class="bpi-round-label">第 ${step} 次选用</div>
+         <div class="bpi-round-entries">${picks.map(row=>`<article>
+           <div>${heroBadge(row.hero,icons)}<b>${count(row.games)} / ${count(row.opportunities)} 局</b></div>
+           ${shareBar(row.share)}${evidenceDetails(row.evidence,'比赛依据')}
+         </article>`).join('')}</div>
+       </div>`;
+    }).join('')}</div>` :
+      note('没有足够的完整顺序记录','必须先取得经过校验的逐手 Pick/Ban 事件，才会统计每一轮的英雄。')}
+    <details class="bpi-method"><summary>查看各次禁用的英雄</summary>
+      <div class="bpi-round-entries">${rounds.filter(r=>r.action==='ban'&&r.games>=2)
+        .slice(0,20).map(row=>`<article><div>${heroBadge(row.hero,icons)}
+          <small>第 ${row.round} 次禁用</small><b>${count(row.games)} / ${count(row.opportunities)} 局</b></div>
+          ${shareBar(row.share)}${evidenceDetails(row.evidence,'BP 证据')}</article>`).join('') ||
+          '没有足够的多场次禁用记录'}</div>
+    </details>
+  </section>`;
+}
+
+function versionView(report){
+  const v=report.bpStudies?.version||{};
+  const options=v.options||[];
+  return `<section class="bpi-panel">
+    <header><h3>版本环境与英雄优先级</h3><span>比较真实游戏版本</span></header>
+    <p class="bpi-explain">当前范围有明确游戏版本标签 ${count(v.coverage?.knownGames)} / ${count(v.coverage?.games)} 局。缺失版本的比赛不参与跨版本比较，不把赛事年份当作游戏版本。</p>
+    <div class="bpi-version-list">${options.map(row=>`<div class="bpi-version-chip">
+      <b>${safe(row.name)}</b><span>${count(row.games)} 局</span>
+      <small>最近记录 ${safe(row.lastDate||'—')}</small></div>`).join('')||
+      '<p class="bpi-subtle">现有数据未包含可用的游戏版本字段，需要先接入真实 patch 标识。</p>'}</div>
+    <h4 class="bpi-section-sub">最近两个已知版本的选禁变化</h4>
+    ${v.available ? `<p class="bpi-explain">${safe(v.before)} → ${safe(v.after)}。仅比较同一战队、同一来源的选禁比例。</p>
+      <div class="bpi-version-rows">${v.changes.map(row=>`<article class="bpi-version-row">
+        <div>${heroBadge(row.hero,report.icons)}
+          <span>${row.action==='pick'?'选用':'禁用'}</span>
+          <b class="${row.changePP>0?'is-up':row.changePP<0?'is-down':''}">${sign(row.changePP)}</b></div>
+        <div class="bpi-period-bar"><small>${safe(v.before)} · ${count(row.oldCount)} / ${count(row.oldGames)} 局</small>${shareBar(row.oldShare)}</div>
+        <div class="bpi-period-bar"><small>${safe(v.after)} · ${count(row.newCount)} / ${count(row.newGames)} 局</small>${shareBar(row.newShare)}</div>
+        ${evidenceDetails(row.evidence,'查看当前版本比赛')}
+      </article>`).join('')||
+        '<p class="bpi-subtle">两个版本均有记录，但还不足以得出稳定的优先级变化。</p>'}</div>`:
+      note('暂时无法做跨版本比较','需要至少两个不同的真实游戏版本，且各自有足够场次。')}
+  </section>`;
+}
+
+function poolView(report){
+ const rows=report.bpStudies?.players || [];
+ return `<section class="bpi-panel">
+   <header><h3>选手英雄池：谁常用什么？</h3><span>已确认选手—英雄对应</span></header>
+   <p class="bpi-explain">查看英雄池宽度、常用英雄和历史表现。单凭常用或高胜率，不能直接定义绝活或英雄限制优先级。</p>
+   ${rows.length?`<div class="bpi-pool-grid">${rows.slice(0,15).map(r=>`<article class="bpi-pool">
+     <header><div><h4>${safe(r.player)}</h4><small>${safe(r.team)} · ${safe(r.lane||'分路未知')}</small></div>
+       <span>${count(r.uniqueHeroes)} 个英雄 · ${count(r.games)} 局</span></header>
+     ${r.heroes.slice(0,6).map(h=>`<div class="bpi-pool-row">
+       ${heroBadge(h.hero,report.icons)}
+       <div>${shareBar(h.share)}<small>${count(h.games)} 局 · 胜率 ${pct(h.winRate)}</small></div>
+       ${evidenceDetails(h.evidence,'对局')}
+     </div>`).join('')}
+   </article>`).join('')}</div>`:
+   note('缺少经过核验的选手英雄数据','需要明确选手身份与每局使用英雄的对应关系。')}
+ </section>`;
+}
+
+function matchupsView(report){
+ const rows=report.bpStudies?.matchups || [];
+ const bySize=(size)=>rows.filter(r=>r.size===size).slice(0,size===5?5:8);
+ const section=(size,title)=>`<section class="bpi-panel">
+   <header><h3>${title}</h3><span>真实对局 · ${size} 英雄对方核心</span></header>
+   <p class="bpi-explain">仅统计对方阵容包含这些英雄时，我方实际使用过的应对英雄和历史胜负。没有发生过的 BP 选择不能据此预测效果。</p>
+   ${bySize(size).length?`<div class="bpi-matchups-grid">${bySize(size).map(r=>`<article class="bpi-matchup">
+     <div class="bpi-matchup-core">${r.enemyCore.map(h=>heroBadge(h,report.icons)).join('')}
+       <span>对方核心</span></div>
+     <div class="bpi-matchup-response"><span>曾选用</span>${heroBadge(r.candidate,report.icons)}</div>
+     <div class="bpi-matchup-stats"><b>${count(r.games)} / ${count(r.opportunities)} 局</b>
+       <span>历史 ${count(r.wins)} / ${count(r.decided)} 胜 · ${pct(r.winRate)}</span></div>
+     ${evidenceDetails(r.evidence,'核查历史交手')}
+   </article>`).join('')}</div>`:
+   note('目前没有足够的同阵容对抗记录','需要更多真实交手；未发生过的阵容不能给出假胜率。')}
+ </section>`;
+ return section(2,'双英雄体系应对')+section(3,'三英雄核心应对')+section(5,'完整阵容交手');
+}
+
+function twoStepView(report, trigger){
+ const rows=report.bpStudies?.twoStep||[];
+ const selected=rows.find(x=>x.trigger===trigger)||rows[0];
+ if(!selected)return note('暂无完整后续 BP 分支','需要至少出现过一次对手 Pick → 我方 Pick → 对方下一次 Pick 的真实顺序。');
+ const group=[...new Set(rows.map(r=>r.trigger))];
+ return `<section class="bpi-panel">
+   <header><h3>两步 BP 历史分支</h3><span>实际发生过的下一手</span></header>
+   <div class="bpi-sandbox-controls"><label>对方先选
+     <select data-bpi-trigger><option value="">选择英雄</option>
+       ${group.map(h=>`<option value="${safe(h)}" ${selected.trigger===h?'selected':''}>${safe(h)}</option>`).join('')}
+     </select></label><span>只根据完整合法的历史逐手记录</span></div>
+   <div class="bpi-branch-trigger">${heroBadge(selected.trigger,report.icons)}
+     <span>→ 我方选择 → 对方再选</span><small>${count(selected.games)} 局出现此触发</small></div>
+   <div class="bpi-branches">${selected.branches.map(b=>`<article class="bpi-branch">
+     <div>${heroBadge(b.ownPick,report.icons)}<span>→</span>${heroBadge(b.enemyNext,report.icons)}</div>
+     <strong>${count(b.games)} / ${count(b.opportunities)} 局</strong>
+     <small>在该回应后对方选此英雄，占 ${pct(b.share)}</small>
+     ${shareBar(b.share)}${evidenceDetails(b.evidence,'核查此分支')}
+   </article>`).join('')}</div>
+   <div class="bpi-research-alert"><b>历史分支不等于最优 BP</b>
+     <p>这里未模拟未发生的英雄替换，也未声称已获得完整规则搜索或对局收益预测；完整 BP 博弈需在合法英雄池与严格回测通过后才可启用。</p></div>
+ </section>`;
+}
+
+function habitView(report, activeSide) {
+  return sideRoundView(report.bpStudies?.draft,report.icons,activeSide) + `<div class="bpi-cols">
     <section class="bpi-panel"><header><h3>最常选择的英雄</h3><span>本队或所选战队</span></header>
       <p class="bpi-explain">蓝条为当前对象的使用占比，细线为同来源全部战队的参照。</p>
       ${rankRows(report.picks, report.icons, 'picks')}</section>
@@ -413,7 +544,7 @@ function sandboxView(report, trigger) {
 
 export function createBpIntelligence({currentQuery=()=>''} = {}) {
   const state = {root:null, controller:null, source:'scrim', team:'本队',
-    mode:'overview', view:'focus', trigger:'', report:null, error:''};
+    mode:'overview', view:'focus', trigger:'', side:'1', version:'',report:null, error:''};
 
   function body() {
     const report=state.report;
@@ -421,13 +552,15 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     if (!report.scope?.games) return note('当前范围没有可分析的 BP 比赛',
       '可切换正式比赛 / 训练赛，或选择其他战队。无比赛时不会显示伪造的胜率与阵容建议。');
     switch (state.view) {
-      case 'habits': return habitView(report);
-      case 'players': return playerView(report);
+      case 'habits': return habitView(report,state.side);
+      case 'version': return versionView(report);
+      case 'players': return poolView(report) + playerView(report);
       case 'combos': return comboView(report);
-      case 'changes': return changeView(report);
+      case 'counter': return matchupsView(report);
+      case 'changes': return versionView(report) + changeView(report) + diagnosticView(report);
       case 'tempo': return processView(report);
       case 'diagnostics': return diagnosticView(report);
-      case 'sandbox': return sandboxView(report,state.trigger);
+      case 'sandbox': return twoStepView(report,state.trigger) + sandboxView(report,state.trigger);
       default: return `<section class="bpi-intro-brief">
           <h3>这段时间最值得关注的 BP 现象</h3>
           <p>从选禁频率、真实 BP 回应、阵容组合和周期变化中选出有比赛证据的发现。</p>
@@ -435,8 +568,8 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
         <div class="bpi-shortcuts"><button type="button" data-bpi-view="habits">查看选禁路径</button>
         <button type="button" data-bpi-view="players">研究选手绝活</button>
         <button type="button" data-bpi-view="combos">研究阵容协同</button>
-        <button type="button" data-bpi-view="tempo">查看比赛节奏</button>
-        <button type="button" data-bpi-view="diagnostics">研究战绩异动</button></div>`;
+        <button type="button" data-bpi-view="counter">研究阵容反制</button>
+        <button type="button" data-bpi-view="changes">研究 BP 异动</button></div>`;
     }
   }
 
@@ -463,6 +596,12 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
               ${safe(t.name)} · ${count(t.games)} 局</option>`).join('')}
             ${state.team&&!hasTeam?`<option selected value="${safe(state.team)}">${safe(state.team)} · 暂无记录</option>`:''}
           </select></label>
+        <label class="bpi-team-select">游戏版本
+          <select data-bpi-version>
+            <option value="" ${!state.version?'selected':''}>全部已记录版本</option>
+            ${(report?.bpStudies?.version?.options||[]).map(row=>`<option value="${safe(row.name)}"
+              ${state.version===row.name?'selected':''}>${safe(row.name)} · ${count(row.games)} 局</option>`).join('')}
+          </select></label>
         <span class="bpi-data-note">${report?`完整 BP ${count(report.scope?.orderedGames)} 局 · 数据不跨来源混算`:'正在读取…'}</span>
       </div>
       ${report ? headline(report) : ''}
@@ -485,6 +624,7 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     state.controller=controller;
     state.report=null; state.error=''; paint();
     const params=new URLSearchParams({source:state.source,team:state.team});
+    if(state.version)params.set('version',state.version);
     try {
       const global=new URLSearchParams(currentQuery().replace(/^\?/,''));
       if(global.get('from'))params.set('from',global.get('from'));
@@ -508,11 +648,13 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     if(root.dataset.bpiBound)return;
     root.dataset.bpiBound='1';
     root.addEventListener('click', event=>{
+      const side=event.target.closest('[data-bpi-side]');
+      if(side){state.side=side.dataset.bpiSide;paint();return;}
       const source=event.target.closest('[data-bpi-source]');
       if(source){
         const next=source.dataset.bpiSource;
         if(next===state.source)return;
-        state.source=next;state.team=next==='scrim'?'本队':'';state.trigger='';
+        state.source=next;state.team=next==='scrim'?'本队':'';state.version='';state.trigger='';
         void load();return;
       }
       const view=event.target.closest('[data-bpi-view]');
@@ -525,6 +667,9 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     root.addEventListener('change', event=>{
       if(event.target.matches('[data-bpi-team]')){
         state.team=event.target.value;state.trigger='';void load();
+      }
+      if(event.target.matches('[data-bpi-version]')){
+        state.version=event.target.value;state.trigger='';void load();
       }
       if(event.target.matches('[data-bpi-trigger]')){
         state.trigger=event.target.value;paint();
@@ -539,7 +684,7 @@ export function createBpIntelligence({currentQuery=()=>''} = {}) {
     state.source='scrim';
     state.team=team==null ? '本队' : team;
     state.view=mode==='team'?'habits':mode==='counter'?'sandbox':'focus';
-    state.trigger='';state.report=null;state.error='';
+    state.trigger='';state.side='1';state.version='';state.report=null;state.error='';
     bind(root);void load();
   }
   return {mount};
