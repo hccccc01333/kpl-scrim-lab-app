@@ -208,6 +208,9 @@ function versionView(report){
           <b class="${row.changePP>0?'is-up':row.changePP<0?'is-down':''}">${sign(row.changePP)}</b></div>
         <div class="bpi-period-bar"><small>${safe(v.before)} · ${count(row.oldCount)} / ${count(row.oldGames)} 局</small>${shareBar(row.oldShare)}</div>
         <div class="bpi-period-bar"><small>${safe(v.after)} · ${count(row.newCount)} / ${count(row.newGames)} 局</small>${shareBar(row.newShare)}</div>
+        ${row.action==='pick'&&row.oldDecided&&row.newDecided?
+          `<p class="bpi-subtle">历史胜率：${pct(row.oldWinRate)} → ${pct(row.newWinRate)}
+            · 有效赛果 ${count(row.oldDecided)} / ${count(row.newDecided)} 局。出场条件不同，不能据此证明英雄被加强或削弱。</p>`:''}
         ${evidenceDetails(row.evidence,'查看当前版本比赛')}
       </article>`).join('')||
         '<p class="bpi-subtle">两个版本均有记录，但还不足以得出稳定的优先级变化。</p>'}</div>`:
