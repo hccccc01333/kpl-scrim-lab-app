@@ -87,6 +87,7 @@ def priority_brief(games, all_games, existing=None):
     from bp_strategy import _evidence, _pct, _uncertainty
     from collections import Counter, defaultdict
     others = [g for g in all_games if g["team"] not in {x["team"] for x in current}]
+    subject = "本队" if current[0]["team"] == "本队" else "对手"
     heroes = Counter(h for g in current for h in g["picks"])
     other = Counter(h for g in others for h in g["picks"])
     result = []
@@ -104,7 +105,7 @@ def priority_brief(games, all_games, existing=None):
         matches = [g for g in current if hero in g["picks"]]
         result.append({
             "kind": "relative-preference", "level": "重点" if n >= 8 else "观察",
-            "title": "对手特别偏爱：" + hero,
+            "title": subject + "特别偏爱：" + hero,
             "detail": (f"该战队使用 {n}/{len(current)} 局（{_pct(n,len(current))}%）；"
                        f"其他战队使用 {other[hero]}/{len(others)} 局"
                        f"（{_pct(other[hero],len(others))}%）。"),
