@@ -291,9 +291,18 @@ def _signature(root, db_path=None, stamp=None):
                 row = connection.execute(
                     "SELECT COUNT(*), COALESCE(MAX(updated_at), 0) FROM match_meta "
                     "WHERE match_key LIKE 'camp:%'").fetchone()
+                parts.append(f'camp-meta:{row[0]}:{row[1]}')
+                # 战队分析改名/合并也会改队名，facts 里的「vs 某队」标签要跟着刷新。
+                for table in ('team_clusters', 'teams'):
+                    try:
+                        column = 'updated_at' if table == 'team_clusters' else 'revision'
+                        row = connection.execute(
+                            f'SELECT COUNT(*), COALESCE(MAX({column}), 0) FROM {table}').fetchone()
+                        parts.append(f'{table}:{row[0]}:{row[1]}')
+                    except sqlite3.OperationalError:
+                        parts.append(f'{table}:none')
             finally:
                 connection.close()
-            parts.append(f'camp-meta:{row[0]}:{row[1]}')
         except sqlite3.OperationalError:
             parts.append('camp-meta:none')
     if stamp is not None and str(stamp) != '':
@@ -1254,7 +1263,22 @@ def create_depth_router(root, db_path=None, profile_loader=None):
         stamp = profile.get('stamp') if isinstance(profile, dict) else None
         key = _signature(root, db_path, stamp)
         if cache['key'] != key:
-            cache['facts'] = build_facts(root, _camp_meta(db_path), profile)
+            meta = _camp_meta(db_path)
+            # 战队分析是当前队名的唯一权威：把每局营地 seq 解析出的队名并进
+            # 分边覆盖层，深度页的「vs 某队」标签与其他页面同一口径。
+            try:
+                import opponent_identity
+                resolved = opponent_identity.resolve(
+                    db_path, data_root(root) / 'camp_details')
+                for seq, name in resolved['bySeq'].items():
+                    if name:
+                        meta.setdefault(seq, {})['opponent'] = name
+                    elif meta.get(seq, {}).get('opponent'):
+                        meta[seq]['opponent'] = resolved['aliases'].get(
+                            meta[seq]['opponent'], meta[seq]['opponent'])
+            except Exception:  # noqa: BLE001 - 解析失败保留教练手填的队名
+                pass
+            cache['facts'] = build_facts(root, meta, profile)
             cache['key'] = key
         return cache['facts']
 

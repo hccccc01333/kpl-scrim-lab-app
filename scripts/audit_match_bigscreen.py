@@ -77,9 +77,10 @@ EXPECTED_LABELS = {
 # 结论卡是 section.md-hero（非 .section），脉搏 / 总量是卡内 / 卡后的 div。
 SCREEN_SECTIONS = [
     "match-verdict",       # section.md-hero：本局结论（内含 #match-pulse 比赛脉搏）
-    "match-ov-lineup",     # 双方阵容
+    "match-ov-lineup",     # 双方阵容（固定列网格 + BP 顺序楼层角标）
     "match-ov-bp",         # 本局 BP 复盘（含赛事命中 .md-kplhit）
     "match-ov-matchup",    # 对位压制
+    "match-ov-counters",   # 克制命中（KPL + 营地两源分开）
     "match-ov-combos",     # 联动组合
     "match-phases",        # 阶段对比
     "match-timeline",      # 关键节点
@@ -96,11 +97,11 @@ PANE_ROWS = [
 
 VIEWPORTS = [(1440, 1000), (1280, 900), (1024, 900)]
 
-# 与 scripts/audit_v3_regression.py 相同的 26 条一级/二级路由。
+# 与 scripts/audit_v3_regression.py 相同的 25 条一级/二级路由。
 # 注意：那个脚本拼的是 `{base}/v3/{route}`；本机 8766 把 v3 应用挂在根路径，
 # `/v3/...` 会 404。所以 --regression 里除了跑外部脚本，还会用根路径自己扫一遍。
 REGRESSION_ROUTES = [
-    "overview", "ingest", "capture", "matches", "query", "featured", "records", "versions",
+    "overview", "ingest", "capture", "matches", "query", "featured", "versions",
     "economy", "tempo", "teams", "opponents", "h2h", "coach", "players", "identity",
     "compare", "bp", "heroes", "combos", "setup", "pending", "plan", "effect", "reports", "sources",
 ]
@@ -185,6 +186,19 @@ SNAPSHOT_JS = """(sections) => {
     const faces = (review ? review.querySelectorAll('.md-mu-face .portrait').length : 0);
     const kplHit = (review ? review.querySelectorAll('.md-kplhit').length : 0);
     const kplHitRows = (review ? review.querySelectorAll('.md-kplhit-row').length : 0);
+    /* 阵容槽位对齐：两队的选用槽卡宽度应一致（固定列网格） */
+    const pickRows = review ? [...review.querySelectorAll('.md-bp-picks')] : [];
+    const slotWidths = pickRows.map((row) => [...row.querySelectorAll(':scope > .md-slot')]
+        .map((slot) => Math.round(slot.getBoundingClientRect().width)));
+    const slotWidthAligned = slotWidths.length >= 2 && slotWidths[0].length === 5
+        && slotWidths.every((widths) => widths.length === 5
+            && widths.every((w) => Math.abs(w - slotWidths[0][0]) <= 2));
+    const orderBadges = (review ? review.querySelectorAll('.md-slot-order').length : 0);
+    const counterRows = (review ? review.querySelectorAll('.md-ct-row').length : 0);
+    const counterChips = (review ? review.querySelectorAll('.md-ct-chip').length : 0);
+    const kqBar = (review ? review.querySelectorAll('.kq-bar').length : 0);
+    const kqTabs = (review ? review.querySelectorAll('.kq-tab').length : 0);
+    const documentHasKq = document.querySelectorAll('.kq-bar').length > 0;
     return {
         hash: location.hash,
         title: document.title,
@@ -192,6 +206,14 @@ SNAPSHOT_JS = """(sections) => {
         tabs,
         panes,
         blocks,
+        slotWidths,
+        slotWidthAligned,
+        orderBadges,
+        counterRows,
+        counterChips,
+        kqBar,
+        kqTabs,
+        documentHasKq,
         totalsInReview: review ? review.querySelectorAll('#' + 'match-totals').length : 0,
         totalsIsInReview: review && totals ? review.contains(totals) : false,
         totalsRightAfterHero: review && hero && totals
@@ -454,6 +476,31 @@ def check_screen_structure(run: ScreenRun, results: Results, tag: str, snap: dic
         )
     else:
         results.warn(tag, "这一局没有命中组合行（数据决定，不算失败）")
+    # 阵容槽位：两队固定列网格对齐
+    results.check(
+        tag,
+        "双方阵容槽位等宽对齐（固定 5 列网格）",
+        snap["slotWidthAligned"],
+        f"各槽宽 {snap['slotWidths']}",
+    )
+    if snap["orderBadges"]:
+        results.check(tag, "BP 顺序楼层角标渲染（P/B）", True, f"{snap['orderBadges']} 个")
+    else:
+        results.warn(tag, "这一局 BP 顺序未知（营地名单），无楼层角标属预期")
+    # 克制命中卡
+    results.check(
+        tag,
+        "克制命中卡渲染（五路行 + 两源 chips）",
+        snap["counterRows"] >= 1,
+        f"{snap['counterRows']} 行 · {snap['counterChips']} 个证据 chip",
+    )
+    # KPL 组合查询已迁去英雄组合页（备赛工具，与单局无关），不允许长回复盘大屏
+    results.check(
+        tag,
+        "复盘大屏不含 KPL 组合查询（已迁 #combos）",
+        snap["kqBar"] == 0 and not snap.get("documentHasKq", False),
+        f"大屏内 kq {snap['kqBar']} 个",
+    )
 
     actual_rows = [row["children"] for row in snap["paneRows"]]
     results.check(
@@ -556,7 +603,7 @@ def check_deep_links(browser, results: Results, base: str, key: str, args) -> No
             results.check(tag, f"深链 /{tab} hash 保持", snap["hash"] == f"#match/{key}/{tab}",
                           f"实际 {snap['hash']}")
             if tab == "review":
-                results.check(tag, "深链 /review 大屏 7 个区块齐全",
+                results.check(tag, "深链 /review 大屏 8 个区块齐全",
                               all(block["inReview"] == 1 for block in snap["blocks"]),
                               f"{len(SCREEN_SECTIONS)} 个各 1 个")
         except Exception as exc:  # noqa: BLE001

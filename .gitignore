@@ -110,3 +110,12 @@ dist-gitee/
 _*.py
 
 docs/feedback-*.md
+
+# 本地虚拟环境、QA 快照与调试产物（不进仓库）
+.venv-*/
+.venv-oss/
+.tmp_qa_*/
+.impeccable/
+_*.log
+_tmp_*
+.tmp_*

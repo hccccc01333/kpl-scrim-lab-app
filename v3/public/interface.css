@@ -1,0 +1,17 @@
+/* Page rules are preserved in one low-priority layer; shared UI owns the system. */
+@layer legacy, theme, foundation, interface, celadon;
+@import url('./style.css') layer(legacy);
+@import url('./match-recap-fixes.css') layer(legacy);
+@import url('./workspace-home.css') layer(legacy);
+@import url('./bp-lab.css?v=pick-20261115') layer(legacy);
+@import url('./match-review.css') layer(legacy);
+@import url('./series.css') layer(legacy);
+@import url('./cross.css') layer(legacy);
+@import url('./team-dossier.css') layer(legacy);
+@import url('./ui-tokens.css') layer(theme);
+@import url('./ui-primitives.css') layer(foundation);
+@import url('./workbench-ui.css') layer(interface);
+@import url('./celadon.css') layer(celadon);
+
+@import url("./brief-celadon.css") layer(celadon);
+@import url("./design-consistency.css") layer(celadon);

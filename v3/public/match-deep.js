@@ -185,9 +185,11 @@ export function createMatchDeep(h) {
       });
   });
 
-  /* ── 总量：总经济 / 击杀 / 输出 / 承伤 ───────────────────────────── */
+  /* ── 总量：总经济 / 击杀 / 输出 / 承伤（附每分钟值，跨时长可比） ───── */
   function totals(m) {
     const own = m.own || {}, foe = m.enemy || {};
+    const duration = Number(m.duration) > 0 ? Number(m.duration) : null;
+    const perMinute = (value) => duration && num(value) ? value / duration * 60 : null;
     const items = [
       ['总经济', own.gold, foe.gold, (v) => fmt(v)],
       ['击杀', own.kills, foe.kills, (v) => fmt(v)],
@@ -197,9 +199,13 @@ export function createMatchDeep(h) {
     const cells = items.map(([label, a, b, show]) => {
       const total = (num(a) ? a : 0) + (num(b) ? b : 0);
       const share = num(a) && num(b) && total > 0 ? a / total * 100 : null;
+      const ownPm = perMinute(a), foePm = perMinute(b);
+      const pm = ownPm !== null && foePm !== null
+        ? `<small class="md-total-pm">${fmt(ownPm, 1)} : ${fmt(foePm, 1)} /分</small>` : '';
       return `<div class="md-total">
         <span>${esc(label)}</span>
         <div class="md-total-pair"><b>${show(a)}</b><i>:</i><b class="foe">${show(b)}</b></div>
+        ${pm}
         <div class="md-total-bar">${share === null ? "" : `<i style="width:${share.toFixed(1)}%"></i>`}</div>
       </div>`;
     }).join('');
@@ -292,18 +298,18 @@ export function createMatchDeep(h) {
     </div>`;
   }
 
-  /* ── 阶段对比：经济差 / 阶段变化 / 资源 / 建筑 / 入侵 ─────────────── */
+  /* ── 阶段对比：经济差 / 阶段增长（每分钟）/ 资源 / 建筑 / 入侵 ─────── */
   function phaseTable(rows) {
     if (!rows.length) return '';
     /* 增长条只在有采样时画：缺数据时画一条空轨道，整张表看起来像骨架屏（2026-11-14）。 */
     const gain = (side, value, pct) => `<span class="md-phase-gain ${side}${num(value) ? '' : ' is-empty'}"
-      data-label="${side === 'own' ? '本队增长' : '对手增长'}"><b>${diff(value)}</b>${num(value) ? `<i style="--v:${pct}"></i>` : ''}</span>`;
-    const head = `<div class="md-phase-head"><span>阶段</span><span>本队增长</span><span>对手增长</span><span>净差</span><span>资源</span><span>建筑</span><span>入侵</span></div>`;
+      data-label="${side === 'own' ? '本队/分' : '对手/分'}"><b>${diff(value)}</b>${num(value) ? `<i style="--v:${pct}"></i>` : ''}</span>`;
+    const head = `<div class="md-phase-head"><span>阶段</span><span>本队/分</span><span>对手/分</span><span>净差/分</span><span>资源</span><span>建筑</span><span>入侵</span></div>`;
     const body = rows.map((r) => `<div class="md-phase-line">
       <span class="md-phase-tag">${esc(r.label)}<small>${esc(r.range)}</small></span>
       ${gain('own', r.ownGain, r.ownPct)}
       ${gain('foe', r.foeGain, r.foePct)}
-      <span class="md-phase-net ${r.net >= 0 ? 'own' : 'foe'}" data-label="差距变化">${diff(r.net)}</span>
+      <span class="md-phase-net ${r.net >= 0 ? 'own' : 'foe'}" data-label="净差/分">${diff(r.net)}</span>
       <span class="md-phase-duo" data-label="资源 本队:对手"><b>${fmt(r.res.own)}</b><i>:</i><b class="foe">${fmt(r.res.foe)}</b></span>
       <span class="md-phase-duo" data-label="建筑 本队:对手"><b>${fmt(r.struct.own)}</b><i>:</i><b class="foe">${fmt(r.struct.foe)}</b></span>
       <span class="md-phase-inv" data-label="本队入侵">${r.invade === null ? '—' : pct(r.invade)}</span>
@@ -652,8 +658,9 @@ export function createMatchDeep(h) {
         const tip = m.tip
           ? [a, b].filter(Boolean).map((p) => `${p.label || p.hero || '—'}：${m.tip(p)}`).join(' / ')
           : '';
-        const chipX = m.grade && num(x) ? goldGrade(lane, x) : null;
-        const chipY = m.grade && num(y) ? goldGrade(lane, y) : null;
+        /* 打野的评级按英雄标签分野核/坦野（赛训组 2026-11-14 口径），英雄名跟着人走 */
+        const chipX = m.grade && num(x) ? goldGrade(lane, x, a?.hero) : null;
+        const chipY = m.grade && num(y) ? goldGrade(lane, y, b?.hero) : null;
         if (m.noBar) {
           const alertX = m.alert && num(x) && m.alert(x);
           const alertY = m.alert && num(y) && m.alert(y);

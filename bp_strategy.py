@@ -301,7 +301,7 @@ def ban_position_study(games):
             if event.get("action") == "ban":
                 slots[event["order"]][event["hero"]] += 1
             elif not seen_first and event.get("action") == "pick":
-                # 15 手排程里 Ban 占 1–5；本局第一个 Pick 即首轮。
+                # Ban 阶段在 20 手模板占 1–10；本局第一个 Pick 即首轮。
                 first[(event.get("actor") or "team", event["hero"])] += 1
                 seen_first = True
         if seen_first:

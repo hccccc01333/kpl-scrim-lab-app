@@ -1,12 +1,14 @@
-"""Rules for the USER-PROVIDED scrim BO3/BO5/BO7 global BP.
+"""训练赛 BO3/BO5/BO7 全局 BP 的唯一规则：20 手。
 
-Scrim (15 actions): B R B R B bans, then B1 R2 B2 R2 B2 R1 picks.
-Five bans are TOTAL: blue bans 3, red bans 2. Each side picks 5.
-Across games, each TEAM cannot pick a hero THAT TEAM already picked.
-Bans reset each game. Camps can swap between games; stable team identity
-controls the global no-repeat rule.
+训练赛规则（赛训组 2026-11-15 确认）：
+* 20 手：蓝红交替 10 个 Ban（每方 5 个），再 10 个 Pick
+  （蓝 1、红 2、蓝 2、红 2、蓝 2、红 1）。
+* 跨局：每支战队自己选过的英雄后续局不可复用；Ban 每局重置；
+  营地允许局间换边，按稳定的战队身份累计。
+* KPL 独立，不套用训练赛规则。
 
-KPL is independent and has no assumed search schedule in this module.
+顺序只认源头写入的 draftEvents（或已核验的每侧顺序重建出的 20 手事件）；
+不从终局名单反推顺序。
 """
 from __future__ import annotations
 
@@ -18,17 +20,20 @@ def _repeat(action, camp, count):
     return ((action, camp),) * count
 
 
-SCRIM_15_SCHEDULE = (
+# 20 手：蓝红交替 10 Ban（每方 5）+ 10 Pick（B1 R2 B2 R2 B2 R1）。
+SCRIM_20_SCHEDULE = (
     _repeat("ban", "1", 1) + _repeat("ban", "2", 1)
     + _repeat("ban", "1", 1) + _repeat("ban", "2", 1)
-    + _repeat("ban", "1", 1)
+    + _repeat("ban", "1", 1) + _repeat("ban", "2", 1)
+    + _repeat("ban", "1", 1) + _repeat("ban", "2", 1)
+    + _repeat("ban", "1", 1) + _repeat("ban", "2", 1)
     + _repeat("pick", "1", 1) + _repeat("pick", "2", 2)
     + _repeat("pick", "1", 2) + _repeat("pick", "2", 2)
     + _repeat("pick", "1", 2) + _repeat("pick", "2", 1)
 )
-assert len(SCRIM_15_SCHEDULE) == 15
-assert Counter(SCRIM_15_SCHEDULE) == {
-    ("ban", "1"): 3, ("ban", "2"): 2,
+assert len(SCRIM_20_SCHEDULE) == 20
+assert Counter(SCRIM_20_SCHEDULE) == {
+    ("ban", "1"): 5, ("ban", "2"): 5,
     ("pick", "1"): 5, ("pick", "2"): 5,
 }
 SERIES_LENGTHS = {"BO3": 3, "BO5": 5, "BO7": 7}
@@ -43,21 +48,37 @@ class DraftRule:
     configured: bool = True
 
 
-SCRIM_GLOBAL_15 = DraftRule(
-    "scrim-global-15", "scrim", "训练赛 · 5 Ban + 10 Pick · BO 全局 BP",
-    SCRIM_15_SCHEDULE,
+SCRIM_GLOBAL_20 = DraftRule(
+    "scrim-global-20", "scrim", "训练赛 · 10 Ban（每方 5）+ 10 Pick · BO 全局 BP",
+    SCRIM_20_SCHEDULE,
 )
+SCRIM_RULE = SCRIM_GLOBAL_20
+SCRIM_RULES = {SCRIM_GLOBAL_20.id: SCRIM_GLOBAL_20}
 KPL_RECORDED = DraftRule(
     "kpl-recorded", "kpl", "KPL · 真实赛事记录（按赛事另配规则）", (),
     configured=False,
 )
 
 
+def scrim_rule(rule=None) -> DraftRule:
+    """按 id 取训练赛规则；训练赛只有 scrim-global-20。"""
+    if rule in (None, ""):
+        return SCRIM_GLOBAL_20
+    if isinstance(rule, DraftRule):
+        if rule.source != "scrim":
+            raise ValueError("KPL 不能套用训练赛 BO 全局 BP 规则")
+        return rule
+    resolved = SCRIM_RULES.get(str(rule))
+    if resolved is None:
+        raise ValueError(f"未知训练赛规则：{rule}；训练赛只有 scrim-global-20")
+    return resolved
+
+
 def profile_for(source: str, profile: str | None = None) -> DraftRule:
     if source == "scrim":
-        if profile in (None, "", SCRIM_GLOBAL_15.id):
-            return SCRIM_GLOBAL_15
-        raise ValueError("训练赛规则不是旧四阶段 18 手；请使用 scrim-global-15")
+        if profile in (None, "", SCRIM_GLOBAL_20.id):
+            return SCRIM_GLOBAL_20
+        raise ValueError("未知训练赛规则；训练赛只有 scrim-global-20")
     if source == "kpl":
         if profile in (None, "", KPL_RECORDED.id):
             return KPL_RECORDED
@@ -78,7 +99,8 @@ def validate_series_context(bo="BO5", game_number=1):
 def _events_valid(events, schedule, *, full=False):
     if not isinstance(events, (list, tuple)) or len(events) > len(schedule):
         return False
-    used = set()
+    picked, banned_any = set(), set()
+    banned_by_camp = {"1": set(), "2": set()}
     for idx, event in enumerate(events):
         if not isinstance(event, dict):
             return False
@@ -90,25 +112,41 @@ def _events_valid(events, schedule, *, full=False):
             if isinstance(order, bool) or str(order) != str(idx + 1):
                 return False
         hero = str(event.get("hero") or "").strip()
-        if not hero or hero in used:
+        if not hero:
             return False
-        used.add(hero)
+        if action == "pick":
+            # 选用全局唯一；已被任一方禁用的英雄不能再选。
+            if hero in picked or hero in banned_any:
+                return False
+            picked.add(hero)
+        else:
+            # Ban 允许跨侧重复（营地/排位同时禁用），但同一方不能重复禁。
+            if hero in banned_by_camp[camp] or hero in picked:
+                return False
+            banned_by_camp[camp].add(hero)
+            banned_any.add(hero)
     return not full or len(events) == len(schedule)
 
 
-def validate_scrim_prefix(events, *, full=False):
-    """Blue=camp 1, red=camp 2; only the screenshot's 15-turn scrim profile."""
-    return _events_valid(events, SCRIM_15_SCHEDULE, full=full)
+def validate_scrim_prefix(events, *, rule=None, full=False):
+    """Blue=camp 1, red=camp 2; validate against the selected scrim schedule.
+
+    `rule` accepts a rule id, a DraftRule, or None (20-hand default).
+    """
+    return _events_valid(events, scrim_rule(rule).schedule, full=full)
 
 
-def next_scrim_action(events):
-    if not validate_scrim_prefix(events):
-        raise ValueError("训练赛选禁顺序不符合 5 Ban + 10 Pick 的 15 手规则")
-    if len(events) == len(SCRIM_15_SCHEDULE):
+def next_scrim_action(events, *, rule=None):
+    resolved = scrim_rule(rule)
+    schedule = resolved.schedule
+    if not validate_scrim_prefix(events, rule=resolved):
+        raise ValueError(f"训练赛选禁顺序不符合 {len(schedule)} 手规则"
+                         f"（{resolved.title}）")
+    if len(events) == len(schedule):
         return None
-    action, camp = SCRIM_15_SCHEDULE[len(events)]
+    action, camp = schedule[len(events)]
     return {"order": len(events) + 1, "action": action, "camp": camp,
-            "phase": "ban" if len(events) < 5 else "pick"}
+            "phase": "ban" if action == "ban" else "pick"}
 
 
 def can_assign_to_players(chosen, pools):
@@ -172,7 +210,7 @@ def build_series_used(history, *, bo, game_number, teams):
 def legal_scrim_candidates(
     events, hero_pool, *, blue_player_pools=None, red_player_pools=None,
     series_unavailable=(), series_used_by_team=None,
-    blue_team="蓝方", red_team="红方", bo="BO5", game_number=1,
+    blue_team="蓝方", red_team="红方", bo="BO5", game_number=1, rule=None,
 ):
     """Legal next action for the scrim-only schedule and prior series history.
 
@@ -183,7 +221,7 @@ def legal_scrim_candidates(
     can express additional explicitly verified restrictions, for picks only.
     """
     validate_series_context(bo, game_number)
-    nxt = next_scrim_action(events)
+    nxt = next_scrim_action(events, rule=rule)
     if nxt is None:
         return []
     if not isinstance(hero_pool, (list, tuple, set, frozenset)):
@@ -228,7 +266,7 @@ def legal_scrim_candidates(
 
 def append_legal_scrim_action(events, hero, hero_pool, **kwargs):
     """Authoritative state transition for candidate search and UI."""
-    nxt = next_scrim_action(events)
+    nxt = next_scrim_action(events, rule=kwargs.get("rule"))
     if nxt is None:
         raise ValueError("本局 BP 已完成")
     if hero not in legal_scrim_candidates(events, hero_pool, **kwargs):
@@ -247,6 +285,7 @@ def scrim_state_payload(payload, catalog):
     """
     if not isinstance(payload, dict) or payload.get("source", "scrim") != "scrim":
         raise ValueError("该规则仅用于训练赛，不能用于 KPL")
+    rule = scrim_rule(payload.get("rule"))
     bo = payload.get("bo", "BO3")
     game_number = payload.get("gameNumber", 1)
     validate_series_context(bo, game_number)
@@ -257,26 +296,26 @@ def scrim_state_payload(payload, catalog):
             blue_team == red_team):
         raise ValueError("蓝红方必须对应两支不同战队")
     events = payload.get("events", [])
-    if not validate_scrim_prefix(events):
-        raise ValueError("训练赛选禁记录不符合当前 15 手规则")
+    if not validate_scrim_prefix(events, rule=rule):
+        raise ValueError(f"训练赛选禁记录不符合当前 {len(rule.schedule)} 手规则")
     history = payload.get("history", [])
     used = build_series_used(history, bo=bo, game_number=game_number,
                              teams=(blue_team, red_team))
     candidates = legal_scrim_candidates(
         events, catalog, bo=bo, game_number=game_number,
-        blue_team=blue_team, red_team=red_team,
+        blue_team=blue_team, red_team=red_team, rule=rule,
         series_used_by_team=used,
         blue_player_pools=payload.get("bluePlayerPools"),
         red_player_pools=payload.get("redPlayerPools"),
     )
-    nxt = next_scrim_action(events)
+    nxt = next_scrim_action(events, rule=rule)
     return {
-        "rule": SCRIM_GLOBAL_15.id,
+        "rule": rule.id,
         "bo": bo, "gameNumber": game_number,
         "totalGames": SERIES_LENGTHS[bo],
         "blueTeam": blue_team, "redTeam": red_team,
         "schedule": [{"order": i + 1, "action": action, "camp": camp}
-                     for i, (action, camp) in enumerate(SCRIM_15_SCHEDULE)],
+                     for i, (action, camp) in enumerate(rule.schedule)],
         "nextAction": nxt,
         "legalCandidates": candidates,
         "completedActions": len(events),
@@ -285,7 +324,9 @@ def scrim_state_payload(payload, catalog):
             payload.get("bluePlayerPools") is not None and
             payload.get("redPlayerPools") is not None),
         "notes": [
-            "5 次 Ban（蓝红蓝红蓝），然后 10 次 Pick（蓝1红2蓝2红2蓝2红1）。",
+            (f"{sum(1 for action, _ in rule.schedule if action == 'ban')} 次 Ban"
+             f"（{'蓝红交替，各 5 个' if rule.id == SCRIM_GLOBAL_20.id else '蓝红蓝红蓝'}），"
+             "然后 10 次 Pick（蓝1红2蓝2红2蓝2红1）。"),
             "BO3/BO5/BO7：战队本系列赛已选英雄不能再由该队 Pick，换边也不重置。",
             "上一局 Ban 不自动延续；本局双方已 Ban/Pick 英雄均不可再选择。",
             "未提供五名选手的真实英雄池时，只校验规则合法性，不代表选手一定会用。",

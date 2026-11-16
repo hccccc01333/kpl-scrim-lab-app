@@ -197,7 +197,7 @@ AUTH_NOTE = """授权说明
 本软件按仓库 LICENSE（PolyForm Noncommercial License 1.0.0）发布。
 非商业用途可直接使用；商业用途（含职业俱乐部、付费服务）需另行取得作者授权。
 
-联系：rainfun446@gmail.com
+联系：https://github.com/hccccc01333
 https://github.com/hccccc01333
 """
 

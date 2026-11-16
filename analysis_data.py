@@ -269,6 +269,16 @@ class AnalysisRepository:
         # 下一层才能算胜负、比分与本队/对手两侧；以前这两步只跑在 db/bundle 上。
         combined = matches + sheet_matches
         self._apply_match_meta(combined, self._load_match_meta(warnings))
+        # 战队分析里的命名/合并是队名的唯一权威：按 gameSeq 解析出这一局属于
+        # 哪支战队，直接在内存快照上换成当前队名。对局档案、系列赛、跨局分析
+        # 都读这份快照，于是一处改名全站同步；原始数据包与 match_meta 都不改写。
+        try:
+            import opponent_identity
+            identity = opponent_identity.resolve(
+                self.db_path, opponent_identity.camp_dir_for(self.matches_dir))
+            opponent_identity.apply_to_matches(combined, identity)
+        except Exception as error:  # noqa: BLE001 - 解析失败不阻塞任何分析页
+            warnings.append(f'战队分析队名解析失败：{error}')
         self._apply_aliases(combined, aliases, roster, (profile.get('enemyAliases') or {}))
         rows = self._flat_rows(matches, warnings)
         # 表格行按需加入；默认 source=db,bundle。
@@ -1428,7 +1438,9 @@ class AnalysisRepository:
             own, enemy = self._camp_totals(match, own_camp)
             result.append({
                 'key': match['key'], 'date': match.get('date'), 'dateText': match.get('dateText'),
-                'startTime': match.get('startTime'), 'opponent': match.get('opponent'), 'session': match.get('session'),
+                'startTime': match.get('startTime'), 'opponent': match.get('opponent'),
+                'opponentTeamId': match.get('opponentTeamId'),
+                'session': match.get('session'),
                 'version': match.get('version'), 'duration': match.get('duration'),
                 'mode': match.get('mode'), 'title': match.get('title'),
                 'sources': match.get('sources'), 'source': match.get('source'),

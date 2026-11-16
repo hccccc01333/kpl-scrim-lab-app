@@ -55,7 +55,7 @@ export function TeamPage() {
   if (!team) {
     return (
       <div className="page">
-        <PageHeader title="战队详情" eyebrow="TEAM" actions={<Link className="btn" to="/teams">战队档案</Link>} />
+        <PageHeader title="战队详情" eyebrow="TEAM" actions={<Link className="btn" to="/teams">战队分析</Link>} />
         <BoardEmpty title="找不到这支战队">可能已被合并或改名。</BoardEmpty>
       </div>
     )
@@ -109,7 +109,7 @@ export function TeamPage() {
         eyebrow="TEAM"
         title={<>{team.displayName}<em>{[team.named ? `教练 ${team.coach || '未录入'}` : '营地阵容聚类', team.firstSeen ? `首次 ${team.firstSeen}` : '', team.lastSeen ? `最近 ${team.lastSeen}` : ''].filter(Boolean).join(' · ')}</em></>}
         actions={<>
-          <Link className="btn" to="/teams">战队档案</Link>
+          <Link className="btn" to="/teams">战队分析</Link>
           <Link className="btn" to="/teams/roster">阵容</Link>
           <Link className="btn" to="/bp/team">BP</Link>
         </>}

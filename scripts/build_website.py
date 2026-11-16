@@ -36,6 +36,10 @@ REPO_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app'
 GITEE_REPO_URL = 'https://gitee.com/Rainfun42/kpl-scrim-lab-app'
 DEFAULT_SITE_URL = 'https://hccccc01333.github.io/kpl-scrim-lab-site'
 SPONSOR_URL = 'https://afdian.com/a/kplscrim'
+SITE_NAME = '雨乐赛训'
+SITE_FULL_NAME = '雨乐王者赛训数据工具'
+BRAND_SUB = '王者荣耀 · 赛训数据'
+THEME_COLOR = '#f3efe5'
 PAGES = ('index.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
 
 
@@ -98,25 +102,25 @@ def parse_changelog() -> list[dict]:
     return sections
 
 
-def render_latest_notes(sections: list[dict], version: str,
-                        release_name: str, limit: int = 4) -> str:
-    """首页的「最新更新」卡片：取最近一个已发布版本的前几条。"""
+def latest_release(sections: list[dict]) -> tuple[dict | None, list[str]]:
+    """最近一个已发布版本及其条目。"""
     for section in sections:
         if section['version'] == '未发布':
             continue
         items = [item for _, group in section['blocks'] for item in group]
-        if not items:
-            continue
-        bullets = ''.join(f'<li>{item}</li>' for item in items[:limit])
-        meta = []
-        if section['version'] == version and release_name:
-            meta.append(f'<span class="tag">{html.escape(release_name)}</span>')
-        if section['date']:
-            meta.append(f'<span class="date">{section["date"]}</span>')
-        return ('<div class="cl-item"><div class="cl-top">'
-                f'<span class="ver">v{html.escape(section["version"])}</span>'
-                f'{"".join(meta)}</div><ul>{bullets}</ul></div>')
-    return '<div class="cl-item"><p>暂无更新记录。</p></div>'
+        if items:
+            return section, items
+    return None, []
+
+
+def render_latest_notes(sections: list[dict], version: str,
+                        release_name: str, limit: int = 4) -> str:
+    """首页「最近几版」：最近一个已发布版本的条目列表。"""
+    section, items = latest_release(sections)
+    if section is None:
+        return '<li>暂无更新记录。</li>'
+    clipped = [item.rstrip('、，。；;') for item in items[:limit]]
+    return ''.join(f'<li>{item}</li>' for item in clipped)
 
 
 def render_sections(sections: list[dict], version: str, release_name: str,
@@ -166,6 +170,7 @@ def build(download_url: str | None, full_download_url: str | None,
         version, f'KPL-Scrim-Lab-{version}-setup.exe')
     portable_url = full_download_url or release_asset_url(
         version, f'KPL-Scrim-Lab-{version}-full.zip')
+    latest, _latest_items = latest_release(sections)
     tokens = {
         'VERSION': version,
         'RELEASE_DATE': release_date,
@@ -178,8 +183,14 @@ def build(download_url: str | None, full_download_url: str | None,
         'REPO_URL': REPO_URL,
         'LICENSE_URL': f'{REPO_URL}/blob/main/LICENSE',
         'LATEST_NOTES': render_latest_notes(sections, version, release_name),
+        'LATEST_VERSION': (latest or {}).get('version', version),
+        'LATEST_DATE': (latest or {}).get('date', release_date),
         'ASSET_VERSION': asset_version(),
         'SPONSOR_URL': SPONSOR_URL,
+        'SITE_NAME': SITE_NAME,
+        'SITE_FULL_NAME': SITE_FULL_NAME,
+        'BRAND_SUB': BRAND_SUB,
+        'THEME_COLOR': THEME_COLOR,
     }
     changelog_html = render_sections(sections, version, release_name, include_unreleased)
 

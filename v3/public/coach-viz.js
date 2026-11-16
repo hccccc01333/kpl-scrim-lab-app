@@ -61,7 +61,7 @@ export function createCoachBoard({ esc = es } = {}) {
       <h3 class="hc-card-title">${title}</h3>
       <div class="hc-card-canvas">${chart}</div>
       <div class="hc-card-foot"><div class="hc-train"><span>怎么用</span><p>${esc(action)}</p></div>
-        <a class="hc-open" href="#teambp">战队 BP →</a></div>
+        <a class="hc-open" href="#bp">BP 概览 →</a></div>
       <p class="hc-method"><b>怎么算的</b> ${esc(method)}</p>
     </article>`;
   }

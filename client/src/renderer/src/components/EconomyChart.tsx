@@ -21,7 +21,7 @@ export function EconomyChart({ points, duration, label = '本队经济差', note
     const high = limit
     const x0 = values[0][0]
     const x1 = values[values.length - 1][0]
-    const plotLeft = 52
+    const plotLeft = 64
     const plotRight = 696
     const plotTop = 20
     const plotBottom = 218
@@ -43,14 +43,14 @@ export function EconomyChart({ points, duration, label = '本队经济差', note
     <div className="economy-chart" style={height ? { minHeight: height } : undefined}>
       <svg viewBox="0 0 720 260" role="img" aria-label={`${label}，${chart.values.length} 个采样点，最后 ${signed(chart.last[1])} 金`}>
         {chart.ticks.map((tick) => (
-          <g key={tick}>
-            <line x1="52" x2="696" y1={chart.y(tick)} y2={chart.y(tick)} className="chart-grid" />
-            <text x="42" y={chart.y(tick) + 4} textAnchor="end" className="chart-axis">
-              {tick === 0 ? '0' : `${tick > 0 ? '+' : ''}${(tick / 1000).toFixed(1)}k`}
+          <g key={tick} className="economy-tick">
+            <line x1="64" x2="696" y1={chart.y(tick)} y2={chart.y(tick)} className="chart-grid" />
+            <text x="60" y={chart.y(tick) + 4} textAnchor="end" className="chart-axis">
+              {tick === 0 ? '0' : `${Number((tick / 1000).toFixed(1))}k`}
             </text>
           </g>
         ))}
-        <line x1="52" x2="696" y1={chart.y(0)} y2={chart.y(0)} className="chart-zero" />
+        <line x1="64" x2="696" y1={chart.y(0)} y2={chart.y(0)} className="chart-zero" />
         <path d={chart.area} className={`chart-area${chart.negative ? ' is-negative' : ''}`} />
         <path d={chart.line} className={`chart-line${chart.negative ? ' is-negative' : ''}`} />
         <circle cx={chart.x(chart.last[0])} cy={chart.y(chart.last[1])} r="4" className="chart-dot" />
@@ -58,7 +58,7 @@ export function EconomyChart({ points, duration, label = '本队经济差', note
           <rect width="88" height="23" rx="3" className="chart-label-box" />
           <text x="9" y="15" className="chart-label-text">{signed(chart.last[1])} 金</text>
         </g>
-        <text x="52" y="246" className="chart-axis">{fmtDuration(chart.x0)}</text>
+        <text x="64" y="246" className="chart-axis">{fmtDuration(chart.x0)}</text>
         <text x="696" y="246" textAnchor="end" className="chart-axis">{fmtDuration(chart.showEnd)}</text>
       </svg>
       <div className="chart-foot">

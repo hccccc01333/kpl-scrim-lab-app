@@ -3,68 +3,118 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>更新日志 — KPL 赛训工具</title>
-<meta name="description" content="KPL 赛训工具的版本更新记录，含每个版本的功能变化与修复。">
-<meta name="theme-color" content="#0a0a0a">
+<title>更新日志 — {{SITE_FULL_NAME}}</title>
+<meta name="description" content="{{SITE_FULL_NAME}}的版本更新记录，含每个版本的功能变化与修复。">
+<meta name="theme-color" content="{{THEME_COLOR}}">
 <link rel="canonical" href="{{SITE_URL}}/changelog.html">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230f1c31'/%3E%3Crect x='6' y='13' width='5' height='12' rx='2' fill='%232a8f8b'/%3E%3Crect x='13.5' y='7' width='5' height='18' rx='2' fill='%23f08a6c'/%3E%3Crect x='21' y='15' width='5' height='10' rx='2' fill='%232a8f8b'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="assets/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111a16'/%3E%3Crect x='6' y='13' width='5' height='12' rx='1.5' fill='%239dc4b7'/%3E%3Crect x='13.5' y='7' width='5' height='18' rx='1.5' fill='%23c9553a'/%3E%3Crect x='21' y='16' width='5' height='9' rx='1.5' fill='%239dc4b7'/%3E%3C/svg%3E">
+<link rel="preload" href="assets/manrope.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/noto-serif-sc.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/style.css?v={{ASSET_VERSION}}">
+<script>document.documentElement.classList.add('js');</script>
+<script src="assets/site.js?v={{ASSET_VERSION}}" defer></script>
 </head>
 <body>
 
+<a class="skip" href="#main">跳到主要内容</a>
+
 <header class="topbar">
   <div class="shell topbar-inner">
-    <a class="brand" href="index.html" aria-label="KPL 赛训工具 首页">
+    <a class="brand" href="index.html" aria-label="{{SITE_NAME}} 首页">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#0f1c31"/><rect x="6" y="13" width="5" height="12" rx="2" fill="#2a8f8b"/><rect x="13.5" y="7" width="5" height="18" rx="2" fill="#f08a6c"/><rect x="21" y="15" width="5" height="10" rx="2" fill="#2a8f8b"/></svg>
+        <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#111a16"/><rect x="6" y="13" width="5" height="12" rx="1.5" fill="#9dc4b7"/><rect x="13.5" y="7" width="5" height="18" rx="1.5" fill="#c9553a"/><rect x="21" y="16" width="5" height="9" rx="1.5" fill="#9dc4b7"/></svg>
       </span>
-      <span class="brand-name">KPL 赛训工具</span>
-      <span class="brand-edition">V3</span>
+      <span class="brand-text">
+        <span class="brand-name">{{SITE_NAME}}</span>
+        <span class="brand-sub">{{BRAND_SUB}}</span>
+      </span>
     </a>
     <nav class="topnav" aria-label="主导航">
-      <a href="index.html#features">能力</a>
-      <a href="index.html#workflow">工作流</a>
+      <a href="index.html#briefing">示例简报</a>
+      <a href="index.html#process">四步链路</a>
       <a href="guide.html">安装说明</a>
-      <a href="changelog.html" class="active">更新日志</a>
+      <a href="changelog.html" aria-current="page">更新日志</a>
+      <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助</a>
     </nav>
-    <a class="top-cta" href="download.html">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15 7.5 10.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-      <span>下载</span>
-    </a>
+    <div class="topbar-cta">
+      <a class="btn btn--primary" href="download.html">下载 Windows 版</a>
+      <button class="nav-toggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="site-menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
   </div>
 </header>
 
-<main class="doc">
+<dialog class="menu" id="site-menu" aria-labelledby="menu-title">
+  <div class="menu-inner">
+    <div class="menu-top">
+      <span class="menu-title" id="menu-title">导航</span>
+      <button class="menu-close" type="button" aria-label="关闭菜单" autofocus>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <nav class="menu-nav" aria-label="站点导航">
+      <a href="index.html#briefing">示例简报<span>01</span></a>
+      <a href="index.html#process">四步链路<span>02</span></a>
+      <a href="guide.html">安装说明<span>03</span></a>
+      <a href="changelog.html">更新日志<span>04</span></a>
+      <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者<span>05</span></a>
+    </nav>
+    <div>
+      <a class="btn btn--primary btn--block" href="download.html">下载 Windows 版</a>
+      <p class="menu-foot">Windows 10 / 11 · 内置运行时 · 数据不出本机</p>
+    </div>
+  </div>
+</dialog>
+
+<main class="doc" id="main">
   <header>
-    <h1>更新日志</h1>
+    <span class="sec-index">更新日志</span>
+    <h1>每一版，改了什么。</h1>
     <p>遵循语义化版本。当前最新 v{{VERSION}}，发布于 {{RELEASE_DATE}}；老用户在工作台右下角点「立即更新」即可增量升级。</p>
   </header>
 {{CHANGELOG_SECTIONS}}
 </main>
 
 <footer class="footer">
-  <div class="shell footer-grid">
-    <div class="footer-brand">
-      <a class="brand" href="index.html">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#0f1c31"/><rect x="6" y="13" width="5" height="12" rx="2" fill="#2a8f8b"/><rect x="13.5" y="7" width="5" height="18" rx="2" fill="#f08a6c"/><rect x="21" y="15" width="5" height="10" rx="2" fill="#2a8f8b"/></svg>
-        </span>
-        <span class="brand-name">KPL 赛训工具</span>
-      </a>
-      <p>为 KPL、非 KPL 职业队、高校联赛与城市赛赛训组做的本机数据分析工作台。</p>
+  <div class="shell">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="index.html">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#111a16"/><rect x="6" y="13" width="5" height="12" rx="1.5" fill="#9dc4b7"/><rect x="13.5" y="7" width="5" height="18" rx="1.5" fill="#c9553a"/><rect x="21" y="16" width="5" height="9" rx="1.5" fill="#9dc4b7"/></svg>
+          </span>
+          <span class="brand-text">
+            <span class="brand-name">{{SITE_NAME}}</span>
+            <span class="brand-sub">{{BRAND_SUB}}</span>
+          </span>
+        </a>
+        <p>为 KPL、非 KPL 职业队、青训、高校联赛与城市赛赛训组做的本机赛训数据工具。</p>
+      </div>
+      <nav class="footer-col" aria-label="产品">
+        <h2>产品</h2>
+        <a href="index.html#briefing">示例简报</a>
+        <a href="index.html#process">四步链路</a>
+        <a href="download.html">下载</a>
+        <a href="changelog.html">更新日志</a>
+      </nav>
+      <nav class="footer-col" aria-label="帮助">
+        <h2>帮助</h2>
+        <a href="guide.html">安装说明</a>
+        <a href="guide.html#faq">常见问题</a>
+        <a href="{{REPO_URL}}/issues">反馈问题</a>
+        <a href="{{REPO_URL}}">源码仓库</a>
+      </nav>
+      <nav class="footer-col" aria-label="支持">
+        <h2>支持</h2>
+        <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者 · 爱发电</a>
+        <a href="{{LICENSE_URL}}">许可协议</a>
+        <a href="download.html">系统要求</a>
+      </nav>
     </div>
-    <nav class="footer-links" aria-label="页脚">
-      <a href="index.html#features">能力</a>
-      <a href="index.html#workflow">工作流</a>
-      <a href="guide.html">安装说明</a>
-      <a href="changelog.html">更新日志</a>
-      <a href="guide.html#faq">常见问题</a>
-      <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者 · 爱发电</a>
-      <a href="{{REPO_URL}}">GitHub</a>
-      <a href="{{REPO_URL}}/issues">反馈问题</a>
-    </nav>
-    <div class="footer-meta">
-      <span>© {{YEAR}} KPL 赛训工具 · PolyForm Noncommercial 1.0.0</span>
+    <div class="footer-word" aria-hidden="true">{{SITE_NAME}}</div>
+    <div class="footer-legal">
+      <span>© {{YEAR}} {{SITE_FULL_NAME}} · PolyForm Noncommercial 1.0.0</span>
       <span>与游戏开发商及赛事组织方无关联</span>
       <span>截图为合成演示数据</span>
     </div>

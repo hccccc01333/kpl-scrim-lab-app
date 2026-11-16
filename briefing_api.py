@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 import re
 import threading
 from datetime import date
@@ -22,6 +23,7 @@ import match_facts
 
 DEFAULT_SOURCE = 'db,bundle'
 MATCH_ROUTE = re.compile(r'^#match/([^?#]+)(.*)$')
+FACTS_CACHE_VERSION = 2  # 事实表结构变更时递增，旧落盘缓存自动失效
 
 
 def _router_match_keys(matches_dir, signature):
@@ -121,16 +123,54 @@ def _apply_match_keys(payload, mapping, *, fallback_query):
 
 
 def _router_facts(replays_dir, camp_dir, data_dir, db_path):
-    """事实表缓存：数据签名不变就直接复用，避免每次请求重扫盘。"""
+    """事实表缓存：内存命中 → 落盘缓存命中 → 重扫盘。
+
+    首次启动仍要解析回放；之后重启直接从 data/.cache 读，避免首页冷启动 4–5s。
+    签名只扫文件数量 + mtime，签名不变但代码 schema 变了时，递增 CACHE_VERSION。
+    """
     cache = {'key': None, 'facts': None}
     lock = threading.Lock()
+    cache_path = None
+    if data_dir:
+        cache_path = (Path(data_dir) / '.cache'
+                      / f'briefing-facts-v{FACTS_CACHE_VERSION}.pkl')
+
+    def _disk_load(key):
+        if not cache_path:
+            return None
+        try:
+            with cache_path.open('rb') as handle:
+                stored = pickle.load(handle)
+            if (isinstance(stored, dict) and stored.get('key') == key
+                    and isinstance(stored.get('facts'), dict)):
+                return stored['facts']
+        except Exception:  # noqa: BLE001 - 缓存损坏就当没有，不影响主流程
+            return None
+        return None
+
+    def _disk_store(key, facts):
+        if not cache_path:
+            return
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = cache_path.with_suffix('.tmp')
+            with tmp.open('wb') as handle:
+                pickle.dump({'key': key, 'facts': facts}, handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+            tmp.replace(cache_path)
+        except Exception:  # noqa: BLE001 - 写缓存失败不阻塞请求
+            pass
 
     def get():
         key = match_facts.data_signature(replays_dir, camp_dir, db_path, data_dir)
         with lock:
             if cache['key'] != key or cache['facts'] is None:
-                cache['facts'] = match_facts.load_facts(
-                    replays_dir, camp_dir, data_dir, db_path)
+                facts = _disk_load(key)
+                if facts is None:
+                    facts = match_facts.load_facts(
+                        replays_dir, camp_dir, data_dir, db_path)
+                    _disk_store(key, facts)
+                cache['facts'] = facts
                 cache['key'] = key
             return cache['facts']
 
@@ -179,12 +219,23 @@ def create_briefing_router(replays_dir, camp_dir, data_dir=None, db_path=None,
     keys_of = _router_match_keys(
         matches_dir or (Path(data_dir) / 'matches' if data_dir else None),
         lambda: match_facts.data_signature(replays_dir, camp_dir, db_path, data_dir))
+
+    def _prewarm():
+        """启动后台预热事实表 + 对局 key，首页第一次请求尽量不等解析回放。"""
+        try:
+            facts_of()
+            keys_of()
+        except Exception:  # noqa: BLE001 - 预热失败不影响后续请求
+            pass
+
+    threading.Thread(target=_prewarm, name='briefing-facts-prewarm',
+                     daemon=True).start()
     router = APIRouter(prefix='/api/briefing', tags=['briefing'])
 
     @router.get('')
     def briefing(request: Request):
         query = request.query_params
-        period = (query.get('period') or 'week').strip() or 'week'
+        period = (query.get('period') or 'week').strip().lower() or 'week'
         date_from = (query.get('from') or '').strip() or None
         date_to = (query.get('to') or '').strip() or None
         opponent = (query.get('opponent') or '').strip() or None
@@ -192,11 +243,20 @@ def create_briefing_router(replays_dir, camp_dir, data_dir=None, db_path=None,
         validation = (query.get('validation') or '0').strip() or '0'
         today = date.today()
 
-        # 参数非法一律 400（custom 缺 from/to、格式错、from>to、period 取值）
+        # 参数非法一律 400（custom 缺 from/to、格式错、from>to、period 取值、n/days 越界）
+        recent_n, days = 5, 3
         try:
-            analysis_period.parse_period(
-                period, today=today, date_from=date_from, date_to=date_to)
-        except ValueError as error:
+            if period in analysis_period.EXTRA_PERIOD_KINDS:
+                recent_n = int(query.get('n') or 5)
+                days = int(query.get('days') or 3)
+                if not 1 <= recent_n <= analysis_period.RECENT_MAX:
+                    raise ValueError(f'n 只能取 1～{analysis_period.RECENT_MAX}')
+                if not 1 <= days <= analysis_period.DAYS_MAX:
+                    raise ValueError(f'days 只能取 1～{analysis_period.DAYS_MAX}')
+            else:
+                analysis_period.parse_period(
+                    period, today=today, date_from=date_from, date_to=date_to)
+        except (TypeError, ValueError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
         try:
@@ -204,7 +264,8 @@ def create_briefing_router(replays_dir, camp_dir, data_dir=None, db_path=None,
         except Exception as error:  # noqa: BLE001 - 取数失败返回空态而不是 500
             payload = analysis_period.build_briefing(
                 {}, period_kind=period, date_from=date_from, date_to=date_to,
-                opponent=opponent, source=source, validation=validation, today=today)
+                opponent=opponent, source=source, validation=validation, today=today,
+                recent_n=recent_n, days=days)
             payload['reason'] = f'读取事实表失败：{error}'
             payload['summary']['note'] = '取数失败，请稍后重试。'
             return payload
@@ -214,7 +275,8 @@ def create_briefing_router(replays_dir, camp_dir, data_dir=None, db_path=None,
         payload = analysis_period.build_briefing(
             facts, period_kind=period, date_from=date_from, date_to=date_to,
             opponent=opponent, source=source, validation=validation, today=today,
-            schedule_rows=rows, team_names=names)
+            schedule_rows=rows, team_names=names,
+            recent_n=recent_n, days=days)
         return _apply_match_keys(
             payload, keys_of(),
             fallback_query=_scope_query(date_from or '', date_to or '', opponent or '', source, validation))

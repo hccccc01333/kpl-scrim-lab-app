@@ -41,9 +41,18 @@ python scripts/build_bp_facts.py \
 
 ## 5. 统计口径（对位）
 
-- 最低样本 `MIN_PAIR_N = 200`，双方使用率 `MIN_PICK_RATE = 0.03`。
+- 收录门槛 `MIN_PAIR_N = 50`，不再按使用率过滤（`MIN_PICK_RATE = 0`）。
+- **基准窗口**：英雄胜率取最近 8 周（`WIN_WINDOW_DAYS = 56`），先按周聚合、再取周中位数，
+  避免单日异常/作弊局把均值拉高。
+- **登场率收缩**：`wr_adj = 0.5 + (wr - 0.5) × pick / (pick + 0.02)`；期望胜率用 `wr_adj`，
+  低登场率英雄不把「绝活哥拉高的胜率」带进对位期望。`pick < 1%` 的对位标 `lowPick`。
+- 证据分级：`<50` 不足（不收录）；`50–199` 或 `lowPick` 初步观察（只给方向和 CI，
+  不判优势/劣势）；`≥200` 且非低登场率可判；`≥3000` 且 CI 不跨 0 为 high。
 - 超额胜率 = 实际胜率 − Bradley-Terry 期望胜率。
 - `+2` / `-2` 是**效果量提示阈值**，不是统计证据充分的判定：
-  每条记录附 `excessCI`（95% 近似区间）与 `reliability`（high/medium/low）。
-- CI 跨过 0 → reliability 至少降一档，且 `state` 不给方向性结论（归为 even）。
+  每条记录附 `excessCI`（95% 近似区间）与 `reliability`（high/medium/preliminary/insufficient）。
+- CI 跨过 0 → `state` 不给方向性结论（归为 even）；50–199 局或低登场率统一归 preliminary。
 - 小样本用贝叶斯收缩（`shrunkExcess` / `shrunkWr`），先验以 expected 为中心、伪计数 40。
+- **对位矩阵的口径**：91m explorer 返回的是累计 `allPickTimes`，当前对位胜率仍是累计值；
+  只有英雄基准做了 8 周窗口。要窗口化对位本身，需要用相邻周快照做差（见 `peak_crawl` 分片），
+  在快照覆盖不足前不要混用「周基准 + 累计对位」下强结论。

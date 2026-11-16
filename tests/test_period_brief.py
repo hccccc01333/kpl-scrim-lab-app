@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -167,6 +168,63 @@ def test_period_windows_equal_length():
 def test_custom_and_period_validation(kind, kwargs):
     with pytest.raises(ValueError):
         analysis_period.parse_period(kind, today=CURRENT, **kwargs)
+
+
+def test_extra_recent_window(tmp_path):
+    """最近 N 场：取日期最新的 N 局，上期是再往前的 N 局。"""
+    facts = make_facts(tmp_path)
+    payload = analysis_period.build_briefing(
+        facts, period_kind='recent', recent_n=2, today=CURRENT)
+    assert payload['available'] is True
+    period = payload['period']
+    assert period['kind'] == 'recent'
+    assert period['label'] == '最近 2 场'
+    assert period['n'] == 2
+    assert (period['from'], period['to']) == (day('11-04'), day('11-04'))
+    assert period['rangeLabel'] == '11-04 ~ 11-04'
+    # 只数有回放的局，且正好 2 局
+    assert payload['coverage']['games'] == 2
+    assert payload['record']['decided'] <= 2
+    assert period['prev']['label'] == '前 2 场'
+    assert period['prev']['from'] == day('11-02')
+    # 标题跟着周期走，不是「本期」
+    assert payload['watchTitle'] == '最近 2 场最值得复盘的比赛'
+    assert payload['findingsTitle'] == '最近 2 场重点发现'
+
+
+def test_extra_days_window(tmp_path):
+    """最近 D 天：以数据里最新日期为终点，往前 D 个自然日。"""
+    facts = make_facts(tmp_path)
+    payload = analysis_period.build_briefing(
+        facts, period_kind='days', days=2, today=CURRENT)
+    period = payload['period']
+    assert period['kind'] == 'days'
+    assert period['label'] == '最近 2 天'
+    assert (period['from'], period['to']) == (day('11-03'), day('11-04'))
+    assert period['rangeLabel'] == '11-03 ~ 11-04'
+    assert payload['coverage']['games'] == 3
+    assert period['prev']['label'] == '前 2 天'
+    assert (period['prev']['from'], period['prev']['to']) == (day('11-01'), day('11-02'))
+
+
+def test_extra_period_empty_facts():
+    """没有任何对局时，最近 N 场 / D 天也要给空态而不是 500。"""
+    for kind in ('recent', 'days'):
+        payload = analysis_period.build_briefing(
+            {}, period_kind=kind, today=CURRENT)
+        assert payload['available'] is False
+        assert payload['period']['kind'] == kind
+        assert payload['findings'] == [] and payload['watchFields'] == []
+
+
+def test_extra_period_api_validation(tmp_path):
+    client, _ = make_client(tmp_path)
+    assert client.get('/api/briefing?period=recent&n=0').status_code == 400
+    assert client.get('/api/briefing?period=recent&n=99').status_code == 400
+    assert client.get('/api/briefing?period=days&days=0').status_code == 400
+    assert client.get('/api/briefing?period=days&days=99').status_code == 400
+    assert client.get('/api/briefing?period=recent&n=3').status_code == 200
+    assert client.get('/api/briefing?period=days&days=3').status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -445,6 +503,8 @@ def test_api_shape_and_contract(tmp_path):
     # 战绩含仅有终局面板的局（4 局有回放 + 1 局面板）
     assert payload['record']['decided'] == 5
     assert payload['record']['unknown'] == 0
+    assert len(payload['record']['form']) == 5
+    assert all(item['result'] in ('win', 'loss') for item in payload['record']['form'])
     assert payload['coverage']['games'] >= payload['coverage']['withReplay']
     assert payload['sources']['panel'] == payload['coverage']['panelGames']
     assert payload['next']['available'] is False
@@ -464,6 +524,7 @@ def test_api_shape_and_contract(tmp_path):
         assert field['empty']
         for card in field['items']:
             assert card['field'] == field['id']
+            assert 'start' in card
             ids = [value['id'] for value in card['values']]
             assert len(ids) == len(set(ids))
             assert 'duration' in ids
@@ -689,11 +750,11 @@ def test_unknown_opponent_keeps_system_name(tmp_path):
     assert all('对阵 #9' in title for title in titles)
 
 
-def _watch_entry(seq, diff, *, date='2026-11-04', deaths=0, fights=()):
+def _watch_entry(seq, diff, *, date='2026-11-04', deaths=0, fights=(), result='loss'):
     """构造一局只带经济曲线的最小数据，用来验复盘区的排序。"""
     return {
         'seq': str(seq), 'label': f'{date[5:]} · 对阵 #{seq}', 'date': date,
-        'result': 'loss', 'opponentId': str(seq), 'opponentName': f'#{seq}',
+        'result': result, 'opponentId': str(seq), 'opponentName': f'#{seq}',
         'hasReplay': True, 'hasTimeline': True,
         'game': {
             'duration': 1200, 'ownDiff': list(diff),
@@ -718,6 +779,9 @@ def test_watch_focus_rules():
     assert analysis_period._watch_focus('giveback', {**stats, 'low': 200}) is None
     assert analysis_period._watch_focus('giveback', {**stats, 'peak': 600}) is None
     assert analysis_period._watch_focus('deficit', {**stats, 'low': 800}) is None
+    # 落后不到 1000 金币不进「最多落后」组：-75 / -999 是噪声，不占复盘位。
+    assert analysis_period._watch_focus('deficit', {**stats, 'low': -999}) is None
+    assert analysis_period._watch_focus('deficit', {**stats, 'low': -1000})[0] == 1000
     assert analysis_period._watch_focus('deaths', {**stats, 'deaths': 0}) is None
     assert analysis_period._watch_focus('fight', {**stats, 'fightLosses': 0}) is None
 
@@ -738,10 +802,11 @@ def test_watch_groups_sort_by_selected_field():
     assert groups['field'] == 'deficit'
 
     deficit = by_id['deficit']['items']
+    assert by_id['deficit']['count'] == 2
     assert [card['title'] for card in deficit] == [
-        '11-04 · 对阵 #b', '11-04 · 对阵 #c', '11-04 · 对阵 #a']
+        '11-04 · 对阵 #b', '11-04 · 对阵 #c']
     assert [card['numbers'][0]['value'] for card in deficit] == [
-        '-5,000 金币', '-3,000 金币', '-200 金币']
+        '-5,000 金币', '-3,000 金币']
 
     deaths = by_id['deaths']['items']
     assert [card['numbers'][0]['value'] for card in deaths] == ['9 次', '5 次', '2 次']
@@ -754,6 +819,43 @@ def test_watch_groups_sort_by_selected_field():
             assert sum(1 for number in card['numbers'] if number.get('focus')) == 1
             assert len(card['numbers']) <= 4
             assert card['conclusion'].startswith('打了 20 分钟')
+
+
+def test_summary_compares_win_rate_when_sample_sizes_differ():
+    """9 局 vs 81 局不比「少赢 50 局」，改比胜率百分点并写明上期局数。"""
+    window = {'kind': 'week'}
+    record = {'decided': 9, 'wins': 4, 'losses': 5, 'unknown': 0, 'winRate': 44.4}
+    prev = {'decided': 81, 'wins': 54, 'losses': 27, 'unknown': 0, 'winRate': 66.7}
+    sentence, tone = analysis_period._sentence(window, record, prev)
+    assert '少赢 50 局' not in sentence
+    assert '胜率比上周同期低 22.3 个百分点' in sentence
+    assert '上期共 81 局' in sentence
+    assert tone == 'down'
+
+    # 样本接近时仍然比胜场，保留教练熟悉的「多赢 / 少赢 N 局」。
+    near = {'decided': 10, 'wins': 6, 'losses': 4, 'unknown': 0, 'winRate': 60.0}
+    sentence, tone = analysis_period._sentence(window, record, near)
+    assert '少赢 2 局' in sentence
+    assert '个百分点' not in sentence
+    assert tone == 'down'
+
+
+def test_watch_card_marks_comeback_and_throw():
+    """落后翻盘的赢局与领先被翻的输局，文案和标签都要分开。"""
+    entries = [
+        _watch_entry('w', [0, -4000, -5000, 3000], result='win'),
+        _watch_entry('t', [0, 4000, 5000, -3000], result='loss'),
+    ]
+    groups = analysis_period.build_watch_groups({'cur': entries})
+    cards = next(item for item in groups['fields'] if item['id'] == 'deficit')['items']
+    by_seq = {card['title'].rsplit('#', 1)[-1]: card for card in cards}
+    win_card = by_seq['w']
+    assert win_card['resultTag'] == '翻盘'
+    assert '最后翻回来了' in win_card['conclusion']
+    assert '中段怎么被拉开、后期怎么打回来' in win_card['conclusion']
+    throw_card = by_seq['t']
+    assert throw_card['resultTag'] == '被翻盘'
+    assert '先看优势是怎么丢的' in throw_card['conclusion']
 
 
 def test_watch_catalog_values_cover_new_fields():
@@ -864,12 +966,62 @@ def test_watch_group_not_capped_at_three():
     assert len(by_id['deaths']['items']) == 8
     assert by_id['deaths']['count'] == 8
 
-    many = [_watch_entry(str(index), [0, -1000], deaths=1) for index in range(35)]
+    many = [_watch_entry(str(index), [0, -1000], deaths=1) for index in range(60)]
     groups = analysis_period.build_watch_groups({'cur': many})
     by_id = {field['id']: field for field in groups['fields']}
-    assert analysis_period.WATCH_LIMIT == 30
-    assert len(by_id['deaths']['items']) == 30
-    assert by_id['deaths']['count'] == 35
+    assert analysis_period.WATCH_LIMIT == 50
+    assert len(by_id['deaths']['items']) == 50
+    assert by_id['deaths']['count'] == 60
+
+
+def test_watch_card_moments():
+    """关键时间点：最多 3 个、时间升序、clock 是 m:ss；没有事实就不编。"""
+    own_diff = [0, 800, 1200, 1500, 1800, -2500, -3000, -3500, -4000, -4200, -4500]
+    game = {
+        'duration': 1200,
+        'ownDiff': own_diff,
+        'times': [float(index * 120) for index in range(len(own_diff))],
+        'deaths': [{'objID': f'd{index}'} for index in range(2)],
+        'objToCamp': {f'd{index}': '1' for index in range(2)},
+        'ownCamp': 'blue',
+        'players': [],
+        'events': [
+            {'dtType': '1', 'dtId': '8', 'killerCamp': '2', 'timeSec': 420},
+            {'dtType': '1', 'dtId': '17', 'killerCamp': '2', 'timeSec': 900},
+            {'dtType': '2', 'dtId': '11', 'killerCamp': '2', 'timeSec': 1000},
+        ],
+        'fights': [
+            {'startSec': 300, 'endSec': 320,
+             'kills': [{'killerCamp': '2'}, {'killerCamp': '2'}]},
+        ],
+    }
+    stats = analysis_period._game_stats(game)
+    moments = analysis_period._watch_moments({'game': game}, stats, 'deficit')
+    assert 1 <= len(moments) <= analysis_period.MOMENT_LIMIT == 3
+    assert [item['t'] for item in moments] == sorted(item['t'] for item in moments)
+    assert all(re.fullmatch(r'\d{1,2}:\d{2}', item['clock']) for item in moments)
+    assert all(item['t'] > 0 for item in moments)
+    assert any('最多落后' in item['label'] or '领先被反超' in item['label']
+               for item in moments)
+
+    dragon = analysis_period._watch_moments({'game': game}, stats, 'dragon')
+    assert any(item['label'].startswith('丢') for item in dragon)
+
+    # 没有任何回放事实：返回空数组，不编时间点
+    bare = {'game': {'duration': 0, 'ownDiff': [], 'times': []}}
+    bare_stats = analysis_period._game_stats({'duration': 0})
+    assert analysis_period._watch_moments(bare, bare_stats, 'deficit') == []
+
+    # 复盘卡里要带 moments 字段（每组每张卡都有，可能是空数组）
+    entries = [{
+        'seq': '9001', 'label': '11-04 · 对阵 #9', 'date': '2026-11-04',
+        'result': 'loss', 'opponentId': '9', 'opponentName': '#9',
+        'hasReplay': True, 'hasTimeline': True, 'panel': None, 'game': game,
+    }]
+    groups = analysis_period.build_watch_groups({'cur': entries})
+    for field in groups['fields']:
+        for card in field['items']:
+            assert 'moments' in card and isinstance(card['moments'], list)
 
 
 def test_watch_payload_links_use_match_keys():

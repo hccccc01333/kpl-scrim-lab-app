@@ -30,15 +30,12 @@ const pages = [
   ['采集', '/collect', 'ingest'],
   ['比赛', '/matches', 'matches'],
   ['跨局分析', '/matches/cross', 'matches'],
-  ['智能找局', '/matches/query', 'matches'],
   ['精选对局', '/matches/featured', 'matches'],
-  ['训练纪录', '/matches/records', 'matches'],
   ['版本对比', '/matches/versions', 'matches'],
   ['选手', '/players', 'players'],
   ['选手档案', '/players/archive', 'players'],
   ['选手对比', '/players/compare', 'players'],
   ['战队', '/teams', 'teams'],
-  ['战队风格', '/teams/style', 'teams'],
   ['英雄', '/heroes', 'heroes'],
   ['英雄对比', '/heroes/compare', 'heroes'],
   ['BP', '/bp', 'bp'],
@@ -60,15 +57,17 @@ export function CommandPalette({
 }: CommandPaletteProps) {
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
 
   useEffect(() => {
-    if (!open) return
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (!open) { if (dialog.open) dialog.close(); return }
     setQuery('')
     setActive(0)
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 20)
-    return () => window.clearTimeout(timer)
+    if (!dialog.open) dialog.showModal()
   }, [open])
 
   const commands = useMemo<Command[]>(() => {
@@ -85,7 +84,7 @@ export function CommandPalette({
     }
     const search = query.trim().toLowerCase()
     if (search) {
-      for (const match of matches.slice(0, 8)) {
+      for (const match of matches.filter((match) => `${match.opponent || ''} ${match.date || ''} ${match.version || ''} ${match.session || ''}`.toLowerCase().includes(search)).slice(0, 8)) {
         const text = `${match.opponent || ''} ${match.date || ''} ${match.version || ''} ${match.session || ''}`.toLowerCase()
         if (!text.includes(search)) continue
         list.push({
@@ -97,7 +96,7 @@ export function CommandPalette({
           run: () => navigate(`/matches/${encodeURIComponent(match.key)}`)
         })
       }
-      for (const player of players.slice(0, 8)) {
+      for (const player of players.filter((player) => `${player.label} ${player.position || ''}`.toLowerCase().includes(search)).slice(0, 8)) {
         const text = `${player.label} ${player.position || ''}`.toLowerCase()
         if (!text.includes(search)) continue
         list.push({
@@ -111,7 +110,7 @@ export function CommandPalette({
       }
     }
     list.push(
-      { id: 'action-theme', group: '操作', label: '切换主题', hint: '纸本 / 比赛房', icon: 'moon', run: onTheme },
+      { id: 'action-theme', group: '操作', label: '切换主题', hint: '浅色 / 深色', icon: 'moon', run: onTheme },
       { id: 'action-density', group: '操作', label: '切换界面密度', hint: '舒适 / 紧凑', icon: 'density', run: onDensity },
       { id: 'action-refresh', group: '操作', label: '刷新当前数据', hint: '重新读取工作台', icon: 'refresh', run: onRefresh },
       { id: 'action-workbench', group: '操作', label: '打开工作台网页版', hint: '采集与导入', icon: 'external', run: onOpenWorkbench },
@@ -125,8 +124,6 @@ export function CommandPalette({
     setActive((current) => Math.min(current, Math.max(0, commands.length - 1)))
   }, [commands.length])
 
-  if (!open) return null
-
   const run = (command?: Command) => {
     if (!command) return
     onClose()
@@ -135,36 +132,41 @@ export function CommandPalette({
 
   let lastGroup = ''
   return (
-    <div className="cmdk-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="cmdk" role="dialog" aria-modal="true" aria-label="命令面板" onMouseDown={(event) => event.stopPropagation()}>
+    <dialog ref={dialogRef} className="cmdk-backdrop" aria-label="搜索比赛、选手或命令" onClose={onClose} {...{ closedby: 'any' }}>
+      <div className="cmdk">
         <div className="cmdk-head">
           <Icon name="search" />
           <input
             ref={inputRef}
+            autoFocus
+            aria-label="搜索比赛、选手或命令"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-controls="client-command-results"
+            aria-expanded={open}
+            aria-activedescendant={commands[active] ? `client-command-${active}` : undefined}
             value={query}
             onChange={(event) => { setQuery(event.target.value); setActive(0) }}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return
               if (event.key === 'ArrowDown') {
                 event.preventDefault()
-                setActive((current) => Math.min(commands.length - 1, current + 1))
+                setActive((current) => Math.max(0, Math.min(commands.length - 1, current + 1)))
               } else if (event.key === 'ArrowUp') {
                 event.preventDefault()
                 setActive((current) => Math.max(0, current - 1))
               } else if (event.key === 'Enter') {
                 event.preventDefault()
                 run(commands[active])
-              } else if (event.key === 'Escape') {
-                event.preventDefault()
-                onClose()
               }
             }}
             placeholder="搜索比赛、选手或命令"
             spellCheck={false}
             autoComplete="off"
           />
-          <kbd>ESC</kbd>
+          <button type="button" className="icon-btn" aria-label="关闭搜索" onClick={onClose}><Icon name="close" /></button>
         </div>
-        <div className="cmdk-list">
+        <div id="client-command-results" className="cmdk-list" role="listbox" aria-label="搜索结果">
           {commands.length ? commands.map((command, index) => {
             const group = command.group !== lastGroup ? command.group : ''
             lastGroup = command.group
@@ -173,6 +175,10 @@ export function CommandPalette({
                 {group ? <div className="cmdk-group">{group}</div> : null}
                 <button
                   type="button"
+                  id={`client-command-${index}`}
+                  role="option"
+                  aria-selected={index === active}
+                  tabIndex={-1}
                   className={`cmdk-item${index === active ? ' is-active' : ''}`}
                   onMouseEnter={() => setActive(index)}
                   onClick={() => run(command)}
@@ -192,6 +198,6 @@ export function CommandPalette({
           <span><kbd>CTRL K</kbd> 关闭</span>
         </div>
       </div>
-    </div>
+    </dialog>
   )
 }

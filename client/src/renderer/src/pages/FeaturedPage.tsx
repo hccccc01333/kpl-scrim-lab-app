@@ -72,6 +72,44 @@ export function FeaturedPage() {
   const avgFlips = games.length ? games.reduce((sum, game) => sum + (game.signFlips || 0), 0) / games.length : null
   const avgFinal = games.length ? games.reduce((sum, game) => sum + (game.finalDiff || 0), 0) / games.length : null
 
+  /* 原训练纪录并入：只留精选维度没覆盖的极值（最长/金差/经济最反复已由精选挑过）。 */
+  const duration = (match: MatchSummary) => typeof match.duration === 'number' && match.duration > 0 ? match.duration : null
+  const gpm = (match: MatchSummary) => {
+    const gold = match.own?.gold
+    const seconds = duration(match)
+    return typeof gold === 'number' && seconds ? gold / (seconds / 60) : null
+  }
+  const records = [
+    { label: '最短对局', get: duration, show: (match: MatchSummary) => fmtDuration(match.duration), dir: 'min' as const, note: '按营地记录时长' },
+    { label: '最高击杀', get: (match: MatchSummary) => match.own?.kills ?? null, show: (match: MatchSummary) => number(match.own?.kills), dir: 'max' as const, note: '本队五人击杀合计' },
+    { label: '最高 KDA', get: (match: MatchSummary) => match.own?.kda ?? null, show: (match: MatchSummary) => number(match.own?.kda, 1), dir: 'max' as const, note: '(击杀 + 助攻) / 死亡' },
+    { label: '最高分均经济', get: gpm, show: (match: MatchSummary) => number(gpm(match)), dir: 'max' as const, note: '本队五人经济 ÷ 时长（金 / 分钟）' }
+  ]
+  const meanOf = (fn: (match: MatchSummary) => number | null) => {
+    const values = matches.map(fn).filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null
+  }
+  const recordCards = records.map((record) => {
+    const values = matches
+      .map((match) => ({ match, value: record.get(match) }))
+      .filter((item): item is { match: MatchSummary; value: number } => typeof item.value === 'number' && Number.isFinite(item.value))
+    if (!values.length) return null
+    const holder = [...values].sort((a, b) => record.dir === 'max' ? b.value - a.value : a.value - b.value)[0]
+    const avg = meanOf(record.get)
+    const gap = avg && avg !== 0 ? Math.round(Math.abs((holder.value - avg) / Math.abs(avg)) * 100) : null
+    return (
+      <article className="record-card" key={record.label}>
+        <span>{record.label}</span>
+        <strong>{record.show(holder.match)}</strong>
+        <p>{record.note}{gap !== null ? ` · ${holder.value >= avg! ? '高' : '低'}于均值 ${gap}%` : ''}</p>
+        <Link to={matchPath(holder.match.key)}>
+          <span>第 {index.get(holder.match.key)} 局 · {holder.match.opponent || '对手未标注'}</span>
+          <b>查看 →</b>
+        </Link>
+      </article>
+    )
+  })
+
   return (
     <div className="page board-page">
       <PageHeader
@@ -118,6 +156,13 @@ export function FeaturedPage() {
       </div>
 
       <BlockBoard page="featured">
+        {recordCards.some(Boolean) ? (
+          <Block id="feat-records" title="训练纪录">
+            <AnalysisSection title="极值保持者" note="精选维度没覆盖到的极值；与均值比，看这批局的上下限。极值只描述这批样本，不代表长期水平。">
+              <div className="record-grid">{recordCards}</div>
+            </AnalysisSection>
+          </Block>
+        ) : null}
         <Block id="feat-method" title="入选标准">
           <AnalysisSection title="为什么是这几局" note="按复盘价值排序：正负切换、落后翻盘、终局胶着、领先被缩、时长与时间轴完整度。">
             <div className="featured-method">

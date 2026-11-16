@@ -2739,13 +2739,30 @@ def channels_list():
     with db() as c:
         rows = c.execute('SELECT * FROM channels ORDER BY updated_at DESC').fetchall()
     result = []
+    # 采集流水也按战队分析显示当前队名（只改返回给页面的副本，不改通道文档）。
+    try:
+        import opponent_identity
+        identity = opponent_identity.resolve(
+            DB_PATH, opponent_identity.camp_dir_for(MATCHES_DIR))
+        by_seq, aliases = identity['bySeq'], identity['aliases']
+    except Exception:  # noqa: BLE001 - 解析失败保留教练手填的队名
+        by_seq, aliases = {}, {}
     for row in rows:
         try:
             channel = json.loads(row['body'])
         except (TypeError, ValueError):
             continue
         channel['revision'] = row['revision']
-        result.append(_channel_summary(channel, recordings))
+        summary = _channel_summary(channel, recordings)
+        match = summary.get('match') or {}
+        camp = (channel.get('sources') or {}).get('camp') or {}
+        seq = str(camp.get('gameSeq') or '')
+        name = by_seq.get(seq)
+        if name:
+            match['opponent'] = name
+        elif str(match.get('opponent') or '') in aliases:
+            match['opponent'] = aliases[str(match['opponent'])]
+        result.append(summary)
     return {'schema': channel_store.SCHEMA, 'channels': result}
 
 

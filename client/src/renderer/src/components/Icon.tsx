@@ -1,6 +1,7 @@
 import type { ReactNode, SVGProps } from 'react'
 
 const paths: Record<string, ReactNode> = {
+  ingest: <><path d="M12 3v11m-4-4 4 4 4-4" /><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" /></>,
   overview: <><rect x="3.5" y="3.5" width="7" height="7" rx="1" /><rect x="13.5" y="3.5" width="7" height="7" rx="1" /><rect x="3.5" y="13.5" width="7" height="7" rx="1" /><rect x="13.5" y="13.5" width="7" height="7" rx="1" /></>,
   decision: <><path d="M4.5 5h9m-9 4.5h6m-6 4.5h4" /><path d="M14 15.5h5.5m-2.8-2.8 2.8 2.8-2.8 2.8" /></>,
   matches: <><rect x="4" y="3.5" width="16" height="17" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,

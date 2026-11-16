@@ -295,6 +295,41 @@ CREATE TABLE IF NOT EXISTS workspace_meta (
   value TEXT NOT NULL,
   updated_at REAL NOT NULL
 );
+
+/* 训练系列赛（V2.0）：独立于单局的关系实体，原始对局数据不改动。
+   确认编组时才把 series_id/game_no 写回 match_records/matches 的既有列，
+   供旧查询兼容；删除系列赛只清关系列，不动对局本身。 */
+CREATE TABLE IF NOT EXISTS training_series (
+  id TEXT PRIMARY KEY,
+  best_of INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'confirmed',
+  ruleset_id TEXT NOT NULL DEFAULT 'scrim-global-team',
+  opponent TEXT,
+  opponent_team_id TEXT,
+  session TEXT,
+  schedule_id TEXT,
+  version TEXT,
+  start_at TEXT,
+  end_at TEXT,
+  completion_mode TEXT NOT NULL DEFAULT 'standard',
+  completion TEXT NOT NULL DEFAULT 'open',
+  notes TEXT,
+  created_at REAL NOT NULL,
+  updated_at REAL,
+  updated_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_series_start ON training_series(start_at);
+CREATE INDEX IF NOT EXISTS idx_series_session ON training_series(session);
+
+/* 一局只能归属一个系列赛：match_key 全局 UNIQUE，重复确认直接被约束拦下。 */
+CREATE TABLE IF NOT EXISTS training_series_games (
+  series_id TEXT NOT NULL,
+  match_key TEXT NOT NULL UNIQUE,
+  game_index INTEGER NOT NULL,
+  created_at REAL NOT NULL,
+  PRIMARY KEY(series_id, match_key)
+);
+CREATE INDEX IF NOT EXISTS idx_series_games_series ON training_series_games(series_id);
 """
 
 
@@ -320,6 +355,15 @@ def is_placeholder_player(name) -> bool:
     """选手占位名与战队占位名（待命名战队 #N）分开识别。"""
     text = str(name or '').strip()
     return text in LEGACY_PLAYER_PLACEHOLDERS or text.startswith(PLAYER_PLACEHOLDER_PREFIX)
+
+
+class SeriesConflict(ValueError):
+    """一局对局已被别的系列赛占用；带出占用清单供接口转 409。"""
+
+    def __init__(self, occupied):
+        self.occupied = occupied  # [(match_key, series_id), ...]
+        text = '；'.join(f'{key} 已属于 {sid}' for key, sid in occupied)
+        super().__init__(text or '对局已被其他系列赛占用')
 
 
 class Workspace:
@@ -369,6 +413,20 @@ class Workspace:
                     connection.execute("ALTER TABLE players ADD COLUMN positions TEXT NOT NULL DEFAULT '[]'")
             except sqlite3.Error as error:
                 self.schema_warnings.append(f'players 迁移: {error}')
+            # 系列赛关系列（V2.0）：旧库的 match_records 可能没有 series_id/game_no，
+            # 有 match_key 结构的按需补列；matches 若是存 JSON body 的旧表（无
+            # match_key）则跳过，写回时按 PRAGMA 动态判断可用表。
+            for table in ('match_records', 'matches'):
+                try:
+                    cols = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
+                    if 'match_key' not in cols:
+                        continue
+                    if 'series_id' not in cols:
+                        connection.execute(f'ALTER TABLE {table} ADD COLUMN series_id TEXT')
+                    if 'game_no' not in cols:
+                        connection.execute(f'ALTER TABLE {table} ADD COLUMN game_no INTEGER')
+                except sqlite3.Error as error:
+                    self.schema_warnings.append(f'{table} 系列赛列迁移: {error}')
             connection.commit()
         finally:
             connection.close()
@@ -452,7 +510,12 @@ class Workspace:
         return item
 
     def merge_teams(self, source_id, target_id, *, actor=None):
-        """合并战队：选手改挂目标队，源队归档；历史记录保留。"""
+        """合并战队：源队归档，主数据里仍挂在源队的选手改挂目标队。
+
+        只动 players.team_id（教练登记的当前归属）；营地逐局面板里的历史出场
+        一个字节都不改。选手真的转会到别的队，由教练在「对手归属」里改挂，
+        并队不会替他做转会判断，也不会把两拨人并成一套当前阵容。
+        """
         if source_id == target_id:
             raise ValueError('不能合并到自己')
         connection = self.connect()
@@ -967,6 +1030,386 @@ class Workspace:
         finally:
             connection.close()
         return [{key: row[key] for key in row.keys()} for row in rows]
+
+    # ---------------------------------------------------------------- 系列赛（V2.0）
+    # 设计约束（docs/series_builder.md）：系列赛是独立于单局的关系实体；
+    # 确认编组只写关系列（series_id/game_no），原始对局数据一律不动。
+    SERIES_BEST_OF = (3, 5, 7)
+    SERIES_STATUSES = ('confirmed', 'needs_review')
+    SERIES_COMPLETION_MODES = ('standard', 'fixed')
+    SERIES_COMPLETIONS = ('completed', 'open', 'interrupted', 'incomplete')
+
+    @staticmethod
+    def _series_brief(row):
+        """training_series 行 → 对外 JSON（camelCase，与前端字段一致）。"""
+        return {
+            'id': row['id'], 'bestOf': row['best_of'], 'status': row['status'],
+            'rulesetId': row['ruleset_id'], 'opponent': row['opponent'],
+            'opponentTeamId': row['opponent_team_id'], 'session': row['session'],
+            'scheduleId': row['schedule_id'], 'version': row['version'],
+            'startAt': row['start_at'], 'endAt': row['end_at'],
+            'completionMode': row['completion_mode'], 'completion': row['completion'],
+            'notes': row['notes'], 'createdAt': row['created_at'], 'updatedAt': row['updated_at'],
+        }
+
+    @staticmethod
+    def _series_games(connection, series_id):
+        rows = connection.execute(
+            'SELECT match_key, game_index FROM training_series_games WHERE series_id=? '
+            'ORDER BY game_index', (series_id,)).fetchall()
+        return [{'matchKey': row['match_key'], 'gameIndex': row['game_index']} for row in rows]
+
+    @staticmethod
+    def _normalize_games(games):
+        """['key',...] / [{'matchKey','gameIndex'?}] → 按 game_index 排列的 [(key, index)]。
+
+        没给局序就按传入顺序编 G1..Gn；给了就必须恰好是连续 1..n——中间缺号
+        意味着采集缺局，要教练先补齐或改自动编排，不静默补号冒充完整 BO。"""
+        normalized = []
+        for item in games or []:
+            if isinstance(item, str):
+                normalized.append((item.strip(), None))
+            elif isinstance(item, dict):
+                key = str(item.get('matchKey') or item.get('key') or '').strip()
+                if not key:
+                    raise ValueError('局次缺少 matchKey')
+                index = item.get('gameIndex')
+                normalized.append((key, int(index) if index else None))
+            else:
+                raise ValueError('局次格式不正确')
+        if not normalized:
+            raise ValueError('系列赛至少需要一局对局')
+        keys = [key for key, _ in normalized]
+        if len(set(keys)) != len(keys):
+            raise ValueError('同一局不能在一次编组里出现两次')
+        explicit = [(key, index) for key, index in normalized if index is not None]
+        if explicit and len(explicit) != len(normalized):
+            raise ValueError('局序要么全部指定，要么全部自动编排，不能混用')
+        if explicit:
+            if sorted(index for _, index in explicit) != list(range(1, len(normalized) + 1)):
+                raise ValueError('局序必须是连续的 G1..Gn，缺号请先补齐或改为自动编排')
+            return normalized
+        return [(key, index) for index, (key, _) in enumerate(normalized, 1)]
+
+    def _check_membership(self, connection, keys, *, exclude_series=None):
+        """一局只能归属一个系列赛；冲突带出占用清单，接口转 409。"""
+        occupied = []
+        for key in keys:
+            row = connection.execute(
+                'SELECT match_key, series_id FROM training_series_games WHERE match_key=?',
+                (key,)).fetchone()
+            if row and row['series_id'] != exclude_series:
+                occupied.append((row['match_key'], row['series_id']))
+        if occupied:
+            raise SeriesConflict(occupied)
+        return occupied
+
+    @staticmethod
+    def _series_relation_tables(connection):
+        """能写 series_id/game_no 的表：必须有 match_key + series_id 列。
+
+        部分老库的 matches 是存 JSON body 的旧表（id/revision/body，无
+        match_key），建表语句会被跳过——这类表不参与关系写回，也不改其结构。"""
+        usable = []
+        for table in ('match_records', 'matches'):
+            try:
+                cols = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
+            except sqlite3.Error:
+                continue
+            if 'match_key' in cols and 'series_id' in cols:
+                usable.append(table)
+        return usable
+
+    @staticmethod
+    def _match_dates(connection, keys):
+        """从可用关系表取对局日期，用于系列赛起止兜底。"""
+        dates = []
+        tables = Workspace._series_relation_tables(connection) or ['match_records']
+        for key in keys:
+            for table in tables:
+                try:
+                    row = connection.execute(
+                        f'SELECT date FROM {table} WHERE match_key=?', (key,)).fetchone()
+                except sqlite3.Error:
+                    row = None
+                if row and row['date']:
+                    dates.append(str(row['date']))
+                    break
+        return sorted(dates)
+
+    def _sync_match_series(self, connection, assignments, cleared=()):
+        """确认编组后把 series_id/game_no 写回 match_records 与 matches 的既有列
+        （旧查询兼容）；移出的局置回 NULL。只改关系列，不 bump revision：
+        对局内容没变，关系变化已由 change_log 记录。表按实际结构动态判断。"""
+        for table in self._series_relation_tables(connection):
+            for key, (series_id, game_no) in assignments.items():
+                connection.execute(
+                    f'UPDATE {table} SET series_id=?, game_no=? WHERE match_key=?',
+                    (series_id, game_no, key))
+            for key in cleared:
+                connection.execute(
+                    f'UPDATE {table} SET series_id=NULL, game_no=NULL WHERE match_key=?', (key,))
+
+    def create_series(self, *, best_of, games, ruleset_id=None, opponent=None,
+                      opponent_team_id=None, session=None, schedule_id=None, version=None,
+                      completion_mode=None, completion=None, status=None, notes=None,
+                      start_at=None, end_at=None, series_id=None, actor=None):
+        """创建并确认一个系列赛。games 全量校验后一次写入；支持显式传
+        series_id（撤销删除时按原 ID 重建）。"""
+        from series_engine import RULESETS  # 规则集注册表在引擎里，延迟导入避免加载静态大表
+        if int(best_of) not in self.SERIES_BEST_OF:
+            raise ValueError('赛制只支持 BO3 / BO5 / BO7')
+        if games and len(games) > int(best_of):
+            raise ValueError(f'BO{int(best_of)} 最多 {int(best_of)} 局，当前给了 {len(games)} 局')
+        if ruleset_id and ruleset_id not in RULESETS:
+            raise ValueError(f'未知规则集：{ruleset_id}')
+        if completion_mode and completion_mode not in self.SERIES_COMPLETION_MODES:
+            raise ValueError(f'未知执行方式：{completion_mode}')
+        if completion and completion not in self.SERIES_COMPLETIONS:
+            raise ValueError(f'未知完赛状态：{completion}')
+        if status and status not in self.SERIES_STATUSES:
+            raise ValueError(f'未知系列赛状态：{status}')
+        ordered = self._normalize_games(games)
+        connection = self.connect()
+        batch_id = uuid.uuid4().hex[:12]
+        try:
+            self._check_membership(connection, [key for key, _ in ordered])
+            now = time.time()
+            series_id = series_id or 'ts-' + time.strftime('%Y%m%d') + '-' + uuid.uuid4().hex[:4]
+            if connection.execute('SELECT 1 FROM training_series WHERE id=?', (series_id,)).fetchone():
+                raise ValueError(f'系列赛 ID 已存在：{series_id}')
+            if not start_at or not end_at:
+                dates = self._match_dates(connection, [key for key, _ in ordered])
+                start_at = start_at or (dates[0] if dates else None)
+                end_at = end_at or (dates[-1] if dates else None)
+            connection.execute(
+                'INSERT INTO training_series(id, best_of, status, ruleset_id, opponent, '
+                'opponent_team_id, session, schedule_id, version, start_at, end_at, '
+                'completion_mode, completion, notes, created_at, updated_at, updated_by) '
+                'VALUES(?,?,COALESCE(?,\'confirmed\'),COALESCE(?,\'scrim-global-team\'),'
+                '?,?,?,?,?,?,?,COALESCE(?,\'standard\'),COALESCE(?,\'open\'),?,?,?,?)',
+                (series_id, int(best_of), status, ruleset_id, opponent, opponent_team_id,
+                 session, schedule_id, version, start_at, end_at, completion_mode, completion,
+                 notes, now, now, actor))
+            for key, index in ordered:
+                connection.execute(
+                    'INSERT INTO training_series_games(series_id, match_key, game_index, created_at) '
+                    'VALUES(?,?,?,?)', (series_id, key, index, now))
+            assignments = {key: (series_id, index) for key, index in ordered}
+            self._sync_match_series(connection, assignments)
+            self._log(connection, 'series', series_id, 'games', None,
+                      json.dumps([{'matchKey': key, 'gameIndex': index} for key, index in ordered],
+                                 ensure_ascii=False),
+                      'series-builder', actor=actor, batch_id=batch_id)
+            for key, index in ordered:
+                self._log(connection, 'match', key, 'series_id', None,
+                          f'{series_id}#G{index}', 'series-builder', actor=actor, batch_id=batch_id)
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_series(series_id)
+
+    def update_series(self, series_id, *, best_of=None, games=None, ruleset_id=None,
+                      opponent=None, opponent_team_id=None, session=None, schedule_id=None,
+                      version=None, completion_mode=None, completion=None, status=None,
+                      notes=None, actor=None):
+        """修改赛制/局序/成员/标注。games 传了就全量替换（调序、增删、拆分、
+        合并都走这一条）；opponent 等 None 表示「本次不改」。"""
+        from series_engine import RULESETS
+        current = self.get_series(series_id)
+        if not current:
+            raise ValueError(f'系列赛不存在：{series_id}')
+        best_of = int(best_of) if best_of is not None else current['bestOf']
+        if best_of not in self.SERIES_BEST_OF:
+            raise ValueError('赛制只支持 BO3 / BO5 / BO7')
+        if ruleset_id and ruleset_id not in RULESETS:
+            raise ValueError(f'未知规则集：{ruleset_id}')
+        if completion_mode and completion_mode not in self.SERIES_COMPLETION_MODES:
+            raise ValueError(f'未知执行方式：{completion_mode}')
+        if completion and completion not in self.SERIES_COMPLETIONS:
+            raise ValueError(f'未知完赛状态：{completion}')
+        if status and status not in self.SERIES_STATUSES:
+            raise ValueError(f'未知系列赛状态：{status}')
+        connection = self.connect()
+        batch_id = uuid.uuid4().hex[:12]
+        try:
+            old_games = [(g['matchKey'], g['gameIndex']) for g in current['games']]
+            replaced = self._normalize_games(games) if games is not None else None
+            if replaced is not None and len(replaced) > best_of:
+                raise ValueError(f'BO{best_of} 最多 {best_of} 局，当前给了 {len(replaced)} 局')
+            keys = [key for key, _ in (replaced or old_games)]
+            self._check_membership(connection, keys, exclude_series=series_id)
+            fields, params = [], []
+            for column, value in (
+                    ('best_of', best_of), ('ruleset_id', ruleset_id), ('opponent', opponent),
+                    ('opponent_team_id', opponent_team_id), ('session', session),
+                    ('schedule_id', schedule_id), ('version', version),
+                    ('completion_mode', completion_mode), ('completion', completion),
+                    ('status', status), ('notes', notes)):
+                if value is not None:
+                    fields.append(f'{column}=?')
+                    params.append(value)
+            fields.append('updated_at=?')
+            params.append(time.time())
+            params.append(series_id)
+            connection.execute(
+                f'UPDATE training_series SET {", ".join(fields)} WHERE id=?', params)
+            cleared = []
+            assignments = {key: (series_id, index) for key, index in (replaced or old_games)}
+            if replaced is not None:
+                connection.execute('DELETE FROM training_series_games WHERE series_id=?', (series_id,))
+                now = time.time()
+                for key, index in replaced:
+                    connection.execute(
+                        'INSERT INTO training_series_games(series_id, match_key, game_index, created_at) '
+                        'VALUES(?,?,?,?)', (series_id, key, index, now))
+                new_keys = {key for key, _ in replaced}
+                cleared = [key for key, _ in old_games if key not in new_keys]
+                self._log(connection, 'series', series_id, 'games',
+                          json.dumps([{'matchKey': k, 'gameIndex': i} for k, i in old_games],
+                                     ensure_ascii=False),
+                          json.dumps([{'matchKey': k, 'gameIndex': i} for k, i in replaced],
+                                     ensure_ascii=False),
+                          'series-builder', actor=actor, batch_id=batch_id)
+                self._sync_match_series(connection, assignments, cleared)
+                for key in cleared:
+                    self._log(connection, 'match', key, 'series_id', f'{series_id}', None,
+                              'series-builder', actor=actor, batch_id=batch_id)
+                for key, index in replaced:
+                    if (key, index) not in old_games:
+                        self._log(connection, 'match', key, 'series_id', None,
+                                  f'{series_id}#G{index}', 'series-builder',
+                                  actor=actor, batch_id=batch_id)
+            else:
+                self._log(connection, 'series', series_id, 'updated', None, None,
+                          'series-builder', actor=actor, batch_id=batch_id)
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_series(series_id)
+
+    def delete_series(self, series_id, *, actor=None):
+        """删除编组关系，保留全部原始对局；返回被释放的 match_key 列表。"""
+        current = self.get_series(series_id)
+        if not current:
+            raise ValueError(f'系列赛不存在：{series_id}')
+        connection = self.connect()
+        batch_id = uuid.uuid4().hex[:12]
+        try:
+            keys = [g['matchKey'] for g in current['games']]
+            connection.execute('DELETE FROM training_series_games WHERE series_id=?', (series_id,))
+            connection.execute('DELETE FROM training_series WHERE id=?', (series_id,))
+            self._sync_match_series(connection, {}, cleared=keys)
+            self._log(connection, 'series', series_id, 'deleted',
+                      json.dumps(current['games'], ensure_ascii=False), None,
+                      'series-builder', actor=actor, batch_id=batch_id)
+            for key in keys:
+                self._log(connection, 'match', key, 'series_id', f'{series_id}', None,
+                          'series-builder', actor=actor, batch_id=batch_id)
+            connection.commit()
+        finally:
+            connection.close()
+        return keys
+
+    def get_series(self, series_id):
+        connection = self.connect()
+        try:
+            row = connection.execute(
+                'SELECT * FROM training_series WHERE id=?', (series_id,)).fetchone()
+            if not row:
+                return None
+            brief = self._series_brief(row)
+            brief['games'] = self._series_games(connection, series_id)
+            return brief
+        finally:
+            connection.close()
+
+    def list_series(self, *, date_from=None, date_to=None, session=None, opponent=None,
+                    best_of=None, status=None, completion=None, limit=500):
+        """按筛选条件列系列赛；系列赛级指标一律按 start_at（开赛日）归档，
+        防止一组 BO 被时间窗口切成两半。"""
+        where, params = [], []
+        if date_from:
+            where.append('COALESCE(end_at, start_at) >= ?')
+            params.append(str(date_from))
+        if date_to:
+            where.append('COALESCE(start_at, end_at) <= ?')
+            params.append(str(date_to))
+        if session:
+            where.append('session = ?')
+            params.append(session)
+        if opponent:
+            where.append('opponent LIKE ?')
+            params.append(f'%{opponent}%')
+        if best_of:
+            where.append('best_of = ?')
+            params.append(int(best_of))
+        if status:
+            where.append('status = ?')
+            params.append(status)
+        if completion:
+            where.append('completion = ?')
+            params.append(completion)
+        sql = 'SELECT * FROM training_series'
+        if where:
+            sql += ' WHERE ' + ' AND '.join(where)
+        sql += ' ORDER BY COALESCE(start_at, \'\') DESC, id DESC LIMIT ?'
+        params.append(int(limit))
+        connection = self.connect()
+        try:
+            rows = connection.execute(sql, params).fetchall()
+            result = []
+            for row in rows:
+                brief = self._series_brief(row)
+                brief['games'] = self._series_games(connection, row['id'])
+                result.append(brief)
+            return result
+        finally:
+            connection.close()
+
+    def series_index(self):
+        """match_key → {seriesId, bestOf, gameIndex, seriesStart} 一次查全。
+
+        跨局分析按赛制 / 局序筛选时要给每局贴上系列赛属性；逐 key 查会变成
+        N+1（几百局就是几百次查询），这里一次 JOIN 拿完。
+        """
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                'SELECT g.match_key, g.game_index, s.id AS series_id, s.best_of, s.start_at '
+                'FROM training_series_games g JOIN training_series s ON s.id = g.series_id'
+            ).fetchall()
+        finally:
+            connection.close()
+        return {
+            str(row['match_key']): {
+                'seriesId': row['series_id'],
+                'bestOf': row['best_of'],
+                'gameIndex': row['game_index'],
+                'seriesStart': row['start_at'],
+            }
+            for row in rows
+        }
+
+    def series_for_matches(self, match_keys):
+        """match_key → {seriesId, gameIndex}；编组页标红冲突局、跨局分析
+        反查所属系列赛都用它。"""
+        keys = [str(key) for key in match_keys or []]
+        mapping = {}
+        if not keys:
+            return mapping
+        connection = self.connect()
+        try:
+            for key in keys:
+                row = connection.execute(
+                    'SELECT series_id, game_index FROM training_series_games WHERE match_key=?',
+                    (key,)).fetchone()
+                if row:
+                    mapping[key] = {'seriesId': row['series_id'], 'gameIndex': row['game_index']}
+            return mapping
+        finally:
+            connection.close()
+
 
     # ---------------------------------------------------------------- 约训
     def save_schedule(self, schedule_id=None, *, date, start_time=None, opponent_team_id=None,

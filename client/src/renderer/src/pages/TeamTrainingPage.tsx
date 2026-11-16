@@ -39,7 +39,7 @@ export function TeamTrainingPage() {
         eyebrow="TEAM TRAINING"
         title="战队训练"
         subtitle="按对手汇总训练课与交手日 · 计划来自训练计划，交手日自动归集。"
-        actions={<Link className="btn" to="/teams">战队档案</Link>}
+        actions={<Link className="btn" to="/teams">战队分析</Link>}
       />
 
       <StatGrid items={[

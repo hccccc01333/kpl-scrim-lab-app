@@ -17,7 +17,7 @@
 | 在闭源商业产品中集成、OEM、贴牌 | **必须购买商业授权** |
 | 二次分发安装包（含改名发布） | AGPL-3.0-or-later，需保留版权声明与协议文本 |
 
-商业授权联系：[hccccc01333](https://github.com/hccccc01333)（`rainfun446 at gmail dot com`），
+商业授权联系：[hccccc01333](https://github.com/hccccc01333)，
 或[提 Issue](https://github.com/hccccc01333/kpl-scrim-lab-app/issues) 说明使用场景。
 
 ## 协议不覆盖的内容

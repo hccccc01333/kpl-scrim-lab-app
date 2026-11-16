@@ -6,7 +6,7 @@
 * ``getHeroChartsLog``  —— 每个英雄逐日 胜率/出场/禁用（巅峰千强等分段，2019-09 起全量）
 * ``getExplorer``       —— 同分路两两英雄的对位总局数与蓝方胜率（公开探索器接口）
 
-此前这条链路依赖外部项目（KPLBPagentRL）手工爬取，``lane_matchups.json`` 只能等
+此前这条链路依赖外部手工爬取，``lane_matchups.json`` 只能等
 手动重建；现在整条链路搬进本项目并自动化：
 
     服务启动 / 每日定时 → 刷新英雄日线 → 重建 hero_daily.parquet →

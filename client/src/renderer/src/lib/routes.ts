@@ -7,21 +7,16 @@ export const MODULE_TABS = {
   matches: [
     { to: '/matches', label: '对局档案', end: true },
     { to: '/matches/cross', label: '跨局分析' },
-    { to: '/matches/query', label: '智能找局' },
     { to: '/matches/featured', label: '精选对局' },
-    { to: '/matches/records', label: '训练纪录' },
     { to: '/matches/versions', label: '版本对比' }
   ],
   players: [
     { to: '/players/archive', label: '选手档案' },
     { to: '/players', label: '名单与状态', end: true },
-    { to: '/players/lanes', label: '选手与位置' },
     { to: '/players/compare', label: '选手对比' }
   ],
   teams: [
-    { to: '/teams', label: '战队档案', end: true },
-    { to: '/teams/style', label: '战队风格' },
-    { to: '/teams/roster', label: '战队阵容' },
+    { to: '/teams', label: '战队分析', end: true },
     { to: '/teams/training', label: '战队训练' }
   ],
   heroes: [

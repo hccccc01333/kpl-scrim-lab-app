@@ -148,6 +148,92 @@ def test_missing_panels_is_reported_not_faked(tmp_path):
     assert result['warnings']
 
 
+def test_merge_keeps_current_five_and_marks_outdated_players(tmp_path):
+    """并队只并战队：换过人的两支聚类合起来后，当前阵容仍是最新的五人。"""
+    new = ['a1', 'a2', 'b3', 'b4', 'b5']
+    items = [(f'old{i}', panel(i, A, f'11-02 12:{i:02d}')) for i in range(1, 7)]
+    items += [(f'new{i}', panel(i, new, f'11-03 12:{i:02d}')) for i in range(1, 6)]
+    write_panels(tmp_path / 'camp_details', items)
+    db = tmp_path / 'db.sqlite3'
+    result = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')
+    assert len(result['teams']) == 2
+    # 前后两段时间不重叠、只剩 2 个老队员：按「阵容更替」给候选，不自动合并
+    assert result['suggestions'][0]['kind'] == 'roster-change'
+    assert result['suggestions'][0]['overlap'] == 2
+
+    team_clusters.merge_team(db, result['teams'][1]['id'], result['teams'][0]['id'])
+    team = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')['teams'][0]
+    assert team['matches'] == 11
+    assert len(team['currentPlayers']) == 5
+    assert {p['id'] for p in team['currentPlayers']} == set(new)
+    assert {p['id'] for p in team['formerPlayers']} == {'a3', 'a4', 'a5'}
+    assert all(p['status'] == 'former' for p in team['formerPlayers'])
+    assert team['rosterWindow'] == 5 and team['rosterChanged'] is True
+    # 历史名单一个都不丢，但不会当成一套 8 人阵容
+    assert len(team['players']) == 8
+    assert team['currentPlayers'][0]['lastSeen'] >= team['formerPlayers'][0]['lastSeen']
+
+
+def test_chained_merge_does_not_lose_games(tmp_path):
+    """A→B、B→C 连着合并时，A 的局也要算进最终那支战队。"""
+    write_panels(tmp_path / 'camp_details', [
+        ('1', panel(1, A, '11-02 12:00')),
+        ('2', panel(2, B, '11-02 13:00')),
+        ('3', panel(3, ['c1', 'c2', 'c3', 'c4', 'c5'], '11-02 14:00')),
+    ])
+    db = tmp_path / 'db.sqlite3'
+    ids = [t['id'] for t in team_clusters.list_teams(
+        tmp_path / 'camp_details', db, '本队')['teams']]
+    team_clusters.merge_team(db, ids[1], ids[2])
+    team_clusters.merge_team(db, ids[0], ids[1])
+    merged = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')
+    assert len(merged['teams']) == 1
+    assert merged['teams'][0]['matches'] == 3
+    assert len(merged['teams'][0]['seqs']) == 3
+
+
+def test_roster_change_needs_non_overlapping_periods(tmp_path):
+    """只留 2 个老队员、但两队交手时间交叠，不能当作阵容更替去提示合并。"""
+    shared = ['a1', 'a2', 'x3', 'x4', 'x5']
+    write_panels(tmp_path / 'camp_details', [
+        ('1', panel(1, A, '11-02 12:00')),
+        ('2', panel(2, shared, '11-02 13:00')),
+        ('3', panel(3, A, '11-02 14:00')),
+    ])
+    result = team_clusters.list_teams(tmp_path / 'camp_details', tmp_path / 'db.sqlite3', '本队')
+    assert result['suggestions'] == []
+
+
+def test_transferred_player_follows_latest_team(tmp_path):
+    new = ['a1', 'a2', 'b3', 'b4', 'b5']
+    write_panels(tmp_path / 'camp_details', [
+        ('1', panel(1, A, '11-02 12:00')),
+        ('2', panel(2, new, '11-03 12:00')),
+    ])
+    result = team_clusters.opponent_players(tmp_path / 'camp_details', tmp_path / 'db.sqlite3')
+    everyone = [p for group in result['teams'] for p in group['players']] + result['unassigned']
+    moved = next(p for p in everyone if p['id'] == 'a1')
+    assert moved['transferred'] is True
+    assert moved['formerTeams']
+    assert moved['defaultTeam'] != moved['formerTeams'][0]
+    # 最近一次出场在哪个战队，默认归属就是哪个战队
+    assert moved['defaultTeam'] == team_clusters.signature(
+        team_clusters.load_panels(tmp_path / 'camp_details')[-1])
+
+
+def test_team_brief_only_lists_current_players(tmp_path):
+    new = ['a1', 'a2', 'b3', 'b4', 'b5']
+    items = [(f'old{i}', panel(i, A, f'11-02 12:{i:02d}')) for i in range(1, 7)]
+    items += [(f'new{i}', panel(i, new, f'11-03 12:{i:02d}')) for i in range(1, 6)]
+    write_panels(tmp_path / 'camp_details', items)
+    db = tmp_path / 'db.sqlite3'
+    result = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')
+    team_clusters.merge_team(db, result['teams'][1]['id'], result['teams'][0]['id'])
+    brief = team_clusters.team_brief(tmp_path / 'camp_details', db, result['teams'][0]['id'])
+    assert len(brief['players']) == 5
+    assert brief['formerCount'] == 3
+
+
 def test_compare_aligns_lanes_and_skips_missing_fields(tmp_path):
     write_panels(tmp_path / 'camp_details', [
         ('1', panel(1, A, '11-02 12:00')),

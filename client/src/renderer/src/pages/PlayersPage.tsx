@@ -3,6 +3,7 @@ import { useConnection } from '../lib/app-context'
 import { usePlayersBoard } from '../lib/hooks'
 import { number, percent, signed } from '../lib/format'
 import { playerPath } from '../lib/routes'
+import { pushToast } from '../lib/toast'
 import {
   PLAYER_LANES,
   formLabel,
@@ -16,7 +17,6 @@ import { BarList } from '../components/charts/BarList'
 import { ErrorState, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { Block, BlockBoard } from '../blocks/BlockBoard'
-import { DecisionResourceBlock } from '../blocks/builtin/domains17'
 
 export function PlayersPage() {
   const { baseUrl } = useConnection()
@@ -31,6 +31,16 @@ export function PlayersPage() {
   const own = board.players.filter((player) => player.side === 'own')
   const status = own.filter((player) => player.form?.available).sort((a, b) => (b.form?.delta || 0) - (a.form?.delta || 0))
   const roster = [...board.roster].sort((a, b) => laneIndex(a.lane) - laneIndex(b.lane))
+  const laneStats = new Map(board.lanes.map((row) => [row.lane, row]))
+  /* 五路深看（胜率、同路金差分布、轮换/补位）只在网页版维护一份，客户端不再复制页面。 */
+  const openLaneWeb = async () => {
+    try {
+      const result = await window.kpl.openWorkbenchPage({ baseUrl, route: '#compare' })
+      if (!result.ok) pushToast(result.error || '网页版没有打开', 'error')
+    } catch (error) {
+      pushToast(error instanceof Error ? error.message : '网页版没有打开', 'error')
+    }
+  }
   const duos = [...board.duos].sort((a, b) => b.games - a.games).slice(0, 8)
   const dayRows = [...new Set(board.games.map((game) => game.day))]
     .sort((a, b) => b.localeCompare(a))
@@ -81,11 +91,20 @@ export function PlayersPage() {
 
       <BlockBoard page="players">
         <Block id="pl-roster" title="位置名册">
-          <AnalysisSection title="位置名册" note="按分路看本期主力与轮换；表现分与胜率来自同池样本。">
+          <AnalysisSection
+            title="位置名册"
+            note="按分路看本期主力与轮换；本队/对手胜率与参团为该路全部营地样本。"
+            action={<button type="button" className="btn btn-sm" onClick={() => void openLaneWeb()}><Icon name="external" />网页版五路深看</button>}
+          >
             <div className="roster-grid">
               {PLAYER_LANES.map((lane) => {
                 const slot = roster.find((item) => item.lane === lane)
                 const player = slot?.player ? own.find((item) => item.name === slot.player) : null
+                const stats = laneStats.get(lane)
+                const rotation = own
+                  .filter((item) => item.lane === lane && item.name !== slot?.player)
+                  .sort((a, b) => b.games - a.games)
+                const otherLanes = player?.laneMix.filter((mix) => mix.lane !== player.lane) || []
                 return (
                   <div className="roster-card" key={lane}>
                     <span className="roster-lane">{lane}</span>
@@ -99,6 +118,21 @@ export function PlayersPage() {
                       <span><small>局数</small><b>{number(slot?.games)}</b></span>
                       <span><small>胜率</small><b>{percent(slot?.winRate)}</b></span>
                       <span><small>表现</small><b>{player?.score ?? '—'}</b></span>
+                    </div>
+                    <div className="roster-foot">
+                      <div className="roster-rotation">
+                        <small>{slot?.player ? '轮换' : '出场'}</small>
+                        {rotation.length
+                          ? rotation.slice(0, 3).map((item) => (
+                            <Link to={playerPath(item.name)} key={item.name}>{item.name}<em>{item.games} 局</em></Link>
+                          ))
+                          : <span className="quiet">{slot?.player ? '无轮换' : '无记录'}</span>}
+                        {otherLanes.length ? <span className="roster-mix">兼 {otherLanes.map((mix) => mix.lane).join(' / ')}</span> : null}
+                      </div>
+                      <div className="roster-lane-stats">
+                        <span><small>该路本队</small><b>{percent(stats?.own.winRate)}</b><em>胜率 · 参团 {percent(stats?.own.participation)}</em></span>
+                        <span><small>该路对手</small><b>{percent(stats?.enemy.winRate)}</b><em>胜率 · 参团 {percent(stats?.enemy.participation)}</em></span>
+                      </div>
                     </div>
                   </div>
                 )
@@ -203,10 +237,6 @@ export function PlayersPage() {
               </div>
             ) : <BoardEmpty title="还没有对局记录" />}
           </AnalysisSection>
-        </Block>
-
-        <Block id="pl-resource" title="资源异常">
-          <DecisionResourceBlock />
         </Block>
       </BlockBoard>
 

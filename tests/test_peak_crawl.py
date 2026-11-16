@@ -2,14 +2,14 @@
 import json
 
 import peak_crawl
-from scripts.build_bp_facts import MIN_PICK_RATE, build_lane_rows, build_ladder_doc
+from scripts.build_bp_facts import build_lane_rows, build_ladder_doc
 
 
-def _hero_stats(pick=MIN_PICK_RATE + 0.1):
+def _hero_stats(pick=0.04):
     """两个够门槛的英雄基准（wr 相同 → 期望胜率 50%）。"""
     return {
-        1: {'name': '英雄甲', 'wr': 0.50, 'pick': pick},
-        2: {'name': '英雄乙', 'wr': 0.50, 'pick': pick},
+        1: {'name': '英雄甲', 'wr': 0.50, 'wrAdj': 0.50, 'pick': pick},
+        2: {'name': '英雄乙', 'wr': 0.50, 'wrAdj': 0.50, 'pick': pick},
     }
 
 
@@ -46,20 +46,32 @@ def test_build_lane_rows_combines_both_directions():
     assert row['excess'] == -3.3
 
 
-def test_build_lane_rows_drops_thin_and_rare():
-    """样本 < 200 局或使用率 < 3% 的对位不进表。"""
+def test_build_lane_rows_drops_thin_and_marks_low_pick():
+    """样本 < 50 局不进表；低登场率不丢弃，只标 lowPick（不判优势/劣势）。"""
     rows = [
-        {'blue_id': 1, 'red_id': 2, 'n': 150, 'blue_win_rate': 55.0, 'status': 'ok'},
-        {'blue_id': 1, 'red_id': 2, 'n': 300, 'blue_win_rate': 55.0, 'status': 'ok'},
-        {'blue_id': 1, 'red_id': 2, 'n': 300, 'blue_win_rate': 55.0,
+        {'blue_id': 1, 'red_id': 2, 'n': 30, 'blue_win_rate': 55.0, 'status': 'ok'},
+        {'blue_id': 1, 'red_id': 2, 'n': 80, 'blue_win_rate': 55.0, 'status': 'ok'},
+        {'blue_id': 1, 'red_id': 2, 'n': 80, 'blue_win_rate': 55.0,
          'status': 'error'},  # 失败行丢弃
     ]
     thin = build_lane_rows(rows[:1], _hero_stats())
     assert thin == []
     ok = build_lane_rows(rows[1:2], _hero_stats())
-    assert len(ok) == 1
-    rare = build_lane_rows(rows[1:2], _hero_stats(pick=MIN_PICK_RATE - 0.01))
-    assert rare == []
+    assert len(ok) == 1 and ok[0]['lowPick'] is False
+    rare = build_lane_rows(rows[1:2], _hero_stats(pick=0.005))
+    assert len(rare) == 1 and rare[0]['lowPick'] is True
+
+
+def test_build_lane_rows_shrinks_low_pick_expected():
+    """低登场率英雄的胜率向 50% 收缩，期望不应等于原始 60%。"""
+    stats = {1: {'name': '英雄甲', 'wr': 0.60, 'wrAdj': 0.52, 'pick': 0.005},
+             2: {'name': '英雄乙', 'wr': 0.50, 'wrAdj': 0.50, 'pick': 0.05}}
+    rows = build_lane_rows(
+        [{'blue_id': 1, 'red_id': 2, 'n': 300, 'blue_win_rate': 60.0, 'status': 'ok'}],
+        stats)
+    assert len(rows) == 1
+    assert rows[0]['expected'] < 60.0
+    assert rows[0]['lowPick'] is True
 
 
 def test_build_ladder_doc_shape():
@@ -70,7 +82,8 @@ def test_build_ladder_doc_shape():
     assert doc['schema'] == 'bp-lane-facts-v1'
     assert doc['bracket'] == '巅峰千强'
     assert doc['windowEnd'] == '2026-11-13'
-    assert doc['minN'] == 200 and doc['minPickRate'] == 0.03
+    assert doc['minN'] == 50 and doc['minPickRate'] == 0.0
+    assert doc['period'] == 'week'
     assert len(doc['pairs']) == 1
     assert set(doc['heroes']) == {'英雄甲', '英雄乙'}
 

@@ -13,7 +13,7 @@
 
 用法：
     python scripts/build_camp_counters.py \
-        --raw "D:/Projects/KPLBPagentRL/data/processed/camp_hero_relations_ui.jsonl"
+        --raw "data/raw/camp_hero_relations_ui.jsonl"
 """
 from __future__ import annotations
 

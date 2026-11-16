@@ -81,6 +81,19 @@ def camp_games(camp_details_dir, db_path=None):
             'opponent': str(override.get('opponent') or '') or None,
             'ownWin': own_win,
         })
+    # 分边页的对手名与战队分析保持同一口径（只改返回值，不改覆盖层）。
+    if db_path:
+        try:
+            import opponent_identity
+            identity = opponent_identity.resolve(db_path, Path(camp_details_dir))
+            for game in games:
+                name = identity['bySeq'].get(game['id'])
+                if name:
+                    game['opponent'] = name
+                elif game.get('opponent') in identity['aliases']:
+                    game['opponent'] = identity['aliases'][game['opponent']]
+        except Exception:  # noqa: BLE001 - 解析失败保留教练手填的队名
+            pass
     return games
 
 
@@ -180,9 +193,20 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         except OSError:
             return 0
 
+    # v8：逐局快照现在带战队分析解析出的队名，旧 pickle 缓存必须作废。
     def snapshot_key():
-        return ('identity-raw-v7', source_stamp(db_path), source_stamp(matches_dir),
+        return ('identity-raw-v8', source_stamp(db_path), source_stamp(matches_dir),
                 source_stamp(imports_dir), source_stamp(results_db))
+
+    def invalidate_workspace_cache():
+        """战队改名/合并后：分析快照、结果缓存与队名解析缓存一起失效。"""
+        repository_cache['value'] = None
+        result_cache.clear()
+        try:
+            import opponent_identity
+            opponent_identity.clear_cache()
+        except ImportError:
+            pass
 
     def cached(key, builder):
         now = time.monotonic()
@@ -1264,6 +1288,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 first_seen=payload.get('firstSeen'), status=payload.get('status') or 'active')
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, 'id': saved['id']}
 
     @router.post('/workspace/teams/merge')
@@ -1275,12 +1300,16 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             raise HTTPException(400, '合并参数无效')
         # merge_team 内部同时归档工作区源队、改挂选手并写覆盖层。
         team_clusters.merge_team(db_path, source, target)
+        invalidate_workspace_cache()
         return {'ok': True, 'from': source, 'into': target}
 
     @router.post('/workspace/teams/reconcile')
     def wb_reconcile_teams(dry_run: bool = False):
         """一次性对账历史覆盖层与工作区主数据；默认只报告，dry_run=false 时写入。"""
-        return team_clusters.reconcile_workspace(db_path, dry_run=dry_run)
+        result = team_clusters.reconcile_workspace(db_path, dry_run=dry_run)
+        if not dry_run:
+            invalidate_workspace_cache()
+        return result
 
     @router.get('/workspace/players')
     def wb_players(team: str = ''):
@@ -1742,9 +1771,11 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         payload = await request.json()
         items = payload.get('items') if isinstance(payload, dict) else None
         try:
-            return team_clusters.rename_many(db_path, items)
+            result = team_clusters.rename_many(db_path, items)
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
+        return result
 
     @router.post('/teams/rename')
     async def rename_team(request: Request):
@@ -1758,6 +1789,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                                          coach=payload.get('coach'))
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, 'id': key}
 
     @router.post('/teams/merge')
@@ -1768,6 +1800,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         if not source or not target or source == target:
             raise HTTPException(400, '合并来源和目标无效')
         team_clusters.merge_team(db_path, source, target)
+        invalidate_workspace_cache()
         return {'ok': True, 'from': source, 'into': target}
 
     return router

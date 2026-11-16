@@ -669,6 +669,8 @@ def test_bp_facts_new_fields_and_lineup(facts_dir):
     (facts_dir / 'kpl_combos.json').write_text(json.dumps(NEW_FACTS, ensure_ascii=False),
                                                encoding='utf-8')
     facts = bp_facts.for_match(detail_for(OWN_SHUFFLED))
+    # 不再输出标签式「阵容短板 / 可补英雄」：没有样本的能力覆盖不作为结论。
+    assert 'structure' not in facts
     kpl = facts['kpl']
     assert kpl['lineupSeen'] is True
     assert kpl['lineup']['n'] == 2 and kpl['lineup']['wins'] == 1
@@ -759,3 +761,151 @@ def test_build_bp_facts_detects_local_and_legacy(tmp_path):
     legacy_facts = module.build_kpl_facts(legacy_path, 2024, 1)
     assert legacy_facts['source'] == 'kpl' and legacy_facts['pairs']
     assert 'lineups' not in legacy_facts          # 旧格式不产出整阵容
+
+
+# ---------------------------------------------------------------------------
+# 7. 四人组合 + KPL 跨阵营克制矩阵
+# ---------------------------------------------------------------------------
+
+def test_build_combos_quads_counted_and_deduped():
+    games = [
+        make_game(PICKS_1, PICKS_2, 1, date='2026-03-01', team1='队A', battle_id='g1'),
+        make_game(PICKS_1, PICKS_2, 2, date='2026-04-01', team1='队B', battle_id='g2'),
+    ]
+    combos = kpl_bp.build_combos(games, since_year=2024, min_games=2)
+    quad = next(row for row in combos['quads'] if set(row['heroes']) == set(PICKS_1[:4]))
+    assert quad['size'] == 4
+    assert quad['n'] == 2 and quad['wins'] == 1 and quad['wr'] == 50.0
+    assert quad['lastDate'] == '2026-04-01'
+    combos_low = kpl_bp.build_combos(games, since_year=2024, min_games=3)
+    assert all(row['n'] >= 3 for row in combos_low['quads'])
+    assert 'quads' in kpl_bp.build_facts(games, since_year=2024, min_games=2)
+
+
+def test_build_counters_directional_matrix():
+    games = [
+        make_game(['关羽', '妲己'], ['吕布', '貂蝉'], 1, date='2026-03-01',
+                  team1='队A', battle_id='g1'),
+        make_game(['关羽', '妲己'], ['吕布', '貂蝉'], 2, date='2026-04-01',
+                  team1='队B', battle_id='g2'),
+    ]
+    doc = kpl_bp.build_counters(games, since_year=2024, min_n=1)
+    assert doc['schema'] == 'bp-kpl-counters-v1'
+    assert doc['games'] == 2
+    assert doc['windowEnd'] == '2026-04-01'
+    by_pair = {(row['a'], row['b']): row for row in doc['pairs']}
+    assert by_pair[('关羽', '吕布')]['n'] == 2
+    assert by_pair[('关羽', '吕布')]['wins'] == 1          # 第一局关羽赢
+    assert by_pair[('吕布', '关羽')]['wins'] == 1          # 第二局吕布赢（有向各自记）
+    assert by_pair[('关羽', '吕布')]['lastDate'] == '2026-04-01'
+    assert by_pair[('吕布', '关羽')]['teams'][0]['team'] == '队B'
+    assert kpl_bp.build_counters(games, since_year=2024, min_n=5)['pairs'] == []
+
+
+def test_bp_facts_lane_evidence_tiers(facts_dir):
+    """50–199 局只作初步观察；n≥200 且 CI 不跨 0 才判优势/劣势。"""
+    def write_lane(n, wr, low_pick=False):
+        (facts_dir / 'lane_matchups.json').write_text(json.dumps({
+            'schema': 'bp-lane-matchups-v1', 'source': 'ladder', 'bracket': '巅峰千强',
+            'windowDays': 56, 'period': 'week', 'windowEnd': '2026-11-13',
+            'minN': 50, 'minPickRate': 0,
+            'pairs': [{'a': '关羽', 'b': '吕布', 'n': n, 'wr': wr, 'expected': 50.0,
+                       'excess': round(wr - 50.0, 1), 'aRank': 50.0, 'bRank': 50.0,
+                       'aPick': 0.5 if low_pick else 10.0,
+                       'bPick': 0.5 if low_pick else 10.0,
+                       'lowPick': low_pick}],
+            'heroes': {'关羽': {'wr': 50.0, 'pick': 10.0},
+                       '吕布': {'wr': 50.0, 'pick': 10.0}},
+        }, ensure_ascii=False), encoding='utf-8')
+        bp_facts._cache.clear()
+
+    detail = {'ownCamp': 'blue',
+              'players': [
+                  {'camp': 'blue', 'position': '对抗路', 'hero': '关羽'},
+                  {'camp': 'blue', 'position': '中路', 'hero': '妲己'},
+                  {'camp': 'red', 'position': '对抗路', 'hero': '吕布'},
+                  {'camp': 'red', 'position': '中路', 'hero': '貂蝉'}],
+              'draft': {'picks': {'left': [{'name': '关羽'}, {'name': '妲己'}],
+                                  'right': [{'name': '吕布'}, {'name': '貂蝉'}]},
+                        'bans': {'left': [], 'right': []}}}
+
+    write_lane(100, 60.0)
+    lane = next(row for row in bp_facts.for_match(detail)['ladder']['lanes']
+                if row['lane'] == '对抗路')
+    assert lane['state'] == 'preliminary'
+    assert lane['reliability'] == 'preliminary'
+    assert lane['realisedFinal'] is None
+
+    write_lane(250, 60.0)
+    lane = next(row for row in bp_facts.for_match(detail)['ladder']['lanes']
+                if row['lane'] == '对抗路')
+    assert lane['state'] == 'ahead'
+    assert lane['reliability'] == 'medium'
+    assert lane['excessCI'][0] > 0
+
+    # 低登场率：即使 n≥200 也只作初步观察，不判优势/劣势
+    write_lane(250, 60.0, low_pick=True)
+    lane = next(row for row in bp_facts.for_match(detail)['ladder']['lanes']
+                if row['lane'] == '对抗路')
+    assert lane['state'] == 'preliminary'
+    assert lane['reliability'] == 'preliminary'
+    assert lane['lowPick'] is True
+
+    assert bp_facts._lane_reliability(49, -1, 1) == 'insufficient'
+    assert bp_facts._lane_reliability(50, -1, 1) == 'preliminary'
+    assert bp_facts._lane_reliability(199, -1, 1) == 'preliminary'
+    assert bp_facts._lane_reliability(200, -1, 1) == 'medium'
+    assert bp_facts._lane_reliability(3000, 0.5, 2.0) == 'high'
+
+
+def test_bp_facts_counters_block(facts_dir):
+    """克制命中：KPL 有向对位与营地指数两源分开，门槛判定落在 bp_facts。"""
+    (facts_dir / 'kpl_counters.json').write_text(json.dumps({
+        'schema': 'bp-kpl-counters-v1', 'source': 'kpl-official', 'sinceYear': 2024,
+        'games': 100, 'minN': 5, 'windowStart': '2024-01-05', 'windowEnd': '2026-11-10',
+        'pairs': [
+            {'a': '关羽', 'b': '吕布', 'n': 20, 'wins': 14, 'wr': 70.0, 'year': 2026,
+             'lastDate': '2026-11-01', 'teams': [{'team': '广州TTG', 'n': 4, 'wins': 3}]},
+            {'a': '吕布', 'b': '关羽', 'n': 20, 'wins': 6, 'wr': 30.0, 'year': 2026,
+             'lastDate': '2026-11-01', 'teams': []},
+            {'a': '妲己', 'b': '貂蝉', 'n': 6, 'wins': 4, 'wr': 66.7, 'year': 2025,
+             'lastDate': '2025-07-01', 'teams': []},
+        ],
+    }, ensure_ascii=False), encoding='utf-8')
+    (facts_dir / 'camp_counters.json').write_text(json.dumps({
+        'schema': 'bp-camp-counters-v1', 'source': '王者营地 App 英雄关系',
+        'capturedAt': '2026-11-08',
+        'heroes': {'钟馗': {'counters': [{'hero': '貂蝉', 'index': 5.3}],
+                            'counteredBy': [{'hero': '张良', 'index': 3.1}],
+                            'duo': [], 'trio': []}},
+    }, ensure_ascii=False), encoding='utf-8')
+    detail = {'ownCamp': 'blue',
+              'players': [
+                  {'camp': 'blue', 'position': '对抗路', 'hero': '关羽'},
+                  {'camp': 'blue', 'position': '中路', 'hero': '妲己'},
+                  {'camp': 'blue', 'position': '游走', 'hero': '钟馗'},
+                  {'camp': 'red', 'position': '对抗路', 'hero': '吕布'},
+                  {'camp': 'red', 'position': '中路', 'hero': '貂蝉'},
+                  {'camp': 'red', 'position': '游走', 'hero': '张良'}],
+              'draft': {'picks': {'left': [{'name': '关羽'}, {'name': '妲己'}, {'name': '钟馗'}],
+                                  'right': [{'name': '吕布'}, {'name': '貂蝉'}, {'name': '张良'}]},
+                        'bans': {'left': [], 'right': []}}}
+    counters = bp_facts.for_match(detail)['counters']
+    assert counters['schema'] == 'bp-counter-facts-v1'
+    assert counters['camp']['capturedAt'] == '2026-11-08'
+    assert counters['kpl']['pairs'] == 3
+    lane = next(row for row in counters['lanes'] if row['lane'] == '对抗路')
+    assert lane['kpl']['n'] == 20 and lane['kplHit'] is True      # 20 局 70% 达标
+    assert lane['campCounter'] is None and lane['campCountered'] is None
+    mid = next(row for row in counters['lanes'] if row['lane'] == '中路')
+    assert mid['kplHit'] is False                                 # 6 局 < 10 局门槛
+    assert mid['kpl']['wr'] == 66.7                               # 数据照样带出，只是不标命中
+    # 重点交叉：钟馗(游走) × 貂蝉(中路，非同路) → 营地克制 5.3 达标
+    notable = next(item for item in counters['notable']
+                   if item['mine'] == '钟馗' and item['foe'] == '貂蝉')
+    assert notable['verdict'] == '我方克制' and notable['campHit'] is True
+    assert notable['camp'] == 5.3 and notable['kpl'] is None
+    # 游走同路对位：钟馗 counteredBy 张良（营地 3.1）→ 被克命中标在 lane 行上
+    lane_s = next(row for row in counters['lanes'] if row['lane'] == '游走')
+    assert lane_s['mine'] == '钟馗' and lane_s['foe'] == '张良'
+    assert lane_s['campCountered'] == 3.1 and lane_s['campCounteredHit'] is True

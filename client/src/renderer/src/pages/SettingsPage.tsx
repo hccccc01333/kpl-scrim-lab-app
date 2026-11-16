@@ -66,7 +66,7 @@ export function SettingsPage() {
         subtitle="客户端只读展示工作台的数据；采集、导入、校对和身份维护仍在工作台完成。"
         meta={[
           `工作台 ${live?.version ? `v${live.version}` : '未连接'}`,
-          settings.theme === 'light' ? '纸本' : '比赛房',
+          settings.theme === 'light' ? '浅色' : '深色',
           settings.density === 'comfortable' ? '舒适密度' : '紧凑密度',
           `界面 ${Math.round((settings.zoom ?? 1.15) * 100)}%`
         ].map((text) => <span key={text}>{text}</span>)}
@@ -104,10 +104,10 @@ export function SettingsPage() {
         <section className="card settings-card">
           <div className="card-head"><div><h2 className="card-title">外观</h2><div className="card-sub">偏好会在下次打开时保留。</div></div></div>
           <div className="settings-row">
-            <div className="settings-row-copy"><b>主题</b><small>纸本适合长时间读数据；比赛房适合视频和大屏复盘。</small></div>
+            <div className="settings-row-copy"><b>主题</b><small>浅色适合日间分析；深色适合低光环境和视频复盘。</small></div>
             <div className="segmented">
-              <button type="button" className={settings.theme === 'light' ? 'is-active' : ''} onClick={() => void update({ theme: 'light' })}>纸本</button>
-              <button type="button" className={settings.theme === 'dark' ? 'is-active' : ''} onClick={() => void update({ theme: 'dark' })}>比赛房</button>
+              <button type="button" className={settings.theme === 'light' ? 'is-active' : ''} aria-pressed={settings.theme === 'light'} onClick={() => void update({ theme: 'light' })}>浅色</button>
+              <button type="button" className={settings.theme === 'dark' ? 'is-active' : ''} aria-pressed={settings.theme === 'dark'} onClick={() => void update({ theme: 'dark' })}>深色</button>
             </div>
           </div>
           <div className="settings-row">

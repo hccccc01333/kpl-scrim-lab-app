@@ -870,6 +870,78 @@
   font-weight: 500;
 }
 
+.roster-foot {
+  display: grid;
+  gap: 6px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 62%, transparent);
+}
+
+.roster-rotation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 7px;
+  font-size: 9.5px;
+}
+
+.roster-rotation > small {
+  color: var(--quiet);
+}
+
+.roster-rotation a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.roster-rotation a:hover {
+  color: var(--text);
+}
+
+.roster-rotation a em {
+  margin-left: 2px;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-style: normal;
+}
+
+.roster-rotation .quiet {
+  color: var(--quiet);
+}
+
+.roster-mix {
+  margin-left: auto;
+  color: var(--quiet);
+}
+
+.roster-lane-stats {
+  display: grid;
+  gap: 2px;
+}
+
+.roster-lane-stats > span {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 9.5px;
+}
+
+.roster-lane-stats small {
+  color: var(--quiet);
+}
+
+.roster-lane-stats b {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.roster-lane-stats em {
+  color: var(--muted);
+  font-style: normal;
+}
+
 .duo-list,
 .day-list,
 .partner-list,
@@ -1617,143 +1689,6 @@
 .compare-trend-head span {
   color: var(--quiet);
   font-size: 9.5px;
-}
-
-.lane-strength-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.lane-strength-card {
-  display: grid;
-  gap: 7px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--paper);
-}
-
-.lane-strength-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.lane-strength-head b {
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.lane-strength-head span {
-  color: var(--quiet);
-  font-family: var(--mono);
-  font-size: 9px;
-}
-
-.lane-strength-card .versus-row,
-.lane-strength-card .versus-head {
-  grid-template-columns: 40px 40px minmax(0, 1fr) 40px;
-  gap: 5px;
-}
-
-.lane-player-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.lane-player-card {
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--paper);
-}
-
-.lane-player-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--line);
-}
-
-.lane-player-head b {
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.lane-player-head span {
-  color: var(--quiet);
-  font-size: 9px;
-}
-
-.lane-player-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-}
-
-.lane-player-row > span:not(.portrait) {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-  flex: 1;
-}
-
-.lane-player-row b {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.lane-player-row small {
-  color: var(--quiet);
-  font-size: 9px;
-}
-
-.lane-player-row strong {
-  color: var(--md-own);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-}
-
-.multi-lane-list {
-  display: grid;
-  gap: 2px;
-}
-
-.multi-lane-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) 48px;
-  gap: 8px;
-  padding: 6px 3px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 56%, transparent);
-  font-size: 10px;
-}
-
-.multi-lane-row b {
-  color: var(--text);
-}
-
-.multi-lane-row span {
-  color: var(--muted);
-}
-
-.multi-lane-row span:last-child {
-  color: var(--quiet);
-  text-align: right;
 }
 
 /* ── 战队 ───────────────────────────────────────────────────────── */
@@ -3496,8 +3431,6 @@
 
 @media (max-width: 1200px) {
   .roster-grid,
-  .lane-strength-grid,
-  .lane-player-grid,
   .lane-pool-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -3522,8 +3455,6 @@
   }
 
   .roster-grid,
-  .lane-strength-grid,
-  .lane-player-grid,
   .lane-pool-grid,
   .style-axis-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));

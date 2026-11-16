@@ -26,10 +26,16 @@ from urllib.parse import quote, urlencode
 import match_facts
 
 PERIOD_KINDS = ('today', 'week', 'month', 'custom')
+EXTRA_PERIOD_KINDS = ('recent', 'days')
 PERIOD_LABELS = {'today': '今日', 'week': '本周', 'month': '本月', 'custom': '自定义'}
-CUR_WORDS = {'today': '今日', 'week': '本周', 'month': '本月', 'custom': '本期'}
-PREV_WORDS = {'today': '昨天', 'week': '上周同期', 'month': '上月同期', 'custom': '上一周期'}
-PREV_SHORT = {'today': '昨天', 'week': '上周', 'month': '上月', 'custom': '上期'}
+CUR_WORDS = {'today': '今日', 'week': '本周', 'month': '本月', 'custom': '本期',
+             'recent': '最近这批', 'days': '最近'}
+PREV_WORDS = {'today': '昨天', 'week': '上周同期', 'month': '上月同期', 'custom': '上一周期',
+              'recent': '前几场', 'days': '前一批'}
+PREV_SHORT = {'today': '昨天', 'week': '上周', 'month': '上月', 'custom': '上期',
+              'recent': '前几场', 'days': '前一批'}
+RECENT_MAX = 20           # 「最近 N 场」N 上限
+DAYS_MAX = 30             # 「最近 D 天」D 上限
 
 MIN_SAMPLE = 3            # 比较类结论的最小样本（docs/period_brief.md §2.1）
 COMPARABLE_EPS = 0.5      # 小于这个变化视为「基本持平」
@@ -38,7 +44,7 @@ LEAD_AT10 = 1000          # 十分钟经济领先阈值（与 analysis_economy.S
 DEFAULT_SOURCE = 'db,bundle'
 RANK_MIN_PEERS = 5        # 同期对手少于这个数就不给排名（避免 2/3 这种假精确）
 RANK_TIERS = ((75.0, 'lead', '领先'), (25.0, 'mid', '中等'), (0.0, 'behind', '落后'))
-WATCH_LIMIT = 30          # 复盘区每个筛选字段最多给 30 局（前端横向滚动；不再固定 3 局）
+WATCH_LIMIT = 50          # 复盘区每个筛选字段最多给 50 局（前端横向滚动；不再固定 3 局）
 WATCH_NUM_LIMIT = 4       # 复盘卡最多给 4 个数字
 
 KIND_ORDER = {
@@ -118,6 +124,118 @@ def parse_period(kind='week', *, today=None, date_from=None, date_to=None):
             # 周/月按相同进度截断；今日与自定义本身就是等长区间。
             'sameProgress': kind in ('week', 'month'),
         },
+    }
+
+
+def _period_cur_word(window):
+    """本期口播词：本周/本月/最近这批/最近…（窗口自带优先）。"""
+    window = window or {}
+    return window.get('curWord') or CUR_WORDS.get(window.get('kind'), '本期')
+
+
+def _period_prev_word(window):
+    window = window or {}
+    return window.get('prevWord') or PREV_WORDS.get(window.get('kind'), '上一周期')
+
+
+def _period_title_word(window):
+    window = window or {}
+    return window.get('titleWord') or _period_cur_word(window)
+
+
+def _extra_window(facts, kind, *, today, opponent=None, recent_n=5, days=3):
+    """「最近 N 场 / 最近 D 天」窗口：需要事实表才能知道最新一批在哪。
+
+    返回 ``(window, cur, prev)``；一条有日期的回放都没有时返回 ``None``。
+    """
+    all_games = _collect_games(facts, '0001-01-01', '9999-12-31', opponent)
+    if not all_games:
+        return None
+    if kind == 'recent':
+        n = max(1, min(RECENT_MAX, int(recent_n)))
+        cur = all_games[-n:]
+        prev = all_games[max(0, len(all_games) - 2 * n):len(all_games) - n]
+        start = date.fromisoformat(cur[0]['date'])
+        end = date.fromisoformat(cur[-1]['date'])
+        prev_end = start - timedelta(days=1)
+        prev_start = prev_end - timedelta(days=max(0, (end - start).days))
+        label = f'最近 {n} 场'
+        prev_label = f'前 {n} 场'
+        window = {
+            'kind': 'recent', 'label': label,
+            'from': cur[0]['date'], 'to': cur[-1]['date'],
+            'rangeLabel': _range_label(start, end), 'days': (end - start).days + 1,
+            'n': n,
+            'curWord': '最近这批', 'prevWord': prev_label, 'titleWord': label,
+            'prev': {
+                'label': prev_label, 'shortLabel': prev_label,
+                'from': (prev[0]['date'] if prev else prev_start.isoformat()),
+                'to': (prev[-1]['date'] if prev else prev_end.isoformat()),
+                'rangeLabel': (f"{prev[0]['date'][5:]} ~ {prev[-1]['date'][5:]}"
+                               if prev else _range_label(prev_start, prev_end)),
+                'days': (end - start).days + 1, 'sameProgress': False,
+            },
+        }
+        return window, cur, prev
+
+    d = max(1, min(DAYS_MAX, int(days)))
+    latest = date.fromisoformat(all_games[-1]['date'])
+    start = latest - timedelta(days=d - 1)
+    end = latest
+    start_iso, end_iso = start.isoformat(), end.isoformat()
+    cur = [item for item in all_games if start_iso <= item['date'] <= end_iso]
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=d - 1)
+    prev = [item for item in all_games
+            if prev_start.isoformat() <= item['date'] <= prev_end.isoformat()]
+    label = f'最近 {d} 天'
+    prev_label = f'前 {d} 天'
+    window = {
+        'kind': 'days', 'label': label,
+        'from': start_iso, 'to': end_iso,
+        'rangeLabel': _range_label(start, end), 'days': d,
+        'd': d,
+        'curWord': '最近', 'prevWord': prev_label, 'titleWord': label,
+        'prev': {
+            'label': prev_label, 'shortLabel': prev_label,
+            'from': prev_start.isoformat(),
+            'to': prev_end.isoformat(),
+            'rangeLabel': _range_label(prev_start, prev_end),
+            'days': d, 'sameProgress': False,
+        },
+    }
+    return window, cur, prev
+
+
+def _extra_empty_window(kind, *, today, recent_n=5, days=3):
+    """最近 N 场 / D 天一条对局都没有时的窗口（给空态用）。"""
+    if kind == 'recent':
+        n = max(1, min(RECENT_MAX, int(recent_n)))
+        label = f'最近 {n} 场'
+        return {
+            'kind': 'recent', 'label': label,
+            'from': today.isoformat(), 'to': today.isoformat(),
+            'rangeLabel': _range_label(today, today), 'days': 1, 'n': n,
+            'curWord': '最近这批', 'prevWord': f'前 {n} 场', 'titleWord': label,
+            'prev': {'label': f'前 {n} 场', 'shortLabel': f'前 {n} 场',
+                     'from': today.isoformat(), 'to': today.isoformat(),
+                     'rangeLabel': _range_label(today, today),
+                     'days': 1, 'sameProgress': False},
+        }
+    d = max(1, min(DAYS_MAX, int(days)))
+    start = today - timedelta(days=d - 1)
+    label = f'最近 {d} 天'
+    return {
+        'kind': 'days', 'label': label,
+        'from': start.isoformat(), 'to': today.isoformat(),
+        'rangeLabel': _range_label(start, today), 'days': d, 'd': d,
+        'curWord': '最近', 'prevWord': f'前 {d} 天', 'titleWord': label,
+        'prev': {'label': f'前 {d} 天', 'shortLabel': f'前 {d} 天',
+                 'from': (start - timedelta(days=d)).isoformat(),
+                 'to': (start - timedelta(days=1)).isoformat(),
+                 'rangeLabel': _range_label(start - timedelta(days=d),
+                                            start - timedelta(days=1)),
+                 'days': d, 'sameProgress': False},
     }
 
 
@@ -330,9 +448,9 @@ def _build_context(facts, window, cur, prev, *, opponent, source, validation,
         'cur_lineups': _lineups(facts, cur),
         'prev_lineups': _lineups(facts, prev),
         'window': window,
-        'cur_word': CUR_WORDS[window['kind']],
-        'prev_word': PREV_WORDS[window['kind']],
-        'prev_short': PREV_SHORT[window['kind']],
+        'cur_word': _period_cur_word(window),
+        'prev_word': _period_prev_word(window),
+        'prev_short': (window.get('prev') or {}).get('shortLabel') or _period_prev_word(window),
         'filters': {
             'from': window['from'], 'to': window['to'], 'opponent': opponent,
             'source': source, 'validation': validation,
@@ -1304,7 +1422,7 @@ def _watch_core(field, stats):
     return ''
 
 
-def _watch_sentence(stats, lost, longest, shortest, field='deficit'):
+def _watch_sentence(stats, lost, longest, shortest, field='deficit', result=None):
     """用这局自己的数字说一句「为什么值得看」，不写术语、不写免责。"""
     duration = stats['duration']
     minutes = int(duration) // 60 if isinstance(duration, (int, float)) and duration > 0 else 0
@@ -1317,7 +1435,13 @@ def _watch_sentence(stats, lost, longest, shortest, field='deficit'):
     else:
         pace = f'打了 {minutes} 分钟'
     core = _watch_core(field, stats)
-    tail = WATCH_TAIL.get(field) or ('后面没守住，先看后期' if lost else '可回看完整过程')
+    # 落后翻盘的局，复盘重点是「怎么翻回来」；被翻盘的局，重点是「优势怎么丢的」。
+    if field == 'deficit' and result == 'win':
+        tail = '最后翻回来了，先看中段怎么被拉开、后期怎么打回来'
+    elif field == 'deficit' and (stats.get('peak') or 0) >= WATCH_COMEBACK_MIN:
+        tail = '先看优势是怎么丢的'
+    else:
+        tail = WATCH_TAIL.get(field) or ('后面没守住，先看后期' if lost else '可回看完整过程')
     return f'{pace}，{core}，{tail}。' if core else f'{pace}，{tail}。'
 
 
@@ -1769,6 +1893,15 @@ def build_scrim_metrics(ctx, record, panel_only=()):
 
     metrics.extend(_dynamic_metrics(
         ctx, entries, prev_entries, at10_rows, prev_at10, has_prev, link, peers)[:2])
+    # 上期局数是本期的 2 倍以上时，「少赢 N 场」只是在比训练量；
+    # 战绩卡只保留上期战绩，不再给这个假差值（摘要句已改比胜率）。
+    if has_prev and record['decided'] and prev_record['decided']:
+        low, high = sorted((record['decided'], prev_record['decided']))
+        if high >= 2 * low:
+            record_metric = next((m for m in metrics if m['id'] == 'record'), None)
+            if record_metric:
+                record_metric['deltaText'] = ''
+                record_metric['tone'] = 'none'
     return metrics
 
 
@@ -1847,9 +1980,14 @@ WATCH_FIELDS = (
 # 卡片默认显示这四项；赛训组可以在页面上自己换（后端只给默认值）。
 WATCH_DEFAULT_DISPLAY = ('deficit', 'at10', 'deaths', 'duration')
 
+# 「最多落后」组只收落后 ≥1000 金币的局：-75 这类噪声不该占「最值得复盘」。
+WATCH_MIN_DEFICIT = 1000
+# 落后 3000 以上翻回来 / 领先 3000 以上被打回去，才在卡上标「翻盘 / 被翻盘」。
+WATCH_COMEBACK_MIN = 3000
+
 # 某个字段在这期一局都没有时给教练看的空态句。
 WATCH_EMPTY = {
-    'deficit': '本期没有落后的局。',
+    'deficit': '本期没有落后 1000 金币以上的局。',
     'deaths': '本期没有掉点的局。',
     'giveback': '本期没有被反超的局。',
     'fight': '本期没有打输团战的局。',
@@ -1860,6 +1998,93 @@ WATCH_EMPTY = {
     'gold': '本期没有结束时经济落后的局。',
     'damage': '本期还没有输出占比偏低的局。',
 }
+
+
+MOMENT_LIMIT = 3             # 复盘卡最多给的「关键时间点」数量
+
+
+def _watch_moments(item, stat, field):
+    """这局值得回看的关键时间点（0–3 个，按时间排序）。
+
+    只用回放事实：经济曲线的最低点 / 领先被反超、被对手拿到的关键龙、
+    被推塔、打输的团战、我方掉点。没有事实就不编，返回空数组。
+    """
+    game = item.get('game') or {}
+    own = [value for value in (game.get('ownDiff') or [])
+           if isinstance(value, (int, float))]
+    times = game.get('times') or []
+    own_num = match_facts.CAMP_CODE_REV.get(str(game.get('ownCamp') or ''))
+    camp_of = game.get('objToCamp') or {}
+
+    def make(seconds, label):
+        if not isinstance(seconds, (int, float)) or seconds <= 0:
+            return None
+        text = match_facts.clock(seconds)
+        if not text or text == '—':
+            return None
+        return {'t': round(float(seconds), 1), 'clock': text, 'label': label}
+
+    candidates = []
+    if own and times:
+        low_index = min(range(len(own)), key=lambda index: own[index])
+        if own[low_index] < 0 and low_index < len(times):
+            candidates.append(('deficit', make(
+                times[low_index], f'最多落后 {abs(own[low_index]):,.0f}')))
+        peak_index = max(range(len(own)), key=lambda index: own[index])
+        if own[peak_index] >= LEAD_AT10:
+            for index in range(peak_index + 1, len(own)):
+                if own[index] < 0:
+                    candidates.append(('giveback', make(
+                        times[index] if index < len(times) else None, '领先被反超')))
+                    break
+        at10 = stat.get('at10')
+        if at10 is not None:
+            candidates.append(('at10', make(600, f'10 分钟 {_k(at10)}')))
+
+    dragon_moment = tower_moment = None
+    for event in game.get('events') or []:
+        goal = match_facts.format_objective(event, game.get('ownCamp'))
+        if goal.get('camp') != 'enemy':
+            continue
+        if (dragon_moment is None and goal.get('kind') == 'resource'
+                and goal.get('name') in DRAGON_NAMES):
+            dragon_moment = make(event.get('timeSec'), f"丢{goal.get('name')}")
+        elif (tower_moment is None and goal.get('kind') == 'building'
+              and goal.get('name') == '防御塔'):
+            tower_moment = make(event.get('timeSec'), '被推塔')
+    candidates.append(('dragon', dragon_moment))
+    candidates.append(('tower', tower_moment))
+
+    for fight in match_facts.fight_events(game):
+        if fight.get('won') is False and (fight.get('killDiff') or 0) <= -2:
+            candidates.append(('fight', make(
+                fight.get('startSec'),
+                f"团战 {fight.get('ownKills')}:{fight.get('enemyKills')}")))
+            break
+
+    death_times = sorted(
+        float(event.get('timeSec')) for event in (game.get('deaths') or [])
+        if isinstance(event.get('timeSec'), (int, float)) and own_num
+        and camp_of.get(str(event.get('objID') or '')) == own_num)
+    if death_times:
+        nth = min(len(death_times), 3)
+        candidates.append(('deaths', make(
+            death_times[nth - 1], f'第 {nth} 次掉点')))
+
+    # 当前字段的时间点优先，再按时间顺序补;# 同一时刻同一句只留一个。
+    candidates = [row for row in candidates if row[1]]
+    candidates.sort(key=lambda row: (0 if row[0] == field else 1, row[1]['t']))
+    picked, seen = [], set()
+    for _kind, moment in candidates:
+        key = (moment['t'], moment['label'])
+        if key in seen:
+            continue
+        seen.add(key)
+        picked.append(moment)
+        if len(picked) >= MOMENT_LIMIT:
+            break
+    picked.sort(key=lambda moment: moment['t'])
+    return picked
 
 
 def _watch_value(field, stats):
@@ -1873,7 +2098,7 @@ def _watch_value(field, stats):
         low = stats.get('low')
         if low is None:
             return None
-        return {'severity': -low if low < 0 else None,
+        return {'severity': -low if low <= -WATCH_MIN_DEFICIT else None,
                 'label': '最多落后', 'value': _k(low)}
     if field == 'deaths':
         deaths = stats.get('deaths') or 0
@@ -1967,15 +2192,25 @@ def _watch_numbers(field, stats):
 
 
 def _watch_card(item, stat, field, longest, shortest):
-    lost = item.get('result') == 'loss'
+    result = item.get('result') if item.get('result') in ('win', 'loss') else None
+    lost = result == 'loss'
+    low, peak = stat.get('low'), stat.get('peak')
+    result_tag = ''
+    if result == 'win' and isinstance(low, (int, float)) and low <= -WATCH_COMEBACK_MIN:
+        result_tag = '翻盘'
+    elif result == 'loss' and isinstance(peak, (int, float)) and peak >= WATCH_COMEBACK_MIN:
+        result_tag = '被翻盘'
     return {
         'id': f"watch_{item['seq']}_{field}",
         'kind': 'loss' if lost else 'win',
+        'resultTag': result_tag,
         'field': field,
         'title': item['label'],
-        'conclusion': _watch_sentence(stat, lost, longest, shortest, field),
+        'start': str(item.get('start') or ''),
+        'conclusion': _watch_sentence(stat, lost, longest, shortest, field, result=result),
         'numbers': _watch_numbers(field, stat),
         'values': _watch_values(stat),
+        'moments': _watch_moments(item, stat, field),
         'rosterText': stat['roster'],
         'rosterPlayers': stat['rosterPlayers'],
         'n': 1,
@@ -2028,8 +2263,8 @@ def build_watch_groups(ctx):
 
 def _sentence(window, record, prev_record, entries=()):
     """首页只报本期训练赛的基本盘，不复述胜率、不写「暂不可比」。"""
-    cur_word = CUR_WORDS[window['kind']]
-    prev_word = PREV_WORDS[window['kind']]
+    cur_word = _period_cur_word(window)
+    prev_word = _period_prev_word(window)
     days = sorted({str(item.get('date') or '')[:10] for item in entries
                    if item.get('date')})
     when = ''
@@ -2043,7 +2278,28 @@ def _sentence(window, record, prev_record, entries=()):
         base += f"、{record['unknown']} 局未判定"
     sentence = f"{base}{when}。"
     tone = 'none'
-    if prev_record['decided']:
+    if prev_record['decided'] and record['decided']:
+        cur_n, prev_n = record['decided'], prev_record['decided']
+        # 两组局数差一个数量级时，比「赢了几局」只是比训练量：
+        # 9 局 4 胜 vs 81 局 54 胜会写成「少赢 50 局」。这时改比胜率百分点，
+        # 并把上期局数写出来，让教练知道基数不同。
+        if max(cur_n, prev_n) >= 2 * min(cur_n, prev_n):
+            cur_rate, prev_rate = record.get('winRate'), prev_record.get('winRate')
+            if cur_rate is not None and prev_rate is not None:
+                diff = round(float(cur_rate) - float(prev_rate), 1)
+                if diff > 0:
+                    sentence = sentence[:-1] + (
+                        f'，胜率比{prev_word}高 {diff:g} 个百分点，上期共 {prev_n} 局。')
+                    tone = 'up'
+                elif diff < 0:
+                    sentence = sentence[:-1] + (
+                        f'，胜率比{prev_word}低 {abs(diff):g} 个百分点，上期共 {prev_n} 局。')
+                    tone = 'down'
+                else:
+                    sentence = sentence[:-1] + (
+                        f'，胜率与{prev_word}持平，上期共 {prev_n} 局。')
+                    tone = 'flat'
+                return sentence, tone
         diff = record['wins'] - prev_record['wins']
         if diff > 0:
             sentence = sentence[:-1] + f'，比{prev_word}多赢 {diff} 局。'
@@ -2060,7 +2316,7 @@ def _coverage(entries, record, window, panel_only=()):
     panel_games = len(entries) + len(panel_only)
     opponents = len({item['opponentId'] for item in entries if item['opponentId']})
     if not entries:
-        note = f"{CUR_WORDS[window['kind']]}还没有对局"
+        note = f"{_period_cur_word(window)}还没有对局"
     else:
         note = f"本期 {len(entries)} 局有比赛过程"
         if panel_only:
@@ -2188,39 +2444,82 @@ def _empty_payload(window, *, reason, fallback, today, schedule_rows, team_names
 def build_briefing(facts, *, period_kind='week', date_from=None, date_to=None,
                    opponent=None, source=DEFAULT_SOURCE, validation='0',
                    today=None, schedule_rows=None, team_names=None,
-                   classic_metrics=False):
-    """生成首页周期简报（只读）。custom 参数非法时抛 ValueError。"""
+                   classic_metrics=False, recent_n=5, days=3):
+    """生成首页周期简报（只读）。custom / recent / days 参数非法时抛 ValueError。"""
     facts = facts if isinstance(facts, dict) else {}
     today = today or date.today()
-    window = parse_period(period_kind, today=today, date_from=date_from, date_to=date_to)
     source_text = _normalize_source(source)
     validation_text = '1' if str(validation).strip() in ('1', 'true') else '0'
 
-    cur = _collect_games(facts, window['from'], window['to'], opponent)
-    # 只有终局面板的局也算本期有数据：它们参与战绩，但不参与时间轴指标。
-    cur_panel_only = _collect_panel_only(
-        facts, window['from'], window['to'], opponent,
-        exclude={item['seq'] for item in cur})
+    extra = False
+    prev = None
+    kind = str(period_kind or 'week').strip().lower()
+    if kind in EXTRA_PERIOD_KINDS:
+        extra = True
+        picked = _extra_window(facts, kind, today=today, opponent=opponent,
+                               recent_n=recent_n, days=days)
+        if picked is None:
+            window = _extra_empty_window(kind, today=today,
+                                         recent_n=recent_n, days=days)
+            cur, prev = [], []
+        else:
+            window, cur, prev = picked
+        # 「最近 N 场」只数有回放的局；「最近 D 天」把只有面板的局并进战绩。
+        cur_panel_only = []
+        if kind == 'days':
+            cur_panel_only = _collect_panel_only(
+                facts, window['from'], window['to'], opponent,
+                exclude={item['seq'] for item in cur})
+    else:
+        window = parse_period(period_kind, today=today,
+                              date_from=date_from, date_to=date_to)
+        cur = _collect_games(facts, window['from'], window['to'], opponent)
+        # 只有终局面板的局也算本期有数据：它们参与战绩，但不参与时间轴指标。
+        cur_panel_only = _collect_panel_only(
+            facts, window['from'], window['to'], opponent,
+            exclude={item['seq'] for item in cur})
+
     if not cur and not cur_panel_only:
         if not (facts.get('panels') or {}):
             reason = '还没有对局数据：先在「采集」里导入营地终局面板或官方回放。'
         else:
-            reason = f"{CUR_WORDS[window['kind']]}还没有对局（{window['rangeLabel']}）。"
-        prev_empty = _collect_games(facts, window['prev']['from'], window['prev']['to'], opponent)
-        prev_empty_panel = _collect_panel_only(
-            facts, window['prev']['from'], window['prev']['to'], opponent,
-            exclude={item['seq'] for item in prev_empty})
+            reason = f"{_period_cur_word(window)}还没有对局（{window['rangeLabel']}）。"
+        if prev is None:
+            prev_empty = _collect_games(
+                facts, window['prev']['from'], window['prev']['to'], opponent)
+            prev_empty_panel = _collect_panel_only(
+                facts, window['prev']['from'], window['prev']['to'], opponent,
+                exclude={item['seq'] for item in prev_empty})
+        else:
+            prev_empty, prev_empty_panel = prev, []
         return _empty_payload(
             window, reason=reason, fallback=fallback_hint(facts, window['from']),
             today=today, schedule_rows=schedule_rows, team_names=team_names,
             prev_record=_record(prev_empty + prev_empty_panel))
 
-    prev = _collect_games(facts, window['prev']['from'], window['prev']['to'], opponent)
-    prev_panel_only = _collect_panel_only(
-        facts, window['prev']['from'], window['prev']['to'], opponent,
-        exclude={item['seq'] for item in prev})
+    if prev is None:
+        prev = _collect_games(facts, window['prev']['from'], window['prev']['to'], opponent)
+        prev_panel_only = _collect_panel_only(
+            facts, window['prev']['from'], window['prev']['to'], opponent,
+            exclude={item['seq'] for item in prev})
+    else:
+        prev_panel_only = []
+        if kind == 'days':
+            prev_panel_only = _collect_panel_only(
+                facts, window['prev']['from'], window['prev']['to'], opponent,
+                exclude={item['seq'] for item in prev})
     record = _record(cur + cur_panel_only)
     prev_record = _record(prev + prev_panel_only)
+    # 首页主卡用「最近 12 局」的胜负序列做 form guide；只放有胜负的局，按日期从旧到新。
+    form_games = sorted(
+        [item for item in (cur + cur_panel_only) if item.get('result') in ('win', 'loss')],
+        key=lambda item: (str(item.get('date') or ''), str(item.get('seq') or '')))
+    record['form'] = [
+        {'result': item['result'],
+         'date': str(item.get('date') or '')[:10],
+         'opponent': str(item.get('opponentName') or '')}
+        for item in form_games[-12:]
+    ]
     coverage = _coverage(cur, record, window, cur_panel_only)
     sentence, tone = _sentence(window, record, prev_record, cur + cur_panel_only)
 
@@ -2266,6 +2565,7 @@ def build_briefing(facts, *, period_kind='week', date_from=None, date_to=None,
             'wins': record['wins'], 'losses': record['losses'],
             'decided': record['decided'], 'unknown': record['unknown'],
             'winRate': record['winRate'],
+            'form': list(record.get('form') or []),
             'prev': dict(prev_record),
         },
         'summary': {'sentence': sentence, 'tone': tone, 'note': note},
@@ -2285,7 +2585,7 @@ def build_briefing(facts, *, period_kind='week', date_from=None, date_to=None,
         'notes': notes,
     }
     if not classic_metrics:
-        period_word = CUR_WORDS[window['kind']]
+        period_word = _period_title_word(window)
         payload['findingsTitle'] = f'{period_word}重点发现'
         payload['findingsCountText'] = f'{len(findings)} 条'
         payload['findingsEmpty'] = f'{period_word}没有需要单独展开的变化。'
@@ -2306,3 +2606,46 @@ def _normalize_source(source):
         if value and value.isalnum() and value not in parts:
             parts.append(value)
     return ','.join(parts) if parts else DEFAULT_SOURCE
+
+
+def bucket_key(iso_date, unit="week"):
+    """把 YYYY-MM-DD 映射成自然周（返回该 ISO 周的周一）/ 自然月的分桶键。
+
+    unit='week' → 'W2026-W45'；unit='month' → 'M2026-11'。
+    其他 unit 返回原日期本身（day 口径）。非法日期返回 None，不猜。
+    """
+    if not iso_date:
+        return None
+    try:
+        day = date.fromisoformat(str(iso_date)[:10])
+    except (TypeError, ValueError):
+        return None
+    if unit == "month":
+        return f"M{day.year}-{day.month:02d}"
+    if unit == "week":
+        monday = day - timedelta(days=day.weekday())
+        iso_year, iso_week, _ = day.isocalendar()
+        return f"W{iso_year}-W{iso_week:02d}-{monday.isoformat()}"
+    return day.isoformat()
+
+
+def bucket_rows(rows, date_field, unit="week"):
+    """把带日期字段的行按自然周/月分桶。
+
+    返回 [{key, start, end, rows}] 按时间升序；无日期/非法日期的行进
+    'undated' 桶并放在最后——绝不丢弃样本，也绝不猜日期。
+    """
+    buckets = defaultdict(list)
+    for row in rows or []:
+        key = bucket_key((row or {}).get(date_field), unit)
+        buckets[key if key else "undated"].append(row)
+    out = []
+    for key, items in buckets.items():
+        if key == "undated":
+            out.append({"key": "undated", "start": None, "end": None, "rows": items})
+            continue
+        dates = sorted(date.fromisoformat(str(r.get(date_field))[:10]) for r in items)
+        out.append({"key": key, "start": dates[0].isoformat(),
+                    "end": dates[-1].isoformat(), "rows": items})
+    out.sort(key=lambda b: (b["key"] == "undated", b["key"] or ""))
+    return out

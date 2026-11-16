@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useConnection, useSettings } from '../lib/app-context'
 import { isLoopback } from '../lib/api'
@@ -11,42 +11,39 @@ import { AppMetaProvider } from '../lib/meta-context'
 import { CommandPalette } from './CommandPalette'
 import { ToastHost } from './ToastHost'
 import { Icon } from './Icon'
-import { OverviewPage } from '../pages/OverviewPage'
-import { MatchesPage } from '../pages/MatchesPage'
-import { MatchPage } from '../pages/MatchPage'
-import { CrossPage } from '../pages/CrossPage'
-import { QueryPage } from '../pages/QueryPage'
-import { FeaturedPage } from '../pages/FeaturedPage'
-import { RecordsPage } from '../pages/RecordsPage'
-import { VersionsPage } from '../pages/VersionsPage'
-import { PlayersPage } from '../pages/PlayersPage'
-import { PlayerPage } from '../pages/PlayerPage'
-import { PlayerArchivePage } from '../pages/PlayerArchivePage'
-import { PlayerComparePage } from '../pages/PlayerComparePage'
-import { LaneBoardPage } from '../pages/LaneBoardPage'
-import { TeamsPage } from '../pages/TeamsPage'
-import { TeamPage } from '../pages/TeamPage'
-import { TeamStylePage } from '../pages/TeamStylePage'
-import { TeamRosterPage } from '../pages/TeamRosterPage'
-import { TeamTrainingPage } from '../pages/TeamTrainingPage'
-import { HeroesPage } from '../pages/HeroesPage'
-import { HeroDetailPage } from '../pages/HeroDetailPage'
-import { HeroComparePage } from '../pages/HeroComparePage'
-import { CombosPage } from '../pages/CombosPage'
-import { BpPage } from '../pages/BpPage'
-import { TeamBpPage } from '../pages/TeamBpPage'
-import { CoachPage } from '../pages/CoachPage'
-import { TrainingPage } from '../pages/TrainingPage'
-import { TrainingEffectPage } from '../pages/TrainingEffectPage'
-import { TrainingSessionPage } from '../pages/TrainingSessionPage'
-import { WeeklyReportPage } from '../pages/WeeklyReportPage'
-import { ReportsPage } from '../pages/ReportsPage'
-import { ReportDetailPage } from '../pages/ReportDetailPage'
-import { SettingsPage } from '../pages/SettingsPage'
-import { NotFoundPage } from '../pages/NotFoundPage'
-import { CollectPage } from '../pages/CollectPage'
-import { ReviewPage } from '../pages/ReviewPage'
-import { StudioPage } from '../pages/StudioPage'
+import { RouteErrorBoundary } from './RouteErrorBoundary'
+import { SkeletonPage } from './ui'
+const OverviewPage = lazy(() => import('../pages/OverviewPage').then((module) => ({ default: module.OverviewPage })))
+const MatchesPage = lazy(() => import('../pages/MatchesPage').then((module) => ({ default: module.MatchesPage })))
+const MatchPage = lazy(() => import('../pages/MatchPage').then((module) => ({ default: module.MatchPage })))
+const CrossPage = lazy(() => import('../pages/CrossPage').then((module) => ({ default: module.CrossPage })))
+const FeaturedPage = lazy(() => import('../pages/FeaturedPage').then((module) => ({ default: module.FeaturedPage })))
+const VersionsPage = lazy(() => import('../pages/VersionsPage').then((module) => ({ default: module.VersionsPage })))
+const PlayersPage = lazy(() => import('../pages/PlayersPage').then((module) => ({ default: module.PlayersPage })))
+const PlayerPage = lazy(() => import('../pages/PlayerPage').then((module) => ({ default: module.PlayerPage })))
+const PlayerArchivePage = lazy(() => import('../pages/PlayerArchivePage').then((module) => ({ default: module.PlayerArchivePage })))
+const PlayerComparePage = lazy(() => import('../pages/PlayerComparePage').then((module) => ({ default: module.PlayerComparePage })))
+const TeamsPage = lazy(() => import('../pages/TeamsPage').then((module) => ({ default: module.TeamsPage })))
+const TeamPage = lazy(() => import('../pages/TeamPage').then((module) => ({ default: module.TeamPage })))
+const TeamTrainingPage = lazy(() => import('../pages/TeamTrainingPage').then((module) => ({ default: module.TeamTrainingPage })))
+const HeroesPage = lazy(() => import('../pages/HeroesPage').then((module) => ({ default: module.HeroesPage })))
+const HeroDetailPage = lazy(() => import('../pages/HeroDetailPage').then((module) => ({ default: module.HeroDetailPage })))
+const HeroComparePage = lazy(() => import('../pages/HeroComparePage').then((module) => ({ default: module.HeroComparePage })))
+const CombosPage = lazy(() => import('../pages/CombosPage').then((module) => ({ default: module.CombosPage })))
+const BpPage = lazy(() => import('../pages/BpPage').then((module) => ({ default: module.BpPage })))
+const TeamBpPage = lazy(() => import('../pages/TeamBpPage').then((module) => ({ default: module.TeamBpPage })))
+const CoachPage = lazy(() => import('../pages/CoachPage').then((module) => ({ default: module.CoachPage })))
+const TrainingPage = lazy(() => import('../pages/TrainingPage').then((module) => ({ default: module.TrainingPage })))
+const TrainingEffectPage = lazy(() => import('../pages/TrainingEffectPage').then((module) => ({ default: module.TrainingEffectPage })))
+const TrainingSessionPage = lazy(() => import('../pages/TrainingSessionPage').then((module) => ({ default: module.TrainingSessionPage })))
+const WeeklyReportPage = lazy(() => import('../pages/WeeklyReportPage').then((module) => ({ default: module.WeeklyReportPage })))
+const ReportsPage = lazy(() => import('../pages/ReportsPage').then((module) => ({ default: module.ReportsPage })))
+const ReportDetailPage = lazy(() => import('../pages/ReportDetailPage').then((module) => ({ default: module.ReportDetailPage })))
+const SettingsPage = lazy(() => import('../pages/SettingsPage').then((module) => ({ default: module.SettingsPage })))
+const NotFoundPage = lazy(() => import('../pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })))
+const CollectPage = lazy(() => import('../pages/CollectPage').then((module) => ({ default: module.CollectPage })))
+const ReviewPage = lazy(() => import('../pages/ReviewPage').then((module) => ({ default: module.ReviewPage })))
+const StudioPage = lazy(() => import('../pages/StudioPage').then((module) => ({ default: module.StudioPage })))
 
 const navItems = [
   { to: '/', label: '概览', icon: 'overview' },
@@ -67,17 +64,12 @@ const pageTitles: Record<string, string> = {
   '/collect': '营地采集',
   '/matches': '比赛',
   '/matches/cross': '跨局分析',
-  '/matches/query': '智能找局',
   '/matches/featured': '精选对局',
-  '/matches/records': '训练纪录',
   '/matches/versions': '版本对比',
   '/players': '选手',
   '/players/archive': '选手档案',
-  '/players/lanes': '选手与位置',
   '/players/compare': '选手对比',
   '/teams': '战队',
-  '/teams/style': '战队风格',
-  '/teams/roster': '战队阵容',
   '/teams/training': '战队训练',
   '/heroes': '英雄',
   '/heroes/compare': '英雄对比',
@@ -220,6 +212,7 @@ export function AppShell() {
 
   return (
     <AppMetaProvider value={meta}>
+      <a className="client-skip" href="#workspace-content" onClick={(event) => { event.preventDefault(); workspaceRef.current?.focus() }}>跳至主要内容</a>
       <div className="app-shell">
         <header className="titlebar">
           <a className="titlebar-brand" href="#/" onClick={(event) => { event.preventDefault(); window.location.hash = '#/' }}>
@@ -227,8 +220,14 @@ export function AppShell() {
             <span className="brand-copy">
               <strong>赛训台</strong>
               <small>ANALYST CLIENT</small>
+              {meta.demo ? <span className="client-demo-badge">演示数据</span> : null}
             </span>
           </a>
+          <nav className="client-top-nav" aria-label="主导航">
+            {navItems.map((item) => (
+              <NavLink key={item.to} to={item.to} end={item.to === '/'} className={({ isActive }) => `client-top-link${isActive ? ' is-active' : ''}`}>{item.label}</NavLink>
+            ))}
+          </nav>
           <span className="titlebar-divider" />
           <button
             type="button"
@@ -240,7 +239,7 @@ export function AppShell() {
             {offline ? '工作台离线' : `工作台${liveHealth?.version ? ` · v${liveHealth.version}` : ''}`}
             {meta.demo ? ' · DEMO' : ''}
           </button>
-          <button type="button" className="titlebar-search" onClick={() => setPaletteOpen(true)}>
+          <button type="button" className="titlebar-search" onClick={() => setPaletteOpen(true)} aria-label="搜索比赛、选手或命令">
             <Icon name="search" />
             <span>搜索比赛、选手或命令</span>
             <kbd>CTRL K</kbd>
@@ -252,42 +251,22 @@ export function AppShell() {
             <button type="button" className="icon-btn" onClick={refresh} title="刷新数据" aria-label="刷新数据">
               <Icon name="refresh" />
             </button>
-            <button type="button" className="icon-btn" onClick={toggleTheme} title={settings.theme === 'light' ? '切换到比赛房' : '切换到纸本'} aria-label="切换主题">
+            <button type="button" className="icon-btn" onClick={toggleTheme} title={settings.theme === 'light' ? '切换深色主题' : '切换浅色主题'} aria-label="切换主题">
               <Icon name={settings.theme === 'light' ? 'moon' : 'sun'} />
             </button>
             <button type="button" className="icon-btn" onClick={toggleDensity} title={`界面密度：${settings.density === 'comfortable' ? '舒适' : '紧凑'}`} aria-label="切换界面密度">
               <Icon name="density" />
             </button>
+            <button type="button" className="icon-btn" onClick={() => void openWorkbench()} title="打开工作台" aria-label="打开工作台"><Icon name="external" /></button>
             <NavLink to="/settings" className="icon-btn" title="设置" aria-label="设置">
               <Icon name="settings" />
             </NavLink>
           </div>
         </header>
 
-        <aside className="rail">
-          <nav className="rail-nav" aria-label="主导航">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === '/'}
-                className={({ isActive }) => `rail-link${isActive ? ' is-active' : ''}`}
-              >
-                <Icon name={item.icon} />
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
-          </nav>
-          <div className="rail-foot">
-            <button type="button" className="rail-link rail-workbench" onClick={() => void openWorkbench()} title="打开工作台">
-              <Icon name="external" />
-              <span>工作台</span>
-            </button>
-            <span className="rail-version">LOCAL · v{liveHealth?.version || '—'}</span>
-          </div>
-        </aside>
 
-        <main className="workspace" ref={workspaceRef}>
+
+        <main id="workspace-content" className="workspace" ref={workspaceRef} tabIndex={-1}>
           {offline ? (
             <div className="offline-bar">
               <i />
@@ -296,6 +275,8 @@ export function AppShell() {
             </div>
           ) : null}
           <ModuleTabs />
+          <RouteErrorBoundary resetKey={location.pathname}>
+          <Suspense fallback={<SkeletonPage cards={2} />}>
           <Routes>
             <Route path="/" element={<OverviewPage />} />
             <Route path="/studio" element={<StudioPage />} />
@@ -303,19 +284,17 @@ export function AppShell() {
             <Route path="/collect/:id" element={<ReviewPage />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/matches/cross" element={<CrossPage />} />
-            <Route path="/matches/query" element={<QueryPage />} />
+            <Route path="/matches/query" element={<Navigate to="/matches" replace />} />
             <Route path="/matches/featured" element={<FeaturedPage />} />
-            <Route path="/matches/records" element={<RecordsPage />} />
+            <Route path="/matches/records" element={<Navigate to="/matches/featured" replace />} />
             <Route path="/matches/versions" element={<VersionsPage />} />
             <Route path="/matches/:key" element={<MatchPage />} />
             <Route path="/players" element={<PlayersPage />} />
             <Route path="/players/archive" element={<PlayerArchivePage />} />
-            <Route path="/players/lanes" element={<LaneBoardPage />} />
+            <Route path="/players/lanes" element={<Navigate to="/players" replace />} />
             <Route path="/players/compare" element={<PlayerComparePage />} />
             <Route path="/players/:key" element={<PlayerPage />} />
             <Route path="/teams" element={<TeamsPage />} />
-            <Route path="/teams/style" element={<TeamStylePage />} />
-            <Route path="/teams/roster" element={<TeamRosterPage />} />
             <Route path="/teams/training" element={<TeamTrainingPage />} />
             <Route path="/teams/:id" element={<TeamPage />} />
             <Route path="/heroes" element={<HeroesPage />} />
@@ -335,6 +314,8 @@ export function AppShell() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          </Suspense>
+          </RouteErrorBoundary>
         </main>
       </div>
 

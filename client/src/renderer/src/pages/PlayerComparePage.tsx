@@ -93,7 +93,6 @@ export function PlayerComparePage() {
         eyebrow="PLAYER COMPARE"
         title="选手对比"
         subtitle="谁更强、强在哪、能不能互换。原始值并列，分位只在各自分路内计算。"
-        actions={<Link className="btn" to="/players/lanes">选手与位置</Link>}
       />
 
       <div className="board-toolbar">

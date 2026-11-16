@@ -9,6 +9,7 @@ import { MatchRow } from '../components/MatchRow'
 import { ErrorState, Ledger, PageHeader, Portrait, SkeletonPage } from '../components/ui'
 import { Icon } from '../components/Icon'
 import { Block, BlockBoard } from '../blocks/BlockBoard'
+import heroArt from '../../../../../v3/public/media/celadon-valley.webp'
 
 function averageCurve(process: Overview['process']): { points: [number, number][]; games: number; note: string } {
   const games = (process.matches || []).filter((game: ProcessMatch) => (game.points || []).length)
@@ -63,6 +64,7 @@ export function OverviewPage() {
   const dates = matches.map((match) => match.date).filter(Boolean)
   const range = dateRange(dates)
   const latest = matches[0]
+  const form = matches.filter((match) => ['win', 'loss'].includes(match.result || '')).slice(0, 12).reverse()
   const curve = averageCurve(process)
   const topHeroes = (summary.topHeroes || []).slice(0, 6)
   const latestMeta = latest ? [latest.date, latest.session || latest.mode, fmtDuration(latest.duration)].filter(Boolean) : []
@@ -71,8 +73,25 @@ export function OverviewPage() {
   const [latestHome, latestAway] = scoreText(latest?.scores, latest?.ownCamp).split(' : ')
 
   return (
-    <div className="page">
+    <div className="page celadon-client-home">
+      <section className="celadon-cover" aria-labelledby="client-overview-title">
+        <img className="celadon-art" src={heroArt} alt="" width={1756} height={896} fetchPriority="high" decoding="async" />
+        <div className="celadon-cover-copy">
+          <h1 id="client-overview-title">赛训简报</h1>
+          <p className="celadon-date">{range || '当前数据范围'}</p>
+          <div className="celadon-record">
+            <span><b>{number(wins)}</b><small>胜</small></span>
+            <span><b>{number(losses)}</b><small>负</small></span>
+            <span className="celadon-game-count"><b>{number(summary.matches)}</b><small>局</small></span>
+          </div>
+          <p className="celadon-cover-note">{teamName}的 {number(summary.matches)} 局记录，{number(curve.games)} 局有可用的经济时间轴。</p>
+          <Link className="btn btn-primary celadon-collect" to="/collect"><Icon name="ingest" />采集对局</Link>
+        </div>
+        {form.length ? <div className="celadon-results"><span>近 {form.length} 局</span><div>{form.map((match) => <Link key={match.key} to={`/matches/${encodeURIComponent(match.key)}`} className={`celadon-result ${match.result === 'win' ? 'is-win' : 'is-loss'}`} title={`${match.date} · ${match.opponent || '对手未标注'} · ${match.result === 'win' ? '胜利' : '失利'}`} aria-label={`${match.date}对阵${match.opponent || '未标注对手'}，${match.result === 'win' ? '胜利' : '失利'}，查看复盘`}>{match.result === 'win' ? '胜' : '负'}</Link>)}</div></div> : null}
+      </section>
+
       <PageHeader
+        headingLevel={2}
         eyebrow={`OVERVIEW · ${range}`}
         title={<>{record}{margin ? <em>{margin}</em> : null}</>}
         subtitle={`${range} · ${number(summary.matches)} 局 · 营地终局面板 + 回放时间轴`}

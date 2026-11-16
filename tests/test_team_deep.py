@@ -116,7 +116,10 @@ def test_team_deep_returns_contract_structure(tmp_path):
     assert deep['team']['matches'] == 3
     assert deep['own']['matches'] == 3
     assert set(deep['games'][0]) >= {'seq', 'start', 'day', 'duration', 'map', 'win',
-                                     'opponentWin', 'ownSide', 'sides', 'style'}
+                                     'opponentWin', 'ownSide', 'sides', 'style', 'matchKey'}
+    # 没有 channel 通道文件时 matchKey 为空字符串（前端渲染纯文本证据），
+    # 有通道文件时按 campBp.gameSeq 映射到复盘 key。
+    assert deep['games'][0]['matchKey'] == ''
     # 逐局按时间倒序
     assert [game['day'] for game in deep['games']] == ['11-04', '11-03', '11-02']
     latest = deep['games'][0]
@@ -125,6 +128,23 @@ def test_team_deep_returns_contract_structure(tmp_path):
     assert latest['duration'] == 900
     assert latest['map'] == '王者峡谷'
     assert set(latest['sides']) == {'own', 'enemy'}
+
+
+def test_seq_match_key_index_maps_camp_seq_to_channel_key(tmp_path):
+    matches = tmp_path / 'matches'
+    matches.mkdir()
+    payload = {'match': {'key': 'channel-abc', 'campBp': {'gameSeq': '1793794402'}}}
+    (matches / 'channel-abc.json').write_text(json.dumps(payload, ensure_ascii=False),
+                                              encoding='utf-8')
+    index = team_clusters.seq_match_key_index(matches)
+    assert index['1793794402'] == 'channel-abc'
+    # 目录未变时走缓存；目录变化（新文件）后重新扫描
+    (matches / 'channel-def.json').write_text(
+        json.dumps({'match': {'key': 'channel-def', 'campBp': {'gameSeq': '1793794403'}}},
+                   ensure_ascii=False), encoding='utf-8')
+    index = team_clusters.seq_match_key_index(matches)
+    assert index['1793794402'] == 'channel-abc'
+    assert index['1793794403'] == 'channel-def'
 
 
 def test_team_deep_players_picks_bans_and_gold_share(tmp_path):
@@ -158,10 +178,10 @@ def test_team_deep_players_picks_bans_and_gold_share(tmp_path):
     own_picks = {pick['name']: pick for pick in game['sides']['own']['picks']}
     assert own_picks['公孙离']['lane'] == '发育路'
     assert own_picks['公孙离']['archetype'] == '游射'
-    # bans 来自营地的终局禁选名单，附类型
+    # bans 来自营地的终局禁选名单，附类型（盾山在工作簿 2026-11 归保护辅）
     enemy_bans = {ban['name']: ban for ban in game['sides']['enemy']['bans']}
     assert enemy_bans['盾山']['lane'] == '游走'
-    assert enemy_bans['盾山']['archetype'] == '开团辅'
+    assert enemy_bans['盾山']['archetype'] == '保护辅'
 
 
 def test_team_deep_game_style_matches_style_windows(tmp_path):
@@ -332,6 +352,43 @@ def test_kpl_section_reports_source_and_empty_when_no_hits(tmp_path):
     assert kpl['lineup']['oppGames'] == 0
 
 
+def test_lineups_block_follows_studied_team_perspective(tmp_path):
+    camp = tmp_path / 'camp_details'
+    three_games(camp)
+    db = tmp_path / 'db.sqlite3'
+    team_id = team_id_of(camp, db)
+    deep = team_clusters.team_deep(camp, db, team_id)
+
+    lu = deep['lineups']
+    assert set(lu) >= {'nEff', 'nIncomplete', 'nUnknown', 'signature', 'unknownRow',
+                       'pairs', 'triads', 'functions', 'fiveHero', 'side',
+                       'resources', 'matchups'}
+    # 被研究战队（enemy 侧）3 局 2 胜，全部可识别
+    assert lu['nEff'] == 3 and lu['nUnknown'] == 0 and lu['nIncomplete'] == 0
+    sig = lu['signature'][0]
+    assert sig['sig'] == ['战边', '刺野', '工具人', '游射', '开团辅']
+    assert sig['games'] == 3 and sig['wins'] == 2 and sig['losses'] == 1
+    assert sig['wr'] == 66.7 and sig['wilson'] is not None
+    assert sig['heroSets'] == [['吕布', '镜', '西施', '马可波罗', '牛魔']]
+    # 双人组合（边野）与五人阵容下钻，英雄按固定分路序
+    bian_ye = next(r for r in lu['pairs'] if r['family'] == '边野')
+    assert bian_ye['pair'] == ['战边', '刺野'] and bian_ye['games'] == 3
+    assert lu['fiveHero'][0]['heroes'] == ['吕布', '镜', '西施', '马可波罗', '牛魔']
+    # 红蓝方按被研究战队阵营：本队 blue → 对手全 red
+    assert lu['side']['red']['games'] == 3 and lu['side']['red']['wins'] == 2
+    assert lu['side']['blue']['games'] == 0
+    # P2 资源对照：3 局面板齐全，对面经济合计 37500 − 本队 37700 → 场均 −200
+    res = lu['resources']
+    assert len(res) == 1 and res[0]['games'] == 3 and res[0]['panelGames'] == 3
+    assert res[0]['towers'] == 5.0 and res[0]['goldDiff'] == -200.0
+    assert res[0]['wr'] == 66.7
+    # P2 对抗矩阵：单格 3 局 2 胜，基准即自身 → diff 0，初步观察
+    cells = lu['matchups']['cells']
+    assert len(cells) == 1 and cells[0]['n'] == 3
+    assert cells[0]['wr'] == 66.7 and cells[0]['baselineDiff'] == 0.0
+    assert cells[0]['evidenceLevel'] == 'initial'
+
+
 def test_taxonomy_and_meta_follow_contract(tmp_path):
     camp = tmp_path / 'camp_details'
     three_games(camp)
@@ -341,8 +398,8 @@ def test_taxonomy_and_meta_follow_contract(tmp_path):
 
     taxonomy = deep['taxonomy']
     assert taxonomy['lanes'] == ['对抗路', '打野', '中路', '发育路', '游走']
-    assert taxonomy['groups']['对抗路'] == ['战边', '坦边', '带线边']
-    assert taxonomy['other'] == '其他'
+    assert taxonomy['groups']['对抗路'] == ['战边', '坦边']
+    assert taxonomy['other'] == '待分类'
 
     meta = deep['meta']
     assert meta['source'] == '营地终局面板'
@@ -350,3 +407,45 @@ def test_taxonomy_and_meta_follow_contract(tmp_path):
     assert meta['thresholds'] == {'sample': 3, 'quadrantShare': 0.5}
     assert meta['warnings'] == []
     assert len(meta['limits']) == 3
+
+
+def test_bp_order_reads_draft_sequence_and_keeps_unlabeled_lanes():
+    # 事件故意乱序：分析必须按 order 还原首 ban / 首抢，而不是按文件顺序。
+    games = []
+    for index in range(6):
+        enemy_first = '瑶' if index < 4 else '未收录英雄'
+        events = [
+            {'order': 20, 'action': 'pick', 'side': 'enemy', 'hero': enemy_first},
+            {'order': 2, 'action': 'ban', 'side': 'enemy', 'hero': '墨子'},
+            {'order': 1, 'action': 'ban', 'side': 'own', 'hero': '敖隐'},
+            {'order': 3, 'action': 'ban', 'side': 'own', 'hero': '金蝉'},
+            {'order': 4, 'action': 'ban', 'side': 'own', 'hero': '盾山'},
+            {'order': 5, 'action': 'ban', 'side': 'own', 'hero': '大乔'},
+            {'order': 6, 'action': 'ban', 'side': 'own', 'hero': '哪吒'},
+        ]
+        games.append({
+            'draft': {'known': True, 'events': events, 'orderAssumed': index >= 4},
+            'sides': {
+                'own': {'bans': [{'name': hero} for hero in ('敖隐', '金蝉', '盾山', '大乔', '哪吒')]},
+                'enemy': {'picks': [{'name': '瑶', 'lane': '游走'}]},
+            },
+            'opponentWin': index < 3,
+        })
+
+    block = team_clusters._bp_order_block(games)
+
+    assert block['knownGames'] == 6
+    assert block['verifiedGames'] == 4
+    assert block['assumedGames'] == 2
+    assert block['banOutcomeGames'] == 6
+    assert block['banOutcomeBaseRate'] == pytest.approx(50.0)
+    assert block['firstBans']['own'][0]['key'] == '敖隐'
+    assert block['firstBans']['enemy'][0]['key'] == '墨子'
+    # 第 2 手不是“全局第二 ban”，而是我方自己的第 2 个 ban。
+    assert block['banSlots']['own'][1]['slot'] == 2
+    assert block['banSlots']['own'][1]['heroes'][0] == {'key': '金蝉', 'games': 6, 'share': 100.0}
+    # 4 局分路已知，2 局未标注；未标注单列，不并进游走，也不让百分比漏算。
+    ao = next(row for row in block['banResponse'] if row['hero'] == '敖隐')
+    assert ao['games'] == 6
+    assert {row['key']: row['games'] for row in ao['lanes']} == {'游走': 4, '未标注': 2}
+    assert sum(row['share'] for row in ao['lanes']) == pytest.approx(100.0, abs=0.1)

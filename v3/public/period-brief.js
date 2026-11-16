@@ -10,18 +10,28 @@
  *     的「还没有对局数据」弹窗（首页不整页换向导）。
  */
 
-const PERIOD_TEXT = { today: '今日', week: '本周', month: '本月', custom: '自定义' };
-const PERIOD_ORDER = ['today', 'week', 'month', 'custom'];
+const PERIOD_TEXT = { today: '今日', week: '本周', month: '本月', recent: '近5场', days: '近3天', custom: '自定义' };
+const PERIOD_ORDER = ['today', 'week', 'month', 'recent', 'days', 'custom'];
 const DEFAULT_KIND = 'week';
+/* 最近 N 场 / 最近 N 天：前端固定档位，后端按 n/days 解析窗口。 */
+const RECENT_N = 5;
+const RECENT_DAYS = 3;
+const PERIOD_REQUEST = { recent: { n: RECENT_N }, days: { days: RECENT_DAYS } };
 const METRIC_LIMIT = 8;
 const EVIDENCE_LIMIT = 2;
 const NUMBER_LIMIT = 4;
 /* 复盘卡「显示字段」：最多 4 项、最少 1 项；用户选择只存在控制器里。 */
 const DISPLAY_LIMIT = 4;
 const DISPLAY_KEY = 'pbr-watch-display-fields';
-/* 关注（收藏）：只存 {id: ISO}，具体时间展示由渲染层格式化。 */
+/* 关注（收藏）：值升级为 {at, reviewedAt, note}；旧 ISO 字符串读入自动迁移。 */
 const FINDING_FAV_KEY = 'pbr-finding-favs';
 const WATCH_FAV_KEY = 'pbr-watch-favs';
+const IGNORED_KEY = 'pbr-finding-ignored';
+const VIEW_KEY = 'pbr-view-mode';
+const VIEW_MODES = ['all', 'fav', 'todo'];
+const VIEW_TEXT = { all: '全部', fav: '关注', todo: '待复盘' };
+/* 数字单位弱化：只把常见后缀拆成 <small class="pbr-unit">。 */
+const UNIT_TOKEN = /(\s*)(金币|次|波|条|座|%|局|分钟|秒)$/;
 const KIND_TEXT = {
   advantage: '领先兑现', fight: '团战', objective: '资源', comp: '阵容',
   roster: '分路', coverage: '数据', training: '训练安排',
@@ -62,14 +72,24 @@ function readableError(error) {
   return message && message.length <= 160 ? message : '这一期的简报暂时读不到，稍后点重试即可。';
 }
 
-/* ── 顶部：kicker + 周期切换 + 标题 + 副标题 ─────────────────────── */
+/* ── 顶部：kicker + 周期切换 + 视图过滤 + 标题 + 副标题 ─────────── */
 function barHtml(view, ctx) {
   const { esc, icon } = ctx;
+  const mode = VIEW_MODES.includes(plain(view.viewMode)) ? plain(view.viewMode) : 'all';
+  /* 左侧放「正在查看」的筛选结果摘要，补掉以前右侧控件左边的大段空白。 */
+  const periodLabel = plain(view.data && view.data.period && view.data.period.label)
+    || PERIOD_TEXT[view.kind] || PERIOD_TEXT[DEFAULT_KIND];
+  const games = Number(view.data && view.data.coverage && view.data.coverage.games);
+  const gameText = Number.isFinite(games) && games > 0 ? ` · ${games} 局` : '';
+  const barContext = `${periodLabel} · ${VIEW_TEXT[mode]}${gameText}`;
   return `<div class="pbr-bar">
-    <span class="pbr-kicker">赛训周期简报</span>
+    <p class="pbr-bar-context"><span class="pbr-bar-context-label">正在查看</span><span class="pbr-bar-context-value">${esc(barContext)}</span></p>
     <div class="pbr-bar-actions">
       <div class="pbr-periods" role="group" aria-label="赛训周期">
         ${PERIOD_ORDER.map((key) => `<button type="button" class="pbr-period" data-pbr-period="${key}" aria-pressed="${String(view.kind === key)}">${PERIOD_TEXT[key]}</button>`).join('')}
+      </div>
+      <div class="pbr-views" role="group" aria-label="视角">
+        ${VIEW_MODES.map((key) => `<button type="button" class="pbr-view" data-pbr-view-mode="${key}" aria-pressed="${String(mode === key)}">${VIEW_TEXT[key]}</button>`).join('')}
       </div>
       <button type="button" class="control pbr-range" data-action="filter">${icon('filter')} 数据范围</button>
     </div>
@@ -92,10 +112,12 @@ function titleHtml(view, ctx) {
     : '';
   return `<div class="pbr-title">
     <div class="pbr-title-copy">
+      <span class="pbr-kicker">赛训周期简报</span>
       <h1>赛训总览</h1>
       <p class="pbr-sub">${esc(label)}赛训表现 · 对比${esc(prevLabel)}${scope ? `<span class="pbr-range-text">${esc(scope)}</span>` : ''}</p>
+      ${coverage ? `<p class="pbr-coverage-chip">${esc(coverage)}</p>` : ''}
     </div>
-    ${coverage ? `<p class="pbr-coverage-chip">${esc(coverage)}</p>` : ''}
+    ${ctx.art ? `<img class="pbr-celadon-art" src="${ctx.API_BASE || ''}/static/media/celadon-valley.webp" alt="" width="1756" height="896" fetchpriority="high" decoding="async">` : ''}
   </div>`;
 }
 
@@ -146,6 +168,35 @@ function meterHtml(metric, esc) {
     </span>`;
 }
 
+/* 战绩主卡：把「4 胜 5 负」拆成可上色的比分，文字仍保持完整可复制。 */
+function recordValueHtml(metric, esc) {
+  const text = plain(metric && metric.valueText);
+  const match = text.match(/^(\d+)\s*胜\s*(\d+)\s*负/);
+  if (!match) return valueWithUnitHtml(text, esc);
+  const rest = text.slice(match[0].length).replace(/^[、,，\s]+/, '');
+  return `<span class="pbr-score"><b class="is-win">${esc(match[1])}</b><small>胜</small><b class="is-loss">${esc(match[2])}</b><small>负</small></span>${rest
+    ? `<span class="pbr-score-rest">${esc(rest)}</span>` : ''}`;
+}
+
+/* 近 N 局 form guide：胜/负小胶囊，title 里带日期与对手。 */
+function formHtml(form, esc) {
+  const items = listOf(form)
+    .filter((item) => item && ['win', 'loss'].includes(plain(item.result)))
+    .slice(-12);
+  if (!items.length) return '';
+  const dots = items.map((item) => {
+    const result = plain(item.result);
+    const label = result === 'win' ? '胜' : '负';
+    const title = [plain(item.date).slice(5), label, plain(item.opponent)]
+      .filter(Boolean).join(' · ');
+    return `<span class="pbr-form-dot is-${result}" role="img" aria-label="${esc(title)}" title="${esc(title)}">${label}</span>`;
+  }).join('');
+  return `<div class="pbr-form" aria-label="最近对局">
+    <span class="pbr-form-label">近 ${items.length} 局</span>
+    <span class="pbr-form-dots">${dots}</span>
+  </div>`;
+}
+
 function metricsHtml(data, ctx) {
   const { esc } = ctx;
   const metrics = listOf(data.metrics)
@@ -169,6 +220,15 @@ function metricsHtml(data, ctx) {
   } else {
     compareNote = `对比${prevName}${prevRange ? `（${prevRange}）` : ''} · 同一口径计算`;
   }
+  /* 3/5、2/9 这种样本挂 -20pp 的红字，很容易被当成趋势；在区头统一提醒一次。 */
+  const games = Number(data.coverage && data.coverage.games);
+  const thinSample = (Number.isFinite(games) && games > 0 && games < 10)
+    || metrics.some((metric) => Number(metric.sample) < 5);
+  if (thinSample) {
+    compareNote += Number.isFinite(games) && games > 0
+      ? ` · 本期只有 ${games} 局，差值只作观察`
+      : ' · 部分指标样本偏少，差值只作观察';
+  }
 
   let leadCount = 0;
   const rows = metrics.map((metric) => {
@@ -180,8 +240,22 @@ function metricsHtml(data, ctx) {
     const sub = plain(metric.valueSub);
     const hasPrev = prevValue && prevValue !== '—' && prevValue !== '-';
     const showDelta = hasPrev && delta && !/暂无可比数据/.test(delta);
+    const isFeature = plain(metric.id) === 'record';
+    const valueHtml = isFeature
+      ? recordValueHtml(metric, esc)
+      : valueWithUnitHtml(metric.valueText, esc);
+    const form = isFeature ? formHtml(data.record && data.record.form, esc) : '';
     const tone = toneOf(metric.tone);
     const arrow = tone === 'up' ? '↑' : tone === 'down' ? '↓' : '';
+    /* 后端历史上把百分率写成「54/81（66.7%）」；卡片上不再用全角括号，
+       改成「54/81 · 66.7%」，和当前值的「2/5 40.0%」保持同一套标点。 */
+    const prevDisplay = prevValue.replace(/（/g, ' · ').replace(/）/g, '');
+    const flatDelta = !delta || tone === 'flat'
+      || /^[+＋−-]?0(?:\.0+)?(?:\s|$)/.test(delta);
+    /* 有箭头时不再重复 +/-：「↓ 25.0 个百分点」比「↓ -25.0 个百分点」干净。 */
+    const deltaText = flatDelta
+      ? '持平'
+      : `${arrow ? `${arrow} ` : ''}${esc(delta.replace(/^[+＋−-]\s*/, ''))}`;
     const rank = metric.rank && plain(metric.rank.text) ? metric.rank : null;
     if (rank && plain(rank.tier) === 'lead') leadCount += 1;
     /* 有排名的指标：大数字跟「领先/中等/落后」同色，扫一眼就知道这项是优势还是短板。 */
@@ -191,20 +265,24 @@ function metricsHtml(data, ctx) {
     const chip = rank ? rankHtml(rank, esc)
       : (!sub && coverage ? `<small class="pbr-metric-coverage">${esc(coverage)}</small>` : '');
     const prevLine = hasPrev
-      ? `<span class="pbr-metric-prev">上期 ${esc(prevValue)}${showDelta
-        ? ` <em class="pbr-metric-delta is-${tone}">${arrow}${esc(delta)}</em>` : ''}</span>`
+      ? `<span class="pbr-metric-prev">上期 ${esc(prevDisplay)}${showDelta
+        ? ` <em class="pbr-metric-delta is-${flatDelta ? 'flat' : tone}">${deltaText}</em>` : ''}</span>`
       : '';
-    const meter = meterHtml(metric, esc);
+    const meterRaw = meterHtml(metric, esc);
+    const meter = isFeature && meterRaw
+      ? `<span class="pbr-meter-label">胜率</span>${meterRaw}`
+      : meterRaw;
     const foot = meter || prevLine
       ? `<div class="pbr-metric-foot">${meter}${prevLine}</div>`
       : '';
-    return `<div class="pbr-metric" title="${esc(note)}">
+    return `<div class="pbr-metric" data-metric-id="${esc(plain(metric.id))}" title="${esc(note)}">
       <div class="pbr-metric-line">
         <span class="pbr-metric-label">${esc(label)}</span>
         ${chip}
-        <span class="pbr-metric-value${valueTier}">${esc(textOf(metric.valueText))}${sub
-          ? `<em class="pbr-metric-pct">（${esc(sub)}）</em>` : ''}</span>
+        <span class="pbr-metric-value${valueTier}">${valueHtml}${sub
+          ? `<em class="pbr-metric-pct">${valueWithUnitHtml(sub, esc)}</em>` : ''}</span>
       </div>
+      ${form}
       ${foot}
     </div>`;
   }).join('');
@@ -265,8 +343,20 @@ function statHtml(finding, numbers, esc) {
     const pct = ratioPct(first.value);
     if (pct !== null) {
       const label = plain(first.label) || '本期';
+      /* 比例型也必须有上期：3/5 和 4/5 同样要两行，不能因为「本期是比例」
+         就提前 return 成单行，导致一页里有的发现有上期、有的没有。 */
+      if (numbers.length >= 2) {
+        const previous = numbers[1];
+        const prevPct = ratioPct(previous.value);
+        if (prevPct !== null) {
+          return `<div class="pbr-stat is-compare is-ratio">
+          <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(label)}</span><b>${valueWithUnitHtml(first.value, esc)}</b><em>${Math.round(pct)}%</em><span class="pbr-stat-track"><i style="width:${pct.toFixed(1)}%"></i></span></span>
+          <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(previous.label) || '上期')}</span><b>${valueWithUnitHtml(previous.value, esc)}</b><em>${Math.round(prevPct)}%</em><span class="pbr-stat-track is-prev"><i style="width:${prevPct.toFixed(1)}%"></i></span></span>
+        </div>`;
+        }
+      }
       return `<div class="pbr-stat">
-        <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(label)}</span><b>${esc(textOf(first.value))}</b><em>${Math.round(pct)}%</em></span>
+        <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(label)}</span><b>${valueWithUnitHtml(first.value, esc)}</b><em>${Math.round(pct)}%</em></span>
         <span class="pbr-stat-track"><i style="width:${pct.toFixed(1)}%"></i></span>
       </div>`;
     }
@@ -276,53 +366,31 @@ function statHtml(finding, numbers, esc) {
       if (current !== null && previous !== null) {
         const max = Math.max(Math.abs(current), Math.abs(previous), 0.000001);
         return `<div class="pbr-stat is-compare">
-          <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(numbers[0].label) || '本期')}</span><b>${esc(textOf(numbers[0].value))}</b><span class="pbr-stat-track"><i style="width:${(Math.abs(current) / max * 100).toFixed(1)}%"></i></span></span>
-          <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(numbers[1].label) || '上期')}</span><b>${esc(textOf(numbers[1].value))}</b><span class="pbr-stat-track is-prev"><i style="width:${(Math.abs(previous) / max * 100).toFixed(1)}%"></i></span></span>
+          <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(numbers[0].label) || '本期')}</span><b>${valueWithUnitHtml(numbers[0].value, esc)}</b><span class="pbr-stat-track"><i style="width:${(Math.abs(current) / max * 100).toFixed(1)}%"></i></span></span>
+          <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(numbers[1].label) || '上期')}</span><b>${valueWithUnitHtml(numbers[1].value, esc)}</b><span class="pbr-stat-track is-prev"><i style="width:${(Math.abs(previous) / max * 100).toFixed(1)}%"></i></span></span>
         </div>`;
       }
     }
     /* 上期没有可比数据：只画本期这一行，不硬造一条 100% 的比例条。 */
     if (numberValue(first.value) !== null) {
       return `<div class="pbr-stat is-single">
-        <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(first.label) || '本期')}</span><b>${esc(textOf(first.value))}</b></span>
+        <span class="pbr-stat-line"><span class="pbr-stat-label">${esc(plain(first.label) || '本期')}</span><b>${valueWithUnitHtml(first.value, esc)}</b></span>
       </div>`;
     }
   }
   return '<div class="pbr-stat is-empty"></div>';
 }
 
-function rosterHtml(finding, esc) {
-  const players = listOf(finding.rosterPlayers)
-    .filter((player) => player && plain(player.name))
-    .slice(0, 5);
-  if (!players.length) {
-    const roster = plain(finding.rosterText);
-    return `<div class="pbr-roster">${roster
-      ? `<span class="pbr-roster-label">我方阵容</span><p class="pbr-finding-roster">${esc(roster)}</p>`
-      : ''}</div>`;
-  }
-  /* 头像点进英雄资料：教练看到「这把谁在打、这个英雄近期什么样」可以直接跳。 */
-  const items = players.map((player) => {
-    const name = plain(player.name);
-    const icon = plain(player.icon);
-    const face = icon
-      ? `<img src="${esc(icon)}" alt="" width="36" height="36" loading="lazy">`
-      : `<i>${esc(name.slice(0, 1))}</i>`;
-    return `<a class="pbr-roster-item" href="#hero/${encodeURIComponent(name)}" title="${esc(name)} · 打开英雄资料">
-      ${face}<small>${esc(name)}</small></a>`;
-  }).join('');
-  return `<div class="pbr-roster"><span class="pbr-roster-label">我方阵容</span>
-    <div class="pbr-roster-list">${items}</div></div>`;
-}
-
-/* 重点发现的证据压成一行：不带 note，只留「对局 + 查看」，两条并排。
-   note 放到 <a title> 里：教练 hover 就能看到这局发生了什么，不占一行的版面。 */
+/* 重点发现的证据压成一行：对局 + 这一局发生了什么 + 查看。
+   同一日期、同一对手的两局，label 往往完全相同；note（团战 0:4 / 资源 6:38）
+   才是区分它们的唯一信息，所以直接显示，不能只放在 hover 的 title 里。 */
 function evidenceInlineHtml(item, esc) {
   const game = plain(item && item.game);
   const label = plain(item && item.label) || game || '对局';
   const note = plain(item && item.note);
-  const tip = note ? ` title="${esc(`${label} ${note}`)}"` : '';
-  const body = `<span class="pbr-evidence-label">${esc(label)}</span>
+  const text = note ? `${label} · ${note}` : label;
+  const tip = note ? ` title="${esc(note)}"` : '';
+  const body = `<span class="pbr-evidence-label">${esc(text)}</span>
     <span class="pbr-evidence-open">查看对局 →</span>`;
   return `<li>${game
     ? `<a href="#match/${encodeURIComponent(game)}"${tip}>${body}</a>`
@@ -330,10 +398,16 @@ function evidenceInlineHtml(item, esc) {
 }
 
 function findingHead(finding, index, esc, options) {
-  const kind = KIND_TEXT[plain(finding.kind)] || '';
-  const kindClass = plain(finding.kind) === 'loss' ? 'pbr-tag is-loss' : 'pbr-tag';
+  const resultTag = plain(finding.resultTag);
+  const kind = resultTag || KIND_TEXT[plain(finding.kind)] || '';
+  const kindClass = plain(finding.kind) === 'loss'
+    ? 'pbr-tag is-loss'
+    : (resultTag ? 'pbr-tag is-comeback' : 'pbr-tag');
   const tag = kind ? `<span class="${kindClass}">${esc(kind)}</span>` : '';
-  const title = `<h3>${esc(plain(finding.title) || '本期变化')}</h3>`;
+  /* 复盘卡标题只到日期 + 对手；再补一个不参与省略的开赛时间，6 张卡才分得清。 */
+  const startClock = (plain(finding.start).match(/\d{1,2}:\d{2}/) || [])[0] || '';
+  const startHtml = startClock ? `<span class="pbr-card-time">${esc(startClock)}</span>` : '';
+  const title = `<h3>${esc(plain(finding.title) || '本期变化')}</h3>${startHtml}`;
   /* 重点发现行是「序号 + 标签 + 标题」；复盘卡保持原来的「标题 + 标签」。 */
   const body = options && options.tagFirst ? `${tag}${title}` : `${title}${tag}`;
   return `<div class="pbr-finding-top">
@@ -350,7 +424,7 @@ function numbersHtml(card, esc) {
       return value && value !== '—' && value !== '-';
     })
     .slice(0, NUMBER_LIMIT);
-  return `<div class="pbr-numbers">${numbers.map((item) => `<span class="pbr-num${item.focus ? ' is-focus' : ''}"><small>${esc(plain(item.label) || '本期')}</small><b>${esc(textOf(item.value))}</b></span>`).join('')}</div>`;
+  return `<div class="pbr-numbers">${numbers.map((item) => `<span class="pbr-num${item.focus ? ' is-focus' : ''}"><small>${esc(plain(item.label) || '本期')}</small><b>${valueWithUnitHtml(item.value, esc)}</b></span>`).join('')}</div>`;
 }
 
 const valueText = (item) => {
@@ -358,9 +432,9 @@ const valueText = (item) => {
   return text && text !== '—' && text !== '-' ? text : '';
 };
 
-/* ── 关注（收藏）────────────────────────────────────────────────
- * 纯渲染只读 view.findingFavs / view.watchFavs（{id: ISO}），
- * localStorage 只在控制器里读写；关注项排在前面、其余保持后端顺序。 */
+/* ── 关注（收藏）工作流 ──────────────────────────────────────────
+ * 纯渲染只读 view.findingFavs / view.watchFavs / view.findingIgnored / view.viewMode，
+ * localStorage 只在控制器里读写。收藏值 {at, reviewedAt, note}；旧版 ISO 字符串自动迁移。 */
 const findingKey = (finding) => plain(finding && finding.id) || plain(finding && finding.title);
 
 function watchCardKey(card) {
@@ -378,35 +452,125 @@ function favTimeText(iso) {
   return date.getFullYear() === new Date().getFullYear() ? clock : `${date.getFullYear()}-${clock}`;
 }
 
+function favStateOf(favs, key) {
+  const raw = favs && favs[key];
+  if (!raw) return null;
+  if (typeof raw === 'string') return { at: plain(raw), reviewedAt: '', note: '' };
+  return {
+    at: plain(raw.at),
+    reviewedAt: plain(raw.reviewedAt),
+    note: plain(raw.note),
+  };
+}
+
+function viewModeOf(view) {
+  const mode = plain(view && view.viewMode);
+  return VIEW_MODES.includes(mode) ? mode : 'all';
+}
+
+/* 视角过滤：全部 / 关注（有收藏）/ 待复盘（已关注且未复盘）。 */
+function inView(state, mode) {
+  if (mode === 'all') return true;
+  if (!state) return false;
+  return mode === 'fav' ? true : !state.reviewedAt;
+}
+
+/* 数字 + 单位：单位用小号弱化，数字更突出（金币/次/波/条/座/%/局）。 */
+function valueWithUnitHtml(value, esc) {
+  const text = plain(value);
+  if (!text || text === '—' || text === '-') return esc(textOf(value));
+  const match = UNIT_TOKEN.exec(text);
+  if (!match) return esc(text);
+  const head = text.slice(0, match.index);
+  return `${esc(head)}${match[1]}<small class="pbr-unit">${esc(match[2])}</small>`;
+}
+
 function favButtonHtml(attr, key, favs, esc, label) {
-  const iso = plain(favs && favs[key]);
-  const on = Boolean(iso);
-  const text = on ? `已关注 · ${favTimeText(iso)}` : (label || '关注');
+  const state = favStateOf(favs, key);
+  const on = Boolean(state);
+  const at = on && state.at ? ` · ${favTimeText(state.at)}` : '';
+  const text = on ? `已关注${at}` : (label || '关注');
   return `<button type="button" class="pbr-fav${on ? ' is-on' : ''}" ${attr}="${esc(key)}"
     aria-pressed="${String(on)}" title="${esc(on ? '取消关注' : '关注')}"><i class="pbr-fav-star" aria-hidden="true">${on ? '★' : '☆'}</i><span class="pbr-fav-text">${esc(text)}</span></button>`;
+}
+
+/* 关注后才出现的工作流：已复盘开关 + ＋结论；结论已存在时显示成一行可点的 muted 斜体。 */
+function favWorkflowHtml(kind, key, favs, esc) {
+  const state = favStateOf(favs, key);
+  if (!state) return '';
+  const reviewed = Boolean(state.reviewedAt);
+  return `<div class="pbr-fav-workflow">
+    <button type="button" class="pbr-fav pbr-review${reviewed ? ' is-on' : ''}" data-pbr-fav-review="${esc(key)}" data-pbr-fav-kind="${kind}" aria-pressed="${String(reviewed)}"><i class="pbr-fav-star" aria-hidden="true">${reviewed ? '✓' : '○'}</i><span class="pbr-fav-text">${reviewed ? '已复盘' : '标记已复盘'}</span></button>
+    ${state.note ? '' : `<button type="button" class="pbr-fav pbr-note-open" data-pbr-fav-note="${esc(key)}" data-pbr-fav-kind="${kind}">＋结论</button>`}
+  </div>
+  <div class="pbr-note-slot" data-pbr-note-slot="${esc(key)}">${state.note
+    ? `<button type="button" class="pbr-note-text" data-pbr-fav-note="${esc(key)}" data-pbr-fav-kind="${kind}" data-pbr-note-text title="点击修改结论">${esc(state.note)}</button>` : ''}</div>`;
 }
 
 function sortedByFav(items, keyOf, favs) {
   if (!favs || !Object.keys(favs).length) return items;
   const fav = [];
   const rest = [];
-  items.forEach((item) => (favs[keyOf(item)] ? fav : rest).push(item));
+  items.forEach((item) => (favStateOf(favs, keyOf(item)) ? fav : rest).push(item));
   return fav.concat(rest);
 }
 
 /* 重点发现的每一行（供渲染与控制器局部重画共用）。 */
-function findingRowsHtml(findings, favs, esc) {
+function findingRowsHtml(findings, view, esc) {
+  const favs = (view && view.findingFavs) || {};
   return sortedByFav(findings, findingKey, favs)
     .map((finding, index) => findingHtml(finding, index, esc, { favType: 'finding', favs }))
     .join('');
 }
 
-/* 某组复盘卡（供渲染与控制器局部重画共用）。 */
+/* 某组复盘卡（供渲染与控制器局部重画共用）：只保留当前视角匹配的对局。 */
 function watchCardsHtml(field, options, esc) {
   const opts = options || {};
-  return sortedByFav(watchItems(field), watchCardKey, opts.favs)
-    .map((item, index) => findingHtml(item, index, esc, { ...opts, favType: 'watch' }))
+  const favs = opts.favs || {};
+  const mode = opts.viewMode || 'all';
+  /* 信息不删：所有卡都按用户勾选的 1–4 个字段 + 时间点 + 紧凑阵容渲染；
+     首卡只是更宽（is-featured），不是唯一保留信息的卡。 */
+  const items = watchItems(field).filter((card) => inView(favStateOf(favs, watchCardKey(card)), mode));
+  return sortedByFav(items, watchCardKey, favs)
+    .map((item, index) => findingHtml(item, index, esc, {
+      ...opts,
+      favType: 'watch',
+      featured: index === 0,
+    }))
     .join('');
+}
+
+/* 关键时间点：轻量 chip，点击直接进这局；空数组不渲染。 */
+function momentsHtml(card, game, esc) {
+  const items = listOf(card && card.moments)
+    .filter((item) => item && plain(item.clock))
+    .slice(0, 3);
+  if (!items.length) return '';
+  const href = game ? `#match/${encodeURIComponent(game)}` : '';
+  const chips = items.map((item) => {
+    const body = `<b>${esc(plain(item.clock))}</b><span>${esc(plain(item.label))}</span>`;
+    return href
+      ? `<a class="pbr-moment" data-pbr-moment href="${href}">${body}</a>`
+      : `<span class="pbr-moment" data-pbr-moment>${body}</span>`;
+  }).join('<i class="pbr-moment-sep" aria-hidden="true">·</i>');
+  return `<div class="pbr-moments" data-pbr-moments>${chips}</div>`;
+}
+
+/* 首卡阵容：紧凑头像条，只恢复「快速扫阵容」，不把整张卡撑回原来的高度。 */
+function rosterStripHtml(finding, esc) {
+  const players = listOf(finding && finding.rosterPlayers)
+    .filter((player) => player && plain(player.name))
+    .slice(0, 5);
+  if (!players.length) return '';
+  const items = players.map((player) => {
+    const name = plain(player.name);
+    const icon = plain(player.icon);
+    const face = icon
+      ? `<img src="${esc(icon)}" alt="" width="28" height="28" loading="lazy">`
+      : `<i>${esc(name.slice(0, 1))}</i>`;
+    return `<a class="pbr-roster-item pbr-roster-mini" href="#hero/${encodeURIComponent(name)}" title="${esc(name)} · 打开英雄资料">${face}</a>`;
+  }).join('');
+  return `<div class="pbr-roster-mini-strip"><span class="pbr-roster-mini-label">我方阵容</span>${items}</div>`;
 }
 
 /* 复盘卡数字：按「显示字段」顺序，从 card.values 里按 id 取；缺什么就写「—」。
@@ -436,7 +600,7 @@ function displayNumbersHtml(card, options, esc) {
     }
     return { id, label, value };
   });
-  return `<div class="pbr-numbers">${entries.map((entry) => `<span class="pbr-num${entry.id === focusId ? ' is-focus' : ''}${entry.value === '—' ? ' is-missing' : ''}" data-pbr-value="${esc(entry.id)}"><small>${esc(entry.label)}</small><b>${esc(entry.value)}</b></span>`).join('')}</div>`;
+  return `<div class="pbr-numbers">${entries.map((entry) => `<span class="pbr-num${entry.id === focusId ? ' is-focus' : ''}${entry.value === '—' ? ' is-missing' : ''}" data-pbr-value="${esc(entry.id)}"><small>${esc(entry.label)}</small><b>${valueWithUnitHtml(entry.value, esc)}</b></span>`).join('')}</div>`;
 }
 
 function findingHtml(finding, index, esc, options) {
@@ -447,25 +611,31 @@ function findingHtml(finding, index, esc, options) {
     .filter((item) => item && (plain(item.label) || plain(item.game)))
     .slice(0, EVIDENCE_LIMIT);
 
-  /* 复盘卡：一句这局发生了什么 + 显示字段数字 + 五人阵容 + 一个动作 + 关注。
+  /* 复盘卡：一句这局发生了什么 + 关键时间点 + 显示字段数字 + 五人阵容 + 动作 + 关注工作流。
      重点发现行即使 kind 是 win/loss 也按「行」渲染（用 favType 区分上下文）。 */
   if (opts.favType !== 'finding' && ['win', 'loss'].includes(plain(finding.kind))) {
     const game = evidence.length ? plain(evidence[0].game) : '';
     const cardKey = watchCardKey(finding);
-    const isFav = opts.favType === 'watch' && Boolean(favs[cardKey]);
+    const state = opts.favType === 'watch' ? favStateOf(favs, cardKey) : null;
+    const isFav = Boolean(state);
+    const reviewed = Boolean(state && state.reviewedAt);
     const fav = opts.favType === 'watch' ? favButtonHtml('data-pbr-fav-watch', cardKey, favs, esc, '关注') : '';
-    /* 老报文（单组）没有「显示字段」，仍按后端给的 numbers 顺序出 4 个数字。 */
+    const workflow = opts.favType === 'watch' ? favWorkflowHtml('watch', cardKey, favs, esc) : '';
+    const featured = Boolean(opts.featured);
     const numbersPart = listOf(opts.displayIds).length
       ? displayNumbersHtml(finding, opts, esc)
       : numbersHtml(finding, esc);
-    return `<article class="pbr-finding is-watch${isFav ? ' is-fav' : ''}">
+    const cls = `pbr-finding is-watch${featured ? ' is-featured' : ''}${isFav ? ' is-fav' : ''}${reviewed ? ' is-reviewed' : ''}`;
+    return `<article class="${cls}" data-watch-key="${esc(cardKey)}" tabindex="-1">
       ${findingHead(finding, index, esc)}
       <p class="pbr-conclusion">${esc(conclusion)}</p>
+      ${momentsHtml(finding, game, esc)}
+      ${rosterStripHtml(finding, esc)}
       ${numbersPart}
-      ${rosterHtml(finding, esc)}
       <div class="pbr-watch-link">${game
         ? `<a href="#match/${encodeURIComponent(game)}">查看这局完整过程 →</a>`
         : '<span></span>'}${fav}</div>
+      ${workflow ? `<div class="pbr-watch-workflow">${workflow}</div>` : ''}
     </article>`;
   }
 
@@ -474,17 +644,25 @@ function findingHtml(finding, index, esc, options) {
     .filter((item) => valueText(item))
     .slice(0, NUMBER_LIMIT);
   const key = findingKey(finding);
-  const isFav = opts.favType === 'finding' && Boolean(favs[key]);
+  const state = opts.favType === 'finding' ? favStateOf(favs, key) : null;
+  const isFav = Boolean(state);
+  const reviewed = Boolean(state && state.reviewedAt);
   const fav = opts.favType === 'finding' ? favButtonHtml('data-pbr-fav-finding', key, favs, esc, '关注') : '';
-  return `<article class="pbr-finding${isFav ? ' is-fav' : ''}" data-finding-id="${esc(key)}">
+  const workflow = opts.favType === 'finding' ? favWorkflowHtml('finding', key, favs, esc) : '';
+  const ignore = opts.favType === 'finding'
+    ? `<button type="button" class="pbr-ignore" data-pbr-ignore-finding="${esc(key)}" title="忽略这条发现，可在区头恢复">忽略</button>`
+    : '';
+  const cls = `pbr-finding${isFav ? ' is-fav' : ''}${reviewed ? ' is-reviewed' : ''}`;
+  return `<article class="${cls}" data-finding-id="${esc(key)}">
     <div class="pbr-finding-main">
       ${findingHead(finding, index, esc, { tagFirst: true })}
       <p class="pbr-conclusion">${esc(conclusion)}</p>
+      ${workflow ? `<div class="pbr-finding-note">${workflow}</div>` : ''}
       ${evidence.length
         ? `<ul class="pbr-evidence is-inline">${evidence.map((item) => evidenceInlineHtml(item, esc)).join('')}</ul>`
         : ''}
     </div>
-    <div class="pbr-finding-side">${statHtml(finding, numbers, esc)}${fav ? `<div class="pbr-finding-fav">${fav}</div>` : ''}</div>
+    <div class="pbr-finding-side">${statHtml(finding, numbers, esc)}<div class="pbr-finding-fav">${fav}${ignore}</div></div>
   </article>`;
 }
 
@@ -505,27 +683,55 @@ function collectFindings(data) {
     .filter((finding) => finding && (plain(finding.title) || plain(finding.conclusion)));
 }
 
+function hasFavContent(data, view) {
+  const findingFavs = (view && view.findingFavs) || {};
+  if (collectFindings(data).some((finding) => favStateOf(findingFavs, findingKey(finding)))) return true;
+  const watchFavs = (view && view.watchFavs) || {};
+  const fields = listOf(data.watchFields).filter((field) => field && plain(field.id));
+  const cards = fields.length ? fields.flatMap((field) => watchItems(field)) : listOf(data.watch);
+  return cards.some((card) => favStateOf(watchFavs, watchCardKey(card)));
+}
+
 function findingsHtml(data, view, ctx) {
   const { esc } = ctx;
-  const findings = collectFindings(data);
-  /* 首页这块是「先看哪几局」的入口；标题/计数/空态由后端按本期口径给，
-     旧数据没有这些字段时回退到原来的「变化」文案。 */
+  const mode = viewModeOf(view);
+  const favs = (view && view.findingFavs) || {};
+  const ignored = (view && view.findingIgnored) || {};
+  const ignoredCount = Object.keys(ignored).length;
+  const all = collectFindings(data);
+  const visible = sortedByFav(all.filter((finding) => !ignored[findingKey(finding)]
+    && inView(favStateOf(favs, findingKey(finding)), mode)), findingKey, favs);
+  /* 首页这块是「先看哪几局」的入口；标题/计数/空态由后端按本期口径给。 */
   const title = plain(data.findingsTitle) || '本周期最值得关注的变化';
-  const countText = findings.length
-    ? (plain(data.findingsCountText) || `${findings.length} 条`)
-    : '本期暂无';
-  const emptyText = plain(data.findingsEmpty)
-    || '本期与上期相比没有明显变化，没有需要单独展开的条目。';
-  const head = sectionHeadHtml(title, countText, esc);
-  if (!findings.length) {
+  const countText = !visible.length
+    ? '本期暂无'
+    : (mode === 'all' && !ignoredCount
+      ? (plain(data.findingsCountText) || `${visible.length} 条`)
+      : `${visible.length} 条`);
+  const canExport = hasFavContent(data, view);
+  const head = `<div class="pbr-section-head">
+    <div class="pbr-section-title">
+      <h2>${esc(title)}</h2>
+      <span class="pbr-section-chip">${esc(countText)}</span>
+    </div>
+    <div class="pbr-head-actions">
+      ${ignoredCount ? `<button type="button" class="pbr-text-btn" data-pbr-restore-ignored>已忽略 ${ignoredCount} 条 · 恢复</button>` : ''}
+      <button type="button" class="pbr-text-btn" data-pbr-export${canExport ? '' : ' disabled'} title="${canExport ? '导出已关注的发现和比赛' : '先关注发现或比赛，再导出清单'}">导出关注项</button>
+    </div>
+  </div>`;
+  if (!visible.length) {
+    let emptyText = plain(data.findingsEmpty) || '本期与上期相比没有明显变化，没有需要单独展开的条目。';
+    if (all.length) {
+      if (mode === 'fav') emptyText = '这个视角下还没有关注的发现。';
+      else if (mode === 'todo') emptyText = '这个视角下没有待复盘的发现。';
+      else if (ignoredCount) emptyText = '本期的发现都被忽略了，点上方「恢复」可以还原。';
+    }
     return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
       <p class="pbr-findings-empty">${esc(emptyText)}</p>
     </section>`;
   }
-  const favs = (view && view.findingFavs) || {};
-  /* 不限条数：条数以后端为准（最多约 8 条），块内上下滚动，滚轮/键盘都能用。 */
   return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
-    <div class="pbr-finding-list is-scroll" tabindex="0" role="region" aria-label="${esc(title)}列表">${findingRowsHtml(findings, favs, esc)}</div>
+    <div class="pbr-finding-list is-scroll" tabindex="0" role="region" aria-label="${esc(title)}列表">${findingRowsHtml(visible, view, esc)}</div>
   </section>`;
 }
 
@@ -645,6 +851,7 @@ function watchToolsHtml(fields, catalog, picked, active, openPop, esc) {
       <span class="pbr-tool-value">显示 ${picked.length} 项</span>
       <span class="pbr-tool-caret" aria-hidden="true">▾</span>
     </button>
+    <span class="pbr-shortcut-hint" data-pbr-shortcut-hint title="J/K 前后切卡 · F 关注 · Enter 打开对局">J/K 切换 · F 关注</span>
     ${sortPopHtml(fields, activeId, sortOpen, esc)}
     ${fieldsPopHtml(catalog, picked, fieldsOpen, esc)}
   </div>`;
@@ -653,24 +860,39 @@ function watchToolsHtml(fields, catalog, picked, active, openPop, esc) {
 function watchGroupHtml(field, activeId, options, esc) {
   const id = plain(field.id);
   const label = plain(field.label) || id;
-  const items = watchItems(field);
+  const baseItems = watchItems(field);
   const hidden = id === activeId ? '' : ' hidden';
   const cardOptions = {
     displayIds: options && options.displayIds,
     catalog: options && options.catalog,
     focusId: options && options.focusId,
     favs: options && options.favs,
+    viewMode: options && options.viewMode,
   };
-  if (!items.length) {
+  if (!baseItems.length) {
     return `<div class="pbr-finding-list is-empty" data-pbr-watch-group="${esc(id)}"
       data-watch-count="0"${hidden}>
       <p class="pbr-findings-empty">${esc(plain(field.empty) || `本期没有${label}的局。`)}</p>
     </div>`;
   }
+  const mode = (options && options.viewMode) || 'all';
+  const favs = (options && options.favs) || {};
+  const visible = baseItems.filter((card) => inView(favStateOf(favs, watchCardKey(card)), mode));
+  if (!visible.length) {
+    const text = mode === 'fav' ? '这个视角下还没有关注的对局。' : '这个视角下没有待复盘的对局。';
+    return `<div class="pbr-finding-list is-empty" data-pbr-watch-group="${esc(id)}"
+      data-watch-count="0"${hidden}>
+      <p class="pbr-findings-empty">${esc(text)}</p>
+    </div>`;
+  }
   /* 每组是横向滑动的轨道：卡片自带边框，不再用整体面板分隔线。 */
+  const total = has(field.count) ? field.count : baseItems.length;
+  const tail = mode === 'all' && total > visible.length
+    ? `<p class="pbr-rail-tail">共 ${total} 局 · 已列前 ${visible.length} 局</p>`
+    : '';
   return `<div class="pbr-finding-list is-rail" data-pbr-watch-group="${esc(id)}"
-    data-watch-count="${items.length}" tabindex="0"${hidden}>
-    ${watchCardsHtml(field, cardOptions, esc)}
+    data-watch-count="${visible.length}" tabindex="0"${hidden}>
+    ${watchCardsHtml(field, cardOptions, esc)}${tail}
   </div>`;
 }
 
@@ -705,17 +927,22 @@ function watchHtml(data, view, ctx) {
   const picked = orderedDisplay(displayPick(data, view, catalog), catalog);
   const openPop = plain(view && view.openPop);
   const favs = (view && view.watchFavs) || {};
-  const activeItems = watchItems(active);
-  /* 区头「N 局」用后端 count（该字段本期总局数），不是这组实际渲染的条数。 */
-  const activeCount = has(active.count) ? active.count : activeItems.length;
+  const mode = viewModeOf(view);
+  const baseActiveItems = watchItems(active);
+  const matchedActive = baseActiveItems.filter((card) => inView(favStateOf(favs, watchCardKey(card)), mode));
+  /* 全部视角用后端 count（该字段本期总局数）；关注/待复盘视角用匹配条数，计数才跟得上。 */
+  const activeCount = mode === 'all'
+    ? (has(active.count) ? active.count : baseActiveItems.length)
+    : matchedActive.length;
+  const countText = activeCount > 0 ? `${activeCount} 局` : '本期暂无';
   const head = `<div class="pbr-section-head">
     <div class="pbr-section-title">
       <h2>${esc(title)}</h2>
-      <span class="pbr-section-chip" data-pbr-watch-count>${activeCount > 0 ? `${activeCount} 局` : '本期暂无'}</span>
+      <span class="pbr-section-chip" data-pbr-watch-count>${countText}</span>
     </div>
     ${watchToolsHtml(fields, catalog, picked, active, openPop, esc)}
   </div>`;
-  const groups = fields.map((field) => watchGroupHtml(field, activeId, { displayIds: picked, catalog, focusId: activeId, favs }, esc)).join('');
+  const groups = fields.map((field) => watchGroupHtml(field, activeId, { displayIds: picked, catalog, focusId: activeId, favs, viewMode: mode }, esc)).join('');
   return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">${head}
     ${groups}
   </section>`;
@@ -804,10 +1031,31 @@ function emptyHtml(data, view, ctx) {
 }
 
 function loadingHtml() {
+  /* 骨架按新周报版式搭：一句战况 → 12 栏 bento → 双列发现 → 复盘轨道。
+     首屏不再从三块灰条跳成整页卡片。 */
   return `<div class="pbr-loading" role="status">
       <span class="pbr-spinner" aria-hidden="true"></span>正在读取本期简报…
     </div>
-    <div class="pbr-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>`;
+    <div class="pbr-skeleton pbr-skeleton-v2" aria-hidden="true">
+      <div class="sk-copy">
+        <i class="sk-line sk-kicker"></i>
+        <i class="sk-line sk-title"></i>
+        <i class="sk-line sk-sub"></i>
+      </div>
+      <div class="sk-metrics">
+        <i class="sk-card sk-feature"></i>
+        <i class="sk-card"></i><i class="sk-card"></i>
+        <i class="sk-card"></i><i class="sk-card"></i>
+        <i class="sk-card"></i><i class="sk-card"></i><i class="sk-card"></i>
+      </div>
+      <div class="sk-feed">
+        <div class="sk-row"><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i></div>
+        <div class="sk-row"><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i></div>
+        <div class="sk-row"><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i></div>
+        <div class="sk-row"><i class="sk-line"></i><i class="sk-line"></i><i class="sk-line"></i></div>
+      </div>
+      <div class="sk-rail"><i class="sk-feature"></i><i></i><i></i><i></i></div>
+    </div>`;
 }
 
 function errorHtml(view, ctx) {
@@ -822,17 +1070,22 @@ function errorHtml(view, ctx) {
 }
 
 function dataHtml(data, view, ctx) {
-  return `${summaryHtml(data, ctx)}
-    ${metricsHtml(data, ctx)}
-    ${findingsHtml(data, view, ctx)}
-    ${watchHtml(data, view, ctx)}
-    <section class="pbr-foot" aria-label="约训与数据覆盖">
+  /* 一句战况 + 右侧「下一场约训 / 数据覆盖」：把原来页脚的信息提上来，
+     补掉摘要右侧的空白，页面也短一截。 */
+  const side = `<aside class="pbr-hero-side" aria-label="约训与数据覆盖">
       <div class="pbr-foot-row">
         <p class="pbr-foot-label">下一场约训</p>
         <div class="pbr-foot-body">${nextHtml(data, ctx)}</div>
       </div>
       ${coverageHtml(data, ctx)}
-    </section>`;
+    </aside>`;
+  return `<section class="pbr-hero">
+      ${summaryHtml(data, ctx)}
+      ${side}
+    </section>
+    ${metricsHtml(data, ctx)}
+    ${findingsHtml(data, view, ctx)}
+    ${watchHtml(data, view, ctx)}`;
 }
 
 /* 纯渲染：给浏览器与静态回归共用，不碰 DOM、不发请求。 */
@@ -856,7 +1109,7 @@ export function renderBrief(view, ctx) {
 
 /* ── 页面控制器：挂载点、周期状态、取数与重试 ─────────────────── */
 export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRange, onEmptyLibrary, applyScope }) {
-  const ctx = { esc, fmt, icon };
+  const ctx = { esc, fmt, icon, API_BASE, art: true };
   let root = null;
   let request = null;
   let generation = 0;
@@ -869,7 +1122,11 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
   /* 关注收藏：纯渲染只读，localStorage 只在这里读写。 */
   let findingFavs = {};
   let watchFavs = {};
+  let findingIgnored = {};
+  let viewMode = 'all';
   let favsLoaded = false;
+  /* J/K 快捷键的当前卡（按对局 key 记住，重画后按 key 复原）。 */
+  let currentWatchKey = null;
 
   const filters = () => {
     try { return getFilters() || {}; } catch { return {}; }
@@ -918,7 +1175,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     } catch {}
   }
 
-  /* ── 关注收藏：{id: ISO} 映射，读一次缓存，改了就写回 ── */
+  /* ── 关注收藏：{id: {at,reviewedAt,note}}，旧 ISO 字符串读入自动迁移 ── */
   function readFavMap(key) {
     try {
       if (typeof localStorage === 'undefined') return {};
@@ -927,8 +1184,8 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
       const map = {};
       Object.keys(parsed).forEach((id) => {
-        const iso = plain(parsed[id]);
-        if (id && iso) map[id] = iso;
+        const state = favStateOf(parsed, id);
+        if (state && id) map[id] = state;
       });
       return map;
     } catch {
@@ -944,19 +1201,78 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     } catch {}
   }
 
+  function readIgnoredMap() {
+    try {
+      if (typeof localStorage === 'undefined') return {};
+      const raw = localStorage.getItem(IGNORED_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+      const map = {};
+      Object.keys(parsed).forEach((id) => {
+        if (id) map[id] = plain(parsed[id]);
+      });
+      return map;
+    } catch {
+      return {};
+    }
+  }
+
+  function writeIgnoredMap(map) {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const store = localStorage;
+      store.setItem(IGNORED_KEY, JSON.stringify(map));
+    } catch {}
+  }
+
+  function readViewMode() {
+    try {
+      if (typeof localStorage === 'undefined') return 'all';
+      const value = plain(localStorage.getItem(VIEW_KEY));
+      return VIEW_MODES.includes(value) ? value : 'all';
+    } catch {
+      return 'all';
+    }
+  }
+
+  function writeViewMode(mode) {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const store = localStorage;
+      store.setItem(VIEW_KEY, mode);
+    } catch {}
+  }
+
   function ensureFavs() {
     if (favsLoaded) return;
     favsLoaded = true;
     findingFavs = readFavMap(FINDING_FAV_KEY);
     watchFavs = readFavMap(WATCH_FAV_KEY);
+    /* 旧 ISO 字符串读入时已迁移成 {at, reviewedAt, note}，这里写回一次，
+       保证 localStorage 结构与契约一致（不会每次都产生多余变化）。 */
+    writeFavMap(FINDING_FAV_KEY, findingFavs);
+    writeFavMap(WATCH_FAV_KEY, watchFavs);
+    findingIgnored = readIgnoredMap();
+    viewMode = readViewMode();
   }
 
-  /* 点一次：没关注就记当前时间，已关注就删掉（回到原位置）。 */
+  /* 点一次：没关注就记 {at,reviewedAt:null,note:''}，已关注就删掉（回到原位置）。 */
   function toggleFavMap(map, key) {
     const next = { ...map };
     if (next[key]) delete next[key];
-    else next[key] = new Date().toISOString();
+    else next[key] = { at: new Date().toISOString(), reviewedAt: '', note: '' };
     return next;
+  }
+
+  /* 当前渲染需要的只读状态（纯渲染层不碰 localStorage）。 */
+  function viewState() {
+    return {
+      findingFavs,
+      watchFavs,
+      findingIgnored,
+      viewMode,
+      currentWatchKey,
+    };
   }
 
   /* 用户选择 > localStorage > payload 默认 > 目录前 4 项；每次都过滤掉目录里没有的 id。 */
@@ -1028,6 +1344,11 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     const current = filters();
     const params = new URLSearchParams();
     params.set('period', state.kind);
+    const extra = PERIOD_REQUEST[state.kind];
+    if (extra) {
+      if (has(extra.n)) params.set('n', String(extra.n));
+      if (has(extra.days)) params.set('days', String(extra.days));
+    }
     const range = currentRange();
     if (state.kind === 'custom' && range) {
       params.set('from', range.from);
@@ -1048,15 +1369,15 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     const displayFields = data && listOf(data.watchFields).length ? resolveDisplay(data) : null;
     root.innerHTML = renderBrief({
       ...view,
+      ...viewState(),
       hasDateScope: scope,
       displayFields,
       watchActive,
       openPop,
-      findingFavs,
-      watchFavs,
     }, ctx);
     root.setAttribute('aria-busy', String(Boolean(view.loading)));
     syncArrows();
+    syncCurrentCard();
   }
 
   /* 左右滚动箭头：只控制当前可见分组的横向轨道，到两端就禁用。 */
@@ -1168,6 +1489,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     stopRequest();
     watchActive = null;
     openPop = null;
+    currentWatchKey = null;
     const controller = new AbortController();
     request = controller;
     view = { kind: state.kind, data: null, loading: true, error: null, notice: state.notice };
@@ -1186,7 +1508,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
       view = { kind: state.kind, data, loading: false, error: null, notice: state.notice };
       paint();
       /* 空库：本期没有对局、也没有更早的一批可看 → 交回首页的入库弹窗。 */
-      if (data.available === false && !hasRange(data.fallback_hint) && typeof onEmptyLibrary === 'function') {
+      if (data.available === false && !hasRange(data.fallback_hint) && !data.record?.prev?.decided && !data.empty_note && typeof onEmptyLibrary === 'function') {
         const stamp = own;
         requestAnimationFrame(() => { if (stamp === generation) onEmptyLibrary(); });
       }
@@ -1277,52 +1599,319 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     focusKeep(root && root.querySelector('[data-pbr-display-reset]'));
   }
 
-  /* 关注一条发现：只重画发现列表（不整页 paint），保持 scrollTop、焦点回到同一按钮。 */
-  function toggleFindingFav(button) {
-    const id = plain(button.dataset.pbrFavFinding);
-    if (!id) return;
-    ensureFavs();
-    findingFavs = toggleFavMap(findingFavs, id);
-    writeFavMap(FINDING_FAV_KEY, findingFavs);
-    const list = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
-    if (!list) return;
-    const top = list.scrollTop;
-    list.innerHTML = findingRowsHtml(collectFindings(view.data || {}), findingFavs, ctx);
-    list.scrollTop = top;
-    const next = Array.from(root.querySelectorAll('[data-pbr-fav-finding]'))
-      .find((node) => node.dataset.pbrFavFinding === id);
-    focusKeep(next);
+  /* ── 局部刷新：只重画发现区 / 复盘区，保留滚动位置与焦点 ── */
+  function replaceSection(selector, html, focusSelector, collectLefts) {
+    if (!root) return null;
+    const section = root.querySelector(selector);
+    if (!section) return null;
+    const holder = document.createElement('div');
+    holder.innerHTML = html;
+    const next = holder.firstElementChild;
+    if (!next) return null;
+    section.replaceWith(next);
+    if (collectLefts) {
+      next.querySelectorAll('[data-pbr-watch-group]').forEach((rail) => {
+        rail.scrollLeft = collectLefts.get(rail.dataset.pbrWatchGroup) || 0;
+      });
+    }
+    if (focusSelector) {
+      const node = next.querySelector(focusSelector);
+      if (node) focusKeep(node);
+      else focusKeep(next.querySelector('.pbr-finding-list'));
+    }
+    return next;
   }
 
-  /* 关注一局复盘：重画所有分组的卡片（跨组共享关注态），逐个恢复 scrollLeft、焦点回按钮。 */
-  function toggleWatchFav(button) {
-    const key = plain(button.dataset.pbrFavWatch);
+  function refreshFindings(focusSelector) {
+    const before = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
+    const top = before ? before.scrollTop : 0;
+    const next = replaceSection('.pbr-findings:not(.pbr-watch)',
+      findingsHtml(view.data || {}, { ...view, ...viewState() }, ctx), focusSelector);
+    const list = next && next.querySelector('.pbr-finding-list');
+    if (list) list.scrollTop = top;
+  }
+
+  function refreshWatch(focusSelector) {
+    const lefts = new Map();
+    if (root) {
+      root.querySelectorAll('.pbr-watch [data-pbr-watch-group]').forEach((rail) => {
+        lefts.set(rail.dataset.pbrWatchGroup, rail.scrollLeft);
+      });
+    }
+    const data = view.data || {};
+    replaceSection('.pbr-watch',
+      watchHtml(data, { ...view, ...viewState(), displayFields: resolveDisplay(data), watchActive, openPop }, ctx),
+      focusSelector, lefts);
+    syncArrows();
+    syncCurrentCard();
+  }
+
+  /* 关注/取消关注（发现、复盘共用）：关注后出现「已复盘 / ＋结论」。 */
+  function toggleFav(kind, button) {
+    const key = kind === 'finding' ? plain(button.dataset.pbrFavFinding) : plain(button.dataset.pbrFavWatch);
     if (!key) return;
     ensureFavs();
-    watchFavs = toggleFavMap(watchFavs, key);
-    writeFavMap(WATCH_FAV_KEY, watchFavs);
-    const data = view.data || {};
-    const fields = listOf(data.watchFields).filter((field) => field && plain(field.id));
-    if (!fields.length) return;
-    const catalog = watchCatalog(data);
-    const wanted = watchActive || plain(data.watchField) || plain(fields[0].id);
-    const active = fields.find((field) => plain(field.id) === wanted) || fields[0];
-    const picked = orderedDisplay(displayPick(data, { displayFields: resolveDisplay(data) }, catalog), catalog);
-    const options = { displayIds: picked, catalog, focusId: plain(active.id), favs: watchFavs };
-    const rails = Array.from(root.querySelectorAll('.pbr-watch [data-pbr-watch-group]'));
-    const lefts = new Map();
-    rails.forEach((rail) => lefts.set(rail.dataset.pbrWatchGroup, rail.scrollLeft));
-    rails.forEach((rail) => {
-      const field = fields.find((item) => plain(item.id) === rail.dataset.pbrWatchGroup);
-      if (!field || !watchItems(field).length) return;
-      rail.innerHTML = watchCardsHtml(field, options, ctx);
+    if (kind === 'finding') {
+      findingFavs = toggleFavMap(findingFavs, key);
+      writeFavMap(FINDING_FAV_KEY, findingFavs);
+      refreshFindings(`[data-pbr-fav-finding="${key}"]`);
+    } else {
+      watchFavs = toggleFavMap(watchFavs, key);
+      writeFavMap(WATCH_FAV_KEY, watchFavs);
+      currentWatchKey = key;
+      refreshWatch(`[data-pbr-fav-watch="${key}"]`);
+    }
+  }
+
+  /* 已复盘开关：只改 reviewedAt，不动关注时间与结论。 */
+  function toggleReviewed(button) {
+    const kind = button.dataset.pbrFavKind === 'watch' ? 'watch' : 'finding';
+    const key = plain(button.dataset.pbrFavReview);
+    if (!key) return;
+    ensureFavs();
+    const map = kind === 'watch' ? watchFavs : findingFavs;
+    const state = favStateOf(map, key);
+    if (!state) return;
+    const next = { ...map, [key]: { ...state, reviewedAt: state.reviewedAt ? '' : new Date().toISOString() } };
+    if (kind === 'watch') {
+      watchFavs = next;
+      writeFavMap(WATCH_FAV_KEY, next);
+      currentWatchKey = key;
+      refreshWatch(`[data-pbr-fav-review="${key}"]`);
+    } else {
+      findingFavs = next;
+      writeFavMap(FINDING_FAV_KEY, next);
+      refreshFindings(`[data-pbr-fav-review="${key}"]`);
+    }
+  }
+
+  /* 行内单行结论：Enter/blur 保存，Esc 取消；保存后回到按钮，弹层/滚动不跳。 */
+  function openNoteEditor(button) {
+    const kind = button.dataset.pbrFavKind === 'watch' ? 'watch' : 'finding';
+    const key = plain(button.dataset.pbrFavNote);
+    if (!key || !root) return;
+    if (root.querySelector('[data-pbr-note-input]')) return;
+    const slot = Array.from(root.querySelectorAll('[data-pbr-note-slot]'))
+      .find((node) => node.dataset.pbrNoteSlot === key);
+    if (!slot) return;
+    const map = kind === 'watch' ? watchFavs : findingFavs;
+    const state = favStateOf(map, key);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'pbr-note-input';
+    input.setAttribute('data-pbr-note-input', '');
+    input.maxLength = 120;
+    input.value = state ? state.note : '';
+    input.placeholder = kind === 'watch' ? '这局怎么复盘（Enter 保存 · Esc 取消）' : '这条怎么处理（Enter 保存 · Esc 取消）';
+    slot.replaceChildren(input);
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      if (save) {
+        const mapNow = kind === 'watch' ? watchFavs : findingFavs;
+        const current = favStateOf(mapNow, key);
+        if (current) {
+          const next = { ...mapNow, [key]: { ...current, note: input.value.trim() } };
+          if (kind === 'watch') {
+            watchFavs = next;
+            writeFavMap(WATCH_FAV_KEY, next);
+          } else {
+            findingFavs = next;
+            writeFavMap(FINDING_FAV_KEY, next);
+          }
+        }
+      }
+      if (kind === 'watch') {
+        currentWatchKey = key;
+        refreshWatch(`[data-pbr-fav-note="${key}"]`);
+      } else {
+        refreshFindings(`[data-pbr-fav-note="${key}"]`);
+      }
+    };
+    input.addEventListener('keydown', (event) => {
+      event.stopPropagation();
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        finish(true);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        finish(false);
+      }
     });
-    rails.forEach((rail) => { rail.scrollLeft = lefts.get(rail.dataset.pbrWatchGroup) || 0; });
-    syncArrows();
+    input.addEventListener('blur', () => finish(true));
+    input.focus();
+    input.select();
+  }
+
+  /* 忽略一条发现（任何视角都不显示），区头出现「已忽略 N 条 · 恢复」。 */
+  function ignoreFinding(button) {
+    const id = plain(button.dataset.pbrIgnoreFinding);
+    if (!id) return;
+    ensureFavs();
+    const list = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
+    const top = list ? list.scrollTop : 0;
+    findingIgnored = { ...findingIgnored, [id]: new Date().toISOString() };
+    writeIgnoredMap(findingIgnored);
+    refreshFindings(null);
+    const after = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
+    if (after) after.scrollTop = top;
+    const next = root && root.querySelector('[data-pbr-ignore-finding]');
+    focusKeep(next || (after || null));
+  }
+
+  function restoreIgnored() {
+    ensureFavs();
+    findingIgnored = {};
+    writeIgnoredMap({});
+    refreshFindings('[data-pbr-ignore-finding]');
+  }
+
+  /* 顶部三态视角：只改渲染、不重新取数。 */
+  function chooseView(mode) {
+    if (!VIEW_MODES.includes(mode) || mode === viewMode) return;
+    viewMode = mode;
+    writeViewMode(mode);
+    repaint(null);
+    focusKeep(root && root.querySelector(`[data-pbr-view-mode="${mode}"]`));
+  }
+
+  /* 导出清单：Markdown 下载 + 尽力写剪贴板（失败不影响下载）。 */
+  function listDateText(date) {
+    const pad = (value) => String(value).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  }
+
+  function buildExportMarkdown(data) {
+    const lines = [`# 赛训复盘清单 · ${listDateText(new Date())}`, ''];
+    const findings = collectFindings(data).filter((finding) => favStateOf(findingFavs, findingKey(finding)));
+    lines.push('## 重点发现');
+    if (!findings.length) lines.push('', '_没有关注的发现_');
+    findings.forEach((finding, index) => {
+      const key = findingKey(finding);
+      const state = favStateOf(findingFavs, key);
+      lines.push('', `### ${index + 1}. ${plain(finding.title)}`);
+      if (plain(finding.conclusion)) lines.push(`- 结论：${plain(finding.conclusion)}`);
+      if (state.note) lines.push(`- 我的结论：${state.note}`);
+      if (state.at) lines.push(`- 关注时间：${favTimeText(state.at)}`);
+      if (state.reviewedAt) lines.push(`- 已复盘：${favTimeText(state.reviewedAt)}`);
+      const game = plain((listOf(finding.evidence)[0] || {}).game);
+      if (game) lines.push(`- 对局链接：#match/${game}`);
+    });
+    const fields = listOf(data.watchFields).filter((field) => field && plain(field.id));
+    const cards = fields.length ? fields.flatMap((field) => watchItems(field)) : listOf(data.watch);
+    const seen = new Set();
+    const watched = [];
+    cards.forEach((card) => {
+      const key = watchCardKey(card);
+      if (!key || seen.has(key) || !favStateOf(watchFavs, key)) return;
+      seen.add(key);
+      watched.push({ card, key });
+    });
+    lines.push('', '## 复盘比赛');
+    if (!watched.length) lines.push('', '_没有关注的对局_');
+    watched.forEach(({ card, key }, index) => {
+      const state = favStateOf(watchFavs, key);
+      lines.push('', `### ${index + 1}. ${plain(card.title)}`);
+      if (plain(card.conclusion)) lines.push(`- 结论：${plain(card.conclusion)}`);
+      if (state.note) lines.push(`- 我的结论：${state.note}`);
+      if (state.at) lines.push(`- 关注时间：${favTimeText(state.at)}`);
+      if (state.reviewedAt) lines.push(`- 已复盘：${favTimeText(state.reviewedAt)}`);
+      lines.push(`- 对局链接：#match/${key}`);
+    });
+    return `${lines.join('\n')}\n`;
+  }
+
+  function exportList() {
+    const data = view.data || {};
+    if (!hasFavContent(data, { ...view, ...viewState() })) return;
+    if (typeof document === 'undefined') return;
+    const markdown = buildExportMarkdown(data);
+    const name = `赛训复盘清单-${listDateText(new Date())}.md`;
+    try {
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = name;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch {} }, 1200);
+    } catch {}
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(markdown).catch(() => {});
+      }
+    } catch {}
+  }
+
+  /* ── J/K/F/Enter 快捷键：只在非输入、无弹层/对话框时生效 ── */
+  const isTypingTarget = (target) => Boolean(target && target.closest
+    && target.closest('input, textarea, select, [contenteditable="true"]'));
+
+  function visibleWatchCards() {
     const rail = watchRail();
-    const next = rail && Array.from(rail.querySelectorAll('[data-pbr-fav-watch]'))
-      .find((node) => node.dataset.pbrFavWatch === key);
-    focusKeep(next);
+    return rail ? Array.from(rail.querySelectorAll('.pbr-finding.is-watch')) : [];
+  }
+
+  function isCurrentCardMarked() {
+    return Boolean(root && root.querySelector('.pbr-watch .pbr-finding.is-watch.is-current'));
+  }
+
+  function currentCard() {
+    const cards = visibleWatchCards();
+    if (!cards.length) return null;
+    if (currentWatchKey) {
+      const hit = cards.find((card) => card.dataset.watchKey === currentWatchKey);
+      if (hit) return hit;
+    }
+    return cards[0];
+  }
+
+  function markCurrentCard(card) {
+    if (!root) return;
+    root.querySelectorAll('.pbr-watch .pbr-finding.is-current').forEach((node) => node.classList.remove('is-current'));
+    if (card) card.classList.add('is-current');
+  }
+
+  function syncCurrentCard() {
+    if (!currentWatchKey || !root) return;
+    const hit = Array.from(root.querySelectorAll('.pbr-watch .pbr-finding.is-watch'))
+      .find((card) => card.dataset.watchKey === currentWatchKey);
+    markCurrentCard(hit || null);
+  }
+
+  function moveWatchCard(direction) {
+    const cards = visibleWatchCards();
+    if (!cards.length) return;
+    const current = currentCard();
+    const index = current ? cards.indexOf(current) : -1;
+    const nextIndex = index < 0
+      ? (direction > 0 ? 0 : cards.length - 1)
+      : (index + direction + cards.length) % cards.length;
+    const card = cards[nextIndex];
+    currentWatchKey = plain(card.dataset.watchKey);
+    markCurrentCard(card);
+    try { card.scrollIntoView({ block: 'nearest', inline: 'center' }); } catch { card.scrollIntoView(); }
+    focusKeep(card);
+    syncArrows();
+  }
+
+  function toggleCurrentFav() {
+    const card = currentCard();
+    if (!card) return;
+    const button = card.querySelector('[data-pbr-fav-watch]');
+    if (button) toggleFav('watch', button);
+  }
+
+  function openCurrentMatch() {
+    const card = currentCard();
+    if (!card) return;
+    const link = card.querySelector('.pbr-watch-link a[href]');
+    const href = link && link.getAttribute('href');
+    if (href) window.location.hash = href;
   }
 
   function onFieldChange(event) {
@@ -1331,13 +1920,47 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     chooseField(input);
   }
 
-  /* Esc 关闭弹层并把焦点还给触发按钮；点弹层外部只关闭，不抢焦点。 */
+  /* 弹层 Esc 关闭并回焦点；非输入状态下 J/K/F/Enter 控制复盘卡。 */
   function onDocumentKeyDown(event) {
-    if (event.key !== 'Escape' || !openPop) return;
-    const kind = openPop;
-    openPop = null;
-    syncPops();
-    focusTool(kind);
+    if (event.key === 'Escape' && openPop) {
+      const kind = openPop;
+      openPop = null;
+      syncPops();
+      focusTool(kind);
+      return;
+    }
+    if (openPop) return;
+    if (isTypingTarget(event.target)) return;
+    if (typeof document !== 'undefined' && document.querySelector('dialog[open]')) return;
+    if (!listOf(view.data && view.data.watchFields).length) return;
+    const key = event.key;
+    if (key === 'j' || key === 'J') {
+      event.preventDefault();
+      moveWatchCard(1);
+      return;
+    }
+    if (key === 'k' || key === 'K') {
+      event.preventDefault();
+      moveWatchCard(-1);
+      return;
+    }
+    if (key === 'f' || key === 'F') {
+      event.preventDefault();
+      toggleCurrentFav();
+      return;
+    }
+    if (key === 'Enter') {
+      /* 焦点在按钮/链接等可交互元素上时，Enter 属于它们自己的默认行为
+         （周期按钮、数据范围、导出、关注…），不能被全局快捷键劫持。 */
+      const target = event.target;
+      if (target && typeof target.closest === 'function'
+          && target.closest('button, a, [role="button"], [href], summary, label, input, select, textarea')) {
+        return;
+      }
+      if (!isCurrentCardMarked()) return;
+      event.preventDefault();
+      openCurrentMatch();
+    }
   }
 
   function onDocumentPointerDown(event) {
@@ -1353,12 +1976,40 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     const target = event.target;
     const favFinding = target.closest('[data-pbr-fav-finding]');
     if (favFinding) {
-      toggleFindingFav(favFinding);
+      toggleFav('finding', favFinding);
       return;
     }
     const favWatch = target.closest('[data-pbr-fav-watch]');
     if (favWatch) {
-      toggleWatchFav(favWatch);
+      toggleFav('watch', favWatch);
+      return;
+    }
+    const review = target.closest('[data-pbr-fav-review]');
+    if (review) {
+      toggleReviewed(review);
+      return;
+    }
+    const note = target.closest('[data-pbr-fav-note]');
+    if (note) {
+      openNoteEditor(note);
+      return;
+    }
+    const ignore = target.closest('[data-pbr-ignore-finding]');
+    if (ignore) {
+      ignoreFinding(ignore);
+      return;
+    }
+    if (target.closest('[data-pbr-restore-ignored]')) {
+      restoreIgnored();
+      return;
+    }
+    if (target.closest('[data-pbr-export]')) {
+      exportList();
+      return;
+    }
+    const viewButton = target.closest('[data-pbr-view-mode]');
+    if (viewButton) {
+      chooseView(viewButton.dataset.pbrViewMode);
       return;
     }
     if (target.closest('[data-pbr-watch-prev]')) {
@@ -1384,6 +2035,13 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     }
     if (target.closest('[data-pbr-display-reset]')) {
       resetDisplay();
+      return;
+    }
+    /* 点卡片本体：把它记为当前卡（不做别的动作，避免误触）。 */
+    const watchCard = target.closest('.pbr-watch .pbr-finding.is-watch');
+    if (watchCard && !target.closest('a, button, input')) {
+      currentWatchKey = plain(watchCard.dataset.watchKey);
+      markCurrentCard(watchCard);
       return;
     }
     const fallback = target.closest('[data-pbr-fallback]');

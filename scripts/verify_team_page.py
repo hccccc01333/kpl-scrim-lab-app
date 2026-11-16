@@ -16,8 +16,8 @@
   1. 浏览器（playwright / chromium，禁用缓存）打开 #team/<teamId>，1440 桌面 + 390 手机两种宽度；
   2. console error / pageerror / 失败请求（4xx/5xx）收集；
   3. 全页 + 关键段截图；
-  4. 页面文本断言：新六段存在、已删除面板不存在、统计禁词不存在、分路对位不出现 KDA；
-  5. 交互冒烟：分路筛选 chips（喜欢什么 / 分路对位）、资源指标切换、四象限时间窗，断言区域文本或 class 变化；
+  4. 页面文本断言：v3 五段存在、已删除面板不存在、统计禁词不存在、分路对位不出现 KDA；
+  5. 交互冒烟：英雄池分路筛选、四象限时间窗，断言区域文本或 class 变化；
   6. 页面布局：无横向溢出；
   7. 数据自检：GET /api/v3/team-deep 校验经济占比合计≈100%、四象限与逐局一致、窗口计数、
      窗口下界=锚点-(N-1) 天、KPL 命中 oppGames/oppWins 与 games 内对手 picks 一致、
@@ -53,25 +53,25 @@ QUADRANTS = ['单核进攻', '多点进攻', '保核运营', '多线牵制']
 WINDOWS = ['7', '15', '30', 'all']
 WINDOW_LABELS = {'7': '最近 7 天', '15': '最近 15 天', '30': '最近 30 天', 'all': '全部'}
 
-# 新页面必须出现的段落标题（契约 §1 B–I）
+# v3 五段（2026-11-14 设计对齐首页后的结构；docs/team_page_v2.md §0.1）
 NEW_SECTIONS = [
-    '打法画像',
-    '战队喜欢什么',
-    '资源分配',
-    '团队风格四象限',
-    '体系表现',
-    '分路对位',
-    'BP 偏好',
+    '样本与整体',
+    '选人模式',
     '阵容组合',
+    '打法与资源',
+    '对位与关联',
+    '变化与异常',
+    '证据与方法',
 ]
-# 打法画像内的内容标记（标题可能被改写成「主要经济核心」等，缺失只告警）
-PROFILE_MARKERS = ['主要经济核心', '主要阵容倾向', '核心观察']
-# 必须消失的旧面板 / 旧套层（契约 §1 删除）
+# 打法段内的内容标记（缺失只告警）
+PROFILE_MARKERS = ['团队风格四象限', '输出与承伤结构', '资源与对位']
+# 必须消失的旧面板 / 旧套层（契约 §1 删除 + P1 收编：体系胜率旧三元组并入阵容体系）
 REMOVED_TOKENS = [
     '交手走势', '节奏与终结', '赛前洞察',
     '经济投入', '输出转化',
     '基础层', '中级层', '高级层',
     'BASIC', 'INTERMEDIATE', 'ADVANCED',
+    '体系表现', '阵容对抗', '证据与职业参照',
 ]
 # 硬性禁词（契约 §3）
 BANNED_TERMS = ['pp', '百分点', 'HHI', '分位', '协同值']
@@ -81,35 +81,30 @@ EXTRA_TERMS = ['显著性', '归一化', 'p 值', 'p值', '标准差']
 # 与战队页 v2 无关、且改造前就存在的环境噪音（更新检查端点在当前数据目录返回 404）
 NOISE_URL_MARKERS = ['/api/update/check']
 
+# 段落内的子面板标题（QA 定位用：现为区块内卡片标题）
+PANEL_SUBTITLES = ['边野组合', '资源与对位', '结果关联', '变化与异常', '团队风格四象限', '分路对位', '英雄使用', '主力体系', 'KPL 职业参照']
+
 # 截图用的关键段（标题, 文件名）
 SHOT_SECTIONS = [
-    ('打法画像', 'section-profile'),
-    ('战队喜欢什么', 'section-preference'),
-    ('资源分配', 'section-resource'),
-    ('团队风格四象限', 'section-style'),
-    ('体系表现', 'section-system'),
-    ('分路对位', 'section-lanes'),
-    ('BP 偏好', 'section-bp'),
-    ('阵容组合', 'section-combos'),
+    ('样本与整体', 'section-overview'),
+    ('选人模式', 'section-heroes'),
+    ('阵容组合', 'section-lineups'),
+    ('打法与资源', 'section-style'),
+    ('对位与关联', 'section-evidence'),
+    ('变化与异常', 'section-change'),
 ]
 
 # 交互冒烟：(断言 id, 段落标题, 候选 chip 文本, 候选 data-td-* 属性, 说明)
 INTERACTIONS = [
-    ('interaction.preference_lane', '战队喜欢什么', ['打野'],
-     ['data-td-chip', 'data-td-lane', 'data-td-lane-filter', 'data-td-profile-lane'],
-     '喜欢什么：点分路 chip「打野」'),
-    ('interaction.resource_metric', '资源分配', ['输出'],
-     ['data-td-chip', 'data-td-metric', 'data-td-resource', 'data-td-res-metric'],
-     '资源分配：切到指标「输出」'),
-    ('interaction.resource_lane', '资源分配', ['打野'],
-     ['data-td-chip', 'data-td-res-lane'],
-     '资源分配：分路筛选「打野」'),
-    ('interaction.style_window', '团队风格四象限', ['15天'],
-     ['data-td-chip', 'data-td-window', 'data-td-style-window'],
-     '四象限：切到时间窗「15 天」'),
-    ('interaction.lane_filter', '分路对位', ['中路'],
-     ['data-td-chip', 'data-td-lane', 'data-td-lane-filter', 'data-td-matchup-lane'],
-     '分路对位：点分路 chip「中路」'),
+    ('interaction.preference_lane', '英雄使用', ['打野'],
+     ['data-td-chip'],
+     '英雄池：点分路 chip「打野」'),
+    ('interaction.style_window', '团队风格四象限', ['7 天', '7天'],
+     ['data-td-chip'],
+     '四象限：切到时间窗「7 天」'),
+    ('interaction.style_window_all', '团队风格四象限', ['全部'],
+     ['data-td-chip'],
+     '四象限：切到时间窗「全部」'),
 ]
 
 READY_JS = r"""() => {
@@ -309,35 +304,95 @@ QUAD_HINT_JS = r"""(title) => {
 
 TEAM_DOM_JS = r"""() => {
   const out = {};
-  const sectionByTitle = (needle) => {
-    const norm = (s) => (s || '').replace(/\s+/g, '');
-    return [...document.querySelectorAll('section')].find((s) => {
-      const h = s.querySelector('h2,h3');
-      return h && norm(h.innerText).includes(norm(needle));
-    }) || null;
-  };
-  const likes = sectionByTitle('战队喜欢什么');
-  out.likes = likes ? {
-    cards: [...likes.querySelectorAll('[data-td-likes-group]')].map((el) => el.dataset.tdLikesGroup),
-    bars: [...likes.querySelectorAll('*')].filter((el) => /(bar|track|fill|progress)/i.test(String(el.className || ''))).length,
+  const norm = (s) => (s || '').replace(/\s+/g, '');
+  const sectionByTitle = (needle) => [...document.querySelectorAll('section')].find((sec) => {
+    return [sec.querySelector('h2'), ...sec.querySelectorAll('h3')].some((h) => {
+      const t = norm(h && (h.innerText || h.textContent));
+      return t && t.includes(norm(needle));
+    });
+  }) || null;
+  // KPL / 体系资源都在折叠块里，先展开再读文本（只读探测，不改页面业务状态）
+  document.querySelectorAll('.tp-page details').forEach((d) => { d.open = true; });
+  const heroes = sectionByTitle('选人模式');
+  out.likes = heroes ? {
+    cards: [...heroes.querySelectorAll('[data-tp-hero-lane]')].map((el) => el.dataset.tpHeroLane),
+    bars: 0,
   } : null;
-  out.duel = [...document.querySelectorAll('[data-td-duel]')].map((card) => ({
-    lane: card.dataset.tdDuel,
-    metrics: [...card.querySelectorAll('.td-duel-metric span')].map((x) => (x.innerText || '').trim()),
+  out.bp = {lanes: [...document.querySelectorAll('.tp-ban-stack-legend span')].map((r) => (r.innerText || '').trim()).filter(Boolean).slice(0, 5)};
+  out.duel = [...document.querySelectorAll('.tp-duel')].map((card) => ({
+    lane: (card.querySelector('header b')?.innerText || '').trim(),
+    metrics: [...card.querySelectorAll('.tp-duel-label')].map((x) => (x.innerText || '').trim()),
   }));
-  const res = sectionByTitle('资源分配');
-  out.resource = res ? {
-    metrics: [...res.querySelectorAll('[data-td-chip="resMetric"]')].map((c) => c.innerText.trim()),
-    lanes: [...res.querySelectorAll('[data-td-chip="resLane"]')].map((c) => c.innerText.trim()),
-    leftRight: /对手（左）/.test(res.innerText) || /对手\(左\)/.test(res.innerText),
-    zeroPoint: /中间\s*0\s*点/.test(res.innerText),
-  } : null;
-  const bp = sectionByTitle('BP 偏好');
-  out.bp = bp ? {lanes: [...bp.querySelectorAll('[data-td-chip="bpLane"]')].map((c) => c.innerText.trim())} : null;
-  const kpl = sectionByTitle('阵容组合');
-  out.kpl = kpl ? {text: (kpl.innerText || '').trim()} : null;
   const style = sectionByTitle('团队风格四象限');
-  out.style = style ? {text: (style.innerText || '').trim()} : null;
+  out.style = style ? {text: (style.textContent || '')} : null;
+  const res = sectionByTitle('资源与对位');
+  out.resource = res ? {
+    metrics: [],
+    lanes: [...res.querySelectorAll('.tp-res-table tbody tr td:first-child')].map((el) => (el.innerText || '').trim()),
+    table: !!res.querySelector('.tp-res-table'),
+    laneDiff: !!res.querySelector('.tp-res-table th:nth-child(3)'),
+  } : null;
+  const kpl = [...document.querySelectorAll('details')].find((d) => (d.querySelector('summary')?.innerText || '').includes('KPL'));
+  if (kpl) kpl.open = true;
+  out.kpl = kpl ? {text: (kpl.innerText || '').trim()} : null;
+  out.text = (document.querySelector('.tp-page')?.innerText || '');
+  out.heroLinks = [...document.querySelectorAll('.tp-hero, .tp-face')].map((a) => a.getAttribute('href') || '').filter(Boolean);
+  out.systems = document.querySelectorAll('.tp-sig-row.is-system').length;
+  out.library = !!document.querySelector('.tp-library');
+  out.fiveRows = document.querySelectorAll('.tp-five-row').length;
+  out.samples = document.querySelectorAll('.tp-sample').length;
+  out.scope = !!document.querySelector('.tp-scope');
+  out.filterButtons = document.querySelectorAll('.tp-page [data-action="filter"]').length;
+  out.copySummary = (document.querySelector('[data-tp-copy]')?.dataset.tpSummary || '').length;
+  out.demo = (document.querySelector('.tp-page')?.innerText || '').includes('演示');
+  out.edge = document.querySelectorAll('.tp-edge-cell:not(.is-empty)').length;
+  out.lift = document.querySelectorAll('.tp-lift').length;
+  out.resourceBars = document.querySelectorAll('.tp-res-table .tp-mini').length;
+  out.spark = !!document.querySelector('.tp-spark');
+  const bpCard = [...document.querySelectorAll('.tp-card')].find((card) => (card.querySelector('h3')?.innerText || '').trim() === 'BP 时序');
+  out.bpOrder = !!document.querySelector('.tp-bpo');
+  out.bpOrderText = bpCard?.innerText || '';
+  out.bpBanSlots = bpCard ? bpCard.querySelectorAll('.tp-bpo-bseq-row').length : 0;
+  const cardByTitle = (title) => [...document.querySelectorAll('.tp-card')].find((card) => (card.querySelector('h3')?.innerText || '').trim() === title);
+  const banPoolCard = cardByTitle('Ban × 英雄池');
+  const banShapeCard = cardByTitle('Ban 形状');
+  const replacementCard = cardByTitle('Ban 后的替代结构');
+  const poolDepthCard = cardByTitle('英雄池深度 · 五路');
+  out.banPool = {
+    panels: document.querySelectorAll('.tp-scatter-panel').length,
+    dots: document.querySelectorAll('.tp-scat-dot').length,
+    text: banPoolCard?.innerText || '',
+  };
+  out.banShape = {
+    stacks: document.querySelectorAll('.tp-ban-stack').length,
+    splits: document.querySelectorAll('.tp-target-mini').length,
+    waste: document.querySelectorAll('.tp-waste > a').length,
+    text: banShapeCard?.innerText || '',
+  };
+  out.replacement = {
+    rows: replacementCard ? replacementCard.querySelectorAll('.tp-repl-table tbody tr').length : 0,
+    cells: document.querySelectorAll('.tp-repl-matrix > i').length,
+    text: replacementCard?.innerText || '',
+  };
+  out.poolDepth = {
+    rows: poolDepthCard ? poolDepthCard.querySelectorAll('.tp-pool-table tbody tr').length : 0,
+    kpl: poolDepthCard ? poolDepthCard.querySelectorAll('.tp-pool-backups small').length : 0,
+    text: poolDepthCard?.innerText || '',
+  };
+  const banOutcomeCard = cardByTitle('Ban 与结果');
+  out.banOutcomeRows = banOutcomeCard ? banOutcomeCard.querySelectorAll('tbody tr').length : 0;
+  out.banOutcomeText = banOutcomeCard?.innerText || '';
+  const rulesCard = [...document.querySelectorAll('.tp-card')].find((card) => (card.querySelector('h3')?.innerText || '').trim() === '结果关联');
+  out.rules = rulesCard ? rulesCard.querySelectorAll('tbody tr:not(.is-group)').length : 0;
+  const changeSec = document.getElementById('tp-change');
+  out.change = !!changeSec;
+  out.changeRows = changeSec ? changeSec.querySelectorAll('.tp-table tbody tr').length : 0;
+  out.outliers = document.querySelectorAll('.tp-outlier').length;
+  const quad = document.querySelector('.tp-quad');
+  out.quad = quad ? {
+    width: quad.viewBox?.baseVal?.width || 0,
+    dots: [...quad.querySelectorAll('.tp-qdot:not(.is-own)')].map((d) => ({cx: parseFloat(d.getAttribute('cx')), cy: parseFloat(d.getAttribute('cy'))})),
+  } : null;
   return out;
 }"""
 
@@ -539,7 +594,8 @@ def check_api(report, base, team, api_timeout):
     report.api_raw_path = str(raw_path)
 
     # 顶层字段
-    top_keys = ['team', 'own', 'games', 'style', 'taxonomy', 'kpl', 'meta']
+    top_keys = ['team', 'own', 'games', 'style', 'taxonomy', 'kpl', 'bpOrder',
+                'banMatchup', 'banReplacement', 'poolDepth', 'meta']
     missing = [k for k in top_keys if k not in data]
     report.add('data.top_keys', 'data', not missing,
                '顶层字段齐全' if not missing else '顶层字段缺失：%s' % ', '.join(missing),
@@ -552,6 +608,50 @@ def check_api(report, base, team, api_timeout):
     style = data.get('style') or {}
     report.add('data.games_present', 'data', len(games) >= 1,
                'games 有 %d 条' % len(games), {'games': len(games)})
+
+    # BP 顺序来源：核验局 + 按名单假设局，必须能对上 knownGames，避免把假设当核验。
+    bp_order = data.get('bpOrder') or {}
+    if bp_order.get('eventsKnown'):
+        known = bp_order.get('knownGames')
+        verified = bp_order.get('verifiedGames')
+        assumed = bp_order.get('assumedGames')
+        provenance_ok = (_num(known) and _num(verified) and _num(assumed)
+                         and verified + assumed == known)
+        report.add('data.bp_order_provenance', 'data', provenance_ok,
+                   'BP 顺序来源可对账：有顺序 %s 局 = 核验 %s + 按名单假设 %s' % (known, verified, assumed)
+                   if provenance_ok else 'BP 顺序来源缺失或对不上（known=%s verified=%s assumed=%s）' % (known, verified, assumed),
+                   {'knownGames': known, 'verifiedGames': verified, 'assumedGames': assumed})
+    else:
+        report.add('data.bp_order_provenance', 'data', True,
+                   '该队没有可用 BP 顺序，跳过来源对账', {'eventsKnown': False})
+
+    bm = data.get('banMatchup') or {}
+    br = data.get('banReplacement') or {}
+    pd = data.get('poolDepth') or {}
+    ban_analysis_ok = (bm.get('games') and len((bm.get('theirBansVsOurPool') or {}).get('points') or []) >= 5
+                       and len((bm.get('ourBansVsTheirPool') or {}).get('points') or []) >= 5
+                       and len(br.get('rows') or []) >= 3
+                       and len((br.get('matrix') or {}).get('rows') or []) >= 3
+                       and len(pd.get('lanes') or []) == 5)
+    report.add('data.ban_analysis', 'data', ban_analysis_ok,
+               'Ban 分析块齐全（双向散点 / 替代矩阵 / 五路池深）' if ban_analysis_ok
+               else 'Ban 分析块不完整',
+               {'matchupGames': bm.get('games'), 'replacementRows': len(br.get('rows') or []),
+                'matrixRows': len((br.get('matrix') or {}).get('rows') or []),
+                'poolLanes': len(pd.get('lanes') or [])})
+
+    ban_rows = bp_order.get('banOutcome') or []
+    if ban_rows:
+        ban_games = bp_order.get('banOutcomeGames')
+        ban_base = bp_order.get('banOutcomeBaseRate')
+        sample_ok = _num(ban_games) and _num(ban_base)
+        report.add('data.ban_outcome_sample', 'data', sample_ok,
+                   'Ban 与结果样本 %s 局、基线 %s%%（只用终局 ban 名单，不要求手序）' % (ban_games, ban_base)
+                   if sample_ok else 'Ban 与结果缺少样本量或基线（games=%s base=%s）' % (ban_games, ban_base),
+                   {'games': ban_games, 'baseRate': ban_base})
+    else:
+        report.add('data.ban_outcome_sample', 'data', True,
+                   '没有 ≥4 局的 ban 条件，跳过', {'rows': 0})
 
     # 逐局结构
     struct_bad = []
@@ -1162,10 +1262,10 @@ def text_assertions(report, page, page_text, headings, mode):
                     '未找到分路对位区域，跳过游走指标检查', {})
 
     # 4c) 用户重点：资源分配不能用 pp / 统计术语
-    res_loc = find_panel(page, '资源分配')
+    res_loc = find_panel(page, '资源与对位')
     if res_loc is None:
         report.warn('copy.resource_no_stats', 'copy', True,
-                    '未找到「资源分配」区域，跳过统计术语检查', {})
+                    '未找到「资源与对位」区域，跳过统计术语检查', {})
     else:
         try:
             res_text = res_loc.first.inner_text()
@@ -1181,8 +1281,8 @@ def text_assertions(report, page, page_text, headings, mode):
             if hits:
                 res_hits[term] = hits[:4]
         report.add('copy.resource_no_stats', 'copy', not res_hits,
-                   '资源分配未使用 pp/统计术语' if not res_hits
-                   else '资源分配出现统计术语：%s' % '、'.join(res_hits.keys()),
+                   '资源与对位未使用 pp/统计术语' if not res_hits
+                   else '资源与对位出现统计术语：%s' % '、'.join(res_hits.keys()),
                    {'hits': res_hits, 'panel_text_len': len(res_text)})
 
     # 4d) 用户重点：样本 < 3 局不能出现胜率结论
@@ -1195,12 +1295,12 @@ def text_assertions(report, page, page_text, headings, mode):
                     continue
                 if any(x in s for x in ('样本', '证据不足', '单局', 'KPL', '官方', '参考')):
                     continue
-                if scope == '阵容组合' and not any(x in s for x in ('对手胜率', '交手', '我们')):
+                if scope == '对位与关联' and not any(x in s for x in ('对手胜率', '交手', '我们')):
                     continue
                 out.append(s[:160])
             return out
 
-        scope_ids = {'体系表现': 'system', 'BP 偏好': 'bp', '阵容组合': 'combos'}
+        scope_ids = {'打法与资源': 'system', '选人模式': 'bp', '证据与方法': 'combos'}
         for title, scope_id in scope_ids.items():
             loc = find_panel(page, title)
             ident = 'copy.no_winrate_%s' % scope_id
@@ -1233,11 +1333,15 @@ def text_assertions(report, page, page_text, headings, mode):
     report.add('copy.sample_note', 'copy', '样本' in raw,
                '页面含样本说明' if '样本' in raw else '页面没有任何样本说明',
                {'sample_lines': lines_with(raw, '样本', 5)})
-    thin_ok = any(t in raw for t in ('单局参考', '样本不足', '证据不足'))
-    report.add('copy.single_game_note', 'copy', thin_ok,
-               '样本不足话术存在' if thin_ok else '1 局样本未提示「单局参考/样本不足/证据不足」',
-               {'lines': [ln.strip() for ln in raw.splitlines()
-                          if any(t in ln for t in ('单局参考', '样本不足', '证据不足'))][:6]})
+    if report.team_matches is not None and report.team_matches < 3:
+        thin_ok = any(t in raw for t in ('单局参考', '样本不足', '证据不足'))
+        report.add('copy.single_game_note', 'copy', thin_ok,
+                   '样本不足话术存在' if thin_ok else '1 局样本未提示「单局参考/样本不足/证据不足」',
+                   {'lines': [ln.strip() for ln in raw.splitlines()
+                              if any(t in ln for t in ('单局参考', '样本不足', '证据不足'))][:6]})
+    else:
+        report.warn('copy.single_game_note', 'copy', True,
+                    '样本 ≥3 局，跳过「单局参考」话术检查', {'team_matches': report.team_matches})
 
     # 7) 代理指标标注（契约 §3 只告警）
     proxy_ok = ('终局面板' in raw) or ('代理' in raw)
@@ -1245,10 +1349,10 @@ def text_assertions(report, page, page_text, headings, mode):
                 '有终局面板代理标注' if proxy_ok else '未见「终局面板/代理」标注',
                 {'lines': [ln.strip()[:160] for ln in raw.splitlines()
                            if ('终局' in ln or '代理' in ln)][:6]})
-    seq_ok = '禁选顺序' in raw or '没有禁选顺序' in raw
+    seq_ok = any(t in raw for t in ('20 手模板', '显式手序', '禁选顺序'))
     report.warn('copy.no_pick_order_note', 'copy', seq_ok,
-                '有「没有禁选顺序」口径说明' if seq_ok else '未见禁选顺序口径说明',
-                {'lines': lines_with(raw, '禁选顺序', 4)})
+                '有手序口径说明（模板/显式）' if seq_ok else '未见手序口径说明',
+                {'lines': lines_with(raw, '手序', 4) + lines_with(raw, '禁选顺序', 4)})
     per_game_ok = '逐局识别' in raw
     report.warn('copy.per_game_note', 'copy', per_game_ok,
                 '有「逐局识别」说明' if per_game_ok else '未见「逐局识别」说明',
@@ -1271,7 +1375,7 @@ def text_assertions(report, page, page_text, headings, mode):
 
 def interaction_assertions(report, page, mode):
     for ident, title, texts, attrs, desc in INTERACTIONS:
-        mark_panels(page, NEW_SECTIONS)
+        mark_panels(page, NEW_SECTIONS + PANEL_SUBTITLES)
         before = snapshot(page, title)
         if before is None:
             report.add(ident, 'interaction', False, '%s：未找到「%s」区域' % (desc, title),
@@ -1286,7 +1390,7 @@ def interaction_assertions(report, page, mode):
         how = click_chip(page)
         page.wait_for_timeout(800)
         clear_chips(page)
-        mark_panels(page, NEW_SECTIONS)
+        mark_panels(page, NEW_SECTIONS + PANEL_SUBTITLES)
         after = snapshot(page, title)
         chip_after = find_chip(page, title, texts, attrs)
         clear_chips(page)
@@ -1386,6 +1490,33 @@ def layout_assertions(report, mode, overflow):
                {'clipped': clipped[:10]})
 
 
+def mobile_collapse_assertion(report, page, mode):
+    info = page.evaluate("""() => ({
+      height: document.documentElement.scrollHeight,
+      bodies: [...document.querySelectorAll('.tp-sec-body')].map((b) => getComputedStyle(b).display),
+      toggles: [...document.querySelectorAll('[data-tp-toggle]')].map((b) => b.textContent),
+    })""")
+    bodies = info.get('bodies') or []
+    collapsed = len(bodies) >= 2 and bodies[0] != 'none' and all(b == 'none' for b in bodies[1:])
+    short = (info.get('height') or 0) < 6000
+    report.add('layout.mobile_collapse_%s' % mode, 'layout', collapsed and short,
+               '移动端默认折叠 02–05，页面高度 %s px' % info.get('height') if collapsed and short
+               else '移动端折叠异常：bodies=%s height=%s' % (bodies, info.get('height')),
+               info)
+    if bodies:
+        try:
+            toggle = page.locator('[data-tp-toggle]').nth(1)
+            toggle.click(timeout=4000)
+            page.wait_for_timeout(300)
+            opened = page.evaluate("() => getComputedStyle(document.querySelectorAll('.tp-sec-body')[1]).display")
+            report.add('interaction.mobile_section_toggle', 'interaction', opened != 'none',
+                       '移动端段头「展开」可打开内容' if opened != 'none'
+                       else '点击「展开」后内容仍未显示', {'display': opened})
+        except Exception as exc:  # noqa: BLE001
+            report.add('interaction.mobile_section_toggle', 'interaction', False,
+                       '移动端段头展开失败：%s' % exc, {})
+
+
 def quadrant_hint_assertion(report, page, mode):
     info = page.evaluate(QUAD_HINT_JS, '团队风格四象限')
     if not info:
@@ -1440,84 +1571,208 @@ def manual_dom_assertions(report, page):
                if not duel_bad else '分路对位指标不符合契约',
                {'problems': duel_bad[:8], 'duel': duel})
 
-    # D 资源分配：指标切换 3 项 + 分路筛选 6 项 + 左右对位
+    # D 资源与对位：五路份额 + 同位置对位差
     res = dom.get('resource') or {}
     res_bad = []
-    if res.get('metrics') != ['经济', '输出', '承伤']:
-        res_bad.append('指标 chips=%s' % res.get('metrics'))
-    if res.get('lanes') != ['全部', '对抗路', '打野', '中路', '发育路', '游走']:
-        res_bad.append('分路 chips=%s' % res.get('lanes'))
-    if not res.get('leftRight'):
-        res_bad.append('缺少「对手（左）/本队（右）」对位说明')
-    if not res.get('zeroPoint'):
-        res_bad.append('缺少「中间 0 点」说明')
+    if res.get('lanes') != ['对抗路', '打野', '中路', '发育路', '游走']:
+        res_bad.append('分路=%s' % res.get('lanes'))
+    if not res.get('table'):
+        res_bad.append('缺少资源对位表')
+    if not res.get('laneDiff'):
+        res_bad.append('缺少对位差列')
     report.add('copy.resource_controls', 'copy', not res_bad,
-               '资源分配：指标 3 项 + 分路 6 项 + 左右对位 + 中间 0 点齐全' if not res_bad
-               else '资源分配控件/文案缺失', {'problems': res_bad, 'resource': res})
+               '资源与对位：五路份额 + 同位置对位差齐全' if not res_bad
+               else '资源与对位结构缺失', {'problems': res_bad, 'resource': res})
 
-    # C 喜欢什么：5 分路卡片，无整行长条（bar/track/fill 元素数应为 0）
+    # C 英雄池：五条分路行（类型胶囊 + 英雄胶囊）
     likes = dom.get('likes') or {}
     likes_cards = likes.get('cards') or []
     likes_bad = []
     if sorted(likes_cards) != sorted(['对抗路', '打野', '中路', '发育路', '游走']):
-        likes_bad.append('分路卡片=%s' % likes_cards)
-    if likes.get('bars'):
-        likes_bad.append('仍有 bar/track/fill 元素 %d 个（可能整行 100%% 长条）' % likes.get('bars'))
+        likes_bad.append('分路行=%s' % likes_cards)
     report.add('copy.likes_layout', 'copy', not likes_bad,
-               '喜欢什么：5 个分路卡片，类型用胶囊不用整行长条' if not likes_bad
-               else '喜欢什么布局不符合要求', {'problems': likes_bad, 'likes': likes})
+               '英雄池：5 个分路行齐全' if not likes_bad
+               else '英雄池布局不符合要求', {'problems': likes_bad, 'likes': likes})
 
     # E 四象限：轴方向读法 + 单局样本话术 + 队伍推塔口径
     style_text = (dom.get('style') or {}).get('text') or ''
     axis_ok = all(t in style_text for t in ('单核', '多核', '打架', '运营'))
-    axis_dir_ok = ('左' in style_text and '右' in style_text and '上' in style_text and '下' in style_text)
-    report.add('copy.quadrant_axes', 'copy', axis_ok and axis_dir_ok,
-               '四象限轴方向可读（左单核/右多核、上打架/下运营）'
-               if axis_ok and axis_dir_ok else '四象限轴文案不完整',
-               {'axis_ok': axis_ok, 'axis_dir_ok': axis_dir_ok,
+    dir_ok = ('经济分配' in style_text) and ('终局面板' in style_text or '代理' in style_text)
+    report.add('copy.quadrant_axes', 'copy', axis_ok and dir_ok,
+               '四象限轴可读（单核/多核、打架/运营 + 终局面板代理标注）'
+               if axis_ok and dir_ok else '四象限轴文案不完整',
+               {'axis_ok': axis_ok, 'dir_ok': dir_ok,
                 'lines': [ln.strip()[:160] for ln in style_text.splitlines()
-                          if any(k in ln for k in ('单核', '多核', '打架', '运营', '横轴', '纵轴'))][:8]})
-    single_ok = ('单局参考' in style_text) and ('不作稳定风格' in style_text or '暂不归类' in style_text)
-    report.add('copy.quadrant_single_game', 'copy', single_ok,
-               '1 局样本标注「单局参考 + 不作稳定风格」' if single_ok
-               else '1 局样本缺少「单局参考/不作稳定风格」标注',
-               {'lines': [ln.strip()[:160] for ln in style_text.splitlines()
-                          if '单局' in ln or '暂不归类' in ln or '样本不足' in ln][:8]})
-    report.warn('copy.quadrant_no_classify_wording', 'copy', '暂不归类' in style_text,
-                '四象限含契约字面「暂不归类」' if '暂不归类' in style_text
-                else '四象限未出现契约字面「暂不归类」（当前用「单局参考：X + 不作稳定风格」表达，语义等价）',
-                {'has_wording': '暂不归类' in style_text})
-    towers_ok = ('队伍终局合计' in style_text or '队伍推塔' in style_text) and ('口径' in style_text)
-    report.add('copy.team_towers_note', 'copy', towers_ok,
-               '证据卡已标注推塔/控龙按队伍终局合计、与页头口径不同' if towers_ok
-               else '证据卡未标注队伍推塔口径',
-               {'lines': [ln.strip()[:200] for ln in style_text.splitlines()
-                          if '推塔' in ln or '口径' in ln][:8]})
+                          if any(k in ln for k in ('单核', '多核', '打架', '运营', '终局'))][:8]})
+    classify_ok = ('暂不归类' in style_text) or ('单局参考' in style_text)
+    report.warn('copy.quadrant_no_classify_wording', 'copy', classify_ok,
+                '四象限有「暂不归类 / 单局参考」话术' if classify_ok
+                else '四象限未出现「暂不归类 / 单局参考」话术',
+                {'has_wording': classify_ok})
+    proxy_ok = '终局面板' in style_text
+    report.warn('copy.team_towers_note', 'copy', proxy_ok,
+                '四象限标注终局面板代理' if proxy_ok else '四象限未标注终局面板代理',
+                {'lines': [ln.strip()[:200] for ln in style_text.splitlines()
+                          if '推塔' in ln or '口径' in ln or '终局' in ln][:8]})
 
-    # H BP 偏好分路 chips
-    bp_lanes = (dom.get('bp') or {}).get('lanes') or []
-    report.add('copy.bp_lane_chips', 'copy',
-               bp_lanes == ['全部', '对抗路', '打野', '中路', '发育路', '游走'],
-               'BP 偏好分路筛选 6 项齐全' if bp_lanes == ['全部', '对抗路', '打野', '中路', '发育路', '游走']
-               else 'BP 偏好分路筛选异常：%s' % bp_lanes, {'chips': bp_lanes})
+    # H Ban 形状：分路 / 类型图例
+    bp_rows = (dom.get('bp') or {}).get('lanes') or []
+    report.add('copy.bp_lane_chips', 'copy', len(bp_rows) >= 4,
+               'Ban 分路/类型图例可用（%d 项）' % len(bp_rows) if len(bp_rows) >= 4
+               else 'Ban 分路/类型图例缺失：%s' % bp_rows, {'rows': bp_rows[:12]})
 
     # I 阵容组合：空 lineup 证据不足 + 年份不带千分位
     kpl_text = (dom.get('kpl') or {}).get('text') or ''
     kpl_bad = []
     if not kpl_text:
-        kpl_bad.append('未找到阵容组合区域')
-    else:
-        if '证据不足' not in kpl_text:
-            kpl_bad.append('空 KPL lineup 未显示「证据不足」')
-        if re.search(r'2[,，]\d{3}', kpl_text):
-            kpl_bad.append('年份出现千分位（如 2,026）')
-        if not re.search(r'20\d{2}', kpl_text):
-            kpl_bad.append('未见年份')
+        kpl_bad.append('未找到 KPL 职业参照区域')
+    elif re.search(r'2[,，]\d{3}', kpl_text):
+        kpl_bad.append('年份出现千分位（如 2,026）')
     report.add('copy.kpl_empty_and_year', 'copy', not kpl_bad,
-               '阵容组合：空 lineup 显示证据不足，年份无千分位' if not kpl_bad
-               else '阵容组合文案/年份格式问题', {'problems': kpl_bad,
-                                                 'year_lines': [ln.strip()[:120] for ln in kpl_text.splitlines()
-                                                                if re.search(r'20\d{2}|2[,，]\d{3}', ln)][:6]})
+               'KPL 参照：区域存在，年份无千分位' if not kpl_bad
+               else 'KPL 参照文案/年份格式问题', {'problems': kpl_bad,
+                                                 'text': kpl_text[:400]})
+
+    # J 英雄头像可跳转（v3.1）
+    hero_links = dom.get('hero_links') or dom.get('heroLinks') or []
+    bad_links = [h for h in hero_links if not h.startswith('#hero/')]
+    report.add('copy.hero_links', 'copy', len(hero_links) >= 20 and not bad_links,
+               '英雄头像可点进英雄详情（%d 个链接）' % len(hero_links) if hero_links and not bad_links
+               else '英雄头像链接缺失或不是 #hero/：%d 个，异常 %d' % (len(hero_links), len(bad_links)),
+               {'count': len(hero_links), 'bad': bad_links[:6]})
+
+    # K 未标注口径（v3.1）：不再出现「待分类」，并解释未标注来源
+    page_text = dom.get('text') or ''
+    no_pending = '待分类' not in page_text
+    explains = ('未标注' not in page_text) or ('英雄分类表' in page_text)
+    report.add('copy.unlabeled_wording', 'copy', no_pending and explains,
+               '类型缺标统一写「未标注」并说明来源' if no_pending and explains
+               else '仍出现「待分类」或未解释「未标注」',
+               {'has_pending': not no_pending, 'has_unlabeled': '未标注' in page_text,
+                'explains': explains})
+
+    # L 四象限点位不贴边（v3.1：5% 内缩 + 抖动）
+    quad = dom.get('quad') or {}
+    dots = quad.get('dots') or []
+    qw = quad.get('width') or 0
+    edge = []
+    if qw > 0:
+        for dot in dots:
+            cx = dot.get('cx') or 0
+            if cx < qw * 0.02 or cx > qw * 0.98:
+                edge.append(round(cx, 1))
+    report.add('layout.quadrant_not_edge', 'layout', len(dots) >= 5 and not edge,
+               '四象限 %d 个点均在画布内（远离左右边框）' % len(dots) if len(dots) >= 5 and not edge
+               else '四象限点位不足或贴边：%d 个点，贴边 %d' % (len(dots), len(edge)),
+               {'dots': len(dots), 'edge': edge[:8], 'width': qw})
+
+    # M 阵容收口：主力体系 3 条 + 体系库折叠 + 五人阵容去重
+    systems_ok = (dom.get('systems') or 0) == 3 and bool(dom.get('library')) and (dom.get('fiveRows') or 0) == 0
+    report.add('copy.lineups_top3', 'copy', systems_ok,
+               '阵容体系：主力体系 3 条 + 体系库折叠，五人阵容已并入' if systems_ok
+               else '阵容收口异常：systems=%s library=%s fiveRows=%s' % (dom.get('systems'), dom.get('library'), dom.get('fiveRows')),
+               {'systems': dom.get('systems'), 'library': dom.get('library'), 'fiveRows': dom.get('fiveRows')})
+
+    # N 演示数据隐藏
+    report.add('copy.demo_hidden', 'copy', not dom.get('demo'),
+               '演示系列赛已隐藏' if not dom.get('demo') else '页面仍出现「演示」系列赛',
+               {'demo': dom.get('demo')})
+
+    # O 数据范围：不再放会误导的全站筛选按钮，改为页头口径说明
+    scope_ok = bool(dom.get('scope')) and (dom.get('filterButtons') or 0) == 0
+    report.add('copy.data_scope', 'copy', scope_ok,
+               '页头写明「全部营地数据」，不再放无效的数据范围按钮' if scope_ok
+               else '口径说明/数据范围按钮处理异常',
+               {'scope': dom.get('scope'), 'filterButtons': dom.get('filterButtons')})
+
+    # P 样本量视觉编码 + 摘要复制
+    samples_ok = (dom.get('samples') or 0) >= 5
+    report.add('copy.sample_badges', 'copy', samples_ok,
+               '胜率带样本量标签（%d 处）' % dom.get('samples') if samples_ok
+               else '胜率缺少样本量标签（%s 处）' % dom.get('samples'),
+               {'samples': dom.get('samples')})
+    copy_ok = (dom.get('copySummary') or 0) >= 80
+    report.add('copy.copy_summary', 'copy', copy_ok,
+               '页头有「复制摘要」且内容完整' if copy_ok
+               else '「复制摘要」缺失或内容过短（%s）' % dom.get('copySummary'),
+               {'length': dom.get('copySummary')})
+
+    # Q 分析/挖掘：边野频率、关联规则、资源对位、变化异常
+    edge_ok = (dom.get('edge') or 0) >= 3
+    report.add('copy.edge_patterns', 'copy', edge_ok,
+               '边野组合矩阵可用（%s 个非空格）' % dom.get('edge') if edge_ok
+               else '边野组合矩阵缺失（%s 个非空格）' % dom.get('edge'),
+               {'cells': dom.get('edge')})
+    rules_ok = (dom.get('rules') or 0) >= 4
+    report.add('copy.association_rules', 'copy', rules_ok,
+               '结果关联表可用（%s 条 ≥4 局条件）' % dom.get('rules') if rules_ok
+               else '结果关联表缺失或条件不足（%s 条）' % dom.get('rules'),
+               {'rows': dom.get('rules')})
+    change_ok = bool(dom.get('change')) and (dom.get('changeRows') or 0) >= 4
+    report.add('copy.change_anomaly', 'copy', change_ok,
+               '变化与异常：前后段对照 + 离群局' if change_ok
+               else '变化与异常卡缺失（rows=%s）' % dom.get('changeRows'),
+               {'rows': dom.get('changeRows'), 'outliers': dom.get('outliers')})
+    lane_diff_ok = bool((dom.get('resource') or {}).get('laneDiff'))
+    report.add('copy.resource_lane_diff', 'copy', lane_diff_ok,
+               '资源卡含同位置对位差' if lane_diff_ok else '资源卡缺少对位差列',
+               {'resource': dom.get('resource')})
+
+    # S BP 时序与 ban 结果（draftEvents 22/25 局）
+    bp_text = dom.get('bpOrderText') or ''
+    bp_order_ok = (bool(dom.get('bpOrder')) and (dom.get('bpBanSlots') or 0) >= 5
+                   and 'ban 顺序' in bp_text and '第一手' in bp_text and '显式' in bp_text)
+    report.add('copy.bp_order', 'copy', bp_order_ok,
+               'BP 时序卡可读（第一手 / ban 顺序 %s 手 / 显式手序标注）' % dom.get('bpBanSlots')
+               if bp_order_ok else 'BP 时序卡缺失或 ban 顺序不完整（%s 手）' % dom.get('bpBanSlots'),
+               {'bpOrder': dom.get('bpOrder'), 'banSlots': dom.get('bpBanSlots')})
+    ban_text = dom.get('banOutcomeText') or ''
+    ban_outcome_ok = (dom.get('banOutcomeRows') or 0) >= 3 and '对手战绩' in ban_text
+    report.add('copy.ban_outcome', 'copy', ban_outcome_ok,
+               'Ban 与结果条件关联表可用（%s 行，含对手战绩）' % dom.get('banOutcomeRows')
+               if ban_outcome_ok else 'Ban 与结果表缺失（%s 行）' % dom.get('banOutcomeRows'),
+               {'rows': dom.get('banOutcomeRows'), 'hasRecord': '对手战绩' in ban_text})
+
+    # T 双向 ban×英雄池 / Ban 形状 / 替代结构 / 池深度
+    pool = dom.get('banPool') or {}
+    pool_ok = ((pool.get('panels') or 0) >= 2 and (pool.get('dots') or 0) >= 20
+               and all(term in (pool.get('text') or '') for term in ('针对率', '命中率', '随机期望')))
+    report.add('copy.ban_pool', 'copy', pool_ok,
+               '双向 Ban×英雄池可用（%s 图 / %s 点）' % (pool.get('panels'), pool.get('dots'))
+               if pool_ok else '双向 Ban×英雄池缺失（图 %s / 点 %s）' % (pool.get('panels'), pool.get('dots')),
+               {'panels': pool.get('panels'), 'dots': pool.get('dots')})
+
+    shape = dom.get('banShape') or {}
+    shape_ok = ((shape.get('stacks') or 0) >= 3 and (shape.get('splits') or 0) >= 4
+                and (shape.get('waste') or 0) >= 1
+                and all(term in (shape.get('text') or '') for term in ('分路', '低使用率', '前 ', '后 ')))
+    report.add('copy.ban_shape', 'copy', shape_ok,
+               'Ban 形状可用（%s 条堆叠 / %s 组边时间 / %s 条低使用）' % (shape.get('stacks'), shape.get('splits'), shape.get('waste'))
+               if shape_ok else 'Ban 形状缺失（堆叠 %s / 边时间 %s / 低使用 %s）' % (shape.get('stacks'), shape.get('splits'), shape.get('waste')),
+               {'stacks': shape.get('stacks'), 'splits': shape.get('splits'), 'waste': shape.get('waste')})
+
+    repl = dom.get('replacement') or {}
+    repl_ok = ((repl.get('rows') or 0) >= 4 and (repl.get('cells') or 0) >= 10
+               and all(term in (repl.get('text') or '') for term in ('有效替代', '同类型', '主要类型转移')))
+    report.add('copy.replacement_structure', 'copy', repl_ok,
+               'Ban 替代结构可用（%s 行 / %s 矩阵格）' % (repl.get('rows'), repl.get('cells'))
+               if repl_ok else 'Ban 替代结构缺失（%s 行 / %s 格）' % (repl.get('rows'), repl.get('cells')),
+               {'rows': repl.get('rows'), 'cells': repl.get('cells')})
+
+    depth = dom.get('poolDepth') or {}
+    depth_ok = (depth.get('rows') == 5 and (depth.get('kpl') or 0) >= 3
+                and '有效' in (depth.get('text') or '') and 'KPL' in (depth.get('text') or ''))
+    report.add('copy.pool_depth', 'copy', depth_ok,
+               '五路池深度可用（%s 路 / %s 条 KPL）' % (depth.get('rows'), depth.get('kpl'))
+               if depth_ok else '五路池深度缺失（%s 路 / %s 条 KPL）' % (depth.get('rows'), depth.get('kpl')),
+               {'rows': depth.get('rows'), 'kpl': depth.get('kpl')})
+
+    # R 可视化编码：边野矩阵 / 资源小条 / 关联提升点 / 滚动胜率
+    visual_ok = (dom.get('edge') or 0) >= 3 and (dom.get('lift') or 0) >= 4 and (dom.get('resourceBars') or 0) >= 10 and bool(dom.get('spark'))
+    report.add('copy.visual_encoding', 'copy', visual_ok,
+               '可视化编码齐全（边野格 %s / 提升点 %s / 资源条 %s / 滚动线 %s）' % (dom.get('edge'), dom.get('lift'), dom.get('resourceBars'), dom.get('spark'))
+               if visual_ok else '可视化编码缺失（边野格 %s / 提升点 %s / 资源条 %s / 滚动线 %s）' % (dom.get('edge'), dom.get('lift'), dom.get('resourceBars'), dom.get('spark')),
+               {'edge': dom.get('edge'), 'lift': dom.get('lift'), 'resourceBars': dom.get('resourceBars'), 'spark': dom.get('spark')})
 
 
 def run_mode(report, browser, mode, args, out):
@@ -1552,7 +1807,7 @@ def run_mode(report, browser, mode, args, out):
         try:
             page.wait_for_function(
                 "() => (document.querySelector('#content') || document.body).innerText"
-                ".replace(/\\s+/g, '').includes('战队喜欢什么')", timeout=8000)
+                ".replace(/\\s+/g, '').includes('证据与方法')", timeout=8000)
         except Exception:  # noqa: BLE001
             pass
         page.wait_for_timeout(700)
@@ -1562,7 +1817,7 @@ def run_mode(report, browser, mode, args, out):
             "() => ((document.querySelector('#content') || document.body).innerText || '').trim()")
         body_len = len(compact(page_text))
         (out / ('%s-page-text.txt' % mode)).write_text(page_text, encoding='utf-8')
-        mark_info = mark_panels(page, NEW_SECTIONS)
+        mark_info = mark_panels(page, NEW_SECTIONS + PANEL_SUBTITLES)
         mode_info['panels'] = mark_info
 
         # 全页截图
@@ -1604,6 +1859,7 @@ def run_mode(report, browser, mode, args, out):
         layout_assertions(report, mode, overflow)
         if mode == 'mobile':
             quadrant_hint_assertion(report, page, mode)
+            mobile_collapse_assertion(report, page, mode)
 
         # 文案 / 结构断言（只在桌面跑，避免重复计数；若只跑手机则退化到手机）
         if mode == 'desktop' or args.desktop is False:
@@ -1631,176 +1887,6 @@ def run_mode(report, browser, mode, args, out):
         except Exception:  # noqa: BLE001
             pass
     return mode_info
-
-
-# --------------------------------------------------------------------------- 战队风格页（#teamstyle）
-TEAMSTYLE_DOM_JS = r"""() => {
-  const out = {};
-  out.dist = [...document.querySelectorAll('.tst-dist-track i')].map((i) => ({
-    w: Math.round(i.getBoundingClientRect().width),
-    style: i.getAttribute('style'),
-  }));
-  out.distRows = [...document.querySelectorAll('.tst-dist-row')]
-    .map((r) => (r.innerText || '').replace(/\n+/g, ' | ').trim().slice(0, 100));
-  out.cards = [...document.querySelectorAll('[data-tst-row]')]
-    .map((c) => (c.innerText || '').replace(/\n+/g, ' | ').trim().slice(0, 180));
-  const sc = document.querySelector('.tst-scatter');
-  if (sc) {
-    const svg = sc.querySelector('svg');
-    out.scatter = {
-      text: (sc.innerText || '').slice(0, 600),
-      svgAria: svg ? svg.getAttribute('aria-label') : null,
-      scrollW: sc.scrollWidth,
-      clientW: sc.clientWidth,
-    };
-  }
-  return out;
-}"""
-
-TEAMSTYLE_OLD_AXES = ['比赛时长代表后期', '节奏分位', '团战分位', '慢节奏 · 团战', '快攻 · 团战',
-                      '慢节奏 · 运营', '快攻 · 运营', 'PACE', 'FIGHT', 'MACRO', 'LATE']
-
-
-def teamstyle_text_assertions(report, page, text):
-    report.add('teamstyle.title', 'teamstyle', '战队风格' in text,
-               '打开的是战队风格页' if '战队风格' in text else '未识别为战队风格页',
-               {'text_len': len(text)})
-    raw = text or ''
-    hits = {}
-    for term in BANNED_TERMS:
-        if term == 'pp':
-            found = [ln.strip()[:140] for ln in raw.splitlines()
-                     if re.search(r'(?<![A-Za-z])pp(?![A-Za-z])', ln, re.I)]
-        else:
-            found = lines_with(raw, term)
-        if found:
-            hits[term] = found[:4]
-    report.add('teamstyle.banned_terms', 'teamstyle', not hits,
-               '风格页无统计禁词' if not hits else '风格页出现禁词：%s' % '、'.join(hits.keys()),
-               {'hits': hits})
-    old = [t for t in TEAMSTYLE_OLD_AXES if t in raw]
-    report.add('teamstyle.old_axes', 'teamstyle', not old,
-               '旧节奏/团战代理轴文案已移除' if not old else '仍出现旧轴文案：%s' % '、'.join(old),
-               {'present': old,
-                'lines': [ln.strip()[:160] for ln in raw.splitlines()
-                          if any(t in ln for t in old)][:6]})
-    axis_ok = all(k in raw for k in ('单核', '多核', '打架', '运营')) and ('横轴' in raw and '纵轴' in raw)
-    report.add('teamstyle.axis_copy', 'teamstyle', axis_ok,
-               '风格页轴文案方向明确（横轴左单核/右多核，纵轴打架/运营）' if axis_ok
-               else '风格页轴文案不完整',
-               {'lines': [ln.strip()[:200] for ln in raw.splitlines()
-                          if any(k in ln for k in ('横轴', '纵轴', '单核', '多核'))][:6]})
-    single_ok = ('单局参考' in raw) and ('样本不足' in raw)
-    report.add('teamstyle.single_ref_copy', 'teamstyle', single_ok,
-               '风格页含「单局参考」与「样本不足」话术' if single_ok
-               else '风格页缺少单局参考/样本不足话术',
-               {'lines': [ln.strip()[:160] for ln in raw.splitlines()
-                          if '单局参考' in ln or '样本不足' in ln][:8]})
-
-    try:
-        dom = page.evaluate(TEAMSTYLE_DOM_JS)
-    except Exception as exc:  # noqa: BLE001
-        report.add('teamstyle.dom_probe', 'teamstyle', False, '风格页结构探测失败：%s' % exc, {})
-        return
-
-    dist = dom.get('dist') or []
-    widths = [d.get('w') for d in dist if isinstance(d.get('w'), (int, float))]
-    dist_ok = bool(widths) and any(w > 0 for w in widths)
-    report.add('teamstyle.dist_not_zero', 'teamstyle', dist_ok,
-               '分布条不全为 0（%d 条，宽度 %s）' % (len(widths), widths[:8]) if dist_ok
-               else '分布条缺失或全为 0',
-               {'widths': widths, 'rows': (dom.get('distRows') or [])[:8]})
-
-    cards = dom.get('cards') or []
-    single_cards = [c for c in cards if '单局参考：' in c]
-    thin_cards = [c for c in cards if '样本不足' in c]
-    cards_ok = bool(cards) and (bool(single_cards) or not cards)
-    report.add('teamstyle.cards_single_ref', 'teamstyle', cards_ok,
-               '卡片含「单局参考：X」标签（%d/%d 张）' % (len(single_cards), len(cards)) if cards_ok
-               else '卡片缺少「单局参考：X」标签',
-               {'cards': len(cards), 'single_cards': single_cards[:6], 'thin_cards': thin_cards[:6]})
-    report.add('teamstyle.cards_thin_note', 'teamstyle', bool(thin_cards),
-               '卡片含「样本不足 3 局」说明（%d 张）' % len(thin_cards) if thin_cards
-               else '卡片未见「样本不足 3 局」说明',
-               {'thin_cards': thin_cards[:6]})
-    scatter = dom.get('scatter') or {}
-    scatter_ok = bool(scatter.get('svgAria')) and any(k in (scatter.get('svgAria') or '')
-                                                      for k in ('四象限', '散点', '风格'))
-    report.warn('teamstyle.scatter_aria', 'teamstyle', scatter_ok,
-                '散点图有可读 aria-label' if scatter_ok else '散点图缺少可读 aria-label',
-                {'scatter': scatter})
-
-
-def run_teamstyle(report, browser, mode, args, out):
-    ctx = make_context(browser, mode)
-    page = ctx.new_page()
-    page.add_init_script(INIT_SCRIPT)
-    base = args.base.rstrip('/')
-    bucket = {'console_errors': [], 'pageerrors': [], 'failed_requests': [], 'request_failures': []}
-    collect_events(page, base, bucket)
-    url = base + '/#teamstyle'
-    shots = []
-    info = {'url': url, 'viewport': None}
-    try:
-        page.set_default_timeout(30000)
-        page.goto(url, wait_until='domcontentloaded', timeout=30000)
-        page.add_style_tag(content=STABLE_CSS)
-        info['viewport'] = page.viewport_size or {}
-        try:
-            page.wait_for_function(READY_JS, timeout=args.timeout)
-        except Exception:  # noqa: BLE001
-            report.warn('runtime.ready_teamstyle_%s' % mode, 'runtime', False,
-                        '风格页在 %dms 内未就绪' % args.timeout, {})
-        try:
-            page.wait_for_load_state('networkidle', timeout=8000)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            page.wait_for_function(
-                "() => (document.querySelector('#content') || document.body).innerText"
-                ".replace(/\\s+/g, '').includes('单局参考')", timeout=8000)
-        except Exception:  # noqa: BLE001
-            pass
-        page.wait_for_timeout(700)
-        text = page.evaluate(
-            "() => ((document.querySelector('#content') || document.body).innerText || '').trim()")
-        (out / ('%s-teamstyle-text.txt' % mode)).write_text(text, encoding='utf-8')
-        full = out / ('%s-teamstyle-full.png' % mode)
-        try:
-            page.screenshot(path=str(full), full_page=True, timeout=30000)
-            shots.append(str(full))
-        except Exception as exc:  # noqa: BLE001
-            report.warn('runtime.fullshot_teamstyle_%s' % mode, 'runtime', False,
-                        '风格页全页截图失败：%s' % exc, {})
-        scatter = page.locator('.tst-scatter').first
-        shot = out / ('%s-teamstyle-scatter.png' % mode)
-        try:
-            if scatter.count():
-                scatter.scroll_into_view_if_needed(timeout=2500)
-                page.wait_for_timeout(250)
-                scatter.screenshot(path=str(shot), timeout=15000)
-            else:
-                page.screenshot(path=str(shot))
-            shots.append(str(shot))
-        except Exception as exc:  # noqa: BLE001
-            report.warn('runtime.scatter_shot_%s' % mode, 'runtime', False,
-                        '风格页散点截图失败：%s' % exc, {})
-        overflow = page.evaluate(OVERFLOW_JS)
-        layout_assertions(report, 'teamstyle_%s' % mode, overflow)
-        if mode == 'desktop':
-            teamstyle_text_assertions(report, page, text)
-    except Exception as exc:  # noqa: BLE001
-        report.add('teamstyle.crash_%s' % mode, 'teamstyle', False,
-                   '风格页验收异常：%s' % exc, {'traceback': traceback.format_exc()[-1200:]})
-    finally:
-        runtime_assertions(report, 'teamstyle_%s' % mode, bucket, base)
-        info['console'] = bucket
-        info['screenshots'] = shots
-        report.modes_data['teamstyle_%s' % mode] = info
-        try:
-            ctx.close()
-        except Exception:  # noqa: BLE001
-            pass
 
 
 # --------------------------------------------------------------------------- 输出
@@ -1897,7 +1983,6 @@ def main():
     ap.add_argument('--api-timeout', type=int, default=60, help='API 请求超时秒，默认 60')
     ap.add_argument('--skip-api', action='store_true', help='跳过 /api/v3/team-deep 数据自检')
     ap.add_argument('--api-only', action='store_true', help='只跑 API 数据自检（team-deep + studio/teams），不开浏览器')
-    ap.add_argument('--teamstyle', action='store_true', help='同时验收 #teamstyle 战队风格页（分布/单局参考/轴文案）')
     ap.set_defaults(desktop=True, mobile=True)
     args = ap.parse_args()
 
@@ -1946,9 +2031,6 @@ def main():
             try:
                 for mode in modes:
                     run_mode(report, browser, mode, args, out)
-                if args.teamstyle:
-                    for mode in modes:
-                        run_teamstyle(report, browser, mode, args, out)
             finally:
                 try:
                     browser.close()

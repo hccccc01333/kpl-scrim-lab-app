@@ -302,17 +302,20 @@ def _opponent_signature(panel):
 
 
 def _opponent_names(camp_dir, panels, db_path):
-    """优先用 team_clusters + workspace DB 的显示名；访问不到时用稳定序号兜底。"""
+    """战队分析的当前队名（含被合并战队与旧名别名）；访问不到时用稳定序号兜底。
+
+    以前只取 team_clusters.list_teams 的显示名，被合并掉的 cluster 会掉回
+    「待命名战队 #N」，简报里的对手分组因此和战队分析对不上。现在统一走
+    opponent_identity.resolve_names，与对局档案、系列赛编组同一份口径。
+    """
     names = {}
     merges = {}
-    if team_clusters is not None:
+    if db_path:
         try:
-            listed = team_clusters.list_teams(camp_dir, db_path) if db_path else None
-            if isinstance(listed, dict):
-                for team in listed.get('teams') or []:
-                    display = _clean(team.get('displayName') or team.get('name'))
-                    if display:
-                        names[team.get('id')] = display
+            import opponent_identity
+            resolved = opponent_identity.resolve_names(db_path)
+            names = {key: value for key, value in resolved['names'].items() if value}
+            merges = {'aliases': resolved['aliases'], 'canonical': resolved['canonical']}
         except Exception:  # pragma: no cover - 查询失败不阻塞分析
             names = {}
     # 兜底：按首次出现顺序编号
@@ -533,7 +536,13 @@ def load_facts(replays_dir, camp_dir, data_dir=None, db_path=None, *, now=None):
     panels, rows = load_panels(camp_dir, year=year)
 
     names, merges = _opponent_names(camp_dir, panels, db_path)
-    seq_to_opponent = {seq: _opponent_signature(panel) for seq, panel in panels.items()}
+    # 合并过的战队统一用目标 id：否则同一支队在对手分组、同批对手排名里
+    # 会被拆成好几份，队名一致了但局数还是散的。
+    canonical = (merges or {}).get('canonical') or {}
+    seq_to_opponent = {}
+    for seq, panel in panels.items():
+        signature = _opponent_signature(panel)
+        seq_to_opponent[seq] = canonical.get(signature, signature)
     for seq, opponent_id in seq_to_opponent.items():
         for row in rows:
             if row['seq'] == seq:

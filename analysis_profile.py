@@ -224,21 +224,27 @@ def training_effect(rows, training, *, actor='coach'):
 
 
 def group_by_opponent(rows, camp_dir, db_path):
-    """按阵容签名把对手侧的行分组，队名走 team_clusters 的显示名。"""
+    """按阵容签名把对手侧的行分组，队名/合并关系走战队分析的当前口径。
+
+    以前只认 team_clusters.list_teams 的 live 队，被合并掉的 cluster 会留下
+    一串「team-xxxxxxxx」当队名；现在统一走 opponent_identity。
+    """
+    import opponent_identity
     import team_clusters
     panels = team_clusters.load_panels(camp_dir)
     sig = {panel['seq']: team_clusters.signature(panel) for panel in panels}
-    teams = team_clusters.list_teams(camp_dir, db_path)
-    names = {team['id']: team['displayName'] for team in teams['teams']}
+    resolved = opponent_identity.resolve_names(db_path)
+    names, canonical = resolved['names'], resolved['canonical']
     groups = defaultdict(list)
     for row in rows:
         if row['side'] != 'enemy':
             continue
         key = sig.get(row['seq'])
         if key:
-            groups[key].append(row)
-    return [{'id': key, 'name': names.get(key, key), 'rows': items}
-            for key, items in groups.items()]
+            groups[canonical.get(key, key)].append(row)
+    ordered = sorted(groups)
+    return [{'id': key, 'name': names.get(key) or f'待命名战队 #{index}', 'rows': groups[key]}
+            for index, key in enumerate(ordered, 1)]
 
 
 def profiles(camp_dir, db_path, *, min_games=3):

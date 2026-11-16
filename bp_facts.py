@@ -1,4 +1,4 @@
-"""把外部事实表（巅峰千强对位 / KPL 组合）查成本局 BP 复盘要的三块结论。
+"""把外部事实表（巅峰千强对位 / KPL 组合）查成本局 BP 复盘要的结论。
 
 数据由 `scripts/build_bp_facts.py` 离线生成，落在 `data/facts/`：
 
@@ -18,11 +18,6 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-
-try:
-    import hero_roles
-except Exception:  # pragma: no cover
-    hero_roles = None
 
 ROOT = Path(__file__).resolve().parent
 FACTS = ROOT / 'data' / 'facts'
@@ -84,7 +79,8 @@ def _counter_block(lane_pairs, own_heroes, foe_heroes):
     * 营地 = 王者营地 App 英雄关系指数（官方编辑口径，无样本量概念）；
     * KPL = 自抓赛事数据的跨阵营有向对位（有样本量，按 n / 胜率判定命中）。
     """
-    camp = _camp_counters()
+    camp_doc = _camp_counters()
+    camp = camp_doc.get('heroes') or {}
     kpl_data, kpl = _kpl_counters()
 
     def camp_index(hero, key, other):
@@ -146,8 +142,8 @@ def _counter_block(lane_pairs, own_heroes, foe_heroes):
     ))
     return {
         'schema': 'bp-counter-facts-v1',
-        'camp': {'source': camp.get('source') or '王者营地 App 英雄关系',
-                 'capturedAt': camp.get('capturedAt'), 'heroes': len(camp.get('heroes') or {})},
+        'camp': {'source': camp_doc.get('source') or '王者营地 App 英雄关系',
+                 'capturedAt': camp_doc.get('capturedAt'), 'heroes': len(camp)},
         'kpl': {'source': 'KPL 官方赛事（本项目自抓）', 'games': kpl_data.get('games'),
                 'windowStart': kpl_data.get('windowStart'),
                 'windowEnd': kpl_data.get('windowEnd'), 'minN': kpl_data.get('minN'),
@@ -268,14 +264,17 @@ KPL_HIT_N = 10            # KPL 跨阵营对位样本 ≥ 10 局
 KPL_HIT_WR = 55.0         # 且胜率 ≥ 55% 算「KPL 克制命中」
 
 
-def _lane_reliability(n, ci_low, ci_high):
-    if not n or n < 200:
-        return 'low'
-    # 单条对位最好有 3000 局样本（教练口径）；200~3000 算「中等」，CI 跨 0 再降级。
-    rating = 'high' if n >= 3000 else 'medium'
-    if ci_low is None or ci_high is None or (ci_low <= 0 <= ci_high):
-        rating = 'medium' if rating == 'high' else 'low'
-    return rating
+def _lane_reliability(n, ci_low, ci_high, low_pick=False):
+    """证据分级：<50 不足；50–199 或低登场率 → 初步；≥200 可判；≥3000 且 CI 不跨 0 为高。"""
+    if not n or n < 50:
+        return 'insufficient'
+    if low_pick or n < 200:
+        return 'preliminary'
+    # 单条对位最好有 3000 局样本（教练口径）；200~3000 算「中等」。
+    if n >= 3000 and ci_low is not None and ci_high is not None \
+            and not (ci_low <= 0 <= ci_high):
+        return 'high'
+    return 'medium'
 
 
 def _lane_stats(row):
@@ -283,9 +282,10 @@ def _lane_stats(row):
     wr = row.get('wr')
     expected = row.get('expected')
     excess = row.get('excess')
+    low_pick = bool(row.get('lowPick'))
     if not n or wr is None:
-        return {'excessCI': None, 'reliability': 'low',
-                'shrunkExcess': excess, 'shrunkWr': wr}
+        return {'excessCI': None, 'reliability': 'insufficient',
+                'shrunkExcess': excess, 'shrunkWr': wr, 'lowPick': low_pick}
     p = max(0.0, min(1.0, float(wr) / 100.0))
     se = math.sqrt(p * (1 - p) / n)
     lo = p - _Z95 * se
@@ -300,12 +300,13 @@ def _lane_stats(row):
     shrunk_wr = shrunk_p * 100.0
     base = (expected if expected is not None else 50.0)
     shrunk_excess = shrunk_wr - base
-    reliability = _lane_reliability(n, ci_low, ci_high)
+    reliability = _lane_reliability(n, ci_low, ci_high, low_pick)
     return {
         'excessCI': [round(ci_low, 2), round(ci_high, 2)],
         'reliability': reliability,
         'shrunkExcess': round(shrunk_excess, 2),
         'shrunkWr': round(shrunk_wr, 2),
+        'lowPick': low_pick,
     }
 
 
@@ -367,8 +368,11 @@ def for_match(detail):
         excess = row['excess']
         stats = _lane_stats(row)
         ci = stats['excessCI']
-        if stats['reliability'] == 'low':
-            state = 'even'
+        if stats['reliability'] == 'preliminary':
+            # 50–199 局：只给方向和区间，不判优势/劣势，也不算兑现。
+            state = 'preliminary'
+        elif stats['reliability'] == 'insufficient':
+            state = 'no-sample'
         elif ci is not None and ci[0] > 0 and excess is not None and excess >= 2:
             state = 'ahead'
         elif ci is not None and ci[1] < 0 and excess is not None and excess <= -2:
@@ -401,6 +405,8 @@ def for_match(detail):
                       'reliability': stats['reliability'],
                       'shrunkExcess': stats['shrunkExcess'],
                       'shrunkWr': stats['shrunkWr'],
+                      'lowPick': bool(row.get('lowPick')),
+                      'aPick': row.get('aPick'), 'bPick': row.get('bPick'),
                       'hypothesis': state,
                       'realisedEarly': realised_early,
                       'realisedFinal': realised_final,
@@ -416,14 +422,16 @@ def for_match(detail):
             row = kpl_pairs.get((heroes[i], heroes[j]))
             if row:
                 pair_hits.append({'heroes': [heroes[i], heroes[j]], 'n': row['n'],
-                                  'wr': row['wr'], 'year': row.get('year'),
+                                  'wins': row.get('wins'), 'wr': row['wr'],
+                                  'year': row.get('year'),
                                   'lastDate': row.get('lastDate'),
                                   'teams': row.get('teams') or []})
             for k in range(j + 1, len(heroes)):
                 trow = kpl_trios.get((heroes[i], heroes[j], heroes[k]))
                 if trow:
                     trio_hits.append({'heroes': [heroes[i], heroes[j], heroes[k]],
-                                      'n': trow['n'], 'wr': trow['wr'],
+                                      'n': trow['n'], 'wins': trow.get('wins'),
+                                      'wr': trow['wr'],
                                       'year': trow.get('year'),
                                       'lastDate': trow.get('lastDate'),
                                       'teams': trow.get('teams') or []})
@@ -438,8 +446,8 @@ def for_match(detail):
                 row = kpl_pairs.get((group[i], group[j]))
                 if row:
                     combo_index[f'{group[i]}+{group[j]}'] = {
-                        'n': row['n'], 'wr': row['wr'], 'year': row.get('year'),
-                        'lastDate': row.get('lastDate'),
+                        'n': row['n'], 'wins': row.get('wins'), 'wr': row['wr'],
+                        'year': row.get('year'), 'lastDate': row.get('lastDate'),
                         'teams': row.get('teams') or []}
                     combo_index[f'{group[j]}+{group[i]}'] = combo_index[f'{group[i]}+{group[j]}']
 
@@ -450,7 +458,8 @@ def for_match(detail):
             row = kpl_pairs.get((fh[i], fh[j]))
             if row:
                 foe_pairs.append({'heroes': [fh[i], fh[j]], 'n': row['n'],
-                                  'wr': row['wr'], 'year': row.get('year'),
+                                  'wins': row.get('wins'), 'wr': row['wr'],
+                                  'year': row.get('year'),
                                   'lastDate': row.get('lastDate'),
                                   'teams': row.get('teams') or []})
     foe_pairs.sort(key=lambda item: -item['n'])
@@ -460,13 +469,6 @@ def for_match(detail):
     latest_year = _latest_year(combo_data, kpl_pairs.values(), kpl_trios.values(),
                                kpl_lineups.values())
     total_trios = len(heroes) * (len(heroes) - 1) * (len(heroes) - 2) // 6 if len(heroes) >= 3 else 0
-
-    # 阵容结构分析（英雄能力标签种子表）；未收录英雄如实带出，页面据此降级结论
-    structure = None
-    if hero_roles is not None:
-        structure = hero_roles.lineup_structure(heroes)
-        structure['source'] = 'hero_roles_seed'
-        structure['untaggedHeroes'] = [h for h in heroes if h not in hero_roles.HERO_ROLES]
 
     # 4) 克制命中：KPL 跨阵营对位 + 营地英雄关系，两源分开不合并
     counters = _counter_block(lane_pairs, heroes, fh)
@@ -490,7 +492,6 @@ def for_match(detail):
                    'minN': lane_data.get('minN'), 'minPickRate': lane_data.get('minPickRate'),
                    'lanes': lanes},
         'hypothesis': hypothesis,
-        'structure': structure,
         'counters': counters,
         'kpl': {'source': 'kpl', 'sinceYear': combo_data.get('sinceYear'),
                 'games': combo_data.get('games'), 'minGames': combo_data.get('minGames'),

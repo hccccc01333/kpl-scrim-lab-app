@@ -449,23 +449,24 @@ export function createCapture(h) {
     const missingText = missing.map((item) => `${item.label}缺${item.missing}/10`).join(' · ');
     const chipClass = status === 'saved' ? 'is-done'
       : missing.length ? 'is-warn' : status === 'reviewed' ? 'is-ok' : 'is-pending';
-    return `<div class="chan-row" data-chan-open="${esc(channel.id)}" title="点击进入缺失值审查">
-      ${scoreCell(match)}
+    const shortMissing = missing.map((item) => item.label).slice(0, 4).join('、')
+      + (missing.length > 4 ? ` 等 ${missing.length} 项` : '');
+    return `<div class="chan-row${result === 1 ? ' is-win' : result === 2 ? ' is-loss' : ''}" data-chan-open="${esc(channel.id)}" title="点击进入缺失值审查">
+      <span class="chan-score-cell"><small>比分</small>${scoreCell(match)}</span>
       <span class="chan-main">
         <b>${resultText ? `<i class="ingest-won ${result === 1 ? 'is-win' : 'is-loss'}">${resultText}</i>` : ''}${esc(title)}</b>
         <small title="${esc(meta)}">${esc(meta || '—')}</small>
-        ${missing.length ? `<small class="chan-missing" title="${esc(missingText)}">缺：${esc(missingText)} · 点此逐条审查</small>` : ''}
+        ${missing.length ? `<small class="chan-missing" title="${esc(missingText)}">缺：${esc(shortMissing)} · 点此逐条审查</small>` : ''}
       </span>
       ${heroesCell(channel, ctx, match)}
-      ${sourceCell(channel)}
-      <span class="chan-session" title="${esc(match.session || '')}">${esc(match.session || '—')}</span>
-      <span class="chan-version" title="${esc(match.version || '')}">${esc(version || '—')}</span>
-      <span class="chan-updated">${esc(stamp(channel.updatedAt) || '—')}</span>
-      <span class="chan-state">
-        ${seed ? '<i class="chip is-seed" title="种子脚本写入的测试数据，不参与正式统计">验证</i>' : ''}
-        <i class="chip ${chipClass}">${esc(label)}</i>
+      <span class="chan-side">
+        ${sourceCell(channel)}
+        <span class="chan-updated" title="最近更新">${esc(stamp(channel.updatedAt) || '—')}</span>
+        <span class="chan-state">
+          ${seed ? '<i class="chip is-seed" title="种子脚本写入的测试数据，不参与正式统计">验证</i>' : ''}
+          <i class="chip ${chipClass}">${esc(label)}</i>
+        </span>
       </span>
-      <span class="chan-spacer"></span>
       <button class="chan-exp" data-chan-expand="${esc(channel.id)}" aria-expanded="false" aria-label="展开十人草稿">⌄</button>
     </div>
     <div class="chan-draft" data-draft-for="${esc(channel.id)}" hidden></div>`;
@@ -519,7 +520,7 @@ export function createCapture(h) {
     const campHost = document.querySelector('[data-ingest-list="camp"]');
     if (campHost) {
       campHost.innerHTML = renderChannelList(filterChannels(camp), lookups(), filtering,
-        '营地同步的局都已自动进入正式统计，没有需要人工审核的记录。');
+        '营地同步的局都已自动进入正式统计，没有需要补全的记录。');
     }
     const ocrHost = document.querySelector('[data-ingest-list="ocr"]');
     if (ocrHost) {
@@ -626,7 +627,7 @@ export function createCapture(h) {
       const missing = rows.filter((channel) => (channel.missing || []).length).length;
       return `<div class="chan-group">
         <div class="chan-group-head"><b>${esc(date)}</b>
-          <span>${rows.length} 条${missing ? ` · ${missing} 条有缺失值` : ' · 可一键通过'}</span></div>
+          <span>${rows.length} 条${missing ? '' : ' · 可一键通过'}</span></div>
         <div class="chan-rows">${rows.map((channel) => channelRow(channel, ctx)).join('')}</div>
       </div>`;
     }).join('');
@@ -733,11 +734,12 @@ export function createCapture(h) {
 
     let actions;
     if (!ready) {
-      actions = `<button class="primary" data-capture-action="auth-start">${icon('search')} 扫码授权</button>`;
+      /* 首次授权的主按钮在上面的深色「下一步」卡；这里是同一动作的次级入口。 */
+      actions = `<button class="control" data-capture-action="auth-start">${icon('search')} 扫码授权</button>`;
     } else {
       actions = `<div class="conn-actions">
         <button class="control" data-capture-action="auth-check" ${checking ? 'disabled' : ''}>${checking ? '检测中…' : '检测授权'}</button>
-        <button class="${expired ? 'primary' : 'control'}" data-capture-action="auth-start">${icon('refresh')} ${expired ? '补充授权' : '重新扫码'}</button>
+        <button class="control" data-capture-action="auth-start">${icon('refresh')} ${expired ? '补充授权' : '重新扫码'}</button>
         <button class="control" data-capture-action="auth-clear">删除凭证</button>
         ${players.length ? '<button class="control" data-capture-action="conn-toggle">收起</button>' : ''}</div>`;
     }
@@ -875,13 +877,14 @@ export function createCapture(h) {
     const moreAction = state.pullHasMore
       ? `<button class="control" data-capture-action="pull-more" ${state.busy ? 'disabled' : ''}>继续拉取更早的对局</button>`
       : '';
+    const hasList = Boolean(list && list.length);
     const right = `<div class="capture-actions">
       ${blocked ? '<button class="primary" data-capture-action="auth-start">补充授权</button>' : ''}
       ${moreAction}
-      <button class="control" data-capture-action="check-all" ${list && list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
-      <button class="control" data-capture-action="check-none">全部取消勾选</button>
-      <button class="control" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : list ? '重新拉取' : '拉取对局'}</button>
-      <button class="${checked ? 'primary' : 'control'}" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button></div>`;
+      ${hasList ? `<button class="control" data-capture-action="check-all" ${list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
+      <button class="control" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消勾选</button>` : ''}
+      <button class="${hasList ? 'control' : 'primary'}" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : hasList ? '重新拉取' : '拉取对局'}</button>
+      ${hasList ? `<button class="${checked ? 'primary' : 'control'}" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>` : ''}</div>`;
 
     const flow = `${summaryLine()}<div data-cap-progress>${progressBar()}</div>`;
     if (!allPlayers.length) {
@@ -897,18 +900,34 @@ export function createCapture(h) {
     const lastSync = (state.value?.sync?.details || []).reduce(
       (max, detail) => Math.max(max, Number(detail.syncedAt) || 0), 0);
     const daysAgo = lastSync ? Math.floor((Date.now() / 1000 - lastSync) / 86400) : null;
-    const syncNote = daysAgo === null ? '还没有拉取过'
-      : daysAgo === 0 ? '上次拉取：今天'
-        : `上次拉取：${daysAgo} 天前`;
+    const lastLabel = daysAgo === null ? '还没拉过' : daysAgo === 0 ? '今天' : `${daysAgo} 天前`;
+    const channels = state.value?.channels?.channels || [];
+    const autoPassed = channels.filter((channel) => channel.saved?.status === 'saved').length;
+    const needReview = channels.filter((channel) => channel.saved?.status !== 'saved').length;
+    const statsStrip = `<div class="pull-strip">${[
+      ['上次拉取', lastLabel, ''],
+      ['已进正式统计', `${fmt(autoPassed)} 局`, ''],
+      ['待补全', `${fmt(needReview)} 条`, needReview ? ' is-warn' : ' is-ok'],
+      ['已绑定营地号', `${players.length} 个`, ''],
+    ].map(([label, value, tone]) => `<span class="pull-cell${tone}"><small>${esc(label)}</small><b>${esc(value)}</b></span>`).join('')}</div>`;
 
     if (!list) {
       const stale = daysAgo !== null && daysAgo >= 1;
-      return block('拉取对局', `将读取 ${players.length} 位选手的最近对局，按对局去重后让你勾选。`,
-        `<div class="cap-body">${flow}${blockedHint}<p class="capture-hint"><i class="chip ${stale ? 'is-warn' : 'is-idle'}">${esc(syncNote)}</i>${stale ? ' 训练赛后记得拉一次。' : ''}</p>
-         <p class="capture-hint">${state.listNote || '点右上角「拉取对局」开始。'}</p></div>`, right, 'data-tour="camp-pull"');
+      /* 「点右上角开始」和「无缺失自动进统计、缺字段去审查」原来挤在右侧一句长注释里；
+         按钮就在标题旁，前一句是废话，后一句并进副标题，右侧只留真正有时效的提醒。 */
+      const note = [state.listNote || '',
+        stale ? '上次拉取已超过一天，训练赛后记得再拉一次。' : ''].filter(Boolean).join(' ');
+      return block('拉取对局',
+        `读取 ${players.length} 位选手的最近对局，按对局去重；无缺失自动进正式统计，缺字段落到下方「对局审查」。`,
+        `<div class="cap-body">${flow}${blockedHint}<div class="pull-empty">${statsStrip}
+          ${note ? `<p class="pull-note">${esc(note)}</p>` : ''}</div></div>`,
+        right, 'data-tour="camp-pull"');
     }
     if (!list.length) {
-      return block('拉取对局', '最近没有新的对局。', `<div class="cap-body">${flow}${blockedHint}<p class="capture-hint">${esc(state.listNote || '选手最近没有可拉取的对局。')}</p></div>`, right, 'data-tour="camp-pull"');
+      return block('拉取对局', '最近没有新的对局。',
+        `<div class="cap-body">${flow}${blockedHint}<div class="pull-empty">${statsStrip}
+          <p class="pull-note">${esc(state.listNote || '选手最近没有可拉取的对局。')}</p></div></div>`,
+        right, 'data-tour="camp-pull"');
     }
 
     const entryRow = (entry) => {
@@ -1022,11 +1041,11 @@ export function createCapture(h) {
       : '还没有上传过录屏';
     return `<section class="section cap-ocr" id="ocr-windows" data-tour="camp-ocr">
       <div class="section-heading"><div><h2>截图 / 录屏 OCR</h2>
-        <p>营地窗口外的老局走这条：同一局七张赛后截图，或一段完整录屏（十人阵容清楚）。识别完可以补到已有对局，也可以直接「新录入一局」；OCR 出来的字段要人工审核一遍。</p></div>
+        <p>营地窗口外的老局用截图 / 录屏补录；识别出的字段要人工审核后才能入库。</p></div>
       </div>
       <div class="ocr-windows">
         <article class="ocr-window">
-          <header><b>截图 OCR</b><i class="chip ${images.length ? 'is-ok' : 'is-idle'}">${esc(shotNote)}</i></header>
+          <header><b class="ocr-title"><span class="ocr-icon">${icon('camera')}</span>截图 OCR</b><i class="chip ${images.length ? 'is-ok' : 'is-idle'}">${esc(shotNote)}</i></header>
           <p>七张赛后结算图：战绩（装备型）、战绩（KDA 占比）、数据、输出、生存、发育、团队。
             传图用微信要勾「原图」或改用 QQ 发文件，被压缩的图识别时会被提示重传。</p>
           <div class="ocr-actions">
@@ -1034,17 +1053,17 @@ export function createCapture(h) {
               accept="image/png,image/jpeg,image/webp" data-ingest-shots></label>
             <button class="primary" data-capture-action="upload-shots" ${state.busy === 'shots' ? 'disabled' : ''}>
               ${state.busy === 'shots' ? '上传识别中…' : '上传并识别'}</button>
-            <a class="ocr-more" href="#shots">完整页 →</a>
+            <a class="ocr-more" href="#shots">打开完整页 →</a>
           </div>
         </article>
         <article class="ocr-window">
-          <header><b>录屏 OCR</b><i class="chip ${recs.length ? 'is-ok' : 'is-idle'}">${esc(recNote)}</i></header>
+          <header><b class="ocr-title"><span class="ocr-icon">${icon('film')}</span>录屏 OCR</b><i class="chip ${recs.length ? 'is-ok' : 'is-idle'}">${esc(recNote)}</i></header>
           <p>每局一段完整录像：加载页十人阵容 5 秒 → 1 倍速整局 → 结算页 5 秒，团队面板常开。</p>
           <div class="ocr-actions">
             <a class="primary" href="#videos">上传录屏 →</a>
             <a class="control" href="/assets/collection-guide.html?section=video"
                target="_blank" rel="noopener">拍摄要求</a>
-            <a class="ocr-more" href="#videos">完整页 →</a>
+            <a class="ocr-more" href="#videos">打开完整页 →</a>
           </div>
         </article>
       </div>
@@ -1112,10 +1131,21 @@ export function createCapture(h) {
 
   function view(value) {
     if (value?.unavailable) {
-      return withPage('营地同步', '营地数据暂时读不到，已经自动重试过；点一次读取即可。',
-        `<div class="capture-notice" role="status">营地数据还没返回，稍后会自动补上。</div>`
-        + block('重新读取', '数据恢复后会自动补上，也可以现在重试一次。',
-          `<p><button class="control" data-action="refresh">重新读取</button></p>`), false);
+      /* 三条近义提示合并成一张状态卡：标题说结论，卡里说「已重试 / 会自动补上 / 可手动再读」。
+         页面副标题仍说明这一页是做什么的，不把错误信息重复两遍。 */
+      return withPage('营地同步', '授权一次，之后每天增量拉取；营地一个月窗口外的老局用截图 / 录屏新录入。',
+        `<div class="cap-page"><section class="cap-offline" role="status">
+          <div class="cap-offline-main">
+            <i class="cap-offline-dot" aria-hidden="true"></i>
+            <div>
+              <h2>营地数据暂时读不到</h2>
+              <p>已经自动重试过；营地数据还没返回，稍后会自动补上。也可以现在手动再读一次。</p>
+            </div>
+          </div>
+          <div class="cap-offline-actions">
+            <button class="primary" data-action="refresh">重新读取</button>
+          </div>
+        </section></div>`, false);
     }
     const list = value?.channels?.channels || [];
     const sync = value?.sync || {};
@@ -1205,8 +1235,8 @@ export function createCapture(h) {
     const campGroup = `<section class="review-group${campChannels.length ? '' : ' is-empty'}">
       <header>
         <b>王者营地</b>
-        <i class="chip ${campChannels.length ? 'is-warn' : 'is-done'}">${campChannels.length ? `${fmt(campChannels.length)} 条待处理` : '无需审核'}</i>
-        <small>营地同步的局字段齐全，自动进入正式统计，不走人工审核。</small>
+        <i class="chip ${campChannels.length ? 'is-warn' : 'is-done'}">${campChannels.length ? `${fmt(campChannels.length)} 条待补全` : '无需补全'}</i>
+        <small>营地同步的局字段齐全就自动进正式统计；缺字段的留在这里补全后再入库。</small>
       </header>
       ${''}<div data-ingest-list="camp">${renderChannelList(filterChannels(campChannels), lookups(), filtering,
         '营地同步的局都已自动进入正式统计，没有需要人工审核的记录。')}</div>
@@ -1215,15 +1245,15 @@ export function createCapture(h) {
     const ocrGroup = `<section class="review-group${ocrChannels.length ? '' : ' is-empty'}">
       <header>
         <b>截图 / 录屏 OCR</b>
-        <i class="chip ${ocrChannels.length ? 'is-warn' : 'is-idle'}">${fmt(ocrChannels.length)} 条待审核</i>
-        <small>OCR 出来的字段可能有缺，逐条确认后才能保存。</small>
+        <i class="chip ${ocrChannels.length ? 'is-warn' : 'is-good'}">${fmt(ocrChannels.length)} 条待审核</i>
+        <small>OCR 识别的字段可能有缺，逐条确认后才能保存。</small>
       </header>
       ${''}<div data-ingest-list="ocr">${renderChannelList(filterChannels(ocrChannels), lookups(), filtering,
         '还没有截图 / 录屏新录入的局。营地一个月窗口外的老局在这里新录入。')}</div>
     </section>`;
 
     const reviewBlock = block('对局审查',
-      `王者营地同步的局不用人工审核；截图 / 录屏 OCR 的局必须逐条确认（共 ${fmt(ocrChannels.length)} 条待处理）。`,
+      `本期已自动入库 ${fmt(autoPassed)} 局；营地缺字段的待补全 ${fmt(campChannels.length)} 条，截图 / 录屏 OCR 待确认 ${fmt(ocrChannels.length)} 条。`,
       `<div class="cap-body">${flowBar}<div class="review-split">${campGroup}${ocrGroup}</div></div>`,
       reviewActions, 'data-tour="camp-flow"');
 

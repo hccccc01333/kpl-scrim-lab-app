@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from camp_client import battle_detail, battle_list, load_account  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 _SEQ_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
 
@@ -71,6 +73,29 @@ def entry_role_id(entry: dict) -> str:
         if match:
             return match.group(1)
     return '0'
+
+
+
+
+def _stamp_payload(detail_body: dict, entry: dict) -> dict:
+    """入库前把营地默认 20 手顺序写进 draftEvents；失败则原样保存。"""
+    payload = {**detail_body, '_campEntry': {
+        'dtEventTime': entry.get('dtEventTime'),
+        'usedTime': entry.get('usedTime'),
+        'mapName': entry.get('mapName'),
+        'gametime': entry.get('gametime'),
+        'battleType': entry.get('battleType'),
+        'winCamp': entry.get('winCamp'),
+        'killcnt': entry.get('killcnt'),
+        'deadcnt': entry.get('deadcnt'),
+        'assistcnt': entry.get('assistcnt'),
+    }}
+    try:
+        from bp_camp import stamp_camp_order
+        stamp_camp_order(payload)
+    except Exception:
+        pass
+    return payload
 
 
 def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
@@ -135,18 +160,7 @@ def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
                 print(f"  详情失败 {seq}: returnCode={detail_body.get('returnCode')} "
                       f"{str(detail_body.get('returnMsg'))[:60]}", file=sys.stderr)
             else:
-                out_path.write_text(json.dumps({**detail_body,
-                                                '_campEntry': {
-                                                    'dtEventTime': entry.get('dtEventTime'),
-                                                    'usedTime': entry.get('usedTime'),
-                                                    'mapName': entry.get('mapName'),
-                                                    'gametime': entry.get('gametime'),
-                                                    'battleType': entry.get('battleType'),
-                                                    'winCamp': entry.get('winCamp'),
-                                                    'killcnt': entry.get('killcnt'),
-                                                    'deadcnt': entry.get('deadcnt'),
-                                                    'assistcnt': entry.get('assistcnt'),
-                                                }},
+                out_path.write_text(json.dumps(_stamp_payload(detail_body, entry),
                                                ensure_ascii=False, indent=1),
                                     encoding='utf-8')
                 summary['saved'] += 1
@@ -287,18 +301,7 @@ def sync_entries(camp_user_id: str, entries, interval: float = 2.0, on_progress=
                 break
             time.sleep(interval)
             continue
-        out_path.write_text(json.dumps({**detail_body,
-                                        '_campEntry': {
-                                            'dtEventTime': entry.get('dtEventTime'),
-                                            'usedTime': entry.get('usedTime'),
-                                            'mapName': entry.get('mapName'),
-                                            'gametime': entry.get('gametime'),
-                                            'battleType': entry.get('battleType'),
-                                            'winCamp': entry.get('winCamp'),
-                                            'killcnt': entry.get('killcnt'),
-                                            'deadcnt': entry.get('deadcnt'),
-                                            'assistcnt': entry.get('assistcnt'),
-                                        }},
+        out_path.write_text(json.dumps(_stamp_payload(detail_body, entry),
                                        ensure_ascii=False, indent=1),
                             encoding='utf-8')
         summary['saved'] += 1

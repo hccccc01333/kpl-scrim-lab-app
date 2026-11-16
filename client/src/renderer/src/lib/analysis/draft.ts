@@ -5,10 +5,12 @@
  * 数组顺序就是该侧的禁选顺序（空 ban 位置保留，不压缩）。
  *
  * 模板（按双方 ban 数量自动识别）：
- * 1. 训练赛/15 手：禁 蓝红蓝红蓝（共 5 ban），选 蓝1-红2-蓝2-红2-蓝2-红1
+ * 1. 训练赛/20 手：禁 蓝红交替 10 手（每方 5 ban），选 蓝1-红2-蓝2-红2-蓝2-红1
  * 2. 排位/20 手：禁① 蓝红蓝红 → 选① 蓝1红2蓝2红1 → 禁② 红蓝红蓝红蓝 → 选② 红1蓝2红1
  *    （由 KPL 2026 官方 BP 原始序列实测：1-4 ban、5-10 选、11-16 ban、17-20 选）
  * 3. 旧版 KPL/18 手：禁① 蓝红蓝红 → 选① 6 手 → 禁② 红蓝红蓝 → 选② 4 手
+ *
+ * 训练赛只有 20 手。
  */
 export type DraftSide = 'blue' | 'red'
 export type DraftPhase = 'ban' | 'pick'
@@ -37,6 +39,7 @@ export interface DraftSource {
   banSlots?: { left?: (string | null)[]; right?: (string | null)[] }
   pickSlots?: { left?: (string | null)[]; right?: (string | null)[] }
   pickOrderKnown?: boolean
+  ruleProfile?: string
   firstPick?: string | null
 }
 
@@ -47,7 +50,7 @@ interface SegmentDef {
 }
 
 interface DraftTemplate {
-  id: 'scrim15' | 'ranked20' | 'kpl18'
+  id: 'scrim20' | 'ranked20' | 'kpl18'
   label: string
   segments: SegmentDef[]
 }
@@ -55,11 +58,11 @@ interface DraftTemplate {
 const B: DraftSide = 'blue'
 const R: DraftSide = 'red'
 
-const SCRIM15: DraftTemplate = {
-  id: 'scrim15',
-  label: '训练赛 · 5 ban + 10 选',
+const SCRIM20: DraftTemplate = {
+  id: 'scrim20',
+  label: '训练赛 · 10 ban（每方 5）+ 10 选',
   segments: [
-    { label: '禁用', phase: 'ban', actions: [B, R, B, R, B] },
+    { label: '禁用', phase: 'ban', actions: [B, R, B, R, B, R, B, R, B, R] },
     { label: '选用', phase: 'pick', actions: [B, R, R, B, B, R, R, B, B, R] }
   ]
 }
@@ -97,17 +100,19 @@ function banCounts(source: DraftSource): { blue: number; red: number } {
   }
 }
 
-/** 按双方 ban 数量选模板：有 5 ban 的按排位 20 手；4/4 按旧版；总数 ≤5 按训练赛 15 手。 */
+/** 按双方 ban 数量选模板：训练赛默认 20 手；KPL 旧版 18 手/排位 20 手保留。 */
 export function detectTemplate(source: DraftSource): DraftTemplate {
   const { blue, red } = banCounts(source)
   const total = blue + red
   const full = isCompleteDraft(source)
-  if (total <= 5 && !full) return SCRIM15
+  if (source.ruleProfile === 'scrim-global-20') return SCRIM20
+  if (Math.min(blue, red) >= 5) return SCRIM20
+  if (total <= 5 && !full) return SCRIM20
   if (Math.max(blue, red) >= 5) return RANKED20
   if (Math.min(blue, red) >= 4) return KPL18
   if (total >= 9) return RANKED20
   if (total >= 6) return KPL18
-  return SCRIM15
+  return SCRIM20
 }
 
 /** 按模板把两侧名单填进手序槽位；空 ban 占位，不压缩后面的位置。 */

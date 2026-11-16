@@ -40,7 +40,7 @@ TEAMS = {
 }
 SUB = '苍梧·替补'
 
-# 数据包与战队档案里展示的队名（面板本身仍保留"待命名"以覆盖改名流程）。
+# 数据包与战队分析里展示的队名（面板本身仍保留"待命名"以覆盖改名流程）。
 BUNDLE_NAMES = {
     'T1': '青岚战队', 'T2': '赤霄战队', 'T3': '苍梧战队', 'T4': '白虎战队',
     'T5': '流云战队', 'T6': '惊蛰战队', 'T7': '逐风战队',
@@ -171,6 +171,57 @@ def panel(seq, team_key, index, start, own_camp_code, own_win, subs):
 
 
 
+def economy_timeline(rng, seconds, own_camp, own_win, index):
+    """合成团队经济时间轴（营地官方回放约 30 秒一个采样点）。
+
+    故事线按序号轮换：顺风 / 逆风 / 翻盘 / 被翻 / 反复拉扯，让「精选对局」的
+    各个挑选维度（正负切换、终局接近、10 分钟落后翻盘、最悬殊）都有素材；
+    结局与 winnerCamp 一致，采样间隔 ≤120s 保证 10 分钟等节点可插值。
+    """
+    step = 30
+    first, last = 30, seconds - 15
+    big = rng.randint(3500, 11000)
+    # 故事线必须与 winnerCamp 一致：赢局走顺风 / 翻盘 / 拉扯后赢，
+    # 输局走逆风 / 被翻 / 拉扯后输，按序号轮换。
+    story = ('lead', 'comeback', 'see-saw')[index % 3] if own_win \
+        else ('deficit', 'blown', 'see-saw')[index % 3]
+    if story == 'lead':
+        anchors = [(first, rng.randint(200, 900)), (600, big), (last, big + rng.randint(500, 2500))]
+    elif story == 'deficit':
+        anchors = [(first, -rng.randint(200, 900)), (600, -big), (last, -big - rng.randint(500, 2500))]
+    elif story == 'comeback':
+        anchors = [(first, rng.randint(-600, 600)), (600, -rng.randint(1800, 5200)), (last, rng.randint(2200, 9500))]
+    elif story == 'blown':
+        anchors = [(first, rng.randint(-600, 600)), (600, rng.randint(1800, 5200)), (last, -rng.randint(2200, 9500))]
+    else:
+        sign = 1 if own_win else -1
+        anchors = [(first, -sign * rng.randint(300, 1200))]
+        t = first
+        while t < last - 240:
+            t += rng.randint(180, 300)
+            anchors.append((min(t, last - 120), sign * rng.randint(800, 3200)))
+            sign = -sign
+        # 结局锚点固定按真实胜负收口，不跟随中途的正负交替
+        anchors.append((last, (1 if own_win else -1) * rng.randint(500, 2600)))
+
+    def diff_at(t):
+        for (t0, d0), (t1, d1) in zip(anchors, anchors[1:]):
+            if t0 <= t <= t1:
+                span = (t1 - t0) or 1
+                return d0 + (d1 - d0) * (t - t0) / span
+        return anchors[-1][1]
+
+    timeline = []
+    for t in range(first, last + 1, step):
+        diff = diff_at(t) + rng.randint(-260, 260)
+        base = 1600 + round(t * 64.5)  # 双方各约 3900 金/分钟的团队经济
+        half = diff / 2
+        blue = base + (half if own_camp == 'blue' else -half)
+        red = base - (half if own_camp == 'blue' else -half)
+        timeline.append({'gameTime': t, 'blueGold': int(blue), 'redGold': int(red)})
+    return timeline
+
+
 def write_bundles(out_dir, plan, team_name='1', names=None):
     """把同一批对局写成 kpl-match-data-v1 数据包。
 
@@ -182,7 +233,7 @@ def write_bundles(out_dir, plan, team_name='1', names=None):
     for old in out.glob('mock-*.json'):
         old.unlink()
     written = 0
-    for seq, team_key, start, own_code, own_win, own_heroes, enemy_heroes in plan:
+    for index, (seq, team_key, start, own_code, own_win, own_heroes, enemy_heroes) in enumerate(plan):
         team = TEAMS[team_key]
         rng = random.Random(f'bundle-{team_key}-{seq}')
         seconds = rng.randint(720, 1500)
@@ -239,7 +290,8 @@ def write_bundles(out_dir, plan, team_name='1', names=None):
         bundle = {
             'schema': 'kpl-match-data-v1',
             'generatedAt': f'2026-11-{day:02d}T12:00:00',
-            'team': {'name': team_name},
+            'team': {'name': team_name,
+                     'timeline': economy_timeline(rng, seconds, own_camp, own_win, index)},
             'match': {
                 'key': f'mock-{seq}',
                 'date': {'year': 2026, 'month': 11, 'day': day, 'text': f'2026-11-{day:02d}'},

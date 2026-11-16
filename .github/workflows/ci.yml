@@ -60,6 +60,8 @@ jobs:
           for f in "${files[@]}"; do node --experimental-default-type=module --check "$f"; done
       - name: Analyst homepage navigation regression
         run: node scripts/test_workspace_home.mjs
+      - name: Cross analysis kernel regression
+        run: node scripts/test_cross_analytics.mjs
       - name: Install browser test dependencies
         run: |
           python -m playwright install chromium --with-deps

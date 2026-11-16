@@ -50,6 +50,17 @@ const WATCH_ROSTER = [
   { name: '李白', lane: '打野', icon: '/catalog/icons/hero-4.png' },
   { name: '朵莉亚', lane: '游走', icon: '/catalog/icons/hero-5.png' },
 ];
+const WATCH_MOMENTS = {
+  a: [{ t: 600, clock: '10:00', label: '10 分钟 -2,500' },
+    { t: 1200, clock: '20:00', label: '领先被反超' },
+    { t: 1691, clock: '28:11', label: '最多落后 4,500' }],
+  b: [{ t: 780, clock: '13:00', label: '丢暴君' }],
+  c: [],
+  d: [{ t: 480, clock: '08:00', label: '打输团战' },
+    { t: 1100, clock: '18:20', label: '被推塔' }],
+  e: [],
+};
+
 const WATCH_GAMES = {
   a: { date: '11-04', label: '11-04 · 对阵 #29', result: 'loss',
     conclusion: '本期最长的一局，打了 27 分钟，10 分钟落后 2,500 金币，先看开局。',
@@ -58,22 +69,28 @@ const WATCH_GAMES = {
       dragon: '3 条', tower: '6 座', gold: '-12,400 金币', damage: '38.2%' } },
   b: { date: '11-03', label: '11-03 · 对阵 #20', result: 'loss',
     conclusion: '中期一波龙团被打出 0 换 4，经济差一路被拉开。',
-    values: { deficit: '-3,900 金币', deaths: '28 次', fight: '3 波',
-      duration: '22:41', dragon: '2 条', tower: '5 座', gold: '-8,700 金币', damage: '41.5%' } },
+    values: { deficit: '-3,900 金币', deaths: '28 次', giveback: '-2,600 金币',
+      fight: '3 波', duration: '22:41', dragon: '2 条', tower: '5 座',
+      gold: '-8,700 金币', damage: '41.5%' } },
   c: { date: '11-02', label: '11-02 · 对阵 #18', result: 'win',
     conclusion: '开局领先一路兑现，19 分钟推平，可当作优势局的参照。',
     values: { deaths: '18 次', at10: '+1,600 金币', duration: '19:02',
       dragon: '4 条', gold: '+6,200 金币', damage: '52.0%' } },
   d: { date: '11-02', label: '11-02 · 对阵 #17', result: 'loss',
     conclusion: '10 分钟还咬着，最后 18 分钟被推掉两座高地。',
-    values: { deficit: '-2,100 金币', deaths: '22 次', at10: '-800 金币',
-      duration: '18:30', tower: '3 座', gold: '-5,300 金币', damage: '44.1%' } },
+    values: { deficit: '-2,100 金币', deaths: '22 次', giveback: '-1,200 金币',
+      fight: '2 波', at10: '-800 金币', duration: '18:30',
+      tower: '3 座', gold: '-5,300 金币', damage: '44.1%' } },
+  e: { date: '11-03', label: '11-03 · 对阵 #22', result: 'loss',
+    conclusion: '前中期两波团战打输，经济差被滚到 9,000 金币。',
+    values: { deficit: '-1,800 金币', deaths: '35 次', giveback: '-2,400 金币',
+      fight: '5 波', at10: '-1,100 金币', duration: '24:12',
+      dragon: '5 条', tower: '7 座', gold: '-9,200 金币', damage: '36.0%' } },
 };
-const WATCH_GROUP_IDS = {
-  deficit: ['a', 'b', 'd'], deaths: ['a', 'c'], giveback: ['a'], fight: ['a', 'd'],
-  at10: ['a', 'b', 'c'], duration: ['a', 'b', 'c'], dragon: ['a', 'c'],
-  tower: ['a', 'b', 'd'], gold: ['a', 'b', 'c'], damage: ['a', 'b', 'c'],
-};
+/* 每个字段 5 张卡（后端最多 30）；game 'a' 出现在所有分组，用来验同 key 跨组共享关注。 */
+const WATCH_GROUP_IDS = Object.fromEntries(
+  WATCH_META.map((meta) => [meta.id, ['a', 'b', 'c', 'd', 'e']]));
+const WATCH_SHARED_KEY = 'channel-a';
 
 const watchCard = (gameId, field) => {
   const game = WATCH_GAMES[gameId];
@@ -86,13 +103,15 @@ const watchCard = (gameId, field) => {
     if (item.id === field || numbers.length >= 4) continue;
     numbers.push({ label: item.label, value: item.value });
   }
+  const gameKey = `channel-${gameId}`;
   return {
     id: `watch_${gameId}_${field}`, kind: game.result, field, title: game.label,
     conclusion: game.conclusion, values, numbers: numbers.slice(0, 4),
     rosterText: WATCH_ROSTER.map((player) => player.name).join(' · '),
     rosterPlayers: WATCH_ROSTER,
-    evidence: [{ game: 'channel-watch', label: '这局过程', note: '' }],
-    primary_destination: '#match/channel-watch',
+    moments: WATCH_MOMENTS[gameId] || [],
+    evidence: [{ game: gameKey, label: '这局过程', note: '' }],
+    primary_destination: `#match/${gameKey}`,
   };
 };
 const WATCH_FIELDS = WATCH_META.map((meta) => ({
@@ -116,7 +135,16 @@ const weekPayload = {
     versions: ['1.0'], opponents: 4, dateLabel: '11-09 ~ 11-15',
     note: '本期收录 6 局，其中 6 局可看比赛过程',
   },
-  record: { wins: 4, losses: 2, decided: 6, winRate: 66.7, prev: { wins: 5, losses: 1, decided: 6, winRate: 83.3 } },
+  record: { wins: 4, losses: 2, decided: 6, winRate: 66.7,
+    prev: { wins: 5, losses: 1, decided: 6, winRate: 83.3 },
+    form: [
+      { result: 'win', date: '2026-11-02', opponent: '#a' },
+      { result: 'loss', date: '2026-11-03', opponent: '#b' },
+      { result: 'win', date: '2026-11-03', opponent: '#c' },
+      { result: 'win', date: '2026-11-04', opponent: '#d' },
+      { result: 'loss', date: '2026-11-04', opponent: '#e' },
+      { result: 'win', date: '2026-11-04', opponent: '#f' },
+    ] },
   summary: {
     sentence: '本周 6 局 4 胜 2 负，胜率 66.7%，比上周同期少赢 1 局。',
     tone: 'down',
@@ -189,21 +217,34 @@ const weekPayload = {
       limitation: '只统计有回放的团战。',
     },
     {
-      id: 'third', kind: 'objective', title: '龙塔争夺的收益变差了',
+      id: 'objective_down', kind: 'objective', title: '龙塔争夺的收益变差了',
       conclusion: '本周每局拿到 2.1 个资源/塔，上周 2.8 个。',
       numbers: [{ label: '本期', value: '2.1' }, { label: '上期', value: '2.8' }],
-      n: 6, enough: true, evidence: [], deep_destination: '#players?from=2026-11-09&to=2026-11-15',
-      limitation: '按终局面板统计。',
+      n: 6, enough: true, evidence: [], limitation: '按终局面板统计。',
     },
     {
-      id: 'fourth', kind: 'comp', title: '第四条变化要被截断',
-      conclusion: '不该出现。', numbers: [], n: 4, enough: true, evidence: [], limitation: '',
+      id: 'comp_concentrated', kind: 'comp', title: '阵容更集中在中野',
+      conclusion: '本周 5 局用同一套中野双人组，上周用了 8 套不同组合。',
+      numbers: [{ label: '本期', value: '5 套' }, { label: '上期', value: '8 套' }],
+      n: 6, enough: true, evidence: [], limitation: '',
+    },
+    {
+      id: 'roster_death_up', kind: 'roster', title: '发育路一局死 3 次以上的情况变多了',
+      conclusion: '本周 23 局里有 7 局发育路一局死 3 次以上，上周 21 局里 4 局。',
+      numbers: [{ label: '本期', value: '7/23 局' }, { label: '上期', value: '4/21 局' }],
+      n: 23, enough: true, evidence: [], limitation: '',
+    },
+    {
+      id: 'opening_death', kind: 'training', title: '开局 5 分钟内掉点的情况变多了',
+      conclusion: '本周 6 局里有 4 局开局 5 分钟就掉点，上周 2 局。',
+      numbers: [{ label: '本期', value: '4/6' }, { label: '上期', value: '2/6' }],
+      n: 6, enough: true, evidence: [], limitation: '',
     },
   ],
   findingsTitle: '本期重点发现',
-  findingsCountText: '3 条',
+  findingsCountText: '6 条',
   watchTitle: '本期最值得复盘的比赛',
-  watchCountText: '3 局',
+  watchCountText: '5 局',
   watchField: 'deficit',
   watch: WATCH_FIELDS.find((field) => field.id === 'deficit').items,
   watchFields: WATCH_FIELDS,
@@ -216,6 +257,15 @@ const weekPayload = {
   sources: { replay: 23, panel: 32, schedule: 1, note: '来源：官方回放 + 营地终局面板' },
   notes: ['训练赛与正式比赛未区分，按来源筛选查看'],
 };
+
+const recentPayload = JSON.parse(JSON.stringify(weekPayload));
+recentPayload.period = {
+  kind: 'recent', label: '最近 5 场', from: '2026-11-02', to: '2026-11-04',
+  rangeLabel: '11-02 ~ 11-04', n: 5,
+  prev: { label: '前 5 场', shortLabel: '前 5 场', from: '2026-10-28', to: '2026-10-30', rangeLabel: '10-28 ~ 10-30' },
+};
+recentPayload.summary = { sentence: '最近 5 场 4 胜 1 负，胜率 80.0%。', tone: 'up', note: '' };
+recentPayload.watchTitle = '最近 5 场最值得复盘的比赛';
 
 const monthPayload = JSON.parse(JSON.stringify(weekPayload));
 monthPayload.period = {
@@ -250,6 +300,17 @@ const emptyLibrary = {
 
 /* 1) 本周正常渲染：结构、顺序、下钻链接与截断 */
 const week = render({ kind: 'week', data: weekPayload });
+// Decorative artwork must not replace or alter any original homepage content.
+for (const view of [
+  { kind: 'week', data: weekPayload }, { kind: 'month', data: monthPayload },
+  { kind: 'week', data: emptyPeriod }, { kind: 'week', data: emptyLibrary },
+  { kind: 'week', loading: true }, { kind: 'week', error: new Error('unavailable') },
+]) {
+  const withArtwork = renderBrief(view, { ...ctx, art: true });
+  assert.equal(withArtwork.replace(/<img class="pbr-celadon-art"[^>]*>/, '').replace(/>\s+</g, '><'), render(view).replace(/>\s+</g, '><'),
+    '青瓷装饰不能删减原首页的内容或操作');
+  assert(!withArtwork.includes('data-gallery-evidence'), '不能插入额外经济/最近对局模块');
+}
 for (const text of ['赛训周期简报', '赛训总览', '本周赛训表现 · 对比上周同期', '11-09 ~ 11-15', '上周同期 11-02 ~ 11-08']) {
   assert(week.includes(text), '简报缺少契约要求的文案：' + text);
 }
@@ -271,9 +332,19 @@ assert(week.includes('href="#matches" data-pbr-all-games'), '全部对局应对�
 /* 固定 8 项：比例写成 xx/xx（百分率），经济差用金币，带同批排名与百分位条 */
 const metricCount = (week.match(/class="pbr-metric"/g) || []).length;
 assert.equal(metricCount, 8, '指标固定 8 个，实际 ' + metricCount);
+assert(week.includes('data-metric-id="record"'), '战绩卡需要 data-metric-id 参与 bento 布局');
+assert(week.includes('class="pbr-score"'), '战绩卡应把比分拆成胜 / 负两段');
+assert.equal((week.match(/class="pbr-form-dot is-/g) || []).length, 6,
+  '战绩卡应渲染近 6 局 form guide');
+assert(week.includes('pbr-form-dot is-win') && week.includes('pbr-form-dot is-loss'),
+  'form guide 应同时有胜 / 负两种状态');
 assert(week.includes('4/6'), '比例指标的数值应是 xx/xx');
-assert(week.includes('（66.7%）'), '百分率应写在括号里');
-assert(week.includes('+2,480 金币'), '经济差要用金币');
+assert(week.includes('class="pbr-metric-pct">66.7<small class="pbr-unit">%</small></em>'),
+  '百分率应以小号数字跟在分数后，% 仍用 .pbr-unit');
+assert(!week.includes('（66.7'), '卡片不再用全角括号包百分率');
+assert(week.includes('↓ 16.6 个百分点'), '下降差值用箭头，不再重复负号');
+assert(!week.includes('↓-16.6') && !week.includes('↓ -16.6'), '箭头和负号不应同时出现');
+assert(week.includes('+2,480 <small class="pbr-unit">金币</small>'), '经济差要用金币（.pbr-unit）');
 assert(!week.includes('上期 —'), '空指标不应留「上期 —」占位');
 assert(!week.includes('暂不可比'), '指标卡不应出现「暂不可比」');
 assert(week.includes('中等 4/7'), '指标要带排名 x/xx');
@@ -289,18 +360,33 @@ assert(week.includes('排名对比本期一起训练的 6 支战队'), '图例�
 assert(!week.includes('a class="pbr-metric"'), '指标卡不应是链接');
 assert(!week.includes('href="#matches?from=2026-11-09'), '指标卡不再带下钻链接');
 
-/* 发现区（全宽面板 + 每行「左文字 + 右数字块」）：序号 / 标题 / 结论 / 证据 / 数字与比例条 */
+/* 第 3 轮：指标大数字按等级配色（有 rank 的加 is-lead/mid/behind，无 rank 不加） */
+assert.equal((week.match(/class="pbr-metric-value[^"]*is-lead/g) || []).length, 2,
+  '领先等级的大数字应有 is-lead');
+assert.equal((week.match(/class="pbr-metric-value[^"]*is-mid/g) || []).length, 3,
+  '中等等级的大数字应有 is-mid');
+assert.equal((week.match(/class="pbr-metric-value[^"]*is-behind/g) || []).length, 1,
+  '落后等级的大数字应有 is-behind');
+assert.equal((week.match(/class="pbr-metric-value"/g) || []).length, 2,
+  '无 rank 的指标大数字不应加 is-* class');
+
+
 const totalCards = WATCH_META.reduce((sum, meta) => sum + WATCH_GROUP_IDS[meta.id].length, 0);
+/* 发现区（第 3 轮）：不限条数（6 条全渲染）+ 区块内滚动 + 关注按钮/置顶/时间 */
+/* 信息不删：所有卡都渲染时间点与紧凑阵容，首卡只是更宽。 */
+const totalMoments = WATCH_META.reduce((sum, meta) => sum + WATCH_GROUP_IDS[meta.id]
+  .reduce((acc, gameId) => acc + (WATCH_MOMENTS[gameId] || []).length, 0), 0);
 const findingCount = (week.match(/class="pbr-finding"/g) || []).length;
-assert.equal(findingCount, 3, '发现行应为 3 条，实际 ' + findingCount);
-assert(!week.includes('第四条变化要被截断'), '第 4 条变化必须被截断');
-for (const no of ['01', '02', '03']) {
+assert.equal(findingCount, 6, '发现区应渲染全部 6 条（不再截 3 条），实际 ' + findingCount);
+for (const no of ['01', '02', '03', '04', '05', '06']) {
   assert(week.includes(`class="pbr-finding-no">${no}`), '发现行缺少序号 ' + no);
 }
-assert.equal((week.match(/class="pbr-finding-main"/g) || []).length, 3, '发现行要有左侧文字栏');
-assert.equal((week.match(/class="pbr-finding-side"/g) || []).length, 3, '发现行要有右侧数字栏');
-assert.equal((week.match(/class="pbr-stat[ "]/g) || []).length, 3, '每行发现恰好一个 .pbr-stat（数字块）');
+assert.equal((week.match(/class="pbr-finding-main"/g) || []).length, 6, '发现行要有左侧文字栏');
+assert.equal((week.match(/class="pbr-finding-side"/g) || []).length, 6, '发现行要有右侧数字栏');
+assert.equal((week.match(/class="pbr-stat[ "]/g) || []).length, 6, '每行发现恰好一个 .pbr-stat（数字块）');
 assert(week.includes('class="pbr-stat is-compare"'), '本期/上期数字要画对比条');
+assert((week.match(/class="pbr-stat is-compare is-ratio"/g) || []).length >= 1,
+  '比例型发现也要显示本期/上期两行，不能只画本期比例条');
 assert(week.includes('class="pbr-stat-line"'), '发现行数字行缺失');
 assert(week.includes('十分钟领先后，丢掉优势的局变多了'), '缺少发现标题');
 assert(week.includes('本周 6 局十分钟领先，赢下 4 局；上周同期 5 局全胜。'), '缺少结论句');
@@ -308,19 +394,33 @@ assert(!week.includes('多余'), '比例条只用本期与上期，多余数字�
 assert(!week.includes('本批观察'), '首页不再出现「本批观察」');
 assert(!week.includes('更多分析'), '首页不再显示「更多分析」');
 assert(!week.includes('href="#players?from=2026-11-09'), '发现卡不再带更多分析下钻');
+assert.equal((week.match(/data-pbr-fav-finding="/g) || []).length, 6,
+  '每条发现都应有 [data-pbr-fav-finding] 关注按钮');
+assert(week.includes('关注'), '发现行缺少「关注」文案');
 assert(/\.pbr-findings:not\(\.pbr-watch\) \.pbr-finding-top h3 \{[^}]*white-space: nowrap;[^}]*text-overflow: ellipsis;/.test(style),
   '发现区标题必须单行省略（white-space: nowrap + text-overflow: ellipsis）');
 assert(/\.pbr-findings:not\(\.pbr-watch\) \.pbr-finding \{[^}]*grid-template-columns: minmax\(0, 1fr\) 230px/.test(style),
   '发现区应为「左文字 + 右 230px 数字」两栏');
-assert.equal((week.match(/href="#match\/channel-/g) || []).length, 3 + totalCards,
-  '证据对局：发现区 3 条 + 复盘卡每张 1 条');
+assert.equal((week.match(/href="#match\/channel-/g) || []).length, 3 + totalCards + totalMoments,
+  '证据对局链接：发现区 3 + 复盘卡主链接 ' + totalCards + ' + 全部时间点 ' + totalMoments);
 assert(!week.includes('channel-ccc'), '每条变化最多 2 条证据，第 3 条应被截断');
 
-/* 复盘卡：显示字段数字（默认 4 项）+ 五个英雄头像（各自链到英雄资料）+ 一个动作 */
+/* 关注注入（纯渲染）：findingFavs → 该条置顶 + is-fav + 已关注 · MM-DD HH:mm */
+const favFinding = render({ kind: 'week', data: weekPayload,
+  findingFavs: { opening_death: '2026-11-13T18:30:00' } });
+const favFindingOrder = [...favFinding.matchAll(/data-pbr-fav-finding="([^"]+)"/g)].map((match) => match[1]);
+assert.equal(favFindingOrder[0], 'opening_death', '关注的发现应渲染在最前：' + favFindingOrder.join(','));
+assert(/class="pbr-finding[^"]*is-fav/.test(favFinding), '关注的发现行应加 is-fav');
+assert(favFinding.includes('已关注 · 11-13 18:30'), '关注的发现应显示「已关注 · MM-DD HH:mm」');
+const favFindingCrossYear = render({ kind: 'week', data: weekPayload,
+  findingFavs: { opening_death: '2025-12-31T18:30:00' } });
+assert(favFindingCrossYear.includes('已关注 · 2025-12-31 18:30'), '跨年关注时间要带年份');
+/* 复盘卡：每张都有 4 个字段 + 时间点 + 紧凑阵容；首卡只是更宽 */
 assert(week.includes('查看这局完整过程'), '复盘卡要有一个明确动作');
-assert.equal((week.match(/class="pbr-roster-item"/g) || []).length, totalCards * 5, '复盘卡五个英雄头像');
-assert.equal((week.match(/href="#hero\//g) || []).length, totalCards * 5, '每个英雄头像都链到英雄资料');
-assert(week.includes('href="#hero/' + encodeURIComponent('项羽') + '"'), '英雄链接要用英雄名');
+assert.equal((week.match(/class="pbr-roster-item[ "]/g) || []).length, totalCards * 5,
+  '每张复盘卡都应保留紧凑阵容');
+assert.equal((week.match(/href="#hero\//g) || []).length, totalCards * 5,
+  '每张卡的阵容头像都应链到英雄资料');
 
 /* 复盘区：10 字段目录各一组；区头是「排序 + 字段」文本工具条（不是一排胶囊），两个弹层常驻 DOM 默认 hidden */
 assert.equal((week.match(/data-pbr-watch-group="/g) || []).length, 10, '10 个字段各一组复盘分组');
@@ -368,18 +468,24 @@ assert(week.includes('恢复默认'), '字段弹层要有「恢复默认」');
 assert(week.includes('data-pbr-display-reset'), '恢复默认按钮应带 data-pbr-display-reset');
 assert.equal((week.match(/data-pbr-watch-count/g) || []).length, 1, '区头计数应唯一');
 
-/* 卡片数字：用户选 4 项 = 每卡 4 个数字，按字段目录顺序（deficit→deaths→at10→duration） */
+/* 卡片数字：所有卡都按勾选的 4 项渲染（字段弹层控制全部卡） */
 const expectedValues = totalCards * WATCH_DISPLAY_DEFAULT.length;
 assert.equal((week.match(/data-pbr-value="/g) || []).length, expectedValues,
-  '每张卡数字数应 == 显示字段数（4）× 卡片数');
+  '每张卡 4 项，实际 ' + (week.match(/data-pbr-value="/g) || []).length);
 const firstCardValues = [...week.matchAll(/class="pbr-num[^"]*" data-pbr-value="([^"]+)"/g)]
   .slice(0, 4).map((match) => match[1]);
 assert.deepEqual(firstCardValues, ['deficit', 'deaths', 'at10', 'duration'],
   '卡片数字应按字段目录顺序渲染，实际 ' + firstCardValues.join(','));
-assert(week.includes('data-pbr-value="deficit"><small>最多落后</small><b>-4,500 金币</b>'),
+assert(week.includes('data-pbr-value="deficit"><small>最多落后</small><b>-4,500 <small class="pbr-unit">金币</small></b>'),
   '卡片数字要带字段 id + 标签 + 数值');
-assert(week.includes('data-pbr-value="at10"><small>10 分钟经济差</small><b>—</b>'),
-  '缺失字段应显示「—」');
+const featuredBlock = (week.match(/class="pbr-finding is-watch is-featured"[\s\S]*?<\/article>/) || [''])[0];
+const compactBlock = (week.match(/class="pbr-finding is-watch"(?! is-featured)[\s\S]*?<\/article>/) || [''])[0];
+assert(featuredBlock.includes('class="pbr-moments"'), '首卡应保留时间点');
+assert(featuredBlock.includes('pbr-roster-mini-strip'), '首卡应保留紧凑阵容');
+assert(compactBlock.includes('class="pbr-moments"'), '其余卡也应保留时间点');
+assert(compactBlock.includes('pbr-roster-mini-strip'), '其余卡也应保留紧凑阵容');
+assert.equal((compactBlock.match(/data-pbr-value="/g) || []).length, 4,
+  '其余卡也应保留 4 项字段');
 
 /* is-focus：默认排序字段 deficit 在显示集合里 → 每张卡恰好 1 个高亮数字 */
 const focusCount = (week.match(/class="pbr-num[^"]*is-focus[^"]*"/g) || []).length;
@@ -389,14 +495,126 @@ assert(/class="pbr-num is-focus" data-pbr-value="deficit"/.test(week), '排序�
 /* 显示字段可配置：纯渲染按 watchDisplayFields（或 view.displayFields）出数字，仍按目录顺序。
    排序字段不在显示集合 → 0 个 is-focus、卡片正好 N 个数字。 */
 const picked = render({ kind: 'week', data: { ...weekPayload, watchDisplayFields: ['deaths', 'duration'] } });
-assert.equal((picked.match(/data-pbr-value="/g) || []).length, totalCards * 2,
-  '显示字段配成 2 项时每卡应只出 2 个数字');
+assert.equal((picked.match(/data-pbr-value="/g) || []).length,
+  totalCards * 2,
+  '勾选 2 项时所有卡都应渲染 2 项');
 assert.equal((picked.match(/is-focus/g) || []).length, 0,
-  '排序字段（deficit）不在显示集合时不应有 is-focus');
+  '排序字段 deficit 不在显示集合 → 所有卡都不应高亮');
 const pickedLabels = [...picked.matchAll(/data-pbr-value="([^"]+)"><small>/g)].map((match) => match[1]);
-assert.deepEqual(pickedLabels, Array(totalCards).fill(['deaths', 'duration']).flat(),
-  '2 项显示字段也应按字段目录顺序渲染（deaths→duration）');
+const expectedPicked = WATCH_META.flatMap((meta) => [
+  ...Array(WATCH_GROUP_IDS[meta.id].length).fill(['deaths', 'duration']),
+]).flat();
+assert.deepEqual(pickedLabels, expectedPicked,
+  '所有卡都按勾选字段渲染');
 assert(picked.includes('显示 2 项'), '字段按钮的项数要跟着选中项变化');
+
+/* 复盘区（第 3 轮）：不限条数（每组 5 张）+ 横向滚动 + 左右箭头 + 关注（同 key 跨组共享） */
+assert.equal((week.match(/data-pbr-watch-prev/g) || []).length, 1, '缺少左滚动箭头 [data-pbr-watch-prev]');
+assert.equal((week.match(/data-pbr-watch-next/g) || []).length, 1, '缺少右滚动箭头 [data-pbr-watch-next]');
+assert.equal((week.match(/data-pbr-fav-watch="/g) || []).length, totalCards,
+  '每张复盘卡都应有 [data-pbr-fav-watch] 关注按钮');
+const groupBlock = (groupId) => (week.match(
+  new RegExp(`data-pbr-watch-group="${groupId}"[\\s\\S]*?(?=data-pbr-watch-group=|</section>)`)) || [''])[0];
+assert.equal((groupBlock('deficit').match(/class="pbr-finding[^"]*is-watch/g) || []).length, 5,
+  'deficit 组应渲染 5 张卡（不再截 3 张）');
+/* count(17) > 列出(5) 时轨道末尾要有「共 17 局 · 已列前 5 局」说明 */
+const railTail = (week.match(/class="pbr-rail-tail"[^>]*>([\s\S]*?)<\//) || ['', ''])[1];
+assert(railTail.includes('共 17 局') && railTail.includes('已列前 5 局'),
+  '轨道末尾应写「共 17 局 · 已列前 5 局」：' + railTail);
+const noTail = render({ kind: 'week', data: { ...weekPayload,
+  watchFields: WATCH_FIELDS.map((field) => ({ ...field, count: field.items.length })) } });
+assert(!noTail.includes('pbr-rail-tail'), 'count 等于列出条数时不应出现轨道说明');
+const favWatch = render({ kind: 'week', data: weekPayload,
+  watchFavs: { [WATCH_SHARED_KEY]: '2026-11-13T18:30:00' } });
+const favWatchKeys = [...favWatch.matchAll(/data-pbr-fav-watch="([^"]+)"/g)].map((match) => match[1]);
+assert.equal(favWatchKeys.length, totalCards, '关注注入后卡片数不应变化');
+for (let group = 0; group < 10; group += 1) {
+  assert.equal(favWatchKeys[group * 5], WATCH_SHARED_KEY,
+    '同一局在其它分组也应置顶关注（第 ' + group + ' 组）：' + favWatchKeys[group * 5]);
+}
+assert(favWatch.includes('已关注 · 11-13 18:30'), '复盘的关注应显示「已关注 · MM-DD HH:mm」');
+assert(/class="pbr-finding[^"]*is-watch[^"]*is-fav|class="pbr-finding[^"]*is-fav[^"]*is-watch/.test(favWatch),
+  '关注的复盘卡应加 is-fav');
+
+/* ── 第 4 轮：6 周期 / 时间点 / 关注工作流 / 视图过滤 / 忽略 / 导出 / 单位 / 快捷键 / 老报文 ── */
+for (const kind of ['today', 'week', 'month', 'recent', 'days', 'custom']) {
+  assert(week.includes(`data-pbr-period="${kind}"`), '缺少周期按钮：' + kind);
+}
+assert(week.includes('近5场') && week.includes('近3天'), '缺少「近5场 / 近3天」周期按钮文案');
+const recentRender = render({ kind: 'recent', data: recentPayload });
+assert(recentRender.includes('最近 5 场赛训表现 · 对比前 5 场'),
+  '「近5场」副标题不对：' + (recentRender.match(/<p class="pbr-sub">[\s\S]*?<\/p>/) || [''])[0]);
+assert(recentRender.includes('最近 5 场 4 胜 1 负'), '「近5场」战况句没跟着变');
+assert(recentRender.includes('data-pbr-period="recent" aria-pressed="true"'), '「近5场」按钮应高亮');
+
+/* 时间点：0-3 个、clock 正则、空数组不渲染容器 */
+
+const momentCards = WATCH_META.reduce((sum, meta) => sum
+  + WATCH_GROUP_IDS[meta.id].filter((gameId) => (WATCH_MOMENTS[gameId] || []).length > 0).length, 0);
+assert.equal((week.match(/data-pbr-moments/g) || []).length, momentCards,
+  '所有卡只要有时间点就渲染时间点容器：' + (week.match(/data-pbr-moments/g) || []).length
+  + ' vs ' + momentCards);
+assert.equal((week.match(/data-pbr-moment[ ="]/g) || []).length, totalMoments,
+  '全部卡片时间点 chip 总数不对：' + (week.match(/data-pbr-moment[ ="]/g) || []).length
+  + ' vs ' + totalMoments);
+const momentChips = [...week.matchAll(/data-pbr-moment[^>]*>([\s\S]*?)<\/a>/g)]
+  .map((match) => match[1].replace(/<[^>]+>/g, '').trim());
+assert(momentChips.length >= 3 && /^\d{1,2}:\d{2}/.test(momentChips[0]),
+  '时间点文本应以 MM:SS 开头：' + momentChips[0]);
+assert(week.includes('28:11') && week.includes('10:00'), '时间点 clock 文本缺失');
+
+/* 关注工作流（纯渲染注入 {at, reviewedAt, note}）：条目置顶 + 已复盘 + 我的结论 */
+const findingFavs = { opening_death: { at: '2026-11-13T18:30:00',
+  reviewedAt: '2026-11-14T09:00:00', note: '重点练开局' } };
+const watchFavs = { [WATCH_SHARED_KEY]: { at: '2026-11-13T18:30:00', reviewedAt: null, note: '' } };
+const favRender = render({ kind: 'week', data: weekPayload, findingFavs, watchFavs, viewMode: 'all' });
+assert(favRender.includes('data-pbr-fav-review'), '关注后应出现「已复盘」按钮');
+assert(/data-pbr-fav-review[^>]*aria-pressed="true"/.test(favRender), '已复盘按钮应选中');
+assert(favRender.includes('重点练开局'), '已保存的结论应渲染出来');
+assert(favRender.includes('data-pbr-fav-note'), '关注后应出现「＋结论」按钮');
+assert.equal((favRender.match(/data-pbr-fav-review/g) || []).length, 11,
+  '1 条发现 + 10 个分组各 1 张关注卡的已复盘按钮数：'
+  + (favRender.match(/data-pbr-fav-review/g) || []).length);
+
+/* 三态视图过滤：关注 = 有收藏；待复盘 = 收藏且 reviewedAt 空 */
+const favView = render({ kind: 'week', data: weekPayload, findingFavs, watchFavs, viewMode: 'fav' });
+assert.equal((favView.match(/class="pbr-finding(?=[ "])(?![^"]*is-watch)[^"]*"/g) || []).length, 1,
+  '关注视图发现区应只剩 1 条：' + (favView.match(/class="pbr-finding(?=[ "])(?![^"]*is-watch)[^"]*"/g) || []).length);
+const favViewWatchKeys = [...favView.matchAll(/data-pbr-fav-watch="([^"]+)"/g)].map((match) => match[1]);
+assert(favViewWatchKeys.length >= 1 && favViewWatchKeys.every((key) => key === WATCH_SHARED_KEY),
+  '关注视图复盘区应只剩关注卡：' + favViewWatchKeys.slice(0, 3).join(','));
+assert(favView.includes('已复盘') && favView.includes('重点练开局'), '关注视图应显示已复盘/我的结论');
+const todoView = render({ kind: 'week', data: weekPayload, findingFavs, watchFavs, viewMode: 'todo' });
+assert.equal((todoView.match(/class="pbr-finding(?=[ "])(?![^"]*is-watch)[^"]*"/g) || []).length, 0,
+  '待复盘视图应排除已复盘发现：' + (todoView.match(/class="pbr-finding(?=[ "])(?![^"]*is-watch)[^"]*"/g) || []).length);
+assert((todoView.match(/data-pbr-fav-watch="/g) || []).length >= 1,
+  '待复盘视图应保留未复盘关注卡');
+
+/* 忽略：隐藏 + 区头「已忽略 N 条」 */
+const ignoredView = render({ kind: 'week', data: weekPayload,
+  findingIgnored: { lead_hold_down: '2026-11-13T18:30:00' } });
+assert(!ignoredView.includes('data-pbr-fav-finding="lead_hold_down"'),
+  '被忽略的发现不应渲染');
+assert(ignoredView.includes('已忽略 1 条'), '区头应显示「已忽略 N 条」');
+assert.equal((ignoredView.match(/data-pbr-ignore-finding="/g) || []).length, 5,
+  '忽略 1 条后剩余 5 条发现的忽略按钮');
+
+/* 导出 / 快捷键 / 单位 */
+assert(week.includes('data-pbr-export'), '缺少「导出清单」按钮');
+assert(/data-pbr-export[^>]*\sdisabled/.test(week), '无关注项时导出按钮应 disabled');
+assert(week.includes('data-pbr-shortcut-hint'), '缺少快捷键提示 [data-pbr-shortcut-hint]');
+assert(week.includes('J/K'), '快捷键提示应含 J/K');
+assert((week.match(/class="pbr-unit"/g) || []).length >= 6,
+  '单位应用 <small class="pbr-unit"> 包裹：' + (week.match(/class="pbr-unit"/g) || []).length);
+const unitRender = render({ kind: 'week', data: { ...weekPayload,
+  watchDisplayFields: ['fight', 'dragon', 'tower', 'deficit'] } });
+for (const unit of ['金币', '次', '波', '条', '座', '%', '局']) {
+  assert(unitRender.includes(`<small class="pbr-unit">${unit}</small>`)
+    || week.includes(`<small class="pbr-unit">${unit}</small>`),
+    '缺少 .pbr-unit 单位：' + unit);
+}
+assert(/(-webkit-line-clamp: 2|line-clamp: 2)/.test(style), '发现行结论应为 2 行 clamp');
+
 
 /* 筛选切换（纯渲染）：只露当前组、计数跟着变，排序弹层选中项跟着切 */
 const filtered = render({ kind: 'week', data: { ...weekPayload, watchField: 'deaths' } });
@@ -404,7 +622,7 @@ assert(!/data-pbr-watch-group="deaths"[^>]*hidden/.test(filtered), '当前分组
 assert(/data-pbr-watch-group="deficit"[^>]*hidden/.test(filtered), '其他分组必须隐藏');
 assert(/data-pbr-sort-option="deaths"[^>]*aria-selected="true"/.test(filtered), '排序弹层选中项要跟着切换');
 assert(filtered.includes('我方掉点 · 23 局'), '排序按钮文本要跟着切换');
-assert(filtered.includes('data-pbr-watch-count>2 局'), '区头计数要跟着分组变');
+assert(filtered.includes('data-pbr-watch-count>23 局'), '区头计数要跟着分组变（后端 count 23 局）');
 const emptyGroup = render({ kind: 'week', data: { ...weekPayload, watchField: 'giveback',
   watchFields: WATCH_FIELDS.map((field) => field.id === 'giveback' ? { ...field, items: [] } : field) } });
 assert(emptyGroup.includes('本期没有领先被反超的局。'), '该字段没数据时给一句空态，不留白卡');
@@ -427,6 +645,15 @@ assert(!legacy.includes('data-pbr-sort-pop') && !legacy.includes('data-pbr-field
 assert(!legacy.includes('data-pbr-watch-group'), '老报文不应出现筛选分组');
 assert.equal((legacy.match(/data-pbr-value="/g) || []).length, 0, '老报文没有 values，不应写 data-pbr-value');
 assert.equal((legacy.match(/class="pbr-num"/g) || []).length, 2, '老报文仍按 numbers 出 2 个数字');
+assert.equal((legacy.match(/data-pbr-watch-prev|data-pbr-watch-next/g) || []).length, 0,
+  '老报文不应出现左右滚动箭头');
+assert.equal((legacy.match(/data-pbr-fav-watch="/g) || []).length, 0,
+  '老报文不应出现复盘卡关注按钮');
+assert.equal((legacy.match(/data-pbr-fav-finding="/g) || []).length, 6,
+  '老报文的发现区仍应有关注按钮（findings 独立区块）');
+assert(!legacy.includes('data-pbr-moment'), '老报文不应渲染时间点');
+assert(!legacy.includes('data-pbr-shortcut-hint'), '老报文不应渲染快捷键提示');
+assert(legacy.includes('data-pbr-ignore-finding'), '老报文发现区仍应有忽略按钮');
 
 /* 下钻链接都必须是站内 hash 路由（分析专题正被并行任务增删，这里只验路由形状，
    不锁死具体页面；证据对局与「全部对局」的目标在上面单独断言）。 */
@@ -513,6 +740,25 @@ assert(style.includes('.pbr-finding-main') && style.includes('.pbr-finding-side'
 assert(style.includes('.pbr-watch-tools') && style.includes('.pbr-tool'), '区头工具条需要样式');
 assert(style.includes('.pbr-pop') && style.includes('.pbr-pop-option'), '弹层与选项需要样式');
 assert(style.includes('.pbr-pop-field'), '字段弹层的复选框行需要样式');
+assert(style.includes('.pbr-metric-value.is-lead'), '指标大数字需要按等级配色的样式');
+assert(/\.pbr-home \{[^}]*font-family: var\(--font\)/.test(style),
+  '首页应使用全站字体栈（Manrope + Noto Sans SC），不要单独锁死雅黑');
+assert(/\.pbr-home \.pbr-metric-pct \{[^}]*font-style: normal/.test(style),
+  '百分比不能继承 <em> 的斜体');
+assert(/\.pbr-home \.pbr-metric-delta \{[^}]*background: transparent/.test(style),
+  '差值不应再用胶囊底色');
+assert(style.includes('#1b7a58') && style.includes('#b4532f'), '指标等级色需要 lead / behind 色值');
+assert(/\.pbr-finding-list[^{]*\{[^}]*max-height: clamp\(/.test(style), '发现区需要固定高度滚动容器');
+assert(style.includes('overflow-y: auto') || style.includes('overflow-y:auto'), '发现区要能内部上下滚动');
+assert(style.includes('.pbr-fav'), '关注按钮需要样式');
+assert(style.includes('scroll-snap-type'), '复盘横向滑动需要 scroll-snap 样式');
+assert(style.includes('.pbr-rail-tail'), '轨道末尾的「共 N 局」说明需要样式');
+assert(style.includes('.pbr-moments') && style.includes('.pbr-moment'), '时间点容器/chip 需要样式');
+assert(style.includes('.pbr-unit'), '单位弱化需要样式');
+assert(briefSource.includes('recent') && briefSource.includes('days'), '简报模块应支持 recent/days 周期');
+assert(briefSource.includes('pbr-view-mode'), '视图模式持久化钩子缺失');
+assert(briefSource.includes('pbr-finding-ignored'), '忽略持久化键缺失');
+assert(briefSource.includes('reviewedAt'), '收藏结构应含 reviewedAt');
 assert(/@media \(max-width: 650px\)[^}]*[\s\S]*\.pbr-finding \{ grid-template-columns: minmax\(0, 1fr\)/.test(style), '窄屏变化卡应单列');
 assert(style.includes('overflow-wrap: anywhere'), '长文案要能换行，避免横向滚动');
 assert(!/\.pbr-findings:not\(\.pbr-watch\) \.pbr-finding-top h3 \{[^}]*white-space: normal/.test(style), '发现区标题不应允许换行');
@@ -522,5 +768,5 @@ assert(!/\.pbr-findings:not\(\.pbr-watch\) \.pbr-finding-top h3 \{[^}]*white-spa
 
 console.log('period brief checks passed');
 console.log('  · 指标截断到', metricCount, '个，发现行', findingCount, '条，复盘', totalCards, '张卡');
-console.log('  · 复盘工具栏（排序弹层 + 字段弹层）/ 默认 4 项 / 缺失字段「—」/ 老报文兼容 均通过');
+console.log('  · 复盘工具栏 + 关注工作流 + 时间点/新周期/视图/忽略/导出/单位/快捷键/老报文 均通过');
 console.log('  · 空态 / 空库 / 读取中 / 失败 四种边界均通过');

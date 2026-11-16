@@ -2,7 +2,7 @@
 import pytest
 
 from bp_rules import (
-    SCRIM_15_SCHEDULE, SERIES_LENGTHS,
+    SCRIM_20_SCHEDULE, SCRIM_GLOBAL_20, SERIES_LENGTHS,
     append_legal_scrim_action, build_series_used, can_assign_to_players,
     legal_scrim_candidates, next_scrim_action, profile_for,
     validate_scrim_prefix, validate_series_context, scrim_state_payload,
@@ -12,8 +12,8 @@ from bp_intelligence import build_report, normalize_kpl, normalize_scrims
 
 BLUE_PICKS = ["花木兰", "镜", "小乔", "孙尚香", "张飞"]
 RED_PICKS = ["马超", "暃", "沈梦溪", "狄仁杰", "太乙真人"]
-BLUE_BANS = ["大乔", "朵莉亚", "鲁班大师"]
-RED_BANS = ["亚连", "吕布"]
+BLUE_BANS = ["大乔", "朵莉亚", "鲁班大师", "司空震", "嬴政"]
+RED_BANS = ["亚连", "吕布", "公孙离", "蔡文姬", "金蝉"]
 
 
 def full_scrim_actions():
@@ -23,10 +23,10 @@ def full_scrim_actions():
     }
     return [{"order": i + 1, "action": action, "camp": camp,
              "hero": next(queues[(action, camp)])}
-            for i, (action, camp) in enumerate(SCRIM_15_SCHEDULE)]
+            for i, (action, camp) in enumerate(SCRIM_20_SCHEDULE)]
 
 
-def scrim(events=None, rule="scrim-global-15"):
+def scrim(events=None, rule="scrim-global-20"):
     return [{
         "key": "scrim-001", "day": "2026-11-14", "ownSide": "left",
         "opponent": "对手战队", "result": "win", "ruleProfile": rule,
@@ -36,65 +36,81 @@ def scrim(events=None, rule="scrim-global-15"):
     }]
 
 
-def test_actual_scrim_order_five_bans_ten_picks_and_no_second_ban_phase():
-    assert len(SCRIM_15_SCHEDULE) == 15
-    assert list(SCRIM_15_SCHEDULE[:5]) == [
-        ("ban", "1"), ("ban", "2"), ("ban", "1"),
-        ("ban", "2"), ("ban", "1"),
-    ]
-    assert list(SCRIM_15_SCHEDULE[5:]) == [
+def test_scrim_order_is_ten_bans_then_ten_picks():
+    assert len(SCRIM_20_SCHEDULE) == 20
+    assert list(SCRIM_20_SCHEDULE[:10]) == [
+        ("ban", "1" if i % 2 == 0 else "2") for i in range(10)]
+    assert list(SCRIM_20_SCHEDULE[10:]) == [
         ("pick", "1"), ("pick", "2"), ("pick", "2"),
         ("pick", "1"), ("pick", "1"),
         ("pick", "2"), ("pick", "2"),
         ("pick", "1"), ("pick", "1"), ("pick", "2"),
     ]
-    assert validate_scrim_prefix(full_scrim_actions(), full=True)
-    assert next_scrim_action(full_scrim_actions()) is None
-    assert next_scrim_action(full_scrim_actions()[:5]) == {
-        "order": 6, "action": "pick", "camp": "1", "phase": "pick"}
+    events = full_scrim_actions()
+    assert validate_scrim_prefix(events, rule="scrim-global-20", full=True)
+    assert next_scrim_action(events, rule=SCRIM_GLOBAL_20) is None
+    assert next_scrim_action(events[:10], rule="scrim-global-20") == {
+        "order": 11, "action": "pick", "camp": "1", "phase": "pick"}
+
+
+def test_scrim_state_payload_switches_schedule():
+    state = scrim_state_payload(
+        {"source": "scrim", "rule": "scrim-global-20", "bo": "BO3", "gameNumber": 1,
+         "blueTeam": "甲", "redTeam": "乙", "events": []},
+        ["甲英雄", "乙英雄", "丙英雄"])
+    assert state["rule"] == "scrim-global-20"
+    assert len(state["schedule"]) == 20
+    assert state["nextAction"]["order"] == 1
+    assert "蓝红交替，各 5 个" in state["notes"][0]
+
+
+def test_profile_for_only_accepts_twenty_hand():
+    assert profile_for("scrim", "scrim-global-20").id == "scrim-global-20"
+    assert profile_for("scrim").id == "scrim-global-20"
 
 
 def test_scrim_wrong_actor_extra_ban_duplicate_hero_are_rejected():
     changed = [dict(e) for e in full_scrim_actions()]
-    changed[5]["action"] = "ban"
+    changed[10]["action"] = "ban"
     assert not validate_scrim_prefix(changed, full=True)
     changed = [dict(e) for e in full_scrim_actions()]
     changed[3]["camp"] = "1"
     assert not validate_scrim_prefix(changed, full=True)
     changed = [dict(e) for e in full_scrim_actions()]
-    changed[7]["hero"] = changed[6]["hero"]
+    changed[12]["hero"] = changed[11]["hero"]
     assert not validate_scrim_prefix(changed, full=True)
     changed = [dict(e) for e in full_scrim_actions()]
-    changed[7]["order"] = 9
+    changed[12]["order"] = 14
     assert not validate_scrim_prefix(changed, full=True)
     with pytest.raises(ValueError):
-        next_scrim_action(changed[:8])
+        next_scrim_action(changed[:13])
 
 
 def test_normalized_scrim_validated_from_both_team_perspectives():
     games = normalize_scrims(scrim())
     assert len(games) == 2
     assert {g["team"] for g in games} == {"本队", "对手战队"}
-    assert all(g["ruleProfile"] == "scrim-global-15" for g in games)
+    assert all(g["ruleProfile"] == "scrim-global-20" for g in games)
     assert all(g["ruleValidated"] for g in games)
-    assert all(len(g["events"]) == 15 for g in games)
+    assert all(len(g["events"]) == 20 for g in games)
     report = build_report(scrim(), [], source="scrim", team="本队")
     assert report["scope"]["orderedGames"] == 1
-    assert report["bpStudies"]["ruleCoverage"]["scrim15"] == 1
+    assert report["bpStudies"]["ruleCoverage"]["scrim20"] == 1
+    assert report["bpStudies"]["ruleCoverage"]["orderedGames"] == 1
     assert report["bpStudies"]["ruleCoverage"]["kplRecorded"] == 0
 
 
 def test_wrong_turn_or_old_18_turn_data_is_not_used_as_scrim_order():
     changed = [dict(e) for e in full_scrim_actions()]
-    changed[4], changed[5] = changed[5], changed[4]
+    changed[10], changed[11] = changed[11], changed[10]
     changed = [dict(e, order=i + 1) for i, e in enumerate(changed)]
     games = normalize_scrims(scrim(changed))
     assert all(not g["ruleValidated"] and not g["events"] for g in games)
-    assert all(g["ruleProfile"] == "scrim-unconfirmed" for g in games)
+    # 训练赛只有 20 手；不完整事件仍标 20，但不计入已验证顺序。
+    assert all(g["ruleProfile"] == "scrim-global-20" for g in games)
     old = full_scrim_actions()
-    old.insert(6, {"order": 7, "camp": "1", "action": "ban", "hero": "司空震"})
+    old.insert(12, {"order": 13, "camp": "1", "action": "ban", "hero": "司空震"})
     old = [dict(e, order=i + 1) for i, e in enumerate(old)]
-    # Old malformed event data is retained only as final picks/bans evidence.
     report = build_report(scrim(old, rule="scrim-staged-18"), [],
                           source="scrim", team="本队")
     assert report["scope"]["orderedGames"] == 0
@@ -125,15 +141,13 @@ def test_kpl_recorded_actions_not_forced_into_practice_schedule():
     report = build_report([], rows, source="kpl", team="战队甲")
     assert report["scope"]["orderedGames"] == 1
     assert report["bpStudies"]["ruleCoverage"]["kplRecorded"] == 1
-    assert report["bpStudies"]["ruleCoverage"]["scrim15"] == 0
+    assert report["bpStudies"]["ruleCoverage"]["orderedGames"] == 0
 
 
 def test_cross_source_profiles_cannot_be_confused():
-    assert profile_for("scrim").id == "scrim-global-15"
+    assert profile_for("scrim").id == "scrim-global-20"
     assert profile_for("kpl").id == "kpl-recorded"
     assert not profile_for("kpl").configured
-    with pytest.raises(ValueError):
-        profile_for("kpl", "scrim-global-15")
     with pytest.raises(ValueError):
         profile_for("scrim", "kpl-recorded")
     with pytest.raises(ValueError):
@@ -164,7 +178,7 @@ def test_global_bp_prevents_same_team_reuse_even_after_side_swap():
                              teams=("甲", "乙"))
     old_a = history[0]["picks"]["甲"][0]
     old_b = history[0]["picks"]["乙"][0]
-    phase = full_scrim_actions()[:5]  # First pick is BLUE (乙 this game).
+    phase = full_scrim_actions()[:10]  # First pick is BLUE (乙 this game).
     candidates = ["新英雄", old_a, old_b]
     blue = legal_scrim_candidates(
         phase, candidates, bo="BO3", game_number=2,
@@ -189,7 +203,7 @@ def test_previous_game_bans_reset_but_pick_reuse_does_not():
         [], ["甲1-0", "全新英雄"], bo="BO3", game_number=2,
         blue_team="甲", red_team="乙", series_used_by_team=used)
     assert "甲1-0" in first_ban  # Cross-game ban remains legal.
-    after_bans = full_scrim_actions()[:5]
+    after_bans = full_scrim_actions()[:10]
     picks = legal_scrim_candidates(
         after_bans, ["甲1-0", "全新英雄"], bo="BO3", game_number=2,
         blue_team="甲", red_team="乙", series_used_by_team=used)
@@ -214,7 +228,7 @@ def test_global_history_up_to_bo7_last_game_and_player_assignment():
     assert len(used["甲"]) == len(used["乙"]) == 30
     all_pools = [{"花木兰"}, {"镜"}, {"小乔"}, {"孙尚香"}, {"张飞"}]
     result = legal_scrim_candidates(
-        full_scrim_actions()[:5],
+        full_scrim_actions()[:10],
         ["花木兰", "镜", "小乔", "孙尚香", "张飞", "马超"],
         blue_player_pools=all_pools, bo="BO7", game_number=7,
         blue_team="甲", red_team="乙", series_used_by_team=used)
@@ -231,18 +245,18 @@ def test_invalid_candidate_rejected_during_transition():
 
 
 
-def test_scrim_15_turn_api_payload_and_next_action():
+def test_scrim_20_turn_api_payload_and_next_action():
     heroes = BLUE_BANS + RED_BANS + BLUE_PICKS + RED_PICKS + ["后羿"]
     snapshot = scrim_state_payload({"source": "scrim", "bo": "BO5",
                                     "gameNumber": 1, "events": []}, heroes)
-    assert snapshot["rule"] == "scrim-global-15"
+    assert snapshot["rule"] == "scrim-global-20"
     assert snapshot["nextAction"] == {
         "order": 1, "action": "ban", "camp": "1", "phase": "ban"}
-    assert len(snapshot["schedule"]) == 15
+    assert len(snapshot["schedule"]) == 20
     after_ban = scrim_state_payload({
         "bo": "BO5", "gameNumber": 1,
-        "events": full_scrim_actions()[:5]}, heroes)
-    assert after_ban["nextAction"]["order"] == 6
+        "events": full_scrim_actions()[:10]}, heroes)
+    assert after_ban["nextAction"]["order"] == 11
     assert after_ban["nextAction"]["action"] == "pick"
     assert "大乔" not in after_ban["legalCandidates"]
     assert "花木兰" in after_ban["legalCandidates"]
@@ -259,7 +273,7 @@ def test_scrim_api_global_bp_from_verified_history():
     history = [_previous(1)]
     data = {"source": "scrim", "bo": "BO3", "gameNumber": 2,
             "blueTeam": "乙", "redTeam": "甲", "history": history,
-            "events": full_scrim_actions()[:5]}
+            "events": full_scrim_actions()[:10]}
     catalog = ["新英雄", hero_a, hero_b, "张飞"]
     snap = scrim_state_payload(data, catalog)
     assert snap["nextAction"]["camp"] == "1"
@@ -276,7 +290,7 @@ def test_scrim_api_rejects_game_two_repick_already_in_progress():
     history = [_previous(1)]
     data = {"bo": "BO3", "gameNumber": 2,
             "blueTeam": "甲", "redTeam": "乙",
-            "history": history, "events": full_scrim_actions()[:5] +
-            [{"order": 6, "action": "pick", "camp": "1", "hero": "甲1-0"}]}
+            "history": history, "events": full_scrim_actions()[:10] +
+            [{"order": 11, "action": "pick", "camp": "1", "hero": "甲1-0"}]}
     with pytest.raises(ValueError, match="禁复用"):
         scrim_state_payload(data, ["甲1-0", "后羿"])

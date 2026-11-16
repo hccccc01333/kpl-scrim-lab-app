@@ -75,12 +75,9 @@ export function TeamsPage() {
     <div className="page board-page">
       <PageHeader
         eyebrow="TEAMS"
-        title="战队档案"
+        title="战队分析"
         subtitle={`${data.teams.length} 支对手 · ${data.summary.games} 局交手 · 评分与分位来自同池对手样本。`}
-        actions={<>
-          <Link className="btn" to="/teams/style">战队风格</Link>
-          <Link className="btn" to="/teams/roster">战队阵容</Link>
-        </>}
+        actions={<Link className="btn" to="/teams/training">战队训练</Link>}
       />
 
       <StatGrid items={[

@@ -63,19 +63,25 @@ for needle in ("prefix='/api/v3/facts'", "'lane_matchup', 'equip_matrix', 'equip
         failures.append(f'普通数据端点缺：{needle}')
 app = source('v3/public/app.js')
 feat = source('v3/public/features.js')
-bp = source('v3/public/bp-counter.js')
+bp = source('v3/public/bp-lab.js')
 if '/api/v3/facts/lane_matchup' not in app:
     failures.append('单局复盘未改用新数据端点')
 if "'v3/facts/lane_matchup'" not in feat:
     failures.append('英雄详情未改用新数据端点')
 if 'CATALOG_URL' in bp or "state.catalog" in bp:
-    failures.append('BP 抗针对仍依赖分析目录接口')
-if "/api/decision/bp" not in bp:
-    failures.append('BP 抗针对主数据接口丢失')
+    failures.append('BP 概览仍依赖分析目录接口')
+if "v3/bp-lab" not in bp:
+    failures.append('BP 概览主数据接口丢失')
+if "label: '己方英雄诊断'" not in bp:
+    failures.append('BP 己方英雄诊断视图丢失')
+if 'v3/bp-lab/diagnose' not in bp:
+    failures.append('BP 己方英雄诊断接口丢失')
 serve = source('v3/serve.py')
+if "@router.get('/api/v3/bp-lab/diagnose')" not in serve:
+    failures.append('BP 己方英雄诊断后端路由丢失')
 if "@router.get('/api/v3/research/reports')" not in serve:
     failures.append('报告库读取接口丢失')
-notes.append('普通页面：单局复盘 / 英雄详情 / BP 抗针对 / 报告库数据链路仍在')
+notes.append('普通页面：单局复盘 / 英雄详情 / BP 概览九区 + 英雄诊断 / 报告库数据链路仍在')
 
 print('== 结果 ==')
 for note in notes:

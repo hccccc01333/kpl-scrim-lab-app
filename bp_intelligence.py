@@ -139,6 +139,9 @@ def normalize_kpl(raw_games):
                           # Never apply the user's scrim 18-step schedule here.
                           "ruleProfile": "kpl-recorded",
                           "ruleValidated": False,
+                          "bpMode": str(item.get("bpMode") or ""),
+                          "pickOrderKnown": bool(item.get("pickOrderKnown")),
+                          "bansKnown": bool(item.get("bansKnown")),
                           "gameSeq": item.get("gameSeq")})
     return games
 
@@ -153,8 +156,12 @@ def _scrim_players(row, side, picks):
         name, hero = str(entry.get("name") or "").strip(), _hero(entry.get("hero"))
         if name and hero and hero in picks:
             players.append({"name": name, "hero": hero, "lane": str(entry.get("lane") or ""),
-                            "gold": entry.get("gold"), "heroDamage": entry.get("heroDamage"),
-                            "deaths": entry.get("deaths"), "participation": entry.get("participation")})
+                            "kills": entry.get("kills"), "deaths": entry.get("deaths"),
+                            "assists": entry.get("assists"), "gold": entry.get("gold"),
+                            "heroDamage": entry.get("heroDamage"),
+                            "taken": entry.get("taken"),
+                            "participation": entry.get("participation"),
+                            "towers": entry.get("towers")})
     return players
 
 
@@ -183,18 +190,22 @@ def normalize_scrims(raw_games, process_map=None):
             camp = "1" if ((side == "own") == (item.get("ownSide") == "left")) else "2"
             events = _checked_events(source_events, camp, own_picks, own_bans,
                                      enemy_picks, _heroes(bans.get(other)))
-            from bp_rules import SCRIM_GLOBAL_15, validate_scrim_prefix
+            from bp_rules import SCRIM_RULES, validate_scrim_prefix
             # Absolute camp (blue/red) is not the research team's POV.
             absolute = [{"order": e["order"], "action": e["action"],
                          "camp": camp if e["actor"] == "team"
                                  else ("2" if camp == "1" else "1"),
                          "hero": e["hero"]} for e in events]
-            is_scrim_15 = bool(events and validate_scrim_prefix(absolute, full=True))
+            matched = None
+            if events:
+                matched = next((rule for rule in SCRIM_RULES.values()
+                                if validate_scrim_prefix(absolute, rule=rule, full=True)), None)
             # Legacy or malformed 18/14-turn records still support final
             # lineup statistics, but MUST NOT train scrim order predictions.
-            if not is_scrim_15:
+            if matched is None:
                 events = []
-            rule_profile = SCRIM_GLOBAL_15.id if is_scrim_15 else "scrim-unconfirmed"
+            # 训练赛只有 20 手；没有完整事件时仍标 20，但不冒充已验证顺序。
+            rule_profile = "scrim-global-20"
             result = item.get("result")
             won = (result == "win") if result in ("win", "loss") else None
             if side == "enemy" and won is not None:
@@ -214,7 +225,11 @@ def normalize_scrims(raw_games, process_map=None):
                           "version": str(item.get("version") or "").strip(),
                           "stage": str(item.get("stage") or "").strip(),
                           "ruleProfile": rule_profile,
-                          "ruleValidated": is_scrim_15,
+                          "ruleValidated": matched is not None,
+                          "bpMode": "scrim",
+                          # 营地终局名单没有手序；只有已核验 draftEvents 才允许顺序类统计。
+                          "pickOrderKnown": bool(events),
+                          "bansKnown": True,
                           "gameSeq": None,
                           "processMatchKey": process.get("matchKey") or "",
                           "teamGoldDiff": team_diff,
@@ -552,17 +567,18 @@ def _lineups(games):
                          "system": Counter(c["system"] for c in cores
                                            if c["hero"] == core_hero).most_common(1)[0][0],
                          "sampled": len(cores)}
-        diffs600 = [g["teamGoldDiff"]["600"] for g in records
-                    if isinstance((g.get("teamGoldDiff") or {}).get("600"), (int, float))]
+        check600 = []
+        for g in records:
+            value = (g.get("teamGoldDiff") or {}).get("600")
+            if isinstance(value, (int, float)):
+                check600.append((value, g))
         tempo = None
-        if diffs600:
-            lead = [d for d in diffs600 if d > 0]
-            lead_decided = [g for g, d in zip(records, [g["teamGoldDiff"]["600"] for g in records])
-                            if isinstance((g.get("teamGoldDiff") or {}).get("600"), (int, float))
-                            and g["result"] is not None and g["teamGoldDiff"]["600"] > 0]
-            tempo = {"games": len(diffs600),
-                     "meanDiff600": round(sum(diffs600) / len(diffs600), 1),
-                     "leadRate": _percent(len(lead), len(diffs600)),
+        if check600:
+            lead = [value for value, _g in check600 if value > 0]
+            lead_decided = [g for value, g in check600 if value > 0 and g["result"] is not None]
+            tempo = {"games": len(check600),
+                     "meanDiff600": round(sum(value for value, _g in check600) / len(check600), 1),
+                     "leadRate": _percent(len(lead), len(check600)),
                      "leadWinRate": _percent(sum(g["result"] is True for g in lead_decided),
                                              len(lead_decided))}
         result.append({"heroes": list(heroes), "games": len(records),
@@ -762,7 +778,7 @@ def _series_adjustments(games):
 
 
 def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end="",
-                 version="", stage="", process_map=None):
+                 version="", stage="", process_map=None, monitor_window=None):
     if source not in ("scrim", "kpl"):
         raise ValueError("未知比赛来源")
     if start:
@@ -827,17 +843,19 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
     from bp_draft_tree import draft_tree, priority_brief
     bp_studies["ruleCoverage"] = {
-        "scrim15": sum(g.get("ruleValidated", False) for g in team_games)
+        "scrim20": sum(g.get("ruleProfile") == "scrim-global-20" for g in team_games)
                    if source == "scrim" else 0,
         "scrimUnknown": sum(not g.get("ruleValidated", False) for g in team_games)
                         if source == "scrim" else 0,
+        "orderedGames": sum(bool(g.get("events")) for g in team_games)
+                        if source == "scrim" else 0,
         "kplRecorded": sum(bool(g["events"]) for g in team_games)
                        if source == "kpl" else 0,
-        "profile": ("scrim-global-15" if source == "scrim" else "kpl-recorded"),
-        "note": ("训练赛只将符合 5 Ban + 10 Pick 的 15 手模板的完整事件用于顺序研究；"
-                 "不符合该模板的旧记录仍可作基础阵容统计。"
+        "profile": ("scrim-global-20" if source == "scrim" else "kpl-recorded"),
+        "note": ("训练赛只有 20 手（每方 5 Ban + 5 Pick）。只有完整且与终局名单一致的"
+                 "事件才用于顺序研究；没有顺序的记录仍可作基础阵容统计。"
                  if source == "scrim" else
-                 "KPL 只校验真实历史 BP 事件，不应用训练赛的四阶段规则。")
+                 "KPL 只校验真实历史 BP 事件，不应用训练赛规则。")
     }
     bp_studies["draftTree"] = (draft_tree(team_games) if team else
                                 {"orderedGames": 0, "indexedGames": 0, "limited": False,
@@ -928,6 +946,7 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
             "bpStudies": bp_studies,
             "responses": responses, "matchups": _matchups(team_games),
             "seriesAdjustments": _series_adjustments(team_games),
+            "monitorWindow": monitor_window,
             "counterCandidates": counter_candidates,
             "validation": _temporal_validation(team_games),
             "findings": findings[:5], "evidence": _evidence(team_games, max_items=30),

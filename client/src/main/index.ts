@@ -179,8 +179,8 @@ function applyTitleBarTheme(theme: Theme): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   try {
     mainWindow.setTitleBarOverlay({
-      color: theme === 'dark' ? '#0e1a1e' : '#f8f3e9',
-      symbolColor: theme === 'dark' ? '#e9f0e9' : '#1b2b2e',
+      color: theme === 'dark' ? '#15161b' : '#fafbf9',
+      symbolColor: theme === 'dark' ? '#ececf1' : '#292f2d',
       height: 64
     })
   } catch {
@@ -195,13 +195,13 @@ function createWindow(): void {
     minWidth: 980,
     minHeight: 600,
     show: false,
-    backgroundColor: settings.theme === 'dark' ? '#0a1316' : '#f2ebdf',
+    backgroundColor: settings.theme === 'dark' ? '#15161b' : '#fafbf9',
     title: '赛训台',
     icon: iconImage(),
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-      color: settings.theme === 'dark' ? '#0e1a1e' : '#f8f3e9',
-      symbolColor: settings.theme === 'dark' ? '#e9f0e9' : '#1b2b2e',
+      color: settings.theme === 'dark' ? '#15161b' : '#fafbf9',
+      symbolColor: settings.theme === 'dark' ? '#ececf1' : '#292f2d',
       height: 64
     },
     webPreferences: {
@@ -481,7 +481,7 @@ function registerIpc(): void {
         minHeight: 640,
         title: '赛训台 · 工作台',
         autoHideMenuBar: true,
-        backgroundColor: settings.theme === 'dark' ? '#0a1316' : '#f2ebdf',
+        backgroundColor: settings.theme === 'dark' ? '#15161b' : '#fafbf9',
         webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
       })
       pageWindow.webContents.setWindowOpenHandler(({ url }) => {

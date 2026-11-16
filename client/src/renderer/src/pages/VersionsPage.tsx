@@ -36,7 +36,7 @@ export function VersionsPage() {
         eyebrow="VERSION COMPARE"
         title="版本对比"
         subtitle="按版本或训练组，看局数、胜率与平均节奏。"
-        actions={<Link className="btn" to="/matches/records">训练纪录</Link>}
+        actions={<Link className="btn" to="/matches/featured">精选对局</Link>}
       />
 
       <StatGrid items={[

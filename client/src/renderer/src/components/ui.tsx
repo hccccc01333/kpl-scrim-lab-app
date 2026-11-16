@@ -9,19 +9,22 @@ export function PageHeader({
   title,
   subtitle,
   actions,
-  meta
+  meta,
+  headingLevel = 1
 }: {
   eyebrow?: string
   title: ReactNode
   subtitle?: ReactNode
   actions?: ReactNode
   meta?: ReactNode
+  headingLevel?: 1 | 2
 }) {
+  const Heading = headingLevel === 2 ? 'h2' : 'h1'
   return (
     <header className="page-header">
       <div>
         {eyebrow ? <span className="eyebrow">{eyebrow}</span> : null}
-        <h1 className="page-title">{title}</h1>
+        <Heading className="page-title">{title}</Heading>
         {subtitle ? <div className="page-subtitle">{subtitle}</div> : null}
         {meta ? <div className="page-meta">{meta}</div> : null}
       </div>
@@ -118,7 +121,7 @@ export function Portrait({
 
 export function SkeletonPage({ cards = 3 }: { cards?: number }) {
   return (
-    <div className="page" aria-busy="true">
+    <div className="page" aria-busy="true" aria-label="正在读取页面数据">
       <div>
         <div className="skeleton skeleton-line" style={{ width: 120 }} />
         <div className="skeleton skeleton-title" style={{ width: '48%', height: 48 }} />
@@ -164,7 +167,7 @@ export function ErrorState({
 }) {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '工作台没有返回数据。'
   return (
-    <div className="error-state">
+    <div className="error-state" role="alert">
       <Icon name="alert" size={24} />
       <b>{title}</b>
       <p>{message}</p>

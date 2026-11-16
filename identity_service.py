@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from contextlib import closing
 
@@ -262,6 +263,7 @@ def save_team(db_path, *, team_id=None, name, short_name=None, coach=None, statu
     team_id = _text(team_id, 60) or None
     if PLACEHOLDER_TEAM.match(name) and not _allow_placeholder_unchanged(ws, team_id, name):
         raise ValueError('「待命名战队」不是真队名，请填写真实战队名称')
+    previous_name, previous_aliases = '', []
     with closing(ws.connect()) as connection:
         if team_id is None:
             same = connection.execute(
@@ -275,9 +277,27 @@ def save_team(db_path, *, team_id=None, name, short_name=None, coach=None, statu
                 (name, team_id)).fetchone()
             if clash is not None:
                 raise ValueError(f'队名已存在：{name}，请改别的名字或先合并战队')
-    team_id = ws.upsert_team(team_id, name=name, short_name=short_name, aliases=aliases,
+            old = connection.execute('SELECT name, aliases FROM teams WHERE id=?',
+                                     (team_id,)).fetchone()
+            if old is not None:
+                previous_name = _text(old['name'])
+                try:
+                    previous_aliases = json.loads(old['aliases'] or '[]')
+                except (TypeError, ValueError):
+                    previous_aliases = []
+    # 改名留下旧名为别名：战队分析改名后，逐局页面读解析层即可自动同步。
+    import opponent_identity
+    merged_aliases = list(aliases) if isinstance(aliases, list) else previous_aliases
+    if not isinstance(merged_aliases, list):
+        merged_aliases = []
+    merged_aliases = opponent_identity.merge_alias(
+        previous_aliases + [item for item in merged_aliases if item not in previous_aliases],
+        previous_name, name)
+    team_id = ws.upsert_team(team_id, name=name, short_name=short_name, aliases=merged_aliases,
                              league=league, coach=coach, status=status or 'active',
                              first_seen=first_seen, source='manual', actor=actor)
     if status != 'archived':
         team_clusters.save_override(db_path, team_id, {'name': name, 'coach': coach})
+        if previous_name and previous_name != name:
+            team_clusters.record_alias(db_path, team_id, previous_name, name)
     return {'ok': True, 'id': team_id, 'name': name}

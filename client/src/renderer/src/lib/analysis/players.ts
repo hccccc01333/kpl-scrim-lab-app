@@ -290,35 +290,6 @@ export function sameLanePeers(board: PlayersBoard, lane: string, side: 'own' | '
     .slice(0, 8)
 }
 
-export interface LaneGoldDiff {
-  lane: string
-  games: number
-  ahead: number
-  avgDiff: number | null
-  rows: { day: string; diff: number; win: boolean }[]
-}
-
-/** 逐局同分路终局经济差；只统计同路各有一人的局。 */
-export function laneGoldDiffs(board: PlayersBoard): LaneGoldDiff[] {
-  return PLAYER_LANES.map((lane) => {
-    const rows: LaneGoldDiff['rows'] = []
-    for (const game of board.games) {
-      const own = game.own.find((row) => row.lane === lane)
-      const enemy = game.enemy.find((row) => row.lane === lane)
-      if (!own || !enemy || !isNum(own.gold) || !isNum(enemy.gold)) continue
-      rows.push({ day: game.day, diff: own.gold - enemy.gold, win: game.result === 'win' })
-    }
-    const ahead = rows.filter((row) => row.diff > 0).length
-    return {
-      lane,
-      games: rows.length,
-      ahead,
-      avgDiff: rows.length ? rows.reduce((sum, row) => sum + row.diff, 0) / rows.length : null,
-      rows
-    }
-  })
-}
-
 export function laneDepth(board: PlayersBoard) {
   return board.lanes.map((lane) => ({
     lane: lane.lane,
