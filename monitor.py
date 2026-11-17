@@ -14,6 +14,9 @@ from analysis_period import bucket_rows
 UNITS = ("day", "week", "month")
 SHARE_DELTA = 10.0
 MIN_GAMES = 3
+# 报告里的类型顺序（也是清单的排序主键）：越靠前越先看。
+_KIND_ORDER = {"usage": 0, "winrate": 1, "pair-replaced": 2,
+               "player-pool": 3, "system": 4}
 
 
 def _pct(w, n):
@@ -91,7 +94,9 @@ def monitor(rows, *, unit="week", date_from=None, date_to=None):
         if not prev["games"] or not cur["games"]:
             continue
         # 1. 英雄使用率 / 胜率突变（出场与胜率分开报，不合并成一个分数）
-        for hero in set(prev["picks"]) | set(cur["picks"]):
+        # 遍历 sorted(...)：集合顺序随 PYTHONHASHSEED 变化，直接迭代会让同一份
+        # 数据在不同进程里排出不同的清单（再被 [:40] 截断后连内容都不一样）。
+        for hero in sorted(set(prev["picks"]) | set(cur["picks"])):
             before, after = prev["picks"].get(hero, 0), cur["picks"].get(hero, 0)
             if before + after < MIN_GAMES:
                 continue
@@ -107,8 +112,8 @@ def monitor(rows, *, unit="week", date_from=None, date_to=None):
                     "note": "使用率突变需先核对赛程与版本，再查阵容搭配变化。",
                     "evidence": [str(g.get("key")) for g in cur_window["rows"]][:6]})
         for side in ("own", "enemy"):
-            heroes = {h for (_, h) in cur["decided"] if _ == side} | \
-                     {h for (_, h) in prev["decided"] if _ == side}
+            heroes = sorted({h for (_, h) in cur["decided"] if _ == side} |
+                            {h for (_, h) in prev["decided"] if _ == side})
             for hero in heroes:
                 key = (side, hero)
                 before_d, after_d = prev["decided"].get(key, 0), cur["decided"].get(key, 0)
@@ -126,7 +131,7 @@ def monitor(rows, *, unit="week", date_from=None, date_to=None):
                         "note": "胜率突变需按 04 号流程核对阵容、对位、选手与过程变化。",
                         "evidence": [str(g.get("key")) for g in cur_window["rows"]][:6]})
         # 2. 常用组合被替换：上一窗口 ≥2 局、本窗口 0 局
-        for pair, count in prev["pairs"].items():
+        for pair, count in sorted(prev["pairs"].items()):
             if count >= 2 and cur["pairs"].get(pair, 0) == 0:
                 anomalies.append({
                     "kind": "pair-replaced", "object": " + ".join(pair),
@@ -136,7 +141,7 @@ def monitor(rows, *, unit="week", date_from=None, date_to=None):
                     "note": "组合消失可能只是没排到对手，需核对赛程。",
                     "evidence": []})
         # 3. 选手英雄池变化：上一窗口出现过的英雄在本窗口不再出现
-        for player in set(prev["playerHeroes"]) | set(cur["playerHeroes"]):
+        for player in sorted(set(prev["playerHeroes"]) | set(cur["playerHeroes"])):
             dropped = prev["playerHeroes"].get(player, set()) - cur["playerHeroes"].get(player, set())
             added = cur["playerHeroes"].get(player, set()) - prev["playerHeroes"].get(player, set())
             if dropped or added:
@@ -159,6 +164,13 @@ def monitor(rows, *, unit="week", date_from=None, date_to=None):
                     "changePP": None, "games": count,
                     "note": "体系标签按经济占比判定，是结构观察；是否刻意尝试需教练确认。",
                     "evidence": [str(g.get("key")) for g in cur_window["rows"]][:6]})
+    # 清单要可复现：同一份数据、同一组参数，任何一次打开都应得到同一份清单
+    # （截图、复盘报告与同事的屏幕必须对得上）。按「类型 → 变化幅度 → 对象」
+    # 排序后再截断 40 条，保证被截掉的永远是幅度最小的那些。
+    anomalies.sort(key=lambda item: (_KIND_ORDER.get(item.get("kind"), 9),
+                                     -abs(item.get("changePP") or 0),
+                                     str(item.get("object") or ""),
+                                     str(item.get("window") or "")))
     return {"unit": unit, "windows": len(windows),
             "games": sum(s["games"] for _w, s in stats), "undated": undated,
             "anomalies": anomalies[:40],

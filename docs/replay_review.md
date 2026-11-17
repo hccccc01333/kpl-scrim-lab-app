@@ -246,12 +246,9 @@ python scripts/build_replay_review_bundle.py --skip-screenshot
 
 ## 8. 相关路径
 
-- 页面：`D:/Projects/KPL训练赛项目/web/replay-review.html`
-- 脚本：`D:/Projects/KPL训练赛项目/web/replay-review.js`
-- 样式：`D:/Projects/KPL训练赛项目/web/replay-review.css`
-- 快照：`D:/Projects/KPL训练赛项目/web/replay-review-data.js`
-- 构建：`D:/Projects/KPL训练赛项目/scripts/build_replay_review_bundle.py`
-- gzip：`D:/Projects/KPL训练赛项目/data/replays/_analysis/datasets/replay_event_stream_events.jsonl.gz`
-- 11/2：`D:/Projects/KPL训练赛项目/data/replays/_analysis/datasets/20261102_buy_events.csv`、`20261102_skill_events.csv`、`20261102_player_actions.csv`
-- 价格：`D:/Projects/KPL训练赛项目/data/replays/_analysis/datasets/agent_equip_prices.csv`
-- 截图：`D:/Projects/KPL训练赛项目/data/screenshots/samples/20261102_1559/01-score-equipment.jpg`
+- 页面与脚本：已归档到 `.archive/2026-11-08-v1v2-retire/`，不再是运行入口
+- 构建：`scripts/build_replay_review_bundle.py`
+- gzip：`data/replays/_analysis/datasets/replay_event_stream_events.jsonl.gz`
+- 11/2：`data/replays/_analysis/datasets/20261102_buy_events.csv`、`20261102_skill_events.csv`、`20261102_player_actions.csv`
+- 价格：`data/replays/_analysis/datasets/agent_equip_prices.csv`
+- 截图：`data/screenshots/samples/20261102_1559/01-score-equipment.jpg`

@@ -119,7 +119,46 @@ export function createSources(h) {
     return value;
   }
 
+  /* ---------------- 内嵌到采集页 ----------------
+     2026-11-16：截图 / 录屏 / 回放不再是三个独立页签，而是采集页里的三块。
+     内嵌时数据由采集页统一取（省掉每次切页签重新拉一遍），这里的交互仍然
+     沿用原来的 state.value：点击前先按事件所在的 [data-source-section] 切一下，
+     之后的上传 / 补采 / 轮询逻辑一行都不用改。 */
+  const embeddedValues = {};
+  let embeddedRepaint = null;
+  let embeddedReload = null;
+  let isEmbedded = false;
+
+  function hydrate(values, hooks = {}) {
+    isEmbedded = true;
+    Object.assign(embeddedValues, values);
+    embeddedRepaint = hooks.repaint || null;
+    embeddedReload = hooks.reload || null;
+    // 默认先指向当前可见的那一块，避免第一次点击时 state.value 还是空。
+    const first = Object.keys(values)[0];
+    if (first && !embeddedValues[state.name]) { state.name = first; state.value = values[first]; }
+  }
+
+  /** 事件落在哪一块，就把 state.value 切到那一块的数据。 */
+  function activate(event) {
+    if (!isEmbedded) return;
+    const section = event.target.closest?.('[data-source-section]');
+    const name = section?.dataset.sourceSection;
+    if (!name || !embeddedValues[name]) return;
+    state.name = name;
+    state.value = embeddedValues[name];
+  }
+
+  function body(name, value) {
+    if (name === 'shots') return shotsBody(value);
+    if (name === 'videos') return videosBody(value);
+    if (name === 'replays') return replaysBody(value);
+    return '';
+  }
+
   function paint() {
+    // 内嵌在采集页里：整页由采集页重绘，这里不碰 #content。
+    if (isEmbedded && embeddedRepaint) { embeddedRepaint(); return; }
     const root = document.querySelector('#content');
     if (!root || !state.value) return;
     // 轮询/安装进度会整页重绘：开着的新录入表单要先记下已填内容，重绘后填回去。
@@ -154,6 +193,8 @@ export function createSources(h) {
   }
 
   async function refresh() {
+    // 内嵌时由采集页统一重取这几块数据，避免两份缓存各说各话。
+    if (isEmbedded && embeddedReload) { await embeddedReload(); return; }
     state.value = await load(state.name, '', undefined);
   }
 
@@ -550,7 +591,7 @@ export function createSources(h) {
     return `<section class="section src-guide" data-tour="shots-guide">
       <div class="section-heading"><div><h2>一局要拍齐这七张</h2>
         <p>同一个结算页把七个页签各截一张；「战绩」有两种显示方式，所以合计七张。少一张就不算齐。</p></div>
-        <div class="capture-actions"><a class="control" href="#videos">还要录屏 · 去录屏页 →</a></div>
+        <div class="capture-actions"><a class="control" href="#videos">还要录屏 · 去「录屏」→</a></div>
       </div>
       <ol class="src-shots">${SHOT_PAGES.map(([no, , name, fields, file]) => `<li>
         <a href="/assets/capture-guide/${file}" target="_blank" rel="noopener" title="点开看大图">
@@ -577,7 +618,14 @@ export function createSources(h) {
 
   // ---------------- 截图 ----------------
 
+  /* 页面外壳与内容分开：采集页把它当「截图」页签内嵌，独立路由仍保留完整页。 */
+  const SHOTS_INTRO = '营地只保留最近一个月的对局详情：一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。拍什么、传到哪，这一页里都能做完。';
+
   function shotsPage(value) {
+    return withPage('截图 OCR', SHOTS_INTRO, shotsBody(value), false);
+  }
+
+  function shotsBody(value) {
     const groups = value.images?.groups || [];
     const images = value.images?.images || [];
     const channels = value.channels?.channels || [];
@@ -656,8 +704,7 @@ export function createSources(h) {
       </article>`;
     }).join('');
 
-    return withPage('截图 OCR', '营地只保留最近一个月的对局详情：一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。拍什么、传到哪，这一页里都能做完。',
-      `<div class="src-page">
+    return `<div class="src-page">
         ${noticeBox()}
         ${steps([['拍齐七张', '同一局，七个页签'], ['上传识别', '本机识别，不联网'], ['补采 或 新录入', '缺素材补采；老局直接建档']], active)}
         ${enginePanel(value)}
@@ -685,7 +732,7 @@ export function createSources(h) {
               : '上传后这里会按日期和比分自动分组，一组对应一局。'}</p></div></div>
           <div class="shot-grid">${cards || `<p class="src-empty">还没有识别过赛后截图。先传一局的七张图。</p>`}</div>
         </section>
-      </div>`, false);
+      </div>`;
   }
 
   // ---------------- 录屏 ----------------
@@ -723,7 +770,7 @@ export function createSources(h) {
     return `<section class="section src-guide" data-tour="videos-guide">
       <div class="section-heading"><div><h2>一局要录成这样</h2>
         <p>从回放列表 / 加载页开始，到赛后结算页停；中间不剪辑、不拖进度、不开倍速。</p></div>
-        <div class="capture-actions"><a class="control" href="#shots">还要七张截图 · 去截图页 →</a></div>
+        <div class="capture-actions"><a class="control" href="#shots">还要七张截图 · 去「截图 OCR」→</a></div>
       </div>
       <ol class="src-timeline">
         <li><i>1</i><div><b>开始 · 约 5 秒</b><span>录到回放列表 / 加载页，双方十人英雄和昵称要清楚，再完整录到局内 00:00。</span></div></li>
@@ -877,7 +924,13 @@ export function createSources(h) {
     }
   }
 
+  const VIDEOS_INTRO = '与七张截图配合使用：每局一段完整录像。营地一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。';
+
   function videosPage(value) {
+    return withPage('录屏 OCR', VIDEOS_INTRO, videosBody(value), false);
+  }
+
+  function videosBody(value) {
     const recordings = value.recordings?.recordings || [];
     const channels = value.channels?.channels || [];
     const statsInfo = value.recordings?.stats || {};
@@ -953,8 +1006,7 @@ export function createSources(h) {
       </article>`;
     }).join('');
 
-    return withPage('录屏 OCR', '与七张截图配合使用：每局一段完整录像。营地一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。',
-      `<div class="src-page">
+    return `<div class="src-page">
         ${noticeBox()}
         ${ffmpegOk ? '' : `<div class="capture-notice is-error" role="status">未检测到 ffmpeg / ffprobe，录屏抽帧不可用。请先安装并加入 PATH。</div>`}
         ${steps([['录一局', '加载页 → 整局 → 结算'], ['上传识别', '本机抽帧，不联网'], ['补采 或 新录入', '缺素材补采；老局直接建档']], active)}
@@ -970,7 +1022,7 @@ export function createSources(h) {
           </div>
           <div class="shot-grid">${rows || `<p class="src-empty">还没有上传过录屏。先按上面的三段录一局。</p>`}</div>
         </section>
-      </div>`, false);
+      </div>`;
   }
 
   /** 把某段录屏的识别报告补采到一局（报告 JSON 直接作为请求体）。 */
@@ -999,7 +1051,13 @@ export function createSources(h) {
 
   // ---------------- 回放 ----------------
 
+  const REPLAYS_INTRO = '尚不作为采集来源：回放解析的字段口径还没定下来，先别把这里的结论当正式数据。';
+
   function replaysPage(value) {
+    return withPage('回放（研究中）', REPLAYS_INTRO, replaysBody(value), false);
+  }
+
+  function replaysBody(value) {
     const replays = value.replays?.replays || [];
     const channels = value.channels?.channels || [];
 
@@ -1037,8 +1095,7 @@ export function createSources(h) {
       </article>`;
     }).join('');
 
-    return withPage('回放（研究中）', '尚不作为采集来源：回放解析的字段口径还没定下来，先别把这里的结论当正式数据。',
-      backLink()
+    return backLink()
       + `<div class="capture-notice is-error" role="status">回放解析还在研究中，没有接入采集档位。页面仅供内部查看，不要据此入库。</div>`
       + stats([
         ['已解析回放', fmt(replays.length), '来自本机回放文件'],
@@ -1047,8 +1104,7 @@ export function createSources(h) {
         ['对局通道', fmt(channels.length), '可挂载到任一审查记录'],
       ])
       + block('回放文件', '回放只补位置与指令，不补赛后统计；终局数值仍以截图或数据包为准。',
-        `<div class="shot-grid">${cards || empty('还没有解析过回放文件。')}</div>`)
-      , false);
+        `<div class="shot-grid">${cards || empty('还没有解析过回放文件。')}</div>`);
   }
 
   function backLink() {
@@ -1306,6 +1362,7 @@ export function createSources(h) {
   }
 
   async function click(event) {
+    activate(event);
     const button = event.target.closest('[data-source-action]');
     if (!button) return false;
     const action = button.dataset.sourceAction;
@@ -1357,6 +1414,7 @@ export function createSources(h) {
   }
 
   function change(event) {
+    activate(event);
     const files = event.target.closest('[data-source-file]');
     if (files) {
       const picked = files.files ? [...files.files] : [];
@@ -1396,7 +1454,7 @@ export function createSources(h) {
     }
   }
 
-  return { load, render, click, change, afterRender };
+  return { load, render, body, hydrate, click, change, afterRender };
 }
 
 

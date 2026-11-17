@@ -72,6 +72,17 @@ class ChannelApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('至少填写', response.json()['detail'])
 
+    def test_delete_channel_removes_saved_bundle(self):
+        """删除通道必须连正式 bundle 一起删，否则分析里会留下重复局。"""
+        server.MATCHES_DIR.mkdir(parents=True, exist_ok=True)
+        bundle = server.MATCHES_DIR / f'channel-{self.channel_id}.json'
+        bundle.write_text(json.dumps({'schema': 'kpl-match-data-v1',
+                                      'match': {'key': f'channel-{self.channel_id}'}}),
+                          encoding='utf-8')
+        response = self.client.delete(f'/api/channels/{self.channel_id}')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertFalse(bundle.exists())
+
     def test_create_table_video_replay_screenshot_review_and_save(self):
         csv = (Path(__file__).resolve().parents[1] / 'web/capture-guide/match-example.csv').read_text(encoding='utf-8-sig').replace('EXAMPLE-请替换','api-match').replace('2026-11-04','2026-06-17')
         response = self.client.post(f'/api/channels/{self.channel_id}/table?name=t.csv', content=csv.encode())

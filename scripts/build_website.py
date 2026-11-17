@@ -23,9 +23,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import json
 import re
 import shutil
 import webbrowser
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
+from functools import partial
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -40,7 +44,7 @@ SITE_NAME = '雨乐赛训'
 SITE_FULL_NAME = '雨乐王者赛训数据工具'
 BRAND_SUB = '王者荣耀 · 赛训数据'
 THEME_COLOR = '#f3efe5'
-PAGES = ('index.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
+PAGES = ('index.html', 'product.html', 'privacy.html', 'opensource.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
 
 
 def read_version() -> tuple[str, str, str]:
@@ -126,10 +130,15 @@ def render_latest_notes(sections: list[dict], version: str,
 def render_sections(sections: list[dict], version: str, release_name: str,
                     include_unreleased: bool) -> str:
     out = []
+    current_series = ''
     for s in sections:
         unreleased = s['version'] == '未发布'
         if unreleased and not include_unreleased:
             continue
+        series = series_of(s['version'])
+        if series and series != current_series:
+            out.append(f'<h2 class="cl-series" id="series-{series}">{series}</h2>')
+            current_series = series
         ver = html.escape(s['version'])
         head = [f'<h2>v{ver}</h2>']
         if s['date']:
@@ -138,7 +147,7 @@ def render_sections(sections: list[dict], version: str, release_name: str,
             head.append(f"<span class='cl-tag'>{html.escape(release_name)}</span>")
         elif unreleased:
             head.append("<span class='cl-tag'>开发中</span>")
-        body = [f"<section class='cl-version'><div class='cl-head'>{''.join(head)}</div>"]
+        body = [f"<section class='cl-version' id='v{ver}'><div class='cl-head'>{''.join(head)}</div>"]
         open_ul = False
         cur_sub: str | None = None
         for sub, items in s['blocks']:
@@ -157,8 +166,117 @@ def render_sections(sections: list[dict], version: str, release_name: str,
     return '\n'.join(out)
 
 
+def series_of(version: str) -> str:
+    """1.6.7 -> 1.6；未发布等非数字版本返回空串。"""
+    parts = version.split('.')
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
+        return f'{parts[0]}.{parts[1]}'
+    return ''
+
+
+def render_series(sections: list[dict]) -> str:
+    """更新日志左侧版本系列索引。"""
+    series: list[str] = []
+    for s in sections:
+        key = series_of(s['version'])
+        if key and key not in series:
+            series.append(key)
+    return ''.join(
+        f'<a href="#series-{key}" data-spy="series-{key}">{key}</a>' for key in series
+    )
+
+
+def faq_jsonld(page: str) -> str:
+    """把安装页的 details/summary 问答抽成 FAQPage 结构化数据。"""
+    items = []
+    for match in re.finditer(r'<summary>(.*?)</summary>\s*<p>(.*?)</p>', page, re.S):
+        question = html.unescape(re.sub(r'<[^>]+>', '', match.group(1))).strip()
+        answer = html.unescape(re.sub(r'<[^>]+>', '', match.group(2))).strip()
+        if not question or not answer:
+            continue
+        items.append({
+            '@type': 'Question',
+            'name': question,
+            'acceptedAnswer': {'@type': 'Answer', 'text': answer},
+        })
+    if not items:
+        return ''
+    return json.dumps(
+        {'@context': 'https://schema.org', '@type': 'FAQPage', 'mainEntity': items},
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def write_feed(sections: list[dict], site_url: str) -> None:
+    """更新日志 RSS：只收已发布、带日期的版本。"""
+    entries = []
+    for s in sections:
+        if s['version'] == '未发布' or not s['date']:
+            continue
+        try:
+            stamp = datetime.strptime(s['date'], '%Y-%m-%d').replace(
+                tzinfo=timezone(timedelta(hours=8)))
+        except ValueError:
+            continue
+        lines = [re.sub(r'<[^>]+>', '', item) for _, group in s['blocks'] for item in group]
+        body = '\n'.join(f'- {line}' for line in lines) or '（无详细说明）'
+        link = f'{site_url}/changelog.html#v{s["version"]}'
+        entries.append(
+            '  <item>\n'
+            f'    <title>v{html.escape(s["version"])}</title>\n'
+            f'    <link>{html.escape(link)}</link>\n'
+            f'    <guid isPermaLink="true">{html.escape(link)}</guid>\n'
+            f'    <pubDate>{format_datetime(stamp)}</pubDate>\n'
+            f'    <description>{html.escape(body)}</description>\n'
+            '  </item>'
+        )
+    feed = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<rss version="2.0">\n'
+        '  <channel>\n'
+        f'    <title>{html.escape(SITE_FULL_NAME)} · 更新日志</title>\n'
+        f'    <link>{html.escape(site_url)}/changelog.html</link>\n'
+        '    <description>每一版改了什么：新增、修复与已知问题。</description>\n'
+        '    <language>zh-CN</language>\n'
+        f'    <lastBuildDate>{format_datetime(datetime.now(timezone.utc))}</lastBuildDate>\n'
+        + '\n'.join(entries) + '\n'
+        '  </channel>\n'
+        '</rss>\n'
+    )
+    (DIST / 'feed.xml').write_text(feed, encoding='utf-8')
+
+
+def github_bits() -> tuple[str, str, str, str]:
+    """读取构建时缓存的 GitHub 仓库信息（不产生运行时请求）。
+
+    没有缓存文件时返回空串：页面只显示仓库链接，不显示任何编造的数字。
+    """
+    path = ROOT / 'website' / 'github.json'
+    if not path.is_file():
+        return '', '', '', '开源'
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (ValueError, OSError):
+        return '', '', '', '开源'
+    user = str(data.get('user') or '')
+    bits = []
+    if data.get('language'):
+        bits.append(f'<span>{html.escape(str(data["language"]))}</span>')
+    if data.get('stars') is not None:
+        bits.append(f'<span>★ {html.escape(str(data["stars"]))}</span>')
+    if data.get('pushed'):
+        bits.append(f'<span>最近提交 {html.escape(str(data["pushed"]))}</span>')
+    stars = ''
+    count_text = '开源'
+    if data.get('stars') is not None:
+        stars = f'<span class="gh-stars">★ {html.escape(str(data["stars"]))}</span>'
+        count_text = f'★ {html.escape(str(data["stars"]))}'
+    return user, ''.join(bits), stars, count_text
+
+
 def release_asset_url(version: str, filename: str) -> str:
-    return f'{GITEE_REPO_URL}/releases/download/v{version}/{filename}'
+    return f'{REPO_URL}/releases/download/v{version}/{filename}'
 
 
 def build(download_url: str | None, full_download_url: str | None,
@@ -171,6 +289,7 @@ def build(download_url: str | None, full_download_url: str | None,
     portable_url = full_download_url or release_asset_url(
         version, f'KPL-Scrim-Lab-{version}-full.zip')
     latest, _latest_items = latest_release(sections)
+    gh_user, gh_bits, gh_stars, gh_count_text = github_bits()
     tokens = {
         'VERSION': version,
         'RELEASE_DATE': release_date,
@@ -178,7 +297,7 @@ def build(download_url: str | None, full_download_url: str | None,
         'DOWNLOAD_URL': setup_url,
         'FULL_DOWNLOAD_URL': portable_url,
         'GITHUB_DOWNLOAD_URL': f'{REPO_URL}/releases/latest',
-        'RELEASE_PAGE_URL': f'{GITEE_REPO_URL}/releases/tag/v{version}',
+        'RELEASE_PAGE_URL': f'{REPO_URL}/releases/tag/v{version}',
         'SITE_URL': site_url,
         'REPO_URL': REPO_URL,
         'LICENSE_URL': f'{REPO_URL}/blob/main/LICENSE',
@@ -187,6 +306,12 @@ def build(download_url: str | None, full_download_url: str | None,
         'LATEST_DATE': (latest or {}).get('date', release_date),
         'ASSET_VERSION': asset_version(),
         'SPONSOR_URL': SPONSOR_URL,
+        'CHANGELOG_SERIES': render_series(sections),
+        'GH_USER': gh_user or 'hccccc01333',
+        'GH_STARS': gh_stars,
+        'GH_COUNT_TEXT': gh_count_text,
+        'GITHUB_META': gh_bits,
+        'GITEE_URL': GITEE_REPO_URL,
         'SITE_NAME': SITE_NAME,
         'SITE_FULL_NAME': SITE_FULL_NAME,
         'BRAND_SUB': BRAND_SUB,
@@ -202,8 +327,18 @@ def build(download_url: str | None, full_download_url: str | None,
         page = (SRC / name).read_text(encoding='utf-8')
         for key, value in tokens.items():
             page = page.replace('{{' + key + '}}', value)
+        if name == 'guide.html':
+            page = page.replace('{{FAQ_JSONLD}}', faq_jsonld(page))
+        # 模板里漏掉的占位符要在构建时炸掉，而不是上线后被用户看见。
+        missing = sorted(set(re.findall(r'\\{\\{[A-Z0-9_]+\\}\\}', page)) - {'{{CHANGELOG_SECTIONS}}'})
+        # 单花括号也查："{{SITE_NAME}}" 被 Python .format 吃掉一层后会变成 "{SITE_NAME}"
+        missing += sorted(set(re.findall(r'(?<!\\{)\\{[A-Z][A-Z0-9_]+\\}(?!\\})', page)))
+        if missing:
+            raise SystemExit(f'{name}: 未替换的占位符 {missing}')
         page = page.replace('{{CHANGELOG_SECTIONS}}', changelog_html)
         (DIST / name).write_text(page, encoding='utf-8')
+
+    write_feed(sections, site_url)
 
     shutil.copyfile(SRC / 'style.css', DIST / 'assets' / 'style.css')
     # SEO 文件（robots / sitemap）放在站点根目录，域名同样走 {{SITE_URL}}
@@ -237,9 +372,17 @@ def build(download_url: str | None, full_download_url: str | None,
     print(f'版本: v{version} ({release_date}) · 渲染了 {len(sections)} 个版本段')
 
 
+class NoCacheHandler(SimpleHTTPRequestHandler):
+    """本地预览禁用缓存：改完刷新就能看到，不会拿着旧页面找问题。"""
+
+    def end_headers(self) -> None:
+        self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        super().end_headers()
+
+
 def serve(port: int) -> None:
-    handler = SimpleHTTPRequestHandler
-    handler.directory = str(DIST)
+    handler = partial(NoCacheHandler, directory=str(DIST))
     url = f'http://127.0.0.1:{port}/'
     print(f'预览: {url}  (Ctrl+C 退出)')
     webbrowser.open(url)

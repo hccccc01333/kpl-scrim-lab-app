@@ -13,7 +13,10 @@ const RELEASE_PAGE = 'https://gitee.com/Rainfun42/kpl-scrim-lab-app/releases/lat
 const DISMISS_KEY = 'kpl-update-dismissed';
 const LAST_CHECK_KEY = 'kpl-update-last-check';
 const AUTO_CHECK_DELAY = 1500;
-const CHECK_THROTTLE = 30 * 60 * 1000;
+const AUTO_CHECK_MIN_MINUTES = 5;
+const AUTO_CHECK_DEFAULT_MINUTES = 30;
+const VISIBILITY_CHECK_GAP = 30 * 60 * 1000;
+const AUTO_PREPARE_DELAY = 2500;
 const HEALTH_TIMEOUT = 150 * 1000;
 const HEALTH_INTERVAL = 1600;
 const NOTE_LIMIT = 6;
@@ -95,7 +98,15 @@ export function initUpdateBanner({ API_BASE }) {
     foot: dock.querySelector('[data-update-foot]'),
     file: dock.querySelector('[data-update-file]'),
   };
-  const state = { data: null, working: false, timer: 0 };
+  const state = {
+    data: null,
+    working: false,
+    timer: 0,
+    autoTimer: 0,
+    checking: false,
+    preparePromise: null,
+    prepared: null,
+  };
 
   /* 页面自己加载时的版本（服务端注入的 meta）。服务端已经换成新版本、页面
    * 还是旧的时候要明确说出来：覆盖安装/手动替换程序文件后，旧标签页不会
@@ -184,22 +195,47 @@ export function initUpdateBanner({ API_BASE }) {
     refs.local.hidden = false;
     refs.now.disabled = false;
     refs.local.disabled = false;
-    refs.date.textContent = data.releaseDate ? `${data.releaseDate}` : '';
+    refs.now.textContent = '立即更新';
+    const published = String(data.releaseDate || data.publishedAt || '');
+    refs.date.textContent = published ? published.slice(0, 10) : '';
     refs.version.textContent = `v${data.latestVersion}`;
     renderNotes(data.notes);
     dock.hidden = false;
   }
 
-  function renderAvailable(data) {
-    baseRender(data);
-    refs.kicker.textContent = '发现新版本';
+  function renderMeta() {
+    const data = state.data;
+    if (!data) return;
     const bits = [`当前 v${data.currentVersion || '旧版本'}`];
     const size = formatSize(data.patch && data.patch.size);
     if (size) bits.push(`增量包 ${size}`);
+    if (state.prepared && state.prepared.version === data.latestVersion) {
+      bits.push('已自动下载');
+    }
     refs.meta.textContent = bits.join(' · ');
+  }
+
+  function markPrepared() {
+    if (!state.data || state.working) return;
+    renderMeta();
+    refs.hint.hidden = false;
+    refs.hint.textContent = '更新包已在后台下载并校验完成；点「立即更新」只需重启服务即可完成安装。';
+    refs.now.textContent = '立即重启更新';
+    refs.foot.textContent = '下载不会替换任何文件；重启后才应用更新，data/ 与 .env 不会被修改。';
+    refs.foot.hidden = false;
+  }
+
+  function renderAvailable(data) {
+    state.prepared = data.pending && data.pending.version === data.latestVersion
+      ? data.pending
+      : null;
+    baseRender(data);
+    refs.kicker.textContent = '发现新版本';
+    renderMeta();
     refs.hint.hidden = true;
     refs.foot.textContent = '更新只替换程序文件，data/ 与 .env 不会被修改；完成后服务会自动重启。';
     refs.foot.hidden = false;
+    if (state.prepared) markPrepared();
   }
 
   function renderBlocked(data) {
@@ -288,10 +324,17 @@ export function initUpdateBanner({ API_BASE }) {
   async function applyOnline(data) {
     if (state.working) return;
     state.working = true;
-    setWorking('正在下载并校验增量包…');
+    const ready = state.prepared && state.prepared.version === data.latestVersion;
+    setWorking(ready ? '更新包已就绪，正在重启服务…' : '正在下载并校验增量包…');
     let expected = data.latestVersion;
     try {
-      const response = await fetch(`${API_BASE}/api/update/apply`, { method: 'POST' });
+      // 后台自动下载还在跑时先等它：服务端会直接复用已暂存的包，不会重复下载。
+      if (state.preparePromise) await state.preparePromise;
+      const response = await fetch(`${API_BASE}/api/update/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: expected }),
+      });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.detail || `更新失败（HTTP ${response.status}）`);
@@ -343,21 +386,26 @@ export function initUpdateBanner({ API_BASE }) {
     }
   }
 
-  async function checkNow({ force = null } = {}) {
-    const last = Number(localStorage.getItem(LAST_CHECK_KEY) || 0);
-    const needForce = force == null ? (!last || Date.now() - last > CHECK_THROTTLE) : force;
-    const response = await fetch(`${API_BASE}/api/update/check${needForce ? '?force=1' : ''}`, { cache: 'no-store' });
+  async function checkNow({ force = true } = {}) {
+    const response = await fetch(`${API_BASE}/api/update/check${force ? '?force=1' : ''}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`检查更新失败（HTTP ${response.status}）`);
     const data = await response.json();
-    if (needForce) {
-      try { localStorage.setItem(LAST_CHECK_KEY, String(Date.now())); } catch (error) { /* 隐私模式 */ }
-    }
+    try { localStorage.setItem(LAST_CHECK_KEY, String(Date.now())); } catch (error) { /* 隐私模式 */ }
     if (data && data.currentVersion) setFooterVersion(data.currentVersion);
     return data;
   }
 
   function handleCheck(data, { auto = false, forceShow = false } = {}) {
-    if (!data || data.ok === false) return;
+    if (!data) return;
+    if (data.ok === false) {
+      /* 所有镜像都连不上、本地也没有缓存：以前这里直接 return，
+       * 页脚「检查更新」看起来像没反应。手动检查必须给出原因。 */
+      if (!auto) {
+        const reason = String(data.reason || '无法连接更新源').slice(0, 160);
+        showToast(`检查更新失败：${reason}`, 8000);
+      }
+      return;
+    }
     if (data.sourceMode) {
       if (!auto) showToast('源码模式：请运行「更新代码.bat」（等价 git pull）更新。');
       return;
@@ -367,18 +415,83 @@ export function initUpdateBanner({ API_BASE }) {
       try { dismissed = sessionStorage.getItem(DISMISS_KEY) || ''; } catch (error) { /* 隐私模式 */ }
       if (!forceShow && auto && dismissed === data.latestVersion) return;
       if (data.blocked) renderBlocked(data);
-      else renderAvailable(data);
+      else {
+        renderAvailable(data);
+        scheduleAutoPrepare(data);
+      }
+      return;
+    }
+    if (!auto && data.stale) {
+      showToast(`没能连上更新源，暂用上次结果（v${data.latestVersion}）；请稍后再试。`, 8000);
       return;
     }
     if (!auto) showToast(`已是最新版本${data.currentVersion ? ' v' + data.currentVersion : ''}`);
   }
 
+  /* 发现新版本后先在后台把增量包下好。失败不打扰：用户点「立即更新」时
+   * 服务端会重新下载并给出错误。blocked（跨版本）和源码模式不自动下载。 */
+  function scheduleAutoPrepare(data) {
+    if (!data || data.sourceMode || data.blocked) return;
+    if (data.autoDownload === false) return;
+    if (!data.patch) return;
+    if (state.prepared && state.prepared.version === data.latestVersion) return;
+    setTimeout(() => { autoPrepare(data); }, AUTO_PREPARE_DELAY);
+  }
+
+  async function autoPrepare(data) {
+    if (!data || state.working) return;
+    if (state.prepared && state.prepared.version === data.latestVersion) return;
+    if (state.preparePromise) return state.preparePromise;
+    state.preparePromise = (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/update/prepare`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ version: data.latestVersion }),
+        });
+        if (!response.ok) return;
+        const body = await response.json().catch(() => ({}));
+        const pending = body && body.pending;
+        if (!pending || pending.version !== data.latestVersion) return;
+        state.prepared = pending;
+        if (state.data && state.data.latestVersion === pending.version) markPrepared();
+      } catch (error) {
+        /* 离线 / 镜像不可用：保持手动按钮，用户点「立即更新」时会再试一次。 */
+      } finally {
+        state.preparePromise = null;
+      }
+    })();
+    return state.preparePromise;
+  }
+
+  function autoCheckMinutes(data) {
+    const value = Number(data && data.autoCheckMinutes);
+    if (!Number.isFinite(value) || value <= 0) return AUTO_CHECK_DEFAULT_MINUTES;
+    return Math.min(1440, Math.max(AUTO_CHECK_MIN_MINUTES, value));
+  }
+
+  function scheduleNextCheck(data) {
+    clearTimeout(state.autoTimer);
+    const minutes = autoCheckMinutes(data);
+    state.autoTimer = setTimeout(() => { autoCheck(); }, minutes * 60 * 1000 + 5000);
+  }
+
   async function autoCheck() {
+    if (state.checking) return;
+    state.checking = true;
+    let data = null;
     try {
-      const data = await checkNow();
+      // 定时检查要真的问到服务端：否则服务端 6 小时缓存会把「每 30 分钟复查」
+      // 变成每 6 小时才看一眼。
+      data = await checkNow({ force: true });
       noticeVersionDrift(data && data.currentVersion);
       handleCheck(data, { auto: true });
-    } catch (error) { /* 没网就静默，不打扰工作台 */ }
+    } catch (error) {
+      /* 没网就静默，不打扰工作台；下一个周期再试。 */
+    } finally {
+      state.checking = false;
+      scheduleNextCheck(data);
+    }
   }
 
   dock.addEventListener('click', (event) => {
@@ -417,6 +530,13 @@ export function initUpdateBanner({ API_BASE }) {
         trigger.disabled = false;
         trigger.textContent = trigger.dataset.label || '检查更新';
       });
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    let last = 0;
+    try { last = Number(localStorage.getItem(LAST_CHECK_KEY) || 0); } catch (error) { /* 隐私模式 */ }
+    if (!last || Date.now() - last > VISIBILITY_CHECK_GAP) autoCheck();
   });
 
   setTimeout(autoCheck, AUTO_CHECK_DELAY);

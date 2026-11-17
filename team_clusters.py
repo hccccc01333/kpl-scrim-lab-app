@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 from collections import Counter, defaultdict
 import unicodedata
@@ -94,7 +95,51 @@ def _camp_key(value) -> str | None:
 
 
 def load_panels(camp_dir) -> list[dict]:
-    """逐局读出「我方 / 对面」两侧阵容。读不出的局跳过，不猜测。"""
+    """逐局读出「我方 / 对面」两侧阵容。读不出的局跳过，不猜测。
+
+    104 个面板约 0.35 秒（每个文件都要 json 解析），而战队列表、BP 汇总、
+    选手看板、训练台账都要这份结果；按目录指纹缓存 2 秒，目录里新增/改动
+    一局就自动重读。返回列表的浅拷贝，调用方可以安心 replace / append。
+    """
+    camp_dir = Path(camp_dir)
+    stamp = _camp_dir_fingerprint(camp_dir)
+    cached = _PANELS_CACHE
+    if stamp is not None and cached['stamp'] == stamp and cached['dir'] == str(camp_dir):
+        return list(cached['panels'])
+    panels = _load_panels_uncached(camp_dir)
+    if stamp is not None:
+        cached.update(stamp=stamp, dir=str(camp_dir), panels=panels)
+    return list(panels)
+
+
+# 面板目录指纹缓存：一次 (数量, 最新 mtime) 扫描约 9ms，比重新解析 104 个
+# 面板便宜一个数量级；指纹每次都重扫，所以新增/改动一局立刻可见。
+_PANELS_CACHE = {'dir': None, 'stamp': None, 'panels': []}
+
+
+def _camp_dir_fingerprint(camp_dir) -> tuple | None:
+    try:
+        count, latest = 0, 0
+        with os.scandir(camp_dir) as entries:
+            for entry in entries:
+                if not entry.name.endswith('.json'):
+                    continue
+                try:
+                    latest = max(latest, entry.stat().st_mtime_ns)
+                except OSError:
+                    continue
+                count += 1
+        return (count, latest)
+    except OSError:
+        return None
+
+
+def clear_panels_cache() -> None:
+    """写入口（新增/改营地面板）后主动丢弃缓存，下一次读必定重解析。"""
+    _PANELS_CACHE.update(stamp=None, panels=[])
+
+
+def _load_panels_uncached(camp_dir) -> list[dict]:
     camp_dir = Path(camp_dir)
     panels = []
     if not camp_dir.is_dir():
@@ -1738,28 +1783,52 @@ def _deep_game(camp_dir, panel, style_index) -> dict:
     if opponent_win is None and isinstance(win, bool):
         opponent_win = not win
     start = panel.get('start') or ''
+    sides = {
+        'own': {'players': _deep_players(panel.get('own_roster'), minutes),
+                'picks': _deep_picks(panel.get('own_roster'), hero_meta),
+                'bans': _deep_bans((bp.get('bans') or {}).get(own_side)),
+                'stats': _deep_stats(own_stats)},
+        'enemy': {'players': _deep_players(panel.get('enemy_roster'), minutes),
+                  'picks': _deep_picks(panel.get('enemy_roster'), hero_meta),
+                  'bans': _deep_bans((bp.get('bans') or {}).get(enemy_side)),
+                  'stats': _deep_stats(enemy_stats)},
+    }
+    hero_info = {}
+    for side in ('own', 'enemy'):
+        # ban 名单里的英雄常常只在这一局出现，先用 ban 行的分路兜底，
+        # 再用出场行覆盖——逐手矩阵需要的分路/类型尽量不留空。
+        for entry in sides[side]['bans']:
+            hero_info.setdefault(entry['name'], {'lane': entry.get('lane') or '',
+                                                 'archetype': entry.get('archetype') or ''})
+    for entry in sides['own']['picks'] + sides['enemy']['picks']:
+        hero_info[entry['name']] = {'lane': entry.get('lane') or '',
+                                    'archetype': entry.get('archetype') or ''}
+    for side in ('own', 'enemy'):
+        sides[side]['lineup'] = lineup_structure(sides[side]['picks'])
     return {
         'seq': seq, 'start': start, 'day': team_style.day_label(start),
         'duration': duration, 'map': panel.get('map') or '',
         'win': win, 'opponentWin': opponent_win, 'ownSide': panel.get('own'),
-        'sides': {
-            'own': {'players': _deep_players(panel.get('own_roster'), minutes),
-                    'picks': _deep_picks(panel.get('own_roster'), hero_meta),
-                    'bans': _deep_bans((bp.get('bans') or {}).get(own_side)),
-                    'stats': _deep_stats(own_stats)},
-            'enemy': {'players': _deep_players(panel.get('enemy_roster'), minutes),
-                      'picks': _deep_picks(panel.get('enemy_roster'), hero_meta),
-                      'bans': _deep_bans((bp.get('bans') or {}).get(enemy_side)),
-                      'stats': _deep_stats(enemy_stats)},
-        },
+        'sides': sides,
         'style': team_style.game_style(style_index['enemy'].get(seq),
                                        style_index['thresholds']),
-        'draft': _draft_block(bp, own_side),
+        'draft': _draft_block(bp, own_side, hero_info),
     }
 
 
-def _draft_block(bp, own_side) -> dict:
-    """逐手事件标准化为 own / enemy 视角；没有顺序时 events 为空。"""
+def _draft_block(bp, own_side, hero_info=None) -> dict:
+    """逐手事件标准化为 own / enemy 视角；没有顺序时 events 为空。
+
+    额外给出每侧按手序排好的 ban / pick 列表（带分路与打法类型），
+    前端才能做「第 1-5 手 ban / pick」的分布分析；顺序来源不透明确时
+    由 orderAssumed 标注，展示层需照抄这个前提，不把它当逐手核验。
+    """
+    info = hero_info or {}
+
+    def label(hero):
+        row = info.get(hero) or {}
+        return {'lane': row.get('lane') or '', 'archetype': row.get('archetype') or ''}
+
     events = []
     for event in (bp.get('draftEvents') or []):
         camp = str(event.get('camp') or '')
@@ -1767,18 +1836,65 @@ def _draft_block(bp, own_side) -> dict:
             continue
         # 营地 camp：1=left，2=right；ownSide 决定 own/enemy。
         known_own = (camp == '1' and own_side == 'left') or (camp == '2' and own_side == 'right')
+        hero = event.get('hero')
+        row = label(hero)
         events.append({
             'order': event.get('order'),
             'action': event.get('action'),
             'side': 'own' if known_own else 'enemy',
-            'hero': event.get('hero'),
+            'hero': hero,
+            'lane': row['lane'],
+            'archetype': row['archetype'],
         })
+    ordered = {'own': {'ban': [], 'pick': []}, 'enemy': {'ban': [], 'pick': []}}
+    for event in sorted(events, key=lambda item: item.get('order') or 0):
+        action = event.get('action')
+        side = event.get('side')
+        if action in ('ban', 'pick') and side in ordered:
+            ordered[side][action].append({key: event[key] for key in ('hero', 'lane', 'archetype')})
     return {
         'known': bool(bp.get('pickOrderKnown') and events),
         'events': events,
+        'ordered': ordered,
         'orderSource': bp.get('orderSource') or '',
         'orderAssumed': bool(bp.get('orderAssumed')),
         'banCount': bp.get('banCount') or {},
+    }
+
+
+# 核 / 前排 / 控制的结构口径（赛训组 2026-11 复盘会）：
+#   核 = 战边 / 刺野 / 战野 / 法核 / 游射 / 呆射；坦边、坦野、工具人、辅助不分核。
+#   控 = 英雄能力表「控制」维度计数；只统计已收录英雄，未收录英雄单列不猜。
+CORE_ARCHETYPES = ('战边', '刺野', '战野', '法核', '游射', '呆射')
+
+
+def lineup_structure(picks) -> dict:
+    """五路阵容结构：核数 / 控数 / 前排 / 功能标签；缺表的英雄单独计数。
+
+    只做结构描述，不评价强弱；未收录能力的英雄会让控数偏低，
+    因此同时给出 known 与 total，展示层必须把覆盖率一起写出来。
+    """
+    import hero_capabilities
+    rows = [pick for pick in picks or [] if pick.get('name')]
+    cores = []
+    for pick in rows:
+        archetype = pick.get('archetype') or ''
+        if archetype in CORE_ARCHETYPES:
+            cores.append({'hero': pick.get('name'), 'lane': pick.get('lane') or '', 'type': archetype})
+    heroes = [pick.get('name') for pick in rows]
+    caps = hero_capabilities.lineup_capabilities(heroes)
+    known = sum(1 for hero in heroes if hero in hero_capabilities.HERO_CAPABILITIES)
+    return {
+        'cores': len(cores),
+        'coreList': cores,
+        'controls': caps['控制'],
+        'front': caps['前排'],
+        'engage': caps['开团'],
+        'peel': caps['保护'] + caps['反开'],
+        'damage': caps['爆发'] + caps['持续输出'],
+        'known': known,
+        'total': len(rows),
+        'tags': hero_capabilities.functional_tags(heroes),
     }
 
 
@@ -2192,6 +2308,40 @@ def series_analysis(games, series_defs) -> list:
 _SEQ_KEY_CACHE: dict = {'stamp': None, 'map': {}}
 
 
+def series_index(db_path) -> dict:
+    """{match key: {'id','bestOf','gameNo'}}——训练系列赛登记表。
+
+    营地面板本身没有赛制字段；只有赛训组在「系列赛」里登记过 BO，
+    这里才给得出 BO3/BO5/BO7。查不到就是未知，不按局数猜赛制。
+    """
+    path = Path(db_path)
+    if not path.is_file():
+        return {}
+    try:
+        connection = sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)
+    except sqlite3.Error:
+        return {}
+    try:
+        rows = connection.execute(
+            'SELECT g.match_key, g.series_id, g.game_index, s.best_of '
+            'FROM training_series_games g '
+            'LEFT JOIN training_series s ON s.id = g.series_id').fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        connection.close()
+    out = {}
+    for match_key, series_id, game_no, best_of in rows:
+        if not match_key:
+            continue
+        out[str(match_key)] = {
+            'id': str(series_id or ''),
+            'bestOf': int(best_of) if isinstance(best_of, (int, float)) else None,
+            'gameNo': int(game_no) if isinstance(game_no, (int, float)) else None,
+        }
+    return out
+
+
 def seq_match_key_index(matches_dir) -> dict:
     """{campBp.gameSeq: 通道 key}——把营地局号映射到单局复盘的 match key。
 
@@ -2238,8 +2388,13 @@ def team_deep(camp_dir, db_path, team_id) -> dict | None:
              for seq in team.get('seqs') or [] if seq in panel_index]
     games.sort(key=lambda game: game.get('start') or '', reverse=True)
     seq_keys = seq_match_key_index(Path(camp_dir).parent / 'matches')
+    series = series_index(db_path)
     for game in games:
-        game['matchKey'] = seq_keys.get(str(game.get('seq') or '')) or ''
+        match_key = seq_keys.get(str(game.get('seq') or '')) or ''
+        game['matchKey'] = match_key
+        hit = series.get(match_key) or None
+        game['series'] = hit
+        game['bo'] = (hit or {}).get('bestOf')
     import ban_analysis
     import hero_archetypes
     import lineup_stats
@@ -2249,6 +2404,9 @@ def team_deep(camp_dir, db_path, team_id) -> dict | None:
     if not games:
         warnings.append('没有读到该战队的营地终局面板。')
     empty_style = team_style.style([], style_index)
+    bo_counts = Counter(game.get('bo') for game in games if game.get('bo'))
+    bo_known = sum(bo_counts.values())
+    draft_known = sum(1 for game in games if (game.get('draft') or {}).get('known'))
     return {
         'team': {key: team.get(key) for key in (
             'id', 'displayName', 'name', 'named', 'coach', 'matches', 'wins', 'losses',
@@ -2271,6 +2429,17 @@ def team_deep(camp_dir, db_path, team_id) -> dict | None:
         'series': series_analysis(games, load_demo_series()),
         'style': team.get('style') or empty_style,
         'taxonomy': hero_archetypes.taxonomy(),
+        # 时间窗与赛制是两个筛选维度；覆盖度写进 meta，前端据实标注样本，
+        # 不能把「没登记 BO」的局当成某个赛制。
+        'coverage': {
+            'games': len(games),
+            'boKnown': bo_known,
+            'boCounts': {str(bo): count for bo, count in sorted(bo_counts.items())},
+            'draftKnown': draft_known,
+            'draftVerified': int(bp_order.get('verifiedGames') or 0),
+            'firstSeen': min((game.get('start') or '' for game in games), default=''),
+            'lastSeen': max((game.get('start') or '' for game in games), default=''),
+        },
         'kpl': _kpl_section(games),
         'meta': {
             'source': '营地终局面板',

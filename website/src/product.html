@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>产品 — {{SITE_FULL_NAME}}</title>
+<meta name="description" content="采集、核对、入库、复盘四步链路：截图 / 录屏 / 表格 / 营地链接统一入库，每个数字标明来源，复盘会一页讲完。">
+<meta name="theme-color" content="{{THEME_COLOR}}">
+<link rel="canonical" href="{{SITE_URL}}/product.html">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111a16'/%3E%3Crect x='6' y='13' width='5' height='12' rx='1.5' fill='%239dc4b7'/%3E%3Crect x='13.5' y='7' width='5' height='18' rx='1.5' fill='%23c9553a'/%3E%3Crect x='21' y='16' width='5' height='9' rx='1.5' fill='%239dc4b7'/%3E%3C/svg%3E">
+<link rel="preload" href="assets/manrope.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/noto-serif-sc.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/style.css?v={{ASSET_VERSION}}">
+<link rel="alternate" type="application/rss+xml" title="{{SITE_FULL_NAME}} · 更新日志" href="feed.xml">
+<script>document.documentElement.classList.add('js');</script>
+<script src="assets/site.js?v={{ASSET_VERSION}}" defer></script>
+</head>
+<body>
+
+<a class="skip" href="#main">跳到主要内容</a>
+
+<header class="topbar">
+  <div class="shell topbar-inner">
+    <a class="brand" href="index.html" aria-label="{{SITE_NAME}} 首页">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#111a16"/><rect x="6" y="13" width="5" height="12" rx="1.5" fill="#9dc4b7"/><rect x="13.5" y="7" width="5" height="18" rx="1.5" fill="#c9553a"/><rect x="21" y="16" width="5" height="9" rx="1.5" fill="#9dc4b7"/></svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">{{SITE_NAME}}</span>
+        <span class="brand-sub">{{BRAND_SUB}}</span>
+      </span>
+    </a>
+    <nav class="topnav" aria-label="主导航">
+      <a href="index.html">首页</a>
+      <a href="product.html" aria-current="page">产品</a>
+      <a href="privacy.html">数据主权</a>
+      <a href="opensource.html">源码</a>
+      <a href="guide.html">安装说明</a>
+      <a href="changelog.html">更新日志</a>
+    </nav>
+    <div class="topbar-cta">
+      <a class="btn btn--primary" href="download.html">下载 Windows 版</a>
+      <button class="nav-toggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="site-menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<dialog class="menu" id="site-menu" aria-labelledby="menu-title">
+  <div class="menu-inner">
+    <div class="menu-top">
+      <span class="menu-title" id="menu-title">导航</span>
+      <button class="menu-close" type="button" aria-label="关闭菜单" autofocus>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <nav class="menu-nav" aria-label="站点导航">
+      <a href="index.html">首页<span>01</span></a>
+      <a href="product.html">产品<span>02</span></a>
+      <a href="privacy.html">数据主权<span>03</span></a>
+      <a href="opensource.html">源码<span>04</span></a>
+      <a href="guide.html">安装说明<span>05</span></a>
+      <a href="changelog.html">更新日志<span>06</span></a>
+    </nav>
+    <div>
+      <a class="btn btn--primary btn--block" href="download.html">下载 Windows 版</a>
+      <p class="menu-foot">Windows 10 / 11 · 内置运行时 · 数据不出本机</p>
+    </div>
+  </div>
+</dialog>
+
+<main id="main">
+  <section class="page-hero">
+    <div class="shell">
+      <div class="hero-masthead">
+        <p class="hero-kicker"><i aria-hidden="true"></i>产品</p>
+        <p class="hero-edition">v{{VERSION}} · {{RELEASE_DATE}}</p>
+      </div>
+
+      <h1 class="page-title">从一张截图，<br>到一页结论。</h1>
+      <p class="page-lede">采集、核对、入库、复盘，四步在同一条本机链路上完成。下面每一段都可以点开，看它具体拦下了什么。</p>
+    </div>
+  </section>
+<section class="section section--deep" id="process" aria-labelledby="process-title">
+  <span class="board-ghost" aria-hidden="true" data-board-ghost>01</span>
+  <div class="shell">
+    <header class="sec-head">
+      <div class="sec-head-main">
+        <span class="sec-index">01 / 四步链路</span>
+        <h2 id="process-title">采集、核对、入库、复盘，<br>一条链路走完。</h2>
+      </div>
+      <p class="sec-intro">没有黑箱，也没有一步被跳过。点开任意一段，看它具体拦下了什么。</p>
+    </header>
+
+    <div class="board" data-board>
+      <div class="board-tabs" aria-label="四步链路">
+        <span class="board-indicator" aria-hidden="true"></span>
+        <button class="board-tab is-open" type="button" id="board-tab-01" aria-expanded="true" aria-controls="board-panel-01">
+          <span class="tab-no">01</span>
+          <span class="tab-name">采集</span>
+        </button>
+        <button class="board-tab" type="button" id="board-tab-02" aria-expanded="false" aria-controls="board-panel-02">
+          <span class="tab-no">02</span>
+          <span class="tab-name">核对</span>
+        </button>
+        <button class="board-tab" type="button" id="board-tab-03" aria-expanded="false" aria-controls="board-panel-03">
+          <span class="tab-no">03</span>
+          <span class="tab-name">入库</span>
+        </button>
+        <button class="board-tab" type="button" id="board-tab-04" aria-expanded="false" aria-controls="board-panel-04">
+          <span class="tab-no">04</span>
+          <span class="tab-name">复盘</span>
+        </button>
+      </div>
+      <div class="board-panels">
+        <div class="board-panel is-open" id="board-panel-01" role="region" aria-labelledby="board-tab-01">
+          <div class="board-inner">
+            <div class="board-col">
+              <h4>把材料收进来</h4>
+              <p class="board-lead">截图、录屏、xlsx、营地链接，四种入口最后落在同一条链路上。</p>
+            </div>
+            <div class="board-col board-col--b">
+              <ul class="board-list">
+                  <li>拖拽或粘贴导入，重复文件按指纹去重</li>
+                  <li>录屏按时间轴抽帧，跳过加载与 BP 段</li>
+                  <li>营地链接直接带出对局列表与结算面板</li>
+              </ul>
+              <p class="board-meta"><span>输入</span>截图 / 录屏 / 表格 / 营地链接</p>
+            </div>
+          </div>
+        </div>
+        <div class="board-panel" id="board-panel-02" role="region" aria-labelledby="board-tab-02">
+          <div class="board-inner">
+            <div class="board-col">
+              <h4>先给人看，再入库</h4>
+              <p class="board-lead">识别结果一律是候选值。名字、英雄、经济对不上时，停下来问你。</p>
+            <blockquote class="board-quote">身份冲突不会被一次误识别静默覆盖。</blockquote>
+            </div>
+            <div class="board-col board-col--b">
+              <ul class="board-list">
+                  <li>同一选手的多个营地昵称合成一个 ID</li>
+                  <li>低置信度字段单独列出，可批量确认</li>
+                  <li>改过的值留痕，不会静默覆盖原文</li>
+              </ul>
+              <p class="board-meta"><span>拦截</span>身份冲突 / 低置信度 / 重复对局</p>
+            </div>
+          </div>
+        </div>
+        <div class="board-panel" id="board-panel-03" role="region" aria-labelledby="board-tab-03">
+          <div class="board-inner">
+            <div class="board-col">
+              <h4>每个数字带出处</h4>
+              <p class="board-lead">写入前过一遍字段契约；缺失就写缺失，不补造。</p>
+            </div>
+            <div class="board-col board-col--b">
+              <ul class="board-list">
+                  <li>字段标明来源：截图 / 录屏 / 表格 / 营地</li>
+                  <li>同一指标带样本数，样本不足直接标注</li>
+                  <li><code>data/</code> 目录就是数据库，拷走即备份</li>
+              </ul>
+              <p class="board-meta"><span>校验</span>字段契约 / 样本数 / 缺失标记</p>
+            </div>
+          </div>
+        </div>
+        <div class="board-panel" id="board-panel-04" role="region" aria-labelledby="board-tab-04">
+          <div class="board-inner">
+            <div class="board-col">
+              <h4>把一局讲成一页</h4>
+              <p class="board-lead">时间线、经济曲线、掉点定位、阵容对照，投到同一屏就能开会。</p>
+            </div>
+            <div class="board-col board-col--b">
+              <ul class="board-list">
+                  <li>周期、对手、选手、英雄四个切口互相对照</li>
+                  <li>阵容与 BP 顺序回放到具体分钟</li>
+                  <li>导出 PDF 直接进训练小结</li>
+              </ul>
+              <p class="board-meta"><span>输出</span>一页看懂 / 周期对照 / PDF</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+  <section class="section">
+    <div class="shell">
+      <header class="sec-head">
+        <div class="sec-head-main">
+          <span class="sec-index">02 / 输出</span>
+          <h2>复盘会上，<br>只放一页。</h2>
+        </div>
+        <p class="sec-intro">时间线、经济曲线、掉点位置、阵容对照，投出来就是结论本身，不用再截图拼 PPT。</p>
+      </header>
+      <div class="faq-grid">
+        <article class="faq-cell">
+          <h3>一屏之内</h3>
+          <p>比分、经济、掉点、阵容同屏对照，投屏不用切页，也不用一边翻网页一边讲。</p>
+        </article>
+        <article class="faq-cell">
+          <h3>每个数字有出处</h3>
+          <p>字段标明来源与样本数；缺失直接标出来，不补造，也不给“看起来差不多”的平均值。</p>
+        </article>
+        <article class="faq-cell">
+          <h3>能带走</h3>
+          <p>导出 PDF 进训练小结；整个 <code>data/</code> 拷走就是完整备份，换电脑覆盖过去就能接着用。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+  <section class="section page-tail">
+    <div class="shell page-tail-inner">
+      <p class="page-tail-text">Windows 10 / 11，安装包内置运行时。<span class="nb">数据</span>只写本机 <code>data</code> 目录。</p>
+      <div class="page-tail-actions">
+        <a class="btn btn--primary" href="download.html">下载 Windows 版</a>
+        <a class="btn btn--ghost" href="guide.html">看安装说明</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="shell">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="index.html">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#111a16"/><rect x="6" y="13" width="5" height="12" rx="1.5" fill="#9dc4b7"/><rect x="13.5" y="7" width="5" height="18" rx="1.5" fill="#c9553a"/><rect x="21" y="16" width="5" height="9" rx="1.5" fill="#9dc4b7"/></svg>
+          </span>
+          <span class="brand-text">
+            <span class="brand-name">{{SITE_NAME}}</span>
+            <span class="brand-sub">{{BRAND_SUB}}</span>
+          </span>
+        </a>
+        <p>为 KPL、非 KPL 职业队、青训、高校联赛与城市赛赛训组做的本机赛训数据工具。</p>
+      </div>
+      <nav class="footer-col" aria-label="产品">
+        <h2>产品</h2>
+        <a href="product.html">示例简报</a>
+        <a href="product.html">四步链路</a>
+        <a href="privacy.html">数据主权</a>
+        <a href="opensource.html">源码</a>
+        <a href="download.html">下载</a>
+        <a href="changelog.html">更新日志</a>
+      </nav>
+      <nav class="footer-col" aria-label="帮助">
+        <h2>帮助</h2>
+        <a href="guide.html">安装说明</a>
+        <a href="guide.html#faq">常见问题</a>
+        <a href="{{REPO_URL}}/issues">反馈问题</a>
+        <a href="{{REPO_URL}}">源码仓库</a>
+      </nav>
+      <nav class="footer-col" aria-label="支持">
+        <h2>支持</h2>
+        <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者 · 爱发电</a>
+        <a href="{{LICENSE_URL}}">许可协议</a>
+        <a href="download.html">系统要求</a>
+        <button class="footer-link-btn" type="button" data-copy="1136567445" data-copied="已复制群号">QQ 群 1136567445</button>
+      </nav>
+    </div>
+    <div class="footer-gh">
+      <div class="footer-gh-main">
+        <svg class="footer-gh-mark" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        <div>
+          <p class="footer-gh-kicker">开源 · GitHub</p>
+          <p class="footer-gh-title"><a href="{{REPO_URL}}">源码都在 GitHub 上</a></p>
+          <p class="footer-gh-repo">github.com/{{GH_USER}}/kpl-scrim-lab-app</p>
+        </div>
+      </div>
+      <div class="footer-gh-side">
+        <p class="footer-gh-meta">{{GITHUB_META}}</p>
+        <a class="btn btn--ghost" href="{{REPO_URL}}">去仓库看看 <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+    <div class="footer-legal">
+      <span>© {{YEAR}} {{SITE_FULL_NAME}} · AGPL-3.0-or-later</span>
+      <span>与游戏开发商及赛事组织方无关联</span>
+      <span>截图为合成演示数据</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

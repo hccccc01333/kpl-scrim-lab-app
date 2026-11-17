@@ -11,6 +11,7 @@ import json
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
@@ -27,6 +28,14 @@ DEFAULT_MANIFEST_URLS = (
 MAX_MANIFEST_BYTES = 256 * 1024
 CACHE_MAX_AGE = 6 * 3600
 USER_AGENT = 'KPL-Scrim-Lab-Updater/1.0'
+
+# 客户端默认行为：页面打开时检查一次，之后每隔 autoCheckMinutes 复查；
+# 发现增量包后在后台下载并暂存，点「立即更新」只需要重启。
+# 都可以在 update_config.json 里覆盖，或用 UPDATE_AUTO_DOWNLOAD=0 临时关掉。
+DEFAULT_SETTINGS = {
+    'autoDownload': True,
+    'autoCheckMinutes': 30,
+}
 
 # Paths an update patch may never write to.  Business data, credentials and
 # build artefacts stay outside the update surface.
@@ -118,6 +127,39 @@ def manifest_urls(root: Path | str | None = None,
     return list(DEFAULT_MANIFEST_URLS)
 
 
+def load_settings(root: Path | str | None = None,
+                  env: dict | None = None) -> dict:
+    """客户端更新行为设置；配置缺失或写错时回退到默认值，永不抛错。"""
+    source = env if env is not None else os.environ
+    config: dict = {}
+    if root:
+        try:
+            payload = json.loads(
+                (Path(root) / 'update_config.json').read_text(encoding='utf-8'))
+            if isinstance(payload, dict):
+                config = payload
+        except Exception:  # noqa: BLE001 - 配置损坏时回默认值，不能让检查更新崩掉
+            config = {}
+
+    result = dict(DEFAULT_SETTINGS)
+    if 'autoDownload' in config:
+        value = config['autoDownload']
+        if isinstance(value, str):
+            result['autoDownload'] = value.strip().lower() in ('1', 'true', 'yes', 'on')
+        else:
+            result['autoDownload'] = bool(value)
+    try:
+        minutes = int(config.get('autoCheckMinutes', DEFAULT_SETTINGS['autoCheckMinutes']))
+        result['autoCheckMinutes'] = min(1440, max(5, minutes))
+    except (TypeError, ValueError):
+        pass
+
+    raw = str(source.get('UPDATE_AUTO_DOWNLOAD', '') or '').strip().lower()
+    if raw:
+        result['autoDownload'] = raw in ('1', 'true', 'yes', 'on')
+    return result
+
+
 def _allow_http(env: dict | None = None) -> bool:
     source = env if env is not None else os.environ
     return str(source.get('UPDATE_ALLOW_HTTP', '') or '').strip().lower() in (
@@ -192,6 +234,8 @@ def normalize_manifest(data) -> dict:
         'schema': int(data.get('schema', 1) or 1),
         'version': version,
         'publishedAt': str(data.get('publishedAt', '') or ''),
+        'releaseDate': str(data.get('releaseDate', '') or ''),
+        'releaseName': str(data.get('releaseName', '') or ''),
         'channel': str(data.get('channel', 'stable') or 'stable'),
         'notes': notes,
     }
@@ -238,17 +282,54 @@ def normalize_manifest(data) -> dict:
     return result
 
 
-def fetch_manifest(urls=None, timeout: float = 3.0,
-                   allow_http: bool | None = None,
-                   root: Path | str | None = None) -> tuple[dict, str]:
-    errors = []
-    for url in urls or manifest_urls(root):
+def fetch_manifest_all(urls=None, timeout: float = 3.0,
+                       allow_http: bool | None = None,
+                       root: Path | str | None = None) -> list[dict]:
+    """并发读取所有镜像，逐个返回成功/失败与原因。
+
+    以前是「谁先返回用谁」：Gitee 还停在旧版本、GitHub 已经发了新版时，
+    旧清单会直接把更新吃掉（1.5.13 就踩过同样的坑）。现在全部读一遍，
+    由 ``fetch_manifest`` 统一挑版本号最高的那份。
+    """
+    targets = list(urls or manifest_urls(root))
+
+    def read_one(url: str) -> dict:
         try:
             payload = _read_url(url, MAX_MANIFEST_BYTES, timeout, allow_http)
-            return normalize_manifest(json.loads(payload.decode('utf-8'))), url
-        except Exception as exc:  # noqa: BLE001 - try the next mirror
-            errors.append(f'{url}: {exc}')
-    raise UpdateError('更新源均不可用：' + '；'.join(errors))
+            manifest = normalize_manifest(json.loads(payload.decode('utf-8')))
+            return {'url': url, 'ok': True, 'manifest': manifest}
+        except Exception as exc:  # noqa: BLE001 - one bad mirror must not stop the rest
+            return {'url': url, 'ok': False, 'error': str(exc) or type(exc).__name__}
+
+    if len(targets) <= 1:
+        return [read_one(url) for url in targets]
+    with ThreadPoolExecutor(max_workers=min(4, len(targets))) as pool:
+        return list(pool.map(read_one, targets))
+
+
+def _public_mirrors(items: list[dict]) -> list[dict]:
+    return [{
+        'url': item.get('url', ''),
+        'ok': bool(item.get('ok')),
+        'version': str((item.get('manifest') or {}).get('version', '')),
+        'error': str(item.get('error', '')),
+    } for item in items]
+
+
+def fetch_manifest(urls=None, timeout: float = 3.0,
+                   allow_http: bool | None = None,
+                   root: Path | str | None = None,
+                   details: list | None = None) -> tuple[dict, str]:
+    results = fetch_manifest_all(urls, timeout, allow_http, root)
+    if details is not None:
+        details.extend(results)
+    usable = [item for item in results if item.get('ok')]
+    if not usable:
+        raise UpdateError('更新源均不可用：' + '；'.join(
+            f"{item['url']}: {item.get('error', '未知错误')}" for item in results))
+    # 版本号最高的镜像说了算；同版本时保持配置顺序里的第一个。
+    best = max(usable, key=lambda item: parse_version(item['manifest']['version']))
+    return best['manifest'], best['url']
 
 
 def cache_file(root: Path) -> Path:
@@ -280,23 +361,37 @@ def save_cache(root: Path, manifest: dict, source: str) -> None:
 
 
 def check_for_update(root: Path, current_version: str, force: bool = False,
-                     timeout: float = 3.0, urls=None) -> dict:
-    """Return update state.  Never raises for ordinary network failures."""
+                     timeout: float = 3.0, urls=None,
+                     max_age: float | None = None) -> dict:
+    """Return update state.  Never raises for ordinary network failures.
+
+    ``max_age`` 覆盖缓存有效期；下载前复用刚写入的清单时传一个很小的值，
+    避免「检查一次、下载前再查一次」白等两个网络往返。
+    """
     root = Path(root)
+    settings = load_settings(root)
+    cache_max_age = CACHE_MAX_AGE if max_age is None else max(0, float(max_age))
     cached = load_cache(root)
     now = time.time()
     stale = False
-    if cached and not force and now - cached['checkedAt'] < CACHE_MAX_AGE:
+    reason = ''
+    diagnostics: list[dict] = []
+    if cached and not force and now - cached['checkedAt'] < cache_max_age:
         manifest, source = cached['manifest'], cached['source']
     else:
         try:
-            manifest, source = fetch_manifest(urls, timeout, root=root)
+            manifest, source = fetch_manifest(urls, timeout, root=root,
+                                              details=diagnostics)
         except Exception as exc:  # noqa: BLE001
             if cached:
                 manifest, source, stale = cached['manifest'], cached['source'], True
+                reason = str(exc)
             else:
                 return {'ok': False, 'currentVersion': current_version,
-                        'reason': str(exc), 'checkedAt': now}
+                        'reason': str(exc), 'checkedAt': now,
+                        'stale': False, 'mirrors': _public_mirrors(diagnostics),
+                        'autoDownload': settings['autoDownload'],
+                        'autoCheckMinutes': settings['autoCheckMinutes']}
         else:
             try:
                 save_cache(root, manifest, source)
@@ -315,11 +410,17 @@ def check_for_update(root: Path, current_version: str, force: bool = False,
         'minVersion': min_version,
         'channel': manifest.get('channel', 'stable'),
         'publishedAt': manifest.get('publishedAt', ''),
+        'releaseDate': manifest.get('releaseDate', ''),
+        'releaseName': manifest.get('releaseName', ''),
         'notes': manifest.get('notes', []),
         'patch': manifest.get('patch'),
         'full': manifest.get('full'),
         'source': source,
         'stale': stale,
+        'reason': reason,
+        'mirrors': _public_mirrors(diagnostics),
+        'autoDownload': settings['autoDownload'],
+        'autoCheckMinutes': settings['autoCheckMinutes'],
         'checkedAt': now,
         'manifest': manifest,
     }

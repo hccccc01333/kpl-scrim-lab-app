@@ -11,8 +11,11 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import update_api  # noqa: E402
 import update_client  # noqa: E402
 import updater  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 def write(path: Path, text: str) -> None:
@@ -247,6 +250,166 @@ class CheckTests(unittest.TestCase):
             self.assertTrue(result['updateAvailable'])
             self.assertEqual(result['latestVersion'], '1.0.2')
             self.assertTrue((root / 'data' / 'update_cache.json').is_file())
+
+
+def manifest_json(version: str) -> str:
+    return json.dumps({
+        'version': version,
+        'notes': [version],
+        'patch': {
+            'url': f'patch-{version}.zip',
+            'files': [{'path': 'server.py', 'sha256': 'a' * 64, 'size': 1}],
+        },
+    }, ensure_ascii=False)
+
+
+class MirrorTests(unittest.TestCase):
+    def test_prefers_newest_mirror(self):
+        """Gitee 停在旧版、GitHub 已发新版时，不能拿先返回的旧清单当结果。"""
+        payloads = {
+            'https://old.example/update.json': manifest_json('1.0.1'),
+            'https://new.example/update.json': manifest_json('1.0.3'),
+        }
+
+        def fake_read(url, limit, timeout, allow_http=None):
+            if url == 'https://dead.example/update.json':
+                raise OSError('connection reset')
+            return payloads[url].encode('utf-8')
+
+        with mock.patch.object(update_client, '_read_url', side_effect=fake_read):
+            manifest, source = update_client.fetch_manifest(
+                list(payloads) + ['https://dead.example/update.json'], timeout=0.1)
+        self.assertEqual(manifest['version'], '1.0.3')
+        self.assertEqual(source, 'https://new.example/update.json')
+
+    def test_all_mirrors_fail_reports_every_url(self):
+        with mock.patch.object(update_client, '_read_url',
+                               side_effect=OSError('boom')):
+            with self.assertRaises(update_client.UpdateError) as caught:
+                update_client.fetch_manifest(['https://a.example', 'https://b.example'])
+        message = str(caught.exception)
+        self.assertIn('https://a.example', message)
+        self.assertIn('https://b.example', message)
+
+    def test_details_carry_per_mirror_status(self):
+        payloads = {'https://ok.example/update.json': manifest_json('1.0.2')}
+
+        def fake_read(url, limit, timeout, allow_http=None):
+            if url not in payloads:
+                raise OSError('blocked')
+            return payloads[url].encode('utf-8')
+
+        details = []
+        with mock.patch.object(update_client, '_read_url', side_effect=fake_read):
+            update_client.fetch_manifest(
+                ['https://ok.example/update.json', 'https://bad.example/update.json'],
+                timeout=0.1, details=details)
+        self.assertEqual(len(details), 2)
+        self.assertTrue(details[0]['ok'])
+        self.assertFalse(details[1]['ok'])
+        self.assertIn('blocked', details[1]['error'])
+
+
+class SettingsTests(unittest.TestCase):
+    def test_defaults(self):
+        with tempfile.TemporaryDirectory() as temp:
+            settings = update_client.load_settings(Path(temp))
+        self.assertTrue(settings['autoDownload'])
+        self.assertEqual(settings['autoCheckMinutes'], 30)
+
+    def test_config_overrides_and_clamps(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            write(root / 'update_config.json',
+                  json.dumps({'autoDownload': False, 'autoCheckMinutes': 1}))
+            settings = update_client.load_settings(root, {})
+        self.assertFalse(settings['autoDownload'])
+        self.assertEqual(settings['autoCheckMinutes'], 5)
+
+    def test_env_can_disable_auto_download(self):
+        with tempfile.TemporaryDirectory() as temp:
+            settings = update_client.load_settings(
+                Path(temp), {'UPDATE_AUTO_DOWNLOAD': '0'})
+        self.assertFalse(settings['autoDownload'])
+
+    def test_release_fields_survive_normalization(self):
+        manifest = update_client.normalize_manifest({
+            'version': '1.0.2',
+            'releaseDate': '2026-11-13',
+            'releaseName': '测试版',
+            'patch': {
+                'url': 'patch.zip',
+                'files': [{'path': 'version.py', 'sha256': 'a' * 64, 'size': 1}],
+            },
+        })
+        self.assertEqual(manifest['releaseDate'], '2026-11-13')
+        self.assertEqual(manifest['releaseName'], '测试版')
+
+
+class UpdateApiTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name) / 'app'
+        write(self.root / 'version.py', "VERSION = '1.0.0'\n")
+        self.app = FastAPI()
+        self.app.include_router(update_api.create_update_router(self.root, '1.0.0'))
+        self.client = TestClient(self.app)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def stage(self, version='1.0.1'):
+        archive = make_patch(Path(self.temp.name), version, {
+            'version.py': f"VERSION = '{version}'\n",
+            'server.py': 'new server\n',
+        })
+        return updater.stage_patch(archive, self.root)
+
+    def test_prepare_reuses_staged_patch_without_network(self):
+        self.stage()
+        with mock.patch.object(update_client, 'check_for_update',
+                               side_effect=AssertionError('不应再查网络')):
+            response = self.client.post('/api/update/prepare',
+                                        json={'version': '1.0.1'})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()['pending']['version'], '1.0.1')
+
+    def test_prepare_does_not_reuse_mismatched_pending(self):
+        self.stage()
+        with mock.patch.object(update_client, 'check_for_update',
+                               side_effect=RuntimeError('network down')) as check:
+            response = self.client.post('/api/update/prepare',
+                                        json={'version': '1.0.2'})
+        self.assertEqual(response.status_code, 400, response.text)
+        check.assert_called_once()
+        self.assertIn('network down', response.json()['detail'])
+
+    def test_apply_reuses_staged_patch_and_requests_restart(self):
+        self.stage()
+        with mock.patch.object(updater, 'spawn_restart') as spawn, \
+                mock.patch.object(update_api, '_schedule_exit') as schedule_exit:
+            response = self.client.post('/api/update/apply',
+                                        json={'version': '1.0.1'})
+        self.assertEqual(response.status_code, 200, response.text)
+        spawn.assert_called_once()
+        schedule_exit.assert_called_once()
+
+    def test_check_hides_broken_pending(self):
+        pending = self.stage()
+        staged = self.root / pending['stagedDir']
+        for item in staged.joinpath('payload').rglob('*'):
+            if item.is_file():
+                item.unlink()
+        result = {
+            'ok': True, 'currentVersion': '1.0.0', 'latestVersion': '1.0.0',
+            'updateAvailable': False, 'blocked': False, 'notes': [],
+            'source': 'https://example.com/update.json', 'stale': False,
+        }
+        with mock.patch.object(update_client, 'check_for_update',
+                               return_value=result):
+            response = self.client.get('/api/update/check?force=1')
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIsNone(response.json()['pending'])
 
 
 if __name__ == '__main__':

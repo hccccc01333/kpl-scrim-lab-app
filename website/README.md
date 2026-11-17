@@ -4,8 +4,12 @@
 
 ```
 website/
+├── github.json     # 构建时读取的 GitHub 仓库信息（scripts/sync_github.py 刷新）
 ├── src/            # 手写模板（{{TOKEN}} 占位）
-│   ├── index.html      # 首页：首屏 / 适用范围 / 能力台账 / 工作流 / 数据主权 / 开发者 / 最近更新 / 下载 CTA
+│   ├── index.html      # 首页：封面 / 示例简报 / 往下看 / 更新 / 顾虑 / 下载 CTA
+│   ├── product.html    # 产品：四步链路 + 输出
+│   ├── privacy.html    # 数据主权：目录、备份与搬迁
+│   ├── opensource.html # 源码：命令、GitHub、许可与参与
 │   ├── download.html   # 下载 + 版本发布卡 + 赞助
 │   ├── guide.html      # 安装与升级 + 常见问题
 │   ├── changelog.html  # 更新日志（渲染自 CHANGELOG.md）
@@ -14,6 +18,8 @@ website/
 │   └── assets/         # 自托管字体（Manrope + Noto Serif SC 子集）、产品截图（img/）
 └── dist/           # 构建产物（git 忽略）
 ```
+
+导航是六页：首页 / 产品 / 数据主权 / 源码 / 安装说明 / 更新日志，下载作为常驻 CTA。
 
 ## 视觉系统
 
@@ -60,8 +66,20 @@ python scripts/build_website.py --include-unreleased
 | `{{RELEASE_PAGE_URL}}` | Gitee 当前版本的 Release 页面（校验和 / 全部文件） |
 | `{{SITE_URL}}` | 站点根地址，默认 GitHub Pages；搬 CloudBase 后用 `--site-url` 覆盖 canonical / sitemap |
 | `{{ASSET_VERSION}}` | `style.css` 与 `assets/` 的内容指纹，用于绕开 Pages 的 10 分钟资源缓存 |
+| `{{GH_USER}}` `{{GH_STARS}}` `{{GH_COUNT_TEXT}}` `{{GITHUB_META}}` | `website/github.json`（`python scripts/sync_github.py` 刷新；构建只读缓存，不联网，也不产生运行时请求） |
+| `{{FAQ_JSONLD}}` | 构建时从安装页 FAQ 的 `details/summary` 自动抽取成 `FAQPage` 结构化数据 |
+| `{{CHANGELOG_SERIES}}` | 由 `CHANGELOG.md` 的版本号分组（1.6 / 1.5 …），供更新日志左侧索引 |
+| `{{GITEE_URL}}` | Gitee 镜像仓库 |
 
 改版本号、写 CHANGELOG、换截图，三个动作就能发一版官网，不需要动 HTML。
+
+构建还会额外产出 `dist/feed.xml`（更新日志 RSS，47 个已发布版本）。渲染完成后会检查是否有残留的 `{{TOKEN}}`，
+漏掉占位符会直接让构建失败，而不是上线后被用户看见。
+
+## 打印
+
+`style.css` 末尾有一组 `@media print` 规则：打印时去掉导航、目录、悬浮按钮、跑马灯与 CTA，把深色区块转成白底描边框，
+FAQ 由 `beforeprint` 自动展开，文档里的外链会补上 URL。安装说明页可以直接打印给教练组。
 
 ## 字体
 

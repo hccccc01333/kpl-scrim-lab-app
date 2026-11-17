@@ -19,7 +19,7 @@ ROUTES = [
     ("versions", "#versions"), ("economy", "#economy"),
     ("tempo", "#tempo"), ("teams", "#teams"), ("opponents", "#opponents"),
     ("h2h", "#h2h"), ("coach", "#coach"), ("players", "#players"),
-    ("identity", "#identity"), ("compare", "#compare"), ("bp", "#bp"),
+    ("identity", "#identity"), ("bp", "#bp"),
     ("heroes", "#heroes"), ("combos", "#combos"), ("setup", "#setup"),
     ("pending", "#pending"), ("plan", "#plan"), ("effect", "#effect"),
     ("reports", "#reports"), ("sources", "#sources"),

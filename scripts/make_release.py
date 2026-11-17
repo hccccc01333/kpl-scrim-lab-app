@@ -46,6 +46,10 @@ CORE_DEPS = [
     'numpy>=1.26,<3',
     'openpyxl>=3.1,<4',
     'pycryptodome>=3.20,<4',
+    # KPL 赛事 BP / 巅峰千强抓取（kpl_bp.py、peak_crawl.py 在模块级 import requests）
+    'requests>=2.31,<3',
+    # FastAPI TestClient 与部署自检用；运行时接口也复用同一 HTTP 客户端栈
+    'httpx>=0.27,<1',
     # 主 OCR 是日常识别的必需组件：随包内置，装完即用，不让用户再点安装。
     # 代价是完整包约 +80–100 MB；可选增强（Mimo 模型、ffmpeg）仍按需一键装。
     'rapidocr-onnxruntime>=1.4.4,<1.5',
@@ -58,6 +62,10 @@ DOCS_SHIP = [
     'ocr_engine.md',
     'camp_replay.md',
 ]
+# web 下只有采集教学页与它引用的图片是运行时资源；web/refsite 是第三方
+# 参考站副本（约 100 MB），不属于本产品，永远不要打进安装包。
+WEB_SHIP_FILES = ['web/collection-guide.html']
+WEB_SHIP_DIRS = ['web/capture-guide']
 # server.py 运行期会把 tools/ 插进 sys.path 再 import 营地同步模块；
 # 这几个文件必须随包发布，否则安装版一进采集就 ModuleNotFoundError。
 TOOLS_SHIP = [
@@ -194,11 +202,13 @@ SOP = """KPL 赛训数据工具 · 部署说明
 AUTH_NOTE = """授权说明
 ========
 
-本软件按仓库 LICENSE（PolyForm Noncommercial License 1.0.0）发布。
-非商业用途可直接使用；商业用途（含职业俱乐部、付费服务）需另行取得作者授权。
+本软件按仓库 LICENSE（GNU AGPL-3.0-or-later）发布。
+个人、俱乐部与训练机构可免费使用；把修改版作为网络服务提供时，需按同协议公开修改部分。
+闭源集成 / OEM / 贴牌需另行取得商业授权。
 
+协议与商业授权说明：
+https://github.com/hccccc01333/kpl-scrim-lab-app/blob/main/LICENSING.md
 联系：https://github.com/hccccc01333
-https://github.com/hccccc01333
 """
 
 
@@ -263,6 +273,15 @@ def _junk_file(name: str) -> bool:
             or '~RF' in name)
 
 
+def _scratch_file(name: str) -> bool:
+    """本机调试留下的下划线文件（``_pv_*.html``、``_inspect.py`` 之类）也不发。
+
+    以前这类文件只过滤了根目录的 ``_*.py``；``v3/public`` 是整目录快照，
+    截图脚本生成的 ``_pv_*.html`` 会跟着进安装包（每个 40 KB 上下）。
+    """
+    return name.startswith('_')
+
+
 # 只留在源码里、不随正式包发布的文件（相对仓库根）。
 # godmode.js 是页面「自定义」编辑器：右下角常驻按钮，能让教练改块顺序/宽度/
 # 显隐/块内文字（只写 localStorage）。产品形态还没定，且和更新提示卡片抢右下角，
@@ -279,7 +298,20 @@ def ship_files() -> list[str]:
         if path.name.startswith(('_', '.')) or _junk_file(path.name):
             continue
         files.append(path.name)
-    for folder in ('web', 'resources'):
+    resources = ROOT / 'resources'
+    if resources.is_dir():
+        for path in sorted(resources.rglob('*')):
+            if not path.is_file():
+                continue
+            if '__pycache__' in path.parts or path.suffix in ('.pyc', '.map'):
+                continue
+            if _junk_file(path.name):
+                continue
+            files.append(path.relative_to(ROOT).as_posix())
+    for name in WEB_SHIP_FILES:
+        if (ROOT / name).is_file():
+            files.append(name)
+    for folder in WEB_SHIP_DIRS:
         base = ROOT / folder
         if not base.is_dir():
             continue
@@ -304,7 +336,7 @@ def ship_files() -> list[str]:
                     continue
                 if '__pycache__' in path.parts or path.suffix in ('.pyc', '.map'):
                     continue
-                if _junk_file(path.name):
+                if _junk_file(path.name) or _scratch_file(path.name):
                     continue
                 files.append(path.relative_to(ROOT).as_posix())
     for name in DOCS_SHIP:
@@ -596,6 +628,9 @@ def smoke_test(build: Path, runtime: Path | None, enabled: bool = True) -> None:
 def zip_dir(build: Path, out: Path, root_name: str) -> None:
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
         for path in sorted(build.rglob('*')):
+            # 冒烟测试会 import server，留下 __pycache__；安装包不带字节码缓存。
+            if '__pycache__' in path.parts or path.suffix == '.pyc':
+                continue
             arcname = (Path(root_name) / path.relative_to(build)).as_posix()
             if path.is_dir():
                 info = zipfile.ZipInfo(arcname.rstrip('/') + '/')

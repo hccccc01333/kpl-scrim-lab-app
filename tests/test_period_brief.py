@@ -569,26 +569,24 @@ def test_api_empty_period_state(tmp_path):
     assert payload['fallback_hint'] is None or payload['fallback_hint']['games'] >= 1
 
 
-def test_dev_serve_mounts_briefing_router():
-    """独立验收服务（v3/serve.py --port 8771）也必须挂 /api/briefing。
+def test_single_app_mounts_briefing_router():
+    """首页简报挂在唯一的那套 app 上（server.py），只为它挂一次。
 
-    只挂 V3 分析路由时，首页简报会拿到 404，退化成「简报服务暂时不可用」。
-    正式入口 server.py 已有挂载，这里守住容易被漏掉的 dev app。
+    以前 v3/serve.py 有独立的 FastAPI app（只有分析路由、没有采集接口），
+    简报得在那儿再挂一遍；两套并成一套后，旁支 app 已删除。
     """
     import ast
     from pathlib import Path
-    source = (Path(__file__).resolve().parents[1] / 'v3' / 'serve.py').read_text(encoding='utf-8')
-    tree = ast.parse(source)
-    mounted = any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == 'include_router'
-        and any(isinstance(arg, ast.Call)
-                and getattr(arg.func, 'id', '') == 'create_briefing_router'
-                for arg in node.args)
-        for node in ast.walk(tree)
-    )
-    assert mounted, 'v3/serve.py 的独立 app 没有挂 create_briefing_router'
+    root = Path(__file__).resolve().parents[1]
+    server = (root / 'server.py').read_text(encoding='utf-8')
+    serve = (root / 'v3' / 'serve.py').read_text(encoding='utf-8')
+    assert 'create_briefing_router' in server, 'server.py 没有挂 /api/briefing'
+    tree = ast.parse(serve)
+    own_app = [
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and getattr(node.func, 'id', '') == 'FastAPI'
+    ]
+    assert not own_app, 'v3/serve.py 又自建了 app：分析接口应挂在 server.py 的同一套 app 上'
 
 
 def test_scrim_metrics_fixed_six_and_dynamic_two(tmp_path):

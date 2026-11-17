@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from time import monotonic
 
 ROOT = Path(__file__).resolve().parent
 ICON_DIR = ROOT / 'resources' / 'icons'
@@ -100,20 +101,65 @@ def hero_icon(hero_id):
     return f'/catalog/icons/hero-{hero_id}.png' if path.is_file() else None
 
 
+def _icon_dir_stamp():
+    try:
+        return ICON_DIR.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+# 静态资源联合指纹（catalog.json / hero-lanes.js / 头像目录）。三者都是随程序
+# 发布的文件，不跟对局变化，所以最多每 _STATIC_TTL 秒校验一次；指纹一变就丢掉
+# 条目缓存，最多 2 秒后生效——和 v3 的对局包指纹同样的新鲜度口径。
+#
+# 为什么必须这样做：一次 hero_entry 要 stat 三个文件，本机一次 stat 约 90µs
+# （资源盘 + 杀软过滤驱动）。一页 BP 名单是上万条 hero_entry，光这三行校验
+# 就占 1–2 秒：剖析里 /api/bp 的 2.7 秒有 2.0 秒是 nt.stat。
+_STATIC_TTL = 2.0
+_STATIC_STAMP = {'at': float('-inf'), 'value': None}
+_ENTRY_CACHE = {}
+_ENTRY_CACHE_MAX = 8192
+
+
+def _static_stamp():
+    now = monotonic()
+    if now - _STATIC_STAMP['at'] < _STATIC_TTL:
+        return _STATIC_STAMP['value']
+    value = (_stamp(CATALOG_PATH), _stamp(LANES_JS), _icon_dir_stamp())
+    if value != _STATIC_STAMP['value']:
+        _ENTRY_CACHE.clear()
+    _STATIC_STAMP.update(at=now, value=value)
+    return value
+
+
 def hero_entry(name, hero_id=None, icon=None, lane=None):
-    """统一条目：{name, id, icon, lane}。"""
+    """统一条目：{name, id, icon, lane}。
+
+    结果按入参记忆：同样的（名字, id, 远程图, 分路）在 2 秒窗口内只解析一次，
+    调用方拿到的是一份浅拷贝，改自己的条目不会污染缓存。
+    """
     name = str(name or '').strip()
     if not name:
         return None
+    key = (name, str(hero_id) if hero_id not in (None, '') else None,
+           icon or None, lane or None)
+    _static_stamp()
+    cached = _ENTRY_CACHE.get(key)
+    if cached is not None:
+        return dict(cached)
     meta = catalog_meta().get(name) or {}
-    hid = str(hero_id) if hero_id not in (None, '') else meta.get('id')
+    hid = key[1] or meta.get('id')
     # 本地头像优先，营地远程 heroIcon 只在本地图标库缺该英雄时兜底。
-    return {
+    entry = {
         'name': name,
         'id': hid,
         'icon': hero_icon(hid) or meta.get('icon') or icon,
         'lane': lane or static_lanes().get(name),
     }
+    if len(_ENTRY_CACHE) >= _ENTRY_CACHE_MAX:
+        _ENTRY_CACHE.clear()
+    _ENTRY_CACHE[key] = entry
+    return dict(entry)
 
 
 def events_from_order(order, *, rule='scrim-global-20'):

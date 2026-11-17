@@ -5,7 +5,7 @@ import { normalizedCamp, sampleNear } from './match-recap-metrics.js';
    视觉口径：深墨蓝底 + 金（本队）· 青（对手）+ 等宽数字 + 体素方块。 */
 
 const MAP = 60;          // 地图坐标半径（营地回放为 [-57, 57]）
-const GRID = 16;         // 热区网格
+const GRID = 20;         // 热区网格（每格 6 个坐标单位）
 const DEEP = 0.66;       // 深区阈值（推进进度）
 const HALF = 0.5;        // 半区阈值（越过中线即入侵）
 const STILL_SECONDS = 12; // 连续静止超过该秒数视为死亡/暂停，样本剔除（与全景页一致）
@@ -21,6 +21,22 @@ const LANE_CORRIDOR = 15;     // 到该路折线的距离上限（塔位内缩�
 const LANE_CLUSTER = 20;      // 一起吃线的彼此距离上限
 const LANE_BASE = 34;         // 己方基地半径内不算（出生点压在边路延长线上）
 const LANE_HOLD = 4;          // 同处最短时长
+/* 热区画布：每格 HEAT_PX 像素（内部渲染分辨率，CSS 再缩放到卡片宽度） */
+const HEAT_PX = 24;
+/* 四个红蓝 BUFF 的点位（±60 坐标）：不是拍的，按回放 killbuff 事件
+   （dtID 10=蓝 / 11=红、dtCamp 归属）的击杀时刻取击杀者坐标中位数反推——
+   蓝方蓝 (−30,0)、蓝方红 (0,−33)、红方蓝 (30,0)、红方红 (0,33)，镜像对得上。
+   营地回放坐标没有官方图例，这四个点就是「教练能认出来的地标」。 */
+const MAP_BUFFS = [
+  { x: -30, y: 0, kind: 'blue', owner: 'blue' },
+  { x: 0, y: -33, kind: 'red', owner: 'blue' },
+  { x: 30, y: 0, kind: 'blue', owner: 'red' },
+  { x: 0, y: 33, kind: 'red', owner: 'red' },
+];
+const MAP_BASES = [
+  { x: -52, y: -54, owner: 'blue' },
+  { x: 52, y: 54, owner: 'red' },
+];
 /* 三条路的折线（营地坐标 ±57，塔位内缩在各边 42 处）：
    对抗路＝左侧竖段接上边横段，发育路＝下边横段接右侧竖段，中路＝对角线。 */
 const LANE_PATH = {
@@ -328,6 +344,8 @@ export function createMatchDeep(h) {
   let heatState = null;
   let heatBound = false;
   let heatTimer = null;
+  let heatSpeed = 1;      // 播放倍速：1× / 2× / 4×（循环切换）
+  const HEAT_SPEEDS = [1, 2, 4];
   let battleState = null;
   let battleBound = false;
   const HEAT_WINDOW = 90; // 热区时间窗（秒）
@@ -1047,7 +1065,7 @@ export function createMatchDeep(h) {
   }
 
   /* ── 热区：时间窗 + 十人 / 对位两视图（canvas 重绘） ─────────────── */
-  function heat(positions, players, ownCamp, duration) {
+  function heat(positions, players, ownCamp, duration, replay) {
     if (!positions || !positions.players?.length) return '';
     const step = positions.step || 2;
     const byKey = new Map(players.map((p) => [`${p.camp}-${p.slot}`, p]));
@@ -1066,7 +1084,7 @@ export function createMatchDeep(h) {
         const depth = forward > 0 ? progress(x, y) : 1 - progress(x, y);
         enemy[i] = depth > HALF ? 1 : 0;
       }
-      return { camp: src.camp, slot: src.slot, points: src.points, cells, enemy, info };
+      return { camp: src.camp, slot: src.slot, points: src.points, cells, enemy, mask, info };
     });
     const total = duration || (list[0] ? list[0].points.length * step : 0);
     heatState = { step, duration: total, list };
@@ -1088,7 +1106,7 @@ export function createMatchDeep(h) {
       if (!own && !foe) return '';
       const one = (p, kind) => (p ? `<div class="hl-side ${kind}">
           <div class="hl-head"><i class="${kind}"></i><b>${esc(p.info.label || p.info.hero || '—')}</b><span>${esc(p.info.hero || '')}</span></div>
-          ${canvas(p, 14)}
+          ${canvas(p, HEAT_PX)}
           <div class="hl-meta"><b data-heat-pct="${p.camp}-${p.slot}">—</b> 在对侧半区</div>
         </div>` : '<div class="hl-side empty">没有对位数据</div>');
       return `<article class="md-heat-lane" data-lane="${lane}"${lane === heatLane ? '' : ' hidden'}>
@@ -1096,10 +1114,31 @@ export function createMatchDeep(h) {
       </article>`;
     }).join('');
 
+    /* 时间轴上的事件刻度：团战 / 掉点。教练最常问的是「这次团战之前他们怎么走的」，
+       所以给可点的刻度，点一下就跳到那一刻，不用拖滑块估位置。 */
+    const marks = [];
+    for (const fight of (replay?.fights || [])) {
+      if (num(fight.t)) marks.push({ t: fight.t, kind: 'fight', label: `团战 ${time(fight.t)}` });
+    }
+    for (const death of (replay?.deaths || [])) {
+      if (num(death.t)) marks.push({ t: death.t, kind: 'death', label: `掉点 ${time(death.t)}` });
+    }
+    marks.sort((a, b) => a.t - b.t);
+    const markHtml = marks.slice(0, 60).map((mark) => {
+      const left = clamp(mark.t / Math.max(1, total) * 100, 0, 100).toFixed(2);
+      return `<button type="button" class="md-heat-mark is-${mark.kind}" style="left:${left}%"
+        data-heat-seek="${Math.round(mark.t)}" title="${esc(mark.label)}（点击跳到这一刻）"
+        aria-label="${esc(mark.label)}"></button>`;
+    }).join('');
+
     return `<div class="md-heatwrap" data-md-heat>
       <div class="md-panel-bar">
         <button type="button" class="md-heat-play" data-heat-play aria-pressed="false">播放</button>
-        <input type="range" class="md-heat-range" data-heat-range min="0" max="${Math.round(total)}" step="${step}" value="${Math.round(total)}" aria-label="热区时间轴">
+        <button type="button" class="md-heat-speed" data-heat-speed title="播放速度（快捷键 S 切换）">${heatSpeed}×</button>
+        <div class="md-heat-track">
+          <input type="range" class="md-heat-range" data-heat-range min="0" max="${Math.round(total)}" step="${step}" value="${Math.round(total)}" aria-label="热区时间轴">
+          <div class="md-heat-marks" aria-label="事件刻度">${markHtml}</div>
+        </div>
         <span class="md-heat-clock" data-heat-clock>—</span>
         <label class="md-heat-pick"><span>分路</span>
           <select data-heat-lane aria-label="选择分路">
@@ -1110,9 +1149,18 @@ export function createMatchDeep(h) {
       <div class="md-heat-phases" data-heat-phases>
         ${phaseLabel.map((label, i) =>
           `<button type="button" class="md-heat-phase" data-heat-phase="${[240, 600, Math.round(total)][i]}">${label}</button>`).join('')}
+        <span class="md-heat-keys">空格 播放/暂停 · ← → 前后 10 秒 · 1 / 2 / 3 跳分期 · S 速度</span>
       </div>
       <div class="md-heats md-heats-lane" data-heat-lanes>${laneCards}</div>
-      <p class="md-panel-note">窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久。分期按赛训组口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
+      <div class="md-heat-legend">
+        <span><i class="sw is-own"></i>本队</span>
+        <span><i class="sw is-foe"></i>对手</span>
+        <span><i class="sw is-buff"></i>红 / 蓝＝野区 BUFF</span>
+        <span><i class="sw is-dot"></i>末端圆点＝当前时刻</span>
+        <span><i class="sw is-ring"></i>描边格＝在对侧半区</span>
+        <span><i class="sw is-mark fight"></i>团战刻度　<i class="sw is-mark death"></i>掉点刻度</span>
+      </div>
+      <p class="md-panel-note">底图：三路（对抗路 / 中路 / 发育路）、河道、双方基地与四个红蓝 BUFF 点位（BUFF 位置由回放 killbuff 事件的击杀时刻坐标反推，与本局坐标同一套 ±60）。窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久，细线是他这 90 秒的走位。分期按赛训组口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
     </div>`;
   }
 
@@ -1121,6 +1169,7 @@ export function createMatchDeep(h) {
     let max = 1;
     for (const p of list) {
       const counts = new Uint16Array(GRID * GRID);
+      const enemyCells = new Uint8Array(GRID * GRID);
       const end = Math.min(i1, p.cells.length - 1);
       let enemy = 0, total = 0;
       for (let i = i0; i <= end; i++) {
@@ -1129,9 +1178,9 @@ export function createMatchDeep(h) {
         counts[cell] += 1;
         if (counts[cell] > max) max = counts[cell];
         total += 1;
-        if (p.enemy[i]) enemy += 1;
+        if (p.enemy[i]) { enemy += 1; enemyCells[cell] = 1; }
       }
-      out.set(`${p.camp}-${p.slot}`, { counts, enemy, total });
+      out.set(`${p.camp}-${p.slot}`, { counts, enemyCells, enemy, total });
     }
     return { out, max };
   }
@@ -1157,7 +1206,7 @@ export function createMatchDeep(h) {
     return heatSprites[side === 'foe' ? 'foe' : 'own'];
   }
 
-  function drawHeat(canvas, counts, max, side) {
+  function drawHeat(canvas, data, max, side, player, i0, i1) {
     const ctx = canvas.getContext && canvas.getContext('2d');
     if (!ctx) return;
     const size = canvas.width;
@@ -1165,33 +1214,151 @@ export function createMatchDeep(h) {
     const rgb = side === 'foe' ? '94, 201, 190' : '216, 178, 106';
     ctx.clearRect(0, 0, size, size);
 
-    /* 底图：细网格 + 河道斜带（河道是 x + y ≈ 0 那条对角线，也是中线方向） */
-    ctx.save();
-    ctx.strokeStyle = 'rgba(128, 152, 162, .22)';
-    ctx.lineWidth = 1;
-    for (let k = 1; k < 4; k++) {
-      const p = Math.round((k / 4) * size) + 0.5;
-      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, size); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, p); ctx.lineTo(size, p); ctx.stroke();
-    }
-    ctx.strokeStyle = 'rgba(38, 74, 96, .30)';
-    ctx.lineWidth = size * 0.075;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(size, size); ctx.stroke();
-    ctx.restore();
+    drawHeatMap(ctx, size);
+    drawHeatCells(ctx, data, max, rgb, size, cell);
+    drawHeatPath(ctx, player, rgb, size, cell, i0, i1);
+  }
 
-    /* 离散分格：每格按停留时长分 5 档填色。
-       原来是径向渐变叠加，2 秒一个采样点画出来是一团糊光斑，看不出走到哪。 */
+  /* 地图底图：blur 之前先有「这是哪」，否则热区只是浮在灰底上的方块。
+     坐标与本局位置同一套 ±60（x 向右、y 向上），绘制时 y 翻成屏幕坐标。
+     红蓝 BUFF 的位置不是拍的：按回放 killbuff（dtID 10=蓝 / 11=红、dtCamp 归属）
+     的击杀时刻取击杀者坐标中位数，四个点分别是蓝方蓝 (−30,0)、蓝方红 (0,−33)、
+     红方蓝 (30,0)、红方红 (0,33)，中心和镜像都对得上。 */
+  function drawHeatMap(ctx, size) {
+    const X = (v) => (v + MAP) / (MAP * 2) * size;
+    const Y = (v) => size - (v + MAP) / (MAP * 2) * size;
+    const team = { blue: '91, 143, 196', red: '206, 106, 106' };
+    ctx.save();
+    /* 两侧半区底色：蓝方在下半（左下到右上），红方在上半——一眼能分「哪边是我们的」 */
+    ctx.fillStyle = 'rgba(91, 143, 196, .07)';
+    ctx.beginPath();
+    ctx.moveTo(0, size); ctx.lineTo(size, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(206, 106, 106, .06)';
+    ctx.beginPath();
+    ctx.moveTo(size, 0); ctx.lineTo(size, size); ctx.lineTo(0, size); ctx.closePath(); ctx.fill();
+    /* 河道：与中路垂直的那条对角线 */
+    ctx.strokeStyle = 'rgba(96, 150, 176, .16)';
+    ctx.lineWidth = size * 0.062;
+    ctx.beginPath();
+    ctx.moveTo(X(-MAP), Y(MAP));
+    ctx.lineTo(X(MAP), Y(-MAP));
+    ctx.stroke();
+    /* 三路：对抗路＝左竖+上横，发育路＝下横+右竖，中路＝对角线（与并线口径同一组折线） */
+    ctx.strokeStyle = 'rgba(226, 236, 241, .30)';
+    ctx.lineWidth = Math.max(1.6, size * 0.009);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const path of Object.values(LANE_PATH)) {
+      ctx.beginPath();
+      path.forEach(([x, y], index) => (index ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y))));
+      ctx.stroke();
+    }
+    /* 基地：圆＋「基地」小字，蓝左下、红右上 */
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `600 ${Math.max(7, size * 0.034)}px Manrope, "Noto Sans SC", sans-serif`;
+    for (const base of MAP_BASES) {
+      const cx = X(base.x), cy = Y(base.y), r = size * 0.045;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${team[base.owner]}, .18)`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${team[base.owner]}, .55)`;
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      ctx.fillStyle = `rgba(${team[base.owner]}, .95)`;
+      ctx.fillText('基地', cx, cy + 0.5);
+    }
+    /* 红蓝 BUFF：填充色＝BUFF 种类，外圈＝归属方（蓝圈是蓝方野区、红圈是红方野区） */
+    const r = Math.max(3.4, size * 0.021);
+    ctx.font = `700 ${Math.max(7, size * 0.034)}px Manrope, "Noto Sans SC", sans-serif`;
+    for (const buff of MAP_BUFFS) {
+      const cx = X(buff.x), cy = Y(buff.y);
+      const color = buff.kind === 'red' ? '216, 96, 96' : '96, 148, 214';
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + Math.max(1.2, size * 0.007), 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${team[buff.owner]}, .85)`;
+      ctx.lineWidth = Math.max(1.2, size * 0.006);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${color}, .92)`;
+      ctx.fill();
+      ctx.fillStyle = 'rgba(250, 252, 253, .96)';
+      ctx.fillText(buff.kind === 'red' ? '红' : '蓝', cx, cy + 0.5);
+    }
+    ctx.restore();
+  }
+
+  /* 停留热区：每格按停留时长分 5 档填色；对侧半区的格子加描边，
+     这样「压过去多远、在对面待了多久」一眼能分出来。 */
+  function drawHeatCells(ctx, data, max, rgb, size, cell) {
     const steps = 5;
-    for (let i = 0; i < counts.length; i++) {
-      const n = counts[i];
+    for (let i = 0; i < data.counts.length; i++) {
+      const n = data.counts[i];
       if (!n) continue;
       const level = clamp(Math.ceil((n / max) * steps), 1, steps);
-      const alpha = 0.26 + (level / steps) * 0.66;
+      const alpha = 0.2 + (level / steps) * 0.6;
       const gx = i % GRID;
       const gy = Math.floor(i / GRID);
+      const px = gx * cell + 0.5, py = (GRID - 1 - gy) * cell + 0.5;
       ctx.fillStyle = `rgba(${rgb},${alpha.toFixed(2)})`;
-      ctx.fillRect(gx * cell + 0.5, (GRID - 1 - gy) * cell + 0.5, cell - 1, cell - 1);
+      ctx.fillRect(px, py, cell - 1, cell - 1);
+      if (data.enemyCells && data.enemyCells[i]) {
+        ctx.strokeStyle = `rgba(${rgb},.95)`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px + 0.25, py + 0.25, cell - 1.5, cell - 1.5);
+      }
     }
+  }
+
+  /* 走位：把窗口里的采样点连成一条淡线，末端画当前所在位置。
+     格子只说「待多久」，线才说「怎么走的、从哪绕的」。 */
+  function drawHeatPath(ctx, player, rgb, size, cell, i0, i1) {
+    if (!player || !player.points) return;
+    const end = Math.min(i1, player.points.length - 1);
+    const sx = (v) => (v + MAP) / (MAP * 2) * size;
+    const sy = (v) => size - (v + MAP) / (MAP * 2) * size;
+    let started = false;
+    ctx.save();
+    ctx.strokeStyle = `rgba(${rgb},.72)`;
+    ctx.lineWidth = Math.max(1, cell * 0.16);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let head = null;
+    for (let i = Math.max(0, i0); i <= end; i++) {
+      const point = player.points[i];
+      if (!point || !player.mask || !player.mask[i]) { started = false; continue; }
+      const [x, y] = point;
+      if (x === 0 && y === 0) { started = false; continue; }
+      if (!started) { ctx.moveTo(sx(x), sy(y)); started = true; } else ctx.lineTo(sx(x), sy(y));
+      head = point;
+    }
+    ctx.stroke();
+    /* 末端：当前时刻的位置，套一圈深色描边压住底下的格子 */
+    const last = player.points[end];
+    if (last && (!player.mask || player.mask[end]) && !(last[0] === 0 && last[1] === 0)) head = last;
+    if (head) {
+      ctx.beginPath();
+      ctx.arc(sx(head[0]), sy(head[1]), Math.max(2.5, cell * 0.3), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${rgb},1)`;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(8, 18, 26, .85)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /* 时间轴读数：值缺失 / 非法时退回窗口末尾。
+     以前这里直接送 Number(slider.value)，滑块值一旦是空串就变成 0，
+     画面停在「0:00–0:00」——只画出出生点那一格（2026-11-17 修）。 */
+  function heatAt(box) {
+    const slider = box && box.querySelector('[data-heat-range]');
+    const value = Number(slider && slider.value);
+    if (Number.isFinite(value) && value >= 0) return value;
+    return heatState ? heatState.duration : 0;
   }
 
   function paintHeat(t) {
@@ -1199,7 +1366,7 @@ export function createMatchDeep(h) {
     const box = document.querySelector('[data-md-heat]');
     if (!box) return;
     const { step, duration, list } = heatState;
-    const at = clamp(t, 0, duration);
+    const at = clamp(Number.isFinite(t) ? t : duration, 0, duration);
     const slider = box.querySelector('[data-heat-range]');
     if (slider) slider.value = String(at);
     const from = Math.max(0, at - HEAT_WINDOW);
@@ -1210,7 +1377,8 @@ export function createMatchDeep(h) {
     const { out, max } = heatCounts(list, i0, i1);
     box.querySelectorAll('canvas[data-heat-card]').forEach((canvas) => {
       const data = out.get(canvas.dataset.heatCard);
-      if (data) drawHeat(canvas, data.counts, max, canvas.dataset.side);
+      const player = list.find((p) => `${p.camp}-${p.slot}` === canvas.dataset.heatCard);
+      if (data) drawHeat(canvas, data, max, canvas.dataset.side, player, i0, i1);
     });
     box.querySelectorAll('[data-heat-share]').forEach((el) => {
       const data = out.get(el.dataset.heatShare);
@@ -1238,14 +1406,67 @@ export function createMatchDeep(h) {
     if (!slider || !heatState) return;
     button.setAttribute('aria-pressed', 'true');
     button.textContent = '暂停';
-    let at = Number(slider.value);
+    let at = heatAt(box);
     if (at >= heatState.duration - heatState.step) at = 0;
     heatTimer = setInterval(() => {
       if (!document.contains(box)) { stopHeat(); return; }
-      at += heatState.step * 3;
+      at += heatState.step * 3 * heatSpeed;
       paintHeat(at);
       if (at >= heatState.duration) stopHeat();
     }, 200);
+  }
+
+  /* 翻译时间轴上的操作：±N 秒、跳到分期、跳到事件刻度。 */
+  function heatSeek(delta) {
+    const box = document.querySelector('[data-md-heat]');
+    if (!box || !heatState) return;
+    stopHeat();
+    paintHeat(clamp(heatAt(box) + delta, 0, heatState.duration));
+  }
+
+  function heatJump(t) {
+    const box = document.querySelector('[data-md-heat]');
+    if (!box || !heatState) return;
+    stopHeat();
+    paintHeat(clamp(t, 0, heatState.duration));
+  }
+
+  function cycleHeatSpeed(button) {
+    const index = HEAT_SPEEDS.indexOf(heatSpeed);
+    heatSpeed = HEAT_SPEEDS[(index + 1) % HEAT_SPEEDS.length];
+    const target = button || document.querySelector('[data-heat-speed]');
+    if (target) {
+      target.textContent = `${heatSpeed}×`;
+      target.dataset.speed = String(heatSpeed);
+    }
+    /* 播放中改速度：重启计时器，让新速度立刻生效。 */
+    const play = document.querySelector('[data-heat-play]');
+    if (heatTimer && play) { stopHeat(); toggleHeat(play); }
+  }
+
+  /* 键盘：空格播放/暂停、← → 前后 10 秒、1/2/3 跳分期、S 切倍速。
+     只在「地图」页签可见、且焦点不在输入框/下拉里时生效，避免抢打字。 */
+  function heatKey(event) {
+    if (!heatState) return;
+    const pane = document.querySelector('[data-md-pane="map"]');
+    if (!pane || pane.hidden) return;
+    const tag = (event.target?.tagName || '').toLowerCase();
+    if (['input', 'select', 'textarea'].includes(tag) || event.target?.isContentEditable) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.code === 'Space') {
+      const play = document.querySelector('[data-heat-play]');
+      if (play) { event.preventDefault(); toggleHeat(play); }
+      return;
+    }
+    if (event.key === 'ArrowLeft') { event.preventDefault(); heatSeek(-10); return; }
+    if (event.key === 'ArrowRight') { event.preventDefault(); heatSeek(10); return; }
+    if (['1', '2', '3'].includes(event.key)) {
+      const stops = [240, 600, heatState.duration];
+      event.preventDefault();
+      heatJump(stops[Number(event.key) - 1]);
+      return;
+    }
+    if (event.key === 's' || event.key === 'S') { event.preventDefault(); cycleHeatSpeed(); }
   }
 
   function bindHeat(root) {
@@ -1265,6 +1486,10 @@ export function createMatchDeep(h) {
           paintHeat(Number(phase.dataset.heatPhase));
           return;
         }
+        const speed = event.target.closest ? event.target.closest('[data-heat-speed]') : null;
+        if (speed) { cycleHeatSpeed(speed); return; }
+        const seek = event.target.closest ? event.target.closest('[data-heat-seek]') : null;
+        if (seek) { heatJump(Number(seek.dataset.heatSeek)); return; }
         const hit = event.target.closest ? event.target.closest('[data-heat-play]') : null;
         if (!hit) return;
         toggleHeat(hit);
@@ -1276,16 +1501,18 @@ export function createMatchDeep(h) {
         const box = pick.closest('[data-md-heat]');
         if (!box) return;
         box.querySelectorAll('[data-lane]').forEach((row) => { row.hidden = row.dataset.lane !== heatLane; });
-        paintHeat(Number(box.querySelector('[data-heat-range]')?.value || 0));
+        paintHeat(heatAt(box));
       });
+      document.addEventListener('keydown', heatKey);
     }
     const box = document.querySelector('[data-md-heat]');
     if (!box || !heatState) return;
     box.querySelectorAll('[data-lane]').forEach((row) => { row.hidden = row.dataset.lane !== heatLane; });
     const pick = box.querySelector('[data-heat-lane]');
     if (pick) pick.value = heatLane;
-    const slider = box.querySelector('[data-heat-range]');
-    paintHeat(Number(slider ? slider.value : heatState.duration));
+    const speed = box.querySelector('[data-heat-speed]');
+    if (speed) speed.textContent = `${heatSpeed}×`;
+    paintHeat(heatAt(box));
   }
 
   /* ── 战斗拆成两块：团战（点地图看本波）与掉点（筛选/点选看单次） ──────

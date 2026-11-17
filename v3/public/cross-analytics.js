@@ -428,6 +428,18 @@ function riskOf(rows) {
     blowLoss: rateOf(blowLoss, withFinal.length),
     blowWin: rateOf(blowWin, withFinal.length),
     at10: dist('at10'), final: dist('final'), duration: dist('duration'),
+    /* 每个计数都带上「是哪几局」：页面上的「看这 11 局」直接用这份 key 列表。 */
+    keys: {
+      lead: lead.map((r) => r.key),
+      leadWin: lead.filter((r) => r.result === 'win').map((r) => r.key),
+      bigLead: bigLead.map((r) => r.key),
+      throw: bigLead.filter((r) => r.result === 'loss').map((r) => r.key),
+      behind: behind.map((r) => r.key),
+      comeback: bigBehind.filter((r) => r.result === 'win').map((r) => r.key),
+      shrink: bigLead.filter((r) => num(r.final) && r.final < r.at10).map((r) => r.key),
+      blowLoss: withFinal.filter((r) => r.final <= -10000).map((r) => r.key),
+      blowWin: withFinal.filter((r) => r.final >= 10000).map((r) => r.key),
+    },
   };
 }
 
@@ -478,6 +490,225 @@ function playerExecutionOf(rows) {
     .sort((a, b) => LANES.indexOf(a.pos) - LANES.indexOf(b.pos) || (b.gpm || 0) - (a.gpm || 0));
 }
 
+/* ── 4b. 选手执行：我方逐人 + 对方同位置基准 ─────────────────────
+ * 游走不看经济与输出（营地有值，但那一栏对游走没有解释力），页面用横杠；
+ * 承伤对四条路都有意义，所以五路统一给承伤，不给「游走也比分均输出」。 */
+const EXEC_KEYS = ['gpm', 'dpm', 'tpm', 'part', 'd', 'ctrl', 'heal', 'twr', 'rating'];
+const execAcc = () => ({ games: 0, heroes: [], buckets: Object.fromEntries(EXEC_KEYS.map((k) => [k, []])) });
+function execPush(e, p) {
+  e.games += 1;
+  if (p.hero) e.heroes.push(p.hero);
+  for (const key of EXEC_KEYS) {
+    const v = key === 'part' ? (num(p.part) ? (p.part > 1.5 ? p.part / 100 : p.part) : null) : p[key];
+    if (num(v)) e.buckets[key].push(v);
+  }
+}
+function execOut(e) {
+  const out = { games: e.games, heroes: e.heroes };
+  for (const key of EXEC_KEYS) out[key] = e.buckets[key].length ? mean(e.buckets[key]) : null;
+  return out;
+}
+function executionOf(rows) {
+  const own = new Map();
+  const foe = new Map();
+  for (const r of rows) {
+    for (const p of r.pl) {
+      if (!p.pos) continue;
+      const key = `${p.pos}|${p.name || '—'}`;
+      const e = own.get(key) || { pos: p.pos, name: p.name || '—', ...execAcc() };
+      execPush(e, p);
+      own.set(key, e);
+    }
+    for (const p of r.plAll) {
+      if (!p.pos || p.camp === r.camp) continue;
+      const e = foe.get(p.pos) || { pos: p.pos, ...execAcc() };
+      execPush(e, p);
+      foe.set(p.pos, e);
+    }
+  }
+  const item = (e) => ({ ...execOut(e), pos: e.pos, name: e.name });
+  const ownRows = [...own.values()].map(item)
+    .sort((a, b) => LANES.indexOf(a.pos) - LANES.indexOf(b.pos) || b.games - a.games);
+  const foeRows = {};
+  for (const e of foe.values()) foeRows[e.pos] = execOut(e);
+  return { own: ownRows, foe: foeRows, n: rows.filter((r) => r.pl.length).length };
+}
+
+/* ── 4c. 英雄类型：五路打法选择（我方 / 对方同一口径）───────────── */
+const ARCH_ORDER = {
+  对抗路: ['战边', '坦边'], 打野: ['刺野', '战野', '坦野'], 中路: ['法核', '工具人'],
+  发育路: ['游射', '呆射'], 游走: ['开团辅', '保护辅', '功能辅'],
+};
+function archetypeOf(rows) {
+  const UNKNOWN = new Set(['', '待分类', '未标注', '其他']);
+  const build = (side) => {
+    const map = new Map();
+    const unknown = new Map();
+    for (const r of rows) {
+      const list = side === 'own' ? r.pl : r.plAll.filter((p) => p.camp !== r.camp);
+      for (const p of list) {
+        if (!p.pos) continue;
+        /* 该分路没登记类型时（营地/工作簿没给这一路），退回英雄默认分路的类型：
+           教练要的是「这个英雄是什么类型」，不是看一个「待分类」占位。
+           真正一个类型都没有的英雄才单列一句。 */
+        const laneArch = p.arch && !UNKNOWN.has(p.arch) ? p.arch : '';
+        const arch = laneArch || (p.archDefault && !UNKNOWN.has(p.archDefault) ? p.archDefault : '');
+        if (!arch) {
+          const u = unknown.get(p.pos) || { pos: p.pos, games: 0, heroes: [] };
+          u.games += 1;
+          if (p.hero) u.heroes.push(p.hero);
+          unknown.set(p.pos, u);
+          continue;
+        }
+        const key = `${p.pos}|${arch}`;
+        const e = map.get(key) || { pos: p.pos, arch, games: 0, wins: 0, decided: 0, heroes: [], inferred: 0 };
+        e.games += 1;
+        if (!laneArch) e.inferred += 1;
+        e.heroes.push(p.hero);
+        if (r.result === 'win') e.wins += 1;
+        if (r.decided) e.decided += 1;
+        map.set(key, e);
+      }
+    }
+    const total = new Map();
+    for (const e of map.values()) total.set(e.pos, (total.get(e.pos) || 0) + e.games);
+    return LANES.map((lane) => {
+      const items = [...map.values()].filter((e) => e.pos === lane).map((e) => ({
+        ...e, label: e.arch, share: total.get(lane) ? e.games / total.get(lane) : null,
+        rate: rateOf(e.wins, e.decided),
+        top: [...new Set(e.heroes)].slice(0, 4),
+      }));
+      const order = ARCH_ORDER[lane] || [];
+      items.sort((a, b) => (order.indexOf(a.arch) + 1 || 99) - (order.indexOf(b.arch) + 1 || 99) || b.games - a.games);
+      const miss = unknown.get(lane);
+      return {
+        lane, n: total.get(lane) || 0, items,
+        unknown: miss ? { games: miss.games, heroes: [...new Set(miss.heroes)] } : null,
+      };
+    }).filter((x) => x.n);
+  };
+  return { own: build('own'), foe: build('foe') };
+}
+
+/* ── 4d. BP 对位台：指定英雄被怎么 ban / 被谁打 / 哪些队怎么配 ───── */
+function banIndexMap(rows, listKey, hero) {
+  const out = [0, 0, 0, 0, 0];
+  let hit = 0;
+  for (const r of rows) {
+    const list = r[listKey] || [];
+    const i = list.indexOf(hero);
+    if (i >= 0) {
+      out[Math.min(i, 4)] += 1;
+      hit += 1;
+    }
+  }
+  return { byTurn: out, games: hit };
+}
+function ourHeroTarget(rows, hero, hero2) {
+  if (!hero) return null;
+  const want = [hero, hero2].filter(Boolean);
+  const picked = rows.filter((r) => want.every((h) => r.heroes.includes(h)));
+  const decided = picked.filter((r) => r.decided);
+  const wins = picked.filter((r) => r.result === 'win').length;
+  const ban = banIndexMap(rows, 'bansFoe', hero);
+  const banOwn = banIndexMap(rows, 'bansOwn', hero);
+  const ban2 = hero2 ? banIndexMap(rows, 'bansFoe', hero2) : null;
+  // 没被 ban 的时候，对方同位置拿什么来打：只按「我方这条路上的是这个英雄」取对方同位置。
+  const respMap = new Map();
+  for (const r of picked) {
+    const mine = r.pl.find((p) => p.hero === hero);
+    if (!mine || !mine.pos) continue;
+    const theirs = r.plAll.find((p) => p.camp !== r.camp && p.pos === mine.pos && p.hero);
+    if (!theirs) continue;
+    const e = respMap.get(theirs.hero) || { hero: theirs.hero, games: 0, foeWins: 0, ownWins: 0, heroes: [] };
+    e.games += 1;
+    e.heroes.push(mine.hero);
+    if (r.result === 'loss') e.foeWins += 1;
+    if (r.result === 'win') e.ownWins += 1;
+    respMap.set(theirs.hero, e);
+  }
+  const responses = [...respMap.values()].sort((a, b) => b.games - a.games || b.foeWins - a.foeWins)
+    .slice(0, 8).map((e) => ({ ...e, foeRate: rateOf(e.foeWins, e.games) }));
+  // 我方这套（一个或两个英雄）在场的局里，对方整条阵容是什么组合。
+  const comboMap = new Map();
+  for (const r of picked) {
+    const hs = [...new Set(r.heroesFoe)].filter(Boolean);
+    for (let i = 0; i < hs.length; i++) {
+      for (let j = i + 1; j < hs.length; j++) {
+        const key = [hs[i], hs[j]].sort().join('+');
+        const e = comboMap.get(key) || { heroes: [hs[i], hs[j]].sort(), games: 0, foeWins: 0 };
+        e.games += 1;
+        if (r.result === 'loss') e.foeWins += 1;
+        comboMap.set(key, e);
+      }
+    }
+  }
+  const combos = [...comboMap.values()].sort((a, b) => b.games - a.games || b.foeWins - a.foeWins)
+    .slice(0, 5).map((e) => ({ ...e, foeRate: rateOf(e.foeWins, e.games) }));
+  const byOpponent = [];
+  const oppMap = new Map();
+  for (const r of picked) {
+    const name = String(r.opponent || '').trim() || '未标注对手';
+    const e = oppMap.get(name) || { name, games: 0, wins: 0, decided: 0, heroes: new Map() };
+    e.games += 1;
+    if (r.result === 'win') e.wins += 1;
+    if (r.decided) e.decided += 1;
+    const mine = r.pl.find((p) => p.hero === hero);
+    const theirs = mine && r.plAll.find((p) => p.camp !== r.camp && p.pos === mine.pos && p.hero);
+    if (theirs) e.heroes.set(theirs.hero, (e.heroes.get(theirs.hero) || 0) + 1);
+    oppMap.set(name, e);
+  }
+  for (const e of [...oppMap.values()].sort((a, b) => b.games - a.games).slice(0, 6)) {
+    byOpponent.push({
+      name: e.name, games: e.games, wins: e.wins, rate: rateOf(e.wins, e.decided),
+      responses: [...e.heroes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h, n]) => ({ hero: h, games: n })),
+    });
+  }
+  return {
+    hero, hero2: hero2 || '', want, games: picked.length, decided: decided.length, wins,
+    rate: rateOf(wins, decided.length),
+    ban, ban2, banOwn, responses, combos, byOpponent,
+    banTotal: ban.games + picked.length,
+  };
+}
+function foeHeroPairing(rows, hero) {
+  if (!hero) return null;
+  /* 反过来看：这个英雄在「对方」阵容里出现时，各队都拿谁来跟它搭。 */
+  const picked = rows.filter((r) => r.heroesFoe.includes(hero));
+  const foeWins = picked.filter((r) => r.result === 'loss').length;
+  const ban = banIndexMap(rows, 'bansOwn', hero);
+  const partnerMap = new Map();
+  for (const r of picked) {
+    for (const h of [...new Set(r.heroesFoe)].filter((x) => x && x !== hero)) {
+      const e = partnerMap.get(h) || { hero: h, games: 0, foeWins: 0 };
+      e.games += 1;
+      if (r.result === 'loss') e.foeWins += 1;
+      partnerMap.set(h, e);
+    }
+  }
+  const partners = [...partnerMap.values()].sort((a, b) => b.games - a.games || b.foeWins - a.foeWins)
+    .slice(0, 10).map((e) => ({ ...e, foeRate: rateOf(e.foeWins, e.games) }));
+  const byOpponent = [];
+  const oppMap = new Map();
+  for (const r of picked) {
+    const name = String(r.opponent || '').trim() || '未标注对手';
+    const e = oppMap.get(name) || { name, games: 0, foeWins: 0, partners: new Map() };
+    e.games += 1;
+    if (r.result === 'loss') e.foeWins += 1;
+    for (const h of [...new Set(r.heroesFoe)].filter((x) => x && x !== hero)) {
+      e.partners.set(h, (e.partners.get(h) || 0) + 1);
+    }
+    oppMap.set(name, e);
+  }
+  for (const e of [...oppMap.values()].sort((a, b) => b.games - a.games).slice(0, 6)) {
+    byOpponent.push({
+      name: e.name, games: e.games, rate: rateOf(e.foeWins, e.games),
+      partners: [...e.partners.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h, n]) => ({ hero: h, games: n })),
+    });
+  }
+  return { hero, games: picked.length, foeWins, rate: rateOf(foeWins, picked.length), ban, partners, byOpponent };
+}
+
 /* ── 5. 前期节奏 ──────────────────────────────────────────────── */
 function earlyOf(rows) {
   const firstRows = rows.filter((r) => r.first);
@@ -489,6 +720,8 @@ function earlyOf(rows) {
       own: own.length, foe: foe.length, n: own.length + foe.length,
       rate: own.length + foe.length ? own.length / (own.length + foe.length) : null,
       avgT: mean(times),
+      // 拿到的用时（只算我方拿到的那几局）：教练看的是「几分钟拿到」，不是百分比。
+      ownT: vals(own.map((r) => r.first[`${key}T`])),
       winOwn: rateOf(own.filter((r) => r.result === 'win').length, own.filter((r) => r.decided).length),
       winFoe: rateOf(foe.filter((r) => r.result === 'win').length, foe.filter((r) => r.decided).length),
     };
@@ -505,8 +738,19 @@ function earlyOf(rows) {
       n: jungle.length, cross: median(jungle.map((r) => r.jungle.crossShare)),
       deep: median(jungle.map((r) => r.jungle.deepShare).filter(num)),
       first: median(jungle.map((r) => r.jungle.firstCross).filter(num)),
+      // 秒数口径：过河总时长 / 深入野区总时长（0–10 分钟逐秒坐标），教练比百分比好懂。
+      crossSec: median(jungle.map((r) => r.jungle.crossSec).filter(num)),
+      deepSec: median(jungle.map((r) => r.jungle.deepSec).filter(num)),
+      // 中位数是 0 时说明一半以上的局根本没进深区，光给 0 秒没信息量：
+      // 补「进入的局数」与「进入的局平均秒数」。
+      deepGames: jungle.filter((r) => num(r.jungle.deepSec) && r.jungle.deepSec > 0).length,
+      deepMeanIn: mean(jungle.map((r) => r.jungle.deepSec).filter((v) => num(v) && v > 0)),
       anti: mean(jungle.map((r) => r.buff.anti).filter(num)),
       stolen: mean(jungle.map((r) => r.buff.stolen).filter(num)),
+      antiRed: mean(jungle.map((r) => r.buff.antiRed).filter(num)),
+      antiBlue: mean(jungle.map((r) => r.buff.antiBlue).filter(num)),
+      stolenRed: mean(jungle.map((r) => r.buff.stolenRed).filter(num)),
+      stolenBlue: mean(jungle.map((r) => r.buff.stolenBlue).filter(num)),
     },
     obj10: obj10.length ? {
       n: obj10.length,
@@ -558,7 +802,11 @@ function objectiveOf(rows) {
   const towerOwn = towerRows.map((r) => r.obj.towerOwn);
   const towerFoe = towerRows.map((r) => r.obj.towerFoe);
   const lead = rows.filter((r) => num(r.at10) && r.at10 > 0 && r.decided);
-  const step = (label, list) => ({ label, n: list.length, wins: list.filter((r) => r.result === 'win').length, rate: rateOf(list.filter((r) => r.result === 'win').length, list.length) });
+  const step = (label, list) => ({
+    label, n: list.length, wins: list.filter((r) => r.result === 'win').length,
+    rate: rateOf(list.filter((r) => r.result === 'win').length, list.length),
+    keys: list.map((r) => r.key),
+  });
   const hasDragon = (r) => num(r.obj.dragonOwn) && r.obj.dragonOwn > 0;
   const hasTower = (r) => num(r.obj.towerOwn) && num(r.obj.towerFoe) && r.obj.towerOwn > r.obj.towerFoe;
   const steps = [
@@ -660,7 +908,24 @@ function draftOf(rows) {
     };
   });
 
+  const compsFoe = (() => {
+    const map = new Map();
+    for (const r of rows) {
+      for (const tag of (r.compFoe || [])) {
+        const e = map.get(tag) || { tag, games: 0, wins: 0, decided: 0 };
+        e.games += 1;
+        if (r.result === 'loss') e.wins += 1;
+        if (r.decided) e.decided += 1;
+        map.set(tag, e);
+      }
+    }
+    return [...map.values()].map((e) => ({
+      ...e, rate: rateOf(e.wins, e.decided), share: rows.length ? e.games / rows.length : null,
+    })).sort((a, b) => b.games - a.games);
+  })();
+
   const heroMap = new Map();
+  const heroFoeMap = new Map();
   const banFoeMap = new Map();
   for (const r of rows) {
     for (const hero of r.heroes) {
@@ -671,6 +936,15 @@ function draftOf(rows) {
       if (r.decided) e.decided += 1;
       if (num(r.at10)) e.at10.push(r.at10);
       heroMap.set(hero, e);
+    }
+    for (const hero of r.heroesFoe) {
+      // 对方英雄池：胜率是「我方胜率」，所以计数用 result === 'win' 保持一致口径。
+      const e = heroFoeMap.get(hero) || { hero, games: 0, wins: 0, decided: 0, at10: [] };
+      e.games += 1;
+      if (r.result === 'win') e.wins += 1;
+      if (r.decided) e.decided += 1;
+      if (num(r.at10)) e.at10.push(r.at10);
+      heroFoeMap.set(hero, e);
     }
     for (const hero of (r.bansFoe || [])) {
       const e = banFoeMap.get(hero) || { hero, games: 0, wins: 0, decided: 0 };
@@ -687,38 +961,63 @@ function draftOf(rows) {
     at10: e.at10.length ? median(e.at10) : null,
     keys: e.keys,
   })).sort((a, b) => b.games - a.games || (b.shrunk || 0) - (a.shrunk || 0));
+  const heroesFoe = [...heroFoeMap.values()].map((e) => ({
+    hero: e.hero, games: e.games, wins: e.wins, decided: e.decided,
+    rate: rateOf(e.wins, e.decided),
+    at10: e.at10.length ? median(e.at10) : null,
+  })).sort((a, b) => b.games - a.games);
 
-  const pairs = new Map();
-  for (const r of rows) {
-    const hs = [...new Set(r.heroes)].filter(Boolean).slice(0, 5);
-    if (hs.length < 2) continue;
-    for (let i = 0; i < hs.length; i++) {
-      for (let j = i + 1; j < hs.length; j++) {
-        const key = [hs[i], hs[j]].sort().join('+');
-        const e = pairs.get(key) || { heroes: [hs[i], hs[j]], games: 0, wins: 0, decided: 0, keys: [] };
-        e.games += 1;
-        e.keys.push(r.key);
-        if (r.result === 'win') e.wins += 1;
-        if (r.decided) e.decided += 1;
-        pairs.set(key, e);
+  const pairMap = (side) => {
+    const pairs = new Map();
+    for (const r of rows) {
+      const hs = [...new Set(side === 'own' ? r.heroes : r.heroesFoe)].filter(Boolean).slice(0, 5);
+      if (hs.length < 2) continue;
+      for (let i = 0; i < hs.length; i++) {
+        for (let j = i + 1; j < hs.length; j++) {
+          const key = [hs[i], hs[j]].sort().join('+');
+          const e = pairs.get(key) || { heroes: [hs[i], hs[j]], games: 0, wins: 0, decided: 0, keys: [] };
+          e.games += 1;
+          e.keys.push(r.key);
+          if (r.result === 'win') e.wins += 1;
+          if (r.decided) e.decided += 1;
+          pairs.set(key, e);
+        }
       }
     }
-  }
-  const pairRows = [...pairs.values()].filter((e) => e.decided >= 3).map((e) => {
-    const pairKeys = new Set(e.keys);
-    const rest = decided.filter((r) => !pairKeys.has(r.key));
-    const restWins = rest.filter((r) => r.result === 'win').length;
-    const restRate = rest.length ? restWins / rest.length : null;
-    const rate = e.wins / e.decided;
-    return {
-      heroes: e.heroes, label: e.heroes.join(' + '), n: e.decided, wins: e.wins,
-      rate, otherN: rest.length, otherRate: restRate,
-      lift: num(restRate) ? rate - restRate : null, keys: e.keys.slice(0, 30),
-    };
-  }).filter((x) => num(x.lift));
-  pairRows.sort((a, b) => b.lift - a.lift);
-  const pairsBest = pairRows.slice(0, 4);
-  const pairsWorst = pairRows.slice(-4).reverse();
+    const decided = rows.filter((r) => r.decided);
+    const build = (min) => [...pairs.values()].map((e) => ({
+      heroes: e.heroes, label: e.heroes.join(' + '), n: e.decided, games: e.games, wins: e.wins,
+      rate: rateOf(e.wins, e.decided), keys: e.keys.slice(0, 30),
+    })).filter((x) => x.n >= min && x.rate && num(x.rate.value));
+    let floor = 3;
+    let list = build(3);
+    if (!list.length) { floor = 2; list = build(2); }
+    // 递增胜率排序：只给「跟不带它比」的差值留给我方的组合卡；对方组合只看自己的胜率。
+    for (const x of list) {
+      const keys = new Set(x.keys);
+      const rest = decided.filter((r) => !keys.has(r.key));
+      const restRate = rest.length ? rest.filter((r) => r.result === 'win').length / rest.length : null;
+      x.lift = num(restRate) ? x.rate.value - restRate : null;
+      x.otherRate = restRate;
+      x.otherN = rest.length;
+    }
+    const total = rows.filter((r) => (side === 'own' ? r.heroes : r.heroesFoe).length >= 2).length;
+    const sorted = list.sort((a, b) => (b.lift ?? -9) - (a.lift ?? -9));
+    /* 同一套五人阵容会派生 10 组双人组合，铺出来就是十行一模一样的数据：
+       按「同一批局」去重，只留第一组，卡的语义变成「这套阵容打了几局、赢几局」。 */
+    const seen = new Set();
+    const unique = sorted.filter((x) => {
+      const sig = [...x.keys].sort().join('|');
+      if (seen.has(sig)) return false;
+      seen.add(sig);
+      return true;
+    });
+    return { list: unique, all: sorted, floor, count: unique.length, total };
+  };
+  const ownPool = pairMap('own');
+  const foePool = pairMap('foe');
+  const ownPairs = ownPool.list;
+  const foePairs = foePool.list;
 
   const sides = ['blue', 'red'].map((side) => {
     const list = decided.filter((r) => r.camp === side);
@@ -741,7 +1040,9 @@ function draftOf(rows) {
     }).sort((a, b) => b.games - a.games);
 
   return {
-    baseline, comps, signature, heroes, pairs: { best: pairsBest, worst: pairsWorst, n: pairRows.length },
+    baseline, comps, compsFoe, signature, heroes, heroesFoe,
+    pairs: { best: ownPairs.slice(0, 4), worst: ownPairs.slice(-4).reverse(), n: ownPairs.length, foe: foePairs },
+    pairPool: ownPool, pairPoolFoe: foePool,
     sides, bansOwn, bansFoe,
     coverage: { comp: rows.filter((r) => r.compOwn).length, bans: rows.filter((r) => Array.isArray(r.bansOwn)).length, arch: rows.filter((r) => r.pl.some((p) => p.arch)).length },
   };
@@ -832,9 +1133,18 @@ export function analyzeCohort(vectors) {
   const opponents = opponentOf(rows);
   return {
     total: rows.length,
+    // 「看这 N 局」需要按 key 反查原始逐局：页面只读，不改口径。
+    rows,
     coverage, record, trend, drivers,
     winCondition: winConditionOf(drivers),
     risk, lane, players, early, path, objective, fight, draft, opponents,
+    execution: executionOf(rows),
+    archetypes: archetypeOf(rows),
+    // BP 对位台按「点哪个英雄」现算：只在这一批局里查，不跨到范围外。
+    bp: {
+      target: (hero, hero2) => ourHeroTarget(rows, hero, hero2),
+      pairing: (hero) => foeHeroPairing(rows, hero),
+    },
     // 兼容旧调用方：不再有 23 张卡，但保留一个可遍历的结论数量。
     cardCount: [drivers.length > 0, early.firstN > 0, objective.n > 0, fight.n > 0, draft.heroes.length > 0, opponents.items.length > 0].filter(Boolean).length,
   };
@@ -843,6 +1153,6 @@ export function analyzeCohort(vectors) {
 /* 导出内部纯函数，供 scripts/test_cross_analytics.mjs 做口径回归。 */
 export const internals = {
   prepare, coverageOf, recordOf, trendOf, driversOf, riskOf, laneOf, playerExecutionOf, earlyOf,
-  pathOf, objectiveOf, fightOf, draftOf, opponentOf,
+  pathOf, objectiveOf, fightOf, draftOf, opponentOf, executionOf, archetypeOf, ourHeroTarget, foeHeroPairing,
   quantile, median, wilson, cliffs, shrink, rateOf, halves, reproduce,
 };

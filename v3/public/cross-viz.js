@@ -369,7 +369,76 @@ function bars(chart, ctx) {
   return shell({ ...chart, id: chart.id || 'bars' }, ctx, '条形', '读数', A, B);
 }
 
-const RENDERERS = { trend, profile, distribution, path, laneRange, funnel, fight, bars };
+/* ── 经济路径：三条折线 + 阶段净增 ───────────────────────────────
+ * 教练看的三个问题：十分钟大概多少钱、赢的局和输的局差在哪一段、
+ * 这一段是挣的还是亏的。所以一条线一个直标，不要图例。 */
+function economy(chart, ctx) {
+  const cps = (chart.checkpoints || []).filter((c) => c && c.all && num(c.all.med));
+  if (cps.length < 2) return empty('这批局的过程数据不够，画不出经济路径。');
+  const H = 264;
+  const L = 62, R = 132;
+  const all = cps.flatMap((c) => [c.win.med, c.loss.med, c.all.med]).filter(num);
+  const max = Math.max(1000, Math.ceil(Math.max(...all.map((v) => Math.abs(v))) / 1000) * 1000);
+  const xOf = (i) => L + (i / Math.max(1, cps.length - 1)) * (1000 - L - R);
+  const yOf = (v) => H / 2 - (v / max) * (H / 2 - 22);
+  const line = (key, cls) => polyline(cps.map((c, i) => ({ x: xOf(i), y: num(c[key].med) ? yOf(c[key].med) : null })), cls, 2.6);
+  const gridLines = [-1, -0.5, 0, 0.5, 1].map((f) => {
+    const y = yOf(f * max);
+    return `<line class="${f === 0 ? 'zero' : 'grid'}" x1="${L}" x2="${1000 - R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" vector-effect="non-scaling-stroke"/>`;
+  }).join('');
+  const dots = cps.map((c, i) => {
+    const t = `${c.minute} 分钟：全部局常见 ${signed(c.all.med)} 金币；赢的局 ${signed(c.win.med)}（${c.win.n} 局）；输的局 ${signed(c.loss.med)}（${c.loss.n} 局）`;
+    return `<span class="xv-hit" style="left:${(xOf(i) / 10).toFixed(2)}%;top:${(yOf(c.all.med) / H * 100).toFixed(2)}%" ${tip(t)}><i></i></span>`;
+  }).join('');
+  /* 直标：每条线在自己最后一个有数的点旁边写名字，省掉图例。
+     三条线末端容易挤在一起，按 y 排序后拉开间距。 */
+  const lastIdxOf = (key) => cps.reduce((acc, c, i) => (num(c[key].med) ? i : acc), -1);
+  const ends = [
+    ['win', '赢的局', 'is-win'],
+    ['loss', '输的局', 'is-loss'],
+    ['all', '全部局', 'is-all'],
+  ].map(([key, label, cls]) => {
+    const i = lastIdxOf(key);
+    if (i < 0) return null;
+    return { key, label, cls, i, y: yOf(cps[i][key].med), value: cps[i][key].med };
+  }).filter(Boolean).sort((a, b) => a.y - b.y);
+  const GAP = 18;
+  for (let i = 1; i < ends.length; i += 1) {
+    if (ends[i].y - ends[i - 1].y < GAP) ends[i].y = ends[i - 1].y + GAP;
+  }
+  for (let i = ends.length - 1; i >= 0; i -= 1) {
+    if (ends[i].y > H - 12) ends[i].y = H - 12 - (ends.length - 1 - i) * GAP;
+  }
+  const direct = ends.map((e) => `<span class="xv-direct ${e.cls}" style="left:calc(${(xOf(e.i) / 10).toFixed(2)}% + 10px);top:${(e.y / H * 100).toFixed(2)}%">${esc(e.label)}<b>${signed(e.value)}</b></span>`).join('');
+  const yLabels = [-1, -0.5, 0, 0.5, 1].map((f) => `<span class="xv-y-lab" style="top:${(H / 2 - f * (H / 2 - 22)) / H * 100}%">${f === 0 ? '0' : signed(f * max)}</span>`).join('');
+  const A = view(
+    `<div class="xv-chartwrap xv-chart-econ">
+      ${chartSvg(H, `${gridLines}${line('all', 'allline')}${line('loss', 'lossline')}${line('win', 'winline')}`)}
+      ${yLabels}
+      ${dots}
+      ${direct}
+    </div>
+    <div class="xv-axis" style="padding-left:${(L / 10).toFixed(1)}%;padding-right:${(R / 10).toFixed(1)}%">${cps.map((c) => `<span>${c.minute}′</span>`).join('')}</div>
+    <p class="xv-note">每条线是该分钟「本队减对手」金币差的常见值，线尾数字是这条线最后一个有数的点。越往后样本越少。</p>`
+  );
+  const phase = (chart.phase || []).filter((p) => num(p.win) || num(p.loss));
+  const pmax = Math.max(1, ...phase.flatMap((p) => [Math.abs(p.win || 0), Math.abs(p.loss || 0)]));
+  const B = view(
+    `<div class="xv-phases">${phase.map((p) => `<div class="xv-phase" ${tip(`${p.label}：赢的局常见净增 ${signed(p.win)} 金币，输的局 ${signed(p.loss)} 金币`)}>
+      <span class="xv-phase-label">${esc(p.label)}</span>
+      <div class="xv-phase-bars">
+        <i class="xv-phase-bar win" style="width:${widthOf(p.win, pmax)}"></i>
+        <i class="xv-phase-bar loss" style="width:${widthOf(p.loss, pmax)}"></i>
+      </div>
+      <span class="xv-phase-vals"><b class="win">${signed(p.win)}</b><b class="loss">${signed(p.loss)}</b></span>
+    </div>`).join('')}</div>
+    <div class="xv-legend-row"><span><i class="is-win"></i>赢的局</span><span><i class="is-loss"></i>输的局</span></div>
+    <p class="xv-note">阶段净增 = 这一阶段末的经济差减阶段初；三段相加大约等于终局差。</p>`
+  );
+  return shell({ ...chart, id: chart.id || 'economy' }, ctx, '累计差', '三段净增', A, B);
+}
+
+const RENDERERS = { trend, profile, distribution, path, laneRange, funnel, fight, bars, economy };
 
 export function renderViz(chart, ctx = {}) {
   if (!chart || !chart.type) return '';

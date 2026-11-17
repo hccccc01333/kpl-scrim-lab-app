@@ -35,6 +35,10 @@ PID_FILE = ROOT / 'data' / 'watchdog.pid'
 LOG_FILE = ROOT / 'data' / 'watch_server.log'
 # 只盯会被运行中进程 import 的后端文件；静态资源改了本来就是实时读盘。
 WATCH_GLOBS = ('*.py', 'v3/*.py', 'tools/*.py')
+# 根目录常年堆着随手写的临时脚本（_tmp_*.py、.tmp_*.py、tmp_*.py）。
+# 它们不是服务端模块，但以前每写一次都会重启工作台，把教练正在看的采集页
+# 和跑着的同步打断；名字以下划线 / 点 / tmp 开头的一律不参与监视。
+SCRATCH_PREFIXES = ('.', '_', 'tmp')
 POLL_SECONDS = 1.0
 QUIET_SECONDS = 1.5
 PORT = int(os.environ.get('KPL_PORT', os.environ.get('TRAINING_PORT', '8766')))
@@ -66,6 +70,9 @@ def snapshot():
     for pattern in WATCH_GLOBS:
         for path in ROOT.glob(pattern):
             if not path.is_file():
+                continue
+            # 临时脚本不触发重启：见 SCRATCH_PREFIXES 的说明。
+            if path.name.lower().startswith(SCRATCH_PREFIXES):
                 continue
             try:
                 info = path.stat()

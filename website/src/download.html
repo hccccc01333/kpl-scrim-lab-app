@@ -13,6 +13,24 @@
 <link rel="stylesheet" href="assets/style.css?v={{ASSET_VERSION}}">
 <script>document.documentElement.classList.add('js');</script>
 <script src="assets/site.js?v={{ASSET_VERSION}}" defer></script>
+<link rel="alternate" type="application/rss+xml" title="{{SITE_FULL_NAME}} · 更新日志" href="feed.xml">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "{{SITE_FULL_NAME}}",
+  "alternateName": "{{SITE_NAME}}",
+  "url": "{{SITE_URL}}/",
+  "description": "面向 KPL、非 KPL 职业队、青训、高校联赛与城市赛赛训组的 Windows 本机赛训数据工具：截图/录屏/表格/营地链接统一入库。",
+  "applicationCategory": "SportsApplication",
+  "operatingSystem": "Windows 10, Windows 11",
+  "inLanguage": "zh-CN",
+  "softwareVersion": "{{VERSION}}",
+  "downloadUrl": "{{DOWNLOAD_URL}}",
+  "license": "{{LICENSE_URL}}",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CNY" }
+}
+</script>
 </head>
 <body>
 
@@ -29,12 +47,13 @@
         <span class="brand-sub">{{BRAND_SUB}}</span>
       </span>
     </a>
-    <nav class="topnav" aria-label="主导航">
-      <a href="index.html#briefing">示例简报</a>
-      <a href="index.html#process">四步链路</a>
+        <nav class="topnav" aria-label="主导航">
+      <a href="index.html">首页</a>
+      <a href="product.html">产品</a>
+      <a href="privacy.html">数据主权</a>
+      <a href="opensource.html">源码</a>
       <a href="guide.html">安装说明</a>
       <a href="changelog.html">更新日志</a>
-      <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助</a>
     </nav>
     <div class="topbar-cta">
       <a class="btn btn--primary" href="download.html" aria-current="page">下载 Windows 版</a>
@@ -53,12 +72,13 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
       </button>
     </div>
-    <nav class="menu-nav" aria-label="站点导航">
-      <a href="index.html#briefing">示例简报<span>01</span></a>
-      <a href="index.html#process">四步链路<span>02</span></a>
-      <a href="guide.html">安装说明<span>03</span></a>
-      <a href="changelog.html">更新日志<span>04</span></a>
-      <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者<span>05</span></a>
+        <nav class="menu-nav" aria-label="站点导航">
+      <a href="index.html">首页<span>01</span></a>
+      <a href="product.html">产品<span>02</span></a>
+      <a href="privacy.html">数据主权<span>03</span></a>
+      <a href="opensource.html">源码<span>04</span></a>
+      <a href="guide.html">安装说明<span>05</span></a>
+      <a href="changelog.html">更新日志<span>06</span></a>
     </nav>
     <div>
       <a class="btn btn--primary btn--block" href="download.html">下载 Windows 版</a>
@@ -67,53 +87,79 @@
   </div>
 </dialog>
 
-<main class="dl" id="main">
-  <div class="shell dl-grid">
-    <div class="dl-copy">
-      <span class="sec-index">下载</span>
-      <h1>下载 Windows 版</h1>
-      <p class="dl-lead">安装包优先从 Gitee 下载，内置 Python 运行时与全部依赖；GitHub 作为海外备用。下载后双击安装，数据只写本地 <code>data</code> 目录。</p>
-
-      <div class="dl-actions">
-        <a class="btn btn--primary" href="{{DOWNLOAD_URL}}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15 7.5 10.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
-          下载安装版 · 58 MB
-        </a>
-        <a class="btn btn--ghost" href="{{FULL_DOWNLOAD_URL}}">免安装版 · 79 MB</a>
+<main id="main">
+  <section class="dl-hero">
+    <div class="shell">
+      <div class="hero-masthead">
+        <p class="hero-kicker"><i aria-hidden="true"></i>下载 · Windows 版</p>
+        <p class="hero-edition">v{{VERSION}} · {{RELEASE_DATE}}</p>
       </div>
 
-      <div class="dl-alt">
-        <a href="{{GITHUB_DOWNLOAD_URL}}" target="_blank" rel="noopener">GitHub 海外备用</a>
+      <h1 class="dl-title">装在这台电脑上，<br>数据留在本机。</h1>
+      <p class="dl-lede">安装包内置 Python 运行时与全部依赖，不需要管理员权限，也不需要账号。第一次打开就会引导你扫码采集、导入表格，或者先看示例。</p>
+
+      <div class="dl-cards">
+        <a class="dl-card" href="{{DOWNLOAD_URL}}">
+          <span class="dl-card-tag">推荐</span>
+          <span class="dl-card-name">安装版</span>
+          <span class="dl-card-size">104<em>MB</em></span>
+          <span class="dl-card-meta">.exe · 双击安装 · 已内置 OCR 运行时</span>
+          <span class="dl-card-go" aria-hidden="true">↓</span>
+        </a>
+        <a class="dl-card" href="{{FULL_DOWNLOAD_URL}}">
+          <span class="dl-card-name">免安装版</span>
+          <span class="dl-card-size">135<em>MB</em></span>
+          <span class="dl-card-meta">.zip · 解压即用 · 可放 U 盘带走</span>
+          <span class="dl-card-go" aria-hidden="true">↓</span>
+        </a>
+      </div>
+
+      <p class="dl-alt">
+        <a href="{{GITEE_URL}}/releases" target="_blank" rel="noopener">Gitee 旧版镜像（1.6.x）</a>
         <a href="{{RELEASE_PAGE_URL}}" target="_blank" rel="noopener">校验和 / 全部文件</a>
         <a href="guide.html">安装与升级说明</a>
-      </div>
+      </p>
 
-      <dl class="spec">
+      <dl class="hero-specs dl-specs">
         <div><dt>系统</dt><dd>Windows 10 / 11 · 64 位</dd></div>
         <div><dt>运行时</dt><dd>已内置，无需另装</dd></div>
         <div><dt>权限</dt><dd>不需要管理员</dd></div>
-        <div><dt>数据</dt><dd>只写本地 data/</dd></div>
+        <div><dt>更新</dt><dd>增量替换，失败回滚</dd></div>
       </dl>
-
-      <ol class="dl-flow">
-        <li><span>01</span>下载安装包</li>
-        <li><span>02</span>双击安装</li>
-        <li><span>03</span>自动打开工作台</li>
-      </ol>
-
-      <p class="dl-note">安装版约 58 MB，免安装包约 79 MB，均已内置运行时；第一次打开会引导「扫码采集 / 看示例 / 导入表格」三条路。没有代码签名，Windows 可能提示「未知发布者」，点「更多信息 → 仍要运行」即可。</p>
     </div>
+  </section>
 
-    <aside>
+  <section class="section--black dl-black" aria-labelledby="dl-warn">
+    <div class="shell">
+      <div class="dl-black-head">
+        <span class="sec-index sec-index--light">安装前</span>
+        <h2 id="dl-warn">没有代码签名，<br>会提示「未知发布者」。</h2>
+      </div>
+      <div class="dl-black-body">
+        <div>
+          <p>安装包由个人开发者发布，没有购买<span class="nb">代码签名</span>证书。Windows <span class="nb">第一次</span>运行会拦一次，这是正常提示，不是文件坏了，也不必<span class="nb">关闭</span> Defender。</p>
+          <p class="support-line">装不上，或者识别不对？进 QQ 群 <b>1136567445</b><button class="copy-chip" type="button" data-copy="1136567445" data-copied="已复制群号">复制群号</button></p>
+        </div>
+        <ol class="dl-steps">
+          <li><b>01</b><span>双击安装包，等 SmartScreen 弹出</span></li>
+          <li><b>02</b><span>点「更多信息 → 仍要运行」</span></li>
+          <li><b>03</b><span>安装完成，工作台自动打开</span></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="section dl-more">
+    <div class="shell dl-more-grid">
       <div class="release-card">
         <div class="release-head"><span>当前版本</span><span>{{RELEASE_DATE}}</span></div>
         <div class="release-body">
           <div class="release-ver"><strong>v{{VERSION}}</strong><span>正式版</span></div>
           <dl class="release-list">
-            <div><dt>安装包</dt><dd>约 58 MB · .exe</dd></div>
-            <div><dt>免安装包</dt><dd>约 79 MB · .zip</dd></div>
+            <div><dt>安装包</dt><dd>约 111 MB · .exe</dd></div>
+            <div><dt>免安装包</dt><dd>约 155 MB · .zip</dd></div>
             <div><dt>平台</dt><dd>Windows x64</dd></div>
-            <div><dt>许可</dt><dd>PolyForm Noncommercial 1.0.0</dd></div>
+            <div><dt>许可</dt><dd>AGPL-3.0-or-later</dd></div>
           </dl>
         </div>
         <p class="release-foot">增量更新只替换程序文件，<code>data</code>、<code>.env</code> 与营地授权不在更新范围内；更新失败自动回滚。</p>
@@ -123,10 +169,10 @@
         <h2>如果它帮到了你</h2>
         <p>软件对个人、学术与非营利使用免费。爱发电代收赞助，用于维护更新、发布测试和文档，不换取功能、授权或发票。</p>
         <a class="arrow-link" href="{{SPONSOR_URL}}" target="_blank" rel="noopener">去爱发电支持 <span>↗</span></a>
-        <p class="fineprint" style="margin-top:6px">赞助完全自愿；不赞助也能正常下载和使用。</p>
+        <p class="fineprint">赞助完全自愿；不赞助也能正常下载和使用。</p>
       </div>
-    </aside>
-  </div>
+    </div>
+  </section>
 </main>
 
 <footer class="footer">
@@ -146,8 +192,10 @@
       </div>
       <nav class="footer-col" aria-label="产品">
         <h2>产品</h2>
-        <a href="index.html#briefing">示例简报</a>
-        <a href="index.html#process">四步链路</a>
+        <a href="product.html">示例简报</a>
+        <a href="product.html">四步链路</a>
+        <a href="privacy.html">数据主权</a>
+        <a href="opensource.html">源码</a>
         <a href="download.html">下载</a>
         <a href="changelog.html">更新日志</a>
       </nav>
@@ -163,11 +211,25 @@
         <a href="{{SPONSOR_URL}}" target="_blank" rel="noopener">赞助作者 · 爱发电</a>
         <a href="{{LICENSE_URL}}">许可协议</a>
         <a href="download.html">系统要求</a>
+        <button class="footer-link-btn" type="button" data-copy="1136567445" data-copied="已复制群号">QQ 群 1136567445</button>
       </nav>
     </div>
-    <div class="footer-word" aria-hidden="true">{{SITE_NAME}}</div>
+    <div class="footer-gh">
+      <div class="footer-gh-main">
+        <svg class="footer-gh-mark" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        <div>
+          <p class="footer-gh-kicker">开源 · GitHub</p>
+          <p class="footer-gh-title"><a href="{{REPO_URL}}">源码都在 GitHub 上</a></p>
+          <p class="footer-gh-repo">github.com/{{GH_USER}}/kpl-scrim-lab-app</p>
+        </div>
+      </div>
+      <div class="footer-gh-side">
+        <p class="footer-gh-meta">{{GITHUB_META}}</p>
+        <a class="btn btn--ghost" href="{{REPO_URL}}">去仓库看看 <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
     <div class="footer-legal">
-      <span>© {{YEAR}} {{SITE_FULL_NAME}} · PolyForm Noncommercial 1.0.0</span>
+      <span>© {{YEAR}} {{SITE_FULL_NAME}} · AGPL-3.0-or-later</span>
       <span>与游戏开发商及赛事组织方无关联</span>
       <span>截图为合成演示数据</span>
     </div>

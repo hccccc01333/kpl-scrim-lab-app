@@ -119,3 +119,6 @@ docs/feedback-*.md
 _*.log
 _tmp_*
 .tmp_*
+
+# 本机生成的快捷方式（含绝对路径，不随仓库分发）
+*.lnk

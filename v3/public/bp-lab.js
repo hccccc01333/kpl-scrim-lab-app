@@ -595,7 +595,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
       <details class="bpl-details"><summary>逐英雄明细（全部 ${laneRows.length} 个）</summary>${table}</details>
     </div>
     <div class="bpl-card bpl-lane-panel"><div class="bpl-card-head"><h3>分路优先级</h3><span class="bpl-muted">每路前 3 · 当前分路筛选</span></div><div class="bpl-lane-grid">${laneBoard}</div></div>
-    ${note('Pick 率 / Ban 率的分母是队-局；KPL 一局有两个队-局。胜率区间为 Wilson 95%，样本不足时只作观察。')}`;
+    ${note('Pick 率 / Ban 率的分母是队-局；KPL 一局有两个队-局。样本不足时只作观察，不下结论。')}`;
     return section('heroes', '01', '英雄优先级', '当前版本哪些英雄值得优先考虑？',
       `<span class="bpl-section-meta">${esc(scopeLabel)} · ${num(board.total)} 队-局</span>`, body);
   }
@@ -701,7 +701,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
       <div><span class="bpl-eyebrow">SPOTLIGHT · 组合样本</span>
         <h3>${esc(spotlight.label)}</h3>
         <p>KPL 历史上同队同局出现 <b>${num(spotlight.games)}</b> 局，胜率 <b>${rate(spotlight.winRate)}</b>${spotlight.relative == null ? '' : `，相对单英雄基准 <b class="${spotlight.relative >= 0 ? 'is-up' : 'is-down'}">${spotlight.relative >= 0 ? '+' : ''}${fmt(spotlight.relative, 1)} pp</b>`}；近 ${state.recentDays} 天 <b>${rate(spotlight.recentWinRate)}</b>（${num(spotlight.recentGames)} 局，变化 ${spotlight.recentChange == null ? '—' : `${spotlight.recentChange >= 0 ? '+' : ''}${fmt(spotlight.recentChange, 1)} pp`}）。</p>
-        <div class="bpl-spotlight-facts">${metric('胜率区间', interval(spotlight.interval), 'Wilson 95%')}${metric('样本', num(spotlight.decided), '局有胜负')}${metric('覆盖战队', num(spotlight.teams), '支')}</div>
+        <div class="bpl-spotlight-facts">${metric('样本', num(spotlight.decided), '局有胜负')}${metric('覆盖战队', num(spotlight.teams), '支')}</div>
         <button type="button" class="bpl-ghost" data-bpl-combo-pick="${esc(spotlight.heroes.join(','))}">用这个组合</button>
       </div>
     </div>` : empty('当前范围没有可用组合 spotlight', '组合至少 2 局才进入统计。');
@@ -752,7 +752,6 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
         resultHtml = `<div class="bpl-kpis">
           ${metric('命中局数', num(summary.games), result.mode === 'lineup' ? '完整阵容' : result.mode === 'hero' ? '单英雄' : '组合')}
           ${metric('胜率', rate(summary.winRate), `${num(summary.wins)} 胜 / ${num(summary.decided)} 局`)}
-          ${metric('胜率区间', interval(summary.interval), 'Wilson 95%')}
           ${metric('覆盖战队', num(summary.teams), `${summary.from || '—'} → ${summary.to || '—'}`)}
         </div>
         <div class="bpl-grid bpl-grid-even">

@@ -263,6 +263,54 @@ class AnalysisDataTests(unittest.TestCase):
             self.assertEqual(rows[0]['matches'], 2)
             self.assertFalse(rows[0]['bound'])
 
+    def test_workspace_claim_renames_bundle_player(self):
+        """认领写 players/player_accounts 后，单局与跨局标签要跟着选手ID 走。
+
+        选手档案页读的是 player_accounts，复盘/跨局读的是 AnalysisRepository；
+        两边不合并时，同一个游戏名会一边显示选手ID、一边还是营地昵称。
+        """
+        connection = sqlite3.connect(self.db)
+        connection.executescript('''
+          CREATE TABLE teams (id TEXT PRIMARY KEY, name TEXT, status TEXT);
+          CREATE TABLE players (id TEXT PRIMARY KEY, name TEXT, team_id TEXT, position TEXT, status TEXT);
+          CREATE TABLE player_accounts (id TEXT PRIMARY KEY, player_id TEXT, platform TEXT,
+                                        account_id TEXT, nickname TEXT);
+        ''')
+        connection.execute("INSERT INTO teams VALUES ('team-own','测试队','active')")
+        connection.execute("INSERT INTO players VALUES ('p-claim','认领后ID','team-own','对抗路','active')")
+        connection.execute("INSERT INTO player_accounts VALUES ('a1','p-claim','camp','123','李白')")
+        connection.commit()
+        connection.close()
+        repo = AnalysisRepository(self.db, self.matches, self.imports)
+        data = repo.get()
+        match = next(item for item in data['matches'] if item['key'] == 'C-bundle')
+        player = next(item for item in match['players'] if item['hero'] == '李白')
+        self.assertEqual(player['label'], '认领后ID')
+        self.assertTrue(player['bound'])
+
+    def test_stale_bundle_copy_is_ignored(self):
+        """通道删除/重建后留下的旧 bundle 不能把同一局算两遍。"""
+        connection = sqlite3.connect(self.db)
+        connection.execute('CREATE TABLE channels (id TEXT PRIMARY KEY, body TEXT NOT NULL)')
+        connection.execute('INSERT INTO channels VALUES (?,?)', (
+            'live-id', json.dumps({'official': {'id': 'camp-999'}}, ensure_ascii=False)))
+        connection.commit()
+        connection.close()
+        live = bundle('channel-live-id', '2026-10-09', 900, C_BLUE, C_RED)
+        live['match']['officialReplay'] = {'id': 'camp-999'}
+        (self.matches / 'channel-live-id.json').write_text(
+            json.dumps(live, ensure_ascii=False), encoding='utf-8')
+        stale = bundle('channel-old-id', '2026-10-09', 900, C_BLUE, C_RED)
+        stale['match']['officialReplay'] = {'id': 'camp-999'}
+        (self.matches / 'channel-old-id.json').write_text(
+            json.dumps(stale, ensure_ascii=False), encoding='utf-8')
+        data = AnalysisRepository(self.db, self.matches, self.imports).get()
+        copies = [match for match in data['matches']
+                  if (match.get('officialReplay') or {}).get('id') == 'camp-999']
+        self.assertEqual(len(copies), 1, copies)
+        self.assertEqual(copies[0]['key'], 'channel-live-id')
+        self.assertTrue(any('重复' in warning for warning in data['warnings']))
+
     def test_hero_and_team_stats(self):
         heroes = self.repo.hero_stats({'sources': ['db', 'bundle']})
         ying = next(hero for hero in heroes if hero['hero'] == '影')

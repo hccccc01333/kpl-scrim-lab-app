@@ -1,0 +1,288 @@
+/* 选手详情页 · 末位覆盖层（2026-11-16）
+   这个文件在 interface.css 里最后、且**不放进任何 @layer**：
+   未分层样式优先于所有 @layer（legacy/theme/foundation/interface/celadon/board），
+   所以这里的字号不会被 design-consistency 那种「统一 12px」的规则压回去。
+   只当选手详情页的排版与筛选框用。 */
+
+/* ── 一、图内文字：一套字号、一个颜色，不再有 11px 灰字 ─────────────── */
+[data-pl-page="solo"] .pv-svg text,
+[data-pl-page="solo"] .pl-radar-label {
+  font-family: var(--font);
+  font-size: 13.5px;
+  fill: var(--text);
+}
+[data-pl-page="solo"] .pl-radar-label,
+[data-pl-page="solo"] .pv-row-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  fill: var(--text);
+}
+[data-pl-page="solo"] .pv-axis { font-size: 13px; fill: var(--text); }
+[data-pl-page="solo"] .pv-axis.is-name { font-size: 13px; fill: var(--muted); }
+[data-pl-page="solo"] .pv-axis.is-dim { font-size: 12px; fill: var(--quiet); }
+[data-pl-page="solo"] .pv-ref-label { font-size: 12.5px; fill: var(--muted); font-weight: 600; }
+[data-pl-page="solo"] .pv-col-val { font-size: 13.5px; fill: var(--text); font-weight: 700; }
+[data-pl-page="solo"] .pv-dot-text { font-size: 13px; fill: var(--text); }
+[data-pl-page="solo"] .pv-bubble-label { font-size: 13px; fill: var(--text); }
+[data-pl-page="solo"] .pv-quad-label { font-size: 12.5px; fill: var(--muted); }
+[data-pl-page="solo"] .pl-radar-tick { font-size: 12px; fill: var(--muted); font-weight: 600; }
+[data-pl-page="solo"] .pv-tm-name { font-size: 13.5px; fill: var(--text); }
+[data-pl-page="solo"] .pv-tm-sub { font-size: 12px; fill: var(--muted); }
+
+/* ── 二、下拉筛选框（替代原来的小药丸）──────────────────────────────── */
+[data-pl-page="solo"] .pv-selbar {
+  display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 0 0 14px;
+  align-items: flex-end;
+}
+[data-pl-page="solo"] .pv-sel { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+[data-pl-page="solo"] .pv-sel-label {
+  font-size: 11.5px; color: var(--muted); font-weight: 600; letter-spacing: .02em;
+}
+[data-pl-page="solo"] .pv-sel-box { position: relative; display: inline-flex; }
+[data-pl-page="solo"] .pv-sel select {
+  appearance: none; -webkit-appearance: none;
+  min-width: 148px; max-width: 260px; height: 34px;
+  padding: 0 30px 0 12px;
+  border: 1px solid var(--line-strong); border-radius: 9px;
+  background: var(--paper); color: var(--text);
+  font: 600 13px var(--font); line-height: 32px;
+  cursor: pointer; text-overflow: ellipsis;
+  transition: border-color var(--ease), box-shadow var(--ease);
+}
+[data-pl-page="solo"] .pv-sel select:hover { border-color: var(--accent); }
+[data-pl-page="solo"] .pv-sel select:focus-visible {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+[data-pl-page="solo"] .pv-sel-caret {
+  position: absolute; right: 11px; top: 50%; width: 8px; height: 8px;
+  margin-top: -5px; pointer-events: none;
+  border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted);
+  transform: rotate(45deg);
+}
+[data-pl-page="solo"] .pv-sel select:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── 三、英雄池网格（同一套按钮，字与头像都放大）────────────────────── */
+[data-pl-page="solo"] .pv-pool { display: flex; flex-direction: column; gap: 8px; max-height: 460px; overflow-y: auto; }
+[data-pl-page="solo"] .pv-pool-row { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 10px; align-items: start; }
+[data-pl-page="solo"] .pv-pool-lane { padding-top: 7px; font-size: 13px; color: var(--text); font-weight: 600; }
+[data-pl-page="solo"] .pv-pool-items { display: flex; flex-wrap: wrap; gap: 6px; }
+[data-pl-page="solo"] .pv-pool-items button {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px;
+  border: 1px solid var(--line); border-radius: 20px; background: var(--paper);
+  font: 600 13px var(--font); color: var(--text); cursor: pointer;
+}
+[data-pl-page="solo"] .pv-pool-items button:hover { border-color: var(--accent); }
+[data-pl-page="solo"] .pv-pool-items button[aria-pressed="true"] {
+  border-color: var(--accent); background: var(--soft); color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+[data-pl-page="solo"] .pv-pool-items button .portrait { width: 24px; height: 24px; border-radius: 50%; }
+[data-pl-page="solo"] .pv-pool-items button small { font-size: 11.5px; color: var(--quiet); font-weight: 500; }
+
+/* ── 四、其它统一 ──────────────────────────────────────────────────── */
+[data-pl-page="solo"] .pv-panel-head h4 { font-size: 13.5px; }
+[data-pl-page="solo"] .pv-panel-foot,
+[data-pl-page="solo"] .pdx-foot { font-size: 12.5px; color: var(--muted); }
+[data-pl-page="solo"] .pdx-lead { font-size: 13.5px; }
+[data-pl-page="solo"] .pv-heat-cell { font-size: 14px; }
+[data-pl-page="solo"] .pv-heat-cell small { font-size: 11.5px; }
+[data-pl-page="solo"] .pv-gauge-val { font-size: 21px; }
+[data-pl-page="solo"] .pv-gauge-label { font-size: 13px; }
+[data-pl-page="solo"] .pv-radar > .pv-svg,
+[data-pl-page="solo"] .pl-radar-svg { width: min(470px, 100%); height: auto; }
+
+/* ── 加黑加粗：浅灰细字在缩放下永远像"发虚"，信息类文字一律压到近墨色 ── */
+[data-pl-page="solo"] { --pv-ink-2: color-mix(in srgb, var(--text) 82%, var(--paper)); }
+
+/* SVG 文字：给一层同色极细描边，等于手动把字形"加粗"半档，小字号明显更实 */
+[data-pl-page="solo"] .pv-axis,
+[data-pl-page="solo"] .pv-axis.is-name,
+[data-pl-page="solo"] .pv-col-val,
+[data-pl-page="solo"] .pv-row-label,
+[data-pl-page="solo"] .pl-radar-label,
+[data-pl-page="solo"] .pv-dot-text,
+[data-pl-page="solo"] .pv-bubble-label,
+[data-pl-page="solo"] .pv-tm-name {
+  fill: var(--text);
+  stroke: var(--text);
+  stroke-width: .22px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+  font-weight: 600;
+}
+[data-pl-page="solo"] .pv-ref-label,
+[data-pl-page="solo"] .pv-quad-label,
+[data-pl-page="solo"] .pv-tm-sub,
+[data-pl-page="solo"] .pl-radar-tick {
+  fill: var(--pv-ink-2);
+  stroke: var(--pv-ink-2);
+  stroke-width: .18px;
+  paint-order: stroke fill;
+  font-weight: 600;
+}
+
+/* HTML 辅助文字：不再用 --quiet/--muted 那种浅灰 */
+[data-pl-page="solo"] .pdx-foot,
+[data-pl-page="solo"] .pv-panel-foot,
+[data-pl-page="solo"] .pv-note,
+[data-pl-page="solo"] .pv-gauge small,
+[data-pl-page="solo"] .pv-legend,
+[data-pl-page="solo"] .pv-heat-col,
+[data-pl-page="solo"] .pv-heat-cell small,
+[data-pl-page="solo"] .pv-sel-label,
+[data-pl-page="solo"] .pv-pool-items button small,
+[data-pl-page="solo"] .pv-strip-item,
+[data-pl-page="solo"] .pv-collabels > span {
+  color: var(--pv-ink-2);
+  font-weight: 500;
+}
+[data-pl-page="solo"] .pdx-foot,
+[data-pl-page="solo"] .pv-panel-foot { font-size: 12.5px; line-height: 1.65; }
+[data-pl-page="solo"] .pdx-lead { color: var(--pv-ink-2); }
+[data-pl-page="solo"] .pdx-lead b { color: var(--accent-ink); }
+
+/* 再上一档：图内基础字号 14px */
+[data-pl-page="solo"] .pv-svg text { font-size: 14px; }
+[data-pl-page="solo"] .pv-axis { font-size: 13.5px; }
+[data-pl-page="solo"] .pl-radar-label,
+[data-pl-page="solo"] .pv-row-label { font-size: 14px; }
+[data-pl-page="solo"] .pv-col-val,
+[data-pl-page="solo"] .pv-dot-text { font-size: 14px; }
+
+/* 仪表与雷达：按 viewBox 原始像素渲染（1:1 才不会重采样发虚） */
+[data-pl-page="solo"] .pv-gauge > .pv-svg { width: auto; max-width: none; }
+[data-pl-page="solo"] .pv-radar > .pv-svg,
+[data-pl-page="solo"] .pl-radar-svg { width: auto; max-width: 100%; }
+
+/* ── 教练用的小控件：重置筛选 / 回顶 / 头部换选手 ───────────────────── */
+[data-pl-page="solo"] .hero-anchor-nav { align-items: center; }
+[data-pl-page="solo"] .pv-reset {
+  flex: none; margin-left: auto; height: 26px; padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: 7px;
+  background: var(--paper); color: var(--muted);
+  font: 600 12px var(--font); cursor: pointer; white-space: nowrap;
+}
+[data-pl-page="solo"] .pv-reset:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--soft); }
+
+[data-pl-page="solo"] .pv-top {
+  position: fixed; right: 28px; bottom: 28px; z-index: 40;
+  width: 42px; height: 42px; border-radius: 50%;
+  border: 1px solid var(--line-strong); background: var(--paper); color: var(--muted);
+  font: 700 17px var(--font); line-height: 38px; text-align: center;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 10%); cursor: pointer;
+  transition: border-color var(--ease), color var(--ease), transform var(--ease);
+}
+[data-pl-page="solo"] .pv-top:hover { border-color: var(--accent); color: var(--accent-ink); transform: translateY(-2px); }
+
+[data-pl-page="solo"] .intro-actions { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+[data-pl-page="solo"] .pv-sel.is-head { margin-right: 4px; }
+[data-pl-page="solo"] .pv-sel.is-head .pv-sel-label { color: var(--ink-muted); }
+[data-pl-page="solo"] .pv-sel.is-head select {
+  min-width: 168px; height: 36px; background: #fff; color: var(--text);
+  border-color: color-mix(in srgb, var(--ink-text) 30%, transparent);
+}
+
+/* ── 打印 / 存 PDF：只留分析内容，卡片不跨页 ────────────────────────── */
+@media print {
+  [data-pl-page="solo"] .hero-anchor-nav,
+  [data-pl-page="solo"] .pv-top,
+  [data-pl-page="solo"] .intro-actions,
+  [data-pl-page="solo"] .pv-selbar,
+  [data-pl-page="solo"] .pv-pool { display: none !important; }
+  [data-pl-page="solo"] .pdx-card {
+    break-inside: avoid; page-break-inside: avoid;
+    border-color: #ccc; box-shadow: none;
+  }
+  [data-pl-page="solo"] .pv-grid { gap: 8px; }
+  [data-pl-page="solo"] .pv-panel { border-color: #ddd; }
+  [data-pl-page="solo"] .hero-masthead { background: #fff !important; color: #111 !important; border-color: #ccc; }
+  [data-pl-page="solo"] .hero-masthead .hero-kpi-cell strong,
+  [data-pl-page="solo"] .hero-masthead h1 { color: #111 !important; }
+}
+
+/* ── 卡片折叠 / 单卡导出 / 无数据标注 ──────────────────────────────── */
+[data-pl-page="solo"] .pdx-card-head { align-items: flex-start; }
+[data-pl-page="solo"] .pdx-tools { margin-left: auto; display: flex; gap: 4px; flex: none; }
+[data-pl-page="solo"] .pdx-tools button {
+  width: 26px; height: 26px; padding: 0; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--paper); color: var(--muted);
+  font: 700 13px var(--font); line-height: 1; cursor: pointer;
+  transition: border-color var(--ease), color var(--ease), background var(--ease);
+}
+[data-pl-page="solo"] .pdx-tools button:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--soft); }
+[data-pl-page="solo"] .pdx-card.is-folded .pdx-card-body,
+[data-pl-page="solo"] .pdx-card.is-folded .pdx-foot { display: none; }
+[data-pl-page="solo"] .pdx-card.is-folded .pdx-card-head { margin-bottom: 0; }
+[data-pl-page="solo"] .pdx-card.is-folded h3 { margin-bottom: 0; }
+
+[data-pl-page="solo"] .pv-na {
+  display: inline-block; padding: 0 5px; border-radius: 4px;
+  background: var(--surface); color: var(--muted);
+  font-size: .92em; font-weight: 600; white-space: nowrap;
+}
+
+/* 单卡导出：只留这一张卡 */
+@media print {
+  [data-pl-page="solo"].is-shot-mode .hero-masthead,
+  [data-pl-page="solo"].is-shot-mode .hero-brief,
+  [data-pl-page="solo"].is-shot-mode .hero-anchor-nav,
+  [data-pl-page="solo"].is-shot-mode .pdx-card:not(.is-shot) { display: none !important; }
+  [data-pl-page="solo"].is-shot-mode .hero-detail-grid > .section:not(:has(.is-shot)) { display: none !important; }
+  [data-pl-page="solo"].is-shot-mode .pdx-card.is-shot { border: 0; padding: 0; }
+  [data-pl-page="solo"].is-shot-mode .pdx-tools { display: none !important; }
+}
+
+/* 锚点跳转时别被吸顶导航盖住标题 */
+[data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 78px; }
+@media (max-width: 720px) {
+  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 62px; }
+}
+
+/* 键盘提示 */
+[data-pl-page="solo"] .pv-keyhint {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11.5px; color: var(--quiet); white-space: nowrap;
+}
+[data-pl-page="solo"] .pv-keyhint kbd {
+  display: inline-block; min-width: 18px; padding: 1px 4px; text-align: center;
+  border: 1px solid var(--line-strong); border-radius: 4px;
+  background: var(--paper); color: var(--muted);
+  font: 600 11px var(--font); line-height: 1.35;
+}
+[data-pl-page="solo"] .pv-keyhint + .pv-reset { margin-left: 8px; }
+
+/* ── 口径治理：卡头 N 徽标 / 范围标注 / 位置感 / 空状态 ──────────────── */
+[data-pl-page="solo"] .pdx-card h3 .pdx-n {
+  margin-left: 8px; padding: 1px 7px; border-radius: 20px;
+  background: var(--surface); color: var(--muted);
+  font: 700 11.5px var(--font); letter-spacing: 0; vertical-align: 2px;
+  font-variant-numeric: tabular-nums;
+}
+[data-pl-page="solo"] .pdx-range {
+  margin: 6px 0 10px; font-size: 11.5px; color: var(--quiet); letter-spacing: .02em;
+}
+[data-pl-page="solo"] .pv-pos {
+  align-self: center; margin-right: 4px; padding: 3px 8px; border-radius: 6px;
+  background: rgb(255 255 255 / 10%); color: #cfe0e3;
+  font: 600 11.5px var(--font); white-space: nowrap;
+}
+[data-pl-page="solo"] .pv-sel.is-nav { flex-direction: row; align-items: center; gap: 6px; margin-left: auto; }
+[data-pl-page="solo"] .pv-sel.is-nav .pv-sel-label { font-size: 11.5px; white-space: nowrap; }
+[data-pl-page="solo"] .pv-sel.is-nav select { min-width: 128px; height: 28px; font-size: 12px; padding: 0 26px 0 9px; border-radius: 7px; }
+[data-pl-page="solo"] .pv-keyhint { margin-left: 10px; }
+[data-pl-page="solo"] .pv-keyhint + .pv-sel.is-nav { margin-left: 10px; }
+[data-pl-page="solo"] .pv-sel.is-nav + .pv-reset { margin-left: 8px; }
+
+[data-pl-page="solo"] .pv-empty2 {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 22px 18px; border: 1px dashed var(--line-strong); border-radius: var(--r-md);
+  background: var(--surface); text-align: center;
+}
+[data-pl-page="solo"] .pv-empty2 b { font-size: 13.5px; color: var(--text); }
+[data-pl-page="solo"] .pv-empty2 p { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--muted); max-width: 460px; }
+[data-pl-page="solo"] .pv-relax {
+  margin-top: 4px; padding: 5px 14px; border: 1px solid var(--accent); border-radius: 8px;
+  background: var(--paper); color: var(--accent-ink); font: 600 12.5px var(--font); cursor: pointer;
+}
+[data-pl-page="solo"] .pv-relax:hover { background: var(--soft); }

@@ -193,9 +193,9 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         except OSError:
             return 0
 
-    # v8：逐局快照现在带战队分析解析出的队名，旧 pickle 缓存必须作废。
+    # v9：bundle 去重 + players/player_accounts 并入分析身份，旧 pickle 缓存作废。
     def snapshot_key():
-        return ('identity-raw-v8', source_stamp(db_path), source_stamp(matches_dir),
+        return ('identity-raw-v9', source_stamp(db_path), source_stamp(matches_dir),
                 source_stamp(imports_dir), source_stamp(results_db))
 
     def invalidate_workspace_cache():
@@ -1148,7 +1148,12 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.get('/teams')
     def teams():
-        return team_clusters.list_teams(camp_dir(), db_path, own_team_name())
+        # 战队聚合要读全部营地面板并做聚类；按营地/对局包/DB 指纹缓存，
+        # 改名、合并、同步新面板都会换 key（invalidate_workspace_cache 也会清）。
+        return cached(
+            ('teams', source_stamp(camp_dir()), source_stamp(db_path),
+             source_stamp(matches_dir), own_team_name()),
+            lambda: team_clusters.list_teams(camp_dir(), db_path, own_team_name()))
 
     # ---------------- 约定计划（教练登记） ----------------
     def plans_connection():
@@ -1666,18 +1671,22 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.get('/coach')
     def coach_board():
         """教练档案：本队教练 + 各对手战队教练（可填）与阵容。"""
+        return cached(('coach', source_stamp(camp_dir()), source_stamp(db_path)),
+                      build_coach_board)
+
+    def build_coach_board():
         opponents = team_clusters.opponent_players(camp_dir(), db_path)
         overrides = team_clusters.load_overrides(db_path)
-        teams = []
+        coaches = []
         for team in opponents['teams']:
             override = overrides.get(team['id'], {})
-            teams.append({
+            coaches.append({
                 'id': team['id'], 'name': team['displayName'], 'named': team['named'],
                 'coach': override.get('coach') or '',
                 'players': [{'id': p['id'], 'name': p['name'], 'lanes': p['lanes'], 'games': p['games']}
                             for p in team['players']],
             })
-        return {'own': {'coach': own_coach_name()}, 'teams': teams}
+        return {'own': {'coach': own_coach_name()}, 'teams': coaches}
 
     def own_coach_name():
         if not Path(db_path).is_file():

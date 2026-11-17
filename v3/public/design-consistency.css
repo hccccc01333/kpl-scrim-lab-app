@@ -274,6 +274,41 @@
 .cap-page .section-heading p { color: var(--muted); font-size: .8125rem; }
 .cap-page .cap-body { padding: 0 22px 18px; }
 
+/* 采集页：五步做成一条页签（营地同步 / 截图 / 录屏 / 回放 / 审查）。
+   2026-11-16 起这五块是同一页，不再靠页面跳转串起来。 */
+.cap-page .cap-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+}
+.cap-page .cap-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: .8125rem;
+  text-decoration: none;
+  transition: background-color .18s ease, color .18s ease;
+}
+.cap-page .cap-tab:hover { color: var(--text); background: var(--soft); }
+.cap-page .cap-tab.is-on { color: var(--text); background: var(--soft); font-weight: 650; }
+.cap-page .cap-tab i { font-style: normal; font-size: .72rem; font-weight: 500; color: var(--muted); }
+.cap-page .cap-embed { min-inline-size: 0; }
+.cap-page .cap-embed-head { display: flex; align-items: flex-start; gap: 16px; padding: 4px 2px 2px; }
+.cap-page .cap-embed-head h2 { font-family: var(--display-font); font-size: 1.35rem; font-weight: 700; letter-spacing: -.015em; }
+.cap-page .cap-embed-head p { margin-block-start: 4px; color: var(--muted); font-size: .8125rem; line-height: 1.65; }
+
+@media (max-width: 900px) {
+  .cap-page .cap-tabs { border-radius: 14px; }
+  .cap-page .cap-embed-head { flex-direction: column; gap: 8px; }
+}
+
 /* 页头通知：从整条浅绿底改成细状态条，保留成功语义。 */
 .cap-page .capture-notice {
   display: flex;

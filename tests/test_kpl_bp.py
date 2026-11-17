@@ -858,6 +858,69 @@ def test_bp_facts_lane_evidence_tiers(facts_dir):
     assert bp_facts._lane_reliability(3000, 0.5, 2.0) == 'high'
 
 
+def test_bp_facts_lane_strength_ranks_by_match_lane():
+    """英雄强度档位按**本局这条路**的池子排，不按源站主分路。
+
+    源站把李信也放进发育路榜（可走射手的战士）；本局他打对抗路，就该和对抗路
+    英雄比。拿主分路的 T2 去解释对抗路是错的。
+    """
+    heroes = {
+        '李信': {'wr': 50.8, 'wrAdj': 50.7, 'pick': 15.0,
+                 'wr7d': 51.4, 'pick7d': 13.9, 'wr30d': 50.6, 'wrAdj30d': 50.6,
+                 'tier': 'T2', 'role': '发育路', 'roleRank': 8, 'roleSize': 23},
+        '吕布': {'wr': 52.0, 'wrAdj': 51.0, 'pick': 10.0, 'wr30d': 52.0, 'wrAdj30d': 52.0},
+        '貂蝉': {'wr': 50.0, 'wrAdj': 50.0, 'pick': 6.0, 'wr30d': 50.0, 'wrAdj30d': 50.0},
+    }
+    pools = {'对抗路': ['吕布', '李信'], '中路': ['貂蝉'], '发育路': ['李信']}
+    top = bp_facts._lane_strength(heroes, pools, '对抗路', '李信')
+    assert top['role'] == '对抗路'          # 按本局分路标，不是源站主分路
+    assert top['rank'] == 2 and top['size'] == 2   # 吕布 52.0 > 李信 50.6
+    assert top['tier'].startswith('T')
+    assert top['wr7d'] == 51.4 and top['pick7d'] == 13.9
+    # 没有分路池时退回主分路档位，不报错
+    fallback = bp_facts._lane_strength(heroes, {}, '对抗路', '李信')
+    assert fallback['tier'] == 'T2'
+    assert bp_facts._lane_strength(heroes, pools, '对抗路', '不存在的英雄') is None
+
+
+def test_bp_facts_draft_combos_include_banned_heroes(facts_dir):
+    """「组合得失」要查「被 ban 的那一格」的 KPL 战绩，所以组合索引必须覆盖禁用英雄。
+
+    只按双方阵容建表时，钟馗（被 ban）不在任何阵容里，`赵云+钟馗` 永远查不到；
+    `draftCombos` 用「阵容 + 禁用」20 个英雄建索引，才拿得到这套的历史场次。
+    """
+    (facts_dir / 'kpl_combos.json').write_text(json.dumps({
+        'schema': 'bp-kpl-combos-v1', 'source': 'kpl', 'games': 100, 'minGames': 2,
+        'windowStart': '2024-01-05', 'windowEnd': '2026-11-10',
+        'pairs': [{'heroes': ['赵云', '钟馗'], 'n': 24, 'wins': 19, 'wr': 79.2,
+                   'year': 2026, 'lastDate': '2026-10-01', 'teams': []}],
+        'trios': [{'heroes': ['扁鹊', '赵云', '钟馗'], 'n': 6, 'wins': 4, 'wr': 66.7,
+                   'year': 2025, 'lastDate': '2025-03-01', 'teams': []}],
+    }, ensure_ascii=False), encoding='utf-8')
+    (facts_dir / 'lane_matchups.json').write_text(json.dumps({
+        'schema': 'bp-lane-facts-v1', 'source': 'ladder', 'bracket': '巅峰千强',
+        'windowDays': 56, 'windowEnd': '2026-11-16', 'minN': 50, 'minPickRate': 0,
+        'pairs': [], 'heroes': {}, 'rolePools': {},
+    }, ensure_ascii=False), encoding='utf-8')
+    bp_facts._cache.clear()
+    detail = {'ownCamp': 'blue',
+              'players': [
+                  {'camp': 'blue', 'position': '打野', 'hero': '赵云'},
+                  {'camp': 'red', 'position': '打野', 'hero': '娜可露露'}],
+              'draft': {'picks': {'left': [{'name': '赵云'}, {'name': '扁鹊'}],
+                                  'right': [{'name': '娜可露露'}, {'name': '蔡文姬'}]},
+                        'bans': {'left': [{'name': '盾山'}], 'right': [{'name': '钟馗'}]}}}
+    combos = bp_facts.for_match(detail)['kpl']['draftCombos']
+    # 排序后的键：赵云+钟馗（被 ban 的英雄也要在索引里）
+    assert '赵云+钟馗' in combos['pairs']
+    assert combos['pairs']['赵云+钟馗']['n'] == 24
+    assert combos['pairs']['赵云+钟馗']['wr'] == 79.2
+    # 三人：扁鹊 + 赵云 + 钟馗
+    assert '扁鹊+赵云+钟馗' in combos['trios']
+    # 与阵中英雄无关的组合不会混进来（娜可露露 与 盾山 只是各自出现，不是同队组合）
+    assert '娜可露露+盾山' not in combos['pairs']
+
+
 def test_bp_facts_counters_block(facts_dir):
     """克制命中：KPL 有向对位与营地指数两源分开，门槛判定落在 bp_facts。"""
     (facts_dir / 'kpl_counters.json').write_text(json.dumps({
@@ -909,3 +972,57 @@ def test_bp_facts_counters_block(facts_dir):
     lane_s = next(row for row in counters['lanes'] if row['lane'] == '游走')
     assert lane_s['mine'] == '钟馗' and lane_s['foe'] == '张良'
     assert lane_s['campCountered'] == 3.1 and lane_s['campCounteredHit'] is True
+
+
+def test_bp_facts_counters_four_way_and_our_view(facts_dir):
+    """营地表只存前 3 组关系：一对英雄要两侧各查两向；KPL 统一成我方视角一条。
+
+    本局对应真实反馈：五路全写成「两源均无克制记录」，因为只在**我方英雄**的
+    关系表里查——`a 克 b` 也可能只记在 b 的「被克」列表里（李信↔鲁班七号）。
+    """
+    (facts_dir / 'camp_counters.json').write_text(json.dumps({
+        'schema': 'bp-camp-counters-v1', 'source': '王者营地 App 英雄关系',
+        'capturedAt': '2026-11-08',
+        'heroes': {
+            # 只有吕布那一侧记了「被李信克」，李信自己的表里没有吕布
+            '吕布': {'counters': [], 'counteredBy': [{'hero': '李信', 'index': 3.25}]},
+            '李信': {'counters': [], 'counteredBy': []},
+        },
+    }, ensure_ascii=False), encoding='utf-8')
+    (facts_dir / 'kpl_counters.json').write_text(json.dumps({
+        'schema': 'bp-kpl-counters-v1', 'source': 'kpl-official', 'sinceYear': 2024,
+        'games': 50, 'minN': 5, 'windowStart': '2024-01-05', 'windowEnd': '2026-11-10',
+        'pairs': [
+            # 只有 b→a 这个方向有行：我方胜率要按 100 − 对方胜率 折算
+            {'a': '貂蝉', 'b': '扁鹊', 'n': 7, 'wins': 5, 'wr': 71.4, 'year': 2026,
+             'lastDate': '2026-11-01', 'teams': []},
+        ],
+    }, ensure_ascii=False), encoding='utf-8')
+    (facts_dir / 'lane_matchups.json').write_text(json.dumps({
+        'schema': 'bp-lane-facts-v1', 'source': 'ladder', 'bracket': '巅峰千强',
+        'windowDays': 56, 'windowEnd': '2026-11-16', 'minN': 50, 'minPickRate': 0,
+        'pairs': [], 'heroes': {},
+    }, ensure_ascii=False), encoding='utf-8')
+    bp_facts._cache.clear()
+    detail = {'ownCamp': 'blue',
+              'players': [
+                  {'camp': 'blue', 'position': '对抗路', 'hero': '李信'},
+                  {'camp': 'blue', 'position': '中路', 'hero': '扁鹊'},
+                  {'camp': 'red', 'position': '对抗路', 'hero': '吕布'},
+                  {'camp': 'red', 'position': '中路', 'hero': '貂蝉'}],
+              'draft': {'picks': {'left': [{'name': '李信'}, {'name': '扁鹊'}],
+                                  'right': [{'name': '吕布'}, {'name': '貂蝉'}]},
+                        'bans': {'left': [], 'right': []}}}
+    counters = bp_facts.for_match(detail)['counters']
+    # 四向查询：吕布一侧的「被李信克」要在对抗路这一行命中，且标明来源是对方那侧
+    top = next(row for row in counters['lanes'] if row['lane'] == '对抗路')
+    assert top['campCounter'] == 3.25 and top['campCounterVia'] == 'foe'
+    assert top['campHit'] is True and top['campCountered'] is None
+    # KPL 只有 貂蝉→扁鹊（对方 71.4%）这一行：折算成我方 28.6%，7 局算观察值
+    mid = next(row for row in counters['lanes'] if row['lane'] == '中路')
+    assert mid['kpl']['n'] == 7
+    assert mid['kpl']['wr'] == pytest.approx(28.6)
+    assert mid['kpl']['source'] == 'rev'
+    assert mid['kplHit'] is False and mid['kplWatch'] is True
+    # 方向要对：我方 28.6% 是吃亏，lead 必须为负，不能被读成「我方占优」
+    assert mid['kpl']['lead'] < 0

@@ -337,6 +337,80 @@ class AnalysisRepository:
                     player['label'] = roster[player_id]
                     player['bound'] = True
 
+    @staticmethod
+    def _merge_workspace_identity(connection, settings, roster, aliases, profile):
+        """把选手主数据（players / player_accounts）并进分析口径。
+
+        认领/改名写的是 ``players`` + ``player_accounts``；``settings.aliases``
+        只作历史兜底。这里按账号昵称把「营地游戏名 → 选手ID」补进同一张表，
+        单局复盘 / 跨局分析 / 表格导入才会和选手档案页显示同一个名字。
+        只补缺，不覆盖 settings 里已有的人工映射。
+        """
+        try:
+            team_rows = connection.execute('SELECT id, name FROM teams').fetchall()
+            player_rows = connection.execute(
+                'SELECT id, name, team_id, position, status FROM players').fetchall()
+            account_rows = connection.execute(
+                "SELECT account_id, nickname, player_id FROM player_accounts"
+                " WHERE platform='camp'").fetchall()
+        except sqlite3.Error:
+            # 旧库没有这三张表：保持 settings 口径，不影响任何分析页。
+            return
+        team_names = {str(row['id']): clean(row['name']) for row in team_rows if row['name']}
+        own_name = clean(settings.get('teamName'))
+        own_ids = {team_id for team_id, name in team_names.items() if own_name and name == own_name}
+        own_ids.add('team-own')
+        enemy_aliases = profile.setdefault('enemyAliases', {})
+        members = profile.setdefault('members', [])
+        member_by_id = {str(item.get('id')): item for item in members}
+        team_by_player = {}
+        for row in player_rows:
+            player_id = str(row['id'])
+            team_id = str(row['team_id'] or '')
+            team_by_player[player_id] = team_id
+            if str(row['status'] or 'active') != 'active':
+                continue
+            name = clean(row['name'])
+            if not name:
+                continue
+            team = team_names.get(team_id, '')
+            # 本队显示名跟 settings.teamName 走：旧 player_board 按
+            # `member.team == teamName` 过滤本队名单，写成 teams 表里的
+            # 「我方战队」会把本队选手漏掉。
+            display_team = own_name if team_id in own_ids and own_name else team
+            label = name
+            # 占位队名（待命名战队）不是真队名，不加前缀；否则列表里会出现
+            # 「待命名战队.某人」这种比昵称还难认的标签。
+            if (team and not team.startswith('待命名') and team_id not in own_ids
+                    and not name.startswith(team + '.')):
+                label = f'{team}.{name}'
+            roster[player_id] = label
+            existing = member_by_id.get(player_id)
+            if existing is not None:
+                # 旧 settings.roster 迁移过来的同 id 选手：改名/转会后这里跟着更新，
+                # 否则 player_board 的名单标签还是旧名字。
+                existing.update({'name': name, 'label': label, 'team': display_team,
+                                 'position': lane_name(row['position']) or existing.get('position') or ''})
+            else:
+                member = {
+                    'id': player_id, 'name': name, 'label': label,
+                    'realName': '', 'position': lane_name(row['position']),
+                    'team': display_team, 'tags': [], 'number': None,
+                    'campUserId': '', 'archived': False,
+                }
+                member_by_id[player_id] = member
+                members.append(member)
+        for row in account_rows:
+            nickname = clean(row['nickname'])
+            player_id = str(row['player_id'] or '')
+            if not nickname or player_id not in roster:
+                continue
+            # 没归队的选手ID 默认按本队处理：建档页「新建选手ID」允许先不选战队，
+            # 这批人多半是本队队员；放到 enemyAliases 会让认领在复盘页完全不生效。
+            team_id = team_by_player.get(player_id)
+            table = aliases if (not team_id or team_id in own_ids) else enemy_aliases
+            table.setdefault(nickname, player_id)
+
     def _load_db(self, warnings):
         if not self.db_path.is_file():
             warnings.append('未找到工作台数据库，仅使用录像数据包/表格。')
@@ -384,6 +458,11 @@ class AnalysisRepository:
                 } for player in roster_members],
             }
             matches, drafts = [], 0
+            # 认领/改名现在写 players + player_accounts；settings.aliases 只是
+            # 历史兜底。不并进来的话，选手档案页已经按选手ID 显示，单局复盘与
+            # 跨局分析却还是营地昵称——同一场比赛两套名字。
+            self._merge_workspace_identity(connection, settings, roster, aliases,
+                                           profile)
             for row in connection.execute('SELECT body FROM matches'):
                 body = json.loads(row[0])
                 if body.get('status') != 'confirmed':
@@ -517,10 +596,31 @@ class AnalysisRepository:
             'warnings': [], 'status': body.get('status'),
         }
 
+    def _live_channel_ids(self):
+        """采集通道表里的 id；用来判断一份 bundle 是否还对应现存的通道。
+
+        通道删除/重建后，旧 `data/matches/channel-*.json` 可能留在磁盘上；
+        只按文件名读会把同一局算很多遍。这里读一次通道表，供去重时优先
+        保留「还活着」的那一份。
+        """
+        if not self.db_path.is_file():
+            return set()
+        try:
+            connection = sqlite3.connect(f'file:{self.db_path.as_posix()}?mode=ro', uri=True)
+            try:
+                return {str(row[0]) for row in connection.execute('SELECT id FROM channels')}
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return set()
+
     def _load_bundles(self, warnings):
         result = []
         if not self.matches_dir.is_dir():
             return result
+        live_channels = self._live_channel_ids()
+        seen_official = {}
+        duplicates = 0
         for path in sorted(self.matches_dir.glob('*.json')):
             try:
                 value = json.loads(path.read_text(encoding='utf-8'))
@@ -577,7 +677,7 @@ class AnalysisRepository:
                 # 回放在对局保存之后才挂上时，旧 bundle 的 timeline 会是空的；
                 # 直接读官方经济，避免要求用户重新入库一次。
                 timeline = official_economy.from_bundle(self.official_dir, value)
-            result.append({
+            entry = {
                 'key': match.get('key') or path.stem,
                 'dbId': None, 'bundleKey': match.get('key') or path.stem,
                 'sources': ['bundle'], 'source': 'bundle',
@@ -610,7 +710,32 @@ class AnalysisRepository:
                 },
                 'warnings': value.get('warnings') or [],
                 'status': 'bundle', 'bp': match.get('bp'),
-            })
+            }
+            # 同一局只留一份 bundle：优先「通道还在」的那份，其次最新文件。
+            # 通道删除/重建后旧 bundle 会留在 data/matches，不去重的话同一局
+            # 会在对局列表和所有聚合里重复 2–8 次（实测 386 行 / 103 局）。
+            official_id = str(official.get('id') or '')
+            if not official_id:
+                seq = str((match.get('campBp') or {}).get('gameSeq') or '')
+                official_id = f'camp-{seq}' if seq else ''
+            channel_id = str(entry['key'])[8:] if str(entry['key']).startswith('channel-') else ''
+            is_live = channel_id in live_channels
+            try:
+                mtime = path.stat().st_mtime_ns
+            except OSError:
+                mtime = 0
+            if official_id:
+                previous = seen_official.get(official_id)
+                if previous is not None:
+                    duplicates += 1
+                    if (is_live and not previous[0]) or (is_live == previous[0] and mtime >= previous[1]):
+                        seen_official[official_id] = (is_live, mtime, previous[2])
+                        result[previous[2]] = entry
+                    continue
+                seen_official[official_id] = (is_live, mtime, len(result))
+            result.append(entry)
+        if duplicates:
+            warnings.append(f'已忽略 {duplicates} 份重复/过期的对局包（同一局有多份副本）')
         return result
 
     def _unify(self, db_matches, bundles, warnings):

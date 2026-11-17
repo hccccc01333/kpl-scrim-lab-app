@@ -173,6 +173,16 @@
     });
   }
 
+  /* ---------- 滚动条宽度：给首屏出血用 ---------- */
+
+  function syncScrollbar() {
+    var width = window.innerWidth - doc.documentElement.clientWidth;
+    doc.documentElement.style.setProperty('--sbw', Math.max(0, width) + 'px');
+  }
+
+  syncScrollbar();
+  window.addEventListener('resize', syncScrollbar, { passive: true });
+
   /* ---------- 滚动：进度条、吸顶阴影、回顶按钮 ---------- */
 
   var topbar = doc.querySelector('.topbar');
@@ -320,6 +330,44 @@
           doc.body.removeChild(area);
           done();
         }
+      });
+    });
+  })();
+
+  /* ---------- 复制仓库地址 / 邮箱等 ---------- */
+
+  (function () {
+    function copyText(text, done) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, done);
+        return;
+      }
+      var area = doc.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      doc.body.appendChild(area);
+      area.select();
+      try { doc.execCommand('copy'); } catch (error) {}
+      doc.body.removeChild(area);
+      done();
+    }
+
+    doc.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.setAttribute('data-sfx-skip', '');
+      btn.addEventListener('click', function () {
+        var text = btn.getAttribute('data-copy');
+        if (!text) return;
+        var original = btn.textContent;
+        copyText(text, function () {
+          btn.textContent = btn.getAttribute('data-copied') || '已复制';
+          btn.classList.add('is-done');
+          sfx.play('success');
+          window.setTimeout(function () {
+            btn.textContent = original;
+            btn.classList.remove('is-done');
+          }, 1800);
+        });
       });
     });
   })();
@@ -642,8 +690,18 @@
     if (!board) return;
     var tabs = Array.prototype.slice.call(board.querySelectorAll('.board-tab'));
     var panels = Array.prototype.slice.call(board.querySelectorAll('.board-panel'));
+    var indicator = board.querySelector('.board-indicator');
+    var ghost = doc.querySelector('[data-board-ghost]');
     if (!tabs.length || tabs.length !== panels.length) return;
     var current = 0;
+
+    function place() {
+      if (!indicator) return;
+      var tab = tabs[current];
+      if (!tab) return;
+      indicator.style.left = tab.offsetLeft + 'px';
+      indicator.style.width = tab.offsetWidth + 'px';
+    }
 
     function open(index) {
       current = index;
@@ -655,6 +713,13 @@
       panels.forEach(function (panel, i) {
         panel.classList.toggle('is-open', i === index);
       });
+      place();
+      if (ghost) {
+        ghost.textContent = '0' + (index + 1);
+        ghost.classList.remove('is-in');
+        void ghost.offsetWidth;
+        ghost.classList.add('is-in');
+      }
     }
 
     tabs.forEach(function (tab, index) {
@@ -667,6 +732,134 @@
     });
 
     open(0);
+    window.requestAnimationFrame(function () {
+      board.classList.add('is-init');
+    });
+
+    var resizeTimer = 0;
+    window.addEventListener('resize', function () {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(place, 120);
+    }, { passive: true });
+  })();
+
+  /* ---------- 数据流细线：从 data/ 绕到承诺之下 ---------- */
+
+  (function () {
+    var flow = doc.querySelector('[data-flow]');
+    if (!flow) return;
+    var grid = flow.parentElement;
+    var card = grid.querySelector('.data-card');
+    var copy = grid.querySelector('.privacy-copy');
+    if (!card || !copy) return;
+
+    var segH1 = flow.querySelector('.flow-h1');
+    var segV = flow.querySelector('.flow-v');
+    var segH2 = flow.querySelector('.flow-h2');
+    var dot = flow.querySelector('.flow-dot');
+
+    function draw() {
+      if (window.innerWidth < 1080) {
+        flow.style.display = 'none';
+        return;
+      }
+      flow.style.display = '';
+
+      var g = grid.getBoundingClientRect();
+      var c = card.getBoundingClientRect();
+      var l = copy.getBoundingClientRect();
+
+      var xCard = c.left - g.left;
+      var yTop = c.top - g.top + 26;
+      var lane = Math.max(24, xCard - 34);
+      var yBottom = l.bottom - g.top + 26;
+      var xEnd = l.left - g.left + 44;
+      if (yBottom <= yTop + 40) yBottom = yTop + 40;
+
+      segH1.style.left = lane + 'px';
+      segH1.style.top = yTop + 'px';
+      segH1.style.width = Math.max(0, xCard - lane) + 'px';
+
+      segV.style.left = lane + 'px';
+      segV.style.top = yTop + 'px';
+      segV.style.height = Math.max(0, yBottom - yTop) + 'px';
+
+      segH2.style.left = xEnd + 'px';
+      segH2.style.top = yBottom + 'px';
+      segH2.style.width = Math.max(0, lane - xEnd) + 'px';
+
+      dot.style.left = xEnd - 2 + 'px';
+      dot.style.top = yBottom - 2 + 'px';
+    }
+
+    draw();
+
+    function reveal() {
+      flow.classList.add('is-drawn');
+    }
+
+    if ('IntersectionObserver' in window && !reduce.matches) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          reveal();
+          io.disconnect();
+        });
+      }, { rootMargin: '0px 0px -12% 0px' });
+      io.observe(grid);
+    } else {
+      reveal();
+    }
+
+    var timer = 0;
+    window.addEventListener('resize', function () {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(draw, 120);
+    }, { passive: true });
+
+    if ('ResizeObserver' in window) {
+      new ResizeObserver(draw).observe(grid);
+    }
+  })();
+
+  /* ---------- 打印时展开所有折叠项 ---------- */
+
+  (function () {
+    var items = Array.prototype.slice.call(doc.querySelectorAll('details'));
+    if (!items.length) return;
+    var state = [];
+    window.addEventListener('beforeprint', function () {
+      state = items.map(function (item) { return item.open; });
+      items.forEach(function (item) { item.open = true; });
+    });
+    window.addEventListener('afterprint', function () {
+      items.forEach(function (item, i) { item.open = state[i] || false; });
+    });
+  })();
+
+  /* ---------- 赞助说明 ---------- */
+
+  (function () {
+    var dialog = doc.getElementById('sponsor');
+    var opener = doc.querySelector('[data-sponsor-open]');
+    if (!dialog || typeof dialog.showModal !== 'function') return;
+
+    if (opener) {
+      opener.addEventListener('click', function (event) {
+        event.preventDefault();
+        dialog.showModal();
+        sfx.play('open');
+      });
+    }
+
+    var close = dialog.querySelector('[data-sponsor-close]');
+    if (close) close.addEventListener('click', function () { dialog.close('dismiss'); });
+
+    dialog.addEventListener('click', function (event) {
+      if (event.target === dialog) dialog.close('dismiss');
+    });
+
+    dialog.addEventListener('close', function () { sfx.play('close'); });
   })();
 
   /* ---------- 首访说明 ---------- */

@@ -378,18 +378,22 @@ def rebuild_facts(log=print) -> dict:
     """hero_daily.parquet + 最新对位行 → data/facts/lane_matchups.json。"""
     if not DAILY_PARQUET.exists():
         raise RuntimeError('hero_daily.parquet 不存在，先跑 --charts --build-daily')
+    from scripts.build_bp_facts import _role_pools  # noqa: E402  （分路池 → T1–T4 档位）
     hero_stats, window_end = _load_hero_daily(DAILY_PARQUET, date.today())
     rows = build_lane_rows(_latest_matchup_rows(log), hero_stats)
-    ladder = build_ladder_doc(rows, hero_stats, window_end)
+    ladder = build_ladder_doc(rows, hero_stats, window_end,
+                              _role_pools(MATCHUP_DIR / 'role_pools.json'))
     FACTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = FACTS_PATH.with_suffix('.json.tmp')
     tmp.write_text(json.dumps(ladder, ensure_ascii=False), encoding='utf-8')
     tmp.replace(FACTS_PATH)
-    log(f'[peak] lane_matchups.json 重建：{len(rows)} 条对位 · 窗口 {window_end}')
+    tiers = sum(1 for row in ladder['heroes'].values() if row.get('tier'))
+    log(f'[peak] lane_matchups.json 重建：{len(rows)} 条对位 · 窗口 {window_end} · '
+        f'{tiers} 个英雄有档位')
     with _state_lock:
         _state['windowEnd'] = str(window_end)
         _state['pairs'] = len(rows)
-    return {'pairs': len(rows), 'windowEnd': str(window_end)}
+    return {'pairs': len(rows), 'windowEnd': str(window_end), 'tiers': tiers}
 
 
 # ---------------------------------------------------------------------------

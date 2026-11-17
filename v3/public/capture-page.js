@@ -62,7 +62,15 @@ async function api(path, { method = 'GET', body, raw, signal } = {}) {
     }
     throw error;
   }
-  return response.json();
+  /* 只有单页应用的静态服务器会对任意路径回 200 的 index.html；
+     解析不出 JSON 说明这个地址不是工作台，按「接口不在」处理，页面才说得出原因。 */
+  try {
+    return await response.json();
+  } catch {
+    const missing = new Error('采集数据暂时读不到。');
+    missing.unavailable = true;
+    throw missing;
+  }
 }
 
 function stamp(iso) {
@@ -130,9 +138,19 @@ function resultChip(entry) {
   return `<i class="ingest-won ${result === 1 ? 'is-win' : 'is-loss'}">${result === 1 ? '胜' : '负'}</i>`;
 }
 
+/* 采集页的五个页签：营地同步 / 截图 / 录屏 / 回放 / 审查。
+   2026-11-16：后四个原先是独立页面（#shots / #videos / #replays / #review），
+   现在是同一个采集页的页签；旧链接仍然可用，路由把它们都映射回 #ingest。 */
+const CAPTURE_HASHES = ['#ingest', '#shots', '#videos', '#replays', '#review'];
+
 export function createCapture(h) {
   const { esc, fmt, table, block, stats, empty, withPage, icon } = h;
   const text = (value) => esc(value === null || value === undefined || value === '' ? '—' : value);
+  /* 素材页与审查明细在 features.js 里比采集页晚创建，用 getter 晚绑定。 */
+  const sourcePages = () => h.sources?.();
+  const reviewPages = () => h.review?.();
+
+  const onCapturePage = () => CAPTURE_HASHES.some((hash) => location.hash.startsWith(hash));
 
   const state = {
     value: null,
@@ -142,6 +160,10 @@ export function createCapture(h) {
     checked: {},
     busy: '',
     notice: '',
+    /* 只有 /api/channels 读不到时的降级说明；camp/sync 挂了才算整页读不到。 */
+    degraded: '',
+    /* 整页读不到时的判定结果：{ cause: not-workbench|api-mismatch|offline, origin, port }。 */
+    failure: null,
     listNote: '',
     authIssue: '',
     authCheckedAt: 0,
@@ -165,7 +187,21 @@ export function createCapture(h) {
     pullCursor: null,
     pullHasMore: false,
     pullPages: 0,
+    // 上一次整页取数的时刻：切页签不算刷新，短时间内的重复进入直接复用，避免每点一下都重拉 1MB。
+    loadedAt: 0,
+    // 「审查」页签里正在看的那一条明细（#review/<id>）。
+    reviewValue: null,
   };
+
+  /** 当前 hash 落在采集页的哪个页签（旧链接 #shots/#videos/#replays/#review 一律映射进来）。 */
+  function routeParts() {
+    const [path] = location.hash.slice(1).split('?');
+    const [name = '', sub = ''] = path.split('/');
+    let id = sub || '';
+    try { id = decodeURIComponent(id); } catch { /* 非法编码就按原文 */ }
+    const tab = { ingest: 'camp', shots: 'shots', videos: 'videos', replays: 'replays', review: 'review' }[name];
+    return { tab: tab || 'camp', id: tab === 'review' ? id : '' };
+  }
 
   function stopPoll() {
     if (state.poll) {
@@ -227,7 +263,7 @@ export function createCapture(h) {
   function paint(keepScroll = false) {
     const root = document.querySelector('#content');
     // 同步在后台跑的时候用户可能已经切走：这时只更新右下角，别把别的页面重绘成采集页。
-    if (!location.hash.startsWith('#ingest')) { renderWidget(); return; }
+    if (!onCapturePage()) { renderWidget(); return; }
     if (root && state.value) {
       // 勾选一局就把整页换掉会让列表跳回原处，逐个取消勾选时要保持当前位置。
       const anchor = keepScroll ? window.scrollY : null;
@@ -243,9 +279,10 @@ export function createCapture(h) {
     const total = Math.max(1, Number(p.total) || 1);
     const done = Math.min(total, Math.max(0, Number(p.done) || 0));
     const percent = Math.round((done / total) * 100);
-    const phase = p.phase === 'channel' ? '正在写入正式统计'
-      : p.phase === 'done' ? '正在收尾'
-        : p.phase === 'list' ? '正在读取对局列表' : '正在同步对局详情';
+    const phase = p.phase === 'official' ? '正在补拉官方回放'
+      : p.phase === 'channel' ? '正在写入正式统计'
+        : p.phase === 'done' ? '正在收尾'
+          : p.phase === 'list' ? '正在读取对局列表' : '正在同步对局详情';
     const detail = p.current ? ` · 对局 ${p.current}` : '';
     const count = p.phase === 'list'
       ? `已翻 ${done} / ${total} 页${p.matches ? ` · 已拿到 ${p.matches} 局` : ''}`
@@ -275,36 +312,96 @@ export function createCapture(h) {
   }
 
   async function reloadValue() {
-    state.value = await load('ingest', '', undefined);
+    // 写操作之后要把数据换成最新的，必须绕开「切页签不重取」的短期缓存。
+    state.value = await load('ingest', '', undefined, true);
   }
 
   // ---------------- 数据 ----------------
 
-  let unavailableRetries = 0;
-  async function load(_name, _key, signal) {
+  /* 「读不到」有三种完全不同的原因，页面必须分开说，否则教练只能看到一句
+     「暂时读不到」：接口本身不在（开的不是工作台那个地址）、工作台没在跑、
+     工作台在线但采集接口异常。判据是工作台独有的 /api/health。 */
+  async function probeWorkbench() {
     try {
-      const [initialChannels, sync, config, catalog, matchesView, shots, recordings] = await Promise.all([
-        api('channels', { signal }),
-        api('camp/sync', { signal }),
+      const response = await fetch(ROOT_API + 'health', { cache: 'no-store' });
+      if (!response.ok) return { ok: false, status: response.status };
+      const payload = await response.json().catch(() => ({}));
+      return { ok: true, status: response.status, pid: payload.pid || 0, version: payload.version || '' };
+    } catch {
+      return { ok: false, status: 0 };
+    }
+  }
+
+  async function classifyFailure() {
+    const health = await probeWorkbench();
+    const port = String(location.port || '');
+    if (health.ok) return { cause: 'api-mismatch', origin: location.origin, port };
+    if (health.status === 404) {
+      // 工作台默认端口上 404：多半是旧版本没这套接口，而不是开错了地址。
+      return { cause: port === '8766' ? 'api-mismatch' : 'not-workbench', origin: location.origin, port };
+    }
+    return { cause: 'offline', origin: location.origin, port };
+  }
+
+  let unavailableRetries = 0;
+  /* 采集页的五个页签共用一份数据：切页签时 hash 变了，但没必要把渠道、营地同步、
+     目录、素材重新拉一遍（跨局明细那份就有 400KB）。显式刷新（fresh）才重取。 */
+  const LOAD_TTL_MS = 15000;
+
+  async function load(_name, _key, signal, fresh = false) {
+    const route = routeParts();
+    const cached = !fresh && state.value && Date.now() - state.loadedAt < LOAD_TTL_MS;
+    if (cached) {
+      await loadReviewDetail(route, signal);
+      return state.value;
+    }
+    try {
+      // 次要数据并行取；拿不到只是少块内容，不该把整页拖成错误卡。
+      const extras = Promise.all([
         api('camp/config', { signal }).catch(() => ({ players: [] })),
         // 英雄图标与阵容：拿不到时只是不显示头像，不影响主流程
         api('catalog', { signal }).catch(() => ({ entries: [] })),
         api('studio/view/matches', { signal }).catch(() => ({ matches: [] })),
-        // 两个 OCR 窗口：读不到时显示 0，不影响营地主流程
+        // 截图 / 录屏 / 回放三块：同一个采集页里的页签，一起取，切换不再请求
         api('postgame/images', { signal }).catch(() => ({ images: [], groups: [] })),
         api('recordings', { signal }).catch(() => ({ recordings: [], jobs: [] })),
+        api('ocr/status', { signal }).catch(() => ({})),
+        api('ocr/install', { signal }).catch(() => null),
+        api('replays', { signal }).catch(() => ({ replays: [] })),
+        // 回放补拉：按钮要显示「还能补几局」，拿不到就退回 0，不影响主流程。
+        api('official/coverage', { signal }).catch(() => null),
       ]);
+      /* 两个核心接口分开取：只挂审查列表时页面照常铺开（降级），
+         不会因为一半数据没回来就把授权、拉取、OCR 全藏起来。
+         camp/sync 挂了才是整页不可信 —— 授权、选手、已同步对局都从它来。 */
+      const [channelsResult, syncResult] = await Promise.allSettled([
+        api('channels', { signal }),
+        api('camp/sync', { signal }),
+      ]);
+      if (syncResult.status === 'rejected') throw syncResult.reason;
+      const sync = syncResult.value;
       // camp/sync 会补齐历史详情并自动通过完整对局；如果这次确实写了，
       // channels 可能比它先返回，再读一次保证首屏就是最新状态。
       const backfilled = Number(sync?.backfill?.created || 0);
       const backfillSaved = Number(sync?.backfill?.saved || 0);
       const finalized = Number(sync?.finalize?.passed || 0);
-      let channels = initialChannels;
-      if (backfilled > 0 || finalized > 0) {
-        channels = await api('channels', { signal });
+      let channels;
+      if (channelsResult.status === 'fulfilled') {
+        channels = channelsResult.value;
+        if (backfilled > 0 || finalized > 0) channels = await api('channels', { signal });
+      } else {
+        channels = { channels: [] };
+        if (!channelsResult.reason?.unavailable) throw channelsResult.reason;
       }
+      const [config, catalog, matchesView, shots, recordings, ocrStatus, ocrInstall, replays, coverage] = await extras;
       // 保存一份，供写操作后局部重绘（paint）使用
-      state.value = { channels, sync, config, catalog, matchesView, shots, recordings };
+      state.value = { channels, sync, config, catalog, matchesView, shots, recordings,
+        ocrStatus, ocrInstall, replays, officialCoverage: coverage };
+      state.loadedAt = Date.now();
+      hydrateSections();
+      await loadReviewDetail(route, signal);
+      state.degraded = channelsResult.status === 'rejected' ? '对局审查列表' : '';
+      state.failure = null;
       unavailableRetries = 0;
       const auth = sync?.auth || {};
       state.authIssue = auth.authorized && auth.expired ? (auth.reason || '营地登录态已失效。') : '';
@@ -316,17 +413,85 @@ export function createCapture(h) {
       }
       return state.value;
     } catch (error) {
+      /* 网络层断开交给 app.js 的全局重连（它会自动重新加载这一页）；
+         这里只处理接口层「回来了但没这个地址」。 */
       if (!error?.unavailable) throw error;
       /* 静态资源与路由表可能短暂错配：先静默重试，别急着把整页换成错误卡。 */
-      if (signal?.aborted || unavailableRetries >= 2) {
-        unavailableRetries = 0;
-        state.value = null;
-        return { unavailable: true };
+      if (signal?.aborted) return { unavailable: true, failure: state.failure };
+      if (unavailableRetries < 3) {
+        unavailableRetries += 1;
+        await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** (unavailableRetries - 1)));
+        if (!signal?.aborted) return load(_name, _key, signal);
       }
-      unavailableRetries += 1;
-      await new Promise((resolve) => setTimeout(resolve, 350 * unavailableRetries));
-      if (signal?.aborted) { unavailableRetries = 0; return { unavailable: true }; }
-      return load(_name, _key, signal);
+      unavailableRetries = 0;
+      state.value = null;
+      state.failure = await classifyFailure();
+      return { unavailable: true, failure: state.failure };
+    }
+  }
+
+  /** 把三块素材数据交给 sources-page，并约定「重绘 / 重取」都回到采集页。 */
+  function hydrateSections() {
+    const pages = sourcePages();
+    if (!pages?.hydrate) return;
+    pages.hydrate({
+      shots: sourceValue('shots'),
+      videos: sourceValue('videos'),
+      replays: sourceValue('replays'),
+    }, {
+      repaint: () => paint(),
+      reload: () => reloadSections(),
+    });
+  }
+
+  function sourceValue(name) {
+    const value = state.value || {};
+    const channels = value.channels || { channels: [] };
+    if (name === 'shots') {
+      return { images: value.shots, channels,
+        status: value.ocrStatus || {}, install: value.ocrInstall || null };
+    }
+    if (name === 'videos') {
+      return { recordings: value.recordings, channels,
+        status: value.ocrStatus || {}, install: value.ocrInstall || null };
+    }
+    return { replays: value.replays, channels };
+  }
+
+  /** 素材页上的上传 / 补采结束后重取这三块（不动营地与目录）。 */
+  async function reloadSections() {
+    if (!state.value) return;
+    const [shots, recordings, replays, ocrStatus, ocrInstall] = await Promise.all([
+      api('postgame/images').catch(() => state.value.shots),
+      api('recordings').catch(() => state.value.recordings),
+      api('replays').catch(() => state.value.replays),
+      api('ocr/status').catch(() => state.value.ocrStatus),
+      api('ocr/install').catch(() => state.value.ocrInstall),
+    ]);
+    state.value = { ...state.value, shots, recordings, replays, ocrStatus, ocrInstall };
+    hydrateSections();
+    paint();
+  }
+
+  /** 「审查」页签里点开某一条时的明细；重绘回到采集页，不再换成独立页。 */
+  async function loadReviewDetail(route, signal) {
+    const pages = reviewPages();
+    if (!pages) return;
+    if (route.tab !== 'review' || !route.id) {
+      state.reviewValue = null;
+      pages.hydrate(null);
+      return;
+    }
+    pages.hydrate(async () => {
+      // 保存 / 标记复核之后：重取这一条明细和审查列表，再重绘，别留在旧数据上。
+      state.loadedAt = 0;
+      await reloadValue().catch(() => {});
+      paint(true);
+    });
+    try {
+      state.reviewValue = await pages.load('review', route.id, signal);
+    } catch {
+      state.reviewValue = null;
     }
   }
 
@@ -878,8 +1043,11 @@ export function createCapture(h) {
       ? `<button class="control" data-capture-action="pull-more" ${state.busy ? 'disabled' : ''}>继续拉取更早的对局</button>`
       : '';
     const hasList = Boolean(list && list.length);
+    const coverage = state.value?.officialCoverage || {};
+    const fillable = Number(coverage.fillable) || 0;
     const right = `<div class="capture-actions">
       ${blocked ? '<button class="primary" data-capture-action="auth-start">补充授权</button>' : ''}
+      ${fillable ? `<button class="control" data-capture-action="backfill-official" ${state.busy ? 'disabled' : ''} title="按较慢速度逐局补拉，避免被营地限流；每次最多 10 局">${state.busy === 'backfill' ? '补拉回放中…' : `补拉缺失回放 ${fillable} 局`}</button>` : ''}
       ${moreAction}
       ${hasList ? `<button class="control" data-capture-action="check-all" ${list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
       <button class="control" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消勾选</button>` : ''}
@@ -1025,51 +1193,6 @@ export function createCapture(h) {
 
   // ---------------- 页面 ----------------
 
-  /** 两个 OCR 窗口：截图与录屏，就地能看到进度、能上传，不必先跳去别的页。 */
-  function ocrWindows(shots, recordings) {
-    const images = shots?.images || [];
-    const groups = shots?.groups || [];
-    const recs = recordings?.recordings || [];
-    const jobs = recordings?.jobs || [];
-    const running = jobs.filter((job) => ['queued', 'running'].includes(job.status)).length;
-    const recent = groups[0];
-    const shotNote = images.length
-      ? `${fmt(groups.length)} 组 · ${fmt(images.length)} 张${recent?.match?.date ? ` · 最近 ${recent.match.date}` : ''}`
-      : '还没有上传过截图';
-    const recNote = recs.length
-      ? `${fmt(recs.length)} 段录屏${running ? ` · ${fmt(running)} 个识别中` : ''}`
-      : '还没有上传过录屏';
-    return `<section class="section cap-ocr" id="ocr-windows" data-tour="camp-ocr">
-      <div class="section-heading"><div><h2>截图 / 录屏 OCR</h2>
-        <p>营地窗口外的老局用截图 / 录屏补录；识别出的字段要人工审核后才能入库。</p></div>
-      </div>
-      <div class="ocr-windows">
-        <article class="ocr-window">
-          <header><b class="ocr-title"><span class="ocr-icon">${icon('camera')}</span>截图 OCR</b><i class="chip ${images.length ? 'is-ok' : 'is-idle'}">${esc(shotNote)}</i></header>
-          <p>七张赛后结算图：战绩（装备型）、战绩（KDA 占比）、数据、输出、生存、发育、团队。
-            传图用微信要勾「原图」或改用 QQ 发文件，被压缩的图识别时会被提示重传。</p>
-          <div class="ocr-actions">
-            <label class="control ocr-file">选择截图<input type="file" multiple
-              accept="image/png,image/jpeg,image/webp" data-ingest-shots></label>
-            <button class="primary" data-capture-action="upload-shots" ${state.busy === 'shots' ? 'disabled' : ''}>
-              ${state.busy === 'shots' ? '上传识别中…' : '上传并识别'}</button>
-            <a class="ocr-more" href="#shots">打开完整页 →</a>
-          </div>
-        </article>
-        <article class="ocr-window">
-          <header><b class="ocr-title"><span class="ocr-icon">${icon('film')}</span>录屏 OCR</b><i class="chip ${recs.length ? 'is-ok' : 'is-idle'}">${esc(recNote)}</i></header>
-          <p>每局一段完整录像：加载页十人阵容 5 秒 → 1 倍速整局 → 结算页 5 秒，团队面板常开。</p>
-          <div class="ocr-actions">
-            <a class="primary" href="#videos">上传录屏 →</a>
-            <a class="control" href="/assets/collection-guide.html?section=video"
-               target="_blank" rel="noopener">拍摄要求</a>
-            <a class="ocr-more" href="#videos">打开完整页 →</a>
-          </div>
-        </article>
-      </div>
-    </section>`;
-  }
-
   /** 营地拿不到的老对局：先新录入一局（建通道），再去截图/录屏页把识别结果录入到这一局。 */
   function backfillPanel() {
     if (!state.backfillOpen) return '';
@@ -1129,23 +1252,45 @@ export function createCapture(h) {
     </section>`;
   }
 
+  /* 读不到采集数据时的那张卡：先说清是哪一种「读不到」，再给一个真能走通的下一步。
+     以前只有「营地数据暂时读不到 + 重新读取」，开错地址的人会一直点同一个不会生效的按钮。 */
+  function unavailableCard(failure) {
+    const cause = failure?.cause || 'unknown';
+    const origin = esc(failure?.origin || location.origin);
+    let title = '营地数据暂时读不到';
+    let body = '工作台还没把数据返回来；点「重新读取」再试一次。';
+    let actions = '<button class="primary" data-action="refresh">重新读取</button>';
+    if (cause === 'not-workbench') {
+      /* 这个地址背后没有工作台进程（预览 / 静态服务器就是这样）：换地址才有效。 */
+      const host = location.hostname || '127.0.0.1';
+      const workbench = `http://${host}:8766`;
+      title = '这个地址没有采集数据';
+      body = `你现在打开的是 <b>${origin}</b>，它只有页面、没有采集接口。`
+        + `采集数据在工作台进程里，用「启动工作台」打开的地址重新进入即可，通常是 <b>${esc(workbench)}/</b>。`;
+      actions = `<a class="primary" href="${esc(workbench)}/#ingest">去工作台</a>`
+        + '<button class="control" data-action="refresh">重新读取</button>';
+    } else if (cause === 'api-mismatch') {
+      title = '采集接口没有响应';
+      body = '工作台在线，但采集接口没返回数据。重启一次工作台（关掉窗口后重新双击「启动工作台」）通常就能恢复。';
+    } else if (cause === 'offline') {
+      title = '工作台没有响应';
+      body = '工作台可能正在重启，或者还没启动。启动后这一页会自动重新读取，也可以现在手动再试一次。';
+    }
+    return `<div class="cap-page"><section class="cap-offline" role="status">
+      <div class="cap-offline-main">
+        <i class="cap-offline-dot" aria-hidden="true"></i>
+        <div><h2>${esc(title)}</h2><p>${body}</p></div>
+      </div>
+      <div class="cap-offline-actions">${actions}</div>
+    </section></div>`;
+  }
+
   function view(value) {
     if (value?.unavailable) {
-      /* 三条近义提示合并成一张状态卡：标题说结论，卡里说「已重试 / 会自动补上 / 可手动再读」。
-         页面副标题仍说明这一页是做什么的，不把错误信息重复两遍。 */
+      /* 状态卡本身承担标题、原因与下一步；页面副标题仍说明这一页是做什么的，
+         也不再摆「数据范围」——那个按钮在这时点了没有任何意义。 */
       return withPage('营地同步', '授权一次，之后每天增量拉取；营地一个月窗口外的老局用截图 / 录屏新录入。',
-        `<div class="cap-page"><section class="cap-offline" role="status">
-          <div class="cap-offline-main">
-            <i class="cap-offline-dot" aria-hidden="true"></i>
-            <div>
-              <h2>营地数据暂时读不到</h2>
-              <p>已经自动重试过；营地数据还没返回，稍后会自动补上。也可以现在手动再读一次。</p>
-            </div>
-          </div>
-          <div class="cap-offline-actions">
-            <button class="primary" data-action="refresh">重新读取</button>
-          </div>
-        </section></div>`, false);
+        unavailableCard(value.failure || state.failure), false, '', false);
     }
     const list = value?.channels?.channels || [];
     const sync = value?.sync || {};
@@ -1191,9 +1336,15 @@ export function createCapture(h) {
       ? `${auth.nickname || '已登录'}${stamp(auth.loginAt) ? ` · ${stamp(auth.loginAt)}` : ''}`
       : '需要在王者营地扫码授权';
 
-    const notice = state.notice
-      ? `<div class="capture-notice${state.notice.isError ? ' is-error' : ''}" role="status">${esc(state.notice.message)}</div>`
-      : '';
+    const notice = [
+      /* 只有审查列表没读到：页面其余部分照常可用，别为了半边数据把整页停掉。 */
+      state.degraded
+        ? `<div class="capture-notice is-error" role="status">${esc(state.degraded)}暂时读不到，页面其余部分照常；点右上角刷新可重试。</div>`
+        : '',
+      state.notice
+        ? `<div class="capture-notice${state.notice.isError ? ' is-error' : ''}" role="status">${esc(state.notice.message)}</div>`
+        : '',
+    ].join('');
 
     // 授权正常 + 有选手时不再需要「下一步」引导：页面按 连接 → 拉取 → OCR → 审查 排。
     const ready = Boolean(auth.authorized) && !(auth.expired || state.authIssue);
@@ -1259,26 +1410,61 @@ export function createCapture(h) {
 
     const connection = connectionBlock(auth, players);
     const work = players.length ? pullBlock(players) : '';
+    const { tab, id } = routeParts();
+    const shotGroups = value?.shots?.groups?.length || 0;
+    const recordingCount = value?.recordings?.recordings?.length || 0;
+    const replayCount = value?.replays?.replays?.length || 0;
 
-    return withPage('营地同步', '授权一次，之后每天增量拉取；营地一个月窗口外的老局用截图 / 录屏新录入。',
+    /* 一个采集页，五步做成页签：营地同步 → 截图 / 录屏（窗口外新录入）→ 回放 → 审查。
+       以前这四块是四个独立页面，链接互相跳、数据各取一遍。 */
+    const tabs = [
+      ['camp', '营地同步', '', '#ingest'],
+      ['shots', '截图 OCR', shotGroups ? `${shotGroups} 组` : '', '#shots'],
+      ['videos', '录屏', recordingCount ? `${recordingCount} 段` : '', '#videos'],
+      ['replays', '回放', replayCount ? `${replayCount} 段` : '', '#replays'],
+      ['review', '对局审查', pendingChannels.length ? `${pendingChannels.length} 条` : '', '#review'],
+    ];
+    const tabBar = `<nav class="cap-tabs" aria-label="采集步骤">${tabs.map(([key, label, count, href]) =>
+      `<a class="cap-tab${tab === key ? ' is-on' : ''}" href="${href}"${tab === key ? ' aria-current="page"' : ''}>${esc(label)}${count ? `<i>${esc(count)}</i>` : ''}</a>`).join('')}</nav>`;
+
+    const campPanel = `${compact ? '' : heroCard({
+      auth, players, pending: pendingChannels.length, missing: missingChannels.length,
+      autoPassed, channels: list.length, daysAgo, compact,
+    })}
+      ${connection}
+      ${work}
+      ${backfillPanel()}
+      <details class="tier-fold"><summary>采集来源档位 —— 营地窗口内走同步，窗口外 / 缺素材走截图 / 录屏</summary>
+        <div class="sv-tiers">${SOURCE_TIERS.map(([name, tier, note, href]) => `<div class="sv-tier is-${tier.key}">
+          <span class="sv-tier-tag">${esc(tier.label)}</span>
+          <b>${esc(name)}</b>
+          <small>${esc(note)}</small>
+          ${href ? `<a class="sv-tier-go" href="${esc(href)}">打开 →</a>` : '<span class="sv-tier-go is-none">无需单独操作</span>'}
+        </div>`).join('')}</div></details>`;
+
+    const embedded = (name) => `<div class="cap-embed" data-source-section="${name}">${
+      sourcePages()?.body?.(name, sourceValue(name)) || ''}</div>`;
+
+    const reviewPanel = id
+      ? `<div class="cap-embed cap-review" data-review-embed="${esc(id)}">${
+        (reviewPages()?.snapshot?.(id) || state.reviewValue)
+          ? reviewPages()?.body?.(id, reviewPages()?.snapshot?.(id) || state.reviewValue, true) || ''
+          : '<p class="capture-hint">正在读取这一局的审查明细…</p>'}</div>`
+      : reviewBlock;
+
+    const panels = {
+      camp: campPanel,
+      shots: embedded('shots'),
+      videos: embedded('videos'),
+      replays: embedded('replays'),
+      review: reviewPanel,
+    };
+
+    return withPage('采集', '营地同步、截图 / 录屏、回放与对局审查都在这一页：营地窗口内的局走同步，窗口外的老局新录入。',
       `<div class="cap-page">
         ${notice}
-        ${compact ? '' : heroCard({
-          auth, players, pending: pendingChannels.length, missing: missingChannels.length,
-          autoPassed, channels: list.length, daysAgo, compact,
-        })}
-        ${connection}
-        ${work}
-        ${backfillPanel()}
-        ${ocrWindows(value?.shots, value?.recordings)}
-        ${reviewBlock}
-        <details class="tier-fold"><summary>采集来源档位 —— 营地窗口内走同步，窗口外 / 缺素材走截图 / 录屏</summary>
-          <div class="sv-tiers">${SOURCE_TIERS.map(([name, tier, note, href]) => `<div class="sv-tier is-${tier.key}">
-            <span class="sv-tier-tag">${esc(tier.label)}</span>
-            <b>${esc(name)}</b>
-            <small>${esc(note)}</small>
-            ${href ? `<a class="sv-tier-go" href="${esc(href)}">打开 →</a>` : '<span class="sv-tier-go is-none">无需单独操作</span>'}
-          </div>`).join('')}</div></details>
+        ${tabBar}
+        ${panels[tab] || panels.camp}
       </div>`, false);
   }
 
@@ -1546,6 +1732,40 @@ export function createCapture(h) {
     paint();
   }
 
+  async function backfillOfficial() {
+    if (state.busy) return;
+    const coverage = state.value?.officialCoverage || {};
+    if (!Number(coverage.fillable)) {
+      setNotice('清单里没有可补的回放；营地只保留最近一个月的回放。', true);
+      paint();
+      return;
+    }
+    state.busy = 'backfill';
+    setNotice('正在补拉缺失回放：逐局放慢速度，避免被营地限流…');
+    paint();
+    try {
+      const result = await api('official/backfill', { method: 'POST', body: { limit: 10 } });
+      const report = result?.report || {};
+      const imported = Number(report.imported) || 0;
+      const attached = Number(report.attached) || 0;
+      const failed = Number(report.failed) || 0;
+      const limited = Number(report.rateLimited) || 0;
+      const parts = [];
+      if (imported) parts.push(`新拉 ${imported} 局`);
+      if (attached) parts.push(`挂上 ${attached} 局`);
+      if (failed) parts.push(`${failed} 局没拉到`);
+      if (limited) parts.push(`${limited} 次被限流已退避`);
+      setNotice(parts.length
+        ? `回放补拉：${parts.join('，')}。`
+        : '没有可补的回放；营地只保留最近一个月的回放。', failed > 0);
+    } catch (error) {
+      setNotice(`补拉回放失败：${error.message}`, true);
+    } finally {
+      state.busy = '';
+      await reloadValue().catch(() => {});
+    }
+  }
+
   async function importSelected() {
     if (state.busy) return; // 顶部「下一步」的同步按钮与卡片按钮共用同一批勾选
     const chosen = (state.list || []).filter((entry) => state.checked[entry.gameSeq]
@@ -1584,7 +1804,10 @@ export function createCapture(h) {
           if (status?.error) throw new Error(status.error);
           const p = status?.progress || {};
           if (status.running) {
-            state.progress = { phase: p.phase || 'detail', label: p.phase === 'channel' ? '正在写入正式统计' : '正在同步对局详情',
+            const phaseLabel = p.phase === 'official'
+              ? '正在补拉官方回放（放慢速度，避免限流）'
+              : p.phase === 'channel' ? '正在写入正式统计' : '正在同步对局详情';
+            state.progress = { phase: p.phase || 'detail', label: phaseLabel,
               done: Number(p.done) || 0, total: Number(p.total) || chosen.length,
               current: p.current || '', note: `本批 ${group.entries.length} 局 · ${group.nickname || '选手'} · 可以切到别的页面，进度在右下角` };
             paintProgress();
@@ -1623,7 +1846,7 @@ export function createCapture(h) {
           } else if (officialFailed > 0) {
             const first = (official.items || []).find(
               (row) => row.status === 'failed' && row.error);
-            problems.push(`${officialFailed} 局官方回放没拉到${first ? `（${first.error}）` : ''}`);
+            problems.push(`${officialFailed} 局官方回放没拉到${first ? `（${first.error}）` : ''}；稍后可点「补拉缺失回放」重试`);
           }
           const summary = item.summary || {};
           // 营地超过一个月就不再提供战局详情（-30457）：这批局只能走截图/录屏，
@@ -1923,6 +2146,7 @@ export function createCapture(h) {
       }
       if (action === 'pull') { await pullList(); return true; }
       if (action === 'pull-more') { await pullList(true); return true; }
+      if (action === 'backfill-official') { await backfillOfficial(); return true; }
       if (action === 'import') { await importSelected(); return true; }
       if (action === 'approve-clean') { await approveClean(); return true; }
       if (action === 'conn-toggle') { state.connOpen = !state.connOpen; paint(); return true; }
@@ -1953,13 +2177,14 @@ export function createCapture(h) {
   }
 
   function afterRender() {
-    // 切走页面时停掉轮询，避免旧页继续打接口
-    if (!location.hash.startsWith('#ingest')) { stopPoll(); return; }
+    const { tab } = routeParts();
+    // 换页签 / 切走页面就停掉营地授权轮询，避免旧页签继续打接口
+    if (tab !== 'camp') stopPoll();
     // 首屏由 features 渲染，不经过 paint()，这里补一次筛选绑定
     bindFilter();
     // 每次回到采集页最多自动检测一次授权；点「检测授权」可强制重查。
     const auth = state.value?.sync?.auth;
-    if (auth?.authorized && Date.now() - state.authCheckedAt > 10 * 60 * 1000) checkAuth(false);
+    if (tab === 'camp' && auth?.authorized && Date.now() - state.authCheckedAt > 10 * 60 * 1000) checkAuth(false);
   }
 
   return { load, render: view, click, change, afterRender };

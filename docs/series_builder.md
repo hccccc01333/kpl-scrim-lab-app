@@ -76,7 +76,7 @@
 跨局页 `/api/cross/vectors` 同样落盘到 `data/.cache/cross-vectors.json`：服务重启后首次 5.5s → 0.18s，
 热缓存 33–38ms；缓存键排除系列赛关系，确认编组不会让跨局向量失效。
 
-挂载：`v3/serve.py` 同时把路由 include 进 `app`（独立运行）与模块级 `router`（生产 `server.py._mount_v3` 只挂后者）。
+挂载：`v3/serve.py` 只把路由 include 进模块级 `router`，由 `server.py._mount_v3` 挂进唯一的那套 app；它自己不再建 `app`。
 
 ## 7. P0 系列赛分析（`series_engine.analyze_series` / `summarize_series`）
 

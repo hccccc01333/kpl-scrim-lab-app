@@ -5,32 +5,27 @@ import { createSources } from './sources-page.js';
 import { createReview } from './review-page.js';
 import { createPlayers } from './players-page.js';
 import { createHeroCompare } from './hero-compare.js';
-import { createLaneBoard } from './lane-viz.js';
 import { createCoachBoard } from './coach-viz.js';
 import { createPlayerCompare } from './player-compare.js';
+import { createTeamDossier } from './team-dossier.js?v=dossier-20261117i';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
-export const featureSections = {
-  ingest: [['ingest','营地同步']],
-  matches: [['matches','对局档案'], ['cross','跨局分析'], ['biggame','大场分析'], ['featured','精选对局'], ['versions','版本对比'], ['series-builder','系列赛编组']],
-  teams: [['teams','战队分析'], ['teamtraining','战队训练']],
-  players: [['playerarchive','选手档案'], ['compare','选手与位置'], ['playercompare','选手对比']],
-  heroes: [['heroes','英雄榜'], ['herocompare','英雄对比'], ['combos','英雄组合']],
-  bp: [['bp','BP 概览'], ['coach','教练档案']],
-  setup: [['plan','比赛与训练'], ['setup','数据准备'], ['reports','复盘与报告']],
-};
+/* 页签清单挪到 feature-sections.js：外壳只要这几行，不该为它 import 整个 features.js。 */
+import { featureSections } from './feature-sections.js';
+export { featureSections };
 
 export function createFeatures(h) {
   const {esc, fmt, pct, diff, time, portrait, route, table, pageIntro, reload, currentQuery, icon, microChart, gameAnchorBar} = h;
   const heroCompare = createHeroCompare({esc, portrait});
-  const laneBoard = createLaneBoard({esc});
   const coachBoard = createCoachBoard({esc});
   const playerCompare = createPlayerCompare({esc, portrait});
   const research = createResearch({esc,fmt,table,icon,pageIntro});
+  /* 战队详情：v4 整页重做在 team-dossier.js，外壳只传工具函数与路由。 */
+  const teamDossier = createTeamDossier({esc, fmt, pct, time, portrait, route});
   const endpoints = {
     teams:['studio/teams'], team:['studio/teams'], teamtraining:['v3/team-training'],
-    capture:['sources'], playerarchive:['v3/players-board','v3/identity/players'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], compare:['v3/players-board'], playercompare:['v3/players-board'], playerdetail:['v3/players-board'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], herocompare:['studio/camp-compare'], featured:['matches','tempo'],
+    capture:['sources'], playerarchive:['v3/players-board','v3/identity/players'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], playercompare:['v3/players-board'], playerdetail:['v3/players-board'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], herocompare:['studio/camp-compare'], featured:['matches','tempo'],
     combos:['studio/camp-combos?min=3'], reports:['v3/research/reports'], report:['v3/research/reports'], economy:['v3/economy'],
     effect:['v3/effect', 'studio/workspace/players'], versions:['matches','v3/versions'], session:['studio/workspace/sessions'],
     weekly:['studio/workspace/schedules','studio/workspace/matches','v3/effect','v3/workspace/overview','studio/workspace/teams'],
@@ -90,12 +85,15 @@ export function createFeatures(h) {
   const text = x => esc(x ?? '—');
   const capture = (items, limit=12) => items.slice(0,limit);
   /* 采集页：读 V3 根接口，见 capture-page.js */
-  const captureIngestPage = createCapture({esc, fmt, table, block, stats, empty, withPage, icon});
+  /* 采集页：一个页面装下营地同步 / 截图 / 录屏 / 回放 / 审查，见 capture-page.js。
+     素材页与审查页在下面创建，用 getter 晚绑定，避免初始化顺序问题。 */
+  const captureIngestPage = createCapture({esc, fmt, table, block, stats, empty, withPage, icon,
+    sources: () => sourcePages, review: () => reviewPage});
   /* 截图 / 录屏 / 回放三个素材页，见 sources-page.js */
   const sourcePages = createSources({esc, fmt, block, stats, empty, withPage, icon, table});
   /* 逐项校对，见 review-page.js */
   const reviewPage = createReview({esc, fmt, block, stats, empty, withPage, icon});
-  /* 选手板块三页：选手档案（含认领命名） / 选手与位置 / 选手对比 */
+  /* 选手板块两页：选手档案（含认领命名、分路筛选） / 选手对比 */
   const playerPages = createPlayers({esc,fmt,pct,diff,portrait,block,empty,stats,reload});
   function bars(items, label, numberOf, display, limit=8) {
     const valid=items.map(item=>({item,n:numberOf(item)})).filter(x=>typeof x.n==='number'&&Number.isFinite(x.n)&&x.n>=0).slice(0,limit);
@@ -114,27 +112,36 @@ export function createFeatures(h) {
   const TEAM_SORTS = ['recent', 'games', 'rate', 'name'];
   /* 搜索 / 状态 / 排序放 URL 和本机记忆：分享链接能复现条件，回页自动恢复。 */
   const readTeamViewState = () => {
-    const fallback = {q: '', status: '', sort: 'recent'};
+    const fallback = {q: '', status: '', sort: 'recent', team: ''};
     const normalizeSort = (value) => TEAM_SORTS.includes(value) ? value : 'recent';
     const normalizeStatus = (value) => value === 'named' || value === 'pending' ? value : '';
+    const normalizeTeam = (value) => typeof value === 'string' ? value : '';
     try {
       const params = new URLSearchParams(location.hash.split('?')[1] || '');
-      if (params.has('q') || params.has('status') || params.has('sort')) {
-        return {q: params.get('q') || '', status: normalizeStatus(params.get('status')), sort: normalizeSort(params.get('sort') || '')};
+      if (params.has('q') || params.has('status') || params.has('sort') || params.has('team')) {
+        return {
+          q: params.get('q') || '',
+          status: normalizeStatus(params.get('status')),
+          sort: normalizeSort(params.get('sort') || ''),
+          team: normalizeTeam(params.get('team')),
+        };
       }
       const saved = JSON.parse(localStorage.getItem(TEAM_VIEW_STORAGE) || 'null');
       if (saved && typeof saved === 'object') {
-        return {q: String(saved.q || ''), status: normalizeStatus(saved.status), sort: normalizeSort(saved.sort)};
+        return {q: String(saved.q || ''), status: normalizeStatus(saved.status), sort: normalizeSort(saved.sort), team: normalizeTeam(saved.team)};
       }
     } catch {}
     return fallback;
   };
+  /* 搜索、命名状态、排序和「正在看哪一支」都写回 URL 与本机记忆：
+     改名或刷新后不会被弹回第一支，也能把当前对手的链接直接发给别人。 */
   const writeTeamViewState = (state) => {
     const q = String(state.q || '');
     const status = state.status === 'named' || state.status === 'pending' ? state.status : '';
     const sort = TEAM_SORTS.includes(state.sort) ? state.sort : 'recent';
+    const team = typeof state.team === 'string' ? state.team : '';
     try {
-      if (q || status || sort !== 'recent') localStorage.setItem(TEAM_VIEW_STORAGE, JSON.stringify({q, status, sort}));
+      if (q || status || sort !== 'recent' || team) localStorage.setItem(TEAM_VIEW_STORAGE, JSON.stringify({q, status, sort, team}));
       else localStorage.removeItem(TEAM_VIEW_STORAGE);
     } catch {}
     try {
@@ -143,6 +150,7 @@ export function createFeatures(h) {
       if (q) params.set('q', q); else params.delete('q');
       if (status) params.set('status', status); else params.delete('status');
       if (sort !== 'recent') params.set('sort', sort); else params.delete('sort');
+      if (team) params.set('team', team); else params.delete('team');
       const query = params.toString();
       const next = `#${path}${query ? `?${query}` : ''}`;
       if (location.hash !== next) history.replaceState(null, '', next);
@@ -163,70 +171,156 @@ export function createFeatures(h) {
   };
   const tmK = (v) => hasNum(v) ? (Math.abs(v) >= 10000 ? fmt(v / 1000, 1) + 'k' : fmt(v)) : '—';
   const tmSignedNum = (v, digits = 0) => hasNum(v) ? (v > 0 ? '+' : '') + fmt(v, digits) : '—';
-  const tmCard = (t, own) => {
+  /* ── 战队：对手情报台（2026-11-16 重做）─────────────────────────────
+     数据来自营地终局面板（studio/teams）。版式换成「左索引 / 右档案」：
+     左边是一条可搜索、可排序的对手索引，右边只讲当前选中的那一支。
+     一屏只服务一支对手，字号才能从 10-11px 提到 13-16px、数字放到 38-42px，
+     也不用把 4 支队硬塞进 3 列小卡（旧版最后一张永远是孤儿卡）。
+     仍然不合成综合得分：单局样本撑不起强弱关系，只给交手、推塔、近况。 */
+  const tbPad = (n) => String(n).padStart(2, '0');
+  const tbDays = (first, last) => {
+    const day = (value) => {
+      const hit = /^(\d{1,2})-(\d{1,2})/.exec(String(value || ''));
+      return hit ? new Date(2000, Number(hit[1]) - 1, Number(hit[2])).getTime() : null;
+    };
+    const a = day(first), b = day(last);
+    if (a == null || b == null) return null;
+    return Math.max(1, Math.round((b - a) / 86400000) + 1);
+  };
+  /* 索引行：编号、队名、最近交手、本队胜率。整行是 button，点一下换右边档案。 */
+  const tbItem = (t, index, selectedId) => {
+    const pending = t.named ? '' : '待命名 · ';
+    const last = t.lastSeen || '还没交过手';
+    return `<button type="button" class="tb-item" data-team-row data-team-select="${esc(t.id)}" data-team-id="${esc(t.id)}"
+      data-team-name="${esc([t.displayName, t.name, t.coach, ...(t.currentPlayers || []).map((x) => `${x.name || ''} ${x.id || ''}`)].filter(Boolean).join(' ').toLowerCase())}"
+      data-team-named="${t.named ? '1' : '0'}" data-team-games="${t.matches || 0}" data-team-rate="${t.winRate ?? ''}"
+      data-team-last="${esc(t.lastSeen || '')}" aria-pressed="${t.id === selectedId ? 'true' : 'false'}" aria-controls="tb-panel-${esc(t.id)}">
+      <span class="tb-item-no" data-team-no aria-hidden="true">${tbPad(index + 1)}</span>
+      <span class="tb-item-main"><b title="${esc(t.displayName)}">${text(t.displayName)}</b><small>${esc(pending)}${text(last)} · ${fmt(t.matches || 0)} 局</small></span>
+      <span class="tb-item-rate"><b><em>本队</em>${pct(t.winRate)}</b></span>
+    </button>`;
+  };
+  /* 档案：头部身份 → 四个读数 → 一句话结论 → 当前五人 / 最近交手。
+     数字一律从本队视角说（本队胜率、本队几胜几负），对手胜率放在注里。 */
+  const tbDossier = (t, own, selectedId) => {
     const m = t.metrics || {};
-    const state = t.coach ? '教练 ' + t.coach : t.named ? '已建档' : '营地阵容聚类';
-    const recentGames = [...(t.games || [])].sort((a, b) => String(b.start || '').localeCompare(String(a.start || ''))).slice(0, 5);
-    const recentWins = recentGames.filter((g) => g.win === true).length;
-    const recentLosses = recentGames.filter((g) => g.win === false).length;
+    const ownM = (own && own.metrics) || {};
+    const games = [...(t.games || [])].sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')));
+    const recent = games.slice(0, 5);
+    const recentWins = recent.filter((g) => g.win === true).length;
+    const recentLosses = recent.filter((g) => g.win === false).length;
+    const decided = (t.wins || 0) + (t.losses || 0);
+    const ownRate = decided ? (t.wins || 0) / decided * 100 : null;
     const oppRate = tmOppRate(t);
-    const rateBlock = `<div class="tm-rate" style="--rate:${hasNum(oppRate) ? oppRate.toFixed(1) : 0}">
-      <div class="tm-ring"><span><b>${hasNum(oppRate) ? pct(oppRate) : '—'}</b><small>对手<br>胜率</small></span></div>
-      <small class="tm-rate-own">本队 ${pct(t.winRate)}</small>
-    </div>`;
-    const figures = [
-      ['交手', `${fmt(t.matches)} 局`, `本队 ${hasNum(t.wins) && hasNum(t.losses) ? `${fmt(t.wins)}-${fmt(t.losses)}` : '—'}`, `本队 ${tmRecord(t)}`],
-      ['场均推塔', fmt(m.towerPerGame, 1), `本队 ${fmt(own?.metrics?.towerPerGame, 1)}`],
-      [`近 ${recentGames.length || 0} 局`, `${recentWins} 胜 ${recentLosses} 负`, '本队视角'],
-    ].map(([label, value, note], index) => `<span${index === 2 ? ' class="is-wide"' : ''}><small>${label}</small><b>${value}</b><small>${note}</small></span>`).join('');
-    /* 卡上只放当前五人：历史出场过的人（离队 / 转会 / 轮换）不算进这套阵容。 */
-    const rosterPlayers = byLaneTm(t.currentPlayers || t.players).slice(0, 5);
-    const rosterRows = rosterPlayers.length
-      ? TM_LANES.map((lane) => {
-        const pl = rosterPlayers.find((item) => (item.lane || '') === lane);
-        return pl
-          ? `<span class="tm-roster-item" title="${esc(`${pl.name || '待补'} · ${lane} · ${fmt(pl.games || 0)} 局`)}"><b>${esc(pl.name || '待补')}</b><small>${esc(lane)} · ${fmt(pl.games || 0)} 局</small></span>`
-          : `<span class="tm-roster-item is-missing"><b>${esc(lane)}</b><small>待补</small></span>`;
-      }).join('')
-      : '<span class="tm-roster-item is-empty">最近 5 局还没有识别到当前五人</span>';
-    const filled = rosterPlayers.filter((pl) => pl.name).length;
-    const former = (t.formerPlayers || []).length
-      ? `<small class="tm-former-note">另有 ${fmt(t.formerPlayers.length)} 人曾出战，见详情页「曾效力」</small>` : '';
-    const lastGame = recentGames[0];
-    const lastResult = lastGame && typeof lastGame.win === 'boolean' ? `上一场：${lastGame.win ? '本队胜' : '对手胜'}` : '';
-    const meta = [t.lastSeen ? `最近 ${text(t.lastSeen)}` : '', lastResult].filter(Boolean).join(' · ');
-    const formDots = recentGames.map((g) => {
-      const cls = g.win === true ? 'win' : g.win === false ? 'loss' : 'unknown';
-      const label = `${g.start || '时间未知'} ${g.win === true ? '本队胜' : g.win === false ? '对手胜' : '结果未知'}`;
-      return `<i class="is-${cls}" title="${esc(label)}"></i>`;
-    }).join('');
-    const formText = recentGames.map((g) => g.win === true ? '胜' : g.win === false ? '负' : '未知').join(' ');
+    const roster = byLaneTm(t.currentPlayers || t.players || []).slice(0, 5);
+    const filled = roster.filter((pl) => pl.name).length;
+    const last = recent[0];
     const thin = (t.matches || 0) < 3;
-    const flag = !t.named ? '待命名' : thin ? '样本少' : '';
-    const rosterId = `tm-roster-${String(t.id || '').replace(/[^a-zA-Z0-9_-]/g, '')}`;
-    return `<article class="tm-card" data-team-row
-      data-team-name="${esc([t.displayName, t.name, t.coach, ...(t.players || []).map((x) => x.name)].filter(Boolean).join(' ').toLowerCase())}"
-      data-team-named="${t.named ? '1' : '0'}" data-team-games="${t.matches || 0}"
-      data-team-rate="${t.winRate ?? ''}" data-team-last="${esc(t.lastSeen || '')}">
-      <a class="tm-card-link" href="${route('team', t.id)}" aria-label="查看 ${esc(t.displayName)} 详情">
-        <header class="tm-card-head">
-          <span class="tm-crest is-lg">${esc((t.displayName || '?').slice(0, 1))}</span>
-          <span class="tm-card-id"><b title="${esc(t.displayName)}">${text(t.displayName)}</b><small class="${t.named ? 'is-named' : ''}" title="${esc(state)}"><i class="tm-status-dot"></i>${esc(state)}</small></span>
-          ${flag ? `<span class="tm-card-flag" title="${flag === '待命名' ? '在详情页命名后，全站队名同步更新' : '不足 3 局，只作参考'}">${flag}</span>` : ''}
-        </header>
-        ${meta || formDots ? `<div class="tm-card-meta">${meta ? `<span>${meta}</span>` : ''}${formDots ? `<span class="tm-form" role="img" aria-label="最近 ${recentGames.length} 局：${formText}" title="最近 ${recentGames.length} 局（新→旧）：${formText}">${formDots}</span>` : ''}</div>` : ''}
-        <div class="tm-card-body">${rateBlock}<div class="tm-card-stats">${figures}</div></div>
-      </a>
-      <div class="tm-card-roster">
-        <button type="button" class="tm-roster-toggle" data-team-roster-toggle aria-expanded="false" aria-controls="${rosterId}">
-          <span>当前五人${filled ? ` · ${fmt(filled)}/5` : ''}</span><em>展开 ▾</em>
-        </button>
-        <div class="tm-roster-list" id="${rosterId}" hidden>${rosterRows}${former}</div>
+    const rateGap = hasNum(ownRate) && hasNum(own?.winRate) ? ownRate - own.winRate : null;
+    const towerGap = hasNum(m.towerPerGame) && hasNum(ownM.towerPerGame) ? m.towerPerGame - ownM.towerPerGame : null;
+    const chips = [
+      t.named ? '<span class="tb-chip is-named">已建档</span>' : '<span class="tb-chip is-warn">待命名</span>',
+      t.coach ? `<span class="tb-chip">教练 ${esc(t.coach)}</span>` : '',
+      thin ? '<span class="tb-chip is-warn">样本少</span>' : '',
+    ].join('');
+    const meta = [
+      t.lastSeen ? `最近 ${text(t.lastSeen)}` : '',
+      last && typeof last.win === 'boolean' ? `上一场 ${last.win ? '本队胜' : '本队负'}` : '',
+      t.firstSeen ? `首次 ${text(t.firstSeen)}` : '',
+    ].filter(Boolean).map((item) => `<span>${item}</span>`).join('');
+    const form = recent.length
+      ? `<div class="tb-form5"><small>近 ${recent.length} 局</small><ul>${recent.map((g) => {
+        const cls = g.win === true ? 'is-win' : g.win === false ? 'is-loss' : '';
+        const label = g.win === true ? '胜' : g.win === false ? '负' : '—';
+        const tip = `${g.start || '时间未知'} ${g.win === true ? '本队胜' : g.win === false ? '本队负' : '结果未知'}`;
+        return `<li class="${cls}" title="${esc(tip)}">${label}</li>`;
+      }).join('')}</ul></div>`
+      : '';
+    const split = hasNum(ownRate)
+      ? `<div class="tb-split" role="img" aria-label="本队 ${fmt(t.wins)} 胜 ${fmt(t.losses)} 负"><i class="is-win" style="width:${ownRate.toFixed(1)}%"></i><i class="is-loss" style="width:${(100 - ownRate).toFixed(1)}%"></i></div>`
+      : '';
+    const figs = `<div class="tb-figs">
+      <div class="tb-fig">
+        <span class="tb-fig-label">本队胜率</span>
+        <strong>${pct(ownRate)}</strong>${split}
+        <small>${fmt(t.wins)} 胜 ${fmt(t.losses)} 负 · 对手 ${pct(oppRate)}</small>
       </div>
-      <footer class="tm-card-foot">
-        <a class="tm-card-open" href="${route('team', t.id)}">查看详情</a>
-        <button type="button" class="tm-rename" data-team-rename="${esc(t.id)}" data-team-label="${esc(t.displayName)}" title="给这支战队命名">${t.named ? '改名' : '命名'}</button>
-      </footer>
+      <div class="tb-fig">
+        <span class="tb-fig-label">交手局数</span>
+        <strong>${fmt(t.matches || 0)}<em>局</em></strong>
+        <small>${t.firstSeen ? `${text(t.firstSeen)} → ${text(t.lastSeen)}` : '首次交手时间未知'}</small>
+      </div>
+      <div class="tb-fig">
+        <span class="tb-fig-label">对手场均推塔</span>
+        <strong>${fmt(m.towerPerGame, 1)}</strong>
+        <small>本队 ${fmt(ownM.towerPerGame, 1)}${towerGap == null || Math.abs(towerGap) < 0.05 ? '' : ` · ${towerGap > 0 ? '落后' : '领先'} ${fmt(Math.abs(towerGap), 1)}`}</small>
+      </div>
+      <div class="tb-fig">
+        <span class="tb-fig-label">最近 ${recent.length || 0} 局</span>
+        <strong>${fmt(recentWins)}<em>胜</em> ${fmt(recentLosses)}<em>负</em></strong>
+        <small>${last ? `上一场 ${text(last.start)} · ${last.win === true ? '本队胜' : last.win === false ? '本队负' : '结果未知'}` : '还没有交过手'}</small>
+      </div>
+    </div>`;
+    const read = [];
+    if (hasNum(ownRate)) {
+      const cmp = !hasNum(own?.winRate) ? ''
+        : Math.abs(rateGap) < 0.5 ? `，与全队整体（${pct(own.winRate)}）基本持平`
+          : `，比全队整体（${pct(own.winRate)}）${rateGap > 0 ? '高' : '低'} <b>${fmt(Math.abs(rateGap), 1)}</b> 个百分点`;
+      read.push(`对 ${text(t.displayName)} 交手 <b>${fmt(t.matches || 0)}</b> 局，本队 <b>${fmt(t.wins)} 胜 ${fmt(t.losses)} 负</b>，胜率 <b>${pct(ownRate)}</b>${cmp}`);
+    } else {
+      read.push(`对 ${text(t.displayName)} 还没有可用的交手记录`);
+    }
+    if (towerGap != null && Math.abs(towerGap) >= 0.05) {
+      read.push(`对手场均推塔 <b>${fmt(m.towerPerGame, 1)}</b>、本队 <b>${fmt(ownM.towerPerGame, 1)}</b>，本队${towerGap > 0 ? '落后' : '领先'} <b>${fmt(Math.abs(towerGap), 1)}</b>`);
+    }
+    if (recent.length) read.push(`最近 ${recent.length} 局 <b>${recentWins} 胜 ${recentLosses} 负</b>`);
+    const rosterRows = roster.length
+      ? TM_LANES.map((lane) => {
+        const pl = roster.find((item) => (item.lane || '') === lane);
+        if (!pl) return `<li class="is-missing"><span class="tb-lane">${esc(lane)}</span><b>待补</b><small>—</small></li>`;
+        const tip = `${pl.name || '待补'} · ${lane} · ${fmt(pl.games || 0)} 局`;
+        /* 对面这个 ID 是谁？点名字直接进选手页，不用回选手档案里再搜一遍。
+           选手页以「营地游戏名」为键，而不是面板里的数字 ID。 */
+        const name = pl.name
+          ? `<a class="tb-player" href="${route('playerdetail', pl.name)}" title="${esc(`${tip} · 打开选手页`)}">${text(pl.name)}</a>`
+          : '<b>待补</b>';
+        return `<li><span class="tb-lane">${esc(lane)}</span>${name}<small>${fmt(pl.games || 0)} 局</small></li>`;
+      }).join('')
+      : '<li class="is-empty">最近 5 局还没有识别到这套五人。</li>';
+    const former = (t.formerPlayers || []).length
+      ? `<p class="tb-note">另有 ${fmt((t.formerPlayers || []).length)} 人曾出战，见完整档案「曾效力」。</p>` : '';
+    const gameRows = recent.length
+      ? recent.map((g) => {
+        const state = g.win === true ? ['is-win', '本队胜'] : g.win === false ? ['is-loss', '本队负'] : ['', '未知'];
+        return `<li data-team-game data-team-game-team="${esc(t.id)}" data-team-game-start="${esc(g.start || '')}" data-team-game-duration="${hasNum(g.duration) ? g.duration : ''}"><time>${text(g.start || '时间未知')}</time><span class="tb-res ${state[0]}">${state[1]}</span><span class="tb-map">${text(g.map || '')}</span><small>${hasNum(g.duration) ? time(g.duration) : '—'}</small></li>`;
+      }).join('')
+      : '<li class="is-empty">还没有交手记录。</li>';
+    return `<article class="tb-dossier" id="tb-panel-${esc(t.id)}" data-team-panel="${esc(t.id)}"${t.id === selectedId ? '' : ' hidden'} aria-label="${esc(t.displayName)} 对手档案">
+      <header class="tb-dhead">
+        <span class="tb-crest" aria-hidden="true">${esc((t.displayName || '?').slice(0, 1))}</span>
+        <div class="tb-id">
+          <div class="tb-id-top"><h2>${text(t.displayName)}</h2>${chips}</div>
+          <p class="tb-meta">${meta}</p>
+        </div>
+        <div class="tb-dhead-side">${form}
+          <div class="tb-actions">
+            <a class="tb-cta" href="${route('team', t.id)}">完整档案 <span aria-hidden="true">→</span></a>
+            <button type="button" class="tb-ghost" data-team-rename="${esc(t.id)}" data-team-label="${esc(t.displayName)}">${t.named ? '改名' : '命名'}</button>
+          </div>
+        </div>
+      </header>
+      ${figs}
+      <p class="tb-read"><span class="tb-read-tag">读数</span><span class="tb-read-text">${read.join('；')}。</span></p>
+      <div class="tb-cols">
+        <section class="tb-col">
+          <div class="tb-col-head"><h3>当前五人</h3><span>${filled}/5 已识别</span></div>
+          <ul class="tb-roster">${rosterRows}</ul>${former}
+        </section>
+        <section class="tb-col">
+          <div class="tb-col-head"><h3>最近交手</h3><span data-team-game-count>${recent.length} 局</span></div>
+          <ul class="tb-games">${gameRows}</ul>
+        </section>
+      </div>
     </article>`;
   };
   const clearTeamSearch = (input) => {
@@ -235,7 +329,75 @@ export function createFeatures(h) {
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.focus();
   };
-  /* 列表前端视图控制：搜索（队名/选手 ID）+ 状态胶囊 + 排序 + 计数。 */
+  /* 列表前端视图控制：搜索（队名 / 选手 ID）+ 命名状态 + 排序 + 选中。
+     筛掉或重排后，若当前选中的那支不再可见，就自动落到第一条可见的对手。 */
+  function selectTeam(root, id) {
+    if (!root) return;
+    root.dataset.teamSelected = id || '';
+    root.querySelectorAll('[data-team-row]').forEach((item) => item.setAttribute('aria-pressed', String(item.dataset.teamId === id)));
+    root.querySelectorAll('[data-team-panel]').forEach((panel) => { panel.hidden = panel.dataset.teamPanel !== id; });
+    const emptyPanel = root.querySelector('[data-team-empty-panel]');
+    if (emptyPanel) emptyPanel.hidden = Boolean(id);
+    /* 选中项跟着 URL 走：改名触发重渲染、或者刷新页面，都还停在这支对手上。 */
+    writeTeamViewState({
+      q: (root.querySelector('[data-team-search]')?.value || '').trim(),
+      status: root.dataset.teamFilter === '1' ? 'named' : root.dataset.teamFilter === '0' ? 'pending' : '',
+      sort: root.querySelector('[data-team-sort]')?.value || 'recent',
+      team: id || '',
+    });
+  }
+  /* 对比模式：最多选两支，右栏并排；不写 URL，退出时回到最后点的那支。 */
+  function renderTeamCompare(root) {
+    if (!root) return;
+    const on = root.dataset.teamCompare === '1';
+    const picks = (root.dataset.teamPicked || '').split(',').filter(Boolean).slice(0, 2);
+    const toggle = root.querySelector('[data-team-compare-toggle]');
+    if (toggle) {
+      toggle.setAttribute('aria-pressed', String(on));
+      toggle.textContent = on ? '退出对比' : '对比';
+    }
+    const detail = root.querySelector('[data-team-detail]');
+    if (detail) {
+      detail.classList.toggle('is-compare', on);
+      detail.dataset.picks = String(picks.length);
+    }
+    if (!on) return;
+    root.querySelectorAll('[data-team-row]').forEach((item) => {
+      const picked = picks.includes(item.dataset.teamId);
+      item.classList.toggle('is-picked', picked);
+      item.setAttribute('aria-pressed', String(picked));
+    });
+    root.querySelectorAll('[data-team-panel]').forEach((panel) => { panel.hidden = !picks.includes(panel.dataset.teamPanel); });
+    const hint = root.querySelector('[data-team-compare-hint]');
+    if (hint) hint.hidden = picks.length === 2;
+    const empty = root.querySelector('[data-team-empty-panel]');
+    if (empty) empty.hidden = true;
+  }
+  function setTeamCompare(root, on) {
+    if (!root) return;
+    if (on) {
+      root.dataset.teamCompare = '1';
+      root.dataset.teamPicked = root.dataset.teamSelected || '';
+      renderTeamCompare(root);
+      return;
+    }
+    const picks = (root.dataset.teamPicked || '').split(',').filter(Boolean);
+    root.dataset.teamCompare = '0';
+    root.dataset.teamPicked = '';
+    renderTeamCompare(root);
+    selectTeam(root, picks[picks.length - 1] || root.dataset.teamSelected || '');
+  }
+  function toggleTeamPick(root, id) {
+    const picks = (root.dataset.teamPicked || '').split(',').filter(Boolean);
+    const index = picks.indexOf(id);
+    if (index >= 0) picks.splice(index, 1);
+    else {
+      if (picks.length >= 2) picks.shift();
+      picks.push(id);
+    }
+    root.dataset.teamPicked = picks.join(',');
+    renderTeamCompare(root);
+  }
   function syncTeamList(root) {
     if (!root) return;
     const rawQuery = root.querySelector('[data-team-search]')?.value || '';
@@ -244,7 +406,6 @@ export function createFeatures(h) {
     const sort = root.querySelector('[data-team-sort]')?.value || 'recent';
     const list = root.querySelector('[data-team-results]');
     if (!list) return;
-    const unit = root.dataset.teamUnit || '支';
     const rows = [...list.querySelectorAll('[data-team-row]')];
     let shown = 0;
     for (const row of rows) {
@@ -260,17 +421,58 @@ export function createFeatures(h) {
       name: (a, b) => String(a.dataset.teamName || '').localeCompare(String(b.dataset.teamName || ''), 'zh'),
     }[sort];
     if (order) [...rows].sort(order).forEach((row) => list.append(row));
+    const visible = [...list.querySelectorAll('[data-team-row]')].filter((row) => !row.hidden);
+    visible.forEach((row, index) => {
+      const no = row.querySelector('[data-team-no]');
+      if (no) no.textContent = tbPad(index + 1);
+    });
+    if (root.dataset.teamCompare === '1') {
+      /* 对比模式下筛掉的对手要从已选里剔除，别让右栏留着看不见的一支。 */
+      const visibleIds = new Set(visible.map((row) => row.dataset.teamId));
+      root.dataset.teamPicked = (root.dataset.teamPicked || '').split(',').filter((id) => visibleIds.has(id)).join(',');
+      renderTeamCompare(root);
+    } else {
+      const current = visible.find((row) => row.dataset.teamId === root.dataset.teamSelected) || visible[0];
+      selectTeam(root, current ? current.dataset.teamId : '');
+    }
     const counter = root.querySelector('[data-team-count]');
-    if (counter) counter.textContent = shown === rows.length ? `共 ${fmt(shown)} ${unit}` : `找到 ${fmt(shown)} ${unit} · 共 ${fmt(rows.length)} ${unit}`;
+    if (counter) counter.textContent = shown === rows.length ? `${fmt(shown)} 支` : `${fmt(shown)} / ${fmt(rows.length)} 支`;
     const hint = root.querySelector('[data-team-empty]');
     if (hint) hint.hidden = shown > 0;
-    writeTeamViewState({q: rawQuery.trim(), status: named === '1' ? 'named' : named === '0' ? 'pending' : '', sort});
   }
-  function syncTeamSticky() {
-    const sentinel = document.querySelector('.tm-command-sentinel');
-    const command = sentinel?.nextElementSibling;
-    if (!sentinel || !command || !command.classList.contains('tm-command')) return;
-    command.classList.toggle('is-stuck', sentinel.getBoundingClientRect().top < 0);
+  /* 「最近交手」能不能点开？营地给的是 seq，对局档案用的是 channel-xxxx，
+     两个 ID 对不上；这里用「对手战队 + 开赛时间 + 时长」做一次对齐，
+     对得上的行才补复盘链接，对不上的保持只读，不硬造入口。 */
+  async function linkTeamGames(root) {
+    if (!root || root.dataset.gamesLinked === '1') return;
+    root.dataset.gamesLinked = '1';
+    let payload = null;
+    try { payload = await api('matches'); } catch { return; }
+    const index = new Map();
+    for (const match of payload?.matches || []) {
+      if (!match?.key || !match.opponentTeamId) continue;
+      index.set(`${match.opponentTeamId}|${match.startTime || ''}|${match.duration ?? ''}`, match.key);
+    }
+    root.querySelectorAll('[data-team-game]').forEach((row) => {
+      if (row.querySelector('.tb-game-hit')) return;
+      const key = index.get(`${row.dataset.teamGameTeam}|${row.dataset.teamGameStart}|${row.dataset.teamGameDuration}`);
+      if (!key) return;
+      const link = document.createElement('a');
+      link.className = 'tb-game-hit';
+      link.href = '#match/' + encodeURIComponent(key);
+      link.title = '查看这局复盘';
+      link.setAttribute('aria-label', `查看 ${row.dataset.teamGameStart || ''} 这局的复盘`);
+      row.append(link);
+      row.classList.add('has-link');
+    });
+    /* 列头补一句「几局可复盘」，不然链接要悬停才知道。 */
+    root.querySelectorAll('[data-team-panel]').forEach((panel) => {
+      const label = panel.querySelector('[data-team-game-count]');
+      if (!label) return;
+      const total = panel.querySelectorAll('[data-team-game]').length;
+      const linked = panel.querySelectorAll('.tb-game-hit').length;
+      if (linked) label.textContent = `${total} 局 · ${linked} 可复盘`;
+    });
   }
   const mapping = {enemy_team_id:'对手战队',session:'训练组',version:'版本',rules:'规则',pick_order:'选用顺序'};
   /* 并队前先对两套「当前五人」：对方转会 / 离队会让选手对不上，
@@ -302,6 +504,7 @@ export function createFeatures(h) {
     const teams = value.teams || [];
     if (key) return teamDetail(value, key, compare, bp, deep, behavior);
     const named = teams.filter((t) => t.named).length;
+    const pendingTeams = teams.filter((t) => !t.named);
     const games = teams.reduce((sum, t) => sum + (t.matches || 0), 0);
     const wins = teams.reduce((sum, t) => sum + (t.wins || 0), 0);
     const losses = teams.reduce((sum, t) => sum + (t.losses || 0), 0);
@@ -309,15 +512,7 @@ export function createFeatures(h) {
     const latest = [...teams].sort((a, b) => String(b.lastSeen || '').localeCompare(String(a.lastSeen || '')))[0];
     const lastSeen = latest ? String(latest.lastSeen || '') : '';
     const firstSeen = teams.map((t) => String(t.firstSeen || '')).filter(Boolean).sort()[0] || '';
-    const teamDay = (value) => {
-      const m = /^(\d{1,2})-(\d{1,2})/.exec(String(value || ''));
-      return m ? new Date(2000, Number(m[1]) - 1, Number(m[2])).getTime() : null;
-    };
-    const dayStart = teamDay(firstSeen), dayEnd = teamDay(lastSeen);
-    const spanDiff = dayStart != null && dayEnd != null
-      ? (dayEnd < dayStart ? dayEnd + 365 * 86400000 - dayStart : dayEnd - dayStart) : null;
-    const spanDays = spanDiff != null ? Math.max(1, Math.round(spanDiff / 86400000) + 1) : null;
-    const span = spanDays ? `${spanDays} 天` : '—';
+    const spanDays = tbDays(firstSeen, lastSeen);
     const decided = wins + losses;
     const ownRate = decided ? wins / decided * 100 : null;
     const oppRate = decided ? losses / decided * 100 : null;
@@ -325,50 +520,134 @@ export function createFeatures(h) {
       || String(a.displayName || '').localeCompare(String(b.displayName || ''), 'zh'));
     const viewState = readTeamViewState();
     const statusValue = viewState.status === 'named' ? '1' : viewState.status === 'pending' ? '0' : '';
+    /* 上次看的那支还在就继续看它，链接里的 team 失效时退回最近交手的第一支。 */
+    const initialTeam = cards.some((t) => t.id === viewState.team) ? viewState.team : (cards[0]?.id || '');
     const sortOptions = [['recent', '最近交手'], ['games', '交手最多'], ['rate', '本队胜率'], ['name', '队名']]
-      .map(([value, label]) => `<option value="${value}"${viewState.sort === value ? ' selected' : ''}>${label}</option>`).join('');
-    const toolbar = `<div class="tm-command">
-      <div class="tm-search">${icon('search')}<input data-team-search value="${esc(viewState.q)}" placeholder="搜索战队名 / 选手 ID" aria-label="搜索战队" autocomplete="off" spellcheck="false"><button type="button" class="tm-search-clear" data-team-search-clear aria-label="清空搜索" title="清空搜索"${viewState.q ? '' : ' hidden'}>${icon('close')}</button></div>
-      <div class="tm-seg" role="group" aria-label="命名状态">
-        <button type="button" class="tm-seg-btn" data-team-chip="" aria-pressed="${statusValue === ''}">全部</button>
-        <button type="button" class="tm-seg-btn" data-team-chip="1" aria-pressed="${statusValue === '1'}">已命名</button>
-        <button type="button" class="tm-seg-btn" data-team-chip="0" aria-pressed="${statusValue === '0'}">待命名</button>
-      </div>
-      <label class="tm-sort"><span>排序</span><select data-team-sort aria-label="排序">${sortOptions}</select>${icon('chevron')}</label>
-      <span class="tm-count" data-team-count aria-live="polite">共 ${fmt(teams.length)} 支</span>
+      .map(([option, label]) => `<option value="${option}"${viewState.sort === option ? ' selected' : ''}>${label}</option>`).join('');
+    /* 顶部：标题 + 一句话口径 + 五个读数。读数不再做成五张小卡，用分隔线拉通。 */
+    const readout = `<div class="tb-readout">
+      <div class="tb-readout-cell is-primary"><span>识别对手</span><strong>${fmt(teams.length)}<em>支</em></strong><small>已命名 ${fmt(named)} · 待命名 ${fmt(teams.length - named)}</small></div>
+      <div class="tb-readout-cell"><span>交手局数</span><strong>${fmt(games)}<em>局</em></strong><div class="tb-split" role="img" aria-label="本队 ${fmt(wins)} 胜 ${fmt(losses)} 负"><i class="is-win" style="width:${games ? wins / games * 100 : 0}%"></i><i class="is-loss" style="width:${games ? losses / games * 100 : 0}%"></i></div><small>${fmt(wins)} 胜 ${fmt(losses)} 负</small></div>
+      <div class="tb-readout-cell"><span>本队胜率</span><strong>${pct(ownRate)}</strong><small>对手 ${pct(oppRate)}</small></div>
+      <div class="tb-readout-cell"><span>时间跨度</span><strong>${spanDays ? `${fmt(spanDays)}<em>天</em>` : '—'}</strong><small>${firstSeen && lastSeen ? `${esc(firstSeen.slice(0, 5))} → ${esc(lastSeen.slice(0, 5))}` : '—'}</small></div>
+      <div class="tb-readout-cell"><span>样本覆盖</span><strong>${fmt(teams.length - thin)}<em>支</em></strong><small>${thin ? `${fmt(thin)} 支不足 3 局，只作参考` : '全部 ≥3 局，可做队间比较'}</small></div>
     </div>`;
+    const hero = `<header class="tb-hero">
+      <div class="tb-hero-top">
+        <div class="tb-hero-copy">
+          <p class="tb-eyebrow">对手情报<span>OPPONENT SCOUT</span></p>
+          <h1>战队分析</h1>
+          <p class="tb-lede">营地阵容聚类识别对手。左边挑一支，右边看本队与它的交手读数；命名后，对局档案与系列赛一起更新。</p>
+        </div>
+        <div class="tb-hero-aside">
+          <div class="tb-hero-actions">
+            <button class="control" data-action="refresh" title="重新读取营地面板">${icon('refresh')} 刷新数据</button>
+          </div>
+          <p class="tb-hero-note">数据来自营地终局面板，与「对局档案」分开统计；两边局数可能不一致，比较强弱前先看交手局数。</p>
+        </div>
+      </div>
+      ${readout}
+    </header>`;
+    /* 索引栏：搜索 / 命名状态 / 排序 + 每条对手的最近交手与本队胜率。 */
+    const toolbar = `<div class="tb-rail-tools">
+      <div class="tb-search">${icon('search')}<input data-team-search value="${esc(viewState.q)}" placeholder="搜队名 / 选手 ID" aria-label="搜索战队" autocomplete="off" spellcheck="false"><kbd class="tb-search-kbd" aria-hidden="true">/</kbd><button type="button" class="tb-search-clear" data-team-search-clear aria-label="清空搜索" title="清空搜索"${viewState.q ? '' : ' hidden'}>${icon('close')}</button></div>
+      <div class="tb-rail-row">
+        <div class="tb-seg" role="group" aria-label="命名状态">
+          <button type="button" class="tb-seg-btn" data-team-chip="" aria-pressed="${statusValue === ''}">全部</button>
+          <button type="button" class="tb-seg-btn" data-team-chip="1" aria-pressed="${statusValue === '1'}">已命名</button>
+          <button type="button" class="tb-seg-btn" data-team-chip="0" aria-pressed="${statusValue === '0'}">待命名</button>
+        </div>
+        <label class="tb-sort"><span>排序</span><select data-team-sort aria-label="排序">${sortOptions}</select>${icon('chevron')}</label>
+      </div>
+    </div>`;
+    const board = `<section class="tb-workspace" data-tm-board data-tm-directory data-team-filter="${statusValue}" data-team-selected="${esc(initialTeam)}" aria-label="对手目录">
+      <aside class="tb-rail">
+        <div class="tb-rail-head">
+          <div class="tb-rail-title"><h2>对手索引</h2><small>共 ${fmt(games)} 局交手</small></div>
+          <div class="tb-rail-head-actions">
+            <span class="tb-rail-count" data-team-count aria-live="polite">${fmt(teams.length)} 支</span>
+            <button type="button" class="tb-compare-btn" data-team-compare-toggle aria-pressed="false" title="并排对比两支对手">对比</button>
+          </div>
+        </div>
+        ${toolbar}
+        <div class="tb-list" data-team-results>
+          ${cards.map((t, index) => tbItem(t, index, initialTeam)).join('')}
+          <p class="tb-empty" data-team-empty hidden>没有符合条件的对手。<button type="button" class="tb-empty-reset" data-team-reset>清空筛选</button></p>
+          ${teams.length ? '' : empty('当前没有识别到对手战队。')}
+        </div>
+        <div class="tb-rail-foot">
+          <div class="tb-bench">
+            <span>本队整体基准</span>
+            <b>${pct(ownRate)}</b>
+            <small>${fmt(games)} 局 · ${fmt(wins)} 胜 ${fmt(losses)} 负</small>
+          </div>
+          <p>同一支队被拆成几条？先合并成一条，再去命名。</p>
+          <button type="button" class="tb-rail-link" data-tb-maint>合并同一支战队 <span aria-hidden="true">↓</span></button>
+          <button type="button" class="tb-rail-link" data-team-bulk>批量命名${pendingTeams.length ? `（${fmt(pendingTeams.length)} 支待命名）` : ''}</button>
+        </div>
+      </aside>
+      <div class="tb-detail" data-team-detail>${cards.map((t, index) => tbDossier(t, value.own, initialTeam)).join('')}
+        <div class="tb-detail-empty" data-team-empty-panel${cards.length ? ' hidden' : ''}>
+          <b>没有符合条件的对手</b>
+          <small>换个关键词，或把命名状态切回「全部」。</small>
+          <button type="button" class="tb-empty-reset" data-team-reset>清空筛选</button>
+        </div>
+        <div class="tb-compare-hint" data-team-compare-hint hidden><b>再选一支对手</b><small>在左边点第二支战队，这里并排显示两边的读数；再点一次可取消。</small></div>
+      </div>
+    </section>`;
     const suggestions = (value.suggestions || []).map((s) => {
       const changed = s.kind === 'roster-change'
         ? ` · 换出 ${fmt(s.changedFrom || 0)} 人 / 加入 ${fmt(s.changedInto || 0)} 人（阵容更替）` : '';
-      return `<li><b>${text(s.fromName || s.from || s.a)}</b> → <b>${text(s.intoName || s.toName || s.into || s.b)}</b><small>共同 ${text(s.overlap || '—')} 人${changed}</small><button type="button" class="tm-mini" data-merge-pick data-merge-from="${esc(s.from || '')}" data-merge-into="${esc(s.into || '')}">选中</button></li>`;
+      return `<li><b>${text(s.fromName || s.from || s.a)}</b> → <b>${text(s.intoName || s.toName || s.into || s.b)}</b><small>共同 ${text(s.overlap || '—')} 人${changed}</small><button type="button" class="tb-mini" data-merge-pick data-merge-from="${esc(s.from || '')}" data-merge-into="${esc(s.into || '')}">选中</button></li>`;
     }).join('');
-    const mergeSection = `<section class="section tm-merge-section">
-      <details class="tm-merge-fold"${suggestions ? ' open' : ''}>
-        <summary>
-          <span class="tm-merge-copy"><b>先合并同一支战队</b><em>对方换人、转会或离队后可能被认成几支。先并成一支，再去下面命名；改成相同名字不会自动合并。</em></span>
-          <i aria-hidden="true"></i>
-        </summary>
-        <div class="tm-tools">${form('merge',
-          select('来源战队', 'from', options(teams)) + select('合并至', 'into', options(teams))
-          + '<div class="tm-merge-preview" data-merge-preview><p class="tm-merge-hint">选好来源和「合并至」，这里会先对一下两边的当前五人。</p></div>',
-          '合并战队')}</div>
-        ${suggestions ? `<div class="tm-suggest-wrap"><h3>可能是同一支战队</h3><ul class="tm-suggest">${suggestions}</ul></div>` : ''}
-      </details>
-    </section>`;
-    const kpis = `<div class="tm-kpis">
-      <div class="tm-kpi is-primary"><span class="tm-kpi-label">识别对手</span><strong>${fmt(teams.length)} 支</strong><span class="tm-kpi-note">已命名 ${fmt(named)} · 待命名 ${fmt(teams.length - named)}</span></div>
-      <div class="tm-kpi"><span class="tm-kpi-label">交手局数</span><strong>${fmt(games)} 局</strong><div class="tm-kpi-split" aria-hidden="true"><i class="is-win" style="width:${games ? wins / games * 100 : 0}%"></i><i class="is-loss" style="width:${games ? losses / games * 100 : 0}%"></i></div><span class="tm-kpi-note">${fmt(wins)} 胜 ${fmt(losses)} 负</span></div>
-      <div class="tm-kpi"><span class="tm-kpi-label">对手交手胜率</span><strong>${pct(oppRate)}</strong><span class="tm-kpi-note">本队 ${pct(ownRate)}</span></div>
-      <div class="tm-kpi"><span class="tm-kpi-label">时间跨度</span><strong>${span}</strong><span class="tm-kpi-note">${firstSeen && lastSeen ? `${esc(firstSeen)} → ${esc(lastSeen)}` : '—'}</span></div>
-      <div class="tm-kpi"><span class="tm-kpi-label">样本覆盖</span><strong>${thin ? `${fmt(thin)} 支偏少` : '全部 ≥3 局'}</strong><span class="tm-kpi-note">${thin ? '交手少，只作参考' : '可做队间比较'}</span></div>
-    </div>`;
-    return withPage('战队分析',
-      '对手战队由营地阵容聚类识别 · 点卡片进详情，命名后对局档案、系列赛与跨局分析一起更新。',
-      kpis
-      + mergeSection
-      + block('对手目录', '按最近交手排序。卡上留交手、对手胜率、场均推塔与近 5 局，不合成综合得分；「当前五人」可展开。',
-        `<div class="tm-command-sentinel" aria-hidden="true"></div>${toolbar}<div class="tm-grid" data-team-results>${cards.map((t) => tmCard(t, value.own)).join('')}<p class="tm-empty" data-team-empty hidden>没有符合条件的战队。<button type="button" class="tm-empty-reset" data-team-reset>清空筛选</button></p>${teams.length ? '' : empty('当前没有识别到对手战队。')}</div>`,
-        '', 'data-tm-directory data-team-filter="' + statusValue + '"'), false);
+    const merge = `<details class="tb-maint" id="tb-merge"${suggestions ? ' open' : ''}>
+      <summary>
+        <span class="tb-maint-copy"><b>先合并同一支战队</b><em>对方换人、转会或离队后可能被认成几支。先并成一支，再去命名；改成相同名字不会自动合并。</em></span>
+        <span class="tb-maint-more" aria-hidden="true"></span>
+      </summary>
+      <div class="tb-maint-body">
+        <form class="feature-form tb-merge-form" data-feature-form="merge">
+          ${select('来源战队', 'from', options(teams))}
+          ${select('合并至', 'into', options(teams))}
+          <div class="tb-merge-preview" data-merge-preview><p class="tb-merge-hint">选好来源和「合并至」，这里会先对一下两边的当前五人。</p></div>
+          <div class="form-footer"><p class="form-status" role="status"></p><button class="primary" type="submit">合并战队</button></div>
+        </form>
+        ${suggestions ? `<div class="tb-suggest-wrap"><h3>可能是同一支战队</h3><ul class="tb-suggest">${suggestions}</ul></div>` : ''}
+      </div>
+    </details>`;
+    const renameDialog = `<dialog class="tb-dialog" data-team-rename-dialog closedby="any" aria-labelledby="tb-rename-title">
+      <form class="tb-dialog-body" data-feature-form="teamRename" novalidate>
+        <header class="tb-dialog-head">
+          <h2 id="tb-rename-title">给对手命名</h2>
+          <p>队名会同步到对局档案、系列赛和跨局分析；留空不能保存。</p>
+        </header>
+        <label class="tb-dialog-field"><span>战队名</span><input name="name" maxlength="24" autocomplete="off" spellcheck="false" placeholder="例如：XX 战队" required></label>
+        <p class="tb-dialog-error" data-team-rename-error role="alert" hidden></p>
+        <footer class="tb-dialog-foot">
+          <button type="button" class="tb-ghost" data-dialog-close>取消</button>
+          <button type="submit" class="tb-cta" data-team-rename-save>保存</button>
+        </footer>
+      </form>
+    </dialog>`;
+    const bulkDialog = `<dialog class="tb-dialog tb-dialog-wide" data-team-bulk-dialog closedby="any" aria-labelledby="tb-bulk-title">
+      <form class="tb-dialog-body" data-feature-form="teamBulkRename" novalidate>
+        <header class="tb-dialog-head">
+          <h2 id="tb-bulk-title">批量命名</h2>
+          <p>只列出还没命名的对手。改好的会一次提交，没动过的行自动跳过。</p>
+        </header>
+        <div class="tb-bulk-list">
+          ${pendingTeams.length
+            ? pendingTeams.map((t) => `<label class="tb-bulk-row" data-bulk-team="${esc(t.id)}"><span class="tb-bulk-crest" aria-hidden="true">${esc((t.displayName || '?').slice(0, 1))}</span><span class="tb-bulk-id">${text(t.displayName)}</span><input name="name" value="${esc(t.displayName)}" maxlength="24" autocomplete="off" spellcheck="false" aria-label="给 ${esc(t.displayName)} 命名"></label>`).join('')
+            : '<p class="tb-bulk-empty">当前没有待命名的对手，全部已建档。</p>'}
+        </div>
+        <p class="tb-dialog-error" data-team-bulk-error role="alert" hidden></p>
+        <footer class="tb-dialog-foot">
+          <button type="button" class="tb-ghost" data-dialog-close>取消</button>
+          <button type="submit" class="tb-cta"${pendingTeams.length ? '' : ' disabled'}>保存</button>
+        </footer>
+      </form>
+    </dialog>`;
+    return `<div class="page feature-page tb-page" data-tm-page>${hero}${board}${merge}${renameDialog}${bulkDialog}</div>`;
   }
   /* ── 战队详情 v3（2026-11-14）──────────────────────────────────────
      对齐首页（#overview）的设计参数：1180 容器、18px 段落标题、13px 正文、
@@ -478,1166 +757,9 @@ export function createFeatures(h) {
     }
   }
   function teamDetail(value, key, compareData, bpData, deepData, behaviorData) {
-    const teams = value.teams || [];
-    const t = teams.find((x) => x.id === key);
-    if (!t) return withPage('战队分析', '未找到这支战队。', empty('这支战队可能已被合并。'), false);
-    const cmp = compareData || {};
-    const deep = deepData && (deepData.team || deepData.games) ? deepData : null;
-    const meta = {...t, ...(deep?.team || {})};
-    const own = {...(value.own || {}), ...(deep?.own || {})};
-    const oppName = meta.displayName || '对手';
-    const ownName = own.name || '本队';
-    const games = [...(meta.games || [])].sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')));
-    const deepGames = [...(deep?.games || [])].sort((a, b) => String(b.start || '').localeCompare(String(a.start || '')));
-    const matches = meta.matches || games.length || 0;
-    const thin = matches < 3;
-    const durations = games.map((g) => g.duration).filter((v) => hasNum(v) && v > 0);
-    const avgDuration = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null;
-    const oppRate = tmOppRate(meta);
-    const cmpGames = Math.max(1, cmp.games || games.length || 1);
-    const oppStyle = deep?.style || meta.style || null;
-    const ownStyle = deep?.own?.style || value.own?.style || null;
-    const styleMain = oppStyle?.main || null;
-    const styleWin30 = oppStyle?.windows?.['30'] || oppStyle?.windows?.all || null;
-    const styleCounts = oppStyle?.windows?.['30']?.counts || oppStyle?.windows?.all?.counts || null;
-    const styleAnchor = oppStyle?.anchor || String(meta.lastSeen || '').slice(0, 5);
-    const bpTeam = (bpData?.teams || []).find((x) => x.id === t.id);
-    const lineups = deep?.lineups || null;
-    const nEff = lineups?.nEff || 0;
-    const luWrText = (row) => {
-      const decided = (row.wins || 0) + (row.losses || 0);
-      const sample = `${fmt(row.games || decided)} 局 · ${fmt(row.wins || 0)} 胜 ${fmt(row.losses || 0)} 负`;
-      if (!(nEff >= 10) || decided < 3 || row.wr == null) return `<span class="tp-wr-sample" title="${esc(sample)}">${esc(sample)}</span>`;
-      return `<b title="${esc(sample)}">${pct(row.wr)}</b><span class="tp-sample">${fmt(row.games || decided)} 局</span>`;
-    };
-    const gameBySeq = new Map(deepGames.map((g) => [String(g.seq), g]));
-    /* ── 基础聚合：队伍口径优先取逐局终局面板（deep），再用 camp-compare 兜底 ── */
-    const deepStat = (side, field) => {
-      if (!deepGames.length) return null;
-      const values = deepGames.map((g) => g.sides?.[side]?.stats?.[field]).filter(hasNum);
-      return values.length ? values.reduce((a, b) => a + b, 0) : null;
-    };
-    const deepPlayers = (side) => deepGames.flatMap((g) => g.sides?.[side]?.players || []);
-    const deepAgg = (side) => {
-      const players = deepPlayers(side);
-      if (!players.length) return null;
-      const sum = (key) => players.reduce((s, p) => s + (hasNum(p[key]) ? p[key] : 0), 0);
-      const seconds = deepGames.reduce((s, g) => s + (hasNum(g.duration) ? g.duration : 0), 0);
-      return {games: deepGames.length, seconds, gold: sum('gold'), kills: sum('kills'), deaths: sum('deaths'), assists: sum('assists'), towers: sum('towers'), heroDamage: sum('heroDamage'), taken: sum('taken')};
-    };
-    const laneRows = (cmp.lanes || []).filter((row) => row.own || row.enemy);
-    const laneAggregate = (side) => TM_LANES.map((lane) => {
-      const group = deepPlayers(side).filter((p) => (p.lane || '位置未知') === lane);
-      if (!group.length) return {lane, row: null};
-      const sum = (key) => group.reduce((s, p) => s + (hasNum(p[key]) ? p[key] : 0), 0);
-      const parts = group.map((p) => p.participation).filter(hasNum);
-      const partValue = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length * (parts[0] <= 1 ? 100 : 1) : null;
-      return {lane, row: {lane, name: group[0].name, games: group.length, gold: sum('gold'), heroDamage: sum('heroDamage'), taken: sum('taken'), kills: sum('kills'), deaths: sum('deaths'), assists: sum('assists'), towers: sum('towers'), control: sum('control'), heal: sum('heal'), participation: partValue, minutes: sum('minutes')}};
-    });
-    const deepLaneRows = (() => {
-      if (!deepGames.length) return [];
-      const ownRows = laneAggregate('own'), enemyRows = laneAggregate('enemy');
-      return TM_LANES.map((lane) => ({lane, own: (ownRows.find((r) => r.lane === lane) || {}).row || null, enemy: (enemyRows.find((r) => r.lane === lane) || {}).row || null})).filter((row) => row.own || row.enemy);
-    })();
-    /* 逐局面板覆盖的局数 ≥ camp-compare 时才用逐局口径，避免 1 局聚合冒充 25 局。 */
-    const lanes = (deepLaneRows.length && deepGames.length >= cmpGames) ? deepLaneRows
-      : laneRows.map((row) => ({lane: row.lane || '位置未知', own: row.own || null, enemy: row.enemy || null}));
-    const laneNormal = (raw, fallbackGames = laneSourceGames) => {
-      if (!raw) return null;
-      const gamesN = hasNum(raw.games) && raw.games > 0 ? raw.games : fallbackGames;
-      const seconds = hasNum(raw.seconds) ? raw.seconds : null;
-      const minutes = seconds && seconds > 0 ? seconds / 60 : (hasNum(raw.minutes) && raw.minutes > 0 ? raw.minutes : (avgDuration ? avgDuration * gamesN / 60 : null));
-      const perGame = (value) => hasNum(value) ? value / gamesN : null;
-      const perMin = (value) => hasNum(value) && minutes ? value / minutes : null;
-      return {
-        name: raw.name, games: gamesN,
-        gold: raw.gold, heroDamage: hasNum(raw.heroDamage) ? raw.heroDamage : raw.damage, taken: raw.taken,
-        gpm: hasNum(raw.gpm) ? raw.gpm : perMin(raw.gold),
-        dpm: hasNum(raw.dpm) ? raw.dpm : perMin(hasNum(raw.heroDamage) ? raw.heroDamage : raw.damage),
-        dtpm: hasNum(raw.dtpm) ? raw.dtpm : perMin(raw.taken),
-        participation: hasNum(raw.participation) ? raw.participation : null,
-        towersPerGame: hasNum(raw.towersPerGame) ? raw.towersPerGame : perGame(raw.towers),
-        killPart: hasNum(raw.killPart) ? raw.killPart : (hasNum(raw.kills) || hasNum(raw.assists) ? (raw.kills || 0) + (raw.assists || 0) : null),
-        controlPerMin: hasNum(raw.controlPerMin) ? raw.controlPerMin : perMin(raw.control),
-        healPerMin: hasNum(raw.healPerMin) ? raw.healPerMin : perMin(raw.heal),
-      };
-    };
-    /* 分路行的局数决定「场均」分母：逐局口径用逐局局数，不能用 camp-compare 的局数。 */
-    const laneSourceGames = (deepLaneRows.length && deepGames.length >= cmpGames) ? deepGames.length : cmpGames;
-    const laneAgg = (side) => {
-      const rows = lanes.map((row) => row[side]).filter(Boolean);
-      if (!rows.length) return null;
-      const sum = (key) => rows.reduce((s, r) => s + (hasNum(r[key]) ? r[key] : 0), 0);
-      return {rows, games: laneSourceGames, seconds: sum('seconds'), gold: sum('gold'), kills: sum('kills'), deaths: sum('deaths'), assists: sum('assists'), towers: sum('towers'), heroDamage: rows.some((r) => hasNum(r.heroDamage)) ? sum('heroDamage') : sum('damage'), taken: sum('taken')};
-    };
-    const oppAgg = laneAgg('enemy') || deepAgg('enemy');
-    const ownAgg = laneAgg('own') || deepAgg('own');
-    const sideMetrics = (agg, side) => {
-      const gamesN = hasNum(agg?.games) && agg.games > 0 ? agg.games : (deepGames.length || cmpGames);
-      const minutes = hasNum(agg?.seconds) && agg.seconds > 0
-        ? agg.seconds / 60
-        : (deepGames.length ? deepGames.reduce((s, g) => s + (hasNum(g.duration) ? g.duration : 0), 0) / 60 : (avgDuration ? avgDuration * gamesN / 60 : null));
-      const deepGold = deepStat(side, 'gold'), deepKills = deepStat(side, 'kills');
-      const deepTowers = deepStat(side, 'towers'), deepDragons = deepStat(side, 'dragons');
-      const gold = hasNum(deepGold) ? deepGold : agg?.gold;
-      const kills = hasNum(deepKills) ? deepKills : agg?.kills;
-      const towers = hasNum(deepTowers) ? deepTowers : agg?.towers;
-      if (!hasNum(gold) && !hasNum(kills) && !hasNum(towers) && !agg) return null;
-      return {
-        games: gamesN,
-        goldPerGame: tdAvgOf(gold, gamesN),
-        killsPerGame: tdAvgOf(kills, gamesN),
-        towersPerGame: tdAvgOf(towers, gamesN),
-        dragonsPerGame: hasNum(deepDragons) ? tdAvgOf(deepDragons, gamesN) : null,
-        dpm: minutes && hasNum(agg?.heroDamage) ? agg.heroDamage / minutes : null,
-        dtpm: minutes && hasNum(agg?.taken) ? agg.taken / minutes : null,
-      };
-    };
-    const oppMetrics = sideMetrics(oppAgg, 'enemy');
-    const ownMetrics = sideMetrics(ownAgg, 'own');
-    const shareMap = (side, field) => {
-      const values = lanes.map((row) => hasNum(row[side]?.[field]) ? row[side][field] : (field === 'heroDamage' ? row[side]?.damage : null));
-      const total = values.reduce((s, v) => s + (hasNum(v) ? v : 0), 0);
-      const map = new Map();
-      lanes.forEach((row, index) => map.set(row.lane, tdShareOf(values[index], total)));
-      return map;
-    };
-    const heroPick = (side) => {
-      const map = new Map();
-      for (const g of deepGames) {
-        const oppWon = g.opponentWin === true || (g.opponentWin == null && g.win === false);
-        for (const p of (g.sides?.[side]?.picks || [])) {
-          if (!p || !p.name) continue;
-          const item = map.get(p.name + '|' + (p.lane || '')) || {hero: p.name, lane: p.lane || '', archetype: p.archetype || '', games: 0, wins: 0, icon: p.icon};
-          item.games++;
-          if (side === 'enemy' ? oppWon : !oppWon) item.wins++;
-          map.set(p.name + '|' + (p.lane || ''), item);
-        }
-      }
-      return [...map.values()].sort((a, b) => b.games - a.games || String(a.hero).localeCompare(String(b.hero), 'zh'));
-    };
-    const oppPicksDeep = heroPick('enemy');
-    const ownPicksDeep = heroPick('own');
-    const fallbackEnemyHeroes = [...(cmp.heroes?.enemy || [])].sort((a, b) => (b.games || 0) - (a.games || 0) || String(a.hero || '').localeCompare(String(b.hero || ''), 'zh'));
-    const oppPicks = oppPicksDeep.length ? oppPicksDeep : fallbackEnemyHeroes.map((h) => ({hero: h.hero, lane: h.lane || '', archetype: '', games: h.games || 0, wins: null, icon: h.icon}));
-    const ownHeroGames = new Map();
-    for (const p of ownPicksDeep) ownHeroGames.set(p.hero, (ownHeroGames.get(p.hero) || 0) + p.games);
-    for (const h of (cmp.heroes?.own || [])) if (!ownHeroGames.has(h.hero)) ownHeroGames.set(h.hero, h.games || 0);
-    const laneArchetype = (game, side) => {
-      const byLane = {};
-      for (const p of (game.sides?.[side]?.picks || [])) if (p.lane && p.archetype) byLane[p.lane] = p.archetype;
-      return byLane;
-    };
-    const comboStats = (side, laneA, laneB) => {
-      const map = new Map();
-      let total = 0;
-      for (const g of deepGames) {
-        const by = laneArchetype(g, side);
-        if (!by[laneA] || !by[laneB]) continue;
-        total++;
-        const key = [by[laneA], by[laneB]].join(' + ');
-        map.set(key, (map.get(key) || 0) + 1);
-      }
-      return {total, rows: [...map.entries()].map(([key, count]) => ({key, count})).sort((a, b) => b.count - a.count)};
-    };
-    const topLaneOf = (shares) => lanes.map((row) => ({lane: row.lane, share: shares.get(row.lane)})).filter((x) => hasNum(x.share)).sort((a, b) => b.share - a.share)[0] || null;
-    const goldShareOwn = shareMap('own', 'gold');
-    const goldShareOpp = shareMap('enemy', 'gold');
-    const damageShareOpp = shareMap('enemy', 'heroDamage');
-    const damageShareOwn = shareMap('own', 'heroDamage');
-    const takenShareOpp = shareMap('enemy', 'taken');
-    const takenShareOwn = shareMap('own', 'taken');
-    const oppGoldTop = topLaneOf(goldShareOpp);
-    const ownGoldTop = topLaneOf(goldShareOwn);
-    /* ── 通用小件 ───────────────────────────────────────────────── */
-    const tpCard = (title, meta2, body, cls = '') => `<article class="tp-card${cls ? ' ' + cls : ''}"><header class="tp-card-head"><h3>${title}</h3>${meta2 ? `<span>${meta2}</span>` : ''}</header>${body}</article>`;
-    const isUnlabeled = (name) => !name || name === '待分类' || name === '未标注';
-    const typeText = (name) => isUnlabeled(name) ? '未标注' : name;
-    const tpTypeText = (types) => `<span class="tp-typetext">${(types || []).map((name) => `<span${isUnlabeled(name) ? ' class="is-unlabeled"' : ''}>${esc(typeText(name))}</span>`).join('')}</span>`;
-    /* 头像数量多、体积小，直接加载；懒加载会让快速滚动时出现空白方块。 */
-    const heroImg = (hero, cls) => portrait(hero, cls).replace(' loading="lazy"', '');
-    const heroLink = (hero, count, cls = '') => `<a class="tp-hero${cls ? ' ' + cls : ''}" href="${route('hero', hero)}" title="打开英雄 ${esc(hero)} 详情">${heroImg(hero, 'is-hero')}<span>${esc(hero)}</span>${hasNum(count) ? `<small>${fmt(count)}</small>` : ''}</a>`;
-    const heroFace = (hero, cls = '') => `<a class="tp-face${cls ? ' ' + cls : ''}" href="${route('hero', hero)}" title="${esc(hero)}">${heroImg(hero, 'is-face')}</a>`;
-    const heroFaces = (heroes, cls = '') => `<span class="tp-faces${cls ? ' ' + cls : ''}">${(heroes || []).map((hero) => heroFace(hero)).join('')}</span>`;
-    const tpGamesRef = (refs, limit = 8) => {
-      const list = refs || [];
-      if (!list.length) return '';
-      if (list.length === 1) {
-        const g = gameBySeq.get(String(list[0]));
-        return g?.matchKey ? `<a class="tp-row-link" href="${route('match', g.matchKey)}" title="打开单局复盘">复盘 ↗</a>` : '';
-      }
-      const chips = list.slice(0, limit).map((seq) => {
-        const g = gameBySeq.get(String(seq));
-        const label = g ? `${text(g.day || g.start || `#${seq}`)}` : `#${text(seq)}`;
-        return g?.matchKey ? `<a class="tp-ref-chip" href="${route('match', g.matchKey)}">${label}</a>` : `<span class="tp-ref-chip">${label}</span>`;
-      }).join('');
-      const more = list.length > limit ? `<span class="tp-ref-more">+${fmt(list.length - limit)}</span>` : '';
-      return `<details class="tp-ref"><summary>逐局</summary><div class="tp-ref-list">${chips}${more}</div></details>`;
-    };
-    const tpStack = (shares, laneList = lanes) => `<div class="tp-stack">${laneList.map((row, index) => {
-      const share = shares.get(row.lane);
-      return `<span class="tp-seg tp-lane-${index}" style="flex:${hasNum(share) ? Math.max(share, 0.4).toFixed(2) : 0} 0 0" title="${esc(row.lane)} ${pct(share)}">${hasNum(share) && share >= 12 ? Math.round(share) + '%' : ''}</span>`;
-    }).join('')}</div>`;
-    const tpStackLegend = () => `<div class="tp-stack-legend">${lanes.map((row, index) => `<span><i class="tp-lane-${index}"></i>${esc(row.lane)}</span>`).join('')}</div>`;
-    /* ── 头部：身份、样本、当前五人 ─────────────────────────────── */
-    const tagList = [];
-    const addTag = (ok, label, cls) => { if (ok) tagList.push({label, cls}); };
-    addTag(thin, '样本不足', 'sample');
-    addTag(matches >= 3 && (oppRate ?? -1) >= 60, '交手下风', 'weak');
-    addTag(matches >= 3 && (oppRate ?? 101) <= 40, '交手占优', 'strong');
-    addTag(meta.named, '已命名', 'neutral');
-    addTag(!!meta.coach, '教练 ' + (meta.coach || ''), 'neutral');
-    if (tagList.length === 1) tagList.push({label: '待观察', cls: 'neutral'});
-    const currentPlayers = meta.currentPlayers || meta.players || [];
-    const lanePlayers = byLaneTm(currentPlayers).slice(0, 5);
-    const formerPlayers = meta.formerPlayers || [];
-    const rotationPlayers = meta.rotationPlayers || [];
-    const rosterStrip = `<div class="tp-roster" aria-label="当前五人">${TM_LANES.map((lane) => {
-      const player = lanePlayers.find((p) => p.lane === lane) || currentPlayers.find((p) => p.lane === lane);
-      return `<span class="tp-player${player ? '' : ' is-empty'}"><i>${esc((player?.name || '?').slice(0, 1))}</i><span><small>${esc(lane)}</small><b>${esc(player?.name || '待补')}</b></span><em>${player ? `${fmt(player.games || 0)} 局` : '—'}</em></span>`;
-    }).join('')}</div>`;
-    const headStats = [
-      ['交手', `${fmt(matches)} 局`],
-      ['本队战绩', tmRecord(meta)],
-      ['对手胜率', pct(oppRate)],
-      ['场均时长', time(avgDuration)],
-      ['最近交手', text(meta.lastSeen)],
-    ];
-    if (thin) headStats[2][0] = '对手胜率（单局）';
-    const head = `<header class="tp-head">
-      <div class="tp-head-bar">
-        <a class="tp-back" href="#teams">← 战队分析</a>
-        <div class="tp-head-actions">
-          <button type="button" class="tp-btn" data-team-rename="${esc(t.id)}" data-team-label="${esc(t.displayName)}">${t.named ? '改名' : '命名'}</button>
-          <button type="button" class="tp-btn" data-tp-copy data-tp-summary="__TP_SUMMARY__">复制摘要</button>
-          <button type="button" class="tp-btn" data-action="refresh">刷新</button>
-        </div>
-      </div>
-      <div class="tp-id">
-        <span class="tp-crest" aria-hidden="true">${esc((oppName || '?').slice(0, 1))}</span>
-        <div class="tp-id-copy">
-          <span class="tp-eyebrow">对手档案 / TEAM DOSSIER</span>
-          <h1>${text(oppName)}</h1>
-          <p>营地阵容聚类 · 首次 ${text(meta.firstSeen)} · 最近 ${text(meta.lastSeen)}</p>
-        </div>
-        <div class="tp-tags">${tagList.slice(0, 5).map((x) => `<span class="tp-tag is-${x.cls}">${esc(x.label)}</span>`).join('')}</div>
-      </div>
-      <dl class="tp-facts">${headStats.map(([label, val]) => `<div><dt>${esc(label)}</dt><dd>${val}</dd></div>`).join('')}</dl>
-      ${rosterStrip}
-      <div class="tp-roster-note"><span>当前五人取最近 ${fmt(meta.rosterWindow || 5)} 局各位置出场最多的人${rotationPlayers.length ? ` · 本期轮换 ${fmt(rotationPlayers.length)} 人` : ''}。</span>${formerPlayers.length ? `<details class="tp-former"><summary>曾效力 ${fmt(formerPlayers.length)} 人</summary><span>${formerPlayers.slice(0, 30).map((p) => `${esc(p.name || p.id)}（${esc(p.lane || '位置未知')}，${fmt(p.games || 0)} 局）`).join('、')}${formerPlayers.length > 30 ? ` …另有 ${fmt(formerPlayers.length - 30)} 人` : ''}</span></details>` : ''}</div>
-      <p class="tp-scope">本页口径：全部营地面板，不随顶栏日期 / 来源筛选变化 · 无时间轴 · 手序含模板假设</p>
-    </header>`;
-    /* ── 一句话画像 ─────────────────────────────────────────────── */
-    const coreLine = oppGoldTop ? `经济份额最高的是${esc(oppGoldTop.lane)}（${pct(oppGoldTop.share)}）` : '分路经济还没有可用明细';
-    const quadRanked = (() => {
-      if (!styleCounts) return null;
-      const ranked = TP_QUADS.map(([name]) => [name, styleCounts[name] || 0]).sort((a, b) => b[1] - a[1]);
-      return ranked[0][1] > 0 ? ranked[0] : null;
-    })();
-    const styleLine = styleMain?.quadrant
-      ? `整体偏「${esc(styleMain.quadrant)}」`
-      : styleMain?.sufficient && quadRanked
-        ? `四象限分散，${esc(quadRanked[0])}最多（${fmt(quadRanked[1])} 局）`
-        : quadRanked ? `单局落在「${esc(quadRanked[0])}」一侧` : '打法倾向证据不足';
-    const pickLine = oppPicks.length ? `常拿 ${oppPicks.slice(0, 3).map((p) => esc(p.hero)).join(' / ')}` : '';
-    const briefLine = `${fmt(matches)} 局样本：${coreLine}，${styleLine}${pickLine ? `；${pickLine}` : ''}。`;
-    const briefNote = `对手胜率 ${pct(oppRate)} · 场均 ${time(avgDuration)} · 最近 ${text(meta.lastSeen)}。`;
-    const brief = `<section class="tp-brief" aria-label="阶段性观察">
-      <span class="tp-brief-label">阶段性观察</span>
-      <div class="tp-brief-body"><p class="tp-brief-line">${briefLine}</p><p class="tp-brief-note">${briefNote} 只是描述汇总，不构成结论。</p></div>
-    </section>`;
-    /* ── 01 总览：整体对照 + 近期交手 ───────────────────────────── */
-    const ovDefs = [
-      ['场均经济', 'goldPerGame', 0], ['场均击杀', 'killsPerGame', 1], ['场均推塔', 'towersPerGame', 1],
-      ['场均控龙', 'dragonsPerGame', 1], ['分均输出', 'dpm', 0], ['分均承伤', 'dtpm', 0],
-    ];
-    const cmpRows = ovDefs.map(([label, metricKey, digits]) => {
-      const oppValue = oppMetrics?.[metricKey] ?? null;
-      const ownValue = ownMetrics?.[metricKey] ?? null;
-      const max = Math.max(1, hasNum(oppValue) ? oppValue : 0, hasNum(ownValue) ? ownValue : 0);
-      return `<div class="tp-cmp-row">
-        <span class="tp-cmp-label">${esc(label)}</span>
-        <b class="tp-cmp-val is-opp">${tdMetricText(metricKey, oppValue)}</b>
-        <span class="tp-cmp-track is-opp"><i style="width:${hasNum(oppValue) ? Math.min(100, oppValue / max * 100).toFixed(1) : 0}%"></i></span>
-        <span class="tp-cmp-track is-own"><i style="width:${hasNum(ownValue) ? Math.min(100, ownValue / max * 100).toFixed(1) : 0}%"></i></span>
-        <b class="tp-cmp-val is-own">${tdMetricText(metricKey, ownValue)}</b>
-        <em class="tp-cmp-gap">${tdGapText(oppValue, ownValue, digits)}</em>
-      </div>`;
-    }).join('');
-    const overviewCard = tpCard('整体对照', '同批营地面板 · 条形只表示两队相对高低', `<div class="tp-cmp-head"><span></span><span class="is-opp">对手</span><span></span><span></span><span class="is-own">本队</span><span></span></div>${cmpRows}`);
-    const formGames = games.slice(0, 12).reverse();
-    const formSquares = formGames.map((g) => `<i class="tp-sq ${g.win === true ? 'is-win' : g.win === false ? 'is-loss' : 'is-unknown'}" title="${esc(`${g.start || ''} · ${g.win === true ? '本队胜' : g.win === false ? '对手胜' : '结果未知'}`)}"></i>`).join('');
-    const last10 = games.slice(0, 10);
-    const win10 = last10.filter((g) => g.win === true).length;
-    const formCard = tpCard('近期交手', `${fmt(games.length)} 局`, `<div class="tp-form-strip">${formSquares || '<span class="tp-quiet">还没有对局记录</span>'}</div>
-      <div class="tp-form-legend"><span><i class="is-win"></i>本队胜</span><span><i class="is-loss"></i>对手胜</span><small>左旧 → 右新</small></div>
-      <div class="tp-form-stats">
-        <div><small>近 ${fmt(last10.length)} 局</small><b>${fmt(win10)} 胜 ${fmt(last10.length - win10)} 负</b></div>
-        <div><small>对手胜率</small><b>${pct(oppRate)}</b></div>
-        <div><small>场均时长</small><b>${time(avgDuration)}</b></div>
-      </div>`);
-    /* ── 02 打法画像：经济分配 / 四象限 / 结构 / 领先 ────────────── */
-    const maxGoldShare = Math.max(1, ...[...goldShareOpp.values(), ...goldShareOwn.values()].filter(hasNum));
-    const ecoRows = lanes.map((row) => {
-      const opp = goldShareOpp.get(row.lane), own = goldShareOwn.get(row.lane);
-      const isTop = row.lane === oppGoldTop?.lane;
-      return `<div class="tp-bar-row${isTop ? ' is-top' : ''}">
-        <span class="tp-bar-lane">${esc(row.lane)}${isTop ? '<small>队内第一</small>' : ''}</span>
-        <b class="tp-bar-val is-opp">${pct(opp)}</b>
-        <span class="tp-bar-track is-opp"><i style="width:${hasNum(opp) ? Math.min(100, opp / maxGoldShare * 100).toFixed(1) : 0}%"></i></span>
-        <span class="tp-bar-track is-own"><i style="width:${hasNum(own) ? Math.min(100, own / maxGoldShare * 100).toFixed(1) : 0}%"></i></span>
-        <b class="tp-bar-val is-own">${pct(own)}</b>
-      </div>`;
-    }).join('');
-    const ecoRead = oppGoldTop && ownGoldTop
-      ? `对手把 ${pct(oppGoldTop.share)} 的经济给了${esc(oppGoldTop.lane)}，本队 ${pct(ownGoldTop.share)} 给了${esc(ownGoldTop.lane)}。`
-      : '分路经济明细不足，暂时读不出经济核心。';
-    const ecoCard = tpCard('经济分配', '谁在吃钱', `<div class="tp-bar-head"><span></span><span class="is-opp">对手</span><span></span><span></span><span class="is-own">本队</span></div>${ecoRows || tpLack('还没有可用的分路经济明细。')}<p class="tp-read">${ecoRead}</p>`);
-    /* x 在后端对同池分位做了 0/100 截断，直接画会全部贴边；这里做小幅确定性抖动，
-       让同值点形成簇，不改变相对位置。 */
-    const plotPos = (value) => 5 + Math.min(95, Math.max(5, value)) * 0.9;
-    const jitterOf = (g) => {
-      let seed = 0;
-      const str = String(g.seq || g.start || g.day || '');
-      for (let i = 0; i < str.length; i++) seed = (seed * 31 + str.charCodeAt(i)) >>> 0;
-      return {x: ((seed % 9) - 4) * 0.42, y: (((seed >> 4) % 7) - 3) * 0.42};
-    };
-    const dots = deepGames.map((g) => {
-      const st = g.style;
-      if (!st || !hasNum(st.x) || !hasNum(st.y)) return '';
-      const opponentWon = g.opponentWin === true || (g.opponentWin == null && g.win === false);
-      const keys = TP_WINDOWS.filter(([k]) => k === 'all' || tdInWindow(g.day, styleAnchor, Number(k))).map(([k]) => k).join(' ');
-      const jitter = jitterOf(g);
-      const x = plotPos(st.x) + jitter.x;
-      const y = plotPos(st.y) + jitter.y;
-      const title = `${g.start || g.day || ''} · ${opponentWon ? '对手胜' : '本队胜'} · ${st.quadrant || '暂不归类'} · 经济集中 ${Math.round(st.x)} / 打架倾向 ${Math.round(st.y)}`;
-      return `<circle cx="${tpQx(x).toFixed(1)}" cy="${tpQy(y).toFixed(1)}" r="4.2" class="tp-qdot ${opponentWon ? 'is-opp' : 'is-win'}" data-td-window-dot="${keys}"><title>${esc(title)}</title></circle>`;
-    }).join('');
-    const ownPoint = ownStyle?.main && hasNum(ownStyle.main.x) && hasNum(ownStyle.main.y)
-      ? {x: ownStyle.main.x, y: ownStyle.main.y}
-      : (() => { const w = ownStyle?.windows?.['30'] || ownStyle?.windows?.all; return w && hasNum(w.x) && hasNum(w.y) ? {x: w.x, y: w.y} : null; })();
-    const ownDot = ownPoint ? `<circle cx="${tpQx(plotPos(ownPoint.x)).toFixed(1)}" cy="${tpQy(plotPos(ownPoint.y)).toFixed(1)}" r="5.4" class="tp-qdot is-own"><title>${esc(ownName)} · 经济集中 ${Math.round(ownPoint.x)} / 打架倾向 ${Math.round(ownPoint.y)}</title></circle>` : '';
-    const avgPoint = hasNum(styleMain?.x) && hasNum(styleMain?.y) ? {x: styleMain.x, y: styleMain.y} : null;
-    const avgLines = avgPoint ? `<line x1="${tpQx(plotPos(avgPoint.x)).toFixed(1)}" y1="${tpQy(0).toFixed(1)}" x2="${tpQx(plotPos(avgPoint.x)).toFixed(1)}" y2="${tpQy(100).toFixed(1)}" class="tp-qavg"/>
-      <line x1="${tpQx(0).toFixed(1)}" y1="${tpQy(plotPos(avgPoint.y)).toFixed(1)}" x2="${tpQx(100).toFixed(1)}" y2="${tpQy(plotPos(avgPoint.y)).toFixed(1)}" class="tp-qavg"/>` : '';
-    const scatter = tpQuadSvg(`${avgLines}${dots}${ownDot}`, '团队风格四象限：逐局散点', styleCounts);
-    const evidenceRows = (list) => list.map((g) => {
-      const st = g.style;
-      const opponentWon = g.opponentWin === true || (g.opponentWin == null && g.win === false);
-      const evidence = st?.evidence?.length ? st.evidence : [
-        st?.top1 ? `经济第一是${st.top1.lane || '某一路'} ${pct(st.top1.share)}` : null,
-        hasNum(st?.fightPerMin) ? `每分钟击杀+助攻 ${fmt(st.fightPerMin, 1)}` : null,
-        hasNum(st?.macroPerMin) ? `每分钟推塔+控龙 ${fmt(st.macroPerMin, 2)}` : null,
-      ].filter(Boolean);
-      return `<div class="tp-ev-row">
-        <span class="tp-ev-date">${text(g.day || g.start)}</span>
-        <i class="tp-ev-res ${opponentWon ? 'is-loss' : 'is-win'}">${opponentWon ? '对手胜' : '本队胜'}</i>
-        <span class="tp-ev-quad">${esc(st?.quadrant || '暂不归类')}</span>
-        <span class="tp-ev-point">经济 ${hasNum(st?.x) ? Math.round(st.x) : '—'} · 打架 ${hasNum(st?.y) ? Math.round(st.y) : '—'}</span>
-        <span class="tp-ev-lines">${evidence.map((line) => esc(line)).join(' · ') || '证据不足'}</span>
-        <span class="tp-ev-dur">${time(g.duration)}</span>
-      </div>`;
-    }).join('');
-    const windowPanel = (windowKey) => {
-      const win = oppStyle?.windows?.[windowKey] || null;
-      const windowGames = deepGames.filter((g) => windowKey === 'all' || tdInWindow(g.day, styleAnchor, Number(windowKey)));
-      const counts = win?.counts || null;
-      const sufficient = win?.sufficient === true;
-      const quad = win?.quadrant || null;
-      const share = hasNum(win?.share) ? win.share : null;
-      const countsTop = (() => {
-        if (!counts) return null;
-        const ranked = TP_QUADS.map(([name]) => [name, counts[name] || 0]).sort((a, b) => b[1] - a[1]);
-        return ranked[0][1] > 0 ? ranked[0][0] : null;
-      })();
-      const total = TP_QUADS.reduce((s, [name]) => s + (counts?.[name] || 0), 0);
-      const dist = TP_QUADS.map(([name], index) => {
-        const count = counts?.[name] || 0;
-        return `<span class="tp-qdist"><i class="tp-qd-${index}"></i>${esc(name)}<b>${fmt(count)}</b></span>`;
-      }).join('');
-      return `<div class="tp-window" data-td-window-panel="${windowKey}" ${windowKey === '30' ? '' : 'hidden'}>
-        <div class="tp-window-facts">
-          <div><span>样本</span><b>${fmt(win?.games ?? windowGames.length)} 局</b><small>${sufficient ? '达到 3 局门槛' : '不足 3 局，只作参考'}</small></div>
-          <div><span>主要倾向</span><b>${esc(quad || (sufficient && countsTop ? `分布分散：${countsTop}最多` : countsTop ? `单局参考：${countsTop}` : '证据不足'))}</b><small>${quad ? `占比 ${pct(share)}` : sufficient && countsTop ? `最多占比 ${pct(share)}，未过半` : '暂不归类'}</small></div>
-          <div><span>平均点位</span><b>经济 ${hasNum(win?.x) ? Math.round(win.x) : '—'} · 打架 ${hasNum(win?.y) ? Math.round(win.y) : '—'}</b><small>${win ? '终局面板代理' : '证据不足'}</small></div>
-        </div>
-        <div class="tp-qdist-list">${dist}</div>
-      </div>`;
-    };
-    const styleRead = styleMain?.quadrant
-      ? `更接近「${esc(styleMain.quadrant)}」：${esc(TD_QUAD_DESC[styleMain.quadrant] || '')}。`
-      : styleMain?.sufficient && quadRanked
-        ? `四象限没有单一倾向：${esc(quadRanked[0])}最多 ${fmt(quadRanked[1])} 局（占 ${pct(styleMain.share)}），未过半，暂不归类。`
-        : quadRanked
-          ? `样本不足 3 局：最近单局落在「${esc(quadRanked[0])}」一侧，只作参考。`
-          : '逐局风格证据不足，四象限先不给结论。';
-    const styleCard = tpCard('团队风格四象限', '逐局识别 · 探索性', `${tpWindowChips()}<div class="tp-quad-wrap">${scatter}</div>
-      <div class="tp-quad-legend"><span><i class="tp-lg-win"></i>本队胜</span><span><i class="tp-lg-opp"></i>对手胜</span><span><i class="tp-lg-own"></i>${esc(ownName)}点位</span>${avgPoint ? '<span><i class="tp-lg-avg"></i>窗口均值</span>' : ''}</div>
-      ${TP_WINDOWS.map(([windowKey]) => windowPanel(windowKey)).join('')}
-      <p class="tp-read">${styleRead}</p>
-      <details class="tp-ref tp-detail"><summary>逐局证据 · ${fmt(deepGames.length)} 局</summary><div class="tp-ev-table">${evidenceRows(deepGames) || tpLack('还没有逐局风格证据。')}</div></details>`);
-    const structCard = tpCard('输出与承伤结构', '五路占比', `<div class="tp-stack-block">
-      <div class="tp-stack-line"><span>对手输出</span>${tpStack(damageShareOpp)}</div>
-      <div class="tp-stack-line"><span>本队输出</span>${tpStack(damageShareOwn)}</div>
-      <div class="tp-stack-line"><span>对手承伤</span>${tpStack(takenShareOpp)}</div>
-      <div class="tp-stack-line"><span>本队承伤</span>${tpStack(takenShareOwn)}</div>
-      ${tpStackLegend()}</div>
-      <p class="tp-read">${(() => {
-        const oppDmg = topLaneOf(damageShareOpp), ownDmg = topLaneOf(damageShareOwn);
-        return oppDmg && ownDmg ? `对手伤害主要来自${esc(oppDmg.lane)}（${pct(oppDmg.share)}），本队来自${esc(ownDmg.lane)}（${pct(ownDmg.share)}）。` : '分路输出明细不足。';
-      })()}</p>`);
-    const leadGroups = ['领先（>5k）', '持平（±5k）', '落后（>5k）'];
-    const leadMap = new Map();
-    for (const g of deepGames) {
-      const enemyGold = g.sides?.enemy?.stats?.gold, ownGold = g.sides?.own?.stats?.gold;
-      if (!hasNum(enemyGold) || !hasNum(ownGold)) continue;
-      const diffGold = enemyGold - ownGold;
-      const key = diffGold > 5000 ? '领先（>5k）' : diffGold < -5000 ? '落后（>5k）' : '持平（±5k）';
-      const enemyStats = g.sides?.enemy?.stats || {};
-      const item = leadMap.get(key) || {key, games: 0, towers: 0, dragons: 0, fight: 0};
-      item.games++;
-      item.towers += enemyStats.towers || 0;
-      item.dragons += enemyStats.dragons || 0;
-      item.fight += (enemyStats.kills || 0) + (enemyStats.assists || 0);
-      leadMap.set(key, item);
-    }
-    const leadTotal = [...leadMap.values()].reduce((s, r) => s + r.games, 0);
-    const leadRows = leadGroups.filter((key) => leadMap.has(key)).map((key) => {
-      const row = leadMap.get(key);
-      const tone = key.startsWith('领先') ? 'is-ahead' : key.startsWith('落后') ? 'is-behind' : 'is-even';
-      return `<div class="tp-lead-row ${tone}"><span>${esc(key)}</span><i><b style="width:${leadTotal ? (row.games / leadTotal * 100).toFixed(0) : 0}%"></b></i><b>${fmt(row.games)} 局</b><em>推塔 ${fmt(row.towers / row.games, 1)} · 控龙 ${fmt(row.dragons / row.games, 1)} · 击杀助攻 ${fmt(row.fight / row.games, 1)}</em></div>`;
-    }).join('');
-    const leadCard = tpCard('领先 / 落后', '按终局经济差分档', leadRows || tpLack('还没有可用的逐局终局经济。'));
-    /* ── 03 英雄与 BP ────────────────────────────────────────────── */
-    const heroLaneMap = new Map();
-    for (const p of oppPicks) if (p.lane && !heroLaneMap.has(p.hero)) heroLaneMap.set(p.hero, p.lane);
-    for (const h of fallbackEnemyHeroes) if (h.lane && !heroLaneMap.has(h.hero)) heroLaneMap.set(h.hero, h.lane);
-    const typeMap = new Map();
-    for (const p of oppPicks) {
-      if (!p.archetype) continue;
-      const laneMap = typeMap.get(p.lane || '其他') || new Map();
-      const item = laneMap.get(p.archetype) || {type: p.archetype, games: 0, heroes: new Map()};
-      item.games += p.games;
-      item.heroes.set(p.hero, (item.heroes.get(p.hero) || 0) + p.games);
-      laneMap.set(p.archetype, item);
-      typeMap.set(p.lane || '其他', laneMap);
-    }
-    const totalHeroes = new Set(oppPicks.map((p) => p.hero)).size;
-    const typedPicks = oppPicks.filter((p) => !isUnlabeled(p.archetype)).reduce((sum, p) => sum + p.games, 0);
-    const allPicks = oppPicks.reduce((sum, p) => sum + p.games, 0);
-    /* 英雄池口径：逐局 picks 有 20+ 局时用逐局分布；camp-compare 只有 1 局时不用它冒充全样本。 */
-    const heroPickCount = new Map();
-    for (const p of oppPicks) heroPickCount.set(p.hero, (heroPickCount.get(p.hero) || 0) + p.games);
-    const pickTotal = [...heroPickCount.values()].reduce((a, b) => a + b, 0);
-    const hhi = pickTotal ? [...heroPickCount.values()].reduce((sum, n) => sum + (n / pickTotal) ** 2, 0) : null;
-    const effective = hasNum(hhi) && hhi > 0 ? 1 / hhi : null;
-    const poolSummary = `<div class="tp-pool-summary">
-      <span><small>英雄数</small><b>${fmt(totalHeroes)}</b></span>
-      <span><small>有效英雄</small><b>${hasNum(effective) ? fmt(effective, 1) : '—'}</b></span>
-      <span><small>英雄池</small><b>${tdPoolText(hhi)}</b></span>
-      <span><small>类型覆盖</small><b>${allPicks ? pct(typedPicks / allPicks * 100) : '—'}</b></span>
-    </div>`;
-    const poolRows = TM_LANES.map((lane) => {
-      const heroes = oppPicks.filter((p) => p.lane === lane).sort((a, b) => b.games - a.games);
-      const types = [...(typeMap.get(lane) || new Map()).values()].sort((a, b) => b.games - a.games);
-      const known = types.filter((item) => !isUnlabeled(item.type));
-      const untypedGames = types.filter((item) => isUnlabeled(item.type)).reduce((s, item) => s + item.games, 0);
-      const knownTotal = known.reduce((s, item) => s + item.games, 0);
-      /* 前 3 类遇到并列时继续纳入，避免把同场次的类型藏进「其余」；最多 5 类。 */
-      const top = known.slice(0, 3);
-      while (top.length < known.length && top.length < 5 && known[top.length].games === top[top.length - 1].games) top.push(known[top.length]);
-      const restItems = known.slice(top.length);
-      const rest = restItems.reduce((s, item) => s + item.games, 0);
-      const restDetail = restItems.map((item) => `${item.type} ${pct(item.games / knownTotal * 100)}`).join(' · ');
-      const segs = [
-        ...top.map((item, index) => ({label: item.type, games: item.games, cls: `tp-mix-${index}`})),
-        ...(rest ? [{label: `其余 ${fmt(restItems.length)} 类`, games: rest, cls: 'tp-mix-rest', title: restDetail}] : []),
-      ];
-      const mix = knownTotal ? `<div class="tp-mixbar">${segs.map((seg) => `<i class="${seg.cls}" style="flex:${seg.games} 0 0" title="${esc(seg.title || `${seg.label} ${pct(seg.games / knownTotal * 100)}`)}"></i>`).join('')}</div>
-        <div class="tp-mixlegend">${segs.map((seg) => `<span title="${esc(seg.title || `${seg.label} ${pct(seg.games / knownTotal * 100)}`)}"><i class="${seg.cls}"></i>${esc(seg.label)}<b>${pct(seg.games / knownTotal * 100)}</b></span>`).join('')}${untypedGames ? `<span class="is-untyped">未标注 ${fmt(untypedGames)} 次</span>` : ''}</div>${restDetail ? `<p class="tp-mix-extra">其余类型：${esc(restDetail)}</p>` : ''}`
-        : `<p class="tp-quiet">类型证据不足${untypedGames ? ` · 未标注 ${fmt(untypedGames)} 次` : ''}</p>`;
-      const shown = heroes.slice(0, 7);
-      return `<div class="tp-pool-row" data-tp-hero-lane="${esc(lane)}">
-        <div class="tp-pool-lane"><b>${esc(lane)}</b><small>${heroes.length ? `${fmt(heroes.length)} 个英雄 · ${fmt(heroes.reduce((s, p) => s + p.games, 0))} 次` : '暂无出场'}</small></div>
-        <div class="tp-pool-main">
-          ${mix}
-          <div class="tp-herolinks">${shown.map((p) => heroLink(p.hero, p.games)).join('')}${heroes.length > shown.length ? `<span class="tp-more">+${fmt(heroes.length - shown.length)}</span>` : ''}</div>
-        </div>
-      </div>`;
-    }).join('');
-    const topPickHeroes = [...heroPickCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([hero, gamesN]) => heroLink(hero, gamesN)).join('');
-    const heroCard = tpCard('英雄使用', `${fmt(totalHeroes)} 个英雄 · 逐局识别`, `<div class="tp-pool-head">${tpHeroLaneChips()}${poolSummary}</div><div class="tp-pool-top"><span>最常选</span><div class="tp-herolinks">${topPickHeroes || '<span class="tp-quiet">—</span>'}</div></div>${poolRows}<p class="tp-read">其余类型＝已知类型里排在前面之外的较低占比类型；未标注＝英雄分类表暂未收录，两者不能混为一谈。</p>`);
-    const bpBans = (bpTeam?.bans || []).map((item) => ({hero: item.hero, count: item.count || item.games || 0}))
-      .sort((a, b) => b.count - a.count).slice(0, 6);
-    const ourTopHeroes = [...ownHeroGames.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
-    const ourPairRows = (() => {
-      const map = new Map();
-      for (const g of deepGames) {
-        const heroes = (g.sides?.own?.picks || []).map((p) => p.name).filter(Boolean);
-        for (let i = 0; i < heroes.length; i++) for (let j = i + 1; j < heroes.length; j++) {
-          const key = [heroes[i], heroes[j]].sort().join(' + ');
-          const item = map.get(key) || {key, games: 0, oppWins: 0};
-          item.games++;
-          if (g.opponentWin === true) item.oppWins++;
-          map.set(key, item);
-        }
-      }
-      return [...map.values()].sort((a, b) => b.games - a.games).slice(0, 4).map((row) => ({heroes: row.key, games: row.games, rate: row.games ? row.oppWins / row.games * 100 : null}));
-    })();
-    const oppPairRows = (() => {
-      const map = new Map();
-      for (const g of deepGames) {
-        const heroes = (g.sides?.enemy?.picks || []).map((p) => p.name).filter(Boolean);
-        for (let i = 0; i < heroes.length; i++) for (let j = i + 1; j < heroes.length; j++) {
-          const key = [heroes[i], heroes[j]].sort().join(' + ');
-          const item = map.get(key) || {key, games: 0, wins: 0};
-          item.games++;
-          if (g.opponentWin === true) item.wins++;
-          map.set(key, item);
-        }
-      }
-      return [...map.values()].sort((a, b) => b.games - a.games).slice(0, 4).map((row) => ({heroes: row.key, games: row.games, rate: row.games ? row.wins / row.games * 100 : null}));
-    })();
-    const pairLine = (row) => `<div class="tp-pair-row"><span>${esc(row.heroes)}</span><small>${fmt(row.games)} 局</small><b>${row.games >= 3 ? pct(row.rate) : '样本'}</b></div>`;
-    const pairsDetail = `<details class="tp-ref tp-detail tp-detail-wide"><summary>双人组合 · 对手 / 本队</summary><div class="tp-pair-cols">
-      <div><b>对手常搭</b>${oppPairRows.map(pairLine).join('') || '<p class="tp-quiet">暂无</p>'}</div>
-      <div><b>本队组合下的对手胜负</b>${ourPairRows.map(pairLine).join('') || '<p class="tp-quiet">暂无</p>'}</div>
-    </div></details>`;
-    /* ── 04 阵容体系（v3.2：主力体系 Top 3 + 体系库）──────────────── */
-    const sigRow = (row) => `<div class="tp-sig-row">
-      ${heroFaces(row.heroSets?.[0] || [])}
-      ${tpTypeText(row.sig)}
-      <span class="tp-games">${fmt(row.games)} 局</span>
-      <span class="tp-wr">${luWrText(row)}</span>
-      ${tpGamesRef(row.gamesRef)}
-    </div>`;
-    const completeSig = (lineups?.signature || []).filter((row) => (row.sig || []).every((name) => !isUnlabeled(name)));
-    const luUnknown = lineups?.unknownRow || {};
-    const sigUnknown = luUnknown.games ? `<details class="tp-ref tp-detail tp-untyped"><summary>含未标注的阵容 · ${fmt(luUnknown.games)} 局</summary>${(luUnknown.sigs || []).map((row) => `<div class="tp-sig-row is-untyped">${heroFaces([])}${tpTypeText(row.sig)}<span class="tp-games">${fmt(row.games || 1)} 局</span><span class="tp-wr"><span class="tp-wr-sample">未计入胜率</span></span><span></span></div>`).join('')}</details>` : '';
-    /* 签名多为 1 局；按「打野 + 中路 + 游走」核心归并，才能看出主力体系。 */
-    const sysMap = new Map();
-    for (const row of completeSig) {
-      const key = (row.sig || []).slice(1, 4).join(' + ');
-      const item = sysMap.get(key) || {key, sig: row.sig, games: 0, wins: 0, losses: 0, heroSets: [], gamesRef: []};
-      item.games += row.games || 0;
-      item.wins += row.wins || 0;
-      item.losses += row.losses || 0;
-      if (row.heroSets?.[0]) item.heroSets.push(row.heroSets[0]);
-      item.gamesRef.push(...(row.gamesRef || []));
-      sysMap.set(key, item);
-    }
-    const systems = [...sysMap.values()].sort((a, b) => b.games - a.games || b.wins - a.wins).slice(0, 3);
-    const sysWr = (item) => {
-      const decided = (item.wins || 0) + (item.losses || 0);
-      if (item.games < 3 || decided < 3) return `<span class="tp-wr-sample">${fmt(item.wins || 0)} 胜 ${fmt(item.losses || 0)} 负</span>`;
-      return `<b>${pct(item.wins / decided * 100)}</b><span class="tp-sample">${fmt(item.games)} 局</span>`;
-    };
-    const systemRow = (item) => `<div class="tp-sig-row is-system">
-      ${heroFaces(item.heroSets[0] || [])}
-      ${tpTypeText(item.sig)}
-      <span class="tp-games">${fmt(item.games)} 局</span>
-      <span class="tp-wr">${sysWr(item)}</span>
-      ${tpGamesRef(item.gamesRef)}
-    </div>`;
-    const luSide = lineups?.side || {};
-    const sideBar = (key, label) => {
-      const side = luSide[key] || {games: 0, wins: 0, losses: 0};
-      const gamesN = (side.wins || 0) + (side.losses || 0);
-      return `<div class="tp-side-row"><span>${esc(label)}</span><i><b style="width:${(side.games || 0) ? ((side.wins || 0) / (side.games || 1) * 100).toFixed(0) : 0}%"></b></i><small>${fmt(side.games || 0)} 局 · ${gamesN >= 3 && nEff >= 10 ? `胜率 ${pct(100 * (side.wins || 0) / gamesN)}` : `${fmt(side.wins || 0)} 胜 ${fmt(side.losses || 0)} 负`}</small></div>`;
-    };
-    const systemsCard = tpCard('主力体系', '按打野 + 中路 + 游走核心归并 · 其余进体系库', `${systems.map(systemRow).join('') || tpLack('还没有可归并的五路签名。')}<div class="tp-side">${sideBar('blue', '蓝方')}${sideBar('red', '红方')}</div>`);
-    const luFamilyGroups = (rows, keyName) => {
-      const families = ['边野', '中野', '射辅', '中辅', '野辅', '中野辅', '边野辅', '中射辅', '野射辅', '边中野'];
-      const map = new Map();
-      for (const row of rows || []) {
-        if (!map.has(row.family)) map.set(row.family, []);
-        map.get(row.family).push(row);
-      }
-      const out = families.filter((family) => map.has(family)).map((family) => {
-        const items = map.get(family).slice(0, 2);
-        return `<div class="tp-fam"><header><b>${esc(family)}</b><small>${esc(LU_FAMILY_NOTES[family] || '')}</small></header>${items.map((row) => `<div class="tp-fam-row">${tpTypeText(row[keyName])}<span class="tp-games">${fmt(row.games)} 局</span><span class="tp-wr">${luWrText(row)}</span>${tpGamesRef(row.gamesRef, 4)}</div>`).join('')}</div>`;
-      }).join('');
-      return out || tpLack('还没有可识别的组合记录；样本不足或英雄类型待分类。');
-    };
-    const muCells = lineups?.matchups?.cells || [];
-    const muBaselines = lineups?.matchups?.rowBaselines || [];
-    const MU_LEVEL = {'established': ['倾向性', 'is-established'], 'initial': ['初步观察', 'is-initial'], 'insufficient': ['证据不足', 'is-insufficient']};
-    const matchupTable = muCells.length ? `<div class="tp-table-wrap"><table class="tp-table">
-      <thead><tr><th>${esc(oppName)}体系</th><th>对手体系（${esc(ownName)}）</th><th>场次</th><th>胜率</th><th>相对基准</th><th>证据</th></tr></thead>
-      <tbody>${muCells.map((c) => {
-        const [lvLabel, lvCls] = MU_LEVEL[c.evidenceLevel] || ['', ''];
-        return `<tr><td>${tpTypeText(c.row)}</td><td>${tpTypeText(c.col)}</td><td><b>${fmt(c.n)}</b></td><td>${c.wr != null ? pct(c.wr) : '<span class="tp-quiet">样本</span>'}</td><td>${c.baselineDiff != null ? `<b class="${c.baselineDiff > 0 ? 'is-up' : c.baselineDiff < 0 ? 'is-down' : ''}">${c.baselineDiff > 0 ? '+' : ''}${fmt(c.baselineDiff, 1)}</b>` : '—'}</td><td><span class="tp-level ${lvCls}">${esc(lvLabel)}</span></td></tr>`;
-      }).join('')}</tbody></table></div>` : tpLack('双方体系都可识别的对局还不足。');
-    const muMax = Math.max(0, ...muCells.map((c) => c.n || 0));
-    const muBaselineLine = muBaselines.length ? `基准：${muBaselines.slice(0, 2).map((b) => `${b.sig.join('+')} ${fmt(b.games)} 局`).join('；')}${muBaselines.length > 2 ? ` 等 ${fmt(muBaselines.length)} 套` : ''}。` : '';
-    const matchupBody = muCells.length && muMax < 2
-      ? `<p class="tp-read">${fmt(muCells.length)} 组体系对位都只有 1 局样本，暂不下结论。</p><details class="tp-ref tp-detail"><summary>展开对位表</summary>${matchupTable}</details>`
-      : matchupTable;
-
-    const resRows = (lineups?.resources || []).map((row) => `<div class="tp-res-row">
-      <div class="tp-res-head">${tpTypeText(row.sig)}<span>面板 ${fmt(row.panelGames)} / ${fmt(row.games)} 局</span>${row.wr != null ? `<span>该体系胜率 ${pct(row.wr)}</span>` : ''}${tpGamesRef(row.gamesRef, 4)}</div>
-      <div class="tp-stack-line"><span>经济</span>${tpStack(new Map(['对抗路', '打野', '中路', '发育路', '游走'].map((l) => [l, (row.lanes[l] || {}).goldShare])))}</div>
-      <div class="tp-stack-line"><span>输出</span>${tpStack(new Map(['对抗路', '打野', '中路', '发育路', '游走'].map((l) => [l, (row.lanes[l] || {}).dmgShare])))}</div>
-    </div>`).join('');
-    const libraryDetail = `<details class="tp-ref tp-detail tp-detail-wide tp-library"><summary>体系库 · ${fmt(completeSig.length)} 条签名 · ${fmt((lineups?.pairs || []).length)} 双人 · ${fmt((lineups?.triads || []).length)} 三人 · ${fmt(muCells.length)} 格对抗</summary>
-      <div class="tp-lib-block"><header><b>五路类型签名</b><span>${fmt(completeSig.length)} 条 · 顺序 对抗 → 打野 → 中路 → 发育 → 游走</span></header>${completeSig.map(sigRow).join('')}${sigUnknown}</div>
-      <div class="tp-grid is-2"><div class="tp-lib-block"><header><b>双人位置组合</b><span>同伴倾向</span></header>${luFamilyGroups(lineups?.pairs, 'pair')}</div><div class="tp-lib-block"><header><b>三人核心三角</b><span>节奏与保护配置</span></header>${luFamilyGroups(lineups?.triads, 'triad')}</div></div>
-      <div class="tp-lib-block"><header><b>体系对抗</b><span>历史关联 · 不写克制因果</span></header>${matchupBody}<p class="tp-read">${muBaselineLine}样本受实力、版本与选边影响，不作为克制结论。</p></div>
-      ${resRows ? `<div class="tp-lib-block"><header><b>按体系的资源分布</b><span>${fmt((lineups?.resources || []).length)} 套</span></header><div class="tp-res-list">${resRows}</div></div>` : ''}
-    </details>`;
-    const realSeries = (deep?.series || []).filter((x) => !/演示|demo/i.test(String(x.label || x.bo || '')) && (x.games || []).length);
-    const seriesHtml = realSeries.map((s) => `<div class="tp-series">
-      <header><b>${esc(s.label || s.bo || '系列赛')}</b><span>${esc(s.bo || '')} · ${fmt(s.score?.wins || 0)} 胜 ${fmt(s.score?.losses || 0)} 负</span></header>
-      <div class="tp-series-track">${(s.games || []).map((r) => `<div class="tp-series-game">
-        <span class="tp-series-no">G${esc(String(r.gameNo ?? '—'))}</span>
-        <i class="tp-series-res ${r.win === true ? 'is-win' : r.win === false ? 'is-loss' : ''}">${r.win === true ? '胜' : r.win === false ? '负' : '—'}</i>
-        <span class="tp-series-sig">${r.signature ? tpTypeText(r.signature) : '<span class="tp-quiet">含未标注</span>'}</span>
-        <span class="tp-series-meta" title="剩余可组体系 ${fmt(r.legalCombos)}">新启用 ${fmt((r.newHeroes || []).length)} · 已用 ${fmt(r.usedCount)}</span>
-        ${r.matchKey ? `<a href="${route('match', r.matchKey)}">复盘 ↗</a>` : ''}
-      </div>`).join('')}</div>
-    </div>`).join('');
-    const seriesCard = realSeries.length ? tpCard('BO 系列赛', `${fmt(realSeries.length)} 个系列`, seriesHtml) : '';
-    /* ── 05 分路对位 + 过程行为 + 对局证据 ───────────────────────── */
-    const oppDragonsPerGame = (() => { const value = deepStat('enemy', 'dragons'); return hasNum(value) ? tdAvgOf(value, deepGames.length || cmpGames) : null; })();
-    const ownDragonsPerGame = (() => { const value = deepStat('own', 'dragons'); return hasNum(value) ? tdAvgOf(value, deepGames.length || cmpGames) : null; })();
-    const ownPlayerByLane = new Map();
-    for (const p of (own.players || [])) if (p.lane && !ownPlayerByLane.has(p.lane)) ownPlayerByLane.set(p.lane, p);
-    for (const p of deepPlayers('own')) if (p.lane && !ownPlayerByLane.has(p.lane)) ownPlayerByLane.set(p.lane, p);
-    const duelCards = TM_LANES.map((lane) => {
-      const row = lanes.find((item) => item.lane === lane);
-      const opp = laneNormal(row?.enemy);
-      const ownSide = laneNormal(row?.own);
-      const ownPlayer = ownPlayerByLane.get(lane);
-      const metricRows = (TD_DUEL_METRICS[lane] || []).map(([label, metricKey]) => {
-        const oppValue = metricKey === 'teamDragons' ? oppDragonsPerGame : (opp?.[metricKey] ?? null);
-        const ownValue = metricKey === 'teamDragons' ? ownDragonsPerGame : (ownSide?.[metricKey] ?? null);
-        const digits = metricKey === 'participation' ? 1 : metricKey === 'controlPerMin' || metricKey === 'killPart' || metricKey === 'towersPerGame' ? 1 : 0;
-        return `<div class="tp-duel-metric"><span class="tp-duel-label">${esc(label)}</span><span class="tp-duel-vals"><b>${tdDuelText(metricKey, oppValue)}</b><i>/</i><b>${tdDuelText(metricKey, ownValue)}</b></span><em>${tdGapText(oppValue, ownValue, digits, metricKey === 'participation' ? '%' : '')}</em></div>`;
-      }).join('');
-      return `<article class="tp-duel">
-        <header><b>${esc(lane)}</b><small>${fmt(opp?.games || ownSide?.games || 0)} 局对位</small></header>
-        <div class="tp-duel-who"><span><small>对手</small><b>${esc(opp?.name || '未记录')}</b></span><span><small>本队</small><b>${esc(ownSide?.name || ownPlayer?.name || '未记录')}</b></span></div>
-        ${metricRows}
-      </article>`;
-    }).join('');
-    const duelCard = tpCard('分路对位', '同位置对照 · 任何分路都不看击杀死亡比', `<div class="tp-duel-grid">${duelCards}</div>`);
-    const behavior = ((behaviorData || {}).teams || []).find((x) => x.opponent === (t.displayName || '')) || null;
-    const behaviorCP = (behavior || {}).checkpoints || {};
-    const cpLine = (stamp, label) => {
-      const c = behaviorCP[stamp] || {};
-      return c.games
-        ? `<div class="tp-cp"><span>${label}</span><b>${fmt(Math.round(c.meanDiff))}</b><small>${fmt(c.games)} 局 · 领先 ${fmt(c.leadRate, 1)}% · 兑现 ${c.leadConversion == null ? '—' : fmt(c.leadConversion, 1) + '%'}</small></div>`
-        : `<div class="tp-cp is-empty"><span>${label}</span><b>—</b><small>无过程证据</small></div>`;
-    };
-    const hasBehaviorCP = ['240', '600'].some((stamp) => (behaviorCP[stamp]?.games || 0) > 0);
-    const behaviorCard = behavior ? tpCard('对手过程行为', `${fmt(behavior.games)} 局`, `
-      <div class="tp-sides"><div class="tp-side-row"><span>蓝方</span><i><b style="width:${behavior.games ? behavior.blueGames / behavior.games * 100 : 0}%"></b></i><small>${fmt(behavior.blueGames)} 局</small></div>
-      <div class="tp-side-row"><span>红方</span><i><b class="is-opp" style="width:${behavior.games ? behavior.redGames / behavior.games * 100 : 0}%"></b></i><small>${fmt(behavior.redGames)} 局</small></div></div>
-      ${hasBehaviorCP ? `<div class="tp-cps">${cpLine('240', '4 分钟')}${cpLine('600', '10 分钟')}</div>` : '<p class="tp-read">4 / 10 分钟过程证据还没有接上（需要 BP 记录与回放时间轴匹配）。</p>'}
-      ${behavior.topPicks?.length ? `<div class="tp-herolinks">${behavior.topPicks.slice(0, 6).map((p) => heroLink(p.hero, p.games)).join('')}</div>` : ''}
-      <p class="tp-read">对手视角＝本队视角取反。</p>`) : '';
-    const evidenceList = (list) => list.map((g) => {
-      const picks = g.sides?.enemy?.picks || [];
-      return `<div class="tp-game-row">
-        <span class="tp-game-date">${text((g.day || g.start || '—').slice(0, 5))}</span>
-        <i class="tp-ev-res ${g.opponentWin ? 'is-loss' : 'is-win'}">${g.opponentWin ? '负' : '胜'}</i>
-        ${heroFaces(picks.slice(0, 5).map((p) => p.name))}
-        <span class="tp-game-time">${time(g.duration)}</span>
-        ${g.matchKey ? `<a class="tp-row-link" href="${route('match', g.matchKey)}" title="打开单局复盘">↗</a>` : '<span></span>'}
-      </div>`;
-    }).join('');
-    const evidenceCard = tpCard('对局证据', `${fmt(deepGames.length)} 局 · 对手视角`, deepGames.length
-      ? `<div class="tp-game-list">${evidenceList(deepGames.slice(0, 8))}</div>${deepGames.length > 8 ? `<details class="tp-ref tp-detail"><summary>全部 ${fmt(deepGames.length)} 局</summary><div class="tp-game-list">${evidenceList(deepGames)}</div></details>` : ''}`
-      : tpLack('还没有可回溯的对局明细。'));
-    const kpl = deep?.kpl || null;
-    const kplHits = [...(kpl?.hits || [])].sort((a, b) => (b.oppGames || 0) - (a.oppGames || 0) || (b.n || 0) - (a.n || 0)).slice(0, 8);
-    const kindLabel = {pair: '双人', trio: '三人', full: '整套'};
-    const kplRows = kplHits.map((hit) => `<tr>
-      <td><span class="tp-kpl-combo">${heroFaces(hit.heroes)}<span>${esc((hit.heroes || []).join(' + '))}</span><small>${esc(kindLabel[hit.kind] || hit.kind || '')}</small></span></td>
-      <td>${fmt(hit.n)}</td><td>${hasNum(hit.wr) ? pct(hit.wr) : '—'}</td>
-      <td>${fmt(hit.oppGames || 0)}</td><td>${(hit.oppGames || 0) >= 3 ? pct(kplOppRate(hit)) : '<span class="tp-quiet">样本</span>'}</td></tr>`).join('');
-    const kplTable = kplHits.length ? `<div class="tp-table-wrap"><table class="tp-table"><thead><tr><th>组合</th><th>KPL 场次</th><th>KPL 胜率</th><th>交手</th><th>对手胜率</th></tr></thead><tbody>${kplRows}</tbody></table></div>` : tpLack('这支对手还没有命中 KPL 组合表的阵容。');
-    const kplLineup = (kpl?.lineup?.heroes || []).length
-      ? `<div class="tp-kpl-lineup"><b>整套命中</b><span>${(kpl.lineup.heroes || []).map((h) => `<em>${esc(h)}</em>`).join('')}</span><small>KPL ${fmt(kpl.lineup.n)} 场 · 胜率 ${pct(kpl.lineup.wr)} · 交手 ${fmt(kpl.lineup.oppGames || 0)} 局</small></div>` : '';
-    const kplDetail = `<details class="tp-ref tp-detail tp-detail-wide"><summary>KPL 职业参照 · ${kplHits.length ? `${fmt(kplHits.length)} 组命中` : '证据不足'}</summary>${kplTable}${kplLineup}<p class="tp-read">KPL 胜率按官方赛事口径；职业参照是外部基准，不证明这支队伍会用某套体系。</p></details>`;
-    /* ── 分析层：资源对位 / 边野模式 / 关联规则 / 变化异常 ───────── */
-    const bpOrder = deep?.bpOrder || null;
-    const meanOf = (list) => list.length ? list.reduce((a, b) => a + b, 0) / list.length : null;
-    const wilson95 = (wins, games) => {
-      if (!games) return null;
-      const z = 1.96, p = wins / games, den = 1 + z * z / games;
-      const center = p + z * z / (2 * games);
-      const margin = z * Math.sqrt(p * (1 - p) / games + z * z / (4 * games * games));
-      return [Math.max(0, (center - margin) / den * 100), Math.min(100, (center + margin) / den * 100)];
-    };
-    const enemyPickOf = (game, lane) => (game.sides?.enemy?.picks || []).find((pick) => pick.lane === lane) || null;
-    const decidedGames = deepGames.filter((game) => game.opponentWin === true || game.opponentWin === false);
-    const baseWins = decidedGames.filter((game) => game.opponentWin === true).length;
-    const baseRate = decidedGames.length ? baseWins / decidedGames.length * 100 : null;
-
-    const roleResource = TM_LANES.map((lane) => {
-      const shares = [], diffPm = [], winShares = [], lossShares = [];
-      let top1 = 0;
-      for (const game of deepGames) {
-        const enemyPlayers = game.sides?.enemy?.players || [];
-        const ownPlayers = game.sides?.own?.players || [];
-        const opp = enemyPlayers.find((player) => player.lane === lane);
-        const ownPlayer = ownPlayers.find((player) => player.lane === lane);
-        const total = enemyPlayers.reduce((sum, player) => sum + (hasNum(player.gold) ? player.gold : 0), 0);
-        if (opp && hasNum(opp.gold) && total) {
-          const share = opp.gold / total * 100;
-          shares.push(share);
-          if (game.opponentWin === true) winShares.push(share);
-          else if (game.opponentWin === false) lossShares.push(share);
-          const max = Math.max(...enemyPlayers.map((player) => hasNum(player.gold) ? player.gold : 0));
-          if (opp.gold === max) top1++;
-        }
-        if (opp && ownPlayer && hasNum(opp.gold) && hasNum(ownPlayer.gold) && hasNum(game.duration) && game.duration > 0) {
-          diffPm.push((opp.gold - ownPlayer.gold) / (game.duration / 60));
-        }
-      }
-      return {lane, games: shares.length, share: meanOf(shares), diffPm: meanOf(diffPm), winShare: meanOf(winShares), lossShare: meanOf(lossShares), top1};
-    });
-    const miniBar = (ratio, cls = '') => `<span class="tp-mini${cls ? ' ' + cls : ''}"><i style="width:${Math.max(0, Math.min(100, hasNum(ratio) ? ratio : 0)).toFixed(1)}%"></i></span>`;
-    const shareCell = (value) => `<div class="tp-cell"><b>${pct(value)}</b>${miniBar(hasNum(value) ? value / 30 * 100 : 0)}</div>`;
-    const diffCell = (value) => {
-      if (!hasNum(value)) return '<div class="tp-cell"><b>—</b></div>';
-      const width = Math.min(50, Math.abs(value) / 30 * 50);
-      return `<div class="tp-cell"><b>${value > 0 ? '+' : ''}${fmt(value, 0)}</b><span class="tp-mini is-diff"><i class="${value >= 0 ? 'is-pos' : 'is-neg'}" style="width:${width}%;${value >= 0 ? 'left:50%' : 'right:50%'}"></i></span></div>`;
-    };
-    const stateCell = (value, cls) => `<div class="tp-cell"><b>${pct(value)}</b>${miniBar(hasNum(value) ? value / 30 * 100 : 0, cls)}</div>`;
-    const countCell = (value, total) => `<div class="tp-cell"><b>${fmt(value)} 局</b>${miniBar(total ? value / total * 100 : 0)}</div>`;
-    const resourceCard = tpCard('资源与对位', `份额 = 同队占比 · 对位差 = 同位置对手 − 本队 / 分钟`, `<div class="tp-table-wrap"><table class="tp-table tp-res-table">
-      <thead><tr><th>位置</th><th>份额</th><th>对位差/分</th><th>胜局份额</th><th>负局份额</th><th>经济第一</th></tr></thead>
-      <tbody>${roleResource.map((row) => `<tr>
-        <td><b>${esc(row.lane)}</b></td>
-        <td>${shareCell(row.share)}</td>
-        <td>${diffCell(row.diffPm)}</td>
-        <td>${stateCell(row.winShare, 'is-win')}</td>
-        <td>${stateCell(row.lossShare, 'is-loss')}</td>
-        <td>${countCell(row.top1, row.games)}</td>
-      </tr>`).join('')}</tbody></table></div>
-      <p class="tp-read">经济第一分布：${roleResource.filter((row) => row.top1).map((row) => `${row.lane} ${row.top1} 局`).join(' / ') || '—'}。份额受角色基线与比赛状态影响，本表未校正；对位差按同位置计算。</p>`);
-
-    const edgeMap = new Map();
-    let edgeGames = 0;
-    for (const game of deepGames) {
-      const edge = enemyPickOf(game, '对抗路');
-      const jungle = enemyPickOf(game, '打野');
-      if (!edge?.archetype || !jungle?.archetype || isUnlabeled(edge.archetype) || isUnlabeled(jungle.archetype)) continue;
-      edgeGames++;
-      const key = `${edge.archetype} + ${jungle.archetype}`;
-      const item = edgeMap.get(key) || {key, games: 0};
-      item.games++;
-      edgeMap.set(key, item);
-    }
-    const edgeMatrix = new Map(edgeMap);
-    const edgeMax = Math.max(1, ...edgeMatrix.values().map((row) => row.games));
-    const edgeTypes = ['战边', '坦边'];
-    const jungleTypes = ['刺野', '战野', '坦野'];
-    const edgeCell = (edge, jungle) => {
-      const item = edgeMatrix.get(`${edge} + ${jungle}`);
-      if (!item) return '<div class="tp-edge-cell is-empty"><b>—</b></div>';
-      const ratio = item.games / edgeMax;
-      const tint = Math.round(10 + ratio * 40);
-      return `<div class="tp-edge-cell" style="background:color-mix(in srgb, var(--accent) ${tint}%, var(--paper))" title="${esc(edge)} + ${esc(jungle)}：${fmt(item.games)} 局 / ${pct(item.games / edgeGames * 100)}"><b>${fmt(item.games)}</b><small>${pct(item.games / edgeGames * 100)}</small></div>`;
-    };
-    const edgeTop = [...edgeMatrix.values()].sort((a, b) => b.games - a.games)[0];
-    const edgeCard = tpCard('边野组合', `类型已知 ${fmt(edgeGames)} 局 · 只描述选人频率`, edgeGames
-      ? `<div class="tp-edge-matrix">
-          <div class="tp-edge-mhead"><span></span>${jungleTypes.map((jungle) => `<b>${esc(jungle)}</b>`).join('')}</div>
-          ${edgeTypes.map((edge) => `<div class="tp-edge-mrow"><span>${esc(edge)}</span>${jungleTypes.map((jungle) => edgeCell(edge, jungle)).join('')}</div>`).join('')}
-        </div>
-        <p class="tp-read">最常见：${edgeTop ? `${esc(edgeTop.key)} ${fmt(edgeTop.games)} 局（${pct(edgeTop.games / edgeGames * 100)}）` : '—'}。只统计对抗路与打野都有类型标注的局；组合不代表先后顺序，也不等于战术身份。</p>`
-      : tpLack('还没有边路与打野类型都已知的局。'));
-
-    const bpoLaneIndex = (lane) => Math.max(0, TM_LANES.indexOf(lane));
-    const bpoBars = (rows) => rows.length
-      ? `<div class="tp-bpo-bars">${rows.map((row) => `<div class="tp-bpo-bar"><span>${esc(row.key)}</span><i><b style="width:${row.share == null ? 0 : Math.min(100, row.share)}%"></b></i><em>${fmt(row.games)} 局 · ${pct(row.share)}</em></div>`).join('')}</div>`
-      : '<p class="tp-quiet">—</p>';
-    const bpoChips = (rows, limit = 4) => `<div class="tp-bpo-chips">${rows.slice(0, limit).map((row) => heroLink(row.key, row.games)).join('') || '<span class="tp-quiet">—</span>'}</div>`;
-    const bpoLaneClass = (lane) => lane === '未标注' ? 'tp-lane-unlabeled' : `tp-lane-${bpoLaneIndex(lane)}`;
-    const bpoDist = (row) => {
-      const lanes = row.lanes || [];
-      return `<div class="tp-bpo-dist">${lanes.map((lane) => `<i class="${bpoLaneClass(lane.key)}" style="flex:${Math.max(1, lane.games)}" title="${esc(lane.key)} ${fmt(lane.games)} 局 · ${pct(lane.share)}"></i>`).join('')}</div>
-        <div class="tp-bpo-dist-legend">${lanes.map((lane) => `<span><i class="${bpoLaneClass(lane.key)}"></i>${esc(lane.key)} <b>${pct(lane.share)}</b></span>`).join('')}</div>`;
-    };
-    const bpoBanSlots = bpOrder?.banSlots || {own: [], enemy: []};
-    const bpoSlotCount = Math.max(0, ...(bpoBanSlots.own || []).map((row) => row.slot), ...(bpoBanSlots.enemy || []).map((row) => row.slot));
-    const bpoBanSeq = bpoSlotCount ? `<div class="tp-bpo-bseq">
-      <div class="tp-bpo-bseq-head"><span></span><b>我方</b><b>对方</b></div>
-      ${Array.from({length: bpoSlotCount}, (_, index) => {
-        const slot = index + 1;
-        const own = (bpoBanSlots.own || []).find((row) => row.slot === slot);
-        const enemy = (bpoBanSlots.enemy || []).find((row) => row.slot === slot);
-        return `<div class="tp-bpo-bseq-row"><small>第 ${slot} ban</small><div>${bpoChips(own?.heroes || [], 2)}</div><div>${bpoChips(enemy?.heroes || [], 2)}</div></div>`;
-      }).join('')}
-    </div>` : '<p class="tp-quiet">—</p>';
-    const bpoProvenance = bpOrder?.assumedGames
-      ? `显式手序 ${fmt(bpOrder.verifiedGames)} 局，按营地名单顺序套 20 手模板 ${fmt(bpOrder.assumedGames)} 局（假设，不是逐手核验）`
-      : (bpOrder?.verifiedGames ? `显式手序 ${fmt(bpOrder.verifiedGames)} 局` : '顺序来源待核验');
-    const bpOrderCard = bpOrder?.eventsKnown ? tpCard('BP 时序', `有顺序 ${fmt(bpOrder.knownGames)} / ${fmt(bpOrder.totalGames)} 局 · 显式 ${fmt(bpOrder.verifiedGames)}`, `<div class="tp-bpo">
-      <div class="tp-bpo-block"><header><b>对手第一手</b><small>首个 Pick 分路 · ${fmt(bpOrder.knownGames)} 局</small></header>${bpoBars(bpOrder.firstPicks?.lanes || [])}${bpoChips(bpOrder.firstPicks?.heroes || [], 5)}</div>
-      <div class="tp-bpo-block"><header><b>ban 顺序</b><small>每手前 2 · 5 手</small></header>${bpoBanSeq}</div>
-    </div>
-    <div class="tp-bpo-block"><header><b>我们 ban → 他们第一手</b><small>条件分布 · 不是因果</small></header>
-      <div class="tp-bpo-rows">${(bpOrder.banResponse || []).map((row) => `<div class="tp-bpo-row"><span class="tp-bpo-ban">${esc(row.hero)}</span><small>${fmt(row.games)} 局</small><div class="tp-bpo-rowdist">${bpoDist(row)}</div></div>`).join('') || '<p class="tp-quiet">—</p>'}</div>
-    </div>
-    <p class="tp-read">顺序：${bpoProvenance}；ban 顺序按我方/对方各自的 ban 次序（全局交替）；第一手=对手该局第一个 Pick，不是全局一抢；分路未标注单列；ban 后第一手是条件分布，不代表因果；没有顺序的局不计入。</p>`) : '';
-
-    const banMatchup = deep?.banMatchup || null;
-    const banReplacement = deep?.banReplacement || null;
-    const poolDepth = deep?.poolDepth || null;
-    const tpScatLaneClass = (lane) => TM_LANES.includes(lane) ? `tp-lane-${TM_LANES.indexOf(lane)}` : 'tp-lane-unlabeled';
-    const tpScatFill = (lane) => TM_LANES.includes(lane) ? `var(--tp-lane-${TM_LANES.indexOf(lane)})` : 'var(--tp-quiet)';
-    const tpScatHash = (value) => {
-      let hash = 0;
-      for (const ch of String(value || '')) hash = (hash * 31 + ch.charCodeAt(0)) % 17;
-      return hash;
-    };
-    const tpScatLegend = () => `<div class="tp-scatter-legend">${TM_LANES.map((lane, index) => `<span><i class="tp-lane-${index}"></i>${lane}</span>`).join('')}<span><i class="tp-lane-unlabeled"></i>未标注</span></div>`;
-    const tpScatterSvg = (points, opts) => {
-      const {xKey, yKey, winKey, xLabel, yLabel} = opts;
-      const labelPoints = [...points].sort((a, b) => ((b[yKey] || 0) + (b[xKey] || 0)) - ((a[yKey] || 0) + (a[xKey] || 0))).slice(0, 6);
-      const labelSet = new Set(labelPoints.map((point) => point.hero));
-      const pos = (point) => {
-        const x = Number.isFinite(point[xKey]) ? point[xKey] : 0;
-        const y = Number.isFinite(point[yKey]) ? point[yKey] : 0;
-        const jitter = x === 0 ? ((tpScatHash(point.hero) % 7) - 3) * 0.55 : 0;
-        return {x: Math.max(4, Math.min(96, 6 + x * 0.88 + jitter)), y: Math.max(4, Math.min(96, 94 - y * 0.88))};
-      };
-      const ticks = [0, 20, 50, 80, 100];
-      const tickX = (v) => 6 + v * 0.88;
-      const tickY = (v) => 94 - v * 0.88;
-      const labelYs = new Map();
-      let lastLabelY = -99;
-      for (const point of [...labelPoints].sort((a, b) => pos(a).y - pos(b).y)) {
-        const y = Math.max(pos(point).y, lastLabelY + 4.1);
-        labelYs.set(point.hero, Math.min(92, y));
-        lastLabelY = y;
-      }
-      return `<svg class="tp-scatter-svg" viewBox="0 0 100 100" role="img" aria-label="${esc(xLabel)}与${esc(yLabel)}散点">
-        <rect x="6" y="6" width="88" height="88" class="tp-scatter-frame"></rect>
-        ${ticks.map((v) => `<line x1="${tickX(v)}" y1="6" x2="${tickX(v)}" y2="94" class="tp-scatter-grid"></line><text x="${tickX(v)}" y="98.4" class="tp-scatter-tick" text-anchor="middle">${v}</text>`).join('')}
-        ${ticks.map((v) => `<line x1="6" y1="${tickY(v)}" x2="94" y2="${tickY(v)}" class="tp-scatter-grid"></line><text x="4" y="${tickY(v) + 1}" class="tp-scatter-tick" text-anchor="end">${v}</text>`).join('')}
-        <line x1="${tickX(20)}" y1="6" x2="${tickX(20)}" y2="94" class="tp-scatter-threshold"></line>
-        <line x1="6" y1="${tickY(20)}" x2="94" y2="${tickY(20)}" class="tp-scatter-threshold"></line>
-        ${points.map((point) => {
-          const {x, y} = pos(point);
-          const wr = point[winKey];
-          const radius = wr == null ? 0.55 : 0.85 + Math.max(0, Math.min(100, wr)) / 100 * 1.35;
-          const rightEdge = x > 78;
-          const label = labelSet.has(point.hero) ? `<text x="${rightEdge ? x - 1.5 : x + 1.5}" y="${(labelYs.get(point.hero) ?? y) - 1.3}" class="tp-scatter-label" text-anchor="${rightEdge ? 'end' : 'start'}">${esc(point.hero)}</text>` : '';
-          const waste = opts.markWaste && (point.pickRate || 0) <= 8 && (point.banRate || 0) >= 8;
-          const tip = `${point.hero}：${xLabel} ${pct(point[xKey])}（${fmt(point.pickGames)} 局）· ${yLabel} ${pct(point[yKey])}（${fmt(point.banGames)} 局）· 被选时胜率 ${pct(point[winKey])}`;
-          return `<a href="${route('hero', point.hero)}" class="tp-scatter-point"><circle cx="${x}" cy="${y}" r="${radius}" fill="${tpScatFill(point.lane)}" class="tp-scat-dot${wr == null ? ' is-empty' : ''}${waste ? ' is-waste' : ''}"><title>${esc(tip)}</title></circle>${label}</a>`;
-        }).join('')}
-      </svg>`;
-    };
-    const tpScatterPanel = (block, opts) => {
-      const allPoints = block?.points || [];
-      const points = allPoints.filter((point) => (point.pickGames || 0) > 0 || (point.banGames || 0) >= 2);
-      const target = block?.targeting || {};
-      const shown = points.length ? points : allPoints;
-      if (!shown.length) return `<div class="tp-scatter-panel">${tpLack('还没有双方都有的选人 / ban 明细。')}</div>`;
-      const xKey = opts.xKey, yKey = opts.yKey;
-      const q = (xHigh, yHigh) => shown.filter((point) => ((point[xKey] || 0) >= 20) === xHigh && ((point[yKey] || 0) >= 20) === yHigh).length;
-      return `<div class="tp-scatter-panel">
-        <header><b>${opts.title}</b><span>${opts.meta}</span></header>
-        <div class="tp-target-metrics">
-          <div><small>${opts.hitLabel}</small><b>${pct(target.targetRate)}</b><em>${fmt(target.hitEvents)} / ${fmt(target.banEvents)} 次 ban</em></div>
-          <div><small>随机期望</small><b>${pct(target.randomRate)}</b><em>按${opts.randomLabel}频率</em></div>
-          <div><small>倍数</small><b>${target.lift == null ? '—' : `${fmt(target.lift, 2)}×`}</b><em>命中 / 随机</em></div>
-        </div>
-        <div class="tp-scatter-axis"><span class="tp-scatter-y">${opts.yLabel}</span><div>${tpScatterSvg(shown, opts)}<span class="tp-scatter-x">${opts.xLabel}</span></div></div>
-        ${tpScatLegend()}
-        <div class="tp-scatter-quads">
-          <span><span class="tp-quad-label">常用·高 ban<small>${opts.quadNotes?.[0] || '尊重 / 针对'}</small></span><b>${q(true, true)}</b></span>
-          <span><span class="tp-quad-label">低用·高 ban<small>${opts.quadNotes?.[1] || '可能怕体系'}</small></span><b>${q(false, true)}</b></span>
-          <span><span class="tp-quad-label">常用·低 ban<small>${opts.quadNotes?.[2] || '放给'}</small></span><b>${q(true, false)}</b></span>
-          <span><span class="tp-quad-label">低用·低 ban<small>${opts.quadNotes?.[3] || '无关'}</small></span><b>${q(false, false)}</b></span>
-        </div>
-        <p class="tp-scatter-read">${opts.hitLabel} ${pct(target.targetRate)}，${target.lift == null ? '—' : target.lift < 0.85 ? '低于随机' : target.lift > 1.15 ? '高于随机' : '接近随机'}（随机 ${pct(target.randomRate)}）。</p>
-        <div class="tp-scatter-top"><small>${opts.topLabel}</small>${(target.top || []).map((row) => heroLink(row.hero, row.games)).join('')}</div>
-      </div>`;
-    };
-    const banPoolCard = banMatchup?.games ? tpCard('Ban × 英雄池', `${fmt(banMatchup.games)} 局 · 双向`, `<div class="tp-grid is-2">
-      ${tpScatterPanel(banMatchup.theirBansVsOurPool, {
-        title: '他们 ban × 我们常用', meta: '他们的 ban，落在我们的池里',
-        xKey: 'pickRate', yKey: 'banRate', winKey: 'pickWinRate',
-        xLabel: '我方出场率', yLabel: '他们 ban 率', hitLabel: '针对率',
-        randomLabel: '我方选人', topLabel: '我方 top5',
-        quadNotes: ['尊重 / 针对', '可能怕体系', '放给我们', '无关'],
-      })}
-      ${tpScatterPanel(banMatchup.ourBansVsTheirPool, {
-        title: '我们 ban × 他们常用', meta: '我们的 ban，落在他们的池里',
-        xKey: 'pickRate', yKey: 'banRate', winKey: 'pickWinRate',
-        xLabel: '他们出场率', yLabel: '我们 ban 率', hitLabel: '命中率',
-        randomLabel: '他们选人', topLabel: '他们 top5', markWaste: true,
-        quadNotes: ['我们针对', '可能浪费 / 怕体系', '放给他们', '无关'],
-      })}
-    </div><p class="tp-read">点大小=该英雄被选时的胜率，空心=没有选过；右图红圈=我们低使用率被 ban（他们出场 ≤8%）；只画出场 ≥1 局或被 ban ≥2 次的英雄；虚线=20% 门槛；同位置点有轻微抖动。针对率=ban 事件命中对方 top5 的比例，随机期望按对方实际选人频率计算；ban 次数与出场局数不同，分母见 tooltip。</p>`) : '';
-
-    const tpBanStack = (rows, kind = 'lane') => {
-      if (!rows?.length) return '<p class="tp-quiet">—</p>';
-      const color = (row, index) => kind === 'lane'
-        ? {class: tpScatLaneClass(row.key)}
-        : {style: `background:color-mix(in srgb, var(--accent) ${74 - Math.min(5, index) * 10}%, var(--paper))`};
-      return `<div class="tp-ban-stack">${rows.map((row, index) => `<i class="${color(row, index).class || ''}" style="${color(row, index).style ? color(row, index).style + ';' : ''}flex:${Math.max(1, row.games)}" title="${esc(row.key)} ${fmt(row.games)} 次 · ${pct(row.share)}"></i>`).join('')}</div>
-        <div class="tp-ban-stack-legend">${rows.map((row, index) => `<span><i class="${color(row, index).class || ''}" style="${color(row, index).style || ''}"></i>${esc(row.key)} <b>${pct(row.share)}</b></span>`).join('')}</div>`;
-    };
-    const tpTargetMini = (label, games, rows) => `<div class="tp-target-mini"><small>${label} · ${fmt(games)} 局</small><div>${(rows || []).map((row) => `<a href="${route('hero', row.hero)}">${esc(row.hero)} <b>${fmt(row.games)}</b></a>`).join('') || '<span class="tp-quiet">—</span>'}</div></div>`;
-    const banShapeCard = banMatchup?.games ? (() => {
-      const their = banMatchup.theirBansVsOurPool || {};
-      const ours = banMatchup.ourBansVsTheirPool || {};
-      const side = their.sideSplit || {};
-      const period = their.periodSplit || {};
-      return tpCard('Ban 形状', `${fmt(banMatchup.games)} 局 · 分路 / 边 / 时间`, `<div class="tp-grid is-2">
-        <div class="tp-shape-panel"><header><b>他们 ban 的分路</b><small>按 ban 事件</small></header><small class="tp-stack-label">分路</small>${tpBanStack(their.laneDist)}
-          <div class="tp-split-grid">
-            ${['blue', 'red'].map((key) => tpTargetMini(`他们${key === 'blue' ? '蓝方' : '红方'}`, side[key]?.games, side[key]?.top)).join('')}
-            ${tpTargetMini(`前 ${fmt(period.first?.games || 0)} 局`, period.first?.games, period.first?.top)}
-            ${tpTargetMini(`后 ${fmt(period.last?.games || 0)} 局`, period.last?.games, period.last?.top)}
-          </div>
-        </div>
-        <div class="tp-shape-panel"><header><b>我们 ban 的分路 / 类型</b><small>按 ban 事件</small></header><small class="tp-stack-label">分路</small>${tpBanStack(ours.laneDist)}<small class="tp-stack-label">类型</small>${tpBanStack(ours.typeDist, 'type')}
-          <div class="tp-waste"><small>低使用率被 ban · 他们出场 ≤8%</small>${(ours.waste || []).slice(0, 4).map((row) => `<a href="${route('hero', row.hero)}">${esc(row.hero)}<em>我们 ban ${fmt(row.banGames)} 次 · 他们 ${fmt(row.pickGames)} 局</em></a>`).join('') || '<span class="tp-quiet">没有命中低使用率英雄</span>'}</div>
-        </div>
-      </div><p class="tp-read">分路/类型按 ban 事件计，重复 ban 也计入；未标注单列。低使用率被 ban 只描述“ban 了但对面很少选”，不等于 ban 错，可能是怕特定体系；条件关联，不是因果。</p>`);
-    })() : '';
-
-    const tpReplacementRow = (row) => {
-      const replacements = (row.replacements || []).slice(0, 2).map((item) => heroLink(item.hero, item.games)).join('');
-      const player = row.playerCount > 3
-        ? `${row.lane || '同分路'} · ${fmt(row.playerCount)} 名选手轮换`
-        : `${row.lane || '同分路'} · ${(row.players || []).slice(0, 2).map((item) => esc(item.name)).join(' / ') || '—'}`;
-      return `<tr>
-        <td data-label="我们 ban"><b>${esc(row.hero)}</b><small>${esc(row.archetype || '未标注')}</small></td>
-        <td data-label="局数">${fmt(row.games)}</td>
-        <td data-label="替代英雄"><b>${fmt(row.distinct)}</b><small>个英雄</small></td>
-        <td data-label="有效替代"><b>${fmt(row.effective, 1)}</b><small>集中度折算</small></td>
-        <td data-label="同类型 / 跨类型"><b>${pct(row.sameTypeRate)}</b><small>同类型 / 跨 ${pct(row.crossTypeRate)}</small></td>
-        <td data-label="主要替代 / 吸收者"><div class="tp-repl-als">${replacements || '<span class="tp-quiet">—</span>'}<small>${esc(player)}</small></div></td>
-        <td data-label="对手胜率（95%）"><b>${pct(row.oppWinRate)}</b><small>${row.wilson ? `${fmt(row.wilson[0], 0)}–${fmt(row.wilson[1], 0)}% · ` : ''}${row.delta == null ? '' : `较基线 ${row.delta > 0 ? '+' : ''}${fmt(row.delta, 1)} 个点 · `}${fmt(row.oppWins)} 胜 ${fmt((row.games || 0) - (row.oppWins || 0))} 负</small></td>
-      </tr>`;
-    };
-    const replacementCard = banReplacement?.rows?.length ? (() => {
-      const matrix = banReplacement.matrix || {};
-      const rows = matrix.rows || [], columns = matrix.columns || [];
-      const cells = new Map((matrix.cells || []).map((cell) => [`${cell.row}|${cell.col}`, cell.games]));
-      const maxCell = Math.max(1, ...(matrix.cells || []).map((cell) => cell.games));
-      const matrixHtml = rows.length ? `<div class="tp-repl-matrix-wrap"><div class="tp-repl-matrix" style="grid-template-columns:64px repeat(${columns.length}, minmax(30px, 1fr))">
-        <span></span>${columns.map((col) => `<b>${esc(col)}</b>`).join('')}
-        ${rows.map((row) => `<span class="tp-repl-mrow">${esc(row)}</span>${columns.map((col) => {
-          const n = cells.get(`${row}|${col}`) || 0;
-          const alpha = n ? 10 + Math.round(n / maxCell * 52) : 0;
-          return `<i class="${n ? 'is-on' : ''}" style="${n ? `background:color-mix(in srgb, var(--accent) ${alpha}%, var(--paper))` : ''}" title="${esc(row)} → ${esc(col)}：${fmt(n)} 局">${n || ''}</i>`;
-        }).join('')}`).join('')}
-      </div></div>` : '';
-      return tpCard('Ban 后的替代结构', `${fmt(banReplacement.games)} 局 · 同分路`, `<div class="tp-table-wrap"><table class="tp-table tp-repl-table">
-        <thead><tr><th>我们 ban</th><th>局数</th><th>替代英雄</th><th>有效替代</th><th>同类型 / 跨类型</th><th>主要替代 / 吸收者</th><th>对手胜率（95%）</th></tr></thead>
-        <tbody>${banReplacement.rows.slice(0, 6).map(tpReplacementRow).join('')}</tbody></table></div>
-        <div class="tp-repl-bottom">
-          <div class="tp-trans-list"><small>主要类型转移</small>${(matrix.top || []).slice(0, 7).map((item) => `<div><span>${esc(item.from)} → ${esc(item.to)}</span><b>${fmt(item.games)}</b></div>`).join('') || '<p class="tp-quiet">—</p>'}</div>
-          <div><small class="tp-matrix-title">类型转移矩阵 · 行=我们 ban，列=他们替代</small>${matrixHtml}</div>
-        </div>
-        <p class="tp-read">替代=同一分路对手实际选人；有效替代=按出场集中度折算（越接近替代英雄数越分散）；同类型=替补类型与原 ban 类型相同。吸收者只列稳定选手，轮换时显示人数。对手胜率来自 Ban 与结果，条件关联，不是因果。</p>`);
-    })() : '';
-
-    const poolDepthCard = poolDepth?.lanes?.length ? tpCard('英雄池深度 · 五路', `对手 · ${fmt(poolDepth.games)} 局`, `<div class="tp-table-wrap"><table class="tp-table tp-pool-table">
-      <thead><tr><th>分路</th><th>英雄 / 有效</th><th>top1 / top2</th><th>去 top1 后</th><th>替补（KPL 成阵）</th></tr></thead>
-      <tbody>${poolDepth.lanes.map((row) => `<tr>
-        <td data-label="分路"><b>${esc(row.lane)}</b><small>${fmt(row.games)} 次选人</small></td>
-        <td data-label="英雄 / 有效"><b>${fmt(row.heroes)}</b><small>有效 ${fmt(row.effective, 1)}</small></td>
-        <td data-label="top1 / top2"><div class="tp-pool-tops">${row.top1 ? `<span><b>${esc(row.top1.hero)}</b><small>${pct(row.top1.share)}</small></span>` : ''}${row.top2 ? `<span><b>${esc(row.top2.hero)}</b><small>${pct(row.top2.share)}</small></span>` : ''}</div></td>
-        <td data-label="去 top1 后">${row.afterTop1 ? `<b>${fmt(row.afterTop1.heroes)}</b><small>有效 ${fmt(row.afterTop1.effective, 1)}</small>` : '—'}</td>
-        <td data-label="替补（KPL 成阵）"><div class="tp-pool-backups">${(row.backups || []).slice(0, 2).map((item) => `<span>${esc(item.hero)} <b>${pct(item.share)}</b><small>KPL ${item.kplWinRate == null ? '—' : pct(item.kplWinRate)} · ${fmt(item.kplGames)} 局</small></span>`).join('') || '<span class="tp-quiet">—</span>'}</div></td>
-      </tr>`).join('')}</tbody></table></div><p class="tp-read">有效英雄数=按出场集中度折算；top1/top2 是出场份额；去 top1 后看剩余池的宽度。KPL 列为五人成阵聚合的英雄出场/胜率，不是官方英雄榜；只作外部参照。</p>`) : '';
-
-    const rules = [];
-    const addRule = (kind, label, test) => {
-      let games = 0, wins = 0;
-      for (const game of decidedGames) {
-        if (!test(game)) continue;
-        games++;
-        if (game.opponentWin === true) wins++;
-      }
-      if (games < 4) return;
-      const conf = wins / games * 100;
-      rules.push({kind, label, games, wins, losses: games - wins, conf, lift: baseRate ? conf / baseRate : null, ci: wilson95(wins, games)});
-    };
-    addRule('边', '对手蓝方', (game) => game.ownSide === 'red');
-    addRule('边', '对手红方', (game) => game.ownSide === 'blue');
-    const supportTypes = new Map();
-    for (const game of deepGames) {
-      const pick = enemyPickOf(game, '游走');
-      if (pick?.archetype && !isUnlabeled(pick.archetype)) supportTypes.set(pick.archetype, (supportTypes.get(pick.archetype) || 0) + 1);
-    }
-    for (const [type, count] of supportTypes) {
-      if (count >= 4) addRule('辅助', type, (game) => enemyPickOf(game, '游走')?.archetype === type);
-    }
-    for (const row of edgeMap.values()) {
-      if (row.games >= 4) addRule('边野', row.key, (game) => {
-        const edge = enemyPickOf(game, '对抗路'), jungle = enemyPickOf(game, '打野');
-        return Boolean(edge?.archetype && jungle?.archetype && `${edge.archetype} + ${jungle.archetype}` === row.key);
-      });
-    }
-    for (const [hero, count] of [...heroPickCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)) {
-      if (count >= 4) addRule('英雄', hero, (game) => (game.sides?.enemy?.picks || []).some((pick) => pick.name === hero));
-    }
-    const ruleHigh = rules.filter((rule) => rule.lift != null && rule.lift >= 1).sort((a, b) => b.lift - a.lift).slice(0, 5);
-    const ruleLow = rules.filter((rule) => rule.lift != null && rule.lift < 1).sort((a, b) => a.lift - b.lift).slice(0, 3);
-    const ruleRow = (rule) => {
-      const ci = rule.ci ? [Math.max(0, rule.ci[0]), Math.min(100, rule.ci[1])] : null;
-      const lift = hasNum(rule.lift) ? Math.max(0, Math.min(2.5, rule.lift)) : null;
-      return `<tr>
-        <td><span class="tp-quiet">${esc(rule.kind)}</span> <b>${esc(rule.label)}</b></td>
-        <td>${fmt(rule.games)}</td>
-        <td>${fmt(rule.wins)}–${fmt(rule.losses)}</td>
-        <td><div class="tp-wrci"><div><b>${pct(rule.conf)}</b><small>${ci ? `${fmt(ci[0], 0)}–${fmt(ci[1], 0)}%` : '—'}</small></div><span class="tp-ci"><i style="left:${ci ? ci[0] : 0}%;width:${ci ? ci[1] - ci[0] : 0}%"></i><em style="left:${rule.conf}%"></em></span></div></td>
-        <td><div class="tp-lift"><span class="tp-lift-track"><em></em><i class="${rule.lift >= 1 ? 'is-up' : 'is-down'}" style="left:${lift == null ? 0 : lift / 2.5 * 100}%"></i></span><b>${rule.lift == null ? '—' : fmt(rule.lift, 2)}</b></div></td>
-      </tr>`;
-    };
-    const bpBanOutcome = bpOrder?.banOutcome || [];
-    const banOutcomeCard = bpBanOutcome.length ? tpCard('Ban 与结果', `ban 名单 ${fmt(bpOrder.banOutcomeGames ?? bpOrder.knownGames)} 局 · 基线 ${pct(bpOrder.banOutcomeBaseRate ?? bpOrder.baseRate)}`, `<div class="tp-table-wrap"><table class="tp-table">
-      <thead><tr><th>我们 ban</th><th>局数</th><th>对手胜率（95% 区间）</th><th>对手相对基线</th><th>对手战绩</th></tr></thead>
-      <tbody>${bpBanOutcome.map((row) => `<tr>
-        <td><b>${esc(row.hero)}</b></td>
-        <td>${fmt(row.games)}</td>
-        <td><div class="tp-wrci"><div><b>${pct(row.rate)}</b><small>${fmt(row.wilson?.[0], 0)}–${fmt(row.wilson?.[1], 0)}%</small></div><span class="tp-ci"><i style="left:${row.wilson?.[0] ?? 0}%;width:${row.wilson ? row.wilson[1] - row.wilson[0] : 0}%"></i><em style="left:${row.rate}%"></em></span></div></td>
-        <td class="${row.delta > 0 ? 'is-up' : row.delta < 0 ? 'is-down' : ''}">${row.delta > 0 ? '+' : ''}${fmt(row.delta, 1)} 个点</td>
-        <td>${fmt(row.oppWins)} 胜 ${fmt(row.games - row.oppWins)} 负</td>
-      </tr>`).join('')}</tbody></table></div>
-      <p class="tp-read">只用终局 ban 名单，不要求手序；这是条件关联，不是因果；受我方阵容、边、选手状态影响；未做多重比较校正；样本 <4 局不展示。</p>`) : '';
-    const rulesCard = tpCard('结果关联', `整体对手胜率 ${pct(baseRate)} · 只展示 ≥4 局的条件`, rules.length
-      ? `<div class="tp-table-wrap"><table class="tp-table"><thead><tr><th>条件</th><th>局数</th><th>胜负</th><th>条件胜率（95% 区间）</th><th>提升（vs 整体）</th></tr></thead><tbody>
-        ${ruleHigh.map(ruleRow).join('')}${ruleHigh.length && ruleLow.length ? '<tr class="is-group"><td colspan="5">低于整体</td></tr>' : ''}${ruleLow.map(ruleRow).join('')}
-      </tbody></table></div><p class="tp-read">提升 = 条件内胜率 / 整体胜率，虚线 1.0 = 与整体持平；区间为 Wilson 95%。这是关联，不是因果；条件之间可能重叠，不能相加；未做多重比较校正，仅供探索。</p>`
-      : tpLack('条件样本不足 4 局，暂不做关联。'));
-
-    const chrono = [...decidedGames].sort((a, b) => String(a.start || a.day || '').localeCompare(String(b.start || b.day || '')));
-    const rolling = chrono.map((game, index) => {
-      const window = chrono.slice(Math.max(0, index - 4), index + 1);
-      const wins = window.filter((item) => item.opponentWin === true).length;
-      return {rate: window.length ? wins / window.length * 100 : null, game};
-    });
-    const sparkW = 600, sparkH = 110, sparkPad = 10;
-    const sparkY = (rate) => sparkPad + (1 - Math.max(0, Math.min(100, rate)) / 100) * (sparkH - sparkPad * 2);
-    const sparkPoints = rolling.map((row, index) => {
-      const x = rolling.length <= 1 ? sparkW / 2 : index / (rolling.length - 1) * sparkW;
-      return `${x.toFixed(1)},${sparkY(row.rate).toFixed(1)}`;
-    }).join(' ');
-    const sparkLast = rolling[rolling.length - 1];
-    const spark = rolling.length > 1
-      ? `<div class="tp-sparkwrap"><div class="tp-spark-head"><span>近 5 局滚动胜率</span><b>${pct(sparkLast?.rate)}</b></div><svg class="tp-spark" viewBox="0 0 ${sparkW} ${sparkH}" preserveAspectRatio="none" role="img" aria-label="近 5 局滚动胜率">
-          <line x1="0" y1="${sparkH / 2}" x2="${sparkW}" y2="${sparkH / 2}" class="tp-spark-base"/>
-          <polyline points="${sparkPoints}" class="tp-spark-line"/>
-          <circle cx="${(sparkW - 3).toFixed(1)}" cy="${sparkY(sparkLast?.rate ?? 0).toFixed(1)}" r="3" class="tp-spark-dot"/>
-        </svg><div class="tp-spark-axis"><span>${text(chrono[0]?.day || '')}</span><span>${text(chrono[chrono.length - 1]?.day || '')}</span></div></div>`
-      : '';
-    const changePart = (list) => {
-      const wins = list.filter((game) => game.opponentWin === true).length;
-      const durations = list.map((game) => game.duration).filter(hasNum);
-      const goldDiffs = list.map((game) => {
-        const enemyGold = game.sides?.enemy?.stats?.gold, ownGold = game.sides?.own?.stats?.gold;
-        return hasNum(enemyGold) && hasNum(ownGold) ? enemyGold - ownGold : null;
-      }).filter(hasNum);
-      const edges = new Map();
-      for (const game of list) {
-        const edge = enemyPickOf(game, '对抗路'), jungle = enemyPickOf(game, '打野');
-        if (!edge?.archetype || !jungle?.archetype || isUnlabeled(edge.archetype) || isUnlabeled(jungle.archetype)) continue;
-        const key = `${edge.archetype}+${jungle.archetype}`;
-        edges.set(key, (edges.get(key) || 0) + 1);
-      }
-      const topEdge = [...edges.entries()].sort((a, b) => b[1] - a[1])[0];
-      return {n: list.length, wins, rate: list.length ? wins / list.length * 100 : null, duration: meanOf(durations), gold: meanOf(goldDiffs), edge: topEdge ? `${topEdge[0]}（${topEdge[1]} 局）` : '—'};
-    };
-    const cut = Math.ceil(chrono.length / 2);
-    const early = changePart(chrono.slice(0, cut));
-    const late = changePart(chrono.slice(cut));
-    const deltaText = (a, b, digits = 0, unit = '') => {
-      if (!hasNum(a) || !hasNum(b)) return '—';
-      const diff = b - a;
-      return `${diff > 0 ? '+' : ''}${fmt(diff, digits)}${unit}`;
-    };
-    const goldDiffs = decidedGames.map((game) => {
-      const enemyGold = game.sides?.enemy?.stats?.gold, ownGold = game.sides?.own?.stats?.gold;
-      return hasNum(enemyGold) && hasNum(ownGold) ? {game, value: enemyGold - ownGold} : null;
-    }).filter(Boolean);
-    const goldMean = meanOf(goldDiffs.map((row) => row.value));
-    const goldSd = goldDiffs.length > 1 && hasNum(goldMean)
-      ? Math.sqrt(goldDiffs.reduce((sum, row) => sum + (row.value - goldMean) ** 2, 0) / (goldDiffs.length - 1))
-      : null;
-    const outliers = goldSd
-      ? goldDiffs.map((row) => ({...row, z: (row.value - goldMean) / goldSd})).sort((a, b) => Math.abs(b.z) - Math.abs(a.z)).slice(0, 3)
-      : [];
-    const outlierRows = outliers.map((row) => `<div class="tp-outlier"><span>${text(row.game.day || row.game.start)}</span><i class="tp-ev-res ${row.game.opponentWin ? 'is-win' : 'is-loss'}">${row.game.opponentWin ? '对手胜' : '本队胜'}</i><b>${row.value > 0 ? '+' : ''}${fmt(row.value)}</b><small>z ${fmt(row.z, 1)}</small>${row.game.matchKey ? `<a class="tp-row-link" href="${route('match', row.game.matchKey)}">复盘 ↗</a>` : ''}</div>`).join('');
-    const changeCard = tpCard('变化与异常', `${fmt(early.n)} 局 / ${fmt(late.n)} 局 · 按时间对半`, spark + `<div class="tp-table-wrap"><table class="tp-table">
-      <thead><tr><th>指标</th><th>前段</th><th>后段</th><th>变化</th></tr></thead>
-      <tbody>
-        <tr><td>对手胜率</td><td>${pct(early.rate)}</td><td>${pct(late.rate)}</td><td>${deltaText(early.rate, late.rate, 1, ' 个点')}</td></tr>
-        <tr><td>场均时长</td><td>${time(early.duration)}</td><td>${time(late.duration)}</td><td>${deltaText(early.duration, late.duration, 0, ' 秒')}</td></tr>
-        <tr><td>终局经济差</td><td>${hasNum(early.gold) ? `${early.gold > 0 ? '+' : ''}${fmt(early.gold)}` : '—'}</td><td>${hasNum(late.gold) ? `${late.gold > 0 ? '+' : ''}${fmt(late.gold)}` : '—'}</td><td>${deltaText(early.gold, late.gold, 0)}</td></tr>
-        <tr><td>主要边野</td><td>${esc(early.edge)}</td><td>${esc(late.edge)}</td><td>—</td></tr>
-      </tbody></table></div>
-      ${outlierRows ? `<div class="tp-outliers"><b>经济差异常局</b>${outlierRows}</div>` : ''}
-      <p class="tp-read">只描述前后差异；没有时间轴与版本标签，不判断原因。</p>`);
-
-    /* ── 页脚：数据质量 + 命名维护 ─────────────────────────────── */
-    const archetypeCount = oppPicks.filter((p) => p.archetype).length;
-    const quality = [
-      ['对局面板', matches ? `${fmt(matches)} 局` : '缺失', matches > 0],
-      ['当前阵容', `${fmt(currentPlayers.length)} / 5 人`, currentPlayers.length >= 5],
-      ['英雄明细', `${fmt(new Set(oppPicks.map((p) => p.hero)).size)} 个`, oppPicks.length > 0],
-      ['BP 明细', bpTeam?.available ? '可用' : bpTeam ? '部分' : '缺失', !!bpTeam?.available],
-      ['深度数据', deep ? '可用' : '缺失（页面已降级）', !!deep],
-      ['英雄类型标注', archetypeCount ? `${fmt(archetypeCount)} 个英雄` : '缺失', archetypeCount > 0],
-      ['KPL 命中', kplHits.length ? `${fmt((kpl?.hits || []).length)} 组` : '无命中', kplHits.length > 0],
-      ['样本门槛', thin ? '不足 3 局' : '达标', !thin],
-    ];
-    const qualityWarnings = [...(deep?.meta?.warnings || []), ...(cmp.warnings || [])].filter(Boolean);
-    const qualityLimits = [...(deep?.meta?.limits || []), ...(deep ? [] : ['深度数据未就绪：逐局风格、体系胜率、KPL 命中暂时显示「证据不足」。'])];
-    const qualityPanel = `<article class="tp-card"><header class="tp-card-head"><h3>数据质量</h3><span>${fmt(quality.filter((x) => x[2]).length)} / ${fmt(quality.length)} 项</span></header>
-      <div class="tp-quality">${quality.map(([label, value, ok]) => `<div class="tp-qitem ${ok ? 'is-ok' : 'is-warn'}"><span>${esc(label)}</span><b>${esc(value)}</b></div>`).join('')}</div>
-      ${qualityWarnings.length ? `<p class="tp-read is-warn">${esc(qualityWarnings.join('；'))}</p>` : ''}
-      ${qualityLimits.length ? `<ul class="tp-limits">${qualityLimits.map((line) => `<li>${esc(line)}</li>`).join('')}</ul>` : ''}
-      <p class="tp-read">数据来源：${esc(deep?.meta?.source || '营地终局面板')}${kpl ? ` + ${esc(kpl.source || 'KPL 官方赛事')}（${fmt(kpl.games)} 场）` : ''}。</p></article>`;
-    const renamePanel = `<article class="tp-card"><header class="tp-card-head"><h3>命名与维护</h3><span>${t.named ? '已命名' : '待命名'}</span></header>${form('rename', `<input type="hidden" name="id" value="${esc(t.id)}">` + field('战队名称', 'name', t.name || '', 'required maxlength="40"'), '保存名称')}<p class="tp-read">命名后，对局、BP 与报告里的对手都会显示这个名字。</p></article>`;
-    const footer = `<details class="tp-footer"><summary><div><b>数据质量与命名维护</b><small>覆盖情况、样本门槛、口径限制与战队主数据</small></div><span>展开</span></summary><div class="tp-footer-grid">${qualityPanel}${renamePanel}</div></details>`;
-    /* ── 组装 ─────────────────────────────────────────────────────── */
-    const sec = (id, no, title, sub, chip, body) => `<section class="tp-sec" id="${id}" data-no="${no}">
-      <header class="tp-sec-head"><div class="tp-sec-title"><h2>${title}</h2>${chip ? `<span class="tp-sec-chip">${esc(chip)}</span>` : ''}</div><p class="tp-sec-sub">${sub}</p><button type="button" class="tp-sec-toggle" data-tp-toggle aria-expanded="false" aria-controls="${id}-body">展开</button></header>
-      <div class="tp-sec-body" id="${id}-body">${body}</div>
-    </section>`;
-    const section01 = sec('tp-overview', '01', '样本与整体', '先看有多少局、结果如何，再看整体对照；这一层只描述样本。', thin ? '样本不足 3 局' : `${fmt(matches)} 局`, `<div class="tp-grid is-2-1">${overviewCard}${formCard}</div>`);
-    const bpDetails = [bpOrderCard, banPoolCard, banShapeCard].filter(Boolean).join('');
-    const section02 = sec('tp-heroes', '02', '选人模式', '他们常选什么、先抢什么、先 ban 什么，以及双方 ban 与英雄池的错位；先描述，不判断强弱。', `${fmt(totalHeroes)} 个英雄`, heroCard + edgeCard + poolDepthCard + (bpDetails ? `<details class="tp-more-fold"><summary><b>BP 与 Ban 细节</b><span>时序、Ban × 英雄池、Ban 形状</span><em></em></summary><div class="tp-more-body">${bpDetails}</div></details>` : ''));
-    const section03 = sec('tp-lineups', '03', '阵容组合', '主力组合在前，完整签名 / 双人 / 三人 / 对抗 / 资源收进组合库。', nEff >= 10 ? `有效 ${fmt(nEff)} 局` : `初步分布 · ${fmt(nEff)} 局`, systemsCard + libraryDetail + pairsDetail + seriesCard);
-    const section04 = sec('tp-style', '04', '打法与资源', '资源分配、同位置对位、输出承伤与节奏；图由终局面板估算。', styleMain?.quadrant || (styleMain?.sufficient ? '分布分散' : '探索性'), styleCard + `<div class="tp-grid is-2">${structCard}${leadCard}</div>` + resourceCard);
-    const banDetails = [banOutcomeCard, replacementCard].filter(Boolean).join('');
-    const section05 = sec('tp-matchup', '05', '对位与关联', '五路同位置对照、ban 与结果、ban 后的替代结构；关联不是因果。', `${fmt(deepGames.length)} 局证据`, duelCard + rulesCard + (banDetails ? `<details class="tp-more-fold"><summary><b>Ban 证据明细</b><span>ban 与结果、ban 后的替代结构</span><em></em></summary><div class="tp-more-body">${banDetails}</div></details>` : '') + brief);
-    const section06 = sec('tp-change', '06', '变化与异常', '按时间对半看描述项的变化，并列出经济差异常局。', `${fmt(early.n)} / ${fmt(late.n)} 局`, changeCard + (behaviorCard || ''));
-    const section07 = sec('tp-evidence', '07', '证据与方法', '逐局证据、KPL 参照与口径；所有结论都能回到局。', `${fmt(deepGames.length)} 局`, evidenceCard + kplDetail);
-    const copyText = [
-      `玩家组：${oppName}`,
-      `样本：${fmt(matches)} 局（本队 ${tmRecord(meta)}，对手胜率 ${pct(oppRate)}，场均 ${time(avgDuration)}）`,
-      `经济：对手 ${pct(oppGoldTop?.share)} 给${oppGoldTop?.lane || '—'}，本队 ${pct(ownGoldTop?.share)} 给${ownGoldTop?.lane || '—'}`,
-      `风格：${styleMain?.quadrant ? `偏「${styleMain.quadrant}」` : styleMain?.sufficient && quadRanked ? `四象限分散，${quadRanked[0]}最多` : '证据不足'}`,
-      `最常选：${[...heroPickCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([hero, n]) => `${hero}×${n}`).join(' / ') || '—'}`,
-      `常禁：${bpBans.slice(0, 4).map((row) => `${row.hero}×${row.count}`).join(' / ') || '—'}`,
-      `本队常拿：${ourTopHeroes.map(([hero, n]) => `${hero}×${n}`).join(' / ') || '—'}`,
-      `近 ${fmt(last10.length)} 局：${fmt(win10)} 胜 ${fmt(last10.length - win10)} 负`,
-      '口径：全部营地面板；分析/挖掘，不构成建议',
-    ].join('\n');
-    const html = `<div class="page feature-page tp-page td-page">
-      ${head}
-      <nav class="tm-jump tp-jump" aria-label="页面目录">
-        ${[['tp-overview', '01 样本'], ['tp-heroes', '02 选人'], ['tp-lineups', '03 阵容'], ['tp-style', '04 打法'], ['tp-matchup', '05 对位'], ['tp-change', '06 变化'], ['tp-evidence', '07 证据']].map(([id, label]) => `<button type="button" data-tm-jump="${id}">${label}</button>`).join('')}
-      </nav>
-      ${section01}${section02}${section03}${section04}${section05}${section06}${section07}${footer}
-      <nav class="tp-bottom-nav" aria-label="快速切换">${[['tp-overview', '样本'], ['tp-heroes', '选人'], ['tp-lineups', '阵容'], ['tp-style', '打法'], ['tp-matchup', '对位'], ['tp-change', '变化'], ['tp-evidence', '证据']].map(([id, label]) => `<button type="button" data-tm-jump="${id}">${label}</button>`).join('')}</nav>
-    </div>`;
-    return html.replace('__TP_SUMMARY__', esc(copyText));
+    /* v4 页面在 team-dossier.js：时间窗 × 赛制、逐手 BP、阵容结构、英雄池与
+       条件胜率森林图都在那边，这里只保留路由与数据透传。 */
+    return teamDossier.render(value, key, compareData, bpData, deepData, behaviorData);
   }
   /* ── 战队训练（2026-11-08）──────────────────────────────────────────
      2026-11-14：跨队的「战队风格」「战队阵容」两页与单支战队分析重复，已下线；
@@ -1831,11 +953,6 @@ export function createFeatures(h) {
     const roster=form('identityRoster',field('选手名称','name','','required maxlength="40"')+select('位置','position','<option value="">待确认</option>'+['对抗路','打野','中路','发育路','游走'].map(x=>`<option value="${x}">${x}</option>`).join('')),'添加本队选手');
     const cards=`<div class="roster-chips">${value.entries.slice(0,18).map(x=>`<span><i>${text(x.label.slice(0,1))}</i><b>${text(x.label)}</b><small>${fmt(x.matches)} 局 · ${x.bound?'已认领':'待认领'}</small></span>`).join('')||empty('当前范围暂无本队昵称。')}</div>`;
     return withPage('选手认领','将对局昵称连接到本队选手，让跨对局分析使用稳定身份。',stats([['本队昵称',fmt(value.entries.length),'当前数据范围'],['待认领',fmt(unbound.length),'需要教练确认'],['本队名单',fmt(value.members.length),'有效选手'],['身份来源','人工','不会自动猜测']])+block('认领昵称','确认该昵称确属这名本队选手后保存。',claim)+block('本队名单','新增后会同时建立选手主数据。',roster)+block('昵称概览','展示前 18 个昵称；可在上方选择全部昵称。',cards),false);
-  }
-  function compare(value) {
-    const players=value.players.own||[], lanes=value.lanes||[];
-    return withPage('选手与位置对比','营地结算面板 · 统计按本队与对手分别汇总。',block('本队选手','按出场次数展示；分均指标按有时长的营地局计算。',bars(players,p=>p.name,p=>p.games,p=>`${fmt(p.games)} 局`)+multiTable(['选手','位置','场次','KDA','分均经济','分均输出','参团率'],players.map(p=>[text(p.name),text(p.lane),fmt(p.games),fmt(p.kda,2),fmt(p.gpm),fmt(p.dpm),pct(p.participation)])))+
-      block('位置对比','各位置以营地数据汇总，以下展示本队分均经济；样本不足时不作能力结论。',bars(lanes,p=>p.lane,p=>p.own?.gpm,p=>`${fmt(p.own?.gpm)} 金 / 分`)+multiTable(['位置','本队场次','本队分均经济','对手场次','对手分均经济'],lanes.map(x=>[text(x.lane),fmt(x.own?.games),fmt(x.own?.gpm),fmt(x.enemy?.games),fmt(x.enemy?.gpm)]))));
   }
   /* 英雄档位沿用 KPL 赛研 common.js:tierOf —— 按胜率 55 / 50 / 45 分 S/A/B/C。
      分析接口的 winRate 是 0–100 百分数，赛研是 0–1 小数，阈值按百分数写。 */
@@ -3080,7 +2197,7 @@ export function createFeatures(h) {
         </div>
       </div>`+linkDialog, false, `<a class="control" href="#session/${encodeURIComponent(s.id || '')}?report=1">导出报告</a><a class="control" href="#plan">编辑计划</a>`, false, true);
   }
-  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),playerarchive:v=>playerPages.archivePage(v[0],v[1]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),featured:v=>featuredPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[1]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3],v[4]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),compare:v=>laneBoard.render(v[0]),heroes:v=>heroes(v[0]),combos:v=>combos(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:(v)=>versions(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
+  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),playerarchive:v=>playerPages.archivePage(v[0],v[1]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),featured:v=>featuredPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[1]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3],v[4]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),heroes:v=>heroes(v[0]),combos:v=>combos(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:(v)=>versions(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
   async function api(path, options={}) {
     const r=await fetch(API_BASE + '/api/'+path,{cache:'no-store',...options});
     if(!r.ok){
@@ -3354,6 +2471,52 @@ export function createFeatures(h) {
       });
     return true;
   }
+  /* 目录页的批量命名：只提交真正改过名的行，没动过的跳过。 */
+  function submitTeamBulkRename(f) {
+    const dialog = f.closest('dialog');
+    const error = f.querySelector('[data-team-bulk-error]');
+    const button = f.querySelector('button[type=submit]');
+    const rows = [...f.querySelectorAll('[data-bulk-team]')];
+    const items = rows.map((row) => {
+      const id = row.dataset.bulkTeam || '';
+      const name = (row.querySelector('input[name="name"]')?.value || '').trim();
+      const current = (row.querySelector('.tb-bulk-id')?.textContent || '').trim();
+      return id && name && name !== current ? {id, name} : null;
+    }).filter(Boolean);
+    const fail = (message) => {
+      if (error) { error.textContent = message; error.hidden = false; }
+      if (button) { button.disabled = false; button.textContent = '保存'; }
+    };
+    if (!rows.length) { fail('当前没有待命名的对手。'); return true; }
+    if (!items.length) { fail('没有改动：至少给一支对手换个名字。'); return true; }
+    if (error) { error.hidden = true; error.textContent = ''; }
+    if (button) { button.disabled = true; button.textContent = `保存中…（${items.length} 支）`; }
+    api('studio/teams/rename-batch', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})})
+      .then(() => { dialog?.close(); reload(); })
+      .catch((err) => fail(err.message || '保存失败，请重试。'));
+    return true;
+  }
+  /* 目录页的命名对话框：提交到营地战队的改名接口，成功后关窗并重渲染。
+     失败的信息留在对话框里，不用系统 alert 打断。 */
+  function submitTeamRename(f, payload) {
+    const dialog = f.closest('dialog');
+    const error = f.querySelector('[data-team-rename-error]');
+    const button = f.querySelector('button[type=submit]');
+    const name = String(payload.name || '').trim();
+    const id = dialog?.dataset.teamId || '';
+    const fail = (message) => {
+      if (error) { error.textContent = message; error.hidden = false; }
+      if (button) { button.disabled = false; button.textContent = '保存'; }
+    };
+    if (!name) { fail('队名不能为空。'); f.querySelector('input[name="name"]')?.focus(); return true; }
+    if (!id) { fail('找不到这支战队，刷新页面后再试。'); return true; }
+    if (error) { error.hidden = true; error.textContent = ''; }
+    if (button) { button.disabled = true; button.textContent = '保存中…'; }
+    api('studio/teams/rename', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, name})})
+      .then(() => { dialog?.close(); reload(); })
+      .catch((err) => fail(err.message || '改名失败，请重试。'));
+    return true;
+  }
   function confirmPendingCard(button) {
     const card = button.closest('[data-sx-pending-card]');
     if (!card) return;
@@ -3463,6 +2626,8 @@ export function createFeatures(h) {
     event.preventDefault(); const id=f.dataset.featureForm, payload=Object.fromEntries(new FormData(f));
     /* 词表下拉选了「其他（手填）」：用手填值覆盖哨兵值，空值让后端按必填规则拦下。 */
     applyVocabValue(f, payload);
+    if (id === 'teamRename') return submitTeamRename(f, payload);
+    if (id === 'teamBulkRename') return submitTeamBulkRename(f);
     if (id === 'sessionLinks') {
       const dialog = f.closest('dialog');
       const scheduleId = String(payload.id || '').trim();
@@ -3542,6 +2707,24 @@ export function createFeatures(h) {
     }catch(error){status.textContent=error.message}
   }
   function change(event) {
+    /* 战队详情：常驻时间 / 赛制下拉。 */
+    if (event.target.matches('[data-tp-select]')) {
+      const root = event.target.closest('.tp-page');
+      if (root) {
+        teamDossier.setFilter(event.target.dataset.tpSelect, event.target.value, root);
+        return true;
+      }
+    }
+    /* 战队详情：时间窗自定义起止。日期输入在 .tp-page 内，直接交给页面模块重算。 */
+    if (event.target.matches('[data-tp-date]')) {
+      const root = event.target.closest('.tp-page');
+      if (root) {
+        const raw = String(event.target.value || '');
+        const hit = /^\d{4}-(\d{2})-(\d{2})$/.exec(raw);
+        teamDossier.setFilter(event.target.dataset.tpDate, hit ? `${hit[1]}-${hit[2]}` : '', root);
+        return true;
+      }
+    }
     if (event.target.matches('form[data-feature-form="merge"] select[name="from"], form[data-feature-form="merge"] select[name="into"]')) {
       syncMergePreview(event.target.closest('form'));
       return true;
@@ -3602,26 +2785,126 @@ if(captureIngestPage.change(event))return;
     /* 时间粒度由 click() 的胶囊按钮切换，不再使用 select。 */
     if(event.target.matches('[data-pair]')) updatePairs(event.target.closest('[data-pair-data]').parentElement);
     if(event.target.matches('[data-team-search]')) {
-      const clear = event.target.closest('.tm-search')?.querySelector('[data-team-search-clear]');
+      const clear = event.target.closest('.tb-search')?.querySelector('[data-team-search-clear]');
       if (clear) clear.hidden = !event.target.value;
     }
-    if(event.target.matches('[data-team-search],[data-team-sort]')) syncTeamList(event.target.closest('.section'));
+    if(event.target.matches('[data-team-search],[data-team-sort]')) syncTeamList(event.target.closest('[data-tm-board]'));
     if(event.target.matches('[data-ttn-search]')) syncTeamTraining(event.target.closest('.ttn-layout'));
   }
+  function copyPlainText(text, button) {
+    const label = button.textContent;
+    let settled = false;
+    const mark = (value) => {
+      if (settled) return;
+      settled = true;
+      button.textContent = value;
+      window.setTimeout(() => { if (button.isConnected) button.textContent = label; }, 1600);
+    };
+    const fallback = () => {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      let copied = false;
+      try { copied = document.execCommand('copy'); } catch { copied = false; }
+      area.remove();
+      mark(copied ? '已复制' : '复制失败');
+    };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => mark('已复制')).catch(fallback);
+    } else {
+      fallback();
+    }
+  }
+
   function click(event) { /* 这三个模块的 click 是 async，返回值是 Promise（恒真），不能直接用来判断是否处理；先用选择器同步判定，再交给它们异步执行。 */
-    const searchClear = event.target.closest('[data-team-search-clear]');
-    if (searchClear) {
-      clearTeamSearch(searchClear.closest('.tm-search')?.querySelector('[data-team-search]'));
+    const tpDrawerClose = event.target.closest('[data-tp-drawer-close]');
+    if (tpDrawerClose) {
+      teamDossier.closeGames(tpDrawerClose.closest('.tp-page'));
       return true;
     }
-    const searchBox = event.target.closest('.tm-search');
+    document.querySelectorAll('.tp-page .tp-more[open]').forEach((item) => {
+      if (!item.contains(event.target)) item.removeAttribute('open');
+    });
+    const tpRefresh = event.target.closest('[data-tp-refresh]');
+    if (tpRefresh) {
+      if (tpRefresh.disabled) return true;
+      tpRefresh.disabled = true;
+      tpRefresh.classList.add('is-loading');
+      const label = tpRefresh.innerHTML;
+      tpRefresh.innerHTML = '<span class="tp-refresh-ico" aria-hidden="true">↻</span>刷新中';
+      const restore = () => {
+        if (!tpRefresh.isConnected) return;
+        tpRefresh.disabled = false;
+        tpRefresh.classList.remove('is-loading');
+        tpRefresh.innerHTML = label;
+      };
+      window.setTimeout(() => {
+        if (!tpRefresh.isConnected) return;
+        Promise.resolve().then(() => reload()).catch(() => { restore(); tpRefresh.textContent = '刷新失败'; });
+      }, 260);
+      window.setTimeout(restore, 12000);
+      return true;
+    }
+    const tpSectionCopy = event.target.closest('[data-tp-section-copy]');
+    if (tpSectionCopy) {
+      const sec = tpSectionCopy.closest('.tp-sec');
+      const page = tpSectionCopy.closest('.tp-page');
+      if (sec && page) {
+        const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+        const team = clean(page.querySelector('.tp-id h1')?.innerText);
+        const title = clean(sec.querySelector('.tp-sec-title h2')?.innerText);
+        const sub = clean(sec.querySelector('.tp-sec-sub')?.innerText);
+        const filter = clean(page.querySelector('.tp-filter-head')?.innerText);
+        const scope = clean(page.querySelector('.tp-scope-strip')?.innerText);
+        const body = String(sec.querySelector('.tp-sec-body')?.innerText || '').trim();
+        const note = String(page.querySelector('[data-tp-note]')?.value || '').trim();
+        const text = [
+          `战队：${team}`,
+          `节：${title}`,
+          filter ? `筛选：${filter}` : '',
+          scope ? `口径：${scope}` : '',
+          sub,
+          '',
+          body,
+          note ? `教练笔记：${note}` : '',
+        ].filter((line) => line !== '').join('\n');
+        copyPlainText(text, tpSectionCopy);
+      }
+      return true;
+    }
+    const tpGames = event.target.closest('[data-tp-games]');
+    if (tpGames) {
+      const root = tpGames.closest('.tp-page');
+      if (root) {
+        teamDossier.openGames(tpGames.dataset.tpGames, root);
+        return true;
+      }
+    }
+    const searchClear = event.target.closest('[data-team-search-clear]');
+    if (searchClear) {
+      clearTeamSearch(searchClear.closest('.tb-search')?.querySelector('[data-team-search]'));
+      return true;
+    }
+    const searchBox = event.target.closest('.tb-search');
     if (searchBox) {
       searchBox.querySelector('[data-team-search]')?.focus();
       return true;
     }
+    const maintJump = event.target.closest('[data-tb-maint]');
+    if (maintJump) {
+      const panel = document.getElementById('tb-merge');
+      if (panel) {
+        panel.open = true;
+        panel.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+      return true;
+    }
     const teamReset = event.target.closest('[data-team-reset]');
     if (teamReset) {
-      const root = teamReset.closest('.section');
+      const root = teamReset.closest('[data-tm-board]');
       const input = root?.querySelector('[data-team-search]');
       if (root && input) {
         input.value = '';
@@ -3890,7 +3173,7 @@ if(captureIngestPage.change(event))return;
       return true;
     }
     if ((event.target.closest('[data-pl-pick]') || event.target.closest('[data-pl-name]') || event.target.closest('[data-pl-goto]')
-      || event.target.closest('[data-pa-page]') || event.target.closest('[data-pa-view]') || event.target.closest('[data-pa-export]')
+      || event.target.closest('[data-pa-team-more]') || event.target.closest('[data-pa-view]') || event.target.closest('[data-pa-export]')
       || event.target.closest('[data-pa-compare]') || event.target.closest('[data-pa-goto]')
       || event.target.closest('[data-pa-check]') || event.target.closest('[data-pa-compare-picked]')
       || event.target.closest('[data-pl-pick-b]') || event.target.closest('[data-pl-swap]') || event.target.closest('[data-pl-recent]')
@@ -3899,8 +3182,38 @@ if(captureIngestPage.change(event))return;
       || event.target.closest('[data-pa-mode]') || event.target.closest('[data-pa-side]') || event.target.closest('[data-pa-unmap]')
       || event.target.closest('[data-pa-id-edit]') || event.target.closest('[data-pa-id-leave]') || event.target.closest('[data-pa-id-delete]')
       || event.target.closest('[data-pd-window]')
+      || event.target.closest('[data-pa-profile]') || event.target.closest('[data-pa-filter-top]')
+      || event.target.closest('[data-pa-filter-profile]')
+      || event.target.closest('[data-pdx-set]') || event.target.closest('[data-pdx-toggle]')
+      || event.target.closest('[data-pdx-reset]') || event.target.closest('[data-pdx-top]')
+      || event.target.closest('[data-pdx-fold]') || event.target.closest('[data-pdx-shot]')
+      || event.target.closest('[data-pdx-print]')
       || event.target.closest('a[href^="#playerdetail/"]'))
       && playerPages.click(event)) return true;
+    const tpTab = event.target.closest('[data-tp-tab]');
+    if (tpTab) {
+      const root = tpTab.closest('.tp-page');
+      if (root) {
+        teamDossier.setSection(tpTab.dataset.tpTab, root);
+        return true;
+      }
+    }
+    const tpBump = event.target.closest('[data-tp-bump]');
+    if (tpBump) {
+      const box = tpBump.closest('.tp-bump');
+      if (box) {
+        const key = tpBump.dataset.tpBump;
+        const focus = box.dataset.focus === key ? '' : key;
+        box.dataset.focus = focus;
+        box.classList.toggle('has-focus', Boolean(focus));
+        box.querySelectorAll('[data-tp-bump]').forEach((el) => {
+          const on = Boolean(focus) && el.dataset.tpBump === focus;
+          el.classList.toggle('is-focus', on);
+          if (el.tagName === 'BUTTON') el.setAttribute('aria-pressed', String(on));
+        });
+      }
+      return true;
+    }
     const tmJump = event.target.closest('[data-tm-jump]');
     if (tmJump) {
       const target = document.getElementById(tmJump.dataset.tmJump);
@@ -3978,7 +3291,7 @@ if(captureIngestPage.change(event))return;
     }
     const teamChip = event.target.closest('[data-team-chip]');
     if (teamChip) {
-      const root = teamChip.closest('.section');
+      const root = teamChip.closest('[data-tm-board]');
       if (root) {
         root.dataset.teamFilter = teamChip.dataset.teamChip;
         root.querySelectorAll('[data-team-chip]').forEach((chip) => chip.setAttribute('aria-pressed', String(chip === teamChip)));
@@ -3997,6 +3310,13 @@ if(captureIngestPage.change(event))return;
           syncTdChips(root, group);
         }
       }
+      return true;
+    }
+    /* 战队详情：时间窗 / 赛制筛选，只在已加载的数据上重算，不发新请求。 */
+    const tpFilter = event.target.closest('[data-tp-filter]');
+    if (tpFilter) {
+      const root = tpFilter.closest('.tp-page');
+      if (root) teamDossier.setFilter(tpFilter.dataset.tpFilter, tpFilter.dataset.tpValue || 'all', root);
       return true;
     }
     const viewChip = event.target.closest('[data-team-view-chip]');
@@ -4021,8 +3341,67 @@ if(captureIngestPage.change(event))return;
       }
       return true;
     }
+    const dialogClose = event.target.closest('[data-dialog-close]');
+    if (dialogClose) {
+      dialogClose.closest('dialog')?.close();
+      return true;
+    }
+    const dialogBackdrop = event.target.closest('dialog.tb-dialog');
+    if (dialogBackdrop && event.target === dialogBackdrop) {
+      dialogBackdrop.close();
+      return true;
+    }
+    const compareToggle = event.target.closest('[data-team-compare-toggle]');
+    if (compareToggle) {
+      const root = compareToggle.closest('[data-tm-board]');
+      if (root) setTeamCompare(root, root.dataset.teamCompare !== '1');
+      return true;
+    }
+    const teamBulk = event.target.closest('[data-team-bulk]');
+    if (teamBulk) {
+      const dialog = document.querySelector('[data-team-bulk-dialog]');
+      if (dialog) {
+        const error = dialog.querySelector('[data-team-bulk-error]');
+        if (error) { error.hidden = true; error.textContent = ''; }
+        const save = dialog.querySelector('button[type="submit"]');
+        if (save && dialog.querySelectorAll('[data-bulk-team]').length) { save.disabled = false; save.textContent = '保存'; }
+        if (!dialog.open) dialog.showModal();
+        const first = dialog.querySelector('input[name="name"]');
+        if (first) { first.focus(); first.select(); }
+      }
+      return true;
+    }
+    const teamSelect = event.target.closest('[data-team-select]');
+    if (teamSelect) {
+      const root = teamSelect.closest('[data-tm-board]');
+      if (root && root.dataset.teamCompare === '1') {
+        toggleTeamPick(root, teamSelect.dataset.teamSelect);
+        return true;
+      }
+      selectTeam(root, teamSelect.dataset.teamSelect);
+      /* 单列版式下档案在索引下面：换人后滚到档案顶部，别让教练自己找。 */
+      if (root && window.matchMedia('(max-width: 1040px)').matches) {
+        const panel = [...root.querySelectorAll('[data-team-panel]')].find((item) => !item.hidden);
+        if (panel) panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      }
+      return true;
+    }
     const renameBtn = event.target.closest('[data-team-rename]');
     if (renameBtn) {
+      const dialog = document.querySelector('[data-team-rename-dialog]');
+      if (dialog) {
+        dialog.dataset.teamId = renameBtn.dataset.teamRename || '';
+        const input = dialog.querySelector('input[name="name"]');
+        const error = dialog.querySelector('[data-team-rename-error]');
+        const save = dialog.querySelector('[data-team-rename-save]');
+        if (input) input.value = renameBtn.dataset.teamLabel || '';
+        if (error) { error.hidden = true; error.textContent = ''; }
+        if (save) { save.disabled = false; save.textContent = '保存'; }
+        if (!dialog.open) dialog.showModal();
+        if (input) { input.focus(); input.select(); }
+        return true;
+      }
+      /* 详情页等没有对话框的位置沿用系统 prompt。 */
       const label = renameBtn.dataset.teamLabel || '';
       const name = window.prompt('给这支对手战队命名 / 改名（全部对局页会一起更新）', label);
       if (name === null || !name.trim()) return true;
@@ -4064,9 +3443,21 @@ if(captureIngestPage.change(event))return;
       return true;
     }
     if(event.target.closest('[data-review-action]')){reviewPage.click(event);return true;} if(event.target.closest('[data-source-action]')){sourcePages.click(event);return true;} if(event.target.closest('[data-capture-action]')||event.target.closest('[data-capture-form]')||event.target.closest('[data-chan-expand]')||event.target.closest('[data-chan-open]')){captureIngestPage.click(event);return true;} const b=event.target.closest('[data-feature-action]');if(!b)return false;if(b.dataset.featureAction==='import-commit'){b.disabled=true;const status=b.parentElement.querySelector('[data-import-commit-status]');status.textContent='正在导入…';api('v3/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:b.dataset.previewId,strict:true})}).then(result=>{status.textContent=`导入完成：${result.sheets.length} 个工作表。可在数据范围中启用表格来源。`;b.textContent='已导入'}).catch(error=>{status.textContent=error.message;b.disabled=false});return true;}if(b.dataset.featureAction==='migrate'){b.disabled=true;api('v3/workspace/migration',{method:'POST'}).then(()=>reload()).catch(error=>{b.disabled=false;b.parentElement.querySelector('.migration-status').textContent=error.message});return true}if(b.dataset.featureAction==='prefill'){b.disabled=true;api('studio/workspace/prefill/run',{method:'POST'}).then(()=>reload()).catch(error=>{b.disabled=false;b.textContent=error.message})}return true; }
-  window.addEventListener('scroll', syncTeamSticky, {passive: true});
-  window.addEventListener('resize', syncTeamSticky);
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      const drawer = document.querySelector('.tp-page [data-tp-drawer]:not([hidden])');
+      if (drawer) {
+        teamDossier.closeGames(drawer.closest('.tp-page'));
+        event.preventDefault();
+        return;
+      }
+      const openMore = document.querySelector('.tp-page .tp-more[open]');
+      if (openMore) {
+        openMore.removeAttribute('open');
+        event.preventDefault();
+        return;
+      }
+    }
     const search = event.target.closest?.('[data-team-search]');
     if (search && event.key === 'Escape') {
       if (!search.value) return;
@@ -4074,13 +3465,38 @@ if(captureIngestPage.change(event))return;
       clearTeamSearch(search);
       return;
     }
+    if (event.key === 'Escape' && !document.querySelector('dialog[open]')) {
+      const board = event.target.closest?.('[data-tm-board]');
+      if (board?.dataset.teamCompare === '1') {
+        setTeamCompare(board, false);
+        return;
+      }
+    }
+    /* 焦点在索引上时用 ↑/↓ 换对手，不用 Tab 一路按过去。 */
+    const row = event.target.closest?.('[data-team-row]');
+    if (row && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      const list = row.closest('[data-team-results]');
+      const items = [...(list?.querySelectorAll('[data-team-row]:not([hidden])') || [])];
+      if (items.length > 1) {
+        event.preventDefault();
+        const index = items.indexOf(row);
+        const next = event.key === 'Home' ? 0
+          : event.key === 'End' ? items.length - 1
+            : event.key === 'ArrowDown' ? Math.min(items.length - 1, index + 1)
+              : Math.max(0, index - 1);
+        items[next].focus();
+        const board = row.closest('[data-tm-board]');
+        if (board?.dataset.teamCompare !== '1') selectTeam(board, items[next].dataset.teamSelect);
+      }
+      return;
+    }
     if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.target.closest?.('input, textarea, select, [contenteditable="true"]')) return;
     if (document.querySelector('.mf-pop, dialog[open]')) return;
     const box = document.querySelector('[data-team-search]');
-    if (!box || !document.querySelector('.tm-grid')) return;
+    if (!box || !box.closest('[data-tm-board]')) return;
     event.preventDefault();
     box.focus();
   });
-  return {has:name=>Object.hasOwn(endpoints,name)||['ingest','shots','videos','replays','review'].includes(name),load:(name,key,signal)=>name==='ingest'?captureIngestPage.load(name,key,signal):name==='capture'?sourcePages.load(name,key,signal):'review'===name?reviewPage.load(name,key,signal):['shots','videos','replays'].includes(name)?sourcePages.load(name,key,signal):Promise.all((name==='report'?[...endpoints[name],'v3/research/reports/'+encodeURIComponent(key)]:name==='hero'?[...endpoints[name],'studio/camp-partners?hero='+encodeURIComponent(key),'matches','v3/facts/lane_matchup','v3/hero-detail/'+encodeURIComponent(key)]:name==='playerdetail'?[...endpoints[name],'v3/player-detail?player='+encodeURIComponent(key)]:name==='session'?['studio/workspace/sessions/'+encodeURIComponent(key)]:name==='competition'?['studio/workspace/competitions/'+encodeURIComponent(key),'v3/players-board']:name==='team'?[...endpoints[name],'studio/camp-compare?team='+encodeURIComponent(key),'v3/team-bp','v3/team-deep?team='+encodeURIComponent(key),'v3/team-behavior']:endpoints[name]).map(p=>name==='team'&&String(p).startsWith('v3/team-deep')?api(p,{signal}).catch(()=>null):api(p==='matches'||p==='tempo'||p==='v3/identity'?p+currentQuery():p,{signal}))).then(data=>name==='weekly'?Promise.all([...data,api('studio/workspace/metrics/week?start='+encodeURIComponent(key||''),{signal})]):data),render:(name,data,key)=>renders[name](data,key),submit,click,change,afterRender:()=>{updatePairs();updateAnchorNav();const tmJumpButtons=[...document.querySelectorAll('.tm-jump [data-tm-jump]')];if(tmJumpButtons.length){const tmBasicButton=tmJumpButtons.find(b=>b.dataset.tmJump==='tm-basic');const tmGroups=[{button:tmBasicButton,target:document.getElementById('tm-score')},...tmJumpButtons.filter(b=>b.dataset.tmJump!=='tm-basic').map(b=>({button:b,target:document.getElementById(b.dataset.tmJump)}))].filter(g=>g.button&&g.target);if(tmGroups.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);window.__tmJumpScroll=()=>{let active=tmGroups[0];for(const group of tmGroups){if(group.target.getBoundingClientRect().top<=180)active=group;}if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)active=tmGroups[tmGroups.length-1];tmJumpButtons.forEach(b=>b.setAttribute('aria-current',String(b===active.button)));};window.addEventListener('scroll',window.__tmJumpScroll,{passive:true});window.__tmJumpScroll();}}const teamRoot=document.querySelector('[data-tm-directory]');if(teamRoot){syncTeamList(teamRoot);syncTeamSticky();}const tpSecs=[...document.querySelectorAll('.tp-page .tp-sec')];if(tpSecs.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);const tpButtons=[...document.querySelectorAll('.tp-jump [data-tm-jump], .tp-bottom-nav [data-tm-jump]')];if(tpButtons.length&&'IntersectionObserver'in window){window.__tpSecObserver?.disconnect();const observer=new IntersectionObserver((entries)=>{const visible=entries.filter((e)=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!visible)return;tpButtons.forEach((b)=>b.setAttribute('aria-current',String(b.dataset.tmJump===visible.target.id)));},{rootMargin:'-90px 0px -55% 0px',threshold:[0,.15,.5,.8]});tpSecs.forEach((sec)=>observer.observe(sec));window.__tpSecObserver=observer;}}captureIngestPage.afterRender();sourcePages.afterRender();reviewPage.afterRender();bindSxDialogs();const setupRoot=document.querySelector('[data-sx-anchor="teams"]');if(setupRoot)syncSetupTeams(setupRoot);const ownRoot=document.querySelector('[data-sx-scope="ownership"]');if(ownRoot)syncOwnershipGroups(ownRoot);const pendingRoot=document.querySelector('[data-sx-scope="pending"]');if(pendingRoot)syncPendingQueue(pendingRoot)}};
+  return {has:name=>Object.hasOwn(endpoints,name)||['ingest','shots','videos','replays','review'].includes(name),load:(name,key,signal,fresh)=>name==='ingest'?captureIngestPage.load(name,key,signal,fresh):name==='capture'?sourcePages.load(name,key,signal):'review'===name?reviewPage.load(name,key,signal):['shots','videos','replays'].includes(name)?sourcePages.load(name,key,signal):Promise.all((name==='report'?[...endpoints[name],'v3/research/reports/'+encodeURIComponent(key)]:name==='hero'?[...endpoints[name],'studio/camp-partners?hero='+encodeURIComponent(key),'matches','v3/facts/lane_matchup','v3/hero-detail/'+encodeURIComponent(key)]:name==='playerdetail'?[...endpoints[name],'v3/player-detail?player='+encodeURIComponent(key)]:name==='session'?['studio/workspace/sessions/'+encodeURIComponent(key)]:name==='competition'?['studio/workspace/competitions/'+encodeURIComponent(key),'v3/players-board']:name==='team'?[...endpoints[name],'studio/camp-compare?team='+encodeURIComponent(key),'v3/team-bp','v3/team-deep?team='+encodeURIComponent(key),'v3/team-behavior']:endpoints[name]).map(p=>name==='team'&&String(p).startsWith('v3/team-deep')?api(p,{signal}).catch(()=>null):api(p==='matches'||p==='tempo'||p==='v3/identity'?p+currentQuery():p,{signal}))).then(data=>name==='weekly'?Promise.all([...data,api('studio/workspace/metrics/week?start='+encodeURIComponent(key||''),{signal})]):data),render:(name,data,key)=>renders[name](data,key),submit,click,change,afterRender:()=>{updatePairs();updateAnchorNav();const tmJumpButtons=[...document.querySelectorAll('.tm-jump [data-tm-jump]')];if(tmJumpButtons.length){const tmBasicButton=tmJumpButtons.find(b=>b.dataset.tmJump==='tm-basic');const tmGroups=[{button:tmBasicButton,target:document.getElementById('tm-score')},...tmJumpButtons.filter(b=>b.dataset.tmJump!=='tm-basic').map(b=>({button:b,target:document.getElementById(b.dataset.tmJump)}))].filter(g=>g.button&&g.target);if(tmGroups.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);window.__tmJumpScroll=()=>{let active=tmGroups[0];for(const group of tmGroups){if(group.target.getBoundingClientRect().top<=180)active=group;}if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)active=tmGroups[tmGroups.length-1];tmJumpButtons.forEach(b=>b.setAttribute('aria-current',String(b===active.button)));};window.addEventListener('scroll',window.__tmJumpScroll,{passive:true});window.__tmJumpScroll();}}const teamRoot=document.querySelector('[data-tm-directory]');if(teamRoot){syncTeamList(teamRoot);linkTeamGames(teamRoot);}const tpSecs=[...document.querySelectorAll('.tp-page .tp-sec')];if(tpSecs.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);const tpButtons=[...document.querySelectorAll('.tp-jump [data-tm-jump], .tp-bottom-nav [data-tm-jump]')];if(tpButtons.length&&'IntersectionObserver'in window){window.__tpSecObserver?.disconnect();const observer=new IntersectionObserver((entries)=>{const visible=entries.filter((e)=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!visible)return;tpButtons.forEach((b)=>b.setAttribute('aria-current',String(b.dataset.tmJump===visible.target.id)));},{rootMargin:'-90px 0px -55% 0px',threshold:[0,.15,.5,.8]});tpSecs.forEach((sec)=>observer.observe(sec));window.__tpSecObserver=observer;}}captureIngestPage.afterRender();sourcePages.afterRender();reviewPage.afterRender();bindSxDialogs();const setupRoot=document.querySelector('[data-sx-anchor="teams"]');if(setupRoot)syncSetupTeams(setupRoot);const ownRoot=document.querySelector('[data-sx-scope="ownership"]');if(ownRoot)syncOwnershipGroups(ownRoot);const pendingRoot=document.querySelector('[data-sx-scope="pending"]');if(pendingRoot)syncPendingQueue(pendingRoot)}};
 }

@@ -1,6 +1,19 @@
 @echo off
 chcp 65001 >nul
-echo Stopping KPL training server...
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -Command "$pidfile=Join-Path (Get-Location) 'data\watchdog.pid'; if(Test-Path $pidfile){$w=Get-Content $pidfile; Stop-Process -Id $w -Force -ErrorAction SilentlyContinue; Remove-Item $pidfile -ErrorAction SilentlyContinue}; $h=Invoke-RestMethod -Uri 'http://127.0.0.1:8766/api/health' -ErrorAction SilentlyContinue; if($h){$proc=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $h.pid); if($proc -and $proc.ParentProcessId){Stop-Process -Id $proc.ParentProcessId -Force -ErrorAction SilentlyContinue}; Stop-Process -Id $h.pid -Force -ErrorAction SilentlyContinue}"
-echo Stopped.
-pause
+cd /d "%~dp0"
+
+rem Stop the watchdog first, otherwise watch_server.py restarts the service.
+if exist "data\watchdog.pid" (
+  for /f "usebackq delims=" %%p in ("data\watchdog.pid") do taskkill /PID %%p /F >nul 2>nul
+  del "data\watchdog.pid" >nul 2>nul
+)
+
+set "PY=python"
+if exist "runtime\python.exe" set "PY=runtime\python.exe"
+"%PY%" launcher.py --stop
+if errorlevel 1 (
+  echo Stop failed, see logs\launcher.log
+) else (
+  echo Workbench stopped.
+)
+timeout /t 2 >nul
