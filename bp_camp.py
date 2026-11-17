@@ -1,15 +1,18 @@
 """营地 battledetail → 结构化 BP 名单（含本地英雄头像与分路）。
 
-口径：营地返回的是**终局名单**（谁被禁、谁上场），不含 pick 手序、不含
-一手方，ban 数量随模式变化（排位 5 ban / 训练赛征召 4 ban）。本模块只产出
-「名单类」BP 数据，供 analysis_data.bp_summary 与 BP 页消费；1–5 楼手序、
-先后手仍然只认比赛校对页的人工录入（bp_input.validate_bp）。
+口径（2026-11-15 教练确认）：训练赛 BP 固定 **20 手**（每方 5 Ban + 5 Pick），
+**营地数据的默认顺序就是 20 手顺序**。本模块入库/读取时按每侧 Ban/Pick 名单
+套 20 手模板生成 `draftEvents`，并写 `ruleProfile=scrim-global-20`；每方
+5 Ban + 5 Pick 才生成，Ban 不足只标 `orderPending`，不伪造。
+人工每侧顺序（`bpOrder`）与逐手事件（`draftEvents`）优先级更高；
+
 """
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
+from time import monotonic
 
 ROOT = Path(__file__).resolve().parent
 ICON_DIR = ROOT / 'resources' / 'icons'
@@ -98,20 +101,112 @@ def hero_icon(hero_id):
     return f'/catalog/icons/hero-{hero_id}.png' if path.is_file() else None
 
 
+def _icon_dir_stamp():
+    try:
+        return ICON_DIR.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+# 静态资源联合指纹（catalog.json / hero-lanes.js / 头像目录）。三者都是随程序
+# 发布的文件，不跟对局变化，所以最多每 _STATIC_TTL 秒校验一次；指纹一变就丢掉
+# 条目缓存，最多 2 秒后生效——和 v3 的对局包指纹同样的新鲜度口径。
+#
+# 为什么必须这样做：一次 hero_entry 要 stat 三个文件，本机一次 stat 约 90µs
+# （资源盘 + 杀软过滤驱动）。一页 BP 名单是上万条 hero_entry，光这三行校验
+# 就占 1–2 秒：剖析里 /api/bp 的 2.7 秒有 2.0 秒是 nt.stat。
+_STATIC_TTL = 2.0
+_STATIC_STAMP = {'at': float('-inf'), 'value': None}
+_ENTRY_CACHE = {}
+_ENTRY_CACHE_MAX = 8192
+
+
+def _static_stamp():
+    now = monotonic()
+    if now - _STATIC_STAMP['at'] < _STATIC_TTL:
+        return _STATIC_STAMP['value']
+    value = (_stamp(CATALOG_PATH), _stamp(LANES_JS), _icon_dir_stamp())
+    if value != _STATIC_STAMP['value']:
+        _ENTRY_CACHE.clear()
+    _STATIC_STAMP.update(at=now, value=value)
+    return value
+
+
 def hero_entry(name, hero_id=None, icon=None, lane=None):
-    """统一条目：{name, id, icon, lane}。"""
+    """统一条目：{name, id, icon, lane}。
+
+    结果按入参记忆：同样的（名字, id, 远程图, 分路）在 2 秒窗口内只解析一次，
+    调用方拿到的是一份浅拷贝，改自己的条目不会污染缓存。
+    """
     name = str(name or '').strip()
     if not name:
         return None
+    key = (name, str(hero_id) if hero_id not in (None, '') else None,
+           icon or None, lane or None)
+    _static_stamp()
+    cached = _ENTRY_CACHE.get(key)
+    if cached is not None:
+        return dict(cached)
     meta = catalog_meta().get(name) or {}
-    hid = str(hero_id) if hero_id not in (None, '') else meta.get('id')
+    hid = key[1] or meta.get('id')
     # 本地头像优先，营地远程 heroIcon 只在本地图标库缺该英雄时兜底。
-    return {
+    entry = {
         'name': name,
         'id': hid,
         'icon': hero_icon(hid) or meta.get('icon') or icon,
         'lane': lane or static_lanes().get(name),
     }
+    if len(_ENTRY_CACHE) >= _ENTRY_CACHE_MAX:
+        _ENTRY_CACHE.clear()
+    _ENTRY_CACHE[key] = entry
+    return dict(entry)
+
+
+def events_from_order(order, *, rule='scrim-global-20'):
+    """把每侧有序 Ban/Pick 名单按 20 手模板重建逐手事件。
+
+    只接受每侧恰好 5 Ban + 5 Pick；任何一处缺失/重复都返回 []，不猜。
+    """
+    from bp_rules import SCRIM_20_SCHEDULE, validate_scrim_prefix
+    if not isinstance(order, dict):
+        return []
+    bans = order.get('bans') or {}
+    picks = order.get('picks') or {}
+    queues = {}
+    for side, camp in (('left', '1'), ('right', '2')):
+        ban_rows = [str(x or '').strip() for x in (bans.get(side) or [])]
+        pick_rows = [str(x or '').strip() for x in (picks.get(side) or [])]
+        if len(ban_rows) != 5 or len(pick_rows) != 5 or not all(ban_rows + pick_rows):
+            return []
+        queues[camp] = {'ban': list(ban_rows), 'pick': list(pick_rows)}
+    events = []
+    for index, (action, camp) in enumerate(SCRIM_20_SCHEDULE, 1):
+        queue = queues.get(camp, {}).get(action) or []
+        if not queue:
+            return []
+        events.append({'order': index, 'action': action,
+                       'camp': camp, 'hero': queue.pop(0)})
+    if not validate_scrim_prefix(events, rule=rule, full=True):
+        return []
+    return events
+
+
+def _source_scrim_events(data):
+    """源头事件：优先已写入的 20 手 draftEvents，其次由每侧顺序重建。
+
+    不完整/重复事件直接视为无效，不用它们污染 20 手统计。
+    """
+    from bp_rules import validate_scrim_prefix
+    if not isinstance(data, dict):
+        return []
+    raw = data.get('draftEvents') or data.get('bpSequence') or []
+    if isinstance(raw, list) and raw:
+        try:
+            return raw if validate_scrim_prefix(raw, rule='scrim-global-20', full=True) else []
+        except (TypeError, ValueError):
+            return []
+    order = data.get('bpOrder')
+    return events_from_order(order) if isinstance(order, dict) else []
 
 
 def normalize_entries(items, lanes=None):
@@ -139,14 +234,23 @@ def normalize_entries(items, lanes=None):
 def slot_entries(items, lanes=None):
     """保留槽位的规范化：空 ban 占位为 None，不压缩后面的位置。
 
-    营地 banHeros / pickHeros 数组下标就是该侧手序；排位赛会有空 ban，
-    解析层必须保留空位，否则首 ban、第几手 ban 会整体前移。
+    注意：空 ban 占位为 None，不压缩后面的位置；营地默认顺序按 20 手模板
+    使用（教练 2026-11-15 确认），空位不参与事件生成。
     """
     result = []
     for item in items or []:
         entry = normalize_entries([item], lanes)
         result.append(entry[0] if entry else None)
     return result
+
+
+def rule_id_for_bp(bp):
+    """训练赛唯一规则：20 手（每方 5 Ban + 5 Pick）。
+
+    2026-11-15 教练确认：训练赛固定 20 手；
+    面板 ban 数不足 5 不是另一套规则，而是采集不完整，仍标 20 手并等待补录。
+    """
+    return 'scrim-global-20'
 
 
 def _data_of(detail):
@@ -233,6 +337,26 @@ def parse_camp_bp(detail, game_seq=None):
             for entry in entries:
                 heroes[entry['name']] = {'id': entry['id'], 'icon': entry['icon'],
                                         'lane': entry['lane']}
+    source_events = _source_scrim_events(data)
+    raw_events = data.get('draftEvents') or data.get('bpSequence') or []
+    raw_order = data.get('bpOrder')
+    if source_events and raw_events:
+        order_source = 'draftEvents'
+    elif source_events and isinstance(raw_order, dict):
+        order_source = 'bpOrder'
+    else:
+        order_source = ''
+    # 教练确认：20 手训练赛 BP 就是营地数据的默认顺序。
+    # 营地没有显式 draftEvents/bpOrder 时，按每侧名单顺序套 20 手模板。
+    if not source_events:
+        source_events = events_from_order({
+            'mode': 'scrim',
+            'bans': {side: [entry['name'] for entry in bans[side]] for side in ('left', 'right')},
+            'picks': {side: [entry['name'] for entry in picks[side]] for side in ('left', 'right')},
+            'firstPick': 'left',
+        })
+        if source_events:
+            order_source = 'campDefault20'
     battle = data.get('battle') or {}
     head = data.get('head') or {}
     entry_meta = detail.get('_campEntry') if isinstance(detail, dict) else None
@@ -252,20 +376,316 @@ def parse_camp_bp(detail, game_seq=None):
         'picks': picks,
         'banSlots': ban_slots,
         'pickSlots': pick_slots,
+        # 逐手事件：显式 draftEvents/bpOrder 优先；没有则按每侧名单顺序
+        # 套 20 手模板，并在 orderAssumed 标出假设，不当作逐手核验。
+        'draftEvents': source_events,
+        'bpOrder': data.get('bpOrder') if isinstance(data.get('bpOrder'), dict) else None,
+        # 训练赛只有 20 手；即使面板缺顺序，也先按 20 手规则标记，等待源头补录。
+        'ruleProfile': 'scrim-global-20',
+        'pickOrderKnown': bool(source_events),
+        'firstPick': next((('left' if event['camp'] == '1' else 'right')
+                           for event in source_events if event.get('action') == 'pick'), None),
+        'orderSource': order_source,
+        'orderAssumed': order_source == 'campDefault20',
         'lanes': lanes,
         'heroMeta': heroes,
         'teamStats': {'left': _team_stats(blue), 'right': _team_stats(red)},
         'banCount': {'left': len(bans['left']), 'right': len(bans['right'])},
-        'pickOrderKnown': False,
-        'firstPick': None,
     }
 
 
-def merge_bp_sources(manual, camp, match=None):
+def clean_scrim_events(events):
+    """逐手事件的形状归一化：camp 别名、order 连续递增、action/hero 合法。"""
+    if not isinstance(events, list) or not events:
+        raise ValueError('缺少逐手选禁事件')
+    clean = []
+    for idx, event in enumerate(events):
+        if not isinstance(event, dict):
+            raise ValueError('逐手事件必须是对象')
+        action = str(event.get('action') or '').lower()
+        hero = str(event.get('hero') or '').strip()
+        camp = str(event.get('camp') or '').lower()
+        camp = {'left': '1', 'blue': '1', 'right': '2', 'red': '2'}.get(camp, camp)
+        raw_order = event.get('order', idx + 1)
+        if isinstance(raw_order, bool):
+            raise ValueError('order 不能是布尔值')
+        try:
+            order = int(raw_order)
+        except (TypeError, ValueError) as error:
+            raise ValueError('order 必须是整数') from error
+        if action not in ('pick', 'ban') or camp not in ('1', '2') or not hero:
+            raise ValueError('事件缺少 action/hero/camp 或取值非法')
+        clean.append({'order': order, 'action': action, 'hero': hero, 'camp': camp})
+    clean.sort(key=lambda event: event['order'])
+    if any(event['order'] != idx + 1 for idx, event in enumerate(clean)):
+        raise ValueError('order 必须从 1 连续递增')
+    return clean
+
+
+def apply_order_events(record, events):
+    """把已核验的逐手事件套到名单记录上；对不齐就原样返回（保持顺序未知）。
+
+    手序只认逐手事件：事件必须完整符合训练赛 20 手规则，且每侧
+    Pick/Ban 与终局名单逐一对上。任何一处对不齐都不改记录、不按名单顺序猜。
+    """
+    if not record or not events:
+        return record
+    from bp_rules import SCRIM_RULES, validate_scrim_prefix
+    rule = SCRIM_RULES.get(rule_id_for_bp(record))
+    if rule is None:
+        return record
+    try:
+        clean = clean_scrim_events(events)
+    except ValueError:
+        return record
+    if not validate_scrim_prefix(clean, rule=rule, full=True):
+        return record
+    side_of = {'1': 'left', '2': 'right'}
+    ordered = {camp: {'pick': [], 'ban': []} for camp in ('1', '2')}
+    for event in clean:
+        ordered[event['camp']][event['action']].append(event['hero'])
+    picks = {side: list((record.get('picks') or {}).get(side) or [])
+             for side in ('left', 'right')}
+    bans = {side: list((record.get('bans') or {}).get(side) or [])
+            for side in ('left', 'right')}
+    for camp, side in side_of.items():
+        for kind, target in (('pick', picks), ('ban', bans)):
+            rows = {entry['name']: entry for entry in target[side]}
+            names = ordered[camp][kind]
+            # 事件与终局名单必须一一对上（数量与英雄集合都一致）。
+            if len(names) != len(target[side]) or any(name not in rows for name in names):
+                return record
+            target[side] = [rows[name] for name in names]
+    first = next((event for event in clean if event['action'] == 'pick'), None)
+    if first is None:
+        return record
+    out = dict(record)
+    out['picks'] = picks
+    out['bans'] = bans
+    out['pickOrderKnown'] = True
+    out['banOrderKnown'] = True
+    out['firstPick'] = side_of[first['camp']]
+    out['orderSource'] = 'draftEvents'
+    out['draftEvents'] = clean
+    # 槽位数组跟着手序一起排；有空位（None）对不齐时保持原样。
+    for kind_key, slot_key in (('picks', 'pickSlots'), ('bans', 'banSlots')):
+        slots = record.get(slot_key)
+        if not isinstance(slots, dict):
+            continue
+        aligned = {}
+        for side in ('left', 'right'):
+            rows = slots.get(side) or []
+            names = [entry['name'] for entry in out[kind_key][side]]
+            if len(rows) != len(names) or any(not isinstance(row, dict) for row in rows):
+                aligned = None
+                break
+            by_name = {row.get('name'): row for row in rows}
+            if any(name not in by_name for name in names):
+                aligned = None
+                break
+            aligned[side] = [by_name[name] for name in names]
+        if aligned:
+            out[slot_key] = aligned
+    return out
+
+
+def _reorder_entries(entries, names, *, allow_duplicate=False):
+    """按名字重排条目；Ban 允许同名重复（排位同时禁用），Pick 不允许。"""
+    rows = list(entries or [])
+    if not isinstance(names, list) or len(names) != len(rows):
+        return None
+    names = [str(name) for name in names]
+    if allow_duplicate:
+        queues = {}
+        for entry in rows:
+            queues.setdefault(entry.get('name'), []).append(entry)
+        out = []
+        for name in names:
+            queue = queues.get(name)
+            if not queue:
+                return None
+            out.append(queue.pop(0))
+        return out if all(not queue for queue in queues.values()) else None
+    by_name = {entry.get('name'): entry for entry in rows}
+    if len(by_name) != len(rows) or any(name not in by_name for name in names):
+        return None
+    return [by_name[name] for name in names]
+
+
+def apply_manual_order(record, order):
+    """套用页面手工录入的每侧 Ban / Pick 顺序；Ban 允许重复，Pick 必须唯一。
+
+    对不齐时原样返回，保持顺序未知。`order` 形状：
+    {mode: 'scrim'|'kpl', bans: {left,right}, picks: {left,right}, firstPick}
+    """
+    if not record or not isinstance(order, dict):
+        return record
+    picks, bans = {}, {}
+    for side in ('left', 'right'):
+        picks[side] = _reorder_entries((record.get('picks') or {}).get(side),
+                                       (order.get('picks') or {}).get(side))
+        bans[side] = _reorder_entries((record.get('bans') or {}).get(side),
+                                      (order.get('bans') or {}).get(side),
+                                      allow_duplicate=True)
+        if picks[side] is None or bans[side] is None:
+            return record
+    out = dict(record)
+    out['picks'] = picks
+    out['bans'] = bans
+    out['pickOrderKnown'] = True
+    out['banOrderKnown'] = True
+    out['firstPick'] = order.get('firstPick') or record.get('firstPick')
+    out['orderSource'] = 'manualOrder'
+    out['bpOrderMode'] = order.get('mode') or ''
+    if (order.get('mode') or 'scrim') == 'scrim':
+        events = events_from_order({
+            'bans': {side: [entry.get('name') for entry in bans[side]] for side in ('left', 'right')},
+            'picks': {side: [entry.get('name') for entry in picks[side]] for side in ('left', 'right')},
+        })
+        if events:
+            out['draftEvents'] = events
+            out['ruleProfile'] = 'scrim-global-20'
+            out['pickOrderKnown'] = True
+            out['firstPick'] = 'left' if events[0]['camp'] == '1' else 'right'
+    # 槽位数组跟着手序排；有空位（None）对不齐时保持原样。
+    for kind_key, slot_key, allow_dup in (('picks', 'pickSlots', False),
+                                          ('bans', 'banSlots', True)):
+        slots = record.get(slot_key)
+        if not isinstance(slots, dict):
+            continue
+        aligned = {}
+        for side in ('left', 'right'):
+            rows = slots.get(side) or []
+            names = [entry.get('name') for entry in out[kind_key][side]]
+            if len(rows) != len(names) or any(not isinstance(row, dict) for row in rows):
+                aligned = None
+                break
+            ordered = _reorder_entries(rows, names, allow_duplicate=allow_dup)
+            if ordered is None:
+                aligned = None
+                break
+            aligned[side] = ordered
+        if aligned:
+            out[slot_key] = aligned
+    return out
+
+
+def apply_default_scrim_order(record):
+    """营地默认顺序 → 20 手事件。
+
+    教练确认：20 手训练赛 BP 是营地数据的默认顺序。营地没有显式
+    draftEvents/bpOrder 时，按每侧 ban/pick 名单顺序套 20 手模板；
+    Ban 必须每方 5 个，否则保持顺序未知（采集不完整，不猜）。
+    """
+    if not record or record.get('source') != 'camp' or record.get('pickOrderKnown'):
+        return record
+    order = {
+        'mode': 'scrim',
+        'bans': {side: [entry.get('name') for entry in (record.get('bans') or {}).get(side) or []]
+                 for side in ('left', 'right')},
+        'picks': {side: [entry.get('name') for entry in (record.get('picks') or {}).get(side) or []]
+                  for side in ('left', 'right')},
+        'firstPick': 'left',
+    }
+    events = events_from_order(order)
+    if not events:
+        return record
+    out = dict(record)
+    out['draftEvents'] = events
+    out['ruleProfile'] = 'scrim-global-20'
+    out['pickOrderKnown'] = True
+    out['banOrderKnown'] = True
+    out['firstPick'] = 'left'
+    out['orderSource'] = 'campDefault20'
+    out['orderAssumed'] = True
+    out['bpOrderMode'] = 'scrim'
+    return out
+
+
+def stamp_camp_order(detail):
+    """在源头把营地默认顺序写成 20 手 draftEvents。
+
+    用于 camp_sync 入库：营地数据默认就是 20 手顺序；每方 5 Ban + 5 Pick
+    时直接生成 draftEvents，ban 数不足则只标规则/待补录，不伪造顺序。
+    """
+    bp = parse_camp_bp(detail)
+    if not bp:
+        return detail
+    data = _data_of(detail)
+    if not isinstance(data, dict):
+        return detail
+    data['ruleProfile'] = 'scrim-global-20'
+    events = bp.get('draftEvents') or []
+    if events:
+        data['draftEvents'] = events
+        data['bpOrderSource'] = bp.get('orderSource') or 'source'
+        data.pop('orderPending', None)
+    else:
+        data['orderPending'] = True
+    return detail
+
+
+def normalize_bp_order(detail, payload, seq=''):
+    """校验页面手工录入的每侧 Ban / Pick 顺序，返回可写入 camp_details 的记录。
+
+    训练赛按唯一 20 手规则要求每方 5 Ban + 5 Pick；Ban 允许跨侧重复
+    （排位同时禁用），但禁用与选用不能重叠。
+    """
+    bp = parse_camp_bp(detail, seq)
+    if not bp:
+        raise ValueError('该面板没有可解析的终局 BP 名单，无法录入顺序')
+    if not isinstance(payload, dict):
+        raise ValueError('BP 顺序格式无效')
+    mode = str(payload.get('mode') or 'scrim').lower()
+    if mode not in ('scrim', 'kpl'):
+        raise ValueError('模式必须是训练赛或 KPL')
+
+    def rows(kind, side, expected):
+        values = (payload.get(kind) or {}).get(side)
+        if not isinstance(values, list) or len(values) != expected:
+            raise ValueError(f'{kind} 每侧必须 {expected} 个英雄')
+        names = []
+        for value in values:
+            text = str(value or '').strip()
+            if not text or len(text) > 30:
+                raise ValueError('英雄名无效')
+            names.append(text)
+        return names
+
+    if mode == 'scrim':
+        for side, label in (('left', '蓝方'), ('right', '红方')):
+            if len(bp['bans'][side]) != 5:
+                raise ValueError(f'{label}面板有 {len(bp["bans"][side])} 个 Ban；训练赛 20 手要求每方 5 Ban')
+    bans = {side: rows('bans', side, len(bp['bans'][side])) for side in ('left', 'right')}
+    picks = {side: rows('picks', side, 5) for side in ('left', 'right')}
+    all_picks = picks['left'] + picks['right']
+    if len(set(all_picks)) != len(all_picks):
+        raise ValueError('双方选用不能重复')
+    for side, label in (('left', '蓝方'), ('right', '红方')):
+        if sorted(picks[side]) != sorted(entry['name'] for entry in bp['picks'][side]):
+            raise ValueError(f'{label}选用与营地终局名单不一致')
+        remaining = [entry['name'] for entry in bp['bans'][side]]
+        for name in bans[side]:
+            if name not in remaining:
+                raise ValueError(f'{label}禁用不在营地终局名单里：{name}')
+            remaining.remove(name)
+    if (set(bans['left']) | set(bans['right'])) & set(all_picks):
+        raise ValueError('同一英雄不能既禁用又选用')
+    first = str(payload.get('firstPick') or '').lower()
+    if first not in ('', 'left', 'right'):
+        raise ValueError('一手方无效')
+    return {'mode': mode, 'bans': bans, 'picks': picks,
+            'firstPick': first or 'left'}
+
+
+def merge_bp_sources(manual, camp, match=None, events=None, order=None,
+                     assume_scrim=False):
     """统一人工手序 BP 与营地名单 BP：人工优先，营地兜底，来源不混算。
 
     返回 None 表示这局没有任何 BP 记录。人工录入的 picks 被视为 1–5 楼有序；
-    营地 picks 只是终局阵容，pickOrderKnown=False，不参与手序类统计。
+    顺序优先级：页面手工顺序（order / camp.bpOrder） > 已核验 20 手事件 >
+    营地默认 20 手顺序（每方 5 Ban + 5 Pick） > 顺序未知。assume_scrim 保留
+    只为兼容旧调用，不再改变行为。
     """
     match = match or {}
 
@@ -281,7 +701,7 @@ def merge_bp_sources(manual, camp, match=None):
             'bans': {side: normalize_entries(names['bans'][side]) for side in ('left', 'right')},
             'picks': {side: normalize_entries(names['picks'][side]) for side in ('left', 'right')},
         }
-        source, order_known = 'manual', True
+        source, order_known, ban_order_known = 'manual', True, True
         first_pick = manual.get('firstPick') or None
     elif has_heroes(camp):
         raw_names = structured_names(camp)
@@ -293,7 +713,7 @@ def merge_bp_sources(manual, camp, match=None):
                                               camp.get('lanes'))
                       for side in ('left', 'right')},
         }
-        source, order_known = 'camp', False
+        source, order_known, ban_order_known = 'camp', False, False
         first_pick = None
     else:
         return None
@@ -330,11 +750,13 @@ def merge_bp_sources(manual, camp, match=None):
         else:
             meta.setdefault(name, merged)
     side_map = {'blue': 'left', 'red': 'right', 'left': 'left', 'right': 'right'}
-    return {
+    record = {
         'source': source,
         'bans': bp['bans'], 'picks': bp['picks'],
         'banSlots': ban_slots, 'pickSlots': pick_slots,
-        'pickOrderKnown': order_known, 'firstPick': first_pick,
+        'pickOrderKnown': order_known, 'banOrderKnown': ban_order_known,
+        'firstPick': first_pick,
+        'ruleProfile': (camp or {}).get('ruleProfile') or 'scrim-global-20',
         'heroMeta': meta,
         'lanes': (camp.get('lanes') or {}) if isinstance(camp, dict) else {},
         'winnerSide': side_map.get((camp or {}).get('winnerSide')) or side_map.get(match.get('winnerCamp')),
@@ -344,6 +766,26 @@ def merge_bp_sources(manual, camp, match=None):
         'duration': (camp or {}).get('duration') or match.get('duration'),
         'teamStats': (camp or {}).get('teamStats') or {},
     }
+    if source == 'camp':
+        # 优先级：页面手工顺序 > 已核验逐手事件 > 默认训练赛推定（可关闭）。
+        manual_order = order if order is not None else (
+            (camp or {}).get('bpOrder') if isinstance(camp, dict) else None)
+        if manual_order:
+            record = apply_manual_order(record, manual_order)
+        else:
+            verified = events if events is not None else (
+                (camp or {}).get('draftEvents') if isinstance(camp, dict) else [])
+            record = apply_order_events(record, verified)
+            if (events is None and record.get('pickOrderKnown')
+                    and (camp or {}).get('orderSource') == 'campDefault20'):
+                record['orderSource'] = 'campDefault20'
+                record['orderAssumed'] = True
+            # 显式事件存在但对不齐：保持顺序未知，不再用默认顺序覆盖坏证据。
+            if not record.get('pickOrderKnown') and not verified:
+                record = apply_default_scrim_order(record)
+            if assume_scrim and not record.get('pickOrderKnown'):
+                record = apply_default_scrim_order(record)
+    return record
 
 
 def structured_names(bp):
@@ -614,3 +1056,44 @@ def bp_report(facts, *, opponent=None, date_from=None, date_to=None, top=8):
             'BP 手序仅部分对局有记录，本页不推断先后手。',
         ],
     }
+
+
+def normalize_camp_events(detail, events, seq=''):
+    """校验并规范逐手 BP 事件（训练赛唯一规则：20 手），与终局名单交叉核对。
+
+    事件形状：{order: 从 1 连续递增, action: 'pick'|'ban',
+    hero: 英雄名, camp: '1'(蓝/left)|'2'(红/right)}。训练赛固定 20 手：
+    蓝红交替 10 Ban（每方 5）+ 10 Pick。任何不一致都抛 ValueError——
+    不一致的顺序数据比没有更危险，绝不静默丢弃、也绝不由终局名单反推顺序。
+    """
+    from bp_rules import SCRIM_RULES, validate_scrim_prefix
+    bp = parse_camp_bp(detail, seq)
+    if not bp:
+        raise ValueError('该面板没有可解析的终局 BP 名单，无法做一致性核对')
+    rule = SCRIM_RULES[rule_id_for_bp(bp)]
+    clean = clean_scrim_events(events)
+    if not validate_scrim_prefix(clean, rule=rule, full=True):
+        raise ValueError('BP 顺序不符合训练赛 20 手规则'
+                         '（蓝红交替 10 Ban → B1 R2 B2 R2 B2 R1 Pick），或有英雄重复')
+
+    def names(rows):
+        return sorted({row.get('name') for row in rows or []
+                       if isinstance(row, dict) and row.get('name')})
+
+    pick_expected = {'1': names(bp['picks'].get('left')), '2': names(bp['picks'].get('right'))}
+    ban_expected = {'1': names(bp['bans'].get('left')), '2': names(bp['bans'].get('right'))}
+    observed = {'1': {'pick': [], 'ban': []}, '2': {'pick': [], 'ban': []}}
+    for event in clean:
+        observed[event['camp']][event['action']].append(event['hero'])
+    for camp, label in (('1', '蓝方'), ('2', '红方')):
+        if sorted(observed[camp]['pick']) != pick_expected[camp]:
+            raise ValueError(f'{label} Pick 与营地终局名单不一致——'
+                             '顺序数据必须与终局名单完全一致，不一致的记录比没有更危险')
+        if ban_expected[camp] and not set(observed[camp]['ban']).issubset(set(ban_expected[camp])):
+            raise ValueError(f'{label} Ban 超出了营地终局禁用名单')
+    warnings = []
+    for camp, label in (('1', '蓝方'), ('2', '红方')):
+        if ban_expected[camp] and len(observed[camp]['ban']) != len(ban_expected[camp]):
+            warnings.append(f'{label}记录 Ban {len(observed[camp]["ban"])} 个，'
+                            f'面板名单 {len(ban_expected[camp])} 个（面板可能含空槽/旧规则 5 Ban）')
+    return clean, warnings

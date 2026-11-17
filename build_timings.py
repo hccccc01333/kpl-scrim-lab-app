@@ -8,7 +8,7 @@ classification.  This module makes the rule explicit and auditable:
     finished  = buy price >= FINISHED_PRICE and not a shoe
 
 Why this rule for the local samples: across the 135 first-seen purchases of the
-20260101_000000 replay, prices cluster into <=399 (basic components), 700-999
+20261102_161129 replay, prices cluster into <=399 (basic components), 700-999
 (mid components) and >=1500 (top-tier items), with nothing bought in 1000-1499.
 A shoe (id 1400-1499) is a finished slot of its own but is excluded here because
 "三件套" conventionally counts core items, not boots.

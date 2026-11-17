@@ -47,7 +47,7 @@ POSITIONS = ['对抗路', '打野', '中路', '发育路', '游走']
 SESSIONS = ['训练赛', '内部对抗', 'BO5', 'BO3']
 VERSIONS = ['S41', 'S40', 'S39']
 
-# 演示用虚构人名。教练档案页读的是「战队档案」里的 coach 字段：
+# 演示用虚构人名。教练档案页读的是「战队分析」里的 coach 字段：
 # 本队教练存在 settings.coach，对手教练存在战队覆盖层 / 工作区 teams.coach。
 OWN_COACH = '示例教练'
 TEAM_COACHES = [
@@ -157,7 +157,7 @@ def has_bundles(data_dir):
 def prepare_camps(data_dir, force):
     """准备演示营地数据，返回 (是否生成, 是否演示数据, mock 模块)。
 
-    教练档案 / 战队档案 / BP 页只读营地十人面板，所以纯 12 场对局记录
+    教练档案 / 战队分析 / BP 页只读营地十人面板，所以纯 12 场对局记录
     撑不起这些页面。全新演示目录自动补一套面板；目录里已有非演示面板时
     绝不覆盖，避免把真实数据洗掉。``--with-camp`` 只强制刷新演示面板。
     """
@@ -229,7 +229,7 @@ def main():
     parser.add_argument('--base', default='http://127.0.0.1:8766')
     parser.add_argument('--games', type=int, default=12)
     parser.add_argument('--with-camp', action='store_true',
-                        help='同时写营地阵容面板与数据包（战队档案 / 英雄榜 / BP 页需要）')
+                        help='同时写营地阵容面板与数据包（战队分析 / 英雄榜 / BP 页需要）')
     args = parser.parse_args()
 
     status, health = call(args.base, '/api/health')

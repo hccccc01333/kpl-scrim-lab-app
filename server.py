@@ -6,6 +6,7 @@ import io
 import json
 import math
 import os
+import random
 import re
 import shutil
 import sqlite3
@@ -23,10 +24,12 @@ from urllib import parse as url_parse
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
 from PIL import Image, UnidentifiedImageError
 
 from analysis_api import create_analysis_router
 from workbench_api import create_workbench_router
+from briefing_api import create_briefing_router
 from depth_api import create_depth_router
 from match_review import create_review_router
 from studio_api import create_studio_router
@@ -115,15 +118,57 @@ def init_db():
 
 init_db()
 app = FastAPI(title='训练赛分析工作台', docs_url=None, redoc_url=None)
+
+
+class LoopbackAwareGZipMiddleware(GZipMiddleware):
+    """本机回环的 **API 响应** 不压缩：压缩省的是带宽，花的是服务端 CPU。
+
+    工作台默认只服务 127.0.0.1，回环传输几乎没有成本，而 1.35 MB 的选手看板
+    压一次要 60–80ms、10 MB 的组合库要 200ms，浏览器解压还要再花一份。
+    静态资源（CSS/JS/字体）仍然压缩：它们压缩比 4:1 左右，省下的解码与传输
+    比压缩更值。局域网/容器部署（TRAINING_ALLOW_REMOTE=1）按原样压缩。
+    """
+
+    LOOPBACK = {'127.0.0.1', '::1', 'localhost'}
+
+    async def __call__(self, scope, receive, send):
+        if scope.get('type') == 'http':
+            client = scope.get('client') or ('', 0)
+            path = scope.get('path') or ''
+            if str(client[0]).lower() in self.LOOPBACK and path.startswith('/api'):
+                await self.app(scope, receive, send)
+                return
+        await super().__call__(scope, receive, send)
+
+
+# 跨局明细一次带回几十 MB 的坐标与事件流，gzip 把传输量压到 1/8 左右。
+# 以前只有 v3/serve.py 那个旁支 app 压过；两套并成一套后，工作台自己也得压。
+app.add_middleware(LoopbackAwareGZipMiddleware, minimum_size=4096)
 # V3 的路由模块在 _mount_v3() 里加载；中间件用它刷新分析快照缓存。
 V3_MODULE = None
 app.include_router(create_analysis_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR, OFFICIAL_DIR))
 app.include_router(create_workbench_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
                                           DATA_DIR, DB_PATH))
-app.include_router(create_depth_router(ROOT, DB_PATH))
+app.include_router(create_briefing_router(OFFICIAL_DIR, DATA_DIR / 'camp_details',
+                                          DATA_DIR, DB_PATH, matches_dir=MATCHES_DIR))
+def _depth_profile_loader():
+    """深度分析 facts 的身份口径：V3 模块加载后复用它的账号映射解析。
+
+    V3 路由在 `_mount_v3()` 里才加载，这里用晚绑定：每次请求再取，
+    模块还没加载时退回旧口径（None），不影响启动。
+    """
+    loader = getattr(V3_MODULE, '_depth_identity_profile', None) if V3_MODULE else None
+    return loader() if callable(loader) else None
+
+
+app.include_router(create_depth_router(ROOT, DB_PATH, profile_loader=_depth_profile_loader))
 app.include_router(create_studio_router(DB_PATH, MATCHES_DIR, IMPORTS_DIR))
 app.include_router(create_review_router(MATCHES_DIR, OFFICIAL_DIR, BUILDS_DIR, ROOT))
 app.include_router(create_update_router(ROOT, VERSION))
+
+
+# 只读 POST：请求体只影响返回结果，不写库，不该让分析快照与向量缓存失效。
+_READ_ONLY_POST = {'/api/series/suggest'}
 
 
 @app.middleware('http')
@@ -136,13 +181,24 @@ async def local_only(request: Request, call_next):
         return JSONResponse({'detail': '来源不匹配，请从本地工作台操作'}, status_code=403)
     response = await call_next(request)
     # V3 与分析快照：写操作成功后让缓存失效，下次读取重新构建。
-    if request.method not in ('GET', 'HEAD', 'OPTIONS') and response.status_code < 400:
+    # 只读 POST（编组建议）不写库，不能触发失效：以前每次进编组页都把几秒的
+    # 向量缓存清空，下一次请求又冷启动。
+    read_only_post = request.url.path in _READ_ONLY_POST
+    if (request.method not in ('GET', 'HEAD', 'OPTIONS') and not read_only_post
+            and response.status_code < 400):
         if V3_MODULE is not None:
             V3_MODULE.invalidate_snapshot()
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['Referrer-Policy'] = 'no-referrer'
-    if request.url.path.startswith(('/assets', '/static', '/api')) or request.url.path in ('/', '/analysis'):
-        # 本机工作台经常直接替换前端文件；每次协商校验，避免浏览器用旧资源
+    path = request.url.path
+    if path.startswith(('/assets', '/static')):
+        # 前端资源（CSS/JS/字体/头像）每次打开都要重新下载 2–3 MB，是本机工作台
+        # 「打开慢」的大头。改成 no-cache：浏览器保留副本，但每次都用 ETag /
+        # Last-Modified 协商；文件没变就是几十个 304（无响应体），替换了前端文件
+        # 也能立刻生效，不需要用户清缓存或改 ?v=。
+        response.headers['Cache-Control'] = 'no-cache'
+    elif path.startswith('/api') or path in ('/', '/analysis'):
+        # 数据接口要的就是最新值，不缓存。
         response.headers['Cache-Control'] = 'no-store'
     return response
 
@@ -1374,8 +1430,8 @@ def official_coverage():
     """
     with db() as c:
         rows = c.execute('SELECT body FROM channels').fetchall()
-    channels, with_replay, saved_without = 0, 0, 0
-    pending = []
+    channels, with_replay, with_files, saved_without = 0, 0, 0, 0
+    pending, unattached = [], []
     for row in rows:
         try:
             channel = json.loads(row['body'])
@@ -1385,19 +1441,46 @@ def official_coverage():
         official = channel.get('official') or {}
         seq = str(official.get('id') or '')
         seq = seq[5:] if seq.startswith('camp-') else ''
-        if seq and (camp_replay.STORE / f'camp-{seq}' / 'meta.json').is_file():
+        # 「有回放」以通道里真的有载荷为准：只看磁盘上的 meta.json 会把
+        # 「回放已下载、却没挂到通道」的局算成已覆盖，单局页其实还是空的。
+        attached = bool(official.get('match'))
+        has_files = bool(seq) and (camp_replay.STORE / f'camp-{seq}' / 'meta.json').is_file()
+        if attached:
             with_replay += 1
-            continue
+        if has_files:
+            with_files += 1
+        if has_files and not attached:
+            unattached.append({'gameSeq': seq, 'channelId': channel.get('id'),
+                               'saved': (channel.get('saved') or {}).get('status') == 'saved'})
         saved = (channel.get('saved') or {}).get('status') == 'saved'
-        if saved:
+        if saved and not attached:
             saved_without += 1
-        if seq:
-            pending.append({'gameSeq': seq, 'channelId': channel.get('id'), 'saved': saved})
+        if seq and not attached:
+            source = official.get('source') or {}
+            pending.append({
+                'gameSeq': seq, 'channelId': channel.get('id'), 'saved': saved,
+                # 通道里已经存了回放接口要的三个参数；清单缓存为空时也能补拉。
+                'source': {
+                    'gameSvrId': str(source.get('gameSvr') or ''),
+                    'relaySvrId': str(source.get('relaySvr') or ''),
+                    'uniqueRoleId': str(source.get('playerId') or ''),
+                },
+            })
     index = _camp_official_index()
-    fillable = [item for item in pending if item['gameSeq'] in index]
-    return {'channels': channels, 'withReplay': with_replay,
+
+    def can_fill(item):
+        if item['gameSeq'] in index:
+            return True
+        source = item.get('source') or {}
+        return bool(source.get('gameSvrId') and source.get('relaySvrId')
+                    and source.get('uniqueRoleId'))
+
+    fillable = [item for item in pending if can_fill(item)]
+    return {'channels': channels, 'withReplay': with_replay, 'withFiles': with_files,
             'savedWithoutReplay': saved_without,
+            'onDiskNotAttached': len(unattached),
             'pending': len(pending), 'fillable': len(fillable),
+            'repairable': len(unattached),
             'listed': len(index), 'sample': fillable[:20]}
 
 
@@ -1408,17 +1491,32 @@ def official_backfill(value: dict):
         limit = max(1, min(200, int((value or {}).get('limit') or 20)))
     except (TypeError, ValueError):
         limit = 20
-    coverage = official_coverage()
-    index = _camp_official_index()
-    entries = [index[item['gameSeq']] for item in coverage['sample']
-               if item['gameSeq'] in index]
-    if not entries:
-        return {'ok': True, 'report': {'tried': 0, 'imported': 0, 'attached': 0,
-                                       'skipped': 0, 'failed': 0, 'items': []},
-                'coverage': coverage}
-    report = _camp_auto_official(entries, limit=limit, actor='backfill')
-    _invalidate_v3_snapshot()
-    return {'ok': True, 'report': report, 'coverage': official_coverage()}
+    if _camp_sync_job.get('running'):
+        raise HTTPException(409, '营地同步进行中，请等同步完成后再补拉回放。')
+    if not _official_backfill_lock.acquire(blocking=False):
+        raise HTTPException(409, '正在补拉回放，请稍后再试。')
+    try:
+        coverage = official_coverage()
+        index = _camp_official_index()
+        entries = []
+        for item in coverage['sample']:
+            seq = item['gameSeq']
+            if seq in index:
+                entries.append(index[seq])
+                continue
+            source = item.get('source') or {}
+            if source.get('gameSvrId') and source.get('relaySvrId') and source.get('uniqueRoleId'):
+                entries.append({'gameSeq': seq, **source})
+        if not entries:
+            return {'ok': True, 'report': {'tried': 0, 'imported': 0, 'attached': 0,
+                                           'skipped': 0, 'failed': 0, 'paced': 0,
+                                           'retried': 0, 'rateLimited': 0, 'items': []},
+                    'coverage': coverage}
+        report = _camp_auto_official(entries, limit=limit, actor='backfill')
+        _invalidate_v3_snapshot()
+        return {'ok': True, 'report': report, 'coverage': official_coverage()}
+    finally:
+        _official_backfill_lock.release()
 
 
 @app.get('/api/official/replays/{replay_id}')
@@ -1643,7 +1741,41 @@ def _camp_official_index():
     return index
 
 
-def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
+def _camp_env_number(name, default):
+    try:
+        return float(os.environ.get(name, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+# 营地公开回放接口会限流：详情同步原本就是每局 2 秒，回放补拉以前是连发。
+# 这里用同一量级的间隔 + 抖动，慢一点换稳定；限流时再退避重试一次。
+CAMP_REPLAY_INTERVAL = max(0.0, _camp_env_number('CAMP_REPLAY_INTERVAL', 2.0))
+CAMP_REPLAY_JITTER = max(0.0, _camp_env_number('CAMP_REPLAY_JITTER', 0.6))
+CAMP_REPLAY_RETRIES = max(1, int(_camp_env_number('CAMP_REPLAY_RETRIES', 2)))
+CAMP_REPLAY_RETRY_WAITS = (5.0, 15.0)
+
+
+def _camp_replay_import(source, owner_id, report):
+    """拉一局回放；被限流时退避后重试一次，普通错误直接抛。"""
+    for attempt in range(CAMP_REPLAY_RETRIES):
+        try:
+            return camp_replay.import_entry(source, force=False, camp_user_id=owner_id)
+        except camp_replay.CampReplayError as error:
+            limited = bool(getattr(error, 'rate_limited', False))
+            if not limited or attempt + 1 >= CAMP_REPLAY_RETRIES:
+                raise
+            wait = float(getattr(error, 'retry_after', 0) or 0)
+            if wait <= 0:
+                wait = CAMP_REPLAY_RETRY_WAITS[min(attempt, len(CAMP_REPLAY_RETRY_WAITS) - 1)]
+            wait = min(max(wait, 3.0), 60.0)
+            report['retried'] = int(report.get('retried') or 0) + 1
+            report['rateLimited'] = int(report.get('rateLimited') or 0) + 1
+            report['lastWaitSec'] = round(wait, 1)
+            time.sleep(wait)
+
+
+def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id='', progress=None):
     """营地同步之后，用清单里的服务器参数直接把官方回放拉下来并挂到通道。
 
     设计上「只给一个营地链接就该自动爬回放」，但这一步此前根本没接：
@@ -1670,7 +1802,8 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
             by_seq.setdefault(official_id[5:], channel)
 
     report = {'tried': 0, 'imported': 0, 'attached': 0, 'skipped': 0,
-              'failed': 0, 'items': []}
+              'failed': 0, 'paced': 0, 'retried': 0, 'rateLimited': 0,
+              'lastWaitSec': 0, 'items': []}
     for entry in entries or []:
         if report['tried'] >= limit:
             break
@@ -1679,20 +1812,49 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
             continue
         folder = camp_replay.STORE / f'camp-{seq}'
         if (folder / 'meta.json').is_file():
+            # 回放已经在本机，但通道可能还没拿到它（批量导入先落盘、通道后建，
+            # 或者上次挂载失败）。以前这里直接 skip，通道永远补不上回放。
+            channel = by_seq.get(seq)
+            if channel is not None and not (channel.get('official') or {}).get('match'):
+                try:
+                    _attach_official_from_store(channel, f'camp-{seq}', actor, 'official-repair')
+                except Exception as error:  # noqa: BLE001 - 单局失败不拖垮整批
+                    report['failed'] += 1
+                    report['items'].append({'gameSeq': seq, 'status': 'failed',
+                                            'error': f'回放已在本机但挂载失败：{error}'})
+                    continue
+                report['attached'] += 1
+                report['items'].append({'gameSeq': seq, 'status': 'attached', 'error': ''})
+                continue
             report['skipped'] += 1
             continue
-        source = index.get(seq) or entry
+        # 清单里的原始条目优先（带 analyseUrl / playerid）；清单没有时，
+        # 用调用方从通道 official.source 还原的条目兜底。
+        source = dict(entry or {})
+        source.update({key: value for key, value in (index.get(seq) or {}).items()
+                       if value not in (None, '')})
+        source['gameSeq'] = seq
         if not (source.get('gameSvrId') and source.get('relaySvrId')):
             report['failed'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'failed',
                                     'error': '清单里没有 gameSvrId / relaySvrId'})
             continue
         report['tried'] += 1
-        # 兜底：调用方漏传营地 ID 时，从条目自带的归属 ID 取（前端按它分组）。
-        owner_id = camp_user_id or str(source.get('ownerCampUserId') or '')
+        # 回放接口以前是连发，容易被营地限流；这里按详情同步同一量级放慢，
+        # 加一点随机抖动，40 局大约多花一分多钟，换的是不触发限流。
+        if report['paced']:
+            time.sleep(CAMP_REPLAY_INTERVAL + random.random() * CAMP_REPLAY_JITTER)
+        report['paced'] += 1
+        if progress is not None:
+            try:
+                progress(report['tried'], max(1, min(len(entries or []), limit)), seq)
+            except Exception:  # noqa: BLE001 - 进度回调不能打断补拉
+                pass
+        # 兜底：调用方漏传营地 ID 时，从条目自带的归属 ID / 角色 ID 取。
+        owner_id = (camp_user_id or str(source.get('ownerCampUserId') or '')
+                    or str(source.get('uniqueRoleId') or ''))
         try:
-            result = camp_replay.import_entry(source, force=False,
-                                              camp_user_id=owner_id)
+            result = _camp_replay_import(source, owner_id, report)
         except camp_replay.CampReplayError as error:
             report['failed'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'failed', 'error': str(error)})
@@ -1709,11 +1871,7 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
                                     'error': '还没有对应的采集通道，回放已单独落盘'})
             continue
         try:
-            meta, normalized = camp_replay.read_normalized(result['id'])
-            with db() as c:
-                channel_store.attach_official(channel, result['id'], meta, normalized, actor)
-                _refresh_saved_bundle_official(channel)
-                _save_channel(c, channel, actor, 'official-auto')
+            _attach_official_from_store(channel, result['id'], actor, 'official-auto')
             report['attached'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'attached', 'error': ''})
         except Exception as error:
@@ -1721,6 +1879,73 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id=''):
             report['items'].append({'gameSeq': seq, 'status': 'imported',
                                     'error': f'回放已落盘但挂载失败：{error}'})
     return report
+
+
+def _attach_official_from_store(channel: dict, official_id: str, actor=None,
+                                action: str = 'official-attach') -> dict:
+    """把本机已落盘的官方回放挂到通道，并刷新已入库 bundle。
+
+    回放与通道是两条写入路径：批量导入 / 上一次同步可能先把回放落盘，
+    通道后建出来；只按 `meta.json` 是否存在判断「已处理」会让这类通道
+    永远拿不到时间轴、事件与位置。
+    """
+    meta, normalized = camp_replay.read_normalized(official_id)
+    with db() as c:
+        channel_store.attach_official(channel, official_id, meta, normalized, actor)
+        # 已入库的局：挂回放后同步刷新 bundle，否则脉搏/阶段会一直空着。
+        _refresh_saved_bundle_official(channel)
+        _save_channel(c, channel, actor, action)
+    return channel
+
+
+_camp_repair_lock = threading.Lock()
+_camp_repair_state = {'at': 0.0}
+_official_backfill_lock = threading.Lock()
+
+
+def _camp_repair_official(limit: int = 200) -> dict:
+    """补挂「回放已在本机、通道却还没有回放载荷」的局。
+
+    典型现场：先批量导入/上次同步把 `official_replays/camp-*` 落盘，之后
+    才建出采集通道；`_camp_auto_official` 看到 meta.json 就跳过，通道的
+    `official` 只有 id/source，单局页的团队时间轴、事件、位置一直是空的。
+    这里只补 `official` 有 id 但还没有 `match` 载荷的通道，幂等、可重复跑。
+    """
+    empty = {'attached': 0, 'failed': 0, 'scanned': 0}
+    now = time.time()
+    if now - float(_camp_repair_state.get('at') or 0) < 30:
+        return empty
+    if not _camp_repair_lock.acquire(blocking=False):
+        return {**empty, 'busy': True}
+    try:
+        _camp_repair_state['at'] = now
+        with db() as c:
+            rows = c.execute('SELECT id, body FROM channels').fetchall()
+        attached = failed = scanned = 0
+        for row in rows:
+            if attached >= limit:
+                break
+            try:
+                channel = json.loads(row['body'])
+            except (TypeError, ValueError):
+                continue
+            official = channel.get('official') or {}
+            official_id = str(official.get('id') or '')
+            if not official_id.startswith('camp-') or official.get('match'):
+                continue
+            if not (camp_replay.STORE / official_id / 'meta.json').is_file():
+                continue
+            scanned += 1
+            try:
+                _attach_official_from_store(channel, official_id, 'camp-repair', 'official-repair')
+                attached += 1
+            except Exception:  # noqa: BLE001 - 单通道失败不影响其它局
+                failed += 1
+        if attached:
+            _invalidate_v3_snapshot()
+        return {'attached': attached, 'failed': failed, 'scanned': scanned}
+    finally:
+        _camp_repair_lock.release()
 
 
 def _camp_entry_match(entry: dict, nickname: str) -> dict:
@@ -2083,6 +2308,10 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
                                           'current': current, 'phase': phase}
 
     summary = None
+
+    def official_progress(done, total, current):
+        progress(done, total, current, 'official')
+
     try:
         summary = _camp_sync_entries(camp_sync, camp_user_id, entries, progress)
         # 入库即建采集通道：以前只写 camp_details/*.json，采集流水与统计都是空的。
@@ -2091,7 +2320,8 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         # 这样拉下来的经济曲线/事件/位置能立刻挂到通道上。
         try:
             channels['official'] = _camp_auto_official(
-                entries, actor='camp-sync', camp_user_id=camp_user_id)
+                entries, actor='camp-sync', camp_user_id=camp_user_id,
+                progress=official_progress)
         except Exception as error:
             channels['official'] = {'failed': 1, 'items': [],
                                     'error': f'{type(error).__name__}: {error}'}
@@ -2263,9 +2493,12 @@ def camp_sync_status():
     # 让历史对局立刻出现在采集流水里，不用教练再手动入库一遍。
     backfill = {'created': 0}
     finalize = {'passed': 0, 'skipped': 0}
+    repair = {'attached': 0, 'failed': 0, 'scanned': 0}
     if not _camp_sync_job.get('running'):
         backfill = _camp_backfill_channels()
         finalize = _camp_auto_finalize_channels()
+        # 回放先落盘、通道后建出来的局：补挂回放，单局页的时间轴/事件才不会空着。
+        repair = _camp_repair_official()
     details = list(camp_sync.DETAIL_DIR.glob('*.json')) if camp_sync.DETAIL_DIR.is_dir() else []
     with db() as c:
         rows = c.execute('SELECT id, body FROM channels').fetchall()
@@ -2301,6 +2534,7 @@ def camp_sync_status():
         })
     return {**_camp_sync_job, 'detailsCount': len(details),
             'details': detail_items, 'backfill': backfill, 'finalize': finalize,
+            'repair': repair,
             'config': _camp_config_read(), 'auth': camp_auth.read_account()}
 
 
@@ -2736,13 +2970,30 @@ def channels_list():
     with db() as c:
         rows = c.execute('SELECT * FROM channels ORDER BY updated_at DESC').fetchall()
     result = []
+    # 采集流水也按战队分析显示当前队名（只改返回给页面的副本，不改通道文档）。
+    try:
+        import opponent_identity
+        identity = opponent_identity.resolve(
+            DB_PATH, opponent_identity.camp_dir_for(MATCHES_DIR))
+        by_seq, aliases = identity['bySeq'], identity['aliases']
+    except Exception:  # noqa: BLE001 - 解析失败保留教练手填的队名
+        by_seq, aliases = {}, {}
     for row in rows:
         try:
             channel = json.loads(row['body'])
         except (TypeError, ValueError):
             continue
         channel['revision'] = row['revision']
-        result.append(_channel_summary(channel, recordings))
+        summary = _channel_summary(channel, recordings)
+        match = summary.get('match') or {}
+        camp = (channel.get('sources') or {}).get('camp') or {}
+        seq = str(camp.get('gameSeq') or '')
+        name = by_seq.get(seq)
+        if name:
+            match['opponent'] = name
+        elif str(match.get('opponent') or '') in aliases:
+            match['opponent'] = aliases[str(match['opponent'])]
+        result.append(summary)
     return {'schema': channel_store.SCHEMA, 'channels': result}
 
 
@@ -3137,7 +3388,7 @@ async def channel_attach_table(channel_id: str, request: Request):
             raise HTTPException(413, '表格请小于 64 MB')
         chunks.append(chunk)
     data = b''.join(chunks)
-    name = request.query_params.get('name', '数据表.xlsx')[:200]
+    name = request.query_params.get('name', '赛训表.xlsx')[:200]
     suffix = Path(name).suffix.lower()
     if suffix not in ('.csv', '.tsv', '.txt', '.xlsx', '.xlsm'):
         raise HTTPException(400, '仅支持 CSV/TSV/XLSX/XLSM')
@@ -3318,6 +3569,11 @@ def channel_delete(channel_id: str):
             raise HTTPException(404, '采集通道不存在')
         c.execute('DELETE FROM channel_files WHERE channel_id=?', (channel_id,))
         c.execute('DELETE FROM channels WHERE id=?', (channel_id,))
+    # 已入库的局：通道删了，正式 bundle 也要一起撤。否则分析快照仍把这一局
+    # 算进统计；以后同一局再同步会建出新通道，旧 bundle 就变成重复局
+    # （现场见过同一 gameSeq 8 份副本、386 行 / 103 局）。
+    (MATCHES_DIR / f'channel-{channel_id}.json').unlink(missing_ok=True)
+    _invalidate_v3_snapshot()
     return {'ok': True}
 
 
@@ -3810,7 +4066,7 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
                          'lastManualBuyFrame':last_manual,
                          'estimatedBattleSeconds':round(max(last_manual-7,0)/FRAME_RATE,1) if last_manual is not None else None,
                          'uncertaintySeconds':1,
-                         'note':'t ≈ (frame − battleStart)/15；校准依据 既有校准（±1s）；帧率常量见 replay_time.py'},
+                         'note':'t ≈ (frame − battleStart)/15；校准依据 docs 5.129（±1s）；帧率常量见 replay_time.py'},
              'provenance':{'moves':{'source':'abc-frame-commands','confidence':'decoded'},
                            'attacks':{'source':'abc-frame-commands','confidence':'decoded'},
                            'buys':{'source':'abc-frame-commands','confidence':'decoded'},
@@ -3844,7 +4100,7 @@ def replay_inputs(replay_id: str, unit: int = None, stride: int = 1):
                          'cc':edata.get('cc') or [],
                          'angleSamples':angles,
                          'pathEstimate':integrate_path(udata.get('moves') or []),
-                         'pathNote':'方向积分形状估算：漂移严重（锚点残差 1.8万-6.5万），仅示意转向历史，绝非位置；既有校准',
+                         'pathNote':'方向积分形状估算：漂移严重（锚点残差 1.8万-6.5万），仅示意转向历史，绝非位置；docs 5.132',
                          'positionAnchors':anchors}
     return payload
 
@@ -4384,7 +4640,55 @@ def _mount_v3() -> bool:
 _mount_v3()
 
 
+def _probe_port(port: int) -> tuple[str, dict | None]:
+    """看看 port 上是「我们自己的工作台」「别的工作台」还是「别的程序」。
+
+    Windows 上 SO_REUSEADDR 允许两个进程绑同一个端口，所以「再点一次启动」
+    很容易变成两个服务抢 8766：一个收到 /api/shutdown，另一个继续服务，页面
+    却不知道连的是哪一个。启动前先探一次端口，把三种情况分开处理。
+    """
+    from urllib.request import urlopen
+    try:
+        with urlopen(f'http://127.0.0.1:{port}/api/health', timeout=1.5) as response:
+            raw = response.read()
+        payload = json.loads(raw.decode('utf-8'))
+    except (OSError, ValueError):
+        return 'free', None                     # 连不上 / 不是 HTTP：当作没在跑
+    if not isinstance(payload, dict):
+        return 'other', None
+    if payload.get('ok') and payload.get('dbPath'):
+        if str(payload['dbPath']) == str(DB_PATH):
+            return 'ours', payload
+        return 'other-workbench', payload        # 例如演示实例（独立数据目录）
+    return 'other', payload
+
+
+def _running_instance(port: int) -> dict | None:
+    kind, payload = _probe_port(port)
+    return payload if kind == 'ours' else None
+
+
 if __name__ == '__main__':
     import uvicorn
-    uvicorn.run(app, host=os.environ.get('TRAINING_HOST', '127.0.0.1'),
-                port=int(os.environ.get('TRAINING_PORT', '8766')))
+    port = int(os.environ.get('TRAINING_PORT', '8766'))
+    host = os.environ.get('TRAINING_HOST', '127.0.0.1')
+    shown = '127.0.0.1' if host in ('0.0.0.0', '::') else host
+    kind, payload = _probe_port(port)
+    if '--force' not in sys.argv:
+        if kind == 'ours':
+            # 已经有一个在工作：不再起第二个（端口争用会让两个进程互相挡请求）。
+            print(f'工作台已经在 http://{shown}:{port}/ 运行（pid {payload.get("pid")}）。')
+            print('直接打开上面的地址即可；要强制再起一个，加 --force 换个端口启动。')
+            sys.exit(0)
+        if kind in ('other', 'other-workbench'):
+            print(f'端口 {port} 已被占用（不是这个工作台的数据目录），没有启动第二份。')
+            print('请关掉占用该端口的程序，或用 TRAINING_PORT 换一个端口。')
+            sys.exit(1)
+    # 真实服务入口才开巅峰千强每日自动刷新；模块导入 / 测试客户端不会触发爬取。
+    os.environ.setdefault('PEAK_AUTO_CRAWL', '1')
+    if V3_MODULE is not None and hasattr(V3_MODULE, 'start_peak_auto'):
+        try:
+            V3_MODULE.start_peak_auto()
+        except Exception as exc:                   # noqa: BLE001
+            print(f'[peak] 自动刷新线程启动失败：{exc}')
+    uvicorn.run(app, host=host, port=port)

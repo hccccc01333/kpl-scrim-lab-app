@@ -1,4 +1,12 @@
-"""V3 route module: read training data and expose the analysis API."""
+"""V3 路由模块：读取赛训数据、提供分析接口。
+
+路由由 server.py 统一挂进同一个 app —— 采集接口、分析接口、前端静态资源
+只有这一套。`/api/health`、`/api/channels`、`/api/camp/*` 与 `/api/v3/*`
+在同一张路由表里，所以不会再出现「某个端口只有界面、没有采集接口」的旁支。
+
+要换端口仍然可以 `python v3/serve.py --port 8811`：它只把端口交给 server.py，
+起的是同一个 app，而不是另搭一个缺采集接口的服务。
+"""
 
 import argparse
 import json
@@ -19,11 +27,8 @@ from pathlib import Path
 from threading import Lock, Thread
 from time import monotonic
 
-import uvicorn
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from starlette.middleware.trustedhost import TrustedHostMiddleware
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, Response
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -36,11 +41,13 @@ import camp_tiles
 from collection_contract import reject_example_table, validate_table
 from match_review import PanoramaRepository
 from paths import data_root
-from studio_api import create_studio_router
-from analysis_api import create_analysis_router
-from depth_api import create_depth_router
+from series_api import create_series_router
 import deep_analysis
+import hero_archetypes
+import hero_capabilities
 import identity_service
+import peak_crawl
+import player_profile
 import vocab as vocab_store
 
 
@@ -54,6 +61,8 @@ def data_path(variable, default):
 DB = data_path('TRAINING_DB', 'training.sqlite3')
 # 词表与写入归一化共用数据目录；版本 / 规则 / 赛制 / 训练组都落在这里。
 DATA_DIR = DB.parent
+# 版本记录（版本名 + 起止日期），教练自己填，全局一份。
+VERSIONS_SCHEMA = 'version-records-v1'
 MATCHES = data_path('ANALYSIS_MATCHES', 'matches')
 IMPORTS = data_path('ANALYSIS_IMPORTS', 'imports')
 OFFICIAL = data_path('ANALYSIS_OFFICIAL', 'official_replays')
@@ -64,6 +73,91 @@ IS_DEMO = DEMO_ROOT is not None
 panorama = PanoramaRepository(MATCHES, OFFICIAL, BUILDS, ROOT)
 router = APIRouter()
 
+# 重量级报告落盘：BP 概览首次全量聚合约 9 秒、BP 工作台约 2.5 秒、选手看板约 1.6 秒，
+# 但它们只取决于数据文件与筛选参数。把「最近一次算过的 key + 结果」写到 data/.cache，
+# 进程重启后第一次打开同一个视图直接读盘；key 不匹配（数据变了或换了筛选）就照常重算。
+_CACHE_DIR = DATA_DIR / '.cache'
+_REPORT_DISK_LOCK = Lock()
+
+
+def _cache_key_id(key):
+    return json.dumps(key, ensure_ascii=False, separators=(',', ':'), default=str)
+
+
+def _report_disk_read(path, key_id, name):
+    try:
+        doc = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict) or doc.get('key') != key_id:
+        return None
+    report = doc.get(name)
+    return report if isinstance(report, (dict, list, str)) else None
+
+
+def _report_disk_write(path, key_id, name, report):
+    with _REPORT_DISK_LOCK:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix('.tmp')
+            tmp.write_text(json.dumps({'key': key_id, name: report},
+                                      ensure_ascii=False, separators=(',', ':')),
+                           encoding='utf-8')
+            os.replace(tmp, path)
+        except (OSError, TypeError, ValueError):
+            pass
+
+
+def _camp_seq(detail):
+    """从单局详情取营地 gameSeq；只认纯数字，避免拼出目录穿越路径。"""
+    if not isinstance(detail, dict):
+        return ''
+    camp = detail.get('campBp') if isinstance(detail.get('campBp'), dict) else {}
+    seq = str(camp.get('gameSeq') or '')
+    if not seq:
+        official = detail.get('officialReplay') if isinstance(detail.get('officialReplay'), dict) else {}
+        oid = str(official.get('id') or '')
+        if oid.startswith('camp-'):
+            seq = oid[len('camp-'):]
+    return seq if re.fullmatch(r'\d+', seq) else ''
+
+
+def _camp_detail_payload(seq):
+    if not re.fullmatch(r'\d+', str(seq or '')):
+        return None
+    path = MATCHES.parent / 'camp_details' / f'{seq}.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def camp_draft_events(detail):
+    """单局复盘读已核验的逐手事件（camp_details/<seq>.json → data.draftEvents）。
+
+    营地名单本身不携带手序；只有沙盘补录并校验过的事件才写回这里。
+    """
+    seq = _camp_seq(detail)
+    payload = _camp_detail_payload(seq) if seq else None
+    if not payload:
+        return []
+    container = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    events = (container.get('draftEvents') or container.get('bpSequence')
+              or payload.get('draftEvents') or [])
+    return events if isinstance(events, list) else []
+
+
+def camp_bp_order(detail):
+    """单局复盘读页面手工录入的每侧 Ban/Pick 顺序（受排位规则允许重复 Ban）。"""
+    seq = _camp_seq(detail)
+    payload = _camp_detail_payload(seq) if seq else None
+    if not payload:
+        return None
+    container = payload.get('data') if isinstance(payload.get('data'), dict) else {}
+    order = container.get('bpOrder')
+    return order if isinstance(order, dict) else None
+
 
 async def read_json(request: Request):
     """把非法 JSON 统一变成 400，避免写接口抛 500。"""
@@ -73,48 +167,319 @@ async def read_json(request: Request):
         raise HTTPException(400, '请求体不是有效 JSON。') from None
 
 
-app = FastAPI(title='峡谷棱镜 · 赛训数据平台', docs_url=None, redoc_url=None, openapi_url=None)
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=['127.0.0.1', 'localhost'])
-# Expose only reviewed studio endpoints. Several other V1 routes automatically
-# unlink cache/upload files, so they are not mounted here.
-_studio = create_studio_router(DB, MATCHES, IMPORTS)
-_STUDIO_ALLOWED = {
-    '/api/studio/teams', '/api/studio/teams/rename', '/api/studio/teams/rename-batch',
-    '/api/studio/teams/merge',
-    '/api/studio/opponents', '/api/studio/opponents/assign', '/api/studio/coach',
-    '/api/studio/camp-compare', '/api/studio/camp-combos', '/api/studio/camp-partners',
-    '/api/studio/analysis/opponents',
-    '/api/studio/workspace/teams', '/api/studio/workspace/teams/merge',
-    '/api/studio/workspace/teams/reconcile',
-    '/api/studio/workspace/players', '/api/studio/workspace/players/migrate-profile',
-    '/api/studio/workspace/players/delete',
-    '/api/studio/workspace/schedules',
-    '/api/studio/workspace/competitions',
-    '/api/studio/workspace/competitions/{competition_id}',
-    '/api/studio/workspace/matches',
-    '/api/studio/workspace/reports/screenshot',
-    '/api/studio/workspace/reports/image/{name}',
-    '/api/studio/workspace/inbox',
-    '/api/studio/workspace/dashboard',
-    '/api/studio/workspace/metrics/week',
-    '/api/studio/workspace/metrics/registry',
-    '/api/studio/workspace/opponents/unmapped',
-    '/api/studio/workspace/opponents/map',
-    '/api/studio/workspace/sessions/{schedule_id}',
-    '/api/studio/workspace/sessions/{schedule_id}/review',
-    '/api/studio/workspace/sessions/{schedule_id}/links',
-    '/api/studio/workspace/training', '/api/studio/workspace/prefill/run',
-    '/api/studio/workspace/pending', '/api/studio/workspace/pending/confirm',
-    '/api/studio/workspace/pending/confirm-batch',
-    '/api/studio/profile',
-}
-_studio.routes = [route for route in _studio.routes if route.path in _STUDIO_ALLOWED]
-app.include_router(_studio)
-app.include_router(create_analysis_router(DB, MATCHES, IMPORTS, OFFICIAL))
-app.include_router(create_depth_router(DEMO_ROOT or ROOT, DB))
-app.mount('/static', StaticFiles(directory=HERE / 'public'), name='frontend')
-app.mount('/catalog/icons', StaticFiles(directory=ROOT / 'resources' / 'icons', check_dir=False),
-          name='icons')
+# 这里只导出路由，不再自建 app。
+#
+# 2026-11-16：历史上 V3 有一套自己的 FastAPI app（只挂分析路由、不挂采集接口），
+# `python v3/serve.py` 起出来的就是那半套服务 —— 打开采集页永远 404，
+# 页面只能显示「营地数据暂时读不到」。现在分析路由由 server.py 的 _mount_v3()
+# 挂进同一个 app，采集 / 分析 / 前端静态资源只有这一套；本文件只剩下这张路由表。
+
+
+
+def _series_query(values=None):
+    """系列赛侧的统一取数口径：全部合格对局，不受跨局页 200 局窗口影响。"""
+    query = {'sources': list(DEFAULT_SOURCES), 'from': None, 'to': None, 'hero': None,
+             'opponent': None, 'excludeSeeds': False, 'ownOnly': True}
+    if values:
+        for key in ('sources', 'from', 'to', 'hero', 'opponent', 'excludeSeeds', 'ownOnly'):
+            if values.get(key) is not None:
+                query[key] = values[key]
+    return query
+
+
+def _series_vectors(repo, values=None):
+    """系列赛侧全量向量（V2.0）：不依赖跨局页的 200 局明细窗口，编组候选
+    先由全部合格对局确定，选定系列赛再按需取明细。"""
+    items = repo.matches(_series_query(values))['matches']
+    return [v for v in (_cross_vector(repo, item, 8) for item in items) if v]
+
+
+def _series_vectors_for(repo, values=None, keys=None):
+    """只建指定对局的完整向量。
+
+    系列赛列表 / 汇总只用到已入组那几十局，以前却为此重建全量 396 局向量，
+    一次 GET 要 3–8 秒。按 key 过滤后只付这几局的钱。
+    """
+    wanted = {str(k) for k in (keys or []) if k}
+    if not wanted:
+        return []
+    items = repo.matches(_series_query(values))['matches']
+    return [v for item in items if str(item.get('key') or '') in wanted
+            for v in [_cross_vector(repo, item, 8)] if v]
+
+
+_SERIES_BUILDER_CACHE = {}
+_MATCH_STAMP_CACHE = {'at': 0.0, 'stamp': None}
+_MATCH_STAMP_TTL = 2.0
+
+
+def _matches_stamp():
+    """只算对局包目录的廉价指纹。
+
+    轻量向量的字段全部来自对局包；系列赛写库只改关系表，不该让这份缓存
+    失效（否则每次确认编组后的第一次写操作又要重建快照）。
+    396 个文件 stat 一次约 30ms，2 秒内复用；新对局最多晚 2 秒出现。
+    """
+    now = monotonic()
+    cached = _MATCH_STAMP_CACHE['stamp']
+    if cached is not None and now - _MATCH_STAMP_CACHE['at'] < _MATCH_STAMP_TTL:
+        return cached
+    try:
+        count, latest = 0, 0.0
+        for path in MATCHES.glob('*.json'):
+            try:
+                latest = max(latest, path.stat().st_mtime)
+            except OSError:
+                continue
+            count += 1
+        stamp = (count, round(latest, 3))
+    except OSError:
+        stamp = (0, 0.0)
+    _MATCH_STAMP_CACHE.update(at=now, stamp=stamp)
+    return stamp
+
+
+def _series_match_stamp():
+    """轻量向量真正依赖的指纹：对局包 + 队名/对局元数据变更。
+
+    `change_log` 里对局只记 series_id / game_no 的写入，系列赛关系不该让
+    轻量缓存失效；队名合并、改名、选手/赛程变更必须立即反映到编组行上。
+    """
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            count, latest = connection.execute(
+                "SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM change_log "
+                "WHERE entity_type IN ('team','player','schedule') "
+                "OR (entity_type='match' AND field NOT IN ('series_id','game_no'))"
+            ).fetchone()
+    except sqlite3.Error:
+        count, latest = 0, 0
+    return (_matches_stamp(), count, latest)
+
+
+def _cross_data_stamp():
+    """跨局向量的失效指纹：对局包 + 队名/对局元数据 + BP 覆盖。
+
+    系列赛关系（series / match.series_id / match.game_no）不算：跨局页的
+    赛制/局序是在向量返回前动态贴上的，不该因此重建几秒的全量向量。
+    """
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            log_count, log_latest = connection.execute(
+                "SELECT COUNT(*), COALESCE(MAX(created_at), 0) FROM change_log "
+                "WHERE entity_type IN ('team','player','schedule','bp') "
+                "OR (entity_type='match' AND field NOT IN ('series_id','game_no'))"
+            ).fetchone()
+            try:
+                bp_count, bp_rev = connection.execute(
+                    "SELECT COUNT(*), COALESCE(MAX(revision), 0) FROM bp_overrides").fetchone()
+            except sqlite3.Error:
+                bp_count, bp_rev = 0, 0
+    except sqlite3.Error:
+        log_count = log_latest = bp_count = bp_rev = 0
+    return (_matches_stamp(), log_count, log_latest, bp_count, bp_rev)
+
+
+_SERIES_VECTOR_SCHEMA = 3
+_SERIES_VECTOR_DISK = DATA_DIR / '.cache' / 'series-vectors.json'
+_SERIES_VECTOR_DISK_STATE = {'loaded': False, 'key': None, 'vectors': None}
+
+
+def _series_vector_cache_id(cache_key):
+    return json.dumps(cache_key, ensure_ascii=False, separators=(',', ':'))
+
+
+def _series_default_query(query):
+    return not (query.get('from') or query.get('to')
+                or query.get('hero') or query.get('opponent'))
+
+
+def _series_vectors_disk_read(cache_key):
+    state = _SERIES_VECTOR_DISK_STATE
+    if not state['loaded']:
+        state['loaded'] = True
+        try:
+            doc = json.loads(_SERIES_VECTOR_DISK.read_text(encoding='utf-8'))
+            if isinstance(doc, dict) and isinstance(doc.get('vectors'), list):
+                state['key'] = doc.get('key')
+                state['vectors'] = doc['vectors']
+        except (OSError, ValueError):
+            pass
+    if state['vectors'] is not None and state['key'] == _series_vector_cache_id(cache_key):
+        return state['vectors']
+    return None
+
+
+def _series_vectors_disk_write(cache_key, vectors, query):
+    if not _series_default_query(query):
+        return
+    try:
+        _SERIES_VECTOR_DISK.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _SERIES_VECTOR_DISK.with_suffix('.tmp')
+        key = _series_vector_cache_id(cache_key)
+        tmp.write_text(json.dumps({'key': key, 'vectors': vectors},
+                                  ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        os.replace(tmp, _SERIES_VECTOR_DISK)
+        _SERIES_VECTOR_DISK_STATE.update(loaded=True, key=key, vectors=vectors)
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _series_builder_vectors(repo=None, values=None):
+    """编组页专用的轻量向量：时间轴 / 对手 / 胜负 / 比分 / 双方阵容。
+
+    编组页一行一局只看这些字段，不需要经济曲线、回放事件和十人明细。
+    轻量版约 0.1 秒（完整 _cross_vector 全量要 3–4 秒），并按对局包指纹缓存；
+    缓存命中时连仓库快照都不需要，写操作因此不再等 15 秒快照重建。
+    默认查询还会落到 `.cache/series-vectors.json`，服务重启后首次进页也直接读盘。
+    """
+    query = _series_query(values)
+    cache_key = (_SERIES_VECTOR_SCHEMA, _series_match_stamp(),
+                 tuple(query['sources']), query['from'], query['to'],
+                 bool(query['excludeSeeds']), bool(query['ownOnly']))
+    cached = _SERIES_BUILDER_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    disk = _series_vectors_disk_read(cache_key)
+    if disk is not None:
+        _SERIES_BUILDER_CACHE[cache_key] = disk
+        return disk
+    if repo is None:
+        repo = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
+    items = repo.matches(query)['matches']
+    out = []
+    for item in items:
+        key = item.get('key')
+        if not key:
+            continue
+        own = item.get('ownCamp') or 'blue'
+        foe = 'red' if own == 'blue' else 'blue'
+        scores = item.get('scores') or {}
+        lineup = item.get('lineup') or []
+        start = str(item.get('startTime') or '')
+        clock = next((token for token in start.replace('T', ' ').split(' ') if ':' in token), '')
+        out.append({
+            'key': str(key),
+            'date': item.get('date') or '',
+            'clock': clock,
+            'order': start,
+            'session': item.get('session') or '',
+            'version': item.get('version') or '',
+            'opponent': item.get('opponent') or '',
+            'opponentTeamId': item.get('opponentTeamId') or '',
+            'result': item.get('result') or '',
+            'duration': item.get('duration') or 0,
+            'finalDiff': item.get('goldDiff'),
+            'killsOwn': scores.get(own),
+            'killsFoe': scores.get(foe),
+            'heroes': list(item.get('heroes') or [])[:5],
+            'heroesFoe': [x.get('enemy') for x in lineup if x.get('enemy')][:5],
+            # 编组页不显示 10 分钟差；保留字段让 _enrich / 前端共用同一套读法。
+            'at10': None,
+            'hasReplay': bool(item.get('hasPov') or item.get('hasTimeline')),
+            'isSeed': bool(item.get('isSeed')),
+            'source': item.get('source') or '',
+        })
+    if len(_SERIES_BUILDER_CACHE) > 3:
+        _SERIES_BUILDER_CACHE.clear()
+    _SERIES_BUILDER_CACHE[cache_key] = out
+    _series_vectors_disk_write(cache_key, out, query)
+    return out
+
+
+def _series_detail(repo, key):
+    return repo.match_detail(key)
+
+
+# 大场挖掘层的全量语料：单局完整向量（经济曲线 / 团战 / 资源 / 十人面板）。
+# 冷启动要把 396 局回放聚合一遍（约 3–6 秒），之后按对局包指纹命中；
+# 只在单场大场下钻时取，列表 / 汇总不付这份钱。
+_SERIES_CORPUS_CACHE = {'stamp': None, 'vectors': []}
+
+
+def _series_corpus(repo=None):
+    stamp = _series_match_stamp()
+    cached = _SERIES_CORPUS_CACHE
+    if cached['stamp'] == stamp and cached['vectors']:
+        return cached['vectors']
+    if repo is None:
+        repo = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
+    vectors = _series_vectors(repo)
+    _SERIES_CORPUS_CACHE.update(stamp=stamp, vectors=vectors)
+    return vectors
+
+
+# 系列赛编组与分析路由（V2.0）：独立关系实体，不走 studio 白名单。
+# 生产入口 server.py 只挂本模块的 router（见 _mount_v3），独立运行走 app；
+# 同一组路由在两处都注册，测试用隔离 FastAPI 时直接用工厂。
+def _scan_dataset_stamp():
+    """扫一遍对局包目录 + 数据库 mtime。"""
+    try:
+        count, latest = 0, 0.0
+        for path in MATCHES.glob('*.json'):
+            try:
+                latest = max(latest, path.stat().st_mtime)
+            except OSError:
+                continue
+            count += 1
+        matches = (count, round(latest, 3))
+    except OSError:
+        matches = (0, 0.0)
+    try:
+        db = round(DB.stat().st_mtime, 3) if DB.is_file() else 0.0
+    except OSError:
+        db = 0.0
+    return (matches, db)
+
+
+def _dataset_stamp():
+    """数据文件的廉价指纹（数量 + 最大 mtime），给跨局向量缓存做失效判断。
+
+    只在快照重建时算一次（15 秒一次），不用每次都扫全目录；比「每 15 秒清空
+    缓存」好：数据没变就继续命中，改了 bundle / 库才重算。
+
+    2 秒 TTL 是给「缓存命中」这条路径用的：命中时只剩指纹可比，而 396 个
+    文件逐个 stat 在本机要 40ms（资源盘 + 杀软过滤驱动），比很多接口本身的
+    计算还贵。写接口都会先调 invalidate_snapshot()/drop_stamp_caches()，
+    所以录入后第一次请求就能看到新数据，不会被 TTL 拖住。
+    """
+    return _ttl_stamp(_DATASET_STAMP_STATE, _scan_dataset_stamp)
+
+
+_STAMP_TTL = 2.0
+_DATASET_STAMP_STATE = {'at': float('-inf'), 'value': None}
+_CAMP_STAMP_STATE = {'path': None, 'at': float('-inf'), 'value': None}
+
+
+def _ttl_stamp(state, scan):
+    now = monotonic()
+    if now - state['at'] < _STAMP_TTL:
+        return state['value']
+    value = scan()
+    state.update(at=now, value=value)
+    return value
+
+
+def drop_stamp_caches():
+    """写操作后让目录指纹立刻重扫（否则目录 TTL 缓存会让新数据最多晚 2 秒）。"""
+    _DATASET_STAMP_STATE.update(at=float('-inf'), value=None)
+    _CAMP_STAMP_STATE.update(path=None, at=float('-inf'), value=None)
+
+
+_series_router = create_series_router(DB, {
+    'repo': lambda request: repository(request),
+    'vectors': _series_vectors,
+    # 列表 / 汇总按需只建已入组那几局的完整向量（at10 / 终局差仍可用）。
+    'vectors_for': _series_vectors_for,
+    # 编组建议与编组页 bootstrap 用轻量向量，0.1 秒级。
+    'builder_vectors': _series_builder_vectors,
+    # 编组页整包缓存用：廉价文件指纹，数据一变自动换 key。
+    'data_stamp': _dataset_stamp,
+    # 大场挖掘：全量单局完整向量，按对局包指纹缓存。
+    'corpus': _series_corpus,
+    'detail': _series_detail,
+})
+router.include_router(_series_router)
 
 _lock = Lock()
 _snapshot = None
@@ -142,59 +507,82 @@ def apply_bp_overrides(data):
 
 
 def invalidate_snapshot():
-    global _snapshot, _loaded_at
+    global _snapshot, _loaded_at, _snapshot_generation
     with _lock:
         _snapshot, _loaded_at = None, float('-inf')
-    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY'):
+        # 代际号：后台重建期间若被写接口作废，这次结果就可能是旧的，提交前丢弃。
+        _snapshot_generation += 1
+    for name in ('_CROSS_VECTOR_CACHE', '_CROSS_VECTOR_BY_KEY', '_PANORAMA_CACHE',
+                 '_POSITIONS_FILE_CACHE', '_CHANNELS_CACHE'):
         cache = globals().get(name)
         if cache is not None:
             cache.clear()
-
-
-def _dataset_stamp():
-    """数据文件的廉价指纹（数量 + 最大 mtime），给跨局向量缓存做失效判断。
-
-    只在快照重建时算一次（15 秒一次），不用每次都扫全目录；比「每 15 秒清空
-    缓存」好：数据没变就继续命中，改了 bundle / 库才重算。
-    """
-    try:
-        count, latest = 0, 0.0
-        for path in MATCHES.glob('*.json'):
-            try:
-                latest = max(latest, path.stat().st_mtime)
-            except OSError:
-                continue
-            count += 1
-        matches = (count, round(latest, 3))
-    except OSError:
-        matches = (0, 0.0)
-    try:
-        db = round(DB.stat().st_mtime, 3) if DB.is_file() else 0.0
-    except OSError:
-        db = 0.0
-    return (matches, db)
+    drop_stamp_caches()
 
 
 _data_stamp = (0, 0.0)
+_snapshot_generation = 0
+_refresh_lock = Lock()
+
+
+def _rebuild_snapshot():
+    """重建快照并提交。重建本身不持状态锁，撞上的请求拿旧快照先走。"""
+    global _snapshot, _loaded_at, _data_stamp
+    with _lock:
+        generation = _snapshot_generation
+    snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
+    data = snapshot.get()
+    apply_bp_overrides(data)
+    stamp = _dataset_stamp()
+    with _lock:
+        if generation != _snapshot_generation:
+            # 读盘期间有写操作作废了快照：这份可能是旧数据，直接丢弃，
+            # 让下一个请求重新读（写接口刚改的内容不会被旧快照盖回去）。
+            return
+        # 数据指纹进缓存 key：数据没变就命中旧向量，变了自然换 key。
+        # 只有指纹真的变了才清缓存（顺便回收旧指纹的条目），不会像
+        # 「每次快照刷新都清空」那样每 15 秒重算一遍全量向量。
+        if stamp != _data_stamp:
+            _CROSS_VECTOR_CACHE.clear()
+            _CROSS_VECTOR_BY_KEY.clear()
+            _PANORAMA_CACHE.clear()
+            _POSITIONS_FILE_CACHE.clear()
+            _data_stamp = stamp
+        _snapshot, _loaded_at = snapshot, monotonic()
+
+
+def _start_background_rebuild():
+    """后台重建快照（15 秒过期时用）：不阻塞当前请求，重建完自然切换。"""
+    if not _refresh_lock.acquire(blocking=False):
+        return False
+
+    def work():
+        try:
+            _rebuild_snapshot()
+        finally:
+            _refresh_lock.release()
+
+    Thread(target=work, daemon=True).start()
+    return True
 
 
 def repository(request: Request):
-    global _snapshot, _loaded_at, _data_stamp
-    with _lock:
-        if request.query_params.get('fresh') == '1' or monotonic() - _loaded_at >= 15:
-            snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
-            data = snapshot.get()
-            apply_bp_overrides(data)
-            _snapshot, _loaded_at = snapshot, monotonic()
-            # 数据指纹进缓存 key：数据没变就命中旧向量，变了自然换 key。
-            # 只有指纹真的变了才清缓存（顺便回收旧指纹的条目），不会像
-            # 「每次快照刷新都清空」那样每 15 秒重算一遍全量向量。
-            stamp = _dataset_stamp()
-            if stamp != _data_stamp:
-                _CROSS_VECTOR_CACHE.clear()
-                _CROSS_VECTOR_BY_KEY.clear()
-                _data_stamp = stamp
+    global _snapshot, _loaded_at
+    fresh = request.query_params.get('fresh') == '1'
+    if _snapshot is None:
+        # 冷启动 / 刚被写接口作废：快照不可用，必须等（约 1.8 秒）。
+        with _refresh_lock:
+            if _snapshot is None:
+                _rebuild_snapshot()
         return _snapshot
+    if fresh:
+        # 手动刷新（fresh=1）要的就是最新数据，同步重建；否则后台重建，
+        # 当前请求先用旧快照返回，避免每 15 秒有一个请求莫名慢 1.8 秒。
+        with _refresh_lock:
+            _rebuild_snapshot()
+    elif monotonic() - _loaded_at >= 15:
+        _start_background_rebuild()
+    return _snapshot
 
 
 def filters(request: Request):
@@ -218,20 +606,6 @@ def filters(request: Request):
     }
 
 
-@app.middleware('http')
-async def prevent_data_caching(request, call_next):
-    global _snapshot, _loaded_at
-    response = await call_next(request)
-    if request.method not in ('GET', 'HEAD', 'OPTIONS') and response.status_code < 400:
-        invalidate_snapshot()
-    # 静态资源也要禁用缓存：前端文件改动后，普通刷新就要能看到，不依赖强刷。
-    path = request.url.path
-    if path.startswith('/api/') or '/static/' in path or path == '/' or path.endswith('/v3/'):
-        response.headers['Cache-Control'] = 'no-store'
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    return response
-
-
 @router.get('/')
 def v3_index():
     return FileResponse(HERE / 'public' / 'index.html')
@@ -240,6 +614,233 @@ def v3_index():
 _CROSS_LANES = ('对抗路', '打野', '中路', '发育路', '游走')
 _CROSS_VECTOR_CACHE = {}
 _CROSS_VECTOR_BY_KEY = {}
+_CROSS_VECTOR_SCHEMA = 10
+_CROSS_VECTOR_DISK = DATA_DIR / '.cache' / 'cross-vectors.json'
+_CROSS_VECTOR_DISK_LOCK = Lock()
+_CROSS_VECTOR_DISK_STATE = {'loaded': False, 'entries': {}}
+
+
+def _cross_vector_cache_id(cache_key):
+    return json.dumps(cache_key, ensure_ascii=False, separators=(',', ':'))
+
+
+def _cross_vectors_disk_read(cache_key):
+    key = _cross_vector_cache_id(cache_key)
+    with _CROSS_VECTOR_DISK_LOCK:
+        state = _CROSS_VECTOR_DISK_STATE
+        if not state['loaded']:
+            state['loaded'] = True
+            try:
+                doc = json.loads(_CROSS_VECTOR_DISK.read_text(encoding='utf-8'))
+                entries = doc.get('entries') if isinstance(doc, dict) else None
+                if doc.get('version') == _CROSS_VECTOR_SCHEMA and isinstance(entries, dict):
+                    state['entries'] = entries
+            except (OSError, ValueError):
+                pass
+        payload = state['entries'].get(key)
+        return payload if isinstance(payload, dict) else None
+
+
+def _cross_vectors_disk_write(cache_key, payload):
+    key = _cross_vector_cache_id(cache_key)
+    with _CROSS_VECTOR_DISK_LOCK:
+        state = _CROSS_VECTOR_DISK_STATE
+        state['loaded'] = True
+        state['entries'][key] = payload
+        while len(state['entries']) > 3:
+            state['entries'].pop(next(iter(state['entries'])), None)
+        try:
+            _CROSS_VECTOR_DISK.parent.mkdir(parents=True, exist_ok=True)
+            tmp = _CROSS_VECTOR_DISK.with_suffix('.tmp')
+            tmp.write_text(json.dumps({'version': _CROSS_VECTOR_SCHEMA, 'entries': state['entries']},
+                                      ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+            os.replace(tmp, _CROSS_VECTOR_DISK)
+        except (OSError, TypeError, ValueError):
+            pass
+# 全景回放按局缓存：数据指纹没变就直接复用，replay 接口与跨局向量都从这里取。
+# 存的是 replay 端点输出的九字段子集（约 40–57KB/局），不存整包 positions。
+_PANORAMA_CACHE = {}
+# positions.json / raw.json 的解析缓存：文件 mtime 变了才重读。
+_POSITIONS_FILE_CACHE = {}
+
+
+_REPLAY_FIELDS = ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage',
+                  'notes', 'buffEvents', 'narrations')
+
+# 全景的磁盘缓存：build_panorama 单局约 350ms 且大头是逐秒坐标的纯计算，
+# 进程重启后内存缓存全空，首次进跨局页要重算两百多局（半分钟以上）。
+# 落盘一份九字段子集（每局几十 KB），按 bundle + 官方回放目录的 mtime 失效。
+_PANORAMA_DISK = DATA_DIR / '.cache' / 'panorama'
+_PANORAMA_DISK_FILE = _PANORAMA_DISK / 'all.json'
+# 全景九字段子集合成一个磁盘文件：294 个小文件逐个读写会被实时扫描拖慢
+# （实测每文件 100–200ms），单文件整存整取只扫一次。
+_panorama_disk_data = None                    # 惰性加载 {key: {'sig': mtime, 'replay': {...}}}
+_panorama_disk_dirty = False
+_panorama_disk_last_write = 0.0
+# build 互斥：miss 时只重建一次；缓存命中路径不进锁。并发重建曾让进程硬崩，
+# 这里也保证任何时刻至多一个 build 在跑。
+_PANORAMA_BUILD_LOCK = Lock()
+# channels 表的 body 可能几百 KB，逐局查询+解析不便宜：按代际缓存解析结果。
+_CHANNELS_CACHE = {}
+# positions 的最终输出（十人降采样点，每局两万上下）也按局缓存：构造要
+# 遍历全部点，跨局页每局都要取一次，没有缓存就是每批几十毫秒的重复劳动。
+_POSITIONS_OUT_CACHE = {}
+
+
+def _channel_camp(channel_id):
+    """采集通道里的营地源数据（gameSeq / 玩家名单），带代际缓存。"""
+    cached = _CHANNELS_CACHE.get(channel_id)
+    if cached is not None and cached[0] == _data_stamp:
+        return cached[1]
+    try:
+        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
+            row = connection.execute('SELECT body FROM channels WHERE id=?', (channel_id,)).fetchone()
+    except sqlite3.Error:
+        row = None
+    camp = {}
+    if row:
+        try:
+            channel = json.loads(row[0])
+            camp = (channel.get('sources') or {}).get('camp') or {}
+        except (ValueError, TypeError):
+            camp = {}
+    if len(_CHANNELS_CACHE) > 600:
+        _CHANNELS_CACHE.clear()
+    _CHANNELS_CACHE[channel_id] = (_data_stamp, camp)
+    return camp
+
+
+def _panorama_sig(key):
+    """缓存新鲜度指纹：bundle 文件 mtime。bundle 变了（重采 / 挂回放）才重建。"""
+    try:
+        return round((MATCHES / f'{key}.json').stat().st_mtime, 3)
+    except OSError:
+        return None
+
+
+def _panorama_disk_load():
+    global _panorama_disk_data
+    if _panorama_disk_data is None:
+        try:
+            data = json.loads(_PANORAMA_DISK_FILE.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            data = {}
+        _panorama_disk_data = data if isinstance(data, dict) else {}
+    return _panorama_disk_data
+
+
+def _panorama_from_disk(key):
+    sig = _panorama_sig(key)
+    if sig is None:
+        return None
+    entry = _panorama_disk_load().get(key)
+    if not isinstance(entry, dict) or entry.get('sig') != sig:
+        return None
+    body = entry.get('replay')
+    return body if isinstance(body, dict) else None
+
+
+def _panorama_to_disk(key, subset):
+    """更新磁盘缓存内容；实际写盘有 15 秒节流，攒一批 miss 合并写一次。"""
+    global _panorama_disk_dirty
+    sig = _panorama_sig(key)
+    if sig is None:
+        return
+    _panorama_disk_load()[key] = {'sig': sig, 'replay': subset}
+    _panorama_disk_dirty = True
+
+
+def _panorama_disk_flush():
+    """把攒下的全景缓存写回磁盘（有 15 秒节流，避免冷启动期间反复整写）。"""
+    global _panorama_disk_dirty, _panorama_disk_last_write
+    if not _panorama_disk_dirty:
+        return
+    now = monotonic()
+    if now - _panorama_disk_last_write < 15:
+        return
+    _panorama_disk_last_write = now
+    _panorama_disk_dirty = False
+    try:
+        _PANORAMA_DISK.mkdir(parents=True, exist_ok=True)
+        tmp = _PANORAMA_DISK_FILE.with_suffix('.tmp')
+        tmp.write_text(json.dumps(_panorama_disk_load(), ensure_ascii=False,
+                                  separators=(',', ':')), encoding='utf-8')
+        os.replace(tmp, _PANORAMA_DISK_FILE)
+    except (OSError, TypeError, ValueError):
+        pass                                  # 磁盘缓存失败不影响主流程
+
+
+def _panorama_cached(key):
+    """全景回放按局缓存：内存一次命中，磁盘跨重启复用，miss 才重建。
+
+    build_panorama 单次约 350ms（读 bundle、规范化事件、逐秒位置分析），
+    跨局页每局都要取一次，没缓存时 200 局就是半分钟以上的重复计算。
+    """
+    cached = _PANORAMA_CACHE.get(key)
+    if cached is not None and cached[0] == _data_stamp:
+        return cached[1]
+    with _PANORAMA_BUILD_LOCK:
+        # 拿到锁后再查一次：刚才等锁期间别的线程可能已经把这局建好。
+        cached = _PANORAMA_CACHE.get(key)
+        if cached is not None and cached[0] == _data_stamp:
+            return cached[1]
+        subset = _panorama_from_disk(key)
+        if subset is None:
+            result = panorama.get(key)
+            if result is None:
+                return None
+            subset = {name: result[name] for name in _REPLAY_FIELDS if name in result}
+            _panorama_to_disk(key, subset)
+        if len(_PANORAMA_CACHE) > 600:
+            _PANORAMA_CACHE.clear()
+        _PANORAMA_CACHE[key] = (_data_stamp, subset)
+        _panorama_disk_flush()
+        return subset
+
+
+def _panorama_prewarm():
+    """后台预热全景缓存：启动后逐局构建并落盘，教练首次进跨局页不再撞冷启动。
+
+    单线程串行、与请求共享 build 锁：预热期间教练正常使用，最多为一局的
+    重建等几百毫秒。失败静默，预热不是正确性的前提。
+    """
+    time.sleep(45)                            # 让启动期的快照重建 / 巅峰刷新先跑
+    if IS_DEMO or not MATCHES.is_dir():
+        return
+    try:
+        snapshot = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
+        keys = [m['key'] for m in snapshot.get().get('matches') or [] if m.get('key')]
+    except Exception:                         # noqa: BLE001
+        return
+    for key in keys:
+        try:
+            _panorama_cached(key)
+        except Exception:                     # noqa: BLE001
+            continue
+
+
+Thread(target=_panorama_prewarm, daemon=True).start()
+
+
+def _series_page_prewarm():
+    """启动后预热编组页：轻量向量依赖仓库快照，先建好，首次进页不再等 3–4 秒。"""
+    time.sleep(6)
+    try:
+        if _snapshot is None or monotonic() - _loaded_at >= 15:
+            got = _refresh_lock.acquire(blocking=False)
+            if got:
+                try:
+                    _rebuild_snapshot()
+                finally:
+                    _refresh_lock.release()
+        snapshot = _snapshot
+        if snapshot is not None:
+            _series_builder_vectors(snapshot)
+    except Exception:                         # noqa: BLE001 - 预热不是正确性前提
+        pass
+
+
+Thread(target=_series_page_prewarm, daemon=True).start()
 
 
 def _cross_interp(series, t):
@@ -314,41 +915,200 @@ def _cross_vector(repo, item, segments=8):
     # 资源 / 推塔 / 死亡 / 团战 / BUFF / 切 C：读回放聚合；没有回放的局留 None，不补 0
     obj = {'dragonOwn': None, 'dragonFoe': None, 'towerOwn': None, 'towerFoe': None}
     death = {'own': None, 'foe': None}
-    fight = {'n': None, 'win': None}
-    buff = {'anti': None, 'stolen': None}
-    cut = {'n': None, 'first': None}
+    fight = {'n': None, 'win': None, 'decidedN': None, 'decidedWin': None}
+    # 反野按 BUFF 颜色拆开：教练要看「红被反几个、蓝被反几个」，不只一个总数。
+    buff = {'anti': None, 'stolen': None, 'antiRed': None, 'antiBlue': None,
+            'stolenRed': None, 'stolenBlue': None}
+    # 切 C 拆成「打野切 / 对抗路切 / 被切」：教练要问的是打野切了几次，
+    # 一个笼统的 cut.n 看不出是谁干的。
+    cut = {'n': None, 'first': None, 'jungle': None, 'top': None, 'suffered': None}
+    # 中立资源按类型拆开：暴君 / 主宰 / 暗影暴君 / 暗影主宰 / 风暴龙王，
+    # 四种龙的价值完全不同，不能只给一个「龙」总数。
+    obj_types = None
+    # 一血 / 一龙 / 一塔与 10 分钟前的资源量：跨局「前期节奏」分析要用，
+    # 但只在有回放的局里成立；没有回放保持 None，不补 0。
+    first = None
+    obj_at10 = None
     fk = None
     fs = None
     try:
-        replay = panorama.get(d.get('bundleKey') or '') if d.get('bundleKey') else None
+        replay = _panorama_cached(d.get('bundleKey') or '') if d.get('bundleKey') else None
     except Exception:                                  # noqa: BLE001
         replay = None
     if replay:
         other = 'red' if camp == 'blue' else 'blue'
         events = [e for e in (replay.get('events') or []) if isinstance(e, dict)]
-        dragons = [e for e in events if e.get('name') in ('暴君', '暗影暴君', '暗影主宰', '主宰', '风暴龙王')]
-        towers = [e for e in events if e.get('name') in ('防御塔', '水晶')]
-        obj['dragonOwn'] = sum(1 for e in dragons if e.get('killerCamp') == camp)
-        obj['dragonFoe'] = sum(1 for e in dragons if e.get('killerCamp') == other)
-        obj['towerOwn'] = sum(1 for e in towers if e.get('killerCamp') == camp)
-        obj['towerFoe'] = sum(1 for e in towers if e.get('killerCamp') == other)
+        raw_dragons = [e for e in events if e.get('name') in
+                       ('暴君', '暗影暴君', '暗影主宰', '主宰', '风暴龙王')]
+        raw_towers = [e for e in events if e.get('name') in ('防御塔', '水晶')]
+        # 同一座建筑在回放事件里会出现多次「摧毁」记录（多路伤害 / 重复采集），
+        # 直接按事件数会得出「一局推了 39 座塔」。按 (击杀方, 建筑 id) 去重，
+        # 只认最早一次；水晶不算推塔。任何建筑重复超过 6 次视为这份回放的
+        # 事件流不可信，塔数记 None，前端显示「回放异常」而不是假数字。
+        tower_index, tower_repeat, crystal = {}, 0, None
+        for event in raw_towers:
+            seconds = event.get('t')
+            if not isinstance(seconds, (int, float)):
+                continue
+            if event.get('name') == '水晶':
+                if crystal is None or seconds < crystal['t']:
+                    crystal = event
+                continue
+            identity = (event.get('killerCamp'), str(event.get('id')))
+            tower_index.setdefault(identity, []).append(seconds)
+        for times in tower_index.values():
+            tower_repeat = max(tower_repeat, len(times))
+        towers_known = tower_repeat <= 6 and bool(tower_index or crystal)
+        towers = [{'t': min(times), 'killerCamp': identity[0]}
+                  for identity, times in tower_index.items()] if towers_known else []
+        if crystal and towers_known:
+            towers.append({'t': crystal['t'], 'killerCamp': crystal.get('killerCamp')})
+        dragon_index = {}
+        for event in raw_dragons:
+            seconds = event.get('t')
+            if not isinstance(seconds, (int, float)):
+                continue
+            name = str(event.get('name') or '中立资源')
+            dragon_index[(event.get('killerCamp'), str(event.get('id')), round(seconds))] = (seconds, name)
+        dragons = [{'t': seconds, 'killerCamp': identity[0], 'name': name}
+                   for identity, (seconds, name) in dragon_index.items()]
+        dragons_known = bool(dragons) or bool((replay.get('coverage') or {}).get('resources'))
+        side_of = lambda c: 'own' if c == camp else 'foe' if c == other else None
+        tower_events, dragon_events = towers, dragons
+
+        def first_of(rows):
+            timed = [x for x in rows if isinstance(x.get('t'), (int, float))]
+            return min(timed, key=lambda x: x['t']) if timed else None
+
+        first_dragon = first_of(dragons)
+        first_tower = first_of(towers)
+        first_blood = first_of([k for k in (replay.get('kills') or []) if isinstance(k, dict)])
+        first = {
+            'bloodT': round(float(first_blood['t']), 1) if first_blood else None,
+            'bloodSide': side_of(first_blood.get('killerCamp')) if first_blood else None,
+            'dragonT': round(float(first_dragon['t']), 1) if first_dragon else None,
+            'dragonSide': side_of(first_dragon.get('killerCamp')) if first_dragon else None,
+            'dragonName': first_dragon.get('name') if first_dragon else None,
+            'towerT': round(float(first_tower['t']), 1) if first_tower else None,
+            'towerSide': side_of(first_tower.get('killerCamp')) if first_tower else None,
+        }
+        early_dragons = [e for e in dragons if isinstance(e.get('t'), (int, float)) and e['t'] <= 600]
+        early_towers = [e for e in towers if isinstance(e.get('t'), (int, float)) and e['t'] <= 600]
+        obj_at10 = {
+            'dragonOwn': sum(1 for e in early_dragons if e.get('killerCamp') == camp) if dragons_known else None,
+            'dragonFoe': sum(1 for e in early_dragons if e.get('killerCamp') == other) if dragons_known else None,
+            'towerOwn': sum(1 for e in early_towers if e.get('killerCamp') == camp) if towers_known else None,
+            'towerFoe': sum(1 for e in early_towers if e.get('killerCamp') == other) if towers_known else None,
+        }
+        obj['dragonOwn'] = sum(1 for e in dragons if e.get('killerCamp') == camp) if dragons_known else None
+        obj['dragonFoe'] = sum(1 for e in dragons if e.get('killerCamp') == other) if dragons_known else None
+        obj['towerOwn'] = sum(1 for e in towers if e.get('killerCamp') == camp) if towers_known else None
+        obj['towerFoe'] = sum(1 for e in towers if e.get('killerCamp') == other) if towers_known else None
         deaths = [x for x in (replay.get('deaths') or []) if isinstance(x, dict)]
         death['own'] = sum(1 for x in deaths if x.get('camp') == camp)
         death['foe'] = sum(1 for x in deaths if x.get('camp') == other)
         fights = [f for f in (replay.get('fights') or []) if isinstance(f, dict)]
         fight['n'] = len(fights)
         fight['win'] = sum(1 for f in fights if (f.get(camp) or 0) > (f.get(other) or 0))
+        # 零击杀团不进胜率分母：跨局页的团战胜率以「有击杀的团」为分母，
+        # 否则拉扯/试探团会被算成未胜，拉低所有局的团战胜率。
+        decided = [f for f in fights if (f.get(camp) or 0) + (f.get(other) or 0) > 0]
+        fight['decidedN'] = len(decided)
+        fight['decidedWin'] = sum(1 for f in decided if (f.get(camp) or 0) > (f.get(other) or 0))
+        # 分阶段资源与团战：教练按 0–4′ / 4–10′ / 10′+ 三段问「这段拿了什么」，
+        # 只有带时间戳的回放能拆；没有回放的局保持整块 None，不补 0。
+        phase_of = lambda t: ('early' if t < 240 else 'mid' if t < 600 else 'late') \
+            if isinstance(t, (int, float)) else None
+        obj_phase = {p: {'dragonOwn': 0 if dragons_known else None,
+                         'dragonFoe': 0 if dragons_known else None,
+                         'towerOwn': 0 if towers_known else None,
+                         'towerFoe': 0 if towers_known else None}
+                     for p in ('early', 'mid', 'late')}
+        for event in dragon_events:
+            if not dragons_known:
+                break
+            phase = phase_of(event.get('t'))
+            if not phase:
+                continue
+            if event.get('killerCamp') == camp:
+                obj_phase[phase]['dragonOwn'] += 1
+            elif event.get('killerCamp') == other:
+                obj_phase[phase]['dragonFoe'] += 1
+        for event in tower_events:
+            if not towers_known:
+                break
+            phase = phase_of(event.get('t'))
+            if not phase:
+                continue
+            if event.get('killerCamp') == camp:
+                obj_phase[phase]['towerOwn'] += 1
+            elif event.get('killerCamp') == other:
+                obj_phase[phase]['towerFoe'] += 1
+        fight_phase = {p: {'n': 0, 'decidedN': 0, 'win': 0, 'decidedWin': 0}
+                       for p in ('early', 'mid', 'late')}
+        for f in fights:
+            phase = phase_of(f.get('t'))
+            if not phase:
+                continue
+            cell = fight_phase[phase]
+            cell['n'] += 1
+            if (f.get(camp) or 0) + (f.get(other) or 0) > 0:
+                cell['decidedN'] += 1
+                if (f.get(camp) or 0) > (f.get(other) or 0):
+                    cell['decidedWin'] += 1
+            if (f.get(camp) or 0) > (f.get(other) or 0):
+                cell['win'] += 1
         buffs = [b for b in (replay.get('buffEvents') or []) if isinstance(b, dict)]
         buff['anti'] = sum(1 for b in buffs if b.get('owner') == other and b.get('killer') == camp)
         buff['stolen'] = sum(1 for b in buffs if b.get('owner') == camp and b.get('killer') == other)
+        is_blue = lambda b: '蓝' in str(b.get('name') or '')
+        buff['antiBlue'] = sum(1 for b in buffs if b.get('owner') == other and b.get('killer') == camp and is_blue(b))
+        buff['antiRed'] = sum(1 for b in buffs if b.get('owner') == other and b.get('killer') == camp and not is_blue(b))
+        buff['stolenBlue'] = sum(1 for b in buffs if b.get('owner') == camp and b.get('killer') == other and is_blue(b))
+        buff['stolenRed'] = sum(1 for b in buffs if b.get('owner') == camp and b.get('killer') == other and not is_blue(b))
+        # 分阶段反野：教练问「这一段反了几个红/蓝」，按事件时间归到三段。
+        buff_phase = {p: {'antiRed': 0, 'antiBlue': 0, 'stolenRed': 0, 'stolenBlue': 0}
+                      for p in ('early', 'mid', 'late')}
+        for b in buffs:
+            phase = phase_of(b.get('t'))
+            if not phase:
+                continue
+            is_blue = '蓝' in str(b.get('name') or '')
+            if b.get('owner') == other and b.get('killer') == camp:
+                buff_phase[phase]['antiBlue' if is_blue else 'antiRed'] += 1
+            elif b.get('owner') == camp and b.get('killer') == other:
+                buff_phase[phase]['stolenBlue' if is_blue else 'stolenRed'] += 1
         kills = [k for k in (replay.get('kills') or []) if isinstance(k, dict)]
         pos_of = {p.get('hero'): p.get('position') for p in (d.get('players') or []) if p.get('hero')}
-        cut['n'] = sum(
+
+        def cut_count(killer_positions):
+            return sum(
+                1 for k in kills
+                if k.get('killerCamp') == camp
+                and pos_of.get(k.get('killer')) in killer_positions
+                and pos_of.get(k.get('victim')) in ('中路', '发育路')
+            )
+
+        cut['n'] = cut_count(('对抗路', '打野'))
+        cut['jungle'] = cut_count(('打野',))
+        cut['top'] = cut_count(('对抗路',))
+        cut['suffered'] = sum(
             1 for k in kills
-            if k.get('killerCamp') == camp
+            if k.get('killerCamp') == other
             and pos_of.get(k.get('killer')) in ('对抗路', '打野')
             and pos_of.get(k.get('victim')) in ('中路', '发育路')
         )
+        # 中立资源分类型：只统计回放里真正出现的类型；没有出现的类型不补 0，
+        # 避免前端把「这场没打风暴龙王」当成「0 条」。
+        if dragons_known:
+            obj_types = {}
+            for event in dragons:
+                name = str(event.get('name') or '中立资源')
+                cell = obj_types.setdefault(name, {'own': 0, 'foe': 0})
+                if event.get('killerCamp') == camp:
+                    cell['own'] += 1
+                elif event.get('killerCamp') == other:
+                    cell['foe'] += 1
         if kills:
             first_kill = min(kills, key=lambda k: k.get('t') or 0)
             cut['first'] = 1 if first_kill.get('killerCamp') == camp else 0
@@ -361,11 +1121,18 @@ def _cross_vector(repo, item, segments=8):
             ours, theirs = people[camp], people[other]
             if not ours and not theirs:
                 continue
+            # 零击杀的拉扯团不进分桶分母：跨局页的团战分桶只回答「打起来的团赢没赢」。
+            kills_total = (f.get(camp) or 0) + (f.get(other) or 0)
+            if kills_total <= 0:
+                continue
             won = (f.get(camp) or 0) > (f.get(other) or 0)
-            key = 'adv' if ours > theirs else 'dis' if ours < theirs else 'even'
-            buckets[key]['n'] += 1
+            # 注意：这里不能用 key（外层 key 是对局 match_key，最后要进 vector），
+            # 改名 bucket。此前覆盖曾让 330/386 个有团战回放的向量 key 变成
+            # adv/even/dis，跨局分析按局链接与系列赛索引全部错位（2026-11-14 修复）。
+            bucket = 'adv' if ours > theirs else 'dis' if ours < theirs else 'even'
+            buckets[bucket]['n'] += 1
             if won:
-                buckets[key]['win'] += 1
+                buckets[bucket]['win'] += 1
             first_side = f.get('first')
             if first_side == camp:
                 buckets['first']['n'] += 1
@@ -395,8 +1162,10 @@ def _cross_vector(repo, item, segments=8):
                 cell['n'] += 1
         fs = {pos: {'hurtShare': round(v['h'] / v['n'], 3), 'takenShare': round(v['t'] / v['n'], 3), 'n': v['n']}
               for pos, v in acc.items() if v['n']}
-    # 打野过河：0–10 分钟逐秒坐标，e>8 算过河、e>25 算深入（口径见 README.md）
-    jungle = {'crossSec': None, 'crossShare': None, 'firstCross': None, 'deepShare': None}
+    # 打野过河：0–10 分钟逐秒坐标，e>8 算过河、e>25 算深入（口径见 docs/jungle_position_spec.md）
+    # 双方各算一份：翻到「敌方视角」时野区不该是空的，对面打野的坐标同样在 positions.json 里。
+    jungle = {'crossSec': None, 'crossShare': None, 'firstCross': None, 'deepSec': None, 'deepShare': None}
+    jungle_foe = {'crossSec': None, 'crossShare': None, 'firstCross': None, 'deepSec': None, 'deepShare': None}
     replay_id = _safe_key((d.get('officialReplay') or {}).get('id'))
     if replay_id:
         pos_path = OFFICIAL / replay_id / 'positions.json'
@@ -406,23 +1175,39 @@ def _cross_vector(repo, item, segments=8):
                 slots = (json.loads(pos_path.read_text(encoding='utf-8')) or {}).get('players') or []
             except (OSError, ValueError):
                 slots = []
-        jungle_idx = None
-        for i, p in enumerate(d.get('players') or []):
-            if p.get('camp') == camp and p.get('position') == '打野':
-                jungle_idx = i
-                break
-        if jungle_idx is not None and jungle_idx < len(slots):
-            arr = slots[jungle_idx].get('posArr') or []
-            facing = 1 if camp == 'blue' else -1
+
+        def jungle_of(side_camp):
+            if not side_camp:
+                return jungle
+            idx = None
+            for i, p in enumerate(d.get('players') or []):
+                if p.get('camp') == side_camp and p.get('position') == '打野':
+                    idx = i
+                    break
+            if idx is None or idx >= len(slots):
+                return None
+            arr = (slots[idx] or {}).get('posArr') or []
+            facing = 1 if side_camp == 'blue' else -1
             e_vals = [(q[0] + q[1]) / 2.0 * facing for q in arr[:600]
                       if isinstance(q, (list, tuple)) and len(q) >= 2]
-            if e_vals:
-                cross_sec = sum(1 for v in e_vals if v > 8)
-                deep = sum(1 for v in e_vals if v > 25)
-                jungle['crossSec'] = cross_sec
-                jungle['crossShare'] = round(cross_sec / len(e_vals), 3)
-                jungle['deepShare'] = round(deep / len(e_vals), 3)
-                jungle['firstCross'] = next((i for i, v in enumerate(e_vals) if v > 8), None)
+            if not e_vals:
+                return None
+            cross_sec = sum(1 for v in e_vals if v > 8)
+            deep = sum(1 for v in e_vals if v > 25)
+            return {
+                'crossSec': cross_sec,
+                'crossShare': round(cross_sec / len(e_vals), 3),
+                'deepSec': deep,
+                'deepShare': round(deep / len(e_vals), 3),
+                'firstCross': next((i for i, v in enumerate(e_vals) if v > 8), None),
+            }
+
+        own_jungle = jungle_of(camp)
+        if own_jungle:
+            jungle = own_jungle
+        foe_jungle = jungle_of('red' if camp == 'blue' else 'blue')
+        if foe_jungle:
+            jungle_foe = foe_jungle
 
     players = d.get('players') or []
     own = [p for p in players if p.get('camp') == camp]
@@ -448,13 +1233,34 @@ def _cross_vector(repo, item, segments=8):
             'camp': p.get('camp'),
             'pos': p.get('position') or '',
             'hero': p.get('hero') or '',
+            'arch': hero_archetypes.archetype_of(p.get('hero') or '', p.get('position')) if p.get('hero') else '',
+            # 该分路没登记类型时的兜底：英雄默认分路的类型（前端只在「类型分布」里用，
+            # 不写回逐局类型口径）。这样跨局页不再出现「待分类」这种词。
+            'archDefault': hero_archetypes.archetype_of(p.get('hero') or '') if p.get('hero') else '',
             'k': p.get('kills'), 'd': p.get('deaths'), 'a': p.get('assists'),
             'gpm': round(number(p.get('gold')) / minutes, 1) if minutes and p.get('gold') is not None else None,
             'dpm': round(number(p.get('damage')) / minutes, 1) if minutes and p.get('damage') is not None else None,
             'part': p.get('participation'),
+            # 赛后选手执行还要承伤/控制/推塔：游走不看经济与输出，改看承伤；
+            # 对抗路同时看承伤。分均量统一用分钟折算，营地原值保持整数。
+            'tpm': round(number(p.get('taken')) / minutes, 1) if minutes and p.get('taken') is not None else None,
+            'ctrl': p.get('control'),
+            'ctrlpm': round(number(p.get('control')) / minutes, 1) if minutes and p.get('control') is not None else None,
+            'heal': round(number(p.get('healing')) / minutes, 1) if minutes and p.get('healing') is not None else None,
+            'twr': round(number(p.get('towerDamage')) / minutes, 1) if minutes and p.get('towerDamage') is not None else None,
+            'rating': p.get('rating'),
         })
     bp = d.get('campBp') or {}
     bans = [x.get('name') for side in ('left', 'right') for x in ((bp.get('bans') or {}).get(side) or []) if x.get('name')]
+    # 双方 ban 拆分：只有营地明确给出 ownSide 时才拆，缺了就留 None，不猜边。
+    own_side = str(bp.get('ownSide') or '').strip().lower()
+    foe_side = 'right' if own_side == 'left' else 'left' if own_side == 'right' else ''
+    bans_own = ([x.get('name') for x in ((bp.get('bans') or {}).get(own_side) or []) if x.get('name')]
+                if foe_side else None)
+    bans_foe = ([x.get('name') for x in ((bp.get('bans') or {}).get(foe_side) or []) if x.get('name')]
+                if foe_side else None)
+    comp_own = hero_capabilities.functional_tags(heroes) or None
+    comp_foe = hero_capabilities.functional_tags(heroes_foe) or None
     scores = d.get('scores') or {}
     kill_own, kill_foe = scores.get(camp), scores.get('red' if camp == 'blue' else 'blue')
     start_text = str(bp.get('startTime') or '')
@@ -467,23 +1273,57 @@ def _cross_vector(repo, item, segments=8):
         'session': d.get('session') or item.get('session') or '',
         'version': d.get('version') or item.get('version') or '',
         'opponent': d.get('opponent') or item.get('opponent') or '',
+        'opponentTeamId': d.get('opponentTeamId') or item.get('opponentTeamId') or '',
         'result': d.get('result') or item.get('result') or '',
         'duration': duration, 'camp': camp,
         'at10': g[2], 'finalDiff': final, 'g': g, 'w': w, 's': shape,
         'at4': round(at4, 1) if at4 is not None else None,
-        'seg': seg, 'ecoPoints': len(econ),
-        'obj': obj, 'death': death, 'fight': fight, 'buff': buff,
-        'cut': cut, 'fk': fk, 'jungle': jungle,
+        'seg': seg,
+        'obj': obj, 'objTypes': obj_types, 'death': death, 'fight': fight, 'buff': buff,
+        'objPhase': obj_phase if replay else None,
+        'fightPhase': fight_phase if replay else None,
+        'buffPhase': buff_phase if replay else None,
+        'objKnown': {'dragon': dragons_known, 'tower': towers_known} if replay else None,
+        'cut': cut, 'fk': fk, 'jungle': jungle, 'jungleFoe': jungle_foe,
+        'first': first, 'objAt10': obj_at10,
         'pl': pl, 'fs': fs,
         'killsOwn': kill_own, 'killsFoe': kill_foe,
         'lanes': lanes, 'heroes': heroes, 'heroesFoe': heroes_foe, 'bans': bans,
+        'bansOwn': bans_own, 'bansFoe': bans_foe,
+        'compOwn': comp_own, 'compFoe': comp_foe,
+        # 覆盖标记：有回放才有事件 / 位置类分析；经济点位数决定过程曲线可不可用。
+        'hasReplay': bool(replay), 'ecoPoints': len(econ),
     }
     _CROSS_VECTOR_BY_KEY[cache_id] = vector
     return vector
 
 
+_SERIES_INDEX_CACHE = {'stamp': None, 'map': {}}
+
+
+def _cross_series_index():
+    """match_key → 所属系列赛 {seriesId, bestOf, gameIndex, seriesStart}。
+
+    跨局分析按 BO3/5/7 与局序筛选要这层关系；系列赛编组写入库即失效
+    （按 sqlite mtime），没有编组表时返回空字典，页面按「未编组」处理。
+    """
+    try:
+        stamp = DB.stat().st_mtime if DB.is_file() else 0.0
+    except OSError:
+        stamp = 0.0
+    if _SERIES_INDEX_CACHE['stamp'] == stamp:
+        return _SERIES_INDEX_CACHE['map']
+    try:
+        import workspace_store
+        mapping = workspace_store.Workspace(DB).ensure_schema().series_index()
+    except Exception:  # noqa: BLE001 - 编组数据异常不应拖垮跨局分析
+        mapping = {}
+    _SERIES_INDEX_CACHE.update(stamp=stamp, map=mapping)
+    return mapping
+
+
 @router.get('/api/cross/vectors')
-def cross_vectors(repo=Depends(repository), values=Depends(filters)):
+def cross_vectors(request: Request, values=Depends(filters)):
     """全量对局的轻量指标向量，供通用跨局分析一次取回。
 
     每局只带聚合需要的标量（经济检查点、5 分钟净增、分路分均差、阵容、
@@ -491,35 +1331,70 @@ def cross_vectors(repo=Depends(repository), values=Depends(filters)):
     /api/matches/{key} 按需取。局数上万时这里应换成预聚合表／物化视图，
     接口契约（向量字段）保持不变，前端分析内核无需改动。
     """
-    items = repo.matches(values)['matches']
-    max_duration = max((float(i.get('duration') or 0) for i in items), default=0.0)
-    segments = max(4, min(16, int(max_duration // 300) + 1)) if max_duration else 8
-    cache_key = (_data_stamp, tuple(i['key'] for i in items), values['from'], values['to'],
-                 tuple(values['sources']), values['excludeSeeds'], segments)
-    hit = _CROSS_VECTOR_CACHE.get(cache_key)
-    if hit is not None:
-        return hit
-    vectors = [v for v in (_cross_vector(repo, item, segments) for item in items) if v]
-    payload = {'total': len(items), 'vectors': vectors, 'unit': 'cohort-vectors-v1',
-               'segments': segments, 'windowMin': 5}
-    if len(_CROSS_VECTOR_CACHE) > 4:
-        _CROSS_VECTOR_CACHE.clear()
-    _CROSS_VECTOR_CACHE[cache_key] = payload
-    return payload
+    # 先查内存 / 磁盘：命中时连仓库快照都不建，跨局页重启后也不再等 5 秒重建。
+    cache_key = (_CROSS_VECTOR_SCHEMA, _cross_data_stamp(),
+                 values['from'], values['to'], tuple(values['sources']),
+                 values['excludeSeeds'], values['hero'], values['opponent'], values['ownOnly'])
+    payload = _CROSS_VECTOR_CACHE.get(cache_key)
+    if payload is None:
+        payload = _cross_vectors_disk_read(cache_key)
+        if payload is not None:
+            _CROSS_VECTOR_CACHE[cache_key] = payload
+    if payload is None:
+        repo = repository(request)
+        items = repo.matches(values)['matches']
+        max_duration = max((float(i.get('duration') or 0) for i in items), default=0.0)
+        segments = max(4, min(16, int(max_duration // 300) + 1)) if max_duration else 8
+        # 注：试过线程池并行构建（各局独立、纯读），但在 Windows 上会让进程
+        # 硬崩（无 Python 异常，疑似底层库非线程安全），保持串行——冷启动靠
+        # panorama 按局缓存与 _find_bundle 直取提速，且前端向量一到就先渲染。
+        vectors = [v for v in (_cross_vector(repo, item, segments) for item in items) if v]
+        payload = {'total': len(items), 'vectors': vectors, 'unit': 'cohort-vectors-v1',
+                   'segments': segments, 'windowMin': 5}
+        if len(_CROSS_VECTOR_CACHE) > 4:
+            _CROSS_VECTOR_CACHE.clear()
+        _CROSS_VECTOR_CACHE[cache_key] = payload
+        _cross_vectors_disk_write(cache_key, payload)
+    # 系列赛关系不进缓存：编组一变就要立刻反映到赛制 / 局序筛选项上，
+    # 这里对每局做一次 dict 拷贝再贴字段（几百局的拷贝成本可以忽略）。
+    series = _cross_series_index()
+    if series:
+        payload = dict(payload, vectors=[
+            dict(v, **series[str(v.get('key') or '')]) if str(v.get('key') or '') in series else v
+            for v in payload['vectors']])
+    # 直接 dumps 返回：绕过 jsonable_encoder（vector 数量上千字段时明显慢）。
+    return Response(content=json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                    media_type='application/json')
+
+
+def json_response(payload):
+    """直接 dumps 返回，绕过 FastAPI 的 jsonable_encoder。
+
+    默认返回 dict 时 FastAPI 会递归重建整个响应对象（只为把类型转成 JSON），
+    0.5–1.4 MB 的分析结果要多花 60–150ms；cross/vectors、cross/window 早就是
+    这么做的。只用于本身就是纯 JSON 结构（dict/list/str/number/bool/None）的载荷。
+    """
+    return Response(content=json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                    media_type='application/json')
 
 
 @router.get('/api/overview')
 def overview(repo=Depends(repository), values=Depends(filters)):
     summary = repo.overview(values)
-    matches = sorted(repo.matches(values)['matches'], key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    matches = sorted(repo.matches(values)['matches'], key=lambda item: (bool(item.get('date')), item.get('date') or '', item.get('startTime') or ''), reverse=True)
     process = repo.process(values)
-    process['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
-    return {
+    process['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or '', item.get('startTime') or ''), reverse=True)
+    # 十分钟领先兑现：process 已算好 leadAt10 / win
+    led = sum(1 for g in (process.get('matches') or []) if g.get('leadAt10'))
+    won = sum(1 for g in (process.get('matches') or []) if g.get('leadAt10') and g.get('win'))
+    if led:
+        summary['tenMinLead'] = f'{won}/{led}'
+    return json_response({
         'summary': {key: value for key, value in summary.items() if key != 'profile'},
         'team': repo.team_stats(values),
         'matches': matches,
         'process': process,
-    }
+    })
 
 
 @router.get('/api/matches')
@@ -535,7 +1410,7 @@ def matches(repo=Depends(repository), values=Depends(filters)):
                 item['version'] = versions[item['key']]
     except sqlite3.Error:
         pass
-    result['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or ''), reverse=True)
+    result['matches'].sort(key=lambda item: (bool(item.get('date')), item.get('date') or '', item.get('startTime') or ''), reverse=True)
     return result
 
 
@@ -544,7 +1419,11 @@ def match(key: str, repo=Depends(repository)):
     detail = repo.match_detail(key)
     if detail is None:
         raise HTTPException(404, '找不到该局对战记录')
-    detail['draft'] = merge_bp_sources(detail.get('bp'), detail.get('campBp'), detail)
+    # 营地名单 + 页面手工顺序 / 已核验逐手事件 / 默认训练赛推定。
+    detail['draft'] = merge_bp_sources(detail.get('bp'), detail.get('campBp'), detail,
+                                       events=camp_draft_events(detail),
+                                       order=camp_bp_order(detail),
+                                       assume_scrim=True)
     # 营地十人面板的派生卡片（视野价值 / 经济转有效伤害 / 反野总经济 / 控龙 / 勾中）。
     # 这些字段一直在 camp_details 里，只是从没被读出来过。缺失就不写，前端据此留空。
     camp_tiles.attach(detail, MATCHES.parent / 'camp_details')
@@ -563,16 +1442,187 @@ def match(key: str, repo=Depends(repository)):
     return detail
 
 
+@router.get('/api/v3/versions')
+def version_records():
+    """赛训版本记录：版本名 + 起止日期。
+
+    教练在这里填 S40 / S41 各自的时间段；对局本身带日期，前端据此把每局
+    归到版本里，不用再一局一局手填版本。
+    """
+    return {'schema': VERSIONS_SCHEMA, 'versions': _read_version_records()}
+
+
+@router.post('/api/v3/versions')
+def save_version_records(value: dict = Body(...)):
+    """整表覆盖保存（前端一次提交「版本名 / 开始 / 结束」全部行）。"""
+    rows = value.get('versions')
+    if not isinstance(rows, list):
+        raise HTTPException(400, 'versions 必须是数组')
+    if len(rows) > 40:
+        raise HTTPException(400, '最多 40 条版本记录')
+    cleaned, seen = [], set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        if len(name) > 20:
+            raise HTTPException(400, f'版本名过长：{name[:20]}…')
+        if name in seen:
+            raise HTTPException(400, f'版本名重复：{name}')
+        seen.add(name)
+        start = _iso_day(row.get('start'))
+        end = _iso_day(row.get('end'))
+        if start and end and start > end:
+            raise HTTPException(400, f'{name} 的结束日期早于开始日期')
+        cleaned.append({'name': name, 'start': start, 'end': end})
+    # 有开始日期的按日期排，没填日期的放最后，顺序稳定（页面直接按这个顺序显示）
+    cleaned.sort(key=lambda item: (item['start'] or '9999-99-99', item['name']))
+    payload = {'schema': VERSIONS_SCHEMA, 'versions': cleaned, 'updatedAt': int(time.time())}
+    path = DATA_DIR / 'versions.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix('.json.tmp')
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding='utf-8')
+    tmp.replace(path)
+    return payload
+
+
+def _iso_day(value):
+    """只接受 YYYY-MM-DD；空值表示不限（开区间）。"""
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    match = re.fullmatch(r'(\d{4})-(\d{2})-(\d{2})', text)
+    if not match:
+        raise HTTPException(400, f'日期格式应为 YYYY-MM-DD：{text}')
+    try:
+        date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+    except ValueError:
+        raise HTTPException(400, f'日期不存在：{text}') from None
+    return text
+
+
+def _read_version_records():
+    path = DATA_DIR / 'versions.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return []
+    rows = payload.get('versions') if isinstance(payload, dict) else payload
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get('name') or '').strip()
+        if not name:
+            continue
+        out.append({'name': name,
+                    'start': str(row.get('start') or '').strip(),
+                    'end': str(row.get('end') or '').strip()})
+    return out
+
+
+@router.get('/api/v3/peak/status')
+def peak_status():
+    """巅峰千强大盘爬取状态：进度、数据窗口、是否自动启用。"""
+    return peak_crawl.status()
+
+
+@router.post('/api/v3/peak/refresh')
+def peak_refresh():
+    """手动触发一轮巅峰千强刷新（后台线程执行，接口立即返回；同一时间只跑一轮）。"""
+    if IS_DEMO:
+        raise HTTPException(403, '演示数据包环境不联网爬取。')
+    if os.environ.get('PEAK_CRAWL') == '0':
+        raise HTTPException(403, '巅峰千强爬取已被 PEAK_CRAWL=0 关闭。')
+    snapshot = peak_crawl.status()
+    if snapshot.get('running'):
+        return {'ok': False, 'running': True, 'phase': snapshot.get('phase') or '',
+                'message': '已有一轮刷新在跑，请稍后。'}
+    Thread(target=peak_crawl.refresh, kwargs={'reason': 'api'}, daemon=True).start()
+    return {'ok': True, 'running': True, 'message': '刷新已开始，进度看 /api/v3/peak/status。'}
+
+
+def start_peak_auto() -> bool:
+    """由 server.py 的真实服务入口调用：启动每日自动刷新线程（导入 / 测试不触发）。"""
+    return peak_crawl.start_auto()
+
+
+# KPL 组合全库约 3.5 万行、序列化后 10 MB 级：过去每次请求都要重建精简行
+# 再走一遍 FastAPI 的 jsonable_encoder。按事实表 mtime 缓存已序列化的响应体，
+# 命中时直接回字节，省掉重建与编码两步；再落盘一份，重启后第一次打开也不重建。
+_KPL_COMBOS_CACHE = {'key': None, 'body': None}
+
+
+def _facts_stamp(name):
+    try:
+        stat = (bp_facts.FACTS / name).stat()
+        return (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+
+
+@router.get('/api/v3/kpl/combos')
+def kpl_combos():
+    """KPL 组合全库（双人 / 三人 / 四人），供复盘大屏的组合查询块筛选。
+
+    行做过精简：只留查询块要展示的字段；整阵容（lineups）不进这块——它只在
+    赛事命中里按本局阵容查，不参与自由组合查询。
+    """
+    stamp = _facts_stamp('kpl_combos.json')
+    if stamp is not None and _KPL_COMBOS_CACHE['key'] == stamp:
+        return Response(content=_KPL_COMBOS_CACHE['body'], media_type='application/json')
+    key_id = _cache_key_id(stamp)
+    body = _report_disk_read(DATA_DIR / '.cache' / 'kpl-combos.json', key_id, 'body')
+    if isinstance(body, str):
+        _KPL_COMBOS_CACHE.update(key=stamp, body=body)
+        return Response(content=body, media_type='application/json')
+    index = bp_facts.kpl_index()
+
+    def slim(row):
+        return {'heroes': row.get('heroes') or [], 'n': row.get('n'),
+                'wins': row.get('wins'), 'wr': row.get('wr'),
+                'year': row.get('year'), 'lastDate': row.get('lastDate'),
+                'teams': (row.get('teams') or [])[:3]}
+
+    payload = {
+        'source': index.get('source'),
+        'games': index.get('games'),
+        'sinceYear': index.get('sinceYear'),
+        'windowStart': index.get('windowStart'),
+        'windowEnd': index.get('windowEnd'),
+        'updatedAt': index.get('updatedAt'),
+        'pairs': [slim(row) for row in index['pairs'].values()],
+        'trios': [slim(row) for row in index['trios'].values()],
+        'quads': [slim(row) for row in index['quads'].values()],
+    }
+    body = json.dumps(payload, ensure_ascii=False, separators=(',', ':'))
+    if stamp is not None:
+        _KPL_COMBOS_CACHE.update(key=stamp, body=body)
+        _report_disk_write(DATA_DIR / '.cache' / 'kpl-combos.json', key_id, 'body', body)
+    return Response(content=body, media_type='application/json')
+
+
+@router.get('/api/v3/camp/counters')
+def camp_counters():
+    """营地英雄克制 / 双排 / 三排关系（查询块用；克制命中卡走 bpFacts.counters）。"""
+    data = bp_facts._camp_counters()
+    if not data:
+        return {'source': '', 'capturedAt': '', 'heroes': {}}
+    return {'source': data.get('source'), 'capturedAt': data.get('capturedAt'),
+            'heroes': data.get('heroes') or {}}
+
+
 @router.get('/api/replay/{key:path}')
 def replay(key: str, repo=Depends(repository)):
     detail = repo.match_detail(key)
-    result = panorama.get(detail['bundleKey']) if detail and detail.get('bundleKey') else None
+    result = _panorama_cached(detail['bundleKey']) if detail and detail.get('bundleKey') else None
     if result is None:
         raise HTTPException(404, '该局没有全景回放数据')
-    return {name: result[name] for name in
-            ('gold', 'events', 'kills', 'deaths', 'fights', 'coverage', 'notes',
-             'buffEvents', 'narrations')
-            if name in result}
+    return {name: result[name] for name in _REPLAY_FIELDS if name in result}
 
 
 _SAFE_KEY_RE = re.compile(r'^[A-Za-z0-9_:.\-]+$')
@@ -586,51 +1636,30 @@ def _safe_key(value):
     return text
 
 
-@router.get('/api/positions/{key:path}')
-def match_positions(key: str):
-    """营地回放的逐秒位置（十人）。用于单局的热区与对位深区。
+def _load_camp_files(seq):
+    """读营地回放的 positions.json / raw.json，带 mtime 缓存。
 
-    通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
-    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `STEP` 秒一点。
+    跨局页每局都取一次位置：逐秒坐标文件几十 KB、raw.json 更大，没缓存时
+    200 局就是几百次重复读盘解析。返回 (positions 解析结果, 短ID身份映射)。
     """
-    # 对局 key 带 channel- 前缀，channels 表的 id 不带。
-    channel_id = key[len('channel-'):] if key.startswith('channel-') else key
+    folder = OFFICIAL / f'camp-{seq}'
+    path = folder / 'positions.json'
+    raw_path = folder / 'raw.json'
     try:
-        with sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True) as connection:
-            row = connection.execute('SELECT body FROM channels WHERE id=?', (channel_id,)).fetchone()
-    except sqlite3.Error:
-        row = None
-
-    camp, seq = {}, ''
-    bundle_players = []
-    if row:
-        channel = json.loads(row[0])
-        camp = (channel.get('sources') or {}).get('camp') or {}
-        seq = str(camp.get('gameSeq') or '')
-    else:
-        # 没有采集通道（例如演示数据包）时，直接按数据包里挂的 officialReplay 找位置
-        safe_key = _safe_key(key)
-        bundle_path = MATCHES / f'{safe_key}.json' if safe_key else None
-        if bundle_path is None or not bundle_path.is_file():
-            raise HTTPException(404, '找不到该局的采集通道')
-        bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
-        linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
-        if linked:
-            seq = linked[len('camp-'):] if linked.startswith('camp-') else linked
-            bundle_players = bundle.get('players') or []
-    seq = _safe_key(seq)
-    if not seq:
-        raise HTTPException(404, '这一局没有营地回放')
-    path = OFFICIAL / f'camp-{seq}' / 'positions.json'
-    if not path.is_file():
-        raise HTTPException(404, '缺少位置数据文件')
-    data = json.loads(path.read_text(encoding='utf-8'))
-    roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
-    # 位置文件的 playerId 是营地短 ID（与 raw.matchInfo.playerId 同源），通道名单里
-    # 存的是游戏内 playID（长 ID），两套 ID 对不上。用 matchInfo 的 heroName /
-    # acntcamp 做桥：短 ID → 英雄名 + 阵营 → 通道名单里的 camp+slot+昵称。
+        sig = (path.stat().st_mtime if path.is_file() else 0.0,
+               raw_path.stat().st_mtime if raw_path.is_file() else 0.0)
+    except OSError:
+        sig = (0.0, 0.0)
+    cached = _POSITIONS_FILE_CACHE.get(seq)
+    if cached is not None and cached[0] == sig:
+        return cached[1], cached[2]
+    data = {}
+    if path.is_file():
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            data = {}
     identity_by_short = {}
-    raw_path = OFFICIAL / f'camp-{seq}' / 'raw.json'
     if raw_path.is_file():
         try:
             raw_value = json.loads(raw_path.read_text(encoding='utf-8'))
@@ -643,8 +1672,68 @@ def match_positions(key: str):
                     'hero': str(item.get('heroName') or ''),
                     'camp': 'blue' if str(item.get('acntcamp') or '1') == '1' else 'red',
                 }
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             identity_by_short = {}
+    if len(_POSITIONS_FILE_CACHE) > 600:
+        _POSITIONS_FILE_CACHE.clear()
+    _POSITIONS_FILE_CACHE[seq] = (sig, data, identity_by_short)
+    return data, identity_by_short
+
+
+def _positions_for_key(key):
+    """一局的十人逐秒位置（降采样后）。取不到返回 None，不抛错。
+
+    通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
+    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `POSITION_STEP` 秒一点。
+    输出按局缓存（数据代际失效），跨局页 200 局各取一次不再重复构造。
+    """
+    cached = _POSITIONS_OUT_CACHE.get(key)
+    if cached is not None and cached[0] == _data_stamp:
+        return cached[1]
+    result = _positions_for_key_uncached(key)
+    if result is not None:
+        if len(_POSITIONS_OUT_CACHE) > 600:
+            _POSITIONS_OUT_CACHE.clear()
+        _POSITIONS_OUT_CACHE[key] = (_data_stamp, result)
+    return result
+
+
+def _positions_for_key_uncached(key):
+    """一局的十人逐秒位置（降采样后）。取不到返回 None，不抛错。
+
+    通道 → 营地 gameSeq → data/official_replays/camp-<seq>/positions.json；
+    玩家按 playerId 与通道里的营地十人面板对齐。降采样到每 `POSITION_STEP` 秒一点。
+    """
+    # 对局 key 带 channel- 前缀，channels 表的 id 不带。
+    channel_id = key[len('channel-'):] if key.startswith('channel-') else key
+    camp, seq = {}, ''
+    bundle_players = []
+    if DB.is_file():
+        camp = _channel_camp(channel_id)
+        seq = str(camp.get('gameSeq') or '')
+    if not seq:
+        # 没有采集通道（例如演示数据包）时，直接按数据包里挂的 officialReplay 找位置
+        safe_key = _safe_key(key)
+        bundle_path = MATCHES / f'{safe_key}.json' if safe_key else None
+        if bundle_path is None or not bundle_path.is_file():
+            return None
+        bundle = json.loads(bundle_path.read_text(encoding='utf-8'))
+        linked = str(((bundle.get('match') or {}).get('officialReplay') or {}).get('id') or '')
+        if linked:
+            seq = linked[len('camp-'):] if linked.startswith('camp-') else linked
+            bundle_players = bundle.get('players') or []
+    seq = _safe_key(seq)
+    if not seq:
+        return None
+    path = OFFICIAL / f'camp-{seq}' / 'positions.json'
+    if not path.is_file():
+        return None
+    data, identity_by_short = _load_camp_files(seq)
+    roster = {str(p.get('playerId')): p for p in (camp.get('players') or []) if p.get('playerId')}
+    # 位置文件的 playerId 是营地短 ID（与 raw.matchInfo.playerId 同源），通道名单里
+    # 存的是游戏内 playID（长 ID），两套 ID 对不上。用 matchInfo 的 heroName /
+    # acntcamp 做桥：短 ID → 英雄名 + 阵营 → 通道名单里的 camp+slot+昵称。
+    # （raw.json 的解析在 _load_camp_files 里带 mtime 缓存。）
     roster_by_hero = {(str(p.get('camp')), str(p.get('hero'))): p
                       for p in (camp.get('players') or []) if p.get('hero')}
     step = POSITION_STEP
@@ -676,6 +1765,51 @@ def match_positions(key: str):
     }
 
 
+@router.get('/api/positions/{key:path}')
+def match_positions(key: str):
+    result = _positions_for_key(key)
+    if result is None:
+        raise HTTPException(404, '这一局没有可用的位置数据')
+    return result
+
+
+@router.get('/api/cross/window')
+def cross_window(batch: int = 0, size: int = 25, limit: int = 200,
+                 repo=Depends(repository), values=Depends(filters)):
+    """跨局页逐局明细的批量取数：一次带回一批「详情 + 位置 + 回放摘要」。
+
+    逐局三接口各带 40ms 左右的请求开销，200 局就是 600 个请求、20 秒以上
+    的排队收发；这里按批合并成十来个请求，取数逻辑与单局接口完全一致。
+    """
+    size = max(1, min(60, size))
+    limit = max(1, min(400, limit))
+    items = repo.matches(values)['matches'][:limit]
+    part = items[batch * size:(batch + 1) * size]
+
+    def one(item):
+        key = item['key']
+        detail = repo.match_detail(key)
+        if not detail:
+            return None
+        replay = _panorama_cached(detail.get('bundleKey') or '') if detail.get('bundleKey') else None
+        return {
+            'key': key,
+            'detail': detail,
+            'replay': {name: replay[name] for name in _REPLAY_FIELDS if name in replay} if replay else None,
+            'positions': _positions_for_key(key),
+        }
+
+    # 保持串行：试过批内并行，在 Windows 上会让进程硬崩（原因未明，表现为
+    # 连接被重置、无 Python 异常）；缓存全热时串行一局约 35ms，一批 25 局
+    # 一秒内，配合磁盘缓存与预热线程，热路径足够快。
+    rows = [row for row in (one(item) for item in part) if row]
+    payload = {'total': len(items), 'batch': batch, 'rows': rows}
+    # 直接 dumps 返回：FastAPI 默认的 jsonable_encoder 会递归转换几十万个
+    # 坐标点（每批 3–4 MB），比 dumps 本身慢一个数量级。
+    return Response(content=json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                    media_type='application/json')
+
+
 @router.get('/api/players')
 def players(repo=Depends(repository), values=Depends(filters)):
     return {'players': repo.player_stats(values)}
@@ -694,7 +1828,7 @@ def player(key: str, repo=Depends(repository), values=Depends(filters)):
 
 @router.get('/api/bp')
 def bp(repo=Depends(repository), values=Depends(filters)):
-    return {'draft': repo.bp_summary(values), 'heroes': repo.hero_stats(values)}
+    return json_response({'draft': repo.bp_summary(values), 'heroes': repo.hero_stats(values)})
 
 
 @router.get('/api/tempo')
@@ -737,7 +1871,7 @@ def opponents(repo=Depends(repository), values=Depends(filters)):
             'picks': picks.most_common(), 'bans': bans.most_common(), 'draftCount': draft_count,
         })
     result.sort(key=lambda item: (-len(item['matches']), item['name']))
-    return {'opponents': result, 'unknown': unknown, 'warnings': warnings}
+    return json_response({'opponents': result, 'unknown': unknown, 'warnings': warnings})
 
 
 @router.get('/api/sources')
@@ -750,20 +1884,78 @@ def sources(repo=Depends(repository), values=Depends(filters)):
     }
 
 
-@router.get('/api/metadata')
-def metadata(repo=Depends(repository)):
-    path = ROOT / 'resources' / 'catalog.json'
-    entries = json.loads(path.read_text(encoding='utf-8')).get('entries', []) if path.is_file() else []
-    return {
-        'teamName': repo.get()['teamName'], 'options': repo.filters(), 'demo': IS_DEMO,
+_ICON_META_CACHE = {'stamp': None, 'payload': None}
+
+
+def _icon_metadata():
+    """图标目录 + 英雄分路标签：只读 resources/，不碰仓库快照。
+
+    编组页只需要头像，不应该为了一份图标目录等快照重建（冷启动约 3 秒）。
+    """
+    catalog_path = ROOT / 'resources' / 'catalog.json'
+    tags_path = ROOT / 'resources' / 'hero_tags.json'
+    try:
+        stamp = (catalog_path.stat().st_mtime_ns, tags_path.stat().st_mtime_ns)
+    except OSError:
+        stamp = (0, 0)
+    if _ICON_META_CACHE['stamp'] == stamp and _ICON_META_CACHE['payload'] is not None:
+        return _ICON_META_CACHE['payload']
+    entries = json.loads(catalog_path.read_text(encoding='utf-8')).get('entries', []) \
+        if catalog_path.is_file() else []
+    # 赛训组英雄标签（resources/hero_tags.json，scripts/import_hero_tags.py 产物）：
+    # 英雄 × 实际分路 → 该位置建议分类。十人面板的 10 分钟经济评级按它给打野
+    # 分野核（800/分钟）与坦野（6800 总量）两套口径。
+    hero_types = {}
+    if tags_path.is_file():
+        try:
+            tags_doc = json.loads(tags_path.read_text(encoding='utf-8'))
+            hero_types = {name: hero.get('lanes') or {}
+                          for name, hero in (tags_doc.get('heroes') or {}).items()}
+        except (OSError, ValueError):
+            hero_types = {}
+    payload = {
         'icons': {entry['name']: entry['icon'] for entry in entries
                   if entry.get('kind') == 'hero' and entry.get('name') and entry.get('icon')},
+        'heroTypes': hero_types,
+    }
+    _ICON_META_CACHE.update(stamp=stamp, payload=payload)
+    return payload
+
+
+@router.get('/api/metadata/icons')
+def metadata_icons():
+    """编组页轻量元数据：头像目录 + 英雄分路标签，不依赖分析快照。"""
+    return {**_icon_metadata(), 'iconsOnly': True}
+
+
+@router.get('/api/metadata')
+def metadata(repo=Depends(repository)):
+    return {
+        'teamName': repo.get()['teamName'], 'options': repo.filters(), 'demo': IS_DEMO,
+        **_icon_metadata(),
     }
 
 
 _demo_lock = Lock()
 DEMO_APPLICATION = 'training-data-v3'
-DEMO_PORT = 8773
+def _demo_port() -> int:
+    """演示实例的端口：默认跟着主端口走（8766 → 8773），可用 KPL_DEMO_PORT 覆盖。
+
+    以前写死 8773，主端口换成 9000 时演示实例仍占 8773，看起来就像"端口一直在变"。
+    """
+    override = os.environ.get('KPL_DEMO_PORT', '').strip()
+    if override:
+        try:
+            return int(override)
+        except ValueError:
+            pass
+    try:
+        return int(os.environ.get('TRAINING_PORT', '8766')) + 7
+    except ValueError:
+        return 8773
+
+
+DEMO_PORT = _demo_port()
 
 
 def _demo_status_is_ours(status):
@@ -1119,7 +2311,7 @@ def start_demo():
         if status:
             if _demo_status_is_ours(status):
                 return {'url': demo_url, 'demo': True}
-            raise HTTPException(409, '演示端口 8773 已被其他程序占用。')
+            raise HTTPException(409, f'演示端口 {DEMO_PORT} 已被其他程序占用。')
         import demo_data
         demo_base = HERE / 'demo-data'
         demo_base.mkdir(exist_ok=True)
@@ -1168,36 +2360,115 @@ def start_demo():
         raise HTTPException(503, '演示环境未能启动，请检查端口或重试。')
 
 
+# ---------------------------------------------------------------------------
+# 回放深度分析（空间 / 经济）：把 official_replays 的 330 份回放逐份聚合。
+# 冷跑空间 2.4 秒、经济 0.6 秒，但结果只取决于回放文件、营地面板与地图标定，
+# 和页面、筛选、登录状态都无关，所以按文件指纹缓存并落盘一份：重启后首次进页
+# 直接读盘，不再把这几秒算在「打开页面」上。
+_DEEP_SCHEMA = 1
+_DEEP_CACHE = {}
+_DEEP_CACHE_MAX = 6
+_DEEP_STAMP_TTL = 2.0
+_DEEP_STAMP = {'at': float('-inf'), 'value': None}
+_DEEP_DISK = DATA_DIR / '.cache' / 'deep-analysis.json'
+_DEEP_DISK_STATE = {'loaded': False, 'stamp': None, 'values': {}}
+
+
+def _dir_fingerprint(path):
+    """目录的 (文件数, 最新 mtime)：新增/改动一局就会换指纹。"""
+    try:
+        count, latest = 0, 0
+        for item in path.iterdir():
+            try:
+                latest = max(latest, item.stat().st_mtime_ns)
+            except OSError:
+                continue
+            count += 1
+        return [count, latest]
+    except OSError:
+        return [0, 0]
+
+
+def _deep_stamp():
+    """回放目录 + 营地目录 + 地图标定的联合指纹，2 秒内复用同一次扫描。"""
+    now = monotonic()
+    if now - _DEEP_STAMP['at'] < _DEEP_STAMP_TTL:
+        return _DEEP_STAMP['value']
+    calibration = DB.parent / 'map_calibration.json'
+    try:
+        calibrated = calibration.stat().st_mtime_ns
+    except OSError:
+        calibrated = 0
+    value = [_dir_fingerprint(OFFICIAL), _dir_fingerprint(DB.parent / 'camp_details'),
+             calibrated]
+    _DEEP_STAMP.update(at=now, value=value)
+    return value
+
+
+def _deep_stamp_id():
+    return json.dumps(_deep_stamp(), ensure_ascii=False, separators=(',', ':'))
+
+
+def _deep_disk_load(stamp_id):
+    state = _DEEP_DISK_STATE
+    if not state['loaded']:
+        state['loaded'] = True
+        try:
+            doc = json.loads(_DEEP_DISK.read_text(encoding='utf-8'))
+            if isinstance(doc, dict) and isinstance(doc.get('values'), dict):
+                state['stamp'] = doc.get('stamp')
+                state['values'] = doc['values']
+        except (OSError, ValueError):
+            pass
+    if state['stamp'] == stamp_id:
+        return state['values']
+    return {}
+
+
+def _deep_disk_save(stamp_id, values):
+    state = _DEEP_DISK_STATE
+    try:
+        _DEEP_DISK.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _DEEP_DISK.with_suffix('.tmp')
+        tmp.write_text(json.dumps({'stamp': stamp_id, 'values': values},
+                                  ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+        os.replace(tmp, _DEEP_DISK)
+        state.update(loaded=True, stamp=stamp_id, values=values)
+    except (OSError, TypeError, ValueError):
+        pass
+
+
+def _deep_analysis(name, build):
+    """按（名字, schema, 文件指纹）缓存一份深度分析结果，并顺手落盘。"""
+    stamp_id = _deep_stamp_id()
+    key = (name, _DEEP_SCHEMA, stamp_id)
+    cached = _DEEP_CACHE.get(key)
+    if cached is not None:
+        return cached
+    persisted = _deep_disk_load(stamp_id).get(name)
+    if persisted is not None:
+        _DEEP_CACHE[key] = persisted
+        return persisted
+    value = build()
+    if len(_DEEP_CACHE) >= _DEEP_CACHE_MAX:
+        _DEEP_CACHE.clear()
+    _DEEP_CACHE[key] = value
+    values = dict(_DEEP_DISK_STATE['values'] if _DEEP_DISK_STATE['stamp'] == stamp_id else {})
+    values[name] = value
+    _deep_disk_save(stamp_id, values)
+    return value
+
+
 @router.get('/api/v3/space')
 def spatial_analysis():
-    return deep_analysis.space(OFFICIAL, DB.parent / 'camp_details', DB.parent)
+    return _deep_analysis(
+        'space', lambda: deep_analysis.space(OFFICIAL, DB.parent / 'camp_details', DB.parent))
 
 
 @router.get('/api/v3/economy')
 def economy_analysis():
-    return deep_analysis.economy(OFFICIAL, DB.parent / 'camp_details')
-
-
-def research_result(topic, values):
-    from studio_analysis import StudioRepository, extract_rows, fingerprint
-    from studio_research import TOPICS, research
-    if topic not in {item[0] for item in TOPICS}:
-        raise HTTPException(404, '专题不存在')
-    source = StudioRepository(DB, MATCHES, IMPORTS)
-    rows, warnings = extract_rows(source, values)
-    rows = [row for row in rows if row.get('isOwn') and row.get('full')]
-    result = research(rows, topic, 'damage', source.get()['matches'] + source.get()['sheetMatches'])
-    result['fingerprint'] = fingerprint(rows)
-    result['warnings'] = warnings
-    result['sourceRows'] = len(rows)
-    result['filters'] = values
-    return result
-
-
-@router.get('/api/v3/research/catalog')
-def research_catalog():
-    from studio_research import TOPICS
-    return {'topics': [{'id':key,'name':name,'description':desc} for key,name,desc in TOPICS]}
+    return _deep_analysis(
+        'economy', lambda: deep_analysis.economy(OFFICIAL, DB.parent / 'camp_details'))
 
 
 @router.get('/api/v3/research/reports')
@@ -1218,32 +2489,6 @@ def research_report(report_id: str):
         row=conn.execute('SELECT title,created_at,body FROM reports WHERE id=?', (report_id,)).fetchone()
     if not row: raise HTTPException(404, '报告不存在')
     return {'title':row[0],'createdAt':row[1],'result':json.loads(row[2])}
-
-
-@router.get('/api/v3/research/{topic}')
-def get_research(topic: str, values=Depends(filters)):
-    return research_result(topic, values)
-
-
-@router.post('/api/v3/research/reports')
-async def save_research_report(request: Request):
-    body=await read_json(request)
-    title=str(body.get('title') or '').strip() if isinstance(body,dict) else ''
-    if not title or len(title)>120: raise HTTPException(400, '请填写 1–120 字的报告标题。')
-    values=body.get('filters')
-    if not isinstance(values,dict): raise HTTPException(400, '数据范围无效。')
-    values={k:v for k,v in values.items() if k in ('sources','from','to','hero','opponent','excludeSeeds','ownOnly')}
-    if not isinstance(values.get('sources'),list) or any(x not in ALL_SOURCES for x in values['sources']):
-        raise HTTPException(400, '来源无效。')
-    result=research_result(body.get('topic',''), values)
-    if not result['rows']: raise HTTPException(400, '当前没有可保存的专题结果。')
-    if result['fingerprint'] != body.get('fingerprint'): raise HTTPException(409, '数据已变化，请刷新后再保存。')
-    from datetime import datetime, timezone
-    report_id=uuid.uuid4().hex; created=datetime.now(timezone.utc).isoformat(timespec='seconds')
-    with sqlite3.connect(DB.with_name('reports.sqlite3')) as conn:
-        conn.execute('CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY,title TEXT NOT NULL,created_at TEXT NOT NULL,topic TEXT NOT NULL,body TEXT NOT NULL)')
-        conn.execute('INSERT INTO reports VALUES(?,?,?,?,?)',(report_id,title,created,body['topic'],json.dumps(result,ensure_ascii=False)))
-    return {'id':report_id,'title':title,'createdAt':created}
 
 
 @router.post('/api/v3/import/preview')
@@ -1597,12 +2842,17 @@ async def name_identity(request: Request):
     saved = []
     try:
         for index, account in enumerate(account_ids or ['']):
+            # 一个昵称可能对应多个营地账号（小号/改名前后的号）：第一个账号
+            # 建/找好选手后，后面的账号必须挂到同一个选手，不能因为没传
+            # team_id 在第二次调用时要求「选择所属战队」而半途失败。
+            target_player = body.get('playerId') if index == 0 else (
+                saved[0]['playerId'] if saved else None)
             saved.append(identity_service.name_account(
                 DB, account_id=account, nickname=nickname, positions=positions or None,
-                player_id=body.get('playerId') if index == 0 else None,
+                player_id=target_player,
                 name=name, position=position,
                 team_id=team_id if index == 0 else '', team_name=team_name,
-                default_team_id=default_team_id if index == 0 else '', actor='coach'))
+                default_team_id=default_team_id, actor='coach'))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     invalidate_players_cache()
@@ -1625,6 +2875,40 @@ async def save_identity_player(request: Request):
         raise HTTPException(400, str(error)) from error
     invalidate_players_cache()
     return {'ok': True, 'id': saved['playerId'], **saved}
+
+
+@router.get('/api/v3/identity/players')
+def identity_players(team_id: str = ''):
+    """选手ID 清单：认领时跨战队选人用。
+
+    和 `identity/accounts` 是同一份主数据的两面：那边一行一个游戏账号，
+    这边一行一个选手ID（一个ID可以挂多个游戏名，也就是小号/改名前后的号）。
+    """
+    import workspace_store
+    try:
+        players = workspace_store.Workspace(DB).list_players(team_id or None)
+    except sqlite3.Error:
+        players = []
+    mapping = camp_accounts()
+    accounts = Counter()
+    for item in mapping.values():
+        if item.get('playerId'):
+            accounts[item['playerId']] += 1
+    teams = _identity_teams()
+    team_names = {team['id']: team['name'] for team in teams}
+    return {
+        'players': [{
+            'id': player['id'],
+            'name': player.get('name') or '',
+            'teamId': player.get('team_id') or '',
+            'teamName': team_names.get(player.get('team_id') or '', ''),
+            'position': player.get('position') or '',
+            'positions': player.get('positions') or [],
+            'role': player.get('role') or '',
+            'accounts': accounts.get(player['id'], 0),
+        } for player in players],
+        'teams': teams,
+    }
 
 
 @router.post('/api/v3/identity/players/delete')
@@ -1790,6 +3074,51 @@ async def update_match_meta(key: str, request: Request, repo=Depends(repository)
     return {'ok': True, 'meta': previous}
 
 
+@router.post('/api/v3/match-meta-bulk')
+async def update_match_meta_bulk(request: Request, repo=Depends(repository)):
+    """批量写对手队名：给一批局的覆盖层补同一个字段。
+
+    教练的真实流程是「今天打的这一批都是同一个对手」——逐局点铅笔要 105 次。
+    只支持 opponent 一个字段，其余补录仍走单局接口，避免误伤。
+    """
+    import time
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise HTTPException(400, '数据格式无效')
+    keys = body.get('keys')
+    if not isinstance(keys, list) or not keys or len(keys) > 600:
+        raise HTTPException(400, '对局列表无效')
+    if not all(isinstance(key, str) and 0 < len(key) <= 200 for key in keys):
+        raise HTTPException(400, '对局列表无效')
+    opponent = body.get('opponent')
+    if not isinstance(opponent, str) or len(opponent.strip()) > 50:
+        raise HTTPException(400, '队名格式或长度不正确')
+    opponent = opponent.strip()
+    if not opponent:
+        raise HTTPException(400, '请填写对手队名；要清空请逐局编辑')
+    existing = {m.get('key') for m in repo.matches({'sources': [], 'excludeSeeds': False}).get('matches', [])}
+    targets = [key for key in dict.fromkeys(keys) if key in existing]
+    if not targets:
+        raise HTTPException(404, '这些对局都不在当前数据里')
+    stamp = time.time()
+    updated = 0
+    with sqlite3.connect(DB) as connection:
+        connection.execute('CREATE TABLE IF NOT EXISTS match_meta (match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+        connection.execute('BEGIN IMMEDIATE')
+        for key in targets:
+            row = connection.execute('SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+            try:
+                previous = json.loads(row[0]) if row else {}
+                if not isinstance(previous, dict): previous = {}
+            except (ValueError, TypeError):
+                previous = {}
+            previous['opponent'] = opponent
+            connection.execute('INSERT INTO match_meta(match_key,body,updated_at) VALUES(?,?,?) ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at',
+                               (key, json.dumps(previous, ensure_ascii=False), stamp))
+            updated += 1
+    return {'ok': True, 'updated': updated, 'skipped': len(keys) - updated}
+
+
 @router.get('/api/v3/workspace/overview')
 def workspace_overview(repo=Depends(repository)):
     selection = {'sources': list(ALL_SOURCES), 'excludeSeeds': True, 'ownOnly': True}
@@ -1851,6 +3180,12 @@ def team_bp():
     import team_clusters
     from bp_camp import parse_camp_bp
     camp_dir = MATCHES.parent / 'camp_details'
+    # 与 bp_board 共用同一份营地指纹：改一局 BP 或合并战队后自动重算。
+    stamp = bp_board_stamp()
+    if stamp[0] is not None:
+        cached = _TEAM_BP_CACHE.get(stamp)
+        if cached is not None:
+            return cached
     clusters = team_clusters.list_teams(camp_dir, DB)
     teams = []
     for team in clusters['teams']:
@@ -1874,33 +3209,95 @@ def team_bp():
                       'games': team['matches'], 'available': available,
                       'picks': [{'hero': k, 'count': v} for k, v in picks.most_common()],
                       'bans': [{'hero': k, 'count': v} for k, v in bans.most_common()]})
-    return {'teams': teams}
+    payload = {'teams': teams}
+    if stamp[0] is not None:
+        if len(_TEAM_BP_CACHE) >= _TEAM_BP_CACHE_MAX:
+            _TEAM_BP_CACHE.clear()
+        _TEAM_BP_CACHE[stamp] = payload
+    return payload
+
+
+@router.get('/api/v3/team-deep')
+def team_deep(team: str = ''):
+    """战队页 v2 的逐局全量数据（docs/team_page_v2.md §2.2）。
+
+    战队 id 来自 studio/teams 的聚类结果；不存在给 404，不返回空壳让前端误以为有数据。
+    """
+    import team_clusters
+    camp_dir = MATCHES.parent / 'camp_details'
+    deep = team_clusters.team_deep(camp_dir, DB, team)
+    if deep is None:
+        raise HTTPException(404, '战队不存在：没有匹配的营地十人面板。')
+    return deep
+
+
+def _roster_entry(player):
+    """营地逐人面板 → BP 诊断可用的选手统计；缺失字段保留 None。"""
+    return {key: player.get(key) for key in
+            ('name', 'hero', 'lane', 'kills', 'deaths', 'assists', 'gold',
+             'heroDamage', 'taken', 'participation', 'towers')}
+
+
+# BP 沙盘 / 教练档案 / 周期监控 / 对手打法共用同一份「营地面板 → 逐局 BP」汇总：
+# 104 个 battleDetail 的解析 + 聚类约 2 秒，过去这几个接口各自重算一遍。
+# 按（营地目录, 对局包 + DB）指纹缓存：营地新增/改 BP、队名合并、教练改名都会
+# 换 key。缓存对象只读，调用方不得原地修改（下面几个接口都是只读消费）。
+_BP_BOARD_CACHE = {}
+_BP_BOARD_CACHE_MAX = 4
+
+# 战队 BP 名单同样按营地指纹缓存：与 bp_board 读的是同一批 battleDetail。
+_TEAM_BP_CACHE = {}
+_TEAM_BP_CACHE_MAX = 4
+
+# 选手板块聚合按同一指纹缓存（1.3 MB 的 board，纯 CPU 0.4 秒），并落盘一份：
+# 重启后第一次打开选手档案不用再付这 1.6 秒。
+_PLAYERS_BOARD_CACHE = {}
+_PLAYERS_BOARD_CACHE_MAX = 3
+_PLAYERS_BOARD_DISK = _CACHE_DIR / 'players-board.json'
+
+# 训练台账（按对手归集的排期 + 交手日）同样按营地指纹缓存。
+_TEAM_TRAINING_CACHE = {}
+_TEAM_TRAINING_CACHE_MAX = 3
+
+
+def bp_board_stamp():
+    """营地目录 + 对局包/DB 的联合指纹，BP 汇总类缓存的统一失效口径。"""
+    return (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
 
 
 @router.get('/api/v3/bp-board')
-def bp_board():
-    """BP 三页共用的全量聚合：营地面板终局名单 + 战队 / 教练档案。
+def bp_board_report():
+    return json_response(bp_board())
 
-    营地只给「谁上场 / 谁被禁」的终局名单，没有禁选先后顺序，也不含一手方。
-    这里只输出逐局名单与元数据；筛选、画像、风格指标由前端按局实时重算，
-    这样 BP 概览 / 战队 BP / 教练档案三页用的是同一份口径，不会混算。
+
+def bp_board():
+    """BP 模块基础数据：终局名单、已知选手，以及经过验证的 BP 顺序事件。
+
+    旧营地记录可能只有最终选禁名单；新采集流程若提供 draftEvents，
+    透传给研究引擎逐手校验后使用，不从名单反推顺序。
     """
     import team_clusters
     from bp_camp import parse_camp_bp
+    import team_style
+    stamp = bp_board_stamp()
+    if stamp[0] is not None:
+        cached = _BP_BOARD_CACHE.get(stamp)
+        if cached is not None:
+            return cached
     camp_dir = MATCHES.parent / 'camp_details'
     clusters = team_clusters.list_teams(camp_dir, DB)
     teams = clusters['teams']
-    # 教练由使用者在战队档案里录入；开发期按「已补好」的默认状态在展示层预置一组
-    # 稳定姓名，录入真名后自动覆盖。只影响展示，不改写档案数据库。
-    preset_coaches = ('陈昱', '林澈', '周砚', '吴珂', '郑霖', '孙骁', '赵衡', '钱越',
-                      '李牧', '王铮', '刘屿', '黄铮', '徐墨', '何川', '高岩', '马骁',
-                      '沈砚', '许澈', '韩昱', '唐珂', '冯霖', '曹衡', '彭越', '董牧',
-                      '袁铮', '邓屿', '傅墨', '苏川', '蒋岩', '卢骁', '余澈', '叶昱')
-    coach_of = {t['id']: (t.get('coach') or preset_coaches[i % len(preset_coaches)])
-                for i, t in enumerate(teams)}
+    # 只有人工录入并核实的教练姓名才能用于执教档案。
+    # 缺失时留空，不使用开发期的随机姓名填充。
+    coach_of = {t['id']: (t.get('coach') or '') for t in teams}
     seq_team = {seq: team for team in teams for seq in team.get('seqs', [])}
+    # 营地 startTime 只有「MM-DD HH:MM」；按 team_style.resolve_days 推断年份
+    # 补成 ISO 日期，才能与回放/DB 的 YYYY-MM-DD 做 BP↔过程匹配、时间过滤与
+    # 前后段切分。推断不出时留空，绝不编造日期。
+    panels = list(team_clusters.load_panels(camp_dir))
+    day_of = team_style.resolve_days([p.get('start') or '' for p in panels])
     games, hero_meta = [], {}
-    for panel in team_clusters.load_panels(camp_dir):
+    for panel in panels:
         seq = panel['seq']
         try:
             detail = json.loads((camp_dir / (seq + '.json')).read_text(encoding='utf-8'))
@@ -1914,7 +3311,8 @@ def bp_board():
         enemy = 'right' if own == 'left' else 'left'
         team = seq_team.get(seq) or {}
         start = panel.get('start') or ''
-        day = start.split(' ')[0]
+        resolved = day_of.get(start)
+        day = resolved.isoformat() if resolved else ''
         result = panel.get('win')
         if result is None and bp.get('winnerSide'):
             result = bp['winnerSide'] == own
@@ -1932,24 +3330,1424 @@ def bp_board():
             'result': 'win' if result else ('loss' if result is False else None),
             'side': panel['own'], 'ownSide': own,
             'duration': bp.get('duration'), 'mapName': bp.get('mapName'),
+            # Only actual patch labels, never derive version from calendar date.
+            'version': (bp.get('version') or detail.get('version') or
+                        (detail.get('data') or {}).get('version') or ''),
+            'stage': bp.get('stage') or '',
+            # Optional explicit scrim-only rule label from capture. Do not
+            # attach this metadata to KPL games.
+            'ruleProfile': (bp.get('ruleProfile') or
+                            detail.get('ruleProfile') or
+                            (detail.get('data') or {}).get('ruleProfile') or
+                            'scrim-global-20'),
             'picks': {'own': entries('picks', own), 'enemy': entries('picks', enemy)},
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
+            # 训练赛固定 20 手（每方 5 Ban + 5 Pick）；缺顺序时 pickOrderKnown=False。
+            'banCount': bp.get('banCount') or {},
+            'pickOrderKnown': bool(bp.get('pickOrderKnown')),
             'players': {'own': [p.get('name') for p in panel['own_roster']],
                         'enemy': [p.get('name') for p in panel['enemy_roster']]},
+            # 选手与英雄仅以营地逐人 usedHero 的事实映射为依据，不按 Pick 顺序猜测。
+            'roster': {
+                'own': [_roster_entry(p) for p in panel['own_roster']],
+                'enemy': [_roster_entry(p) for p in panel['enemy_roster']],
+            },
+            # 源头已写入的 20 手事件（或由每侧有序名单重建）；没有就为空。
+            'draftEvents': bp.get('draftEvents') or [],
             # 终局面板的经济 / 击杀 / 推塔 / 龙，供教练档案与 BP 页做资源口径；
             # 视角固定为「本队 = own」，前端按需要翻转成教练一方。
             'stats': {'own': (bp.get('teamStats') or {}).get(own) or {},
                       'enemy': (bp.get('teamStats') or {}).get(enemy) or {}},
         })
     games.sort(key=lambda g: g['start'], reverse=True)
-    return {
+    payload = {
         'games': games,
         'teams': [{'id': t['id'], 'name': t['displayName'], 'coach': coach_of[t['id']],
                    'matches': t['matches'], 'wins': t['wins'], 'losses': t['losses'],
                    'players': [p.get('name') for p in t['players'][:6]]} for t in teams],
         'heroMeta': hero_meta,
-        'source': '营地终局名单 · 不推断禁选先后顺序',
+        'source': '营地终局名单 · 训练赛 20 手；无顺序时只做名单统计',
     }
+    if stamp[0] is not None:
+        if len(_BP_BOARD_CACHE) >= _BP_BOARD_CACHE_MAX:
+            _BP_BOARD_CACHE.clear()
+        _BP_BOARD_CACHE[stamp] = payload
+    return payload
+
+
+def _local_scrim_hero_catalog():
+    """Repo-pinned hero names; no network or inferred hero identities."""
+    path = ROOT / 'resources' / 'catalog.json'
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise HTTPException(503, '本地英雄词表不可用，无法校验 BP 候选。') from error
+    items = payload.get('entries') or []
+    heroes, icons = [], {}
+    seen = set()
+    for entry in items:
+        if not isinstance(entry, dict) or entry.get('kind') != 'hero':
+            continue
+        name = str(entry.get('name') or '').strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        heroes.append(name)
+        icon = str(entry.get('icon') or '')
+        if re.fullmatch(r'/catalog/icons/hero-\d+\.png', icon):
+            icons[name] = icon
+    return {'heroes': heroes, 'icons': icons,
+            'catalogUpdatedAt': payload.get('updatedAt') or ''}
+
+
+@router.get('/api/v3/bp-scrim/catalog')
+def bp_scrim_catalog():
+    """Full local hero roster + configured scrim schedules for the manual planner."""
+    from bp_rules import SCRIM_GLOBAL_20
+    data = _local_scrim_hero_catalog()
+    return {**data, 'rule': SCRIM_GLOBAL_20.id,
+            'rules': [{'id': SCRIM_GLOBAL_20.id, 'title': SCRIM_GLOBAL_20.title,
+                       'actions': len(SCRIM_GLOBAL_20.schedule)}]}
+
+
+@router.post('/api/v3/bp-scrim/next')
+async def bp_scrim_next(request: Request):
+    """Pure scrim rule check (20 hands only); never applies scrim rules to KPL."""
+    from bp_rules import scrim_state_payload
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 请求必须是对象')
+    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
+        raise HTTPException(413, 'BP 请求过大')
+    try:
+        return scrim_state_payload(payload, _local_scrim_hero_catalog()['heroes'])
+    except (ValueError, TypeError, KeyError) as error:
+        raise HTTPException(400, str(error)) from error
+
+
+def _write_camp_detail(path, detail, seq):
+    """camp_details 写前备份 + 原子替换；BP 顺序 / 逐手事件共用。"""
+    history_dir = DB.parent / 'bp-history'
+    history_dir.mkdir(parents=True, exist_ok=True)
+    backup = history_dir / f'camp-{seq}-{int(time.time())}.json'
+    backup.write_bytes(path.read_bytes())
+    temporary = path.with_suffix('.bp-tmp')
+    temporary.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding='utf-8')
+    temporary.replace(path)
+    # 刚写的手工顺序必须马上出现在 BP 汇总里：清掉目录指纹的 TTL 缓存，
+    # 下一次请求就会用新指纹命中另一份缓存。
+    drop_stamp_caches()
+    return backup
+
+
+@router.post('/api/v3/camp-bp-order/{seq}')
+async def save_camp_bp_order(seq: str, request: Request):
+    """页面内手工录入每侧 Ban/Pick 顺序；Ban 允许跨侧重复（排位同时禁用）。
+
+    只保存和终局名单对得上的选用，以及营地名单里存在的禁用；写前整文件备份。
+    """
+    from bp_camp import normalize_bp_order
+    if not re.fullmatch(r'\d+', seq):
+        raise HTTPException(400, '营地编号无效')
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 顺序必须是对象')
+    path = (MATCHES.parent / 'camp_details') / f'{seq}.json'
+    if not path.is_file():
+        raise HTTPException(404, '训练赛营地面板不存在')
+    try:
+        detail = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise HTTPException(400, '营地面板 JSON 无法解析') from error
+    try:
+        clean = normalize_bp_order(detail, payload, seq)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    clean['savedAt'] = time.time()
+    container = detail.get('data') if isinstance(detail.get('data'), dict) else {}
+    container['bpOrder'] = clean
+    events = []
+    if clean['mode'] == 'scrim':
+        from bp_camp import events_from_order
+        events = events_from_order(clean)
+        if events:
+            container['draftEvents'] = events
+            container['ruleProfile'] = 'scrim-global-20'
+    detail['data'] = container
+    backup = _write_camp_detail(path, detail, seq)
+    saved = len(clean['picks']['left']) + len(clean['picks']['right'])         + len(clean['bans']['left']) + len(clean['bans']['right'])
+    return {'ok': True, 'seq': seq, 'mode': clean['mode'], 'saved': saved,
+            'events': len(events), 'rule': 'scrim-global-20',
+            'backup': backup.name}
+
+
+@router.post('/api/v3/camp-bp-events/{seq}')
+async def save_camp_bp_events(seq: str, request: Request):
+    """把逐手 BP 顺序（训练赛唯一规则：20 手）与版本/规则标签补录进 camp_details/<seq>.json。
+
+    只保存通过 20 手规则校验、且与终局名单一致的顺序。写前整文件备份到
+    data/bp-history/，原子替换。绝不由终局名单反推顺序，缺证据就拒绝保存。
+    """
+    from bp_camp import normalize_camp_events, parse_camp_bp, rule_id_for_bp
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 录入必须是对象')
+    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
+        raise HTTPException(413, 'BP 录入过大')
+    path = (MATCHES.parent / 'camp_details') / (seq + '.json')
+    if not path.is_file():
+        raise HTTPException(404, '训练赛营地面板不存在')
+    try:
+        detail = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as error:
+        raise HTTPException(400, '营地面板 JSON 无法解析') from error
+    try:
+        clean, warnings = normalize_camp_events(detail, payload.get('events'), seq)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+    rule_id = rule_id_for_bp(parse_camp_bp(detail, seq) or {})
+    version = str(payload.get('version') or '').strip()[:40]
+    rule_label = str(payload.get('ruleProfile') or 'scrim-global-20').strip()[:40]
+    container = detail.get('data') if isinstance(detail.get('data'), dict) else {}
+    container['draftEvents'] = clean
+    if version:
+        container['version'] = version
+    if rule_label:
+        container['ruleProfile'] = rule_label
+    detail['data'] = container
+
+    backup = _write_camp_detail(path, detail, seq)
+    return {'ok': True, 'seq': seq, 'saved': len(clean), 'rule': rule_id,
+            'version': version, 'ruleProfile': rule_label,
+            'warnings': warnings, 'backup': backup.name}
+
+
+# KPL 源的情报报告按（数据指纹, 过滤参数）缓存：bp_games.jsonl 没变且参数相同
+# 就复用上次完整研究结论，避免每次请求对 4702 局全量重算。训练赛源不缓存——
+# 它依赖 repo 快照（15 秒窗口）与 camp_details 实时状态，必须反映最新录入。
+_BP_INTEL_KPL_CACHE = {}
+_BP_INTEL_KPL_CACHE_MAX = 8
+# 训练赛源的同一份报告（营地汇总 + 过程匹配 + 监控 + 研究 + 头像）。
+_BP_INTEL_SCRIM_CACHE = {}
+_BP_INTEL_SCRIM_CACHE_MAX = 8
+
+
+# BP 概览十区：按（数据指纹 + 全部筛选参数）缓存。KPL 首次全量聚合约 3 秒，
+# 之后切队伍/窗口命中缓存；训练赛数据量小，同样按营地指纹缓存。
+_BP_LAB_CACHE = {}
+_BP_LAB_CACHE_MAX = 8
+_BP_LAB_DISK = _CACHE_DIR / 'bp-lab.json'
+_BP_LAB_LOOKUP_CACHE = {}
+_BP_LAB_LOOKUP_CACHE_MAX = 16
+
+
+def _kpl_source_stamp(kpl_bp):
+    try:
+        stat = kpl_bp.GAMES_PATH.stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+# 监控报告按（camp_details 指纹, 过滤参数）缓存：教练反复切窗口/刷新时
+# 不必每次重读全部营地面板。营地目录有新增/修改（指纹变化）自动失效。
+_MONITOR_CACHE = {}
+_MONITOR_CACHE_MAX = 12
+
+
+def _camp_dir_stamp(camp_dir):
+    """营地目录指纹（最新 mtime），同样带 2 秒 TTL；写入口会主动清掉。"""
+    state = _CAMP_STAMP_STATE
+    now = monotonic()
+    if state['path'] == str(camp_dir) and now - state['at'] < _STAMP_TTL:
+        return state['value']
+    try:
+        value = max((p.stat().st_mtime_ns for p in camp_dir.glob('*.json')),
+                    default=0.0)
+    except OSError:
+        value = None
+    state.update(path=str(camp_dir), at=now, value=value)
+    return value
+
+
+@router.get('/api/v3/monitor')
+def monitor_report(request: Request):
+    """周期异常监控：英雄/组合/选手/体系的窗口突变清单。"""
+    from monitor import monitor as run_monitor, UNITS
+    values = request.query_params
+    unit = values.get('unit', 'week')
+    if unit not in UNITS:
+        raise HTTPException(400, '监控窗口必须是 day / week / month')
+    player = str(values.get('player') or '').strip()
+    camp_dir = MATCHES.parent / 'camp_details'
+    # 指纹同时覆盖营地文件与 DB：对手命名/合并写的是 DB，不改营地文件，
+    # 缓存键必须跟着变，否则归属完成后页面还会显示旧的「待命名战队」。
+    stamp = (_camp_dir_stamp(camp_dir), _dataset_stamp())
+    cache_key = (stamp, unit, player, values.get('from') or '', values.get('to') or '')
+    cached = _MONITOR_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        report = run_monitor(bp_board()['games'], unit=unit,
+                             date_from=(values.get('from') or '').strip() or None,
+                             date_to=(values.get('to') or '').strip() or None)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    if player:
+        # 选手个人页只要自己的英雄池变化条目，其余异常不必下发
+        report['anomalies'] = [a for a in report['anomalies']
+                               if a.get('kind') == 'player-pool' and a.get('object') == player]
+        report['player'] = player
+    if stamp is not None:
+        if len(_MONITOR_CACHE) >= _MONITOR_CACHE_MAX:
+            _MONITOR_CACHE.pop(next(iter(_MONITOR_CACHE)))
+        _MONITOR_CACHE[cache_key] = report
+    return report
+
+
+# 对手打法按（营地指纹 + DB 指纹）缓存：对手命名/合并写 DB 会自动失效。
+_TEAM_BEHAVIOR_CACHE = {}
+_TEAM_BEHAVIOR_CACHE_MAX = 8
+
+
+@router.get('/api/v3/team-behavior')
+def team_behavior(repo=Depends(repository)):
+    """对手打法习惯：阵容/阵营统计 + 对手视角经济检查点；证据缺失留空。"""
+    from bp_process import link_scrim_process
+    from opponent_behavior import opponent_behavior
+    stamp = (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
+    cached = _TEAM_BEHAVIOR_CACHE.get(stamp)
+    if cached is not None:
+        return cached
+    rows = bp_board()['games']
+    process_map = link_scrim_process(rows, repo.get()['matches'])
+    report = opponent_behavior(rows, process_map)
+    if stamp[0] is not None or stamp[1]:
+        if len(_TEAM_BEHAVIOR_CACHE) >= _TEAM_BEHAVIOR_CACHE_MAX:
+            _TEAM_BEHAVIOR_CACHE.pop(next(iter(_TEAM_BEHAVIOR_CACHE)))
+        _TEAM_BEHAVIOR_CACHE[stamp] = report
+    return report
+
+
+@router.get('/api/v3/bp-intelligence')
+def bp_intelligence_report(request: Request, repo=Depends(repository)):
+    """BP 内置研究；严格匹配回放经济证据，避免跨局错配。"""
+    from bp_intelligence import build_report
+    from monitor import monitor as run_monitor
+    from bp_process import link_scrim_process
+    from bp_camp import hero_entry
+    import kpl_bp
+    import re
+
+    values = request.query_params
+    source = values.get('source', 'scrim')
+    team = str(values.get('team') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    version = str(values.get('version') or '').strip()
+    stage = str(values.get('stage') or '').strip()
+    # 训练赛源过去每次请求都重跑「营地汇总 + 过程匹配 + 监控 + 研究 + 头像」，
+    # 约 0.4 秒；它只取决于营地面板、对局包与筛选参数，和 KPL 源一样按指纹缓存。
+    scrim_stamp = bp_board_stamp()
+    scrim_key = (scrim_stamp, team, start, end, version, stage)
+    if source != 'kpl' and scrim_stamp[0] is not None:
+        scrim_cached = _BP_INTEL_SCRIM_CACHE.get(scrim_key)
+        if scrim_cached is not None:
+            return json_response(scrim_cached)
+    try:
+        panel_board = bp_board() if source == 'scrim' else None
+        # 只按完整日期、双方 10 英雄、阵营与唯一匹配连接；对不上就留空。
+        # 仅读仓库已有快照，绝不重新抓取回放或把队伍经济当个人对线经济。
+        process_map = (link_scrim_process(panel_board['games'], repo.get()['matches'])
+                       if panel_board else {})
+        monitor_window = (run_monitor(panel_board['games'], unit='week') if panel_board else None)
+        if source == 'kpl':
+            stamp = _kpl_source_stamp(kpl_bp)
+            cache_key = (stamp, team, start, end, version, stage)
+            report = _BP_INTEL_KPL_CACHE.get(cache_key)
+            if report is None:
+                report = build_report([], kpl_bp.load_games(), source=source,
+                                      team=team, start=start, end=end,
+                                      version=version, stage=stage, process_map={})
+                if stamp is not None:
+                    if len(_BP_INTEL_KPL_CACHE) >= _BP_INTEL_KPL_CACHE_MAX:
+                        _BP_INTEL_KPL_CACHE.pop(next(iter(_BP_INTEL_KPL_CACHE)))
+                    _BP_INTEL_KPL_CACHE[cache_key] = report
+        else:
+            report = build_report(
+                panel_board['games'] if panel_board else [],
+                [],
+                source=source,
+                team=team,
+                start=start,
+                end=end,
+                version=version,
+                stage=stage,
+                process_map=process_map,
+                monitor_window=monitor_window,
+            )
+        # 头像仅用本机可验证的英雄图，避免 HTML 中嵌入任意远程 URL。
+        heroes = set()
+        for key in ('picks', 'bans'):
+            heroes.update(row['hero'] for row in report[key])
+        for key in ('pairs', 'trios'):
+            for row in report[key]:
+                heroes.update(row['heroes'])
+        for row in report['players']:
+            heroes.add(row['hero'])
+        for row in report['responses']:
+            heroes.add(row['trigger'])
+            heroes.add(row['response'])
+        for section in ('matchups', 'twoStep'):
+            for row in (report.get('bpStudies') or {}).get(section) or []:
+                if section == 'matchups':
+                    heroes.update(row['enemyCore'])
+                    heroes.add(row['candidate'])
+                else:
+                    heroes.add(row['trigger'])
+                    for branch in row['branches']:
+                        heroes.add(branch['ownPick'])
+                        heroes.add(branch['enemyNext'])
+        for row in (report.get('bpStudies') or {}).get('draft', {}).get('rounds', []):
+            heroes.add(row['hero'])
+        for row in (report.get('bpStudies') or {}).get('version', {}).get('changes', []):
+            heroes.add(row['hero'])
+        # Multi-round explorer includes long-tail Ban/Pick heroes beyond the
+        # top-24 aggregate tables; resolve their local icons as well.
+        for node in (report.get('bpStudies') or {}).get('draftTree', {}).get('nodes', []):
+            if node.get('hero'):
+                heroes.add(node['hero'])
+        for context in (report.get('bpStudies') or {}).get('nextPickPolicy', {}).get('contexts', []):
+            heroes.add(context['opponentHero'])
+            heroes.update(pick['hero'] for pick in context['options'])
+        icons = {}
+        if panel_board:
+            for hero, item in (panel_board.get('heroMeta') or {}).items():
+                url = (item or {}).get('icon') or ''
+                if hero in heroes and re.fullmatch(r'/catalog/icons/hero-\d+\.png', url):
+                    icons[hero] = url
+        for hero in heroes:
+            if hero in icons:
+                continue
+            url = (hero_entry(hero) or {}).get('icon') or ''
+            if re.fullmatch(r'/catalog/icons/hero-\d+\.png', url):
+                icons[hero] = url
+        report['icons'] = icons
+        if source != 'kpl' and scrim_stamp[0] is not None:
+            if len(_BP_INTEL_SCRIM_CACHE) >= _BP_INTEL_SCRIM_CACHE_MAX:
+                _BP_INTEL_SCRIM_CACHE.pop(next(iter(_BP_INTEL_SCRIM_CACHE)))
+            _BP_INTEL_SCRIM_CACHE[scrim_key] = report
+        return json_response(report)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@router.get('/api/v3/bp-lab')
+def bp_lab_report(request: Request):
+    """BP 概览十区：英雄、组合、对抗、对手习惯、演变、稳定性与赛前方案。
+
+    数据源严格分开：KPL（可含挑战者杯）与训练赛各自归一化、各自算胜率；
+    不把训练赛的终局名单冒充逐手顺序，也不从日期推断版本。
+    """
+    from bp_lab import build_report
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    team = str(values.get('team') or '').strip()
+    opponent = str(values.get('opponent') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    unit = str(values.get('unit') or ('day' if source == 'scrim' else 'month')).strip()
+    if unit not in ('day', 'month', 'season', 'stage'):
+        raise HTTPException(400, 'unit 只能是 day / month / season / stage')
+    target = [part.strip() for part in str(values.get('target') or '').split(',') if part.strip()]
+    combo = [part.strip() for part in str(values.get('combo') or '').split(',') if part.strip()]
+    rule = str(values.get('rule') or 'scrim-global-20').strip()
+    bo = str(values.get('bo') or 'BO5').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    if recent_days not in (7, 15, 30):
+        raise HTTPException(400, 'recentDays 只能是 7 / 15 / 30')
+
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = (stamp, source, league, team, opponent, start, end,
+                 unit, tuple(target), tuple(combo), rule, bo, recent_days)
+    cached = _BP_LAB_CACHE.get(cache_key)
+    if cached is not None:
+        return json_response(cached)
+    key_id = _cache_key_id(cache_key)
+    persisted = _report_disk_read(_BP_LAB_DISK, key_id, 'report')
+    if persisted is not None:
+        _BP_LAB_CACHE[cache_key] = persisted
+        return json_response(persisted)
+    try:
+        games = _bp_lab_games(source, league, start, end)
+        report = build_report(games, source=source, team=team, opponent=opponent,
+                              unit=unit, target=target or None, combo=combo or None,
+                              rule=rule, bo=bo, recent_days=recent_days)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    report['filters'] = {'source': source, 'league': league, 'team': team,
+                         'opponent': opponent, 'from': start, 'to': end,
+                         'unit': unit, 'target': target, 'combo': combo,
+                         'rule': rule, 'bo': bo, 'recentDays': recent_days}
+    if stamp is not None:
+        if len(_BP_LAB_CACHE) >= _BP_LAB_CACHE_MAX:
+            _BP_LAB_CACHE.pop(next(iter(_BP_LAB_CACHE)))
+        _BP_LAB_CACHE[cache_key] = report
+        _report_disk_write(_BP_LAB_DISK, key_id, 'report', report)
+    return json_response(report)
+
+
+# ── BP 工作台（2026-11 重做）：一份页面模型，KPL 与训练赛同题对照 ──────────
+_BP_STUDIO_CACHE = {}
+_BP_STUDIO_CACHE_MAX = 6
+_BP_STUDIO_DISK = _CACHE_DIR / 'bp-studio.json'
+# 页面模型加字段时递增，旧磁盘缓存自动失效。
+_BP_STUDIO_VERSION = '2026-11-17-a'
+_BP_STUDIO_TARGET_CACHE = {}
+_BP_STUDIO_TARGET_CACHE_MAX = 24
+# 类型博弈报告（英雄类型 × 手序 × BO × 核数），按数据指纹 + 全部筛选参数缓存。
+_BP_STUDIO_TYPES_CACHE = {}
+_BP_STUDIO_TYPES_CACHE_MAX = 16
+_BP_STUDIO_TYPES_DISK = _CACHE_DIR / 'bp-studio-types.json'
+_BP_STUDIO_COMBO_CACHE = {}
+_BP_STUDIO_COMBO_CACHE_MAX = 24
+_BP_STUDIO_RAW = {}
+_BP_STUDIO_NORM = {}
+_BP_STUDIO_SCRIM = {}
+
+
+def _bp_studio_raw(leagues):
+    """KPL 原始对局：先按赛季过滤，未选赛季 = 全库。按文件指纹缓存解析结果。"""
+    import kpl_bp
+    stamp = _kpl_source_stamp(kpl_bp)
+    key = (stamp, str(leagues or ''))
+    cached = _BP_STUDIO_RAW.get(key)
+    if cached is not None:
+        return cached
+    raw = kpl_bp.load_games()
+    wanted = [item.strip() for item in str(leagues or '').split(',') if item.strip()]
+    if wanted:
+        keep = set(wanted)
+        raw = [game for game in raw if str(game.get('leagueId') or '') in keep]
+    if stamp is not None:
+        if len(_BP_STUDIO_RAW) > 8:
+            _BP_STUDIO_RAW.clear()
+        _BP_STUDIO_RAW[key] = raw
+    return raw
+
+
+def _bp_studio_kpl(leagues):
+    """归一化后的 KPL 队-局行；同一份数据只归一化一次。"""
+    from bp_intelligence import normalize_kpl
+    import kpl_bp
+    stamp = _kpl_source_stamp(kpl_bp)
+    key = (stamp, str(leagues or ''))
+    cached = _BP_STUDIO_NORM.get(key)
+    if cached is not None:
+        return cached
+    games = normalize_kpl(_bp_studio_raw(leagues))
+    if stamp is not None:
+        if len(_BP_STUDIO_NORM) > 6:
+            _BP_STUDIO_NORM.clear()
+        _BP_STUDIO_NORM[key] = games
+    return games
+
+
+def _bp_studio_scrim():
+    from bp_intelligence import normalize_scrims
+    stamp = (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
+    cached = _BP_STUDIO_SCRIM.get(stamp)
+    if cached is not None:
+        return cached
+    rows = bp_board().get('games') or []
+    games = normalize_scrims(rows)
+    if len(_BP_STUDIO_SCRIM) > 4:
+        _BP_STUDIO_SCRIM.clear()
+    _BP_STUDIO_SCRIM[stamp] = games
+    return games
+
+
+def _team_icons():
+    """战队队标：本机缓存目录 resources/icons/teams（scripts/sync_team_icons.py 生成）。"""
+    path = ROOT / 'resources' / 'icons' / 'teams' / 'index.json'
+    try:
+        data = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    teams = data.get('teams') if isinstance(data.get('teams'), dict) else data
+    return {str(key): value for key, value in teams.items()
+            if value and not str(key).startswith('_')}
+
+
+def _studio_windows(games, start, end, recent_days, compare):
+    from bp_studio import comparison_window, _in_window, window_bounds
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    current = _in_window(games, bounds['from'], bounds['to'])
+    windows = []
+    for mode in ('prev', 'yoy'):
+        span = comparison_window(bounds, mode)
+        if not span:
+            continue
+        rows = _in_window(games, span['from'], span['to'])
+        windows.append({'mode': mode, 'label': span['label'], 'from': span['from'],
+                        'to': span['to'], 'games': len(rows), 'rows': rows})
+    return bounds, current, windows
+
+
+@router.get('/api/v3/bp-studio')
+def bp_studio_page(request: Request):
+    """BP 工作台页面模型：目录 + 主数据层 + 对手情报 + 目标对照 + 赛前方案。"""
+    from bp_intelligence import normalize_kpl
+    from bp_studio import (SCHEMA, build_studio, compare_break, hero_catalog,
+                           league_catalog, lineup_diff, opponent_studio, plan,
+                           target_break, team_catalog, _hero_rates, _strong_combos)
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    opponent = str(values.get('opponent') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    compare = str(values.get('compare') or 'prev').strip()
+    if compare not in ('prev', 'yoy', 'none'):
+        raise HTTPException(400, 'compare 只能是 prev / yoy / none')
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    if recent_days not in (7, 15, 30, 90, 180, 365):
+        raise HTTPException(400, 'recentDays 只能是 7 / 15 / 30 / 90 / 180 / 365')
+    target = [part.strip() for part in str(values.get('target') or '').split(',')
+              if part.strip()]
+    if len(target) > 3:
+        raise HTTPException(400, '目标最多 3 个英雄')
+
+    kpl_stamp = _kpl_source_stamp(kpl_bp)
+    camp_stamp = (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
+    cache_key = (kpl_stamp, camp_stamp, source, leagues, team, opponent,
+                 start, end, compare, recent_days, tuple(target), _BP_STUDIO_VERSION)
+    cached = _BP_STUDIO_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    key_id = _cache_key_id(cache_key)
+    persisted = _report_disk_read(_BP_STUDIO_DISK, key_id, 'page')
+    if persisted is not None:
+        _BP_STUDIO_CACHE[cache_key] = persisted
+        return persisted
+
+    raw = _bp_studio_raw(leagues)
+    kpl_games = _bp_studio_kpl(leagues)
+    own_games = _bp_studio_scrim()
+    primary = kpl_games if source == 'kpl' else own_games
+    if not primary:
+        raise HTTPException(400, '当前数据源还没有可用的 BP 记录。')
+    scrim_names = sorted({str(game.get('enemy')) for game in own_games
+                          if str(game.get('team')) == '本队' and game.get('enemy')})
+    # 首屏不知道默认值：由服务端一次性解析，避免前端先空跑一次再重取。
+    if team == '__auto__':
+        team = '本队' if source == 'scrim' else ''
+    auto_opponent = opponent == '__auto__'
+    bounds, current, windows = _studio_windows(primary, start, end, recent_days, compare)
+    if auto_opponent:
+        # 默认对手取当前窗口里出场最多的队，首屏才有东西可看。
+        counts = Counter(str(game.get('team')) for game in current
+                         if str(game.get('team')) and str(game.get('team')) != team)
+        opponent = counts.most_common(1)[0][0] if counts else ''
+    prev = next((item for item in windows if item['mode'] == 'prev'), None)
+    yoy = next((item for item in windows if item['mode'] == 'yoy'), None)
+    focus = '' if source == 'kpl' else '本队'
+    page = build_studio(
+        primary, source=source, team=team, opponent=opponent, bounds=bounds,
+        compare=compare, recent_days=recent_days,
+        prev_games=(prev or {}).get('rows'),
+        yoy_games=(yoy or {}).get('rows'),
+        opponent_key=opponent, focus_team=focus)
+    # KPL 基线：训练赛来源时给同窗口同赛季的联盟大盘，用于对照。
+    baseline = None
+    if source == 'scrim' and kpl_games:
+        baseline = build_studio(
+            kpl_games, source='kpl', bounds=bounds, recent_days=recent_days,
+            team='', opponent='', compare='none', focus_team='')
+
+    kpl_rates = _hero_rates(_in_scope(kpl_games, bounds))
+    meta_bans = {hero: index + 1 for index, (hero, _row) in enumerate(
+        sorted(((hero, row) for hero, row in kpl_rates.items()),
+               key=lambda item: -(item[1].get('bans') or 0))[:15])}
+    strong = _strong_combos(page['combos'].get('pairs') or [])
+    opponent_key = opponent or ((baseline or {}).get('opponent') or '')
+    if opponent == '__all__':
+        opp_scope = [game for game in current if str(game.get('team')) != team]
+        opponent_block = opponent_studio(opp_scope, '__all__', strong=strong,
+                                         meta_bans=meta_bans)
+    elif opponent:
+        opponent_block = opponent_studio(current, opponent, strong=strong,
+                                         meta_bans=meta_bans)
+    else:
+        opponent_block = {'available': False, 'reason': '未选择对手。'}
+
+    own_bounds, own_current, _ = _studio_windows(own_games, start, end, recent_days, compare)
+    own_team_rows = [game for game in own_current if str(game.get('team')) == '本队']
+    target_block = None
+    if target:
+        kpl_break = target_break(_in_scope(kpl_games, bounds), target)
+        own_break = (target_break(own_team_rows, target)
+                     if own_team_rows else {'available': False, 'reason': '本队训练赛没有同窗口样本。'})
+        target_block = {
+            'kpl': kpl_break, 'own': own_break,
+            'compare': compare_break(kpl_break, own_break),
+        }
+
+    opp_rows = [game for game in current if str(game.get('team')) == opponent] if opponent else []
+    diff = lineup_diff(own_team_rows, opp_rows, size=2) if own_team_rows and opp_rows \
+        else {'available': False, 'shared': [], 'onlyUs': [], 'onlyThem': []}
+
+    plan_block = {'available': False, 'reason': '未选择对手。'}
+    if opponent and opponent != '__all__':
+        try:
+            plan_block = plan(current, team, opponent, source=source)
+        except ValueError:
+            plan_block = {'available': False, 'reason': '赛前方案数据不足。'}
+
+    # 手序可用率：盲选 / BP 不完整的局不进第 N 手统计，页头要把它说清楚。
+    if source == 'kpl':
+        blind = sum(1 for game in current if str(game.get('bpMode') or '') == 'blind')
+        partial = sum(1 for game in current if str(game.get('bpMode') or '') == 'partial')
+        ordered = sum(1 for game in current
+                      if game.get('pickOrderKnown') and game.get('bansKnown'))
+    else:
+        blind = 0
+        ordered = sum(1 for game in current if game.get('pickOrderKnown'))
+        partial = max(0, len(current) - ordered)
+    quality = {'games': len(current), 'ordered': ordered,
+               'blind': blind, 'partial': partial}
+    heroes = page['heroes']
+    heroes.pop('byLane', None)
+    for key in ('pairs', 'size3'):
+        rows = page['combos'].get(key) or []
+        page['combos'][f'{key}Total'] = len(rows)
+        page['combos'][key] = rows[:45]
+    catalog = league_catalog(raw)
+    scrim_opponents = sorted({str(game.get('enemy')) for game in own_games
+                              if str(game.get('team')) == '本队' and game.get('enemy')})
+    report = {
+        'schema': SCHEMA,
+        'source': source,
+        'scope': {
+            'source': source, 'leagues': leagues, 'team': team, 'opponent': opponent,
+            'from': bounds['from'], 'to': bounds['to'], 'days': bounds['days'],
+            'anchor': bounds['anchor'], 'compare': compare,
+            'games': len(current), 'boardGames': page['boardGames'],
+            'prev': ({'from': prev['from'], 'to': prev['to'], 'games': prev['games']}
+                     if prev else None),
+            'yoy': ({'from': yoy['from'], 'to': yoy['to'], 'games': yoy['games']}
+                    if yoy else None),
+        },
+        'options': {
+            'leagues': catalog['leagues'], 'years': catalog['years'],
+            'kinds': catalog['kinds'],
+            'teams': team_catalog(raw),
+            'heroes': hero_catalog(kpl_games),
+            'scrimOpponents': scrim_opponents,
+            'teamIcons': _team_icons(),
+            'recentDays': recent_days,
+            'recentOptions': [7, 15, 30, 90, 180, 365],
+            'defaultTeam': '重庆狼队' if source == 'kpl' else '本队',
+            'defaultOpponent': ('成都AG超玩会' if source == 'kpl'
+                                else (scrim_opponents[0] if scrim_opponents else '')),
+        },
+        'quality': quality,
+        'primary': page,
+        'baseline': baseline,
+        'opponentBlock': opponent_block,
+        'targetBlock': target_block,
+        'lineupDiff': diff,
+        'plan': plan_block,
+        'caveats': page['caveats'] + [
+            '拆组合 = 目标组合里恰好一个英雄被对手 Ban；第几手只表示该队自己的 Ban 位次。',
+            'KPL 先验是历史同队同局记录；训练赛对照只说明我们做过什么，不证明对错。',
+        ],
+    }
+    if kpl_stamp is not None:
+        if len(_BP_STUDIO_CACHE) >= _BP_STUDIO_CACHE_MAX:
+            _BP_STUDIO_CACHE.pop(next(iter(_BP_STUDIO_CACHE)))
+        _BP_STUDIO_CACHE[cache_key] = report
+        _report_disk_write(_BP_STUDIO_DISK, key_id, 'page', report)
+    return report
+
+
+def _in_scope(games, bounds):
+    from bp_studio import _in_window
+    return _in_window(games, bounds['from'], bounds['to'])
+
+
+@router.get('/api/v3/bp-studio/target')
+def bp_studio_target(request: Request):
+    """只重算目标（英雄 / 组合）：KPL 怎么应对、本队怎么应对、差在哪。"""
+    from bp_intelligence import normalize_kpl
+    from bp_studio import (compare_break, _in_window, target_break, window_bounds)
+    import kpl_bp
+
+    values = request.query_params
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    target = [part.strip() for part in str(values.get('target') or '').split(',')
+              if part.strip()]
+    if not target:
+        raise HTTPException(400, '请选择目标英雄或组合')
+    if len(target) > 3:
+        raise HTTPException(400, '目标最多 3 个英雄')
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    cache_key = (_kpl_source_stamp(kpl_bp),
+                 _camp_dir_stamp(MATCHES.parent / 'camp_details'), leagues, team,
+                 start, end, recent_days, tuple(target))
+    cached = _BP_STUDIO_TARGET_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    raw = _bp_studio_raw(leagues)
+    kpl_games = _bp_studio_kpl(leagues)
+    own_games = _bp_studio_scrim()
+    own_team_rows = [game for game in own_games if str(game.get('team')) == '本队']
+    kpl_bounds = window_bounds(kpl_games, start=start, end=end, recent_days=recent_days)
+    own_bounds = window_bounds(own_team_rows, start=start, end=end,
+                               recent_days=recent_days)
+    kpl_break = target_break(_in_window(kpl_games, kpl_bounds['from'], kpl_bounds['to']),
+                             target)
+    own_break = (target_break(_in_window(own_team_rows, own_bounds['from'],
+                                         own_bounds['to']), target)
+                 if own_team_rows else {'available': False,
+                                        'reason': '本队训练赛还没有同窗口样本。'})
+    if team:
+        own_break['team'] = team
+    report = {
+        'target': target, 'label': kpl_break.get('label'),
+        'kpl': kpl_break, 'own': own_break,
+        'compare': compare_break(kpl_break, own_break, kpl_label='KPL',
+                                 own_label=team or '本队'),
+        'windows': {'kpl': kpl_bounds, 'own': own_bounds if own_team_rows else None},
+    }
+    if len(_BP_STUDIO_TARGET_CACHE) >= _BP_STUDIO_TARGET_CACHE_MAX:
+        _BP_STUDIO_TARGET_CACHE.pop(next(iter(_BP_STUDIO_TARGET_CACHE)))
+    _BP_STUDIO_TARGET_CACHE[cache_key] = report
+    return report
+
+
+@router.get('/api/v3/bp-studio/combo')
+def bp_studio_combo(request: Request):
+    """自选组合的完整战绩卡（同队同局）。"""
+    from bp_intelligence import normalize_kpl
+    from bp_studio import _in_window, window_bounds
+    from bp_lab import combo_detail
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    heroes = [part.strip() for part in str(values.get('target') or '').split(',')
+              if part.strip()]
+    if len(heroes) < 2:
+        raise HTTPException(400, '至少选择 2 个英雄')
+    if len(heroes) > 3:
+        raise HTTPException(400, '最多 3 个英雄')
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    cache_key = (_kpl_source_stamp(kpl_bp),
+                 _camp_dir_stamp(MATCHES.parent / 'camp_details'), source, leagues,
+                 team, start, end, recent_days, tuple(sorted(heroes)))
+    cached = _BP_STUDIO_COMBO_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    if source == 'scrim':
+        games = [game for game in _bp_studio_scrim()
+                 if not team or str(game.get('team')) == team]
+    else:
+        games = _bp_studio_kpl(leagues)
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    scoped = _in_window(games, bounds['from'], bounds['to'])
+    detail = combo_detail(scoped, heroes, recent_days=recent_days)
+    detail['window'] = bounds
+    detail['source'] = source
+    if len(_BP_STUDIO_COMBO_CACHE) >= _BP_STUDIO_COMBO_CACHE_MAX:
+        _BP_STUDIO_COMBO_CACHE.pop(next(iter(_BP_STUDIO_COMBO_CACHE)))
+    _BP_STUDIO_COMBO_CACHE[cache_key] = detail
+    return detail
+
+
+@router.get('/api/v3/bp-studio/opponent')
+def bp_studio_opponent(request: Request):
+    """只取一个对手的情报块，供“对比对手”用，避免再拉整页模型。"""
+    from bp_studio import _in_window, opponent_studio, window_bounds
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    opponent = str(values.get('opponent') or '').strip()
+    if not opponent or opponent == '__all__':
+        raise HTTPException(400, '请选择一个具体对手')
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    scoped = _in_window(games, bounds['from'], bounds['to'])
+    block = opponent_studio(scoped, opponent)
+    block['window'] = bounds
+    return block
+
+
+@router.get('/api/v3/bp-studio/sequence')
+def bp_studio_sequence(request: Request):
+    """第 N 手查询：某队第 N 手 Ban/Pick 了什么，对面同手 / 下一手怎么接。"""
+    from bp_studio import _in_window, sequence_board, window_bounds
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    action = str(values.get('action') or 'pick').strip()
+    if action not in ('pick', 'ban'):
+        raise HTTPException(400, 'action 只能是 pick / ban')
+    try:
+        hand = int(values.get('hand') or 1)
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'hand / recentDays 必须是整数')
+    hand = max(1, min(5, hand))
+    hero = str(values.get('hero') or '').strip()
+    games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    scoped = _in_window(games, bounds['from'], bounds['to'])
+    if source == 'scrim' and not team:
+        team = '本队'
+    report = sequence_board(scoped, team, action=action, hand=hand, hero=hero)
+    report['window'] = bounds
+    report['source'] = source
+    return report
+
+
+@router.get('/api/v3/bp-studio/types')
+def bp_studio_types(request: Request, repo=Depends(repository)):
+    """类型博弈：Ban / Pick 的英雄类型 × 手序 × BO × 时间，外加核数与条件反应。"""
+    from bp_studio import _in_window, window_bounds
+    from bp_types import build_types
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    opponent = str(values.get('opponent') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+        bo = int(values.get('bo') or 0)
+        hand = int(values.get('hand') or 0)
+        core = int(values.get('core') or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays / bo / hand / core 必须是整数')
+    if bo not in (0, 3, 5, 7):
+        raise HTTPException(400, 'bo 只能是 0 / 3 / 5 / 7')
+    targets = [part.strip() for part in str(values.get('targets') or '').split(',')
+               if part.strip()][:3]
+    # 类型博弈要在全库（KPL 4700 局 / 训练赛全量）上做英雄类型 × 手序 × BO 的交叉，
+    # 一次约 0.9 秒；筛选参数与数据指纹都不变时直接复用上一份报告。
+    kpl_stamp = _kpl_source_stamp(kpl_bp)
+    camp_stamp = (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
+    types_key = (_BP_STUDIO_VERSION, kpl_stamp, camp_stamp, source, leagues, team, opponent, start, end,
+                 recent_days, bo, hand, core, tuple(targets))
+    types_cached = _BP_STUDIO_TYPES_CACHE.get(types_key)
+    if types_cached is not None:
+        return types_cached
+    types_key_id = _cache_key_id(types_key)
+    types_persisted = _report_disk_read(_BP_STUDIO_TYPES_DISK, types_key_id, 'types')
+    if types_persisted is not None:
+        _BP_STUDIO_TYPES_CACHE[types_key] = types_persisted
+        return types_persisted
+    hint = {}
+    timeline_games = None
+    if source == 'scrim':
+        from bp_intelligence import normalize_scrims
+        from bp_process import link_scrim_process
+        rows = bp_board().get('games') or []
+        process_map = link_scrim_process(rows, repo.get()['matches'])
+        games = normalize_scrims(rows, process_map=process_map)
+        # 训练课系列赛登记了 BO3/5/7：按 channel match_key 精确挂到每一局。
+        try:
+            from contextlib import closing
+            with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as conn:
+                for match_key, best_of in conn.execute(
+                        'SELECT g.match_key, s.best_of FROM training_series_games g'
+                        ' JOIN training_series s ON s.id = g.series_id'):
+                    if best_of in (3, 5, 7):
+                        hint[str(match_key)] = int(best_of)
+        except sqlite3.Error:
+            pass
+        for game in games:
+            key = str(game.get('processMatchKey') or '')
+            if key and hint.get(key):
+                hint[game.get('id')] = hint[key]
+        timeline_games = games
+    else:
+        games = _bp_studio_kpl(leagues)
+        timeline_games = games
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    scoped = _in_window(games, bounds['from'], bounds['to'])
+    if source == 'scrim' and not team:
+        team = '本队'
+    # 排期表里的赛制是日期级兜底；series 的 best_of 已经在上面精确挂到局。
+    try:
+        import workspace_store
+        workspace = workspace_store.Workspace(DB).ensure_schema()
+        for row in workspace.list_schedules():
+            match = re.search(r'([357])', str(row.get('format') or ''))
+            if match and str(row.get('date') or ''):
+                hint.setdefault(str(row.get('date'))[:10], int(match.group(1)))
+    except Exception:  # 排期读不到不影响类型分析
+        pass
+    report = build_types(scoped, team=team, opponent=opponent, bo=bo, targets=targets,
+                         bo_hint=hint, hand=hand, core=core,
+                         timeline_games=timeline_games)
+    report['window'] = bounds
+    report['filters'] = {'source': source, 'leagues': leagues, 'team': team,
+                         'opponent': opponent, 'from': start, 'to': end,
+                         'recentDays': recent_days, 'bo': bo, 'targets': targets,
+                         'hand': hand, 'core': core}
+    if kpl_stamp is not None or camp_stamp[0] is not None:
+        if len(_BP_STUDIO_TYPES_CACHE) >= _BP_STUDIO_TYPES_CACHE_MAX:
+            _BP_STUDIO_TYPES_CACHE.pop(next(iter(_BP_STUDIO_TYPES_CACHE)))
+        _BP_STUDIO_TYPES_CACHE[types_key] = report
+        _report_disk_write(_BP_STUDIO_TYPES_DISK, types_key_id, 'types', report)
+    return report
+
+
+@router.get('/api/v3/bp-lab/lookup')
+def bp_lab_lookup(request: Request):
+    """指定英雄 / 组合 / 完整阵容的历史对手与分路类型。"""
+    from bp_lab import lookup as run_lookup
+    import kpl_bp
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    heroes = [part.strip() for part in str(values.get('heroes') or '').split(',')
+              if part.strip()]
+    if not heroes:
+        raise HTTPException(400, '请至少提供一个英雄')
+    if len(heroes) > 5:
+        raise HTTPException(400, '最多查询 5 个英雄')
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = (stamp, source, league, tuple(heroes), start, end)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        games = _bp_lab_games(source, league, start, end)
+        result = run_lookup(games, heroes)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league, 'heroes': heroes,
+                         'from': start, 'to': end}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+@router.get('/api/v3/bp-lab/combo')
+def bp_lab_combo(request: Request):
+    """自选组合：任意 2–3 个英雄的同队同局战绩与基准。"""
+    from bp_lab import combo_detail
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    heroes = [part.strip() for part in str(values.get('heroes') or '').split(',')
+              if part.strip()]
+    if not heroes:
+        raise HTTPException(400, '请至少选择一个英雄')
+    if len(heroes) > 5:
+        raise HTTPException(400, '组合最多 5 个英雄')
+    team = str(values.get('team') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    if recent_days not in (7, 15, 30):
+        raise HTTPException(400, 'recentDays 只能是 7 / 15 / 30')
+    import kpl_bp
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = ('combo-detail', stamp, source, league, team, tuple(heroes),
+                 start, end, recent_days)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = combo_detail(
+            _bp_lab_games(source, league, start, end), heroes,
+            team=team, recent_days=recent_days,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league, 'team': team,
+                         'heroes': heroes, 'from': start, 'to': end,
+                         'recentDays': recent_days}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+@router.get('/api/v3/bp-lab/counters')
+def bp_lab_counters(request: Request):
+    """04 区的按需查询：同一目标英雄/组合，各队怎么 Ban / 怎么应对。"""
+    from bp_lab import team_counters
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    target = [part.strip() for part in str(values.get('target') or '').split(',')
+              if part.strip()]
+    if not target:
+        raise HTTPException(400, '请选择目标英雄或组合')
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    import kpl_bp
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = ('counters', stamp, source, league, tuple(target), start, end)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = team_counters(_bp_lab_games(source, league, start, end), target)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league,
+                         'target': target, 'from': start, 'to': end}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+@router.get('/api/v3/bp-lab/stability')
+def bp_lab_stability(request: Request):
+    """09 区的按需查询：组合逐窗口胜率与稳定性判定。"""
+    from bp_lab import combo_stability
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    combo = [part.strip() for part in str(values.get('combo') or '').split(',')
+             if part.strip()]
+    if not combo:
+        raise HTTPException(400, '请选择组合')
+    team = str(values.get('team') or '').strip()
+    unit = str(values.get('unit') or ('day' if source == 'scrim' else 'month')).strip()
+    if unit not in ('day', 'month', 'season', 'stage'):
+        raise HTTPException(400, 'unit 只能是 day / month / season / stage')
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    import kpl_bp
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = ('stability', stamp, source, league, team, tuple(combo), unit, start, end)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        games = _bp_lab_games(source, league, start, end)
+        if team:
+            games = [g for g in games if str(g.get('team') or '') == team]
+        elif source == 'scrim':
+            games = [g for g in games if str(g.get('team') or '') == '本队']
+        result = combo_stability(games, combo, unit, available=[])
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league, 'team': team,
+                         'combo': combo, 'unit': unit, 'from': start, 'to': end}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+@router.get('/api/v3/bp-lab/opponent')
+def bp_lab_opponent(request: Request):
+    """03 区：指定对手 + 指定 BP 局面的组合/英雄使用与反制。"""
+    from bp_lab import opponent_research
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    opponent = str(values.get('opponent') or '').strip()
+    if not opponent:
+        raise HTTPException(400, '请选择对手')
+    side = str(values.get('side') or '').strip()
+    first_pick = str(values.get('firstPick') or values.get('first_pick') or '').strip()
+    combo = [part.strip() for part in str(values.get('combo') or '').split(',')
+             if part.strip()]
+    hero = str(values.get('hero') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    import kpl_bp
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = ('opponent', stamp, source, league, opponent, side, first_pick,
+                 tuple(combo), hero, start, end)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = opponent_research(
+            _bp_lab_games(source, league, start, end), opponent,
+            side=side, first_pick=first_pick,
+            combo=combo or None, hero=hero or None,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league, 'opponent': opponent,
+                         'side': side, 'firstPick': first_pick,
+                         'combo': combo, 'hero': hero,
+                         'from': start, 'to': end}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+@router.post('/api/v3/bp-lab/simulate')
+async def bp_lab_simulate(request: Request):
+    """训练赛规则沙盘：合法下一手 + 历史证据候选 + 对手一步回应。"""
+    from bp_lab import simulate_scrim
+
+    payload = await read_json(request)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, 'BP 沙盘请求必须是对象')
+    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
+        raise HTTPException(413, 'BP 沙盘请求过大')
+    evidence_source = str(payload.get('evidenceSource') or 'kpl').strip()
+    if evidence_source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'evidenceSource 只能是 kpl 或 scrim')
+    league = str(payload.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    start = str(payload.get('from') or '').strip()
+    end = str(payload.get('to') or '').strip()
+    try:
+        catalog = _local_scrim_hero_catalog()
+        evidence = _bp_lab_games(evidence_source, league, start, end)
+        return simulate_scrim(payload, catalog['heroes'], evidence)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+
+
+@router.get('/api/v3/bp-lab/compare')
+def bp_lab_compare(request: Request):
+    """时间对比：当前窗口 vs 环比（前一个等长窗口）vs 同比（去年同日期）。"""
+    from bp_lab import period_compare
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    team = str(values.get('team') or '').strip()
+    target = [part.strip() for part in str(values.get('target') or '').split(',')
+              if part.strip()]
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    if recent_days not in (7, 15, 30):
+        raise HTTPException(400, 'recentDays 只能是 7 / 15 / 30')
+    import kpl_bp
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = ('compare', stamp, source, league, team, tuple(target), start, end, recent_days)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = period_compare(
+            _bp_lab_games(source, league, '', ''),
+            start=start, end=end, source=source, team=team,
+            recent_days=recent_days, target=target or None,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league, 'team': team,
+                         'target': target, 'from': start, 'to': end,
+                         'recentDays': recent_days}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+@router.get('/api/v3/bp-lab/diagnose')
+def bp_lab_diagnose(request: Request, repo=Depends(repository)):
+    """己方英雄诊断 N01–N16：表现、趋势、异常、定位、归因、阵容对比。"""
+    from bp_diagnose import build_diagnosis, default_hero
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    league = str(values.get('league') or 'all').strip()
+    if league not in ('all', 'kpl', 'challenger'):
+        raise HTTPException(400, 'league 只能是 all / kpl / challenger')
+    team = str(values.get('team') or '').strip()
+    hero = str(values.get('hero') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    enemy_lineup = [part.strip() for part in
+                    str(values.get('enemyLineup') or values.get('enemy_lineup') or '').split(',')
+                    if part.strip()]
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    if recent_days not in (7, 15, 30):
+        raise HTTPException(400, 'recentDays 只能是 7 / 15 / 30')
+    if len(enemy_lineup) > 5:
+        raise HTTPException(400, '敌方阵容最多 5 个英雄')
+    import kpl_bp
+    stamp = (_kpl_source_stamp(kpl_bp) if source == 'kpl'
+             else (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp()))
+    cache_key = ('diagnose', stamp, source, league, team, hero, start, end,
+                 tuple(enemy_lineup), recent_days)
+    cached = _BP_LAB_LOOKUP_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        games = _bp_lab_games(source, league, '', '', repo=repo)
+        from collections import Counter
+        names = Counter(str(g.get('team') or '') for g in games if g.get('team'))
+        if not team:
+            team = ("本队" if source == 'scrim' and names.get("本队")
+                    else (names.most_common(1)[0][0] if names else ""))
+        if not hero:
+            hero = default_hero(games, team=team, recent_days=recent_days,
+                                start=start, end=end)
+        result = build_diagnosis(
+            games, team=team, hero=hero, recent_days=recent_days,
+            start=start, end=end, enemy_lineup=enemy_lineup, source=source,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    result['filters'] = {'source': source, 'league': league, 'team': team,
+                         'hero': hero, 'from': start, 'to': end,
+                         'enemyLineup': enemy_lineup, 'recentDays': recent_days}
+    if stamp is not None:
+        if len(_BP_LAB_LOOKUP_CACHE) >= _BP_LAB_LOOKUP_CACHE_MAX:
+            _BP_LAB_LOOKUP_CACHE.pop(next(iter(_BP_LAB_LOOKUP_CACHE)))
+        _BP_LAB_LOOKUP_CACHE[cache_key] = result
+    return result
+
+
+def _bp_lab_games(source, league, start, end, repo=None):
+    """归一化 BP 概览的数据源；KPL 先按联赛类型过滤，再做日期过滤。"""
+    from bp_intelligence import normalize_kpl, normalize_scrims
+    import kpl_bp
+
+    if source == 'kpl':
+        raw = kpl_bp.load_games()
+        if league == 'challenger':
+            raw = [g for g in raw if '挑战者杯' in str(g.get('leagueName') or '')]
+        elif league == 'kpl':
+            raw = [g for g in raw if '挑战者杯' not in str(g.get('leagueName') or '')]
+        games = normalize_kpl(raw)
+    else:
+        rows = bp_board().get('games') or []
+        process_map = {}
+        if repo is not None:
+            from bp_process import link_scrim_process
+            process_map = link_scrim_process(rows, repo.get()['matches'])
+        games = normalize_scrims(rows, process_map=process_map)
+    if start:
+        games = [g for g in games if str(g.get('date') or '') >= start]
+    if end:
+        games = [g for g in games if str(g.get('date') or '') <= end]
+    return games
 
 
 @router.get('/api/v3/effect')
@@ -1961,16 +4759,31 @@ def training_effect_analysis():
 
 @router.get('/api/v3/team-training')
 def team_training_ledger():
-    """按对手的训练台账：训练计划里的排期 + 营地交手日自动归集。"""
+    """按对手的训练台账：训练计划里的排期 + 营地交手日自动归集。
+
+    台账要读全部营地面板并交叉对局包（500 次文件读 + 605 次 JSON 解析，约
+    0.6 秒），但结果只取决于这些文件和排期表；按（营地目录, 对局包 + DB）
+    指纹缓存，改一局营地或排期就自动重算。
+    """
     import team_clusters
     import workspace_store
+    stamp = bp_board_stamp()
+    if stamp[0] is not None:
+        cached = _TEAM_TRAINING_CACHE.get(stamp)
+        if cached is not None:
+            return cached
     workspace = workspace_store.Workspace(DB).ensure_schema()
-    return team_clusters.team_training(MATCHES.parent / 'camp_details', DB,
-                                       workspace.list_schedules(), MATCHES)
+    payload = team_clusters.team_training(MATCHES.parent / 'camp_details', DB,
+                                          workspace.list_schedules(), MATCHES)
+    if stamp[0] is not None:
+        if len(_TEAM_TRAINING_CACHE) >= _TEAM_TRAINING_CACHE_MAX:
+            _TEAM_TRAINING_CACHE.clear()
+        _TEAM_TRAINING_CACHE[stamp] = payload
+    return payload
 
 
 # ── 选手看板：营地十人面板 → 逐人逐局记录 ──────────────────────────────
-# 四张选手页（名单与状态 / 选手认领 / 选手与位置 / 选手对比）共用这一份数据。
+# 选手页（选手档案 / 选手对比）共用这一份数据。
 # 只用营地自己的字段：battleStats 的击杀/死亡/助攻/经济/输出/承伤/参团/评分，
 # 以及 battleRecords 的 position / usedHero。不推算、不补值。
 _CAMP_LANES = {0: '对抗路', 1: '中路', 2: '发育路', 3: '打野', 4: '游走'}
@@ -2033,26 +4846,81 @@ def camp_accounts():
 
 def invalidate_players_cache():
     """身份 / 战队改名后清掉选手看板缓存，页面刷新立即按新名字聚合。"""
-    global _players_cache, _players_at
+    global _players_cache, _players_at, _hero_facts_cache, _hero_facts_at
     _players_cache, _players_at = None, 0.0
+    # 英雄详情的「选手使用榜」走 depth_api.build_facts；它也吃账号映射，
+    # 认领/改名后不能还挂着旧昵称。
+    _hero_facts_cache, _hero_facts_at = None, 0.0
+
+
+def _depth_identity_profile():
+    """depth_api.build_facts 用的身份口径：players / player_accounts 是唯一来源。
+
+    depth_api 原本只认 settings.aliases（旧口径），认领后英雄详情仍显示营地
+    昵称。这里把账号映射编译成它认识的 profile 形状，并带一个 DB 指纹让
+    facts 缓存跟着失效。
+    """
+    accounts = camp_accounts()
+    home = own_team()
+    roster, aliases, enemy_aliases, members = {}, {}, {}, []
+    for info in accounts.values():
+        player_id = str(info.get('playerId') or '')
+        name = str(info.get('name') or '').strip()
+        if not player_id or not name:
+            continue
+        team_name = str(info.get('teamName') or '').strip()
+        own = info.get('teamId') == home['id'] or not team_name \
+            or team_name.startswith('待命名')
+        label = name if own or name.startswith(team_name + '.') else f'{team_name}.{name}'
+        if player_id not in roster:
+            members.append({'id': player_id, 'name': name, 'label': label,
+                            'team': team_name, 'position': info.get('position') or ''})
+        roster[player_id] = label
+        nickname = _camp_name(info.get('nickname'))
+        if nickname:
+            (aliases if own else enemy_aliases)[nickname] = player_id
+    try:
+        stamp = str(DB.stat().st_mtime_ns) if DB.is_file() else ''
+    except OSError:
+        stamp = ''
+    return {'teamName': home['name'], 'roster': roster, 'members': members,
+            'aliases': aliases, 'enemyAliases': enemy_aliases, 'stamp': stamp}
 
 
 def _panel_games():
     """营地面板 id → 对局标题 / 对手 / 日期，用于把面板挂回训练赛。"""
     index = {}
+    # 通道删除/重建后旧 bundle 会留在 data/matches；这里只认还活着的通道，
+    # 否则面板行可能链到已删除的那一份（打开是重复局或 404）。
+    live_channels = set()
+    if DB.is_file():
+        try:
+            with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as connection:
+                live_channels = {str(row[0]) for row in connection.execute('SELECT id FROM channels')}
+        except sqlite3.Error:
+            live_channels = set()
+    try:
+        import opponent_identity
+        by_seq = opponent_identity.resolve(DB, opponent_identity.camp_dir_for(MATCHES))['bySeq']
+    except Exception:  # noqa: BLE001 - 解析失败退回数据包里的手写队名
+        by_seq = {}
     for path in (ROOT / 'data' / 'matches').glob('*.json'):
         try:
             body = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             continue
         match = body.get('match') or {}
+        key = str(match.get('key') or path.stem)
+        if (live_channels and key.startswith('channel-')
+                and key[8:] not in live_channels):
+            continue
         seq = str((match.get('campBp') or {}).get('gameSeq') or '')
         if not seq:
             continue
         date = match.get('date') or {}
-        index[seq] = {'key': match.get('key') or path.stem,
+        index[seq] = {'key': key,
                       'title': match.get('title') or '',
-                      'opponent': (match.get('opponent') or '').strip(),
+                      'opponent': by_seq.get(seq) or (match.get('opponent') or '').strip(),
                       'date': date.get('text') or ''}
     return index
 
@@ -2160,9 +5028,17 @@ def _camp_records():
                     'kills': kills, 'deaths': deaths, 'assists': assists,
                     'kda': round((kills + assists) / deaths, 2) if deaths else round(kills + assists, 2),
                     'gold': item['gold'], 'damage': item['damage'], 'taken': item['taken'],
+                    # 输出两套口径分开存，避免「分均输出」和「输出占比」混用同一个分子。
+                    'heroDamage': _camp_number(stats.get('totalHeroHurtCnt')) or 0,
+                    'ctrlTime': _camp_number(stats.get('ctrlTime')) or 0,
+                    'towerCnt': _camp_number(stats.get('towerCnt')) or 0,
+                    'monsterCoin': _camp_number(stats.get('monsterCoin')) or 0,
+                    'healCnt': _camp_number(stats.get('healCnt')) or 0,
                     'cs': _camp_number(stats.get('killSoldier')) or 0,
                     'gpm': round(item['gold'] / minutes) if minutes else None,
                     'dpm': round(item['damage'] / minutes) if minutes else None,
+                    'hdpm': round((_camp_number(stats.get('totalHeroHurtCnt')) or 0) / minutes) if minutes else None,
+                    'ctrlPerMin': round((_camp_number(stats.get('ctrlTime')) or 0) / minutes, 2) if minutes else None,
                     'dtpm': round(item['taken'] / minutes) if minutes else None,
                     'goldShare': round(item['gold'] / team_gold * 100, 1),
                     'damageShare': round(item['damage'] / team_damage * 100, 1),
@@ -2320,7 +5196,7 @@ def _players_board():
             'laneMix': [{'lane': name, 'games': n} for name, n in bucket['lanes'].most_common()],
             'side': bucket['side'], 'bound': bool(member), 'memberId': member_id,
             'accountIds': bucket['_accounts'],
-            'nicknames': [nick for nick, _ in bucket['_nicknames'].most_common(3)],
+            'nicknames': [nick for nick, _ in bucket['_nicknames'].most_common()],  # 全量：档案页要按昵称逐个解绑
             'teamName': (mapped or {}).get('teamName') or '',
             'games': bucket['games'], 'wins': bucket['wins'], 'decided': bucket['decided'],
             'winRate': round(bucket['wins'] / bucket['decided'] * 100, 1) if bucket['decided'] else None,
@@ -2408,25 +5284,6 @@ def _players_board():
                for names, item in lineup_map.items()]
     lineups.sort(key=lambda item: (-item['games'], -item['wins']))
 
-    # 位置对照：本队 / 对手在同一位置的分均与参团。
-    lane_rows = []
-    for lane in _CAMP_LANE_ORDER:
-        rows = [row for row in records if row['lane'] == lane]
-        item = {'lane': lane}
-        for side in ('own', 'enemy'):
-            cells = [row for row in rows if row['side'] == side]
-            decided = [row for row in cells if row['result'] in ('win', 'loss')]
-            wins = sum(1 for row in decided if row['result'] == 'win')
-            item[side] = {
-                'games': len(cells), 'winRate': round(wins / len(decided) * 100, 1) if decided else None,
-                'gpm': _mean_of([row.get('gpm') for row in cells]),
-                'dpm': _mean_of([row.get('dpm') for row in cells]),
-                'dtpm': _mean_of([row.get('dtpm') for row in cells]),
-                'participation': _mean_of([row.get('participation') for row in cells], 1),
-                'players': len({row['name'] for row in cells}),
-            }
-        lane_rows.append(item)
-
     # 位置名册：有认领就用认领，否则给该位置出场最多的人（认领页的第一候选）。
     roster = []
     for lane in _CAMP_LANE_ORDER:
@@ -2467,7 +5324,7 @@ def _players_board():
     }
     board = {'games': sorted(games, key=lambda game: (game['sort'], game['id']), reverse=True),
              'players': sorted(players, key=lambda item: (-item['games'], -item['wins'], item['name'])),
-             'lanes': lane_rows, 'pairs': pairs[:24], 'roster': roster,
+             'pairs': pairs[:24], 'roster': roster,
              'duos': duos[:40], 'lineups': lineups[:12],
              'opponents': [{'name': name, 'games': n}
                            for name, n in Counter(row['opponent'] for row in records if row.get('opponent')).most_common(20)],
@@ -2490,10 +5347,232 @@ def _players_board():
     return board
 
 
+# ── 选手个人页：按实际分路的全量逐局事实 ─────────────────────────────
+# 与 players-board 分开：档案与对比共用页读聚合，个人页读这名选手的每一局。
+# 分位样本按「实际分路」而不是选手主位置聚合，多位置选手不再被混算。
+_CAPABILITY_CN = {
+    'engage': '强开', 'peel': '保护', 'burst': '爆发', 'sustained': '持续输出',
+    'frontline': '前排', 'waveclear': '清线', 'roam': '支援', 'macro': '运营',
+    'resilience': '容错',
+}
+_hero_meta_cache = None
+
+
+def _hero_meta():
+    """英雄职业 / 默认分路 / 九维战术能力标签，一次读入即可。"""
+    global _hero_meta_cache
+    if _hero_meta_cache is not None:
+        return _hero_meta_cache
+    import hero_roles
+    meta = {}
+    try:
+        raw = json.loads((ROOT / 'resources' / 'hero_tags.json').read_text(encoding='utf-8'))
+        for hero, item in (raw.get('heroes') or {}).items():
+            roles = hero_roles.role_of(hero) or {}
+            matrix = item.get('matrix') or {}
+            meta[hero] = {
+                'type': item.get('defaultType') or '',
+                'lane': item.get('defaultLane') or '',
+                'compat': item.get('compat') or '',
+                'caps': [_CAPABILITY_CN[key] for key, value in roles.items() if value],
+                'control': 1 if matrix.get('控制') else 0,
+                'support': 1 if matrix.get('支援') else 0,
+            }
+    except (OSError, ValueError):
+        meta = {}
+    _hero_meta_cache = meta
+    return meta
+
+
+def _lane_samples(records):
+    """每个「选手 × 实际分路」一个样本；分位、排行榜与最低局数门槛都基于它。"""
+    fields = ('kda', 'gpm', 'dpm', 'hdpm', 'participation', 'takenShare',
+              'damageShare', 'goldShare', 'rating', 'ctrlPerMin', 'dtpm')
+    buckets = {}
+    for row in records:
+        item = buckets.setdefault((row['name'], row['lane']), {
+            'name': row['name'], 'lane': row['lane'], 'side': row['side'],
+            'games': 0, 'wins': 0, 'decided': 0, 'mvp': 0,
+            **{'_' + key: [] for key in fields}})
+        item['games'] += 1
+        if row['result'] in ('win', 'loss'):
+            item['decided'] += 1
+            if row['result'] == 'win':
+                item['wins'] += 1
+        if row.get('mvp'):
+            item['mvp'] += 1
+        for key in fields:
+            value = row.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                item['_' + key].append(value)
+    out = defaultdict(list)
+    for item in buckets.values():
+        cell = {'name': item['name'], 'lane': item['lane'], 'side': item['side'],
+                'games': item['games'], 'wins': item['wins'], 'decided': item['decided'],
+                'mvp': item['mvp'],
+                'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None}
+        for key in fields:
+            values = item['_' + key]
+            cell[key] = round(sum(values) / len(values), 2) if values else None
+        out[item['lane']].append(cell)
+    return {lane: sorted(group, key=lambda cell: -cell['games']) for lane, group in out.items()}
+
+
+def _lane_distributions(records):
+    """同分路逐局记录的指标分布。
+
+    这批数据里绝大多数游戏名只出现 1 局，用「选手级均值」做分位会变成自己跟自己比；
+    分位参照改用同分路的逐局记录，样本基础在页面上按「N 局」写明。
+    """
+    keys = ('kda', 'gpm', 'dpm', 'hdpm', 'participation', 'takenShare',
+            'damageShare', 'goldShare', 'rating', 'ctrlPerMin', 'dtpm', 'monsterCoin')
+    out = defaultdict(lambda: defaultdict(list))
+    for row in records:
+        for key in keys:
+            value = row.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                out[row['lane']][key].append(round(float(value), 2))
+    return {lane: dict(groups) for lane, groups in out.items()}
+
+
+def _player_detail(name):
+    """一名选手的全量逐局事实 + 十人上下文 + 同位置样本 + 英雄标签。"""
+    facts = _camp_records()
+    games_all, records = facts['games'], facts['records']
+    key = _camp_name(name)
+    mine = [row for row in records if _camp_name(row['name']) == key]
+    if not mine:
+        return {'player': None, 'identity': {}, 'rows': [], 'laneSamples': {},
+                'laneDistributions': {}, 'heroMeta': {}, 'opponents': [],
+                'summary': {'games': 0, 'name': name}}
+    game_by_id = {game['id']: game for game in games_all}
+    meta = _hero_meta()
+
+    # 系列赛归组：training_series_games.match_key 就是训练赛档案的 key。
+    series_by_match = {}
+    if DB.is_file():
+        try:
+            with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as connection:
+                for match_key, index, sid, best_of, opponent, start_at in connection.execute(
+                        'SELECT g.match_key, g.game_index, s.id, s.best_of, s.opponent, s.start_at'
+                        ' FROM training_series_games g JOIN training_series s ON s.id = g.series_id'):
+                    series_by_match[str(match_key)] = {
+                        'id': sid, 'index': index, 'bestOf': best_of,
+                        'opponent': opponent or '', 'date': start_at or ''}
+        except sqlite3.Error:
+            pass
+
+    # 对手强度：本队对该对手的交手胜率，作为分层依据（越低越强）。
+    opp = {}
+    for game in games_all:
+        label = game.get('opponent')
+        if not label:
+            continue
+        item = opp.setdefault(label, {'name': label, 'games': 0, 'wins': 0})
+        item['games'] += 1
+        if game['result'] == 'win':
+            item['wins'] += 1
+    opponents = [dict(item, winRate=round(item['wins'] / item['games'] * 100, 1) if item['games'] else None)
+                 for item in sorted(opp.values(), key=lambda cell: -cell['games'])]
+
+    # 同局十人回填完整面板统计，对位 / 搭档 / 阵容分析才不用只看 KDA 与经济。
+    record_by_key = {(item['gameId'], item['accountId']): item for item in records}
+
+    def compact(items, game_id):
+        out = []
+        for cell in items:
+            full = record_by_key.get((game_id, str(cell.get('accountId') or ''))) or {}
+            out.append({
+                'name': cell.get('name') or '', 'hero': cell.get('hero') or '',
+                'lane': cell.get('lane') or '', 'gold': cell.get('gold'),
+                'kda': cell.get('kda'), 'cs': full.get('cs'),
+                'participation': full.get('participation'), 'rating': full.get('rating'),
+                'hdpm': full.get('hdpm'), 'gpm': full.get('gpm'),
+                'kills': full.get('kills'), 'deaths': full.get('deaths'),
+                'assists': full.get('assists'),
+            })
+        return out
+
+    rows = []
+    for row in sorted(mine, key=lambda item: (item['sort'], item['gameId'])):
+        game = game_by_id.get(row['gameId']) or {}
+        side = row['side']
+        own_side = game.get(side) or []
+        foe_side = game.get('enemy' if side == 'own' else 'own') or []
+        foe = next((cell for cell in foe_side if cell['lane'] == row['lane']), None)
+        tag = meta.get(row.get('hero') or '') or {}
+        item = dict(row)
+        item.update({
+            'duration': game.get('duration'), 'title': game.get('title') or '',
+            'match': game.get('match') or '', 'ownCamp': game.get('ownCamp') or '',
+            'opponentTeam': game.get('opponent') or '',
+            'heroType': tag.get('type') or '', 'heroDefaultLane': tag.get('lane') or '',
+            'heroCompat': tag.get('compat') or '', 'caps': tag.get('caps') or [],
+            'heroControl': tag.get('control') or 0, 'heroSupport': tag.get('support') or 0,
+            'mates': compact([cell for cell in own_side if cell['name'] != row['name']], row['gameId']),
+            'foes': compact(foe_side, row['gameId']),
+            'foe': compact([foe], row['gameId'])[0] if foe else None,
+            'lineup': [cell.get('hero') or '' for cell in own_side],
+            'enemyLineup': [cell.get('hero') or '' for cell in foe_side],
+            'series': series_by_match.get(game.get('match') or ''),
+        })
+        rows.append(item)
+
+    board = _players_board()
+    player = next((p for p in board['players'] if _camp_name(p['name']) == key), None)
+    identity = {
+        'bound': bool(player and player.get('bound')),
+        'playerId': (player or {}).get('memberId') or '',
+        'teamName': (player or {}).get('teamName') or '',
+        'accountIds': (player or {}).get('accountIds') or [],
+        'nicknames': (player or {}).get('nicknames') or [],
+        'side': (player or {}).get('side') or rows[0]['side'],
+        'lane': (player or {}).get('lane') or '',
+        'laneMix': (player or {}).get('laneMix') or [],
+    }
+    return {
+        'player': player, 'identity': identity, 'rows': rows,
+        'laneSamples': _lane_samples(records),
+        'laneDistributions': _lane_distributions(records), 'heroMeta': meta,
+        'opponents': opponents,
+        'summary': {'games': len(rows), 'name': rows[0]['name'],
+                    'days': len({row['day'] for row in rows if row['day']}),
+                    'heroes': len({row['hero'] for row in rows if row['hero']})},
+    }
+
+
+@router.get('/api/v3/player-detail')
+def player_detail(player: str = ''):
+    """选手个人页数据：全量逐局 + 按实际分路的同位置样本 + 英雄标签。"""
+    payload = _player_detail(player)
+    return Response(content=json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                    media_type='application/json; charset=utf-8')
+
+
 @router.get('/api/v3/players-board')
 def players_board():
-    """选手板块四页共用聚合：逐人逐局记录、位置对照、搭档、认领状态。"""
-    return _players_board()
+    """选手板块共用聚合：逐人逐局记录、搭档、认领状态。
+
+    整份 board 约 1.3 MB、纯聚合要 0.4 秒，而它只取决于营地面板与选手主数据；
+    按（营地目录, 对局包 + DB）指纹缓存，选手档案 / 对比 / 战队页共用一份。
+    """
+    stamp = bp_board_stamp()
+    if stamp[0] is not None:
+        cached = _PLAYERS_BOARD_CACHE.get(stamp)
+        if cached is not None:
+            return json_response(cached)
+    key_id = _cache_key_id(stamp)
+    persisted = _report_disk_read(_PLAYERS_BOARD_DISK, key_id, 'board')
+    if persisted is not None:
+        _PLAYERS_BOARD_CACHE[stamp] = persisted
+        return json_response(persisted)
+    board = _players_board()
+    if stamp[0] is not None:
+        if len(_PLAYERS_BOARD_CACHE) >= _PLAYERS_BOARD_CACHE_MAX:
+            _PLAYERS_BOARD_CACHE.clear()
+        _PLAYERS_BOARD_CACHE[stamp] = board
+        _report_disk_write(_PLAYERS_BOARD_DISK, key_id, 'board', board)
+    return json_response(board)
 
 
 @router.get('/api/v3/vocab')
@@ -2539,7 +5618,7 @@ def _hero_facts():
     global _hero_facts_cache, _hero_facts_at
     if _hero_facts_cache is None or monotonic() - _hero_facts_at > 60:
         import depth_api
-        _hero_facts_cache = depth_api.build_facts(ROOT)
+        _hero_facts_cache = depth_api.build_facts(ROOT, profile=_depth_identity_profile())
         _hero_facts_at = monotonic()
     return _hero_facts_cache
 
@@ -2691,12 +5770,98 @@ async def transfer_export(request: Request):
             'size': manifest.get('bundleSize') or out.stat().st_size,
             'counts': manifest.get('counts') or {}, 'dataDir': str(data_dir)}
 
+# ── 选手主页档案：百段 / 巅峰赛分 / 千强 / 实力 ─────────────────────
+# 营地对局面板里没有这几项，只存在选手主页上；能采到就预填，采不到就手填。
 
-app.include_router(router)
+@router.get('/api/v3/player-profiles')
+def player_profiles():
+    """整份档案（按游戏名索引）+ 自动采集是否可用。"""
+    data = player_profile.all_profiles()
+    return {
+        'schema': player_profile.SCHEMA,
+        'profiles': data['profiles'],
+        'count': data['count'],
+        'lanes': list(player_profile.POSITIONS),
+        'strengths': list(player_profile.STRENGTHS),
+        'crawl': {
+            'canAuto': bool(player_profile.read_session()),
+            'hint': '主页数据要营地网页的登录态：点「扫码登录」开一个窗口扫码即可；不想登就直接手填。',
+        },
+    }
+
+
+@router.post('/api/v3/player-profiles')
+async def save_player_profile(request: Request):
+    """手工档案：分路 1–5 条（主/副）、段数、巅峰分、千强、实力、英雄战力。"""
+    body = await read_json(request)
+    try:
+        saved = player_profile.save(body if isinstance(body, dict) else {})
+    except player_profile.ProfileError as error:
+        raise HTTPException(400, str(error))
+    return {'ok': True, 'profile': saved}
+
+
+@router.post('/api/v3/player-profiles/clear')
+async def clear_player_profile(request: Request):
+    body = await read_json(request)
+    name = str((body or {}).get('name') or '').strip() if isinstance(body, dict) else ''
+    if not name:
+        raise HTTPException(400, '缺少游戏名。')
+    return {'ok': True, 'cleared': player_profile.clear_profile(name)}
+
+
+@router.post('/api/v3/player-profiles/web-login')
+async def start_player_profile_web_login():
+    """打开本机浏览器窗口，用手机扫码登录营地网页；扫完自动把 Cookie 存下来。"""
+    return player_profile.start_web_login()
+
+
+@router.get('/api/v3/player-profiles/web-login')
+def player_profile_web_login_status():
+    return player_profile.web_login_status()
+
+
+@router.post('/api/v3/player-profiles/web-login/cancel')
+async def cancel_player_profile_web_login():
+    return player_profile.cancel_web_login()
+
+
+@router.post('/api/v3/player-profiles/session')
+async def save_player_profile_session(request: Request):
+    """存一次营地 Cookie（只在本机 data/ 下，不进仓库）。"""
+    body = await read_json(request)
+    cookie = str((body or {}).get('cookie') or '').strip() if isinstance(body, dict) else ''
+    player_profile.write_session(cookie)
+    return {'ok': True, 'canAuto': bool(cookie)}
+
+
+@router.post('/api/v3/player-profiles/crawl')
+async def crawl_player_profile(request: Request):
+    """试一次自动采集；失败时把原因和候选字段一起带回来，前端据此提示或预填。"""
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise HTTPException(400, '采集参数无效。')
+    name = str(body.get('name') or '').strip()
+    role_id = str(body.get('roleId') or '').strip()
+    if not name:
+        raise HTTPException(400, '缺少游戏名。')
+    result = player_profile.crawl(name, role_id)
+    # 原始返回可能很大，截断后再回给前端展示
+    raw = result.get('raw')
+    if isinstance(raw, dict):
+        text = json.dumps(raw, ensure_ascii=False)
+        if len(text) > 20000:
+            result['raw'] = text[:20000]
+    return result
 
 
 if __name__ == '__main__':
+    # 只保留一套服务：把端口交给 server.py 起同一个 app（采集 + 分析 + 前端），
+    # 不再自己起一个只有分析路由的旁支 app。
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port', type=int, default=8771, help='V3 dev-only port (default: 8771)')
-    uvicorn.run(app, host='127.0.0.1', port=parser.parse_args().port)
+    parser.add_argument('--port', type=int, default=8771, help='端口（默认 8771）')
+    port = parser.parse_args().port
+    env = dict(os.environ, TRAINING_PORT=str(port))
+    raise SystemExit(subprocess.call([sys.executable, str(ROOT / 'server.py')],
+                                     cwd=str(ROOT), env=env))
 

@@ -6,7 +6,7 @@ from contextlib import closing
 from pathlib import Path
 
 from analysis_api import create_analysis_router
-from analysis_data import AnalysisRepository
+from analysis_data import AnalysisRepository, hero_lineup
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -262,6 +262,54 @@ class AnalysisDataTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]['matches'], 2)
             self.assertFalse(rows[0]['bound'])
+
+    def test_workspace_claim_renames_bundle_player(self):
+        """认领写 players/player_accounts 后，单局与跨局标签要跟着选手ID 走。
+
+        选手档案页读的是 player_accounts，复盘/跨局读的是 AnalysisRepository；
+        两边不合并时，同一个游戏名会一边显示选手ID、一边还是营地昵称。
+        """
+        connection = sqlite3.connect(self.db)
+        connection.executescript('''
+          CREATE TABLE teams (id TEXT PRIMARY KEY, name TEXT, status TEXT);
+          CREATE TABLE players (id TEXT PRIMARY KEY, name TEXT, team_id TEXT, position TEXT, status TEXT);
+          CREATE TABLE player_accounts (id TEXT PRIMARY KEY, player_id TEXT, platform TEXT,
+                                        account_id TEXT, nickname TEXT);
+        ''')
+        connection.execute("INSERT INTO teams VALUES ('team-own','测试队','active')")
+        connection.execute("INSERT INTO players VALUES ('p-claim','认领后ID','team-own','对抗路','active')")
+        connection.execute("INSERT INTO player_accounts VALUES ('a1','p-claim','camp','123','李白')")
+        connection.commit()
+        connection.close()
+        repo = AnalysisRepository(self.db, self.matches, self.imports)
+        data = repo.get()
+        match = next(item for item in data['matches'] if item['key'] == 'C-bundle')
+        player = next(item for item in match['players'] if item['hero'] == '李白')
+        self.assertEqual(player['label'], '认领后ID')
+        self.assertTrue(player['bound'])
+
+    def test_stale_bundle_copy_is_ignored(self):
+        """通道删除/重建后留下的旧 bundle 不能把同一局算两遍。"""
+        connection = sqlite3.connect(self.db)
+        connection.execute('CREATE TABLE channels (id TEXT PRIMARY KEY, body TEXT NOT NULL)')
+        connection.execute('INSERT INTO channels VALUES (?,?)', (
+            'live-id', json.dumps({'official': {'id': 'camp-999'}}, ensure_ascii=False)))
+        connection.commit()
+        connection.close()
+        live = bundle('channel-live-id', '2026-10-09', 900, C_BLUE, C_RED)
+        live['match']['officialReplay'] = {'id': 'camp-999'}
+        (self.matches / 'channel-live-id.json').write_text(
+            json.dumps(live, ensure_ascii=False), encoding='utf-8')
+        stale = bundle('channel-old-id', '2026-10-09', 900, C_BLUE, C_RED)
+        stale['match']['officialReplay'] = {'id': 'camp-999'}
+        (self.matches / 'channel-old-id.json').write_text(
+            json.dumps(stale, ensure_ascii=False), encoding='utf-8')
+        data = AnalysisRepository(self.db, self.matches, self.imports).get()
+        copies = [match for match in data['matches']
+                  if (match.get('officialReplay') or {}).get('id') == 'camp-999']
+        self.assertEqual(len(copies), 1, copies)
+        self.assertEqual(copies[0]['key'], 'channel-live-id')
+        self.assertTrue(any('重复' in warning for warning in data['warnings']))
 
     def test_hero_and_team_stats(self):
         heroes = self.repo.hero_stats({'sources': ['db', 'bundle']})
@@ -583,6 +631,41 @@ class WinnerTruthTests(unittest.TestCase):
             match = [item for item in repo.get()['matches'] if item['key'] == 'G-bundle'][0]
             self.assertEqual(match['ownCamp'], 'blue')
             self.assertEqual(match['winnerCamp'], 'blue')
+
+
+class HeroLineupTests(unittest.TestCase):
+    """对局列表的十人阵容：同一行左右两组必须按同分路配对。"""
+
+    def test_pairs_same_lane_across_both_sides(self):
+        match = {'players': [
+            {'camp': 'blue', 'hero': '关羽', 'position': '对抗路'},
+            {'camp': 'blue', 'hero': '孙悟空', 'position': '打野'},
+            {'camp': 'blue', 'hero': '妲己', 'position': '中路'},
+            {'camp': 'blue', 'hero': '百里守约', 'position': '发育路'},
+            {'camp': 'blue', 'hero': '钟馗', 'position': '游走'},
+            {'camp': 'red', 'hero': '公孙离', 'position': '发育路'},
+            {'camp': 'red', 'hero': '张良', 'position': '游走'},
+            {'camp': 'red', 'hero': '貂蝉', 'position': '中路'},
+            {'camp': 'red', 'hero': '吕布', 'position': '对抗路'},
+            {'camp': 'red', 'hero': '兰陵王', 'position': '打野'},
+        ]}
+        pairs = hero_lineup(match, 'blue')
+        self.assertEqual([p['lane'] for p in pairs], ['对抗路', '打野', '中路', '发育路', '游走'])
+        self.assertEqual([(p['own'], p['enemy']) for p in pairs],
+                         [('关羽', '吕布'), ('孙悟空', '兰陵王'), ('妲己', '貂蝉'),
+                          ('百里守约', '公孙离'), ('钟馗', '张良')])
+
+    def test_falls_back_to_slot_order_without_lanes(self):
+        match = {'players': [
+            {'camp': 'blue', 'hero': '关羽'}, {'camp': 'blue', 'hero': '孙悟空'},
+            {'camp': 'red', 'hero': '吕布'}, {'camp': 'red', 'hero': '兰陵王'},
+        ]}
+        pairs = hero_lineup(match, 'blue')
+        self.assertEqual([(p['own'], p['enemy']) for p in pairs],
+                         [('关羽', '吕布'), ('孙悟空', '兰陵王')])
+
+    def test_empty_without_any_side(self):
+        self.assertEqual(hero_lineup({'players': []}, None), [])
 
 
 if __name__ == '__main__':

@@ -20,7 +20,7 @@ per-player battle state.  This tool **only reads** process memory through
    (`ctx & ~0xFFF`, so file offset 0 is the arena mapping base on this build,
    `ctx = base + 0xFF0`), with per-chunk retries and an exact length check;
 4. decodes the ten per-player battle records by header signature
-   (README.md 5.157/5.158) and follows each record's
+   (docs/replay_binary_format.md 5.157/5.158) and follows each record's
    `+0x28` absolute pointer to the arena-internal unit object, then reads
    HP / hero / camp / entity / clock from the unit (5.157.3/5.157.4);
 5. writes `meta.json`, `arena.bin` (optional) and `units.jsonl` (+ per-unit
@@ -62,7 +62,7 @@ Unit object (5.157.3, 5.157.4):
     unit + 0x288/+0x290 i32 facing pair
 
 The record <-> player identity is established by the **pointer**, not by the
-static idx order (既有校准 order is only a cross-check and is reported as a
+static idx order (docs 5.157 order is only a cross-check and is reported as a
 warning if a future replay reorders the roster).
 
 Usage
@@ -168,7 +168,7 @@ CLOCK_TOLERANCE_MS = 500
 CLOCK_MIN_VALID = 9
 CLOCK_STALE_DEVIATION_MS = 5000
 
-#: heroID -> hero name (既有校准).
+#: heroID -> hero name (docs 5.156).
 HERO_ID = {
     109: "妲己",
     123: "吕布",
@@ -181,7 +181,7 @@ HERO_ID = {
     196: "百里守约",
     199: "公孙离",
 }
-#: Documented arena record order (idx 13 -> 4, 既有校准).  Only a cross-check.
+#: Documented arena record order (idx 13 -> 4, docs 5.157).  Only a cross-check.
 ARENA_INDEX_HEROES = (
     "兰陵王", "张良", "妲己", "百里守约", "钟馗",
     "公孙离", "孙悟空", "貂蝉", "关羽", "吕布",
@@ -1252,7 +1252,7 @@ def _scan_size_constant_candidates(data: bytes,
     """Find ``u32 == arena size`` fields and the qword written just before them.
 
     Used by the .data fallback: an arena size constant in module data is often
-    preceded by the context/arena pointer (既有校准 header layout).  Returns
+    preceded by the context/arena pointer (docs 5.155 header layout).  Returns
     ``(byte_offset_of_size, preceding_u64)`` pairs with ``offset >= 8``.
     """
     out: list[tuple[int, int]] = []

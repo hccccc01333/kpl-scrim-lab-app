@@ -4,7 +4,7 @@ Read-only and offline: every input is a `dd if=/proc/<pid>/mem` dump taken
 during a replay session.  Nothing here touches a device.
 
 Each snapshot holds ten per-player battle-stat records with a stable header
-(既有校准):
+(docs 5.157):
 
     +0x00 u32 16
     +0x08 u32 10000

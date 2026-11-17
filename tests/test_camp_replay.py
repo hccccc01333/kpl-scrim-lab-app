@@ -1,3 +1,4 @@
+import io
 import json
 import tempfile
 import unittest
@@ -132,6 +133,40 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(normalized['events']['key'][0]['timeSec'], 39)
         self.assertEqual(normalized['match']['durationSec'], 63)
         self.assertTrue(any('30秒' in warning for warning in normalized['warnings']))
+
+
+class RateLimitTests(unittest.TestCase):
+    """营地公开接口限流要能识别，批量补拉才知道该退避而不是直接报错。"""
+
+    def test_http_429_is_marked_rate_limited(self):
+        error = camp_replay.urllib.error.HTTPError(
+            'https://kohcamp.qq.com/game/battleanalyze/old', 429,
+            'Too Many Requests', {}, io.BytesIO(b''))
+        with mock.patch.object(camp_replay.urllib.request, 'urlopen', side_effect=error):
+            with self.assertRaises(camp_replay.CampReplayError) as ctx:
+                camp_replay.fetch(camp_replay.parse_link(PERSONAL_LINK))
+        self.assertTrue(ctx.exception.rate_limited)
+        self.assertIn('429', str(ctx.exception))
+
+    def test_return_message_rate_limit_is_marked(self):
+        body = json.dumps({'returnCode': -1, 'returnMsg': '操作太频繁，请稍后再试',
+                           'data': {}}).encode('utf-8')
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, size):
+                return body
+
+        with mock.patch.object(camp_replay.urllib.request, 'urlopen', return_value=Response()):
+            with self.assertRaises(camp_replay.CampReplayError) as ctx:
+                camp_replay.fetch(camp_replay.parse_link(PERSONAL_LINK))
+        self.assertTrue(ctx.exception.rate_limited)
+        self.assertIn('频繁', str(ctx.exception))
 
 
 class ImportTests(unittest.TestCase):

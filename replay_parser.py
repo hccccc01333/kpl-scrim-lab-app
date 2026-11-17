@@ -716,7 +716,7 @@ def inspect_player_events(data, frames):
     """Extract the tail-stream 0x85 buy echo, 0x87 skill and 0x82 position messages.
 
     The 7-byte 0x85 body is `[equip_id:u16BE][pad:u8 x3][objectId:u8][flag:u8]`
-    and mirrors each BUYEQUIP frame command one-to-one (既有校准): all event
+    and mirrors each BUYEQUIP frame command one-to-one (docs 5.130): all event
     frames coincide with purchase commands and the equip ids match. It carries
     no gold amounts, so no income ledger can be built from the tail stream.
     """

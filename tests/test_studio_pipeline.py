@@ -81,13 +81,10 @@ class ResearchTests(unittest.TestCase):
         self.assertEqual(best['p50'],3)
         self.assertEqual(best['referencePlayers'],5)
 
-    def test_pair_requires_stable_ids(self):
-        rows=[player(g,s,bound=False) for g in range(1,5) for s in range(5)]
-        self.assertEqual(research(rows,'player_pairs')['rows'],[])
-        for r in rows:r['bound']=True
-        result=research(rows,'player_pairs')
-        self.assertTrue(result['rows'])
-        self.assertEqual(result['rows'][0]['n'],4)
+    def test_removed_player_topics_are_gone(self):
+        for topic in ('player' + '_form', 'player' + '_pairs', 'resource' + '_efficiency'):
+            with self.assertRaises(ValueError):
+                research([player(1)], topic)
 
     def test_no_time_extrapolation_and_missing_gap(self):
         # 王者三段口径（0-4 / 4-10 / 10+）后字段从 gold5/gold15 改为 gold4/goldEnd；

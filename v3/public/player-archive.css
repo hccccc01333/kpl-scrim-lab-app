@@ -1,0 +1,1082 @@
+/* 选手名册（#playerarchive）—— 2026-11-16 整页重做
+   ------------------------------------------------------------------
+   旧版的问题不在配色，在排版：内容缩在 1560 中间、左右两条空边比内容还抢眼，
+   标签 10–11px、卡片读数 18px，离屏幕一米读不出来；每块都是「白底 + 一根发丝边」，
+   没有厚度，也没有选中态。
+   这一版：横向对齐顶部导航的 1640；正文 14–16px 起、主数字 40–76px；
+   卡片有釉面渐变、内高光、两层投影，悬停抬起来，勾选描一圈。
+   颜色只用青瓷这套 token，不引入第二种主色。 */
+
+/* 档案页的色板与投影放在 :root：录入弹窗挂在 body 上、详情页也不是 .arch-page，
+   如果只定义在 .arch-page 里，弹窗里的 var(--arch-line) 会失效、边框整条掉掉。 */
+:root {
+  --arch-hi: #ffffff;
+  --arch-max: 1640px;
+  --arch-line: color-mix(in srgb, var(--line) 74%, #a7c0b4);
+  --arch-line-soft: color-mix(in srgb, var(--line) 52%, transparent);
+  --arch-wash: color-mix(in srgb, var(--soft) 52%, var(--paper));
+  --arch-sink: color-mix(in srgb, var(--surface) 66%, var(--paper));
+  --arch-shadow: 0 2px 3px rgb(26 54 46 / 5%), 0 14px 26px -20px rgb(26 54 46 / 34%);
+  --arch-shadow-lift: 0 3px 6px rgb(26 54 46 / 8%), 0 26px 48px -26px rgb(26 54 46 / 48%);
+  /* 数字用本地衬线（等高数字）：Georgia 的默认数字是旧式数字，3/4/7/9 掉到基线以下，
+     一排读数看上去忽高忽低；这台机器上 Georgia 的 lnum 替换不可用，所以直接换字体。 */
+  --arch-fig: 'Celadon Serif', Georgia, var(--display-font);
+}
+
+.page.arch-page {
+  max-inline-size: var(--arch-max);
+  margin-inline: auto;
+  padding: 30px var(--page-gutter) 64px;
+  /* 工具条要能吸顶：.page 默认是 grid，每个子元素独占一行，
+     吸顶元素的包含块就只有它自己那么高，滚起来根本不动。
+     这里改回普通流，间距全部由各段的 margin 控制。 */
+  display: block;
+  gap: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-theme='dark'] {
+  --arch-hi: #23252d;
+  --arch-line: color-mix(in srgb, var(--line) 82%, #567a6e);
+  --arch-line-soft: color-mix(in srgb, var(--line) 64%, transparent);
+  --arch-shadow: 0 1px 2px rgb(0 0 0 / 18%), 0 16px 32px -24px rgb(0 0 0 / 55%);
+  --arch-shadow-lift: 0 2px 6px rgb(0 0 0 / 24%), 0 26px 50px -28px rgb(0 0 0 / 68%);
+}
+
+/* ── 报头 ───────────────────────────────────────────────────────── */
+.arch-head { display: grid; gap: 0; }
+.arch-top {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-block-end: 20px;
+}
+.arch-eyebrow {
+  display: inline-flex; align-items: baseline; gap: 10px; margin: 0;
+  color: var(--text); font-size: .875rem; font-weight: 700; letter-spacing: .02em;
+}
+.arch-eyebrow span {
+  color: var(--quiet); font-size: .75rem; font-weight: 700; letter-spacing: .16em;
+}
+.arch-modes {
+  display: inline-flex; flex: none; gap: 2px; padding: 4px;
+  border: 1px solid var(--arch-line); border-radius: 12px; background: var(--arch-sink);
+}
+.arch-modes button {
+  min-block-size: 34px; padding: 0 16px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--muted);
+  font: 650 .8125rem/1 var(--font); letter-spacing: .01em; cursor: pointer;
+  transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
+}
+.arch-modes button:hover { color: var(--text); background: color-mix(in srgb, var(--paper) 70%, transparent); }
+.arch-modes button.is-active {
+  color: var(--accent-ink); background: var(--paper);
+  box-shadow: 0 1px 2px rgb(26 54 46 / 10%), 0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.arch-head-main {
+  display: grid; grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 36px; align-items: stretch;
+}
+.arch-head-copy { min-inline-size: 0; }
+
+.arch-title {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px;
+  margin: 0; color: var(--text);
+  font-family: var(--display-font); font-weight: 700; line-height: 1.1; letter-spacing: -.02em;
+}
+.arch-title b {
+  color: var(--text); font: 600 clamp(3.25rem, 4.4vw, 4.5rem)/.92 var(--display-font);
+  letter-spacing: -.055em;
+}
+.arch-title span { color: var(--muted); font-size: clamp(1.25rem, 1.7vw, 1.75rem); font-weight: 600; }
+.arch-title strong { color: var(--accent-ink); font-size: clamp(1.25rem, 1.7vw, 1.75rem); font-weight: 700; }
+
+.arch-lede {
+  max-inline-size: 74ch; margin: 18px 0 0;
+  color: var(--muted); font-size: .9375rem; line-height: 1.85;
+}
+.arch-lede b { color: var(--text); font-weight: 700; }
+
+.arch-facts {
+  display: flex; flex-wrap: wrap; gap: 0; margin: 26px 0 0;
+  padding-block-start: 16px; border-block-start: 1px solid var(--arch-line-soft);
+}
+.arch-facts > div {
+  flex: 0 0 auto; display: grid; gap: 5px;
+  padding-inline: 22px; border-inline-start: 1px solid var(--arch-line-soft);
+}
+.arch-facts > div:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.arch-facts dt { color: var(--quiet); font-size: .75rem; font-weight: 600; letter-spacing: .04em; }
+.arch-facts dd {
+  margin: 0; color: var(--text);
+  font: 600 1.75rem/1 var(--arch-fig); letter-spacing: -.03em;
+}
+
+/* 认领面板：整页唯一的状态面板，所以做厚 —— 釉面渐变 + 两条深浅不一的投影。
+   内容是「标签 / 大百分比 / 进度条 / 一句话 / 三个按钮」，用 space-between 撑满
+   报头高度，按钮正好落在左侧四个事实的基线上。 */
+.arch-claim-panel {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; align-content: space-between; gap: 14px;
+  padding: 22px 22px 20px;
+  border: 1px solid var(--arch-line); border-radius: 18px;
+  background:
+    linear-gradient(158deg,
+      color-mix(in srgb, var(--paper) 92%, var(--arch-hi)) 0%,
+      color-mix(in srgb, var(--arch-wash) 42%, var(--paper)) 58%,
+      color-mix(in srgb, var(--soft) 62%, var(--paper)) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 90%, transparent), var(--arch-shadow);
+}
+.arch-claim-panel::before {
+  content: ''; position: absolute; z-index: -1; inset-block-start: 0; inset-inline: 0;
+  block-size: 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 40%, transparent), transparent);
+}
+.arch-claim-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.arch-claim-kicker { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .1em; }
+.arch-claim-count { color: var(--muted); font-size: .75rem; }
+.arch-claim-count b { color: var(--text); font-weight: 700; }
+.arch-claim-pct {
+  color: var(--accent-ink); font: 600 3.75rem/1 var(--arch-fig);
+  letter-spacing: -.055em; font-variant-numeric: tabular-nums;
+}
+.arch-claim-pct i { margin-inline-start: 4px; font-size: 1rem; font-style: normal; opacity: .55; }
+.arch-claim-track {
+  block-size: 8px; margin-block-start: -2px; border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 58%, transparent);
+  box-shadow: inset 0 1px 2px rgb(26 54 46 / 10%); overflow: hidden;
+}
+.arch-claim-track i {
+  display: block; block-size: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 62%, #8fd8c5) 100%);
+  transition: width .45s var(--ease);
+}
+.arch-claim-foot { margin: 0; color: var(--muted); font-size: .8125rem; line-height: 1.7; }
+.arch-claim-foot b { color: var(--text); font-weight: 700; }
+.arch-claim-acts { display: flex; gap: 8px; margin-block-start: 4px; }
+
+.arch-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  block-size: 42px; padding: 0 16px; border: 1px solid var(--arch-line); border-radius: 11px;
+  background: var(--paper); color: var(--text);
+  font: 650 .8125rem/1 var(--font); cursor: pointer; white-space: nowrap;
+  box-shadow: 0 1px 2px rgb(26 54 46 / 4%);
+  transition: border-color var(--duration) var(--ease), color var(--duration) var(--ease),
+    background var(--duration) var(--ease), transform var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease);
+}
+.arch-btn:hover { border-color: var(--accent); color: var(--accent-ink); background: var(--arch-wash); }
+.arch-btn:active { transform: translateY(1px); }
+.arch-btn.is-primary {
+  flex: 1; border-color: var(--accent); color: var(--accent-text);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, #ffffff) 0%, var(--accent) 100%);
+  box-shadow: 0 1px 2px rgb(26 54 46 / 22%), 0 10px 20px -14px rgb(26 54 46 / 60%);
+}
+.arch-btn.is-primary:hover {
+  color: var(--accent-text);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-hover) 100%);
+  border-color: var(--accent-hover);
+}
+.arch-btn.is-icon { flex: none; inline-size: 42px; padding: 0; }
+.arch-btn.is-icon svg { inline-size: 16px; block-size: 16px; }
+
+/* ── 四个「最高」 ───────────────────────────────────────────────── */
+.arch-hls {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;
+  margin-block-start: 30px;
+}
+.arch-hls[hidden] { display: none; }
+.arch-hl {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; gap: 10px; padding: 18px 20px 16px;
+  border: 1px solid var(--arch-line); border-radius: 16px;
+  background:
+    linear-gradient(170deg, color-mix(in srgb, var(--paper) 94%, var(--arch-hi)) 0%, var(--paper) 52%,
+      color-mix(in srgb, var(--arch-wash) 34%, var(--paper)) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 85%, transparent), var(--arch-shadow);
+  color: inherit; text-decoration: none;
+  transition: transform var(--duration) var(--ease), box-shadow var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+.arch-hl::after {
+  content: ''; position: absolute; inset-block-start: 0; inset-inline: 18px;
+  block-size: 2px; border-radius: 0 0 2px 2px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 42%, transparent), transparent);
+}
+.arch-hl:hover {
+  transform: translateY(-3px); border-color: color-mix(in srgb, var(--accent) 42%, var(--arch-line));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 85%, transparent), var(--arch-shadow-lift);
+}
+.arch-hl-kicker { color: var(--quiet); font-size: .75rem; font-weight: 700; letter-spacing: .08em; }
+.arch-hl-fig { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-inline-size: 0; }
+.arch-hl-fig > b {
+  color: var(--text); font: 600 2.625rem/1 var(--arch-fig);
+  letter-spacing: -.045em; white-space: nowrap;
+}
+.arch-hl-fig > b i { margin-inline-start: 3px; font-size: .8125rem; font-style: normal; color: var(--muted); }
+.arch-hl-who {
+  display: flex; align-items: baseline; gap: 8px; min-inline-size: 0;
+  font-size: .8125rem; color: var(--muted);
+}
+.arch-hl-who b {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text); font-weight: 650;
+}
+.arch-hl-who i { flex: none; font-style: normal; color: var(--quiet); }
+
+.arch-hl-trend { display: grid; flex: none; justify-items: end; gap: 3px; }
+.arch-hl-trend small { color: var(--quiet); font-size: .75rem; letter-spacing: .01em; }
+.arch-spark { flex: none; inline-size: 104px; block-size: 34px; overflow: visible; }
+.arch-spark-line {
+  fill: none; stroke: var(--accent); stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; opacity: .92;
+}
+.arch-spark-area { fill: color-mix(in srgb, var(--accent) 8%, transparent); }
+.arch-spark circle { fill: var(--paper); stroke: var(--accent); stroke-width: 1.4; }
+
+/* ── 工具条 ─────────────────────────────────────────────────────── */
+/* 吸顶位置要让开顶部导航：.masthead 是 sticky（z 35，高 72），
+   二级页签跟在它下面 53px。所以工具条从 128px 开始吸，否则会被导航盖住。 */
+.arch-bar {
+  position: sticky; inset-block-start: calc(var(--header-height) + 58px); z-index: 20;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-block-start: 30px; padding: 12px;
+  border: 1px solid var(--arch-line); border-radius: 16px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 80%, transparent), var(--arch-shadow);
+}
+.arch-search {
+  display: flex; flex: 1 1 210px; align-items: center; gap: 9px;
+  min-inline-size: 170px; block-size: 42px; padding: 0 14px;
+  border: 1px solid var(--arch-line); border-radius: 11px;
+  background: var(--arch-sink); color: var(--quiet);
+  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+.arch-search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.arch-search svg { flex: none; inline-size: 16px; block-size: 16px; }
+.arch-search input {
+  inline-size: 100%; min-inline-size: 0; border: 0; background: transparent;
+  color: var(--text); font: 400 .875rem/1.4 var(--font); outline: 0;
+}
+.arch-search input::placeholder { color: var(--quiet); }
+
+.arch-set { display: inline-flex; flex: none; align-items: center; gap: 8px; }
+.arch-seg {
+  display: inline-flex; block-size: 42px; gap: 2px; padding: 4px;
+  border: 1px solid var(--arch-line); border-radius: 11px; background: var(--arch-sink);
+}
+.arch-seg button {
+  min-inline-size: 43px; block-size: 34px; padding: 0 9px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted);
+  font: 650 .8125rem/1 var(--font); cursor: pointer;
+  transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
+}
+.arch-seg button:hover { color: var(--text); }
+.arch-seg button.is-active {
+  color: var(--accent-ink); background: var(--paper);
+  box-shadow: 0 1px 2px rgb(26 54 46 / 10%), 0 0 0 1px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.arch-sep { flex: none; inline-size: 1px; block-size: 24px; margin-inline: 4px; background: var(--arch-line-soft); }
+/* 换行位：1920 一行放得下，1620 以下主动在这里断成两行 ——
+   断在「找谁 / 圈范围」和「怎么排」之间，第二行左边是排序组、右边是计数和视图，
+   比让导出按钮单独掉一行好看，也不会把搜索框挤成一条缝。 */
+.arch-break { display: none; }
+@media (max-width: 1620px) {
+  .arch-break { display: block; flex: 0 0 100%; block-size: 0; margin: 0; }
+  .arch-bar > .arch-sep { display: none; }
+}
+
+.arch-select { position: relative; display: inline-flex; }
+.arch-select select {
+  block-size: 42px; min-inline-size: 120px; padding: 0 30px 0 12px;
+  border: 1px solid var(--arch-line); border-radius: 11px;
+  background: var(--paper); color: var(--text);
+  font: 500 .8125rem/1 var(--font); cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+.arch-select.is-wide select { min-inline-size: 146px; }
+/* 具体对手：名字长短不一，给一个下限并封顶，长队名在展开的列表里看全 */
+.arch-select.is-team select { min-inline-size: 116px; max-inline-size: 208px; }
+.arch-select select:hover { border-color: color-mix(in srgb, var(--accent) 46%, var(--arch-line)); }
+.arch-select select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.arch-select::after {
+  content: ''; position: absolute; inset-block-start: 50%; inset-inline-end: 14px;
+  inline-size: 6px; block-size: 6px; margin-block-start: -4px;
+  border-inline-end: 1.6px solid var(--quiet); border-block-end: 1.6px solid var(--quiet);
+  transform: rotate(45deg); pointer-events: none;
+}
+
+.arch-chip {
+  block-size: 42px; padding: 0 13px; border: 1px solid var(--arch-line); border-radius: 11px;
+  background: var(--paper); color: var(--muted);
+  font: 650 .8125rem/1 var(--font); cursor: pointer; white-space: nowrap;
+  transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease),
+    background var(--duration) var(--ease);
+}
+.arch-chip:hover { color: var(--accent-ink); border-color: var(--accent); }
+.arch-chip.is-on {
+  color: var(--accent-ink); border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--arch-wash);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.arch-bar-end { display: flex; flex: none; align-items: center; gap: 10px; margin-inline-start: auto; }
+.arch-count { color: var(--muted); font-size: .8125rem; white-space: nowrap; }
+.arch-view {
+  display: inline-flex; gap: 2px; padding: 4px;
+  border: 1px solid var(--arch-line); border-radius: 11px; background: var(--arch-sink);
+}
+.arch-view button {
+  display: grid; place-items: center; inline-size: 34px; block-size: 34px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+  transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
+}
+.arch-view button svg { inline-size: 15px; block-size: 15px; }
+.arch-view button:hover { color: var(--text); }
+.arch-view button.is-active {
+  color: var(--accent-ink); background: var(--paper);
+  box-shadow: 0 1px 2px rgb(26 54 46 / 10%), 0 0 0 1px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.arch-icon {
+  display: grid; place-items: center; inline-size: 38px; block-size: 38px;
+  border: 1px solid transparent; border-radius: 10px; background: transparent;
+  color: var(--muted); cursor: pointer;
+  transition: color var(--duration) var(--ease), background var(--duration) var(--ease);
+}
+.arch-icon svg { inline-size: 16px; block-size: 16px; }
+.arch-icon:hover { color: var(--accent-ink); background: var(--arch-wash); }
+
+.arch-picked {
+  display: inline-flex; align-items: center; gap: 8px; block-size: 38px;
+  padding: 0 5px 0 13px; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  background: var(--arch-wash); color: var(--text); font-size: .75rem;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 60%, transparent);
+}
+.arch-picked-count { color: var(--accent-ink); font-weight: 700; white-space: nowrap; }
+.arch-picked-count b { font-weight: 800; }
+.arch-picked i {
+  max-inline-size: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--muted); font-style: normal;
+}
+.arch-picked button {
+  block-size: 30px; padding: 0 9px; border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted); font: 600 .75rem/1 var(--font); cursor: pointer;
+}
+.arch-picked button:hover { color: var(--text); background: color-mix(in srgb, var(--paper) 60%, transparent); }
+.arch-picked .arch-picked-go {
+  color: var(--accent-text); background: var(--accent); padding-inline: 12px;
+}
+.arch-picked .arch-picked-go:hover { background: var(--accent-hover); color: var(--accent-text); }
+.arch-picked .arch-picked-go:disabled { opacity: .45; cursor: not-allowed; background: var(--accent); }
+
+/* ── 区块头 ─────────────────────────────────────────────────────── */
+.arch-sec { margin-block-start: 34px; }
+.arch-sec + .arch-sec { margin-block-start: 40px; }
+.arch-sec-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 24px;
+  margin-block-end: 16px;
+}
+.arch-sec-head h2 {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  font-family: var(--display-font); font-size: 1.375rem; font-weight: 700; letter-spacing: -.02em;
+}
+.arch-sec-head h2::before {
+  content: ''; inline-size: 3px; block-size: 1.125rem; border-radius: 2px; background: var(--accent);
+}
+.arch-sec-head h2 b {
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--arch-wash); color: var(--accent-ink);
+  font: 700 .875rem/1.25 var(--font); letter-spacing: .01em;
+}
+.arch-sec-head h2 i {
+  color: var(--quiet); font: 500 .75rem/1 var(--font); font-style: normal; letter-spacing: 0;
+}
+.arch-sec-head p {
+  max-inline-size: 58ch; margin: 0; color: var(--muted);
+  font-size: .8125rem; line-height: 1.65; text-align: end;
+}
+
+/* ── 选手卡：三列宽卡，左读数右英雄 ─────────────────────────────── */
+.arch-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.arch-card {
+  position: relative; isolation: isolate; overflow: hidden;
+  display: grid; gap: 0; min-inline-size: 0;
+  padding: 16px 20px 14px;
+  border: 1px solid var(--arch-line); border-radius: 16px;
+  background:
+    linear-gradient(168deg,
+      color-mix(in srgb, var(--paper) 95%, var(--arch-hi)) 0%,
+      var(--paper) 46%,
+      color-mix(in srgb, var(--arch-wash) 40%, var(--paper)) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 85%, transparent), var(--arch-shadow);
+  cursor: pointer;
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease);
+}
+.arch-card::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 58%);
+  opacity: 0; transition: opacity .18s var(--ease);
+}
+.arch-card:hover {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--arch-line));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 85%, transparent), var(--arch-shadow-lift);
+}
+.arch-card:hover::before { opacity: 1; }
+.arch-card:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.arch-card.is-picked {
+  border-color: var(--accent);
+  background:
+    linear-gradient(168deg,
+      color-mix(in srgb, var(--soft) 52%, var(--paper)) 0%,
+      color-mix(in srgb, var(--soft) 34%, var(--paper)) 100%);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 76%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 70%, transparent),
+    var(--arch-shadow-lift);
+}
+.arch-card.is-enemy .arch-card-name { color: var(--muted); }
+
+.arch-card-top { display: flex; align-items: center; gap: 10px; min-inline-size: 0; }
+.arch-lane {
+  flex: none; display: grid; place-items: center;
+  inline-size: 30px; block-size: 30px; border-radius: 9px;
+  background: var(--arch-sink); color: var(--muted);
+  font: 700 .8125rem/1 var(--font);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+.arch-lane[data-side='own'] {
+  color: var(--accent-ink);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--soft) 88%, var(--paper)) 0%, var(--soft) 100%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.arch-card-name {
+  flex: 0 1 auto; min-inline-size: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text); font-size: 1.0625rem; font-weight: 750; letter-spacing: -.015em;
+  text-decoration: none;
+  transition: color var(--duration) var(--ease);
+}
+.arch-card:hover .arch-card-name { color: var(--accent-ink); }
+.arch-card-when { flex: none; color: var(--quiet); font-size: .75rem; }
+.arch-card-top .arch-claim { margin-inline-start: auto; }
+
+.arch-claim {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  block-size: 28px; padding: 0 12px; border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--line-strong) 70%, transparent);
+  background: transparent; color: var(--muted);
+  font: 650 .75rem/1 var(--font); letter-spacing: .02em; white-space: nowrap; cursor: pointer;
+  transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease),
+    background var(--duration) var(--ease);
+}
+.arch-claim:hover {
+  border-style: solid; border-color: var(--accent); color: var(--accent-ink); background: var(--arch-wash);
+}
+.arch-card:hover .arch-claim,
+.arch-idx-row:hover .arch-claim,
+.arch-pick:hover .arch-claim { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent-ink); }
+.arch-claim.is-done {
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  background: var(--arch-wash); color: var(--accent-ink); cursor: default;
+}
+
+/* 卡内分两段：左边一个胜率（带进度条），右边四个读数排成小账本，
+   中间用竖发丝线断开 —— 三列宽卡里的横向空间全部用完，不留空档。 */
+.arch-card-main {
+  display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 22px;
+  align-items: end; margin-block-start: 16px;
+}
+.arch-card-hero { display: grid; gap: 5px; min-inline-size: 0; }
+.arch-card-hero b {
+  color: var(--text); font: 600 2.75rem/1 var(--arch-fig); letter-spacing: -.05em;
+}
+.arch-card-hero b i { margin-inline-start: 3px; font-size: .875rem; font-style: normal; color: var(--muted); }
+.arch-card-hero small { color: var(--quiet); font-size: .75rem; font-weight: 600; letter-spacing: .06em; }
+.arch-meter {
+  block-size: 5px; margin-block-start: 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--line) 52%, transparent); overflow: hidden;
+}
+.arch-meter i {
+  display: block; block-size: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 78%, #ffffff) 0%, var(--accent) 100%);
+}
+.arch-card-reads {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0; margin: 0; align-self: stretch; align-items: end;
+}
+.arch-card-reads > div {
+  display: flex; flex-direction: column-reverse; gap: 5px;
+  min-inline-size: 0; padding-inline-start: 14px;
+  border-inline-start: 1px solid var(--arch-line-soft);
+}
+.arch-card-reads > div:first-child { padding-inline-start: 0; border-inline-start: 0; }
+.arch-card-reads dt {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--quiet); font-size: .75rem; font-weight: 600; letter-spacing: .05em;
+}
+.arch-card-reads dd {
+  margin: 0; color: var(--text);
+  font: 700 1.1875rem/1.1 var(--font); letter-spacing: -.02em;
+}
+
+/* 单局样本的标记：挂在胜率进度条的位置上，写明「胜 / 负 · 只 1 局」，
+   让读者一眼看出这张卡没有胜率可谈，而不是以为数字是 0。 */
+.arch-solo {
+  display: inline-flex; align-items: center; gap: 6px;
+  align-self: start; block-size: 24px; padding: 0 10px; border-radius: 999px;
+  background: var(--arch-sink); color: var(--muted);
+  font: 700 .75rem/1 var(--font); letter-spacing: .02em; white-space: nowrap;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 70%, transparent);
+}
+.arch-solo i { font-style: normal; font-weight: 600; font-size: .75rem; opacity: .7; }
+.arch-solo.is-win { background: var(--success-soft); color: var(--success); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--success) 22%, transparent); }
+.arch-solo.is-loss { background: var(--danger-soft); color: var(--danger); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 20%, transparent); }
+/* 单局卡的底压平一点，让有样本的卡先跳出来，但仍然是完整的一张卡 */
+.arch-card.is-thin {
+  background: var(--paper);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 70%, transparent), 0 1px 2px rgb(26 54 46 / 3%);
+}
+.arch-card.is-thin:hover { box-shadow: inset 0 1px 0 color-mix(in srgb, var(--arch-hi) 70%, transparent), var(--arch-shadow-lift); }
+
+.arch-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-block-start: 14px; padding-block-start: 12px;
+  border-block-start: 1px solid var(--arch-line-soft);
+}
+.arch-heroes { display: inline-flex; align-items: center; gap: 6px; min-inline-size: 0; }
+.arch-heroes.is-empty { color: var(--quiet); font-size: .75rem; }
+.arch-hero { display: inline-flex; }
+.arch-hero .portrait {
+  inline-size: 28px; block-size: 28px; border-radius: 8px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 72%, transparent);
+}
+.arch-pick {
+  display: inline-flex; align-items: center; gap: 7px;
+  block-size: 30px; padding: 0 11px 0 8px;
+  border: 1px solid var(--arch-line); border-radius: 999px;
+  background: var(--paper); color: var(--muted);
+  font: 650 .75rem/1 var(--font); cursor: pointer; white-space: nowrap;
+  opacity: 0; transform: translateY(2px);
+  transition: opacity .16s var(--ease), transform .16s var(--ease), color .16s var(--ease),
+    border-color .16s var(--ease), background .16s var(--ease);
+}
+.arch-pick i {
+  display: grid; place-items: center;
+  inline-size: 15px; block-size: 15px; border-radius: 999px;
+  border: 1.4px solid color-mix(in srgb, var(--line-strong) 80%, transparent);
+  transition: background .16s var(--ease), border-color .16s var(--ease);
+}
+.arch-card:hover .arch-pick,
+.arch-card:focus-within .arch-pick,
+.arch-pick:focus-visible { opacity: 1; transform: none; }
+.arch-pick:hover { color: var(--accent-ink); border-color: var(--accent); }
+.arch-card.is-picked .arch-pick {
+  opacity: 1; transform: none; color: var(--accent-ink);
+  border-color: color-mix(in srgb, var(--accent) 44%, transparent); background: var(--paper);
+}
+.arch-card.is-picked .arch-pick i {
+  border-color: var(--accent); background: var(--accent);
+  box-shadow: inset 0 0 0 2.5px var(--paper);
+}
+
+/* ── 名字索引：只打过 1 局的 860 个号 ───────────────────────────── */
+.arch-index {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  column-gap: 26px; border-block-start: 1px solid var(--arch-line-soft);
+}
+.arch-idx-row {
+  display: flex; align-items: center; gap: 9px;
+  block-size: 46px; min-inline-size: 0; padding-inline: 8px;
+  border-block-end: 1px solid var(--arch-line-soft);
+  border-radius: 8px; cursor: pointer;
+  transition: background var(--duration) var(--ease);
+}
+.arch-idx-row:hover { background: var(--arch-sink); }
+.arch-idx-dot {
+  flex: none; inline-size: 7px; block-size: 7px; border-radius: 999px;
+  background: color-mix(in srgb, var(--line-strong) 70%, transparent);
+}
+.arch-idx-dot[data-side='own'] { background: var(--accent); }
+.arch-idx-name {
+  flex: 0 1 auto; min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text); font-size: .875rem; font-weight: 650; letter-spacing: -.01em;
+}
+.arch-idx-meta { flex: none; margin-inline-start: 2px; color: var(--quiet); font-size: .75rem; }
+.arch-idx-row .arch-claim { opacity: 0; margin-inline-start: auto; block-size: 24px; padding-inline: 9px; }
+.arch-idx-row:hover .arch-claim,
+.arch-idx-row:focus-within .arch-claim { opacity: 1; }
+
+/* ── 分页与脚注 ─────────────────────────────────────────────────── */
+.arch-pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  margin-block-start: 18px; color: var(--muted); font-size: .8125rem;
+}
+.arch-pager b { color: var(--text); }
+.arch-pager-btns { display: inline-flex; align-items: center; gap: 10px; }
+.arch-pager-btns small { color: var(--quiet); font-size: .75rem; }
+.arch-pager button {
+  inline-size: 34px; block-size: 34px; border: 1px solid var(--arch-line); border-radius: 10px;
+  background: var(--paper); color: var(--muted); font-size: 1rem; line-height: 1; cursor: pointer;
+  transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease);
+}
+.arch-pager button:hover:not(:disabled) { color: var(--accent-ink); border-color: var(--accent); }
+.arch-pager button:disabled { opacity: .4; cursor: not-allowed; }
+.arch-note {
+  margin: 30px 0 0; padding-block-start: 18px;
+  border-block-start: 1px solid var(--arch-line-soft);
+  color: var(--muted); font-size: .8125rem; line-height: 1.8; max-inline-size: 96ch;
+  text-wrap: pretty;
+}
+
+/* 列表视图：名字列限宽 300，其余读数平分剩余宽度并右对齐 ——
+   用 flex 而不是 grid，是因为固定栅格在 1640 宽下会把名字列拉到 800px，
+   名字和第二个读数之间空出一整片。 */
+.arch-list {
+  border: 1px solid var(--arch-line); border-radius: 16px; background: var(--paper);
+  box-shadow: var(--arch-shadow); overflow-x: auto;
+}
+.arch-row {
+  display: flex; align-items: center; gap: 10px;
+  min-block-size: 54px; padding-inline: 18px;
+  border-block-start: 1px solid var(--arch-line-soft);
+  color: var(--text); font-size: .875rem; white-space: nowrap;
+}
+.arch-row > :first-child { flex: 0 0 26px; }
+.arch-row-name { flex: 0 1 300px; }
+.arch-row > span { flex: 1 1 0; min-inline-size: 0; text-align: end; }
+.arch-row:hover:not(.is-head) { background: var(--arch-sink); }
+.arch-row.is-picked { background: var(--arch-wash); }
+.arch-row.is-head {
+  border-block-start: 0; min-block-size: 44px;
+  background: var(--arch-sink); color: var(--quiet);
+  font-size: .75rem; font-weight: 650; letter-spacing: .04em;
+  border-radius: 16px 16px 0 0;
+}
+.arch-row.is-head > span:nth-child(2) { flex: 0 1 300px; text-align: start; }
+.arch-row > span { overflow: hidden; text-overflow: ellipsis; }
+.arch-row-name { display: flex; align-items: center; gap: 9px; min-inline-size: 0; color: inherit; text-decoration: none; }
+.arch-row-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9375rem; font-weight: 700; }
+.arch-row-name .arch-lane { inline-size: 26px; block-size: 26px; font-size: .75rem; }
+.arch-row-name .arch-claim { opacity: 0; }
+.arch-row:hover .arch-row-name .arch-claim { opacity: 1; }
+.arch-row.is-thin { color: var(--muted); }
+.arch-check {
+  inline-size: 16px; block-size: 16px; accent-color: var(--accent); cursor: pointer;
+  justify-self: center;
+}
+.arch-row-name { display: flex; align-items: center; gap: 9px; min-inline-size: 0; color: inherit; text-decoration: none; }
+.arch-row-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9375rem; font-weight: 700; }
+.arch-row-name .arch-lane { inline-size: 26px; block-size: 26px; font-size: .75rem; }
+.arch-row-name .arch-claim { opacity: 0; }
+.arch-row:hover .arch-row-name .arch-claim { opacity: 1; }
+.arch-row.is-thin { color: var(--muted); }
+.arch-check {
+  inline-size: 16px; block-size: 16px; accent-color: var(--accent); cursor: pointer;
+  justify-self: center;
+}
+
+/* ── 选手ID 视图 ────────────────────────────────────────────────── */
+.arch-ids { display: grid; gap: 10px; }
+.arch-id {
+  display: flex; align-items: center; gap: 18px;
+  padding: 14px 18px; border: 1px solid var(--arch-line); border-radius: 14px;
+  background: var(--paper); box-shadow: var(--arch-shadow);
+  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+.arch-id:hover { border-color: color-mix(in srgb, var(--accent) 34%, var(--arch-line)); box-shadow: var(--arch-shadow-lift); }
+.arch-id-head { display: flex; flex: 0 1 240px; align-items: center; gap: 12px; min-inline-size: 0; }
+.arch-id-mark {
+  flex: none; display: grid; place-items: center; inline-size: 38px; block-size: 38px;
+  border-radius: 11px; color: var(--accent-ink);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--soft) 88%, var(--paper)) 0%, var(--soft) 100%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+  font: 700 .9375rem/1 var(--font);
+}
+.arch-id-title { display: grid; gap: 4px; min-inline-size: 0; }
+.arch-id-title > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9375rem; }
+.arch-id-title > small { color: var(--quiet); font-size: .75rem; }
+.arch-id-names { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 6px; min-inline-size: 0; }
+.arch-name-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  block-size: 27px; padding: 0 4px 0 10px; border-radius: 999px;
+  border: 1px solid var(--arch-line); background: var(--arch-sink);
+  font-size: .75rem;
+}
+.arch-name-chip b { font-weight: 650; }
+.arch-name-chip button {
+  display: grid; place-items: center; inline-size: 19px; block-size: 19px;
+  border: 0; border-radius: 999px; background: transparent; color: var(--quiet);
+  font-size: .875rem; line-height: 1; cursor: pointer;
+}
+.arch-name-chip button:hover { color: var(--danger); background: var(--danger-soft); }
+.arch-id-empty { color: var(--quiet); font-size: .75rem; }
+.arch-id-go {
+  block-size: 27px; padding: 0 12px; border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  border-radius: 999px; background: var(--paper); color: var(--accent-ink);
+  font: 650 .75rem/1 var(--font); cursor: pointer;
+}
+.arch-id-go:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.arch-id-figs {
+  display: grid; flex: none; grid-template-columns: repeat(2, minmax(48px, auto)); gap: 8px 18px;
+  padding-inline-start: 16px; border-inline-start: 1px solid var(--arch-line-soft);
+}
+.arch-id-figs > span { display: grid; gap: 3px; }
+.arch-id-figs b { font-size: .9375rem; font-weight: 700; }
+.arch-id-figs small { color: var(--quiet); font-size: .75rem; }
+.arch-id-foot { display: flex; flex: none; gap: 6px; }
+.arch-id-foot button {
+  block-size: 30px; padding: 0 11px; border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--muted); font: 650 .75rem/1 var(--font); cursor: pointer;
+  transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease),
+    background var(--duration) var(--ease);
+}
+.arch-id-foot button:hover:not(:disabled) { color: var(--accent-ink); border-color: var(--accent); background: var(--arch-wash); }
+.arch-id-foot button:disabled { opacity: .4; cursor: not-allowed; }
+.arch-id-foot button.is-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 24%, transparent); }
+.arch-id-foot button.is-danger:hover:not(:disabled) { color: #fff; background: var(--danger); border-color: var(--danger); }
+
+/* 空 ID 时的引导：直接摆出出场最多的十个号，就地开始认 */
+.arch-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.arch-cand {
+  display: flex; align-items: center; gap: 12px; min-inline-size: 0;
+  block-size: 68px; padding: 0 16px 0 14px;
+  border: 1px solid var(--arch-line); border-radius: 14px; background: var(--paper);
+  box-shadow: var(--arch-shadow); cursor: pointer; color: inherit;
+  transition: transform .18s var(--ease), box-shadow .18s var(--ease), border-color .18s var(--ease);
+}
+.arch-cand:hover {
+  transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 40%, var(--arch-line));
+  box-shadow: var(--arch-shadow-lift);
+}
+.arch-cand-name { display: grid; flex: 1; gap: 4px; min-inline-size: 0; }
+.arch-cand-name > b {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9375rem; font-weight: 700;
+}
+.arch-cand-name > small { color: var(--quiet); font-size: .75rem; }
+.arch-cand-fig { display: flex; flex: none; align-items: baseline; gap: 3px; }
+.arch-cand-fig > b { font: 700 1.25rem/1 var(--font); }
+.arch-cand-fig > small { color: var(--quiet); font-size: .75rem; }
+
+/* ── 断点 ───────────────────────────────────────────────────────── */
+@media (max-width: 1400px) {
+  .arch-head-main { grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; }
+  .arch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .arch-index { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .arch-hls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 1180px) {
+  .arch-head-main { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  /* 一栏时面板不再缩成 520 的小方块，改成横条：百分比在左、进度条在右 */
+  .arch-claim-panel {
+    max-inline-size: none;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center; gap: 10px 20px;
+  }
+  .arch-claim-top { grid-column: 1 / -1; }
+  .arch-claim-pct { grid-column: 1; }
+  .arch-claim-track { grid-column: 2; margin-block-start: 0; }
+  .arch-claim-foot { grid-column: 1 / -1; }
+  .arch-claim-acts { grid-column: 1 / -1; margin-block-start: 0; flex-wrap: wrap; }
+  /* 横条形态下面板很宽，主按钮不该再撑满 */
+  .arch-claim-acts .arch-btn.is-primary { flex: 0 0 auto; }
+  .arch-index { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .arch-sec-head { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .arch-sec-head p { text-align: start; }
+  .arch-bar { position: static; }
+  .arch-row { font-size: .8125rem; }
+  .arch-row-name, .arch-row.is-head > span:nth-child(2) { flex-basis: 220px; }
+}
+@media (max-width: 900px) {
+  .page.arch-page { padding: 22px var(--page-gutter) 48px; }
+  .arch-grid { grid-template-columns: minmax(0, 1fr); }
+  .arch-index { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .arch-hls { grid-template-columns: minmax(0, 1fr); }
+  .arch-title b { font-size: clamp(2.75rem, 9vw, 3.5rem); }
+  .arch-title span, .arch-title strong { font-size: 1.25rem; }
+  .arch-lede { font-size: .875rem; }
+  .arch-facts > div { padding-inline: 18px; }
+  .arch-facts dd { font-size: 1.375rem; }
+  .arch-picks { grid-template-columns: minmax(0, 1fr); }
+  .arch-id { flex-wrap: wrap; }
+  .arch-id-head { flex-basis: 100%; }
+  .arch-id-figs { border-inline-start: 0; padding-inline-start: 0; }
+  .arch-row { min-inline-size: 880px; }
+}
+@media (max-width: 620px) {
+  .arch-top { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .arch-modes { inline-size: 100%; }
+  .arch-modes button { flex: 1; }
+  .arch-head-main, .arch-grid, .arch-index { grid-template-columns: minmax(0, 1fr); }
+  .arch-facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 0; }
+  .arch-facts > div:nth-child(3) { padding-inline-start: 0; border-inline-start: 0; }
+  /* 工具条：搜索、阵营、下拉各占一整行，不然 430 宽下会互相挤出去 */
+  .arch-bar { gap: 8px; padding: 10px; }
+  .arch-search { flex-basis: 100%; min-inline-size: 0; }
+  .arch-set { flex: 1 1 100%; flex-wrap: wrap; }
+  .arch-set .arch-seg { flex: 1 1 100%; }
+  .arch-seg button { flex: 1; min-inline-size: 0; }
+  .arch-select { flex: 1 1 calc(50% - 4px); }
+  .arch-select select, .arch-select.is-wide select { inline-size: 100%; min-inline-size: 0; }
+  .arch-chip { flex: 1 1 100%; }
+  .arch-bar-end { inline-size: 100%; margin-inline-start: 0; flex-wrap: wrap; justify-content: space-between; }
+  /* 卡内：胜率一行、四个读数一行，不能并排 —— 430 宽下会被裁掉 */
+  .arch-card-main { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .arch-card-hero { grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; }
+  .arch-card-hero b { font-size: 2.25rem; }
+  .arch-card-hero small { align-self: end; }
+  .arch-meter { margin-block-start: 0; }
+  .arch-card-reads { gap: 0; }
+  .arch-card-reads dd { font-size: 1.0625rem; }
+  .arch-sec-head h2 { font-size: 1.25rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arch-card, .arch-hl, .arch-pick, .arch-btn { transition: none; }
+  .arch-card:hover, .arch-hl:hover, .arch-picks .arch-pick:hover { transform: none; }
+}
+
+/* ── 战队分框：一个战队一个框，框里「能跨局看的」摊成卡，其余进名字索引 ── */
+.arch-teams { display: grid; gap: 18px; margin-block-start: 30px; }
+.arch-team {
+  padding: 18px 20px 16px;
+  border: 1px solid color-mix(in srgb, var(--arch-line) 56%, #8fae9f);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--arch-wash) 58%, var(--paper));
+  box-shadow: var(--arch-shadow);
+}
+.arch-team-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px;
+  margin-block-end: 16px; padding-block-end: 12px;
+  border-block-end: 1px solid var(--arch-line-soft);
+}
+.arch-team-head h2 {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  color: var(--text); font-family: var(--display-font);
+  font-size: 1.3125rem; font-weight: 700; letter-spacing: -.02em;
+}
+.arch-team-tag {
+  flex: none; padding: 3px 10px; border-radius: 999px;
+  font: 700 .75rem/1.2 var(--font); font-style: normal; letter-spacing: .02em;
+}
+.arch-team-tag.is-own {
+  background: var(--soft); color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.arch-team-tag.is-enemy { background: color-mix(in srgb, var(--line) 46%, transparent); color: var(--muted); }
+.arch-team-head p { margin: 0; color: var(--quiet); font-size: .8125rem; }
+.arch-team-head p b { color: var(--text); font-weight: 700; }
+.arch-team-more {
+  flex: none; margin-inline-start: auto; min-block-size: 34px; padding: 0 14px;
+  border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--accent-ink);
+  font: 650 .8125rem/1 var(--font); cursor: pointer;
+  transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease);
+}
+.arch-team-more:hover { border-color: var(--accent); background: var(--soft); }
+.arch-team .arch-grid { margin: 0; }
+.arch-team-empty { margin: 0 0 12px; color: var(--muted); font-size: .8125rem; }
+.arch-team .arch-index {
+  margin-block-start: 14px; border-block-start-color: color-mix(in srgb, var(--arch-line) 60%, transparent);
+}
+.arch-team .arch-idx-row { border-block-end-color: color-mix(in srgb, var(--arch-line) 44%, transparent); }
+.arch-team .arch-idx-row:hover { background: color-mix(in srgb, var(--paper) 72%, transparent); }
+@media (max-width: 820px) {
+  .arch-team { padding: 14px 12px; }
+  .arch-team-head { align-items: flex-start; }
+  .arch-team-more { margin-inline-start: 0; }
+}
+
+/* ── 主页档案：卡片上的一条 / 筛选行 / 详情页一段 / 录入弹窗 ─────────
+   百段、巅峰赛分、千强、实力只存在于选手主页上（营地对局接口没有），
+   所以这组控件的原则是：能采就先采，采不到直接手填，填完能筛。 */
+
+.pf-strip {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-block-start: 10px; padding: 0; border: 0; background: none;
+  font: inherit; cursor: pointer; text-align: start;
+}
+.pf-strip .pf-add {
+  display: inline-flex; align-items: center;
+  block-size: 26px; padding: 0 10px; border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--line-strong) 66%, transparent);
+  color: var(--muted); font: 600 .75rem/26px var(--font);
+  transition: color var(--duration) var(--ease), border-color var(--duration) var(--ease);
+}
+.pf-strip:hover .pf-add { color: var(--accent-ink); border-color: var(--accent); border-style: solid; }
+.pf-strip i {
+  font-style: normal; font-size: .75rem; color: var(--accent-ink);
+  opacity: 0; transition: opacity var(--duration) var(--ease);
+}
+.pf-strip:hover i, .pf-strip:focus-visible i { opacity: 1; }
+
+.pf-chip {
+  display: inline-flex; align-items: baseline; gap: 3px;
+  block-size: 26px; padding: 0 9px; border-radius: 8px;
+  background: var(--arch-sink); color: var(--muted);
+  font: 600 .75rem/26px var(--font); white-space: nowrap;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 62%, transparent);
+}
+.pf-chip b { color: var(--text); font-weight: 800; font-size: .8125rem; letter-spacing: -.01em; }
+.pf-chip.is-hot {
+  color: var(--accent-text);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, #ffffff) 0%, var(--accent) 100%);
+  box-shadow: 0 1px 2px rgb(26 54 46 / 18%);
+}
+.pf-chip.is-hot b { color: inherit; }
+
+.pf-grade {
+  display: inline-grid; place-items: center;
+  inline-size: 26px; block-size: 26px; border-radius: 8px;
+  font: 800 .8125rem/1 var(--font); letter-spacing: 0;
+}
+.pf-grade[data-grade='S'] { background: var(--accent); color: var(--accent-text); }
+.pf-grade[data-grade='A'] { background: color-mix(in srgb, var(--accent) 22%, var(--paper)); color: var(--accent-ink); }
+.pf-grade[data-grade='B'] { background: var(--arch-sink); color: var(--muted); }
+.pf-grade[data-grade='C'] { background: color-mix(in srgb, var(--line) 44%, transparent); color: var(--quiet); }
+
+/* 筛选行：单独一条，不挤主工具条 */
+.arch-filters {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-block-start: 10px; padding: 10px 12px;
+  border: 1px solid var(--arch-line); border-radius: 14px;
+  background: color-mix(in srgb, var(--paper) 78%, transparent);
+}
+.arch-filters-kicker {
+  color: var(--quiet); font-size: .75rem; font-weight: 700; letter-spacing: .08em;
+  margin-inline-end: 4px;
+}
+.arch-select.is-narrow select { min-inline-size: 126px; }
+.arch-filters .arch-count { margin-inline-start: auto; }
+.arch-filters .arch-count b { color: var(--text); }
+
+/* 详情页的一段 */
+.pf-summary {
+  display: grid; gap: 12px; padding: 18px 20px;
+  border: 1px solid var(--arch-line); border-radius: 16px;
+  background:
+    linear-gradient(168deg, color-mix(in srgb, var(--paper) 95%, #ffffff) 0%, var(--paper) 46%,
+      color-mix(in srgb, var(--soft) 30%, var(--paper)) 100%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #ffffff 85%, transparent), var(--arch-shadow);
+}
+.pf-summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.pf-summary-head h2 { margin: 0; font: 700 1.125rem/1.4 var(--display-font); }
+.pf-summary-head p { margin: 5px 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.7; max-inline-size: 70ch; }
+.pf-summary-body { display: grid; gap: 10px; }
+.pf-lane-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-lane-chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 7px 12px; border-radius: 10px;
+  border: 1px solid var(--arch-line); background: var(--paper);
+  font-size: .75rem; color: var(--muted);
+}
+.pf-lane-chip b { color: var(--text); font-size: .8125rem; }
+.pf-lane-chip i { font-style: normal; font-size: .6875rem; color: var(--accent-ink); }
+.pf-lane-chip.is-main { border-color: color-mix(in srgb, var(--accent) 34%, transparent); background: var(--arch-wash); }
+.pf-summary-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.pf-note-text { color: var(--muted); font-size: .8125rem; }
+.pf-heroes-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.pf-hero {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 6px 10px; border-radius: 9px; background: var(--arch-sink);
+  font-size: .75rem; color: var(--quiet);
+}
+.pf-hero b { color: var(--text); font-size: .8125rem; }
+.pf-empty { color: var(--quiet); font-size: .8125rem; }
+
+/* 录入 / 采集弹窗 */
+.pf-dialog {
+  width: min(780px, 94vw); max-height: min(88vh, 900px); padding: 0; border: 0;
+  border-radius: 18px; background: var(--paper); color: var(--text);
+  box-shadow: 0 32px 80px -28px rgb(12 22 24 / 46%);
+}
+.pf-dialog::backdrop { background: rgb(12 22 24 / 42%); }
+.pf-dialog form { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: inherit; }
+.pf-dialog .dialog-body { overflow: auto; gap: 16px; }
+.pf-crawl {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--arch-line); border-radius: 12px;
+  background: var(--arch-sink);
+}
+.pf-crawl-status { flex: 1 1 240px; color: var(--muted); font-size: .8125rem; line-height: 1.6; }
+.pf-cookie { flex: 1 1 100%; display: grid; gap: 8px; }
+.pf-cookie[hidden], .pf-dialog [hidden] { display: none; }
+.pf-cookie label { display: grid; gap: 6px; color: var(--muted); font-size: .75rem; }
+.pf-cookie textarea {
+  inline-size: 100%; padding: 8px 10px; border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--text); font: 400 .75rem/1.5 var(--mono); resize: vertical;
+}
+.pf-lane-list, .pf-hero-list { display: grid; gap: 8px; }
+.pf-lane {
+  display: grid; grid-template-columns: minmax(96px, 118px) 54px minmax(0, 1fr) minmax(0, 1fr) 30px;
+  gap: 8px; align-items: center;
+}
+.pf-lane .arch-select select { min-inline-size: 0; inline-size: 100%; }
+.pf-main, .pf-check { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.pf-num { display: grid; gap: 3px; color: var(--quiet); font-size: .6875rem; }
+.pf-num input {
+  block-size: 40px; padding: 0 10px; border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--text); font: 600 .875rem var(--font);
+}
+.pf-row-x {
+  display: grid; place-items: center; inline-size: 30px; block-size: 30px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--quiet); font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.pf-row-x:hover { color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 30%, transparent); }
+.pf-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
+.pf-grades { display: inline-flex; align-items: center; gap: 10px; }
+.pf-grades-label { color: var(--muted); font-size: .75rem; }
+.pf-grades label { display: inline-flex; align-items: center; gap: 4px; font-size: .8125rem; }
+.pf-hero-row { display: grid; grid-template-columns: minmax(0, 1fr) 120px 30px; gap: 8px; align-items: center; }
+.pf-hero-row input {
+  block-size: 40px; padding: 0 10px; border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--text); font: 500 .875rem var(--font);
+}
+.pf-note-field { display: grid; gap: 6px; color: var(--muted); font-size: .75rem; }
+.pf-note-field input {
+  block-size: 40px; padding: 0 10px; border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--text); font: 400 .875rem var(--font);
+}
+.pf-dialog fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 10px; }
+.pf-dialog legend { font-size: .75rem; font-weight: 700; color: var(--muted); margin-block-end: 2px; }
+.pf-dialog .dialog-actions { padding: 14px 22px; }
+@media (max-width: 720px) {
+  /* 手机上分路行折成两行：上面选分路，下面「主 / 段数 / 巅峰分 / 删」一字排开 */
+  .pf-lane { grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 30px; }
+  .pf-lane .arch-select { grid-column: 1 / -1; }
+  .pf-lane .pf-main { grid-column: 1; }
+  .pf-lane [data-lane-seg] { grid-column: 2; }
+  .pf-lane [data-lane-peak] { grid-column: 3; }
+  .pf-lane .pf-row-x { grid-column: 4; }
+  .pf-lane-head { display: none; }
+  .pf-hero-row { grid-template-columns: minmax(0, 1fr) 96px 30px; }
+  .arch-filters .arch-count { margin-inline-start: 0; }
+}
+
+/* 表格式的行：表头 + 一行行控件，比每个格子顶一个小标题好读 */
+.pf-lane-head, .pf-hero-head {
+  display: grid; gap: 8px; padding-inline: 2px 32px;
+  color: var(--quiet); font-size: .6875rem; font-weight: 600; letter-spacing: .04em;
+}
+.pf-lane-head { grid-template-columns: minmax(96px, 118px) 54px minmax(0, 1fr) minmax(0, 1fr); }
+.pf-hero-head { grid-template-columns: minmax(0, 1fr) 120px; }
+.pf-input {
+  inline-size: 100%; block-size: 40px; padding: 0 10px;
+  border: 1px solid var(--arch-line); border-radius: 9px;
+  background: var(--paper); color: var(--text); font: 600 .875rem var(--font);
+}
+.pf-input::placeholder { color: var(--quiet); font-weight: 500; }
+.pf-input:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pf-lane .pf-main { justify-self: center; }
+.pf-meta { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .75rem; }
+.pf-meta i { font-style: normal; }
+
+/* 手机端：分路表头对不上两行布局，直接收掉（放在最后，盖住前面的 display:grid） */
+@media (max-width: 720px) { .pf-lane-head, .pf-hero-head { display: none; } }
+.pf-crawl .control.is-strong { border-color: var(--accent); color: var(--accent-ink); background: var(--arch-wash); }
+.pf-crawl .control.is-strong:hover { background: var(--accent); color: var(--accent-text); }

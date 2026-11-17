@@ -15,7 +15,7 @@ USEPOSITIONSKILL   0x82    16  slot, aim_x, aim_y, seq, object, drag
 The outer ``wObjID`` of a 0x02 entry is the casting hero's entity id, the
 same value the roster blocks carry, so a cast resolves to unit (8-12 / 16-20)
 and then to camp/slot/hero.  Targeted casts carry a *second* id space: the
-small battle-object ids (7..65) that LEARNSKILL pins per hero (既有校准, one
+small battle-object ids (7..65) that LEARNSKILL pins per hero (docs 5.3, one
 constant id per hero).  Cross-referencing the two makes every targeted cast
 say whether it was aimed at itself, an allied hero, an enemy hero or a
 non-hero object (minion/monster/summon; this ledger does not split those).
@@ -25,7 +25,7 @@ What this does NOT read
 * No hit, damage, control time or kill: the .abc records inputs, not results.
 * No cooldown state, so the same slot may repeat faster than the real kit.
 * No world position for the caster.  Only USEPOSITIONSKILL's own target point
-  is a coordinate, and 0x82's ``object`` field stays unused (既有校准 marks it
+  is a coordinate, and 0x82's ``object`` field stays unused (docs 5.4 marks it
   medium confidence: it is routinely garbage, e.g. 0xD1E00000).
 * Slot numbers are the client's raw slot, *not* a hero skill name.  Slots 1-4
   are the hero's kit slots; 5/6/7/9/15 are non-kit keys (item active,
@@ -36,7 +36,7 @@ Evidence behind the field choices
 ---------------------------------
 * ``skill_seq`` is a per-hero cast ordinal: on every non-POV hero of the two
   11/2 samples it runs 1..N with one message per increment (count == max).
-  On the POV hero it can be lossy (20260101_000000: 78 recorded of 174), so
+  On the POV hero it can be lossy (20261102_161129: 78 recorded of 174), so
   the ledger reports per-hero counter integrity instead of hiding it.
 * ``aim_degree`` is centi-degrees.  All 2,001 directional casts of the two
   samples sit in [-17994, 17920]; divided by 100 they agree with the 0x2d
@@ -138,7 +138,7 @@ def load_catalog(path: Path) -> dict:
 def _object_pool(entities: dict) -> tuple[dict, set]:
     """entityId -> battle-object id from LEARNSKILL; plus the ambiguous ids.
 
-    LEARNSKILL pins one constant object id per hero (既有校准).  When two
+    LEARNSKILL pins one constant object id per hero (docs 5.3).  When two
     entities claim the same id the mapping is unusable, so those ids are
     reported as ambiguous instead of silently resolving to one side.
     """
@@ -371,7 +371,7 @@ def skill_ledger(abc: bytes, catalog: dict | None = None) -> dict:
                 "skillSlot 为客户端原始槽位；1-4 为英雄技能槽，5/6/7/9/15 属非英雄技能槽（装备主动/召唤师技能等，未验证，只标注不解释）。",
                 "directional 的 aimDeg = 原始 centi-degree / 100（与 0x2d 朝向样本对拍，平均差 2.1-2.4°）。",
                 "position 的 (aimX, aimY) 是该次施法的世界坐标落点；0x82 的 object 字段置信度 medium，未参与目标解析。",
-                "counter.complete=false 表示该英雄的技能计数不连续（POV 玩家实录会丢条目，20260101_000000 为 78/174），该行次数视为下限。",
+                "counter.complete=false 表示该英雄的技能计数不连续（POV 玩家实录会丢条目，20261102_161129 为 78/174），该行次数视为下限。",
                 "engine 字段默认 null：本层只有文件解码。引擎实测（暂停帧只读客户端进程内存）是另一档来源，需由 attach_engine_outcomes 显式挂载；缺测=null，不补 0、不推断，且与文件解码禁止相加/互校。",
             ]}
 

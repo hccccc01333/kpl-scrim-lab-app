@@ -12,7 +12,7 @@ with the header length and their terminators differ by client build:
 Because the terminator length varies, the block is pinned by anchor words that
 hold across every 5v5 sample seen so far and confirmed by the player-block
 signature.  No field is named here: the documented meanings live in
-``README.md`` and only cover indices 1/2/67.
+``docs/abc_scalar_block.md`` and only cover indices 1/2/67.
 """
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def kv_pairs(data: bytes, located: dict) -> dict[int, int]:
 def server_stamp_from_name(stem: str) -> int | None:
     """The server unix timestamp carried by the replay file name.
 
-    Names look like ``20260101_000000_1593860880_29_1790300977_<hash>``: several
+    Names look like ``20260925_095631_1593860880_29_1790300977_<hash>``: several
     segments can be 10-digit numbers (relay entity, table ids), so the last
     plausible unix-time segment is the timestamp, not the first.
     """

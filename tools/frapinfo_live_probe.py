@@ -4,7 +4,7 @@
 Why this tool exists
 --------------------
 `GameLogicHelper.AdvanceFrameCommands(frameNo, frapInfo)` receives a
-CSDT_FRAPBOOT_INFO object whose live layout is (README.md):
+CSDT_FRAPBOOT_INFO object whose live layout is (docs/advance_frame_binding.md):
 
     frapInfo + 0x00  Il2CppClass*  (8-byte object header on this build)
     frapInfo + 0x0c  u8            command count (1..27 while processing)

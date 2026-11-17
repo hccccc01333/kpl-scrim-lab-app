@@ -1,0 +1,26 @@
+﻿/* Page rules are preserved in one low-priority layer; shared UI owns the system. */
+@layer legacy, theme, foundation, interface, celadon, board;
+/* 选手详情页覆盖层：不放进任何 layer，优先级高于全部 @layer。
+   @import 必须排在所有规则之前，否则浏览器直接丢弃。 */
+@import url('./player-v2.css?v=20261116c');
+@import url('./style.css?v=20261116c') layer(legacy);
+@import url('./match-recap-fixes.css?v=20261116c') layer(legacy);
+@import url('./workspace-home.css?v=20261116c') layer(legacy);
+@import url('./bp-studio.css?v=20261118l') layer(legacy);
+@import url('./match-review.css?v=20261116c') layer(legacy);
+@import url('./series.css?v=20261116c') layer(legacy);
+@import url('./cross.css?v=20261116c') layer(legacy);
+@import url('./team-dossier.css?v=20261116c') layer(legacy);
+@import url('./ui-tokens.css?v=20261116c') layer(theme);
+@import url('./ui-primitives.css?v=20261116c') layer(foundation);
+@import url('./workbench-ui.css?v=20261116c') layer(interface);
+@import url('./celadon.css?v=20261116c') layer(celadon);
+
+@import url("./brief-celadon.css") layer(celadon);
+@import url("./design-consistency.css") layer(celadon);
+@import url("./biggame.css") layer(celadon);
+@import url("./teams-board.css?v=20261116-board") layer(board);
+/* 选手名册整页重做（2026-11-16）：不放进任何 layer，保证盖过历史补丁里的 .rs-* 尺寸。 */
+@import url("./player-archive.css");
+/* 战队详情 v9（2026-11-17）：分节、英雄大圆卡、类型矩阵。不放进 layer，保证盖过历史补丁。 */
+@import url("./team-dossier-v9.css?v=20261117h");

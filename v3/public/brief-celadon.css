@@ -1,0 +1,72 @@
+/* The existing V3 period brief, with its original information and controls. */
+.page.pbr-home { padding-block-start: 22px; gap: 26px; }
+.pbr-home .pbr-head { display: grid; grid-template-columns: minmax(0,1fr); grid-template-areas: "title" "bar" "notice"; gap: 12px; }
+.pbr-home .pbr-title { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,.92fr); align-items: center; gap: 32px; min-block-size: 0; }
+.pbr-home .pbr-title-copy { min-inline-size: 0; }
+.pbr-home .pbr-title h1 { font: 700 clamp(2.5rem, 1.4rem + 2.4vw, 3.6rem)/1.2 var(--display-font); letter-spacing: -.035em; }
+.pbr-home .pbr-title .pbr-kicker { display: inline-flex; align-items: center; gap: 8px; margin-block-end: 6px; color: var(--muted); font-size: .75rem; font-weight: 650; letter-spacing: .08em; }
+.pbr-home .pbr-title .pbr-kicker::before { content: ""; inline-size: 7px; block-size: 7px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 0 4px var(--soft); }
+.pbr-home .pbr-sub { margin-block-start: 14px; max-inline-size: 52ch; line-height: 1.7; }
+.pbr-home .pbr-title .pbr-coverage-chip { margin-block-start: 12px; padding: 0; }
+.pbr-celadon-art { display: block; inline-size: auto; max-inline-size: 100%; max-block-size: 200px; margin-inline-start: auto; object-fit: contain; pointer-events: none; filter: drop-shadow(0 12px 16px rgb(46 75 61 / 8%)); }
+/* 筛选条不再是一整条空盒子：左边说清「正在看什么」，右边才是控件。 */
+.pbr-home .pbr-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 18px; margin: 0; padding: 10px 2px; border: 0; border-block: 1px solid var(--line); background: transparent; }
+.pbr-home .pbr-bar-context { display: flex; align-items: baseline; gap: 8px; min-inline-size: 0; margin: 0; }
+.pbr-home .pbr-bar-context-label { color: var(--quiet); font-size: .75rem; }
+.pbr-home .pbr-bar-context-value { color: var(--text); font-size: .8125rem; font-weight: 650; }
+.pbr-home .pbr-bar-actions { inline-size: auto; max-inline-size: 100%; flex: 0 1 auto; justify-content: flex-end; flex-wrap: nowrap; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.pbr-home .pbr-periods,
+.pbr-home .pbr-views { padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); }
+.pbr-home .pbr-range { min-block-size: 36px; padding-inline: 13px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); }
+.pbr-home .pbr-range { margin-inline-start: 0; }
+.pbr-home .pbr-hero { grid-template-columns: minmax(0,1.7fr) minmax(280px,.8fr); gap: 40px; }
+.pbr-home .pbr-summary { padding: 8px 0; }
+.pbr-home .pbr-summary-sentence { font-size: 1.5rem; line-height: 1.7; }
+.pbr-home .pbr-hero-side { border: 0; border-block-start: 1px solid var(--line); padding: 16px 0 0; }
+.pbr-home .pbr-metrics { grid-template-columns: repeat(12,minmax(0,1fr)); gap: 14px; border: 0; }
+.pbr-home .pbr-metric[data-metric-id] { grid-column: span 3; grid-row: auto; min-block-size: 138px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.pbr-home .pbr-metric[data-metric-id='record'] { grid-column: span 6; grid-row: span 2; padding: 24px; background: var(--soft); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-value { font-size: 3.5rem; }
+.pbr-home .pbr-metric[data-metric-id='record'] :is(.pbr-metric-label,.pbr-metric-coverage,.pbr-metric-prev,.pbr-form-label,.pbr-score small) { color: var(--muted); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-win { color: var(--accent); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-loss { color: var(--text); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter { background: var(--line-strong); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter > i { background: var(--accent); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-delta.is-up { color: var(--success); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-delta.is-down { color: var(--danger); }
+.pbr-home .pbr-metric[data-metric-id='fight_rate'], .pbr-home .pbr-metric[data-metric-id='dragon_rate'], .pbr-home .pbr-metric[data-metric-id='first_tower_rate'] { grid-column: span 4; }
+.pbr-home .pbr-findings:not(.pbr-watch) .pbr-finding-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 28px; }
+.pbr-home .pbr-findings:not(.pbr-watch) .pbr-finding-list.is-scroll { max-block-size: clamp(300px,44dvh,520px); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+:root[data-theme='dark'] .pbr-celadon-art { opacity: .85; }
+@media (max-width: 1420px) {
+  .page.pbr-home { padding-block-start: 18px; }
+  .pbr-home .pbr-head { gap: 10px; }
+  .pbr-home .pbr-title h1 { font-size: clamp(2.35rem, 1.2rem + 2.2vw, 3.2rem); }
+  .pbr-celadon-art { max-block-size: 148px; }
+}
+@media (max-width: 1180px) {
+  .pbr-home .pbr-title { grid-template-columns: minmax(0,1fr) minmax(0,.8fr); gap: 24px; }
+  .pbr-celadon-art { max-block-size: 130px; }
+  .pbr-home .pbr-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .pbr-home .pbr-metric[data-metric-id] { grid-column: span 1; grid-row: auto; }
+  .pbr-home .pbr-metric[data-metric-id='record'] { grid-column: span 2; }
+  .pbr-home .pbr-findings:not(.pbr-watch) .pbr-finding-list { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 900px) {
+  .pbr-home .pbr-hero { grid-template-columns: minmax(0,1fr); gap: 20px; }
+}
+@media (max-width: 760px) {
+  .page.pbr-home { padding-block-start: 18px; gap: 22px; }
+  .pbr-home .pbr-title { grid-template-columns: minmax(0,1fr); gap: 0; }
+  .pbr-home .pbr-title h1 { font-size: 2.35rem; }
+  .pbr-home .pbr-sub { margin-block-start: 10px; font-size: .875rem; }
+  .pbr-celadon-art { display: none; }
+  .pbr-home .pbr-bar { align-items: flex-start; gap: 8px; padding-block: 8px; }
+  .pbr-home .pbr-bar-context { flex-basis: 100%; }
+  .pbr-home .pbr-bar-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
+  .pbr-home .pbr-range { margin-inline-start: auto; }
+  .pbr-home .pbr-metrics { grid-template-columns: minmax(0,1fr); }
+  .pbr-home .pbr-metric[data-metric-id], .pbr-home .pbr-metric[data-metric-id='record'] { grid-column: span 1; }
+  .pbr-home .pbr-summary-sentence { font-size: 1.25rem; }
+}
+@media print { .pbr-celadon-art { display: none; } .pbr-home .pbr-title { display: block; min-block-size: 0; } }

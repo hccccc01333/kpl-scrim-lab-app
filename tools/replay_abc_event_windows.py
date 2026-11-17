@@ -136,12 +136,12 @@ def describe(row: dict, prices: dict, units: dict) -> dict:
         # on this replay it takes values 8..65 for entities whose units are
         # 18/19/20, so joining it to the unit table would be false.
         fields["hero_object_id_note"] = (
-            "small actor/object id; unit mapping unresolved (既有校准-5.142)")
+            "small actor/object id; unit mapping unresolved (docs 5.141-5.142)")
         return fields
     if name == "USEDIRECTIONALSKILL":
         fields = dict(row["fields"])
         fields["degree_deg"] = round(fields["degree"] / 100.0, 2)
-        fields["degree_note"] = "centidegrees, 既有校准"
+        fields["degree_note"] = "centidegrees, docs 5.128"
         return fields
     if name == "CC":
         buf = bytes.fromhex(row["buffer_hex"])
@@ -328,7 +328,7 @@ def build(abc_path: Path, anchors: list[float], half_window: int):
                           "player": facing_rows[0]["player"],
                           "evidence": "only entity emitting 0x01/0x2d angle samples"}
                          if facing_rows else None),
-            "duration": "11:33 (693 s) per postgame screenshot / 既有校准",
+            "duration": "11:33 (693 s) per postgame screenshot / docs 5.129",
         },
         "timeBase": {
             "framesPerSecond": FRAME_RATE,

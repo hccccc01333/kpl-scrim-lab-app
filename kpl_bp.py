@@ -18,7 +18,7 @@
 `bp_list[].is_ban_or_pick == 1` 是**选用（pick）**，`== 0` 是**禁用（ban）**，顺序即 BP 顺序。
 契约文档第一版曾把这两个值写反，代码以实测为准。
 
-BP 完整性（契约 v1.1，见 `README.md` §1）：
+BP 完整性（契约 v1.1，见 `docs/kpl_bp_pipeline.md` §1）：
 * `bpMode="full"`：`bp_list` 完整（两侧各 5 pick + 同数 ban），picks 用 BP 顺序，bans 可用；
 * `bpMode="blind"`：**巅峰对决盲选**——系列赛打满的最后一局按规则盲选，官方 `bp_list` 为空或不完整，
   这不是数据缺失。picks 取十人面板，`bansKnown=false`、`pickOrderKnown=false`，照常进组合统计；
@@ -469,6 +469,10 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         'leagueId': _league_id(match, league),
         'leagueName': str(league.get('league_name') or ''),
         'year': _league_year(match, league),
+        # Store the exact game-patch label if the upstream API provides it.
+        # A league season, tournament name or date is never substituted for it.
+        'version': str(data.get('game_version') or data.get('gameVersion') or
+                       data.get('patch_version') or '').strip(),
         'stage': str(match.get('match_stage_desc') or match.get('match_stage_name') or ''),
         'startTime': start_time,
         'date': start_time[:10],
@@ -900,27 +904,33 @@ def _iter_game_sides(game):
         win_camp = int(game.get('winCamp') or 0)
     except (TypeError, ValueError):
         win_camp = 0
+    # 最近使用时间：组合 / 队伍都要记最近一次同场日期（比赛日期，缺了记空串）
+    date = str(game.get('date') or '')[:10]
     for camp in ('1', '2'):
         heroes = _side_heroes(game, camp)
         if not heroes:
             continue
         team = str((game.get('camp' + camp) or {}).get('team') or '')
-        yield camp, team, heroes, 1 if win_camp == int(camp) else 0
+        yield camp, team, heroes, 1 if win_camp == int(camp) else 0, date
 
 
-def _bump(store, key, year, team, won):
+def _bump(store, key, year, team, won, date=''):
     record = store.get(key)
     if record is None:
-        record = store[key] = {'n': 0, 'wins': 0, 'year': 0, 'teams': {}}
+        record = store[key] = {'n': 0, 'wins': 0, 'year': 0, 'lastDate': '', 'teams': {}}
     record['n'] += 1
     record['wins'] += won
     record['year'] = max(record['year'], year)
+    if date:
+        record['lastDate'] = max(record['lastDate'], date)
     if team:
         team_row = record['teams'].get(team)
         if team_row is None:
-            team_row = record['teams'][team] = {'n': 0, 'wins': 0}
+            team_row = record['teams'][team] = {'n': 0, 'wins': 0, 'lastDate': ''}
         team_row['n'] += 1
         team_row['wins'] += won
+        if date:
+            team_row['lastDate'] = max(team_row['lastDate'], date)
 
 
 def _pack(store, *, size=None, min_n=1):
@@ -928,13 +938,19 @@ def _pack(store, *, size=None, min_n=1):
     for heroes, record in store.items():
         if record['n'] < min_n:
             continue
-        teams = sorted(record['teams'].items(), key=lambda item: (-item[1]['n'], item[0]))
+        # 「最近 KPL 谁用了」：先按最近使用日期倒序，再用场次稳一下顺序。
+        teams = sorted(record['teams'].items(),
+                       key=lambda item: (item[1].get('lastDate') or '', -item[1]['n'], item[0]),
+                       reverse=True)
         row = {'heroes': list(heroes), 'n': record['n'], 'wins': record['wins'],
                'wr': round(record['wins'] / record['n'] * 100, 1),
                'year': record['year']}
+        if record.get('lastDate'):
+            row['lastDate'] = record['lastDate']
         if size is not None:
             row['size'] = size
-        row['teams'] = [{'team': team, 'n': value['n'], 'wins': value['wins']}
+        row['teams'] = [{'team': team, 'n': value['n'], 'wins': value['wins'],
+                         'lastDate': value.get('lastDate') or ''}
                         for team, value in teams[:MAX_TEAMS]]
         rows.append(row)
     rows.sort(key=lambda item: (-item['n'], item['heroes']))
@@ -942,12 +958,13 @@ def _pack(store, *, size=None, min_n=1):
 
 
 def build_combos(games, *, since_year=DEFAULT_SINCE_YEAR, min_games=DEFAULT_MIN_GAMES):
-    """同队同场 5 个 pick → 双人 / 三人 / 整阵容组合的场次与胜率。
+    """同队同场 5 个 pick → 双人 / 三人 / 四人 / 整阵容组合的场次与胜率。
 
-    与旧版口径一致：先按英雄名去重再排序组合；`minGames` 只过滤双人 / 三人，
-    整阵容出现过 1 次就保留。
+    与旧版口径一致：先按英雄名去重再排序组合；`minGames` 只过滤双人 / 三人 / 四人，
+    整阵容出现过 1 次就保留。四人组合是组合查询要的「2/3/4 组合筛选」，同样
+    按排序后元组去重（同一套 4 人不因站位不同而重复计数）。
     """
-    pairs, trios, lineups = {}, {}, {}
+    pairs, trios, quads, lineups = {}, {}, {}, {}
     included = 0
     for game in games:
         try:
@@ -957,18 +974,22 @@ def build_combos(games, *, since_year=DEFAULT_SINCE_YEAR, min_games=DEFAULT_MIN_
         if year and year < since_year:
             continue
         included += 1
-        for _camp, team, heroes, won in _iter_game_sides(game):
+        for _camp, team, heroes, won, date in _iter_game_sides(game):
             for i in range(len(heroes)):
                 for j in range(i + 1, len(heroes)):
-                    _bump(pairs, (heroes[i], heroes[j]), year, team, won)
+                    _bump(pairs, (heroes[i], heroes[j]), year, team, won, date)
                     for k in range(j + 1, len(heroes)):
-                        _bump(trios, (heroes[i], heroes[j], heroes[k]), year, team, won)
+                        _bump(trios, (heroes[i], heroes[j], heroes[k]), year, team, won, date)
+                        for l in range(k + 1, len(heroes)):
+                            _bump(quads, (heroes[i], heroes[j], heroes[k], heroes[l]),
+                                  year, team, won, date)
             if len(heroes) == 5:
-                _bump(lineups, tuple(heroes), year, team, won)
+                _bump(lineups, tuple(heroes), year, team, won, date)
     return {
         'games': included,
         'pairs': _pack(pairs, size=2, min_n=min_games),
         'trios': _pack(trios, size=3, min_n=min_games),
+        'quads': _pack(quads, size=4, min_n=min_games),
         'lineups': _pack(lineups, min_n=1),
     }
 
@@ -1014,7 +1035,79 @@ def build_facts(games, *, since_year=DEFAULT_SINCE_YEAR, min_games=DEFAULT_MIN_G
         'note': COMBOS_NOTE,
         'pairs': combos['pairs'],
         'trios': combos['trios'],
+        'quads': combos['quads'],
         'lineups': combos['lineups'],
+    }
+
+
+def build_counters(games, *, since_year=DEFAULT_SINCE_YEAR, min_n=5):
+    """跨阵营对位矩阵（有向）：A 方英雄 vs B 方英雄的场次 / A 胜率 / 最近使用日期。
+
+    与组合事实表同一批 game 数据，口径是「同场对立阵营」：一场贡献 5×5 个有序对位。
+    `min_n` 只做落盘去噪（展示层另有门槛，如 n≥10 且胜率≥55% 才算克制命中）。
+    返回 `data/facts/kpl_counters.json` 的完整文档。
+    """
+    store = {}
+    included = 0
+    dates = []
+    for game in games:
+        try:
+            year = int(game.get('year') or 0)
+        except (TypeError, ValueError):
+            year = 0
+        if year and year < since_year:
+            continue
+        sides = []
+        for camp in ('1', '2'):
+            heroes = _side_heroes(game, camp)
+            if not heroes:
+                continue
+            team = str((game.get('camp' + camp) or {}).get('team') or '')
+            try:
+                win_camp = int(game.get('winCamp') or 0)
+            except (TypeError, ValueError):
+                win_camp = 0
+            won = 1 if win_camp == int(camp) else 0
+            sides.append((heroes, won, team, str(game.get('date') or '')[:10]))
+        if len(sides) != 2:
+            continue
+        included += 1
+        if sides[0][3]:
+            dates.append(sides[0][3])
+        (heroes_a, won_a, team_a, date), (heroes_b, _won_b, team_b, _date) = sides
+        for a in heroes_a:
+            for b in heroes_b:
+                _bump(store, (a, b), year, team_a, won_a, date)
+                _bump(store, (b, a), year, team_b, 1 - won_a, date)
+
+    rows = []
+    for (a, b), record in store.items():
+        if record['n'] < min_n:
+            continue
+        teams = sorted(record['teams'].items(),
+                       key=lambda item: (item[1].get('lastDate') or '', -item[1]['n'], item[0]),
+                       reverse=True)
+        row = {'a': a, 'b': b, 'n': record['n'], 'wins': record['wins'],
+               'wr': round(record['wins'] / record['n'] * 100, 1),
+               'year': record['year']}
+        if record.get('lastDate'):
+            row['lastDate'] = record['lastDate']
+        row['teams'] = [{'team': team, 'n': value['n'], 'wins': value['wins'],
+                         'lastDate': value.get('lastDate') or ''}
+                        for team, value in teams[:MAX_TEAMS]]
+        rows.append(row)
+    rows.sort(key=lambda item: (-item['n'], item['a'], item['b']))
+    return {
+        'schema': 'bp-kpl-counters-v1',
+        'source': SOURCE,
+        'sinceYear': int(since_year),
+        'games': included,
+        'minN': int(min_n),
+        'windowStart': min(dates) if dates else '',
+        'windowEnd': max(dates) if dates else '',
+        'note': '有向对位：a 方英雄对上 b 方英雄的场次与 a 方胜率（同场对立阵营）；'
+                '「克制命中」在展示层按样本与胜率门槛判定，这里只存数。',
+        'pairs': rows,
     }
 
 

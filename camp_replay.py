@@ -35,7 +35,31 @@ MAX_BYTES = 4 * 1024 * 1024
 
 
 class CampReplayError(ValueError):
-    """The link, endpoint or payload cannot be used."""
+    """The link, endpoint or payload cannot be used.
+
+    ``rate_limited`` 标记营地公开接口的限流（HTTP 429 / “操作频繁”一类），
+    调用方可以据此放慢速度后重试；普通解析错误不应该重试。
+    """
+
+    def __init__(self, message, *, rate_limited=False, retry_after=None):
+        super().__init__(message)
+        self.rate_limited = bool(rate_limited)
+        self.retry_after = retry_after
+
+
+# 营地公开接口限流的文案没有固定 code：HTTP 429、returnMsg 里带「频繁 /
+# 限流 / 稍后」都按限流处理，批量补拉才会退避重试。
+_RATE_LIMIT_MARKERS = (
+    '频繁', '限流', '过快', '请求过多', '访问过多', '稍后再试', '稍后重试',
+    'too many', 'rate limit', 'rate-limit', 'system busy', '系统繁忙',
+)
+
+
+def _is_rate_limited(code, message) -> bool:
+    if str(code) in ('429', '-429'):
+        return True
+    text = str(message or '').lower()
+    return any(marker in text for marker in _RATE_LIMIT_MARKERS)
 
 
 # 微信里分享营地战绩，复制出来的是这类短链。302 一跳就落到公开的
@@ -234,6 +258,15 @@ def fetch(link, timeout=30):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = response.read(MAX_BYTES + 1)
     except urllib.error.HTTPError as error:
+        retry_after = None
+        try:
+            retry_after = int(error.headers.get('Retry-After') or 0) or None
+        except (AttributeError, TypeError, ValueError):
+            retry_after = None
+        if error.code == 429:
+            raise CampReplayError(
+                '营地接口限流（HTTP 429），请放慢拉取速度后重试',
+                rate_limited=True, retry_after=retry_after) from error
         raise CampReplayError(f'营地接口 HTTP {error.code}') from error
     except urllib.error.URLError as error:
         raise CampReplayError(f'无法连接营地接口：{error.reason}') from error
@@ -246,7 +279,12 @@ def fetch(link, timeout=30):
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise CampReplayError('营地接口没有返回 JSON') from error
     if not isinstance(value, dict) or value.get('returnCode') not in (0, '0'):
+        code = value.get('returnCode') if isinstance(value, dict) else ''
         message = value.get('returnMsg') if isinstance(value, dict) else ''
+        if _is_rate_limited(code, message):
+            raise CampReplayError(
+                f'营地接口限流：{message or "请求太快"}，请放慢拉取速度后重试',
+                rate_limited=True)
         raise CampReplayError(f'营地接口拒绝：{message or "未知错误"}')
     data_body = value.get('data')
     if not isinstance(data_body, dict) or not data_body:
@@ -494,7 +532,8 @@ def link_from_entry(entry, camp_user_id=''):
                               if key.lower() == 'playerid' and values), '')
         except ValueError:
             player_id = ''
-    player_id = str(player_id or camp_user_id or '').strip()
+    player_id = str(player_id or camp_user_id
+                    or entry.get('uniqueRoleId') or '').strip()
     if not re.fullmatch(r'\d{5,20}', player_id):
         raise CampReplayError('这条战局没有可用的 playerid，无法拉取官方回放')
     kind = 'kpl' if str(entry.get('kplMatchFlag') or '') == '1' else 'personal'

@@ -166,12 +166,12 @@ def describe(row: dict, prices: dict) -> dict:
         # on this replay it takes values 8..65 for entities whose units are
         # 18/19/20, so joining it to the unit table would be false.
         fields["hero_object_id_note"] = (
-            "small actor/object id; unit mapping unresolved (既有校准-5.142)")
+            "small actor/object id; unit mapping unresolved (docs 5.141-5.142)")
         return fields
     if name == "USEDIRECTIONALSKILL":
         fields = dict(row["fields"])
         fields["degree_deg"] = round(fields["degree"] / 100.0, 2)
-        fields["degree_note"] = "centidegrees, 既有校准"
+        fields["degree_note"] = "centidegrees, docs 5.128"
         return fields
     if name == "CC":
         buf = bytes.fromhex(row["buffer_hex"])
@@ -712,7 +712,7 @@ def render_readme(report) -> str:
     add("`PLAYER_MOVE` values are input directions, not world positions. The")
     add("calibrated mapping is `world_vector = (cos dir°, sin dir°)` in native")
     add("axes (+x east, +y south) and `compass_deg = (90 + dir_deg) mod 360`")
-    add("(既有校准). `USEPOSITIONSKILL.target_x/target_y` are skill-target")
+    add("(docs 5.128). `USEPOSITIONSKILL.target_x/target_y` are skill-target")
     add("coordinates, not hero coordinates.")
     add("")
     add("---")
@@ -866,13 +866,13 @@ def render_readme(report) -> str:
         f"{stats['cc_raw']:,} buffers with lengths "
         f"{', '.join(str(k) for k in sorted(stats['cc_raw_lengths']))} are")
     add("   kept as raw `buffer_hex`. The control-state semantics are unresolved")
-    add("   (既有校准); no game state is inferred.")
+    add("   (docs 5.131); no game state is inferred.")
     add(f"2. **`PLAYER_MOVE` ({stats['command'].get('PLAYER_MOVE', 0):,} rows).** "
-        "Direction and world vector are calibrated (既有校准), but `mag`")
+        "Direction and world vector are calibrated (docs 5.128), but `mag`")
     add("   is a stick value whose exact meaning (amplitude vs duration) is")
     add("   unresolved, and move/attack/control states are not separable. This")
     add("   is not a position or trajectory; direction integration is negative")
-    add("   (既有校准).")
+    add("   (docs 5.132).")
     add(f"3. **`PLAYER_ATTACK` + `PLAYER_ATTACKWITHOBJ` "
         f"({stats['command'].get('PLAYER_ATTACK', 0) + stats['command'].get('PLAYER_ATTACKWITHOBJ', 0):,} rows).** "
         "The packed `seq` and `flag` bits are preserved but their exact")
@@ -882,7 +882,7 @@ def render_readme(report) -> str:
         f"`auto_buy` flags observed: "
         f"{', '.join(f'{key}={value}' for key, value in sorted(stats['buy_flags'].items()))}. "
         "Their")
-    add("   meaning is unresolved (既有校准). Repeats are notification")
+    add("   meaning is unresolved (docs 5.130). Repeats are notification")
     add("   echoes, not distinct purchases. `price` is the battle-item table")
     add("   reference price, not a spend ledger; no gold total is derived.")
     add(f"5. **`USEDIRECTIONALSKILL` ({stats['command'].get('USEDIRECTIONALSKILL', 0):,} rows).** "
@@ -905,7 +905,7 @@ def render_readme(report) -> str:
     add("9. **No kill/death command exists in route 1075.** Kill rows are 0 by")
     add("   decoder scope, not evidence that the match had no kills.")
     add("10. **Time base.** `t = (frame − 1)/15 s`; battle 0:00 lies in frames")
-    add("    0–14, so absolute times carry ±1 s uncertainty (既有校准).")
+    add("    0–14, so absolute times carry ±1 s uncertainty (docs 5.129).")
     add("    Tail frames can still carry system buys and moves after inputs")
     add("    lock at the end of a match; treat them as post-game, not play.")
     add("11. **Absent command types.** `MOVE`, `SELLEQUIP`, `BASEATTACK`,")

@@ -136,6 +136,10 @@ POST /api/channels/{channelId}/official   {"officialId": "camp-..."}
 ## 边界
 
 - 这是公开接口，不是登录态爬虫；接口可能改版或限流，失败时保留原数据并报错。
+- 批量补拉按约 2 秒/局 + 随机抖动放慢（`CAMP_REPLAY_INTERVAL` / `CAMP_REPLAY_JITTER` 可调）；
+  被限流（HTTP 429 / “操作频繁”）会退避 5–15 秒重试一次。采集页的
+  「补拉缺失回放」按钮每次最多补 10 局，清单缓存为空时用通道里已存的
+  `gameSvrId / relaySvrId / playerid` 补拉。
 - 个人回放的玩家昵称、KDA、评分可作为核对；不能据此自动确定本队阵营，仍需工作台确认。
 - KPL 链接数据不能混入训练赛统计；工作台会标记 `kind = kpl`。
 - `official_replays` 目录是原始数据证据，不进入 SQLite/JSON 备份；需要时单独备份该目录。

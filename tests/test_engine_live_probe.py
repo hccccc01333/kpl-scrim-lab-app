@@ -1,7 +1,7 @@
 """Offline tests for tools/engine_live_probe.py (no device required).
 
 The synthetic arena is built from the documented live layout
-(README.md 5.155/5.157/5.158): a 30 MiB-ish self-relative
+(docs/replay_binary_format.md 5.155/5.157/5.158): a 30 MiB-ish self-relative
 arena whose context header sits at mapping base + 0xFF0, ten per-player record
 headers carrying an absolute pointer at +0x28, and ten unit objects with
 heroID/camp/entity/HP/clock fields.  A ``FakeAdb`` serves those bytes through

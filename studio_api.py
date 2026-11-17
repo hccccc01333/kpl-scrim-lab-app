@@ -81,6 +81,19 @@ def camp_games(camp_details_dir, db_path=None):
             'opponent': str(override.get('opponent') or '') or None,
             'ownWin': own_win,
         })
+    # 分边页的对手名与战队分析保持同一口径（只改返回值，不改覆盖层）。
+    if db_path:
+        try:
+            import opponent_identity
+            identity = opponent_identity.resolve(db_path, Path(camp_details_dir))
+            for game in games:
+                name = identity['bySeq'].get(game['id'])
+                if name:
+                    game['opponent'] = name
+                elif game.get('opponent') in identity['aliases']:
+                    game['opponent'] = identity['aliases'][game['opponent']]
+        except Exception:  # noqa: BLE001 - 解析失败保留教练手填的队名
+            pass
     return games
 
 
@@ -180,9 +193,20 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         except OSError:
             return 0
 
+    # v9：bundle 去重 + players/player_accounts 并入分析身份，旧 pickle 缓存作废。
     def snapshot_key():
-        return ('identity-raw-v7', source_stamp(db_path), source_stamp(matches_dir),
+        return ('identity-raw-v9', source_stamp(db_path), source_stamp(matches_dir),
                 source_stamp(imports_dir), source_stamp(results_db))
+
+    def invalidate_workspace_cache():
+        """战队改名/合并后：分析快照、结果缓存与队名解析缓存一起失效。"""
+        repository_cache['value'] = None
+        result_cache.clear()
+        try:
+            import opponent_identity
+            opponent_identity.clear_cache()
+        except ImportError:
+            pass
 
     def cached(key, builder):
         now = time.monotonic()
@@ -604,7 +628,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.post('/research')
     def topical_research(value: dict):
         try:
-            return calculate({**value, 'topic': value.get('topic', 'hero_pool')})
+            return calculate({**value, 'topic': value.get('topic', 'tempo')})
         except (ValueError, TypeError) as error:
             raise HTTPException(400, str(error)) from error
 
@@ -980,7 +1004,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             for key, limit in [('id', 80), ('title', 120), ('note', 4000), ('createdAt', 80)]:
                 if not isinstance(report.get(key), str) or len(report[key]) > limit or (key != 'note' and not report[key]):
                     raise HTTPException(400, '备份记录字段无效')
-            if (result.get('meta') or {}).get('method') not in ({m[0] for m in METHODS} | {'topic:'+t[0] for t in TOPICS}) or not isinstance(result.get('rows'), list) or not isinstance(result.get('columns'), list):
+            if (result.get('meta') or {}).get('method') not in ({m[0] for m in METHODS} | {'topic:'+t[0] for t in TOPICS} | {'topic:hero_benchmark', 'topic:hero_pool'}) or not isinstance(result.get('rows'), list) or not isinstance(result.get('columns'), list):
                 raise HTTPException(400, '备份结果结构无效')
             meta = result['meta']
             if not isinstance(meta.get('matches'), int) or meta['matches'] < 0 or not isinstance(meta.get('fingerprint'), str):
@@ -1124,7 +1148,12 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.get('/teams')
     def teams():
-        return team_clusters.list_teams(camp_dir(), db_path, own_team_name())
+        # 战队聚合要读全部营地面板并做聚类；按营地/对局包/DB 指纹缓存，
+        # 改名、合并、同步新面板都会换 key（invalidate_workspace_cache 也会清）。
+        return cached(
+            ('teams', source_stamp(camp_dir()), source_stamp(db_path),
+             source_stamp(matches_dir), own_team_name()),
+            lambda: team_clusters.list_teams(camp_dir(), db_path, own_team_name()))
 
     # ---------------- 约定计划（教练登记） ----------------
     def plans_connection():
@@ -1264,6 +1293,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 first_seen=payload.get('firstSeen'), status=payload.get('status') or 'active')
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, 'id': saved['id']}
 
     @router.post('/workspace/teams/merge')
@@ -1275,12 +1305,16 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             raise HTTPException(400, '合并参数无效')
         # merge_team 内部同时归档工作区源队、改挂选手并写覆盖层。
         team_clusters.merge_team(db_path, source, target)
+        invalidate_workspace_cache()
         return {'ok': True, 'from': source, 'into': target}
 
     @router.post('/workspace/teams/reconcile')
     def wb_reconcile_teams(dry_run: bool = False):
         """一次性对账历史覆盖层与工作区主数据；默认只报告，dry_run=false 时写入。"""
-        return team_clusters.reconcile_workspace(db_path, dry_run=dry_run)
+        result = team_clusters.reconcile_workspace(db_path, dry_run=dry_run)
+        if not dry_run:
+            invalidate_workspace_cache()
+        return result
 
     @router.get('/workspace/players')
     def wb_players(team: str = ''):
@@ -1637,18 +1671,22 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.get('/coach')
     def coach_board():
         """教练档案：本队教练 + 各对手战队教练（可填）与阵容。"""
+        return cached(('coach', source_stamp(camp_dir()), source_stamp(db_path)),
+                      build_coach_board)
+
+    def build_coach_board():
         opponents = team_clusters.opponent_players(camp_dir(), db_path)
         overrides = team_clusters.load_overrides(db_path)
-        teams = []
+        coaches = []
         for team in opponents['teams']:
             override = overrides.get(team['id'], {})
-            teams.append({
+            coaches.append({
                 'id': team['id'], 'name': team['displayName'], 'named': team['named'],
                 'coach': override.get('coach') or '',
                 'players': [{'id': p['id'], 'name': p['name'], 'lanes': p['lanes'], 'games': p['games']}
                             for p in team['players']],
             })
-        return {'own': {'coach': own_coach_name()}, 'teams': teams}
+        return {'own': {'coach': own_coach_name()}, 'teams': coaches}
 
     def own_coach_name():
         if not Path(db_path).is_file():
@@ -1742,9 +1780,11 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         payload = await request.json()
         items = payload.get('items') if isinstance(payload, dict) else None
         try:
-            return team_clusters.rename_many(db_path, items)
+            result = team_clusters.rename_many(db_path, items)
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
+        return result
 
     @router.post('/teams/rename')
     async def rename_team(request: Request):
@@ -1758,6 +1798,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                                          coach=payload.get('coach'))
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, 'id': key}
 
     @router.post('/teams/merge')
@@ -1768,6 +1809,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         if not source or not target or source == target:
             raise HTTPException(400, '合并来源和目标无效')
         team_clusters.merge_team(db_path, source, target)
+        invalidate_workspace_cache()
         return {'ok': True, 'from': source, 'into': target}
 
     return router

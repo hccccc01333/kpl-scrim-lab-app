@@ -1,0 +1,88 @@
+/* A single component vocabulary. Legacy page CSS stays in a lower cascade layer. */
+html { scroll-padding-block-start: 120px; }
+body { font-family: var(--font); font-size: var(--fs-body); line-height: 1.6; color: var(--text); background: var(--bg); }
+button, input, select, textarea { font: inherit; }
+button, input, select, textarea, a { -webkit-tap-highlight-color: transparent; }
+button { touch-action: manipulation; }
+button:disabled, [aria-disabled='true'] { cursor: not-allowed; opacity: .55; }
+input, textarea { caret-color: var(--accent); }
+input, select, textarea { accent-color: var(--accent); }
+::selection { background: var(--soft); color: var(--accent-ink); }
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus); outline-offset: 3px;
+}
+:where(input, textarea)::placeholder { color: var(--quiet); opacity: 1; }
+:where(h1, h2, h3) { font-family: var(--font); text-wrap: balance; }
+:where(p, li) { overflow-wrap: anywhere; }
+:where(img, video) { max-inline-size: 100%; }
+:where(.control, .primary, .btn, .xc-btn, .tp-btn, .bpl-btn) {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-block-size: var(--control-height); block-size: auto;
+  padding: 8px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  color: var(--text); background: var(--paper); font-size: .8125rem; font-weight: 600; line-height: 1.4;
+  letter-spacing: 0; text-decoration: none;
+  transition: background-color var(--duration) var(--ease), border-color var(--duration) var(--ease), color var(--duration) var(--ease);
+}
+:where(.control, .btn, .xc-btn, .tp-btn, .bpl-btn):hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--surface-hover); color: var(--accent-ink); border-color: var(--accent);
+}
+:where(.primary, .btn-primary, .control.is-primary, .xc-btn.primary) {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-text); box-shadow: none;
+}
+:where(.primary, .btn-primary, .control.is-primary, .xc-btn.primary):hover:not(:disabled, [aria-disabled='true']) {
+  background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); filter: none;
+}
+:where(.control, .primary, .btn, .xc-btn):active:not(:disabled) { translate: 0 1px; }
+:where(.control, .primary, .btn) svg { inline-size: 16px; block-size: 16px; }
+:where(.icon-control, .icon-btn, .head-button) { min-inline-size: 40px; min-block-size: 40px; border-radius: var(--r-sm); }
+:where(.btn-sm) { min-block-size: 32px; font-size: .75rem; padding: 6px 10px; }
+:where(.btn-ghost) { border-color: transparent; background: transparent; }
+:where(.search, .search-box) { background: var(--paper); border-radius: var(--r-sm); border-color: var(--line-strong); min-block-size: var(--control-height); }
+:where(.search, .search-box):focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+:where(.search input, .search-box input) { min-inline-size: 0; font-size: .8125rem; }
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden']), select, textarea):not(.search input, .search-box input, .ui-command-input, .cmdk-head input) {
+  min-block-size: var(--control-height); max-inline-size: 100%; padding: 9px 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--paper); color: var(--text);
+  font-size: .8125rem; line-height: 1.5;
+}
+:where(textarea) { resize: vertical; min-block-size: 96px; }
+:where(input, select, textarea)[aria-invalid='true'] { border-color: var(--danger); }
+:where(.section, .panel, .card, .stats-band, .hero-kpi) { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: none; }
+:where(.section-heading, .card-head) { padding: 20px 24px 16px; gap: 16px; }
+:where(.section-heading h2, .card-title) { font: 600 var(--fs-section)/1.4 var(--font); letter-spacing: -.02em; }
+:where(.section-heading p, .card-sub, .footnote) { color: var(--muted); font-size: .75rem; line-height: 1.7; }
+:where(.card)::before, :where(.card-title)::before { display: none; }
+:where(.table-wrap, .dx-table-wrap, .data-table-wrap, .table-scroll) {
+  max-inline-size: 100%; overflow: auto; overscroll-behavior-inline: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent;
+}
+:where(table) { font-size: .8125rem; font-variant-numeric: tabular-nums; }
+:where(th) { background: var(--surface); color: var(--muted); font-size: .75rem; font-weight: 600; }
+:where(td, th) { padding: 14px 16px; line-height: 1.5; border-color: var(--line); }
+:where(tbody tr):hover { background: var(--surface-hover); }
+:where(.badge, .scope-chip, .chip) { border-radius: 6px; font-family: var(--font); font-size: .75rem; letter-spacing: 0; }
+:where(.result, .badge-win) { background: var(--success-soft); color: var(--success); }
+:where(.result.loss, .badge-loss) { background: var(--danger-soft); color: var(--danger); }
+:where(.notice) { color: var(--warning); background: var(--warning-soft); border: 1px solid color-mix(in srgb, var(--warning) 25%, var(--line)); border-radius: var(--r-sm); }
+:where(.empty, .offline-card) { padding: 40px 24px; font-size: .875rem; line-height: 1.8; }
+:where(.empty p, .offline-card p) { max-inline-size: 65ch; color: var(--muted); }
+:where(dialog) { max-inline-size: min(720px, calc(100% - 32px)); max-block-size: calc(100dvh - 48px); border: 1px solid var(--line); border-radius: 16px; background: var(--paper); color: var(--text); box-shadow: var(--shadow-pop); }
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { background: rgb(14 31 42 / 38%); overflow: hidden; overscroll-behavior: contain; }
+:where(.dialog-head, .dialog-actions) { padding: 20px 24px; }
+:where(.dialog-body) { padding: 24px; }
+:where(.dialog-head h2) { font-size: 1.125rem; }
+:where(.dialog-head p) { font-size: .8125rem; color: var(--muted); }
+:where(.text-link, .card-link) { color: var(--accent-ink); text-underline-offset: 4px; }
+:where(.text-link, .card-link):hover { text-decoration: underline; color: var(--accent-ink); }
+:where(.stats-band strong, .ledger-value, .kpi-value, .row-score) { font-variant-numeric: tabular-nums; }
+@media (pointer: coarse) {
+  :where(.control, .primary, .btn, .icon-btn, .head-button, select, summary) { min-block-size: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  :where(body, body *) { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+@media (forced-colors: active) {
+  :where(a, button, input, select, textarea):focus-visible { outline-color: Highlight; }
+  :where([aria-current='page'], [aria-pressed='true'], .is-active) { outline: 1px solid Highlight; outline-offset: -1px; }
+}

@@ -300,9 +300,20 @@ def main(argv: list[str] | None = None) -> int:
     quiet = '--autostart' in argv
 
     if '--stop' in argv:
-        return stop_server()
+        code = stop_server()
+        print('工作台已停止。' if code == 0 else '停止失败，详见 logs\\launcher.log')
+        return code
     if '--status' in argv:
-        return 0 if health() else 1
+        payload = health()
+        if not payload:
+            print(f'未运行（端口 {_port()} 上没有工作台）')
+            return 1
+        print(f'运行中：{_base_url()}/  pid={payload.get("pid")} v{payload.get("version")}')
+        return 0
+    if '--url' in argv:
+        # 给脚本/快捷方式用：只打印地址，不启动、不打开浏览器。
+        print(f'{_base_url()}/')
+        return 0
 
     log('启动器启动')
     payload = health()

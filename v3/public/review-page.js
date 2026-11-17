@@ -102,6 +102,8 @@ export function createReview(h) {
   }
 
   function paint() {
+    // 内嵌在采集页里：整页由采集页重绘，这里不碰 #content。
+    if (state.onPaint) { state.onPaint(); return; }
     const root = document.querySelector('#content');
     if (root && state.channel) {
       root.innerHTML = view(state.id, { channel: state.channel });
@@ -332,11 +334,13 @@ export function createReview(h) {
     </aside>`;
   }
 
-  function view(id, value) {
+  /* 审查明细既是独立页（#review/<id>），也是采集页「审查」页签里的内容。
+     两者共用同一段内容，只是外面那层页头不同。 */
+  function body(id, value, embedded = false) {
     const channel = value?.channel;
     if (!channel) {
-      return `<div class="page"><p class="capture-notice is-error">审查记录 ${esc(id)} 不存在。</p>
-        <p><a class="control" href="#ingest">${icon('arrow')} 回到营地同步</a></p></div>`;
+      return `<p class="capture-notice is-error">审查记录 ${esc(id)} 不存在。</p>
+        <p><a class="control" href="#ingest">${icon('arrow')} 回到采集页</a></p>`;
     }
     const mode = entryMode(channel);
     const ocrEntry = mode === 'ocr';
@@ -352,7 +356,7 @@ export function createReview(h) {
     const gameSeq = channel.official?.source?.gameSeq || channel.match?.gameSeq || '';
     const repairNote = players.length ? '' : (ocrEntry
       ? `<div class="capture-notice is-error" role="status">
-          <b>这局还没有可用的十人名单。</b>回截图 / 录屏页重新识别并挂上，识别出十人后再来核对。
+          <b>这局还没有可用的十人名单。</b>在「截图 / 录屏」页重新识别并挂上，识别出十人后再来核对。
           <div class="notice-actions">
             <a class="control" href="#shots">去截图 OCR</a>
             <a class="control" href="#videos">去录屏 OCR</a>
@@ -370,12 +374,19 @@ export function createReview(h) {
       ? (channel.match?.session || channel.match?.date || '未命名对局')
       : `${channel.match?.session || '未命名训练组'} · 缺失值审查`;
 
-    return `<div class="page">
-      <div class="page-intro"><div><h1>${esc(title)}</h1>
+    const head = embedded
+      ? `<div class="cap-embed-head"><a class="control" href="#review">${icon('arrow')} 返回审查列表</a>
+          <div><h2>${esc(title)}</h2>
+            <p>${ocrEntry
+              ? '数据来自截图 / 录屏 OCR；核对十人数值后标记复核并保存。'
+              : '数据以营地十人面板为准，可直接修改；保存后需要重新标记复核。'}</p></div></div>`
+      : `<div class="page-intro"><div><h1>${esc(title)}</h1>
         <p>${ocrEntry
           ? '数据来自截图 / 录屏 OCR；核对十人数值后标记复核并保存。'
           : '数据以营地十人面板为准，可直接修改；保存后需要重新标记复核。'}</p></div>
-        <div class="intro-actions"><a class="control" href="${ocrEntry ? '#shots' : '#ingest'}">${icon('arrow')} ${ocrEntry ? '回截图 / 录屏' : '返回缺失值审查'}</a></div></div>
+        <div class="intro-actions"><a class="control" href="${ocrEntry ? '#shots' : '#ingest'}">${icon('arrow')} ${ocrEntry ? '回截图 / 录屏' : '返回缺失值审查'}</a></div></div>`;
+
+    return `${head}
       ${notice}
       ${stale}
       ${repairNote}
@@ -389,8 +400,11 @@ export function createReview(h) {
           ${table(channel)}
         </section>
         ${aside(channel)}
-      </div>
-    </div>`;
+      </div>`;
+  }
+
+  function view(id, value) {
+    return `<div class="page">${body(id, value, false)}</div>`;
   }
 
   // ---------------- 交互 ----------------
@@ -588,5 +602,15 @@ export function createReview(h) {
 
   function afterRender() { bindNotes(); bindMatchForm(); bindColResize(); }
 
-  return { load, render: view, click, afterRender };
+  /** 采集页把审查明细内嵌进「审查」页签时用：重绘交给采集页，不再自己换页。 */
+  function hydrate(repaint) {
+    state.onPaint = repaint || null;
+  }
+
+  /** 内嵌时采集页每次重绘都取这里的最新通道对象，避免保存后还显示旧数据。 */
+  function snapshot(id) {
+    return state.id === id && state.channel ? { channel: state.channel } : null;
+  }
+
+  return { load, render: view, body, hydrate, snapshot, click, afterRender };
 }

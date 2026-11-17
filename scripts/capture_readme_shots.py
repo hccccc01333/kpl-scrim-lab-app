@@ -12,14 +12,15 @@ V3 是唯一入口：所有页面都是同一个 HTML 应用上的 hash 路由�
 文件编号沿用历史命名（01–08），方便 README 与官网引用：
 
     01 首页        02 导入表格    03 对局档案    04 名单与状态
-    05 战队档案    06 英雄榜      07 BP 概览     08 训练纪录
+    05 战队分析    06 英雄榜      07 BP 概览     08 精选对局
 
 建议先起一个隔离实例，避免把演示数据写进自己的库：
 
     set TRAINING_PORT=8790
     set TRAINING_DB=...\\demo\\training.sqlite3
+    set ANALYSIS_MATCHES=...\\demo\\matches
     python server.py
-    python scripts/seed_demo_data.py --base http://127.0.0.1:8790
+    python scripts/seed_demo_data.py --base http://127.0.0.1:8790 --with-camp
     python scripts/capture_readme_shots.py --base http://127.0.0.1:8790 --out docs/images
 """
 from __future__ import annotations
@@ -40,7 +41,8 @@ SHOTS = [
     ('05-team', '#teams', 4500),
     ('06-heroes', '#heroes', 4500),
     ('07-topics', '#bp', 4000),
-    ('08-depth', '#records', 4500),
+    # 精选对局（含训练纪录极值卡）一页放不下 900 高：加高视口把下半截拍进来
+    ('08-depth', '#featured', 4500, 1520),
 ]
 
 
@@ -61,7 +63,10 @@ def main() -> None:
                                       device_scale_factor=args.scale)
         context.add_init_script(TOUR_FLAG)
         page = context.new_page()
-        for name, route, wait in SHOTS:
+        for shot in SHOTS:
+            name, route, wait = shot[:3]
+            if len(shot) > 3:
+                page.set_viewport_size({'width': 1440, 'height': shot[3]})
             page.goto(f'{base}/{route}', wait_until='load')
             page.wait_for_timeout(wait)
             if '数据读取失败' in page.inner_text('body'):

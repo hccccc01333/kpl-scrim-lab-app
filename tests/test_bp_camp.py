@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from analysis_data import AnalysisRepository  # noqa: E402
-from bp_camp import merge_bp_sources, parse_camp_bp, structured_names  # noqa: E402
+from bp_camp import merge_bp_sources, normalize_camp_events, parse_camp_bp, structured_names  # noqa: E402
 import channel_store  # noqa: E402
 from test_analysis_data import OWN, ENEMY, ROSTER, bundle, db_match  # noqa: E402
 
@@ -55,6 +55,26 @@ def camp_detail():
 
 
 class ParseCampBpTest(unittest.TestCase):
+    def test_explicit_bp_order_is_labeled_as_bp_order(self):
+        detail = camp_detail()
+        data = detail['data']
+        left_bans = ['盾山', '芈月', '海月', '孙悟空', '庄周']
+        right_bans = ['张良', '大乔', '少司缘', '朵莉亚', '东皇太一']
+        data['blueTeam']['banHeros'] = [{'heroName': name} for name in left_bans]
+        data['redTeam']['banHeros'] = [{'heroName': name} for name in right_bans]
+        data['bpOrder'] = {
+            'mode': 'scrim',
+            'bans': {'left': left_bans, 'right': right_bans},
+            'picks': {'left': ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽'],
+                      'right': ['瑶', '阿轲', '安琪拉', '虞姬', '钟无艳']},
+            'firstPick': 'left',
+        }
+        bp = parse_camp_bp(detail, 'seq-order')
+        self.assertEqual(bp['orderSource'], 'bpOrder')
+        self.assertTrue(bp['pickOrderKnown'])
+        self.assertFalse(bp['orderAssumed'])
+        self.assertEqual(bp['firstPick'], 'left')
+
     def test_ban_pick_lanes_and_local_icons(self):
         bp = parse_camp_bp(camp_detail(), 'seq-1')
         names = structured_names(bp)
@@ -222,3 +242,255 @@ def test_catalog_index_reloads_after_file_change(tmp_path):
     finally:
         bp_camp.CATALOG_PATH = original
         bp_camp._CATALOG_CACHE.update({'stamp': object(), 'value': ({}, {})})
+
+
+def short_scrim_events(blue_picks=None, red_picks=None, *, red_bans=None):
+    """旧短手序事件；只用于验证 20 手规则会拒绝它。"""
+    blue = blue_picks or ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽']
+    red = red_picks or ['瑶', '阿轲', '安琪拉', '虞姬', '钟无艳']
+    ban_blue = ['盾山', '芈月', '海月']
+    ban_red = red_bans or ['孙悟空', '庄周']
+    pick_order = [('1', blue[0]), ('2', red[0]), ('2', red[1]), ('1', blue[1]), ('1', blue[2]),
+                  ('2', red[2]), ('2', red[3]), ('1', blue[3]), ('1', blue[4]), ('2', red[4])]
+    events, order = [], 1
+    # Ban 排程 B R B R B：蓝方 3 个（第 1/3/5 手），红方 2 个（第 2/4 手）。
+    ban_sequence = [('1', ban_blue[0]), ('2', ban_red[0]), ('1', ban_blue[1]),
+                    ('2', ban_red[1]), ('1', ban_blue[2])]
+    for camp, hero in ban_sequence:
+        events.append({'order': order, 'action': 'ban', 'hero': hero, 'camp': camp})
+        order += 1
+    for camp, hero in pick_order:
+        events.append({'order': order, 'action': 'pick', 'hero': hero, 'camp': camp})
+        order += 1
+    return events
+
+
+def camp_detail_5ban():
+    """双方各 5 个 ban 的面板；选人列表故意反转，用来验证合并按事件重排。"""
+    detail = camp_detail()
+    blue = detail['data']['blueTeam']
+    red = detail['data']['redTeam']
+    blue['banHeros'] = blue['banHeros'] + [
+        {'heroId': 9001, 'heroName': '盘古'}, {'heroId': 9002, 'heroName': '墨子'}]
+    red['banHeros'] = red['banHeros'] + [
+        {'heroId': 9003, 'heroName': '女娲'}, {'heroId': 9004, 'heroName': '大乔'}]
+    blue['pickHeros'] = list(reversed(blue['pickHeros']))
+    return detail
+
+
+def scrim_events_20(blue_picks=None, red_picks=None):
+    """按 20 手排程构造事件：蓝红交替 10 Ban → B1 R2 B2 R2 B2 R1 Pick。"""
+    blue = blue_picks or ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽']
+    red = red_picks or ['瑶', '阿轲', '安琪拉', '虞姬', '钟无艳']
+    ban_blue = ['盾山', '芈月', '海月', '盘古', '墨子']
+    ban_red = ['孙悟空', '庄周', '张良', '女娲', '大乔']
+    sequence = []
+    for index in range(5):
+        sequence.append(('ban', '1', ban_blue[index]))
+        sequence.append(('ban', '2', ban_red[index]))
+    pick_order = [('1', blue[0]), ('2', red[0]), ('2', red[1]), ('1', blue[1]), ('1', blue[2]),
+                  ('2', red[2]), ('2', red[3]), ('1', blue[3]), ('1', blue[4]), ('2', red[4])]
+    sequence.extend(('pick', camp, hero) for camp, hero in pick_order)
+    return [{'order': index + 1, 'action': action, 'camp': camp, 'hero': hero}
+            for index, (action, camp, hero) in enumerate(sequence)]
+
+
+class CampEventTests(unittest.TestCase):
+    """normalize_camp_events：20 手逐手 BP 的规则与终局名单一致性守卫。"""
+
+    def test_valid_events_pass(self):
+        clean, warnings = normalize_camp_events(camp_detail_5ban(), scrim_events_20(), 'seq-20')
+        self.assertEqual(len(clean), 20)
+        self.assertEqual([e['order'] for e in clean], list(range(1, 21)))
+        self.assertEqual(warnings, [])
+
+    def test_camp_alias_blue_left_accepted(self):
+        events = scrim_events_20()
+        for event in events:
+            event['camp'] = {'1': 'blue', '2': 'red'}[event['camp']]
+        clean, _ = normalize_camp_events(camp_detail_5ban(), events, 'seq-20')
+        self.assertEqual(clean[0]['camp'], '1')
+
+    def test_wrong_action_schedule_rejected(self):
+        events = scrim_events_20()
+        events[10]['action'] = 'ban'  # 第 11 手必须是 Pick
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), events, 'seq-20')
+
+    def test_duplicate_hero_rejected(self):
+        events = scrim_events_20()
+        events[19]['hero'] = '瑶'
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), events, 'seq-20')
+
+    def test_pick_mismatch_rejected(self):
+        events = scrim_events_20(blue_picks=['鲁班七号', '嫦娥', '刘禅', '李元芳', '盾山'])
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), events, 'seq-20')
+
+    def test_ban_outside_panel_rejected(self):
+        events = scrim_events_20()
+        events[1]['hero'] = '大乔'
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), events, 'seq-20')
+
+    def test_nonsequential_order_rejected(self):
+        events = scrim_events_20()
+        events[3]['order'] = 9
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), events, 'seq-20')
+
+    def test_empty_or_invalid_events_rejected(self):
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), [], 'seq-20')
+        with self.assertRaises(ValueError):
+            normalize_camp_events(camp_detail_5ban(), [{'order': 1}], 'seq-20')
+
+    def test_panel_without_bp_rejected(self):
+        with self.assertRaises(ValueError):
+            normalize_camp_events({'data': {'blueTeam': {}, 'redTeam': {}}},
+                                  scrim_events_20(), 'seq-2')
+
+    def test_import_in_bp_camp_exports(self):
+        from bp_camp import normalize_camp_events as fn  # noqa: F401
+        self.assertTrue(callable(fn))
+
+
+class CampEventTwentyTest(unittest.TestCase):
+    """5+5 Ban 面板：20 手校验 + 已核验事件套用为 P/B 手序。"""
+
+    def test_twenty_events_pass_on_five_ban_panel(self):
+        clean, warnings = normalize_camp_events(camp_detail_5ban(), scrim_events_20(), 'seq-20')
+        self.assertEqual(len(clean), 20)
+        self.assertEqual([e['order'] for e in clean], list(range(1, 21)))
+        self.assertEqual(warnings, [])
+
+    def test_fifteen_events_rejected_on_five_ban_panel(self):
+        with self.assertRaises(ValueError) as ctx:
+            normalize_camp_events(camp_detail_5ban(), short_scrim_events(), 'seq-20')
+        self.assertIn('20 手', str(ctx.exception))
+
+    def test_merge_applies_verified_event_order(self):
+        bp = parse_camp_bp(camp_detail_5ban(), 'seq-20')
+        # 营地原始排列被反转，合并必须按事件重排而不是照抄
+        self.assertEqual(bp['picks']['left'][0]['name'], '项羽')
+        record = merge_bp_sources(None, bp, {'ownCamp': 'left'},
+                                  events=scrim_events_20())
+        self.assertTrue(record['pickOrderKnown'])
+        self.assertEqual(record['firstPick'], 'left')
+        self.assertEqual([entry['name'] for entry in record['picks']['left']],
+                         ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽'])
+        self.assertEqual([entry['name'] for entry in record['bans']['left']],
+                         ['盾山', '芈月', '海月', '盘古', '墨子'])
+        self.assertEqual([entry['name'] for entry in record['pickSlots']['left']],
+                         ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽'])
+        self.assertEqual(record['orderSource'], 'draftEvents')
+
+    def test_misaligned_events_keep_order_unknown(self):
+        bp = parse_camp_bp(camp_detail_5ban(), 'seq-20')
+        events = scrim_events_20(blue_picks=['鲁班七号', '嫦娥', '刘禅', '李元芳', '影'])
+        record = merge_bp_sources(None, bp, {}, events=events)
+        self.assertFalse(record['pickOrderKnown'])
+        self.assertIsNone(record['firstPick'])
+        # 不合规的事件（少一手）同样不改记录
+        record = merge_bp_sources(None, bp, {}, events=scrim_events_20()[:19])
+        self.assertFalse(record['pickOrderKnown'])
+
+    def test_four_ban_panel_rejects_twenty_hand_events(self):
+        clean, _ = normalize_camp_events(camp_detail_5ban(), scrim_events_20(), 'seq-20')
+        # 同一份 20 手事件套到只有 4 Ban 的面板：规则对不上，不套用。
+        from bp_camp import parse_camp_bp
+        record = merge_bp_sources(None, parse_camp_bp(camp_detail(), 'seq-1'),
+                                  {}, events=clean)
+        self.assertFalse(record['pickOrderKnown'])
+
+
+def test_camp_draft_events_reads_only_game_seq_file(tmp_path):
+    """单局复盘只读 gameSeq 指向的 camp_details 文件；非法 seq 不拼路径。"""
+    import server
+    serve = server.V3_MODULE
+    assert serve is not None, 'v3/serve.py 必须能被加载（否则复盘接口不可用）'
+    camp_dir = tmp_path / 'camp_details'
+    camp_dir.mkdir()
+    (camp_dir / '123.json').write_text(json.dumps({'data': {'draftEvents': [
+        {'order': 1, 'action': 'ban', 'hero': '盾山', 'camp': '1'}]}}, ensure_ascii=False),
+        encoding='utf-8')
+    original = serve.MATCHES
+    serve.MATCHES = tmp_path / 'matches'
+    try:
+        by_seq = serve.camp_draft_events({'campBp': {'gameSeq': '123'}})
+        assert by_seq[0]['hero'] == '盾山'
+        by_replay = serve.camp_draft_events({'officialReplay': {'id': 'camp-123'}})
+        assert by_replay[0]['hero'] == '盾山'
+        assert serve.camp_draft_events({'campBp': {'gameSeq': '../../etc/passwd'}}) == []
+        assert serve.camp_draft_events({}) == []
+    finally:
+        serve.MATCHES = original
+
+
+class ManualOrderTest(unittest.TestCase):
+    """页面手工录入每侧顺序：Ban 允许跨侧重复，Pick 必须与终局名单一致。"""
+
+    def setUp(self):
+        self.detail = camp_detail_5ban()
+        # 把红方一个 ban 换成盾山，构造跨侧重复（排位同时禁用的真实情况）。
+        self.detail['data']['redTeam']['banHeros'][-1] = {'heroId': 509, 'heroName': '盾山'}
+        self.bp = parse_camp_bp(self.detail, 'seq-order')
+
+    def payload(self):
+        return {
+            'mode': 'scrim',
+            'bans': {'left': ['盾山', '芈月', '海月', '盘古', '墨子'],
+                     'right': ['盾山', '庄周', '张良', '女娲', '孙悟空']},
+            'picks': {'left': ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽'],
+                      'right': ['瑶', '阿轲', '安琪拉', '虞姬', '钟无艳']},
+            'firstPick': 'left',
+        }
+
+    def test_order_is_applied_with_duplicate_bans(self):
+        from bp_camp import normalize_bp_order
+        clean = normalize_bp_order(self.detail, self.payload(), 'seq-order')
+        record = merge_bp_sources(None, self.bp, {}, order=clean)
+        self.assertTrue(record['pickOrderKnown'])
+        self.assertTrue(record['banOrderKnown'])
+        self.assertEqual(record['orderSource'], 'manualOrder')
+        self.assertEqual([e['name'] for e in record['picks']['left']],
+                         ['鲁班七号', '嫦娥', '刘禅', '李元芳', '项羽'])
+        self.assertEqual([e['name'] for e in record['bans']['left']],
+                         ['盾山', '芈月', '海月', '盘古', '墨子'])
+        self.assertEqual([e['name'] for e in record['bans']['right']],
+                         ['盾山', '庄周', '张良', '女娲', '孙悟空'])
+        self.assertEqual([e['name'] for e in record['banSlots']['right']],
+                         ['盾山', '庄周', '张良', '女娲', '孙悟空'])
+
+    def test_manual_order_overrides_default_and_is_not_assumed(self):
+        from bp_camp import normalize_bp_order
+        clean = normalize_bp_order(self.detail, self.payload(), 'seq-order')
+        record = merge_bp_sources(None, self.bp, {}, order=clean, assume_scrim=True)
+        self.assertTrue(record['pickOrderKnown'])
+        self.assertFalse(record.get('orderAssumed', False))
+        self.assertEqual(record['orderSource'], 'manualOrder')
+
+    def test_camp_default_order_is_stamped_as_twenty_hand(self):
+        # 教练确认：营地默认顺序就是训练赛 20 手；parse_camp_bp 已在源头生成事件。
+        record = merge_bp_sources(None, parse_camp_bp(camp_detail_5ban(), 'seq-default'), {})
+        self.assertTrue(record['pickOrderKnown'])
+        self.assertTrue(record['banOrderKnown'])
+        self.assertTrue(record['orderAssumed'])
+        self.assertEqual(record['orderSource'], 'campDefault20')
+        self.assertEqual(len(record['draftEvents']), 20)
+        self.assertEqual(record['ruleProfile'], 'scrim-global-20')
+
+    def test_pick_mismatch_is_rejected(self):
+        from bp_camp import normalize_bp_order
+        payload = self.payload()
+        payload['picks']['left'][0] = '影'
+        with self.assertRaises(ValueError):
+            normalize_bp_order(self.detail, payload, 'seq-order')
+
+    def test_ban_outside_panel_is_rejected(self):
+        from bp_camp import normalize_bp_order
+        payload = self.payload()
+        payload['bans']['left'][0] = '大乔'
+        with self.assertRaises(ValueError):
+            normalize_bp_order(self.detail, payload, 'seq-order')

@@ -9,6 +9,7 @@ import re
 import sqlite3
 import threading
 from collections import Counter, defaultdict
+from datetime import datetime
 from pathlib import Path
 
 import official_economy
@@ -63,6 +64,87 @@ def lane_name(value):
     if text.endswith('.0'):
         text = text[:-2]
     return _LANE_BY_CODE.get(text, text)
+
+
+def _side_by_lane(players, camp):
+    """取一方五人，按分路顺序排；分路缺失的人排在后面，不丢人。"""
+    rows = [p for p in (players or [])
+            if camp and (p.get('camp') or p.get('side')) == camp and p.get('hero')]
+    by_lane = {}
+    for player in rows:
+        lane = player.get('position')
+        if lane and lane not in by_lane:
+            by_lane[lane] = player
+    ordered = [by_lane[lane] for lane in LANES if lane in by_lane]
+    return ordered + [p for p in rows if not any(p is x for x in ordered)]
+
+
+def hero_lineup(match, own_camp):
+    """本局双方五人按分路配对，供对局列表上下两行头像使用。
+
+    同一列是我方与对面的同分路，读出来就是五个对位；对局缺对面数据时
+    只返回我方五列，前端据此退回单排，不硬凑空格。
+    """
+    players = match.get('players') or []
+    enemy_camp = {'blue': 'red', 'red': 'blue'}.get(own_camp)
+    own = _side_by_lane(players, own_camp)
+    foe = _side_by_lane(players, enemy_camp)
+    if not own and not foe:
+        return []
+    foe_by_lane = {}
+    for player in foe:
+        lane = player.get('position')
+        if lane and lane not in foe_by_lane:
+            foe_by_lane[lane] = player
+    used = set()
+    pairs = []
+    for player in own:
+        lane = player.get('position') or ''
+        mate = foe_by_lane.get(lane) if lane else None
+        if mate is not None and id(mate) in used:
+            mate = None
+        if mate is None:
+            mate = next((x for x in foe if id(x) not in used), None)
+        if mate is not None:
+            used.add(id(mate))
+        pairs.append({'lane': lane or (mate or {}).get('position') or '',
+                      'own': player.get('hero') or '', 'enemy': (mate or {}).get('hero') or ''})
+    for player in foe:
+        if id(player) not in used:
+            pairs.append({'lane': player.get('position') or '',
+                          'own': '', 'enemy': player.get('hero') or ''})
+    return pairs
+
+
+def _bundle_date(match, path):
+    """数据包的日期：优先顶层 date.text；采集包常缺，退回营地 BP 自带的 startTime。
+
+    营地 startTime 形如「11-02 13:32」，只有月日；年份取包文件修改时间，
+    拼出来的日期若比文件时间晚半年以上（跨年入库），按上一年算。
+    """
+    raw = match.get('date')
+    text = clean(raw.get('text')) if isinstance(raw, dict) else clean(raw)
+    if text:
+        return text
+    start = clean((match.get('campBp') or {}).get('startTime'))
+    found = re.match(r'(\d{1,2})-(\d{1,2})', start)
+    if not found:
+        return None
+    try:
+        modified = datetime.fromtimestamp(path.stat().st_mtime)
+    except OSError:
+        modified = datetime.now()
+    month, day = int(found.group(1)), int(found.group(2))
+    try:
+        candidate = datetime(modified.year, month, day)
+    except ValueError:
+        return None
+    if (candidate - modified).days > 180:
+        try:
+            candidate = datetime(modified.year - 1, month, day)
+        except ValueError:
+            pass
+    return candidate.strftime('%Y-%m-%d')
 
 
 def _cjk(text):
@@ -187,6 +269,16 @@ class AnalysisRepository:
         # 下一层才能算胜负、比分与本队/对手两侧；以前这两步只跑在 db/bundle 上。
         combined = matches + sheet_matches
         self._apply_match_meta(combined, self._load_match_meta(warnings))
+        # 战队分析里的命名/合并是队名的唯一权威：按 gameSeq 解析出这一局属于
+        # 哪支战队，直接在内存快照上换成当前队名。对局档案、系列赛、跨局分析
+        # 都读这份快照，于是一处改名全站同步；原始数据包与 match_meta 都不改写。
+        try:
+            import opponent_identity
+            identity = opponent_identity.resolve(
+                self.db_path, opponent_identity.camp_dir_for(self.matches_dir))
+            opponent_identity.apply_to_matches(combined, identity)
+        except Exception as error:  # noqa: BLE001 - 解析失败不阻塞任何分析页
+            warnings.append(f'战队分析队名解析失败：{error}')
         self._apply_aliases(combined, aliases, roster, (profile.get('enemyAliases') or {}))
         rows = self._flat_rows(matches, warnings)
         # 表格行按需加入；默认 source=db,bundle。
@@ -245,6 +337,80 @@ class AnalysisRepository:
                     player['label'] = roster[player_id]
                     player['bound'] = True
 
+    @staticmethod
+    def _merge_workspace_identity(connection, settings, roster, aliases, profile):
+        """把选手主数据（players / player_accounts）并进分析口径。
+
+        认领/改名写的是 ``players`` + ``player_accounts``；``settings.aliases``
+        只作历史兜底。这里按账号昵称把「营地游戏名 → 选手ID」补进同一张表，
+        单局复盘 / 跨局分析 / 表格导入才会和选手档案页显示同一个名字。
+        只补缺，不覆盖 settings 里已有的人工映射。
+        """
+        try:
+            team_rows = connection.execute('SELECT id, name FROM teams').fetchall()
+            player_rows = connection.execute(
+                'SELECT id, name, team_id, position, status FROM players').fetchall()
+            account_rows = connection.execute(
+                "SELECT account_id, nickname, player_id FROM player_accounts"
+                " WHERE platform='camp'").fetchall()
+        except sqlite3.Error:
+            # 旧库没有这三张表：保持 settings 口径，不影响任何分析页。
+            return
+        team_names = {str(row['id']): clean(row['name']) for row in team_rows if row['name']}
+        own_name = clean(settings.get('teamName'))
+        own_ids = {team_id for team_id, name in team_names.items() if own_name and name == own_name}
+        own_ids.add('team-own')
+        enemy_aliases = profile.setdefault('enemyAliases', {})
+        members = profile.setdefault('members', [])
+        member_by_id = {str(item.get('id')): item for item in members}
+        team_by_player = {}
+        for row in player_rows:
+            player_id = str(row['id'])
+            team_id = str(row['team_id'] or '')
+            team_by_player[player_id] = team_id
+            if str(row['status'] or 'active') != 'active':
+                continue
+            name = clean(row['name'])
+            if not name:
+                continue
+            team = team_names.get(team_id, '')
+            # 本队显示名跟 settings.teamName 走：旧 player_board 按
+            # `member.team == teamName` 过滤本队名单，写成 teams 表里的
+            # 「我方战队」会把本队选手漏掉。
+            display_team = own_name if team_id in own_ids and own_name else team
+            label = name
+            # 占位队名（待命名战队）不是真队名，不加前缀；否则列表里会出现
+            # 「待命名战队.某人」这种比昵称还难认的标签。
+            if (team and not team.startswith('待命名') and team_id not in own_ids
+                    and not name.startswith(team + '.')):
+                label = f'{team}.{name}'
+            roster[player_id] = label
+            existing = member_by_id.get(player_id)
+            if existing is not None:
+                # 旧 settings.roster 迁移过来的同 id 选手：改名/转会后这里跟着更新，
+                # 否则 player_board 的名单标签还是旧名字。
+                existing.update({'name': name, 'label': label, 'team': display_team,
+                                 'position': lane_name(row['position']) or existing.get('position') or ''})
+            else:
+                member = {
+                    'id': player_id, 'name': name, 'label': label,
+                    'realName': '', 'position': lane_name(row['position']),
+                    'team': display_team, 'tags': [], 'number': None,
+                    'campUserId': '', 'archived': False,
+                }
+                member_by_id[player_id] = member
+                members.append(member)
+        for row in account_rows:
+            nickname = clean(row['nickname'])
+            player_id = str(row['player_id'] or '')
+            if not nickname or player_id not in roster:
+                continue
+            # 没归队的选手ID 默认按本队处理：建档页「新建选手ID」允许先不选战队，
+            # 这批人多半是本队队员；放到 enemyAliases 会让认领在复盘页完全不生效。
+            team_id = team_by_player.get(player_id)
+            table = aliases if (not team_id or team_id in own_ids) else enemy_aliases
+            table.setdefault(nickname, player_id)
+
     def _load_db(self, warnings):
         if not self.db_path.is_file():
             warnings.append('未找到工作台数据库，仅使用录像数据包/表格。')
@@ -292,6 +458,11 @@ class AnalysisRepository:
                 } for player in roster_members],
             }
             matches, drafts = [], 0
+            # 认领/改名现在写 players + player_accounts；settings.aliases 只是
+            # 历史兜底。不并进来的话，选手档案页已经按选手ID 显示，单局复盘与
+            # 跨局分析却还是营地昵称——同一场比赛两套名字。
+            self._merge_workspace_identity(connection, settings, roster, aliases,
+                                           profile)
             for row in connection.execute('SELECT body FROM matches'):
                 body = json.loads(row[0])
                 if body.get('status') != 'confirmed':
@@ -425,10 +596,31 @@ class AnalysisRepository:
             'warnings': [], 'status': body.get('status'),
         }
 
+    def _live_channel_ids(self):
+        """采集通道表里的 id；用来判断一份 bundle 是否还对应现存的通道。
+
+        通道删除/重建后，旧 `data/matches/channel-*.json` 可能留在磁盘上；
+        只按文件名读会把同一局算很多遍。这里读一次通道表，供去重时优先
+        保留「还活着」的那一份。
+        """
+        if not self.db_path.is_file():
+            return set()
+        try:
+            connection = sqlite3.connect(f'file:{self.db_path.as_posix()}?mode=ro', uri=True)
+            try:
+                return {str(row[0]) for row in connection.execute('SELECT id FROM channels')}
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return set()
+
     def _load_bundles(self, warnings):
         result = []
         if not self.matches_dir.is_dir():
             return result
+        live_channels = self._live_channel_ids()
+        seen_official = {}
+        duplicates = 0
         for path in sorted(self.matches_dir.glob('*.json')):
             try:
                 value = json.loads(path.read_text(encoding='utf-8'))
@@ -438,7 +630,7 @@ class AnalysisRepository:
             if not isinstance(value, dict) or value.get('schema') != MATCH_SCHEMA:
                 continue
             match = value.get('match') or {}
-            date = match.get('date') or {}
+            date_text = _bundle_date(match, path)
             players = []
             raw_players = value.get('players', [])
             hero_counts = Counter(clean(player.get('hero')) for player in raw_players)
@@ -485,12 +677,14 @@ class AnalysisRepository:
                 # 回放在对局保存之后才挂上时，旧 bundle 的 timeline 会是空的；
                 # 直接读官方经济，避免要求用户重新入库一次。
                 timeline = official_economy.from_bundle(self.official_dir, value)
-            result.append({
+            entry = {
                 'key': match.get('key') or path.stem,
                 'dbId': None, 'bundleKey': match.get('key') or path.stem,
                 'sources': ['bundle'], 'source': 'bundle',
                 'campBacked': camp_backed,
-                'date': date.get('text'), 'dateText': date.get('text'),
+                'date': date_text, 'dateText': date_text,
+                # 营地开局时间「11-02 13:32」：同日多局靠它排先后，列表局号才对得上。
+                'startTime': clean((match.get('campBp') or {}).get('startTime')),
                 # 数据包可能缺顶层 duration；官方回放 normalized 有同口径的
                 # durationSec（秒），缺失时兜底，否则按分钟聚合的指标分母塌缩
                 # （GPM/DPM 曾因此虚高数倍且无任何提示）。
@@ -516,7 +710,32 @@ class AnalysisRepository:
                 },
                 'warnings': value.get('warnings') or [],
                 'status': 'bundle', 'bp': match.get('bp'),
-            })
+            }
+            # 同一局只留一份 bundle：优先「通道还在」的那份，其次最新文件。
+            # 通道删除/重建后旧 bundle 会留在 data/matches，不去重的话同一局
+            # 会在对局列表和所有聚合里重复 2–8 次（实测 386 行 / 103 局）。
+            official_id = str(official.get('id') or '')
+            if not official_id:
+                seq = str((match.get('campBp') or {}).get('gameSeq') or '')
+                official_id = f'camp-{seq}' if seq else ''
+            channel_id = str(entry['key'])[8:] if str(entry['key']).startswith('channel-') else ''
+            is_live = channel_id in live_channels
+            try:
+                mtime = path.stat().st_mtime_ns
+            except OSError:
+                mtime = 0
+            if official_id:
+                previous = seen_official.get(official_id)
+                if previous is not None:
+                    duplicates += 1
+                    if (is_live and not previous[0]) or (is_live == previous[0] and mtime >= previous[1]):
+                        seen_official[official_id] = (is_live, mtime, previous[2])
+                        result[previous[2]] = entry
+                    continue
+                seen_official[official_id] = (is_live, mtime, len(result))
+            result.append(entry)
+        if duplicates:
+            warnings.append(f'已忽略 {duplicates} 份重复/过期的对局包（同一局有多份副本）')
         return result
 
     def _unify(self, db_matches, bundles, warnings):
@@ -859,6 +1078,8 @@ class AnalysisRepository:
                 return False
             if filters.get('to') and row.get('dateKey') and row['dateKey'] > filters['to']:
                 return False
+            if (filters.get('from') or filters.get('to')) and not row.get('dateKey'):
+                return False
             if filters.get('player') and filters['player'] not in (row.get('playerKey'), row.get('playerId'), row.get('label')):
                 return False
             if filters.get('hero') and row.get('hero') != filters['hero']:
@@ -935,6 +1156,36 @@ class AnalysisRepository:
                                if match['players'] and all(_complete(player) and not player.get('partial')
                                                            for player in match['players']))
         partial_rows = sum(1 for row in rows if row.get('partial'))
+        ten_led = 0
+        ten_won = 0
+        for match in matches:
+            process = match.get('process') or {}
+            timeline = process.get('timeline') or []
+            own = match.get('ownCamp') or match.get('ownSide') or 'blue'
+            sign = 1 if own in ('blue', 'left') else -1
+            series = []
+            for point in timeline:
+                t = point.get('gameTime')
+                if not isinstance(t, (int, float)):
+                    continue
+                if isinstance(point.get('blueGold'), (int, float)) and isinstance(point.get('redGold'), (int, float)):
+                    value = (point['blueGold'] - point['redGold']) * sign
+                elif isinstance(point.get('goldDiff'), (int, float)):
+                    value = point['goldDiff'] * sign
+                else:
+                    continue
+                series.append((float(t), float(value)))
+            series.sort()
+            at10 = None
+            if series:
+                prior = [p for p in series if p[0] <= 600]
+                if prior and (match.get('duration') or 0) >= 600:
+                    at10 = prior[-1][1]
+            if at10 is not None and at10 > 0:
+                ten_led += 1
+                if match.get('result') == 'win':
+                    ten_won += 1
+        ten_min_lead = f'{ten_won}/{ten_led}' if ten_led else None
         unknown_opponent = sum(1 for match in matches if not match.get('opponent'))
         if partial_rows and not filters.get('includePartial'):
             filter_warnings.append(f'{partial_rows} 行是过程/部分数据，未计入队员/英雄/团队统计；'
@@ -945,6 +1196,7 @@ class AnalysisRepository:
             'season': (self.get().get('profile') or {}).get('season') or '',
             'matches': len(matches), 'decided': decided, 'wins': wins,
             'winRate': round(wins / decided * 100, 1) if decided else None,
+            'tenMinLead': ten_min_lead,
             'players': len(players), 'heroes': len(heroes),
             # 本队口径：首页和英雄页要的是「我们自己的」，不含对手。
             'ownPlayers': len({row['label'] for row in rows if row.get('isOwn') and row.get('label')}),
@@ -964,6 +1216,27 @@ class AnalysisRepository:
             'profile': self.get().get('profile') or {},
             'warnings': list(dict.fromkeys(self.get()['warnings'] + filter_warnings)),
         }
+        lanes = ('对抗路', '打野', '中路', '发育路', '游走')
+        lane_compare = []
+        for lane in lanes:
+            def agg(is_own):
+                subset = [row for row in rows if row.get('isOwn') == is_own and row.get('position') == lane and row.get('hero')]
+                if not subset:
+                    return None
+                player_counts = Counter(row.get('label') or row.get('playerKey') for row in subset)
+                player = player_counts.most_common(1)[0][0]
+                p_rows = [row for row in subset if (row.get('label') or row.get('playerKey')) == player]
+                hero_counts = Counter(row.get('hero') for row in p_rows)
+                hero = hero_counts.most_common(1)[0][0]
+                h_rows = [row for row in p_rows if row.get('hero') == hero]
+                games = len(h_rows)
+                wins = sum(1 for row in h_rows if row.get('result') == 'win')
+                return {
+                    'player': player, 'hero': hero, 'games': games,
+                    'wins': wins, 'winRate': round(wins / games * 100, 1) if games else None,
+                }
+            lane_compare.append({'lane': lane, 'own': agg(True), 'foe': agg(False)})
+        result['laneCompare'] = lane_compare
         if include_top:
             result['topPlayers'] = self.player_stats(filters)[:5]
             result['topHeroes'] = self.hero_stats(filters)[:5]
@@ -1290,7 +1563,9 @@ class AnalysisRepository:
             own, enemy = self._camp_totals(match, own_camp)
             result.append({
                 'key': match['key'], 'date': match.get('date'), 'dateText': match.get('dateText'),
-                'opponent': match.get('opponent'), 'session': match.get('session'),
+                'startTime': match.get('startTime'), 'opponent': match.get('opponent'),
+                'opponentTeamId': match.get('opponentTeamId'),
+                'session': match.get('session'),
                 'version': match.get('version'), 'duration': match.get('duration'),
                 'mode': match.get('mode'), 'title': match.get('title'),
                 'sources': match.get('sources'), 'source': match.get('source'),
@@ -1308,6 +1583,7 @@ class AnalysisRepository:
                 'missing': self._match_gaps(match),
                 'heroes': [player.get('hero') for player in match.get('players', [])
                            if player.get('hero') and (player.get('camp') or player.get('side')) == own_camp][:5],
+                'lineup': hero_lineup(match, own_camp),
             })
         return {'matches': result, 'warnings': warnings}
 
@@ -1385,7 +1661,7 @@ class AnalysisRepository:
         return None
 
     # ---------- 深度分析：对位 / 画像 / 协同 / 过程 ----------
-    # 口径见 README.md；缺数据保持缺省，不做估算。
+    # 口径见 docs/metric_registry.md；缺数据保持缺省，不做估算。
 
     @staticmethod
     def _series_stats(values):

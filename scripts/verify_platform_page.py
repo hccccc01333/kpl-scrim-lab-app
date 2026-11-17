@@ -147,11 +147,6 @@ try:
         page.wait_for_selector('.import-panel', timeout=15000)
         check('批量导入页', page.locator('#import-file').count() == 1)
 
-        page.goto(BASE + '/studio#topics/player_form', wait_until='networkidle')
-        page.wait_for_selector('#topic-run', timeout=15000)
-        check('功能直接进入分析', page.locator('h1').inner_text() == '近期状态与稳定性' and page.locator('.topic-card').count() == 0)
-        check('分析功能归选手', page.locator('#navigation .nav-item.active').inner_text() == '选手')
-
         page.goto(BASE + '/studio#lab', wait_until='networkidle')
         page.wait_for_selector('.scenario-card', timeout=15000)
         page.wait_for_timeout(1800)

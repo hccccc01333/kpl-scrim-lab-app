@@ -143,6 +143,16 @@ def _find_bundle(matches_dir, key):
     directory = Path(matches_dir)
     if not directory.is_dir():
         return None, None
+    # bundleKey 一般就是文件 stem：先按名直取，避免全目录逐个 JSON 解析。
+    text = str(key or '')
+    if text and '/' not in text and '\\' not in text and text not in ('.', '..'):
+        direct = directory / f'{text}.json'
+        if direct.is_file():
+            value = _read_json(direct)
+            if isinstance(value, dict) and value.get('schema') == MATCH_SCHEMA:
+                match = value.get('match') or {}
+                if str(match.get('key') or '') == text or direct.stem == text:
+                    return direct, value
     for path in sorted(directory.glob('*.json')):
         value = _read_json(path)
         if not isinstance(value, dict) or value.get('schema') != MATCH_SCHEMA:

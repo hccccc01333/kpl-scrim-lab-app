@@ -133,9 +133,19 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     return shell('01', A, B);
   }
 
-  /* ── 02 胜率可信度分析 ────────────────────────────────────── */
+  /* ── 02 胜率与样本量（Wilson 区间） ──────────────────────────── */
+  function wilsonCI(wins, games, z = 1.96) {
+    if (!games || games <= 0) return null;
+    const p = (wins || 0) / games;
+    const z2 = z * z;
+    const denom = 1 + z2 / games;
+    const center = (p + z2 / (2 * games)) / denom;
+    const half = z * Math.sqrt(p * (1 - p) / games + z2 / (4 * games * games)) / denom;
+    return { low: Math.max(0, center - half) * 100, high: Math.min(1, center + half) * 100, p: p * 100 };
+  }
   function analysis02(a, b) {
     const gap = (isNum(a.winRate) ? a.winRate : 0) - (isNum(b.winRate) ? b.winRate : 0);
+    const ciA = wilsonCI(a.wins, a.games), ciB = wilsonCI(b.wins, b.games);
     const R = 62, C = 2 * Math.PI * R;
     const side = (x, cls) => {
       const v = clamp((isNum(x.winRate) ? x.winRate : 0) / 100, 0, 1);
@@ -160,9 +170,9 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     const B = view(big(ra ? `第 ${ra} / ${pool().length}` : '—', `${a.hero} 在全英雄的胜率位次`, 'gold'),
       `<div class="hc-band-label"><span>最差的10%对局 ${pc(lo)}</span><b>全英雄 ${pool().length} 个</b><span>最好的10%对局 ${pc(hi)}</span></div>
       <div class="hc-band"><i class="hc-band-fill" style="left:${at(q(.25)).toFixed(1)}%;width:${(at(q(.75)) - at(q(.25))).toFixed(1)}%"></i>
-        <i class="hc-band-dot a" style="left:${at(a.winRate).toFixed(1)}%" ${tip(`${a.hero} ${pc(a.winRate)} · 第 ${ra} 名`)}></i>
-        <i class="hc-band-dot b" style="left:${at(b.winRate).toFixed(1)}%" ${tip(`${b.hero} ${pc(b.winRate)} · 第 ${rb} 名`)}></i></div>
-      <div class="hc-band-foot"><span>${es(a.hero)} 第 ${ra || '—'} 名</span><span>${es(b.hero)} 第 ${rb || '—'} 名</span></div>`);
+        <i class="hc-band-dot a" style="left:${at(a.winRate).toFixed(1)}%" ${tip(`${a.hero} ${pc(a.winRate)} · 第 ${ra} 名${ciA ? ` · Wilson 95% CI ${pc(ciA.low)}–${pc(ciA.high)}` : ''}`)}></i>
+        <i class="hc-band-dot b" style="left:${at(b.winRate).toFixed(1)}%" ${tip(`${b.hero} ${pc(b.winRate)} · 第 ${rb} 名${ciB ? ` · Wilson 95% CI ${pc(ciB.low)}–${pc(ciB.high)}` : ''}`)}></i></div>
+      <div class="hc-band-foot"><span>${es(a.hero)} 第 ${ra || '—'} 名${ciA ? ` · 95% CI ${pc(ciA.low)}–${pc(ciA.high)}` : ''}</span><span>${es(b.hero)} 第 ${rb || '—'} 名${ciB ? ` · 95% CI ${pc(ciB.low)}–${pc(ciB.high)}` : ''}</span></div>`);
     return shell('02', A, B);
   }
 

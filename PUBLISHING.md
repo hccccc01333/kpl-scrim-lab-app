@@ -77,4 +77,4 @@ python scripts/check_publish.py --strict
 - 已清理:两份文档里的本机绝对路径。
 - 已加自检:`python scripts/check_publish.py --strict` 覆盖禁止路径、
   本机用户名、外部项目名与邮箱。
-- 未决:Git 历史是否重写(见上),以及 `docs/feedback-*.md`(教练反馈台账)是否随仓库公开。
+- 未决:Git 历史是否重写(见上),以及 `docs/feedback-*.md`(反馈记录)是否随仓库公开。

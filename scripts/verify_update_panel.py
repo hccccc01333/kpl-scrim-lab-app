@@ -64,6 +64,8 @@ class Case:
         self.state = {
             'check': None,
             'apply': None,
+            'prepare': None,
+            'prepareBody': '',
             'stage': None,
             'restart': None,
             'status': None,
@@ -103,6 +105,9 @@ def install_routes(page, case: Case) -> None:
             payload = state.get('check')
         elif path == '/api/update/apply':
             payload = state.get('apply')
+        elif path == '/api/update/prepare':
+            state['prepareBody'] = route.request.post_data or ''
+            payload = state.get('prepare')
         elif path == '/api/update/stage':
             payload = state.get('stage')
         elif path == '/api/update/restart':
@@ -302,6 +307,41 @@ def case_local_package(browser, base: str, shots: bool) -> Case:
     return case
 
 
+def case_auto_download(browser, base: str, shots: bool) -> Case:
+    """发现新版本后不等点击，先在后台下载并暂存；按钮变成「立即重启更新」。"""
+    case = Case('auto-download')
+    case.state['check'] = AVAILABLE
+    case.state['prepare'] = {'ok': True, 'pending': {'version': '1.6.3', 'fileCount': 37}}
+    case.state['apply'] = {'ok': True, 'restarting': True, 'pending': {'version': '1.6.3'}}
+    case.state['health'] = {'ok': True, 'version': '1.6.2'}
+
+    def run(page):
+        if not wait_banner(page):
+            case.fail('没有出现更新卡片')
+            return
+        try:
+            page.wait_for_function(
+                "() => (document.querySelector('.update-card')?.innerText || '').includes('已自动下载')",
+                timeout=15000)
+        except Exception:  # noqa: BLE001
+            case.fail('自动下载完成后没有显示「已自动下载」')
+        text = card_text(page)
+        if '立即重启更新' not in text:
+            case.fail('已下载后按钮文案没有变成「立即重启更新」')
+        if '/api/update/prepare' not in case.state['calls']:
+            case.fail('没有请求 /api/update/prepare')
+        if '1.6.3' not in (case.state.get('prepareBody') or ''):
+            case.fail(f'prepare 没有带版本号：{(case.state.get("prepareBody") or "")[:80]}')
+        page.click('[data-update="now"]')
+        page.wait_for_timeout(4200)
+        if '/api/update/apply' not in case.state['calls']:
+            case.fail('已下载后点按钮没有请求 /api/update/apply')
+
+    case.run = run
+    run_case(browser, base, case, shots)
+    return case
+
+
 def manual_check_toast(page, case: Case, needle: str, label: str, timeout: int = 8000) -> str:
     """点页脚「检查更新」，等提示出现并校验文案；失败时把实际文案带进报告。
 
@@ -331,6 +371,23 @@ def case_latest(browser, base: str, shots: bool) -> Case:
         if page.locator('.update-card').is_visible():
             case.fail('已是最新时不应弹卡片')
         manual_check_toast(page, case, '已是最新版本', '手动检查提示不正确')
+
+    case.run = run
+    run_case(browser, base, case, shots)
+    return case
+
+
+def case_check_failed(browser, base: str, shots: bool) -> Case:
+    """清单接口 200 但 ok=false：手动检查必须给原因，不能像没反应。"""
+    case = Case('check-failed')
+    case.state['check'] = {'ok': False, 'currentVersion': '1.6.2',
+                           'reason': '更新源均不可用：gitee 连接被重置；github 超时'}
+
+    def run(page):
+        page.wait_for_timeout(2800)
+        if page.locator('.update-card').is_visible():
+            case.fail('检查失败时不应弹更新卡片')
+        manual_check_toast(page, case, '检查更新失败', '手动检查失败没有提示')
 
     case.run = run
     run_case(browser, base, case, shots)
@@ -397,8 +454,9 @@ def case_source_mode(browser, base: str, shots: bool) -> Case:
     return case
 
 
-CASES = [case_available, case_dismiss, case_blocked, case_apply,
-         case_local_package, case_latest, case_offline, case_source_mode]
+CASES = [case_available, case_auto_download, case_dismiss, case_blocked, case_apply,
+         case_local_package, case_latest, case_check_failed, case_offline,
+         case_source_mode]
 
 
 def main(argv=None) -> int:

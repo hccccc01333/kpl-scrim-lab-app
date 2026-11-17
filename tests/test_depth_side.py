@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 
 from depth_api import (_apply_side, _camp_meta, _filter_matches, _signature, analysis_payload,
-                       analyses_catalog, build_facts)
+                       build_facts)
 from studio_api import camp_games
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -189,33 +189,17 @@ class PayloadSideTest(unittest.TestCase):
         if not cls.facts.get('players'):
             raise unittest.SkipTest('缺少营地对局详情样本（公开仓库不含对局数据）')
 
-    def test_side_filter_is_symmetric_on_real_data(self):
-        total = len(self.facts['players'])
-        own = analysis_payload(self.facts, 'cs_conversion', side='own')
-        opp = analysis_payload(self.facts, 'cs_conversion', side='opp')
-        own_n = sum(l['n'] for l in own['lanes'])
-        opp_n = sum(l['n'] for l in opp['lanes'])
-        self.assertEqual(own_n + opp_n, total)
-        self.assertGreater(own_n, 0)
-        self.assertGreater(opp_n, 0)
-
-    def test_points_carry_chinese_lane_labels(self):
-        p = analysis_payload(self.facts, 'cross_resource_output')
-        groups = {pt['group'] for pt in p['points']}
-        self.assertTrue(groups)
-        self.assertTrue(groups <= {'对抗路', '中路', '发育路', '打野', '游走', '未标注'})
-
-    def test_catalog_exposes_camp_meta_and_sided_flags(self):
-        catalog = analyses_catalog(self.facts)
-        meta = {a['id']: a for a in catalog}
-        for aid in ('time_cross_match', 'time_economy', 'time_events', 'time_kill_rhythm', 'compare_camp'):
-            self.assertFalse(meta[aid]['sided'], f'{aid} 是双边过程/视角体检，不应可分边')
-        for aid in ('cs_conversion', 'cross_lane_hero'):
-            self.assertTrue(meta[aid]['sided'], f'{aid} 应支持分边')
-        self.assertTrue(meta['cs_conversion']['samples'])
+    def test_removed_analyses_are_gone(self):
+        from fastapi import HTTPException
+        for aid in ('cs_' + 'conversion', 'cross_resource_' + 'output',
+                    'compare_' + 'baseline', 'compare_' + 'camp', 'resource_' + 'bp'):
+            with self.assertRaises(HTTPException) as ctx:
+                analysis_payload(self.facts, aid)
+            self.assertEqual(ctx.exception.status_code, 404)
 
 
 class CampGamesHelperTest(unittest.TestCase):
+    """camp_games：分边推断、日期归一与 match_meta 覆盖层（与深度 API 同源）。"""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -307,14 +291,6 @@ class LaneMatchupTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
-
-    def test_catalog_exposes_lane_matchup(self):
-        facts = build_facts(self.root)
-        item = next(a for a in analyses_catalog(facts) if a['id'] == 'lane_matchup')
-        self.assertEqual(item['direction'], '对比')
-        self.assertEqual(item['viz'], 'matchup')
-        self.assertEqual(item['filters'], ['team', 'player'])
-        self.assertTrue(item['boundary'])
 
     def test_payload_pairs_same_lane_and_names_lanes(self):
         facts = build_facts(self.root)

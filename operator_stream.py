@@ -208,7 +208,7 @@ LAYOUTS = {
                         ('varint', 'param1')]),
            # 11/2: every `15 6f 02 …` block is followed by CppEventOpe
            # `0c 04 02 00 <seq>`; the four varints end exactly on that
-           # boundary (e.g., 0x1B41 and 39 repeats in 20260101_000000).
+           # boundary (e.g., 0x1B41 and 39 repeats in 20261102_161129).
            (TENTATIVE, [('frame',), ('varint', 'degree')])],
     0x16: [(CONFIRMED, [('u16', 'tag'), ('varints', 'layout', 75)]),
            # Legacy fallback: a raw u16-length payload.  The length was read
@@ -627,7 +627,7 @@ def parse_with_repair(stream, start=0, max_points=REPAIR_MAX_POINTS):
 def repair_summary(stream, start=0):
     """Counts and clock audit for the repaired DP segmentation."""
     records, repairs, end = parse_with_repair(stream, start)
-    # Clock audit uses the same filter as README.md: only confirmed
+    # Clock audit uses the same filter as docs/ope_stream.md: only confirmed
     # UnityFrameOpe values >= 1000, so small frame numbers are not mistaken for
     # clock regressions.
     unity = [record['fields']['unityFrame'] for record in records

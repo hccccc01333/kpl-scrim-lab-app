@@ -45,7 +45,7 @@ FAMILIES = ("movement", "attack", "skill", "buy", "cc", "aim")
 
 # Inner commands of a CSDT_FRAPBOOT_CC packet.  The family is named `cc` in the
 # decoder, but it carries direction / stop / attack-position commands, not crowd
-# control; see README.md.
+# control; see docs/replay_player.md.
 CC_INNER = {
     "2d": "direction", "03": "stopMove", "2c": "attackPos",
     "01": "positionMove",
@@ -61,7 +61,7 @@ MISSING = {
     "assists": "同上：没有助攻记录。",
     "goldIncome": "尾部购买镜像没有金币收入事件，无法重建收入账本；只有支出账本。",
     "hp": "容器不含 HP 字段。",
-    "positions": "连续轨迹不可得：移动指令积分实测残差/位移 0.94–1.00（无预测力，README.md）；只有稀疏坐标锚点，见 anchors。",
+    "positions": "连续轨迹不可得：移动指令积分实测残差/位移 0.94–1.00（无预测力，docs/abc_move_integration.md）；只有稀疏坐标锚点，见 anchors。",
 }
 
 

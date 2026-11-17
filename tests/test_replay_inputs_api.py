@@ -100,11 +100,11 @@ class ReplayInputsApiTests(unittest.TestCase):
     def test_03_entity_events_join_roster_entity(self):
         response = self.client.get(f'/api/replays/{self.replay_id}/inputs?unit=9')
         hero = response.json()['hero']
-        # equip 1111 = 铁剑, battle-table price 275 (既有校准).
+        # equip 1111 = 铁剑, battle-table price 275 (docs 5.130).
         self.assertEqual(hero['buys'], [[3, 1111, 8, 0, 275]])
         # The synthetic record stream has no 0x01-wrapped TLVs.
         self.assertEqual(hero['angleSamples'], [])
-        # Direction-integrated shape estimate: present, honesty-labeled (既有校准).
+        # Direction-integrated shape estimate: present, honesty-labeled (docs 5.132).
         self.assertTrue(hero['pathEstimate'])
         self.assertIn('绝非位置', hero['pathNote'])
 

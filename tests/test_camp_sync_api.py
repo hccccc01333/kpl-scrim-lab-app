@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,7 @@ os.environ['CAMP_SYNC_STATE'] = str(TMP / 'camp_sync_state.json')
 from fastapi.testclient import TestClient
 
 import camp_replay
+import channel_store
 import server
 from server import app, db
 
@@ -40,12 +42,12 @@ class CampConfigTests(unittest.TestCase):
 
     def test_config_roundtrip_and_validation(self):
         response = self.client.post('/api/camp/config', json={'players': [
-            {'nickname': '队长', 'campUserId': '100000001'},
+            {'nickname': '队长', 'campUserId': '540599032'},
             {'nickname': '坏', 'campUserId': 'not-a-number'},
             'not-a-dict',
         ]})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([p['campUserId'] for p in response.json()['players']], ['100000001'])
+        self.assertEqual([p['campUserId'] for p in response.json()['players']], ['540599032'])
         stored = self.client.get('/api/camp/config').json()
         self.assertEqual(stored['players'][0]['nickname'], '队长')
 
@@ -66,10 +68,10 @@ class CampConfigTests(unittest.TestCase):
     def test_resolve_extracts_user_id_from_share_link(self):
         """分享链接（含 mp-redirect 形态）直接解出营地 ID，不用人工抄。"""
         response = self.client.post('/api/camp/resolve', json={'url':
-            'https://camp.qq.com/h5/webdist/mp-redirect/index.html?userId=100000001'
+            'https://camp.qq.com/h5/webdist/mp-redirect/index.html?userId=540599032'
             '&gameSeq=1793795458&battleType=12&gameSvrId=108724&relaySvrId=1260446482'})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['userId'], '100000001')
+        self.assertEqual(response.json()['userId'], '540599032')
         self.assertEqual(response.json()['gameSeq'], '1793795458')
 
     def test_resolve_rejects_non_camp_links(self):
@@ -79,12 +81,12 @@ class CampConfigTests(unittest.TestCase):
     def test_batch_items_carry_share_user_id(self):
         """批量导入顺便带回分享者的营地 ID，供一键加入同步清单。"""
         text = ('https://camp.qq.com/h5/webdist/battle-replay/index.html?gameseq=1793606215'
-                '&gamesvrentity=2&relaysvrentity=3&userId=100000001')
+                '&gamesvrentity=2&relaysvrentity=3&userId=540599032')
         with mock.patch.object(camp_replay, 'import_link', side_effect=fake_import):
             response = self.client.post('/api/official/replays/batch', json={'text': text})
         self.assertEqual(response.status_code, 200)
         item = response.json()['items'][0]
-        self.assertEqual(item['shareUserId'], '100000001')
+        self.assertEqual(item['shareUserId'], '540599032')
 
 
 class CampListImportedTests(unittest.TestCase):
@@ -121,7 +123,7 @@ class CampListImportedTests(unittest.TestCase):
         }
         body = {'returnCode': 0, 'data': {'list': [entry], 'hasMore': False, 'lastTime': 0}}
         with mock.patch.object(self.camp_client, 'call', return_value={'body': body}):
-            response = self.client.post('/api/camp/list', json={'campUserId': '100000001'})
+            response = self.client.post('/api/camp/list', json={'campUserId': '540599032'})
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()['entries'][0]
 
@@ -152,7 +154,7 @@ class CampListImportedTests(unittest.TestCase):
             'data': {'head': {'gameResult': True, 'acntCamp': 1,
                               'mapName': '排位赛', 'heroId': 196,
                               'heroName': '孙悟空', 'gradeGame': '9.2',
-                              'matchDesc': '伯仲局', 'userId': '100000001',
+                              'matchDesc': '伯仲局', 'userId': '540599032',
                               'playerId': head_id,
                               'killCnt': 3, 'deadCnt': 1, 'assistCnt': 8},
                      'blueRoles': blue, 'redRoles': red,
@@ -274,7 +276,7 @@ class CampSyncWorkerResilienceTests(unittest.TestCase):
                 mock.patch.object(server, '_camp_tools', lambda: None), \
                 mock.patch.object(server, '_camp_ensure_channels',
                                   lambda entries, nickname, progress=None: dict(stub)):
-            return server._camp_sync_worker('100000001', '队长', [{'gameSeq': '1793900009'}])
+            return server._camp_sync_worker('540599032', '队长', [{'gameSeq': '1793900009'}])
 
     def test_legacy_tools_without_on_progress_still_sync(self):
         calls = []
@@ -287,7 +289,7 @@ class CampSyncWorkerResilienceTests(unittest.TestCase):
 
         results, _ids = self._worker(LegacyCampSync)
         self.assertTrue(results[0]['ok'], results[0])
-        self.assertEqual(calls, [('100000001', 1)])
+        self.assertEqual(calls, [('540599032', 1)])
 
     def test_auto_official_gets_camp_user_id(self):
         """自动补拉官方回放必须拿到营地账号 ID：采集页回传的条目没有 analyseUrl。"""
@@ -311,9 +313,9 @@ class CampSyncWorkerResilienceTests(unittest.TestCase):
                                   lambda entries, nickname, progress=None: dict(stub)), \
                 mock.patch.object(server, '_camp_auto_official', side_effect=fake_auto):
             results, _ids = server._camp_sync_worker(
-                '100000001', '队长', [{'gameSeq': '1793900009'}])
+                '540599032', '队长', [{'gameSeq': '1793900009'}])
         self.assertTrue(results[0]['ok'], results[0])
-        self.assertEqual(captured.get('camp_user_id'), '100000001', captured)
+        self.assertEqual(captured.get('camp_user_id'), '540599032', captured)
 
     def test_sync_error_is_reported_not_swallowed(self):
         def boom(camp_user_id, entries, on_progress=None):
@@ -367,7 +369,7 @@ class CampDetailWindowTests(unittest.TestCase):
         old = self._entry('1700000001', 60)
         with mock.patch.object(self.camp_sync, 'battle_detail',
                                side_effect=lambda *a, **k: calls.append(a) or {'body': {}}):
-            summary = self.camp_sync.sync_entries('100000001', [old], interval=0)
+            summary = self.camp_sync.sync_entries('540599032', [old], interval=0)
         self.assertEqual(calls, [], '超出一个月的局不该再发详情请求')
         self.assertEqual(summary['unsupported'], 1)
         self.assertEqual(summary['unsupportedSeqs'], ['1700000001'])
@@ -377,7 +379,7 @@ class CampDetailWindowTests(unittest.TestCase):
         recent = self._entry('1700000002', 2)
         body = {'returnCode': -30457, 'returnMsg': '-30457:暂不支持查看一个月前的战绩详情'}
         with mock.patch.object(self.camp_sync, 'battle_detail', return_value={'body': body}):
-            summary = self.camp_sync.sync_entries('100000001', [recent], interval=0)
+            summary = self.camp_sync.sync_entries('540599032', [recent], interval=0)
         self.assertEqual(summary['unsupported'], 1)
         self.assertEqual(summary['unsupportedSeqs'], ['1700000002'])
         self.assertEqual(summary['failed'], 0)
@@ -482,10 +484,10 @@ class CampResolveModeAgnosticTests(unittest.TestCase):
     def test_room_draft_link_without_replay_server_params(self):
         """开房间征召链接可能只带 userId + gameSeq，仍能登记选手。"""
         url = ('https://camp.qq.com/h5/webdist/mp-redirect/index.html?'
-               'userId=100000001&gameSeq=1793606215&battleType=32')
+               'userId=540599032&gameSeq=1793606215&battleType=32')
         response = self._resolve(url)
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()['userId'], '100000001')
+        self.assertEqual(response.json()['userId'], '540599032')
         self.assertEqual(response.json()['battleType'], '32')
 
     def test_prefers_user_id_over_role_and_player_ids(self):
@@ -557,7 +559,7 @@ class CampAutoOfficialTests(unittest.TestCase):
     def _entry(self, seq=None, **extra):
         entry = {
             'gameSeq': seq or self.SEQ, 'gameSvrId': '120245',
-            'relaySvrId': '-1656708288', 'uniqueRoleId': '200000001',
+            'relaySvrId': '-1656708288', 'uniqueRoleId': '2081911312',
             'battleType': 12, 'mapName': '排位赛', 'winCamp': 1,
         }
         entry.update(extra)
@@ -565,19 +567,25 @@ class CampAutoOfficialTests(unittest.TestCase):
 
     def test_entry_without_analyse_url_uses_camp_user_id(self):
         """回归：没有 analyseUrl 时用营地账号 ID 兜底，回放必须真的拉下来。"""
-        report = server._camp_auto_official([self._entry()], camp_user_id='100000001')
+        report = server._camp_auto_official([self._entry()], camp_user_id='540599032')
         self.assertEqual(report['failed'], 0, report)
         self.assertEqual(report['imported'], 1, report)
         self.assertEqual(len(self.calls), 1, report)
-        self.assertEqual(self.calls[0]['playerId'], '100000001')
+        self.assertEqual(self.calls[0]['playerId'], '540599032')
         self.assertTrue((self.store / f'camp-{self.SEQ}' / 'meta.json').is_file())
 
     def test_missing_player_id_still_fails_with_actionable_reason(self):
-        """既没有 analyseUrl 也没有账号 ID 时，要报具体原因而不是静默。"""
-        report = server._camp_auto_official([self._entry()])
+        """analyseUrl / 账号 ID / uniqueRoleId 都没有时，要报具体原因而不是静默。"""
+        report = server._camp_auto_official([self._entry(uniqueRoleId='')])
         self.assertEqual(report['imported'], 0, report)
         self.assertEqual(report['failed'], 1, report)
         self.assertIn('playerid', report['items'][0]['error'])
+
+    def test_unique_role_id_is_used_when_no_account_id(self):
+        """补拉按钮从通道还原的条目只带 uniqueRoleId，也要能拉。"""
+        report = server._camp_auto_official([self._entry()])
+        self.assertEqual(report['imported'], 1, report)
+        self.assertEqual(self.calls[0]['playerId'], '2081911312')
 
     def test_analyse_url_keeps_its_own_player_id(self):
         """有 analyseUrl 时仍以列表里的 playerid 为准，不被账号 ID 覆盖。"""
@@ -586,9 +594,161 @@ class CampAutoOfficialTests(unittest.TestCase):
             analyseUrl='https://camp.qq.com/h5/webdist/team-analyzev2.html?'
                        'gameseq=1793999002&relaysvrentity=-1656708288'
                        '&gamesvrentity=120245&playerid=1085983157')
-        report = server._camp_auto_official([entry], camp_user_id='100000001')
+        report = server._camp_auto_official([entry], camp_user_id='540599032')
         self.assertEqual(report['imported'], 1, report)
         self.assertEqual(self.calls[0]['playerId'], '1085983157')
+
+    def test_rate_limited_import_retries_with_backoff(self):
+        """被限流时退避重试一次，而不是把整局直接记成失败。"""
+        calls = []
+
+        def fake_import(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise camp_replay.CampReplayError('营地接口限流', rate_limited=True)
+            return {'id': f'camp-{self.SEQ}', 'meta': {'id': f'camp-{self.SEQ}'}}
+
+        with mock.patch.object(camp_replay, 'import_entry', side_effect=fake_import), \
+                mock.patch.object(server.time, 'sleep') as sleep:
+            report = server._camp_auto_official([self._entry()], camp_user_id='540599032')
+        self.assertEqual(len(calls), 2, report)
+        self.assertEqual(report['retried'], 1, report)
+        self.assertEqual(report['rateLimited'], 1, report)
+        self.assertTrue(sleep.called, report)
+
+    def test_bulk_import_is_paced(self):
+        """两局以上要按间隔放慢，不能连发。"""
+        entries = [self._entry(seq='1793999001'), self._entry(seq='1793999002')]
+        with mock.patch.object(camp_replay, 'import_entry',
+                               return_value={'id': 'camp-x', 'meta': {}}), \
+                mock.patch.object(server.time, 'sleep') as sleep, \
+                mock.patch.object(server, 'CAMP_REPLAY_INTERVAL', 2.0), \
+                mock.patch.object(server, 'CAMP_REPLAY_JITTER', 0.0):
+            report = server._camp_auto_official(entries, camp_user_id='540599032')
+        self.assertEqual(report['paced'], 2, report)
+        sleep.assert_called_once_with(2.0)
+
+
+class CampRepairOfficialTests(unittest.TestCase):
+    """回放已落盘、通道还没拿到载荷时，要能自动补挂。
+
+    现场：先批量导入官方回放（或上次同步单独落盘），之后才建出采集通道。
+    `_camp_auto_official` 看到 meta.json 就 skip，通道的 official 只有 id，
+    单局页的时间轴 / 事件 / 位置一直是空的，而磁盘上其实有完整回放。
+    """
+
+    SEQ = '1793999101'
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.data = root / 'data'
+        self.data.mkdir()
+        self.store = root / 'official_replays'
+        folder = self.store / f'camp-{self.SEQ}'
+        folder.mkdir(parents=True)
+        (folder / 'meta.json').write_text(json.dumps({
+            'id': f'camp-{self.SEQ}', 'gameSeq': self.SEQ,
+            'gameSvr': '120245', 'relaySvr': '-1656708288', 'playerId': '2081911312',
+        }, ensure_ascii=False), encoding='utf-8')
+        (folder / 'normalized.json').write_text(json.dumps({
+            'schema': 'camp-replay-v1', 'source': {'kind': 'personal'},
+            'match': {'durationSec': 900, 'winCamp': '1'},
+            'economy': {'blue': [1500, 3000], 'red': [1500, 2900], 'intervalSec': 30},
+            'events': {}, 'positions': {},
+        }, ensure_ascii=False), encoding='utf-8')
+        self.db = root / 'training.sqlite3'
+        connection = sqlite3.connect(self.db)
+        connection.executescript(
+            'CREATE TABLE channels (id TEXT PRIMARY KEY, revision INTEGER NOT NULL,'
+            ' body TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);')
+        channel = channel_store.blank({'date': '2026-11-01'})
+        channel['id'] = 'ch-repair'
+        channel['official'] = {'id': f'camp-{self.SEQ}', 'schema': 'camp-replay-v1',
+                               'kind': 'personal', 'source': {'gameSeq': self.SEQ}}
+        connection.execute('INSERT INTO channels VALUES (?,1,?,?,?)',
+                           ('ch-repair', json.dumps(channel, ensure_ascii=False), 0, 0))
+        connection.commit()
+        connection.close()
+        self.patches = [
+            mock.patch.object(server, 'DB_PATH', self.db),
+            mock.patch.object(server, 'DATA_DIR', self.data),
+            mock.patch.object(server, 'MATCHES_DIR', self.data / 'matches'),
+            mock.patch.object(camp_replay, 'STORE', self.store),
+        ]
+        for patch in self.patches:
+            patch.start()
+        self.addCleanup(self._stop)
+        server._camp_repair_state['at'] = 0
+
+    def _stop(self):
+        for patch in reversed(self.patches):
+            patch.stop()
+        self.temp.cleanup()
+
+    def _channel(self):
+        connection = sqlite3.connect(self.db)
+        try:
+            return json.loads(connection.execute(
+                'SELECT body FROM channels WHERE id=?', ('ch-repair',)).fetchone()[0])
+        finally:
+            connection.close()
+
+    def test_repair_attaches_replay_already_on_disk(self):
+        report = server._camp_repair_official()
+        self.assertEqual(report['attached'], 1, report)
+        official = self._channel().get('official') or {}
+        self.assertTrue(official.get('match'), official)
+        self.assertTrue(official.get('economy'), official)
+
+    def test_auto_official_attaches_instead_of_skipping_existing_files(self):
+        """同一条目再同步时不能只报 skipped：通道缺载荷就补挂。"""
+        report = server._camp_auto_official([{'gameSeq': self.SEQ}], camp_user_id='2081911312')
+        self.assertEqual(report['attached'], 1, report)
+        self.assertEqual(report['skipped'], 0, report)
+        self.assertTrue((self._channel().get('official') or {}).get('match'))
+
+    def test_coverage_uses_channel_source_when_list_cache_is_empty(self):
+        """清单缓存为空时，通道 official.source 里的三参数也能补拉。"""
+        connection = sqlite3.connect(self.db)
+        channel = channel_store.blank({'date': '2026-11-02'})
+        channel['id'] = 'ch-source'
+        channel['official'] = {
+            'id': 'camp-1793999200',
+            'source': {'gameSeq': '1793999200', 'gameSvr': '120245',
+                       'relaySvr': '-1656708288', 'playerId': '2081911312'},
+        }
+        connection.execute('INSERT INTO channels VALUES (?,1,?,?,?)',
+                           ('ch-source', json.dumps(channel, ensure_ascii=False), 0, 0))
+        connection.commit()
+        connection.close()
+        coverage = server.official_coverage()
+        self.assertEqual(coverage['fillable'], 1, coverage)
+        item = next(row for row in coverage['sample'] if row['gameSeq'] == '1793999200')
+        self.assertEqual(item['source']['gameSvrId'], '120245')
+        self.assertEqual(item['source']['uniqueRoleId'], '2081911312')
+
+    def test_backfill_builds_entry_from_channel_source(self):
+        connection = sqlite3.connect(self.db)
+        channel = channel_store.blank({'date': '2026-11-02'})
+        channel['id'] = 'ch-source'
+        channel['official'] = {
+            'id': 'camp-1793999200',
+            'source': {'gameSeq': '1793999200', 'gameSvr': '120245',
+                       'relaySvr': '-1656708288', 'playerId': '2081911312'},
+        }
+        connection.execute('INSERT INTO channels VALUES (?,1,?,?,?)',
+                           ('ch-source', json.dumps(channel, ensure_ascii=False), 0, 0))
+        connection.commit()
+        connection.close()
+        with mock.patch.object(server, '_camp_auto_official',
+                               return_value={'tried': 0}) as auto:
+            server.official_backfill({'limit': 10})
+        entries = auto.call_args[0][0]
+        target = next(entry for entry in entries if entry['gameSeq'] == '1793999200')
+        self.assertEqual(target['gameSvrId'], '120245')
+        self.assertEqual(target['relaySvrId'], '-1656708288')
+        self.assertEqual(target['uniqueRoleId'], '2081911312')
 
 
 if __name__ == '__main__':
@@ -604,7 +764,7 @@ class GameSeqTraversalTests(unittest.TestCase):
 
     def test_sync_rejects_traversal_game_seq(self):
         self.client.post('/api/camp/config', json={'players': [
-            {'nickname': '队长', 'campUserId': '100000001'}]})
+            {'nickname': '队长', 'campUserId': '540599032'}]})
         response = self.client.post('/api/camp/sync', json={'entries': [
             {'gameSeq': '../evil', 'gameSvrId': '1', 'relaySvrId': '2',
              'dtEventTime': 1793804938, 'usedTime': 900}]})

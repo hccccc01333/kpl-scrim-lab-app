@@ -1,0 +1,208 @@
+/* Approved reference: .impeccable/mocks/art-round/concept-1.png. Artwork never contains UI text. */
+@font-face { font-family: 'Celadon Serif'; src: url('./media/celadon-serif-regular.woff2') format('woff2'); font-style: normal; font-weight: 400 500; font-display: swap; }
+@font-face { font-family: 'Celadon Serif'; src: url('./media/celadon-serif-bold.woff2') format('woff2'); font-style: normal; font-weight: 600 800; font-display: swap; }
+
+body { background: var(--bg); }
+#app { padding-inline-start: 0; }
+.masthead { background: var(--bg); border-color: var(--line); }
+.masthead-inner { max-inline-size: 1640px; margin-inline: auto; padding-inline: var(--page-gutter); block-size: var(--header-height); gap: 28px; }
+.wordmark { gap: 10px; font: 700 1.5rem/1.2 var(--display-font); letter-spacing: -.025em; }
+.wordmark small { display: none; }
+.brand-symbol { inline-size: 29px; block-size: 29px; padding: 4px; gap: 3px; border-radius: 0; background: transparent; }
+.brand-symbol i { inline-size: 5px; block-size: 13px; border-radius: 2px; transform: skewY(-22deg); background: #a1c3ba; }
+.brand-symbol i:nth-child(2) { block-size: 23px; background: var(--accent); }
+.brand-symbol i:nth-child(3) { block-size: 17px; background: #81aaa0; }
+.main-nav { flex: 1; flex-direction: row; align-items: center; block-size: 100%; gap: 4px; overflow: visible; padding: 0; }
+.main-nav a { justify-content: center; min-block-size: 44px; padding: 10px 13px; font-size: .8125rem; font-weight: 500; color: var(--muted); border-radius: 7px; transition: none; }
+.main-nav .nav-icon { display: none; }
+.main-nav a[aria-current] { background: var(--soft); color: var(--accent-ink); font-weight: 650; }
+.ui-breadcrumb { display: none; }
+.ui-search-trigger { inline-size: 36px; min-inline-size: 36px; min-block-size: 36px; padding: 9px; margin-inline-start: auto; border: 0; }
+.ui-search-trigger span, .ui-search-trigger kbd { display: none; }
+.head-actions { gap: 4px; }
+.head-actions .client-button { display: inline-flex; min-inline-size: 36px; min-block-size: 36px; padding: 8px; border: 0; background: transparent; color: var(--muted); }
+.head-actions .client-button span { display: none; }
+.ui-drawer-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 20px; border-block-start: 1px solid var(--line); }
+.head-button { border-radius: 7px; color: var(--muted); }
+.secondary-wrap { background: var(--bg); }
+.secondary-nav { min-block-size: 48px; }
+.secondary-nav a { min-block-size: 48px; font-size: .8125rem; }
+.page, .page.tp-page, [data-pl-page='archive'].page { padding: 36px var(--page-gutter) 60px; gap: 28px; }
+.page-intro h1, .xc-title, .bpl-hero h1, .tp-id-copy h1 { font-family: var(--display-font); font-size: var(--fs-display); font-weight: 700; letter-spacing: -.035em; line-height: 1.35; }
+.page-intro p { max-inline-size: 75ch; font-size: .875rem; }
+.section-heading h2, .tp-sec-head h2 { font-family: var(--display-font); font-size: 1.375rem; font-weight: 700; }
+.section, .panel { box-shadow: none; }
+.stats-band { background: transparent; }
+.primary { background: var(--accent); border-color: var(--accent); }
+.result { border-radius: 5px; }
+.footer { padding-block: 24px; }
+
+/* A complete first composition, model at exhibition scale and copy on its own quiet axis. */
+.page.pbr-home { max-inline-size: 1640px; padding: 0 var(--page-gutter) 60px; gap: 32px; }
+.celadon-cover { position: relative; isolation: isolate; min-block-size: 510px; padding-block: 48px 16px; }
+.celadon-cover-copy { position: relative; z-index: 1; inline-size: 39%; padding-block-end: 20px; }
+.celadon-cover h1 { font: 600 4.75rem/1.2 var(--display-font); letter-spacing: -.045em; white-space: nowrap; }
+.celadon-date { margin-block-start: 12px; color: var(--muted); font: 400 1.625rem/1.5 Georgia, var(--display-font); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+.celadon-record { display: flex; align-items: baseline; flex-wrap: wrap; gap: 18px; margin-block-start: 28px; font-variant-numeric: tabular-nums; }
+.celadon-record > span { display: inline-flex; align-items: baseline; gap: 6px; }
+.celadon-record b { font: 400 3.75rem/1 Georgia, var(--font); letter-spacing: -.04em; }
+.celadon-record small { font: 400 1.25rem/1.3 var(--display-font); }
+.celadon-record > span:first-child b { color: var(--accent); }
+.celadon-game-count { border-inline-start: 1px solid var(--line-strong); padding-inline-start: 20px; }
+.celadon-game-count b { font-size: 1.75rem; color: var(--muted); }
+.celadon-cover .celadon-cover-note { margin-block-start: 24px; max-inline-size: 36ch; min-block-size: 44px; font-size: .9375rem; color: var(--muted); line-height: 1.8; }
+.celadon-collect { margin-block-start: 22px; min-block-size: 48px; min-inline-size: 186px; padding: 12px 24px; gap: 12px; font-size: 1rem; font-weight: 500; }
+.celadon-collect svg { inline-size: 20px; block-size: 20px; }
+.celadon-art { position: absolute; z-index: -1; inset-block-start: 10px; inset-inline-end: -24px; inline-size: 72%; max-inline-size: none; block-size: auto; aspect-ratio: 2; object-fit: contain; filter: drop-shadow(0 16px 16px rgb(46 75 61 / 9%)); pointer-events: none; }
+.celadon-results { display: flex; align-items: center; gap: 16px; margin-block-start: 16px; color: var(--muted); font-size: .8125rem; }
+.celadon-results > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.celadon-result { display: inline-grid; place-items: center; inline-size: 28px; min-block-size: 25px; border-radius: 5px; font-size: .8125rem; line-height: 1.4; flex: none; color: var(--muted); background: var(--surface); }
+.celadon-result.is-win { color: var(--accent-ink); background: var(--soft); }
+.celadon-result.is-loss { color: var(--muted); background: color-mix(in srgb, var(--line) 55%, var(--bg)); }
+.celadon-evidence-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0,1fr); gap: 40px; }
+.celadon-section-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-block-end: 20px; }
+.celadon-section-head h2 { font: 700 1.625rem/1.4 var(--display-font); letter-spacing: -.025em; }
+.celadon-section-head > :is(span,a) { color: var(--muted); font-size: .75rem; }
+.celadon-section-head a:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 4px; }
+.celadon-economy { min-inline-size: 0; }
+.celadon-economy .chart-wrap { padding: 0; }
+.celadon-economy .chart-axis { font: 13px var(--font); }
+.celadon-economy .chart-label-text { font: 12px var(--font); }
+.celadon-economy .chart-foot { padding-inline: 0; font-size: .6875rem; gap: 10px; flex-wrap: wrap; }
+.celadon-recent { min-inline-size: 0; padding-inline-start: 40px; border-inline-start: 1px solid var(--line); }
+.celadon-recent-head, .celadon-recent-row { display: grid; grid-template-columns: 56px minmax(100px,1fr) 50px 32px 16px; align-items: center; gap: 12px; }
+.celadon-recent-head { padding-block-end: 10px; border-block-end: 1px solid var(--line); color: var(--quiet); font-size: .75rem; }
+.celadon-recent-row { min-block-size: 43px; border-block-end: 1px solid var(--line); color: var(--text); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.celadon-recent-row > time { color: var(--muted); }
+.celadon-recent-row .celadon-opponent { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.celadon-recent-row > svg { inline-size: 14px; block-size: 14px; color: var(--accent); }
+.celadon-recent-row:hover { background: var(--surface-hover); }
+.celadon-source-note { margin-block-start: 10px; color: var(--quiet); font-size: .75rem; }
+.celadon-chart-empty { min-block-size: 230px; display: flex; flex-direction: column; justify-content: center; gap: 10px; color: var(--muted); }
+.celadon-chart-empty span { color: var(--text); font-family: var(--display-font); font-size: 1.125rem; }
+.celadon-chart-empty p { max-inline-size: 42ch; }
+.celadon-evidence-loading { display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; }
+.celadon-evidence-loading > div { min-block-size: 280px; }
+.celadon-evidence-error { min-block-size: 200px; display: grid; align-content: center; justify-items: start; gap: 16px; color: var(--muted); }
+.pbr-home .pbr-head { display: block; }
+.pbr-home .pbr-title h2 { font: 700 1.5rem/1.4 var(--display-font); }
+.pbr-home .pbr-bar { margin-block-start: 4px; padding-block: 16px; }
+.pbr-home .pbr-periods, .pbr-home .pbr-views { background: transparent; border: 1px solid var(--line); padding: 3px; }
+.pbr-home .pbr-period[aria-pressed='true'], .pbr-home .pbr-view[aria-pressed='true'] { background: var(--soft); color: var(--accent-ink); box-shadow: none; }
+.pbr-home .pbr-section-title h2 { font-family: var(--display-font); font-size: 1.375rem; }
+.pbr-home .pbr-metrics { border-inline-start: 0; gap: 0; }
+.pbr-home .pbr-metric[data-metric-id] { background: transparent; min-block-size: 140px; padding: 20px; border-radius: 0; }
+.pbr-home .pbr-metric[data-metric-id]:nth-child(4n) { border-inline-end: 0; }
+.pbr-home .pbr-metric[data-metric-id='record'] { background: transparent; grid-column: auto; }
+.pbr-home .pbr-metric-value { font-family: var(--font); }
+.pbr-home .pbr-finding-top h3 { font-size: 1rem; }
+.fixture-day-head { background: var(--surface); }
+.fixture-day .match-row { min-block-size: 80px; }
+.match-rename-control { opacity: 1; }
+.tm-kpi.is-primary strong { color: var(--text); }
+[data-pl-page='archive'] .rs-hero-copy h1 { font-family: var(--display-font); }
+[data-pl-page='archive'] .rs-hero-copy p b { color: var(--text); }
+[data-pl-page='archive'] .rs-modes { border: 1px solid var(--line); background: var(--surface); padding: 3px; border-radius: 7px; }
+[data-pl-page='archive'] .rs-modes button { min-block-size: 32px; block-size: auto; border-radius: 5px; color: var(--muted); background: transparent; font-size: .75rem; }
+[data-pl-page='archive'] .rs-modes button:hover { color: var(--text); background: var(--paper); }
+[data-pl-page='archive'] .rs-modes button.is-active { color: var(--accent-ink); background: var(--soft); }
+[data-pl-page='archive'] .rs-ghost { border: 1px solid var(--line-strong); border-radius: 7px; color: var(--muted); background: var(--paper); font-size: .75rem; min-block-size: 36px; }
+[data-pl-page='archive'] .rs-ghost:hover { color: var(--accent); background: var(--soft); border-color: var(--accent); }
+[data-pl-page='archive'] .rs-ring b { color: var(--text); }
+[data-pl-page='archive'] .rs-ring :is(small,b i) { color: var(--muted); }
+[data-pl-page='archive'] .rs-ring-track { stroke: var(--line); }
+[data-pl-page='archive'] .rs-ring-fill { stroke: var(--accent); }
+:is(.tm-search,.rs-search,.pl-search) input { min-block-size: 0; border: 0; background: transparent; padding: 0; border-radius: 0; box-shadow: none; }
+:root[data-theme='dark'] .celadon-art { opacity: .8; filter: drop-shadow(0 16px 28px rgb(0 0 0 / 30%)); }
+
+@media (min-width: 1640px) {
+  .celadon-cover { min-block-size: 550px; }
+  .celadon-cover h1 { font-size: 5rem; }
+}
+@media (max-width: 1240px) {
+  .masthead-inner { gap: 16px; }
+  .wordmark { font-size: 1.25rem; }
+  .main-nav a { padding-inline: 10px; }
+  .celadon-cover h1 { font-size: 4rem; }
+  .celadon-date { font-size: 1.375rem; }
+  .celadon-record { gap: 12px; }
+  .celadon-record b { font-size: 3rem; }
+  .celadon-game-count { padding-inline-start: 12px; }
+  .celadon-game-count b { font-size: 1.5rem; }
+  .celadon-cover { min-block-size: 460px; padding-block-start: 36px; }
+  .celadon-art { inset-block-start: 32px; inline-size: 70%; }
+  .celadon-evidence-grid { gap: 28px; }
+  .celadon-recent { padding-inline-start: 28px; }
+  .fixture-column-head, .fixture-day .match-row { grid-template-columns: minmax(180px,1fr) 56px 76px 52px 24px; }
+  .fixture-column-head > span:nth-child(5), .fixture-day .match-lineup { display: none; }
+}
+@media (max-width: 1050px) {
+  .main-nav { gap: 0; }
+  .main-nav a { padding-inline: 8px; font-size: .75rem; }
+  .celadon-cover-copy { inline-size: 44%; }
+  .celadon-cover h1 { font-size: 3.5rem; }
+  .celadon-art { inset-block-start: 60px; inline-size: 66%; }
+  .celadon-evidence-grid { grid-template-columns: minmax(0,1fr); gap: 28px; }
+  .celadon-recent { border-inline-start: 0; border-block-start: 1px solid var(--line); padding: 28px 0 0; }
+  .celadon-recent-head, .celadon-recent-row { grid-template-columns: 90px minmax(100px,1fr) 70px 48px 16px; }
+}
+@media (max-width: 900px) {
+  .masthead .main-nav { display: none; }
+  .masthead .menu-button { display: grid; }
+  .masthead .wordmark { margin-inline-end: auto; }
+  .head-actions .client-button { display: none; }
+  .masthead-inner { gap: 10px; }
+  .page, .page.tp-page, [data-pl-page='archive'].page { padding-block-start: 28px; }
+  .celadon-cover { min-block-size: 430px; }
+  .celadon-art { inset-inline-end: -18px; inset-block-start: 70px; inline-size: 65%; opacity: .9; }
+  .celadon-cover-copy { inline-size: 34%; }
+  .celadon-record { column-gap: 10px; }
+  .celadon-record small { font-size: 1rem; }
+  .celadon-record b { font-size: 2.5rem; }
+  .celadon-game-count b { font-size: 1.375rem; }
+  .celadon-cover .celadon-cover-note { font-size: .875rem; max-inline-size: 100%; }
+  .pbr-home .pbr-hero { grid-template-columns: minmax(0,1fr); gap: 20px; }
+  .pbr-home .pbr-hero-side { padding: 20px 0 0; border-inline-start: 0; border-block-start: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  :root { --header-height: 60px; --page-gutter: 20px; --fs-display: 1.75rem; }
+  .masthead-inner { padding-inline: 16px; }
+  .masthead .wordmark { font-size: 1.125rem; gap: 6px; }
+  .brand-symbol { inline-size: 25px; }
+  .head-actions .inbox-button { display: none; }
+  .page.pbr-home { padding-inline: 20px; gap: 28px; }
+  .celadon-cover { display: flex; flex-direction: column; min-block-size: 0; padding-block: 28px 0; }
+  .celadon-cover-copy { inline-size: 100%; padding: 0; }
+  .celadon-cover h1 { font-size: 3rem; }
+  .celadon-date { font-size: 1.125rem; margin-block-start: 8px; }
+  .celadon-art { position: relative; order: 2; inset: auto; inline-size: calc(100% + 24px); margin: 12px -12px 0; z-index: 0; opacity: 1; }
+  .celadon-record { margin-block-start: 22px; gap: 14px; }
+  .celadon-record b { font-size: 3rem; }
+  .celadon-game-count b { font-size: 1.5rem; }
+  .celadon-cover .celadon-cover-note { min-block-size: 0; margin-block-start: 16px; max-inline-size: 100%; }
+  .celadon-collect { min-block-size: 44px; min-inline-size: 160px; margin-block-start: 18px; }
+  .celadon-results { order: 3; margin-block-start: 20px; align-items: flex-start; gap: 12px; }
+  .celadon-results > span { white-space: nowrap; padding-block: 2px; }
+  .celadon-results > div { gap: 5px; }
+  .celadon-result { inline-size: 24px; min-block-size: 24px; font-size: .75rem; }
+  .celadon-section-head { margin-block-end: 16px; }
+  .celadon-section-head h2 { font-size: 1.375rem; }
+  .celadon-recent-head, .celadon-recent-row { grid-template-columns: 52px minmax(90px,1fr) 44px 28px 12px; gap: 8px; }
+  .celadon-economy .chart-foot { font-size: .6875rem; }
+  .celadon-economy :is(.axis-text,.chart-axis) { font-size: 24px; }
+  .celadon-economy .economy-chart svg > g[transform] { display: none; }
+  .celadon-economy .economy-tick:nth-of-type(2n) text { display: none; }
+  .pbr-home .pbr-metric[data-metric-id] { padding: 16px 12px; min-block-size: 148px; }
+  .pbr-home .pbr-metric[data-metric-id]:nth-child(2n) { border-inline-end: 0; }
+  .fixture-page .match-overview { gap: 16px 24px; }
+  .fixture-page .match-overview > div { min-inline-size: 124px; }
+  .fixture-column-head, .fixture-day .match-row { grid-template-columns: minmax(0,1fr) 44px 60px 24px; gap: 8px; padding-inline: 8px; }
+  .fixture-column-head > span:nth-child(4), .fixture-column-head > span:nth-child(5), .fixture-day .match-duration, .fixture-day .match-lineup { display: none; }
+  .fixture-day .match-row { min-block-size: 76px; }
+  .fixture-day-head { padding-inline: 8px; }
+  .fixture-page .mf-toolbar { flex-wrap: wrap; }
+  .fixture-page .mf-search { inline-size: 100%; }
+  .fixture-page .mfilter { inline-size: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .celadon-art { transform: none; } }
+@media print { .celadon-cover { min-block-size: 380px; } .celadon-collect { display: none; } }

@@ -75,8 +75,10 @@ def test_recap_page_uses_safe_metrics_and_labels():
 
 def test_recap_layout_is_scoped_and_loaded():
     index = (FRONT / "index.html").read_text(encoding="utf-8")
+    interface = (FRONT / "interface.css").read_text(encoding="utf-8")
     css = (FRONT / "match-recap-fixes.css").read_text(encoding="utf-8")
-    assert 'static/match-recap-fixes.css' in index
+    # 2026-11-16 起这张表由 interface.css 用 @import 带进来，index.html 不再单独挂一行。
+    assert 'static/match-recap-fixes.css' in index or "match-recap-fixes.css" in interface
     assert ".md-page .md-bp-bans" in css
     assert "repeat(var(--bp-slots, 5)" in css
     assert ".md-page .md-node-num::before" in css

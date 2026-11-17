@@ -1,6 +1,6 @@
 """Extract the ten per-player gold/KDA records from a saved GameCore arena.
 
-The GameCore context is a 30 MiB self-relative arena (既有校准-5.157).  While
+The GameCore context is a 30 MiB self-relative arena (docs 5.155-5.157).  While
 a replay is loaded, it holds ten battle-stat records with a stable header:
 
     +0x00 u32 16
