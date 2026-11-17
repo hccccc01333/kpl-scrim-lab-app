@@ -1,4 +1,4 @@
-/* Approved reference: .impeccable/mocks/art-round/concept-1.png. Artwork never contains UI text. */
+/* 青瓷浮雕素材不含界面文字，只作首页开场装饰。 */
 @font-face { font-family: 'Celadon Serif'; src: url('./media/celadon-serif-regular.woff2') format('woff2'); font-style: normal; font-weight: 400 500; font-display: swap; }
 @font-face { font-family: 'Celadon Serif'; src: url('./media/celadon-serif-bold.woff2') format('woff2'); font-style: normal; font-weight: 600 800; font-display: swap; }
 
