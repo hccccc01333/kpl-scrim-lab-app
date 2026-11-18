@@ -4,7 +4,7 @@
   <p><b>把一场训练赛的七张截图、一段录屏和一条营地链接，<br>变成一份能复盘的结论。</b></p>
 
   <p>
-    <img alt="版本" src="https://img.shields.io/badge/version-2.0.0-176B69?style=flat-square&labelColor=0F2E29">
+    <img alt="版本" src="https://img.shields.io/badge/version-2.0.1-176B69?style=flat-square&labelColor=0F2E29">
     <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12-3776AB?style=flat-square&labelColor=0F2E29&logo=python&logoColor=white">
     <img alt="许可" src="https://img.shields.io/badge/license-AGPL--3.0-F08A6C?style=flat-square&labelColor=0F2E29">
     <img alt="PRs" src="https://img.shields.io/badge/PRs-welcome-3E8F6E?style=flat-square&labelColor=0F2E29">
@@ -56,7 +56,7 @@
 | **采集一页** | 营地同步、截图 / 录屏 / 回放、缺失值审查并成采集页的页签；扫码授权、增量拉取、回放自动补挂、重复局清理在同一条链路里 |
 | **对局档案** | 顶部四块战况（当前对局 / 本队战绩 / 胜率环 / 近 10 场）+ 按训练日分组的对局卡；跨局分析、大场分析（BO3/5/7）、精选对局、版本对比、系列赛编组各自独立入口 |
 | **战队与选手** | 战队整页图形化（对手索引 + 档案 + BP / Ban 证据折叠）；选手主档（百段 / 巅峰赛分 / 千强 / 实力）与选手详情吸顶切片（范围 / 分路 / 英雄 / 对手 / 结果），整页联动并同步 URL |
-| **BP** | 新的 BP 工作台：英雄优先级、组合强度、战队如何破解、对手 BP 情报、类型与手序、体系与异动、赛前方案；训练赛统一 20 手（5+5 Ban），逐手事件接进单局复盘 |
+| **BP** | 新的 BP 工作台：英雄优先级、组合强度、战队如何破解、对手 BP 情报、类型与手序、体系与异动、赛前方案；征召 18 手 / KPL 18|20 手 / 排位·巅峰 20 手，每方名单按规则自动还原，逐手事件接进单局复盘 |
 | **单局复盘** | 区块条、复制结论、热区快捷键；命中 / 联动组合按样本分级显示胜率，对位补英雄强度与 T1–T4 档位，热区补三路、河道、四个 BUFF 地标与 90 秒走位 |
 | **更新与性能** | 自动检查改为持续行为（30 分钟复查）+ 后台预下载；清单多镜像取最高版本；前端按路由加载，首屏少解析约 1.5 MB |
 | **交付** | 单入口、单端口、单实例；源码目录可生成无窗口快捷方式；安装包流水线与增量更新链路重跑通过 |

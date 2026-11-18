@@ -264,6 +264,67 @@ function portrait(name, cls = '') {
   return `<span class="portrait portrait-placeholder ${cls}" aria-label="${esc(name || '未知英雄')}">${esc((name || '?')[0])}</span>`;
 }
 
+function openDeciderDialog() {
+  let dialog = document.querySelector('#decider-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'decider-dialog';
+    dialog.className = 'sx-dialog bp-order-dialog decider-dialog';
+    document.body.append(dialog);
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+  }
+  const heroes = Object.keys(metadata.heroTypes || {}).sort((a, b) => a.localeCompare(b, 'zh'));
+  const options = (selected = '') => ['<option value="">— 未选 —</option>']
+    .concat(heroes.map((name) => `<option value="${esc(name)}"${name === selected ? ' selected' : ''}>${esc(name)}</option>`))
+    .join('');
+  const side = (key, label) => `<section class="bp-order-side"><h3>${label}</h3>
+    <div class="bp-order-group"><b>盲选 5 个</b>
+      ${Array.from({ length: 5 }, (_, index) => `<label>P${index + 1}<select data-decider-side="${key}" data-decider-index="${index}">${options()}</select></label>`).join('')}
+    </div></section>`;
+  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">PEAK DUEL</span><h2>巅峰对决 · 双方盲选</h2></div><button type="button" class="sx-dialog-x" data-decider-close aria-label="关闭">×</button></div>
+    <p class="sx-dialog-note">BO7 第 7 局（大比分 3:3）：取消 Ban；双方各盲选 5 个；解除此前全局 BP 限制。允许双方选到同一个英雄；同一方 5 个不能重复。</p>
+    <div class="bp-order-grid">${side('own', '我方')}${side('foe', '对方')}</div>
+    <div class="bp-order-foot"><p class="form-status" data-decider-status></p>
+      <button type="button" class="control" data-decider-clear>清空</button>
+      <button type="button" class="control" data-decider-close>关闭</button>
+      <button type="button" class="primary" data-decider-summary>生成摘要</button></div>
+    <div class="decider-summary" data-decider-summary-box hidden></div>`;
+  const values = (key) => [...dialog.querySelectorAll(`[data-decider-side="${key}"]`)].map((select) => select.value);
+  const status = dialog.querySelector('[data-decider-status]');
+  const summaryBox = dialog.querySelector('[data-decider-summary-box]');
+  const renderSummary = () => {
+    const own = values('own');
+    const foe = values('foe');
+    const duplicates = (list) => list.filter((name, index) => name && list.indexOf(name) !== index);
+    if (duplicates(own).length || duplicates(foe).length) {
+      status.textContent = '同一方不能重复选同一个英雄；双方之间可以重复。';
+      summaryBox.hidden = true;
+      return;
+    }
+    if (own.filter(Boolean).length < 5 || foe.filter(Boolean).length < 5) {
+      status.textContent = '双方各选满 5 个再生成摘要。';
+      summaryBox.hidden = true;
+      return;
+    }
+    status.textContent = '';
+    const lineup = (list, tone) => `<div class="decider-lineup ${tone}"><b>${tone === 'own' ? '我方' : '对方'}</b>${list.map((name) => `<span class="decider-hero">${portrait(name, 'decider-portrait')}<em>${esc(name)}</em></span>`).join('')}</div>`;
+    summaryBox.innerHTML = `${lineup(own, 'own')}${lineup(foe, 'foe')}<p class="decider-note">无 Ban、解除全局 BP；双方可重复选同一英雄；这是赛前推演，不改动任何对局记录。</p>`;
+    summaryBox.hidden = false;
+  };
+  dialog.onclick = (event) => {
+    if (event.target === dialog || event.target.closest('[data-decider-close]')) { dialog.close(); return; }
+    if (event.target.closest('[data-decider-clear]')) {
+      dialog.querySelectorAll('select[data-decider-side]').forEach((select) => { select.value = ''; });
+      status.textContent = '';
+      summaryBox.hidden = true;
+      return;
+    }
+    if (event.target.closest('[data-decider-summary]')) renderSummary();
+  };
+  dialog.onchange = () => { summaryBox.hidden = true; status.textContent = ''; };
+  if (!dialog.open) dialog.showModal();
+}
+
 const navHref = (key) => key === 'setup' ? '#plan' : key === 'players' ? '#playerarchive' : '#' + key;
 let workbenchUI;
 function shell() {
@@ -337,102 +398,6 @@ function openInbox() {  const data = inboxState;
   }).join('');
   dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">INBOX</span><h2>待处理 ${fmt(data.total || 0)} 项</h2></div><button type="button" class="sx-dialog-x" data-sx-inbox-close aria-label="关闭">×</button></div><p class="sx-dialog-note">先清数据，再看报告；这里只列需要人工判断的事项。</p><div class="sx-inbox-groups">${groups || '<p class="sx-empty">当前没有待处理项。</p>'}</div>`;
   if (!dialog.open) dialog.showModal();
-}
-
-function openBpOrderDialog() {
-  const draft = data?.draft;
-  if (!draft || !draft.picks) return;
-  const seq = draft.gameSeq;
-  if (!seq) { window.alert('这局没有营地编号，无法录入顺序。'); return; }
-  let dialog = document.querySelector('#bp-order-dialog');
-  if (!dialog) {
-    dialog = document.createElement('dialog');
-    dialog.id = 'bp-order-dialog';
-    dialog.className = 'sx-dialog bp-order-dialog';
-    document.body.append(dialog);
-    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
-  }
-  const sideLabel = { left: '本队 · 蓝方', right: '对手 · 红方' };
-  /* 回填已保存的模式与一手方：否则第二次打开会永远显示「训练赛」，
-     用户会以为切换模式没有覆盖。 */
-  const savedMode = draft.bpOrderMode === 'kpl' ? 'kpl' : 'scrim';
-  const savedFirst = draft.firstPick === 'right' ? 'right' : 'left';
-  const sideBlock = (side) => {
-    const picks = (draft.picks?.[side] || []).map((row) => row?.name).filter(Boolean);
-    const bans = (draft.bans?.[side] || []).map((row) => row?.name).filter(Boolean);
-    const opts = (names) => names.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-    const pickRows = Array.from({ length: 5 }, (_, i) => `<label>P${i + 1}<select data-order-side="${side}" data-order-kind="picks" data-order-index="${i}">${opts(picks)}</select></label>`).join('');
-    const banRows = Array.from({ length: bans.length }, (_, i) => `<label>B${i + 1}<select data-order-side="${side}" data-order-kind="bans" data-order-index="${i}">${opts(bans)}</select></label>`).join('');
-    return `<section class="bp-order-side"><h3>${sideLabel[side]}</h3>
-      <div class="bp-order-group"><b>选用 P1–P5</b>${pickRows}</div>
-      <div class="bp-order-group"><b>禁用 B1–B${bans.length}</b>${banRows}</div></section>`;
-  };
-  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">BP ORDER</span><h2>手工录入 BP 顺序</h2></div><button type="button" class="sx-dialog-x" data-bp-order-close aria-label="关闭">×</button></div>
-    <p class="sx-dialog-note">训练赛 / KPL 都是 20 手（每侧 5 Ban + 5 Pick）；按真实顺序排，禁用允许跨侧重复（排位同时禁用）。选用必须与营地终局名单一致。保存后本页显示 P/B 楼层。</p>
-    <div class="bp-order-mode"><span>模式</span><label><input type="radio" name="bp-order-mode" value="scrim" ${savedMode === 'scrim' ? 'checked' : ''}> 训练赛</label><label><input type="radio" name="bp-order-mode" value="kpl" ${savedMode === 'kpl' ? 'checked' : ''}> KPL</label><label>一手方<select data-order-first><option value="left" ${savedFirst === 'left' ? 'selected' : ''}>蓝方</option><option value="right" ${savedFirst === 'right' ? 'selected' : ''}>红方</option></select></label></div>
-    <div class="bp-order-grid">${sideBlock('left')}${sideBlock('right')}</div>
-    <div class="bp-order-foot"><p class="form-status" data-order-status></p><button type="button" class="control" data-bp-order-cancel>取消</button><button type="button" class="primary" data-bp-order-save>保存顺序</button></div>`;
-  dialog.querySelectorAll('select[data-order-side]').forEach((select) => {
-    const side = select.dataset.orderSide, kind = select.dataset.orderKind;
-    const index = Number(select.dataset.orderIndex);
-    const list = kind === 'picks' ? (draft.picks?.[side] || []) : (draft.bans?.[side] || []);
-    const name = list[index]?.name;
-    if (name) select.value = name;
-  });
-  dialog.onclick = (event) => {
-    if (event.target === dialog) { dialog.close(); return; }
-    if (event.target.closest('[data-bp-order-close]') || event.target.closest('[data-bp-order-cancel]')) {
-      dialog.close();
-      return;
-    }
-    const save = event.target.closest('[data-bp-order-save]');
-    if (save) saveBpOrder(dialog, save);
-  };
-  if (!dialog.open) dialog.showModal();
-}
-
-function collectBpOrder(dialog) {
-  const payload = {
-    mode: dialog.querySelector('input[name="bp-order-mode"]:checked')?.value || 'scrim',
-    bans: { left: [], right: [] }, picks: { left: [], right: [] },
-    firstPick: dialog.querySelector('[data-order-first]')?.value || 'left',
-  };
-  dialog.querySelectorAll('select[data-order-side]').forEach((select) => {
-    payload[select.dataset.orderKind][select.dataset.orderSide][Number(select.dataset.orderIndex)] = select.value;
-  });
-  return payload;
-}
-
-function saveBpOrder(dialog, button) {
-  const status = dialog.querySelector('[data-order-status]');
-  const seq = data?.draft?.gameSeq;
-  if (!seq) {
-    if (status) status.textContent = '这局没有营地编号，无法保存。';
-    return;
-  }
-  const payload = collectBpOrder(dialog);
-  const allPicks = payload.picks.left.concat(payload.picks.right);
-  if (new Set(allPicks).size !== allPicks.length) {
-    if (status) status.textContent = '双方选用不能重复。';
-    return;
-  }
-  button.disabled = true;
-  if (status) status.textContent = '正在保存…';
-  fetch(`${API_BASE}/api/v3/camp-bp-order/${encodeURIComponent(seq)}`, {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload),
-  }).then(async (response) => {
-    if (!response.ok) {
-      let detail = '保存失败';
-      try { detail = (await response.json()).detail || detail; } catch {}
-      throw new Error(detail);
-    }
-    dialog.close();
-    await load(true);
-  }).catch((error) => {
-    if (status) status.textContent = error.message || '保存失败';
-    button.disabled = false;
-  });
 }
 
 function updateMode() {
@@ -1765,6 +1730,7 @@ function matchPage(m) {
   const ownSideKey = (own === 'red' || own === 'right') ? 'right' : 'left';
   const enemySideKey = ownSideKey === 'left' ? 'right' : 'left';
   const banSlotCount = Math.max((draft?.bans?.left || []).length, (draft?.bans?.right || []).length);
+  const ruleLabel = {'rank-20':'排位/巅峰 20 手','draft-18':'征召 18 手','draft-20':'KPL 20 手','blind':'巅峰对决盲选'}[draft?.ruleProfile] || '规则待判定';
   /* 阵容槽位：固定列网格（见 CSS），头像+名字整卡可点跳英雄详情页。
      BP 顺序只有人工录入过才显示（P=选用楼层 / B=禁用楼层）；营地名单没有顺序，
      不猜——行头标「顺序未知」。 */
@@ -2251,10 +2217,8 @@ function matchPage(m) {
      但由下面的一组整行容器拼成宽屏版式，不再一列堆到底。 */
   const mdOvLineup = `<section class="section md-ov" id="match-ov-lineup">
       <div class="section-heading"><div><h2>双方阵容${evTag('desc')}</h2><p>营地终局名单 · 选用 / 禁用各自按槽位对齐${draft?.pickOrderKnown
-        ? (draft?.orderAssumed
-            ? '，默认按训练赛顺序推定（营地名单排列，未人工核验）；可手工修改'
-            : draft?.banOrderKnown ? `，BP 顺序按手工录入显示（${draft?.bpOrderMode === 'kpl' ? 'KPL' : '训练赛'}模式；P＝选用楼层，B＝禁用楼层）` : '，选用顺序已录入（P＝楼层）；禁用只有名单、无先后')
-        : '；营地名单不记 BP 顺序，标「顺序未知」，手工录入后显示楼层'}${draft ? ` · 本局录入 ${banSlotCount} 个禁用槽` : ''}</p></div>${draft && draft.gameSeq ? `<button type="button" class="control" data-bp-order>${draft.pickOrderKnown ? '修改 BP 顺序' : '手工录入 BP 顺序'}</button>` : ''}</div>
+        ? `，按${ruleLabel}自动还原（P＝选用楼层，B＝禁用楼层）`
+        : '；名单数量与当前规则不符，标「名单不完整」，补齐后自动还原'}${draft ? ` · 本局 ${banSlotCount} 个禁用槽` : ''}</p></div><button type="button" class="control" data-decider-open>巅峰对决盲选</button></div>
       <div class="md-ov-lineup">${draft ? `${bpRow(ownSideKey, '本队 · ' + (sides[own] || ''), 'own')}${bpRow(enemySideKey, '对手 · ' + (sides[opposite[own]] || ''), 'enemy')}` : '<div class="md-ov-empty">暂无禁选记录。</div>'}</div>
     </section>`;
   const mdOvBp = `<section class="section md-ov" id="match-ov-bp">
@@ -3375,9 +3339,9 @@ app.addEventListener('click', (event) => {
     opponentDialog(editOpponent.dataset.matchEdit, editOpponent.dataset.opponent || '', editOpponent.dataset.teamId || '');
     return;
   }
-  if (event.target.closest('[data-bp-order]')) {
+  if (event.target.closest('[data-decider-open]')) {
     event.preventDefault();
-    openBpOrderDialog();
+    openDeciderDialog();
     return;
   }
   if (mods.features?.click(event)) return;

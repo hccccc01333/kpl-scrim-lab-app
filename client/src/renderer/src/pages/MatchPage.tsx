@@ -750,11 +750,11 @@ export function MatchPage() {
           <AnalysisSection
             id="match-bp"
             title="本局 BP"
-            note={`营地终局名单 · 禁用固定 5 位，空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已人工校对选用顺序）' : ''}`}
+            note={`营地终局名单 · 禁用按该方名单（4/5 位），空位标为空 BAN；选用按 pickHeros 原样展示${draft?.pickOrderKnown ? '（已按规则自动还原手序）' : ''}`}
           >
             {draft ? (
               <div className="md-bp">
-                <div className="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 固定 5 位</span></div>
+                <div className="md-bp-head"><span>阵容</span><span>选用 · 按序号</span><span>禁用 · 按名单</span></div>
                 <BpRow title={`本队 · ${sideLabel(ownCamp)}`} side="own" picks={draft.picks?.[ownSideKey]} bans={draft.bans?.[ownSideKey]} />
                 <BpRow title={`对手 · ${sideLabel(enemyCamp)}`} side="foe" picks={draft.picks?.[enemySideKey]} bans={draft.bans?.[enemySideKey]} />
               </div>
@@ -909,7 +909,7 @@ function BpRow({
         })}
       </div>
       <div className="md-bp-slots is-bans">
-        {Array.from({ length: 5 }).map((_, index) => {
+        {Array.from({ length: Math.max(4, banList.length) }).map((_, index) => {
           const hero = banList[index]
           return hero ? (
             <span className="md-bp-slot is-ban" key={`ban-${index}`}>

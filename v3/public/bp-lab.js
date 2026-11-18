@@ -1,7 +1,7 @@
 /* BP 概览 · 九个内容区驱动的研究页。
    数据源：/api/v3/bp-lab（KPL 含挑战者杯 / 训练赛分源）
    口径：KPL 只按每方 Pick/Ban 数组顺序统计“第 N 手”，不还原全局交错手序；
-   版本为空时不按日期推断；训练赛默认 20 手（营地默认顺序），Ban 不足处只显示名单。 */
+   版本为空时不按日期推断；训练赛/征召按 draft-18、KPL 按 draft-20 自动还原，Ban 不足处只显示名单。 */
 const FETCH_TIMEOUT = 30000;
 
 export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
@@ -9,13 +9,13 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
     root: null, controller: null, partController: null, observer: null,
     source: 'kpl', league: 'all', team: '', opponent: '', from: '', to: '',
     view: 'database',
-    unit: 'month', recentDays: 30, target: [], combo: [], rule: 'scrim-global-20', bo: 'BO5',
+    unit: 'month', recentDays: 30, target: [], combo: [], rule: 'draft-18', bo: 'BO5',
     lane: '', comboSort: 'usage', lookupText: '', lookup: null, lookupBusy: false,
     lookupOpen: false,
     counters: null, stability: null, data: null, loading: false, error: '',
     opponentResearch: null, opponentSide: '', opponentFirstPick: '',
     opponentCombo: [], opponentHero: '',
-    sim: {rule: 'scrim-global-20', bo: 'BO5', gameNumber: 1, side: '1',
+    sim: {rule: 'draft-18', bo: 'BO5', gameNumber: 1, side: '1',
           events: [], evidenceSource: 'kpl', result: null, loading: false, error: ''},
     compare: null, compareLoading: false, compareError: '',
     opponentCompare: null, opponentCompareLoading: false, opponentCompareError: '',
@@ -462,7 +462,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
     </div>
     <div class="bpl-scope">
       <span class="bpl-scope-chip">${state.source === 'kpl' ? 'KPL 与训练赛不混算' : '训练赛只作本批观察'}</span>
-      <span class="bpl-scope-chip">${state.source === 'kpl' ? '每方手序（非全局交错）' : '营地默认 20 手'}</span>
+      <span class="bpl-scope-chip">${state.source === 'kpl' ? '每方手序（非全局交错）' : '按规则自动还原'}</span>
       <span class="bpl-scope-chip">${data.scope?.versionAvailable ? '版本已记录' : '版本未记录'}</span>
       <p>${state.source === 'kpl' ? 'KPL 含挑战者杯；第一手 / Ban 后选择按该队数组顺序统计。' : '训练赛来自本机营地面板；对手多为占位名，组合样本少时只作单场观察。'}</p>
     </div>`;
@@ -1022,7 +1022,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
     </details>`;
     const body = `<div class="bpl-kpis">
       ${metric('战队', esc(habits.team || '—'), `${num(habits.games)} 局记录`)}
-      ${metric('可算手序', `${num(habits.orderGames)} 局`, habits.orderKnown ? (state.source === 'scrim' ? '营地默认 20 手' : 'KPL 每方数组顺序') : '无逐手顺序')}
+      ${metric('可算手序', `${num(habits.orderGames)} 局`, habits.orderKnown ? (state.source === 'scrim' ? '按规则自动还原' : 'KPL 每方数组顺序') : '无逐手顺序')}
       ${metric('最常 Ban', esc(topBans[0]?.hero || '—'), topBans[0] ? `${num(topBans[0].count)} 次` : '')}
       ${metric('最常 Pick', esc(topPicks[0]?.hero || '—'), topPicks[0] ? `${num(topPicks[0].count)} 次` : '')}
     </div>
@@ -1264,7 +1264,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
       return section('plan', '09', '赛前方案', '针对明天的对手，准备哪些阵容与应对分支？', '',
         empty('先选一支对手', plan.reason || '当前范围没有对手记录。'));
     }
-    const ruleOptions = [['scrim-global-20', '20 手 · 每方 5 Ban + 10 Pick']];
+    const ruleOptions = [['draft-18', '征召 18 手 · 4 Ban + 10 Pick'], ['draft-20', 'KPL 20 手 · 5 Ban + 10 Pick']];
     const boOptions = ['BO3', 'BO5', 'BO7'];
     const ruleControls = state.source === 'scrim'
       ? `<label class="bpl-field">BP 规则<select data-bpl-field="rule">${ruleOptions.map(([value, label]) => `<option value="${value}" ${value === state.rule ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
@@ -1681,7 +1681,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
         <option value="scrim" ${sim.evidenceSource === 'scrim' ? 'selected' : ''}>训练赛</option>
       </select></label>
       <label class="bpl-field">规则<select data-bpl-sim-field="rule">
-        <option value="scrim-global-20" ${sim.rule === 'scrim-global-20' ? 'selected' : ''}>20 手 · 每方 5 Ban + 10 Pick</option>
+        <option value="draft-18" ${sim.rule === 'draft-18' ? 'selected' : ''}>征召 18 手 · 4 Ban + 10 Pick</option><option value="draft-20" ${sim.rule === 'draft-20' ? 'selected' : ''}>KPL 20 手 · 5 Ban + 10 Pick</option>
       </select></label>
       <label class="bpl-field">赛制<select data-bpl-sim-field="bo">
         ${['BO3', 'BO5', 'BO7'].map((value) => `<option value="${value}" ${value === sim.bo ? 'selected' : ''}>${value}</option>`).join('')}
@@ -1702,7 +1702,7 @@ export function createBpLab({esc, fmt, pct, icon, portrait, API_BASE}) {
     } else if (sim.error) {
       body = `<div class="bpl-error-inline"><b>沙盘暂时读不到</b><p>${esc(sim.error)}</p><button type="button" class="bpl-primary" data-bpl-sim-run>重试</button></div>`;
     } else if (!result) {
-      body = `<div class="bpl-lookup-prompt"><b>从空局开始，或重开本局。</b><p>规则只走训练赛 15/20 手；证据来源可切 KPL 或训练赛。</p><button type="button" class="bpl-primary" data-bpl-sim-run>开始沙盘</button></div>`;
+      body = `<div class="bpl-lookup-prompt"><b>从空局开始，或重开本局。</b><p>规则只走征召 18 手 / KPL 20 手；证据来源可切 KPL 或训练赛。</p><button type="button" class="bpl-primary" data-bpl-sim-run>开始沙盘</button></div>`;
     } else if (result.complete) {
       body = `<div class="bpl-empty"><b>本局 BP 已完成</b><p>${esc(result.note || '')}</p><button type="button" class="bpl-primary" data-bpl-sim-reset>重开本局</button></div>`;
     } else {

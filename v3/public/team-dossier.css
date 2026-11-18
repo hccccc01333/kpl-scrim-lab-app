@@ -1253,8 +1253,8 @@ details.tp-detail-wide[open] > summary { margin-bottom: 12px; padding-bottom: 12
 /* 玫瑰 */
 .tp-rose-wrap { display: grid; place-items: center; }
 .tp-rose-bar { stroke: var(--paper); stroke-width: 1; }
-.tp-rose-label { fill: var(--tp-ink); font-size: 10px; font-weight: 650; }
-.tp-rose-count { fill: var(--tp-quiet); font-size: 9.5px; font-variant-numeric: tabular-nums; }
+.tp-rose-label { fill: var(--tp-ink); font-size: 10.5px; font-weight: 650; }
+.tp-rose-count { fill: var(--tp-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 
 /* 小环组 */
 .tp-minirings { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }

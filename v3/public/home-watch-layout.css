@@ -1,0 +1,85 @@
+/* 首页「最值得复盘的比赛」排版收尾（2026-11-18）
+   只作用于 .pbr-home 的 watch 轨道。晚于 brief-celadon.css / style.css 导入且未分层，
+   把历史上几十条互相覆盖的密度规则收成一套：轨道共享行轨道 + 卡片 subgrid，
+   所以三张卡的「标题 / 结论 / 时间点 / 阵容 / 数字 / 动作」逐行对齐。 */
+
+/* 轨道本身是网格：一列一张卡，七条共享行轨道；横向滚动照旧。 */
+.pbr-home .pbr-watch .pbr-finding-list.is-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 380px;
+  grid-template-rows: repeat(7, auto);
+  gap: 10px 16px;
+  overflow-x: auto;
+  align-items: stretch;
+  padding: 4px 2px 14px;
+}
+.pbr-home .pbr-watch .pbr-finding-list.is-rail > .pbr-rail-tail {
+  grid-row: 1 / -1;
+  align-self: center;
+  margin: 0;
+}
+
+/* 每张卡跨满七行并继承轨道，子区域按元素选择器归位，缺区域的行自动留空。 */
+.pbr-home .pbr-watch .pbr-finding,
+.pbr-home .pbr-watch .pbr-finding.is-featured {
+  grid-row: 1 / -1;
+  display: grid;
+  grid-template-rows: repeat(7, auto); /* 同层级回退：不支持 subgrid 时仍按七行排 */
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  min-inline-size: 0;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--pbr-border, var(--line));
+  border-radius: 12px;
+  background: var(--pbr-card, var(--paper));
+}
+.pbr-home .pbr-watch .pbr-finding > .pbr-finding-top { grid-row: 1; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-conclusion { grid-row: 2; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-moments { grid-row: 3; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-roster-mini-strip { grid-row: 4; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-numbers { grid-row: 5; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-watch-link { grid-row: 6; align-self: end; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-watch-workflow { grid-row: 7; align-self: end; }
+
+/* 每行的节奏：字号、行高、上下留白统一。
+   结论必须钳到两行：subgrid 的行轨道由全轨道最高内容决定，
+   一张卡的长文案会把所有卡的同一行撑爆，这是之前空白的根源。 */
+.pbr-home .pbr-watch .pbr-finding > .pbr-conclusion {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  line-clamp: 2; overflow: hidden; max-block-size: 3.4em;
+  align-self: start; margin: 0; font-size: 13.5px; line-height: 1.7;
+}
+.pbr-home .pbr-watch .pbr-finding > .pbr-moments {
+  align-self: center; max-block-size: 62px; overflow: hidden;
+}
+.pbr-home .pbr-watch .pbr-finding > .pbr-roster-mini-strip { align-self: center; }
+.pbr-home .pbr-watch .pbr-finding > .pbr-watch-link { padding-block-start: 12px; }
+
+/* 阵容头像放大：28 → 40，间距也放开 */
+.pbr-home .pbr-roster-mini-strip { gap: 10px; }
+.pbr-home .pbr-roster-mini-label { font-size: 12px; font-weight: 600; }
+.pbr-home .pbr-roster-mini {
+  inline-size: 40px; block-size: 40px; border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .03);
+}
+.pbr-home .pbr-roster-mini i { font-size: 15px; }
+
+/* 数字两列两行，统一字号与对齐 */
+.pbr-home .pbr-watch .pbr-numbers {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--pbr-border, var(--line));
+}
+.pbr-home .pbr-watch .pbr-num small { font-size: 11.5px; }
+.pbr-home .pbr-watch .pbr-num b { font-size: 18px; letter-spacing: -.02em; }
+
+/* 时间点胶囊：等高、同底色 */
+.pbr-home .pbr-moments { gap: 6px; }
+.pbr-home .pbr-moment {
+  padding: 5px 9px; border-radius: 7px;
+  background: var(--pbr-card-2, var(--soft));
+  font-size: 11.5px; line-height: 1.3;
+}
+.pbr-home .pbr-moment b { font-size: 11.5px; }

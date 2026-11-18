@@ -1,0 +1,177 @@
+/* 大场列表 · 全新白色卡片界面（2026-11-18）
+   只作用于 #biggame 列表页（.bgx-page 且非 .bgx-detail）。
+   色彩方案：暖白纸张 + 墨绿黑 + 赭金强调 + 玉绿胜 / 陶红负。
+   暖色系比原来的冷薄荷更有层次，胜负极色也拉开距离，不再是一页灰绿。
+   本文件在 interface.css 最后以未分层导入，盖过 biggame.css 的 @layer(celadon)。 */
+
+.bgx-page:not(.bgx-detail) {
+  --du-canvas: #f4f6f8;
+  --du-paper: #ffffff;
+  --du-ink: #1c2530;
+  --du-body: #3f4b58;
+  --du-muted: #78838f;
+  --du-quiet: #9aa4ae;
+  --du-line: #e4e8ec;
+  --du-line-strong: #d3dae1;
+  --du-accent: #3d566f;
+  --du-accent-soft: #eaf0f5;
+  --du-win: #2b6cb0;
+  --du-win-soft: #e9f1fa;
+  --du-win-line: #c9dff2;
+  --du-loss: #c2702a;
+  --du-loss-soft: #fbf0e2;
+  --du-loss-line: #f0dcc2;
+  background: var(--du-canvas);
+}
+.bgx-page:not(.bgx-detail)::before { display: none; }
+
+/* ── 标题区 ─────────────────────────────────────────────────────────── */
+.bgx-page:not(.bgx-detail) .bgx-list-head { padding: 6px 0 2px; gap: 24px; align-items: end; }
+.bgx-page:not(.bgx-detail) .bgx-eyebrow { color: var(--du-quiet); font-size: 11px; font-weight: 650; letter-spacing: .14em; }
+.bgx-page:not(.bgx-detail) .bgx-eyebrow i { color: var(--du-line-strong); }
+.bgx-page:not(.bgx-detail) .bgx-list-head h1 {
+  margin-top: 10px; font-family: var(--font); font-size: 30px; font-weight: 750;
+  letter-spacing: -.035em; line-height: 1.25; color: var(--du-ink);
+}
+.bgx-page:not(.bgx-detail) .bgx-list-head h1 em { font-style: normal; color: var(--du-ink); }
+.bgx-page:not(.bgx-detail) .bgx-list-head h1 em .du-win { color: var(--du-win); }
+.bgx-page:not(.bgx-detail) .bgx-list-head h1 em .du-loss { color: var(--du-loss); }
+.bgx-page:not(.bgx-detail) .bgx-list-sub { margin-top: 10px; color: var(--du-muted); font-size: 12.5px; line-height: 1.7; }
+
+.bgx-page:not(.bgx-detail) .bgx-list-kpis { gap: 0; padding: 0 0 4px; }
+.bgx-page:not(.bgx-detail) .bgx-list-kpi {
+  padding: 4px 20px; text-align: left; border-left: 1px solid var(--du-line); border-radius: 0;
+  background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.bgx-page:not(.bgx-detail) .bgx-list-kpi:first-child { border-left: 0; padding-left: 0; }
+.bgx-page:not(.bgx-detail) .bgx-list-kpi span { color: var(--du-quiet); font-size: 11px; letter-spacing: .06em; }
+.bgx-page:not(.bgx-detail) .bgx-list-kpi b { font-size: 26px; font-weight: 750; color: var(--du-ink); }
+.bgx-page:not(.bgx-detail) .bgx-list-kpi b i { color: var(--du-quiet); font-size: 13px; }
+
+/* ── 筛选条 ─────────────────────────────────────────────────────────── */
+.bgx-page:not(.bgx-detail) .bgx-scope {
+  padding: 12px 14px; border: 1px solid var(--du-line); border-radius: 12px;
+  background: var(--du-paper); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.bgx-page:not(.bgx-detail) .bgx-seg {
+  padding: 3px; border: 1px solid var(--du-line); border-radius: 9px;
+  background: #eef1f3; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.bgx-page:not(.bgx-detail) .bgx-seg-btn { color: var(--du-muted); font-size: 12.5px; }
+.bgx-page:not(.bgx-detail) .bgx-seg-btn:hover { color: var(--du-ink); }
+.bgx-page:not(.bgx-detail) .bgx-seg-btn[aria-pressed='true'] {
+  background: var(--du-paper); color: var(--du-ink); font-weight: 700;
+  box-shadow: 0 1px 3px rgba(29, 37, 33, .12);
+}
+.bgx-page:not(.bgx-detail) .bgx-select,
+.bgx-page:not(.bgx-detail) .bgx-btn {
+  background: var(--du-paper); border-color: var(--du-line-strong); border-radius: 8px;
+  box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.bgx-page:not(.bgx-detail) .bgx-btn:hover { background: var(--du-accent-soft); border-color: var(--du-accent); }
+
+/* ── 卡片 ───────────────────────────────────────────────────────────── */
+.bgx-page:not(.bgx-detail) .bgx-grid { gap: 16px; }
+.bgx-page:not(.bgx-detail) .bgx-team-card {
+  gap: 11px; padding: 20px 20px 16px;
+  background: var(--du-paper); border: 1px solid var(--du-line); border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(29, 37, 33, .025);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-card:hover {
+  transform: translateY(-2px); border-color: var(--du-accent);
+  box-shadow: 0 12px 28px -16px rgba(29, 37, 33, .24);
+}
+/* 左侧 outcome 色条：胜蓝 / 负橙，整张卡的情绪锚点 */
+.bgx-page:not(.bgx-detail) .bgx-team-card::before {
+  content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--du-line-strong);
+}
+.bgx-page:not(.bgx-detail) .bgx-team-card.is-win::before { background: var(--du-win); }
+.bgx-page:not(.bgx-detail) .bgx-team-card.is-loss::before { background: var(--du-loss); }
+.bgx-page:not(.bgx-detail) .bgx-team-card::after { display: none; }
+
+/* 卡头：日期 / 赛制 + 状态胶囊 */
+.bgx-page:not(.bgx-detail) .bgx-team-top {
+  padding-bottom: 9px; border-bottom: 1px solid var(--du-line);
+  color: var(--du-quiet); font-size: 11.5px; font-weight: 600;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-top span:last-child {
+  padding: 3px 9px; border-radius: 999px; background: #eef1f3; color: var(--du-muted);
+  font-size: 10.5px; font-weight: 650; letter-spacing: .02em;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-top .bgx-status.is-done { background: var(--du-win-soft); color: var(--du-win); }
+
+/* 对手：赭金首字头像 */
+.bgx-page:not(.bgx-detail) .bgx-team-ident {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.bgx-page:not(.bgx-detail) .bgx-avatar {
+  width: 40px; height: 40px; flex: none; border-radius: 12px;
+  display: grid; place-items: center;
+  background: var(--du-accent-soft); border: 1px solid #d8e2ec; color: var(--du-accent);
+  font-size: 16px; font-weight: 750; font-style: normal; line-height: 1;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-name b {
+  font-family: var(--font); font-size: 20px; font-weight: 700; color: var(--du-ink); letter-spacing: -.025em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* 比分：胜玉绿 / 负陶红的结果徽章 */
+.bgx-page:not(.bgx-detail) .bgx-team-score {
+  display: grid; justify-items: end; gap: 0; flex: none; margin-block-start: 0;
+  padding: 6px 12px 7px; border-radius: 10px;
+  background: #eef1f3; border: 1px solid var(--du-line);
+}
+.bgx-page:not(.bgx-detail) .bgx-team-score.is-win { background: var(--du-win-soft); border-color: var(--du-win-line); }
+.bgx-page:not(.bgx-detail) .bgx-team-score.is-loss { background: var(--du-loss-soft); border-color: var(--du-loss-line); }
+.bgx-page:not(.bgx-detail) .bgx-team-score b {
+  font-family: var(--font); font-size: 29px; line-height: 1.05;
+  font-weight: 750; letter-spacing: -.035em; color: var(--du-ink);
+}
+.bgx-page:not(.bgx-detail) .bgx-team-score b.is-win { color: var(--du-win); }
+.bgx-page:not(.bgx-detail) .bgx-team-score b.is-loss { color: var(--du-loss); }
+.bgx-page:not(.bgx-detail) .bgx-team-score span { color: var(--du-muted); font-size: 11px; font-weight: 600; }
+
+/* 小局：两行「1胜 / +1,579」，顶边用胜负色 */
+.bgx-page:not(.bgx-detail) .bgx-game-col {
+  gap: 4px; padding: 7px 3px 8px; border: 1px solid var(--du-line); border-top-width: 2px; border-radius: 8px;
+  background: #f5f7f8; box-shadow: none;
+}
+.bgx-page:not(.bgx-detail) .bgx-game-col b {
+  display: flex; align-items: baseline; justify-content: center; gap: 3px;
+  color: var(--du-body); font-size: 11.5px; font-weight: 700;
+}
+.bgx-page:not(.bgx-detail) .bgx-game-col b i { font-style: normal; font-weight: 500; opacity: .82; }
+.bgx-page:not(.bgx-detail) .bgx-game-col em { color: var(--du-muted); font-size: 11px; font-weight: 600; }
+.bgx-page:not(.bgx-detail) .bgx-team-games.is-dense .bgx-game-col b { font-size: 11.5px; }
+.bgx-page:not(.bgx-detail) .bgx-team-games.is-dense .bgx-game-col em { font-size: 11px; }
+.bgx-page:not(.bgx-detail) .bgx-game-col.is-win { background: var(--du-win-soft); border-color: var(--du-win-line); border-top-color: var(--du-win); }
+.bgx-page:not(.bgx-detail) .bgx-game-col.is-win b,
+.bgx-page:not(.bgx-detail) .bgx-game-col.is-win em { color: var(--du-win); }
+.bgx-page:not(.bgx-detail) .bgx-game-col.is-loss { background: var(--du-loss-soft); border-color: var(--du-loss-line); border-top-color: var(--du-loss); }
+.bgx-page:not(.bgx-detail) .bgx-game-col.is-loss b,
+.bgx-page:not(.bgx-detail) .bgx-game-col.is-loss em { color: var(--du-loss); }
+
+/* 卡脚 */
+.bgx-page:not(.bgx-detail) .bgx-team-foot {
+  padding-top: 10px; border-top: 1px solid var(--du-line);
+  color: var(--du-muted); font-size: 12px;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-foot b { color: var(--du-accent); font-weight: 650; }
+
+/* 深色主题：同一套冷暖关系换成深色底 */
+:root[data-theme='dark'] .bgx-page:not(.bgx-detail) {
+  --du-canvas: #111715; --du-paper: #1a221e; --du-ink: #e8eee9;
+  --du-body: #c2cec6; --du-muted: #93a198; --du-quiet: #78867d;
+  --du-line: #2c3932; --du-line-strong: #3a4b42;
+  --du-accent: #8fb4d6; --du-accent-soft: #1e2a34;
+  --du-win: #79b6e8; --du-win-soft: #1b2c3b; --du-win-line: #2d4a63;
+  --du-loss: #e5a662; --du-loss-soft: #33271c; --du-loss-line: #59432c;
+}
+:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-seg,
+:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-game-col { background: #151d19; }
+:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-team-top span:last-child { background: #151d19; }
+:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-team-card:hover { border-color: var(--du-accent); box-shadow: 0 12px 28px -16px rgba(0, 0, 0, .85); }

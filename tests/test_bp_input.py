@@ -35,13 +35,19 @@ class BpInputTests(unittest.TestCase):
         app.include_router(create_studio_router(self.db, self.matches, self.root / 'imports'))
         self.client = TestClient(app)
 
+    def test_five_bans_per_side_is_allowed(self):
+        bp = copy.deepcopy(BP)
+        bp['bans']['left'] = ['大乔', '镜', '张飞', '孙膑', '庄周']
+        clean = validate_bp(bp)
+        self.assertEqual(len(clean['bans']['left']), 5)
+
     def test_order_gaps_and_rejections(self):
         self.assertEqual(validate_bp(BP)['picks']['left'], ['', '关羽'])
         for kind in ['repeat', 'banned-pick', 'too-many', 'wrong-side']:
             bp = copy.deepcopy(BP)
             if kind == 'repeat': bp['picks']['right'] = ['关羽']
             if kind == 'banned-pick': bp['picks']['right'] = ['镜']
-            if kind == 'too-many': bp['bans']['left'] = ['']*5
+            if kind == 'too-many': bp['bans']['left'] = ['大乔', '镜', '张飞', '孙膑', '庄周', '鲁班大师']
             if kind == 'wrong-side': bp['firstPick'] = 'blue'
             with self.assertRaises(ValueError): validate_bp(bp)
 

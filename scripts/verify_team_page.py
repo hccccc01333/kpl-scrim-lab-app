@@ -1349,9 +1349,9 @@ def text_assertions(report, page, page_text, headings, mode):
                 '有终局面板代理标注' if proxy_ok else '未见「终局面板/代理」标注',
                 {'lines': [ln.strip()[:160] for ln in raw.splitlines()
                            if ('终局' in ln or '代理' in ln)][:6]})
-    seq_ok = any(t in raw for t in ('20 手模板', '显式手序', '禁选顺序'))
+    seq_ok = any(t in raw for t in ('逐手还原', '自动还原', '显式手序', '禁选顺序'))
     report.warn('copy.no_pick_order_note', 'copy', seq_ok,
-                '有手序口径说明（模板/显式）' if seq_ok else '未见手序口径说明',
+                '有手序口径说明（自动还原/显式）' if seq_ok else '未见手序口径说明',
                 {'lines': lines_with(raw, '手序', 4) + lines_with(raw, '禁选顺序', 4)})
     per_game_ok = '逐局识别' in raw
     report.warn('copy.per_game_note', 'copy', per_game_ok,

@@ -1590,7 +1590,7 @@ export function createPlayers(h) {
 
   function click(event) {
     /* 单人详情：卡内筛选（分路 / 指标 / 口径 / 时间窗口）。
-       data-pdx-set 是单选，data-pdx-toggle 是多选（最多留 4 个）。
+       data-pdx-set 是单选（再点一次同一个就取消、回到全部），data-pdx-toggle 是多选（最多留 4 个）。
        选择结果写进 st.pd.ui，由 readFilters 统一校验，再到整页重画。 */
     /* 卡片折叠：只切 class，不重画，滚动位置和筛选都不动 */
     const foldBtn = event.target.closest('[data-pdx-fold]');
@@ -1666,7 +1666,8 @@ export function createPlayers(h) {
           const next = cur.includes(value) ? cur.filter((x) => x !== value) : [...cur, value];
           ui[name] = next.slice(-4).join(',');
         } else {
-          ui[name] = value;
+          /* 单选再点一次同一个 = 取消，回到「全部」；写空串，writeFilterHash 会把它从 URL 里去掉。 */
+          ui[name] = String(ui[name] ?? '') === value ? '' : value;
         }
         writeFilterHash();
         refreshSolo(`${toggle ? 'data-pdx-toggle' : 'data-pdx-set'}="${raw}"`);

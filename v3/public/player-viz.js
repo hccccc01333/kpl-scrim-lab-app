@@ -176,7 +176,7 @@ export function createPlayerViz({esc, fmt}) {
      所以默认只画前 top 个，剩下的并成一块「其他 N 个英雄」：
      面积仍然如实加总，但小块不再抢视觉。listDetail 里给完整清单。 */
   function treemap(opt) {
-    const {items = [], W = 620, H = 320, aria = '矩形树图', top = 13, pickName = ''} = opt;
+    const {items = [], W = 620, H = 320, aria = '矩形树图', top = 13, pickName = '', showSub = true} = opt;
     let list = items.filter((x) => isNum(x.value) && x.value > 0).sort((a, b) => b.value - a.value);
     if (!list.length) return empty('这一组没有可铺的面积。');
     let restCount = 0, restValue = 0;
@@ -220,17 +220,19 @@ export function createPlayerViz({esc, fmt}) {
     }
     return `<div class="pv-tm" role="img" aria-label="${S(aria)}" style="--pv-tm-ratio:${W} / ${H}">
       ${rows.map(({item, x, y, w, h}) => {
-        const big = w > 86 && h > 62, mid = w > 52 && h > 30;
+        const mid = w > 52 && h > 30;
+        /* 小方块只留头像和名字；够大才写「局数 · 胜率」，免得小字挤成一团。 */
+        const roomy = w > 120 && h > 90 && w * h > 15000;
         const attrs = `left:${(x / W * 100).toFixed(2)}%;top:${(y / H * 100).toFixed(2)}%;width:${(w / W * 100).toFixed(2)}%;height:${(h / H * 100).toFixed(2)}%`;
         const inner = `<span class="pv-tm-face">${item.icon || ''}</span>
-          <b>${S(item.label)}</b>${big ? `<small>${S(item.sub || '')}</small>` : ''}`;
+          <b>${S(item.label)}</b>${showSub && roomy && item.sub ? `<small>${S(item.sub)}</small>` : ''}`;
         const cls = `pv-tm-tile ${item.cls || ''}${mid ? ' is-mid' : ''}`;
         const tip = S(item.title || `${item.label} · ${fmtVDefault(item.value)}`);
         /* 点方块 = 把这个英雄设成当前切片（不再跳英雄页：跳走就看不到切片效果了）；
            英雄页入口留在卡片标题与「英雄」下拉里。 */
         if (pickName && item.pick) {
           return `<button type="button" class="${cls}" style="${attrs}" data-pdx-set="${S(pickName)}:${S(item.pick)}"
-            title="${tip}｜点击切到这位英雄">${inner}</button>`;
+            title="${tip}｜点击只看这位英雄，再点一次回到全部">${inner}</button>`;
         }
         if (item.href) return `<a class="${cls}" href="${item.href}" style="${attrs}" title="${tip}">${inner}</a>`;
         return `<span class="${cls}" style="${attrs}" title="${tip}">${inner}</span>`;
@@ -353,12 +355,17 @@ export function createPlayerViz({esc, fmt}) {
 
   /* ── 散点 / 气泡（可带四象限底色、标签、半径编码）────────────────── */
   function scatter(opt) {
-    const {points = [], W = FULL, H = 320, padL = 56, padR = 26, padT = 24, padB = 44,
+    const {points = [], W = FULL, H = 320, padL: padL0 = 56, padR = 26, padT: padT0 = 24, padB = 44,
       xDomain = null, yDomain = null, xTicks = 5, yTicks = 4, refX = null, refY = null,
       fmtX = (v) => N(v, 0), fmtY = (v) => N(v, 0), xLabel = '', yLabel = '', aria = '散点图',
       quadrants = null} = opt;
     const list = points.filter((p) => isNum(p.x) && isNum(p.y));
     if (!list.length) return empty('这一组没有可落点的记录。');
+    /* 动态留白：y 轴名竖排占左侧一条；气泡最大半径 21px + 标签字高约 18px，
+       顶部留够才不会让「左上角」的点标签压到轴名或跑到图外。 */
+    const padL = Math.max(padL0, yLabel ? 76 : padL0);
+    const padT = Math.max(padT0, 21 + 5 + 18 + 6);
+    const rMax = Math.max(1, ...list.map((p) => (isNum(p.r) ? p.r : 1)));
     const norm = (d, lo, hi, count) => (Array.isArray(d)
       ? {lo: d[0], hi: d[1], ticks: niceTicks(d[0], d[1], count).ticks}
       : d || niceTicks(lo, hi, count));
@@ -385,14 +392,17 @@ export function createPlayerViz({esc, fmt}) {
     const refs = `${isNum(refX) ? `<line class="pv-ref" x1="${x(refX).toFixed(1)}" y1="${padT}" x2="${x(refX).toFixed(1)}" y2="${H - padB}"/>` : ''}
       ${isNum(refY) ? `<line class="pv-ref" x1="${padL}" y1="${y(refY).toFixed(1)}" x2="${W - padR}" y2="${y(refY).toFixed(1)}"/>` : ''}
       ${opt.diagonal ? `<line class="pv-ref is-diag" x1="${x(xd.lo).toFixed(1)}" y1="${y(yd.lo).toFixed(1)}" x2="${x(Math.min(xd.hi, yd.hi)).toFixed(1)}" y2="${y(Math.min(xd.hi, yd.hi)).toFixed(1)}"/>` : ''}`;
-    const rMax = Math.max(1, ...list.map((p) => (isNum(p.r) ? p.r : 1)));
     const bubbles = list.map((p) => {
       const r = 5 + Math.sqrt((isNum(p.r) ? p.r : 1) / rMax) * 16;
-      return `<circle class="pv-bubble ${p.cls || ''}" cx="${x(p.x).toFixed(1)}" cy="${y(p.y).toFixed(1)}" r="${r.toFixed(1)}"><title>${S(p.title || `${p.label || ''} · ${fmtX(p.x)} / ${fmtY(p.y)}`)}</title></circle>
-        <text class="pv-bubble-label ${p.cls || ''}" x="${x(p.x).toFixed(1)}" y="${(y(p.y) - r - 5).toFixed(1)}" text-anchor="middle">${S(p.label || '')}</text>`;
+      const px = x(p.x), py = y(p.y);
+      /* 点标签默认在上方；贴到左/右边界时改对齐方向，贴到顶部时翻到下方，别出图。 */
+      const anchor = px < padL + 26 ? 'start' : px > W - padR - 26 ? 'end' : 'middle';
+      const labelY = py - r - 5 < 12 ? py + r + 17 : py - r - 5;
+      return `<circle class="pv-bubble ${p.cls || ''}" cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r.toFixed(1)}"><title>${S(p.title || `${p.label || ''} · ${fmtX(p.x)} / ${fmtY(p.y)}`)}</title></circle>
+        <text class="pv-bubble-label ${p.cls || ''}" x="${px.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="${anchor}">${S(p.label || '')}</text>`;
     }).join('');
     const axisNames = `${xLabel ? `<text class="pv-axis is-name" x="${(padL + W - padR) / 2}" y="${H - 6}" text-anchor="middle">${S(xLabel)}</text>` : ''}
-      ${yLabel ? `<text class="pv-axis is-name" x="${padL - 8}" y="${padT - 9}" text-anchor="start">${S(yLabel)}</text>` : ''}`;
+      ${yLabel ? `<text class="pv-axis is-name" transform="translate(18,${((padT + H - padB) / 2).toFixed(1)}) rotate(-90)" text-anchor="middle">${S(yLabel)}</text>` : ''}`;
     return svg(W, H, `${quad}${grid}${refs}${bubbles}${axisNames}`, aria);
   }
 

@@ -1,0 +1,6 @@
+/* 单场报告细节修正（2026-11-18）
+   BP 博弈卡是 <details>：同一行里一张展开、一张收起时，
+   网格默认 stretch 会把收起的那张拉成同样高，出现一整块空白。 */
+
+.bgx-detail .bgv-bp-grid { align-items: start; }
+.bgx-detail .bgv-bp-card { align-self: start; min-inline-size: 0; }

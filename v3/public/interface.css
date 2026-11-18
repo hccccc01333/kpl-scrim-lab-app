@@ -1,9 +1,9 @@
-﻿/* Page rules are preserved in one low-priority layer; shared UI owns the system. */
+/* Page rules are preserved in one low-priority layer; shared UI owns the system. */
 @layer legacy, theme, foundation, interface, celadon, board;
 /* 选手详情页覆盖层：不放进任何 layer，优先级高于全部 @layer。
    @import 必须排在所有规则之前，否则浏览器直接丢弃。 */
-@import url('./player-v2.css?v=20261116c');
-@import url('./style.css?v=20261116c') layer(legacy);
+@import url('./player-v2.css?v=20261118b');
+@import url('./style.css?v=20261118a') layer(legacy);
 @import url('./match-recap-fixes.css?v=20261116c') layer(legacy);
 @import url('./workspace-home.css?v=20261116c') layer(legacy);
 @import url('./bp-studio.css?v=20261118d4') layer(legacy);
@@ -24,3 +24,8 @@
 @import url("./player-archive.css");
 /* 战队详情 v9（2026-11-17）：分节、英雄大圆卡、类型矩阵。不放进 layer，保证盖过历史补丁。 */
 @import url("./team-dossier-v9.css?v=20261118d4");
+/* 大场列表全新白色卡片界面（2026-11-18）：未分层、最后导入，只盖 #biggame 列表页。 */
+@import url("./biggame-list-ui.css?v=20261118b");
+/* 首页复盘卡排版收尾（2026-11-18）：未分层最后导入，统一卡片宽度 / 行距 / 头像尺寸。 */
+@import url("./home-watch-layout.css?v=20261118a");
+@import url("./biggame-detail-fixes.css?v=20261118a");

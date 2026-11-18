@@ -291,17 +291,25 @@ def ban_position_study(games):
     events_games = [g for g in games if g.get("events")]
     if not events_games:
         return {"games": len(games), "orderedGames": 0, "banSlots": [], "firstPicks": [],
-                "reason": "当前范围没有已录入逐手顺序的对局；Ban 位与首轮统计需要先在沙盘补录 draftEvents。"}
+                "parallelGames": 0,
+                "reason": "当前范围没有逐手顺序的对局；Ban 位与首轮统计需要官方逐手事件或沙盘。"}
     slots = defaultdict(lambda: defaultdict(int))
     first = defaultdict(int)
     first_games = 0
+    parallel_games = 0
     for g in events_games:
         seen_first = False
+        has_parallel = any(event.get("parallel") for event in g["events"]
+                           if event.get("action") == "ban")
+        if has_parallel:
+            parallel_games += 1
         for event in g["events"]:
             if event.get("action") == "ban":
+                # 排位/巅峰的 Ban 同时禁用，没有“第 N 个 Ban”的先后。
+                if has_parallel or event.get("parallel"):
+                    continue
                 slots[event["order"]][event["hero"]] += 1
             elif not seen_first and event.get("action") == "pick":
-                # Ban 阶段在 20 手模板占 1–10；本局第一个 Pick 即首轮。
                 first[(event.get("actor") or "team", event["hero"])] += 1
                 seen_first = True
         if seen_first:
@@ -316,9 +324,12 @@ def ban_position_study(games):
     first_picks = [{"actor": actor, "hero": hero, "count": count}
                    for (actor, hero), count in
                    sorted(first.items(), key=lambda kv: -kv[1])[:10]]
+    reason = ("排位/巅峰 Ban 同时禁用，不产出 Ban 位顺序；首轮 Pick 仍按逐手事件统计。"
+              if parallel_games and not ban_slots else "")
     return {"games": len(games), "orderedGames": len(events_games),
             "firstPickGames": first_games, "banSlots": ban_slots,
-            "firstPicks": first_picks, "reason": ""}
+            "firstPicks": first_picks, "parallelGames": parallel_games,
+            "reason": reason}
 
 
 def lineup_system_study(games):

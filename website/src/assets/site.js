@@ -183,6 +183,25 @@
   syncScrollbar();
   window.addEventListener('resize', syncScrollbar, { passive: true });
 
+  /* ---------- 首屏截图视差 ---------- */
+
+  (function () {
+    var frame = doc.querySelector('.hero-visual .frame');
+    if (!frame || reduce.matches) return;
+    var ticking = false;
+    function shift() {
+      ticking = false;
+      var y = window.pageYOffset || doc.documentElement.scrollTop;
+      if (y > window.innerHeight * 1.2) return;
+      frame.style.translate = '0 ' + (y * -0.06).toFixed(1) + 'px';
+    }
+    window.addEventListener('scroll', function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(shift);
+    }, { passive: true });
+  })();
+
   /* ---------- 滚动：进度条、吸顶阴影、回顶按钮 ---------- */
 
   var topbar = doc.querySelector('.topbar');
@@ -890,6 +909,163 @@
     dialog.addEventListener('click', function (event) {
       if (event.target === dialog) dialog.close('dismiss');
     });
+  })();
+
+  /* ---------- 赛训简报演示（对齐 2.0 工作台首页） ---------- */
+
+  (function () {
+    var root = doc.querySelector('[data-demo]');
+    if (!root) return;
+
+    var svg = root.querySelector('[data-ov-svg]');
+    var chipsEl = root.querySelector('[data-ov-chips]');
+    var lineupEl = root.querySelector('[data-ov-lineup]');
+    var scoreEl = root.querySelector('[data-ov-score]');
+    var resultEl = root.querySelector('[data-ov-result]');
+    var metaEl = root.querySelector('[data-ov-meta]');
+
+    var ROSTER = [['廉颇'], ['澜'], ['沈梦溪'], ['公孙离'], ['张飞']];
+
+    var GAMES = [
+      {
+        ka: 9, kb: 9, dur: 18.7, result: 'win', date: '11-16 21:04',
+        diff: [[0, 0], [2, 180], [4, 120], [6, -90], [8, -260], [10, -120], [12, 140], [14, 520], [16, 880], [18, 1240]]
+      },
+      {
+        ka: 12, kb: 6, dur: 16.3, result: 'win', date: '11-15 20:12',
+        diff: [[0, 0], [2, 260], [4, 480], [6, 420], [8, 760], [10, 1120], [12, 980], [14, 1460], [16, 1820]]
+      },
+      {
+        ka: 7, kb: 11, dur: 21.1, result: 'loss', date: '11-14 19:38',
+        diff: [[0, 0], [3, -280], [6, -560], [9, -480], [12, -860], [15, -1210], [18, -1520], [21, -1780]]
+      }
+    ];
+
+    var state = { game: 0 };
+
+    function fmtClock(minute) {
+      var m = Math.floor(minute);
+      var s = Math.round((minute - m) * 60);
+      if (s === 60) { m += 1; s = 0; }
+      return m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function fmtDiff(value) {
+      var k = value / 1000;
+      if (Math.abs(k) < 0.05) return '0.0k';
+      return (k > 0 ? '+' : '−') + Math.abs(k).toFixed(1) + 'k';
+    }
+
+    function renderChart() {
+      var game = GAMES[state.game];
+      var pts = game.diff;
+      var W = Math.max(280, Math.round(svg.parentElement.clientWidth || 640));
+      var H = W < 480 ? 170 : 240;
+      var PAD = { l: W < 480 ? 40 : 52, r: 14, t: 14, b: 22 };
+      svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+
+      var maxAbs = Math.max.apply(null, pts.map(function (p) { return Math.abs(p[1]); }));
+      var limit = Math.max(2000, Math.ceil(maxAbs / 1000) * 1000);
+      var values = pts.map(function (p) { return p[1]; });
+      var low = Math.min.apply(null, values) < 0 ? -limit : 0;
+      var high = limit;
+
+      var innerW = W - PAD.l - PAD.r;
+      var innerH = H - PAD.t - PAD.b;
+
+      function x(m) { return PAD.l + (m / game.dur) * innerW; }
+      function y(v) { return PAD.t + innerH * (1 - (v - low) / (high - low)); }
+      function path() {
+        return pts.map(function (p, i) {
+          return (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1);
+        }).join(' ');
+      }
+      function tickLabel(v) {
+        if (v === 0) return '0';
+        return (v > 0 ? '+' : '−') + Math.abs(v / 1000).toFixed(0) + 'k';
+      }
+
+      var zero = y(0).toFixed(1);
+      var area = path() + ' L' + x(game.dur).toFixed(1) + ' ' + zero + ' L' + PAD.l + ' ' + zero + ' Z';
+
+      var parts = [];
+      for (var i = 0; i <= 2; i += 1) {
+        var value = low + ((high - low) * i) / 2;
+        var yy = y(value).toFixed(1);
+        parts.push('<line class="ov-grid" x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + yy + '" y2="' + yy + '"/>');
+        parts.push('<text class="ov-axis" x="' + (PAD.l - 8) + '" y="' + (Number(yy) + 4) + '" text-anchor="end">' + tickLabel(value) + '</text>');
+      }
+      parts.push('<line class="ov-zero" x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + zero + '" y2="' + zero + '"/>');
+      parts.push('<path class="ov-area" d="' + area + '"/>');
+      parts.push('<path class="ov-line" d="' + path() + '"/>');
+      svg.innerHTML = parts.join('');
+    }
+
+    function paintLineup() {
+      lineupEl.innerHTML = ROSTER.map(function (hero) {
+        return '<span class="ov-slot"><i aria-hidden="true">' + hero[0].slice(0, 1) + '</i><small>' + hero[0] + '</small></span>';
+      }).join('');
+    }
+
+    function paintChips() {
+      chipsEl.innerHTML = GAMES.map(function (game, i) {
+        return '<button type="button" class="ov-chip ' + (game.result === 'win' ? 'is-win' : 'is-loss') +
+          (i === state.game ? ' is-on' : '') + '" data-ov-chip="' + i + '"' +
+          ' aria-label="' + game.date + ' 对局，' + (game.result === 'win' ? '胜利' : '失利') + '"' +
+          ' aria-pressed="' + (i === state.game ? 'true' : 'false') + '">' +
+          (game.result === 'win' ? '胜' : '负') + '</button>';
+      }).join('');
+    }
+
+    function select(index) {
+      state.game = index;
+      var game = GAMES[index];
+      scoreEl.innerHTML = game.ka + '<span>:</span>' + game.kb;
+      resultEl.textContent = game.result === 'win' ? '胜利' : '失利';
+      resultEl.setAttribute('data-result', game.result);
+      metaEl.textContent = game.date + ' / ' + fmtClock(game.dur) + ' / 训练赛';
+      renderChart();
+      paintChips();
+    }
+
+    chipsEl.addEventListener('click', function (event) {
+      var chip = event.target.closest('[data-ov-chip]');
+      if (!chip) return;
+      var index = Number(chip.getAttribute('data-ov-chip'));
+      if (index !== state.game) select(index);
+    });
+
+    paintLineup();
+
+    var resizeTimer = 0;
+    window.addEventListener('resize', function () {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(renderChart, 150);
+    }, { passive: true });
+
+    // 台账：三局汇总
+    var wins = GAMES.filter(function (g) { return g.result === 'win'; }).length;
+    var avgDur = GAMES.reduce(function (s, g) { return s + g.dur; }, 0) / GAMES.length;
+    var avgDiff = GAMES.reduce(function (s, g) { return s + g.diff[g.diff.length - 1][1]; }, 0) / GAMES.length;
+    root.querySelector('[data-ov-stat-total]').innerHTML = GAMES.length + '<small>局</small>';
+    root.querySelector('[data-ov-stat-wr]').innerHTML = Math.round(wins / GAMES.length * 100) + '<small>%</small>';
+    root.querySelector('[data-ov-stat-dur]').textContent = fmtClock(avgDur);
+    root.querySelector('[data-ov-stat-gold]').textContent = fmtDiff(avgDiff);
+    root.querySelector('[data-ov-total]').textContent = GAMES.length;
+    root.querySelector('[data-ov-wins]').textContent = wins;
+    root.querySelector('[data-ov-losses]').textContent = GAMES.length - wins;
+    root.querySelector('[data-ov-note]').textContent = GAMES.length + ' 局记录，' + GAMES.length + ' 局有可用的经济时间轴。';
+
+    select(0);
+  })();
+
+  /* ---------- 滚动动画（仅支持 scroll-driven 的浏览器） ---------- */
+
+  (function () {
+    if (reduce.matches) return;
+    if (!window.CSS || !CSS.supports('animation-timeline', 'view()')) return;
+    var targets = doc.querySelectorAll('.sec-head, .brief, .wb, .faq-grid, .footer-gh, .page-tail-inner');
+    Array.prototype.forEach.call(targets, function (el) { el.classList.add('scroll-rise'); });
   })();
 
   onScroll();

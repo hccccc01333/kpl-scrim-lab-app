@@ -318,7 +318,7 @@ export function createPlayerDetail(h) {
       <label class="pv-sel is-scope"><span class="pv-sel-label">止</span>
         <span class="pv-sel-box"><input type="date" data-pdx-select="to" value="${S(s.customTo || s.to || '')}"
           min="${S(s.allDays[0] || '')}" max="${S(s.allDays[s.allDays.length - 1] || '')}" aria-label="结束训练日"></span></label>` : '';
-    return `<div class="pdx-scope" role="region" aria-label="分析切片" style="--pdx-top:${stickyTop()}px">
+    return `<div class="pdx-scope" role="region" aria-label="分析切片">
       <div class="pdx-scope-row">
         ${V.pvSelect({name: 'range', label: '范围', value: s.range, options: RANGE_MODES})}
         ${custom}
@@ -574,7 +574,7 @@ export function createPlayerDetail(h) {
         `切片内用了 <b>${fmt(pool.length)} 个达标英雄</b>，出场最多 ${heroTag((pool[0] || [])[0] || '—')} <b>${fmt(pool[0] ? pool[0][1].length : 0)} 局</b>；方块面积 = 前 ${fmt(Math.min(shown.length, TOP_TILES))} 个英雄之间的相对场次，点方块切到该英雄。`,
         grid([
           panel(`英雄出场面积${rest.length ? ` · 前 ${fmt(shown.length)} 个` : ''}`, tmEmpty, {
-            span: 7, foot: '颜色：对抗 / 打野 / 中路 / 发育 / 游走；点方块 = 把整页切到这位英雄，再点一次（下拉里选「全部」）取消',
+            span: 7, foot: '颜色：对抗 / 打野 / 中路 / 发育 / 游走；点方块 = 整页只看这位英雄，再点一次回到全部',
           }),
           panel('职业构成', V.ring({
             items: ringItems, size: 200, aria: '英雄职业构成', top: 8,
@@ -1110,15 +1110,17 @@ export function createPlayerDetail(h) {
       ['matchup', '同分路对位', '逐局终局经济差与对线期代理', (c, ff) => buildMatchup(c, ff)],
       ['team', '组合与替代', '双英雄组合矩阵与英雄替代候选', (c, ff) => buildTeam(c, ff)],
     ];
-    /* 吸顶的只有切片条：模块导航跟着页面滚走（它是「跳到哪一节」的入口，
-       读完一段不会再回头点）。吸顶高度按顶部导航实测，别把切片条塞到它后面。 */
-    const dock = `<nav class="hero-anchor-nav" aria-label="模块快速导航">
+    /* 模块导航 + 切片条一起吸顶：滚到任何一节都能换英雄 / 换范围。
+       （原来让导航跟着滚走，每翻一节都要回顶部换筛选。）高度按顶部导航实测。 */
+    const dock = `<div class="pdx-dock" style="--pdx-top:${stickyTop()}px">
+      <nav class="hero-anchor-nav" aria-label="模块快速导航">
         ${modules.map(([, label], i) => `<button type="button" data-hero-scroll="${i}">${S(label)}</button>`).join('')}
         <span class="pv-keyhint" aria-hidden="true"><kbd>←</kbd><kbd>→</kbd>换选手</span>
         <button type="button" class="pv-reset" data-pdx-print title="打印整页（可在对话框里存成 PDF）">整页 PDF</button>
         <button type="button" class="pv-reset" data-pdx-reset title="把所有切片与卡片筛选恢复默认">重置全部</button>
       </nav>
-      ${scopeBar(ctx)}`;
+      ${scopeBar(ctx)}
+      </div>`;
 
     /* 切片命中 0 局时不再画一堆空图：直接给一张能让教练退回上一步的卡 */
     if (!rows.length) {

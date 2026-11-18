@@ -2226,8 +2226,8 @@ def load_demo_series(path=None) -> list:
 def series_analysis(games, series_defs) -> list:
     """演示系列赛的 BO 演变分析（docs/team_dossier_p0.md §7.3）。
 
-    规则口径 = 赛训组唯一规则 scrim-global-20：全局 BP 跨局禁复用、末局不解禁；
-    手序见 bp_rules.scrim_slots（本分析只依赖每局选人集合，不依赖手序）。
+    规则口径 = 征召 draft-18：全局 BP 跨局禁复用，征召默认无巅峰对决；
+    手序见 bp_formats.DRAFT_18.schedule（本分析只依赖每局选人集合，不依赖手序）。
     games 项来自 team-deep（对手=被研究战队视角）；不在系列赛定义里的 seq 跳过。
     """
     import hero_archetypes
@@ -2292,13 +2292,19 @@ def series_analysis(games, series_defs) -> list:
             prev_sig, prev_win = sig, win
         if not rows:
             continue
+        rank = any(str((row or {}).get('ruleProfile') or '') == 'rank-20'
+                   for row in games or [])
+        rule_id = 'rank-20' if rank else 'draft-18'
+        slots = 20 if rank else 18
+        ban_text = '5+5 同时 Ban' if rank else '4 Ban'
         out.append({
             'seriesId': sdef.get('seriesId'),
             'bo': sdef.get('bo'),
             'label': sdef.get('label'),
             'demo': True,
-            'rule': {'id': 'scrim-global-20', 'slots': 20,
-                     'note': '全局 BP 跨局禁复用、末局不解禁；每局 5 Ban + 10 Pick（手序见 bp_rules）'},
+            'rule': {'id': rule_id, 'slots': slots,
+                     'note': f'全局 BP 跨局禁复用；每局 {ban_text} + 10 Pick（手序见 bp_formats）'},
+
             'score': score,
             'games': rows,
         })

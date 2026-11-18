@@ -4,13 +4,12 @@
  * 数据口径：分析数据 left = 蓝方，right = 红方；营地采集的 banHeros/pickHeros
  * 数组顺序就是该侧的禁选顺序（空 ban 位置保留，不压缩）。
  *
- * 模板（按双方 ban 数量自动识别）：
- * 1. 训练赛/20 手：禁 蓝红交替 10 手（每方 5 ban），选 蓝1-红2-蓝2-红2-蓝2-红1
- * 2. 排位/20 手：禁① 蓝红蓝红 → 选① 蓝1红2蓝2红1 → 禁② 红蓝红蓝红蓝 → 选② 红1蓝2红1
- *    （由 KPL 2026 官方 BP 原始序列实测：1-4 ban、5-10 选、11-16 ban、17-20 选）
- * 3. 旧版 KPL/18 手：禁① 蓝红蓝红 → 选① 6 手 → 禁② 红蓝红蓝 → 选② 4 手
- *
- * 训练赛只有 20 手。
+ * 模板（按 ruleProfile 优先，其次双方 ban 数量自动识别）：
+ * 1. draft-18：禁① 蓝红蓝红 → 选① 6 手 → 禁② 红蓝红蓝 → 选② 4 手（征召；KPL 2024 夏季赛前）
+ * 2. draft-20：禁① 蓝红蓝红 → 选① 6 手 → 禁② 红蓝红蓝红蓝 → 选② 4 手（KPL 2024 年度总决赛起）
+ * 3. rank-20：5+5 同时禁用 + 10 选（排位/巅峰；Ban 无全局先后）
+ * 4. blind：巅峰对决，无 Ban、双方盲选 5
+ * 5. legacy-20：旧口径 10 Ban + 10 选，只用于历史记录
  */
 export type DraftSide = 'blue' | 'red'
 export type DraftPhase = 'ban' | 'pick'
@@ -50,7 +49,7 @@ interface SegmentDef {
 }
 
 interface DraftTemplate {
-  id: 'scrim20' | 'ranked20' | 'kpl18'
+  id: 'draft-18' | 'draft-20' | 'rank-20' | 'blind' | 'legacy-20'
   label: string
   segments: SegmentDef[]
 }
@@ -58,18 +57,20 @@ interface DraftTemplate {
 const B: DraftSide = 'blue'
 const R: DraftSide = 'red'
 
-const SCRIM20: DraftTemplate = {
-  id: 'scrim20',
-  label: '训练赛 · 10 ban（每方 5）+ 10 选',
+const DRAFT18: DraftTemplate = {
+  id: 'draft-18',
+  label: '征召 · 4 Ban + 5 Pick（18 手）',
   segments: [
-    { label: '禁用', phase: 'ban', actions: [B, R, B, R, B, R, B, R, B, R] },
-    { label: '选用', phase: 'pick', actions: [B, R, R, B, B, R, R, B, B, R] }
+    { label: '禁用 ①', phase: 'ban', actions: [B, R, B, R] },
+    { label: '选用 ①', phase: 'pick', actions: [B, R, R, B, B, R] },
+    { label: '禁用 ②', phase: 'ban', actions: [R, B, R, B] },
+    { label: '选用 ②', phase: 'pick', actions: [R, B, B, R] }
   ]
 }
 
-const RANKED20: DraftTemplate = {
-  id: 'ranked20',
-  label: '排位 · 10 ban + 10 选',
+const DRAFT20: DraftTemplate = {
+  id: 'draft-20',
+  label: 'KPL · 5 Ban + 5 Pick（20 手）',
   segments: [
     { label: '禁用 ①', phase: 'ban', actions: [B, R, B, R] },
     { label: '选用 ①', phase: 'pick', actions: [B, R, R, B, B, R] },
@@ -78,14 +79,29 @@ const RANKED20: DraftTemplate = {
   ]
 }
 
-const KPL18: DraftTemplate = {
-  id: 'kpl18',
-  label: '旧版 · 8 ban + 10 选',
+const RANK20: DraftTemplate = {
+  id: 'rank-20',
+  label: '排位/巅峰 · 5+5 同时 Ban + 10 选',
   segments: [
-    { label: '禁用 ①', phase: 'ban', actions: [B, R, B, R] },
-    { label: '选用 ①', phase: 'pick', actions: [B, R, R, B, B, R] },
-    { label: '禁用 ②', phase: 'ban', actions: [R, B, R, B] },
-    { label: '选用 ②', phase: 'pick', actions: [R, B, B, R] }
+    { label: '禁用（同时）', phase: 'ban', actions: [B, B, B, B, B, R, R, R, R, R] },
+    { label: '选用', phase: 'pick', actions: [B, R, R, B, B, R, R, B, B, R] }
+  ]
+}
+
+const BLIND: DraftTemplate = {
+  id: 'blind',
+  label: '巅峰对决 · 双方盲选 5',
+  segments: [
+    { label: '盲选', phase: 'pick', actions: [B, R, R, B, B, R, R, B, B, R] }
+  ]
+}
+
+const LEGACY20: DraftTemplate = {
+  id: 'legacy-20',
+  label: '旧口径 · 10 Ban + 10 选',
+  segments: [
+    { label: '禁用', phase: 'ban', actions: [B, R, B, R, B, R, B, R, B, R] },
+    { label: '选用', phase: 'pick', actions: [B, R, R, B, B, R, R, B, B, R] }
   ]
 }
 
@@ -100,19 +116,21 @@ function banCounts(source: DraftSource): { blue: number; red: number } {
   }
 }
 
-/** 按双方 ban 数量选模板：训练赛默认 20 手；KPL 旧版 18 手/排位 20 手保留。 */
+/** 先看 ruleProfile，再按双方 ban 数量兜底；不再默认 20 手训练赛。 */
 export function detectTemplate(source: DraftSource): DraftTemplate {
   const { blue, red } = banCounts(source)
-  const total = blue + red
-  const full = isCompleteDraft(source)
-  if (source.ruleProfile === 'scrim-global-20') return SCRIM20
-  if (Math.min(blue, red) >= 5) return SCRIM20
-  if (total <= 5 && !full) return SCRIM20
-  if (Math.max(blue, red) >= 5) return RANKED20
-  if (Math.min(blue, red) >= 4) return KPL18
-  if (total >= 9) return RANKED20
-  if (total >= 6) return KPL18
-  return SCRIM20
+  const profile = String(source.ruleProfile || '')
+  const minBans = Math.min(blue, red)
+  if (profile === 'rank-20') return RANK20
+  if (profile === 'draft-20') return DRAFT20
+  if (profile === 'draft-18') return DRAFT18
+  if (profile === 'blind') return BLIND
+  if (profile === 'scrim-global-20') return LEGACY20
+  if (profile === 'kpl-recorded') return minBans >= 5 ? DRAFT20 : DRAFT18
+  if (minBans >= 5) return RANK20
+  if (minBans >= 4) return DRAFT18
+  if (blue + red >= 9) return DRAFT20
+  return DRAFT18
 }
 
 /** 按模板把两侧名单填进手序槽位；空 ban 占位，不压缩后面的位置。 */

@@ -309,9 +309,10 @@ export function createBigGamePage(h) {
   function gameColumns(games) {
     return (games || []).map((game) => {
       const cls = game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : '';
+      /* BO7 这类密集卡片把「第一把 / 胜 / +1,579」堆三行太挤，压成「1胜 / +1,579」两行。 */
+      const dense = (games || []).length > 5;
       return `<span class="bgx-game-col ${cls}" title="${esc(gameWord(game.gameIndex))} ${game.result === 'win' ? '胜' : '负'}${num(game.at10) ? ` · 10′ ${signed(game.at10)}` : ''}">
-        <b>${esc(gameWord(game.gameIndex))}</b>
-        <span>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</span>
+        <b>${esc(dense ? String(Number(game.gameIndex) || 1) : gameWord(game.gameIndex))}<i>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</i></b>
         <em>${num(game.at10) ? signed(game.at10) : '—'}</em>
       </span>`;
     }).join('');
@@ -325,15 +326,21 @@ export function createBigGamePage(h) {
     const leads = games.filter((g) => num(g.at10) && g.at10 > 0);
     const holds = leads.filter((g) => g.result === 'win').length;
     const avgDur = mean(games.map((g) => g.duration));
-    return `<a class="bgx-team-card" href="#biggame/${encodeURIComponent(s.id)}${scopeQuery()}">
+    const opp = String(s.opponent || '对手待补');
+    /* 单字 / 双字队名（比如「D」）直接做首字头像就够了，不必再重复一遍文字。 */
+    const oppName = opp.length <= 2 ? '' : esc(opp);
+    const outcome = us > them ? 'is-win' : them > us ? 'is-loss' : '';
+    return `<a class="bgx-team-card ${outcome}" href="#biggame/${encodeURIComponent(s.id)}${scopeQuery()}">
       <div class="bgx-team-top">
         <span>${esc((seriesDate(s) || '—').slice(5))} · BO${esc(String(s.bestOf || '—'))}${s.completionMode === 'fixed' ? ' · 固定打满' : ''}</span>
-        <span>${esc(COMPLETION_LABEL[s.completion] || s.completion || '—')}${s.status === 'needs_review' ? ' · 待核实' : ''}</span>
+        <span class="bgx-status${s.completion === 'completed' ? ' is-done' : ''}">${esc(COMPLETION_LABEL[s.completion] || s.completion || '—')}${s.status === 'needs_review' ? ' · 待核实' : ''}</span>
       </div>
-      <div class="bgx-team-name"><b>${esc(s.opponent || '对手待补')}</b></div>
-      <div class="bgx-team-score">
-        <b class="${us > them ? 'is-win' : them > us ? 'is-loss' : ''}">${us}:${them}</b>
+      <div class="bgx-team-ident">
+      <div class="bgx-team-name"><i class="bgx-avatar">${esc(opp.slice(0, 1))}</i><b>${oppName}</b></div>
+      <div class="bgx-team-score ${outcome}">
+        <b class="${outcome}">${us}:${them}</b>
         <span>${us > them ? '战胜' : them > us ? '不敌' : '对阵'}${valid ? '' : ' · 比分异常'}</span>
+      </div>
       </div>
       <div class="bgx-team-games${games.length > 5 ? ' is-dense' : ''}" style="--cols:${Math.max(3, games.length)}">${gameColumns(games) || '<span class="bgx-chip">没有小局</span>'}</div>
       <div class="bgx-team-foot">
@@ -365,7 +372,7 @@ export function createBigGamePage(h) {
       <header class="bgx-list-head">
         <div>
           <p class="bgx-eyebrow">大场分析 <i>/</i> 单场 BO <i>/</i> ${esc(scopeLabel())}</p>
-          <h1>${esc(String(t.series))} 场已确认 BO，<em>${t.seriesWins} 胜 ${t.seriesLosses} 负</em></h1>
+          <h1>${esc(String(t.series))} 场已确认 BO，<em><span class="du-win">${t.seriesWins} 胜</span> <span class="du-loss">${t.seriesLosses} 负</span></em></h1>
           <p class="bgx-list-sub">小局 ${t.gameWins} 胜 ${t.games - t.gameWins} 负（${pct1(t.gameWinRate)}）· 场均 ${fixed(t.avgGames, 1)} 局 · ${sum.close} 场打满 · ${sum.sweep} 场零封。点任一场进入单场分析。</p>
         </div>
         <div class="bgx-list-kpis">
@@ -523,7 +530,7 @@ export function createBigGamePage(h) {
       </section>`;
     } else if (moduleKey === 'bp') {
       const bpNav = `<nav class="bgv-subnav" aria-label="BP 页内导航">
-        <button type="button" class="is-on" data-bp-jump="order">20 手顺序</button>
+        <button type="button" class="is-on" data-bp-jump="order">BP 顺序</button>
         <button type="button" data-bp-jump="games">逐局 BP</button>
         <button type="button" data-bp-jump="habit">BO 习惯</button>
       </nav>`;

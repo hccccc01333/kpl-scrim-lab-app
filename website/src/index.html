@@ -120,7 +120,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15 7.5 10.5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
             下载 Windows 版
           </a>
-          <a class="btn btn--ghost" href="product.html">先看看能做什么</a>
+          <a class="btn btn--ghost" href="#demo">先看看能做什么</a>
         </div>
         <dl class="hero-specs">
           <div><dt>系统</dt><dd>Windows 10 / 11</dd></div>
@@ -133,11 +133,11 @@
       <div class="hero-visual">
         <figure class="frame">
           <div class="frame-bar">
-            <span class="frame-title">赛训简报</span>
+            <span class="frame-title">赛训数据</span>
             <span class="frame-url">127.0.0.1:8766</span>
           </div>
-          <img src="assets/img/v3-hero.webp?v={{ASSET_VERSION}}" alt="赛训简报页面：本周期胜负、经济走势与最近对局列表，均为合成演示数据" width="1600" height="1000" fetchpriority="high">
-          <figcaption class="frame-cap"><span>赛训简报 · 合成示例数据</span><span>v{{VERSION}}</span></figcaption>
+          <img src="assets/img/v3-hero.webp?v={{ASSET_VERSION}}" alt="对局档案页面：43 场训练赛按训练日归档，比分、时长与阵容一眼可见，均为合成演示数据" width="1600" height="1000" fetchpriority="high">
+          <figcaption class="frame-cap"><span>对局档案 · 合成示例数据</span><span>v{{VERSION}}</span></figcaption>
         </figure>
         <p class="hero-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
@@ -164,68 +164,85 @@
   </div>
 </section>
 
-<section class="section briefing" id="briefing" aria-labelledby="briefing-title">
+
+
+
+
+
+
+
+
+<section class="section briefing" id="demo" aria-labelledby="demo-title">
   <div class="shell">
     <header class="sec-head">
       <div class="sec-head-main">
-        <span class="sec-index">01 / 示例简报</span>
-        <h2 id="briefing-title">先动手，<br>再看它怎么算。</h2>
+        <span class="sec-index">01 / 试一局</span>
+        <h2 id="demo-title">点一下，<br>就是工作台的首页。</h2>
       </div>
-      <p class="sec-intro">下面这份简报是<strong>合成示例</strong>：切换周期和指标，看到的就是<span class="nb">工作台</span>里的图表与口径。真实战报只会来自你自己的<span class="nb">训练赛</span>。</p>
+      <p class="sec-intro">2.0 工作台「赛训简报」页的合成示例：换一场比赛，比分、阵容和经济走势都会跟着换。</p>
     </header>
 
-    <div class="brief" data-brief>
-      <div class="brief-chrome">
-        <span class="brief-app"><i aria-hidden="true"></i>赛训简报<span>合成示例 · 非真实战报</span></span>
-        <div class="brief-period" role="group" aria-label="时间范围">
-          <input type="radio" name="brief-period" id="bp-week" value="week" checked><label for="bp-week">本周</label>
-          <input type="radio" name="brief-period" id="bp-month" value="month"><label for="bp-month">本月</label>
-          <input type="radio" name="brief-period" id="bp-season" value="season"><label for="bp-season">赛季</label>
-        </div>
-      </div>
-
-      <div class="brief-main">
-        <div class="brief-figure">
-          <p class="brief-metric" data-kpi-label>分均经济</p>
-          <p class="brief-value"><b data-kpi-main>—</b><span data-kpi-unit>k</span></p>
-          <p class="brief-delta"><b data-kpi-gap>—</b><span>对位差</span></p>
-          <p class="brief-delta"><b data-kpi-trend>—</b><span>环比 <span data-kpi-prev>上周</span></span></p>
-          <p class="brief-sample"><span data-kpi-games>6</span> 局 · 示例战队</p>
-        </div>
-
-        <figure class="chart">
-          <div class="chart-plot">
-            <svg viewBox="0 0 760 300" role="img" aria-labelledby="chart-svg-title" data-chart-svg>
-              <title id="chart-svg-title">分均经济走势示例</title>
-            </svg>
-            <div class="chart-tip" data-chart-tip hidden></div>
+    <div class="ov" data-demo>
+      <div class="ov-cover">
+        <div>
+          <p class="ov-kicker">赛训简报</p>
+          <h3 class="ov-team">示例战队</h3>
+          <p class="ov-range">2026-11-10 → 2026-11-16 · 3 局</p>
+          <div class="ov-record">
+            <span><b data-ov-wins>2</b><small>胜</small></span>
+            <span><b data-ov-losses>1</b><small>负</small></span>
+            <span class="ov-games"><b data-ov-total>3</b><small>局</small></span>
           </div>
-          <figcaption class="chart-cap" data-chart-cap>合成示例数据，加载后显示走势。</figcaption>
-        </figure>
+          <p class="ov-note" data-ov-note>3 局记录，3 局有可用的经济时间轴。</p>
+        </div>
+        <div class="ov-recent">
+          <span>近 3 局</span>
+          <div class="ov-chips" data-ov-chips></div>
+        </div>
       </div>
 
-      <div class="brief-switch" role="group" aria-label="指标">
-        <input type="radio" name="brief-metric" id="bm-gold" value="gold" checked><label for="bm-gold"><em>01</em><span>分均经济</span></label>
-        <input type="radio" name="brief-metric" id="bm-tower" value="tower"><label for="bm-tower"><em>02</em><span>场均推塔</span></label>
-        <input type="radio" name="brief-metric" id="bm-fight" value="fight"><label for="bm-fight"><em>03</em><span>参团率</span></label>
-        <input type="radio" name="brief-metric" id="bm-vision" value="vision"><label for="bm-vision"><em>04</em><span>视野得分</span></label>
-      </div>
+      <div class="ov-body">
+        <div class="ov-main">
+          <article class="ov-match">
+            <div class="ov-match-top"><span>最近对局</span><span class="mono" data-ov-meta></span></div>
+            <div class="ov-match-score">
+              <div class="ov-side"><small>本队</small><b>示例战队</b><span>蓝方</span></div>
+              <div class="ov-num"><b data-ov-score>9<span>:</span>9</b><small data-ov-result>胜利</small></div>
+              <div class="ov-side is-away"><small>对手</small><b>星轨战队</b><span>对方战队</span></div>
+            </div>
+            <div class="ov-lineup">
+              <span>本队阵容</span>
+              <div data-ov-lineup></div>
+            </div>
+          </article>
 
-      <p class=brief-foot>
-        <span>样本 <b data-meta-games>6</b> 局</span>
-        <span>来源 截图 <b data-meta-shots>4</b> / 录屏 <b data-meta-replay>2</b></span>
-        <span>缺失 0 项</span>
-        <span class=mono>示例数据不写库</span>
-      </p>
+          <div class="ov-chart">
+            <div class="ov-chart-head"><span>本队经济差</span><span>本队 − 对手</span></div>
+            <div class="ov-plot">
+              <svg viewBox="0 0 640 220" role="img" aria-label="经济走势，合成示例数据" data-ov-svg></svg>
+            </div>
+            <p class="ov-cap">每 30 秒一个采样点 · 本队减对手 · 合成示例数据</p>
+          </div>
+        </div>
+
+        <aside class="ov-side ov-side-col">
+          <div class="ov-stats">
+            <div><span>对局总数</span><b data-ov-stat-total>3<small>局</small></b><em>3 局时间轴完整</em></div>
+            <div><span>有胜负胜率</span><b data-ov-stat-wr>67<small>%</small></b><em>2 胜 / 3 局</em></div>
+            <div><span>平均时长</span><b data-ov-stat-dur>18:42</b><em>按有时长的对局</em></div>
+            <div><span>场均经济差</span><b data-ov-stat-gold>+0.3k</b><em>本队减对手</em></div>
+          </div>
+          <div class="ov-hero">
+            <span class="ov-hero-glyph" aria-hidden="true">廉</span>
+            <p>英雄观察 · 本队出场最多</p>
+            <b>廉颇</b>
+            <em>5 次出场 · 60% 胜率</em>
+          </div>
+        </aside>
+      </div>
     </div>
   </div>
 </section>
-
-
-
-
-
-
 
 <section class="section" id="explore">
   <div class="shell">
@@ -380,9 +397,9 @@
     </div>
     <div class="footer-gh">
       <div class="footer-gh-main">
-        <svg class="footer-gh-mark" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        <img class="footer-gh-avatar" src="assets/img/avatar-rainfun.webp?v={{ASSET_VERSION}}" alt="Rainfun 的头像" width="64" height="64">
         <div>
-          <p class="footer-gh-kicker">开源 · GitHub</p>
+          <p class="footer-gh-kicker"><b>Rainfun</b> · 独立开发者</p>
           <p class="footer-gh-title"><a href="{{REPO_URL}}">源码都在 GitHub 上</a></p>
           <p class="footer-gh-repo">github.com/{{GH_USER}}/kpl-scrim-lab-app</p>
         </div>

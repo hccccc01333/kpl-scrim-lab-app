@@ -27,6 +27,12 @@ const SECTION_LIST = [
   ['plan', '07', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？', '历史证据，不是最优解'],
 ];
 const STORE_KEY = 'bp-studio.v3';
+const MODES = [['scrim', '征召 18 手'], ['kpl', 'KPL 18/20 手'], ['rank', '排位/巅峰 20 手']];
+const MODE_CONF = {
+  scrim: {source: 'scrim', rule: 'draft-18'},
+  kpl: {source: 'kpl', rule: ''},
+  rank: {source: 'scrim', rule: 'rank-20'},
+};
 
 export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   /* 元流之子实际只有这五个形态：坦克 / 辅助 / 射手 / 法师 / 刺客。 */
@@ -48,7 +54,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   const state = {
     root: null, controller: null, disposed: false,
     data: null, loading: false, error: '',
-    source: 'kpl', leagues: [], team: '', opponent: '',
+    mode: 'kpl', source: 'kpl', rule: 'draft-20', leagues: [], team: '', opponent: '',
     recentDays: 30, from: '', to: '', compare: 'prev',
     lane: '', chartAll: false, chartView: 'bubble', comboOpen: false, comboSize: 2, comboSort: 'usage', oppComboSize: '2',
     comboPick: [], comboDetail: null, comboLoading: false, comboError: '',
@@ -145,7 +151,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   // ── 数据 ────────────────────────────────────────────────────────────
   function queryParams(extra = {}) {
-    const values = {source: state.source, recentDays: state.recentDays,
+    const values = {source: state.source, rule: state.rule, demo: state.demo ? 1 : '', recentDays: state.recentDays,
       compare: state.compare, ...extra};
     if (state.leagues.length) values.leagues = state.leagues.join(',');
     if (state.team) values.team = state.team;
@@ -174,7 +180,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
-        source: state.source, leagues: state.leagues, team: state.team,
+        mode: state.mode, rule: state.rule, source: state.source, leagues: state.leagues, team: state.team,
         opponent: state.opponent, recentDays: state.recentDays,
         from: state.from, to: state.to, compare: state.compare,
         lane: state.lane, chartAll: state.chartAll, chartView: state.chartView,
@@ -195,10 +201,20 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     } catch {}
   }
 
+  function applyMode(mode) {
+    const conf = MODE_CONF[mode] || MODE_CONF.kpl;
+    state.mode = MODE_CONF[mode] ? mode : 'kpl';
+    state.source = conf.source;
+    state.rule = conf.rule;
+    state.demo = false;
+  }
+
   function restore() {
     try {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
       if (!raw || typeof raw !== 'object') return;
+      if (raw.mode && MODE_CONF[raw.mode]) applyMode(raw.mode);
+      else if (raw.source === 'scrim' || raw.source === 'kpl') applyMode(raw.source);
       for (const key of ['source', 'team', 'opponent', 'recentDays', 'from', 'to',
         'compare', 'lane', 'chartAll', 'chartView', 'comboSize', 'comboSort', 'prior',
         'treeDepth', 'treeBranch', 'treeSide']) {
@@ -516,7 +532,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       const params = new URLSearchParams(location.search);
       if (params.get('bps') !== '1') return;
       const read = (key) => params.get(key);
-      if (read('source') === 'scrim' || read('source') === 'kpl') state.source = read('source');
+      const mode = read('mode');
+      if (mode && MODE_CONF[mode]) applyMode(mode);
+      else if (read('source') === 'scrim' || read('source') === 'kpl') applyMode(read('source'));
       if (read('leagues')) state.leagues = read('leagues').split(',').filter(Boolean).slice(0, 40);
       if (read('team') !== null) state.team = read('team');
       if (read('opponent') !== null) state.opponent = read('opponent');
@@ -533,7 +551,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   function shareParams() {
-    const params = new URLSearchParams({bps: '1', source: state.source});
+    const params = new URLSearchParams({bps: '1', mode: state.mode, rule: state.rule, source: state.source});
     if (state.leagues.length) params.set('leagues', state.leagues.join(','));
     if (state.team) params.set('team', state.team);
     if (state.opponent) params.set('opponent', state.opponent);
@@ -571,7 +589,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function filterSnapshot() {
     return {
-      source: state.source, leagues: [...state.leagues], team: state.team,
+      mode: state.mode, rule: state.rule, source: state.source, leagues: [...state.leagues], team: state.team,
       opponent: state.opponent, from: state.from, to: state.to,
       recentDays: state.recentDays, compare: state.compare,
       target: [...state.target], comboPick: [...state.comboPick],
@@ -603,14 +621,20 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const seasonText = state.leagues.length ? `${state.leagues.length} 个赛季` : span;
     const games = data.primary.games;
     const teamGames = data.primary.boardGames;
+    const modeLabel = state.mode === 'rank' ? '排位/巅峰' : state.mode === 'scrim' ? '征召' : 'KPL 赛事';
     return `<header class="bps-hero">
       <div class="bps-hero-copy">
-        <span class="bps-eyebrow"><i></i>BP STUDIO · ${isKpl ? 'KPL 赛事' : '训练赛'}</span>
+        <span class="bps-eyebrow"><i></i>BP STUDIO · ${modeLabel}</span>
         <h1>${title}</h1>
         <p>${isKpl
           ? `按每方 Ban/Pick 数组统计第 N 手；<b>${num(games)}</b> 个队-局里看版本、组合、拆解与对手习惯。`
           : `只统计本队训练赛 <b>${num(teamGames)}</b> 个队-局；KPL 同窗口作为先验对照，两边不混算。`}
           ${state.from && state.to ? `当前自定义窗口 <b>${esc(state.from)} → ${esc(state.to)}</b>。` : ''}</p>
+        ${state.mode === 'scrim' && !(data.quality?.ordered)
+          ? `<p class="bps-note">当前营地数据是排位/巅峰（rank-20）；征召 18 手还没有完整对局。
+              <button type="button" class="bps-softbtn" data-bps-demo>载入模拟数据</button></p>` : ''}
+        ${state.demo
+          ? '<p class="bps-note">模拟数据 · 8 局征召 18 手，仅用于界面验证，不计入真实统计。</p>' : ''}
       </div>
       <div class="bps-hero-facts">
         <div><span>覆盖队-局</span><b>${num(games)}</b><small>${isKpl ? 'KPL 双方视角' : '本队视角'}</small></div>
@@ -746,8 +770,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const leagues = state.leagues.length;
     return `<div class="bps-console">
       <div class="bps-console-group">
-        <span class="bps-console-label">数据源</span>
-        ${seg([['kpl', 'KPL 赛事'], ['scrim', '训练赛']], state.source, 'data-bps-source')}
+        <span class="bps-console-label">模式</span>
+        ${seg(MODES, state.mode, 'data-bps-mode')}
       </div>
       ${isKpl ? `<span class="bps-console-sep"></span>
       <div class="bps-console-group">
@@ -1681,7 +1705,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <div class="bps-tree-tools">
           <span class="bps-console-label">视图</span>${seg([['flow', '历史路径'], ['decision', '决策树']],
             state.treeMode, 'data-bps-tree-mode', {small: true})}
-          ${state.treeMode === 'flow' ? `<span class="bps-console-label">深度</span>${seg([[6, '前 6 手'], [10, '前 10 手'], [20, '全 20 手']],
+          ${state.treeMode === 'flow' ? `<span class="bps-console-label">深度</span>${seg([[6, '前 6 手'], [10, '前 10 手'], [state.rule === 'draft-18' ? 18 : 20, `全 ${state.rule === 'draft-18' ? 18 : 20} 手`]],
             String(state.treeDepth), 'data-bps-tree-depth', {small: true})}
           <span class="bps-console-label">分叉</span>${seg([[2, '2 支'], [3, '3 支']],
             String(state.treeBranch), 'data-bps-tree-branch', {small: true})}` : ''}
@@ -1698,7 +1722,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         </div>
         ${state.treeMode === 'flow' && state.tree?.available ? `<div class="bps-flow-nav">
           <button type="button" class="bps-softbtn" data-bps-flow-left>← 向左</button>
-          <span>可左右拖动看全 20 手</span>
+          <span>可左右拖动看全 ${state.rule === 'draft-18' ? 18 : 20} 手</span>
           <button type="button" class="bps-softbtn" data-bps-flow-right>向右 →</button>
           <button type="button" class="bps-softbtn" data-bps-flow-pick>跳到 Pick 阶段</button>
         </div>` : ''}
@@ -1708,7 +1732,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         ${state.tree?.available && state.tree.games < 8
           ? '<p class="bps-note">已核验手序不到 8 局，整张图只作方向参考，不当作稳定习惯。</p>' : ''}
         ${state.tree?.available && state.treeDepth >= 20
-          ? '<p class="bps-note">20 手较宽，图内可左右滚动看完整路径。</p>' : ''}
+          ? `<p class="bps-note">${state.rule === 'draft-18' ? 18 : 20} 手较宽，图内可左右滚动看完整路径。</p>` : ''}
         ${state.tree?.available ? `<div class="bps-tree-scroll">${viz.draftFlowMap(state.tree, {width: 1080, height: 480})}</div>
           <div class="bps-tree-key">
             <span><i class="is-own-pick"></i>我方 Pick</span>
@@ -1748,7 +1772,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const laneOf = (type) => Object.keys(groups).find((lane) => groups[lane].includes(type)) || '';
     const boOptions = [['0', '全部'], ['3', 'BO3'], ['5', 'BO5'], ['7', 'BO7']]
       .filter(([value]) => value === '0' || (t.bo?.available || []).includes(Number(value)));
-    const handOptions = [['0', '全部'], ['1', '第1手'], ['2', '第2手'], ['3', '第3手'], ['4', '第4手']];
+    const banMax = state.mode === 'scrim' ? 4 : 5;
+    const handOptions = [['0', '全部']].concat(
+      Array.from({ length: banMax }, (_, index) => [String(index + 1), `第${index + 1}手`]));
     const coreOptions = [['0', '全部'], ['2', '2核'], ['3', '3核'], ['4', '4核']];
     const focus = state.typeFocus;
     const tools = `<div class="bps-types-tools">
@@ -1804,7 +1830,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           <div class="bps-panel-body">${viz.typeRank(banFull.firstTypes || [], laneOf, {width: 460, focus})}</div>
         </div>
         <div class="bps-panel">
-          <div class="bps-panel-head"><h3>Ban 手序 × 类型</h3><span class="bps-sub">同一类型在第 1–4 手 Ban 的份额</span></div>
+          <div class="bps-panel-head"><h3>Ban 手序 × 类型</h3><span class="bps-sub">同一类型在第 1–5 手 Ban 的份额</span></div>
           <div class="bps-panel-body">${viz.typeLines(banSeries,
             {width: 520, height: 280, xLabels: hands.map((hand) => `第${hand.hand}手`), focus})}</div>
         </div>
@@ -2580,9 +2606,21 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (event.target.closest('[data-bps-pop-close]')) { closePops(''); return; }
     if (!event.target.closest('.bps-pop')) closePops('');
 
-    const source = event.target.closest('[data-bps-source]');
-    if (source) {
-      state.source = source.dataset.bpsSource;
+    if (event.target.closest('[data-bps-demo]')) {
+      state.mode = 'scrim';
+      state.source = 'scrim';
+      state.rule = 'draft-18';
+      state.demo = true;
+      state.leagues = [];
+      state.team = '本队';
+      state.opponent = '';
+      persist();
+      load();
+      return;
+    }
+    const modeButton = event.target.closest('[data-bps-mode]');
+    if (modeButton) {
+      applyMode(modeButton.dataset.bpsMode);
       state.leagues = [];
       state.team = state.source === 'scrim' ? '本队' : '';
       state.opponent = '';

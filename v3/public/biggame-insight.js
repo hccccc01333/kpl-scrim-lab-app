@@ -414,7 +414,7 @@ export function renderBp(insight, ui, h) {
         <span class="bgv-verdict">${esc(game.label || '—')}</span>
         ${firstFoe ? `<span class="bgv-bp-sum-first"><i>对方一抢</i>${h.portrait(firstFoe, 'bgv-bp-sum-face')}<b>${esc(firstFoe)}</b></span>` : ''}
         <span class="bgv-bp-sum-kpl">KPL <b>${pairHit}</b> 对</span>
-        <button type="button" class="bgv-bp-jump" data-bp-jump-order="${esc(String(game.gameIndex))}">看这把 20 手 →</button>
+        <button type="button" class="bgv-bp-jump" data-bp-jump-order="${esc(String(game.gameIndex))}">看这把 BP 顺序 →</button>
       </summary>
       <div class="bgv-bp-body">
         ${lineupRow(h, 'own', ownCells, game.result)}
@@ -451,7 +451,7 @@ export function renderBp(insight, ui, h) {
     <p class="bgv-note"><b>怎么读</b>组合来自双方在这份历史语料里的常用双人组（≥2 场）＋ KPL 常用双人组。绿色＝拿到了；红色＝被拆掉（ban 或抢走其中一张）；灰色＝两边都没拿到。不是胜负预测。</p>`;
 }
 
-/* ── 02 BP 顺序：征召模式固定 20 手，按名单入位就是真实手序 ── */
+/* ── 02 BP 顺序：按记录格式还原 18/20 手；排位/巅峰的 Ban 同时展示 ── */
 const SCRIM_20 = (() => {
   const slots = [];
   for (let i = 0; i < 5; i += 1) slots.push(['ban', '1'], ['ban', '2']);
@@ -471,6 +471,19 @@ function draftTile(h, hero, step, action, side, role) {
   </span>`;
 }
 
+const DRAFT_18 = (() => {
+  const slots = [];
+  const add = (action, code, count) => {
+    for (let i = 0; i < count; i += 1) slots.push([action, code]);
+  };
+  add('ban', '1', 1); add('ban', '2', 1); add('ban', '1', 1); add('ban', '2', 1);
+  add('pick', '1', 1); add('pick', '2', 2); add('pick', '1', 2); add('pick', '2', 1);
+  add('ban', '2', 1); add('ban', '1', 1); add('ban', '2', 1); add('ban', '1', 1);
+  add('pick', '2', 1); add('pick', '1', 2); add('pick', '2', 1);
+  return slots;
+})();
+const RANK_PICK = ['1', '2', '2', '1', '1', '2', '2', '1', '1', '2'];
+
 export function renderDraft(insight, ui, h) {
   const { esc } = localHelpers(h);
   const games = (insight.draft && insight.draft.games) || [];
@@ -484,62 +497,100 @@ export function renderDraft(insight, ui, h) {
   const foeBans = picked.bansFoe || [];
   const ownPicks = picked.heroesOwn || [];
   const foePicks = picked.heroesFoe || [];
-  let oi = 0; let fi = 0; let op = 0; let fp = 0;
-  const steps = SCRIM_20.map(([action, code], index) => {
-    const side = sideOf(code);
-    let hero = '';
-    if (action === 'ban') hero = side === 'own' ? (ownBans[oi++] || '') : (foeBans[fi++] || '');
-    else hero = side === 'own' ? (ownPicks[op++] || '') : (foePicks[fp++] || '');
-    return { action, side, hero, step: index + 1 };
-  });
+  const rank = picked.orderSource === 'rank-20';
+  const schedule = picked.orderSource === 'draft-18' ? DRAFT_18 : SCRIM_20;
   const roleOf = (hero) => {
     const cells = [...(picked.signature?.own || []), ...(picked.signature?.foe || [])];
     const cell = cells.find((item) => item.hero === hero);
     return cell ? [cell.position, cell.archetype].filter(Boolean).join(' · ') : '';
   };
-  const firstPick = steps[10] || {};
-  const lastPick = steps[19] || {};
+  let steps = [];
+  if (rank) {
+    let oi = 0; let fi = 0;
+    steps = [
+      ...ownBans.slice(0, 5).map((hero, i) => ({ action: 'ban', side: 'own', hero, step: `B${i + 1}` })),
+      ...foeBans.slice(0, 5).map((hero, i) => ({ action: 'ban', side: 'foe', hero, step: `B${i + 1}` })),
+      ...RANK_PICK.map((code, i) => {
+        const side = code === ownCode ? 'own' : 'foe';
+        const hero = side === 'own' ? (ownPicks[oi++] || '') : (foePicks[fi++] || '');
+        return { action: 'pick', side, hero, step: i + 1 };
+      }),
+    ];
+  } else {
+    let oi = 0; let fi = 0; let op = 0; let fp = 0;
+    steps = schedule.map(([action, code], index) => {
+      const side = sideOf(code);
+      const hero = action === 'ban'
+        ? (side === 'own' ? (ownBans[oi++] || '') : (foeBans[fi++] || ''))
+        : (side === 'own' ? (ownPicks[op++] || '') : (foePicks[fp++] || ''));
+      return { action, side, hero, step: index + 1 };
+    });
+  }
+  const firstPick = steps.find((step) => step.action === 'pick') || {};
+  const lastPick = [...steps].reverse().find((step) => step.action === 'pick') || {};
   const complete = steps.every((step) => step.hero);
   const sourceWord = picked.orderSource === 'explicit' ? '逐手记录'
-    : picked.orderSource === 'scrim-20' ? '征召 20 手还原' : '名单不完整';
-  const row = (from, to, label) => `<div class="bgv-draft-20-row">
-    <span class="bgv-draft-20-label">${label}</span>
-    ${steps.slice(from, to).map((step) => draftTile(h, step.hero, step.step, step.action, step.side,
-      step.action === 'pick' ? roleOf(step.hero) : '')).join('')}
-  </div>`;
+    : picked.orderSource === 'draft-18' ? '征召 18 手还原'
+    : picked.orderSource === 'draft-20' ? 'KPL 20 手还原'
+    : picked.orderSource === 'rank-20' ? '排位/巅峰 20 手还原'
+    : picked.orderSource === 'scrim-20' ? '旧口径 20 手' : '名单不完整';
+  const ruleText = rank
+    ? '排位/巅峰：5+5 同时 Ban，随后 10 手蛇形 Pick；Ban 没有全局先后。'
+    : picked.orderSource === 'draft-18'
+      ? '征召 18 手：4 Ban + 6 Pick + 4 Ban + 4 Pick，按每方名单入位。'
+      : 'KPL 20 手：4 Ban + 6 Pick + 6 Ban + 4 Pick，按每方名单入位。';
+  const tile = (step) => draftTile(h, step.hero, step.step, step.action, step.side,
+    step.action === 'pick' ? roleOf(step.hero) : '');
+  const rows = [];
+  if (rank) {
+    const lane = (side, label) => `<div class="bgv-draft-20-row">
+      <span class="bgv-draft-20-label">${label}</span>
+      ${steps.filter((step) => step.action === 'ban' && step.side === side).map(tile).join('')}
+    </div>`;
+    rows.push(lane('own', 'BAN 同时 · 我方'), lane('foe', 'BAN 同时 · 对方'));
+    rows.push(`<div class="bgv-draft-20-row"><span class="bgv-draft-20-label">PICK 01–10</span>
+      ${steps.filter((step) => step.action === 'pick').map(tile).join('')}</div>`);
+  } else {
+    let start = 0;
+    for (let index = 1; index <= steps.length; index += 1) {
+      if (index === steps.length || steps[index].action !== steps[start].action) {
+        const label = `${steps[start].action === 'ban' ? 'BAN' : 'PICK'} `
+          + `${String(start + 1).padStart(2, '0')}–${String(index).padStart(2, '0')}`;
+        rows.push(`<div class="bgv-draft-20-row"><span class="bgv-draft-20-label">${label}</span>
+          ${steps.slice(start, index).map(tile).join('')}</div>`);
+        start = index;
+      }
+    }
+  }
   const switchStrip = `<div class="bgv-game-switch" role="group" aria-label="局次">
     <button type="button" class="bgv-game-switch-all" data-bp-game="" aria-pressed="${!ui.bpGame}">全部局</button>
     ${games.map((game) => {
-      const ownCode = game.camp === 'red' ? '2' : '1';
-      const pickOnOwn = ownCode === '1';
-      const firstPick = (pickOnOwn ? game.heroesOwn : game.heroesFoe)?.[0];
+      const pickOnOwn = (game.camp === 'red' ? '2' : '1') === '1';
+      const firstPickHero = (pickOnOwn ? game.heroesOwn : game.heroesFoe)?.[0];
       const firstBan = (pickOnOwn ? game.bansOwn : game.bansFoe)?.[0];
       const on = String(ui.bpGame || ui.draftGame) === String(game.gameIndex);
       return `<button type="button" class="bgv-game-switch-slot ${on ? 'is-on' : ''} ${game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : ''}"
         data-bp-game="${esc(String(game.gameIndex))}" aria-pressed="${on}">
         <span>${esc(gameWord(game.gameIndex))}<em>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</em></span>
-        <i class="bgv-game-switch-face">${firstPick ? h.portrait(firstPick, 'bgv-game-switch-img') : '—'}</i>
-        <small>一抢 ${firstPick ? esc(firstPick) : '—'}</small>
+        <i class="bgv-game-switch-face">${firstPickHero ? h.portrait(firstPickHero, 'bgv-game-switch-img') : '—'}</i>
+        <small>一抢 ${firstPickHero ? esc(firstPickHero) : '—'}</small>
         <small class="is-ban">首 ban ${firstBan ? esc(firstBan) : '—'}</small>
       </button>`;
     }).join('')}
   </div>`;
   return `<section class="bgx-card bgv-draft">
-    ${cardHead(esc, '02 BP 顺序', `${esc(gameWord(picked.gameIndex))}：20 手，谁先拿、谁 counter`,
-      '训练赛征召模式固定 20 手：10 ban 蓝红交替，随后蓝1、红2、蓝2、红2、蓝2、红1。每方名单按手序入位，得到的就是真实 BP 顺序。',
+    ${cardHead(esc, '02 BP 顺序', `${esc(gameWord(picked.gameIndex))}：${steps.length} 手，谁先拿、谁 counter`,
+      ruleText,
       `<span class="bgx-chip">${picked.camp === 'red' ? '我方红方' : '我方蓝方'}</span><span class="bgx-chip ${complete ? 'is-accent' : ''}">${sourceWord}</span>`)}
     ${switchStrip}
-    <div class="bgv-draft-20">
-      ${row(0, 10, 'BAN 01–10')}
-      ${row(10, 20, 'PICK 11–20')}
-    </div>
+    <div class="bgv-draft-20">${rows.join('')}</div>
     <div class="bgv-draft-keys">
       <span><b>一抢</b>${firstPick.hero ? esc(firstPick.hero) : '—'}<em>${firstPick.side === 'foe' ? '对方' : '我方'}</em></span>
       <span><b>末位</b>${lastPick.hero ? esc(lastPick.hero) : '—'}<em>${lastPick.side === 'foe' ? '对方' : '我方'}</em></span>
       <span><b>我方一抢</b>${ownPicks[0] ? esc(ownPicks[0]) : '—'}</span>
       <span><b>对方一抢</b>${foePicks[0] ? esc(foePicks[0]) : '—'}</span>
     </div>
-    <div class="bgv-draft-legend"><span><i class="is-ban"></i>BAN：灰头像 + 斜杠</span><span><i class="is-pick"></i>PICK：亮头像 + 分路/类型</span><span>01–20 是全局手序，不是我/敌各自的手序</span></div>
+    <div class="bgv-draft-legend"><span><i class="is-ban"></i>BAN：灰头像 + 斜杠</span><span><i class="is-pick"></i>PICK：亮头像 + 分路/类型</span><span>${rank ? 'Ban 同时禁用，不在全局手序里' : `01–${steps.length} 是全局手序，不是我/敌各自的手序`}</span></div>
   </section>`;
 }
 

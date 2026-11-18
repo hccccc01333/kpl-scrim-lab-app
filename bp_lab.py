@@ -674,7 +674,7 @@ def draft_habits(games, team):
         "firstBans": _top(first_bans, len(order_rows), 8),
         "sides": side_rows, "pickSlots": pick_slots, "banSlots": ban_slots,
         "banResponses": ban_responses[:8],
-        "note": (("训练赛按营地默认 20 手顺序；只表示该队第 N 手，不还原全局交错手序。"
+        "note": (("训练赛/排位按规则自动还原（征召 18 / KPL 20 / 排位·巅峰 20）；只表示该队第 N 手，不还原全局交错手序。"
                   if rows[0].get("source") == "scrim" else
                   "KPL 用每方 Pick/Ban 数组顺序；只表示该队第 N 手，不还原全局交错手序。")
                  if order_rows else "当前记录没有逐手顺序，第一手 / 轮次 / Ban 后选择不可计算。"),
@@ -1262,7 +1262,7 @@ def combo_stability(games, combo, unit="month", available=None):
 # 09 赛前方案
 # ---------------------------------------------------------------------------
 
-def plan(games, team, opponent, source="kpl", rule="scrim-global-20", bo="BO5"):
+def plan(games, team, opponent, source="kpl", rule="draft-18", bo="BO5"):
     team = str(team or "")
     opponent = str(opponent or "")
     opp_rows = [g for g in games if str(g.get("team") or "") == opponent]
@@ -1325,15 +1325,15 @@ def plan(games, team, opponent, source="kpl", rule="scrim-global-20", bo="BO5"):
         selected = scrim_rule(rule)
         rule_notes = {
             "id": selected.id, "title": selected.title,
-            "bansPerSide": sum(1 for action, _camp in selected.schedule if action == "ban") // 2,
-            "picksPerSide": sum(1 for action, _camp in selected.schedule if action == "pick") // 2,
+            "bansPerSide": selected.bans_per_side["1"],
+            "picksPerSide": selected.picks_per_side["1"],
             "global": True,
             "note": "训练赛 BO 全局 BP：此前局已选英雄按战队身份禁用；本页只给历史证据，不模拟最优解。",
         }
     else:
         rule_notes = {"id": "kpl-recorded", "title": "KPL 赛事记录",
                       "bansPerSide": None, "picksPerSide": None, "global": False,
-                      "note": "KPL 不套用训练赛 15/20 手规则；方案只按历史对手证据准备。"}
+                      "note": "KPL 不套用征召 18 手规则；方案只按历史对手证据准备。"}
 
     our_systems = []
     if source == "scrim":
@@ -1606,7 +1606,7 @@ def _shrunk_rate(row):
 def simulate_scrim(payload, hero_pool, evidence_games):
     """训练赛规则下的下一手候选与对手一步回应。
 
-    规则只走训练赛 15/20 手；证据可以来自 KPL 或训练赛（由调用方传
+    规则只走征召 18 手 / KPL 20 手；证据可以来自 KPL 或训练赛（由调用方传
     evidence_games）。候选排序是透明的历史证据加权，不是搜索最优解；
     对手回应只推一步，不做完整多步博弈。
     """
@@ -1616,7 +1616,7 @@ def simulate_scrim(payload, hero_pool, evidence_games):
                           validate_series_context)
     if not isinstance(payload, dict):
         raise ValueError('BP 沙盘请求必须是对象')
-    rule = scrim_rule(str(payload.get('rule') or 'scrim-global-20'))
+    rule = scrim_rule(str(payload.get('rule') or 'draft-18'))
     bo = str(payload.get('bo') or 'BO5')
     try:
         game_number = int(payload.get('gameNumber') or 1)
@@ -1782,8 +1782,8 @@ def simulate_scrim(payload, hero_pool, evidence_games):
         "available": True, "complete": False,
         "rule": {"id": rule.id, "title": rule.title,
                  "actions": len(rule.schedule),
-                 "bansPerSide": sum(1 for a, _ in rule.schedule if a == "ban") // 2,
-                 "picksPerSide": sum(1 for a, _ in rule.schedule if a == "pick") // 2},
+                 "bansPerSide": rule.bans_per_side["1"],
+                 "picksPerSide": rule.picks_per_side["1"]},
         "team": team, "opponent": opponent, "side": side,
         "bo": bo, "gameNumber": game_number,
         "events": events, "nextAction": next_action,
@@ -1791,7 +1791,7 @@ def simulate_scrim(payload, hero_pool, evidence_games):
         "ourPicks": our_picks, "opponentPicks": opp_picks,
         "candidates": candidates[:10], "branches": branches,
         "note": "候选按历史证据加权，不是最优解；对手回应只推一步。",
-        "caveats": ["规则只走训练赛 15/20 手；KPL 证据只作历史参考，不套用 KPL 规则。",
+        "caveats": ["规则只走征召 18 手 / KPL 20 手；KPL 证据只作历史参考，不套用 KPL 规则。",
                     "候选排序不包含选手当天状态、隐藏战术与训练目标，最终由教练决定。",
                     "对手回应是历史频率，不是预测；多步搜索与 BO 系列回测尚未接入。"],
     }
@@ -1802,7 +1802,7 @@ def simulate_scrim(payload, hero_pool, evidence_games):
 # ---------------------------------------------------------------------------
 
 def build_report(games, *, source="kpl", team="", opponent="", unit="month",
-                 target=None, combo=None, rule="scrim-global-20", bo="BO5",
+                 target=None, combo=None, rule="draft-18", bo="BO5",
                  recent_days=30):
     games = list(games or [])
     source = "scrim" if source == "scrim" else "kpl"

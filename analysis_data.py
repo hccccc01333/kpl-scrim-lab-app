@@ -2011,11 +2011,11 @@ class AnalysisRepository:
                 'warnings': warnings}
 
     def bp_summary(self, filters):
-        """BP 聚合：人工手序录入优先、营地名单兜底，两类来源不混算手序。
+        """BP 聚合：营地每方名单按格式自动还原手序优先；旧 match.bp 只作回退。
 
-        营地 battledetail 给的是终局 ban/pick 名单（无 1–5 楼顺序、无一手方），
-        所以名单类指标（禁用/选用频率、阵容、分路、对手习惯）自动出；
-        手序效果与先后手只使用比赛校对页人工填写的 match.bp。
+        营地 battledetail 的每方 ban/pick 名单就是最终手序，`parse_camp_bp`
+        按 draft-18 / draft-20 / rank-20 自动铺成 draftEvents；名单类指标
+        （禁用/选用频率、阵容、分路、对手习惯）与逐手效果都来自同一份记录。
         旧字段（bans / ownPicks / orderEffect / opponents）保持原形状。
         """
         from bp_camp import merge_bp_sources

@@ -3339,10 +3339,10 @@ def bp_board():
             'ruleProfile': (bp.get('ruleProfile') or
                             detail.get('ruleProfile') or
                             (detail.get('data') or {}).get('ruleProfile') or
-                            'scrim-global-20'),
+                            'unknown'),
             'picks': {'own': entries('picks', own), 'enemy': entries('picks', enemy)},
             'bans': {'own': entries('bans', own), 'enemy': entries('bans', enemy)},
-            # 训练赛固定 20 手（每方 5 Ban + 5 Pick）；缺顺序时 pickOrderKnown=False。
+            # 顺序由营地每方名单 + 规则自动还原；名单数量不符时 pickOrderKnown=False。
             'banCount': bp.get('banCount') or {},
             'pickOrderKnown': bool(bp.get('pickOrderKnown')),
             'players': {'own': [p.get('name') for p in panel['own_roster']],
@@ -3352,7 +3352,7 @@ def bp_board():
                 'own': [_roster_entry(p) for p in panel['own_roster']],
                 'enemy': [_roster_entry(p) for p in panel['enemy_roster']],
             },
-            # 源头已写入的 20 手事件（或由每侧有序名单重建）；没有就为空。
+            # 源头已写入的逐手事件，或由每侧名单 + 规则自动还原；没有就为空。
             'draftEvents': bp.get('draftEvents') or [],
             # 终局面板的经济 / 击杀 / 推塔 / 龙，供教练档案与 BP 页做资源口径；
             # 视角固定为「本队 = own」，前端按需要翻转成教练一方。
@@ -3366,7 +3366,7 @@ def bp_board():
                    'matches': t['matches'], 'wins': t['wins'], 'losses': t['losses'],
                    'players': [p.get('name') for p in t['players'][:6]]} for t in teams],
         'heroMeta': hero_meta,
-        'source': '营地终局名单 · 训练赛 20 手；无顺序时只做名单统计',
+        'source': '营地终局名单 · 按规则自动还原（征召 18 / KPL 18|20 / 排位·巅峰 20）',
     }
     if stamp[0] is not None:
         if len(_BP_BOARD_CACHE) >= _BP_BOARD_CACHE_MAX:
@@ -3400,19 +3400,57 @@ def _local_scrim_hero_catalog():
             'catalogUpdatedAt': payload.get('updatedAt') or ''}
 
 
+@router.get('/api/v3/bp/rules')
+def bp_rules_catalog():
+    """BP 三格式的排程、身份口径与全局 BP 约束；前端不再自带 20 手模板。"""
+    import bp_formats
+    formats = []
+    for fmt in (bp_formats.DRAFT_18, bp_formats.DRAFT_20,
+                bp_formats.RANK_20, bp_formats.BLIND):
+        formats.append({
+            'id': fmt.id, 'title': fmt.title, 'modes': list(fmt.modes),
+            'totalHands': fmt.total_hands,
+            'bansPerSide': fmt.bans_per_side,
+            'picksPerSide': fmt.picks_per_side,
+            'globalBp': fmt.global_bp,
+            'allowSharedBans': fmt.allow_shared_bans,
+            'allowSharedPicks': fmt.allow_shared_picks,
+            'pickIdentity': fmt.pick_identity,
+            'banIdentity': fmt.ban_identity,
+            'decider': fmt.decider,
+            'deciderOverride': fmt.decider_override,
+            'phases': [{'key': phase.key, 'action': phase.action,
+                        'layout': phase.layout,
+                        'steps': [{'camp': camp, 'count': count}
+                                  for camp, count in phase.steps],
+                        'counts': [{'camp': camp, 'count': count}
+                                   for camp, count in phase.counts],
+                        'total': phase.total()} for phase in fmt.phases],
+            'schedule': fmt.schedule,
+        })
+    return {'default': bp_formats.DRAFT_18.id, 'formats': formats,
+            'yuanliu': {'name': bp_formats.YUANLIU,
+                        'forms': list(bp_formats.YUANLIU_FORMS),
+                        'pickIdentity': 'canonical', 'banIdentity': 'form'}}
+
+
 @router.get('/api/v3/bp-scrim/catalog')
 def bp_scrim_catalog():
-    """Full local hero roster + configured scrim schedules for the manual planner."""
-    from bp_rules import SCRIM_GLOBAL_20
+    """本地英雄词表 + 三格式排程；沙盘/BP 板共用，前端不再自带模板。"""
+    import bp_formats
     data = _local_scrim_hero_catalog()
-    return {**data, 'rule': SCRIM_GLOBAL_20.id,
-            'rules': [{'id': SCRIM_GLOBAL_20.id, 'title': SCRIM_GLOBAL_20.title,
-                       'actions': len(SCRIM_GLOBAL_20.schedule)}]}
+    return {**data, 'rule': bp_formats.DRAFT_18.id,
+            'rules': [{'id': fmt.id, 'title': fmt.title,
+                       'actions': fmt.total_hands,
+                       'bansPerSide': fmt.bans_per_side['1'],
+                       'picksPerSide': fmt.picks_per_side['1']}
+                      for fmt in (bp_formats.DRAFT_18, bp_formats.DRAFT_20,
+                                  bp_formats.RANK_20, bp_formats.BLIND)]}
 
 
 @router.post('/api/v3/bp-scrim/next')
 async def bp_scrim_next(request: Request):
-    """Pure scrim rule check (20 hands only); never applies scrim rules to KPL."""
+    """按 ``rule``（draft-18 / draft-20）做逐手合法动作校验；不把训练赛规则套到 KPL。"""
     from bp_rules import scrim_state_payload
     payload = await read_json(request)
     if not isinstance(payload, dict):
@@ -3423,104 +3461,6 @@ async def bp_scrim_next(request: Request):
         return scrim_state_payload(payload, _local_scrim_hero_catalog()['heroes'])
     except (ValueError, TypeError, KeyError) as error:
         raise HTTPException(400, str(error)) from error
-
-
-def _write_camp_detail(path, detail, seq):
-    """camp_details 写前备份 + 原子替换；BP 顺序 / 逐手事件共用。"""
-    history_dir = DB.parent / 'bp-history'
-    history_dir.mkdir(parents=True, exist_ok=True)
-    backup = history_dir / f'camp-{seq}-{int(time.time())}.json'
-    backup.write_bytes(path.read_bytes())
-    temporary = path.with_suffix('.bp-tmp')
-    temporary.write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding='utf-8')
-    temporary.replace(path)
-    # 刚写的手工顺序必须马上出现在 BP 汇总里：清掉目录指纹的 TTL 缓存，
-    # 下一次请求就会用新指纹命中另一份缓存。
-    drop_stamp_caches()
-    return backup
-
-
-@router.post('/api/v3/camp-bp-order/{seq}')
-async def save_camp_bp_order(seq: str, request: Request):
-    """页面内手工录入每侧 Ban/Pick 顺序；Ban 允许跨侧重复（排位同时禁用）。
-
-    只保存和终局名单对得上的选用，以及营地名单里存在的禁用；写前整文件备份。
-    """
-    from bp_camp import normalize_bp_order
-    if not re.fullmatch(r'\d+', seq):
-        raise HTTPException(400, '营地编号无效')
-    payload = await read_json(request)
-    if not isinstance(payload, dict):
-        raise HTTPException(400, 'BP 顺序必须是对象')
-    path = (MATCHES.parent / 'camp_details') / f'{seq}.json'
-    if not path.is_file():
-        raise HTTPException(404, '训练赛营地面板不存在')
-    try:
-        detail = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError) as error:
-        raise HTTPException(400, '营地面板 JSON 无法解析') from error
-    try:
-        clean = normalize_bp_order(detail, payload, seq)
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-    clean['savedAt'] = time.time()
-    container = detail.get('data') if isinstance(detail.get('data'), dict) else {}
-    container['bpOrder'] = clean
-    events = []
-    if clean['mode'] == 'scrim':
-        from bp_camp import events_from_order
-        events = events_from_order(clean)
-        if events:
-            container['draftEvents'] = events
-            container['ruleProfile'] = 'scrim-global-20'
-    detail['data'] = container
-    backup = _write_camp_detail(path, detail, seq)
-    saved = len(clean['picks']['left']) + len(clean['picks']['right'])         + len(clean['bans']['left']) + len(clean['bans']['right'])
-    return {'ok': True, 'seq': seq, 'mode': clean['mode'], 'saved': saved,
-            'events': len(events), 'rule': 'scrim-global-20',
-            'backup': backup.name}
-
-
-@router.post('/api/v3/camp-bp-events/{seq}')
-async def save_camp_bp_events(seq: str, request: Request):
-    """把逐手 BP 顺序（训练赛唯一规则：20 手）与版本/规则标签补录进 camp_details/<seq>.json。
-
-    只保存通过 20 手规则校验、且与终局名单一致的顺序。写前整文件备份到
-    data/bp-history/，原子替换。绝不由终局名单反推顺序，缺证据就拒绝保存。
-    """
-    from bp_camp import normalize_camp_events, parse_camp_bp, rule_id_for_bp
-    payload = await read_json(request)
-    if not isinstance(payload, dict):
-        raise HTTPException(400, 'BP 录入必须是对象')
-    if len(json.dumps(payload, ensure_ascii=False)) > 60000:
-        raise HTTPException(413, 'BP 录入过大')
-    path = (MATCHES.parent / 'camp_details') / (seq + '.json')
-    if not path.is_file():
-        raise HTTPException(404, '训练赛营地面板不存在')
-    try:
-        detail = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError) as error:
-        raise HTTPException(400, '营地面板 JSON 无法解析') from error
-    try:
-        clean, warnings = normalize_camp_events(detail, payload.get('events'), seq)
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-
-    rule_id = rule_id_for_bp(parse_camp_bp(detail, seq) or {})
-    version = str(payload.get('version') or '').strip()[:40]
-    rule_label = str(payload.get('ruleProfile') or 'scrim-global-20').strip()[:40]
-    container = detail.get('data') if isinstance(detail.get('data'), dict) else {}
-    container['draftEvents'] = clean
-    if version:
-        container['version'] = version
-    if rule_label:
-        container['ruleProfile'] = rule_label
-    detail['data'] = container
-
-    backup = _write_camp_detail(path, detail, seq)
-    return {'ok': True, 'seq': seq, 'saved': len(clean), 'rule': rule_id,
-            'version': version, 'ruleProfile': rule_label,
-            'warnings': warnings, 'backup': backup.name}
 
 
 # KPL 源的情报报告按（数据指纹, 过滤参数）缓存：bp_games.jsonl 没变且参数相同
@@ -3769,7 +3709,7 @@ def bp_lab_report(request: Request):
         raise HTTPException(400, 'unit 只能是 day / month / season / stage')
     target = [part.strip() for part in str(values.get('target') or '').split(',') if part.strip()]
     combo = [part.strip() for part in str(values.get('combo') or '').split(',') if part.strip()]
-    rule = str(values.get('rule') or 'scrim-global-20').strip()
+    rule = str(values.get('rule') or 'draft-18').strip()
     bo = str(values.get('bo') or 'BO5').strip()
     try:
         recent_days = int(values.get('recentDays') or 30)
@@ -3908,6 +3848,24 @@ def _studio_windows(games, start, end, recent_days, compare):
     return bounds, current, windows
 
 
+def _game_matches_rule(game, rule):
+    """BP 工作台三模式过滤：按记录格式，不按日期猜。"""
+    if not rule:
+        return True
+    profile = str(game.get("ruleProfile") or "")
+    events = game.get("events") or []
+    bans = game.get("bans") or []
+    if rule == "rank-20":
+        return profile == "rank-20"
+    if rule == "draft-18":
+        return profile == "draft-18" or len(events) == 18 or len(bans) == 4
+    if rule == "draft-20":
+        return profile == "draft-20" or len(events) == 20 or len(bans) == 5
+    if rule == "blind":
+        return str(game.get("bpMode") or "") == "blind"
+    return True
+
+
 @router.get('/api/v3/bp-studio')
 def bp_studio_page(request: Request):
     """BP 工作台页面模型：目录 + 主数据层 + 对手情报 + 目标对照 + 赛前方案。"""
@@ -3922,6 +3880,10 @@ def bp_studio_page(request: Request):
     if source not in ('kpl', 'scrim'):
         raise HTTPException(400, 'source 只能是 kpl 或 scrim')
     leagues = str(values.get('leagues') or '').strip()
+    rule = str(values.get('rule') or '').strip()
+    if rule and rule not in ('draft-18', 'draft-20', 'rank-20', 'blind'):
+        raise HTTPException(400, 'rule 只能是 draft-18 / draft-20 / rank-20 / blind')
+    demo = str(values.get('demo') or '').strip().lower() in ('1', 'true', 'yes')
     team = str(values.get('team') or '').strip()
     opponent = str(values.get('opponent') or '').strip()
     start = str(values.get('from') or '').strip()
@@ -3942,7 +3904,7 @@ def bp_studio_page(request: Request):
 
     kpl_stamp = _kpl_source_stamp(kpl_bp)
     camp_stamp = (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
-    cache_key = (kpl_stamp, camp_stamp, source, leagues, team, opponent,
+    cache_key = (kpl_stamp, camp_stamp, source, rule, demo, leagues, team, opponent,
                  start, end, compare, recent_days, tuple(target), _BP_STUDIO_VERSION)
     cached = _BP_STUDIO_CACHE.get(cache_key)
     if cached is not None:
@@ -3956,7 +3918,14 @@ def bp_studio_page(request: Request):
     raw = _bp_studio_raw(leagues)
     kpl_games = _bp_studio_kpl(leagues)
     own_games = _bp_studio_scrim()
+    if demo and source == 'scrim':
+        from bp_demo import scrim_games
+        own_games = scrim_games()
     primary = kpl_games if source == 'kpl' else own_games
+    if rule:
+        primary = [game for game in primary if _game_matches_rule(game, rule)]
+        if not primary:
+            raise HTTPException(400, f'当前数据源没有 {rule} 记录。')
     if not primary:
         raise HTTPException(400, '当前数据源还没有可用的 BP 记录。')
     scrim_names = sorted({str(game.get('enemy')) for game in own_games
@@ -4074,6 +4043,7 @@ def bp_studio_page(request: Request):
                                 else (scrim_opponents[0] if scrim_opponents else '')),
         },
         'quality': quality,
+        'demo': bool(demo),
         'primary': page,
         'baseline': baseline,
         'opponentBlock': opponent_block,

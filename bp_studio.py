@@ -643,7 +643,7 @@ def target_break(games, target, *, team="", label=""):
     banned_total = sum(ban_indexes.values())
     hands = [{"hand": index + 1, "count": ban_indexes.get(index, 0),
               "share": _pct(ban_indexes.get(index, 0), banned_total),
-              "round": _ban_round(index)} for index in range(4)]
+              "round": _ban_round(index)} for index in range(5)]
     return {
         "available": True, "target": wanted,
         "label": label or _combo_label(wanted), "team": team,
@@ -709,7 +709,7 @@ def compare_break(kpl_block, own_block, *, kpl_label="KPL", own_label="本队"):
     kpl_hands = (kpl_block.get("banned") or {}).get("hands") or []
     own_hands = ((own_block.get("banned") or {}).get("hands") or []
                  if own_block.get("available") else [])
-    for index in range(4):
+    for index in range(5):
         kpl_row = kpl_hands[index] if index < len(kpl_hands) else {}
         own_row = own_hands[index] if index < len(own_hands) else {}
         hands.append({"hand": index + 1,
@@ -843,7 +843,7 @@ def opponent_studio(games, team, *, strong=None, meta_bans=None, phase2_window=N
                        "heroes": _top(counter, games_count * len(indexes), 8)})
 
     hands = []
-    for index in range(4):
+    for index in range(5):
         counter = Counter()
         games_count = 0
         for game in order_rows:
@@ -1400,7 +1400,7 @@ def period_compare(games, cut, days=30, *, limit=10):
 def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, side=""):
     """BP 时序分支树：同一前缀合并，分叉按样本数保留前 N。
 
-    只认已核验的 20 手 `events`（order/action/actor/hero）；没有手序的局不参与，
+    只认已核验的逐手 `events`（18/20 手，order/action/actor/hero）；没有手序的局不参与，
     不按名单顺序补。节点 `actor` 相对所选队伍：team = 我方，enemy = 对方。
     蓝/红方的第一手行动方不同，默认取样本多的一侧，避免把两个视角混进一棵树。
     """
@@ -1416,7 +1416,7 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, 
             continue
         total += 1
         events = game.get("events") or []
-        # KPL 早期是 18 手（4 Ban + 10 Pick），训练赛是 20 手；够画到本页深度即可。
+        # 征召/KPL 早期 18 手（4 Ban），KPL 2024-10 起 20 手（5 Ban）；按事件长度画。
         if len(events) < 4:
             continue
         side_counts[str(game.get("side") or "")] += 1
@@ -1551,6 +1551,6 @@ def build_studio(games, *, source="kpl", team="", opponent="", bounds=None,
         "caveats": [
             "KPL 与训练赛各自归一化、各自算胜率，不混池。",
             "版本字段当前为空；时间变化只作观测，不解释成版本强度。",
-            "Ban 数组按每方顺序（前 2 手第一轮、后 2 手第二轮），不还原全局交错手序。",
+            "Ban 数组按每方顺序（前 2 手第一轮、其余第二轮），不还原全局交错手序。",
         ],
     }

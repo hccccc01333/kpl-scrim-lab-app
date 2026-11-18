@@ -204,8 +204,8 @@ def normalize_scrims(raw_games, process_map=None):
             # lineup statistics, but MUST NOT train scrim order predictions.
             if matched is None:
                 events = []
-            # 训练赛只有 20 手；没有完整事件时仍标 20，但不冒充已验证顺序。
-            rule_profile = "scrim-global-20"
+            # 按记录格式（draft-18 / draft-20 / rank-20）；没有完整事件时标 unknown。
+            rule_profile = matched.id if matched is not None else "unknown"
             result = item.get("result")
             won = (result == "win") if result in ("win", "loss") else None
             if side == "enemy" and won is not None:
@@ -842,19 +842,29 @@ def build_report(scrim_rows, kpl_rows, *, source="scrim", team="", start="", end
     }
     bp_studies["brief"] = coach_brief(bp_studies, team_games) if team else []
     from bp_draft_tree import draft_tree, priority_brief
+    scrim_families = {"draft-18", "draft-20", "rank-20"}
+    scrim = source == "scrim"
+    draft18 = sum(g.get("ruleProfile") == "draft-18" for g in team_games) if scrim else 0
+    draft20 = sum(g.get("ruleProfile") == "draft-20" for g in team_games) if scrim else 0
+    rank20 = sum(g.get("ruleProfile") == "rank-20" for g in team_games) if scrim else 0
+    ordered = sum(bool(g.get("events")) for g in team_games) if scrim else 0
+    unknown = sum(not g.get("ruleValidated", False) for g in team_games) if scrim else 0
+    profile = ("rank-20" if scrim and rank20 and not draft18 and not draft20
+               else "draft-18" if scrim else "kpl-recorded")
     bp_studies["ruleCoverage"] = {
-        "scrim20": sum(g.get("ruleProfile") == "scrim-global-20" for g in team_games)
-                   if source == "scrim" else 0,
-        "scrimUnknown": sum(not g.get("ruleValidated", False) for g in team_games)
-                        if source == "scrim" else 0,
-        "orderedGames": sum(bool(g.get("events")) for g in team_games)
-                        if source == "scrim" else 0,
+        "scrim20": sum(g.get("ruleProfile") in scrim_families for g in team_games)
+                   if scrim else 0,
+        "draft18": draft18,
+        "draft20": draft20,
+        "rank20": rank20,
+        "scrimUnknown": unknown,
+        "orderedGames": ordered,
         "kplRecorded": sum(bool(g["events"]) for g in team_games)
                        if source == "kpl" else 0,
-        "profile": ("scrim-global-20" if source == "scrim" else "kpl-recorded"),
-        "note": ("训练赛只有 20 手（每方 5 Ban + 5 Pick）。只有完整且与终局名单一致的"
-                 "事件才用于顺序研究；没有顺序的记录仍可作基础阵容统计。"
-                 if source == "scrim" else
+        "profile": profile,
+        "note": ("训练赛/排位按记录格式（征召 18 / KPL 20 / 排位·巅峰 20）。只有完整且与终局名单"
+                 "一致的事件才用于顺序研究；没有顺序的记录仍可作基础阵容统计。"
+                 if scrim else
                  "KPL 只校验真实历史 BP 事件，不应用训练赛规则。")
     }
     bp_studies["draftTree"] = (draft_tree(team_games) if team else

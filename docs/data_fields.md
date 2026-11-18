@@ -195,39 +195,35 @@ teamTotals = {
 | 字段 | 说明 |
 |---|---|
 | `bans` / `picks` | 按边 `{left, right}` 的英雄对象数组 |
-| `banSlots` / `pickSlots` | **保留槽位**的数组：空 ban 为 null；按营地默认顺序参与 20 手事件生成 |
+| `banSlots` / `pickSlots` | **保留槽位**的数组：空 ban 为 null；按格式排程自动铺成逐手事件 |
 | `banCount` | `{left, right}` ban 数 |
-| `pickOrderKnown` | 训练赛按营地默认顺序生成 20 手事件后为 `true`；Ban 不足 5 个时保持 `false`，不猜 |
-| `firstPick` | 首抢方（训练赛 20 手固定为 1 方/蓝/left） |
-| `draftEvents` | 20 手逐手事件；营地入库时按默认顺序生成，或由已核验事件/人工顺序写入 |
+| `pickOrderKnown` | 名单数量与格式相符、已自动生成逐手事件后为 `true`；不足时 `false`，只做名单统计 |
+| `firstPick` | 首抢方（`draft-18` / `draft-20` 固定蓝方先选） |
+| `draftEvents` | 逐手事件；营地入库时按「每方名单 + 格式」自动生成，不再人工录入 |
 | `heroMeta` / `lanes` | 英雄元信息 / 英雄分路 |
 | `teamStats` / `winnerSide` / `ownSide` | 队伍统计 / 胜方 / 我方 |
 | `gameSeq` / `mapName` / `duration` / `startTime` | 对局标识与时间 |
 
-### 5.2 训练赛 BP 规则（`bp_rules`）
+### 5.2 BP 三格式（`bp_formats`）
 
-训练赛只有 **20 手**（2026-11-15 教练确认）：
+| 格式 | 用于 | Ban | Pick | 手数 |
+|---|---|---|---|---|
+| `draft-18` | 征召（训练赛/自定义）；KPL 2024 夏季赛及以前 | 2 + 2（第二轮红先） | 6 + 4 | 18 |
+| `draft-20` | KPL 2024 年度总决赛起 | 2 + 3（第二轮红先） | 6 + 4 | 20 |
+| `rank-20` | 排位 / 巅峰 | 5 + 5 同时 | 10 | 20 |
 
-- `B R` 交替 10 个 Ban（每方 5 个）+ `B R R B B R R B B R` 10 个 Pick。
-- 每侧 pick 槽位：蓝（1 方）= 11/14/15/18/19，红（2 方）= 12/13/16/17/20。
-
-| 全局手序 | 1–10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20 |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 动作 | ban ×10 | pick | pick | pick | pick | pick | pick | pick | pick | pick | pick |
-| 方 | 1/2 交替 | 1 | 2 | 2 | 1 | 1 | 2 | 2 | 1 | 1 | 2 |
+完整逐手排程、全局 BP、巅峰对决与元流之子口径见 `docs/bp_rules_v2.md`。
 
 ### 5.3 手序来源
 
-训练赛 20 手顺序**在源头写入**：
+赛后数据里每方名单就是最终手序，**不手工录入**：
 
-1. 营地数据默认顺序：`camp_sync` 入库时读取每侧 Ban/Pick 名单，按 20 手模板生成
-   `draftEvents`，并写 `ruleProfile=scrim-global-20`；每方必须 5 Ban + 5 Pick。
-2. 人工每侧顺序：单局复盘「双方阵容」录入，写 `data.bpOrder`；保存时同时生成
-   `draftEvents`，不要求再走一次沙盘。
-3. 沙盘逐手录入：`/api/v3/camp-bp-events/{seq}` 只接受 20 手规则，写 `data.draftEvents`。
-4. 旧「BP 补录」按 1–5 楼录入，写 `bp_overrides`（KPL/旧数据兼容，不用于训练赛 20 手）。
-
-营地 Ban 不足每方 5 个时只标 `orderPending=true` 和 20 手规则，不生成假顺序。
+1. 营地数据：`camp_sync` 入库时读取每侧 Ban/Pick 名单，按自动判定的格式
+   （排位/巅峰 → `rank-20`；4 Ban → `draft-18`；5 Ban → `draft-20`）铺成
+   `draftEvents`，并写 `ruleProfile=<format>`。
+2. KPL 官方数据：`bp_list` 的逐手事件按记录格式保留；4 Ban 历史局按 `draft-18` 显示。
+3. 名单数量与格式不符时只标 `orderPending=true`，不生成假顺序、不改写名单。
+4. 旧 `bpOrder` / 手工顺序字段忽略；不再提供录入弹窗或写接口。
 
 ### 5.4 人工 BP 表（`bp`）
 
@@ -250,7 +246,7 @@ teamTotals = {
 |---|---|
 | `id` / `best_of` | 系列赛 ID / BO3/5/7 |
 | `status` | `confirmed` / `needs_review`（当前 4 组均为 needs_review） |
-| `ruleset_id` | 规则集（`scrim-global-20`） |
+| `ruleset_id` | 规则集（`scrim-global-team`；KPL 固定全局 BP） |
 | `opponent` / `opponent_team_id` | 对手 |
 | `session` / `version` / `schedule_id` | 训练组 / 版本 / 约训 |
 | `start_at` / `end_at` | 开赛 / 结束日期 |
@@ -324,7 +320,7 @@ data
      battleStats, heroBehavior, recCards, dataBehavior, dataBehaviorV2 }]
 ```
 
-训练赛的营地默认顺序就是 20 手顺序（2026-11-15 教练确认）。`camp_sync` 入库时按每侧 `banHeros` / `pickHeros` 顺序生成 `draftEvents`；人工录入的 `bpOrder` / `draftEvents` 优先。
+赛后数据里每方 `banHeros` / `pickHeros` 名单就是最终手序。`camp_sync` 入库时按自动判定的格式（征召 18 / KPL 20 / 排位·巅峰 20）生成 `draftEvents`；不再使用 `bpOrder` 手工顺序。
 
 ---
 
@@ -388,7 +384,7 @@ data
 - **时间**：`duration`、`timeSec`、`usedTime` 均为秒；`clock`/`gametime` 为 `MM-DD HH:mm` 文本。
 - **at4 / at10**：只在有经济采样且时长足够（≥240 / ≥600 秒）时非 null，**不补 0**。
 - **`g` / `w` / `s`**：`g` 为 5 分钟段绝对差，`w` 为段净增，`s` 为按比赛进度对齐的 6 点形状。
-- **`pickOrderKnown`**：`true` 表示已有 20 手顺序；营地每方 5 Ban + 5 Pick 时由默认顺序生成，Ban 不足时保持 `false` 并标 `orderPending`。
+- **`pickOrderKnown`**：`true` 表示已按格式自动生成逐手顺序；营地名单数量与格式相符时为 `true`，不足时保持 `false` 并标 `orderPending`。
 - **状态枚举**：系列赛 `status ∈ {confirmed, needs_review}`；`completion ∈ {completed, open, interrupted, incomplete}`；通道 `review.status` 为 `unreviewed` 等；`sourceStatus.statuses` 每类来源为 `completed/parsed/missing`。
 
 ---

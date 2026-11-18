@@ -4,7 +4,7 @@
 - 系列赛归属由教练确认；自动建议只产出候选，绝不改动已确认编组。
 - 全局 BP 以训练赛规则集（RULESETS）为准，不默认套用 KPL 赛事规则；
   规则集只影响「累计不可再选」的账本口径，不参与编组归属判断。
-- 营地终局名单不等于 BP 手序（campBp.pickOrderKnown=False）：没有人工手序时，
+- 营地名单按格式自动还原手序（campBp.pickOrderKnown）；名单不足时按终局名单处理，
   一切「应对 / 针对」类结论降级为「终局阵容对照」；缺数据一律返回 None 并
   写覆盖说明，不用 0 充数。
 - BO5 不等于一定有五局：3:0 / 3:1 / 3:2 都是完整 BO5；训练赛还可能约定
@@ -200,9 +200,8 @@ def _suggestion_from_group(group, opponent, session):
 def _bp_sides(detail, vector=None):
     """detail → 本方/对方的终局选人与禁用名单。
 
-    人工校对 bp（唯一带手序的来源）优先；营地 battledetail 是终局名单
-    （pickOrderKnown=False）；两者都没有时退化用向量里的阵容（来源
-    'roster'）。orderKnown 只在有手序数据时为 True。"""
+    营地名单按格式自动还原的手序优先；旧人工 bp 只作回退；两者都没有时
+    退化用向量里的阵容（来源 'roster'）。orderKnown 只在有手序数据时为 True。"""
     out = {'ownPicks': [], 'foePicks': [], 'ownBans': [], 'foeBans': [],
            'orderKnown': False, 'source': None, 'firstPick': None}
 

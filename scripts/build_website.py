@@ -244,7 +244,7 @@ def write_feed(sections: list[dict], site_url: str) -> None:
         '  </channel>\n'
         '</rss>\n'
     )
-    (DIST / 'feed.xml').write_text(feed, encoding='utf-8')
+    (DIST / 'feed.xml').write_text(feed, encoding='utf-8', newline='\n')
 
 
 def github_bits() -> tuple[str, str, str, str]:
@@ -284,10 +284,10 @@ def build(download_url: str | None, full_download_url: str | None,
     version, release_date, release_name = read_version()
     sections = parse_changelog()
     site_url = site_url.rstrip('/')
-    setup_url = download_url or release_asset_url(
-        version, f'KPL-Scrim-Lab-{version}-setup.exe')
-    portable_url = full_download_url or release_asset_url(
-        version, f'KPL-Scrim-Lab-{version}-full.zip')
+    # 默认指向 GitHub Releases：Gitee 镜像只发到 1.6.6，1.6.7 的完整包只在 GitHub。
+    # Gitee 补齐后可用 --download-url / --full-download-url 覆盖回国内直链。
+    setup_url = download_url or f'{REPO_URL}/releases/download/v{version}/KPL-Scrim-Lab-{version}-setup.exe'
+    portable_url = full_download_url or f'{REPO_URL}/releases/download/v{version}/KPL-Scrim-Lab-{version}-full.zip'
     latest, _latest_items = latest_release(sections)
     gh_user, gh_bits, gh_stars, gh_count_text = github_bits()
     tokens = {
@@ -336,7 +336,7 @@ def build(download_url: str | None, full_download_url: str | None,
         if missing:
             raise SystemExit(f'{name}: 未替换的占位符 {missing}')
         page = page.replace('{{CHANGELOG_SECTIONS}}', changelog_html)
-        (DIST / name).write_text(page, encoding='utf-8')
+        (DIST / name).write_text(page, encoding='utf-8', newline='\n')
 
     write_feed(sections, site_url)
 
@@ -348,7 +348,7 @@ def build(download_url: str | None, full_download_url: str | None,
             text = f.read_text(encoding='utf-8')
             for key, value in tokens.items():
                 text = text.replace('{{' + key + '}}', value)
-            (DIST / name).write_text(text, encoding='utf-8')
+            (DIST / name).write_text(text, encoding='utf-8', newline='\n')
     # 自托管字体等静态资源（manrope.woff2 及其许可证），无外部请求
     src_assets = SRC / 'assets'
     if src_assets.is_dir():

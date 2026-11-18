@@ -2,7 +2,7 @@ def validate_bp(value):
     if not isinstance(value, dict):
         raise ValueError('BP 必须是对象')
     result = {'bans': {}, 'picks': {}}
-    for kind, limit in [('bans', 4), ('picks', 5)]:
+    for kind, limit in [('bans', 5), ('picks', 5)]:
         group = value.get(kind, {})
         if not isinstance(group, dict):
             raise ValueError('BP 阵营格式无效')
@@ -12,10 +12,13 @@ def validate_bp(value):
             if not isinstance(heroes, list) or len(heroes) > limit or any(not isinstance(h, str) or len(h) > 30 for h in heroes):
                 raise ValueError(f'{kind} 每方最多 {limit} 个英雄')
             heroes = [hero.strip() for hero in heroes]
+            if len(set(heroes)) != len(heroes):
+                raise ValueError(f'{side} 同一{kind}序列不能重复英雄')
             all_heroes.extend(hero for hero in heroes if hero)
             result[kind][side] = heroes
-        if len(set(all_heroes)) != len(all_heroes):
-            raise ValueError('同一禁用或选用序列不能重复英雄')
+        # 排位/巅峰双方可以同时禁用同一英雄；选用仍要求全局唯一。
+        if kind == 'picks' and len(set(all_heroes)) != len(all_heroes):
+            raise ValueError('双方选用不能重复英雄')
     banned = {h for heroes in result['bans'].values() for h in heroes if h}
     picked = {h for heroes in result['picks'].values() for h in heroes if h}
     if banned & picked:

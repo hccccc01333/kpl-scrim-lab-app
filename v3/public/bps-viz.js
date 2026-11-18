@@ -1336,7 +1336,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     return wrap(width, height, `${head}${body}`);
   }
 
-  /* ── Ban 位环：四个 Ban 位的份额做成同心环，比四条横条更像“手序” ── */
+  /* ── Ban 位环：五个 Ban 位的份额做成同心环，比横条更像“手序” ── */
   function handRing(hands, {size = 168, label = 'Ban 位'} = {}) {
     const list = (hands || []).filter((row) => has(row.share));
     if (!list.length) return '<div class="bv-empty">没有 Ban 记录。</div>';

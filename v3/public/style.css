@@ -14386,12 +14386,16 @@ input[type="radio"] { accent-color: #1d766d; }
    2. 热力网格列多了改成横向滚动 + 行头吸左，格子保持 44px，不缩成细线；
    3. 矩形树图放不下就并「其他」，方块本身是按钮，点一下切到该英雄。 */
 
-/* ── 一、切片条：吸顶在顶部导航下面，改一项整页重算 ────────────────── */
+/* ── 一、导航 + 切片条：一起吸顶在顶部导航下面，改一项整页重算 ──────── */
+[data-pl-page="solo"] .pdx-dock {
+  position: sticky; top: var(--pdx-top, 8px); z-index: 22;
+  margin: 10px 0 18px; padding: 0 0 4px;
+  background: var(--paper);
+}
 [data-pl-page="solo"] .hero-anchor-nav { position: static; }
 [data-pl-page="solo"] .pdx-scope {
-  position: sticky; top: var(--pdx-top, 8px); z-index: 22;
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 7px 18px;
-  margin: 10px 0 18px; padding: 9px 12px 10px;
+  margin: 4px 0 0; padding: 9px 12px 10px;
   background: var(--paper);
   border: 1px solid var(--line); border-radius: var(--r-md);
   box-shadow: var(--shadow-card);
@@ -14462,23 +14466,27 @@ input[type="radio"] { accent-color: #1d766d; }
 [data-pl-page="solo"] .pv-tm-tile.is-other b { font-weight: 600; }
 
 /* ── 五、吸顶后锚点定位要留出切片条的高度，别把标题顶到条下面 ────────── */
-[data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 96px; }
+[data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 210px; }
 @media (max-width: 1100px) {
   [data-pl-page="solo"] .pdx-scope .pv-sel select { max-width: 190px; }
-  /* 窄屏切片条会折成两三行，吸顶反而吃掉半屏，直接跟着内容滚 */
-  [data-pl-page="solo"] .pdx-scope { position: static; }
-  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 128px; }
+  /* 窄屏也保持吸顶：下拉排一行横向滚动，摘要收成小字，别折成两三行吃掉半屏 */
+  [data-pl-page="solo"] .pdx-dock { margin: 8px 0 14px; }
+  [data-pl-page="solo"] .pdx-scope { gap: 5px 10px; padding: 7px 10px 8px; }
+  [data-pl-page="solo"] .pdx-scope-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
+  [data-pl-page="solo"] .pdx-hit { gap: 3px 10px; font-size: 11.5px; margin-left: 0; }
+  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 230px; }
 }
 @media (max-width: 720px) {
-  [data-pl-page="solo"] .pdx-scope { position: static; }
-  [data-pl-page="solo"] .pdx-scope-row { gap: 6px 10px; }
-  [data-pl-page="solo"] .pdx-hit { font-size: 11.5px; margin-left: 0; }
-  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 76px; }
+  [data-pl-page="solo"] .pdx-dock { margin: 6px 0 12px; }
+  [data-pl-page="solo"] .pdx-scope { gap: 4px 8px; padding: 6px 8px 7px; }
+  [data-pl-page="solo"] .pdx-scope-row { gap: 4px 8px; }
+  [data-pl-page="solo"] .pdx-hit { font-size: 11px; }
+  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 210px; }
 }
 
 /* ── 六、打印：切片条与导航不进 PDF，卡片自己已经把「范围」印在头上 ──── */
 @media print {
-  [data-pl-page="solo"] .pdx-scope { display: none !important; }
+  [data-pl-page="solo"] .pdx-dock { display: none !important; }
 }
 
 /* 热力行的列宽：滚动模式按 --pv-heat-colw（表头放得下的宽度）固定，不压缩 */
@@ -14570,3 +14578,13 @@ input[type="radio"] { accent-color: #1d766d; }
   flex: 0 1 auto; margin-left: auto; margin-top: 0; padding: 0 2px 2px;
   border-top: 0;
 }
+
+
+/* 巅峰对决盲选面板 */
+.decider-dialog { width: min(760px, calc(100vw - 24px)); }
+.decider-summary { display: grid; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.decider-lineup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.decider-lineup > b { width: 42px; color: var(--muted); font-size: 12px; }
+.decider-hero { display: inline-flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-size: 11px; }
+.decider-portrait { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; }
+.decider-note { margin: 0; color: var(--quiet); font-size: 11px; }

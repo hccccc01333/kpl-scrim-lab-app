@@ -1281,13 +1281,16 @@ def _draft_block(rows, stats, analysis):
             if own_info and has_corpus else None
         own_bans = [str(hero) for hero in row.get('bansOwn') or [] if hero]
         foe_bans = [str(hero) for hero in row.get('bansFoe') or [] if hero]
-        # 训练赛征召模式是固定 20 手（每方 5 ban + 5 pick，顺序见 bp_rules）。
-        # 营地名单本身按该方手序给出，所以两侧都有 5+5 时，按规则入位就是
-        # 真实手序，不应再标「假设/名单顺序」。
-        complete_order = (len(own_bans) >= 5 and len(foe_bans) >= 5
+        # 名单口径：每方 4/5 Ban + 5 Pick 时，按记录格式（draft-18/draft-20/rank-20）
+        # 入位就是真实手序；数量不足才标「顺序未知」。
+        complete_order = (len(own_bans) >= 4 and len(foe_bans) >= 4
                           and len(own_heroes) >= 5 and len(foe_heroes) >= 5)
         order_known = bool(row.get('orderKnown')) or complete_order
-        order_source = 'explicit' if row.get('orderKnown') else ('scrim-20' if complete_order else None)
+        rule_profile = str(row.get('ruleProfile') or '')
+        if not rule_profile:
+            rule_profile = 'draft-18' if len(own_bans) < 5 else 'rank-20'
+        order_source = ('explicit' if row.get('orderKnown')
+                        else (rule_profile or 'scrim-order') if complete_order else None)
         ban_own_value = _mean([_hero_row(hero, stats)['value'] for hero in own_bans]) \
             if has_corpus else None
         ban_foe_value = _mean([_hero_row(hero, stats)['value'] for hero in foe_bans]) \

@@ -7,7 +7,7 @@ import { createPlayers } from './players-page.js';
 import { createHeroCompare } from './hero-compare.js';
 import { createCoachBoard } from './coach-viz.js';
 import { createPlayerCompare } from './player-compare.js';
-import { createTeamDossier } from './team-dossier.js?v=dossier-20261117i';
+import { createTeamDossier } from './team-dossier.js?v=dossier-20261118a';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');

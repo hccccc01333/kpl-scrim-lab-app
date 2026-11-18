@@ -18,20 +18,21 @@ def test_no_peak_unlock_any_game():
 
 
 def test_scrim_rule_delegates_to_bp_rules():
-    # 规则唯一档案在 bp_rules；bp_series 只引用不另造
-    assert bs.SCRIM_RULE.id == 'scrim-global-20'
+    # 规则唯一档案在 bp_formats；bp_series 只引用不另造
+    assert bs.SCRIM_RULE.id == 'draft-18'
     slots = bs.scrim_slots()
-    assert len(slots) == 20
-    assert [s['phase'] for s in slots] == ['ban'] * 10 + ['pick'] * 10
-    # Ban 序：蓝红交替 10 手（每方 5 Ban）
-    assert [(s['action'], s['camp']) for s in slots[:10]] == [
-        ('ban', '1' if i % 2 == 0 else '2') for i in range(10)]
-    # Pick 序：蓝1 红2 蓝2 红2 蓝2 红1（每队 5 选）
-    pick_camps = [s['camp'] for s in slots[10:]]
+    assert len(slots) == 18
+    assert [s['phase'] for s in slots] == (
+        ['ban1'] * 4 + ['pick1'] * 6 + ['ban2'] * 4 + ['pick2'] * 4)
+    assert [(s['action'], s['camp']) for s in slots[:4]] == [
+        ('ban', '1'), ('ban', '2'), ('ban', '1'), ('ban', '2')]
+    assert [(s['action'], s['camp']) for s in slots[10:14]] == [
+        ('ban', '2'), ('ban', '1'), ('ban', '2'), ('ban', '1')]
+    pick_camps = [s['camp'] for s in slots if s['action'] == 'pick']
     assert pick_camps == ['1', '2', '2', '1', '1', '2', '2', '1', '1', '2']
     assert sum(1 for s in slots if s['camp'] == '1' and s['action'] == 'pick') == 5
     assert sum(1 for s in slots if s['camp'] == '2' and s['action'] == 'pick') == 5
-    assert SCRIM_20_SCHEDULE == bs.SCRIM_RULE.schedule
+    assert SCRIM_20_SCHEDULE == tuple((s['action'], s['camp']) for s in slots)
 
 
 def test_terminal_and_wins_needed():

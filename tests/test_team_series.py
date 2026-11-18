@@ -24,7 +24,7 @@ def test_series_analysis_tracks_global_bp_and_adjust(tmp_path):
     assert len(out) == 1
     s = out[0]
     assert s['seriesId'] == 's1' and s['bo'] == 'BO3' and s['demo'] is True
-    assert s['rule']['id'] == 'scrim-global-20' and s['rule']['slots'] == 20
+    assert s['rule']['id'] == 'draft-18' and s['rule']['slots'] == 18
     assert s['score'] == {'wins': 2, 'losses': 1}
     # 全局 BP：fixture 三局同一对手阵容 → 新启用仅 G1，已用恒 5
     assert len(s['games'][0]['newHeroes']) == 5

@@ -121,14 +121,14 @@ def _count_rows(counter, total, limit=None):
 def ban_profile(games, *, bo=0, hand=0):
     """Ban 的类型 × 手序分布。分母 = 有该手 Ban 的局数。"""
     samples = _type_samples(games)
-    hands = [Counter() for _ in range(4)]
-    hand_games = [0] * 4
+    hands = [Counter() for _ in range(5)]
+    hand_games = [0] * 5
     rounds = {1: Counter(), 2: Counter()}
     first = Counter()
     timeline = defaultdict(Counter)
     for item in samples:
         bans = item["bans"]
-        for index, hero_type in enumerate(bans[:4]):
+        for index, hero_type in enumerate(bans[:5]):
             if hand and index != hand - 1:
                 continue
             hands[index][hero_type] += 1
@@ -140,7 +140,7 @@ def ban_profile(games, *, bo=0, hand=0):
         if month and bans:
             timeline[month][bans[0]] += 1
     rows = []
-    for index in range(4):
+    for index in range(5):
         total = hand_games[index] or 1
         rows.append({
             "hand": index + 1,

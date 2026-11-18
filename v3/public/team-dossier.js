@@ -6,7 +6,7 @@
       「全部 110」是清除英雄筛选，不再是一排小胶囊；
    3) 分路 × 类型、边野搭配、位置组合、五路类型全部换成带文字的表，
       小分路（游走）的三类辅助也能逐个对上；
-   4) 名次折线可点线聚焦，前段 / 近段与 BO 切片写清口径；
+   4) 名次折线可点线聚焦，本窗口 / 上窗口与 BO 切片写清口径；
    5) 英雄池的大卡与「具体拿了谁」放大，ban 后替补按次数加权。
    历史图表函数保留在下方，当前页面只调用 v9 的新图元。
    ============================================================ */
@@ -448,11 +448,14 @@ export function createTeamDossier(h) {
       const large = a1 - a0 > Math.PI ? 1 : 0;
       const mid = (a0 + a1) / 2;
       const [lx, ly] = p(r + 10, mid);
+      /* 局数放进扇区里：沿中线取内外半径的中点，白色粗体压在色块上，
+         不再和外侧的「N 核」标签挤成一行。 */
+      const [ix, iy] = p((inner + r) / 2, mid);
       const roseGames = opts.gamesOf ? opts.gamesOf(item) : [];
       const gid = roseGames.length ? gamesAttr(roseGames, `${opts.caption || '分布'} · ${item.key}`, opts.lanesOf ? opts.lanesOf(item) : []) : '';
       return `<path d="M${x0.toFixed(1)} ${y0.toFixed(1)} L${x3.toFixed(1)} ${y3.toFixed(1)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L${x1.toFixed(1)} ${y1.toFixed(1)} A${inner} ${inner} 0 ${large} 0 ${x0.toFixed(1)} ${y0.toFixed(1)} Z" fill="${opts.colorOf ? opts.colorOf(item) : 'var(--accent)'}" class="tp-rose-bar${gid ? ' is-drill' : ''}"${gid}><title>${esc(`${item.key} · ${fmt(item.count)} 局${gid ? '；点开看这 ' + roseGames.length + ' 局' : ''}`)}</title></path>
-        <text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="tp-rose-label">${esc(item.key)}</text>
-        <text x="${lx.toFixed(1)}" y="${(ly + 11).toFixed(1)}" text-anchor="middle" class="tp-rose-count">${fmt(item.count)}</text>`;
+        <text x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" text-anchor="middle" dominant-baseline="central" class="tp-rose-value">${fmt(item.count)}</text>
+        <text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" text-anchor="middle" class="tp-rose-label">${esc(item.key)}</text>`;
     }).join('');
     return svg(size, size, `${bars}<circle cx="${c}" cy="${c}" r="${inner - 2}" class="tp-sun-hole"/>
       <text x="${c}" y="${c + 1}" text-anchor="middle" class="tp-sun-total">${fmt(total)}</text>
@@ -996,15 +999,19 @@ export function createTeamDossier(h) {
   }
 
   function sliceGroups(games) {
-    const chrono = [...games].filter((game) => game.day).sort((a, b) => String(a.start || '').localeCompare(String(b.start || '')));
-    const cut = Math.ceil(chrono.length / 2);
+    /* 时间切片不再把当前窗口对半切：页面已经有时间窗，窗口内再切两半只是噪声。
+       改成和 01 样本页同口径的「本窗口 vs 上一个同长度窗口」；没有上窗口（全部 / 自定义）时只留 BO 切片。 */
+    const prev = previousGames(model);
     const withRange = (group) => {
       const days = group.games.map((game) => game.day).filter(Boolean).sort();
       return {...group, range: days.length ? `${days[0]}~${days[days.length - 1]}` : ''};
     };
+    const windows = prev.length ? [
+      {key: 'current', label: '本窗口', note: `${fmt(games.length)} 局`, games: [...games]},
+      {key: 'previous', label: '上窗口', note: `${fmt(prev.length)} 局`, games: prev},
+    ] : [];
     return [
-      {key: 'early', label: '前段', note: `${fmt(chrono.slice(0, cut).length)} 局`, games: chrono.slice(0, cut)},
-      {key: 'late', label: '近段', note: `${fmt(chrono.slice(cut).length)} 局`, games: chrono.slice(cut)},
+      ...windows,
       ...[3, 5, 7].map((bo) => {
         const list = games.filter((game) => Number(game.bo) === bo);
         return {key: `bo${bo}`, label: `BO${bo}`, note: `${fmt(list.length)} 局`, games: list};
@@ -1014,7 +1021,7 @@ export function createTeamDossier(h) {
 
   function driftCard(games) {
     const groups = sliceGroups(games);
-    if (groups.length < 2) return card('变化 · 时间与赛制', '切片不足', lack('切片后样本不足两组。'));
+    if (groups.length < 2) return card('变化 · 窗口与赛制', '切片不足', lack('切片后样本不足两组。'));
     const laneSeries = groups.map((group) => {
       const rows = handRows(group.games, 'pick').filter((row) => row.slot <= 2);
       return {label: group.label, note: group.note, range: group.range, games: group.games, segments: LANES.map((lane) => ({key: lane, count: rows.filter((row) => row.lane === lane).length})).filter((seg) => seg.count)};
@@ -1036,10 +1043,10 @@ export function createTeamDossier(h) {
       const count = item.segments.find((seg) => seg.key === key)?.count || 0;
       return `${fmt(count)}<small>${item.total ? pct((count / item.total) * 100) : '—'}</small>`;
     })]);
-    return card('变化 · 时间与赛制', `${fmt(groups.length)} 个切片 · 名次与构成`, `<div class="tp-driftgrid">
+    return card('变化 · 窗口与赛制', `${fmt(groups.length)} 个切片 · 名次与构成`, `<div class="tp-driftgrid">
       <div class="tp-driftcell"><header><b>前两手选人 · 分路名次</b><small>第 1 名＝这个切片里被选得最多；点线上的点看对局，点线只看这一路</small></header>${bumpChart(laneSeries, laneKeys, {height: 230, aria: '分路名次变化', gamesOf: (item, key) => item.games.filter((game) => handRows([game], 'pick').some((row) => row.slot <= 2 && row.lane === key))})}${dataTable(['切片', ...laneKeys], laneTable, '表里是每个切片的选人次和名次；点图上的点可以看对应局。')}</div>
       <div class="tp-driftcell"><header><b>核数构成</b><small>柱高固定 100%，只看体系变胖还是变瘦</small></header>${shareColumns(coreSeries, coreKeys, {width: 520, height: 230, barW: 54, shortOf: (key) => key.replace(' ', ''), colorOf: (key) => CORE_COLOR[coreKeys.indexOf(key) % 4], aria: '核数构成', gamesOf: (item, key) => item.games.filter((game) => (game.sides?.enemy?.lineup?.cores || 0) === Number(key.replace(/\D/g, '')) && game.sides?.enemy?.lineup?.total)})}<div class="tp-legend">${coreKeys.map((key, index) => `<span><i style="background:${CORE_COLOR[index]}"></i>${esc(key)}</span>`).join('')}</div>${dataTable(['切片', ...coreKeys], coreTable, '每个切片下方标了日期范围和局数；点柱子可以看对应局。')}</div>
-    </div><p class="tp-read"><b>前段 / 近段</b>：把这批局按开始时间排序后对半切，前一半叫前段，后一半叫近段。<b>BO3 / BO5 / BO7</b> 是按赛制另切的一刀，会和前后段重叠，不是互斥分组。左图名次 1＝该切片里这条分路被选得最多；右图每根柱子的总高都是 100%，柱下标的是该切片的局数。</p>`);
+    </div><p class="tp-read"><b>本窗口 / 上窗口</b>：本窗口是当前时间 + 赛制筛选下的局；上窗口是紧挨着它之前、长度相同的一段，和 01 样本的环比同口径。选「全部 / 自定义」时没有上窗口，只显示 BO 切片。<b>BO3 / BO5 / BO7</b> 是按赛制另切的一刀，会和窗口切片重叠，不是互斥分组。左图名次 1＝该切片里这条分路被选得最多；右图每根柱子的总高都是 100%，柱下标的是该切片的局数。</p>`);
   }
 
   /* ── 03 阵容与风格 ────────────────────────────────────────────── */

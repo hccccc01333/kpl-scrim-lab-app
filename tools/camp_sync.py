@@ -82,7 +82,7 @@ def entry_role_id(entry: dict) -> str:
 
 
 def _stamp_payload(detail_body: dict, entry: dict) -> dict:
-    """入库前把营地默认 20 手顺序写进 draftEvents；失败则原样保存。"""
+    """入库前把营地每方名单按格式自动铺成 draftEvents；失败则原样保存。"""
     payload = {**detail_body, '_campEntry': {
         'dtEventTime': entry.get('dtEventTime'),
         'usedTime': entry.get('usedTime'),

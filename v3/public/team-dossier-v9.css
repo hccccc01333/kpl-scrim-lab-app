@@ -4,7 +4,7 @@
    1) 01–05 真分节，点哪个只看哪个；时间 / 赛制常驻在分节条上；
    2) 英雄选择器一次只摊一条路，头像改成大圆卡，「全部」是清除筛选；
    3) 分路 × 类型、边野搭配、位置组合、五路类型全部改成带文字标签的表；
-   4) 名次图可点线聚焦，前段 / 近段与 BO 切片写清口径。
+   4) 名次图可点线聚焦，本窗口 / 上窗口与 BO 切片写清口径。
    本文件不放进 @layer，保证盖过历史补丁。
    ============================================================ */
 
@@ -605,8 +605,10 @@
 /* 移动端才出现的横向滑动提示 */
 .tp-page .tp-scrollhint { display: none; margin: 2px 0 0; color: var(--tp-quiet); font-size: 9.5px; text-align: center; }
 
-/* 玫瑰图浅色扇区的字容易糊，统一加一层描边 */
-.tp-page .tp-rose-label { paint-order: stroke; stroke: rgba(8, 24, 22, .28); stroke-width: 2px; }
+/* 玫瑰图标签放在扇区外，白底上直接加深色字即可；描边会让字发黑结块。 */
+.tp-page .tp-rose-label { stroke: none; paint-order: normal; fill: var(--tp-ink); font-weight: 650; }
+/* 局数在扇区内部：白色粗体，和外侧的核数标签彻底分开 */
+.tp-page .tp-rose-value { fill: #fff; font-size: 12px; font-weight: 750; font-variant-numeric: tabular-nums; }
 
 /* ── 五路类型：分段条 + 全量清单 ───────────────────────────── */
 .tp-page .tp-lanetypes { display: grid; }
@@ -658,25 +660,28 @@
 .tp-page .tp-pairlist { display: grid; }
 .tp-page .tp-pairrow {
   display: grid;
-  grid-template-columns: 168px minmax(0, 1fr) 110px 72px 64px;
+  grid-template-columns: 215px minmax(0, 1fr) 120px 90px 86px;
   align-items: center;
-  gap: 10px;
-  padding: 9px 0;
+  gap: 14px;
+  padding: 11px 0;
   border-top: 1px solid var(--tp-hair);
-  font-size: 11.5px;
+  font-size: 15px;
 }
-.tp-page .tp-pairrow.is-head { padding: 0 0 6px; border-top: 0; color: var(--tp-quiet); font-size: 9.5px; font-weight: 650; }
+.tp-page .tp-pairrow.is-head { padding: 0 0 9px; border-top: 0; color: var(--tp-quiet); font-size: 13px; font-weight: 650; }
 .tp-page .tp-pairrow.is-head > span:nth-child(3) { visibility: hidden; }
 .tp-page .tp-pairlabel { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .tp-page .tp-pairlabel i { flex: 0 0 7px; width: 7px; height: 7px; border-radius: 2px; }
-.tp-page .tp-pairlabel b { font-size: 12px; font-weight: 650; }
-.tp-page .tp-pairlabel small { overflow: hidden; color: var(--tp-quiet); font-size: 9.5px; text-overflow: ellipsis; white-space: nowrap; }
-.tp-page .tp-paircombo { display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--tp-muted); }
-.tp-page .tp-paircombo em { color: var(--tp-quiet); font-size: 9.5px; font-style: normal; white-space: nowrap; }
-.tp-page .tp-pairmeter { height: 6px; overflow: hidden; border-radius: 3px; background: var(--tp-surface); }
-.tp-page .tp-pairmeter i { display: block; height: 100%; border-radius: 3px; }
-.tp-page .tp-pairnum { color: var(--tp-ink); font-size: 11.5px; font-weight: 650; text-align: right; white-space: nowrap; }
-.tp-page .tp-pairshare { color: var(--tp-quiet); font-size: 10px; text-align: right; white-space: nowrap; }
+.tp-page .tp-pairlabel b { font-size: 16px; font-weight: 650; }
+.tp-page .tp-pairlabel small { overflow: hidden; color: var(--tp-quiet); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+/* 必须显式给字号：team-dossier.css 里有一条给 SVG 用的 .tp-paircombo{font-size:9px}，
+   在分层样式里会漏到这个 HTML 表格上，导致这一列比别处小一圈。 */
+.tp-page .tp-paircombo { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--tp-muted); font-size: 15px; line-height: 1.5; }
+.tp-page .tp-paircombo em { color: var(--tp-quiet); font-size: 12.5px; font-style: normal; white-space: nowrap; }
+.tp-page .tp-pairmeter { height: 8px; overflow: hidden; border-radius: 4px; background: var(--tp-surface); }
+.tp-page .tp-pairmeter i { display: block; height: 100%; border-radius: 4px; }
+.tp-page .tp-pairnum { color: var(--tp-ink); font-size: 15px; font-weight: 650; text-align: right; white-space: nowrap; }
+.tp-page .tp-pairshare { color: var(--tp-quiet); font-size: 13px; text-align: right; white-space: nowrap; }
+.tp-page .tp-pairlist + .tp-read { font-size: 15px; line-height: 1.7; }
 
 /* ── 英雄池：大圆卡 ───────────────────────────────────────── */
 .tp-page .tp-poolgrid { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 9px 3px; }
@@ -728,7 +733,7 @@
 /* ── 响应式 ───────────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .tp-page .tp-evm { grid-template-columns: minmax(0, 1fr); }
-  .tp-page .tp-pairrow { grid-template-columns: 140px minmax(0, 1fr) 58px 52px; }
+  .tp-page .tp-pairrow { grid-template-columns: 195px minmax(0, 1fr) 90px 84px; }
   .tp-page .tp-pairmeter { display: none; }
   .tp-page .tp-pairrow.is-head > span:nth-child(3) { display: none; }
   .tp-page .tp-replace-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -758,7 +763,7 @@
   .tp-page .tp-lanerow { grid-template-columns: minmax(0, 1fr); }
   .tp-page .tp-lanerow-list { grid-column: 1; }
   .tp-page .tp-lanerow.is-empty { grid-template-columns: minmax(0, 1fr); }
-  .tp-page .tp-pairrow { grid-template-columns: minmax(0, 1fr) 68px 58px; gap: 8px; }
+  .tp-page .tp-pairrow { grid-template-columns: minmax(0, 1fr) 96px 88px; gap: 8px; }
   .tp-page .tp-paircombo { display: none; }
   .tp-page .tp-pairrow.is-head > span:nth-child(2) { display: none; }
   .tp-page .tp-poollanes { grid-template-columns: minmax(0, 1fr) !important; }

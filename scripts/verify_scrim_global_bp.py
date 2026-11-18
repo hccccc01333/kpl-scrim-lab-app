@@ -1,4 +1,4 @@
-"""Browser regression: scrim BP is 20-hand only, and the strategy sandbox can
+"""Browser regression: 征召 BP is 18-hand, and the strategy sandbox can
 complete a full 20-action draft.
 
 No fixture/mock: the evidence source is read from the local workbench.
@@ -24,9 +24,9 @@ def check(width, height):
         page.get_by_role("button", name="BP 策略模拟", exact=False).click()
         page.wait_for_selector("#bpl-simulate [data-bpl-sim-candidate]", timeout=20000)
         text = page.locator("#bpl-simulate").inner_text()
-        assert "20 手" in text, text[:300]
+        assert "18 手" in text, text[:300]
 
-        for turn in range(20):
+        for turn in range(18):
             candidates = page.locator("#bpl-simulate [data-bpl-sim-candidate]")
             candidates.first.wait_for(timeout=15000)
             candidates.first.click()
@@ -49,4 +49,4 @@ def check(width, height):
 if __name__ == "__main__":
     check(1440, 900)
     check(390, 844)
-    print("Scrim 20-hand rule + full BP sandbox browser regression: PASS")
+    print("Scrim 18-hand rule + full BP sandbox browser regression: PASS")

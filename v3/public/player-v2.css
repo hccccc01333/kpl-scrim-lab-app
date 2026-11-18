@@ -95,30 +95,31 @@
 /* ── 加黑加粗：浅灰细字在缩放下永远像"发虚"，信息类文字一律压到近墨色 ── */
 [data-pl-page="solo"] { --pv-ink-2: color-mix(in srgb, var(--text) 82%, var(--paper)); }
 
-/* SVG 文字：给一层同色极细描边，等于手动把字形"加粗"半档，小字号明显更实 */
+/* SVG 文字：统一用字体本身的字重，不再加同色描边。
+   描边 + 600 字重在 13–14px 的中文上会把笔画糊成一团（尤其「五五开」这种小标签），
+   看起来像套了一层黑边，反而不如直接 600/700 字重干净。 */
 [data-pl-page="solo"] .pv-axis,
 [data-pl-page="solo"] .pv-axis.is-name,
-[data-pl-page="solo"] .pv-col-val,
 [data-pl-page="solo"] .pv-row-label,
 [data-pl-page="solo"] .pl-radar-label,
 [data-pl-page="solo"] .pv-dot-text,
 [data-pl-page="solo"] .pv-bubble-label,
 [data-pl-page="solo"] .pv-tm-name {
   fill: var(--text);
-  stroke: var(--text);
-  stroke-width: .22px;
-  stroke-linejoin: round;
-  paint-order: stroke fill;
+  stroke: none;
   font-weight: 600;
+}
+[data-pl-page="solo"] .pv-col-val {
+  fill: var(--text);
+  stroke: none;
+  font-weight: 700;
 }
 [data-pl-page="solo"] .pv-ref-label,
 [data-pl-page="solo"] .pv-quad-label,
 [data-pl-page="solo"] .pv-tm-sub,
 [data-pl-page="solo"] .pl-radar-tick {
   fill: var(--pv-ink-2);
-  stroke: var(--pv-ink-2);
-  stroke-width: .18px;
-  paint-order: stroke fill;
+  stroke: none;
   font-weight: 600;
 }
 
@@ -226,7 +227,7 @@
 @media print {
   [data-pl-page="solo"].is-shot-mode .hero-masthead,
   [data-pl-page="solo"].is-shot-mode .hero-brief,
-  [data-pl-page="solo"].is-shot-mode .hero-anchor-nav,
+  [data-pl-page="solo"].is-shot-mode .pdx-dock,
   [data-pl-page="solo"].is-shot-mode .pdx-card:not(.is-shot) { display: none !important; }
   [data-pl-page="solo"].is-shot-mode .hero-detail-grid > .section:not(:has(.is-shot)) { display: none !important; }
   [data-pl-page="solo"].is-shot-mode .pdx-card.is-shot { border: 0; padding: 0; }
@@ -234,9 +235,9 @@
 }
 
 /* 锚点跳转时别被吸顶导航盖住标题 */
-[data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 78px; }
+[data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 210px; }
 @media (max-width: 720px) {
-  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 62px; }
+  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 210px; }
 }
 
 /* 键盘提示 */
