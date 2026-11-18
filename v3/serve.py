@@ -4278,13 +4278,16 @@ def bp_studio_tree(request: Request):
     opponent = str(values.get('opponent') or '').strip()
     start = str(values.get('from') or '').strip()
     end = str(values.get('to') or '').strip()
+    side = str(values.get('side') or '').strip()
+    if side not in ('', '1', '2'):
+        raise HTTPException(400, 'side 只能是 1 / 2 或留空')
     try:
         recent_days = int(values.get('recentDays') or 30)
         depth = int(values.get('depth') or 6)
         branch = int(values.get('branch') or 3)
     except (TypeError, ValueError):
         raise HTTPException(400, 'recentDays / depth / branch 必须是整数')
-    depth = max(3, min(10, depth))
+    depth = max(3, min(20, depth))
     branch = max(2, min(5, branch))
     games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
     bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
@@ -4292,7 +4295,7 @@ def bp_studio_tree(request: Request):
     if source == 'scrim' and not team:
         team = '本队'
     report = draft_tree(scoped, team=team, opponent=opponent,
-                        depth=depth, branch=branch)
+                        depth=depth, branch=branch, side=side)
     report['window'] = bounds
     report['source'] = source
     return report

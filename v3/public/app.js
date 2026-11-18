@@ -2792,7 +2792,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'bp' && !mods.bpLab) {
-    jobs.push(importOnce('./bp-studio.js?v=20261118t').then(({ createBpStudio }) => {
+    jobs.push(importOnce('./bp-studio.js?v=20261118a8').then(({ createBpStudio }) => {
       mods.bpLab = createBpStudio({ esc, fmt, pct, icon, portrait, API_BASE });
     }));
   }

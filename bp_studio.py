@@ -1173,15 +1173,17 @@ def sequence_board(games, team, action="pick", hand=1, hero=""):
     }
 
 
-def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600):
+def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, side=""):
     """BP 时序分支树：同一前缀合并，分叉按样本数保留前 N。
 
     只认已核验的 20 手 `events`（order/action/actor/hero）；没有手序的局不参与，
     不按名单顺序补。节点 `actor` 相对所选队伍：team = 我方，enemy = 对方。
+    蓝/红方的第一手行动方不同，默认取样本多的一侧，避免把两个视角混进一棵树。
     """
-    depth = max(2, min(10, int(depth or 6)))
+    depth = max(2, min(20, int(depth or 6)))
     branch = max(2, min(5, int(branch or 3)))
     rows = []
+    side_counts = Counter()
     total = 0
     for game in games or []:
         if team and str(game.get("team")) != team:
@@ -1190,16 +1192,24 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600):
             continue
         total += 1
         events = game.get("events") or []
-        # KPL 早期是 18 手（4 Ban + 10 Pick），训练赛是 20 手；只要够画到本页深度即可。
-        if len(events) < depth:
+        # KPL 早期是 18 手（4 Ban + 10 Pick），训练赛是 20 手；够画到本页深度即可。
+        if len(events) < 4:
             continue
+        side_counts[str(game.get("side") or "")] += 1
         rows.append(game)
+    if not side:
+        side = side_counts.most_common(1)[0][0] if side_counts else ""
+    if side:
+        rows = [game for game in rows if str(game.get("side") or "") == side]
     rows.sort(key=lambda game: str(game.get("date") or ""), reverse=True)
     rows = rows[:max(1, int(limit_games or 600))]
+    actual_depth = min(depth, max((len(game.get("events") or []) for game in rows), default=depth))
+    depth = max(2, actual_depth)
     if not rows:
         return {"available": False, "games": 0, "ordered": 0, "total": total,
                 "reason": "这个条件下没有足够长的已核验手序；先在采集/沙盘补录。",
                 "team": team, "opponent": opponent, "depth": depth, "branch": branch,
+                "side": side, "sideCounts": dict(side_counts),
                 "nodes": [], "main": [], "paths": []}
 
     nodes = {"0": {"id": "0", "parent": None, "level": 0, "order": 0,
@@ -1269,6 +1279,7 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600):
     kept.sort(key=lambda item: (item["level"], -item["count"], item["hero"]))
     return {"available": True, "games": len(rows), "ordered": len(rows), "total": total,
             "team": team, "opponent": opponent, "depth": depth, "branch": branch,
+            "side": side, "sideCounts": dict(side_counts),
             "nodes": kept, "main": main, "paths": paths[:12],
             "dropped": sum(len(kids) - min(len(kids), branch)
                            for kids in children.values())}

@@ -7,11 +7,11 @@ SCHEDULE = [("ban", "team"), ("ban", "enemy"), ("ban", "team"), ("ban", "enemy")
             ("pick", "team"), ("pick", "enemy"), ("pick", "enemy"), ("pick", "team")]
 
 
-def game(index, heroes, *, team="A队", enemy="B队", result=True, events=True):
+def game(index, heroes, *, team="A队", enemy="B队", result=True, events=True, side="1"):
     hands = [{"order": order, "action": action, "actor": actor, "hero": hero}
              for order, ((action, actor), hero) in enumerate(zip(SCHEDULE, heroes), 1)]
     return {"id": f"g{index}", "date": f"2026-11-{10 + index:02d}",
-            "team": team, "enemy": enemy, "result": result,
+            "team": team, "enemy": enemy, "result": result, "side": side,
             "events": hands if events else []}
 
 
@@ -42,3 +42,16 @@ def test_tree_empty_reports_reason():
     assert tree["available"] is False
     assert tree["reason"]
     assert tree["nodes"] == []
+
+
+def test_tree_splits_blue_and_red_side():
+    games = [game(1, ["盾山"] * 8, side="1"), game(2, ["大乔"] * 8, side="1"),
+             game(3, ["张飞"] * 8, side="2")]
+    tree = draft_tree(games, team="A队", depth=6)
+    assert tree["available"] is True
+    assert tree["side"] == "1"
+    assert tree["games"] == 2
+    red = draft_tree(games, team="A队", depth=6, side="2")
+    assert red["available"] is True
+    assert red["games"] == 1
+    assert red["side"] == "2"

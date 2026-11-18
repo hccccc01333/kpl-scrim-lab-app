@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118t';
+import {createBpViz} from './bps-viz.js?v=20261118a8';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -55,7 +55,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     target: [], targetData: null, targetLoading: false, targetError: '', targetOpen: false,
     heroSearch: '', comboSearch: '', targetSearch: '',
     types: null, typesLoading: false, typesError: '', typeBo: 0, typeSide: 'opponent', kplTypes: null, prior: 60, typeHand: 0, typeCore: 0, typeFocus: '', counterRowLane: '', counterColLane: '', counterSel: null, counterMode: 'pick',
-    tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeStale: true,
+    tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeSide: '', treeStale: true,
+    treeMode: 'flow', decisionPath: [], decisionPins: [],
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
@@ -174,6 +175,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         comboSize: state.comboSize, comboSort: state.comboSort, prior: state.prior,
         collapsed: state.collapsed, pins: state.pins, views: state.views, compact: state.compact,
         solo: state.solo, active: state.active,
+        treeDepth: state.treeDepth, treeBranch: state.treeBranch, treeSide: state.treeSide,
         comboPick: state.comboPick, target: state.target,
       }));
     } catch {}
@@ -192,7 +194,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
       if (!raw || typeof raw !== 'object') return;
       for (const key of ['source', 'team', 'opponent', 'recentDays', 'from', 'to',
-        'compare', 'lane', 'chartAll', 'chartView', 'comboSize', 'comboSort', 'prior']) {
+        'compare', 'lane', 'chartAll', 'chartView', 'comboSize', 'comboSort', 'prior',
+        'treeDepth', 'treeBranch', 'treeSide']) {
         if (raw[key] !== undefined && raw[key] !== null) state[key] = raw[key];
       }
       if (Array.isArray(raw.leagues)) state.leagues = raw.leagues.slice(0, 40);
@@ -336,6 +339,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (!state.root || !state.data) return;
     state.treeLoading = true;
     state.treeError = '';
+    state.decisionPath = [];
+    state.decisionPins = [];
     paint();
     try {
       const search = new URLSearchParams({
@@ -352,6 +357,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (team) search.set('team', team);
       if (state.leagues.length) search.set('leagues', state.leagues.join(','));
       if (state.from && state.to) { search.set('from', state.from); search.set('to', state.to); }
+      if (state.treeSide) search.set('side', state.treeSide);
       state.tree = await api(`/tree?${search.toString()}`);
       state.treeStale = false;
     } catch (error) {
@@ -1450,28 +1456,116 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           <em>${rate(row.winRate)}</em><i class="${row.delta >= 0 ? 'is-good' : 'is-bad'}">${signed(row.delta)} pp</i></span>`).join('')}</div>` : ''}`;
   }
 
+  function decisionTreeHtml() {
+    const tree = state.tree;
+    if (!tree?.available) {
+      return `<div class="bps-empty"><b>还没有可展开的手序</b>
+        <p>${esc(tree?.reason || '先选一个有已核验逐手记录的对手和窗口。')}</p></div>`;
+    }
+    const nodes = tree.nodes || [];
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const children = new Map();
+    for (const node of nodes) {
+      if (!children.has(node.parent)) children.set(node.parent, []);
+      children.get(node.parent).push(node);
+    }
+    const path = state.decisionPath.map((id) => byId.get(id)).filter(Boolean);
+    const parentKey = path.length ? path[path.length - 1].id : '0';
+    const siblings = [...(children.get(parentKey) || [])]
+      .sort((a, b) => (b.count - a.count) || String(a.hero).localeCompare(String(b.hero)));
+    const next = siblings.slice(0, 3);
+    const total = siblings.reduce((sum, node) => sum + node.count, 0) || 1;
+    const last = path[path.length - 1];
+    const crumb = [`<button type="button" class="bps-crumb ${path.length ? '' : 'is-on'}"
+        data-bps-decision-back="0">BP 开始</button>`]
+      .concat(path.map((node, index) => `<button type="button" class="bps-crumb ${index === path.length - 1 ? 'is-on' : ''}"
+        data-bps-decision-back="${index + 1}">${esc(heroShort(node.hero))}<em>${node.count}</em></button>`))
+      .join('<i>›</i>');
+    if (!next.length) {
+      return `<div class="bps-decision">
+        <div class="bps-decision-path">${crumb}</div>
+        <div class="bps-empty is-soft"><b>这条路径到头了</b>
+          <p>当前选择之后没有更长的已核验样本；换一个分支或换窗口。</p>
+          <button type="button" class="bps-softbtn" data-bps-decision-reset>回到起点</button></div>
+      </div>`;
+    }
+    const cards = next.map((node) => {
+      const share = node.count / total;
+      const grand = [...(children.get(node.id) || [])]
+        .sort((a, b) => b.count - a.count).slice(0, 3);
+      const grandTotal = grand.reduce((sum, item) => sum + item.count, 0) || 1;
+      return `<div class="bps-decision-card">
+        <button type="button" class="bps-decision-main" data-bps-decision-pick="${esc(node.id)}">
+          <span class="bps-decision-head">${heroImg(node.hero)}
+            <span><b>${esc(heroShort(node.hero))}</b><small>${node.action === 'ban' ? 'BAN' : 'PICK'} · ${node.actor === 'team' ? '我方' : '对方'}</small></span>
+            <em>${node.count} 局</em></span>
+          <span class="bps-decision-label"><span>分支概率</span><b>${Math.round(share * 100)}%</b></span>
+          <span class="bps-prob"><i style="width:${Math.round(share * 100)}%"></i></span>
+          <span class="bps-decision-label"><span>这条路径胜率</span><b>${node.winRate == null ? '—' : `${fmt(node.winRate, 1)}%`}</b></span>
+          <span class="bps-score"><i style="width:${node.winRate == null ? 0 : Math.round(node.winRate)}%"></i></span>
+          <span class="bps-decision-next">${grand.length
+            ? `预测下一手：${grand.map((item) => `${esc(heroShort(item.hero))} ${Math.round(item.count / grandTotal * 100)}%`).join(' · ')}`
+            : '没有更长的样本'}</span>
+        </button>
+        <button type="button" class="bps-decision-pin" data-bps-decision-pin="${esc(node.id)}">固定这条对比</button>
+      </div>`;
+    }).join('');
+    const pins = (state.decisionPins || []).map((ids, index) => {
+      const route = ids.map((id) => byId.get(id)).filter(Boolean);
+      if (!route.length) return '';
+      const tail = route[route.length - 1];
+      return `<span class="bps-decision-pinrow">
+        <b>${route.map((node) => esc(heroShort(node.hero))).join(' → ')}</b>
+        <em>${tail.count} 局 · 胜率 ${tail.winRate == null ? '—' : `${fmt(tail.winRate, 1)}%`}</em>
+        <button type="button" data-bps-decision-unpin="${index}" aria-label="移除">×</button>
+      </span>`;
+    }).join('');
+    return `<div class="bps-decision">
+      <div class="bps-decision-path">${crumb}</div>
+      <div class="bps-decision-caption">当前${last ? `在「${esc(heroShort(last.hero))}」之后` : '从第一手开始'}，
+        按历史条件频率展开前 ${next.length} 个分支；条宽 = 分支概率，第二条 = 该路径胜率。</div>
+      <div class="bps-decision-cands">${cards}</div>
+      ${pins ? `<div class="bps-decision-pins"><span class="bps-console-label">固定对比</span>${pins}</div>` : ''}
+    </div>`;
+  }
+
   function draftTreePanel() {
     return `<div class="bps-panel is-wide bps-tree-panel" data-bps-tree>
       <div class="bps-panel-head"><h3>BP 时序分支</h3>
-        <span class="bps-sub">主线 = 每手样本最多；支线 = 同手其他高频选择 · 只认已核验手序</span></div>
+        <span class="bps-sub">同一手同一英雄合并；线宽 = 局数；只认已核验手序</span></div>
       <div class="bps-panel-body">
         <div class="bps-tree-tools">
-          <span class="bps-console-label">深度</span>${seg([[4, '4 手'], [6, '6 手'], [8, '8 手']],
+          <span class="bps-console-label">视图</span>${seg([['flow', '历史路径'], ['decision', '决策树']],
+            state.treeMode, 'data-bps-tree-mode', {small: true})}
+          ${state.treeMode === 'flow' ? `<span class="bps-console-label">深度</span>${seg([[6, '前 6 手'], [10, '前 10 手'], [20, '全 20 手']],
             String(state.treeDepth), 'data-bps-tree-depth', {small: true})}
           <span class="bps-console-label">分叉</span>${seg([[2, '2 支'], [3, '3 支']],
-            String(state.treeBranch), 'data-bps-tree-branch', {small: true})}
+            String(state.treeBranch), 'data-bps-tree-branch', {small: true})}` : ''}
           <span class="bps-console-label">看</span>${seg([['opponent', '对手'], ['own', '我们']],
             state.typeSide, 'data-bps-tree-side', {small: true})}
+          <span class="bps-console-label">阵营</span>${seg([['', '自动'], ['1', '蓝方'], ['2', '红方']],
+            state.treeSide, 'data-bps-tree-camp', {small: true})}
           ${state.tree?.available
-            ? `<span class="bps-sub">已核验 ${num(state.tree.games)} / ${num(state.tree.total)} 局</span>` : ''}
+            ? `<span class="bps-sub">已核验 ${num(state.tree.games)} / ${num(state.tree.total)} 局
+              ${state.tree.sideCounts ? `· 蓝 ${num(state.tree.sideCounts['1'] || 0)} / 红 ${num(state.tree.sideCounts['2'] || 0)}` : ''}</span>` : ''}
         </div>
+        ${state.treeMode === 'decision' ? decisionTreeHtml() : `
         ${state.treeLoading && !state.tree ? '<div class="bps-loading">正在按逐手事件建树…</div>' : ''}
         ${state.treeError ? `<div class="bps-inline-error">${esc(state.treeError)}</div>` : ''}
         ${state.tree?.available && state.tree.games < 8
-          ? '<p class="bps-note">已核验手序不到 8 局，主线只作方向参考，不当作稳定习惯。</p>' : ''}
-        ${state.tree?.available ? `<div class="bps-tree-scroll">${viz.draftBranchMap(state.tree, {width: 1080, height: 300})}</div>`
+          ? '<p class="bps-note">已核验手序不到 8 局，整张图只作方向参考，不当作稳定习惯。</p>' : ''}
+        ${state.tree?.available && state.treeDepth >= 20
+          ? '<p class="bps-note">20 手较宽，图内可左右滚动看完整路径。</p>' : ''}
+        ${state.tree?.available ? `<div class="bps-tree-scroll">${viz.draftFlowMap(state.tree, {width: 1080, height: 480})}</div>
+          <div class="bps-tree-key">
+            <span><i class="is-own-pick"></i>我方 Pick</span>
+            <span><i class="is-own-ban"></i>我方 Ban</span>
+            <span><i class="is-foe-pick"></i>对方 Pick</span>
+            <span><i class="is-foe-ban"></i>对方 Ban</span>
+            <span class="is-note">线宽 = 局数；同一手同一英雄合并成一个节点</span>
+          </div>`
           : (state.tree ? `<div class="bps-empty"><b>还没有可画的手序</b>
-              <p>${esc(state.tree.reason || '')}</p></div>` : '')}
+              <p>${esc(state.tree.reason || '')}</p></div>` : '')}`}
       </div>
     </div>`;
   }
@@ -2433,6 +2527,49 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.typeSide = treeSide.dataset.bpsTreeSide;
       state.treeStale = true;
       loadTree();
+      return;
+    }
+    const treeCamp = event.target.closest('[data-bps-tree-camp]');
+    if (treeCamp) {
+      state.treeSide = treeCamp.dataset.bpsTreeCamp;
+      loadTree();
+      return;
+    }
+    const treeMode = event.target.closest('[data-bps-tree-mode]');
+    if (treeMode) {
+      state.treeMode = treeMode.dataset.bpsTreeMode === 'decision' ? 'decision' : 'flow';
+      state.decisionPath = [];
+      paint();
+      return;
+    }
+    const decisionPick = event.target.closest('[data-bps-decision-pick]');
+    if (decisionPick) {
+      state.decisionPath.push(decisionPick.dataset.bpsDecisionPick);
+      paint();
+      return;
+    }
+    const decisionPin = event.target.closest('[data-bps-decision-pin]');
+    if (decisionPin) {
+      const route = [...state.decisionPath, decisionPin.dataset.bpsDecisionPin];
+      state.decisionPins = [...(state.decisionPins || []), route].slice(-3);
+      paint();
+      return;
+    }
+    const decisionUnpin = event.target.closest('[data-bps-decision-unpin]');
+    if (decisionUnpin) {
+      state.decisionPins.splice(Number(decisionUnpin.dataset.bpsDecisionUnpin) || 0, 1);
+      paint();
+      return;
+    }
+    const decisionBack = event.target.closest('[data-bps-decision-back]');
+    if (decisionBack) {
+      state.decisionPath = state.decisionPath.slice(0, Number(decisionBack.dataset.bpsDecisionBack) || 0);
+      paint();
+      return;
+    }
+    if (event.target.closest('[data-bps-decision-reset]')) {
+      state.decisionPath = [];
+      paint();
       return;
     }
     const compareOpponent = event.target.closest('[data-bps-compare-opponent]');

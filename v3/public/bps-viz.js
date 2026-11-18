@@ -772,20 +772,90 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         transform="rotate(-90 8 ${topH + rows.length * cell / 2})" text-anchor="middle">对面类型 →</text></svg>`;
   }
 
-  /* ── BP 时序分支：一条主路径 + 每手的高频支线，像地铁线路图 ────────── */
-  function draftBranchMap(data, {width = 1080, height = 340} = {}) {
-    const nodes = data?.nodes || [];
-    if (!data?.available || !nodes.length) {
+  /* ── BP 时序流：同一手同一英雄合并成一个节点，边宽 = 局数，像地铁汇流图 ── */
+  function draftFlowMap(data, {width = 1080, height = 480} = {}) {
+    const all = (data?.nodes || []).filter((node) => node.level > 0);
+    if (!data?.available || !all.length) {
       return `<div class="bv-empty">${esc(data?.reason || '没有可用的手序样本。')}</div>`;
     }
-    const byId = new Map(nodes.map((node) => [node.id, node]));
-    const main = (data.main || []).map((id) => byId.get(id)).filter(Boolean);
-    if (!main.length) return '<div class="bv-empty">还没有足够长的已核验手序。</div>';
-    const left = 64;
-    const right = 92;
-    const colW = (width - left - right) / Math.max(1, main.length - 1);
-    const x = (level) => left + (level - 1) * colW;
-    const mainY = height / 2 + 4;
+    const depth = Math.max(2, Number(data.depth) || 6);
+    const canvasWidth = Math.max(width, depth * 92 + 168);
+    if (depth > 12) height = Math.max(height, 520);
+    const keyOf = (node) => `${node.level}:${node.actor}:${node.action}:${node.hero}`;
+    const merged = new Map();
+    const sourceKey = new Map();
+    for (const node of all) {
+      const key = keyOf(node);
+      sourceKey.set(node.id, key);
+      const row = merged.get(key);
+      if (row) {
+        row.count += node.count;
+        row.wins += node.wins || 0;
+        row.decided += node.decided || 0;
+      } else {
+        merged.set(key, {key, level: node.level, action: node.action, actor: node.actor,
+          hero: node.hero, count: node.count, wins: node.wins || 0, decided: node.decided || 0});
+      }
+    }
+    const edgeCounts = new Map();
+    for (const node of all) {
+      const parentKey = node.parent === '0' ? '0' : sourceKey.get(node.parent);
+      if (!parentKey) continue;
+      const key = `${parentKey}>${sourceKey.get(node.id)}`;
+      edgeCounts.set(key, (edgeCounts.get(key) || 0) + node.count);
+    }
+    const byLevel = new Map();
+    for (const node of merged.values()) {
+      if (!byLevel.has(node.level)) byLevel.set(node.level, []);
+      byLevel.get(node.level).push(node);
+    }
+    const levels = [...byLevel.keys()].sort((a, b) => a - b);
+    const top = 64;
+    const bottom = 84;
+    for (const level of levels) {
+      const list = byLevel.get(level).sort((a, b) => b.count - a.count || a.hero.localeCompare(b.hero));
+      const gap = (height - top - bottom) / Math.max(1, list.length - 1);
+      list.forEach((node, index) => {
+        node._y = list.length === 1 ? (top + height - bottom) / 2 : top + index * gap;
+      });
+    }
+    const parentsOf = new Map();
+    for (const [edge, count] of edgeCounts) {
+      const [parentKey, childKey] = edge.split('>');
+      if (parentKey === '0') continue;
+      const parent = merged.get(parentKey);
+      const child = merged.get(childKey);
+      if (!parent || !child) continue;
+      if (!parentsOf.has(childKey)) parentsOf.set(childKey, []);
+      parentsOf.get(childKey).push({parent, count});
+    }
+    for (let round = 0; round < 4; round += 1) {
+      for (const level of levels.slice(1)) {
+        const list = byLevel.get(level);
+        for (const node of list) {
+          const parents = parentsOf.get(node.key) || [];
+          const total = parents.reduce((sum, item) => sum + item.count, 0);
+          if (total) node._y = parents.reduce((sum, item) => sum + item.parent._y * item.count, 0) / total;
+        }
+        list.sort((a, b) => a._y - b._y);
+        const gap = 54;
+        for (let index = 1; index < list.length; index += 1) {
+          if (list[index]._y - list[index - 1]._y < gap) list[index]._y = list[index - 1]._y + gap;
+        }
+        const overflow = list.length ? list[list.length - 1]._y - (height - bottom) : 0;
+        if (overflow > 0) for (const node of list) node._y -= overflow;
+        const under = list.length ? top - list[0]._y : 0;
+        if (under > 0) for (const node of list) node._y += under;
+      }
+    }
+    const first = byLevel.get(levels[0]) || [];
+    const rootY = first.length ? first.reduce((sum, node) => sum + node._y, 0) / first.length : height / 2;
+    const left = 56;
+    const right = 104;
+    const colW = (canvasWidth - left - right) / Math.max(1, depth - 1);
+    const xOf = (level) => left + (level - 1) * colW;
+    const maxCount = Math.max(1, ...[...merged.values()].map((node) => node.count));
+    const maxEdge = Math.max(1, ...edgeCounts.values());
     const tone = (node) => {
       if (node.actor === 'team') {
         return node.action === 'ban'
@@ -794,48 +864,47 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       return node.action === 'ban'
         ? {color: '#a86a2a', dash: '5 4'} : {color: '#4a6fa8', dash: ''};
     };
-    const segments = [];
-    const branches = [];
-    const marks = [];
-    for (let index = 0; index < main.length; index += 1) {
-      const node = main[index];
-      const cx = x(node.level);
-      const paint = tone(node);
-      if (index > 0) {
-        const prev = main[index - 1];
-        segments.push(`<path d="M${(x(prev.level) + 19).toFixed(1)},${mainY} L${(cx - 19).toFixed(1)},${mainY}"
-          fill="none" stroke="${paint.color}" stroke-width="2.6" stroke-linecap="round"
-          ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''} opacity=".9"/>`);
-      }
-      marks.push(`<text x="${cx.toFixed(1)}" y="${(mainY - 44).toFixed(1)}" class="bv-tree-hand">${node.order} 手 · ${node.action === 'ban' ? 'BAN' : 'PICK'}</text>
-        <text x="${cx.toFixed(1)}" y="${(mainY - 28).toFixed(1)}" class="bv-tree-side" fill="${paint.color}">${node.actor === 'team' ? '我方' : '对方'}</text>
-        ${markerWithIcon(node.hero, cx, mainY, 17, `tree-main-${index}`, paint.color)}
-        <text x="${cx.toFixed(1)}" y="${(mainY + 33).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
-        <text x="${cx.toFixed(1)}" y="${(mainY + 47).toFixed(1)}" class="bv-tree-count">${node.count} 局 · ${node.winRate == null ? '—' : fmt1(node.winRate) + '%'}</text>`);
-      const siblings = nodes
-        .filter((item) => item.parent === node.parent && item.level === node.level && item.id !== node.id)
-        .slice(0, 2);
-      siblings.forEach((item, slot) => {
-        const cy = mainY + (slot === 0 ? -1 : 1) * (74 + slot * 30);
-        const alt = tone(item);
-        branches.push(`<path d="M${(cx - 18).toFixed(1)},${mainY} C${(cx - 34).toFixed(1)},${mainY} ${(cx - 26).toFixed(1)},${cy.toFixed(1)} ${(cx - 12).toFixed(1)},${cy.toFixed(1)}"
-          fill="none" stroke="${alt.color}" stroke-width="1.1" ${alt.dash ? `stroke-dasharray="${alt.dash}"` : ''} opacity=".5"/>
-          ${markerWithIcon(item.hero, cx - 11, cy, 10, `tree-alt-${index}-${slot}`, alt.color)}
-          <text x="${(cx + 2).toFixed(1)}" y="${(cy + 3.4).toFixed(1)}" class="bv-tree-alt">${esc(short(item.hero))} ${item.count}</text>`);
-      });
+    const headers = levels.map((level) => {
+      const list = byLevel.get(level);
+      const lead = list[0];
+      const paint = tone(lead);
+      return `<text x="${xOf(level).toFixed(1)}" y="40" class="bv-tree-hand" fill="${paint.color}">${level} 手 · ${lead.action === 'ban' ? 'BAN' : 'PICK'}</text>
+        <text x="${xOf(level).toFixed(1)}" y="54" class="bv-tree-side" fill="${paint.color}">${lead.actor === 'team' ? '我方' : '对方'}</text>`;
+    }).join('');
+    const edges = [];
+    for (const [edge, count] of edgeCounts) {
+      const [parentKey, childKey] = edge.split('>');
+      const child = merged.get(childKey);
+      if (!child) continue;
+      const paint = tone(child);
+      const y0 = parentKey === '0' ? rootY : merged.get(parentKey)?._y;
+      if (!Number.isFinite(y0) || !Number.isFinite(child._y)) continue;
+      const x0 = parentKey === '0' ? left - 26 : xOf(merged.get(parentKey).level);
+      const x1 = xOf(child.level);
+      const mid = (x0 + x1) / 2;
+      const stroke = 1.2 + 4.4 * (count / maxEdge);
+      edges.push(`<path d="M${(x0 + 12).toFixed(1)},${y0.toFixed(1)} C${mid.toFixed(1)},${y0.toFixed(1)} ${mid.toFixed(1)},${child._y.toFixed(1)} ${(x1 - 12).toFixed(1)},${child._y.toFixed(1)}"
+        fill="none" stroke="${paint.color}" stroke-width="${stroke.toFixed(1)}"
+        ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''}
+        opacity="${(0.18 + 0.4 * (count / maxEdge)).toFixed(2)}" stroke-linecap="round"/>`);
     }
-    const legend = `<g transform="translate(${left}, ${height - 12})">
-      <line x1="0" y1="-4" x2="18" y2="-4" stroke="#246b63" stroke-width="2.4"/>
-      <text x="24" y="0" class="bv-tree-legend">我方 Pick</text>
-      <line x1="92" y1="-4" x2="110" y2="-4" stroke="#a94b40" stroke-width="2.4" stroke-dasharray="5 4"/>
-      <text x="116" y="0" class="bv-tree-legend">我方 Ban</text>
-      <line x1="174" y1="-4" x2="192" y2="-4" stroke="#4a6fa8" stroke-width="2.4"/>
-      <text x="198" y="0" class="bv-tree-legend">对方 Pick</text>
-      <line x1="266" y1="-4" x2="284" y2="-4" stroke="#a86a2a" stroke-width="2.4" stroke-dasharray="5 4"/>
-      <text x="290" y="0" class="bv-tree-legend">对方 Ban</text>
-      <text x="360" y="0" class="bv-tree-legend">支线 = 同一手其他高频选择；数字 = 局数</text>
-    </g>`;
-    return wrap(width, height, `${segments.join('')}${branches.join('')}${marks.join('')}${legend}`);
+    const marks = [];
+    let uid = 0;
+    marks.push(`<circle cx="${(left - 26).toFixed(1)}" cy="${rootY.toFixed(1)}" r="9"
+      fill="#0e2f2b" stroke="#fff" stroke-width="2"/>
+      <text x="${(left - 26).toFixed(1)}" y="${(rootY + 26).toFixed(1)}" class="bv-tree-root">BP 开始</text>`);
+    for (const node of merged.values()) {
+      if (!Number.isFinite(node._y)) continue;
+      const x = xOf(node.level);
+      const paint = tone(node);
+      const radius = 10 + 5 * Math.sqrt(node.count / maxCount);
+      marks.push(`<g><title>${esc(node.hero)} · ${node.count} 局 · 胜率 ${node.decided ? fmt1(node.wins / node.decided * 100) + '%' : '—'}</title>
+        ${markerWithIcon(node.hero, x, node._y, radius, `flow-${uid++}`, paint.color)}</g>
+        <text x="${x.toFixed(1)}" y="${(node._y + radius + 14).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
+        ${node.count > 1 ? `<text x="${x.toFixed(1)}" y="${(node._y + radius + 26).toFixed(1)}" class="bv-tree-count">${node.count} 局</text>` : ''}`);
+    }
+    return wrap(canvasWidth, height, `${headers}${edges.join('')}${marks.join('')}`)
+      .replace('<svg ', `<svg style="min-width:${canvasWidth}px" `);
   }
 
   /* ── 类型时间轴：第一手 Ban 的类型份额按月堆叠 ─────────────────────── */
@@ -1237,6 +1306,6 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   return {heroScatter, dotScatter, dotCI, dumbbell, handHeatmap, handRing, radar, slope,
-    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftBranchMap, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
+    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftFlowMap, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
 
 }
