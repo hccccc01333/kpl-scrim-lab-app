@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118c9';
+import {createBpViz} from './bps-viz.js?v=20261118d4';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -829,6 +829,37 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (!sticky) return;
     const height = Math.round(sticky.getBoundingClientRect().height);
     document.documentElement.style.setProperty('--bps-sticky-h', `${height}px`);
+  }
+
+  function bindFlowDrag() {
+    if (!state.root) return;
+    state.root.querySelectorAll('.bps-tree-scroll').forEach((scroller) => {
+      if (scroller.dataset.dragBound) return;
+      scroller.dataset.dragBound = '1';
+      let active = false;
+      let startX = 0;
+      let startLeft = 0;
+      scroller.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return;
+        active = true;
+        startX = event.clientX;
+        startLeft = scroller.scrollLeft;
+        scroller.classList.add('is-dragging');
+        scroller.setPointerCapture?.(event.pointerId);
+        event.preventDefault();
+      });
+      scroller.addEventListener('pointermove', (event) => {
+        if (!active) return;
+        scroller.scrollLeft = startLeft - (event.clientX - startX);
+      });
+      const end = () => {
+        active = false;
+        scroller.classList.remove('is-dragging');
+      };
+      scroller.addEventListener('pointerup', end);
+      scroller.addEventListener('pointercancel', end);
+      scroller.addEventListener('lostpointercapture', end);
+    });
   }
 
   // ── 01 英雄优先级 ───────────────────────────────────────────────────
@@ -1978,6 +2009,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     applyZoom();
     decorateSections();
     observeLazy();
+    bindFlowDrag();
     updateActiveJump();
     requestAnimationFrame(syncSticky);
     // 单节模式直接进入 01 时，关系环在首屏下方，不能等滚动才请求。
@@ -2060,6 +2092,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       decorateSections();
       applyZoom();
       observeLazy();
+      bindFlowDrag();
       updateActiveJump();
     });
   }

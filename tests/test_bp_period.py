@@ -27,6 +27,17 @@ def test_period_compare_rates_and_min_sample():
     assert row["after"]["winRate"] is None
 
 
+def test_season_compare_shifts_to_mid_when_season_has_no_before():
+    games = []
+    for index in range(8):
+        games.append(_game(f"2026-11-{index + 2:02d}", ["盾山"], ["鲁班大师"], index % 2 == 0))
+    report = bp_studio.season_period_compare(games, "S45", days=30)
+    assert report["available"] is True
+    assert report.get("autoShifted") is True
+    assert report["season"] == "S45"
+    assert report["before"]["games"] > 0 and report["after"]["games"] > 0
+
+
 def test_hero_ring_uses_relation_tables(monkeypatch):
     monkeypatch.setattr(bp_studio, "_relation_fact", lambda name: {
         "lane_matchups.json": {"pairs": [

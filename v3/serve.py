@@ -4267,7 +4267,7 @@ def bp_studio_sequence(request: Request):
 @router.get('/api/v3/bp-studio/period-compare')
 def bp_studio_period_compare(request: Request):
     """按日期切分的前后对照（Pick / Ban / 胜率）；没有版本字段，不冒充版本。"""
-    from bp_studio import _in_window, period_compare, window_bounds
+    from bp_studio import _in_window, period_compare, season_period_compare, season_cut, window_bounds
 
     values = request.query_params
     source = str(values.get('source') or 'kpl').strip()
@@ -4276,19 +4276,17 @@ def bp_studio_period_compare(request: Request):
     leagues = str(values.get('leagues') or '').strip()
     cut = str(values.get('cut') or '').strip()
     season = str(values.get('season') or '').strip()
-    if season and not cut:
-        from bp_studio import season_cut
-        cut = season_cut(season)
-        if not cut:
-            raise HTTPException(400, '未知赛季')
-    if not cut:
+    if not season and not cut:
         raise HTTPException(400, 'cut 或 season 不能为空')
+    if season and not season_cut(season):
+        raise HTTPException(400, '未知赛季')
     try:
         days = int(values.get('days') or 30)
     except (TypeError, ValueError):
         raise HTTPException(400, 'days 必须是整数')
     games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
-    report = period_compare(games, cut, days)
+    report = (season_period_compare(games, season, days) if season
+              else period_compare(games, cut, days))
     report['source'] = source
     report['season'] = season or ''
     return report

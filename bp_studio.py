@@ -1291,6 +1291,38 @@ def season_cut(season):
     return ''
 
 
+def season_period_compare(games, season, days=30, *, limit=10):
+    """赛季切换前后对比；赛季未结束时退到赛季内有样本的中段，避免整块空白。"""
+    start = season_cut(season)
+    if not start:
+        return {"available": False, "reason": "未知赛季。", "season": season}
+    report = period_compare(games, start, days, limit=limit)
+    report["season"] = season
+    if report.get("available"):
+        return report
+    # 赛季刚开始：切分点前没有样本。把切分点挪到赛季内已有数据的中段，
+    # 至少让 10/11 月的训练赛能形成“前半段 vs 后半段”的对照。
+    dated = []
+    for game in games or []:
+        day = str(game.get("date") or "")[:10]
+        if day and day >= start:
+            dated.append(day)
+    dated = sorted(set(dated))
+    if len(dated) < 2:
+        report["reason"] = "赛季开始后还没有足够训练赛样本。"
+        return report
+    middle = dated[len(dated) // 2]
+    shifted = period_compare(games, middle, days, limit=limit)
+    shifted["season"] = season
+    if shifted.get("available"):
+        shifted["autoShifted"] = True
+        shifted["note"] = ("赛季尚未结束，切分点前没有样本；已自动挪到赛季内有样本的中段，"
+                           "按赛季内前后对照，不冒充开赛前后。")
+        return shifted
+    report["reason"] = "赛季内也没有足够的前后样本。"
+    return report
+
+
 def period_compare(games, cut, days=30, *, limit=10):
     """按日期切分的前后对照：Pick / Ban / 胜率。没有版本字段，不冒充官方版本。"""
     try:

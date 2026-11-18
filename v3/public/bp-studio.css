@@ -350,8 +350,10 @@
 .bps-jump-mode:hover { background: var(--bps-wash-2); }
 
 /* ── 分区 ───────────────────────────────────────────────────────────── */
-.bps-sections { display: grid; gap: 26px; margin-top: 10px; }
+.bps-sections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; margin-top: 10px; }
+.bps-sections > * { min-width: 0; }
 .bps-section {
+  min-width: 0;
   scroll-margin-top: calc(var(--bps-sticky-h, 132px) + 14px);
   padding: 30px 0 10px;
   border-top: 1px solid var(--bps-line);
@@ -1111,7 +1113,10 @@
   margin: -2px 0 8px; color: var(--bps-quiet); font-size: 11px; font-weight: 650;
 }
 .bps-tree-panel { margin-bottom: 14px; }
-.bps-tree-scroll { overflow-x: auto; }
+.bps-tree-scroll { overflow-x: auto; max-width: 100%; min-width: 0; cursor: grab; }
+.bps-tree-panel, .bps-tree-panel .bps-panel-body { min-width: 0; max-width: 100%; }
+.bps-tree-scroll.is-dragging { cursor: grabbing; user-select: none; }
+.bps-tree-scroll.is-dragging * { pointer-events: none; }
 .bps-tree-scroll > .bv { min-width: 760px; max-width: none; margin: 0; }
 .bps-tree-key {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;

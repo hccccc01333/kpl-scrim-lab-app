@@ -870,8 +870,8 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     marks.push(`<g>
       <circle cx="${x0}" cy="${currentY.toFixed(1)}" r="9" fill="#0e2f2b" stroke="#fff" stroke-width="2"/>
       ${current ? markerWithIcon(current.hero, x0, currentY, 18, 'dt-current', '#0e2f2b') : ''}
-      <text x="${x0}" y="${(currentY - 44).toFixed(1)}" class="bv-tree-hand">${current ? '当前选择' : 'BP 开始'}</text>
-      ${current ? `<text x="${x0}" y="${(currentY - 29).toFixed(1)}" class="bv-tree-side" fill="#0e2f2b">${current.level} 手 · ${current.action === 'ban' ? 'BAN' : 'PICK'} · ${current.actor === 'team' ? '我方' : '对方'}</text>` : ''}
+      <text x="${x0}" y="${(currentY - 54).toFixed(1)}" class="bv-tree-hand">${current ? '当前选择' : 'BP 开始'}</text>
+      ${current ? `<text x="${x0}" y="${(currentY - 36).toFixed(1)}" class="bv-tree-side" fill="#0e2f2b">${current.level} 手 · ${current.action === 'ban' ? 'BAN' : 'PICK'} · ${current.actor === 'team' ? '我方' : '对方'}</text>` : ''}
       <text x="${x0}" y="${(currentY + 40).toFixed(1)}" class="bv-tree-hero">${current ? esc(short(current.hero)) : '第 1 手'}</text>
     </g>`);
     first.forEach((node, index) => {
@@ -882,7 +882,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''} opacity="${(0.35 + 0.55 * share).toFixed(2)}" stroke-linecap="round"/>`);
       marks.push(`<g class="bv-dt-node" data-bps-decision-pick="${esc(node.id)}">
         <title>${esc(node.hero)} · ${node.count} 局 · 胜率 ${node.winRate == null ? '—' : fmt1(node.winRate) + '%'}</title>
-        <text x="${x1}" y="${(node._y - 28).toFixed(1)}" class="bv-tree-hand" fill="${paint.color}">${node.level} 手 · ${node.action === 'ban' ? 'BAN' : 'PICK'} · ${node.actor === 'team' ? '我方' : '对方'}</text>
+        <text x="${x1}" y="${(node._y - 36).toFixed(1)}" class="bv-tree-hand" fill="${paint.color}">${node.level} 手 · ${node.action === 'ban' ? 'BAN' : 'PICK'} · ${node.actor === 'team' ? '我方' : '对方'}</text>
         ${markerWithIcon(node.hero, x1, node._y, 15, `dt-${index}`, paint.color)}
         <text x="${x1}" y="${(node._y + 30).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
         <text x="${x1}" y="${(node._y + 43).toFixed(1)}" class="bv-tree-count">${node.count} 局 · ${Math.round(share * 100)}%</text>
@@ -901,7 +901,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         marks.push(`<g class="bv-dt-node" data-bps-decision-pick="${esc(node.id)},${esc(item.id)}">
           <title>${esc(item.hero)} · ${item.count} 局</title>
           ${markerWithIcon(item.hero, x2, cy, 11, `dt-${index}-${slot}`, alt.color)}
-          <text x="${x2}" y="${(cy + 24).toFixed(1)}" class="bv-tree-count">${esc(short(item.hero))} ${item.count}</text>
+          <text x="${x2}" y="${(cy + 24).toFixed(1)}" class="bv-tree-alt">${item.action === 'ban' ? 'BAN' : 'PICK'} ${esc(short(item.hero))} ${item.count}</text>
         </g>`);
       });
     });
@@ -915,7 +915,8 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       return `<div class="bv-empty">${esc(data?.reason || '没有可用的手序样本。')}</div>`;
     }
     const depth = Math.max(2, Number(data.depth) || 6);
-    const canvasWidth = Math.max(width, depth * 92 + 168);
+    const perCol = depth >= 18 ? 68 : 92;
+    const canvasWidth = Math.max(width, depth * perCol + 150);
     if (depth > 12) height = Math.max(height, 520);
     const keyOf = (node) => `${node.level}:${node.actor}:${node.action}:${node.hero}`;
     const merged = new Map();

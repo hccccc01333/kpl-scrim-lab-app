@@ -6,7 +6,7 @@
 @import url('./style.css?v=20261116c') layer(legacy);
 @import url('./match-recap-fixes.css?v=20261116c') layer(legacy);
 @import url('./workspace-home.css?v=20261116c') layer(legacy);
-@import url('./bp-studio.css?v=20261118c9') layer(legacy);
+@import url('./bp-studio.css?v=20261118d4') layer(legacy);
 @import url('./match-review.css?v=20261116c') layer(legacy);
 @import url('./series.css?v=20261116c') layer(legacy);
 @import url('./cross.css?v=20261116c') layer(legacy);
@@ -23,4 +23,4 @@
 /* 选手名册整页重做（2026-11-16）：不放进任何 layer，保证盖过历史补丁里的 .rs-* 尺寸。 */
 @import url("./player-archive.css");
 /* 战队详情 v9（2026-11-17）：分节、英雄大圆卡、类型矩阵。不放进 layer，保证盖过历史补丁。 */
-@import url("./team-dossier-v9.css?v=20261118c9");
+@import url("./team-dossier-v9.css?v=20261118d4");
