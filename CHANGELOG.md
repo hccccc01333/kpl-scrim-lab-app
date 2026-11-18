@@ -14,6 +14,7 @@
 - 首页复盘卡改用 subgrid 逐行对齐，阵容头像放大到 40px。
 - 战队页核数玫瑰图标签去描边、局数移进扇区；位置组合表字号整体放大。
 - 单场报告 BP 卡不再被同排展开的卡拉长。
+- 修掉公开仓库与发布包根路径空白：`v3/serve.py` 顶层 `import peak_crawl`，而 `peak_crawl` 依赖不随包发布的 `scripts/build_bp_facts.py`，导入一失败 v3 路由与 `/static` 全部不挂载。现在抓取模块缺失只关掉巅峰千强，其余页面照常；`make_release.py` 的冒烟测试也补了 `import v3.serve`，同类问题不会再漏到发布包。
 
 ### BP 规则与展示：三模式重做
 

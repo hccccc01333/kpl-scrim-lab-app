@@ -1,5 +1,9 @@
-# 官网自动部署：推送 main 后构建 website/dist 并发布到 GitHub Pages。
-# 首次启用：仓库 Settings -> Pages -> Source 选「GitHub Actions」。
+# 官网构建自检：模板占位符、CHANGELOG 渲染、资源指纹出错都要在这里拦住。
+#
+# 真正的发布不在这里：官网部署在独立仓库 hccccc01333/kpl-scrim-lab-site
+# （GitHub Pages → https://hccccc01333.github.io/kpl-scrim-lab-site/），
+# 本仓库没有开启 Pages，所以以前那套 configure-pages / deploy-pages 必然 404。
+# 发布走 `python scripts/deploy_site_api.py`，把 website/dist 推到站点仓库。
 name: website
 
 on:
@@ -16,19 +20,10 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: pages
-  cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -36,9 +31,13 @@ jobs:
           python-version: '3.12'
       - name: 构建官网
         run: python scripts/build_website.py
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - name: 校验产物
+        run: |
+          test -f website/dist/index.html
+          test -f website/dist/sitemap.xml
+          ! grep -rq '{{[A-Z_]*}}' website/dist --include='*.html'
+      - uses: actions/upload-artifact@v4
         with:
+          name: website-dist
           path: website/dist
-      - uses: actions/deploy-pages@v4
-        id: deployment
+          retention-days: 7

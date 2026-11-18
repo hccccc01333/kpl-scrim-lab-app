@@ -121,6 +121,10 @@
             下载 Windows 版
           </a>
           <a class="btn btn--ghost" href="#demo">先看看能做什么</a>
+          <a class="btn btn--ghost btn--sponsor" href="{{SPONSOR_URL}}" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13v6a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M17 9h1.5a2.5 2.5 0 0 1 0 5H17"/><path d="M7 4c0 1 1 1 1 2M11 4c0 1 1 1 1 2"/></svg>
+            请作者喝咖啡
+          </a>
         </div>
         <dl class="hero-specs">
           <div><dt>系统</dt><dd>Windows 10 / 11</dd></div>
@@ -136,8 +140,8 @@
             <span class="frame-title">赛训数据</span>
             <span class="frame-url">127.0.0.1:8766</span>
           </div>
-          <img src="assets/img/v3-hero.webp?v={{ASSET_VERSION}}" alt="对局档案页面：43 场训练赛按训练日归档，比分、时长与阵容一眼可见，均为合成演示数据" width="1600" height="1000" fetchpriority="high">
-          <figcaption class="frame-cap"><span>对局档案 · 合成示例数据</span><span>v{{VERSION}}</span></figcaption>
+          <img src="assets/img/v3-hero.webp?v={{ASSET_VERSION}}" alt="赛训数据首页：最近对局、英雄观察、胜负与经济走势，均为合成演示数据" width="1600" height="1000" fetchpriority="high">
+          <figcaption class="frame-cap"><span>赛训数据首页 · 合成示例数据</span><span>v{{VERSION}}</span></figcaption>
         </figure>
         <p class="hero-note">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
@@ -434,16 +438,23 @@
         <p class="sponsor-way-no">01 · 爱发电</p>
         <img src="assets/img/sponsor-afdian.png?v={{ASSET_VERSION}}" alt="爱发电赞助页二维码，扫码或点下方按钮都能到达" width="440" height="440">
         <a class="btn btn--primary btn--block" href="{{SPONSOR_URL}}" target="_blank" rel="noopener">去爱发电支持</a>
-        <p class="sponsor-way-note sponsor-way-note--qr">扫码或在手机上打开都行</p>
+        <p class="sponsor-way-note">按月或单次都行，记录留在爱发电</p>
       </div>
 
-      <div class="sponsor-way sponsor-way--alt">
-        <p class="sponsor-way-no">02 · GitHub</p>
-        <svg class="sponsor-mark" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-        <p class="sponsor-star">{{GH_COUNT_TEXT}}</p>
-        <a class="btn btn--ghost btn--block" href="{{REPO_URL}}">给仓库点个 Star</a>
-        <p class="sponsor-way-note">不花钱，但同样有用</p>
+      <div class="sponsor-way sponsor-way--wechat">
+        <p class="sponsor-way-no">02 · 微信支付</p>
+        <img src="assets/img/sponsor-wechat.png?v={{ASSET_VERSION}}" alt="微信收款码，用手机微信扫一扫即可转账" width="648" height="648">
+        <p class="sponsor-way-note">用手机微信「扫一扫」，金额自己填</p>
       </div>
+    </div>
+
+    <div class="sponsor-gh">
+      <svg class="sponsor-mark" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      <div class="sponsor-gh-text">
+        <p class="sponsor-gh-title">不想花钱也行：给仓库点个 Star。</p>
+        <p class="sponsor-gh-note">源码、更新日志和每个版本都在 GitHub · {{GH_COUNT_TEXT}}</p>
+      </div>
+      <a class="btn btn--ghost" href="{{REPO_URL}}">去仓库看看</a>
     </div>
 
     <p class="sponsor-note">赞助完全自愿。它不会解锁任何功能，也不会改变下载方式。</p>

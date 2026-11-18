@@ -885,6 +885,8 @@
 
   (function () {
     var dialog = doc.getElementById('welcome');
+    // 首访弹窗已停用：内容直接落在页面上，不再打断阅读。
+    return;
     if (!dialog || typeof dialog.showModal !== 'function') return;
     if (window.location.hash) return;
 

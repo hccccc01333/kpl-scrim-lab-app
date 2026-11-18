@@ -46,7 +46,12 @@ import deep_analysis
 import hero_archetypes
 import hero_capabilities
 import identity_service
-import peak_crawl
+try:
+    import peak_crawl
+except ModuleNotFoundError:
+    # 公开仓库不带 scripts/build_bp_facts.py（巅峰千强那部分依赖私有数据集），
+    # 抓取模块整个导不进来。这时只关掉巅峰千强抓取，别让根路径连带 404。
+    peak_crawl = None
 import player_profile
 import vocab as vocab_store
 
@@ -1528,12 +1533,17 @@ def _read_version_records():
 @router.get('/api/v3/peak/status')
 def peak_status():
     """巅峰千强大盘爬取状态：进度、数据窗口、是否自动启用。"""
+    if peak_crawl is None:
+        return {'available': False, 'running': False, 'phase': '',
+                'message': '这份代码里没有巅峰千强抓取模块（它依赖私有数据集，不在公开仓库）。'}
     return peak_crawl.status()
 
 
 @router.post('/api/v3/peak/refresh')
 def peak_refresh():
     """手动触发一轮巅峰千强刷新（后台线程执行，接口立即返回；同一时间只跑一轮）。"""
+    if peak_crawl is None:
+        raise HTTPException(503, '这份代码里没有巅峰千强抓取模块，无法刷新。')
     if IS_DEMO:
         raise HTTPException(403, '演示数据包环境不联网爬取。')
     if os.environ.get('PEAK_CRAWL') == '0':
@@ -1548,6 +1558,8 @@ def peak_refresh():
 
 def start_peak_auto() -> bool:
     """由 server.py 的真实服务入口调用：启动每日自动刷新线程（导入 / 测试不触发）。"""
+    if peak_crawl is None:
+        return False
     return peak_crawl.start_auto()
 
 

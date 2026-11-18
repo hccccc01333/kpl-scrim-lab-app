@@ -1,8 +1,13 @@
 """peak_crawl 的纯逻辑：分片按 ts 取最新、双方向合成一条对位、lane 文档结构。"""
 import json
 
-import peak_crawl
-from scripts.build_bp_facts import build_lane_rows, build_ladder_doc
+import pytest
+
+pytest.importorskip('scripts.build_bp_facts',
+                    reason='巅峰千强口径脚本只在源码工作区提供，公开仓库跳过')
+
+import peak_crawl  # noqa: E402
+from scripts.build_bp_facts import build_lane_rows, build_ladder_doc  # noqa: E402
 
 
 def _hero_stats(pick=0.04):

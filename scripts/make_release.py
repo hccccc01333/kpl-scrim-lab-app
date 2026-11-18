@@ -609,6 +609,11 @@ def smoke_test(build: Path, runtime: Path | None, enabled: bool = True) -> None:
         f'sys.path.insert(0, {str(build)!r})',
         f'sys.path.insert(0, {str(build / "tools")!r})',
         'import server',
+        # 第三段：v3 路由必须真的能加载。发布包不带 scripts/，凡是根目录模块
+        # 直接 import scripts.xxx 的都会在这里炸；`import server` 自己会吞掉异常，
+        # 只在根路径提示「前端资源缺失」，不显式 import 一次根本发现不了。
+        'import v3.serve  # noqa: F401',
+        'assert getattr(server, "app", None) is not None, "server.app 缺失"',
         'import camp_sync',
         '_sig = inspect.signature(camp_sync.sync_entries)',
         'assert "on_progress" in _sig.parameters, (',
