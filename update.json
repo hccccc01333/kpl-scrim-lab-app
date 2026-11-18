@@ -1,656 +1,242 @@
 {
   "schema": 1,
-  "version": "2.0.0",
-  "publishedAt": "2026-11-18T02:42:10+08:00",
+  "version": "2.0.1",
+  "publishedAt": "2026-11-18T21:03:56+08:00",
   "channel": "stable",
   "minVersion": "2.0.0",
   "notes": [
-    "单应用外壳：一级导航收成 8 个板块，旧链接自动落到新页面，书签不失效。",
-    "采集页一页完成：营地同步、截图 / 录屏 / 回放、缺失值审查都是页签；扫码授权、增量拉取、回放补挂、重复局清理一条链路。",
-    "对局档案改版：战况仪表 + 按日双列对局卡；跨局分析、大场分析、精选对局、版本对比、系列赛编组各自入口。",
-    "战队页整页图形化：对手索引 + 档案 + BP / Ban 证据折叠，默认先看结论。",
-    "选手档案与详情重做：主档（百段 / 巅峰赛分 / 千强 / 实力）+ 吸顶切片（范围 / 分路 / 英雄 / 对手 / 结果），整页联动、URL 可分享。",
-    "新的 BP 工作台：英雄与组合数据库、对手 BP 情报、己方训练赛评估、己方英雄诊断 N01–N16、策略沙盘；训练赛统一 20 手（5+5 Ban）。",
-    "单局复盘：区块条、复制结论、热区快捷键；组合胜率按样本分级，对位补英雄强度与 T1–T4，热区补三路 / 河道 / BUFF 地标与走位。",
-    "更新链路：30 分钟自动复查、发现新版先后台预下载、多镜像取最高版本，检查失败给出具体原因。",
-    "性能：页面模块按路由加载，首屏少解析约 1.5 MB；固定计算改为按指纹缓存。",
-    "运行与交付：单入口、单端口、单实例；源码目录可生成无窗口快捷方式，安装包流水线跑通。",
-    "下线与归位：移除「选手与位置」页签、旧版决策页和独立监控入口，独有信息归位到对应页面。",
-    "口径不变：缺失不补零、来源留痕、样本不足明确标注，不拿部分数据冒充全场。"
+    "BP 三模式：征召 18 手、KPL 20 手（含 BO7 巅峰对决）、排位·巅峰 5+5 同时 Ban；营地名单位置直接铺成手序。",
+    "元流之子按形态 Ban、按英雄 Pick；KPL 逐手手序回填 3,418/3,482（98.2%）。",
+    "战队页「变化」卡改为「本窗口 vs 上一个同长度窗口」，不再把窗口对半切。",
+    "选手页：英雄方块再点一次取消、图内字体去描边、英雄池变动图轴标签不再重叠、导航与切片条一起吸顶。",
+    "大场列表重做：纯白画布 + 钢蓝 / 琥珀橙胜负色，卡片内对手名与比分同行、小局压成两行。",
+    "首页复盘卡改用 subgrid 逐行对齐，阵容头像放大到 40px。",
+    "战队页核数玫瑰图标签去描边、局数移进扇区；位置组合表字号整体放大。",
+    "单场报告 BP 卡不再被同排展开的卡拉长。"
   ],
   "patch": {
-    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.0/patch-2.0.0.zip",
-    "sha256": "168c0226e545b8cbc81b3e7d9d3cfca90c59f5b0682d6c0c756f4a8a90f561a1",
-    "size": 7393757,
+    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/patch-2.0.1.zip",
+    "sha256": "44881b09357e95f5d4dea2936d1c5062603aa1829a9a341989187c80dd30b6cc",
+    "size": 1029812,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "890ad95dcb94a1f6d953406466e9b98e594f57d2b84a2712125cfd8604cfd0b5",
-        "size": 223086
+        "sha256": "2b4a0b90283dd94a8f9ad6821440abf7f3e69f7870f319f6174f88303371e2ae",
+        "size": 229364
       },
       {
         "path": "analysis_data.py",
-        "sha256": "3e731d127aa0038801553650c0b60aba28172fa7ef363eeb12330f4f4ce13cf3",
-        "size": 132570
-      },
-      {
-        "path": "analysis_economy.py",
-        "sha256": "68855a4d6c94eb4860402a1d8288294ab348d9c340dfb5de3fbfe99d6093b07d",
-        "size": 9492
-      },
-      {
-        "path": "analysis_period.py",
-        "sha256": "4f5871a6aa3726df5f03539739a729e530e8c560bcf849c9b0c7191e6daa5e5a",
-        "size": 124072
-      },
-      {
-        "path": "analysis_profile.py",
-        "sha256": "813f883f048f10fa22c62df2b97a5c1829cdeb9f39f532e0e44b5aa0a3a6abec",
-        "size": 35735
-      },
-      {
-        "path": "analysis_space.py",
-        "sha256": "bb87173107cd1e2d84aabf8c9e4b4b83ce516fb688e4ddf12a379e84ebecc435",
-        "size": 24568
-      },
-      {
-        "path": "ban_analysis.py",
-        "sha256": "04bda7d1c7a97c3c62bfd0a2ca527a516b0404ff5da401cd27e242fc4a8b0d11",
-        "size": 20891
+        "sha256": "5b9fabb5af506df0f11df48b95461f6a86a83ce66e06639015379a92448f451f",
+        "size": 132571
       },
       {
         "path": "bp_camp.py",
-        "sha256": "6435b1095045f779821317c68d3dac1d6ae08c78220e3e787dbd0370ff5dc44b",
-        "size": 48822
+        "sha256": "6952207c88c7064567c60280c2eb3a21c3ac46923d0d2a3b320e75ddb32d4e33",
+        "size": 38194
       },
       {
-        "path": "bp_diagnose.py",
-        "sha256": "7c13b6e525f69754062022e6d0d8fdb2552b9706af0bef0a0ba601f4ea479909",
-        "size": 28596
+        "path": "bp_demo.py",
+        "sha256": "e6d93834f72804e4b2a2a1ad13bb9c3e744be434abeeaf6848a6dcce37ddb54b",
+        "size": 5323
       },
       {
-        "path": "bp_draft_tree.py",
-        "sha256": "477a6b656c64c403b2b64e05185f668b2ea9d41c4f0335c06dab0fff3ebe41e8",
-        "size": 7823
+        "path": "bp_formats.py",
+        "sha256": "f1dc2aca59526ecfa2ee344a1699206bbb0ffb526b14f30c1844908a902b7eaf",
+        "size": 22436
       },
       {
-        "path": "bp_facts.py",
-        "sha256": "a16cf1a4d54216f2c3fc2854132b161abd3e8f96fb1ac0d7829daccf2b46425a",
-        "size": 33849
+        "path": "bp_input.py",
+        "sha256": "823b176a8be367fa05dbffddb9b57bcb7bef32d560994ca2d089932721d07edb",
+        "size": 1730
       },
       {
         "path": "bp_intelligence.py",
-        "sha256": "08de393746a8a8403c017cae15df30b81ff8023d62d926191363b0bab00ec039",
-        "size": 51308
-      },
-      {
-        "path": "bp_interactions.py",
-        "sha256": "291e0d92861f6edb28243e34b71f697004023894148d0e4e3f68a5ecf9ee4787",
-        "size": 5617
+        "sha256": "2c4ed4393b5fbf08d09deb87f2ee9e953de3511d74547fe400126ee3ab7c483e",
+        "size": 50869
       },
       {
         "path": "bp_lab.py",
-        "sha256": "53c431b2a315df29541a398a630b459ff331a873516821ee0520429d5750cea0",
-        "size": 93711
-      },
-      {
-        "path": "bp_policy.py",
-        "sha256": "785a03fe69a63e15c88623fd9346c4e99611e2a5ad90f03bb7c19eba7d883ffe",
-        "size": 5599
-      },
-      {
-        "path": "bp_process.py",
-        "sha256": "7ea5b4b2c91e8cc6223c35c310b6cd6788880c694b8053dba7a92fcdf598eead",
-        "size": 8733
+        "sha256": "b156b0acbaf7cc9dcedd6edbe4ea13114bacfda46464f9f31dcfe8608f1492ab",
+        "size": 91703
       },
       {
         "path": "bp_rules.py",
-        "sha256": "9fbeb9e7f79caf8206171acb8ee3cea3da3674561beead7dd62ad5284023f683",
-        "size": 15255
+        "sha256": "98ea57e04bc82519b9d73eea3e67fb8cd89f2be2f2bb86cc5c2c835d539e2df4",
+        "size": 8522
       },
       {
         "path": "bp_series.py",
-        "sha256": "407f81c01941fde94df8b10f11e8aa489aded5ce29cd97addb555c10a79f2483",
-        "size": 6778
+        "sha256": "f111acb2aa039a9f84a6a50753c0b05cdbd768b6f2196943d976955bf77666e4",
+        "size": 6131
       },
       {
         "path": "bp_strategy.py",
-        "sha256": "e2ccf741d85088c8cd80c8426a69043256ec0e77301c92179a0942cebc0a75c8",
-        "size": 18293
+        "sha256": "cb590266bc1170321bb8fe3c85ce0f5821b31c407151132a2f5da29414d890e1",
+        "size": 18482
       },
       {
         "path": "bp_studio.py",
-        "sha256": "51c8b81cccd3cab69ff9d9fd46c605edbb88cce7bdf996d829890d70c60e8984",
-        "size": 54645
+        "sha256": "07877d9947e6c6483c321d602d20d224c6aa2c518c167eca9fdb878f92610cc3",
+        "size": 68360
       },
       {
         "path": "bp_types.py",
-        "sha256": "a8e24dffca4fe383a4210bcafcc9c7721d18edeb639e7f42cf223743dfa6abf5",
-        "size": 21574
+        "sha256": "3a5a45e6647b87c39468434d42bb1d97ef79174268db9290feaea759a4deb8ec",
+        "size": 21109
       },
       {
-        "path": "briefing_api.py",
-        "sha256": "eb9b52999121422274fda23f99de248b874595db5f1f41ee1d432d80a1c8fc62",
-        "size": 11323
-      },
-      {
-        "path": "camp_replay.py",
-        "sha256": "18fd873fec2bce6459fa98967454e86f0e6151dbb3d756abb5d778da81b6b529",
-        "size": 29754
-      },
-      {
-        "path": "depth_api.py",
-        "sha256": "83de59b9939146b8030051688cae2ac469f6fdf6910e473682b74f0b5ee3579b",
-        "size": 68371
-      },
-      {
-        "path": "docs/camp_replay.md",
-        "sha256": "7906f8398fe93a61ad8e3436685871a16b65e2f3c5869672da2559d0caf980d4",
-        "size": 7562
-      },
-      {
-        "path": "docs/product_guide.md",
-        "sha256": "a64eeb7fe78c099aacd91d1e2e4d1bb8a3d18385f110d5c17d57ae22857e1b7a",
-        "size": 9261
-      },
-      {
-        "path": "hero_archetypes.py",
-        "sha256": "6f5c6c80483cd1b835d4e5bc7c14ab4d878901636c31c7fcbe5d350bc4ed902c",
-        "size": 21684
-      },
-      {
-        "path": "hero_capabilities.py",
-        "sha256": "c6d72754de4aed8d453a6e8376c7225920b8d2529ee4d4e1cc4f74ca329088ce",
-        "size": 11148
-      },
-      {
-        "path": "hero_roles.py",
-        "sha256": "5626b652662e11b9b7270083e6b68f02a654f7561bdbcc258e57194400786377",
-        "size": 21781
-      },
-      {
-        "path": "identity_service.py",
-        "sha256": "1d1d25e5a9a173db4d72f7b6121a976fe3ef3bcd8b06abc7d157275a339f96f9",
-        "size": 15008
-      },
-      {
-        "path": "kpl_bp.py",
-        "sha256": "391cb85c2b67a92ab1de2e9029143e4da43d2ef51b7909ad12f2774a6e6051dc",
-        "size": 46620
-      },
-      {
-        "path": "launcher.py",
-        "sha256": "dc9b1c98c2fd8212cbea0597eee52d28c333ad35c02734b3a71f54e01e49bc96",
-        "size": 13610
-      },
-      {
-        "path": "lineup_stats.py",
-        "sha256": "f934013244b27002fdd821114bb33e3f0e955496682325d6a816c05527a1b4bb",
-        "size": 17764
-      },
-      {
-        "path": "match_facts.py",
-        "sha256": "a59682560d16e4cd8c054360b88a24cdac486eab1928f882919f32dcfd758f16",
-        "size": 36632
-      },
-      {
-        "path": "match_review.py",
-        "sha256": "17f2104b5ad55f21ac4698cf4dccec78055a19c61b7bd22bf3ed5533b314bb77",
-        "size": 42841
-      },
-      {
-        "path": "monitor.py",
-        "sha256": "6c7ffbb87960262949486d1f05f8dbc297a4cdec1eb31baeab759853576d5db2",
-        "size": 10198
-      },
-      {
-        "path": "opponent_behavior.py",
-        "sha256": "187814edb7bfb1935ec2561091d0e4f66a62a1c51db00ad2379b4b5f66278cca",
-        "size": 3992
-      },
-      {
-        "path": "opponent_identity.py",
-        "sha256": "5ecce3d10b936ab6712c1b0eada2853985ecb6e3e9bb04fecafa38ebc9661e51",
-        "size": 9881
-      },
-      {
-        "path": "peak_crawl.py",
-        "sha256": "ee1a8f0a9629a37d92949b0683d791cf604b6a07ce84871260937e18ff19e367",
-        "size": 23272
-      },
-      {
-        "path": "player_profile.py",
-        "sha256": "cf8872461ddc16813b0483603b73d6836c08dbb2adc78b80e635b5cfd2487c7b",
-        "size": 15362
-      },
-      {
-        "path": "requirements.txt",
-        "sha256": "56b0c32f34330e2d3703998c1af19ac8316d87dd6734d7d1fc77e57d20dda0d1",
-        "size": 733
-      },
-      {
-        "path": "resources/hero_tags.json",
-        "sha256": "428787c0c21031d704ec9f39a1d75e113506e6bf88c42605f489faa782fb309e",
-        "size": 55381
+        "path": "resources/seasons.json",
+        "sha256": "56d1655a70f45cb57f25c26fa6d6ac765cf2fb268fee141357c39c9d2a59e1d6",
+        "size": 3166
       },
       {
         "path": "series_engine.py",
-        "sha256": "c32c16703ec0f14f36f67a06ddad62392d24252248d6b3b3e85b67287110c2c4",
-        "size": 30704
+        "sha256": "375a7308a072e8858a45a07cb1c5e16991263bb1720c0dfc6b2d1205f890bdd8",
+        "size": 30672
       },
       {
         "path": "series_insight.py",
-        "sha256": "8e2461d982786ef74288f61cac942321f6cc60728ce19929bbd9e8b57c221113",
-        "size": 185069
-      },
-      {
-        "path": "server.py",
-        "sha256": "74f512bae4ea949b128bf720ecac6a49b5508e6e81f482669dc6650402c6f200",
-        "size": 221948
-      },
-      {
-        "path": "studio_api.py",
-        "sha256": "c5b6749f04ddf8163b8ea1ab26ae9cd25d5d3f74a839389f973023a39404f453",
-        "size": 93440
-      },
-      {
-        "path": "studio_research.py",
-        "sha256": "6e2cf85595d6609293ed84940217a1dee9734d293a63d30209f88543c9c5a584",
-        "size": 10161
+        "sha256": "bd645414a6d710b4e4d4f272cfb028584e528d808ce07592e2bf2391b9d17f36",
+        "size": 185185
       },
       {
         "path": "team_clusters.py",
-        "sha256": "9aded4dd63fffd52c76dd32524f90d9521cc3386de2da4c903b9cb2a42287158",
-        "size": 114797
+        "sha256": "fecab3a853de8cc71597c3ff7c073934b3a8c7bd60a62c1b552ca734f46ad704",
+        "size": 112587
       },
       {
         "path": "team_style.py",
-        "sha256": "1884ad0178e71337868de3bf568b34462aba2c9afbb21c5a2c42afd09d540696",
-        "size": 16950
+        "sha256": "60e43f2c4d86292b3f1c5ec6a5b06f6d0685e431945c95e99a28f4daa50b864e",
+        "size": 16575
       },
       {
         "path": "tools/camp_sync.py",
-        "sha256": "c21933ab368633b05cd090aadbd429baee3944b13879d9ead740be0e80c2601b",
-        "size": 14577
-      },
-      {
-        "path": "update_api.py",
-        "sha256": "741afcffb5a37c097411d0e89ca8b203cef3e507b4ec77939c89a734722df129",
-        "size": 9264
-      },
-      {
-        "path": "update_client.py",
-        "sha256": "a273116e3624ac127bd8de217764a7b6b799e280d2dee0cf0f9a449c86693c02",
-        "size": 19136
+        "sha256": "cba8b64e4cac0c332054dd3b73a60b31cb615189d007593658486c0112254651",
+        "size": 14477
       },
       {
         "path": "v3/public/app.js",
-        "sha256": "a056f1d958ec9623ffd27aa771f6b97e1db7605a7150df525bb597e2ee241b38",
-        "size": 241302
+        "sha256": "222a833a98d6290733fab59afb9f8526618fcf94ed1e15f2606a81491384bdda",
+        "size": 239439
+      },
+      {
+        "path": "v3/public/biggame-detail-fixes.css",
+        "sha256": "3fc5ff21295e0d5d40759061da58bdadb8e43c522d41113640f8fa2e0bcf2b5d",
+        "size": 330
       },
       {
         "path": "v3/public/biggame-insight.js",
-        "sha256": "2fd98e719349aa1af1c60f262686120c242ad6f30b152f40c9576f0e1e8fe271",
-        "size": 59799
+        "sha256": "c7c511efb674708334350d8850998aafd4d7f1fb07506321ce6bf9948ed50594",
+        "size": 62422
+      },
+      {
+        "path": "v3/public/biggame-list-ui.css",
+        "sha256": "45a2b1788818155786dd4dce47edb09e2dfecab38a51baae22cee353d51b5609",
+        "size": 10205
       },
       {
         "path": "v3/public/biggame-page.js",
-        "sha256": "dad4209db12377a53a21cc6cc287a92382b72a69f9eb55b1cdfb3ddb5189d453",
-        "size": 41198
-      },
-      {
-        "path": "v3/public/biggame.css",
-        "sha256": "2e00bd18867094fef2211c70cc6d17482c629ff30600dfdd843d29c8039f14f9",
-        "size": 173319
-      },
-      {
-        "path": "v3/public/bp-lab.css",
-        "sha256": "208a3191a2538f92bfc9b44aefbb241d4d0320637cfbd182934ea88a0e58dbd7",
-        "size": 45557
+        "sha256": "e4fe1730e98fbdc49b417ac0673e91d8556daed42f5aa1e791fb541a75ecec31",
+        "size": 41860
       },
       {
         "path": "v3/public/bp-lab.js",
-        "sha256": "cc9030dcb786ed5e9c593000bfd5d0ef837e37eb85c387e1462931e603b0cbbc",
-        "size": 143377
+        "sha256": "e1e77d8cba623a81d0af4b9b4baaebe12c3efed4fe077bd75b9f84a95d388690",
+        "size": 141238
       },
       {
         "path": "v3/public/bp-studio.css",
-        "sha256": "0aecd76cc56c45ec2c92cbc3321440b6b45e2421ec770a9ecfdc2919ca436e41",
-        "size": 85654
+        "sha256": "f2098e280e925b529adf0f5f0459210b19c3bd284927e94871e4c16e4eda7628",
+        "size": 98080
       },
       {
         "path": "v3/public/bp-studio.js",
-        "sha256": "42c7fa525b54f95dd9cb69ad1eb2b4090698c59f503b5327f7c014d23528d45e",
-        "size": 144709
+        "sha256": "547f42c1fd41f464c8a71d4b97997b8ef62e0cf79f112c0b6fc25cb039e21a4c",
+        "size": 174301
       },
       {
         "path": "v3/public/bps-viz.js",
-        "sha256": "3ca755587168494dff02833f6dde116cd319389c39f986a3c5a8b77536f6eaff",
-        "size": 74028
-      },
-      {
-        "path": "v3/public/brief-celadon.css",
-        "sha256": "4381f6efd225d559a18df15fe6e6e2f4baea6bfd42cbf61510a6fd69e0d59c4d",
-        "size": 6457
-      },
-      {
-        "path": "v3/public/capture-page.js",
-        "sha256": "9db3fe49191b4e119859916fa87b134d6f0969772590a9ae81a3968e76d93299",
-        "size": 115977
-      },
-      {
-        "path": "v3/public/celadon.css",
-        "sha256": "ce13d6d80fc7aa5a39439b99afb3f66199b1bba194bfbd87c2232fb04a4e1a4e",
-        "size": 16200
-      },
-      {
-        "path": "v3/public/coach-viz.js",
-        "sha256": "e1bad93dfd911a9abaec048310593692dbb78c639ee8e8bab66b304c12f2703b",
-        "size": 32358
-      },
-      {
-        "path": "v3/public/combo-query.js",
-        "sha256": "d62276e8619a35d1521b9df3e6282590de46d550939e07b5d932d11598ee037c",
-        "size": 12988
-      },
-      {
-        "path": "v3/public/cross-analytics.js",
-        "sha256": "a8e779f3a9c58bb69bbbc3d41d36aa69643516de0ad8e1237842d5380fb0904b",
-        "size": 58197
-      },
-      {
-        "path": "v3/public/cross-page.js",
-        "sha256": "099dabc92f0d9a148e10bf71017a4899cc581b404df3df93bcdef2490b9dde33",
-        "size": 108274
-      },
-      {
-        "path": "v3/public/cross-viz.js",
-        "sha256": "dab3901570f8f11ebd4f5c623fc9175728a6e98d1fabae10198a7a4184209758",
-        "size": 29003
-      },
-      {
-        "path": "v3/public/cross.css",
-        "sha256": "2cdb86726d6ee554d6b061d599ca636d783773bb86026729768283b0b9f0009d",
-        "size": 101469
-      },
-      {
-        "path": "v3/public/design-consistency.css",
-        "sha256": "7aa55fcfb3f5835e9ba390a3cbe8453aee9ca9422308e8da97290000d052043e",
-        "size": 100173
-      },
-      {
-        "path": "v3/public/feature-sections.js",
-        "sha256": "02679970a36469237b71f90e608593664180a0094128f8d412b91bbfe34d2ec7",
-        "size": 906
+        "sha256": "a7aee4e4015eb5805bccf85764fdee5d98d44193fca46cff7ef9597db627717a",
+        "size": 89795
       },
       {
         "path": "v3/public/features.js",
-        "sha256": "f5c179fa262b8a947d6314f1364f2b8a391a6bec27a53d92521d75e3eb45f61b",
+        "sha256": "1eee9e0821a9f48eb73e2a21e95a5eb1edb434c7b49b28ac764056dd0a377060",
         "size": 275051
       },
       {
-        "path": "v3/public/gallery-view.d.ts",
-        "sha256": "dc32bd4bfbd2d314a3b206d748fea80607d11a36f9d9a8cf0afa7ea5a8c22135",
-        "size": 261
-      },
-      {
-        "path": "v3/public/gallery-view.js",
-        "sha256": "71d8547676c930e6f72b0bec873bbd5c35c77e01225d18fd51f6316f5ca27b05",
-        "size": 6313
-      },
-      {
-        "path": "v3/public/hero-compare.js",
-        "sha256": "05b056719c21fa94c42a243a7a1e6d9d5bf14b7c64e70f13216a63661cad641d",
-        "size": 27750
+        "path": "v3/public/home-watch-layout.css",
+        "sha256": "5972c76f9e8f02b0daa9f9f3a670bee8c9d2875177bad52c3c7af3b67b4f38d5",
+        "size": 3732
       },
       {
         "path": "v3/public/index.html",
-        "sha256": "b96d38cd285d0caf8a81b77a3b5071b891f799463da1e30a8828c7572ffd760f",
-        "size": 800
+        "sha256": "05dc3ba2b6bc738ffd7f7c6f1ae6d8150995e69a2cb58b3b776f33d013ee9d61",
+        "size": 801
       },
       {
         "path": "v3/public/interface.css",
-        "sha256": "2374356993cf4822da195015d18fcf7f281efd3234e39c272bb882cf5206ed09",
-        "size": 1625
-      },
-      {
-        "path": "v3/public/match-deep.js",
-        "sha256": "307a7176ea18f96b51856e468196bfd5852f055b9e2b093fb450d70877e6e9b2",
-        "size": 140136
-      },
-      {
-        "path": "v3/public/match-recap-fixes.css",
-        "sha256": "13323cacb86a0a3e07a0e9002e7c7c7821ae15897ace85a37f6693a4e6aaee53",
-        "size": 3718
-      },
-      {
-        "path": "v3/public/match-recap-metrics.js",
-        "sha256": "af2813cf514bb4d030c8324309897cd5fd3686bb7229de0ae679ecf40c4e4fd8",
-        "size": 1746
-      },
-      {
-        "path": "v3/public/match-review.css",
-        "sha256": "44b3620e6ca53186ec8dfec5e3b37ae58eb02f49041e4e98f0e5fc17aec0dfe9",
-        "size": 26192
-      },
-      {
-        "path": "v3/public/media/celadon-serif-OFL.txt",
-        "sha256": "5e0da210fb04058a8c0087985d2d456b931c2579811a49655721d3cf0c36b6d6",
-        "size": 4350
-      },
-      {
-        "path": "v3/public/media/celadon-serif-bold.woff2",
-        "sha256": "eaf1c99788614223c6336d08a584161816a1e4cecab76f7bc5af66a687c040d7",
-        "size": 596000
-      },
-      {
-        "path": "v3/public/media/celadon-serif-regular.woff2",
-        "sha256": "4147321758c720c3e1d5c91ab161a8bc179a9850b463b9f3a07eba93aa205a6a",
-        "size": 570756
-      },
-      {
-        "path": "v3/public/media/celadon-valley.webp",
-        "sha256": "ae10b6d14a0a5c0a05854093655fcc1a94b0a10998810727ead10b79013912a4",
-        "size": 295920
-      },
-      {
-        "path": "v3/public/media/noto-sans-sc-OFL.txt",
-        "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
-        "size": 4301
-      },
-      {
-        "path": "v3/public/media/noto-sans-sc-bold.woff2",
-        "sha256": "2e8d5400b6f7bddda2a674761d76e61444261471e33081243c5afca577fc02cd",
-        "size": 1416688
-      },
-      {
-        "path": "v3/public/media/noto-sans-sc-medium.woff2",
-        "sha256": "d316039f4c5a9c2c113d5b5dd7cdcb516882f56a3ea9c2f9a2fe0d13df7902bd",
-        "size": 1385208
-      },
-      {
-        "path": "v3/public/media/noto-sans-sc-regular.woff2",
-        "sha256": "6124ec028c800523e8f8fa559a35a3cf202230f3a79a8003af7ce2a796b22294",
-        "size": 1366692
-      },
-      {
-        "path": "v3/public/period-brief.js",
-        "sha256": "1e3f40be6d05eba4c413a51e3846ea2f22f4271a9e3b8ace035e473cd6ad9779",
-        "size": 94794
-      },
-      {
-        "path": "v3/public/player-archive.css",
-        "sha256": "7426b23b5ad9f8dbc6e198a366631baa7655c3399a927bdae7a777061a0f7cd2",
-        "size": 56265
-      },
-      {
-        "path": "v3/public/player-compare.js",
-        "sha256": "089c69dea4192620222cb237853c7519f7c699dfbf50bae62384ac5abb9bd6e1",
-        "size": 42942
+        "sha256": "d0bb82a844e54744d23a84616b0e8c7366979a9c8aa3d17da6a2c7d1cbc24ca1",
+        "size": 2020
       },
       {
         "path": "v3/public/player-detail.js",
-        "sha256": "98ea50e51844b33c2e0a29ac621b0a57607e7aac8cac706775c41307655f80e2",
-        "size": 71991
-      },
-      {
-        "path": "v3/public/player-profile-ui.js",
-        "sha256": "e75364c75971bcdf1fc1e778f5de3ad7f77e9e56f36d0eac8d804c9cce97a9be",
-        "size": 24092
+        "sha256": "c75d03b81886eaa8171b0e036e0995b6a2314089a76db03b9865f88655a71007",
+        "size": 71994
       },
       {
         "path": "v3/public/player-v2.css",
-        "sha256": "4cd0445b285194ed1a0c6896dda883315b3b5756a7e906947c69fb4fb3946dfc",
-        "size": 15042
+        "sha256": "2795520f33ec6427337c612bedc41d543a0fdb1833d7c4c53f08afacdccd4760",
+        "size": 15116
       },
       {
         "path": "v3/public/player-viz.js",
-        "sha256": "2dc4b3f044da92352bbf4550685413ca07d0098a73ce8484fd8e2f06dbc21b46",
-        "size": 38461
+        "sha256": "f6fdc874474cd906ee38679a4827f5e0caa56dd194342e6ac9d5b59b346d88ae",
+        "size": 39323
       },
       {
         "path": "v3/public/players-page.js",
-        "sha256": "bbade0086728344c94e5525fc95bcdfc9e170c5537b26eefccf3e53e3e066714",
-        "size": 112195
-      },
-      {
-        "path": "v3/public/research.js",
-        "sha256": "70eff4701887b03a72d896baa9c490fb99dd14bcdc73503b800b12df7e7d5325",
-        "size": 6005
-      },
-      {
-        "path": "v3/public/review-page.js",
-        "sha256": "f54f079453211390af222a602bd7f9de574f0ff97dea37c797d241efad9ae6f4",
-        "size": 29284
-      },
-      {
-        "path": "v3/public/series-builder.js",
-        "sha256": "46c7b431b2602c6ee70384549dabf6fbad8659202cae11063b929ac676db4013",
-        "size": 76549
-      },
-      {
-        "path": "v3/public/series.css",
-        "sha256": "dc63dbfd9d522829d5c187dc2201a58d1a858600606c4105e018c5649a483943",
-        "size": 47670
-      },
-      {
-        "path": "v3/public/sources-page.js",
-        "sha256": "d9599affea60b2caef19a25aff51ff59b371597ff2dc0db1fef24d4a91474cb9",
-        "size": 76329
+        "sha256": "ba29fe296ae61524a6fce7a832b0f6e98280ee797afea55ec677f1872fd66818",
+        "size": 112420
       },
       {
         "path": "v3/public/style.css",
-        "sha256": "2ddd76c34c138639b3dae7e4e65d24e5e033d4679e994755e693def900365e72",
-        "size": 1025259
+        "sha256": "3fbf5d295cb9d58e0c1cf794fe67584a4e0d7627b88b731d724f95a62c2adef2",
+        "size": 1026445
       },
       {
         "path": "v3/public/team-dossier-v9.css",
-        "sha256": "a23ab6cc7b5cd533d8d0d134f9dd175ccf37b08ef7447f10d6d7cb2939c347fc",
-        "size": 43810
+        "sha256": "4cc767d9facabb3113962637c63ca67618f98db9ce8ec1820e47e0df12608f96",
+        "size": 44352
       },
       {
         "path": "v3/public/team-dossier.css",
-        "sha256": "12d8789e3ea526462edfa222c08d26dc7715b64c3dbfd890ba32cc5f9990d883",
-        "size": 115827
+        "sha256": "a80c0487dcbd3ce84d751a046af2930fd5bc1cf996a0f2d0a4a4b1e8ec815de9",
+        "size": 116071
       },
       {
         "path": "v3/public/team-dossier.js",
-        "sha256": "2725be6fe2c550da870c8ed2cb7f318bce196b068f7e2161bbfe3a9cef3674db",
-        "size": 121566
-      },
-      {
-        "path": "v3/public/teams-board.css",
-        "sha256": "0b87b417c453dbd1fe829fdd83624a01b71b9fc4dbf8aa1a1a5e21b620a90dbb",
-        "size": 44482
-      },
-      {
-        "path": "v3/public/theme-init.js",
-        "sha256": "a343b1799a3e715c12a996f5cac1580cb875d9eb3c73aa3d90e7828e886b2f65",
-        "size": 306
-      },
-      {
-        "path": "v3/public/tour.js",
-        "sha256": "8d89ea51dbb01e4e3385e232af1b14921b86bfddbd8e95d1b6031679a8cd9980",
-        "size": 32398
-      },
-      {
-        "path": "v3/public/ui-primitives.css",
-        "sha256": "b2c1ed0789a051b0bb22325a7681da057228caf44f130029b0eb0bbe6b0bdca9",
-        "size": 6787
-      },
-      {
-        "path": "v3/public/ui-tokens.css",
-        "sha256": "6e78d99bbeebcba6a9b00c5844d9269829b08cc15ed877b4d08fdae0f604f578",
-        "size": 3002
-      },
-      {
-        "path": "v3/public/update-banner.js",
-        "sha256": "09fd7d454846cc0a56161467c283dfa131513cf922e57294461369526d70851d",
-        "size": 21979
-      },
-      {
-        "path": "v3/public/workbench-ui.css",
-        "sha256": "fe16c0967d41bd103202784d2ca67ef6a442acc2387117f0eb018b2b15807dfa",
-        "size": 28890
-      },
-      {
-        "path": "v3/public/workbench-ui.js",
-        "sha256": "58226cb4ba609161b2adbaa0c22f507dccd4a8d8dfb944152bd7d134bcc262c9",
-        "size": 6666
-      },
-      {
-        "path": "v3/public/workspace-home.css",
-        "sha256": "ab1082d978e114ad31052f3c068dc1fabba480968768c10aab853ff47c62fe02",
-        "size": 14350
+        "sha256": "0ed68fba9e49a23397667be200c4374c6dba704430e662ee8f5046d12e5e5e5a",
+        "size": 122097
       },
       {
         "path": "v3/serve.py",
-        "sha256": "abd2d8a40c35af494824d4e284787ae81e0e9732ef2d0422d4b45963f4c0a1b2",
-        "size": 280379
+        "sha256": "6ab341e24236015838b9408c04f350688719f2cc18ec83e2d903fe9cda1546ec",
+        "size": 277256
       },
       {
         "path": "version.py",
-        "sha256": "fe33d4190f2c1dfbf588d44463f076725186d4a02144864b971845addea7a793",
-        "size": 359
-      },
-      {
-        "path": "web/capture-guide/README.md",
-        "sha256": "e53c5d2519c2ac78a8aa5169d57d5ab716559904d7c6d752a354bcafa47be580",
-        "size": 1163
-      },
-      {
-        "path": "workbench_api.py",
-        "sha256": "0284793b7905b33dbdf70ba91e2d1eea10409602a608f90a11e1cb5bd8c81ef8",
-        "size": 2913
-      },
-      {
-        "path": "workspace_store.py",
-        "sha256": "810e28791f71b118ed9e9bb00b12094c1e7e7027a0c5e0d6f2aed6060b229a73",
-        "size": 95643
+        "sha256": "acd2a414c3265b71b37cd8604485362dcbf195ded2f6cd424842d8946e945c66",
+        "size": 346
       }
     ],
-    "remove": [
-      "briefing.py",
-      "docs/mockups/report-v2.html",
-      "docs/mockups/report-v2.png",
-      "docs/release_1.3.0.md",
-      "docs/state_0743_checkpoint.md",
-      "docs/state_extra_checkpoints.md",
-      "docs/state_series_10pt.md",
-      "v3/public/bp-counter.js",
-      "v3/public/decision-page.js",
-      "v3/public/depth.js",
-      "v3/public/home-decision.js",
-      "v3/public/lane-viz.js",
-      "v3/public/navigation.js",
-      "v3/public/workspace-home.js"
-    ]
+    "remove": []
   },
-  "releaseName": "2.0：一个工作台，从采集到复盘全部重做",
+  "releaseName": "2.0.1：BP 三模式 + 界面细节修正",
   "releaseDate": "2026-11-18",
   "full": {
-    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.0/KPL-Scrim-Lab-2.0.0-full.zip",
-    "sha256": "29a06c7dc5fd208ccccd3a63ed7ff422185cf72c8b91e2337f75fb7f2aa49b72",
-    "size": 141236993
+    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/KPL-Scrim-Lab-2.0.1-full.zip",
+    "sha256": "b3d18fa29e41e5684d9f19f0941da7c0b2a27bc30df9e79e7710f7f4891e5ff0",
+    "size": 145230359
   }
 }
