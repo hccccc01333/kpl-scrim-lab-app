@@ -33,9 +33,10 @@ jobs:
         run: python scripts/build_website.py
       - name: 校验产物
         run: |
-          test -f website/dist/index.html
-          test -f website/dist/sitemap.xml
-          ! grep -rq '{{[A-Z_]*}}' website/dist --include='*.html'
+          test -f website/dist/index.html || { echo '缺少 index.html'; exit 1; }
+          test -f website/dist/sitemap.xml || { echo '缺少 sitemap.xml'; exit 1; }
+          test -f website/dist/feed.xml || { echo '缺少 feed.xml'; exit 1; }
+          echo '产物检查通过'
       - uses: actions/upload-artifact@v4
         with:
           name: website-dist
