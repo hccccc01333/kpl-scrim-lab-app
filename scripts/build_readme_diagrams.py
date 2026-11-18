@@ -5,14 +5,16 @@
     python scripts/build_readme_diagrams.py              # 全部重建
     python scripts/build_readme_diagrams.py architecture # 只重建一张
 
-三类产物，都写到 ``docs/images/``，已随仓库入库——读者看 README 不需要任何工具：
+两类产物，都写到 ``docs/images/``，已随仓库入库——读者看 README 不需要任何工具：
 
 1. **结构图**：源码是 ``docs/diagrams/architecture.html``，用 Chromium 截
    ``.stage`` 元素（2 倍像素）。改字改色只改 HTML。
 2. **流程图**：源码是 ``docs/diagrams/*.mmd``（Mermaid），用 Chromium 加载
    mermaid 10 渲染后截图，再补圆角与描边。渲染需要联网拉一次 mermaid。
-3. **首屏截图**：把 ``website/src/assets/img/v3-hero.webp`` 做成圆角 + 投影的
-   透明 PNG，深浅主题下都不突兀。
+
+界面截图不在这里：``scripts/capture_readme_shots.py`` 直接拍运行中的工作台
+（含 README 首图 readme-hero.png），本模块只提供 ``frame_image()`` 给它套
+圆角 + 描边 + 投影。
 
 只有改了源文件才需要重跑。依赖：``pip install -r requirements-dev.txt``，
 ``python -m playwright install chromium``。
@@ -44,9 +46,10 @@ DIAGRAMS = {
 }
 
 # 截图成片：名字 → (源图, 产物名, 逻辑宽度)
-FRAMES = {
-    'hero': (SHOTS / 'v3-hero.webp', 'readme-hero.png', 1500),
-}
+# 首图 ``readme-hero.png`` 现在由 ``scripts/capture_readme_shots.py`` 直接拍
+# 工作台的对局档案（深色）再套同一套圆角/投影，不再从官网站图取，避免两边
+# 界面一改就不同步。
+FRAMES: dict[str, tuple[Path, str, int]] = {}
 
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <style>html,body{{margin:0;background:#fff}}
