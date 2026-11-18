@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "2.0.1",
-  "publishedAt": "2026-11-18T21:29:51+08:00",
+  "publishedAt": "2026-11-18T22:17:49+08:00",
   "channel": "stable",
   "minVersion": "2.0.0",
   "notes": [
@@ -13,22 +13,29 @@
     "首页复盘卡改用 subgrid 逐行对齐，阵容头像放大到 40px。",
     "战队页核数玫瑰图标签去描边、局数移进扇区；位置组合表字号整体放大。",
     "单场报告 BP 卡不再被同排展开的卡拉长。",
-    "修掉公开仓库与发布包根路径空白：发布包只拷 `v3/serve.py`、`deep_analysis.py`、`demo_data.py` 三个白名单文件，同目录的 `v3/series_api.py` 没进包，`_mount_v3()` 一失败 v3 路由与 `/static` 全都不挂载，打开就是空白页；公开仓库那边则是 `peak_crawl` 顶层依赖不随仓库发布的 `scripts/build_bp_facts.py`。现在 `v3/` 按目录扫 `*.py`，`peak_crawl` 改为可选导入（缺失只关掉巅峰千强抓取）；`make_release.py` 的冒烟测试补了 `V3_MODULE` 断言，同类问题打包时就报错。"
+    "修掉公开仓库与发布包根路径空白：发布包只拷 `v3/serve.py`、`deep_analysis.py`、`demo_data.py` 三个白名单文件，同目录的 `v3/series_api.py` 没进包，`_mount_v3()` 一失败 v3 路由与 `/static` 全都不挂载，打开就是空白页；公开仓库那边则是 `peak_crawl` 顶层依赖不随仓库发布的 `scripts/build_bp_facts.py`。现在 `v3/` 按目录扫 `*.py`，`peak_crawl` 改为可选导入（缺失只关掉巅峰千强抓取）；`make_release.py` 的冒烟测试补了 `V3_MODULE` 断言，同类问题打包时就报错。",
+    "**首页数据覆盖文案**：只有终局面板、没有可看过程的对局时，概述与「数据覆盖」原来都写「本月还没有对局」，而同一屏的「一句战况」写着「本月 31 局训练赛」——自相矛盾。现在改成「本月还没有可看比赛过程的对局」，并在有面板局时点明「N 局只有终局面板，只参与战绩，不参与时间轴指标」。",
+    "**首页与官网截图**：README 首图与官网首屏换成新的「赛训简报」首页（一句战况 / 本期指标 / 重点发现 / 最值得复盘的比赛），不再是对局档案或旧版首页；alt 文案同步。"
   ],
   "patch": {
     "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/patch-2.0.1.zip",
-    "sha256": "b0b60f9c234ced51b9ef970a01c28bc80b3bdacab32f576c1ccdc8f90da0323b",
-    "size": 1030789,
+    "sha256": "4324fc9d2a378a36e8b2937a975456d0e6a07b44e9b20fa44df8c0d50b2e6486",
+    "size": 1090076,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "f7ef563b00342465abd4722bc9b866d77f6f634f1f962b670a4fd178e78da6ad",
-        "size": 229944
+        "sha256": "6c0018081c3db98692262abe02be71810b853a20fa2eb4fb28b60afdb9d813dc",
+        "size": 230587
       },
       {
         "path": "analysis_data.py",
         "sha256": "5b9fabb5af506df0f11df48b95461f6a86a83ce66e06639015379a92448f451f",
         "size": 132571
+      },
+      {
+        "path": "analysis_period.py",
+        "sha256": "eae09cf2484cbb2e82a989c7e72a7008923a91d50108aeba09bc86b9a9a197f4",
+        "size": 124427
       },
       {
         "path": "bp_camp.py",
@@ -181,6 +188,11 @@
         "size": 2020
       },
       {
+        "path": "v3/public/period-brief.js",
+        "sha256": "263a6e3f060ba5d3c55867a689d17b03e0d56135426e7ceb97b449f6148cc02c",
+        "size": 95034
+      },
+      {
         "path": "v3/public/player-detail.js",
         "sha256": "c75d03b81886eaa8171b0e036e0995b6a2314089a76db03b9865f88655a71007",
         "size": 71994
@@ -237,7 +249,7 @@
   "releaseDate": "2026-11-18",
   "full": {
     "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/KPL-Scrim-Lab-2.0.1-full.zip",
-    "sha256": "4c75f7aa60184463767e5a494ead7d0172cff3ec16aa85c8741a6cf3269f054c",
-    "size": 145237640
+    "sha256": "ece7917c4645d39a02920334b0216985ab18195251da434ae9e7fe53a2e0c2a5",
+    "size": 145238597
   }
 }
