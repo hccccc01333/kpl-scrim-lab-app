@@ -772,6 +772,83 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         transform="rotate(-90 8 ${topH + rows.length * cell / 2})" text-anchor="middle">对面类型 →</text></svg>`;
   }
 
+  /* ── BP 决策树：当前节点 → 前 3 个候选 → 各自前 2 个后续，水平展开 ── */
+  function decisionTreeMap(data, pathIds, {width = 780, height = 420, branch = 3} = {}) {
+    const nodes = data?.nodes || [];
+    if (!data?.available || !nodes.length) {
+      return `<div class="bv-empty">${esc(data?.reason || '没有可展开的手序。')}</div>`;
+    }
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const children = new Map();
+    for (const node of nodes) {
+      if (!children.has(node.parent)) children.set(node.parent, []);
+      children.get(node.parent).push(node);
+    }
+    const path = (pathIds || []).map((id) => byId.get(id)).filter(Boolean);
+    const current = path.length ? path[path.length - 1] : null;
+    const parentKey = current ? current.id : '0';
+    const siblings = [...(children.get(parentKey) || [])]
+      .sort((a, b) => (b.count - a.count) || String(a.hero).localeCompare(String(b.hero)));
+    const total = siblings.reduce((sum, node) => sum + node.count, 0) || 1;
+    const first = siblings.slice(0, Math.max(2, branch));
+    if (!first.length) return `<div class="bv-empty">这条路径之后没有更长的已核验样本。</div>`;
+    height = Math.max(320, 120 + (first.length - 1) * 100);
+    const gap = Math.min(110, (height - 120) / Math.max(1, first.length - 1));
+    const startY = (height - (first.length - 1) * gap) / 2 - 10;
+    first.forEach((node, index) => { node._y = startY + index * gap; });
+    const currentY = first.reduce((sum, node) => sum + node._y, 0) / first.length;
+    const x0 = 78;
+    const x1 = 330;
+    const x2 = 600;
+    const tone = (node) => {
+      if (node.actor === 'team') {
+        return node.action === 'ban'
+          ? {color: '#a94b40', dash: '5 4'} : {color: '#246b63', dash: ''};
+      }
+      return node.action === 'ban'
+        ? {color: '#a86a2a', dash: '5 4'} : {color: '#4a6fa8', dash: ''};
+    };
+    const edges = [];
+    const marks = [];
+    marks.push(`<g>
+      <circle cx="${x0}" cy="${currentY.toFixed(1)}" r="9" fill="#0e2f2b" stroke="#fff" stroke-width="2"/>
+      ${current ? markerWithIcon(current.hero, x0, currentY, 18, 'dt-current', '#0e2f2b') : ''}
+      <text x="${x0}" y="${(currentY - 30).toFixed(1)}" class="bv-tree-hand">${current ? '当前选择' : 'BP 开始'}</text>
+      <text x="${x0}" y="${(currentY + 40).toFixed(1)}" class="bv-tree-hero">${current ? esc(short(current.hero)) : '第 1 手'}</text>
+    </g>`);
+    first.forEach((node, index) => {
+      const paint = tone(node);
+      const share = node.count / total;
+      edges.push(`<path d="M${x0 + 20},${currentY.toFixed(1)} C${(x0 + 120).toFixed(1)},${currentY.toFixed(1)} ${(x1 - 100).toFixed(1)},${node._y.toFixed(1)} ${x1 - 18},${node._y.toFixed(1)}"
+        fill="none" stroke="${paint.color}" stroke-width="${(1.2 + 5 * share).toFixed(1)}"
+        ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''} opacity="${(0.35 + 0.55 * share).toFixed(2)}" stroke-linecap="round"/>`);
+      marks.push(`<g class="bv-dt-node" data-bps-decision-pick="${esc(node.id)}">
+        <title>${esc(node.hero)} · ${node.count} 局 · 胜率 ${node.winRate == null ? '—' : fmt1(node.winRate) + '%'}</title>
+        ${markerWithIcon(node.hero, x1, node._y, 15, `dt-${index}`, paint.color)}
+        <text x="${x1}" y="${(node._y + 30).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
+        <text x="${x1}" y="${(node._y + 43).toFixed(1)}" class="bv-tree-count">${node.count} 局 · ${Math.round(share * 100)}%</text>
+        <rect x="${x1 - 44}" y="${(node._y + 50).toFixed(1)}" width="88" height="5" rx="2.5" fill="#e3efe9"/>
+        <rect x="${x1 - 44}" y="${(node._y + 50).toFixed(1)}" width="${(88 * share).toFixed(1)}" height="5" rx="2.5" fill="#2f8a76"/>
+        <text x="${x1}" y="${(node._y + 68).toFixed(1)}" class="bv-tree-count">路径胜率 ${node.winRate == null ? '—' : `${fmt1(node.winRate)}%`}</text>
+      </g>`);
+      const grand = [...(children.get(node.id) || [])]
+        .sort((a, b) => b.count - a.count).slice(0, 2);
+      grand.forEach((item, slot) => {
+        const cy = node._y + (slot - (grand.length - 1) / 2) * 44;
+        const alt = tone(item);
+        edges.push(`<path d="M${x1 + 18},${node._y.toFixed(1)} C${(x1 + 70).toFixed(1)},${node._y.toFixed(1)} ${(x2 - 60).toFixed(1)},${cy.toFixed(1)} ${x2 - 14},${cy.toFixed(1)}"
+          fill="none" stroke="${alt.color}" stroke-width="1.2"
+          ${alt.dash ? `stroke-dasharray="${alt.dash}"` : ''} opacity=".45"/>`);
+        marks.push(`<g class="bv-dt-node" data-bps-decision-pick="${esc(node.id)},${esc(item.id)}">
+          <title>${esc(item.hero)} · ${item.count} 局</title>
+          ${markerWithIcon(item.hero, x2, cy, 11, `dt-${index}-${slot}`, alt.color)}
+          <text x="${x2}" y="${(cy + 24).toFixed(1)}" class="bv-tree-count">${esc(short(item.hero))} ${item.count}</text>
+        </g>`);
+      });
+    });
+    return wrap(width, height, `${edges.join('')}${marks.join('')}`);
+  }
+
   /* ── BP 时序流：同一手同一英雄合并成一个节点，边宽 = 局数，像地铁汇流图 ── */
   function draftFlowMap(data, {width = 1080, height = 480} = {}) {
     const all = (data?.nodes || []).filter((node) => node.level > 0);
@@ -1306,6 +1383,6 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   return {heroScatter, dotScatter, dotCI, dumbbell, handHeatmap, handRing, radar, slope,
-    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftFlowMap, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
+    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftFlowMap, decisionTreeMap, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
 
 }

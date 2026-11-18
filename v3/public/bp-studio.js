@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118a8';
+import {createBpViz} from './bps-viz.js?v=20261118b2';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -56,7 +56,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     heroSearch: '', comboSearch: '', targetSearch: '',
     types: null, typesLoading: false, typesError: '', typeBo: 0, typeSide: 'opponent', kplTypes: null, prior: 60, typeHand: 0, typeCore: 0, typeFocus: '', counterRowLane: '', counterColLane: '', counterSel: null, counterMode: 'pick',
     tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeSide: '', treeStale: true,
-    treeMode: 'flow', decisionPath: [], decisionPins: [],
+    treeMode: 'flow', decisionPath: [], decisionPins: [], decisionNote: '',
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
@@ -1491,24 +1491,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     const cards = next.map((node) => {
       const share = node.count / total;
-      const grand = [...(children.get(node.id) || [])]
-        .sort((a, b) => b.count - a.count).slice(0, 3);
-      const grandTotal = grand.reduce((sum, item) => sum + item.count, 0) || 1;
-      return `<div class="bps-decision-card">
-        <button type="button" class="bps-decision-main" data-bps-decision-pick="${esc(node.id)}">
-          <span class="bps-decision-head">${heroImg(node.hero)}
-            <span><b>${esc(heroShort(node.hero))}</b><small>${node.action === 'ban' ? 'BAN' : 'PICK'} · ${node.actor === 'team' ? '我方' : '对方'}</small></span>
-            <em>${node.count} 局</em></span>
-          <span class="bps-decision-label"><span>分支概率</span><b>${Math.round(share * 100)}%</b></span>
-          <span class="bps-prob"><i style="width:${Math.round(share * 100)}%"></i></span>
-          <span class="bps-decision-label"><span>这条路径胜率</span><b>${node.winRate == null ? '—' : `${fmt(node.winRate, 1)}%`}</b></span>
-          <span class="bps-score"><i style="width:${node.winRate == null ? 0 : Math.round(node.winRate)}%"></i></span>
-          <span class="bps-decision-next">${grand.length
-            ? `预测下一手：${grand.map((item) => `${esc(heroShort(item.hero))} ${Math.round(item.count / grandTotal * 100)}%`).join(' · ')}`
-            : '没有更长的样本'}</span>
-        </button>
-        <button type="button" class="bps-decision-pin" data-bps-decision-pin="${esc(node.id)}">固定这条对比</button>
-      </div>`;
+      return `<option value="${esc(node.hero)}">${esc(node.hero)} · ${node.count} 局 · ${Math.round(share * 100)}%</option>`;
     }).join('');
     const pins = (state.decisionPins || []).map((ids, index) => {
       const route = ids.map((id) => byId.get(id)).filter(Boolean);
@@ -1523,8 +1506,18 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return `<div class="bps-decision">
       <div class="bps-decision-path">${crumb}</div>
       <div class="bps-decision-caption">当前${last ? `在「${esc(heroShort(last.hero))}」之后` : '从第一手开始'}，
-        按历史条件频率展开前 ${next.length} 个分支；条宽 = 分支概率，第二条 = 该路径胜率。</div>
-      <div class="bps-decision-cands">${cards}</div>
+        水平展开前 ${next.length} 个分支；线宽 = 分支概率，节点条 = 该路径胜率。</div>
+      <div class="bps-decision-tree">${viz.decisionTreeMap(state.tree, state.decisionPath,
+        {width: 780, height: 420, branch: 3})}</div>
+      <div class="bps-decision-manual">
+        <span class="bps-console-label">手动指定下一手</span>
+        <select data-bps-decision-hero>
+          <option value="">选一个英雄…</option>${cards}
+        </select>
+        <button type="button" class="bps-softbtn" data-bps-decision-apply>走这手</button>
+        <button type="button" class="bps-softbtn" data-bps-decision-pin-current>固定当前路径</button>
+        <span class="bps-note">${esc(state.decisionNote || '')}</span>
+      </div>
       ${pins ? `<div class="bps-decision-pins"><span class="bps-console-label">固定对比</span>${pins}</div>` : ''}
     </div>`;
   }
@@ -2544,14 +2537,42 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     const decisionPick = event.target.closest('[data-bps-decision-pick]');
     if (decisionPick) {
-      state.decisionPath.push(decisionPick.dataset.bpsDecisionPick);
+      state.decisionPath.push(...String(decisionPick.dataset.bpsDecisionPick).split(',').filter(Boolean));
+      state.decisionNote = '';
       paint();
       return;
     }
     const decisionPin = event.target.closest('[data-bps-decision-pin]');
     if (decisionPin) {
-      const route = [...state.decisionPath, decisionPin.dataset.bpsDecisionPin];
+      const route = [...state.decisionPath, ...String(decisionPin.dataset.bpsDecisionPin).split(',').filter(Boolean)];
       state.decisionPins = [...(state.decisionPins || []), route].slice(-3);
+      paint();
+      return;
+    }
+    if (event.target.closest('[data-bps-decision-pin-current]')) {
+      if (state.decisionPath.length) {
+        state.decisionPins = [...(state.decisionPins || []), [...state.decisionPath]].slice(-3);
+        paint();
+      }
+      return;
+    }
+    if (event.target.closest('[data-bps-decision-apply]')) {
+      const hero = state.root?.querySelector('[data-bps-decision-hero]')?.value || '';
+      const nodes = state.tree?.nodes || [];
+      const children = new Map();
+      for (const node of nodes) {
+        if (!children.has(node.parent)) children.set(node.parent, []);
+        children.get(node.parent).push(node);
+      }
+      const parentKey = state.decisionPath.length ? state.decisionPath[state.decisionPath.length - 1] : '0';
+      const hit = (children.get(parentKey) || []).find((node) => node.hero === hero);
+      if (!hit) {
+        state.decisionNote = hero ? `「${hero}」在已核验样本里没有出现，不能凭空展开。` : '先选一个英雄。';
+        paint();
+        return;
+      }
+      state.decisionPath.push(hit.id);
+      state.decisionNote = '';
       paint();
       return;
     }
