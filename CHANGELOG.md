@@ -18,6 +18,7 @@
 - **改法**：接口改为返回 `200 {"available": false, "reason": ..., "source": ...}`；前端在 `paint()` 里先判 `available === false`，渲染 `.bps-empty` 整页空态（标题 + 缺什么 + 两步怎么办 + 去采集 / 载入模拟数据 / 重新读取）；`rule` 名字翻成人话（`draft-20` → KPL 20 手），不再把内部代号摆给教练看。
 - **验证**：在 `git clone` 出来、没有 `data/` 的干净副本上跑 `scripts/audit_v3_regression.py`，24 条路由 **失败 0 条 / 空态 2 条**（`coach`、`bp`）；空态里的「载入模拟数据」点下去能正常渲染整套 BP 版式。
 - **CI 清理**：`verify_bp_interactions` / `verify_bp_diagnose` / `verify_bp_pickers` 等的是 `.bpi-*` 情报面板，`verify_scrim_global_bp` 等的是 `bp-lab` 的 `.bpl-*`——BP 概览换成 `bp-studio` 之后这两个视图都不再渲染，四条脚本每次提交必红。已删除，换成 `scripts/verify_bp_shell.py`：宽窄屏各验一次 `#bp` 落到「有数据」或「空态」、无 JS 异常、无横向溢出，空态下点「载入模拟数据」必须渲染出完整界面。干净副本与本地实例都通过。
+- **更新面板回归**：空库首次打开会弹「还没有对局数据」引导（复用 `#filters`，fixed 遮罩），关掉后下一次数据刷新还会再弹，把更新卡片的点击全挡住——10 条用例里 7 条超时在 click。回归里改成弹起即关，10/10 通过（53s）。至此 `ci` 三条 job 全绿。
 
 ## [2.0.1] - 2026-11-18
 
