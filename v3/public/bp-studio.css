@@ -1146,6 +1146,74 @@
   border-radius: 9px; background: var(--bps-paper); color: var(--bps-text);
   font: 650 12px var(--font); max-width: 260px;
 }
+.bps-ring-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 4px; }
+.bps-ring-tools select {
+  min-height: 34px; padding: 4px 10px; border: 1px solid var(--bps-line);
+  border-radius: 9px; background: var(--bps-paper); color: var(--bps-text);
+  font: 650 12px var(--font); max-width: 220px;
+}
+.bv-ring-hero { fill: var(--bps-ink); font-size: 11.5px; font-weight: 750; }
+.bv-ring-metric { font-size: 10px; font-weight: 700; }
+.bv-ring-title { font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+.bv-ring-center { fill: var(--bps-ink); font-family: var(--serif); font-size: 17px; font-weight: 700; text-anchor: middle; }
+.bv-ring-stat { fill: var(--bps-quiet); font-size: 11px; font-weight: 700; }
+.bv-ring-stat-v { fill: var(--bps-ink); font-size: 13px; font-weight: 800; }
+
+.bps-period-panel { margin-top: 16px; }
+.bps-period-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+.bps-period-tools input[type="date"] {
+  min-height: 34px; padding: 4px 10px; border: 1px solid var(--bps-line);
+  border-radius: 9px; background: var(--bps-paper); color: var(--bps-text);
+  font: 650 12px var(--font);
+}
+.bps-period-axis {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; border-radius: 10px; background: var(--bps-paper-2);
+  color: var(--bps-muted); font-size: 11px; font-weight: 700;
+}
+.bps-period-axis b { color: var(--bps-accent); font-size: 12px; }
+.bps-period-cards {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px; margin-top: 12px;
+}
+.bps-period-card {
+  padding: 10px 12px; border: 1px solid var(--bps-line); border-radius: 12px;
+  background: var(--bps-paper);
+}
+.bps-period-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; margin-bottom: 6px; }
+.bps-period-card-head .bps-p { width: 26px; height: 26px; border-radius: 8px; }
+.bps-period-card-head b { color: var(--bps-ink); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bps-period-card-head small { margin-left: auto; color: var(--bps-quiet); font-size: 10px; white-space: nowrap; }
+.bps-period-card-body { display: grid; gap: 4px; }
+.bps-period-line { display: flex; align-items: baseline; gap: 6px; color: var(--bps-muted); font-size: 10.5px; }
+.bps-period-line > span { width: 28px; color: var(--bps-quiet); font-weight: 700; }
+.bps-period-line b { color: var(--bps-ink); font-size: 11.5px; font-weight: 750; font-variant-numeric: tabular-nums; }
+.bps-period-line b i { padding: 0 3px; color: var(--bps-quiet); font-style: normal; font-weight: 500; }
+.bps-period-line .bps-delta { margin-left: auto; font-size: 10px; }
+@media (max-width: 1100px) { .bps-period-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .bps-period-cards { grid-template-columns: 1fr; } }
+.bps-period-list { display: grid; gap: 6px; margin-top: 10px; }
+.bps-period-row {
+  display: grid; grid-template-columns: 132px repeat(3, minmax(0, 1fr));
+  gap: 8px 12px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--bps-line-soft); border-radius: 10px;
+}
+.bps-period-hero { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.bps-period-hero .bps-p { width: 26px; height: 26px; border-radius: 8px; }
+.bps-period-hero b { color: var(--bps-ink); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bps-period-metric { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bps-period-label { color: var(--bps-quiet); font-size: 10px; font-weight: 800; }
+.bps-period-bars { position: relative; display: block; height: 5px; border-radius: 999px; background: var(--bps-wash); overflow: hidden; }
+.bps-period-bars .is-before { position: absolute; inset: 0 auto 0 0; background: #b9c6bf; border-radius: 999px; }
+.bps-period-bars .is-after { position: absolute; inset: 0 auto 0 0; background: var(--bps-accent-2); opacity: .75; border-radius: 999px; }
+.bps-period-values { color: var(--bps-muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.bps-period-row .bps-delta { font-size: 10px; }
+@media (max-width: 900px) {
+  .bps-period-row { grid-template-columns: 110px repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .bps-period-row { grid-template-columns: 1fr; }
+}
 .bps-decision-cands { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
 .bps-decision-card {
   display: flex; flex-direction: column; gap: 6px;

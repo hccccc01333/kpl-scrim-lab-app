@@ -772,6 +772,63 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         transform="rotate(-90 8 ${topH + rows.length * cell / 2})" text-anchor="middle">对面类型 →</text></svg>`;
   }
 
+  /* ── 英雄关系环：克制 / 被克制 / 最佳搭档三向环绕头像 ─────────────── */
+  function heroRing(data, {width = 640, height = 360} = {}) {
+    if (!data?.available) return `<div class="bv-empty">${esc(data?.reason || '没有关系数据。')}</div>`;
+    const cx = width / 2;
+    const cy = 158;
+    const radius = 96;
+    const rad = (angle) => angle * Math.PI / 180;
+    const point = (angle, r = radius) => [cx + r * Math.cos(rad(angle)), cy + r * Math.sin(rad(angle))];
+    const arc = (a0, a1, color) => {
+      const [x0, y0] = point(a0);
+      const [x1, y1] = point(a1);
+      return `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${radius},${radius} 0 0 1 ${x1.toFixed(1)},${y1.toFixed(1)}"
+        fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round" opacity=".22"/>`;
+    };
+    const groups = [
+      {title: '克制谁', color: '#246b63', angles: [-160, -120, -80],
+        items: data.counters || [], metric: (item) => `+${fmt1(item.excess)}pp`},
+      {title: '被谁克制', color: '#a94b40', angles: [-20, 20, 60],
+        items: data.counteredBy || [], metric: (item) => `-${fmt1(item.excess)}pp`},
+      {title: '最佳搭档', color: '#4a6fa8', angles: [100, 140, 180],
+        items: data.partners || [], metric: (item) => `${item.n} 局`},
+    ];
+    const marks = [];
+    let uid = 0;
+    for (const group of groups) {
+      const used = group.items.slice(0, group.angles.length);
+      if (!used.length) continue;
+      marks.push(arc(group.angles[0] - 12, group.angles[used.length - 1] + 12, group.color));
+      used.forEach((item, index) => {
+        const angle = group.angles[index];
+        const [x, y] = point(angle);
+        const [lx, ly] = point(angle, radius + 30);
+        const anchor = Math.cos(rad(angle)) > 0.35 ? 'start'
+          : Math.cos(rad(angle)) < -0.35 ? 'end' : 'middle';
+        marks.push(`<g>
+          ${markerWithIcon(item.hero, x, y, 12, `ring-${uid++}`, group.color)}
+          <text x="${lx.toFixed(1)}" y="${(ly - 2).toFixed(1)}" class="bv-ring-hero" text-anchor="${anchor}">${esc(short(item.hero))}</text>
+          <text x="${lx.toFixed(1)}" y="${(ly + 11).toFixed(1)}" class="bv-ring-metric" text-anchor="${anchor}" fill="${group.color}">${group.metric(item)}</text>
+        </g>`);
+      });
+    }
+    marks.push(`${markerWithIcon(data.hero, cx, cy, 44, 'ring-center', '#0e2f2b')}
+      <text x="${cx}" y="${cy + 60}" class="bv-ring-center">${esc(short(data.hero))}</text>`);
+    const stats = data.stats || {};
+    marks.push(`<g transform="translate(${cx - 150}, ${height - 40})">
+      <circle cx="5" cy="-4" r="4" fill="#246b63"/><text x="14" y="0" class="bv-ring-stat">克制谁</text>
+      <circle cx="88" cy="-4" r="4" fill="#a94b40"/><text x="97" y="0" class="bv-ring-stat">被谁克制</text>
+      <circle cx="182" cy="-4" r="4" fill="#4a6fa8"/><text x="191" y="0" class="bv-ring-stat">最佳搭档</text>
+    </g>`);
+    marks.push(`<g transform="translate(${cx - 126}, ${height - 16})">
+      <text x="0" y="0" class="bv-ring-stat">Pick <tspan class="bv-ring-stat-v">${stats.pickRate == null ? '—' : `${fmt1(stats.pickRate)}%`}</tspan></text>
+      <text x="86" y="0" class="bv-ring-stat">Ban <tspan class="bv-ring-stat-v">${stats.banRate == null ? '—' : `${fmt1(stats.banRate)}%`}</tspan></text>
+      <text x="166" y="0" class="bv-ring-stat">胜率 <tspan class="bv-ring-stat-v">${stats.winRate == null ? '—' : `${fmt1(stats.winRate)}%`}</tspan></text>
+    </g>`);
+    return wrap(width, height, marks.join(''));
+  }
+
   /* ── BP 决策树：当前节点 → 前 3 个候选 → 各自前 2 个后续，水平展开 ── */
   function decisionTreeMap(data, pathIds, {width = 780, height = 420, branch = 3} = {}) {
     const nodes = data?.nodes || [];
@@ -1383,6 +1440,6 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   return {heroScatter, dotScatter, dotCI, dumbbell, handHeatmap, handRing, radar, slope,
-    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftFlowMap, decisionTreeMap, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
+    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftFlowMap, decisionTreeMap, heroRing, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
 
 }

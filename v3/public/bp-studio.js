@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118b2';
+import {createBpViz} from './bps-viz.js?v=20261118c5';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -57,6 +57,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     types: null, typesLoading: false, typesError: '', typeBo: 0, typeSide: 'opponent', kplTypes: null, prior: 60, typeHand: 0, typeCore: 0, typeFocus: '', counterRowLane: '', counterColLane: '', counterSel: null, counterMode: 'pick',
     tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeSide: '', treeStale: true,
     treeMode: 'flow', decisionPath: [], decisionPins: [], decisionNote: '',
+    ringHero: '', ring: null, ringLoading: false, ringError: '', ringStale: true,
+    periodCut: '', periodDays: 30, period: null, periodLoading: false, periodError: '', periodStale: true,
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
@@ -229,11 +231,24 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.lastLoadedAt = Date.now();
       if (!state.team) state.team = data.scope?.team || data.options.defaultTeam || '';
       if (!state.opponent) state.opponent = data.scope?.opponent || data.options.defaultOpponent || '';
+      if (!state.ringHero) {
+        state.ringHero = data.primary?.heroes?.top?.[0]?.hero
+          || data.primary?.heroes?.rows?.[0]?.hero || '';
+      }
+      if (!state.periodCut) {
+        const end = new Date(`${data.scope?.to || ''}T00:00:00`);
+        if (!Number.isNaN(end.getTime())) {
+          end.setDate(end.getDate() - 30);
+          state.periodCut = end.toISOString().slice(0, 10);
+        }
+      }
       paint();
       if (state.target.length) loadTarget();
       if (state.comboPick.length >= 2) loadCombo();
       state.typesStale = true;
       state.treeStale = true;
+      state.ringStale = true;
+      state.periodStale = true;
       state.seqStale = true;
       observeLazy();
       if (state.compareOpponent) loadCompareOpponent();
@@ -331,6 +346,49 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.typesError = error.message || '类型数据读取失败';
     } finally {
       state.typesLoading = false;
+      paint();
+    }
+  }
+
+  async function loadRing() {
+    if (!state.root || !state.ringHero) return;
+    state.ringLoading = true;
+    state.ringError = '';
+    paint();
+    try {
+      const search = new URLSearchParams({
+        hero: state.ringHero, source: state.source, recentDays: state.recentDays,
+      });
+      if (state.leagues.length) search.set('leagues', state.leagues.join(','));
+      if (state.from && state.to) { search.set('from', state.from); search.set('to', state.to); }
+      state.ring = await api(`/hero-ring?${search.toString()}`);
+      state.ringStale = false;
+    } catch (error) {
+      state.ringError = error.message || '英雄关系读取失败';
+      state.ringStale = false;
+    } finally {
+      state.ringLoading = false;
+      paint();
+    }
+  }
+
+  async function loadPeriod() {
+    if (!state.root || !state.periodCut) return;
+    state.periodLoading = true;
+    state.periodError = '';
+    paint();
+    try {
+      const search = new URLSearchParams({
+        cut: state.periodCut, days: String(state.periodDays), source: state.source,
+      });
+      if (state.leagues.length) search.set('leagues', state.leagues.join(','));
+      state.period = await api(`/period-compare?${search.toString()}`);
+      state.periodStale = false;
+    } catch (error) {
+      state.periodError = error.message || '前后对照读取失败';
+      state.periodStale = false;
+    } finally {
+      state.periodLoading = false;
       paint();
     }
   }
@@ -766,6 +824,28 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     </button>`;
   }
 
+  function ringPanel() {
+    const heroes = state.data?.options?.heroes || [];
+    const options = heroes.map((row) => `<option value="${esc(row.name)}"
+      ${row.name === state.ringHero ? 'selected' : ''}>${esc(row.name)} · ${esc(row.lane || '')}</option>`).join('');
+    return `<div class="bps-panel bps-ring-panel" data-bps-ring>
+      <div class="bps-panel-head"><h3>英雄关系环</h3>
+        <span class="bps-sub">克制 / 被克制 / 最佳搭档 · KPL 历史对位与同队同局</span></div>
+      <div class="bps-panel-body">
+        <div class="bps-ring-tools">
+          <span class="bps-console-label">英雄</span>
+          <select data-bps-ring-hero>${options}</select>
+          ${state.ring?.stats ? `<span class="bps-sub">${num(state.ring.stats.games)} 队-局 · Pick ${rate(state.ring.stats.pickRate)} · Ban ${rate(state.ring.stats.banRate)} · 胜率 ${rate(state.ring.stats.winRate)}</span>` : ''}
+        </div>
+        ${state.ringLoading && !state.ring ? '<div class="bps-loading">正在读取英雄关系…</div>' : ''}
+        ${state.ringError ? `<div class="bps-inline-error">${esc(state.ringError)}</div>` : ''}
+        ${state.ring?.available ? viz.heroRing(state.ring, {width: 760, height: 380})
+          : (state.ring ? `<div class="bps-empty"><b>没有这个英雄的关系数据</b><p>${esc(state.ring.reason || '')}</p></div>` : '')}
+        ${state.ring?.note ? `<p class="bps-note">${esc(state.ring.note)}</p>` : ''}
+      </div>
+    </div>`;
+  }
+
   function heroSection() {
     const data = state.data;
     const block = data.primary.heroes;
@@ -842,6 +922,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             </div>` : ''}
           </div>
           <div class="bps-focus-grid">${rows.slice(0, 4).map(focusCard).join('')}</div>
+          ${ringPanel()}
           ${fullTable}
         </div>
         <aside class="bps-movers">
@@ -1681,6 +1762,50 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   // ── 05 体系与异动 ───────────────────────────────────────────────────
+  function periodPanel() {
+    const data = state.period;
+    return `<div class="bps-panel bps-period-panel" data-bps-period>
+      <div class="bps-panel-head"><h3>版本 / 日期前后对比</h3>
+        <span class="bps-sub">Pick / Ban / 胜率 · 切分点前后各 ${state.periodDays} 天</span></div>
+      <div class="bps-panel-body">
+        <div class="bps-period-tools">
+          <span class="bps-console-label">切分点</span>
+          <input type="date" data-bps-period-cut value="${esc(state.periodCut)}">
+          ${seg([[30, '30 天'], [60, '60 天'], [90, '90 天']], String(state.periodDays), 'data-bps-period-days', {small: true})}
+          <button type="button" class="bps-softbtn" data-bps-period-apply>重新对照</button>
+          ${data?.available ? `<span class="bps-sub">前 ${num(data.before.games)} 局 / 后 ${num(data.after.games)} 局</span>` : ''}
+        </div>
+        ${state.periodLoading && !data ? '<div class="bps-loading">正在按日期对照…</div>' : ''}
+        ${state.periodError ? `<div class="bps-inline-error">${esc(state.periodError)}</div>` : ''}
+        ${data?.available ? `<div class="bps-period-axis">
+            <span>${esc(data.before.from)} → ${esc(data.before.to)}</span>
+            <b>${esc(data.cut)}</b>
+            <span>${esc(data.after.from)} → ${esc(data.after.to)}</span>
+          </div>
+          <div class="bps-period-cards">${(data.rows || []).map((item) => {
+            const metrics = [
+              ['Pick', item.before.pickRate, item.after.pickRate, item.delta.pick, 'neutral'],
+              ['Ban', item.before.banRate, item.after.banRate, item.delta.ban, 'neutral'],
+              ['胜率', item.before.winRate, item.after.winRate, item.delta.win, 'good'],
+            ];
+            return `<div class="bps-period-card">
+              <div class="bps-period-card-head">${heroImg(item.hero)}<b>${esc(heroShort(item.hero))}</b>
+                <small>${num(item.before.picks + item.before.bans)} → ${num(item.after.picks + item.after.bans)} 次</small></div>
+              <div class="bps-period-card-body">${metrics.map(([label, before, after, delta, tone]) => `
+                <div class="bps-period-line">
+                  <span>${label}</span>
+                  <b>${before == null ? '—' : `${fmt(before, 1)}%`}<i>→</i>${after == null ? '—' : `${fmt(after, 1)}%`}</b>
+                  ${deltaChip(delta, {tone})}
+                </div>`).join('')}</div>
+            </div>`;
+          }).join('') || '<p class="bps-note">没有变化明显的英雄。</p>'}</div>
+          <p class="bps-note">每个英雄三行：Pick / Ban / 胜率，左边切分前、右边切分后；不画横条，直接读数字和差值。</p>`
+          : (data ? `<div class="bps-empty"><b>这个切分点没有前后样本</b><p>${esc(data.reason || '')}</p></div>` : '')}
+        ${data?.note ? `<p class="bps-note">${esc(data.note)}</p>` : ''}
+      </div>
+    </div>`;
+  }
+
   function systemsSection() {
     const data = state.data;
     const systems = data.primary.systems;
@@ -1711,6 +1836,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           </div>
         </div>
       </div>
+      ${periodPanel()}
       <div class="bps-panel" style="margin-top:16px">
         <div class="bps-panel-head"><h3>阵容差异</h3><span class="bps-sub">本队 vs ${esc(state.opponent || '对手')} 的双人组合</span></div>
         <div class="bps-panel-body">
@@ -1800,11 +1926,17 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     observeLazy();
     updateActiveJump();
     requestAnimationFrame(syncSticky);
-    // 单节模式直接进入 05 时，主图在首屏下方，不能等滚动才请求。
-    if (state.solo && state.active === 'types' && state.data
-      && state.treeStale && !state.treeLoading) {
+    // 单节模式直接进入 01 时，关系环在首屏下方，不能等滚动才请求。
+    if (state.solo && state.active === 'heroes' && state.data
+      && state.ringStale && !state.ringLoading) {
       setTimeout(() => {
-        if (state.treeStale && !state.treeLoading) loadTree();
+        if (state.ringStale && !state.ringLoading) loadRing();
+      }, 60);
+    }
+    if (state.solo && state.active === 'systems' && state.data
+      && state.periodStale && !state.periodLoading) {
+      setTimeout(() => {
+        if (state.periodStale && !state.periodLoading) loadPeriod();
       }, 60);
     }
   }
@@ -1819,6 +1951,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           const key = entry.target.dataset.bpsLazy;
           if (key === 'types' && state.typesStale && !state.typesLoading) loadTypes();
           else if (key === 'tree' && state.treeStale && !state.treeLoading) loadTree();
+          else if (key === 'ring' && state.ringStale && !state.ringLoading) loadRing();
+          else if (key === 'period' && state.periodStale && !state.periodLoading) loadPeriod();
           else if (key === 'sequence' && state.seqStale && !state.seqLoading) loadSequence();
         }
       }, {rootMargin: '600px 0px'});
@@ -1833,6 +1967,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (tree && state.treeStale && !state.treeLoading) {
       tree.dataset.bpsLazy = 'tree';
       lazyObserver.observe(tree);
+    }
+    const ring = state.root.querySelector('[data-bps-ring]');
+    if (ring && state.ringStale && !state.ringLoading) {
+      ring.dataset.bpsLazy = 'ring';
+      lazyObserver.observe(ring);
+    }
+    const period = state.root.querySelector('[data-bps-period]');
+    if (period && state.periodStale && !state.periodLoading) {
+      period.dataset.bpsLazy = 'period';
+      lazyObserver.observe(period);
     }
     const seq = state.root.querySelector('.bps-seq');
     if (seq && state.seqStale) {
@@ -2593,6 +2737,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       paint();
       return;
     }
+    const periodDays = event.target.closest('[data-bps-period-days]');
+    if (periodDays) {
+      state.periodDays = Number(periodDays.dataset.bpsPeriodDays) || 30;
+      loadPeriod();
+      return;
+    }
+    if (event.target.closest('[data-bps-period-apply]')) {
+      loadPeriod();
+      return;
+    }
     const compareOpponent = event.target.closest('[data-bps-compare-opponent]');
     if (compareOpponent) {
       state.compareOpponent = compareOpponent.dataset.bpsCompareOpponent;
@@ -2700,6 +2854,17 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (heroFilter) {
       state.heroQuery = heroFilter.value;
       refreshSection('heroes');
+      return;
+    }
+    const ringHero = event.target.closest('[data-bps-ring-hero]');
+    if (ringHero) {
+      state.ringHero = ringHero.value;
+      loadRing();
+      return;
+    }
+    const periodCut = event.target.closest('[data-bps-period-cut]');
+    if (periodCut) {
+      state.periodCut = periodCut.value;
       return;
     }
     const viewName = event.target.closest('[data-bps-view-name]');

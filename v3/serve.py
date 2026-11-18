@@ -4264,6 +4264,57 @@ def bp_studio_sequence(request: Request):
     return report
 
 
+@router.get('/api/v3/bp-studio/period-compare')
+def bp_studio_period_compare(request: Request):
+    """按日期切分的前后对照（Pick / Ban / 胜率）；没有版本字段，不冒充版本。"""
+    from bp_studio import _in_window, period_compare, window_bounds
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    cut = str(values.get('cut') or '').strip()
+    if not cut:
+        raise HTTPException(400, 'cut 不能为空')
+    try:
+        days = int(values.get('days') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'days 必须是整数')
+    games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
+    report = period_compare(games, cut, days)
+    report['source'] = source
+    return report
+
+
+@router.get('/api/v3/bp-studio/hero-ring')
+def bp_studio_hero_ring(request: Request):
+    """英雄关系环：克制 / 被克制 / 最佳搭档 + 当前范围的基础比率。"""
+    from bp_studio import _in_window, hero_ring, window_bounds
+
+    values = request.query_params
+    hero = str(values.get('hero') or '').strip()
+    if not hero:
+        raise HTTPException(400, 'hero 不能为空')
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays 必须是整数')
+    games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    scoped = _in_window(games, bounds['from'], bounds['to'])
+    report = hero_ring(hero, scoped)
+    report['window'] = bounds
+    report['source'] = source
+    return report
+
+
 @router.get('/api/v3/bp-studio/tree')
 def bp_studio_tree(request: Request):
     """BP 时序分支：已核验手序的前缀树 + 主路径，给“地铁图”用。"""

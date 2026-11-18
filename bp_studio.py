@@ -24,6 +24,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from itertools import combinations
+from pathlib import Path
+import json
 
 from bp_lab import (
     LANES,
@@ -1170,6 +1172,170 @@ def sequence_board(games, team, action="pick", hand=1, hero=""):
         "enemyNextTypes": [{"type": name, "count": count, "share": _pct(count, total)}
                            for name, count in enemy_next_type.most_common(6)],
         "sample": _sample_label(total, decided),
+    }
+
+
+_RELATION_CACHE = {}
+
+
+def _relation_fact(name):
+    """读取 data/facts 下的关系表，按 mtime 缓存，避免每次请求重读 20MB JSON。"""
+    path = Path(__file__).resolve().parent / 'data' / 'facts' / name
+    try:
+        stat = path.stat()
+        key = (name, stat.st_mtime_ns, stat.st_size)
+        cached = _RELATION_CACHE.get(key)
+        if cached is not None:
+            return cached
+        data = json.loads(path.read_text(encoding='utf-8'))
+        if len(_RELATION_CACHE) > 8:
+            _RELATION_CACHE.clear()
+        _RELATION_CACHE[key] = data
+        return data
+    except (OSError, ValueError):
+        return {}
+
+
+def hero_ring(hero, games=None, *, limit=3, min_games=30):
+    """英雄关系环：克制 / 被克制（KPL 对位超额胜率）+ 最佳搭档（KPL 同队同局）。"""
+    hero = str(hero or '').strip()
+    if not hero:
+        return {"available": False, "reason": "先选一个英雄。"}
+    matchups = _relation_fact('lane_matchups.json').get('pairs') or []
+    combos = _relation_fact('kpl_combos.json').get('pairs') or []
+    counters, countered = [], []
+    for row in matchups:
+        a, b = str(row.get('a') or ''), str(row.get('b') or '')
+        if hero not in (a, b):
+            continue
+        n = int(row.get('n') or 0)
+        excess = row.get('excess')
+        if n < min_games or not isinstance(excess, (int, float)):
+            continue
+        other = b if a == hero else a
+        value = float(excess) if a == hero else -float(excess)
+        item = {"hero": other, "n": n, "excess": round(value, 1),
+                "winRate": row.get('wr')}
+        if value > 0:
+            counters.append(item)
+        elif value < 0:
+            countered.append({**item, "excess": round(-value, 1)})
+    counters.sort(key=lambda item: (-item['excess'], -item['n']))
+    countered.sort(key=lambda item: (-item['excess'], -item['n']))
+    partners = []
+    for row in combos:
+        heroes = [str(name) for name in row.get('heroes') or []]
+        if hero not in heroes:
+            continue
+        n = int(row.get('n') or 0)
+        if n < min_games:
+            continue
+        other = next((name for name in heroes if name != hero), '')
+        if not other:
+            continue
+        partners.append({"hero": other, "n": n, "winRate": row.get('wr')})
+    partners.sort(key=lambda item: (-item['n'], -(item['winRate'] or 0)))
+    stats = {"games": 0, "picks": 0, "bans": 0, "wins": 0, "decided": 0,
+             "pickRate": None, "banRate": None, "winRate": None}
+    for game in games or []:
+        picks = _heroes(game.get('picks'))
+        bans = _heroes(game.get('bans'))
+        stats['games'] += 1
+        if hero in picks:
+            stats['picks'] += 1
+            if isinstance(game.get('result'), bool):
+                stats['decided'] += 1
+                if game.get('result'):
+                    stats['wins'] += 1
+        if hero in bans:
+            stats['bans'] += 1
+    if stats['games']:
+        stats['pickRate'] = _pct(stats['picks'], stats['games'])
+        stats['banRate'] = _pct(stats['bans'], stats['games'])
+    if stats['decided']:
+        stats['winRate'] = _pct(stats['wins'], stats['decided'])
+    return {
+        "available": True, "hero": hero,
+        "counters": counters[:limit],
+        "counteredBy": countered[:limit],
+        "partners": partners[:limit],
+        "stats": stats,
+        "source": "KPL 历史对位（lane_matchups）",
+        "note": f"对位要求 n≥{min_games}；搭档为同队同局，n≥{min_games}。克制是相对英雄强度的超额胜率，不是因果。",
+    }
+
+
+def period_compare(games, cut, days=30, *, limit=10):
+    """按日期切分的前后对照：Pick / Ban / 胜率。没有版本字段，不冒充官方版本。"""
+    try:
+        cut_day = date.fromisoformat(str(cut)[:10])
+    except (TypeError, ValueError):
+        return {"available": False, "reason": "切分日期格式应为 YYYY-MM-DD。"}
+    days = max(7, min(180, int(days or 30)))
+    before_start = cut_day - timedelta(days=days)
+    after_end = cut_day + timedelta(days=days)
+    before, after = [], []
+    for game in games or []:
+        try:
+            day = date.fromisoformat(str(game.get('date') or '')[:10])
+        except (TypeError, ValueError):
+            continue
+        if before_start <= day < cut_day:
+            before.append(game)
+        elif cut_day <= day < after_end:
+            after.append(game)
+    if not before or not after:
+        return {"available": False,
+                "reason": f"切分点前后各 {days} 天没有足够对局。",
+                "cut": cut_day.isoformat(), "days": days,
+                "beforeGames": len(before), "afterGames": len(after)}
+
+    def summarize(rows):
+        picks, bans, wins, decided = Counter(), Counter(), Counter(), Counter()
+        for game in rows:
+            won = isinstance(game.get('result'), bool)
+            for hero in _heroes(game.get('picks')):
+                picks[hero] += 1
+                if won:
+                    decided[hero] += 1
+                    if game.get('result'):
+                        wins[hero] += 1
+            for hero in _heroes(game.get('bans')):
+                bans[hero] += 1
+        return picks, bans, wins, decided
+
+    b_picks, b_bans, b_wins, b_decided = summarize(before)
+    a_picks, a_bans, a_wins, a_decided = summarize(after)
+    heroes = set(b_picks) | set(a_picks) | set(b_bans) | set(a_bans)
+    rows = []
+    for hero in heroes:
+        bp, ap = b_picks[hero], a_picks[hero]
+        bb, ab = b_bans[hero], a_bans[hero]
+        if bp + bb < 10 and ap + ab < 10:
+            continue
+        b_wr = _pct(b_wins[hero], b_decided[hero]) if b_decided[hero] >= 5 else None
+        a_wr = _pct(a_wins[hero], a_decided[hero]) if a_decided[hero] >= 5 else None
+        rows.append({
+            "hero": hero,
+            "before": {"games": len(before), "picks": bp, "bans": bb,
+                       "pickRate": _pct(bp, len(before)), "banRate": _pct(bb, len(before)),
+                       "winRate": b_wr, "decided": b_decided[hero]},
+            "after": {"games": len(after), "picks": ap, "bans": ab,
+                      "pickRate": _pct(ap, len(after)), "banRate": _pct(ab, len(after)),
+                      "winRate": a_wr, "decided": a_decided[hero]},
+            "delta": {"pick": round((_pct(ap, len(after)) or 0) - (_pct(bp, len(before)) or 0), 1),
+                      "ban": round((_pct(ab, len(after)) or 0) - (_pct(bb, len(before)) or 0), 1),
+                      "win": (round(a_wr - b_wr, 1) if a_wr is not None and b_wr is not None else None)},
+        })
+    rows.sort(key=lambda row: (-(abs(row['delta']['ban']) + abs(row['delta']['win'] or 0)), row['hero']))
+    return {
+        "available": True, "cut": cut_day.isoformat(), "days": days,
+        "before": {"from": before_start.isoformat(), "to": cut_day.isoformat(),
+                   "games": len(before)},
+        "after": {"from": cut_day.isoformat(), "to": after_end.isoformat(),
+                  "games": len(after)},
+        "rows": rows[:limit],
+        "note": "数据里没有官方 patch/version 字段，这里按日期切分，不冒充版本对比；只列前后各至少 10 个 Ban/Pick 样本的英雄，胜率只显示前后各至少 5 个胜负样本。",
     }
 
 
