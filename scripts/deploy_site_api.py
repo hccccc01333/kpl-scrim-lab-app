@@ -13,6 +13,7 @@ Nothing is written unless the tree actually differs from the remote one.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import subprocess
@@ -97,8 +98,11 @@ def main() -> int:
             entries.append({'path': rel, 'mode': '100644', 'type': 'blob',
                             'content': data.decode('utf-8')})
         else:
-            blob = gh(f'repos/{REPO}/git/blobs', '-f', 'encoding=base64',
-                      '-f', f'content={__import__("base64").b64encode(data).decode("ascii")}')
+            # base64 有几百 KB，不能塞进命令行（Windows 会报 WinError 206），
+            # 必须走 --input 的 JSON 载荷。
+            blob = gh(f'repos/{REPO}/git/blobs', payload={
+                'content': base64.b64encode(data).decode('ascii'),
+                'encoding': 'base64'})
             entries.append({'path': rel, 'mode': '100644', 'type': 'blob',
                             'sha': blob['sha']})
             print(f'  二进制 {rel} -> {blob["sha"][:8]}')

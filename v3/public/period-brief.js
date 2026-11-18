@@ -972,7 +972,12 @@ function coverageSentence(coverage) {
   const games = has(coverage.games) ? coverage.games : null;
   const replay = has(coverage.withReplay) ? coverage.withReplay : null;
   if (games === null) return '本期还没有可统计的对局。';
-  if (games === 0) return '本期还没有收录对局。';
+  // 只有终局面板时局数不是 0，不能说「还没有收录对局」。
+  if (games === 0) {
+    return has(coverage.panelGames) && Number(coverage.panelGames) > 0
+      ? '本期只有终局面板，没有可看比赛过程的对局。'
+      : '本期还没有收录对局。';
+  }
   if (replay === null) return `本期收录 ${games} 局。`;
   return `已收录 ${games} 局，其中 ${replay} 局可看比赛过程。`;
 }

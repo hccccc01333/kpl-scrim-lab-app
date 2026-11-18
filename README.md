@@ -23,10 +23,10 @@
 </div>
 
 <p align="center">
-  <img src="docs/images/readme-hero.png" width="100%" alt="V3 工作台 · 对局档案：43 场训练赛按训练日归档，比分、时长与阵容一眼可见">
+  <img src="docs/images/readme-hero.png" width="100%" alt="V3 工作台 · 首页赛训简报：一句战况、本期指标、重点发现与最值得复盘的比赛，结论先摆出来">
 </p>
 
-<p align="center"><sub>V3 工作台 · 对局档案（深色主题） · 界面内为合成演示数据</sub></p>
+<p align="center"><sub>V3 工作台 · 首页「赛训简报」（深色主题） · 界面内为合成演示数据</sub></p>
 
 ---
 

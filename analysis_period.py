@@ -2316,7 +2316,12 @@ def _coverage(entries, record, window, panel_only=()):
     panel_games = len(entries) + len(panel_only)
     opponents = len({item['opponentId'] for item in entries if item['opponentId']})
     if not entries:
-        note = f"{_period_cur_word(window)}还没有对局"
+        # 只有终局面板时 summary 里仍然有局数，这里不能写成「还没有对局」，
+        # 否则首页一句战况说「本月 31 局」、数据覆盖说「本月还没有对局」，自相矛盾。
+        if panel_only:
+            note = f"{_period_cur_word(window)}还没有可看比赛过程的对局"
+        else:
+            note = f"{_period_cur_word(window)}还没有对局"
     else:
         note = f"本期 {len(entries)} 局有比赛过程"
         if panel_only:
