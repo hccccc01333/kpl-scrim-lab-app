@@ -4,11 +4,19 @@ import struct
 import unittest
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "host" / "fixtures" / "20261102_161129" / "consumer"
 HEADER = struct.Struct("<4sIIQQQ")
 ENTRY = struct.Struct("<QQ")
 SLOT = struct.Struct("<II")
+
+# host/fixtures/ 是从本机回放派生的二进制夹具，不进公开仓库；
+# 缺夹具时跳过，而不是让整个套件报 FileNotFoundError。
+pytestmark = pytest.mark.skipif(
+    not (FIXTURE / "cmd_table.bin").is_file(),
+    reason="host/fixtures 下的命令表夹具不进公开仓库")
 
 
 class CommandTableFixtureTests(unittest.TestCase):

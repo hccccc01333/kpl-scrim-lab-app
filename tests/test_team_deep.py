@@ -344,6 +344,9 @@ def test_kpl_section_reports_source_and_empty_when_no_hits(tmp_path):
     deep = team_clusters.team_deep(camp, db, team_id)
 
     kpl = deep['kpl']
+    if not kpl['games']:
+        # KPL 组合事实表（data/facts/）不入公开仓库，公开克隆里这段没有数据。
+        pytest.skip('KPL 组合事实表不在公开仓库（data/ 不入库）')
     assert kpl['source'] == 'KPL 官方赛事'
     assert kpl['games'] and kpl['sinceYear']
     assert kpl['hits'] == []

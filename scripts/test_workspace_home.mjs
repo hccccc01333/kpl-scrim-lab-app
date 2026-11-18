@@ -710,8 +710,10 @@ assert(!failed.includes(weekPayload.summary.sentence), '失败不得残留旧结
 const missing = render({ kind: 'week', data: null, error: Object.assign(new Error('全站 404'), { status: 404 }) });
 assert(!missing.includes('全站 404'), '不应把英文/内部错误原样摆出来');
 
-/* 6) 静态检查：入口改造完成，旧首页代码不再残留 */
-assert(app.includes("import { createPeriodBrief } from './period-brief.js'"), 'app.js 必须接新首页模块');
+/* 6) 静态检查：入口改造完成，旧首页代码不再残留。
+   首页模块已改成按路由懒加载（importOnce），这里只要求入口仍指向 period-brief.js。 */
+assert(app.includes('./period-brief.js'), 'app.js 必须接新首页模块');
+assert(/createPeriodBrief/.test(app), 'app.js 必须用 createPeriodBrief 建简报');
 assert(app.includes('brief.mount(document.querySelector(\'[data-pbr-root]\'))'), 'app.js 必须在 #overview 挂载简报');
 assert(app.includes('r.name === \'overview\''), 'app.js 必须把 #overview 交给自取数分支');
 assert(!app.includes('renderWorkspaceHome'), '旧首页渲染函数应从 app.js 移除');
