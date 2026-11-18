@@ -56,6 +56,18 @@ LATEST = dict(AVAILABLE, latestVersion='1.6.2', updateAvailable=False, patch=Non
 BLOCKED = dict(AVAILABLE, latestVersion='1.7.0', blocked=True, minVersion='1.6.3')
 SOURCE_MODE = dict(AVAILABLE, sourceMode=True)
 TOUR_INIT = "localStorage.setItem('training-tour-complete-v3', '1');"
+# 空库首次打开会弹「还没有对局数据」引导（复用 #filters 容器，fixed 遮罩），
+# 即使 Escape / close() 关掉，下一次数据刷新还会再弹，把更新卡片的点击全挡住。
+# 这里只在这个回归里把 showModal 后的 #filters 立刻关掉，别让引导参与判定。
+NO_WELCOME_INIT = """
+(() => {
+  const open = HTMLDialogElement.prototype.showModal;
+  HTMLDialogElement.prototype.showModal = function () {
+    open.call(this);
+    if (this.id === 'filters') { try { this.close(); } catch (e) {} }
+  };
+})();
+"""
 
 
 class Case:
@@ -141,16 +153,37 @@ def card_text(page) -> str:
     return page.locator('.update-card').inner_text()
 
 
+def dismiss_dialogs(page) -> None:
+    """新实例会先弹「还没有对局数据」引导（复用 #filters 容器），挡住首页点击。
+
+    直接调 dialog.close() 而不是按 Escape：headless 下窗口未必有焦点，
+    Escape 不一定送到；close() 会触发 close 事件，把「已关闭」记进页面状态，
+    不会马上又弹回来。
+    """
+    for _ in range(3):
+        closed = page.evaluate("""() => {
+            const dialog = document.querySelector('dialog[open]');
+            if (!dialog) return false;
+            try { dialog.close(); } catch (e) { return false; }
+            return true;
+        }""")
+        if not closed:
+            return
+        page.wait_for_timeout(250)
+
+
 def run_case(browser, base: str, case: Case, shots: bool) -> None:
     context = browser.new_context(viewport={'width': 1360, 'height': 900})
     page = context.new_page()
     page.add_init_script(TOUR_INIT)
+    page.add_init_script(NO_WELCOME_INIT)
     errors: list[str] = []
     page.on('pageerror', lambda exc: errors.append(str(exc)))
     install_routes(page, case)
     try:
         page.goto(base, wait_until='domcontentloaded', timeout=30000)
         page.wait_for_selector('[data-action="check-update"]', timeout=20000)
+        dismiss_dialogs(page)
         case.run(page)
         if errors:
             case.fail(f'页面 JS 报错：{errors[:2]}')
@@ -211,6 +244,7 @@ def case_dismiss(browser, base: str, shots: bool) -> Case:
         try:
             probe = fresh.new_page()
             probe.add_init_script(TOUR_INIT)
+            probe.add_init_script(NO_WELCOME_INIT)
             install_routes(probe, case)
             probe.goto(base, wait_until='domcontentloaded')
             if not wait_banner(probe):
@@ -421,12 +455,14 @@ def case_offline(browser, base: str, shots: bool) -> Case:
     context = browser.new_context(viewport={'width': 1360, 'height': 900})
     page = context.new_page()
     page.add_init_script(TOUR_INIT)
+    page.add_init_script(NO_WELCOME_INIT)
     errors: list[str] = []
     page.on('pageerror', lambda exc: errors.append(str(exc)))
     page.route('**/api/update/**', on_update)
     try:
         page.goto(base, wait_until='domcontentloaded', timeout=30000)
         page.wait_for_selector('[data-action="check-update"]', timeout=20000)
+        dismiss_dialogs(page)
         run(page)
         if errors:
             context_case.fail(f'页面 JS 报错：{errors[:2]}')
