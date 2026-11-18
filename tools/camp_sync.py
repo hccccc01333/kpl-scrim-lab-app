@@ -31,6 +31,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import paths  # noqa: E402
+
 _SEQ_RE = re.compile(r'^[A-Za-z0-9_\-]+$')
 
 
@@ -41,8 +43,10 @@ def _safe_seq(value):
         return ''
     return text
 STATE_PATH = Path(os.environ['CAMP_SYNC_STATE']) if 'CAMP_SYNC_STATE' in os.environ \
-    else ROOT / 'data' / 'camp_sync_state.json'
-DETAIL_DIR = Path(os.environ.get('CAMP_DETAIL_DIR', ROOT / 'data' / 'camp_details'))
+    else paths.data_path('camp_sync_state.json')
+# 营地详情目录跟随 paths 的数据根（KPL_DATA_DIR），不再写死仓库 data/：
+# 演示 / 截图实例只设 KPL_DATA_DIR 时，绝不能读进教练真实的面板去补建通道。
+DETAIL_DIR = Path(os.environ.get('CAMP_DETAIL_DIR') or paths.data_path('camp_details'))
 REQUEST_INTERVAL = 2.0
 INCREMENTAL_MAX_PAGES = 8
 FULL_PULL_MAX_PAGES = 60
