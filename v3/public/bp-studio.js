@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118c6';
+import {createBpViz} from './bps-viz.js?v=20261118c7';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -161,6 +161,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       cache: 'no-store', signal, headers: {Accept: 'application/json'},
     });
     if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('接口不存在：当前工作台可能还是旧进程，请重启工作台后再试。');
+      }
       let detail = '';
       try { detail = (await response.json()).detail || ''; } catch {}
       throw new Error(detail || `请求失败（HTTP ${response.status}）`);
