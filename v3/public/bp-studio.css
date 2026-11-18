@@ -1106,6 +1106,10 @@
 .bps-type-empty .bps-note { color: var(--bps-quiet); }
 .bps-tree-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
 .bps-tree-tools .bps-sub { margin-left: auto; }
+.bps-flow-nav {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  margin: -2px 0 8px; color: var(--bps-quiet); font-size: 11px; font-weight: 650;
+}
 .bps-tree-panel { margin-bottom: 14px; }
 .bps-tree-scroll { overflow-x: auto; }
 .bps-tree-scroll > .bv { min-width: 760px; max-width: none; margin: 0; }

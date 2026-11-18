@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118c7';
+import {createBpViz} from './bps-viz.js?v=20261118c9';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -57,7 +57,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     types: null, typesLoading: false, typesError: '', typeBo: 0, typeSide: 'opponent', kplTypes: null, prior: 60, typeHand: 0, typeCore: 0, typeFocus: '', counterRowLane: '', counterColLane: '', counterSel: null, counterMode: 'pick',
     tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeSide: '', treeStale: true,
     treeMode: 'flow', decisionPath: [], decisionPins: [], decisionNote: '',
-    ringHero: '', ring: null, ringLoading: false, ringError: '', ringStale: true,
+    ringHero: '', ringLane: '', ring: null, ringLoading: false, ringError: '', ringStale: true,
     periodCut: '', periodDays: 30, period: null, periodLoading: false, periodError: '', periodStale: true,
     seasons: [], periodSeason: '',
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
@@ -238,6 +238,10 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (!state.ringHero) {
         state.ringHero = data.primary?.heroes?.top?.[0]?.hero
           || data.primary?.heroes?.rows?.[0]?.hero || '';
+      }
+      if (!state.ringLane && state.ringHero) {
+        const row = (data.primary?.heroes?.rows || []).find((item) => item.hero === state.ringHero);
+        state.ringLane = row?.lane || '';
       }
       if (!state.periodCut) {
         const end = new Date(`${data.scope?.to || ''}T00:00:00`);
@@ -853,15 +857,23 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function ringPanel() {
     const heroes = state.data?.options?.heroes || [];
-    const options = heroes.map((row) => `<option value="${esc(row.name)}"
-      ${row.name === state.ringHero ? 'selected' : ''}>${esc(row.name)} · ${esc(row.lane || '')}</option>`).join('');
+    const laneHeroes = heroes.filter((row) => !state.ringLane || row.lane === state.ringLane);
+    if (laneHeroes.length && !laneHeroes.some((row) => row.name === state.ringHero)) {
+      state.ringHero = laneHeroes[0].name;
+    }
+    const laneOptions = [['', '全部分路'], ...LANES.map((lane) => [lane, lane])]
+      .map(([value, label]) => `<option value="${esc(value)}" ${state.ringLane === value ? 'selected' : ''}>${esc(label)}</option>`).join('');
+    const heroOptions = laneHeroes.map((row) => `<option value="${esc(row.name)}"
+      ${row.name === state.ringHero ? 'selected' : ''}>${esc(row.name)}</option>`).join('');
     return `<div class="bps-panel bps-ring-panel" data-bps-ring>
       <div class="bps-panel-head"><h3>英雄关系环</h3>
         <span class="bps-sub">克制 / 被克制 / 最佳搭档 · KPL 历史对位与同队同局</span></div>
       <div class="bps-panel-body">
         <div class="bps-ring-tools">
+          <span class="bps-console-label">分路</span>
+          <select data-bps-ring-lane>${laneOptions}</select>
           <span class="bps-console-label">英雄</span>
-          <select data-bps-ring-hero>${options}</select>
+          <select data-bps-ring-hero>${heroOptions}</select>
           ${state.ring?.stats ? `<span class="bps-sub">${num(state.ring.stats.games)} 队-局 · Pick ${rate(state.ring.stats.pickRate)} · Ban ${rate(state.ring.stats.banRate)} · 胜率 ${rate(state.ring.stats.winRate)}</span>` : ''}
         </div>
         ${state.ringLoading && !state.ring ? '<div class="bps-loading">正在读取英雄关系…</div>' : ''}
@@ -1587,7 +1599,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const crumb = [`<button type="button" class="bps-crumb ${path.length ? '' : 'is-on'}"
         data-bps-decision-back="0">BP 开始</button>`]
       .concat(path.map((node, index) => `<button type="button" class="bps-crumb ${index === path.length - 1 ? 'is-on' : ''}"
-        data-bps-decision-back="${index + 1}">${esc(heroShort(node.hero))}<em>${node.count}</em></button>`))
+        data-bps-decision-back="${index + 1}">${esc(heroShort(node.hero))}<em>${node.level}手 ${node.action === 'ban' ? 'BAN' : 'PICK'}</em></button>`))
       .join('<i>›</i>');
     if (!next.length) {
       return `<div class="bps-decision">
@@ -1646,10 +1658,19 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             state.typeSide, 'data-bps-tree-side', {small: true})}
           <span class="bps-console-label">阵营</span>${seg([['', '自动'], ['1', '蓝方'], ['2', '红方']],
             state.treeSide, 'data-bps-tree-camp', {small: true})}
+          ${state.treeMode === 'decision' ? `<span class="bps-console-label">阶段</span>
+            <button type="button" class="bps-softbtn" data-bps-decision-phase="ban">从 Ban 开始</button>
+            <button type="button" class="bps-softbtn" data-bps-decision-phase="pick">从第一个 Pick 开始</button>` : ''}
           ${state.tree?.available
             ? `<span class="bps-sub">已核验 ${num(state.tree.games)} / ${num(state.tree.total)} 局
               ${state.tree.sideCounts ? `· 蓝 ${num(state.tree.sideCounts['1'] || 0)} / 红 ${num(state.tree.sideCounts['2'] || 0)}` : ''}</span>` : ''}
         </div>
+        ${state.treeMode === 'flow' && state.tree?.available ? `<div class="bps-flow-nav">
+          <button type="button" class="bps-softbtn" data-bps-flow-left>← 向左</button>
+          <span>可左右拖动看全 20 手</span>
+          <button type="button" class="bps-softbtn" data-bps-flow-right>向右 →</button>
+          <button type="button" class="bps-softbtn" data-bps-flow-pick>跳到 Pick 阶段</button>
+        </div>` : ''}
         ${state.treeMode === 'decision' ? decisionTreeHtml() : `
         ${state.treeLoading && !state.tree ? '<div class="bps-loading">正在按逐手事件建树…</div>' : ''}
         ${state.treeError ? `<div class="bps-inline-error">${esc(state.treeError)}</div>` : ''}
@@ -2712,6 +2733,45 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       paint();
       return;
     }
+    const flowLeft = event.target.closest('[data-bps-flow-left]');
+    if (flowLeft) {
+      state.root.querySelector('.bps-tree-scroll')?.scrollBy({left: -620, behavior: 'smooth'});
+      return;
+    }
+    const flowRight = event.target.closest('[data-bps-flow-right]');
+    if (flowRight) {
+      state.root.querySelector('.bps-tree-scroll')?.scrollBy({left: 620, behavior: 'smooth'});
+      return;
+    }
+    const flowPick = event.target.closest('[data-bps-flow-pick]');
+    if (flowPick) {
+      const scroller = state.root.querySelector('.bps-tree-scroll');
+      if (scroller) scroller.scrollTo({left: scroller.scrollWidth * 0.48, behavior: 'smooth'});
+      return;
+    }
+    const decisionPhase = event.target.closest('[data-bps-decision-phase]');
+    if (decisionPhase) {
+      const phase = decisionPhase.dataset.bpsDecisionPhase;
+      const byId = new Map((state.tree?.nodes || []).map((node) => [node.id, node]));
+      const main = (state.tree?.main || []).map((id) => byId.get(id)).filter(Boolean);
+      if (phase === 'pick') {
+        const index = main.findIndex((node) => node.action === 'pick');
+        if (index > 0) {
+          state.decisionPath = main.slice(0, index).map((node) => node.id);
+          state.decisionNote = '';
+        } else if (index === 0) {
+          state.decisionPath = [];
+          state.decisionNote = '';
+        } else {
+          state.decisionNote = '这段样本里没有 Pick 手序。';
+        }
+      } else {
+        state.decisionPath = [];
+        state.decisionNote = '';
+      }
+      paint();
+      return;
+    }
     const decisionPick = event.target.closest('[data-bps-decision-pick]');
     if (decisionPick) {
       state.decisionPath.push(...String(decisionPick.dataset.bpsDecisionPick).split(',').filter(Boolean));
@@ -2887,6 +2947,17 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (heroFilter) {
       state.heroQuery = heroFilter.value;
       refreshSection('heroes');
+      return;
+    }
+    const ringLane = event.target.closest('[data-bps-ring-lane]');
+    if (ringLane) {
+      state.ringLane = ringLane.value;
+      const heroes = state.data?.options?.heroes || [];
+      const laneHeroes = heroes.filter((row) => !state.ringLane || row.lane === state.ringLane);
+      if (laneHeroes.length && !laneHeroes.some((row) => row.name === state.ringHero)) {
+        state.ringHero = laneHeroes[0].name;
+      }
+      loadRing();
       return;
     }
     const ringHero = event.target.closest('[data-bps-ring-hero]');
