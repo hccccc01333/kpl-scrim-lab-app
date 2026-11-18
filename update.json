@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "2.0.1",
-  "publishedAt": "2026-11-18T21:03:56+08:00",
+  "publishedAt": "2026-11-18T21:29:51+08:00",
   "channel": "stable",
   "minVersion": "2.0.0",
   "notes": [
@@ -12,17 +12,18 @@
     "大场列表重做：纯白画布 + 钢蓝 / 琥珀橙胜负色，卡片内对手名与比分同行、小局压成两行。",
     "首页复盘卡改用 subgrid 逐行对齐，阵容头像放大到 40px。",
     "战队页核数玫瑰图标签去描边、局数移进扇区；位置组合表字号整体放大。",
-    "单场报告 BP 卡不再被同排展开的卡拉长。"
+    "单场报告 BP 卡不再被同排展开的卡拉长。",
+    "修掉公开仓库与发布包根路径空白：发布包只拷 `v3/serve.py`、`deep_analysis.py`、`demo_data.py` 三个白名单文件，同目录的 `v3/series_api.py` 没进包，`_mount_v3()` 一失败 v3 路由与 `/static` 全都不挂载，打开就是空白页；公开仓库那边则是 `peak_crawl` 顶层依赖不随仓库发布的 `scripts/build_bp_facts.py`。现在 `v3/` 按目录扫 `*.py`，`peak_crawl` 改为可选导入（缺失只关掉巅峰千强抓取）；`make_release.py` 的冒烟测试补了 `V3_MODULE` 断言，同类问题打包时就报错。"
   ],
   "patch": {
     "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/patch-2.0.1.zip",
-    "sha256": "44881b09357e95f5d4dea2936d1c5062603aa1829a9a341989187c80dd30b6cc",
-    "size": 1029812,
+    "sha256": "b0b60f9c234ced51b9ef970a01c28bc80b3bdacab32f576c1ccdc8f90da0323b",
+    "size": 1030789,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "2b4a0b90283dd94a8f9ad6821440abf7f3e69f7870f319f6174f88303371e2ae",
-        "size": 229364
+        "sha256": "f7ef563b00342465abd4722bc9b866d77f6f634f1f962b670a4fd178e78da6ad",
+        "size": 229944
       },
       {
         "path": "analysis_data.py",
@@ -221,8 +222,8 @@
       },
       {
         "path": "v3/serve.py",
-        "sha256": "6ab341e24236015838b9408c04f350688719f2cc18ec83e2d903fe9cda1546ec",
-        "size": 277256
+        "sha256": "083b78cc87e054d066741e6d9b3640f064a60e4d9f860671155e81f8ad826e13",
+        "size": 277920
       },
       {
         "path": "version.py",
@@ -236,7 +237,7 @@
   "releaseDate": "2026-11-18",
   "full": {
     "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/KPL-Scrim-Lab-2.0.1-full.zip",
-    "sha256": "b3d18fa29e41e5684d9f19f0941da7c0b2a27bc30df9e79e7710f7f4891e5ff0",
-    "size": 145230359
+    "sha256": "4c75f7aa60184463767e5a494ead7d0172cff3ec16aa85c8741a6cf3269f054c",
+    "size": 145237640
   }
 }

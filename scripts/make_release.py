@@ -324,11 +324,14 @@ def ship_files() -> list[str]:
                 continue
             files.append(path.relative_to(ROOT).as_posix())
     # 单一 V3 应用：server.py 随包发布，根路径才能正常打开。
+    # v3/ 下的模块要按目录扫，不写白名单：v3/serve.py 还会 import 同目录的
+    # series_api.py，漏掉它 _mount_v3() 就整段失败、根路径直接空白（2.0.0 踩过）。
     v3 = ROOT / 'v3'
     if v3.is_dir():
-        for name in ('serve.py', 'deep_analysis.py', 'demo_data.py'):
-            if (v3 / name).is_file():
-                files.append(f'v3/{name}')
+        for path in sorted(v3.glob('*.py')):
+            if _junk_file(path.name) or _scratch_file(path.name):
+                continue
+            files.append(f'v3/{path.name}')
         public = v3 / 'public'
         if public.is_dir():
             for path in sorted(public.rglob('*')):
@@ -609,11 +612,12 @@ def smoke_test(build: Path, runtime: Path | None, enabled: bool = True) -> None:
         f'sys.path.insert(0, {str(build)!r})',
         f'sys.path.insert(0, {str(build / "tools")!r})',
         'import server',
-        # 第三段：v3 路由必须真的能加载。发布包不带 scripts/，凡是根目录模块
-        # 直接 import scripts.xxx 的都会在这里炸；`import server` 自己会吞掉异常，
-        # 只在根路径提示「前端资源缺失」，不显式 import 一次根本发现不了。
-        'import v3.serve  # noqa: F401',
-        'assert getattr(server, "app", None) is not None, "server.app 缺失"',
+        # 第三段：v3 路由必须真的挂上。发布包不带 scripts/，凡是根目录模块直接
+        # import scripts.xxx 的都会在 _mount_v3() 里炸，而 server.py 会把这个异常
+        # 吞掉、只在根路径提示「前端资源缺失」——不显式查一次根本发现不了。
+        'assert getattr(server, "V3_MODULE", None) is not None, (',
+        '    "v3 路由没有挂载：发布包缺模块，根路径会空白。"',
+        '    "看上面 [v3] 加载失败 那行给出的原因。")',
         'import camp_sync',
         '_sig = inspect.signature(camp_sync.sync_entries)',
         'assert "on_progress" in _sig.parameters, (',
