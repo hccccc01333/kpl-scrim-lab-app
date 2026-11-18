@@ -2,7 +2,13 @@
 import struct
 import unittest
 
-from tools.protocol_selector_map import compressed_i32, scan_envelopes
+import pytest
+
+# tools/protocol_selector_map.py 顶层 import capstone（离线反汇编用），
+# 这里只测纯解码函数；没有 capstone 的环境跳过，而不是整个套件报错。
+pytest.importorskip('capstone', reason='capstone 只在离线反汇编环境安装')
+
+from tools.protocol_selector_map import compressed_i32, scan_envelopes  # noqa: E402
 
 
 class MetadataIntegerTests(unittest.TestCase):
