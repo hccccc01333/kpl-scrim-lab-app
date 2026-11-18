@@ -1,255 +1,53 @@
 {
   "schema": 1,
-  "version": "2.0.1",
-  "publishedAt": "2026-11-18T22:17:49+08:00",
+  "version": "2.0.2",
+  "publishedAt": "2026-11-18T23:01:03+08:00",
   "channel": "stable",
-  "minVersion": "2.0.0",
+  "minVersion": "2.0.1",
   "notes": [
-    "BP 三模式：征召 18 手、KPL 20 手（含 BO7 巅峰对决）、排位·巅峰 5+5 同时 Ban；营地名单位置直接铺成手序。",
-    "元流之子按形态 Ban、按英雄 Pick；KPL 逐手手序回填 3,418/3,482（98.2%）。",
-    "战队页「变化」卡改为「本窗口 vs 上一个同长度窗口」，不再把窗口对半切。",
-    "选手页：英雄方块再点一次取消、图内字体去描边、英雄池变动图轴标签不再重叠、导航与切片条一起吸顶。",
-    "大场列表重做：纯白画布 + 钢蓝 / 琥珀橙胜负色，卡片内对手名与比分同行、小局压成两行。",
-    "首页复盘卡改用 subgrid 逐行对齐，阵容头像放大到 40px。",
-    "战队页核数玫瑰图标签去描边、局数移进扇区；位置组合表字号整体放大。",
-    "单场报告 BP 卡不再被同排展开的卡拉长。",
-    "修掉公开仓库与发布包根路径空白：发布包只拷 `v3/serve.py`、`deep_analysis.py`、`demo_data.py` 三个白名单文件，同目录的 `v3/series_api.py` 没进包，`_mount_v3()` 一失败 v3 路由与 `/static` 全都不挂载，打开就是空白页；公开仓库那边则是 `peak_crawl` 顶层依赖不随仓库发布的 `scripts/build_bp_facts.py`。现在 `v3/` 按目录扫 `*.py`，`peak_crawl` 改为可选导入（缺失只关掉巅峰千强抓取）；`make_release.py` 的冒烟测试补了 `V3_MODULE` 断言，同类问题打包时就报错。",
-    "**首页数据覆盖文案**：只有终局面板、没有可看过程的对局时，概述与「数据覆盖」原来都写「本月还没有对局」，而同一屏的「一句战况」写着「本月 31 局训练赛」——自相矛盾。现在改成「本月还没有可看比赛过程的对局」，并在有面板局时点明「N 局只有终局面板，只参与战绩，不参与时间轴指标」。",
-    "**首页与官网截图**：README 首图与官网首屏换成新的「赛训简报」首页（一句战况 / 本期指标 / 重点发现 / 最值得复盘的比赛），不再是对局档案或旧版首页；alt 文案同步。"
+    "新库打开 BP 页不再是一句「BP 数据暂时读不到」：没有任何 BP 记录时给整页空态，写清缺哪种赛制的记录，并给「去采集 / 载入模拟数据 / 重新读取」三个入口。",
+    "接口口径：`GET /api/v3/bp-studio` 在无记录时由 400 改为 200 + `available: false` + `reason`，这不是客户端错误。",
+    "骨架屏补「正在读取 BP 数据…」，首次冷启动不再是一片空白骨架。",
+    "全站路由回归把 `.bps-empty` / `.bps-loading` 也算作正常空态与加载态。"
   ],
   "patch": {
-    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/patch-2.0.1.zip",
-    "sha256": "4324fc9d2a378a36e8b2937a975456d0e6a07b44e9b20fa44df8c0d50b2e6486",
-    "size": 1090076,
+    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.2/patch-2.0.2.zip",
+    "sha256": "559e3308ac3454046b08fb5cde677b09b1d08cc36b0646b8f8f8c454cefda1ad",
+    "size": 243279,
     "files": [
       {
         "path": "CHANGELOG.md",
-        "sha256": "6c0018081c3db98692262abe02be71810b853a20fa2eb4fb28b60afdb9d813dc",
-        "size": 230587
-      },
-      {
-        "path": "analysis_data.py",
-        "sha256": "5b9fabb5af506df0f11df48b95461f6a86a83ce66e06639015379a92448f451f",
-        "size": 132571
-      },
-      {
-        "path": "analysis_period.py",
-        "sha256": "eae09cf2484cbb2e82a989c7e72a7008923a91d50108aeba09bc86b9a9a197f4",
-        "size": 124427
-      },
-      {
-        "path": "bp_camp.py",
-        "sha256": "6952207c88c7064567c60280c2eb3a21c3ac46923d0d2a3b320e75ddb32d4e33",
-        "size": 38194
-      },
-      {
-        "path": "bp_demo.py",
-        "sha256": "e6d93834f72804e4b2a2a1ad13bb9c3e744be434abeeaf6848a6dcce37ddb54b",
-        "size": 5323
-      },
-      {
-        "path": "bp_formats.py",
-        "sha256": "f1dc2aca59526ecfa2ee344a1699206bbb0ffb526b14f30c1844908a902b7eaf",
-        "size": 22436
-      },
-      {
-        "path": "bp_input.py",
-        "sha256": "823b176a8be367fa05dbffddb9b57bcb7bef32d560994ca2d089932721d07edb",
-        "size": 1730
-      },
-      {
-        "path": "bp_intelligence.py",
-        "sha256": "2c4ed4393b5fbf08d09deb87f2ee9e953de3511d74547fe400126ee3ab7c483e",
-        "size": 50869
-      },
-      {
-        "path": "bp_lab.py",
-        "sha256": "b156b0acbaf7cc9dcedd6edbe4ea13114bacfda46464f9f31dcfe8608f1492ab",
-        "size": 91703
-      },
-      {
-        "path": "bp_rules.py",
-        "sha256": "98ea57e04bc82519b9d73eea3e67fb8cd89f2be2f2bb86cc5c2c835d539e2df4",
-        "size": 8522
-      },
-      {
-        "path": "bp_series.py",
-        "sha256": "f111acb2aa039a9f84a6a50753c0b05cdbd768b6f2196943d976955bf77666e4",
-        "size": 6131
-      },
-      {
-        "path": "bp_strategy.py",
-        "sha256": "cb590266bc1170321bb8fe3c85ce0f5821b31c407151132a2f5da29414d890e1",
-        "size": 18482
-      },
-      {
-        "path": "bp_studio.py",
-        "sha256": "07877d9947e6c6483c321d602d20d224c6aa2c518c167eca9fdb878f92610cc3",
-        "size": 68360
-      },
-      {
-        "path": "bp_types.py",
-        "sha256": "3a5a45e6647b87c39468434d42bb1d97ef79174268db9290feaea759a4deb8ec",
-        "size": 21109
-      },
-      {
-        "path": "resources/seasons.json",
-        "sha256": "56d1655a70f45cb57f25c26fa6d6ac765cf2fb268fee141357c39c9d2a59e1d6",
-        "size": 3166
-      },
-      {
-        "path": "series_engine.py",
-        "sha256": "375a7308a072e8858a45a07cb1c5e16991263bb1720c0dfc6b2d1205f890bdd8",
-        "size": 30672
-      },
-      {
-        "path": "series_insight.py",
-        "sha256": "bd645414a6d710b4e4d4f272cfb028584e528d808ce07592e2bf2391b9d17f36",
-        "size": 185185
-      },
-      {
-        "path": "team_clusters.py",
-        "sha256": "fecab3a853de8cc71597c3ff7c073934b3a8c7bd60a62c1b552ca734f46ad704",
-        "size": 112587
-      },
-      {
-        "path": "team_style.py",
-        "sha256": "60e43f2c4d86292b3f1c5ec6a5b06f6d0685e431945c95e99a28f4daa50b864e",
-        "size": 16575
-      },
-      {
-        "path": "tools/camp_sync.py",
-        "sha256": "cba8b64e4cac0c332054dd3b73a60b31cb615189d007593658486c0112254651",
-        "size": 14477
-      },
-      {
-        "path": "v3/public/app.js",
-        "sha256": "222a833a98d6290733fab59afb9f8526618fcf94ed1e15f2606a81491384bdda",
-        "size": 239439
-      },
-      {
-        "path": "v3/public/biggame-detail-fixes.css",
-        "sha256": "3fc5ff21295e0d5d40759061da58bdadb8e43c522d41113640f8fa2e0bcf2b5d",
-        "size": 330
-      },
-      {
-        "path": "v3/public/biggame-insight.js",
-        "sha256": "c7c511efb674708334350d8850998aafd4d7f1fb07506321ce6bf9948ed50594",
-        "size": 62422
-      },
-      {
-        "path": "v3/public/biggame-list-ui.css",
-        "sha256": "45a2b1788818155786dd4dce47edb09e2dfecab38a51baae22cee353d51b5609",
-        "size": 10205
-      },
-      {
-        "path": "v3/public/biggame-page.js",
-        "sha256": "e4fe1730e98fbdc49b417ac0673e91d8556daed42f5aa1e791fb541a75ecec31",
-        "size": 41860
-      },
-      {
-        "path": "v3/public/bp-lab.js",
-        "sha256": "e1e77d8cba623a81d0af4b9b4baaebe12c3efed4fe077bd75b9f84a95d388690",
-        "size": 141238
+        "sha256": "847eed059aa4ad1edc4a90ee9eed214de96d93e2d2f90eecfbb0c0d80d9ee043",
+        "size": 232271
       },
       {
         "path": "v3/public/bp-studio.css",
-        "sha256": "f2098e280e925b529adf0f5f0459210b19c3bd284927e94871e4c16e4eda7628",
-        "size": 98080
+        "sha256": "ead9856c1f378c70be26a7b562c67fb19b774235c856089b062b57ee58ecd118",
+        "size": 98408
       },
       {
         "path": "v3/public/bp-studio.js",
-        "sha256": "547f42c1fd41f464c8a71d4b97997b8ef62e0cf79f112c0b6fc25cb039e21a4c",
-        "size": 174301
-      },
-      {
-        "path": "v3/public/bps-viz.js",
-        "sha256": "a7aee4e4015eb5805bccf85764fdee5d98d44193fca46cff7ef9597db627717a",
-        "size": 89795
-      },
-      {
-        "path": "v3/public/features.js",
-        "sha256": "1eee9e0821a9f48eb73e2a21e95a5eb1edb434c7b49b28ac764056dd0a377060",
-        "size": 275051
-      },
-      {
-        "path": "v3/public/home-watch-layout.css",
-        "sha256": "5972c76f9e8f02b0daa9f9f3a670bee8c9d2875177bad52c3c7af3b67b4f38d5",
-        "size": 3732
-      },
-      {
-        "path": "v3/public/index.html",
-        "sha256": "05dc3ba2b6bc738ffd7f7c6f1ae6d8150995e69a2cb58b3b776f33d013ee9d61",
-        "size": 801
-      },
-      {
-        "path": "v3/public/interface.css",
-        "sha256": "d0bb82a844e54744d23a84616b0e8c7366979a9c8aa3d17da6a2c7d1cbc24ca1",
-        "size": 2020
-      },
-      {
-        "path": "v3/public/period-brief.js",
-        "sha256": "263a6e3f060ba5d3c55867a689d17b03e0d56135426e7ceb97b449f6148cc02c",
-        "size": 95034
-      },
-      {
-        "path": "v3/public/player-detail.js",
-        "sha256": "c75d03b81886eaa8171b0e036e0995b6a2314089a76db03b9865f88655a71007",
-        "size": 71994
-      },
-      {
-        "path": "v3/public/player-v2.css",
-        "sha256": "2795520f33ec6427337c612bedc41d543a0fdb1833d7c4c53f08afacdccd4760",
-        "size": 15116
-      },
-      {
-        "path": "v3/public/player-viz.js",
-        "sha256": "f6fdc874474cd906ee38679a4827f5e0caa56dd194342e6ac9d5b59b346d88ae",
-        "size": 39323
-      },
-      {
-        "path": "v3/public/players-page.js",
-        "sha256": "ba29fe296ae61524a6fce7a832b0f6e98280ee797afea55ec677f1872fd66818",
-        "size": 112420
-      },
-      {
-        "path": "v3/public/style.css",
-        "sha256": "3fbf5d295cb9d58e0c1cf794fe67584a4e0d7627b88b731d724f95a62c2adef2",
-        "size": 1026445
-      },
-      {
-        "path": "v3/public/team-dossier-v9.css",
-        "sha256": "4cc767d9facabb3113962637c63ca67618f98db9ce8ec1820e47e0df12608f96",
-        "size": 44352
-      },
-      {
-        "path": "v3/public/team-dossier.css",
-        "sha256": "a80c0487dcbd3ce84d751a046af2930fd5bc1cf996a0f2d0a4a4b1e8ec815de9",
-        "size": 116071
-      },
-      {
-        "path": "v3/public/team-dossier.js",
-        "sha256": "0ed68fba9e49a23397667be200c4374c6dba704430e662ee8f5046d12e5e5e5a",
-        "size": 122097
+        "sha256": "81e2505493eca4f23a18de66d49977b7ae511b637fbe3c8d50002769198b39a8",
+        "size": 175578
       },
       {
         "path": "v3/serve.py",
-        "sha256": "083b78cc87e054d066741e6d9b3640f064a60e4d9f860671155e81f8ad826e13",
-        "size": 277920
+        "sha256": "40db79fec8ce8e2bef473a397590e7eae95b982bed449cd92d4bd2d1e8ac2363",
+        "size": 278806
       },
       {
         "path": "version.py",
-        "sha256": "acd2a414c3265b71b37cd8604485362dcbf195ded2f6cd424842d8946e945c66",
-        "size": 346
+        "sha256": "b3461c5b3e9819328c9084f5010a44b73b33f2743c48e19b6bd82472edc45b99",
+        "size": 352
       }
     ],
     "remove": []
   },
-  "releaseName": "2.0.1：BP 三模式 + 界面细节修正",
+  "releaseName": "2.0.2：BP 页空库空态 + 首页文案修正",
   "releaseDate": "2026-11-18",
   "full": {
-    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.1/KPL-Scrim-Lab-2.0.1-full.zip",
-    "sha256": "ece7917c4645d39a02920334b0216985ab18195251da434ae9e7fe53a2e0c2a5",
-    "size": 145238597
+    "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v2.0.2/KPL-Scrim-Lab-2.0.2-full.zip",
+    "sha256": "6c07135e4502bea2e2392511b297d1336e87ba79e3ea4f2b9b97a75c4f1ebc71",
+    "size": 145236992
   }
 }
