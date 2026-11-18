@@ -1265,6 +1265,32 @@ def hero_ring(hero, games=None, *, limit=3, min_games=30):
     }
 
 
+_SEASON_CACHE = {}
+
+
+def season_timeline():
+    path = Path(__file__).resolve().parent / 'resources' / 'seasons.json'
+    try:
+        stat = path.stat()
+        key = (stat.st_mtime_ns, stat.st_size)
+        if key in _SEASON_CACHE:
+            return _SEASON_CACHE[key]
+        data = json.loads(path.read_text(encoding='utf-8'))
+        _SEASON_CACHE.clear()
+        _SEASON_CACHE[key] = data
+        return data
+    except (OSError, ValueError):
+        return {"seasons": []}
+
+
+def season_cut(season):
+    target = str(season or '').strip().upper()
+    for row in season_timeline().get('seasons') or []:
+        if str(row.get('season') or '').upper() == target:
+            return str(row.get('start') or '')
+    return ''
+
+
 def period_compare(games, cut, days=30, *, limit=10):
     """按日期切分的前后对照：Pick / Ban / 胜率。没有版本字段，不冒充官方版本。"""
     try:
@@ -1335,7 +1361,7 @@ def period_compare(games, cut, days=30, *, limit=10):
         "after": {"from": cut_day.isoformat(), "to": after_end.isoformat(),
                   "games": len(after)},
         "rows": rows[:limit],
-        "note": "数据里没有官方 patch/version 字段，这里按日期切分，不冒充版本对比；只列前后各至少 10 个 Ban/Pick 样本的英雄，胜率只显示前后各至少 5 个胜负样本。",
+        "note": "按赛季切换日期切分；赛季≠客户端 patch 版本号，不是官方版本对比。只列前后各至少 10 个 Ban/Pick 样本的英雄，胜率只显示前后各至少 5 个胜负样本。",
     }
 
 

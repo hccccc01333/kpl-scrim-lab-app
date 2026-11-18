@@ -1161,11 +1161,13 @@
 
 .bps-period-panel { margin-top: 16px; }
 .bps-period-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
-.bps-period-tools input[type="date"] {
+.bps-period-tools input[type="date"],
+.bps-period-tools select {
   min-height: 34px; padding: 4px 10px; border: 1px solid var(--bps-line);
   border-radius: 9px; background: var(--bps-paper); color: var(--bps-text);
   font: 650 12px var(--font);
 }
+.bps-period-tools select { max-width: 190px; }
 .bps-period-axis {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 8px 12px; border-radius: 10px; background: var(--bps-paper-2);

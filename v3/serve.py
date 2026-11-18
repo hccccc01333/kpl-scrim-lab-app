@@ -4275,8 +4275,14 @@ def bp_studio_period_compare(request: Request):
         raise HTTPException(400, 'source 只能是 kpl 或 scrim')
     leagues = str(values.get('leagues') or '').strip()
     cut = str(values.get('cut') or '').strip()
+    season = str(values.get('season') or '').strip()
+    if season and not cut:
+        from bp_studio import season_cut
+        cut = season_cut(season)
+        if not cut:
+            raise HTTPException(400, '未知赛季')
     if not cut:
-        raise HTTPException(400, 'cut 不能为空')
+        raise HTTPException(400, 'cut 或 season 不能为空')
     try:
         days = int(values.get('days') or 30)
     except (TypeError, ValueError):
@@ -4284,6 +4290,7 @@ def bp_studio_period_compare(request: Request):
     games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
     report = period_compare(games, cut, days)
     report['source'] = source
+    report['season'] = season or ''
     return report
 
 

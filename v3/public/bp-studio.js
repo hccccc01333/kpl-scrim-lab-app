@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118c5';
+import {createBpViz} from './bps-viz.js?v=20261118c6';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -59,6 +59,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     treeMode: 'flow', decisionPath: [], decisionPins: [], decisionNote: '',
     ringHero: '', ring: null, ringLoading: false, ringError: '', ringStale: true,
     periodCut: '', periodDays: 30, period: null, periodLoading: false, periodError: '', periodStale: true,
+    seasons: [], periodSeason: '',
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
@@ -242,6 +243,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           state.periodCut = end.toISOString().slice(0, 10);
         }
       }
+      chooseSeason();
       paint();
       if (state.target.length) loadTarget();
       if (state.comboPick.length >= 2) loadCombo();
@@ -372,6 +374,27 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
   }
 
+  async function loadSeasons() {
+    try {
+      const response = await fetch(`${API_BASE}/catalog/seasons.json`, {cache: 'no-store'});
+      if (!response.ok) return;
+      const data = await response.json();
+      state.seasons = (data.seasons || []).filter((row) => row.start);
+      chooseSeason();
+    } catch {}
+  }
+
+  function chooseSeason() {
+    if (state.periodSeason || !state.seasons.length || !state.data) return;
+    const to = state.data.scope?.to || '';
+    const eligible = state.seasons.filter((row) => row.start <= to);
+    const picked = eligible[eligible.length - 1] || state.seasons[state.seasons.length - 1];
+    if (picked) {
+      state.periodSeason = picked.season;
+      state.periodCut = picked.start;
+    }
+  }
+
   async function loadPeriod() {
     if (!state.root || !state.periodCut) return;
     state.periodLoading = true;
@@ -381,6 +404,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       const search = new URLSearchParams({
         cut: state.periodCut, days: String(state.periodDays), source: state.source,
       });
+      if (state.periodSeason) search.set('season', state.periodSeason);
       if (state.leagues.length) search.set('leagues', state.leagues.join(','));
       state.period = await api(`/period-compare?${search.toString()}`);
       state.periodStale = false;
@@ -1765,10 +1789,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function periodPanel() {
     const data = state.period;
     return `<div class="bps-panel bps-period-panel" data-bps-period>
-      <div class="bps-panel-head"><h3>版本 / 日期前后对比</h3>
-        <span class="bps-sub">Pick / Ban / 胜率 · 切分点前后各 ${state.periodDays} 天</span></div>
+      <div class="bps-panel-head"><h3>赛季切换 / 日期前后对比</h3>
+        <span class="bps-sub">Pick / Ban / 胜率 · 切换点前后各 ${state.periodDays} 天</span></div>
       <div class="bps-panel-body">
         <div class="bps-period-tools">
+          <span class="bps-console-label">赛季</span>
+          <select data-bps-period-season>
+            <option value="">自定义日期</option>
+            ${(state.seasons || []).map((row) => `<option value="${esc(row.season)}"
+              ${row.season === state.periodSeason ? 'selected' : ''}>${esc(row.season)} ${esc(row.theme || '')}</option>`).join('')}
+          </select>
           <span class="bps-console-label">切分点</span>
           <input type="date" data-bps-period-cut value="${esc(state.periodCut)}">
           ${seg([[30, '30 天'], [60, '60 天'], [90, '90 天']], String(state.periodDays), 'data-bps-period-days', {small: true})}
@@ -2865,6 +2895,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const periodCut = event.target.closest('[data-bps-period-cut]');
     if (periodCut) {
       state.periodCut = periodCut.value;
+      state.periodSeason = '';
+      return;
+    }
+    const periodSeason = event.target.closest('[data-bps-period-season]');
+    if (periodSeason) {
+      state.periodSeason = periodSeason.value;
+      const row = (state.seasons || []).find((item) => item.season === state.periodSeason);
+      if (row) state.periodCut = row.start;
+      loadPeriod();
       return;
     }
     const viewName = event.target.closest('[data-bps-view-name]');
@@ -3091,6 +3130,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     applyShareLink();
     bind();
+    loadSeasons();
     if (!state.data) paint();
     load();
   }
