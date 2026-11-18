@@ -3878,6 +3878,26 @@ def _game_matches_rule(game, rule):
     return True
 
 
+_BP_RULE_LABEL = {'draft-18': '征召 18 手', 'draft-20': 'KPL 20 手',
+                  'rank-20': '排位 / 巅峰 20 手', 'blind': '巅峰对决盲选'}
+
+
+def _bp_studio_unavailable(source: str, reason: str) -> dict:
+    """一条 BP 记录都没有：回 200 + available=false，让页面画空态。
+
+    以前这里抛 400，前端只能显示「BP 数据暂时读不到 / 请求失败（HTTP 400）」，
+    新装的库打开 BP 页就是一句红字报错，既不像空态也没告诉用户下一步做什么。
+    """
+    return {
+        'schema': 'bp-studio-empty-1',
+        'available': False,
+        'reason': reason,
+        'source': source,
+        'quality': {'games': 0, 'ordered': 0, 'blind': 0, 'partial': 0},
+        'caveats': [],
+    }
+
+
 @router.get('/api/v3/bp-studio')
 def bp_studio_page(request: Request):
     """BP 工作台页面模型：目录 + 主数据层 + 对手情报 + 目标对照 + 赛前方案。"""
@@ -3937,9 +3957,11 @@ def bp_studio_page(request: Request):
     if rule:
         primary = [game for game in primary if _game_matches_rule(game, rule)]
         if not primary:
-            raise HTTPException(400, f'当前数据源没有 {rule} 记录。')
+            label = _BP_RULE_LABEL.get(rule, rule)
+            return _bp_studio_unavailable(
+                source, f'当前数据源还没有{label}的 BP 记录（{rule}）。')
     if not primary:
-        raise HTTPException(400, '当前数据源还没有可用的 BP 记录。')
+        return _bp_studio_unavailable(source, '当前数据源还没有可用的 BP 记录。')
     scrim_names = sorted({str(game.get('enemy')) for game in own_games
                           if str(game.get('team')) == '本队' and game.get('enemy')})
     # 首屏不知道默认值：由服务端一次性解析，避免前端先空跑一次再重取。

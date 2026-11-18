@@ -1,4 +1,4 @@
-﻿/* BP 工作台（2026-11 重做 · 图表版）
+/* BP 工作台（2026-11 重做 · 图表版）
  *
  * 一条页面回答四个问题：
  *   01 版本里谁值得先拿 → 02 自选组合有多强 → 03 目标被拿走时 KPL / 我们各怎么应对
@@ -249,6 +249,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.data = data;
       state.loading = false;
       state.lastLoadedAt = Date.now();
+      // 没有任何 BP 记录：只画空态，下面这些默认值都没有可选项可填。
+      if (data && data.available === false) {
+        paint();
+        return;
+      }
       if (!state.team) state.team = data.scope?.team || data.options.defaultTeam || '';
       if (!state.opponent) state.opponent = data.scope?.opponent || data.options.defaultOpponent || '';
       if (!state.ringHero) {
@@ -1994,10 +1999,27 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function skeleton() {
     return `<div class="bps">
       <header class="bps-hero" style="display:block;min-height:150px"></header>
+      <p class="bps-loading" data-bps-loading>正在读取 BP 数据…</p>
       <div class="bps-skeleton">
         <div class="bps-sk" style="height:64px"></div>
         <div class="bps-sk" style="height:220px"></div>
         <div class="bps-sk" style="height:160px"></div>
+      </div>
+    </div>`;
+  }
+
+  /* 库里一条 BP 记录都没有：说清缺什么、下一步做什么，别摆一句「读不到」。 */
+  function unavailableState(reason) {
+    return `<div class="bps">
+      <div class="bps-empty bps-unavailable">
+        <b>还没有可分析的 BP 记录</b>
+        <p>${esc(reason || '当前数据源还没有可用的 BP 记录。')}</p>
+        <p class="bps-note">先把训练赛对局拿进来（营地同步，或截图 / 录屏），BP 页会按每方 Ban / Pick 顺序自动整理；想先看版式，也可以载入一份模拟数据。</p>
+        <div class="bps-unavailable-actions">
+          <a class="bps-primary" href="#ingest">去采集</a>
+          <button type="button" class="bps-softbtn" data-bps-demo>载入模拟数据</button>
+          <button type="button" class="bps-softbtn" data-bps-refresh>重新读取</button>
+        </div>
       </div>
     </div>`;
   }
@@ -2014,7 +2036,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (state.loading && !state.data) state.root.innerHTML = skeleton();
     else if (state.error && !state.data) state.root.innerHTML = errorState();
     else if (!state.data) state.root.innerHTML = skeleton();
-    else {
+    else if (state.data.available === false) {
+      state.root.innerHTML = unavailableState(state.data.reason);
+    } else {
       const visible = state.solo ? [state.active] : SECTION_LIST.map(([key]) => key);
       state.root.innerHTML = `<div class="bps ${state.compact ? 'is-compact' : ''}">
         ${heroBand()}

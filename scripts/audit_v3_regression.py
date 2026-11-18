@@ -65,8 +65,9 @@ def main() -> int:
                         const visible = (el) => el.getClientRects().length > 0;
                         /* 详情路由（#identity / #match 等）没带 ID 时渲染的是
                            .offline-card「需要…ID」，那也是一种正常空态，
-                           不算页面挂掉。 */
-                        const texts = box ? [...box.querySelectorAll('.empty, .offline-card')]
+                           不算页面挂掉。BP 工作台的整页空态是 .bps-empty，
+                           骨架是 .bps-loading（文案以「正在」开头）。 */
+                        const texts = box ? [...box.querySelectorAll('.empty, .offline-card, .bps-empty, .bps-loading')]
                             .filter(visible).map((el) => clean(el.textContent)).filter(Boolean) : [];
                         const loading = texts.filter((text) => /^(正在|加载)/.test(text));
                         const empties = texts.filter((text) => !/^(正在|加载)/.test(text));

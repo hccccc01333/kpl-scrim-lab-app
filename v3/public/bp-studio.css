@@ -466,6 +466,10 @@
 }
 .bps-empty b { color: var(--bps-text); font-size: 14px; }
 .bps-empty p { max-width: 54ch; font-size: 12.5px; }
+/* 整页空态：没有 BP 记录时给一句话 + 去采集 / 载入模拟数据 */
+.bps-unavailable { margin-top: 28px; gap: 8px; padding: 48px 20px; }
+.bps-unavailable .bps-note { color: var(--bps-muted); }
+.bps-unavailable-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
 .bps-loading { display: grid; place-items: center; gap: 10px; padding: 40px; color: var(--bps-muted); font-size: 13px; }
 .bps-spinner {
   width: 18px; height: 18px; border-radius: 50%;
