@@ -772,6 +772,72 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         transform="rotate(-90 8 ${topH + rows.length * cell / 2})" text-anchor="middle">对面类型 →</text></svg>`;
   }
 
+  /* ── BP 时序分支：一条主路径 + 每手的高频支线，像地铁线路图 ────────── */
+  function draftBranchMap(data, {width = 1080, height = 340} = {}) {
+    const nodes = data?.nodes || [];
+    if (!data?.available || !nodes.length) {
+      return `<div class="bv-empty">${esc(data?.reason || '没有可用的手序样本。')}</div>`;
+    }
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const main = (data.main || []).map((id) => byId.get(id)).filter(Boolean);
+    if (!main.length) return '<div class="bv-empty">还没有足够长的已核验手序。</div>';
+    const left = 64;
+    const right = 92;
+    const colW = (width - left - right) / Math.max(1, main.length - 1);
+    const x = (level) => left + (level - 1) * colW;
+    const mainY = height / 2 + 4;
+    const tone = (node) => {
+      if (node.actor === 'team') {
+        return node.action === 'ban'
+          ? {color: '#a94b40', dash: '5 4'} : {color: '#246b63', dash: ''};
+      }
+      return node.action === 'ban'
+        ? {color: '#a86a2a', dash: '5 4'} : {color: '#4a6fa8', dash: ''};
+    };
+    const segments = [];
+    const branches = [];
+    const marks = [];
+    for (let index = 0; index < main.length; index += 1) {
+      const node = main[index];
+      const cx = x(node.level);
+      const paint = tone(node);
+      if (index > 0) {
+        const prev = main[index - 1];
+        segments.push(`<path d="M${(x(prev.level) + 19).toFixed(1)},${mainY} L${(cx - 19).toFixed(1)},${mainY}"
+          fill="none" stroke="${paint.color}" stroke-width="2.6" stroke-linecap="round"
+          ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''} opacity=".9"/>`);
+      }
+      marks.push(`<text x="${cx.toFixed(1)}" y="${(mainY - 44).toFixed(1)}" class="bv-tree-hand">${node.order} 手 · ${node.action === 'ban' ? 'BAN' : 'PICK'}</text>
+        <text x="${cx.toFixed(1)}" y="${(mainY - 28).toFixed(1)}" class="bv-tree-side" fill="${paint.color}">${node.actor === 'team' ? '我方' : '对方'}</text>
+        ${markerWithIcon(node.hero, cx, mainY, 17, `tree-main-${index}`, paint.color)}
+        <text x="${cx.toFixed(1)}" y="${(mainY + 33).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
+        <text x="${cx.toFixed(1)}" y="${(mainY + 47).toFixed(1)}" class="bv-tree-count">${node.count} 局 · ${node.winRate == null ? '—' : fmt1(node.winRate) + '%'}</text>`);
+      const siblings = nodes
+        .filter((item) => item.parent === node.parent && item.level === node.level && item.id !== node.id)
+        .slice(0, 2);
+      siblings.forEach((item, slot) => {
+        const cy = mainY + (slot === 0 ? -1 : 1) * (74 + slot * 30);
+        const alt = tone(item);
+        branches.push(`<path d="M${(cx - 18).toFixed(1)},${mainY} C${(cx - 34).toFixed(1)},${mainY} ${(cx - 26).toFixed(1)},${cy.toFixed(1)} ${(cx - 12).toFixed(1)},${cy.toFixed(1)}"
+          fill="none" stroke="${alt.color}" stroke-width="1.1" ${alt.dash ? `stroke-dasharray="${alt.dash}"` : ''} opacity=".5"/>
+          ${markerWithIcon(item.hero, cx - 11, cy, 10, `tree-alt-${index}-${slot}`, alt.color)}
+          <text x="${(cx + 2).toFixed(1)}" y="${(cy + 3.4).toFixed(1)}" class="bv-tree-alt">${esc(short(item.hero))} ${item.count}</text>`);
+      });
+    }
+    const legend = `<g transform="translate(${left}, ${height - 12})">
+      <line x1="0" y1="-4" x2="18" y2="-4" stroke="#246b63" stroke-width="2.4"/>
+      <text x="24" y="0" class="bv-tree-legend">我方 Pick</text>
+      <line x1="92" y1="-4" x2="110" y2="-4" stroke="#a94b40" stroke-width="2.4" stroke-dasharray="5 4"/>
+      <text x="116" y="0" class="bv-tree-legend">我方 Ban</text>
+      <line x1="174" y1="-4" x2="192" y2="-4" stroke="#4a6fa8" stroke-width="2.4"/>
+      <text x="198" y="0" class="bv-tree-legend">对方 Pick</text>
+      <line x1="266" y1="-4" x2="284" y2="-4" stroke="#a86a2a" stroke-width="2.4" stroke-dasharray="5 4"/>
+      <text x="290" y="0" class="bv-tree-legend">对方 Ban</text>
+      <text x="360" y="0" class="bv-tree-legend">支线 = 同一手其他高频选择；数字 = 局数</text>
+    </g>`;
+    return wrap(width, height, `${segments.join('')}${branches.join('')}${marks.join('')}${legend}`);
+  }
+
   /* ── 类型时间轴：第一手 Ban 的类型份额按月堆叠 ─────────────────────── */
   function typeTimeline(timeline, laneOf, {width = 1200, height = 240} = {}) {
     const months = (timeline || []).filter((item) => (item.types || []).length);
@@ -809,17 +875,31 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         return `L${x(index).toFixed(1)},${y(stack[ti].start).toFixed(1)}`;
       }).join(' ');
       const color = palette[ti % palette.length];
-      const last = stacks[stacks.length - 1][ti];
-      return `<path d="${top} ${bottom} Z" fill="${color}" fill-opacity=".26" stroke="${color}" stroke-width="1.2"/>
-        <text x="${x(months.length - 1) + 10}" y="${(y((last.start + last.end) / 2) + 3).toFixed(1)}"
-          class="bv-stream-label" fill="${color}">${esc(type)}</text>`;
+      return `<path d="${top} ${bottom} Z" fill="${color}" fill-opacity=".24" stroke="${color}" stroke-width="1.2"/>`;
     }).join('');
+    /* 右侧类型标签按末点位置排序后强制 13px 间距，避免几条线收在一起时文字叠住。 */
+    const labels = topTypes.map((type, ti) => {
+      const last = stacks[stacks.length - 1][ti];
+      return {type, color: palette[ti % palette.length],
+        y: y((last.start + last.end) / 2)};
+    }).sort((a, b) => a.y - b.y);
+    const gap = 13;
+    const maxY = pad.top + plotH;
+    for (let index = 1; index < labels.length; index += 1) {
+      if (labels[index].y - labels[index - 1].y < gap) labels[index].y = labels[index - 1].y + gap;
+    }
+    for (let index = labels.length - 1; index >= 0; index -= 1) {
+      const ceiling = maxY - (labels.length - 1 - index) * gap;
+      if (labels[index].y > ceiling) labels[index].y = ceiling;
+    }
+    const labelText = labels.map((item) => `<text x="${x(months.length - 1) + 10}"
+      y="${(item.y + 3.4).toFixed(1)}" class="bv-stream-label" fill="${item.color}">${esc(item.type)}</text>`).join('');
     const grid = [0, 25, 50, 75, 100].map((value) => `
       <line x1="${pad.left}" y1="${y(value).toFixed(1)}" x2="${pad.left + plotW}" y2="${y(value).toFixed(1)}" class="bv-grid"/>
       <text x="${pad.left - 8}" y="${(y(value) + 3.4).toFixed(1)}" class="bv-tick" text-anchor="end">${value}</text>`).join('');
     const ticks = months.map((month, index) => `
       <text x="${x(index)}" y="${height - 12}" class="bv-tick" text-anchor="middle">${esc(String(month.month).slice(2))}</text>`).join('');
-    return wrap(width, height, `${grid}${paths}${ticks}`);
+    return wrap(width, height, `${grid}${paths}${labelText}${ticks}`);
   }
 
   /* ── 组合矩阵：英雄 × 英雄，格子颜色 = 相对基准，深浅 = 局数 ─────── */
@@ -1157,6 +1237,6 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   return {heroScatter, dotScatter, dotCI, dumbbell, handHeatmap, handRing, radar, slope,
-    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
+    donut, spark, intervalDot, miniDelta, comboScatter, comboMatrix, heroCloud, portraitQuadrant, poolScatter, typeRank, typeLines, coreDots, typeCounterMatrix, typeTimeline, draftBranchMap, dotMatrix, typeWheel, slotStream, coreRadial, LANE_COLOR, PALETTE};
 
 }

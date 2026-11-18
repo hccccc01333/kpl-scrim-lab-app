@@ -124,6 +124,18 @@
 }
 
 /* ── 筛选台 ─────────────────────────────────────────────────────────── */
+/* 筛选台 + 分区导航一起吸顶：对手、时间窗、当前分区滚动时始终可见。 */
+.bps-sticky {
+  position: sticky; top: 0; z-index: 35;
+  margin: -26px 0 0;
+  padding: 8px 0 10px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--bps-paper-2) 98%, transparent) 0%,
+    color-mix(in srgb, var(--bps-paper-2) 92%, transparent) 62%,
+    transparent 100%);
+  backdrop-filter: blur(12px) saturate(1.05);
+}
+.bps-sticky .bps-console { margin: 0 18px; }
 .bps-console {
   position: relative;
   z-index: 30;
@@ -143,6 +155,11 @@
   letter-spacing: .08em; white-space: nowrap;
 }
 .bps-console-spacer { flex: 1 1 auto; }
+@media (max-width: 760px) {
+  .bps-sticky { position: static; margin-top: -18px; padding: 0; background: none; backdrop-filter: none; }
+  .bps-sticky .bps-console { margin: 0 8px; }
+  .bps-jump { position: sticky; top: 4px; z-index: 30; margin-top: 8px; }
+}
 @media (max-width: 900px) {
   .bps-console { margin: -18px 8px 0; padding: 12px; }
   .bps-console-sep { display: none; }
@@ -303,8 +320,8 @@
 
 /* ── 节导航 ─────────────────────────────────────────────────────────── */
 .bps-jump {
-  position: sticky; top: 8px; z-index: 20;
-  display: flex; gap: 4px; margin: 18px 0 4px; padding: 6px;
+  position: static;
+  display: flex; gap: 4px; margin: 10px 0 0; padding: 6px;
   overflow-x: auto; scrollbar-width: none;
   border: 1px solid var(--bps-line); border-radius: 999px;
   background: color-mix(in srgb, var(--bps-paper) 90%, transparent);
@@ -322,11 +339,20 @@
 .bps-jump button:hover { background: var(--bps-wash); color: var(--bps-text); }
 .bps-jump button.is-active { background: var(--bps-ink); color: #f2faf7; }
 .bps-jump button.is-active i { color: #8fc6b8; }
+.bps-jump-mode {
+  margin-left: auto; flex: none;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 12px; border-radius: 999px;
+  background: var(--bps-wash); color: var(--bps-accent);
+  font-size: 12px; font-weight: 750;
+}
+.bps-jump-mode svg { width: 13px; height: 13px; }
+.bps-jump-mode:hover { background: var(--bps-wash-2); }
 
 /* ── 分区 ───────────────────────────────────────────────────────────── */
 .bps-sections { display: grid; gap: 26px; margin-top: 10px; }
 .bps-section {
-  scroll-margin-top: 132px;
+  scroll-margin-top: calc(var(--bps-sticky-h, 132px) + 14px);
   padding: 30px 0 10px;
   border-top: 1px solid var(--bps-line);
 }
@@ -1069,6 +1095,27 @@
 .bv-matrix-value { fill: #173b33; font-size: 9.5px; font-weight: 800; }
 .bv-zero-dot { fill: var(--bps-line); }
 .bps-type-cond { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.bps-type-empty {
+  display: flex; flex-direction: column; justify-content: center; gap: 8px;
+  padding: 18px 20px;
+  border: 1px dashed var(--bps-line); border-radius: 14px;
+  background: var(--bps-paper-2);
+}
+.bps-type-empty b { font-size: 15px; color: var(--bps-ink); }
+.bps-type-empty p { margin: 0; color: var(--bps-muted); font-size: 12.5px; line-height: 1.6; }
+.bps-type-empty .bps-note { color: var(--bps-quiet); }
+.bps-tree-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.bps-tree-tools .bps-sub { margin-left: auto; }
+.bps-tree-panel { margin-bottom: 14px; }
+.bps-tree-scroll { overflow-x: auto; }
+.bps-tree-scroll > .bv { min-width: 760px; max-width: none; margin: 0; }
+.bps-type-grid .bps-panel[data-bps-tree] .bv { max-width: none; margin: 0; }
+.bv-tree-hand { fill: var(--bps-quiet); font-size: 10.5px; font-weight: 750; text-anchor: middle; }
+.bv-tree-side { font-size: 10px; font-weight: 800; text-anchor: middle; }
+.bv-tree-hero { fill: var(--bps-ink); font-size: 12px; font-weight: 750; text-anchor: middle; }
+.bv-tree-count { fill: var(--bps-muted); font-size: 10.5px; text-anchor: middle; }
+.bv-tree-alt { fill: var(--bps-muted); font-size: 10px; font-weight: 650; }
+.bv-tree-legend { fill: var(--bps-quiet); font-size: 10.5px; }
 .bps-type-cond h4 {
   margin: 0 0 8px; font-size: 11px; font-weight: 800; letter-spacing: .05em;
   color: var(--bps-quiet);

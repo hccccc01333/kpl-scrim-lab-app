@@ -1173,6 +1173,108 @@ def sequence_board(games, team, action="pick", hand=1, hero=""):
     }
 
 
+def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600):
+    """BP 时序分支树：同一前缀合并，分叉按样本数保留前 N。
+
+    只认已核验的 20 手 `events`（order/action/actor/hero）；没有手序的局不参与，
+    不按名单顺序补。节点 `actor` 相对所选队伍：team = 我方，enemy = 对方。
+    """
+    depth = max(2, min(10, int(depth or 6)))
+    branch = max(2, min(5, int(branch or 3)))
+    rows = []
+    total = 0
+    for game in games or []:
+        if team and str(game.get("team")) != team:
+            continue
+        if opponent and opponent != "__all__" and str(game.get("enemy")) != opponent:
+            continue
+        total += 1
+        events = game.get("events") or []
+        # KPL 早期是 18 手（4 Ban + 10 Pick），训练赛是 20 手；只要够画到本页深度即可。
+        if len(events) < depth:
+            continue
+        rows.append(game)
+    rows.sort(key=lambda game: str(game.get("date") or ""), reverse=True)
+    rows = rows[:max(1, int(limit_games or 600))]
+    if not rows:
+        return {"available": False, "games": 0, "ordered": 0, "total": total,
+                "reason": "这个条件下没有足够长的已核验手序；先在采集/沙盘补录。",
+                "team": team, "opponent": opponent, "depth": depth, "branch": branch,
+                "nodes": [], "main": [], "paths": []}
+
+    nodes = {"0": {"id": "0", "parent": None, "level": 0, "order": 0,
+                   "action": "", "actor": "", "hero": "", "count": 0,
+                   "wins": 0, "decided": 0}}
+    paths = []
+    for game in rows:
+        won = game.get("result")
+        parent = "0"
+        hands = []
+        for event in sorted(game.get("events") or [],
+                            key=lambda item: int(item.get("order") or 0))[:depth]:
+            order = int(event.get("order") or 0)
+            action = "ban" if event.get("action") == "ban" else "pick"
+            actor = "team" if event.get("actor") == "team" else "enemy"
+            hero = str(event.get("hero") or "").strip()
+            if not hero:
+                break
+            key = f"{parent}>{order}:{actor}:{action}:{hero}"
+            node = nodes.get(key)
+            if node is None:
+                node = {"id": key, "parent": parent, "level": order, "order": order,
+                        "action": action, "actor": actor, "hero": hero,
+                        "count": 0, "wins": 0, "decided": 0}
+                nodes[key] = node
+            node["count"] += 1
+            if isinstance(won, bool):
+                node["decided"] += 1
+                if won:
+                    node["wins"] += 1
+            hands.append({"order": order, "action": action, "actor": actor, "hero": hero})
+            parent = key
+        paths.append({"id": game.get("id"), "date": game.get("date"),
+                      "enemy": game.get("enemy"), "result": game.get("result"),
+                      "hands": hands})
+
+    # 每个父节点只留前 branch 个分叉；其余分支不画，但父节点数字仍是全量。
+    children = defaultdict(list)
+    for node in nodes.values():
+        if node["parent"] is not None:
+            children[node["parent"]].append(node)
+    keep = {"0"}
+    frontier = ["0"]
+    while frontier:
+        parent = frontier.pop()
+        kids = sorted(children.get(parent, []), key=lambda item: (-item["count"], item["hero"]))
+        for child in kids[:branch]:
+            keep.add(child["id"])
+            frontier.append(child["id"])
+    kept = [node for node in nodes.values() if node["id"] in keep]
+    for node in kept:
+        node["share"] = _pct(node["count"], len(rows))
+        node["winRate"] = (_pct(node["wins"], node["decided"])
+                           if node["decided"] else None)
+    # 主路径 = 每一层样本最多的分叉；前端把它画成地铁主线，其余分叉画成支线。
+    main = []
+    parent = "0"
+    for _ in range(depth):
+        kids = sorted(children.get(parent, []),
+                      key=lambda item: (-item["count"], item["hero"]))
+        if not kids:
+            break
+        best = kids[0]
+        main.append(best["id"])
+        parent = best["id"]
+    # 子节点按层排好，前端不用再猜纵坐标。
+    kept.sort(key=lambda item: (item["level"], -item["count"], item["hero"]))
+    return {"available": True, "games": len(rows), "ordered": len(rows), "total": total,
+            "team": team, "opponent": opponent, "depth": depth, "branch": branch,
+            "nodes": kept, "main": main, "paths": paths[:12],
+            "dropped": sum(len(kids) - min(len(kids), branch)
+                           for kids in children.values())}
+
+
+
 def build_studio(games, *, source="kpl", team="", opponent="", bounds=None,
                  compare="prev", recent_days=30, month_series=None,
                  prev_games=None, yoy_games=None, baseline_games=None,

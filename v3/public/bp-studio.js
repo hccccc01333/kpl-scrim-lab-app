@@ -1,4 +1,4 @@
-/* BP 工作台（2026-11 重做 · 图表版）
+﻿/* BP 工作台（2026-11 重做 · 图表版）
  *
  * 一条页面回答四个问题：
  *   01 版本里谁值得先拿 → 02 自选组合有多强 → 03 目标被拿走时 KPL / 我们各怎么应对
@@ -14,7 +14,7 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118l';
+import {createBpViz} from './bps-viz.js?v=20261118t';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -55,9 +55,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     target: [], targetData: null, targetLoading: false, targetError: '', targetOpen: false,
     heroSearch: '', comboSearch: '', targetSearch: '',
     types: null, typesLoading: false, typesError: '', typeBo: 0, typeSide: 'opponent', kplTypes: null, prior: 60, typeHand: 0, typeCore: 0, typeFocus: '', counterRowLane: '', counterColLane: '', counterSel: null, counterMode: 'pick',
+    tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeStale: true,
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
+    solo: true, active: 'heroes',
     pins: {heroes: [], combos: []}, heroSort: {key: 'priority', dir: -1}, views: [], viewName: '',
     shareTip: '', compareOpponent: '', compareBlock: null, compareLoading: false,
     pop: '',
@@ -171,6 +173,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         lane: state.lane, chartAll: state.chartAll, chartView: state.chartView,
         comboSize: state.comboSize, comboSort: state.comboSort, prior: state.prior,
         collapsed: state.collapsed, pins: state.pins, views: state.views, compact: state.compact,
+        solo: state.solo, active: state.active,
         comboPick: state.comboPick, target: state.target,
       }));
     } catch {}
@@ -197,6 +200,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (Array.isArray(raw.target)) state.target = raw.target.slice(0, 3);
       if (raw.collapsed && typeof raw.collapsed === 'object') state.collapsed = raw.collapsed;
       if (typeof raw.compact === 'boolean') state.compact = raw.compact;
+      if (typeof raw.solo === 'boolean') state.solo = raw.solo;
+      if (SECTION_LIST.some(([key]) => key === raw.active)) state.active = raw.active;
       if (raw.pins && typeof raw.pins === 'object') {
         state.pins = {heroes: Array.isArray(raw.pins.heroes) ? raw.pins.heroes.slice(0, 20) : [],
           combos: Array.isArray(raw.pins.combos) ? raw.pins.combos.slice(0, 20) : []};
@@ -225,6 +230,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (state.target.length) loadTarget();
       if (state.comboPick.length >= 2) loadCombo();
       state.typesStale = true;
+      state.treeStale = true;
       state.seqStale = true;
       observeLazy();
       if (state.compareOpponent) loadCompareOpponent();
@@ -322,6 +328,37 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.typesError = error.message || '类型数据读取失败';
     } finally {
       state.typesLoading = false;
+      paint();
+    }
+  }
+
+  async function loadTree() {
+    if (!state.root || !state.data) return;
+    state.treeLoading = true;
+    state.treeError = '';
+    paint();
+    try {
+      const search = new URLSearchParams({
+        source: state.source, recentDays: state.recentDays,
+        depth: String(state.treeDepth), branch: String(state.treeBranch),
+      });
+      let team;
+      if (state.typeSide === 'opponent' && state.opponent && state.opponent !== '__all__') {
+        team = state.opponent;
+      } else {
+        team = state.source === 'scrim' ? '本队' : state.team;
+        if (state.opponent && state.opponent !== '__all__') search.set('opponent', state.opponent);
+      }
+      if (team) search.set('team', team);
+      if (state.leagues.length) search.set('leagues', state.leagues.join(','));
+      if (state.from && state.to) { search.set('from', state.from); search.set('to', state.to); }
+      state.tree = await api(`/tree?${search.toString()}`);
+      state.treeStale = false;
+    } catch (error) {
+      state.treeError = error.message || '时序分支读取失败';
+      state.treeStale = false;
+    } finally {
+      state.treeLoading = false;
       paint();
     }
   }
@@ -681,9 +718,22 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function jumpBar() {
     return `<nav class="bps-jump" aria-label="BP 分区">
-      ${SECTION_LIST.map(([key, no, title]) => `<button type="button" data-bps-jump="${key}">
+      ${SECTION_LIST.map(([key, no, title]) => `<button type="button" data-bps-jump="${key}"
+        aria-pressed="${state.solo && state.active === key}"
+        class="${state.solo && state.active === key ? 'is-active' : ''}">
         <i>${no}</i>${esc(title)}</button>`).join('')}
+      <button type="button" class="bps-jump-mode" data-bps-solo aria-pressed="${state.solo}"
+        title="${state.solo ? '当前：单节阅读，点击切回连续滚动' : '当前：连续滚动，点击切到单节阅读'}">
+        ${state.solo ? '单节阅读' : '连续滚动'}
+      </button>
     </nav>`;
+  }
+
+  function syncSticky() {
+    const sticky = state.root?.querySelector('.bps-sticky');
+    if (!sticky) return;
+    const height = Math.round(sticky.getBoundingClientRect().height);
+    document.documentElement.style.setProperty('--bps-sticky-h', `${height}px`);
   }
 
   // ── 01 英雄优先级 ───────────────────────────────────────────────────
@@ -1400,6 +1450,32 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           <em>${rate(row.winRate)}</em><i class="${row.delta >= 0 ? 'is-good' : 'is-bad'}">${signed(row.delta)} pp</i></span>`).join('')}</div>` : ''}`;
   }
 
+  function draftTreePanel() {
+    return `<div class="bps-panel is-wide bps-tree-panel" data-bps-tree>
+      <div class="bps-panel-head"><h3>BP 时序分支</h3>
+        <span class="bps-sub">主线 = 每手样本最多；支线 = 同手其他高频选择 · 只认已核验手序</span></div>
+      <div class="bps-panel-body">
+        <div class="bps-tree-tools">
+          <span class="bps-console-label">深度</span>${seg([[4, '4 手'], [6, '6 手'], [8, '8 手']],
+            String(state.treeDepth), 'data-bps-tree-depth', {small: true})}
+          <span class="bps-console-label">分叉</span>${seg([[2, '2 支'], [3, '3 支']],
+            String(state.treeBranch), 'data-bps-tree-branch', {small: true})}
+          <span class="bps-console-label">看</span>${seg([['opponent', '对手'], ['own', '我们']],
+            state.typeSide, 'data-bps-tree-side', {small: true})}
+          ${state.tree?.available
+            ? `<span class="bps-sub">已核验 ${num(state.tree.games)} / ${num(state.tree.total)} 局</span>` : ''}
+        </div>
+        ${state.treeLoading && !state.tree ? '<div class="bps-loading">正在按逐手事件建树…</div>' : ''}
+        ${state.treeError ? `<div class="bps-inline-error">${esc(state.treeError)}</div>` : ''}
+        ${state.tree?.available && state.tree.games < 8
+          ? '<p class="bps-note">已核验手序不到 8 局，主线只作方向参考，不当作稳定习惯。</p>' : ''}
+        ${state.tree?.available ? `<div class="bps-tree-scroll">${viz.draftBranchMap(state.tree, {width: 1080, height: 300})}</div>`
+          : (state.tree ? `<div class="bps-empty"><b>还没有可画的手序</b>
+              <p>${esc(state.tree.reason || '')}</p></div>` : '')}
+      </div>
+    </div>`;
+  }
+
   function typesSection() {
     const head = section('types', '05', '类型与手序',
       '他第一手 Ban / 选的是什么类型？放到 BO 和时间里还成立吗？',
@@ -1468,29 +1544,13 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       color: viz.LANE_COLOR[laneOf(type)] || '#246b63',
       values: slots.map((slot) => (slot.types.find((row) => row.type === type) || {}).share || 0),
     }));
-    const timeline = (side === 'kpl' ? state.kplTypes?.timelines?.league : t.timelines?.[side])
-      || profile.ban?.timeline || [];
-    const monthLabels = timeline.map((row) => String(row.month).slice(2));
-    const tlTotals = new Map();
-    for (const month of timeline) {
-      for (const row of month.types || []) tlTotals.set(row.type, (tlTotals.get(row.type) || 0) + (row.count || 0));
-    }
-    const tlTypes = [...tlTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([type]) => type);
-    const timelineSeries = tlTypes.map((type) => ({
-      label: type,
-      color: viz.LANE_COLOR[laneOf(type)] || '#246b63',
-      values: timeline.map((month) => {
-        const total = (month.types || []).reduce((sum, row) => sum + (row.count || 0), 0) || 1;
-        const hit = (month.types || []).find((row) => row.type === type);
-        return hit ? (hit.count / total) * 100 : 0;
-      }),
-    }));
     const compactText = state.compact ? `<div class="bps-compact-summary">
       <span><b>第一手 Ban</b>：${(banFull.firstTypes || []).slice(0, 4).map((row) => `${row.type} ${rate(row.share)}`).join('、') || '—'}</span>
       <span><b>核数</b>：${(cores || []).map((row) => `${row.cores}核 ${rate(row.share)} / 胜率 ${rate(row.winRate)}`).join(' · ') || '—'}</span>
       <span><b>克制</b>：${(t.counters?.best || []).slice(0, 3).map((row) => `${row.enemy}→${row.response} ${rate(row.winRate)}`).join('；') || '—'}</span>
     </div>` : '';
     return `${head}${tools}${compactText}
+      ${draftTreePanel()}
       <div class="bps-type-grid">
         <div class="bps-panel">
           <div class="bps-panel-head"><h3>第一手 Ban 的类型</h3><span class="bps-sub">${num(banFull.games || 0)} 局</span></div>
@@ -1520,11 +1580,6 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             <span class="bps-console-label">我们</span>${seg(laneOptions, state.counterColLane, 'data-bps-counter-col', {small: true})}
           </div>
           <div class="bps-panel-body">${counterMatrixHtml(t, laneOf)}</div>
-        </div>
-        <div class="bps-panel is-wide">
-          <div class="bps-panel-head"><h3>第一手 Ban · 时间轴</h3><span class="bps-sub">全库月度 · 不受窗口影响</span></div>
-          <div class="bps-panel-body">${viz.typeLines(timelineSeries,
-            {width: 1080, height: 260, xLabels: monthLabels, focus})}</div>
         </div>
       </div>
       ${t.conditional?.available ? `<div class="bps-panel" style="margin-top:14px">
@@ -1636,20 +1691,17 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     else if (state.error && !state.data) state.root.innerHTML = errorState();
     else if (!state.data) state.root.innerHTML = skeleton();
     else {
+      const visible = state.solo ? [state.active] : SECTION_LIST.map(([key]) => key);
       state.root.innerHTML = `<div class="bps ${state.compact ? 'is-compact' : ''}">
         ${heroBand()}
-        ${consoleBar()}
+        <div class="bps-sticky">
+          ${consoleBar()}
+          ${jumpBar()}
+        </div>
         ${pinsBar()}
         ${sampleBanner()}
-        ${jumpBar()}
         <div class="bps-sections">
-          ${heroSection()}
-          ${comboSection()}
-          ${breakSection()}
-          ${opponentSection()}
-          ${typesSection()}
-          ${systemsSection()}
-          ${planSection()}
+          ${visible.map((key) => SECTION_RENDER[key]()).join('')}
         </div>
         <div class="bps-caveats">${(state.data.caveats || []).map((text) => `<p class="bps-note">· ${esc(text)}</p>`).join('')}</div>
         <button type="button" class="bps-top" data-bps-top hidden aria-label="回到顶部">${icon('arrow')}</button>
@@ -1660,6 +1712,14 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     decorateSections();
     observeLazy();
     updateActiveJump();
+    requestAnimationFrame(syncSticky);
+    // 单节模式直接进入 05 时，主图在首屏下方，不能等滚动才请求。
+    if (state.solo && state.active === 'types' && state.data
+      && state.treeStale && !state.treeLoading) {
+      setTimeout(() => {
+        if (state.treeStale && !state.treeLoading) loadTree();
+      }, 60);
+    }
   }
 
   let lazyObserver = null;
@@ -1671,6 +1731,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           if (!entry.isIntersecting) continue;
           const key = entry.target.dataset.bpsLazy;
           if (key === 'types' && state.typesStale && !state.typesLoading) loadTypes();
+          else if (key === 'tree' && state.treeStale && !state.treeLoading) loadTree();
           else if (key === 'sequence' && state.seqStale && !state.seqLoading) loadSequence();
         }
       }, {rootMargin: '600px 0px'});
@@ -1680,6 +1741,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (types && state.typesStale && !state.collapsed.types) {
       types.dataset.bpsLazy = 'types';
       lazyObserver.observe(types);
+    }
+    const tree = state.root.querySelector('[data-bps-tree]');
+    if (tree && state.treeStale && !state.treeLoading) {
+      tree.dataset.bpsLazy = 'tree';
+      lazyObserver.observe(tree);
     }
     const seq = state.root.querySelector('.bps-seq');
     if (seq && state.seqStale) {
@@ -1795,13 +1861,21 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (!state.root) return;
     const sections = [...state.root.querySelectorAll('[data-bps-section]')];
     if (!sections.length) return;
-    const mark = window.scrollY + 130;
+    const stickyH = parseFloat(getComputedStyle(document.documentElement)
+      .getPropertyValue('--bps-sticky-h')) || 120;
+    const mark = window.scrollY + stickyH + 20;
     let active = sections[0].dataset.bpsSection;
-    for (const item of sections) {
-      if (item.offsetTop <= mark) active = item.dataset.bpsSection;
+    if (!state.solo) {
+      for (const item of sections) {
+        if (item.offsetTop <= mark) active = item.dataset.bpsSection;
+      }
+      state.active = active;
+    } else {
+      active = state.active;
     }
     state.root.querySelectorAll('[data-bps-jump]').forEach((link) => {
       link.classList.toggle('is-active', link.dataset.bpsJump === active);
+      link.setAttribute('aria-pressed', String(link.dataset.bpsJump === active));
     });
     const topButton = state.root.querySelector('[data-bps-top]');
     if (topButton) topButton.hidden = window.scrollY < 600;
@@ -1827,6 +1901,14 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   // ── 事件 ────────────────────────────────────────────────────────────
   function scrollToSection(id) {
+    if (state.solo) {
+      state.active = id;
+      state.collapsed[id] = false;
+      persist();
+      paint();
+      window.scrollTo({top: 0, behavior: 'smooth'});
+      return;
+    }
     const target = state.root?.querySelector(`#bps-${id}`);
     if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
   }
@@ -2342,6 +2424,17 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (typeHand) { state.typeHand = Number(typeHand.dataset.bpsTypeHand); loadTypes(); return; }
     const typeCore = event.target.closest('[data-bps-type-core]');
     if (typeCore) { state.typeCore = Number(typeCore.dataset.bpsTypeCore); loadTypes(); return; }
+    const treeDepth = event.target.closest('[data-bps-tree-depth]');
+    if (treeDepth) { state.treeDepth = Number(treeDepth.dataset.bpsTreeDepth); loadTree(); return; }
+    const treeBranch = event.target.closest('[data-bps-tree-branch]');
+    if (treeBranch) { state.treeBranch = Number(treeBranch.dataset.bpsTreeBranch); loadTree(); return; }
+    const treeSide = event.target.closest('[data-bps-tree-side]');
+    if (treeSide) {
+      state.typeSide = treeSide.dataset.bpsTreeSide;
+      state.treeStale = true;
+      loadTree();
+      return;
+    }
     const compareOpponent = event.target.closest('[data-bps-compare-opponent]');
     if (compareOpponent) {
       state.compareOpponent = compareOpponent.dataset.bpsCompareOpponent;
@@ -2364,7 +2457,13 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       refreshSection('types'); return;
     }
     const typeSide = event.target.closest('[data-bps-type-side]');
-    if (typeSide) { state.typeSide = typeSide.dataset.bpsTypeSide; refreshSection('types'); return; }
+    if (typeSide) {
+      state.typeSide = typeSide.dataset.bpsTypeSide;
+      state.treeStale = true;
+      refreshSection('types');
+      if (state.tree) loadTree();
+      return;
+    }
     if (event.target.closest('[data-bps-widen]')) {
       state.recentDays = Number(event.target.closest('[data-bps-widen]').dataset.bpsWiden) || 90;
       state.from = ''; state.to = '';
@@ -2425,6 +2524,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     const jump = event.target.closest('[data-bps-jump]');
     if (jump) { scrollToSection(jump.dataset.bpsJump); return; }
+    const solo = event.target.closest('[data-bps-solo]');
+    if (solo) {
+      state.solo = !state.solo;
+      state.collapsed[state.active] = false;
+      persist();
+      paint();
+      window.scrollTo({top: 0, behavior: 'smooth'});
+      return;
+    }
   }
 
   function onInput(event) {
@@ -2582,6 +2690,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   let clickBound = null;
   let inputBound = null;
   let keyBound = null;
+  let resizeBound = null;
 
   function bind() {
     clickBound = (event) => {
@@ -2593,6 +2702,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       onInput(event);
     };
     scrollBound = () => updateActiveJump();
+    resizeBound = () => { syncSticky(); updateActiveJump(); };
     keyBound = (event) => {
       if (event.key === 'Escape') {
         if (state.pop) closePops('');
@@ -2615,6 +2725,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     document.addEventListener('mouseout', onCompareOut);
     document.addEventListener('scroll', onCompareScroll, true);
     window.addEventListener('scroll', scrollBound, {passive: true});
+    window.addEventListener('resize', resizeBound, {passive: true});
     state.root?.addEventListener('wheel', onWheel, {passive: false});
     state.root?.addEventListener('pointerdown', onPointerDown);
     state.root?.addEventListener('pointerdown', matrixPointerDown);
@@ -2628,6 +2739,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (clickBound) document.removeEventListener('click', clickBound);
     if (inputBound) document.removeEventListener('input', inputBound);
     if (scrollBound) window.removeEventListener('scroll', scrollBound);
+    if (resizeBound) window.removeEventListener('resize', resizeBound);
     if (keyBound) document.removeEventListener('keydown', keyBound);
     document.removeEventListener('mouseover', onHoverIn);
     document.removeEventListener('mouseout', onHoverOut);

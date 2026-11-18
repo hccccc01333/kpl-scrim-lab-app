@@ -4264,6 +4264,40 @@ def bp_studio_sequence(request: Request):
     return report
 
 
+@router.get('/api/v3/bp-studio/tree')
+def bp_studio_tree(request: Request):
+    """BP 时序分支：已核验手序的前缀树 + 主路径，给“地铁图”用。"""
+    from bp_studio import _in_window, draft_tree, window_bounds
+
+    values = request.query_params
+    source = str(values.get('source') or 'kpl').strip()
+    if source not in ('kpl', 'scrim'):
+        raise HTTPException(400, 'source 只能是 kpl 或 scrim')
+    leagues = str(values.get('leagues') or '').strip()
+    team = str(values.get('team') or '').strip()
+    opponent = str(values.get('opponent') or '').strip()
+    start = str(values.get('from') or '').strip()
+    end = str(values.get('to') or '').strip()
+    try:
+        recent_days = int(values.get('recentDays') or 30)
+        depth = int(values.get('depth') or 6)
+        branch = int(values.get('branch') or 3)
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'recentDays / depth / branch 必须是整数')
+    depth = max(3, min(10, depth))
+    branch = max(2, min(5, branch))
+    games = _bp_studio_scrim() if source == 'scrim' else _bp_studio_kpl(leagues)
+    bounds = window_bounds(games, start=start, end=end, recent_days=recent_days)
+    scoped = _in_window(games, bounds['from'], bounds['to'])
+    if source == 'scrim' and not team:
+        team = '本队'
+    report = draft_tree(scoped, team=team, opponent=opponent,
+                        depth=depth, branch=branch)
+    report['window'] = bounds
+    report['source'] = source
+    return report
+
+
 @router.get('/api/v3/bp-studio/types')
 def bp_studio_types(request: Request, repo=Depends(repository)):
     """类型博弈：Ban / Pick 的英雄类型 × 手序 × BO × 时间，外加核数与条件反应。"""
