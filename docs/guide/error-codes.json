@@ -1,0 +1,58 @@
+{
+  "E-SYS-001": {
+    "title": "工作台连接中断",
+    "cause": "浏览器与主服务 8766 之间的连接断了，常见原因是启动窗口被关掉或服务还没起来。",
+    "action": "确认启动窗口还在；页面会自动重连，也可以点「立即重试」。打开 /api/health 能看到进程与数据目录。",
+    "owner": "v3/public/app.js · setOffline() / renderOffline()",
+    "status": "已接入"
+  },
+  "E-SYS-002": {
+    "title": "这一页的数据还没返回",
+    "cause": "接口连续失败两次，或静态资源与路由表短暂错配；不是对局数据本身的问题。",
+    "action": "点「重新读取」；若反复出现，打开 /api/health 并复制诊断信息反馈。",
+    "owner": "v3/public/app.js · load() 失败分支 / renderDataNotice()",
+    "status": "已接入"
+  },
+  "E-MOD-001": {
+    "title": "页面模块加载失败",
+    "cause": "按需加载的页面脚本没有取回来，通常是缓存版本不匹配或文件缺失。",
+    "action": "按 Ctrl+F5 强制刷新；仍失败时附带诊断信息反馈。",
+    "owner": "v3/public/app.js · ensureModules() / importOnce()",
+    "status": "预留"
+  },
+  "E-CAP-001": {
+    "title": "营地同步失败",
+    "cause": "教练号扫码授权失效、营地接口临时不可用，或该账号没有可拉取的训练赛。",
+    "action": "重新扫码授权；超过一个月、营地没有详情的老局改走截图 OCR 或录屏新录入。",
+    "owner": "v3/public/capture-page.js · 营地同步",
+    "status": "预留"
+  },
+  "E-CAP-002": {
+    "title": "截图识别结果不完整",
+    "cause": "截图被微信 / QQ 压缩、不是赛后结算页原图，或字段被遮挡。",
+    "action": "用原图或文件方式重传，逐字段人工校对；不要用猜测补全。",
+    "owner": "v3/public/capture-page.js · 截图 OCR",
+    "status": "预留"
+  },
+  "E-IMP-001": {
+    "title": "表格导入失败",
+    "cause": "模板 sheet 缺失、局序或赛果格式不对、归属赛事未选，或同一局重复导入。",
+    "action": "按错误行号改好后重新导入；先确认顶栏已选当前赛事。",
+    "owner": "v3/public/official-entry.js · 批量导入",
+    "status": "预留"
+  },
+  "E-EXP-001": {
+    "title": "诊断信息复制失败",
+    "cause": "浏览器拒绝了剪贴板权限，且兜底复制也被拦截。",
+    "action": "手动选中诊断文本框里的内容复制；反馈时保留错误码即可。",
+    "owner": "v3/public/diagnostics.js · bindDiagnosticCopy()",
+    "status": "已接入"
+  },
+  "E-DOC-001": {
+    "title": "文档内容加载失败",
+    "cause": "生成的 help-content.js 缺失或与文档页版本不匹配。",
+    "action": "运行 python scripts/build_help_content.py 重新生成；仍失败时反馈诊断信息。",
+    "owner": "v3/public/docs-page.js · helpContent 导入",
+    "status": "预留"
+  }
+}
