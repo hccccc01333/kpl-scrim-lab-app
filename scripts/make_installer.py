@@ -20,6 +20,7 @@ import argparse
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import zipfile
@@ -80,9 +81,19 @@ def build_full(version: str) -> Path:
     return path
 
 
+def _clear_readonly(func, path, exc_info) -> None:
+    """Windows 下只读文件会让 rmtree 直接失败；去掉只读位再重试。"""
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        pass
+
+
 def extract(archive: Path) -> Path:
     if SOURCE_DIR.exists():
-        shutil.rmtree(SOURCE_DIR)
+        # 旧包可能带着只读附件（二维码等），rmtree 默认清不掉。
+        shutil.rmtree(SOURCE_DIR, onerror=_clear_readonly)
     SOURCE_DIR.mkdir(parents=True)
     with zipfile.ZipFile(archive) as bundle:
         for member in bundle.infolist():

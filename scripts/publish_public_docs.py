@@ -22,6 +22,7 @@ REPO = 'hccccc01333/kpl-scrim-lab-app'
 FILES = [
     'README.md',
     'CHANGELOG.md',
+    'update.json',
     'docs/images/readme-hero.png',
     'docs/images/02-capture.png',
     'docs/images/03-matches.png',

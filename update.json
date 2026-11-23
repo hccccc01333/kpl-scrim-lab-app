@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "version": "3.0.1",
-  "publishedAt": "2026-11-23T15:08:24+08:00",
+  "publishedAt": "2026-11-23T15:51:15+08:00",
   "channel": "stable",
   "minVersion": "2.0.2",
   "notes": [
@@ -11,8 +11,8 @@
   ],
   "patch": {
     "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v3.0.1/patch-3.0.1.zip",
-    "sha256": "828c22db96355f38eaa5f17be31c179d01011a0582066922902e2f80bacc195c",
-    "size": 13124796,
+    "sha256": "a459191e35fc3a49d6cdb57cbcf5cafeb799d6221500f594e3aa5476b1b3373b",
+    "size": 13124822,
     "files": [
       {
         "path": "CHANGELOG.md",
@@ -2116,8 +2116,8 @@
       },
       {
         "path": "v3/public/help-content.js",
-        "sha256": "59455d33f70022c5899ef43fcdd2fef0a2cdc953fa9a3e68cb9b2a90e3994ea5",
-        "size": 131682
+        "sha256": "2623d674402f979cc53c87a969ad594d5967d674e4d71b9903aaf1f602373d85",
+        "size": 132153
       },
       {
         "path": "v3/public/hero-compare.js",
@@ -4304,7 +4304,7 @@
   "releaseDate": "2026-11-23",
   "full": {
     "url": "https://github.com/hccccc01333/kpl-scrim-lab-app/releases/download/v3.0.1/KPL-Scrim-Lab-3.0.1-full.zip",
-    "sha256": "1ec3abe2f57332fa6101b4346c6b64aa2e6ab0f957c01d78590e0db6b6a581c2",
-    "size": 156935219
+    "sha256": "35eebc78cfde9f345876146708ce7905b19e0282dd49f7f7723677af2e394c73",
+    "size": 156935254
   }
 }
