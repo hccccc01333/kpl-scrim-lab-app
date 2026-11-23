@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" role="img">
+<title>数据标题三角标记</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient></defs>
+<path d="M3 4 Q3 2 5 3 L17 9 Q19 10 17 11 L5 17 Q3 18 3 16Z" fill="url(#gold)"/>
+</svg>

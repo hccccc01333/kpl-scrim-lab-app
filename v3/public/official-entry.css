@@ -1,0 +1,890 @@
+/* 正式比赛线上表格录入 + 赛后笔记（白金画廊）
+ * 加载：在 kpl-gold.css 之后以普通 <link> 加载（无 @layer）。
+ * 仅使用白金 token，不硬编码蓝；图表/红蓝语义色保持原样。
+ */
+
+/* match-notes.js 用这个哨兵判断样式表是否已加载，未加载时注入最小兜底样式。 */
+:root { --oe-styles-loaded: 1; }
+
+/* ── 模态滚动锁定（原生 dialog，不用自定义遮罩） ──────────────
+   dialog:modal 与 ::backdrop 两条必须同时存在；不要给 html/body 加 overflow:hidden。 */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(47, 43, 30, 0.34);
+}
+
+/* ── 页面骨架 ───────────────────────────────────────────────── */
+
+.oe-page {
+  /* 三档控件高度 token：主输入/主按钮 44，成对输入 40，表格与迷你按钮 34。 */
+  --oe-h-lg: 44px;
+  --oe-h-md: 40px;
+  --oe-h-sm: 34px;
+  display: grid;
+  gap: 18px;
+  padding: 8px 4px 32px;
+  color: var(--text);
+}
+
+.oe-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.oe-kicker {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: 999px;
+  background: var(--soft, var(--surface));
+  color: var(--accent-ink, var(--text));
+  font-size: 12px;
+  letter-spacing: .04em;
+}
+
+.oe-head h1 {
+  margin: 10px 0 6px;
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.3;
+}
+
+.oe-intro {
+  max-inline-size: 72ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.oe-link {
+  color: var(--accent-ink, var(--text));
+  font-size: 13px;
+  text-underline-offset: 4px;
+}
+
+/* ── 语义图标排版：图标全部 aria-hidden，可访问名仍由按钮/链接文字承担 ── */
+.oe-link .ui-glyph { margin-inline-end: 6px; }
+.oe-link .ui-glyph.oe-ext {
+  margin-inline-end: 0;
+  margin-inline-start: 4px;
+  transform: rotate(45deg); /* ↗ 转成 →，替代原来的箭头字符 */
+}
+.oe-btn .ui-glyph:not(:only-child),
+.oe-mini .ui-glyph:not(:only-child) { margin-inline-end: 6px; }
+.oe-btn .ui-plus { margin-inline-end: 6px; }
+/* 金色图标落在浅金主按钮上，加一圈暗影保证描边可辨（不改图标配色）。 */
+.oe-btn-primary .ui-glyph { filter: drop-shadow(0 1px 1px rgba(47, 43, 30, .45)); }
+
+.oe-series {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg, 18px);
+  background: var(--paper);
+  box-shadow: var(--shadow-card, 0 10px 24px rgba(77, 60, 47, .12));
+}
+
+.oe-fieldset {
+  display: block;
+  min-inline-size: 0; /* 匿名 fieldset 盒会 shrink-to-fit，必须显式放开 */
+  margin: 0;
+  padding: 14px 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--paper-2, var(--surface));
+}
+
+.oe-fieldset legend {
+  padding: 0 8px;
+  color: var(--accent-ink, var(--text));
+  font-weight: 600;
+}
+
+/* 全字段选填的说明：跟着 legend 走，弱化为正文小字。 */
+.oe-optional-note {
+  margin-inline-start: 8px;
+  color: var(--muted, var(--quiet, #8a9aa5));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.oe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  inline-size: 100%;
+  gap: 12px 16px;
+}
+
+.oe-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.oe-field label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.oe-field input,
+.oe-field select,
+.oe-games input,
+.oe-games select,
+.oe-dialog input,
+.oe-dialog textarea {
+  box-sizing: border-box;
+  inline-size: 100%;
+  min-block-size: var(--oe-h-lg);
+  padding: 8px 9px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-sm, 8px);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: max(1rem, 1em);
+}
+
+/* 原生日历图标调成金色，避免黑色图标破坏白金配色。 */
+.oe-field input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: sepia(1) saturate(3) hue-rotate(355deg) brightness(.82);
+  cursor: pointer;
+}
+
+/* 焦点环严格限定在本模块作用域：此处若写成全局 button/summary/[tabindex]，
+   会覆盖 kpl-gold.css 的整站焦点环，导致按钮焦点色被页面级文件劫持。 */
+:is(.oe-page, .oe-dialog) :is(button, summary, [tabindex="0"]):focus-visible,
+.oe-field input:focus-visible,
+.oe-field select:focus-visible,
+.oe-games input:focus-visible,
+.oe-games select:focus-visible,
+.oe-dialog input:focus-visible,
+.oe-dialog textarea:focus-visible {
+  outline: 2px solid var(--accent-ink, var(--accent));
+  outline-offset: 2px;
+}
+
+.oe-field input:user-invalid,
+.oe-field select:user-invalid,
+.oe-games input:user-invalid {
+  border-color: var(--danger, #B5564A);
+}
+
+/* 内联错误：延后到交互/提交后出现；图标 + 文案双通道，不只靠红框与颜色。 */
+.oe-field-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger, #B5564A);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.oe-field-error[hidden] { display: none; }
+.oe-field-error .ui-glyph { flex: 0 0 auto; }
+
+/* ── 语义化数据表：sticky 表头 + 容器查询降级为卡片 ────────── */
+
+.oe-tablewrap {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(72vh, 760px);
+  container-type: inline-size;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--paper);
+}
+
+.oe-games {
+  inline-size: 100%;
+  min-inline-size: 960px; /* 宽屏保持宽表，由容器横向滚动；卡片模式下会清零 */
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.oe-games caption {
+  padding: 10px 12px;
+  color: var(--muted);
+  text-align: start;
+  caption-side: top;
+}
+
+.oe-games th,
+.oe-games td {
+  padding: 8px 10px;
+  border-block-end: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+
+.oe-games thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.oe-games tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--paper-2, var(--surface));
+  white-space: nowrap;
+}
+
+.oe-games thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+}
+
+.oe-pair {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.oe-pair input {
+  inline-size: 62px;
+  min-block-size: var(--oe-h-md);
+  font-size: max(.95rem, 1em);
+}
+
+.oe-pair span {
+  color: var(--muted);
+}
+
+/* 十人阵容：去掉浏览器默认三角，用纯 CSS 金色箭头 + 悬停/聚焦底色。 */
+.oe-lineup-details summary {
+  position: relative;
+  cursor: pointer;
+  padding: 6px 8px 6px 24px;
+  border-radius: var(--r-sm, 8px);
+  color: var(--accent-ink, var(--text));
+  white-space: nowrap;
+  list-style: none;
+}
+.oe-lineup-details summary::-webkit-details-marker { display: none; }
+.oe-lineup-details summary::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 9px;
+  inset-block-start: 50%;
+  inline-size: 0;
+  block-size: 0;
+  border-inline-start: 5px solid var(--accent-ink, var(--accent));
+  border-block-start: 4px solid transparent;
+  border-block-end: 4px solid transparent;
+  transform: translateY(-50%);
+  transition: transform .18s ease;
+}
+.oe-lineup-details[open] summary::before { transform: translateY(-50%) rotate(90deg); }
+.oe-lineup-details summary:hover,
+.oe-lineup-details summary:focus-visible {
+  background: var(--accent-soft, var(--surface));
+}
+
+.oe-lineup {
+  margin-block-start: 8px;
+  max-inline-size: 340px;
+}
+
+.oe-lineup-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.oe-lineup-table caption {
+  padding: 4px 0;
+  font-weight: 600;
+}
+
+.oe-lineup-table th,
+.oe-lineup-table td {
+  padding: 3px 4px;
+  border-block-end: 1px solid var(--line);
+}
+
+.oe-lineup-table input {
+  min-block-size: var(--oe-h-sm);
+  padding: 4px 6px;
+  font-size: max(.9rem, 1em);
+}
+
+/* 小容器（含侧栏场景）下把行转成卡片，data-label 注入列名，表头对读屏隐藏。
+   表格最小宽度 960px；阈值必须覆盖它，否则 1180px 视口下容器约 884px 会出现
+   横向滚动但滚动条落在屏幕外、操作列看不见。1440px 容器约 1162px 仍是宽表。 */
+@container (width < 1000px) {
+  .oe-games {
+    --label: "";
+  }
+  .oe-games thead {
+    display: none;
+  }
+  .oe-games,
+  .oe-games tbody,
+  .oe-games tr,
+  .oe-games th,
+  .oe-games td {
+    display: block;
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+  .oe-games tr {
+    margin-block-end: 14px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md, 12px);
+    background: var(--paper);
+  }
+  .oe-games tbody th {
+    position: static;
+    margin-block-end: 8px;
+    padding: 4px 8px;
+    border-radius: var(--r-sm, 8px);
+    background: var(--surface);
+    font-weight: 700;
+  }
+  .oe-games td {
+    display: grid;
+    grid-template-columns: minmax(110px, 34%) 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-block-end: 1px dashed var(--line);
+  }
+  .oe-games td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .oe-lineup {
+    max-inline-size: none;
+  }
+}
+
+/* ── 操作区 ─────────────────────────────────────────────────── */
+
+.oe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.oe-btn {
+  min-block-size: var(--oe-h-lg);
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-sm, 8px);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.oe-btn:hover {
+  background: var(--surface-hover, var(--surface));
+}
+
+.oe-btn:disabled {
+  opacity: .6;
+  cursor: progress;
+}
+
+/* 浅金底 + 深金墨细描边（不再是深棕实心块）。
+   文字 --accent-ink #8A6530 vs 10% 金底 #FBF6EE ≈ 4.90:1；hover 16% ≈ 4.74:1；
+   描边深金墨 alpha .85 vs 浅底 ≈ 3.66:1，均达标。 */
+.oe-btn-primary {
+  border-color: rgba(138, 101, 48, 0.85);
+  background: color-mix(in srgb, var(--accent, #D7B071) 10%, var(--paper, #FFFEFC));
+  color: var(--accent-ink, #8A6530);
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.oe-btn-primary:hover {
+  background: color-mix(in srgb, var(--accent, #D7B071) 16%, var(--paper, #FFFEFC));
+  border-color: var(--accent-ink, #8A6530);
+  color: var(--accent-ink, #8A6530);
+}
+
+.oe-btn-primary:active {
+  background: color-mix(in srgb, var(--accent, #D7B071) 20%, var(--paper, #FFFEFC));
+}
+
+.oe-mini {
+  min-block-size: var(--oe-h-sm);
+  inline-size: max-content; /* 卡片模式下 td 是 grid，按钮不能被拉伸成整行宽 */
+  justify-self: start;
+  padding: 4px 9px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-sm, 8px);
+  background: var(--paper);
+  color: var(--accent-ink, var(--text));
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.oe-mini:hover {
+  background: var(--soft, var(--surface));
+}
+
+/* 纯图标小按钮：固定 34×34，危险操作不会变成大片误触区。 */
+.oe-mini-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--oe-h-sm);
+  padding-inline: 0;
+}
+
+.oe-mini-danger {
+  color: var(--danger, #B5564A);
+}
+
+.oe-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.oe-status .ui-glyph { flex: 0 0 auto; }
+
+.oe-status.is-ok { color: var(--success, #2AA68A); }
+.oe-status.is-error { color: var(--danger, #B5564A); }
+.oe-status.is-warn { color: var(--warning, var(--accent-ink, var(--text))); }
+
+/* 保存/上传中：旋转图标 + 文案 + aria-busy，不再只有 opacity:.6。 */
+@keyframes oe-spin { to { transform: rotate(360deg); } }
+.oe-spin { animation: oe-spin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .oe-spin { animation-duration: 2.4s; }
+}
+
+/* 撤销条：删局/删图后 9 秒可撤回，避免误删不可逆。 */
+.oe-toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-sm, 8px);
+  background: var(--paper-2, var(--surface));
+  color: var(--text);
+  font-size: 13px;
+}
+.oe-toast[hidden] { display: none; }
+.oe-toast-undo {
+  min-block-size: var(--oe-h-sm);
+  padding: 4px 12px;
+  border: 1px solid var(--accent-ink, var(--accent));
+  border-radius: var(--r-sm, 8px);
+  background: transparent;
+  color: var(--accent-ink, var(--text));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.oe-toast-undo:hover { background: var(--accent-soft, var(--surface)); }
+
+.oe-result {
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--paper-2, var(--surface));
+  font-size: 13px;
+}
+
+.oe-result h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 15px; }
+.oe-result ul { margin: 6px 0 0; padding-inline-start: 20px; }
+.oe-result a { margin-inline-start: 8px; color: var(--accent-ink, var(--text)); }
+.oe-warn { color: var(--warning, var(--accent-ink, var(--text))); }
+
+/* ── 图片上传弹窗 ───────────────────────────────────────────── */
+
+.oe-dialog {
+  inline-size: min(560px, calc(100vw - 32px));
+  max-block-size: min(86vh, 760px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-lg, 18px);
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(77, 60, 47, .22));
+}
+
+.oe-dialog[open] { display: block; }
+.oe-dialog h2 { margin: 0 0 8px; font-size: 17px; }
+
+.oe-dialog-hint {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 拖放区：主图标居中、文案在下，悬停/聚焦只做轻微提亮，不改结构逻辑。 */
+.oe-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-block-size: 150px;
+  padding: 20px 16px;
+  border: 1px dashed var(--line-strong, var(--line));
+  border-radius: var(--r-md, 12px);
+  background: var(--paper-2, var(--surface));
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .18s ease, background-color .18s ease;
+}
+.oe-drop.is-dragover {
+  border-color: var(--accent-ink, var(--accent));
+  border-style: solid;
+  background: var(--accent-soft, var(--paper-2, var(--surface)));
+  box-shadow: inset 0 0 0 1px var(--accent-ink, var(--accent));
+}
+.oe-drop.is-dragover .oe-drop-capture { opacity: 1; transform: translateY(-2px) scale(1.04); }
+
+.oe-drop-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 60px;
+  block-size: 60px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.oe-drop-capture {
+  opacity: .68; /* 淡金，非全亮 */
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.oe-drop:hover,
+.oe-drop:focus-within {
+  border-color: var(--accent, var(--accent-ink));
+  background: var(--accent-soft, var(--paper-2, var(--surface)));
+}
+
+.oe-drop:hover .oe-drop-capture,
+.oe-drop:focus-within .oe-drop-capture {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+
+.oe-drop p { margin: 0; color: var(--muted); font-size: 12px; }
+.oe-drop input { font-size: 13px; }
+
+.oe-img-preview {
+  margin-block-start: 12px;
+  max-block-size: 220px;
+  overflow: hidden;
+  border-radius: var(--r-sm, 8px);
+}
+
+.oe-img-preview img {
+  display: block;
+  max-inline-size: 100%;
+  max-block-size: 220px;
+  object-fit: contain;
+  margin-inline: auto;
+}
+
+.oe-err {
+  min-block-size: 20px;
+  margin: 8px 0 0;
+  color: var(--danger, #B5564A);
+  font-size: 12px;
+}
+
+.oe-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-block-start: 12px;
+}
+
+.oe-shots {
+  display: inline-grid;
+  justify-self: start;
+  gap: 6px;
+  min-inline-size: 120px;
+}
+
+.oe-shot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.oe-shot {
+  position: relative;
+  display: inline-block;
+}
+
+.oe-shot img {
+  inline-size: 66px;
+  block-size: 46px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm, 8px);
+  object-fit: cover;
+}
+
+/* 截图删除按钮：浅金底 + 深金墨细描边，去掉深棕实心圆块。 */
+.oe-shot-x {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-end: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 24px 基础命中区；共享 ui-icons.css 在 coarse 指针下再兜到 44px。 */
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(138, 101, 48, 0.85);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent, #D7B071) 10%, var(--paper, #FFFEFC));
+  color: var(--accent-ink, var(--text));
+  cursor: pointer;
+}
+
+.oe-shot-x .ui-glyph { filter: drop-shadow(0 0 1px rgba(138, 101, 48, .55)); }
+
+/* ── 赛后笔记（match-notes.js 生成的 .mn-* 结构） ───────────── */
+
+.mn-embed,
+.mn-page {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--paper);
+  color: var(--text);
+}
+
+.mn-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mn-kicker {
+  color: var(--accent-ink, var(--text));
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.mn-count {
+  margin-inline-start: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mn-add,
+.mn-edit,
+.mn-del,
+.mn-tagadd,
+.mn-tag-x {
+  min-block-size: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-sm, 8px);
+  background: var(--paper);
+  color: var(--accent-ink, var(--text));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mn-add:hover,
+.mn-edit:hover,
+.mn-tagadd:hover {
+  background: var(--soft, var(--surface));
+}
+
+.mn-del,
+.mn-tag-x { color: var(--danger, #B5564A); }
+
+.mn-list { display: grid; gap: 8px; }
+
+.mn-note {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm, 8px);
+  background: var(--paper-2, var(--surface));
+}
+
+.mn-body {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.mn-meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mn-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-block-start: 8px;
+}
+
+.mn-tag {
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  color: var(--accent-ink, var(--text));
+  font-size: 12px;
+}
+
+.mn-note-actions {
+  display: flex;
+  gap: 6px;
+  margin-block-start: 6px;
+}
+
+.mn-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mn-status {
+  min-block-size: 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.mn-status.is-ok { color: var(--success, #2AA68A); }
+.mn-status.is-error { color: var(--danger, #B5564A); }
+
+/* 独立页（mn-pagev2）：应用标准页壳 + 按对局分组的卡片。
+   分组头一行放「日期 · 对阵」（可点进复盘）、条数和写笔记；裸 matchKey 缩成
+   等宽小字副行，悬停有完整提示。 */
+.mn-pagev2 {
+  display: grid;
+  gap: 14px;
+  max-inline-size: 1100px;
+}
+
+.mn-page-intro { align-items: flex-end; }
+
+.mn-page-list { display: grid; gap: 12px; }
+
+.mn-group {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 12px);
+  background: var(--paper);
+}
+
+.mn-group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mn-group-main {
+  display: grid;
+  gap: 1px;
+  min-inline-size: 0;
+  margin-inline-end: auto;
+  color: inherit;
+  text-decoration: none;
+}
+
+.mn-group-main b {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.mn-group-main:hover b { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+
+.mn-group-main small {
+  overflow: hidden;
+  max-inline-size: 340px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
+  font-size: 10px;
+}
+
+.mn-page .mn-count {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--soft, var(--surface));
+  color: var(--accent-ink, var(--text));
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: 0;
+}
+
+.mn-dialog {
+  inline-size: min(520px, calc(100vw - 32px));
+  max-block-size: min(86vh, 720px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-lg, 18px);
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(77, 60, 47, .22));
+}
+
+.mn-dialog[open] { display: block; }
+.mn-dialog h2 { margin: 0 0 10px; font-size: 16px; }
+.mn-dialog textarea {
+  min-block-size: 150px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.mn-tag-input {
+  inline-size: min(240px, 100%);
+  min-block-size: 40px;
+}
+
+.mn-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-block-start: 14px;
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="125" height="475" viewBox="0 0 125 475" role="img">
+<title>5:19 英雄出装竖卡框</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient><linearGradient id="white-fade" x2="0%" y2="100%">
+ <stop stop-color="#fbf8f4" stop-opacity="0"/><stop offset=".48" stop-color="#fbf8f4" stop-opacity=".88"/><stop offset="1" stop-color="#fbf8f4"/>
+</linearGradient><linearGradient id="glass" x2="100%" y2="100%">
+ <stop stop-color="#fff" stop-opacity=".5"/><stop offset=".5" stop-color="#f8f6f4" stop-opacity=".21"/><stop offset="1" stop-color="#eee9e6" stop-opacity=".52"/>
+</linearGradient></defs>
+<defs><clipPath id="build-blank"><rect x="0" y="0" width="125" height="475" rx="15" fill="#fff"/></clipPath></defs><g clip-path="url(#build-blank)"><rect x="0.8" y="0.8" width="123.4" height="473.4" rx="15" fill="url(#pearl)" stroke="#fffcf6" stroke-width="0.8"/><path d="M0 0 Q30 332.5 77.5 0 H87.5 Q33.75 432.25 0 80.75Z" fill="#d8d5d8" opacity="0.27"/><path d="M0 304 Q56.25 61.75 90 0 Q30 304 0 470.25Z" fill="#d9d6d6" opacity="0.16"/><path d="M22.5 475 Q66.25 375.25 125 57 Q96.25 370.5 56.25 475Z" fill="#fffdfa" opacity="0.6"/><path d="M67.5 475 Q102.5 294.5 125 180.5 V270.75 Q115 356.25 91.25 475Z" fill="#fff" opacity="0.55"/><g transform="translate(97.5 0) scale(1 1)"><path d="M0 0 H19.5 Q27.5 0 27.5 8 V27.5 C26.95 7.7 18.7 0.275 0 0Z" fill="url(#gold)"/><path d="M2.2 0 C15.95 1 25.85 4.125 27.5 23.65 C27.225 5.775 19.25 0 2.2 0Z" fill="url(#teal-edge)"/></g><g transform="translate(27.5 475) scale(-1 -1)"><path d="M0 0 H19.5 Q27.5 0 27.5 8 V27.5 C26.95 7.7 18.7 0.275 0 0Z" fill="url(#gold)"/><path d="M2.2 0 C15.95 1 25.85 4.125 27.5 23.65 C27.225 5.775 19.25 0 2.2 0Z" fill="url(#teal-edge)"/></g></g><rect x="1" y="1" width="123" height="348" rx="13" fill="url(#glass)" stroke="#ffffffc8" stroke-width="1"/><rect x="1" y="293" width="123" height="181" rx="13" fill="url(#white-fade)"/>
+</svg>

@@ -1,0 +1,354 @@
+# 素材逐项索引
+
+每个链接打开对应 SVG。括号内为 `viewBox` 尺寸、素材类型和参考图编号。
+
+## 背景和容器
+
+- [主背景 · 漩涡原图](surfaces/main-background-swirl.svg) · 690 × 323 · 内嵌原图 · 图 1
+- [漩涡背景缩略卡](surfaces/swirl-background-tile.svg) · 372 × 165 · 内嵌原图 · 图 2
+- [漩涡背景方形纹理](surfaces/swirl-texture-square.svg) · 107 × 82 · 内嵌原图 · 图 5
+- [珍珠灰方形纹理](surfaces/pearl-texture-square.svg) · 80 × 82 · 内嵌原图 · 图 5
+- [珍珠白波纹底板](surfaces/pearl-background.svg) · 960 × 450 · 纯矢量 · 图 1、2、3、5
+- [主容器卡片](surfaces/main-card-container.svg) · 882 × 346 · 纯矢量 · 图 1
+- [比赛数据页宽卡片](surfaces/stats-card-wide.svg) · 422 × 159 · 纯矢量 · 图 2
+- [半透明过渡容器](surfaces/transition-overlay.svg) · 701 × 171 · 纯矢量 · 图 1
+- [半透明过渡容器 · 参考纹理](surfaces/transition-overlay-with-texture.svg) · 681 × 151 · 内嵌原图 · 图 1
+- [英雄出装对比中央面板](surfaces/hero-build-center-panel.svg) · 868 × 170 · 纯矢量 · 图 1
+- [半透明小卡片](surfaces/transition-card-compact.svg) · 220 × 162 · 纯矢量 · 图 2
+- [半透明小卡片 · 参考纹理](surfaces/transition-card-compact-with-texture.svg) · 220 × 162 · 内嵌原图 · 图 2
+- [下三分之一底板](surfaces/lower-third-background.svg) · 192 × 91 · 纯矢量 · 图 3
+- [下三分之一底板 · 参考纹理](surfaces/lower-third-wave-texture.svg) · 177 × 76 · 内嵌原图 · 图 3
+- [通用信息容器](surfaces/information-container.svg) · 107 × 87 · 纯矢量 · 图 3
+- [白金数据模块底板](surfaces/white-gold-module.svg) · 104 × 57 · 纯矢量 · 图 4
+- [横向辅助卡框](surfaces/support-frame-wide.svg) · 264 × 150 · 纯矢量 · 图 5
+- [近方形辅助卡框](surfaces/support-frame-square.svg) · 130 × 150 · 纯矢量 · 图 5
+- [竖向辅助卡框](surfaces/support-frame-tall.svg) · 112 × 169 · 纯矢量 · 图 5
+- [竖卡姓名区底座](surfaces/hero-card-base.svg) · 70 × 72 · 纯矢量 · 图 3
+- [竖卡白色渐变遮罩](surfaces/hero-card-fade.svg) · 100 × 112 · 纯矢量 · 图 3、5
+- [竖卡灰色渐变遮罩](surfaces/hero-card-top-veil.svg) · 60 × 73 · 纯矢量 · 图 3
+- [轻投影示例](surfaces/shadow-light.svg) · 128 × 68 · 纯矢量 · 图 1
+- [标准投影示例](surfaces/shadow-medium.svg) · 128 × 68 · 纯矢量 · 图 1
+- [强投影示例](surfaces/shadow-strong.svg) · 128 × 68 · 纯矢量 · 图 1
+
+## 赛事标题、胜负、比分和战队
+
+- [KPL 赛事金色徽章](broadcast/kpl-emblem.svg) · 200 × 176 · 内嵌原图 · 图 1、2、3、4、5
+- [年度总决赛字标](broadcast/finals-wordmark.svg) · 329 × 58 · 内嵌原图 · 图 2、3
+- [年度总决赛中心徽章](broadcast/finals-badge-stacked.svg) · 329 × 230 · 内嵌原图 · 图 2、3
+- [横排赛事徽章](broadcast/finals-badge-horizontal-full.svg) · 215 × 56 · 内嵌原图 · 图 3
+- [简化横排赛事徽章](broadcast/finals-badge-horizontal-compact.svg) · 215 × 51 · 内嵌原图 · 图 3
+- [KPL GRAND FINALS 2026 标题字标](broadcast/event-title-wordmark.svg) · 550 × 39 · 纯矢量 · 图 1、2、3、5
+- [赛事顶中标题条 · 宽版](broadcast/event-title-with-ornaments.svg) · 1030 × 56 · 纯矢量 · 图 1、2、3
+- [赛事顶中标题条 · 紧凑](broadcast/event-title-compact.svg) · 400 × 34 · 纯矢量 · 图 1、2、3
+- [GRAND FINALS](broadcast/event-caption-left.svg) · 148 × 21 · 纯矢量 · 图 2
+- [2026](broadcast/event-caption-year.svg) · 54 × 21 · 纯矢量 · 图 2
+- [KING PRO LEAGUE](broadcast/event-caption-right.svg) · 173 × 21 · 纯矢量 · 图 2
+- [总决赛标签底座](broadcast/grand-finals-tab-accent-blank.svg) · 288 × 66 · 纯矢量 · 图 2
+- [GRAND FINALS 标签](broadcast/grand-finals-tab-accent.svg) · 288 × 66 · 纯矢量 · 图 2
+- [总决赛标签底座](broadcast/grand-finals-tab-swirl-blank.svg) · 288 × 66 · 纯矢量 · 图 2
+- [GRAND FINALS 标签](broadcast/grand-finals-tab-swirl.svg) · 288 × 66 · 纯矢量 · 图 2
+- [失败 LOSE 字标](broadcast/result-lose-wordmark.svg) · 425 × 106 · 纯矢量 · 图 1、2
+- [失败 LOSE 侧块](broadcast/result-lose-block.svg) · 252 × 114 · 纯矢量 · 图 1
+- [胜利 WIN 字标](broadcast/result-win-wordmark.svg) · 425 × 106 · 纯矢量 · 图 1、2
+- [胜利 WIN 侧块](broadcast/result-win-block.svg) · 252 × 114 · 纯矢量 · 图 1
+- [胜负侧块底板](broadcast/result-block-blank.svg) · 252 × 114 · 纯矢量 · 图 1
+- [比分数字 0](broadcast/score-digit-0.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 1](broadcast/score-digit-1.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 2](broadcast/score-digit-2.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 3](broadcast/score-digit-3.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 4](broadcast/score-digit-4.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 5](broadcast/score-digit-5.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 6](broadcast/score-digit-6.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 7](broadcast/score-digit-7.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 8](broadcast/score-digit-8.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分数字 9](broadcast/score-digit-9.svg) · 60 × 58 · 纯矢量 · 图 2
+- [比分 VS](broadcast/score-vs.svg) · 79 × 42 · 纯矢量 · 图 2、3
+- [比分 1 vs 0](broadcast/score-1-v-0.svg) · 261 × 52 · 纯矢量 · 图 3
+- [比分 1 vs 1](broadcast/score-1-v-1.svg) · 261 × 52 · 纯矢量 · 图 3
+- [比分白金底板](broadcast/score-plate-blank.svg) · 261 × 52 · 纯矢量 · 图 2、3
+- [北京WB · 队名按钮](broadcast/team-wb-plain.svg) · 218 × 70 · 纯矢量 · 图 2
+- [北京JDG · 队名按钮](broadcast/team-jdg-plain.svg) · 218 × 70 · 纯矢量 · 图 2
+- [战队条空白 · 队名按钮](broadcast/team-plain-blank.svg) · 218 × 70 · 纯矢量 · 图 2
+- [北京WB · 线框队徽按钮](broadcast/team-wb-outline.svg) · 221 × 70 · 矢量叠加原图 · 图 2
+- [北京JDG · 线框队徽按钮](broadcast/team-jdg-outline.svg) · 221 × 70 · 矢量叠加原图 · 图 2
+- [战队条空白 · 线框队徽按钮](broadcast/team-outline-blank.svg) · 221 × 70 · 纯矢量 · 图 2
+- [北京WB · 带队徽战队名条](broadcast/team-wb-emblem.svg) · 295 × 67 · 矢量叠加原图 · 图 3
+- [北京JDG · 带队徽战队名条](broadcast/team-jdg-emblem.svg) · 295 × 67 · 矢量叠加原图 · 图 3
+- [战队条空白 · 带队徽名条](broadcast/team-emblem-blank.svg) · 295 × 67 · 纯矢量 · 图 3
+- [北京WB · 比分宽版战队名条](broadcast/team-wb-wide.svg) · 341 × 88 · 矢量叠加原图 · 图 2
+- [北京JDG · 比分宽版战队名条](broadcast/team-jdg-wide.svg) · 341 × 88 · 矢量叠加原图 · 图 2
+- [战队条空白 · 宽版比分名条](broadcast/team-wide-blank.svg) · 341 × 88 · 纯矢量 · 图 2
+- [北京WB 深色队徽](broadcast/team-wb-mark.svg) · 60 × 60 · 内嵌原图 · 图 2、3、5
+- [北京WB 金色队徽座](broadcast/team-wb-gold-tile.svg) · 86 × 81 · 内嵌原图 · 图 2、3
+- [北京WB 珍珠白队徽座](broadcast/team-wb-light-holder.svg) · 76 × 83 · 矢量叠加原图 · 图 5
+- [北京JDG 深色队徽](broadcast/team-jdg-mark.svg) · 60 × 60 · 内嵌原图 · 图 2、3、5
+- [北京JDG 金色队徽座](broadcast/team-jdg-gold-tile.svg) · 86 × 81 · 内嵌原图 · 图 2、3
+- [北京JDG 珍珠白队徽座](broadcast/team-jdg-light-holder.svg) · 76 × 83 · 矢量叠加原图 · 图 5
+- [金色队徽底座](broadcast/team-logo-holder-blank.svg) · 86 × 81 · 纯矢量 · 图 2、3
+- [KPL 金色赛事徽章座](broadcast/kpl-gold-holder.svg) · 76 × 84 · 内嵌原图 · 图 5
+- [北京WB 1 VS 1 北京JDG · 宽版](broadcast/scoreboard-wide.svg) · 980 × 89 · 矢量叠加原图 · 图 2
+- [总比分条空白 · 宽版](broadcast/scoreboard-wide-blank.svg) · 980 × 89 · 纯矢量 · 图 2
+- [北京WB 1 VS 1 北京JDG · 紧凑版](broadcast/scoreboard-compact.svg) · 900 × 60 · 矢量叠加原图 · 图 2
+- [总比分条空白 · 紧凑版](broadcast/scoreboard-compact-blank.svg) · 900 × 60 · 纯矢量 · 图 2
+- [输出伤害](broadcast/metric-tab-output.svg) · 222 × 59 · 纯矢量 · 图 2
+- [承受伤害](broadcast/metric-tab-taken.svg) · 211 × 59 · 纯矢量 · 图 2
+- [总经济](broadcast/metric-tab-economy.svg) · 209 × 59 · 纯矢量 · 图 2
+- [参团率](broadcast/metric-tab-participation.svg) · 202 × 59 · 纯矢量 · 图 2
+- [数据指标按钮底座](broadcast/metric-tab-blank.svg) · 212 × 59 · 纯矢量 · 图 2
+
+## BP 槽位、竖卡和下三分之一
+
+- [梓墨 · BP 英雄竖卡](bp/hero-card-zi-mo.svg) · 98 × 265 · 矢量叠加原图 · 图 3
+- [暖阳 · BP 英雄竖卡](bp/hero-card-nuan-yang.svg) · 96 × 265 · 矢量叠加原图 · 图 3
+- [听悦 · BP 英雄竖卡](bp/hero-card-ting-yue.svg) · 96 × 265 · 矢量叠加原图 · 图 3
+- [昭珏 · BP 英雄竖卡](bp/hero-card-zhao-jue.svg) · 95 × 265 · 矢量叠加原图 · 图 3
+- [一笙 · BP 英雄竖卡](bp/hero-card-yi-sheng.svg) · 95 × 265 · 矢量叠加原图 · 图 3
+- [BP 英雄竖卡 · 带底座与遮罩](bp/hero-card-veiled.svg) · 98 × 252 · 纯矢量 · 图 3
+- [BP 英雄竖卡 · 带底座](bp/hero-card-plain.svg) · 98 × 252 · 纯矢量 · 图 3
+- [BP 英雄竖卡 · 新增占位](bp/hero-card-add.svg) · 98 × 252 · 纯矢量 · 图 3
+- [BP 槽位 · 选用](bp/capsule-pick.svg) · 70 × 58 · 纯矢量 · 图 3
+- [BP 槽位 · 选用样例](bp/capsule-pick-example.svg) · 70 × 58 · 内嵌原图 · 图 3
+- [BP 槽位 · 禁用](bp/capsule-ban.svg) · 70 × 58 · 纯矢量 · 图 3
+- [BP 槽位 · 禁用样例](bp/capsule-ban-example.svg) · 70 × 58 · 内嵌原图 · 图 3
+- [BP 槽位 · 空槽](bp/capsule-empty.svg) · 70 × 58 · 纯矢量 · 图 3
+- [BP 槽位 · 新增](bp/capsule-add.svg) · 70 × 58 · 纯矢量 · 图 3
+- [BP 顶部小头像槽空底](bp/mini-slot-blank.svg) · 50 × 50 · 纯矢量 · 图 3
+- [BP 顶部小头像禁用斜杠](bp/mini-slot-ban-overlay.svg) · 50 × 50 · 纯矢量 · 图 3
+- [BP 顶部小头像槽 · 蓝色](bp/mini-slot-blue.svg) · 50 × 50 · 内嵌原图 · 图 3
+- [BP 顶部小头像槽 · 红色](bp/mini-slot-red.svg) · 50 × 50 · 内嵌原图 · 图 3
+- [BP 顶部小头像槽 · 灰色禁用](bp/mini-slot-banned.svg) · 50 × 50 · 内嵌原图 · 图 3
+- [BP 顶部小头像槽 · 金色](bp/mini-slot-gold.svg) · 50 × 50 · 内嵌原图 · 图 3
+- [BP 顶部小头像槽 · 青色](bp/mini-slot-teal.svg) · 50 × 50 · 内嵌原图 · 图 3
+- [下三分之一 · 左队小头像 1](bp/lower-third-mini-left-01.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 左队小头像 2](bp/lower-third-mini-left-02.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 左队小头像 3](bp/lower-third-mini-left-03.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 左队小头像 4](bp/lower-third-mini-left-04.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 左队小头像 5](bp/lower-third-mini-left-05.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 右队小头像 1](bp/lower-third-mini-right-01.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 右队小头像 2](bp/lower-third-mini-right-02.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 右队小头像 3](bp/lower-third-mini-right-03.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 右队小头像 4](bp/lower-third-mini-right-04.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [下三分之一 · 右队小头像 5](bp/lower-third-mini-right-05.svg) · 33 × 32 · 内嵌原图 · 图 3
+- [梓墨 · 下三分之一英雄卡](bp/lower-third-card-zi-mo.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [暖阳 · 下三分之一英雄卡](bp/lower-third-card-nuan-yang.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [听悦 · 下三分之一英雄卡](bp/lower-third-card-ting-yue.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [昭珏 · 下三分之一英雄卡](bp/lower-third-card-zhao-jue.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [一笙 · 下三分之一英雄卡](bp/lower-third-card-yi-sheng.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [无畏 · 下三分之一英雄卡](bp/lower-third-card-wu-wei.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [小寒 · 下三分之一英雄卡](bp/lower-third-card-xiao-han.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [清融 · 下三分之一英雄卡](bp/lower-third-card-qing-rong.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [无双 · 下三分之一英雄卡](bp/lower-third-card-wu-shuang.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [光明 · 下三分之一英雄卡](bp/lower-third-card-guang-ming.svg) · 69 × 150 · 内嵌原图 · 图 3
+- [下三分之一英雄卡底座](bp/lower-third-card-blank.svg) · 69 × 150 · 纯矢量 · 图 3
+- [BP 下三分之一组合空白](bp/lower-third-blank.svg) · 864 × 195 · 纯矢量 · 图 3
+- [BP / 对局下三分之一完整示例](bp/lower-third-composition.svg) · 864 × 195 · 矢量叠加原图 · 图 3
+- [英雄角标 · 红色](bp/hero-tag-red.svg) · 40 × 40 · 内嵌原图 · 图 3、5
+- [英雄角标 · 紫色](bp/hero-tag-purple.svg) · 40 × 40 · 内嵌原图 · 图 3、5
+- [英雄角标 · 金色](bp/hero-tag-gold.svg) · 40 × 40 · 内嵌原图 · 图 3、5
+- [金色角标底座](bp/tag-holder-gold.svg) · 58 × 55 · 纯矢量 · 图 3
+- [浅色角标底座](bp/tag-holder-light.svg) · 58 × 55 · 纯矢量 · 图 3
+- [角标新增占位](bp/tag-holder-add.svg) · 58 × 55 · 纯矢量 · 图 3
+
+## 图表、数值和统计行
+
+- [五轴雷达图网格](charts/radar-grid-5.svg) · 80 × 80 · 纯矢量 · 图 4
+- [八轴雷达图网格](charts/radar-grid-8.svg) · 336 × 336 · 纯矢量 · 图 4
+- [雷达图 · 队伍 A 数据面](charts/radar-team-a-polygon.svg) · 336 × 336 · 纯矢量 · 图 4
+- [雷达图 · 队伍 A 顶点](charts/radar-team-a-point.svg) · 18 × 18 · 纯矢量 · 图 4
+- [雷达图图例 · 队伍 A 色块](charts/radar-legend-polygon-a.svg) · 68 × 60 · 纯矢量 · 图 4
+- [雷达图 · 队伍 B 数据面](charts/radar-team-b-polygon.svg) · 336 × 336 · 纯矢量 · 图 4
+- [雷达图 · 队伍 B 顶点](charts/radar-team-b-point.svg) · 18 × 18 · 纯矢量 · 图 4
+- [雷达图图例 · 队伍 B 色块](charts/radar-legend-polygon-b.svg) · 68 × 60 · 纯矢量 · 图 4
+- [选手对比雷达图样例](charts/radar-comparison.svg) · 336 × 336 · 纯矢量 · 图 4
+- [Radar Grid (5 axis)](charts/radar-legend-grid.svg) · 212 × 65 · 纯矢量 · 图 4
+- [Polygon - Team A](charts/radar-legend-team-a.svg) · 212 × 65 · 纯矢量 · 图 4
+- [Polygon - Team B](charts/radar-legend-team-b.svg) · 212 × 65 · 纯矢量 · 图 4
+- [Vertex Point](charts/radar-legend-points.svg) · 212 × 65 · 纯矢量 · 图 4
+- [选手对比雷达图模块](charts/radar-module.svg) · 594 × 375 · 纯矢量 · 图 4
+- [经济差金色走势线](charts/economy-trend-line.svg) · 622 × 72 · 纯矢量 · 图 4
+- [经济差走势图填色](charts/economy-difference-area.svg) · 622 × 72 · 纯矢量 · 图 4
+- [经济差折线与填色样例](charts/economy-difference-plot.svg) · 622 × 72 · 纯矢量 · 图 4
+- [经济差横向网格](charts/economy-grid.svg) · 624 × 152 · 纯矢量 · 图 4
+- [Gold Trend Line](charts/economy-legend-trend.svg) · 226 × 54 · 纯矢量 · 图 4
+- [Difference Area](charts/economy-legend-area.svg) · 226 × 54 · 纯矢量 · 图 4
+- [Chart Grid Line](charts/economy-legend-grid.svg) · 226 × 54 · 纯矢量 · 图 4
+- [胜负页经济差走势图模块](charts/economy-difference-module.svg) · 974 × 264 · 纯矢量 · 图 4
+- [时间轴四个刻度样例](charts/axis-time-row.svg) · 230 × 33 · 纯矢量 · 图 4
+- [时间轴刻度 00:00](charts/axis-time-start.svg) · 62 × 30 · 纯矢量 · 图 4
+- [时间轴刻度 04:52](charts/axis-time-first.svg) · 62 × 30 · 纯矢量 · 图 4
+- [时间轴刻度 09:44](charts/axis-time-second.svg) · 62 × 30 · 纯矢量 · 图 4
+- [时间轴刻度 14:36](charts/axis-time-end.svg) · 62 × 30 · 纯矢量 · 图 4
+- [经济差轴数值 10.3K](charts/axis-value-positive.svg) · 74 × 34 · 纯矢量 · 图 4
+- [经济差轴数值 -10.3K](charts/axis-value-negative.svg) · 74 × 34 · 纯矢量 · 图 4
+- [轴数值底座](charts/numeric-chip-blank.svg) · 74 × 34 · 纯矢量 · 图 4
+- [分均经济指标标签](charts/axis-metric-label.svg) · 124 × 30 · 纯矢量 · 图 4
+- [数值示例 66.7%](charts/numeric-percent-left.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值示例 33.3%](charts/numeric-percent-right.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值对比 66.7% / 33.3%](charts/numeric-percent-comparison.svg) · 178 × 28 · 纯矢量 · 图 4
+- [数值示例 8393](charts/numeric-economy-left.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值示例 8202](charts/numeric-economy-right.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值对比 8393 / 8202](charts/numeric-economy-comparison.svg) · 178 × 28 · 纯矢量 · 图 4
+- [数值示例 57](charts/numeric-count-left.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值示例 57](charts/numeric-count-right.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值对比 57 / 57](charts/numeric-count-comparison.svg) · 178 × 28 · 纯矢量 · 图 4
+- [数值示例 668.2](charts/numeric-decimal-left.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值示例 731.4](charts/numeric-decimal-right.svg) · 83 × 28 · 纯矢量 · 图 4
+- [数值对比 668.2 / 731.4](charts/numeric-decimal-comparison.svg) · 178 × 28 · 纯矢量 · 图 4
+- [塔 · 战场目标图标](charts/objective-icon-tower.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [暴君 · 战场目标图标](charts/objective-icon-tyrant.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [暗影暴君 · 战场目标图标](charts/objective-icon-shadow-tyrant.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [风暴龙王 · 战场目标图标](charts/objective-icon-storm-dragon.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [主宰 · 战场目标图标](charts/objective-icon-overlord.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [暗影主宰 · 战场目标图标](charts/objective-icon-shadow-overlord.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [经济 · 战场目标图标](charts/objective-icon-economy.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [KDA · 战场目标图标](charts/objective-icon-kda.svg) · 36 × 36 · 内嵌原图 · 图 4
+- [对局摘要战场目标图标组合](charts/objective-icon-row.svg) · 576 × 76 · 矢量叠加原图 · 图 4
+- [对局摘要战场目标模块](charts/objective-module.svg) · 594 × 166 · 矢量叠加原图 · 图 4
+- [坐标轴与数值样式模块](charts/axis-numeric-module.svg) · 594 × 209 · 纯矢量 · 图 4
+- [横向数据条轨道](charts/progress-track.svg) · 355 × 20 · 纯矢量 · 图 4、5
+- [输出伤害进度条](charts/progress-output.svg) · 355 × 20 · 纯矢量 · 图 4、5
+- [输出伤害填充](charts/progress-output-fill.svg) · 64 × 18 · 纯矢量 · 图 4、5
+- [输出伤害数值单元格](charts/stat-cell-output.svg) · 167 × 42 · 纯矢量 · 图 4、5
+- [输出伤害图例](charts/progress-legend-output.svg) · 190 × 39 · 纯矢量 · 图 4
+- [承受伤害进度条](charts/progress-taken.svg) · 355 × 20 · 纯矢量 · 图 4、5
+- [承受伤害填充](charts/progress-taken-fill.svg) · 64 × 18 · 纯矢量 · 图 4、5
+- [承受伤害数值单元格](charts/stat-cell-taken.svg) · 167 × 42 · 纯矢量 · 图 4、5
+- [承受伤害图例](charts/progress-legend-taken.svg) · 190 × 39 · 纯矢量 · 图 4
+- [总经济进度条](charts/progress-economy.svg) · 355 × 20 · 纯矢量 · 图 4、5
+- [总经济填充](charts/progress-economy-fill.svg) · 64 × 18 · 纯矢量 · 图 4、5
+- [总经济数值单元格](charts/stat-cell-economy.svg) · 167 × 42 · 纯矢量 · 图 4、5
+- [总经济图例](charts/progress-legend-economy.svg) · 190 × 39 · 纯矢量 · 图 4
+- [参团率进度条](charts/progress-participation.svg) · 355 × 20 · 纯矢量 · 图 4、5
+- [参团率填充](charts/progress-participation-fill.svg) · 64 × 18 · 纯矢量 · 图 4、5
+- [参团率数值单元格](charts/stat-cell-participation.svg) · 167 × 42 · 纯矢量 · 图 4、5
+- [参团率图例](charts/progress-legend-participation.svg) · 190 × 39 · 纯矢量 · 图 4
+- [十人面板横向对比条模块](charts/horizontal-comparison-module.svg) · 975 × 212 · 纯矢量 · 图 4
+- [数值和进度条单元格底座](charts/stat-cell-blank.svg) · 167 × 42 · 纯矢量 · 图 4、5
+- [十人数据行底座](charts/stat-row-blank.svg) · 935 × 55 · 纯矢量 · 图 4、5
+- [十人数据行 · 四项指标样例](charts/stat-row-ten-player.svg) · 935 × 55 · 矢量叠加原图 · 图 4
+- [十人数据行模块](charts/stat-row-module.svg) · 974 × 117 · 矢量叠加原图 · 图 4
+- [分隔线和模块边角组合](charts/divider-rules-module.svg) · 972 × 140 · 纯矢量 · 图 4
+
+## 选手、装备和位置模块
+
+- [梓墨 · 英雄与出装竖卡](modules/hero-build-card-zi-mo.svg) · 118 × 503 · 矢量叠加原图 · 图 5
+- [梓墨 · 出装图标 1](modules/hero-build-item-zi-mo-1.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [梓墨 · 出装图标 2](modules/hero-build-item-zi-mo-2.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [梓墨 · 出装图标 3](modules/hero-build-item-zi-mo-3.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [梓墨 · 出装图标 4](modules/hero-build-item-zi-mo-4.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [暖阳 · 英雄与出装竖卡](modules/hero-build-card-nuan-yang.svg) · 113 × 503 · 矢量叠加原图 · 图 5
+- [暖阳 · 出装图标 1](modules/hero-build-item-nuan-yang-1.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [暖阳 · 出装图标 2](modules/hero-build-item-nuan-yang-2.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [暖阳 · 出装图标 3](modules/hero-build-item-nuan-yang-3.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [暖阳 · 出装图标 4](modules/hero-build-item-nuan-yang-4.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [听悦 · 英雄与出装竖卡](modules/hero-build-card-ting-yue.svg) · 116 × 503 · 矢量叠加原图 · 图 5
+- [听悦 · 出装图标 1](modules/hero-build-item-ting-yue-1.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [听悦 · 出装图标 2](modules/hero-build-item-ting-yue-2.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [听悦 · 出装图标 3](modules/hero-build-item-ting-yue-3.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [听悦 · 出装图标 4](modules/hero-build-item-ting-yue-4.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [昭珏 · 英雄与出装竖卡](modules/hero-build-card-zhao-jue.svg) · 113 × 503 · 矢量叠加原图 · 图 5
+- [昭珏 · 出装图标 1](modules/hero-build-item-zhao-jue-1.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [昭珏 · 出装图标 2](modules/hero-build-item-zhao-jue-2.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [昭珏 · 出装图标 3](modules/hero-build-item-zhao-jue-3.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [昭珏 · 出装图标 4](modules/hero-build-item-zhao-jue-4.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [一笙 · 英雄与出装竖卡](modules/hero-build-card-yi-sheng.svg) · 110 × 503 · 矢量叠加原图 · 图 5
+- [一笙 · 出装图标 1](modules/hero-build-item-yi-sheng-1.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [一笙 · 出装图标 2](modules/hero-build-item-yi-sheng-2.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [一笙 · 出装图标 3](modules/hero-build-item-yi-sheng-3.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [一笙 · 出装图标 4](modules/hero-build-item-yi-sheng-4.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [5:19 英雄出装竖卡框](modules/hero-build-card-blank.svg) · 125 × 475 · 纯矢量 · 图 5
+- [5:19 英雄出装竖卡边框](modules/hero-build-card-frame.svg) · 125 × 475 · 纯矢量 · 图 5
+- [装备图标 1](modules/equipment-icon-01.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [装备图标 2](modules/equipment-icon-02.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [装备图标 3](modules/equipment-icon-03.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [装备图标 4](modules/equipment-icon-04.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [装备图标 5](modules/equipment-icon-05.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [装备图标 6](modules/equipment-icon-06.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [独立展示装备图标](modules/equipment-icon-featured.svg) · 40 × 40 · 内嵌原图 · 图 5
+- [圆形装备图标底座](modules/equipment-icon-slot.svg) · 40 × 40 · 纯矢量 · 图 5
+- [装备 2×3 组合 · 空白](modules/equipment-cluster-blank.svg) · 144 × 88 · 纯矢量 · 图 5
+- [装备 2×3 组合 · 样例](modules/equipment-cluster-example.svg) · 144 × 88 · 矢量叠加原图 · 图 5
+- [雷达页选手相框](modules/player-portrait-frame.svg) · 208 × 241 · 纯矢量 · 图 5
+- [雷达页选手照片蒙版](modules/player-portrait-mask.svg) · 208 × 241 · 纯矢量 · 图 5
+- [雷达页选手相框描边](modules/player-portrait-frame-overlay.svg) · 208 × 241 · 纯矢量 · 图 5
+- [雷达页选手照片示例](modules/player-portrait-example.svg) · 208 × 241 · 矢量叠加原图 · 图 5
+- [雷达页英雄头像](modules/hero-avatar-portrait.svg) · 116 × 118 · 内嵌原图 · 图 5
+- [列表英雄头像](modules/hero-avatar-small.svg) · 108 × 108 · 内嵌原图 · 图 5
+- [统计行蓝发英雄头像](modules/hero-avatar-blue.svg) · 46 × 46 · 内嵌原图 · 图 4
+- [统计行英雄头像](modules/hero-avatar-stat.svg) · 51 × 49 · 内嵌原图 · 图 5
+- [通用深底英雄头像框](modules/hero-avatar-blank.svg) · 108 × 108 · 纯矢量 · 图 5
+- [雷达页深底英雄头像框](modules/hero-avatar-portrait-blank.svg) · 117 × 120 · 纯矢量 · 图 5
+- [浅底通用图标框](modules/icon-holder-empty.svg) · 76 × 84 · 纯矢量 · 图 5
+- [对抗路位置图标](modules/role-icon-clash.svg) · 40 × 40 · 纯矢量 · 图 5
+- [对抗路位置标签](modules/role-button-clash.svg) · 56 × 69 · 纯矢量 · 图 5
+- [打野位置图标](modules/role-icon-jungle.svg) · 40 × 40 · 纯矢量 · 图 5
+- [打野位置标签](modules/role-button-jungle.svg) · 56 × 69 · 纯矢量 · 图 5
+- [中路位置图标](modules/role-icon-mid.svg) · 40 × 40 · 纯矢量 · 图 5
+- [中路位置标签](modules/role-button-mid.svg) · 56 × 69 · 纯矢量 · 图 5
+- [发育路位置图标](modules/role-icon-farm.svg) · 40 × 40 · 纯矢量 · 图 5
+- [发育路位置标签](modules/role-button-farm.svg) · 56 × 69 · 纯矢量 · 图 5
+- [游走位置图标](modules/role-icon-roam.svg) · 40 × 40 · 纯矢量 · 图 5
+- [游走位置标签](modules/role-button-roam.svg) · 56 × 69 · 纯矢量 · 图 5
+- [位置图标金色底座](modules/role-icon-holder-blank.svg) · 40 × 40 · 纯矢量 · 图 5
+- [位置标签空白底座](modules/role-button-blank.svg) · 56 × 69 · 纯矢量 · 图 5
+- [选手名牌空白底板](modules/player-nameplate-blank.svg) · 336 × 72 · 纯矢量 · 图 5
+- [北京WB.梓墨选手名牌](modules/player-nameplate-example.svg) · 336 × 72 · 纯矢量 · 图 5
+- [十人数据行 · 双指标紧凑样例](modules/stat-row-compact.svg) · 583 × 64 · 矢量叠加原图 · 图 5
+- [十人数据行紧凑底板](modules/stat-row-compact-blank.svg) · 583 × 64 · 纯矢量 · 图 5
+- [输出伤害小型统计条](modules/stat-bar-output.svg) · 130 × 22 · 纯矢量 · 图 5
+- [承受伤害小型统计条](modules/stat-bar-taken.svg) · 130 × 22 · 纯矢量 · 图 5
+- [总经济小型统计条](modules/stat-bar-economy.svg) · 130 × 22 · 纯矢量 · 图 5
+- [参团率小型统计条](modules/stat-bar-participation.svg) · 130 × 22 · 纯矢量 · 图 5
+- [四项统计条组合](modules/stat-bar-group.svg) · 564 × 24 · 纯矢量 · 图 5
+- [40 × 40 装备尺寸标记](modules/equipment-dimension-40.svg) · 108 × 106 · 纯矢量 · 图 5
+
+## 角饰、高光、分隔线和色板
+
+- [细分割线](decor/divider-thin.svg) · 360 × 16 · 纯矢量 · 图 1、4
+- [浅分割线](decor/divider-light.svg) · 360 × 16 · 纯矢量 · 图 1、3、4
+- [深分割线](decor/divider-dark.svg) · 360 × 16 · 纯矢量 · 图 2、3
+- [图表网格线](decor/grid-line.svg) · 360 × 16 · 纯矢量 · 图 4
+- [赛事标题双端卷曲分隔线](decor/divider-title-flourish.svg) · 425 × 29 · 纯矢量 · 图 1、3、4、5
+- [左卷曲装饰](decor/flourish-left.svg) · 96 × 31 · 纯矢量 · 图 1、2、3、4、5
+- [右卷曲装饰](decor/flourish-right.svg) · 96 × 31 · 纯矢量 · 图 1、2、3、4、5
+- [金色竖分隔线](decor/divider-vertical-gold.svg) · 10 × 66 · 纯矢量 · 图 2、5
+- [灰色竖分隔线](decor/divider-vertical-gray.svg) · 8 × 110 · 纯矢量 · 图 3、4
+- [金色横条](decor/divider-gold-top.svg) · 258 × 10 · 纯矢量 · 图 3
+- [金色波折分割线及色块](decor/divider-gold-jagged.svg) · 444 × 51 · 纯矢量 · 图 1、2
+- [右上金色圆角](decor/corner-top-right.svg) · 84 × 84 · 纯矢量 · 图 1、2、4、5
+- [左上金色圆角](decor/corner-top-left.svg) · 84 × 84 · 纯矢量 · 图 1、2、4、5
+- [右下金色圆角](decor/corner-bottom-right.svg) · 84 × 84 · 纯矢量 · 图 1、2、4、5
+- [左下金色圆角](decor/corner-bottom-left.svg) · 84 × 84 · 纯矢量 · 图 1、2、4、5
+- [青金双边顶部角饰](decor/corner-bridge-teal.svg) · 217 × 46 · 纯矢量 · 图 1
+- [金边顶部角饰](decor/corner-bridge-gold.svg) · 217 × 46 · 纯矢量 · 图 1
+- [面板右上描边样式](decor/panel-edge-top-right.svg) · 193 × 94 · 纯矢量 · 图 1
+- [面板右下描边样式](decor/panel-edge-bottom-right.svg) · 193 × 94 · 纯矢量 · 图 1
+- [长弧面高光](decor/highlight-sweep.svg) · 137 × 52 · 纯矢量 · 图 1
+- [斜线高光](decor/highlight-slash.svg) · 57 × 57 · 纯矢量 · 图 1
+- [横向闪光](decor/highlight-glint.svg) · 82 × 34 · 纯矢量 · 图 1
+- [短圆角高光](decor/highlight-arc.svg) · 83 × 55 · 纯矢量 · 图 1
+- [小节金色斜杠](decor/section-slash.svg) · 20 × 20 · 纯矢量 · 图 1、3
+- [三道金色斜杠](decor/section-triple-slash.svg) · 42 × 27 · 纯矢量 · 图 5
+- [数据标题三角标记](decor/section-triangle.svg) · 20 × 20 · 纯矢量 · 图 4
+- [素材板页眉白金弧线底板](decor/section-header-background.svg) · 1672 × 94 · 纯矢量 · 图 1、3、4、5
+- [素材板编号底座](decor/board-id.svg) · 110 × 28 · 纯矢量 · 图 3、4
+- [素材包描边徽标底座](decor/asset-caption.svg) · 263 × 28 · 纯矢量 · 图 5
+- [BACKGROUNDS & CONTAINERS](decor/board-label-s1.svg) · 333 × 31 · 纯矢量 · 图 1
+- [BOARD 3](decor/board-label-s3.svg) · 105 × 31 · 纯矢量 · 图 3
+- [BOARD 4](decor/board-label-s4.svg) · 113 × 31 · 纯矢量 · 图 4
+- [UI MATERIAL PACK / FRONT-END RECREATION](decor/board-label-pack.svg) · 265 × 31 · 纯矢量 · 图 5
+- [A. VERTICAL HERO PORTRAIT CARD](decor/module-section-a.svg) · 260 × 29 · 纯矢量 · 图 5
+- [B. EQUIPMENT / ITEM CLUSTER](decor/module-section-b.svg) · 236 × 29 · 纯矢量 · 图 5
+- [C. PLAYER PORTRAIT MASK](decor/module-section-c.svg) · 204 × 29 · 纯矢量 · 图 5
+- [D. PLAYER NAMEPLATE & ROLE LABELS](decor/module-section-d.svg) · 284 × 29 · 纯矢量 · 图 5
+- [E. TEN-PLAYER STAT ROW](decor/module-section-e.svg) · 196 × 29 · 纯矢量 · 图 5
+- [F. HERO AVATAR](decor/module-section-f.svg) · 182 × 29 · 纯矢量 · 图 5
+- [G. ICON HOLDERS](decor/module-section-g.svg) · 182 × 29 · 纯矢量 · 图 5
+- [H. CARD & PANEL FRAMES](decor/module-section-h.svg) · 196 × 29 · 纯矢量 · 图 5
+- [I. COMMON COMPONENTS](decor/module-section-i.svg) · 182 × 29 · 纯矢量 · 图 5
+- [主背景 #F8F7F3](decor/swatch-surface.svg) · 48 × 48 · 纯矢量 · 图 3
+- [主文字 #2F281E](decor/swatch-ink.svg) · 48 × 48 · 纯矢量 · 图 3
+- [品牌金 #D7B071](decor/swatch-gold.svg) · 48 × 48 · 纯矢量 · 图 3
+- [强调色 #2AA68A](decor/swatch-teal.svg) · 48 × 48 · 纯矢量 · 图 3
+- [中性灰 #E6E6EA](decor/swatch-neutral.svg) · 48 × 48 · 纯矢量 · 图 3
+

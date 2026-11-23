@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="882" height="346" viewBox="0 0 882 346" role="img">
+<title>主容器卡片</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient><filter id="medium" x="-40%" y="-75%" width="180%" height="250%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#4d3c2f" flood-opacity=".24"/></filter></defs>
+<g transform="translate(13 13) scale(1 1)"><g filter="url(#medium)"><defs><clipPath id="panel"><rect x="0" y="0" width="856" height="320" rx="29" fill="#fff"/></clipPath></defs><g clip-path="url(#panel)"><rect x="0.8" y="0.8" width="854.4" height="318.4" rx="29" fill="url(#pearl)" stroke="#fffcf6" stroke-width="0.8"/><path d="M0 0 Q205.44 224 530.72 0 H599.2 Q231.12 291.2 0 54.4Z" fill="#d8d5d8" opacity="0.27"/><path d="M0 204.8 Q385.2 41.6 616.32 0 Q205.44 204.8 0 316.8Z" fill="#d9d6d6" opacity="0.16"/><path d="M154.08 320 Q453.68 252.8 856 38.4 Q659.12 249.6 385.2 320Z" fill="#fffdfa" opacity="0.6"/><path d="M462.24 320 Q701.92 198.4 856 121.6 V182.4 Q787.52 240 624.88 320Z" fill="#fff" opacity="0.55"/><g transform="translate(756 0) scale(1 1)"><path d="M0 0 H92 Q100 0 100 8 V100 C98 28 68 1 0 0Z" fill="url(#gold)"/><path d="M8 0 C58 1 94 15 100 86 C99 21 70 0 8 0Z" fill="url(#teal-edge)"/></g><g transform="translate(100 320) scale(-1 -1)"><path d="M0 0 H92 Q100 0 100 8 V100 C98 28 68 1 0 0Z" fill="url(#gold)"/><path d="M8 0 C58 1 94 15 100 86 C99 21 70 0 8 0Z" fill="url(#teal-edge)"/></g></g></g></g>
+</svg>

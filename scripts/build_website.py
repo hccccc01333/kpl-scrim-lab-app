@@ -43,8 +43,8 @@ SPONSOR_URL = 'https://afdian.com/a/kplscrim'
 SITE_NAME = '雨乐赛训'
 SITE_FULL_NAME = '雨乐王者赛训数据工具'
 BRAND_SUB = '王者荣耀 · 赛训数据'
-THEME_COLOR = '#f3efe5'
-PAGES = ('index.html', 'product.html', 'privacy.html', 'opensource.html', 'download.html', 'changelog.html', 'guide.html', '404.html')
+THEME_COLOR = '#fafafa'
+PAGES = ('index.html', 'product.html', 'metrics.html', 'privacy.html', 'opensource.html', 'download.html', 'changelog.html', 'guide.html', '404.html', 'workbench-demo.html')
 
 
 def read_version() -> tuple[str, str, str]:
@@ -332,7 +332,7 @@ def build(download_url: str | None, full_download_url: str | None,
         # 模板里漏掉的占位符要在构建时炸掉，而不是上线后被用户看见。
         missing = sorted(set(re.findall(r'\\{\\{[A-Z0-9_]+\\}\\}', page)) - {'{{CHANGELOG_SECTIONS}}'})
         # 单花括号也查："{{SITE_NAME}}" 被 Python .format 吃掉一层后会变成 "{SITE_NAME}"
-        missing += sorted(set(re.findall(r'(?<!\\{)\\{[A-Z][A-Z0-9_]+\\}(?!\\})', page)))
+        missing += sorted(set(re.findall(r'(?<!\{)\{[A-Z][A-Z0-9_]+\}(?!\})', page)))
         if missing:
             raise SystemExit(f'{name}: 未替换的占位符 {missing}')
         page = page.replace('{{CHANGELOG_SECTIONS}}', changelog_html)

@@ -1,0 +1,71 @@
+/* 赛训组配置管理工具（导出/导入/变更历史/撤销）：只作用于 .cfg-section。 */
+
+.cfg-section :is(button, label, input):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.cfg-section .visually-hidden {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+.cfg-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.cfg-tools .control { min-block-size: var(--control-height); padding: 8px 14px; font: inherit; cursor: pointer; }
+.cfg-import-label { display: inline-flex; align-items: center; gap: 4px; }
+.cfg-status {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.cfg-status.is-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.cfg-history {
+  margin-block-start: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.cfg-history > summary {
+  padding: 8px 12px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.cfg-history-count { color: var(--accent-ink); }
+.cfg-history-list { list-style: none; margin: 0; padding: 0 12px 12px; }
+.cfg-history-list .cfg-empty { color: var(--muted); font-size: var(--fs-small); padding: 8px 0; }
+.cfg-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-block-end: 1px solid var(--line);
+}
+.cfg-entry:last-child { border-block-end: 0; }
+.cfg-entry-meta { display: flex; flex-direction: column; min-inline-size: 132px; color: var(--muted); font-size: var(--fs-micro); }
+.cfg-entry-rev { opacity: 0.75; }
+.cfg-entry-summary { flex: 1; min-inline-size: 160px; color: var(--text); font-size: var(--fs-small); }
+.cfg-rollback { min-block-size: 30px; padding: 4px 12px; font: inherit; font-size: var(--fs-small); }
+.cfg-rollback-confirm {
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: var(--r-sm);
+  background: var(--warning-soft);
+}
+.cfg-rollback-confirm p { margin: 0 0 8px; color: var(--text); font-size: var(--fs-small); }
+.cfg-rollback-confirm button { min-block-size: 30px; padding: 4px 12px; font: inherit; margin-inline-end: 6px; }

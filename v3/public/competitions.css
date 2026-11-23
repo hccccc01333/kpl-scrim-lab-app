@@ -1,0 +1,620 @@
+/* 赛事页（2026-11-22 · 白金画廊精修版）：页头 + 当前赛事条 + 赛事卡片 + 排期 + 归档/未归档区。
+   版式原则：区块不套框（卡片自身承载边界），元信息走细线规格表而非灰底盒子；
+   颜色一律走主题 CSS 变量（platinum-ds 中性墨色收口），主按钮跟随平台深墨 CTA；
+   金色 SVG 装饰件（角饰 / 三角标 / 斜杠）保留作为版面点缀。 */
+
+/* 门控：用 aria-disabled 而非纯 pointer-events，保留可聚焦与可发现性。 */
+[data-nav].is-gated {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+[data-nav].is-gated:hover { text-decoration: none; }
+
+.comp-page { display: grid; gap: 20px; }
+.comp-page :is(h1, h2, h3, h4) { margin: 0; }
+/* 官方 SVG 装饰件统一盒模型：纯装饰、不吃指针、不参与选中。 */
+.comp-page .comp-svg { display: inline-block; pointer-events: none; user-select: none; }
+.comp-page .comp-swatch {
+  display: inline-block;
+  inline-size: 8px;
+  block-size: 8px;
+  margin-inline-end: 5px;
+  vertical-align: 1px;
+  object-fit: contain;
+}
+
+/* ── 页头：无框标题行，动作靠右 ─────────────────────────────────── */
+.comp-lead-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.comp-lead-row h1 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--text);
+}
+.comp-lead-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.comp-lead-actions :is(button) {
+  min-block-size: 34px;
+  padding: 5px 14px;
+  font: inherit;
+  font-size: 13px;
+  border-radius: var(--r-sm);
+}
+.comp-lead-actions .ui-plus { margin-inline-end: 6px; }
+.comp-notice {
+  margin: 10px 0 0;
+  padding: 9px 14px;
+  border: 1px solid var(--accent);
+  border-inline-start-width: 3px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft, var(--soft));
+  color: var(--accent-ink);
+  font-size: 13px;
+}
+.comp-notice.is-error { border-color: var(--danger); background: var(--danger-soft, var(--surface)); color: var(--danger); }
+.comp-notice .comp-notice-icon { margin-inline-end: 6px; vertical-align: -2px; }
+
+/* ── 小节：三角标 + 标题 + 计数 ─────────────────────────────────── */
+.comp-block { display: grid; gap: 12px; min-inline-size: 0; }
+.comp-block-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-inline-size: 0; }
+/* 表格自身有 640px 最小宽度并放在可滚动容器里；父级必须允许收缩，
+   否则 min-width:auto 会把整块面板顶出窄屏视口。 */
+.comp-archive-panel, .comp-sched-head, .comp-table-wrap { min-inline-size: 0; }
+.comp-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: .01em;
+}
+.comp-section-mark { inline-size: 16px; block-size: 16px; flex: 0 0 auto; }
+.comp-sub-mark { inline-size: 13px; block-size: 13px; flex: 0 0 auto; }
+.comp-count {
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--soft, var(--surface));
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 当前赛事条：细金边 + 金左标，不再占一整块 ──────────────────── */
+.comp-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-block-end: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-inline-start-width: 3px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft, var(--soft));
+}
+.comp-current > span { color: var(--accent-ink); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.comp-current b { font-size: 15px; }
+.comp-current small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.comp-current .control {
+  margin-inline-start: auto;
+  min-block-size: 28px;
+  padding: 3px 12px;
+  font: inherit;
+  font-size: 12px;
+}
+
+/* ── 主按钮：跟随 platinum-ds 平台语言（深墨底白字 CTA），本页不再覆写。
+      旧的「浅金底」覆盖已移除 —— platinum-ds 是唯一视觉层，token 已收口为中性墨色。 ── */
+
+/* ── 赛事卡片：纸面卡 + 规格表元信息 + 底部操作条 ───────────────── */
+.comp-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+}
+.comp-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  transition: box-shadow 0.18s ease, border-color 0.18s ease, translate 0.18s ease;
+}
+.comp-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); translate: 0 -1px; }
+.comp-card.is-current { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent), var(--shadow-card); }
+/* 右上官方金角：普通卡半透明，当前卡更亮更实，形成质感层次。 */
+.comp-card-corner {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: 46px;
+  block-size: 46px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+.comp-card.is-current .comp-card-corner { inline-size: 56px; block-size: 56px; opacity: 0.62; }
+.comp-card > :not(.comp-card-corner) { position: relative; z-index: 1; }
+
+.comp-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  padding: 14px 16px 0;
+}
+.comp-card-head h3 {
+  margin-inline-end: auto;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.01em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.comp-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--soft, var(--surface));
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.comp-status.is-planned { background: var(--surface, var(--soft)); color: var(--muted); }
+.comp-status.is-ongoing { background: var(--success-soft, var(--soft)); color: var(--success-ink, #1B7A62); }
+.comp-status.is-training { background: var(--soft); color: var(--accent-ink); }
+.comp-status.is-completed { background: var(--surface, var(--soft)); color: var(--muted); }
+.comp-status.is-cancelled { background: var(--danger-soft, var(--surface)); color: var(--danger); }
+.comp-current-badge {
+  padding: 2px 9px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* 元信息：细线规格表（dt 灰 / dd 右对齐等宽数字），替代灰底小盒。 */
+.comp-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 20px;
+  margin: 12px 16px 0;
+  font-size: 13px;
+  border-block-start: 1px solid var(--line);
+}
+.comp-card-meta > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+  border-block-end: 1px solid var(--line);
+  min-inline-size: 0;
+}
+.comp-card-meta .comp-meta-wide { grid-column: 1 / -1; }
+.comp-card-meta dt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.comp-card-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.comp-card-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-block-start: auto;   /* 卡片等高时操作条贴底 */
+  padding: 12px 16px 14px;
+}
+.comp-card-actions :is(button, a),
+.comp-assign :is(button, select) {
+  border-radius: var(--r-sm);
+}
+.comp-card-actions :is(button, a) {
+  min-block-size: 30px;
+  padding: 4px 11px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+.comp-card-actions :is(button, a):hover {
+  background: var(--surface-hover, var(--surface));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.comp-card-actions :is(button, a):active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 3px rgb(138 101 48 / 18%);
+}
+.comp-card-tools { display: flex; flex-wrap: wrap; gap: 7px; margin-inline-start: auto; }
+.comp-card-actions .ui-glyph:not(:only-child),
+.comp-assign .ui-glyph { margin-inline-end: 5px; }
+/* ↗ 外链箭头：arrow-up 旋转 45°，替代不存在的 icon('external')。 */
+.comp-card-actions .comp-ext {
+  margin-inline-end: 0;
+  margin-inline-start: 4px;
+  transform: rotate(45deg);
+}
+.comp-card-actions .comp-chev {
+  margin-inline-start: 4px;
+  margin-inline-end: 0;
+  transform: rotate(45deg);
+  transition: transform .18s ease;
+}
+.comp-card-actions [aria-expanded="true"] .comp-chev { transform: rotate(225deg); }
+.comp-card-actions .comp-del { color: var(--danger); }
+.comp-card-actions .comp-del:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft, var(--surface));
+}
+/* 选中态：浅金软底 + 金描边，不用 disabled 默认灰底。 */
+.comp-card-actions [data-comp-select]:disabled {
+  opacity: 1;
+  cursor: default;
+  background: var(--accent-soft, var(--soft));
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.comp-card-actions [data-comp-select]:disabled:hover { box-shadow: none; }
+
+/* ── 空态 / 读取中 ──────────────────────────────────────────────── */
+.comp-empty, .comp-loading {
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.comp-empty b { display: block; margin-block-end: 4px; color: var(--text); font-size: 14px; }
+.comp-empty p { margin: 0; }
+.comp-empty-emblem { position: relative; inline-size: 220px; block-size: 42px; margin: 0 auto 10px; }
+.comp-empty-wave { position: absolute; inset-inline-start: 0; inset-block-start: 8px; inline-size: 220px; opacity: 0.85; }
+.comp-empty-tri { position: absolute; inset-inline-start: 50%; inset-block-start: 2px; translate: -50% 0; inline-size: 20px; }
+
+/* ── 归档 / 未归档区：单面板承载，语义表格 ─────────────────────── */
+.comp-archive-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  padding: 14px 18px 16px;
+}
+.comp-archive-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-block-end: 6px;
+  padding-block-end: 10px;
+  border-block-end: 1px solid var(--line);
+}
+.comp-archive-head b { font-size: 15px; }
+.comp-archive-head small {
+  display: block;
+  margin-block-start: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.comp-archive-head .control { min-block-size: 30px; padding: 4px 12px; font-size: 12px; }
+.comp-archive-detail h4, .comp-archive-unfiled h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+.comp-archive-unfiled h4 { margin-block-start: 4px; }
+.comp-archive-detail h4 small, .comp-archive-detail h4 small { color: var(--muted); font-weight: 400; }
+.comp-sub-empty {
+  margin: 4px 0 8px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.comp-table-wrap {
+  max-block-size: 320px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+/* 固定最小宽度：窄屏由 .comp-table-wrap 横向滚动，列不会再被挤到互相盖住。 */
+.comp-table {
+  inline-size: 100%;
+  min-inline-size: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.comp-table :is(th, td) {
+  padding: 8px 12px;
+  text-align: start;
+  border-block-end: 1px solid var(--line);
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+.comp-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--soft, var(--surface));
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* sticky 首列：头像 vs 头像（2026-11-22 反馈）。
+   原来这里是等宽字体的裸 channel-xxx，教练认不出来；现在放 本队/对手 队徽 + 对手名，
+   完整 ID 悬停在整格 title 上。 */
+.comp-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  inline-size: 190px;
+  min-inline-size: 0;
+  max-inline-size: 190px;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--muted);
+}
+.comp-versus {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-inline-size: 0;
+  color: inherit;
+  text-decoration: none;
+  font-family: inherit;
+  font-size: 12.5px;
+}
+.comp-versus:hover { color: var(--accent); }
+.comp-versus:hover .comp-versus-name { text-decoration: underline; text-underline-offset: 3px; }
+.comp-versus-x {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--quiet, var(--muted));
+  flex: none;
+}
+.comp-crest {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  flex: none;
+  user-select: none;
+}
+.comp-crest.is-own {
+  background: var(--accent-soft, var(--soft));
+  color: var(--accent-ink, var(--accent));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.comp-crest.is-foe {
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.comp-versus-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: var(--text);
+}
+.comp-page .visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.comp-table thead th:first-child { z-index: 3; }
+.comp-table tbody tr:last-child :is(th, td) { border-block-end: 0; }
+.comp-table tbody tr:hover :is(th, td) { background: var(--surface-hover, var(--surface)); }
+.comp-assign { display: flex; flex-wrap: wrap; gap: 6px; }
+.comp-assign select {
+  min-block-size: 32px;
+  max-inline-size: 200px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--text);
+}
+.comp-assign .control { min-block-size: 32px; padding: 4px 10px; font: inherit; font-size: 12px; }
+/* 补挂反馈紧贴表格上方，用户不必滚回页顶才知道结果。 */
+.comp-assign-notice {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft, var(--soft));
+  color: var(--accent-ink);
+  font-size: 12px;
+}
+.comp-assign-notice[hidden] { display: none; }
+.comp-assign-notice.is-error { border-color: var(--danger); color: var(--danger); background: var(--danger-soft, var(--surface)); }
+
+/* ── 训练赛排期（原 #plan 页并入）──────────────────────────────── */
+.comp-block-head .comp-sched-next {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.comp-block-head .comp-sched-next b { color: var(--accent-ink); font-variant-numeric: tabular-nums; }
+.comp-block-actions { margin-inline-start: auto; display: flex; gap: 8px; }
+.comp-block-actions :is(button) { min-block-size: 34px; padding: 5px 14px; font: inherit; font-size: 13px; border-radius: var(--r-sm); }
+.comp-sched-head { display: grid; gap: 10px; }
+.comp-next-strip { margin-block: 0; }
+.comp-sched-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+.comp-sched-group:first-of-type { margin-block-start: 4px; }
+.comp-sched-when { display: inline-flex; flex-direction: column; gap: 1px; }
+/* 排期日期是正文信息：覆回正体并加重，不沿用对局 key 的 mono 弱化。 */
+.comp-sched-table tbody th {
+  inline-size: 150px;
+  max-inline-size: 150px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: normal;
+}
+.comp-sched-when b { font-variant-numeric: tabular-nums; }
+.comp-sched-when b small { color: var(--accent-ink); font-size: 11px; font-weight: 600; margin-inline-start: 4px; }
+.comp-sched-when > small { display: block; color: var(--muted); font-size: 11px; }
+.comp-muted-cell { color: var(--muted); font-size: 12px; }
+.comp-sched-ops { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.comp-sched-ops :is(a, button.control) {
+  min-block-size: 30px;
+  padding: 3px 10px;
+  font: inherit;
+  font-size: 12px;
+  border-radius: var(--r-sm);
+}
+.comp-status.is-confirmed { background: var(--soft); color: var(--accent-ink); }
+.comp-form-wide { grid-column: 1 / -1; }
+
+/* 训练负荷与目标达成看板已下线（2026-11-22 反馈），.comp-dash 样式随之移除；
+   全局 .train-dash 系列仍被 features.js 的旧 #plan 渲染引用，故保留不动。 */
+
+/* ── 新建 / 编辑对话框（原生 dialog：焦点收敛、Esc、焦点归还交给浏览器）── */
+.comp-dialog {
+  inline-size: min(680px, calc(100vw - 32px));
+  max-block-size: min(86vh, 760px);
+  overflow: auto;
+  border: 1px solid var(--line-strong, var(--line));
+  border-radius: var(--r-md);
+  background: var(--paper);
+  color: var(--text);
+  padding: 20px 22px;
+  box-shadow: 0 18px 48px rgb(47 43 30 / 22%);
+}
+.comp-dialog::backdrop { background: rgb(47 43 30 / 38%); }
+.comp-dialog h3 { font-size: 16px; }
+.comp-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 14px; }
+.comp-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 12px; }
+.comp-form input {
+  min-block-size: 34px;
+  padding: 6px 10px;
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+}
+.comp-form :is(input, button, select):focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.comp-dialog-sub { color: var(--muted); margin: 6px 0 0; font-size: 12px; }
+.comp-warn {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--focus);
+  border-radius: var(--r-sm);
+  background: var(--accent-soft, var(--surface));
+  color: var(--accent-ink);
+  font-size: 12px;
+}
+.comp-warn .ui-glyph { margin-inline-end: 6px; }
+.comp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.comp-dialog-actions :is(button) { min-block-size: 34px; padding: 5px 16px; font: inherit; font-size: 13px; }
+
+/* 删除确认沿用白金 dialog：warning 图标 + 可读全名。 */
+.comp-confirm { inline-size: min(440px, calc(100vw - 32px)); }
+.comp-confirm h3 { display: flex; align-items: center; gap: 8px; }
+.comp-confirm h3 .ui-glyph { flex: 0 0 auto; }
+.comp-confirm-msg {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: var(--r-sm);
+  background: var(--surface-hover, var(--surface));
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* ── 窄屏 ───────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .comp-page { gap: 16px; }
+  .comp-lead-row h1 { font-size: 19px; }
+  /* 触屏命中区放大到 40px，并加大间距避免相邻危险按钮误触。 */
+  .comp-card-actions { gap: 10px; }
+  .comp-card-tools { inline-size: 100%; margin-inline-start: 0; }
+  .comp-card-actions :is(button, a) { flex: 1 1 auto; min-block-size: 40px; min-height: 40px; justify-content: center; }
+  .comp-card-meta { grid-template-columns: 1fr; column-gap: 0; margin-inline: 14px; }
+  .comp-assign select, .comp-assign .control { min-block-size: 40px; }
+  .comp-dialog, .comp-confirm { padding: 16px; }
+  /* 弹窗网格窄屏显式单列。 */
+  .comp-form-grid { grid-template-columns: 1fr; }
+  .comp-table tbody th { inline-size: 150px; max-inline-size: 150px; }
+  /* 角饰随窄屏收缩，不溢出不遮挡文字。 */
+  .comp-card-corner { inline-size: 34px; block-size: 34px; }
+  .comp-card.is-current .comp-card-corner { inline-size: 42px; block-size: 42px; }
+  .comp-empty-emblem, .comp-empty-wave { inline-size: 180px; }
+}
+
+/* 尊重减少动效偏好：关掉本次新增的悬停/按压过渡与位移。 */
+@media (prefers-reduced-motion: reduce) {
+  .comp-card,
+  .comp-card-actions :is(button, a),
+  .comp-page :is(button, a).primary,
+  .comp-page .comp-form button[type='submit'].primary { transition: none; }
+  .comp-card:hover { translate: 0 0; }
+  .comp-card-actions :is(button, a):active,
+  .comp-page :is(button, a).primary:active { transform: none; }
+}
+
+/* 存量系列归属 + 正赛录入（赛事域 M2） */
+.comp-ops-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.comp-ops-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--line, #dcd6cc); border-radius: 10px;
+  background: var(--paper, #fff);
+}
+.comp-ops-row b { color: var(--text, #1d1c1a); font-size: .875rem; }
+.comp-ops-row small { color: var(--quiet, #8a8378); margin-inline-end: auto; font-size: .75rem; }
+.comp-ops-row select { max-inline-size: 220px; }
+.comp-ops-hint, .comp-ops-empty { margin: 6px 0 0; color: var(--quiet, #8a8378); font-size: .75rem; }

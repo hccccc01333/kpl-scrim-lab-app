@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '2.0.2'
-RELEASE_DATE = '2026-11-18'
-RELEASE_NAME = '2.0.2：BP 页空库空态 + 首页文案修正'
+VERSION = '3.0.0'
+RELEASE_DATE = '2026-11-23'
+RELEASE_NAME = '3.0.0：全新视觉体系 + 复盘细节打磨 + 跨局大场收口'

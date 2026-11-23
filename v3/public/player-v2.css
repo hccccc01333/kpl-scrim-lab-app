@@ -287,3 +287,491 @@
   background: var(--paper); color: var(--accent-ink); font: 600 12.5px var(--font); cursor: pointer;
 }
 [data-pl-page="solo"] .pv-relax:hover { background: var(--soft); }
+
+/* ── 英雄池变动：上期 / 本期两栏英雄卡，逐行对齐、可滚动可拖 ────────── */
+[data-pl-page="solo"] [data-pdx-key="trend"] .section-heading p:empty,
+[data-pl-page="solo"] [data-pdx-key="trend"] .pdx-lead:empty { display: none; }
+[data-pl-page="solo"] .pv-trend-head {
+  grid-column: 1 / -1;
+  position: sticky; inset-block-start: 0; z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: subgrid;
+  gap: 8px 12px;
+  padding-block: 2px;
+  background: var(--bg, var(--paper));
+}
+[data-pl-page="solo"] .pv-trend-head > span {
+  display: block; padding: 9px 14px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface);
+  font-size: 15px; font-weight: 700; color: var(--text);
+  letter-spacing: .01em;
+}
+[data-pl-page="solo"] .pv-trend-scroll {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  align-content: start;
+  max-block-size: 440px;
+  padding: 2px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  user-select: none;
+  cursor: grab;
+}
+[data-pl-page="solo"] .pv-trend-scroll.is-dragging { cursor: grabbing; user-select: none; }
+[data-pl-page="solo"] .pv-trend-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[data-pl-page="solo"] .pv-trend-row {
+  grid-column: 1 / -1;
+  display: grid;
+  /* 同一行两栏共用父级轨道，左右卡片严丝合缝对齐 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: subgrid;
+  align-items: stretch;
+}
+[data-pl-page="solo"] .pv-trend-cell {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center; gap: 12px;
+  min-block-size: 66px;
+  padding: 9px 14px;
+  border: 1px solid var(--line-strong, #b8c7bd); border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 32%, var(--paper));
+  color: var(--text); text-decoration: none;
+  box-shadow: 0 1px 4px rgb(20 40 50 / 8%);
+  transition: border-color var(--ease), background var(--ease);
+}
+[data-pl-page="solo"] a.pv-trend-cell:hover { border-color: var(--accent); background: var(--soft); }
+[data-pl-page="solo"] .pv-trend-cell .portrait {
+  display: block; inline-size: 46px; block-size: 46px;
+  border-radius: 8px; object-fit: cover;
+}
+[data-pl-page="solo"] .pv-trend-name {
+  min-inline-size: 0; font-size: 16px; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+[data-pl-page="solo"] .pv-trend-n {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  font-size: 23px; font-weight: 800; line-height: 1; color: var(--accent-ink);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+[data-pl-page="solo"] .pv-trend-n small { font-size: 13px; font-weight: 600; color: var(--muted); }
+[data-pl-page="solo"] .pv-trend-delta {
+  font-style: normal; font-size: 14px; font-weight: 800; letter-spacing: .01em;
+}
+[data-pl-page="solo"] .pv-trend-delta.is-up { color: var(--success, #2f7a4f); }
+[data-pl-page="solo"] .pv-trend-delta.is-down { color: var(--warning, #a2543a); }
+[data-pl-page="solo"] .pv-trend-delta.is-flat { color: var(--quiet); }
+/* 占位的空卡也是同一款卡片，只是没内容：白底虚线，不做成灰块 */
+[data-pl-page="solo"] .pv-trend-cell.is-empty {
+  border-style: dashed; border-color: var(--line);
+  background: var(--paper); box-shadow: none; opacity: .6;
+}
+[data-pl-page="solo"] .pv-trend-cell.is-new { box-shadow: inset 3px 0 0 var(--accent); }
+[data-pl-page="solo"] .pv-trend-cell.is-gone { box-shadow: inset 3px 0 0 var(--warning); }
+/* 两期独有英雄的分界线：横线在上、标题在下，左右各管一栏 */
+[data-pl-page="solo"] .pv-trend-sep {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: subgrid;
+  gap: 8px 12px;
+  margin-block: 14px 2px;
+}
+[data-pl-page="solo"] .pv-trend-sep > span {
+  padding-top: 10px;
+  border-top: 1px solid var(--line-strong, var(--line));
+  font-size: 14px; font-weight: 700; color: var(--muted);
+  letter-spacing: .02em;
+}
+@media (max-width: 760px) {
+  [data-pl-page="solo"] .pv-trend-cell {
+    grid-template-columns: 38px minmax(0, 1fr) auto; gap: 8px; padding: 8px 10px;
+  }
+  [data-pl-page="solo"] .pv-trend-cell .portrait { inline-size: 38px; block-size: 38px; }
+  [data-pl-page="solo"] .pv-trend-name { font-size: 14px; }
+  [data-pl-page="solo"] .pv-trend-n { font-size: 19px; gap: 3px; }
+  [data-pl-page="solo"] .pv-trend-n small { font-size: 11px; }
+  [data-pl-page="solo"] .pv-trend-delta { font-size: 12px; }
+  [data-pl-page="solo"] .pv-trend-sep > span { font-size: 13px; }
+}
+@media print {
+  [data-pl-page="solo"] .pv-trend-scroll { max-block-size: none; overflow: visible; cursor: auto; }
+}
+
+/* ── 分析卡只留结论和图：口径 / 读图说明 / 数据来源 / 范围 / 颜色图例一律不显示 ── */
+[data-pl-page="solo"] .pdx-range,
+[data-pl-page="solo"] .pdx-foot,
+[data-pl-page="solo"] .pv-panel-foot,
+[data-pl-page="solo"] .pv-note,
+[data-pl-page="solo"] .pv-legend,
+[data-pl-page="solo"] .pv-heat-legend { display: none; }
+
+/* ── 选手头部重做：身份区 + 元信息胶囊 + 数据瓷砖 ───────────────────── */
+[data-pl-page="solo"] .hero-masthead {
+  position: relative;
+  padding: 28px 30px 26px;
+  border-radius: 18px;
+  background:
+    radial-gradient(680px 240px at 88% -8%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 72%, var(--paper)),
+    var(--paper);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgb(20 50 40 / 4%), 0 20px 50px -40px rgb(20 50 40 / 30%);
+}
+[data-pl-page="solo"] .hero-masthead .page-intro {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap; padding: 0;
+}
+[data-pl-page="solo"] .pls-head { gap: 10px; }
+[data-pl-page="solo"] .pls-back-row { display: flex; align-items: center; gap: 8px; }
+[data-pl-page="solo"] .pls-back-row .hero-back { margin-bottom: 0; }
+[data-pl-page="solo"] .pls-id { gap: 18px; align-items: center; }
+[data-pl-page="solo"] .pls-id-copy { min-inline-size: 0; }
+
+[data-pl-page="solo"] .pls-ava {
+  inline-size: 72px; block-size: 72px; flex: none;
+  border-radius: 20px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 16%, var(--paper)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line-strong));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 75%), 0 8px 18px -10px color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--accent-ink);
+  font: 800 clamp(28px, 3vw, 34px)/1 var(--display-font);
+  letter-spacing: -.04em;
+}
+
+[data-pl-page="solo"] .pls-id h1 {
+  margin: 0; font-size: clamp(30px, 3.4vw, 42px);
+  font-weight: 800; letter-spacing: -.045em; line-height: 1.12;
+  text-wrap: balance;
+}
+[data-pl-page="solo"] .pls-meta {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 6px; margin: 10px 0 0; max-inline-size: none;
+}
+[data-pl-page="solo"] .pls-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--line);
+  font: 650 12px/1.3 var(--font); white-space: nowrap;
+}
+[data-pl-page="solo"] .pls-chip.is-role {
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  color: var(--accent-ink);
+}
+[data-pl-page="solo"] .pls-chip.is-ok {
+  color: #2e7d5b; background: color-mix(in srgb, #2e7d5b 8%, var(--paper));
+  border-color: color-mix(in srgb, #2e7d5b 22%, var(--line));
+}
+[data-pl-page="solo"] .pls-chip.is-warn {
+  color: #b45309; background: color-mix(in srgb, #b45309 8%, var(--paper));
+  border-color: color-mix(in srgb, #b45309 22%, var(--line));
+}
+
+[data-pl-page="solo"] .intro-actions {
+  align-items: center; justify-content: flex-end;
+  gap: 8px; margin-inline-start: auto;
+}
+[data-pl-page="solo"] .pv-pos {
+  align-self: auto; margin: 0; padding: 5px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--muted);
+  font: 650 12px var(--font);
+}
+[data-pl-page="solo"] .intro-actions .control {
+  height: 36px; display: inline-flex; align-items: center;
+  padding-inline: 14px; border-radius: 9px; font-size: 12.5px;
+}
+[data-pl-page="solo"] .pv-sel.is-head .pv-sel-label { color: var(--muted); }
+[data-pl-page="solo"] .pv-sel.is-head select {
+  min-inline-size: 150px; border-color: var(--line-strong);
+  border-radius: 9px; font-size: 12.5px;
+}
+
+[data-pl-page="solo"] .hero-masthead .hero-kpi {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 4px; margin-block-start: 22px; padding: 6px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 55%, var(--paper));
+  box-shadow: none;
+}
+[data-pl-page="solo"] .hero-masthead .hero-kpi-cell {
+  min-inline-size: 0; border: 0; border-radius: 10px;
+  padding: 14px 16px; background: var(--paper);
+}
+[data-pl-page="solo"] .hero-masthead .hero-kpi-cell.is-key {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 9%, var(--paper)), var(--paper) 70%);
+}
+[data-pl-page="solo"] .hero-masthead .hero-kpi-cell.is-key strong { color: var(--accent-ink); }
+[data-pl-page="solo"] .hero-masthead .hero-kpi-cell span {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--quiet);
+}
+[data-pl-page="solo"] .hero-masthead .hero-kpi-cell strong {
+  margin-block-start: 8px; font-size: clamp(21px, 2.2vw, 27px);
+  line-height: 1.15; letter-spacing: -.035em;
+}
+[data-pl-page="solo"] .hero-masthead .hero-kpi-cell p {
+  margin-block-start: 6px; font-size: 11px; line-height: 1.5; color: var(--muted);
+}
+
+@media (max-width: 900px) {
+  [data-pl-page="solo"] .intro-actions { margin-inline-start: 0; justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  [data-pl-page="solo"] .hero-masthead { padding: 20px 18px; }
+  [data-pl-page="solo"] .pls-ava { inline-size: 56px; block-size: 56px; border-radius: 15px; font-size: 25px; }
+  [data-pl-page="solo"] .hero-masthead .hero-kpi { grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); }
+  [data-pl-page="solo"] .hero-masthead .hero-kpi-cell { padding: 12px; }
+}
+
+/* ── 吸顶导航 + 切片条：字号与控件整体放大一档，看着更松弛 ─────────────── */
+[data-pl-page="solo"] .hero-anchor-nav { gap: 8px; padding: 10px 12px; }
+[data-pl-page="solo"] .hero-anchor-nav button {
+  padding: 8px 15px; border-radius: 9px;
+  font-size: 14px; font-weight: 650;
+}
+[data-pl-page="solo"] .hero-anchor-nav .pv-keyhint,
+[data-pl-page="solo"] .pv-sel.is-nav .pv-sel-label { font-size: 12.5px; }
+[data-pl-page="solo"] .pv-sel.is-nav select { height: 32px; font-size: 12.5px; }
+[data-pl-page="solo"] .hero-anchor-nav .pv-reset {
+  height: 32px; padding: 0 14px; border-radius: 9px; font-size: 12.5px;
+}
+
+[data-pl-page="solo"] .pdx-scope { gap: 10px 18px; padding: 12px 14px; }
+[data-pl-page="solo"] .pdx-scope-row { gap: 8px 16px; }
+[data-pl-page="solo"] .pdx-scope .pv-sel { gap: 5px; }
+[data-pl-page="solo"] .pdx-scope .pv-sel-label {
+  font-size: 13px; font-weight: 650; letter-spacing: .02em;
+}
+[data-pl-page="solo"] .pdx-scope .pv-sel select {
+  height: 38px; padding: 0 30px 0 12px; border-radius: 9px;
+  font-size: 14px; line-height: 36px;
+}
+[data-pl-page="solo"] .pdx-scope .pv-sel-caret { right: 11px; }
+[data-pl-page="solo"] .pdx-scope .pv-sel-box input[type="date"] {
+  height: 38px; padding: 0 10px; border-radius: 9px; font-size: 13.5px;
+}
+[data-pl-page="solo"] .pdx-hit { gap: 6px 16px; font-size: 14px; }
+[data-pl-page="solo"] .pdx-hit b { font-size: 17px; }
+
+/* 吸顶条长高了，锚点跳转多留一点余量 */
+[data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 232px; }
+@media (max-width: 720px) {
+  [data-pl-page="solo"] .hero-detail-grid > .section { scroll-margin-top: 232px; }
+}
+
+/* ── 统一字号阶梯：模块 > 卡片 > 面板 > 正文 > 图内 > 注释 ───────────────
+   整页铺在大屏上，正文还停在 12–13px 就越看越小。这里把每一级统一抬一档，
+   保持清晰的层级差，同时让最里层的字也够大、不费眼。 */
+/* 模块标题 20 · 卡片标题 18 · 结论 15 */
+[data-pl-page="solo"] .section-heading h2 { font-size: 20px; line-height: 1.3; }
+[data-pl-page="solo"] .pdx-card h3 { font-size: 18px; line-height: 1.35; }
+[data-pl-page="solo"] .pdx-lead { font-size: 15px; line-height: 1.6; }
+[data-pl-page="solo"] .pdx-n { font-size: 13px; }
+
+/* 面板标题 15 · 面板正文 14.5 */
+[data-pl-page="solo"] .pv-panel-head h4 { font-size: 15px; line-height: 1.35; }
+[data-pl-page="solo"] .pv-panel-head { font-size: 15px; }
+[data-pl-page="solo"] .pv-strip-item,
+[data-pl-page="solo"] .pv-collabels > span { font-size: 14.5px; }
+
+/* 图内文字 15 · 坐标 14.5 · 数值 15 */
+[data-pl-page="solo"] .pv-svg text { font-size: 15px; }
+[data-pl-page="solo"] .pv-axis { font-size: 14.5px; }
+[data-pl-page="solo"] .pv-axis.is-name { font-size: 14.5px; }
+[data-pl-page="solo"] .pv-axis.is-dim { font-size: 13.5px; }
+[data-pl-page="solo"] .pl-radar-label,
+[data-pl-page="solo"] .pv-row-label { font-size: 15px; }
+[data-pl-page="solo"] .pv-col-val,
+[data-pl-page="solo"] .pv-dot-text,
+[data-pl-page="solo"] .pv-bubble-label { font-size: 15px; }
+[data-pl-page="solo"] .pv-tm-name { font-size: 15px; }
+[data-pl-page="solo"] .pv-tm-sub { font-size: 13.5px; }
+[data-pl-page="solo"] .pv-ref-label { font-size: 14px; }
+[data-pl-page="solo"] .pl-radar-tick { font-size: 13.5px; }
+[data-pl-page="solo"] .pv-quad-label { font-size: 14px; }
+[data-pl-page="solo"] .pv-heat-cell { font-size: 15px; }
+[data-pl-page="solo"] .pv-heat-cell small { font-size: 13px; }
+[data-pl-page="solo"] .pv-gauge-val { font-size: 25px; }
+[data-pl-page="solo"] .pv-gauge-label { font-size: 15px; }
+[data-pl-page="solo"] .pv-gauge small { font-size: 14px; }
+
+/* 英雄池变动卡：名字 17 · 局数 25 · 涨跌 15 */
+[data-pl-page="solo"] .pv-trend-name { font-size: 17px; }
+[data-pl-page="solo"] .pv-trend-n { font-size: 25px; }
+[data-pl-page="solo"] .pv-trend-n small { font-size: 14px; }
+[data-pl-page="solo"] .pv-trend-delta { font-size: 15px; }
+[data-pl-page="solo"] .pv-trend-head { font-size: 15px; }
+[data-pl-page="solo"] .pv-trend-sep { font-size: 15px; }
+
+/* 注释兜底 13（口径/来源类文案此前已隐藏，这里只管仍会露出的小字） */
+[data-pl-page="solo"] .pv-pool-items button small,
+[data-pl-page="solo"] .pv-sel-label { font-size: 13px; }
+
+/* ── 英雄替代候选表：这是要逐字读的决策表，整表放大一档 ─────────────────
+   能力胶囊原来 11.5px、间距 4px，「保护 / 加容错 / 加持续输出」挤成一坨；
+   放大字号和间距，让每个能力能单独扫读。 */
+[data-pl-page="solo"] .pv-cand-row {
+  gap: 7px 16px; padding: 12px 8px;
+  grid-template-columns: minmax(140px, 190px) minmax(190px, 1.7fr) minmax(104px, 130px) minmax(116px, 150px) minmax(140px, 1fr);
+}
+[data-pl-page="solo"] .pv-cand-row.is-head { padding: 4px 8px 10px; font-size: 13px; }
+[data-pl-page="solo"] .pv-cand-hero .pv-hero { font-size: 15px; }
+[data-pl-page="solo"] .pv-cand-hero .pv-hero .portrait { width: 28px; height: 28px; }
+[data-pl-page="solo"] .pv-cand-caps { gap: 7px; row-gap: 7px; }
+[data-pl-page="solo"] .pv-cap {
+  padding: 3px 11px; font-size: 14px; line-height: 1.4;
+}
+[data-pl-page="solo"] .pv-cap.is-on::before { font-size: 13px; }
+[data-pl-page="solo"] .pv-cand-num { font-size: 14px; line-height: 1.5; white-space: normal; }
+[data-pl-page="solo"] .pv-cand-none { font-size: 13.5px; }
+[data-pl-page="solo"] .pv-cand-verdict { font-size: 14px; line-height: 1.5; white-space: normal; }
+@media (max-width: 900px) {
+  [data-pl-page="solo"] .pv-cand-row { grid-template-columns: minmax(120px, 1fr) minmax(0, 1.6fr); }
+}
+
+/* ── 搭档榜：一行一组，全部列出、可滚动；组合越多只是往下长，不再截前 48 格 ── */
+[data-pl-page="solo"] .pv-combo { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+[data-pl-page="solo"] .pv-combo-row {
+  display: grid; align-items: center; gap: 8px 14px;
+  grid-template-columns: 42px minmax(0, 1fr) 96px 150px;
+  padding: 10px 16px; border-top: 1px solid var(--line);
+}
+[data-pl-page="solo"] .pv-combo-row:first-child { border-top: 0; }
+[data-pl-page="solo"] .pv-combo-row.is-head {
+  position: sticky; top: 0; z-index: 2; background: var(--surface);
+  font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .02em;
+}
+[data-pl-page="solo"] .pv-combo-scroll {
+  max-block-size: 480px; overflow-y: auto; scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+[data-pl-page="solo"] .pv-combo-rank {
+  font: 800 15px Manrope, var(--font); color: var(--quiet); font-variant-numeric: tabular-nums;
+}
+[data-pl-page="solo"] .pv-combo-row:nth-child(2) .pv-combo-rank { color: var(--accent-ink); }
+[data-pl-page="solo"] .pv-combo-pair {
+  display: flex; align-items: center; gap: 10px; min-inline-size: 0; flex-wrap: wrap;
+}
+[data-pl-page="solo"] .pv-combo-hero { min-inline-size: 0; }
+[data-pl-page="solo"] .pv-combo-hero .pv-hero { font-size: 15px; }
+[data-pl-page="solo"] .pv-combo-hero .pv-hero .portrait { inline-size: 28px; block-size: 28px; border-radius: 7px; }
+[data-pl-page="solo"] .pv-combo-plus { font: 800 17px var(--font); color: var(--quiet); font-style: normal; }
+[data-pl-page="solo"] .pv-combo-games {
+  display: inline-flex; align-items: baseline; gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+[data-pl-page="solo"] .pv-combo-games b { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -.03em; }
+[data-pl-page="solo"] .pv-combo-games small { font-size: 12px; color: var(--muted); }
+[data-pl-page="solo"] .pv-combo-rate { display: flex; flex-direction: column; gap: 5px; }
+[data-pl-page="solo"] .pv-combo-rate b {
+  font: 700 15px Manrope, var(--font); font-variant-numeric: tabular-nums; color: var(--text);
+}
+[data-pl-page="solo"] .pv-combo-rate.is-good b { color: var(--success, #2f7a4f); }
+[data-pl-page="solo"] .pv-combo-rate.is-bad b { color: var(--warning, #a2543a); }
+[data-pl-page="solo"] .pv-combo-bar { display: block; block-size: 5px; border-radius: 5px; background: var(--surface); overflow: hidden; }
+[data-pl-page="solo"] .pv-combo-bar > i { display: block; block-size: 100%; border-radius: 5px; background: var(--line-strong); }
+[data-pl-page="solo"] .pv-combo-rate.is-good .pv-combo-bar > i { background: var(--success, #2f7a4f); }
+[data-pl-page="solo"] .pv-combo-rate.is-bad .pv-combo-bar > i { background: var(--warning, #a2543a); }
+[data-pl-page="solo"] .pv-combo-row.is-dim { opacity: .55; }
+@media (max-width: 760px) {
+  [data-pl-page="solo"] .pv-combo-row { grid-template-columns: 32px minmax(0, 1fr) 68px 110px; gap: 6px 8px; padding: 9px 10px; }
+  [data-pl-page="solo"] .pv-combo-hero .pv-hero { font-size: 13.5px; }
+  [data-pl-page="solo"] .pv-combo-games b { font-size: 19px; }
+}
+@media print {
+  [data-pl-page="solo"] .pv-combo-scroll { max-block-size: none; overflow: visible; }
+}
+
+/* ── 深入各图的内层文字：之前被 viewBox 缩放 + quiet 灰压得又小又糊 ───── */
+/* 矩形树图是 HTML 瓦片，不是 SVG：之前覆盖的 .pv-tm-name 根本没命中。
+   这里直接调瓦片里的名字与「N局 胜率」，小方块只留名字也放大。 */
+[data-pl-page="solo"] .pv-tm-tile b,
+[data-pl-page="solo"] .pv-tm-tile.is-mid b { font-size: 15px; }
+[data-pl-page="solo"] .pv-tm-tile small { font-size: 13px; color: var(--text); }
+[data-pl-page="solo"] .pv-tm-face .portrait { inline-size: 30px; block-size: 30px; }
+
+/* 下面这些字号必须压过通用规则 `[data-pl-page="solo"] .pv-svg text`（0,2,1）：
+   它比 .pv-gauge-val 这类类选择器（0,2,0）更具体，会把所有图内文字强制成 14px。
+   多带一层 .pv-svg 提到 (0,3,0) 才能真正生效。 */
+/* 环形图：SVG 按 viewBox 原尺寸画，不再被 CSS 压到 176px（缩放会让中心字发虚） */
+[data-pl-page="solo"] .pv-ring-wrap > .pv-svg { inline-size: auto; max-inline-size: none; }
+[data-pl-page="solo"] .pv-svg .pv-ring-center-val { fill: var(--text); font-size: 30px; font-weight: 800; stroke: none; }
+[data-pl-page="solo"] .pv-svg .pv-ring-center-label { fill: var(--text); font-size: 15px; font-weight: 600; stroke: none; }
+[data-pl-page="solo"] .pv-ring-legend { font-size: 15px; gap: 8px; }
+[data-pl-page="solo"] .pv-ring-legend > span { color: var(--text); }
+
+/* 仪表：中心数字与标签压到近墨色，按原始像素画不缩放 */
+[data-pl-page="solo"] .pv-svg .pv-gauge-val { fill: var(--text); font-size: 28px; font-weight: 800; stroke: none; }
+[data-pl-page="solo"] .pv-gauge-label { color: var(--text); font-size: 15px; font-weight: 600; }
+[data-pl-page="solo"] .pv-gauge small { color: var(--text); font-size: 14px; }
+
+/* 柱状图：柱顶数字与类目名（选手名）放大 */
+[data-pl-page="solo"] .pv-svg .pv-col-val { font-size: 18px; }
+[data-pl-page="solo"] .pv-collabels > span,
+[data-pl-page="solo"] .pv-collabels > span > span { font-size: 14px; color: var(--text); }
+[data-pl-page="solo"] .pv-collabels .pv-hero b { font-size: 14px; }
+[data-pl-page="solo"] .pv-collabels .pv-hero .portrait { inline-size: 26px; block-size: 26px; }
+[data-pl-page="solo"] .pv-colwrap > .pv-svg { max-inline-size: 100%; margin-inline: auto; }
+/* 参考线标签（如「同位置中位」）移到图右端，并加同背景色的描边衬底，
+   这样即使参考线穿过柱子，文字也不会和柱子糊在一起。需带 .pv-svg 提高特异性压过通用 text 规则。 */
+[data-pl-page="solo"] .pv-svg .pv-ref-label {
+  paint-order: stroke fill; stroke: var(--paper); stroke-width: 4px; stroke-linejoin: round;
+}
+
+/* ══ 指标对照卡（专项指标 / 本人三项）：写清数值 + 差距 + 环比 ══════ */
+[data-pl-page="solo"] .pm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+[data-pl-page="solo"] .pm-metric {
+  position: relative; display: flex; flex-direction: column; gap: 6px;
+  min-width: 0; padding: 16px 18px;
+  border: 1px solid var(--hair); border-radius: 14px;
+  background: var(--paper);
+  transition: border-color .18s var(--ease, ease), transform .18s var(--ease, ease), box-shadow .18s var(--ease, ease);
+}
+[data-pl-page="solo"] .pm-metric:hover { transform: translateY(-2px); border-color: var(--accent, var(--text)); box-shadow: 0 8px 22px rgba(0, 0, 0, .07); }
+[data-pl-page="solo"] .pm-metric-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+[data-pl-page="solo"] .pm-metric-label { font-size: 14px; font-weight: 650; color: var(--muted); white-space: nowrap; }
+[data-pl-page="solo"] .pm-verdict {
+  flex: 0 0 auto; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; white-space: nowrap; letter-spacing: .01em;
+}
+[data-pl-page="solo"] .pm-verdict.is-top { color: #0b7a4b; background: #e4f7ed; }
+[data-pl-page="solo"] .pm-verdict.is-high { color: #147a5b; background: #eaf6f0; }
+[data-pl-page="solo"] .pm-verdict.is-mid { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
+[data-pl-page="solo"] .pm-verdict.is-low { color: #b5651a; background: #fdf1e2; }
+[data-pl-page="solo"] .pm-verdict.is-bottom { color: #c0392b; background: #fdecea; }
+[data-pl-page="solo"] .pm-verdict.is-na { color: var(--quiet); background: color-mix(in srgb, var(--quiet) 12%, transparent); }
+[data-pl-page="solo"] .pm-metric-value {
+  font-size: clamp(28px, 2.4vw, 38px); font-weight: 800; line-height: 1.05;
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text);
+}
+[data-pl-page="solo"] .pm-metric-mid { font-size: 13px; color: var(--quiet); }
+[data-pl-page="solo"] .pm-metric-mid b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+[data-pl-page="solo"] .pm-metric-trend { margin-top: 2px; padding-top: 8px; border-top: 1px solid var(--hair); }
+[data-pl-page="solo"] .pm-trend { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+[data-pl-page="solo"] .pm-trend i { font-size: 14px; font-style: normal; }
+[data-pl-page="solo"] .pm-trend.is-up { color: #0b7a4b; }
+[data-pl-page="solo"] .pm-trend.is-down { color: #c0392b; }
+[data-pl-page="solo"] .pm-trend.is-flat { color: var(--quiet); }
+@media (max-width: 1100px) { [data-pl-page="solo"] .pm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) { [data-pl-page="solo"] .pm-grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* ══ 同分路对比：黄色标准线 + 左侧规则表 ══════════════════════════════ */
+[data-pl-page="solo"] .pv-svg .pv-ref.is-standard {
+  stroke: #f0b400; stroke-width: 2.5px; stroke-dasharray: 7 5;
+}
+[data-pl-page="solo"] .pv-svg .pv-ref.is-standard + .pv-ref-label {
+  fill: #a87300; stroke: var(--paper); paint-order: stroke fill;
+}
+[data-pl-page="solo"] .pv-rules-wrap { max-inline-size: 100%; overflow-x: auto; border: 1px solid var(--hair); border-radius: 12px; }
+[data-pl-page="solo"] .pv-rules-wrap:focus-visible { outline: 2px solid var(--accent, #2f6fed); outline-offset: 2px; }
+[data-pl-page="solo"] .pv-rules-table { inline-size: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+[data-pl-page="solo"] .pv-rules-table caption { padding: 10px 12px; text-align: left; font-weight: 700; color: var(--text); }
+[data-pl-page="solo"] .pv-rules-table th,
+[data-pl-page="solo"] .pv-rules-table td { padding: 8px 12px; border-top: 1px solid var(--hair); text-align: right; color: var(--muted); }
+[data-pl-page="solo"] .pv-rules-table thead th { font-size: 12px; font-weight: 650; color: var(--quiet); }
+[data-pl-page="solo"] .pv-rules-table th[scope="row"] { text-align: left; color: var(--text); font-weight: 600; }
+[data-pl-page="solo"] .pv-rules-table td.is-mine { color: var(--text); font-weight: 800; background: color-mix(in srgb, var(--accent, #2f6fed) 8%, transparent); }

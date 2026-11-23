@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="40" viewBox="0 0 40 40" role="img">
+<title>圆形装备图标底座</title>
+<defs><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<circle cx="20" cy="20" r="19" fill="#f4eee7" stroke="url(#gold-edge)" stroke-width="1"/>
+</svg>

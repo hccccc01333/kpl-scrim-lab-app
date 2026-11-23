@@ -442,6 +442,38 @@ def _combo_reference(rows, hero_rates):
 # 01 英雄优先级
 # ---------------------------------------------------------------------------
 
+def _enemy_ban_rates(games):
+    """只看指定对手自己的 Ban（enemyBans），返回 {英雄: Ban 率} 与次数。"""
+    total = len(games)
+    bans = Counter()
+    for game in games or []:
+        for hero in _heroes(game.get("enemyBans")):
+            bans[hero] += 1
+    return ({hero: _pct(count, total) for hero, count in bans.items()}, bans)
+
+
+def opponent_ban_movers(current, previous, opponent):
+    """对手 Ban 率相对上一窗口的变化，随所选对手变化。"""
+    cur = [game for game in current or []
+           if opponent and str(game.get("enemy") or "") == opponent]
+    prev = [game for game in previous or []
+            if opponent and str(game.get("enemy") or "") == opponent]
+    if not cur:
+        return None
+    cur_rates, cur_counts = _enemy_ban_rates(cur)
+    prev_rates, _ = _enemy_ban_rates(prev)
+    rows = []
+    for hero, rate in cur_rates.items():
+        if cur_counts[hero] < 3:
+            continue
+        rows.append({"hero": hero, "delta": {"ban": _delta(rate, prev_rates.get(hero))}})
+    up = sorted((row for row in rows if (row["delta"]["ban"] or 0) > 0),
+                key=lambda row: -row["delta"]["ban"])[:5]
+    down = sorted((row for row in rows if (row["delta"]["ban"] or 0) < 0),
+                  key=lambda row: row["delta"]["ban"])[:5]
+    return {"up": up, "down": down, "opponent": opponent, "games": len(cur)}
+
+
 def hero_studio(games, *, prev_games=None, yoy_games=None, team="", recent_days=30,
                 series=None):
     board = hero_board(games)
@@ -568,6 +600,8 @@ def target_break(games, target, *, team="", label=""):
     ban_indexes = Counter()
     ban_rounds = Counter()
     ban_teams = Counter()
+    # 按单个目标英雄分别统计 Ban 手序：组合里谁在第几手被 Ban 要能分开看。
+    ban_by_hero = {hero: Counter() for hero in wanted}
     answer_heroes = Counter()
     answer_pairs = Counter()
     answer_rows = []
@@ -589,6 +623,7 @@ def target_break(games, target, *, team="", label=""):
                 ban_indexes[index] += 1
                 ban_rounds[_ban_round(index)] += 1
                 ban_teams[str(game.get("team") or "")] += 1
+                ban_by_hero[hero][index] += 1
         if len(wanted_set & own) == len(wanted_set) - 1:
             missing = wanted_set - own
             if missing & set(enemy_bans):
@@ -657,6 +692,11 @@ def target_break(games, target, *, team="", label=""):
         "split": {"games": len(split), "share": _pct(len(split), total)},
         "banned": {"games": banned_total, "share": _pct(banned_total, total),
                    "hands": hands,
+                   "byHero": [
+                       {"hero": hero, "total": sum(counter.values()),
+                        "hands": [{"hand": i + 1, "count": counter.get(i, 0)} for i in range(5)]}
+                       for hero, counter in ban_by_hero.items()
+                   ],
                    "firstRound": ban_rounds.get(1, 0), "secondRound": ban_rounds.get(2, 0),
                    "firstRoundShare": _pct(ban_rounds.get(1, 0), banned_total),
                    "secondRoundShare": _pct(ban_rounds.get(2, 0), banned_total),
@@ -718,6 +758,16 @@ def compare_break(kpl_block, own_block, *, kpl_label="KPL", own_label="本队"):
                       "kplCount": kpl_row.get("count"),
                       "ownCount": own_row.get("count")})
     missed = [row for row in rows if row["kplCount"] and not row["ownCount"]][:6]
+    # 双人组合命中率：本队应对组合落在 KPL 常用组合里的比例。
+    kpl_combos = {tuple(row["heroes"]) for row in (kpl_block.get("answerCombos") or [])}
+    own_combo_rows = own_block.get("answerCombos") or []
+    own_combo_total = sum(row.get("count") or 0 for row in own_combo_rows)
+    combo_hit_count = sum(row.get("count") or 0 for row in own_combo_rows
+                          if tuple(row["heroes"]) in kpl_combos)
+    combo_hit = {"value": _pct(combo_hit_count, own_combo_total) if own_combo_total else None,
+                 "ownCombos": own_combo_total,
+                 "kplTop": [row["label"] for row in (kpl_block.get("answerCombos") or [])[:6]],
+                 "note": "本队双人组合应对里落在 KPL 常用组合中的比例。"}
     return {
         "available": True,
         "kplLabel": kpl_label, "ownLabel": own_label,
@@ -726,6 +776,7 @@ def compare_break(kpl_block, own_block, *, kpl_label="KPL", own_label="本队"):
             "ownPicks": own_total, "kplTop": top_kpl,
             "note": "本队应对里落在 KPL 前 8 常用应对中的比例。",
         },
+        "comboHit": combo_hit,
         "ban": {"kplRate": kpl_ban, "ownRate": own_ban,
                 "delta": _delta(own_ban, kpl_ban)},
         "breakRate": {"kpl": (kpl_block.get("broken") or {}).get("share"),
@@ -1397,12 +1448,52 @@ def period_compare(games, cut, days=30, *, limit=10):
     }
 
 
-def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, side=""):
+def _ordered_events(game):
+    """按真实 BP 规则输出逐手事件，修正旧训练赛「先全 Ban 后全 Pick」的拼接顺序。
+
+    新版采集已按 `events_from_lists` 铺成交错顺序；这里仅当事件明显是先 Ban
+    后 Pick 拼接（前半段全 ban、后半段全 pick）时才按格式 schedule 重排，
+    用每方名单的原有先后作队列，不猜缺失手序，也不动 KPL 的真实记录顺序。
+    """
+    events = sorted(game.get("events") or [], key=lambda e: int(e.get("order") or 0))
+    if not events:
+        return []
+    actions = [("ban" if e.get("action") == "ban" else "pick") for e in events]
+    # 只在「先一段 ban、再一段 pick」的拼接形态下重排
+    switch = next((i for i in range(1, len(actions)) if actions[i] != actions[i - 1]), len(actions))
+    if switch == len(actions) or actions[switch] != "pick":
+        return events
+    try:
+        from bp_formats import get_format
+        # 训练赛（含旧 rank-20 拼接记录）按征召规则展开成交错手序，符合教练的
+        # 「ban2→pick→ban2→pick」口径；页面会标注这是按规则展开，非逐手实录。
+        rule = game.get("ruleProfile") or ""
+        fmt = get_format("draft-20" if rule in ("rank-20", "rank", "") else rule)
+        # 每方名单按现有先后入队
+        queues = {}
+        for e in events:
+            actor = "team" if e.get("actor") == "team" else "enemy"
+            queues.setdefault(actor, {"ban": [], "pick": []})[e.get("action")].append(e.get("hero"))
+        out = []
+        for step in fmt.schedule:
+            actor = "team" if step["camp"] == str(game.get("side") or "") else "enemy"
+            queue = queues.get(actor, {}).get(step["action"]) or []
+            if not queue:
+                return events  # 名单与格式对不上，保持原样，不伪造
+            out.append({"order": step["order"], "action": step["action"],
+                        "actor": actor, "hero": queue.pop(0)})
+        return out
+    except Exception:
+        return events
+
+
+def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, side="", start_hero=""):
     """BP 时序分支树：同一前缀合并，分叉按样本数保留前 N。
 
     只认已核验的逐手 `events`（18/20 手，order/action/actor/hero）；没有手序的局不参与，
     不按名单顺序补。节点 `actor` 相对所选队伍：team = 我方，enemy = 对方。
     蓝/红方的第一手行动方不同，默认取样本多的一侧，避免把两个视角混进一棵树。
+    ``start_hero`` 把某个英雄当作新的第 1 手：只留经过它的局，并从它开始重排手序。
     """
     depth = max(2, min(20, int(depth or 6)))
     branch = max(2, min(5, int(branch or 3)))
@@ -1427,13 +1518,17 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, 
         rows = [game for game in rows if str(game.get("side") or "") == side]
     rows.sort(key=lambda game: str(game.get("date") or ""), reverse=True)
     rows = rows[:max(1, int(limit_games or 600))]
+    if start_hero:
+        rows = [game for game in rows
+                if any(str(event.get("hero") or "").strip() == start_hero
+                       for event in _ordered_events(game))]
     actual_depth = min(depth, max((len(game.get("events") or []) for game in rows), default=depth))
     depth = max(2, actual_depth)
     if not rows:
         return {"available": False, "games": 0, "ordered": 0, "total": total,
                 "reason": "这个条件下没有足够长的已核验手序；先在采集/沙盘补录。",
                 "team": team, "opponent": opponent, "depth": depth, "branch": branch,
-                "side": side, "sideCounts": dict(side_counts),
+                "side": side, "startHero": start_hero, "sideCounts": dict(side_counts),
                 "nodes": [], "main": [], "paths": []}
 
     nodes = {"0": {"id": "0", "parent": None, "level": 0, "order": 0,
@@ -1444,19 +1539,31 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, 
         won = game.get("result")
         parent = "0"
         hands = []
-        for event in sorted(game.get("events") or [],
-                            key=lambda item: int(item.get("order") or 0))[:depth]:
-            order = int(event.get("order") or 0)
+        events = _ordered_events(game)
+        if start_hero:
+            hit = next((index for index, event in enumerate(events)
+                        if str(event.get("hero") or "").strip() == start_hero), None)
+            if hit is None:
+                continue
+            events = events[hit:hit + depth]
+        else:
+            events = events[:depth]
+        for offset, event in enumerate(events):
+            order = offset + 1 if start_hero else int(event.get("order") or 0)
             action = "ban" if event.get("action") == "ban" else "pick"
             actor = "team" if event.get("actor") == "team" else "enemy"
             hero = str(event.get("hero") or "").strip()
             if not hero:
                 break
+            from bp_types import type_of as _type_of, TYPE_LANE as _TYPE_LANE
+            hero_type = _type_of(hero)
+            hero_lane = _TYPE_LANE.get(hero_type, "")
             key = f"{parent}>{order}:{actor}:{action}:{hero}"
             node = nodes.get(key)
             if node is None:
                 node = {"id": key, "parent": parent, "level": order, "order": order,
                         "action": action, "actor": actor, "hero": hero,
+                        "type": hero_type, "lane": hero_lane,
                         "count": 0, "wins": 0, "decided": 0}
                 nodes[key] = node
             node["count"] += 1
@@ -1503,7 +1610,7 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, 
     kept.sort(key=lambda item: (item["level"], -item["count"], item["hero"]))
     return {"available": True, "games": len(rows), "ordered": len(rows), "total": total,
             "team": team, "opponent": opponent, "depth": depth, "branch": branch,
-            "side": side, "sideCounts": dict(side_counts),
+            "side": side, "startHero": start_hero, "sideCounts": dict(side_counts),
             "nodes": kept, "main": main, "paths": paths[:12],
             "dropped": sum(len(kids) - min(len(kids), branch)
                            for kids in children.values())}
@@ -1532,6 +1639,10 @@ def build_studio(games, *, source="kpl", team="", opponent="", bounds=None,
     series = month_series if month_series is not None else _month_index(board_games)
     heroes = hero_studio(board_games, prev_games=board_prev, yoy_games=board_yoy,
                          team=team, recent_days=recent_days, series=series)
+    if opponent and opponent != '__all__':
+        foe_movers = opponent_ban_movers(current, prev_games, opponent)
+        if foe_movers:
+            heroes['movers'] = foe_movers
     combos = combo_studio(board_games, prev_games=board_prev, yoy_games=board_yoy,
                           recent_days=recent_days, series=series)
     systems = system_studio(current, prev_games=prev_games or [], team=team,

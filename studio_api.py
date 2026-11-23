@@ -20,12 +20,58 @@ from identity_auto import build_plan
 import metric_service
 import team_clusters
 import vocab
+import hero_external_stats
 from camp_time import camp_times
 
 from studio_analysis import (DIMENSIONS, METHODS, METRICS, deduplicate, extract_rows,
                              finite, fingerprint, run_analysis, screenshot_rows, StudioRepository)
 from studio_pipeline import DatasetStore, prepare
 from studio_research import TOPICS, research
+
+# 战队标签预置项：赛训组统一维护，前端不再写死「本机标签」。
+TEAM_TAG_PRESETS = [
+    {'label': '巅峰2100', 'kind': 'peak', 'title': '对手里有巅峰分 2100+ 的选手'},
+    {'label': '百强', 'kind': 'peak', 'title': '对手里有巅峰百强选手'},
+    {'label': '国赛队', 'kind': 'elite', 'title': '打过全国大赛的队伍'},
+    {'label': 'KPL', 'kind': 'league', 'title': '打过 KPL 的队伍'},
+    {'label': 'K甲', 'kind': 'league', 'title': '打过 K 甲的队伍'},
+]
+
+# 周报可配置模块：前端勾选取子集并排序，后端只接受这里登记的 id。
+WEEKLY_REPORT_MODULES = [
+    'kpi', 'compare', 'leader', 'matches', 'types', 'foes', 'effects',
+]
+
+
+def _normalize_weekly_modules(raw):
+    """兼容第一版的字符串数组，并允许自定义标题与 text: 文字块。"""
+    out = []
+    seen = set()
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, str):
+            module_id, title, text = item, '', ''
+        elif isinstance(item, dict):
+            module_id = str(item.get('id') or '')
+            title = str(item.get('title') or '')[:60]
+            text = str(item.get('text') or '')[:2000]
+        else:
+            continue
+        if module_id in WEEKLY_REPORT_MODULES:
+            key = module_id
+        elif module_id.startswith('text:') and len(module_id) <= 80:
+            key = module_id
+        else:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        entry = {'id': key}
+        if title:
+            entry['title'] = title
+        if text:
+            entry['text'] = text
+        out.append(entry)
+    return out
 
 
 def camp_games(camp_details_dir, db_path=None):
@@ -478,7 +524,8 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 if not isinstance(team_name, str) or not team_name.strip() or len(team_name.strip()) > 50:
                     raise HTTPException(400, '请填写 1–50 字的战队名称')
                 settings['teamName'] = team_name.strip()
-            for key, limit in (('coach', 30), ('season', 40), ('organization', 60)):
+            for key, limit in (('coach', 30), ('season', 40), ('organization', 60),
+                               ('league', 40)):
                 if key in value:
                     raw = value.get(key)
                     if raw is not None and not isinstance(raw, str):
@@ -492,7 +539,8 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         repository_cache['value'] = None
         result_cache.clear()
         return {'ok': True, 'teamName': settings.get('teamName'),
-                'coach': settings.get('coach', ''), 'season': settings.get('season', '')}
+                'coach': settings.get('coach', ''), 'season': settings.get('season', ''),
+                'league': settings.get('league', '')}
 
     @router.get('/workspace')
     def workspace():
@@ -1387,9 +1435,339 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     def wb_schedules(status: str = ''):
         return {'schedules': workspace().list_schedules(status=status or None)}
 
+    def _team_name(db_path):
+        with sqlite3.connect(db_path) as connection:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            return (json.loads(row[0]) if row else {}).get('teamName') or ''
+
+    @router.get('/workspace/onboarding')
+    def wb_onboarding(competition: str = ''):
+        """初始化清单（v1）：步骤完成判定全部由数据计算，前端只做呈现。
+
+        赛事域：competition 传当前赛事时，系列/语料按赛事口径；对局采集
+        总数用全局口径——采集这件事不随切赛事归零。
+        """
+        ws = workspace()
+        competitions = ws.list_competitions()
+        rows = ws._all_match_rows()
+        opponents = {str(row.get('enemy_team_id') or '') for row in rows} - {''}
+        scoped_keys = ws.competition_scope_keys(competition) if competition else set()
+        series = ws.list_series(competition=competition or None, limit=500)
+        confirmed = [item for item in series if item.get('status') == 'confirmed']
+        import combo_pool
+        import bp_facts
+        import tiers
+        with sqlite3.connect(db_path) as connection:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+            settings_doc = json.loads(row[0]) if row else {}
+        league = settings_doc.get('league') or tiers.DEFAULT_LEAGUE
+        settings_doc['leagueOptions'] = tiers.LEAGUES
+        counters_doc = bp_facts._load('rules_counters.json') or {}
+
+        def own_player_ids(item):
+            try:
+                return json.loads(item.get('own_player_ids') or '[]')
+            except (TypeError, ValueError):
+                return []
+
+        return {
+            'competitions': [{'id': item.get('id'), 'name': item.get('name'),
+                              'status': item.get('status')} for item in competitions],
+            'ownPlayersBound': any(own_player_ids(item) for item in competitions),
+            'rules': {'comboPoolSaved': bool(combo_pool.has_saved()),
+                      'counterRules': len(counters_doc.get('heroPairs') or [])
+                                      + len(counters_doc.get('comboPairs') or [])},
+            'opponentCount': len(opponents),
+            'matchCount': len(rows),
+            'scopedMatchCount': len(scoped_keys),
+            'confirmedSeries': len(confirmed),
+            'confirmedGames': sum(len(item.get('games') or []) for item in confirmed),
+            'league': league,
+            'leagueOptions': tiers.LEAGUES,
+            'capabilities': tiers.capabilities(league),
+            'corpusThreshold': tiers.threshold_for(league),
+        }
+
     @router.get('/workspace/competitions')
     def wb_competitions():
         return {'competitions': workspace().list_competitions()}
+
+    @router.get('/workspace/formal-bp/{match_key}')
+    def wb_formal_bp(match_key: str):
+        """正赛 BP 顺序覆盖层读取（BP 顺序级录入的回显）。"""
+        with sqlite3.connect(db_path) as connection:
+            row = connection.execute('SELECT body, revision FROM bp_overrides WHERE match_key=?',
+                                     (match_key,)).fetchone()
+        if not row:
+            raise HTTPException(404, '该局还没有 BP 顺序记录')
+        return {'matchKey': match_key, 'bp': json.loads(row[0]), 'revision': row[1]}
+
+    @router.get('/workspace/opponents/{team_id}/cross-event')
+    def wb_opponent_cross_event(team_id: str):
+        """跨赛事档案：对手交手时间线按赛事分组（跨赛事实体，不受当前赛事隔离）。"""
+        ws = workspace()
+        team = next((t for t in ws.list_teams(include_archived=True) if t['id'] == team_id), None)
+        if not team:
+            raise HTTPException(404, '对手不存在')
+        competitions = {c['id']: c for c in ws.list_competitions()}
+        groups = {}
+        for row in ws._all_match_rows():
+            if str(row.get('enemy_team_id') or '') != team_id:
+                continue
+            comp_id = str(row.get('competition_id') or '')
+            group = groups.setdefault(comp_id, {
+                'competitionId': comp_id,
+                'competitionName': (competitions.get(comp_id) or {}).get('name') or '未归属',
+                'matches': [], 'wins': 0, 'losses': 0})
+            group['matches'].append({
+                'matchKey': row.get('match_key'), 'date': row.get('date'),
+                'matchType': row.get('match_type') or 'training',
+                'winner': row.get('winner'),
+                'win': str(row.get('winner') or '') == str(row.get('own_side') or ''),
+            })
+        for group in groups.values():
+            group['matches'].sort(key=lambda m: str(m.get('date') or ''))
+            for match in group['matches']:
+                if match['matchType'] == 'formal':
+                    continue
+                if match['winner'] in ('blue', 'red'):
+                    group['wins' if match['win'] else 'losses'] += 1
+        timeline = sorted(groups.values(),
+                          key=lambda g: min((m['date'] for m in g['matches']), default=''))
+        return {'team': team, 'timeline': timeline}
+
+    @router.get('/workspace/formal-sync/pull')
+    def wb_formal_sync_pull(competition: str = '', own: str = '', limit: int = 30):
+        """KPL 拉取预览：官方 BP 数据里本队的比赛（去重后待确认落库）。"""
+        import kpl_bp
+        ws = workspace()
+        own_name = own or _team_name(db_path)
+        if not own_name:
+            return {'own': own_name, 'games': [], 'reason': '先在本队资料里填写战队名称'}
+        with sqlite3.connect(db_path) as connection:
+            existing = {row[0] for row in connection.execute(
+                'SELECT match_key FROM match_records WHERE match_type=?', ('formal',))}
+            linked = {row[0] for row in connection.execute(
+                'SELECT match_key FROM match_records WHERE formal_link IS NOT NULL')}
+            competitors = {}
+            for row in connection.execute(
+                    'SELECT m.match_key, t.name FROM match_records m '
+                    'JOIN teams t ON t.id = m.enemy_team_id'):
+                competitors[row[0]] = row[1]
+        seen_fp = set()
+        for row_ in connection.execute(
+                'SELECT m.date, t.name FROM match_records m '
+                'LEFT JOIN teams t ON t.id = m.enemy_team_id '
+                "WHERE m.match_type='formal'"):
+            seen_fp.add((str(row_[1] or ''), str(row_[0] or '')[:10]))
+        preview = []
+        for row in kpl_bp.load_games():
+            camps = (str(row.get('camp1') or ''), str(row.get('camp2') or ''))
+            if own_name not in camps:
+                continue
+            opponent = camps[1] if camps[0] == own_name else camps[0]
+            date = str(row.get('date') or '')[:10]
+            if any(opponent == fp_o and date == fp_d for fp_o, fp_d in seen_fp):
+                continue
+            preview.append({
+                'battleId': row.get('battleId'), 'date': date,
+                'league': row.get('leagueName'), 'stage': row.get('stage'),
+                'opponent': opponent, 'bpMode': row.get('bpMode'),
+                'result': 'win' if row.get('winCamp') == own_name else
+                          ('loss' if row.get('winCamp') in camps else None),
+            })
+            if len(preview) >= int(limit):
+                break
+        return {'own': own_name, 'competition': competition, 'games': preview}
+
+    @router.post('/workspace/formal-sync/commit')
+    async def wb_formal_sync_commit(request: Request):
+        """KPL 拉取落库：每场写 match_records（formal）+ BP 顺序覆盖 + 对手建档。"""
+        import kpl_bp
+        ws = workspace()
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        competition_id = str(payload.get('competitionId') or '').strip()
+        battle_ids = payload.get('battleIds') or []
+        own_name = str(payload.get('own') or '') or _team_name(db_path)
+        comp = ws.get_competition(competition_id) if competition_id else None
+        if not comp:
+            raise HTTPException(400, '归属赛事必填（且必须存在）')
+        if comp.get('status') == 'archived':
+            raise HTTPException(400, '赛事已归档（只读），不能落库。')
+        index = {}
+        for row in kpl_bp.load_games():
+            if row.get('battleId'):
+                index[str(row['battleId'])] = row
+        saved, failed = [], []
+        for battle_id in battle_ids or []:
+            row = index.get(str(battle_id))
+            if not row:
+                failed.append({'battleId': battle_id, 'error': '未找到该场'})
+                continue
+            camps = (str(row.get('camp1') or ''), str(row.get('camp2') or ''))
+            if own_name not in camps:
+                failed.append({'battleId': battle_id, 'error': '不属于本队'})
+                continue
+            opponent = camps[1] if camps[0] == own_name else camps[0]
+            enemy_team = ws.search_teams(opponent, limit=1)
+            enemy_team_id = enemy_team[0]['id'] if enemy_team else ws.upsert_team(name=opponent)
+            own_side = 'left' if camps[0] == own_name else 'right'
+            try:
+                out = ws.save_formal_match(
+                    date=str(row.get('date') or '')[:10], opponent=opponent,
+                    enemy_team_id=enemy_team_id, winner=row.get('winCamp'),
+                    own_side=own_side, competition_id=competition_id,
+                    with_bp=True, source='kpl',
+                    match_key=f"m-kpl-{row.get('battleId')}")
+            except ValueError as error:
+                failed.append({'battleId': battle_id, 'error': str(error)})
+                continue
+            saved.append({'matchKey': out['matchKey'], 'dedup': out['dedup'],
+                          'battleId': battle_id})
+            # BP 顺序：官方逐手事实行 → bp_overrides（与工作台同 schema）
+            picks = row.get('picks') or {}
+            bans = row.get('bans') or {}
+            own = row.get('winCamp') if row.get('winCamp') in camps else camps[0]
+            foe = camps[1] if camps[0] == own else camps[0]
+            left = own if own_side == 'left' else foe
+            right = foe if left == own else own
+
+            def _names(camp, table):
+                values = table.get(camp) or []
+                return [str(item.get('name') if isinstance(item, dict) else item)
+                        for item in values if item]
+
+            body = {'bans': {'left': _names(left, bans), 'right': _names(right, bans)},
+                    'picks': {'left': _names(left, picks), 'right': _names(right, picks)},
+                    'orderPending': not bool(row.get('pickOrderKnown'))}
+            with sqlite3.connect(db_path) as connection:
+                connection.execute(
+                    'CREATE TABLE IF NOT EXISTS bp_overrides '
+                    '(match_key TEXT PRIMARY KEY, body TEXT NOT NULL, '
+                    'revision INTEGER NOT NULL, updated_at REAL NOT NULL)')
+                connection.execute(
+                    'INSERT INTO bp_overrides VALUES(?,?,?,?) ON CONFLICT(match_key) DO UPDATE '
+                    'SET body=excluded.body, revision=excluded.revision+1, updated_at=excluded.updated_at',
+                    (out['matchKey'], json.dumps(body, ensure_ascii=False), 1, time.time()))
+        return {'saved': saved, 'failed': failed}
+
+    @router.get('/workspace/competitions/{competition_id}/archive-preview')
+    def wb_archive_preview(competition_id: str):
+        """赛季切换向导：归档收尾检查 + 配置继承清单。"""
+        try:
+            return workspace().archive_preview(competition_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    @router.post('/workspace/competitions/{competition_id}/archive')
+    async def wb_archive_competition(competition_id: str, request: Request):
+        """赛季切换向导：归档旧赛事 + 创建并继承新赛事。"""
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        payload = payload or {}
+        try:
+            return workspace().archive_and_inherit(competition_id, {
+                'name': payload.get('nextName'), 'date': payload.get('nextDate'),
+                'end_date': payload.get('nextEndDate'),
+                'formalFrom': payload.get('formalFrom'),
+                'formalTo': payload.get('formalTo'),
+            })
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    @router.get('/workspace/unfiled-series')
+    def wb_unfiled_series():
+        return {'series': workspace().unfiled_series(limit=200)}
+
+    @router.post('/workspace/competitions/{competition_id}/assign-series')
+    async def wb_assign_series(competition_id: str, request: Request):
+        """存量系列批量归属（M2）：逐个走 update_series 校验，混编/冲突逐条回报。"""
+        ws = workspace()
+        competition = ws.get_competition(competition_id)
+        if not competition:
+            raise HTTPException(404, '赛事不存在')
+        if competition.get('status') == 'archived':
+            raise HTTPException(400, '赛事已归档（只读），不能归属系列。')
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        ids = payload.get('seriesIds') or []
+        if not isinstance(ids, list):
+            raise HTTPException(400, 'seriesIds 必须是列表')
+        return ws.bulk_assign_series(ids, competition_id)
+
+    @router.get('/workspace/formal-matches')
+    def wb_formal_matches(competition: str = ''):
+        ws = workspace()
+        rows = ws.competition_formal_matches(competition, limit=200) if competition else []
+        return {'competitionId': competition, 'matches': rows}
+
+    @router.post('/workspace/formal-matches')
+    async def wb_formal_match_save(request: Request):
+        """正式比赛数据录入（M2）：结果级 / 阵容级；去重与对手建档在 ws 层。"""
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        payload = payload or {}
+        target_competition = payload.get('competitionId')
+        if target_competition:
+            comp_row = workspace().get_competition(target_competition)
+            if comp_row and comp_row.get('status') == 'archived':
+                raise HTTPException(400, '赛事已归档（只读），不能录入正赛。')
+        bp_payload = payload.get('bp') if isinstance(payload.get('bp'), dict) else None
+        try:
+            saved = workspace().save_formal_match(
+                date=payload.get('date'), opponent=payload.get('opponent'),
+                enemy_team_id=payload.get('enemyTeamId'), score=payload.get('score'),
+                winner=payload.get('winner'), own_side=payload.get('ownSide'),
+                competition_id=payload.get('competitionId') or None,
+                lineup=payload.get('lineup') or None,
+                with_bp=bool(bp_payload))
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        if bp_payload and saved.get('matchKey'):
+            # BP 顺序级（M2）：写入 bp_overrides（与 BP 工作台同一张表、同一 schema），
+            # orderPending 复用采集口径：双方各 5 人齐才算完整，缺了只标不伪造。
+            from bp_input import validate_bp
+            try:
+                bp = validate_bp(bp_payload)
+            except (ValueError, TypeError) as error:
+                raise HTTPException(400, str(error))
+            picks_full = all(len(bp['picks'][side]) == 5 for side in ('left', 'right'))
+            bp['orderPending'] = not picks_full
+            with sqlite3.connect(db_path) as connection:
+                connection.execute(
+                    'CREATE TABLE IF NOT EXISTS bp_overrides '
+                    '(match_key TEXT PRIMARY KEY, body TEXT NOT NULL, '
+                    'revision INTEGER NOT NULL, updated_at REAL NOT NULL)')
+                connection.execute(
+                    'INSERT INTO bp_overrides VALUES(?,?,?,?) ON CONFLICT(match_key) DO UPDATE '
+                    'SET body=excluded.body, revision=excluded.revision+1, '
+                    'updated_at=excluded.updated_at',
+                    (saved['matchKey'], json.dumps(bp, ensure_ascii=False), 1, time.time()))
+            saved['bpSaved'] = True
+            saved['orderPending'] = bp['orderPending']
+        return saved
+
+    # ---- 赛事归集与双时间口径（新增端点，均只读；literal 路由须先于 /{competition_id}）----
+    @router.get('/workspace/competitions/unfiled-matches')
+    def wb_unfiled_training_matches():
+        """未归档训练赛：不在任何赛事归集窗口、也未被手动挂载（已排除试训对局）。"""
+        rows = workspace().unfiled_training_matches(limit=None)
+        return {'count': len(rows), 'matches': rows}
+
+    @router.get('/workspace/competitions/overlaps')
+    def wb_competition_overlaps(start: str = '', end: str = '', excludeId: str = ''):
+        """时间窗口重叠检查：只提示、不阻止保存（训练归集窗口 / 正式范围任一重叠即算）。"""
+        rows = workspace().overlapping_competitions(start, end, excludeId or None)
+        return {'count': len(rows), 'overlaps': rows}
 
     @router.get('/workspace/competitions/{competition_id}')
     def wb_competition_detail(competition_id: str):
@@ -1398,23 +1776,114 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             raise HTTPException(404, '找不到这场比赛')
         return value
 
+    @router.get('/workspace/competitions/{competition_id}/matches')
+    def wb_competition_matches(competition_id: str):
+        """赛事直连对局：只返回 match_records.competition_id 指向该赛事的记录。
+
+        简洁直连接口，供赛事页/分析页按赛事取对局键；归属由 POST
+        /workspace/competitions/{id}/matches 维护。
+        """
+        ws = workspace()
+        if not ws.get_competition(competition_id):
+            raise HTTPException(404, '找不到这场比赛')
+        rows = ws.competition_matches(competition_id, limit=None)
+        return {'competitionId': competition_id, 'count': len(rows), 'matches': rows}
+
+    # ---- 归集查询：训练赛按录入日期 / 正式赛按 formal 范围；改赛事时间后即时重算 ----
+    @router.get('/workspace/competitions/{competition_id}/training-matches')
+    def wb_competition_training_matches(competition_id: str):
+        """按赛事查训练赛：录入日期落入归集窗口 + 手动挂载补全，试训对局排除。"""
+        ws = workspace()
+        if not ws.get_competition(competition_id):
+            raise HTTPException(404, '找不到这场比赛')
+        rows = ws.competition_training_matches(competition_id, limit=None)
+        return {'competitionId': competition_id, 'count': len(rows), 'matches': rows}
+
+    @router.get('/workspace/competitions/{competition_id}/formal-matches')
+    def wb_competition_formal_matches(competition_id: str):
+        """赛事正式比赛范围内的对局（formal_from~formal_to，match_type=formal）。"""
+        ws = workspace()
+        if not ws.get_competition(competition_id):
+            raise HTTPException(404, '找不到这场比赛')
+        rows = ws.competition_formal_matches(competition_id, limit=None)
+        return {'competitionId': competition_id, 'count': len(rows), 'matches': rows}
+
     @router.post('/workspace/competitions')
     async def wb_save_competition(request: Request):
         payload = await request.json()
         ws = workspace()
+        existing = ws.get_competition(payload.get('id')) if payload.get('id') else None
+
+        def keep_text(key):
+            """字段缺失=保留原值；显式 ''=清空。
+
+            save_competition 里 stage/format/owner/notes 非 COALESCE（None 会写 NULL），
+            所以这四项在字段缺失时回填旧值；其余文本字段本来就走 COALESCE，
+            直接传 None 即可保留旧值，传 '' 则清空。
+            """
+            if key in payload:
+                return payload[key]
+            return (existing or {}).get(key)
+
         try:
             competition_id = ws.save_competition(
                 payload.get('id'), name=payload.get('name') or '',
-                date=payload.get('date') or '',
+                date=payload.get('collectFrom') or payload.get('date') or '',
+                end_date=(payload.get('collectTo') if 'collectTo' in payload
+                          else payload.get('endDate')),
+                # 新增：正式比赛范围（旧数据字段缺失时由 save_competition 保留原值）
+                formal_from=payload.get('formalFrom'),
+                formal_to=payload.get('formalTo'),
                 opponent_team_id=payload.get('opponentTeamId') or None,
-                stage=payload.get('stage') or None,
-                format=payload.get('format') or None,
-                status=payload.get('status') or 'planned',
-                owner=payload.get('owner') or None,
-                notes=payload.get('notes') or None)
+                team_ids=payload.get('teamIds'),
+                head_coach=payload.get('headCoach'),
+                assistant_coach=payload.get('assistantCoach'),
+                data_analyst=payload.get('dataAnalyst'),
+                staff=payload.get('staff'),
+                own_player_ids=payload.get('ownPlayerIds'),
+                key_match_keys=payload.get('keyMatchKeys'),
+                stage=keep_text('stage'),
+                format=keep_text('format'),
+                status=payload.get('status') or None,
+                owner=keep_text('owner'),
+                notes=keep_text('notes'))
         except ValueError as error:
             raise HTTPException(400, str(error))
         return {'ok': True, 'id': competition_id}
+
+    @router.delete('/workspace/competitions/{competition_id}')
+    def wb_delete_competition(competition_id: str):
+        ws = workspace()
+        if not ws.get_competition(competition_id):
+            raise HTTPException(404, '找不到这场比赛')
+        ws.delete_competition(competition_id)
+        return {'ok': True}
+
+    @router.post('/workspace/competitions/{competition_id}/matches')
+    async def wb_set_competition_matches(competition_id: str, request: Request):
+        """把一批对局归属到该赛事：matchKeys 为对局 key 列表，整批覆盖（先解绑旧的）。"""
+        ws = workspace()
+        if not ws.get_competition(competition_id):
+            raise HTTPException(404, '找不到这场比赛')
+        payload = await request.json()
+        keys = payload.get('matchKeys')
+        if not isinstance(keys, list):
+            raise HTTPException(400, 'matchKeys 必须是数组')
+        conn = ws.connect()
+        try:
+            for table in ('match_records', 'matches'):
+                cols = {row[1] for row in conn.execute(f'PRAGMA table_info({table})')}
+                if 'competition_id' not in cols:
+                    continue
+                conn.execute(f'UPDATE {table} SET competition_id=NULL WHERE competition_id=?',
+                             (competition_id,))
+                for key in keys:
+                    conn.execute(f'UPDATE {table} SET competition_id=? WHERE match_key=?',
+                                 (competition_id, str(key)))
+            conn.commit()
+        finally:
+            conn.close()
+        return {'ok': True, 'count': len(keys)}
 
     @router.post('/workspace/reports/screenshot')
     async def wb_report_screenshot(request: Request):
@@ -1759,8 +2228,178 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.get('/camp-compare')
     def camp_compare(team: str = ''):
-        """逐人 / 逐英雄对照。不传 team 就是全部对手合并后的口径。"""
-        return team_clusters.compare(camp_dir(), team or None)
+        """逐人 / 逐英雄对照。不传 team 就是全部对手合并后的口径。
+
+        英雄行补齐外部口径：KPL 胜率由本地官方赛程缓存自算，国服第十英雄
+        战力分与大盘梯度（T0–T4.5）来自 91m 每日抓取；缺数据时前端继续显示
+        「—」，不编造数字。
+        """
+        result = team_clusters.compare(camp_dir(), team or None)
+        for side in ('own', 'enemy'):
+            for row in ((result.get('heroes') or {}).get(side) or []):
+                if isinstance(row, dict) and row.get('hero'):
+                    row.update(hero_external_stats.hero_fields(row['hero']))
+        return result
+
+    def _tag_db():
+        """标签 / 笔记共用 results_db；表在首次访问时建，不依赖外部迁移。"""
+        connection = sqlite3.connect(results_db)
+        connection.execute('CREATE TABLE IF NOT EXISTS team_tags (team TEXT PRIMARY KEY, tags TEXT NOT NULL)')
+        connection.execute('CREATE TABLE IF NOT EXISTS team_notes (team TEXT PRIMARY KEY, days TEXT NOT NULL)')
+        connection.execute('CREATE TABLE IF NOT EXISTS report_templates (competition TEXT PRIMARY KEY, modules TEXT NOT NULL)')
+        return connection
+
+    @router.get('/team-tags')
+    def team_tags_get(team: str = ''):
+        """预置标签 + 该战队已打标签，赛训组共享一份。"""
+        connection = _tag_db()
+        try:
+            row = connection.execute('SELECT tags FROM team_tags WHERE team=?', (team,)).fetchone()
+        finally:
+            connection.close()
+        tags = []
+        if row:
+            try:
+                tags = json.loads(row[0])
+            except (ValueError, TypeError):
+                tags = []
+        return {'presets': TEAM_TAG_PRESETS, 'tags': tags if isinstance(tags, list) else []}
+
+    @router.post('/team-tags')
+    def team_tags_save(payload: dict):
+        team = str(payload.get('team') or '').strip()
+        raw = payload.get('tags')
+        if not team or not isinstance(raw, list):
+            raise HTTPException(400, '保存标签需要 team 与 tags')
+        tags: list[str] = []
+        for item in raw:
+            value = str(item or '').strip()[:20]
+            if value and value not in tags:
+                tags.append(value)
+        tags = tags[:12]
+        connection = _tag_db()
+        try:
+            connection.execute('INSERT OR REPLACE INTO team_tags(team, tags) VALUES(?, ?)',
+                               (team, json.dumps(tags, ensure_ascii=False)))
+            connection.commit()
+        finally:
+            connection.close()
+        return {'ok': True, 'tags': tags}
+
+    @router.get('/data-freshness')
+    def data_freshness():
+        """英雄榜三套外部口径的最近更新时间，前端用来提示旧数据。"""
+        data = hero_external_stats.load() or {}
+        updated = str(data.get('updatedAt') or '')
+        today = datetime.now().date().isoformat()
+        stale = not updated or updated[:10] != today
+
+        def file_day(path: Path) -> str:
+            try:
+                return datetime.fromtimestamp(path.stat().st_mtime).date().isoformat()
+            except OSError:
+                return ''
+
+        return {
+            'updatedAt': updated,
+            'stale': stale,
+            'kpl': {'heroes': len(data.get('kpl') or {}), 'fileAt': file_day(hero_external_stats.GAMES_PATH)},
+            'peak10': {'heroes': len(data.get('top10') or {})},
+            'bigTier': {'heroes': len(data.get('big') or {})},
+            'sourceAt': file_day(hero_external_stats.OUT_PATH),
+        }
+
+    @router.get('/team-tags/all')
+    def team_tags_all():
+        """战队页筛选用：一次拿到所有已打标签，按 team id 分组。"""
+        connection = _tag_db()
+        try:
+            rows = connection.execute('SELECT team, tags FROM team_tags').fetchall()
+        finally:
+            connection.close()
+        teams: dict[str, list[str]] = {}
+        for team, raw in rows:
+            try:
+                tags = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(tags, list):
+                teams[str(team)] = [str(item).strip() for item in tags if str(item).strip()]
+        return {'presets': TEAM_TAG_PRESETS, 'teams': teams}
+
+    @router.get('/team-notes')
+    def team_notes_get(team: str = ''):
+        connection = _tag_db()
+        try:
+            row = connection.execute('SELECT days FROM team_notes WHERE team=?', (team,)).fetchone()
+        finally:
+            connection.close()
+        days = {}
+        if row:
+            try:
+                days = json.loads(row[0])
+            except (ValueError, TypeError):
+                days = {}
+        return {'days': days if isinstance(days, dict) else {}}
+
+    @router.post('/team-notes')
+    def team_notes_save(payload: dict):
+        team = str(payload.get('team') or '').strip()
+        raw = payload.get('days')
+        if not team or not isinstance(raw, dict):
+            raise HTTPException(400, '保存笔记需要 team 与 days')
+        days = {}
+        for key, value in raw.items():
+            day = str(key)[:10]
+            text = str(value or '')[:2000]
+            if day and text:
+                days[day] = text
+        connection = _tag_db()
+        try:
+            connection.execute('INSERT OR REPLACE INTO team_notes(team, days) VALUES(?, ?)',
+                               (team, json.dumps(days, ensure_ascii=False)))
+            connection.commit()
+        finally:
+            connection.close()
+        return {'ok': True, 'days': days}
+
+    @router.get('/report-template')
+    def report_template_get(competition: str = ''):
+        """按赛事保存的周报模块配置；没存过就返回默认全套。"""
+        key = str(competition or '').strip()[:80]
+        connection = _tag_db()
+        try:
+            row = connection.execute('SELECT modules FROM report_templates WHERE competition=?', (key,)).fetchone()
+        finally:
+            connection.close()
+        modules = [{'id': item} for item in WEEKLY_REPORT_MODULES]
+        if row:
+            try:
+                saved = json.loads(row[0])
+                cleaned = _normalize_weekly_modules(saved)
+                if cleaned:
+                    modules = cleaned
+            except (ValueError, TypeError):
+                pass
+        return {'modules': modules, 'available': WEEKLY_REPORT_MODULES}
+
+    @router.post('/report-template')
+    def report_template_save(payload: dict):
+        key = str(payload.get('competition') or '').strip()[:80]
+        raw = payload.get('modules')
+        if not key or not isinstance(raw, list):
+            raise HTTPException(400, '保存周报模板需要 competition 与 modules')
+        modules = _normalize_weekly_modules(raw)
+        if not modules:
+            raise HTTPException(400, '周报至少要保留一个模块')
+        connection = _tag_db()
+        try:
+            connection.execute('INSERT OR REPLACE INTO report_templates(competition, modules) VALUES(?, ?)',
+                               (key, json.dumps(modules, ensure_ascii=False)))
+            connection.commit()
+        finally:
+            connection.close()
+        return {'ok': True, 'modules': modules}
 
     @router.get('/camp-combos')
     def camp_combos(min: int = 3):
@@ -1811,5 +2450,495 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         team_clusters.merge_team(db_path, source, target)
         invalidate_workspace_cache()
         return {'ok': True, 'from': source, 'into': target}
+
+    # =====================================================================
+    # [entry-dev] 正式比赛录入 + 赛后笔记（新增区块 BEGIN）—— 只追加，不改既有端点
+    # 前端：v3/public/official-entry.js、v3/public/match-notes.js
+    # 存储：channels 走既有 channel_store + channels 表；notes 落 data/match_notes.json
+    # =====================================================================
+    import sys
+    import threading
+
+    NOTES_PATH = Path(db_path).parent / 'match_notes.json'
+    NOTES_LOCK = threading.Lock()
+    NOTES_SCHEMA = 'kpl-match-notes-v1'
+    NOTE_MAX_BODY = 4000
+    NOTE_MAX_TAGS = 8
+    NOTE_MAX_TAG_LEN = 16
+
+    def _notes_read():
+        try:
+            raw = json.loads(NOTES_PATH.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            raw = None
+        if not isinstance(raw, dict) or not isinstance(raw.get('notes'), list):
+            return {'schema': NOTES_SCHEMA, 'updatedAt': '', 'notes': []}
+        return raw
+
+    def _notes_write(doc):
+        doc['schema'] = NOTES_SCHEMA
+        doc['updatedAt'] = time.time()
+        NOTES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = NOTES_PATH.with_name(NOTES_PATH.name + '.tmp')
+        tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding='utf-8')
+        tmp.replace(NOTES_PATH)
+
+    def _note_clean(raw, match_key, created=''):
+        item = raw if isinstance(raw, dict) else {}
+        tags = []
+        for tag in (item.get('tags') or []):
+            cleaned = str(tag or '').strip()[:NOTE_MAX_TAG_LEN]
+            if cleaned and cleaned not in tags and len(tags) < NOTE_MAX_TAGS:
+                tags.append(cleaned)
+        stamp = time.time()
+        return {
+            'id': str(item.get('id') or uuid.uuid4().hex)[:80],
+            'matchKey': match_key,
+            'body': str(item.get('body') or '')[:NOTE_MAX_BODY],
+            'tags': tags,
+            'author': str(item.get('author') or '')[:40],
+            'createdAt': created or str(item.get('createdAt') or stamp),
+            'updatedAt': stamp,
+        }
+
+    @router.get('/notes')
+    def studio_notes_get(match_key: str = ''):
+        """match_key 为空时返回全部（按 matchKey 分组），供独立笔记页 / 日历扩展。"""
+        notes = [item for item in _notes_read()['notes'] if isinstance(item, dict)]
+        key = str(match_key or '').strip()
+        if key:
+            return {'ok': True, 'matchKey': key,
+                    'notes': [item for item in notes if item.get('matchKey') == key]}
+        by_match = {}
+        for item in notes:
+            by_match.setdefault(str(item.get('matchKey') or ''), []).append(item)
+        return {'ok': True, 'notes': notes, 'byMatch': by_match}
+
+    @router.post('/notes')
+    async def studio_notes_post(request: Request):
+        """新增/更新/删除笔记：{matchKey, body, tags} / {matchKey,id,delete:true}
+        也可整组覆盖：{matchKey, notes:[...]}。"""
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(400, '笔记数据格式错误')
+        key = str(payload.get('matchKey') or '').strip()[:200]
+        if not key:
+            raise HTTPException(400, '缺少 matchKey')
+        with NOTES_LOCK:
+            doc = _notes_read()
+            notes = [item for item in doc['notes'] if isinstance(item, dict)]
+            if isinstance(payload.get('notes'), list):
+                kept = [item for item in notes if item.get('matchKey') != key]
+                incoming = [_note_clean(item, key) for item in payload['notes'][:200]]
+                notes = kept + incoming
+            elif payload.get('delete'):
+                note_id = str(payload.get('id') or '')
+                if not note_id:
+                    raise HTTPException(400, '删除笔记需要 id')
+                notes = [item for item in notes
+                         if not (item.get('matchKey') == key and item.get('id') == note_id)]
+            else:
+                raw = {field: payload.get(field) for field in ('id', 'body', 'tags', 'author')}
+                fresh = _note_clean(raw, key)
+                index = next((i for i, item in enumerate(notes)
+                              if item.get('matchKey') == key and item.get('id') == fresh['id']), None)
+                if index is None:
+                    notes.append(fresh)
+                else:
+                    old = notes[index]
+                    fresh['createdAt'] = old.get('createdAt') or fresh['createdAt']
+                    notes[index] = fresh
+            doc['notes'] = notes
+            _notes_write(doc)
+        return {'ok': True, 'matchKey': key,
+                'notes': [item for item in notes if item.get('matchKey') == key]}
+
+    def _formal_template_bytes():
+        from openpyxl import Workbook
+        import io
+        wb = Workbook()
+        s1 = wb.active; s1.title = '对局'
+        s1.append(['比赛日期','对手','赛段','BO','局序','我方阵营','赛果','时长分','时长秒','我方击杀','对方击杀','一血','一塔','10分钟经济差','推塔我方','推塔对方','分均经济我方','分均经济对方','版本号','备注'])
+        s1.append(['2026-11-10','示例对手','常规赛',3,1,'蓝方','胜',15,32,18,12,'我方','我方',800,9,3,2100,1950,'3.1.2.7','示例行，导入前删除'])
+        s2 = wb.create_sheet('选手')
+        s2.append(['比赛日期','对手','局序','阵营','位置','英雄','选手名','击杀','死亡','助攻','总经济','输出伤害','承受伤害','参团率%','评分'])
+        s2.append(['2026-11-10','示例对手',1,'我方','对抗路','张飞','选手A',2,1,8,9800,12000,15000,62,8.5])
+        s3 = wb.create_sheet('BP顺序')
+        s3.append(['比赛日期','对手','局序','手序','阵营','动作','英雄'])
+        s3.append(['2026-11-10','示例对手',1,1,'我方','ban','大乔'])
+        for sh in (s1, s2, s3): sh.freeze_panes = 'A2'
+        buf = io.BytesIO(); wb.save(buf); buf.seek(0); return buf.getvalue()
+
+    @router.get('/official-entry/template')
+    def formal_template_download():
+        from fastapi.responses import Response
+        return Response(_formal_template_bytes(), media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        headers={'Content-Disposition': 'attachment; filename=formal-entry-template.xlsx'})
+
+    def _parse_formal_workbook(path):
+        from openpyxl import load_workbook
+        LANES = ('对抗路', '打野', '中路', '发育路', '游走')
+        errors, games = [], []
+        wb = load_workbook(path, data_only=True)
+        sh1 = wb['对局']
+        hdr = [str(c.value or '').strip() for c in sh1[1]]
+        if hdr[:7] != ['比赛日期','对手','赛段','BO','局序','我方阵营','赛果']:
+            raise ValueError('「对局」表头不符，请用平台下载的固定模板')
+        groups = {}
+        for rn, row in enumerate(sh1.iter_rows(min_row=2, values_only=True), 2):
+            vals = [None if v is None else str(v).strip() for v in row] + [''] * 20
+            if not any(vals): continue
+            date, opp, stage, bo, gno, side, result = vals[:7]
+            if not date or not opp:
+                errors.append({'row': rn, 'error': '日期与对手必填'}); continue
+            try: bo_n = int(float(bo))
+            except: errors.append({'row': rn, 'error': f'BO 无效: {bo}'}); continue
+            if bo_n not in (1,3,5,7):
+                errors.append({'row': rn, 'error': f'BO 只能 1/3/5/7: {bo}'}); continue
+            try: gn = int(float(gno))
+            except: errors.append({'row': rn, 'error': f'局序无效: {gno}'}); continue
+            if side not in ('蓝方','红方'):
+                errors.append({'row': rn, 'error': f'阵营只能是蓝方/红方: {side}'}); continue
+            if result not in ('胜','负'):
+                errors.append({'row': rn, 'error': f'赛果只能是胜/负: {result}'}); continue
+            gkey = (date, opp, bo_n)
+            groups.setdefault(gkey, []).append((rn, {
+                'date': date, 'opponent': opp, 'stage': stage, 'bo': bo_n, 'gameNo': gn,
+                'ownSide': 'blue' if side == '蓝方' else 'red',
+                'result': 'win' if result == '胜' else 'loss',
+                'durationMin': vals[7], 'durationSec': vals[8],
+                'killsOwn': vals[9], 'killsFoe': vals[10],
+                'firstBlood': vals[11], 'firstTower': vals[12], 'at10': vals[13],
+                'towersOwn': vals[14], 'towersFoe': vals[15],
+                'gpmOwn': vals[16], 'gpmFoe': vals[17], 'version': vals[18], 'notes': vals[19]}))
+        pmap, hmap = {}, {}
+        for sn, key_list in (('选手', pmap), ('BP顺序', hmap)):
+            sh = wb.get(sn)
+            if not sh: continue
+            for rn, row in enumerate(sh.iter_rows(min_row=2, values_only=True), 2):
+                vals = [None if v is None else str(v).strip() for v in row] + [''] * 15
+                if not any(vals): continue
+                gkey = (vals[0], vals[1], vals[2])
+                entry = {'row': rn, 'camp': vals[3], 'lane': vals[4], 'hero': vals[5],
+                         'id': vals[6], 'kills': vals[7], 'deaths': vals[8],
+                         'assists': vals[9], 'gold': vals[10], 'damage': vals[11],
+                         'taken': vals[12], 'participation': vals[13], 'rating': vals[14],
+                         'handNo': vals[3] if sn == 'BP顺序' else None,
+                         'action': vals[5] if sn == 'BP顺序' else None}
+                if sn == 'BP顺序':
+                    entry.update({'handNo': vals[3], 'action': vals[4], 'hero': vals[5], 'camp': vals[4]})
+                else:
+                    entry.update({'gameNo': vals[2]})
+                hmap_key = gkey
+                if sn == 'BP顺序':
+                    hmap.setdefault(hmap_key, []).append(entry)
+                else:
+                    pmap.setdefault(hmap_key, []).append(entry)
+        for gkey, rows in sorted(groups.items()):
+            rows.sort(key=lambda x: x[1]['gameNo'])
+            gnos = [x[1]['gameNo'] for x in rows]
+            if gnos != list(range(1, len(gnos)+1)):
+                for rn, _ in rows:
+                    errors.append({'row': rn, 'error': f'局序必须从1连续: {gnos}'})
+                continue
+            sides = {x[1]['ownSide'] for x in rows}
+            if len(sides) > 1:
+                for rn, _ in rows:
+                    errors.append({'row': rn, 'error': '同一份BO内阵营必须一致'})
+                continue
+            players = pmap.get((gkey[0], gkey[1], str(gkey[2])), [])
+            hands = hmap.get((gkey[0], gkey[1], str(gkey[2])), [])
+            entry = {'date': gkey[0], 'opponent': gkey[1], 'boFormat': gkey[2],
+                     'ownSide': 'left' if rows[0][1]['ownSide'] == '蓝方' else 'right',
+                     'lineups': {'left': [], 'right': []}, 'bpHands': hands}
+            for rn, game in rows:
+                side_key = 'left' if game['ownSide'] == 'blue' else 'right'
+                for p in players:
+                    if str(p.get('gameNo')) != str(game['gameNo']): continue
+                    p_side = 'left' if p['camp'] == '我方' else 'right'
+                    if p['camp'] == '对方': p_side = 'right' if entry['ownSide'] == 'left' else 'left'
+                    lane = p['lane'] if p['lane'] in LANES else '中路'
+                    entry['lineups'].setdefault(p_side, []).append({
+                        'lane': lane, 'hero': p['hero'], 'id': p['id'],
+                        'kills': p['kills'], 'deaths': p['deaths'], 'assists': p['assists'],
+                        'gold': p['gold'], 'damage': p['damage'], 'taken': p['taken'],
+                        'participation': p['participation'], 'rating': p['rating']})
+            games.append({'rows': [rn for rn, _ in rows],
+                          'date': gkey[0], 'opponent': gkey[1], 'bo': gkey[2],
+                          'ownSide': entry['ownSide'], 'entry': entry,
+                          'games': [{'gameNo': g['gameNo'], **g} for rn, g in rows]})
+        return games, errors
+
+    @router.get('/official-entry/template')
+    def formal_template_download():
+        from fastapi.responses import Response
+        return Response(_formal_template_bytes(),
+                        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        headers={'Content-Disposition': 'attachment; filename=formal-entry-template.xlsx'})
+
+    @router.post('/official-entry/import')
+    async def formal_import_upload(request: Request):
+        """Excel 三 sheet 批量导入：对局 + 选手 + BP顺序，走速记同口径落库。"""
+        import tempfile, shutil as _shutil
+        from openpyxl import load_workbook as _lwb
+        form = await request.form()
+        upload = form.get('file')
+        if not upload:
+            raise HTTPException(400, '请上传 Excel 文件')
+        competition_id = str(form.get('competitionId') or '').strip()
+        ws = workspace()
+        if not competition_id:
+            raise HTTPException(400, '归属赛事必填')
+        comp = ws.get_competition(competition_id)
+        if not comp:
+            raise HTTPException(400, '赛事不存在')
+        if comp.get('status') == 'archived':
+            raise HTTPException(400, '赛事已归档（只读）')
+        tmp = Path(tempfile.mkdtemp()) / 'import.xlsx'
+        with open(tmp, 'wb') as f:
+            f.write(await upload.read())
+        try:
+            games, errors = _parse_formal_workbook(tmp)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:
+            raise HTTPException(400, f'解析失败: {e}')
+        saved, dedup, failed = 0, 0, list(errors)
+        for game in games:
+            entry = game['entry']
+            lineup_lines = []
+            for side, players in (entry.get('lineups') or {}).items():
+                for p in players:
+                    lineup_lines.append(f"{p.get('camp', '')},{p.get('lane', '')},{p.get('hero', '')}")
+            try:
+                result = ws.save_formal_match(
+                    date=game['date'], opponent=game['opponent'],
+                    competition_id=competition_id,
+                    own_side=game['ownSide'], source='excel',
+                    lineup=lineup_lines,
+                    with_bp=bool(entry.get('bpHands')))
+            except ValueError as e:
+                failed.append({'row': game['rows'][0], 'error': str(e)}); continue
+            if result.get('dedup'): dedup += 1
+            else: saved += 1
+            mk = result['matchKey']
+            if entry.get('bpHands'):
+                from bp_input import validate_bp
+                own_side_key = 'left' if game['ownSide'] == 'left' else 'right'
+                foe_side_key = 'right' if own_side_key == 'left' else 'left'
+                bans = {'left': [], 'right': []}
+                picks = {'left': [], 'right': []}
+                for hand in entry['bpHands']:
+                    side = 'left' if hand.get('camp') == '我方' else 'right'
+                    action = hand.get('action', '').strip().lower()
+                    hero = hand.get('hero', '')
+                    if action == 'ban': bans[side].append(hero)
+                    elif action == 'pick': picks[side].append(hero)
+                try:
+                    bp_body = validate_bp({'bans': bans, 'picks': picks})
+                    bp_body['orderPending'] = not all(len(picks[k]) == 5 for k in ('left', 'right'))
+                    with sqlite3.connect(db_path) as connection:
+                        connection.execute(
+                            'INSERT INTO bp_overrides VALUES(?,?,?,?) ON CONFLICT(match_key) DO UPDATE '
+                            'SET body=excluded.body, revision=excluded.revision+1, updated_at=excluded.updated_at',
+                            (mk, json.dumps(bp_body, ensure_ascii=False), 1, time.time()))
+                except Exception:
+                    pass
+        return {'saved': saved, 'dedup': dedup, 'failed': failed, 'total': len(games)}
+
+    @router.post('/official-entry')
+    async def studio_official_entry(request: Request):
+        """一场 BO 的线上表格录入：每局建一条 channel（matchType=formal）。
+
+        结构化字段写进 channel.match / draft.match / sources.table.rows；
+        赛后数据图只挂 imageIds（来自 /api/images），不做 OCR。
+        finalize=true 时沿用 channel_store.bundle 写入 matches_dir，不新造存储。
+        2026-11-22 反馈：字段全部选填——日期/对手/比分等留空的先入库占位，回头补录；
+        finalize 时跳过必采材料校验（require_complete=False），空阵容也直接进正式档案。
+        """
+        import channel_store
+
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(400, '录入数据格式错误')
+        date = str(payload.get('date') or '').strip()
+        opponent = str(payload.get('opponent') or '').strip()
+        event = str(payload.get('event') or '').strip()
+        match_type = 'formal'  # 正式比赛固定口径，不信任前端传值
+        try:
+            bo = int(payload.get('boFormat') or 0)
+        except (TypeError, ValueError):
+            bo = 0
+        # date/opponent 允许留空（录入日期缺省回退 date 的口径里，空 date 由
+        # 文件时间兜底）；只挡住结构性错误：赛制和局数。
+        if bo not in (1, 3, 5, 7):
+            raise HTTPException(400, 'BO 赛制只能是 BO1 / BO3 / BO5 / BO7')
+        games = payload.get('games')
+        if not isinstance(games, list) or not games or len(games) > 7:
+            raise HTTPException(400, '每场正式比赛需要 1–7 局数据')
+        own_side = str(payload.get('ownSide') or 'left').strip()
+        if own_side not in ('left', 'right'):
+            own_side = 'left'
+        foe_side = 'right' if own_side == 'left' else 'left'
+        reviewer = str(payload.get('reviewer') or '教练').strip()[:40] or '教练'
+        version = str(payload.get('version') or '').strip()[:40]
+        replay_link = str(payload.get('replayLink') or '').strip()[:300]
+        series_key = f'formal:{date}:{uuid.uuid4().hex[:12]}'
+        session = event or f'正式赛 BO{bo}'
+        do_finalize = payload.get('finalize', True) is not False
+
+        built, warnings = [], []
+        for index, raw_game in enumerate(games):
+            game = raw_game if isinstance(raw_game, dict) else {}
+            game_no = int(game.get('gameNo') or index + 1)
+            scores = game.get('scores') if isinstance(game.get('scores'), dict) else {}
+            own_score = scores.get('own')
+            foe_score = scores.get('foe')
+            try:
+                own_score = int(own_score) if own_score not in (None, '') else None
+                foe_score = int(foe_score) if foe_score not in (None, '') else None
+            except (TypeError, ValueError):
+                own_score = foe_score = None
+            try:
+                duration = int(game.get('durationSec') or 0) or None
+            except (TypeError, ValueError):
+                duration = None
+            result = str(game.get('result') or '').strip()
+            winner = own_side if result == 'win' else foe_side if result == 'loss' else ''
+            left_score, right_score = ((foe_score, own_score) if own_side == 'right'
+                                       else (own_score, foe_score))
+            metrics_raw = game.get('keyMetrics') if isinstance(game.get('keyMetrics'), dict) else {}
+            key_metrics = {name: metrics_raw.get(name) for name in (
+                'gpmOwn', 'gpmFoe', 'tyrantRate', 'lordRate', 'shadowTyrantRate', 'shadowLordRate',
+                'towersOwn', 'towersFoe', 'at10')}
+            image_ids = []
+            for image_id in (game.get('imageIds') or []):
+                value = str(image_id or '')
+                if re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value) and value not in image_ids:
+                    image_ids.append(value)
+                if len(image_ids) >= 4:
+                    break
+            lineups = game.get('lineups') if isinstance(game.get('lineups'), dict) else {}
+
+            team_stats = game.get('teamStats') if isinstance(game.get('teamStats'), dict) else {}
+            match_body = {
+                'date': date, 'opponent': opponent, 'session': session,
+                'version': version, 'mode': f'正式赛 BO{bo}',
+                'durationSec': duration,
+                'scores': {'left': left_score, 'right': right_score},
+                'ownSide': own_side, 'winner': winner,
+                'teamStats': {name: team_stats.get(name) for name in (
+                    'towersOwn', 'towersFoe', 'at10')},
+            }
+            channel = channel_store.blank(match_body)
+            channel['id'] = uuid.uuid4().hex
+            channel['_createdAt'] = time.time()
+            channel['entry'] = {'mode': 'camp', 'primary': '正式比赛线上表格'}
+            channel['matchType'] = match_type
+            extra = {
+                'matchType': match_type, 'seriesKey': series_key, 'gameNo': game_no,
+                'boFormat': bo, 'event': event, 'keyMetrics': key_metrics,
+                'evidenceImageIds': image_ids,
+            }
+            channel['officialEntry'] = {
+                **extra, 'game': game, 'opponent': opponent, 'date': date,
+                'replayLink': replay_link, 'reviewer': reviewer,
+            }
+            channel['match'].update(extra)
+            # 赛事域：正赛局同步登记 match_records（显式赛事或 formal 窗口归属），
+            # 让速记占位能在转正时链接到本局。
+            try:
+                from workspace_store import Workspace
+                Workspace(db_path).upsert_match(
+                    f'channel-{channel["id"]}', date=date, recorded_date=date,
+                    match_type='formal', source='official-entry',
+                    competition_id=competition_id or None,
+                    own_side=own_side)
+            except Exception:  # noqa: BLE001 - 登记失败不阻断录入
+                pass
+
+            # 十人阵容写成 match_player 表格行，复用既有 channel 草稿/复核链路。
+            rows = []
+            for side in ('left', 'right'):
+                for player in (lineups.get(side) or []):
+                    if not isinstance(player, dict):
+                        continue
+                    rows.append({
+                        'grain': 'match_player', 'aggregated': False,
+                        'keys': {
+                            'matchId': series_key, 'side': side,
+                            'player': str(player.get('id') or '')[:40],
+                            'hero': str(player.get('hero') or '')[:24],
+                            'position': str(player.get('lane') or '')[:16],
+                        },
+                        'metrics': {name: player.get(name) for name in (
+                            'kills', 'deaths', 'assists', 'gold', 'damage',
+                            'taken', 'participation', 'rating')}, 'raw': player,
+                    })
+            channel_store.attach_table(
+                channel,
+                {'name': f'正式赛 {date} 第{game_no}局', 'size': 0, 'sha256': None},
+                {'rows': rows[:10], 'grain': 'match_player'}, reviewer,
+            )
+            # rebuild 会重建 draft.match，这里把正式赛专属字段补回去。
+            channel['match'].update(extra)
+            channel.setdefault('draft', {}).setdefault('match', {}).update(extra)
+            if image_ids:
+                channel['sources']['screenshot']['imageIds'] = list(image_ids)
+            channel_store.append_log(channel, 'official-entry', reviewer, {'gameNo': game_no})
+
+            if do_finalize:
+                try:
+                    # 正式录入本身就是结构化来源：复核与落盘都跳过必采材料校验，
+                    # 字段没填齐也先落一份占位 bundle 进正式档案，回头补录。
+                    channel_store.set_review(channel, reviewer, '正式比赛线上表格录入',
+                                             require_complete=False)
+                    bundle = channel_store.bundle(channel, require_complete=False)
+                    bundle.setdefault('match', {}).update(extra)
+                    folder = Path(matches_dir)
+                    folder.mkdir(parents=True, exist_ok=True)
+                    (folder / f'channel-{channel["id"]}.json').write_text(
+                        json.dumps(bundle, ensure_ascii=False, indent=2), encoding='utf-8')
+                    channel['saved'] = {
+                        'status': 'saved', 'bundleKey': bundle['match']['key'],
+                        'savedAt': channel_store.now(),
+                    }
+                except Exception as error:  # noqa: BLE001 - 单局失败不阻断整场录入
+                    warnings.append(f'第{game_no}局未进入正式统计：{error}')
+
+            built.append(channel)
+
+        with sqlite3.connect(db_path, timeout=30) as connection:
+            for channel in built:
+                connection.execute(
+                    'INSERT INTO channels(id,revision,body,created_at,updated_at) VALUES(?,?,?,?,?)',
+                    (channel['id'], 1, json.dumps(channel, ensure_ascii=False),
+                     channel['_createdAt'], time.time()),
+                )
+
+        # 与 server.py 的 _invalidate_v3_snapshot 同口径：正式 bundle 落盘后让 V3 快照失效。
+        if do_finalize and any((c.get('saved') or {}).get('status') == 'saved' for c in built):
+            try:
+                v3_module = sys.modules.get('kpl_v3_app')
+                if v3_module and hasattr(v3_module, 'invalidate_snapshot'):
+                    v3_module.invalidate_snapshot()
+            except Exception:  # noqa: BLE001 - 刷新失败不影响录入结果
+                pass
+
+        return {
+            'ok': True,
+            'seriesKey': series_key,
+            'finalized': bool(built) and not warnings,
+            'warning': ' '.join(warnings),
+            'channels': [
+                {'id': channel['id'], 'matchKey': f'channel-{channel["id"]}',
+                 'gameNo': channel['officialEntry']['gameNo'],
+                 'saved': (channel.get('saved') or {}).get('status') == 'saved'}
+                for channel in built
+            ],
+        }
+    # =====================================================================
+    # [entry-dev] 正式比赛录入 + 赛后笔记（新增区块 END）
+    # =====================================================================
 
     return router

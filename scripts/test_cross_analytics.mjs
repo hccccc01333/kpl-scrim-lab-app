@@ -66,7 +66,7 @@ const make = (i, over = {}) => {
     pl: [
       { name: '上单', camp: 'blue', pos: '对抗路', hero: '项羽', arch: '坦边', gpm: 600, dpm: 1500, part: 0.6, d: 2 },
       { name: '打野', camp: 'blue', pos: '打野', hero: '赵云', arch: '战士野', gpm: 650, dpm: 1800, part: 0.7, d: 3 },
-      { name: '中单', camp: 'blue', pos: '中路', hero: '小乔', arch: '法核', gpm: 620, dpm: 2200, part: 0.65, d: 2 },
+      { name: '中单', camp: 'blue', pos: '中路', hero: '小乔', arch: '法刺', gpm: 620, dpm: 2200, part: 0.65, d: 2 },
       { name: '射手', camp: 'blue', pos: '发育路', hero: '百里守约', arch: '游射', gpm: 700, dpm: 2500, part: 0.62, d: 2 },
       { name: '辅助', camp: 'blue', pos: '游走', hero: '钟馗', arch: '开团辅', gpm: 400, dpm: 900, part: 0.7, d: 4 },
     ],

@@ -1,0 +1,412 @@
+/* ==========================================================================
+   V14 — 温润编排系统（Warm Editorial）
+   取代 V8 的「全灰阶 + 全 300 细体」。核心是对比：
+     纸的暖白 / 墨的深黑 / 一个来自产品本身的青碧色（与工作台一致）
+     标题 500 中黑 + 紧字距 / 正文 400 / 标签 600 / 数字 Manrope tabular
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* —— 纸与墨：暖，但不是米黄；深，但不是纯黑 —— */
+  --paper:      #f7f6f2;
+  --paper-2:    #f1efe8;
+  --surface:    #fffefa;
+  --surface-2:  #f4f2eb;
+
+  --ink:        #1b1d19;
+  --ink-2:      #3d423b;
+  --muted:      #646a61;   /* 5.14:1 on paper — 次级正文达 WCAG AA */
+  --faint:      #6a7067;   /* 4.71:1 on paper — 元信息不再不可读 */
+
+  --line:       #e0ded5;
+  --line-2:     #cdcbc0;
+  --line-soft:  #eceae3;
+
+  /* —— 唯一强调色：工作台本身的青碧色 —— */
+  --accent:        #1f5f57;
+  --accent-deep:   #15443e;
+  --accent-soft:   #5c8b83;
+  --accent-on-dark: #6a9a92; /* 5.38:1 on ink — 深墨底上的青碧文字 */
+  --accent-wash:   #e8f0ed;
+
+  /* 兼容旧变量名；不再一律降为灰 */
+  --celadon:       var(--accent);
+  --celadon-deep:  var(--accent-deep);
+  --celadon-wash:  var(--accent-wash);
+  --celadon-light: var(--accent-soft);
+  --coral:         #a96046;
+  --coral-deep:    #83462f;
+  --coral-wash:    #f6ece6;
+
+  /* —— 字体：同一族，靠字重建立层级 —— */
+  --display: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --sans:    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font:    var(--sans);
+  --serif:   "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono:    "Manrope", "Noto Sans SC", system-ui, sans-serif;
+
+  /* —— 字阶：全部 rem，随系统字号缩放 —— */
+  --fs-display: clamp(2.25rem, 1.6rem + 2.4vw, 3.5rem);
+  --fs-h2:      clamp(1.625rem, 1.25rem + 1.5vw, 2.25rem);
+  --fs-lead:    1.0625rem;
+  --fs-body:    1rem;
+  --fs-small:   0.875rem;
+  --fs-micro:   0.75rem;
+}
+
+/* --------------------------------------------------------------------------
+   基础排版
+   -------------------------------------------------------------------------- */
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  line-height: 1.75;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection { background: var(--accent-wash); color: var(--accent-deep); }
+
+p { color: var(--ink-2); }
+strong, b { font-weight: 600; color: var(--ink); }
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+  padding: 0.1em 0.35em;
+  border-radius: 2px;
+}
+
+/* 标题：中黑 + 紧字距，是整站质感的支点 */
+h1, .v5-h1, .page-title, .dl-title {
+  font-family: var(--display) !important;
+  font-weight: 500 !important;
+  font-size: var(--fs-display) !important;
+  line-height: 1.22 !important;
+  letter-spacing: -0.028em !important;
+  color: var(--ink) !important;
+}
+h2, .sec-head h2, .v5-head h2, .v9-faq-intro h2,
+.v5-cta-inner h2, .footer-col h2, .card-title {
+  font-family: var(--display);
+  font-weight: 500;
+  font-size: var(--fs-h2);
+  line-height: 1.32;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+/* v6.css 里有一条覆盖深/浅两种 section 的 !important 把标题压回 300，这里抵消 */
+.section--deep h2, .section--black h2, .section--deep h3,
+.section--black h3, .mx-dark .sec-head h2, .mx-dark .mx-block h3,
+.privacy-copy h2, .sec-head h2 {
+  font-weight: 500 !important;
+  letter-spacing: -0.02em !important;
+}
+/* .cl-series 是小号系列标签，被 style.css 的 .doc h2 撑成 28px 且落到 --faint，
+   看起来像一块低对比的水印。按语义还原成 12px 眉题。 */
+.cl-series {
+  font-family: var(--mono) !important;
+  font-size: var(--fs-micro) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.14em !important;
+  color: var(--accent) !important;
+}
+h3, h4 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+}
+.page-title em, .v5-h1 em { font-style: normal; color: var(--muted); font-weight: 400; }
+
+/* 导语 / 正文 */
+.v5-sub, .page-lede, .dl-lede, .sec-intro, .mx-note, .note {
+  font-size: var(--fs-lead);
+  line-height: 1.8;
+  color: var(--ink-2);
+  font-weight: 400;
+}
+
+/* 眉题与序号：小、重、疏，用色彩点一下 */
+.v5-eyebrow, .v5-kicker, .hero-kicker, .sec-index,
+.sponsor-kicker, .footer-gh-kicker, .doc-toc-title {
+  font-family: var(--sans) !important;
+  font-size: var(--fs-micro) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.1em !important;
+  color: var(--accent) !important;
+  text-transform: none !important;
+}
+.hero-kicker i { background: var(--accent) !important; }
+.sec-index { font-family: var(--mono) !important; letter-spacing: 0.06em !important; }
+.hero-edition, .v9-hero-meta, .v9-fact-no,
+.board-meta, .release-foot, .footer-status .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.v9-fact-no { color: var(--accent); font-weight: 600; font-size: 0.875rem; }
+
+/* 旧版残留在内页封面左下角的赤陶色 44×2 装饰线，和暖纸/青碧体系冲突，
+   且浮在内容容器之外像贴纸 —— 直接移除。 */
+.page-hero::after, .mx-hero::after { display: none !important; }
+
+/* --------------------------------------------------------------------------
+   导航
+   -------------------------------------------------------------------------- */
+.topbar { background: var(--paper) !important; border-bottom: 1px solid var(--line); }
+.topnav a {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  transition: color 160ms ease;
+}
+.topnav a:hover { color: var(--accent); }
+.topnav a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+.topnav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 12px; right: 12px; bottom: 4px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 1px;
+}
+.brand-name { color: var(--ink); font-weight: 600; letter-spacing: -0.01em; }
+.brand-sub { color: var(--muted); font-weight: 400; }
+
+/* --------------------------------------------------------------------------
+   按钮：墨色实心，hover 转青碧。去掉塑料圆角与立体阴影
+   -------------------------------------------------------------------------- */
+.btn {
+  font-family: var(--sans);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  transition: background 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+.btn--primary, .topbar-cta .btn--primary, .hero .btn--primary {
+  background: var(--ink) !important;
+  color: var(--surface) !important;
+  border: 1px solid var(--ink) !important;
+}
+.btn--primary:hover, .topbar-cta .btn--primary:hover, .hero .btn--primary:hover {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
+.btn--ghost { color: var(--accent); border-color: var(--line-2); }
+.btn--ghost:hover { background: var(--accent-wash); border-color: var(--accent-soft); }
+.btn--light { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn--light:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.v5-textlink { color: var(--accent); font-weight: 600; }
+.v5-textlink:hover { color: var(--accent-deep); }
+a:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* --------------------------------------------------------------------------
+   首页
+   -------------------------------------------------------------------------- */
+.v5-hero { background: var(--paper); }
+.v9-fact {
+  border: 0 !important;
+  border-top: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 1rem 0 !important;
+}
+.v9-fact b { display: block; margin-top: 0.15rem; font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
+.v9-fact p { font-size: var(--fs-small); line-height: 1.7; color: var(--muted); }
+.v9-hero-facts > p { color: var(--faint); font-size: var(--fs-micro); }
+
+.v5-head h2, .v9-faq-intro h2 { margin-top: 0.5rem; }
+.v9-head-note, .v9-faq-note { color: var(--muted); font-size: var(--fs-small); line-height: 1.75; font-weight: 400; }
+
+/* 演示框：细框 + 柔和投影，与暖纸区分开，但不用彩色 */
+.v10-browser {
+  border: 1px solid var(--line-2) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 18px 48px -30px rgba(27, 29, 25, 0.45) !important;
+  background: var(--surface) !important;
+}
+.v10-browser-bar {
+  height: 38px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+.v10-url { color: var(--ink-2); font-size: var(--fs-micro); font-weight: 500; }
+.v10-badge { color: var(--accent); border-color: var(--accent-soft); font-weight: 600; letter-spacing: 0; }
+.v10-dots i { background: var(--line-2); }
+.v5-demo-note { font-size: var(--fs-small); color: var(--muted); line-height: 1.75; }
+
+/* FAQ：只用发丝线分组，不画卡片框 */
+.v5-qa details, .faq-grid details {
+  border: 0 !important;
+  border-top: 1px solid var(--line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.v5-qa details:last-child, .faq-grid details:last-child { border-bottom: 1px solid var(--line) !important; }
+.v5-qa summary, .faq-grid summary {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 1.0625rem;
+  color: var(--ink);
+  padding: 1.15rem 0;
+}
+.v5-qa summary span, .faq-grid summary span { color: var(--accent); font-weight: 400; }
+.v5-qa details p, .faq-grid details p { color: var(--muted); font-size: 0.9375rem; line-height: 1.8; padding-bottom: 1.15rem; }
+.v5-more { color: var(--muted); font-size: var(--fs-small); }
+.v5-more a { color: var(--accent); font-weight: 600; }
+
+/* CTA：深墨收尾，暖色文字 */
+.v5-cta { background: var(--ink) !important; color: var(--surface); }
+.v5-cta h2, .v5-cta .v5-eyebrow { color: var(--surface) !important; }
+.v5-cta .v5-eyebrow { color: var(--accent-on-dark) !important; }
+.v5-cta-inner p { color: #b8bdb4; }
+.v5-cta .btn--light { background: var(--surface); color: var(--ink); border-color: var(--surface); }
+.v5-cta .btn--light:hover { background: var(--accent-soft); color: #fff; border-color: var(--accent-soft); }
+.v5-sponsor { color: var(--accent-on-dark); font-weight: 600; }
+.v5-sponsor:hover { color: #9ec6bd; }
+.v5-fine { color: #8f958b !important; font-size: var(--fs-micro); }
+
+/* --------------------------------------------------------------------------
+   内页
+   -------------------------------------------------------------------------- */
+.page-hero { background: var(--paper); }
+.hero-masthead { margin-bottom: 1.25rem; }
+.page-lede { max-width: 42rem; }
+.sec-head { gap: 2rem; }
+.sec-head-main h2 { max-width: 22ch; }
+.section--deep {
+  background: var(--ink) !important;
+  color: var(--surface) !important;
+}
+.section--deep h2, .section--deep h3, .section--deep h4 { color: var(--surface) !important; }
+.section--deep .sec-index { color: var(--accent-on-dark) !important; }
+.section--deep p, .section--deep .sec-intro, .section--deep li { color: #b8bdb4 !important; }
+.section--deep .board-tab { color: #b8bdb4; }
+.section--deep .board-tab.is-open { color: var(--surface); }
+.section--deep .board-indicator { background: var(--accent-soft) !important; }
+
+/* 数据口径页等浅色卡片：去框，用底色和发丝线 */
+.data-card, .dl-card, .release-card, .mx-spec, .privacy-grid > div {
+  border: 1px solid var(--line) !important;
+  border-radius: 3px !important;
+  background: var(--surface) !important;
+  box-shadow: none !important;
+}
+.page-tail { background: var(--surface-2) !important; }
+.page-tail-inner h2 { color: var(--ink); }
+
+/* --------------------------------------------------------------------------
+   页脚
+   -------------------------------------------------------------------------- */
+.footer { background: var(--surface-2); border-top: 1px solid var(--line); }
+.footer-col h2 {
+  font-family: var(--mono) !important;
+  font-size: var(--fs-micro) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
+  color: var(--accent) !important;
+}
+.footer-col a, .footer-link-btn { color: var(--ink-2); font-size: var(--fs-small); }
+.footer-col a:hover, .footer-link-btn:hover { color: var(--accent); }
+.footer-brand p, .footer-legal, .footer-status { color: var(--muted); font-size: var(--fs-small); }
+.footer-gh { border-top: 1px solid var(--line); }
+.footer-gh-title a { color: var(--ink); font-weight: 500; }
+.footer-gh-repo, .footer-gh-meta { color: var(--muted); font-size: var(--fs-small); }
+.footer-gh-kicker { color: var(--muted); font-weight: 400; letter-spacing: 0; }
+.footer-gh-kicker b { color: var(--ink); font-weight: 600; }
+
+/* --------------------------------------------------------------------------
+   自适应：字号用 clamp 已能流动，这里只处理布局
+   -------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .v9-hero, .v9-head, .v9-faq { grid-template-columns: 1fr; }
+  .v9-faq-intro { position: static; }
+  .sec-head { flex-direction: column; }
+}
+@media (max-width: 640px) {
+  .v5-hero, .v5-section, .v5-cta, .page-hero { padding-inline: 1.25rem; }
+}
+
+/* ==========================================================================
+   V18 — 修正遗留的「低对比透明文字」
+   V8 曾把 .section--black/.dl-black/.terminal 等深色区块背景清空改成浅底，
+   但子组件里大量 rgba(252,249,242,α) / #b7d8cc / --celadon-light 仍是
+   为深底写的浅色字。它们留在浅底上对比度低到 1.0:1，几乎不可见。
+   这里按「实际底色」把它们归位：浅底用墨色，深底（board / mx-block）用纸色。
+   ========================================================================== */
+
+/* —— 浅底区块：把遗留浅色字改回墨色 —— */
+.privacy-copy > p,
+.checks li,
+.dl-black-body p,
+.dl-steps li,
+.support-line,
+.guide-fails p,
+.term-bar,
+.filetree li {
+  color: var(--ink-2) !important;
+}
+
+/* 浅底上的序号 / 标签：用强调色，达 AA */
+.checks .check-no,
+.local-pill,
+.dl-steps li b,
+.support-line b,
+.guide-fails b,
+.terminal .p {
+  color: var(--accent) !important;
+}
+
+/* 浅底上的代码 / 文件名：深青碧，达 AA */
+.checks code,
+.guide-fails code,
+.terminal code,
+.zero strong {
+  color: var(--accent-deep) !important;
+}
+
+.filetree em,
+.zero span,
+.data-foot,
+.brief-foot .mono {
+  color: var(--muted) !important;
+}
+
+/* 浅底上的复制按钮：文字与边框都要看得见 */
+.copy-btn,
+.copy-chip {
+  color: var(--accent) !important;
+  border-color: var(--accent-soft) !important;
+}
+
+/* —— 深底区块：被错误压成墨色 / 对比不足的字改回纸色系 —— */
+.mx-block,
+.mx-block p,
+.mx-block b {
+  color: var(--surface) !important;
+}
+/* v6 里 .mx-dark .mx-block h3 带 !important，需同 specificity 覆盖 */
+.mx-dark .mx-block h3 { color: var(--surface) !important; }
+
+/* 工作台深墨面板上的序号：提到 AA（0.45→0.62 透明度） */
+.section--deep .tab-no,
+.section--deep .board-meta span {
+  color: rgba(252, 249, 242, 0.7) !important;
+}

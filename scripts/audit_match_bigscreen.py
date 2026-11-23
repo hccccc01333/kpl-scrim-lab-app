@@ -1,30 +1,30 @@
-"""单局「复盘大屏」验收脚本（2026-11-14 方案变更后）。
+"""单局「复盘大屏」验收脚本（2026-11-22 图三版式）。
 
-背景（2026-11-14）：教练要求复盘大屏收敛——赛事命中并入本局 BP 复盘（命中组合
-带头像 / 胜率 / 最近谁用 / 使用时间），团战与资源、经济走势两张卡撤掉（细节在
-「事件」页签），比赛脉搏放进本局结论卡，总量条紧跟结论。当前契约：
+背景（2026-11-22）：教练要求把首屏改成参考图三——比分头 → 镜像 Pick/Ban →
+经济 / 资源 → 五路对位表（左伤害 · 右经济），比赛脉搏独立成卡。当前契约：
   * 单局页 4 个页签，顺序 review(复盘大屏) / data(十人数据) / events(事件) / map(地图)；
     默认页签 review，地址 ``#match/<key>``；深链 ``#match/<key>/<tab>`` 仍有效。
+    四段页签吸顶，贴在 sticky 顶栏下方。
   * review pane 内依次是：
-      section.md-hero#match-verdict（本局结论，内含 div#match-pulse 比赛脉搏）
-      div#match-totals（总量条）
-      section#match-ov-lineup（双方阵容，头像 / 名字跳 #hero/<名字>）
+      section.md-hero#match-verdict（比分头 + Pick/Ban + 经济/资源 + 五路表 + 结论句）
+      section#match-pulse-card（比赛脉搏独立卡，内含 #match-pulse）
       section#match-ov-bp（本局 BP 复盘 + 赛事命中 .md-kplhit）
-      section#match-ov-matchup（对位压制，.md-mu-face 头像跳英雄页）
-      section#match-ov-combos（联动组合）
-      .md-pane-row（#match-phases + #match-timeline）
-  * 不再存在：#match-ov-kpl / #match-ov-battle / #match-ov-economy 独立卡，
-    以及任何 ``data-md-jump`` 跳转按钮。
+      section#match-ov-counters（克制命中）
+      section#match-ov-broken（组合得失）
+      .md-pane-row（#match-phases）
+  * data pane 内保留：10 分钟经济、十人面板（#match-profiles）、对位压制、
+    资源 / 推塔 / BUFF 明细、打野并线、协同。
+  * 不再存在：#match-totals、#match-ov-lineup、证据类型图例、吸顶区块条、
+    「巅峰对决盲选」按钮，以及任何 ``data-md-jump`` 跳转按钮。
   * 页签按钮是 ``.md-tabs [data-md-tab]``，共 4 个。
-  * 异步回放到达后，pane 内的 ``section[id]``（含结论卡）会被原位替换，
+  * 异步回放到达后，pane 内的 ``section[id]``（含首屏卡 / 脉搏卡）会被原位替换，
     不允许出现重复 id 或丢区块。
 
 断言覆盖：
-  1. 默认 active=review；4 个页签且第一个文字含「复盘大屏」；
-  2. review pane 可见，7 个 section 区块各恰好 1 个，``#match-totals`` 与
-     ``#match-pulse`` 都在 review 内（pulse 在结论卡里），文档内无重复 id；
-     ``section.md-hero`` 存在且 h1 有结论句；
-  3. 阵容 / 对位 / 组合的英雄链接全部指向 ``#hero/<名字>``，不允许 ``#matches/hero=``；
+  1. 默认 active=review；4 个页签且第一个文字含「复盘大屏」，页签到顶栏下方吸顶；
+  2. review pane 可见，6 个 section 区块各恰好 1 个；首屏卡有结论句、20 个 Pick/Ban
+     头像、5 行五路表；脉搏在独立卡内；文档内无重复 id；
+  3. 五路表「详细数据」能切到 data 页签并点亮对应分路；英雄链接全部指向 ``#hero/<名字>``；
   4. BP 复盘块内出现「赛事命中」子块（.md-kplhit）；
   5. 点击 data / events / map / review：对应 pane 可见、其余隐藏、hash 同步、无 JS 报错；
   6. 1440×1000 / 1280×900 / 1024×900：无横向溢出、各截全页图、打印复盘大屏高度；
@@ -74,25 +74,24 @@ EXPECTED_LABELS = {
 }
 
 # review pane 内应有且仅有一个的 section 区块（顺序即视觉顺序）。
-# 结论卡是 section.md-hero（非 .section），脉搏 / 总量是卡内 / 卡后的 div。
+# 首屏卡是 section.md-hero（非 .section），脉搏是紧随其后的独立 section。
 SCREEN_SECTIONS = [
-    "match-verdict",       # section.md-hero：本局结论（内含 #match-pulse 比赛脉搏）
-    "match-ov-lineup",     # 双方阵容（固定列网格 + BP 顺序楼层角标）
+    "match-verdict",       # section.md-hero：比分头 / Pick-Ban / 经济资源 / 五路表
+    "match-pulse-card",    # 比赛脉搏独立卡（内含 #match-pulse）
     "match-ov-bp",         # 本局 BP 复盘（含赛事命中 .md-kplhit）
-    "match-ov-matchup",    # 对位压制
     "match-ov-counters",   # 克制命中（KPL + 营地两源分开）
-    "match-ov-combos",     # 联动组合
+    "match-ov-broken",     # 组合得失（拿到 / 被拆；2026-11-19 撤掉重复的联动组合）
     "match-phases",        # 阶段对比
-    "match-timeline",      # 关键节点
 ]
-TOTALS_ID = "match-totals"  # 总量条是 div，紧跟结论卡
-PULSE_ID = "match-pulse"    # 比赛脉搏在结论卡里，也是 div
-# 2026-11-14 撤掉的三张卡，不允许再出现。
-REMOVED_IDS = ["match-ov-kpl", "match-ov-battle", "match-ov-economy"]
+PULSE_ID = "match-pulse"    # 比赛脉搏在独立卡里，也是 div
+# 2026-11-14 撤掉的三张卡 + 2026-11-19 撤掉的联动组合 + 2026-11-22 撤掉的总量/阵容，
+# 都不允许再出现。
+REMOVED_IDS = ["match-ov-kpl", "match-ov-battle", "match-ov-economy", "match-ov-combos",
+               "match-totals", "match-ov-lineup"]
 
-# 两栏行只剩阶段对比 + 关键节点。
+# 两栏行只剩阶段对比。
 PANE_ROWS = [
-    ["match-phases", "match-timeline"],
+    ["match-phases"],
 ]
 
 VIEWPORTS = [(1440, 1000), (1280, 900), (1024, 900)]
@@ -178,22 +177,27 @@ SNAPSHOT_JS = """(sections) => {
             children: [...row.querySelectorAll(':scope > section[id]')].map((s) => s.id),
         }))
         : [];
-    const totals = document.getElementById('match-totals');
     const pulse = document.getElementById('match-pulse');
-    const heroLinks = (review ? [...review.querySelectorAll('a.bp-hero-link[href^="#hero/"]')] : []);
+    const pulseCard = document.getElementById('match-pulse-card');
+    const summary = hero;
+    const summaryPickHeroes = summary
+        ? summary.querySelectorAll('.ms-draft-row.is-pick .ms-hero:not(.is-empty)').length : 0;
+    const summaryBanHeroes = summary
+        ? summary.querySelectorAll('.ms-draft-row.is-ban .ms-hero:not(.is-empty)').length : 0;
+    const summaryLaneRows = summary ? summary.querySelectorAll('.ms-lane-row').length : 0;
+    const summaryLaneSides = summary ? summary.querySelectorAll('.ms-lane-side').length : 0;
+    const summaryHasBoard = summary ? !!summary.querySelector('.ms-board') : false;
+    const summaryDetailButtons = summary ? summary.querySelectorAll('[data-ms-lane]').length : 0;
+    const stickyTabs = document.querySelector('.md-tabs');
+    const stickyTop = stickyTabs ? Math.round(stickyTabs.getBoundingClientRect().top) : -1;
+    const deskBar = document.querySelector('.desk-bar');
+    const deskBarHeight = deskBar ? Math.round(deskBar.getBoundingClientRect().height) : 0;
+    const heroLinks = (review ? [...review.querySelectorAll('a.bp-hero-link[href^="#hero/"], a.ms-hero[href^="#hero/"]')] : []);
     const staleMatchesLinks = (review
-        ? [...review.querySelectorAll('a.bp-hero-link[href^="#matches/hero="]')].length : 0);
+        ? [...review.querySelectorAll('a.bp-hero-link[href^="#matches/hero="], a.ms-hero[href^="#matches/hero="]')].length : 0);
     const faces = (review ? review.querySelectorAll('.md-mu-face .portrait').length : 0);
     const kplHit = (review ? review.querySelectorAll('.md-kplhit').length : 0);
     const kplHitRows = (review ? review.querySelectorAll('.md-kplhit-row').length : 0);
-    /* 阵容槽位对齐：两队的选用槽卡宽度应一致（固定列网格） */
-    const pickRows = review ? [...review.querySelectorAll('.md-bp-picks')] : [];
-    const slotWidths = pickRows.map((row) => [...row.querySelectorAll(':scope > .md-slot')]
-        .map((slot) => Math.round(slot.getBoundingClientRect().width)));
-    const slotWidthAligned = slotWidths.length >= 2 && slotWidths[0].length === 5
-        && slotWidths.every((widths) => widths.length === 5
-            && widths.every((w) => Math.abs(w - slotWidths[0][0]) <= 2));
-    const orderBadges = (review ? review.querySelectorAll('.md-slot-order').length : 0);
     const counterRows = (review ? review.querySelectorAll('.md-ct-row').length : 0);
     const counterChips = (review ? review.querySelectorAll('.md-ct-chip').length : 0);
     const kqBar = (review ? review.querySelectorAll('.kq-bar').length : 0);
@@ -206,25 +210,27 @@ SNAPSHOT_JS = """(sections) => {
         tabs,
         panes,
         blocks,
-        slotWidths,
-        slotWidthAligned,
-        orderBadges,
+        summaryPickHeroes,
+        summaryBanHeroes,
+        summaryLaneRows,
+        summaryLaneSides,
+        summaryHasBoard,
+        summaryDetailButtons,
+        stickyPosition: stickyTabs ? getComputedStyle(stickyTabs).position : '',
+        stickyTop,
+        deskBarHeight,
         counterRows,
         counterChips,
         kqBar,
         kqTabs,
         documentHasKq,
-        totalsInReview: review ? review.querySelectorAll('#' + 'match-totals').length : 0,
-        totalsIsInReview: review && totals ? review.contains(totals) : false,
-        totalsRightAfterHero: review && hero && totals
-            ? hero.nextElementSibling === totals : false,
-        pulseInHero: hero && pulse ? hero.contains(pulse) : false,
-        removedStillPresent: ['match-ov-kpl', 'match-ov-battle', 'match-ov-economy']
-            .filter((id) => document.getElementById(id)),
+        pulseInCard: pulseCard && pulse ? pulseCard.contains(pulse) : false,
+        pulseCardExists: !!pulseCard,
+        removedStillPresent: ['match-ov-kpl', 'match-ov-battle', 'match-ov-economy',
+            'match-totals', 'match-ov-lineup'].filter((id) => document.getElementById(id)),
         dupIds,
         heroExists: !!hero,
         heroH1: clean(hero ? hero.querySelector('h1')?.textContent : ''),
-        heroHasPulse: hero ? !!hero.querySelector('#match-pulse') : false,
         heroFaceCount: hero ? hero.querySelectorAll('.portrait').length : 0,
         heroLinks: heroLinks.length,
         staleMatchesLinks,
@@ -429,21 +435,39 @@ def check_screen_structure(run: ScreenRun, results: Results, tag: str, snap: dic
     )
     results.check(
         tag,
-        f"总量条 #{TOTALS_ID} 在 review 内且唯一",
-        snap["totalsInReview"] == 1 and snap["totalsIsInReview"],
-        f"在 review 内 {snap['totalsInReview']} 个",
+        "图三首屏：比分头存在",
+        snap["summaryHasBoard"],
+        "review 内 #match-verdict 的 .ms-board",
     )
     results.check(
         tag,
-        "总量条紧跟结论卡",
-        snap["totalsRightAfterHero"],
-        "md-hero 的下一个兄弟是 #match-totals" if snap["totalsRightAfterHero"] else "顺序不对",
+        "图三首屏：镜像 Pick/Ban 各 5 个（本队 + 对手）",
+        snap["summaryPickHeroes"] >= 10 and snap["summaryBanHeroes"] >= 10,
+        f"Pick {snap['summaryPickHeroes']} 个 · Ban {snap['summaryBanHeroes']} 个",
     )
     results.check(
         tag,
-        f"比赛脉搏 #{PULSE_ID} 在结论卡内",
-        snap["pulseInHero"] and snap["heroHasPulse"],
-        "#match-pulse 在 #match-verdict 内",
+        "图三首屏：五路对位表 5 行 / 10 个侧栏",
+        snap["summaryLaneRows"] == 5 and snap["summaryLaneSides"] == 10,
+        f"{snap['summaryLaneRows']} 行 · {snap['summaryLaneSides']} 侧",
+    )
+    results.check(
+        tag,
+        "图三首屏：每行有「详细数据」入口",
+        snap["summaryDetailButtons"] == 5,
+        f"{snap['summaryDetailButtons']} 个",
+    )
+    results.check(
+        tag,
+        f"比赛脉搏 #{PULSE_ID} 在独立卡内",
+        snap["pulseCardExists"] and snap["pulseInCard"],
+        "#match-pulse 在 #match-pulse-card 内",
+    )
+    results.check(
+        tag,
+        "四段页签吸顶",
+        snap["stickyPosition"] == "sticky",
+        f"position={snap['stickyPosition']}",
     )
     results.check(tag, "文档内无重复 id", not snap["dupIds"], f"重复：{snap['dupIds']}" if snap["dupIds"] else "无")
     results.check(tag, "section.md-hero 存在", snap["heroExists"], "review pane 内")
@@ -476,17 +500,6 @@ def check_screen_structure(run: ScreenRun, results: Results, tag: str, snap: dic
         )
     else:
         results.warn(tag, "这一局没有命中组合行（数据决定，不算失败）")
-    # 阵容槽位：两队固定列网格对齐
-    results.check(
-        tag,
-        "双方阵容槽位等宽对齐（固定 5 列网格）",
-        snap["slotWidthAligned"],
-        f"各槽宽 {snap['slotWidths']}",
-    )
-    if snap["orderBadges"]:
-        results.check(tag, "BP 顺序楼层角标渲染（P/B）", True, f"{snap['orderBadges']} 个")
-    else:
-        results.warn(tag, "这一局 BP 顺序未知（营地名单），无楼层角标属预期")
     # 克制命中卡
     results.check(
         tag,
@@ -505,7 +518,7 @@ def check_screen_structure(run: ScreenRun, results: Results, tag: str, snap: dic
     actual_rows = [row["children"] for row in snap["paneRows"]]
     results.check(
         tag,
-        "两栏行结构正确（阶段 + 节点）",
+        "两栏行结构正确（仅阶段对比）",
         actual_rows == PANE_ROWS,
         f"实际 {actual_rows}",
     )
@@ -603,7 +616,7 @@ def check_deep_links(browser, results: Results, base: str, key: str, args) -> No
             results.check(tag, f"深链 /{tab} hash 保持", snap["hash"] == f"#match/{key}/{tab}",
                           f"实际 {snap['hash']}")
             if tab == "review":
-                results.check(tag, "深链 /review 大屏 8 个区块齐全",
+                results.check(tag, f"深链 /review 大屏 {len(SCREEN_SECTIONS)} 个区块齐全",
                               all(block["inReview"] == 1 for block in snap["blocks"]),
                               f"{len(SCREEN_SECTIONS)} 个各 1 个")
         except Exception as exc:  # noqa: BLE001
@@ -802,8 +815,9 @@ def main(argv: list[str] | None = None) -> int:
                 results.check(tag, "复盘大屏区块仍齐全",
                               all(block["inReview"] == 1 for block in snap["blocks"]),
                               f"{len(SCREEN_SECTIONS)} 个 section 各 1 个")
-                results.check(tag, "结论卡（含脉搏）仍被替换渲染", snap["heroHasPulse"],
-                              "md-hero 内有 #match-pulse")
+                results.check(tag, "首屏卡与脉搏卡仍被替换渲染",
+                              snap["heroExists"] and snap["pulseCardExists"] and snap["pulseInCard"],
+                              "md-hero + #match-pulse-card 内 #match-pulse")
                 take_screenshot(run, results, tag, args, "match-bigscreen-no-replay.png")
             except Exception as exc:  # noqa: BLE001
                 results.fail(tag, f"运行异常：{type(exc).__name__}: {str(exc)[:160]}")

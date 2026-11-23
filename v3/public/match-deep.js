@@ -1,5 +1,4 @@
 import { normalizedCamp, sampleNear } from './match-recap-metrics.js';
-
 /* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
    全部为纯函数式构建，数据来自 /api/matches/<key>、/api/replay/<key>、/api/positions/<key>。
    视觉口径：深墨蓝底 + 金（本队）· 青（对手）+ 等宽数字 + 体素方块。 */
@@ -170,7 +169,7 @@ export function joinLaneStats(positions, players, laneOf) {
           const stat = note(key);
           stat.total += 1;
           stat.lanes[lane] = (stat.lanes[lane] || 0) + 1;
-          stat.waves.push({ t: bucket.t, wave: bucket.wave, lane: bucket.lane, size: bucket.size });
+          stat.waves.push({ t: bucket.t, wave: bucket.wave, lane: bucket.lane, size: bucket.size, who: [...bucket.who] });
         }
       }
     }
@@ -191,9 +190,13 @@ export function createMatchDeep(h) {
     return minutes ? player.gold / minutes : null;
   });
   const goldGrade = h.goldGrade || (() => null);
+  /* 赛训组自定义评级（grade-rules 设置页）：注入后可给选手字段显示档位徽标；
+     未保存规则时注入的函数返回 null，界面不显示徽标，退回原展示。 */
+  const fieldGrade = h.fieldGrade || (() => null);
+  const subjectOf = h.subjectOf || (() => '');
   const phaseWindows = h.phases || ((duration) => {
     const total = Number(duration) > 0 ? Number(duration) : 0;
-    return [['对线期', 0, 240], ['发育期', 240, 600], ['后期', 600, Infinity]]
+    return [['0–4', 0, 240], ['4–10', 240, 600], ['10–结束', 600, Infinity]]
       .map(([label, start, end]) => {
         const a = Math.min(start, total);
         const b = Math.min(end === Infinity ? total : end, total);
@@ -214,58 +217,79 @@ export function createMatchDeep(h) {
     ];
     const cells = items.map(([label, a, b, show]) => {
       const total = (num(a) ? a : 0) + (num(b) ? b : 0);
-      const share = num(a) && num(b) && total > 0 ? a / total * 100 : null;
+      const share = num(a) && num(b) && total > 0 ? a / total * 100 : 50;
       const ownPm = perMinute(a), foePm = perMinute(b);
-      const pm = ownPm !== null && foePm !== null
-        ? `<small class="md-total-pm">${fmt(ownPm, 1)} : ${fmt(foePm, 1)} /分</small>` : '';
-      return `<div class="md-total">
-        <span>${esc(label)}</span>
-        <div class="md-total-pair"><b>${show(a)}</b><i>:</i><b class="foe">${show(b)}</b></div>
-        ${pm}
-        <div class="md-total-bar">${share === null ? "" : `<i style="width:${share.toFixed(1)}%"></i>`}</div>
+      const sub = ownPm !== null && foePm !== null
+        ? `${fmt(ownPm, 1)} : ${fmt(foePm, 1)} /分` : '';
+      return `<div class="tot">
+        <div class="tot-label">${esc(label)}</div>
+        <div class="tot-nums"><b class="own">${show(a)}</b><span>:</span><b class="foe">${show(b)}</b></div>
+        <div class="tot-bar"><i class="own" style="width:${share.toFixed(1)}%"></i><i class="foe"></i></div>
+        <div class="tot-sub">${sub}</div>
       </div>`;
     }).join('');
-    return `<div class="md-totals">${cells}</div>`;
+    return `<div class="tot-head">
+        <h1>总量</h1>
+        <span class="chip own">${esc(m.ownName || '本队')}</span>
+        <span class="vs">vs</span>
+        <span class="chip foe">${esc(m.foeName || '对手')}</span>
+      </div>
+      <div class="tot-grid">${cells}</div>`;
   }
 
-  /* ── 比赛脉搏：经济差曲线 + 事件标记 + 可拖动指针 ───────────────── */
+  /* ── 比赛脉搏 ─────────────────────────────────────────────────────
+     图形沿用设计稿（design-redblue/本局结论_红蓝渐变版.html）的横轴与配色，
+     但 2026-11-22 教练要求结论卡「变小」：卡片不再锁 881×734，脉搏图
+     改成独立矮画布（881×200），悬停坐标同步缩短。 */
   function pulse(series, events, duration, camps) {
     if (!series.length) return '';
-    const W = 1000, H = 300, L = 58, R = 982, TOP = 26, BOT = 250;
+    const W = 881, H = 200;
+    const L = 78, R = 838, ZERO = 102, UNIT = 58;   // UNIT = 满量程对应的像素
     const t0 = series[0].t, t1 = series.at(-1).t;
     const span = Math.max(1, t1 - t0);
     const absMax = Math.max(1000, ...series.map((p) => Math.abs(p.diff)));
-    const limit = Math.ceil(absMax / 5000) * 5000;
-    const low = Math.min(0, ...series.map((p) => p.diff)) < 0 ? -limit : 0;
-    const high = limit;
+    const limit = Math.max(10000, Math.ceil(absMax / 5000) * 5000);
     const x = (t) => L + (t - t0) / span * (R - L);
-    const y = (v) => TOP + (high - v) / (high - low) * (BOT - TOP);
-    const line = series.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.diff).toFixed(1)}`).join(' ');
+    const y = (v) => ZERO - v / limit * UNIT;
+    const top = ZERO - UNIT, bot = ZERO + UNIT;
     const tip = series.at(-1);
 
-    const steps = [];
-    const stepSize = limit >= 20000 ? 10000 : 5000;
-    for (let v = low; v <= high; v += stepSize) steps.push(v);
-
-    const bands = duration > 0 ? phaseWindows(duration).map((w, i) => {
+    /* 阶段色块 + 段名：设计稿三块底色（我方侧极淡蓝 / 中段更淡 / 对侧淡红） */
+    const wins = duration > 0 ? phaseWindows(duration) : [];
+    const bandFill = ['rgba(45,110,190,0.045)', 'rgba(45,110,190,0.018)', 'rgba(190,60,60,0.035)'];
+    let bands = '', bandLabels = '';
+    wins.forEach((w, i) => {
       const a = Math.max(w.start, t0), b = Math.min(w.end, t1);
-      if (b <= a) return '';
+      if (b <= a) return;
       const xa = x(a), xb = x(b);
-      return `<rect x="${xa.toFixed(1)}" y="${TOP}" width="${(xb - xa).toFixed(1)}" height="${BOT - TOP}" class="mp-band${i % 2 ? ' alt' : ''}"/>
-        <text x="${((xa + xb) / 2).toFixed(1)}" y="${TOP - 9}" text-anchor="middle" class="mp-band-label">${w.label}</text>`;
-    }).join('') : '';
+      bands += `<rect x="${xa.toFixed(1)}" y="${ZERO - UNIT}" width="${(xb - xa).toFixed(1)}" height="${(UNIT * 2.24).toFixed(1)}" fill="${bandFill[i] || bandFill[1]}"/>`;
+      bandLabels += `<text x="${((xa + xb) / 2).toFixed(1)}" y="${ZERO - UNIT - 11}" text-anchor="middle" class="mp-band-label">${esc(w.label)}</text>`;
+    });
 
-    const zero = low < 0 ? `<line x1="${L}" x2="${R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}" class="mp-zero"/>` : '';
+    /* 横向网格 + 左侧刻度：±5k / ±10k …，0 单独画实线 */
+    const stepSize = limit >= 20000 ? 10000 : 5000;
+    let grid = '';
+    for (let v = -limit; v <= limit; v += stepSize) {
+      if (v === 0) continue;
+      const yy = y(v);
+      grid += `<line x1="${L}" x2="${R}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="mp-grid"/>`;
+      grid += `<text x="${L - 8}" y="${(yy + 4).toFixed(1)}" text-anchor="end" class="mp-axis">${v / 1000}k</text>`;
+    }
+    grid += `<line x1="${L}" x2="${R}" y1="${ZERO}" y2="${ZERO}" class="mp-zero"/>`;
+    grid += `<text x="${L - 8}" y="${ZERO + 4}" text-anchor="end" class="mp-axis">0</text>`;
 
-    /* 事件标记：龙/野怪/塔/水晶各有自己的形状，点位可点开看具体是什么。
-       形状区别是为了让教练不用悬停也能分出「这是红 BUFF 还是中路一塔」。 */
+    /* 曲线 + 面积 + 每个采样点的小圆点（设计稿是逐点画点，不是只画端点） */
+    const line = series.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.diff).toFixed(1)}`).join(' ');
+    const dots = series.map((p) => `<circle cx="${x(p.t).toFixed(1)}" cy="${y(p.diff).toFixed(1)}" r="3" class="mp-dot"/>`).join('');
+
+    /* 事件标记：菱形＝龙 / 圆＝BUFF / 方＝防御塔 / 大方＝水晶，画在曲线上方 13px */
     const diffAt = (t) => sampleNear(series, t)?.diff ?? null;
     const markKind = (e) => {
       if (e.kind === 'structure') return /水晶/.test(e.label || '') ? 'core' : 'tower';
       return /BUFF/.test(e.label || '') ? 'buff' : 'dragon';
     };
     const shapeOf = (kind, cx, cy) => {
-      if (kind === 'tower') return `<rect x="${(cx - 4).toFixed(1)}" y="${(cy - 4).toFixed(1)}" width="8" height="8" rx="1.5"/>`;
+      if (kind === 'tower') return `<rect x="${(cx - 4).toFixed(1)}" y="${(cy - 4).toFixed(1)}" width="8" height="8" rx="1"/>`;
       if (kind === 'core') return `<rect x="${(cx - 5.5).toFixed(1)}" y="${(cy - 5.5).toFixed(1)}" width="11" height="11" rx="2"/>`;
       if (kind === 'buff') return `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4"/>`;
       return `<path d="M${cx.toFixed(1)},${(cy - 5.5).toFixed(1)} L${(cx + 5.5).toFixed(1)},${cy.toFixed(1)} L${cx.toFixed(1)},${(cy + 5.5).toFixed(1)} L${(cx - 5.5).toFixed(1)},${cy.toFixed(1)} Z"/>`;
@@ -282,63 +306,80 @@ export function createMatchDeep(h) {
 
     return `<div class="mp" data-pulse data-t0="${t0}" data-t1="${t1}" data-duration="${duration}">
       <div class="mp-readout">
-        <span class="mp-clock"><small>指针时刻</small><b data-pulse-clock>${time(t0)}</b></span>
+        <span><small>指针时刻</small><b class="clock" data-pulse-clock>${time(t0)}</b></span>
         <span><small class="own">本队经济</small><b data-pulse-blue>${fmt(series[0].own)}</b></span>
         <span><small class="foe">对手经济</small><b data-pulse-red>${fmt(series[0].foe)}</b></span>
         <span><small>经济差</small><b data-pulse-diff>${diff(series[0].diff)}</b></span>
-        <span class="mp-at" data-pulse-at>拖动或点按曲线，查看任意时刻</span>
+        <span class="mp-at" data-pulse-at hidden></span>
       </div>
-      <svg class="mp-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="经济差随时间变化，共 ${series.length} 个采样点">
-        <defs><linearGradient id="mp-area" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" style="stop-color:var(--md-gold);stop-opacity:.34"/>
-          <stop offset="1" style="stop-color:var(--md-gold);stop-opacity:0"/>
-        </linearGradient></defs>
-        ${bands}
-        <line class="mp-grid" x1="${L}" x2="${R}" y1="${y(0).toFixed(1)}" y2="${y(0).toFixed(1)}"/>
-        ${steps.filter((v) => v !== 0).map((v) => `<line class="mp-grid" x1="${L}" x2="${R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>
-          <text x="${L - 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end" class="mp-axis">${fmt(v / 1000, 0)}k</text>`).join('')}
-        <text x="${L - 10}" y="${(y(0) + 4).toFixed(1)}" text-anchor="end" class="mp-axis">0</text>
-        ${zero}
-        <path d="${line} L${x(tip.t).toFixed(1)},${y(0).toFixed(1)} L${x(t0).toFixed(1)},${y(0).toFixed(1)} Z" fill="url(#mp-area)"/>
-        <path d="${line}" class="mp-curve"/>
-        <rect class="mp-hit" x="${L}" y="${TOP}" width="${R - L}" height="${BOT - TOP}"/>
-        ${marks}
-        <circle cx="${x(tip.t).toFixed(1)}" cy="${y(tip.diff).toFixed(1)}" r="4.5" class="mp-end"/>
-        <g class="mp-cursor" hidden>
-          <line x1="0" x2="0" y1="${TOP}" y2="${BOT}"/>
-          <circle cx="0" cy="0" r="5"/>
-        </g>
-      </svg>
       <div class="mp-card" data-pulse-card hidden></div>
-      <div class="mp-axis-row"><span>${time(t0)}</span><span>${time(t1)}</span></div>
+    </div>
+    <div class="mp-chart">
+      <svg class="mp-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" role="img"
+      aria-label="经济差随时间变化，共 ${series.length} 个采样点">
+      <defs>
+        <linearGradient id="mp-area" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#2f7fe0" stop-opacity=".30"/>
+          <stop offset="1" stop-color="#2f7fe0" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      ${bands}
+      ${bandLabels}
+      ${grid}
+      <path d="${line} L${x(tip.t).toFixed(1)},${ZERO} L${x(t0).toFixed(1)},${ZERO} Z" fill="url(#mp-area)"/>
+      <path d="${line}" class="mp-curve"/>
+      ${dots}
+      <circle cx="${x(tip.t).toFixed(1)}" cy="${y(tip.diff).toFixed(1)}" r="4.5" class="mp-end"/>
+      <text x="58" y="${H - 10}" class="mp-axis mp-axis-x">${time(t0)}</text>
+      <text x="838" y="${H - 10}" text-anchor="end" class="mp-axis mp-axis-x">${time(t1)}</text>
+      <rect class="mp-hit" x="${L}" y="${top}" width="${R - L}" height="${bot - top}" fill="transparent"/>
+      ${marks}<!-- 必须画在 mp-hit 之后：命中矩形覆盖整张图，放前面会把标记盖住，
+                  鼠标点不开事件浮层（指针移动仍冒泡到 svg，读数不受影响）。 -->
+      <g class="mp-cursor" hidden>
+        <line x1="0" x2="0" y1="${top}" y2="${bot}"/>
+        <circle cx="0" cy="0" r="5"/>
+      </g>
+      </svg>
     </div>`;
   }
 
-  /* ── 阶段对比：经济差 / 阶段增长（每分钟）/ 资源 / 建筑 / 入侵 ─────── */
+  /* ── 阶段对比（1:1 设计稿 7 列卡片式）─────────────────────────── */
   function phaseTable(rows) {
     if (!rows.length) return '';
-    /* 增长条只在有采样时画：缺数据时画一条空轨道，整张表看起来像骨架屏（2026-11-14）。 */
-    const gain = (side, value, pct) => `<span class="md-phase-gain ${side}${num(value) ? '' : ' is-empty'}"
-      data-label="${side === 'own' ? '本队/分' : '对手/分'}"><b>${diff(value)}</b>${num(value) ? `<i style="--v:${pct}"></i>` : ''}</span>`;
-    const head = `<div class="md-phase-head"><span>阶段</span><span>本队/分</span><span>对手/分</span><span>净差/分</span><span>资源</span><span>建筑</span><span>入侵</span></div>`;
-    const body = rows.map((r) => `<div class="md-phase-line">
-      <span class="md-phase-tag">${esc(r.label)}<small>${esc(r.range)}</small></span>
-      ${gain('own', r.ownGain, r.ownPct)}
-      ${gain('foe', r.foeGain, r.foePct)}
-      <span class="md-phase-net ${r.net >= 0 ? 'own' : 'foe'}" data-label="净差/分">${diff(r.net)}</span>
-      <span class="md-phase-duo" data-label="资源 本队:对手"><b>${fmt(r.res.own)}</b><i>:</i><b class="foe">${fmt(r.res.foe)}</b></span>
-      <span class="md-phase-duo" data-label="建筑 本队:对手"><b>${fmt(r.struct.own)}</b><i>:</i><b class="foe">${fmt(r.struct.foe)}</b></span>
-      <span class="md-phase-inv" data-label="本队入侵">${r.invade === null ? '—' : pct(r.invade)}</span>
-    </div>`).join('');
+    const head = `<div class="ph-head"><h1>阶段对比</h1><span class="tag">本局描述</span></div>
+      <div class="ph-cols"><span>阶段</span><span>本队 / 分</span><span>对手 / 分</span>
+      <span>净差 / 分</span><span>红蓝BUFF</span><span>防御塔</span><span>入侵</span></div>`;
+    const body = rows.map((r) => {
+      /* 赛训组 2026-11-19：阶段对比里的横向细长条删除，只留数字。 */
+      const econ = (side, value) => `<div class="ph-econ">
+        <small>${side === 'own' ? '本队经济' : '对手经济'} / 分</small>
+        <div class="pv"><b class="${side}">${diff(value)}</b></div>
+      </div>`;
+      const net = num(r.net)
+        ? `<b class="${r.net >= 0 ? 'up' : 'down'}">${r.net >= 0 ? '本队多' : '对手多'} ${fmt(Math.abs(r.net))}</b>`
+        : '—';
+      return `<div class="phase">
+        <div class="ph-name"><b>${esc(r.label)}</b><small>${esc(r.range)}</small></div>
+        ${econ('own', r.ownGain, r.ownPct)}
+        ${econ('foe', r.foeGain, r.foePct)}
+        <div class="ph-net"><small>净差 / 分</small>${net}</div>
+        <div class="ph-mini"><small>红蓝BUFF</small><b>${fmt(r.res.own)} : ${fmt(r.res.foe)}</b></div>
+        <div class="ph-mini"><small>防御塔</small><b>${fmt(r.struct.own)} : ${fmt(r.struct.foe)}</b></div>
+        <div class="ph-mini"><small>入侵</small><b class="inv">${r.invade === null ? '—' : pct(r.invade)}</b></div>
+      </div>`;
+    }).join('');
     return `<div class="md-phase-table">${head}${body}</div>`;
   }
 
   /* ── 十人面板：对位比较 / 同队比较 ───────────────────────────────── */
-  const LANES = ['对抗路', '发育路', '中路', '打野', '游走'];
+  const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
+  /* 对位筛选按设计稿顺序：对抗路 / 打野 / 中路 / 发育路 / 游走。 */
+  const LANE_TABS = ['对抗路', '打野', '中路', '发育路', '游走'];
   const read = (p, key) => (p && num(p[key]) ? p[key] : null);
   const laneOf = (p) => (LANES.includes(p.position) ? p.position : '游走');
   let panelMode = 'duel';
-  let duelMode = 'deep';
+  let panelLane = LANE_TABS[0];
+  let duelMode = 'half'; // 半区 >50%（入侵）优先显示
   let panelBound = false;
   let heatLane = LANES[0];
   let heatState = null;
@@ -652,166 +693,232 @@ export function createMatchDeep(h) {
     return `<svg class="md-fl" viewBox="0 0 ${size} ${size}" role="img" aria-label="对位雷达：${esc(name)}">${[0.34, 0.67, 1].map(ring).join('')}${spokes}${area(a, 'own')}${area(b, 'foe')}</svg>`;
   }
 
-  function duelView(players, ownCamp, pool) {
-    const pick = (camp) => {
-      const map = new Map();
-      for (const p of players) if (p.camp === camp) map.set(laneOf(p), p);
-      return map;
-    };
-    const mine = pick(ownCamp), theirs = pick(ownCamp === 'blue' ? 'red' : 'blue');
-    const who = (p, side) => (p
-      ? `<span class="md-vs-id ${side}">${portrait(p.hero)}<span><b>${esc(p.label || p.hero || '—')}</b><small>${esc(p.hero || '—')}</small></span></span>`
-      : `<span class="md-vs-id ${side} empty">未匹配</span>`);
-    /* 数值列固定给评级章留一格：不然带「优秀」的那一行数字会往左缩，
-       整列数字右边缘参差，看起来像没对齐。没评级也占位（空白）。 */
-    const numCell = (side, value, chip = '', extra = '') => `<b class="md-vsm-num ${side}${extra}">${
-      value === null || value === undefined ? '<span class="md-vsm-val">—</span>' : `<span class="md-vsm-val">${value}</span>`
-    }<em class="md-grade${chip ? ' ' + chip.level : ' is-blank'}">${chip ? chip.label : ''}</em></b>`;
-    const rows = LANES.map((lane) => {
-      const a = mine.get(lane), b = theirs.get(lane);
-      const metrics = (LANE_METRICS[lane] || Object.keys(pool))
-        .map((key) => pool[key]).filter(Boolean);
-      const bars = metrics.map((m) => {
-        const x = m.get(a), y = m.get(b);
-        const tip = m.tip
-          ? [a, b].filter(Boolean).map((p) => `${p.label || p.hero || '—'}：${m.tip(p)}`).join(' / ')
-          : '';
-        /* 打野的评级按英雄标签分野核/坦野（赛训组 2026-11-14 口径），英雄名跟着人走 */
-        const chipX = m.grade && num(x) ? goldGrade(lane, x, a?.hero) : null;
-        const chipY = m.grade && num(y) ? goldGrade(lane, y, b?.hero) : null;
-        if (m.noBar) {
-          const alertX = m.alert && num(x) && m.alert(x);
-          const alertY = m.alert && num(y) && m.alert(y);
-          return `<div class="md-vsm" data-lead="tie"${tip ? ` title="${esc(tip)}"` : ''}>
-            <span class="md-vsm-label">${m.label}</span>
-            ${numCell('own', num(x) ? m.text(x) : null, null, alertX ? ' is-alert' : '')}
-            <span class="md-vsm-track is-flat"></span>
-            ${numCell('foe', num(y) ? m.text(y) : null, null, alertY ? ' is-alert' : '')}
-          </div>`;
-        }
-        const comparable = num(x) && num(y);
-        const sum = comparable ? x + y : 0;
-        const share = comparable && sum > 0 ? x / sum * 100 : null;
-        const lead = !comparable ? 'unknown' : x > y ? 'own' : x < y ? 'foe' : 'tie';
-        return `<div class="md-vsm" data-lead="${lead}"${tip ? ` title="${esc(tip)}"` : ''}>
-          <span class="md-vsm-label">${m.label}</span>
-          ${numCell('own', num(x) ? m.text(x) : null, chipX)}
-          <span class="md-vsm-track${share === null ? " is-flat" : ""}">${share === null ? "" : `<i style="width:${share.toFixed(1)}%"></i>`}</span>
-          ${numCell('foe', num(y) ? m.text(y) : null, chipY)}
-        </div>`;
-      }).join('');
-      const tileName = LANE_TILE[lane];
-      const ownTile = tileText(a, tileName);
-      const foeTile = tileText(b, tileName);
-      const tileRow = `<div class="md-vsm md-vsm-camp" data-lead="tie">
-        <span class="md-vsm-label" title="营地十人面板的分路派生卡片">${tileName}</span>
-        <b class="md-vsm-num own" title="${esc(ownTile.tip)}"><span class="md-vsm-val">${esc(ownTile.text)}</span><em class="md-grade is-blank"></em></b>
-        <span class="md-vsm-track is-flat"></span>
-        <b class="md-vsm-num foe" title="${esc(foeTile.tip)}"><span class="md-vsm-val">${esc(foeTile.text)}</span><em class="md-grade is-blank"></em></b>
-      </div>`;
-      return `<article class="md-vs">
-        <div class="md-vs-head"><span class="md-vs-lane">${lane}</span>${who(a, 'own')}${who(b, 'foe')}</div>
-        <div class="md-vs-body">${pairRadar(a, b, metrics)}<div class="md-vs-metrics">${bars}${tileRow}</div></div>
-        ${tileDetails(a, b)}
-      </article>`;
-    }).join('');
-    return `<div class="md-duels">${rows}</div>`;
+  /* 对位表按设计稿（design-redblue/十人面板_优化版.html）：
+     一路一张干净表格，列＝指标 / 本队 / 对手 / 相对差距 / 结论；
+     相对差距用「(本队−对手)÷对手」，和设计稿的 +406%、-40%、少 60% 同口径。
+     不再画雷达和条。 */
+  const panelPick = (players, camp) => {
+    const map = new Map();
+    for (const p of players) if (p.camp === camp) map.set(laneOf(p), p);
+    return map;
+  };
+
+  const gapOf = (a, b) => {
+    if (!num(a) || !num(b)) return null;
+    if (a === b) return { value: 0, text: '持平' };
+    if (b === 0) return { value: null, text: a > 0 ? '对手 0' : '—' };
+    return { value: (a - b) / Math.abs(b) * 100, text: null };
+  };
+
+  const levelOf = (gap, capMid = false) => {
+    if (!gap) return 'near';
+    if (gap.text === '持平') return 'near';
+    if (gap.value === null) return 'big';
+    const abs = Math.abs(gap.value);
+    if (abs < 10) return 'near';
+    if (abs < 100 || capMid) return 'mid';
+    return 'big';
+  };
+
+  const LEVEL_LABEL = { near: '接近', mid: '明显', big: '大幅' };
+  const LEVEL_CLASS = { near: 'is-near', mid: 'is-mid', big: 'is-big' };
+
+  function duelMetricDefs(duration, killStats) {
+    const cutOf = (p) => (p && killStats ? killStats.get(`${p.camp}-${p.hero}`) : null);
+    const minutes = Number(duration) > 0 ? duration / 60 : 0;
+    return [
+      { label: '分均经济', field: 'gpm', get: (p) => gpmOf(p, duration), text: (v) => fmt(Math.round(v)) },
+      { label: '经济转输出', get: (p) => read(p, 'damageConversion'), text: (v) => fmt(v, 2) },
+      /* 「承受」展示总量，但评级按赛训口径用分均承伤 tpm（越低越好）。 */
+      { label: '承受', field: 'tpm', get: (p) => read(p, 'taken'), gradeValue: (p) => minutes ? read(p, 'taken') / minutes : null, text: (v) => fmt(v), word: '更高' },
+      { label: '对塔伤害', get: (p) => read(p, 'towerDamage'), text: (v) => fmt(v) },
+      { label: '切入', get: (p) => (killStats ? (cutOf(p)?.cutC || 0) : null), text: (v) => fmt(v) },
+      { label: '死亡', field: 'deaths', get: (p) => read(p, 'deaths'), text: (v) => fmt(v), death: true },
+      { label: '参团', field: 'participation', get: (p) => read(p, 'participation'), text: (v) => pct(v) },
+    ];
+  }
+  /* 某个选手在指定指标上的赛训评级徽标；无规则/无值返回空串。 */
+  function gradeBadge(def, player) {
+    if (!def?.field || !player || typeof fieldGrade !== 'function') return '';
+    const value = def.gradeValue ? def.gradeValue(player) : def.get(player);
+    const lv = fieldGrade(subjectOf(player), def.field, value);
+    return lv ? `<em class="md-grade ${lv.level}" title="赛训规则：${esc(lv.label)}">${esc(lv.label)}</em>` : '';
   }
 
-  function teamTable(players, camp, label, side, metrics, inv) {
-    const team = players.filter((p) => p.camp === camp)
-      .sort((a, b) => LANES.indexOf(laneOf(a)) - LANES.indexOf(laneOf(b))).slice(0, 5);
-    if (!team.length) return '';
-    const cols = `grid-template-columns:92px repeat(${metrics.length}, minmax(0, 1fr))`;
-    const totals = metrics.map((m) => team.length === 5 && team.every((p) => num(m.get(p)))
-      ? team.reduce((sum, p) => sum + m.get(p), 0) : null);
-    const values = team.map((p) => metrics.map((m, i) => {
-      const v = m.get(p);
-      if (!num(v)) return null;
-      if (m.rate) return v;
-      if (totals[i] === null || totals[i] <= 0) return null;
-      return v / totals[i] * 100;
-    }));
-    const scale = metrics.map((_, i) => Math.max(1, ...values.map((row) => row[i] ?? 0)));
-    const head = `<div class="md-tg-row md-tg-head" style="${cols}"><span>选手</span>${metrics.map((m) => `<span>${m.label}</span>`).join('')}</div>`;
-    const body = team.map((p, r) => `<div class="md-tg-row" style="${cols}">
-      <span class="md-tg-who"><b>${esc(p.label || p.hero || '—')}</b><small>${esc(p.hero || '—')}</small></span>
-      ${values[r].map((v, i) => (v === null
-        ? '<span class="md-tg-cell empty">—</span>'
-        : `<span class="md-tg-cell"${metrics[i].tip ? ` title="${esc(metrics[i].tip(p))}"` : ''}><i style="--a:${(v / scale[i]).toFixed(2)}"></i><b>${pct(v)}</b></span>`)).join('')}
-    </div>`).join('');
-    let note = inv
-      ? '经济 / 输出 / 承伤 / 发育为队内份额，参团、入侵为比率'
-      : '经济 / 输出 / 承伤 / 发育为队内份额，参团为参团率';
-    if (inv) {
-      const pick = (p) => inv.get(`${p.camp}-${p.slot}`);
-      const rates = team.map((p) => pick(p)?.rate).filter((v) => num(v));
-      const episodes = team.reduce((sum, p) => sum + (pick(p)?.episodes || 0), 0);
-      const firsts = team.map((p) => pick(p)?.first).filter((v) => num(v));
-      if (rates.length) {
-        note += ` · 全队入侵 ${pct(rates.reduce((a, b) => a + b, 0) / rates.length)}`;
-        if (episodes) note += `，共 ${fmt(episodes)} 次`;
-        if (firsts.length) note += `，首次 ${time(Math.min(...firsts))}`;
+  function duelView(players, ownCamp, duration, killStats, lane, open = panelLane === lane) {
+    const mine = panelPick(players, ownCamp);
+    const theirs = panelPick(players, ownCamp === 'blue' ? 'red' : 'blue');
+    const a = mine.get(lane), b = theirs.get(lane);
+    const who = (p, side) => (p
+      ? `<div class="md-duel-player ${side}">${portrait(p.hero, 'md-duel-face')}
+          <span><b>${esc(p.hero || p.label || '—')}</b><small>${esc(p.label || '—')}</small></span></div>`
+      : `<div class="md-duel-player ${side} is-empty"><span class="md-duel-face is-empty">?</span>
+          <span><b>未匹配</b><small>—</small></span></div>`);
+    const defs = duelMetricDefs(duration, killStats);
+    let ownWins = 0, foeWins = 0, near = 0, big = 0;
+    const rows = defs.map((def) => {
+      const x = def.get(a), y = def.get(b);
+      const gap = gapOf(x, y);
+      const level = levelOf(gap, def.death);
+      const hasGap = Boolean(gap);
+      let gapText = '—';
+      if (hasGap) {
+        if (gap.text) gapText = gap.text;
+        else if (gap.value === null) gapText = '—';
+        else {
+          const value = `${gap.value > 0 ? '+' : ''}${fmt(gap.value)}%`;
+          gapText = def.death
+            ? `${gap.value < 0 ? '少' : '多'} ${fmt(Math.abs(gap.value))}%`
+            : value;
+        }
       }
-    }
-    return `<div class="md-team ${side}">
-      <div class="md-team-top"><b>${esc(label)}</b><span>${team.length} 人</span></div>
-      <div class="md-tg">${head}${body}</div>
-      <p class="md-team-note">${note}</p>
+      const diff = num(x) && num(y) ? x - y : null;
+      /* 死亡是「越少越好」，其余指标都是越高越好。 */
+      const better = !num(x) || !num(y) || diff === 0 ? ''
+        : def.death ? (diff < 0 ? 'own' : 'foe') : (diff > 0 ? 'own' : 'foe');
+      if (level !== 'near') {
+        if (better === 'own') { ownWins += 1; if (level === 'big') big += 1; }
+        else if (better === 'foe') foeWins += 1;
+      } else if (num(x) && num(y)) near += 1;
+      const winner = better;
+      const verdict = !num(x) || !num(y) || diff === null
+        ? '<span class="md-duel-j is-mute">—</span>'
+        : level === 'near'
+          ? '<span class="md-duel-j is-mute">基本接近</span>'
+          : `<span class="md-duel-j is-${winner}">${winner === 'own' ? '本队' : '对手'}${def.word || LEVEL_LABEL[level]}${def.word ? '' : '优'}</span>`;
+      const badgeA = gradeBadge(def, a), badgeB = gradeBadge(def, b);
+      return `<div class="md-duel-row">
+        <span class="md-duel-name">${def.label}<i class="md-duel-level ${LEVEL_CLASS[level]}">${LEVEL_LABEL[level]}</i></span>
+        <b class="md-duel-num">${num(x) ? def.text(x) : '—'}${badgeA}</b>
+        <b class="md-duel-num">${num(y) ? def.text(y) : '—'}${badgeB}</b>
+        <b class="md-duel-gap ${winner ? 'is-' + winner : 'is-mute'}">${gapText}</b>
+        ${verdict}
+      </div>`;
+    }).join('');
+    const summary = [
+      `本队 <b>${ownWins}</b> 项占优${big ? `（<b>${big}</b> 项大幅）` : ''}`,
+      `对手 <b>${foeWins}</b> 项占优`,
+      near ? `<b>${near}</b> 项接近` : '',
+    ].filter(Boolean).join(' · ');
+    return `<div class="md-duel-card" data-md-lane-view="${lane}"${open ? '' : ' hidden'}>
+      <div class="md-duel-top">
+        ${who(a, 'own')}
+        <div class="md-duel-summary">${summary}</div>
+        ${who(b, 'foe')}
+      </div>
+      <div class="md-duel-head"><span>指标</span><span>本队</span><span>对手</span><span>相对差距</span><span>结论</span></div>
+      <div class="md-duel-rows">${rows}</div>
+    </div>`;
+  }
+
+  function teamTable(players, camp, label, side, inv) {
+    const team = players.filter((p) => p.camp === camp)
+      .sort((a, b) => LANE_TABS.indexOf(laneOf(a)) - LANE_TABS.indexOf(laneOf(b))).slice(0, 5);
+    if (!team.length) return '';
+    const defs = [
+      { label: '经济', get: (p) => read(p, 'gold'), share: true },
+      { label: '输出', get: (p) => read(p, 'damage'), share: true },
+      { label: '承受', get: (p) => read(p, 'taken'), share: true },
+      { label: '团战', get: (p) => read(p, 'participation'), share: false },
+      { label: '发育', get: (p) => read(p, 'cs'), share: true },
+      { label: '入侵', get: (p) => (inv ? (inv.get(`${p.camp}-${p.slot}`)?.rate ?? null) : null), share: false },
+    ];
+    const sums = defs.map((def, i) => (def.share
+      ? team.reduce((sum, p) => sum + (num(def.get(p)) ? def.get(p) : 0), 0)
+      : null));
+    const values = team.map((p) => defs.map((def, i) => {
+      const v = def.get(p);
+      if (!num(v)) return null;
+      if (!def.share) return v;
+      return sums[i] > 0 ? v / sums[i] * 100 : null;
+    }));
+    const ranks = defs.map((_, i) => {
+      const sorted = values.map((row) => row[i]).filter((v) => num(v)).sort((a, b) => b - a);
+      return new Map(sorted.map((v, index) => [v, index + 1]));
+    });
+    const cols = `grid-template-columns:190px repeat(${defs.length}, minmax(0,1fr))`;
+    const head = `<div class="md-team-row md-team-head" style="${cols}"><span>选手</span>${defs.map((def) => `<span>${def.label}</span>`).join('')}</div>`;
+    const body = team.map((p, r) => `<div class="md-team-row" style="${cols}">
+      <span class="md-team-who">${portrait(p.hero, 'md-team-face')}<span><b>${esc(p.hero || p.label || '—')}</b><small>${esc(p.label || '—')}</small></span></span>
+      ${values[r].map((v, i) => {
+        const rank = num(v) ? ranks[i].get(v) : null;
+        const first = rank === 1;
+        return `<span class="md-team-cell${first ? ' is-first' : ''}">${num(v) ? `<b>${pct(v)}</b>` : '<b>—</b>'}<i>${rank ? ['1st', '2nd', '3rd', '4th', '5th'][rank - 1] || '' : ''}</i></span>`;
+      }).join('')}
+    </div>`).join('');
+    return `<div class="md-team-card ${side}">
+      <div class="md-team-title">${esc(label)}<span>${team.length} 人</span></div>
+      ${head}${body}
     </div>`;
   }
 
   function panel(players, ownCamp, positions, duration, kills, fights, deaths) {
     if (!players || !players.length) return `<div class="empty">这场比赛还没有十人面板数据。</div>`;
-    if (!ownCamp) return `<div class="empty">阵营未知，无法做对位比较。</div>`;
+    if (!ownCamp) return `<div class="empty">阵营未知，无法做同队比较。</div>`;
     /* 兼容 ownCamp 为 left / right 的历史写法 */
     const camp = ownCamp === 'left' ? 'blue' : ownCamp === 'right' ? 'red' : ownCamp;
     const foeCamp = camp === 'blue' ? 'red' : 'blue';
     const ownName = `本队 · ${camp === 'blue' ? '蓝方' : '红方'}`;
     const foeName = `对手 · ${foeCamp === 'blue' ? '蓝方' : '红方'}`;
     const inv = positions && positions.players && positions.players.length ? invasionStats(positions, players, duration) : null;
-    const join = positions && positions.players && positions.players.length
-      ? joinLaneStats(positions, players, laneOf) : null;
-    const metrics = buildMetrics(inv);
-    const pool = metricPool(inv, duration, killStatsFor(players, kills),
-      fightSurvival(players, fights, deaths), roamStats(positions, duration), join);
-    const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${panelMode === mode ? ' is-on' : ''}"
-      aria-selected="${panelMode === mode}" data-md-panel-mode="${mode}">${text}</button>`;
-    const note = inv
-      ? '对位看同分路两人的形状差；同队看资源分配。入侵 = 进入对侧半区的时间占比，悬停可看次数与首次时间；并线按兵线波次算（近似）'
-      : '对位看同分路两人的形状差；同队看资源在本队内部的分配（本局没有位置数据，入侵与并线缺省）';
+    /* 对位比较已由首屏五路表的「详细数据」就地展开，面板只保留队内名次。 */
     return `<div class="md-panel" data-md-panel>
-      <div class="md-panel-bar">
-        <div class="md-seg" role="tablist" aria-label="十人面板口径">${tab('duel', '对位比较')}${tab('team', '同队比较')}</div>
-        <p class="md-panel-note">${note}</p>
-      </div>
-      <div class="md-panel-view" data-md-view="duel"${panelMode === 'duel' ? '' : ' hidden'}>${duelView(players, camp, pool)}</div>
-      <div class="md-panel-view" data-md-view="team"${panelMode === 'team' ? '' : ' hidden'}>
-        <div class="md-teams">${teamTable(players, camp, ownName, 'own', metrics, inv)}${teamTable(players, foeCamp, foeName, 'foe', metrics, inv)}</div>
+      <div class="md-panel-view" data-md-view="team">
+        <div class="md-panel-subtitle">同队比较 · 队内名次</div>
+        <div class="md-teams">${teamTable(players, camp, ownName, 'own', inv)}${teamTable(players, foeCamp, foeName, 'foe', inv)}</div>
       </div>
     </div>`;
+  }
+
+  /* 首屏五路表的「详细数据」：一次生成五条对位的完整卡片，点击时只切 hidden。 */
+  function laneViews(players, ownCamp, duration, kills) {
+    if (!players || !players.length) return {};
+    const camp = ownCamp === 'left' ? 'blue' : ownCamp === 'right' ? 'red' : ownCamp;
+    if (camp !== 'blue' && camp !== 'red') return {};
+    const killStats = kills && kills.length ? killStatsFor(players, kills) : null;
+    return Object.fromEntries(LANE_TABS.map((lane) => [lane, duelView(players, camp, duration, killStats, lane, true)]));
   }
 
   function bindPanel(root) {
     if (panelBound) return;
     panelBound = true;
-    root.addEventListener('click', (event) => {
-      const hit = event.target.closest ? event.target.closest('[data-md-panel-mode],[data-md-duel-mode]') : null;
-      if (!hit) return;
-      const isPanel = Boolean(hit.dataset.mdPanelMode);
-      const mode = isPanel ? hit.dataset.mdPanelMode : hit.dataset.mdDuelMode;
-      const box = hit.closest(isPanel ? '[data-md-panel]' : '[data-md-duel]');
-      if (!box) return;
-      if (isPanel) panelMode = mode; else duelMode = mode;
-      box.querySelectorAll(isPanel ? '[data-md-panel-mode]' : '[data-md-duel-mode]').forEach((b) => {
-        const on = (isPanel ? b.dataset.mdPanelMode : b.dataset.mdDuelMode) === mode;
+    const syncLane = (box) => {
+      box.querySelectorAll('[data-md-lane]').forEach((b) => {
+        const on = b.dataset.mdLane === panelLane;
         b.classList.toggle('is-on', on);
         b.setAttribute('aria-selected', String(on));
       });
-      box.querySelectorAll(isPanel ? '[data-md-view]' : '[data-md-duel-view]').forEach((view) => {
-        view.hidden = (isPanel ? view.dataset.mdView : view.dataset.mdDuelView) !== mode;
+      box.querySelectorAll('[data-md-lane-view]').forEach((view) => {
+        view.hidden = view.dataset.mdLaneView !== panelLane;
+      });
+    };
+    root.addEventListener('click', (event) => {
+      if (!event.target.closest) return;
+      const laneHit = event.target.closest('[data-md-lane]');
+      if (laneHit) {
+        const box = laneHit.closest('[data-md-panel]');
+        if (!box) return;
+        panelLane = laneHit.dataset.mdLane;
+        syncLane(box);
+        return;
+      }
+      const hit = event.target.closest('[data-md-panel-mode]');
+      if (!hit) return;
+      const mode = hit.dataset.mdPanelMode;
+      const box = hit.closest('[data-md-panel]');
+      if (!box) return;
+      panelMode = mode;
+      box.querySelectorAll('[data-md-panel-mode]').forEach((b) => {
+        const on = b.dataset.mdPanelMode === mode;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-selected', String(on));
+      });
+      box.querySelectorAll('[data-md-view]').forEach((view) => {
+        view.hidden = view.dataset.mdView !== mode;
       });
     });
+    /* 初始只显示当前分路；服务端已经按 panelLane 渲染过一次，但重进页面时状态会保持。 */
+    root.querySelectorAll('[data-md-panel]').forEach(syncLane);
   }
 
   /* ── 中野辅集结：三人两两距离 ≤ 22.5（对角线 15%）且持续 ≥ 5 秒 ──── */
@@ -857,211 +964,185 @@ export function createMatchDeep(h) {
 
   /* 入侵窗口的结果归因：击杀取团战账本（kills），目标取官方事件流（资源/建筑）。
      窗口取 [进入 -5 秒, 离开 +10 秒]，同一事件/击杀只记一次。 */
-  function invadeSummary(inv, events, kills) {
-    const out = new Map();
-    if (!inv) return out;
-    for (const camp of ['blue', 'red']) {
-      const entries = [...inv.values()].filter((item) => item.camp === camp);
-      if (!entries.length) continue;
-      const windows = entries.flatMap((item) => item.windows);
-      const won = new Set(), lost = new Set(), objects = new Set();
-      for (const [start, end] of windows) {
-        for (const kill of kills || []) {
-          if (!num(kill.t) || kill.t < start - 5 || kill.t > end + 10) continue;
-          const key = `${kill.t}-${kill.killer}-${kill.victim}`;
-          if (kill.killerCamp === camp) won.add(key);
-          else if (kill.victimCamp === camp) lost.add(key);
-        }
-        for (const event of events || []) {
-          if (!num(event.t) || event.t < start - 5 || event.t > end + 10) continue;
-          objects.add(`${event.kind}-${event.t}-${event.id || ''}`);
-        }
-      }
-      out.set(camp, {
-        episodes: entries.reduce((sum, item) => sum + item.episodes, 0),
-        kills: won.size, lost: lost.size, objects: objects.size,
-      });
-    }
-    return out;
-  }
-
-  /* ── 打野并线：三段（0–4 / 4–10 / 10 分钟后）× 三路，两队对照 ────────
-     口径完全交给 joinLaneStats（那波兵出发后，打野和该路队友在走廊里聚成 2～3 人、
-     待满 4 秒算一次，一波一线一次）；这里只负责把它画清楚。 */
+  /* ── 疑似打野并线（设计稿 design-redblue/疑似打野并线_优化版.html）─────────
+     只保留 0–4 对线期：卡内数字、时间轴、表格全部只覆盖 0:00–4:00。
+     口径仍交给 joinLaneStats（兵线波次出发后，打野和该路队友聚成 2～3 人待满 4 秒）。 */
   function jungleJoin(positions, players, ownCamp, duration) {
     if (!positions || !positions.players?.length) return '';
     const camp = ownCamp === 'left' ? 'blue' : ownCamp === 'right' ? 'red' : ownCamp;
     if (camp !== 'blue' && camp !== 'red') return '';
     const foeCamp = camp === 'blue' ? 'red' : 'blue';
     const join = joinLaneStats(positions, players, laneOf);
-    const wins = phaseWindows(duration);
-    const phaseOf = (t) => {
-      const index = wins.findIndex((w) => t < w.end);
-      return index < 0 ? wins.length - 1 : index;
-    };
+    const laneOfPlayer = new Map((players || []).map((p) => [`${p.camp}-${p.slot}`, laneOf(p)]));
+    const EARLY_END = 240;
+    const EARLY_TOTAL = Math.min(EARLY_END, Number(duration) > 0 ? Number(duration) : EARLY_END) || EARLY_END;
+    const LANE_ROWS = ['对抗路', '中路', '发育路'];
     const jungler = (side) => {
       const player = (players || []).find((p) => p.camp === side && laneOf(p) === '打野');
       if (!player) return null;
-      const stat = join.get(`${player.camp}-${player.slot}`) || { total: 0, lanes: {}, waves: [] };
-      const phases = wins.map(() => 0);
-      const lanes = { '对抗路': 0, '中路': 0, '发育路': 0 };
-      const grid = wins.map(() => ({ '对抗路': 0, '中路': 0, '发育路': 0 }));
-      for (const wave of stat.waves) {
-        const index = phaseOf(wave.t);
-        phases[index] += 1;
-        lanes[wave.lane] = (lanes[wave.lane] || 0) + 1;
-        if (grid[index]) grid[index][wave.lane] = (grid[index][wave.lane] || 0) + 1;
-      }
+      const stat = join.get(`${player.camp}-${player.slot}`) || { waves: [] };
+      const waves = (stat.waves || []).filter((wave) => num(wave.t) && wave.t <= EARLY_END);
+      const lanes = { 对抗路: 0, 中路: 0, 发育路: 0 };
+      for (const wave of waves) if (lanes[wave.lane] != null) lanes[wave.lane] += 1;
       return {
-        player, stat, phases, lanes, grid,
-        total: stat.waves.length,
-        triples: stat.waves.filter((wave) => wave.size >= 3).length,
+        player, waves, lanes,
+        total: waves.length,
+        triples: waves.filter((wave) => wave.size >= 3).length,
       };
     };
     const own = jungler(camp);
     const foe = jungler(foeCamp);
     if (!own && !foe) return '';
-    const total = duration && duration > 0 ? duration : 1;
-    const pctOf = (value) => `${clamp(value / total * 100, 0, 100).toFixed(2)}%`;
+    const pctOf = (value) => `${clamp(value / EARLY_TOTAL * 100, 0, 100).toFixed(2)}%`;
 
-    /* 每条路的点只画在该路上：把全量点按路分一次，避免三行重复画一遍 */
-    const laneDots = (side, lane) => {
-      const entry = side === 'own' ? own : foe;
+    const laneDots = (entry, side, lane) => {
       if (!entry) return '';
-      return entry.stat.waves.filter((wave) => wave.lane === lane).map((wave) => {
-        const label = `${time(wave.t)} · ${wave.lane} · ${wave.size} 人`;
-        return `<i class="md-jg-dot ${side}${wave.size >= 3 ? ' is-trio' : ''}"`
-          + ` style="--x:${pctOf(wave.t)}" title="${esc(label)}"></i>`;
+      return entry.waves.filter((wave) => wave.lane === lane).map((wave) => {
+        const lanes = [...new Set((wave.who || []).map((key) => laneOfPlayer.get(key)).filter(Boolean))];
+        const label = `${time(wave.t)} · ${lanes.length ? lanes.join(' + ') : lane} · ${wave.size} 人`;
+        return `<i class="md-jl-dot ${side}${wave.size >= 3 ? ' is-trio' : ''}"`
+          + ` style="left:${pctOf(wave.t)}" title="${esc(label)}"></i>`;
       }).join('');
     };
-    /* 三段分界：每条路的轨道里画一条竖虚线，横跨整条时间轴 */
-    const cuts = wins.slice(1).map((win) => `<span class="md-jg-cut" style="left:${pctOf(win.start)}"></span>`).join('');
-    const laneRow = (lane) => `<div class="md-jg-row">
-        <span class="md-jg-lane">${lane}</span>
-        <div class="md-jg-track">
-          ${cuts}
-          <div class="md-jg-marks own">${laneDots('own', lane)}</div>
-          <span class="md-jg-line"></span>
-          <div class="md-jg-marks foe">${laneDots('foe', lane)}</div>
+    const laneRow = (lane) => `<div class="md-jl-row">
+        <span class="md-jl-lane">${lane}</span>
+        <div class="md-jl-track">
+          <div class="md-jl-marks own">${laneDots(own, 'own', lane)}</div>
+          <span class="md-jl-line"></span>
+          <div class="md-jl-marks foe">${laneDots(foe, 'foe', lane)}</div>
         </div>
-        <span class="md-jg-rowcount"><b class="own">${own ? own.lanes[lane] || 0 : 0}</b><em>/</em><b class="foe">${foe ? foe.lanes[lane] || 0 : 0}</b></span>
+        <span class="md-jl-rowcount"><b class="own">${own ? own.lanes[lane] : 0}</b> / <b class="foe">${foe ? foe.lanes[lane] : 0}</b></span>
       </div>`;
-
-    const bands = wins.map((win) => {
-      const left = clamp(win.start / total * 100, 0, 100);
-      const width = clamp((win.end - win.start) / total * 100, 0, 100);
-      return `<span class="md-jg-band" style="left:${left.toFixed(2)}%;width:${width.toFixed(2)}%">`
-        + `<em>${esc(win.label)}</em></span>`;
-    }).join('');
 
     const card = (entry, side) => {
-      if (!entry) return `<div class="md-jg-card ${side} is-empty"><span class="md-jg-tag">${side === 'own' ? '本队' : '对手'}打野</span><p>这局没有这个位置的位置数据</p></div>`;
+      if (!entry) return `<article class="md-jl-card ${side} is-empty"><div class="md-jl-tag">${side === 'own' ? '本队' : '对手'}打野</div><p>这局没有这个位置的位置数据</p></article>`;
       const player = entry.player;
-      const peak = Math.max(1, ...entry.phases);
-      /* 最后一段时长每局不一样（10 分钟后到结束），只给这一段折算成「次 / 10 分钟」 */
-      const last = wins[wins.length - 1];
-      const lastSeconds = last ? Math.max(0, last.end - last.start) : 0;
-      const phases = wins.map((win, index) => {
-        const isLast = index === wins.length - 1;
-        const rate = isLast && lastSeconds >= 60
-          ? `<small class="md-jg-rate">${(entry.phases[index] / (lastSeconds / 600)).toFixed(1)}/10 分</small>`
-          : '';
-        return `<span class="md-jg-phase">
-          <small>${esc(win.label)}</small><b>${entry.phases[index]}</b>${rate}
-          <i style="--v:${(entry.phases[index] / peak).toFixed(2)}"></i></span>`;
-      }).join('');
-      return `<div class="md-jg-card ${side}">
-        <span class="md-jg-tag">${side === 'own' ? '本队' : '对手'}打野</span>
-        <div class="md-jg-who">${portrait(player.hero)}<span><b>${esc(player.label || player.hero || '—')}</b><small>${esc(player.hero || '—')}</small></span></div>
-        <div class="md-jg-big">${entry.total}<em>次并线</em></div>
-        <div class="md-jg-chips">
-          <span class="md-jg-chip is-trio">三人 <b>${entry.triples}</b></span>
-          <span class="md-jg-chip">双人 <b>${entry.total - entry.triples}</b></span>
-        </div>
-        <div class="md-jg-phases">${phases}</div>
-      </div>`;
+      return `<article class="md-jl-card ${side}">
+        <div class="md-jl-tag">${side === 'own' ? '本队' : '对手'}打野</div>
+        <div class="md-jl-who">${portrait(player.hero, 'md-jl-face')}<span><b>${esc(player.hero || player.label || '—')}</b><small>${esc(player.label || '—')}</small></span></div>
+        <div class="md-jl-big">${entry.total}<em>次并线</em></div>
+        <div class="md-jl-chips"><span>三人 ${entry.triples}</span><span>双人 ${entry.total - entry.triples}</span></div>
+        <div class="md-jl-seg"><span>0–4 对线期</span><b>${entry.total}</b></div>
+      </article>`;
     };
 
-    const head = `<span>路</span>${wins.map((win) => `<span>${esc(win.label)}</span>`).join('')}<span>合计</span>`;
-    const body = ['对抗路', '中路', '发育路'].map((lane) => {
-      const cells = wins.map((_, index) => {
-        const ownValue = own ? own.grid[index][lane] || 0 : 0;
-        const foeValue = foe ? foe.grid[index][lane] || 0 : 0;
-        const heat = clamp((ownValue + foeValue) / 3, 0, 1);
-        const dim = ownValue + foeValue === 0;
-        return `<span class="md-jg-cell${dim ? ' is-zero' : ''}" style="--k:${heat.toFixed(2)}">`
-          + `<b class="own">${ownValue}</b><em>/</em><b class="foe">${foeValue}</b></span>`;
-      }).join('');
-      const ownTotal = own ? own.lanes[lane] || 0 : 0;
-      const foeTotal = foe ? foe.lanes[lane] || 0 : 0;
-      return `<div class="md-jg-trow"><span class="md-jg-tlane">${lane}</span>${cells}`
-        + `<span class="md-jg-total"><b class="own">${ownTotal}</b><em>/</em><b class="foe">${foeTotal}</b></span></div>`;
-    }).join('');
-
-    const best = (entry) => {
-      if (!entry) return '';
-      const top = ['对抗路', '中路', '发育路']
-        .map((lane) => [lane, entry.lanes[lane] || 0])
-        .sort((a, b) => b[1] - a[1])[0];
-      if (!top || !top[1]) return '';
-      const early = entry.phases[0] || 0;
-      return `${top[0]}最多（${top[1]} 次）· 对线期 ${early} 次`;
-    };
-    const line = (side, entry) => (entry
-      ? `<p class="md-jg-line-${side}">${side === 'own' ? '本队' : '对手'}打野 <b>${entry.total}</b> 次并线，${esc(best(entry))}</p>`
-      : '');
     const gap = own && foe ? own.total - foe.total : null;
-    const verdict = gap === null
-      ? ''
-      : `${gap === 0 ? '两队打野并线次数持平' : `本队打野${gap > 0 ? '多' : '少'} ${Math.abs(gap)} 次`}`;
+    const verdict = gap === null ? '缺少打野位置数据'
+      : gap === 0 ? '两队打平' : gap > 0 ? `本队多 ${gap} 次` : `对手多 ${Math.abs(gap)} 次`;
+    const totalOwn = own ? own.total : 0;
+    const totalFoe = foe ? foe.total : 0;
 
-    return `<div class="md-jg">
-      <div class="md-jg-cards">${card(own, 'own')}
-        <div class="md-jg-vs"><b>并线</b>
-          ${gap === null ? '' : `<strong class="${gap >= 0 ? 'own' : 'foe'}">${gap > 0 ? '+' : ''}${gap}</strong>`}
+    const tableRows = LANE_ROWS.map((lane) => {
+      const a = own ? own.lanes[lane] : 0;
+      const b = foe ? foe.lanes[lane] : 0;
+      const diff = a === b ? '0 次' : a > b ? `本队多 ${a - b} 次` : `对手多 ${b - a} 次`;
+      const tone = a === b ? 'is-mute' : a > b ? 'is-own' : 'is-foe';
+      return `<div class="md-jl-tr">
+        <span class="md-jl-tlane">${lane}</span>
+        <b class="${a === b ? 'is-mute' : a > b ? 'is-win own' : 'is-lose own'}">${a}</b>
+        <b class="${a === b ? 'is-mute' : b > a ? 'is-win foe' : 'is-lose foe'}">${b}</b>
+        <b class="${tone}">${diff}</b>
+      </div>`;
+    }).join('');
+    const totalTone = totalOwn === totalFoe ? 'is-mute' : totalOwn > totalFoe ? 'is-own' : 'is-foe';
+    const totalDiff = totalOwn === totalFoe ? '0 次' : totalOwn > totalFoe ? `本队多 ${totalOwn - totalFoe} 次` : `对手多 ${totalFoe - totalOwn} 次`;
+
+    return `<div class="md-jl">
+      <div class="md-jl-cards">
+        ${card(own, 'own')}
+        <div class="md-jl-mid">
+          <small>并线</small>
+          <b class="${gap === null ? 'is-mute' : gap > 0 ? 'own' : gap < 0 ? 'foe' : 'is-mute'}">${gap === null ? '—' : `${gap > 0 ? '+' : ''}${gap}`}</b>
           <span>${esc(verdict)}</span>
-          <i class="md-jg-key"><em class="md-jg-dot own"></em>本队<em class="md-jg-dot foe"></em>对手</i>
-          <i class="md-jg-key"><em class="md-jg-dot is-trio"></em>三人并线</i>
+          <div class="md-jl-legend">
+            <span><i class="md-jl-dot own"></i>本队</span>
+            <span><i class="md-jl-dot foe"></i>对手</span>
+            <span><i class="md-jl-dot is-trio"></i>大点＝三人并线</span>
+          </div>
         </div>
-        ${card(foe, 'foe')}</div>
-      <div class="md-jg-timeline">
-        <div class="md-jg-bands">${bands}</div>
-        <div class="md-jg-rows">${['对抗路', '中路', '发育路'].map(laneRow).join('')}</div>
-        <div class="md-jg-axis"><span>0:00</span>${wins.slice(1).map((win) => `<span>${time(win.start)}</span>`).join('')}<span>${time(total)}</span></div>
+        ${card(foe, 'foe')}
       </div>
-      <div class="md-jg-table"><div class="md-jg-thead">${head}</div>${body}</div>
-      <p class="md-jg-tcap">表格读法：格子里 <b class="own">本队</b> / <b class="foe">对手</b> 的打野并线次数，底色越深＝两队在这条路这一段的并线越多。</p>
-      <p class="md-jg-note">${line('own', own)}${line('foe', foe)}
-        <span>怎么算：第 n 波兵 10+33(n−1) 秒出发，打野和该路队友在走廊里 2～3 人聚在一起满 4 秒算一次，一波一线最多一次；组里必须有打野——射手 + 辅助这种固定搭档不算；基地内、阵亡与 5 人推挤不计。最后一段按时长折算成「次 / 10 分钟」。近似值，只做同局横向比较。</span></p>
+      <div class="md-jl-timeline">
+        <div class="md-jl-title">0–4 对线期 · 并线时刻</div>
+        ${LANE_ROWS.map(laneRow).join('')}
+        <div class="md-jl-axis"><span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span></div>
+      </div>
+      <div class="md-jl-table">
+        <div class="md-jl-tr head"><span class="md-jl-tlane">并线发生分路</span><span>本队次数</span><span>对手次数</span><span>分路差</span></div>
+        ${tableRows}
+        <div class="md-jl-tr total"><span class="md-jl-tlane">合计</span>
+          <b class="${totalOwn >= totalFoe ? 'is-win own' : 'is-lose own'}">${totalOwn}</b>
+          <b class="${totalFoe >= totalOwn ? 'is-win foe' : 'is-lose foe'}">${totalFoe}</b>
+          <b class="${totalTone}">${totalDiff}</b></div>
+      </div>
     </div>`;
   }
 
-  /* ── 中野辅与入侵：两队对照 ─────────────────────────────────────── */
-  function cohesion(positions, players, ownCamp, duration, events, kills) {
+  /* ── 中野辅集结与 BUFF（设计稿 design-redblue/中野辅与入侵_优化版.html）──
+     只留集结率 / 集结次数 / 红蓝 BUFF / 推塔矩阵；
+     最长集结、平均间距、说明段全部删除。 */
+  function cohesion(positions, players, ownCamp, duration, events, kills, extras = {}) {
     if (!positions || !positions.players?.length) return '';
     const prox = proximity(positions, players);
     if (!prox.size) return '';
-    const inv = invadeSummary(invasionStats(positions, players, duration), events, kills);
+    const buffs = extras.buffs || [];
+    const towerGrid = extras.towers || null;
+    const ownSide = ownCamp === 'blue' ? 'blue' : 'red';
+    const foeSide = ownSide === 'blue' ? 'red' : 'blue';
+    const buffCount = (camp, word) => (buffs.length
+      ? buffs.filter((b) => b.killer === camp && String(b.name || '').includes(word)).length
+      : null);
+    const towerCell = (camp, tier, lane) => (towerGrid ? (towerGrid[camp]?.[tier]?.[lane] || 0) : 0);
     const card = (camp) => {
       const item = prox.get(camp);
-      const side = camp === ownCamp ? 'own' : 'foe';
+      const side = camp === ownSide ? 'own' : 'foe';
       const name = camp === 'blue' ? '蓝方' : '红方';
-      const title = `${camp === ownCamp ? '本队' : '对手'} · ${name}`;
-      if (!item) return `<article class="md-coh ${side}"><header><b>${title}</b><span>中野辅</span></header><p class="md-coh-empty">缺少中/野/辅位置数据</p></article>`;
-      const invade = inv.get(camp);
-      const row = (label, value) => `<span><small>${label}</small><b>${value}</b></span>`;
-      return `<article class="md-coh ${side}">
-        <header><b>${title}</b><span>中野辅集结</span></header>
-        <div class="md-coh-nums">
-          ${row('集结率', pct(item.rate))}
-          ${row('集结次数', fmt(item.count))}
-          ${row('最长集结', item.longest ? `${fmt(item.longest)} 秒` : '—')}
-          ${row('平均间距', num(item.gap) ? fmt(item.gap, 1) : '—')}
+      const title = `${camp === ownSide ? '本队' : '对手'} · ${name}`;
+      if (!item) return `<article class="md-coh-card ${side}"><div class="md-coh-title">${title}</div><p class="md-coh-empty">缺少中/野/辅位置数据</p></article>`;
+      const red = buffCount(camp, '红');
+      const blue = buffCount(camp, '蓝');
+      const towerRows = ['一塔', '二塔', '高地塔'].map((tier) => `<div class="md-coh-tw-row"><span>${tier}</span>
+        ${['上路', '中路', '下路'].map((lane) => `<span>${towerCell(camp, tier, lane)}</span>`).join('')}</div>`).join('');
+      return `<article class="md-coh-card ${side}">
+        <div class="md-coh-title">${title}</div>
+        <div class="md-coh-rate"><b>${pct(item.rate)}</b><span>集结率</span></div>
+        <div class="md-coh-times"><b>${fmt(item.count)}</b><span>次集结</span></div>
+        <div class="md-coh-rule"></div>
+        <div class="md-coh-sub">红蓝 BUFF</div>
+        <div class="md-coh-buff"><span>红 BUFF <b>${red === null ? '—' : red}</b></span><span>蓝 BUFF <b>${blue === null ? '—' : blue}</b></span></div>
+        <div class="md-coh-sub">推塔（上路 / 中路 / 下路）</div>
+        <div class="md-coh-tw">
+          <div class="md-coh-tw-head"><span></span><span>上路</span><span>中路</span><span>下路</span></div>
+          ${towerRows}
         </div>
-        <p class="md-coh-invade">入侵 ${fmt(invade ? invade.episodes : 0)} 次 · 期间击杀 ${fmt(invade ? invade.kills : 0)} / 阵亡 ${fmt(invade ? invade.lost : 0)} · 资源·建筑 ${fmt(invade ? invade.objects : 0)}</p>
       </article>`;
     };
-    return `<div class="md-coh-grid">${card(ownCamp)}${card(ownCamp === 'blue' ? 'red' : 'blue')}</div>`;
+    const ownItem = prox.get(ownSide), foeItem = prox.get(foeSide);
+    const rateDiff = ownItem && foeItem && num(ownItem.rate) && num(foeItem.rate) ? ownItem.rate - foeItem.rate : null;
+    const countDiff = ownItem && foeItem ? ownItem.count - foeItem.count : null;
+    const bits = [];
+    if (rateDiff !== null) {
+      bits.push(rateDiff >= 0
+        ? `集结率本队高 <b>+${fmt(rateDiff, 1)}pp</b>`
+        : `集结率对手高 <i>+${fmt(Math.abs(rateDiff), 1)}pp</i>`);
+    }
+    if (countDiff !== null) {
+      bits.push(countDiff >= 0
+        ? `集结多 <b>${fmt(countDiff)} 次</b>`
+        : `集结少 <i>${fmt(Math.abs(countDiff))} 次</i>`);
+    }
+    const vs = (label, value, side) => `<div><small>${label}</small><b class="${side}">${value}</b></div>`;
+    return `<div class="md-coh-wrap">
+      ${bits.length ? `<p class="md-coh-summary">${bits.join(' · ')}</p>` : ''}
+      <div class="md-coh-grid">
+        ${card(ownSide)}
+        <div class="md-coh-vs">
+          ${vs('集结率', rateDiff === null ? '—' : `${rateDiff >= 0 ? '+' : ''}${fmt(rateDiff, 1)}pp`, rateDiff === null ? 'is-mute' : rateDiff >= 0 ? 'own' : 'foe')}
+          ${vs('集结次数', countDiff === null ? '—' : `${countDiff >= 0 ? '+' : ''}${fmt(countDiff)}`, countDiff === null ? 'is-mute' : countDiff >= 0 ? 'own' : 'foe')}
+        </div>
+        ${card(foeSide)}
+      </div>
+    </div>`;
   }
 
   /* ── 热区：时间窗 + 十人 / 对位两视图（canvas 重绘） ─────────────── */
@@ -1088,13 +1169,8 @@ export function createMatchDeep(h) {
     });
     const total = duration || (list[0] ? list[0].points.length * step : 0);
     heatState = { step, duration: total, list };
-    /* 赛训组口径的三段：0–4 对线、4–10 发育、10 分钟以后到结束 */
-    const [label1, label2, label3] = (phaseWindows(total) || []).map((w) => w.label).concat(['后期']).slice(0, 3);
-    const phaseLabel = [
-      `${label1} 0–4`,
-      `${label2} 4–10`,
-      `${label3} 10+`,
-    ];
+    /* 赛训组口径的三段：0–4 / 4–10 / 10–结束（标签本身就是时间段） */
+    const phaseLabel = ['0–4', '4–10', '10–结束'];
 
     const side = (p) => (p.camp === ownCamp ? 'own' : 'foe');
     const canvas = (p, size) => `<canvas class="md-heat-canvas" width="${GRID * size}" height="${GRID * size}"
@@ -1201,7 +1277,7 @@ export function createMatchDeep(h) {
         g.fillRect(0, 0, 64, 64);
         return c;
       };
-      heatSprites = { own: make('216, 178, 106'), foe: make('94, 201, 190') };
+      heatSprites = { own: make('31, 111, 207'), foe: make('207, 63, 63') };
     }
     return heatSprites[side === 'foe' ? 'foe' : 'own'];
   }
@@ -1211,7 +1287,7 @@ export function createMatchDeep(h) {
     if (!ctx) return;
     const size = canvas.width;
     const cell = size / GRID;
-    const rgb = side === 'foe' ? '94, 201, 190' : '216, 178, 106';
+    const rgb = side === 'foe' ? '207, 63, 63' : '31, 111, 207';
     ctx.clearRect(0, 0, size, size);
 
     drawHeatMap(ctx, size);
@@ -1227,7 +1303,7 @@ export function createMatchDeep(h) {
   function drawHeatMap(ctx, size) {
     const X = (v) => (v + MAP) / (MAP * 2) * size;
     const Y = (v) => size - (v + MAP) / (MAP * 2) * size;
-    const team = { blue: '91, 143, 196', red: '206, 106, 106' };
+    const team = { blue: '31, 111, 207', red: '207, 63, 63' };
     ctx.save();
     /* 两侧半区底色：蓝方在下半（左下到右上），红方在上半——一眼能分「哪边是我们的」 */
     ctx.fillStyle = 'rgba(91, 143, 196, .07)';
@@ -1256,7 +1332,7 @@ export function createMatchDeep(h) {
     /* 基地：圆＋「基地」小字，蓝左下、红右上 */
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `600 ${Math.max(7, size * 0.034)}px Manrope, "Noto Sans SC", sans-serif`;
+    ctx.font = `400 ${Math.max(7, size * 0.034)}px "Microsoft YaHei", "Microsoft YaHei UI", sans-serif`;
     for (const base of MAP_BASES) {
       const cx = X(base.x), cy = Y(base.y), r = size * 0.045;
       ctx.beginPath();
@@ -1271,7 +1347,7 @@ export function createMatchDeep(h) {
     }
     /* 红蓝 BUFF：填充色＝BUFF 种类，外圈＝归属方（蓝圈是蓝方野区、红圈是红方野区） */
     const r = Math.max(3.4, size * 0.021);
-    ctx.font = `700 ${Math.max(7, size * 0.034)}px Manrope, "Noto Sans SC", sans-serif`;
+    ctx.font = `400 ${Math.max(7, size * 0.034)}px "Microsoft YaHei", "Microsoft YaHei UI", sans-serif`;
     for (const buff of MAP_BUFFS) {
       const cx = X(buff.x), cy = Y(buff.y);
       const color = buff.kind === 'red' ? '216, 96, 96' : '96, 148, 214';
@@ -1521,7 +1597,7 @@ export function createMatchDeep(h) {
        团战 = 团战地图 + 本波伤害/承伤/控制 + 全队团战贡献 + 团战分析；
        掉点 = 掉点地图 + 掉点列表 + 选中掉点详情 + 掉点分析。
      两块共用官方回放的 battles/deaths 与逐秒位置，口径一致、互不遮挡。 */
-  const PHASE_LABELS = ['对线期', '发育期', '后期'];
+  const PHASE_LABELS = ['0–4', '4–10', '10–结束'];
   function battle(positions, players, ownCamp, duration, series, deaths, fights) {
     const deathList = (deaths || []).filter((d) => num(d.t));
     const fightList = (fights || []).filter((f) => num(f.t));
@@ -2344,7 +2420,17 @@ export function createMatchDeep(h) {
     }
   }
 
-  /* ── 对位纵深：同一张表，深区（>66%）/ 半区（>50%，即入侵）双口径 ── */
+  /* ── 入侵时长：半区（>50%，即入侵）/ 深区（>66%）双口径，共用一张表 ──
+     2026-11-20 赛训组第二轮：
+     ① 数字回归墨色，整张表只留「差距最大」那一行用色；
+     ② 口径切换真的能点（原来只有按钮、没有事件）；
+     ③ 0–4 / 4–10 / 10+ 并进表头，和下面的列严格对齐，不再单独浮一行。 */
+  /* 中文时长：≥60 秒「X分XX秒」，不足 60 秒「N秒」（赛训组口径，不用 xx:xx） */
+  const durText = (sec) => {
+    const s = Math.round(sec);
+    return s < 60 ? `${s}秒` : `${Math.floor(s / 60)}分${String(s % 60).padStart(2, '0')}秒`;
+  };
+
   function duel(positions, players, ownCamp, duration) {
     if (!positions || !positions.players?.length) return '';
     const wins = phaseWindows(duration);
@@ -2352,7 +2438,8 @@ export function createMatchDeep(h) {
     const laneOfPlayer = (p) => (LANES.includes(p.position) ? p.position : '游走');
     const foeCamp = ownCamp === 'blue' ? 'red' : 'blue';
 
-    const table = (threshold, ownLabel, foeLabel) => {
+    /* 逐人逐段秒数：进入对侧半区 / 深区的时长，两种口径各采一次 */
+    const collect = (threshold) => {
       const index = new Map();
       for (const src of positions.players) {
         const info = players.find((p) => p.camp === src.camp && p.slot === src.slot);
@@ -2372,48 +2459,168 @@ export function createMatchDeep(h) {
         }
         index.set(`${src.camp}-${laneOfPlayer(info)}`, { info, seconds });
       }
-      const rows = LANES.map((lane) => {
-        const own = index.get(`${ownCamp}-${lane}`);
-        const foe = index.get(`${foeCamp}-${lane}`);
-        const cell = (entry, side) => {
-          if (!entry) return `<span class="md-duel-cell ${side} empty">—</span>`;
-          return entry.seconds.map((sec) => (sec <= 0
-            ? `<span class="md-duel-cell ${side} is-zero"><b>0<small>秒</small></b></span>`
-            : `<span class="md-duel-cell ${side}">
-            <b>${fmt(sec)}<small>秒</small></b>
-            <span class="md-vox">${'<i></i>'.repeat(clamp(Math.round(sec / 10), 0, 10))}</span>
-          </span>`)).join('');
-        };
-        return `<div class="md-duel-row"><span class="md-duel-lane">${lane}</span>
-          <div class="md-duel-side own">${cell(own, 'own')}</div>
-          <div class="md-duel-side foe">${cell(foe, 'foe')}</div></div>`;
-      }).join('');
-      const head = `<div class="md-duel-head"><span></span><span class="own">${ownLabel}</span><span class="foe">${foeLabel}</span></div>
-        <div class="md-duel-phases"><span></span><span class="own"><i>前期</i><i>中期</i><i>后期</i></span><span class="foe"><i>前期</i><i>中期</i><i>后期</i></span></div>`;
-      return `<div class="md-duel">${head}${rows}</div>`;
+      return index;
     };
 
-    const view = (mode, body, caption) => `<div class="md-panel-view" data-md-duel-view="${mode}"${duelMode === mode ? '' : ' hidden'}>
-      ${caption ? `<p class="md-panel-note">${caption}</p>` : ''}${body}</div>`;
-    const tab = (mode, text) => `<button type="button" role="tab" class="md-seg-btn${duelMode === mode ? ' is-on' : ''}"
-      aria-selected="${duelMode === mode}" data-md-duel-mode="${mode}">${text}</button>`;
-    return `<div class="md-depth" data-md-duel>
-      <div class="md-panel-bar">
-        <div class="md-seg" role="tablist" aria-label="纵深口径">${tab('deep', '深区 >66%')}${tab('half', '半区 >50%（入侵）')}</div>
-        <p class="md-panel-note">静止 ≥12 秒的样本（阵亡停留等）已剔除，与全景页同口径</p>
-      </div>
-      ${view('deep', table(DEEP, '本队 · 推进到对侧深区', '对手 · 推进到本队深区'), '')}
-      ${view('half', table(HALF, '本队 · 进入对侧半区', '对手 · 进入本队半区'),
-        '越过中线（推进进度 > 50%）即算进入对侧半区，也就是入侵；同一套采样，只换了阈值')}
+    const table = (mode) => {
+      const index = collect(mode === 'deep' ? DEEP : HALF);
+      const ownLabel = mode === 'deep' ? '本队 · 推进到对侧深区' : '本队 · 进入对侧半区';
+      const foeLabel = mode === 'deep' ? '对手 · 推进到本队深区' : '对手 · 进入本队半区';
+      const rows = LANES.map((lane) => {
+        const ownEntry = index.get(`${ownCamp}-${lane}`) || null;
+        const foeEntry = index.get(`${foeCamp}-${lane}`) || null;
+        const secs = (entry) => (entry ? entry.seconds.slice() : [null, null, null]);
+        const total = (list) => list.reduce((sum, v) => sum + (num(v) ? v : 0), 0);
+        const ownSecs = secs(ownEntry);
+        const foeSecs = secs(foeEntry);
+        /* 一边没有这名选手的位置（分路标错 / 缺位置）时不给差距：
+           拿 0 当对手时长会把「没数据」说成「本队多 10 分钟」。 */
+        const comparable = ownSecs.some(num) && foeSecs.some(num);
+        return { lane, ownSecs, foeSecs, own: total(ownSecs), foe: total(foeSecs), comparable };
+      });
+      /* 三种分期共用一把尺子：条长就是绝对秒数，不按分期各自归一 */
+      const peak = Math.max(1, ...rows.flatMap((r) => r.ownSecs.concat(r.foeSecs)).filter(num));
+      const paired = rows.filter((r) => r.comparable);
+      /* 合计只算两边都有位置的「可比」分路：缺一边的路不能拿 0 当对手时长，
+         否则「对手根本没被记录」会被说成「本队多 10 分钟」。
+         五路全缺时也不能回退到 rows —— 那样算出的合计会和下面
+         「缺位置不计入合计」的说明自相矛盾，直接给「无法合计」。 */
+      const noPair = !paired.length;
+      const sumRows = paired;
+      const ownTot = sumRows.reduce((sum, r) => sum + r.own, 0);
+      const foeTot = sumRows.reduce((sum, r) => sum + r.foe, 0);
+      const gap = foeTot - ownTot;
+      /* 表里只强调一行：合计差距方向上的最大差 */
+      const dir = gap >= 0 ? 1 : -1;
+      const worst = paired.length
+        ? paired.reduce((pick, r) => ((r.foe - r.own) * dir > (pick.foe - pick.own) * dir ? r : pick), paired[0])
+        : null;
+
+      const cell = (sec) => {
+        if (!num(sec)) return '<span class="iv-cell is-empty"><b>—</b></span>';
+        if (!sec) return '<span class="iv-cell is-zero"><b>0</b></span>';
+        const width = Math.max(4, Math.round(sec / peak * 100));
+        return `<span class="iv-cell"><b>${durText(sec)}</b>`
+          + `<i class="iv-meter"><em style="width:${width}%"></em></i></span>`;
+      };
+      const body = rows.map((r) => {
+        const d = r.foe - r.own;
+        const diffText = !r.comparable ? '—' : d > 0 ? `对手多 ${durText(d)}` : d < 0 ? `本队多 ${durText(-d)}` : '持平';
+        const mark = r.comparable && r === worst && d !== 0 ? (d > 0 ? ' is-worst' : ' is-best') : '';
+        const naCls = r.comparable ? '' : ' is-na';
+        return `<div class="iv-row">
+          <span class="iv-lane">${r.lane}</span>
+          <div class="iv-cells own">${r.ownSecs.map(cell).join('')}</div>
+          <div class="iv-cells foe">${r.foeSecs.map(cell).join('')}</div>
+          <span class="iv-diff${mark}${naCls}">${diffText}</span>
+        </div>`;
+      }).join('');
+      const head = `<div class="iv-head">
+        <span class="iv-h-lane">分路</span>
+        <div class="iv-h-group"><b><i class="iv-dot own"></i>${ownLabel}</b>
+          <div class="iv-h-phases"><i>0–4 分钟</i><i>4–10 分钟</i><i>10 分钟后</i></div></div>
+        <div class="iv-h-group"><b><i class="iv-dot foe"></i>${foeLabel}</b>
+          <div class="iv-h-phases"><i>0–4 分钟</i><i>4–10 分钟</i><i>10 分钟后</i></div></div>
+        <span class="iv-h-diff">差距</span>
+      </div>`;
+      const ratio = ownTot && foeTot ? (foeTot / ownTot) : null;
+      const mid = noPair
+        ? '<span>无法合计</span><b>—</b>'
+        : gap > 0
+          ? `<span>对手多</span><b class="is-behind">+${durText(gap)}</b>${ratio ? `<small>约 ${ratio.toFixed(1)} 倍</small>` : ''}`
+          : gap < 0
+            ? `<span>本队多</span><b class="is-ahead">+${durText(-gap)}</b>${ratio ? `<small>约 ${(1 / ratio).toFixed(1)} 倍</small>` : ''}`
+            : '<span>两边合计</span><b>持平</b>';
+      const sum = `<div class="iv-sum">
+        <div class="iv-sum-cell"><span><i class="iv-dot own"></i>本队</span><b>${noPair ? '—' : durText(ownTot)}</b></div>
+        <div class="iv-sum-cell mid">${mid}</div>
+        <div class="iv-sum-cell foe"><span>对手<i class="iv-dot foe"></i></span><b>${noPair ? '—' : durText(foeTot)}</b></div>
+      </div>`;
+      const ahead = paired.filter((r) => r.foe > r.own).length;
+      const behind = paired.filter((r) => r.own > r.foe).length;
+      const lead = (r) => durText(Math.abs(r.foe - r.own));
+      const take = (() => {
+        if (noPair) return '没有可对比的分路，本局不给合计差距';
+        if (!gap) return '两队入侵时长合计持平';
+        if (!worst) return `合计${gap > 0 ? '对手' : '本队'}多 ${durText(Math.abs(gap))}`;
+        if (gap > 0 && ahead) return `${ahead} 条分路对手更久，<b>${worst.lane}差最多 ${lead(worst)}</b>`;
+        if (gap < 0 && behind) return `${behind} 条分路本队更久，<b>${worst.lane}领先最多 ${lead(worst)}</b>`;
+        return `合计${gap > 0 ? '对手' : '本队'}多 ${durText(Math.abs(gap))}`;
+      })();
+      /* 有一边没这名选手的位置：不编差距，写清哪一路缺 */
+      const missing = rows.filter((r) => !r.comparable)
+        .map((r) => `${r.lane}${r.ownSecs.some(num) ? '对手' : '本队'}无位置`);
+      const caveat = missing.length ? `<span class="iv-note-caveat">（${missing.join('、')}，不计入合计）</span>` : '';
+      return `${sum}<div class="iv-table">${head}${body}</div><p class="iv-note">${take}${caveat}</p>`;
+    };
+
+    const view = (mode, body) => `<div class="iv-view" id="iv-view-${mode}" data-iv-view="${mode}"
+      role="tabpanel" aria-labelledby="iv-tab-${mode}"${duelMode === mode ? '' : ' hidden'}>${body}</div>`;
+    const tab = (mode, text) => `<button type="button" role="tab" id="iv-tab-${mode}"
+      class="iv-tab${duelMode === mode ? ' is-on' : ''}" aria-selected="${duelMode === mode}"
+      aria-controls="iv-view-${mode}" tabindex="${duelMode === mode ? '0' : '-1'}"
+      data-iv-mode-btn="${mode}">${text}</button>`;
+    /* 半区优先：初始口径 half（切过深区就尊重上次选择） */
+    return `<div class="md-invasion" data-md-duel>
+      <div class="iv-bar"><div class="iv-tabs" role="tablist" aria-label="入侵口径">${tab('half', '半区 &gt;50%')}${tab('deep', '深区 &gt;66%')}</div></div>
+      ${view('half', table('half'))}
+      ${view('deep', table('deep'))}
     </div>`;
   }
 
+  /* 口径切换：两份表都已渲染，点一下只切 hidden（原来只有按钮、没有事件） */
+  function setDuelMode(mode) {
+    duelMode = mode === 'deep' ? 'deep' : 'half';
+    const box = document.querySelector('[data-md-duel]');
+    if (!box) return;
+    box.querySelectorAll('[data-iv-mode-btn]').forEach((btn) => {
+      const on = btn.dataset.ivModeBtn === duelMode;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-selected', String(on));
+      btn.tabIndex = on ? 0 : -1;
+    });
+    box.querySelectorAll('[data-iv-view]').forEach((view) => {
+      view.hidden = view.dataset.ivView !== duelMode;
+    });
+  }
+
+  let duelBound = false;
+  function bindDuel(root) {
+    if (!duelBound) {
+      duelBound = true;
+      root.addEventListener('click', (event) => {
+        const hit = event.target.closest ? event.target.closest('[data-iv-mode-btn]') : null;
+        if (!hit) return;
+        setDuelMode(hit.dataset.ivModeBtn);
+      });
+      /* 方向键在半区/深区之间移动焦点并切换，tab 的相关属性由 setDuelMode 统一同步。 */
+      root.addEventListener('keydown', (event) => {
+        const hit = event.target.closest?.('[data-iv-mode-btn]');
+        if (!hit || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+        const tabs = [...(hit.closest('.iv-tabs')?.querySelectorAll('[data-iv-mode-btn]') || [])];
+        if (tabs.length < 2) return;
+        const at = tabs.indexOf(hit);
+        const next = tabs[(at + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        event.preventDefault();
+        next.focus();
+        setDuelMode(next.dataset.ivModeBtn);
+      });
+    }
+    setDuelMode(duelMode);
+  }
+
   /* ── 交互：比赛脉搏指针 ─────────────────────────────────────────── */
+  /* 增量替换会反复调用 bindPulse（异步回放到达时）：「点外面收起浮层」
+     只在 document 上挂一次，各次的 box/card 只登记进表；旧 DOM 脱离文档后
+     顺手清掉，不再每次重渲染都留一个捕获旧节点的闭包。 */
+  const pulseCards = new Set();
+  let pulseDismissBound = false;
   function bindPulse(root, series, events, ownCamp) {
     const box = root.querySelector('[data-pulse]');
     if (!box || !series.length) return;
-    const svg = box.querySelector('.mp-svg');
-    const cursor = box.querySelector('.mp-cursor');
+    /* 图表 SVG 在读数条下面的 .mp-chart 里，从脉搏容器取 */
+    const svg = box.parentElement?.querySelector('.mp-svg') || box.querySelector('.mp-svg');
+    const cursor = svg?.querySelector('.mp-cursor');
     const line = cursor?.querySelector('line');
     const dot = cursor?.querySelector('circle');
     const clock = box.querySelector('[data-pulse-clock]');
@@ -2424,22 +2631,23 @@ export function createMatchDeep(h) {
     if (!svg || !cursor) return;
 
     const t0 = Number(box.dataset.t0), t1 = Number(box.dataset.t1);
-    const L = 58, R = 982, W = 1000;
+    /* 与 pulse() 的矮画布一致：881 × 200，x 轴 78→838，零线 102，满量程 58px */
+    const W = 881, L = 78, R = 838, ZERO = 102, UNIT = 58;
+    const absMax = Math.max(1000, ...series.map((p) => Math.abs(p.diff)));
+    const limit = Math.max(10000, Math.ceil(absMax / 5000) * 5000);
     const nearest = (t) => series.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a, series[0]);
 
     const move = (event) => {
       const rect = svg.getBoundingClientRect();
       const px = clamp(event.clientX - rect.left, 0, rect.width);
-      const t = t0 + (px / rect.width * W - L) / (R - L) * (t1 - t0);
+      const vx = px / rect.width * W;                 // 换算回画布坐标
+      const t = t0 + (vx - L) / (R - L) * (t1 - t0);
       const point = nearest(clamp(t, t0, t1));
       const x = L + (point.t - series[0].t) / Math.max(1, series.at(-1).t - series[0].t) * (R - L);
-      const absMax = Math.max(1000, ...series.map((p) => Math.abs(p.diff)));
-      const limit = Math.ceil(absMax / 5000) * 5000;
-      const low = Math.min(0, ...series.map((p) => p.diff)) < 0 ? -limit : 0;
-      const high = limit;
-      const y = 26 + (high - point.diff) / (high - low) * (250 - 26);
+      const y = ZERO - point.diff / limit * UNIT;
       cursor.removeAttribute('hidden');
       line.setAttribute('x1', x.toFixed(1)); line.setAttribute('x2', x.toFixed(1));
+      line.setAttribute('y1', (ZERO - UNIT).toFixed(1)); line.setAttribute('y2', (ZERO + UNIT).toFixed(1));
       dot.setAttribute('cx', x.toFixed(1)); dot.setAttribute('cy', y.toFixed(1));
       clock.textContent = time(point.t);
       ownOut.textContent = fmt(point.own);
@@ -2447,21 +2655,34 @@ export function createMatchDeep(h) {
       diffOut.textContent = diff(point.diff);
       const near = (events || []).filter((e) => num(e.t) && Math.abs(e.t - point.t) <= 45)
         .sort((a, b) => Math.abs(a.t - point.t) - Math.abs(b.t - point.t))[0];
-      atOut.textContent = near
+      if (atOut) atOut.textContent = near
         ? `${time(near.t)} ${near.kind === 'structure' ? '建筑' : near.kind === 'resource' ? '资源' : '击杀'} · ${near.killer || near.killerHero || ''}`
         : '该时刻附近没有记录事件';
     };
     const card = box.querySelector('[data-pulse-card]');
+    if (card) {
+      pulseCards.add({ box, card });
+      if (!pulseDismissBound) {
+        pulseDismissBound = true;
+        document.addEventListener('pointerdown', (event) => {
+          for (const entry of [...pulseCards]) {
+            if (!entry.box.isConnected) { pulseCards.delete(entry); continue; }
+            if (!entry.box.contains(event.target) && entry.card) entry.card.hidden = true;
+          }
+        });
+      }
+    }
     const markList = (events || []).filter((e) => num(e.t) && (e.kind === 'resource' || e.kind === 'structure'));
     const showCard = (index, event) => {
       const item = markList[Number(index)];
       if (!card || !item) return;
       const side = item.killerCamp === ownCamp ? 'own' : 'foe';
       const sideText = item.killerCamp ? (side === 'own' ? '我方' : '对手') : '';
-      card.innerHTML = `<b>${time(item.t)} · ${item.label || item.name || ''}</b>
-        <span class="mp-card-side ${side}">${sideText}${item.killerHero || item.killer ? ' · ' + (item.killerHero || item.killer) : ''}</span>
+      card.innerHTML = `<b>${time(item.t)} · ${esc(item.label || item.name || '')}</b>
+        <span class="mp-card-side ${side}">${sideText}${item.killerHero || item.killer ? ' · ' + esc(item.killerHero || item.killer) : ''}</span>
         <small>${item.kind === 'structure' ? '建筑' : '资源'} · 官方回放事件</small>`;
-      const host = box.getBoundingClientRect();
+      /* 浮卡以整张脉搏卡为定位父级；2026-11-22 起脉搏已移出结论卡。 */
+      const host = (box.closest('.ms-pulse-card, #match-verdict') || box).getBoundingClientRect();
       const rect = event.currentTarget.getBoundingClientRect();
       card.hidden = false;
       const left = clamp(rect.left + rect.width / 2 - host.left, 8, host.width - card.offsetWidth - 8);
@@ -2482,13 +2703,208 @@ export function createMatchDeep(h) {
       event.preventDefault();
       showCard(mark.dataset.mark, event);
     });
-    document.addEventListener('pointerdown', (event) => {
-      if (!box.contains(event.target)) card && (card.hidden = true);
-    });
     svg.addEventListener('pointermove', move);
     svg.addEventListener('pointerdown', move);
     svg.addEventListener('pointerleave', () => { cursor.setAttribute('hidden', ''); });
   }
 
-  return { totals, pulse, phaseTable, panel, heat, duel, jungleJoin, cohesion, battle, bindPulse, bindPanel, bindHeat, bindBattle };
+  /* ── 事件时间轴（2026-11-19）：资源与推塔水晶两条横向时间轴 ─────────
+     事件以竖线插入时间带，外端挂官方图标胶囊；悬停/聚焦弹出卡片显示
+     时间、事件、归属与参与者头像。密集事件上下错层避免重叠。 */
+  const RES_ICON = {
+    '暴君': 'kpl-svg/charts/objective-icon-tyrant.svg', '主宰': 'kpl-svg/charts/objective-icon-overlord.svg',
+    /* 本地 SVG 资产比旧 PNG 更清楚，21px 胶囊里也能看清龙形；水晶暂无独立图标，沿用塔。 */
+    '暗影暴君': 'kpl-svg/charts/objective-icon-shadow-tyrant.svg', '暗影主宰': 'kpl-svg/charts/objective-icon-shadow-overlord.svg',
+    '风暴龙王': 'kpl-svg/charts/objective-icon-storm-dragon.svg', '塔': 'kpl-svg/charts/objective-icon-tower.svg', '水晶': 'kpl-svg/charts/objective-icon-tower.svg'
+  };
+  const iconUrl = (name, foe = false) => {
+    /* 塔/水晶按阵营取色：我方蓝塔、对方红塔，外圈颜色与图标本体保持一致。 */
+    const foeIcon = foe && (name === '塔' || name === '水晶');
+    const file = foeIcon ? 'kpl-svg/charts/objective-icon-tower-red.svg'
+      : (RES_ICON[name] || 'kpl-svg/charts/objective-icon-tower.svg');
+    return `static/${file}`;
+  };
+
+  function timeline(events, ownCamp, duration, players) {
+    const list = (events || []).filter((e) => num(e.t) && (e.kind === 'resource' || e.kind === 'structure') && e.name !== '野怪');
+    if (!list.length) return '';
+    const end = Math.max(Number(duration) || 0, ...list.map((e) => Number(e.t) || 0)) || 1;
+
+    const iconOf = (e) => {
+      if (e.kind === 'structure') return /水晶/.test(e.name || '') ? '水晶' : '塔';
+      const n = e.name || '';
+      if (/风暴|龙王/.test(n)) return '风暴龙王';
+      if (/暗影暴君/.test(n)) return '暗影暴君';
+      if (/暗影主宰/.test(n)) return '暗影主宰';
+      if (/主宰/.test(n)) return '主宰';
+      if (/暴君/.test(n)) return '暴君';
+      return '暴君';
+    };
+    const kindText = (e) => e.label || (e.kind === 'structure'
+      ? (/水晶/.test(e.name || '') ? '水晶' : '防御塔')
+      : (e.name || iconOf(e)));
+
+    const wins = phaseWindows(end);
+    const PHASE_NAMES = ['对线期', '发育期', '后期'];
+    const segs = wins.map((win, i) => {
+      const width = Math.max(0, Math.min(100, (win.end - win.start) / end * 100));
+      return `<div class="tl-seg s${i + 1}" style="width:${width.toFixed(2)}%">${PHASE_NAMES[i] || ''}<em>${esc(win.label)}</em></div>`;
+    }).join('');
+    const tickTimes = (() => {
+      const base = end > 300
+        ? [0, 180, 360, 540, 720].filter((t) => t < end - 20)
+        : [0, end / 3, end * 2 / 3];
+      return [...new Set([...base.map((t) => Math.round(t)), Math.round(end)])];
+    })();
+
+    const axis = (rows, isLane) => {
+      const sorted = rows.slice().sort((a, b) => a.t - b.t);
+      const ownN = sorted.filter((e) => e.killerCamp === ownCamp).length;
+      const foeN = sorted.filter((e) => e.killerCamp && e.killerCamp !== ownCamp).length;
+      const ticks = tickTimes.map((t) => `<span style="left:${(t / end * 100).toFixed(2)}%">${time(t)}</span>`).join('');
+      const nodes = sorted.map((e) => {
+        const pct = clamp((Number(e.t) || 0) / end * 100, 0, 100);
+        const own = e.killerCamp === ownCamp;
+        const camp = own ? 'own' : 'foe';
+        const parts = (e.participants || []).filter((p) => p && p.hero);
+        const who = parts.slice(0, 8).map((p) => `<span class="tl-who">${portrait(p.hero, 'tl-face')}<em>${esc(p.hero)}</em></span>`).join('');
+        const icon = iconOf(e);
+        return `<span class="tl-ev ${camp}" style="left:${pct.toFixed(2)}%" data-pct="${pct.toFixed(3)}"
+          tabindex="0" data-time="${time(e.t)}" data-icon="${icon}" data-kind="${esc(kindText(e))}"
+          data-result="${own ? '我方拿下' : '对手拿下'}"
+          data-note="${parts.length ? `${parts.length} 人参与` : '回放未记录参与者'}"
+          data-who="${encodeURIComponent(who)}">
+          <span class="tl-cap"><span class="tl-ic"><img src="${iconUrl(icon, !own)}" alt=""></span><span class="tl-time">${time(e.t)}</span></span>
+          <span class="tl-stem"></span></span>`;
+      }).join('');
+      return `<div class="tl-axis ${isLane ? 'tl-lane' : 'tl-res'}">
+        <div class="tl-head"><b>${isLane ? '推塔与水晶' : '关键资源'}</b><span><i class="own">${ownN}</i> 我方 · <i class="foe">${foeN}</i> 对手 · 共 ${sorted.length} 事件</span></div>
+        <div class="tl-ticks">${ticks}</div>
+        <div class="tl-track"><div class="tl-band">${segs}</div>${nodes}</div>
+      </div>`;
+    };
+
+    const legendNames = ['暴君', '主宰', '暗影暴君', '暗影主宰', '风暴龙王'];
+    const legend = `<div class="tl-legend">
+      ${legendNames.map((n) => {
+        const count = list.filter((e) => e.kind === 'resource' && iconOf(e) === n).length;
+        return `<span class="${count ? '' : 'unused'}"><img src="${iconUrl(n)}" alt=""><em>${n}</em><b class="${count ? '' : 'off'}">${count || '本局 0'}</b></span>`;
+      }).join('')}</div>`;
+
+    return `<div class="md-timeline" data-md-timeline>
+      ${legend}
+      ${axis(list.filter((e) => e.kind === 'resource'), false)}
+      ${axis(list.filter((e) => e.kind === 'structure'), true)}
+      <div class="tl-pop" data-tl-pop hidden></div>
+    </div>`;
+  }
+
+  /* 时间轴事件分层：按实际像素宽度做区间排层（不靠固定百分比猜），
+     6 条泳道 u0/d0/u1/d1/u2/d2，密集簇（14:14/14:25、15:00/15:08/15:11）
+     自动上下错开；页签从隐藏变可见时 ResizeObserver 会重排。 */
+  function bindTimeline(root) {
+    const box = root && root.querySelector('[data-md-timeline]');
+    if (!box || box.dataset.tlBound) return;
+    box.dataset.tlBound = '1';
+    const pop = box.querySelector('[data-tl-pop]');
+    if (!pop) return;
+    const LANES = ['u0', 'd0', 'u1', 'd1', 'u2', 'd2'];
+    const layoutAxis = (axis) => {
+      const track = axis.querySelector('.tl-track');
+      if (!track) return;
+      const width = track.clientWidth;
+      if (!width) return;
+      const nodes = [...track.querySelectorAll('.tl-ev')]
+        .sort((a, b) => Number(a.dataset.pct) - Number(b.dataset.pct));
+      const lanes = new Map(LANES.map((lane) => [lane, []]));
+      nodes.forEach((node, index) => {
+        const x = Number(node.dataset.pct) / 100 * width;
+        const cap = node.querySelector('.tl-cap');
+        const w = Math.max(56, cap ? cap.offsetWidth : 84);
+        const order = index % 2 ? ['d0', 'u0', 'd1', 'u1', 'd2', 'u2'] : LANES;
+        let best = null, bestDist = -1;
+        for (const lane of order) {
+          const used = lanes.get(lane);
+          const conflict = used.some((o) => Math.abs(o.x - x) < (o.w + w) / 2 + 4);
+          if (!conflict) { best = lane; break; }
+          const dist = used.reduce((min, o) => Math.min(min, Math.abs(o.x - x)), Infinity);
+          if (dist > bestDist) { bestDist = dist; best = lane; }
+        }
+        const lane = best || 'u0';
+        node.classList.remove(...LANES);
+        node.classList.add(lane);
+        lanes.get(lane).push({ x, w });
+      });
+    };
+    const layoutAll = () => box.querySelectorAll('.tl-axis').forEach(layoutAxis);
+    layoutAll();
+    if (window.ResizeObserver && !box._tlRO) {
+      box._tlRO = new ResizeObserver(() => layoutAll());
+      box.querySelectorAll('.tl-track').forEach((track) => box._tlRO.observe(track));
+    }
+
+    const place = (x, y) => {
+      pop.hidden = false;
+      const w = pop.offsetWidth || 248;
+      const h = pop.offsetHeight || 180;
+      let left = x + 14;
+      let top = y - 24;
+      if (left + w > window.innerWidth - 12) left = x - w - 14;
+      if (left < 12) left = 12;
+      if (top + h > window.innerHeight - 12) top = window.innerHeight - h - 12;
+      if (top < 12) top = 12;
+      pop.style.left = `${left}px`;
+      pop.style.top = `${top}px`;
+    };
+    const fill = (el) => {
+      let who = '';
+      try { who = decodeURIComponent(el.dataset.who || ''); } catch { who = ''; }
+      const own = el.classList.contains('own');
+      pop.className = 'tl-pop on ' + (own ? 'own' : 'foe');
+      pop.innerHTML = `<div class="tl-pop-head"><img src="${iconUrl(el.dataset.icon, el.classList.contains('foe'))}" alt="">
+          <div><span>${esc(el.dataset.time || '')}</span><b>${esc(el.dataset.kind || '')}</b></div></div>
+        <div class="tl-pop-side ${own ? 'own' : 'foe'}">${esc(el.dataset.result || '')}</div>
+        <div class="tl-pop-note">${esc(el.dataset.note || '')}</div>
+        ${who ? `<div class="tl-pop-parts">${who}</div>` : ''}`;
+    };
+    const showAt = (el, x, y) => {
+      fill(el);
+      place(x, y);
+    };
+    const hide = () => { pop.hidden = true; };
+    box.querySelectorAll('.tl-ev').forEach((el) => {
+      el.addEventListener('mouseenter', (event) => showAt(el, event.clientX, event.clientY));
+      el.addEventListener('mousemove', (event) => showAt(el, event.clientX, event.clientY));
+      el.addEventListener('mouseleave', hide);
+      el.addEventListener('focus', () => {
+        const r = el.getBoundingClientRect();
+        showAt(el, r.right, r.top);
+      });
+      el.addEventListener('blur', hide);
+    });
+    box.addEventListener('mouseleave', hide);
+  }
+
+  /* 横滑卡片：卡片被容器右缘齐边切断时，给「还能往右滑」一个可见提示。
+     只在右侧确实还有内容时显示渐隐 + 小箭头；滑到底自动消失，
+     不改变卡片尺寸、排序、滚动口径。 */
+  const hscrollRO = typeof ResizeObserver !== 'undefined'
+    ? new ResizeObserver((entries) => entries.forEach((e) => syncHScrollHint(e.target))) : null;
+  function syncHScrollHint(el) {
+    const more = el.scrollWidth - el.clientWidth - el.scrollLeft > 8;
+    el.closest('.md-hscroll')?.classList.toggle('can-scroll-right', more);
+  }
+  function bindHScrollHints(root) {
+    (root || document).querySelectorAll('.md-hscroll').forEach((wrap) => {
+      if (wrap.dataset.hsBound) return;
+      const track = wrap.querySelector('.md-mu-grid, .md-ct-list');
+      if (!track) return;
+      wrap.dataset.hsBound = '1';
+      track.addEventListener('scroll', () => syncHScrollHint(track), { passive: true });
+      hscrollRO?.observe(track);
+      syncHScrollHint(track);
+    });
+  }
+
+  return { totals, pulse, phaseTable, panel, laneViews, heat, duel, jungleJoin, cohesion, battle, timeline, bindPulse, bindPanel, bindHeat, bindBattle, bindTimeline, bindDuel, bindHScrollHints };
 }

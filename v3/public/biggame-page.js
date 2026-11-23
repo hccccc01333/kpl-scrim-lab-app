@@ -11,10 +11,20 @@
 
 import { fmt } from './cross-analytics.js';
 import {
-  gameWord, renderPhase, renderBp, renderBoHabit, renderDraft, renderOverview, renderCompSystem,
-} from './biggame-insight.js';
+  gameWord, renderPhase, renderBp, renderBoHabit, renderOverview, renderCompSystem,
+} from './biggame-insight.js?v=20261122trend';
 
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
+
+/* 赛事域（M1）：大场页自带取数，统一在这里补当前赛事参数。 */
+const currentCompetitionId = () => {
+  try { return localStorage.getItem('training-current-competition') || ''; } catch { return ''; }
+};
+const scopedSeriesUrl = (path) => {
+  const competition = currentCompetitionId();
+  if (!competition) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}competition=${encodeURIComponent(competition)}`;
+};
 
 const RANGE_OPTIONS = [['all', '全部时间'], ['7', '近 7 天'], ['30', '近 30 天'], ['custom', '自定义']];
 const BO_OPTIONS = [['', '全部赛制'], ['3', 'BO3'], ['5', 'BO5'], ['7', 'BO7']];
@@ -23,6 +33,11 @@ const COMPLETION_OPTIONS = [['', '全部完赛状态'], ['completed', '已完赛
   ['interrupted', '中断'], ['incomplete', '采集不完整']];
 const STATUS_LABEL = { confirmed: '已确认', needs_review: '待核实' };
 const COMPLETION_LABEL = { completed: '已完赛', open: '未完赛', interrupted: '中断', incomplete: '采集不完整' };
+/* 单字符对手名（如占位 "D"）当队名渲染会像评级字母，统一回落到待补。 */
+const opponentLabel = (value) => {
+  const name = String(value || '').trim();
+  return name.length <= 1 ? '对手待补' : name;
+};
 const DEFAULT_RANGE = 'all';
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -55,18 +70,32 @@ export function createBigGamePage(h) {
   const { esc, fmt: format } = h;
   let generation = 0;
   let controller = null;
+  /* 复制等操作的反馈同时读给屏幕阅读器，失败不能冒充成功。 */
+  let liveNode = null;
+  const announce = (message) => {
+    if (!liveNode || !liveNode.isConnected) {
+      liveNode = document.createElement('div');
+      liveNode.setAttribute('role', 'status');
+      liveNode.setAttribute('aria-live', 'polite');
+      liveNode.style.cssText = 'position:fixed;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap';
+      document.body.append(liveNode);
+    }
+    liveNode.textContent = message;
+  };
   const state = {
     allSeries: [], attention: [], rulesets: [], latestDate: '',
     navSeries: [], navLoaded: false,
     loaded: false, loading: false, error: '',
     detailId: '', detail: null, detailLoading: false, detailError: '',
+    comboPool: undefined, rulesCounters: undefined, rulesCombos: undefined,
   };
   const scope = { range: DEFAULT_RANGE, from: '', to: '', bo: '', opponent: '', session: '', status: '', completion: '' };
   /* 单场页的视图状态：切局次/阶段/对比窗口都只重绘，不重新取数。 */
   const ui = {
     phase: 'mid', window: 'd30',
-    boWindow: '90', boScope: 'opp', boSlot: 1, baseMode: 'format', module: 'overview', draftGame: '',
-    bpGame: '', bpOpen: {}, metricMode: 'all',
+    boWindow: '90', boScope: 'opp', boSlot: 1, boSide: 'auto', baseMode: 'format', module: 'overview',
+    boIncludeOtherEvents: false,
+    bpGame: '', bpOpen: {}, metricGroup: 'all',
   };
 
   /* ── 地址与范围 ───────────────────────────────────────────── */
@@ -80,6 +109,11 @@ export function createBigGamePage(h) {
     scope.completion = pick('completion', ['completed', 'open', 'interrupted', 'incomplete'], '');
     scope.opponent = String(params.get('opp') || '');
     scope.session = String(params.get('sess') || '');
+    /* 赛事域：URL 带 event= 时切换当前赛事（分享链接直达某个分析域）。 */
+    const event = params.get('event');
+    if (event) {
+      try { localStorage.setItem('training-current-competition', event); } catch {}
+    }
     scope.from = isDate(params.get('from')) ? params.get('from') : '';
     scope.to = isDate(params.get('to')) ? params.get('to') : '';
     if (scope.range !== 'custom' && scope.from && scope.to) scope.range = 'custom';
@@ -98,6 +132,8 @@ export function createBigGamePage(h) {
     if (scope.session) params.set('sess', scope.session);
     if (scope.status) params.set('status', scope.status);
     if (scope.completion) params.set('completion', scope.completion);
+    const event = currentCompetitionId();
+    if (event) params.set('event', event);
     const query = params.toString();
     return query ? `?${query}` : '';
   }
@@ -208,7 +244,7 @@ export function createBigGamePage(h) {
     state.error = '';
     paintLoading('正在汇总大场…');
     try {
-      const response = await fetch(`${API_BASE}/api/cross/series-summary`, { signal: controller.signal, cache: 'no-store' });
+      const response = await fetch(scopedSeriesUrl(`${API_BASE}/api/cross/series-summary`), { signal: controller.signal, cache: 'no-store' });
       if (gen !== generation) return;
       if (!response.ok) throw new Error(`系列赛汇总 ${response.status}`);
       const payload = await response.json();
@@ -233,18 +269,38 @@ export function createBigGamePage(h) {
     state.detailLoading = true;
     state.detailError = '';
     state.detail = null;
-    ui.draftGame = '';
+    state.comboPool = undefined;
+    state.rulesCounters = undefined;
+    state.rulesCombos = undefined;
     ui.bpGame = '';
     ui.bpOpen = {};
     ui.boSlot = 1;
     paintLoading('正在读取大场明细…');
     try {
-      const response = await fetch(`${API_BASE}/api/series/${encodeURIComponent(id)}/analysis`, {
-        signal: controller.signal, cache: 'no-store',
-      });
+      const analysisBase = scopedSeriesUrl(`${API_BASE}/api/series/${encodeURIComponent(id)}/analysis`);
+      const analysisUrl = ui.boIncludeOtherEvents
+        ? `${analysisBase}${analysisBase.includes('?') ? '&' : '?'}includeOtherEvents=1`
+        : analysisBase;
+      const [response, poolResponse, counterResponse, comboRuleResponse] = await Promise.all([
+        fetch(analysisUrl, {
+          signal: controller.signal, cache: 'no-store',
+        }),
+        fetch(`${API_BASE}/api/v3/custom-combos`, {
+          signal: controller.signal, cache: 'no-store',
+        }).catch(() => null),
+        fetch(scopedSeriesUrl(`${API_BASE}/api/v3/rules-center/counters`), {
+          signal: controller.signal, cache: 'no-store',
+        }).catch(() => null),
+        fetch(scopedSeriesUrl(`${API_BASE}/api/v3/rules-center/combos`), {
+          signal: controller.signal, cache: 'no-store',
+        }).catch(() => null),
+      ]);
       if (gen !== generation) return;
       if (!response.ok) throw new Error(`大场明细 ${response.status}`);
       state.detail = await response.json();
+      state.comboPool = poolResponse?.ok ? await poolResponse.json().catch(() => null) : null;
+      state.rulesCounters = counterResponse?.ok ? await counterResponse.json().catch(() => null) : null;
+      state.rulesCombos = comboRuleResponse?.ok ? await comboRuleResponse.json().catch(() => null) : null;
     } catch (error) {
       if (gen !== generation) return;
       state.detailError = String((error && error.message) || error);
@@ -261,7 +317,7 @@ export function createBigGamePage(h) {
     if (state.navLoaded) return;
     state.navLoaded = true;
     try {
-      const response = await fetch(`${API_BASE}/api/series`, { cache: 'no-store' });
+      const response = await fetch(scopedSeriesUrl(`${API_BASE}/api/series`), { cache: 'no-store' });
       if (!response.ok) throw new Error(`系列赛 ${response.status}`);
       const payload = await response.json();
       state.navSeries = (payload.series || []).slice().sort((a, b) =>
@@ -306,15 +362,15 @@ export function createBigGamePage(h) {
     </div>`;
   }
 
-  function gameColumns(games) {
+  /* 逐局压成一条胜负色块，经济差留在 tooltip，卡面只留走势 */
+  function formStrip(games) {
     return (games || []).map((game) => {
-      const cls = game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : '';
-      /* BO7 这类密集卡片把「第一把 / 胜 / +1,579」堆三行太挤，压成「1胜 / +1,579」两行。 */
-      const dense = (games || []).length > 5;
-      return `<span class="bgx-game-col ${cls}" title="${esc(gameWord(game.gameIndex))} ${game.result === 'win' ? '胜' : '负'}${num(game.at10) ? ` · 10′ ${signed(game.at10)}` : ''}">
-        <b>${esc(dense ? String(Number(game.gameIndex) || 1) : gameWord(game.gameIndex))}<i>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</i></b>
-        <em>${num(game.at10) ? signed(game.at10) : '—'}</em>
-      </span>`;
+      const win = game.result === 'win';
+      const loss = game.result === 'loss';
+      const cls = win ? 'is-win' : loss ? 'is-loss' : '';
+      const ch = win ? '胜' : loss ? '负' : '—';
+      const tip = `${gameWord(game.gameIndex)} ${ch}${num(game.at10) ? ` · 10′ ${signed(game.at10)}` : ''}`;
+      return `<i class="bgx-form-cell ${cls}" title="${esc(tip)}">${ch}</i>`;
     }).join('');
   }
 
@@ -326,26 +382,31 @@ export function createBigGamePage(h) {
     const leads = games.filter((g) => num(g.at10) && g.at10 > 0);
     const holds = leads.filter((g) => g.result === 'win').length;
     const avgDur = mean(games.map((g) => g.duration));
-    const opp = String(s.opponent || '对手待补');
-    /* 单字 / 双字队名（比如「D」）直接做首字头像就够了，不必再重复一遍文字。 */
-    const oppName = opp.length <= 2 ? '' : esc(opp);
+    const oppRaw = String(s.opponent || '').trim();
+    const oppTbd = oppRaw.length <= 1;
+    const opp = opponentLabel(oppRaw);
+    /* 队名始终显示：卡片的主角是「跟谁打」，占位文案要弱化为标签，不当大标题。 */
+    const oppName = esc(opp);
+    const oppClass = oppTbd ? ' is-tbd' : '';
     const outcome = us > them ? 'is-win' : them > us ? 'is-loss' : '';
+    /* 结论先于过程被读到：和单场页用同一套判词，不另造一套说法。 */
+    const verdict = verdictText(s, games, { us, them });
     return `<a class="bgx-team-card ${outcome}" href="#biggame/${encodeURIComponent(s.id)}${scopeQuery()}">
       <div class="bgx-team-top">
         <span>${esc((seriesDate(s) || '—').slice(5))} · BO${esc(String(s.bestOf || '—'))}${s.completionMode === 'fixed' ? ' · 固定打满' : ''}</span>
         <span class="bgx-status${s.completion === 'completed' ? ' is-done' : ''}">${esc(COMPLETION_LABEL[s.completion] || s.completion || '—')}${s.status === 'needs_review' ? ' · 待核实' : ''}</span>
       </div>
-      <div class="bgx-team-ident">
-      <div class="bgx-team-name"><i class="bgx-avatar">${esc(opp.slice(0, 1))}</i><b>${oppName}</b></div>
-      <div class="bgx-team-score ${outcome}">
-        <b class="${outcome}">${us}:${them}</b>
-        <span>${us > them ? '战胜' : them > us ? '不敌' : '对阵'}${valid ? '' : ' · 比分异常'}</span>
+      <div class="bgx-scoreline">
+        <b class="bgx-side-name${oppClass}">${oppName}</b>
+        <span class="bgx-score ${outcome}">${us}<i>:</i>${them}</span>
+        <span class="bgx-outcome ${outcome}">${us > them ? '战胜' : them > us ? '不敌' : '对阵'}${valid ? '' : ' · 比分异常'}</span>
       </div>
+      <div class="bgx-verdict-row">
+        <p class="bgx-verdict-line">${esc(verdict)}</p>
+        <span class="bgx-form">${formStrip(games) || '<span class="bgx-noform">暂无小局</span>'}</span>
       </div>
-      <div class="bgx-team-games${games.length > 5 ? ' is-dense' : ''}" style="--cols:${Math.max(3, games.length)}">${gameColumns(games) || '<span class="bgx-chip">没有小局</span>'}</div>
       <div class="bgx-team-foot">
-        <span>${leads.length ? `10′ 领先 ${leads.length}/${games.length} 局，守住 ${holds} 局` : '无 10 分钟过程'}${num(avgDur) ? ` · 场均 ${dur(avgDur)}` : ''}</span>
-        <span>${attentionCount ? `<b>${attentionCount} 条关注 · </b>` : ''}<b>进入 →</b></span>
+        <span class="bgx-team-foot-meta">${leads.length ? `10′ 领先 ${leads.length}/${games.length} 局，守住 ${holds} 局` : '无 10 分钟过程'}${num(avgDur) ? ` · 场均 ${dur(avgDur)}` : ''}${attentionCount ? ` · ${attentionCount} 条关注` : ''}</span><b>进入 →</b>
       </div>
     </a>`;
   }
@@ -355,7 +416,7 @@ export function createBigGamePage(h) {
       return `<div class="page bgx-page"><section class="bgx-empty"><h2>读不到大场</h2><p>${esc(state.error)}</p><button type="button" class="bgx-btn" data-cx-retry>重试</button></section></div>`;
     }
     if (!state.allSeries.length) {
-      return `<div class="page bgx-page">${scopeBarHtml()}<section class="bgx-empty"><h2>还没有已确认的大场</h2><p>大场分析以已确认的 BO3/5/7 为单位；先到系列赛编组确认 BO 关系。</p><a class="bgx-btn is-primary" href="#series-builder">去系列赛编组 →</a></section></div>`;
+      return `<div class="page bgx-page"><section class="bgx-empty"><h1>还没有已确认的大场</h1><p>大场分析以已确认的 BO3/5/7 为单位；先到系列赛编组确认 BO 关系。</p><a class="bgx-btn is-primary" href="#series-builder">去系列赛编组 →</a></section></div>`;
     }
     const series = filteredSeries();
     if (!series.length) {
@@ -451,7 +512,7 @@ export function createBigGamePage(h) {
         <p class="bgx-eyebrow">大场分析 <i>/</i> 单场 BO <i>/</i> ${esc(String(series.bestOf ? `BO${series.bestOf}` : '赛制未设置'))}</p>
         <div class="bgx-hero-score">
           <span class="bgx-hero-digits"><b>${us}</b><i>/</i><b>${them}</b></span>
-          <span class="bgx-hero-outcome"><span>${us > them ? '战胜' : them > us ? '不敌' : '对阵'}</span><b>${esc(series.opponent || '对手待补')}</b></span>
+          <span class="bgx-hero-outcome"><span>${us > them ? '战胜' : them > us ? '不敌' : '对阵'}</span><b>${esc(opponentLabel(series.opponent))}</b></span>
         </div>
         <p class="bgx-hero-verdict">${valid ? esc(verdictText(series, games, score)) : `<b class="bgx-warn">比分异常：</b>${esc(verdictText(series, games, score))}`}</p>
         <div class="bgx-hero-tags">${tags.map((tag) => `<span class="bgx-chip">${esc(tag)}</span>`).join('')}</div>
@@ -508,6 +569,7 @@ export function createBigGamePage(h) {
         ${next ? `<a href="#biggame/${encodeURIComponent(next.id)}${scopeQuery()}" title="下一场：${esc(next.opponent || '')} ${esc(String(next.startAt || '').slice(0, 10))}">${esc(next.opponent || '下一场')} ${esc(dateOf(next))} →</a>` : ''}
       </div>
       <div class="bgx-detail-actions">
+        ${currentCompetitionId() ? `<span class="bgx-chip" title="当前赛事">${esc((() => { try { return localStorage.getItem('training-current-competition-name') || ''; } catch { return ''; } })())}</span>` : ''}
         <button type="button" class="bgx-btn" data-bgx-copy>复制链接</button>
         <button type="button" class="bgx-btn" data-bgx-print>打印</button>
       </div>
@@ -515,7 +577,7 @@ export function createBigGamePage(h) {
     const moduleKey = ['overview', 'bp', 'comp', 'exec'].includes(ui.module) ? ui.module : 'overview';
     const modules = [
       ['overview', '01', '总览与对比', '逐局指标、对比时间窗'],
-      ['bp', '02', 'BP 博弈', '每局选禁、阵容结构、顺序'],
+      ['bp', '02', 'BP 博弈', '每局选禁、阵容结构'],
       ['comp', '03', '阵容体系', '五路类型、组合、核心、英雄池'],
       ['exec', '04', '执行与资源', '阶段、龙塔、团战、反野'],
     ];
@@ -530,19 +592,20 @@ export function createBigGamePage(h) {
       </section>`;
     } else if (moduleKey === 'bp') {
       const bpNav = `<nav class="bgv-subnav" aria-label="BP 页内导航">
-        <button type="button" class="is-on" data-bp-jump="order">BP 顺序</button>
-        <button type="button" data-bp-jump="games">逐局 BP</button>
+        <button type="button" class="is-on" data-bp-jump="games">逐局 BP</button>
         <button type="button" data-bp-jump="habit">BO 习惯</button>
       </nav>`;
       body = `<section class="rpt-module" id="bgx-bp">
         ${bpNav}
-        <div id="bgx-bp-order" class="bgv-bp-anchor">${renderDraft(insight, ui, { esc, fmt, portrait: h.portrait })}</div>
-        <div id="bgx-bp-games" class="bgv-bp-anchor">${cardShell('bp', renderBp(insight, ui, { esc, fmt, portrait: h.portrait }))}</div>
-        <div id="bgx-bp-habit" class="bgv-bp-anchor">${renderBoHabit(insight, ui, { esc, fmt, portrait: h.portrait })}</div>
+        <div id="bgx-bp-games" class="bgv-bp-anchor">${cardShell('bp', renderBp(insight, ui, { esc, fmt, portrait: h.portrait, comboPool: state.comboPool }))}</div>
+        <div id="bgx-bp-habit" class="bgv-bp-anchor">${renderBoHabit(insight, ui, { esc, fmt, portrait: h.portrait, comboPool: state.comboPool, rulesCounters: state.rulesCounters, rulesCombos: state.rulesCombos })}</div>
       </section>`;
     } else if (moduleKey === 'comp') {
       body = `<section class="rpt-module" id="bgx-comp">
-        ${cardShell('comp', renderCompSystem(insight, ui, { esc, fmt, portrait: h.portrait }))}
+        ${cardShell('comp', renderCompSystem(insight, ui, {
+          esc, fmt, portrait: h.portrait,
+          ownName: h.teamName?.() || '本队', foeName: series.opponent || '对手',
+        }))}
       </section>`;
     } else if (moduleKey === 'exec') {
       body = `<section class="rpt-module" id="bgx-exec">
@@ -557,15 +620,13 @@ export function createBigGamePage(h) {
         <aside class="rpt-rail">
           <div class="rpt-rail-meta">
             <span>BO${esc(String(series.bestOf || '—'))} · ${esc(String(series.startAt || '').slice(0, 10))}</span>
-            <b>${esc(series.opponent || '对手待补')}</b>
+            <b>${esc(opponentLabel(series.opponent))}</b>
             <small>${esc(rule)} · ${count(games.length)} 局</small>
           </div>
           ${nav}
-          <div class="rpt-rail-note">01 右上角切换时间窗，指标板的对比列同步。</div>
         </aside>
         <main class="rpt-main">
           ${body}
-          <p class="bgx-foot"><span>数据：系列赛编组 + 各局向量/明细 + 全量历史对照。</span><span>结论只在这组 BO 内成立；样本不足的格显示「—」而不是 0。</span></p>
         </main>
       </div>
     </div>`;
@@ -593,8 +654,8 @@ export function createBigGamePage(h) {
     const nav = document.querySelector('.bgv-subnav');
     if (!nav) return;
     const line = Math.max(nav.getBoundingClientRect().bottom + 18, window.innerHeight * 0.34);
-    let active = 'order';
-    for (const key of ['order', 'games', 'habit']) {
+    let active = 'games';
+    for (const key of ['games', 'habit']) {
       const node = document.getElementById(`bgx-bp-${key}`);
       if (node && node.getBoundingClientRect().top <= line) active = key;
     }
@@ -612,6 +673,7 @@ export function createBigGamePage(h) {
   function repaintDetail() {
     if (!isCrossRoute() || !state.detail || !detailIdOf()) return;
     paint(detailHtml());
+    document.dispatchEvent(new CustomEvent('route:repainted'));
     requestAnimationFrame(updateBpSubnav);
   }
 
@@ -651,15 +713,26 @@ export function createBigGamePage(h) {
     const copyBtn = target.closest('[data-bgx-copy]');
     if (copyBtn) {
       const text = location.href;
-      const done = () => { copyBtn.textContent = '已复制'; setTimeout(() => { copyBtn.textContent = '复制链接'; }, 1600); };
-      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done).catch(done);
-      else {
+      const show = (message) => {
+        announce(message);
+        if (!copyBtn.isConnected) return;
+        copyBtn.textContent = message;
+        clearTimeout(copyBtn._copyTimer);
+        copyBtn._copyTimer = setTimeout(() => {
+          if (copyBtn.isConnected) copyBtn.textContent = '复制链接';
+        }, 1600);
+      };
+      const fallback = () => {
         const area = document.createElement('textarea');
         area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
         document.body.append(area); area.select();
-        try { document.execCommand('copy'); } catch { /* ignore */ }
-        area.remove(); done();
-      }
+        let ok = false;
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+        area.remove();
+        show(ok ? '已复制' : '复制失败，请手动复制地址栏链接');
+      };
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => show('已复制')).catch(fallback);
+      else fallback();
       return;
     }
     if (target.closest('[data-bgx-print]')) {
@@ -674,28 +747,15 @@ export function createBigGamePage(h) {
     if (bpGame) {
       const id = bpGame.dataset.bpGame || '';
       ui.bpGame = id;
-      ui.draftGame = id;
       if (id) ui.bpOpen[id] = true;
       else ui.bpOpen = {};
       repaintDetail();
-      requestAnimationFrame(() => scrollToBp(id ? 'games' : 'order'));
+      requestAnimationFrame(() => scrollToBp('games'));
       return;
     }
-    const jumpOrder = target.closest('[data-bp-jump-order]');
-    if (jumpOrder) {
-      event.preventDefault();
-      event.stopPropagation();
-      const id = jumpOrder.dataset.bpJumpOrder;
-      ui.draftGame = id;
-      ui.bpGame = id;
-      ui.bpOpen[id] = true;
-      repaintDetail();
-      requestAnimationFrame(() => scrollToBp('order'));
-      return;
-    }
-    const metricMode = target.closest('[data-bgv-metricmode]');
-    if (metricMode) {
-      ui.metricMode = metricMode.dataset.bgvMetricmode === 'key' ? 'key' : 'all';
+    const metricGroup = target.closest('[data-bgv-group]');
+    if (metricGroup) {
+      ui.metricGroup = metricGroup.dataset.bgvGroup || 'all';
       repaintDetail();
       return;
     }
@@ -708,7 +768,7 @@ export function createBigGamePage(h) {
       return;
     }
     if (target.closest('[data-bgx-boreset]')) {
-      Object.assign(ui, { boScope: 'opp', boWindow: '90', boSlot: 1 });
+      Object.assign(ui, { boScope: 'opp', boWindow: '90', boSlot: 1, boSide: 'auto' });
       repaintDetail();
       return;
     }
@@ -718,15 +778,37 @@ export function createBigGamePage(h) {
     if (boWindow) { ui.boWindow = boWindow.dataset.bgxBowindow; repaintDetail(); return; }
     const boScope = target.closest('[data-bgx-boscope]');
     if (boScope) { ui.boScope = boScope.dataset.bgxBoscope === 'all' ? 'all' : 'opp'; repaintDetail(); return; }
+    const boSide = target.closest('[data-bgx-boside]');
+    if (boSide) {
+      ui.boSide = ['blue', 'red'].includes(boSide.dataset.bgxBoside) ? boSide.dataset.bgxBoside : 'auto';
+      repaintDetail();
+      return;
+    }
+    const boOther = target.closest('[data-bgx-boother]');
+    if (boOther) {
+      // 赛事域：对手习惯类分析允许显式跨赛事积累（默认关，卡片上明示）。
+      ui.boIncludeOtherEvents = !ui.boIncludeOtherEvents;
+      if (state.detailId) loadDetail(state.detailId);
+      return;
+    }
     const boSlot = target.closest('[data-bgx-boslot]');
     if (boSlot) { ui.boSlot = Number(boSlot.dataset.bgxBoslot) || 1; repaintDetail(); return; }
-    const draftGame = target.closest('[data-bgx-draftgame]');
-    if (draftGame) {
-      const id = draftGame.dataset.bgxDraftgame;
-      ui.draftGame = id;
-      ui.bpGame = id;
-      ui.bpOpen[id] = true;
-      repaintDetail();
+    const intentToggle = target.closest('[data-boh-intent-toggle]');
+    if (intentToggle) {
+      const panel = intentToggle.parentElement?.querySelector('.bgv-boh-intent-panel');
+      const open = intentToggle.getAttribute('aria-expanded') === 'true';
+      /* 同一列一次只展开一层，避免几层面板把列撑得过长。 */
+      if (!open) {
+        intentToggle.closest('.bgv-boh-col')
+          ?.querySelectorAll('[data-boh-intent-toggle][aria-expanded="true"]')
+          .forEach((other) => {
+            if (other === intentToggle) return;
+            other.setAttribute('aria-expanded', 'false');
+            other.parentElement?.querySelector('.bgv-boh-intent-panel')?.setAttribute('hidden', '');
+          });
+      }
+      intentToggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (panel) panel.hidden = open;
       return;
     }
     const moduleBtn = target.closest('[data-bgx-module]');
@@ -765,6 +847,27 @@ export function createBigGamePage(h) {
       bind.done = true;
       document.addEventListener('click', onClick);
       document.addEventListener('change', onChange);
+      document.addEventListener('competition:selected', () => {
+        // 赛事域（M1）：切赛事即切分析域——清空筛选与缓存的大场明细后重载。
+        Object.assign(scope, {
+          range: DEFAULT_RANGE, from: '', to: '',
+          bo: '', opponent: '', session: '', status: '', completion: '',
+        });
+        Object.assign(ui, {
+          phase: 'mid', window: 'd30', boWindow: '90', boScope: 'opp', boSlot: 1,
+          boSide: 'auto', baseMode: 'format', module: 'overview',
+          boIncludeOtherEvents: false,
+          bpGame: '', bpOpen: {}, metricGroup: 'all',
+        });
+        state.detailId = '';
+        state.detail = null;
+        state.navLoaded = false;
+        if (isCrossRoute()) {
+          const id = detailIdOf();
+          if (id) loadDetail(id);
+          else { state.loaded = false; loadAll(); }
+        } else loadAll();
+      });
       let raf = 0;
       document.addEventListener('scroll', () => {
         if (ui.module !== 'bp' || raf) return;
@@ -776,6 +879,13 @@ export function createBigGamePage(h) {
           ui.bpOpen[node.dataset.bpCard] = node.open;
         }
       }, true);
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const toggle = event.target?.closest?.('[data-boh-intent-toggle]');
+        if (!toggle) return;
+        event.preventDefault();
+        toggle.click();
+      });
       document.addEventListener('keydown', (event) => {
         if (ui.module !== 'bp' || !state.detail) return;
         if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target?.tagName)) return;

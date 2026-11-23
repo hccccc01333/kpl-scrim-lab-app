@@ -602,11 +602,14 @@ def _draft_diff(before, after):
     return changes
 
 
-def set_review(channel, reviewed_by, notes='', actor=None):
+def set_review(channel, reviewed_by, notes='', actor=None, *, require_complete=True):
     reviewed_by = str(reviewed_by or '').strip()
     if not reviewed_by:
         raise ValueError('请填写复核人')
-    require_collection(channel)
+    # require_complete=False 只给正式比赛线上表格录入用：录入本身就是结构化
+    # 来源，字段没填齐也允许复核落盘占位；常规采集复核仍走必采材料校验。
+    if require_complete:
+        require_collection(channel)
     channel['review'] = {'status': 'reviewed', 'reviewedBy': reviewed_by,
                          'reviewedAt': now(), 'notes': str(notes or '')}
     append_log(channel, 'review', actor or reviewed_by, {'notes': notes})
@@ -1099,8 +1102,15 @@ def _resolve_heroes(players, roster):
         missing[0]['heroSource'] = 'roster-elimination'
 
 
-def bundle(channel):
-    require_collection(channel)
+def bundle(channel, *, require_complete=True):
+    """落盘正式 bundle。
+
+    require_complete=False 跳过必采材料校验（bundle 的其余行为不变）：
+    正式比赛线上表格录入走这里——录入本身就是结构化来源，字段全部选填时
+    允许先落一份占位 bundle 进正式档案，回头经采集页复核补录。
+    """
+    if require_complete:
+        require_collection(channel)
     if (channel.get('review') or {}).get('status') != 'reviewed':
         raise ValueError('请先完成人工审核')
     draft = channel.get('draft') or {}

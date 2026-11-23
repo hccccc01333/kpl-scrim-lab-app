@@ -1,0 +1,240 @@
+/* 对位压制 / 克制命中 / 组合得失 —— 1:1 移植设计稿卡片语言
+   （design-redblue/对位压制_卡片版.html / 克制命中_卡片版.html / 组合得失_卡片版.html）
+   统一：白卡 + 蓝→红渐变细边 + 横向滑动 + 圆头像 + 蓝红英雄名。 */
+
+/* ── 三块的共同外壳 ───────────────────────────────────── */
+.md-page #match-ov-matchup,
+.md-page #match-ov-counters,
+.md-page #match-ov-broken{
+  background:#fff;border:1px solid #dbe4e9;border-radius:14px;
+  box-shadow:0 14px 44px rgba(24,48,72,.14);
+  padding:20px 24px 16px;margin-top:12px;
+  font-family:"Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;color:#1c2b3a;overflow:hidden;
+}
+.md-page #match-ov-matchup .section-heading,
+.md-page #match-ov-counters .section-heading,
+.md-page #match-ov-broken .section-heading{display:none}
+.md-page #match-ov-matchup .md-ov-pad,
+.md-page #match-ov-counters .md-ov-pad,
+.md-page #match-ov-broken .md-ov-pad{padding:0}
+/* 滑轨的负 margin-right 想铺到区块边缘，但 .md-ov-pad 是 grid：
+   网格项默认 min-width:auto 会按卡片总宽撑开，滑轨就和内容一样宽、
+   根本不能滚动，最后一张卡被上级 overflow:hidden 齐边切掉。
+   允许收缩后滑轨才有真正的滚动区间，右缘提示也才有意义。 */
+.md-page .md-matchup,
+.md-page .md-counters{min-width:0}
+
+/* 区块自带标题行（用 ::before 拼，避免再写 JS） */
+.md-page #match-ov-matchup .md-ov-pad::before{content:"对位压制";display:block;
+  font-size:22px;font-weight:800;color:#1b2d3d;margin-bottom:4px}
+.md-page #match-ov-counters .md-ov-pad::before{content:"克制命中";display:block;
+  font-size:22px;font-weight:800;color:#1b2d3d;margin-bottom:4px}
+
+/* ── 横向滑动容器（只有对位压制一排卡）───────────────────── */
+.md-page .md-mu-grid{
+  display:flex;flex-wrap:nowrap;gap:14px;
+  overflow-x:auto;overflow-y:hidden;
+  overscroll-behavior-x:contain;
+  scroll-snap-type:x mandatory;
+  scrollbar-width:none;
+  padding:6px 0 14px;
+  margin-right:-24px;
+}
+.md-page .md-mu-grid::-webkit-scrollbar{display:none}
+
+/* ── 横滑截断提示：右侧还有卡片时，右缘渐隐 ──────────────────────
+   纯视觉提示（pointer-events:none），不新增按钮、不改卡片尺寸与排序。
+   由 match-deep.js 的 bindHScrollHints 按 scrollWidth/clientWidth 切换
+   .can-scroll-right；滑到底自动消失，最后一卡不再被"齐边切断"误导。 */
+.md-page .md-hscroll{position:relative}
+.md-page .md-hscroll::after{content:"";position:absolute;top:0;right:-24px;bottom:14px;width:52px;
+  background:linear-gradient(90deg,rgba(255,255,255,0),#fff 72%);
+  opacity:0;pointer-events:none;transition:opacity .18s ease;z-index:1}
+.md-page .md-hscroll.can-scroll-right::after{opacity:1}
+@media (prefers-reduced-motion:reduce){
+  .md-page .md-hscroll::after{transition:none}
+}
+
+/* ── 对位压制卡（duel-card）────────────────────────────── */
+.md-page .md-mu-card{
+  position:relative;flex:0 0 300px;min-width:300px;max-width:300px;
+  border-radius:14px;scroll-snap-align:start;
+  border:1px solid transparent;
+  background:linear-gradient(#fff,#fff) padding-box,
+             linear-gradient(120deg,#c3ddf8,#e6ecf1 50%,#f7cfcf) border-box;
+  box-shadow:0 6px 18px -12px rgba(28,66,104,.28);
+  padding:15px 17px 16px;
+  display:flex;flex-direction:column;gap:0;
+}
+/* 卡头 / 头像 / 对位胜率 / 强度 —— 之前只搬了 .md-mu-* 选择器，而标记用的是设计稿的
+   .dc-* / .rate / .strength / .st-*，于是「对位胜率」整块以裸文字出现，看着像只有强度。 */
+.md-page .md-mu-card .dc-top{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  border:0;padding:0;background:none}
+.md-page .md-mu-card .dc-lane{font-size:17px;font-weight:800;color:#1b2d3d}
+.md-page .md-mu-card .verdict{font-size:12px;font-weight:800;padding:4px 11px;border-radius:999px;
+  border:1px solid #dfe6eb;background:#f2f5f7;color:#6c7c88;font-style:normal}
+.md-page .md-mu-card .verdict.is-ahead{color:#1a7a5c;background:#e8f5ee;border-color:#bfe0cb}
+.md-page .md-mu-card .verdict.is-behind{color:#cf3f3f;background:#fbeeee;border-color:#f0cccc}
+.md-page .md-mu-card .verdict.is-even{color:#1f6fcf;background:#e8f2ff;border-color:#c5dcf7}
+.md-page .md-mu-card .verdict.is-thin{color:#6c7c88;background:#f2f5f7;border-color:#dfe6eb}
+.md-page .md-mu-card .dc-heroes{display:flex;align-items:flex-start;justify-content:center;gap:14px;
+  margin-top:12px}
+.md-page .md-mu-card .dc-heroes .vs{font-size:12px;color:#98a8b5;font-weight:700;margin-top:20px}
+.md-page .md-mu-card .dc-heroes .md-mu-face .portrait,
+.md-page .md-mu-card .dc-heroes .md-mu-face img{width:50px;height:50px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.45)}
+.md-page .md-mu-card .dc-heroes .md-mu-face b{font-size:17px;font-weight:800}
+
+/* 对位胜率块（设计稿 .rate）：五路里最该看的一块，给足对比度 */
+.md-page .md-mu-card .rate{margin-top:15px;padding:11px 12px;border-radius:10px;
+  background:#f6f9fc;border:1px solid #e6edf3}
+.md-page .md-mu-card .rate-label{font-size:12px;font-weight:700;color:#7a8d9c;letter-spacing:.04em}
+.md-page .md-mu-card .rate-nums{display:flex;align-items:baseline;justify-content:space-between;margin-top:3px}
+.md-page .md-mu-card .rate-nums b{font-family:Manrope,"Segoe UI",sans-serif;font-size:27px;font-weight:800;
+  letter-spacing:-.03em}
+.md-page .md-mu-card .rate-nums b.own{color:#1f6fcf}
+.md-page .md-mu-card .rate-nums b.foe{color:#cf3f3f}
+.md-page .md-mu-card .rate-nums span{font-size:12px;color:#9aabb8;letter-spacing:.02em}
+.md-page .md-mu-card .rate-bar{display:flex;height:8px;border-radius:4px;overflow:hidden;
+  margin-top:6px;background:#e7eef4}
+.md-page .md-mu-card .rate-bar i{display:block;height:100%}
+.md-page .md-mu-card .rate-bar i.own{background:#2f7fe0;flex:none}
+.md-page .md-mu-card .rate-bar i.foe{background:#d24a4a;flex:1}
+.md-page .md-mu-card .rate-sub{margin-top:7px;font-size:12px;line-height:1.5;color:#6f8292}
+.md-page .md-mu-card .rate-none{margin-top:4px;font-size:21px;font-weight:800;color:#8a9aa7}
+
+/* 英雄强度（设计稿 .strength / .st-*）：名字 · 档位 · 胜率 · 登场 */
+.md-page .md-mu-card .strength{margin-top:14px}
+.md-page .md-mu-card .st-head{font-size:13px;font-weight:800;color:#2b3d4e;padding-bottom:7px;
+  border-bottom:1px solid #e6edf2}
+.md-page .md-mu-card .st-head small{font-size:12px;font-weight:500;color:#8a9aa7;margin-left:4px}
+.md-page .md-mu-card .st-row{display:grid;grid-template-columns:1fr auto 56px 78px;align-items:center;
+  gap:7px;padding:7px 0;border-bottom:1px dashed #e8eef2}
+.md-page .md-mu-card .st-row:last-child{border-bottom:0}
+.md-page .md-mu-card .st-name{font-size:13.5px;font-weight:700;color:#2b3d4e;overflow:hidden;
+  white-space:nowrap;text-overflow:ellipsis}
+.md-page .md-mu-card .st-row b{font-family:Manrope,"Segoe UI",sans-serif;font-size:14px;font-weight:800;
+  color:#20374b;text-align:right}
+.md-page .md-mu-card .st-row small{font-size:12px;color:#8193a1;text-align:right;white-space:nowrap}
+.md-page .md-mu-card .tier{font-size:12px;font-weight:800;padding:2px 7px;border-radius:999px;
+  border:1px solid #dfe6eb;background:#f2f5f7;color:#6c7c88}
+.md-page .md-mu-card .tier.t1{color:#a1701f;background:#fff4dc;border-color:#ecd49a}
+.md-page .md-mu-card .tier.t2{color:#17765a;background:#e7f3ec;border-color:#bfe0cb}
+.md-page .md-mu-card .tier.t3{color:#1f6fcf;background:#e8f2ff;border-color:#c5dcf7}
+.md-page .md-mu-card .tier.t4{color:#cf3f3f;background:#fbeeee;border-color:#f0cccc}
+
+.md-page .md-mu-who{display:flex;align-items:flex-start;justify-content:center;gap:14px;
+  margin-top:12px}
+.md-page .md-mu-face{display:grid;justify-items:center;gap:5px;text-decoration:none;border:0}
+.md-page .md-mu-face .portrait,
+.md-page .md-mu-face img{width:50px;height:50px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.45)}
+.md-page .md-mu-face b{font-size:17px;font-weight:800}
+.md-page .md-mu-face.own b{color:#1f6fcf}
+.md-page .md-mu-face.foe b{color:#cf3f3f}
+.md-page .md-mu-who > i{font-style:normal;font-size:12px;color:#98a8b5;font-weight:700;margin-top:20px}
+
+.md-page .md-mu-card .md-mu-strength{display:block;margin-top:14px;padding:0;border:0}
+.md-page .md-mu-card .md-mu-strength > small{display:block;font-size:13px;font-weight:800;color:#2b3d4e;
+  padding-bottom:7px;border-bottom:1px solid #e6edf2;margin-bottom:2px}
+.md-page .md-mu-card .md-mu-str{display:grid;grid-template-columns:1fr auto auto auto;
+  align-items:center;gap:7px;padding:7px 0;border-bottom:1px dashed #e8eef2;
+  font-size:13.5px;font-weight:700;color:#2b3d4e}
+.md-page .md-mu-card .md-mu-str.own{color:#1f6fcf}
+.md-page .md-mu-card .md-mu-str.foe{color:#cf3f3f}
+.md-page .md-mu-card .md-mu-str b{font-family:Manrope,"Segoe UI",sans-serif;font-size:14px;
+  font-weight:800;color:#20374b;text-align:right}
+.md-page .md-mu-card .md-mu-str small{font-size:12px;color:#8193a1;text-align:right}
+
+.md-page .md-mu-card .md-mu-now{margin-top:auto;padding-top:10px;border-top:1px solid #e6edf2;
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.md-page .md-mu-card .md-mu-now small{font-size:12px;color:#718598}
+.md-page .md-mu-card .md-mu-now b{font-family:Manrope,"Segoe UI",sans-serif;font-size:21px;
+  font-weight:800;letter-spacing:-.02em}
+.md-page .md-mu-card .md-mu-now b.up{color:#1f6fcf}
+.md-page .md-mu-card .md-mu-now b.down{color:#cf3f3f}
+
+/* ── 克制命中：两条带，每条带内横向卡片 ─────────────── */
+.md-page .md-counters{display:block;overflow:visible;margin-right:0;padding:0}
+.md-page .md-ct-head{display:flex;align-items:center;justify-content:space-between;
+  margin:22px 0 10px;border:0;background:none;padding:0}
+.md-page .md-ct-head:first-child{margin-top:6px}
+.md-page .md-ct-head > *:first-child{font-size:16px;font-weight:800;color:#25384a}
+.md-page .md-ct-head > *:not(:first-child){display:none}
+.md-page .md-ct-head small,.md-page .md-ct-head p{display:none}
+
+.md-page .md-ct-list{display:flex;flex-wrap:nowrap;gap:14px;
+  overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;
+  scroll-snap-type:x mandatory;scrollbar-width:none;
+  padding:4px 0 14px;margin-right:-24px}
+.md-page .md-ct-list::-webkit-scrollbar{display:none}
+.md-page .md-ct-row{
+  flex:0 0 268px;min-width:268px;max-width:268px;scroll-snap-align:start;
+  border-radius:14px;border:1px solid transparent;
+  background:linear-gradient(#fff,#fff) padding-box,
+             linear-gradient(120deg,#c3ddf8,#e6ecf1 50%,#f7cfcf) border-box;
+  box-shadow:0 6px 18px -12px rgba(28,66,104,.28);
+  padding:14px 16px 16px;border-top:0;
+  display:flex;flex-direction:column;gap:0;
+}
+.md-page .md-ct-lane{font-size:14px;font-weight:800;color:#4a6072}
+.md-page .md-ct-who{display:flex;align-items:flex-start;justify-content:center;gap:12px;margin-top:10px}
+.md-page .md-ct-who .md-mu-face .portrait,
+.md-page .md-ct-who .md-mu-face img{width:46px;height:46px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.45)}
+.md-page .md-ct-who .md-mu-face b{font-size:16px;font-weight:800}
+.md-page .md-ct-who .md-mu-face.own b{color:#1f6fcf}
+.md-page .md-ct-who .md-mu-face.foe b{color:#cf3f3f}
+.md-page .md-ct-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.md-page .md-ct-chip{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px}
+.md-page .md-ct-chip.is-hit{color:#17765a;background:#e8f5ee;border:1px solid #bfe0cb}
+.md-page .md-ct-chip.is-watch{color:#a1701f;background:#fff4dc;border:1px solid #ecd49a}
+.md-page .md-ct-chip.is-miss{color:#6c7c88;background:#f2f5f7;border:1px solid #dfe6eb}
+.md-page .md-ct-foot{display:none}
+
+/* ── 组合得失卡（combo-card 同族）────────────────────── */
+/* .md-bp-combos 的直接子元素是「我方组合 / 对手组合」两栏，不是卡；
+   卡在栏内的 .md-combo-grid 里。所以分栏给等分宽度，卡自己按 240px 起排。 */
+.md-page .md-bp-combos > .md-bp-combo-side{
+  flex:1 1 0;min-width:0;max-width:none;scroll-snap-align:none;
+  display:grid;gap:10px;align-content:start;padding:0;border:0;background:none;
+}
+.md-page .md-bp-combos > .md-bp-combo-side > span{
+  display:flex;align-items:center;gap:8px;padding-bottom:8px;
+  border-bottom:1px solid #e6edf2;font-size:12px;font-weight:800;
+  letter-spacing:.06em;color:#5d7284;
+}
+.md-page .md-bp-combos .md-combo-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;
+}
+/* 组合得失两栏网格里的每一张卡（.md-bk-row）统一白底 + 蓝→红渐变细边 */
+.md-page .md-broken .md-bk-row{
+  border-radius:13px;border:1px solid transparent;
+  background:linear-gradient(#fff,#fff) padding-box,
+             linear-gradient(120deg,#c3ddf8,#e6ecf1 50%,#f7cfcf) border-box;
+  box-shadow:0 6px 18px -12px rgba(28,66,104,.28);
+  padding:12px 14px;
+}
+.md-page .md-broken .md-bk-row.is-broken{
+  background:linear-gradient(#fbfcfd,#fbfcfd) padding-box,
+             linear-gradient(120deg,#dfe9f3,#eef2f5 50%,#f3e2e2) border-box;
+}
+/* 三人组合的头像并排就有 260px 宽，卡片再横着切两栏会把文字挤成竖排——
+   统一改成「上面一排头像、下面几行字」的竖版卡（与设计稿 cc-card 同构）。 */
+.md-page .md-bp-combos .md-combo-card{
+  display:grid;grid-template-columns:minmax(0,1fr);gap:7px;align-content:start;
+}
+.md-page .md-bp-combos .md-combo-card .md-combo-heroes{
+  grid-row:auto;grid-column:auto;display:flex;flex-wrap:wrap;align-items:center;
+  justify-content:flex-start;gap:6px;
+}
+.md-page .md-bp-combos .md-combo-card > p{grid-column:auto;margin:0}
+
+/* 卡片内圆头像统一 */
+.md-page .md-counters .portrait,
+.md-page .md-bp-combos .portrait,
+.md-page .md-broken .portrait{
+  width:44px;height:44px;border-radius:50%;object-fit:cover;object-position:top center;
+  border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.45);
+}

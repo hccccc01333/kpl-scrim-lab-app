@@ -23,7 +23,7 @@ def test_old_source_routes_map_back_to_ingest():
 
 def test_capture_page_renders_one_page_tabs():
     capture = (PUBLIC / 'capture-page.js').read_text(encoding='utf-8')
-    assert 'cap-tabs' in capture, '采集页没有页签导航'
+    assert 'capv-tabs' in capture, '采集页没有页签导航'
     for tab in ("'camp'", "'shots'", "'videos'", "'replays'", "'review'"):
         assert tab in capture, f'采集页缺少 {tab} 页签'
     assert 'data-source-section' in capture, '素材页没有作为内嵌区块渲染'

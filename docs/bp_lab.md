@@ -121,8 +121,8 @@ KPL 报告按数据文件指纹 + 参数缓存；训练赛按营地目录 + DB �
 
 - 计算：`bp_lab.py`（纯函数；复用 `bp_intelligence` 归一化、`lineup_stats`、`hero_archetypes`、`bp_rules`）
 - 路由：`v3/serve.py` 的 `/api/v3/bp-lab*`
-- 前端：`v3/public/bp-lab.js` + `v3/public/bp-lab.css`
-- 页面入口：`v3/public/app.js` 的 `renderers.bp` / `bpLab.mount`；旧 `#bp/team`、`#bp/counter`、`#teambp`、`#bpcounter` 一律回 `#bp`
+- 前端：`v3/public/bp-studio.js` + `v3/public/bp-studio.css`（旧 `bp-lab.js/css` 已删除）
+- 页面入口：`v3/public/app.js` 的 `mods.bp.mount`；旧 `#bp/team`、`#bp/counter`、`#teambp`、`#bpcounter` 一律回 `#bp`
 
 ## 已知边界
 

@@ -118,6 +118,38 @@ def test_competition_aggregates_schedules_and_matches(ws):
     assert ws.competition_detail(competition_id)['schedules'] == []
 
 
+def test_competition_enhanced_fields_and_direct_matches(ws):
+    """赛事增强字段（教练组/本队选手/参赛队伍）+ 对局直连归属。"""
+    team_a = ws.upsert_team(name='本校队')
+    cid = ws.save_competition(
+        name='王者荣耀全国大赛', date='2026-11-01', end_date='2026-12-20',
+        opponent_team_id=team_a,
+        team_ids=[team_a], head_coach='张教练', assistant_coach='李教练',
+        data_analyst='分析结果', staff=['队务小王'], own_player_ids=['player-甲'],
+        key_match_keys=['direct-match-1'], status='training')
+    comp = ws.get_competition(cid)
+    assert comp['head_coach'] == '张教练' and comp['assistant_coach'] == '李教练'
+    assert comp['data_analyst'] == '分析结果' and comp['end_date'] == '2026-12-20'
+    assert team_a in (comp['team_ids'] or '[]')
+    assert 'direct-match-1' in (comp['key_match_keys'] or '[]')
+
+    # 对局直连赛事：不依赖训练课也能出现在赛事详情里。
+    ws.upsert_match('direct-match-1', date='2026-11-10', competition_id=cid,
+                    own_side='blue', winner='blue', duration=800)
+    detail = ws.competition_detail(cid)
+    keys = [m['match_key'] for m in detail['matches']]
+    assert 'direct-match-1' in keys
+
+    # 另一赛事看不到这条对局
+    cid2 = ws.save_competition(name='另一赛事', date='2026-11-01')
+    assert 'direct-match-1' not in [m['match_key'] for m in ws.competition_detail(cid2)['matches']]
+
+    # 删除赛事只解绑、不删对局
+    assert ws.delete_competition(cid) is True
+    assert ws.get_competition(cid) is None
+    assert ws.competition_detail(cid2) is not None
+
+
 def test_missing_fields_stay_null(ws):
     team_id = ws.upsert_team(name='苍梧')
     assert ws.list_teams()[0]['coach'] is None

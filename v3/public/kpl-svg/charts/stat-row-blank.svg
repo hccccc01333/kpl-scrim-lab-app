@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="935" height="55" viewBox="0 0 935 55" role="img">
+<title>十人数据行底座</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<defs><clipPath id="stats-row"><rect x="0" y="0" width="935" height="55" rx="12" fill="#fff"/></clipPath></defs><g clip-path="url(#stats-row)"><rect x="0" y="0" width="935" height="55" rx="12" fill="url(#pearl)"/><path d="M0 0 Q224.4 38.5 579.7 0 H654.5 Q252.45 50.05 0 9.35Z" fill="#d8d5d8" opacity="0.1026"/><path d="M0 35.2 Q420.75 7.15 673.2 0 Q224.4 35.2 0 54.45Z" fill="#d9d6d6" opacity="0.0608"/><path d="M168.3 55 Q495.55 43.45 935 6.6 Q719.95 42.9 420.75 55Z" fill="#fffdfa" opacity="0.228"/><path d="M504.9 55 Q766.7 34.1 935 20.9 V31.35 Q860.2 41.25 682.55 55Z" fill="#fff" opacity="0.209"/></g><rect x="0.6" y="0.6" width="933.8" height="53.8" rx="12" fill="none" stroke="url(#gold-edge)" stroke-width="1.2"/>
+</svg>

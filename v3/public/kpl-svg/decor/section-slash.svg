@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" role="img">
+<title>小节金色斜杠</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient></defs>
+<path d="M2 19 L12 1 H19 L9 19Z" fill="url(#gold)"/>
+</svg>

@@ -1,0 +1,406 @@
+/* ============================================================
+   战队分析列表页 · 版面补丁
+   ------------------------------------------------------------
+   只作用于 .tb-page（#teams），覆盖 teams-board.css 的第 6 节布局。
+
+   2026-11-22 调整：不再在本页改写 --accent / --soft / --focus。
+   页面自带一套蓝色强调色，会让「战队」和「首页 / 对局 / 选手」看起来像
+   两个产品（同一界面出现两套强调色，视觉层级无法稳定）。
+   强调色一律继承全局设计系统；红蓝只保留为「胜/负」语义色。
+   ============================================================ */
+
+/* 1) 本页只保留结构尺寸 token */
+.page.tb-page {
+  --tb-radius: 10px;
+}
+
+/* ── 索引栏：改名按钮就地可用 + 条目多了滚动不撑爆 ─────────────── */
+/* 宽屏原本有 520px 滚动，窄屏没有；这里统一给高度上限，几十上百局也只滚不撑。 */
+.tb-page .tb-list { max-block-size: 520px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.tb-page .tb-item-wrap { position: relative; display: flex; align-items: stretch; }
+.tb-page .tb-item-wrap .tb-item { flex: 1 1 auto; min-inline-size: 0; }
+.tb-page .tb-item-wrap[hidden] { display: none; }
+.tb-page .tb-item-wrap + .tb-item-wrap .tb-item::before {
+  content: ''; position: absolute; inset-block-start: -1px; inset-inline: 12px;
+  block-size: 1px; background: var(--line);
+}
+.tb-page .tb-item-wrap:has(.tb-item[aria-pressed="true"])::before,
+.tb-page .tb-item-wrap:has(.tb-item[aria-pressed="true"]) + .tb-item-wrap .tb-item::before { display: none; }
+.tb-page .tb-item-rename {
+  flex: none; align-self: center; margin-inline-end: 8px; padding: 4px 6px;
+  border: 1px solid var(--line-strong); border-radius: 999px; background: var(--paper);
+  color: var(--accent-ink); font-size: var(--fs-micro); font-weight: 700; white-space: nowrap; cursor: pointer;
+  opacity: 1; transition: opacity .16s ease, background-color .16s ease, border-color .16s ease;
+}
+.tb-page .tb-item-rename.is-pending { border-color: #f0c9c9; color: #cf3f3f; }
+.tb-page .tb-item-rename:hover { background: var(--soft); border-color: var(--accent); }
+.tb-page .tb-item-rename.is-pending:hover { background: #fdeeee; border-color: #cf3f3f; }
+:root[data-theme="dark"] .tb-page .tb-item-wrap + .tb-item-wrap .tb-item::before { background: #354b4b; }
+:root[data-theme="dark"] .tb-page .tb-item-rename { border-color: #2a323e; background: #1b212b; color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tb-item-rename:hover { background: #1b2c40; border-color: #6aa9ee; }
+
+/* ── 索引栏展开 / 收起：把手点一下占满工作区，详情隐藏 ─────────── */
+.tb-page .tb-workspace { position: relative; }
+.tb-page .tb-workspace.is-expanded { grid-template-columns: minmax(0, 1fr); }
+.tb-page .tb-workspace.is-expanded .tb-detail { display: none; }
+.tb-page .tb-workspace.is-expanded .tb-rail { border-inline-end: 0; }
+/* 展开后列表分多列铺开、限高滚动，几十上百支一眼看更多 */
+.tb-page .tb-workspace.is-expanded .tb-list {
+  max-block-size: 72vh; overflow-y: auto;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 2px 10px;
+}
+/* 展开后工具行别被拉成满宽：搜索与分段各占合理宽度 */
+.tb-page .tb-workspace.is-expanded .tb-rail-tools { grid-template-columns: minmax(260px, 460px) 1fr; align-items: start; }
+.tb-page .tb-workspace.is-expanded .tb-rail-row { justify-content: flex-start; }
+.tb-page .tb-workspace.is-expanded .tb-seg { flex: none; }
+.tb-page .tb-workspace.is-expanded .tb-search { max-inline-size: 460px; }
+.tb-page .tb-rail-handle {
+  position: absolute; z-index: 5; inset-block-start: 50%; inset-inline-start: var(--tb-rail-w);
+  inline-size: 16px; block-size: 52px; transform: translate(-50%, -50%);
+  display: grid; place-items: center; padding: 0;
+  border: 1px solid #d7e2ef; border-radius: 999px; background: #fff;
+  box-shadow: 0 2px 8px -3px rgba(28, 43, 58, .28); cursor: pointer;
+}
+.tb-page .tb-rail-handle span {
+  inline-size: 3px; block-size: 18px; border-radius: 999px; background: #9db4cd;
+}
+.tb-page .tb-rail-handle:hover { border-color: var(--ds-gold-ink, #8a6530); }
+.tb-page .tb-rail-handle:hover span { background: var(--ds-gold-ink, #8a6530); }
+.tb-page .tb-workspace.is-expanded .tb-rail-handle { inset-inline-start: calc(100% - 8px); }
+.tb-page .tb-workspace.is-expanded .tb-rail-handle span { transform: rotate(180deg); }
+:root[data-theme="dark"] .tb-page .tb-rail-handle { border-color: #2a323e; background: #1b212b; }
+:root[data-theme="dark"] .tb-page .tb-rail-handle span { background: #6aa9ee; }
+
+/* ── 批量勾选：合并多支 ─────────────────────────────────────────── */
+.tb-page .tb-item-check {
+  flex: none; align-self: center; display: grid; place-items: center;
+  inline-size: 22px; block-size: 22px; margin-inline-start: 8px; cursor: pointer;
+}
+.tb-page .tb-item-check input { position: absolute; opacity: 0; inline-size: 100%; block-size: 100%; margin: 0; cursor: pointer; }
+.tb-page .tb-item-check span {
+  inline-size: 15px; block-size: 15px; border: 1.5px solid #b9c8d9; border-radius: 4px; background: #fff;
+}
+.tb-page .tb-item-check input:checked + span { border-color: var(--ds-gold-ink, #8a6530); background: var(--ds-gold-ink, #8a6530); box-shadow: inset 0 0 0 3px #fff; }
+.tb-page .tb-item-check input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tb-page .tb-merge-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 2px 0 12px; padding: 9px 12px; border: 1px solid #cfe0f7; border-radius: 10px;
+  background: #f2f8ff; font-size: 12.5px; color: #1c2b3a;
+}
+.tb-page .tb-merge-bar[hidden] { display: none; }
+.tb-page .tb-merge-bar > span { font-weight: 650; color: var(--ds-gold-ink, #8a6530); }
+.tb-page .tb-merge-run {
+  margin-inline-start: auto; padding: 5px 13px; border: 0; border-radius: 8px;
+  background: var(--ds-gold-ink, #8a6530); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.tb-page .tb-merge-run[disabled] { opacity: .45; cursor: not-allowed; }
+.tb-page .tb-merge-clear { padding: 4px 8px; border: 0; background: transparent; color: var(--ds-muted, #6b6559); font-size: 12px; cursor: pointer; }
+.tb-page .tb-bulk-tag-label {
+  margin-inline-start: 6px; padding-inline-start: 10px; border-inline-start: 1px solid #cfe0f7;
+  color: var(--ds-muted, #6b6559) !important; font-size: 11.5px !important; font-weight: 600 !important;
+}
+.tb-page .tb-bulk-tag {
+  padding: 4px 10px; border: 1px solid #cfe0f7; border-radius: 8px; background: #fff;
+  color: #1c2b3a; font-size: 11.5px; font-weight: 700; cursor: pointer;
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.tb-page .tb-bulk-tag:hover:not([disabled]) { box-shadow: 0 2px 6px rgb(16 45 80 / 12%); transform: translateY(-1px); }
+.tb-page .tb-bulk-tag.is-kpl { border-color: #f79009; color: #b54708; }
+.tb-page .tb-bulk-tag.is-jia { border-color: #12b76a; color: #027a48; }
+.tb-page .tb-bulk-tag[disabled] { opacity: .45; cursor: not-allowed; }
+:root[data-theme="dark"] .tb-page .tb-item-check span { border-color: #4a5b6e; background: #1b212b; }
+:root[data-theme="dark"] .tb-page .tb-merge-bar { border-color: #2b4057; background: #141d2a; }
+:root[data-theme="dark"] .tb-page .tb-merge-bar > span { color: #8cc0f5; }
+
+/* 2) Hero：浅白底 + 蓝→白→红渐变，和大场分析结论卡同一套语言 */
+:root[data-theme="light"] .tb-page .tb-hero {
+  --tb-ink-text: #1c2b3a;
+  --tb-ink-muted: #5b6b7d;
+  --tb-ink-line: rgba(28, 43, 58, .12);
+  --tb-mint: var(--ds-gold-ink, #8a6530);
+  color: var(--tb-ink-text);
+  border: 1px solid #e2e9f1;
+  background:
+    linear-gradient(90deg, #b6d3f6 0%, #d7e8fc 18%, #f2f7fd 36%, #ffffff 50%, #fff0f0 64%, #fbdcdc 82%, #f6c6c6 100%);
+  box-shadow: 0 14px 34px -28px rgba(28, 43, 58, .35);
+}
+/* 关掉原来的青绿网格与同心圆装饰，浅白卡不要这些花纹 */
+:root[data-theme="light"] .tb-page .tb-hero::before,
+:root[data-theme="light"] .tb-page .tb-hero::after { display: none; }
+
+:root[data-theme="light"] .tb-page .tb-eyebrow { color: var(--ds-gold-ink, #8a6530); }
+:root[data-theme="light"] .tb-page .tb-eyebrow span { color: var(--ds-muted, #6b6559); }
+:root[data-theme="light"] .tb-page .tb-hero h1 { color: #1c2b3a; }
+:root[data-theme="light"] .tb-page .tb-lede { color: #5b6b7d; }
+/* 顶部判断句：压过纯说明文字，教练扫一眼就知道整体强弱 */
+.tb-page .tb-headline {
+  margin-block-start: 12px; color: #1c2b3a; font-size: 17px; font-weight: 650; line-height: 1.4;
+}
+.tb-page .tb-headline b { color: var(--ds-gold-ink, #8a6530); font-weight: 800; }
+.tb-page .tb-headline + .tb-lede { margin-block-start: 4px; font-size: 13px; }
+:root[data-theme="dark"] .tb-page .tb-headline { color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tb-headline b { color: #8cc0f5; }
+:root[data-theme="light"] .tb-page .tb-hero .control {
+  border-color: #d7e2ef;
+  background: rgba(255, 255, 255, .82);
+  color: var(--ds-gold-ink, #8a6530);
+}
+:root[data-theme="light"] .tb-page .tb-hero .control:hover {
+  border-color: var(--ds-gold-ink, #8a6530);
+  background: #fff;
+  color: var(--accent-hover, #7a5726);
+}
+
+/* 3) 五个读数：胜率条蓝胜红负，主读数用蓝 */
+:root[data-theme="light"] .tb-page .tb-readout-cell strong { color: #1c2b3a; }
+:root[data-theme="light"] .tb-page .tb-readout-cell.is-primary strong { color: var(--ds-gold-ink, #8a6530); }
+:root[data-theme="light"] .tb-page .tb-readout-cell small { color: var(--ds-muted, #6b6559); }
+:root[data-theme="light"] .tb-page .tb-readout-cell .tb-split { background: rgba(28, 43, 58, .09); }
+:root[data-theme="light"] .tb-page .tb-readout-cell .tb-split .is-win { background: var(--ds-gold-ink, #8a6530); }
+:root[data-theme="light"] .tb-page .tb-readout-cell .tb-split .is-loss { background: #cf3f3f; }
+
+/* 4) 工作台选中态 / 头像 / 近五局：蓝红语义 */
+:root[data-theme="light"] .tb-page .tb-crest {
+  color: var(--ds-gold-ink, #8a6530);
+  border: 1px solid #cfe0f7;
+  background: linear-gradient(148deg, #e8f2ff 0%, #d8eaff 100%);
+}
+:root[data-theme="light"] .tb-page .tb-item[aria-pressed="true"] {
+  background: var(--ds-gold-wash, #f4eee3);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+/* 「完整档案」主按钮：浅蓝渐变 + 深蓝字，去掉实心深蓝 */
+:root[data-theme="light"] .tb-page .tb-cta {
+  border: 1px solid #cfe0f7;
+  background: linear-gradient(100deg, #e8f2ff 0%, #d8eaff 100%);
+  color: var(--ds-gold-ink, #8a6530);
+  transition: background-color var(--duration) var(--ease), border-color var(--duration) var(--ease);
+}
+:root[data-theme="light"] .tb-page .tb-cta:hover {
+  border-color: #a9c9f2;
+  background: linear-gradient(100deg, #dbeaff 0%, #c7dffa 100%);
+  color: var(--accent-hover, #7a5726);
+}
+:root[data-theme="light"] .tb-page .tb-form5 li.is-win { background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); }
+:root[data-theme="light"] .tb-page .tb-res.is-win { background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); }
+:root[data-theme="light"] .tb-page .tb-fig .tb-split .is-win { background: var(--ds-gold-ink, #8a6530); }
+
+/* ── 判断前置：教练第一眼要的结论 ─────────────────────────────── */
+.tb-page .tb-verdict {
+  display: grid; gap: 9px; padding: 16px 18px 15px; margin-block: 2px 14px;
+  border: 1px solid #e2e9f1; border-radius: 12px;
+}
+.tb-page .tb-verdict.is-good {
+  border-color: #d6e6fa;
+  background: linear-gradient(100deg, #dbeaff 0%, var(--ds-gold-wash, #f4eee3) 44%, #f8fbff 100%);
+}
+.tb-page .tb-verdict.is-bad {
+  border-color: #f6d9d9;
+  background: linear-gradient(100deg, #ffe2e2 0%, #fdeeee 44%, #fffafa 100%);
+}
+.tb-page .tb-verdict.is-flat {
+  border-color: #e3e8ee;
+  background: linear-gradient(100deg, #edf2f8 0%, #f6f8fb 44%, #fbfcfe 100%);
+}
+.tb-page .tb-verdict-top { display: flex; align-items: center; gap: 10px; }
+.tb-page .tb-verdict-tone {
+  padding: 3px 11px; border-radius: 999px; font-size: 12px; font-weight: 750;
+  color: var(--ds-gold-ink, #8a6530); background: rgba(255, 255, 255, .72);
+}
+.tb-page .tb-verdict.is-good .tb-verdict-tone { color: var(--ds-gold-ink, #8a6530); }
+.tb-page .tb-verdict.is-bad .tb-verdict-tone { color: #cf3f3f; }
+.tb-page .tb-verdict.is-flat .tb-verdict-tone { color: #5b6b7d; }
+.tb-page .tb-verdict-label { color: var(--muted); font-size: var(--fs-micro); font-weight: 600; letter-spacing: .06em; }
+.tb-page .tb-verdict-main {
+  margin: 0; color: #1c2b3a; font-family: var(--font); font-size: 19px; font-weight: 700;
+  line-height: 1.4; letter-spacing: -.015em;
+}
+.tb-page .tb-verdict-main b { color: var(--ds-gold-ink, #8a6530); font-weight: 800; }
+.tb-page .tb-verdict.is-bad .tb-verdict-main b { color: #cf3f3f; }
+.tb-page .tb-verdict .tb-split {
+  inline-size: min(100%, 320px); block-size: 6px; border-radius: 999px;
+  overflow: hidden; background: rgba(28, 43, 58, .09);
+}
+.tb-page .tb-verdict-sub { margin: 0; color: #5b6b7d; font-size: 12.5px; line-height: 1.5; }
+.tb-page .tb-verdict-sub b { color: #1c2b3a; font-weight: 700; }
+
+:root[data-theme="dark"] .tb-page .tb-verdict.is-good {
+  border-color: #2b4057;
+  background: linear-gradient(100deg, #1d2d40 0%, #182231 44%, #151a22 100%);
+}
+:root[data-theme="dark"] .tb-page .tb-verdict.is-bad {
+  border-color: #4a2e32;
+  background: linear-gradient(100deg, #352226 0%, #2a1d20 44%, #1a171a 100%);
+}
+:root[data-theme="dark"] .tb-page .tb-verdict.is-flat {
+  border-color: #2a323e;
+  background: linear-gradient(100deg, #1f2630 0%, #191e26 44%, #151a22 100%);
+}
+:root[data-theme="dark"] .tb-page .tb-verdict-tone { background: rgba(255, 255, 255, .08); }
+:root[data-theme="dark"] .tb-page .tb-verdict-main { color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tb-verdict-main b { color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tb-verdict.is-bad .tb-verdict-main b { color: #e88080; }
+:root[data-theme="dark"] .tb-page .tb-verdict-sub { color: #9aabc0; }
+:root[data-theme="dark"] .tb-page .tb-verdict-sub b { color: #e8eef6; }
+
+/* 5) 深色主题：只把 accent 换成深蓝/深红，保留原有深色底 */
+:root[data-theme="dark"] .tb-page {
+  --accent: #6aa9ee;
+  --accent-hover: #8cc0f5;
+  --accent-ink: #8cc0f5;
+  /* 底色换成亮蓝后，按钮文字必须跟着转深色：白字压 #6aa9ee 只有约 2.5:1。 */
+  --accent-text: #10233a;
+  --soft: #1b2c40;
+  --focus: #6aa9ee;
+}
+:root[data-theme="dark"] .tb-page .tb-crest { color: var(--ds-gold-ink, #8a6530); border-color: #2b4057; background: linear-gradient(148deg, #d8eaff 0%, #bcd6f7 100%); }
+:root[data-theme="dark"] .tb-page .tb-cta {
+  border-color: #2b4057;
+  background: linear-gradient(100deg, #1d2d40 0%, #24374f 100%);
+  color: #8cc0f5;
+}
+:root[data-theme="dark"] .tb-page .tb-cta:hover { background: linear-gradient(100deg, #24374f 0%, #2c4360 100%); color: #b3d6f8; }
+:root[data-theme="dark"] .tb-page .tb-readout-cell .tb-split .is-win { background: #6aa9ee; }
+:root[data-theme="dark"] .tb-page .tb-readout-cell .tb-split .is-loss { background: #e88080; }
+
+/* ── 当前五人：选手链接去掉 hover 下划线，换成淡蓝底高亮 ─────────── */
+.tb-page .tb-roster .tb-player { border-block-end: 0; padding: 2px 5px; margin-inline-start: -5px; border-radius: 6px; }
+.tb-page .tb-roster .tb-player:hover { background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); border-block-end-color: transparent; }
+:root[data-theme="dark"] .tb-page .tb-roster .tb-player:hover { background: #1b2c40; color: #8cc0f5; }
+
+/* ── 合并工作台：标题 / 空状态 / 候选 / 手动 分层 ─────────────────── */
+/* 标题区：图标 + 文案 + 收起，拉开层次 */
+.tb-page .tb-maint > summary { gap: 14px; padding: 20px 24px; }
+.tb-page .tb-maint-icon {
+  flex: none; inline-size: 40px; block-size: 40px; display: grid; place-items: center;
+  border-radius: 11px; background: linear-gradient(145deg, #e8f2ff, #d8eaff); color: var(--ds-gold-ink, #8a6530);
+}
+.tb-page .tb-maint-icon svg { inline-size: 22px; block-size: 22px; }
+.tb-page .tb-maint-copy { gap: 5px; }
+.tb-page .tb-maint-copy b { font-size: 1.06rem; letter-spacing: -.01em; }
+.tb-page .tb-maint-copy em { font-size: .82rem; color: var(--ds-muted, #6b6559); }
+.tb-page .tb-maint-more { align-self: flex-start; padding: 3px 10px; border: 1px solid #e2e9f1; border-radius: 999px; font-size: .74rem; background: #fff; }
+.tb-page .tb-maint-body { gap: 22px; padding: 22px 24px 26px; }
+
+/* 分区头：小蓝点 + 标题 + 说明 + 计数 */
+.tb-page .tb-merge-sec { display: grid; gap: 14px; }
+.tb-page .tb-merge-sec + .tb-merge-sec { padding-block-start: 22px; border-block-start: 1px solid #eef2f7; }
+.tb-page .tb-merge-sec-head { display: flex; align-items: flex-start; gap: 10px; }
+.tb-page .tb-merge-sec-head::before { content: ''; flex: none; inline-size: 7px; block-size: 7px; margin-block-start: 7px; border-radius: 50%; background: var(--ds-gold-ink, #8a6530); }
+.tb-page .tb-merge-sec-head > div { display: grid; gap: 3px; }
+.tb-page .tb-merge-sec-head b { font-size: .94rem; font-weight: 700; color: #1c2b3a; }
+.tb-page .tb-merge-sec-head p { margin: 0; font-size: .8rem; color: var(--ds-muted, #6b6559); line-height: 1.5; }
+.tb-page .tb-merge-sec-count { margin-inline-start: auto; padding: 3px 11px; border-radius: 999px; background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); font-size: .75rem; font-weight: 700; white-space: nowrap; }
+
+/* 空状态：居中徽章 + 主标题 + 两行说明，不再是一句突兀的裸文字 */
+.tb-page .tb-merge-empty {
+  display: grid; justify-items: center; gap: 6px; text-align: center;
+  padding: 22px 20px 20px; border: 1px dashed #d7e2ef; border-radius: 14px;
+  background: linear-gradient(180deg, #fafcff, #ffffff);
+}
+.tb-page .tb-merge-empty-icon {
+  inline-size: 46px; block-size: 46px; display: grid; place-items: center; margin-block-end: 4px;
+  border-radius: 14px; background: var(--ds-gold-wash, #f4eee3); color: #8fb6e6;
+}
+.tb-page .tb-merge-empty-icon svg { inline-size: 25px; block-size: 25px; }
+.tb-page .tb-merge-empty b { font-size: .95rem; color: #1c2b3a; }
+.tb-page .tb-merge-empty p { margin: 0; max-inline-size: 42ch; font-size: .8rem; color: var(--ds-muted, #6b6559); line-height: 1.65; }
+
+/* 候选卡片 */
+.tb-page .tb-sug-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.tb-page .tb-sug-card {
+  display: grid; gap: 10px; padding: 15px 16px;
+  border: 1px solid #e6edf5; border-radius: 12px; background: #fbfdff;
+}
+.tb-page .tb-sug-pair { display: flex; align-items: center; gap: 10px; font-size: .88rem; }
+.tb-page .tb-sug-pair b { color: #1c2b3a; font-weight: 700; }
+.tb-page .tb-sug-pair i { color: #b0c1d4; font-style: normal; }
+.tb-page .tb-sug-meta { display: flex; align-items: center; gap: 8px; color: var(--ds-muted, #6b6559); font-size: .76rem; }
+.tb-page .tb-sug-kind { padding: 3px 9px; border-radius: 999px; background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); font-weight: 650; }
+.tb-page .tb-sug-act { display: flex; justify-content: flex-end; }
+.tb-page .tb-sug-merge {
+  min-block-size: 34px; padding: 0 16px; border: 1px solid #cfe0f7; border-radius: 9px;
+  background: #fff; color: var(--ds-gold-ink, #8a6530); font-size: .78rem; font-weight: 700; cursor: pointer;
+}
+.tb-page .tb-sug-merge:hover { background: var(--ds-gold-ink, #8a6530); color: #fff; border-color: var(--ds-gold-ink, #8a6530); }
+
+/* 手动合并：两栏输入 + 中间方向箭头，字段带说明，触控高度 ≥48px */
+.tb-page .tb-maint-body .tb-merge-form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 0; }
+.tb-page .tb-merge-fields { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: end; gap: 14px; }
+.tb-page .tb-merge-field { display: grid; gap: 6px; min-inline-size: 0; }
+.tb-page .tb-merge-field > span { color: #5b6b7d; font-size: .8rem; font-weight: 650; }
+.tb-page .tb-merge-field > small { color: var(--muted); font-size: var(--fs-micro); line-height: 1.4; }
+.tb-page .tb-merge-arrow { display: grid; place-items: center; inline-size: 32px; block-size: 48px; color: #a8bfd9; }
+.tb-page .tb-merge-arrow svg { inline-size: 18px; block-size: 18px; }
+.tb-page .tb-merge-form input[type="text"] {
+  min-block-size: 48px; inline-size: 100%; padding: 0 13px; border: 1.5px solid #d7e2ef; border-radius: 10px;
+  background: #fff; color: #1c2b3a; font-size: max(1rem, 1em);
+}
+.tb-page .tb-merge-form input[type="text"]::placeholder { color: #b3c0cf; }
+.tb-page .tb-merge-form input[type="text"]:hover { border-color: #b9cde5; }
+.tb-page .tb-merge-form input[type="text"]:focus-visible { outline: 3px solid #d7e8ff; border-color: var(--ds-gold-ink, #8a6530); }
+.tb-page .tb-merge-form input[type="text"].is-resolved { border-color: var(--ds-gold-ink, #8a6530); background: #f7fbff; }
+.tb-page .tb-merge-form .tb-merge-preview { margin-block-start: 4px; }
+.tb-page .tb-merge-form .form-footer { margin-block-start: 2px; }
+.tb-page .tb-merge-form .primary { min-block-size: 42px; padding: 0 22px; border-radius: 10px; font-size: .85rem; font-weight: 700; }
+
+:root[data-theme="dark"] .tb-page .tb-maint-icon { background: #1b2c40; color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tb-maint-copy em,
+:root[data-theme="dark"] .tb-page .tb-merge-sec-head p { color: #8a99ab; }
+/* 标题原来是浅色主题的深墨色，深色底上几乎看不见；深色段只覆盖了 p，b 一直漏着。 */
+:root[data-theme="dark"] .tb-page .tb-merge-sec-head b { color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tb-maint-more { border-color: #2a323e; background: transparent; }
+:root[data-theme="dark"] .tb-page .tb-merge-sec + .tb-merge-sec { border-color: #2a323e; }
+:root[data-theme="dark"] .tb-page .tb-merge-sec-count { background: #1b2c40; color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tb-merge-empty { border-color: #2a323e; background: #151a22; }
+:root[data-theme="dark"] .tb-page .tb-merge-empty-icon { background: #1b2c40; color: #6aa9ee; }
+:root[data-theme="dark"] .tb-page .tb-merge-empty b { color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tb-merge-empty p { color: #8a99ab; }
+:root[data-theme="dark"] .tb-page .tb-sug-card { border-color: #2a323e; background: #151a22; }
+:root[data-theme="dark"] .tb-page .tb-sug-pair b { color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tb-sug-kind { background: #1b2c40; color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tb-sug-merge { border-color: #2b4057; background: #1b212b; color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tb-merge-form input[type="text"] { border-color: #2a323e; background: #151a22; color: #e8eef6; }
+
+/* ── 预览区：选手独立成标签，结论分条陈述 ───────────────────────── */
+.tb-page .tb-merge-preview { gap: 18px; padding: 20px 22px; background: #fbfdff; border-color: #e6edf5; }
+/* 两栏阵容：每张是独立浅底小卡 */
+.tb-page .tm-rosters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.tb-page .tm-roster { min-inline-size: 0; padding: 14px 16px; border: 1px solid #e6edf5; border-radius: 12px; background: #fff; }
+.tb-page .tm-roster h4 { margin: 0 0 12px; color: #5b6b7d; font-size: .8rem; font-weight: 700; }
+/* 每个选手一个 chip，字号放大、彼此隔开、自动换行 */
+.tb-page .tm-names { display: flex; flex-wrap: wrap; gap: 8px; }
+.tb-page .tm-name {
+  display: inline-grid; place-items: center; padding: 6px 12px;
+  border: 1px solid #e2e9f1; border-radius: 8px; background: #f7f9fc;
+  color: #1c2b3a; font-size: .86rem; font-weight: 600; line-height: 1.3;
+}
+.tb-page .tm-name.is-shared { border-color: #cfe0f7; background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); }
+.tb-page .tm-name.is-only { border-color: #f0d2d2; background: #fdeeee; color: #cf3f3f; }
+.tb-page .tm-name.is-none { color: #b3c0cf; background: transparent; border-style: dashed; }
+/* 三条结论：计数徽章 + 说明 + 名单 */
+.tb-page .tm-facts { display: grid; gap: 10px; padding-block-start: 4px; }
+.tb-page .tm-fact { display: flex; align-items: flex-start; gap: 12px; }
+.tb-page .tm-fact-tag {
+  flex: none; min-inline-size: 30px; inline-size: 30px; block-size: 30px;
+  display: grid; place-items: center; border-radius: 9px; font-size: .85rem; font-weight: 700;
+}
+.tb-page .tm-fact-tag.is-shared { background: var(--ds-gold-wash, #f4eee3); color: var(--ds-gold-ink, #8a6530); }
+.tb-page .tm-fact-tag.is-only { background: #fdeeee; color: #cf3f3f; }
+.tb-page .tm-fact-body { min-inline-size: 0; padding-block-start: 3px; }
+.tb-page .tm-fact-body b { color: #1c2b3a; font-size: .82rem; font-weight: 650; line-height: 1.4; }
+.tb-page .tm-fact-body p { margin: 3px 0 0; color: var(--ds-muted, #6b6559); font-size: .8rem; line-height: 1.6; overflow-wrap: anywhere; }
+/* 说明与警告分区 */
+.tb-page .tm-merge-note { margin: 0; padding-block-start: 14px; border-block-start: 1px solid #eef2f7; color: var(--ds-muted, #6b6559); font-size: .78rem; line-height: 1.7; }
+.tb-page .tm-merge-warn { margin: 0; padding: 12px 14px; border: 1px solid #f0d2d2; border-radius: 10px; background: #fff7f7; color: #cf3f3f; font-size: .8rem; line-height: 1.6; }
+.tb-page .tm-merge-warn b { font-weight: 700; }
+
+:root[data-theme="dark"] .tb-page .tb-merge-preview { background: #151a22; border-color: #2a323e; }
+:root[data-theme="dark"] .tb-page .tm-roster { border-color: #2a323e; background: #1b212b; }
+:root[data-theme="dark"] .tb-page .tm-roster h4 { color: #8a99ab; }
+:root[data-theme="dark"] .tb-page .tm-name { border-color: #2a323e; background: #1b212b; color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tm-name.is-shared { border-color: #2b4057; background: #1b2c40; color: #8cc0f5; }
+:root[data-theme="dark"] .tb-page .tm-name.is-only { border-color: #553030; background: #2b1a1a; color: #e88080; }
+:root[data-theme="dark"] .tb-page .tm-fact-body b { color: #e8eef6; }
+:root[data-theme="dark"] .tb-page .tm-merge-note { border-color: #2a323e; color: #8a99ab; }
+:root[data-theme="dark"] .tb-page .tm-merge-warn { border-color: #553030; background: #2b1a1a; color: #e88080; }

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="70" height="58" viewBox="0 0 70 58" role="img">
+<title>BP 槽位 · 选用</title>
+<defs><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<defs><clipPath id="capsule-pick"><rect x="0" y="0" width="70" height="58" rx="11" fill="#fff"/></clipPath></defs><g clip-path="url(#capsule-pick)"><rect x="1" y="1" width="68" height="56" rx="10" fill="#2b526d" stroke="url(#gold-edge)" stroke-width="2"/><path d="M-3 45.82 L56 -2 H73 L11.2 61 Z" fill="#f1e9df" opacity=".24"/><path d="M-3 61 L73 -3" fill="none" stroke="#fff8ef" stroke-width="2.8"/></g>
+</svg>

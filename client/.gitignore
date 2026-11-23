@@ -1,6 +1,0 @@
-node_modules/
-out/
-release*/
-.cache/
-*.log
-.DS_Store

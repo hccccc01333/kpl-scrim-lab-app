@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="68" height="60" viewBox="0 0 68 60" role="img">
+<title>雷达图图例 · 队伍 A 色块</title>
+<defs><radialGradient id="dot-gold" cx="35%" cy="25%" r="80%">
+ <stop stop-color="#ffe497"/><stop offset="1" stop-color="#8a5b12"/>
+</radialGradient></defs>
+<polygon points="34.00,4.35 55.31,23.07 47.49,48.57 28.13,38.08 19.88,25.41" fill="#f3ce78" stroke="#b18024" stroke-width="1.15" fill-opacity=".36" stroke-linejoin="round"/><circle cx="34" cy="4.35" r="2.6" fill="url(#dot-gold)" stroke="#b18024" stroke-width="0.4"/><circle cx="55.3132" cy="23.0749" r="2.6" fill="url(#dot-gold)" stroke="#b18024" stroke-width="0.4"/><circle cx="47.4897" cy="48.5669" r="2.6" fill="url(#dot-gold)" stroke="#b18024" stroke-width="0.4"/><circle cx="28.128" cy="38.0821" r="2.6" fill="url(#dot-gold)" stroke="#b18024" stroke-width="0.4"/><circle cx="19.8768" cy="25.4111" r="2.6" fill="url(#dot-gold)" stroke="#b18024" stroke-width="0.4"/>
+</svg>

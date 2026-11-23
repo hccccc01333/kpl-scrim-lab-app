@@ -8,6 +8,10 @@
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 380px;
+  /* 这条必须显式清掉：共用规则 .pbr-finding-list 带 grid-template-columns:
+     minmax(0,1fr)，会在轨道里多出一列 0px 的显式轨道，把第一张卡（首卡）
+     挤成只剩内边距的细条，看起来像卡片外面还套了一张空卡。 */
+  grid-template-columns: none;
   grid-template-rows: repeat(7, auto);
   gap: 10px 16px;
   overflow-x: auto;
@@ -55,6 +59,22 @@
 }
 .pbr-home .pbr-watch .pbr-finding > .pbr-roster-mini-strip { align-self: center; }
 .pbr-home .pbr-watch .pbr-finding > .pbr-watch-link { padding-block-start: 12px; }
+
+/* 首页空态放大一档（教练 2026-11-19：这块字太小）。
+   没有对局时空态就是整屏唯一的内容，原来标题 20px、正文 14px、「训练安排」12px，
+   几个人挤在一起看很吃力。放在这个未分层文件里，才能盖过 celadon / legacy 层里
+   那套按小字号写的旧规则（分层优先于选择器权重）。 */
+.pbr-home .pbr-empty { gap: 18px; padding: 34px 32px; }
+.pbr-home .pbr-empty h2 { font-size: 1.75rem; letter-spacing: -.02em; }
+.pbr-home .pbr-empty-reason { font-size: 1rem; line-height: 1.8; }
+.pbr-home .pbr-empty-prev { font-size: .9375rem; line-height: 1.7; }
+.pbr-home .pbr-empty-next { padding: 16px 18px; }
+.pbr-home .pbr-empty .pbr-foot-label { font-size: .8125rem; }
+.pbr-home .pbr-empty .pbr-next li { font-size: 1rem; }
+.pbr-home .pbr-empty .pbr-next-empty { font-size: 1rem; }
+.pbr-home .pbr-empty .pbr-next-note { font-size: .875rem; }
+.pbr-home .pbr-empty-actions { gap: 10px; }
+.pbr-home .pbr-empty-actions :is(.control, .primary) { font-size: 1rem; padding: 10px 18px; }
 
 /* 阵容头像放大：28 → 40，间距也放开 */
 .pbr-home .pbr-roster-mini-strip { gap: 10px; }

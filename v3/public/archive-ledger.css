@@ -1,0 +1,787 @@
+/* 训练赛档案库 · 对局档案页专用样式
+ * 放在白金视觉层之后加载：视觉层的 .match-row 规则带 !important，
+ * 这里同样按 #content 作用域精确覆盖。原则是「统计与筛选只占一小条，
+ * 首屏的绝大部分留给比赛记录」。
+ */
+
+#content .archive-page { gap: 10px !important; padding-block-start: 16px !important; }
+#content .archive-page .page-intro { margin-block-end: 0; }
+#content .archive-page .page-intro h1 { font-size: 26px !important; }
+/* 旧 .mo-cell 自带 18px 上下内边距，四格摘要会把首屏撑掉近 80px。 */
+#content .archive-summary .mo-cell { padding: 0 10px !important; }
+#content .archive-summary .mo-cell:first-child { padding-inline-start: 0 !important; }
+#content .archive-ledger { padding: 12px !important; }
+
+/* ── 一行统计摘要 ─────────────────────────────────────────────── */
+#content .archive-summary {
+  display: flex !important;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin: 0 !important;
+  padding: 8px 14px !important;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 8px;
+  background: var(--ds-surface, var(--surface));
+}
+#content .archive-summary .mo-cell { display: inline-flex; align-items: baseline; gap: 5px; margin: 0; }
+#content .archive-summary .mo-cell small {
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-1, 12px);
+  font-weight: 400;
+}
+#content .archive-summary .mo-cell b {
+  color: var(--ds-ink, var(--text));
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+#content .archive-summary .mo-cell em { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 12px); font-style: normal; }
+#content .archive-summary .is-win { color: var(--ds-success, var(--success)) !important; }
+#content .archive-summary .is-loss { color: var(--ds-danger, var(--danger)) !important; }
+#content .archive-summary .archive-summary-note {
+  margin-inline-start: auto;
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-1, 12px);
+}
+
+/* ── 搜索 + 组合筛选 + 批量入口 ───────────────────────────────── */
+#content .archive-toolbar {
+  display: flex !important;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-block-end: 8px !important;
+  padding: 8px 10px !important;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 8px;
+  background: var(--ds-surface, var(--surface));
+}
+#content .archive-toolbar .mf-search { flex: 0 1 320px; min-inline-size: 240px; }
+#content .archive-toolbar .mf-search input { inline-size: 100% !important; flex: 1 1 auto; }
+#content .archive-toolbar .mfilter { flex: 1 1 auto; flex-wrap: wrap; }
+#content .archive-batch-toggle {
+  min-block-size: 30px;
+  padding: 4px 11px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 6px;
+  background: var(--ds-surface, var(--paper));
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-2, 13px);
+  cursor: pointer;
+}
+#content .archive-batch-toggle[aria-pressed='true'] {
+  border-color: var(--ds-gold, #d7b071);
+  background: var(--ds-gold-wash, #fbf6e9);
+  color: var(--ds-gold-ink, #7a5a20);
+  font-weight: 600;
+}
+
+/* 标签检索栏本身就是全库组合查询；主列表就是它的结果，
+   所以不再渲染第二份命中列表，避免同一份数据出现两遍。 */
+#content .archive-tagtools { margin-block: 0 8px; }
+#content .archive-tagtools > summary { padding-block: 6px; }
+#content .archive-tagtools [data-archive-tag-count] { color: var(--ds-muted, var(--muted)); font-weight: 400; }
+/* 标签查询收进主筛选栏的弹出面板。与首页共用 match-tags.js 的数据与 DOM，
+   这里只把方块按钮换成首页同一语言的胶囊控件，并隐藏弹层里重复的命中列表。 */
+#content .mf-pop-tagbar .tagbar-body { padding: 4px 4px 2px !important; }
+#content .mf-pop-tagbar .tagbar-out,
+#content .mf-pop-tagbar .tagbar-foot { display: none !important; }
+#content .mf-pop-title { font-size: 12px; font-weight: 600; }
+#content .mf-pop-tagbar .tagbar-form {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+#content .mf-pop-tagbar .tagbar-form label { color: var(--ds-muted, var(--muted)) !important; font-size: 11px !important; }
+#content .mf-pop-tagbar input[type='search'] {
+  flex: 1 1 180px !important;
+  min-inline-size: 0 !important;
+  padding: 5px 10px !important;
+  border: 1px solid var(--ds-line, var(--line)) !important;
+  border-radius: 999px !important;
+  background: var(--ds-surface, var(--paper)) !important;
+  color: var(--ds-ink, var(--text)) !important;
+  font: inherit !important;
+  font-size: 12px !important;
+}
+#content .mf-pop-tagbar button {
+  padding: 4px 10px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: var(--ds-muted, var(--muted)) !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  cursor: pointer !important;
+}
+#content .mf-pop-tagbar .tagbar-form button[type='submit'] {
+  background: var(--ds-ink, var(--text)) !important;
+  color: var(--ds-surface, var(--paper)) !important;
+}
+#content .mf-pop-tagbar button:hover { background: var(--ds-surface-2) !important; color: var(--ds-ink, var(--text)) !important; }
+#content .mf-pop-tagbar .tagbar-fieldset { margin: 10px 0 0 !important; padding: 0 !important; border: 0 !important; }
+#content .mf-pop-tagbar legend { padding: 0 !important; color: var(--ds-muted, var(--muted)) !important; font-size: 11px !important; }
+#content .mf-pop-tagbar .tagbar-chips {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  min-block-size: 26px !important;
+}
+#content .mf-pop-tagbar .tagbar-chip {
+  padding: 4px 10px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--ds-surface-2) !important;
+  color: var(--ds-ink, var(--text)) !important;
+}
+#content .mf-pop-tagbar .tagbar-chip.is-on {
+  background: var(--ds-ink, var(--text)) !important;
+  color: var(--ds-surface, var(--paper)) !important;
+}
+#content .mf-pop-tagbar .tagbar-chip span { max-inline-size: 12rem !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
+#content .mf-pop-tagbar .tagbar-chip i { margin-inline-start: 4px !important; color: var(--ds-muted, var(--muted)) !important; font-size: 10px !important; font-style: normal !important; }
+#content .mf-pop-tagbar .tagbar-chip.is-on i { color: inherit !important; }
+#content .mf-pop-tagbar .tagbar-empty,
+#content .mf-pop-tagbar .tagbar-hint { color: var(--ds-muted, var(--muted)) !important; font-size: 11px !important; }
+#content .mf-pop-tagbar .tagbar-manage {
+  display: grid !important;
+  gap: 4px !important;
+  margin-block-start: 8px !important;
+  padding-block-start: 8px !important;
+  border-block-start: 1px solid var(--ds-line, var(--line)) !important;
+}
+#content .mf-pop-tagbar .tagbar-manage-row { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+#content .mf-pop-tagbar .tagbar-manage-row > span { margin-inline-end: auto; color: var(--ds-muted, var(--muted)); }
+#content .mf-pop-tagbar .tagbar-manage-row button { padding: 2px 8px !important; font-size: 11px !important; }
+#content .archive-tag-hint {
+  font-size: 11px;
+  color: var(--ds-muted, var(--muted));
+  white-space: nowrap;
+}
+#content .archive-tag-hint:empty { display: none; }
+
+#content .archive-list-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 2px 6px;
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-1, 12px);
+}
+#content .archive-list-head > span { margin-inline-start: 0; }
+#content .archive-count { color: var(--ds-ink, var(--text)); font-weight: 600; }
+#content .archive-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-start: auto;
+  padding: 2px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 999px;
+  background: var(--ds-surface-2, var(--surface-2));
+}
+#content .archive-sort-label { padding-inline: 8px 4px; color: var(--ds-muted, var(--muted)); font-size: 11px; }
+#content .archive-sort-btn {
+  min-block-size: 22px !important;
+  padding: 2px 10px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: var(--ds-muted, var(--muted)) !important;
+  font-size: 11px !important;
+  transition: background-color .16s ease, color .16s ease;
+}
+#content .archive-sort-btn:hover { color: var(--ds-ink, var(--text)) !important; }
+#content .archive-sort-btn.is-on {
+  background: var(--ds-ink, var(--text)) !important;
+  color: var(--ds-surface, var(--paper)) !important;
+}
+#content .archive-sort-btn:focus-visible { outline: 2px solid var(--ds-accent, var(--accent)); outline-offset: 1px; }
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ── 批量操作条 ───────────────────────────────────────────────── */
+#content .archive-bulkbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block-end: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-gold, #d7b071);
+  border-radius: 8px;
+  background: var(--ds-gold-wash, #fbf6e9);
+}
+#content .archive-bulkbar[hidden] { display: none; }
+#content .archive-bulkbar > b { color: var(--ds-gold-ink, #7a5a20); font-size: var(--fs-2, 13px); }
+#content .archive-bulkbar :is(button, input) { min-block-size: 28px; font-size: var(--fs-2, 13px); }
+#content .archive-bulkbar label { display: inline-flex; align-items: center; gap: 6px; }
+#content .archive-bulkbar label span { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 12px); }
+#content .archive-bulkbar input { inline-size: 140px; padding-inline: 8px; }
+#content .archive-bulk-status { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 12px); }
+#content .archive-bulk-library {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 100%;
+  padding-block-end: 6px;
+  border-block-end: 1px solid var(--ds-line, var(--line));
+}
+#content .archive-bulk-library > span { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 12px); }
+#content .archive-bulk-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+#content .archive-bulk-tags button {
+  min-block-size: 22px !important;
+  padding: 2px 9px !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: var(--ds-surface, var(--paper)) !important;
+  color: var(--ds-ink, var(--text)) !important;
+  font-size: var(--fs-1, 11px) !important;
+}
+#content .archive-bulk-tags button:hover { background: var(--ds-ink, var(--text)) !important; color: var(--ds-surface, var(--paper)) !important; }
+#content .archive-bulk-empty { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 11px); }
+#content .archive-ledger .empty { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+#content .archive-ledger .empty .mf-clear {
+  padding: 3px 10px;
+  border: 1px solid var(--ds-line, var(--line)) !important;
+  border-radius: 999px !important;
+  background: var(--ds-surface, var(--paper)) !important;
+}
+
+/* ── 日期分组：可折叠 + 标题吸顶，滚到哪一天就一直知道是哪一天 ── */
+#content .archive-ledger details.fixture-day { margin-block-start: 8px; overflow-anchor: none; }
+#content .archive-ledger .fixture-day-head {
+  position: sticky !important;
+  inset-block-start: calc(var(--header-height, 68px) + 44px) !important;
+  z-index: 12 !important;
+  container-type: scroll-state;
+  container-name: archive-day;
+  display: block !important;
+  list-style: none;
+  cursor: pointer;
+  margin-block: 6px 2px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  min-block-size: 0 !important;
+}
+#content .archive-ledger .fixture-day-head::-webkit-details-marker { display: none; }
+/* 全局 details 样式会给 summary 加一个 ›，这里用自己的箭头，别让它占一行。 */
+#content .archive-ledger details.fixture-day > summary::before { content: none !important; display: none !important; }
+#content .archive-ledger .fixture-day-head:focus-visible { outline: 2px solid var(--ds-accent, var(--accent)); outline-offset: 1px; border-radius: 8px; }
+#content .archive-ledger .archive-day-head-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 999px;
+  background: var(--ds-surface-2, var(--surface-2));
+  transition: background-color .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+#content .archive-ledger .fixture-day-head:hover .archive-day-head-inner { border-color: var(--ds-gold, #d7b071); }
+#content .archive-ledger .archive-day-caret { display: inline-flex; color: var(--ds-muted, var(--muted)); transition: rotate .18s ease; }
+#content .archive-ledger .archive-day-caret svg { inline-size: 12px; block-size: 12px; }
+#content .archive-ledger details.fixture-day[open] .archive-day-caret { rotate: 90deg; }
+#content .archive-ledger .archive-day-date { color: var(--ds-ink, var(--text)); font-size: var(--fs-2, 13px); font-weight: 650; letter-spacing: .01em; }
+#content .archive-ledger .archive-day-date time { color: inherit !important; font-size: inherit !important; }
+#content .archive-ledger details.fixture-day:not([open]) .archive-day-head-inner { background: var(--ds-surface-2, var(--surface-2)); }
+@container archive-day scroll-state(stuck: top) {
+  #content .archive-ledger .archive-day-head-inner {
+    background: var(--ds-surface-2, var(--surface-2));
+    border-color: var(--ds-gold, #d7b071);
+    box-shadow: 0 4px 12px rgb(10 24 28 / 14%);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  #content .archive-ledger details.fixture-day::details-content {
+    interpolate-size: allow-keywords;
+    overflow: clip;
+    contain: layout;
+    transition: block-size .22s ease, content-visibility .22s allow-discrete;
+  }
+  #content .archive-ledger details.fixture-day:not([open])::details-content { block-size: 0; }
+}
+html { scroll-padding-top: calc(var(--header-height, 68px) + 96px); }
+#content .archive-ledger .match-list {
+  display: block !important;
+  padding: 0 !important;
+}
+
+/* ── 一场一行的档案记录 ───────────────────────────────────────── */
+#content .archive-row-wrap {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 230px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-block-end: 1px solid var(--ds-line, var(--line));
+}
+#content .archive-row-wrap { position: relative; }
+#content .archive-row-wrap::before {
+  content: '';
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 0;
+  inline-size: 2px;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color .16s ease;
+}
+#content .archive-row-wrap:hover { background: var(--ds-surface-2); }
+#content .archive-row-wrap:hover::before,
+#content .archive-row-wrap:focus-within::before { background: var(--ds-accent, var(--accent)); }
+#content .archive-row-wrap:has(.archive-pick input:checked) { background: rgba(215, 176, 113, .14); }
+#content .archive-row-wrap:has(.archive-pick input:checked) { background: color-mix(in srgb, var(--ds-accent, var(--accent)) 8%, transparent); }
+#content .archive-row-wrap:has(.archive-pick input:checked)::before { background: var(--ds-accent, var(--accent)); }
+#content .archive-row:focus-visible { outline: 2px solid var(--ds-ink, CanvasText); outline-offset: -2px; border-radius: 8px; }
+#content .archive-ledger :where(button, summary, input, a):focus-visible { outline: 2px solid var(--ds-ink, CanvasText); outline-offset: 2px; }
+#content .archive-ledger :where(.archive-sort-btn, .archive-bulkbar button, .archive-tools button, .tagadd, .tagpick, .archive-rename-inline) { transition: background-color .16s ease, color .16s ease, scale .12s ease, opacity .16s ease; }
+#content .archive-ledger :where(.archive-sort-btn, .archive-bulkbar button, .archive-tools button, .tagadd, .tagpick, .archive-rename-inline):active { scale: .96; }
+#content .archive-ledger:not(.is-batch) .archive-pick { visibility: hidden; }
+#content .archive-pick { display: grid; place-items: center; min-block-size: 34px; }
+#content .archive-pick input {
+  inline-size: 15px;
+  block-size: 15px;
+  margin: 0;
+  accent-color: var(--ds-accent, var(--accent));
+  cursor: pointer;
+}
+
+/* 主体仍是 <a>，键盘导航与 Enter 进复盘照旧。 */
+#content .archive-row {
+  display: grid !important;
+  grid-template-columns: 62px minmax(120px, 1fr) 44px 74px 44px minmax(340px, 1.4fr) 84px !important;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 54px !important;
+  padding: 4px 6px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--ds-ink, var(--text)) !important;
+  text-decoration: none;
+  min-inline-size: 0;
+}
+#content .archive-row:hover { background: transparent !important; }
+#content .archive-row-wrap:hover .archive-row { background: transparent !important; }
+/* 旧样式给 .match-lineup 指定了 grid-area: lineup；本页是按列自动排布的
+   紧凑网格，必须清掉具名区域，否则阵容会被塞进「胜负」那一列。 */
+#content .archive-row > * { min-inline-size: 0; grid-area: auto !important; }
+#content .archive-when { display: flex; flex-direction: column; line-height: 1.25; }
+#content .archive-when b { font-size: var(--fs-2, 13px); font-variant-numeric: tabular-nums; }
+#content .archive-when small { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 11px); font-variant-numeric: tabular-nums; }
+#content .archive-opponent { display: flex; flex-direction: column; gap: 1px; }
+#content .archive-opponent small { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 11px); }
+#content .archive-opponent-line { display: inline-flex; align-items: center; gap: 5px; min-inline-size: 0; }
+#content .archive-opponent b {
+  display: block;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--fs-2, 13px);
+  font-weight: 600;
+}
+/* 改名按钮紧跟队名，而不是占右侧操作区的一格。 */
+#content .archive-rename-inline {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  inline-size: 17px;
+  block-size: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ds-muted, var(--muted));
+  opacity: .55;
+  cursor: pointer;
+}
+#content .archive-rename-inline svg { inline-size: 12px; block-size: 12px; }
+#content .archive-row-wrap:hover .archive-rename-inline,
+#content .archive-row-wrap:focus-within .archive-rename-inline,
+#content .archive-rename-inline:focus-visible { opacity: 1; }
+@media (hover: none) { #content .archive-rename-inline { opacity: 1; } }
+#content .archive-rename-inline:hover { background: var(--ds-surface-2); color: var(--ds-accent, var(--accent)); }
+#content .archive-row .result {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-inline-size: 42px;
+  padding: 3px 8px !important;
+  border-radius: 999px !important;
+  background: var(--ds-surface-2, var(--surface-2)) !important;
+  font-size: var(--fs-2, 12px);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* workbench-ui 给 .result 加了一个 ::before 圆点；本页在 DOM 里已有 <i>，
+   不隐藏就会变成两个点。纯装饰重复项，直接 content:none。 */
+#content .archive-ledger .fixture-day .archive-row .result::before { content: none !important; display: none !important; }
+#content .archive-row .result i { inline-size: 5px; block-size: 5px; border-radius: 50%; background: var(--ds-muted); }
+/* 先给纯色回退，再用 color-mix 做淡染；旧浏览器保留回退，胜负仍然一眼可辨。 */
+#content .archive-row .result.win {
+  color: var(--ds-success, var(--success));
+  background: var(--ds-surface-2, var(--surface-2)) !important;
+  background: color-mix(in srgb, var(--ds-success, var(--success)) 14%, transparent) !important;
+}
+#content .archive-row .result.win i { background: var(--ds-success, var(--success)); }
+#content .archive-row .result.loss {
+  color: var(--ds-danger, var(--danger));
+  background: var(--ds-surface-2, var(--surface-2)) !important;
+  background: color-mix(in srgb, var(--ds-danger, var(--danger)) 12%, transparent) !important;
+}
+#content .archive-row .result.loss i { background: var(--ds-danger, var(--danger)); }
+#content .archive-row .row-score {
+  font-size: var(--fs-3, 14px) !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#content .archive-row .match-duration {
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-2, 12px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 双方十人 + 真实分路角标。没有 lane 字段就不画角标，也不补齐虚构头像。 */
+#content .archive-row .archive-lineup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-start;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#content .archive-row .ml-side { display: inline-flex; flex-direction: column; gap: 3px; vertical-align: middle; flex: 0 0 auto; }
+#content .archive-row .ml-side > small { color: var(--ds-muted, var(--muted)); font-size: 10px; line-height: 1; }
+#content .archive-row .ml-faces { display: inline-flex; gap: 2px; }
+#content .archive-row .ml-cell {
+  position: relative;
+  display: inline-block;
+  inline-size: 28px;
+  block-size: 28px;
+}
+#content .archive-row .ml-cell.is-empty {
+  border: 1px dashed var(--ds-line, var(--line));
+  border-radius: 4px;
+  background: var(--ds-surface-2);
+}
+#content .archive-row .portrait {
+  display: block;
+  inline-size: 28px !important;
+  block-size: 28px !important;
+  border-radius: 4px !important;
+}
+#content .archive-row .ml-cell.is-foe .portrait { filter: saturate(.72); }
+#content .archive-row .lane-badge {
+  position: absolute;
+  inset-block-end: -2px;
+  inset-inline-end: -3px;
+  inline-size: 13px;
+  block-size: 13px;
+  border-radius: 3px;
+  background: var(--ds-surface, var(--paper));
+  box-shadow: 0 0 0 1px var(--ds-line, var(--line));
+}
+#content .archive-row .ml-vs {
+  margin-inline: 8px;
+  color: var(--ds-muted, var(--muted));
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+#content .archive-row .ml-note,
+#content .archive-row .ml-empty { color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 11px); }
+#content .archive-row .ml-note {
+  padding: 3px 9px;
+  border: 1px dashed var(--ds-line, var(--line));
+  border-radius: 999px;
+  background: var(--ds-surface-2, var(--surface-2));
+}
+/* 全局样式在旧 fixture 列表里藏了「查看复盘」；档案页这一列还留着，
+   把它恢复成悬停/聚焦才出现的次要提示，不抢队名和胜负的视线。 */
+#content .archive-row .row-arrow {
+  display: inline-flex !important;
+  visibility: visible !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-1, 11px);
+  white-space: nowrap;
+  text-align: end;
+  opacity: 0;
+  transition: opacity .16s ease, color .16s ease;
+}
+#content .archive-row-wrap:hover .row-arrow,
+#content .archive-row:focus-visible .row-arrow { opacity: 1; color: var(--ds-accent, var(--accent)); }
+#content .archive-row .row-arrow svg { inline-size: 13px; block-size: 13px; vertical-align: -2px; }
+
+/* 标签与行尾操作在 <a> 外侧：可以直接打标签、写备注、改对手名。 */
+#content .archive-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+  padding-inline-start: 8px;
+  border-inline-start: 1px solid var(--ds-line, var(--line));
+}
+#content .archive-side .tagrow { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; min-block-size: 22px; }
+#content .archive-side .tagchip { font-size: 11px; }
+/* 超过 3 个只留计数，避免一行标签把紧凑记录撑高；展开输入时让位给候选。 */
+#content .archive-side .tagrow > .tagchip:nth-child(n+4) { display: none; }
+#content .archive-side .tagrow[data-tag-more]::after {
+  content: attr(data-tag-more);
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 20px;
+  padding-inline: 7px;
+  border-radius: 999px;
+  background: var(--ds-surface-2, var(--surface-2));
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-1, 11px);
+}
+#content .archive-side .tagrow:has(.tagpick)::after { display: none; }
+#content .archive-tools { display: flex; align-items: center; justify-content: flex-start; gap: 6px; }
+#content .archive-tools button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 22px;
+  padding: 2px 10px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 999px;
+  background: var(--ds-surface, var(--paper));
+  color: var(--ds-muted, var(--muted));
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+}
+#content .archive-tools button:hover { color: var(--ds-ink, var(--text)); border-color: var(--ds-gold, #d7b071); }
+#content .archive-tools button b { margin-inline-start: 3px; color: var(--ds-accent, var(--accent)); }
+
+/* 备注弹窗 */
+#content .archive-note-list { display: grid; gap: 8px; margin-block-end: 12px; }
+#content .archive-note-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 6px;
+  background: var(--ds-surface, var(--surface));
+}
+#content .archive-note-item p { margin: 0; font-size: var(--fs-2, 13px); }
+#content .archive-note-item small { grid-column: 1; color: var(--ds-muted, var(--muted)); font-size: var(--fs-1, 11px); }
+#content .archive-note-item button {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ds-muted, var(--muted));
+  font-size: var(--fs-1, 11px);
+  cursor: pointer;
+}
+
+/* ── 窄屏：先收操作区宽度，再退成第二行；尽量保住「一眼一行」 ─── */
+@media (max-width: 1180px) {
+  #content .archive-row-wrap { grid-template-columns: 26px minmax(0, 1fr) 190px; }
+  #content .archive-row {
+    grid-template-columns: 58px minmax(100px, 1fr) 40px 68px 40px minmax(240px, 1.2fr) 66px !important;
+  }
+}
+@media (max-width: 1100px) {
+  #content .archive-row-wrap { grid-template-columns: 26px minmax(0, 1fr); }
+  #content .archive-side {
+    grid-column: 2;
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+  #content .archive-row {
+    grid-template-columns: 60px minmax(110px, 1fr) 42px 70px 42px minmax(300px, 1.2fr) 76px !important;
+  }
+}
+@media (max-width: 880px) {
+  #content .archive-row {
+    grid-template-columns: 58px minmax(100px, 1fr) 40px 68px 40px 78px !important;
+  }
+  #content .archive-row .ml-side.is-foe,
+  #content .archive-row .ml-vs { display: none; }
+  #content .archive-summary .archive-summary-note { margin-inline-start: 0; flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  #content .archive-row-wrap { transition: background-color .12s ease; }
+}
+
+/* ── 教练备注弹窗：只作用于这个弹窗，不碰全局 .dialog-* ─────────── */
+#filters.archive-note-dialog {
+  inline-size: min(540px, calc(100vw - 32px)) !important;
+  max-block-size: min(86vh, 720px);
+  overflow: hidden;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(8, 24, 26, .28);
+}
+#filters.archive-note-dialog:modal { overscroll-behavior: contain; }
+#filters.archive-note-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(12, 22, 24, .46);
+  backdrop-filter: blur(2px);
+}
+#filters.archive-note-dialog .dialog-head { align-items: flex-start; gap: 16px; padding: 20px 22px 16px; }
+#filters.archive-note-dialog .dialog-head h2 { font-size: 17px; font-weight: 750; letter-spacing: -.015em; }
+#filters.archive-note-dialog .dialog-head p { margin-block-start: 6px; font-size: 12px; line-height: 1.6; }
+#filters.archive-note-dialog .head-button {
+  flex: 0 0 auto;
+  inline-size: 30px;
+  block-size: 30px;
+  min-inline-size: 30px;
+  min-block-size: 30px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 50%;
+}
+#filters.archive-note-dialog .dialog-body {
+  display: grid;
+  gap: 18px;
+  max-block-size: 58vh;
+  overflow: auto;
+  padding: 18px 22px 20px;
+}
+#filters.archive-note-dialog .archive-note-history h3,
+#filters.archive-note-dialog .archive-note-compose h3 {
+  margin: 0 0 8px;
+  color: var(--ds-quiet, var(--quiet));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+#filters.archive-note-dialog .archive-note-loading {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--ds-line, var(--line));
+  border-radius: 10px;
+  color: var(--ds-muted, var(--muted));
+  font-size: 12px;
+}
+#filters.archive-note-dialog .archive-note-list { display: grid; gap: 8px; }
+#filters.archive-note-dialog .archive-note-item {
+  padding: 10px 12px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 10px;
+  background: var(--ds-surface, var(--surface));
+}
+#filters.archive-note-dialog .archive-note-item p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+#filters.archive-note-dialog .archive-note-item footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-block-start: 8px;
+}
+#filters.archive-note-dialog .archive-note-item small { color: var(--ds-muted, var(--muted)); font-size: 11px; }
+#filters.archive-note-dialog .archive-note-item button {
+  border: 0;
+  background: transparent;
+  color: var(--ds-muted, var(--muted));
+  font-size: 11px;
+  cursor: pointer;
+}
+#filters.archive-note-dialog .archive-note-item button:hover { color: #c0392b; }
+#filters.archive-note-dialog .archive-note-compose {
+  display: grid;
+  gap: 10px;
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--ds-line, var(--line));
+}
+#filters.archive-note-dialog .archive-note-draft-status { color: var(--ds-quiet, var(--quiet)); font-size: 11px; }
+#filters.archive-note-dialog .archive-note-draft-status:empty { display: none; }
+#filters.archive-note-dialog .archive-note-field { display: grid; gap: 6px; }
+#filters.archive-note-dialog .archive-note-field > span {
+  color: var(--ds-quiet, var(--quiet));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+#filters.archive-note-dialog .archive-note-field textarea,
+#filters.archive-note-dialog .archive-note-field input {
+  inline-size: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--ds-line, var(--line));
+  border-radius: 10px;
+  background: var(--ds-surface, var(--paper));
+  color: var(--ds-ink, var(--text));
+  font: inherit;
+  font-size: 12.5px;
+}
+#filters.archive-note-dialog .archive-note-field textarea { min-block-size: 96px; line-height: 1.6; resize: vertical; }
+#filters.archive-note-dialog .archive-note-field :is(textarea, input):focus {
+  outline: none;
+  border-color: var(--ds-accent, var(--accent));
+  box-shadow: 0 0 0 3px var(--ds-soft, var(--soft));
+}
+#filters.archive-note-dialog .filter-error:empty { display: none; }
+#filters.archive-note-dialog .dialog-actions {
+  padding: 14px 22px;
+  border-block-start: 1px solid var(--ds-line, var(--line));
+  background: var(--ds-surface, var(--surface));
+}
+#filters.archive-note-dialog .dialog-actions .control,
+#filters.archive-note-dialog .dialog-actions .primary {
+  min-block-size: 34px;
+  border-radius: 9px;
+  font-size: 12px;
+}
+#filters.archive-note-dialog .dialog-actions .control {
+  border: 1px solid var(--ds-line, var(--line));
+  background: var(--ds-surface, var(--paper));
+  color: var(--ds-muted, var(--muted));
+}
+#filters.archive-note-dialog .dialog-actions .primary { border: 0; background: var(--ds-accent, var(--accent)); color: #fff; }
+
+/* 搜索命中：只给视觉底纹，屏幕阅读器仍读原始文本；不支持的浏览器照常显示。 */
+::highlight(archive-search) {
+  background-color: #ffe08a;
+  color: #1b2430;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+/* 窄屏：筛选条整行折行，避免搜索框 + 五个筛选胶囊把页面顶出横向滚动。 */
+@media (max-width: 720px) {
+  #content .mf-toolbar.archive-toolbar .mf-search { flex: 1 1 100% !important; min-inline-size: 0 !important; }
+  #content .mf-toolbar.archive-toolbar .mfilter,
+  #content .mf-toolbar.archive-toolbar .mf-pills { flex: 1 1 100% !important; flex-wrap: wrap !important; }
+  #content .mf-toolbar.archive-toolbar .mf-pill { flex: 1 1 auto; justify-content: center; min-inline-size: 0; }
+}
+@media (max-width: 600px) {
+  #content .archive-ledger .row-arrow { display: none !important; }
+}

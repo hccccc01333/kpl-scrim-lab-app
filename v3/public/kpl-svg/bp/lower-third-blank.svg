@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="864" height="195" viewBox="0 0 864 195" role="img">
+<title>BP 下三分之一组合空白</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="paper" x2="0%" y2="100%">
+ <stop stop-color="#fffefb"/><stop offset="1" stop-color="#eeeae5"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<defs><clipPath id="lower-bg"><rect x="0" y="0" width="864" height="195" rx="21" fill="#fff"/></clipPath></defs><g clip-path="url(#lower-bg)"><rect x="0" y="0" width="864" height="195" rx="21" fill="url(#pearl)"/><path d="M0 0 Q207.36 136.5 535.68 0 H604.8 Q233.28 177.45 0 33.15Z" fill="#d8d5d8" opacity="0.1026"/><path d="M0 124.8 Q388.8 25.35 622.08 0 Q207.36 124.8 0 193.05Z" fill="#d9d6d6" opacity="0.0608"/><path d="M155.52 195 Q457.92 154.05 864 23.4 Q665.28 152.1 388.8 195Z" fill="#fffdfa" opacity="0.228"/><path d="M466.56 195 Q708.48 120.9 864 74.1 V111.15 Q794.88 146.25 630.72 195Z" fill="#fff" opacity="0.209"/></g><rect x="0.6" y="0.6" width="862.8" height="193.8" rx="21" fill="none" stroke="url(#gold-edge)" stroke-width="1.2"/><g transform="translate(0.5 0) scale(1 1)"><defs><clipPath id="lower-top"><rect x="0" y="0" width="863" height="43" rx="13" fill="#fff"/></clipPath></defs><g clip-path="url(#lower-top)"><rect x="0" y="0" width="863" height="43" rx="13" fill="url(#paper)" stroke="url(#gold-edge)" stroke-width="1"/><path d="M0 0 H24 Q10 1 10 14 V43 H0Z" fill="url(#gold)"/><path d="M8 0 H21 Q12 5 12 15 V43 H8Z" fill="url(#teal-edge)"/><g transform="translate(863 0) scale(-1 1)"><path d="M0 0 H24 Q10 1 10 14 V43 H0Z" fill="url(#gold)"/><path d="M8 0 H21 Q12 5 12 15 V43 H8Z" fill="url(#teal-edge)"/></g></g></g><path d="M348 47 V183 M527 47 V183" fill="none" stroke="#d8c9b3" stroke-width="1.1"/>
+</svg>

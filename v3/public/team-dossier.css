@@ -8,26 +8,26 @@
   width: 100%; max-width: 1200px; margin-inline: auto; gap: 26px;
   --tp-ink: var(--text);
   --tp-muted: var(--muted);
-  --tp-quiet: #6c7c7f;
+  --tp-quiet: #6f8292;
   --tp-line: var(--line);
   --tp-surface: color-mix(in srgb, var(--bg) 55%, var(--paper));
   --tp-own: var(--accent);
-  --tp-opp: #5f7478;
+  --tp-opp: #6b7d92;
   --tp-win: #1b7a58;
   --tp-loss: #b4532f;
   --tp-radius: 16px;
   --tp-hair: color-mix(in srgb, var(--line) 78%, transparent);
-  --tp-lane-0: #0f5f58; --tp-lane-1: #2b8379; --tp-lane-2: #63a89f;
-  --tp-lane-3: #a9cdc7; --tp-lane-4: #d7e5e2;
+  --tp-lane-0: #0f4f8a; --tp-lane-1: #2f6fb5; --tp-lane-2: #7fb0e8;
+  --tp-lane-3: #bcd8f2; --tp-lane-4: #e3eef9;
 }
 :root[data-theme="dark"] .page.tp-page {
-  --tp-quiet: #a9c0bd;
-  --tp-opp: #9db4b6;
+  --tp-quiet: #a9c0d6;
+  --tp-opp: #9db4cc;
   --tp-win: #7fd9b4;
   --tp-loss: #f0a183;
   --tp-surface: color-mix(in srgb, var(--bg) 42%, var(--paper));
-  --tp-lane-0: #176b63; --tp-lane-1: #328f84; --tp-lane-2: #5caaa0;
-  --tp-lane-3: #86bfb6; --tp-lane-4: #a9d3cb;
+  --tp-lane-0: #1a4f86; --tp-lane-1: #2f6fb5; --tp-lane-2: #5b9ff0;
+  --tp-lane-3: #86bce8; --tp-lane-4: #a9c9e8;
 }
 
 /* ── 头部 ───────────────────────────────────────────────────── */
@@ -1183,7 +1183,7 @@ details.tp-detail-wide[open] > summary { margin-bottom: 12px; padding-bottom: 12
   --c-core-1: #5a6ea8; --c-core-2: #2c7a70; --c-core-3: #b0873a; --c-core-4: #b4643b;
   --c-type-战边: #b4643b; --c-type-坦边: #d9a07a;
   --c-type-刺野: #1f6b62; --c-type-战野: #4a9c90; --c-type-坦野: #a6cec6;
-  --c-type-工具人: #8a6a2a; --c-type-法核: #c9a256;
+  --c-type-工具人: #8a6a2a; --c-type-法刺: #c9a256;
   --c-type-游射: #46599a; --c-type-呆射: #93a7d1;
   --c-type-开团辅: #8c3f2e; --c-type-保护辅: #c07b5e; --c-type-功能辅: #e0b49c;
   --tp-lane-0: var(--c-lane-0); --tp-lane-1: var(--c-lane-1); --tp-lane-2: var(--c-lane-2);
@@ -1198,7 +1198,7 @@ details.tp-detail-wide[open] > summary { margin-bottom: 12px; padding-bottom: 12
   --c-core-1: #8496d6; --c-core-2: #4fa396; --c-core-3: #d3ab5c; --c-core-4: #d98a5b;
   --c-type-战边: #d98a5b; --c-type-坦边: #a06a4c;
   --c-type-刺野: #4fa396; --c-type-战野: #3d8078; --c-type-坦野: #2c5f59;
-  --c-type-工具人: #d3ab5c; --c-type-法核: #a9843f;
+  --c-type-工具人: #d3ab5c; --c-type-法刺: #a9843f;
   --c-type-游射: #8496d6; --c-type-呆射: #5f6fa5;
   --c-type-开团辅: #e08a63; --c-type-保护辅: #ad6849; --c-type-功能辅: #7d4b35;
 }

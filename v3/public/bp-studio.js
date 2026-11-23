@@ -14,20 +14,41 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261118d4';
+import {createBpViz} from './bps-viz.js?v=20261124link2';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
   ['heroes', '01', '英雄优先级', '版本里哪些英雄值得先拿？', '气泡 = Pick 次数 · 颜色 = 分路'],
-  ['combos', '02', '组合强度', '自选组合到底多强，联盟哪些组合在赢？', '同队同局，不是因果协同'],
+  ['combos', '02', '组合', '自选组合到底多强，联盟哪些组合在赢？', '同队同局，不是因果协同 · 阵容差异'],
   ['break', '03', '战队如何破解', '目标被对面拿走，KPL 怎么应对，我们怎么应对？', 'KPL 先验 × 本队训练赛'],
   ['opponent', '04', '对手 BP 情报', '他的 Ban 在想什么，第一手之后他会怎么走？', 'Ban 意图 / 手序 / 条件回应'],
-  ['types', '05', '类型与手序', '他第一手 Ban / 选的是什么类型？放到 BO 和时间里还成立吗？', '类型 × 手序 × 赛制 × 核数'],
-  ['systems', '06', '体系与异动', '双方爱打什么体系，最近谁在变？', '体系雷达 + 窗口斜率'],
-  ['plan', '07', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？', '历史证据，不是最优解'],
+  ['types', '05', '手序', '他第一手 Ban / 选的是什么类型？放到 BO 和时间里还成立吗？', '手序 × 赛制'],
+  ['plan', '06', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？', '历史证据，不是最优解'],
+  ['counter', '07', '应对分析', '对方第一手之后，双方逐层怎么接？', '楼层 × 战队 × 先后手 × BO'],
+];
+/* 应对分析前置条件：按 KPL draft-20 的真实手序，Ban 与 Pick 混合排列。
+   hand = 全局第几手（1~20），同一阶段多手共用一个槽位。 */
+const COUNTER_PREFIX_STAGES = [
+  {key: 'blueBan1', slots: 1, camp: '1', suffix: 'Ban 1', group: 'ban', hand: 1},
+  {key: 'redBan1', slots: 1, camp: '2', suffix: 'Ban 1', group: 'ban', hand: 2},
+  {key: 'blueBan2', slots: 1, camp: '1', suffix: 'Ban 2', group: 'ban', hand: 3},
+  {key: 'redBan2', slots: 1, camp: '2', suffix: 'Ban 2', group: 'ban', hand: 4},
+  {key: 'blue1', slots: 1, camp: '1', suffix: '1L', group: 'pick', hand: 5},
+  {key: 'red12', slots: 2, camp: '2', suffix: '1L+2L', group: 'pick', hand: 6},
+  {key: 'blue23', slots: 2, camp: '1', suffix: '2L+3L', group: 'pick', hand: 8},
+  {key: 'red3', slots: 1, camp: '2', suffix: '3L', group: 'pick', hand: 10},
+  {key: 'redBan3', slots: 1, camp: '2', suffix: 'Ban 3', group: 'ban', hand: 11},
+  {key: 'blueBan3', slots: 1, camp: '1', suffix: 'Ban 3', group: 'ban', hand: 12},
+  {key: 'redBan4', slots: 1, camp: '2', suffix: 'Ban 4', group: 'ban', hand: 13},
+  {key: 'blueBan4', slots: 1, camp: '1', suffix: 'Ban 4', group: 'ban', hand: 14},
+  {key: 'redBan5', slots: 1, camp: '2', suffix: 'Ban 5', group: 'ban', hand: 15},
+  {key: 'blueBan5', slots: 1, camp: '1', suffix: 'Ban 5', group: 'ban', hand: 16},
+  {key: 'red4', slots: 1, camp: '2', suffix: '4L', group: 'pick', hand: 17},
+  {key: 'blue45', slots: 2, camp: '1', suffix: '4L+5L', group: 'pick', hand: 18},
+  {key: 'red5', slots: 1, camp: '2', suffix: '5L', group: 'pick', hand: 20},
 ];
 const STORE_KEY = 'bp-studio.v3';
-const MODES = [['scrim', '征召 18 手'], ['kpl', 'KPL 18/20 手'], ['rank', '排位/巅峰 20 手']];
+const MODES = [['scrim', '训练赛'], ['kpl', 'KPL'], ['rank', '排位与巅峰']];
 const MODE_CONF = {
   scrim: {source: 'scrim', rule: 'draft-18'},
   kpl: {source: 'kpl', rule: ''},
@@ -58,16 +79,19 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     recentDays: 30, from: '', to: '', compare: 'prev',
     lane: '', chartAll: false, chartView: 'bubble', comboOpen: false, comboSize: 2, comboSort: 'usage', oppComboSize: '2',
     comboPick: [], comboDetail: null, comboLoading: false, comboError: '',
-    target: [], targetData: null, targetLoading: false, targetError: '', targetOpen: false,
+    target: [], targetData: null, targetLoading: false, targetError: '', targetOpen: false, breakView: 'ours',
     heroSearch: '', comboSearch: '', targetSearch: '',
     types: null, typesLoading: false, typesError: '', typeBo: 0, typeSide: 'opponent', kplTypes: null, prior: 60, typeHand: 0, typeCore: 0, typeFocus: '', counterRowLane: '', counterColLane: '', counterSel: null, counterMode: 'pick',
     tree: null, treeLoading: false, treeError: '', treeDepth: 6, treeBranch: 3, treeSide: '', treeStale: true,
-    treeMode: 'flow', decisionPath: [], decisionPins: [], decisionNote: '',
+    treeMode: 'flow', decisionPath: [], decisionPins: [], decisionNote: '', flowHero: '',
+    typeTreeMode: 'flow', typeHandFocus: 0, flowSimple: true,
     ringHero: '', ringLane: '', ring: null, ringLoading: false, ringError: '', ringStale: true,
-    periodCut: '', periodDays: 30, period: null, periodLoading: false, periodError: '', periodStale: true,
-    seasons: [], periodSeason: '',
     seqTeam: 'opponent', seqAction: 'pick', seqHand: 1, seqHero: '', seqLane: '', seqOpen: false,
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
+    counterData: null, counterLoading: false, counterError: '', counterStale: true,
+    counterSide: '', counterBo: 0, counterOpen: '', counterSearch: '', counterTeamScope: 'all',
+    counterPrefix: Object.fromEntries(COUNTER_PREFIX_STAGES.map((stage) => [stage.key, []])),
+    counterPrefixStage: 'blueBan1', counterPrefixSearch: '',
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
     solo: true, active: 'heroes',
     pins: {heroes: [], combos: []}, heroSort: {key: 'priority', dir: -1}, views: [], viewName: '',
@@ -81,11 +105,20 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   const signed = (n, d = 1) => has(n) ? `${n > 0 ? '+' : ''}${fmt(n, d)}` : '—';
   const interval = (arr) => Array.isArray(arr) && has(arr[0]) && has(arr[1])
     ? `${pct(arr[0])}–${pct(arr[1])}` : '—';
+  // 窗口跨年时只留月日会出现「11-15 → 11-14」这种看着像倒挂的区间，
+  // 当前窗和环比窗还可能显示成同一串；跨年就补全年，同年内才省略年份。
+  const windowRange = (from, to) => {
+    const a = String(from || ''), b = String(to || '');
+    if (!a || !b) return '—';
+    return a.slice(0, 4) === b.slice(0, 4)
+      ? `${a.slice(5)} → ${b.slice(5)}`
+      : `${a} → ${b}`;
+  };
 
   // ── 视觉基元 ────────────────────────────────────────────────────────
   const deltaChip = (value, {tone = 'good', suffix = ' pp'} = {}) => {
-    if (!has(value)) return '<span class="bps-delta is-fall">—</span>';
-    if (Math.abs(value) < 0.05) return '<span class="bps-delta is-fall">持平</span>';
+    if (!has(value)) return '<span class="bps-delta is-flat">—</span>';
+    if (Math.abs(value) < 0.05) return '<span class="bps-delta is-flat">持平</span>';
     const up = value > 0;
     let cls;
     if (tone === 'good') cls = up ? 'is-good' : 'is-bad';
@@ -142,7 +175,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const meta = SECTION_LIST.find(([key]) => key === id) || [];
     return `<section class="bps-section" id="bps-${id}" data-bps-section="${id}">
       <header class="bps-section-head">
-        <span class="bps-section-no">${no}</span>
+        <span class="bps-section-no">${meta[1] || no}</span>
         <h2>${esc(title)}</h2>
         <span class="bps-section-meta">${esc(metaText || meta[4] || '')}</span>
         <p>${esc(question)}</p>
@@ -163,7 +196,12 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   async function api(path, signal) {
-    const response = await fetch(`${API_BASE}/api/v3/bp-studio${path}`, {
+    /* 赛事域 P1-4：BP 工作台全部请求自动带上当前赛事，scrim 语料按其归集窗口收滤。 */
+    let competition = '';
+    try { competition = localStorage.getItem('training-current-competition') || ''; } catch {}
+    const competitionSuffix = competition
+      ? `${path.includes('?') ? '&' : '?'}competition=${encodeURIComponent(competition)}` : '';
+    const response = await fetch(`${API_BASE}/api/v3/bp-studio${path}${competitionSuffix}`, {
       cache: 'no-store', signal, headers: {Accept: 'application/json'},
     });
     if (!response.ok) {
@@ -188,7 +226,10 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         collapsed: state.collapsed, pins: state.pins, views: state.views, compact: state.compact,
         solo: state.solo, active: state.active,
         treeDepth: state.treeDepth, treeBranch: state.treeBranch, treeSide: state.treeSide,
+        treeMode: state.treeMode, flowHero: state.flowHero, flowSimple: state.flowSimple,
+        typeTreeMode: state.typeTreeMode,
         comboPick: state.comboPick, target: state.target,
+        counterPrefix: state.counterPrefix, counterPrefixStage: state.counterPrefixStage,
       }));
     } catch {}
     syncUrl();
@@ -217,12 +258,22 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       else if (raw.source === 'scrim' || raw.source === 'kpl') applyMode(raw.source);
       for (const key of ['source', 'team', 'opponent', 'recentDays', 'from', 'to',
         'compare', 'lane', 'chartAll', 'chartView', 'comboSize', 'comboSort', 'prior',
-        'treeDepth', 'treeBranch', 'treeSide']) {
+        'treeDepth', 'treeBranch', 'treeSide', 'flowHero', 'treeMode', 'flowSimple', 'typeTreeMode']) {
         if (raw[key] !== undefined && raw[key] !== null) state[key] = raw[key];
       }
       if (Array.isArray(raw.leagues)) state.leagues = raw.leagues.slice(0, 40);
       if (Array.isArray(raw.comboPick)) state.comboPick = raw.comboPick.slice(0, 3);
       if (Array.isArray(raw.target)) state.target = raw.target.slice(0, 3);
+      if (raw.counterPrefix && typeof raw.counterPrefix === 'object') {
+        for (const key of Object.keys(state.counterPrefix)) {
+          if (Array.isArray(raw.counterPrefix[key])) {
+            state.counterPrefix[key] = raw.counterPrefix[key].slice(0, 2);
+          }
+        }
+      }
+      if (raw.counterPrefixStage && state.counterPrefix[raw.counterPrefixStage]) {
+        state.counterPrefixStage = raw.counterPrefixStage;
+      }
       if (raw.collapsed && typeof raw.collapsed === 'object') state.collapsed = raw.collapsed;
       if (typeof raw.compact === 'boolean') state.compact = raw.compact;
       if (typeof raw.solo === 'boolean') state.solo = raw.solo;
@@ -264,22 +315,14 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         const row = (data.primary?.heroes?.rows || []).find((item) => item.hero === state.ringHero);
         state.ringLane = row?.lane || '';
       }
-      if (!state.periodCut) {
-        const end = new Date(`${data.scope?.to || ''}T00:00:00`);
-        if (!Number.isNaN(end.getTime())) {
-          end.setDate(end.getDate() - 30);
-          state.periodCut = end.toISOString().slice(0, 10);
-        }
-      }
-      chooseSeason();
       paint();
       if (state.target.length) loadTarget();
       if (state.comboPick.length >= 2) loadCombo();
       state.typesStale = true;
       state.treeStale = true;
       state.ringStale = true;
-      state.periodStale = true;
       state.seqStale = true;
+      state.counterStale = true;
       observeLazy();
       if (state.compareOpponent) loadCompareOpponent();
     } catch (error) {
@@ -402,45 +445,35 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
   }
 
-  async function loadSeasons() {
-    try {
-      const response = await fetch(`${API_BASE}/catalog/seasons.json`, {cache: 'no-store'});
-      if (!response.ok) return;
-      const data = await response.json();
-      state.seasons = (data.seasons || []).filter((row) => row.start);
-      chooseSeason();
-    } catch {}
-  }
-
-  function chooseSeason() {
-    if (state.periodSeason || !state.seasons.length || !state.data) return;
-    const to = state.data.scope?.to || '';
-    const eligible = state.seasons.filter((row) => row.start <= to);
-    const picked = eligible[eligible.length - 1] || state.seasons[state.seasons.length - 1];
-    if (picked) {
-      state.periodSeason = picked.season;
-      state.periodCut = picked.start;
-    }
-  }
-
-  async function loadPeriod() {
-    if (!state.root || !state.periodCut) return;
-    state.periodLoading = true;
-    state.periodError = '';
+  /* 应对分析：楼层 × 战队 × 先后手 × BO 全部交给后端算，前端只排版。 */
+  async function loadCounterChain() {
+    if (!state.root) return;
+    state.counterLoading = true;
+    state.counterError = '';
     paint();
     try {
       const search = new URLSearchParams({
-        cut: state.periodCut, days: String(state.periodDays), source: state.source,
+        source: state.source, recentDays: state.recentDays,
+        side: state.counterSide, bo: String(state.counterBo),
       });
-      if (state.periodSeason) search.set('season', state.periodSeason);
       if (state.leagues.length) search.set('leagues', state.leagues.join(','));
-      state.period = await api(`/period-compare?${search.toString()}`);
-      state.periodStale = false;
+      /* 选了「我方蓝/红方」就必须锁定我方 + 指定对手，否则 side 只是在筛记录方。 */
+      if (state.counterTeamScope === 'matchup' || state.counterSide) {
+        if (state.source === 'scrim') search.set('team', '本队');
+        else if (state.team) search.set('team', state.team);
+        if (state.opponent && state.opponent !== '__all__') search.set('opponent', state.opponent);
+      }
+      for (const [stage, heroes] of Object.entries(state.counterPrefix)) {
+        if (heroes.length) search.set(`prefix_${stage}`, heroes.join(','));
+      }
+      if (state.from && state.to) { search.set('from', state.from); search.set('to', state.to); }
+      state.counterData = await api(`/counter-chain?${search.toString()}`);
+      state.counterStale = false;
     } catch (error) {
-      state.periodError = error.message || '前后对照读取失败';
-      state.periodStale = false;
+      state.counterError = error.message || '应对分析读取失败';
+      state.counterStale = false;
     } finally {
-      state.periodLoading = false;
+      state.counterLoading = false;
       paint();
     }
   }
@@ -468,6 +501,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (state.leagues.length) search.set('leagues', state.leagues.join(','));
       if (state.from && state.to) { search.set('from', state.from); search.set('to', state.to); }
       if (state.treeSide) search.set('side', state.treeSide);
+      if (state.flowHero) search.set('hero', state.flowHero);
       state.tree = await api(`/tree?${search.toString()}`);
       state.treeStale = false;
     } catch (error) {
@@ -525,10 +559,13 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const games = state.data?.scope?.games || 0;
     if (games >= 20) return '';
     const next = state.recentDays < 90 ? 90 : 365;
+    // 已经在最长窗口（或自定义窗口）时再给「放到近 365 天」就是死按钮：
+    // 近 365 天被数据源本身截断，点下去窗口和样本都不会变。
+    const canWiden = !state.from && !state.to && state.recentDays < next;
     return `<div class="bps-sample-warn">
       <b>当前窗口只有 ${num(games)} 个队-局</b>
-      <span>胜率、克制这类结论很容易被 1–2 局带偏。</span>
-      <button type="button" class="bps-softbtn" data-bps-widen="${next}">放到近 ${next} 天</button>
+      <span>胜率、克制这类结论很容易被 1–2 局带偏。${canWiden ? '' : '当前数据源本身样本有限，换数据源或补采更多对局后再看。'}</span>
+      ${canWiden ? `<button type="button" class="bps-softbtn" data-bps-widen="${next}">放到近 ${next} 天</button>` : ''}
     </div>`;
   }
 
@@ -608,33 +645,23 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function heroBand() {
     const data = state.data;
     const scope = data.scope;
-    const heroes = data.primary.heroes;
-    const top = heroes.top?.[0];
-    const topBan = [...(heroes.rows || [])].sort((a, b) => (b.banRate || 0) - (a.banRate || 0))[0];
     const isKpl = state.source === 'kpl';
-    const topHero = top?.hero || '';
-    const banHero = topBan?.hero || '';
-    const title = !isKpl
-      ? `本队 ${data.primary.games ? num(data.primary.games) : 0} 个队-局，<em>对照</em> KPL 校准`
-      : (topHero && banHero && topHero !== banHero
-        ? `<em>${esc(topHero)}</em> 优先级最高，${esc(banHero)} 最吃 Ban`
-        : topHero
-          ? `<em>${esc(topHero)}</em> 一个人占了两头：优先级最高，也最吃 Ban`
-          : 'BP 工作台');
-    const years = (data.options.years || []).filter((row) => row.year);
-    const span = years.length ? `${years[0].year}–${years[years.length - 1].year}` : '—';
-    const seasonText = state.leagues.length ? `${state.leagues.length} 个赛季` : span;
     const games = data.primary.games;
     const teamGames = data.primary.boardGames;
-    const modeLabel = state.mode === 'rank' ? '排位/巅峰' : state.mode === 'scrim' ? '征召' : 'KPL 赛事';
+    const years = (data.options.years || []).filter((row) => row.year);
+    const span = years.length ? `${years[0].year}–${years[years.length - 1].year}` : '—';
+    // 训练赛页没有赛季概念：options.years 是 KPL 目录的全库年份，
+    // 拿它当「赛季范围」会显示 2019–2026，和 11-02→11-10 的数据窗口对不上。
+    const fromYear = String(scope.from || '').slice(0, 4);
+    const toYear = String(scope.to || '').slice(0, 4);
+    const dataSpan = fromYear && toYear
+      ? (fromYear === toYear ? fromYear : `${fromYear}–${toYear}`) : '—';
+    const seasonText = isKpl
+      ? (state.leagues.length ? `${state.leagues.length} 个赛季` : span)
+      : dataSpan;
     return `<header class="bps-hero">
       <div class="bps-hero-copy">
-        <span class="bps-eyebrow"><i></i>BP STUDIO · ${modeLabel}</span>
-        <h1>${title}</h1>
-        <p>${isKpl
-          ? `按每方 Ban/Pick 数组统计第 N 手；<b>${num(games)}</b> 个队-局里看版本、组合、拆解与对手习惯。`
-          : `只统计本队训练赛 <b>${num(teamGames)}</b> 个队-局；KPL 同窗口作为先验对照，两边不混算。`}
-          ${state.from && state.to ? `当前自定义窗口 <b>${esc(state.from)} → ${esc(state.to)}</b>。` : ''}</p>
+        <h1>BP 工作台</h1>
         ${state.mode === 'scrim' && !(data.quality?.ordered)
           ? `<p class="bps-note">当前营地数据是排位/巅峰（rank-20）；征召 18 手还没有完整对局。
               <button type="button" class="bps-softbtn" data-bps-demo>载入模拟数据</button></p>` : ''}
@@ -642,9 +669,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           ? '<p class="bps-note">模拟数据 · 8 局征召 18 手，仅用于界面验证，不计入真实统计。</p>' : ''}
       </div>
       <div class="bps-hero-facts">
-        <div><span>覆盖队-局</span><b>${num(games)}</b><small>${isKpl ? 'KPL 双方视角' : '本队视角'}</small></div>
-        <div><span>赛季范围</span><b>${esc(seasonText)}</b><small>${esc(String(scope.from || '').slice(5))} → ${esc(String(scope.to || '').slice(5))}</small></div>
-        <div><span>对比窗口</span><b>${state.compare === 'prev' ? '环比' : state.compare === 'yoy' ? '同比' : '关闭'}</b><small>${scope.prev ? `${esc(String(scope.prev.from).slice(5))} → ${esc(String(scope.prev.to).slice(5))}` : '无上一窗口'}</small></div>
+        <div><span>覆盖队-局</span><b>${num(games)}</b><small>${isKpl ? 'KPL 双方视角' : `双方合计 · 本队 ${num(teamGames)}`}</small></div>
+        <div><span>${isKpl ? '赛季范围' : '数据范围'}</span><b>${esc(seasonText)}</b><small class="bps-range">${esc(windowRange(scope.from, scope.to))}</small></div>
+        <div><span>对比窗口</span><b>${state.compare === 'prev' ? '环比' : state.compare === 'yoy' ? '同比' : '关闭'}</b><small class="bps-range">${scope.prev ? esc(windowRange(scope.prev.from, scope.prev.to)) : '无上一窗口'}</small></div>
         <div><span>对手样本</span><b>${state.opponent ? num(data.opponentBlock?.games || 0) : '—'}</b><small>${state.opponent ? esc(state.opponent === '__all__' ? '全部对手' : state.opponent) : '未选择对手'}</small></div>
       </div>
     </header>`;
@@ -654,7 +681,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function seasonPanel() {
     const years = state.data?.options?.years || [];
     const selected = new Set(state.leagues);
-    return `<div class="bps-pop" data-bps-pop-panel="season" ${state.pop === 'season' ? '' : 'hidden'}>
+    return `<div class="bps-pop is-right" data-bps-pop-panel="season" ${state.pop === 'season' ? '' : 'hidden'}>
       <div class="bps-pop-head"><b>选择赛季</b>
         <span class="bps-sub">${selected.size ? `已选 ${selected.size} 个` : '未选 = 全库'}</span>
       </div>
@@ -774,6 +801,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const isKpl = state.source === 'kpl';
     const leagues = state.leagues.length;
     return `<div class="bps-console">
+      ${state.loading ? '<span class="bps-progress" aria-hidden="true"></span>' : ''}
       <div class="bps-console-group">
         <span class="bps-console-label">模式</span>
         ${seg(MODES, state.mode, 'data-bps-mode')}
@@ -828,16 +856,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         </button>
         ${viewsPanel()}
       </div>
-      <span class="bps-console-spacer"></span>
-      ${state.loading
-        ? '<span class="bps-updating"><i></i>更新中</span>'
-        : qualityChip()}
-      <button type="button" class="bps-softbtn is-icon" data-bps-compact aria-pressed="${state.compact}"
-        title="${state.compact ? '切回标准视图' : '切换简洁视图（隐藏图表）'}">${state.compact ? '标准' : '简洁'}</button>
-      <button type="button" class="bps-softbtn is-icon" data-bps-reset aria-label="重置筛选" title="清空赛季、战队、时间、目标等全部筛选">${icon('close')}</button>
-      <button type="button" class="bps-softbtn is-icon" data-bps-refresh aria-label="重新读取" title="重新读取">${icon('refresh')}</button>
-    </div>
-    ${state.loading ? '<span class="bps-progress" aria-hidden="true"></span>' : ''}`;
+      <div class="bps-console-tools">
+        ${state.loading
+          ? '<span class="bps-updating"><i></i>更新中</span>'
+          : qualityChip()}
+        <button type="button" class="bps-softbtn is-icon" data-bps-compact aria-pressed="${state.compact}"
+          title="${state.compact ? '切回标准视图' : '切换简洁视图（隐藏图表）'}">${state.compact ? '标准' : '简洁'}</button>
+        <button type="button" class="bps-softbtn is-icon" data-bps-reset aria-label="重置筛选" title="清空赛季、战队、时间、目标等全部筛选">${icon('close')}</button>
+        <button type="button" class="bps-softbtn is-icon" data-bps-refresh aria-label="重新读取" title="重新读取">${icon('refresh')}</button>
+      </div>
+    </div>`;
   }
 
   function jumpBar() {
@@ -867,12 +895,18 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       scroller.dataset.dragBound = '1';
       let active = false;
       let startX = 0;
+      let startY = 0;
       let startLeft = 0;
+      let startTop = 0;
       scroller.addEventListener('pointerdown', (event) => {
         if (event.button !== 0) return;
+        // 点节点要触发 click（占比 / 决策分支），不能被画布拖拽拦下。
+        if (event.target.closest?.('[data-bps-type-level], [data-bps-decision-pick], [data-bps-flow-hero]')) return;
         active = true;
         startX = event.clientX;
+        startY = event.clientY;
         startLeft = scroller.scrollLeft;
+        startTop = scroller.scrollTop;
         scroller.classList.add('is-dragging');
         scroller.setPointerCapture?.(event.pointerId);
         event.preventDefault();
@@ -880,6 +914,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       scroller.addEventListener('pointermove', (event) => {
         if (!active) return;
         scroller.scrollLeft = startLeft - (event.clientX - startX);
+        scroller.scrollTop = startTop - (event.clientY - startY);
       });
       const end = () => {
         active = false;
@@ -911,8 +946,41 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <span>Ban ${deltaChip(row.delta?.ban, {tone: 'neutral'})}</span>
         <span>胜率 ${deltaChip(row.delta?.win)}</span>
       </span>
-      <span class="bps-focus-spark">${viz.spark(row.spark, {key: 'pickRate', w: 220, h: 26})}</span>
+      <span class="bps-focus-spark">${viz.spark(row.spark, {key: 'pickRate', w: 260, h: 26})}</span>
     </button>`;
+  }
+
+  /* 搭配从关系环里单独拎出一行：双人组合卡片按胜率排，样本量随卡标注。 */
+  function ringPartnersHtml() {
+    const partners = [...(state.ring?.partners || [])]
+      .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1));
+    if (!partners.length) return '';
+    return `<div class="bps-ring-partners">
+      <div class="bps-subblock-head"><b>最佳搭档 · 双人组合</b></div>
+      <div class="bps-partner-cards">${partners.map((row) => `<div class="bps-partner-card">
+        ${heroImg(row.hero)}
+        <b>${esc(heroShort(row.hero))}</b>
+        <span>胜率 ${rate(row.winRate)}</span>
+        <small>${num(row.n)} 局</small>
+      </div>`).join('')}</div>
+    </div>`;
+  }
+
+  /* 克制链按英雄/全局口径展示：关系环本身就来自 KPL 全局对位，不绑定某支战队。
+     对位英雄用头像而不是名字，和下方最佳搭档卡、关系环中心的呈现保持一致。 */
+  function ringChainHtml() {
+    const ring = state.ring;
+    if (!ring?.available) return '';
+    const faces = (list) => (list || []).slice(0, 3)
+      .map((row) => `<span class="bps-chain-face" title="${esc(row.hero)}">${heroImg(row.hero)}</span>`).join('') || '—';
+    return `<div class="bps-ring-chain">
+      <div class="bps-subblock-head"><b>克制链 · 全局英雄对位</b></div>
+      <div class="bps-chain-row">
+        <span class="is-against"><em>被克制</em>${faces(ring.counteredBy)}</span>
+        <b>${esc(heroShort(ring.hero))}</b>
+        <span class="is-for"><em>克制</em>${faces(ring.counters)}</span>
+      </div>
+    </div>`;
   }
 
   function ringPanel() {
@@ -940,7 +1008,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         ${state.ringError ? `<div class="bps-inline-error">${esc(state.ringError)}</div>` : ''}
         ${state.ring?.available ? viz.heroRing(state.ring, {width: 760, height: 380})
           : (state.ring ? `<div class="bps-empty"><b>没有这个英雄的关系数据</b><p>${esc(state.ring.reason || '')}</p></div>` : '')}
-        ${state.ring?.note ? `<p class="bps-note">${esc(state.ring.note)}</p>` : ''}
+        ${ringChainHtml()}
+        ${ringPartnersHtml()}
       </div>
     </div>`;
   }
@@ -1008,11 +1077,12 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
               <span>${state.chartView === 'bubble' ? '滚轮缩放 / 拖拽移动 · 气泡 = Pick 次数 · 虚线 = 中位 Ban 与 50% 胜率' : '色块越深 Ban 率越高 · 每个分路按优先级取前 10'}</span></div>
             <div class="bps-chart-tools">
               ${seg([['top', '前 24 高优先'], ['all', '全部 ' + num(rows.length)]], state.chartAll ? 'all' : 'top', 'data-bps-chart-limit', {small: true})}
+              <span class="bps-tool-divider" aria-hidden="true"></span>
               ${seg([['bubble', '气泡图'], ['matrix', '分路矩阵']], state.chartView, 'data-bps-chart-view', {small: true})}
               ${state.chartView === 'bubble' ? '<button type="button" class="bps-link" data-bps-chart-reset>重置视图</button>' : ''}
             </div>
             <div class="bps-chart">${state.chartView === 'bubble'
-              ? viz.heroScatter(chartRows, {onlyLane: state.lane, width: 1080, height: 430, minDecided: 8})
+              ? viz.heroScatter(chartRows, {onlyLane: state.lane, width: 860, height: 350, minDecided: 8})
               : heroMatrix(matrixRows)}</div>
             ${state.chartView === 'bubble' ? `<div class="bps-chart-legend">
               ${['对抗路', '打野', '中路', '发育路', '游走'].map((lane) => `<i><span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${viz.LANE_COLOR[lane]}"></span>${lane}</i>`).join('')}
@@ -1026,16 +1096,12 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         </div>
         <aside class="bps-movers">
           <div class="bps-movers-block">
-            <b>升温 · Ban 率上升</b>
+            <b>${movers.opponent ? `${esc(movers.opponent)} Ban 率上升` : '对方 Ban 率上升'}</b>
             ${(movers.up || []).slice(0, 5).map(moverRow).join('') || '<p class="bps-note">样本不足</p>'}
           </div>
           <div class="bps-movers-block">
-            <b>降温 · Ban 率下降</b>
+            <b>${movers.opponent ? `${esc(movers.opponent)} Ban 率下降` : '对方 Ban 率下降'}</b>
             ${(movers.down || []).slice(0, 5).map(moverRow).join('') || '<p class="bps-note">样本不足</p>'}
-          </div>
-          <div class="bps-movers-block">
-            <b>怎么读</b>
-            <p class="bps-note">Ban 率 = 被 Ban 的队-局 ÷ 全部队-局；环比对照上一段同样长度的窗口。点击上方焦点卡或气泡里的英雄，会把目标送到 03 破解区。</p>
           </div>
         </aside>
       </div></section>`;
@@ -1109,14 +1175,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             data-bps-hero-name="${esc(row.name)}" aria-pressed="${selected.has(row.name)}">
             ${heroImg(row.name)}<span>${esc(heroShort(row.name))}</span></button>`).join('')}`;
         }).join('')}
+        <p class="bps-note bps-picker-empty" hidden>没有匹配的英雄。换个关键词，或清空搜索框看全部。</p>
       </div>
     </div>`;
   }
 
-  // ── 02 组合强度 ─────────────────────────────────────────────────────
+  // ── 02 组合（组合强度 + 阵容差异）────────────────────────────────────
   function comboCard() {
     if (state.comboPick.length < 2) {
-      return `<div class="bps-empty" style="margin-top:14px"><b>先选两个英雄</b>
+      return `<div class="bps-empty bps-combo-empty"><b>先选两个英雄</b>
         <p>组合按“同队同局”统计：两个英雄在同一支队、同一局里一起出场才算命中。</p></div>`;
     }
     if (state.comboLoading && !state.comboDetail) {
@@ -1129,7 +1196,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const detail = state.comboDetail;
     if (!detail) return '<div class="bps-loading">准备组合数据…</div>';
     if (!detail.available) {
-      return `<div class="bps-empty" style="margin-top:14px"><b>这组英雄没有同队同局记录</b>
+      return `<div class="bps-empty bps-combo-empty"><b>这组英雄没有同队同局记录</b>
         <p>${esc(detail.reason || '换一个组合或放宽时间窗。')}</p></div>`;
     }
     const recent = (detail.recent || []).map((row) => `<div class="bps-window-cell">
@@ -1163,15 +1230,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     </article>`;
   }
 
-  function trioCards(rows) {
+  function comboCards(rows) {
     const list = (rows || []).slice(0, 9);
-    if (!list.length) return '<div class="bv-empty">当前范围没有三人组合。</div>';
+    if (!list.length) return '<div class="bv-empty">当前范围没有组合卡片。</div>';
     return `<div class="bps-trio-grid">${list.map((row) => {
       const rel = row.relative;
       return `<button type="button" class="bps-trio" data-bps-combo-row="${esc(row.heroes.join(','))}">
         <span class="bps-trio-faces">${row.heroes.map((hero) => heroImg(hero)).join('<i>+</i>')}</span>
-        <span class="bps-trio-meta"><b>${num(row.games)} 局</b><em>${rate(row.winRate)}</em></span>
-        <span class="bps-trio-rel ${has(rel) ? (rel >= 0 ? 'is-good' : 'is-bad') : ''}">${has(rel) ? `${signed(rel)} pp` : '基准 —'}</span>
+        <span class="bps-trio-meta"><b>${num(row.games)} 局</b><em>${rate(row.winRate)} 胜率</em></span>
+        <span class="bps-trio-rel ${has(rel) ? (rel >= 0 ? 'is-good' : 'is-bad') : ''}">${has(rel) ? `${signed(rel)} pp` : '—'}</span>
       </button>`;
     }).join('')}</div>`;
   }
@@ -1187,14 +1254,14 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       ${pinStar(`combo:${item.heroes.join(',')}`)}
       <span class="bps-cr-faces">${item.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(heroShort(item.label))}</b></span>
       <span class="bps-cr-num">${num(item.games)} 局<small>${rate(item.share)} 使用率</small></span>
-      <span class="bps-cr-ci">${viz.intervalDot(item.winRate, item.interval)}
-        <small>${rate(item.winRate)} · ${interval(item.interval)}</small></span>
+      <span class="bps-cr-ci"><b class="bps-cr-wr">${rate(item.winRate)}</b>
+        <small>胜率</small></span>
       <span class="bps-cr-num is-hide-sm">${deltaChip(item.deltaWin)}<small>环比</small></span>
       <span class="bps-cr-meta is-hide-sm">
         <span class="bps-badge ${item.relative == null ? 'is-low' : item.relative >= 0 ? 'is-good' : 'is-bad'}">${has(item.relative) ? `基准 ${signed(item.relative)}` : '基准 —'}</span>
       </span>
     </button>`;
-    return `${section('combos', '02', '组合强度', '自选组合到底多强，联盟哪些组合在赢？')}
+    return `${section('combos', '02', '组合', '自选组合到底多强，联盟哪些组合在赢？')}
       <div class="bps-combo-layout">
         <div>
           ${heroPicker(state.comboPick, {action: 'combo', max: 3, placeholder: '选 2–3 个英雄查组合'})}
@@ -1202,19 +1269,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           ${comboCard()}
         </div>
         <div>
-          ${state.comboSize === 2 ? `<div class="bps-panel">
-            <div class="bps-chart-head"><b>组合矩阵 · 英雄 × 英雄</b>
-              <span>颜色 = 相对基准（绿高红低）· 深浅 = 命中局数 · 数字 = 同队同局</span></div>
-            <div class="bps-chart">${viz.comboMatrix(sorted, {width: 780, cell: 40})}</div>
-          </div>` : `<div class="bps-panel">
-            <div class="bps-chart-head"><b>三人组合 · 信号卡</b>
-              <span>三张头像 = 同队同局三人 · 底色 = 相对基准</span></div>
-            <div class="bps-chart" style="padding:6px 14px 14px">${trioCards(sorted)}</div>
-          </div>`}
+          <div class="bps-panel">
+            <div class="bps-chart-head"><b>${state.comboSize === 2 ? '双人组合 · 组合卡' : '三人体系 · 组合卡'}</b>
+              <span>头像 = 同队同局 · 数字 = 场次与胜率 · 绿/红 = 比基准高/低</span></div>
+            <div class="bps-chart" style="padding:6px 14px 14px">${comboCards(sorted)}</div>
+          </div>
           <div class="bps-board" style="margin-top:14px">
             <div class="bps-board-head">
-              ${seg([['2', '双人组合'], ['3', '三人组合']], state.comboSize, 'data-bps-combo-size', {small: true})}
-              ${seg([['usage', '按使用'], ['signal', '按信号']], state.comboSort, 'data-bps-combo-sort', {small: true})}
+              ${seg([['2', '双人组合'], ['3', '三人体系']], state.comboSize, 'data-bps-combo-size', {small: true})}
+              ${seg([['usage', '按使用'], ['signal', '按胜率']], state.comboSort, 'data-bps-combo-sort', {small: true})}
             </div>
             <div class="bps-board-head" style="border-top:0;padding-top:0">
               <span class="bps-sub">${num(sorted.length)} 组 · 同队同局 ≥2 局才进榜</span>
@@ -1226,7 +1289,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             </div>` : ''}
           </div>
         </div>
-      </div></section>`;
+      </div>
+      ${lineupDiffPanel()}</section>`;
   }
 
   // ── 03 战队如何破解 ─────────────────────────────────────────────────
@@ -1235,9 +1299,39 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return `<div class="bps-empty"><b>先选一个目标</b>
       <p>目标可以是一个英雄，也可以是 2–3 个英雄的组合。选完会同时给出：KPL 历史上怎么应对、本队训练赛怎么应对、差在哪。</p>
       <div class="bps-faces-row" style="justify-content:center;margin-top:6px">
-        ${pairs.map((row) => `<button type="button" class="bps-face" data-bps-quick-target="${esc(row.heroes.join(','))}">
-          ${row.heroes.map((hero) => heroImg(hero)).join('')}<em>${num(row.games)} 局</em></button>`).join('')}
+        ${pairs.map((row) => `<button type="button" class="bps-face" title="${esc(row.heroes.join('、'))}"
+          data-bps-quick-target="${esc(row.heroes.join(','))}">
+          ${row.heroes.map((hero) => heroImg(hero)).join('')}
+          <small>${esc(row.heroes.map(heroShort).join(' + '))}</small><em>${num(row.games)} 局</em></button>`).join('')}
       </div></div>`;
+  }
+
+  /* 单英雄 Ban 手序：每个目标单独一行，第几手被 Ban 一眼看清，不用会和文字重叠的圆环。 */
+  function banHandRowsHtml(block) {
+    const byHero = block.banned?.byHero || [];
+    if (!byHero.length) return '<p class="bps-note">没有可拆的 Ban 手序。试试扩大时间窗，或先切到「对手 / 我们」其中一方。</p>';
+    return byHero.map((h) => {
+      const max = Math.max(...h.hands.map((x) => x.count), 0);
+      const peakIdx = max > 0 ? h.hands.findIndex((x) => x.count === max) : -1;
+      const cells = h.hands.map((x, i) => `<span class="bps-bhcell ${max > 0 && x.count === max ? 'is-peak' : ''}" title="第${i + 1}手 ${num(x.count)} 次">${num(x.count)}</span>`).join('');
+      return `<div class="bps-banhero">
+        ${heroImg(h.hero)}
+        <div class="bps-banhero-main"><b>${esc(heroShort(h.hero))}</b>
+          <small>${num(h.total)} 次被 Ban${peakIdx >= 0 ? ` · 常在第 <b>${peakIdx + 1}</b> 手` : ''}</small></div>
+        <div class="bps-banhands">${cells}</div>
+      </div>`;
+    }).join('');
+  }
+  /* 双人组合应对：对面拿到目标时，我们常一起拿的两个人 + 次数 + 胜率。 */
+  function comboAnswersHtml(block) {
+    const combos = block.answerCombos || [];
+    if (!combos.length) return '<p class="bps-note">还没有稳定的双人组合应对（同框至少 3 次）。</p>';
+    return combos.slice(0, 4).map((row) => `<div class="bps-comboans">
+      <span class="bps-ca-faces">${(row.heroes || []).map((hero) => heroImg(hero)).join('')}</span>
+      <span class="bps-ca-name">${esc(row.label)}</span>
+      <span class="bps-ca-n">${num(row.count)} 次</span>
+      <span class="bps-ca-wr">${rate(row.winRate)}</span>
+    </div>`).join('');
   }
 
   function answerPanel(block, label, tone) {
@@ -1248,8 +1342,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     const answers = block.answers || [];
     const gap = !answers.length
-      ? `<div class="bps-empty" style="margin:8px 0"><b>当前窗口没有被完整放出的局</b>
-          <p>Ban 数据仍然有效：${num(block.banned?.games)} 次被 Ban（${rate(block.banned?.share)}）。换更长的窗口能看到历史应对。</p>
+      ? `<div class="bps-empty-compact"><b>当前窗口没有被完整放出的局</b>
+          <span>Ban 数据仍然有效：${num(block.banned?.games)} 次被 Ban（${rate(block.banned?.share)}）。</span>
           <button type="button" class="bps-softbtn" data-bps-widen="365">放到近 365 天</button></div>`
       : '';
     return `<div class="bps-panel">
@@ -1265,14 +1359,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             <small>${num(row.count)} 次 · 占 ${rate(row.share)}</small></div>
           ${viz.intervalDot(row.winRate, row.interval, {width: 118, height: 20})}
           <span class="bps-ar-wr">${rate(row.winRate)}</span>
-        </div>`).join('') || '<p class="bps-note">没有可用的应对记录。</p>'}
+        </div>`).join('') || ''}
       </div>
-      <div class="bps-panel-body" style="border-top:1px solid var(--bps-line-soft);display:flex;gap:14px;align-items:center;flex-wrap:wrap">
-        ${viz.handRing((block.banned?.hands || []).map((row) => ({...row, share: row.share})), {size: 150})}
-        <div style="flex:1 1 180px;display:grid;gap:6px">
-          <p class="bps-note">Ban 率 ${rate(block.banned?.share)} · 首轮 ${num(block.banned?.firstRound)} 次 / 次轮 ${num(block.banned?.secondRound)} 次</p>
-          <p class="bps-note">被完整放出的 ${num(block.completed?.games)} 局，胜率 ${rate(block.completed?.winRate)}；被拆 ${num(block.broken?.games)} 局。</p>
-        </div>
+      <div class="bps-panel-body" style="border-top:1px solid var(--bps-line-soft)">
+        <div class="bps-subblock-head"><b>双人组合应对</b><span class="bps-sub">对面拿到目标时，我们一起拿的组合 · 胜率</span></div>
+        ${comboAnswersHtml(block)}
+      </div>
+      <div class="bps-panel-body" style="border-top:1px solid var(--bps-line-soft)">
+        <div class="bps-subblock-head"><b>目标各在第几手被 Ban</b><span class="bps-sub">每局各自的手序 · 格子＝第1–5手次数</span></div>
+        ${banHandRowsHtml(block)}
+        <p class="bps-note" style="margin-top:6px">Ban 率 ${rate(block.banned?.share)} · 首轮 ${num(block.banned?.firstRound)} 次 / 次轮 ${num(block.banned?.secondRound)} 次；被完整放出 ${num(block.completed?.games)} 局（胜率 ${rate(block.completed?.winRate)}）。</p>
       </div>
     </div>`;
   }
@@ -1290,9 +1386,169 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <span class="bps-console-label">研究对象</span>
       ${picked.length
         ? picked.map((hero) => `<span class="bps-picker-chip">${heroImg(hero)}<span>${esc(hero)}</span></span>`).join('')
-        : '<span class="bps-sub">还没有目标：选 1–3 个英雄，看 KPL 与本队各自怎么应对</span>'}
-      <button type="button" class="bps-softbtn" data-bps-target-toggle>${picked.length ? '改目标' : '选目标英雄'}</button>
+        : '<span class="bps-sub">研究对象 · 待选（1–3 个英雄）</span>'}
+      <button type="button" class="${picked.length ? 'bps-softbtn' : 'bps-link'}" data-bps-target-toggle>${picked.length ? '改目标' : '展开全部英雄'}</button>
     </div>`;
+  }
+
+  /* 按 BP 顺序把每一手（楼层）与其下一手应对并排，右侧可切视角。数据取已核验手序主线。 */
+  function bpLadderHtml() {
+    const view = state.breakView || 'ours';
+    const tree = state.tree;
+    const viewBox = `<label class="bps-ladder-view"><span>视角</span>
+      <select data-bps-break-view aria-label="切换逐层推演视角">
+        ${[['ours', '我方视角'], ['theirs', '对方视角'], ['target', '对手战队针对性']]
+          .map(([value, label]) => `<option value="${value}" ${view === value ? 'selected' : ''}>${label}</option>`).join('')}
+      </select></label>`;
+    let body;
+    if (!tree) {
+      body = '<div class="bps-loading"><span class="bps-spinner"></span>正在读取已核验的 BP 手序…</div>';
+    } else if (!tree.available || !(tree.main || []).length) {
+      body = `<div class="bps-empty"><b>没有可推演的 BP 手序</b><p>${esc(tree.reason || '换个窗口或对手再试。')}</p></div>`;
+    } else {
+      const byId = new Map((tree.nodes || []).map((node) => [node.id, node]));
+      const main = tree.main.map((id) => byId.get(id)).filter(Boolean);
+      const ourSide = view === 'theirs' ? (tree.side === '1' ? '2' : '1') : (tree.side || '1');
+      const who = (side) => view === 'target'
+        ? esc(tree.opponent || state.opponent || '对手')
+        : (String(side) === String(ourSide) ? '我方' : '对方');
+      body = main.map((node, index) => {
+        const next = main[index + 1];
+        const camp = String(node.side) === '1' ? '蓝方' : String(node.side) === '2' ? '红方' : '手序';
+        return `<div class="bps-ladder-row">
+          <div class="bps-ladder-floor"><b>第 ${node.level} 手</b><span>${camp} · ${node.action === 'ban' ? 'Ban' : 'Pick'} · ${who(node.side)}</span></div>
+          <div class="bps-ladder-hero">${heroImg(node.hero)}<b>${esc(heroShort(node.hero))}</b>
+            <small>${num(node.count)} 局 · 胜率 ${rate(node.winRate)}</small></div>
+          <div class="bps-ladder-arrow" aria-hidden="true">→</div>
+          <div class="bps-ladder-answer">${next
+            ? `${heroImg(next.hero)}<b>${esc(heroShort(next.hero))}</b><small>第 ${next.level} 手 · ${who(next.side)}回应 · ${num(next.count)} 局</small>`
+            : '<span class="bps-sub">主线最后一手（Counter 位）</span>'}</div>
+        </div>`;
+      }).join('');
+    }
+    return `<div class="bps-panel bps-ladder-panel" data-bps-lazy="tree">
+      <div class="bps-panel-head"><h3>应对分析 · 按 BP 顺序逐层推演</h3>
+        <span class="bps-sub">楼层与应对并排 · 主线 = 样本最多的一条已核验路径</span>${viewBox}</div>
+      <div class="bps-panel-body">${body}</div>
+    </div>`;
+  }
+
+  /* 应对分析：和「逐层推演」互补——这里按楼层给出每种触发的回应分布，可下钻。 */
+  function counterSection() {
+    const sideItems = [['', '不限'], ['1', '我方蓝方'], ['2', '我方红方']];
+    const boItems = [['0', '全部 BO'], ['3', 'BO3'], ['5', 'BO5'], ['7', 'BO7']];
+    const sideName = (camp) => state.counterSide === '1'
+      ? (camp === '1' ? '我方蓝方' : '敌方红方')
+      : state.counterSide === '2'
+        ? (camp === '1' ? '敌方蓝方' : '我方红方')
+        : (camp === '1' ? '蓝方' : '红方');
+    const stageLabel = (stage) => `${sideName(stage.camp)} ${stage.suffix}`;
+    const activeStage = COUNTER_PREFIX_STAGES.find((stage) => stage.key === state.counterPrefixStage)
+      || COUNTER_PREFIX_STAGES[0];
+    const stageButton = (stage) => {
+      const picked = state.counterPrefix[stage.key] || [];
+      const faces = picked.length
+        ? `${picked.slice(0, 3).map((hero) => heroImg(hero)).join('')}${picked.length > 3 ? `<i>+${picked.length - 3}</i>` : ''}`
+        : '<span class="bps-slot-empty" aria-hidden="true"></span>';
+      return `<button type="button" class="bps-prefix-stage is-${stage.group} ${picked.length ? 'is-filled' : ''} ${stage.key === activeStage.key ? 'is-on' : ''}"
+        data-bps-prefix-stage="${stage.key}" aria-pressed="${stage.key === activeStage.key}"
+        title="第 ${stage.hand} 手 · ${esc(stageLabel(stage))}${picked.length ? '：' + esc(picked.join('、')) : ''}">
+        <span class="bps-slot-index">${String(stage.hand).padStart(2, '0')}</span>
+        <span class="bps-slot-faces">${faces}</span>
+        <span class="bps-slot-text"><b>${esc(stageLabel(stage))}</b>
+          <small>${picked.length ? esc(picked.map((hero) => heroShort(hero)).join(' · ')) : '未指定'}</small></span>
+      </button>`;
+    };
+    const prefixBox = `<fieldset class="bps-prefix-card">
+      <legend class="bps-sr-only">前置条件</legend>
+      <div class="bps-prefix-head">
+        <div><h4>前置条件</h4><p>按真实 BP 手序填已确定的英雄，Ban 与 Pick 混在一起</p></div>
+        <button type="button" class="bps-link" data-bps-prefix-clear>清空全部</button>
+      </div>
+      <div class="bps-prefix-body">
+        <div class="bps-prefix-slots">
+          <div class="bps-prefix-group">
+            <span class="bps-prefix-group-label">BP 顺序 · 第几手</span>
+            <div class="bps-prefix-slot-grid">${COUNTER_PREFIX_STAGES.map(stageButton).join('')}</div>
+          </div>
+        </div>
+        <div class="bps-prefix-picker">${heroPicker(state.counterPrefix[activeStage.key], {action: 'counterPrefix',
+          max: activeStage.slots, placeholder: `点英雄设定「${stageLabel(activeStage)}」`})}</div>
+      </div>
+    </fieldset>`;
+    const controls = `<div class="bps-counter-tools">
+      <span class="bps-tool-group"><span class="bps-console-label">战队</span>
+        ${seg([['all', '全部战队'], ['matchup', '本队 vs 对手']], state.counterTeamScope,
+          'data-bps-counter-team', {small: true})}</span>
+      <span class="bps-tool-group"><span class="bps-console-label">我方位置</span>
+        ${seg(sideItems, state.counterSide, 'data-bps-counter-side', {small: true})}</span>
+      <span class="bps-tool-group"><span class="bps-console-label">赛制</span>
+        ${seg(boItems, String(state.counterBo), 'data-bps-counter-bo', {small: true})}</span>
+      <span class="bps-tool-group">
+        <input type="search" class="bps-counter-search" data-bps-counter-search
+          value="${esc(state.counterSearch)}" placeholder="搜索英雄" aria-label="搜索英雄">
+        <button type="button" class="bps-softbtn" data-bps-counter-retry>刷新</button>
+      </span>
+    </div>${prefixBox}`;
+    let body;
+    if (state.counterLoading && !state.counterData) {
+      body = '<div class="bps-loading"><span class="bps-spinner"></span>正在按楼层统计应对…</div>';
+    } else if (state.counterError) {
+      body = `<div class="bps-inline-error">${esc(state.counterError)}
+        <button type="button" class="bps-softbtn" data-bps-counter-retry>重试</button></div>`;
+    } else if (!state.counterData) {
+      body = '<div class="bps-loading"><span class="bps-spinner"></span>正在按楼层统计应对…</div>';
+    } else if (state.counterData.available === false) {
+      body = `<div class="bps-empty"><b>没有可分析的应对样本</b><p>${esc(state.counterData.reason || '换个筛选条件再试。')}</p></div>`;
+    } else {
+      const data = state.counterData;
+      const scope = data.scope || {};
+      const faces = (heroes) => (heroes || []).map((hero) => heroImg(hero)).join('');
+      const card = (chain) => {
+        const rows = chain.rows.filter((row) => !state.counterSearch
+          || row.label.includes(state.counterSearch));
+        return `<div class="bps-counter-card" data-bps-counter-chain="${esc(chain.key)}">
+          <div class="bps-counter-head"><b>${esc(chain.title)}</b>
+            <span class="bps-sub">${num(chain.rows.length)} 组触发 · ${state.counterOpen.startsWith(chain.key + '|') ? '点击收起回应' : '点击展开回应'}</span></div>
+          <table class="bps-counter-table">
+            <colgroup><col><col class="is-num"><col class="is-num"><col class="is-num"></colgroup>
+            <thead><tr><th>英雄 / 组合</th><th class="is-num">场次</th>
+              <th class="is-num">出场率</th><th class="is-num">胜率</th></tr></thead>
+            <tbody>${rows.map((row) => {
+              const key = `${chain.key}|${row.label}`;
+              const open = state.counterOpen === key;
+              return `<tr class="bps-counter-tr" data-bps-cd-row="${esc(key)}"
+                tabindex="0" role="button" aria-expanded="${open}">
+                <td><span class="bps-counter-face">${faces(row.heroes)}${esc(heroShort(row.label))}</span></td>
+                <td class="is-num">${num(row.games)}</td>
+                <td class="is-num">${rate(row.share)}</td>
+                <td class="is-num">${rate(row.winRate)}</td>
+              </tr>${open ? `<tr class="bps-counter-resp-row"><td colspan="4">
+                <div class="bps-counter-resp-head">对手回应 · ${num(row.responseTotal)} 种 · 至少 3 场对位</div>
+                ${(row.responses || []).map((resp) => `<div class="bps-counter-resp">
+                  <span class="bps-counter-face">${faces(resp.heroes)}${esc(heroShort(resp.label))}</span>
+                  <span class="is-num">${num(resp.games)} 场</span>
+                  <span class="is-num">${rate(resp.share)}</span>
+                  <span class="is-num">${rate(resp.winRate)}</span>
+                </div>`).join('') || '<p class="bps-note">这一层还没有足够的回应样本。</p>'}
+              </td></tr>` : ''}`;
+            }).join('') || '<tr><td colspan="4" class="bps-note">没有匹配的英雄。换个关键词，或清空搜索框看全部。</td></tr>'}</tbody>
+          </table>
+        </div>`;
+      };
+      body = `<div class="bps-counter-scope">
+        <span>已核验 <b>${num(scope.games)}</b> 局 · 逐层 <b>${num(scope.chains)}</b> 局${scope.prefixGames != null ? ` · 符合前置 <b>${num(scope.prefixGames)}</b> 局` : ''}</span>
+        <span>${(state.counterTeamScope === 'matchup' || state.counterSide)
+          ? `${esc(scope.team || state.team || '本队')} vs ${esc(scope.opponent || state.opponent || '对手')}`
+          : '全部战队'}</span>
+        <span>${scope.side === '1' ? '我方蓝方' : scope.side === '2' ? '我方红方' : '不限位置'} · ${scope.bo ? `BO${scope.bo}` : '全部 BO'}</span>
+      </div>
+      <div class="bps-counter-grid">${(data.chains || []).map(card).join('')}</div>`;
+    }
+    return `${section('counter', '07', '应对分析', '先定已选英雄，再看双方逐层怎么接？',
+      '已选英雄 × 楼层 × 战队 × 先后手 × BO')}
+      <div class="bps-panel-body" data-bps-counter>${controls}${body}</div>
+    </section>`;
   }
 
   function breakSection() {
@@ -1317,15 +1573,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             <small>胜率 ${rate(kpl.completed?.winRate)} · ${interval(kpl.completed?.interval)}</small></div>
           <div class="bps-break-stat"><span>被拆掉的局</span><b>${num(kpl.broken?.games)}</b>
             <small>占 ${rate(kpl.broken?.share)} · 对手 Ban 掉其中一半</small></div>
-          <div class="bps-break-stat"><span>两边各拿一个</span><b>${num(kpl.split?.games)}</b>
+          <div class="bps-break-stat ${(kpl.split?.games || 0) === 0 ? 'is-zero' : ''}"><span>两边各拿一个</span><b>${num(kpl.split?.games)}</b>
             <small>全部被 Ban ${num(kpl.blocked?.games)} 局 · ${rate(kpl.blocked?.share)}</small></div>
         </div>
         <div class="bps-break-grid">
           ${answerPanel(kpl, `KPL 应对 · ${block.label}`, 'kpl')}
           ${answerPanel(own, `本队应对 · ${block.label}`, 'own')}
         </div>
-        <div class="bps-hit" style="grid-template-columns:96px minmax(0,1fr)">
-          ${viz.donut(hit.value, {label: '命中率', size: 96, stroke: 10})}
+        <div class="bps-hit is-plain" style="grid-template-columns:minmax(0,1fr)">
+          <div class="bps-hit-figure"><b>${has(hit.value) ? rate(hit.value) : '—'}</b><span>命中率</span></div>
           <div class="bps-hit-copy">
             <b>本队应对里，${has(hit.value) ? rate(hit.value) : '—'} 落在 KPL 最常用的 8 个应对里</b>
             <p>${has(hit.value) ? `本队 ${num(hit.ownPicks)} 次应对；KPL 常用：${(hit.kplTop || []).map(esc).join('、') || '—'}。` : '本队还没有面对这个目标的训练赛样本，先积累再比较。'}
@@ -1333,27 +1589,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
               （${has(compare.ban?.delta) ? `${signed(compare.ban.delta)} pp` : '—'}）。
               先验权重 KPL ${num(state.prior)}% / 训练赛 ${num(100 - state.prior)}%。</p>
             <div class="bps-blend" data-bps-blend>${blendPanel()}</div>
-          </div>
-        </div>
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>同一目标，两边怎么选</h3>
-            <span class="bps-sub">哑铃两端 = KPL 份额 / 本队份额</span></div>
-          <div class="bps-panel-body">
-            ${viz.dumbbell(compare.rows || [], {aKey: 'kplShare', bKey: 'ownShare', labelKey: 'hero', width: 760})}
-          </div>
-          <div class="bps-panel-body is-flush" style="border-top:1px solid var(--bps-line-soft)">
-            <table class="bps-table">
-              <thead><tr><th>应对英雄</th><th class="is-num">KPL 次数</th><th class="is-num">KPL 胜率</th>
-                <th class="is-num">本队次数</th><th class="is-num">本队胜率</th><th class="is-num">份额差</th></tr></thead>
-              <tbody>${(compare.rows || []).map((row) => `<tr class="${row.ownCount ? '' : 'is-miss'}">
-                <td><span class="bps-face">${heroImg(row.hero)}<span>${esc(heroShort(row.hero))}</span>${row.inKplTop ? '<span class="bps-tag">KPL 前八</span>' : ''}</span></td>
-                <td class="is-num">${num(row.kplCount)}</td>
-                <td class="is-num">${rate(row.kplWinRate)}</td>
-                <td class="is-num is-strong">${num(row.ownCount)}</td>
-                <td class="is-num">${rate(row.ownWinRate)}</td>
-                <td class="is-num">${deltaChip(row.deltaShare, {tone: 'neutral'})}</td>
-              </tr>`).join('') || '<tr><td colspan="6" class="bps-note">还没有可比较的应对。</td></tr>'}</tbody>
-            </table>
+            ${(() => {
+              const ch = compare.comboHit || {};
+              if (!has(ch.value) && !ch.ownCombos) return '';
+              return `<p class="bps-note" style="margin-top:6px"><b>组合命中率 ${has(ch.value) ? rate(ch.value) : '—'}</b>：本队 ${num(ch.ownCombos)} 次双人组合应对里，落在 KPL 常用组合的比例。</p>`;
+            })()}
           </div>
         </div>
         ${(compare.missed || []).length ? `<div class="bps-panel"><div class="bps-panel-head"><h3>KPL 常用、本队还没用过</h3></div>
@@ -1487,11 +1727,39 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             ${(data.enemyAtHand || []).slice(0, 6).map((row) => `<div class="bps-seq-row">${heroImg(row.hero)}<b>${esc(heroShort(row.hero))}</b><em>${num(row.count)}</em></div>`).join('') || '<p class="bps-note">—</p>'}</div>
           <div><h4>对面下一手</h4>
             ${(data.enemyNext || []).slice(0, 6).map((row) => `<div class="bps-seq-row">${heroImg(row.hero)}<b>${esc(heroShort(row.hero))}</b><em>${num(row.count)}</em></div>`).join('') || '<p class="bps-note">—</p>'}
-            <p class="bps-note" style="margin-top:6px">类型：${(data.enemyNextTypes || []).slice(0, 4).map((row) => `${esc(row.type)} ${num(row.count)}`).join(' · ') || '—'}</p>
+            ${(data.enemyNextTypes || []).length ? `<div class="bps-seq-types">${(data.enemyNextTypes || []).slice(0, 4).map((row) => {
+              const groups = state.data?.types?.taxonomy?.groups || {};
+              const lane = Object.keys(groups).find((key) => groups[key].includes(row.type)) || '';
+              return `<span class="bps-seq-type" style="--type-color:${viz.LANE_COLOR[lane] || '#1f6fcf'}">${esc(row.type)} <b>${num(row.count)}</b></span>`;
+            }).join('')}<small>共 ${num(data.enemyNextTypes.reduce((sum, row) => sum + (row.count || 0), 0))} 局</small></div>` : ''}
           </div>
         </div>
       </div>` : (data && !data.available ? `<div class="bps-empty"><b>没有符合的对局</b><p>${esc(data.reason || '')}</p></div>` : '')}
     </div>`;
+  }
+
+  /* 对手情报的三块卡片化替换：不用热力图/散点，直接给头像 + 数字。 */
+  function banHandCards(hands) {
+    const list = (hands || []).filter((hand) => (hand.heroes || []).length);
+    if (!list.length) return '<div class="bps-empty">没有逐手 Ban 记录。</div>';
+    return `<div class="bps-banhand-list">${list.map((hand) => `<div class="bps-banhand">
+      <div class="bps-banhand-head"><b>第 ${num(hand.hand)} 手</b><span>${num(hand.games)} 局</span></div>
+      <div class="bps-banhand-chips">${(hand.heroes || []).slice(0, 5).map((row) => `<span class="bps-banhand-chip">
+        ${heroImg(row.hero)}<b>${esc(heroShort(row.hero))}</b><em>${num(row.count)} 次</em></span>`).join('')}</div>
+    </div>`).join('')}</div>`;
+  }
+
+  function statCards(rows, {countKey, countLabel, rateKey, empty, lowerIsBetter = false, rateLabel = '胜率'}) {
+    const list = (rows || []).filter((row) => row.hero && has(row[rateKey]))
+      .sort((a, b) => (b[countKey] || 0) - (a[countKey] || 0)).slice(0, 9);
+    if (!list.length) return `<div class="bps-empty">${esc(empty)}</div>`;
+    return `<div class="bps-stat-grid">${list.map((row) => `<div class="bps-stat-card">
+      <span class="bps-stat-face">${heroImg(row.hero)}<b>${esc(heroShort(row.hero))}</b></span>
+      <span class="bps-stat-num"><b>${num(row[countKey])}</b><small>${countLabel}</small></span>
+      <span class="bps-stat-num ${lowerIsBetter
+        ? ((row[rateKey] || 0) <= 45 ? 'is-good' : (row[rateKey] || 0) >= 55 ? 'is-bad' : '')
+        : ((row[rateKey] || 0) >= 55 ? 'is-good' : (row[rateKey] || 0) <= 45 ? 'is-bad' : '')}"><b>${rate(row[rateKey])}</b><small>${rateLabel}</small></span>
+    </div>`).join('')}</div>`;
   }
 
   function opponentSection() {
@@ -1537,20 +1805,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           <div class="bps-panel-body" style="padding:6px 8px">${(block.firstBans || []).map(intentRow).join('') || '<p class="bps-note">没有逐手记录。</p>'}</div>
         </div>
         <div class="bps-panel">
-          <div class="bps-panel-head"><h3>第 N 手 Ban 热力</h3><span class="bps-sub">颜色越深 = 越常在这个 Ban 位</span></div>
-          <div class="bps-panel-body">${viz.handHeatmap(block.banHands || [])}</div>
-        </div>
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>我们第一手之后，他先拿什么</h3><span class="bps-sub">同局共现</span></div>
-          <div class="bps-panel-body" style="padding:4px 10px">
-            ${(block.responses || []).slice(0, 6).map((row) => `<div class="bps-response-row">
-              <div class="bps-response-our">${heroImg(row.ourFirst)}<div><b>${esc(row.ourFirst)}</b><small>${num(row.games)} 局</small></div></div>
-              <div class="bps-response-next">
-                <div class="bps-response-line"><span>选</span>${(row.nextPicks || []).map((pick) => `<span class="bps-mini-face">${heroImg(pick.hero)}${esc(pick.hero)} · ${num(pick.count)}</span>`).join('') || '<span class="bps-sub">—</span>'}</div>
-                <div class="bps-response-line"><span>Ban</span>${(row.nextBans || []).map((pick) => `<span class="bps-mini-face">${heroImg(pick.hero)}${esc(pick.hero)} · ${num(pick.count)}</span>`).join('') || '<span class="bps-sub">—</span>'}</div>
-              </div>
-            </div>`).join('') || '<p class="bps-note">样本不足 3 局。</p>'}
-          </div>
+          <div class="bps-panel-head"><h3>第 N 手 Ban 统计</h3><span class="bps-sub">每一手最常禁的英雄与次数</span></div>
+          <div class="bps-panel-body">${banHandCards(block.banHands || [])}</div>
         </div>
         <div class="bps-panel">
           <div class="bps-panel-head"><h3>他爱用的组合</h3>
@@ -1566,8 +1822,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           </div>
         </div>
         <div class="bps-panel">
-          <div class="bps-panel-head"><h3>他的英雄池 · Pick × 胜率</h3><span class="bps-sub">气泡 = Pick 次数</span></div>
-          <div class="bps-panel-body">${viz.poolScatter(block.heroes, {width: 760, height: 360})}
+          <div class="bps-panel-head"><h3>他的英雄池 · Pick 与胜率</h3><span class="bps-sub">按 Pick 次数排序</span></div>
+          <div class="bps-panel-body">${statCards(block.heroes, {countKey: 'picks', countLabel: '次 Pick', rateKey: 'winRate', empty: '当前窗口没有英雄池样本。'})}
             ${(() => {
               const pool = (block.heroes || []).filter((row) => (row.picks || 0) >= 2 && has(row.winRate));
               const strong = [...pool].filter((row) => row.winRate >= 55).sort((a, b) => b.picks - a.picks).slice(0, 3);
@@ -1580,18 +1836,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           </div>
         </div>
         <div class="bps-panel">
-          <div class="bps-panel-head"><h3>打他，什么有效</h3><span class="bps-sub">点 = 对手拿到该英雄时的胜率</span></div>
+          <div class="bps-panel-head"><h3>打他，什么有效</h3><span class="bps-sub">他拿到该英雄时的胜率 · 越低越好</span></div>
           <div class="bps-panel-body">
-            ${viz.portraitQuadrant(block.counters || [], {width: 700, height: 320})}
+            ${statCards(block.counters, {countKey: 'games', countLabel: '局', rateKey: 'opponentWinRate', empty: '当前窗口没有对位样本。', lowerIsBetter: true, rateLabel: '他胜率'})}
           </div>
         </div>
-      </div>
-      <div class="bps-panel" style="margin-top:16px">
-        <div class="bps-panel-head"><h3>输一局之后怎么调</h3><span class="bps-sub">同一系列赛的下一局</span></div>
-        <div class="bps-panel-body"><div class="bps-serie">
-          <div><span>输后下一局胜率</span><b>${rate(block.series?.afterLoss?.winRate)}</b><small>${num(block.series?.afterLoss?.games)} 个样本 · Ban 变化 ${rate(block.series?.afterLoss?.changeRate)}</small></div>
-          <div><span>赢后下一局胜率</span><b>${rate(block.series?.afterWin?.winRate)}</b><small>${num(block.series?.afterWin?.games)} 个样本 · Ban 变化 ${rate(block.series?.afterWin?.changeRate)}</small></div>
-        </div></div>
       </div>
       ${(block.caveats || []).length ? `<p class="bps-note" style="margin-top:10px">${block.caveats.map(esc).join(' ')}</p>` : ''}</section>`;
   }
@@ -1702,18 +1951,32 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     </div>`;
   }
 
+  function treeTakeaway(byType) {
+    const nodes = state.tree?.nodes || [];
+    const first = nodes.filter((node) => node.level === 1 && node.action === 'ban');
+    if (!first.length) return '';
+    const total = first.reduce((sum, node) => sum + (node.count || 0), 0);
+    const top = [...first].sort((a, b) => (b.count || 0) - (a.count || 0))[0];
+    const label = byType ? (top.type || '待分类') : heroShort(top.hero);
+    const share = total ? Math.round((top.count || 0) / total * 100) : 0;
+    return `当前 ${num(state.tree.games || 0)} 局样本里，第一手 Ban 集中在${label}（${num(top.count || 0)} 局，占首 Ban ${share}%）。悬停节点看它接下来最常见的走向。`;
+  }
+
   function draftTreePanel() {
     return `<div class="bps-panel is-wide bps-tree-panel" data-bps-tree>
       <div class="bps-panel-head"><h3>BP 时序分支</h3>
-        <span class="bps-sub">同一手同一英雄合并；线宽 = 局数；只认已核验手序</span></div>
+        <span class="bps-sub">同一手同一英雄合并；线宽 = 局数；训练赛按征召规则展开手序</span></div>
       <div class="bps-panel-body">
+        <p class="bps-tree-takeaway">${treeTakeaway(false)}</p>
         <div class="bps-tree-tools">
           <span class="bps-console-label">视图</span>${seg([['flow', '历史路径'], ['decision', '决策树']],
             state.treeMode, 'data-bps-tree-mode', {small: true})}
-          ${state.treeMode === 'flow' ? `<span class="bps-console-label">深度</span>${seg([[6, '前 6 手'], [10, '前 10 手'], [state.rule === 'draft-18' ? 18 : 20, `全 ${state.rule === 'draft-18' ? 18 : 20} 手`]],
+          ${state.treeMode === 'flow' ? `<span class="bps-console-label">深度</span>${seg([[6, '前六手'], [10, '前10手'], [18, '全18手'], [20, '全20手']],
             String(state.treeDepth), 'data-bps-tree-depth', {small: true})}
           <span class="bps-console-label">分叉</span>${seg([[2, '2 支'], [3, '3 支']],
-            String(state.treeBranch), 'data-bps-tree-branch', {small: true})}` : ''}
+            String(state.treeBranch), 'data-bps-tree-branch', {small: true})}
+          <span class="bps-console-label">连线</span>${seg([['1', '精简'], ['0', '完整']],
+            state.flowSimple ? '1' : '0', 'data-bps-flow-simple', {small: true})}` : ''}
           <span class="bps-console-label">看</span>${seg([['opponent', '对手'], ['own', '我们']],
             state.typeSide, 'data-bps-tree-side', {small: true})}
           <span class="bps-console-label">阵营</span>${seg([['', '自动'], ['1', '蓝方'], ['2', '红方']],
@@ -1724,11 +1987,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           ${state.tree?.available
             ? `<span class="bps-sub">已核验 ${num(state.tree.games)} / ${num(state.tree.total)} 局
               ${state.tree.sideCounts ? `· 蓝 ${num(state.tree.sideCounts['1'] || 0)} / 红 ${num(state.tree.sideCounts['2'] || 0)}` : ''}</span>` : ''}
+          ${state.flowHero ? `<span class="bps-flow-start">起点：${esc(heroShort(state.flowHero))}
+            <button type="button" data-bps-flow-start-clear aria-label="清除起点">×</button></span>` : ''}
         </div>
         ${state.treeMode === 'flow' && state.tree?.available ? `<div class="bps-flow-nav">
           <button type="button" class="bps-softbtn" data-bps-flow-left>← 向左</button>
-          <span>可左右拖动看全 ${state.rule === 'draft-18' ? 18 : 20} 手</span>
           <button type="button" class="bps-softbtn" data-bps-flow-right>向右 →</button>
+          <button type="button" class="bps-softbtn" data-bps-flow-up>↑ 向上</button>
+          <button type="button" class="bps-softbtn" data-bps-flow-down>↓ 向下</button>
+          <span>按住图面可上下左右自由拖动，点头像可设为起点</span>
           <button type="button" class="bps-softbtn" data-bps-flow-pick>跳到 Pick 阶段</button>
         </div>` : ''}
         ${state.treeMode === 'decision' ? decisionTreeHtml() : `
@@ -1736,9 +2003,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         ${state.treeError ? `<div class="bps-inline-error">${esc(state.treeError)}</div>` : ''}
         ${state.tree?.available && state.tree.games < 8
           ? '<p class="bps-note">已核验手序不到 8 局，整张图只作方向参考，不当作稳定习惯。</p>' : ''}
-        ${state.tree?.available && state.treeDepth >= 20
-          ? `<p class="bps-note">${state.rule === 'draft-18' ? 18 : 20} 手较宽，图内可左右滚动看完整路径。</p>` : ''}
-        ${state.tree?.available ? `<div class="bps-tree-scroll">${viz.draftFlowMap(state.tree, {width: 1080, height: 480})}</div>
+        ${state.tree?.available && state.treeDepth >= 18
+          ? '<p class="bps-note">手数较多，按住图面拖动或点方向键看完整路径。</p>' : ''}
+        ${state.tree?.available ? `<div class="bps-tree-scroll">${viz.draftFlowMap(state.tree, {width: 1560, height: 680, maxEdges: state.flowSimple ? 36 : 0})}</div>
           <div class="bps-tree-key">
             <span><i class="is-own-pick"></i>我方 Pick</span>
             <span><i class="is-own-ban"></i>我方 Ban</span>
@@ -1752,10 +2019,71 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     </div>`;
   }
 
+  /* 类型版 BP 时序：和英雄版同款分析，只是把节点换成英雄类型标签（五路 12 类）。 */
+  function typeHandBreakdown(level) {
+    const nodes = (state.tree?.nodes || []).filter((n) => n.level === level && n.type && n.count);
+    if (!nodes.length) return '<p class="bps-note">这一手没有可统计的类型。</p>';
+    const merged = new Map();
+    for (const n of nodes) merged.set(n.type, (merged.get(n.type) || 0) + n.count);
+    const total = [...merged.values()].reduce((a, b) => a + b, 0) || 1;
+    const laneOf = (t) => {
+      const groups = state.types?.taxonomy?.groups || {};
+      return Object.keys(groups).find((lane) => groups[lane].includes(t)) || '';
+    };
+    return [...merged.entries()].sort((a, b) => b[1] - a[1]).map(([type, count]) => {
+      const share = (count / total) * 100;
+      const color = viz.LANE_COLOR[laneOf(type)] || '#246b63';
+      return `<div class="bps-typebreak-row">
+        <span class="bps-typebreak-name">${esc(type)}</span>
+        <span class="bps-typebreak-track"><i style="width:${share.toFixed(1)}%;background:${color}"></i></span>
+        <b>${share.toFixed(1)}%</b><small>${num(count)} 局</small>
+      </div>`;
+    }).join('');
+  }
+
+  function typeTreePanel() {
+    const available = state.tree?.available;
+    const focus = state.typeHandFocus;
+    return `<div class="bps-panel is-wide bps-tree-panel bps-typetree" data-bps-typetree>
+      <div class="bps-panel-head"><h3>BP 时序 · 类型</h3>
+        <span class="bps-sub">和上面的时序同款分析，节点换成英雄类型（五路 12 类）；点一手看该手各类型占比</span></div>
+      <div class="bps-panel-body">
+        <p class="bps-tree-takeaway">${treeTakeaway(true)}</p>
+        <div class="bps-tree-tools">
+          <span class="bps-console-label">视图</span>${seg([['flow', '历史路径'], ['decision', '决策树']],
+            state.typeTreeMode, 'data-bps-type-tree-mode', {small: true})}
+          ${available ? `<span class="bps-console-label">连线</span>${seg([['1', '精简'], ['0', '完整']],
+            state.flowSimple ? '1' : '0', 'data-bps-flow-simple', {small: true})}` : ''}
+          ${available ? `<span class="bps-sub">类型来自英雄标签；线宽 = 局数</span>` : ''}
+        </div>
+        ${state.treeLoading && !state.tree ? '<div class="bps-loading">正在按逐手事件建树…</div>' : ''}
+        ${available ? `<div class="bps-tree-scroll">${
+          state.typeTreeMode === 'decision'
+            ? viz.decisionTreeMap(state.tree, state.decisionPath, {width: 780, height: 480, branch: 3, byType: true})
+            : viz.draftFlowMap(state.tree, {width: 1560, height: 680, byType: true, maxEdges: state.flowSimple ? 36 : 0})
+        }</div>
+          <div class="bps-tree-key bps-typetree-key">
+            ${['对抗路', '打野', '中路', '发育路', '游走'].map((lane) => `<span><i class="is-lane" style="background:${viz.LANE_COLOR[lane]}"></i>${lane}</span>`).join('')}
+            <span><i class="is-own-pick"></i>我方 Pick</span>
+            <span><i class="is-own-ban"></i>我方 Ban</span>
+            <span><i class="is-foe-pick"></i>对方 Pick</span>
+            <span><i class="is-foe-ban"></i>对方 Ban</span>
+            <span class="is-note">胶囊色 = 分路 · 线宽 = 局数</span>
+          </div>
+          ${focus ? `<div class="bps-typebreak">
+            <div class="bps-typebreak-head"><b>第 ${focus} 手 · 各类型占比</b>
+              <button type="button" class="bps-link" data-bps-type-break-close>收起 ×</button></div>
+            ${typeHandBreakdown(focus)}
+          </div>` : '<p class="bps-note">点上面任意一个类型节点，展开这一手的类型占比。</p>'}`
+          : (state.tree ? `<div class="bps-empty"><b>还没有可画的类型时序</b><p>${esc(state.tree.reason || '')}</p></div>` : '')}
+      </div>
+    </div>`;
+  }
+
   function typesSection() {
-    const head = section('types', '05', '类型与手序',
+    const head = section('types', '05', '手序',
       '他第一手 Ban / 选的是什么类型？放到 BO 和时间里还成立吗？',
-      '类型 × 手序 × 赛制 × 核数');
+      '手序 × 赛制');
     if (state.typesLoading && !state.types) {
       return `${head}<div class="bps-loading"><span class="bps-spinner"></span>正在按类型拆 Ban / Pick…</div></section>`;
     }
@@ -1785,8 +2113,6 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const tools = `<div class="bps-types-tools">
       <span class="bps-console-label">对象</span>${seg(sides, side, 'data-bps-type-side', {small: true})}
       <span class="bps-console-label">赛制</span>${seg(boOptions, String(state.typeBo), 'data-bps-type-bo', {small: true})}
-      <span class="bps-console-label">Ban 手</span>${seg(handOptions, String(state.typeHand), 'data-bps-type-hand', {small: true})}
-      <span class="bps-console-label">核数</span>${seg(coreOptions, String(state.typeCore), 'data-bps-type-core', {small: true})}
       ${focus ? `<button type="button" class="bps-chip is-focus" data-bps-type-focus="">
         已聚焦 ${esc(focus)} <em>×</em></button>` : '<span class="bps-sub">点图里的类型可以跨图聚焦</span>'}
     </div>`;
@@ -1822,176 +2148,104 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       color: viz.LANE_COLOR[laneOf(type)] || '#246b63',
       values: slots.map((slot) => (slot.types.find((row) => row.type === type) || {}).share || 0),
     }));
-    const compactText = state.compact ? `<div class="bps-compact-summary">
-      <span><b>第一手 Ban</b>：${(banFull.firstTypes || []).slice(0, 4).map((row) => `${row.type} ${rate(row.share)}`).join('、') || '—'}</span>
-      <span><b>核数</b>：${(cores || []).map((row) => `${row.cores}核 ${rate(row.share)} / 胜率 ${rate(row.winRate)}`).join(' · ') || '—'}</span>
-      <span><b>克制</b>：${(t.counters?.best || []).slice(0, 3).map((row) => `${row.enemy}→${row.response} ${rate(row.winRate)}`).join('；') || '—'}</span>
-    </div>` : '';
-    return `${head}${tools}${compactText}
+    return `${head}${tools}
       ${draftTreePanel()}
-      <div class="bps-type-grid">
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>第一手 Ban 的类型</h3><span class="bps-sub">${num(banFull.games || 0)} 局</span></div>
-          <div class="bps-panel-body">${viz.typeRank(banFull.firstTypes || [], laneOf, {width: 460, focus})}</div>
-        </div>
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>Ban 手序 × 类型</h3><span class="bps-sub">同一类型在第 1–5 手 Ban 的份额</span></div>
-          <div class="bps-panel-body">${viz.typeLines(banSeries,
-            {width: 520, height: 280, xLabels: hands.map((hand) => `第${hand.hand}手`), focus})}</div>
-        </div>
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>Pick 位次 × 类型</h3><span class="bps-sub">同一类型在第 1–5 手的份额</span></div>
-          <div class="bps-panel-body">${viz.typeLines(pickSeries,
-            {width: 520, height: 280, xLabels: slots.map((slot) => `${slot.slot} 手`), focus})}</div>
-        </div>
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>阵容核数</h3><span class="bps-sub">横轴核数 · 纵轴胜率 · 点大小 = 局数</span></div>
-          <div class="bps-panel-body">${viz.coreDots(cores, {width: 460, height: 260})}</div>
-        </div>
-        <div class="bps-panel is-wide">
-          <div class="bps-panel-head"><h3>类型克制矩阵</h3><span class="bps-sub">${state.counterMode === 'ban'
-            ? `对面 Ban 手${state.typeHand ? `（第 ${state.typeHand} 手）` : '（全部）'} 的类型 × 我们出的类型`
-            : '对面拿到的类型 × 我们出的类型'} · 拖方块只看选中范围</span></div>
-          <div class="bps-counter-tools">
-            ${seg([['pick', '对面 Pick'], ['ban', '对面 Ban']], state.counterMode, 'data-bps-counter-mode', {small: true})}
-            <span class="bps-console-label">对面</span>${seg(laneOptions, state.counterRowLane, 'data-bps-counter-row', {small: true})}
-            <span class="bps-console-label">我们</span>${seg(laneOptions, state.counterColLane, 'data-bps-counter-col', {small: true})}
-          </div>
-          <div class="bps-panel-body">${counterMatrixHtml(t, laneOf)}</div>
-        </div>
-      </div>
-      ${t.conditional?.available ? `<div class="bps-panel" style="margin-top:14px">
-        <div class="bps-panel-head"><h3>对面拿到 ${esc((t.conditional.targets || []).join(' + '))} 时</h3>
-          <span class="bps-sub">${num(t.conditional.games)} 局 · 两边第一手出什么类型</span></div>
-        <div class="bps-panel-body bps-type-cond">
-          <div><h4>我们第一手</h4>${viz.typeRank(t.conditional.ownFirstTypes || [], laneOf, {width: 420})}</div>
-          <div><h4>对手第一手</h4>${viz.typeRank(t.conditional.enemyFirstTypes || [], laneOf, {width: 420})}</div>
-        </div>
-      </div>` : ''}
-      <p class="bps-note" style="margin-top:10px">类型 = 五路 12 类；核数口径：战边/刺野/战野/法核/射手算核，坦边/坦野/工具人/辅助不算，战野按“可转肉”先计一核。Ban 手只影响 Ban 侧统计，Pick 位次图始终看 1–5 手。</p></section>`;
+      ${typeTreePanel()}
+      <p class="bps-note" style="margin-top:10px">类型 = 五路 12 类；英雄类型来自赛训组标签。类型时序与英雄时序共用同一批已核验手序。</p></section>`;
   }
 
-  // ── 05 体系与异动 ───────────────────────────────────────────────────
-  function periodPanel() {
-    const data = state.period;
-    return `<div class="bps-panel bps-period-panel" data-bps-period>
-      <div class="bps-panel-head"><h3>赛季切换 / 日期前后对比</h3>
-        <span class="bps-sub">Pick / Ban / 胜率 · 切换点前后各 ${state.periodDays} 天</span></div>
+  /* 阵容差异：本队 vs 对手的双人组合三栏对照。
+     2026-11-22 从「英雄异动」迁到 02 组合；英雄异动整节按赛训组反馈删除。 */
+  function lineupDiffPanel() {
+    const data = state.data;
+    return `<div class="bps-panel" style="margin-top:16px">
+      <div class="bps-panel-head"><h3>阵容差异</h3><span class="bps-sub">本队 vs ${esc(state.opponent || '对手')} 的双人组合</span></div>
       <div class="bps-panel-body">
-        <div class="bps-period-tools">
-          <span class="bps-console-label">赛季</span>
-          <select data-bps-period-season>
-            <option value="">自定义日期</option>
-            ${(state.seasons || []).map((row) => `<option value="${esc(row.season)}"
-              ${row.season === state.periodSeason ? 'selected' : ''}>${esc(row.season)} ${esc(row.theme || '')}</option>`).join('')}
-          </select>
-          <span class="bps-console-label">切分点</span>
-          <input type="date" data-bps-period-cut value="${esc(state.periodCut)}">
-          ${seg([[30, '30 天'], [60, '60 天'], [90, '90 天']], String(state.periodDays), 'data-bps-period-days', {small: true})}
-          <button type="button" class="bps-softbtn" data-bps-period-apply>重新对照</button>
-          ${data?.available ? `<span class="bps-sub">前 ${num(data.before.games)} 局 / 后 ${num(data.after.games)} 局</span>` : ''}
-        </div>
-        ${state.periodLoading && !data ? '<div class="bps-loading">正在按日期对照…</div>' : ''}
-        ${state.periodError ? `<div class="bps-inline-error">${esc(state.periodError)}</div>` : ''}
-        ${data?.available ? `<div class="bps-period-axis">
-            <span>${esc(data.before.from)} → ${esc(data.before.to)}</span>
-            <b>${esc(data.cut)}</b>
-            <span>${esc(data.after.from)} → ${esc(data.after.to)}</span>
-          </div>
-          <div class="bps-period-cards">${(data.rows || []).map((item) => {
-            const metrics = [
-              ['Pick', item.before.pickRate, item.after.pickRate, item.delta.pick, 'neutral'],
-              ['Ban', item.before.banRate, item.after.banRate, item.delta.ban, 'neutral'],
-              ['胜率', item.before.winRate, item.after.winRate, item.delta.win, 'good'],
-            ];
-            return `<div class="bps-period-card">
-              <div class="bps-period-card-head">${heroImg(item.hero)}<b>${esc(heroShort(item.hero))}</b>
-                <small>${num(item.before.picks + item.before.bans)} → ${num(item.after.picks + item.after.bans)} 次</small></div>
-              <div class="bps-period-card-body">${metrics.map(([label, before, after, delta, tone]) => `
-                <div class="bps-period-line">
-                  <span>${label}</span>
-                  <b>${before == null ? '—' : `${fmt(before, 1)}%`}<i>→</i>${after == null ? '—' : `${fmt(after, 1)}%`}</b>
-                  ${deltaChip(delta, {tone})}
-                </div>`).join('')}</div>
-            </div>`;
-          }).join('') || '<p class="bps-note">没有变化明显的英雄。</p>'}</div>
-          <p class="bps-note">每个英雄三行：Pick / Ban / 胜率，左边切分前、右边切分后；不画横条，直接读数字和差值。</p>`
-          : (data ? `<div class="bps-empty"><b>这个切分点没有前后样本</b><p>${esc(data.reason || '')}</p></div>` : '')}
-        ${data?.note ? `<p class="bps-note">${esc(data.note)}</p>` : ''}
+        ${data.lineupDiff?.available ? `<div class="bps-diff-grid">
+          <div class="bps-diff-col ${(data.lineupDiff.shared || []).length ? '' : 'is-empty'}"><h4>两边都在用</h4>${(data.lineupDiff.shared || []).map((row) => `<div class="bps-diff-item">${row.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(row.label)}</b><em>本队 ${num(row.ownGames)} 局 ${rate(row.ownWinRate)} · 对手 ${num(row.enemyGames)} 局 ${rate(row.enemyWinRate)}</em></div>`).join('') || '<p class="bps-note">没有交集。</p>'}</div>
+          <div class="bps-diff-col"><h4>只有本队在用</h4>${(data.lineupDiff.onlyUs || []).map((row) => `<div class="bps-diff-item">${row.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(row.label)}</b><em>${num(row.games)} 局 · ${rate(row.winRate)} 胜率</em></div>`).join('') || '<p class="bps-note">—</p>'}</div>
+          <div class="bps-diff-col"><h4>只有对手在用</h4>${(data.lineupDiff.onlyThem || []).map((row) => `<div class="bps-diff-item">${row.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(row.label)}</b><em>${num(row.games)} 局 · ${rate(row.winRate)} 胜率</em></div>`).join('') || '<p class="bps-note">—</p>'}</div>
+        </div>` : '<div class="bps-empty"><b>还没有可对比的阵容</b><p>需要本队训练赛与对手同窗口的记录。</p></div>'}
       </div>
     </div>`;
   }
 
-  function systemsSection() {
-    const data = state.data;
-    const systems = data.primary.systems;
-    const rows = systems.rows || [];
-    const diff = systems.diff || [];
-    const anomalies = data.primary.anomalies;
-    return `${section('systems', '06', '体系与异动', '双方爱打什么体系，最近谁在变？')}
-      <div class="bps-opp-grid">
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>体系雷达</h3><span class="bps-sub">实线 = 本队，虚线 = 对手</span></div>
-          <div class="bps-panel-body">${viz.radar(diff, {aKey: 'ownPickRate', bKey: 'enemyPickRate', labelKey: 'system', width: 470, height: 420, aLabel: '本队', bLabel: state.opponent || '对手'})}</div>
-        </div>
-        <div class="bps-panel">
-          <div class="bps-panel-head"><h3>${state.source === 'scrim' ? '本队英雄异动' : '联盟英雄异动'}</h3>
-            <span class="bps-sub">斜率 = 当前窗口 → 上一窗口</span></div>
-          <div class="bps-panel-body">
-            ${anomalies?.available ? `<div class="bps-anomaly-grid">${anomalies.rows.map((row) => {
-              const key = row.kind === '胜率' ? 'winRate' : row.kind === 'Ban 率' ? 'banRate' : 'pickRate';
-              return `<div class="bps-anomaly">
-                <div class="bps-anomaly-top">${heroImg(row.hero)}<div><b>${esc(heroShort(row.hero))}</b><small>${esc(row.lane || '')} · ${esc(row.kind)}变化</small></div></div>
-                <div class="bps-anomaly-body">
-                  <div class="bps-num">${rate(row.current[key])}<small>上一窗口 ${rate(row.previous[key])}</small></div>
-                  ${deltaChip(row.kind === '胜率' ? row.delta.win : row.kind === 'Ban 率' ? row.delta.ban : row.delta.pick, {tone: row.kind === '胜率' ? 'good' : 'neutral'})}
-                </div>
-                ${viz.miniDelta(row.previous[key], row.current[key], {width: 240, height: 30})}
-              </div>`;
-            }).join('')}</div>` : `<div class="bps-empty"><b>没有明显的窗口异动</b><p>${esc(anomalies?.reason || '变化幅度都在 5 个百分点以内。')}</p></div>`}
-          </div>
-        </div>
-      </div>
-      ${periodPanel()}
-      <div class="bps-panel" style="margin-top:16px">
-        <div class="bps-panel-head"><h3>阵容差异</h3><span class="bps-sub">本队 vs ${esc(state.opponent || '对手')} 的双人组合</span></div>
-        <div class="bps-panel-body">
-          ${data.lineupDiff?.available ? `<div class="bps-diff-grid">
-            <div class="bps-diff-col"><h4>两边都在用</h4>${(data.lineupDiff.shared || []).map((row) => `<div class="bps-diff-item">${row.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(row.label)}</b><em>${num(row.ownGames)} / ${num(row.enemyGames)}</em></div>`).join('') || '<p class="bps-note">没有交集。</p>'}</div>
-            <div class="bps-diff-col"><h4>只有本队在用</h4>${(data.lineupDiff.onlyUs || []).map((row) => `<div class="bps-diff-item">${row.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(row.label)}</b><em>${num(row.games)} 局</em></div>`).join('') || '<p class="bps-note">—</p>'}</div>
-            <div class="bps-diff-col"><h4>只有对手在用</h4>${(data.lineupDiff.onlyThem || []).map((row) => `<div class="bps-diff-item">${row.heroes.map((hero) => heroImg(hero)).join('')}<b>${esc(row.label)}</b><em>${num(row.games)} 局</em></div>`).join('') || '<p class="bps-note">—</p>'}</div>
-          </div>` : '<div class="bps-empty"><b>还没有可对比的阵容</b><p>需要本队训练赛与对手同窗口的记录。</p></div>'}
-        </div>
-      </div></section>`;
+  /* 赛前方案直接引用 03 的应对结论：目标一换，这里跟着换，不再各写一套。 */
+  function planResponseBlock() {
+    const block = state.targetData;
+    if (!block?.available) return '';
+    const col = (data, label) => `<div class="bps-plan-res-col">
+      <b>${esc(label)}</b>
+      ${(data?.answers || []).slice(0, 4).map((row) => `<div class="bps-plan-res-row">
+        ${heroImg(row.hero)}<span>${esc(heroShort(row.hero))}</span>
+        <em>${num(row.count)} 次 · ${rate(row.winRate)}</em></div>`).join('') || '<p class="bps-note">样本不足。</p>'}
+    </div>`;
+    return `<div class="bps-panel bps-plan-response">
+      <div class="bps-panel-head"><h3>针对「${esc(block.label)}」的应对 · 引用 03</h3>
+        <span class="bps-sub">与破解页同一份目标数据；选目标后自动同步</span></div>
+      <div class="bps-plan-response-grid">${col(block.kpl, 'KPL 应对')}${col(block.own, '本队应对')}</div>
+    </div>`;
   }
 
   // ── 06 赛前方案 ─────────────────────────────────────────────────────
   function planSection() {
     const plan = state.data.plan;
     if (!plan?.available) {
-      return `${section('plan', '07', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？')}
+      return `${section('plan', '06', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？')}
         <div class="bps-empty"><b>${esc(plan?.reason || '先选一个对手')}</b>
           <p>方案只按历史证据准备：对手常拿什么、我们 Ban 谁、被 Ban 之后本队第一手怎么接。</p></div></section>`;
     }
-    const banItem = (row) => `<div class="bps-plan-item">${heroImg(row.hero)}
-      <div><b>${esc(heroShort(row.hero))}</b><small>${esc(row.reason || '')}</small></div>
-      <em>${rate(row.ourWinRate)}</em></div>`;
-    const branch = (row) => `<div class="bps-plan-item">
-      <div><b>对手 Ban ${esc(row.ban)}</b><small>${num(row.games)} 局</small></div>
-      <em>${esc((row.options || []).map((option) => `${option.hero} ${num(option.count)}`).join(' / '))}</em></div>`;
-    const system = (row) => `<div class="bps-plan-item">
-      <div><b>${esc(heroShort(row.label))}</b><small>${num(row.games)} 局 · 基准 ${has(row.relative) ? `${signed(row.relative)} pp` : '—'}</small></div>
-      <em>${rate(row.winRate)}</em></div>`;
-    return `${section('plan', '07', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？')}
+    const heroesOf = (label) => String(label || '').split('+').map((hero) => hero.trim()).filter(Boolean);
+    const planRate = (n) => {
+      if (!has(n)) return '—';
+      const text = fmt(n, 1);
+      return `${text.includes('.') ? text : `${text}.0`}%`;
+    };
+    const banItem = (row) => `<div class="bps-plan-item has-portrait" data-bps-plan-col="0">${heroImg(row.hero)}
+      <div class="bps-plan-text"><b>${esc(heroShort(row.hero))}</b><small>${esc(row.reason || '')}</small></div>
+      <em>${planRate(row.ourWinRate)}</em></div>`;
+    const branch = (row) => `<div class="bps-plan-item bps-plan-branch has-portrait" data-bps-plan-col="1">
+      ${heroImg(row.ban)}
+      <div class="bps-plan-text"><b>对手 Ban ${esc(row.ban)}</b><small>${num(row.games)} 局</small></div>
+      <div class="bps-plan-options">${(row.options || []).slice(0, 4).map((option) => `<span class="bps-plan-option">
+        ${heroImg(option.hero)}<b>${esc(heroShort(option.hero))}</b><em>${num(option.count)}</em></span>`).join('') || '<span class="bps-sub">样本不足</span>'}</div>
+    </div>`;
+    const system = (row) => `<div class="bps-plan-item has-portrait" data-bps-plan-col="2">
+      <span class="bps-plan-faces">${heroesOf(row.label).map((hero) => heroImg(hero)).join('')}</span>
+      <div class="bps-plan-text"><b>${esc(row.label)}</b><small>${num(row.games)} 局 · 基准 ${has(row.relative) ? `${signed(row.relative)} pp` : '—'}</small></div>
+      <em>${planRate(row.winRate)}</em></div>`;
+    const firstBan = (plan.banPriority || [])[0];
+    const firstBranch = (plan.branches || [])[0];
+    const firstOption = (firstBranch?.options || [])[0];
+    const firstSystem = (plan.ourSystems || [])[0];
+    const step = (index, label, hero, text) => `<button type="button" class="bps-plan-step" data-bps-plan-step="${index}">
+      <i>${index + 1}</i><span class="bps-plan-step-label">${esc(label)}</span>
+      ${hero ? heroImg(hero) : ''}<b>${esc(text || (hero ? heroShort(hero) : '样本不足'))}</b></button>`;
+    const flowStrip = firstBan ? `<div class="bps-plan-flow" aria-label="赛前推演">
+      ${step(0, '先 Ban', firstBan.hero)}
+      <span class="bps-plan-arrow" aria-hidden="true">→</span>
+      ${step(1, '对手转 Ban', firstBranch?.ban, firstBranch ? heroShort(firstBranch.ban) : '')}
+      <span class="bps-plan-arrow" aria-hidden="true">→</span>
+      ${step(2, '我们接', firstOption?.hero || '', firstOption ? heroShort(firstOption.hero) : (firstSystem?.label || ''))}
+    </div>` : '';
+    const takeaway = firstBan
+      ? `建议首 Ban ${heroShort(firstBan.hero)}：${firstBan.reason || `对手拿到后我方胜率 ${planRate(firstBan.ourWinRate)}`}。对方若转 Ban，按右侧两列接。`
+      : '当前样本不足，先扩大时间窗或切换对手后再看结论。';
+    return `${section('plan', '06', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？')}
+      <p class="bps-plan-takeaway">${esc(takeaway)}</p>
+      ${flowStrip}
       <div class="bps-plan-grid">
         <div class="bps-plan-col"><h4>优先 Ban</h4>
-          ${(plan.banPriority || []).map(banItem).join('') || '<p class="bps-note">对手样本不足。</p>'}</div>
+          ${(plan.banPriority || []).map(banItem).join('') || '<p class="bps-note">对手样本不足。试试扩大时间窗，或在筛选台切到具体对手。</p>'}</div>
         <div class="bps-plan-col"><h4>对手 Ban 之后我们接什么</h4>
-          ${(plan.branches || []).map(branch).join('') || '<p class="bps-note">还没有足够的 Ban 后样本。</p>'}</div>
+          ${(plan.branches || []).map(branch).join('') || '<p class="bps-note">还没有足够的 Ban 后样本。可先在 02 组合里确认对手常 Ban 英雄。</p>'}</div>
         <div class="bps-plan-col"><h4>本队体系与威胁</h4>
-          ${(plan.ourSystems || []).map(system).join('') || '<p class="bps-note">本队体系样本不足。</p>'}
-          ${(plan.threats || []).length ? `<p class="bps-note" style="margin-top:10px">对手常用：${plan.threats.map((row) => esc(heroShort(row.label))).join('、')}</p>` : ''}</div>
+          ${(plan.ourSystems || []).map(system).join('') || '<p class="bps-note">本队体系样本不足。切到「只看我们」并扩大时间窗后再看。</p>'}
+          ${(plan.threats || []).length ? `<div class="bps-plan-threats"><b>对手常用</b>
+            ${plan.threats.map((row) => `<span class="bps-plan-threat">${heroesOf(row.label).map((hero) => heroImg(hero)).join('')}
+              <span>${esc(row.label)}</span><b>${planRate(row.winRate)}</b></span>`).join('')}</div>` : ''}</div>
       </div>
+      ${planResponseBlock()}
       <p class="bps-note" style="margin-top:10px">${(plan.caveats || []).map(esc).join(' ')}</p></section>`;
   }
 
@@ -2030,9 +2284,32 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <button type="button" class="bps-primary" data-bps-refresh>重新读取</button></div></div>`;
   }
 
+  /* 重绘会替换整棵 DOM；记录当前控件的稳定标识，渲染后回焦，避免 Tab 顺序从头开始。 */
+  function focusToken() {
+    const el = document.activeElement;
+    if (!el || !state.root?.contains(el)) return '';
+    for (const attr of el.attributes) {
+      if (attr.name.startsWith('data-bps-') && attr.name !== 'data-bps-section') {
+        return `[${attr.name}="${String(attr.value).replace(/"/g, '\\"')}"]`;
+      }
+    }
+    return '';
+  }
+  function restoreFocus(token) {
+    if (!token) return;
+    requestAnimationFrame(() => {
+      try { state.root?.querySelector(token)?.focus({preventScroll: true}); } catch (_) { /* 忽略过时标识 */ }
+    });
+  }
+
   function paint() {
     if (!state.root || state.disposed) return;
+    if (hoverNode) hoverNode.hidden = true;
+    /* 解读浮层不随重绘强制关闭：其他分区异步加载完成时不应打断正在看的节点。 */
+    const focus = focusToken();
     const y = window.scrollY;
+    const treeScrolls = [...state.root.querySelectorAll('.bps-tree-scroll')]
+      .map((el) => [el.scrollLeft, el.scrollTop]);
     if (state.loading && !state.data) state.root.innerHTML = skeleton();
     else if (state.error && !state.data) state.root.innerHTML = errorState();
     else if (!state.data) state.root.innerHTML = skeleton();
@@ -2043,36 +2320,46 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.root.innerHTML = `<div class="bps ${state.compact ? 'is-compact' : ''}">
         ${heroBand()}
         <div class="bps-sticky">
-          ${consoleBar()}
           ${jumpBar()}
+          <div class="bps-filters">${consoleBar()}</div>
         </div>
         ${pinsBar()}
         ${sampleBanner()}
         <div class="bps-sections">
           ${visible.map((key) => SECTION_RENDER[key]()).join('')}
         </div>
-        <div class="bps-caveats">${(state.data.caveats || []).map((text) => `<p class="bps-note">· ${esc(text)}</p>`).join('')}</div>
         <button type="button" class="bps-top" data-bps-top hidden aria-label="回到顶部">${icon('arrow')}</button>
       </div>`;
     }
     if (y > 0) window.scrollTo(0, y);
+    const treeAfter = state.root.querySelectorAll('.bps-tree-scroll');
+    treeScrolls.forEach(([left, top], index) => {
+      const el = treeAfter[index];
+      if (!el) return;
+      el.scrollLeft = left;
+      el.scrollTop = top;
+    });
+    /* 重绘后把已保存的搜索词重新作用到英雄选择器，避免筛选态丢失。 */
+    state.root?.querySelectorAll('input[data-bps-search]').forEach((input) => {
+      filterPicker(input.dataset.bpsSearch, input.value);
+    });
+    restoreFocus(focus);
     applyZoom();
     decorateSections();
     observeLazy();
     bindFlowDrag();
     updateActiveJump();
+    if (state.typeHandFocus) {
+      requestAnimationFrame(() => {
+        state.root?.querySelector('.bps-typebreak')?.scrollIntoView({block: 'nearest'});
+      });
+    }
     requestAnimationFrame(syncSticky);
     // 单节模式直接进入 01 时，关系环在首屏下方，不能等滚动才请求。
     if (state.solo && state.active === 'heroes' && state.data
       && state.ringStale && !state.ringLoading) {
       setTimeout(() => {
         if (state.ringStale && !state.ringLoading) loadRing();
-      }, 60);
-    }
-    if (state.solo && state.active === 'systems' && state.data
-      && state.periodStale && !state.periodLoading) {
-      setTimeout(() => {
-        if (state.periodStale && !state.periodLoading) loadPeriod();
       }, 60);
     }
   }
@@ -2088,8 +2375,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           if (key === 'types' && state.typesStale && !state.typesLoading) loadTypes();
           else if (key === 'tree' && state.treeStale && !state.treeLoading) loadTree();
           else if (key === 'ring' && state.ringStale && !state.ringLoading) loadRing();
-          else if (key === 'period' && state.periodStale && !state.periodLoading) loadPeriod();
           else if (key === 'sequence' && state.seqStale && !state.seqLoading) loadSequence();
+          else if (key === 'counter' && state.counterStale && !state.counterLoading) loadCounterChain();
         }
       }, {rootMargin: '600px 0px'});
     }
@@ -2109,22 +2396,26 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       ring.dataset.bpsLazy = 'ring';
       lazyObserver.observe(ring);
     }
-    const period = state.root.querySelector('[data-bps-period]');
-    if (period && state.periodStale && !state.periodLoading) {
-      period.dataset.bpsLazy = 'period';
-      lazyObserver.observe(period);
+    const breakTree = state.root.querySelector('[data-bps-lazy="tree"]');
+    if (breakTree && state.treeStale && !state.treeLoading) {
+      lazyObserver.observe(breakTree);
     }
     const seq = state.root.querySelector('.bps-seq');
     if (seq && state.seqStale) {
       seq.dataset.bpsLazy = 'sequence';
       lazyObserver.observe(seq);
     }
+    const counter = state.root.querySelector('[data-bps-counter]');
+    if (counter && state.counterStale && !state.counterLoading) {
+      counter.dataset.bpsLazy = 'counter';
+      lazyObserver.observe(counter);
+    }
   }
 
   const SECTION_RENDER = {
     heroes: () => heroSection(), combos: () => comboSection(), break: () => breakSection(),
     opponent: () => opponentSection(), types: () => typesSection(),
-    systems: () => systemsSection(), plan: () => planSection(),
+    plan: () => planSection(), counter: () => counterSection(),
   };
   let sectionFrame = 0;
 
@@ -2132,6 +2423,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const render = SECTION_RENDER[key];
     const current = state.root?.querySelector(`[data-bps-section="${key}"]`);
     if (!render || !current) { paint(); return; }
+    const focus = focusToken();
     cancelAnimationFrame(sectionFrame);
     sectionFrame = requestAnimationFrame(() => {
       const holder = document.createElement('div');
@@ -2139,6 +2431,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       const next = holder.firstElementChild;
       if (!next) return;
       current.replaceWith(next);
+      restoreFocus(focus);
       decorateSections();
       applyZoom();
       observeLazy();
@@ -2158,6 +2451,52 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return hoverNode;
   }
 
+  /* 时序图节点解读：文字锚定在节点旁，和连线高亮指向同一处证据。 */
+  let flowCallout = null;
+  function ensureFlowCallout() {
+    if (flowCallout) return flowCallout;
+    flowCallout = document.createElement('div');
+    flowCallout.className = 'bps-flow-callout';
+    flowCallout.hidden = true;
+    flowCallout.setAttribute('role', 'tooltip');
+    document.body.appendChild(flowCallout);
+    return flowCallout;
+  }
+
+  function showFlowCallout(node) {
+    const callout = ensureFlowCallout();
+    const svg = node.closest('svg');
+    if (!svg) return;
+    const key = node.dataset.flowNode;
+    const title = node.querySelector('title')?.textContent || '';
+    const count = (title.match(/(\d+)\s*局/) || [])[1] || '';
+    const win = (title.match(/胜率\s*([\d.]+)%/) || [])[1] || '';
+    const label = node.dataset.bpsTypeLevel
+      ? `第 ${node.dataset.bpsTypeLevel} 手 · ${node.dataset.bpsTypeName || '待分类'}`
+      : (node.dataset.bpsFlowHero || '该节点');
+    const outgoing = [...svg.querySelectorAll('[data-flow-edge]')]
+      .filter((path) => path.dataset.flowEdge.startsWith(`${key}>`))
+      .sort((a, b) => Number(b.dataset.edgeCount || 0) - Number(a.dataset.edgeCount || 0))[0];
+    let nextText = '这是当前样本里的末手。';
+    if (outgoing) {
+      const childKey = outgoing.dataset.flowEdge.slice(key.length + 1);
+      const child = [...svg.querySelectorAll('[data-flow-node]')]
+        .find((item) => item.dataset.flowNode === childKey);
+      const nextLabel = child?.dataset.bpsTypeName || child?.dataset.bpsFlowHero || '下一手';
+      nextText = `接下来最常走向${nextLabel}（${outgoing.dataset.edgeCount || 0} 局）。`;
+    }
+    callout.textContent = `${label}：${count ? `${count} 局` : '有样本'}${win ? `，胜率 ${win}%` : ''}。${nextText}`;
+    callout.hidden = false;
+    const rect = node.getBoundingClientRect();
+    const size = callout.getBoundingClientRect();
+    let left = rect.right + 14;
+    if (left + size.width > window.innerWidth - 12) left = Math.max(12, rect.left - size.width - 14);
+    let top = rect.top - 10;
+    if (top + size.height > window.innerHeight - 12) top = Math.max(12, window.innerHeight - size.height - 12);
+    callout.style.left = `${Math.round(left)}px`;
+    callout.style.top = `${Math.round(top)}px`;
+  }
+
   function heroRow(hero) {
     return (state.data?.primary?.heroes?.rows || []).find((row) => row.hero === hero) || null;
   }
@@ -2175,7 +2514,14 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       </div>
       <div class="bps-hover-deltas">Ban ${deltaChip(row.delta?.ban, {tone: 'neutral'})} · 胜率 ${deltaChip(row.delta?.win)}</div>
       <div class="bps-hover-spark">${viz.spark(row.spark, {key: 'pickRate', w: 200, h: 30})}</div>
-      <div class="bps-hover-foot">区间 ${interval(row.interval)} · 点击可送到 03 破解</div>`;
+      <div class="bps-hover-foot">区间 ${interval(row.interval)} · ${(() => {
+        const owner = anchor.closest?.('[data-hover-hint], [data-bps-hero-card]');
+        if (owner?.dataset.hoverHint) return owner.dataset.hoverHint;
+        if (owner?.hasAttribute('data-bps-hero-card') && /送到/.test(owner.getAttribute('title') || '')) {
+          return '点击可送到 03 破解';
+        }
+        return '悬停查看样本区间';
+      })()}</div>`;
     card.hidden = false;
     const rect = anchor.getBoundingClientRect();
     const width = 228;
@@ -2217,8 +2563,23 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function closePops(except = '') {
     state.pop = except;
     if (!state.root) return;
+    const trigger = except ? state.root.querySelector(`[data-bps-pop="${except}"]`) : null;
     state.root.querySelectorAll('[data-bps-pop-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.bpsPopPanel !== except;
+      panel.classList.remove('is-up');
+      if (panel.hidden) return;
+      /* 浮层宽度大，贴触发器右缘后可能越过视口；按触发器位置钳制到可视区域。 */
+      const groupRect = (panel.offsetParent || trigger || panel).getBoundingClientRect();
+      const triggerRect = trigger ? trigger.getBoundingClientRect() : groupRect;
+      const width = panel.offsetWidth;
+      const desired = Math.max(12, Math.min(triggerRect.right - width, window.innerWidth - width - 12));
+      panel.style.left = `${desired - groupRect.left}px`;
+      panel.style.right = 'auto';
+      const rect = panel.getBoundingClientRect();
+      if (rect.bottom > window.innerHeight - 12 && rect.top > window.innerHeight * 0.4) {
+        panel.classList.add('is-up');
+      }
+      panel.style.maxHeight = `${Math.max(220, Math.min(620, window.innerHeight - 40))}px`;
     });
     state.root.querySelectorAll('[data-bps-pop]').forEach((button) => {
       button.setAttribute('aria-expanded', String(button.dataset.bpsPop === except));
@@ -2252,10 +2613,14 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function filterPicker(action, text) {
     const picker = state.root?.querySelector(`[data-bps-picker="${action}"]`);
     if (!picker) return;
-    const query = String(text || '').trim();
+    const query = String(text || '').trim().toLowerCase();
+    let visible = 0;
     picker.querySelectorAll('[data-bps-hero-name]').forEach((button) => {
-      button.hidden = Boolean(query) && !button.dataset.bpsHeroName.includes(query);
+      button.hidden = Boolean(query) && !button.dataset.bpsHeroName.toLowerCase().includes(query);
+      if (!button.hidden) visible += 1;
     });
+    const empty = picker.querySelector('.bps-picker-empty');
+    if (empty) empty.hidden = visible > 0;
     picker.querySelectorAll('[data-lane-group]').forEach((group) => {
       let next = group.nextElementSibling;
       let any = false;
@@ -2278,10 +2643,24 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       return;
     }
     const target = state.root?.querySelector(`#bps-${id}`);
-    if (target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+    if (!target) return;
+    const sticky = state.root.querySelector('.bps-sticky');
+    const bottom = sticky ? sticky.getBoundingClientRect().bottom : 0;
+    const top = target.getBoundingClientRect().top + window.scrollY - bottom - 16;
+    window.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
   }
 
   function onPick(action, hero) {
+    if (action === 'counterPrefix') {
+      const stage = COUNTER_PREFIX_STAGES.find((item) => item.key === state.counterPrefixStage)
+        || COUNTER_PREFIX_STAGES[0];
+      const list = state.counterPrefix[stage.key];
+      const index = list.indexOf(hero);
+      if (index >= 0) list.splice(index, 1);
+      else if (list.length < stage.slots) list.push(hero);
+      else { list.shift(); list.push(hero); }
+      persist(); refreshSection('counter'); loadCounterChain(); return;
+    }
     const list = action === 'combo' ? state.comboPick : state.target;
     const index = list.indexOf(hero);
     if (index >= 0) list.splice(index, 1);
@@ -2381,8 +2760,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const [kind, value] = String(spec).split(':');
     const list = kind === 'combo' ? state.pins.combos : state.pins.heroes;
     const on = list.includes(value);
+    /* 外层 .bps-focus 已是 button，这里不能再嵌 button。 */
     return `<span class="bps-pin ${on ? 'is-on' : ''}" data-bps-pin="${esc(spec)}"
-      role="button" title="${on ? '取消关注' : '加入我的关注'}">${on ? '★' : '☆'}</span>`;
+      role="button" tabindex="0" aria-pressed="${on}"
+      aria-label="${on ? '取消关注' : '加入我的关注'}"
+      title="${on ? '取消关注' : '加入我的关注'}">${on ? '★' : '☆'}</span>`;
   };
 
   /* ── 导出 ─────────────────────────────────────────────────────────── */
@@ -2416,11 +2798,6 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (!c?.available) return null;
       rows.push(['对面类型', ...c.cols]);
       c.rows.forEach((enemy, ri) => rows.push([enemy, ...c.cols.map((_, ci) => c.matrix[ri][ci]?.winRate ?? '')]));
-    } else if (key === 'systems') {
-      rows.push(['体系', 'Pick率', 'Ban率', '环比Pick', '环比Ban']);
-      for (const row of data.primary.systems.rows) {
-        rows.push([row.system, row.pickRate, row.banRate, row.deltaPick, row.deltaBan]);
-      }
     } else if (key === 'plan') {
       rows.push(['优先Ban', '原因', '我们对位胜率']);
       for (const row of data.plan?.banPriority || []) rows.push([row.hero, row.reason, row.ourWinRate]);
@@ -2580,6 +2957,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (!node && state.root) {
       node = document.createElement('div');
       node.className = 'bps-toast';
+      node.setAttribute('role', 'status');
+      node.setAttribute('aria-live', 'polite');
       state.root.appendChild(node);
     }
     if (!node) return;
@@ -2614,6 +2993,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const pickRemove = event.target.closest('[data-bps-remove]');
     if (pickRemove) {
       const action = pickRemove.dataset.bpsRemoveAction;
+      if (action === 'counterPrefix') { onPick(action, pickRemove.dataset.bpsRemove); return; }
       const list = action === 'combo' ? state.comboPick : state.target;
       const index = list.indexOf(pickRemove.dataset.bpsRemove);
       if (index >= 0) list.splice(index, 1);
@@ -2804,10 +3184,28 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (typeHand) { state.typeHand = Number(typeHand.dataset.bpsTypeHand); loadTypes(); return; }
     const typeCore = event.target.closest('[data-bps-type-core]');
     if (typeCore) { state.typeCore = Number(typeCore.dataset.bpsTypeCore); loadTypes(); return; }
+    const flowStartClear = event.target.closest('[data-bps-flow-start-clear]');
+    if (flowStartClear) { state.flowHero = ''; state.treeStale = true; loadTree(); return; }
+    const flowHero = event.target.closest('[data-bps-flow-hero]');
+    if (flowHero && state.treeMode === 'flow' && !flowHero.hasAttribute('data-bps-type-level')) {
+      const hero = flowHero.dataset.bpsFlowHero;
+      if (hero && hero !== state.flowHero) {
+        state.flowHero = hero;
+        state.treeStale = true;
+        persist();
+        loadTree();
+      }
+      return;
+    }
     const treeDepth = event.target.closest('[data-bps-tree-depth]');
     if (treeDepth) { state.treeDepth = Number(treeDepth.dataset.bpsTreeDepth); loadTree(); return; }
     const treeBranch = event.target.closest('[data-bps-tree-branch]');
     if (treeBranch) { state.treeBranch = Number(treeBranch.dataset.bpsTreeBranch); loadTree(); return; }
+    const flowSimple = event.target.closest('[data-bps-flow-simple]');
+    if (flowSimple) {
+      state.flowSimple = flowSimple.dataset.bpsFlowSimple === '1';
+      persist(); paint(); return;
+    }
     const treeSide = event.target.closest('[data-bps-tree-side]');
     if (treeSide) {
       state.typeSide = treeSide.dataset.bpsTreeSide;
@@ -2828,6 +3226,24 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       paint();
       return;
     }
+    const typeTreeMode = event.target.closest('[data-bps-type-tree-mode]');
+    if (typeTreeMode) {
+      state.typeTreeMode = typeTreeMode.dataset.bpsTypeTreeMode === 'decision' ? 'decision' : 'flow';
+      paint();
+      return;
+    }
+    const typeNode = event.target.closest('[data-bps-type-level]');
+    if (typeNode) {
+      state.typeHandFocus = Number(typeNode.dataset.bpsTypeLevel) || 0;
+      paint();
+      return;
+    }
+    const typeBreakClose = event.target.closest('[data-bps-type-break-close]');
+    if (typeBreakClose) {
+      state.typeHandFocus = 0;
+      paint();
+      return;
+    }
     const flowLeft = event.target.closest('[data-bps-flow-left]');
     if (flowLeft) {
       state.root.querySelector('.bps-tree-scroll')?.scrollBy({left: -620, behavior: 'smooth'});
@@ -2836,6 +3252,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const flowRight = event.target.closest('[data-bps-flow-right]');
     if (flowRight) {
       state.root.querySelector('.bps-tree-scroll')?.scrollBy({left: 620, behavior: 'smooth'});
+      return;
+    }
+    const flowUp = event.target.closest('[data-bps-flow-up]');
+    if (flowUp) {
+      state.root.querySelector('.bps-tree-scroll')?.scrollBy({top: -360, behavior: 'smooth'});
+      return;
+    }
+    const flowDown = event.target.closest('[data-bps-flow-down]');
+    if (flowDown) {
+      state.root.querySelector('.bps-tree-scroll')?.scrollBy({top: 360, behavior: 'smooth'});
       return;
     }
     const flowPick = event.target.closest('[data-bps-flow-pick]');
@@ -2925,16 +3351,6 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       paint();
       return;
     }
-    const periodDays = event.target.closest('[data-bps-period-days]');
-    if (periodDays) {
-      state.periodDays = Number(periodDays.dataset.bpsPeriodDays) || 30;
-      loadPeriod();
-      return;
-    }
-    if (event.target.closest('[data-bps-period-apply]')) {
-      loadPeriod();
-      return;
-    }
     const compareOpponent = event.target.closest('[data-bps-compare-opponent]');
     if (compareOpponent) {
       state.compareOpponent = compareOpponent.dataset.bpsCompareOpponent;
@@ -2982,6 +3398,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     if (event.target.closest('[data-bps-clear]')) {
       const action = event.target.closest('[data-bps-clear]').dataset.bpsClear;
+      if (action === 'counterPrefix') {
+        state.counterPrefix[state.counterPrefixStage] = [];
+        state.counterPrefixSearch = '';
+        persist(); refreshSection('counter'); loadCounterChain(); return;
+      }
       if (action === 'combo') { state.comboPick = []; state.comboDetail = null; }
       else { state.target = []; state.targetData = null; }
       persist(); paint(); return;
@@ -3007,6 +3428,50 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (event.target.closest('[data-bps-combo-retry]')) { loadCombo(); return; }
     if (event.target.closest('[data-bps-target-retry]')) { loadTarget(); return; }
     if (event.target.closest('[data-bps-types-retry]')) { loadTypes(); return; }
+    if (event.target.closest('[data-bps-counter-retry]')) { loadCounterChain(); return; }
+    const counterTeam = event.target.closest('[data-bps-counter-team]');
+    if (counterTeam) {
+      state.counterTeamScope = counterTeam.dataset.bpsCounterTeam;
+      if (state.counterTeamScope === 'all') state.counterSide = '';
+      state.counterStale = true;
+      state.counterOpen = '';
+      loadCounterChain();
+      return;
+    }
+    const counterSide = event.target.closest('[data-bps-counter-side]');
+    if (counterSide) {
+      state.counterSide = counterSide.dataset.bpsCounterSide;
+      if (state.counterSide) state.counterTeamScope = 'matchup';
+      state.counterStale = true;
+      state.counterOpen = '';
+      loadCounterChain();
+      return;
+    }
+    const counterBo = event.target.closest('[data-bps-counter-bo]');
+    if (counterBo) {
+      state.counterBo = Number(counterBo.dataset.bpsCounterBo) || 0;
+      state.counterStale = true;
+      state.counterOpen = '';
+      loadCounterChain();
+      return;
+    }
+    const prefixStage = event.target.closest('[data-bps-prefix-stage]');
+    if (prefixStage) {
+      state.counterPrefixStage = prefixStage.dataset.bpsPrefixStage;
+      persist(); refreshSection('counter'); return;
+    }
+    if (event.target.closest('[data-bps-prefix-clear]')) {
+      for (const key of Object.keys(state.counterPrefix)) state.counterPrefix[key] = [];
+      state.counterPrefixSearch = '';
+      persist(); refreshSection('counter'); loadCounterChain(); return;
+    }
+    const counterDrill = event.target.closest('[data-bps-cd-row]');
+    if (counterDrill) {
+      const key = counterDrill.dataset.bpsCdRow;
+      state.counterOpen = state.counterOpen === key ? '' : key;
+      refreshSection('counter');
+      return;
+    }
     const oppCombo = event.target.closest('[data-bps-opp-combo]');
     if (oppCombo) { state.oppComboSize = oppCombo.dataset.bpsOppCombo; paint(); return; }
     const exportPng = event.target.closest('[data-bps-export-png]');
@@ -3044,6 +3509,18 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       refreshSection('heroes');
       return;
     }
+    const breakView = event.target.closest('[data-bps-break-view]');
+    if (breakView) {
+      state.breakView = breakView.value;
+      paint();
+      return;
+    }
+    const counterSearch = event.target.closest('[data-bps-counter-search]');
+    if (counterSearch) {
+      state.counterSearch = counterSearch.value.trim();
+      refreshSection('counter');
+      return;
+    }
     const ringLane = event.target.closest('[data-bps-ring-lane]');
     if (ringLane) {
       state.ringLane = ringLane.value;
@@ -3059,20 +3536,6 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (ringHero) {
       state.ringHero = ringHero.value;
       loadRing();
-      return;
-    }
-    const periodCut = event.target.closest('[data-bps-period-cut]');
-    if (periodCut) {
-      state.periodCut = periodCut.value;
-      state.periodSeason = '';
-      return;
-    }
-    const periodSeason = event.target.closest('[data-bps-period-season]');
-    if (periodSeason) {
-      state.periodSeason = periodSeason.value;
-      const row = (state.seasons || []).find((item) => item.season === state.periodSeason);
-      if (row) state.periodCut = row.start;
-      loadPeriod();
       return;
     }
     const viewName = event.target.closest('[data-bps-view-name]');
@@ -3204,20 +3667,73 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     state.root.querySelectorAll('[data-cmp-key].is-linked').forEach((item) => item.classList.remove('is-linked'));
   }
 
+  /* 时序图：悬停节点时高亮它的进出边，其余连线淡出，解开“毛球”。 */
+  function highlightFlow(node, on) {
+    const svg = node.closest('svg');
+    if (!svg) return;
+    const key = node.dataset.flowNode;
+    svg.querySelectorAll('[data-flow-edge]').forEach((path) => {
+      const edge = path.dataset.flowEdge;
+      const linked = edge.startsWith(`${key}>`) || edge.endsWith(`>${key}`);
+      path.classList.toggle('is-hot', on && linked);
+      path.classList.toggle('is-dim', on && !linked);
+    });
+  }
+
+  /* 推演条与下方三列双向联动：文字定位到证据，证据反指回文字。 */
+  function linkPlan(index) {
+    if (!state.root) return;
+    state.root.querySelectorAll('[data-bps-plan-step]').forEach((node) => {
+      node.classList.toggle('is-linked', Number(node.dataset.bpsPlanStep) === index);
+    });
+    state.root.querySelectorAll('[data-bps-plan-col]').forEach((node) => {
+      const col = Number(node.dataset.bpsPlanCol);
+      node.classList.toggle('is-linked', col === index);
+      node.classList.toggle('is-dimmed', index >= 0 && col !== index);
+    });
+  }
+
   function onHoverIn(event) {
+    const flow = event.target.closest?.('[data-flow-node]');
+    if (flow && state.root?.contains(flow)) {
+      highlightFlow(flow, true);
+      showFlowCallout(flow);
+    }
+    const step = event.target.closest?.('[data-bps-plan-step]');
+    const col = event.target.closest?.('[data-bps-plan-col]');
+    if (step && state.root?.contains(step)) linkPlan(Number(step.dataset.bpsPlanStep));
+    else if (col && state.root?.contains(col)) linkPlan(Number(col.dataset.bpsPlanCol));
     const node = event.target.closest?.('[data-hover-hero]');
     if (!node || !state.root?.contains(node)) return;
     showHover(node.dataset.hoverHero, node);
   }
 
   function onHoverOut(event) {
+    if (event.target.closest?.('.bps-flow-callout')) {
+      const next = event.relatedTarget?.closest?.('[data-flow-node], .bps-flow-callout');
+      if (!next && flowCallout) flowCallout.hidden = true;
+    }
+    const flow = event.target.closest?.('[data-flow-node]');
+    if (flow) {
+      const next = event.relatedTarget?.closest?.('[data-flow-node], .bps-flow-callout');
+      if (!next || next.closest('svg') !== flow.closest('svg')) {
+        highlightFlow(flow, false);
+        if (flowCallout && !flowCallout.contains(event.relatedTarget)) flowCallout.hidden = true;
+      }
+    }
+    const step = event.target.closest?.('[data-bps-plan-step], [data-bps-plan-col]');
+    if (step) {
+      const next = event.relatedTarget?.closest?.('[data-bps-plan-step], [data-bps-plan-col]');
+      if (!next || next.dataset.bpsPlanStep !== step.dataset.bpsPlanStep && next.dataset.bpsPlanCol !== step.dataset.bpsPlanCol) linkPlan(-1);
+    }
     const node = event.target.closest?.('[data-hover-hero]');
     if (!node) return;
-    const next = event.relatedTarget?.closest?.('[data-hover-hero]');
-    if (!next) { if (hoverNode) hoverNode.hidden = true; }
+    const nextHero = event.relatedTarget?.closest?.('[data-hover-hero]');
+    if (!nextHero) { if (hoverNode) hoverNode.hidden = true; }
   }
 
   let scrollBound = null;
+  let lastScrollY = 0;
   let clickBound = null;
   let inputBound = null;
   let keyBound = null;
@@ -3232,9 +3748,41 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (!state.root?.contains(event.target)) return;
       onInput(event);
     };
-    scrollBound = () => updateActiveJump();
+    scrollBound = () => {
+      if (hoverNode) hoverNode.hidden = true;
+    if (flowCallout) flowCallout.hidden = true;
+      updateActiveJump();
+      /* 向下阅读时收起筛选台，向上滚动或聚焦时立即恢复；吸顶高度始终很小。 */
+      const y = window.scrollY || 0;
+      const sticky = state.root?.querySelector('.bps-sticky');
+      if (sticky) {
+        const tuck = y > 160 && y > lastScrollY + 4;
+        if (sticky.classList.contains('is-tucked') !== tuck) {
+          sticky.classList.toggle('is-tucked', tuck);
+          syncSticky();
+        }
+      }
+      lastScrollY = y;
+    };
     resizeBound = () => { syncSticky(); updateActiveJump(); };
     keyBound = (event) => {
+      if (event.key === 'Escape' && flowCallout) flowCallout.hidden = true;
+      if (event.key === 'Enter' || event.key === ' ') {
+        const drill = event.target?.closest?.('[data-bps-cd-row]');
+        if (drill && state.root?.contains(drill)) {
+          event.preventDefault();
+          const key = drill.dataset.bpsCdRow;
+          state.counterOpen = state.counterOpen === key ? '' : key;
+          refreshSection('counter');
+          return;
+        }
+        const pin = event.target?.closest?.('[data-bps-pin]');
+        if (pin && state.root?.contains(pin)) {
+          event.preventDefault();
+          togglePin(pin.dataset.bpsPin);
+          return;
+        }
+      }
       if (event.key === 'Escape') {
         if (state.pop) closePops('');
         if (state.seqOpen) { state.seqOpen = false; paint(); }
@@ -3278,6 +3826,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     document.removeEventListener('mouseout', onCompareOut);
     document.removeEventListener('scroll', onCompareScroll, true);
     if (hoverNode) { hoverNode.remove(); hoverNode = null; }
+    if (flowCallout) { flowCallout.remove(); flowCallout = null; }
     state.root?.removeEventListener('wheel', onWheel);
     state.root?.removeEventListener('pointerdown', onPointerDown);
     state.root?.removeEventListener('pointerdown', matrixPointerDown);
@@ -3285,21 +3834,23 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     state.root?.removeEventListener('pointermove', matrixPointerMove);
     state.root?.removeEventListener('pointerup', onPointerUp);
     state.root?.removeEventListener('pointerup', matrixPointerUp);
-    clickBound = inputBound = scrollBound = keyBound = null;
+    clickBound = inputBound = scrollBound = resizeBound = keyBound = null;
   }
 
   function mount(root) {
     if (!root) return;
+    /* 点当前导航会 load(true) 重渲同页：innerHTML 换掉了 root，但 document/window
+       上的监听不会跟着消失。先解绑上一组再挂新的，避免每次重渲累积一套 handler。 */
+    if (clickBound) unbind();
     state.root = root;
     state.disposed = false;
     restore();
     if (window.innerWidth < 900) state.compact = true;
     if (window.innerWidth < 760 && !Object.keys(state.collapsed || {}).length) {
-      state.collapsed = {combos: true, types: true, systems: true, plan: true};
+      state.collapsed = {combos: true, types: true, plan: true};
     }
     applyShareLink();
     bind();
-    loadSeasons();
     if (!state.data) paint();
     load();
   }

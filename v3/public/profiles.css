@@ -1,0 +1,707 @@
+/* ============================================================
+   三套档案模块样式（本队 / 对手 / 试训）
+   与 v3/public/kpl-gold.css 同一套白金 token：只引用现有 CSS 变量，
+   不硬编码色值；加载顺序跟在 kpl-gold.css 之后即可。
+   ============================================================ */
+
+.pf-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  color: var(--text);
+  padding-block: 0.5rem 2rem;
+}
+
+/* ---------- 页头 / 分类切换 ---------- */
+.pf-head {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  padding: 1.4rem 1.5rem 0;
+  overflow: hidden;
+}
+.pf-head-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.pf-head .ui-deco-divider-title { inline-size: min(320px, 100%); margin-block: 0 10px; }
+.pf-head h1 {
+  margin: 0 0 0.35rem;
+  /* 与指标观察页 h1 的 clamp(1.35rem, 2.4vw, 1.9rem) 比例协调 */
+  font-size: clamp(1.5rem, 2.2vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+}
+.pf-head p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.7;
+  font-size: 0.92rem;
+}
+.pf-tabs {
+  display: flex;
+  gap: 0.35rem;
+  margin-block-start: 1.2rem;
+  border-block-start: 1px solid var(--line);
+  padding-block-start: 0.75rem;
+  flex-wrap: wrap;
+}
+.pf-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-block-size: 40px;
+  padding: 0.45rem 1rem;
+  border: 1px solid transparent;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.pf-tab:hover { background: var(--surface-hover); color: var(--accent-ink); }
+.pf-tab.is-active {
+  background: var(--soft);
+  border-color: var(--line-strong);
+  color: var(--accent-ink);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+.pf-tab-count {
+  display: inline-block;
+  min-inline-size: 1.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--quiet);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.pf-tab.is-active .pf-tab-count { background: var(--accent); color: var(--accent-text); }
+
+/* ---------- 提示条 ---------- */
+.pf-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-inline-start: 4px solid var(--accent);
+  border-radius: var(--r-sm);
+  background: var(--soft);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+/* display:flex 会压过 UA 的 [hidden]，必须显式兜底 */
+.pf-notice[hidden],
+.pf-dialog-err[hidden] { display: none; }
+.pf-notice.is-error {
+  border-inline-start-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.pf-notice .ui-glyph { flex: none; }
+
+/* ---------- 区块 / 表格 ---------- */
+.pf-section {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  padding: 1.35rem 1.5rem 1.5rem;
+}
+.pf-section + .pf-section { margin-block-start: 1.25rem; }
+.pf-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-block-end: 1rem;
+}
+.pf-section h2,
+.pf-section h3 {
+  margin: 0 0 0.35rem;
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+.pf-section h2 { font-size: 1.2rem; }
+.pf-section h3 { font-size: 1.05rem; }
+.pf-section h3 small { color: var(--quiet); font-weight: 500; font-size: 0.82rem; }
+.pf-section-head p,
+.pf-section > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+/* 长表格：可键盘滚动 + sticky 表头；内联尺寸用逻辑属性 */
+.pf-table-wrap {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(560px, 74vh);
+  container-type: inline-size;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper);
+}
+.pf-table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.86rem;
+}
+.pf-table caption { text-align: start; }
+.pf-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  background: var(--paper-2);
+  color: var(--accent-ink);
+  font-weight: 800;
+  text-align: start;
+  white-space: nowrap;
+  padding: 0.7rem 0.85rem;
+  border-block-end: 1px solid var(--line-strong);
+}
+.pf-table tbody th,
+.pf-table tbody td {
+  padding: 0.7rem 0.85rem;
+  border-block-end: 1px solid var(--line);
+  vertical-align: top;
+  line-height: 1.55;
+}
+.pf-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 2;
+  background: var(--paper);
+  color: var(--text);
+  font-weight: 700;
+  white-space: nowrap;
+  border-inline-end: 1px solid var(--line);
+}
+.pf-table tbody tr:hover th,
+.pf-table tbody tr:hover td { background: var(--surface); }
+.pf-table tbody tr:last-child th,
+.pf-table tbody tr:last-child td { border-block-end: 0; }
+
+.pf-lanes { min-inline-size: 15rem; }
+.pf-lane { display: inline-block; margin-inline-end: 0.6rem; white-space: nowrap; }
+.pf-lane i {
+  font-style: normal;
+  color: var(--quiet);
+  font-size: 0.78rem;
+}
+.pf-heroes { min-inline-size: 12rem; }
+.pf-mini-hero {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-inline-end: 0.45rem;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper-2);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.pf-mini-hero img { border-radius: 50%; }
+.pf-metric { display: inline-block; margin-inline-end: 0.55rem; white-space: nowrap; }
+.pf-metric i { font-style: normal; color: var(--quiet); font-size: 0.78rem; }
+.pf-dim { color: var(--quiet); }
+.pf-empty,
+.pf-empty-small { color: var(--muted); text-align: center; padding: 1.4rem; }
+.pf-empty-small { padding: 0.6rem; font-size: 0.85rem; }
+/* 空状态淡金点缀：只借现有 token，不插图 */
+.pf-table tbody .pf-empty {
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.pf-section > p.pf-empty {
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+}
+/* 空态引导：把「为什么空、下一步做什么」放在同一处，避免只有一行提示。 */
+.pf-empty-guide { display: grid; justify-items: center; gap: 4px; padding: 8px 0; }
+.pf-empty-guide b { color: var(--text); font-size: .9375rem; }
+.pf-empty-guide > span { color: var(--muted); font-size: .8125rem; }
+.pf-empty-guide .pf-empty-steps { color: var(--quiet); font-size: .75rem; }
+/* 空态淡金图标 / 加载旋转图标：图标本身是金色渐变图，用 opacity 压淡 */
+.pf-empty-icon { opacity: .4; vertical-align: middle; margin-inline-end: 0.5rem; }
+.pf-loading { color: var(--muted); padding: 2rem; text-align: center; }
+.pf-loading .ui-glyph { opacity: .55; vertical-align: middle; margin-inline-end: 0.5rem; }
+.pf-loading .pf-spin { animation: pf-spin 1.4s linear infinite; }
+@keyframes pf-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .pf-loading .pf-spin { animation: none; }
+}
+
+/* ---------- 徽标 / 标签 ---------- */
+.pf-badge {
+  display: inline-block;
+  padding: 0.12rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pf-badge.is-starter { background: var(--soft); color: var(--accent-ink); border-color: var(--accent); }
+.pf-badge.is-sub { background: var(--surface); color: var(--muted); }
+.pf-badge.is-promoted { background: var(--success-soft); color: var(--success); border-color: var(--success); }
+.pf-tag {
+  display: inline-block;
+  margin: 0 0.3rem 0.25rem 0;
+  padding: 0.12rem 0.5rem;
+  border-radius: var(--r-sm);
+  background: var(--soft);
+  border: 1px solid var(--line);
+  color: var(--accent-ink);
+  font-size: 0.78rem;
+}
+.pf-tag.is-editable { display: inline-flex; align-items: center; gap: 0.3rem; }
+
+/* ---------- 按钮（沿用外壳类名，在本模块内兜底样式） ---------- */
+.pf-page .control,
+.pf-page .primary,
+.pf-dialog .control,
+.pf-dialog .primary,
+.pf-dialog .pf-danger {
+  font: inherit;
+  font-size: 0.85rem;
+  min-block-size: 34px;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--text);
+  cursor: pointer;
+  /* 图标 + 文字统一对齐；图标本身是金色渐变图，不受 currentColor 影响 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+/* 防御：flex 容器里图标不应按 SVG 的 48×48 固有尺寸撑开按钮 */
+.pf-page .ui-glyph,
+.pf-dialog .ui-glyph { max-inline-size: 18px; max-block-size: 18px; }
+.pf-page .control:hover,
+.pf-dialog .control:hover { border-color: var(--accent); background: var(--surface-hover); color: var(--accent-ink); }
+/* 浅金底 + 深金墨细描边，去掉深棕实心块。
+   文字 #8A6530 vs 10% 金底 ≈ 4.90:1；hover 16% ≈ 4.74:1；描边 vs 浅底 ≈ 3.66:1。 */
+.pf-page .primary,
+.pf-dialog .primary {
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  border-color: rgba(138, 101, 48, 0.85);
+  color: var(--accent-ink);
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+.pf-page .primary:hover,
+.pf-dialog .primary:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--paper));
+  border-color: var(--accent-ink);
+}
+.pf-page .primary:active,
+.pf-dialog .primary:active { background: color-mix(in srgb, var(--accent) 20%, var(--paper)); }
+.pf-page .control.is-danger,
+.pf-dialog .pf-danger { color: var(--danger); border-color: var(--danger); background: var(--danger-soft); }
+.pf-page .control.is-danger:hover,
+.pf-dialog .pf-danger:hover { background: var(--danger); color: var(--accent-text); }
+.pf-page .control:disabled { opacity: .6; cursor: progress; }
+.pf-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--muted);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.pf-icon-btn .ui-glyph { inline-size: 14px; block-size: 14px; }
+.pf-icon-btn:hover { color: var(--danger); border-color: var(--danger); }
+.pf-actions { white-space: nowrap; }
+.pf-actions > * { margin-inline-end: 0.35rem; }
+
+/* ---------- 横向对比 ---------- */
+.pf-compare-controls {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-block-end: 1rem;
+}
+.pf-compare-controls > label,
+.pf-compare-people legend {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.pf-compare-people {
+  display: flex;
+  gap: 0.4rem 1rem;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0.25rem 0.75rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.pf-compare-people legend { padding: 0 0.35rem; }
+.pf-check { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.86rem; cursor: pointer; }
+.pf-check-block { display: flex; margin-block: 0.9rem; }
+.pf-page input[type='checkbox'],
+.pf-dialog input[type='checkbox'] { accent-color: var(--accent); inline-size: 16px; block-size: 16px; }
+
+/* ---------- 原生 dialog：滚动隔离 + 白金面板 ---------- */
+/* 必须成对出现：::backdrop 默认 overflow:visible，不是滚动容器，
+   单独写 overscroll-behavior 不会拦住滚轮传到背后的页面。 */
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: var(--line-strong);
+  background: color-mix(in srgb, var(--text) 42%, transparent);
+}
+.pf-dialog {
+  inline-size: min(760px, calc(100vw - 2rem));
+  max-block-size: min(88vh, 900px);
+  overflow: auto;
+  padding: 1.5rem 1.6rem 1.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+}
+.pf-dialog-sm { inline-size: min(420px, calc(100vw - 2rem)); }
+.pf-dialog h2 {
+  margin: 0 0 0.35rem;
+  color: var(--accent-ink);
+  font-size: 1.2rem;
+}
+.pf-dialog-desc {
+  margin: 0 0 1.1rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+/* 弹窗内错误区：模态打开时页头 notice 被遮罩挡住，校验 / 409 冲突必须写在这里 */
+.pf-dialog-err {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--danger);
+  border-inline-start-width: 4px;
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 0.85rem;
+  font-weight: 650;
+}
+.pf-dialog-err .ui-glyph { flex: none; }
+.pf-transfer-note {
+  margin: 0 0 1rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--r-sm);
+  border-inline-start: 3px solid var(--accent);
+  background: var(--soft);
+  color: var(--accent-ink);
+  font-size: 0.85rem;
+}
+.pf-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-block-start: 1.4rem;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--line);
+}
+
+/* ---------- 表单 ---------- */
+.pf-form-grid,
+.pf-lane-grid,
+.pf-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.85rem 1rem;
+}
+.pf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-inline-size: 0;
+}
+.pf-field > label {
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.pf-required { color: var(--danger); font-weight: 800; }
+.pf-hint { margin: 0; color: var(--quiet); font-size: 0.78rem; line-height: 1.5; }
+/* 全局 fieldset{display:flex;gap:12px} 会渗进弹窗，多出 12px gap；
+   本模块字段集统一回归 grid（对比勾选区 .pf-compare-people 保留自己的 flex 布局）。 */
+.pf-page fieldset:not(.pf-compare-people),
+.pf-dialog fieldset { display: grid; }
+.pf-fieldset {
+  margin: 1.1rem 0 0;
+  padding: 0.8rem 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+.pf-fieldset legend {
+  padding: 0 0.4rem;
+  color: var(--accent-ink);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+.pf-field input,
+.pf-field select,
+.pf-field textarea,
+.pf-tag-add input,
+.pf-hero-picker input[type='search'] {
+  font: inherit;
+  font-size: max(1rem, 1em);
+  color: var(--text);
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: 0.5rem 0.65rem;
+  min-block-size: 40px;
+  inline-size: 100%;
+  box-sizing: border-box;
+}
+.pf-field textarea { resize: vertical; }
+.pf-field input:hover,
+.pf-field select:hover,
+.pf-field textarea:hover { border-color: var(--accent); }
+.pf-field input:focus-visible,
+.pf-field select:focus-visible,
+.pf-field textarea:focus-visible,
+.pf-tag-add input:focus-visible,
+.pf-hero-option:focus-visible,
+.pf-icon-btn:focus-visible,
+.pf-tab:focus-visible,
+.pf-table-wrap:focus-visible,
+.pf-page button:focus-visible,
+.pf-dialog button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.pf-field input:user-invalid { border-color: var(--danger); }
+
+/* ---------- 英雄头像选择器 ---------- */
+.pf-hero-picker { margin-block-start: 1.1rem; }
+.pf-hero-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-block: 0.6rem;
+  min-block-size: 1.8rem;
+  align-items: center;
+  color: var(--quiet);
+  font-size: 0.82rem;
+}
+.pf-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--soft);
+}
+.pf-hero-chip img,
+.pf-hero-initial {
+  inline-size: 26px;
+  block-size: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.pf-hero-initial {
+  display: inline-grid;
+  place-items: center;
+  background: var(--selected);
+  color: var(--accent-ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.pf-hero-chip-name { font-size: 0.82rem; font-weight: 700; }
+.pf-hero-chip input {
+  inline-size: 74px;
+  min-block-size: 32px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.85rem;
+}
+.pf-hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 0.4rem;
+  max-block-size: 210px;
+  overflow: auto;
+  padding: 0.5rem 0.5rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+  overscroll-behavior: contain;
+  /* 固定高度会截断第三行：细滚动条 + 底部淡金渐隐，明确提示可继续滚动 */
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--accent) 55%, var(--line)) transparent;
+  box-shadow: inset 0 -12px 12px -12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.pf-hero-grid::-webkit-scrollbar { inline-size: 8px; }
+.pf-hero-grid::-webkit-scrollbar-track { background: transparent; }
+.pf-hero-grid::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+.pf-hero-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.35rem 0.2rem;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+  min-block-size: 68px;
+}
+.pf-hero-option img,
+.pf-hero-option .pf-hero-initial { inline-size: 34px; block-size: 34px; }
+.pf-hero-option:hover { background: var(--surface-hover); color: var(--accent-ink); }
+.pf-hero-option.is-selected {
+  border-color: var(--accent);
+  background: var(--soft);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* ---------- 标签编辑 ---------- */
+.pf-tag-list { min-block-size: 1.8rem; margin-block-end: 0.5rem; }
+.pf-tag-add { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.pf-tag-add input { flex: 1 1 12rem; inline-size: auto; }
+
+/* ---------- 屏幕阅读器专用 ---------- */
+.pf-visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* ---------- 窄容器：保持横向滚动，但收紧留白、放大点击区 ---------- */
+@container (width < 620px) {
+  .pf-table { font-size: 0.8rem; }
+  .pf-table thead th,
+  .pf-table tbody th,
+  .pf-table tbody td { padding: 0.55rem 0.6rem; }
+  .pf-actions > * { min-block-size: 36px; }
+}
+@media (pointer: coarse) {
+  .pf-page .control,
+  .pf-dialog .control,
+  .pf-dialog .primary,
+  .pf-icon-btn,
+  .pf-hero-option { min-block-size: 44px; }
+}
+
+/* ---------- 补录表单：分区之间留白 + 五路段数不再挤成一排 ---------- */
+.pf-head-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pf-dialog .pf-fieldset { margin-block: 1.5rem; }
+.pf-dialog .pf-lane-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem 1.25rem;
+}
+.pf-hero-filters {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) minmax(160px, 1.4fr);
+  align-items: end;
+  gap: 0.5rem 0.75rem;
+  margin-block-end: 0.75rem;
+}
+.pf-hero-filters > label { font-size: 0.85rem; color: var(--text); }
+.pf-hero-filters select,
+.pf-hero-filters input {
+  inline-size: 100%;
+  min-block-size: 36px;
+  padding-inline: 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+}
+.pf-hero-filters select:focus-visible,
+.pf-hero-filters input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- 从选手分析导入 ---------- */
+.pf-import-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-block-end: 0.5rem;
+}
+.pf-import-bar input[type='search'] {
+  flex: 1 1 220px;
+  min-block-size: 36px;
+  padding-inline: 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+}
+.pf-import-bar input[type='search']:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pf-import-list {
+  max-block-size: min(420px, 52vh);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper-2);
+}
+.pf-import-row {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) minmax(140px, 1.2fr);
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-block-end: 1px solid var(--line);
+  cursor: pointer;
+}
+.pf-import-row:last-child { border-block-end: 0; }
+.pf-import-row:hover { background: var(--surface-hover); }
+.pf-import-row input { accent-color: var(--accent); }
+.pf-import-name { color: var(--text); font-size: 0.9rem; }
+.pf-import-meta { color: var(--muted); font-size: 0.8rem; }
+@container (width < 620px) {
+  .pf-hero-filters { grid-template-columns: 1fr 1fr; }
+  .pf-import-row { grid-template-columns: auto 1fr; }
+  .pf-import-meta { grid-column: 2; }
+}

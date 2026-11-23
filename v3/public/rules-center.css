@@ -1,0 +1,646 @@
+/* 赛训规则中心（2026-11-22）：白金画廊风格，作用域 .rc-page / .rc-dialog。
+ * 只使用 kpl-gold.css 的 token（带兜底值），不硬编码任何主题蓝；
+ * 红蓝双方语义色与图表色不在本作用域内，不受影响。
+ */
+
+.rc-page {
+  --rc-bg: var(--bg, #F8F7F3);
+  --rc-paper: var(--paper, #FFFEFC);
+  --rc-surface: var(--surface, #F3F0E9);
+  --rc-text: var(--text, #2F2B1E);
+  --rc-muted: var(--muted, #6E6658);
+  --rc-line: var(--line, rgba(150, 116, 49, .28));
+  --rc-line-strong: var(--line-strong, rgba(150, 116, 49, .5));
+  --rc-accent: var(--accent, #D7B071);
+  --rc-accent-ink: var(--accent-ink, #8A6530);
+  --rc-accent-hover: var(--accent-hover, #B98F42);
+  --rc-soft: var(--soft, #F5EBD3);
+  --rc-success: var(--success, #2AA68A);
+  --rc-danger: var(--danger, #B5564A);
+  --rc-danger-soft: var(--danger-soft, #F6E8E5);
+  --rc-focus: var(--focus, #A97C3E);
+  --rc-shadow: var(--shadow, 0 4px 14px rgba(77, 60, 47, .08));
+  --rc-r-sm: var(--r-sm, 8px);
+  --rc-r-md: var(--r-md, 12px);
+  --rc-r-lg: var(--r-lg, 18px);
+  color: var(--rc-text);
+}
+
+.rc-page :is(button, input, select, textarea, summary, [tabindex="0"]):focus-visible {
+  outline: 2px solid var(--rc-focus);
+  outline-offset: 2px;
+}
+.rc-page .visually-hidden {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+/* ── 页头 / 提示 ─────────────────────────────────────────────────── */
+.rc-head { padding-block-end: 12px; }
+.rc-head h1 {
+  margin: 0;
+  font-size: clamp(1.35rem, 2vw, 1.8rem);
+  color: var(--rc-accent-ink);
+  letter-spacing: .02em;
+}
+.rc-doc-rev {
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--rc-line);
+  border-radius: 999px;
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-size: .8rem;
+  white-space: nowrap;
+}
+.rc-notice {
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-surface);
+  color: var(--rc-muted);
+  font-size: .85rem;
+}
+.rc-notice.is-error {
+  border-color: var(--rc-danger);
+  background: var(--rc-danger-soft);
+  color: var(--rc-danger);
+}
+.rc-note {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-inline-start: 3px solid var(--rc-accent);
+  border-radius: 0 var(--rc-r-sm) var(--rc-r-sm) 0;
+  background: var(--rc-soft);
+  color: var(--rc-muted);
+  font-size: .84rem;
+  line-height: 1.6;
+}
+/* 增改删成功后的短 toast（notify 存在时才由 JS 注入）。 */
+.rc-toast {
+  position: fixed;
+  inset-block-end: 24px;
+  inset-inline-end: 24px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-inline-size: min(360px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid var(--rc-accent);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  color: var(--rc-accent-ink);
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(77, 60, 47, .22));
+  font-size: .86rem;
+  animation: rc-toast-in .18s ease-out;
+}
+@keyframes rc-toast-in { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+
+/* ── 六个分类 tab ────────────────────────────────────────────────── */
+.rc-tabs {
+  /* 等宽网格：窄屏换行后每列仍等宽，不会出现第二行两个 tab 被拉宽失衡。 */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  margin: 4px 0 16px;
+  padding: 6px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-md);
+  background: var(--rc-paper);
+  box-shadow: var(--rc-shadow);
+}
+.rc-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-inline-size: 0;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: var(--rc-r-sm);
+  background: transparent;
+  color: var(--rc-muted);
+  font: inherit;
+  font-size: .9rem;
+  cursor: pointer;
+}
+.rc-tab:hover { background: var(--rc-surface); color: var(--rc-text); }
+.rc-tab.is-on,
+.rc-tab[aria-selected="true"] {
+  border-color: var(--rc-line-strong);
+  background: linear-gradient(180deg, var(--rc-soft), var(--rc-paper));
+  color: var(--rc-accent-ink);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--rc-accent);
+}
+/* tab 图标选中 / 未选中要有区分：选中给金色辉光，未选中轻微去色。 */
+.rc-tab .ui-glyph { filter: grayscale(.3); opacity: .8; }
+.rc-tab.is-on .ui-glyph,
+.rc-tab[aria-selected="true"] .ui-glyph { filter: drop-shadow(0 0 3px var(--rc-accent)); opacity: 1; }
+/* .rc-filter/.rc-table-wrap 自身设了 display:flex/block，会盖过 UA 的 [hidden]{display:none}。 */
+.rc-panel[hidden], .rc-filter[hidden], .rc-table-wrap[hidden] { display: none !important; }
+.rc-panel > .section { padding: 0; border: 0; box-shadow: none; }
+.rc-panel .section-heading { flex-wrap: wrap; gap: 10px; }
+.rc-panel .section-heading h2 { color: var(--rc-text); }
+.rc-panel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* 图标按钮：金色 SVG 与文字同轴，图标不被按钮压缩变形。 */
+.rc-page :is(.rc-panel-actions button, .section-heading .primary, .rc-filter .primary, .rc-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.rc-page :is(.rc-panel-actions button, .section-heading .primary, .rc-icon) svg { inline-size: 14px; block-size: 14px; flex: 0 0 auto; }
+/* arrow-up 旋转 45° = 外链箭头，替代 app.js 中不存在的 icon('external')。 */
+.ui-glyph.rc-ext { transform: rotate(45deg); }
+/* 浅金主按钮上的外链箭头：保留 14px，去掉原「深棕底提亮」滤镜，
+   改用深金墨细影保证金色图标在浅底上仍可辨；不改图标配色。 */
+.primary .ui-glyph.rc-ext {
+  inline-size: 14px; block-size: 14px;
+  filter: drop-shadow(0 0 1px rgba(138, 101, 48, .65));
+}
+.rc-count { color: var(--rc-muted); font-size: .82rem; }
+.rc-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+.rc-filter label { display: inline-flex; flex-direction: column; gap: 4px; color: var(--rc-muted); font-size: .8rem; }
+/* 一体式搜索框：容器带边框与背景，图标嵌在框内左侧，input 去掉自身边框 */
+.rc-search {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 240px;
+  min-block-size: 36px; padding: 0 12px;
+  border: 1px solid var(--rc-line); border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  transition: border-color .16s ease, box-shadow .16s ease;
+}
+.rc-search:focus-within { border-color: var(--rc-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--rc-accent) 18%, transparent); }
+.rc-search > svg { inline-size: 16px; block-size: 16px; flex: 0 0 auto; color: var(--rc-accent-ink); }
+.rc-search input {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  inline-size: 100%;
+  min-block-size: 34px;
+  padding: 7px 0;
+  border: 0;
+  background: transparent;
+  color: var(--rc-text);
+  font: inherit;
+  font-size: .86rem;
+}
+.rc-filter select {
+  min-block-size: 34px;
+  padding: 6px 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  color: var(--rc-text);
+  font: inherit;
+  font-size: .86rem;
+}
+
+/* ── 表格：语义化 + sticky thead ─────────────────────────────────── */
+.rc-table-wrap {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(560px, 74vh);
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-md);
+  background: var(--rc-paper);
+  container-type: inline-size;
+}
+.rc-table {
+  inline-size: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .84rem;
+}
+.rc-table caption { text-align: start; }
+.rc-table :is(th, td) {
+  padding: 9px 12px;
+  border-block-end: 1px solid var(--rc-line);
+  text-align: start;
+  vertical-align: top;
+  line-height: 1.45;
+}
+/* Sticky 表头：容器滚动时始终可见；背景必须不透明才能盖住下方内容。 */
+.rc-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-weight: 600;
+  white-space: nowrap;
+  border-block-end: 1px solid var(--rc-line-strong);
+}
+.rc-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--rc-surface) 45%, var(--rc-paper)); }
+.rc-table tbody tr:hover { background: var(--rc-surface); }
+.rc-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background: var(--rc-paper);
+  color: var(--rc-accent-ink);
+  font-weight: 600;
+}
+.rc-table small { color: var(--rc-muted); font-size: .78rem; }
+.rc-table .rc-empty { padding: 24px 12px; color: var(--rc-muted); text-align: center; }
+.rc-muted { color: var(--rc-muted); }
+.rc-value { display: block; max-inline-size: 30ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rc-hero-cell { display: inline-flex; align-items: center; gap: 6px; }
+.rc-hero-cell .portrait { inline-size: 26px; block-size: 26px; border-radius: 6px; object-fit: cover; }
+.rc-hero-cell .portrait-placeholder {
+  display: inline-grid;
+  place-items: center;
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-size: .8rem;
+}
+.rc-token {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--rc-line);
+  border-radius: 999px;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  font-size: .78rem;
+}
+.rc-always { color: var(--rc-success); font-weight: 600; }
+.rc-arrow { color: var(--rc-accent-ink); font-size: 1.1rem; font-weight: 700; }
+/* 徽标体系统一：人数 / 强度 / 生效时间 / 修订号一律 24px 高、999 圆角、11px、同边框 token。 */
+.rc-size, .rc-strength, .rc-always, .rc-effective, .rc-rev, .rc-doc-rev {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 24px;
+  padding: 2px 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.rc-effective { display: inline-block; white-space: normal; }
+.rc-size { min-inline-size: 44px; background: var(--rc-soft); color: var(--rc-accent-ink); }
+.rc-size-5 { background: color-mix(in srgb, var(--rc-success) 18%, var(--rc-paper)); color: var(--rc-accent-ink); }
+.rc-strength.s-强 { background: var(--rc-soft); color: var(--rc-accent-ink); }
+.rc-strength:is(.s-中) { background: var(--rc-surface); color: var(--rc-text); }
+.rc-strength:is(.s-弱) { background: var(--rc-danger-soft); color: var(--rc-danger); }
+.rc-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.rc-icon { min-block-size: 28px; padding: 3px 8px; font-size: .78rem; }
+.rc-icon.is-danger { color: var(--rc-danger); }
+.rc-icon.is-danger:hover { background: var(--rc-danger-soft); }
+.rc-history-btn { min-block-size: 28px; padding: 3px 8px; font: inherit; font-size: .78rem; cursor: pointer; }
+.rc-rev, .rc-doc-rev { color: var(--rc-accent-ink); font-variant-numeric: tabular-nums; }
+/* 空状态：语义图标 + 内联新增按钮，避免只有一行干巴巴的文字。 */
+.rc-empty .rc-empty-inner { display: inline-flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; }
+.rc-empty-add { min-block-size: 28px; padding: 3px 10px; font-size: .78rem; }
+/* 一次性新行高亮；reduced-motion 下不闪动。 */
+@keyframes rc-fresh { from { background: color-mix(in srgb, var(--rc-success) 22%, var(--rc-paper)); } to { background: transparent; } }
+.rc-table tbody tr.is-fresh { animation: rc-fresh 1.9s ease-out; }
+
+/* 窄容器（侧栏 / 小屏）下把行变成卡片，保留表头文案作为单元格标签。 */
+@container (width < 720px) {
+  .rc-table:not(.rc-compact), .rc-table:not(.rc-compact) :is(thead, tbody, tr, th, td) { display: block; }
+  .rc-table:not(.rc-compact) thead { display: none; }
+  .rc-table:not(.rc-compact) tr {
+    margin-block-end: 12px;
+    padding: 8px;
+    border: 1px solid var(--rc-line);
+    border-radius: var(--rc-r-sm);
+    background: var(--rc-paper);
+  }
+  .rc-table:not(.rc-compact) :is(th, td) {
+    border: 0;
+    padding: 4px 6px;
+  }
+  .rc-table:not(.rc-compact) td::before {
+    content: attr(data-label) '：';
+    display: inline-block;
+    min-inline-size: 7em;
+    color: var(--rc-muted);
+    font-size: .76rem;
+  }
+}
+
+/* ── 子表切换 / 评级预览 ─────────────────────────────────────────── */
+.rc-subtabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }.rc-subtab {
+  padding: 8px 14px;
+  border: 1px solid var(--rc-line);
+  border-radius: 999px;
+  background: var(--rc-paper);
+  color: var(--rc-muted);
+  font: inherit;
+  font-size: .84rem;
+  cursor: pointer;
+}
+.rc-subtab.is-on, .rc-subtab[aria-pressed="true"] {
+  border-color: var(--rc-line-strong);
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-weight: 600;
+}
+
+/* ── 英雄头像选择 / 筛选（弹窗选择器与列表筛选共用一套按钮）───────── */
+.rc-pick-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+  padding: 6px 2px 5px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  color: var(--rc-text);
+  font: inherit;
+  font-size: .72rem;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.rc-pick-hero:hover { border-color: var(--rc-accent); background: var(--rc-surface); }
+.rc-pick-hero .portrait { inline-size: 36px; block-size: 36px; border-radius: 8px; object-fit: cover; }
+.rc-pick-hero.is-on {
+  border-color: var(--rc-accent);
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--rc-accent);
+}
+.rc-pick-hero.is-on .rc-pick-name::before { content: '✓ '; }
+.rc-pick-face { display: inline-flex; }
+.rc-pick-name {
+  max-inline-size: 100%;
+  padding-inline: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 已选 chips（弹窗选择器与列表筛选共用）。 */
+.rc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 4px;
+  border: 1px solid var(--rc-line-strong);
+  border-radius: 999px;
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-size: .78rem;
+  white-space: nowrap;
+}
+.rc-chip .portrait { inline-size: 22px; block-size: 22px; border-radius: 5px; object-fit: cover; }
+.rc-chip-face { display: inline-flex; }
+.rc-chip-x {
+  padding: 0 3px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.rc-chip-x:hover { color: var(--rc-danger); }
+
+/* 弹窗内的头像选择器（攻方 / 受方各一个）。 */
+.rc-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: color-mix(in srgb, var(--rc-surface) 40%, var(--rc-paper));
+}
+.rc-picker-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rc-picker-label { color: var(--rc-text); font-size: .84rem; font-weight: 600; }
+.rc-picker-head input[type="search"] {
+  flex: 0 1 150px;
+  min-inline-size: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  color: var(--rc-text);
+  font: inherit;
+  font-size: .8rem;
+}
+.rc-picker-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-picker-chips:empty, .rc-hero-filter-chips:empty { display: none; }
+.rc-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 6px;
+  max-block-size: 200px;
+  overflow: auto;
+  padding: 2px;
+}
+.rc-picker-grid .rc-muted, .rc-hero-filter-grid .rc-muted { grid-column: 1 / -1; margin: 0; font-size: .8rem; }
+
+/* 分路筛选：先选分路再选英雄；与 combo-pool 的 .cp-lane 同一套交互。 */
+.rc-lane-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-lane {
+  padding: 4px 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: 999px;
+  background: var(--rc-paper);
+  color: var(--rc-muted);
+  font: inherit;
+  font-size: .78rem;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.rc-lane:hover { border-color: var(--rc-accent); color: var(--rc-text); }
+.rc-lane.is-on {
+  border-color: var(--rc-line-strong);
+  background: var(--rc-soft);
+  color: var(--rc-accent-ink);
+  font-weight: 600;
+}
+
+/* 列表区的英雄头像筛选（details 折叠，chips 常驻 summary）。 */
+.rc-hero-filter {
+  flex: 1 1 260px;
+  min-inline-size: 0;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+}
+.rc-hero-filter summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-block-size: 36px;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  list-style: none;
+  color: var(--rc-muted);
+  font-size: .84rem;
+  cursor: pointer;
+  user-select: none;
+}
+.rc-hero-filter summary::-webkit-details-marker { display: none; }
+.rc-hero-filter-label::before { content: '▾ '; color: var(--rc-accent-ink); }
+.rc-hero-filter[open] .rc-hero-filter-label::before { content: '▴ '; }
+.rc-hero-filter[open] summary { border-block-end: 1px solid var(--rc-line); }
+.rc-hero-filter-count { color: var(--rc-accent-ink); font-size: .78rem; white-space: nowrap; }
+.rc-hero-filter-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-hero-filter-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; }
+.rc-hero-filter-body input[type="search"] {
+  padding: 7px 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  color: var(--rc-text);
+  font: inherit;
+  font-size: .84rem;
+}
+.rc-hero-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  gap: 6px;
+  max-block-size: 240px;
+  overflow: auto;
+  padding: 2px;
+}
+.rc-hero-filter-foot { display: flex; justify-content: flex-end; }
+
+.rc-grade-preview { margin-block-start: 12px; }
+.rc-tools-note {
+  margin-block-start: 18px;
+  padding: 14px 18px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-md);
+  background: var(--rc-surface);
+  color: var(--rc-muted);
+  font-size: .85rem;
+}
+
+/* ── 原生 dialog（表单 / 删除确认 / 条目历史）─────────────────────── */
+.rc-dialog {
+  inline-size: min(760px, 94vw);
+  max-block-size: min(86vh, 900px);
+  overflow: auto;
+  padding: 0;
+  border: 1px solid var(--rc-line-strong);
+  border-radius: var(--rc-r-lg);
+  background: var(--rc-paper);
+  color: var(--rc-text);
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(77, 60, 47, .22));
+}
+/* 必须成对出现：::backdrop 默认 overflow: visible，不设 hidden 就不成为滚动容器，
+   overscroll-behavior 会被忽略，背景页仍会跟着滚。不要用 html/body overflow 锁。 */
+.rc-dialog:modal { overscroll-behavior: contain; }
+.rc-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(47, 40, 30, .42);
+}
+.rc-dialog-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding: 14px 20px;
+  border-block-end: 1px solid var(--rc-line);
+  background: var(--rc-soft);
+}
+.rc-dialog-head h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--rc-accent-ink);
+}
+/* 弹窗内字段校验错误：必须显示在 dialog 内，页头 notice 会被弹窗遮住。 */
+.rc-field-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--rc-danger);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-danger-soft);
+  color: var(--rc-danger);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.rc-field-error[hidden] { display: none; }
+.rc-field-error .ui-glyph { flex: 0 0 auto; margin-block-start: 1px; }
+.rc-dialog-form { padding: 16px 20px 0; }
+.rc-dialog-body :is(label, .rc-eff, fieldset) { display: block; }
+.rc-dialog-body label { margin-block-end: 10px; color: var(--rc-muted); font-size: .84rem; }
+.rc-dialog-body :is(input[type="text"], input[type="number"], input[type="date"], select, textarea) {
+  display: block;
+  inline-size: 100%;
+  margin-block-start: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+  background: var(--rc-paper);
+  color: var(--rc-text);
+  font: inherit;
+  font-size: .88rem;
+}
+.rc-dialog-body textarea { resize: vertical; }
+.rc-dialog-body fieldset {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--rc-line);
+  border-radius: var(--rc-r-sm);
+}
+.rc-dialog-body legend { padding-inline: 6px; color: var(--rc-accent-ink); font-size: .84rem; font-weight: 600; }
+.rc-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 14px; }
+.rc-check-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 4px 10px; }
+.rc-check { display: inline-flex !important; align-items: center; gap: 6px; margin: 0 !important; }
+.rc-check input { inline-size: auto !important; margin: 0 !important; }
+.rc-lineup { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 14px; }
+.rc-lineup label { margin: 0; }
+.rc-hint { margin: 6px 0 0; color: var(--rc-muted); font-size: .78rem; line-height: 1.5; }
+.rc-names summary { cursor: pointer; color: var(--rc-accent-ink); font-size: .82rem; }
+.rc-names p { color: var(--rc-muted); font-size: .8rem; line-height: 1.6; }
+.rc-dialog-foot {
+  position: sticky;
+  inset-block-end: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 16px -20px 0;
+  padding: 12px 20px;
+  border-block-start: 1px solid var(--rc-line);
+  background: var(--rc-surface);
+}
+.rc-dialog-foot button { min-block-size: 34px; padding: 7px 16px; font: inherit; cursor: pointer; }
+.rc-dialog-foot .is-danger { background: var(--rc-danger); border-color: var(--rc-danger); color: #fff; }
+.rc-hist-item { margin-block-end: 8px; border: 1px solid var(--rc-line); border-radius: var(--rc-r-sm); }
+.rc-hist-item summary { padding: 8px 10px; cursor: pointer; color: var(--rc-accent-ink); font-size: .84rem; }
+.rc-hist-item pre {
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  background: var(--rc-surface);
+  color: var(--rc-text);
+  font-size: .76rem;
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-page *, .rc-dialog * { scroll-behavior: auto !important; }
+  .rc-toast { animation: none; }
+  .rc-table tbody tr.is-fresh { animation: none; }
+}

@@ -5,6 +5,22 @@
 body { background: var(--bg); }
 #app { padding-inline-start: 0; }
 .masthead { background: var(--bg); border-color: var(--line); }
+
+/* 顶部导航统一浅蓝白（2026-11-20）：与单局复盘页 / 选手名册同一套色板。
+   只给导航自身换 token，页面内容 theme 不受影响；深色模式保留原样。 */
+:root:not([data-theme='dark']) :is(.masthead, .secondary-wrap, .secondary-nav) {
+  --bg: #ffffff;
+  --paper: #ffffff;
+  --line: #e3eaf2;
+  --text: #1c2b3a;
+  --muted: #5a6b7c;
+  --accent: #1f6fcf;
+  --accent-ink: #1a5fb4;
+  --soft: #eaf3ff;
+}
+:root:not([data-theme='dark']) .brand-symbol i { background: #a9c9ef; }
+:root:not([data-theme='dark']) .brand-symbol i:nth-child(2) { background: var(--accent); }
+:root:not([data-theme='dark']) .brand-symbol i:nth-child(3) { background: #7fb0e8; }
 .masthead-inner { max-inline-size: 1640px; margin-inline: auto; padding-inline: var(--page-gutter); block-size: var(--header-height); gap: 28px; }
 .wordmark { gap: 10px; font: 700 1.5rem/1.2 var(--display-font); letter-spacing: -.025em; }
 .wordmark small { display: none; }

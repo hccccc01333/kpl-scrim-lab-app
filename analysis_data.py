@@ -588,6 +588,9 @@ class AnalysisRepository:
             'duration': duration_seconds, 'opponent': clean(body.get('opponent')),
             'session': clean(body.get('session')), 'version': clean(body.get('version')),
             'mode': None, 'title': None, 'ownSide': own, 'ownCamp': own,
+            # 手工表单录入走训练赛口径；正式赛只从线上表格录入链路产生。
+            'matchType': clean(body.get('matchType')) or 'training',
+            'gameNo': body.get('gameNo'), 'seriesKey': clean(body.get('seriesKey')),
             'winner': winner, 'scores': body.get('scores') or {},
             'players': players,
             'bp': body.get('bp') or '', 'events': body.get('events') or [],
@@ -692,6 +695,11 @@ class AnalysisRepository:
                             or official_economy.duration_from_bundle(self.official_dir, value),
                 'opponent': match.get('opponent'), 'session': match.get('session'),
                 'version': None, 'mode': match.get('mode'),
+                # 正式赛/训练赛口径（2026-11-22）：正式比赛线上表格录入的包带
+                # matchType=formal（含 gameNo/seriesKey），其余 bundle 一律按训练赛算。
+                'matchType': clean(match.get('matchType')) or 'training',
+                'gameNo': match.get('gameNo'),
+                'seriesKey': clean(match.get('seriesKey')),
                 'title': match.get('title'), 'ownSide': own_camp,
                 'ownCamp': own_camp or match.get('ownCamp'),
                 # winner 保持原有口径（数据包默认不由面板冒充胜负）；
@@ -784,6 +792,11 @@ class AnalysisRepository:
         merged['bundleWarnings'] = bundle.get('warnings', [])
         merged['title'] = bundle.get('title')
         merged['mode'] = bundle.get('mode')
+        # 正式赛口径以 bundle 为准：正式录入的包必带 matchType=formal，
+        # 手工训练赛条目合并后跟着包走，避免同一局两处口径打架。
+        merged['matchType'] = clean(bundle.get('matchType')) or clean(db.get('matchType')) or 'training'
+        merged['gameNo'] = bundle.get('gameNo') or db.get('gameNo')
+        merged['seriesKey'] = clean(bundle.get('seriesKey')) or clean(db.get('seriesKey'))
         merged['warnings'] = list(dict.fromkeys((db.get('warnings') or []) + (bundle.get('warnings') or [])))
         b_blue = [p['hero'] for p in bundle['players'] if p.get('camp') == 'blue']
         b_red = [p['hero'] for p in bundle['players'] if p.get('camp') == 'red']
@@ -1566,6 +1579,9 @@ class AnalysisRepository:
                 'startTime': match.get('startTime'), 'opponent': match.get('opponent'),
                 'opponentTeamId': match.get('opponentTeamId'),
                 'session': match.get('session'),
+                # 正式赛/训练赛口径：对局档案页的类型切换按这个字段分流。
+                'matchType': match.get('matchType') or 'training',
+                'gameNo': match.get('gameNo'), 'seriesKey': match.get('seriesKey'),
                 'version': match.get('version'), 'duration': match.get('duration'),
                 'mode': match.get('mode'), 'title': match.get('title'),
                 'sources': match.get('sources'), 'source': match.get('source'),

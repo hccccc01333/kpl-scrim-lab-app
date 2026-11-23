@@ -2,30 +2,150 @@
 @layer legacy, theme, foundation, interface, celadon, board;
 /* 选手详情页覆盖层：不放进任何 layer，优先级高于全部 @layer。
    @import 必须排在所有规则之前，否则浏览器直接丢弃。 */
-@import url('./player-v2.css?v=20261118b');
-@import url('./style.css?v=20261118a') layer(legacy);
+@import url('./player-v2.css?v=20261120m');
+@import url('./style.css?v=20261123scout2') layer(legacy);
 @import url('./match-recap-fixes.css?v=20261116c') layer(legacy);
 @import url('./workspace-home.css?v=20261116c') layer(legacy);
-@import url('./bp-studio.css?v=20261118d4') layer(legacy);
+@import url('./bp-studio.css?v=20261124link') layer(legacy);
 @import url('./match-review.css?v=20261116c') layer(legacy);
 @import url('./series.css?v=20261116c') layer(legacy);
 @import url('./cross.css?v=20261116c') layer(legacy);
 @import url('./team-dossier.css?v=20261116c') layer(legacy);
-@import url('./ui-tokens.css?v=20261116c') layer(theme);
+@import url('./ui-tokens.css?v=20261119d') layer(theme);
 @import url('./ui-primitives.css?v=20261116c') layer(foundation);
-@import url('./workbench-ui.css?v=20261116c') layer(interface);
+@import url('./workbench-ui.css?v=20261119b') layer(interface);
 @import url('./celadon.css?v=20261116c') layer(celadon);
 
 @import url("./brief-celadon.css") layer(celadon);
 @import url("./design-consistency.css") layer(celadon);
-@import url("./biggame.css") layer(celadon);
-@import url("./teams-board.css?v=20261116-board") layer(board);
+@import url("./biggame.css?v=20261122trend") layer(celadon);
+@import url("./teams-board.css?v=20261122fresh") layer(board);
+/* 战队分析列表页浅白红蓝皮肤（2026-11-20）：未分层，盖过 board 层的青绿主题。 */
+@import url("./teams-board-light.css?v=20261123uipolish");
 /* 选手名册整页重做（2026-11-16）：不放进任何 layer，保证盖过历史补丁里的 .rs-* 尺寸。 */
-@import url("./player-archive.css");
+@import url("./player-archive.css?v=20261123pct");
 /* 战队详情 v9（2026-11-17）：分节、英雄大圆卡、类型矩阵。不放进 layer，保证盖过历史补丁。 */
-@import url("./team-dossier-v9.css?v=20261118d4");
+@import url("./team-dossier-v9.css?v=20261123head");
+/* 战队详情 02 BP 四块新分析（2026-11-22）：优先级象限 / 赢输指纹 / 条件响应 / 招牌 ban。 */
+@import url("./team-bp-analysis.css?v=20261123d");
 /* 大场列表全新白色卡片界面（2026-11-18）：未分层、最后导入，只盖 #biggame 列表页。 */
-@import url("./biggame-list-ui.css?v=20261118b");
+@import url("./biggame-list-ui.css?v=20261120a");
 /* 首页复盘卡排版收尾（2026-11-18）：未分层最后导入，统一卡片宽度 / 行距 / 头像尺寸。 */
-@import url("./home-watch-layout.css?v=20261118a");
+@import url("./home-watch-layout.css?v=20261119c");
+/* 单局标签（2026-11-19）：首页复盘卡 / 对局档案 / 单局复盘页共用的标签行。 */
+@import url("./match-tags.css?v=20261122b");
 @import url("./biggame-detail-fixes.css?v=20261118a");
+/* 单局复盘页白底红蓝对决皮肤（2026-11-19）：未分层最后导入，仅作用于 .md-page。 */
+@import url("./match-redblue.css?v=20261121b");
+/* 本局结论/总量：1:1 移植设计稿红蓝渐变卡片（2026-11-19）。 */
+@import url("./design-verdict.css?v=20261122b");
+/* 单局复盘首屏图三版式（2026-11-22）：比分头 / Pick-Ban / 五路表。 */
+@import url("./match-summary.css?v=20261122polish");
+/* 总量 + 阶段对比：1:1 移植设计稿白卡 + 7 列表格（2026-11-19）。 */
+@import url("./design-totals.css?v=20261119z");
+/* 本局BP复盘：1:1 移植设计稿横向组合卡（2026-11-19）。 */
+@import url("./design-bp.css?v=20261119v");
+/* 对位压制 / 克制命中 / 组合得失：1:1 设计稿卡片语言（2026-11-19）。 */
+@import url("./design-cards.css?v=20261122polish");
+/* 10 分钟经济：1:1 设计稿分路卡（2026-11-19）。 */
+@import url("./design-gold10.css?v=20261122polish");
+/* 十人面板 / 中野辅 / 并线 / 切C：白卡 + 蓝红统一（2026-11-19）。 */
+@import url("./design-panels.css?v=20261119z");
+/* 选手对比页整页重做（2026-11-20）：未分层最后导入，双视图同屏 + A金/B青对决头。 */
+@import url("./player-compare-v3.css?v=20261120g");
+/* 单局复盘深色主题补丁：最后导入，统一翻掉设计稿里的浅底浅字。 */
+@import url("./md-dark.css?v=20261122h");
+/* 组合池设置页（2026-11）：分路筛选 / 头像多选 / 双人组合池 / 三人体系池。
+   未分层最后导入，只作用于 .cp-page / .cp-dialog。 */
+@import url("./combo-pool.css?v=20261121c");
+/* 赛训组配置管理工具（导出/导入/变更历史/撤销）。只作用于 .cfg-section。 */
+@import url("./config-tools.css?v=20261121a");
+/* 评级规则设置页（2026-11）：分路×字段的 4 档阈值表格。只作用于 .gr-page。 */
+@import url("./grade-rules.css?v=20261121c");
+/* 赛事框架（2026-11）：赛事列表/当前赛事/门控灰化。只作用于 .comp-page 与 [data-nav].is-gated。 */
+@import url("./competitions.css?v=20261121a");
+
+/* ── 精致化收尾（2026-11-23）：只调间距、焦点、阴影与悬停反馈，不改结构 ───── */
+/* 英雄头像浮层：柔和焦点环、更大的点击区、名字不被挤成一团 */
+.hb-picker-pop { border-radius: 12px; box-shadow: 0 18px 44px rgb(16 35 60 / 18%), 0 2px 8px rgb(16 35 60 / 6%); }
+#app .hb-picker-head input:focus,
+#app .hb-picker-head input:focus-visible,
+#app [data-hero-filter="name"]:focus-visible,
+#app [data-team-search]:focus-visible,
+#content .hero-filterbar select:focus-visible,
+#content [data-team-sort] select:focus-visible,
+#content [data-team-tag-filter]:focus-visible,
+#content .tp-utag-field input:focus-visible,
+#app #content input:focus-visible,
+#app #content select:focus-visible,
+#app #content textarea:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent) !important;
+  outline-offset: 2px !important;
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+.hb-pick { min-height: 54px; }
+.hb-pick span { max-width: 46px; font-size: 10.5px; }
+.hb-picker-foot .primary { border-radius: 7px; box-shadow: 0 2px 6px rgb(16 35 60 / 12%); }
+/* 英雄榜：整行轻悬停，表头排序态更克制 */
+.hero-board-table tbody tr[data-hero-row] > * { transition: background .15s ease; }
+.hero-board-table tbody tr[data-hero-row]:hover > * { background: color-mix(in srgb, var(--accent) 4%, var(--paper)); }
+/* 战队详情头部：收紧纵向节奏，标签与队名同排居中 */
+.tp-page .tp-head { gap: 16px; padding: 22px 24px 20px; }
+.tp-page .tp-id-copy { flex: 0 1 auto; }
+.tp-page .tp-tags { align-self: center; justify-content: flex-start; margin-inline-start: 4px; padding-top: 0; }
+.tp-page .tp-facts { padding-top: 14px; }
+.tp-page .tp-crest { box-shadow: 0 4px 12px rgb(16 35 60 / 10%); }
+.tp-page .tp-tab.is-active { box-shadow: 0 2px 8px rgb(16 35 60 / 10%); }
+
+/* 尊重系统的减少动态效果偏好：关掉微动效，保留所有状态本身 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* 触屏下给小按钮更大的点击区 */
+@media (pointer: coarse) {
+  .tp-page .tp-sec-copy { min-block-size: 44px; padding-inline: 12px; font-size: 12px; }
+  .tp-page .tp-utag-remove { min-inline-size: 40px; min-block-size: 36px; }
+  .tp-page .tp-note-tag { min-block-size: 38px; padding-inline: 10px; }
+}
+
+/* 周报模板：按赛事勾选模块并调整顺序 */
+.report-toolbar { position: relative; }
+.report-template > summary {
+  display: inline-flex; align-items: center; min-block-size: 32px; padding: 6px 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--paper);
+  color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.report-template[open] {
+  position: absolute; top: 100%; inset-inline-start: 0; z-index: 40;
+  inline-size: min(324px, calc(100vw - 32px)); max-inline-size: calc(100vw - 32px); margin-block-start: 8px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--paper);
+  box-shadow: 0 14px 36px rgb(16 35 60 / 14%);
+}
+.report-template .rt-comp { margin: 8px 0 10px; color: var(--quiet); font-size: 11.5px; }
+.report-template .rt-comp b { color: var(--text); font-weight: 700; }
+.report-template .rt-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.report-template .rt-presets button { min-block-size: 28px; padding-inline: 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); color: var(--muted); font-size: 11.5px; cursor: pointer; }
+.report-template .rt-presets button:hover { border-color: var(--accent); color: var(--accent); }
+.report-template .rt-list { display: grid; gap: 4px; margin-block: 10px; max-block-size: 340px; overflow-y: auto; }
+.report-template .rt-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 6px; border-radius: 7px; }
+.report-template .rt-row:hover { background: color-mix(in srgb, var(--accent) 5%, var(--paper)); }
+.report-template .rt-check { display: inline-flex; align-items: center; cursor: pointer; }
+.report-template .rt-title { inline-size: 100%; min-inline-size: 0; block-size: 28px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font: 500 12px var(--font); }
+.report-template .rt-text { grid-column: 1 / -1; inline-size: 100%; min-block-size: 62px; padding: 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font: 12px/1.5 var(--font); resize: vertical; }
+.report-template .rt-move { display: inline-flex; gap: 2px; }
+.report-template .rt-move button { inline-size: 24px; block-size: 24px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--muted); cursor: pointer; }
+.report-template .rt-move [data-rt-delete] { color: #b42318; }
+.report-template .rt-add { min-block-size: 30px; }
+.report-template .rt-actions { display: flex; align-items: center; gap: 10px; margin-block-start: 8px; }
+.report-template .rt-actions button { min-block-size: 32px; }
+.report-template [data-rt-status] { color: var(--muted); font-size: 11.5px; }
+.report-template .rt-hint { margin-block: 8px 0; color: var(--quiet); font-size: 11px; line-height: 1.5; }
+.report-custom-text { color: var(--text); font-size: 13px; line-height: 1.7; }
+
+

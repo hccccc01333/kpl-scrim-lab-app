@@ -41,11 +41,13 @@ export function createCoachBoard({ esc = es } = {}) {
     const cur = viewOf(id);
     const one = (k, html) => `<div class="hc-view${cur === k ? ' is-enter' : ''}" data-cv-view="${k}"${cur === k ? '' : ' hidden'}>${html}</div>`;
     return `<div class="hcv" data-cv-viz="${id}">
-      <div class="hcv-bar"><div class="hcv-switch" role="group" aria-label="切换视图">
-        <button type="button" data-cv-view-btn="a" data-cv-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}">${es(meta[0])}</button>
-        <button type="button" data-cv-view-btn="b" data-cv-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}">${es(meta[1])}</button>
-      </div></div>
-      <div class="hcv-stage">${one('a', a)}${one('b', b)}<div class="hcv-tip" hidden></div></div>
+      <div class="hcv-stage">
+        <div class="hcv-bar"><div class="hcv-switch" role="group" aria-label="切换视图">
+          <button type="button" data-cv-view-btn="a" data-cv-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}">${es(meta[0])}</button>
+          <button type="button" data-cv-view-btn="b" data-cv-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}">${es(meta[1])}</button>
+        </div></div>
+        ${one('a', a)}${one('b', b)}<div class="hcv-tip" hidden></div>
+      </div>
     </div>`;
   }
   const view = (hero, body) => `<div class="hcv-view"><div class="hcv-hero">${hero}</div><div class="hcv-body">${body}</div></div>`;
@@ -333,14 +335,22 @@ export function createCoachBoard({ esc = es } = {}) {
     const yMin = Math.min(...ys), yMax = Math.max(...ys);
     const xPos = (v) => 6 + (v - xMin) / Math.max(0.001, xMax - xMin) * 88;
     const yPos = (v) => 8 + (v - yMin) / Math.max(0.001, yMax - yMin) * 84;
-    const dots = pts.map((c) => `<i class="pb-dot${c.teamId === state.teamId ? ' is-on' : ''}${c.winRate !== null && c.winRate < 50 ? ' neg' : ''}"
-      style="left:${xPos(c.pickHeat).toFixed(1)}%;bottom:${yPos(c.banHeat).toFixed(1)}%"
-      ${tip(`${c.name} · 选用热度 ${n1(c.pickHeat)} · 禁用热度 ${n1(c.banHeat)} · ${n0(c.wins)} 胜 ${n0(c.losses)} 负`)}></i>`).join('');
+    const dots = pts.map((c) => {
+      const left = xPos(c.pickHeat).toFixed(1);
+      const bottom = yPos(c.banHeat).toFixed(1);
+      const on = c.teamId === state.teamId;
+      return `<i class="pb-dot${on ? ' is-on' : ''}${c.winRate !== null && c.winRate < 50 ? ' neg' : ''}"
+        style="left:${left}%;bottom:${bottom}%"
+        ${tip(`${c.name} · 选用热度 ${n1(c.pickHeat)} · 禁用热度 ${n1(c.banHeat)} · ${n0(c.wins)} 胜 ${n0(c.losses)} 负`)}></i>
+        ${on ? `<em class="pb-dot-name" style="left:${left}%;bottom:${bottom}%">${es(c.name)}</em>` : ''}`;
+    }).join('');
     const A = view(
       big(d.self ? n1(d.self.pickHeat) : '—', `${name} 的选用热度 · 全场均值 ${n1(avg(pts.map((c) => c.pickHeat)))}`, 'gold'),
       `<div class="pb-scatter">
         <span class="pb-sc-x"></span><span class="pb-sc-y"></span>
         <span class="pb-sc-lab yt">禁得偏热</span><span class="pb-sc-lab yb">禁得偏冷</span>
+        <span class="pb-sc-tick tl">${n1(yMax)}</span><span class="pb-sc-tick bl">${n1(yMin)}</span>
+        <span class="pb-sc-tick tr">${n1(xMax)}</span><span class="pb-sc-tick br">${n1(xMin)}</span>
         ${dots}
       </div>
       <div class="pb-sc-axis"><span>英雄偏冷</span><span>选用热度</span><span>英雄偏热</span></div>`

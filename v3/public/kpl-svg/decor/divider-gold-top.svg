@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="258" height="10" viewBox="0 0 258 10" role="img">
+<title>金色横条</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient></defs>
+<path d="M1 2 H257 Q257 9 249 9 H9 Q1 9 1 2Z" fill="url(#gold)"/>
+</svg>

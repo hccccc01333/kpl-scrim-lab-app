@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="218" height="70" viewBox="0 0 218 70" role="img">
+<title>战队条空白 · 队名按钮</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="paper" x2="0%" y2="100%">
+ <stop stop-color="#fffefb"/><stop offset="1" stop-color="#eeeae5"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<defs><clipPath id="team-empty-plain"><rect x="0" y="0" width="218" height="70" rx="13" fill="#fff"/></clipPath></defs><g clip-path="url(#team-empty-plain)"><rect x="0" y="0" width="218" height="70" rx="13" fill="url(#paper)" stroke="url(#gold-edge)" stroke-width="1"/><path d="M0 0 H24 Q10 1 10 14 V70 H0Z" fill="url(#gold)"/><path d="M8 0 H21 Q12 5 12 15 V70 H8Z" fill="url(#teal-edge)"/><g transform="translate(218 0) scale(-1 1)"><path d="M0 0 H24 Q10 1 10 14 V70 H0Z" fill="url(#gold)"/><path d="M8 0 H21 Q12 5 12 15 V70 H8Z" fill="url(#teal-edge)"/></g></g>
+</svg>

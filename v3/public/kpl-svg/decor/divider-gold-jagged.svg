@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="444" height="51" viewBox="0 0 444 51" role="img">
+<title>金色波折分割线及色块</title>
+<defs><linearGradient id="economy" x2="0%" y2="100%">
+ <stop stop-color="#ecc065" stop-opacity=".72"/><stop offset="1" stop-color="#f9de94" stop-opacity=".28"/>
+</linearGradient></defs>
+<path d="M0 4 L20 5 31 7 39 5 53 10 67 9 77 12 87 11 98 15 108 13 118 17 131 18 144 20 154 18 164 24 174 22 184 25 194 21 205 26 219 24 230 30 241 27 253 28 266 17 276 16 286 19 300 24 312 23 323 28 337 32 351 31 364 34 376 30 389 37 401 36 415 41 427 39 441 48 V3 H0Z" fill="url(#economy)"/><path d="M0 4 L20 5 31 7 39 5 53 10 67 9 77 12 87 11 98 15 108 13 118 17 131 18 144 20 154 18 164 24 174 22 184 25 194 21 205 26 219 24 230 30 241 27 253 28 266 17 276 16 286 19 300 24 312 23 323 28 337 32 351 31 364 34 376 30 389 37 401 36 415 41 427 39 441 48" fill="none" stroke="#dfa947" stroke-width="1.15" stroke-linejoin="round"/>
+</svg>

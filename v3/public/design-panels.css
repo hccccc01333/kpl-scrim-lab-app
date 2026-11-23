@@ -1,0 +1,300 @@
+/* 十人面板 / 中野辅与入侵 / 疑似打野并线 / 切C与首杀
+   —— 按 design-redblue 系列视觉稿 1:1 重排（2026-11-19 赛训组反馈）。
+   统一白卡 + 蓝红语义色；说明性小字不渲染，也不再靠 CSS 隐藏。 */
+
+/* ── 四个区块的共同外壳 ───────────────────────────────── */
+.md-page #match-profiles,
+.md-page #match-cohesion,
+.md-page #match-jungle,
+.md-page #match-kills{
+  background:#fff;border:1px solid #dbe4e9;border-radius:14px;
+  box-shadow:0 14px 44px rgba(24,48,72,.14);
+  padding:20px 22px 18px;margin-top:12px;
+  font-family:"Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;color:#1c2b3a;overflow:hidden;
+}
+.md-page #match-profiles .section-heading h2,
+.md-page #match-cohesion .section-heading h2,
+.md-page #match-jungle .section-heading h2,
+.md-page #match-kills .section-heading h2{font-size:21px;font-weight:800;color:#1b2d3d}
+.md-page #match-profiles .section-heading p,
+.md-page #match-cohesion .section-heading p,
+.md-page #match-jungle .section-heading p,
+.md-page #match-kills .section-heading p{display:none}
+
+/* ══ 十人面板（design-redblue/十人面板_优化版.html）══════════ */
+.md-page #match-profiles{position:relative}
+.md-page .md-panel{display:block;padding:0}
+.md-page .md-panel-bar{display:flex;align-items:center;justify-content:flex-end;
+  gap:12px;border:0;padding:0;margin-top:2px}
+/* 切换器与区块标题同一行（设计稿 head 右侧），不另占一行。 */
+.md-page #match-profiles .md-panel-bar{position:absolute;top:20px;right:22px;z-index:2;margin:0}
+.md-page .md-seg{display:inline-flex;background:#eef2f5;border-radius:10px;padding:3px}
+.md-page .md-seg-btn{border:0;background:transparent;padding:7px 18px;border-radius:8px;
+  font-size:13px;font-weight:700;color:#6f8292;cursor:pointer;font-family:inherit}
+.md-page .md-seg-btn.is-on{background:#fff;color:#1f6fcf;
+  box-shadow:0 2px 8px -3px rgba(28,66,104,.3)}
+.md-page .md-panel-subtitle{font-size:15px;font-weight:800;color:#25384a;margin:2px 0 10px}
+.md-page .md-lane-filter{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 13px}
+.md-page .md-lane-chip{padding:6px 16px;border-radius:8px;font-size:12.5px;font-weight:700;
+  border:1px solid #dbe4e9;color:#6f8292;background:#fafcfe;cursor:pointer;font-family:inherit}
+.md-page .md-lane-chip.is-on{color:#1f6fcf;background:#e8f2ff;border-color:#c5dcf7}
+.md-page .md-lane-view[hidden],
+.md-page .md-duel-card[hidden]{display:none}
+
+/* 对位比较：干净表格，无雷达、无条、无彩色标签 */
+.md-page .md-duel-card{border:1px solid #e3eaf0;border-radius:12px;padding:14px 18px 16px}
+.md-page .md-duel-top{display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding-bottom:11px;border-bottom:1px solid #e6edf2}
+.md-page .md-duel-player{display:flex;align-items:center;gap:9px;min-width:150px}
+.md-page .md-duel-player.foe{flex-direction:row-reverse;text-align:right}
+.md-page .md-duel-face{width:42px;height:42px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.45);flex:none}
+.md-page .md-duel-face.is-empty{display:grid;place-items:center;background:#eef2f5;color:#9aabb8;
+  font-size:16px;font-weight:800}
+.md-page .md-duel-player b{font-size:18px;font-weight:800;color:#25384a;display:block}
+.md-page .md-duel-player small{font-size:12px;color:#8495a3;display:block}
+.md-page .md-duel-player.is-empty b{color:#9aabb8}
+.md-page .md-duel-summary{font-size:13px;font-weight:700;color:#42586a;text-align:center}
+.md-page .md-duel-summary b{color:#25384a;font-weight:800;font-size:14px}
+.md-page .md-duel-head,
+.md-page .md-duel-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr .9fr;gap:12px;align-items:center}
+.md-page .md-duel-head{font-size:12px;font-weight:700;color:#8495a3;padding:9px 0 5px}
+.md-page .md-duel-head span:not(:first-child){text-align:right}
+.md-page .md-duel-row{padding:8px 0;border-top:1px dashed #e9eef2}
+.md-page .md-duel-name{font-size:13.5px;font-weight:700;color:#42586a}
+.md-page .md-duel-level{font-size:12px;font-style:normal;font-weight:600;margin-left:7px;
+  color:#9aabb8;vertical-align:middle}
+.md-page .md-duel-level.is-big{font-weight:800;color:#42586a}
+.md-page .md-duel-num{font-family:Manrope,"Segoe UI",sans-serif;font-size:19px;font-weight:800;
+  letter-spacing:-.02em;text-align:right;color:#25384a}
+.md-page .md-duel-gap{font-family:Manrope,"Segoe UI",sans-serif;font-size:23px;font-weight:800;
+  letter-spacing:-.03em;text-align:right}
+.md-page .md-duel-gap.is-own{color:#1f6fcf}
+.md-page .md-duel-gap.is-foe{color:#cf3f3f}
+.md-page .md-duel-gap.is-mute{color:#8495a3}
+.md-page .md-duel-j{display:block;text-align:right;font-size:12px;font-weight:700}
+.md-page .md-duel-j.is-own{color:#1f6fcf}
+.md-page .md-duel-j.is-foe{color:#cf3f3f}
+.md-page .md-duel-j.is-mute{color:#9aabb8}
+
+/* 同队比较：两张表上下排、各占满整宽，只标 1st，不用色块 */
+.md-page .md-teams{display:grid;grid-template-columns:1fr;gap:14px}
+.md-page .md-team-card{border:1px solid #e3eaf0;border-radius:12px;padding:16px 20px 14px}
+.md-page .md-team-title{font-size:16px;font-weight:800;color:#1f6fcf;display:flex;
+  justify-content:space-between;padding-bottom:11px;border-bottom:1px solid #e6edf2}
+.md-page .md-team-card.foe .md-team-title{color:#cf3f3f}
+.md-page .md-team-title span{font-size:12px;color:#9aabb8;font-weight:600}
+.md-page .md-team-row{display:grid;gap:16px;align-items:center}
+.md-page .md-team-head{font-size:12px;font-weight:700;color:#8495a3;padding:9px 0}
+.md-page .md-team-head span:not(:first-child){text-align:center}
+.md-page .md-team-row:not(.md-team-head){padding:10px 0;border-top:1px dashed #e9eef2}
+.md-page .md-team-who{display:flex;align-items:center;gap:9px;overflow:hidden}
+.md-page .md-team-face{width:32px;height:32px;border-radius:50%;object-fit:cover;
+  object-position:top center;flex:none;border:1.5px solid #fff}
+.md-page .md-team-who b{font-size:14px;font-weight:800;color:#2b3d4e;display:block;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.md-page .md-team-who small{font-size:12px;color:#9aabb8;display:block;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.md-page .md-team-cell{display:grid;gap:2px;text-align:center}
+.md-page .md-team-cell b{font-family:Manrope,"Segoe UI",sans-serif;font-size:16px;font-weight:600;
+  color:#546a7b}
+.md-page .md-team-cell i{font-size:12px;font-style:normal;font-weight:700;color:#a8b5c0}
+.md-page .md-team-cell.is-first b{font-size:18px;font-weight:800;color:#1f6fcf}
+.md-page .md-team-cell.is-first i{color:#1f6fcf}
+.md-page .md-team-card.foe .md-team-cell.is-first b,
+.md-page .md-team-card.foe .md-team-cell.is-first i{color:#cf3f3f}
+
+/* ══ 疑似打野并线（design-redblue/疑似打野并线_优化版.html）══════
+   保留原金/青风格：本队 #c99a3f、对手 #3fa89e，只放大字号。 */
+.md-page .md-jl{display:grid;gap:14px;color:#1c2b3a}
+.md-page .md-jl-cards{display:grid;grid-template-columns:1fr 170px 1fr;gap:14px}
+.md-page .md-jl-card{border-radius:11px;padding:16px 18px 18px;border:1.5px solid #e5c88f;
+  background:#fffdf8}
+.md-page .md-jl-card.foe{border-color:#9ed4cd;background:#f8fdfc}
+.md-page .md-jl-tag{font-size:13px;font-weight:700;color:#a8813d}
+.md-page .md-jl-card.foe .md-jl-tag{color:#3f9a91}
+.md-page .md-jl-who{display:flex;align-items:center;gap:9px;margin-top:9px}
+.md-page .md-jl-face{width:40px;height:40px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.35);flex:none}
+.md-page .md-jl-who b{font-size:17px;font-weight:800;color:#25384a;display:block}
+.md-page .md-jl-who small{font-size:12px;color:#8495a3}
+.md-page .md-jl-big{display:flex;align-items:baseline;gap:8px;margin-top:11px;
+  font-family:Manrope,"Segoe UI",sans-serif;font-size:42px;font-weight:800;
+  letter-spacing:-.04em;line-height:1;color:#c99a3f}
+.md-page .md-jl-card.foe .md-jl-big{color:#3fa89e}
+.md-page .md-jl-big em{font-family:"Microsoft YaHei UI","PingFang SC",sans-serif;
+  font-size:13px;font-weight:700;font-style:normal;letter-spacing:0;color:#6f8292}
+.md-page .md-jl-chips{display:flex;gap:7px;margin-top:8px}
+.md-page .md-jl-chips span{font-size:12px;font-weight:700;color:#a8813d;background:#fbf2e0;
+  border:1px solid #ecd9ad;border-radius:999px;padding:4px 11px}
+.md-page .md-jl-card.foe .md-jl-chips span{color:#3f9a91;background:#e6f5f2;border-color:#bde2dc}
+.md-page .md-jl-seg{display:grid;grid-template-columns:1fr auto;margin-top:14px;padding-top:10px;
+  border-top:1px dashed #e6edf2;font-size:13px;color:#8495a3}
+.md-page .md-jl-seg b{font-family:Manrope,"Segoe UI",sans-serif;font-size:21px;font-weight:800;color:#25384a}
+.md-page .md-jl-mid{display:grid;place-content:center;text-align:center;gap:7px}
+.md-page .md-jl-mid small{font-size:13px;color:#8495a3}
+.md-page .md-jl-mid b{font-family:Manrope,"Segoe UI",sans-serif;font-size:38px;font-weight:800;color:#42586a}
+.md-page .md-jl-mid b.own{color:#c99a3f}
+.md-page .md-jl-mid b.foe{color:#3fa89e}
+.md-page .md-jl-mid b.is-mute{color:#8495a3}
+.md-page .md-jl-mid span{font-size:13px;font-weight:700;color:#6f8292}
+.md-page .md-jl-legend{display:grid;gap:5px;margin-top:8px;font-size:12px;color:#9aabb8;text-align:left}
+.md-page .md-jl-legend span{display:flex;align-items:center;gap:5px}
+.md-page .md-jl-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#d9a441;flex:none}
+.md-page .md-jl-dot.foe{background:#4aafa2}
+.md-page .md-jl-dot.is-trio{width:13px;height:13px}
+.md-page .md-jl-timeline{border:1px solid #e3eaf0;border-radius:11px;padding:14px 18px 16px}
+.md-page .md-jl-title{font-size:15px;font-weight:800;color:#25384a;margin-bottom:10px}
+.md-page .md-jl-row{display:grid;grid-template-columns:76px 1fr 76px;gap:12px;align-items:center;
+  padding:10px 0;border-top:1px solid #eef2f5}
+.md-page .md-jl-lane{font-size:14px;font-weight:700;color:#42586a}
+.md-page .md-jl-track{position:relative;height:24px;border-bottom:1px solid #e6edf2}
+.md-page .md-jl-marks{position:absolute;inset:0}
+.md-page .md-jl-track .md-jl-dot{position:absolute;width:10px;height:10px;transform:translateX(-50%)}
+.md-page .md-jl-track .md-jl-dot.own{top:1px}
+.md-page .md-jl-track .md-jl-dot.foe{bottom:1px}
+.md-page .md-jl-track .md-jl-dot.is-trio{width:14px;height:14px}
+.md-page .md-jl-rowcount{text-align:right;font-family:Manrope,"Segoe UI",sans-serif;
+  font-size:17px;font-weight:700;color:#8495a3}
+.md-page .md-jl-rowcount b.own{color:#c99a3f;font-size:21px}
+.md-page .md-jl-rowcount b.foe{color:#3fa89e;font-size:21px}
+.md-page .md-jl-axis{display:flex;justify-content:space-between;margin:6px 0 0 88px;
+  font-size:12px;color:#9aabb8}
+.md-page .md-jl-table{width:100%;border:1px solid #e3eaf0;border-radius:11px;overflow:hidden}
+.md-page .md-jl-tr{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;align-items:center;
+  text-align:center;border-bottom:1px solid #e9eef2;padding:11px 14px}
+.md-page .md-jl-tr:last-child{border-bottom:0}
+.md-page .md-jl-tr.head{background:#f6f9fc;font-size:13px;font-weight:700;color:#6f8292}
+.md-page .md-jl-tr.total{background:#f9fbfd}
+.md-page .md-jl-tr .md-jl-tlane{text-align:left;font-weight:700;color:#42586a;font-size:15px}
+.md-page .md-jl-tr b{font-family:Manrope,"Segoe UI",sans-serif;font-size:19px;font-weight:800}
+.md-page .md-jl-tr b.own{color:#c99a3f}
+.md-page .md-jl-tr b.foe{color:#3fa89e}
+.md-page .md-jl-tr b.is-win{font-weight:800}
+.md-page .md-jl-tr b.is-lose{opacity:.5;font-weight:600}
+.md-page .md-jl-tr b.is-mute{color:#8495a3;font-size:16px;font-weight:700}
+.md-page .md-jl-tr b.is-own{color:#c99a3f}
+.md-page .md-jl-tr b.is-foe{color:#3fa89e}
+
+/* ══ 中野辅与入侵（design-redblue/中野辅与入侵_优化版.html）════════ */
+.md-page .md-coh-wrap{display:grid;gap:14px;color:#1c2b3a}
+.md-page .md-coh-summary{font-size:15px;font-weight:700;color:#42586a;margin:0}
+.md-page .md-coh-summary b{color:#1f6fcf;font-size:19px;font-weight:800}
+.md-page .md-coh-summary i{color:#cf3f3f;font-size:19px;font-style:normal;font-weight:800}
+.md-page .md-coh-grid{display:grid;grid-template-columns:1fr 128px 1fr;gap:14px}
+.md-page .md-coh-card{border:1px solid transparent;border-radius:13px;padding:16px 20px 18px;
+  background:linear-gradient(#fff,#fff) padding-box,
+             linear-gradient(120deg,#bcd8f7,#e6ecf1) border-box}
+.md-page .md-coh-card.foe{background:linear-gradient(#fff,#fff) padding-box,
+             linear-gradient(120deg,#e6ecf1,#f7cfcf) border-box}
+.md-page .md-coh-title{font-size:16px;font-weight:800;color:#1f6fcf}
+.md-page .md-coh-card.foe .md-coh-title{color:#cf3f3f}
+.md-page .md-coh-rate{display:flex;align-items:baseline;gap:10px;margin-top:10px}
+.md-page .md-coh-rate b{font-family:Manrope,"Segoe UI",sans-serif;font-size:46px;font-weight:800;
+  letter-spacing:-.04em;line-height:1;color:#1f6fcf}
+.md-page .md-coh-card.foe .md-coh-rate b{color:#cf3f3f}
+.md-page .md-coh-rate span{font-size:14px;font-weight:700;color:#6f8292}
+.md-page .md-coh-times{display:flex;align-items:baseline;gap:10px;margin-top:4px}
+.md-page .md-coh-times b{font-family:Manrope,"Segoe UI",sans-serif;font-size:30px;font-weight:800;color:#25384a}
+.md-page .md-coh-times span{font-size:13px;color:#8495a3}
+.md-page .md-coh-rule{height:1px;background:#e6edf2;margin:12px 0}
+.md-page .md-coh-stat{display:flex;align-items:baseline;justify-content:space-between}
+.md-page .md-coh-stat span{font-size:13.5px;font-weight:700;color:#5c7183}
+.md-page .md-coh-stat b{font-family:Manrope,"Segoe UI",sans-serif;font-size:26px;font-weight:800;color:#25384a}
+.md-page .md-coh-pair{display:flex;gap:24px;margin-top:8px}
+.md-page .md-coh-pair span{font-size:12.5px;color:#8495a3}
+.md-page .md-coh-pair b{font-family:Manrope,"Segoe UI",sans-serif;font-size:17px;font-weight:800;color:#42586a}
+.md-page .md-coh-sub{font-size:12px;font-weight:700;color:#9aabb8;margin-top:12px}
+.md-page .md-coh-buff{display:flex;gap:24px;margin-top:5px}
+.md-page .md-coh-buff span{font-size:13px;color:#6f8292}
+.md-page .md-coh-buff b{font-family:Manrope,"Segoe UI",sans-serif;font-size:19px;font-weight:800;
+  color:#25384a;margin-left:4px}
+.md-page .md-coh-tw{margin-top:5px}
+.md-page .md-coh-tw-head,
+.md-page .md-coh-tw-row{display:grid;grid-template-columns:1fr repeat(3,1fr);gap:8px;
+  text-align:center;align-items:center}
+.md-page .md-coh-tw-head{font-size:12px;font-weight:700;color:#9aabb8;padding-bottom:4px}
+.md-page .md-coh-tw-row{font-size:12px;color:#6f8292;padding:3px 0;border-top:1px dashed #e9eef2}
+.md-page .md-coh-tw-row span:first-child,
+.md-page .md-coh-tw-head span:first-child{text-align:left;color:#5c7183;font-weight:700}
+.md-page .md-coh-tw-row span:not(:first-child){font-family:Manrope,"Segoe UI",sans-serif;
+  font-size:15px;font-weight:800;color:#25384a}
+.md-page .md-coh-vs{display:grid;place-content:center;text-align:center;gap:12px}
+.md-page .md-coh-vs div{display:grid;gap:3px}
+.md-page .md-coh-vs small{font-size:12px;color:#8495a3}
+.md-page .md-coh-vs b{font-family:Manrope,"Segoe UI",sans-serif;font-size:22px;font-weight:800}
+.md-page .md-coh-vs b.own{color:#1f6fcf}
+.md-page .md-coh-vs b.foe{color:#cf3f3f}
+.md-page .md-coh-vs b.is-mute{color:#8495a3}
+
+/* ══ 切C与首杀（design-redblue/切C与首杀_优化版.html）════════ */
+.md-page .md-cut-block{margin-top:18px}
+.md-page .md-cut-block:first-of-type{margin-top:2px}
+.md-page .md-cut-sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:10px}
+.md-page .md-cut-sec-head h2{font-size:17px;font-weight:800;color:#25384a;margin:0}
+.md-page .md-cut-total{font-size:14px;color:#6f8292}
+.md-page .md-cut-total b{font-family:Manrope,"Segoe UI",sans-serif;font-size:28px;
+  font-weight:800;color:#c99a3f;letter-spacing:-.03em;margin:0 2px}
+.md-page .md-cut-total b.is-foe{color:#cf3f3f}
+.md-page .md-cut-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}
+.md-page .md-cut-card{display:block;border:1px solid #e6edf2;border-radius:12px;
+  padding:12px 12px 14px;background:#fafcfe}
+.md-page .md-cut-card.is-hit{border-color:#ecd9ad;background:#fffdf8}
+.md-page .md-cut-card.by.is-hit{border-color:#f0cccc;background:#fffafa}
+.md-page .md-cut-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.md-page .md-cut-lane{font-size:12px;font-weight:800;color:#8495a3}
+.md-page .md-cut-top b{font-size:15px;font-weight:800;color:#25384a;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.md-page .md-cut-nick{font-size:12px;color:#9aabb8;margin-top:2px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.md-page .md-cut-main{display:flex;align-items:center;gap:8px;margin-top:8px}
+.md-page .md-cut-face{width:42px;height:42px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:2px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.35);flex:none}
+.md-page .md-cut-num{font-family:Manrope,"Segoe UI",sans-serif;font-size:32px;font-weight:800;
+  color:#c99a3f;letter-spacing:-.03em;line-height:1}
+.md-page .md-cut-num small{display:block;font-family:"Microsoft YaHei UI","PingFang SC",sans-serif;
+  font-size:12px;font-weight:800;color:#a8813d;letter-spacing:0;margin-top:3px}
+.md-page .md-cut-card.by .md-cut-num{color:#cf3f3f}
+.md-page .md-cut-card.by .md-cut-num small{color:#cf3f3f}
+.md-page .md-cut-card.is-none .md-cut-num,
+.md-page .md-cut-card.is-none .md-cut-num small{color:#b6c1ca}
+.md-page .md-cut-targets{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;min-height:28px}
+.md-page .md-cut-target{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:800;
+  color:#6f8292;background:#fbf2e0;border-radius:999px;padding:2px 7px 2px 2px}
+.md-page .md-cut-target em{font-style:normal}
+.md-page .md-cut-target-face{width:20px;height:20px;border-radius:50%;object-fit:cover;
+  object-position:top center}
+.md-page .md-cut-card.by.is-hit .md-cut-target{background:#fbeeee;color:#cf3f3f}
+.md-page .md-cut-none{font-size:12px;color:#a8b5c0;margin-top:9px;min-height:28px}
+.md-page .md-cut-sub{display:flex;flex-wrap:wrap;gap:4px 9px;margin-top:9px;padding-top:8px;
+  border-top:1px solid #e6edf2;font-size:12px;color:#8495a3}
+.md-page .md-cut-sub b{font-family:Manrope,"Segoe UI",sans-serif;font-size:14px;font-weight:800;color:#42586a}
+.md-page .md-cut-pct{color:#9aabb8}
+.md-page .md-cut-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.md-page .md-cut-stat{border:1px solid #e3eaf0;border-radius:12px;padding:13px 16px 15px;background:#fafcfe}
+.md-page .md-cut-stat-label{font-size:12.5px;font-weight:800;color:#8495a3}
+.md-page .md-cut-stat-big{font-family:Manrope,"Segoe UI",sans-serif;font-size:32px;font-weight:800;
+  color:#25384a;letter-spacing:-.03em;margin-top:5px}
+.md-page .md-cut-stat-big em{font-style:normal;font-size:18px;color:#8495a3;font-weight:800}
+.md-page .md-cut-stat-sub{font-size:12px;color:#8495a3;margin-top:4px;line-height:1.5}
+.md-page .md-cut-stat-sub b{color:#42586a}
+
+/* ── 窄屏：卡片与表格降为可读宽度 ───────────────────── */
+@media(max-width:1180px){
+  .md-page .md-duel-head,
+  .md-page .md-duel-row{grid-template-columns:1.2fr .8fr .8fr .9fr .9fr;gap:8px}
+  .md-page .md-cut-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .md-page .md-cut-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:980px){
+  .md-page #match-profiles .md-panel-bar{position:static;justify-content:flex-start;margin-bottom:8px}
+  .md-page .md-jl-cards{grid-template-columns:1fr}
+  .md-page .md-jl-mid{grid-auto-flow:column;place-content:center;gap:16px}
+  .md-page .md-coh-grid{grid-template-columns:1fr}
+  .md-page .md-coh-vs{grid-auto-flow:column;place-content:center;gap:24px}
+  .md-page .md-duel-top{flex-wrap:wrap}
+  .md-page .md-duel-summary{order:3;flex-basis:100%;text-align:left}
+  .md-page .md-team-row{grid-template-columns:150px repeat(6,minmax(0,1fr)) !important;gap:8px}
+  .md-page .md-cut-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

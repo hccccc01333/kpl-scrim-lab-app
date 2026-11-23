@@ -10,14 +10,20 @@
  *     的「还没有对局数据」弹窗（首页不整页换向导）。
  */
 
-const PERIOD_TEXT = { today: '今日', week: '本周', month: '本月', recent: '近5场', days: '近3天', custom: '自定义' };
-const PERIOD_ORDER = ['today', 'week', 'month', 'recent', 'days', 'custom'];
-const DEFAULT_KIND = 'week';
+const PERIOD_TEXT = { today: '今日', week: '本周', month: '本月', recent: '近5场', days: '近3天', all: '全部', custom: '自定义' };
+const PERIOD_ORDER = ['today', 'week', 'month', 'all', 'days', 'custom'];
+/* 「全部」复用后端 custom 的宽区间：不改 /api/briefing 契约，也不用先把全局
+   数据范围改掉；样本里如果有晚于今天的训练赛，默认周期就够不到它们。 */
+const ALL_RANGE = { from: '2000-01-01', to: '2099-12-31' };
+/* 进首页先看今天：赛训是当天打完当天复盘，一进来就落在今日最能对上教练的节奏。
+   今日没有对局时页面本身会给「查看最近一期」的入口，不需要退回本周。
+   周期不落盘，下次进首页仍然从今日开始。 */
+const DEFAULT_KIND = 'today';
 /* 最近 N 场 / 最近 N 天：前端固定档位，后端按 n/days 解析窗口。 */
 const RECENT_N = 5;
 const RECENT_DAYS = 3;
 const PERIOD_REQUEST = { recent: { n: RECENT_N }, days: { days: RECENT_DAYS } };
-const METRIC_LIMIT = 8;
+const METRIC_LIMIT = 16;
 const EVIDENCE_LIMIT = 2;
 const NUMBER_LIMIT = 4;
 /* 复盘卡「显示字段」：最多 4 项、最少 1 项；用户选择只存在控制器里。 */
@@ -72,18 +78,11 @@ function readableError(error) {
   return message && message.length <= 160 ? message : '这一期的简报暂时读不到，稍后点重试即可。';
 }
 
-/* ── 顶部：kicker + 周期切换 + 视图过滤 + 标题 + 副标题 ─────────── */
+/* ── 顶部：周期切换 + 视图过滤 + 数据范围 ───────────────────── */
 function barHtml(view, ctx) {
-  const { esc, icon } = ctx;
+  const { icon } = ctx;
   const mode = VIEW_MODES.includes(plain(view.viewMode)) ? plain(view.viewMode) : 'all';
-  /* 左侧放「正在查看」的筛选结果摘要，补掉以前右侧控件左边的大段空白。 */
-  const periodLabel = plain(view.data && view.data.period && view.data.period.label)
-    || PERIOD_TEXT[view.kind] || PERIOD_TEXT[DEFAULT_KIND];
-  const games = Number(view.data && view.data.coverage && view.data.coverage.games);
-  const gameText = Number.isFinite(games) && games > 0 ? ` · ${games} 局` : '';
-  const barContext = `${periodLabel} · ${VIEW_TEXT[mode]}${gameText}`;
   return `<div class="pbr-bar">
-    <p class="pbr-bar-context"><span class="pbr-bar-context-label">正在查看</span><span class="pbr-bar-context-value">${esc(barContext)}</span></p>
     <div class="pbr-bar-actions">
       <div class="pbr-periods" role="group" aria-label="赛训周期">
         ${PERIOD_ORDER.map((key) => `<button type="button" class="pbr-period" data-pbr-period="${key}" aria-pressed="${String(view.kind === key)}">${PERIOD_TEXT[key]}</button>`).join('')}
@@ -96,43 +95,68 @@ function barHtml(view, ctx) {
   </div>`;
 }
 
+/* 页头只留标题。操作入口在左侧导航与各页内已有，页头再放按钮只是噪音。 */
 function titleHtml(view, ctx) {
-  const { esc } = ctx;
-  const period = (view.data && view.data.period) || {};
-  const prev = period.prev || {};
-  const label = plain(period.label) || PERIOD_TEXT[view.kind] || PERIOD_TEXT[DEFAULT_KIND];
-  const prevLabel = plain(prev.label) || '上一周期';
-  /* 范围行用短标签（上周 / 上期），避免「对比上周同期（… / 上周同期 …）」重复。 */
-  const prevShort = plain(prev.shortLabel) || prevLabel;
-  const range = plain(period.rangeLabel) || rangeText(period.from, period.to);
-  const prevRange = plain(prev.rangeLabel) || rangeText(prev.from, prev.to);
-  const scope = range ? `（${range}${prevRange ? ` / ${prevShort} ${prevRange}` : ''}）` : '';
-  const coverage = view.data && view.data.available !== false
-    ? plain(view.data && view.data.coverage && view.data.coverage.note)
-    : '';
   return `<div class="pbr-title">
     <div class="pbr-title-copy">
-      <span class="pbr-kicker">赛训周期简报</span>
       <h1>赛训总览</h1>
-      <p class="pbr-sub">${esc(label)}赛训表现 · 对比${esc(prevLabel)}${scope ? `<span class="pbr-range-text">${esc(scope)}</span>` : ''}</p>
-      ${coverage ? `<p class="pbr-coverage-chip">${esc(coverage)}</p>` : ''}
     </div>
-    ${ctx.art ? `<img class="pbr-celadon-art" src="${ctx.API_BASE || ''}/static/media/celadon-valley.webp" alt="" width="1756" height="896" fetchpriority="high" decoding="async">` : ''}
   </div>`;
 }
 
 /* ── 一句战况 ─────────────────────────────────────────────────── */
+/* 战况句里的「数值 + 单位」加重：让结论里的关键数字自己站出来，
+   替教练先做一次筛选（§2.1 层级由字号/字重承担，不靠加大留白）。
+   文案一字不改，非匹配片段逐段转义，日期（11-08）不会被误伤。 */
+function emphasizeSummary(text, esc) {
+  const source = plain(text);
+  const pattern = /(\d[\d,]*(?:\.\d+)?\s*(?:局|胜|负|场|天|个|次|波|条|百分点))/g;
+  let out = '';
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(source))) {
+    out += esc(source.slice(last, match.index));
+    out += `<b class="pbr-em">${esc(match[1])}</b>`;
+    last = match.index + match[1].length;
+  }
+  return out + esc(source.slice(last));
+}
+
+/* 记分牌：把后端已给的 record（胜负、胜率、最近走势）做成一眼可读的数字块。
+   战况句仍是同一批数字的叙述版本，这里不删它，只把「读数」提到视觉最前，
+   让教练先看到 2 胜 3 负，再读那句话（§2.1 层级：数字与叙述分工不同）。 */
+function scoreboardHtml(data, esc) {
+  const record = data.record || {};
+  const wins = Number(record.wins);
+  const losses = Number(record.losses);
+  if (!Number.isFinite(wins) || !Number.isFinite(losses)) return '';
+  const decided = Number.isFinite(Number(record.decided)) ? Number(record.decided) : wins + losses;
+  if (!decided) return '';
+  const rate = Number(record.winRate);
+  const rateText = Number.isFinite(rate) ? `${rate.toFixed(1)}%` : '';
+  const form = listOf(record.form).slice(-5);
+  const segs = form.map((item) => {
+    const result = plain(item.result);
+    if (!['win', 'loss'].includes(result)) return '';
+    const label = result === 'win' ? '胜' : '负';
+    const title = [plain(item.date).slice(5), label, plain(item.opponent)].filter(Boolean).join(' · ');
+    return `<i class="pbr-sb-seg is-${result}" title="${esc(title)}"></i>`;
+  }).join('');
+  return `<div class="pbr-scoreboard">
+      <p class="pbr-sb-record"><b>${wins}</b><small>胜</small><b>${losses}</b><small>负</small></p>
+      ${rateText ? `<p class="pbr-sb-rate">${esc(rateText)}<small>胜率</small></p>` : ''}
+      ${segs ? `<p class="pbr-sb-form"><span>近 ${form.length} 局</span><span class="pbr-sb-track" role="img" aria-label="最近 ${form.length} 局胜负走势">${segs}</span></p>` : ''}
+    </div>`;
+}
+
 function summaryHtml(data, ctx) {
   const { esc } = ctx;
   const summary = data.summary || {};
   const sentence = plain(summary.sentence);
-  const note = plain(summary.note);
-  return `<section class="pbr-summary is-${toneOf(summary.tone)}" aria-label="一句战况">
-    <span class="pbr-summary-label">一句战况</span>
-    <div class="pbr-summary-body">
-      <p class="pbr-summary-sentence">${esc(sentence || '本期还没有可以总结的战况。')}</p>
-      ${note ? `<p class="pbr-summary-note">${esc(note)}</p>` : ''}
-    </div>
+  /* 顶部只保留一句话：局数、胜负、胜率。记分牌与近五局走势重复同一信息，
+     而且三种字号并排会把注意力从「这一期打了多少」上带走。 */
+  return `<section class="pbr-summary" aria-label="本期战况">
+    <p class="pbr-summary-sentence">${sentence ? esc(sentence) : esc('本期还没有可以总结的战况。')}</p>
   </section>`;
 }
 
@@ -197,119 +221,183 @@ function formHtml(form, esc) {
   </div>`;
 }
 
+/* 比率类指标卡面只给百分比：分子分母移到 title，悬停再看，避免一行里
+   同时写「12/23」和「52.2%」这种双重表达。 */
+const RATE_METRIC_IDS = new Set([
+  'lead_rate', 'fight_rate', 'first_blood_rate', 'first_tower_rate',
+  'tyrant_rate', 'elder_dragon_rate', 'baron_rate', 'elder_baron_rate',
+]);
+
+function percentOnly(text) {
+  const value = plain(text);
+  const match = value.match(/(\d+(?:\.\d+)?\s*%)/);
+  return match ? match[1] : value;
+}
+
+/* 变化列用纯文本，不靠箭头、红色、斜体表达涨跌。 */
+function plainDelta(text) {
+  const value = plain(text);
+  if (value === '上期暂无可比数据' || value === '本期暂无数据') return '—';
+  const match = value.match(/^([+-]?[\d,]+(?:\.\d+)?)\s*个百分点$/);
+  return match ? `${match[1]}pp` : value;
+}
+
+/* ── 上半屏：四组战况 + 精简指标表 + 值得关注的变化 ───────────── */
+
+const KPI_IDS = ['record', 'lead_econ', 'lead_rate', 'fight_rate'];
+const CHANGE_CATEGORY = {
+  lead_econ: '前期表现', lead_rate: '前期节奏', fight_rate: '团战协同',
+  first_tower_rate: '推进节奏', first_blood_rate: '前期节奏',
+  tyrant_rate: '资源控制', elder_dragon_rate: '资源控制',
+  baron_rate: '资源控制', elder_baron_rate: '资源控制',
+  record: '整体战绩',
+};
+
+function signedNumber(text) {
+  const match = plain(text).match(/^([+-]?[\d,]+(?:\.\d+)?)/);
+  return match ? Number(match[1].replace(/,/g, '')) : null;
+}
+
+function deltaArrow(text) {
+  const value = signedNumber(text);
+  if (!value) return '';
+  return value > 0 ? '↑' : value < 0 ? '↓' : '·';
+}
+
+function absDelta(text) {
+  return plainDelta(text).replace(/^[+-]/, '');
+}
+
+function metricById(data, id) {
+  return listOf(data.metrics).find((metric) => plain(metric && metric.id) === id) || {};
+}
+
+function kpiHtml(data, ctx) {
+  const { esc } = ctx;
+  const summary = data.summary || {};
+  const period = data.period || {};
+  const record = metricById(data, 'record');
+  const winMatch = plain(summary.sentence).match(/胜率\s*([\d.]+)%/);
+  const delta = signedNumber(record.deltaText);
+  const versus = delta === null ? '—' : delta === 0 ? '与上期持平'
+    : `${delta > 0 ? '多' : '少'} ${Math.abs(delta)} 场`;
+  const blocks = KPI_IDS.map((id) => {
+    const metric = metricById(data, id);
+    const label = plain(metric.label) || id;
+    let value = plain(metric.valueText) || '—';
+    let sub = plain(metric.deltaText) || '—';
+    if (id === 'record') {
+      value = value.replace(/\s+/g, '');
+      sub = `${winMatch ? `胜率 ${winMatch[1]}%` : '胜率 —'} · ${versus}`;
+    } else if (id === 'lead_rate') {
+      sub = `${value} · 有效 ${has(metric.sample) ? metric.sample : 0} 场 · ${deltaArrow(sub)}${absDelta(sub)}`;
+    } else {
+      sub = `${deltaArrow(sub)} ${absDelta(sub)}`;
+    }
+    return `<div class="pbr-kpi">
+      <span class="pbr-kpi-label">${esc(label)}</span>
+      <strong class="pbr-kpi-value">${esc(RATE_METRIC_IDS.has(id) ? percentOnly(plain(metric.valueSub) || value) : value)}</strong>
+      <span class="pbr-kpi-sub"${id === 'lead_rate' ? ` title="${esc(`${value} · 样本 ${metric.sample || 0} / ${metric.total || 0} 场`)}"` : ''}>${esc(sub)}</span>
+    </div>`;
+  }).join('');
+  return `<section class="pbr-kpi-panel" aria-label="本期战况">
+    <div class="pbr-section-head">
+      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">01</span><h2>本期战况</h2></div>
+      <p class="pbr-section-note">对比${esc(plain(period.prev && period.prev.label) || '上一期')}</p>
+    </div>
+    <div class="pbr-kpi-grid">${blocks}</div>
+  </section>`;
+}
+
+function metricRowHtml(metric, esc) {
+  const id = plain(metric.id);
+  const raw = plain(metric.valueText);
+  const isRate = RATE_METRIC_IDS.has(id);
+  const valueText = isRate ? percentOnly(plain(metric.valueSub) || raw) : raw;
+  const detail = [raw, plain(metric.note)].filter(Boolean).join(' · ');
+  const prevRaw = plain(metric.prevValueText);
+  const prevMatch = prevRaw.match(/（([^）]+)）/);
+  const prevDisplay = isRate && prevMatch ? prevMatch[1]
+    : (prevRaw && prevRaw !== '—' && prevRaw !== '-' ? prevRaw : '—');
+  return `<tr data-metric-id="${esc(id)}">
+    <th scope="row">${esc(plain(metric.label))}</th>
+    <td class="pbr-t-current"${detail ? ` title="${esc(detail)}"` : ''}>${esc(valueText)}</td>
+    <td class="pbr-t-prev">${esc(prevDisplay)}</td>
+    <td class="pbr-t-delta">${esc(plainDelta(plain(metric.deltaText)))}</td>
+  </tr>`;
+}
+
+function notableHtml(data, ctx) {
+  const { esc } = ctx;
+  const candidates = listOf(data.metrics)
+    .filter((metric) => metric && !['record', 'lead_rate', 'fight_rate', 'baron_rate'].includes(plain(metric.id))
+      && has(signedNumber(metric.deltaText)))
+    .sort((a, b) => Math.abs(signedNumber(b.deltaText)) - Math.abs(signedNumber(a.deltaText)))
+    .slice(0, 2);
+  if (!candidates.length) return '';
+  const cards = candidates.map((metric) => {
+    const id = plain(metric.id);
+    const label = plain(metric.label);
+    const delta = plain(metric.deltaText);
+    const value = RATE_METRIC_IDS.has(id) ? percentOnly(plain(metric.valueSub) || plain(metric.valueText)) : plain(metric.valueText);
+    const prevRaw = plain(metric.prevValueText);
+    const prevMatch = prevRaw.match(/（([^）]+)）/);
+    const prev = prevMatch ? prevMatch[1] : prevRaw;
+    const title = id === 'lead_econ'
+      ? '10 分钟经济优势明显缩小'
+      : `${label}${deltaArrow(delta) === '↓' ? '下降' : '上升'} ${absDelta(delta)}`;
+    const detail = `${prev || '—'} → ${value || '—'}。${plain(metric.note) || ''}`.trim();
+    return `<article class="pbr-notable-card">
+      <span class="pbr-notable-category">${esc(CHANGE_CATEGORY[id] || '赛训表现')}</span>
+      <h3>${esc(title)}</h3>
+      <p>${esc(detail)}</p>
+    </article>`;
+  }).join('');
+  return `<section class="pbr-notable" aria-label="值得关注的变化">
+    <div class="pbr-section-head">
+      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">03</span><h2>值得关注的变化</h2></div>
+      <p class="pbr-section-note">基于当前比赛数据识别</p>
+    </div>
+    <div class="pbr-notable-grid">${cards}</div>
+  </section>`;
+}
+
 function metricsHtml(data, ctx) {
   const { esc } = ctx;
   const metrics = listOf(data.metrics)
-    .filter((metric) => metric && plain(metric.label))
+    .filter((metric) => metric && plain(metric.label)
+      && !['win_rate', 'lead_hold_rate'].includes(plain(metric.id)))
     .slice(0, METRIC_LIMIT);
   if (!metrics.length) return '';
 
-  /* 上期整段没有对局时，这句话只在区头说一遍，不在 8 张卡里重复 8 次。 */
-  const prev = (data.period && data.period.prev) || {};
-  const prevName = plain(prev.shortLabel) || plain(prev.label) || '上期';
-  const prevRange = plain(prev.rangeLabel) || rangeText(prev.from, prev.to);
-  const withPrev = metrics.filter((metric) => {
-    const value = plain(metric.prevValueText);
-    return value && value !== '—' && value !== '-';
-  }).length;
-  let compareNote = '';
-  if (!withPrev) {
-    compareNote = `${prevName}${prevRange ? `（${prevRange}）` : ''}没有对局 · 上期暂无可比数据`;
-  } else if (withPrev < metrics.length) {
-    compareNote = `${prevName}有 ${metrics.length - withPrev} 项没有对局 · 这几项只看本期值`;
-  } else {
-    compareNote = `对比${prevName}${prevRange ? `（${prevRange}）` : ''} · 同一口径计算`;
-  }
-  /* 3/5、2/9 这种样本挂 -20pp 的红字，很容易被当成趋势；在区头统一提醒一次。 */
-  const games = Number(data.coverage && data.coverage.games);
-  const thinSample = (Number.isFinite(games) && games > 0 && games < 10)
-    || metrics.some((metric) => Number(metric.sample) < 5);
-  if (thinSample) {
-    compareNote += Number.isFinite(games) && games > 0
-      ? ` · 本期只有 ${games} 局，差值只作观察`
-      : ' · 部分指标样本偏少，差值只作观察';
-  }
-
-  let leadCount = 0;
-  const rows = metrics.map((metric) => {
-    const label = plain(metric.label);
-    const prevValue = plain(metric.prevValueText);
-    const delta = plain(metric.deltaText);
-    const note = plain(metric.note);
-    const coverage = plain(metric.coverage);
-    const sub = plain(metric.valueSub);
-    const hasPrev = prevValue && prevValue !== '—' && prevValue !== '-';
-    const showDelta = hasPrev && delta && !/暂无可比数据/.test(delta);
-    const isFeature = plain(metric.id) === 'record';
-    const valueHtml = isFeature
-      ? recordValueHtml(metric, esc)
-      : valueWithUnitHtml(metric.valueText, esc);
-    const form = isFeature ? formHtml(data.record && data.record.form, esc) : '';
-    const tone = toneOf(metric.tone);
-    const arrow = tone === 'up' ? '↑' : tone === 'down' ? '↓' : '';
-    /* 后端历史上把百分率写成「54/81（66.7%）」；卡片上不再用全角括号，
-       改成「54/81 · 66.7%」，和当前值的「2/5 40.0%」保持同一套标点。 */
-    const prevDisplay = prevValue.replace(/（/g, ' · ').replace(/）/g, '');
-    const flatDelta = !delta || tone === 'flat'
-      || /^[+＋−-]?0(?:\.0+)?(?:\s|$)/.test(delta);
-    /* 有箭头时不再重复 +/-：「↓ 25.0 个百分点」比「↓ -25.0 个百分点」干净。 */
-    const deltaText = flatDelta
-      ? '持平'
-      : `${arrow ? `${arrow} ` : ''}${esc(delta.replace(/^[+＋−-]\s*/, ''))}`;
-    const rank = metric.rank && plain(metric.rank.text) ? metric.rank : null;
-    if (rank && plain(rank.tier) === 'lead') leadCount += 1;
-    /* 有排名的指标：大数字跟「领先/中等/落后」同色，扫一眼就知道这项是优势还是短板。 */
-    const tier = rank ? plain(rank.tier) : '';
-    const valueTier = ['lead', 'mid', 'behind'].includes(tier) ? ` is-${tier}` : '';
-    /* 百分率已经带着分母了，右侧就不再重复「19/19 局」；没排名的才退回收数。 */
-    const chip = rank ? rankHtml(rank, esc)
-      : (!sub && coverage ? `<small class="pbr-metric-coverage">${esc(coverage)}</small>` : '');
-    const prevLine = hasPrev
-      ? `<span class="pbr-metric-prev">上期 ${esc(prevDisplay)}${showDelta
-        ? ` <em class="pbr-metric-delta is-${flatDelta ? 'flat' : tone}">${deltaText}</em>` : ''}</span>`
-      : '';
-    const meterRaw = meterHtml(metric, esc);
-    const meter = isFeature && meterRaw
-      ? `<span class="pbr-meter-label">胜率</span>${meterRaw}`
-      : meterRaw;
-    const foot = meter || prevLine
-      ? `<div class="pbr-metric-foot">${meter}${prevLine}</div>`
-      : '';
-    return `<div class="pbr-metric" data-metric-id="${esc(plain(metric.id))}" title="${esc(note)}">
-      <div class="pbr-metric-line">
-        <span class="pbr-metric-label">${esc(label)}</span>
-        ${chip}
-        <span class="pbr-metric-value${valueTier}">${valueHtml}${sub
-          ? `<em class="pbr-metric-pct">${valueWithUnitHtml(sub, esc)}</em>` : ''}</span>
-      </div>
-      ${form}
-      ${foot}
+  /* 默认只露出变化最明显的三行；其余行放进 <details>，
+     继续参与页面内查找、可深链，也不会被 display:none 藏掉。 */
+  const ranked = metrics.slice().sort((a, b) =>
+    Math.abs(signedNumber(b.deltaText)) - Math.abs(signedNumber(a.deltaText)));
+  const top = new Set(ranked.slice(0, 3).map((metric) => plain(metric.id)));
+  const primary = metrics.filter((metric) => top.has(plain(metric.id)));
+  const rest = metrics.filter((metric) => !top.has(plain(metric.id)));
+  const table = (rows) => `<div class="pbr-metrics-table-wrap" role="region" tabindex="0" aria-label="本期与上期指标对比">
+      <table class="pbr-metrics-table">
+        <caption class="pbr-sr-only">本期与上期指标对比</caption>
+        <thead><tr><th scope="col">指标</th><th scope="col">本期</th><th scope="col">上期</th><th scope="col">变化</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
     </div>`;
-  }).join('');
+  const moreLabels = rest.filter((metric) => !KPI_IDS.includes(plain(metric.id)))
+    .slice(0, 3).map((metric) => plain(metric.label));
+  const more = rest.length ? `<details class="pbr-more-metrics">
+      <summary>查看更多${moreLabels.length ? `：${esc(moreLabels.join('、'))}等` : ''}</summary>
+      ${table(rest.map((metric) => metricRowHtml(metric, esc)).join(''))}
+    </details>` : '';
 
-  const peerTotal = listOf(data.metrics).reduce((max, metric) => {
-    const total = metric && metric.rank && has(metric.rank.total) ? metric.rank.total : 0;
-    return Math.max(max, total);
-  }, 0);
-  const legend = peerTotal
-    ? `<p class="pbr-legend">
-        <span class="pbr-legend-item"><i class="pbr-legend-dot is-lead"></i>领先</span>
-        <span class="pbr-legend-item"><i class="pbr-legend-dot is-mid"></i>中等</span>
-        <span class="pbr-legend-item"><i class="pbr-legend-dot is-behind"></i>落后</span>
-        <span class="pbr-legend-note">排名对比本期一起训练的 ${peerTotal - 1} 支战队，同一口径；本页 <b>${leadCount}</b> 项领先</span>
-      </p>`
-    : '';
-
-  return `<section class="pbr-metrics-block" aria-label="本期 8 项赛训指标">
+  return `<section class="pbr-metrics-block" aria-label="近期表现变化">
     <div class="pbr-section-head">
-      <div class="pbr-section-title">
-        <h2>本期指标</h2>
-        <span class="pbr-section-chip">${metrics.length} 项</span>
-      </div>
-      <p class="pbr-section-note">${esc(compareNote)}</p>
+      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">02</span><h2>近期表现变化</h2></div>
+      <button type="button" class="pbr-section-link" data-pbr-all-metrics>全部指标 <span aria-hidden="true">→</span></button>
     </div>
-    <div class="pbr-metrics">${rows}</div>
-    ${legend}
+    ${table(primary.map((metric) => metricRowHtml(metric, esc)).join(''))}
+    ${more}
   </section>`;
 }
 
@@ -634,7 +722,7 @@ function findingHtml(finding, index, esc, options) {
       ${numbersPart}
       <div class="pbr-watch-link">${game
         ? `<a href="#match/${encodeURIComponent(game)}">查看这局完整过程 →</a>`
-        : '<span></span>'}${fav}</div>
+        : '<span></span>'}<div class="tagrow" data-tag-key="${esc(cardKey)}"></div>${fav}</div>
       ${workflow ? `<div class="pbr-watch-workflow">${workflow}</div>` : ''}
     </article>`;
   }
@@ -692,46 +780,120 @@ function hasFavContent(data, view) {
   return cards.some((card) => favStateOf(watchFavs, watchCardKey(card)));
 }
 
+/* ── 重点发现：手风琴卡 ─────────────────────────────────────────
+ * 用原生 details/summary：三角就是浏览器自带的展开控件，键盘可操作，
+ * 折叠内容仍能被页内查找命中。同一时间只开一张（details name）。 */
+function pairHtml(pair, esc) {
+  const left = pair && pair.left;
+  const right = pair && pair.right;
+  if (!left || !right) return '';
+  const side = (item, cls) => {
+    const ratio = Math.max(0, Math.min(100, Number(item.ratio) || 0));
+    return `<div class="pbr-pair-side ${cls}">
+      <span class="pbr-pair-label">${esc(plain(item.label))}</span>
+      <strong class="pbr-pair-value">${esc(plain(item.value))}</strong>
+      <span class="pbr-pair-fraction">${esc(plain(item.fraction))}</span>
+      <span class="pbr-pair-bar" aria-hidden="true"><i style="width:${ratio}%"></i></span>
+    </div>`;
+  };
+  return `<div class="pbr-pair">${side(left, 'is-left')}${side(right, 'is-right')}</div>`;
+}
+
+function heroStripHtml(finding, esc) {
+  const heroes = listOf(finding.heroes).slice(0, 4);
+  if (!heroes.length) return '';
+  return `<div class="pbr-hero-strip" aria-label="相关英雄">${heroes.map((hero) => {
+    const name = plain(hero);
+    return `<span class="pbr-hero-chip" title="${esc(name)}" aria-label="${esc(name)}">${esc(name.slice(0, 2))}</span>`;
+  }).join('')}</div>`;
+}
+
+function findingStatsHtml(finding, esc) {
+  const stats = listOf(finding.stats).filter((item) => item && plain(item.value));
+  if (stats.length) {
+    return stats.map((item) => `<span class="pbr-finding-stat"${plain(item.title)
+      ? ` title="${esc(plain(item.title))}"` : ''}>
+      <strong>${esc(plain(item.value))}</strong><span>${esc(plain(item.label))}</span>
+    </span>`).join('');
+  }
+  return listOf(finding.numbers).filter((item) => valueText(item))
+    .slice(0, 2).map((item) => `<span class="pbr-finding-stat">
+      <strong>${esc(valueText(item))}</strong><span>${esc(plain(item.label))}</span>
+    </span>`).join('');
+}
+
+function relatedMatchHtml(match, esc, portraitFn) {
+  const id = plain(match.id);
+  const head = [plain(match.label), plain(match.time)].filter(Boolean).join(' · ');
+  const note = plain(match.note);
+  return `<article class="pbr-related-match">
+    <p class="pbr-related-head">${esc(head)}${note ? ` · ${esc(note)}` : ''}</p>
+    <div class="pbr-related-rosters">
+      ${rosterRowHtml(match.rosterPlayers, 'own', '我方阵容', esc, portraitFn)}
+      <span class="pbr-related-vs" aria-hidden="true">VS</span>
+      ${rosterRowHtml(match.foePlayers, 'enemy', '对方阵容', esc, portraitFn)}
+    </div>
+    <div class="pbr-related-foot">
+      <div class="tagrow" data-tag-key="${esc(id)}"></div>
+      ${id ? `<a href="#match/${encodeURIComponent(id)}/events">查看时间节点</a>
+        <a href="#match/${encodeURIComponent(id)}/review">进入复盘 <span aria-hidden="true">→</span></a>` : ''}
+    </div>
+  </article>`;
+}
+
+function findingCardHtml(finding, index, total, esc, portraitFn) {
+  const key = findingKey(finding);
+  const status = plain(finding.statusTag) || '持续观察';
+  const category = plain(finding.categoryTag) || '本批观察';
+  const statusClass = status === '重点复盘' ? 'is-attention'
+    : status === '有所改善' ? 'is-good' : 'is-neutral';
+  const matches = listOf(finding.relatedMatches).slice(0, 2);
+  const more = plain(finding.deep_destination);
+  /* 整行就是 summary：点结论、数字或右侧文字都会展开，不再用只有三角的按钮。 */
+  return `<details class="pbr-finding" name="pbr-finding-group" data-finding-id="${esc(key)}">
+    <summary class="pbr-finding-trigger">
+      <span class="pbr-finding-no">${String(index + 1).padStart(2, '0')}</span>
+      <span class="pbr-finding-main">
+        <span class="pbr-finding-tags">
+          <span class="pbr-tag ${statusClass}">${esc(category)}</span>
+          <span class="pbr-tag is-status">${esc(status)}</span>
+        </span>
+        <span class="pbr-finding-title">${esc(plain(finding.title) || '本期变化')}</span>
+        <span class="pbr-finding-fold">${esc(plain(finding.foldSummary) || plain(finding.conclusion))}</span>
+      </span>
+      <span class="pbr-finding-stats">${findingStatsHtml(finding, esc)}</span>
+      <span class="pbr-finding-expand">查看关联对局 <span class="pbr-finding-chevron" aria-hidden="true">⌄</span></span>
+    </summary>
+    <div class="pbr-finding-body">
+      <p class="pbr-finding-lead">${esc(plain(finding.conclusion))}</p>
+      ${pairHtml(finding.pair, esc)}
+      ${plain(finding.advice) ? `<div class="pbr-advice"><span class="pbr-advice-label">建议复盘</span><p>${esc(plain(finding.advice))}</p></div>` : ''}
+      <div class="pbr-related-list">${matches.map((match) => relatedMatchHtml(match, esc, portraitFn)).join('')}</div>
+      ${more && matches.length ? `<a class="pbr-finding-more" href="${esc(more)}">查看全部关联对局 <span aria-hidden="true">→</span></a>` : ''}
+    </div>
+  </details>`;
+}
+
 function findingsHtml(data, view, ctx) {
   const { esc } = ctx;
-  const mode = viewModeOf(view);
-  const favs = (view && view.findingFavs) || {};
-  const ignored = (view && view.findingIgnored) || {};
-  const ignoredCount = Object.keys(ignored).length;
-  const all = collectFindings(data);
-  const visible = sortedByFav(all.filter((finding) => !ignored[findingKey(finding)]
-    && inView(favStateOf(favs, findingKey(finding)), mode)), findingKey, favs);
-  /* 首页这块是「先看哪几局」的入口；标题/计数/空态由后端按本期口径给。 */
-  const title = plain(data.findingsTitle) || '本周期最值得关注的变化';
-  const countText = !visible.length
-    ? '本期暂无'
-    : (mode === 'all' && !ignoredCount
-      ? (plain(data.findingsCountText) || `${visible.length} 条`)
-      : `${visible.length} 条`);
-  const canExport = hasFavContent(data, view);
+  const visible = collectFindings(data);
+  const title = plain(data.findingsTitle) || '近期战术发现';
+  const periodText = plain((data.period || {}).label) || '最近本批';
   const head = `<div class="pbr-section-head">
-    <div class="pbr-section-title">
-      <h2>${esc(title)}</h2>
-      <span class="pbr-section-chip">${esc(countText)}</span>
+    <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">04</span><h2>${esc(title)}</h2>
+      <span class="pbr-section-chip">${esc(plain(data.findingsCountText) || `${visible.length} 项发现`)}</span>
     </div>
-    <div class="pbr-head-actions">
-      ${ignoredCount ? `<button type="button" class="pbr-text-btn" data-pbr-restore-ignored>已忽略 ${ignoredCount} 条 · 恢复</button>` : ''}
-      <button type="button" class="pbr-text-btn" data-pbr-export${canExport ? '' : ' disabled'} title="${canExport ? '导出已关注的发现和比赛' : '先关注发现或比赛，再导出清单'}">导出关注项</button>
-    </div>
+    <p class="pbr-section-note">${esc(periodText)} · 点击条目展开证据</p>
   </div>`;
   if (!visible.length) {
-    let emptyText = plain(data.findingsEmpty) || '本期与上期相比没有明显变化，没有需要单独展开的条目。';
-    if (all.length) {
-      if (mode === 'fav') emptyText = '这个视角下还没有关注的发现。';
-      else if (mode === 'todo') emptyText = '这个视角下没有待复盘的发现。';
-      else if (ignoredCount) emptyText = '本期的发现都被忽略了，点上方「恢复」可以还原。';
-    }
     return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
-      <p class="pbr-findings-empty">${esc(emptyText)}</p>
+      <p class="pbr-findings-empty">${esc(plain(data.findingsEmpty) || '本期没有需要单独展开的发现。')}</p>
     </section>`;
   }
   return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
-    <div class="pbr-finding-list is-scroll" tabindex="0" role="region" aria-label="${esc(title)}列表">${findingRowsHtml(visible, view, esc)}</div>
+    <div class="pbr-finding-accordion" aria-label="${esc(title)}">
+      ${visible.map((finding, index) => findingCardHtml(finding, index, visible.length, esc, ctx.portrait)).join('')}
+    </div>
   </section>`;
 }
 
@@ -896,55 +1058,145 @@ function watchGroupHtml(field, activeId, options, esc) {
   </div>`;
 }
 
+/* ── 重点复盘：对局名片 ─────────────────────────────────────────
+ * 先看阵容认出是哪一把 → 再看这把有什么问题 → 决定要不要进入复盘。
+ * 卡片不再堆时间戳胶囊和四组指标；默认首页只出 2×2 的名片。 */
+function rosterHeroHtml(player, side, esc, portraitFn) {
+  const hero = plain(player && player.name);
+  const lane = plain(player && player.lane);
+  const who = plain(player && player.player);
+  const tip = [who || hero, lane, hero].filter(Boolean).join(' · ');
+  const kda = [player.kills, player.deaths, player.assists]
+    .map((value) => (has(value) ? value : '—')).join('/');
+  const gold = has(player && player.gold) ? `${Number(player.gold).toLocaleString()} 金币` : '—';
+  const art = portraitFn && hero
+    ? portraitFn(hero, 'pbr-roster-portrait')
+    : `<span class="portrait portrait-placeholder pbr-roster-portrait" aria-hidden="true">${esc(hero.slice(0, 1) || '?')}</span>`;
+  return `<button type="button" class="pbr-roster-hero" data-hero-side="${esc(side)}"
+    data-hero-name="${esc(hero)}" data-hero-tip="${esc(tip)}" data-hero-kda="${esc(kda)}"
+    data-hero-gold="${esc(gold)}" title="${esc(tip)}" aria-label="${esc(tip)}">${art}</button>`;
+}
+
+function rosterRowHtml(players, side, label, esc, portraitFn) {
+  const row = listOf(players).slice(0, 5)
+    .map((player) => rosterHeroHtml(player, side, esc, portraitFn)).join('');
+  return `<div class="pbr-roster-side">
+    <span class="pbr-roster-label">${esc(label)}</span>
+    <div class="pbr-roster-heroes">${row || '<span class="pbr-roster-none">暂无阵容</span>'}</div>
+  </div>`;
+}
+
+function reviewCardHtml(card, index, esc, portraitFn) {
+  const start = plain(card.start);
+  const date = start.split(' ')[0] || '';
+  const clock = (start.match(/\d{1,2}:\d{2}/) || [])[0] || '';
+  const reviewType = plain(card.reviewType) || plain(card.resultTag) || '值得复盘';
+  const attention = /劣势|落后|被翻|输/.test(reviewType);
+  const gameId = plain((listOf(card.evidence)[0] || {}).game)
+    || plain(card.primary_destination).replace('#match/', '');
+  const base = `#match/${encodeURIComponent(gameId)}`;
+  const problem = plain(card.problem) || plain(card.conclusion);
+  const focusValue = plain(card.focusValue)
+    || (listOf(card.numbers)[0] || {}).value || '—';
+  const focusLabel = plain(card.focusLabel)
+    || (listOf(card.numbers)[0] || {}).label || '关键指标';
+  return `<article class="pbr-review-card" data-review-id="${esc(plain(card.id))}">
+    <div class="pbr-review-top">
+      <span class="pbr-review-no">${String(index + 1).padStart(2, '0')}</span>
+      <span class="pbr-review-date">${esc(date)}</span>
+      <span class="pbr-review-opponent">${esc(plain(card.title).replace(/^\d{2}-\d{2}\s*·\s*/, ''))}</span>
+      <span class="pbr-review-clock">${esc(clock)}</span>
+      <span class="pbr-review-type${attention ? ' is-attention' : ''}">${esc(reviewType)}</span>
+    </div>
+    <div class="pbr-roster">
+      ${rosterRowHtml(card.rosterPlayers, 'own', '我方阵容', esc, portraitFn)}
+      <span class="pbr-roster-vs" aria-hidden="true">VS</span>
+      ${rosterRowHtml(card.foePlayers, 'foe', '对方阵容', esc, portraitFn)}
+    </div>
+    <div class="pbr-hero-focus" data-pbr-hero-focus hidden></div>
+    <div class="pbr-review-issue">
+      <p class="pbr-review-problem">${esc(problem)}</p>
+      <p class="pbr-review-detail">${esc((() => {
+        const moments = listOf(card.moments);
+        const first = moments[0] || {};
+        const last = moments.slice(-1)[0] || {};
+        const range = first.clock && last.clock && first.clock !== last.clock
+          ? `${first.clock}–${last.clock}` : (last.clock || first.clock || '');
+        return [range, focusValue].filter(Boolean).join(' · ');
+      })())}</p>
+    </div>
+    <div class="pbr-review-metric">
+      <strong>${esc(focusValue)}</strong>
+      <span>${esc(focusLabel)}</span>
+    </div>
+    <div class="pbr-review-tags">
+      <span class="pbr-review-tag-label">系统特征</span>
+      <span class="pbr-review-feature">${esc(reviewType)}</span>
+      <span class="pbr-review-tag-label">自定义标签</span>
+      <div class="tagrow" data-tag-key="${esc(gameId)}"></div>
+    </div>
+    <div class="pbr-review-actions">
+      <a href="${esc(base)}/events">查看比赛关键过程</a>
+      <a href="${esc(base)}/review">进入复盘 <span aria-hidden="true">→</span></a>
+    </div>
+  </article>`;
+}
+
 function watchHtml(data, view, ctx) {
-  const { esc } = ctx;
+  const { esc, portrait: portraitFn } = ctx;
   const fields = listOf(data.watchFields).filter((field) => field && plain(field.id));
   const legacy = listOf(data.watch)
     .filter((item) => item && (plain(item.title) || plain(item.conclusion)));
-  /* 旧报文没有 watch 字段时整块不渲染，避免首页多出一个空板块。 */
   if (!fields.length && !legacy.length && !plain(data.watchTitle)) return '';
-  const title = plain(data.watchTitle) || '本期最值得复盘的比赛';
-
-  /* 老报文（单组）：维持原样，不再强行造工具条/弹层/关注。 */
-  if (!fields.length) {
-    const head = sectionHeadHtml(title,
-      plain(data.watchCountText) || `${legacy.length} 局`, esc,
-      legacy.length ? '点开看完整过程' : '');
-    if (!legacy.length) {
-      const empty = plain(data.watchEmpty) || '本期没有可复盘的比赛过程。';
-      return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">${head}
-        <p class="pbr-findings-empty">${esc(empty)}</p></section>`;
-    }
-    return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">${head}
-      <div class="pbr-finding-list is-rail" tabindex="0">${legacy.map((item, index) => findingHtml(item, index, esc)).join('')}</div>
+  const title = plain(data.watchTitle) || '重点复盘';
+  const countText = plain(data.watchCountText) || `${legacy.length} 场值得关注的对局`;
+  const wanted = plain(view && view.watchActive)
+    || plain(data.watchField) || (fields[0] && plain(fields[0].id));
+  let cards = fields.length
+    ? watchItems(fields.find((field) => plain(field.id) === wanted) || fields[0])
+    : legacy;
+  const filter = (view && view.tagFilter) || {};
+  const filterTags = listOf(filter.tags).map(plain).filter(Boolean);
+  const filtered = filterTags.length || plain(filter.keyword)
+    ? new Set(listOf(filter.keys).map(plain).filter(Boolean))
+    : null;
+  if (filtered) {
+    cards = cards.filter((card) => filtered.has(plain(listOf(card.evidence)[0]?.game)
+      || plain(card.primary_destination).replace('#match/', '')));
+  }
+  if (!cards.length) {
+    return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">
+      <div class="pbr-section-head"><div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2></div>
+      <p class="pbr-section-note">${esc(countText)}</p></div>
+      <div class="pbr-tagbar" data-tagbar="home"></div>
+      <p class="pbr-findings-empty">${esc(plain(data.watchEmpty) || '本期没有可复盘的比赛过程。')}</p>
     </section>`;
   }
-
-  const catalog = watchCatalogOf(data, fields);
-  const wanted = plain(view && view.watchActive) || plain(data.watchField) || plain(fields[0].id);
-  const active = fields.find((field) => plain(field.id) === wanted) || fields[0];
-  const activeId = plain(active.id);
-  const picked = orderedDisplay(displayPick(data, view, catalog), catalog);
-  const openPop = plain(view && view.openPop);
-  const favs = (view && view.watchFavs) || {};
-  const mode = viewModeOf(view);
-  const baseActiveItems = watchItems(active);
-  const matchedActive = baseActiveItems.filter((card) => inView(favStateOf(favs, watchCardKey(card)), mode));
-  /* 全部视角用后端 count（该字段本期总局数）；关注/待复盘视角用匹配条数，计数才跟得上。 */
-  const activeCount = mode === 'all'
-    ? (has(active.count) ? active.count : baseActiveItems.length)
-    : matchedActive.length;
-  const countText = activeCount > 0 ? `${activeCount} 局` : '本期暂无';
-  const head = `<div class="pbr-section-head">
-    <div class="pbr-section-title">
-      <h2>${esc(title)}</h2>
-      <span class="pbr-section-chip" data-pbr-watch-count>${countText}</span>
+  const menu = fields.length > 1
+    ? `<details class="pbr-watch-menu">
+        <summary>排序 / 筛选</summary>
+        <div class="pbr-watch-menu-body" role="listbox" aria-label="按复盘维度排序">
+          ${fields.map((field) => {
+            const id = plain(field.id);
+            const on = id === wanted;
+            return `<button type="button" role="option" aria-selected="${String(on)}"
+              class="pbr-watch-menu-option${on ? ' is-on' : ''}" data-pbr-sort-option="${esc(id)}">
+              ${esc(plain(field.label) || id)}</button>`;
+          }).join('')}
+        </div>
+      </details>`
+    : '';
+  return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">
+    <div class="pbr-section-head">
+      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2></div>
+      <p class="pbr-section-note">${esc(countText)}</p>
+      ${menu}
+      <a class="pbr-watch-all" href="#matches">全部比赛 <span aria-hidden="true">→</span></a>
     </div>
-    ${watchToolsHtml(fields, catalog, picked, active, openPop, esc)}
-  </div>`;
-  const groups = fields.map((field) => watchGroupHtml(field, activeId, { displayIds: picked, catalog, focusId: activeId, favs, viewMode: mode }, esc)).join('');
-  return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">${head}
-    ${groups}
+    <div class="pbr-tagbar" data-tagbar="home"></div>
+    <div class="pbr-review-grid">
+      ${cards.map((card, index) => reviewCardHtml(card, index, esc, portraitFn)).join('')}
+    </div>
   </section>`;
 }
 
@@ -964,7 +1216,7 @@ function nextHtml(data, ctx) {
     }).join('');
     return `<ul class="pbr-next">${rows}</ul>`;
   }
-  return `<p class="pbr-next-empty">${esc(plain(next.note) || '还没有登记下一场约训')} <a href="#plan">去登记 →</a></p>`;
+  return `<p class="pbr-next-empty">${esc(plain(next.note) || '还没有登记下一场约训')} <a href="#competitions">去登记 →</a></p>`;
 }
 
 /* ── 数据覆盖 ─────────────────────────────────────────────────── */
@@ -1000,37 +1252,25 @@ function coverageHtml(data, ctx) {
 }
 
 /* ── 空态 / 错误 / 读取中 ─────────────────────────────────────── */
+/* 空态只讲一件事：本期没对局，下一步去采集。
+   不再堆训练安排 / 最近一批 / 数据范围等次要入口，避免主次颠倒。 */
 function emptyHtml(data, view, ctx) {
   const { esc } = ctx;
   const period = data.period || {};
   const label = plain(period.label) || PERIOD_TEXT[view.kind] || PERIOD_TEXT[DEFAULT_KIND];
-  const hint = data.fallback_hint || null;
-  const from = plain(hint && hint.from);
-  const to = plain(hint && hint.to);
-  const hintLabel = plain(hint && hint.label) || rangeText(from, to);
-  const reason = plain(data.reason);
-  /* 后端 reason 与标题同义（「本周还没有对局（…）」）时不再重复一遍，改成说明能做什么。 */
-  const range = rangeText(period.from, period.to);
-  const reasonLine = reason && !reason.startsWith(`${label}还没有对局`)
-    ? reason
-    : `当前范围${range ? `（${range}）` : ''}没有可统计的对局；换一个周期，或先看最近一批。`;
-  /* 本期 0 局时也交代上一周期的情况：教练才分得清「还没打」还是「数据没进来」。 */
-  const prevNote = plain(data.empty_note);
   return `<section class="pbr-empty" aria-label="${esc(label)}暂无对局">
+    <span class="pbr-empty-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+        <path d="M3 9h18M8 2v4M16 2v4M8 14h4"></path>
+      </svg>
+    </span>
     <div class="pbr-empty-copy">
-      <h2>${esc(label)}还没有对局</h2>
-      <p class="pbr-empty-reason">${esc(reasonLine)}</p>
-      ${prevNote ? `<p class="pbr-empty-prev">${esc(prevNote)}</p>` : ''}
-    </div>
-    <div class="pbr-empty-next">
-      <p class="pbr-empty-label"><span class="pbr-foot-label">训练安排</span></p>
-      ${nextHtml(data, ctx)}
+      <h2>${esc(label)}没有对局</h2>
     </div>
     <div class="pbr-empty-actions">
-      ${from && to ? `<button type="button" class="primary" data-pbr-fallback data-from="${esc(from)}" data-to="${esc(to)}">查看最近一批（${esc(hintLabel)}）</button>` : ''}
-      <a class="control" href="#ingest">去采集</a>
-      ${view.hasDateScope ? '<button type="button" class="control" data-action="clear-scope">清除日期范围</button>' : ''}
-      <button type="button" class="control" data-action="filter">数据范围</button>
+      <a class="control primary" href="#ingest">去采集</a>
     </div>
   </section>`;
 }
@@ -1074,23 +1314,24 @@ function errorHtml(view, ctx) {
   </div>`;
 }
 
+/* 标签查询容器：内容由 match-tags.js 按实时标签词表填充（新加的标签立刻可查）。 */
+function tagQueryHtml() {
+  return '<div class="tagquery" data-tagquery="home" data-tq-label="标签查询"></div>';
+}
+
 function dataHtml(data, view, ctx) {
-  /* 一句战况 + 右侧「下一场约训 / 数据覆盖」：把原来页脚的信息提上来，
-     补掉摘要右侧的空白，页面也短一截。 */
-  const side = `<aside class="pbr-hero-side" aria-label="约训与数据覆盖">
-      <div class="pbr-foot-row">
-        <p class="pbr-foot-label">下一场约训</p>
-        <div class="pbr-foot-body">${nextHtml(data, ctx)}</div>
-      </div>
-      ${coverageHtml(data, ctx)}
-    </aside>`;
+  /* 战况区只保留战况卡本身。
+     「下一场约训」「数据覆盖」两块在侧栏与「数据来源」页各有入口，
+     放在首页只会跟主结论抢位置，按标注整块移除。 */
   return `<section class="pbr-hero">
-      ${summaryHtml(data, ctx)}
-      ${side}
+      <p class="pbr-page-intro">近期表现、关键变化与对局复盘</p>
+      ${kpiHtml(data, ctx)}
     </section>
     ${metricsHtml(data, ctx)}
+    ${notableHtml(data, ctx)}
     ${findingsHtml(data, view, ctx)}
-    ${watchHtml(data, view, ctx)}`;
+    ${watchHtml(data, view, ctx)}
+    `;
 }
 
 /* 纯渲染：给浏览器与静态回归共用，不碰 DOM、不发请求。 */
@@ -1105,16 +1346,16 @@ export function renderBrief(view, ctx) {
       : data.available === false
         ? emptyHtml(data, state, deps)
         : dataHtml(data, state, deps);
-  return `<header class="pbr-head">
-      ${barHtml(state, deps)}
+  return `<header class="pbr-head" aria-label="赛训周期简报">
       ${titleHtml(state, deps)}
+      ${barHtml(state, deps)}
       ${state.notice ? `<p class="pbr-notice" role="status">${deps.esc(state.notice)}</p>` : ''}
     </header>${body}`;
 }
 
 /* ── 页面控制器：挂载点、周期状态、取数与重试 ─────────────────── */
-export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRange, onEmptyLibrary, applyScope }) {
-  const ctx = { esc, fmt, icon, API_BASE, art: true };
+export function createPeriodBrief({ esc, fmt, icon, API_BASE, portrait, getFilters, openRange, onEmptyLibrary, applyScope }) {
+  const ctx = { esc, fmt, icon, API_BASE, portrait, art: true };
   let root = null;
   let request = null;
   let generation = 0;
@@ -1123,6 +1364,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
   /* 复盘区状态只活在控制器里：显示字段可持久化；排序字段只影响本次渲染；弹层开关不落盘。 */
   let displayChoice = null;
   let watchActive = null;
+  let tagFilter = { tags: [], keyword: '', keys: [] };
   let openPop = null;
   /* 关注收藏：纯渲染只读，localStorage 只在这里读写。 */
   let findingFavs = {};
@@ -1355,7 +1597,11 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
       if (has(extra.days)) params.set('days', String(extra.days));
     }
     const range = currentRange();
-    if (state.kind === 'custom' && range) {
+    if (state.kind === 'all') {
+      params.set('period', 'custom');
+      params.set('from', ALL_RANGE.from);
+      params.set('to', ALL_RANGE.to);
+    } else if (state.kind === 'custom' && range) {
       params.set('from', range.from);
       params.set('to', range.to);
     }
@@ -1512,11 +1758,6 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
       const data = payload && typeof payload === 'object' ? payload : {};
       view = { kind: state.kind, data, loading: false, error: null, notice: state.notice };
       paint();
-      /* 空库：本期没有对局、也没有更早的一批可看 → 交回首页的入库弹窗。 */
-      if (data.available === false && !hasRange(data.fallback_hint) && !data.record?.prev?.decided && !data.empty_note && typeof onEmptyLibrary === 'function') {
-        const stamp = own;
-        requestAnimationFrame(() => { if (stamp === generation) onEmptyLibrary(); });
-      }
     } catch (error) {
       if (own !== generation || (error && (error.name === 'AbortError' || error.code === 20))) return;
       view = { kind: state.kind, data: null, loading: false, error, notice: state.notice };
@@ -1645,7 +1886,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     }
     const data = view.data || {};
     replaceSection('.pbr-watch',
-      watchHtml(data, { ...view, ...viewState(), displayFields: resolveDisplay(data), watchActive, openPop }, ctx),
+      watchHtml(data, { ...view, ...viewState(), displayFields: resolveDisplay(data), watchActive, openPop, tagFilter }, ctx),
       focusSelector, lefts);
     syncArrows();
     syncCurrentCard();
@@ -1736,10 +1977,16 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     };
     input.addEventListener('keydown', (event) => {
       event.stopPropagation();
+      /* 中文输入法确认候选词的回车不算「保存」：此时 input.value 还是拼音，
+         Safari 还会把 keyCode 报成 229，两个信号一起挡，等文字上屏再按一次回车。 */
+      const imeConfirming = event.isComposing === true || event.keyCode === 229;
       if (event.key === 'Enter') {
         event.preventDefault();
+        if (imeConfirming) return;
         finish(true);
       } else if (event.key === 'Escape') {
+        /* 选字中途按 Esc 是取消候选，不是放弃整条结论。 */
+        if (imeConfirming) return;
         event.preventDefault();
         finish(false);
       }
@@ -1978,6 +2225,7 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
   }
 
   function onClick(event) {
+    if (event.target.closest('[data-pbr-import-help]')) { onEmptyLibrary?.(); return; }
     const target = event.target;
     const favFinding = target.closest('[data-pbr-fav-finding]');
     if (favFinding) {
@@ -2036,6 +2284,39 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     const sortOption = target.closest('[data-pbr-sort-option]');
     if (sortOption) {
       chooseSort(sortOption);
+      const menu = sortOption.closest('.pbr-watch-menu');
+      if (menu) menu.open = false;
+      return;
+    }
+    /* 点英雄头像只高亮这位英雄在本场的表现，不跳走；复盘仍走卡片入口。 */
+    const hero = target.closest('.pbr-roster-hero');
+    if (hero) {
+      const card = hero.closest('.pbr-review-card');
+      const strip = card && card.querySelector('[data-pbr-hero-focus]');
+      if (!card || !strip) return;
+      const name = plain(hero.dataset.heroName);
+      const already = hero.classList.contains('is-picked');
+      card.querySelectorAll('.pbr-roster-hero').forEach((node) => node.classList.remove('is-picked'));
+      if (already) {
+        strip.hidden = true;
+        strip.textContent = '';
+        return;
+      }
+      hero.classList.add('is-picked');
+      strip.hidden = false;
+      const kda = plain(hero.dataset.heroKda);
+      const gold = plain(hero.dataset.heroGold);
+      strip.innerHTML = `<span class="pbr-hero-focus-name">${esc(plain(hero.dataset.heroTip))}</span>`
+        + (kda && !kda.includes('—') ? `<span class="pbr-hero-focus-stat">KDA ${esc(kda)}</span>` : '')
+        + (gold && gold !== '—' ? `<span class="pbr-hero-focus-stat">${esc(gold)}</span>` : '');
+      return;
+    }
+    if (target.closest('[data-pbr-all-metrics]')) {
+      const details = root && root.querySelector('.pbr-more-metrics');
+      if (details) {
+        details.open = true;
+        details.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
       return;
     }
     if (target.closest('[data-pbr-display-reset]')) {
@@ -2071,18 +2352,33 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, getFilters, openRa
     }
   }
 
+  function onTagFilter(event) {
+    const detail = event.detail || {};
+    if (detail.scope !== 'home') return;
+    const next = {
+      tags: listOf(detail.tags).map(plain).filter(Boolean),
+      keyword: plain(detail.keyword),
+      keys: listOf(detail.keys).map(plain).filter(Boolean),
+    };
+    if (JSON.stringify(next) === JSON.stringify(tagFilter)) return;
+    tagFilter = next;
+    refreshWatch();
+  }
+
   let docBound = false;
   function bindDocument() {
     if (docBound || typeof document === 'undefined') return;
     docBound = true;
     document.addEventListener('keydown', onDocumentKeyDown);
     document.addEventListener('pointerdown', onDocumentPointerDown, true);
+    document.addEventListener('match-tags:filter', onTagFilter);
   }
   function unbindDocument() {
     if (!docBound || typeof document === 'undefined') return;
     docBound = false;
     document.removeEventListener('keydown', onDocumentKeyDown);
     document.removeEventListener('pointerdown', onDocumentPointerDown, true);
+    document.removeEventListener('match-tags:filter', onTagFilter);
   }
 
   return {

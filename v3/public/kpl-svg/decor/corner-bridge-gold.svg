@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="217" height="46" viewBox="0 0 217 46" role="img">
+<title>金边顶部角饰</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient></defs>
+<path d="M1 43V15 Q1 1 15 1 H201 Q215 1 215 15 V43" fill="none" stroke="url(#gold)" stroke-width="4"/>
+</svg>

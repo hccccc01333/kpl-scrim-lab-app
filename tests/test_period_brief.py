@@ -188,7 +188,7 @@ def test_extra_recent_window(tmp_path):
     assert period['prev']['label'] == '前 2 场'
     assert period['prev']['from'] == day('11-02')
     # 标题跟着周期走，不是「本期」
-    assert payload['watchTitle'] == '最近 2 场最值得复盘的比赛'
+    assert payload['watchTitle'] == '重点复盘'
     assert payload['findingsTitle'] == '最近 2 场重点发现'
 
 
@@ -517,8 +517,11 @@ def test_api_shape_and_contract(tmp_path):
         'deficit', 'deaths', 'giveback', 'fight', 'at10', 'duration',
         'dragon', 'tower', 'gold', 'damage']
     assert payload['watchDisplayFields'] == ['deficit', 'at10', 'deaths', 'duration']
-    assert payload['watch'] == next(item['items'] for item in payload['watchFields']
-                                    if item['id'] == payload['watchField'])
+    default_items = next(item['items'] for item in payload['watchFields']
+                         if item['id'] == payload['watchField'])
+    assert payload['watch'] == default_items
+    scores = [card['reviewScore'] for card in default_items]
+    assert scores == sorted(scores, reverse=True)
     for field in payload['watchFields']:
         assert {'id', 'label', 'note', 'unit', 'count', 'items', 'empty'} <= set(field)
         assert field['empty']
@@ -590,19 +593,21 @@ def test_single_app_mounts_briefing_router():
 
 
 def test_scrim_metrics_fixed_six_and_dynamic_two(tmp_path):
-    """首页 8 项：6 项固定 + 2 项动态，每项都有本期、上期与有效数据量。"""
+    """首页 10 项：基本盘 + 比率 + 一塔率 + 四种资源控制率。
+
+    本期胜率已在顶部一句话里给出，十分钟领先兑现率与顶部信息重复，不再单列。
+    """
     facts = make_facts(tmp_path)
     payload = analysis_period.build_briefing(
         facts, today=CURRENT, period_kind='custom',
         date_from=day('11-02'), date_to=day('11-04'))
     metrics = payload['metrics']
     ids = [item['id'] for item in metrics]
-    for required in ('record', 'win_rate', 'lead_rate', 'lead_hold_rate',
-                     'lead_econ', 'fight_rate'):
-        assert required in ids
-    assert len(metrics) == 8
-    assert all(item in ('dragon_rate', 'first_tower_rate',
-                        'behind_comeback', 'lead_drawdown') for item in ids[6:])
+    expected = ('record', 'lead_rate', 'lead_econ', 'fight_rate', 'first_blood_rate',
+                'first_tower_rate', 'tyrant_rate', 'elder_dragon_rate',
+                'baron_rate', 'elder_baron_rate')
+    assert ids == list(expected)
+    assert 'win_rate' not in ids and 'lead_hold_rate' not in ids
     for item in metrics:
         assert item['valueText']
         assert item['coverage']
@@ -611,21 +616,28 @@ def test_scrim_metrics_fixed_six_and_dynamic_two(tmp_path):
         assert item['href'].startswith('#matches?') and 'from=' in item['href']
     by_id = {item['id']: item for item in metrics}
     # 比例类变化用百分点，经济类用金币
-    assert '个百分点' in by_id['win_rate']['deltaText']
+    assert '个百分点' in by_id['lead_rate']['deltaText']
     assert '金币' in by_id['lead_econ']['deltaText']
-    # 百分率一律写成「xx/xx（百分率）」，分母和百分比都在卡面上
-    assert by_id['win_rate']['valueText'].count('/') == 1
-    assert by_id['win_rate']['valueSub'].endswith('%')
+    # 比率卡面仍带分子分母与百分比，前端只展示百分比、分母放到 title
+    assert by_id['lead_rate']['valueText'].count('/') == 1
+    assert by_id['lead_rate']['valueSub'].endswith('%')
+    for mid in ('tyrant_rate', 'elder_dragon_rate', 'baron_rate', 'elder_baron_rate'):
+        if by_id[mid]['sample']:
+            assert by_id[mid]['valueSub'] and by_id[mid]['valueSub'].endswith('%')
     assert by_id['lead_econ']['valueText'].endswith('金币')
     # 同批对手排名：x/xx + 领先/中等/落后三档，样本不足时不给排名（字段仍在）
     assert all('rank' in item for item in metrics)
     # 最值得复盘的比赛不能退化成只有标题的空白卡，标题要跟着周期变
-    assert payload['watchTitle'] == '本期最值得复盘的比赛'
+    assert payload['watchTitle'] == '重点复盘'
+    assert payload['watchCountText'].startswith('发现 ')
     assert payload['findingsTitle'] == '本期重点发现'
     assert payload['watch']
     assert all(card['conclusion'] for card in payload['watch'])
     for card in payload['watch']:
         assert card['rosterPlayers'], card['id']
+        assert card['problem'] and card['reviewType']
+        assert isinstance(card['reviewScore'], (int, float))
+        assert 'foePlayers' in card and 'focusValue' in card
         assert all(player['icon'].startswith('/catalog/icons/')
                    for player in card['rosterPlayers'])
         assert all(player['name'] for player in card['rosterPlayers'])
@@ -687,10 +699,10 @@ def test_panel_only_period_counts_record_only(tmp_path):
     assert payload['available'] is True
     assert payload['record']['decided'] >= 1
     by_id = {item['id']: item for item in payload['metrics']}
-    for mid in ('lead_rate', 'lead_hold_rate', 'lead_econ', 'fight_rate'):
+    for mid in ('lead_rate', 'lead_econ', 'fight_rate', 'tyrant_rate'):
         assert by_id[mid]['sample'] == 0
         assert by_id[mid]['valueText'] == '—'
-    assert len(payload['metrics']) == 8
+    assert len(payload['metrics']) == 10
 
 
 def test_duplicate_games_are_deduped(tmp_path):
@@ -819,23 +831,50 @@ def test_watch_groups_sort_by_selected_field():
             assert card['conclusion'].startswith('打了 20 分钟')
 
 
-def test_summary_compares_win_rate_when_sample_sizes_differ():
-    """9 局 vs 81 局不比「少赢 50 局」，改比胜率百分点并写明上期局数。"""
+def test_findings_cards_carry_fold_and_pair_data(tmp_path):
+    """重点发现卡要能独立渲染：标签、折叠摘要、建议、双条件对位都在 payload 里。"""
+    facts = make_facts(tmp_path)
+    payload = analysis_period.build_briefing(
+        facts, today=CURRENT, period_kind='custom',
+        date_from=day('11-02'), date_to=day('11-04'))
+    findings = payload['findings']
+    assert findings
+    for item in findings:
+        assert item['statusTag'] and item['categoryTag']
+        assert item['foldSummary']
+        assert isinstance(item['heroes'], list)
+    paired = [item for item in findings if item.get('pair')]
+    assert paired
+    for item in paired:
+        for side in ('left', 'right'):
+            block = item['pair'][side]
+            assert block['label'] and block['value'] and block['fraction']
+            assert isinstance(block['ratio'], (int, float))
+    hold = next((item for item in findings if item['id'].startswith('lead_hold')), None)
+    assert hold is not None
+    assert [entry['label'] for entry in hold['stats']] == ['本期兑现', '上期兑现']
+    assert hold['relatedMatches']
+    for match in hold['relatedMatches']:
+        assert match['id'] and match['label']
+        assert isinstance(match['rosterPlayers'], list)
+        assert isinstance(match['foePlayers'], list)
+
+
+def test_summary_is_one_plain_sentence():
+    """顶部一句话只说局数、胜负、胜率：不带日期区间，也不跟上期比较。"""
     window = {'kind': 'week'}
     record = {'decided': 9, 'wins': 4, 'losses': 5, 'unknown': 0, 'winRate': 44.4}
     prev = {'decided': 81, 'wins': 54, 'losses': 27, 'unknown': 0, 'winRate': 66.7}
     sentence, tone = analysis_period._sentence(window, record, prev)
-    assert '少赢 50 局' not in sentence
-    assert '胜率比上周同期低 22.3 个百分点' in sentence
-    assert '上期共 81 局' in sentence
-    assert tone == 'down'
+    assert sentence == '本周 9 局训练赛，4 胜 5 负，胜率 44.4%。'
+    assert tone == 'none'
+    assert '少赢 50 局' not in sentence and '个百分点' not in sentence
 
-    # 样本接近时仍然比胜场，保留教练熟悉的「多赢 / 少赢 N 局」。
+    # 样本接近时也不追加「少赢 2 局」，上期信息由指标表的「上期/变化」列承担。
     near = {'decided': 10, 'wins': 6, 'losses': 4, 'unknown': 0, 'winRate': 60.0}
     sentence, tone = analysis_period._sentence(window, record, near)
-    assert '少赢 2 局' in sentence
-    assert '个百分点' not in sentence
-    assert tone == 'down'
+    assert sentence == '本周 9 局训练赛，4 胜 5 负，胜率 44.4%。'
+    assert tone == 'none'
 
 
 def test_watch_card_marks_comeback_and_throw():
@@ -952,7 +991,7 @@ def test_findings_dedup_and_limit_removed_from_payload(tmp_path):
     facts = make_facts(tmp_path, panel_only=True)
     payload = build(facts, period_kind='custom', classic_metrics=False,
                     date_from=day('11-02'), date_to=day('11-04'))
-    assert payload['findingsCountText'] == f'{len(payload["findings"])} 条'
+    assert payload['findingsCountText'] == f'{len(payload["findings"])} 项发现'
 
 
 def test_watch_group_not_capped_at_three():

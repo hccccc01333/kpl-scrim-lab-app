@@ -336,6 +336,36 @@ def _kpl_combos():
     return data, pairs, trios, quads, lineups
 
 
+def _effective_tables(pairs, trios):
+    """赛训组组合池优先：已保存且非空时，双人 / 三人名单只认池子。
+
+    KPL 行只作为背景统计挂到同名组合上（场次 / 胜率 / 最近队伍），
+    不再新增名单——这样「命中」「拆组合」都按赛训组的口径。
+    池子没保存过时原样返回 KPL 表，保持旧实例行为。
+    """
+    try:
+        import combo_pool
+        if not combo_pool.has_saved():
+            return pairs, trios, False
+        custom_pairs, custom_trios = combo_pool.tables()
+        if not (custom_pairs or custom_trios):
+            return pairs, trios, False
+
+        def overlay(custom, base):
+            out = {}
+            for key, row in custom.items():
+                bg = dict(base.get(key) or {})
+                bg.update({'heroes': list(key), 'source': 'custom',
+                           'strength': row.get('strength'),
+                           'name': row.get('name'), 'note': row.get('note')})
+                out[key] = bg
+            return out
+
+        return overlay(custom_pairs, pairs), overlay(custom_trios, trios), True
+    except (ImportError, OSError, ValueError):
+        return pairs, trios, False
+
+
 def _latest_year(data, *groups):
     """最近一个赛季年份：组合行里的最大 year，退化为窗口结束年份。"""
     years = []
@@ -373,6 +403,9 @@ def kpl_index() -> dict:
     不猜组合。
     """
     data, pairs, trios, quads, lineups = _kpl_combos()
+    # 赛训组组合池最高优先级：所有用这个公开索引的地方（战队页、BP 实验室、
+    # 大场契合度）都只按池子名单看双人 / 三人组合，KPL 只留背景统计。
+    pairs, trios, pool_active = _effective_tables(pairs, trios)
 
     def normalized(table):
         out = {}
@@ -384,7 +417,8 @@ def kpl_index() -> dict:
         return out
 
     return {
-        'source': 'KPL 官方赛事',
+        'source': 'KPL 官方赛事',   # 数据源标注保持 KPL；名单口径由 poolActive 表达
+        'poolActive': pool_active,
         'games': data.get('games'),
         'sinceYear': data.get('sinceYear'),
         'updatedAt': data.get('updatedAt'),
@@ -492,6 +526,7 @@ def for_match(detail):
     lane_data, lane_table = _lane_pairs()
     heroes_doc, pools, _ = _hero_strength()
     combo_data, kpl_pairs, kpl_trios, kpl_quads, kpl_lineups = _kpl_combos()
+    kpl_pairs, kpl_trios, pool_active = _effective_tables(kpl_pairs, kpl_trios)
 
     # 1) 对位压制：用营地面板里的位置对齐五路
     by_lane = {}
@@ -586,20 +621,27 @@ def for_match(detail):
         for j in range(i + 1, len(heroes)):
             row = kpl_pairs.get((heroes[i], heroes[j]))
             if row:
-                pair_hits.append({'heroes': [heroes[i], heroes[j]], 'n': row['n'],
-                                  'wins': row.get('wins'), 'wr': row['wr'],
+                pair_hits.append({'heroes': [heroes[i], heroes[j]], 'n': row.get('n') or 0,
+                                  'wins': row.get('wins'), 'wr': row.get('wr'),
                                   'year': row.get('year'),
                                   'lastDate': row.get('lastDate'),
-                                  'teams': row.get('teams') or []})
+                                  'teams': row.get('teams') or [],
+                                  'source': row.get('source', 'kpl'),
+                                  'strength': row.get('strength'),
+                                  'name': row.get('name'),
+                                       'note': row.get('note')})
             for k in range(j + 1, len(heroes)):
                 trow = kpl_trios.get((heroes[i], heroes[j], heroes[k]))
                 if trow:
                     trio_hits.append({'heroes': [heroes[i], heroes[j], heroes[k]],
-                                      'n': trow['n'], 'wins': trow.get('wins'),
-                                      'wr': trow['wr'],
+                                      'n': trow.get('n') or 0, 'wins': trow.get('wins'),
+                                      'wr': trow.get('wr'),
                                       'year': trow.get('year'),
                                       'lastDate': trow.get('lastDate'),
-                                      'teams': trow.get('teams') or []})
+                                      'teams': trow.get('teams') or [],
+                                      'source': trow.get('source', 'kpl'),
+                                      'name': trow.get('name'),
+                                       'note': trow.get('note')})
     pair_hits.sort(key=lambda item: -item['n'])
     trio_hits.sort(key=lambda item: -item['n'])
 
@@ -611,8 +653,10 @@ def for_match(detail):
                 row = kpl_pairs.get((group[i], group[j]))
                 if row:
                     combo_index[f'{group[i]}+{group[j]}'] = {
-                        'n': row['n'], 'wins': row.get('wins'), 'wr': row['wr'],
+                        'n': row.get('n') or 0, 'wins': row.get('wins'), 'wr': row.get('wr'),
                         'year': row.get('year'), 'lastDate': row.get('lastDate'),
+                        'source': row.get('source', 'kpl'),
+                        'strength': row.get('strength'), 'name': row.get('name'),
                         'teams': row.get('teams') or []}
                     combo_index[f'{group[j]}+{group[i]}'] = combo_index[f'{group[i]}+{group[j]}']
                 trow = None
@@ -621,8 +665,9 @@ def for_match(detail):
                         trow = kpl_trios.get((group[i], group[j], group[k]))
                         if trow:
                             combo_index[f'{group[i]}+{group[j]}+{group[k]}'] = {
-                                'n': trow['n'], 'wins': trow.get('wins'), 'wr': trow['wr'],
+                                'n': trow.get('n') or 0, 'wins': trow.get('wins'), 'wr': trow.get('wr'),
                                 'year': trow.get('year'), 'lastDate': trow.get('lastDate'),
+                                'source': trow.get('source', 'kpl'), 'name': trow.get('name'),
                                 'teams': (trow.get('teams') or [])[:3]}
 
     # 「被拆掉的组合」用的 KPL 索引：只看**本局出现过的英雄**（双方选用 + 双方禁用）。
@@ -644,8 +689,10 @@ def for_match(detail):
             if not row:
                 continue
             draft_combos[bucket]['+'.join(combo)] = {
-                'heroes': list(combo), 'n': row['n'], 'wins': row.get('wins'),
-                'wr': row['wr'], 'year': row.get('year'),
+                'heroes': list(combo), 'n': row.get('n') or 0, 'wins': row.get('wins'),
+                'wr': row.get('wr'), 'year': row.get('year'),
+                'source': row.get('source', 'kpl'), 'strength': row.get('strength'),
+                'name': row.get('name'),
                 'lastDate': row.get('lastDate'), 'teams': (row.get('teams') or [])[:3]}
 
     # 对手侧的组合，给 BP 复盘做对照
@@ -654,10 +701,12 @@ def for_match(detail):
         for j in range(i + 1, len(fh)):
             row = kpl_pairs.get((fh[i], fh[j]))
             if row:
-                foe_pairs.append({'heroes': [fh[i], fh[j]], 'n': row['n'],
-                                  'wins': row.get('wins'), 'wr': row['wr'],
+                foe_pairs.append({'heroes': [fh[i], fh[j]], 'n': row.get('n') or 0,
+                                  'wins': row.get('wins'), 'wr': row.get('wr'),
                                   'year': row.get('year'),
                                   'lastDate': row.get('lastDate'),
+                                  'source': row.get('source', 'kpl'),
+                                  'strength': row.get('strength'), 'name': row.get('name'),
                                   'teams': row.get('teams') or []})
     foe_pairs.sort(key=lambda item: -item['n'])
 
@@ -691,10 +740,12 @@ def for_match(detail):
                    'lanes': lanes},
         'hypothesis': hypothesis,
         'counters': counters,
-        'kpl': {'source': 'kpl', 'sinceYear': combo_data.get('sinceYear'),
+        'kpl': {'source': '赛训组组合池' if pool_active else 'kpl',
+                'poolActive': pool_active,
+                'sinceYear': combo_data.get('sinceYear'),
                 'games': combo_data.get('games'), 'minGames': combo_data.get('minGames'),
                 'updatedAt': combo_data.get('updatedAt'),
-                'sourceLabel': 'KPL 官方赛事',
+                'sourceLabel': '赛训组组合池' if pool_active else 'KPL 官方赛事',
                 'windowStart': combo_data.get('windowStart'),
                 'windowEnd': combo_data.get('windowEnd'),
                 'leagueCount': combo_data.get('leagueCount'),

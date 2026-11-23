@@ -77,8 +77,8 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     const points = (rows || []).filter((row) => has(row[xKey]) && has(row[yKey])
       && (row.decided || 0) >= minDecided && row[yKey] >= minY
       && (!onlyLane || row.lane === onlyLane));
-    if (points.length < 3) {
-      return `<div class="bv-empty">样本不足，散点图暂不绘制（至少 3 个英雄有 4 局以上胜负）。</div>`;
+    if (!points.length) {
+      return `<div class="bv-empty">当前筛选下没有可绘制的英雄（需要 Ban 率、胜率与足够胜负样本）。</div>`;
     }
     const pad = {left: 58, right: 26, top: 30, bottom: 46};
     const plotW = width - pad.left - pad.right;
@@ -93,7 +93,12 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     const x = (v) => pad.left + clamp(v, 0, xMax) / xMax * plotW;
     const y = (v) => pad.top + (1 - (clamp(v, yMin, yMax) - yMin) / Math.max(1, yMax - yMin)) * plotH;
     const maxPick = Math.max(...points.map((p) => p[sizeKey] || 1));
-    const radius = (p) => 5 + Math.sqrt((p[sizeKey] || 1) / maxPick) * 14;
+    /* 单个英雄时铺满做主点；搬率最高的英雄额外放大，Ban 压力一眼可见。 */
+    const single = points.length === 1;
+    const banTop = points.reduce((best, p) =>
+      (!best || (p[xKey] || 0) > (best[xKey] || 0)) ? p : best, null);
+    const radius = (p) => (single ? 34 : 5 + Math.sqrt((p[sizeKey] || 1) / maxPick) * 14)
+      * (!single && p === banTop ? 1.45 : 1);
     const midX = [...points].sort((a, b) => (a[xKey] || 0) - (b[xKey] || 0))[Math.floor(points.length / 2)]?.[xKey] || 0;
     const sorted = [...points].sort((a, b) => (a[sizeKey] || 0) - (b[sizeKey] || 0));
     const grid = [];
@@ -130,7 +135,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       const px = x(p[xKey]);
       const py = y(p[yKey]);
       const r = radius(p) + 5;
-      const nameW = String(p.hero).length * 13 + 6;
+      const nameW = String(p.hero).length * 15 + 8;
       const options = [
         {tx: px, ty: py - r - 7, anchor: 'middle', x0: px - nameW / 2, x1: px + nameW / 2, y0: py - r - 17, y1: py - r - 5},
         {tx: px + r + 3, ty: py + 4, anchor: 'start', x0: px + r, x1: px + r + nameW, y0: py - 8, y1: py + 5},
@@ -283,35 +288,54 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   /* ── 热力图：对手第 N 手 Ban 谁 ───────────────────────────────────── */
-  function handHeatmap(hands, {width = 900, leftWidth = 92, colWidth = 198,
-    rowHeight = 40, colors = null} = {}) {
+  function handHeatmap(hands, {width = 900, leftWidth = 76, colWidth = 96,
+    rowHeight = 52} = {}) {
     const list = (hands || []).filter((hand) => (hand.heroes || []).length);
     if (!list.length) return '<div class="bv-empty">没有逐手 Ban 记录。</div>';
-    const maxCount = Math.max(1, ...list.flatMap((hand) => (hand.heroes || []).map((row) => row.count || 0)));
-    const rowsCount = Math.max(...list.map((hand) => (hand.heroes || []).length));
-    const height = rowsCount * rowHeight + 46;
-    const head = list.map((hand, col) => {
-      const cx = leftWidth + col * colWidth;
-      return `<g><text x="${cx + 12}" y="20" class="bv-col-title">第 ${hand.hand || col + 1} 手</text>
-        <text x="${cx + 12}" y="35" class="bv-tick">${hand.games || 0} 局</text></g>`;
-    }).join('');
+    /* 列 = 全局被 Ban 次数最高的英雄；行 = 手序。颜色按全局最大值归一，跨手可比。 */
+    const totals = new Map();
+    for (const hand of list) {
+      for (const row of hand.heroes || []) {
+        totals.set(row.hero, (totals.get(row.hero) || 0) + (row.count || 0));
+      }
+    }
+    const topHeroes = [...totals.entries()].sort((a, b) => b[1] - a[1])
+      .slice(0, 8).map(([hero]) => hero);
+    const cols = topHeroes.length;
+    const canvasWidth = Math.max(width, leftWidth + cols * colWidth + 8);
+    const height = 62 + list.length * rowHeight + 8;
+    const maxCount = Math.max(1, ...list.flatMap((hand) =>
+      (hand.heroes || []).map((row) => row.count || 0)));
+    const lookup = new Map(list.map((hand) => [hand.hand, new Map(
+      (hand.heroes || []).map((row) => [row.hero, row.count || 0]))]));
+    const xOf = (i) => leftWidth + i * colWidth;
+    const yOf = (r) => 62 + r * rowHeight;
+    /* 列头：头像 + 简称 + 总次数 */
+    const head = topHeroes.map((hero, i) => {
+      const cx = xOf(i) + colWidth / 2;
+      return `<g>${markerWithIcon(hero, cx, 18, 13, `hh-top-${i}`)}
+        <text x="${cx}" y="44" class="bv-cell-label" text-anchor="middle">${esc(short(hero))}</text>
+        <text x="${cx}" y="56" class="bv-tick" text-anchor="middle">${totals.get(hero)} 次</text></g>`;
+    }).join('') + '<text x="10" y="30" class="bv-col-title">手序</text>';
     const cells = [];
-    list.forEach((hand, col) => {
-      (hand.heroes || []).forEach((row, index) => {
-        const count = row.count || 0;
+    list.forEach((hand, r) => {
+      const cy = yOf(r);
+      const map = lookup.get(hand.hand) || new Map();
+      cells.push(`<text x="10" y="${cy + rowHeight / 2 + 4}" class="bv-col-title">第${hand.hand || r + 1}手</text>
+        <text x="10" y="${cy + rowHeight / 2 + 19}" class="bv-tick">${hand.games || 0} 局</text>`);
+      topHeroes.forEach((hero, i) => {
+        const count = map.get(hero) || 0;
+        const cx = xOf(i) + 4;
         const intensity = count / maxCount;
-        const cx = leftWidth + col * colWidth;
-        const cy = 44 + index * rowHeight;
-        const color = (colors && colors[col]) || '#246b63';
-        const mid = cy + (rowHeight - 5) / 2;
-        cells.push(`<rect x="${cx}" y="${cy}" width="${colWidth - 8}" height="${rowHeight - 5}" rx="8"
-          fill="${color}" opacity="${(0.1 + intensity * 0.5).toFixed(2)}"/>
-          ${markerWithIcon(row.hero, cx + 17, mid, 12, `heat-${col}-${index}`)}
-          <text x="${cx + 34}" y="${mid + 4}" class="bv-cell-label">${esc(short(row.hero))}</text>
-          <text x="${cx + colWidth - 14}" y="${mid + 4}" class="bv-cell-count" text-anchor="end">${count}</text>`);
+        cells.push(`<rect x="${cx.toFixed(1)}" y="${cy + 4}" width="${colWidth - 10}" height="${rowHeight - 10}"
+          rx="8" fill="#246b63" opacity="${count ? (0.12 + intensity * 0.62).toFixed(2) : '0.04'}">
+          <title>第${hand.hand || r + 1}手 · ${esc(hero)} · ${count} 次</title></rect>
+          ${count ? `<text x="${(cx + (colWidth - 10) / 2).toFixed(1)}" y="${cy + rowHeight / 2 + 5}"
+            class="bv-cell-count" text-anchor="middle">${count}</text>` : ''}`);
       });
     });
-    return wrap(width, height, `${head}${cells.join('')}`);
+    return wrap(canvasWidth, height, `${head}${cells.join('')}`)
+      .replace('<svg ', `<svg style="min-width:${canvasWidth}px" `);
   }
 
   /* ── 体系雷达：本队 vs 对手 ───────────────────────────────────────── */
@@ -773,33 +797,38 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   /* ── 英雄关系环：克制 / 被克制 / 最佳搭档三向环绕头像 ─────────────── */
-  function heroRing(data, {width = 640, height = 360} = {}) {
+  function heroRing(data, {width = 640, height = 360, focus = ''} = {}) {
     if (!data?.available) return `<div class="bv-empty">${esc(data?.reason || '没有关系数据。')}</div>`;
     const cx = width / 2;
     const cy = 158;
     const radius = 96;
     const rad = (angle) => angle * Math.PI / 180;
     const point = (angle, r = radius) => [cx + r * Math.cos(rad(angle)), cy + r * Math.sin(rad(angle))];
-    const arc = (a0, a1, color) => {
+    const arc = (a0, a1, color, dim) => {
       const [x0, y0] = point(a0);
       const [x1, y1] = point(a1);
       return `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${radius},${radius} 0 0 1 ${x1.toFixed(1)},${y1.toFixed(1)}"
-        fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round" opacity=".22"/>`;
+        fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round" opacity="${dim ? '.07' : '.22'}"/>`;
     };
+    /* key 用于绿(克制) / 蓝(搭配) 切换：非当前焦点的一组压暗，不清空数据。 */
     const groups = [
-      {title: '克制谁', color: '#246b63', angles: [-160, -120, -80],
+      {key: 'counter', title: '克制谁', color: '#246b63', angles: [-160, -120, -80],
         items: data.counters || [], metric: (item) => `+${fmt1(item.excess)}pp`},
-      {title: '被谁克制', color: '#a94b40', angles: [-20, 20, 60],
+      {key: 'counter', title: '被谁克制', color: '#a94b40', angles: [-20, 20, 60],
         items: data.counteredBy || [], metric: (item) => `-${fmt1(item.excess)}pp`},
-      {title: '最佳搭档', color: '#4a6fa8', angles: [100, 140, 180],
+      {key: 'partner', title: '最佳搭档', color: '#4a6fa8', angles: [100, 140, 180],
         items: data.partners || [], metric: (item) => `${item.n} 局`},
     ];
     const marks = [];
     let uid = 0;
+    let openedGroups = 0;
     for (const group of groups) {
       const used = group.items.slice(0, group.angles.length);
       if (!used.length) continue;
-      marks.push(arc(group.angles[0] - 12, group.angles[used.length - 1] + 12, group.color));
+      const dim = Boolean(focus && group.key !== focus);
+      marks.push(`<g opacity="${dim ? '.22' : '1'}">`);
+      openedGroups += 1;
+      marks.push(arc(group.angles[0] - 12, group.angles[used.length - 1] + 12, group.color, dim));
       used.forEach((item, index) => {
         const angle = group.angles[index];
         const [x, y] = point(angle);
@@ -813,6 +842,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         </g>`);
       });
     }
+    marks.push('</g>'.repeat(openedGroups));
     marks.push(`${markerWithIcon(data.hero, cx, cy, 44, 'ring-center', '#0e2f2b')}
       <text x="${cx}" y="${cy + 60}" class="bv-ring-center">${esc(short(data.hero))}</text>`);
     const stats = data.stats || {};
@@ -830,7 +860,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   /* ── BP 决策树：当前节点 → 前 3 个候选 → 各自前 2 个后续，水平展开 ── */
-  function decisionTreeMap(data, pathIds, {width = 780, height = 420, branch = 3} = {}) {
+  function decisionTreeMap(data, pathIds, {width = 780, height = 420, branch = 3, byType = false} = {}) {
     const nodes = data?.nodes || [];
     if (!data?.available || !nodes.length) {
       return `<div class="bv-empty">${esc(data?.reason || '没有可展开的手序。')}</div>`;
@@ -854,7 +884,8 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     const startY = (height - (first.length - 1) * gap) / 2 - 10;
     first.forEach((node, index) => { node._y = startY + index * gap; });
     const currentY = first.reduce((sum, node) => sum + node._y, 0) / first.length;
-    const x0 = 78;
+    /* 与流图同口径：起点贴左，不留大段空白（2026-11-22 赛训组反馈）。 */
+    const x0 = 40;
     const x1 = 330;
     const x2 = 600;
     const tone = (node) => {
@@ -867,12 +898,14 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     };
     const edges = [];
     const marks = [];
+    const dtLabel = (node) => byType ? (node.type || '待分类') : short(node.hero);
     marks.push(`<g>
-      <circle cx="${x0}" cy="${currentY.toFixed(1)}" r="9" fill="#0e2f2b" stroke="#fff" stroke-width="2"/>
-      ${current ? markerWithIcon(current.hero, x0, currentY, 18, 'dt-current', '#0e2f2b') : ''}
+      ${byType && current ? `<rect x="${(x0 - 34).toFixed(1)}" y="${(currentY - 14).toFixed(1)}" width="68" height="28" rx="14" fill="${LANE_COLOR[current.lane] || '#246b63'}" opacity=".92"/>` : `<circle cx="${x0}" cy="${currentY.toFixed(1)}" r="9" fill="#0e2f2b" stroke="#fff" stroke-width="2"/>`}
+      ${!byType && current ? markerWithIcon(current.hero, x0, currentY, 18, 'dt-current', '#0e2f2b') : ''}
+      ${byType && current ? `<text x="${x0}" y="${(currentY + 4).toFixed(1)}" class="bv-typepill" text-anchor="middle">${esc(dtLabel(current))}</text>` : ''}
       <text x="${x0}" y="${(currentY - 54).toFixed(1)}" class="bv-tree-hand">${current ? '当前选择' : 'BP 开始'}</text>
       ${current ? `<text x="${x0}" y="${(currentY - 36).toFixed(1)}" class="bv-tree-side" fill="#0e2f2b">${current.level} 手 · ${current.action === 'ban' ? 'BAN' : 'PICK'} · ${current.actor === 'team' ? '我方' : '对方'}</text>` : ''}
-      <text x="${x0}" y="${(currentY + 40).toFixed(1)}" class="bv-tree-hero">${current ? esc(short(current.hero)) : '第 1 手'}</text>
+      ${!byType ? `<text x="${x0}" y="${(currentY + 40).toFixed(1)}" class="bv-tree-hero">${current ? esc(dtLabel(current)) : '第 1 手'}</text>` : ''}
     </g>`);
     first.forEach((node, index) => {
       const paint = tone(node);
@@ -881,10 +914,12 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         fill="none" stroke="${paint.color}" stroke-width="${(1.2 + 5 * share).toFixed(1)}"
         ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''} opacity="${(0.35 + 0.55 * share).toFixed(2)}" stroke-linecap="round"/>`);
       marks.push(`<g class="bv-dt-node" data-bps-decision-pick="${esc(node.id)}">
-        <title>${esc(node.hero)} · ${node.count} 局 · 胜率 ${node.winRate == null ? '—' : fmt1(node.winRate) + '%'}</title>
+        <title>${esc(byType ? dtLabel(node) : node.hero)} · ${node.count} 局 · 胜率 ${node.winRate == null ? '—' : fmt1(node.winRate) + '%'}</title>
         <text x="${x1}" y="${(node._y - 36).toFixed(1)}" class="bv-tree-hand" fill="${paint.color}">${node.level} 手 · ${node.action === 'ban' ? 'BAN' : 'PICK'} · ${node.actor === 'team' ? '我方' : '对方'}</text>
-        ${markerWithIcon(node.hero, x1, node._y, 15, `dt-${index}`, paint.color)}
-        <text x="${x1}" y="${(node._y + 30).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
+        ${byType ? `<rect x="${(x1 - 36).toFixed(1)}" y="${(node._y - 13).toFixed(1)}" width="72" height="26" rx="13" fill="${LANE_COLOR[node.lane] || '#246b63'}" opacity=".92"/>
+          <text x="${x1}" y="${(node._y + 4).toFixed(1)}" class="bv-typepill" text-anchor="middle">${esc(dtLabel(node))}</text>`
+          : markerWithIcon(node.hero, x1, node._y, 15, `dt-${index}`, paint.color)}
+        <text x="${x1}" y="${(node._y + 30).toFixed(1)}" class="bv-tree-hero">${esc(dtLabel(node))}</text>
         <text x="${x1}" y="${(node._y + 43).toFixed(1)}" class="bv-tree-count">${node.count} 局 · ${Math.round(share * 100)}%</text>
         <rect x="${x1 - 44}" y="${(node._y + 50).toFixed(1)}" width="88" height="5" rx="2.5" fill="#e3efe9"/>
         <rect x="${x1 - 44}" y="${(node._y + 50).toFixed(1)}" width="${(88 * share).toFixed(1)}" height="5" rx="2.5" fill="#2f8a76"/>
@@ -899,9 +934,11 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
           fill="none" stroke="${alt.color}" stroke-width="1.2"
           ${alt.dash ? `stroke-dasharray="${alt.dash}"` : ''} opacity=".45"/>`);
         marks.push(`<g class="bv-dt-node" data-bps-decision-pick="${esc(node.id)},${esc(item.id)}">
-          <title>${esc(item.hero)} · ${item.count} 局</title>
-          ${markerWithIcon(item.hero, x2, cy, 11, `dt-${index}-${slot}`, alt.color)}
-          <text x="${x2}" y="${(cy + 24).toFixed(1)}" class="bv-tree-alt">${item.action === 'ban' ? 'BAN' : 'PICK'} ${esc(short(item.hero))} ${item.count}</text>
+          <title>${esc(byType ? dtLabel(item) : item.hero)} · ${item.count} 局</title>
+          ${byType ? `<rect x="${(x2 - 30).toFixed(1)}" y="${(cy - 11).toFixed(1)}" width="60" height="22" rx="11" fill="${LANE_COLOR[item.lane] || '#246b63'}" opacity=".9"/>
+            <text x="${x2}" y="${(cy + 4).toFixed(1)}" class="bv-typepill" text-anchor="middle">${esc(dtLabel(item))}</text>`
+            : markerWithIcon(item.hero, x2, cy, 11, `dt-${index}-${slot}`, alt.color)}
+          <text x="${x2}" y="${(cy + 24).toFixed(1)}" class="bv-tree-alt">${item.action === 'ban' ? 'BAN' : 'PICK'} ${esc(dtLabel(item))} ${item.count}</text>
         </g>`);
       });
     });
@@ -909,7 +946,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   }
 
   /* ── BP 时序流：同一手同一英雄合并成一个节点，边宽 = 局数，像地铁汇流图 ── */
-  function draftFlowMap(data, {width = 1080, height = 480} = {}) {
+  function draftFlowMap(data, {width = 1080, height = 480, byType = false, maxEdges = 0} = {}) {
     const all = (data?.nodes || []).filter((node) => node.level > 0);
     if (!data?.available || !all.length) {
       return `<div class="bv-empty">${esc(data?.reason || '没有可用的手序样本。')}</div>`;
@@ -918,7 +955,11 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     const perCol = depth >= 18 ? 68 : 92;
     const canvasWidth = Math.max(width, depth * perCol + 150);
     if (depth > 12) height = Math.max(height, 520);
-    const keyOf = (node) => `${node.level}:${node.actor}:${node.action}:${node.hero}`;
+    const keyOf = (node) => byType
+      ? `${node.level}:${node.actor}:${node.action}:${node.type || '待分类'}`
+      : (data.startHero && node.level === 1)
+        ? `1:${node.hero}`
+        : `${node.level}:${node.actor}:${node.action}:${node.hero}`;
     const merged = new Map();
     const sourceKey = new Map();
     for (const node of all) {
@@ -931,7 +972,8 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
         row.decided += node.decided || 0;
       } else {
         merged.set(key, {key, level: node.level, action: node.action, actor: node.actor,
-          hero: node.hero, count: node.count, wins: node.wins || 0, decided: node.decided || 0});
+          hero: node.hero, type: node.type, lane: node.lane,
+          count: node.count, wins: node.wins || 0, decided: node.decided || 0});
       }
     }
     const edgeCounts = new Map();
@@ -940,6 +982,12 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       if (!parentKey) continue;
       const key = `${parentKey}>${sourceKey.get(node.id)}`;
       edgeCounts.set(key, (edgeCounts.get(key) || 0) + node.count);
+    }
+    /* 默认只保留样本量最高的边，避免前六手几十条曲线堆成“毛球”。 */
+    if (maxEdges > 0 && edgeCounts.size > maxEdges) {
+      const top = [...edgeCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxEdges);
+      const keep = new Set(top.map(([key]) => key));
+      for (const key of [...edgeCounts.keys()]) if (!keep.has(key)) edgeCounts.delete(key);
     }
     const byLevel = new Map();
     for (const node of merged.values()) {
@@ -987,8 +1035,9 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     }
     const first = byLevel.get(levels[0]) || [];
     const rootY = first.length ? first.reduce((sum, node) => sum + node._y, 0) / first.length : height / 2;
-    const left = 56;
-    const right = 104;
+    /* 2026-11-22 赛训组反馈：BP 开始节点贴面板左边太多空白，整条流图往左收紧。 */
+    const left = 40;
+    const right = 88;
     const colW = (canvasWidth - left - right) / Math.max(1, depth - 1);
     const xOf = (level) => left + (level - 1) * colW;
     const maxCount = Math.max(1, ...[...merged.values()].map((node) => node.count));
@@ -1020,25 +1069,39 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       const x1 = xOf(child.level);
       const mid = (x0 + x1) / 2;
       const stroke = 1.2 + 4.4 * (count / maxEdge);
-      edges.push(`<path d="M${(x0 + 12).toFixed(1)},${y0.toFixed(1)} C${mid.toFixed(1)},${y0.toFixed(1)} ${mid.toFixed(1)},${child._y.toFixed(1)} ${(x1 - 12).toFixed(1)},${child._y.toFixed(1)}"
+      edges.push(`<path data-flow-edge="${esc(parentKey)}>${esc(childKey)}" data-edge-count="${count}" d="M${(x0 + 12).toFixed(1)},${y0.toFixed(1)} C${mid.toFixed(1)},${y0.toFixed(1)} ${mid.toFixed(1)},${child._y.toFixed(1)} ${(x1 - 12).toFixed(1)},${child._y.toFixed(1)}"
         fill="none" stroke="${paint.color}" stroke-width="${stroke.toFixed(1)}"
         ${paint.dash ? `stroke-dasharray="${paint.dash}"` : ''}
-        opacity="${(0.18 + 0.4 * (count / maxEdge)).toFixed(2)}" stroke-linecap="round"/>`);
+        opacity="${(0.28 + 0.4 * (count / maxEdge)).toFixed(2)}" stroke-linecap="round"/>`);
     }
     const marks = [];
     let uid = 0;
+    /* 起点贴左：圆点落在图内 x=14，标签左对齐（类默认居中会把文字裁出图）。 */
     marks.push(`<circle cx="${(left - 26).toFixed(1)}" cy="${rootY.toFixed(1)}" r="9"
       fill="#0e2f2b" stroke="#fff" stroke-width="2"/>
-      <text x="${(left - 26).toFixed(1)}" y="${(rootY + 26).toFixed(1)}" class="bv-tree-root">BP 开始</text>`);
+      <text x="2" y="${(rootY - 28).toFixed(1)}" class="bv-tree-root" style="text-anchor:start">BP 开始</text>`);
     for (const node of merged.values()) {
       if (!Number.isFinite(node._y)) continue;
       const x = xOf(node.level);
       const paint = tone(node);
       const radius = 10 + 5 * Math.sqrt(node.count / maxCount);
-      marks.push(`<g><title>${esc(node.hero)} · ${node.count} 局 · 胜率 ${node.decided ? fmt1(node.wins / node.decided * 100) + '%' : '—'}</title>
-        ${markerWithIcon(node.hero, x, node._y, radius, `flow-${uid++}`, paint.color)}</g>
-        <text x="${x.toFixed(1)}" y="${(node._y + radius + 14).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
-        ${node.count > 1 ? `<text x="${x.toFixed(1)}" y="${(node._y + radius + 26).toFixed(1)}" class="bv-tree-count">${node.count} 局</text>` : ''}`);
+      const label = byType ? (node.type || '待分类') : node.hero;
+      if (byType) {
+        const fill = LANE_COLOR[node.lane] || '#246b63';
+        const w = Math.max(46, label.length * 15 + 14);
+        marks.push(`<g class="bv-typenode" data-flow-node="${esc(node.key)}" data-bps-flow-hero="${esc(node.hero || '')}" data-bps-type-level="${node.level}" data-bps-type-name="${esc(label)}">
+          <title>${esc(label)} · ${node.count} 局 · 胜率 ${node.decided ? fmt1(node.wins / node.decided * 100) + '%' : '—'}</title>
+          <rect x="${(x - w / 2).toFixed(1)}" y="${(node._y - 13).toFixed(1)}" width="${w}" height="26" rx="13"
+            fill="${fill}" opacity=".92"/>
+          <text x="${x.toFixed(1)}" y="${(node._y + 4).toFixed(1)}" class="bv-typepill" text-anchor="middle">${esc(label)}</text>
+          ${node.count > 1 ? `<text x="${x.toFixed(1)}" y="${(node._y + 25).toFixed(1)}" class="bv-tree-count" text-anchor="middle">${node.count} 局</text>` : ''}
+        </g>`);
+      } else {
+        marks.push(`<g data-flow-node="${esc(node.key)}" data-bps-flow-hero="${esc(node.hero)}" style="cursor:pointer"><title>${esc(node.hero)} · ${node.count} 局 · 胜率 ${node.decided ? fmt1(node.wins / node.decided * 100) + '%' : '—'} · 点击设为起点</title>
+          ${markerWithIcon(node.hero, x, node._y, radius, `flow-${uid++}`, paint.color)}</g>
+          <text x="${x.toFixed(1)}" y="${(node._y + radius + 14).toFixed(1)}" class="bv-tree-hero">${esc(short(node.hero))}</text>
+          ${node.count > 1 ? `<text x="${x.toFixed(1)}" y="${(node._y + radius + 26).toFixed(1)}" class="bv-tree-count">${node.count} 局</text>` : ''}`);
+      }
     }
     return wrap(canvasWidth, height, `${headers}${edges.join('')}${marks.join('')}`)
       .replace('<svg ', `<svg style="min-width:${canvasWidth}px" `);
@@ -1437,8 +1500,9 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       ${low != null && high != null ? `<line x1="${x(low).toFixed(1)}" y1="${height / 2}" x2="${x(high).toFixed(1)}" y2="${height / 2}" class="bv-ci"/>
         <line x1="${x(low).toFixed(1)}" y1="${height / 2 - 3}" x2="${x(low).toFixed(1)}" y2="${height / 2 + 3}" class="bv-ci-cap"/>
         <line x1="${x(high).toFixed(1)}" y1="${height / 2 - 3}" x2="${x(high).toFixed(1)}" y2="${height / 2 + 3}" class="bv-ci-cap"/>` : ''}
+      <line x1="7" y1="${height - 1}" x2="${width - 7}" y2="${height - 1}" class="bv-axis"/>
       <line x1="${x(50).toFixed(1)}" y1="3" x2="${x(50).toFixed(1)}" y2="${height - 3}" class="bv-quad"/>
-      <circle cx="${x(value).toFixed(1)}" cy="${height / 2}" r="3.8" class="bv-dot ${tone}"/>
+      <circle cx="${x(value).toFixed(1)}" cy="${height / 2}" r="4.5" class="bv-dot ${tone}"/>
     </svg>`;
   }
 

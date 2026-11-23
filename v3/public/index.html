@@ -1,16 +1,33 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <meta name="description" content="本机运行的 KPL 赛训数据平台，采集、分析与复盘使用同一份可靠数据。">
-  <meta name="theme-color" content="#f6f8fa">
+  <meta name="theme-color" content="#173f40">
   <link rel="icon" href="static/media/mark.svg" type="image/svg+xml">
   <title>赛训数据 · 工作台</title>
-  <link rel="stylesheet" href="static/interface.css?v=20261118d4">
+  <link rel="stylesheet" href="static/interface.css?v=20261124entry">
+  <link rel="stylesheet" href="static/metrics-observe.css?v=20261122a">
+  <link rel="stylesheet" href="static/rules-center.css?v=20261122b">
+  <link rel="stylesheet" href="static/official-entry.css?v=20261123a">
+  <link rel="stylesheet" href="static/ui-icons.css?v=20261122a">
+  <link rel="stylesheet" href="static/training-desk.css?v=20261122">
+  <!-- 唯一视觉层：必须在 training-desk.css 之后，覆盖其残留配色 -->
+  <link rel="stylesheet" href="static/platinum-ds.css?v=20261122f">
+  <link rel="stylesheet" href="static/onboarding.css?v=20261123a">
+  <!-- 训练赛档案库：对局档案的紧凑记录列表，排在视觉层之后 -->
+  <link rel="stylesheet" href="static/archive-ledger.css?v=20261122a">
+  <!-- 赛事页（白金精修版式）：卡片/规格表/归档面板，排在视觉层之后 -->
+  <link rel="stylesheet" href="static/competitions.css?v=20261122f">
+  <!-- 采集页 v2：独立整页版式，排在视觉层之后，只作用于 #content 的 capv-* 组件 -->
+  <link rel="stylesheet" href="static/capture-v2.css?v=20261122a">
+  <link rel="stylesheet" href="static/coach-polish.css?v=20261124entry">
   <script src="static/theme-init.js"></script>
-  <script type="module" src="static/app.js"></script>
+  <!-- 与 app.js 里的 importOnce 同版本：冷启动直达采集/对局页签时并行预取模块。 -->
+  <link rel="modulepreload" href="static/features.js?v=20261124entry">
+  <script type="module" src="static/app.js?v=20261124entry"></script>
 </head>
 <body>
   <a class="skip" href="#content">跳至主要内容</a>

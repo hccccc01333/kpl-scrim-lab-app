@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="208" height="241" viewBox="0 0 208 241" role="img">
+<title>雷达页选手相框</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<path d="M2 45.79 Q2 2 52 2 H190 Q206 2 206 20 V183.16 Q206 239 147.68 239 H19 Q2 239 2 221Z" fill="url(#pearl)" stroke="url(#gold-edge)" stroke-width="2"/>
+</svg>

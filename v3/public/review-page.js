@@ -376,10 +376,7 @@ export function createReview(h) {
 
     const head = embedded
       ? `<div class="cap-embed-head"><a class="control" href="#review">${icon('arrow')} 返回审查列表</a>
-          <div><h2>${esc(title)}</h2>
-            <p>${ocrEntry
-              ? '数据来自截图 / 录屏 OCR；核对十人数值后标记复核并保存。'
-              : '数据以营地十人面板为准，可直接修改；保存后需要重新标记复核。'}</p></div></div>`
+          <div><h2>${esc(title)}</h2></div></div>`
       : `<div class="page-intro"><div><h1>${esc(title)}</h1>
         <p>${ocrEntry
           ? '数据来自截图 / 录屏 OCR；核对十人数值后标记复核并保存。'
@@ -394,9 +391,7 @@ export function createReview(h) {
       ${header(channel)}
       <div class="ed-layout">
         <section class="ed-main">
-          <div class="ed-panel-head"><h2>十人数据</h2>
-            <span>拖表头边界可调列宽 · 改完点右上角「保存修改」</span></div>
-          <p class="ed-ext-note">扩展指标来自七页截图的输出 / 生存 / 发育 / 团队页（营地通道来自营地面板）；缺失不影响保存。</p>
+          <div class="ed-panel-head"><h2>十人数据</h2></div>
           ${table(channel)}
         </section>
         ${aside(channel)}

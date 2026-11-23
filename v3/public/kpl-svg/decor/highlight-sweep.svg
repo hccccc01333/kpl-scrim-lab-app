@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="137" height="52" viewBox="0 0 137 52" role="img">
+<title>长弧面高光</title>
+<defs><radialGradient id="glint">
+ <stop stop-color="#fff"/><stop offset=".25" stop-color="#fff6df" stop-opacity=".94"/><stop offset=".6" stop-color="#ffe7b5" stop-opacity=".28"/><stop offset="1" stop-color="#fff6e2" stop-opacity="0"/>
+</radialGradient></defs>
+<ellipse cx="69" cy="24" rx="67" ry="21" fill="url(#glint)"/><path d="M4 45 Q58 -3 130 8" fill="none" stroke="#fff6e2" stroke-width="2.1"/>
+</svg>

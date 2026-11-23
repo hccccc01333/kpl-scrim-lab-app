@@ -18,7 +18,7 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background: radial-gradient(1200px 600px at 15% -10%, #14262c, var(--bg));
+    background: var(--bg);
     color: var(--ink);
     font: 14px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
     min-height: 100vh;
@@ -168,17 +168,29 @@
     .rp-charts { grid-template-columns: 1fr; }
     .rp-cards { grid-template-columns: repeat(2, 1fr); }
   }
+  .rp-return { display: block; width: fit-content; margin-bottom: 16px; color: #94d6c0; text-decoration: underline; text-underline-offset: 3px; }
+  .rp-timeline { position: sticky; top: 8px; z-index: 2; }
+  .rp-play, .rp-speed { min-height: 40px; }
+  .rp-play { width: 44px; }
+  .rp-range { min-width: 0; }
+  @media (max-width: 600px) {
+    #player { padding: 16px 12px 40px; }
+    .rp-timeline { display: grid; grid-template-columns: auto 1fr auto; gap: 6px 12px; }
+    .rp-range { width: 100%; grid-column: 1 / -1; grid-row: 2; }
+    .rp-cards { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .rp-gaps li { grid-template-columns: 1fr; gap: 2px; }
+  }
 </style>
 </head>
 <body>
-<main id="player"></main>
+<main id="player"><a class="rp-return" href="../#replays">返回回放列表</a><div id="replay-content"></div></main>
 <script type="module">
 import { mount } from '/static/replay-player.js';
 const params = new URLSearchParams(location.search);
 const replayId = params.get('replay') || params.get('id') || '';
-const root = document.querySelector('#player');
+const root = document.querySelector('#replay-content');
 if (!replayId) {
-  root.innerHTML = '<div class="rp-error">缺少 replay 参数：请用 ?replay=&lt;回放ID&gt; 打开。</div>';
+  root.innerHTML = '<div class="rp-error">请从回放列表选择一场对局。</div>';
 } else {
   mount(root, replayId);
 }

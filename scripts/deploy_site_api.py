@@ -111,7 +111,7 @@ def main() -> int:
 
     new_tree = gh(f'repos/{REPO}/git/trees', payload={'base_tree': base_tree,
                                                       'tree': entries})
-    message = ('官网：v2.0.1（BP 三模式 + 界面细节修正）\n\n'
+    message = ('官网：v3.0.0（全新视觉体系 + 复盘细节打磨 + 跨局大场收口）\n\n'
                f'由 scripts/build_website.py 构建，{len(changed)} 个文件更新，'
                f'{len(removed)} 个删除。')
     new_commit = gh(f'repos/{REPO}/git/commits', payload={

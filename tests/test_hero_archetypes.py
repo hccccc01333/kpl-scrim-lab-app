@@ -17,7 +17,7 @@ def test_lane_archetype_groups_cover_five_lanes():
     assert len(ha.LANES) == 5
     assert ha.LANE_ARCHETYPES['对抗路'] == ('战边', '坦边')
     assert ha.LANE_ARCHETYPES['打野'] == ('刺野', '战野', '坦野')
-    assert ha.LANE_ARCHETYPES['中路'] == ('工具人', '法核')
+    assert ha.LANE_ARCHETYPES['中路'] == ('工具人', '法刺')
     assert ha.LANE_ARCHETYPES['发育路'] == ('游射', '呆射')
     assert ha.LANE_ARCHETYPES['游走'] == ('开团辅', '保护辅', '功能辅')
 

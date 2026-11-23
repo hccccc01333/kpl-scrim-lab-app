@@ -1819,7 +1819,7 @@ def _own_pick_history(corpus):
 
 
 def _signature(vector, side):
-    """阵容的功能分工签名：每个分路一个打法类型（战边/坦野/法核/游射/开团辅…）。"""
+    """阵容的功能分工签名：每个分路一个打法类型（战边/坦野/法刺/游射/开团辅…）。"""
     camp = (vector or {}).get('camp')
     cells = []
     for player in (vector or {}).get('pl') or []:
@@ -2151,6 +2151,12 @@ def _bp_plan_block(rows, stats, corpus, opponent):
         kpl_foe = _kpl_comp(foe_heroes)
         matchup = _tag_matchup(corpus, (row.get('vector') or {}).get('compOwn'),
                                (row.get('vector') or {}).get('compFoe'), exclude_keys)
+        # 赛训组组合池是否激活（拆组合名单口径），供 combos 标来源用。
+        try:
+            import combo_pool
+            pool_active_outer = combo_pool.has_saved()
+        except (ImportError, OSError, ValueError):
+            pool_active_outer = False
 
         def pair_status(pair, own_side):
             """一对组合在这局的下场：拿到 / 被拆 / 被抢 / 两边都没拿到。"""
@@ -2191,10 +2197,25 @@ def _bp_plan_block(rows, stats, corpus, opponent):
                         'wr': _rate((history.get('pairWins') or {}).get(pair, 0), times),
                         **cell,
                     })
-            # 训练赛组合样本少，补 KPL 常用组合：他们拿到一张、我们 ban/抢掉另一张，
-            # 就是「拆掉了一套成熟组合」。只收 KPL 样本 ≥20 局的配对。
+            # 训练赛组合样本少，补「成熟组合」：他们拿到一张、我们 ban/抢掉另一张，
+            # 就是「拆掉了一套组合」。名单优先用赛训组组合池（最高优先级），
+            # 没保存过才退回 KPL 常用组合（样本 ≥20 局）。
             index = _kpl_index() or {}
             pairs_index = index.get('pairs') or {}
+            pool_pairs, pool_active = {}, pool_active_outer
+            try:
+                import combo_pool
+                if pool_active_outer:
+                    pool_pairs, _ = combo_pool.tables()
+                    pool_active = bool(pool_pairs)
+            except (ImportError, OSError, ValueError):
+                pool_active = False
+            if pool_active:
+                lookup = pool_pairs
+                min_n = 0          # 赛训池的组合不要求 KPL 场次，命中即算
+            else:
+                lookup = pairs_index
+                min_n = 20
             kept_heroes = (own_heroes if own_side else foe_heroes)
             lost_bans = (bans_foe if own_side else bans_own)
             lost_picks = (foe_heroes if own_side else own_heroes)
@@ -2204,13 +2225,18 @@ def _bp_plan_block(rows, stats, corpus, opponent):
                     pair = tuple(sorted((kept, lost)))
                     if pair in seen:
                         continue
-                    row = pairs_index.get(pair)
-                    if not row or not _num(row.get('n')) or row['n'] < 20:
+                    row = lookup.get(pair)
+                    if not row:
+                        continue
+                    row_n = _num(row.get('n')) or 0
+                    if row_n < min_n:
                         continue
                     extra.append({
-                        'heroes': list(pair), 'n': int(row['n']), 'wr': _r(row.get('wr'), 1),
+                        'heroes': list(pair), 'n': int(row_n), 'wr': _r(row.get('wr'), 1),
                         'status': 'broken' if by == 'ban' else 'stolen',
-                        'kept': kept, 'lost': lost, 'by': by, 'source': 'KPL',
+                        'kept': kept, 'lost': lost, 'by': by,
+                        'source': '赛训池' if pool_active else 'KPL',
+                        'strength': row.get('strength'), 'name': row.get('name'),
                     })
             extra.sort(key=lambda item: -item['n'])
             for item in extra[:2]:
@@ -2226,6 +2252,7 @@ def _bp_plan_block(rows, stats, corpus, opponent):
         combos = {
             'foe': combo_rows(foe_history, False),
             'own': combo_rows(own_history, True),
+            'poolActive': pool_active_outer,
         }
 
         story = []
@@ -2410,7 +2437,7 @@ def _bp_similar_block(rows, corpus, exclude_keys, series_date):
         'games': games,
         'windows': [{'key': window['key'], 'label': window['label'],
                      'days': window['days']} for window in windows],
-        'note': '相似＝同分路同打法类型（战边/坦野/法核/游射/开团辅…）；'
+        'note': '相似＝同分路同打法类型（战边/坦野/法刺/游射/开团辅…）；'
                 '换英雄但分工相同也算像。对手视角的胜负按「对手赢」统计。',
     }
 
@@ -2465,6 +2492,8 @@ def _bo_profile_block(rows, series, series_briefs, corpus_index, stats):
                 'ownBans': list(vector.get('bansOwn') or []),
                 'foePicks': list(vector.get('heroesFoe') or []),
                 'ownPicks': list(vector.get('heroes') or []),
+                'foeSide': ('red' if vector.get('camp') == 'blue'
+                            else 'blue' if vector.get('camp') == 'red' else None),
                 'at10': _r(-at10, 1) if at10 is not None else None,
                 'duration': _r(vector.get('duration'), 0),
             })
@@ -2532,6 +2561,8 @@ def _bo_profile_block(rows, series, series_briefs, corpus_index, stats):
             'ownBans': list(row.get('bansOwn') or []),
             'foePicks': list(foe),
             'ownPicks': list(own),
+            'foeSide': ('red' if vector.get('camp') == 'blue'
+                        else 'blue' if vector.get('camp') == 'red' else None),
             'at10': _r(-at10, 1) if at10 is not None else None,
             'duration': _r(row.get('duration'), 0),
         })

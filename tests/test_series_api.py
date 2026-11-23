@@ -228,3 +228,60 @@ def test_summary_endpoint(client):
     first = body['series'][0]
     assert first['games'][0]['usedUsCount'] == 5
     assert len(body['rulesets']) == 3
+
+
+def test_series_competition_scope(tmp_path):
+    """赛事域（M1）：系列归属推导、混编拦截、列表过滤与 boBp 跨赛事开关。
+
+    这里自带 lookup（corpus 指向假向量），让 boBp 历史真的有对局可数。
+    """
+    import sqlite3
+
+    # 第二个 A 赛事系列用 k6（只在本地 lookup 里扩一份向量，不动共享 VECTORS）
+    vectors = {**VECTORS, 'k6': _vector('k6', date='2026-11-14', clock='21:00',
+                                        opponent='青岚', result='win')}
+    lookup = {
+        'repo': lambda request: None,
+        'vectors': lambda repo, values=None: list(vectors.values()),
+        'detail': lambda repo, key: DETAILS.get(key),
+        'corpus': lambda repo: list(vectors.values()),
+    }
+    ws = workspace_store.Workspace(tmp_path / 'ws.sqlite3').ensure_schema()
+    for key, v in vectors.items():
+        ws.upsert_match(key, date=v['date'], session=v['session'], status='confirmed', source='test')
+    app = FastAPI()
+    app.include_router(create_series_router(tmp_path / 'ws.sqlite3', lookup))
+    client = TestClient(app)
+    ws = workspace_store.Workspace(tmp_path / 'ws.sqlite3')
+    ca = ws.save_competition(name='赛事A', date='2026-11-01')
+    cb = ws.save_competition(name='赛事B', date='2026-12-01')
+    with sqlite3.connect(ws.db_path) as connection:
+        for key in ('k1', 'k2', 'k3', 'k6'):
+            connection.execute('UPDATE match_records SET competition_id=? WHERE match_key=?', (ca, key))
+        for key in ('k4', 'k5', 'n1', 'n2'):
+            connection.execute('UPDATE match_records SET competition_id=? WHERE match_key=?', (cb, key))
+
+    sa = client.post('/api/series', json={'bestOf': 3, 'games': ['k1', 'k2', 'k3']}).json()['series']
+    assert sa['competitionId'] == ca
+    sb = client.post('/api/series', json={'bestOf': 3, 'games': ['k4', 'k5']}).json()['series']
+    client.post('/api/series', json={'bestOf': 3, 'games': ['n1', 'n2']})
+    # 同赛事第二个系列：boBp 历史至少要能数到它
+    sa2 = client.post('/api/series', json={'bestOf': 3, 'games': ['k6']}).json()['series']
+
+    # 混编：所选对局分属不同赛事 → 报错（400/409）
+    mixed = client.post('/api/series', json={'bestOf': 3, 'games': ['k1', 'k4']})
+    assert mixed.status_code in (400, 409)
+
+    # 列表按赛事过滤
+    ids_a = [item['id'] for item in
+             client.get('/api/series', params={'competition': ca}).json()['series']]
+    assert sa['id'] in ids_a and sb['id'] not in ids_a
+
+    # boBp 历史默认只看同一赛事；includeOtherEvents=1 显式跨赛事
+    scoped = client.get(f"/api/series/{sa['id']}/analysis",
+                        params={'competition': ca}).json()['insight']['boBp']
+    assert scoped['available'] is True
+    assert [item['id'] for item in scoped['history']] == [sa2['id']]
+    other = client.get(f"/api/series/{sa['id']}/analysis",
+                       params={'competition': ca, 'includeOtherEvents': '1'}).json()['insight']['boBp']
+    assert any(item['id'] == sb['id'] for item in other['history'])

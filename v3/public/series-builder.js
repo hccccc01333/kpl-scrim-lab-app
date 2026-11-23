@@ -608,6 +608,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     const bulk = bulkCandidates();
     const cards = list.map(({ s, index }) => {
       const warnings = s.warnings || [];
+      const needsReview = warnings.length > 0 || Boolean(s.needsReview);
       return `<article class="sb-cand" data-sb-cand="${index}">
         <div class="sb-cand-top">
           <span class="sb-bo">BO${esc(s.bestOf)}</span>
@@ -622,14 +623,14 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
         }).join('')}</div>
         ${warnings.length ? `<p class="sb-cand-warn" title="${esc(warnings.join('；'))}">⚠ ${esc(warnings[0])}${warnings.length > 1 ? ` +${warnings.length - 1}` : ''}</p>` : ''}
         <button type="button" class="sb-cand-apply" data-sb-confirm-suggest="${index}"
-          title="按这个候选创建系列赛">一键编组</button>
+          ${needsReview ? 'disabled title="这组需要人工核实后再编组"' : 'title="按这个候选创建系列赛"'}>${needsReview ? '需核实' : '一键编组'}</button>
       </article>`;
     }).join('');
     return `<section class="sb-cands" data-sb-suggest-panel aria-label="自动识别候选">
       <header class="sb-cands-head">
         <span class="sb-cands-icon">${sparkIcon()}</span>
-        <div class="sb-cands-copy"><b>自动识别候选</b><small>按日期 + 对手 + 时间连续性分组，只生成候选，确认后才落库</small></div>
-        <span class="sb-cands-count">${list.length} 组可一键${hidden ? ` · 另 ${hidden} 组需手动拆分` : ''}</span>
+        <div class="sb-cands-copy"><b>自动识别候选</b><small>按日期 + 对手 + 时间连续性分组，只生成候选，确认后才落库</small>${hasFilter() ? '<small>候选基于全量数据，不受当前筛选影响</small>' : ''}</div>
+        <span class="sb-cands-count">${bulk.length} 组可一键${list.length > bulk.length ? ` · 另 ${list.length - bulk.length} 组需核实` : ''}${hidden ? ` · 另 ${hidden} 组需手动拆分` : ''}</span>
         ${bulk.length ? `<button type="button" class="sb-bulk-btn${state.bulkConfirm ? ' is-confirm' : ''}" data-sb-bulk-suggest
           title="只处理无警告、无需人工核实、≤7 局的候选">${state.bulkConfirm ? `确认编组 ${bulk.length} 组？` : `全部编组 ${bulk.length} 组`}</button>` : ''}
         <button type="button" class="sb-linkbtn" data-sb-suggest-close>收起</button>
@@ -785,17 +786,16 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
   function heroHtml() {
     const ungrouped = state.counts.ungrouped;
     const groups = state.series.length;
-    const candidates = actionableSuggestions().length;
+    const candidates = bulkCandidates().length;
     return `<header class="sb-hero">
       <div class="sb-hero-copy">
-        <span class="sb-eyebrow">SERIES BUILDER</span>
         <h1>系列赛编组</h1>
-        <p class="sb-lede">一行一局：点行选中、Shift 连选，底部确认赛制生成系列赛。编组只改关系，不动原始对局。</p>
+        <p class="sb-lede">选择属于同一场比赛的对局，再确认赛制。按住 Shift 可连续选择。</p>
       </div>
       <div class="sb-hero-meta" aria-label="编组概览">
         <span class="sb-hero-stat"><b>${fmt(ungrouped)}</b><small>局待编组</small></span>
         <span class="sb-hero-stat"><b>${fmt(groups)}</b><small>组已确认</small></span>
-        <span class="sb-hero-stat" title="另有 ${Math.max(0, state.suggestions.length - candidates)} 组超过 7 局，需手动拆分"><b>${fmt(candidates)}</b><small>组可一键</small></span>
+        <span class="sb-hero-stat" title="只统计无警告、无需核实的高置信候选；${Math.max(0, actionableSuggestions().length - candidates)} 组需核实，${Math.max(0, state.suggestions.length - actionableSuggestions().length)} 组超过 7 局需手动拆分"><b>${fmt(candidates)}</b><small>组可一键</small></span>
         <span class="sb-hero-stat is-quiet"><b>${esc(latestDate())}</b><small>最近对局</small></span>
       </div>
     </header>`;
@@ -1073,7 +1073,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
 
   async function confirmSuggest(index) {
     const s = state.suggestions[index];
-    if (!s) return;
+    if (!s || (s.warnings || []).length || s.needsReview) return;
     try {
       const payload = await api('/api/series', { method: 'POST', body: suggestionBody(s) });
       const created = payload.series;
@@ -1377,6 +1377,17 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       state.dangerId = null;
       action.setAttribute('aria-expanded', 'true');
       card.insertAdjacentHTML('beforeend', menuHtml(series, state.editId === id, false));
+      const panel = card.querySelector('[data-sb-menu-panel]');
+      if (panel && panel.getBoundingClientRect().bottom > window.innerHeight - 12) {
+        /* 空间不够就向上展开，并把高度收进可见区；菜单内部仍可滚动。 */
+        const cardTop = card.getBoundingClientRect().top;
+        const triggerTop = action.getBoundingClientRect().top;
+        panel.classList.add('is-up');
+        panel.style.maxHeight = `${Math.min(360, Math.max(180, triggerTop - 76))}px`;
+        const wantedTop = Math.max(66, triggerTop - panel.getBoundingClientRect().height - 6);
+        panel.style.top = `${wantedTop - cardTop}px`;
+        panel.style.bottom = 'auto';
+      }
       return;
     }
     if (action.dataset.sbEdit) {

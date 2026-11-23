@@ -361,7 +361,7 @@ export function createSources(h) {
 
   // ---------------- 截图 / 录屏：共用的引导件 ----------------
 
-  /* 七个页签与 requirements.json 一一对应；页面里直接摆出来，教练不用再去翻采集规范。 */
+  /* 页面类型与 requirements.json 一一对应；只用于内部覆盖度校验，不向教练展示固定张数要求。 */
   const SHOT_PAGES = [
     ['01', 'score', '战绩 · 装备型', '比分、胜负、时长、十人 KDA 与装备', '01-score-equipment.jpg'],
     ['02', 'kda', '战绩 · KDA 占比', '击杀、死亡、助攻及各自占比', '02-score-kda.jpg'],
@@ -589,8 +589,7 @@ export function createSources(h) {
 
   function shotGuide() {
     return `<section class="section src-guide" data-tour="shots-guide">
-      <div class="section-heading"><div><h2>一局要拍齐这七张</h2>
-        <p>同一个结算页把七个页签各截一张；「战绩」有两种显示方式，所以合计七张。少一张就不算齐。</p></div>
+      <div class="section-heading"><div><h2>截图示例</h2></div>
         <div class="capture-actions"><a class="control" href="#videos">还要录屏 · 去「录屏」→</a></div>
       </div>
       <ol class="src-shots">${SHOT_PAGES.map(([no, , name, fields, file]) => `<li>
@@ -600,7 +599,7 @@ export function createSources(h) {
       </li>`).join('')}</ol>
       <p class="src-note">示例图里昵称已经打码，只是教学用；<b>你上传的截图不要打码</b>——识别要靠昵称和数值，遮住反而要人工补十行。</p>
       <ul class="src-rules">
-        <li><b>同一局</b>七张的日期、比分、十人阵容要一致</li>
+        <li><b>同一局</b>截图的日期、比分、十人阵容要一致</li>
         <li><b>保留</b>顶部比分与日期、双方十人、列名、底部页签</li>
         <li><b>不要</b>裁切、拼图、遮挡字段、加边框文字</li>
         <li><b>原图</b>PNG / JPEG / WebP，别用聊天软件压过的图</li>
@@ -608,7 +607,7 @@ export function createSources(h) {
     </section>`;
   }
 
-  /** 一组的七页覆盖度：缺哪页直接点名。 */
+  /** 一组截图的覆盖度：缺哪页直接点名。 */
   function groupCoverage(group, imageById) {
     const present = new Set((group.imageIds || [])
       .map((id) => imageById.get(id)?.pageType).filter(Boolean));
@@ -639,7 +638,7 @@ export function createSources(h) {
       const open = state.openGroup === String(index);
       const ids = group.imageIds || [];
       const players = group.players || [];
-      const { present, missing, count } = groupCoverage(group, imageById);
+      const { missing } = groupCoverage(group, imageById);
       const score = match.score ? `${match.score.left} : ${match.score.right}` : '比分未识别';
       const attached = channelsUsingShots(channels, ids);
       const canEntry = missing.length === 0 && players.length >= 10;
@@ -649,9 +648,7 @@ export function createSources(h) {
         ? '这组截图已经补采到已有对局，避免重复建档'
         : canEntry
           ? '营地一个月窗口外的老局：用这组截图新建一局并录入'
-          : `七页齐全且有十人数据才能新建一局${missing.length ? `；还缺 ${missing.map(([, , name]) => name).join('、')}` : '；还缺十人数据'}`;
-      const dots = SHOT_PAGES.map(([, type, name]) =>
-        `<i class="src-cov-dot ${present.has(type) ? 'is-on' : ''}" title="${esc(name)}${present.has(type) ? '' : '（缺）'}"></i>`).join('');
+          : `截图齐全且有十人数据才能新建一局${missing.length ? `；还缺 ${missing.map(([, , name]) => name).join('、')}` : '；还缺十人数据'}`;
       const pageList = ids.map((id) => {
         const image = imageById.get(id);
         return `<li><b>${esc(image?.tab || image?.pageType || '页面')}</b>
@@ -669,12 +666,12 @@ export function createSources(h) {
         <header class="shot-head">
           <div><h3>${esc(match.date || '未归档的一局')}${match.time ? ` · ${esc(match.time)}` : ''}</h3>
             <p>${esc(match.mode || '模式未知')} · ${seconds(match.durationSec)} · ${esc(score)} · ${match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '结果未知'}</p></div>
-          <span class="src-badge ${missing.length ? 'is-warn' : 'is-ok'}">${count} / 7 页${missing.length ? ` · 缺 ${missing.map(([, , name]) => name).join('、')}` : ' · 齐了'}</span>
+          <span class="src-badge ${missing.length ? 'is-warn' : 'is-ok'}">${missing.length ? `缺 ${missing.length} 项` : '信息齐全'}</span>
         </header>
-        <div class="src-cov">${dots}<small>${missing.length ? `还差 ${missing.length} 页` : '七页齐全'}</small></div>
+        <div class="src-cov"><small>已识别 ${ids.length} 张${missing.length ? ' · 还有字段待补' : ' · 可直接建档'}</small></div>
         <div class="shot-players">${playerList || '<span class="capture-hint">这一组还没有识别出选手。</span>'}</div>
         <details class="shot-detail" ${open ? 'open' : ''} data-open-group="${index}">
-          <summary>${ids.length} 页明细${(group.warnings || []).length ? ` · ${group.warnings.length} 条提示` : ''}</summary>
+          <summary>${ids.length} 张明细${(group.warnings || []).length ? ` · ${group.warnings.length} 条提示` : ''}</summary>
           <ol class="shot-pages">${pageList}</ol>
           ${(group.warnings || []).length ? `<ul class="shot-warnings">${group.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
         </details>
@@ -706,12 +703,11 @@ export function createSources(h) {
 
     return `<div class="src-page">
         ${noticeBox()}
-        ${steps([['拍齐七张', '同一局，七个页签'], ['上传识别', '本机识别，不联网'], ['补采 或 新录入', '缺素材补采；老局直接建档']], active)}
+        ${steps([['准备截图', '按对局整理'], ['上传识别', '本机识别，不联网'], ['补采 或 新录入', '缺素材补采；老局直接建档']], active)}
         ${enginePanel(value)}
         ${shotGuide()}
         <section class="section src-upload" data-tour="shots-upload">
-          <div class="section-heading"><div><h2>上传这七张</h2>
-            <p>可一次多选；上传后按日期和比分自动分组。识别完可以补到已有对局，也可以直接新建一局。</p></div>
+          <div class="section-heading"><div><h2>上传截图</h2></div>
             <div class="capture-actions">
               <span class="src-count">${fmt(images.length)} 张 · ${fmt(groups.length)} 组</span>
               <button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>
@@ -726,11 +722,14 @@ export function createSources(h) {
           <p class="capture-hint">识别在本机完成；一页通常几秒，Mimo 精读整页约 2–3 分钟，可以先去挂别的组。</p>
         </section>
         <section class="section src-results" data-tour="shots-results">
-          <div class="section-heading"><div><h2>识别结果</h2>
-            <p>${groups.length
-              ? `共 ${fmt(groups.length)} 组 · ${fmt(complete)} 组七页齐全；每张卡片分两条路：营地一个月内缺素材的「补采到已有对局」，超过一个月 / 营地没有的老局「新录入一局」。`
-              : '上传后这里会按日期和比分自动分组，一组对应一局。'}</p></div></div>
-          <div class="shot-grid">${cards || `<p class="src-empty">还没有识别过赛后截图。先传一局的七张图。</p>`}</div>
+          <div class="section-heading"><div><h2>识别结果</h2></div>
+            <div class="capture-actions">
+              <span class="src-count">${groups.length
+                ? `共 ${fmt(groups.length)} 组 · ${fmt(complete)} 组信息齐全`
+                : `${fmt(images.length)} 张截图`}</span>
+            </div>
+          </div>
+          <div class="shot-grid">${cards || `<p class="src-empty">还没有识别过赛后截图。先传一局的截图。</p>`}</div>
         </section>
       </div>`;
   }
@@ -768,9 +767,8 @@ export function createSources(h) {
 
   function videoGuide(maxBytes) {
     return `<section class="section src-guide" data-tour="videos-guide">
-      <div class="section-heading"><div><h2>一局要录成这样</h2>
-        <p>从回放列表 / 加载页开始，到赛后结算页停；中间不剪辑、不拖进度、不开倍速。</p></div>
-        <div class="capture-actions"><a class="control" href="#shots">还要七张截图 · 去「截图 OCR」→</a></div>
+      <div class="section-heading"><div><h2>一局要录成这样</h2></div>
+        <div class="capture-actions"><a class="control" href="#shots">还要补截图 · 去「截图 OCR」→</a></div>
       </div>
       <ol class="src-timeline">
         <li><i>1</i><div><b>开始 · 约 5 秒</b><span>录到回放列表 / 加载页，双方十人英雄和昵称要清楚，再完整录到局内 00:00。</span></div></li>
@@ -811,8 +809,7 @@ export function createSources(h) {
     }).join('');
 
     return `<section class="section src-upload" data-tour="videos-upload">
-      <div class="section-heading"><div><h2>上传录像</h2>
-        <p>一份完整录像即可；上传后自动排队抽帧识别，不用再手工触发。</p></div>
+      <div class="section-heading"><div><h2>上传录像</h2></div>
         <div class="capture-actions">
           <span class="src-count">${fmt(recordings.length)} 段 · ${bytes(statsInfo.bytes)} / ${bytes(maxBytes)}</span>
         </div>
@@ -924,7 +921,7 @@ export function createSources(h) {
     }
   }
 
-  const VIDEOS_INTRO = '与七张截图配合使用：每局一段完整录像。营地一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。';
+  const VIDEOS_INTRO = '与截图配合使用：每局一段完整录像。营地一个月内缺素材的局用「补采」挂到已有对局；更早、营地没有的老局用「新录入」直接建档。';
 
   function videosPage(value) {
     return withPage('录屏 OCR', VIDEOS_INTRO, videosBody(value), false);
@@ -1014,13 +1011,15 @@ export function createSources(h) {
         ${videoGuide(Number(statsInfo.maxBytes || 0))}
         ${uploadVideosBlock(value)}
         <section class="section src-results" data-tour="videos-results">
-          <div class="section-heading"><div><h2>本机录屏</h2>
-            <p>${recordings.length
-              ? `共 ${fmt(recordings.length)} 段 · ${fmt(done)} 段已出报告${running ? ` · ${fmt(running)} 段识别中` : ''}；每张卡片分两条路：营地一个月内缺素材的「补采到已有对局」，超过一个月 / 营地没有的老局「新录入一局」。`
-              : '还没有上传过录屏。上传后这里按状态显示进度与报告。'}</p></div>
-            <div class="capture-actions"><button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button></div>
+          <div class="section-heading"><div><h2>本机录屏</h2></div>
+            <div class="capture-actions">
+              <span class="src-count">${recordings.length
+                ? `共 ${fmt(recordings.length)} 段 · ${fmt(done)} 段已出报告${running ? ` · ${fmt(running)} 段识别中` : ''}`
+                : '还没有录屏'}</span>
+              <button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>
+            </div>
           </div>
-          <div class="shot-grid">${rows || `<p class="src-empty">还没有上传过录屏。先按上面的三段录一局。</p>`}</div>
+          <div class="shot-grid">${rows || `<p class="src-empty">还没有上传过录屏。</p>`}</div>
         </section>
       </div>`;
   }
@@ -1103,7 +1102,7 @@ export function createSources(h) {
         ['十人齐全', fmt(replays.filter((r) => (r.blocks || []).length >= 10).length), '解析出完整名单'],
         ['对局通道', fmt(channels.length), '可挂载到任一审查记录'],
       ])
-      + block('回放文件', '回放只补位置与指令，不补赛后统计；终局数值仍以截图或数据包为准。',
+      + block('回放文件', '',
         `<div class="shot-grid">${cards || empty('还没有解析过回放文件。')}</div>`);
   }
 
@@ -1132,10 +1131,10 @@ export function createSources(h) {
     </div><div data-import-preview></div>`;
 
     if (!sheet) {
-      return withPage('导入表格', '选填 · 补充 —— 只在营地与截图都没有某个字段时才需要手填。',
+      return withPage('导入表格', '',
         backLink()
         + noticeBox()
-        + block('上传', '支持 CSV / TSV / XLSX / XLSM，单个文件不超过 20 MB。', upload)
+        + block('上传', '', upload)
         + `<div class="capture-notice is-error" role="status">读取不到字段规格文件 capture-guide/requirements.json，无法展示字段要求。请确认通过 server.py 启动（该文件由 /assets 提供）。</div>`, false);
     }
 
@@ -1149,11 +1148,11 @@ export function createSources(h) {
 
     const lanes = (sheet.positions || []).join(' / ');
 
-    return withPage('导入表格', '选填 · 补充 —— 表格只进分析数据集（在「数据范围」里勾「表格导入」查看），不写营地口径的正式统计；正式统计仍要本局营地回放。',
+    return withPage('导入表格', '',
       backLink()
       + noticeBox()
-      + block('上传与预览', '支持 CSV / TSV / XLSX / XLSM，单个文件不超过 20 MB。先预览识别结果，确认后再导入。', upload)
-      + block('表格长什么样', '一行一个人，一局正好十行。',
+      + block('上传与预览', '', upload)
+      + block('表格长什么样', '',
         `<div class="sv-spec-grid">
           <div><b>行数</b><span>${fmt(sheet.rows)} 行（我方 5 + 对方 5）</span></div>
           <div><b>阵营</b><span>${(sheet.sides || []).map((s) => (s === 'blue' ? 'blue（蓝方）' : 'red（红方）')).join(' / ')}，每方 5 行</span></div>
@@ -1162,11 +1161,12 @@ export function createSources(h) {
           <div><b>本队阵营</b><span>blue 或 red，十行一致；多局逐局不同</span></div>
         </div>
         <p class="capture-hint">同一张表可以往下追加多局：每局十行、对局ID不同；跨局汇总不要放进来。</p>`)
-      + block('字段要求', `共 ${sheet.columns.length} 列，其中 ${requiredCount} 列必填。`,
+      + block('字段要求', '',
         `<div class="table-wrap sv-spec-wrap"><table class="sv-spec-table"><thead><tr>
           <th>列名</th><th>字段</th><th>要求</th><th>规则</th>
-        </tr></thead><tbody>${columnRows}</tbody></table></div>`)
-      + block('模板与示例', '模板列名不要改；示例可以对照格式，其中「十人一局」那份填好了完整数据，可以直接试导入。',
+        </tr></thead><tbody>${columnRows}</tbody></table></div>`,
+        `<span class="src-count">共 ${sheet.columns.length} 列 · ${requiredCount} 列必填</span>`)
+      + block('模板与示例', '',
         `<div class="sv-downloads">
           <a class="control" href="/assets/capture-guide/match-template.xlsx" download>${icon('sources')} 下载 XLSX 模板</a>
           <a class="control" href="/assets/capture-guide/match-template.csv" download>${icon('sources')} 下载 CSV 模板</a>
@@ -1174,7 +1174,7 @@ export function createSources(h) {
           <a class="control" href="/assets/capture-guide/match-sample.csv" download>${icon('sources')} 下载示例 · 十人一局（可直接试导入）</a>
         </div>
         <p class="capture-hint">示例是虚构数据。试导入后在「数据范围 → 表格导入」勾选才看得到；正式记录请换掉对局 ID、日期和十人数据。</p>`)
-      + block('最常见的三个错', '导入失败的绝大多数都是这三种。',
+      + block('最常见的三个错', '',
         `<ul class="sv-pitfalls">
           <li><b>对局 ID 十行不一致</b> —— 同一局十行必须同一个 ID，且不能用示例里的编号。</li>
           <li><b>数值写成「1.2万」</b> —— 金币、输出、承伤都要原始整数，不要带单位或缩写。</li>
@@ -1241,7 +1241,7 @@ export function createSources(h) {
         const pending = images.filter((image) => !grouped.has(image.id)).length;
         if (!pending || ticks >= 30) {
           stopPoll();
-          if (!pending) setNotice(`七张截图已识别并分组（${groups.length} 组）。`);
+          if (!pending) setNotice(`截图已识别并分组（${groups.length} 组）。`);
           paint();
         }
       } catch { /* 单次失败不打断轮询 */ }
@@ -1291,7 +1291,7 @@ export function createSources(h) {
     }
   }
 
-  /** 截图「新录入」：一组七页齐全的截图直接新建一局，成功后去校对页核对保存。 */
+  /** 截图「新录入」：一组信息齐全的截图直接新建一局，成功后去校对页核对保存。 */
   async function createShotsEntry(index) {
     const groups = state.value?.images?.groups || [];
     const group = groups[Number(index)];

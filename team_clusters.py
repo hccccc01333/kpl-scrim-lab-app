@@ -1863,9 +1863,9 @@ def _draft_block(bp, own_side, hero_info=None) -> dict:
 
 
 # 核 / 前排 / 控制的结构口径（赛训组 2026-11 复盘会）：
-#   核 = 战边 / 刺野 / 战野 / 法核 / 游射 / 呆射；坦边、坦野、工具人、辅助不分核。
+#   核 = 战边 / 刺野 / 战野 / 法刺 / 游射 / 呆射；坦边、坦野、工具人、辅助不分核。
 #   控 = 英雄能力表「控制」维度计数；只统计已收录英雄，未收录英雄单列不猜。
-CORE_ARCHETYPES = ('战边', '刺野', '战野', '法核', '游射', '呆射')
+CORE_ARCHETYPES = ('战边', '刺野', '战野', '法刺', '游射', '呆射')
 
 
 def lineup_structure(picks) -> dict:
@@ -2099,7 +2099,7 @@ def _kpl_section(games) -> dict:
                   'teams': [], 'oppGames': 0, 'oppWins': None, 'oppWinRate': None}
 
     return {
-        'source': index.get('source') or 'KPL 官方赛事',
+        'source': '赛训组组合池' if index.get('poolActive') else (index.get('source') or 'KPL 官方赛事'),
         'games': index.get('games'),
         'sinceYear': index.get('sinceYear'),
         'updatedAt': index.get('updatedAt'),

@@ -58,7 +58,6 @@ export function createPlayerViz({esc, fmt}) {
   const panel = (title, body, opt = {}) => `<section class="pv-panel${opt.span ? ` is-${opt.span}` : ''}">
     ${title || opt.right ? `<header class="pv-panel-head"><h4>${title || ''}</h4>${opt.right ? `<span class="pv-panel-right">${opt.right}</span>` : ''}</header>` : ''}
     <div class="pv-panel-body">${body}</div>
-    ${opt.foot ? `<p class="pv-panel-foot">${opt.foot}</p>` : ''}
   </section>`;
   const grid = (list) => `<div class="pv-grid">${list.filter(Boolean).join('')}</div>`;
 
@@ -123,7 +122,7 @@ export function createPlayerViz({esc, fmt}) {
     const gridHtml = tickList.map((v) => `<line class="pv-grid" x1="${padL}" y1="${y(v).toFixed(1)}" x2="${W - padR}" y2="${y(v).toFixed(1)}"/>
       <text class="pv-axis" x="${padL - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${S(fmtV(v))}</text>`).join('');
     const refsHtml = refs.filter((r) => isNum(r.v)).map((r) => `<line class="pv-ref ${r.cls || ''}" x1="${padL}" y1="${y(r.v).toFixed(1)}" x2="${W - padR}" y2="${y(r.v).toFixed(1)}"/>
-      ${r.label ? `<text class="pv-ref-label" x="${padL + 6}" y="${(y(r.v) - 5).toFixed(1)}">${S(r.label)}</text>` : ''}`).join('');
+      ${r.label ? `<text class="pv-ref-label" x="${W - padR - 4}" y="${(y(r.v) - 6).toFixed(1)}" text-anchor="end">${S(r.label)}</text>` : ''}`).join('');
 
     const bars = series.map((s, gi) => (s.values || []).map((v, i) => {
       if (!isNum(v)) return '';

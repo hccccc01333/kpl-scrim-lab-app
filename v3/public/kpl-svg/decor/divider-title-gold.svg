@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="425" height="29" viewBox="0 0 425 29" role="img">
+<title>赛事标题双端卷曲分隔线 · 白金金</title>
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#E4C88A"/><stop offset=".5" stop-color="#D7B071"/><stop offset="1" stop-color="#A97C3E"/></linearGradient></defs>
+<path d="M2 20 H49 M376 20 H423" fill="none" stroke="url(#g)" stroke-width="1"/><g transform="translate(48 0) scale(1 1)"><path d="M0 20 Q23 20 36 19 Q51 17 40 6 Q32 -1 29 4 Q25 10 50 20 Q58 23 68 22 M44 19 Q51 20 53 16" fill="none" stroke="url(#g)" stroke-width="1.4" stroke-linecap="round"/></g><g transform="translate(377 0) scale(-1 1)"><path d="M0 20 Q23 20 36 19 Q51 17 40 6 Q32 -1 29 4 Q25 10 50 20 Q58 23 68 22 M44 19 Q51 20 53 16" fill="none" stroke="url(#g)" stroke-width="1.4" stroke-linecap="round"/></g><path d="M113 24 H312" fill="none" stroke="url(#g)" stroke-width="0.8" opacity=".55"/>
+</svg>

@@ -61,6 +61,8 @@ def create_series_router(db_path, lookup):
             'bestOf': (q.get('bestOf') or '').strip() or None,
             'status': (q.get('status') or '').strip() or None,
             'completion': (q.get('completion') or '').strip() or None,
+            'competition': (q.get('competition') or '').strip() or None,
+            'includeOtherEvents': (q.get('includeOtherEvents') or '') == '1',
         }
 
     def _vector_index(repo, values=None, keys=None):
@@ -80,10 +82,16 @@ def create_series_router(db_path, lookup):
                 if game.get('matchKey')]
 
     def _light_vectors(request):
-        """编组页轻量向量：优先走对局包指纹缓存，命中时完全不碰仓库快照。"""
+        """编组页轻量向量：优先走对局包指纹缓存，命中时完全不碰仓库快照。
+
+        赛事域（M1）：带 competition 时必须用 scoped 仓库重建（builder 缓存
+        key 已含赛事），否则会把其他赛事的局混进编组候选。
+        """
         builder = lookup.get('builder_vectors')
         if builder is not None:
             try:
+                if (_series_values(request) or {}).get('competition'):
+                    return builder(lookup['repo'](request), _series_values(request))
                 return builder(repo=None)
             except TypeError:
                 return builder(lookup['repo'](request))
@@ -106,7 +114,8 @@ def create_series_router(db_path, lookup):
             date_from=values['from'], date_to=values['to'], session=values['session'],
             opponent=None,
             best_of=int(values['bestOf']) if values['bestOf'] else None,
-            status=values['status'], completion=values['completion'])
+            status=values['status'], completion=values['completion'],
+            competition=values['competition'])
 
     def _opponent_query(values):
         """筛选词连同它的旧名/新名一起认：改名后旧系列赛不会被筛掉。"""
@@ -217,7 +226,7 @@ def create_series_router(db_path, lookup):
         stamp = stamp_fn() if callable(stamp_fn) else None
         cache_key = (str(db_path), stamp, values['from'], values['to'], values['session'],
                      values['opponent'], values['bestOf'], values['status'],
-                     values['completion']) if stamp is not None else None
+                     values['completion'], values['competition']) if stamp is not None else None
         if cache_key is not None:
             cached = _BOOTSTRAP_CACHE.get(cache_key)
             if cached is not None:
@@ -273,16 +282,24 @@ def create_series_router(db_path, lookup):
                 'detail': lookup['detail'](repo, game['matchKey']),
             })
         analysis = series_engine.analyze_series(brief, games)
-        # 大场挖掘层：全量单局向量作历史语料（按对局包指纹缓存，冷启动
-        # 首次约 3–6 秒）。取不到语料就降级成只描述本场，不阻断分析。
+        # 大场挖掘层：按赛事收窄的单局向量作历史语料（缓存键含赛事，P0-2）。
+        # 取不到语料就降级成只描述本场，不阻断分析。
         corpus = None
         collector = lookup.get('corpus')
+        competition_id = brief.get('competitionId')
         if collector is not None:
             try:
-                corpus = collector(repo)
+                try:
+                    corpus = collector(repo, competition_id)
+                except TypeError:
+                    corpus = collector(repo)
             except Exception:  # noqa: BLE001 - 语料异常不应让单场分析 500
                 corpus = None
         briefs = ws.list_series(limit=500)
+        # 赛事域（M1）：boBp 历史默认只看同一赛事；对手习惯类允许显式跨赛事积累。
+        competition_id = brief.get('competitionId')
+        if competition_id and (request.query_params.get('includeOtherEvents') or '') != '1':
+            briefs = [item for item in briefs if item.get('competitionId') == competition_id]
         insight = series_insight.build_insight(
             brief, games, analysis, corpus=corpus, series_briefs=briefs)
         return {'series': brief, **analysis, 'insight': insight}

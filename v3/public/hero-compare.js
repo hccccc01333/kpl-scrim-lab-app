@@ -1,7 +1,7 @@
 /* 英雄对比 · 可视化重构
    与「通用跨局分析」同一套设计语言：白底、大读数、一分析一形态、
-   每卡两个可切换视图、图形可悬停读数 / 点选换人、教练语言、无解释小字。
-   顶部沿用「对位深区」深墨蓝结论卡：结论式 H1 + 双人左右对位。
+   每卡一张图、可悬停读数 / 点选换人、教练语言、无解释小字。
+   顶头条为浅白对位结论卡：结论式 H1 + 双人左右对位。
    数据：/api/studio/camp-compare 的 heroes.own / heroes.enemy 聚合样本。 */
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -17,19 +17,32 @@ const signed1 = (v) => (v < 0 ? '−' : '+') + Math.abs(isNum(v) ? v : 0).toFixe
 const tip = (t) => `data-hc-tip="${es(t)}"`;
 const keyOf = (x) => `${x.hero}|${x.lane || ''}`;
 
-const VIEWS = {
-  '01': ['六项对位', '差值排序'],
-  '02': ['胜率对照', '全英雄位置'],
-  '03': ['三项产出', '谁在扛伤害'],
-  '04': ['全英雄坐标', '输出分布带'],
-  '05': ['出场与胜率', '出场排行'],
+/* 英雄不能只用「输出」一把尺子量：输出位看经济/输出，游走位看参团/承伤/控制/治疗。
+   分路取当前对象 A 的实际位置，A 是输出位就只出输出位对比，是游走位就只出游走位对比。 */
+const ROLE_GROUPS = {
+  damage: {
+    label: '输出 · 资源位', sub: '对抗路 / 打野 / 中路 / 发育路',
+    lanes: ['对抗路', '打野', '中路', '发育路'],
+    x: { key: 'gpm', label: '分均经济', fmt: n0 },
+    y: { key: 'dpm', label: '分均输出', fmt: n0 },
+    head: { key: 'dpm', label: '分均输出' },
+    strip: [['分均经济', 'gpm', n0], ['分均输出', 'dpm', n0], ['参团率', 'participation', pc], ['KDA', 'kda', n1]],
+  },
+  support: {
+    label: '游走 · 保护位', sub: '游走（辅助）',
+    lanes: ['游走'],
+    x: { key: 'participation', label: '参团率', fmt: pc },
+    y: { key: 'dtpm', label: '分均承伤', fmt: n0 },
+    head: { key: 'participation', label: '参团率' },
+    strip: [['参团率', 'participation', pc], ['分均承伤', 'dtpm', n0], ['分均控制', 'controlPerMin', n1], ['分均治疗', 'healPerMin', n0]],
+  },
 };
+const roleOf = (x) => (ROLE_GROUPS.support.lanes.indexOf(x.lane) >= 0 ? 'support' : 'damage');
 
 export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
-  const state = { data: null, scope: 'own', keyA: '', keyB: '', views: {} };
+  const state = { data: null, scope: 'own', keyA: '', keyB: '' };
   const pool = () => (state.data && state.data.heroes && state.data.heroes[state.scope]) || [];
   const find = (k) => pool().find((x) => keyOf(x) === k);
-  const viewOf = (id) => state.views[id] || 'a';
 
   function initKeys() {
     const list = pool().slice().sort((a, b) => (b.games || 0) - (a.games || 0));
@@ -39,8 +52,7 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     if (state.keyA === state.keyB && list[1]) state.keyB = keyOf(list[1]);
   }
 
-  const sorted = (key) => pool().filter((x) => isNum(x[key])).slice().sort((a, b) => b[key] - a[key]);
-  const rank = (key, v) => isNum(v) ? 1 + pool().filter((x) => isNum(x[key]) && x[key] > v).length : null;
+  const rank = (key, v, list = pool()) => isNum(v) ? 1 + list.filter((x) => isNum(x[key]) && x[key] > v).length : null;
   const quantile = (arr, p) => {
     const s = arr.filter(isNum).slice().sort((a, b) => a - b);
     if (!s.length) return 0;
@@ -49,35 +61,20 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
   };
 
   /* ── 通用零件 ─────────────────────────────────────────────── */
-  function shell(id, a, b) {
-    const meta = VIEWS[id] || ['看图', '换个角度'];
-    const cur = viewOf(id);
-    const one = (k, html) => `<div class="hc-view${cur === k ? ' is-enter' : ''}" data-hc-view="${k}"${cur === k ? '' : ' hidden'}>${html}</div>`;
+  function shell(id, a) {
     return `<div class="hcv" data-hc-viz="${id}">
-      <div class="hcv-bar"><div class="hcv-switch" role="group" aria-label="切换视图">
-        <button type="button" data-hc-view-btn="a" data-hc-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}">${es(meta[0])}</button>
-        <button type="button" data-hc-view-btn="b" data-hc-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}">${es(meta[1])}</button>
-      </div></div>
-      <div class="hcv-stage">${one('a', a)}${one('b', b)}<div class="hcv-tip" hidden></div></div>
+      <div class="hcv-stage"><div class="hc-view is-enter" data-hc-view="a">${a}</div><div class="hcv-tip" hidden></div></div>
     </div>`;
   }
   const view = (hero, body) => `<div class="hcv-view"><div class="hcv-hero">${hero}</div><div class="hcv-body">${body}</div></div>`;
   const big = (v, label, cls = '') => `<div class="hcv-figure ${cls}"><b>${es(v)}</b><span>${es(label)}</span></div>`;
-  const barRow = (label, value, width, cls, tipText, sub = '') => `<div class="hcv-row" ${tip(tipText)}>
-    <span class="hcv-row-label">${es(label)}${sub ? `<small>${es(sub)}</small>` : ''}</span>
-    <i class="hcv-track"><b class="${cls}" style="width:${width}"></b></i>
-    <em class="hcv-row-val">${es(value)}</em></div>`;
-  const scaleTicks = (a, b, c) => `<div class="hcv-ticks"><span>${es(a)}</span><span>${es(b)}</span><span>${es(c)}</span></div>`;
 
-  function card(id, name, title, chart, action, method) {
+  function card(id, name, title, chart, titleAttrs = '') {
     return `<article class="hc-card" id="hc-analysis-${id}">
       <div class="hc-card-top"><span class="hc-kicker">${id} / 英雄对比</span></div>
       <div class="hc-card-name">${es(name)}</div>
-      <h3 class="hc-card-title">${title}</h3>
+      <h3 class="hc-card-title"${titleAttrs}>${title}</h3>
       <div class="hc-card-canvas">${chart}</div>
-      <div class="hc-card-foot"><div class="hc-train"><span>怎么用</span><p>${es(action)}</p></div>
-        <a class="hc-open" href="#hero/${encodeURIComponent((find(state.keyA) || {}).hero || '')}">打开 ${es((find(state.keyA) || {}).hero || '英雄')} 档案 →</a></div>
-      <p class="hc-method"><b>怎么算的</b> ${es(method)}</p>
     </article>`;
   }
 
@@ -112,8 +109,11 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
       const wb = 100 - wa;
       const win = isNum(va) && isNum(vb) ? (va > vb ? 'a' : vb > va ? 'b' : '') : '';
       const gap = isNum(va) && isNum(vb) ? va - vb : null;
-      return `<div class="hc-cell" ${tip(`${label} · ${es(a.hero)} ${show(va)} / ${es(b.hero)} ${show(vb)}`)}>
-        <span class="hc-cell-label">${es(label)}</span>
+      const badge = win
+        ? `<b class="hc-cell-badge ${win}">${win === 'a' ? '▲' : '▼'} ${es(win === 'a' ? a.hero : b.hero)} 领先</b>`
+        : '<b class="hc-cell-badge tie">持平</b>';
+      return `<div class="hc-cell" data-win="${win || 'tie'}" ${tip(`${label} · ${es(a.hero)} ${show(va)} / ${es(b.hero)} ${show(vb)}`)}>
+        <div class="hc-cell-head"><span class="hc-cell-label">${es(label)}</span>${badge}</div>
         <div class="hc-cell-duel">
           <b class="a ${win === 'a' ? 'win' : ''}">${show(va)}</b>
           <i class="hc-duel-bar"><em class="a" style="width:${wa.toFixed(1)}%"></em><em class="b" style="width:${wb.toFixed(1)}%"></em></i>
@@ -124,13 +124,7 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     }).join('');
     const sum = summary(a, b);
     const A = view(big(`${sum.aWins} / 6`, `${a.hero} 领先的指标项数`, 'gold'), `<div class="hc-mtx">${cells}</div>`);
-    const diffs = METRICS.map(([label, key, show, unit]) => ({ label, key, show, unit, d: (isNum(a[key]) ? a[key] : 0) - (isNum(b[key]) ? b[key] : 0) }))
-      .sort((x, y) => Math.abs(y.d) - Math.abs(x.d));
-    const mx = Math.max(1, ...diffs.map((x) => Math.abs(x.d)));
-    const B = view(big(`${diffs.filter((x) => x.d > 0).length} 项`, `${a.hero} 高于 ${b.hero}`, 'teal'),
-      `<div class="hcv-rows">${diffs.map((x) => barRow(x.label, `${x.d >= 0 ? '+' : '−'}${x.show(Math.abs(x.d))}${x.unit}`,
-        `${(Math.abs(x.d) / mx * 100).toFixed(1)}%`, x.d >= 0 ? 'a' : 'b', `${x.label} · ${es(a.hero)} ${x.show(a[x.key])} / ${es(b.hero)} ${x.show(b[x.key])}`)).join('')}</div>`);
-    return shell('01', A, B);
+    return shell('01', A);
   }
 
   /* ── 02 胜率与样本量（Wilson 区间） ──────────────────────────── */
@@ -158,22 +152,13 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
         </svg>
         <b>${es(x.hero)}</b><small>${n0(x.games)} 局 · ${n0(x.wins)} 胜</small></div>`;
     };
+    const ciLine = (x, ci) => `${es(x.hero)} ${n0(x.games)} 局${ci ? `（95% CI ${pc(ci.low)}–${pc(ci.high)}）` : ''}`;
     const A = view(big(`${signed1(gap)} 个百分点`, `${gap >= 0 ? a.hero : b.hero} 的胜率更高`, gap >= 0 ? 'gold' : 'teal'),
       `<div class="hc-rings">${side(a, 'a')}
         <div class="hc-rings-mid"><i></i><b>${pc(Math.abs(gap))}</b><span>胜率差</span></div>
-        ${side(b, 'b')}</div>`);
-    const vals = pool().map((x) => x.winRate).filter(isNum).sort((x, y) => x - y);
-    const q = (p) => quantile(vals, p);
-    const lo = q(.1), hi = q(.9), span = Math.max(1, hi - lo);
-    const at = (v) => clamp(((isNum(v) ? v : 0) - lo) / span * 100, 1, 99);
-    const ra = rank('winRate', a.winRate), rb = rank('winRate', b.winRate);
-    const B = view(big(ra ? `第 ${ra} / ${pool().length}` : '—', `${a.hero} 在全英雄的胜率位次`, 'gold'),
-      `<div class="hc-band-label"><span>最差的10%对局 ${pc(lo)}</span><b>全英雄 ${pool().length} 个</b><span>最好的10%对局 ${pc(hi)}</span></div>
-      <div class="hc-band"><i class="hc-band-fill" style="left:${at(q(.25)).toFixed(1)}%;width:${(at(q(.75)) - at(q(.25))).toFixed(1)}%"></i>
-        <i class="hc-band-dot a" style="left:${at(a.winRate).toFixed(1)}%" ${tip(`${a.hero} ${pc(a.winRate)} · 第 ${ra} 名${ciA ? ` · Wilson 95% CI ${pc(ciA.low)}–${pc(ciA.high)}` : ''}`)}></i>
-        <i class="hc-band-dot b" style="left:${at(b.winRate).toFixed(1)}%" ${tip(`${b.hero} ${pc(b.winRate)} · 第 ${rb} 名${ciB ? ` · Wilson 95% CI ${pc(ciB.low)}–${pc(ciB.high)}` : ''}`)}></i></div>
-      <div class="hc-band-foot"><span>${es(a.hero)} 第 ${ra || '—'} 名${ciA ? ` · 95% CI ${pc(ciA.low)}–${pc(ciA.high)}` : ''}</span><span>${es(b.hero)} 第 ${rb || '—'} 名${ciB ? ` · 95% CI ${pc(ciB.low)}–${pc(ciB.high)}` : ''}</span></div>`);
-    return shell('02', A, B);
+        ${side(b, 'b')}</div>
+      <p class="hc-ci-line"><b>样本可信度</b><span>${ciLine(a, ciA)}</span><i></i><span>${ciLine(b, ciB)}</span></p>`);
+    return shell('02', A);
   }
 
   /* ── 03 分均产出分析 ──────────────────────────────────────── */
@@ -189,85 +174,57 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
           <i class="hc-b2b-track"><em class="a" style="width:${(Math.abs(va) / mx * 50).toFixed(1)}%"></em><em class="b" style="width:${(Math.abs(vb) / mx * 50).toFixed(1)}%"></em></i>
           <b class="b">${show(vb)}</b><span>${es(label)}</span></div>`;
       }).join('')}</div>
-      <div class="hc-b2b-foot"><span>金 ${es(a.hero)} · ${es(b.hero)} 青</span><span>每行按该项较高者对齐</span></div>`);
-    const ra = isNum(a.dpm) && isNum(a.dtpm) && a.dtpm ? a.dpm / a.dtpm : 0;
-    const rb = isNum(b.dpm) && isNum(b.dtpm) && b.dtpm ? b.dpm / b.dtpm : 0;
-    const B = view(big(n1(Math.max(ra, rb)), '每承 1 点伤害换出的输出', 'teal'),
-      `<div class="hc-duo">
-        <div class="hc-duo-side"><span>${es(a.hero)} · 输出 / 承伤</span><b>${n1(ra)}</b><small>分均输出 ${n0(a.dpm)} · 承伤 ${n0(a.dtpm)}</small></div>
-        <i>→</i>
-        <div class="hc-duo-side"><span>${es(b.hero)} · 输出 / 承伤</span><b>${n1(rb)}</b><small>分均输出 ${n0(b.dpm)} · 承伤 ${n0(b.dtpm)}</small></div>
-        <em>${signed(ra - rb)}</em></div>`);
-    return shell('03', A, B);
+      <div class="hc-b2b-foot"><span>蓝 ${es(a.hero)} · ${es(b.hero)} 红</span><span>每行按该项较高者对齐</span></div>`);
+    return shell('03', A);
   }
 
-  /* ── 04 全英雄坐标分析 ────────────────────────────────────── */
+  /* ── 04 分路坐标：尺子跟着对象 A 的实际位置走 ───────────────── */
+  const groupOf = (roleId) => pool().filter((x) => roleOf(x) === roleId);
+
+  function roleTitle(a, roleId, list) {
+    const g = ROLE_GROUPS[roleId];
+    const r = rank(g.head.key, a[g.head.key], list);
+    return `${es(a.hero)} · ${g.label}：${g.head.label}排 <em>${r ? `第 ${r}` : '—'}</em> / ${list.length}`;
+  }
+
   function analysis04(a, b) {
-    const list = pool().filter((x) => isNum(x.gpm) && isNum(x.dpm));
-    const xs = list.map((x) => x.gpm), ys = list.map((x) => x.dpm);
+    const roleId = roleOf(a);
+    const g = ROLE_GROUPS[roleId];
+    const list = groupOf(roleId).filter((x) => isNum(x[g.x.key]) && isNum(x[g.y.key]));
+    const xs = list.map((x) => x[g.x.key]), ys = list.map((x) => x[g.y.key]);
     const x0 = quantile(xs, .02) * .98, x1 = quantile(xs, .98) * 1.02;
     const y0 = quantile(ys, .02) * .9, y1 = quantile(ys, .98) * 1.05;
     const X = (v) => clamp((v - x0) / Math.max(1, x1 - x0) * 100, 1, 99);
     const Y = (v) => clamp(100 - (v - y0) / Math.max(1, y1 - y0) * 100, 2, 98);
+    const inGroup = (x) => roleOf(x) === roleId;
     const pts = list.map((x) => {
-      const me = keyOf(x) === state.keyA || keyOf(x) === state.keyB;
       const cls = keyOf(x) === state.keyA ? 'a' : keyOf(x) === state.keyB ? 'b' : '';
-      return `<i class="hc-pt ${cls}" style="left:${X(x.gpm).toFixed(2)}%;top:${Y(x.dpm).toFixed(2)}%"
-        ${tip(`${x.hero} · ${x.lane || ''} · 分均经济 ${n0(x.gpm)} · 分均输出 ${n0(x.dpm)} · 点一下换到右侧对比`)}
+      return `<i class="hc-pt ${cls}" style="left:${X(x[g.x.key]).toFixed(2)}%;top:${Y(x[g.y.key]).toFixed(2)}%"
+        ${tip(`${x.hero} · ${x.lane} · ${g.x.label} ${g.x.fmt(x[g.x.key])} · ${g.y.label} ${g.y.fmt(x[g.y.key])} · 点一下换到右侧对比`)}
         data-hc-pick="${es(keyOf(x))}"></i>`;
     }).join('');
-    const label = (x, cls) => `<span class="hc-pt-label ${cls}" style="left:${X(x.gpm).toFixed(2)}%;top:${Y(x.dpm).toFixed(2)}%">${es(x.hero)}</span>`;
-    const ra = rank('dpm', a.dpm);
-    const A = view(big(ra ? `第 ${ra} / ${pool().length}` : '—', `${a.hero} 的分均输出位次`, 'gold'),
-      `<div class="hc-scatter-wrap"><div class="hc-grid-lines"><i></i><i></i><i></i><i></i></div>
-        ${pts}${label(a, 'a')}${label(b, 'b')}
-        <span class="hc-axis-x">分均经济 ${n0(x0)} → ${n0(x1)}</span>
-        <span class="hc-axis-y">分均输出 ${n0(y0)} → ${n0(y1)}</span></div>`);
-    const vals = pool().map((x) => x.dpm).filter(isNum);
-    const lo = quantile(vals, .1), hi = quantile(vals, .9), span = Math.max(1, hi - lo);
-    const at = (v) => clamp(((isNum(v) ? v : 0) - lo) / span * 100, 1, 99);
-    const B = view(big(n0(a.dpm), `${a.hero} 的分均输出`, 'teal'),
-      `<div class="hc-band-label"><span>最差的10%对局 ${n0(lo)}</span><b>全英雄分均输出</b><span>最好的10%对局 ${n0(hi)}</span></div>
-      <div class="hc-band"><i class="hc-band-fill" style="left:${at(quantile(vals, .25)).toFixed(1)}%;width:${(at(quantile(vals, .75)) - at(quantile(vals, .25))).toFixed(1)}%"></i>
-        <i class="hc-band-dot a" style="left:${at(a.dpm).toFixed(1)}%" ${tip(`${a.hero} ${n0(a.dpm)}`)}></i>
-        <i class="hc-band-dot b" style="left:${at(b.dpm).toFixed(1)}%" ${tip(`${b.hero} ${n0(b.dpm)}`)}></i></div>
-      <div class="hc-band-foot"><span>${es(a.hero)} ${n0(a.dpm)}</span><span>${es(b.hero)} ${n0(b.dpm)}</span></div>`);
-    return shell('04', A, B);
-  }
-
-  /* ── 05 使用与轮换分析 ────────────────────────────────────── */
-  function analysis05(a, b) {
-    const list = pool().filter((x) => isNum(x.games) && isNum(x.winRate));
-    const bins = [
-      { label: '1 局', hit: (g) => g <= 1 },
-      { label: '2–3 局', hit: (g) => g >= 2 && g <= 3 },
-      { label: '4–6 局', hit: (g) => g >= 4 && g <= 6 },
-      { label: '7–10 局', hit: (g) => g >= 7 && g <= 10 },
-      { label: '11 局以上', hit: (g) => g >= 11 },
-    ].map((x) => {
-      const group = list.filter((y) => x.hit(y.games));
-      return { ...x, n: group.length, win: group.length ? group.reduce((t, y) => t + y.winRate, 0) / group.length : 0, group };
-    });
-    const maxN = Math.max(1, ...bins.map((x) => x.n));
-    const A = view(big(`${n0(a.games)} 局`, `${a.hero} 的出场，是 ${b.hero} 的 ${(isNum(b.games) && b.games ? a.games / b.games : 0).toFixed(1)} 倍`, 'gold'),
-      `<div class="hc-bins">${bins.map((x) => {
-        const hasA = x.group.some((y) => keyOf(y) === state.keyA);
-        const hasB = x.group.some((y) => keyOf(y) === state.keyB);
-        const marks = `${hasA ? `<em class="a" ${tip(`${a.hero} 在「${x.label}」这一档`)}>${es(a.hero)}</em>` : ''}${hasB ? `<em class="b" ${tip(`${b.hero} 在「${x.label}」这一档`)}>${es(b.hero)}</em>` : ''}`;
-        return `<div class="hc-bin" ${tip(`${x.label} · ${x.n} 个英雄 · 平均胜率 ${pc(x.win)}`)}>
-          <div class="hc-bin-top"><b>${n0(x.win)}%</b><small>平均胜率</small>${marks}</div>
-          <i class="hc-bin-bar" style="height:${(x.n / maxN * 100).toFixed(1)}%"><b>${n0(x.n)}</b></i>
-          <span>${es(x.label)}</span></div>`;
-      }).join('')}</div>`);
-    const top = sorted('games').slice(0, 8);
-    const mx = Math.max(1, ...top.map((x) => x.games));
-    const B = view(big(`${top.length} 个`, '出场最多的英雄', 'teal'),
-      `<div class="hcv-rows">${top.map((x) => {
-        const me = keyOf(x) === state.keyA || keyOf(x) === state.keyB;
-        return barRow(`${x.hero} · ${x.lane || ''}`, `${n0(x.games)} 局`, `${(x.games / mx * 100).toFixed(1)}%`, me ? 'a' : '',
-          `${x.hero} · ${x.games} 局 · 胜率 ${pc(x.winRate)}`, me ? '当前对比' : '');
-      }).join('')}</div>`);
-    return shell('05', A, B);
+    const label = (x, cls) => `<span class="hc-pt-label ${cls}" style="left:${X(x[g.x.key]).toFixed(2)}%;top:${Y(x[g.y.key]).toFixed(2)}%">${es(x.hero)}</span>`;
+    const rankA = rank(g.head.key, a[g.head.key], list);
+    const bigVal = rankA ? `第 ${rankA} / ${list.length}` : (isNum(a[g.head.key]) ? g.head.key === 'participation' ? pc(a[g.head.key]) : n0(a[g.head.key]) : '—');
+    const note = `<p class="hc-role-note"><b>${g.label}</b> · ${g.sub} · ${list.length} 个英雄。<span>${roleId === 'support'
+      ? '按游走位口径：看参团、承伤、控制与治疗。'
+      : '按输出位口径：看经济与输出，看谁把资源转成伤害。'}</span></p>`;
+    const scatter = `<div class="hc-scatter-wrap"><div class="hc-grid-lines"><i></i><i></i><i></i><i></i></div>
+        ${pts}${inGroup(a) ? label(a, 'a') : ''}${inGroup(b) ? label(b, 'b') : ''}
+        <span class="hc-axis-x">${g.x.label} ${g.x.fmt(x0)} → ${g.x.fmt(x1)}</span>
+        <span class="hc-axis-y">${g.y.label} ${g.y.fmt(y0)} → ${g.y.fmt(y1)}</span></div>`;
+    const strip = `<div class="hc-mtx hc-mtx-role">${g.strip.map(([lbl, key, fmt]) => {
+      const va = a[key], vb = b[key];
+      const total = Math.max(1, Math.abs(isNum(va) ? va : 0) + Math.abs(isNum(vb) ? vb : 0));
+      const wa = clamp(Math.abs(isNum(va) ? va : 0) / total * 100, 4, 96);
+      const win = isNum(va) && isNum(vb) ? (va > vb ? 'a' : vb > va ? 'b' : '') : '';
+      return `<div class="hc-cell" data-win="${win || 'tie'}" ${tip(`${lbl} · ${es(a.hero)} ${fmt(va)} / ${es(b.hero)} ${fmt(vb)}`)}>
+        <span class="hc-cell-label">${lbl}</span>
+        <div class="hc-cell-duel"><b class="a ${win === 'a' ? 'win' : ''}">${fmt(va)}</b>
+          <i class="hc-duel-bar"><em class="a" style="width:${wa.toFixed(1)}%"></em><em class="b" style="width:${(100 - wa).toFixed(1)}%"></em></i>
+          <b class="b ${win === 'b' ? 'win' : ''}">${fmt(vb)}</b></div></div>`;
+    }).join('')}</div>`;
+    return shell('04', view(big(bigVal, `${a.hero} · ${g.label}的${g.head.label}位次`, roleId === 'support' ? 'teal' : 'gold'), note + scatter + strip));
   }
 
   /* ── 页面 ─────────────────────────────────────────────────── */
@@ -307,28 +264,19 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     initKeys();
     const a = find(state.keyA), b = find(state.keyB);
     if (!a || !b) return '<div class="page"><div class="empty">当前范围没有可对比的英雄样本。</div></div>';
-    const names = ['六项对位分析', '胜率可信度分析', '分均产出分析', '全英雄坐标分析', '使用与轮换分析'];
-    const ra = rank('dpm', a.dpm);
+    const names = ['六项对位分析', '胜率与样本可信度', '分均产出分析', '分路坐标分析'];
+    const roleId = roleOf(a);
     const sum = summary(a, b);
     const head01 = sum.aWins === sum.bWins
       ? `六项各领先 <em>${sum.aWins}</em> 项，差距最大的是${es(sum.best ? sum.best.label : '—')}`
       : `${es(a.hero)} 六项里领先 <em>${sum.aWins}</em> 项`;
     const cards = [
-      card('01', names[0], head01,
-        analysis01(a, b), `把领先项固定成 ${a.hero} 的选用理由，落后项列进 ${b.hero} 的专项训练。`,
-        '本队营地结算汇总；六项均为该英雄全部出场局的均值或比率，不同英雄的出场局数不同。'),
+      card('01', names[0], head01, analysis01(a, b)),
       card('02', names[1], `胜率差 <em>${signed1((a.winRate || 0) - (b.winRate || 0))}</em> 个百分点，${es((a.winRate || 0) >= (b.winRate || 0) ? a.hero : b.hero)} 更稳`,
-        analysis02(a, b), `胜率高但出场少的一边先补齐场次，再决定比赛日首选。`,
-        '胜率＝胜场 / 有胜负的局；全英雄位次按同一范围全部英雄排序，出场局数一并给出。'),
+        analysis02(a, b)),
       card('03', names[2], `分均输出 <em>${n0(a.dpm)}</em> 对 <em>${n0(b.dpm)}</em>，承伤 ${n0(a.dtpm)} 对 ${n0(b.dtpm)}`,
-        analysis03(a, b), `输出高但承伤也高的一边，训练里补一轮站位与进场时机。`,
-        '分均值＝总量 ÷ 出场总时长（分钟）；输出 / 承伤比用同一局集合的分均值相除。'),
-      card('04', names[3], `${es(a.hero)} 的分均输出排全英雄 <em>${ra ? `第 ${ra}` : '—'}</em> / ${pool().length}`,
-        analysis04(a, b), `在坐标图里点任意英雄换到右侧，快速筛出同档可替代人选。`,
-        '横轴分均经济、纵轴分均输出，点为同范围全部英雄；分布带用全英雄第 10 / 25 / 50 / 75 / 90 档。'),
-      card('05', names[4], `${es(a.hero)} 用了 <em>${n0(a.games)}</em> 局，${es(b.hero)} 用了 ${n0(b.games)} 局`,
-        analysis05(a, b), `出场多且胜率稳的作主选，出场少的排进下一轮轮换验证。`,
-        '横轴出场局数、纵轴胜率、点大小按分均输出；竖线为全英雄出场典型水平，横线为 50% 胜率。'),
+        analysis03(a, b)),
+      card('04', names[3], roleTitle(a, roleId, groupOf(roleId)), analysis04(a, b)),
     ].join('');
     return `<div class="page hc-page">
       <div class="page-intro hc-intro"><div><h1>英雄对比</h1><p>两个英雄摆在一起，看谁更稳、强在哪、下一阶段练谁。</p></div>
@@ -352,18 +300,6 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     const page = document.querySelector('.hc-page');
     if (page) page.outerHTML = render(null);
   }
-  function switchView(id, key) {
-    state.views[id] = key;
-    const wrap = [...document.querySelectorAll('[data-hc-viz]')].find((el) => el.dataset.hcViz === id);
-    if (!wrap) return;
-    wrap.querySelectorAll('[data-hc-view-btn]').forEach((x) => x.classList.toggle('is-on', x.dataset.hcViewBtn === key));
-    wrap.querySelectorAll('.hc-view').forEach((x) => {
-      const on = x.dataset.hcView === key;
-      x.hidden = !on;
-      x.classList.remove('is-enter');
-      if (on) { void x.offsetWidth; x.classList.add('is-enter'); }
-    });
-  }
   function showTip(target, event) {
     const wrap = target.closest('[data-hc-viz]');
     if (!wrap) return;
@@ -381,8 +317,6 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
     if (t.closest('a')) return;
     const jump = t.closest('[data-hc-jump]');
     if (jump) { const el = document.getElementById(`hc-analysis-${jump.dataset.hcJump}`); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
-    const vb = t.closest('[data-hc-view-btn]');
-    if (vb) { switchView(vb.dataset.hcViz, vb.dataset.hcViewBtn); return; }
     const pick = t.closest('[data-hc-pick]');
     if (pick && pick.dataset.hcPick) {
       if (pick.dataset.hcPick === state.keyA) state.keyB = state.keyA;

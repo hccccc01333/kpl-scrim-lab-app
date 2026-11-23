@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="583" height="64" viewBox="0 0 583 64" role="img">
+<title>十人数据行紧凑底板</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<defs><clipPath id="stats-row5"><rect x="0" y="0" width="583" height="64" rx="15" fill="#fff"/></clipPath></defs><g clip-path="url(#stats-row5)"><rect x="0" y="0" width="583" height="64" rx="15" fill="url(#pearl)"/><path d="M0 0 Q139.92 44.8 361.46 0 H408.1 Q157.41 58.24 0 10.88Z" fill="#d8d5d8" opacity="0.1026"/><path d="M0 40.96 Q262.35 8.32 419.76 0 Q139.92 40.96 0 63.36Z" fill="#d9d6d6" opacity="0.0608"/><path d="M104.94 64 Q308.99 50.56 583 7.68 Q448.91 49.92 262.35 64Z" fill="#fffdfa" opacity="0.228"/><path d="M314.82 64 Q478.06 39.68 583 24.32 V36.48 Q536.36 48 425.59 64Z" fill="#fff" opacity="0.209"/></g><rect x="0.6" y="0.6" width="581.8" height="62.8" rx="15" fill="none" stroke="url(#gold-edge)" stroke-width="1.2"/>
+</svg>

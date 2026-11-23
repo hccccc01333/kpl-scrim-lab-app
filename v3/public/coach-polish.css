@@ -1,0 +1,104 @@
+/* 教练档案 · 收尾精修（2026-11-23）
+   本文件在 index.html 中排于 platinum-ds.css 之后，专门复位被全局 #content hN !important
+   覆盖的标题层级，并补齐页内缺失的设计令牌。只作用于 #coach 相关组件。 */
+
+#content .pb-hero .pb-claim {
+  color: #fff !important;
+  font-size: clamp(21px, 2.3vw, 29px) !important;
+  line-height: 1.36 !important;
+}
+#content .pb-hero .pb-coach-name {
+  color: #fff !important;
+  font-size: clamp(26px, 3vw, 36px) !important;
+  line-height: 1.1 !important;
+}
+#content .hc-card h3.hc-card-title {
+  font-size: 21px !important;
+  font-weight: 750 !important;
+  line-height: 1.45 !important;
+  color: var(--ink) !important;
+}
+#content .hc-card .hc-kicker { margin-bottom: 9px; }
+
+.pb-page {
+  --gold-ink: #8a5a12;
+  --gold-soft: #fbf3e4;
+  --gold-line: #e4cfa2;
+  --teal-ink: #176b69;
+}
+.hc-index button:hover,
+.hc-index button:focus-visible {
+  border-color: var(--gold-line);
+  color: var(--gold-ink);
+  background: var(--gold-soft);
+}
+.pb-seat:hover {
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+}
+.pb-seat:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+/* 视图切换与读数同组：绝对定位到画布右上，标题行留出空间避免压住大数字。 */
+.hcv-stage > .hcv-bar {
+  position: absolute; top: 0; right: 0; z-index: 3;
+  min-height: 0; justify-content: flex-end;
+}
+.hcv-hero { padding-right: 190px; }
+.hcv-switch button {
+  border-radius: 99px !important;
+  min-block-size: 28px; min-inline-size: 44px;
+}
+@media (pointer: coarse) {
+  .hcv-switch button { min-block-size: 44px; }
+}
+/* 首卡保留完整直达条，其余卡仅在悬停/键盘聚焦时显现，避免六张卡同一节奏。 */
+.hc-card:not(:first-child) .hc-card-foot .hc-open {
+  opacity: 0; transform: translateY(2px);
+  transition: opacity .16s ease, transform .16s ease;
+}
+.hc-card:not(:first-child):hover .hc-card-foot .hc-open,
+.hc-card:not(:first-child):focus-within .hc-card-foot .hc-open {
+  opacity: 1; transform: none;
+}
+
+.pb-dot-name {
+  position: absolute; z-index: 3; transform: translate(-50%, -190%);
+  color: var(--navy); font-size: 10px; font-style: normal; font-weight: 800;
+  white-space: nowrap; pointer-events: none;
+}
+.pb-sc-tick {
+  position: absolute; color: var(--quiet);
+  font-size: 9.5px; font-style: normal; font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.pb-sc-tick.tl { left: 6px; top: 14px; }
+.pb-sc-tick.bl { left: 6px; bottom: 18px; }
+.pb-sc-tick.tr { right: 6px; top: 48%; }
+.pb-sc-tick.br { left: 7%; bottom: 18px; }
+.hc-method { font-size: 11px; color: var(--quiet); }
+
+.pb-dot {
+  width: 12px; height: 12px;
+  opacity: .9;
+  box-shadow: 0 0 0 1px #fff;
+}
+.pb-dot.is-on {
+  width: 15px; height: 15px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(15, 31, 45, .16);
+}
+
+@media (max-width: 1200px) {
+  .pb-coach-main { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .pb-coach-lineup { align-items: flex-start; }
+  .pb-pool { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pb-heat-row { grid-template-columns: 34px minmax(0, 120px) minmax(0, 1fr) 40px; gap: 8px; }
+  .pb-hero { padding: 18px 20px 20px; }
+  .hcv-stage > .hcv-bar { position: static; margin-bottom: 8px; }
+  .hcv-hero { padding-right: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pb-dot, .pb-seat, .hc-index button { transition: none; }
+}

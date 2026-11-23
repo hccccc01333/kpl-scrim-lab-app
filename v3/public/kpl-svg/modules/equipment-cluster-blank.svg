@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="144" height="88" viewBox="0 0 144 88" role="img">
+<title>装备 2×3 组合 · 空白</title>
+<defs><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="glass" x2="100%" y2="100%">
+ <stop stop-color="#fff" stop-opacity=".5"/><stop offset=".5" stop-color="#f8f6f4" stop-opacity=".21"/><stop offset="1" stop-color="#eee9e6" stop-opacity=".52"/>
+</linearGradient></defs>
+<rect x="0.6" y="0.6" width="143" height="87" rx="12" fill="url(#glass)" stroke="#d6cec7" stroke-width="1.2" stroke-dasharray="4 4"/><circle cx="24" cy="22" r="19.5" fill="#f5f0e9" stroke="url(#gold-edge)" stroke-width="0.8"/><circle cx="72" cy="22" r="19.5" fill="#f5f0e9" stroke="url(#gold-edge)" stroke-width="0.8"/><circle cx="120" cy="22" r="19.5" fill="#f5f0e9" stroke="url(#gold-edge)" stroke-width="0.8"/><circle cx="24" cy="66" r="19.5" fill="#f5f0e9" stroke="url(#gold-edge)" stroke-width="0.8"/><circle cx="72" cy="66" r="19.5" fill="#f5f0e9" stroke="url(#gold-edge)" stroke-width="0.8"/><circle cx="120" cy="66" r="19.5" fill="#f5f0e9" stroke="url(#gold-edge)" stroke-width="0.8"/>
+</svg>

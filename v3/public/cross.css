@@ -1634,7 +1634,7 @@
   letter-spacing: .14em;
   color: var(--accent);
 }
-.xw-step-label { font-size: 13px; color: var(--muted); }
+.xw-step-label { font-size: 16px; font-weight: 600; color: var(--text); line-height: 1.35; }
 .xw-step b { font-size: 40px; font-weight: 600; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
 .xw-step b em { font-style: normal; font-size: 14px; margin-left: 2px; color: var(--quiet); letter-spacing: 0; }
 .xw-step strong { font-size: 14px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
@@ -1715,8 +1715,14 @@
 .xw-exec-who small { font-size: 12px; color: var(--quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xw-exec-cell { display: grid; gap: 2px; justify-items: end; text-align: right; }
 .xw-exec-cell b { font-size: 26px; font-weight: 600; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
-.xw-exec-cell i { font-style: normal; font-size: 12px; color: var(--quiet); font-variant-numeric: tabular-nums; }
+.xw-exec-cell i { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px;
+  font-style: normal; font-size: 12.5px; color: var(--quiet); font-variant-numeric: tabular-nums; }
 .xw-exec-cell i.is-empty { color: var(--line-strong); }
+/* 谁好谁坏：赢的一侧直接挂「本队优 / 对手优 + 差值」 */
+.xw-exec-verdict { font-style: normal; font-size: 12.5px; font-weight: 700; line-height: 1.6;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.xw-exec-verdict.is-own { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.xw-exec-verdict.is-foe { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
 .xw-exec-cell.is-na b { font-size: 20px; font-weight: 500; color: var(--quiet); }
 .xw-exec-cell .xw-delta { justify-self: end; }
 
@@ -1869,20 +1875,35 @@
 .xw-turn.is-top i { background: var(--accent); }
 .xw-turn.is-top b { color: var(--accent); }
 .xw-bp-list { display: grid; }
+/* 赛训组反馈：对位台的字太小、英雄名看不清。整体放大到 16px 左右，
+   英雄头像统一放大后再跟在名字前面。 */
 .xw-bp-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 160px 62px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 11px 0;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 13.5px;
+  font-size: 16px;
 }
 .xw-bp-row:last-child { border-bottom: 0; }
-.xw-bp-row b { flex: 1 1 auto; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.xw-bp-row span { flex: none; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.xw-bp-row em { flex: none; font-style: normal; font-size: 12.5px; color: var(--quiet); }
-.xw-face-pair { display: flex; gap: 2px; flex: none; }
-.xw-face-pair .xw-face-img { width: 28px; height: 28px; border-radius: 6px; }
+.xw-bp-row b { min-width: 0; font-weight: 600; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xw-bp-row span { font-size: 16px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.xw-bp-row em { font-style: normal; font-size: 16px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.xw-bp-row .xw-face.is-sm .xw-face-img { width: 36px; height: 36px; border-radius: 7px; }
+.xw-face-pair { display: flex; gap: 3px; flex: none; }
+.xw-face-pair .xw-face-img { width: 34px; height: 34px; border-radius: 7px; }
+/* 各队怎么应对：队伍名 + 局数 + 对手英雄（带头像）分两行，避免右边一大块空白。 */
+.xw-bp-row.is-opp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; }
+.xw-bp-row.is-opp > b { grid-column: 1; }
+.xw-bp-row.is-opp > span { grid-column: 2; text-align: right; }
+.xw-bp-mini-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px 12px; }
+.xw-bp-mini { display: inline-flex; align-items: center; gap: 6px; font-size: 15.5px; color: var(--text); }
+.xw-bp-mini .xw-face-img { width: 28px; height: 28px; border-radius: 6px; }
+.xw-bp-mini.is-empty { color: var(--quiet); }
+/* 对位台左列是逐英雄清单，右列是队伍应对；左列不需要一半宽度，
+   收窄后左边的空档也跟着变小。 */
+.xw-two-col.is-bp { grid-template-columns: minmax(360px, .78fr) minmax(0, 1.22fr); gap: 22px; }
 
 
 /* 红蓝方与 ban：整行三栏 */
@@ -2176,7 +2197,8 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-width: 158px;
+  min-width: 210px;
+  max-width: 560px;
   padding: 6px 10px;
   border: 1px solid var(--line-strong);
   border-radius: 7px;
@@ -2187,8 +2209,15 @@
   cursor: pointer;
 }
 .xw-picker-btn:hover { border-color: var(--accent); }
-.xw-picker-btn b { font-weight: 600; }
+.xw-picker-btn b { font-weight: 600; white-space: nowrap; }
 .xw-picker-btn i { margin-left: auto; font-style: normal; font-size: 11px; color: var(--quiet); }
+.xw-picker-names { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
+.xw-picker-plus { font-style: normal; color: var(--quiet); }
+.xw-picker-hint { margin: 0; font-size: 12px; color: var(--quiet); }
+.xw-picker-opt { position: relative; }
+.xw-picker-opt[disabled] { opacity: .38; cursor: not-allowed; }
+.xw-pick-check { position: absolute; top: 4px; right: 6px; font-style: normal; font-size: 12px;
+  font-weight: 700; color: var(--accent); }
 .xw-picker.is-open .xw-picker-btn { border-color: var(--accent); box-shadow: 0 0 0 2px var(--tint); }
 .xw-picker-pop {
   position: absolute;
@@ -2237,8 +2266,8 @@
   text-align: left;
 }
 .xw-picker-opt .xw-face { grid-row: 1 / span 2; }
-.xw-picker-opt b { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.xw-picker-opt em { font-style: normal; font-size: 10.5px; color: var(--quiet); }
+.xw-picker-opt b { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xw-picker-opt em { font-style: normal; font-size: 11.5px; color: var(--quiet); }
 .xw-picker-opt:hover { border-color: var(--accent); background: var(--tint); }
 .xw-picker-opt.is-on { border-color: var(--accent); background: var(--tint); }
 .xw-picker-foot { display: flex; gap: 8px; justify-content: flex-end; }
@@ -2307,4 +2336,235 @@
   .xw-skel-grid { grid-template-columns: minmax(0, 1fr); }
   .xw-scope-row { padding-top: 10px; }
   .xw-picker-pop { width: min(360px, 92vw); }
+}
+
+/* ── 楼层分析（2026-11-22） ─────────────────────────────────────
+   只看对面：红蓝方胜率卡只保留胜率与失败次数；常搬与按 BP 顺序
+   拆开的 pick 楼层独立成一块。蓝方单 pick，红方 1+2、3、4+5。 */
+.xw-floor-bans {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.xw-floor-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.xw-floor-controls .xw-seg { flex-wrap: wrap; }
+.xw-floor-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.xw-floor-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.xw-floor-summary b { color: var(--text); font-size: 15px; font-weight: 600; }
+.xw-floor-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 8px;
+}
+.xw-floor-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.xw-floor-item .xw-face-img { width: 34px; height: 34px; border-radius: 7px; }
+.xw-floor-item .xw-face-pair { display: flex; flex: none; gap: 3px; }
+.xw-floor-item.is-combo .xw-face-pair .xw-face-img { width: 30px; height: 30px; }
+.xw-floor-copy { display: grid; gap: 2px; min-width: 0; }
+.xw-floor-copy b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.xw-floor-copy small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.xw-sides.is-opponent .xw-side em { color: var(--text); }
+@media (max-width: 720px) {
+  .xw-floor-list { grid-template-columns: minmax(0, 1fr); }
+  .xw-floor-controls .xw-seg { width: 100%; }
+  .xw-floor-controls .xw-segbtn { flex: 1; }
+}
+
+/* 红蓝方卡横向排：左侧阵营、中间大胜率、右侧失败次数，避免整行空白 */
+.xw-sides.is-opponent .xw-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 16px 22px;
+}
+.xw-sides.is-opponent .xw-side span { flex: none; font-size: 14px; }
+.xw-sides.is-opponent .xw-side em {
+  margin-inline-start: auto;
+  font-size: 38px;
+  line-height: 1;
+  color: var(--text);
+}
+.xw-sides.is-opponent .xw-side small {
+  flex: none;
+  padding-inline-start: 18px;
+  border-inline-start: 1px solid var(--line);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.xw-floor-controls .xw-floor-mode { margin-inline-start: auto; }
+@media (max-width: 900px) {
+  .xw-sides.is-opponent .xw-side { gap: 6px 12px; padding: 14px 16px; }
+  .xw-sides.is-opponent .xw-side em { font-size: 32px; }
+  .xw-sides.is-opponent .xw-side small { padding-inline-start: 12px; }
+  .xw-floor-controls .xw-floor-mode { margin-inline-start: 0; }
+}
+
+/* 对位台分区线：ban 顺序 / 两组对照 / 常见组合之间各加一条边界 */
+.xw-two-col.is-bp {
+  padding-block-start: 18px;
+  border-block-start: 1px solid var(--line);
+}
+.xw-two-col.is-bp > .xw-subblock + .xw-subblock {
+  padding-inline-start: 24px;
+  border-inline-start: 1px solid var(--line);
+}
+.xw-subblock.is-bp-combos {
+  padding-block-start: 18px;
+  border-block-start: 1px solid var(--line);
+}
+@media (max-width: 1180px) {
+  .xw-two-col.is-bp > .xw-subblock + .xw-subblock {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    padding-block-start: 18px;
+    border-block-start: 1px solid var(--line);
+  }
+}
+
+/* 选手执行：优势和劣势直接用绿 / 红，别再靠浅色胶囊猜 */
+.xw-exec-verdict.is-own { color: #ffffff; background: var(--ds-pos); }
+.xw-exec-verdict.is-foe { color: #ffffff; background: var(--ds-neg); }
+.xw-lane-row .is-pos { color: var(--ds-pos); }
+.xw-lane-row .is-neg { color: var(--ds-neg); }
+.xw-exec-cell.is-span-2 { grid-column: span 2; justify-items: center; text-align: center; }
+.xw-exec-cell.is-span-2 i { justify-content: center; }
+.xw-exec-row { padding: 11px 0; }
+.xw-exec-cell b { font-size: 24px; }
+.xw-exec-who b { font-size: 16px; }
+
+/* 同位置对位：从宽表格收成一行一路的差值条，避免和上面的逐人表重复铺开 */
+.xw-lane-strip { display: grid; gap: 4px; }
+.xw-lane-strip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.xw-lane-strip-row:last-child { border-bottom: 0; }
+.xw-lane-strip-row > b {
+  flex: 0 0 72px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+.xw-lane-metric {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.xw-lane-metric small { color: inherit; font-size: 11.5px; opacity: .75; }
+.xw-lane-metric b { color: var(--text); font-size: 15px; font-weight: 600; }
+.xw-lane-metric em { color: inherit; font-size: 11px; font-style: normal; opacity: .7; }
+.xw-lane-metric.is-pos { background: var(--ds-pos-wash); color: var(--ds-pos); }
+.xw-lane-metric.is-pos b { color: var(--ds-pos); }
+.xw-lane-metric.is-neg { background: var(--ds-neg-wash); color: var(--ds-neg); }
+.xw-lane-metric.is-neg b { color: var(--ds-neg); }
+.xw-lane-sample { margin-inline-start: auto; color: var(--quiet); font-size: 12px; }
+@media (max-width: 720px) {
+  .xw-lane-strip-row > b { flex-basis: 100%; }
+  .xw-lane-sample { margin-inline-start: 0; }
+}
+
+/* 对位台右列按内容高度排，别把只有 2 个对手的列表拉满整栏 */
+.xw-two-col.is-bp { align-items: start; }
+.xw-bp-list { align-content: start; }
+
+/* 打法类型的分类色：五种类型拉开色相，避免相邻两块都是深紫/深灰 */
+.xw-arch-seg.is-0, .xw-arch-key.is-0 i { background: #2f6f5b; }
+.xw-arch-seg.is-1, .xw-arch-key.is-1 i { background: #4f7fa3; }
+.xw-arch-seg.is-2, .xw-arch-key.is-2 i { background: #a05f77; }
+.xw-arch-seg.is-3, .xw-arch-key.is-3 i { background: #c18a4f; }
+.xw-arch-seg.is-4, .xw-arch-key.is-4 i { background: #7b8a68; }
+.xw-arch-seg.is-5, .xw-arch-key.is-5 i { background: #6a6a8a; }
+
+/* 筛选条 + 分区页签一起吸顶：滚到长页中间也能改口径、换分区 */
+.xw-pin {
+  position: sticky;
+  top: var(--xw-sticky-top, 0px);
+  z-index: 30;
+  min-width: 0;
+  background: var(--paper);
+}
+.xw-pin .xw-tabs {
+  position: static;
+  top: auto;
+}
+
+/* 经济路径：赢/输直接用绿/红，全部局保留中性虚线 */
+.xv-shape .winline { stroke: var(--ds-pos); }
+.xv-shape .lossline { stroke: var(--ds-neg); }
+.xv-shape .allline { stroke: #9a9a9a; }
+.xv-direct.is-win { color: var(--ds-pos); }
+.xv-direct.is-loss { color: var(--ds-neg); }
+.xv-direct.is-all { color: var(--muted); }
+.xv-legend i.is-win, .xv-legend-row i.is-win { background: var(--ds-pos); }
+.xv-legend i.is-loss, .xv-legend-row i.is-loss { background: var(--ds-neg); }
+.xv-phase-bar.win { background: var(--ds-pos); }
+.xv-phase-bar.loss { background: var(--ds-neg); }
+.xv-phase-vals b.win { color: var(--ds-pos); }
+.xv-phase-vals b.loss { color: var(--ds-neg); }
+
+/* 团战输出 / 承伤：两条系列用暖 / 冷两色分开，避免和胜负绿红混淆 */
+.xw-dmg-plot i.is-out { background: #b07a43; }
+.xw-dmg-plot i.is-out b { color: #8a5a2d; }
+.xw-dmg-plot i.is-in { background: #4f7fa3; }
+.xw-dmg-plot i.is-in b { color: #3c6180; }
+.xw-dmg-legend i.is-out { background: #b07a43; }
+.xw-dmg-legend i.is-in { background: #4f7fa3; }
+
+/* 组合池命中但不足 3 局：标签保持中性，不写成「更好打 / 更吃力」 */
+.xw-pair.is-thin .xw-pair-tag { background: var(--surface); color: var(--quiet); }
+
+/* 没有英雄图标时的占位：给个底色和首字，别只剩两个白圈 */
+.xw-page .portrait-placeholder {
+  display: inline-grid;
+  place-items: center;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
 }

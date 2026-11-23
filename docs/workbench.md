@@ -177,7 +177,7 @@ cd client; npm run typecheck; npm run build
 | `client/src/renderer/src/styles/fonts.css` + `assets/fonts/` | 中文衬线 400/700 子集 |
 | `scripts/build_client_fonts.py` | 生成字体子集 |
 | `v3/public/navigation.js` | 分析入口分组（分析 rail 的数据源） |
-| `v3/public/bp-lab.js` | 工作台 BP 概览九区（`#bp`） |
+| `v3/public/bp-studio.js` + `v3/public/bp-studio.css` | 工作台 BP 概览（`#bp`），旧 `bp-lab.js/css` 已删除 |
 | `docs/workbench_contract.md` | 实现契约（第 4 节前端页面已按 2026-11-13 变更作废） |
 
 ## 已知限制与下一步

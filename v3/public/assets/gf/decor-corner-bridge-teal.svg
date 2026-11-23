@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="217" height="46" viewBox="0 0 217 46" role="img">
+<title>青金双边顶部角饰</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<path d="M1 43V15 Q1 1 15 1 H201 Q215 1 215 15 V43" fill="none" stroke="url(#gold)" stroke-width="4"/><path d="M7 43V13Q7 3 16 3 M210 43V13Q210 3 201 3" fill="none" stroke="url(#teal-edge)" stroke-width="3"/>
+</svg>

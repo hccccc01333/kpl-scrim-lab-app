@@ -616,25 +616,25 @@ export function createCapture(h) {
       : missing.length ? 'is-warn' : status === 'reviewed' ? 'is-ok' : 'is-pending';
     const shortMissing = missing.map((item) => item.label).slice(0, 4).join('、')
       + (missing.length > 4 ? ` 等 ${missing.length} 项` : '');
-    return `<div class="chan-row${result === 1 ? ' is-win' : result === 2 ? ' is-loss' : ''}" data-chan-open="${esc(channel.id)}" title="点击进入缺失值审查">
-      <span class="chan-score-cell"><small>比分</small>${scoreCell(match)}</span>
-      <span class="chan-main">
-        <b>${resultText ? `<i class="ingest-won ${result === 1 ? 'is-win' : 'is-loss'}">${resultText}</i>` : ''}${esc(title)}</b>
-        <small title="${esc(meta)}">${esc(meta || '—')}</small>
-        ${missing.length ? `<small class="chan-missing" title="${esc(missingText)}">缺：${esc(shortMissing)} · 点此逐条审查</small>` : ''}
+    return `<div class="capv-review-row${result === 1 ? ' is-win' : result === 2 ? ' is-loss' : ''}" data-chan-open="${esc(channel.id)}" title="点击进入缺失值审查">
+      <span class="capv-review-score"><small>比分</small>${scoreCell(match)}</span>
+      <span class="capv-review-main">
+        <span class="capv-review-title">${resultText ? `<i class="capv-result ${result === 1 ? 'is-win' : 'is-loss'}">${resultText}</i>` : ''}<b>${esc(title)}</b></span>
+        <small class="capv-review-meta" title="${esc(meta)}">${esc(meta || '—')}</small>
+        ${missing.length ? `<small class="capv-review-missing" title="${esc(missingText)}">缺 ${esc(shortMissing)} · 点此逐条审查</small>` : ''}
       </span>
-      ${heroesCell(channel, ctx, match)}
-      <span class="chan-side">
+      <span class="capv-review-heroes">${heroesCell(channel, ctx, match)}</span>
+      <span class="capv-review-side">
         ${sourceCell(channel)}
-        <span class="chan-updated" title="最近更新">${esc(stamp(channel.updatedAt) || '—')}</span>
-        <span class="chan-state">
-          ${seed ? '<i class="chip is-seed" title="种子脚本写入的测试数据，不参与正式统计">验证</i>' : ''}
-          <i class="chip ${chipClass}">${esc(label)}</i>
+        <span class="capv-review-updated" title="最近更新">更新 ${esc(stamp(channel.updatedAt) || '—')}</span>
+        <span class="capv-review-state">
+          ${seed ? '<span class="capv-state is-seed" title="种子脚本写入的测试数据，不参与正式统计">验证</span>' : ''}
+          <span class="capv-state ${chipClass}">${esc(label)}</span>
         </span>
       </span>
-      <button class="chan-exp" data-chan-expand="${esc(channel.id)}" aria-expanded="false" aria-label="展开十人草稿">⌄</button>
+      <button class="capv-expand" data-chan-expand="${esc(channel.id)}" aria-expanded="false" aria-label="展开十人草稿">⌄</button>
     </div>
-    <div class="chan-draft" data-draft-for="${esc(channel.id)}" hidden></div>`;
+    <div class="capv-draft" data-draft-for="${esc(channel.id)}" hidden></div>`;
   }
 
   /** 通道筛选：对手 / 训练组 / 模式 / 日期文本 + 日期区间。 */
@@ -697,7 +697,25 @@ export function createCapture(h) {
       || state.scope !== 'all' || state.range !== 'all');
   }
 
+  /** 原生 <dialog> 只负责打开：Esc / 焦点 / 背景 inert 交给浏览器，不自建焦点陷阱。 */
+  function bindDialogs() {
+    document.querySelectorAll('[data-cap-dialog-open]').forEach((button) => {
+      if (button.dataset.boundDialog) return;
+      button.dataset.boundDialog = '1';
+      button.addEventListener('click', () => {
+        const dialog = document.getElementById(button.dataset.capDialogOpen);
+        if (dialog && !dialog.open) dialog.showModal();
+      });
+    });
+    document.querySelectorAll('[data-cap-dialog-close]').forEach((button) => {
+      if (button.dataset.boundDialogClose) return;
+      button.dataset.boundDialogClose = '1';
+      button.addEventListener('click', () => button.closest('dialog')?.close());
+    });
+  }
+
   function bindFilter() {
+    bindDialogs();
     const input = document.querySelector('[data-ingest-query]');
     if (input && !input.dataset.bound) {
       input.dataset.bound = '1';
@@ -790,10 +808,10 @@ export function createCapture(h) {
     }
     return [...groups.entries()].map(([date, rows]) => {
       const missing = rows.filter((channel) => (channel.missing || []).length).length;
-      return `<div class="chan-group">
-        <div class="chan-group-head"><b>${esc(date)}</b>
+      return `<div class="capv-day">
+        <div class="capv-day-head"><b>${esc(date)}</b>
           <span>${rows.length} 条${missing ? '' : ' · 可一键通过'}</span></div>
-        <div class="chan-rows">${rows.map((channel) => channelRow(channel, ctx)).join('')}</div>
+        <div class="capv-review-rows">${rows.map((channel) => channelRow(channel, ctx)).join('')}</div>
       </div>`;
     }).join('');
   }
@@ -817,29 +835,29 @@ export function createCapture(h) {
       step = '第 1 步';
       title = '营地授权已失效，需要补充授权';
       desc = `${issue}重新扫码补充授权后，沿用原来的选手白名单；已进入正式统计的数据不受影响。`;
-      action = '<button class="hero-cta" data-capture-action="auth-start">补充授权</button>';
+      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="auth-start">补充授权</button>';
     } else if (!auth.authorized) {
       step = '第 1 步';
       title = '授权王者营地';
       desc = '用教练号扫码授权一次，凭证只存在本机。之后每天拉取都不必再扫。';
-      action = '<button class="hero-cta" data-capture-action="auth-start">扫码授权</button>';
+      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="auth-start">扫码授权</button>';
     } else if (!players.length) {
       step = '第 2 步';
       title = '绑定一位选手的营地 ID';
       desc = '挑每场必上的号（通常是队长）。让他在王者营地分享任意一局战绩并复制链接，粘贴到下方即可自动解析。';
  
-      action = '<button class="hero-cta" data-capture-action="focus-player">去添加</button>';
+      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="focus-player">去添加</button>';
     } else if (!state.list) {
       step = '第 3 步';
       title = '拉取最近对局';
       desc = `读取 ${players.length} 位选手的最近战绩，按对局去重后让你勾选；进行中的对局不包含在内。`;
-      action = '<button class="hero-cta" data-capture-action="pull">拉取对局</button>';
+      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="pull">拉取对局</button>';
     } else if (Object.keys(state.checked).length) {
       const count = Object.keys(state.checked).length;
       step = '第 4 步';
       title = `同步所选 ${count} 局`;
       desc = '同步后无缺失值的对局会直接进入正式统计；只有缺英雄或面板字段的局才进入「缺失值审查」。';
-      action = `<button class="hero-cta" data-capture-action="import">同步 ${count} 局</button>`;
+      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="import">同步 ${count} 局</button>`;
     } else {
       step = '已完成';
       title = '今天没有需要同步的新对局';
@@ -847,29 +865,35 @@ export function createCapture(h) {
         ? `还有 ${pending} 条在缺失值审查${missing ? `，其中 ${missing} 条有缺失值` : ''}；无缺失的局已直接进入正式统计。`
         : '无缺失值的对局都已进入正式统计。下次训练赛结束后重新拉取即可。';
       action = pending
-        ? `<button class="hero-cta" data-capture-action="scroll-channels">查看 ${pending} 条</button>`
+        ? `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="scroll-channels">查看 ${pending} 条</button>`
         : '';
     }
 
     const syncText = ctx.daysAgo === null ? '还没拉取过'
       : ctx.daysAgo === 0 ? '今天拉取过' : `${ctx.daysAgo} 天前拉取`;
-    const dot = (ok) => `<i class="hero-dot ${ok ? 'is-ok' : 'is-warn'}"></i>`;
+    const syncShort = ctx.daysAgo === null ? '还没拉取过'
+      : ctx.daysAgo === 0 ? '今天' : `${ctx.daysAgo} 天前`;
+    const stepNo = (step.match(/第\s*(\d+)\s*步/) || [])[1] || '';
+    const fact = (ok, label, value) => `<span class="capv-fact">
+      <i class="capv-dot ${ok ? 'is-ok' : 'is-idle'}" aria-hidden="true"></i>
+      <span>${esc(label)}</span><b>${esc(value)}</b></span>`;
 
-    // 授权正常、选手也在时，「下一步」只是一句提示：压成一条，把首屏让给拉取列表。
-    return `<section class="next-hero ${ctx.compact ? 'is-compact' : ''}" data-tour="collect-hero">
-      <div class="hero-main">
-        <span class="hero-eyebrow">下一步 · ${esc(step)}</span>
+    return `<section class="capv-next" data-tour="collect-hero">
+      <div class="capv-next-copy">
+        <span class="capv-kicker">下一步 · ${esc(step)}</span>
         <h2>${esc(title)}</h2>
         <p>${esc(desc)}</p>
+        <div class="capv-facts">
+          ${fact(auth.authorized && !expired, '营地授权', expired ? '失效' : auth.authorized ? '正常' : '未授权')}
+          ${fact(players.length > 0, '营地选手', `${fmt(players.length)} 位`)}
+          ${fact(!pending, '待审查', `${fmt(pending)} 条`)}
+          <span class="capv-fact is-plain"><i class="capv-dot is-idle" aria-hidden="true"></i><span>上次拉取</span><b>${esc(syncShort)}</b></span>
+        </div>
       </div>
-      ${ctx.compact
-        ? `<div class="hero-compact-note">${esc(syncText)}${pending ? ` · ${fmt(pending)} 条待审` : ''}</div>`
-        : (action ? `<div class="hero-action">${action}</div>` : '')}
-      <div class="hero-stats">
-        <span>${dot(auth.authorized && !expired)}营地授权 <b>${expired ? '失效' : auth.authorized ? '正常' : '未授权'}</b></span>
-        <span>${dot(players.length > 0)}营地选手 <b>${fmt(players.length)}</b></span>
-        <span>${dot(!pending)}缺失值审查 <b>${fmt(pending)}</b><small>· ${autoPassed ? `${autoPassed} 已自动进统计` : '无待审'}</small></span>
-        <span class="hero-sync">${esc(syncText)}</span>
+      <div class="capv-next-side">
+        <span class="capv-next-num" aria-hidden="true">${stepNo ? stepNo.padStart(2, '0') : '✓'}</span>
+        ${action ? `<div class="capv-next-action">${action}</div>` : ''}
+        ${pending && autoPassed ? `<small class="capv-next-note">${fmt(autoPassed)} 局已自动进入正式统计</small>` : ''}
       </div>
     </section>`;
   }
@@ -883,90 +907,143 @@ export function createCapture(h) {
       ? state.authProbe.checkedAt
       : (auth.checkedAt && !auth.expired ? auth.checkedAt : '');
 
-    // 已经授权、也有选手时，这条只在需要改配置时才展开，省下首屏一大块。
-    if (ready && !expired && players.length && !state.connOpen) {
-      return `<section class="section conn-fold" data-tour="camp-connect">
-        <div class="conn-fold-main">
-          <b>营地连接</b>
-          <span class="chip is-done">已授权</span>
-          <small>${esc(auth.nickname || '已登录')}${stamp(auth.loginAt) ? ` · 授权于 ${stamp(auth.loginAt)}` : ''} · ${fmt(players.length)} 位选手</small>
-        </div>
-        <div class="capture-actions">
-          <button class="control" data-capture-action="conn-toggle">展开管理</button>
-        </div>
+    // 选手行：窄卡与展开管理共用。data-* 原样保留，事件仍由 features.js 统一分发。
+    const playerRow = (player, manage = false) => {
+      const off = player.enabled === false;
+      const name = player.nickname || '未命名';
+      return `<div class="capv-player${off ? ' is-off' : ''}">
+        <span class="capv-avatar" aria-hidden="true">${esc(name.replace(/^选手\s*/, '').slice(0, 1) || '选')}</span>
+        <span class="capv-player-copy"><b>${esc(name)}</b><small>营地 ID ${text(player.campUserId)}</small></span>
+        ${manage ? `<span class="capv-player-actions">
+          <button type="button" class="capv-textbtn" data-capture-action="player-rename" data-camp-user="${esc(player.campUserId)}">改名</button>
+          <button type="button" class="capv-textbtn is-danger" data-capture-action="player-remove" data-camp-user="${esc(player.campUserId)}" aria-label="移除选手 ${esc(name)}">移除</button>
+        </span>` : ''}
+        <label class="capv-switch" title="${off ? '当前跳过这个号' : '拉取对局时会读取这个号'}">
+          <input type="checkbox" ${off ? '' : 'checked'} data-capture-action="player-toggle" data-camp-user="${esc(player.campUserId)}">
+          <span aria-hidden="true"></span>
+          <em>${off ? '跳过' : '拉取'}</em>
+        </label>
+      </div>`;
+    };
+
+    // 已经授权、也有选手时，连接收成右栏一张窄卡，首屏让给拉取列表。
+    // 二维码展开时必须回到主栏，否则窄卡里看不到扫码图。
+    if (ready && !expired && players.length && !state.connOpen && !state.qr) {
+      return `<section class="capv-card capv-conn is-compact" data-tour="camp-connect">
+        <header class="capv-conn-head">
+          <div class="capv-conn-id">
+            <i class="capv-dot is-ok" aria-hidden="true"></i>
+            <div><h3>营地连接</h3><p>${esc(auth.nickname || '已登录')} · 营地 ID ${text(auth.userId)}</p></div>
+          </div>
+          <span class="capv-state is-ok">已授权</span>
+        </header>
+        <dl class="capv-facts-list">
+          <div><dt>授权时间</dt><dd>${stamp(auth.loginAt) || '—'}</dd></div>
+          <div><dt>拉取选手</dt><dd>${fmt(players.filter((p) => p.enabled !== false).length)} / ${fmt(players.length)} 位</dd></div>
+        </dl>
+        <div class="capv-players is-compact">${players.map((p) => playerRow(p, false)).join('')}</div>
+        <footer class="capv-conn-foot">
+          <button type="button" class="capv-link" data-capture-action="conn-toggle">全部管理 <span aria-hidden="true">→</span></button>
+          <details class="capv-menu">
+            <summary class="capv-link is-muted">连接管理</summary>
+            <div class="capv-menu-pop">
+              <button type="button" data-capture-action="auth-check" ${checking ? 'disabled' : ''}>${checking ? '检测中…' : '检测授权'}</button>
+              <button type="button" data-capture-action="auth-start">重新扫码</button>
+              <button type="button" class="is-danger" data-capture-action="auth-clear">删除凭证</button>
+            </div>
+          </details>
+        </footer>
       </section>`;
     }
 
+    // 连接管理收进原生 details 菜单：检测/重扫是次级操作，删除凭证是危险操作（标红、不占常驻位置）。
+    const connMenu = `<details class="capv-menu">
+      <summary class="capv-link is-muted">连接管理 <span aria-hidden="true">⌄</span></summary>
+      <div class="capv-menu-pop">
+        <button type="button" data-capture-action="auth-check" ${checking ? 'disabled' : ''}>${checking ? '检测中…' : '检测授权'}</button>
+        <button type="button" data-capture-action="auth-start">${expired ? '补充授权' : '重新扫码'}</button>
+        <button type="button" class="is-danger" data-capture-action="auth-clear">删除凭证</button>
+      </div>
+    </details>`;
     let actions;
     if (!ready) {
-      /* 首次授权的主按钮在上面的深色「下一步」卡；这里是同一动作的次级入口。 */
-      actions = `<button class="control" data-capture-action="auth-start">${icon('search')} 扫码授权</button>`;
+      /* 首次授权的主按钮在上面的「下一步」卡；这里是同一动作的描边主按钮入口。 */
+      actions = `<button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">${icon('search')} 扫码授权</button>`;
     } else {
-      actions = `<div class="conn-actions">
-        <button class="control" data-capture-action="auth-check" ${checking ? 'disabled' : ''}>${checking ? '检测中…' : '检测授权'}</button>
-        <button class="control" data-capture-action="auth-start">${icon('refresh')} ${expired ? '补充授权' : '重新扫码'}</button>
-        <button class="control" data-capture-action="auth-clear">删除凭证</button>
-        ${players.length ? '<button class="control" data-capture-action="conn-toggle">收起</button>' : ''}</div>`;
+      actions = `<div class="capv-head-tools">${connMenu}
+        ${players.length ? '<button class="capv-link" type="button" data-capture-action="conn-toggle">收起 <span aria-hidden="true">⌃</span></button>' : ''}</div>`;
     }
 
     // 授权失效时把「补充授权」放在最显眼的位置；二维码展开后让出位置给扫码。
     const alert = expired && !state.qr
-      ? `<div class="conn-alert" role="alert">
-          <div class="conn-alert-copy"><b>营地授权已失效，爬取已暂停</b>
-            <small>${esc(issue)}重新扫码补充授权后即可继续拉取；已进入正式统计的数据不受影响。</small></div>
-          <button class="primary" data-capture-action="auth-start">补充授权</button>
+      ? `<div class="capv-alert" role="alert">
+          <i class="capv-dot is-warn" aria-hidden="true"></i>
+          <div class="capv-alert-copy"><b>营地授权已失效，拉取已暂停</b>
+            <p>${esc(issue)}重新扫码补充授权后即可继续拉取；已进入正式统计的数据不受影响。</p></div>
+          <button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">补充授权</button>
         </div>`
       : '';
 
     let authBody;
     if (state.qr) {
-      authBody = `<div class="capture-qr"><img src="data:image/png;base64,${esc(state.qr.qrcodeBase64 || '')}" alt="营地授权二维码">
-        <div><p class="capture-qr-note">用王者营地 App 扫码，并在手机上确认授权。</p>
-        <p class="capture-qr-status">${esc(state.notice?.message || '等待扫码…')}</p>
-        <button class="control" data-capture-action="auth-cancel">取消这次授权</button></div></div>`;
+      authBody = `<div class="capv-auth-box is-qr">
+        <div class="capv-qr"><img src="data:image/png;base64,${esc(state.qr.qrcodeBase64 || '')}" alt="营地授权二维码"></div>
+        <div class="capv-qr-copy">
+          <span class="capv-kicker">等待扫码</span>
+          <b>用王者营地 App 扫一扫</b>
+          <p>在手机上确认授权，页面会自动继续。</p>
+          <p class="capv-qr-status" role="status">${esc(state.notice?.message || '等待扫码…')}</p>
+          <button type="button" class="capv-link" data-capture-action="auth-cancel">取消这次授权</button>
+        </div>
+      </div>`;
     } else if (expired) {
-      authBody = `<div class="conn-auth is-stale"><i class="conn-dot"></i>
-        <div class="conn-auth-main"><b>${esc(auth.nickname || '已登录')}</b>
-          <small>营地 ID ${text(auth.userId)}${stamp(auth.loginAt) ? ` · 授权于 ${stamp(auth.loginAt)}` : ''} · 登录态已失效</small></div>
-        <span class="chip is-warn">授权失效</span></div>`;
+      authBody = `<div class="capv-auth-box is-warn">
+        <div class="capv-auth-top"><i class="capv-dot is-warn" aria-hidden="true"></i><span class="capv-state is-warn">授权失效</span></div>
+        <b class="capv-auth-name">${esc(auth.nickname || '已登录')}</b>
+        <p>营地 ID ${text(auth.userId)}</p>
+        <div class="capv-auth-meta">${stamp(auth.loginAt) ? `<span>授权于 ${esc(stamp(auth.loginAt))}</span>` : ''}<span>拉取已暂停</span></div>
+      </div>`;
     } else if (ready) {
-      authBody = `<div class="conn-auth is-ok"><i class="conn-dot"></i>
-        <div class="conn-auth-main"><b>${esc(auth.nickname || '已登录')}</b>
-          <small>营地 ID ${text(auth.userId)}${stamp(auth.loginAt) ? ` · 授权于 ${stamp(auth.loginAt)}` : ''}${checkedAt ? ` · 最近检测 ${stamp(checkedAt)}` : ''}</small></div>
-        <span class="chip is-done">已授权</span></div>`;
+      authBody = `<div class="capv-auth-box is-ok">
+        <div class="capv-auth-top"><i class="capv-dot is-ok" aria-hidden="true"></i><span class="capv-state is-ok">已授权</span>${state.authProbe?.valid === false ? '<span class="capv-state is-warn">最近检测未通过</span>' : ''}</div>
+        <b class="capv-auth-name">${esc(auth.nickname || '已登录')}</b>
+        <p>营地 ID ${text(auth.userId)}</p>
+        <div class="capv-auth-meta">
+          ${stamp(auth.loginAt) ? `<span>授权于 ${esc(stamp(auth.loginAt))}</span>` : ''}
+          ${checkedAt ? `<span>最近检测 ${esc(stamp(checkedAt))}</span>` : ''}
+          <span>凭证只存在本机</span>
+        </div>
+      </div>`;
     } else {
-      authBody = `<div class="conn-auth is-off"><i class="conn-dot"></i>
-        <div class="conn-auth-main"><b>还没有营地凭证</b><small>扫码授权后才能拉取选手的最近对局</small></div>
-        <span class="chip is-idle">未授权</span></div>`;
+      authBody = `<div class="capv-auth-box">
+        <div class="capv-auth-top"><i class="capv-dot is-idle" aria-hidden="true"></i><span class="capv-state">未授权</span></div>
+        <b class="capv-auth-name">还没有营地凭证</b>
+        <p>扫码授权后才能拉取选手的最近对局；凭证只存在本机，不会上传。</p>
+      </div>`;
     }
 
+    // 选手白名单：一行一个选手，勾选 / 改名 / 移除都在行内。
+    // 所有 data-* 与 data-camp-user 原样保留，事件委托在 features.js 按字符串分发。
     const list = players.length
-      ? `<ul class="conn-list">${players.map((player) => {
-          const off = player.enabled === false;
-          return `<li class="${off ? 'is-off' : ''}">
-            <label class="conn-pick" title="取消勾选后，拉取对局会跳过这个号">
-              <input type="checkbox" ${off ? '' : 'checked'}
-                data-capture-action="player-toggle" data-camp-user="${esc(player.campUserId)}">
-              <span>拉取</span>
-            </label>
-            <b>${esc(player.nickname || '未命名')}</b><small>${text(player.campUserId)}</small>
-            <button class="conn-rename" data-capture-action="player-rename" data-camp-user="${esc(player.campUserId)}">改名</button>
-            <button class="conn-x" data-capture-action="player-remove" data-camp-user="${esc(player.campUserId)}" aria-label="移除这个选手">×</button>
-          </li>`;
-        }).join('')}</ul>`
-      : '';
+      ? `<div class="capv-players is-manage">${players.map((player) => playerRow(player, true)).join('')}</div>`
+      : '<p class="capv-empty-copy">还没有绑定选手。点右上「批量添加」，填入营地 ID 或分享链接即可。</p>';
 
-    const playersBody = `<div class="conn-players" data-tour="camp-players">
-      <div class="conn-players-head"><h3>选手白名单</h3><span class="conn-count">${fmt(players.length)} 位 · 勾选 ${fmt(players.filter((p) => p.enabled !== false).length)} 位</span></div>
-      <div class="conn-keytip">
-        <div><b>只绑一个每场都上的号就够</b><span>一局详情自带双方十人面板，不用每个选手都绑。</span></div>
-        <div><b>看不到某位选手的战绩？</b><span>让他在王者营地「隐私设置」里把教练加入白名单，否则拉不到他的对局。</span></div>
-        <div><b>这里的「改名」只是本机备注</b><span>比赛里的游戏ID → 选手ID 在「赛训 → 数据准备 → 身份对照」里统一改，一处命名处处生效。</span></div>
-      </div>
-      ${players.length ? '' : '<p class="conn-empty">还没有绑定选手 —— 填好下面这一栏，拉取就有东西可读了。</p>'}
-      <details class="camp-link-help" data-tour="camp-link">
-        <summary>怎么拿到这条链接？（带图步骤）</summary>
-        <div class="camp-link-body">
+    // 批量添加与操作说明都移进原生 <dialog>：Esc / 焦点由浏览器管理，不自造焦点陷阱。
+    const playersBody = `<div class="capv-players-box" data-tour="camp-players">
+      <header class="capv-subhead">
+        <div><h3>选手白名单</h3><p>${fmt(players.length)} 位 · 勾选 ${fmt(players.filter((p) => p.enabled !== false).length)} 位</p></div>
+        <div class="capv-subhead-actions">
+          <span class="capv-hint" data-tour="camp-link">怎么拿到分享链接？
+            <button class="capv-help" type="button" data-cap-dialog-open="cap-help-dialog" aria-label="查看获取链接的帮助">?</button></span>
+          <button class="ds-btn ds-btn-secondary" type="button" data-cap-dialog-open="cap-add-dialog">＋ 批量添加</button>
+        </div>
+      </header>
+      <p class="capv-hint">只绑一个每场都上的号就够 —— 一局详情自带双方十人面板；战绩对教练不可见时，请选手在营地隐私设置里把教练加入白名单。「改名」只是本机备注。</p>
+      ${list}
+      <dialog class="ds-help-dialog" id="cap-help-dialog" aria-labelledby="cap-help-title">
+        <div class="ds-dialog-head"><h2 id="cap-help-title">怎么拿到营地分享链接？</h2>
+          <form method="dialog"><button class="ds-dialog-x" value="cancel" autofocus aria-label="关闭帮助">×</button></form></div>
+        <div class="ds-dialog-body ds-help-body">
           <p class="camp-link-intro">这一步每位选手只做一次，配的是<strong>「选手是谁」</strong>，不是某一局：用他分享出来的营地链接解析出<strong>营地 ID</strong> 存进下面的白名单。之后每天点「拉取对局」就能同步他最近的比赛，不用再找他要链接。</p>
           <ol class="camp-link-steps">
             <li>
@@ -999,18 +1076,40 @@ export function createCapture(h) {
           <p>链接里 <code>userId=</code> 后面才是营地 ID，<code>roleId=</code> 是角色 ID，不要混；漏参数会提示「链接里没有营地 ID」。也可以直接填 5–15 位数字的营地 ID，或粘 <code>cu.qq.com</code> 短链（会自动展开）；<strong>微信小程序跳转链不能用</strong>，必须按第 02 步在浏览器里打开再复制。</p>
           <p>只绑一个每场都上的号就够 —— 一局详情自带双方十人面板。选手战绩对教练不可见时，请他在营地「隐私设置」里把教练加入白名单。</p>
         </div>
-      </details>
-      <form data-capture-form="player" class="conn-form">
-        <textarea name="identity" rows="3" autocomplete="off" spellcheck="false"
-          placeholder="一行一个营地 ID，也可以直接粘贴多条分享链接"></textarea>
-        <div class="conn-form-foot">
-          <p>支持换行、逗号或空格分隔，链接会自动解析。每场必上的号一位就够 —— 一局详情自带双方十人面板。</p>
-          <button class="primary" type="submit">批量添加</button>
-        </div>
-      </form>${list}</div>`;
+        <div class="ds-dialog-foot"><form method="dialog"><button class="ds-btn ds-btn-secondary" value="ok">知道了</button></form></div>
+      </dialog>
+      <dialog class="ds-add-dialog" id="cap-add-dialog" aria-labelledby="cap-add-title">
+        <div class="ds-dialog-head"><h2 id="cap-add-title">批量添加选手</h2>
+          <form method="dialog"><button class="ds-dialog-x" value="cancel" aria-label="关闭批量添加">×</button></form></div>
+        <form data-capture-form="player" class="conn-form ds-player-form">
+          <div class="ds-dialog-body">
+            <label class="ds-field-label" for="cap-identities">营地 ID 或分享链接</label>
+            <textarea id="cap-identities" name="identity" rows="6" autocomplete="off" spellcheck="false" autofocus
+              placeholder="一行一个营地 ID，也可以直接粘贴多条分享链接"></textarea>
+            <p class="ds-hint">支持换行、逗号或空格分隔，链接会自动解析。每场必上的号一位就够 —— 一局详情自带双方十人面板。</p>
+          </div>
+          <div class="ds-dialog-foot">
+            <button class="ds-btn ds-btn-quiet" type="button" data-cap-dialog-close>取消</button>
+            <button class="ds-btn ds-btn-primary" type="submit">批量添加</button>
+          </div>
+        </form>
+      </dialog>
+    </div>`;
 
-    return block('营地连接', '授权一次，之后每天点「拉取对局」；凭证只存在本机。',
-      `<div class="conn-body">${alert}${authBody}${playersBody}</div>`, actions, 'data-tour="camp-connect"');
+    return `<section class="capv-card capv-conn is-manage" data-tour="camp-connect">
+      <header class="capv-panel-head">
+        <div class="capv-panel-title">
+          <span class="capv-kicker">授权与选手</span>
+          <h2>营地连接</h2>
+        </div>
+        ${actions}
+      </header>
+      ${alert}
+      <div class="capv-conn-body">
+        <div class="capv-auth-col">${authBody}</div>
+        <div class="capv-players-col">${playersBody}</div>
+      </div>
+    </section>`;
   }
 
   // ---------------- 对局列表 ----------------
@@ -1020,13 +1119,14 @@ export function createCapture(h) {
     const s = state.summary;
     if (!s) return '';
     const parts = [`<b>上次同步 ${fmt(s.total)} 局</b>`];
-    parts.push(`<span class="cap-sum-ok">${fmt(s.saved)} 局进入正式统计</span>`);
-    if (s.review) parts.push(`<span class="cap-sum-warn">${fmt(s.review)} 局待缺失值审查</span>`);
-    if (s.unsupported) parts.push(`<span class="cap-sum-warn">${fmt(s.unsupported)} 局营地无详情</span>`);
-    if (s.failed) parts.push(`<span class="cap-sum-warn">${fmt(s.failed)} 局没拉全，可重试</span>`);
+    parts.push(`<span class="capv-sum-ok">${fmt(s.saved)} 局进入正式统计</span>`);
+    if (s.review) parts.push(`<span class="capv-sum-warn">${fmt(s.review)} 局待缺失值审查</span>`);
+    if (s.unsupported) parts.push(`<span class="capv-sum-warn">${fmt(s.unsupported)} 局营地无详情</span>`);
+    if (s.failed) parts.push(`<span class="capv-sum-warn">${fmt(s.failed)} 局没拉全，可重试</span>`);
     const problems = (s.problems || []).filter(Boolean).slice(0, 2);
-    return `<div class="cap-summary${s.failed && !s.saved && !s.unsupported ? ' is-error' : ''}">
-      ${parts.join('')}${problems.length ? `<small>${esc(problems.join('；'))}</small>` : ''}
+    return `<div class="capv-summary${s.failed && !s.saved && !s.unsupported ? ' is-error' : ''}">
+      <span class="capv-summary-main">${parts.join('')}</span>
+      ${problems.length ? `<small>${esc(problems.join('；'))}</small>` : ''}
     </div>`;
   }
 
@@ -1037,34 +1137,14 @@ export function createCapture(h) {
     const checked = Object.keys(state.checked).length;
     const blocked = Boolean(state.authIssue);
     const blockedHint = blocked
-      ? '<p class="capture-hint is-warn">营地授权已失效，拉取会失败 —— 先点「补充授权」重新扫码。</p>'
+      ? '<p class="capv-hint is-warn">营地授权已失效，拉取会失败 —— 先在「营地连接」里补充授权。</p>'
       : '';
     const moreAction = state.pullHasMore
-      ? `<button class="control" data-capture-action="pull-more" ${state.busy ? 'disabled' : ''}>继续拉取更早的对局</button>`
+      ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull-more" ${state.busy ? 'disabled' : ''}>继续拉取更早</button>`
       : '';
     const hasList = Boolean(list && list.length);
     const coverage = state.value?.officialCoverage || {};
     const fillable = Number(coverage.fillable) || 0;
-    const right = `<div class="capture-actions">
-      ${blocked ? '<button class="primary" data-capture-action="auth-start">补充授权</button>' : ''}
-      ${fillable ? `<button class="control" data-capture-action="backfill-official" ${state.busy ? 'disabled' : ''} title="按较慢速度逐局补拉，避免被营地限流；每次最多 10 局">${state.busy === 'backfill' ? '补拉回放中…' : `补拉缺失回放 ${fillable} 局`}</button>` : ''}
-      ${moreAction}
-      ${hasList ? `<button class="control" data-capture-action="check-all" ${list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
-      <button class="control" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消勾选</button>` : ''}
-      <button class="${hasList ? 'control' : 'primary'}" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : hasList ? '重新拉取' : '拉取对局'}</button>
-      ${hasList ? `<button class="${checked ? 'primary' : 'control'}" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>` : ''}</div>`;
-
-    const flow = `${summaryLine()}<div data-cap-progress>${progressBar()}</div>`;
-    if (!allPlayers.length) {
-      return block('拉取对局', '绑定选手后，这里会列出他们最近的战绩供你勾选。',
-        `<div class="cap-body">${flow}${blockedHint}<p class="capture-hint">还没有可拉取的选手 —— 先在上面「营地连接」里绑定一位。</p></div>`, right, 'data-tour="camp-pull"');
-    }
-    if (!players.length) {
-      const offNames = allPlayers.map((p) => p.nickname || p.campUserId).join('、');
-      return block('拉取对局', '所有选手都取消了勾选。',
-        `<div class="cap-body">${flow}${blockedHint}<p class="capture-hint is-warn">当前白名单里 ${esc(offNames)} 都取消勾选了。在「营地连接」里勾上至少一个号再拉取。</p></div>`,
-        right, 'data-tour="camp-pull"');
-    }
     const lastSync = (state.value?.sync?.details || []).reduce(
       (max, detail) => Math.max(max, Number(detail.syncedAt) || 0), 0);
     const daysAgo = lastSync ? Math.floor((Date.now() / 1000 - lastSync) / 86400) : null;
@@ -1072,30 +1152,84 @@ export function createCapture(h) {
     const channels = state.value?.channels?.channels || [];
     const autoPassed = channels.filter((channel) => channel.saved?.status === 'saved').length;
     const needReview = channels.filter((channel) => channel.saved?.status !== 'saved').length;
-    const statsStrip = `<div class="pull-strip">${[
-      ['上次拉取', lastLabel, ''],
-      ['已进正式统计', `${fmt(autoPassed)} 局`, ''],
-      ['待补全', `${fmt(needReview)} 条`, needReview ? ' is-warn' : ' is-ok'],
-      ['已绑定营地号', `${players.length} 个`, ''],
-    ].map(([label, value, tone]) => `<span class="pull-cell${tone}"><small>${esc(label)}</small><b>${esc(value)}</b></span>`).join('')}</div>`;
+
+    // 全选 / 补拉 / 重拉都是次操作；唯一的实心按钮留给「同步所选」。
+    const right = `<div class="capv-actions">
+      ${blocked ? '<button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">补充授权</button>' : ''}
+      ${fillable ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-official" ${state.busy ? 'disabled' : ''} title="按较慢速度逐局补拉，避免被营地限流；每次最多 10 局">${state.busy === 'backfill' ? '补拉回放中…' : `补拉缺失回放 ${fillable} 局`}</button>` : ''}
+      ${moreAction}
+      ${hasList ? `<button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-all" ${list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
+      <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消勾选</button>
+      <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : '重新拉取'}</button>
+      <button class="ds-btn ${checked ? 'ds-btn-primary' : 'ds-btn-secondary'}" type="button" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>` : ''}
+    </div>`;
+
+    const statsStrip = `<div class="capv-metrics">
+      <span class="capv-metric"><small>上次拉取</small><b>${esc(lastLabel)}</b></span>
+      <span class="capv-metric"><small>已进正式统计</small><b>${fmt(autoPassed)}<em>局</em></b></span>
+      ${needReview
+        ? `<button class="capv-metric is-todo" type="button" data-capture-action="scroll-channels" title="跳转到对局审查中的待办条目"><small>待补全 · 待办</small><b>${fmt(needReview)}<em>条</em></b><i aria-hidden="true">→</i></button>`
+        : `<span class="capv-metric"><small>待补全</small><b>0<em>条</em></b></span>`}
+      <span class="capv-metric"><small>已绑定营地号</small><b>${players.length}<em>个</em></b></span>
+    </div>`;
+
+    const chip = blocked ? '<span class="capv-state is-warn">授权失效</span>'
+      : !allPlayers.length ? '<span class="capv-state">待绑定选手</span>'
+        : !players.length ? '<span class="capv-state is-warn">已全部跳过</span>'
+          : hasList ? '<span class="capv-state is-ok">已读取</span>'
+            : '<span class="capv-state">可拉取</span>';
+
+    const panel = (body, headActions = right) => `<section class="capv-card capv-pull" data-tour="camp-pull">
+      <header class="capv-panel-head">
+        <div class="capv-panel-title">
+          <div class="capv-title-line"><span class="capv-kicker">营地同步 · 第 3 步</span>${chip}</div>
+          <h2>拉取对局</h2>
+        </div>
+        ${headActions}
+      </header>
+      ${statsStrip}
+      <div class="capv-pull-body">${body}</div>
+    </section>`;
+
+    const flow = `${summaryLine()}<div data-cap-progress>${progressBar()}</div>`;
+
+    const authReady = Boolean(state.value?.sync?.auth?.authorized) && !state.authIssue;
+    if (!allPlayers.length) {
+      return panel(`<div class="capv-empty">
+        <span class="capv-empty-glyph">${icon('players')}</span>
+        <div class="capv-empty-copy"><b>${authReady ? '还没有可拉取的选手' : '先完成营地授权'}</b>
+          <p>${authReady
+            ? '先在「营地连接」里绑定一位每场都上的号，之后拉取会自动带上双方十人面板。'
+            : '扫码授权后用一位每场都上的号建立白名单，再回来拉取最近对局。'}</p></div>
+        <button class="ds-btn ds-btn-primary" type="button" data-capture-action="${authReady ? 'focus-player' : 'auth-start'}">${authReady ? '去绑定选手' : '扫码授权'}</button>
+      </div>${flow}`);
+    }
+    if (!players.length) {
+      const offNames = allPlayers.map((p) => p.nickname || p.campUserId).join('、');
+      return panel(`<div class="capv-empty is-warn">
+        <span class="capv-empty-glyph">${icon('players')}</span>
+        <div class="capv-empty-copy"><b>所有选手都取消了拉取</b><p>当前白名单里 ${esc(offNames)} 都被跳过了。到「营地连接」里打开至少一个号再拉取。</p></div>
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="conn-toggle">去营地连接</button>
+      </div>${flow}`);
+    }
 
     if (!list) {
       const stale = daysAgo !== null && daysAgo >= 1;
-      /* 「点右上角开始」和「无缺失自动进统计、缺字段去审查」原来挤在右侧一句长注释里；
-         按钮就在标题旁，前一句是废话，后一句并进副标题，右侧只留真正有时效的提醒。 */
       const note = [state.listNote || '',
         stale ? '上次拉取已超过一天，训练赛后记得再拉一次。' : ''].filter(Boolean).join(' ');
-      return block('拉取对局',
-        `读取 ${players.length} 位选手的最近对局，按对局去重；无缺失自动进正式统计，缺字段落到下方「对局审查」。`,
-        `<div class="cap-body">${flow}${blockedHint}<div class="pull-empty">${statsStrip}
-          ${note ? `<p class="pull-note">${esc(note)}</p>` : ''}</div></div>`,
-        right, 'data-tour="camp-pull"');
+      return panel(`${flow}${blockedHint}<div class="capv-empty">
+        <span class="capv-empty-glyph">${icon('ingest')}</span>
+        <div class="capv-empty-copy"><b>${daysAgo === null ? '还没有拉取过对局' : `上次拉取在${lastLabel}`}</b>
+          <p>${esc(note || '营地只保留最近 30 天的对局详情；训练赛结束后当天拉取，才能自动补全十人面板。')}</p></div>
+        <button class="ds-btn ds-btn-primary" type="button" data-capture-action="pull" ${state.busy === 'pull' || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : '拉取最近对局'}</button>
+      </div>`);
     }
     if (!list.length) {
-      return block('拉取对局', '最近没有新的对局。',
-        `<div class="cap-body">${flow}${blockedHint}<div class="pull-empty">${statsStrip}
-          <p class="pull-note">${esc(state.listNote || '选手最近没有可拉取的对局。')}</p></div></div>`,
-        right, 'data-tour="camp-pull"');
+      return panel(`${flow}${blockedHint}<div class="capv-empty">
+        <span class="capv-empty-glyph">${icon('ingest')}</span>
+        <div class="capv-empty-copy"><b>最近没有可拉取的新对局</b><p>${esc(state.listNote || '选手最近没有新的战绩；营地只保留最近 30 天的对局详情。')}</p></div>
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull" ${state.busy === 'pull' || blocked ? 'disabled' : ''}>重新拉取</button>
+      </div>`);
     }
 
     const entryRow = (entry) => {
@@ -1119,21 +1253,24 @@ export function createCapture(h) {
         entry.gradeGame ? `评分 ${entry.gradeGame}` : '', entry.roleJobName || '',
         entry.desc || ''].filter(Boolean).join(' · ');
       const extra = [entry.ownerName || entry.owner || '', `对局 ${seq}`].filter(Boolean).join(' · ');
-      const stateChip = already ? '<i class="chip is-in">已进统计</i>'
-        : inReview ? '<i class="chip is-warn" title="十人面板已挂上，等缺失值审查处理">待审查</i>'
-          : expired ? '<i class="chip is-idle" title="营地只提供最近一个月的战局详情；这局要走截图或录屏「新录入一局」">营地无详情</i>'
-            : needsDetail ? '<i class="chip is-warn" title="审查记录已建，但十人面板还没挂上；同步会补详情">通道待补详情</i>'
-              : needsChannel ? '<i class="chip is-warn" title="详情已缓存，同步时不用重新下载，只补建审查记录">补建记录</i>'
-                : '<i class="chip is-pending">待同步</i>';
-      return `<label class="ingest-row is-check ${!selectable ? 'is-in' : ''}">
+      const stateChip = already ? '<span class="capv-state is-ok">已进统计</span>'
+        : inReview ? '<span class="capv-state is-warn" title="十人面板已挂上，等缺失值审查处理">待审查</span>'
+          : expired ? '<span class="capv-state" title="营地只提供最近一个月的战局详情；这局要走截图或录屏「新录入一局」">营地无详情</span>'
+            : needsDetail ? '<span class="capv-state is-warn" title="审查记录已建，但十人面板还没挂上；同步会补详情">待补详情</span>'
+              : needsChannel ? '<span class="capv-state is-warn" title="详情已缓存，同步时不用重新下载，只补建审查记录">补建记录</span>'
+                : '<span class="capv-state">待同步</span>';
+      const titleBits = [mode, hero ? `${hero} ${kda}` : ''].filter(Boolean).join(' · ');
+      const metaBits = [matchMinutes(entry.usedTime),
+        entry.gradeGame ? `评分 ${entry.gradeGame}` : '', entry.roleJobName || '',
+        extra].filter(Boolean).join(' · ');
+      return `<label class="capv-game${!selectable ? ' is-in' : ''}">
         <input type="checkbox" data-capture-check="${esc(seq)}" ${checkedAttr} ${!selectable ? 'disabled' : ''}>
-        <span class="ingest-date"><b>${esc(when.day || '--')}</b><small>${esc(when.clock || '时间未知')}</small></span>
-        <span class="ingest-main"><b>${resultChip(entry)}<span>${esc(when.clock || when.day)} ${esc(mode)}</span></b>
-          <small title="${esc(bits)}">${esc(bits)}</small>
-          <small class="ingest-extra">${esc(extra)}</small></span>
-        <span class="ingest-chips">
-          ${stateChip}
+        <span class="capv-game-date"><b>${esc(when.day || '--')}</b><small>${esc(when.clock || '时间未知')}</small></span>
+        <span class="capv-game-main">
+          <span class="capv-game-title">${resultChip(entry)}<b>${esc(titleBits)}</b></span>
+          <small title="${esc(bits)}">${esc(metaBits)}</small>
         </span>
+        <span class="capv-game-side">${stateChip}</span>
       </label>`;
     };
 
@@ -1145,70 +1282,71 @@ export function createCapture(h) {
     const expiredRows = list.filter((entry) => !entry.imported && !entry.channelReady
       && campDetailExpired(entry));
 
-    const moreHint = state.pullHasMore
-      ? `已翻 ${state.pullPages} 页，还能继续拉更早的。`
-      : `已翻 ${state.pullPages} 页，已到底。`;
     const fold = (rows, label, extra = '') => (rows.length
-      ? `<details class="ingest-fold${extra}"><summary>${esc(label)} <i>${fmt(rows.length)}</i> 局</summary>
-          <div class="ingest-list">${rows.map(entryRow).join('')}</div></details>`
+      ? `<details class="capv-fold-list${extra}"><summary><span>${esc(label)}</span><em>${fmt(rows.length)} 局</em><i aria-hidden="true">⌄</i></summary>
+          <div class="capv-games">${rows.map(entryRow).join('')}</div></details>`
       : '');
 
-    const expiredCallout = expiredRows.length ? `<div class="ingest-callout" role="status">
-      <div class="ingest-callout-copy">
-        <b>${fmt(expiredRows.length)} 局营地无详情</b>
-        <span>营地只保留最近一个月的对局详情（手机营地 App 里也打不开）。这些局不是补采，要用截图或录屏「新录入一局」直接建档。</span>
+    const expiredCallout = expiredRows.length ? `<div class="capv-callout" role="status">
+      <span class="capv-callout-icon" aria-hidden="true">!</span>
+      <div class="capv-callout-copy">
+        <b>${fmt(expiredRows.length)} 局超出营地详情窗口</b>
+        <p>营地只保留最近一个月的对局详情（手机营地 App 里也打不开）。这些局不是补采，要用截图或录屏「新录入一局」直接建档。</p>
       </div>
-      <div class="capture-actions">
-        <button class="control" data-capture-action="backfill-open">新录入一局</button>
-        <button class="control" data-capture-action="jump-ocr">去截图 / 录屏 →</button>
+      <div class="capv-actions">
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">新录入一局</button>
+        <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="jump-ocr">去截图 / 录屏 →</button>
       </div>
     </div>` : '';
 
     const pendingList = pendingRows.length
-      ? `<div class="ingest-list">${pendingRows.map(entryRow).join('')}</div>`
-      : `<p class="capture-hint">${reviewRows.length || importedRows.length || expiredRows.length
+      ? `<div class="capv-games">${pendingRows.map(entryRow).join('')}</div>`
+      : `<p class="capv-hint">${reviewRows.length || importedRows.length || expiredRows.length
         ? '没有待同步的新局；下面的折叠里有已进统计和营地无详情的局。'
         : '没有可同步的新局。'}</p>`;
 
     // 列表一长，顶部的「全部取消勾选」要滚回去才点得到；底下再放一条同样的出口。
     const clearBar = checked
-      ? `<div class="capture-actions ingest-clear">
-          <span class="capture-hint">已勾选 ${fmt(checked)} 局</span>
-          <button class="control" data-capture-action="check-none">全部取消勾选</button>
+      ? `<div class="capv-selection-bar">
+          <span>已勾选 <b>${fmt(checked)}</b> 局</span>
+          <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-none">全部取消</button>
+          <button class="ds-btn ds-btn-primary" type="button" data-capture-action="import" ${state.busy ? 'disabled' : ''}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>
         </div>`
       : '';
 
-    return block('拉取对局',
-      `待同步 ${fmt(pendingRows.length)} · 已进统计 ${fmt(importedRows.length)}`
-      + `${expiredRows.length ? ` · 营地无详情 ${fmt(expiredRows.length)}` : ''}`
-      + `${reviewRows.length ? ` · 待审查 ${fmt(reviewRows.length)}` : ''}`
-      + ` · 已勾选 ${fmt(checked)}。${moreHint}`,
-      `<div class="cap-body">${flow}${expiredCallout}${pendingList}${clearBar}`
+    const footNote = state.busy === 'import' ? '正在同步并写入正式统计…' : (state.listNote || '');
+    return panel(`${flow}${expiredCallout}${pendingList}${clearBar}`
       + fold(importedRows, '已进正式统计')
       + fold(expiredRows, '营地无详情（超过一个月）', ' is-warn')
       + fold(reviewRows, '已在缺失值审查')
-      + `<p class="capture-hint">${esc(state.busy === 'import' ? '正在同步并写入正式统计…' : (state.listNote || ''))}</p></div>`,
-      right, 'data-tour="camp-pull"');
+      + (footNote ? `<p class="capv-hint">${esc(footNote)}</p>` : ''));
   }
 
   // ---------------- 页面 ----------------
 
   /** 营地拿不到的老对局：先新录入一局（建通道），再去截图/录屏页把识别结果录入到这一局。 */
   function backfillPanel() {
-    if (!state.backfillOpen) return '';
-    return `<section class="section backfill-panel" data-tour="camp-backfill">
-      <div class="section-heading"><div><h2>新录入一局</h2>
-        <p>营地一个月窗口外的历史数据（超过一个月、选手隐藏战绩等）：营地没有可补采的通道，先建一局，再到截图 / 录屏页把识别结果录入到这一局。</p></div>
-        <div class="capture-actions"><button class="control" data-capture-action="backfill-close">取消</button></div></div>
-      <div class="backfill-fields">
+    if (!state.backfillOpen) {
+      return `<div class="capv-backfill-intro">
+        <div><b>营地一个月窗口外的老局</b>
+          <p>超过一个月、或选手隐藏了战绩的局，营地没有可补采的通道；先在这里建一局，再去截图 / 录屏页把识别结果录进这一局。</p></div>
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">新录入一局</button>
+      </div>`;
+    }
+    return `<div class="capv-backfill" data-tour="camp-backfill">
+      <div class="capv-backfill-head">
+        <div><h3>新录入一局</h3><p>先建一条空白通道，截图或录屏识别完再挂进来。</p></div>
+        <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="backfill-close">取消</button>
+      </div>
+      <div class="capv-backfill-fields">
         <label>比赛日期<input type="date" data-backfill="date" value="${today()}"></label>
         <label>训练组 / 对手<input type="text" data-backfill="session" maxlength="40" autocomplete="off" placeholder="如 0917 训练赛 / 对手名"></label>
-        <button class="primary" data-capture-action="backfill-create" ${state.busy ? 'disabled' : ''}>
+        <button class="ds-btn ds-btn-primary" type="button" data-capture-action="backfill-create" ${state.busy ? 'disabled' : ''}>
           ${state.busy === 'backfill' ? '正在建…' : '建好这局，去传截图'}</button>
       </div>
-      <p class="capture-hint">建好后会跳到「截图 OCR」：七张截图识别完，在卡片左侧「补采到已有对局」里选中这一局（已预选）补进去；也可以在录屏页用「补采到已有对局」补一段完整录像。补完再去校对页核对保存。
-        <a class="cap-guide-link" href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">先看拍摄要求 →</a></p>
-    </section>`;
+      <p class="capv-hint">建好后会跳到「截图 OCR」：七张截图识别完，在卡片左侧「补采到已有对局」里选中这一局（已预选）补进去；也可以在录屏页用「补采到已有对局」补一段完整录像。补完再去校对页核对保存。
+        <a href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">先看拍摄要求 →</a></p>
+    </div>`;
   }
 
   /** 按当前状态给出「今天这一步该做什么」，只显示一个动作。 */
@@ -1220,28 +1358,28 @@ export function createCapture(h) {
     if (!auth.authorized) {
       title = '第 1 步 · 授权王者营地';
       desc = '用教练号扫码授权一次，凭证只存在本机。之后每天拉取都不必再扫。';
-      action = '<button class="primary" data-capture-action="auth-start">扫码授权</button>';
+      action = '<button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">扫码授权</button>';
     } else if (!players.length) {
       title = '第 2 步 · 绑定一位选手的营地 ID';
       desc = '挑每场必上的号（通常是队长）。让他在王者营地分享任意一局战绩到微信并复制链接，'
         + '把链接粘贴到下方「营地选手」的输入框即可，会自动解析出 ID。一局详情自带双方十人面板，所以一个号就够。';
-      action = '<button class="control" data-capture-action="focus-player">去添加</button>';
+      action = '<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="focus-player">去添加</button>';
     } else if (!state.list) {
       title = '第 3 步 · 拉取最近对局';
       desc = `会读取 ${players.length} 位选手的最近战绩，按对局去重后让你勾选；进行中的对局不会包含在内。`;
-      action = '<button class="primary" data-capture-action="pull">拉取对局</button>';
+      action = '<button class="ds-btn ds-btn-primary" type="button" data-capture-action="pull">拉取对局</button>';
     } else if (Object.keys(state.checked).length) {
       const count = Object.keys(state.checked).length;
       title = `第 4 步 · 同步所选 ${count} 局`;
       desc = '同步后无缺失值的对局直接进入正式统计；只有缺英雄或面板字段的局才进缺失值审查。';
-      action = `<button class="primary" data-capture-action="import">同步所选 ${count} 局</button>`;
+      action = `<button class="ds-btn ds-btn-primary" type="button" data-capture-action="import">同步所选 ${count} 局</button>`;
     } else {
       title = '今天没有需要同步的新对局';
       desc = pending
         ? `还有 ${pending} 条在缺失值审查，可以在下面逐条确认。`
         : '无缺失值的对局都已进入正式统计。下次训练赛结束后重新拉取即可。';
       action = pending
-        ? `<button class="control" data-capture-action="scroll-channels">查看 ${pending} 条</button>`
+        ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="scroll-channels">查看 ${pending} 条</button>`
         : '';
     }
 
@@ -1276,12 +1414,12 @@ export function createCapture(h) {
       title = '工作台没有响应';
       body = '工作台可能正在重启，或者还没启动。启动后这一页会自动重新读取，也可以现在手动再试一次。';
     }
-    return `<div class="cap-page"><section class="cap-offline" role="status">
-      <div class="cap-offline-main">
-        <i class="cap-offline-dot" aria-hidden="true"></i>
-        <div><h2>${esc(title)}</h2><p>${body}</p></div>
+    return `<div class="cap-page capv-page"><section class="capv-offline" role="status">
+      <div class="capv-offline-main">
+        <span class="capv-offline-dot" aria-hidden="true"></span>
+        <div><span class="capv-kicker">采集服务</span><h2>${esc(title)}</h2><p>${body}</p></div>
       </div>
-      <div class="cap-offline-actions">${actions}</div>
+      <div class="capv-actions">${actions}</div>
     </section></div>`;
   }
 
@@ -1289,7 +1427,7 @@ export function createCapture(h) {
     if (value?.unavailable) {
       /* 状态卡本身承担标题、原因与下一步；页面副标题仍说明这一页是做什么的，
          也不再摆「数据范围」——那个按钮在这时点了没有任何意义。 */
-      return withPage('营地同步', '授权一次，之后每天增量拉取；营地一个月窗口外的老局用截图 / 录屏新录入。',
+      return withPage('营地同步', '',
         unavailableCard(value.failure || state.failure), false, '', false);
     }
     const list = value?.channels?.channels || [];
@@ -1339,10 +1477,10 @@ export function createCapture(h) {
     const notice = [
       /* 只有审查列表没读到：页面其余部分照常可用，别为了半边数据把整页停掉。 */
       state.degraded
-        ? `<div class="capture-notice is-error" role="status">${esc(state.degraded)}暂时读不到，页面其余部分照常；点右上角刷新可重试。</div>`
+        ? `<div class="capv-notice is-error" role="status">${esc(state.degraded)}暂时读不到，页面其余部分照常；点右上角刷新可重试。</div>`
         : '',
       state.notice
-        ? `<div class="capture-notice${state.notice.isError ? ' is-error' : ''}" role="status">${esc(state.notice.message)}</div>`
+        ? `<div class="capv-notice${state.notice.isError ? ' is-error' : ''}" role="status">${esc(state.notice.message)}</div>`
         : '',
     ].join('');
 
@@ -1355,61 +1493,69 @@ export function createCapture(h) {
     const ocrChannels = pendingChannels.filter((channel) => Number(channel.sourceStatus?.counts?.camp || 0) === 0);
     const passableChannels = ocrChannels.filter((channel) => !(channel.missing || []).length);
 
-    const reviewActions = `<div class="capture-actions">
-      <button class="control" data-capture-action="backfill-open">新录入一局（截图/录屏）</button>
-      ${passableChannels.length ? `<button class="primary" data-capture-action="approve-clean" ${state.busy ? 'disabled' : ''}>
+    const reviewActions = `<div class="capv-actions">
+      <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">新录入一局</button>
+      ${passableChannels.length ? `<button class="ds-btn ds-btn-primary" type="button" data-capture-action="approve-clean" ${state.busy ? 'disabled' : ''}>
         ${state.busy === 'approve' ? '正在通过…' : `一键通过无缺失 ${passableChannels.length} 条`}</button>` : ''}
     </div>`;
 
-    const flowBar = `<div class="flow-bar">
-      <label class="flow-search">${icon('search')}
+    const flowBar = `<div class="capv-filterbar">
+      <label class="capv-search">${icon('search')}
         <input type="search" data-ingest-query value="${esc(state.query)}"
-          placeholder="搜索对局审查" aria-label="搜索对局审查"></label>
-      <div class="seg" role="group" aria-label="数据范围">
+          placeholder="搜索对手 / 训练组 / 英雄" aria-label="搜索对局审查"></label>
+      <div class="capv-seg" role="group" aria-label="数据范围">
         <button data-ingest-scope="all" class="${state.scope === 'all' ? 'is-on' : ''}">全部 <i>${pendingChannels.length}</i></button>
         <button data-ingest-scope="real" class="${state.scope === 'real' ? 'is-on' : ''}">真实 <i>${pendingChannels.length - seedCount}</i></button>
         <button data-ingest-scope="seed" class="${state.scope === 'seed' ? 'is-on' : ''}">验证 <i>${seedCount}</i></button>
       </div>
-      <div class="seg" role="group" aria-label="时间范围">
+      <div class="capv-seg" role="group" aria-label="时间范围">
         <button data-ingest-range="all" class="${state.range === 'all' ? 'is-on' : ''}">全部时间</button>
         <button data-ingest-range="7" class="${state.range === '7' ? 'is-on' : ''}">近 7 天</button>
         <button data-ingest-range="30" class="${state.range === '30' ? 'is-on' : ''}">近 30 天</button>
         <button data-ingest-range="custom" class="${state.range === 'custom' ? 'is-on' : ''}">自定义</button>
       </div>
-      ${filtering ? '<button class="flow-clear" data-capture-action="clear-filter">清除筛选</button>' : ''}
+      ${filtering ? '<button class="capv-clear" type="button" data-capture-action="clear-filter">清除筛选</button>' : ''}
     </div>
-    ${state.range === 'custom' ? `<div class="flow-dates">
+    ${state.range === 'custom' ? `<div class="capv-dates">
       <label>从<input type="date" data-ingest-from value="${esc(state.fromDate)}"></label>
       <label>到<input type="date" data-ingest-to value="${esc(state.toDate)}"></label>
     </div>` : ''}`;
 
-    const campGroup = `<section class="review-group${campChannels.length ? '' : ' is-empty'}">
-      <header>
-        <b>王者营地</b>
-        <i class="chip ${campChannels.length ? 'is-warn' : 'is-done'}">${campChannels.length ? `${fmt(campChannels.length)} 条待补全` : '无需补全'}</i>
-        <small>营地同步的局字段齐全就自动进正式统计；缺字段的留在这里补全后再入库。</small>
+    const campGroup = `<section class="capv-group${campChannels.length ? '' : ' is-empty'}">
+      <header class="capv-group-head">
+        <div class="capv-group-title"><b>王者营地</b>
+          <span class="capv-state ${campChannels.length ? 'is-warn' : 'is-ok'}">${campChannels.length ? `${fmt(campChannels.length)} 条待补全` : '无需补全'}</span></div>
+        <p>营地同步的局字段齐全就自动进正式统计；缺字段的留在这里补全后再入库。</p>
       </header>
-      ${''}<div data-ingest-list="camp">${renderChannelList(filterChannels(campChannels), lookups(), filtering,
+      <div data-ingest-list="camp">${renderChannelList(filterChannels(campChannels), lookups(), filtering,
         '营地同步的局都已自动进入正式统计，没有需要人工审核的记录。')}</div>
     </section>`;
 
-    const ocrGroup = `<section class="review-group${ocrChannels.length ? '' : ' is-empty'}">
-      <header>
-        <b>截图 / 录屏 OCR</b>
-        <i class="chip ${ocrChannels.length ? 'is-warn' : 'is-good'}">${fmt(ocrChannels.length)} 条待审核</i>
-        <small>OCR 识别的字段可能有缺，逐条确认后才能保存。</small>
+    const ocrGroup = `<section class="capv-group${ocrChannels.length ? '' : ' is-empty'}">
+      <header class="capv-group-head">
+        <div class="capv-group-title"><b>截图 / 录屏 OCR</b>
+          <span class="capv-state ${ocrChannels.length ? 'is-warn' : 'is-ok'}">${ocrChannels.length ? `${fmt(ocrChannels.length)} 条待审核` : '无需审核'}</span></div>
+        <p>OCR 识别的字段可能有缺，逐条确认后才能保存。</p>
       </header>
-      ${''}<div data-ingest-list="ocr">${renderChannelList(filterChannels(ocrChannels), lookups(), filtering,
+      <div data-ingest-list="ocr">${renderChannelList(filterChannels(ocrChannels), lookups(), filtering,
         '还没有截图 / 录屏新录入的局。营地一个月窗口外的老局在这里新录入。')}</div>
     </section>`;
 
-    const reviewBlock = block('对局审查',
-      `本期已自动入库 ${fmt(autoPassed)} 局；营地缺字段的待补全 ${fmt(campChannels.length)} 条，截图 / 录屏 OCR 待确认 ${fmt(ocrChannels.length)} 条。`,
-      `<div class="cap-body">${flowBar}<div class="review-split">${campGroup}${ocrGroup}</div></div>`,
-      reviewActions, 'data-tour="camp-flow"');
+    const reviewBlock = `<section class="capv-card capv-review-panel" data-tour="camp-flow">
+      <header class="capv-panel-head">
+        <div class="capv-panel-title">
+          <div class="capv-title-line"><span class="capv-kicker">对局审查 · 第 5 步</span>
+            <span class="capv-state ${pendingChannels.length ? 'is-warn' : 'is-ok'}">${pendingChannels.length ? `${fmt(pendingChannels.length)} 条待处理` : '已清空'}</span></div>
+          <h2>对局审查</h2>
+        </div>
+        ${reviewActions}
+      </header>
+      <div class="capv-review-filters">${flowBar}</div>
+      <div class="capv-review-groups">${campGroup}${ocrGroup}</div>
+    </section>`;
 
     const connection = connectionBlock(auth, players);
-    const work = players.length ? pullBlock(players) : '';
+    const work = pullBlock(players);
     const { tab, id } = routeParts();
     const shotGroups = value?.shots?.groups?.length || 0;
     const recordingCount = value?.recordings?.recordings?.length || 0;
@@ -1424,32 +1570,63 @@ export function createCapture(h) {
       ['replays', '回放', replayCount ? `${replayCount} 段` : '', '#replays'],
       ['review', '对局审查', pendingChannels.length ? `${pendingChannels.length} 条` : '', '#review'],
     ];
-    const tabBar = `<nav class="cap-tabs" aria-label="采集步骤">${tabs.map(([key, label, count, href]) =>
-      `<a class="cap-tab${tab === key ? ' is-on' : ''}" href="${href}"${tab === key ? ' aria-current="page"' : ''}>${esc(label)}${count ? `<i>${esc(count)}</i>` : ''}</a>`).join('')}</nav>`;
+    const tabBar = `<nav class="capv-tabs" aria-label="采集步骤">${tabs.map(([key, label, count, href], index) =>
+      `<a class="capv-tab${tab === key ? ' is-on' : ''}" href="${href}"${tab === key ? ' aria-current="page"' : ''}>
+        <span class="capv-tab-no" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span>
+        <span class="capv-tab-name">${esc(label)}</span>
+        ${count ? `<span class="capv-tab-count">${esc(count)}</span>` : ''}
+      </a>`).join('')}</nav>`;
 
-    const campPanel = `${compact ? '' : heroCard({
-      auth, players, pending: pendingChannels.length, missing: missingChannels.length,
-      autoPassed, channels: list.length, daysAgo, compact,
-    })}
-      ${connection}
-      ${work}
-      ${backfillPanel()}
-      <details class="tier-fold"><summary>采集来源档位 —— 营地窗口内走同步，窗口外 / 缺素材走截图 / 录屏</summary>
-        <div class="sv-tiers">${SOURCE_TIERS.map(([name, tier, note, href]) => `<div class="sv-tier is-${tier.key}">
-          <span class="sv-tier-tag">${esc(tier.label)}</span>
-          <b>${esc(name)}</b>
-          <small>${esc(note)}</small>
-          ${href ? `<a class="sv-tier-go" href="${esc(href)}">打开 →</a>` : '<span class="sv-tier-go is-none">无需单独操作</span>'}
-        </div>`).join('')}</div></details>`;
+    const tiers = `<div class="capv-tiers">${SOURCE_TIERS.map(([name, tier, note, href]) => `<div class="capv-tier is-${tier.key}">
+      <span class="capv-tier-tag">${esc(tier.label)}</span>
+      <div class="capv-tier-copy"><b>${esc(name)}</b><small>${esc(note)}</small></div>
+      ${href ? `<a class="capv-tier-go" href="${esc(href)}">打开 →</a>` : '<span class="capv-tier-go is-none">无需单独操作</span>'}
+    </div>`).join('')}</div>`;
+
+    const reviewTeaser = `<a class="capv-rail-card capv-todo${pendingChannels.length ? '' : ' is-clear'}" href="#review">
+      <div class="capv-todo-head"><span class="capv-kicker">对局审查</span><span aria-hidden="true">→</span></div>
+      <b class="capv-todo-num">${fmt(pendingChannels.length)}<em>条</em></b>
+      <p>${pendingChannels.length
+        ? `营地 ${fmt(campChannels.length)} 条 · 截图 / 录屏 ${fmt(ocrChannels.length)} 条`
+        : '字段全部齐全，没有待处理记录'}</p>
+    </a>`;
+
+    const guide = `<details class="capv-rail-card capv-guide">
+      <summary><div><span class="capv-kicker">素材说明</span><b>各类素材能补哪些数据</b></div><i aria-hidden="true">⌄</i></summary>
+      ${tiers}
+    </details>`;
+
+    const connInRail = !state.connOpen && !state.qr;
+    const backfillFold = `<details class="capv-panel-fold"${state.backfillOpen ? ' open' : ''}>
+      <summary><span>补录历史对局</span><em>营地窗口外的老局</em><i aria-hidden="true">⌄</i></summary>
+      <div class="capv-panel-fold-body">${backfillPanel()}</div>
+    </details>`;
+
+    const campPanel = compact
+      ? `<div class="capv-layout">
+          <div class="capv-main">${connInRail ? '' : connection}${work}${backfillFold}</div>
+          <aside class="capv-rail">${connInRail ? connection : ''}${reviewTeaser}${guide}</aside>
+        </div>`
+      : `${heroCard({
+        auth, players, pending: pendingChannels.length, missing: missingChannels.length,
+        autoPassed, channels: list.length, daysAgo, compact,
+      })}
+        ${connection}
+        ${work}
+        ${backfillFold}
+        <details class="capv-card capv-guide is-wide">
+          <summary><div><span class="capv-kicker">素材说明</span><b>各类素材能补哪些数据</b></div><i aria-hidden="true">⌄</i></summary>
+          ${tiers}
+        </details>`;
 
     const embedded = (name) => `<div class="cap-embed" data-source-section="${name}">${
       sourcePages()?.body?.(name, sourceValue(name)) || ''}</div>`;
 
     const reviewPanel = id
-      ? `<div class="cap-embed cap-review" data-review-embed="${esc(id)}">${
+      ? `<div class="cap-embed capv-embed cap-review" data-review-embed="${esc(id)}">${
         (reviewPages()?.snapshot?.(id) || state.reviewValue)
           ? reviewPages()?.body?.(id, reviewPages()?.snapshot?.(id) || state.reviewValue, true) || ''
-          : '<p class="capture-hint">正在读取这一局的审查明细…</p>'}</div>`
+          : '<p class="capv-hint">正在读取这一局的审查明细…</p>'}</div>`
       : reviewBlock;
 
     const panels = {
@@ -1460,12 +1637,12 @@ export function createCapture(h) {
       review: reviewPanel,
     };
 
-    return withPage('采集', '营地同步、截图 / 录屏、回放与对局审查都在这一页：营地窗口内的局走同步，窗口外的老局新录入。',
-      `<div class="cap-page">
+    return withPage('采集', '',
+      `<div class="cap-page capv-page">
         ${notice}
         ${tabBar}
         ${panels[tab] || panels.camp}
-      </div>`, false);
+      </div>`, false, '', false);
   }
 
   // ---------------- 交互 ----------------
@@ -1534,6 +1711,7 @@ export function createCapture(h) {
     const input = form.querySelector('[name="identity"]');
     const tokens = splitIdentities(input?.value);
     if (!tokens.length) return;
+    form.closest('dialog')?.close(); // 提交后立刻关弹窗，后续整页重绘不会留下悬空对话框
 
     state.busy = 'player';
     setNotice(`正在处理 ${tokens.length} 个营地 ID…`);
@@ -2077,14 +2255,18 @@ export function createCapture(h) {
         return true;
       }
       if (action === 'focus-player') {
-        const input = document.querySelector('[data-capture-form="player"] input[name="identity"]');
-        if (input) { input.scrollIntoView({ block: 'center', behavior: 'smooth' }); input.focus(); }
+        const form = document.querySelector('[data-capture-form="player"]');
+        const input = form?.querySelector('[name="identity"]');
+        const dialog = form?.closest('dialog');
+        if (dialog && !dialog.open) dialog.showModal();
+        if (input) input.focus();
         return true;
       }
       if (action === 'scroll-channels') {
-        // 区块顺序会随「营地连接」折叠而变，按标记找，别用下标。
+        // 采集页的审查区在「对局审查」页签；不在页签上时直接切过去。
         const host = document.querySelector('[data-tour="camp-flow"]');
         if (host) host.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        else location.hash = '#review';
         return true;
       }
       if (action === 'check-all') {
@@ -2150,13 +2332,19 @@ export function createCapture(h) {
       if (action === 'import') { await importSelected(); return true; }
       if (action === 'approve-clean') { await approveClean(); return true; }
       if (action === 'conn-toggle') { state.connOpen = !state.connOpen; paint(); return true; }
-      if (action === 'backfill-open') { state.backfillOpen = true; paint(); return true; }
+      if (action === 'backfill-open') {
+        state.backfillOpen = true;
+        if (routeParts().tab !== 'camp') location.hash = '#ingest';
+        else paint();
+        return true;
+      }
       if (action === 'backfill-close') { state.backfillOpen = false; paint(); return true; }
       if (action === 'backfill-create') { await createBackfillMatch(); return true; }
       if (action === 'upload-shots') { await uploadIngestShots(); return true; }
       if (action === 'jump-ocr') {
         const host = document.getElementById('ocr-windows');
         if (host) host.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        else location.hash = '#shots';
         return true;
       }
       if (action === 'player-remove') { await removePlayer(button.dataset.campUser); return true; }

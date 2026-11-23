@@ -34,14 +34,14 @@ def game(seq, start, own_side, own_win, own_picks, enemy_picks, own_bans, enemy_
 def make_games():
     games = []
     own_bans = [ban('瑶', '游走', '保护辅'), ban('盾山', '游走', '保护辅'),
-                ban('海月', '中路', '法核'), ban('大乔', '游走', '功能辅'),
+                ban('海月', '中路', '法刺'), ban('大乔', '游走', '功能辅'),
                 ban('哪吒', '对抗路', '战边')]
-    enemy_bans = [ban('墨子', '游走', '功能辅'), ban('扁鹊', '中路', '法核'),
+    enemy_bans = [ban('墨子', '游走', '功能辅'), ban('扁鹊', '中路', '法刺'),
                   ban('盾山', '游走', '保护辅'), ban('大乔', '游走', '功能辅'),
                   ban('张良', '中路', '工具人')]
     for index in range(6):
         own_picks = [
-            pick('扁鹊' if index < 4 else '小乔', '中路', '法核'),
+            pick('扁鹊' if index < 4 else '小乔', '中路', '法刺'),
             pick('赵云', '打野', '战野'),
             pick('钟馗', '游走', '开团辅'),
             pick('百里守约', '发育路', '游射'),
@@ -49,7 +49,7 @@ def make_games():
         ]
         enemy_picks = [
             pick('关羽', '对抗路', '战边'),
-            pick('安琪拉', '中路', '法核'),
+            pick('安琪拉', '中路', '法刺'),
             pick('虞姬', '发育路', '呆射'),
             pick('娜可露露', '打野', '刺野'),
             pick('蔡文姬' if index < 2 else '朵莉亚', '游走', '保护辅'),

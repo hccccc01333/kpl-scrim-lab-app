@@ -49,6 +49,7 @@ from scripts.build_bp_facts import (BRACKET, MIN_PAIR_N, MIN_PICK_RATE,  # noqa:
                                     WIN_WINDOW_DAYS, _load_hero_daily,
                                     build_lane_rows, build_ladder_doc)
 from hero_catalog import hero_name  # noqa: E402  heroId → 英雄名（本地缓存，离线可用）
+import hero_external_stats  # noqa: E402  英雄榜 KPL 胜率 / 国服前十战力分
 
 API = 'https://api.91m.top/hero/app'
 HEADERS = {
@@ -122,6 +123,12 @@ def _is_fresh() -> bool:
     except (OSError, ValueError):
         return False
     if not facts.get('pairs'):
+        return False
+    # 英雄榜外部口径（KPL 胜率 + 国服前十战力分）也要每天重算一次
+    try:
+        if date.fromtimestamp(hero_external_stats.OUT_PATH.stat().st_mtime).isoformat() != date.today().isoformat():
+            return False
+    except OSError:
         return False
     today = date.today().isoformat()
     with _state_lock:
@@ -443,6 +450,35 @@ def refresh(reason: str = 'manual', max_requests: int = 0, log=print) -> dict:
         with _state_lock:
             _state['phase'] = 'facts'
         result['facts'] = rebuild_facts(log=log)
+
+        with _state_lock:
+            _state['phase'] = 'kpl'
+        # KPL 增量抓取：官方赛程 BP，按 battleId 去重；失败只记日志，不拖垮整轮。
+        if not IS_DEMO and os.environ.get('KPL_AUTO_CRAWL', '1') != '0':
+            try:
+                import kpl_bp  # noqa: PLC0415  延迟导入，避免 demo / 未安装依赖时影响巅峰链路
+                kpl_report = kpl_bp.run_crawl(limit=120, log=log)
+                result['kplCrawl'] = {
+                    'added': (kpl_report.get('crawl') or {}).get('added', 0),
+                    'skipped': (kpl_report.get('crawl') or {}).get('skippedExisting', 0),
+                }
+                log(f"[peak] KPL 增量：新增 {result['kplCrawl']['added']} 局")
+            except Exception as exc:  # noqa: BLE001
+                result['kplCrawl'] = {'error': str(exc)[:200]}
+                log(f'[peak] KPL 增量抓取跳过：{str(exc)[:120]}')
+
+        with _state_lock:
+            _state['phase'] = 'hero-stats'
+        stats = hero_external_stats.build()
+        result['heroStats'] = {
+            'kpl': len(stats.get('kpl') or {}),
+            'top10': len(stats.get('top10') or {}),
+            'big': len(stats.get('big') or {}),
+            'updatedAt': stats.get('updatedAt'),
+        }
+        log(f"[peak] 英雄榜口径：KPL {result['heroStats']['kpl']} 英雄 / "
+            f"国服前十战力分 {result['heroStats']['top10']} 英雄 / "
+            f"大盘梯度 {result['heroStats']['big']} 英雄")
     except Exception as exc:  # noqa: BLE001
         result['ok'] = False
         result['error'] = str(exc)[:300]
@@ -498,6 +534,7 @@ def main(argv=None) -> int:
     ap.add_argument('--build-daily', action='store_true', help='从缓存重建 hero_daily.parquet')
     ap.add_argument('--matchups', action='store_true', help='爬对位矩阵（本轮分片）')
     ap.add_argument('--build', action='store_true', help='重建 lane_matchups.json')
+    ap.add_argument('--hero-stats', action='store_true', help='重算英雄榜 KPL 胜率 + 抓国服前十战力分')
     ap.add_argument('--limit', type=int, default=0, help='本次最多爬多少个对位（试跑用）')
     ap.add_argument('--status', action='store_true', help='只看状态')
     args = ap.parse_args(argv)
@@ -532,7 +569,12 @@ def main(argv=None) -> int:
         crawl_matchups(max_requests=args.limit, log=log)
     if args.build:
         rebuild_facts(log=log)
-    if not (args.charts or args.build_daily or args.matchups or args.build):
+    if args.hero_stats:
+        stats = hero_external_stats.build()
+        log(f"[peak] 英雄榜口径：KPL {len(stats.get('kpl') or {})} 英雄 / "
+            f"国服前十战力分 {len(stats.get('top10') or {})} 英雄 / "
+            f"大盘梯度 {len(stats.get('big') or {})} 英雄")
+    if not (args.charts or args.build_daily or args.matchups or args.build or args.hero_stats):
         ap.print_help()
     return 0 if ok else 1
 

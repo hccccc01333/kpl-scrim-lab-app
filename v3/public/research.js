@@ -18,20 +18,24 @@ export function createResearch({esc,fmt,table,icon,pageIntro}) {
  function reports(data) {
   const reports=data.reports||[];
   const latest=reports[0]?.createdAt?.slice(0,10)||'—';
-  const reportCards=reports.map(r=>`<a class="profile-card report-card" href="#report/${encodeURIComponent(r.id)}"><div class="profile-card-top"><span>${text('分析快照')}</span><b>${text((r.createdAt||'').slice(0,10))}</b></div><h3>${text(r.title)}</h3><p>${text('分析快照')} · 保存时的结果与口径</p><span>查看报告 →</span></a>`).join('');
+  const reportCards=reports.map(r=>`<a class="profile-card report-card" href="#report/${encodeURIComponent(r.id)}"><div class="profile-card-top"><span>${text('分析快照')}</span><b>${text((r.createdAt||'').slice(0,10))}</b></div><h3>${text(r.title)}</h3><span>查看报告 →</span></a>`).join('');
   const intro=`<section class="sx-report-hero">
-    <div class="sx-report-copy"><span class="sx-eyebrow">REPORT LIBRARY</span><h2>把分析结论保存成可复核的快照</h2><p>保存时会一并记录数据范围、结果和数据指纹；源数据变化后，旧报告仍能按当时的口径回看。</p></div>
+    <div class="sx-report-copy"><span class="sx-eyebrow">REPORT LIBRARY</span><h2>把分析结论保存成可复核的快照</h2></div>
     <div class="sx-report-stats"><div><b>${reports.length}</b><span>已保存报告</span></div><div><b>${text(latest)}</b><span>最近保存</span></div></div>
   </section>`;
-  const library=reports.length?`<section class="section"><div class="section-heading"><div><h2>已保存报告</h2><p>共 ${reports.length} 份，按保存时间倒序。</p></div></div><div class="profiles-grid sx-report-grid">${reportCards}</div></section>`:'';
-  const reportHeader=`<div class="page-intro"><div><h1>复盘与报告</h1><p>训练效果与已保存的分析快照放在同一处；报告保留当时的数据范围和结果。</p></div><div class="intro-actions"><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></div></div>`;
+  const library=reports.length?`<section class="section"><div class="section-heading"><div><h2>已保存报告</h2></div></div><div class="profiles-grid sx-report-grid">${reportCards}</div></section>`:'';
+  const reportHeader=`<div class="page-intro"><div><h1>复盘与报告</h1></div><div class="intro-actions"><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></div></div>`;
   const reviewNav=`<nav class="sx-subnav" aria-label="复盘子页面"><a href="#reports" aria-current="page">报告库</a><a href="#effect">训练效果</a></nav>`;
   const now=new Date();
   const monday=new Date(now); monday.setDate(now.getDate() - (now.getDay()+6)%7);
   const today=`${monday.getFullYear()}-${String(monday.getMonth()+1).padStart(2,'0')}-${String(monday.getDate()).padStart(2,'0')}`;
-  const weekBuilder=`<section class="section sx-week-builder"><div class="section-heading"><div><h2>生成训练周报</h2><p>默认从本周一开始，汇总 7 天内的训练课、对局、目标和复盘；打开后可以打印或保存 PDF。</p></div></div><div class="sx-week-form"><label>周报起始日<input type="date" data-sx-week-start value="${today}"></label><button type="button" class="primary" data-sx-week-go>生成周报 →</button></div></section>`;
+  let focusTeams=[];
+  try { const raw=JSON.parse(localStorage.getItem('sx-weekly-focus-teams')||'[]'); if(Array.isArray(raw)) focusTeams=raw.map(String); } catch {}
+  const focusOptions=['KA女子队','SPK','AA俱乐部'];
+  const focusBoxes=`<fieldset class="sx-week-focus"><legend>重点战队</legend><div class="sx-week-focus-list">${focusOptions.map(name=>`<label><input type="checkbox" data-sx-week-team value="${text(name)}" ${focusTeams.includes(name)?'checked':''}>${text(name)}</label>`).join('')}</div></fieldset>`;
+  const weekBuilder=`<section class="section sx-week-builder"><div class="section-heading"><div><h2>生成训练周报</h2></div></div><div class="sx-week-form"><label>周报起始日<input type="date" data-sx-week-start value="${today}"></label><button type="button" class="primary" data-sx-week-go>生成周报 →</button><button type="button" class="control" data-sx-week-template>配置周报模板</button></div>${focusBoxes}</section>`;
   return `<div class="page feature-page sx-page sx-report-page">${reportHeader}${reviewNav}${weekBuilder}${intro}${library}</div>`;
  }
- function report(data){return `<div class="page feature-page">${header(data.title,`保存于 ${data.createdAt}`)}<a class="depth-back" href="#reports">← 返回报告</a><div class="scope-note"><span>结果快照</span>以下内容为保存时的数据与口径，不会随源数据变化。</div>${body(data.result)}</div>`}
+ function report(data){return `<div class="page feature-page">${header(data.title,`保存于 ${data.createdAt}`)}<a class="depth-back" href="#reports">← 返回报告</a><div class="scope-note"><span>结果快照</span>保存当时的数据与口径。</div>${body(data.result)}</div>`}
  return {reports,report};
 }

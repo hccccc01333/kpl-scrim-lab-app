@@ -145,8 +145,8 @@ function renderHeader(doc) {
   const winner = match.winningCamp;
   return `<header class="rp-head">
     <div>
-      <p class="rp-eyebrow">输入层回放 · kpl-replay-state-v1</p>
-      <h1>${esc(mmss(match.durationSec || 0))} 对局 <span class="rp-win">${esc(TEAM_LABEL[winner] || '胜负未知')}获胜</span></h1>
+      <p class="rp-eyebrow">对局回放</p>
+      <h1>${esc(mmss(match.durationSec || 0))} 对局 <span class="rp-win">${TEAM_LABEL[winner] ? esc(TEAM_LABEL[winner]) + '获胜' : '胜负未知'}</span></h1>
       <p class="rp-sub">${esc((doc.source.build || []).join(' / ') || '构建未知')} · ${esc(String(doc.source.totalFrames || ''))} 帧 · ${esc(String(doc.source.frameHz || ''))} Hz</p>
     </div>
     <div class="rp-head-note">所有数值来自 <b>.abc/.ope 解码</b>。容器不含 HP、金币收入、KDA 与轨迹，因此本页不显示这些；缺失原因见页脚。</div>
@@ -212,10 +212,10 @@ function renderCharts(series) {
 
 function renderTimeline(doc) {
   return `<div class="rp-timeline">
-    <button class="rp-play" data-act="toggle" aria-label="播放/暂停">▶</button>
-    <input class="rp-range" type="range" min="0" max="${Math.max(0, doc.timeline.length - 1)}" value="0" step="1">
+    <button class="rp-play" data-act="toggle" aria-label="播放回放" aria-pressed="false">▶</button>
+    <input class="rp-range" aria-label="回放进度" type="range" min="0" max="${Math.max(0, doc.timeline.length - 1)}" value="0" step="1">
     <output class="rp-clock">00:00</output>
-    <select class="rp-speed" data-act="speed">
+    <select class="rp-speed" aria-label="播放速度" data-act="speed">
       <option value="0.5">0.5×</option>
       <option value="1" selected>1×</option>
       <option value="2">2×</option>
@@ -446,7 +446,10 @@ function tick(now) {
   draw();
   if (store.second >= last) {
     store.playing = false;
-    document.querySelector('.rp-play').textContent = '▶';
+    const button = document.querySelector('.rp-play');
+    button.textContent = '▶';
+    button.setAttribute('aria-pressed', 'false');
+    button.setAttribute('aria-label', '播放回放');
     return;
   }
   store.raf = requestAnimationFrame(tick);
@@ -456,7 +459,10 @@ function bind(root) {
   root.addEventListener('click', (event) => {
     const toggle = event.target.closest('[data-act="toggle"]');
     if (toggle) {
+      if (!store.playing && store.second >= store.doc.timeline.length - 1) store.second = 0;
       store.playing = !store.playing;
+      toggle.setAttribute('aria-pressed', String(store.playing));
+      toggle.setAttribute('aria-label', store.playing ? '暂停回放' : '播放回放');
       toggle.textContent = store.playing ? '❚❚' : '▶';
       if (store.playing) {
         store.last = performance.now();
@@ -517,8 +523,8 @@ export async function mount(root, replayId) {
 
   root.innerHTML = `<div class="rp-root">
     ${renderHeader(doc)}
-    ${renderRoster(store.series)}
     ${renderTimeline(doc)}
+    ${renderRoster(store.series)}
     ${renderCharts(store.series)}
     ${renderPlayerCards(store.series)}
     ${renderEvents()}

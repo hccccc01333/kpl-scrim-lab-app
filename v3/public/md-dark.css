@@ -1,0 +1,444 @@
+/* ============================================================
+   单局复盘页 · 深色主题补丁（2026-11-20）
+   ------------------------------------------------------------
+   design-*.css 是 1:1 移植的设计稿像素，写死大量浅底与浅字；
+   match-redblue.css 只翻了局部 token。本文件在 interface.css 最后导入，
+   统一把 .md-page 的卡片、图表和控件翻成深色，浅色主题完全不受影响。
+   本队蓝 / 对手红的语义保持不变，只换明度。
+   ============================================================ */
+
+/* ── 本局结论卡 ─────────────────────────────────────────────── */
+:root[data-theme='dark'] .md-page #match-verdict {
+  background: linear-gradient(90deg, #16283f 0%, var(--paper) 50%, #3a1f22 100%);
+  border: 1px solid var(--line);
+  box-shadow: none;
+  color: var(--text);
+}
+:root[data-theme='dark'] .md-page #match-verdict .dv-pulse {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--paper) 55%, transparent) 0%,
+    color-mix(in srgb, var(--paper) 94%, transparent) 18%, var(--paper) 100%);
+}
+:root[data-theme='dark'] .md-page #match-verdict::before {
+  background: radial-gradient(calc(440px * var(--k)) calc(260px * var(--k)) at 50% 60%,
+    color-mix(in srgb, var(--accent) 16%, transparent), transparent 74%);
+}
+:root[data-theme='dark'] .md-page #match-verdict::after {
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--accent) 12%, transparent), transparent);
+}
+:root[data-theme='dark'] .md-page .dv-kicker,
+:root[data-theme='dark'] .md-page .dv-pulse > .dv-kicker { color: var(--text); }
+/* 视觉层 platinum-ds.css 用 #content h1!important 把标题刷成深墨色，
+   收口段又把 --text 强制成浅色主题的 #1c1c1c；深色下这里直接给浅色值。 */
+:root[data-theme='dark'] #content .md-page .dv-claim h1 { color: #ececf1 !important; }
+/* match-redblue 给结论句里的加粗数字也写了 var(--text)，同样被收口成深墨色 */
+:root[data-theme='dark'] .md-page .dv-claim h1 b { color: #ececf1; }
+:root[data-theme='dark'] .md-page .dv-claim p,
+:root[data-theme='dark'] .md-page .dv-top-right,
+:root[data-theme='dark'] .md-page .dv-sub span,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-readout small,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-readout b,
+:root[data-theme='dark'] .md-page .dv-legend { color: var(--muted); }
+:root[data-theme='dark'] .md-page .dv-tag {
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
+:root[data-theme='dark'] .md-page .dv-side.own span,
+:root[data-theme='dark'] .md-page .dv-side.own b,
+:root[data-theme='dark'] .md-page .dv-nums i.own,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-readout small.own,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-readout b.clock { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .dv-side.foe span,
+:root[data-theme='dark'] .md-page .dv-side.foe b,
+:root[data-theme='dark'] .md-page .dv-nums i.foe,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-readout small.foe { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .dv-nums span { color: var(--quiet); }
+:root[data-theme='dark'] .md-page .dv-sub em {
+  color: var(--md-own-ink);
+  background: var(--md-own-soft);
+  border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .dv-sub em.loss {
+  color: var(--md-enemy-ink);
+  background: var(--md-enemy-soft);
+  border-color: color-mix(in srgb, var(--md-enemy-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .dv-rule {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--md-own-ink) 28%, transparent),
+    var(--line) 50%,
+    color-mix(in srgb, var(--md-enemy-ink) 28%, transparent));
+}
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-readout {
+  border-color: var(--line-strong);
+  background: var(--surface);
+}
+/* SVG 内的面积渐变仍按本队蓝画，深色底不需要再铺白色遮罩。 */
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-band-label,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-axis { fill: var(--muted); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-axis-x { fill: var(--quiet); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-grid { stroke: var(--line-strong); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-zero { stroke: var(--quiet); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-curve { stroke: var(--accent); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-dot,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-end,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-mark,
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-cursor circle { stroke: var(--paper); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-mark.unknown { fill: var(--quiet); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-cursor line { stroke: var(--accent); }
+:root[data-theme='dark'] .md-page #match-pulse-card .mp-card {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page #match-pulse-card .dv-legend i.dia { background: var(--accent); }
+:root[data-theme='dark'] .md-page #match-pulse-card .dv-legend i.buff,
+:root[data-theme='dark'] .md-page #match-pulse-card .dv-legend i.sq { background: var(--quiet); }
+
+/* ── 总量卡 ─────────────────────────────────────────────────── */
+:root[data-theme='dark'] .md-page #match-totals {
+  background: linear-gradient(90deg, #16283f 0%, var(--paper) 50%, #3a1f22 100%);
+  border-color: var(--line);
+  box-shadow: none;
+  color: var(--text);
+}
+:root[data-theme='dark'] .md-page .tot-head { border-bottom-color: var(--line); }
+:root[data-theme='dark'] .md-page .tot-head h1,
+:root[data-theme='dark'] .md-page .tot-label { color: var(--text); }
+:root[data-theme='dark'] .md-page .chip.own {
+  color: var(--md-own-ink); background: var(--md-own-soft);
+  border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .chip.foe {
+  color: var(--md-enemy-ink); background: var(--md-enemy-soft);
+  border-color: color-mix(in srgb, var(--md-enemy-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .vs { color: var(--quiet); }
+:root[data-theme='dark'] .md-page .tot { border-right-color: var(--line); }
+:root[data-theme='dark'] .md-page .tot-nums span { color: var(--muted); }
+:root[data-theme='dark'] .md-page .tot-bar { background: var(--surface); }
+:root[data-theme='dark'] .md-page .tot-bar i.own { background: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .tot-bar i.foe { background: var(--md-enemy-ink); }
+
+/* ── 通用卡片 / 控件：所有设计稿卡都从白底改为深色底 ─────────── */
+:root[data-theme='dark'] .md-page .section,
+:root[data-theme='dark'] .md-page .md-card,
+:root[data-theme='dark'] .md-page .md-panel,
+:root[data-theme='dark'] .md-page .md-ov-empty,
+:root[data-theme='dark'] .md-page .md-g10-card,
+:root[data-theme='dark'] .md-page .chip,
+:root[data-theme='dark'] .md-page .tag {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  color: var(--text);
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .md-seg,
+:root[data-theme='dark'] .md-page .iv-tabs,
+:root[data-theme='dark'] .md-page .md-invasion .iv-tabs {
+  background: var(--surface);
+}
+:root[data-theme='dark'] .md-page .md-seg-btn[aria-selected='true'],
+:root[data-theme='dark'] .md-page .md-seg-btn.is-on,
+:root[data-theme='dark'] .md-page .iv-tab[aria-selected='true'],
+:root[data-theme='dark'] .md-page .md-tab[aria-selected='true'] {
+  background: var(--selected);
+  color: var(--text);
+}
+:root[data-theme='dark'] .md-page .md-lane-chip,
+:root[data-theme='dark'] .md-page input,
+:root[data-theme='dark'] .md-page select {
+  background: var(--surface);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+:root[data-theme='dark'] .md-page .ec-side.own,
+:root[data-theme='dark'] .md-page .md-g10-jtype {
+  background: var(--md-own-soft);
+  color: var(--md-own-ink);
+}
+:root[data-theme='dark'] .md-page .ec-side.foe {
+  background: var(--md-enemy-soft);
+  color: var(--md-enemy-ink);
+}
+:root[data-theme='dark'] .md-page .md-duel-face { background: var(--surface); }
+
+/* 设计稿卡片用 #match-* ID 选择器（0,1,1），高于上面的类选择器，必须单独翻。 */
+:root[data-theme='dark'] .md-page :is(
+  #match-gold10, #match-profiles, #match-jungle, #match-cohesion,
+  #match-kills, #match-ov-bp, #match-ov-broken,
+  #match-ov-matchup, #match-ov-counters
+) {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  box-shadow: none;
+  color: var(--text);
+}
+:root[data-theme='dark'] .md-page :is(
+  #match-gold10, #match-profiles, #match-jungle, #match-cohesion,
+  #match-kills, #match-ov-bp
+) :is(.section-heading h2, h2) { color: var(--text); }
+:root[data-theme='dark'] .md-page #match-gold10 .md-g10-count { color: var(--muted); }
+:root[data-theme='dark'] .md-page #match-gold10 .md-g10-side-label.own { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page #match-gold10 .md-g10-side-label.foe { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .md-g10-row input:focus { background: var(--surface); border-color: var(--accent); }
+:root[data-theme='dark'] .md-page .md-seg-btn.is-on { background: var(--selected); color: var(--text); }
+:root[data-theme='dark'] .md-page .md-cut-card.is-hit,
+:root[data-theme='dark'] .md-page .md-cut-card.by.is-hit { background: var(--surface); }
+:root[data-theme='dark'] .md-page .cc-grade.watch,
+:root[data-theme='dark'] .md-page .md-mu-card .tier.t1,
+:root[data-theme='dark'] .md-page .md-ct-chip.is-watch { color: var(--warning); background: var(--warning-soft); }
+
+/* ── 事件时间轴：泳道胶囊与悬浮卡 ───────────────────────────── */
+:root[data-theme='dark'] .md-page .tl-legend,
+:root[data-theme='dark'] .md-page .tl-axis,
+:root[data-theme='dark'] .md-page .tl-pop,
+:root[data-theme='dark'] .md-page .tl-cap {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .tl-legend b { color: var(--text); }
+:root[data-theme='dark'] .md-page .tl-legend b.off { color: var(--quiet); }
+:root[data-theme='dark'] .md-page .tl-seg.s1 {
+  background: linear-gradient(90deg, #16283f, #1b3050); color: var(--md-own-ink);
+}
+:root[data-theme='dark'] .md-page .tl-seg.s2 {
+  background: var(--surface); color: var(--muted);
+}
+:root[data-theme='dark'] .md-page .tl-seg.s3 {
+  background: linear-gradient(90deg, #3a2329, #4a282e); color: var(--md-enemy-ink);
+}
+:root[data-theme='dark'] .md-page .tl-ev.own .tl-cap {
+  background: #16283f;
+  border-color: color-mix(in srgb, var(--md-own-ink) 45%, transparent);
+}
+:root[data-theme='dark'] .md-page .tl-ev.foe .tl-cap {
+  background: #3a2329;
+  border-color: color-mix(in srgb, var(--md-enemy-ink) 45%, transparent);
+}
+:root[data-theme='dark'] .md-page .tl-ic { background: var(--md-own-soft); }
+:root[data-theme='dark'] .md-page .tl-ev.foe .tl-ic { background: var(--md-enemy-soft); }
+:root[data-theme='dark'] .md-page .tl-time { color: var(--text); }
+:root[data-theme='dark'] .md-page .tl-stem::after { background: var(--paper); }
+:root[data-theme='dark'] .md-page .tl-pop-side.own {
+  border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .tl-pop-side.foe {
+  border-color: color-mix(in srgb, var(--md-enemy-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .tl-pop-parts .tl-who {
+  border-color: var(--line);
+  background: var(--surface-hover);
+}
+:root[data-theme='dark'] .md-page :is(.section-heading h2, h2) { color: var(--text); }
+
+/* ── 对位压制 / 克制命中 / 组合得失：设计稿白卡 ──────────────── */
+:root[data-theme='dark'] .md-page .md-ct-row,
+:root[data-theme='dark'] .md-page .md-broken .md-bk-row {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--md-own-ink) 30%, var(--line));
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .md-ct-lane { color: var(--text); }
+:root[data-theme='dark'] .md-page .md-ct-chip.is-hit,
+:root[data-theme='dark'] .md-page .md-mu-card .verdict.is-ahead {
+  color: var(--success); background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-ct-chip.is-miss,
+:root[data-theme='dark'] .md-page .md-mu-card .verdict.is-behind {
+  color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-mu-card .verdict.is-even {
+  color: var(--md-own-ink); background: var(--md-own-soft); border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-mu-card .verdict.is-thin,
+:root[data-theme='dark'] .md-page .md-mu-card .rate,
+:root[data-theme='dark'] .md-page .res-item,
+:root[data-theme='dark'] .md-page .rate-bar { background: var(--surface-hover); color: var(--text); }
+:root[data-theme='dark'] .md-page .md-mu-card .rate-label,
+:root[data-theme='dark'] .md-page .md-mu-card .rate-sub,
+:root[data-theme='dark'] .md-page .md-mu-card .rate-nums span { color: var(--muted); }
+:root[data-theme='dark'] .md-page .rate-bar i.own { background: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .rate-bar i.foe { background: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .count-track { background: var(--surface-hover); }
+:root[data-theme='dark'] .md-page .md-mu-card .tier {
+  color: var(--muted); background: var(--surface); border-color: var(--line-strong);
+}
+:root[data-theme='dark'] .md-page .md-mu-card .tier.t1 {
+  color: var(--warning); background: var(--warning-soft); border-color: color-mix(in srgb, var(--warning) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-mu-card .tier.t2 {
+  color: var(--success); background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-mu-card .tier.t3 {
+  color: var(--md-own-ink); background: var(--md-own-soft); border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-mu-card .tier.t4 {
+  color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 34%, transparent);
+}
+
+/* ── 总量小卡 / BP 标题 ─────────────────────────────────────── */
+:root[data-theme='dark'] .md-page .rCard {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--md-own-ink) 30%, var(--line));
+}
+:root[data-theme='dark'] .md-page .rHead { color: var(--text); }
+:root[data-theme='dark'] .md-page .rLine { border-top-color: var(--line); }
+:root[data-theme='dark'] .md-page .rLine span,
+:root[data-theme='dark'] .md-page .rLine i,
+:root[data-theme='dark'] .md-page .tHead,
+:root[data-theme='dark'] .md-page .res-item { color: var(--muted); }
+:root[data-theme='dark'] .md-page .md-mu-card .dc-lane,
+:root[data-theme='dark'] .md-page .rCard .bLine b { color: var(--text); }
+:root[data-theme='dark'] .md-page .rLine b.own,
+:root[data-theme='dark'] .md-page .res-item b.blue,
+:root[data-theme='dark'] .md-page .rCard .bLine b.blue { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .rCard .bLine b.red { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .rLine b.foe,
+:root[data-theme='dark'] .md-page .res-item b.red { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .tHead b { color: var(--text); }
+:root[data-theme='dark'] .md-page .tLine { color: var(--muted); border-top-color: var(--line); }
+:root[data-theme='dark'] .md-page .tLine b,
+:root[data-theme='dark'] .md-page .tot-nums b.own { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .tLine b.foe,
+:root[data-theme='dark'] .md-page .tot-nums b.foe { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .bp-head h1 { color: var(--text); }
+:root[data-theme='dark'] .md-page .bp-copy {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+}
+
+/* 10 分钟经济：设计稿用双层 linear-gradient 做白卡+渐变描边，必须整体替换。 */
+:root[data-theme='dark'] .md-page .md-g10-row {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--md-own-ink) 30%, var(--line));
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .md-g10-row.foe {
+  border-color: color-mix(in srgb, var(--md-enemy-ink) 30%, var(--line));
+}
+:root[data-theme='dark'] .md-page .md-g10-row .md-g10-lane,
+:root[data-theme='dark'] .md-page .md-g10-row .md-g10-hero b { color: var(--muted); }
+:root[data-theme='dark'] .md-page .md-g10-row.own .ec-side {
+  color: var(--md-own-ink); background: var(--md-own-soft);
+  border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-g10-row.foe .ec-side {
+  color: var(--md-enemy-ink); background: var(--md-enemy-soft);
+  border-color: color-mix(in srgb, var(--md-enemy-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-g10-row .md-g10-hero .portrait,
+:root[data-theme='dark'] .md-page .md-g10-row .md-g10-hero img { border-color: var(--line-strong); }
+:root[data-theme='dark'] .md-page .md-g10-row input {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+:root[data-theme='dark'] .md-page .md-g10-row input::placeholder { color: var(--quiet); }
+:root[data-theme='dark'] .md-page .md-g10-row .md-grade {
+  color: var(--muted); background: var(--surface-hover); border-color: var(--line-strong);
+}
+:root[data-theme='dark'] .md-page .md-g10-row .md-grade.is-good,
+:root[data-theme='dark'] .md-page .md-g10-row .md-grade.is-ok {
+  color: var(--success); background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .md-g10-row .md-grade.is-bad {
+  color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 34%, transparent);
+}
+
+/* 卡片渐变描边在深色下改为实线，避免 border-image 盖掉 border-color。 */
+:root[data-theme='dark'] .md-page [class*='card']:not([class*='hero']):not([class*='legend']),
+:root[data-theme='dark'] .md-page .md-mu-card,
+:root[data-theme='dark'] .md-page .md-kplhit-card,
+:root[data-theme='dark'] .md-page .md-combo-card,
+:root[data-theme='dark'] .md-page .md-g10-card {
+  border-image: none;
+  border-color: var(--line-strong);
+}
+
+/* ── 图三首屏（2026-11-22）：比分头 / Pick-Ban / 五路表 ────────── */
+:root[data-theme='dark'] .md-page .ms-summary#match-verdict {
+  border-color: var(--line);
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .ms-mode,
+:root[data-theme='dark'] .md-page .ms-board-mid small,
+:root[data-theme='dark'] .md-page .ms-totals,
+:root[data-theme='dark'] .md-page .ms-lanes-head,
+:root[data-theme='dark'] .md-page .ms-lane-more,
+:root[data-theme='dark'] .md-page .ms-res-item small { color: var(--muted); }
+:root[data-theme='dark'] .md-page .ms-summary .dv-kicker { color: #ececf1 !important; }
+:root[data-theme='dark'] .md-page .ms-summary .dv-tag {
+  color: var(--muted) !important; background: var(--surface); border-color: var(--line-strong);
+}
+:root[data-theme='dark'] .md-page .ms-summary .dv-claim p { color: #b4b6c2 !important; }
+:root[data-theme='dark'] .md-page .ms-team-text b { color: var(--text); }
+:root[data-theme='dark'] .md-page .ms-team.own .ms-team-text b { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .ms-team.foe .ms-team-text b { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .ms-team.own .ms-crest {
+  color: var(--md-own-ink); background: var(--md-own-soft); border-color: color-mix(in srgb, var(--md-own-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .ms-team.foe .ms-crest {
+  color: var(--md-enemy-ink); background: var(--md-enemy-soft); border-color: color-mix(in srgb, var(--md-enemy-ink) 34%, transparent);
+}
+:root[data-theme='dark'] .md-page .ms-badge.is-loss { color: var(--muted); background: var(--surface); }
+:root[data-theme='dark'] .md-page .ms-badge.is-draw { color: var(--warning); background: var(--warning-soft); }
+:root[data-theme='dark'] .md-page .ms-score { color: var(--text); }
+:root[data-theme='dark'] .md-page .ms-score i.own { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .ms-score i.foe { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .ms-cross { color: var(--muted); }
+:root[data-theme='dark'] .md-page .ms-board,
+:root[data-theme='dark'] .md-page .ms-draft,
+:root[data-theme='dark'] .md-page .ms-draft-row + .ms-draft-row,
+:root[data-theme='dark'] .md-page .ms-draft-empty,
+:root[data-theme='dark'] .md-page .ms-lanes-head,
+:root[data-theme='dark'] .md-page .ms-lane-row,
+:root[data-theme='dark'] .md-page .ms-lanes-empty { border-color: var(--line); }
+:root[data-theme='dark'] .md-page .ms-pulse-card {
+  background: var(--paper); border-color: var(--line); box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .ms-draft-row {
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--md-own-ink) 13%, transparent) 0%, transparent 36%,
+    var(--paper) 50%, transparent 64%,
+    color-mix(in srgb, var(--md-enemy-ink) 13%, transparent) 100%);
+}
+:root[data-theme='dark'] .md-page .ms-draft-label {
+  color: var(--muted); background: var(--paper); border-color: var(--line-strong);
+  box-shadow: none;
+}
+:root[data-theme='dark'] .md-page .ms-draft-row.is-econ b.own,
+:root[data-theme='dark'] .md-page .ms-res-item b,
+:root[data-theme='dark'] .md-page .ms-lane-who b,
+:root[data-theme='dark'] .md-page .ms-lane-stat b,
+:root[data-theme='dark'] .md-page .ms-lane-mid b { color: var(--text); }
+:root[data-theme='dark'] .md-page .ms-draft-row.is-econ b.own { color: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .ms-draft-row.is-econ b.foe { color: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .ms-hero {
+  background: var(--surface); border-color: var(--line-strong);
+}
+:root[data-theme='dark'] .md-page .ms-lane-side.own {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--md-own-ink) 16%, var(--paper)), transparent);
+}
+:root[data-theme='dark'] .md-page .ms-lane-side.foe {
+  background: linear-gradient(270deg, color-mix(in srgb, var(--md-enemy-ink) 16%, var(--paper)), transparent);
+}
+:root[data-theme='dark'] .md-page .ms-lane-mid { background: var(--paper); }
+:root[data-theme='dark'] .md-page .ms-lane-who small,
+:root[data-theme='dark'] .md-page .ms-lane-who em { color: var(--muted); }
+:root[data-theme='dark'] .md-page .ms-lane-items img,
+:root[data-theme='dark'] .md-page .ms-lane-items i {
+  background: var(--surface); border-color: var(--line-strong);
+}
+:root[data-theme='dark'] .md-page .ms-lane-items i { color: var(--muted); }
+:root[data-theme='dark'] .md-page .ms-lane-stat i { background: var(--surface-hover); }
+:root[data-theme='dark'] .md-page .ms-lane-stat i::after { background: var(--md-own-ink); }
+:root[data-theme='dark'] .md-page .ms-lane-side.foe .ms-lane-stat i::after { background: var(--md-enemy-ink); }
+:root[data-theme='dark'] .md-page .ms-totals b { color: var(--text); }
+:root[data-theme='dark'] .md-page .ms-pulse-card .mp-readout {
+  background: var(--surface); border-color: var(--line-strong);
+}

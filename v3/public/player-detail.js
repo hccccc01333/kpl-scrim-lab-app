@@ -27,6 +27,47 @@ export function createPlayerDetail(h) {
 
   const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 
+  /* ── 同分路「标准线」：赛训组评级规则 ──────────────────────────────
+     与设置页 / 对局复盘共用 /api/v3/grade-rules：没保存过也返回内置默认阈值，
+     所以标准线永远有数可画。取到后派发一次事件，让外层把详情页重画一次。 */
+  const RULES_URL = new URL('../api/v3/grade-rules', import.meta.url).href;
+  let rulesPending = null;
+  function ensureGradeRules() {
+    if (st && st.pd && st.pd.gradeRules) return Promise.resolve(st.pd.gradeRules);
+    if (!rulesPending) {
+      rulesPending = fetch(RULES_URL, {cache: 'no-store'})
+        .then((response) => response.ok ? response.json() : null)
+        .then((doc) => {
+          rulesPending = null;
+          if (doc && doc.subjects) {
+            if (st) { st.pd = st.pd || {}; st.pd.gradeRules = doc; }
+            document.dispatchEvent(new CustomEvent('pdx:rules-ready'));
+          }
+          return doc;
+        })
+        .catch(() => { rulesPending = null; return null; });
+    }
+    return rulesPending;
+  }
+  /* 元组是 [逐局字段, 规则字段, 页签标签]。10 分钟经济不在评级规则表里，
+     用赛训组手填口径补一份合成规则；阈值与对局页的 gold10Grade 保持一致。 */
+  const BENCH_FIELDS = [
+    ['gold10', 'gold10', '10 分钟经济'],
+    ['gpm', 'gpm', '分均经济'], ['participation', 'participation', '参团率'],
+    ['dpm', 'dpm', '分均输出'], ['dtpm', 'tpm', '分均承伤'],
+  ];
+  const GOLD10_THRESHOLDS = {
+    '对抗路': [7400, 7000, 6800], '发育路': [7400, 7000, 6800],
+    '中路': [5500, 5500, 5500], '打野': [8000, 8000, 8000],
+    '打野·野核': [8000, 8000, 8000], '打野·坦野': [6800, 6800, 6800],
+  };
+  function rulesFor(doc, lane) {
+    if (!doc || !doc.subjects) return null;
+    const keys = lane === '打野' ? ['打野·野核', '打野·坦野', '打野', lane] : [lane];
+    for (const key of keys) if (doc.subjects[key]) return {key, fields: doc.subjects[key]};
+    return null;
+  }
+
   /* 指标登记表：一处定义，全页共用标签、小数位和单位口径。 */
   const FIELDS = {
     games: {label: '场次', digits: 0, kind: 'int'},
@@ -41,7 +82,6 @@ export function createPlayerDetail(h) {
     goldShare: {label: '经济占比', digits: 1, kind: 'pct'},
     takenShare: {label: '承伤占比', digits: 1, kind: 'pct'},
     participation: {label: '参团率', digits: 1, kind: 'pct'},
-    rating: {label: '评分', digits: 1, kind: 'num'},
     dtpm: {label: '分均承伤', digits: 0, kind: 'num'},
     ctrlPerMin: {label: '分均控制', digits: 2, kind: 'num'},
     monsterCoin: {label: '野怪经济', digits: 0, kind: 'num'},
@@ -63,18 +103,16 @@ export function createPlayerDetail(h) {
   };
   const RADAR_SHORT = {
     kda: 'KDA', gpm: '经济', hdpm: '对英雄输出', damageShare: '输出占比', goldShare: '经济占比',
-    takenShare: '承伤占比', participation: '参团', ctrlPerMin: '控制', rating: '评分', dtpm: '分均承伤',
+    takenShare: '承伤占比', participation: '参团', ctrlPerMin: '控制', dtpm: '分均承伤',
     monsterCoin: '野区', dpm: '总输出', winRate: '胜率', mvpRate: 'MVP',
   };
   const LANE_FOCUS = {
-    '游走': ['participation', 'takenShare', 'ctrlPerMin', 'kda', 'rating', 'dtpm'],
-    '打野': ['gpm', 'monsterCoin', 'participation', 'hdpm', 'rating', 'kda'],
-    '对抗路': ['hdpm', 'damageShare', 'takenShare', 'gpm', 'kda', 'rating'],
-    '中路': ['hdpm', 'damageShare', 'gpm', 'participation', 'kda', 'rating'],
-    '发育路': ['hdpm', 'damageShare', 'gpm', 'goldShare', 'kda', 'rating'],
+    '游走': ['participation', 'takenShare', 'ctrlPerMin', 'kda', 'winRate', 'dtpm'],
+    '打野': ['gpm', 'monsterCoin', 'participation', 'hdpm', 'winRate', 'kda'],
+    '对抗路': ['hdpm', 'damageShare', 'takenShare', 'gpm', 'kda', 'winRate'],
+    '中路': ['hdpm', 'damageShare', 'gpm', 'participation', 'kda', 'winRate'],
+    '发育路': ['hdpm', 'damageShare', 'gpm', 'goldShare', 'kda', 'winRate'],
   };
-  /* 「指标全景」矩阵用的 12 项指标 */
-  const PANEL_KEYS = ['rating', 'kda', 'gpm', 'hdpm', 'damageShare', 'goldShare', 'participation', 'takenShare', 'ctrlPerMin', 'dtpm', 'monsterCoin', 'mvpRate'];
   const RESULT_TXT = {win: '胜', loss: '负', unknown: '—'};
 
   /* ── 统计小工具 ─────────────────────────────────────────────────── */
@@ -117,7 +155,7 @@ export function createPlayerDetail(h) {
   const laneDist = (c, lane, key) => ((c.laneDistributions || {})[lane] || {})[key] || [];
   function laneDistOf(rows) {
     const keys = ['kda', 'gpm', 'dpm', 'hdpm', 'participation', 'takenShare',
-      'damageShare', 'goldShare', 'rating', 'ctrlPerMin', 'dtpm', 'monsterCoin'];
+      'damageShare', 'goldShare', 'ctrlPerMin', 'dtpm', 'monsterCoin'];
     const out = {};
     for (const r of rows) {
       const cell = out[r.lane] || (out[r.lane] = {});
@@ -126,6 +164,39 @@ export function createPlayerDetail(h) {
     return out;
   }
   const lanePctile = (c, lane, key, value) => percentile(laneDist(c, lane, key), value);
+
+  /* ── 指标对照卡：本人值 vs 同位置中位 + 一针见血的差距判断 + 环比 ────
+     不用仪表盘和百分位数字（赛训组要看具体数值），用语义徽章直接说清高低。 */
+  const diffVerdict = (pct, myVal, midVal) => {
+    if (!isNum(pct) || !isNum(myVal) || !isNum(midVal)) return {level: 'na', text: '样本不足'};
+    const rel = midVal !== 0 ? (myVal - midVal) / Math.abs(midVal) * 100 : null;
+    const gap = isNum(rel) ? ` ${rel > 0 ? '+' : ''}${fmt(rel, 0)}%` : '';
+    if (pct >= 85) return {level: 'top', text: `远高于中位${gap}`};
+    if (pct >= 65) return {level: 'high', text: `高于中位${gap}`};
+    if (pct >= 40) return {level: 'mid', text: `接近中位${gap}`};
+    if (pct >= 20) return {level: 'low', text: `低于中位${gap}`};
+    return {level: 'bottom', text: `远低于中位${gap}`};
+  };
+  /* metric: {label, key, my, mid, pct, prev, prevLabel}
+     prev 为上期同口径数值；有则显示环比。 */
+  const metricCard = (metric) => {
+    const {key, my, mid, pct, prev, prevLabel} = metric;
+    const v = diffVerdict(pct, my, mid);
+    const delta = isNum(my) && isNum(prev) ? my - prev : null;
+    let trend = '';
+    if (isNum(delta) && Math.abs(delta) > 1e-9) {
+      const up = delta > 0;
+      trend = `<span class="pm-trend ${up ? 'is-up' : 'is-down'}"><i aria-hidden="true">${up ? '↑' : '↓'}</i>较${S(prevLabel || '上期')} ${deltaVal(key, delta)}</span>`;
+    } else if (isNum(delta)) {
+      trend = `<span class="pm-trend is-flat">与${S(prevLabel || '上期')}持平</span>`;
+    }
+    return `<div class="pm-metric">
+      <div class="pm-metric-top"><span class="pm-metric-label">${S(metric.label)}</span><span class="pm-verdict is-${v.level}">${S(v.text)}</span></div>
+      <div class="pm-metric-value">${showVal(key, my)}</div>
+      <div class="pm-metric-mid">同位置中位 <b>${showVal(key, mid)}</b></div>
+      ${trend ? `<div class="pm-metric-trend">${trend}</div>` : ''}
+    </div>`;
+  };
 
   /* ── 时间维度：训练日 / 周 / 环比窗口 ──────────────────────────── */
   const DAY_MS = 86400000;
@@ -224,27 +295,16 @@ export function createPlayerDetail(h) {
 
   /* ── 渲染原语 ───────────────────────────────────────────────────── */
   let cardSeq = 0;
-  let foldedCards = new Set();
   let cardN = null;
   let rangeLabel = '';
   const setN = (n) => { cardN = isNum(n) ? n : null; };
   const card = (no, title, lead, body, foot = '') => {
-    const id = 'c' + (++cardSeq);
-    const folded = foldedCards.has(id);
     const badge = isNum(cardN) ? `<span class="pdx-n" title="这张卡的结论建立在多少局上">N=${fmt(cardN)} 局</span>` : '';
     cardN = null;
-    return `<article class="pdx-card${folded ? ' is-folded' : ''}" data-pdx-fold-id="${id}">
-    <div class="pdx-card-head"><span class="pdx-no">${S(no)}</span><div>
-      <h3>${S(title)}${badge}</h3><p class="pdx-lead">${lead}</p></div>
-      <span class="pdx-tools">
-        <button type="button" class="pdx-fold" data-pdx-fold="${id}" aria-expanded="${folded ? 'false' : 'true'}"
-          title="折叠 / 展开这张卡">⌄</button>
-        <button type="button" class="pdx-shot" data-pdx-shot="${id}"
-          title="只打印这张卡（系统打印对话框里可选存为 PDF 或图片）">⤓</button>
-      </span></div>
-    <p class="pdx-range">范围：${S(rangeLabel)}</p>
-    <div class="pdx-card-body">${body}</div>
-    ${foot ? `<p class="pdx-foot">${foot}</p>` : ''}</article>`;
+    return `<article class="pdx-card">
+    <div class="pdx-card-head">${no ? `<span class="pdx-no">${S(no)}</span>` : ''}
+      <h3>${S(title)}${badge}</h3></div>
+    <div class="pdx-card-body">${body}</div></article>`;
   };
   const na = (text = '无数据', title = '') => `<span class="pv-na"${title ? ` title="${S(title)}"` : ''}>${S(text)}</span>`;
   const emptyWith = (title, hint, relaxLabel = '清除切片条件') => `<div class="pv-empty2">
@@ -256,7 +316,7 @@ export function createPlayerDetail(h) {
   const resChip = (r) => `<em class="pv-chip ${r === 'win' ? 'is-win' : r === 'loss' ? 'is-loss' : 'is-quiet'}">${RESULT_TXT[r] || '—'}</em>`;
   const stats = (items) => `<div class="pv-stats">${items.map(([label, value, note]) =>
     `<div><span>${S(label)}</span><strong>${value}</strong><small>${S(note || '')}</small></div>`).join('')}</div>`;
-  const note = (text) => `<p class="pv-note">${text}</p>`;
+  const note = () => '';
   const laneClsOf = (lane) => V.LANE_CLS[lane] || 'is-c6';
   /* 胜率在表格里要一眼分好坏：≥55% 绿、≤45% 棕、中间走正文色。 */
   const rateCls = (rate) => (!isNum(rate) ? '' : rate >= 55 ? 'is-good' : rate <= 45 ? 'is-bad' : '');
@@ -332,6 +392,77 @@ export function createPlayerDetail(h) {
     </div>`;
   }
 
+  /* ══ 模块 0 · 同分路对比：自家 vs 规则标准线 ═════════════════════════
+     旧版这里画的是「本人 − 同分路对手」的经济差；按验收口径改成自家与
+     赛训组标准线对照：黄色横线是达标线，左边把规则三档原样贴出来当标准，
+     不再拿任何一个对手当基准。没样本的项按 0 显示，不画成「—」。 */
+  function buildBench(c, f) {
+    const lane = c.focusLane;
+    const doc = st && st.pd && st.pd.gradeRules;
+    const rule = rulesFor(doc, lane);
+    const rows = c.scope.rows;
+    /* 规则字段 + 手填的 10 分钟经济合成一份字段表；gold10 不进评级规则接口，
+       但口径与对局页的 10 分钟经济评级一致，教练填过就能在这里对照。 */
+    const fields = {...(rule ? rule.fields : {})};
+    const gold10Ts = GOLD10_THRESHOLDS[rule && rule.key] || GOLD10_THRESHOLDS[lane];
+    if (gold10Ts) fields.gold10 = {label: '10 分钟经济', key: 'gold10', unit: '金', thresholds: gold10Ts};
+    const options = BENCH_FIELDS
+      .filter(([key]) => fields[key])
+      .map(([key, ruleKey, label]) => [key, ruleKey, label]);
+    const pickKey = one(options.map(([key]) => key), f.benchField, options[0] ? options[0][0] : 'gpm');
+    const active = options.find(([key]) => key === pickKey) || options[0];
+    const ruleItem = active ? fields[active[0]] : null;
+    const thresholds = (ruleItem && Array.isArray(ruleItem.thresholds)) ? ruleItem.thresholds : null;
+    const pass = thresholds ? thresholds[2] : null;
+    const fmtBench = (v, unit) => {
+      if (!isNum(v)) return '—';
+      const suffix = unit || (ruleItem && ruleItem.unit) || '';
+      return fmt(v, Math.abs(v) < 20 ? 1 : 0) + (suffix ? ` ${suffix}` : '');
+    };
+    const rowValue = (row, ruleKey) => row[ruleKey === 'tpm' ? 'dtpm' : ruleKey];
+
+    /* 左边贴规则：卓越 / 优秀 / 达标三档 + 本人在当前切片的均值。 */
+    const ruleRows = options.map(([key, ruleKey, label]) => {
+      const r = fields[key];
+      const vals = rows.map((row) => rowValue(row, ruleKey)).filter(isNum);
+      const mine = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      const ts = Array.isArray(r.thresholds) ? r.thresholds : [];
+      return `<tr><th scope="row">${S(label)}</th>
+        <td>${fmtBench(ts[0], r.unit)}</td><td>${fmtBench(ts[1], r.unit)}</td><td>${fmtBench(ts[2], r.unit)}</td>
+        <td class="is-mine">${fmtBench(mine, r.unit)}</td></tr>`;
+    }).join('');
+    const rulesTable = rule
+      ? `<div class="pv-rules-wrap" role="region" tabindex="0" aria-labelledby="pdx-rules-cap">
+           <table class="pv-rules-table"><caption id="pdx-rules-cap">${S(rule.key)} · 赛训组标准线</caption>
+             <thead><tr><th scope="col">指标</th><th scope="col">卓越</th><th scope="col">优秀</th><th scope="col">达标</th><th scope="col">本人</th></tr></thead>
+             <tbody>${ruleRows}</tbody></table></div>`
+      : emptyWith('标准线还没加载出来', '评级规则正在读取；到「赛训 → 规则设置」保存过后，这里会按你保存的阈值重画。');
+
+    const ownVals = active ? rows.map((row) => rowValue(row, active[1])).filter(isNum) : [];
+    const mine = ownVals.length ? ownVals.reduce((a, b) => a + b, 0) / ownVals.length : null;
+    const chart = active && isNum(pass)
+      ? (!isNum(mine)
+        ? emptyWith(pickKey === 'gold10' ? '这几局还没有 10 分钟经济' : '这一项暂无样本',
+          pickKey === 'gold10' ? '在对局复盘的「10 分钟经济」里由教练填过后，这里会按本切片均值画出来。'
+            : '当前切片没有可用样本，换个范围或清除切片条件。')
+        : V.columns({
+          labels: [S(active[2])],
+          series: [{values: [mine], cls: 'is-mark', texts: [fmtBench(mine)]}],
+          refs: [{v: pass, label: '达标线', cls: 'is-standard', text: fmtBench(pass)}],
+          W: w(7), H: 320, padL: 88, padR: 22, maxBarW: 96, forceZero: true,
+          fmtV: fmtBench, aria: `${S(active[2])}：本人 ${fmtBench(mine)}，达标线 ${fmtBench(pass)}`,
+        }))
+      : emptyWith('这条标准线还没有达标阈值', '到「赛训 → 规则设置」给这一路补上阈值。');
+    const tools = options.length > 1
+      ? selBar([cardSelect('benchField', '看哪项', options, pickKey)]) : '';
+
+    return [card('00', '同分路对比', '',
+      tools + grid([
+        panel('规则标准线', rulesTable, {span: 5}),
+        panel('本人 vs 达标线', chart, {span: 7}),
+      ]), '')];
+  }
+
   /* ══ 模块 1 · 综合画像 ═════════════════════════════════════════════ */
   function buildPortrait(c, f) {
     const out = [];
@@ -361,83 +492,28 @@ export function createPlayerDetail(h) {
       const lane = c.focusLane;
       const list = c.byLane.get(lane) || [];
       const keys = LANE_FOCUS[lane] || LANE_FOCUS['中路'];
-      const mainKeys = LANE_FOCUS[c.mainLane] || LANE_FOCUS['中路'];
       const w2 = win(list);
+      /* 本人值用所选范围本身；上期是紧邻它的等长窗口（prevByLane）。 */
+      const prevList = c.prevByLane.get(lane) || [];
       const pcts = keys.map((key) => lanePctile(c, lane, key, mean(list, (r) => r[key])));
-      const axes = keys.map((key, i) => ({label: RADAR_SHORT[key] || fieldLabel(key), value: pcts[i]}));
-      const series = [{cls: 'is-a', name: `${lane} · 本人`, values: pcts}];
-      if (lane !== c.mainLane) {
-        const mainList = c.byLane.get(c.mainLane) || [];
-        series.push({
-          cls: 'is-b', name: `${c.mainLane} · 主位置`,
-          values: mainKeys.map((key) => lanePctile(c, c.mainLane, key, mean(mainList, (r) => r[key]))),
-        });
-      }
-      const tiles = `<div class="pv-tiles3">${keys.map((key, i) => V.gauge({
-        value: pcts[i], label: fieldLabel(key),
-        sub: `本人 ${showVal(key, mean(list, (r) => r[key]))} · 中位 ${showVal(key, median(laneDist(c, lane, key)))}`,
+      /* 每项写清：本人具体数值 / 同位置中位 / 一针见血的差距判断 / 较上期环比。 */
+      const tiles = `<div class="pm-grid">${keys.map((key, i) => metricCard({
+        key, label: fieldLabel(key),
+        my: mean(list, (r) => r[key]),
+        mid: median(laneDist(c, lane, key)),
+        pct: pcts[i],
+        prev: mean(prevList, (r) => r[key]),
+        prevLabel: c.prevLabel,
       })).join('')}</div>`;
       setN(list.length);
       out.push(card('02', '位置能力 · 专项指标',
-        `切片内的分路是 <b>${S(lane)}</b>（${scope.lane === '全部' ? '没限定分路，取主位置' : '来自上方「分路」'}）：<b>${fmt(list.length)} 局</b>、胜率 <b>${P(w2.rate)}</b>；`
-        + `仪表刻度是「同位置分位」，50 就是中位。`,
-        grid([
-          panel('六项指标 · 同位置分位', V.radar({axes, series, size: 460, aria: `${lane} 六项专项指标的分位雷达`}), {
-            span: 5, foot: lane === c.mainLane ? `单线 = 本人在本分路的相对位置；同类参照 ${fmt(laneDist(c, lane, keys[0]).length)} 局`
-              : '实线 = 切片分路，虚线 = 主位置对照',
-          }),
-          panel('专项指标仪表', tiles, {span: 7, foot: '环 = 同位置分位，数字 = 分位值，下方是本人数值与中位'}),
-        ]),
-        '分位参照是同实际分路的全部逐局记录（全量，不随切片变）；样本不足 2 局的指标照样给值，但不判分位。'));
+        `切片内的分路是 <b>${S(lane)}</b>（${scope.lane === '全部' ? '没限定分路，取主位置' : '来自上方「分路」'}）：<b>${fmt(list.length)} 局</b>、胜率 <b>${P(w2.rate)}</b>；下方数值与所选范围一致。`,
+        panel('六项专项指标 · 本人 vs 同位置中位', tiles, {span: 12,
+          foot: `本期＝所选范围，上期＝${S(c.prevLabel)}（等长）。差距基于同位置分位；中位参照全量逐局记录。`}),
+        '样本不足 2 局的指标照样给值，但不判分位。'));
     }
 
-    /* 03 指标越线：分路 × 12 项指标的热力矩阵 */
-    {
-      const lanesInScope = scope.lane === '全部' ? c.laneOrder : [scope.lane];
-      const rows = lanesInScope.map((lane) => {
-        const list = c.byLane.get(lane) || [];
-        return {
-          label: lane, labelHtml: `${S(lane)}<small class="pv-heat-count">${fmt(list.length)} 局</small>`,
-          cls: lane === c.mainLane ? 'is-self' : '',
-          cells: PANEL_KEYS.map((key) => {
-            const p = lanePctile(c, lane, key, mean(list, (r) => r[key]));
-            if (p == null) return {v: null};
-            const dim = f.anomalyDir === 'all'
-              || (f.anomalyDir === 'hi' && p >= 80) || (f.anomalyDir === 'lo' && p <= 20);
-            return {
-              v: dim ? p : 50, text: `${fmt(p, 0)}`,
-              cls: dim ? '' : 'is-muted',
-              title: `${lane} ${fieldLabel(key)} · 本人 ${showVal(key, mean(list, (r) => r[key]))} · 同位置 ${Math.round(p)} 分位`,
-            };
-          }),
-        };
-      });
-      const tools = selBar([
-        cardSelect('anomalyDir', '越线', [['all', '看全部'], ['hi', '只看偏高'], ['lo', '只看偏低']], f.anomalyDir),
-      ]);
-      let count = 0;
-      for (const lane of lanesInScope) {
-        const list = c.byLane.get(lane) || [];
-        if (list.length < 2) continue;
-        for (const key of PANEL_KEYS) {
-          const p = lanePctile(c, lane, key, mean(list, (r) => r[key]));
-          if (p != null && (p >= 80 || p <= 20)) count += 1;
-        }
-      }
-      setN(scope.rows.length);
-      out.push(card('03', '指标越线矩阵',
-        `${fmt(lanesInScope.length)} 条实际分路 × ${fmt(PANEL_KEYS.length)} 项指标的分位矩阵；当前切片共 <b>${fmt(count)} 格</b>越出 20 / 80 分位线。`,
-        tools + grid([panel('同分路分位热力', V.heat({
-          rows,
-          cols: PANEL_KEYS.map((key) => ({label: RADAR_SHORT[key] || fieldLabel(key)})),
-          diverging: true, aria: '分路与指标的分位热力矩阵', headW: 132, colW: 78, fit: w(12),
-          fmtV: (v) => `${fmt(v, 0)} 分位`,
-          legend: '<span>越左越靠后</span><i></i><span>越右越靠前</span><span style="margin-left:8px">50 = 同位置中位</span>',
-        }), {span: 12, foot: '颜色深浅 = 离中位的距离；格子里的数字是分位值。分路一栏想只看一条，用上方「分路」切片。'})]),
-        '分位参照是同实际分路的全部逐局记录，不是选手均值；越线只说明分布位置，不判断好坏。'));
-    }
-
-    /* 04 同位置对标：同一指标的选手排行柱 + 三个分位仪表 */
+    /* 03 同位置对标：同一指标的选手排行柱 + 三个分位仪表 */
     {
       const lane = c.focusLane;
       const key = f.bench;
@@ -450,7 +526,7 @@ export function createPlayerDetail(h) {
       const rows = selfRow ? [...top, selfRow] : top;
       const rank = scored.findIndex((s) => s.name === c.name) + 1;
       const tools = selBar([cardSelect('bench', '指标', [
-        ['rating', '评分'], ['winRate', '胜率'], ['kda', 'KDA'], ['hdpm', '对英雄输出'], ['participation', '参团率'],
+        ['winRate', '胜率'], ['kda', 'KDA'], ['hdpm', '对英雄输出'], ['participation', '参团率'],
       ], key)]);
       const chart = rows.length ? V.columns({
         labels: rows.map((s) => s.name),
@@ -460,30 +536,38 @@ export function createPlayerDetail(h) {
           clsAt: rows.map((s) => (s.name === c.name ? 'is-mark' : 'is-flat')),
           texts: rows.map((s) => showVal(key, s[key])),
         }],
-        W: w(8), H: 280, padL: 44, padR: 12, maxBarW: 40, baseline: 'auto',
+        /* 只有两三个人时别把图拉满 8 栏：柱会浮在巨大的空槽里。
+           宽度随人数收，柱子本身加宽，整图居中，不再是一片空白托两根细柱。 */
+        W: Math.min(w(8), 220 + rows.length * 150), H: 280,
+        padL: 56, padR: 16, maxBarW: 96, baseline: 'auto',
         fmtV: (v) => N(v, fieldDigits(key) > 1 ? 2 : 1),
         refs: median(scored.map((x) => x[key])) == null ? []
           : [{v: median(scored.map((x) => x[key])), label: '同位置中位'}],
         aria: `同位置选手 ${fieldLabel(key)} 排行`,
       }) : emptyWith('这一路还没有达标的选手',
         `本人${lane}只有 ${fmt((c.byLane.get(lane) || []).length)} 局，同位置里也没有达到 2 局门槛的人。`);
-      const selfGames = (c.byLane.get(lane) || []).length;
-      const selfRate = win(c.byLane.get(lane) || []).rate;
-      const selfRating = mean(c.byLane.get(lane) || [], (r) => r.rating);
+      const curSelf = c.byLane.get(lane) || [];
+      const selfGames = curSelf.length;
+      const selfRate = win(curSelf).rate;
+      const selfKda = mean(curSelf, (r) => r.kda);
       const pGames = percentile(all.map((s) => s.games), selfGames);
       const pRate = percentile(all.map((s) => s.winRate), selfRate);
-      const pRating = percentile(all.map((s) => s.rating), selfRating);
-      const gauges = `<div class="pv-tiles3">${[
-        V.gauge({value: pGames, label: '场次分位', sub: `${fmt(selfGames)} 局`}),
-        V.gauge({value: pRate, label: '胜率分位', sub: P(selfRate)}),
-        V.gauge({value: pRating, label: '评分分位', sub: N(selfRating, 2)}),
+      const pKda = percentile(all.map((s) => s.kda), selfKda);
+      const prevSelf = c.prevByLane.get(lane) || [];
+      const gauges = `<div class="pm-grid pm-grid--three">${[
+        metricCard({key: 'games', label: '场次', my: selfGames, mid: median(all.map((s) => s.games)),
+          pct: pGames, prev: c.prevByLane.size ? prevSelf.length : null, prevLabel: c.prevLabel}),
+        metricCard({key: 'winRate', label: '胜率', my: selfRate, mid: median(all.map((s) => s.winRate)),
+          pct: pRate, prev: win(prevSelf).rate, prevLabel: c.prevLabel}),
+        metricCard({key: 'kda', label: 'KDA', my: selfKda, mid: median(all.map((s) => s.kda)),
+          pct: pKda, prev: mean(prevSelf, (r) => r.kda), prevLabel: c.prevLabel}),
       ].join('')}</div>`;
       setN(valid.length);
-      out.push(card('04', `同位置对标 · ${lane}`,
+      out.push(card('03', `同位置对标 · ${lane}`,
         `${S(lane)} 共 <b>${fmt(all.length)} 人</b>，达 <b>2 局</b>门槛 <b>${fmt(valid.length)} 人</b>；按 <b>${S(fieldLabel(key))}</b> 排，本人 <b>${rank ? `第 ${fmt(rank)} 位` : na('未进榜', '本人该分路不足 2 局，不进榜')}</b>。`,
         tools + grid([
           panel(`按${fieldLabel(key)}排行 · 前 ${fmt(rows.length)} 人`, chart, {span: 8, foot: '强调色柱 = 本人，灰色柱 = 同位置其他人'}),
-          panel('本人三项分位', gauges, {span: 4, foot: `参照 ${fmt(all.length)} 名同位置选手`}),
+          panel('本人三项 · 数值与差距', gauges, {span: 4, foot: `中位参照 ${fmt(all.length)} 名同位置选手；环比为${S(c.prevLabel)}`}),
         ])
         + (all.length - valid.length ? note(`另有 <b>${fmt(all.length - valid.length)} 人</b>只打了 1 局或缺少该项数据，不进榜。`) : ''),
         '榜单只给单项原始值，不用统一综合分排序；1 局样本不进榜，避免一次高光把人顶到前面。'));
@@ -516,23 +600,6 @@ export function createPlayerDetail(h) {
     return map;
   }
 
-  /* 训练日一多（一整个赛季 40 天以上）就不按天铺列，自动并成周，
-     免得热力图变成一排 6px 宽的竖线。 */
-  function dayColumns(rows) {
-    const days = daysOf(rows);
-    if (days.length <= 21) return days.map((day) => ({key: day, label: day.slice(5), days: [day], weekly: false}));
-    const map = new Map();
-    for (const day of days) {
-      const key = weekStart(day);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(day);
-    }
-    return [...map].map(([key, list]) => ({
-      key, days: list, weekly: true,
-      label: list.length > 1 ? `${list[0].slice(5)}~${list[list.length - 1].slice(5)}` : list[0].slice(5),
-    }));
-  }
-
   function buildHeroes(c, f) {
     const out = [];
     const scope = c.scope;
@@ -555,15 +622,28 @@ export function createPlayerDetail(h) {
       const treemapItems = shown.map(([hero, list]) => {
         const wv = win(list);
         const lanes = [...new Set(list.map((r) => r.lane))];
+        const share = scope.rows.length ? list.length / scope.rows.length * 100 : 0;
         return {
           label: hero, value: list.length, pick: hero, cls: laneClsOf(lanes[0]),
           icon: portrait(hero),
-          sub: `${fmt(list.length)} 局 · 胜率 ${P(wv.rate)}`,
-          title: `${hero} · ${fmt(list.length)} 局 · 胜率 ${P(wv.rate)} · 评分 ${N(mean(list, (r) => r.rating), 1)} · 分路 ${lanes.join('/')}`,
+          sub: `${fmt(list.length)} 局 · 占 ${P(share)} · 胜率 ${P(wv.rate)}`,
+          title: `${hero} · ${fmt(list.length)} 局 · 出场占比 ${P(share)} · 胜率 ${P(wv.rate)} · 分路 ${lanes.join('/')}`,
         };
       });
       const byType = [...group(scope.rows, (r) => r.heroType || '未分类')].sort((a, b) => b[1].length - a[1].length);
       const ringItems = byType.map(([type, list], i) => ({label: type, value: list.length, cls: V.catCls(i)}));
+      /* 对抗路的战边 / 坦边单独给占比与胜率：职业环只给次数，教练要的是比例和赢没赢。 */
+      const sideRows = ['战边', '坦边'].map((type) => {
+        const list = scope.rows.filter((r) => r.heroType === type);
+        const wr = win(list);
+        return `<tr><th scope="row">${type}</th><td>${fmt(list.length)}</td>
+          <td>${P(scope.rows.length ? list.length / scope.rows.length * 100 : 0)}</td>
+          <td>${list.length ? P(wr.rate) : '0'}</td></tr>`;
+      }).join('');
+      const sideTable = `<div class="pv-rules-wrap" role="region" tabindex="0" aria-labelledby="pdx-side-cap">
+        <table class="pv-rules-table"><caption id="pdx-side-cap">战边 / 坦边 · 出场占比与胜率</caption>
+          <thead><tr><th scope="col">类型</th><th scope="col">出场</th><th scope="col">出场占比</th><th scope="col">胜率</th></tr></thead>
+          <tbody>${sideRows}</tbody></table></div>`;
       const tmEmpty = pool.length
         ? V.treemap({items: treemapItems, W: w(7), H: 330, pickName: 'hero', top: TOP_TILES + 1, aria: '英雄出场场次的矩形树图'})
         : emptyWith('门槛把英雄全筛掉了',
@@ -580,110 +660,57 @@ export function createPlayerDetail(h) {
             items: ringItems, size: 200, aria: '英雄职业构成', top: 8,
             center: {value: scope.rows.length, label: '切片场次', text: `${fmt(scope.rows.length)}`},
           }), {span: 5, foot: `覆盖 ${fmt(byType.length)} 类职业`}),
+          panel('对抗路类型占比', sideTable, {span: 12,
+            foot: '占比分母是当前切片的全部场次；没有样本的项按 0 显示。'}),
         ]) + (restText ? note(restText) : '') + (below ? note(banned) : ''),
         '职业元数据来自 resources/hero_tags.json 的 defaultType；面积只算次数，不代表强度。'));
     }
 
-    /* 02 使用节奏：英雄 × 训练日热力（列多则滚动/按周）+ 实际 × 默认分路 */
-    if (!pool.length) {
-      out.push(card('02', '使用节奏与分路类型',
-        `没有英雄达到 ${fmt(scope.min)} 局门槛，这段节奏看不出规律。`,
-        emptyWith('门槛把英雄全筛掉了',
-          `切片里 ${fmt(scope.rows.length)} 局分散在 ${fmt(c.topHeroes.length)} 个英雄上，没有一个到 ${fmt(scope.min)} 局。把「英雄门槛」调到「全部英雄」再看。`,
-          '清除切片条件'),
-        '一局英雄撑不起节奏判断，所以门槛会把它们整体挡在图表外。'));
-    } else {
-      const cols = dayColumns(scope.rows);
-      const heatHeroes = pool.slice(0, 9);
-      const heatRows = heatHeroes.map(([hero, list]) => ({
-        label: hero, labelHtml: heroPlain(hero),
-        cells: cols.map((col) => {
-          const hit = list.filter((r) => col.days.includes(dayOf(r)));
-          const n = hit.length;
-          const wv = win(hit);
-          return n
-            ? {v: n, text: fmt(n), title: `${hero} · ${col.label} · ${fmt(n)} 局 · 胜率 ${P(wv.rate)}`}
-            : {v: null};
-        }),
-      }));
-      const defaults = [...new Set(scope.rows.map((r) => r.heroDefaultLane).filter(Boolean))];
-      const defCols = LANES.filter((x) => defaults.includes(x));
-      const swapRows = c.laneOrder.map((lane) => {
-        const list = c.byLane.get(lane) || [];
-        return {
-          label: lane,
-          labelHtml: `${S(lane)}<small class="pv-heat-count">${fmt(list.length)} 局</small>`,
-          cells: defCols.map((def) => {
-            const n = list.filter((r) => r.heroDefaultLane === def).length;
-            return n ? {v: n, text: fmt(n), title: `${lane} 实际分路 · 默认 ${def} · ${fmt(n)} 局`} : {v: null};
-          }),
-        };
-      });
-      const swapped = scope.rows.filter((r) => r.heroDefaultLane && r.heroDefaultLane !== r.lane).length;
-      setN(scope.rows.length);
-      out.push(card('02', '使用节奏与分路类型',
-        `切片内 <b>${fmt(cols.length)}</b> ${cols.length && cols[0].weekly ? '周' : '个训练日'}的使用分布，以及 <b>${fmt(swapped)} 局</b>（<b>${P(scope.rows.length ? swapped / scope.rows.length * 100 : null)}</b>）打的不是英雄默认分路。`,
-        grid([
-          panel(`英雄 × 训练日${cols.length && cols[0].weekly ? '（按周合并）' : ''}`, V.heat({
-            rows: heatRows, cols: cols.map((col) => ({label: col.label})),
-            aria: '英雄与训练日的使用次数热力网格', empty: '', headW: 150, colW: 52, fit: w(7),
-            legend: '<span>少</span><i></i><span>多</span><span style="margin-left:8px">空格 = 那段时间没用</span>',
-            fmtV: (v) => `${fmt(v)} 局`,
-          }), {span: 7, foot: '列多时横向滚动（行头吸左）；训练日超过 21 天自动按周合并'}),
-          panel('实际分路 × 默认分路', V.heat({
-            rows: swapRows, cols: defCols.map((x) => ({label: x})),
-            aria: '实际分路与英雄默认分路的对应矩阵', empty: '', headW: 118, colW: 52, fit: w(5),
-            legend: '<span>格子里是局数</span>', fmtV: (v) => `${fmt(v)} 局`,
-          }), {span: 5, foot: '对角线 = 按默认分路打，其余 = 换位'}),
-        ]),
-        '实际分路取营地面板 battleRecords.position，默认分路取英雄元数据；两边都按局计。'));
-    }
-
-    /* 03 常用英雄对比：切片英雄优先，没选就用出场最多的 */
-    {
-      const bench = c.bench || new Map();
-      const hero = scope.hero !== '全部' ? scope.hero : ((pool[0] || c.topHeroes[0] || [])[0] || '');
-      const key = f.cmpMetric;
-      const list = c.byHero.get(hero) || [];
-      const wv = win(list);
-      const mine = key === 'games' ? list.length : key === 'winRate' ? wv.rate : mean(list, (r) => r[key]);
-      const b = bench.get(hero);
-      const theirs = !b ? null : key === 'games' ? b.games : key === 'winRate' ? (b.decided ? b.wins / b.decided * 100 : null) : b.kda;
-      const laneOf = list.length ? [...group(list, (r) => r.lane)].sort((x, y) => y[1].length - x[1].length)[0][0] : c.focusLane;
-      const laneList = c.byLane.get(laneOf) || [];
-      const laneVal = key === 'games' ? laneList.length : key === 'winRate' ? win(laneList).rate : mean(laneList, (r) => r[key]);
-      const tools = selBar([
-        cardSelect('cmpMetric', '指标', [['winRate', '胜率'], ['games', '场次'], ['kda', 'KDA']], key),
-      ]);
-      const cols = [
-        {label: '本人', value: mine, cls: 'is-mark', note: `${fmt(list.length)} 局`},
-        {label: '别的选手用同英雄', value: theirs, cls: 'is-flat', note: b ? `${fmt(b.games)} 局` : '无样本'},
-        {label: `${laneOf}整体`, value: laneVal, cls: 'is-na', note: `${fmt(laneList.length)} 局`},
-      ];
-      const chart = V.columns({
-        labels: cols.map((x) => x.label),
-        series: [{values: cols.map((x) => x.value), clsAt: cols.map((x) => x.cls),
-          texts: cols.map((x) => showVal(key, x.value))}],
-        W: w(12), H: 320, padL: 64, padR: 20, maxBarW: 120,
-        yMin: key === 'winRate' ? 0 : null, yMax: key === 'winRate' ? 100 : null,
-        baseline: key === 'winRate' ? 'zero' : 'auto',
-        fmtV: (v) => (fieldKind(key) === 'pct' ? `${fmt(v, 0)}%` : N(v, fieldDigits(key))),
-        refs: key === 'winRate' ? [{v: 50, label: '五五开'}] : [],
-        aria: `${hero} 的三种口径对比`,
-      });
-      const gap = isNum(mine) && isNum(theirs) ? mine - theirs : null;
-      setN(list.length);
-      out.push(card('03', '常用英雄对比',
-        `现在比的是 ${heroTag(hero)} 的 <b>${S(fieldLabel(key))}</b>：本人 <b>${showVal(key, mine)}</b>，同英雄其他选手 <b>${showVal(key, theirs)}</b>，差 <b>${fieldKind(key) === 'pct' ? deltaVal(key, gap) : signed(gap, fieldDigits(key))}</b>。`
-        + (scope.hero === '全部' ? '（没限定英雄，默认取出场最多的一个；用上方「英雄」切片换）' : ''),
-        tools + grid([panel(`${hero} · 本人 / 同英雄其他 / 分路整体`, chart, {
-          span: 12,
-          right: V.legend([['is-mark', '本人', false], ['is-flat', '别的选手用同英雄', false], ['is-na', `${laneOf}整体`, false]]).replace('pv-legend', 'pv-legend is-inline'),
-          foot: `柱上数字 = ${S(fieldLabel(key))}；第三根柱是本人该分路的整体水平，用来判断「是这个英雄打得差，还是这一路本来就这样」`,
-        })]),
-        '灰柱只统计同一批对局里其他选手用这个英雄的记录（不含本人）；样本不足 3 局只画柱不下结论。'));
-    }
     return out;
+  }
+
+  /* 上期 / 本期英雄卡对照：共有英雄排最前、左右同头像对齐，各期独有放分隔线后 */
+  const trendDelta = (d) => !d
+    ? '<em class="pv-trend-delta is-flat">→</em>'
+    : `<em class="pv-trend-delta ${d > 0 ? 'is-up' : 'is-down'}">${d > 0 ? '▲' : '▼'}${fmt(Math.abs(d))}</em>`;
+  function heroCompareHtml(period) {
+    const listOf = (list) => {
+      const map = new Map();
+      for (const [hero, set] of group(list, (r) => r.hero || '未知')) map.set(hero, set.length);
+      return map;
+    };
+    const prevCount = listOf(period.previous);
+    const curCount = listOf(period.current);
+    const byGames = (a, b) => b.n - a.n || String(a.hero).localeCompare(String(b.hero), 'zh');
+    const shared = [...prevCount].filter(([hero]) => curCount.has(hero))
+      .map(([hero, from]) => ({hero, from, to: curCount.get(hero)}))
+      .sort((a, b) => (b.from + b.to) - (a.from + a.to) || b.to - a.to
+        || String(a.hero).localeCompare(String(b.hero), 'zh'));
+    const prevOnly = [...prevCount].filter(([hero]) => !curCount.has(hero))
+      .map(([hero, n]) => ({hero, n})).sort(byGames);
+    const curOnly = [...curCount].filter(([hero]) => !prevCount.has(hero))
+      .map(([hero, n]) => ({hero, n})).sort(byGames);
+    const cell = (item, cls, delta, title) => {
+      if (!item) return '<div class="pv-trend-cell is-empty" aria-hidden="true"></div>';
+      return `<a class="pv-trend-cell${cls ? ' ' + cls : ''}" href="#hero/${encodeURIComponent(item.hero)}" draggable="false"
+          title="${S(title || `${item.hero} · ${fmt(item.n)} 局`)}">
+          <span class="pv-trend-face">${portrait(item.hero)}</span>
+          <b class="pv-trend-name">${S(item.hero)}</b>
+          <strong class="pv-trend-n">${fmt(item.n)}<small> 局</small>${delta == null ? '' : trendDelta(delta)}</strong>
+        </a>`;
+    };
+    const pair = (left, right) => `<div class="pv-trend-row">${left}${right}</div>`;
+    const sharedRows = shared.map((x) => pair(
+      cell({hero: x.hero, n: x.from}, '', null, `${x.hero} · 上期 ${fmt(x.from)} 局`),
+      cell({hero: x.hero, n: x.to}, '', x.to - x.from,
+        `${x.hero} · 上期 ${fmt(x.from)} 局 → 本期 ${fmt(x.to)} 局`),
+    )).join('');
+    const splitCount = Math.max(prevOnly.length, curOnly.length);
+    const splitter = splitCount
+      ? '<div class="pv-trend-sep"><span>上期有 · 本期无</span><span>本期有 · 上期无</span></div>' : '';
+    const splitRows = Array.from({length: splitCount}, (_, i) =>
+      pair(cell(prevOnly[i], 'is-gone', null), cell(curOnly[i], 'is-new', null))).join('');
+    return sharedRows + splitter + splitRows;
   }
 
   /* ══ 模块 3 · 周期与英雄池变动 ═══════════════════════════════════ */
@@ -692,58 +719,19 @@ export function createPlayerDetail(h) {
     const rows = c.scope.rows;
     const period = periodWindow(rows, f.period);
 
-    /* 01 英雄池变动：上期 × 本期 的二维漂移图，条目再多也不会挤在一起 */
+    /* 01 英雄池变动：左「上期」右「本期」，一行一对英雄卡，逐行对齐 */
     {
       const tools = selBar([
         cardSelect('period', '窗口', PERIOD_MODES.map(([key, label]) => [key, label]), f.period),
       ]);
       if (!period) {
-        out.push(card('01', '英雄池变动', '这个切片没有可用日期，切不出两期。', tools + V.empty('需要对局日期。'), ''));
+        out.push(card('', '英雄池变动', '', `<div class="pdx-center">${tools}</div>` + V.empty('需要对局日期，才能切出上期和本期。'), ''));
       } else {
-        const curHeroes = group(period.current, (r) => r.hero || '未知');
-        const prevHeroes = group(period.previous, (r) => r.hero || '未知');
-        const names = [...new Set([...curHeroes.keys(), ...prevHeroes.keys()])];
-        const items = names.map((hero) => ({
-          hero,
-          from: (prevHeroes.get(hero) || []).length,
-          to: (curHeroes.get(hero) || []).length,
-        })).filter((x) => x.from || x.to);
-        const fresh = items.filter((x) => x.from === 0).sort((a, b) => b.to - a.to);
-        const gone = items.filter((x) => x.to === 0).sort((a, b) => b.from - a.from);
-        const stay = items.filter((x) => x.from && x.to);
-        const top = Math.max(1, ...items.map((x) => Math.max(x.from, x.to)));
-        const points = items.map((x) => {
-          const diff = x.to - x.from;
-          return {
-            x: x.from, y: x.to, r: Math.max(1, x.from + x.to), label: x.from + x.to >= 3 ? x.hero : '',
-            cls: diff > 0 ? 'is-up' : diff < 0 ? 'is-down' : 'is-flat',
-            title: `${x.hero} · 上期 ${fmt(x.from)} 局 → 本期 ${fmt(x.to)} 局（${signed(diff)} 局）`,
-          };
-        });
-        const chart = points.length ? V.scatter({
-          points, W: w(12), H: 380, padL: 60, padB: 48,
-          xDomain: [-0.4, top + 0.6], yDomain: [-0.4, top + 0.6],
-          diagonal: true,
-          fmtX: (v) => `${fmt(v, 0)} 局`, fmtY: (v) => `${fmt(v, 0)} 局`,
-          xLabel: `上期出场（${period.prevLabel}）`, yLabel: `本期出场（${period.label}）`,
-          aria: '英雄出场数的两期漂移散点',
-        }) : emptyWith('两期之间没有可比较的英雄',
-          '上一个等长窗口里这名选手没有出场记录，切不出「上期 vs 本期」。');
-        const chips = (list, cls, emptyText) => list.length
-          ? `<div class="pv-strip">${list.slice(0, 12).map((x) => `<span class="pv-strip-item ${cls}">${heroPlain(x.hero)}<b>${fmt(x.from || x.to)} 局</b></span>`).join('')}</div>`
-          : `<p class="pv-note">${S(emptyText)}</p>`;
-        out.push(card('01', '英雄池变动',
-          `两期共出现 <b>${fmt(items.length)} 个英雄</b>；新增 <b>${fmt(fresh.length)} 个</b>、本期未用 <b>${fmt(gone.length)} 个</b>、两期都在用 <b>${fmt(stay.length)} 个</b>。`,
-          tools + grid([
-            panel('上期 → 本期 漂移', chart, {
-              span: 12,
-              right: V.legend([['is-up', '用得更多', false], ['is-down', '用得少', false], ['is-flat', '持平', false]]).replace('pv-legend', 'pv-legend is-inline'),
-              foot: '对角线 = 两期场次相同；点在对角线上方 = 本期用得更多，下方 = 更少；点大小 = 两期总场次',
-            }),
-          ])
-          + `<div class="pv-split"><div class="pv-block"><h4>本期新增 / 重启</h4>${chips(fresh, 'is-hi', '本期没有新英雄。')}</div>
-             <div class="pv-block"><h4>上期用过、本期未用</h4>${chips(gone, 'is-lo', '上期用过的英雄本期都还在用。')}</div></div>`,
-          '漂移图只说明使用次数变了，不等于英雄强度或胜率变了。'));
+        const board = `<div class="pv-trend-scroll" data-pool-scroll tabindex="0" role="group" aria-label="上期与本期英雄出场对照，可滚动或按住拖动">
+          <div class="pv-trend-head"><span>上期 · ${S(period.prevLabel)}</span><span>本期 · ${S(period.label)}</span></div>
+          ${heroCompareHtml(period)}
+        </div>`;
+        out.push(card('', '英雄池变动', '', `<div class="pdx-center">${tools}</div>` + board, ''));
       }
     }
     return out;
@@ -788,89 +776,27 @@ export function createPlayerDetail(h) {
     };
   }
 
-  /* ══ 模块 4 · 同分路对位 ═══════════════════════════════════════════ */
-  function buildMatchup(c, f) {
-    const out = [];
-    const scope = c.scope;
-    const duels = scope.rows.filter((r) => r.foe);
-    const diffOf = (r) => r.gold - (r.foe.gold || 0);
-
-    {
-      const avg = mean(duels, diffOf);
-      const ahead = duels.filter((r) => diffOf(r) > 0).length;
-      const tools = selBar([
-        cardSelect('mu', '视角', [['gold', '终局经济差'], ['proxy', '对线期代理']], f.mu),
-      ]);
-      const proxyTools = f.mu === 'proxy'
-        ? selBar([cardSelect('proxy', '代理指标', [['cs', '补刀差'], ['kda', 'KDA 差'], ['participation', '参团率差']], f.proxy)])
-        : '';
-      let chart = '', chartFoot = '';
-      if (f.mu === 'gold') {
-        const recent = duels.slice(0, 20).reverse();
-        chart = recent.length ? V.columns({
-          labels: recent.map((r) => String(r.day || '').slice(5)),
-          labelsHtml: recent.map((r) => `<span class="pv-col-face ${r.result === 'win' ? 'is-win' : 'is-loss'}">${portrait(r.hero)}</span>`),
-          series: [{
-            values: recent.map(diffOf),
-            clsAt: recent.map((r) => (diffOf(r) >= 0 ? 'is-up' : 'is-down')),
-            texts: recent.map((r) => signed(diffOf(r))),
-          }],
-          W: w(12), H: 330, padL: 60, padR: 16, maxBarW: 30, showValues: recent.length <= 22,
-          fmtV: (v) => signed(v), aria: '逐局终局经济差',
-        }) : emptyWith('这个切片里没有可对位的局',
-          scope.lane !== '全部'
-            ? `切片里的 ${scope.lane} 对局没有同分路对手面板（对手阵容可能没采全）。`
-            : '切片里找不到同分路的对手面板（对手阵容可能没采全）。');
-        chartFoot = '柱 = 终局经济差（金币）：柱在 0 线之上为领先，之下为落后；柱下头像是本人所用英雄，绿框胜 / 棕框负';
-      } else {
-        const key = f.proxy;
-        const label = {cs: '补刀差', kda: 'KDA 差', participation: '参团率差'}[key];
-        const lanes = c.laneOrder.filter((lane) => duels.some((r) => r.lane === lane));
-        const vals = lanes.map((lane) => {
-          const list = duels.filter((r) => r.lane === lane);
-          return mean(list, (r) => (r[key] || 0) - (r.foe[key] || 0));
-        });
-        chart = V.columns({
-          labels: lanes,
-          series: [{
-            values: vals, clsAt: vals.map((v) => (v >= 0 ? 'is-up' : 'is-down')),
-            texts: vals.map((v) => signed(v, key === 'kda' ? 2 : key === 'participation' ? 1 : 0)),
-          }],
-          W: w(12), H: 320, padL: 60, padR: 16, maxBarW: 64,
-          fmtV: (v) => signed(v), aria: `各分路的${label}`,
-        });
-        chartFoot = `柱 = 各分路的${label}（本人 − 同分路对手）`;
-      }
-      setN(duels.length);
-      out.push(card('01', '同分路对位',
-        `<b>${fmt(duels.length)} / ${fmt(scope.rows.length)} 局</b>能找到同分路对手，场均终局经济差 <b>${signed(avg)} 金币</b>，领先 <b>${fmt(ahead)} 局</b>。`,
-        stats([
-          ['可对位局数', fmt(duels.length), '切片内全部，不止最近 10 局'],
-          ['场均经济差', signed(avg), '本人 − 同分路对手（金币）'],
-          ['领先局', `${fmt(ahead)} / ${fmt(duels.length)}`, '终局经济为正'],
-          ['对位胜率', P(win(duels).rate), '这些局的胜负'],
-        ]) + tools + proxyTools
-        + grid([panel(f.mu === 'gold' ? '逐局终局经济差 · 最近 20 局' : '对线期代理', chart, {span: 12, foot: chartFoot})]),
-        '终局口径只看双方最终经济；对线期 1v1、早期死亡点要回放，代理指标只作对照。'));
-    }
-    return out;
-  }
-
-  /* ══ 模块 5 · 双英雄组合与替代候选 ════════════════════════════════ */
+  /* ══ 模块 4 · 双英雄组合与替代候选 ════════════════════════════════ */
   function buildTeam(c, f) {
     const out = [];
     const scope = c.scope;
     const rows = scope.rows;
     const focusHero = scope.hero !== '全部' ? scope.hero : '';
 
-    /* 01 双英雄组合：本人英雄 × 搭档英雄 的矩阵，组合本来就是二维的 */
+    /* 01 双英雄组合：改成「搭档榜」——一行一组，全部列出、可排序。
+       原来的 8×6 热力矩阵空格多、还只露前 48 格，组合越多越看不全；
+       榜单是 1 维排序列表，组合再多也只是往下滚，永远显示全部。 */
     {
+      /* 组合口径只认组合池里定义过的搭档；没进池的同场共现不算「组合」。 */
+      const poolPairs = ((st.pd && st.pd.comboPool && st.pd.comboPool.pairs) || []);
+      const poolKeys = new Set(poolPairs.map((p) => [...(p.heroes || [])].sort().join('|')));
       const allPairs = new Map();
       for (const r of rows) {
         if (!r.hero) continue;
         for (const mate of r.mates || []) {
           if (!mate.name || !mate.hero) continue;
-          const key = `${r.hero}|${mate.hero}`;
+          const key = [r.hero, mate.hero].sort().join('|');
+          if (!poolKeys.has(key)) continue;
           const it = allPairs.get(key) || {a: r.hero, b: mate.hero, mate: mate.name, games: 0, wins: 0, decided: 0};
           it.games += 1;
           if (r.result === 'win' || r.result === 'loss') {
@@ -881,38 +807,45 @@ export function createPlayerDetail(h) {
         }
       }
       const list = [...allPairs.values()].filter((v) => v.games >= 2);
-      const inside = [...allPairs.values()].sort((a, b) => b.games - a.games);
-      const mineRows = [...group(inside, (v) => v.a)].sort((x, y) => y[1].length - x[1].length);
-      const shownRows = (focusHero ? mineRows.filter(([mineHero]) => mineHero === focusHero)
-        .concat(mineRows.filter(([mineHero]) => mineHero !== focusHero)) : mineRows).slice(0, 6);
-      const cols = [...group(inside, (v) => v.b)].sort((x, y) => y[1].length - x[1].length).slice(0, 8).map(([b]) => b);
-      const heatRows = shownRows.map(([mineHero]) => ({
-        label: mineHero, labelHtml: heroPlain(mineHero),
-        cls: focusHero && mineHero !== focusHero ? 'is-dim' : (focusHero ? 'is-self' : ''),
-        cells: cols.map((mateHero) => {
-          const it = allPairs.get(`${mineHero}|${mateHero}`);
-          if (!it) return {v: null};
-          const rate = it.decided ? it.wins / it.decided * 100 : null;
-          return {
-            v: it.games, text: `${fmt(it.games)}`, sub: P(rate),
-            title: `${mineHero} + ${mateHero} · ${fmt(it.games)} 局 · 组合胜率 ${P(rate)} · 搭档 ${it.mate}`,
-          };
-        }),
-      }));
-      const best = list.slice().sort((a, b) => (b.decided ? b.wins / b.decided : 0) - (a.decided ? a.wins / a.decided : 0) || b.games - a.games)[0];
+      const rateOf = (x) => (x.decided ? x.wins / x.decided * 100 : null);
+      /* 按胜率排时只认 ≥3 局的组合：2 局 100% 不该压过 12 局 75%。
+         没有够格的就退回按场次，避免整页空榜。 */
+      const byWin = f.comboSort === 'winRate';
+      const solid = list.filter((x) => x.games >= 3);
+      const pool = byWin && solid.length ? solid : list;
+      const ranked = pool.slice().sort((a, b) => byWin
+        ? (rateOf(b) ?? -1) - (rateOf(a) ?? -1) || b.games - a.games
+        : b.games - a.games || (rateOf(b) ?? -1) - (rateOf(a) ?? -1));
+      const top = ranked[0];
+      const tools = selBar([cardSelect('comboSort', '排序', [['games', '按场次'], ['winRate', '按胜率']], f.comboSort)]);
+      const comboRow = (x, i) => {
+        const rate = rateOf(x);
+        return `<div class="pv-combo-row${focusHero && x.a !== focusHero ? ' is-dim' : ''}">
+          <span class="pv-combo-rank">${String(i + 1).padStart(2, '0')}</span>
+          <span class="pv-combo-pair">
+            <span class="pv-combo-hero">${heroPlain(x.a)}</span>
+            <i class="pv-combo-plus" aria-hidden="true">+</i>
+            <span class="pv-combo-hero">${heroPlain(x.b)}</span>
+          </span>
+          <span class="pv-combo-games"><b>${fmt(x.games)}</b><small>局</small></span>
+          <span class="pv-combo-rate ${rateCls(rate)}">
+            <b>${P(rate)}</b>
+            <i class="pv-combo-bar" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, rate ?? 0))}%"></i></i>
+          </span>
+        </div>`;
+      };
+      const board = `<div class="pv-combo">
+        <div class="pv-combo-row is-head" aria-hidden="true"><span>#</span><span>本人英雄 + 搭档英雄</span><span>场次</span><span>组合胜率</span></div>
+        <div class="pv-combo-scroll" data-combo-scroll tabindex="0" role="group" aria-label="搭档组合排行，可滚动">
+          ${ranked.length ? ranked.map(comboRow).join('')
+            : `<p class="pv-empty">${poolKeys.size ? '组合池里的搭档在这个切片里没有出场 2 局以上。' : '组合池还没加载出来。'}</p>`}
+        </div>
+      </div>`;
       setN(allPairs.size);
       out.push(card('01', '双英雄组合',
-        `切片内「本人英雄 × 搭档英雄」共 <b>${fmt(allPairs.size)} 组</b>，出场 ≥ 2 局 <b>${fmt(list.length)} 组</b>；最稳的是 ${best ? `<b>${heroPlain(best.a)} + ${heroPlain(best.b)}</b>` : '—'}（${P(best && best.decided ? best.wins / best.decided * 100 : null)}）。`
-        + (focusHero ? `当前已聚焦 ${S(focusHero)}。` : '用上方「英雄」切片可聚焦某一位。'),
-        grid([
-          panel(focusHero ? `${focusHero} 的搭档组合（纵轴第一行）` : '组合矩阵（本人 × 搭档）', V.heat({
-            rows: heatRows,
-            cols: cols.map((hero) => ({label: hero, iconHtml: heroPlain(hero)})),
-            aria: '本人英雄与搭档英雄的组合矩阵', headW: 168, colW: 100, fit: w(12),
-            legend: '<span>格子里是组合场次，小字是组合胜率</span><span style="margin-left:8px">空格 = 没同场过 2 局以上</span>',
-            fmtV: (v) => `${fmt(v)} 局`,
-          }), {span: 12, foot: '横轴 = 搭档英雄，纵轴 = 本人英雄；组合本来就是二维关系，只列前 8 × 6，够看清主力搭配'})]),
-        '组合胜率分母只算有胜负的局；1 局组合不进图，样本太薄看不出稳定度。'));
+        `组合池内「本人英雄 × 搭档英雄」共 <b>${fmt(allPairs.size)} 组</b>，出场 ≥ 2 局 <b>${fmt(list.length)} 组</b>${byWin ? '（按胜率排只认 ≥3 局）' : ''}；${byWin ? '胜率最高' : '用得最多'}的是 ${top ? `<b>${heroPlain(top.a)} + ${heroPlain(top.b)}</b>` : '—'}（${fmt(top ? top.games : 0)} 局 · ${P(top ? rateOf(top) : null)}）。`,
+        tools + board,
+        '只统计组合池里定义过的双人组合；同场共现但没进池的搭档不算组合。'));
     }
 
     /* 02 英雄替代候选：能力覆盖表
@@ -931,6 +864,7 @@ export function createPlayerDetail(h) {
         const lane = base.lane || list[0].heroDefaultLane || list[0].lane;
         const caps = base.caps || [];
         const bench = c.bench || new Map();
+        const kplStats = (st.pd && st.pd.detail && st.pd.detail.kplHeroStats) || {};
         const candidates = Object.entries(c.meta)
           .filter(([name, tag]) => name !== hero && tag.lane && tag.lane === lane)
           .map(([name, tag]) => {
@@ -938,11 +872,13 @@ export function createPlayerDetail(h) {
             const mine = c.byHero.get(name) || [];
             const wv = win(mine);
             const peer = bench.get(name);
+            const kpl = kplStats[name];
             return {
               name, tag, shared, miss: caps.filter((x) => !(tag.caps || []).includes(x)),
               used: mine.length, rate: wv.rate,
               peerRate: peer && peer.decided ? peer.wins / peer.decided * 100 : null,
               peerGames: peer ? peer.games : 0,
+              kplRate: kpl ? kpl.winRate : null, kplPicks: kpl ? kpl.picks : 0,
             };
           })
           .filter((x) => x.shared.length >= 2)
@@ -966,6 +902,9 @@ export function createPlayerDetail(h) {
           const peerTxt = x.peerGames
             ? `${fmt(x.peerGames)} 局 · <em class="${rateCls(x.peerRate)}">${P(x.peerRate)}</em>`
             : '<span class="pv-cand-none">无同英雄样本</span>';
+          const kplTxt = isNum(x.kplRate)
+            ? `<em class="${rateCls(x.kplRate)}">${P(x.kplRate)}</em><small>${fmt(x.kplPicks)} 局</small>`
+            : '<span class="pv-cand-none">无 KPL 样本</span>';
           /* 最后给一句人话结论：教练扫一眼就知道这条该不该跟。 */
           let verdict = '样本不足，先观察', vcls = '';
           if (!x.used && !x.peerGames) { verdict = '没样本，纯名单'; }
@@ -979,6 +918,7 @@ export function createPlayerDetail(h) {
             <span class="pv-cand-caps" role="cell">${capCell}</span>
             <span class="pv-cand-num" role="cell">${mineTxt}</span>
             <span class="pv-cand-num" role="cell">${peerTxt}</span>
+            <span class="pv-cand-num pv-cand-kpl" role="cell" title="KPL 职业赛该英雄胜率">${kplTxt}</span>
             <span class="pv-cand-verdict ${vcls}" role="cell">${S(verdict)}</span>
           </div>`;
         }).join('');
@@ -987,6 +927,7 @@ export function createPlayerDetail(h) {
           <span role="columnheader">比 ${S(hero)} 多 / 少的能力</span>
           <span role="columnheader">本人已用</span>
           <span role="columnheader">同英雄其他人</span>
+          <span role="columnheader" title="KPL 职业赛该英雄胜率">KPL 胜率</span>
           <span role="columnheader">怎么读</span>
         </div>`;
         const body = candidates.length
@@ -1002,7 +943,7 @@ export function createPlayerDetail(h) {
           grid([
             panel(`${hero} 的能力 → 谁来补`, body, {
               span: 12,
-              foot: '点英雄名进英雄页查细节；「本人已用」和「同英雄其他人」两列才是决策依据 —— 能力对得上但没打过，只能算考察名单',
+              foot: '「本人已用」「同英雄其他人」是训练赛样本，「KPL 胜率」是职业赛参照，两边不混算',
             })]),
           '能力标签来自 resources/hero_tags.json，是英雄机制的粗分类；同英雄其他人的样本取同一批对局里别队的记录，不含本人。'));
       }
@@ -1013,9 +954,7 @@ export function createPlayerDetail(h) {
   /* ══ 页面装配 ══════════════════════════════════════════════════════ */
   function render(board, name, detail) {
     cardSeq = 0;
-    try {
-      foldedCards = new Set(JSON.parse(window.localStorage.getItem('pdx.fold') || '[]'));
-    } catch (err) { foldedCards = new Set(); }
+    ensureGradeRules();
     const allRows = (detail && detail.rows) || [];
     const back = st && st.returnTo && st.returnTo.href ? st.returnTo : {href: '#playerarchive', label: '选手档案'};
     if (!allRows.length) {
@@ -1033,6 +972,17 @@ export function createPlayerDetail(h) {
     const scope = buildScope(allRows);
     const rows = scope.rows;
     const identity = detail.identity || {};
+    /* 选手档案只做自家：对手的号不再进档案 / 详情页，链接直接落回本队名册。 */
+    if (identity.side === 'enemy') {
+      return `<div class="page hero-detail-page page-wide" data-pl-page="solo">
+        <header class="hero-masthead"><div class="page-intro"><div class="pls-head">
+          <a class="hero-back" href="#playerarchive">← 选手档案</a>
+          <div class="pls-id"><div><h1>档案只收录本队选手</h1>
+            <p>${S(name)} 是对手战队的游戏名；按验收口径，选手档案不再给对手建档案。</p></div></div></div></div></header>
+        <div class="hero-detail-grid"><section class="section"><div class="section-heading"><div>
+          <h2>回到本队名册</h2><p>对手数据仍参与对局与 BP 分析，只是不进选手档案。</p></div></div>
+          <p class="pl-note"><a class="pl-link" href="#playerarchive">← 选手档案</a></p></section></div></div>`;
+    }
     const byLane = group(rows, (r) => r.lane);
     const laneOrder = LANES.filter((lane) => byLane.has(lane));
     for (const lane of byLane.keys()) if (!laneOrder.includes(lane)) laneOrder.push(lane);
@@ -1041,8 +991,23 @@ export function createPlayerDetail(h) {
     const focusLane = scope.lane !== '全部' ? scope.lane : mainLane;
     const byHero = group(rows.filter((r) => r.hero), (r) => r.hero);
     const topHeroes = [...byHero].sort((a, b) => b[1].length - a[1].length || String(a[0]).localeCompare(String(b[0])));
+    /* 环比口径与顶部范围选择器一致：
+       本期 = 你选的范围（rows）；上期 = 紧邻该范围之前、等长的训练日。
+       选「近 10 个训练日」就是本期 10 天 vs 前 10 天，不再另挑窗口。 */
+    const prevCtx = (() => {
+      const allDays = daysOf(allRows);
+      const curDays = daysOf(rows);
+      const n = curDays.length;
+      if (!n || !allDays.length) return {prev: new Map(), label: '上期'};
+      const firstIdx = allDays.indexOf(curDays[0]);
+      const startIdx = firstIdx < 0 ? allDays.length - n : firstIdx;
+      const prevDays = allDays.slice(Math.max(0, startIdx - n), startIdx);
+      const prevRows = allRows.filter((r) => { const d = dayOf(r); return d && prevDays.includes(d); });
+      return {prev: group(prevRows, (r) => r.lane), label: `前 ${n} 个训练日`};
+    })();
     const ctx = {
       board, name, detail, allRows, rows, identity, scope, focusLane,
+      prevByLane: prevCtx.prev, prevLabel: prevCtx.label,
       desc: [...rows].reverse(),
       laneSamples: detail.laneSamples || {},
       laneDistributions: detail.laneDistributions || laneDistOf(allRows),
@@ -1057,8 +1022,6 @@ export function createPlayerDetail(h) {
     const total = win(allRows);
     const mainList = group(allRows, (r) => r.lane).get(mainLane) || [];
     const allLaneCount = new Set(allRows.map((r) => r.lane).filter(Boolean)).size;
-    const recent10 = allRows.slice(-10);
-    const baseRatings = allRows.slice(0, Math.max(0, allRows.length - 10)).map((r) => r.rating).filter(isNum);
     const kpiHtml = `<div class="hero-kpi pl-kpi" role="group" aria-label="关键指标">${[
       ['出场', `${fmt(allRows.length)} 局`, `${fmt(total.wins)} 胜 ${fmt(total.decided - total.wins)} 负`],
       ['胜率', P(total.rate), `${fmt(total.wins)} / ${fmt(total.decided)} 有胜负`],
@@ -1066,9 +1029,8 @@ export function createPlayerDetail(h) {
       ['副位置覆盖', `${fmt(allLaneCount - 1)} 个位置`, `${fmt(allRows.length - mainList.length)} 局`],
       ['英雄池', `${fmt(new Set(allRows.map((r) => r.hero).filter(Boolean)).size)} 个英雄`,
         `覆盖 ${fmt(new Set(allRows.map((r) => r.heroType).filter(Boolean)).size)} 类职业`],
-      ['近 10 局评分', N(mean(recent10, (r) => r.rating), 2), baseRatings.length ? `此前基线 ${N(mean(baseRatings), 2)}` : '基线样本不足'],
       ['训练日', `${fmt(daysOf(allRows).length)} 个`, rangeText(daysOf(allRows))],
-    ].map(([label, value, noteText]) => `<div class="hero-kpi-cell"><span>${S(label)}</span><strong>${value}</strong><p>${S(noteText)}</p></div>`).join('')}</div>`;
+    ].map(([label, value, noteText], i) => `<div class="hero-kpi-cell${i < 2 ? ' is-key' : ''}"><span>${S(label)}</span><strong>${value}</strong><p>${S(noteText)}</p></div>`).join('')}</div>`;
 
     const allPlayers = ((board && board.players) || []).filter((p) => p && p.name && (p.games || 0) >= 1);
     const regulars = allPlayers.filter((p) => p.side === 'own' && (p.games || 0) >= 3);
@@ -1090,7 +1052,16 @@ export function createPlayerDetail(h) {
         <span class="pls-back-row"><a class="hero-back" href="${S(back.href)}">← ${S(back.label)}</a>${backExtra}</span>
         <div class="pls-id">
           <span class="pls-ava" aria-hidden="true">${S(String(name).trim().slice(0, 1) || '?')}</span>
-          <div><h1>${S(name)}</h1><p>${S(mainLane)} · ${identity.side === 'own' ? '本队侧' : '对手侧'} · ${identity.bound ? '已认领' : '待认领昵称'} · ${fmt(allLaneCount)} 个实际分路 · ${fmt(allRows.length)} 局</p></div>
+          <div class="pls-id-copy">
+            <h1>${S(name)}</h1>
+            <p class="pls-meta">
+              <span class="pls-chip is-role">${S(mainLane)}</span>
+              <span class="pls-chip">${identity.side === 'own' ? '本队' : '对手'}</span>
+              <span class="pls-chip${identity.bound ? ' is-ok' : ' is-warn'}">${identity.bound ? '已认领' : '待认领'}</span>
+              <span class="pls-chip">${fmt(allLaneCount)} 个分路</span>
+              <span class="pls-chip">${fmt(allRows.length)} 局</span>
+            </p>
+          </div>
         </div>
       </div>
       <div class="intro-actions">${roster.length > 1 ? `<label class="pv-sel is-head"><span class="pv-sel-label">换选手</span>
@@ -1101,13 +1072,11 @@ export function createPlayerDetail(h) {
           : `<button class="control${inCompare ? ' is-on' : ''}" data-pl-pick-b="${S(name)}">${inCompare ? `已放入对比（${compareCount}/2）` : '放入对比'}</button>`}<button class="control" data-action="refresh">刷新数据</button></div>
     </div>${kpiHtml}</header>`;
 
-    const briefHtml = `<div class="hero-brief">全量 <b>${fmt(allRows.length)} 局</b>、${fmt(total.wins)} 胜 ${fmt(total.decided - total.wins)} 负（胜率 <b>${P(total.rate)}</b>）。主位置 <b>${S(mainLane)} ${fmt(mainList.length)} 局</b>；下面的分析只看上方切片里的 <b>${fmt(rows.length)} 局</b>，切一下就能把「一整个赛季」收成「这几天的这一路」。所有分位、排名都按各自实际分路计算，不给统一综合分。</div>`;
-
     const modules = [
-      ['portrait', '选手综合画像', '位置能力、指标越线矩阵、同位置对标', (c, ff) => buildPortrait(c, ff)],
-      ['heroes', '英雄池', '使用图谱、使用节奏与同英雄对照', (c, ff) => buildHeroes(c, ff)],
-      ['trend', '英雄池变动', '上期 × 本期出场漂移与进出池', (c, ff) => buildTrend(c, ff)],
-      ['matchup', '同分路对位', '逐局终局经济差与对线期代理', (c, ff) => buildMatchup(c, ff)],
+      ['bench', '同分路对比', '自家 vs 规则标准线', (c, ff) => buildBench(c, ff)],
+      ['portrait', '选手综合画像', '位置能力、同位置对标', (c, ff) => buildPortrait(c, ff)],
+      ['heroes', '英雄池', '使用图谱与同英雄对照', (c, ff) => buildHeroes(c, ff)],
+      ['trend', '英雄池变动', '', (c, ff) => buildTrend(c, ff)],
       ['team', '组合与替代', '双英雄组合矩阵与英雄替代候选', (c, ff) => buildTeam(c, ff)],
     ];
     /* 模块导航 + 切片条一起吸顶：滚到任何一节都能换英雄 / 换范围。
@@ -1124,7 +1093,7 @@ export function createPlayerDetail(h) {
 
     /* 切片命中 0 局时不再画一堆空图：直接给一张能让教练退回上一步的卡 */
     if (!rows.length) {
-      return `<div class="page hero-detail-page page-wide" data-pl-page="solo">${head}${briefHtml}${dock}
+      return `<div class="page hero-detail-page page-wide" data-pl-page="solo">${head}${dock}
         <div class="hero-detail-grid"><section class="section" data-pdx-module="空切片" data-pdx-key="empty">
           <div class="pdx-cards">${card('00', '这个切片里没有对局', '范围、分路、英雄、对手、结果五个条件叠在一起，把数据筛空了。',
             emptyWith('当前切片 0 局', `${scopeText(scope)} —— 换个范围或去掉一个条件就能看到数据。`),
@@ -1134,11 +1103,8 @@ export function createPlayerDetail(h) {
     }
 
     const sections = modules.map(([key, label, sub, build]) =>
-      block(label, sub, `<div class="pdx-cards">${build(ctx, f).join('')}</div>`, '', `data-pdx-module="${S(label)}" data-pdx-key="${S(key)}"`)).join('');
-    const profileRow = (st.board && (st.board.players || []).find((p) => p.name === name))
-      || {name, nicknames: (identity && identity.nicknames) || []};
-    const profileBlock = profile ? profile.summary(profileRow) : '';
-    return `<div class="page hero-detail-page page-wide" data-pl-page="solo">${head}${profileBlock}${briefHtml}${dock}<div class="hero-detail-grid">${sections}</div>
+      block(label, '', `<div class="pdx-cards">${build(ctx, f).join('')}</div>`, '', `data-pdx-module="${S(label)}" data-pdx-key="${S(key)}"`)).join('');
+    return `<div class="page hero-detail-page page-wide" data-pl-page="solo">${head}${dock}<div class="hero-detail-grid">${sections}</div>
       <button type="button" class="pv-top" data-pdx-top aria-label="回到顶部" title="回到顶部">↑</button></div>`;
   }
 
@@ -1146,12 +1112,10 @@ export function createPlayerDetail(h) {
   function readFilters(c) {
     const ui = stateUI();
     const f = {
-      anomalyDir: one(['all', 'hi', 'lo'], ui.anomalyDir, 'all'),
-      bench: one(['rating', 'winRate', 'kda', 'hdpm', 'participation'], ui.bench, 'rating'),
-      cmpMetric: one(['winRate', 'games', 'kda'], ui.cmpMetric, 'winRate'),
+      bench: one(['winRate', 'kda', 'hdpm', 'participation'], ui.bench, 'winRate'),
+      benchField: one(BENCH_FIELDS.map(([key]) => key), ui.benchField, 'gold10'),
       period: one(PERIOD_MODES.map((m) => m[0]), ui.period, 'd3'),
-      mu: one(['gold', 'proxy'], ui.mu, 'gold'),
-      proxy: one(['cs', 'kda', 'participation'], ui.proxy, 'cs'),
+      comboSort: one(['games', 'winRate'], ui.comboSort, 'games'),
     };
     Object.assign(ui, f);
     return f;

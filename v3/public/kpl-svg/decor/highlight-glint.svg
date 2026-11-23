@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="82" height="34" viewBox="0 0 82 34" role="img">
+<title>横向闪光</title>
+<defs><radialGradient id="glint">
+ <stop stop-color="#fff"/><stop offset=".25" stop-color="#fff6df" stop-opacity=".94"/><stop offset=".6" stop-color="#ffe7b5" stop-opacity=".28"/><stop offset="1" stop-color="#fff6e2" stop-opacity="0"/>
+</radialGradient></defs>
+<ellipse cx="41" cy="17" rx="40" ry="16" fill="url(#glint)"/><ellipse cx="41" cy="17" rx="27" ry="4" fill="url(#glint)"/>
+</svg>

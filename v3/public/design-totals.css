@@ -1,0 +1,80 @@
+/* 总量 + 阶段对比 —— 1:1 移植自 design-redblue/总量与阶段对比_卡片版.html
+   scoped 到 .md-page。 */
+
+/* 总量样式已并入 design-verdict.css（同一设计稿画布） */
+
+/* ── 阶段对比 ─────────────────────────────────────────── */
+.md-page .ph-head{display:flex;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid #e6edf2}
+.md-page .ph-head h1{font-size:19px;font-weight:800;color:#1b2d3d;margin:0}
+.md-page .ph-head .tag{font-size:12px;font-weight:700;color:#1f6fcf;padding:3px 10px;border-radius:999px;
+  background:rgba(47,127,224,.1);border:1px solid rgba(47,127,224,.28)}
+/* 宽屏下 1fr 会把两列经济拉到 400px，中间留一大块空白；
+   改成有上限的列宽 + space-between，设计稿的疏密关系不变。 */
+.md-page .ph-cols{display:grid;
+  grid-template-columns:104px minmax(160px,240px) minmax(160px,240px) minmax(140px,180px) 88px 84px 80px;
+  justify-content:space-between;gap:12px;padding:10px 0 4px;font-size:12px;font-weight:700;color:#8495a3}
+.md-page .phase{display:grid;
+  grid-template-columns:104px minmax(160px,240px) minmax(160px,240px) minmax(140px,180px) 88px 84px 80px;
+  justify-content:space-between;gap:12px;align-items:center;padding:12px 0;border-top:1px dashed #e6edf2}
+.md-page .ph-name b{font-size:16px;font-weight:800;color:#25384a;display:block}
+.md-page .ph-name small{font-size:12px;color:#8495a3}
+.md-page .ph-econ small,.md-page .ph-net small,.md-page .ph-mini small{font-size:12px;color:#8495a3;display:block}
+.md-page .pv{display:grid;gap:4px}
+.md-page .pv b{font-family:Manrope,"Segoe UI",sans-serif;font-size:20px;font-weight:800;letter-spacing:-.03em}
+.md-page .pv b.own{color:#1f6fcf}
+.md-page .pv b.foe{color:#cf3f3f}
+.md-page .track{display:block;height:6px;border-radius:3px;background:#eef2f5;overflow:hidden}
+.md-page .track i{display:block;height:100%;border-radius:3px}
+.md-page .track i.own{background:#2f7fe0}
+.md-page .track i.foe{background:#d24a4a}
+.md-page .ph-net b{font-family:Manrope,"Segoe UI",sans-serif;font-size:18px;font-weight:800;
+  letter-spacing:-.02em;white-space:nowrap}
+.md-page .ph-net b.up{color:#1f6fcf}
+.md-page .ph-net b.down{color:#cf3f3f}
+.md-page .ph-mini b{font-family:Manrope,"Segoe UI",sans-serif;font-size:17px;font-weight:800;color:#42586a}
+.md-page .ph-mini b.inv{color:#1a8a5a}
+
+/* ── 资源四小格 + 三张资源卡（设计稿 res / res-cards）──── */
+.md-page .res{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px;
+  padding-top:14px;border-top:1px solid #e6edf2}
+.md-page .res-item{padding:10px 12px;border-radius:10px;background:#f6f9fc;border:1px solid #e6edf3}
+.md-page .res-item small{font-size:12px;font-weight:700;color:#7a8d9c;display:block}
+.md-page .res-item b{font-family:Manrope,"Segoe UI",sans-serif;font-size:26px;font-weight:800;
+  color:#20374b;letter-spacing:-.03em}
+.md-page .res-item b.blue{color:#1f6fcf}
+.md-page .res-item b.red{color:#cf3f3f}
+.md-page .res-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.md-page .rCard{border:1px solid transparent;border-radius:12px;min-height:142px;padding:14px 16px 20px;
+  display:flex;flex-direction:column;
+  background:linear-gradient(#fff,#fff) padding-box,
+  linear-gradient(120deg,#c3ddf8,#e6ecf1 50%,#f7cfcf) border-box}
+.md-page .rHead{font-size:13px;font-weight:800;color:#2b3d4e;margin-bottom:10px}
+.md-page .rLine{display:grid;grid-template-columns:1fr auto 12px auto;align-items:center;
+  gap:6px;padding:5px 0;border-top:1px dashed #e6edf2}
+.md-page .rLine span{font-size:12px;color:#7a8d9c}
+.md-page .rLine b{font-family:Manrope,"Segoe UI",sans-serif;font-size:19px;font-weight:800}
+.md-page .rLine b.own{color:#1f6fcf}
+.md-page .rLine b.foe{color:#cf3f3f}
+.md-page .rLine i{font-style:normal;color:#a6b4bf;font-size:12px;text-align:center}
+.md-page .tHead{display:grid;grid-template-columns:1fr auto auto;gap:8px;font-size:12px;
+  color:#8495a3;padding-bottom:4px}
+.md-page .tHead b{font-weight:800;color:#42586a}
+.md-page .tLine{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;
+  padding:3px 0;border-top:1px dashed #e6edf2;font-size:12px;color:#7a8d9c}
+.md-page .tLine b{font-family:Manrope,"Segoe UI",sans-serif;font-size:17px;font-weight:800;
+  color:#1f6fcf;text-align:right}
+.md-page .tLine b.foe{color:#cf3f3f}
+.md-page .bLine{flex:1;display:grid;grid-template-columns:repeat(3,1fr);
+  align-content:center;gap:6px;text-align:center}
+.md-page .bLine div{display:grid;gap:3px}
+.md-page .bLine b{font-family:Manrope,"Segoe UI",sans-serif;font-size:26px;font-weight:800;color:#20374b}
+.md-page .bLine small{font-size:12px;color:#8495a3}
+
+@media(max-width:980px){
+  .md-page .tot-grid{grid-template-columns:repeat(2,1fr);gap:14px 10px}
+  .md-page .tot:nth-child(2n){border-right:0;padding-right:0}
+  .md-page .res{grid-template-columns:repeat(2,1fr)}
+  .md-page .res-cards{grid-template-columns:1fr}
+  .md-page .ph-cols{display:none}
+  .md-page .phase{grid-template-columns:repeat(2,1fr);gap:10px}
+}

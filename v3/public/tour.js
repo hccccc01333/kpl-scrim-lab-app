@@ -1,22 +1,21 @@
 /** 分步教程：从采集、补录到复盘，跟着点一遍就会用。 */
 
-/* 教程目录只在第一次打开时自动弹出；进度按课保存，可以单独重看。 */
-const SEEN_KEY = 'training-tour-complete-v3';
+/* 从使用教程入口打开，进度按课保存。 */
 const PROGRESS_KEY = 'training-tour-v3-progress';
 
-const NAV_HREF = { setup: '#plan', players: '#playerarchive' };
+const NAV_HREF = { setup: '#competitions', players: '#playerarchive' };
 const navHref = (key) => NAV_HREF[key] || '#' + key;
 /* 顶部导航在窄屏收进菜单：先高亮菜单按钮，点开后再高亮菜单里的那一项。 */
 function navTarget(key) {
   return () => {
     const desktop = document.querySelector(`.main-nav [data-nav="${key}"]`);
     if (desktop?.getClientRects().length) return desktop;
-    const item = document.querySelector(`.mobile-menu a[href="${navHref(key)}"]`);
+    const item = document.querySelector(`#ui-navigation a[href="${navHref(key)}"]`);
     if (item?.getClientRects().length) return item;
     return document.querySelector('.menu-button');
   };
 }
-const navAdvance = (key) => [`.main-nav [data-nav="${key}"]`, `.mobile-menu a[href="${navHref(key)}"]`];
+const navAdvance = (key) => [`.main-nav [data-nav="${key}"]`, `#ui-navigation a[href="${navHref(key)}"]`];
 
 const LESSONS = [
   {
@@ -369,7 +368,6 @@ export function createTour() {
   let mode = 'idle';          // idle | hub | lesson | done
   let lessonIndex = -1;
   let stepIndex = -1;
-  let seen = Boolean(localStorage.getItem(SEEN_KEY));
   let runToken = 0;
   /* 教程自己把目标滚进视野时，别再触发一次重画。 */
   let programmatic = false;
@@ -435,8 +433,6 @@ export function createTour() {
         </div>
       </div>
     </div>`;
-    seen = true;
-    localStorage.setItem(SEEN_KEY, '1');
   }
 
   function cardHtml({ kicker, title, text, actions, progress: bar }) {
@@ -682,8 +678,7 @@ export function createTour() {
     open() { hub(); },
     afterRender() {
       if (mode === 'lesson') { setTimeout(draw, 60); return; }
-      if (mode !== 'idle') return;
-      if (!seen) { seen = true; localStorage.setItem(SEEN_KEY, '1'); setTimeout(hub, 420); }
+
     },
   };
 }

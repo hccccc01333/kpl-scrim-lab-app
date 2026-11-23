@@ -128,8 +128,18 @@ CREATE INDEX IF NOT EXISTS idx_schedules_competition ON schedules(competition_id
 CREATE TABLE IF NOT EXISTS competitions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  date TEXT NOT NULL,
+  date TEXT NOT NULL,          -- 训练赛归集窗口起（按录入日期）
+  end_date TEXT,               -- 训练赛归集窗口止（按录入日期）
+  formal_from TEXT,            -- 正式比赛范围起（与训练归集独立的时间口径）
+  formal_to TEXT,              -- 正式比赛范围止
   opponent_team_id TEXT,
+  team_ids TEXT NOT NULL DEFAULT '[]',
+  head_coach TEXT,
+  assistant_coach TEXT,
+  data_analyst TEXT,
+  staff TEXT NOT NULL DEFAULT '[]',
+  own_player_ids TEXT NOT NULL DEFAULT '[]',
+  key_match_keys TEXT NOT NULL DEFAULT '[]',
   stage TEXT,
   format TEXT,
   status TEXT NOT NULL DEFAULT 'planned',
@@ -157,7 +167,10 @@ CREATE TABLE IF NOT EXISTS team_aliases (
 
 CREATE TABLE IF NOT EXISTS matches (
   match_key TEXT PRIMARY KEY,
-  date TEXT,
+  date TEXT,                   -- 比赛发生日期
+  recorded_date TEXT,          -- 录入日期（训练赛归集口径；缺省回退 date）
+  match_type TEXT,             -- training / formal，与赛事归属是独立维度
+  in_trial INTEGER DEFAULT 0,           -- 试训对局：必须排除在赛事归集外（NULL=未指定）
   session TEXT,
   series_id TEXT,
   game_no INTEGER,
@@ -168,6 +181,7 @@ CREATE TABLE IF NOT EXISTS matches (
   enemy_team_id TEXT,
   enemy_cluster_id TEXT,
   schedule_id TEXT,
+  competition_id TEXT,
   own_side TEXT,
   winner TEXT,
   score TEXT,
@@ -185,7 +199,10 @@ CREATE INDEX IF NOT EXISTS idx_matches_session ON matches(session);
 
 CREATE TABLE IF NOT EXISTS match_records (
   match_key TEXT PRIMARY KEY,
-  date TEXT,
+  date TEXT,                   -- 比赛发生日期
+  recorded_date TEXT,          -- 录入日期（训练赛归集口径；缺省回退 date）
+  match_type TEXT,             -- training / formal，与赛事归属是独立维度
+  in_trial INTEGER DEFAULT 0,           -- 试训对局：必须排除在赛事归集外（NULL=未指定）
   session TEXT,
   series_id TEXT,
   game_no INTEGER,
@@ -196,6 +213,7 @@ CREATE TABLE IF NOT EXISTS match_records (
   enemy_team_id TEXT,
   enemy_cluster_id TEXT,
   schedule_id TEXT,
+  competition_id TEXT,
   own_side TEXT,
   winner TEXT,
   score TEXT,
@@ -208,6 +226,7 @@ CREATE TABLE IF NOT EXISTS match_records (
   revision INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_records_date ON match_records(date);
+CREATE INDEX IF NOT EXISTS idx_records_competition ON match_records(competition_id);
 CREATE INDEX IF NOT EXISTS idx_records_enemy ON match_records(enemy_team_id);
 CREATE INDEX IF NOT EXISTS idx_records_session ON match_records(session);
 
@@ -314,6 +333,7 @@ CREATE TABLE IF NOT EXISTS training_series (
   completion_mode TEXT NOT NULL DEFAULT 'standard',
   completion TEXT NOT NULL DEFAULT 'open',
   notes TEXT,
+  competition_id TEXT,
   created_at REAL NOT NULL,
   updated_at REAL,
   updated_by TEXT
@@ -427,6 +447,52 @@ class Workspace:
                         connection.execute(f'ALTER TABLE {table} ADD COLUMN game_no INTEGER')
                 except sqlite3.Error as error:
                     self.schema_warnings.append(f'{table} 系列赛列迁移: {error}')
+            # 赛事归属：对局直连 competition_id（旧库补列）。
+            # 归集与双时间口径所需列：录入日期 / 比赛类型 / 试训标记（全部可选，旧数据回退 date/training/0）。
+            for table in ('match_records', 'matches'):
+                try:
+                    cols = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
+                    if 'match_key' not in cols:
+                        continue
+                    if 'competition_id' not in cols:
+                        connection.execute(f'ALTER TABLE {table} ADD COLUMN competition_id TEXT')
+                    for column, ddl in {
+                        'recorded_date': 'TEXT',
+                        'match_type': 'TEXT',
+                        'in_trial': 'INTEGER DEFAULT 0',
+                        'formal_link': 'TEXT',
+                    }.items():
+                        if column not in cols:
+                            connection.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
+                except sqlite3.Error as error:
+                    self.schema_warnings.append(f'{table} 赛事列迁移: {error}')
+            # 赛事域（M1）：系列赛赛事归属冗余列，旧库补列。
+            try:
+                series_cols = {row[1] for row in connection.execute('PRAGMA table_info(training_series)')}
+                if series_cols and 'competition_id' not in series_cols:
+                    connection.execute('ALTER TABLE training_series ADD COLUMN competition_id TEXT')
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'training_series 赛事列迁移: {error}')
+            # 比赛实体增强字段（教练组 / 本队选手 / 参赛队伍 / 关键对局等）。
+            # formal_from/formal_to：正式比赛范围，独立于训练赛归集窗口 date/end_date。
+            try:
+                existing = {row[1] for row in connection.execute('PRAGMA table_info(competitions)')}
+                for column, ddl in {
+                    'end_date': 'TEXT',
+                    'formal_from': 'TEXT',
+                    'formal_to': 'TEXT',
+                    'team_ids': "TEXT NOT NULL DEFAULT '[]'",
+                    'head_coach': 'TEXT',
+                    'assistant_coach': 'TEXT',
+                    'data_analyst': 'TEXT',
+                    'staff': "TEXT NOT NULL DEFAULT '[]'",
+                    'own_player_ids': "TEXT NOT NULL DEFAULT '[]'",
+                    'key_match_keys': "TEXT NOT NULL DEFAULT '[]'",
+                }.items():
+                    if column not in existing:
+                        connection.execute(f'ALTER TABLE competitions ADD COLUMN {column} {ddl}')
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'competitions 增强字段迁移: {error}')
             connection.commit()
         finally:
             connection.close()
@@ -939,25 +1005,34 @@ class Workspace:
     # ---------------------------------------------------------------- 结构化对局
     def upsert_match(self, match_key, *, date=None, session=None, series_id=None, game_no=None,
                      mode=None, rules=None, version=None, own_team_id=None, enemy_team_id=None,
-                     enemy_cluster_id=None, schedule_id=None, own_side=None, winner=None,
+                     enemy_cluster_id=None, schedule_id=None, competition_id=None, own_side=None, winner=None,
                      score=None, duration=None, reviewer=None, status=None, tags=None,
-                     notes=None, source='camp'):
+                     notes=None, source='camp', recorded_date=None, match_type=None, in_trial=None):
         """写入/合并一局记录。status/tags 传 None 表示「本次不改」。
 
         部分更新（例如营地只回填日期与胜负）不能把人工确认过的 status 重置回
         draft，也不能清空 tags，所以 ON CONFLICT 分支用 COALESCE 保留旧值。
+
+        归集维度（全部可选，旧调用方无需改）：
+          recorded_date 录入日期（训练赛归集口径，缺省回退 date）；
+          match_type    training/formal，与赛事归属独立；
+          in_trial      试训对局标记，归集时必须排除。
         """
         if not match_key:
             raise ValueError('缺少 match_key')
         connection = self.connect()
         try:
             connection.execute(
-                'INSERT INTO match_records(match_key, date, session, series_id, game_no, mode, rules, '
-                'version, own_team_id, enemy_team_id, enemy_cluster_id, schedule_id, own_side, winner, '
+                'INSERT INTO match_records(match_key, date, recorded_date, match_type, in_trial, '
+                'session, series_id, game_no, mode, rules, '
+                'version, own_team_id, enemy_team_id, enemy_cluster_id, schedule_id, competition_id, own_side, winner, '
                 'score, duration, reviewer, status, tags, notes, source) '
-                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,\'draft\'),COALESCE(?,\'[]\'),?,?) '
+                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,\'draft\'),COALESCE(?,\'[]\'),?,?) '
                 'ON CONFLICT(match_key) DO UPDATE SET '
                 'date=COALESCE(excluded.date, match_records.date), '
+                'recorded_date=COALESCE(excluded.recorded_date, match_records.recorded_date), '
+                'match_type=COALESCE(excluded.match_type, match_records.match_type), '
+                'in_trial=COALESCE(excluded.in_trial, match_records.in_trial), '
                 'session=COALESCE(excluded.session, match_records.session), '
                 'series_id=COALESCE(excluded.series_id, match_records.series_id), '
                 'game_no=COALESCE(excluded.game_no, match_records.game_no), '
@@ -968,6 +1043,7 @@ class Workspace:
                 'enemy_team_id=COALESCE(excluded.enemy_team_id, match_records.enemy_team_id), '
                 'enemy_cluster_id=COALESCE(excluded.enemy_cluster_id, match_records.enemy_cluster_id), '
                 'schedule_id=COALESCE(excluded.schedule_id, match_records.schedule_id), '
+                'competition_id=COALESCE(excluded.competition_id, match_records.competition_id), '
                 'own_side=COALESCE(excluded.own_side, match_records.own_side), '
                 'winner=COALESCE(excluded.winner, match_records.winner), '
                 'score=COALESCE(excluded.score, match_records.score), '
@@ -977,8 +1053,10 @@ class Workspace:
                 'tags=COALESCE(?, match_records.tags), '
                 'notes=COALESCE(excluded.notes, match_records.notes), '
                 'revision=match_records.revision+1',
-                (match_key, date, session, series_id, game_no, mode, rules, version, own_team_id,
-                 enemy_team_id, enemy_cluster_id, schedule_id, own_side, winner,
+                (match_key, date, recorded_date, match_type,
+                 int(bool(in_trial)) if in_trial is not None else None,
+                 session, series_id, game_no, mode, rules, version, own_team_id,
+                 enemy_team_id, enemy_cluster_id, schedule_id, competition_id, own_side, winner,
                  _json(score, None) if score is not None else None, duration, reviewer, status,
                  _json(tags, None) if tags is not None else None, notes, source,
                  status, _json(tags, None) if tags is not None else None))
@@ -1031,6 +1109,443 @@ class Workspace:
             connection.close()
         return [{key: row[key] for key in row.keys()} for row in rows]
 
+    def competition_matches(self, competition_id, limit=200):
+        """直连归属到赛事的对局（match_records.competition_id），供赛事页与分析过滤共用。
+
+        旧库没有 match_records/competition_id 时返回空列表，而不是抛错中断请求。
+        """
+        connection = self.connect()
+        try:
+            sql = 'SELECT * FROM match_records WHERE competition_id=? ORDER BY date, match_key'
+            params = [competition_id]
+            if limit is not None:
+                sql += ' LIMIT ?'
+                params.append(int(limit))
+            rows = connection.execute(sql, params).fetchall()
+        except sqlite3.Error:
+            return []
+        finally:
+            connection.close()
+        return [{key: row[key] for key in row.keys()} for row in rows]
+
+    # ---------------------------------------------------------------- 赛事归集与双时间口径
+    # 设计要点（docs/重构蓝图_白金画廊交互.md §3.5.3）：
+    # - 训练赛按【录入日期 recorded_date】落入赛事的归集窗口 date~end_date（缺省回退 date）；
+    # - 正式比赛按【发生日期 date】落入独立的 formal_from~formal_to 范围；
+    # - 全部在查询时计算，改赛事时间后归属自然重算，不写死在对局上；
+    # - 试训对局 in_trial=1 一律排除；key_match_keys / competition_id 手动挂载作为补充；
+    # - 「赛事」与「训练赛/正式赛」是独立维度，分别用 match_type 过滤。
+    TRAINING = 'training'
+    FORMAL = 'formal'
+
+    @staticmethod
+    def _mfield(row, name, default=None):
+        value = row.get(name, default) if isinstance(row, dict) else default
+        return default if value is None else value
+
+    @staticmethod
+    def _date_bounds(start, end):
+        """归一化日期区间；只有一端时另一端留空表示无界。结束早于开始时交换。"""
+        start = str(start or '').strip()
+        end = str(end or '').strip()
+        if start and end and end < start:
+            start, end = end, start
+        return (start, end) if (start or end) else None
+
+    @classmethod
+    def _in_window(cls, value, bounds):
+        if not bounds or not value:
+            return False
+        low, high = bounds
+        return (not low or value >= low) and (not high or value <= high)
+
+    @classmethod
+    def _match_type(cls, row):
+        """显式 match_type 优先；旧数据按 session 文本推断，默认训练赛。"""
+        value = str(cls._mfield(row, 'match_type', '') or '').strip().lower()
+        if value in (cls.TRAINING, cls.FORMAL):
+            return value
+        session = str(cls._mfield(row, 'session', '') or '')
+        if '正式' in session or 'formal' in session.lower():
+            return cls.FORMAL
+        return cls.TRAINING
+
+    @classmethod
+    def _recorded_date(cls, row):
+        return str(cls._mfield(row, 'recorded_date', '') or cls._mfield(row, 'date', '') or '').strip()
+
+    @classmethod
+    def _collect_bounds(cls, competition):
+        """训练归集窗口：end_date 缺省时按单日窗口处理，避免旧数据无限吞并后续录入。"""
+        start = competition.get('date')
+        return cls._date_bounds(start, competition.get('end_date') or start)
+
+    def _all_match_rows(self):
+        connection = self.connect()
+        try:
+            rows = connection.execute('SELECT * FROM match_records ORDER BY date, match_key').fetchall()
+            return [{key: row[key] for key in row.keys()} for row in rows]
+        except sqlite3.Error:
+            return []
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _competition_manual_keys(competition):
+        raw = competition.get('key_match_keys') if isinstance(competition, dict) else None
+        try:
+            keys = json.loads(raw or '[]')
+        except (TypeError, ValueError):
+            keys = []
+        return {str(key) for key in keys} if isinstance(keys, list) else set()
+
+    @staticmethod
+    def _limit(items, limit):
+        if limit is None:
+            return items
+        try:
+            return items[:max(0, int(limit))]
+        except (TypeError, ValueError):
+            return items
+
+    def _aggregated_item(self, row, aggregation):
+        item = dict(row)
+        item.update({
+            'recordedDate': self._recorded_date(row),
+            'matchType': self._match_type(row),
+            'inTrial': bool(self._mfield(row, 'in_trial', 0)),
+            'aggregation': aggregation,  # window / manual / direct / unfiled
+        })
+        return item
+
+    def competition_training_matches(self, competition_id, limit=None):
+        """按赛事查训练赛：录入日期落入归集窗口 + 手动挂载 + 直连，排除试训对局。
+
+        改赛事时间后无需回写对局，本查询立即反映新归属。
+        """
+        competition = self.get_competition(competition_id)
+        if not competition:
+            return []
+        window = self._collect_bounds(competition)
+        manual = self._competition_manual_keys(competition)
+        result = []
+        for row in self._all_match_rows():
+            if self._mfield(row, 'in_trial', 0) or self._match_type(row) != self.TRAINING:
+                continue
+            key = str(self._mfield(row, 'match_key', '') or '')
+            direct_id = str(self._mfield(row, 'competition_id', '') or '')
+            direct = direct_id == competition_id
+            # 赛事域 P0：直连归属其他赛事的对局，不进本赛事的窗口/手动口径，
+            # 避免同一局同时落在两个赛事的 scope 里（跨域双归属）。
+            if direct_id and not direct:
+                continue
+            # 双通道统一：已被 official-entry 转正的速记占位行，让位给正牌对局。
+            if str(self._mfield(row, 'formal_link', '') or ''):
+                continue
+            mounted = key in manual
+            if not (direct or mounted or self._in_window(self._recorded_date(row), window)):
+                continue
+            result.append(self._aggregated_item(
+                row, 'direct' if direct else ('manual' if mounted else 'window')))
+        result.sort(key=lambda item: (item['recordedDate'], str(item.get('match_key') or '')))
+        return self._limit(result, limit)
+
+    def competition_scope_keys(self, competition_id, kinds=('training', 'formal')):
+        # 赛事分析域的对局键集合（M1 统一 scope 层）：训练赛口径（直连 U 归集
+        # 窗口 U 手动挂载）U 正赛口径（formal 窗口）。所有分析取「当前赛事
+        # 有哪些局」一律走这里，不得各自另造过滤口径（方案文档 §4）。
+        keys = set()
+        if not competition_id:
+            return keys
+        if 'training' in kinds:
+            keys |= {str(row.get('match_key') or '')
+                     for row in self.competition_training_matches(competition_id, limit=None)}
+        if 'formal' in kinds:
+            keys |= {str(row.get('match_key') or '')
+                     for row in self.competition_formal_matches(competition_id, limit=None)}
+        return keys
+
+    def unfiled_series(self, limit=200):
+        # 未归属赛事的系列赛（存量批量归属工具的数据源）。
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                'SELECT * FROM training_series WHERE competition_id IS NULL '
+                "ORDER BY COALESCE(start_at, '') DESC LIMIT ?", (int(limit),)).fetchall()
+            result = []
+            for row in rows:
+                brief = self._series_brief(row)
+                brief['games'] = self._series_games(connection, row['id'])
+                result.append(brief)
+            return result
+        finally:
+            connection.close()
+
+    def archive_preview(self, competition_id):
+        """赛季切换向导第一步：归档收尾检查 + 配置继承清单。"""
+        competition = self.get_competition(competition_id)
+        if not competition:
+            raise ValueError('赛事不存在')
+        unconfirmed = [item for item in self.list_series(competition=competition_id, limit=500)
+                       if item.get('status') != 'confirmed']
+        unfiled_matches = [row for row in self._all_match_rows()
+                           if self._match_type(row) == self.TRAINING
+                           and not self._mfield(row, 'competition_id')
+                           and self._in_window(self._recorded_date(row),
+                                               self._collect_bounds(competition))]
+        return {'competition': competition,
+                'unconfirmedSeries': [{'id': item['id'], 'opponent': item['opponent']}
+                                      for item in unconfirmed],
+                'unfiledMatches': len(unfiled_matches),
+                'config': {'staff': competition.get('staff'),
+                           'ownPlayerIds': competition.get('own_player_ids'),
+                           'format': competition.get('format'),
+                           'stage': competition.get('stage')}}
+
+    def archive_and_inherit(self, competition_id, next_competition):
+        """赛季切换向导第二步：归档旧赛事 + 创建新赛事并继承配置。"""
+        from rules_effective import resolve_doc
+        import json as _json
+        competition = self.get_competition(competition_id)
+        if not competition:
+            raise ValueError('赛事不存在')
+        if competition.get('status') == 'archived':
+            raise ValueError('赛事已归档')
+        next_name = str(next_competition.get('name') or '').strip()
+        if not next_name:
+            raise ValueError('新赛事必须有名称')
+        new_id = self.save_competition(
+            name=next_name, date=next_competition.get('date'),
+            end_date=next_competition.get('end_date'),
+            formal_from=next_competition.get('formalFrom'),
+            formal_to=next_competition.get('formalTo'),
+            stage=competition.get('stage'), format=competition.get('format'),
+            status='planned', owner=competition.get('owner'),
+            team_ids=None, head_coach=competition.get('head_coach'),
+            assistant_coach=competition.get('assistant_coach'),
+            data_analyst=competition.get('data_analyst'),
+            staff=_json(competition.get('staff'), '[]') if False else None,
+            own_player_ids=competition.get('own_player_ids'))
+        # 规则中心条目复制：effective.eventId 换成新赛事
+        try:
+            facts = Path(bp_facts.FACTS)
+            for file_name, list_key in (('rules_counters.json', None),):
+                doc_path = facts / file_name
+                if not doc_path.is_file():
+                    continue
+                doc = json.loads(doc_path.read_text(encoding='utf-8'))
+                entries = (doc.get('heroPairs') or []) + (doc.get('comboPairs') or [])
+                copied = 0
+                for entry in entries:
+                    eff = entry.get('effective') or {}
+                    if str(eff.get('eventId') or '') == competition_id:
+                        entry['id'] = entry['id'] + f"-{new_id}"
+                        entry['effective'] = {**eff, 'eventId': new_id}
+                        entry['revision'] = 0
+                        copied += 1
+                if copied:
+                    doc['revision'] = int(doc.get('revision') or 0) + 1
+                    doc_path.write_text(json.dumps(doc, ensure_ascii=False, indent=2),
+                                        encoding='utf-8')
+        except Exception:  # noqa: BLE001 - 复制失败不阻断归档
+            pass
+        self.save_competition(competition_id, name=competition.get('name'),
+                              date=competition.get('date'),
+                              end_date=competition.get('end_date'),
+                              status='archived')
+        return {'archived': competition_id, 'next': new_id}
+
+    def bulk_assign_series(self, series_ids, competition_id):
+        # 存量系列批量归属：逐个走 update_series 的校验口径（混编/冲突不掩盖）。
+        assigned, failed = [], []
+        for series_id in series_ids or []:
+            try:
+                self.update_series(series_id, competition_id=competition_id)
+                assigned.append(series_id)
+            except ValueError as error:
+                failed.append({'seriesId': series_id, 'error': str(error)})
+        return {'assigned': assigned, 'failed': failed}
+
+    def save_formal_match(self, *, date, opponent=None, enemy_team_id=None, score=None,
+                          winner=None, own_side=None, competition_id=None,
+                          lineup=None, with_bp=False, source='manual', match_key=None):
+        # 正式比赛数据录入（结果级 / 阵容级；BP 顺序级后续走 bp_overrides）。
+        # - match_type='formal' 硬标记；competition_id 缺省按 formal 窗口匹配赛事；
+        # - 去重：同对手 + 同日期 + 同比分指纹 → 返回已存在对局（营地同步优先）；
+        # - 对手自动进对手库（teams.upsert_team）。
+        if not date:
+            raise ValueError('正赛必须有日期')
+        opponent = str(opponent or '').strip()
+        if not opponent and not enemy_team_id:
+            raise ValueError('对手不能为空')
+        if not enemy_team_id:
+            # 对手库按名称去重：同名对手复用同一个建档，去重指纹才稳定。
+            known = self.search_teams(opponent, limit=1)
+            enemy_team_id = known[0]['id'] if known else self.upsert_team(name=opponent)
+        candidates = (self.competition_formal_matches(competition_id, limit=None) if competition_id
+                      else [row for row in self._all_match_rows()
+                            if self._match_type(row) == self.FORMAL])
+        score_text = str(score or '')
+        for row in candidates:
+            stored_score = str(row.get('score') or '')
+            # upsert_match 会把 score JSON 序列化（"3:1" 带引号落库），比对前剥掉。
+            if stored_score.startswith('"') and stored_score.endswith('"'):
+                stored_score = stored_score[1:-1]
+            if (str(row.get('enemy_team_id') or '') == str(enemy_team_id or '')
+                    and str(row.get('date') or '') == str(date)
+                    and stored_score == score_text):
+                return {'matchKey': row.get('match_key'), 'dedup': True,
+                        'competitionId': row.get('competition_id')}
+        if not competition_id:
+            for competition in self.list_competitions():
+                if competition.get('status') == 'archived':
+                    continue
+                window = self._date_bounds(
+                    competition.get('formal_from') or competition.get('date'),
+                    competition.get('formal_to') or competition.get('end_date')
+                    or competition.get('date'))
+                if self._in_window(str(date), window):
+                    competition_id = competition.get('id')
+                    break
+        if not competition_id:
+            raise ValueError('没有可归属的赛事：先配置赛事的正式比赛范围，或显式选择赛事。')
+        depth = 'bp' if with_bp else ('lineup' if lineup else 'result')
+        notes = json.dumps({'formalEntry': {'depth': depth, 'lineup': lineup or []}},
+                           ensure_ascii=False) if (lineup or with_bp) else ''
+        match_key = match_key or 'm-formal-' + time.strftime('%Y%m%d') + '-' + uuid.uuid4().hex[:4]
+        self.upsert_match(match_key, date=date, competition_id=competition_id,
+                          enemy_team_id=enemy_team_id, score=score, winner=winner,
+                          own_side=own_side, match_type='formal', source=source,
+                          notes=notes)
+        return {'matchKey': match_key, 'dedup': False, 'depth': depth,
+                'competitionId': competition_id}
+
+    def pending_formal_entries(self, limit=50):
+        """待补全的速记行：结果级/阵容级占位，等 official-entry 转正。"""
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                "SELECT * FROM match_records WHERE match_type='formal' AND source='manual' "
+                'AND formal_link IS NULL ORDER BY date DESC LIMIT ?', (int(limit),)).fetchall()
+        finally:
+            connection.close()
+        result = []
+        for row in rows:
+            item = {key: row[key] for key in row.keys()}
+            try:
+                entry = (json.loads(item.get('notes') or '') or {}).get('formalEntry') or {}
+            except (TypeError, ValueError):
+                entry = {}
+            item['formalEntry'] = entry
+            result.append(item)
+        return result
+
+    def link_formal_entry(self, entry_key, canonical_key):
+        """速记占位转正：formal_link 指向正牌对局（bundle/channel），scope 让位。"""
+        connection = self.connect()
+        try:
+            cursor = connection.execute(
+                'UPDATE match_records SET formal_link=? '
+                'WHERE match_key=? AND formal_link IS NULL',
+                (canonical_key, entry_key))
+            linked = cursor.rowcount > 0
+            connection.commit()
+        finally:
+            connection.close()
+        return linked
+
+    def _match_competitions(self, connection, keys):
+        # 对局键 → 赛事集合（直连列）；编组时校验/推导系列赛事归属用。
+        comps = set()
+        for table in self._series_relation_tables(connection):
+            try:
+                cols = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
+            except sqlite3.Error:
+                continue
+            if 'competition_id' not in cols or 'match_key' not in cols:
+                continue
+            for key in keys:
+                try:
+                    row = connection.execute(
+                        f'SELECT competition_id FROM {table} WHERE match_key=?', (key,)).fetchone()
+                except sqlite3.Error:
+                    row = None
+                if row and row['competition_id']:
+                    comps.add(str(row['competition_id']))
+        return comps
+
+    def competition_formal_matches(self, competition_id, limit=None):
+        """赛事正式比赛范围：formal_from~formal_to（缺省回退归集窗口）+ 类型为 formal。"""
+        competition = self.get_competition(competition_id)
+        if not competition:
+            return []
+        window = self._date_bounds(
+            competition.get('formal_from') or competition.get('date'),
+            competition.get('formal_to') or competition.get('end_date') or competition.get('date'))
+        manual = self._competition_manual_keys(competition)
+        result = []
+        for row in self._all_match_rows():
+            if self._mfield(row, 'in_trial', 0) or self._match_type(row) != self.FORMAL:
+                continue
+            key = str(self._mfield(row, 'match_key', '') or '')
+            direct_id = str(self._mfield(row, 'competition_id', '') or '')
+            direct = direct_id == competition_id
+            # 赛事域 P0：与训练赛口径同一条排除规则。
+            if direct_id and not direct:
+                continue
+            # 双通道统一：已被 official-entry 转正的速记占位行，让位给正牌对局。
+            if str(self._mfield(row, 'formal_link', '') or ''):
+                continue
+            mounted = key in manual
+            if not (direct or mounted or self._in_window(
+                    str(self._mfield(row, 'date', '') or '').strip(), window)):
+                continue
+            result.append(self._aggregated_item(
+                row, 'direct' if direct else ('manual' if mounted else 'window')))
+        result.sort(key=lambda item: (str(item.get('date') or ''), str(item.get('match_key') or '')))
+        return self._limit(result, limit)
+
+    def unfiled_training_matches(self, limit=None):
+        """未归档训练赛：录入日期不在任何赛事归集窗口、也未被任何赛事手动挂载。"""
+        rows = self._all_match_rows()
+        covered = set()
+        for competition in self.list_competitions():
+            window = self._collect_bounds(competition)
+            manual = self._competition_manual_keys(competition)
+            for row in rows:
+                if self._mfield(row, 'in_trial', 0) or self._match_type(row) != self.TRAINING:
+                    continue
+                key = str(self._mfield(row, 'match_key', '') or '')
+                if (str(self._mfield(row, 'competition_id', '') or '') == competition['id']
+                        or key in manual
+                        or self._in_window(self._recorded_date(row), window)):
+                    covered.add(key)
+        result = [self._aggregated_item(row, 'unfiled') for row in rows
+                  if not self._mfield(row, 'in_trial', 0)
+                  and self._match_type(row) == self.TRAINING
+                  and str(self._mfield(row, 'match_key', '') or '') not in covered]
+        result.sort(key=lambda item: (item['recordedDate'], str(item.get('match_key') or '')))
+        return self._limit(result, limit)
+
+    def overlapping_competitions(self, start, end, exclude_id=None):
+        """时间窗口重叠检查（训练归集窗口 / 正式比赛范围任一重叠即算），仅供提示。"""
+        target = self._date_bounds(start, end)
+        if not target:
+            return []
+        result = []
+        for competition in self.list_competitions():
+            if exclude_id and competition.get('id') == exclude_id:
+                continue
+            for label, bounds in (
+                ('training', self._collect_bounds(competition)),
+                ('formal', self._date_bounds(competition.get('formal_from'), competition.get('formal_to'))),
+            ):
+                if bounds and target[0] <= bounds[1] and bounds[0] <= target[1]:
+                    result.append({'id': competition['id'], 'name': competition['name'],
+                                   'window': label, 'start': bounds[0], 'end': bounds[1]})
+                    break
+        return result
+
     # ---------------------------------------------------------------- 系列赛（V2.0）
     # 设计约束（docs/series_builder.md）：系列赛是独立于单局的关系实体；
     # 确认编组只写关系列（series_id/game_no），原始对局数据一律不动。
@@ -1042,8 +1557,13 @@ class Workspace:
     @staticmethod
     def _series_brief(row):
         """training_series 行 → 对外 JSON（camelCase，与前端字段一致）。"""
+        try:
+            competition_id = row['competition_id'] if 'competition_id' in row.keys() else None
+        except (TypeError, ValueError):
+            competition_id = None
         return {
             'id': row['id'], 'bestOf': row['best_of'], 'status': row['status'],
+            'competitionId': competition_id,
             'rulesetId': row['ruleset_id'], 'opponent': row['opponent'],
             'opponentTeamId': row['opponent_team_id'], 'session': row['session'],
             'scheduleId': row['schedule_id'], 'version': row['version'],
@@ -1153,7 +1673,8 @@ class Workspace:
     def create_series(self, *, best_of, games, ruleset_id=None, opponent=None,
                       opponent_team_id=None, session=None, schedule_id=None, version=None,
                       completion_mode=None, completion=None, status=None, notes=None,
-                      start_at=None, end_at=None, series_id=None, actor=None):
+                      start_at=None, end_at=None, series_id=None, competition_id=None,
+                      actor=None):
         """创建并确认一个系列赛。games 全量校验后一次写入；支持显式传
         series_id（撤销删除时按原 ID 重建）。"""
         from series_engine import RULESETS  # 规则集注册表在引擎里，延迟导入避免加载静态大表
@@ -1174,6 +1695,14 @@ class Workspace:
         batch_id = uuid.uuid4().hex[:12]
         try:
             self._check_membership(connection, [key for key, _ in ordered])
+            # 赛事域（M1）：一个系列只归一个赛事。归属优先取所选对局的直连赛事，
+            # 混编（对局分属不同赛事）直接报错，不允许靠猜。
+            comp_ids = self._match_competitions(connection, [key for key, _ in ordered])
+            if len(comp_ids) > 1:
+                raise ValueError('所选对局分属不同赛事，请先统一归属再编组。')
+            if competition_id and comp_ids and competition_id not in comp_ids:
+                raise ValueError('所选对局已归属其他赛事，无法编入该赛事。')
+            competition_id = competition_id or (next(iter(comp_ids)) if comp_ids else None)
             now = time.time()
             series_id = series_id or 'ts-' + time.strftime('%Y%m%d') + '-' + uuid.uuid4().hex[:4]
             if connection.execute('SELECT 1 FROM training_series WHERE id=?', (series_id,)).fetchone():
@@ -1185,12 +1714,12 @@ class Workspace:
             connection.execute(
                 'INSERT INTO training_series(id, best_of, status, ruleset_id, opponent, '
                 'opponent_team_id, session, schedule_id, version, start_at, end_at, '
-                'completion_mode, completion, notes, created_at, updated_at, updated_by) '
+                'completion_mode, completion, notes, competition_id, created_at, updated_at, updated_by) '
                 'VALUES(?,?,COALESCE(?,\'confirmed\'),COALESCE(?,\'scrim-global-team\'),'
-                '?,?,?,?,?,?,?,COALESCE(?,\'standard\'),COALESCE(?,\'open\'),?,?,?,?)',
+                '?,?,?,?,?,?,?,COALESCE(?,\'standard\'),COALESCE(?,\'open\'),?,?,?,?,?)',
                 (series_id, int(best_of), status, ruleset_id, opponent, opponent_team_id,
                  session, schedule_id, version, start_at, end_at, completion_mode, completion,
-                 notes, now, now, actor))
+                 notes, competition_id, now, now, actor))
             for key, index in ordered:
                 connection.execute(
                     'INSERT INTO training_series_games(series_id, match_key, game_index, created_at) '
@@ -1212,7 +1741,7 @@ class Workspace:
     def update_series(self, series_id, *, best_of=None, games=None, ruleset_id=None,
                       opponent=None, opponent_team_id=None, session=None, schedule_id=None,
                       version=None, completion_mode=None, completion=None, status=None,
-                      notes=None, actor=None):
+                      notes=None, competition_id=None, actor=None):
         """修改赛制/局序/成员/标注。games 传了就全量替换（调序、增删、拆分、
         合并都走这一条）；opponent 等 None 表示「本次不改」。"""
         from series_engine import RULESETS
@@ -1239,6 +1768,19 @@ class Workspace:
                 raise ValueError(f'BO{best_of} 最多 {best_of} 局，当前给了 {len(replaced)} 局')
             keys = [key for key, _ in (replaced or old_games)]
             self._check_membership(connection, keys, exclude_series=series_id)
+            new_competition = None
+            if replaced is not None:
+                # 赛事域（M1）：换局后按新对局重推赛事归属，混编报错。
+                comp_ids = self._match_competitions(connection, [key for key, _ in replaced])
+                if len(comp_ids) > 1:
+                    raise ValueError('所选对局分属不同赛事，请先统一归属再编组。')
+                if competition_id and comp_ids and competition_id not in comp_ids:
+                    raise ValueError('所选对局已归属其他赛事，无法编入该赛事。')
+                new_competition = competition_id or (next(iter(comp_ids)) if comp_ids else None)
+            elif competition_id is not None:
+                comp_ids = self._match_competitions(connection, keys)
+                if comp_ids and competition_id not in comp_ids:
+                    raise ValueError('系列赛现有对局已归属其他赛事，无法改归属。')
             fields, params = [], []
             for column, value in (
                     ('best_of', best_of), ('ruleset_id', ruleset_id), ('opponent', opponent),
@@ -1249,6 +1791,12 @@ class Workspace:
                 if value is not None:
                     fields.append(f'{column}=?')
                     params.append(value)
+            if replaced is not None:
+                fields.append('competition_id=?')
+                params.append(new_competition)
+            elif competition_id is not None:
+                fields.append('competition_id=?')
+                params.append(competition_id)
             fields.append('updated_at=?')
             params.append(time.time())
             params.append(series_id)
@@ -1325,7 +1873,7 @@ class Workspace:
             connection.close()
 
     def list_series(self, *, date_from=None, date_to=None, session=None, opponent=None,
-                    best_of=None, status=None, completion=None, limit=500):
+                    best_of=None, status=None, completion=None, competition=None, limit=500):
         """按筛选条件列系列赛；系列赛级指标一律按 start_at（开赛日）归档，
         防止一组 BO 被时间窗口切成两半。"""
         where, params = [], []
@@ -1350,6 +1898,9 @@ class Workspace:
         if completion:
             where.append('completion = ?')
             params.append(completion)
+        if competition:
+            where.append('competition_id = ?')
+            params.append(competition)
         sql = 'SELECT * FROM training_series'
         if where:
             sql += ' WHERE ' + ' AND '.join(where)
@@ -1357,6 +1908,8 @@ class Workspace:
         params.append(int(limit))
         connection = self.connect()
         try:
+            # 赛事域（P2-1）：GET 不再有写副作用；归属回填在写路径
+            # （create/update/bulk_assign）与赛事页归属工具完成。
             rows = connection.execute(sql, params).fetchall()
             result = []
             for row in rows:
@@ -1439,25 +1992,71 @@ class Workspace:
 
     # ---------------------------------------------------------------- 比赛
     def save_competition(self, competition_id=None, *, name, date, opponent_team_id=None,
-                         stage=None, format=None, status=None, owner=None, notes=None):
-        """写入/合并比赛。status 传 None 表示保留原状态，不重置回 planned。"""
+                         stage=None, format=None, status=None, owner=None, notes=None,
+                         end_date=None, team_ids=None, head_coach=None, assistant_coach=None,
+                         data_analyst=None, staff=None, own_player_ids=None, key_match_keys=None,
+                         formal_from=None, formal_to=None, collect_from=None, collect_to=None):
+        """写入/合并比赛。status 传 None 表示保留原状态，不重置回 planned。
+
+        列表/集合字段（team_ids/staff/own_player_ids/key_match_keys）以 JSON 字符串落库；
+        传 None 表示保留原值（兼容旧调用方与局部更新）。
+
+        双时间口径（新增字段全部可选，旧库/旧调用方不受影响）：
+          date/end_date        训练赛归集窗口（按录入日期）；collect_from/collect_to 为其别名；
+          formal_from/formal_to 正式比赛范围。传 None 保留原值，传 '' 清空。
+        """
         name = str(name or '').strip()
         if not name:
             raise ValueError('比赛必须有名称')
+        if collect_from is not None:
+            date = collect_from
+        if collect_to is not None:
+            end_date = collect_to
         if not date:
             raise ValueError('比赛必须有日期')
         competition_id = competition_id or 'comp-' + uuid.uuid4().hex[:10]
+        def pack(value, default='[]'):
+            if value is None:
+                return default
+            if isinstance(value, str):
+                return value
+            return json.dumps(value, ensure_ascii=False)
+        team_ids = pack(team_ids)
+        staff = pack(staff)
+        own_player_ids = pack(own_player_ids)
+        key_match_keys = pack(key_match_keys)
         connection = self.connect()
         try:
+            # 赛事生命周期（P2-2）：archived 只读——除非本次明确重开
+            #（status 改回 planned/ongoing），其余编辑一律拒绝。
+            existing = connection.execute(
+                'SELECT status FROM competitions WHERE id=?', (competition_id,)).fetchone()
+            if existing and existing[0] == 'archived' and status not in ('planned', 'ongoing'):
+                raise ValueError('赛事已归档（只读）：先在状态里改回「筹备中/进行中」再编辑。')
             connection.execute(
-                'INSERT INTO competitions(id, name, date, opponent_team_id, stage, format, status, '
-                'owner, notes, created_at) VALUES(?,?,?,?,?,?,COALESCE(?,\'planned\'),?,?,?) '
+                'INSERT INTO competitions(id, name, date, end_date, formal_from, formal_to, '
+                'opponent_team_id, team_ids, '
+                'head_coach, assistant_coach, data_analyst, staff, own_player_ids, key_match_keys, '
+                'stage, format, status, owner, notes, created_at) '
+                'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,\'planned\'),?,?,?) '
                 'ON CONFLICT(id) DO UPDATE SET name=excluded.name, date=excluded.date, '
-                'opponent_team_id=excluded.opponent_team_id, stage=excluded.stage, '
-                'format=excluded.format, status=COALESCE(?,competitions.status), owner=excluded.owner, '
+                'end_date=COALESCE(excluded.end_date, competitions.end_date), '
+                'formal_from=COALESCE(excluded.formal_from, competitions.formal_from), '
+                'formal_to=COALESCE(excluded.formal_to, competitions.formal_to), '
+                'opponent_team_id=excluded.opponent_team_id, team_ids=COALESCE(excluded.team_ids, competitions.team_ids), '
+                'head_coach=COALESCE(excluded.head_coach, competitions.head_coach), '
+                'assistant_coach=COALESCE(excluded.assistant_coach, competitions.assistant_coach), '
+                'data_analyst=COALESCE(excluded.data_analyst, competitions.data_analyst), '
+                'staff=COALESCE(excluded.staff, competitions.staff), '
+                'own_player_ids=COALESCE(excluded.own_player_ids, competitions.own_player_ids), '
+                'key_match_keys=COALESCE(excluded.key_match_keys, competitions.key_match_keys), '
+                'stage=excluded.stage, format=excluded.format, '
+                'status=COALESCE(?,competitions.status), owner=excluded.owner, '
                 'notes=excluded.notes, updated_at=?, revision=competitions.revision+1',
-                (competition_id, name, date, opponent_team_id, stage, format, status,
-                 owner, notes, time.time(), status, time.time()))
+                (competition_id, name, date, end_date, formal_from, formal_to,
+                 opponent_team_id, team_ids,
+                 head_coach, assistant_coach, data_analyst, staff, own_player_ids, key_match_keys,
+                 stage, format, status, owner, notes, time.time(), status, time.time()))
             connection.commit()
         finally:
             connection.close()
@@ -1486,6 +2085,25 @@ class Workspace:
             connection.close()
         return {key: row[key] for key in row.keys()} if row else None
 
+    def delete_competition(self, competition_id):
+        """删除比赛本体；训练课/对局仅解除归属，不删除记录本身。"""
+        connection = self.connect()
+        try:
+            connection.execute('UPDATE schedules SET competition_id=NULL WHERE competition_id=?',
+                               (competition_id,))
+            # 尽力解绑对局（两张表结构可能不同，逐表按存在列处理）。
+            for table in ('match_records', 'matches'):
+                cols = {row[1] for row in connection.execute(f'PRAGMA table_info({table})')}
+                if 'competition_id' in cols:
+                    connection.execute(
+                        f'UPDATE {table} SET competition_id=NULL WHERE competition_id=?',
+                        (competition_id,))
+            connection.execute('DELETE FROM competitions WHERE id=?', (competition_id,))
+            connection.commit()
+            return connection.total_changes > 0
+        finally:
+            connection.close()
+
     def competition_detail(self, competition_id):
         """比赛聚合：比赛本身 + 挂在其下的训练课 + 这些训练课关联的对局。
 
@@ -1504,6 +2122,21 @@ class Workspace:
             connection.close()
         schedules = [{key: row[key] for key in row.keys()} for row in rows]
         matches, seen = [], set()
+        # 优先直连归属（match_records.competition_id）；老数据仍走训练课启发式兜底。
+        try:
+            direct = self.connect()
+            direct_rows = direct.execute(
+                'SELECT match_key FROM match_records WHERE competition_id=? '
+                'ORDER BY date, match_key', (competition_id,)).fetchall()
+            direct.close()
+            for row in direct_rows:
+                key = row[0]
+                if key in seen:
+                    continue
+                seen.add(key)
+                matches.append({'match_key': key, 'competitionDirect': True})
+        except sqlite3.Error:
+            pass
         for schedule in schedules:
             for match in self.session_matches(schedule)['matches']:
                 key = match.get('match_key')

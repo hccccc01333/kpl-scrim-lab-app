@@ -23,7 +23,7 @@ BANNED_PREFIXES = (
     'marketing/',
     'datasets/',
     'docs/afdian/',
-    'web/refsite/',
+    # 2026-11-22：历史前端统一归档到 内部资料/前端资料库/（内部资料/ 已整体禁止发布）。
     'resources/icons/',
     'data/',
     'logs/',
@@ -61,7 +61,7 @@ EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
 # 这些文件里的邮箱是公开联系方式或第三方元数据，允许存在
 EMAIL_ALLOW = {
     'LICENSE', 'NOTICE', 'LICENSING.md', 'README.md', 'CONTRIBUTING.md', 'SECURITY.md',
-    'scripts/make_release.py', 'client/package-lock.json',
+    'scripts/make_release.py',
     'packaging/ChineseSimplified.isl',
     'LICENSES/PolyForm-Noncommercial-1.0.0.txt',
 }

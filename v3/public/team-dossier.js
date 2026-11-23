@@ -10,12 +10,16 @@
    5) 英雄池的大卡与「具体拿了谁」放大，ban 后替补按次数加权。
    历史图表函数保留在下方，当前页面只调用 v9 的新图元。
    ============================================================ */
+import { renderHeroPoolCross } from './biggame-insight.js';
+
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
+/* 赛训组 2026-11-19：中路只有「法刺」，旧接口缓存里的「法核」在展示层归一。 */
+const normArch = (value) => (value === '法核' ? '法刺' : value);
 const LANE_SHORT = {'对抗路': '对抗', '打野': '打野', '中路': '中路', '发育路': '发育', '游走': '游走'};
 const ARCH = {
   '对抗路': ['战边', '坦边'],
   '打野': ['刺野', '战野', '坦野'],
-  '中路': ['工具人', '法核'],
+  '中路': ['工具人', '法刺'],
   '发育路': ['游射', '呆射'],
   '游走': ['开团辅', '保护辅', '功能辅'],
 };
@@ -25,7 +29,7 @@ const TYPE_LANE = Object.fromEntries(LANES.flatMap((lane) => ARCH[lane].map((typ
 const TYPE_DESC = {
   '战边': '战士边路，带线切后', '坦边': '坦克边路，抗伤开团',
   '刺野': '刺客打野，切后排', '战野': '战士打野，半前排', '坦野': '坦克打野，开团抗伤',
-  '工具人': '功能中单，先手控制', '法核': '法师核心，主要输出',
+  '工具人': '功能中单，先手控制', '法刺': '法师核心，主要输出',
   '游射': '位移射手，自保输出', '呆射': '站桩射手，持续输出',
   '开团辅': '先手开团', '保护辅': '保排反手', '功能辅': '功能增益',
 };
@@ -34,12 +38,6 @@ const EDGE_COMBO = {
   '坦刺': ['坦边', '刺野'], '坦战': ['坦边', '战野'], '坦坦': ['坦边', '坦野'],
 };
 const UNLABELED = ['待分类', '未标注', '未知', ''];
-const PAIRS = [
-  ['边野', '对抗路', '打野'], ['中野', '中路', '打野'], ['射辅', '发育路', '游走'],
-  ['中辅', '中路', '游走'], ['野辅', '打野', '游走'], ['边中', '对抗路', '中路'],
-  ['边射', '对抗路', '发育路'], ['边辅', '对抗路', '游走'], ['野射', '打野', '发育路'],
-  ['中射', '中路', '发育路'],
-];
 const WINDOWS = [['3', '近 3 天'], ['7', '近 7 天'], ['30', '近 30 天'], ['all', '全部'], ['custom', '自定义']];
 const BO_OPTIONS = [['all', '全部赛制'], ['3', 'BO3'], ['5', 'BO5'], ['7', 'BO7'], ['none', '未登记']];
 /* 分路五色相：同一路在图里永远是同一个颜色。 */
@@ -50,7 +48,7 @@ const CORE_COLOR = ['var(--c-core-1)', 'var(--c-core-2)', 'var(--c-core-3)', 'va
 const TYPE_COLOR = {
   '战边': 'var(--c-type-战边)', '坦边': 'var(--c-type-坦边)',
   '刺野': 'var(--c-type-刺野)', '战野': 'var(--c-type-战野)', '坦野': 'var(--c-type-坦野)',
-  '工具人': 'var(--c-type-工具人)', '法核': 'var(--c-type-法核)',
+  '工具人': 'var(--c-type-工具人)', '法刺': 'var(--c-type-法刺)',
   '游射': 'var(--c-type-游射)', '呆射': 'var(--c-type-呆射)',
   '开团辅': 'var(--c-type-开团辅)', '保护辅': 'var(--c-type-保护辅)', '功能辅': 'var(--c-type-功能辅)',
 };
@@ -87,6 +85,7 @@ export function createTeamDossier(h) {
   const state = {
     days: '30', bo: 'all', from: '', to: '', hand: 'all', lane: 'all', mode: 'pick',
     bpHero: 'all', poolHero: 'all', bpHeroLane: '对抗路', poolHeroLane: '对抗路',
+    responseBan: '', responsePick: '',
     section: 'tp-overview',
   };
   let model = null;
@@ -108,7 +107,7 @@ export function createTeamDossier(h) {
   };
   const isDrill = (games) => (games && games.length ? ' is-drill' : '');
 
-  const card = (title, meta, body, cls = '') => `<article class="tp-card${cls ? ' ' + cls : ''}"><header class="tp-card-head"><h3>${title}</h3>${meta ? `<span>${meta}</span>` : ''}</header>${body}</article>`;
+  const card = (title, meta, body, cls = '') => `<article class="tp-card${cls ? ' ' + cls : ''}">${title || meta ? `<header class="tp-card-head"><h3>${title}</h3>${meta ? `<span>${meta}</span>` : ''}</header>` : ''}${body}</article>`;
   const lack = (note) => `<p class="tp-lack">证据不足 · ${esc(note)}</p>`;
   const heroChip = (hero, count, title) => `<a class="tp-hchip" href="${route('hero', hero)}" title="${esc(title || `${hero}${has(count) ? ` · ${fmt(count)} 次` : ''}`)}">${String(portrait(hero, 'is-chip')).replace(' loading="lazy"', '')}<b>${esc(hero)}</b>${has(count) ? `<small>${fmt(count)}</small>` : ''}</a>`;
   const heroChips = (rows, limit = 5) => `<div class="tp-hchips">${(rows || []).slice(0, limit).map((row) => heroChip(row.hero, row.games, row.title)).join('') || '<span class="tp-quiet">—</span>'}</div>`;
@@ -276,59 +275,33 @@ export function createTeamDossier(h) {
     return svg(W, H, `${grid}${bars}`, opts.aria || '占比柱');
   }
 
-  /* 3c. 分路 × 类型矩阵：每一格都写人次和本路占比，小分路也不会丢标签。 */
+  /* 3c. 分路类型构成：每条分路一条分段条 + 清晰清单。
+       要看的就是「对抗路选了多少战边、多少坦边」，稀疏矩阵的大量空格与合计行没有信息量。 */
   function typeMatrix(rows, opts = {}) {
     const typedRows = rows.filter((row) => isKnownType(row.archetype));
     const lanes = LANES.filter((lane) => typedRows.some((row) => row.lane === lane));
     if (!lanes.length) return '';
-    const types = TYPE_ORDER.filter((type) => typedRows.some((row) => row.archetype === type));
-    if (!types.length) return '';
-    const countOf = (lane, type) => typedRows.filter((row) => row.lane === lane && row.archetype === type).length;
-    const laneTotal = (lane) => typedRows.filter((row) => row.lane === lane).length;
-    const typeTotal = (type) => typedRows.filter((row) => row.archetype === type).length;
-    let max = 1;
-    for (const lane of lanes) for (const type of types) max = Math.max(max, countOf(lane, type));
-    const head = `<thead><tr><th class="tp-mx-corner"><span>分路</span><small>人次</small></th>${types.map((type, ti) => `<th data-col="${ti}"><i style="background:${colorOfKey(type)}"></i>${esc(type)}</th>`).join('')}<th class="tp-mx-sum">合计</th></tr></thead>`;
     const body = lanes.map((lane) => {
-      const total = laneTotal(lane);
-      const cells = types.map((type, ti) => {
-        const cellRows = typedRows.filter((row) => row.lane === lane && row.archetype === type);
-        const count = cellRows.length;
-        if (!count) return `<td class="tp-mx-cell is-zero" data-col="${ti}">·</td>`;
-        const alpha = 12 + Math.round((count / max) * 30);
-        const games = cellRows.map((row) => row.game);
-        const gid = gamesAttr(games, `${lane} · ${type}`, [lane]);
-        return `<td class="tp-mx-cell is-drill" data-col="${ti}" style="background:color-mix(in srgb, ${colorOfKey(lane)} ${alpha}%, var(--paper))"${gid} title="${esc(`${lane} · ${type} · ${fmt(count)} 人次（${pct((count / total) * 100)}）；点开看这 ${fmt(games.length)} 局`)}"><b>${fmt(count)}</b><small>${pct((count / total) * 100)}</small></td>`;
+      const laneRows = typedRows.filter((row) => row.lane === lane);
+      const total = laneRows.length;
+      const parts = TYPE_ORDER
+        .map((type) => ({type, partRows: laneRows.filter((row) => row.archetype === type)}))
+        .filter((part) => part.partRows.length)
+        .sort((a, b) => b.partRows.length - a.partRows.length);
+      const bar = parts.map((part) => {
+        const share = (part.partRows.length / total) * 100;
+        const games = part.partRows.map((row) => row.game);
+        const gid = gamesAttr(games, `${lane} · ${part.type}`, [lane]);
+        return `<span class="tp-tm-seg${gid ? ' is-drill' : ''}"${gid} data-col="${TYPE_ORDER.indexOf(part.type)}" style="width:${share.toFixed(2)}%;background:${colorOfKey(part.type)}" title="${esc(`${lane} · ${part.type} · ${fmt(part.partRows.length)} 人次（${pct(share)}）；点开看这 ${fmt(games.length)} 局`)}">${share >= 12 ? `<i>${pct(share)}</i>` : ''}</span>`;
       }).join('');
-      return `<tr><th class="tp-mx-lane"><i style="background:${colorOfKey(lane)}"></i><span>${esc(lane)}</span><b>${fmt(total)}</b></th>${cells}<td class="tp-mx-sum">${fmt(total)}</td></tr>`;
+      const list = parts.map((part) => `<span><i style="background:${colorOfKey(part.type)}"></i><b>${esc(part.type)}</b><em>${fmt(part.partRows.length)} 人次</em><small>${pct((part.partRows.length / total) * 100)}</small></span>`).join('');
+      return `<div class="tp-tm-row">
+        <div class="tp-tm-head"><b>${esc(lane)}</b><small>${fmt(total)} 人次</small></div>
+        <div class="tp-tm-bar" role="img" aria-label="${esc(`${lane}各类型构成`)}">${bar}</div>
+        <div class="tp-tm-list">${list}</div>
+      </div>`;
     }).join('');
-    const foot = `<tfoot><tr><th class="tp-mx-lane">合计</th>${types.map((type) => `<td class="tp-mx-sum">${fmt(typeTotal(type))}</td>`).join('')}<td class="tp-mx-sum is-strong">${fmt(typedRows.length)}</td></tr></tfoot>`;
-    return `<p class="tp-scrollhint">← 左右滑动看全部类型 →</p><div class="tp-mx-wrap"><table class="tp-mx" aria-label="${esc(opts.aria || '分路与类型矩阵')}">${head}<tbody>${body}</tbody>${foot}</table></div>`;
-  }
-
-  /* 3d. 选人顺位矩阵：行是分路，列是第几手，把「选人」写进表头。 */
-  function priorityTable(rows, mode) {
-    const lanes = LANES.filter((lane) => rows.some((row) => row.lane === lane));
-    const countOf = (lane, slot) => rows.filter((row) => row.lane === lane && row.slot === slot).length;
-    const laneSlots = (lane) => rows.filter((row) => row.lane === lane).map((row) => row.slot);
-    let max = 1;
-    for (const lane of lanes) for (const slot of [1, 2, 3, 4, 5]) max = Math.max(max, countOf(lane, slot));
-    const head = `<thead><tr><th class="tp-pr-corner" rowspan="2">分路</th><th class="tp-pr-group" colspan="5">${mode === 'ban' ? 'Ban' : '选人'} · 第几手</th><th class="tp-pr-side" rowspan="2">中位</th><th class="tp-pr-side" rowspan="2">众数</th><th class="tp-pr-side" rowspan="2">合计</th></tr><tr>${[1, 2, 3, 4, 5].map((slot) => `<th class="tp-pr-slot" data-col="${slot}">第${slot}手</th>`).join('')}</tr></thead>`;
-    const body = lanes.map((lane) => {
-      const slots = laneSlots(lane);
-      const band = medianBand(slots);
-      const mode2 = modeOf(slots);
-      const cells = [1, 2, 3, 4, 5].map((slot) => {
-        const cellRows = rows.filter((row) => row.lane === lane && row.slot === slot);
-        const count = cellRows.length;
-        if (!count) return `<td class="tp-pr-cell is-zero" data-col="${slot}">·</td>`;
-        const alpha = 8 + Math.round((count / max) * 34);
-        const gid = gamesAttr(cellRows.map((row) => row.game), `${lane} · 第${slot}手`, [lane]);
-        return `<td class="tp-pr-cell is-drill" data-col="${slot}" style="background:color-mix(in srgb, ${colorOfKey(lane)} ${alpha}%, var(--paper))"${gid} title="${esc(`${lane} · 第${slot}手 · ${fmt(count)} 人次；点开看这 ${fmt(count)} 局`)}"><b>${fmt(count)}</b></td>`;
-      }).join('');
-      return `<tr><th class="tp-pr-lane"><i style="background:${colorOfKey(lane)}"></i>${esc(lane)}</th>${cells}<td class="tp-pr-side">${band ? (band[0] === band[1] ? band[0] : `${band[0]}–${band[1]}`) : '—'}</td><td class="tp-pr-side">${mode2 ? mode2.values.join('/') : '—'}</td><td class="tp-pr-side is-strong">${fmt(slots.length)}</td></tr>`;
-    }).join('');
-    return `<p class="tp-scrollhint">← 左右滑动看第 4、5 手 →</p><div class="tp-pr-wrap"><table class="tp-pr" aria-label="选人顺位矩阵">${head}<tbody>${body}</tbody></table></div>`;
+    return `<div class="tp-tm" aria-label="${esc(opts.aria || '分路类型构成')}">${body}</div>`;
   }
 
   /* 3e. 英雄池大卡：头像 56px，名字和次数在下面，不再挤成一条胶囊。 */
@@ -337,6 +310,12 @@ export function createTeamDossier(h) {
       <span class="tp-poolhero-face">${String(portrait(hero, 'is-face')).replace(' loading="lazy"', '')}<em>${fmt(count)}</em></span>
       <b>${esc(hero)}</b>${type ? `<small>${esc(type)}</small>` : ''}
     </a>`;
+  }
+  /* BP 顶部速览的紧凑英雄格：头像 32px，比英雄池的大圆卡小一圈。 */
+  function topHeroTile(hero, count, winRate = null) {
+    return `<a class="tp-tophero" href="${route('hero', hero)}" title="${esc(`${hero} · ${fmt(count)} 次${winRate == null ? '' : ` · 本队胜率 ${winRate}%`}`)}">
+      <span class="tp-tophero-face">${String(portrait(hero, 'is-face')).replace(' loading="lazy"', '')}<em>${fmt(count)}</em></span>
+      <b>${esc(hero)}</b>${winRate == null ? '' : `<i class="tp-tophero-rate${winRate >= 50 ? ' is-win' : ' is-loss'}">本队 ${winRate}%</i>`}</a>`;
   }
   /* 4. 排名折线（bump）：切片之间名次怎么换；右侧直接写线名，点线只看一路。 */
   function bumpChart(series, keys, opts = {}) {
@@ -651,6 +630,9 @@ export function createTeamDossier(h) {
       const input = event.target.closest?.('[data-tp-hero-search]');
       if (input) filterHeroPicker(input.closest('.tp-heropick'));
     });
+    document.addEventListener('toggle', (event) => {
+      if (event.target.matches?.('[data-tp-pickfold]')) bpHeroFoldOpen = event.target.open;
+    }, true);
     document.addEventListener('click', (event) => {
       const button = event.target.closest?.('[data-tp-hero-type]');
       if (!button) return;
@@ -684,11 +666,23 @@ export function createTeamDossier(h) {
     document.addEventListener('input', (event) => {
       const note = event.target.closest?.('[data-tp-note]');
       if (!note) return;
-      const status = note.closest('.tp-card')?.querySelector('[data-tp-note-status]');
+      const card = note.closest('.tp-card');
+      const status = card?.querySelector('[data-tp-note-status]');
+      const count = card?.querySelector('[data-tp-note-count]');
+      if (count) count.textContent = `${note.value.length} / 2000`;
       clearTimeout(note.__tpNoteTimer);
       note.__tpNoteTimer = setTimeout(() => {
         try {
-          localStorage.setItem(note.dataset.tpNote, note.value);
+          const days = loadNoteDays(note.dataset.tpNote);
+          days[note.dataset.noteDate] = note.value;
+          saveNoteDays(note.dataset.tpNote, days);
+          /* 同步日历上的绿点：写了就有，清空就去掉。 */
+          const cell = document.querySelector(`[data-note-cal-day="${note.dataset.noteDate}"]`);
+          if (cell) {
+            const dot = cell.querySelector('.tp-note-dot');
+            if (note.value.trim() && !dot) cell.insertAdjacentHTML('beforeend', '<i class="tp-note-dot"></i>');
+            if (!note.value.trim() && dot) dot.remove();
+          }
           if (status) {
             const stamp = new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit', hour12: false});
             status.textContent = `已保存 ${stamp}`;
@@ -697,6 +691,150 @@ export function createTeamDossier(h) {
           if (status) status.textContent = '本机无法保存';
         }
       }, 250);
+    });
+    /* 常用标注一键插入笔记；复制按钮把整段笔记带走。都复用 input 事件以触发自动保存。 */
+    document.addEventListener('click', (event) => {
+      /* 切换记录日期：直接换 textarea 内容，不重绘整页。 */
+      /* 日历选日期 / 翻月 / 回到今天：直接换 textarea 与网格，不重绘整页。 */
+      const calDay = event.target.closest?.('[data-note-cal-day]');
+      if (calDay) {
+        const c = calDay.closest('.tp-card');
+        const note = c?.querySelector('[data-tp-note]');
+        if (!note) return;
+        const key = calDay.dataset.noteCalDay;
+        noteSelectedDate = key;
+        const days = loadNoteDays(note.dataset.tpNote);
+        note.value = String(days[key] || '');
+        note.dataset.noteDate = key;
+        c.querySelector('[data-note-sel-label]').textContent = `${noteSelText(key)}`;
+        c.querySelectorAll('[data-note-cal-day]').forEach((b) => {
+          const on = b.dataset.noteCalDay === key;
+          b.classList.toggle('is-sel', on);
+          b.setAttribute('aria-pressed', String(on));
+        });
+        const status = c.querySelector('[data-tp-note-status]');
+        const count = c.querySelector('[data-tp-note-count]');
+        if (count) count.textContent = `${note.value.length} / 2000`;
+        if (status) status.textContent = note.value ? '已保存' : '输入后自动保存';
+        document.getElementById('tp-note-cal')?.hidePopover?.();
+        c.querySelector('.tp-note-datebtn')?.focus();
+        return;
+      }
+      const calStep = event.target.closest?.('[data-note-cal-step]');
+      if (calStep) {
+        const c = calStep.closest('.tp-card');
+        const note = c?.querySelector('[data-tp-note]');
+        if (!note) return;
+        const base = noteCalMonth || noteTodayKey().slice(0, 7);
+        const [y, m] = base.split('-').map(Number);
+        const d = new Date(y, m - 1 + Number(calStep.dataset.noteCalStep), 1);
+        noteCalMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const days = loadNoteDays(note.dataset.tpNote);
+        c.querySelector('[data-note-cal-title]').textContent = noteCalTitle();
+        c.querySelector('.tp-note-cal-grid').innerHTML = noteCalGridHtml(days);
+        return;
+      }
+      const calToday = event.target.closest?.('[data-note-cal-today]');
+      if (calToday) {
+        const c = calToday.closest('.tp-card');
+        const note = c?.querySelector('[data-tp-note]');
+        if (!note) return;
+        noteSelectedDate = null;
+        noteCalMonth = null;
+        const key = noteTodayKey();
+        const days = loadNoteDays(note.dataset.tpNote);
+        note.value = String(days[key] || '');
+        note.dataset.noteDate = key;
+        c.querySelector('[data-note-sel-label]').textContent = `${noteSelText(key)}`;
+        c.querySelector('[data-note-cal-title]').textContent = noteCalTitle();
+        c.querySelector('.tp-note-cal-grid').innerHTML = noteCalGridHtml(days);
+        const status = c.querySelector('[data-tp-note-status]');
+        const count = c.querySelector('[data-tp-note-count]');
+        if (count) count.textContent = `${note.value.length} / 2000`;
+        if (status) status.textContent = note.value ? '已保存' : '输入后自动保存';
+        document.getElementById('tp-note-cal')?.hidePopover?.();
+        c.querySelector('.tp-note-datebtn')?.focus();
+        return;
+      }
+      const tag = event.target.closest?.('[data-note-tag]');
+      if (tag) {
+        const note = tag.closest('.tp-card')?.querySelector('[data-tp-note]');
+        if (!note) return;
+        const text = tag.dataset.noteTag || '';
+        const start = note.selectionStart ?? note.value.length;
+        const end = note.selectionEnd ?? note.value.length;
+        const before = note.value.slice(0, start);
+        const after = note.value.slice(end);
+        const joiner = before && !/[\s，。、；：]$/.test(before) ? '，' : '';
+        const insert = joiner + text;
+        note.value = before + insert + after;
+        const caret = (before + insert).length;
+        note.focus();
+        note.setSelectionRange(caret, caret);
+        note.dispatchEvent(new Event('input', {bubbles: true}));
+        return;
+      }
+      const copy = event.target.closest?.('[data-note-copy]');
+      if (copy) {
+        const note = copy.closest('.tp-card')?.querySelector('[data-tp-note]');
+        if (!note) return;
+        const done = () => { const old = copy.dataset.label || copy.textContent; copy.dataset.label = old; copy.textContent = '已复制'; setTimeout(() => { copy.textContent = old; }, 1400); };
+        if (navigator.clipboard?.writeText) navigator.clipboard.writeText(note.value).then(done).catch(() => {});
+      }
+    });
+  }
+
+  /* 就地更新标签卡与头部标签，不整页重绘，焦点留在原处。 */
+  const paintTags = (root) => {
+    if (!root || !model) return;
+    const tags = loadTeamTags(model.t.id);
+    root.querySelectorAll('[data-tp-tag-preset]').forEach((button) => {
+      const on = tags.includes(button.dataset.tpTagPreset);
+      button.classList.toggle('is-on', on);
+      button.setAttribute('aria-pressed', String(on));
+      const mark = button.querySelector('i');
+      if (mark) mark.textContent = on ? '✓' : '+';
+    });
+    const current = root.querySelector('[data-tp-tag-current]');
+    if (current) current.innerHTML = tags.length
+      ? tags.map((label) => `<span class="tp-utag-chip is-${tagKind(label)}">${esc(label)}<button type="button" class="tp-utag-remove" data-tp-tag-remove="${esc(label)}" aria-label="移除标签 ${esc(label)}" title="移除 ${esc(label)}">×</button></span>`).join('')
+      : '<span class="tp-quiet">还没打标签</span>';
+    const status = root.querySelector('[data-tp-tag-status]');
+    if (status) status.textContent = tags.length ? `已打 ${fmt(tags.length)} 个标签 · 赛训组共享` : '';
+    const head = root.querySelector('[data-tp-head-tags]');
+    if (head) head.innerHTML = headTagChips(model);
+  };
+  if (typeof document !== 'undefined' && !window.__tpTagBound) {
+    window.__tpTagBound = true;
+    const writeTags = (root, tags) => { saveTeamTags(model?.t?.id, tags); paintTags(root); };
+    document.addEventListener('click', (event) => {
+      const preset = event.target.closest?.('[data-tp-tag-preset]');
+      if (preset) {
+        const label = preset.dataset.tpTagPreset;
+        const tags = loadTeamTags(model?.t?.id);
+        writeTags(preset.closest('.tp-page'), tags.includes(label) ? tags.filter((item) => item !== label) : [...tags, label]);
+        return;
+      }
+      const remove = event.target.closest?.('[data-tp-tag-remove]');
+      if (!remove) return;
+      const root = remove.closest('.tp-page');
+      const tags = loadTeamTags(model?.t?.id).filter((item) => item !== remove.dataset.tpTagRemove);
+      writeTags(root, tags);
+      /* 焦点落到下一枚删除按钮；没有就回输入框，不把用户丢回页首。 */
+      const next = root?.querySelector('[data-tp-tag-remove]') || root?.querySelector('[data-tp-tag-input]');
+      next?.focus();
+    });
+    document.addEventListener('submit', (event) => {
+      const form = event.target.closest?.('[data-tp-tag-form]');
+      if (!form) return;
+      event.preventDefault();
+      const input = form.querySelector('[data-tp-tag-input]');
+      const label = String(input?.value || '').trim().slice(0, 20);
+      if (label) {
+        const tags = loadTeamTags(model?.t?.id);
+        if (!tags.includes(label)) writeTags(form.closest('.tp-page'), [...tags, label]);
+      }
+      if (input) { input.value = ''; input.focus(); }
     });
   }
 
@@ -763,134 +901,272 @@ export function createTeamDossier(h) {
     });
   }
 
-  function filterChips() {
-    const view = model;
-    const total = view ? view.deepGames.length : 0;
-    const liveGames = activeGames(view);
-    const live = liveGames.length;
-    const scope = state.days === 'all' ? '全部时间' : state.days === 'custom' ? `${state.from || '起'}~${state.to || '止'}` : `近 ${state.days} 天`;
-    const bo = state.bo === 'all' ? '全部赛制' : state.bo === 'none' ? '未登记赛制' : `BO${state.bo}`;
-    return `<div class="tp-filter tp-filter-compact" role="group" aria-label="样本范围">
-      <div class="tp-filter-head">
-        <span class="tp-filter-title">样本范围</span>
-        <b>${esc(scope)}</b><i>·</i><b>${esc(bo)}</b>
-        <span class="tp-filter-note">改时间 / 赛制用下方分节条；这里只显示当前口径</span>
-      </div>
-      <div class="tp-filter-stat" data-tp-mount="filterstat">${filterStat(live, total)}</div>
-    </div>`;
+  const NOTE_TAGS = ['前期入侵', '后期团战强', '怕强开', '运营稳', '节奏偏慢', '野辅联动好', '阵容吃配合', '翻盘能力强'];
+
+  /* ── 战队标签（模块三）───────────────────────────────────────────
+     教练按巅峰分 / 俱乐部给对手打标签：常用标签点一下打上、再点取消，
+     俱乐部等自定义标签手填。按战队 id 存本机，和教练笔记同一口径，
+     不改主数据、不动历史对局。 */
+  const TAG_PRESETS = [
+    {label: '巅峰2100', kind: 'peak', title: '对手里有巅峰分 2100+ 的选手'},
+    {label: '百强', kind: 'peak', title: '对手里有巅峰百强选手'},
+    {label: '国赛队', kind: 'elite', title: '打过全国大赛的队伍'},
+  ];
+  const TAG_LIMIT = 12;
+  /* 标签 / 笔记都存赛训数据库（全组共享），localStorage 只作离线过渡缓存。 */
+  const tagCache = new Map();
+  const noteCache = new Map();
+  let tagPresets = null;
+  let sharedLoadedFor = null;
+  const sharedPresets = () => (tagPresets && tagPresets.length ? tagPresets : TAG_PRESETS);
+  const tagKind = (label) => sharedPresets().find((preset) => preset.label === label)?.kind || 'club';
+  const tagStorageKey = (id) => `kpl-team-tags:${id || 'team'}`;
+  function loadTeamTags(id) {
+    if (tagCache.has(id)) return tagCache.get(id) || [];
+    try {
+      const parsed = JSON.parse(localStorage.getItem(tagStorageKey(id)) || '[]');
+      if (!Array.isArray(parsed)) return [];
+      return [...new Set(parsed.filter((value) => typeof value === 'string')
+        .map((value) => value.trim()).filter(Boolean))].slice(0, TAG_LIMIT);
+    } catch { return []; }
+  }
+  function saveTeamTags(id, tags) {
+    const list = tags.slice(0, TAG_LIMIT);
+    tagCache.set(id, list);
+    window.__teamTagsDirty = true;
+    try { localStorage.setItem(tagStorageKey(id), JSON.stringify(list)); } catch {}
+    fetch('/api/studio/team-tags', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({team: id, tags: list}),
+    }).catch(() => {});
+  }
+  /* 渲染后把库里的标签 / 笔记取回来，覆盖本机缓存并重画这两个卡片。 */
+  function loadSharedAsync(root) {
+    const id = model?.t?.id;
+    if (!id || sharedLoadedFor === id || typeof fetch === 'undefined') return;
+    sharedLoadedFor = id;
+    Promise.all([
+      fetch('/api/studio/team-tags?team=' + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/studio/team-notes?team=' + encodeURIComponent(id)).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([tagData, noteData]) => {
+      if (model?.t?.id !== id) return;
+      if (tagData) {
+        if (Array.isArray(tagData.presets) && tagData.presets.length) tagPresets = tagData.presets;
+        tagCache.set(id, Array.isArray(tagData.tags) ? tagData.tags : []);
+      }
+      if (noteData && noteData.days && typeof noteData.days === 'object') noteCache.set(id, noteData.days);
+      if (!root || !document.body.contains(root)) return;
+      const area = root.querySelector('[data-tp-analysis]');
+      if (area && typeof repaint === 'function') repaint(root);
+      paintTags(root);
+      /* repaint 重建了节头，新鲜度提示要补回去。 */
+      window.__loadFreshness?.();
+    });
   }
 
-  function scopeStrip(games) {
-    if (!games.length) return '';
-    const days = [...new Set(games.map((game) => game.day).filter(Boolean))].sort();
-    const range = days.length ? `${days[0]}~${days[days.length - 1]}` : '—';
-    const draft = draftGames(games).length;
-    const boKnown = games.filter((game) => game.bo).length;
-    const unregistered = games.length - boKnown;
-    return `<div class="tp-scope-strip" aria-label="样本口径">
-      <span class="tp-scope-strong">${fmt(games.length)} 局</span>
-      <span>${esc(range)}</span>
-      <span>手序 ${fmt(draft)}</span>
-      <span>BO 登记 ${fmt(boKnown)}</span>
-      ${unregistered ? `<span class="is-warn">未登记 ${fmt(unregistered)}</span>` : ''}
-      <span class="tp-scope-note">BP 手序只统计有手序的局；类型 / 英雄池按全部对局，边野只算双方都有类型的局</span>
-    </div>`;
+  let noteSelectedDate = null; /* null = 今天；否则 'YYYY-MM-DD' */
+  let noteCalMonth = null;     /* 日历显示月 'YYYY-MM'；null = 今天所在月 */
+  const noteDateKey = (offset) => {
+    const d = new Date();
+    d.setDate(d.getDate() - offset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const noteTodayKey = () => noteDateKey(0);
+  const noteSelectedKey = () => noteSelectedDate || noteTodayKey();
+  /* 只用字符串 key 比较，不解析 ISO 字符串为 Date，避免时区漂移。 */
+  const noteDayLabel = (key) => key === noteTodayKey() ? '今天' : key === noteDateKey(1) ? '昨天' : key === noteDateKey(2) ? '前天' : key.slice(5);
+  /* 触发按钮上的完整文案：相对日期拼具体日期，更早的日期本身就是日期，不重复。 */
+  const noteSelText = (key) => {
+    const label = noteDayLabel(key);
+    return label.includes('-') ? label : `${label} · ${key.slice(5)}`;
+  };
+  /* 按天存储：{ 'YYYY-MM-DD': 文本 }。兼容并迁移旧的单条笔记。 */
+  function loadNoteDays(storageKey) {
+    const teamKey = storageKey.replace('kpl-team-note-days:', '');
+    if (noteCache.has(teamKey)) return noteCache.get(teamKey) || {};
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    try {
+      const old = localStorage.getItem(storageKey.replace('-days:', ':'));
+      if (old) {
+        const map = {[noteDateKey(0)]: old};
+        try { localStorage.setItem(storageKey, JSON.stringify(map)); } catch {}
+        return map;
+      }
+    } catch {}
+    return {};
   }
-
+  /* 日历网格：周一开头；有笔记的日子带绿点，选中日高亮，今天描边。 */
+  function saveNoteDays(storageKey, days) {
+    const teamKey = storageKey.replace('kpl-team-note-days:', '');
+    noteCache.set(teamKey, days);
+    try { localStorage.setItem(storageKey, JSON.stringify(days)); } catch {}
+    fetch('/api/studio/team-notes', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({team: teamKey, days}),
+    }).catch(() => {});
+  }
+  function noteCalGridHtml(days) {
+    const month = noteCalMonth || noteTodayKey().slice(0, 7);
+    const [y, m] = month.split('-').map(Number);
+    const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+    const total = new Date(y, m, 0).getDate();
+    const todayKey = noteTodayKey(), selKey = noteSelectedKey();
+    let cells = '';
+    for (let i = 0; i < lead; i++) cells += '<span class="tp-note-cal-cell is-blank" aria-hidden="true"></span>';
+    for (let day = 1; day <= total; day++) {
+      const key = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const filled = !!String(days[key] || '').trim();
+      const cls = ['tp-note-cal-cell'];
+      if (key === selKey) cls.push('is-sel');
+      if (key === todayKey) cls.push('is-today');
+      cells += `<button type="button" class="${cls.join(' ')}" data-note-cal-day="${key}" aria-label="${key}${filled ? '，有笔记' : ''}" aria-pressed="${key === selKey}"><span>${day}</span>${filled ? '<i class="tp-note-dot"></i>' : ''}</button>`;
+    }
+    return cells;
+  }
+  function noteCalTitle() {
+    const month = noteCalMonth || noteTodayKey().slice(0, 7);
+    const [y, m] = month.split('-').map(Number);
+    return `${y} 年 ${m} 月`;
+  }
   function noteCard() {
-    const storageKey = `kpl-team-note:${model?.key || 'team'}`;
-    let note = '';
-    try { note = localStorage.getItem(storageKey) || ''; } catch { note = ''; }
-    return card('教练笔记', '本机保存 · 只在这台电脑可见', `<textarea class="tp-note" data-tp-note="${esc(storageKey)}" maxlength="2000" placeholder="这队喜欢什么、怕什么、上次交手怎么输的……">${esc(note)}</textarea><p class="tp-note-foot" data-tp-note-status>${note ? '已保存' : '输入后自动保存'}</p>`, 'is-wide');
+    const storageKey = `kpl-team-note-days:${model?.key || 'team'}`;
+    const days = loadNoteDays(storageKey);
+    const selKey = noteSelectedKey();
+    const note = String(days[selKey] || '');
+    const tags = NOTE_TAGS.map((t) => `<button type="button" class="tp-note-tag" data-note-tag="${esc(t)}" title="插入「${esc(t)}」">+ ${esc(t)}</button>`).join('');
+    const dows = ['一', '二', '三', '四', '五', '六', '日'].map((d) => `<span>${d}</span>`).join('');
+    const history = Object.entries(days).filter(([, value]) => String(value || '').trim()).sort((a, b) => b[0].localeCompare(a[0]));
+    const historyHtml = `<details class="tp-note-history">
+      <summary>历史笔记 · ${fmt(history.length)} 天</summary>
+      ${history.length
+        ? `<div class="tp-note-history-list">${history.map(([key, text]) => `<button type="button" class="tp-note-history-item${key === selKey ? ' is-sel' : ''}" data-note-cal-day="${esc(key)}"><b>${esc(noteSelText(key))}</b><span>${esc(String(text).slice(0, 48))}</span></button>`).join('')}</div>`
+        : '<p class="tp-note-history-empty"><i class="empty-dot"></i>还没有历史笔记，写下第一条吧。</p>'}
+    </details>`;
+    return card('教练笔记', '赛训组共享 · 按天记录', `<div class="tp-note-datesel">
+      <button type="button" class="tp-note-datebtn" commandfor="tp-note-cal" command="toggle-popover" aria-label="选择笔记日期">
+        <span class="tp-note-dateico" aria-hidden="true">▦</span>
+        <span class="tp-note-datetext"><b data-note-sel-label>${esc(noteSelText(selKey))}</b><small>点开选日期 · 绿点＝已写</small></span>
+        <span class="tp-note-caret" aria-hidden="true">▾</span>
+      </button>
+      <div id="tp-note-cal" popover class="tp-note-cal">
+        <div class="tp-note-cal-head">
+          <button type="button" class="tp-note-cal-nav" data-note-cal-step="-1" aria-label="上个月">‹</button>
+          <b data-note-cal-title>${noteCalTitle()}</b>
+          <button type="button" class="tp-note-cal-nav" data-note-cal-step="1" aria-label="下个月">›</button>
+        </div>
+        <div class="tp-note-cal-dow" aria-hidden="true">${dows}</div>
+        <div class="tp-note-cal-grid" role="group" aria-label="选择日期">${noteCalGridHtml(days)}</div>
+        <div class="tp-note-cal-foot"><span><i class="tp-note-dot"></i>有笔记</span><button type="button" class="tp-note-cal-today" data-note-cal-today>回到今天</button></div>
+      </div>
+    </div>
+      <div class="tp-note-tags" role="group" aria-label="常用标注，点击插入笔记">${tags}</div>
+      <textarea class="tp-note" data-tp-note="${esc(storageKey)}" data-note-date="${selKey}" maxlength="2000" placeholder="这队喜欢什么、怕什么、上次交手怎么输的…… 点上方标签可快速插入">${esc(note)}</textarea>
+      <div class="tp-note-foot"><span data-tp-note-status>${note ? '已保存' : '输入后自动保存'}</span><span class="tp-note-count" data-tp-note-count>${note.length} / 2000</span><button type="button" class="tp-note-copy" data-note-copy>复制</button></div>
+      ${historyHtml}`, 'is-wide');
   }
 
-  function filterStat(live, total) {
-    if (!model) return '';
-    const boCounts = (model.coverage && model.coverage.boCounts) || {};
-    const boOf = (bo) => Number(boCounts[bo] ?? boCounts[String(bo)] ?? 0);
-    const boText = [3, 5, 7].filter((bo) => boOf(bo)).map((bo) => `BO${bo} ${fmt(boOf(bo))}`).join(' · ');
-    const decided = activeGames(model).filter((game) => game.opponentWin === true || game.opponentWin === false);
-    const wins = decided.filter((game) => game.opponentWin === true).length;
-    const pctLive = total ? Math.round((live / total) * 100) : 0;
-    return `<div class="tp-filter-copy"><b>当前 ${fmt(live)} / ${fmt(total)} 局</b><span>对手 ${fmt(wins)} 胜 ${fmt(decided.length - wins)} 负${decided.length ? ` · ${pct(wins / decided.length * 100)}` : ''}${boText ? ` · ${boText}` : ''}</span></div>
-      <div class="tp-filter-cover"><span class="tp-filter-ring">${ringArc(pctLive, 40, 4)}<b>${pctLive}%</b></span><small>样本覆盖</small></div>`;
-  }
-
-  function ringArc(rate, size = 58, stroke = 5) {
-    const r = (size - stroke) / 2;
-    const c = 2 * Math.PI * r;
-    const value = (Math.max(0, Math.min(100, rate)) / 100) * c;
-    return `<svg class="tp-ringarc" viewBox="0 0 ${size} ${size}" role="img" aria-label="${fmt(rate, 0)}%">
-      <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--tp-hair)" stroke-width="${stroke}"/>
-      <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${value.toFixed(1)} ${(c - value).toFixed(1)}" transform="rotate(-90 ${size / 2} ${size / 2})"/>
-    </svg>`;
-  }
-
-  /* ── 01 整体对照：数字 + 环比 ─────────────────────────────────── */
-  const BASE_METRICS = [
-    ['场均控龙', 'dragons', 1, 0.05, '中立资源'],
-    ['场均推塔', 'towers', 1, 0.05, '推进兑现'],
-    ['场均经济', 'gold', 0, 500, '资源总量'],
+  /* ── 01 整体对照：一针见血的对比表 ──────────────────────────────
+     每行一个有效指标，直接给「本队领先/落后多少」和「环比是改善还是下滑」。
+     good 指明这个指标高好还是低好（死亡越低越好），据此判断占优方向与环比好坏。 */
+  const CMP_METRICS = [
+    {key: 'kills', label: '场均击杀', good: 'high', digits: 1},
+    {key: 'deaths', label: '场均死亡', good: 'low', digits: 1},
+    {key: 'assists', label: '场均助攻', good: 'high', digits: 1},
+    {key: 'gold', label: '场均经济', good: 'high', digits: 1, scale: 1000, suffix: 'k'},
+    {key: 'towers', label: '场均推塔', good: 'high', digits: 1},
+    {key: 'dragons', label: '场均控龙', good: 'high', digits: 1},
   ];
 
-  function metricValue(games, side, field) {
-    const values = games.map((game) => game.sides?.[side]?.stats?.[field]).filter(has);
+  /* 取某队在某指标上的值：均取 sides[side].stats 该字段的场均。 */
+  function metricOf(games, side, key) {
+    if (!games.length) return null;
+    const values = games.map((g) => g.sides?.[side]?.stats?.[key]).filter(has);
     return values.length ? mean(values) : null;
   }
 
   function baseBoard(games) {
     const prev = previousGames(model);
-    const blocks = BASE_METRICS.map(([label, field, digits, threshold, note]) => {
-      const opp = metricValue(games, 'enemy', field);
-      const own = metricValue(games, 'own', field);
-      const oppDelta = has(opp) && has(metricValue(prev, 'enemy', field)) ? opp - metricValue(prev, 'enemy', field) : null;
-      const ownDelta = has(own) && has(metricValue(prev, 'own', field)) ? own - metricValue(prev, 'own', field) : null;
-      const show = (value) => (field === 'gold' ? `${fmt(value / 1000, 1)}k` : fmt(value, digits));
-      const deltaText = (value) => {
-        if (!has(value)) return '无环比';
-        if (Math.abs(value) < threshold) return '持平';
-        const body = field === 'gold' ? `${fmt(Math.abs(value) / 1000, 1)}k` : fmt(Math.abs(value), digits);
-        return `${value > 0 ? '↑' : '↓'} ${body}`;
-      };
-      const deltaTone = (value) => (!has(value) || Math.abs(value) < threshold ? 'is-even' : value > 0 ? 'is-up' : 'is-down');
-      const gap = has(opp) && has(own) ? opp - own : null;
-      return `<div class="tp-metric">
-        <div class="tp-metric-head"><b>${esc(label)}</b><small>${esc(note)}</small></div>
-        <div class="tp-metric-body">
-          <span class="is-opp"><small>对手</small><b>${show(opp)}</b><em class="${deltaTone(oppDelta)}">${deltaText(oppDelta)}</em></span>
-          <span class="is-own"><small>本队</small><b>${show(own)}</b><em class="${deltaTone(ownDelta)}">${deltaText(ownDelta)}</em></span>
-        </div>
-        <div class="tp-metric-foot"><em>${!has(gap) ? '—' : Math.abs(gap) < threshold ? '两队持平' : `${gap > 0 ? '对手高' : '本队高'} ${field === 'gold' ? `${fmt(Math.abs(gap) / 1000, 1)}k` : fmt(Math.abs(gap), digits)}`}</em></div>
-      </div>`;
-    }).join('');
-    const compareNote = prev.length ? `环比＝上一个同长度窗口（${fmt(prev.length)} 局）` : '选全部 / 自定义时没有环比窗口';
-    return card('整体对照', `${fmt(games.length)} 局 · ${compareNote}`, `<div class="tp-metrics">${blocks}</div>
-      <p class="tp-read">只摆这三项：控龙是队伍级资源决策、推塔是推进兑现、经济是资源总量，跨队能比。↑↓ 是和上一个同长度窗口比的环比。</p>`, 'is-wide');
-  }
-
-  function formCard(games) {
-    const form = games.slice(0, 14).reverse();
-    const squares = form.map((game) => `<i class="tp-sq ${game.opponentWin === true ? 'is-loss' : game.opponentWin === false ? 'is-win' : 'is-unknown'}" title="${esc(`${game.start || ''} · ${game.opponentWin === true ? '对手胜' : game.opponentWin === false ? '本队胜' : '结果未知'}${game.bo ? ` · BO${game.bo}` : ''}`)}"></i>`).join('');
-    const decided = games.filter((game) => game.opponentWin === true || game.opponentWin === false);
-    const losses = decided.filter((game) => game.opponentWin === true).length;
-    const durations = games.map((game) => game.duration).filter((v) => has(v) && v > 0);
-    return card('近期交手', `${fmt(games.length)} 局`, `<div class="tp-form-strip">${squares || '<span class="tp-quiet">还没有对局记录</span>'}</div>
-      <div class="tp-form-legend"><span><i class="is-win"></i>本队胜</span><span><i class="is-loss"></i>对手胜</span><small>左旧 → 右新</small></div>
-      <div class="tp-form-stats">
-        <div><small>对手战绩</small><b>${fmt(losses)} 胜 ${fmt(decided.length - losses)} 负</b></div>
-        <div><small>对手胜率</small><b>${decided.length ? pct((losses / decided.length) * 100) : '—'}</b></div>
-        <div><small>场均时长</small><b>${time(mean(durations))}</b></div>
+    const rows = [];
+    let lead = 0, behind = 0, better = 0, worse = 0;
+    let topEdge = null, topGap = null;
+    for (const m of CMP_METRICS) {
+      const opp = metricOf(games, 'enemy', m.key);
+      const own = metricOf(games, 'own', m.key);
+      if (!has(opp) && !has(own)) continue; // 这一指标双方都没数据（如控龙常缺），不占行
+      /* eps 用指标原始单位：经济是原始金（500 金≈0.5k），否则 0.05k 内的差会被误报成"落后 0k"。 */
+      const eps = m.key === 'gold' ? 500 : 0.05;
+      const show = (v) => !has(v) ? '—' : `${fmt(m.scale ? v / m.scale : v, m.digits)}${m.unit || m.suffix || ''}`;
+      /* 优势 = 本队优势幅度：高好指标取 own-opp，低好指标取 opp-own。正=本队占优。 */
+      const edge = has(opp) && has(own) ? (m.good === 'high' ? own - opp : opp - own) : null;
+      let gapText = '—', gapTone = 'is-even';
+      if (has(edge)) {
+        if (Math.abs(edge) < eps) gapText = '两队持平';
+        else {
+          gapText = `${edge > 0 ? '本队领先' : '本队落后'} ${show(Math.abs(edge))}`;
+          gapTone = edge > 0 ? 'is-good' : 'is-bad';
+          if (edge > 0) lead++; else behind++;
+          const rec = {label: m.label, size: Math.abs(edge)};
+          if (edge > 0 && (!topEdge || rec.size > topEdge.size)) topEdge = rec;
+          if (edge < 0 && (!topGap || rec.size > topGap.size)) topGap = rec;
+        }
+      }
+      /* 环比看本队：delta = 本队当前 - 上窗口，按 good 方向判好坏。 */
+      const ownPrev = metricOf(prev, 'own', m.key);
+      const delta = has(own) && has(ownPrev) ? own - ownPrev : null;
+      let trendText = '—', trendTone = 'is-even';
+      if (has(delta)) {
+        if (Math.abs(delta) < eps) trendText = '持平';
+        else {
+          const good = m.good === 'high' ? delta > 0 : delta < 0;
+          trendText = `${delta > 0 ? '↑' : '↓'} ${show(Math.abs(delta))}`;
+          trendTone = good ? 'is-good' : 'is-bad';
+          if (good) better++; else worse++;
+        }
+      }
+      const trendBadge = trendText !== '—' ? `<small class="tp-duel-trend ${trendTone}">环比 ${trendText}</small>` : '';
+      /* 固定四列：指标 / 对手 / 本队 / 差距。数字右对齐，位置在每行严格对齐。 */
+      rows.push(`<div class="tp-duel ${gapTone}" role="listitem">
+        <div class="tp-duel-name"><b>${esc(m.label)}</b>${trendBadge}</div>
+        <span class="tp-duel-opp">${show(opp)}</span>
+        <span class="tp-duel-own">${show(own)}</span>
+        <div class="tp-duel-gap"><b>${gapText}</b></div>
       </div>`);
+    }
+    /* 顶部战绩牌：大比分一眼定调，下面一行点出最大强弱项。 */
+    const tally = lead + behind;
+    const headline = tally
+      ? (behind === 0 ? '本队全面占优' : lead > behind ? '本队总体占优' : lead === behind ? '两队各有胜负' : '本队总体落后')
+      : '暂无可比指标';
+    const hero = `<div class="tp-cmp-hero">
+      <div class="tp-cmp-score"><b>${lead}</b><i>:</i><b>${behind}</b><span>本队占优 · 对手占优</span></div>
+      <div class="tp-cmp-headline"><b>${headline}</b>
+        <div class="tp-cmp-highlights">
+          ${topEdge ? `<span class="is-good">最强 <b>${esc(topEdge.label)}</b></span>` : ''}
+          ${topGap ? `<span class="is-bad">最弱 <b>${esc(topGap.label)}</b></span>` : ''}
+          ${better || worse ? `<span class="is-even">环比 <b>${better}↑ / ${worse}↓</b></span>` : ''}
+        </div>
+      </div>
+    </div>`;
+    const note = prev.length ? `环比＝上一个同长度窗口（${fmt(prev.length)} 局）` : '当前口径没有环比窗口';
+    const head = `<div class="tp-duel tp-duel-head" aria-hidden="true"><span></span><span>对手</span><span>本队</span><span></span></div>`;
+    return card('整体对照', `${fmt(games.length)} 局 · ${note}`, `${hero}
+      <div class="tp-duels" role="list" aria-label="本队与对手的关键指标对决">${head}${rows.join('')}</div>`, 'is-wide');
   }
 
-  /* ── 02 BP 手序 ───────────────────────────────────────────────── */
+  /* ── 02 BP ───────────────────────────────────────────────────── */
   const draftGames = (games) => games.filter((game) => game.draft?.known && game.draft.ordered);
 
   function handRows(games, mode) {
     const rows = [];
     for (const game of draftGames(games)) {
       const list = game.draft.ordered?.enemy?.[mode] || [];
-      list.forEach((entry, index) => rows.push({slot: index + 1, ...entry, game}));
+      list.forEach((entry, index) => rows.push({slot: index + 1, ...entry, archetype: normArch(entry.archetype), game}));
     }
     return rows;
   }
@@ -918,8 +1194,100 @@ export function createTeamDossier(h) {
         </div>
       </details>
       ${chipBar}
-      <span class="tp-bpbar-note">英雄列表默认只摊一条路；头像角标是人次，同一英雄只出现一张卡</span>
     </div>`;
+  }
+
+  /* 英雄选择器收进 details，默认收起，避免一进分节就摊一整排头像。
+     repaint 会重建 DOM，用模块变量记住展开状态，筛选/选英雄后不会意外合上。 */
+  let bpHeroFoldOpen = false;
+  function heroPickerFold(rows) {
+    const inner = heroPicker(rows, {key: 'bpHero', laneKey: 'bpHeroLane', lane: state.bpHeroLane, label: '英雄'});
+    const open = bpHeroFoldOpen ? ' open' : '';
+    return `<details class="tp-pickfold"${open} data-tp-pickfold>
+      <summary><span class="tp-pickfold-ico" aria-hidden="true">♟</span><span>选英雄看落点</span><small>${state.bpHero === 'all' ? '看他在第几手拿 / Ban' : `当前 ${esc(state.bpHero)}`}</small><span class="tp-pickfold-caret" aria-hidden="true">▾</span></summary>
+      ${inner}
+    </details>`;
+  }
+
+  /* 单个英雄的画像：拿与 Ban 各一条同款手序刻度条，一眼看出「常在第几手拿 / Ban」。 */
+  function heroFocusCard(mode, state_bpHero, focusRows, controls, pickRows, banRows) {
+    const slots = focusRows.map((row) => row.slot);
+    const lane = LANES.map((name) => ({name, count: focusRows.filter((row) => row.lane === name).length})).sort((a, b) => b.count - a.count)[0];
+    const type = distOf(focusRows.filter((row) => isKnownType(row.archetype)).map((row) => row.archetype)).sort((a, b) => b[1] - a[1])[0];
+    const band = medianBand(slots);
+    const bandText = band ? (band[0] === band[1] ? String(band[0]) : `${band[0]}–${band[1]}`) : '—';
+    const modeText = modeOf(slots) ? modeOf(slots).values.join('/') : '—';
+    /* 一条手序刻度条：每一手一段，段高按人次，峰值手高亮；下 marking 对齐手序号。 */
+    const handTicks = (rows) => {
+      const src = rows || [];
+      const counts = [1, 2, 3, 4, 5].map((slot) => ({slot, count: src.filter((row) => row.slot === slot).length}));
+      const peak = Math.max(...counts.map((c) => c.count), 1);
+      const ticks = counts.map((c) => {
+        const h = c.count ? Math.max(14, Math.round(c.count / peak * 100)) : 0;
+        const isPeak = c.count === peak;
+        return `<div class="tp-handtick${isPeak ? ' is-peak' : ''}${c.count ? '' : ' is-zero'}" title="第 ${c.slot} 手 · ${fmt(c.count)} 人次">
+          <span class="tp-handtick-bar"><i style="height:${h}%"></i></span>
+          <b>${c.count || ''}</b>
+          <small>${c.slot} 手</small>
+        </div>`;
+      }).join('');
+      return `<div class="tp-handchart-plot" role="img" aria-label="手序分布：${counts.map((c) => `第${c.slot}手${c.count}人次`).join('，')}">${ticks}</div>`;
+    };
+    const facts = [
+      ['主要分路', lane ? esc(lane.name) : '—', lane ? `${fmt(lane.count)} 人次` : ''],
+      ['主要类型', type ? esc(type[0]) : '—', type ? `${fmt(type[1])} 人次` : ''],
+      ['中位手序', bandText, '手'],
+      ['最常落在', modeText, '手'],
+    ].map(([label, value, sub]) => `<div class="tp-focusfact"><small>${label}</small><b>${value}</b><em>${sub}</em></div>`).join('');
+    return card(`${mode === 'ban' ? 'Ban' : '选人'} · ${esc(state_bpHero)}`, `${fmt(focusRows.length)} 人次 · 出手画像`, `${controls}
+      <div class="tp-herofocus-head">
+        <span class="tp-herofocus-face">${String(portrait(state_bpHero, 'is-face')).replace(' loading="lazy"', '')}</span>
+        <div class="tp-herofocus-title"><small>正在单看</small><b>${esc(state_bpHero)}</b></div>
+        <button type="button" class="tp-herofocus-exit" data-tp-filter="bpHero" data-tp-value="all">退出单看</button>
+      </div>
+      <div class="tp-handchart">
+        <div class="tp-handchart-head"><b>常在第几手拿</b><small>从左到右＝第 1 手到第 5 手，柱子越高用得越多</small></div>
+        ${handTicks(pickRows)}
+      </div>
+      <div class="tp-handchart">
+        <div class="tp-handchart-head"><b>常在第几手 Ban</b><small>从左到右＝第 1 手到第 5 手，柱子越高用得越多</small></div>
+        ${handTicks(banRows)}
+      </div>
+      <div class="tp-focusfacts">${facts}</div>`);
+  }
+
+  /* 对面常选 / 常 ban 前五：BP 页顶部的速览，按当前时间窗与赛制筛选，只算有手序的局。 */
+  /* 各分路自己的常选 / 常 ban 前五，和总榜同一批有手序的局。 */
+  function laneTopList(games, lane, mode = 'pick', limit = 5) {
+    const counts = new Map();
+    for (const row of handRows(games, mode)) {
+      if (row.lane !== lane || !row.hero) continue;
+      const entry = counts.get(row.hero) || {n: 0, own: 0, decided: 0};
+      entry.n++;
+      if (row.game.opponentWin === true || row.game.opponentWin === false) {
+        entry.decided++;
+        if (!row.game.opponentWin) entry.own++;
+      }
+      counts.set(row.hero, entry);
+    }
+    return [...counts.entries()]
+      .map(([hero, entry]) => [hero, entry.n, entry.decided ? Math.round(entry.own / entry.decided * 100) : null])
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), 'zh-CN'))
+      .slice(0, limit);
+  }
+
+  function enemyTopCard(games) {
+    const known = draftGames(games);
+    if (!known.length) return card('', '', lack('这批筛选里没有带手序的 BP。'));
+    /* 常选 / 常 ban 都按五路各一张卡，同一批有手序的局。 */
+    const laneCardsFor = (mode) => LANES.map((lane) => {
+      const list = laneTopList(games, lane, mode);
+      const total = list.reduce((sum, [, count]) => sum + count, 0);
+      return card(lane, list.length ? `${fmt(total)} 人次` : '暂无数据',
+        `<div class="tp-toprow">${list.map(([hero, count, rate]) => topHeroTile(hero, count, rate)).join('') || '<span class="tp-quiet">—</span>'}</div>`);
+    }).join('');
+    return `<div class="tp-lanecards-head">常选 · 各分路前五</div><div class="tp-lanecards">${laneCardsFor('pick')}</div>`
+      + `<div class="tp-lanecards-head">常 ban · 各分路前五</div><div class="tp-lanecards">${laneCardsFor('ban')}</div>`;
   }
 
   function bpDistribution(games) {
@@ -927,130 +1295,25 @@ export function createTeamDossier(h) {
     let rows = handRows(games, mode);
     if (!rows.length) return card(mode === 'ban' ? 'Ban 分布' : '选人分布', '没有可用手序', `${bpControls()}${lack('这批筛选条件里没有带手序的 BP。')}`);
     if (state.hand !== 'all') rows = rows.filter((row) => row.slot === Number(state.hand));
-    const heroBar = heroPicker(rows, {key: 'bpHero', laneKey: 'bpHeroLane', lane: state.bpHeroLane, label: '英雄'});
     const laneRows = state.lane === 'all' ? rows : rows.filter((row) => row.lane === state.lane);
     const focusRows = state.bpHero === 'all' ? laneRows : rows.filter((row) => row.hero === state.bpHero);
     const scope = `${state.hand === 'all' ? '全部手序' : `第 ${state.hand} 手`}${state.lane === 'all' ? '' : ` · ${state.lane}`}`;
-    if (!focusRows.length) return card(mode === 'ban' ? 'Ban 分布' : '选人分布', `${scope} · 0 人次`, `${bpControls()}${heroBar}${lack('当前手序、分路或英雄没有记录，换一个条件再看看。')}`);
-    /* 选到单个英雄：看它落在第几手，而不是一张只有一个扇区的图。 */
+    if (!focusRows.length) return card(mode === 'ban' ? 'Ban 分布' : '选人分布', `${scope} · 0 人次`, `${bpControls()}${heroPickerFold(rows)}${lack('当前手序、分路或英雄没有记录，换一个条件再看看。')}`);
+    /* 选到单个英雄：单独一张画像卡，不摊头像列表、不摆饼图。 */
     if (state.bpHero !== 'all') {
-      const slots = focusRows.map((row) => row.slot);
-      const items = [1, 2, 3, 4, 5].map((slot) => ({key: `第 ${slot} 手`, slot, count: slots.filter((value) => value === slot).length, games: focusRows.filter((row) => row.slot === slot).map((row) => row.game)})).filter((item) => item.count);
-      const lane = LANES.map((name) => ({name, count: focusRows.filter((row) => row.lane === name).length})).sort((a, b) => b.count - a.count)[0];
-      const type = distOf(focusRows.filter((row) => isKnownType(row.archetype)).map((row) => row.archetype)).sort((a, b) => b[1] - a[1])[0];
-      const heroTable = items.map((item) => [item.key, `${fmt(item.count)} 人次`, pct((item.count / focusRows.length) * 100)]);
-      return card(`${mode === 'ban' ? 'Ban' : '选人'}分布 · ${state.bpHero}`, `${fmt(focusRows.length)} 人次 · 落在第几手`, `${bpControls()}${heroBar}
-        <div class="tp-focusbar">
-          <span class="tp-focusbar-face">${String(portrait(state.bpHero, 'is-face')).replace(' loading="lazy"', '')}</span>
-          <span class="tp-focusbar-copy"><small>正在单看</small><b>${esc(state.bpHero)}</b></span>
-          <button type="button" class="tp-focusbar-exit" data-tp-filter="bpHero" data-tp-value="all">退出单看 · 回到全部</button>
-        </div>
-        <div class="tp-sun-wrap">
-          <div class="tp-sun-figure">${rose(items, {size: 260, caption: '人次', colorOf: (item) => HAND_COLOR[Math.max(0, [1, 2, 3, 4, 5].indexOf(Number(String(item.key).replace(/[^0-9]/g, '')))) % 5], gamesOf: (item) => item.games})}${dataTable(['手序', '人次', '占比'], heroTable, '点扇区可以看这只英雄在那几手对应的局。')}</div>
-          <div class="tp-sun-side">
-            <div class="tp-sun-block"><small>这几次的落点</small>
-              <div class="tp-typelist">
-                <span><i style="background:${lane ? colorOfKey(lane.name) : 'var(--c-muted)'}"></i><b>${lane ? esc(lane.name) : '—'}</b><em>${lane ? fmt(lane.count) : '0'}</em><small>人次</small></span>
-                <span><i style="background:${type ? colorOfKey(type[0]) : 'var(--c-muted)'}"></i><b>${type ? esc(type[0]) : '未标注'}</b><em>${type ? fmt(type[1]) : '0'}</em><small>人次</small></span>
-                <span><i style="background:var(--c-hand-3)"></i><b>中位手序</b><em>${medianBand(slots) ? (medianBand(slots)[0] === medianBand(slots)[1] ? medianBand(slots)[0] : `${medianBand(slots)[0]}–${medianBand(slots)[1]}`) : '—'}</em><small>手</small></span>
-                <span><i style="background:var(--c-hand-1)"></i><b>众数手序</b><em>${modeOf(slots) ? modeOf(slots).values.join('/') : '—'}</em><small>手</small></span>
-              </div>
-            </div>
-          </div>
-        </div><p class="tp-read">这里的「第几手」是这套阵容里第几个选人：第 1 手＝最先亮出来的那一手。</p>`);
+      const both = (m) => handRows(games, m).filter((row) => row.hero === state.bpHero
+        && (state.hand === 'all' || row.slot === Number(state.hand))
+        && (state.lane === 'all' || row.lane === state.lane));
+      return heroFocusCard(mode, state.bpHero, focusRows, bpControls(), both('pick'), both('ban'));
     }
-    const total = focusRows.length;
-    const types = distOf(focusRows.filter((row) => isKnownType(row.archetype)).map((row) => row.archetype)).sort((a, b) => b[1] - a[1]);
-    const untyped = focusRows.filter((row) => !isKnownType(row.archetype)).length;
-    const top = types.slice(0, 3).map(([type, count]) => `<span><i style="background:${colorOfKey(type)}"></i>${esc(type)}<b>${fmt(count)}</b><small>人次</small></span>`).join('');
-    return card(`${mode === 'ban' ? 'Ban' : '选人'}分布 · 分路 × 类型`, `${scope} · ${fmt(total)} 人次`, `${bpControls()}${heroBar}
-      <div class="tp-mx-head">
-        <div class="tp-mx-top"><small>出现最多</small>${top || '<span class="tp-quiet">未标注</span>'}</div>
-      </div>
-      ${typeMatrix(focusRows, {aria: `${mode === 'ban' ? 'Ban' : '选人'}分路与类型矩阵`})}
-      <p class="tp-read">行是分路，列是英雄类型；格子里是人次，浅色小字是这一路里的占比。点任意一格可以看对应的局。${untyped ? `还有 ${fmt(untyped)} 人次类型未标注，不进表。` : ''}</p>`);
-  }
 
-  function handStream(games) {
-    const mode = state.mode;
-    const rows = handRows(games, mode);
-    if (!rows.length) return '';
-    const slots = [...new Set(rows.map((row) => row.slot))].sort((a, b) => a - b).slice(0, 5);
-    if (slots.length < 2) return '';
-    const series = slots.map((slot) => {
-      const group = rows.filter((row) => row.slot === slot);
-      return {label: `第${slot}${mode === 'ban' ? ' ban' : '选'}`, slot, rows: group, total: group.length, segments: LANES.map((lane) => ({key: lane, count: group.filter((row) => row.lane === lane).length})).filter((seg) => seg.count)};
-    });
-    const keys = LANES.filter((lane) => series.some((item) => item.segments.some((seg) => seg.key === lane)));
-    const per = new Set(series.map((item) => item.total));
-    const tableRows = series.map((item) => [`${item.label}`, ...keys.map((key) => `${fmt(item.segments.find((seg) => seg.key === key)?.count || 0)}（${pct((item.segments.find((seg) => seg.key === key)?.count || 0) / item.total * 100)}）`), fmt(item.total)]);
-    return card(`${mode === 'ban' ? 'Ban' : '选人'}手序 · 分路构成`, `${fmt(rows.length)} 人次 · ${per.size === 1 ? `每手 ${fmt(series[0].total)} 人次` : '按手序拆开'}`, `${shareColumns(series, keys, {width: 600, height: 250, barW: 70, shortOf: (key) => LANE_SHORT[key] || key, aria: `${mode === 'ban' ? 'Ban' : '选人'}手序分路构成`, gamesOf: (item, key) => item.rows.filter((row) => row.lane === key).map((row) => row.game), lanesOf: (key) => [key]})}
-      <div class="tp-legend">${keys.map((key) => `<span><i style="background:${colorOfKey(key)}"></i>${esc(key)}</span>`).join('')}</div>
-      ${dataTable(['手序', ...keys, '合计'], tableRows, '点色块可以看对应对局；这里的百分比是同一手内的分路占比。')}
-      <p class="tp-read">每一手总人次相同，所以柱高固定为 100%，只看分路占比：哪一路的色块在第几手最厚，就是他们最优先处理的位置。点色块可以看对应的局。</p>`);
-  }
-
-  function priorityCard(games) {
-    const mode = state.mode;
-    const rows = handRows(games, mode);
-    if (!rows.length) return '';
-    return card(`${mode === 'ban' ? 'Ban' : '选人'}顺位`, `${fmt(rows.length)} 人次 · 行＝分路，列＝第几手`, `${priorityTable(rows, mode)}
-      <p class="tp-read">先横着看表头：列是「第几手」，第 1 手就是这套阵容里第一个${mode === 'ban' ? ' ban' : '选人'}。格子里的数字是该分路在第几手出现了多少次；右侧中位／众数是这一路的整体顺位。点格子可以看对应的局。</p>`);
-  }
-
-  function sliceGroups(games) {
-    /* 时间切片不再把当前窗口对半切：页面已经有时间窗，窗口内再切两半只是噪声。
-       改成和 01 样本页同口径的「本窗口 vs 上一个同长度窗口」；没有上窗口（全部 / 自定义）时只留 BO 切片。 */
-    const prev = previousGames(model);
-    const withRange = (group) => {
-      const days = group.games.map((game) => game.day).filter(Boolean).sort();
-      return {...group, range: days.length ? `${days[0]}~${days[days.length - 1]}` : ''};
-    };
-    const windows = prev.length ? [
-      {key: 'current', label: '本窗口', note: `${fmt(games.length)} 局`, games: [...games]},
-      {key: 'previous', label: '上窗口', note: `${fmt(prev.length)} 局`, games: prev},
-    ] : [];
-    return [
-      ...windows,
-      ...[3, 5, 7].map((bo) => {
-        const list = games.filter((game) => Number(game.bo) === bo);
-        return {key: `bo${bo}`, label: `BO${bo}`, note: `${fmt(list.length)} 局`, games: list};
-      }),
-    ].map(withRange).filter((group) => group.games.length >= 1);
-  }
-
-  function driftCard(games) {
-    const groups = sliceGroups(games);
-    if (groups.length < 2) return card('变化 · 窗口与赛制', '切片不足', lack('切片后样本不足两组。'));
-    const laneSeries = groups.map((group) => {
-      const rows = handRows(group.games, 'pick').filter((row) => row.slot <= 2);
-      return {label: group.label, note: group.note, range: group.range, games: group.games, segments: LANES.map((lane) => ({key: lane, count: rows.filter((row) => row.lane === lane).length})).filter((seg) => seg.count)};
-    });
-    const coreSeries = groups.map((group) => {
-      const lineups = group.games.map((game) => game.sides?.enemy?.lineup).filter((lineup) => lineup && lineup.total);
-      return {label: group.label, note: `${fmt(lineups.length)} 局`, range: group.range, games: group.games, total: lineups.length, segments: [1, 2, 3, 4].map((core) => ({key: `${core} 核`, count: lineups.filter((lineup) => lineup.cores === core).length})).filter((seg) => seg.count)};
-    });
-    const laneKeys = LANES.filter((lane) => laneSeries.some((item) => item.segments.some((seg) => seg.key === lane)));
-    const coreKeys = ['1 核', '2 核', '3 核', '4 核'];
-    const laneTable = groups.map((group, index) => {
-      const item = laneSeries[index];
-      const totals = new Map(laneKeys.map((key) => [key, item.segments.find((seg) => seg.key === key)?.count || 0]));
-      const sorted = [...totals.entries()].sort((a, b) => b[1] - a[1]);
-      const rankOf = new Map(sorted.map(([key], rank) => [key, rank + 1]));
-      return [`${group.label}<small>${group.range || ''}</small>`, ...laneKeys.map((key) => `${fmt(totals.get(key) || 0)} 人次<small>第${rankOf.get(key) || '—'}名</small>`)];
-    });
-    const coreTable = coreSeries.map((item) => [`${item.label}<small>${item.range || ''} · ${fmt(item.total)} 局</small>`, ...coreKeys.map((key) => {
-      const count = item.segments.find((seg) => seg.key === key)?.count || 0;
-      return `${fmt(count)}<small>${item.total ? pct((count / item.total) * 100) : '—'}</small>`;
-    })]);
-    return card('变化 · 窗口与赛制', `${fmt(groups.length)} 个切片 · 名次与构成`, `<div class="tp-driftgrid">
-      <div class="tp-driftcell"><header><b>前两手选人 · 分路名次</b><small>第 1 名＝这个切片里被选得最多；点线上的点看对局，点线只看这一路</small></header>${bumpChart(laneSeries, laneKeys, {height: 230, aria: '分路名次变化', gamesOf: (item, key) => item.games.filter((game) => handRows([game], 'pick').some((row) => row.slot <= 2 && row.lane === key))})}${dataTable(['切片', ...laneKeys], laneTable, '表里是每个切片的选人次和名次；点图上的点可以看对应局。')}</div>
-      <div class="tp-driftcell"><header><b>核数构成</b><small>柱高固定 100%，只看体系变胖还是变瘦</small></header>${shareColumns(coreSeries, coreKeys, {width: 520, height: 230, barW: 54, shortOf: (key) => key.replace(' ', ''), colorOf: (key) => CORE_COLOR[coreKeys.indexOf(key) % 4], aria: '核数构成', gamesOf: (item, key) => item.games.filter((game) => (game.sides?.enemy?.lineup?.cores || 0) === Number(key.replace(/\D/g, '')) && game.sides?.enemy?.lineup?.total)})}<div class="tp-legend">${coreKeys.map((key, index) => `<span><i style="background:${CORE_COLOR[index]}"></i>${esc(key)}</span>`).join('')}</div>${dataTable(['切片', ...coreKeys], coreTable, '每个切片下方标了日期范围和局数；点柱子可以看对应局。')}</div>
-    </div><p class="tp-read"><b>本窗口 / 上窗口</b>：本窗口是当前时间 + 赛制筛选下的局；上窗口是紧挨着它之前、长度相同的一段，和 01 样本的环比同口径。选「全部 / 自定义」时没有上窗口，只显示 BO 切片。<b>BO3 / BO5 / BO7</b> 是按赛制另切的一刀，会和窗口切片重叠，不是互斥分组。左图名次 1＝该切片里这条分路被选得最多；右图每根柱子的总高都是 100%，柱下标的是该切片的局数。</p>`);
+    /* 默认态只留英雄选择入口；分路类型构成已统一到 03「五路类型」，这里不再重复。 */
+    return card(`${mode === 'ban' ? 'Ban' : '选人'} · 选英雄看落点`, `${scope} · ${fmt(focusRows.length)} 人次`, `${bpControls()}${heroPickerFold(rows)}`);
   }
 
   /* ── 03 阵容与风格 ────────────────────────────────────────────── */
-  const enemyPicks = (game) => game.sides?.enemy?.picks || [];
+  const enemyPicks = (game) => (game.sides?.enemy?.picks || []).map((pick) => (
+    pick.archetype === '法核' ? { ...pick, archetype: '法刺' } : pick));
   const pickOfLane = (game, lane) => enemyPicks(game).find((pick) => pick.lane === lane) || null;
 
   function styleCard(games) {
@@ -1070,36 +1333,35 @@ export function createTeamDossier(h) {
       cells.set(key, cell);
     }
     if (!total) return card('边野搭配', '类型未标注', lack('对抗路与打野的类型都还没标注。'));
-    const allEdges = ['战边', '坦边'], allJungles = ['刺野', '战野', '坦野'];
-    const cellOf = (edge, jungle) => cells.get(`${edge}|${jungle}`) || {games: 0, wins: 0};
-    const edgeTypes = allEdges.filter((edge) => allJungles.some((jungle) => cellOf(edge, jungle).games));
-    const jungleTypes = allJungles.filter((jungle) => allEdges.some((edge) => cellOf(edge, jungle).games));
-    const hiddenTypes = [...allEdges, ...allJungles].filter((type) => !edgeTypes.includes(type) && !jungleTypes.includes(type));
-    let max = 1;
-    for (const edge of edgeTypes) for (const jungle of jungleTypes) max = Math.max(max, cellOf(edge, jungle).games);
-    const colTotal = (jungle) => edgeTypes.reduce((sum, edge) => sum + cellOf(edge, jungle).games, 0);
-    const rowTotal = (edge) => jungleTypes.reduce((sum, jungle) => sum + cellOf(edge, jungle).games, 0);
-    const head = `<thead><tr><th class="tp-evm-corner"><span>对抗路</span><small>打野</small></th>${jungleTypes.map((jungle, ji) => `<th data-col="${ji}"><i style="background:${colorOfKey(jungle)}"></i>${esc(jungle)}</th>`).join('')}<th class="tp-evm-sum">合计</th></tr></thead>`;
-    const body = edgeTypes.map((edge) => `<tr><th class="tp-evm-row"><i style="background:${colorOfKey(edge)}"></i><span>${esc(edge)}</span><small>${fmt(rowTotal(edge))} 局</small></th>${jungleTypes.map((jungle, ji) => {
-      const cell = cellOf(edge, jungle);
-      if (!cell.games) return `<td class="tp-evm-cell is-zero" data-col="${ji}">—</td>`;
-      const alpha = 10 + Math.round((cell.games / max) * 30);
+    /* 每种实际出现的搭配一行：横条看占比，大字看局数与对手胜率。
+       比 2×3 矩阵更搭这组数据——矩阵里的空格子和合计行在这里没有信息量。 */
+    const combos = [...cells.entries()]
+      .filter(([, cell]) => cell.games > 0)
+      .map(([key, cell]) => {
+        const [edge, jungle] = key.split('|');
+        return {edge, jungle, games: cell.games, wins: cell.wins};
+      })
+      .sort((a, b) => b.games - a.games || a.edge.localeCompare(b.edge, 'zh'));
+    const max = combos[0]?.games || 1;
+    const body = combos.map((combo) => {
+      const share = (combo.games / total) * 100;
       const cellGames = rows.filter((game) => {
         const e = pickOfLane(game, '对抗路'), j = pickOfLane(game, '打野');
-        return e?.archetype === edge && j?.archetype === jungle;
+        return e?.archetype === combo.edge && j?.archetype === combo.jungle;
       });
-      const gid = gamesAttr(cellGames, `${edge} + ${jungle}`, ['对抗路', '打野']);
-      return `<td class="tp-evm-cell is-drill${cell.games === max ? ' is-top' : ''}" data-col="${ji}" style="background:color-mix(in srgb, ${colorOfKey(edge)} ${alpha}%, var(--paper))"${gid} title="${esc(`${edge} + ${jungle} · ${fmt(cell.games)} 局 · ${pct((cell.games / total) * 100)}；点开看这 ${fmt(cellGames.length)} 局`)}"><b>${fmt(cell.games)} 局</b><small>${pct((cell.games / total) * 100)}</small><em>${cell.games >= 3 ? `对手胜 ${pct((cell.wins / cell.games) * 100)}` : '样本不足'}</em></td>`;
-    }).join('')}<td class="tp-evm-sum">${fmt(rowTotal(edge))}</td></tr>`).join('');
-    const foot = `<tfoot><tr><th class="tp-evm-row">合计</th>${jungleTypes.map((jungle) => `<td class="tp-evm-sum">${fmt(colTotal(jungle))}</td>`).join('')}<td class="tp-evm-sum is-strong">${fmt(total)}</td></tr></tfoot>`;
-    const top = [...cells.entries()].sort((a, b) => b[1].games - a[1].games)[0];
-    const guide = `<div class="tp-evm-guide">
-      <div class="tp-evm-top"><small>最常见</small><b>${esc(top[0].replace('|', ' + '))}</b><span>${fmt(top[1].games)} 局 · ${pct((top[1].games / total) * 100)}</span></div>
-      <div class="tp-evm-types">${[...edgeTypes, ...jungleTypes].map((type) => `<span><i style="background:${colorOfKey(type)}"></i><b>${esc(type)}</b><small>${esc(TYPE_DESC[type] || '')}</small></span>`).join('')}</div>
-      ${hiddenTypes.length ? `<p class="tp-evm-hidden">本样本没有出现：${hiddenTypes.map((type) => esc(type)).join('、')}，已收起。</p>` : ''}
-      <p class="tp-read">横着读一行：以「战边」为例，配刺野几局、配战野几局、配坦野几局，一眼能看出这套阵容让谁顶前排、谁负责切后。格子里第一行是局数，第二行是占比，第三行是这种搭配下对手的胜率（少于 3 局写样本不足）。只统计对抗路和打野都有类型标注的局。点格子可以看对应的局。</p>
-    </div>`;
-    return card('边野搭配 · 前排与切入', `${fmt(total)} 局 · 边路 × 打野`, `<p class="tp-scrollhint">← 左右滑动看全部打野类型 →</p><div class="tp-evm"><div class="tp-evm-wrap"><table class="tp-evm-table" aria-label="边野搭配矩阵">${head}<tbody>${body}</tbody>${foot}</table></div>${guide}</div>`, 'is-wide');
+      const gid = gamesAttr(cellGames, `${combo.edge} + ${combo.jungle}`, ['对抗路', '打野']);
+      const winRate = pct((combo.wins / combo.games) * 100);
+      return `<div class="tp-edgecombo${gid ? ' is-drill' : ''}"${gid} title="${esc(`${combo.edge} + ${combo.jungle} · ${fmt(combo.games)} 局 · 占比 ${pct(share)} · 对手胜率 ${winRate}${gid ? '；点开看这 ' + cellGames.length + ' 局' : ''}`)}">
+        <span class="tp-ec-name"><b>${esc(combo.edge)} + ${esc(combo.jungle)}</b></span>
+        <span class="tp-ec-bar" aria-hidden="true"><i style="width:${((combo.games / max) * 100).toFixed(1)}%"></i></span>
+        <span class="tp-ec-games"><b>${fmt(combo.games)}</b><small>局 · ${pct(share)}</small></span>
+        <span class="tp-ec-win"><b>${winRate}</b><small>对手胜率</small></span>
+      </div>`;
+    }).join('');
+    return card('边野搭配 · 前排与切入', `${fmt(total)} 局`, `<div class="tp-edgecombos">
+      <div class="tp-edgecombo is-head"><span>搭配</span><span></span><span>出现</span><span>对手胜率</span></div>
+      ${body}
+    </div>`, 'is-wide');
   }
 
   function coreCard(games) {
@@ -1107,10 +1369,7 @@ export function createTeamDossier(h) {
     if (!rows.length) return card('核数', '没有阵容标签', lack('这批局没有可用的类型标注。'));
     const cores = rows.map((lineup) => lineup.cores);
     const items = [1, 2, 3, 4, 5].map((core) => ({key: `${core} 核`, core, count: cores.filter((value) => value === core).length, games: games.filter((game) => game.sides?.enemy?.lineup?.cores === core)})).filter((item) => item.count);
-    const four = cores.filter((value) => value >= 4).length;
-    const tableRows = items.map((item) => [item.key, `${fmt(item.count)} 局`, pct((item.count / rows.length) * 100)]);
-    return card('核数', `${fmt(rows.length)} 局 · 一局一个核数`, `<div class="tp-rose-wrap">${rose(items, {size: 240, caption: '局', colorOf: (item) => CORE_COLOR[items.indexOf(item) % 4], gamesOf: (item) => item.games})}${dataTable(['核数', '局数', '占比'], tableRows, '点扇区可以看对应局。')}</div>
-      <p class="tp-read">${fmt(four)} 局是四核（${pct((four / rows.length) * 100)}）。核＝战边 / 刺野 / 战野 / 法核 / 游射 / 呆射；坦边、坦野、工具人、辅助不分核。点扇区可以看对应的局。</p>`);
+    return card('核数', '', `<div class="tp-rose-wrap">${rose(items, {size: 240, caption: '局', colorOf: (item) => CORE_COLOR[items.indexOf(item) % 4], gamesOf: (item) => item.games})}</div>`);
   }
 
   function laneTypeCard(games) {
@@ -1125,64 +1384,50 @@ export function createTeamDossier(h) {
       };
     });
     const body = items.map((item) => {
-      if (!item.total) return `<div class="tp-lanerow is-empty"><div class="tp-lanerow-head"><i style="background:${colorOfKey(item.lane)}"></i><b>${esc(item.lane)}</b><small>类型未标注</small></div><p class="tp-lack">这一路还没有类型标注。</p></div>`;
+      if (!item.total) return `<div class="tp-lanerow is-empty"><div class="tp-lanerow-head"><b>${esc(item.lane)}</b></div><p class="tp-lack">这一路还没有类型标注。</p></div>`;
       const segments = item.segments.map((seg) => {
         const share = (seg.count / item.total) * 100;
         const segGames = rows.filter((game) => pickOfLane(game, item.lane)?.archetype === seg.key);
         const gid = gamesAttr(segGames, `${item.lane} · ${seg.key}`, [item.lane]);
-        return `<span class="tp-lanerow-seg${gid ? ' is-drill' : ''}" data-col="${TYPE_ORDER.indexOf(seg.key)}" style="width:${share.toFixed(2)}%;background:${colorOfKey(seg.key)}"${gid} title="${esc(`${item.lane} · ${seg.key} · ${fmt(seg.count)} 局（${pct(share)}）；点开看这 ${fmt(segGames.length)} 局`)}">${share >= 11 ? `<b>${esc(seg.key)}</b>` : ''}</span>`;
+        return `<span class="tp-lanerow-seg${gid ? ' is-drill' : ''}" data-col="${TYPE_ORDER.indexOf(seg.key)}" style="width:${share.toFixed(2)}%;background:${colorOfKey(seg.key)}"${gid} title="${esc(`${item.lane} · ${seg.key} · ${fmt(seg.count)} 局（${pct(share)}）；点开看这 ${fmt(segGames.length)} 局`)}"></span>`;
       }).join('');
       const list = item.segments.map((seg) => `<span><i style="background:${colorOfKey(seg.key)}"></i><b>${esc(seg.key)}</b><em>${fmt(seg.count)} 局</em><small>${pct((seg.count / item.total) * 100)}</small></span>`).join('');
-      return `<div class="tp-lanerow"><div class="tp-lanerow-head"><i style="background:${colorOfKey(item.lane)}"></i><b>${esc(item.lane)}</b><small>${fmt(item.total)} 局有类型标注</small></div><div class="tp-lanerow-bar">${segments}</div><div class="tp-lanerow-list">${list}</div></div>`;
+      return `<div class="tp-lanerow"><div class="tp-lanerow-head"><b>${esc(item.lane)}</b></div><div class="tp-lanerow-bar">${segments}</div><div class="tp-lanerow-list">${list}</div></div>`;
     }).join('');
-    return card('五路类型', `${fmt(rows.length)} 局 · 每路一条构成`, `<div class="tp-lanetypes">${body}</div>
-      <p class="tp-read">每一行是一路；横条按类型切分，条上写得下就写类型名，写不下的在下面清单里全部列出局数和占比。这样游走的三类辅助也能逐个对上。点色块可以看对应的局。本卡统计全部对局；BP 的分路 × 类型只统计有手序的局，所以同一路的人次可能略少。</p>`);
+    return card('五路类型', '', `<div class="tp-lanetypes">${body}</div>`);
   }
 
-  function pairCard(games) {
-    const rows = games.filter((game) => enemyPicks(game).length);
-    if (!rows.length) return card('位置组合', '没有选人明细', lack('这批局没有可用的选人明细。'));
-    const pairKeys = PAIRS.map(([label, laneA, laneB]) => {
-      const counter = new Map();
-      for (const game of rows) {
-        const a = pickOfLane(game, laneA), b = pickOfLane(game, laneB);
-        if (!a || !b || !isKnownType(a.archetype) || !isKnownType(b.archetype)) continue;
-        const key = `${a.archetype} × ${b.archetype}`;
-        counter.set(key, (counter.get(key) || 0) + 1);
+  /* 战队层面的英雄池交叉：和大场页共用同一份版面，只是范围换成
+     「当前筛选内、这支对手与我方的交手局」。公共英雄＝两队都选出过。 */
+  function poolCrossCard(games) {
+    const rows = new Map();
+    for (const game of games) {
+      for (const [side, picks] of [['own', game.sides?.own?.picks], ['foe', enemyPicks(game)]]) {
+        for (const pick of picks || []) {
+          const hero = pick.name;
+          if (!hero) continue;
+          const row = rows.get(hero) || { hero, lane: pick.lane || '', type: normArch(pick.archetype) || '', ownApps: 0, foeApps: 0, ownPick: false, foePick: false };
+          if (side === 'own') { row.ownApps++; row.ownPick = true; } else { row.foeApps++; row.foePick = true; }
+          if (!row.lane && pick.lane) row.lane = pick.lane;
+          if (!row.type && pick.archetype) row.type = normArch(pick.archetype);
+          rows.set(hero, row);
+        }
       }
-      const ranked = [...counter.entries()].sort((x, y) => y[1] - x[1]);
-      const total = ranked.reduce((sum, [, value]) => sum + value, 0);
-      const top = ranked[0];
-      return {label, laneA, laneB, top, ranked, total, stable: total ? top[1] / total : 0, kinds: ranked.length};
-    }).sort((a, b) => (b.top?.[1] || 0) - (a.top?.[1] || 0) || b.total - a.total);
-    const maxTop = Math.max(1, ...pairKeys.map((item) => item.top?.[1] || 0));
-    const body = pairKeys.map((item) => {
-      const combos = item.ranked.slice(0, 3).map(([key, count]) => `${key} ${count}局`).join('；');
-      const comboParts = item.top ? item.top[0].split(' × ') : [];
-      const comboGames = item.top ? rows.filter((game) => {
-        const a = pickOfLane(game, item.laneA), b = pickOfLane(game, item.laneB);
-        return a?.archetype === comboParts[0] && b?.archetype === comboParts[1];
-      }) : [];
-      const gid = comboGames.length ? gamesAttr(comboGames, `${item.label} · ${item.top ? item.top[0] : ''}`, [item.laneA, item.laneB]) : '';
-      return `<div class="tp-pairrow${gid ? ' is-drill' : ''}"${gid} title="${esc(`${item.laneA} × ${item.laneB}：${combos || '没有记录'}${gid ? '；点开看这 ' + comboGames.length + ' 局' : ''}`)}">
-        <span class="tp-pairlabel"><i style="background:${colorOfKey(item.laneA)}"></i><b>${esc(item.label)}</b><small>${esc(item.laneA)} × ${esc(item.laneB)}</small></span>
-        <span class="tp-paircombo">${item.top ? `${esc(item.top[0])}<em>${fmt(item.top[1])} 局</em>` : '—'}</span>
-        <span class="tp-pairmeter"><i style="width:${(((item.top?.[1] || 0) / maxTop) * 100).toFixed(1)}%;background:${colorOfKey(item.laneA)}"></i></span>
-        <b class="tp-pairnum">${fmt(item.top?.[1] || 0)} / ${fmt(item.total)}</b>
-        <small class="tp-pairshare">${item.total ? `${pct(item.stable * 100)} 稳定` : '—'}</small>
-      </div>`;
-    }).join('');
-    return card('位置组合 · 五个位置两两', `${fmt(rows.length)} 局 · ${fmt(pairKeys.length)} 对位置`, `<div class="tp-pairlist">
-      <div class="tp-pairrow is-head"><span>位置组合</span><span>最常见的类型搭配</span><span></span><span>出现 / 该对</span><span>稳定度</span></div>
-      ${body}
-    </div><p class="tp-read">因为每局五个位置都有人，单看「这一对出现了几局」永远等于样本局数；所以这里按「最常见的类型搭配出现了几局」排序。<b>稳定度</b>＝最常见搭配占这一对全部组合的比例，越高说明他们越固定用同一套类型组合，越低说明搭配越分散。点一行可以看这一对最常见搭配对应的局。之前打野 × 中路这一格漏了，这次十对都在。</p>`, 'is-wide');
+    }
+    const list = [...rows.values()];
+    if (!list.length) return card('', '', lack('这批局没有可用的选人明细。'), 'is-wide');
+    for (const row of list) row.status = row.ownApps && row.foeApps ? 'both' : row.ownApps ? 'own' : 'foe';
+    /* 分区面板本身已经写明队名与「只有这支战队用过」，不再重复卡头计数与口径说明。 */
+    return card('', '', renderHeroPoolCross(list, { esc, portrait }, {
+        ownName: (typeof h.teamName === 'function' ? h.teamName() : '') || model?.ownName || '本队',
+        foeName: model?.oppName || '对手',
+      }), 'is-wide');
   }
 
-  /* ── 04 英雄池与替代 ──────────────────────────────────────────── */
+  /* ── Ban 后替补（BP 页末尾） ──────────────────────────────────── */
   function poolCard(games) {
-    const rows = games.filter((game) => enemyPicks(game).length);
-    if (!rows.length) return card('英雄池与替代', '没有选人明细', lack('这批局没有可用的选人明细。'));
     const known = draftGames(games);
+    if (!known.length) return card('被 ban 之后拿谁', '没有手序', lack('这批局没有可用的 BP 手序。'));
     /* 我们 ban 掉某只英雄之后，他们在同一条路实际拿了谁；带上替补的类型。 */
     const raw = [];
     for (const game of known) {
@@ -1203,27 +1448,10 @@ export function createTeamDossier(h) {
     }
     const links = [...merged.values()].sort((a, b) => b.count - a.count);
     const selected = state.poolHero;
-    const lanes = LANES.map((lane) => {
-      const picks = new Map();
-      for (const game of rows) {
-        const pick = pickOfLane(game, lane);
-        if (!pick) continue;
-        picks.set(pick.name, (picks.get(pick.name) || 0) + 1);
-      }
-      const bans = new Map();
-      for (const game of known) for (const ban of (game.draft.ordered.own.ban || [])) if (ban?.hero && ban.lane === lane) bans.set(ban.hero, (bans.get(ban.hero) || 0) + 1);
-      return {lane, list: [...picks.entries()].sort((a, b) => b[1] - a[1]), bans: [...bans.entries()].sort((a, b) => b[1] - a[1])};
-    });
-    const laneCards = lanes.map((row) => `<div class="tp-poollane"><header><i style="background:${colorOfKey(row.lane)}"></i><b>${esc(row.lane)}</b><small>${fmt(rows.length)} 局</small></header>
-      <div class="tp-poollane-col"><small>最常选 · 前 4</small><div class="tp-poolgrid">${row.list.slice(0, 4).map(([hero, games]) => poolHeroCard(hero, games)).join('') || '<span class="tp-quiet">—</span>'}</div></div>
-      <div class="tp-poollane-col"><small>被我们 ban</small><div class="tp-poolgrid">${row.bans.slice(0, 3).map(([hero, games]) => poolHeroCard(hero, games)).join('') || '<span class="tp-quiet">—</span>'}</div></div>
-    </div>`).join('');
-
     const heroBar = heroPicker(raw.map((link) => ({hero: link.from, lane: link.lane, archetype: link.fromType})), {key: 'poolHero', laneKey: 'poolHeroLane', lane: state.poolHeroLane, label: '被我们 ban 的英雄'});
 
     if (!links.length) {
-      return card('英雄池 · 选与 ban', `${fmt(rows.length)} 局 · 五个位置`, `<div class="tp-poollanes">${laneCards}</div>
-        <div class="tp-flowsection"><header><b>被 ban 之后拿谁</b></header>${lack('这批筛选里没有「我们 ban 了、他们同路改拿」的记录。')}</div>`);
+      return card('被 ban 之后拿谁', `${fmt(known.length)} 局有手序`, lack('这批筛选里没有「我们 ban 了、他们同路改拿」的记录。'));
     }
 
     if (selected !== 'all' && links.some((link) => link.from === selected)) {
@@ -1237,7 +1465,7 @@ export function createTeamDossier(h) {
       const types = [...typeCounts.entries()].sort((a, b) => b[1] - a[1]);
       const untyped = selLinks.filter((link) => !link.toType).reduce((sum, link) => sum + link.count, 0);
       const total = selLinks.reduce((sum, link) => sum + link.count, 0) || 1;
-      return card(`英雄池 · ${selected} 被 ban 之后`, `${fmt(total)} 次 · ${esc(lane || '同路')}`, `${heroBar}
+      return card(`${selected} 被 ban 之后`, `${fmt(total)} 次 · ${esc(lane || '同路')}`, `${heroBar}
         <div class="tp-focusbar">
           <span class="tp-focusbar-face">${String(portrait(selected, 'is-face')).replace(' loading="lazy"', '')}</span>
           <span class="tp-focusbar-copy"><small>正在单看</small><b>${esc(selected)}</b></span>
@@ -1251,66 +1479,369 @@ export function createTeamDossier(h) {
             </div>
             <div class="tp-sun-block"><small>具体拿了谁 · 点英雄看详情</small><div class="tp-replace-grid">${list.slice(0, 8).map((item) => poolHeroCard(item.hero, item.games, item.type)).join('') || '<span class="tp-quiet">—</span>'}</div></div>
           </div>
-        </div><p class="tp-read">左是我们 ban 的 ${esc(selected)}，右是他们同一路改拿的英雄；右侧给出替补的类型分布和具体英雄卡，直接能看出「ban 掉之后他们换的是同一类还是换了思路」。被 ban 之后拿谁只统计有手序的局；上面的选人与被 ban 覆盖全部对局。</p>`);
+        </div><p class="tp-read">左是我们 ban 的 ${esc(selected)}，右是他们同一路改拿的英雄；右侧给出替补的类型分布和具体英雄卡，直接能看出「ban 掉之后他们换的是同一类还是换了思路」。只统计有手序、且对手同路有选人的局。</p>`);
     }
 
-    return card('英雄池 · 选与 ban', `${fmt(rows.length)} 局 · 五个位置`, `<div class="tp-poollanes">${laneCards}</div>
-      <div class="tp-flowsection"><header><b>被 ban 之后拿谁</b><small>先选一条路，再点英雄头像只看那一只被 ban 之后的替补；角标是人次</small></header>${heroBar}${flowChart(links, {leftLimit: 6, rightLimit: 8})}</div>
-      <p class="tp-read">选人与被我们 ban 覆盖全部对局；被 ban 之后拿谁只统计有手序的局，所以两张卡的样本会差几局。</p>`);
+    return card('被 ban 之后拿谁', `${fmt(links.length)} 组改拿 · ${fmt(known.length)} 局有手序`, `<div class="tp-flowsection is-lead"><header><b>点英雄头像，只看那一只被 ban 之后的同路替补</b><small>角标是人次</small></header>${heroBar}${flowChart(links, {leftLimit: 6, rightLimit: 8})}</div>
+      <p class="tp-read">只统计有手序、且我们 ban 掉后对手同路有选人的局。</p>`);
   }
 
-  /* ── 05 结果 ──────────────────────────────────────────────────── */
-  function resultCard(games) {
-    const rows = games.filter((game) => game.opponentWin === true || game.opponentWin === false);
-    if (rows.length < 4) return card('赢与输的结构差别', '样本不足', lack('可判定胜负的局少于 4 局。'));
-    const win = rows.filter((game) => game.opponentWin === false);
-    const loss = rows.filter((game) => game.opponentWin === true);
-    const coreUp = new Map(), coreDown = new Map();
-    for (const game of win) { const c = game.sides?.enemy?.lineup?.cores; if (has(c)) coreUp.set(c, (coreUp.get(c) || 0) + 1); }
-    for (const game of loss) { const c = game.sides?.enemy?.lineup?.cores; if (has(c)) coreDown.set(c, (coreDown.get(c) || 0) + 1); }
-    const styleUp = new Map(), styleDown = new Map();
-    for (const [list, bucket] of [[win, styleUp], [loss, styleDown]]) {
-      for (const game of list) {
-        const edge = pickOfLane(game, '对抗路'), jungle = pickOfLane(game, '打野');
-        if (!edge || !jungle || !isKnownType(edge.archetype) || !isKnownType(jungle.archetype)) continue;
-        const key = `${edge.archetype}+${jungle.archetype}`;
-        bucket.set(key, (bucket.get(key) || 0) + 1);
+  /* ── BP 2.0（2026-11-22）：四个直接改变 ban / pick 的分析 ─────────
+     1) 英雄优先级象限：他们愿不愿意选 × 拿到后赢不赢；
+     2) 赢/输局 BP 指纹：赢的局和输的局，首抢 / 一 ban / 阵容结构差在哪；
+     3) 条件响应：我们 ban X 后，他们一抢什么、二抢什么；
+     4) 招牌 ban 后改拿：按选手看招牌被 ban 后的同路替补。
+     四块都只消费当前筛选后的局，样本量写在卡头。 */
+  const bpOrdered = (game) => game?.draft?.ordered?.enemy || {pick: [], ban: []};
+  const bpDraft = (games) => games.filter((game) => game.draft?.known
+    && ((bpOrdered(game).pick || []).length || (bpOrdered(game).ban || []).length));
+  const bpWin = (game) => Boolean(game.opponentWin);
+  const bpRate = (wins, games) => (games ? wins / games * 100 : null);
+  const bpPct = (value) => (has(value) ? pct(value) : '—');
+  const bpBans = (game) => (game.draft?.ordered?.own?.ban || []).map((row) => row.hero).filter(Boolean);
+  const bpUnique = (list) => [...new Set((list || []).filter(Boolean))];
+
+  /* ── 1. 英雄优先级象限 ─────────────────────────────────────────── */
+  function bpPriorityData(games) {
+    const picks = new Map(), bans = new Map();
+    for (const game of games) {
+      for (const pick of (game.sides?.enemy?.picks || [])) {
+        if (!pick?.name) continue;
+        const row = picks.get(pick.name) || {hero: pick.name, lane: pick.lane || '', games: 0, wins: 0, list: []};
+        row.games++; row.wins += bpWin(game) ? 1 : 0; row.list.push(game);
+        row.lane ||= pick.lane || '';
+        picks.set(pick.name, row);
+      }
+      for (const hero of bpBans(game)) {
+        const row = bans.get(hero) || {hero, lane: '', games: 0, list: []};
+        row.games++; row.list.push(game);
+        bans.set(hero, row);
       }
     }
-    const durations = (list) => mean(list.map((game) => game.duration).filter((value) => has(value) && value > 0));
-    const rate = (list, pred) => (list.length ? pct((list.filter(pred).length / list.length) * 100) : '—');
-    const hiddenLabels = [];
-    for (const [label, core] of [['1 核', 1], ['2 核', 2], ['3 核', 3], ['4 核', 4]]) {
-      if (!(coreUp.get(core) || coreDown.get(core))) hiddenLabels.push(label);
-    }
-    for (const [label, combo] of Object.entries(EDGE_COMBO)) {
-      if (!(styleUp.get(combo.join('+')) || styleDown.get(combo.join('+')))) hiddenLabels.push(label);
-    }
-    const hiddenNote = hiddenLabels.length ? ` <b>本样本没有：${esc(hiddenLabels.join('、'))}</b>，已收起。` : '';
-    return card('赢与输的结构差别', `${fmt(rows.length)} 局 · 对手胜 ${fmt(loss.length)} / 本队胜 ${fmt(win.length)}`, `<div class="tp-result">
-      <div class="tp-result-col"><header><b>核数 · 上下对冲</b><small>上＝本队胜，下＝对手胜</small></header>${mirrorColumns(['1 核', '2 核', '3 核', '4 核'], new Map([['1 核', coreUp.get(1) || 0], ['2 核', coreUp.get(2) || 0], ['3 核', coreUp.get(3) || 0], ['4 核', coreUp.get(4) || 0]]), new Map([['1 核', coreDown.get(1) || 0], ['2 核', coreDown.get(2) || 0], ['3 核', coreDown.get(3) || 0], ['4 核', coreDown.get(4) || 0]]), {width: 460, height: 210, hideEmpty: true, gamesOf: (key, side) => {
-        const core = Number(key.replace(/\D/g, ''));
-        return (side === 'up' ? win : loss).filter((game) => (game.sides?.enemy?.lineup?.cores || 0) === core);
-      }})}</div>
-      <div class="tp-result-col"><header><b>边野搭配 · 上下对冲</b><small>同一套搭配在两种结果里的局数</small></header>${mirrorColumns(['战刺', '战战', '战坦', '坦刺', '坦战', '坦坦'], new Map([['战刺', styleUp.get('战边+刺野') || 0], ['战战', styleUp.get('战边+战野') || 0], ['战坦', styleUp.get('战边+坦野') || 0], ['坦刺', styleUp.get('坦边+刺野') || 0], ['坦战', styleUp.get('坦边+战野') || 0], ['坦坦', styleUp.get('坦边+坦野') || 0]]), new Map([['战刺', styleDown.get('战边+刺野') || 0], ['战战', styleDown.get('战边+战野') || 0], ['战坦', styleDown.get('战边+坦野') || 0], ['坦刺', styleDown.get('坦边+刺野') || 0], ['坦战', styleDown.get('坦边+战野') || 0], ['坦坦', styleDown.get('坦边+坦野') || 0]]), {width: 460, height: 210, hideEmpty: true, gamesOf: (key, side) => {
-        const [edgeType, jungleType] = EDGE_COMBO[key] || [];
-        return (side === 'up' ? win : loss).filter((game) => {
-          const edge = pickOfLane(game, '对抗路'), jungle = pickOfLane(game, '打野');
-          return edge?.archetype === edgeType && jungle?.archetype === jungleType;
-        });
-      }, lanesOf: () => ['对抗路', '打野']})}</div>
-    </div>
-    <div class="tp-result-stats">
-      <div><small>场均时长</small><b class="is-win">${time(durations(win))}</b><b class="is-loss">${time(durations(loss))}</b></div>
-      <div><small>四核占比</small><b class="is-win">${rate(win, (game) => (game.sides?.enemy?.lineup?.cores || 0) >= 4)}</b><b class="is-loss">${rate(loss, (game) => (game.sides?.enemy?.lineup?.cores || 0) >= 4)}</b></div>
-      <div><small>双坦前排占比</small><b class="is-win">${rate(win, (game) => { const edge = pickOfLane(game, '对抗路'), jungle = pickOfLane(game, '打野'); return edge?.archetype === '坦边' && jungle?.archetype === '坦野'; })}</b><b class="is-loss">${rate(loss, (game) => { const edge = pickOfLane(game, '对抗路'), jungle = pickOfLane(game, '打野'); return edge?.archetype === '坦边' && jungle?.archetype === '坦野'; })}</b></div>
-    </div>
-    <p class="tp-read">绿＝本队赢下的局，赭＝对手赢下的局；同一分类上下对冲，谁的柱子在下面更粗，就是谁在这种结构里赢得多。只画本样本出现过的分类。${hiddenNote}点柱子可以看对应的局。</p>`, 'is-wide');
+    const all = bpUnique([...picks.keys(), ...bans.keys()]).map((hero) => {
+      const p = picks.get(hero), b = bans.get(hero);
+      return {
+        hero,
+        lane: p?.lane || b?.lane || '',
+        pickGames: p?.games || 0,
+        pickWins: p?.wins || 0,
+        winRate: p ? bpRate(p.wins, p.games) : null,
+        pickRate: games.length ? (p?.games || 0) / games.length * 100 : 0,
+        banGames: b?.games || 0,
+        banRate: games.length ? (b?.games || 0) / games.length * 100 : 0,
+        presence: games.length ? ((p?.games || 0) + (b?.games || 0)) / games.length * 100 : 0,
+        games: bpUnique([...(p?.list || []), ...(b?.list || [])]),
+      };
+    }).sort((a, b) => b.presence - a.presence);
+    const picked = all.filter((row) => row.pickGames > 0);
+    /* 竖线用「至少 3 局」做决策阈值，比中位数更稳定：1 局英雄太多会把线压到 4%。 */
+    const xLine = Math.max(8, Math.min(20, 3 / Math.max(1, games.length) * 100));
+    const xMax = Math.max(20, Math.ceil((Math.max(0, ...picked.map((row) => row.pickRate)) + 1) / 10) * 10);
+    const base = bpRate(games.filter(bpWin).length, games.length) ?? 50;
+    return {all, picked, bannedOnly: all.filter((row) => !row.pickGames && row.banGames), base, xLine, xMax};
   }
 
-  /* ── 头部 ─────────────────────────────────────────────────────── */
-  function headBlock(view) {
-    const { meta, oppName, matches, avgDuration, oppRate, coverage } = view;
+  function bpPriorityCard(games) {
+    const data = bpPriorityData(games);
+    if (!data.picked.length && !data.bannedOnly.length) {
+      return card('英雄优先级', '', lack('这批局没有可用的选人 / Ban 记录。'), 'is-bp-card');
+    }
+    const plotted = data.picked.slice(0, 20);
+    const dots = plotted.map((row, index) => {
+      const x = 4 + (row.pickRate / data.xMax) * 92;
+      const y = 6 + ((row.winRate ?? data.base) / 100) * 88;
+      const size = row.pickGames >= 4 ? 'is-big' : row.pickGames >= 2 ? 'is-mid' : 'is-small';
+      const labeled = index < 6;
+      const title = `${row.hero} · 选用 ${row.pickGames} 局（${bpPct(row.winRate)} 胜率）· 被我们 ban ${row.banGames} 局`;
+      return `<button type="button" class="tp-qdot ${size}${labeled ? ' is-labeled' : ''}" style="left:${x.toFixed(2)}%;bottom:${y.toFixed(2)}%"${gamesAttr(row.games, title)} title="${esc(title)}" aria-label="${esc(title)}">
+        <span class="tp-qdot-face" style="border-color:${colorOfKey(row.lane)}">${portrait(row.hero, 'is-qface')}</span>
+        ${labeled ? `<b>${esc(row.hero)}</b>` : ''}
+        ${labeled && row.banGames ? `<em>ban ${Math.round(row.banRate)}%</em>` : ''}
+      </button>`;
+    }).join('');
+    const bannedOnly = data.bannedOnly.length ? `<div class="tp-qonly"><span>只被 ban / 未选用</span>${data.bannedOnly.slice(0, 8).map((row) => heroChip(row.hero, row.banGames, `${row.hero} · 被我们 ban ${row.banGames} 局`)).join('')}</div>` : '';
+    const table = dataTable(
+      ['英雄', '分路', '选用', '胜率', '被我们 ban'],
+      data.all.slice(0, 20).map((row) => [esc(row.hero), esc(row.lane || '—'), `${fmt(row.pickGames)} 局`, bpPct(row.winRate), `${fmt(row.banGames)} 局`]),
+      '图上取 presence 前 20 只，完整前 20 见本表；悬停 / 点开头像看对应对局。'
+    );
+    return card('英雄优先级', `${fmt(games.length)} 局 · 基准 ${bpPct(data.base)} · 图取前 20`, `
+      <div class="tp-quad" role="img" aria-label="英雄优先级四象限：横轴选用率，纵轴拿到后胜率">
+        <span class="tp-quad-ylabel">拿到后胜率</span>
+        <div class="tp-quad-plot">
+          <i class="tp-quad-tint is-steal" style="left:0;width:${(data.xLine / data.xMax) * 100}%;top:0;bottom:${data.base}%"></i>
+          <i class="tp-quad-tint is-must" style="left:${(data.xLine / data.xMax) * 100}%;right:0;top:0;bottom:${data.base}%"></i>
+          <i class="tp-quad-tint is-low" style="left:0;width:${(data.xLine / data.xMax) * 100}%;top:${100 - data.base}%;bottom:0"></i>
+          <i class="tp-quad-tint is-bait" style="left:${(data.xLine / data.xMax) * 100}%;right:0;top:${100 - data.base}%;bottom:0"></i>
+          <span class="tp-quad-area is-steal">可抢 / 尊重</span>
+          <span class="tp-quad-area is-must">必 ban</span>
+          <span class="tp-quad-area is-low">低优先</span>
+          <span class="tp-quad-area is-bait">可放</span>
+          <span class="tp-quad-ytick" style="bottom:0%">0%</span>
+          <span class="tp-quad-ytick" style="bottom:50%">50%</span>
+          <span class="tp-quad-ytick" style="bottom:100%">100%</span>
+          <i class="tp-quad-line is-h" style="bottom:${data.base}%"></i>
+          <i class="tp-quad-line is-v" style="left:${(data.xLine / data.xMax) * 100}%"></i>
+          ${dots}
+        </div>
+        <div class="tp-quad-xticks">${[0, 1 / 3, 2 / 3, 1].map((part) => `<span style="left:${(part * 100).toFixed(1)}%">${Math.round(data.xMax * part)}%</span>`).join('')}</div>
+        <div class="tp-quad-x"><span>选用率 →</span><span>虚线：3 局阈值 ${bpPct(data.xLine)} · 基准 ${bpPct(data.base)}</span><span>点大小＝选用局数</span></div>
+      </div>
+      ${bannedOnly}
+      <p class="tp-read">右上＝他们常选且拿到后赢得多，优先 ban；右下＝常选但赢不多，可以放；左上＝不常选、拿到却赢，别轻易放；左下＝低优先。ban% 是我们目前 ban 掉它的比例。</p>
+      ${table}`, 'is-bp-card');
+  }
+
+  /* ── 2. 赢 / 输局 BP 指纹 ─────────────────────────────────────── */
+  function bpFingerprintData(games) {
+    const known = bpDraft(games);
+    const win = known.filter(bpWin), loss = known.filter((game) => !bpWin(game));
+    const firstPick = (game) => (bpOrdered(game).pick || [])[0] || null;
+    const firstBan = (game) => (bpOrdered(game).ban || [])[0] || null;
+    const laneRows = (list, picker) => {
+      const total = list.length || 1;
+      return LANES.map((lane) => ({lane, games: list.filter((game) => picker(game)?.lane === lane).length}))
+        .filter((row) => row.games)
+        .map((row) => ({...row, share: row.games / total * 100}))
+        .sort((a, b) => b.games - a.games);
+    };
+    const heroRows = (list) => {
+      const map = new Map();
+      for (const game of list) {
+        const first = firstPick(game);
+        const hero = first?.hero;
+        if (!hero) continue;
+        const row = map.get(hero) || {hero, lane: first?.lane || '', games: 0, list: []};
+        row.games++; row.list.push(game); row.lane ||= first?.lane || ''; map.set(hero, row);
+      }
+      return [...map.values()].sort((a, b) => b.games - a.games);
+    };
+    const lineupOf = (game) => game.sides?.enemy?.lineup;
+    const coreRate = (list) => {
+      const usable = list.filter((game) => has(lineupOf(game)?.cores));
+      return usable.length ? usable.filter((game) => Number(lineupOf(game).cores) >= 4).length / usable.length * 100 : null;
+    };
+    const avgCores = (list) => {
+      const values = list.map((game) => lineupOf(game)?.cores).filter(has);
+      return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+    };
+    const noFrontRate = (list) => {
+      const usable = list.filter((game) => has(lineupOf(game)?.front));
+      return usable.length ? usable.filter((game) => Number(lineupOf(game).front) === 0).length / usable.length * 100 : null;
+    };
+    return {
+      known, win, loss,
+      firstPickWin: laneRows(win, firstPick), firstPickLoss: laneRows(loss, firstPick),
+      firstBanWin: laneRows(win, firstBan), firstBanLoss: laneRows(loss, firstBan),
+      heroWin: heroRows(win), heroLoss: heroRows(loss),
+      coreWin: coreRate(win), coreLoss: coreRate(loss),
+      avgCoreWin: avgCores(win), avgCoreLoss: avgCores(loss),
+      noFrontWin: noFrontRate(win), noFrontLoss: noFrontRate(loss),
+    };
+  }
+
+  function bpFingerprintCard(games) {
+    const data = bpFingerprintData(games);
+    if (!data.known.length) return card('赢 / 输局 BP 指纹', '', lack('这批局没有可用的 BP 手序。'));
+    const bar = (rows) => `<span class="tp-fp-bar">${rows.map((row) => `<i style="width:${row.share.toFixed(1)}%;background:${colorOfKey(row.lane)}" title="${esc(`${row.lane} · ${row.games} 局`)}"></i>`).join('')}</span>`;
+    const top = (rows) => (rows[0] ? `${esc(rows[0].lane)} ${Math.round(rows[0].share)}%` : '—');
+    const cell = (list, rows, label) => (list.length
+      ? `<button type="button" class="tp-fp-cell"${gamesAttr(list, label)}>${bar(rows)}<span>${top(rows)}</span></button>`
+      : '<span class="tp-fp-cell is-empty">没有记录</span>');
+    const fillCell = (list, value, text, label) => (list.length
+      ? `<button type="button" class="tp-fp-cell"${gamesAttr(list, label)}><span class="tp-fp-fill"><i style="width:${has(value) ? Math.max(0, Math.min(100, value)) : 0}%"></i></span><span>${text}</span></button>`
+      : '<span class="tp-fp-cell is-empty">没有记录</span>');
+    const heroCell = (list, rows, label) => (list.length
+      ? `<div class="tp-fp-heroes">${rows.slice(0, 3).map((row) => `<button type="button" class="tp-fp-hero"${gamesAttr(row.list, `${label} · 首抢 ${row.hero}`)}><i class="tp-fp-hero-lane" style="background:${colorOfKey(row.lane)}" aria-hidden="true"></i>${portrait(row.hero, 'is-face')}<b>${esc(row.hero)}</b><small>${fmt(row.games)}</small></button>`).join('') || '<span class="tp-quiet">—</span>'}</div>`
+      : '<span class="tp-fp-cell is-empty">没有记录</span>');
+    const row = (label, winCell, lossCell) => `<div class="tp-fp-row"><div class="tp-fp-label">${label}</div>${winCell}${lossCell}</div>`;
+    const gaps = [
+      {key: '无前排率', win: data.noFrontWin, loss: data.noFrontLoss},
+      {key: '4 核率', win: data.coreWin, loss: data.coreLoss},
+    ].filter((item) => has(item.win) && has(item.loss))
+      .sort((a, b) => Math.abs(b.loss - b.win) - Math.abs(a.loss - a.win));
+    const gap = gaps[0];
+    return card('赢 / 输局 BP 指纹', `${fmt(data.known.length)} 局有手序 · 赢 ${fmt(data.win.length)} / 输 ${fmt(data.loss.length)}`, `
+      <div class="tp-fp-head"><span></span><b>赢局 ${fmt(data.win.length)}</b><b>输局 ${fmt(data.loss.length)}</b></div>
+      ${gap ? `<div class="tp-fp-insight"><b>最大差异 · ${gap.key}</b><span>赢局 ${bpPct(gap.win)} · 输局 ${bpPct(gap.loss)}</span></div>` : ''}
+      ${row('首抢分路', cell(data.win, data.firstPickWin, '赢局 · 首抢分路'), cell(data.loss, data.firstPickLoss, '输局 · 首抢分路'))}
+      ${row('一 ban 分路', cell(data.win, data.firstBanWin, '赢局 · 一 ban 分路'), cell(data.loss, data.firstBanLoss, '输局 · 一 ban 分路'))}
+      ${row('4 核率', fillCell(data.win, data.coreWin, `4 核 ${bpPct(data.coreWin)} · 平均 ${has(data.avgCoreWin) ? data.avgCoreWin.toFixed(1) : '—'} 核`, '赢局 · 4 核阵容'), fillCell(data.loss, data.coreLoss, `4 核 ${bpPct(data.coreLoss)} · 平均 ${has(data.avgCoreLoss) ? data.avgCoreLoss.toFixed(1) : '—'} 核`, '输局 · 4 核阵容'))}
+      ${row('无前排率', fillCell(data.win, data.noFrontWin, `无前排 ${bpPct(data.noFrontWin)}`, '赢局 · 无前排'), fillCell(data.loss, data.noFrontLoss, `无前排 ${bpPct(data.noFrontLoss)}`, '输局 · 无前排'))}
+      ${row('首抢英雄', heroCell(data.win, data.heroWin, '赢局'), heroCell(data.loss, data.heroLoss, '输局'))}
+      <p class="tp-read">只统计有手序的局；百分比以该侧局数为分母。点任一行看对应对局，点首抢英雄只看那只英雄的局。赢局和输局的差别是观察，不是因果。</p>`, 'is-fingerprint is-bp-card');
+  }
+
+  /* ── 3. 条件响应：我们 ban → 他们一抢 → 他们二抢 ─────────────── */
+  function bpResponseData(games) {
+    const known = bpDraft(games);
+    const byBan = new Map();
+    for (const game of known) {
+      const picks = bpOrdered(game).pick || [];
+      const first = picks[0];
+      if (!first?.hero) continue;
+      for (const ban of (game.draft?.ordered?.own?.ban || [])) {
+        const banHero = ban.hero;
+        if (!banHero) continue;
+        const row = byBan.get(banHero) || {hero: banHero, lane: ban.lane || '', games: 0, wins: 0, list: [], first: new Map()};
+        row.games++; row.wins += bpWin(game) ? 1 : 0; row.list.push(game);
+        row.lane ||= ban.lane || '';
+        const f = row.first.get(first.hero) || {hero: first.hero, lane: first.lane || '', games: 0, wins: 0, list: [], second: new Map()};
+        f.games++; f.wins += bpWin(game) ? 1 : 0; f.list.push(game);
+        const second = picks[1];
+        if (second?.hero) {
+          const s = f.second.get(second.hero) || {hero: second.hero, lane: second.lane || '', games: 0, wins: 0, list: []};
+          s.games++; s.wins += bpWin(game) ? 1 : 0; s.list.push(game);
+          f.second.set(second.hero, s);
+        }
+        row.first.set(first.hero, f);
+        byBan.set(banHero, row);
+      }
+    }
+    return [...byBan.values()]
+      .map((row) => ({...row, list: bpUnique(row.list), first: [...row.first.values()].sort((a, b) => b.games - a.games)}))
+      .sort((a, b) => b.games - a.games);
+  }
+
+  function bpResponseCard(games) {
+    const rows = bpResponseData(games);
+    if (!rows.length) return card('条件响应 · ban 之后他们怎么拿', '', lack('这批局没有「我们 ban → 他们一抢」的完整手序。'), 'is-bp-card');
+    if (!rows.some((row) => row.hero === state.responseBan)) state.responseBan = rows[0].hero;
+    const row = rows.find((item) => item.hero === state.responseBan) || rows[0];
+    const firsts = row.first;
+    if (!firsts.some((item) => item.hero === state.responsePick)) state.responsePick = firsts[0]?.hero || '';
+    const pick = firsts.find((item) => item.hero === state.responsePick) || firsts[0] || null;
+    const seconds = pick ? [...pick.second.values()].sort((a, b) => b.games - a.games) : [];
+    const pathGames = pick ? pick.list : row.list;
+    const node = (item, kind, on, attrs, note) => {
+      const share = kind === 'ban' ? null : (item.games / (kind === 'pick' ? row.games : pick.games) * 100);
+      const title = `${item.hero} · ${fmt(item.games)} 局${has(item.wins) ? ` · 他们胜率 ${bpPct(bpRate(item.wins, item.games))}` : ''}`;
+      const filterAttrs = kind === 'ban'
+        ? ` data-tp-filter="responseBan" data-tp-value="${esc(item.hero)}"`
+        : kind === 'pick' ? ` data-tp-filter="responsePick" data-tp-value="${esc(item.hero)}"` : '';
+      return `<button type="button" class="tp-rsp-node is-${kind}${on ? ' is-on' : ''}" style="--rsp:${colorOfKey(item.lane)}" ${attrs}${filterAttrs} title="${esc(title)}" aria-label="${esc(title)}">
+        <span class="tp-rsp-face">${portrait(item.hero, 'is-face')}</span>
+        <span class="tp-rsp-copy"><b>${esc(item.hero)}</b><small>${note}</small>${share === null ? '' : `<span class="tp-rsp-share"><i style="width:${Math.max(3, share).toFixed(1)}%"></i></span>`}</span>
+        ${has(item.wins) ? `<em>${bpPct(bpRate(item.wins, item.games))}</em>` : ''}
+      </button>`;
+    };
+    const banNodes = rows.map((item) => node(
+      item, 'ban', item.hero === row.hero, '',
+      `${fmt(item.games)} 局 · ban 后胜 ${bpPct(bpRate(item.wins, item.games))}`
+    )).join('');
+    const firstNodes = firsts.slice(0, 8).map((item) => node(
+      item, 'pick', item.hero === pick?.hero, '',
+      `${fmt(item.games)} 局 · 占 ${Math.round(item.games / row.games * 100)}%`
+    )).join('') || '<p class="tp-lack">没有一抢记录。</p>';
+    const secondNodes = seconds.slice(0, 8).map((item) => node(
+      item, 'second', false, gamesAttr(item.list, `我们 ban ${row.hero} · 一抢 ${pick?.hero} · 二抢 ${item.hero}`),
+      `${fmt(item.games)} 局 · 占 ${Math.round(item.games / (pick?.games || 1) * 100)}%`
+    )).join('') || '<p class="tp-lack">这一组一抢后面没有二抢记录。</p>';
+    return card('条件响应 · ban 之后他们怎么拿', `${fmt(games.length)} 局 · ${fmt(row.games)} 局 ban 过 ${row.hero}`, `
+      <div class="tp-rsp-path">
+        <span class="tp-rsp-path-item">${portrait(row.hero, 'is-path-face')}<small>ban</small><b>${esc(row.hero)}</b></span><i aria-hidden="true">→</i>
+        <span class="tp-rsp-path-item">${pick ? portrait(pick.hero, 'is-path-face') : ''}<small>一抢</small><b>${pick ? esc(pick.hero) : '—'}</b></span><i aria-hidden="true">→</i>
+        <span class="tp-rsp-path-item">${seconds[0] ? portrait(seconds[0].hero, 'is-path-face') : ''}<small>二抢</small><b>${seconds[0] ? esc(seconds[0].hero) : '—'}</b></span>
+      </div>
+      <div class="tp-rsp">
+        <div class="tp-rsp-col is-ban"><div class="tp-rsp-head"><span>我们 ban</span><small>候选 ${fmt(rows.length)} 个</small></div><div class="tp-rsp-list is-ban">${banNodes}</div></div>
+        <span class="tp-rsp-arrow" aria-hidden="true">→</span>
+        <div class="tp-rsp-col"><div class="tp-rsp-head"><span>他们一抢</span><small>${fmt(row.games)} 局</small></div><div class="tp-rsp-list">${firstNodes}</div></div>
+        <span class="tp-rsp-arrow" aria-hidden="true">→</span>
+        <div class="tp-rsp-col"><div class="tp-rsp-head"><span>他们二抢</span><small>${pick ? `一抢 ${esc(pick.hero)}` : '先选一抢'}</small></div><div class="tp-rsp-list">${secondNodes}</div></div>
+      </div>
+      <div class="tp-rsp-foot">
+        <span>我们 ban <b>${esc(row.hero)}</b> 的 ${fmt(row.games)} 局里，他们胜率 <b>${bpPct(bpRate(row.wins, row.games))}</b>；一抢 <b>${pick ? esc(pick.hero) : '—'}</b> 后二抢最常拿 <b>${seconds[0] ? esc(seconds[0].hero) : '—'}</b>。${row.games < 3 ? '样本少，只作观察。' : ''}</span>
+        ${pathGames.length ? `<button type="button" class="tp-rsp-games"${gamesAttr(pathGames, `我们 ban ${row.hero}${pick ? ` · 一抢 ${pick.hero}` : ''}`)}>看这 ${fmt(pathGames.length)} 局 →</button>` : ''}
+      </div>
+      <p class="tp-read">点左边换一个 ban 候选，点中间换一个一抢英雄；每层都是这批筛选局里的历史频率，不是预测。样本少的节点只作观察。</p>`, 'is-bp-card');
+  }
+
+  /* ── 4. 招牌 ban 后改拿（按选手） ─────────────────────────────── */
+  function bpSignatureData(games) {
+    const byPlayer = new Map();
+    for (const game of games) {
+      const players = game.sides?.enemy?.players || [];
+      if (!players.length) continue;
+      const bans = new Set(bpBans(game));
+      for (const player of players) {
+        if (!player?.name || !player?.hero) continue;
+        const key = player.id || player.name;
+        const row = byPlayer.get(key) || {id: key, name: player.name, lane: player.lane || '', picks: new Map(), records: []};
+        row.lane ||= player.lane || '';
+        row.picks.set(player.hero, (row.picks.get(player.hero) || 0) + 1);
+        row.records.push({game, hero: player.hero, lane: player.lane || '', bans});
+        byPlayer.set(key, row);
+      }
+    }
+    const laneOrder = (lane) => {
+      const index = LANES.indexOf(lane);
+      return index < 0 ? 99 : index;
+    };
+    return [...byPlayer.values()].map((row) => {
+      const signatures = [...row.picks.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 2)
+        .filter(([, count]) => count >= 2)
+        .map(([hero]) => {
+          const played = row.records.filter((record) => record.hero === hero);
+          const banned = row.records.filter((record) => record.bans.has(hero));
+          const replacements = new Map();
+          for (const record of banned) {
+            if (record.hero === hero) continue;
+            const item = replacements.get(record.hero) || {hero: record.hero, lane: record.lane, games: 0, wins: 0, list: []};
+            item.games++; item.wins += bpWin(record.game) ? 1 : 0; item.list.push(record.game);
+            replacements.set(record.hero, item);
+          }
+          return {
+            hero,
+            lane: row.lane,
+            games: played.length,
+            winRate: bpRate(played.filter((record) => bpWin(record.game)).length, played.length),
+            banGames: banned.length,
+            bannedWinRate: bpRate(banned.filter((record) => bpWin(record.game)).length, banned.length),
+            replacements: [...replacements.values()].sort((a, b) => b.games - a.games),
+            gamesList: bpUnique([...played.map((record) => record.game), ...banned.map((record) => record.game)]),
+          };
+        });
+      return {...row, signatures, laneOrder: laneOrder(row.lane)};
+    }).filter((row) => row.signatures.length)
+      .sort((a, b) => a.laneOrder - b.laneOrder || a.name.localeCompare(b.name));
+  }
+
+  function bpSignatureCard(games) {
+    const rows = bpSignatureData(games);
+    if (!rows.length) return card('招牌 ban 后改拿', '选手名单不稳定', lack('这批局没有同一位选手 2 局同英雄的记录；等有固定首发后再看招牌与替补。'), 'is-bp-card');
+    const totalBans = rows.reduce((sum, row) => sum + row.signatures.reduce((n, sig) => n + sig.banGames, 0), 0);
+    const heroButton = (item, meta, label) => `<button type="button" class="tp-sig-hero"${gamesAttr(item.list || item.gamesList, label)}>
+      ${portrait(item.hero, 'is-face')}<span><b>${esc(item.hero)}</b><small>${meta}</small></span>
+    </button>`;
+    const body = rows.map((row) => row.signatures.map((sig, index) => {
+      const playerCell = index === 0 ? `<th scope="rowgroup" rowspan="${row.signatures.length}"><b>${esc(row.name)}</b><small>${esc(row.lane || '—')}</small></th>` : '';
+      const repl = sig.banGames
+        ? (sig.replacements.length
+          ? `<div class="tp-sig-repl">${sig.replacements.slice(0, 3).map((item) => heroButton(item, `${fmt(item.games)} 局 · ${bpPct(bpRate(item.wins, item.games))}`, `${row.name} · ${sig.hero} 被 ban 后改拿 ${item.hero}`)).join('')}</div>`
+          : '<span class="tp-quiet">没改拿记录</span>')
+        : '<span class="tp-quiet">没被我们 ban 过</span>';
+      return `<tr style="--sig-lane:${colorOfKey(row.lane)}">
+        ${playerCell}
+        <td>${heroButton({hero: sig.hero, list: sig.gamesList}, `${fmt(sig.games)} 局 · ${bpPct(sig.winRate)}`, `${row.name} 的招牌 ${sig.hero}`)}</td>
+        <td><b>${sig.banGames ? fmt(sig.banGames) : '—'}</b>${sig.banGames ? `<small class="tp-sig-rate">改拿后 ${bpPct(sig.bannedWinRate)}</small>` : ''}</td>
+        <td>${repl}</td>
+      </tr>`;
+    }).join('')).join('');
+    return card('招牌 ban 后改拿', `${fmt(rows.length)} 人 · 招牌被 ban ${fmt(totalBans)} 局`, `
+      <div class="tp-sig-wrap"><table class="tp-sig-table">
+        <thead><tr><th scope="col">选手</th><th scope="col">招牌</th><th scope="col">被我们 ban</th><th scope="col">改拿</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table></div>
+      <p class="tp-read">招牌＝同一选手在这批局里拿得最多的 1–2 个英雄（至少 2 局）。只统计有出场、且招牌被我们 ban 的局；改拿后的胜率以被 ban 的局为分母。点英雄看具体对局，样本少时只作观察。</p>`, 'is-bp-card');
+  }
+
+  /* ── 战队标签 ─────────────────────────────────────────────────── */
+  /* 自动状态标签保持原样；教练标签排在最前，一眼能看到「巅峰 / 俱乐部」。 */
+  function computedTags(view) {
+    const { meta, matches, oppRate } = view;
     const thin = matches < 3;
     const tags = [];
     if (thin) tags.push(['样本不足', 'sample']);
@@ -1319,15 +1850,50 @@ export function createTeamDossier(h) {
     if (meta.named) tags.push(['已命名', 'neutral']);
     if (meta.coach) tags.push([`教练 ${meta.coach}`, 'neutral']);
     if (!tags.length) tags.push(['待观察', 'neutral']);
-    const current = meta.currentPlayers || meta.players || [];
-    const lanePlayers = [...current].sort((a, b) => {
-      const ia = LANES.indexOf(a.lane), ib = LANES.indexOf(b.lane);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    }).slice(0, 5);
-    const roster = `<div class="tp-roster" aria-label="当前五人">${LANES.map((lane) => {
-      const player = lanePlayers.find((item) => item.lane === lane) || current.find((item) => item.lane === lane);
-      return `<span class="tp-player${player ? '' : ' is-empty'}"><i>${esc((player?.name || '?').slice(0, 1))}</i><span><small>${esc(lane)}</small><b>${esc(player?.name || '待补')}</b></span><em>${player ? `${fmt(player.games || 0)} 局` : '—'}</em></span>`;
-    }).join('')}</div>`;
+    return tags;
+  }
+  function headTagChips(view) {
+    const user = loadTeamTags(view.t.id).map((label) =>
+      `<span class="tp-tag is-usertag is-${tagKind(label)}" title="教练按巅峰分/俱乐部标注">${esc(label)}</span>`);
+    const auto = computedTags(view).map(([label, cls]) => `<span class="tp-tag is-${cls}">${esc(label)}</span>`);
+    return [...user, ...auto].slice(0, 6).join('');
+  }
+  function tagChipsHtml(tags) {
+    if (!tags.length) return '<span class="tp-quiet">还没打标签</span>';
+    return tags.map((label) => `<span class="tp-utag-chip is-${tagKind(label)}">${esc(label)}<button type="button" class="tp-utag-remove" data-tp-tag-remove="${esc(label)}" aria-label="移除标签 ${esc(label)}" title="移除 ${esc(label)}">×</button></span>`).join('');
+  }
+  function tagsCard(view) {
+    const tags = loadTeamTags(view.t.id);
+    const inputId = `tp-utag-input-${esc(view.t.id)}`;
+    const helpId = `tp-utag-help-${esc(view.t.id)}`;
+    const presets = sharedPresets().map((preset) => {
+      const on = tags.includes(preset.label);
+      return `<button type="button" class="tp-utag-preset${on ? ' is-on' : ''}" data-tp-tag-preset="${esc(preset.label)}" aria-pressed="${on}" title="${esc(preset.title)}"><i aria-hidden="true">${on ? '✓' : '+'}</i>${esc(preset.label)}</button>`;
+    }).join('');
+    return card('战队标签', '赛训组共享 · 按巅峰分 / 俱乐部 / 赛事级别', `<div class="tp-utag" data-tp-tags-card>
+      <div class="tp-utag-main">
+        <fieldset class="tp-utag-set">
+          <legend>常用标签 · 点一下打上，再点一下取消</legend>
+          <div class="tp-utag-presets" role="group" aria-label="按巅峰分选常用标签">${presets}</div>
+        </fieldset>
+        <form class="tp-utag-form" data-tp-tag-form>
+          <label for="${inputId}">自定义标签 · 填俱乐部名等</label>
+          <div class="tp-utag-field">
+            <input id="${inputId}" type="text" data-tp-tag-input maxlength="20" placeholder="例如：AG 俱乐部" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" enterkeyhint="done" aria-describedby="${helpId}">
+            <button type="submit">添加标签</button>
+          </div>
+          <p id="${helpId}" class="tp-utag-help">预置标签点选即可，也可填俱乐部等自定义标签；保存在赛训数据库，全组共享。</p>
+        </form>
+      </div>
+      <div class="tp-utag-current" role="group" aria-label="已打标签" data-tp-tag-current>${tagChipsHtml(tags)}</div>
+      <p class="tp-utag-status" role="status" aria-live="polite" data-tp-tag-status>${tags.length ? `已打 ${fmt(tags.length)} 个标签 · 赛训组共享` : ''}</p>
+    </div>`);
+  }
+
+  /* ── 头部 ─────────────────────────────────────────────────────── */
+  function headBlock(view) {
+    const { meta, oppName, matches, avgDuration, oppRate } = view;
+    const thin = matches < 3;
     const facts = [
       ['交手', `${fmt(matches)} 局`],
       ['本队战绩', `${fmt(meta.wins)} 胜 ${fmt(meta.losses)} 负`],
@@ -1336,9 +1902,6 @@ export function createTeamDossier(h) {
       ['最近交手', text(meta.lastSeen)],
     ];
     if (thin) facts[2][0] = '对手胜率（单局）';
-    const boText = coverage && coverage.boKnown
-      ? [3, 5, 7].filter((bo) => coverage.boCounts[bo] || coverage.boCounts[String(bo)]).map((bo) => `BO${bo} ${fmt(coverage.boCounts[bo] ?? coverage.boCounts[String(bo)])}`).join(' · ')
-      : '';
     const stamp = new Date().toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit', hour12: false});
     return `<header class="tp-head">
       <div class="tp-head-bar">
@@ -1355,42 +1918,19 @@ export function createTeamDossier(h) {
         <div class="tp-id-copy">
           <span class="tp-eyebrow">对手档案 / TEAM DOSSIER</span>
           <h1>${text(oppName)}</h1>
-          <p>营地阵容聚类 · 首次 ${text(meta.firstSeen)} · 最近 ${text(meta.lastSeen)}${boText ? ` · ${boText}` : ''}</p>
         </div>
-        <div class="tp-tags">${tags.slice(0, 5).map(([label, cls]) => `<span class="tp-tag is-${cls}">${esc(label)}</span>`).join('')}</div>
+        <div class="tp-tags" data-tp-head-tags>${headTagChips(view)}</div>
       </div>
       <dl class="tp-facts">${facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`).join('')}</dl>
-      ${roster}
-      <p class="tp-scope">本页口径：全部营地面板 · 时间窗与赛制筛选只影响下方的分析段，头部数字始终是全样本</p>
     </header>`;
   }
 
-  function briefBlock(view, games) {
-    const decided = games.filter((game) => game.opponentWin === true || game.opponentWin === false);
-    const losses = decided.filter((game) => game.opponentWin === true).length;
-    const lineups = games.map((game) => game.sides?.enemy?.lineup).filter((lineup) => lineup && lineup.total);
-    const cores = lineups.map((lineup) => lineup.cores);
-    const rows = handRows(games, 'pick');
-    const firstLane = modeOf(rows.filter((row) => row.slot === 1 && isKnownLane(row.lane)).map((row) => row.lane));
-    const boText = [3, 5, 7].map((bo) => ({bo, games: games.filter((game) => Number(game.bo) === bo)})).filter((row) => row.games.length).map((row) => `BO${row.bo} ${fmt(row.games.length)} 局`).join(' / ');
-    const parts = [
-      `${fmt(games.length)} 局样本${boText ? `（${boText}）` : ''}`,
-      cores.length ? `最常见 ${modeOf(cores).values.join('/')} 核` : '',
-      firstLane ? `第一手最常落在${esc(firstLane.values.join('/'))}` : '',
-      `对手 ${fmt(losses)} 胜 ${fmt(decided.length - losses)} 负`,
-    ].filter(Boolean);
-    return `<div data-tp-mount="brief"><section class="tp-brief" aria-label="阶段性观察">
-      <span class="tp-brief-label">阶段性观察</span>
-      <div class="tp-brief-body"><p class="tp-brief-line">${parts.join('，')}。</p><p class="tp-brief-note">只描述当前筛选内的分布，不构成强弱结论。</p></div>
-    </section></div>`;
-  }
-
   const section = (id, no, title, sub, chip, body) => `<section class="tp-sec${state.section === id ? ' is-active' : ''}" id="${id}" data-no="${no}" role="tabpanel" aria-labelledby="tp-tab-${id}"${state.section === id ? '' : ' hidden'}>
-    <header class="tp-sec-head"><div class="tp-sec-title"><h2>${title}</h2>${chip ? `<span class="tp-sec-chip">${esc(chip)}</span>` : ''}<button type="button" class="tp-sec-copy" data-tp-section-copy="${id}" title="复制本节的文字与表格">复制本节</button></div><p class="tp-sec-sub">${sub}</p></header>
+    ${title ? `<header class="tp-sec-head"><div class="tp-sec-title"><h2>${title}</h2>${chip ? `<span class="tp-sec-chip">${esc(chip)}</span>` : ''}<button type="button" class="tp-sec-copy" data-tp-section-copy="${id}" title="复制本节的文字与表格">复制本节</button></div><p class="tp-sec-sub">${sub}</p></header>` : ''}
     <div class="tp-sec-body" id="${id}-body">${body}</div>
   </section>`;
 
-  const NAV = [['tp-overview', '01 样本'], ['tp-bp', '02 BP 手序'], ['tp-comp', '03 阵容与风格'], ['tp-pool', '04 英雄池'], ['tp-result', '05 结果']];
+  const NAV = [['tp-overview', '01 样本'], ['tp-bp', '02 BP'], ['tp-comp', '03 阵容与风格'], ['tp-pool', '04 英雄池']];
 
   function tabsBar() {
     const live = model ? activeGames(model).length : 0;
@@ -1415,12 +1955,13 @@ export function createTeamDossier(h) {
   function bodyHtml(view, games) {
     resetGameRegistry();
     const known = draftGames(games);
-    const section01 = section('tp-overview', '01', '样本与整体', '三个能跨队比的数，带环比与交手时间线。', `${fmt(games.length)} 局`, `<div class="tp-grid is-2-1">${baseBoard(games)}${formCard(games)}</div>${noteCard()}`);
-    const section02 = section('tp-bp', '02', 'BP 手序', '分路与类型的协作分布，按手序、分路、时间窗拆开看。', `${fmt(known.length)} 局有手序`, bpDistribution(games) + `<div class="tp-grid is-2">${handStream(games)}${priorityCard(games)}</div>` + driftCard(games));
-    const section03 = section('tp-comp', '03', '阵容与风格', '边野怎么搭、几核、五路类型与位置组合。', `${fmt(games.length)} 局`, styleCard(games) + `<div class="tp-grid is-2">${coreCard(games)}${laneTypeCard(games)}</div>` + pairCard(games));
-    const section04 = section('tp-pool', '04', '英雄池', '每个位置他们选什么、被 ban 什么、被 ban 之后拿谁。', `${fmt(games.length)} 局`, poolCard(games));
-    const section05 = section('tp-result', '05', '结果', '赢下的局和对手赢下的局，结构差在哪。', `${fmt(games.length)} 局`, resultCard(games));
-    return scopeStrip(games) + section01 + section02 + section03 + section04 + section05 + tabFoot();
+    const section01 = section('tp-overview', '01', '样本与整体', '三个能跨队比的数，带环比；口径取当前筛选内的对局。', `${fmt(games.length)} 局`, `${tagsCard(view)}${noteCard()}${baseBoard(games)}`);
+    const section02 = section('tp-bp', '02', 'BP', '先看英雄优先级、输赢指纹、ban 后响应与选手招牌；下面是分路常选 / 常 ban 明细。<span class="hb-fresh" data-freshness></span>', `${fmt(known.length)} 局有手序`, `<div class="tp-grid is-2 tp-bp-pair">${bpPriorityCard(games)}${bpFingerprintCard(games)}</div>` + bpResponseCard(games) + bpSignatureCard(games) + `<details class="tp-bp-details"><summary>分路常选 / 常 ban 明细 · 5 路 × 2</summary>${enemyTopCard(games)}</details>` + bpDistribution(games) + poolCard(games));
+    const section03 = section('tp-comp', '03', '阵容与风格', '边野怎么搭、几核、五路类型。', `${fmt(games.length)} 局`, styleCard(games) + `<div class="tp-grid is-2">${coreCard(games)}${laneTypeCard(games)}</div>`);
+    /* 04 英雄池：只留双方英雄池交叉；常选 / 常 ban 与 ban 后替补移到 BP。
+       顶部筛条与标签页已经写明节名和局数，本节不再重复标题、副标题与复制按钮。 */
+    const section04 = section('tp-pool', '04', '', '', '', poolCrossCard(games));
+    return section01 + section02 + section03 + section04 + tabFoot();
   }
 
   function drawerShell() {
@@ -1498,12 +2039,16 @@ export function createTeamDossier(h) {
     const games = activeGames(view);
     const html = `<div class="page feature-page tp-page td-page">
       ${headBlock(view)}
-      ${briefBlock(view, games)}
-      ${filterChips()}
       ${tabsBar()}
       <div data-tp-analysis>${bodyHtml(view, games)}</div>
       ${drawerShell()}
     </div>`;
+    /* 标签 / 笔记在库里共享：DOM 落地后再异步取回，避免首屏阻塞。 */
+    setTimeout(() => {
+      const root = document.querySelector('.tp-page');
+      if (root) loadSharedAsync(root);
+      window.__loadFreshness?.();
+    }, 0);
     return html.replace('__TP_SUMMARY__', esc(summary(view, games)));
   }
 
@@ -1528,12 +2073,8 @@ export function createTeamDossier(h) {
     const games = activeGames(model);
     const holder = root.querySelector('[data-tp-analysis]');
     if (holder) holder.innerHTML = bodyHtml(model, games);
-    const brief = root.querySelector('[data-tp-mount="brief"]');
-    if (brief) brief.innerHTML = briefBlock(model, games);
     const nav = root.querySelector('.tp-tabs');
     if (nav) nav.outerHTML = tabsBar();
-    const stat = root.querySelector('[data-tp-mount="filterstat"]');
-    if (stat) stat.innerHTML = filterStat(games.length, model.deepGames.length);
     const copy = root.querySelector('[data-tp-copy]');
     if (copy) copy.dataset.tpSummary = summary(model, games);
     const sync = (selector, active) => root.querySelectorAll(selector).forEach((el) => el.setAttribute('aria-pressed', String(el.dataset.tpValue === active)));
@@ -1579,6 +2120,8 @@ export function createTeamDossier(h) {
       state.hand = 'all';
       state.lane = 'all';
       state.bpHero = 'all';
+      state.responseBan = '';
+      state.responsePick = '';
     } else if (name === 'days') {
       state.days = value;
       if (value === 'custom' && !state.from) {
@@ -1587,16 +2130,13 @@ export function createTeamDossier(h) {
       }
     } else if (name === 'bo') {
       state.bo = value;
-    } else if (['hand', 'lane', 'mode', 'bpHero', 'poolHero', 'bpHeroLane', 'poolHeroLane'].includes(name)) {
+    } else if (['hand', 'lane', 'mode', 'bpHero', 'poolHero', 'bpHeroLane', 'poolHeroLane', 'responseBan', 'responsePick'].includes(name)) {
       state[name] = value;
       if (name === 'mode') state.bpHero = 'all';
       if (name === 'lane' && value !== 'all') state.bpHeroLane = value;
+      if (name === 'responseBan') state.responsePick = '';
     } else if (name === 'from' || name === 'to') {
       state[name] = value;
-    }
-    if (name === 'days' || name === 'bo') {
-      const host = root?.querySelector('.tp-filter');
-      if (host) host.outerHTML = filterChips();
     }
     repaint(root);
   }

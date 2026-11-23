@@ -1,24 +1,24 @@
 /* Shared by the web workbench and desktop renderer. All dimensions are CSS pixels at 100%. */
 :root {
   color-scheme: light;
-  --bg: #fafbf9;
+  --bg: #f7faff;
   --paper: #ffffff;
   --paper-2: #ffffff;
-  --surface: #eff3f0;
-  --surface-hover: #f0f5f2;
-  --sidebar: #f7f8fa;
-  --selected: #e9ebef;
-  --text: #292f2d;
-  --muted: #5c6963;
-  --quiet: #68766f;
-  --line: #dfe6e0;
-  --line-strong: #b8c7bd;
-  --accent: #246b63;
-  --accent-hover: #19574f;
-  --accent-ink: #19574f;
+  --surface: #f5f8fc;
+  --surface-hover: #eef4fb;
+  --sidebar: #f7faff;
+  --selected: #eaf3ff;
+  --text: #1c2b3a;
+  --muted: #5a6b7c;
+  --quiet: #8495a3;
+  --line: #e3eaf2;
+  --line-strong: #cbd8e6;
+  --accent: #1f6fcf;
+  --accent-hover: #185bb0;
+  --accent-ink: #1a5fb4;
   --accent-text: #ffffff;
-  --soft: #e0eeea;
-  --focus: #246b63;
+  --soft: #eaf3ff;
+  --focus: #1f6fcf;
   --success: #18794e;
   --success-soft: #eaf5ee;
   --danger: #b64545;
@@ -30,10 +30,14 @@
   --ink: #23252d;
   --ink-text: #f5fafb;
   --ink-muted: #bbced5;
-  --font: Manrope, 'Noto Sans SC', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  /* 中文优先走系统字体（雅黑 UI / 苹方）：系统字有 Windows 原生微调，
+     小字号比子集化的 Noto Sans SC 清晰；Noto 只兜底没有系统中文的环境。 */
+  --font: Manrope, 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
   --sans: var(--font);
   --serif: 'Celadon Serif', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', serif;
-  --display-font: var(--serif);
+  /* 标题与数字统一用正文的无衬线字体：衬线体在表格和密集读数里笔画细、
+     混排中文字重不均，教练看久了吃力。--serif 仍保留给确实需要衬线的封面。 */
+  --display-font: var(--font);
   --mono: 'JetBrains Mono', 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
   --fs-display: 2.25rem;
   --fs-title: 1.125rem;
@@ -59,9 +63,9 @@
   --content: 1560px;
   --topbar: var(--header-height);
   --rail: var(--sidebar-width);
-  --shadow: 0 2px 6px rgb(24 46 58 / 3%);
+  --shadow: 0 2px 6px rgb(28 66 104 / 4%);
   --shadow-card: var(--shadow);
-  --shadow-pop: 0 16px 56px rgb(15 35 48 / 16%);
+  --shadow-pop: 0 16px 56px rgb(28 66 104 / 16%);
   --ease: cubic-bezier(.2, .7, .2, 1);
   --duration: 160ms;
   --window-controls: 146px;
@@ -83,12 +87,12 @@
   --quiet: #9da0af;
   --line: #2a2c36;
   --line-strong: #4e5263;
-  --accent: #72d4d5;
-  --accent-hover: #9ae5e5;
-  --accent-ink: #9ae5e5;
-  --accent-text: #102d35;
-  --soft: #1c3439;
-  --focus: #72d4d5;
+  --accent: #5b9ff0;
+  --accent-hover: #8fc0f5;
+  --accent-ink: #8fc0f5;
+  --accent-text: #10243a;
+  --soft: #16283f;
+  --focus: #5b9ff0;
   --success: #85d3aa;
   --success-soft: #1d3c32;
   --danger: #f19c9c;

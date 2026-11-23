@@ -2,29 +2,44 @@
    Goals: semantic up/down colors, a readable 12px floor, shared rhythm,
    and the same avatar/control sizes across pages. */
 
-/* ── 1b. 战绩主卡：深玉色锚点，浅薄荷底在 1440 下对比不足 ─────────── */
+/* ── 1b. 战绩主卡：浅蓝→白的横向渐变，跟现在这套浅色调一致 ──────────
+   左边是蓝、右边收白；文字用深海军蓝。胜负不再沿用红绿，改用同一套蓝调：
+   胜＝深蔚蓝（主色），负＝暖琥珀（互补色），两者都能压在浅蓝/白底上。 */
 .pbr-home .pbr-metric[data-metric-id='record'] {
   display: flex;
   flex-direction: column;
-  border-color: #17453f;
-  background: linear-gradient(150deg, #21645a 0%, #153f39 100%);
-  color: #f4faf8;
+  border-color: rgba(47, 127, 193, .26);
+  background: linear-gradient(105deg, #93c2ec 0%, #cfe4f7 44%, #ffffff 100%);
+  color: #123a5e;
+  box-shadow: 0 18px 40px -30px rgba(31, 96, 158, .5);
 }
 .pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-foot { margin-block-start: auto; }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-value { color: #ffffff; }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-value { color: #0e3050; }
 .pbr-home .pbr-metric[data-metric-id='record'] :is(.pbr-metric-label, .pbr-metric-coverage,
-  .pbr-metric-prev, .pbr-form-label, .pbr-score small) { color: rgb(235 248 243 / 76%); }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-win { color: #a7ecd3; }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-loss { color: #ffe0da; }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter { background: rgb(255 255 255 / 18%); }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter > i { background: #a7ecd3; }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter-label { color: rgb(235 248 243 / 68%); }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-form-dot.is-win { background: rgb(167 236 211 / 22%); color: #c9f6e4; }
-.pbr-home .pbr-metric[data-metric-id='record'] .pbr-form-dot.is-loss { background: rgb(255 255 255 / 16%); color: #ffe4de; }
+  .pbr-metric-prev, .pbr-form-label, .pbr-score small, .pbr-score-rest) { color: rgba(18, 58, 94, .62); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-win,
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-delta.is-up { color: #1668ad; }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-loss,
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-delta.is-down { color: #c2741e; }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter { background: rgba(18, 58, 94, .10); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter > i { background: #1668ad; }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter-label { color: rgba(18, 58, 94, .60); }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-form-dot.is-win { background: rgba(22, 104, 173, .12); color: #1668ad; }
+.pbr-home .pbr-metric[data-metric-id='record'] .pbr-form-dot.is-loss { background: rgba(194, 116, 30, .12); color: #c2741e; }
 :root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] {
-  border-color: #2b5b52;
-  background: linear-gradient(150deg, #1d4c44 0%, #122e2b 100%);
+  border-color: rgba(147, 194, 236, .22);
+  background: linear-gradient(105deg, #1a4468 0%, #102b45 100%);
+  color: #eaf4ff;
 }
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-value { color: #ffffff; }
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] :is(.pbr-metric-label, .pbr-metric-coverage,
+  .pbr-metric-prev, .pbr-form-label, .pbr-score small, .pbr-score-rest) { color: rgba(234, 244, 255, .66); }
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-win,
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-delta.is-up { color: #8ecbf5; }
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-score b.is-loss,
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-metric-delta.is-down { color: #f0c17a; }
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter { background: rgba(255, 255, 255, .16); }
+:root[data-theme='dark'] .pbr-home .pbr-metric[data-metric-id='record'] .pbr-meter > i { background: #7fc4f2; }
 
 /* ── 1c. 环比 / 同比：涨跌必须用语义色，不再统一 muted ─────────────── */
 /* 通用兜底：表格 b / td、行内 em 上的 is-up/is-down（战队、选手、系列赛）。
@@ -74,8 +89,9 @@
   block-size: 18px;
   padding: 0 4px;
   font: 700 .75rem/18px var(--font);
-  inset-block-start: 2px;
-  inset-inline-end: 1px;
+  /* 胶囊放大到 18px 后要挪到图标右上角外侧，否则会把 19px 的收件箱图标盖住。 */
+  inset-block-start: -9px;
+  inset-inline-end: -6px;
 }
 :where(.pbr-moment b, .pbr-moment span, .pbr-moment-sep) {
   font-size: max(.75rem, .85em);
@@ -182,6 +198,13 @@
 .xc-opp-rate em,
 .xc-hero-rate em,
 .hero-tier { font-size: .75rem; }
+/* 英雄页次要文字：--quiet #8495a3 压在页面底色 #f7faff 上只有 2.95:1，
+   12px 的说明字读不清。这里只在该页把 token 收深到 #64748b（4.55:1，过 AA），
+   不动全局 :root —— 全站有 1300+ 处引用 --quiet，全局改深会和 --muted 撞色。
+   页脚同样是 10–11px 的说明字，一并收深。 */
+.page:has(.hero-board),
+.page:has(.hero-detail-page),
+.footer { --quiet: #64748b; }
 
 /* 剩余页面的辅助字下限：BP 焦点卡 / 选手档案 / 数据来源 */
 .bpl-spotlight-heroes b { font-size: .75rem; }
@@ -208,8 +231,55 @@
 .tm-crest { border-radius: 8px; }
 .tm-search, .tm-seg, .tm-sort { border-radius: var(--r-md); }
 .tm-seg-btn { border-radius: var(--r-sm); }
-.pbr-home .pbr-period,
-.pbr-home .pbr-view { min-block-size: 36px; border-radius: var(--r-sm); }
+/* 首页周期/视角筛选：白金画廊胶囊。
+   生效链：celadon.css L107 的 .pbr-home .pbr-period[aria-pressed=true]（浅金实心方块）
+   是此前真正生效的选中态；本层 celadon 且导入更晚，用更高特异性覆盖它。
+   选中态仍由 [aria-pressed] 驱动，不引入新 class（toolbar 规范）。 */
+.pbr-home .pbr-bar .pbr-periods .pbr-period,
+.pbr-home .pbr-bar .pbr-views .pbr-view {
+  min-inline-size: 24px;
+  min-block-size: 36px;
+  padding-inline: 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  font-weight: 500;
+}
+.pbr-home .pbr-bar .pbr-periods .pbr-period[aria-pressed='true'],
+.pbr-home .pbr-bar .pbr-views .pbr-view[aria-pressed='true'] {
+  /* 浅金底 + 1px 金描边：描边是第二视觉线索（vs 相邻容器底 3.69:1 ≥ 3:1）；
+     文字 --accent-ink on 合成底 #F9F2E6 = 4.74:1 ≥ 4.5:1。 */
+  border-color: var(--focus);
+  background: rgba(215, 176, 113, .16);
+  color: var(--accent-ink);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+  font-weight: 650;
+}
+@media (hover: hover) {
+  .pbr-home .pbr-bar .pbr-periods .pbr-period[aria-pressed='false']:hover,
+  .pbr-home .pbr-bar .pbr-views .pbr-view[aria-pressed='false']:hover {
+    background: rgba(215, 176, 113, .12);
+    color: var(--accent-ink);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pbr-home .pbr-bar .pbr-periods .pbr-period,
+  .pbr-home .pbr-bar .pbr-views .pbr-view {
+    transition: background-color 150ms ease, color 150ms ease,
+                border-color 150ms ease, box-shadow 150ms ease;
+  }
+}
+@media (forced-colors: active) {
+  .pbr-home .pbr-bar .pbr-periods .pbr-period[aria-pressed='true'],
+  .pbr-home .pbr-bar .pbr-views .pbr-view[aria-pressed='true'] {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+    box-shadow: none;
+  }
+}
 :where(tbody tr) { transition: background-color var(--duration) var(--ease); }
 :where(tbody tr:hover) { background: var(--surface-hover); }
 .bpl-empty p { font-size: .8125rem; line-height: 1.65; }
@@ -298,7 +368,7 @@
 }
 .cap-page .cap-tab:hover { color: var(--text); background: var(--soft); }
 .cap-page .cap-tab.is-on { color: var(--text); background: var(--soft); font-weight: 650; }
-.cap-page .cap-tab i { font-style: normal; font-size: .72rem; font-weight: 500; color: var(--muted); }
+.cap-page .cap-tab i { font-style: normal; font-size: .75rem; font-weight: 500; color: var(--muted); }
 .cap-page .cap-embed { min-inline-size: 0; }
 .cap-page .cap-embed-head { display: flex; align-items: flex-start; gap: 16px; padding: 4px 2px 2px; }
 .cap-page .cap-embed-head h2 { font-family: var(--display-font); font-size: 1.35rem; font-weight: 700; letter-spacing: -.015em; }

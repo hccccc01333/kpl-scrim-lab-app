@@ -1,0 +1,500 @@
+/* 组合池设置页（2026-11）：只作用于 .cp-page / .cp-dialog，全部颜色走主题 token。
+   未放进 @layer：最后导入，盖过历史补丁里的通用 .portrait 尺寸与按钮样式。 */
+
+.cp-page { display: grid; gap: 18px; }
+.cp-page .visually-hidden {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+.cp-page :is(button, input):focus-visible,
+.cp-dialog :is(button, input):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.cp-page .cp-status {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--fs-small);
+}
+.cp-page .cp-status.is-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* 英雄池：分路筛选 + 搜索 + 头像网格 */
+.cp-search { display: block; margin-block-end: 12px; }
+.cp-search input {
+  inline-size: min(360px, 100%);
+  min-block-size: var(--control-height);
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: max(1rem, 0.875em);
+}
+.cp-lanes { display: flex; flex-wrap: wrap; gap: 8px; margin-block-end: 14px; }
+.cp-lane {
+  min-block-size: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
+}
+.cp-lane:hover { background: var(--surface-hover); color: var(--text); }
+.cp-lane[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 700;
+}
+/* 按当前分路批量选：文字按钮 + 加号，选中分路前禁用。 */
+.cp-lane-pick {
+  min-block-size: 36px;
+  padding: 0 14px;
+  border: 1px dashed var(--accent);
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  cursor: pointer;
+}
+.cp-lane-pick:hover:not([disabled]) { background: var(--accent); color: var(--accent-text); }
+.cp-lane-pick[disabled] { opacity: 0.5; cursor: not-allowed; border-style: solid; }
+/* 英雄池限高 + 内部滚动：进来不再被 133 个头像淹没。
+   用 scroll-state 容器查询做「底部还有内容」的渐隐提示（渐进增强，
+   不支持的浏览器仍有原生滚动条与可见边框，可正常滚动）。
+   注册自定义属性才能被动画插值，否则渐隐会跳变。 */
+@property --cp-fade-out {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+.cp-grid-scroller {
+  container-type: scroll-state;
+  container-name: cp-hero-grid;
+  border-block: 1px solid transparent;
+  border-radius: var(--r-md);
+}
+.cp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 10px;
+  max-block-size: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  scroll-padding-block: 8px;
+}
+/* 仅在支持 scroll() 时间轴的浏览器里加渐隐；遮罩只盖两端条带，
+   保留焦点圈与中间内容可见（与滚动提示指南一致）。 */
+@supports (animation-timeline: scroll()) {
+  .cp-grid {
+    --cp-fade-size: 28px;
+    mask:
+      linear-gradient(black, black) no-clip subtract,
+      linear-gradient(to bottom, black, transparent) 0 100% / 100% var(--cp-fade-out) no-repeat no-clip;
+    animation: cp-grid-fade linear both;
+    animation-timeline: scroll(self block);
+    animation-range: calc(100% - var(--cp-fade-size)) 100%;
+  }
+  @keyframes cp-grid-fade { to { --cp-fade-out: var(--cp-fade-size); } }
+}
+@container cp-hero-grid scroll-state(scrollable: bottom) {
+  .cp-grid-scroller { border-block-end-color: var(--line); }
+}
+.cp-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 92px;
+  padding: 9px 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease), transform var(--duration) var(--ease);
+}
+.cp-hero:hover { border-color: var(--accent); background: var(--surface-hover); transform: translateY(-1px); }
+.cp-hero .portrait {
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.cp-hero-name {
+  max-inline-size: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: clip;
+  font-size: var(--fs-micro);
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.cp-hero[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.cp-hero[aria-pressed='true'] .cp-hero-name { color: var(--accent-ink); font-weight: 700; }
+/* 非颜色的第二重选中提示：对色觉障碍用户也能一眼分辨。 */
+.cp-hero[aria-pressed='true'] .cp-hero-name::before { content: '✓ '; }
+.cp-empty {
+  margin: 0;
+  padding: 18px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  text-align: center;
+}
+.cp-grid > .cp-empty { grid-column: 1 / -1; }
+
+/* 已选区做成粘性条：点头像后不用上下滚就能看到选了谁、按钮变成什么。
+   scroll-state 容器查询在吸附时加阴影与底色（渐进增强），普通浏览器仅 sticky。 */
+.cp-selected {
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  container-type: scroll-state;
+  container-name: cp-picked;
+  padding-block: 8px;
+  /* 吸附时改变 padding 会引起滚动锚定抖动，禁用父级锚定（指南要求）。 */
+  overflow-anchor: none;
+}
+@container cp-picked scroll-state(stuck: top) {
+  .cp-selected-inner {
+    background: var(--surface);
+    border-color: var(--accent);
+    box-shadow: var(--shadow-pop);
+    padding: 10px 12px;
+    border-radius: var(--r-md);
+  }
+}
+.cp-selected-inner {
+  border: 1px solid transparent;
+  padding: 2px 4px;
+  border-radius: var(--r-md);
+  transition: background var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+/* 已选 chips 与加入表单 */
+.cp-chips { display: flex; flex-wrap: wrap; gap: 8px; min-block-size: 40px; }
+.cp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px 3px 3px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+.cp-chip .portrait { inline-size: 26px; block-size: 26px; border-radius: 50%; }
+.cp-chip-x {
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.cp-chip-x:hover { background: var(--danger-soft); color: var(--danger); }
+/* 命名表单与批量导入独立成块，不再挤进 sticky 区，避免吸附时遮住半屏列表。 */
+.cp-compose { padding: 12px 14px; }
+/* 批量导入：折叠区，默认收起，避免干扰常规两三步操作。 */
+.cp-batch {
+  margin-block: 10px 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.cp-batch summary {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+.cp-batch[open] summary { margin-block-end: 10px; color: var(--text); font-weight: 700; }
+.cp-batch-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.cp-batch-form input {
+  flex: 1 1 260px;
+  min-block-size: var(--control-height);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: max(1rem, 0.875em);
+}
+.cp-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+  margin-block-start: 14px;
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--line);
+}
+.cp-form-row { display: flex; flex-direction: column; gap: 6px; }
+.cp-form-row label,
+.cp-strength legend {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: 700;
+}
+.cp-form input[type='text'] {
+  min-inline-size: 240px;
+  min-block-size: var(--control-height);
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: max(1rem, 0.875em);
+}
+.cp-strength {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+.cp-strength legend { padding: 0 4px; }
+.cp-strength label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--fs-body);
+  cursor: pointer;
+}
+.cp-strength input { accent-color: var(--accent); }
+.cp-form-hint {
+  flex: 1 1 220px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+.cp-form-foot { display: flex; gap: 8px; margin-inline-start: auto; }
+.cp-page :is(button, input)[disabled] { opacity: 0.55; cursor: not-allowed; }
+
+/* 已有列表 */
+.cp-list-search { display: block; margin-block: 0 14px; }
+.cp-list-search input {
+  inline-size: min(420px, 100%);
+  min-block-size: var(--control-height);
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: max(1rem, 0.875em);
+}
+.cp-existing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.cp-existing-grid.is-pair-heavy { grid-template-columns: minmax(0, 2.2fr) minmax(260px, .8fr); }
+.cp-existing-grid.is-trio-heavy { grid-template-columns: minmax(260px, .8fr) minmax(0, 2.2fr); }
+@media (max-width: 900px) {
+  .cp-existing-grid,
+  .cp-existing-grid.is-pair-heavy,
+  .cp-existing-grid.is-trio-heavy { grid-template-columns: 1fr; }
+}
+.cp-list-wrap {
+  min-inline-size: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.cp-list-wrap h3 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 10px;
+  font-size: var(--fs-title);
+}
+.cp-count { color: var(--muted); font-size: var(--fs-small); font-weight: 500; }
+.cp-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+/* ul 上保留 role="list"：Safari 在 list-style:none 下会丢掉列表语义。 */
+.cp-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+.cp-row-faces { display: flex; flex: none; }
+.cp-row-faces .portrait {
+  inline-size: 30px;
+  block-size: 30px;
+  margin-inline-end: -6px;
+  border: 2px solid var(--paper);
+  border-radius: 8px;
+  object-fit: cover;
+}
+.cp-row-body { display: grid; gap: 2px; min-inline-size: 0; }
+.cp-row-body b,
+.cp-row-body small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-row-body b { font-size: var(--fs-body); }
+.cp-row-body small { color: var(--muted); font-size: var(--fs-micro); }
+/* 强弱徽标：颜色 + 形状（▲/▼）双重编码，色觉障碍也能分辨；加边框更醒目。 */
+.cp-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cp-tag.is-strong { background: var(--success-soft); color: var(--success); }
+.cp-tag.is-strong::before { content: '▲'; }
+.cp-tag.is-weak { background: var(--warning-soft); color: var(--warning); }
+.cp-tag.is-weak::before { content: '▼'; }
+/* 双人池顶部的强 / 弱计数 */
+.cp-strength-stats { display: flex; gap: 8px; margin: -2px 0 10px; }
+.cp-stat {
+  padding: 2px 9px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: var(--fs-micro);
+  font-weight: 700;
+}
+.cp-stat-strong { color: var(--success); background: var(--success-soft); }
+.cp-stat-weak { color: var(--warning); background: var(--warning-soft); }
+.cp-row-actions { display: flex; flex: none; gap: 6px; margin-inline-start: auto; }
+.cp-icon-btn { display: inline-grid; place-items: center; inline-size: 32px; block-size: 32px; padding: 0; }
+.cp-icon-btn svg { inline-size: 15px; block-size: 15px; }
+.cp-page .cp-danger { color: var(--danger); }
+.cp-list > .cp-empty { border: 1px dashed var(--line); border-radius: var(--r-sm); }
+
+/* 原生确认对话框：不写 role / aria-modal，滚动边界按指南处理 */
+.cp-dialog {
+  inline-size: min(420px, calc(100vw - 32px));
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow-pop);
+}
+.cp-dialog:modal { overscroll-behavior: contain; }
+.cp-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgb(10 12 18 / 55%);
+}
+.cp-dialog h2 { margin: 0 0 10px; font-size: var(--fs-title); }
+.cp-dialog p { margin: 0 0 18px; color: var(--muted); font-size: var(--fs-body); line-height: 1.7; }
+.cp-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cp-dialog-actions button {
+  min-block-size: var(--control-height);
+  padding: 8px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.cp-dialog-actions .cp-delete-btn {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--paper);
+  font-weight: 700;
+}
+.cp-dialog-actions .cp-delete-btn:hover { filter: brightness(1.08); }
+
+/* ── 已有组合：英雄头像筛选器（2026-11）───────────────────────────────
+   和上方英雄池共用 .cp-hero / .cp-grid 样式，但状态独立。默认折叠降噪。 */
+.cp-filter {
+  margin-block-end: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--soft);
+}
+.cp-filter > summary {
+  padding: 10px 14px;
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 700;
+  cursor: pointer;
+}
+.cp-filter > summary::marker { color: var(--accent); }
+.cp-filter-summary-count { color: var(--accent-ink); font-weight: 400; }
+.cp-filter-body { padding: 0 14px 14px; }
+.cp-filter-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-block-end: 8px;
+}
+.cp-filter-tools input[type='search'] {
+  inline-size: min(240px, 100%);
+  min-block-size: var(--control-height);
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+}
+.cp-filter-lanes { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-filter-lanes .cp-lane { min-block-size: 30px; padding: 0 10px; font-size: var(--fs-small); }
+.cp-filter-hint { margin: 0 0 8px; color: var(--muted); font-size: var(--fs-small); }
+.cp-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-block-size: 8px;
+  margin-block-end: 8px;
+}
+.cp-filter-grid .cp-grid { max-block-size: 240px; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+.cp-filter-grid .cp-hero { min-block-size: 80px; }
+.cp-filter-clear { margin-block-start: 8px; min-block-size: var(--control-height); padding: 6px 14px; }
+.cp-filter-clear:disabled { opacity: 0.5; cursor: not-allowed; }
+.cp-add-builtin { min-block-size: 28px; padding: 3px 10px; font: inherit; font-size: var(--fs-small); }

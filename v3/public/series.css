@@ -55,7 +55,8 @@
 
 /* ── 悬浮工具栏 ── */
 .sb-toolbar {
-  position: sticky; top: 0; z-index: 30;
+  /* 顶栏是 z-40 / 56px 高；贴在其下方，否则滚动后搜索筛选栏会被完全盖住。 */
+  position: sticky; top: calc(var(--header-height, 56px) + 10px); z-index: 41;
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 9px 10px 9px 12px; border: 1px solid var(--sb-line-strong); border-radius: 16px;
   background: color-mix(in srgb, var(--paper) 78%, transparent);
@@ -115,6 +116,7 @@
 .sb-cands-copy { min-width: 0; }
 .sb-cands-copy b { display: block; font-size: 13.5px; letter-spacing: -.01em; }
 .sb-cands-copy small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--quiet); }
+.sb-cands-copy small + small { color: var(--sb-warn); }
 .sb-cands-count { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
 .sb-bulk-btn { min-height: 30px; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--sb-line)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 7%, var(--sb-paper)); color: var(--accent); font-size: 11.5px; font-weight: 750; white-space: nowrap; }
 .sb-bulk-btn:hover { background: color-mix(in srgb, var(--accent) 13%, var(--sb-paper)); }
@@ -242,8 +244,13 @@ a.sb-game:hover { border-color: var(--accent); color: var(--accent); }
 .sb-series-note { margin: 0; font-size: 11px; color: var(--quiet); }
 
 /* 卡片菜单 */
-.sb-menu { position: absolute; z-index: 15; right: 10px; top: 44px; width: 224px; display: grid; gap: 2px; padding: 8px; border: 1px solid var(--sb-line-strong); border-radius: 14px; background: var(--sb-paper); box-shadow: var(--sb-shadow-lg); animation: sb-menu-in .14s ease-out; }
+.sb-menu { position: absolute; z-index: 15; right: 10px; top: 44px; width: 224px; max-height: min(360px, calc(100vh - 120px)); overflow-y: auto; display: grid; gap: 2px; padding: 8px; border: 1px solid var(--sb-line-strong); border-radius: 14px; background: var(--sb-paper); box-shadow: var(--sb-shadow-lg); animation: sb-menu-in .14s ease-out; }
+/* 卡片所在日块平时裁掉溢出；菜单打开的那一天放开，菜单才不会被圆角切掉。 */
+.sb-day:has(.sb-menu) { overflow: visible; }
+/* 视口底部空间不足时向上展开，由脚本按实际位置加 .is-up。 */
+.sb-menu.is-up { top: auto; bottom: 44px; animation-name: sb-menu-in-up; }
 @keyframes sb-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+@keyframes sb-menu-in-up { from { opacity: 0; transform: translateY(4px) scale(.98); } }
 .sb-menu-label { padding: 2px 8px 5px; font-size: 10px; font-weight: 800; letter-spacing: .1em; color: var(--quiet); }
 .sb-menu-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; padding: 3px; margin: 0 2px 2px; border-radius: 9px; background: var(--soft); }
 .sb-menu-seg button { height: 26px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -308,7 +315,8 @@ a.sb-game:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── 底部操作条 ── */
 .sb-selectbar {
-  position: fixed; z-index: 55; left: 50%; bottom: 20px; transform: translateX(-50%);
+  /* 给下方「推荐」角标留位置，避免文字掉出圆角边框。 */
+  position: fixed; z-index: 55; left: 50%; bottom: 34px; transform: translateX(-50%);
   display: flex; align-items: center; gap: 14px; width: min(920px, calc(100vw - 32px));
   padding: 10px 12px 10px 18px; border: 1px solid var(--sb-line-strong); border-radius: 18px;
   background: color-mix(in srgb, var(--paper) 88%, transparent);
@@ -328,7 +336,7 @@ a.sb-game:hover { border-color: var(--accent); color: var(--accent); }
 .sb-seg button.is-active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--accent) 55%, transparent); }
 .sb-seg button:disabled { opacity: .32; cursor: not-allowed; }
 :root[data-theme="dark"] .sb-seg button.is-active { color: #10201f; }
-.sb-seg button i { position: absolute; left: 50%; bottom: -17px; transform: translateX(-50%); font-style: normal; font-size: 8.5px; font-weight: 700; color: var(--accent); letter-spacing: .02em; opacity: .85; white-space: nowrap; }
+.sb-seg button i { position: absolute; left: 50%; bottom: -11px; transform: translateX(-50%); font-style: normal; font-size: 8.5px; font-weight: 700; color: var(--accent); letter-spacing: .02em; opacity: .85; white-space: nowrap; }
 .sb-switch { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--muted); cursor: pointer; flex: none; }
 .sb-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
 .sb-switch-track { position: relative; width: 32px; height: 19px; border-radius: 99px; background: var(--line); transition: background .16s; flex: none; }
@@ -382,7 +390,13 @@ a.sb-game:hover { border-color: var(--accent); color: var(--accent); }
 /* ── 响应式 ── */
 @media (max-width: 1260px) {
   .sb-toolbar-hint { display: none; }
-  .sb-row { --sb-cols: 20px 76px minmax(130px, 1.2fr) 42px 64px 50px 68px minmax(170px, 1fr) 22px; }
+  /* 1180px 下日块可用宽约 666px，原列宽下限求和 742px 会把右侧裁掉。 */
+  .sb-row {
+    --sb-cols: 18px 68px minmax(110px, 1.2fr) 36px 56px 44px 60px minmax(120px, 1fr) 20px;
+    gap: 6px;
+    padding-inline: 7px;
+  }
+  .sb-row > * { min-inline-size: 0; }
 }
 @media (max-width: 1080px) {
   .sb-hero { align-items: flex-start; flex-direction: column; gap: 16px; }

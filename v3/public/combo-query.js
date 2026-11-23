@@ -57,8 +57,16 @@ export function createComboQuery({ esc, fmt, portrait, route, icon, getHeroes })
     const when = row.lastDate
       ? `<span class="kq-when">最近 <b>${esc(row.lastDate)}</b></span>`
       : row.year ? `<span class="kq-when"><b>${row.year}</b> 年</span>` : '';
+    /* 赛训池行：文字标签（赛训 / 体系名 / 强弱联动）不只靠颜色区分口径。 */
+    const flags = [
+      row.source === 'custom' ? '<span class="kq-src">赛训</span>' : '',
+      row.name ? `<span class="kq-sysname">${esc(row.name)}</span>` : '',
+      row.strength === 'strong' ? '<span class="kq-strength is-strong">强联动</span>' : '',
+      row.strength === 'weak' ? '<span class="kq-strength is-weak">弱联动</span>' : '',
+    ].filter(Boolean).join('');
     return `<div class="kq-row">
       <span class="kq-tag">${SIZE_LABEL[row.size] || ''}</span>
+      ${flags}
       <span class="kq-heroes">${row.heroes.map(faceLink).join('<i>+</i>')}</span>
       ${teamChips(row.teams)}
       <span class="kq-stat"><b>${fmt(row.n)}</b> 场<i>·</i>胜率 <b>${has_(row.wr) ? `${Number(row.wr).toFixed(1)}%` : '—'}</b></span>
@@ -73,7 +81,8 @@ export function createComboQuery({ esc, fmt, portrait, route, icon, getHeroes })
     if (!state.selected.length) {
       const total = Object.entries(counts()).map(([size, count]) =>
         `${SIZE_LABEL[size]} ${fmt(count)}`).join(' · ');
-      return `<div class="kq-hint">从上面选 1–4 个英雄开始查；选 2 个以上 = 只看包含全部所选英雄的组合。<small>库里共：${esc(total)} 组（样本 ≥3 场）。</small></div>`;
+      const basis = state.data?.poolActive ? '赛训组组合池' : '样本 ≥3 场';
+      return `<div class="kq-hint">从上面选 1–4 个英雄开始查；选 2 个以上 = 只看包含全部所选英雄的组合。<small>库里共：${esc(total)} 组（${basis}）。</small></div>`;
     }
     if (!rows.length) {
       return `<div class="kq-hint">所选英雄在 KPL 统计窗口内没有${state.size === 'all' ? '' : SIZE_LABEL[state.size]}组合记录。<small>新阵容或冷门搭配本来就不容易同场，这不代表不能用。</small></div>`;
@@ -102,7 +111,11 @@ export function createComboQuery({ esc, fmt, portrait, route, icon, getHeroes })
     const data = state.data;
     if (!data) return '';
     const scope = [data.windowStart, data.windowEnd].filter(Boolean).join(' – ');
-    return `<p class="kq-foot">口径：同队同场同时选用过的组合，≥1 场即收录，样本 ≥3 场进库${scope ? ` · 统计窗口 ${esc(scope)}` : ''}${data.games ? ` · ${fmt(data.games)} 局` : ''}${data.updatedAt ? ` · 更新于 ${esc(String(data.updatedAt).slice(0, 10))}` : ''}。点击英雄名跳英雄详情页。</p>`;
+    /* 池子已保存时双人/三人以名单为准，只在脚注补充背景口径；四人仍走 KPL 全库。 */
+    const basis = data.poolActive
+      ? '口径：赛训组组合池（最高优先级），双人/三人以池子名单为准；KPL 只补背景场次/胜率。四人组合仍看 KPL 全库。'
+      : '口径：同队同场同时选用过的组合，≥1 场即收录，样本 ≥3 场进库';
+    return `<p class="kq-foot">${esc(basis)}${scope ? ` · 统计窗口 ${esc(scope)}` : ''}${data.games ? ` · ${fmt(data.games)} 局` : ''}${data.updatedAt ? ` · 更新于 ${esc(String(data.updatedAt).slice(0, 10))}` : ''}。点击英雄名跳英雄详情页。</p>`;
   }
 
   /* ── 对外：区块内容（app.js 拼进 #match-ov-kq）────────────────── */

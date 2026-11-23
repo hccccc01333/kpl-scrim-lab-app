@@ -1,0 +1,72 @@
+/* 10 分钟经济 —— 1:1 移植自 design-redblue/10分钟经济_卡片版.html
+   每条分路一张渐变边卡：分路 + 本队/对手章、圆头像 + 英雄名、金币输入、评级章。 */
+
+.md-page #match-gold10{
+  background:#fff;border:1px solid #dbe4e9;border-radius:14px;
+  box-shadow:0 14px 44px rgba(24,48,72,.14);
+  padding:16px 18px 14px;margin-top:12px;
+  font-family:"Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;color:#1c2b3a;
+}
+.md-page #match-gold10 .section-heading{display:flex;align-items:center;justify-content:space-between;
+  border:0;padding:0;margin:0}
+.md-page #match-gold10 .section-heading h2{font-size:21px;font-weight:800;color:#1b2d3d}
+.md-page #match-gold10 .section-heading p{display:none}
+.md-page #match-gold10 .section-heading > div{display:flex;align-items:center;gap:12px}
+.md-page #match-gold10 .md-g10-count{font-size:12px;font-weight:700;color:#6f8292}
+
+/* 两个 band 上下排；2026-11-22 教练要求缩小并补辅助，5 人一行 */
+.md-page #match-gold10 .md-g10-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:10px}
+.md-page #match-gold10 .md-g10-side{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.md-page #match-gold10 .md-g10-side-label{grid-column:1/-1;font-size:14px;font-weight:800;margin-bottom:-2px}
+.md-page #match-gold10 .md-g10-side-label.own{color:#1f6fcf}
+.md-page #match-gold10 .md-g10-side-label.foe{color:#cf3f3f}
+
+/* 卡片 */
+.md-page .md-g10-row{
+  display:flex;flex-direction:column;align-items:stretch;gap:0;text-align:left;
+  border:1px solid transparent;border-radius:10px;padding:7px 6px 8px;
+  background:linear-gradient(#fff,#fff) padding-box,
+             linear-gradient(120deg,#c3ddf8,#e6ecf1 50%,#f7cfcf) border-box;
+  box-shadow:0 6px 18px -12px rgba(28,66,104,.28);
+  cursor:pointer;min-width:0;
+}
+.md-page .md-g10-row .ec-top{display:flex;align-items:center;justify-content:space-between;
+  width:100%;gap:4px}
+.md-page .md-g10-row .md-g10-lane{font-size:11px;font-weight:800;color:#5c7183;flex:none}
+.md-page .md-g10-row .ec-side{font-size:10.5px;font-weight:800;padding:2px 6px;border-radius:999px;flex:none}
+.md-page .md-g10-row.own .ec-side{color:#1f6fcf;background:#e8f2ff;border:1px solid #c5dcf7}
+.md-page .md-g10-row.foe .ec-side{color:#cf3f3f;background:#fbeeee;border:1px solid #f0cccc}
+
+.md-page .md-g10-row .md-g10-hero{display:flex;align-items:center;gap:2px;margin-top:6px;min-width:0}
+.md-page .md-g10-row .md-g10-hero .portrait,
+.md-page .md-g10-row .md-g10-hero img{width:23px;height:23px;min-width:23px;min-height:23px;max-height:23px;border-radius:50%;object-fit:cover;
+  object-position:top center;border:1.5px solid #fff;box-shadow:0 3px 10px -3px rgba(20,50,80,.45);flex:none}
+.md-page .md-g10-row .md-g10-hero b{font-size:10.5px;font-weight:800;color:#283d50;letter-spacing:-.02em;
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.md-page .md-g10-row .md-g10-jtype{font-size:9.5px;font-weight:700;color:#a1701f;
+  background:#fff4dc;border:1px solid #ecd49a;border-radius:999px;padding:1px 4px;font-style:normal;flex:none}
+
+.md-page .md-g10-row input{
+  margin-top:6px;height:28px;padding:0 6px;
+  border:1px solid #d8e2ea;border-radius:7px;background:#fafcfe;
+  font-size:10.5px;color:#20374b;font-family:inherit;
+}
+.md-page .md-g10-row input:focus{outline:none;border-color:#93bde8;background:#fff;
+  box-shadow:0 0 0 3px rgba(47,127,224,.12)}
+.md-page .md-g10-row input::placeholder{color:#9aabb8}
+
+.md-page .md-g10-row .md-grade{margin-top:6px;align-self:flex-start;
+  font-size:10.5px;font-weight:800;padding:2px 7px;border-radius:999px;font-style:normal;
+  color:#6c7c88;background:#f2f5f7;border:1px solid #dfe6eb}
+.md-page .md-g10-row .md-grade.is-blank{display:none}
+.md-page .md-g10-row .md-grade.is-good,.md-page .md-g10-row .md-grade.is-ok{
+  color:#17765a;background:#e8f5ee;border-color:#bfe0cb}
+.md-page .md-g10-row .md-grade.is-bad{color:#cf3f3f;background:#fbeeee;border-color:#f0cccc}
+
+@media(max-width:760px){
+  .md-page #match-gold10 .md-g10-side{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:520px){
+  .md-page #match-gold10 .md-g10-side{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

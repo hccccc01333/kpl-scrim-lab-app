@@ -333,7 +333,10 @@ def test_team_deep_kpl_lineup_hit_from_real_table(tmp_path):
     assert 'ourGames' not in lineup
 
 
-def test_kpl_section_reports_source_and_empty_when_no_hits(tmp_path):
+def test_kpl_section_reports_source_and_empty_when_no_hits(tmp_path, monkeypatch):
+    # 这个用例测的是纯 KPL 口径；隔离赛训组组合池，避免真实 data 里已保存的池子改变 source
+    import combo_pool
+    monkeypatch.setattr(combo_pool, 'has_saved', lambda: False)
     camp = tmp_path / 'camp_details'
     # 五个英雄都不在 KPL 组合表里（自定义占位名）→ 命中为空但结构完整
     heroes = ['不存在的英雄1', '不存在的英雄2', '不存在的英雄3',

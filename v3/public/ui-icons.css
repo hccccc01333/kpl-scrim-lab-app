@@ -1,0 +1,65 @@
+/* 白金转播视觉 · UI 图标基础样式（2026-11-22） */
+
+/* 语义图标：垂直居中、不收缩、继承按钮 currentColor 语境（本身是金色渐变图） */
+.ui-glyph {
+  display: inline-block;
+  flex: 0 0 auto;
+  vertical-align: -0.18em;
+  inline-size: auto;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 装饰件：不撑破布局、纯装饰 */
+.ui-deco {
+  display: block;
+  max-inline-size: 100%;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+.ui-deco-divider-title { inline-size: min(425px, 100%); block-size: auto; margin-block: 4px 14px; }
+.ui-deco-divider-thin { inline-size: 100%; block-size: 8px; opacity: .8; }
+.ui-deco-section-triangle { inline-size: 16px; block-size: 16px; display: inline-block; vertical-align: -2px; margin-inline-end: 4px; }
+
+/* 金渐变「＋」：语义图标套件无 plus，年总包只有灰描边占位，故用 token 画。
+   作为 mask 让 + 形状跟随金色渐变（background 用 token），尺寸随 --ui-plus-size。 */
+.ui-plus {
+  --ui-plus-size: 16px;
+  display: inline-block;
+  inline-size: var(--ui-plus-size);
+  block-size: var(--ui-plus-size);
+  flex: 0 0 auto;
+  vertical-align: -0.15em;
+  background: linear-gradient(135deg, #F6DDA7, #CA9650 55%, #A77735);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+
+/* ── 交互兜底（2026-11-22 深度审计）─────────────────────────────
+   用 :where() 0 特异性 + 6 页根节点作用域：既能给新页补齐按压/命中区/焦点，
+   又不会覆盖旧页刻意写的 outline:none + box-shadow 自定义焦点环。
+   按压用 translate 独立属性，不覆盖 .rc-ext 之类 transform:rotate 的图标。 */
+:where(.pf-page, .mo-page, .rc-page, .oe-page, .mn-page, .comp-page)
+  :where(button:not(:disabled)):active {
+  translate: 0 1px;
+}
+/* 纯图标按钮命中区：::after 对 <img> 替换元素无效，必须加在按钮容器上 */
+:where(.pf-page, .mo-page, .rc-page, .oe-page, .mn-page, .comp-page)
+  :where(.pf-icon-btn, .oe-shot-x, .mn-tag-x, .mo-chip button, .rc-icon) {
+  min-inline-size: 24px;
+  min-block-size: 24px;
+}
+@media (pointer: coarse) {
+  :where(.pf-page, .mo-page, .rc-page, .oe-page, .mn-page, .comp-page)
+    :where(.pf-icon-btn, .oe-shot-x, .mn-tag-x, .mo-chip button, .rc-icon, summary) {
+    min-block-size: 44px;
+    min-inline-size: 44px;
+  }
+}
+
+/* 强制配色模式下图标退化为当前文字色，保证可见（装饰件隐藏） */
+@media (forced-colors: active) {
+  .ui-glyph, .ui-deco { filter: grayscale(1) brightness(0) saturate(0); opacity: .75; }
+}

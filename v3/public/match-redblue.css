@@ -1,0 +1,461 @@
+/* ============================================================
+   单局复盘页 · 白底红蓝对决皮肤（2026-11-19）
+   ------------------------------------------------------------
+   赛训组反馈：整页从深墨蓝改白底，本队=蓝 #1f6fcf，敌方=红 #cf3f3f，
+   中间白色过渡；卡片白底、渐变细边框；说明性小字一律隐藏。
+   全部规则限定在 .md-page 下，未分层 @import（见 interface.css 末尾），
+   确保盖过 legacy 层的 style.css / match-review.css，且不影响其它页面。
+   ============================================================ */
+
+.md-page {
+  /* 语义色：金→本队蓝，青→敌方红 */
+  --md-gold: #1f6fcf;          /* 本队 */
+  --md-teal: #cf3f3f;          /* 敌方 */
+  --md-ink: #ffffff;
+  --md-own-ink: #1f6fcf;
+  --md-enemy-ink: #cf3f3f;
+  --md-own-soft: #eaf3ff;
+  --md-enemy-soft: #fbeeee;
+
+  /* 本页白底 token（覆盖 ui-tokens 的浅绿灰，不外溢） */
+  --paper: #ffffff;
+  --surface: #f5f8fc;
+  --surface-hover: #eef4fb;
+  --line: #e3eaf2;
+  --line-strong: #cbd8e6;
+  --text: #1c2b3a;
+  --muted: #5a6b7c;
+  --quiet: #8495a3;
+  background: linear-gradient(180deg, #f7faff 0%, #f2f6fb 100%);
+}
+:root[data-theme="dark"] .md-page {
+  --md-own-ink: #5b9ff0;
+  --md-enemy-ink: #f07a7a;
+  --md-own-soft: #16283f;
+  --md-enemy-soft: #3a1f22;
+  /* 本页浅色皮肤自己定义了一套 --paper/--text；深色下必须整体翻过来，
+     否则只有蓝红语义变深色，整页仍是白底深字。值与 ui-tokens 深色主题一致。 */
+  --paper: #191a20;
+  --surface: #23252d;
+  --surface-hover: #262831;
+  --line: #2a2c36;
+  --line-strong: #4e5263;
+  --text: #ececf1;
+  --muted: #b4b6c2;
+  --quiet: #9da0af;
+  background: linear-gradient(180deg, #15161b 0%, #191a20 100%);
+}
+
+/* 正文/标题默认深色（原来 md 区内硬编码浅色，逐项在下方覆盖） */
+.md-page, .md-page .section, .md-page .section-heading,
+.md-page .md-page-title, .md-page h1, .md-page h2, .md-page h3 {
+  color: var(--text);
+}
+.md-page .section-heading p,
+.md-page p, .md-page small { color: var(--muted); }
+
+/* 说明性小字一律隐藏：口径定义、数据来源、图例提示等（数据类小字保留） */
+.md-page .section-heading p,
+.md-page .md-hero > p,
+.md-page .md-hero h1 > span,
+.md-page .md-hero-kicker + p,
+.md-page .md-hero-pulse-head small,
+.md-page .md-hero .chart-foot span:last-child,
+.md-page .mp-at,
+.md-page .mp-legend-foot,
+.md-page .md-evidence-legend,
+.md-page .md-source > p,
+.md-page .md-line-diff,
+.md-page .md-g10-note,
+.md-page .md-total-note,
+.md-page .md-node-head-note,
+.md-page .md-ov-note,
+.md-page .md-coh-note,
+.md-page .md-kill-note,
+.md-page .md-kplhit-verdict,
+.md-page .md-kplhit-lineup-note,
+.md-page .md-kplhit-foot,
+.md-page .md-mu-hist,
+.md-page .md-ct-foot,
+.md-page .md-combo-kpl,
+.md-page .md-ev-note,
+.md-page .md-bp-note,
+.md-page .md-phase-note,
+.md-page .md-gold-note,
+.md-page .md-prof-note,
+.md-page .md-jg-note,
+.md-page .md-depth-note { display: none !important; }
+
+/* ── 关键节点整块删除（2026-11-19 赛训组要求）────────────────── */
+.md-page #match-timeline,
+.md-page .md-pane-row > #match-timeline { display: none !important; }
+/* 阶段对比与关键节点同排时，阶段对比独占整行 */
+.md-page .md-pane-row { display: block; }
+
+/* ── 本局结论 Hero：蓝→白→红渐变，图表区留白 ───────────────── */
+.md-page .md-hero {
+  background: linear-gradient(96deg, color-mix(in srgb, var(--md-own-ink) 13%, transparent) 0%, transparent 46%, transparent 54%, color-mix(in srgb, var(--md-enemy-ink) 13%, transparent) 100%), var(--paper);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px -18px rgba(24,48,72,.28);
+}
+.md-page .md-hero::before { background: none; }
+.md-page .md-hero-kicker { color: var(--md-own-ink); }
+.md-page .md-hero-meta,
+.md-page .md-hero h1 span { color: var(--muted); }
+.md-page .md-hero h1 b { color: var(--text); font-size: 1.12em; }
+
+/* 记分牌：两侧队伍名/比分/经济差改为深色可读，蓝红区分双方 */
+.md-page .md-line { border-block-color: var(--line); }
+.md-page .md-line-side > span,
+.md-page .md-line-note span,
+.md-page .md-line-diff { color: var(--muted); }
+.md-page .md-line-side b { color: var(--text); }
+.md-page .md-line-side.own b { color: var(--md-own-ink); }
+.md-page .md-line-side.rival b { color: var(--md-enemy-ink); }
+.md-page .md-line-mid strong { color: var(--text); }
+.md-page .md-line-mid strong span { color: var(--quiet); }
+.md-page .md-line-mid strong i.win { color: var(--text); }
+.md-page .md-line-note em { color: var(--muted); background: var(--surface); }
+.md-page .md-line-diff b { color: var(--md-own-ink); }
+.md-page .md-hero-pulse { border-top-color: var(--line); }
+.md-page .mp-legend .own { color: var(--md-own-ink); }
+.md-page .mp-legend .foe { color: var(--md-enemy-ink); }
+
+/* ── 通用卡片：白底 + 蓝→红渐变细边框 ───────────────────────── */
+.md-page .section {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 24px -18px rgba(24,48,72,.24);
+}
+
+/* 金/青 → 蓝/红 语义映射（覆盖约 60 处硬编码 rgba） */
+.md-page :is(.own, .md-own, [data-side="own"]) { --side-color: var(--md-own-ink); }
+.md-page .md-node-dir.own,
+.md-page .md-res-bar-own,
+.md-page .md-ev-seg i.is-own { background: color-mix(in srgb, var(--md-own-ink) 20%, transparent); }
+.md-page .md-node-dir.enemy,
+.md-page .md-res-bar,
+.md-page .md-ev-seg i.is-foe { background: color-mix(in srgb, var(--md-enemy-ink) 20%, transparent); }
+.md-page .md-res-bar i,
+.md-page .md-res-gauge i,
+.md-page .md-vsm-track i,
+.md-page .md-total-bar i,
+.md-page .md-node-num.is-own,
+.md-page .md-diff.own,
+.md-page .md-own-ink { color: var(--md-own-ink); }
+.md-page .md-res-bar.foe i,
+.md-page .md-node-num.is-foe,
+.md-page .md-diff.foe,
+.md-page .md-enemy-ink { color: var(--md-enemy-ink); }
+.md-page .md-total-bar,
+.md-page .md-vs-track { background: linear-gradient(90deg, var(--md-own-ink), var(--line-strong) 50%, var(--md-enemy-ink)); }
+.md-page .is-own, .md-page .side-own { color: var(--md-own-ink); }
+.md-page .is-foe, .md-page .side-foe { color: var(--md-enemy-ink); }
+
+/* 差值/结论列文字：中性色，仅真正强调处用色（控制颜色滥用） */
+.md-page .md-diff.tie, .md-page .md-level, .md-page .md-rank { color: var(--muted); }
+
+/* ── 十人面板 / 对比条：青→红，本队金→蓝，统一渐变 ─────────────── */
+.md-page .md-vs-track,
+.md-page .md-panel [class*="bar"] i,
+.md-page .md-mu-bar i,
+.md-page .md-diff-bar i,
+.md-page .md-panel .md-bar-own { background: var(--md-own-ink); }
+.md-page .md-panel .md-bar-foe,
+.md-page .md-mu-bar .foe i,
+.md-page .md-diff-bar .foe i { background: var(--md-enemy-ink); }
+/* 对比条底槽：蓝→白→红 */
+.md-page .md-mu-bar,
+.md-page .md-diff-bar,
+.md-page .md-panel [class*="bar"][class*="track"] {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--md-own-ink) 30%, var(--paper)), var(--surface) 50%, color-mix(in srgb, var(--md-enemy-ink) 30%, var(--paper)));
+}
+
+/* 记分牌比分两侧队名：本队蓝、对手红，放大 */
+.md-page .md-line-side.own b { color: var(--md-own-ink); font-size: 1.05em; }
+.md-page .md-line-side.rival b { color: var(--md-enemy-ink); font-size: 1.05em; }
+
+/* 全局字号：说明隐藏后主数据放大一档 */
+.md-page .md-total-num,
+.md-page .md-hero-stat b,
+.md-page .md-mu-pct { font-size: 1.08em; }
+
+/* 卡片白底 + 蓝→红渐变细边框（命中组合/对位/克制/经济卡） */
+/* 十人面板 / 并线 / 切C 的新卡片有自己的纯色细边，排除掉这条渐变边框。 */
+.md-page [class*="card"]:not([class*="hero"]):not([class*="legend"]):not(.md-cut-card):not(.md-jl-card):not(.md-team-card):not(.md-duel-card):not(.md-coh-card),
+.md-page .md-mu-card,
+.md-page .md-kplhit-card,
+.md-page .md-combo-card,
+.md-page .md-g10-card {
+  background: var(--paper);
+  border: 1px solid var(--line-strong);
+  border-image: linear-gradient(110deg,
+    color-mix(in srgb, var(--md-own-ink) 45%, var(--line)),
+    var(--line) 50%,
+    color-mix(in srgb, var(--md-enemy-ink) 45%, var(--line))) 1;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px -14px rgba(24,48,72,.3);
+}
+
+/* ── 入侵时长（2026-11-20 第二轮）──────────────────────────────────
+   赛训组反馈：整块蓝红过饱和（数字、分期、差距全是彩色）、
+   「深区 >66%」点了没反应、0–4 / 4–10 / 10+ 单独浮一行太丑。
+   改法：数字统一墨色，整块只保留「差距最大」一行用色；
+   切换与标题同行；分期并进表头，和列共用同一套栅格，天然对齐。 */
+.md-page #match-duel { position: relative; }
+.md-page #match-duel .section-heading { padding: 16px var(--md-pad) 6px; }
+.md-page #match-duel .section-heading h2 { font-size: 21px; font-weight: 800; color: #1b2d3d; }
+.md-page .md-invasion { padding: 0 var(--md-pad) 16px; }
+
+/* 口径切换：贴住区块标题右侧，不再单独占一行 */
+.md-page .md-invasion .iv-bar { position: absolute; top: 13px; right: var(--md-pad); }
+.md-page .iv-tabs { display: inline-flex; gap: 2px; padding: 3px; background: #eef2f6; border-radius: 10px; }
+.md-page .iv-tab { border: 0; background: transparent; padding: 7px 16px; border-radius: 8px;
+  font-family: inherit; font-size: 15px; font-weight: 700; color: #6f8292; cursor: pointer; }
+.md-page .iv-tab:hover { color: #1c2b3a; }
+.md-page .iv-tab.is-on { background: #fff; color: #1c2b3a; box-shadow: 0 2px 8px -4px rgba(28,66,104,.45); }
+.md-page .iv-view[hidden] { display: none; }
+
+/* 合计条：三段等宽，数字墨色，只有「多出来的那一边」带色 */
+.md-page .iv-sum { display: grid; grid-template-columns: 1fr 1.15fr 1fr;
+  margin: 2px 0 12px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--paper); overflow: hidden; }
+.md-page .iv-sum-cell { display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 12px 18px; }
+.md-page .iv-sum-cell > span { display: inline-flex; align-items: center; gap: 6px;
+  font-size: 14px; font-weight: 700; color: var(--muted); }
+.md-page .iv-sum-cell > b { font-family: Manrope, "Segoe UI", sans-serif; font-size: 30px; font-weight: 800;
+  line-height: 1.05; letter-spacing: -.015em; color: var(--text); font-variant-numeric: tabular-nums; }
+.md-page .iv-sum-cell.foe { align-items: flex-end; text-align: right; }
+.md-page .iv-sum-cell.mid { align-items: center; text-align: center; border-inline: 1px solid var(--line); }
+.md-page .iv-sum-cell.mid > b { font-size: 23px; }
+.md-page .iv-sum-cell.mid > b.is-behind { color: #b23c3c; }
+.md-page .iv-sum-cell.mid > b.is-ahead { color: #1f6fcf; }
+.md-page .iv-sum-cell.mid > small { font-size: 13px; font-weight: 700; color: var(--quiet); }
+.md-page .iv-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.md-page .iv-dot.own { background: var(--md-own-ink); }
+.md-page .iv-dot.foe { background: var(--md-enemy-ink); }
+
+/* 主表：表头一条，分期贴着列；数字墨色，条只表示量级 */
+.md-page .iv-table { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--paper); }
+.md-page .iv-head, .md-page .iv-row { display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) minmax(0, 1fr) 132px; gap: 14px; align-items: center; }
+.md-page .iv-head { padding: 11px 16px 12px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.md-page .iv-h-lane, .md-page .iv-h-diff { font-size: 13.5px; font-weight: 700; color: #5a6b7c; }
+.md-page .iv-h-diff { text-align: center; }
+.md-page .iv-h-group { display: flex; flex-direction: column; gap: 6px; }
+.md-page .iv-h-group > b { display: flex; align-items: center; justify-content: center; gap: 7px;
+  font-size: 15px; font-weight: 700; color: #2b3d4f; }
+.md-page .iv-h-phases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  width: min(520px, 100%); margin-inline: auto; }
+.md-page .iv-h-phases i { font-style: normal; font-size: 13px; font-weight: 700; letter-spacing: 0;
+  color: #5a6b7c; text-align: center; white-space: nowrap; }
+.md-page .iv-row { padding: 10px 16px; border-top: 1px solid #f0f4f8; }
+.md-page .iv-row:first-of-type { border-top: 0; }
+.md-page .iv-lane { font-size: 15px; font-weight: 700; color: #2b3d4f; }
+.md-page .iv-cells { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  width: min(520px, 100%); margin-inline: auto; }
+.md-page .iv-cell { display: grid; justify-items: center; gap: 5px; }
+.md-page .iv-cell > b { font-family: Manrope, "Segoe UI", sans-serif; font-size: 18px; font-weight: 700;
+  line-height: 1.1; color: var(--text); font-variant-numeric: tabular-nums; }
+/* 0 是真实秒数、不是占位：原来 #b0bdc9 在白底上几乎看不见。
+   用 --muted 压住它不抢墨色数字的视觉，又比「—」(--quiet) 略重，
+   让「真 0」和「缺位置」一眼分得开。 */
+.md-page .iv-cell.is-zero > b { color: var(--muted); font-weight: 600; }
+.md-page .iv-cell.is-empty > b { color: var(--quiet); }
+.md-page .iv-meter { display: block; width: 100%; max-width: 64px; height: 4px; border-radius: 2px;
+  background: #f1f5f9; overflow: hidden; }
+.md-page .iv-meter > em { display: block; height: 100%; border-radius: 2px; background: #a9c3dd; }
+.md-page .iv-cells.foe .iv-meter > em { background: #dcaeae; }
+.md-page .iv-diff { text-align: center; font-size: 14px; font-weight: 700; color: #5a6b7c;
+  padding: 5px 4px; border-radius: 7px; }
+.md-page .iv-diff.is-worst { color: #b23c3c; background: #fbf0f0; font-weight: 800; }
+.md-page .iv-diff.is-best { color: #1f6fcf; background: #eef5ff; font-weight: 800; }
+.md-page .iv-diff.is-na { color: var(--quiet); font-weight: 600; }
+.md-page .iv-note { margin: 12px 2px 0; font-size: 15px; font-weight: 700; color: var(--text); }
+.md-page .iv-note b { font-weight: 800; }
+.md-page .iv-note-caveat { margin-left: 6px; font-size: 13px; font-weight: 600; color: var(--quiet); }
+
+@media (max-width: 900px) {
+  .md-page .iv-head { display: none; }
+  .md-page .iv-row { grid-template-columns: 62px minmax(0, 1fr) minmax(0, 1fr) 100px; gap: 8px; }
+  .md-page .md-invasion .iv-bar { position: static; margin-bottom: 10px; }
+}
+
+/* ── 事件时间轴：24px 阶段带 + 6 泳道竖线 + 图标胶囊 + 跟随鼠标的卡片 ──
+   2026-11-19：胶囊按实际像素宽度分层（JS 排层），轨道加高到 330px；
+   浮层改 position:fixed，彻底修掉「悬停卡片跑到页面最上面」。 */
+.md-timeline { display: flex; flex-direction: column; gap: 16px; position: relative; }
+.tl-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 14px;
+  background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+.tl-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: var(--text); }
+.tl-legend img { width: 22px; height: 22px; object-fit: contain; }
+.tl-legend em { font-style: normal; }
+.tl-legend b { font-family: Manrope,"Segoe UI",sans-serif; font-size: 14px; font-weight: 800; color: #25384a; }
+.tl-legend b.off { font-family: inherit; font-size: 10.5px; color: #a8b5c0; font-weight: 600; }
+.tl-legend .unused { opacity: .55; }
+.tl-axis { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px 12px;
+  box-shadow: 0 6px 18px -14px rgba(24,48,72,.3); }
+.tl-head { display: flex; align-items: baseline; justify-content: space-between; }
+.tl-head b { font-size: 16px; font-weight: 800; color: var(--text); }
+.tl-head span { font-size: 12px; color: var(--muted); }
+.tl-head i.own { color: var(--md-own-ink); font-style: normal; font-weight: 800; }
+.tl-head i.foe { color: var(--md-enemy-ink); font-style: normal; font-weight: 800; }
+.tl-ticks { position: relative; height: 18px; margin: 10px 62px 0; }
+.tl-ticks span { position: absolute; transform: translateX(-50%); font-size: var(--fs-micro); color: var(--muted);
+  font-family: Manrope,"Segoe UI",sans-serif; font-weight: 600; white-space: nowrap; }
+.tl-track { position: relative; height: 330px; margin: 0 62px 4px; }
+.tl-band { position: absolute; top: 150px; left: 0; right: 0; height: 26px; border-radius: 13px;
+  display: flex; overflow: hidden; box-shadow: 0 3px 10px -3px rgba(30,60,90,.25); }
+.tl-seg { font-size: var(--fs-micro); font-weight: 800; display: flex; align-items: center; justify-content: center;
+  gap: 6px; flex: none; overflow: hidden; white-space: nowrap; }
+.tl-seg em { font-style: normal; font-size: var(--fs-micro); font-weight: 700; }
+.tl-seg.s1 { background: linear-gradient(90deg,#dbeaff,#eaf3ff); color: #2f6fbf; }
+.tl-seg.s2 { background: linear-gradient(90deg,#eef2f6,#f4f6f9); color: #6b7b8b; }
+.tl-seg.s3 { background: linear-gradient(90deg,#fdeeee,#f9dede); color: #c34a4a; }
+.tl-ev { position: absolute; top: 0; width: 88px; transform: translateX(-50%); height: 330px;
+  cursor: pointer; outline: none; }
+.tl-cap { position: absolute; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
+  padding: 3px 10px 3px 3px; background: #fff; border: 1.5px solid #e6edf2; border-radius: 999px;
+  box-shadow: 0 4px 14px -5px rgba(24,48,72,.4); z-index: 2; transition: transform .12s; }
+.tl-ev:hover .tl-cap, .tl-ev:focus .tl-cap { transform: translateX(-50%) scale(1.08); }
+.tl-ev.own .tl-cap { border-color: #bcd8f7; background: linear-gradient(180deg,#fff,#f6faff); }
+.tl-ev.foe .tl-cap { border-color: #f3cfcf; background: linear-gradient(180deg,#fff,#fff7f7); }
+.tl-ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: linear-gradient(145deg,#e8f2ff,#d7e8fb); }
+.tl-ev.foe .tl-ic { background: linear-gradient(145deg,#fdecec,#f9dede); }
+.tl-ic img { width: 24px; height: 24px; object-fit: contain; }
+.tl-time { font-family: Manrope,"Segoe UI",sans-serif; font-size: 13.5px; font-weight: 800; color: #33495c; }
+.tl-stem { position: absolute; left: 50%; width: 2.5px; transform: translateX(-50%); }
+.tl-ev.own .tl-stem { background: linear-gradient(#6aa6e6,#2f7fe0); }
+.tl-ev.foe .tl-stem { background: linear-gradient(#e39b9b,#d24a4a); }
+/* 六条泳道：u=带上方、d=带下方；0/1/2 越远越外。锚点在阶段带中心 y=163。 */
+.tl-ev.u0 .tl-stem { bottom: 163px; height: 38px; }
+.tl-ev.u1 .tl-stem { bottom: 163px; height: 74px; }
+.tl-ev.u2 .tl-stem { bottom: 163px; height: 110px; }
+.tl-ev.d0 .tl-stem { top: 163px; height: 38px; }
+.tl-ev.d1 .tl-stem { top: 163px; height: 74px; }
+.tl-ev.d2 .tl-stem { top: 163px; height: 110px; }
+.tl-ev.u0 .tl-cap { bottom: 201px; } .tl-ev.u1 .tl-cap { bottom: 237px; } .tl-ev.u2 .tl-cap { bottom: 273px; }
+.tl-ev.d0 .tl-cap { top: 201px; } .tl-ev.d1 .tl-cap { top: 237px; } .tl-ev.d2 .tl-cap { top: 273px; }
+.tl-stem::after { content: ''; position: absolute; left: 50%; width: 9px; height: 9px; border-radius: 50%;
+  background: #fff; border: 2.5px solid #2f7fe0; transform: translateX(-50%); z-index: 1; }
+.tl-ev.foe .tl-stem::after { border-color: #d24a4a; }
+.tl-ev.u0 .tl-stem::after, .tl-ev.u1 .tl-stem::after, .tl-ev.u2 .tl-stem::after { bottom: 0; }
+.tl-ev.d0 .tl-stem::after, .tl-ev.d1 .tl-stem::after, .tl-ev.d2 .tl-stem::after { top: 0; }
+/* 悬停卡片：fixed 跟随鼠标，限制在视口内 */
+.tl-pop { position: fixed; left: 0; top: 0; width: 248px; z-index: 60; background: #fff;
+  border: 1px solid #dbe4e9; border-radius: 12px; padding: 14px 15px;
+  box-shadow: 0 16px 40px rgba(20,48,72,.26); pointer-events: none; }
+.tl-pop[hidden] { display: none !important; }
+.tl-pop-head { display: flex; gap: 8px; align-items: center; }
+.tl-pop-head img { width: 30px; height: 30px; object-fit: contain; flex: none; }
+.tl-pop-head span { font-size: 12px; color: var(--muted); font-weight: 700; }
+.tl-pop-head b { display: block; font-size: 16px; color: var(--text); }
+.tl-pop-side { margin: 8px 0 0; display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: var(--fs-micro); font-weight: 800; }
+.tl-pop-side.own { color: var(--md-own-ink); background: var(--md-own-soft); border: 1px solid #c5dcf7; }
+.tl-pop-side.foe { color: var(--md-enemy-ink); background: var(--md-enemy-soft); border: 1px solid #f0cccc; }
+.tl-pop-note { font-size: var(--fs-micro); color: var(--muted); margin-top: 7px; }
+.tl-pop-parts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tl-pop-parts .tl-who { display: flex; align-items: center; gap: 5px; padding: 3px 8px 3px 3px;
+  border: 1px solid #e6edf2; border-radius: 999px; background: #fafcfe; }
+.tl-pop-parts .tl-face { width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
+  object-position: top center; border: 0; flex: none; }
+.tl-pop-parts .tl-who em { font-style: normal; font-size: var(--fs-micro); font-weight: 700; color: var(--muted); }
+
+/* ── 卡片横向滑动（BP复盘 / 对位压制 / 克制命中 / 组合得失）───────────
+   原生滚动 + scroll-snap，只约束横向 overscroll，保留纵向页面滚动。
+   遵循：scroll-snap 为 Baseline Widely，可直接使用；overscroll-behavior-x
+   为渐进增强，不支持时退化为普通横滑。 */
+.md-page .md-mu-grid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  padding: 4px 2px 12px;
+  scrollbar-width: thin;
+}
+/* 只有对位压制是「一排卡横着滑」，才需要定宽。
+   克制命中（.md-counters）是「小标题 + 卡片滑轨」上下排，
+   组合得失（.md-broken）是两栏网格（style.css 里定义），都不能再被拉成 flex 行、也不该定宽。 */
+.md-page .md-mu-grid > * {
+  flex: 0 0 300px;
+  min-width: 300px;
+  max-width: 300px;
+  scroll-snap-align: start;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .md-page .md-mu-grid { scroll-behavior: smooth; }
+}
+/* 卡片第一视觉：胜率/关键数值放大居中 */
+.md-page .md-mu-card { padding: 14px; }
+.md-page .md-mu-card .md-mu-str { font-size: 18px; font-weight: 800; }
+.md-page .md-mu-card .md-mu-str.own { color: var(--md-own-ink); }
+.md-page .md-mu-card .md-mu-str.foe { color: var(--md-enemy-ink); }
+
+/* ── 赛训组组合池：口径标记 + 三人体系命中横幅（2026-11-21）────────
+   全部取 .md-page 上的主题 token（浅色 / 深色各有一套），不写死颜色；
+   命中用头像 + 文字传达，不只靠背景色区分状态。 */
+.md-page .md-kplhit-scope { display: inline-block; margin: 0 0 10px; padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, transparent); border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  color: var(--accent-ink, var(--accent)); font-size: 11px; font-weight: 800; }
+.md-page .cp-trio-hit { display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+  margin: 0 0 12px; padding: 10px 14px;
+  border: 1px solid var(--accent); border-inline-start-width: 4px; border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper)); }
+.md-page .cp-trio-faces { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.md-page .cp-trio-face .portrait { width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid var(--line-strong); }
+.md-page .cp-trio-copy { min-width: 0; color: var(--text); font-size: 13px; line-height: 1.5; }
+.md-page .cp-trio-copy b { color: var(--accent-ink, var(--accent)); font-weight: 800; }
+.md-page .cp-trio-copy .kq-strength { margin-inline-start: 6px; }
+.md-page .cp-trio-copy small { display: block; color: var(--muted); font-size: 11px; }
+/* 命中行小标签复用 .kq-*，这里只保证它们在卡片顶栏里不挤坏两端对齐。 */
+.md-page .cc-kinds { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
+
+/* ── 双方阵容扩大 + 出装进阵容板块（模块五 2026-11-21）────────────────
+   竖排英雄头像/名字 + 横向一排装备；grid 定五人骨架，装备行 flex 单行不折，
+   窄屏横向滚动保留购买顺序。图标缺失时装备名文字占位，名始终可见。 */
+.md-page .md-lineup-builds { display: grid; gap: 10px; padding-block: 4px 2px; }
+.md-page .md-lineup-camp { min-width: 0; display: grid; gap: 10px; padding: 12px 14px 14px;
+  border: 1px solid var(--line); border-inline-start: 3px solid var(--md-gold); border-radius: 10px;
+  background: var(--paper); }
+.md-page .md-lineup-camp.foe { border-inline-start-color: var(--md-teal); }
+.md-page .md-lineup-camp-title { display: flex; align-items: baseline; justify-content: space-between;
+  flex-wrap: wrap; gap: 4px 10px; }
+.md-page .md-lineup-camp-title b { color: var(--md-own-ink); font-size: 13px; font-weight: 800; }
+.md-page .md-lineup-camp.foe .md-lineup-camp-title b { color: var(--md-enemy-ink); }
+.md-page .md-lineup-camp-title span { color: var(--muted); font-size: 11px; }
+.md-page .md-lineup-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.md-page .md-lineup-player { display: grid; gap: 8px; min-width: 0; padding: 10px 8px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.md-page .md-lineup-head { display: grid; justify-items: center; gap: 3px; min-width: 0; text-align: center; }
+.md-page .md-lineup-head .portrait { display: block; inline-size: 48px; block-size: 48px;
+  border: 1px solid var(--line-strong); border-radius: 10px; }
+.md-page .md-lineup-head b, .md-page .md-lineup-head small { inline-size: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-page .md-lineup-head b { font-size: 12.5px; font-weight: 800; }
+.md-page .md-lineup-head small { font-size: 10.5px; }
+.md-page .md-lineup-head em { color: var(--muted); font-size: 9.5px; font-style: normal; }
+.md-page .md-lineup-items { display: flex; flex-wrap: nowrap; gap: 4px; min-width: 0;
+  overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-gutter: stable; padding-block-end: 3px; }
+.md-page .md-lineup-item { flex: 0 0 auto; inline-size: 38px; display: grid; justify-items: center; gap: 2px; }
+.md-page .md-lineup-item img { display: block; inline-size: 30px; block-size: 30px; aspect-ratio: 1;
+  border: 1px solid var(--line); border-radius: 6px; }
+.md-page .md-lineup-item > small { inline-size: 100%; color: var(--muted); font-size: 9px;
+  line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.md-page .md-lineup-item.is-text > i { display: grid; place-items: center; inline-size: 30px;
+  block-size: 30px; border-radius: 6px; background: var(--line); color: var(--text);
+  font-size: 10px; font-style: normal; font-weight: 800; }
+.md-page .md-lineup-noitem { color: var(--quiet); font-size: 10px; }
+.md-page .md-lineup-note { margin-block: 0; color: var(--muted); font-size: 10.5px; }
+.md-page .md-panel > .md-lineup-builds { padding: 12px 14px 2px; }
+@media (max-width: 1180px) { .md-page .md-lineup-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .md-page .md-lineup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

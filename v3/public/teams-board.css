@@ -11,7 +11,9 @@
 
 /* ── 0. 页面骨架 ───────────────────────────────────────────────── */
 .page.tb-page {
-  --tb-rail-w: clamp(304px, 23.5vw, 368px);
+  /* 索引栏略放宽：原来「本队 65.4%」+ 改名键把文字列挤到 75px，
+     队名和「· 25 局」被 ellipsis 吃掉；加宽后文字列约 128px，可完整显示。 */
+  --tb-rail-w: clamp(320px, 25.5vw, 400px);
   --tb-gap: 22px;
   --tb-ink-text: #f2fbf7;
   --tb-ink-muted: rgba(226, 247, 239, .70);
@@ -408,16 +410,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tb-item-rate { display: grid; justify-items: stretch; inline-size: 92px; }
+.tb-item-tags { display: flex; flex-wrap: wrap; gap: 3px; }
+.tb-item-tags:empty { display: none; }
+.tb-item-tag {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.5;
+}
+.tb-item-tag.is-kpl { border-color: #f79009; background: #fffaeb; color: #b54708; }
+.tb-item-tag.is-jia { border-color: #12b76a; background: #ecfdf3; color: #027a48; }
+/* 胜率列收紧 92→78px、数字 18→16px：仍比队名字号大，但把宽度让给姓名/局数。 */
+.tb-item-rate { display: grid; justify-items: stretch; inline-size: 78px; }
 .tb-item-rate b {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(44px, auto);
+  grid-template-columns: minmax(0, 1fr) minmax(40px, auto);
   align-items: baseline;
   gap: 5px;
   justify-items: end;
   color: var(--text);
   font-family: Manrope, var(--font);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 750;
   line-height: 1.2;
   letter-spacing: -.02em;

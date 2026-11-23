@@ -509,6 +509,35 @@ def _evidence(item, note, *, t=None, approx=False):
     }
 
 
+def _pair_stats(left_label, left_wins, left_total, right_label, right_wins,
+                right_total, *, unit='局'):
+    """展开卡里并排的两组条件胜率：label + 百分比 + 分子分母。
+
+    两组都必须是同一口径（同一批局或同一批团战），否则「低 37 个百分点」
+    就是拿不同样本硬比。没有样本的一侧给「—」，不编造 0%。
+    """
+    def side(label, wins, total):
+        rate = _rate(wins, total) if total else None
+        return {
+            'label': label,
+            'value': _fmt_pct(rate) if rate is not None else '—',
+            'fraction': f'{wins} 胜 / {total} {unit}' if total else '—',
+            'ratio': rate,
+        }
+    return {'left': side(left_label, left_wins, left_total),
+            'right': side(right_label, right_wins, right_total)}
+
+
+STATUS_BY_TONE = {
+    'down': '重点复盘', 'up': '有所改善', 'flat': '持续观察', 'none': '持续观察',
+}
+CATEGORY_BY_ID = {
+    'fight_arrival': '团战协同', 'fight_trade': '团战交换',
+    'roster': '发育路', 'lead_hold': '领先兑现', 'comeback': '优势保持',
+    'objective': '龙塔资源', 'comp': '阵容体系', 'coverage': '数据覆盖',
+}
+
+
 def _finish(candidate, ctx, *, deep):
     candidate['primary_destination'] = f'#match/{quote(str(candidate["evidence"][0]["game"]))}' \
         if candidate['evidence'] else None
@@ -556,8 +585,17 @@ def _cand_lead_hold(ctx):
         evidence.append(_evidence(
             {'seq': str(game['game']), 'label': _game_label(game.get('date'), game.get('opponentName'), game['game'])},
             f"10 分钟领先 {int(game.get('leadAt10') or 0):,}，最终告负", t=600, approx=True))
+    # 两种条件对位：十分钟领先 ≥1000 的局 vs 未达到的局，各自最终胜率。
+    other = [game for game in ctx['cur_advantage']
+             if game.get('leadAt10') is None or game['leadAt10'] < LEAD_AT10]
+    other_wins = sum(1 for game in other if game.get('result') == 'win')
+    cur_lost = cur['total'] - cur['wins']
+    prev_lost = prev['total'] - prev['wins']
     if prev['total'] == 0:
         title = '本批十分钟领先后的兑现情况'
+    elif cur_lost > 0 and cur_lost == prev_lost:
+        # 两期未兑现局数相同，不能只凭胜率变化写成「丢掉优势的局变多了」。
+        title = f"十分钟领先后，仍有 {cur_lost} 局未兑现"
     else:
         title = {'up': '十分钟领先后的兑现变好了',
                  'down': '十分钟领先后，丢掉优势的局变多了',
@@ -582,6 +620,14 @@ def _cand_lead_hold(ctx):
         'severity': 0.0 if cur['rate'] is None else max(0.0, 100 - cur['rate']),
         'evidence': evidence,
         'limitation': f"样本 {cur['total']} 局；经济点为约 30 秒一个的近似值，仅作本批观察。",
+        'pair': _pair_stats('十分钟领先局胜率', cur['wins'], cur['total'],
+                            '未建立领先局胜率', other_wins, len(other)),
+        'foldSummary': f"领先 ≥1000 共 {cur['total']} 局，赢下 {cur['wins']} 局 · 最近本批对比",
+        'stats': [
+            {'label': '本期兑现', 'value': f"{cur['wins']}/{cur['total']}"},
+            {'label': '上期兑现', 'value': f"{prev['wins']}/{prev['total']}" if prev['total'] else '—'},
+        ],
+        'advice': '回看丢掉优势的局，定位 10 分钟后第一次掉点的时间和资源交换，再决定是否继续压塔。',
     }
     return _finish(candidate, ctx, deep='matches')
 
@@ -710,13 +756,9 @@ def _cand_fight_arrival(ctx):
         counter.append(_evidence(
             {'seq': row['game'], 'label': row['label']},
             f"少 {abs(int(row['advStart']))} 人还赢下团战", t=row['startSec'], approx=False))
-    if prev['decided'] == 0:
-        title = (f"少人接团，胜率低 {cur['gap']:.0f} 个百分点"
-                 if cur['gap'] >= 10 else '人少接团，胜率跟人齐时差不多')
-    else:
-        title = {'down': '开局人少还硬接团的情况变多了',
-                 'up': '开局人少接团的代价变小了',
-                 'flat': '开局人数落后的团战胜率基本持平'}.get(tone, '开局人数落后的团战胜率变化')
+    # 本条只比较同一批团战里「少人 / 齐人」两种口径的胜率，不拿频次变化当结论。
+    title = (f"少人接团胜率明显低于齐人团"
+             if cur['gap'] >= 10 else '少人接团与齐人接团胜率接近')
     late_text = f"{cur['lateRate']:.1f}%" if cur['lateRate'] is not None else '—'
     conclusion = (f"本期 {len(cur['behind'])} 波团战开打时就少人，赢 {cur['behindWins']} 波；"
                   f"人齐的 {len(cur['even'])} 波赢 {cur['evenWins']} 波，"
@@ -744,6 +786,16 @@ def _cand_fight_arrival(ctx):
         'severity': max(0.0, cur['gap']),
         'evidence': evidence, 'counterexamples': counter,
         'limitation': '团战数据来自回放，只描述到位与结果的关系，不判断指挥失误；仅作本批观察。',
+        'pair': _pair_stats('少人接团胜率', cur['behindWins'], len(cur['behind']),
+                            '人员齐整胜率', cur['evenWins'], len(cur['even']), unit='波'),
+        'foldSummary': f"开局少人团 {len(cur['behind'])} 波，人齐团 {len(cur['even'])} 波 · 最近本批对比",
+        'stats': [
+            {'label': '少人接团', 'value': f"{cur['behindRate']:.1f}%",
+             'title': f"{cur['behindWins']} 胜 / {len(cur['behind'])} 波"},
+            {'label': '齐人接团', 'value': f"{cur['evenRate']:.1f}%",
+             'title': f"{cur['evenWins']} 胜 / {len(cur['even'])} 波"},
+        ],
+        'advice': '优先检查开团前的人员位置、支援距离，以及关键队员未到场时的开团决策。',
     }
     return _finish(candidate, ctx, deep='matches')
 
@@ -867,6 +919,17 @@ def _cand_objective(ctx):
         diff = (cur['avg'] or 0) - (prev['avg'] or 0)
         delta = (f'每局多拿 {diff:.1f} 个' if diff > 0.05
                  else f'每局少拿 {-diff:.1f} 个' if diff < -0.05 else '每局数量持平')
+    ahead_wins = ahead_total = behind_wins = behind_total = 0
+    for row in cur['rows']:
+        result = row['entry'].get('result')
+        if result not in ('win', 'loss'):
+            continue
+        if row['own'] >= row['enemy']:
+            ahead_total += 1
+            ahead_wins += result == 'win'
+        else:
+            behind_total += 1
+            behind_wins += result == 'win'
     behind = sorted([row for row in cur['rows'] if row['own'] < row['enemy']],
                     key=lambda row: (row['own'] - row['enemy'], row['entry']['date']))
     evidence = []
@@ -882,6 +945,8 @@ def _cand_objective(ctx):
                 row['entry'], f"我方 {row['own']} 个、对手 {row['enemy']} 个资源/塔"))
     if prev['games'] == 0:
         title = '本批资源/塔的获取情况'
+    elif ahead_total < behind_total:
+        title = '本期龙塔争夺占优局数偏少'
     else:
         title = {'up': '龙塔争夺的收益变好了',
                  'down': '龙塔争夺的收益变差了',
@@ -908,6 +973,14 @@ def _cand_objective(ctx):
         'severity': max(0.0, (cur['enemy'] - cur['own']) / total * 100) if total else 0.0,
         'evidence': evidence, 'counterexamples': counter,
         'limitation': '资源/建筑来自回放关键事件；敌方阵营未知的事件不计入双方；仅作本批观察。',
+        'pair': _pair_stats('我方龙塔占优局胜率', ahead_wins, ahead_total,
+                            '我方龙塔落后局胜率', behind_wins, behind_total),
+        'foldSummary': f"我方龙塔占优 {ahead_total} 局、落后 {behind_total} 局 · 最近本批对比",
+        'stats': [
+            {'label': '占优局', 'value': f"{ahead_total}/{cur['games']}"},
+            {'label': '落后局', 'value': f"{behind_total}/{cur['games']}"},
+        ],
+        'advice': '对照落后局的龙团时间点，先确认是视野缺失还是决策犹豫，再安排提前站位。',
     }
     return _finish(candidate, ctx, deep='matches')
 
@@ -1048,12 +1121,38 @@ def _cand_roster(ctx):
         evidence.append(_evidence(entry, note))
         if len(evidence) >= 2:
             break
+    # 两种条件对位：发育路单局死亡 ≥3 的局 vs 不足 3 次的局，各自胜率。
+    deaths_by_seq = {}
+    for row in death_rows:
+        seq = str(row.get('seq') or '')
+        deaths_by_seq[seq] = max(deaths_by_seq.get(seq, 0), row.get('deaths') or 0)
+    worst = max(death_rows, key=lambda row: row.get('deaths') or 0) if death_rows else None
+    heroes = []
+    for row in sorted(death_rows, key=lambda item: -(item.get('deaths') or 0)):
+        hero = row.get('hero')
+        if hero and hero not in heroes:
+            heroes.append(hero)
+        if len(heroes) >= 4:
+            break
+    high_wins = high_total = low_wins = low_total = 0
+    for entry in ctx['cur']:
+        if entry.get('result') not in ('win', 'loss'):
+            continue
+        if deaths_by_seq.get(str(entry.get('seq') or ''), 0) >= 3:
+            high_total += 1
+            high_wins += entry['result'] == 'win'
+        else:
+            low_total += 1
+            low_wins += entry['result'] == 'win'
+    diff_games = len(prev_seqs) - len(seqs) if prev_games else 0
     if not prev_games:
         title = f"{len(seqs)} 局里发育路一局死 3 次以上"
+    elif diff_games > 0:
+        title = f'发育路高死亡对局减少 {diff_games} 场'
+    elif diff_games < 0:
+        title = f'发育路高死亡对局增加 {-diff_games} 场'
     else:
-        title = {'down': '发育路死得多的局变多了',
-                 'up': '发育路死得多的局变少了',
-                 'flat': '发育路死亡的局数基本持平'}.get(tone, '发育路死亡局数的变化')
+        title = '发育路高死亡对局数基本持平'
     conclusion = (f"本期 {games} 局里有 {len(seqs)} 局，发育路一局死 3 次以上"
                   f"（共 {len(death_rows)} 人次）；"
                   + (f"{ctx['prev_word']} {prev_games} 局里 {len(prev_seqs)} 局。"
@@ -1075,6 +1174,21 @@ def _cand_roster(ctx):
         'severity': cur_share,
         'evidence': evidence,
         'limitation': '只描述分路死亡数量，不评价选手；仅作本批观察。',
+        'pair': _pair_stats('发育路高死亡局胜率', high_wins, high_total,
+                            '发育路低死亡局胜率', low_wins, low_total),
+        'player': ({
+            'name': (worst.get('nickname') or worst.get('name')
+                     or worst.get('hero') or '发育路'),
+            'hero': worst.get('hero') or '', 'lane': '发育路',
+            'deaths': worst.get('deaths'),
+        } if death_rows else None),
+        'foldSummary': f"单局死亡 ≥3 次共 {len(death_rows)} 人次，最近本批对比",
+        'stats': [
+            {'label': '本期高死亡', 'value': f"{len(seqs)}/{games} 局"},
+            {'label': '上期高死亡', 'value': f"{len(prev_seqs)}/{prev_games} 局" if prev_games else '—'},
+        ],
+        'advice': '回看高死亡局的死亡回放，先看被抓前的兵线位置与视野，再定保护或换线策略。',
+        'heroes': heroes,
     }
     return _finish(candidate, ctx, deep='players')
 
@@ -1226,6 +1340,7 @@ def select_findings(candidates, *, exclude_kinds=()):
             'title': item['title'],
             'conclusion': item['conclusion'],
             'numbers': list(item['numbers'])[:2],
+            'stats': list(item.get('stats') or [])[:2],
             'n': item['sample'],
             'enough': bool(item['enough']),
             'evidence': item['evidence'][:2],
@@ -1233,6 +1348,14 @@ def select_findings(candidates, *, exclude_kinds=()):
             'primary_destination': item['primary_destination'],
             'deep_destination': item['deep_destination'],
             'limitation': item['limitation'],
+            'statusTag': ('样本较少' if not item['enough']
+                          else STATUS_BY_TONE.get(item['tone'], '持续观察')),
+            'categoryTag': CATEGORY_BY_ID.get(item['id'], '本批观察'),
+            'foldSummary': item.get('foldSummary') or item.get('note') or '',
+            'advice': item.get('advice') or '',
+            'pair': item.get('pair'),
+            'player': item.get('player'),
+            'heroes': list(item.get('heroes') or []),
         })
         kinds.add(item['kind'])
         themes.add(item['theme'])
@@ -1325,19 +1448,33 @@ def _game_stats(game, panel=None):
     own_num = match_facts.CAMP_CODE_REV.get(str(game.get('ownCamp') or ''))
     deaths = sum(1 for event in (game.get('deaths') or [])
                  if own_num and camp_of.get(str(event.get('objID') or '')) == own_num)
-    own = [item for item in (game.get('players') or []) if item.get('side') == 'own']
-    own.sort(key=lambda item: LANE_ORDER.get(item.get('lane'), 9))
     icons = _hero_icon_map()
-    roster_players = []
-    for item in own:
-        hero = str(item.get('hero') or '')
-        if not hero:
-            continue
-        roster_players.append({
-            'name': hero,
-            'lane': str(item.get('lane') or ''),
-            'icon': icons.get(hero, ''),
-        })
+
+    def roster_of(side):
+        players = [item for item in (game.get('players') or [])
+                   if item.get('side') == side]
+        players.sort(key=lambda item: LANE_ORDER.get(item.get('lane'), 9))
+        out = []
+        for item in players:
+            hero = str(item.get('hero') or '')
+            if not hero:
+                continue
+            final = item.get('final') or {}
+            out.append({
+                'name': hero,
+                'player': str(item.get('nickname') or ''),
+                'lane': str(item.get('lane') or ''),
+                'icon': icons.get(hero, ''),
+                'kills': final.get('kills'),
+                'deaths': final.get('deaths'),
+                'assists': final.get('assists'),
+                'gold': final.get('totalGold'),
+                'participation': final.get('participation'),
+            })
+        return out
+
+    roster_players = roster_of('own')
+    foe_players = roster_of('enemy')
     peak = max(own_diff) if own_diff else None
     low = min(own_diff) if own_diff else None
     # 领先被打回去：从最高点跌到最低点的金额（没有经济曲线就是 0）
@@ -1364,6 +1501,7 @@ def _game_stats(game, panel=None):
         'towersLost': towers_lost,
         'roster': ' · '.join(item['name'] for item in roster_players),
         'rosterPlayers': roster_players,
+        'foePlayers': foe_players,
     }
 
 
@@ -1455,9 +1593,13 @@ def _own_heroes(entries):
 
 
 # ---------------------------------------------------------------------------
-# 首页 8 项赛训指标（6 固定 + 2 动态）
+# 首页赛训指标：基本盘 + 比率 + 逐条资源控制率
 # ---------------------------------------------------------------------------
 DRAGON_NAMES = ('暗影主宰', '暴君', '暗影暴君')
+# 逐条展示的资源名。旧版把它们合成「关键龙控制率」，看不出到底是哪种龙。
+OBJECTIVE_NAMES = ('暴君', '暗影暴君', '主宰', '暗影主宰')
+OBJECTIVE_MID = {'暴君': 'tyrant_rate', '暗影暴君': 'elder_dragon_rate',
+                 '主宰': 'baron_rate', '暗影主宰': 'elder_baron_rate'}
 DYNAMIC_VALUE = {'dragon': 40, 'first_tower': 30, 'behind_comeback': 20, 'lead_drawdown': 10}
 
 
@@ -1568,6 +1710,62 @@ def _objective_summary(entries):
     return dragons, towers
 
 
+def _objective_by_name(entries):
+    """逐条资源的归属统计：{名称: {'own': n, 'enemy': n}}。
+
+    与 _objective_summary 的合并口径分开，避免改到「关键龙控制率」的历史口径。
+    """
+    out = {name: {'own': 0, 'enemy': 0} for name in OBJECTIVE_NAMES}
+    for item in entries:
+        game = item.get('game')
+        if not game:
+            continue
+        for event in match_facts.objective_events(game):
+            name = event.get('name')
+            camp = event.get('camp')
+            if (event.get('kind') == 'resource' and name in out
+                    and camp in ('own', 'enemy')):
+                out[name][camp] += 1
+    return out
+
+
+def _first_blood_summary(entries):
+    """一血归属：每局最早的死亡事件，死的那一方丢掉一血。
+
+    只认阵营明确、有时间戳的死亡事件；一局里找不到任何可判定死亡就不进分母。
+    """
+    own = 0
+    enemy = 0
+    for item in entries:
+        game = item.get('game')
+        if not game:
+            continue
+        own_camp = game.get('ownCamp')
+        if not own_camp:
+            continue
+        side_of = {match_facts.CAMP_CODE_REV.get(own_camp): 'own'}
+        side_of['2' if own_camp == 'blue' else '1'] = 'enemy'
+        earliest = None
+        for death in game.get('deaths') or []:
+            try:
+                seconds = float(death.get('timeSec'))
+            except (TypeError, ValueError):
+                continue
+            side = side_of.get(str(death.get('camp') or ''))
+            if side is None:
+                continue
+            if earliest is None or seconds < earliest[0]:
+                earliest = (seconds, side)
+        if earliest is None:
+            continue
+        # 我方先死 = 对面拿到一血，反之亦然。
+        if earliest[1] == 'own':
+            enemy += 1
+        else:
+            own += 1
+    return {'own': own, 'enemy': enemy}
+
+
 def _peer_rows(entries, panel_only=()):
     """把每局镜头翻到对面，按对手聚合成同口径数据，作为排名基准。
 
@@ -1670,7 +1868,7 @@ def _dynamic_metrics(ctx, entries, prev_entries, at10_rows, prev_at10, has_prev,
                      peers=()):
     """动态两项：先看有效样本是否够，再看赛训价值，不看变化幅度。
 
-    四项候选都生成卡片（没数据就给「本期暂无数据」），保证首页永远是 8 项；
+    四项候选都生成卡片（没数据就给「本期暂无数据」），只取前 2 项；
     排序按「样本达标 > 有样本 > 赛训价值 > 样本量」，变化幅度不参与。
     """
     out = []
@@ -1757,8 +1955,39 @@ def _dynamic_metrics(ctx, entries, prev_entries, at10_rows, prev_at10, has_prev,
     return [card for _, _, card in out]
 
 
+def _objective_metrics(entries, prev_entries, has_prev, link):
+    """一塔率 + 四种资源各自的控制率，全部按「我方拿到 / 总出现数」计。"""
+    out = []
+    cur_towers, prev_towers = _objective_summary(entries), _objective_summary(prev_entries)
+    specs = [('first_tower_rate', '一塔率', cur_towers[1]['own'],
+              cur_towers[1]['own'] + cur_towers[1]['enemy'],
+              prev_towers[1]['own'], prev_towers[1]['own'] + prev_towers[1]['enemy'],
+              '每局第一座防御塔由我方拿到的比例')]
+    cur_by = _objective_by_name(entries)
+    prev_by = _objective_by_name(prev_entries)
+    for name in OBJECTIVE_NAMES:
+        cur, prev = cur_by[name], prev_by[name]
+        specs.append((OBJECTIVE_MID[name], f'{name}控制率', cur['own'],
+                      cur['own'] + cur['enemy'], prev['own'],
+                      prev['own'] + prev['enemy'], f'{name}由我方拿到的比例'))
+    for mid, label, own, total, prev_own, prev_total, note in specs:
+        rate = _pct(own, total) if total else None
+        prev_rate = _pct(prev_own, prev_total) if prev_total else None
+        out.append(_metric_card(
+            mid=mid, label=label,
+            valueText=f'{own}/{total}' if total else '—',
+            valueSub=_fmt_pct(rate) if rate is not None else None,
+            prevValueText=(f'{prev_own}/{prev_total}（{_fmt_pct(prev_rate)}）'
+                           if prev_total and prev_rate is not None else None),
+            sample=total, prevSample=prev_total, total=total,
+            change=(rate - prev_rate) if rate is not None and prev_rate is not None else None,
+            changeKind='pp', higherIsBetter=True, unit='个',
+            note=note, href=link(), enough=total >= MIN_SAMPLE, share=rate))
+    return out
+
+
 def build_scrim_metrics(ctx, record, panel_only=()):
-    """6 项固定 + 2 项动态。仅终局面板的局只进战绩，不进任何时间轴指标。"""
+    """基本盘 + 比率 + 资源控制率。仅终局面板的局只进战绩，不进时间轴指标。"""
     entries = list(ctx.get('cur') or [])
     prev_entries = list(ctx.get('prev') or [])
     panel_only = list(panel_only or ())
@@ -1785,8 +2014,8 @@ def build_scrim_metrics(ctx, record, panel_only=()):
         wins = sum(1 for item, _ in decided if item.get('result') == 'win')
         return lead, decided, wins
 
-    lead, lead_decided, lead_wins = lead_stats(at10_rows)
-    prev_lead, prev_lead_decided, prev_lead_wins = lead_stats(prev_at10)
+    lead, _, _ = lead_stats(at10_rows)
+    prev_lead, _, _ = lead_stats(prev_at10)
 
     value = f"{record['wins']} 胜 {record['losses']} 负"
     if record['unknown']:
@@ -1796,9 +2025,6 @@ def build_scrim_metrics(ctx, record, panel_only=()):
 
     lead_rate = _pct(len(lead), len(at10_rows))
     prev_lead_rate = _pct(len(prev_lead), len(prev_at10)) if prev_at10 else None
-    hold_rate = _pct(lead_wins, len(lead_decided))
-    prev_hold_rate = (_pct(prev_lead_wins, len(prev_lead_decided))
-                      if prev_lead_decided else None)
     econ_mean = match_facts.mean([item for _, item in at10_rows])
     prev_econ_mean = match_facts.mean([item for _, item in prev_at10]) if prev_at10 else None
 
@@ -1810,24 +2036,6 @@ def build_scrim_metrics(ctx, record, panel_only=()):
             changeKind='count', higherIsBetter=True,
             note='含仅有终局面板的局；未判定胜负的不进胜率分母',
             href=link(), enough=True, share=record['winRate']),
-        _metric_card(
-            mid='win_rate', label='本期胜率',
-            valueText=(f"{record['wins']}/{record['decided']}"
-                       if record['decided'] else '—'),
-            valueSub=(_fmt_pct(record['winRate'])
-                      if record['winRate'] is not None else None),
-            prevValueText=(f"{prev_record['wins']}/{prev_record['decided']}"
-                           f"（{_fmt_pct(prev_record['winRate'])}）"
-                           if has_prev and prev_record['decided'] else None),
-            sample=record['decided'], prevSample=prev_record['decided'], total=total,
-            change=((record['winRate'] - prev_record['winRate'])
-                    if (has_prev and record['winRate'] is not None
-                        and prev_record['winRate'] is not None) else None),
-            changeKind='pp', higherIsBetter=True,
-            note='已判定胜负的局里赢下的比例',
-            href=link(), enough=record['decided'] >= MIN_SAMPLE,
-            share=record['winRate'],
-            rank=_rank_of('win_rate', record['winRate'], peers)),
         _metric_card(
             mid='lead_rate', label='十分钟领先率',
             valueText=(f"{len(lead)}/{len(at10_rows)}" if at10_rows else '—'),
@@ -1842,22 +2050,6 @@ def build_scrim_metrics(ctx, record, panel_only=()):
             href=link(), enough=len(at10_rows) >= MIN_SAMPLE,
             share=lead_rate,
             rank=_rank_of('lead_rate', lead_rate, peers)),
-        _metric_card(
-            mid='lead_hold_rate', label='十分钟领先兑现率',
-            valueText=(f"{lead_wins}/{len(lead_decided)}" if lead_decided else '—'),
-            valueSub=_fmt_pct(hold_rate) if hold_rate is not None else None,
-            prevValueText=(f"{prev_lead_wins}/{len(prev_lead_decided)}"
-                           f"（{_fmt_pct(prev_hold_rate)}）"
-                           if prev_lead_decided and prev_hold_rate is not None else None),
-            sample=len(lead_decided), prevSample=len(prev_lead_decided),
-            total=len(lead_decided),
-            change=(hold_rate - prev_hold_rate
-                    if (hold_rate is not None and prev_hold_rate is not None) else None),
-            changeKind='pp', higherIsBetter=True,
-            note='10 分钟领先的局最终赢下几局',
-            href=link(), enough=len(lead_decided) >= MIN_SAMPLE,
-            share=hold_rate,
-            rank=_rank_of('lead_hold_rate', hold_rate, peers)),
         _metric_card(
             mid='lead_econ', label='十分钟经济差',
             valueText=_fmt_econ(econ_mean),
@@ -1891,8 +2083,27 @@ def build_scrim_metrics(ctx, record, panel_only=()):
         share=fight_rate,
         rank=_rank_of('fight_rate', fight_rate, peers)))
 
-    metrics.extend(_dynamic_metrics(
-        ctx, entries, prev_entries, at10_rows, prev_at10, has_prev, link, peers)[:2])
+    blood = _first_blood_summary(entries)
+    prev_blood = _first_blood_summary(prev_entries)
+    blood_total = blood['own'] + blood['enemy']
+    prev_blood_total = prev_blood['own'] + prev_blood['enemy']
+    blood_rate = _pct(blood['own'], blood_total)
+    prev_blood_rate = _pct(prev_blood['own'], prev_blood_total) if prev_blood_total else None
+    metrics.append(_metric_card(
+        mid='first_blood_rate', label='一血率',
+        valueText=f"{blood['own']}/{blood_total}" if blood_total else '—',
+        valueSub=_fmt_pct(blood_rate) if blood_rate is not None else None,
+        prevValueText=(f"{prev_blood['own']}/{prev_blood_total}（{_fmt_pct(prev_blood_rate)}）"
+                       if prev_blood_total and prev_blood_rate is not None else None),
+        sample=blood_total, prevSample=prev_blood_total, total=blood_total,
+        change=(blood_rate - prev_blood_rate
+                if (blood_rate is not None and prev_blood_rate is not None) else None),
+        changeKind='pp', higherIsBetter=True,
+        note='每局第一次击杀由我方拿到的比例',
+        href=link(), enough=blood_total >= MIN_SAMPLE,
+        share=blood_rate))
+
+    metrics.extend(_objective_metrics(entries, prev_entries, has_prev, link))
     # 上期局数是本期的 2 倍以上时，「少赢 N 场」只是在比训练量；
     # 战绩卡只保留上期战绩，不再给这个假差值（摘要句已改比胜率）。
     if has_prev and record['decided'] and prev_record['decided']:
@@ -2191,6 +2402,70 @@ def _watch_numbers(field, stats):
     return numbers[:WATCH_NUM_LIMIT]
 
 
+def _watch_review_type(item, stat, field):
+    """一张名片只贴一个复盘类型，不用红绿表达严重程度。"""
+    peak, low = stat.get('peak'), stat.get('low')
+    duration = stat.get('duration') or 0
+    if (isinstance(peak, (int, float)) and peak >= 1000
+            and isinstance(low, (int, float)) and low <= -1000):
+        return '领先转落后'
+    if item.get('result') == 'win' and isinstance(low, (int, float)) and low <= -1000:
+        return '逆风追回'
+    if isinstance(low, (int, float)) and low <= -5000:
+        return '大劣势局'
+    if duration and duration <= 400:
+        return '快速结束'
+    return _watch_field_label(field)
+
+
+def _watch_field_label(field):
+    for key, label, _note, _unit in WATCH_FIELDS:
+        if key == field:
+            return label
+    return field
+
+
+def _watch_problem(field, stat):
+    """一句话说清这局为什么值得复盘，优先讲「怎么变的」而不是最大数值。"""
+    peak, low = stat.get('peak'), stat.get('low')
+    if field in ('deficit', 'giveback', 'gold'):
+        if (isinstance(peak, (int, float)) and peak >= 1000
+                and isinstance(low, (int, float)) and low <= -1000):
+            return f"从领先 {peak:,.0f} 变成落后 {abs(low):,.0f}"
+    return _watch_core(field, stat) or _watch_sentence_tail(stat)
+
+
+def _watch_sentence_tail(stat):
+    low = stat.get('low')
+    if isinstance(low, (int, float)) and low < 0:
+        return f"最多落后 {abs(low):,.0f} 金币"
+    return ''
+
+
+def _watch_review_score(stat):
+    """复盘价值：多维度叠加，不再只按「落后最多」排。"""
+    low, peak = stat.get('low'), stat.get('peak')
+    score = 0.0
+    if isinstance(low, (int, float)) and low < 0:
+        score += abs(low) / 100
+    if isinstance(peak, (int, float)) and isinstance(low, (int, float)) and peak >= 1000 > low:
+        score += 6
+    score += (stat.get('deaths') or 0) * 1.5
+    score += (stat.get('fightLosses') or 0) * 3
+    score += (stat.get('dragonsLost') or 0) * 2
+    score += (stat.get('towersLost') or 0)
+    duration = stat.get('duration') or 0
+    if duration and duration <= 420:
+        score += (420 - duration) / 30
+    at10 = stat.get('at10')
+    if isinstance(at10, (int, float)) and at10 < 0:
+        score += abs(at10) / 200
+    pct = stat.get('damagePct')
+    if isinstance(pct, (int, float)) and pct < 50:
+        score += (50 - pct) / 3
+    return round(score, 2)
+
+
 def _watch_card(item, stat, field, longest, shortest):
     result = item.get('result') if item.get('result') in ('win', 'loss') else None
     lost = result == 'loss'
@@ -2200,6 +2475,7 @@ def _watch_card(item, stat, field, longest, shortest):
         result_tag = '翻盘'
     elif result == 'loss' and isinstance(peak, (int, float)) and peak >= WATCH_COMEBACK_MIN:
         result_tag = '被翻盘'
+    focus = next((item for item in _watch_values(stat) if item['id'] == field), None)
     return {
         'id': f"watch_{item['seq']}_{field}",
         'kind': 'loss' if lost else 'win',
@@ -2213,6 +2489,13 @@ def _watch_card(item, stat, field, longest, shortest):
         'moments': _watch_moments(item, stat, field),
         'rosterText': stat['roster'],
         'rosterPlayers': stat['rosterPlayers'],
+        'foePlayers': stat.get('foePlayers') or [],
+        'problem': _watch_problem(field, stat),
+        'reviewType': _watch_review_type(item, stat, field),
+        'reviewScore': _watch_review_score(stat),
+        'reviewTail': WATCH_TAIL.get(field, ''),
+        'focusLabel': (focus or {}).get('label', ''),
+        'focusValue': (focus or {}).get('value', ''),
         'n': 1,
         'enough': True,
         'evidence': [{'game': item['seq'], 'label': '这局过程', 'note': ''}],
@@ -2221,6 +2504,39 @@ def _watch_card(item, stat, field, longest, shortest):
         'deep_destination': '',
         'limitation': '',
     }
+
+
+def _attach_finding_matches(findings, ctx):
+    """给每条发现补上展开后才用的关联对局：真实阵容、时间、复盘入口。
+
+    标签不在后端读：前端 match-tags.js 已按 data-tag-key 自动填充 .tagrow，
+    这里只给对局唯一 id，保持标签由同一份匹配数据驱动。
+    """
+    entries = list(ctx.get('cur') or [])
+    by_seq = {str(item.get('seq') or ''): item for item in entries}
+    by_label = {}
+    for item in entries:
+        by_label.setdefault(str(item.get('label') or ''), item)
+    for finding in findings:
+        rows = []
+        for evidence in list(finding.get('evidence') or [])[:2]:
+            key = str(evidence.get('game') or '')
+            entry = by_seq.get(key) or by_label.get(str(evidence.get('label') or ''))
+            if not entry:
+                continue
+            stat = _game_stats(entry.get('game') or {}, entry.get('panel'))
+            rows.append({
+                'id': str(entry.get('seq') or key),
+                'label': str(evidence.get('label') or entry.get('label') or ''),
+                'time': str(entry.get('start') or '')[:5],
+                'note': str(evidence.get('note') or ''),
+                't': evidence.get('t'),
+                'rosterPlayers': stat.get('rosterPlayers') or [],
+                'foePlayers': stat.get('foePlayers') or [],
+            })
+            if len(rows) >= 2:
+                break
+        finding['relatedMatches'] = rows
 
 
 def build_watch_groups(ctx):
@@ -2257,57 +2573,31 @@ def build_watch_groups(ctx):
             'empty': WATCH_EMPTY.get(field, f'本期没有{label}的局。'),
         })
     default = next((item for item in fields if item['items']), fields[0] if fields else None)
+    if default:
+        # 首页默认那组按复盘价值排：领先被翻、掉点多、资源丢得多、时长异常叠加，
+        # 而不是只按「落后最多」一个数字，否则四张卡会变成同一个维度的重复。
+        group = next((item for item in fields if item['id'] == default['id']), None)
+        if group:
+            group['items'].sort(key=lambda card: -card['reviewScore'])
     return {'field': default['id'] if default else None, 'fields': fields,
             'display': list(WATCH_DEFAULT_DISPLAY)}
 
 
 def _sentence(window, record, prev_record, entries=()):
-    """首页只报本期训练赛的基本盘，不复述胜率、不写「暂不可比」。"""
+    """首页战况只说一件事：本期多少局、几胜几负、胜率多少。
+
+    不写日期区间、不跟上期对比——本期指标表里已经逐项给了上期与变化，
+    顶部再来一句「比上月同期…」既重复又让字号忽大忽小。
+    """
     cur_word = _period_cur_word(window)
-    prev_word = _period_prev_word(window)
-    days = sorted({str(item.get('date') or '')[:10] for item in entries
-                   if item.get('date')})
-    when = ''
-    if len(days) == 1:
-        when = f'，都在 {days[0][5:]}'
-    elif len(days) > 1:
-        when = f'，集中在 {days[0][5:]} ~ {days[-1][5:]}'
     base = (f"{cur_word} {record['decided']} 局训练赛，"
             f"{record['wins']} 胜 {record['losses']} 负")
     if record.get('unknown'):
         base += f"、{record['unknown']} 局未判定"
-    sentence = f"{base}{when}。"
-    tone = 'none'
-    if prev_record['decided'] and record['decided']:
-        cur_n, prev_n = record['decided'], prev_record['decided']
-        # 两组局数差一个数量级时，比「赢了几局」只是比训练量：
-        # 9 局 4 胜 vs 81 局 54 胜会写成「少赢 50 局」。这时改比胜率百分点，
-        # 并把上期局数写出来，让教练知道基数不同。
-        if max(cur_n, prev_n) >= 2 * min(cur_n, prev_n):
-            cur_rate, prev_rate = record.get('winRate'), prev_record.get('winRate')
-            if cur_rate is not None and prev_rate is not None:
-                diff = round(float(cur_rate) - float(prev_rate), 1)
-                if diff > 0:
-                    sentence = sentence[:-1] + (
-                        f'，胜率比{prev_word}高 {diff:g} 个百分点，上期共 {prev_n} 局。')
-                    tone = 'up'
-                elif diff < 0:
-                    sentence = sentence[:-1] + (
-                        f'，胜率比{prev_word}低 {abs(diff):g} 个百分点，上期共 {prev_n} 局。')
-                    tone = 'down'
-                else:
-                    sentence = sentence[:-1] + (
-                        f'，胜率与{prev_word}持平，上期共 {prev_n} 局。')
-                    tone = 'flat'
-                return sentence, tone
-        diff = record['wins'] - prev_record['wins']
-        if diff > 0:
-            sentence = sentence[:-1] + f'，比{prev_word}多赢 {diff} 局。'
-            tone = 'up'
-        elif diff < 0:
-            sentence = sentence[:-1] + f'，比{prev_word}少赢 {-diff} 局。'
-            tone = 'down'
-    return sentence, tone
+    rate = record.get('winRate')
+    if rate is not None:
+        base += f"，胜率 {_fmt_pct(rate)}"
+    return f"{base}。", 'none'
 
 
 def _coverage(entries, record, window, panel_only=()):
@@ -2541,6 +2831,7 @@ def build_briefing(facts, *, period_kind='week', date_from=None, date_to=None,
     else:
         metrics = build_scrim_metrics(ctx, record, cur_panel_only)
         findings = select_findings(candidates, exclude_kinds=('coverage',))
+        _attach_finding_matches(findings, ctx)
         watch = build_watch_groups(ctx)
 
     note = '训练赛战绩来自营地终局面板，比赛过程以官方回放为准。'
@@ -2592,10 +2883,10 @@ def build_briefing(facts, *, period_kind='week', date_from=None, date_to=None,
     if not classic_metrics:
         period_word = _period_title_word(window)
         payload['findingsTitle'] = f'{period_word}重点发现'
-        payload['findingsCountText'] = f'{len(findings)} 条'
+        payload['findingsCountText'] = f'{len(findings)} 项发现'
         payload['findingsEmpty'] = f'{period_word}没有需要单独展开的变化。'
-        payload['watchTitle'] = f'{period_word}最值得复盘的比赛'
-        payload['watchCountText'] = f'{len(watch_items)} 局'
+        payload['watchTitle'] = '重点复盘'
+        payload['watchCountText'] = f'发现 {len(watch_items)} 场值得关注的对局'
         payload['watchEmpty'] = f'{period_word}没有可复盘的比赛过程。'
         payload['watchNote'] = '按「{}」从差到好排 · 点开看完整过程'.format(
             next((item['label'] for item in watch_fields

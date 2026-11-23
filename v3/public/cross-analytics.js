@@ -493,7 +493,7 @@ function playerExecutionOf(rows) {
 /* ── 4b. 选手执行：我方逐人 + 对方同位置基准 ─────────────────────
  * 游走不看经济与输出（营地有值，但那一栏对游走没有解释力），页面用横杠；
  * 承伤对四条路都有意义，所以五路统一给承伤，不给「游走也比分均输出」。 */
-const EXEC_KEYS = ['gpm', 'dpm', 'tpm', 'part', 'd', 'ctrl', 'heal', 'twr', 'rating'];
+const EXEC_KEYS = ['gpm', 'dpm', 'dmgShare', 'tpm', 'part', 'd', 'ctrl', 'heal', 'twr', 'rating'];
 const execAcc = () => ({ games: 0, heroes: [], buckets: Object.fromEntries(EXEC_KEYS.map((k) => [k, []])) });
 function execPush(e, p) {
   e.games += 1;
@@ -512,17 +512,22 @@ function executionOf(rows) {
   const own = new Map();
   const foe = new Map();
   for (const r of rows) {
+    const foePlayers = r.plAll.filter((p) => p.camp && p.camp !== r.camp);
+    const ownDpm = r.pl.reduce((sum, p) => sum + (num(p.dpm) ? p.dpm : 0), 0);
+    const foeDpm = foePlayers.reduce((sum, p) => sum + (num(p.dpm) ? p.dpm : 0), 0);
+    /* 输出占比 = 个人分均输出 / 本队五人分均输出之和。分均与伤害同除时长，
+       占比不受局时长影响；比直接摆分均伤害更适合跨位置比较。 */
     for (const p of r.pl) {
       if (!p.pos) continue;
       const key = `${p.pos}|${p.name || '—'}`;
       const e = own.get(key) || { pos: p.pos, name: p.name || '—', ...execAcc() };
-      execPush(e, p);
+      execPush(e, { ...p, dmgShare: ownDpm && num(p.dpm) ? p.dpm / ownDpm : null });
       own.set(key, e);
     }
-    for (const p of r.plAll) {
-      if (!p.pos || p.camp === r.camp) continue;
+    for (const p of foePlayers) {
+      if (!p.pos) continue;
       const e = foe.get(p.pos) || { pos: p.pos, ...execAcc() };
-      execPush(e, p);
+      execPush(e, { ...p, dmgShare: foeDpm && num(p.dpm) ? p.dpm / foeDpm : null });
       foe.set(p.pos, e);
     }
   }
@@ -536,11 +541,14 @@ function executionOf(rows) {
 
 /* ── 4c. 英雄类型：五路打法选择（我方 / 对方同一口径）───────────── */
 const ARCH_ORDER = {
-  对抗路: ['战边', '坦边'], 打野: ['刺野', '战野', '坦野'], 中路: ['法核', '工具人'],
+  对抗路: ['战边', '坦边'], 打野: ['刺野', '战野', '坦野'], 中路: ['法刺', '工具人'],
   发育路: ['游射', '呆射'], 游走: ['开团辅', '保护辅', '功能辅'],
 };
 function archetypeOf(rows) {
   const UNKNOWN = new Set(['', '待分类', '未标注', '其他']);
+  /* 老缓存里中路还叫「法核」；赛训组 2026-11-19 明确只有「法刺」。
+     读到旧值就地归一，避免整张图把中路拆成两个类型。 */
+  const normArch = (value) => (value === '法核' ? '法刺' : value);
   const build = (side) => {
     const map = new Map();
     const unknown = new Map();
@@ -551,8 +559,8 @@ function archetypeOf(rows) {
         /* 该分路没登记类型时（营地/工作簿没给这一路），退回英雄默认分路的类型：
            教练要的是「这个英雄是什么类型」，不是看一个「待分类」占位。
            真正一个类型都没有的英雄才单列一句。 */
-        const laneArch = p.arch && !UNKNOWN.has(p.arch) ? p.arch : '';
-        const arch = laneArch || (p.archDefault && !UNKNOWN.has(p.archDefault) ? p.archDefault : '');
+        const laneArch = p.arch && !UNKNOWN.has(p.arch) ? normArch(p.arch) : '';
+        const arch = laneArch || (p.archDefault && !UNKNOWN.has(p.archDefault) ? normArch(p.archDefault) : '');
         if (!arch) {
           const u = unknown.get(p.pos) || { pos: p.pos, games: 0, heroes: [] };
           u.games += 1;
@@ -604,15 +612,16 @@ function banIndexMap(rows, listKey, hero) {
   }
   return { byTurn: out, games: hit };
 }
-function ourHeroTarget(rows, hero, hero2) {
+function ourHeroTarget(rows, heroes) {
+  const want = (Array.isArray(heroes) ? heroes : [heroes]).filter(Boolean).slice(0, 4);
+  const hero = want[0];
   if (!hero) return null;
-  const want = [hero, hero2].filter(Boolean);
   const picked = rows.filter((r) => want.every((h) => r.heroes.includes(h)));
   const decided = picked.filter((r) => r.decided);
   const wins = picked.filter((r) => r.result === 'win').length;
   const ban = banIndexMap(rows, 'bansFoe', hero);
   const banOwn = banIndexMap(rows, 'bansOwn', hero);
-  const ban2 = hero2 ? banIndexMap(rows, 'bansFoe', hero2) : null;
+  const ban2 = want[1] ? banIndexMap(rows, 'bansFoe', want[1]) : null;
   // 没被 ban 的时候，对方同位置拿什么来打：只按「我方这条路上的是这个英雄」取对方同位置。
   const respMap = new Map();
   for (const r of picked) {
@@ -665,21 +674,28 @@ function ourHeroTarget(rows, hero, hero2) {
     });
   }
   return {
-    hero, hero2: hero2 || '', want, games: picked.length, decided: decided.length, wins,
+    hero, heroes: want, want, games: picked.length, decided: decided.length, wins,
     rate: rateOf(wins, decided.length),
     ban, ban2, banOwn, responses, combos, byOpponent,
     banTotal: ban.games + picked.length,
   };
 }
-function foeHeroPairing(rows, hero) {
-  if (!hero) return null;
-  /* 反过来看：这个英雄在「对方」阵容里出现时，各队都拿谁来跟它搭。 */
-  const picked = rows.filter((r) => r.heroesFoe.includes(hero));
+function foeHeroPairing(rows, heroOrHeroes) {
+  /* 反过来看：所选英雄（1–4 个，2 个以上按组合）同时在「对方」阵容出现时，
+     各队还拿谁来跟它搭。传字符串仍按单英雄处理，兼容旧调用方。 */
+  const heroes = (Array.isArray(heroOrHeroes) ? heroOrHeroes : [heroOrHeroes]).filter(Boolean).slice(0, 4);
+  if (!heroes.length) return null;
+  const hero = heroes[0];
+  const isCombo = heroes.length > 1;
+  const picked = rows.filter((r) => heroes.every((h) => r.heroesFoe.includes(h)));
   const foeWins = picked.filter((r) => r.result === 'loss').length;
-  const ban = banIndexMap(rows, 'bansOwn', hero);
+  /* 组合下「ban 过其中任意一个」按局去重，不重复计数。 */
+  const ban = isCombo
+    ? { games: rows.filter((r) => heroes.some((h) => (r.bansOwn || []).includes(h))).length }
+    : banIndexMap(rows, 'bansOwn', hero);
   const partnerMap = new Map();
   for (const r of picked) {
-    for (const h of [...new Set(r.heroesFoe)].filter((x) => x && x !== hero)) {
+    for (const h of [...new Set(r.heroesFoe)].filter((x) => x && !heroes.includes(x))) {
       const e = partnerMap.get(h) || { hero: h, games: 0, foeWins: 0 };
       e.games += 1;
       if (r.result === 'loss') e.foeWins += 1;
@@ -695,7 +711,7 @@ function foeHeroPairing(rows, hero) {
     const e = oppMap.get(name) || { name, games: 0, foeWins: 0, partners: new Map() };
     e.games += 1;
     if (r.result === 'loss') e.foeWins += 1;
-    for (const h of [...new Set(r.heroesFoe)].filter((x) => x && x !== hero)) {
+    for (const h of [...new Set(r.heroesFoe)].filter((x) => x && !heroes.includes(x))) {
       e.partners.set(h, (e.partners.get(h) || 0) + 1);
     }
     oppMap.set(name, e);
@@ -706,7 +722,7 @@ function foeHeroPairing(rows, hero) {
       partners: [...e.partners.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h, n]) => ({ hero: h, games: n })),
     });
   }
-  return { hero, games: picked.length, foeWins, rate: rateOf(foeWins, picked.length), ban, partners, byOpponent };
+  return { hero, heroes, want: heroes, isCombo, games: picked.length, foeWins, rate: rateOf(foeWins, picked.length), ban, partners, byOpponent };
 }
 
 /* ── 5. 前期节奏 ──────────────────────────────────────────────── */
@@ -1142,8 +1158,8 @@ export function analyzeCohort(vectors) {
     archetypes: archetypeOf(rows),
     // BP 对位台按「点哪个英雄」现算：只在这一批局里查，不跨到范围外。
     bp: {
-      target: (hero, hero2) => ourHeroTarget(rows, hero, hero2),
-      pairing: (hero) => foeHeroPairing(rows, hero),
+      target: (heroes) => ourHeroTarget(rows, heroes),
+      pairing: (heroes) => foeHeroPairing(rows, heroes),
     },
     // 兼容旧调用方：不再有 23 张卡，但保留一个可遍历的结论数量。
     cardCount: [drivers.length > 0, early.firstN > 0, objective.n > 0, fight.n > 0, draft.heroes.length > 0, opponents.items.length > 0].filter(Boolean).length,

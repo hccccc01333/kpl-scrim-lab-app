@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="42" height="27" viewBox="0 0 42 27" role="img">
+<title>三道金色斜杠</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient></defs>
+<path d="M0 25 L15 2 H20 L5 25Z" fill="url(#gold)"/><path d="M10 25 L25 2 H30 L15 25Z" fill="url(#gold)"/><path d="M20 25 L35 2 H40 L25 25Z" fill="url(#gold)"/>
+</svg>

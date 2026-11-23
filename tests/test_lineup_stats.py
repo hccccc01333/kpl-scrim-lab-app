@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 import lineup_stats as ls
 
 HERO5 = {'对抗路': '吕布', '打野': '云缨', '中路': '貂蝉', '发育路': '艾琳', '游走': '张飞'}
-TYPE5 = {'对抗路': '战边', '打野': '战野', '中路': '法核', '发育路': '呆射', '游走': '保护辅'}
+TYPE5 = {'对抗路': '战边', '打野': '战野', '中路': '法刺', '发育路': '呆射', '游走': '保护辅'}
 
 
 def _picks(hero=HERO5, types=None):
@@ -106,7 +106,7 @@ def test_pair_and_triad_exclusion_only_involved_lanes():
     assert '边野' not in families
     assert {'中野', '射辅', '中辅', '野辅'} <= families
     mid_jungle = next(r for r in out['pairs'] if r['family'] == '中野')
-    assert mid_jungle['pair'] == ['战野', '法核'] and mid_jungle['games'] == 1
+    assert mid_jungle['pair'] == ['战野', '法刺'] and mid_jungle['games'] == 1
     # 三人组合同理：涉对抗路的「边野辅 / 边中野」不计
     triad_families = {row['family'] for row in out['triads']}
     assert '边野辅' not in triad_families and '边中野' not in triad_families
@@ -225,7 +225,7 @@ def test_lineup_resources_missing_values_not_zero_filled():
 
 # ------------------------------------------------------------- P2 对抗矩阵
 SIG_A = tuple(TYPE5[l] for l in ls.LANES)
-SIG_X = ('坦边', '坦野', '法核', '呆射', '保护辅')
+SIG_X = ('坦边', '坦野', '法刺', '呆射', '保护辅')
 SIG_Y = ('战边', '战野', '工具人', '呆射', '保护辅')
 
 

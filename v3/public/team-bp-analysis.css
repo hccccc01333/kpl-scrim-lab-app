@@ -1,0 +1,326 @@
+/* 战队详情 · 02 BP 的四块新分析（2026-11-22）
+   优先级象限 / 赢输指纹 / 条件响应 / 招牌 ban 后改拿。
+   只作用在 .tp-page，颜色沿用 team-dossier 的 --tp-* 与 --c-* 变量。 */
+
+/* ── 01 英雄优先级象限 ─────────────────────────────────────────── */
+.tp-page #tp-bp .is-bp-card .tp-card-head h3 { display: flex; align-items: center; gap: 7px; }
+.tp-page #tp-bp .is-bp-card .tp-card-head h3::before {
+  content: ''; width: 3px; height: 14px; border-radius: 2px; flex: none;
+  background: linear-gradient(180deg, var(--c-lane-0), var(--c-lane-3));
+}
+.tp-page .tp-bp-pair { align-items: stretch; grid-template-columns: minmax(0, 1.18fr) minmax(0, .82fr); }
+.tp-page .tp-bp-pair > .tp-card { height: 100%; }
+.tp-page .tp-bp-pair > .tp-card.is-fingerprint .tp-read { margin-top: auto; padding-top: 12px; }
+.tp-page .tp-quad {
+  position: relative; margin: 8px 0 2px; padding: 8px 8px 4px 34px;
+}
+.tp-page .tp-quad-plot {
+  position: relative; height: 310px;
+  border-left: 1px solid color-mix(in oklab, var(--tp-hair) 82%, var(--tp-quiet));
+  border-bottom: 1px solid color-mix(in oklab, var(--tp-hair) 82%, var(--tp-quiet));
+  background:
+    linear-gradient(90deg, transparent calc(50% - .5px), color-mix(in oklab, var(--tp-hair) 65%, transparent) 50%, transparent calc(50% + .5px)),
+    linear-gradient(180deg, transparent calc(50% - .5px), color-mix(in oklab, var(--tp-hair) 65%, transparent) 50%, transparent calc(50% + .5px));
+}
+.tp-page .tp-quad-tint { position: absolute; z-index: 0; pointer-events: none; }
+.tp-page .tp-quad-tint.is-must { background: color-mix(in oklab, var(--c-loss) 5%, transparent); }
+.tp-page .tp-quad-tint.is-bait { background: color-mix(in oklab, var(--c-loss) 2.5%, transparent); }
+.tp-page .tp-quad-tint.is-steal { background: color-mix(in oklab, var(--c-win) 4%, transparent); }
+.tp-page .tp-quad-tint.is-low { background: color-mix(in oklab, var(--tp-hair) 30%, transparent); }
+.tp-page .tp-quad-ylabel {
+  position: absolute; left: -6px; top: 44%; transform: rotate(-90deg);
+  transform-origin: center; color: var(--tp-quiet); font-size: 10px; letter-spacing: .08em; white-space: nowrap;
+}
+.tp-page .tp-quad-ytick {
+  position: absolute; left: -8px; transform: translate(-100%, 50%);
+  color: var(--tp-quiet); font-size: 9.5px; font-variant-numeric: tabular-nums; pointer-events: none;
+}
+.tp-page .tp-quad-area {
+  position: absolute; z-index: 1; padding: 2px 5px; border-radius: 4px;
+  color: var(--tp-quiet); font-size: 10px; font-weight: 600; letter-spacing: .04em;
+  background: color-mix(in oklab, var(--paper) 72%, transparent);
+}
+.tp-page .tp-quad-area::before {
+  content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 4px;
+  border-radius: 50%; background: currentColor; vertical-align: middle;
+}
+.tp-page .tp-quad-area.is-must { right: 6px; top: 6px; color: var(--c-loss); }
+.tp-page .tp-quad-area.is-steal { left: 6px; top: 6px; color: var(--c-win); }
+.tp-page .tp-quad-area.is-bait { right: 6px; bottom: 6px; }
+.tp-page .tp-quad-area.is-low { left: 6px; bottom: 6px; }
+.tp-page .tp-quad-line { position: absolute; z-index: 1; pointer-events: none; }
+.tp-page .tp-quad-line.is-h { left: 0; right: 0; border-top: 1px dashed color-mix(in oklab, var(--tp-quiet) 60%, transparent); }
+.tp-page .tp-quad-line.is-v { top: 0; bottom: 0; border-left: 1px dashed color-mix(in oklab, var(--tp-quiet) 60%, transparent); }
+.tp-page .tp-qdot {
+  position: absolute; z-index: 2; transform: translate(-50%, 50%);
+  display: grid; justify-items: center; padding: 0; border: 0; background: transparent;
+  cursor: pointer; line-height: 1;
+}
+.tp-page .tp-qdot:hover { z-index: 4; }
+.tp-page .tp-qdot-face {
+  display: block; width: 30px; height: 30px; overflow: hidden; border-radius: 50%;
+  border: 2px solid var(--tp-hair); background: var(--paper); padding: 2px;
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--paper) 90%, transparent),
+              0 4px 10px -4px color-mix(in oklab, var(--tp-ink) 35%, transparent);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.tp-page .tp-qdot:hover .tp-qdot-face {
+  transform: scale(1.14);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--paper) 85%, transparent),
+              0 8px 18px -8px color-mix(in oklab, var(--tp-ink) 45%, transparent);
+}
+.tp-page .tp-qdot-face .portrait,
+.tp-page .tp-qdot-face img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.tp-page .tp-qdot.is-big .tp-qdot-face { width: 36px; height: 36px; }
+.tp-page .tp-qdot.is-small .tp-qdot-face { width: 24px; height: 24px; }
+.tp-page .tp-qdot b {
+  position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%);
+  max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 9.5px; font-weight: 600; color: var(--tp-text);
+  background: color-mix(in oklab, var(--paper) 88%, transparent); padding: 0 2px; border-radius: 3px;
+  opacity: 0; pointer-events: none; transition: opacity .12s ease;
+}
+.tp-page .tp-qdot em {
+  position: absolute; top: calc(100% + 15px); left: 50%; transform: translateX(-50%);
+  font-style: normal; font-size: 8.5px; color: var(--tp-quiet); white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .12s ease;
+}
+.tp-page .tp-qdot:hover b,
+.tp-page .tp-qdot:focus-visible b,
+.tp-page .tp-qdot:hover em,
+.tp-page .tp-qdot:focus-visible em { opacity: 1; }
+.tp-page .tp-quad-xticks { position: relative; height: 14px; margin-top: 5px; }
+.tp-page .tp-quad-xticks span {
+  position: absolute; transform: translateX(-50%);
+  color: var(--tp-quiet); font-size: 9.5px; font-variant-numeric: tabular-nums;
+}
+.tp-page .tp-quad-xticks span:first-child { transform: none; }
+.tp-page .tp-quad-xticks span:last-child { transform: translateX(-100%); }
+.tp-page .tp-quad-x {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  margin-top: 2px; color: var(--tp-quiet); font-size: 9.5px;
+}
+.tp-page .tp-quad-x span:first-child { flex: none; color: var(--tp-muted); font-weight: 600; }
+.tp-page .tp-quad-x span:nth-child(2) { flex: 1; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-page .tp-quad-x span:last-child { flex: none; }
+.tp-page .tp-qonly {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--tp-hair);
+}
+.tp-page .tp-qonly > span { flex: 0 0 auto; color: var(--tp-quiet); font-size: 10.5px; }
+
+/* ── 02 赢 / 输局 BP 指纹 ──────────────────────────────────────── */
+.tp-page .tp-fp-head,
+.tp-page .tp-fp-row {
+  display: grid; grid-template-columns: 86px minmax(0, 1fr) minmax(0, 1fr); gap: 10px;
+  align-items: center;
+}
+.tp-page .tp-fp-head { padding-bottom: 7px; color: var(--tp-quiet); font-size: 11px; }
+.tp-page .tp-fp-head b {
+  justify-self: start; display: inline-block; padding: 1px 7px; border-radius: 999px;
+  font-size: 10px; font-weight: 650; line-height: 1.65;
+}
+.tp-page .tp-fp-head b:nth-child(2) {
+  color: var(--c-win); background: color-mix(in oklab, var(--c-win) 9%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--c-win) 25%, var(--tp-hair));
+}
+.tp-page .tp-fp-head b:nth-child(3) {
+  color: var(--c-loss); background: color-mix(in oklab, var(--c-loss) 8%, var(--paper));
+  border: 1px solid color-mix(in oklab, var(--c-loss) 24%, var(--tp-hair));
+}
+.tp-page .tp-fp-insight {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin: 0 0 4px; padding: 6px 9px; border: 1px dashed color-mix(in oklab, var(--c-loss) 35%, var(--tp-hair));
+  border-radius: 8px; background: color-mix(in oklab, var(--c-loss) 5%, var(--paper));
+  color: var(--tp-muted); font-size: 10.5px;
+}
+.tp-page .tp-fp-insight b { color: var(--c-loss); font-size: 10.5px; white-space: nowrap; }
+.tp-page .tp-fp-row { padding: 7px 0; border-top: 1px solid var(--tp-hair); }
+.tp-page .tp-fp-label { color: var(--tp-muted); font-size: 12px; font-weight: 600; }
+.tp-page .tp-fp-cell {
+  position: relative; z-index: 0; isolation: isolate;
+  display: grid; gap: 4px; padding: 0; border: 0; background: transparent;
+  min-width: 0; text-align: left; cursor: pointer; font: inherit;
+}
+.tp-page .tp-fp-cell::before {
+  content: ''; position: absolute; inset: -3px -5px; z-index: -1; border-radius: 8px;
+  background: transparent; transition: background .12s ease;
+}
+.tp-page .tp-fp-cell:hover::before { background: color-mix(in oklab, var(--tp-surface) 72%, transparent); }
+.tp-page .tp-fp-cell > span:last-child { color: var(--tp-quiet); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tp-page .tp-fp-cell.is-empty { color: var(--tp-quiet); font-size: 11px; cursor: default; }
+.tp-page .tp-fp-cell:hover > span:last-child { color: var(--tp-text); }
+.tp-page .tp-fp-bar,
+.tp-page .tp-fp-fill { display: flex; height: 9px; border-radius: 999px; overflow: hidden; background: var(--tp-surface); }
+.tp-page .tp-fp-bar i { display: block; height: 100%; min-width: 3px; }
+.tp-page .tp-fp-fill i { display: block; height: 100%; background: var(--c-lane-0); }
+.tp-page .tp-fp-row > button.tp-fp-cell:nth-of-type(1) .tp-fp-fill i { background: var(--c-win); }
+.tp-page .tp-fp-row > button.tp-fp-cell:nth-of-type(2) .tp-fp-fill i { background: var(--c-loss); }
+.tp-page .tp-fp-heroes { display: flex; flex-wrap: wrap; gap: 5px; }
+.tp-page .tp-fp-hero {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  padding: 3px 5px; border: 1px solid var(--tp-hair); border-radius: 7px;
+  background: var(--tp-surface); cursor: pointer; font: inherit;
+}
+.tp-page .tp-fp-hero:hover { border-color: var(--c-lane-0); background: var(--paper); }
+.tp-page .tp-fp-hero-lane {
+  flex: none; width: 5px; height: 5px; border-radius: 50%; margin-right: -1px;
+}
+.tp-page .tp-fp-hero .portrait,
+.tp-page .tp-fp-hero img { width: 22px; height: 22px; border-radius: 5px; flex: none; }
+.tp-page .tp-fp-hero b { max-width: 62px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 600; }
+.tp-page .tp-fp-hero small { color: var(--tp-quiet); font-size: 9.5px; }
+
+/* ── 03 条件响应 ──────────────────────────────────────────────── */
+.tp-page .tp-rsp-path {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin: 0 0 8px; padding: 5px 8px; border-radius: 9px;
+  background: var(--tp-surface); color: var(--tp-muted); font-size: 11px;
+}
+.tp-page .tp-rsp-path-item { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.tp-page .tp-rsp-path-item .is-path-face,
+.tp-page .tp-rsp-path-item img {
+  width: 20px; height: 20px; border-radius: 5px; object-fit: cover; flex: none;
+}
+.tp-page .tp-rsp-path-item small {
+  color: var(--tp-quiet); font-size: 9px; font-weight: 600; letter-spacing: .04em;
+}
+.tp-page .tp-rsp-path-item b { color: var(--tp-text); font-size: 11px; }
+.tp-page .tp-rsp-path i { color: var(--tp-quiet); font-style: normal; }
+.tp-page .tp-rsp {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) auto minmax(0, 1.1fr) auto minmax(0, 1fr);
+  gap: 8px; align-items: start;
+}
+.tp-page .tp-rsp-col { min-width: 0; }
+.tp-page .tp-rsp-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 6px;
+  margin-bottom: 6px; color: var(--tp-quiet); font-size: 11px;
+}
+.tp-page .tp-rsp-head span { color: var(--tp-text); font-size: 12.5px; font-weight: 650; }
+.tp-page .tp-rsp-list {
+  display: grid; gap: 5px; max-height: 300px; overflow: auto; padding-right: 2px;
+  scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--tp-quiet) 35%, transparent) transparent;
+}
+.tp-page .tp-rsp-list::-webkit-scrollbar { width: 6px; height: 6px; }
+.tp-page .tp-rsp-list::-webkit-scrollbar-thumb {
+  border-radius: 999px; background: color-mix(in oklab, var(--tp-quiet) 35%, transparent);
+}
+.tp-page .tp-rsp-list::-webkit-scrollbar-track { background: transparent; }
+.tp-page .tp-rsp-node {
+  display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0;
+  padding: 5px 6px; border: 1px solid var(--tp-hair); border-radius: 9px;
+  background: var(--tp-surface); color: var(--tp-text); font: inherit; text-align: left; cursor: pointer;
+  transition: border-color .12s ease, background .12s ease, box-shadow .12s ease;
+}
+.tp-page .tp-rsp-node:hover { border-color: var(--rsp, var(--c-lane-0)); background: var(--paper); }
+.tp-page .tp-rsp-node.is-on {
+  border-color: var(--rsp, var(--c-lane-0)); background: var(--paper);
+  box-shadow: inset 3px 0 0 var(--rsp, var(--c-lane-0)),
+              0 4px 14px -12px color-mix(in oklab, var(--rsp, var(--c-lane-0)) 60%, transparent);
+}
+.tp-page .tp-rsp-node.is-ban { padding: 4px 6px; }
+.tp-page .tp-rsp-face { flex: none; width: 27px; height: 27px; border-radius: 7px; overflow: hidden; background: var(--paper); }
+.tp-page .tp-rsp-face .portrait,
+.tp-page .tp-rsp-face img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.tp-page .tp-rsp-copy { display: grid; gap: 1px; flex: 1; min-width: 0; }
+.tp-page .tp-rsp-copy b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.tp-page .tp-rsp-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tp-quiet); font-size: 10.5px; }
+.tp-page .tp-rsp-share { height: 3px; border-radius: 2px; overflow: hidden; background: var(--tp-hair); }
+.tp-page .tp-rsp-share i { display: block; height: 100%; background: var(--rsp, var(--c-lane-0)); }
+.tp-page .tp-rsp-node > em {
+  flex: none; padding: 1px 5px; border-radius: 999px;
+  background: var(--tp-surface); color: var(--tp-quiet);
+  font-style: normal; font-size: 10.5px; font-weight: 650;
+}
+.tp-page .tp-rsp-node.is-on > em {
+  color: var(--tp-text); background: color-mix(in oklab, var(--rsp, var(--c-lane-0)) 10%, var(--paper));
+}
+.tp-page .tp-rsp-node.is-ban > em { color: var(--c-loss); }
+.tp-page .tp-rsp-arrow {
+  align-self: center; display: grid; place-items: center;
+  width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  color: var(--tp-quiet); font-size: 12px; background: var(--tp-surface);
+  border: 1px solid var(--tp-hair);
+}
+.tp-page .tp-rsp-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--tp-hair);
+  color: var(--tp-muted); font-size: 11px;
+}
+.tp-page .tp-rsp-foot b { color: var(--tp-text); }
+.tp-page .tp-rsp-games {
+  flex: 0 0 auto; padding: 4px 10px; border: 1px solid var(--tp-hair); border-radius: 999px;
+  background: var(--paper); color: var(--tp-text); font: inherit; font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.tp-page .tp-rsp-games:hover { border-color: var(--c-lane-0); color: var(--c-lane-0); }
+
+/* ── 04 招牌 ban 后改拿 ────────────────────────────────────────── */
+.tp-page .tp-sig-wrap { overflow-x: auto; }
+.tp-page .tp-sig-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.tp-page .tp-sig-table thead th {
+  padding: 0 7px 6px; border: 0; color: var(--tp-quiet); font-size: 10.5px; font-weight: 600; text-align: left;
+}
+.tp-page .tp-sig-table tbody th,
+.tp-page .tp-sig-table tbody td {
+  padding: 7px; border-top: 1px solid var(--tp-hair); vertical-align: middle; text-align: left;
+}
+.tp-page .tp-sig-table tbody tr { transition: background .12s ease; }
+.tp-page .tp-sig-table tbody tr:hover {
+  background: color-mix(in oklab, var(--tp-surface) 68%, transparent);
+}
+.tp-page .tp-sig-table tbody th {
+  white-space: nowrap; border-left: 2px solid color-mix(in oklab, var(--sig-lane, var(--tp-hair)) 72%, var(--tp-hair));
+  padding-left: 9px;
+}
+.tp-page .tp-sig-table tbody th b { display: block; font-size: 12.5px; font-weight: 650; }
+.tp-page .tp-sig-table tbody th small { color: var(--tp-quiet); font-size: 10px; font-weight: 500; }
+.tp-page .tp-sig-table td > b {
+  display: inline-block; min-width: 20px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--tp-hair); background: var(--tp-surface);
+  font-size: 12px; text-align: center; line-height: 1.5;
+}
+.tp-page .tp-sig-rate { display: block; color: var(--tp-quiet); font-size: 10px; }
+.tp-page .tp-sig-hero {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; margin: 1px 2px;
+  padding: 3px 5px; border: 1px solid var(--tp-hair); border-radius: 8px;
+  background: var(--tp-surface); color: var(--tp-text); font: inherit; cursor: pointer;
+}
+.tp-page .tp-sig-hero:hover { border-color: var(--c-lane-0); }
+.tp-page .tp-sig-hero .portrait,
+.tp-page .tp-sig-hero img { width: 25px; height: 25px; border-radius: 6px; flex: none; }
+.tp-page .tp-sig-hero span { display: grid; gap: 0; min-width: 0; text-align: left; }
+.tp-page .tp-sig-hero b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 92px; font-size: 10.5px; }
+.tp-page .tp-sig-hero small { color: var(--tp-quiet); font-size: 9px; white-space: nowrap; }
+.tp-page .tp-sig-repl { display: flex; flex-wrap: wrap; gap: 2px; }
+
+/* 分路常选 / 常 ban 收进折叠，默认先看四块分析 */
+.tp-page .tp-bp-details {
+  margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--tp-hair);
+}
+.tp-page .tp-bp-details > summary {
+  padding: 4px 0; color: var(--tp-muted); font-size: 12px; font-weight: 600;
+  cursor: pointer; list-style: none;
+}
+.tp-page .tp-bp-details > summary::-webkit-details-marker { display: none; }
+.tp-page .tp-bp-details > summary::before { content: '▸ '; color: var(--tp-quiet); }
+.tp-page .tp-bp-details[open] > summary::before { content: '▾ '; }
+.tp-page .tp-bp-details[open] { padding-bottom: 4px; }
+
+@media (max-width: 1200px) {
+  .tp-page .tp-grid.is-2.tp-bp-pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .tp-page .tp-grid.is-2 { grid-template-columns: minmax(0, 1fr); }
+  .tp-page .tp-rsp { grid-template-columns: minmax(0, 1fr); }
+  .tp-page .tp-rsp-arrow { justify-self: center; padding: 0; transform: rotate(90deg); }
+  .tp-page .tp-rsp-list { max-height: none; }
+  .tp-page .tp-quad-plot { height: 270px; }
+}
+@media (max-width: 620px) {
+  .tp-page .tp-fp-head,
+  .tp-page .tp-fp-row { grid-template-columns: 70px minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
+  .tp-page .tp-qdot b { font-size: 9px; }
+  .tp-page .tp-quad-plot { height: 240px; }
+  .tp-page .tp-quad { padding-left: 26px; }
+}

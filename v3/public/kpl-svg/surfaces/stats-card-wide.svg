@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="422" height="159" viewBox="0 0 422 159" role="img">
+<title>比赛数据页宽卡片</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<defs><clipPath id="panel"><rect x="0" y="0" width="422" height="159" rx="21" fill="#fff"/></clipPath></defs><g clip-path="url(#panel)"><rect x="0.8" y="0.8" width="420.4" height="157.4" rx="21" fill="url(#pearl)" stroke="#fffcf6" stroke-width="0.8"/><path d="M0 0 Q101.28 111.3 261.64 0 H295.4 Q113.94 144.69 0 27.03Z" fill="#d8d5d8" opacity="0.27"/><path d="M0 101.76 Q189.9 20.67 303.84 0 Q101.28 101.76 0 157.41Z" fill="#d9d6d6" opacity="0.16"/><path d="M75.96 159 Q223.66 125.61 422 19.08 Q324.94 124.02 189.9 159Z" fill="#fffdfa" opacity="0.6"/><path d="M227.88 159 Q346.04 98.58 422 60.42 V90.63 Q388.24 119.25 308.06 159Z" fill="#fff" opacity="0.55"/><g transform="translate(371.12 0) scale(1 1)"><path d="M0 0 H42.88 Q50.88 0 50.88 8 V50.88 C49.8624 14.2464 34.5984 0.5088 0 0Z" fill="url(#gold)"/><path d="M4.0704 0 C29.5104 1 47.8272 7.632 50.88 43.7568 C50.3712 10.6848 35.616 0 4.0704 0Z" fill="url(#teal-edge)"/></g><g transform="translate(50.88 159) scale(-1 -1)"><path d="M0 0 H42.88 Q50.88 0 50.88 8 V50.88 C49.8624 14.2464 34.5984 0.5088 0 0Z" fill="url(#gold)"/><path d="M4.0704 0 C29.5104 1 47.8272 7.632 50.88 43.7568 C50.3712 10.6848 35.616 0 4.0704 0Z" fill="url(#teal-edge)"/></g></g>
+</svg>

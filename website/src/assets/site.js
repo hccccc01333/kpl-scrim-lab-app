@@ -925,25 +925,41 @@
     var scoreEl = root.querySelector('[data-ov-score]');
     var resultEl = root.querySelector('[data-ov-result]');
     var metaEl = root.querySelector('[data-ov-meta]');
+    var periodEl = root.querySelector('[data-ov-period]');
+    var readoutEl = root.querySelector('[data-ov-readout]');
+    var rangeButtons = root.querySelectorAll('[data-ov-range]');
 
     var ROSTER = [['廉颇'], ['澜'], ['沈梦溪'], ['公孙离'], ['张飞']];
 
+    // 合成示例数据：五局，按时间从新到旧。全部数字仅用于演示。
     var GAMES = [
       {
-        ka: 9, kb: 9, dur: 18.7, result: 'win', date: '11-16 21:04',
+        ka: 9, kb: 9, dur: 18.7, result: 'win', date: '11-16 21:04', day: '2026-11-16',
         diff: [[0, 0], [2, 180], [4, 120], [6, -90], [8, -260], [10, -120], [12, 140], [14, 520], [16, 880], [18, 1240]]
       },
       {
-        ka: 12, kb: 6, dur: 16.3, result: 'win', date: '11-15 20:12',
+        ka: 12, kb: 6, dur: 16.3, result: 'win', date: '11-15 20:12', day: '2026-11-15',
         diff: [[0, 0], [2, 260], [4, 480], [6, 420], [8, 760], [10, 1120], [12, 980], [14, 1460], [16, 1820]]
       },
       {
-        ka: 7, kb: 11, dur: 21.1, result: 'loss', date: '11-14 19:38',
+        ka: 7, kb: 11, dur: 21.1, result: 'loss', date: '11-14 19:38', day: '2026-11-14',
         diff: [[0, 0], [3, -280], [6, -560], [9, -480], [12, -860], [15, -1210], [18, -1520], [21, -1780]]
+      },
+      {
+        ka: 10, kb: 8, dur: 19.4, result: 'win', date: '11-13 20:41', day: '2026-11-13',
+        diff: [[0, 0], [2, -140], [4, 80], [6, 340], [8, 260], [10, 620], [12, 480], [14, 940], [16, 1180], [19, 1420]]
+      },
+      {
+        ka: 6, kb: 12, dur: 20.6, result: 'loss', date: '11-10 19:22', day: '2026-11-10',
+        diff: [[0, 0], [3, 120], [6, -180], [9, -520], [12, -740], [15, -980], [18, -1340], [20, -1620]]
       }
     ];
 
-    var state = { game: 0 };
+    var state = { game: 0, range: '3' };
+
+    function visible() {
+      return state.range === '3' ? GAMES.slice(0, 3) : GAMES;
+    }
 
     function fmtClock(minute) {
       var m = Math.floor(minute);
@@ -956,6 +972,17 @@
       var k = value / 1000;
       if (Math.abs(k) < 0.05) return '0.0k';
       return (k > 0 ? '+' : '−') + Math.abs(k).toFixed(1) + 'k';
+    }
+
+    function resetReadout() {
+      readoutEl.textContent = '点图上的点，看那一分钟的经济差。';
+      readoutEl.classList.remove('is-active');
+    }
+
+    function showPoint(minute, value) {
+      readoutEl.textContent = '第 ' + minute + ' 分钟 · 本队经济差 ' + fmtDiff(value) +
+        '（' + (value > 0 ? '领先' : value < 0 ? '落后' : '持平') + '）';
+      readoutEl.classList.add('is-active');
     }
 
     function renderChart() {
@@ -1000,6 +1027,13 @@
       parts.push('<line class="ov-zero" x1="' + PAD.l + '" x2="' + (W - PAD.r) + '" y1="' + zero + '" y2="' + zero + '"/>');
       parts.push('<path class="ov-area" d="' + area + '"/>');
       parts.push('<path class="ov-line" d="' + path() + '"/>');
+      // 每个采样点都是可点击、可用键盘聚焦的控件
+      pts.forEach(function (pt) {
+        var label = '第 ' + pt[0] + ' 分钟，本队经济差 ' + fmtDiff(pt[1]);
+        parts.push('<circle class="ov-point" cx="' + x(pt[0]).toFixed(1) + '" cy="' + y(pt[1]).toFixed(1) +
+          '" r="5" tabindex="0" role="button" aria-label="' + label + '"' +
+          ' data-minute="' + pt[0] + '" data-value="' + pt[1] + '"/>');
+      });
       svg.innerHTML = parts.join('');
     }
 
@@ -1010,13 +1044,34 @@
     }
 
     function paintChips() {
-      chipsEl.innerHTML = GAMES.map(function (game, i) {
+      var list = visible();
+      chipsEl.innerHTML = list.map(function (game) {
+        var i = GAMES.indexOf(game);
         return '<button type="button" class="ov-chip ' + (game.result === 'win' ? 'is-win' : 'is-loss') +
           (i === state.game ? ' is-on' : '') + '" data-ov-chip="' + i + '"' +
           ' aria-label="' + game.date + ' 对局，' + (game.result === 'win' ? '胜利' : '失利') + '"' +
           ' aria-pressed="' + (i === state.game ? 'true' : 'false') + '">' +
           (game.result === 'win' ? '胜' : '负') + '</button>';
       }).join('');
+    }
+
+    function paintStats() {
+      var list = visible();
+      var wins = list.filter(function (g) { return g.result === 'win'; }).length;
+      var avgDur = list.reduce(function (s, g) { return s + g.dur; }, 0) / list.length;
+      var avgDiff = list.reduce(function (s, g) { return s + g.diff[g.diff.length - 1][1]; }, 0) / list.length;
+      root.querySelector('[data-ov-stat-total]').innerHTML = list.length + '<small>局</small>';
+      root.querySelector('[data-ov-stat-wr]').innerHTML = Math.round(wins / list.length * 100) + '<small>%</small>';
+      root.querySelector('[data-ov-stat-dur]').textContent = fmtClock(avgDur);
+      root.querySelector('[data-ov-stat-gold]').textContent = fmtDiff(avgDiff);
+      root.querySelector('[data-ov-total]').textContent = list.length;
+      root.querySelector('[data-ov-wins]').textContent = wins;
+      root.querySelector('[data-ov-losses]').textContent = list.length - wins;
+      root.querySelector('[data-ov-note]').textContent = list.length + ' 局记录，' + list.length + ' 局有可用的经济时间轴。';
+      root.querySelector('[data-ov-stat-total]').nextElementSibling.textContent = list.length + ' 局时间轴完整';
+      root.querySelector('[data-ov-stat-wr]').nextElementSibling.textContent = wins + ' 胜 / ' + list.length + ' 局';
+      var days = list.map(function (g) { return g.day; }).sort();
+      periodEl.textContent = days[0] + ' → ' + days[days.length - 1] + ' · ' + list.length + ' 局';
     }
 
     function select(index) {
@@ -1026,6 +1081,7 @@
       resultEl.textContent = game.result === 'win' ? '胜利' : '失利';
       resultEl.setAttribute('data-result', game.result);
       metaEl.textContent = game.date + ' / ' + fmtClock(game.dur) + ' / 训练赛';
+      resetReadout();
       renderChart();
       paintChips();
     }
@@ -1037,26 +1093,45 @@
       if (index !== state.game) select(index);
     });
 
+    Array.prototype.forEach.call(rangeButtons, function (button) {
+      button.addEventListener('click', function () {
+        var range = button.getAttribute('data-ov-range');
+        if (range === state.range) return;
+        state.range = range;
+        Array.prototype.forEach.call(rangeButtons, function (b) {
+          b.setAttribute('aria-pressed', String(b === button));
+        });
+        var list = visible();
+        if (list.indexOf(GAMES[state.game]) < 0) state.game = 0;
+        paintStats();
+        select(state.game);
+      });
+    });
+
+    svg.addEventListener('click', function (event) {
+      var pt = event.target.closest('[data-minute]');
+      if (!pt) return;
+      showPoint(Number(pt.getAttribute('data-minute')), Number(pt.getAttribute('data-value')));
+    });
+    svg.addEventListener('focusin', function (event) {
+      var pt = event.target.closest('[data-minute]');
+      if (!pt) return;
+      showPoint(Number(pt.getAttribute('data-minute')), Number(pt.getAttribute('data-value')));
+    });
+    svg.addEventListener('mouseover', function (event) {
+      var pt = event.target.closest('[data-minute]');
+      if (!pt) return;
+      showPoint(Number(pt.getAttribute('data-minute')), Number(pt.getAttribute('data-value')));
+    });
+
     paintLineup();
+    paintStats();
 
     var resizeTimer = 0;
     window.addEventListener('resize', function () {
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(renderChart, 150);
     }, { passive: true });
-
-    // 台账：三局汇总
-    var wins = GAMES.filter(function (g) { return g.result === 'win'; }).length;
-    var avgDur = GAMES.reduce(function (s, g) { return s + g.dur; }, 0) / GAMES.length;
-    var avgDiff = GAMES.reduce(function (s, g) { return s + g.diff[g.diff.length - 1][1]; }, 0) / GAMES.length;
-    root.querySelector('[data-ov-stat-total]').innerHTML = GAMES.length + '<small>局</small>';
-    root.querySelector('[data-ov-stat-wr]').innerHTML = Math.round(wins / GAMES.length * 100) + '<small>%</small>';
-    root.querySelector('[data-ov-stat-dur]').textContent = fmtClock(avgDur);
-    root.querySelector('[data-ov-stat-gold]').textContent = fmtDiff(avgDiff);
-    root.querySelector('[data-ov-total]').textContent = GAMES.length;
-    root.querySelector('[data-ov-wins]').textContent = wins;
-    root.querySelector('[data-ov-losses]').textContent = GAMES.length - wins;
-    root.querySelector('[data-ov-note]').textContent = GAMES.length + ' 局记录，' + GAMES.length + ' 局有可用的经济时间轴。';
 
     select(0);
   })();
@@ -1066,7 +1141,7 @@
   (function () {
     if (reduce.matches) return;
     if (!window.CSS || !CSS.supports('animation-timeline', 'view()')) return;
-    var targets = doc.querySelectorAll('.sec-head, .brief, .wb, .faq-grid, .footer-gh, .page-tail-inner');
+    var targets = doc.querySelectorAll('.sec-head, .v9-head, .v9-fact, .v9-faq-body, .v5-cta-inner, .footer-gh, .page-tail-inner');
     Array.prototype.forEach.call(targets, function (el) { el.classList.add('scroll-rise'); });
   })();
 

@@ -25,6 +25,8 @@ jobs:
           python -m pip install -r requirements-dev.txt
       - name: Deploy smoke test
         run: python scripts/check_deploy.py
+      - name: Module removal regression
+        run: python scripts/verify_module_analyses.py
       - name: Replay and checkpoint tests
         run: |
           # checkpoints 用例只随源码发行版发布；公开仓库里跳过，避免整体失败。
@@ -62,6 +64,11 @@ jobs:
         run: node scripts/test_workspace_home.mjs
       - name: Cross analysis kernel regression
         run: node scripts/test_cross_analytics.mjs
+      # test_analysis_math.mjs / test_draft_state.mjs 仍 import 已删除的
+      # web/analysis-math.mjs、web/draft-state.mjs，本地直接跑就 ERR_MODULE_NOT_FOUND；
+      # 修好之前不能接进 CI。gallery 这条是实测自洽的纯 Node 测试。
+      - name: Gallery view regression
+        run: node scripts/test_gallery_view.mjs
       - name: Install browser test dependencies
         run: |
           python -m playwright install chromium --with-deps

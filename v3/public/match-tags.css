@@ -1,0 +1,293 @@
+/* 单局标签：首页复盘卡 / 对局档案 / 单局复盘页共用。
+   颜色沿用墨绿强调色，未选中的是浅灰描边，和「关注」按钮同一套语言。 */
+
+.tagrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 180px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  color: var(--accent-ink, var(--text));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tagchip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tagchip-x {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tagchip-x:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-ink, var(--text));
+}
+
+/* 备注按钮：原先没有基础样式，浏览器默认按钮在 chip 里是一块白方框，
+   和圆角标签拼在一起很脏。和 × 一样做成 16px 的透明圆钮。 */
+.tagchip-note {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: color-mix(in srgb, var(--accent) 62%, var(--muted));
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tagchip-note:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-ink, var(--text));
+}
+
+.tagadd {
+  padding: 2px 9px;
+  border: 1px dashed color-mix(in srgb, var(--muted) 45%, var(--line));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.tagadd:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink, var(--text));
+}
+
+.tagpick-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.taginput {
+  width: 150px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.taginput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.tagpick-list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: max-content;
+  max-width: 280px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: 0 8px 22px rgb(15 35 48 / 14%);
+}
+
+.tagpick {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tagpick:hover {
+  border-color: var(--accent);
+  color: var(--accent-ink, var(--text));
+}
+
+.tagpick-more {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+}
+
+/* 三个入口的局部对齐 */
+.pbr-watch .tagrow { margin-top: 2px; }
+.md-crumb .tagrow { flex-basis: 100%; margin-top: 6px; }
+
+/* 对局档案：标签只读地跟在对手名下面，不额外撑高卡片 */
+.tagstrip {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.tagstrip[hidden] { display: none; }
+.tagchip-ro {
+  padding: 1px 7px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+}
+
+.tags-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.tags-filter select {
+  max-width: 180px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+/* ── 标签查询（首页复盘区下方 / 对局档案工具栏下）─────────────────
+   输入或点选一个标签，列出挂过这个标签的对局；候选随加标签实时更新。 */
+
+.tagquery { margin: 14px 0 4px; }
+.tq-body {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+}
+.tq-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+.tq-head b { color: var(--text); font-size: 13px; }
+.tq-head span { color: var(--muted); font-size: 11.5px; }
+.tq-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tq-input {
+  flex: 1 1 220px;
+  min-width: 160px;
+  max-width: 360px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.tq-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.tq-go, .tq-clear {
+  padding: 7px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.tq-go:hover { filter: brightness(1.06); }
+.tq-clear { border-color: var(--line); background: transparent; color: var(--muted); }
+.tq-clear[hidden] { display: none; }
+.tq-clear:hover { border-color: var(--muted); color: var(--text); }
+.tq-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.tq-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.tq-chip:hover, .tq-chip.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--soft));
+  color: var(--accent-ink, var(--text));
+}
+.tq-chip-more { border-style: dashed; background: transparent; color: var(--muted); }
+.tq-chip-empty, .tq-hint, .tq-empty { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.tq-out { margin-top: 2px; }
+.tq-count { margin: 10px 0 6px; color: var(--muted); font-size: 12px; }
+.tq-count b { color: var(--accent-ink, var(--text)); }
+.tq-hits { display: grid; gap: 4px; max-height: 260px; overflow: auto; }
+.tq-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--text);
+  text-decoration: none;
+}
+.tq-hit:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--soft));
+}
+.tq-hit-name { font-size: 12.5px; font-weight: 600; }
+.tq-hit-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-inline-start: auto; }
+.tq-hit-tags i {
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+}
+.tq-hit-go { color: var(--muted); font-size: 13px; }
+
+/* 首页：跟复盘板块对齐；档案：工具栏下一条窄栏，结果多列铺开 */
+.pbr-home .tagquery { margin: 4px 0 22px; }
+.pbr-home .tq-body { border-radius: var(--pbr-r, 14px); }
+.fixture-page .tagquery { margin: 0 0 14px; }
+.fixture-page .tq-body { padding: 10px 12px; }
+.fixture-page .tq-hits {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  max-height: 220px;
+}

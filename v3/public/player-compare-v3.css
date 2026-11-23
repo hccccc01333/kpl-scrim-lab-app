@@ -1,0 +1,307 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   选手对比页 v4 —— KPL 红蓝对决 / 浅白底 / 一针见血
+   未分层，最后导入，盖过 style.css 里 2018 年的 .hc-* / .pc-* 小字样式。
+   红方 A / 蓝方 B 双色贯穿；筛选与目录合并为一条吸顶工具条；
+   分位一律翻成「同位置第几 / 共几人」；删掉细横条、谁赢哪项、分位差、
+   同场记录、评分分布、按天走势、区间条与标准差术语。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.pc-page {
+  --pca: #c0392b;          /* 红方 A */
+  --pca-soft: #fbecEa;
+  --pcb: #2166c7;          /* 蓝方 B */
+  --pcb-soft: #e9f1fc;
+  --pcink: #162630;
+  --pcmute: #5c6b76;
+  --pcpaper: #fff;
+  --pcline: #e4e9ed;
+  --pcwash: #f5f7f8;
+  font-variant-numeric: tabular-nums;
+}
+.pc-empty-title { font-size: 24px; font-weight: 800; margin: 0 0 16px; }
+
+/* ── 浅白红蓝对决头 ────────────────────────────────────────────── */
+.pc-page .pc-hero {
+  position: relative; overflow: hidden; padding: 22px 28px 24px; border-radius: 16px;
+  background: linear-gradient(180deg, #fff 0%, #fbfcfd 100%);
+  border: 1px solid var(--pcline); box-shadow: 0 6px 22px -18px rgba(22, 38, 48, .5);
+}
+.pc-page .pc-hero::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 5px; pointer-events: none;
+  background: linear-gradient(90deg, var(--pca) 0 46%, var(--pcline) 46% 54%, var(--pcb) 54% 100%);
+}
+.pc-page .pc-hero > * { position: relative; }
+.pc-page .hc-hero-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.pc-page .hc-hero-kicker { font: 800 12px Manrope, var(--font); letter-spacing: .12em; color: var(--pca); }
+.pc-page .hc-hero-scope { font-size: 12.5px; color: var(--pcmute); }
+.pc-page .hc-duel { display: grid; grid-template-columns: minmax(0, 1fr) 132px minmax(0, 1fr); align-items: stretch; gap: 14px; margin: 16px 0 0; }
+.pc-page .hc-duel-side {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 16px;
+  padding: 15px 17px; border: 1px solid var(--pcline); border-radius: 12px; min-inline-size: 0;
+}
+.pc-page .hc-duel-side.a { background: linear-gradient(110deg, var(--pca-soft), #fff 78%); border-color: #efc9c3; box-shadow: inset 3px 0 0 var(--pca); }
+.pc-page .hc-duel-side.b { background: linear-gradient(250deg, var(--pcb-soft), #fff 78%); border-color: #c3d6f3; box-shadow: inset 3px 0 0 var(--pcb); }
+.pc-page .hc-duel-id { display: flex; align-items: center; gap: 12px; min-inline-size: 0; }
+.pc-page .hc-duel-id > div { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
+.pc-page .hc-duel-id span { font-size: 11.5px; font-weight: 800; letter-spacing: .05em; color: var(--pcmute); }
+.pc-page .hc-duel-side.a .hc-duel-id span { color: var(--pca); }
+.pc-page .hc-duel-side.b .hc-duel-id span { color: var(--pcb); }
+.pc-page .hc-duel-id b { font-size: 25px; font-weight: 800; letter-spacing: -.02em; color: var(--pcink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-page .hc-duel-id small { font-size: 12.5px; color: var(--pcmute); }
+.pc-page .pc-mono {
+  display: grid; place-items: center; inline-size: 52px; block-size: 52px; border-radius: 11px;
+  font: 800 25px var(--font); flex: none;
+}
+.pc-page .pc-mono.a { background: var(--pca); color: #fff; }
+.pc-page .pc-mono.b { background: var(--pcb); color: #fff; }
+.pc-page .hc-duel-id .portrait { inline-size: 52px; block-size: 52px; border-radius: 10px; object-fit: cover; }
+.pc-page .hc-duel-num { text-align: right; display: flex; flex-direction: column; align-items: flex-end; }
+.pc-page .hc-duel-num b { font: 800 40px/1 Manrope, var(--font); letter-spacing: -.045em; }
+.pc-page .hc-duel-side.a .hc-duel-num b { color: var(--pca); }
+.pc-page .hc-duel-side.b .hc-duel-num b { color: var(--pcb); }
+.pc-page .hc-duel-num span { font-size: 11.5px; color: var(--pcmute); margin-top: 3px; }
+.pc-page .hc-duel-side select {
+  grid-column: 1 / -1; inline-size: 100%; padding: 8px 11px; border-radius: 8px;
+  border: 1px solid var(--pcline); background: #fff; color: var(--pcink); font-size: 13px;
+}
+.pc-page .hc-duel-side.a select:focus { outline-color: var(--pca); }
+.pc-page .hc-duel-side.b select:focus { outline-color: var(--pcb); }
+.pc-page .hc-vs { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+.pc-page .hc-vs-tag { font: 800 12px Manrope, var(--font); letter-spacing: .16em; color: var(--pcmute); }
+.pc-page .hc-vs b { display: flex; align-items: center; gap: 7px; font: 800 38px/1 Manrope, var(--font); letter-spacing: -.04em; }
+.pc-page .hc-vs-n.a { color: var(--pca); }
+.pc-page .hc-vs-n.b { color: var(--pcb); }
+.pc-page .hc-vs b i { display: block; inline-size: 5px; block-size: 5px; border-radius: 50%; background: #aebac2; box-shadow: 0 11px 0 #aebac2; margin-block: 5px; }
+.pc-page .hc-vs small { font-size: 11.5px; color: var(--pcmute); }
+.pc-page .hc-verdict {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 14px; align-items: baseline;
+  margin-top: 16px; padding: 13px 16px; border-radius: 11px;
+  background: var(--pcwash); border: 1px solid var(--pcline);
+}
+.pc-page .hc-verdict-tag {
+  grid-row: 1 / 3; align-self: start; padding: 4px 9px; border-radius: 6px;
+  background: var(--pca); color: #fff; font: 800 11.5px var(--font); letter-spacing: .08em;
+}
+.pc-page .hc-claim { margin: 0; font-size: 19px; font-weight: 750; line-height: 1.45; color: var(--pcink); }
+.pc-page .hc-claim em { font-style: normal; color: var(--pca); }
+.pc-page .hc-fact { margin: 3px 0 0; font-size: 13px; line-height: 1.6; color: var(--pcmute); }
+
+/* ── 吸顶工具条：筛选 + 目录并在一起 ───────────────────────────── */
+.pc-page .hc-controlbar {
+  position: sticky; top: 126px; z-index: 24;
+  display: grid; gap: 10px; margin: 14px 0 14px; padding: 11px 15px;
+  border: 1px solid var(--pcline); border-radius: 12px; background: rgba(255, 255, 255, .97);
+  box-shadow: 0 8px 20px -16px rgba(22, 38, 48, .55); backdrop-filter: blur(8px);
+}
+.pc-page .hc-controlbar-filters { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.pc-page .hc-filter { display: inline-flex; align-items: center; gap: 9px; font-size: 13.5px; }
+.pc-page .hc-filter > span { color: var(--pcmute); font-weight: 600; }
+.pc-page .hc-filter select {
+  min-inline-size: 132px; padding: 8px 30px 8px 12px; border: 1px solid var(--pcline); border-radius: 8px;
+  background: var(--pcwash); color: var(--pcink); font-size: 13.5px;
+}
+.pc-page .pc-refresh { border-radius: 8px; padding: 8px 15px; font-size: 13.5px; }
+.pc-page .hc-toolbar-count { margin-left: auto; font-size: 13px; color: var(--pcmute); }
+.pc-page .pc-reach {
+  border: 1px solid var(--pcline); background: var(--pcb-soft); color: var(--pcb);
+  border-radius: 999px; padding: 4px 11px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+}
+.pc-page .pc-reach:hover { border-color: var(--pcb); }
+.pc-page .hc-index { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid var(--pcline); }
+.pc-page .hc-index button {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 9px;
+  border: 1px solid var(--pcline); background: #fff; color: var(--pcink);
+  font-size: 14px; font-weight: 750; cursor: pointer; transition: border-color .15s, background .15s, transform .15s;
+}
+.pc-page .hc-index button i {
+  display: grid; place-items: center; inline-size: 22px; block-size: 22px; border-radius: 6px;
+  background: var(--pcb-soft); color: var(--pcb); font: 800 11px Manrope, var(--font); font-style: normal;
+}
+.pc-page .hc-index button:hover { border-color: var(--pca); background: var(--pca-soft); transform: translateY(-1px); }
+.pc-page .hc-source { margin: 18px 2px 0; font-size: 12.5px; color: var(--pcmute); }
+
+/* ── 卡片 ──────────────────────────────────────────────────────── */
+.pc-page .hc-cards { display: grid; gap: 16px; }
+.pc-page .hc-card {
+  --gold: var(--pca); --teal: var(--pcb); --wash: var(--pcwash);
+  --line: var(--pcline); --ink: var(--pcink); --muted: var(--pcmute);
+  background: #fff; border: 1px solid var(--pcline); border-radius: 14px; overflow: hidden;
+  box-shadow: 0 4px 18px -14px rgba(22, 38, 48, .4);
+  scroll-margin-top: 158px;
+}
+.pc-page .hc-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+  padding: 18px 22px 14px; border-bottom: 1px solid var(--pcline);
+}
+.pc-page .hc-card-heading { display: flex; align-items: flex-start; gap: 13px; min-inline-size: 0; }
+.pc-page .hc-card-no {
+  display: grid; place-items: center; inline-size: 34px; block-size: 34px; border-radius: 9px; flex: none;
+  background: var(--pcb-soft); color: var(--pcb); font: 800 14px Manrope, var(--font);
+}
+.pc-page .hc-card-name { font: 800 11.5px var(--font); letter-spacing: .09em; color: var(--pca); }
+.pc-page .hc-card-title { margin: 4px 0 0; font-size: 19px; font-weight: 750; line-height: 1.45; color: var(--pcink); }
+.pc-page .hc-card-title em { font-style: normal; color: var(--pca); }
+.pc-page .hc-card-canvas { margin: 0; border: 0; padding: 16px 18px 20px; }
+
+/* 两视图同屏并排，窄屏堆叠；短面板不拉伸 */
+.pc-page .hcv { position: relative; }
+.pc-page .hcv-stage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+.pc-page .hcv-stage:has(> .hcv-pane:only-of-type) { grid-template-columns: minmax(0, 1fr); }
+.pc-page .hcv-pane { min-inline-size: 0; align-self: start; border: 1px solid var(--pcline); border-radius: 11px; overflow: hidden; background: #fff; }
+.pc-page .hcv-pane.is-b { border-color: #c3d6f3; }
+.pc-page .hcv-pane-cap {
+  display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+  background: var(--pca-soft); border-bottom: 1px solid var(--pcline);
+  font-size: 12.5px; font-weight: 750; color: var(--pca);
+}
+.pc-page .hcv-pane.is-b .hcv-pane-cap { background: var(--pcb-soft); color: var(--pcb); }
+.pc-page .hcv-pane-no {
+  display: grid; place-items: center; inline-size: 20px; block-size: 20px; border-radius: 5px;
+  background: #fff; color: var(--pca); font: 800 10px Manrope, var(--font);
+}
+.pc-page .hcv-pane.is-b .hcv-pane-no { color: var(--pcb); }
+.pc-page .hcv-view { display: block; }
+.pc-page .hcv-hero { padding: 14px 16px 12px; border-bottom: 1px solid var(--pcline); }
+.pc-page .hcv-body { padding: 14px 16px 16px; }
+.pc-page .hcv-figure { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.pc-page .hcv-figure b { font: 800 38px/1 Manrope, var(--font); letter-spacing: -.045em; color: var(--pcink); }
+.pc-page .hcv-figure.red b { color: var(--pca); }
+.pc-page .hcv-figure.blue b { color: var(--pcb); }
+.pc-page .hcv-figure span { font-size: 13.5px; color: var(--pcmute); line-height: 1.5; }
+
+/* ── 01 位置指标：数字放大，就地高亮赢家，无细横条 ──────────────── */
+.pc-page .pc-vs-table { display: grid; gap: 0; max-inline-size: 900px; }
+.pc-page .pc-vs-head, .pc-page .pc-vs-row { display: grid; grid-template-columns: minmax(92px, 1fr) minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 12px; }
+.pc-page .pc-vs-head { padding: 0 12px 10px; font-size: 12.5px; color: var(--pcmute); }
+.pc-page .pc-vs-head b { font-size: 15px; font-weight: 800; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-page .pc-vs-head b.a { color: var(--pca); }
+.pc-page .pc-vs-head b.b { color: var(--pcb); }
+.pc-page .pc-vs-row { padding: 10px 12px; border-top: 1px solid var(--pcline); border-radius: 8px; }
+.pc-page .pc-vs-key { font-size: 14.5px; font-weight: 650; color: var(--pcmute); }
+.pc-page .pc-vs-val { position: relative; font: 800 25px/1.15 Manrope, var(--font); text-align: center; letter-spacing: -.03em; color: var(--pcmute); }
+.pc-page .pc-vs-val.a.is-win { color: var(--pca); }
+.pc-page .pc-vs-val.b.is-win { color: var(--pcb); }
+.pc-page .pc-vs-val i {
+  position: absolute; top: -6px; right: 2px; font: 700 10px var(--font); font-style: normal;
+  padding: 2px 6px; border-radius: 999px; color: #fff; background: var(--pca);
+}
+.pc-page .pc-vs-val.b i { background: var(--pcb); }
+
+/* ── 02 位置排名 ───────────────────────────────────────────────── */
+.pc-page .pc-legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 10px; font-size: 12.5px; color: var(--pcmute); }
+.pc-page .pc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pc-page .pc-legend i { inline-size: 11px; block-size: 11px; border-radius: 3px; background: var(--gold); }
+.pc-page .pc-legend i.b { background: var(--teal); }
+.pc-page .pc-rad-wrap { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; }
+.pc-page .pc-rad-svg { inline-size: min(300px, 100%); block-size: auto; }
+.pc-page .pc-rad-ring { fill: none; stroke: var(--pcline); stroke-width: 1; }
+.pc-page .pc-rad-ring.is-mid { stroke-dasharray: 4 4; }
+.pc-page .pc-rad-spoke { stroke: var(--pcline); stroke-width: 1; }
+.pc-page .pc-rad-label { fill: var(--pcink); font-size: 12px; font-weight: 600; }
+.pc-page .pc-rad-tick { fill: var(--pcmute); font-size: 10.5px; }
+.pc-page .pc-rad-area.a { fill: var(--pca); fill-opacity: .14; stroke: var(--pca); stroke-width: 2.2; }
+.pc-page .pc-rad-area.b { fill: var(--pcb); fill-opacity: .12; stroke: var(--pcb); stroke-width: 2.2; }
+.pc-page .pc-rad-dot.a { fill: var(--pca); stroke: #fff; stroke-width: 1.3; }
+.pc-page .pc-rad-dot.b { fill: var(--pcb); stroke: #fff; stroke-width: 1.3; }
+.pc-page .pc-ladders { display: grid; gap: 9px; }
+.pc-page .pc-ladder-head, .pc-page .pc-ladder-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 58px 58px; align-items: center; gap: 9px; }
+.pc-page .pc-ladder-head { font-size: 11.5px; color: var(--pcmute); }
+.pc-page .pc-ladder-head span:not(:first-child) { text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-page .pc-ladder-label { font-size: 13.5px; color: var(--pcmute); }
+.pc-page .pc-ladder { position: relative; display: block; height: 10px; border-radius: 999px; background: linear-gradient(90deg, var(--pca-soft), var(--pcwash)); }
+.pc-page .pc-ladder em { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--pcline); }
+.pc-page .pc-ladder b { position: absolute; top: 50%; inline-size: 11px; block-size: 11px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px #fff; }
+.pc-page .pc-ladder b.a { background: var(--pca); }
+.pc-page .pc-ladder b.b { background: var(--pcb); }
+.pc-page .pc-ladder-val { font: 750 13px Manrope, var(--font); text-align: center; }
+.pc-page .pc-ladder-val.a { color: var(--pca); }
+.pc-page .pc-ladder-val.b { color: var(--pcb); }
+
+/* ── 03 英雄池 ─────────────────────────────────────────────────── */
+.pc-page .pc-pool { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pc-page .pc-pool-col { display: grid; align-content: start; gap: 7px; padding: 12px; border-radius: 10px; border: 1px solid var(--pcline); background: var(--pcwash); min-inline-size: 0; }
+.pc-page .pc-pool-col.is-both { border-color: #edc9c3; background: var(--pca-soft); }
+.pc-page .pc-pool-col > b { font-size: 12.5px; color: var(--pcmute); padding-bottom: 4px; border-bottom: 1px solid var(--pcline); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-page .pc-chip { display: flex; align-items: center; gap: 7px; min-inline-size: 0; font-size: 12.5px; }
+.pc-page .pc-chip .portrait { inline-size: 24px; block-size: 24px; border-radius: 6px; object-fit: cover; flex: none; }
+.pc-page .pc-chip b { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-page .pc-chip em { margin-left: auto; font: 600 11.5px Manrope, var(--font); font-style: normal; color: var(--pcmute); white-space: nowrap; }
+.pc-page .pc-pool-empty, .pc-page .pc-pool-zero { font-size: 12px; color: var(--pcmute); }
+.pc-page .pc-pool-zero { display: grid; place-items: center; gap: 2px; padding: 14px 0; }
+.pc-page .pc-pool-zero b { font: 800 26px Manrope, var(--font); color: var(--pca); }
+.pc-page .pc-conc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pc-page .pc-conc-col { display: grid; gap: 8px; padding: 12px; border-radius: 10px; border: 1px solid var(--pcline); background: var(--pcwash); min-inline-size: 0; }
+.pc-page .pc-conc-col.a { border-color: #edc9c3; }
+.pc-page .pc-conc-col.b { border-color: #c3d6f3; }
+.pc-page .pc-conc-col > b { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+.pc-page .pc-conc-col.a > b { color: var(--pca); }
+.pc-page .pc-conc-col.b > b { color: var(--pcb); }
+.pc-page .pc-conc-col > b small { font: 600 11.5px Manrope, var(--font); color: var(--pcmute); }
+.pc-page .pc-conc-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 64px 46px; align-items: center; gap: 7px; font-size: 12.5px; }
+.pc-page .pc-conc-row .portrait { inline-size: 24px; block-size: 24px; border-radius: 6px; object-fit: cover; }
+.pc-page .pc-conc-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-page .pc-conc-row > b { font: 700 12px Manrope, var(--font); text-align: right; }
+.pc-page .pc-conc { display: block; height: 7px; border-radius: 999px; background: #fff; overflow: hidden; }
+.pc-page .pc-conc em { display: block; height: 100%; border-radius: 999px; }
+.pc-page .pc-conc em.a { background: var(--pca); }
+.pc-page .pc-conc em.b { background: var(--pcb); }
+
+/* ── 04 状态走势 ───────────────────────────────────────────────── */
+.pc-page .pc-line-svg { inline-size: 100%; block-size: auto; }
+.pc-page .pc-line-grid { stroke: var(--pcline); stroke-width: 1; }
+.pc-page .pc-line-tick { fill: var(--pcmute); font-size: 11px; }
+.pc-page .pc-line-path.a { stroke: var(--pca); stroke-width: 2.4; }
+.pc-page .pc-line-path.b { stroke: var(--pcb); stroke-width: 2.4; }
+.pc-page .pc-line-dot { stroke: #fff; stroke-width: 1.2; }
+.pc-page .pc-line-dot.a { fill: var(--pca); }
+.pc-page .pc-line-dot.b { fill: var(--pcb); }
+.pc-page .pc-empty { padding: 20px 12px; text-align: center; font-size: 13px; color: var(--pcmute); }
+
+/* ── 悬浮读数 ──────────────────────────────────────────────────── */
+.pc-page .pcv-tip {
+  position: absolute; z-index: 5; max-inline-size: 260px; padding: 7px 10px; border-radius: 7px;
+  background: #162630; color: #eef5f8; font-size: 12px; line-height: 1.5;
+  box-shadow: 0 6px 18px rgba(22, 38, 48, .3); pointer-events: none;
+}
+
+/* ── 响应式 ────────────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  .pc-page .hcv-stage { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .pc-page .hc-controlbar { top: 73px; }
+}
+@media (max-width: 820px) {
+  .pc-page .pc-hero { padding: 18px; }
+  .pc-page .hc-duel { grid-template-columns: 1fr; gap: 10px; }
+  .pc-page .hc-vs { padding: 6px 0; }
+  .pc-page .hc-vs b { font-size: 30px; }
+  .pc-page .hc-verdict { grid-template-columns: 1fr; }
+  .pc-page .hc-verdict-tag { grid-row: auto; justify-self: start; }
+  .pc-page .hc-card-head { padding: 15px 16px 12px; }
+  .pc-page .hc-card-title { font-size: 17px; }
+  .pc-page .hc-card-canvas { padding: 13px 12px 16px; }
+  .pc-page .hcv-figure b { font-size: 30px; }
+  .pc-page .pc-vs-val { font-size: 21px; }
+  .pc-page .pc-ladder-head, .pc-page .pc-ladder-row { grid-template-columns: 72px minmax(0, 1fr) 50px 50px; gap: 7px; }
+}
+@media (max-width: 560px) {
+  .pc-page .hc-duel-id b { font-size: 21px; }
+  .pc-page .hc-duel-num b { font-size: 32px; }
+  .pc-page .hcv-figure b { font-size: 26px; }
+  .pc-page .pc-vs-head, .pc-page .pc-vs-row { grid-template-columns: 78px minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .pc-page .pc-pool { grid-template-columns: 1fr; }
+  .pc-page .pc-conc-grid { grid-template-columns: 1fr; }
+  .pc-page .hc-index button i { display: none; }
+}
+
+/* 深色主题 */
+:root[data-theme="dark"] .pc-page { --pcink: #eef3f5; --pcmute: #a8b6be; --pca: #e8786c; --pcb: #6ea6f0; --pca-soft: #33211f; --pcb-soft: #1a2738; --pcline: #2a3a44; --pcwash: #1b2831; }
+:root[data-theme="dark"] .pc-page .pc-hero { background: #16232c; }
+:root[data-theme="dark"] .pc-page .hc-card,
+:root[data-theme="dark"] .pc-page .hcv-pane,
+:root[data-theme="dark"] .pc-page .pc-pool-col,
+:root[data-theme="dark"] .pc-page .pc-conc-col { background: #18242c; border-color: #2a3a44; }
+:root[data-theme="dark"] .pc-page .hc-controlbar { background: rgba(24, 36, 44, .97); }
+:root[data-theme="dark"] .pc-page .hc-duel-side.a { background: linear-gradient(120deg, var(--pca-soft), #18242c); }
+:root[data-theme="dark"] .pc-page .hc-duel-side.b { background: linear-gradient(240deg, var(--pcb-soft), #18242c); }

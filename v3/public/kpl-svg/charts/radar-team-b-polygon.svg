@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="336" height="336" viewBox="0 0 336 336" role="img">
+<title>雷达图 · 队伍 B 数据面</title>
+<defs><radialGradient id="dot-gray" cx="35%" cy="25%" r="80%">
+ <stop stop-color="#d9dad9"/><stop offset="1" stop-color="#353939"/>
+</radialGradient></defs>
+<polygon points="168.00,61.92 214.33,121.67 211.68,168.00 175.72,175.72 168.00,277.20 132.70,203.30 12.00,168.00 97.40,97.40" fill="#7c7e80" stroke="#4a4c4c" stroke-width="1.15" fill-opacity=".36" stroke-linejoin="round"/><circle cx="168" cy="61.92" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="214.33" cy="121.67" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="211.68" cy="168" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="175.722" cy="175.722" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="168" cy="277.2" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="132.701" cy="203.299" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="12" cy="168" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/><circle cx="97.4025" cy="97.4025" r="2.6" fill="url(#dot-gray)" stroke="#4a4c4c" stroke-width="0.4"/>
+</svg>

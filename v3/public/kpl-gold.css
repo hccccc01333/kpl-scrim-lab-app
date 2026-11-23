@@ -1,0 +1,423 @@
+/* ============================================================
+   KPL Gold Skin — KPL GRAND FINALS 2026 转播视觉（年总）
+   ------------------------------------------------------------
+   外壳全部使用官方 SVG 资产包（v3/public/kpl-svg/，来自
+   resources/KPL-Grand-Finals-2026-SVG.zip），色值取 README：
+   主背景 #F8F7F3 / 主文字 #2F281E / 品牌金 #D7B071 / 青绿 #2AA68A。
+   加载顺序：必须在 interface.css 之后、以无 @layer 的 <link> 加载。
+   本层只换视觉，不改 DOM / JS / 数据逻辑。
+   红线：图表蓝、红蓝双方语义色不覆盖（主题蓝与图表蓝同值 #1f6fcf，
+   严禁全局替换；只按下方白名单作用域操作）。
+   ============================================================ */
+
+/* ---------- 1. 全局 token：年总白金体系（固定浅色） ---------- */
+:root,
+:root[data-theme='dark'] {
+  color-scheme: light;
+  --bg: #F8F7F3;
+  --paper: #FFFEFC;
+  --paper-2: #F7F4EC;
+  --surface: #F3F0E9;
+  --surface-hover: #EDE7D8;
+  --sidebar: #F8F7F3;
+  --selected: #EAD9B4;
+  --text: #2F281E;
+  --muted: #6E6658;
+  --quiet: #938B7B;
+  --line: rgba(150,116,49,0.28);
+  --line-strong: rgba(150,116,49,0.5);
+  --accent: #D7B071;          /* 品牌金 */
+  --accent-hover: #B98F42;
+  --accent-ink: #8A6530;      /* 深金墨：按钮底 / 强调文字，白字对比度达标 */
+  --accent-text: #FFFFFF;
+  --soft: #F5EBD3;
+  --focus: #A97C3E;
+  --success: #2AA68A;         /* 青绿强调 */
+  --success-soft: #E1F2ED;
+  --danger: #B5564A;
+  --danger-soft: #F6E8E5;
+  --warning: #A97C3E;
+  --warning-soft: #F6EBD7;
+  --coral: var(--danger);
+  --gold: var(--accent);
+  --shadow: 0 4px 14px rgba(77, 60, 47, 0.08);
+  --shadow-card: 0 10px 24px rgba(77, 60, 47, 0.12);
+  --shadow-pop: 0 20px 60px rgba(77, 60, 47, 0.22);
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  /* 年总 SVG 资产路径 */
+  --gf-swirl: url('kpl-svg/surfaces/main-background-swirl.svg');
+  --gf-pearl: url('kpl-svg/surfaces/pearl-background.svg');
+  --gf-card: url('kpl-svg/surfaces/main-card-container.svg');
+  --gf-corner-tl: url('kpl-svg/decor/corner-top-left.svg');
+  --gf-corner-br: url('kpl-svg/decor/corner-bottom-right.svg');
+}
+
+/* ---------- 2. 全页背景：珍珠白波纹 + 右上金绸漩涡 ---------- */
+html { background: var(--bg); }
+body {
+  background-color: var(--bg);
+  background-image: var(--gf-pearl);
+  background-position: center top;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  color: var(--text);
+}
+/* 金绸漩涡作右上角点缀：独立伪元素 + 渐隐遮罩，消除矩形硬边 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0 0 auto auto;
+  inline-size: min(760px, 56vw);
+  block-size: 460px;
+  background: var(--gf-swirl) no-repeat right top / cover;
+  -webkit-mask-image: radial-gradient(ellipse 72% 82% at 88% 12%, #000 38%, transparent 100%);
+  mask-image: radial-gradient(ellipse 72% 82% at 88% 12%, #000 38%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+#app { position: relative; z-index: 1; }
+/* 内容区加一层暖白薄雾，金绸不冲淡正文；顶栏 hero 自带冷网格一并压暖 */
+#app > main#content { position: relative; }
+/* BP hero 自带硬编码淡蓝渐变 + 蓝网格，token 覆盖不到，直接在此压成白金 */
+.bps-hero {
+  background:
+    radial-gradient(1100px 320px at 84% -50%, rgba(215, 176, 113, 0.14), transparent 62%),
+    radial-gradient(760px 300px at 4% 125%, rgba(42, 166, 138, 0.07), transparent 62%),
+    linear-gradient(135deg, #FFFEFC 0%, #FBF7EE 58%, #F3F6F3 100%) !important;
+}
+.bps-hero::before {
+  background-image:
+    linear-gradient(rgba(183, 139, 63, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(183, 139, 63, 0.07) 1px, transparent 1px) !important;
+}
+::selection { background: var(--accent); color: #2F281E; }
+
+/* ---------- 3. 顶栏 / 品牌 ---------- */
+.wordmark { color: var(--text); }
+.wordmark small { color: var(--accent-ink); letter-spacing: 0.16em; }
+.brand-symbol {
+  background: linear-gradient(150deg, var(--accent), var(--accent-ink));
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(138, 101, 48, 0.32);
+}
+.brand-symbol i { background: rgba(255, 255, 255, 0.86); }
+.brand-symbol i:nth-child(2) { background: #fff; }
+.main-nav a { font-weight: 700; }
+.main-nav a[aria-current] { color: var(--accent-ink); }
+.main-nav a[aria-current]::after {
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  border-radius: 3px 3px 0 0;
+}
+.nav-icon { color: var(--quiet); }
+.main-nav a[aria-current] .nav-icon,
+.main-nav a:hover .nav-icon { color: var(--accent-ink); }
+.ui-breadcrumb { color: var(--quiet); }
+.ui-search-trigger {
+  border: 1px solid var(--line-strong) !important;
+  background: var(--paper) !important;
+  border-radius: 10px;
+  color: var(--muted);
+}
+.ui-search-trigger:hover { border-color: var(--accent) !important; }
+.head-button { border-color: var(--line-strong) !important; border-radius: 10px; color: var(--muted); }
+.head-button:hover { border-color: var(--accent) !important; color: var(--accent-ink) !important; }
+.inbox-badge { background: var(--success) !important; }
+/* 固定浅色：隐藏主题切换（.theme-button；.mode-button 是"打开客户端"，勿藏） */
+.theme-button { display: none !important; }
+
+/* ---------- 4. 二级导航 ---------- */
+.secondary-wrap {
+  background: rgba(255, 254, 252, 0.92);
+  border-bottom: 1px solid var(--line-strong);
+  backdrop-filter: blur(10px);
+  /* P1 侧栏改竖排 fixed 整列后已无 72px 横向顶栏：workbench-ui.css 的 sticky
+     top:var(--header-height) 会把页签栏推到 72px 悬浮、盖住 #content 顶部标题。
+     竖排布局下贴视口顶部即可，滚动时仍固定、内容从下方穿过。 */
+  inset-block-start: 0 !important;
+}
+
+/* ---------- 5. 主容器卡：年总 SVG 珍珠白金角卡 ---------- */
+.panel, .card, .tile, .metric, .box,
+.bps-panel, .section, .pv-panel, .tb-panel {
+  border: 1px solid var(--line) !important;
+  border-radius: var(--r-lg) !important;
+  box-shadow: var(--shadow-card);
+  background-color: var(--paper);
+}
+
+/* ---------- 6. 主按钮：浅金底 + 深金墨细描边（去掉深金墨实心块） ----------
+   对比度核算（WCAG 相对亮度公式，详见交付说明）：
+   - 文字 --accent-ink #8A6530 (L≈0.1493) vs 浅金底 10% 金 over --paper
+     = #FBF6EE (L≈0.9259) → (0.9259+0.05)/(0.1493+0.05) ≈ 4.90:1 ≥ 4.5 ✓
+   - hover 16% = #F9F2E6 (L≈0.8935) → ≈ 4.73:1；active 20% = #F7EEE0 (L≈0.8630) → ≈ 4.58:1 ✓
+   - 描边深金墨 alpha .85 (合成 ≈#9C7C4F) vs 浅金底 ≈ 3.66:1、vs 页面底 #F8F7F3 ≈ 3.62:1 ≥ 3 ✓
+   品牌金 #D7B071 描边对浅底仅 1.89:1，故用深金墨 1px 细描边（不是深色块）。
+   :active 只加深底色，下沉交给 ui-icons.css 的 translate 兜底，不重复。
+   下方焦点环保持不变。 */
+button.primary, .control.primary, .btn.primary,
+button[type='submit'].primary, .pbr-week-go.primary {
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper)) !important;
+  border-color: rgba(138, 101, 48, 0.85) !important;
+  color: var(--accent-ink) !important;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+}
+button.primary:hover, .control.primary:hover, .btn.primary:hover,
+button[type='submit'].primary:hover, .pbr-week-go.primary:hover {
+  background: color-mix(in srgb, var(--accent) 16%, var(--paper)) !important;
+  border-color: var(--accent-ink) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+button.primary:active, .control.primary:active, .btn.primary:active,
+button[type='submit'].primary:active, .pbr-week-go.primary:active {
+  background: color-mix(in srgb, var(--accent) 20%, var(--paper)) !important;
+}
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  /* 青绿 --success 对比度仅 2.83:1，不达 WCAG 1.4.11 的 3:1；
+     品牌金 --accent 更低（1.89:1）。深金墨 --accent-ink 为 4.92:1，浅底/软底均达标。 */
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+
+/* ---------- 7. 表格 ---------- */
+table { border-color: var(--line); }
+thead { background: rgba(215, 176, 113, 0.09); }
+th { color: var(--accent-ink); font-weight: 800; }
+tbody tr:hover { background: rgba(215, 176, 113, 0.06); }
+
+/* ---------- 8. 页脚 / 滚动条 ---------- */
+.footer { color: var(--quiet); border-top-color: var(--line-strong); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(150, 116, 49, 0.35);
+  border-radius: 10px; border: 2px solid transparent; background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(150, 116, 49, 0.6); background-clip: padding-box; }
+
+/* ---------- 9. 作用域补洞：压过页面级/元素级蓝色变量 ---------- */
+:root:not([data-theme='dark']) :is(.masthead, .secondary-wrap, .secondary-nav) {
+  --accent: #D7B071;
+  --accent-ink: #8A6530;
+  --accent-hover: #B98F42;
+  --soft: #F5EBD3;
+  --text: #2F281E;
+  --line: rgba(150, 116, 49, 0.28);
+  --line-strong: rgba(150, 116, 49, 0.5);
+}
+.page.arch-page, body:has(.page.arch-page) {
+  --accent: #D7B071; --accent-ink: #8A6530; --soft: #F5EBD3;
+}
+.page.tb-page, :root[data-theme='light'] .tb-page {
+  --accent: #D7B071; --accent-ink: #8A6530; --soft: #F5EBD3; --focus: #A97C3E;
+  --tb-mint: #2AA68A;
+}
+/* BP 工作台自有蓝 token（保留红蓝双方语义色与图表色） */
+.bps, .bps-page, .bps-root {
+  --bps-ink: #2F281E; --bps-ink-2: #5A4A2E; --bps-ink-3: #7A6642;
+  --bps-paper: #FFFEFC; --bps-paper-2: #F7F4EC;
+  --bps-wash: #F5EBD3; --bps-wash-2: #EEDFC0;
+  --bps-line: rgba(150, 116, 49, 0.28); --bps-line-soft: rgba(150, 116, 49, 0.14);
+  --bps-line-strong: rgba(150, 116, 49, 0.5);
+  --bps-text: #2F281E; --bps-muted: #6E6658; --bps-quiet: #938B7B;
+  --bps-accent: #B98F42; --bps-accent-2: #8A6530;
+  --bps-shadow-sm: 0 2px 8px rgba(77, 60, 47, 0.07);
+  --bps-shadow-md: 0 8px 20px rgba(77, 60, 47, 0.12);
+  --bps-shadow-lg: 0 30px 70px -40px rgba(77, 60, 47, 0.45);
+}
+.bps-focus:hover { border-color: var(--line-strong) !important; }
+.pbr-home .pbr-metric[data-metric-id='record'],
+.pbr-home [data-metric-id='record'] {
+  background: linear-gradient(105deg, #F5EBD3, #FDF9F1, #FFFEFC) !important;
+  color: #2F281E !important;
+}
+
+/* ---------- 10. 不覆盖清单（图表蓝 / 红蓝语义色，务必保留） ----------
+   .md-page .own / --md-own-ink / --md-own-soft（单局本队）
+   --bc-blue / --bc-blue-soft（大场本队）  --pcb（选手对比 B 方）
+   .cxv-* / .pb-* / .track-line.blue / .cxv-arc.s2（图表曲线）
+   --tp-lane-*（分路数据可视化）
+   match-redblue.css / design-*.css / player-compare-v3.css 内的语义蓝
+   ------------------------------------------------------------ */
+
+/* ============================================================
+   11. 年总外壳：金绸侧栏 + SVG 金角 + 赛事标题条
+   ============================================================ */
+:root { --gf-sidebar: 232px; }
+
+/* 11.1 侧栏：珍珠白 + 金饰（去掉深棕，保留导航结构） */
+#app > .masthead {
+  position: fixed !important;
+  inset: 0 auto 0 0 !important;
+  inline-size: var(--gf-sidebar) !important;
+  block-size: 100dvh !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-inline-end: 1px solid rgba(215, 176, 113, 0.5) !important;
+  box-shadow: 6px 0 24px rgba(77, 60, 47, 0.1) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 254, 252, 0.97), rgba(248, 247, 243, 0.97)),
+    var(--gf-pearl) center top / cover no-repeat !important;
+  color: var(--text) !important;
+  z-index: 60;
+  backdrop-filter: none !important;
+}
+#app > .masthead .masthead-inner {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 0 !important;
+  max-inline-size: none !important;
+  margin: 0 !important;
+  padding: 20px 14px 16px !important;
+  block-size: 100% !important;
+  overflow-y: auto;
+}
+/* 侧栏品牌区：金框 S 标 + 赛训数据 + GRAND FINALS EDITION */
+#app > .masthead .wordmark {
+  display: grid !important;
+  grid-template-columns: 46px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 16px !important;
+  margin-block-end: 10px;
+  border-block-end: 1px solid rgba(215, 176, 113, 0.45);
+  color: var(--text) !important;
+  font: 700 1.05rem/1.2 var(--display-font) !important;
+}
+#app > .masthead .wordmark small {
+  display: block !important;
+  margin-top: 4px;
+  color: var(--accent-ink) !important;
+  font: 700 0.56rem/1.3 var(--font) !important;
+  letter-spacing: 0.12em !important;
+}
+/* 侧栏品牌标：S 标换成 KPL 金色赛事徽章（官方 SVG） */
+#app > .masthead .brand-symbol {
+  inline-size: 48px !important; block-size: 48px !important; padding: 4px !important;
+  border: 1px solid rgba(215, 176, 113, 0.8) !important; border-radius: 10px !important;
+  gap: 3px !important;
+  background: url('kpl-svg/broadcast/kpl-emblem.svg') no-repeat center / contain !important;
+  box-shadow: 0 4px 12px rgba(138, 101, 48, 0.28) !important;
+}
+#app > .masthead .brand-symbol i { display: none !important; }
+/* 11.2 主导航竖排，金标选中态 */
+#app > .masthead .main-nav {
+  flex: 0 0 auto !important; flex-direction: column !important; align-items: stretch !important;
+  gap: 2px !important; block-size: auto !important; overflow: visible !important;
+  padding: 0 !important; margin: 0 !important;
+}
+#app > .masthead .main-nav a {
+  display: flex !important; justify-content: flex-start !important; gap: 10px !important;
+  min-block-size: 40px !important; padding: 9px 12px !important;
+  border-radius: 8px !important; color: var(--muted) !important;
+  font-size: 0.86rem !important; font-weight: 600 !important;
+  transition: background 0.16s, color 0.16s;
+}
+#app > .masthead .main-nav .nav-icon { display: inline-flex !important; color: var(--accent-ink) !important; opacity: 0.85; }
+#app > .masthead .main-nav a:hover { background: rgba(215, 176, 113, 0.1) !important; color: var(--text) !important; }
+#app > .masthead .main-nav a[aria-current] {
+  background: linear-gradient(90deg, rgba(215, 176, 113, 0.26), rgba(215, 176, 113, 0.05)) !important;
+  color: var(--accent-ink) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+#app > .masthead .main-nav a[aria-current]::after { display: none !important; }
+#app > .masthead .masthead-inner::after {
+  content: 'KPL GRAND FINALS 2026 · 白金转播视觉';
+  display: block; margin-block-start: auto; padding: 14px 8px 0;
+  border-block-start: 1px solid rgba(215, 176, 113, 0.35);
+  color: var(--accent-ink); font: 700 0.56rem/1.5 var(--font); letter-spacing: 0.04em;
+}
+#app > .masthead .ui-search-trigger {
+  inline-size: auto !important; min-inline-size: 0 !important; margin: 10px 0 0 !important;
+  padding: 9px 10px !important; background: rgba(255, 255, 255, 0.7) !important;
+  border: 1px solid var(--line-strong) !important; color: var(--muted) !important;
+}
+#app > .masthead .ui-search-trigger span { display: none !important; }
+#app > .masthead .head-actions { margin-block-start: 6px !important; }
+#app > .masthead .ui-breadcrumb { display: none !important; }
+
+/* 11.3 内容区右移 */
+#app > .secondary-wrap, #app > main#content, #app > .footer, .demo-banner {
+  margin-inline-start: var(--gf-sidebar) !important;
+}
+
+/* 11.4 赛事标题条：直接用官方 SVG 字标（替代手写英文） */
+.page-intro::before, .pbr-title-copy::before, .bps-hero-copy::before {
+  content: '';
+  display: block; margin-block-end: 10px;
+  inline-size: 300px; block-size: 26px;
+  background: url('kpl-svg/broadcast/event-title-compact.svg') no-repeat left center / contain;
+}
+.pbr-title-copy .pbr-kicker { display: none !important; }
+
+/* 11.4b 主容器卡：大面板用官方 SVG 珍珠白金角卡（自带渐变+金角+阴影） */
+.hero-panel, .pbr-summary, .bps-hero-card, .md-panel {
+  background-image: var(--gf-card) !important;
+  background-position: center !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-color: transparent !important;
+}
+
+/* 11.4c 胜负字标：结论卡大字结果套官方 SVG 字标
+   文本用 color:transparent 隐藏但保留在 DOM（无障碍可读），SVG 作视觉层。
+   只作用于结论卡的 .dv-sub em，不碰表格里的小 .result 标签。 */
+.dv-sub em:not(.loss) {
+  color: transparent !important;
+  background: url('kpl-svg/broadcast/result-win-wordmark.svg') no-repeat center / contain;
+  display: inline-block;
+  min-inline-size: 92px;
+  min-block-size: 24px;
+  vertical-align: middle;
+}
+.dv-sub em.loss {
+  color: transparent !important;
+  background: url('kpl-svg/broadcast/result-lose-wordmark.svg') no-repeat center / contain;
+  display: inline-block;
+  min-inline-size: 92px;
+  min-block-size: 24px;
+  vertical-align: middle;
+}
+/* 青瓷谷浮雕插画：年总视觉不需要，去掉；标题改单列占满 */
+.pbr-celadon-art { display: none !important; }
+.pbr-home .pbr-title { grid-template-columns: minmax(0, 1fr) !important; }
+
+/* 11.5 SVG 金角饰：主要面板左上金 + 右下青绿（用官方角饰 SVG） */
+.hero-panel::before, .bps-hero::before {
+  /* 避免覆盖已有伪元素的组件不在此列 */
+}
+
+/* 11.6 窄屏回退：恢复横向导航 */
+@media (max-width: 1080px) {
+  :root { --gf-sidebar: 0px; }
+  #app > .masthead {
+    position: sticky !important; inset: 0 0 auto 0 !important;
+    inline-size: auto !important; block-size: auto !important;
+    border-inline-end: 0 !important; border-block-end: 1px solid var(--line-strong) !important;
+    box-shadow: 0 6px 20px rgba(77, 60, 47, 0.08) !important;
+  }
+  #app > .masthead .masthead-inner {
+    flex-direction: row !important; align-items: center !important;
+    padding: 8px var(--page-gutter) !important; block-size: var(--header-height) !important;
+    background: rgba(255, 254, 252, 0.96);
+  }
+  #app > .masthead .wordmark { display: flex !important; grid-template-columns: none !important; padding: 0 !important; margin: 0 !important; border: 0 !important; }
+  #app > .masthead .brand-symbol { inline-size: 32px !important; block-size: 32px !important; padding: 5px !important; }
+  #app > .masthead .wordmark small { display: none !important; }
+  #app > .masthead .main-nav { flex-direction: row !important; align-items: center !important; overflow: visible !important; }
+  #app > .masthead .main-nav a { min-block-size: 40px !important; padding: 8px 10px !important; }
+  #app > .masthead .masthead-inner::after { display: none !important; }
+  #app > .masthead .ui-search-trigger { inline-size: 36px !important; min-inline-size: 36px !important; margin-inline-start: auto !important; padding: 9px !important; }
+}
+
+/* ---------- 12. 无障碍：强制颜色模式回退 ---------- */
+@media (forced-colors: active) {
+  .panel, .card, .tile, .metric, .box, .masthead, .secondary-wrap, .ui-search-trigger, th {
+    border: 1px solid CanvasText !important;
+  }
+  button.primary, .control.primary { border: 1px solid ButtonText !important; }
+}

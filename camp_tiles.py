@@ -156,9 +156,14 @@ def read_detail(path):
             hero = _hero(role)
             if not hero:
                 continue
+            records = role.get('battleRecords') or {}
+            equips = [str((item or {}).get('equipName') or '').strip()
+                      for item in (records.get('finalEquips') or [])
+                      if isinstance(item, dict)]
             result[(camp, hero)] = {
                 'position': _position_name(role),
                 'tiles': parse_tiles(role),
+                'equips': [name for name in equips if name],
             }
     return result
 
@@ -210,7 +215,20 @@ def attach(detail, base=None):
     for player in detail.get('players') or []:
         key = (str(player.get('camp') or ''), str(player.get('hero') or ''))
         entry = table.get(key)
-        if not entry or not entry.get('tiles'):
+        if not entry:
+            continue
+        # 打野定位看本局实际出的打野刀，不写死在英雄身上（大司命肉刀=坦野/红刀=野核）。
+        # 这段不依赖 campTiles：没同步卡片面板的局也能靠 finalEquips 判定。
+        position = player.get('position') or entry.get('position')
+        if entry.get('equips') and position == '打野':
+            try:
+                import jungle_blade
+                blade = jungle_blade.classify(entry['equips'])
+                if blade:
+                    player['blade'] = blade
+            except ImportError:
+                pass
+        if not entry.get('tiles'):
             continue
         player['campTiles'] = entry['tiles']
         if not player.get('position') and entry.get('position'):

@@ -63,14 +63,16 @@ def test_recap_metric_guards():
 
 def test_recap_page_uses_safe_metrics_and_labels():
     source = (FRONT / "app.js").read_text(encoding="utf-8")
-    assert "economyDirection(s.delta)" in source
     assert "eventSide(e.killerCamp, own)" in source
     assert "teamTotal(m.players, camp, 'gold')" in source
     assert "sampleNear(absPoints, t)" in source
     assert "再没回落" not in source
     assert "realisedEarly" not in source
-    assert "data-label=\"当时经济差\"" in source
     assert "本局兑现" not in source
+    # 「关键节点」整块已按设计稿移除：旧的 economyDirection / 当时经济差断言不能留，
+    # 否则这次提交一进 CI 就红。改为反向盯住，避免旧块被无意带回。
+    assert "economyDirection(s.delta)" not in source
+    assert 'data-label="当时经济差"' not in source
 
 
 def test_recap_layout_is_scoped_and_loaded():

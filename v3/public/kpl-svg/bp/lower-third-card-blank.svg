@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="69" height="150" viewBox="0 0 69 150" role="img">
+<title>下三分之一英雄卡底座</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="paper" x2="0%" y2="100%">
+ <stop stop-color="#fffefb"/><stop offset="1" stop-color="#eeeae5"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<rect x="0" y="0" width="69" height="150" rx="13" fill="url(#gold)"/><path d="M1 12 Q1 1 12 1 H57 Q68 1 68 12 V121 Q68 143 34.5 144 Q1 143 1 121Z" fill="url(#paper)" stroke="url(#gold-edge)" stroke-width="0.8"/>
+</svg>

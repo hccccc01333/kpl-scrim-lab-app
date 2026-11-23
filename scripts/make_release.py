@@ -62,8 +62,9 @@ DOCS_SHIP = [
     'ocr_engine.md',
     'camp_replay.md',
 ]
-# web 下只有采集教学页与它引用的图片是运行时资源；web/refsite 是第三方
-# 参考站副本（约 100 MB），不属于本产品，永远不要打进安装包。
+# web 下只有采集教学页与它引用的图片是运行时资源；原 web/refsite 第三方参考站副本
+# 已于 2026-11-22 归档到 内部资料/前端资料库/05_竞品参考站快照/，不属于本产品，
+# 永远不要打进安装包。
 WEB_SHIP_FILES = ['web/collection-guide.html']
 WEB_SHIP_DIRS = ['web/capture-guide']
 # server.py 运行期会把 tools/ 插进 sys.path 再 import 营地同步模块；

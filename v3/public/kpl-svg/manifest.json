@@ -1,0 +1,4761 @@
+{
+  "name": "KPL Grand Finals 2026 · SVG 素材包",
+  "sourceBoards": {
+    "1": "背景和容器",
+    "2": "赛事标题、胜负、比分和战队",
+    "3": "BP 对局层",
+    "4": "数据可视化",
+    "5": "英雄、选手和装备"
+  },
+  "formats": {
+    "vector": "纯矢量",
+    "mixed": "矢量叠加原图",
+    "raster": "内嵌原图"
+  },
+  "categories": {
+    "surfaces": "背景和容器",
+    "broadcast": "赛事标题、胜负、比分和战队",
+    "bp": "BP 槽位、竖卡和下三分之一",
+    "charts": "图表、数值和统计行",
+    "modules": "选手、装备和位置模块",
+    "decor": "角饰、高光、分隔线和色板"
+  },
+  "assets": [
+    {
+      "id": "surfaces/main-background-swirl",
+      "file": "surfaces/main-background-swirl.svg",
+      "label": "主背景 · 漩涡原图",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 690,
+      "height": 323,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/swirl-background-tile",
+      "file": "surfaces/swirl-background-tile.svg",
+      "label": "漩涡背景缩略卡",
+      "category": "surfaces",
+      "boards": [
+        2
+      ],
+      "width": 372,
+      "height": 165,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/swirl-texture-square",
+      "file": "surfaces/swirl-texture-square.svg",
+      "label": "漩涡背景方形纹理",
+      "category": "surfaces",
+      "boards": [
+        5
+      ],
+      "width": 107,
+      "height": 82,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/pearl-texture-square",
+      "file": "surfaces/pearl-texture-square.svg",
+      "label": "珍珠灰方形纹理",
+      "category": "surfaces",
+      "boards": [
+        5
+      ],
+      "width": 80,
+      "height": 82,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/pearl-background",
+      "file": "surfaces/pearl-background.svg",
+      "label": "珍珠白波纹底板",
+      "category": "surfaces",
+      "boards": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "width": 960,
+      "height": 450,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/main-card-container",
+      "file": "surfaces/main-card-container.svg",
+      "label": "主容器卡片",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 882,
+      "height": 346,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/stats-card-wide",
+      "file": "surfaces/stats-card-wide.svg",
+      "label": "比赛数据页宽卡片",
+      "category": "surfaces",
+      "boards": [
+        2
+      ],
+      "width": 422,
+      "height": 159,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/transition-overlay",
+      "file": "surfaces/transition-overlay.svg",
+      "label": "半透明过渡容器",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 701,
+      "height": 171,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/transition-overlay-with-texture",
+      "file": "surfaces/transition-overlay-with-texture.svg",
+      "label": "半透明过渡容器 · 参考纹理",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 681,
+      "height": 151,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/hero-build-center-panel",
+      "file": "surfaces/hero-build-center-panel.svg",
+      "label": "英雄出装对比中央面板",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 868,
+      "height": 170,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/transition-card-compact",
+      "file": "surfaces/transition-card-compact.svg",
+      "label": "半透明小卡片",
+      "category": "surfaces",
+      "boards": [
+        2
+      ],
+      "width": 220,
+      "height": 162,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/transition-card-compact-with-texture",
+      "file": "surfaces/transition-card-compact-with-texture.svg",
+      "label": "半透明小卡片 · 参考纹理",
+      "category": "surfaces",
+      "boards": [
+        2
+      ],
+      "width": 220,
+      "height": 162,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/lower-third-background",
+      "file": "surfaces/lower-third-background.svg",
+      "label": "下三分之一底板",
+      "category": "surfaces",
+      "boards": [
+        3
+      ],
+      "width": 192,
+      "height": 91,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/lower-third-wave-texture",
+      "file": "surfaces/lower-third-wave-texture.svg",
+      "label": "下三分之一底板 · 参考纹理",
+      "category": "surfaces",
+      "boards": [
+        3
+      ],
+      "width": 177,
+      "height": 76,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/information-container",
+      "file": "surfaces/information-container.svg",
+      "label": "通用信息容器",
+      "category": "surfaces",
+      "boards": [
+        3
+      ],
+      "width": 107,
+      "height": 87,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/white-gold-module",
+      "file": "surfaces/white-gold-module.svg",
+      "label": "白金数据模块底板",
+      "category": "surfaces",
+      "boards": [
+        4
+      ],
+      "width": 104,
+      "height": 57,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/support-frame-wide",
+      "file": "surfaces/support-frame-wide.svg",
+      "label": "横向辅助卡框",
+      "category": "surfaces",
+      "boards": [
+        5
+      ],
+      "width": 264,
+      "height": 150,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/support-frame-square",
+      "file": "surfaces/support-frame-square.svg",
+      "label": "近方形辅助卡框",
+      "category": "surfaces",
+      "boards": [
+        5
+      ],
+      "width": 130,
+      "height": 150,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/support-frame-tall",
+      "file": "surfaces/support-frame-tall.svg",
+      "label": "竖向辅助卡框",
+      "category": "surfaces",
+      "boards": [
+        5
+      ],
+      "width": 112,
+      "height": 169,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/hero-card-base",
+      "file": "surfaces/hero-card-base.svg",
+      "label": "竖卡姓名区底座",
+      "category": "surfaces",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 72,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/hero-card-fade",
+      "file": "surfaces/hero-card-fade.svg",
+      "label": "竖卡白色渐变遮罩",
+      "category": "surfaces",
+      "boards": [
+        3,
+        5
+      ],
+      "width": 100,
+      "height": 112,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/hero-card-top-veil",
+      "file": "surfaces/hero-card-top-veil.svg",
+      "label": "竖卡灰色渐变遮罩",
+      "category": "surfaces",
+      "boards": [
+        3
+      ],
+      "width": 60,
+      "height": 73,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/shadow-light",
+      "file": "surfaces/shadow-light.svg",
+      "label": "轻投影示例",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 128,
+      "height": 68,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/shadow-medium",
+      "file": "surfaces/shadow-medium.svg",
+      "label": "标准投影示例",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 128,
+      "height": 68,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "surfaces/shadow-strong",
+      "file": "surfaces/shadow-strong.svg",
+      "label": "强投影示例",
+      "category": "surfaces",
+      "boards": [
+        1
+      ],
+      "width": 128,
+      "height": 68,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-thin",
+      "file": "decor/divider-thin.svg",
+      "label": "细分割线",
+      "category": "decor",
+      "boards": [
+        1,
+        4
+      ],
+      "width": 360,
+      "height": 16,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-light",
+      "file": "decor/divider-light.svg",
+      "label": "浅分割线",
+      "category": "decor",
+      "boards": [
+        1,
+        3,
+        4
+      ],
+      "width": 360,
+      "height": 16,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-dark",
+      "file": "decor/divider-dark.svg",
+      "label": "深分割线",
+      "category": "decor",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 360,
+      "height": 16,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/grid-line",
+      "file": "decor/grid-line.svg",
+      "label": "图表网格线",
+      "category": "decor",
+      "boards": [
+        4
+      ],
+      "width": 360,
+      "height": 16,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-title-flourish",
+      "file": "decor/divider-title-flourish.svg",
+      "label": "赛事标题双端卷曲分隔线",
+      "category": "decor",
+      "boards": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "width": 425,
+      "height": 29,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/flourish-left",
+      "file": "decor/flourish-left.svg",
+      "label": "左卷曲装饰",
+      "category": "decor",
+      "boards": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "width": 96,
+      "height": 31,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/flourish-right",
+      "file": "decor/flourish-right.svg",
+      "label": "右卷曲装饰",
+      "category": "decor",
+      "boards": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "width": 96,
+      "height": 31,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-vertical-gold",
+      "file": "decor/divider-vertical-gold.svg",
+      "label": "金色竖分隔线",
+      "category": "decor",
+      "boards": [
+        2,
+        5
+      ],
+      "width": 10,
+      "height": 66,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-vertical-gray",
+      "file": "decor/divider-vertical-gray.svg",
+      "label": "灰色竖分隔线",
+      "category": "decor",
+      "boards": [
+        3,
+        4
+      ],
+      "width": 8,
+      "height": 110,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-gold-top",
+      "file": "decor/divider-gold-top.svg",
+      "label": "金色横条",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 258,
+      "height": 10,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/divider-gold-jagged",
+      "file": "decor/divider-gold-jagged.svg",
+      "label": "金色波折分割线及色块",
+      "category": "decor",
+      "boards": [
+        1,
+        2
+      ],
+      "width": 444,
+      "height": 51,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/corner-top-right",
+      "file": "decor/corner-top-right.svg",
+      "label": "右上金色圆角",
+      "category": "decor",
+      "boards": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "width": 84,
+      "height": 84,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/corner-top-left",
+      "file": "decor/corner-top-left.svg",
+      "label": "左上金色圆角",
+      "category": "decor",
+      "boards": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "width": 84,
+      "height": 84,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/corner-bottom-right",
+      "file": "decor/corner-bottom-right.svg",
+      "label": "右下金色圆角",
+      "category": "decor",
+      "boards": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "width": 84,
+      "height": 84,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/corner-bottom-left",
+      "file": "decor/corner-bottom-left.svg",
+      "label": "左下金色圆角",
+      "category": "decor",
+      "boards": [
+        1,
+        2,
+        4,
+        5
+      ],
+      "width": 84,
+      "height": 84,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/corner-bridge-teal",
+      "file": "decor/corner-bridge-teal.svg",
+      "label": "青金双边顶部角饰",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 217,
+      "height": 46,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/corner-bridge-gold",
+      "file": "decor/corner-bridge-gold.svg",
+      "label": "金边顶部角饰",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 217,
+      "height": 46,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/panel-edge-top-right",
+      "file": "decor/panel-edge-top-right.svg",
+      "label": "面板右上描边样式",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 193,
+      "height": 94,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/panel-edge-bottom-right",
+      "file": "decor/panel-edge-bottom-right.svg",
+      "label": "面板右下描边样式",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 193,
+      "height": 94,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/highlight-sweep",
+      "file": "decor/highlight-sweep.svg",
+      "label": "长弧面高光",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 137,
+      "height": 52,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/highlight-slash",
+      "file": "decor/highlight-slash.svg",
+      "label": "斜线高光",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 57,
+      "height": 57,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/highlight-glint",
+      "file": "decor/highlight-glint.svg",
+      "label": "横向闪光",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 82,
+      "height": 34,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/highlight-arc",
+      "file": "decor/highlight-arc.svg",
+      "label": "短圆角高光",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 83,
+      "height": 55,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/section-slash",
+      "file": "decor/section-slash.svg",
+      "label": "小节金色斜杠",
+      "category": "decor",
+      "boards": [
+        1,
+        3
+      ],
+      "width": 20,
+      "height": 20,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/section-triple-slash",
+      "file": "decor/section-triple-slash.svg",
+      "label": "三道金色斜杠",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 42,
+      "height": 27,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/section-triangle",
+      "file": "decor/section-triangle.svg",
+      "label": "数据标题三角标记",
+      "category": "decor",
+      "boards": [
+        4
+      ],
+      "width": 20,
+      "height": 20,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/section-header-background",
+      "file": "decor/section-header-background.svg",
+      "label": "素材板页眉白金弧线底板",
+      "category": "decor",
+      "boards": [
+        1,
+        3,
+        4,
+        5
+      ],
+      "width": 1672,
+      "height": 94,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/board-id",
+      "file": "decor/board-id.svg",
+      "label": "素材板编号底座",
+      "category": "decor",
+      "boards": [
+        3,
+        4
+      ],
+      "width": 110,
+      "height": 28,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/asset-caption",
+      "file": "decor/asset-caption.svg",
+      "label": "素材包描边徽标底座",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 263,
+      "height": 28,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/board-label-s1",
+      "file": "decor/board-label-s1.svg",
+      "label": "BACKGROUNDS & CONTAINERS",
+      "category": "decor",
+      "boards": [
+        1
+      ],
+      "width": 333,
+      "height": 31,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/board-label-s3",
+      "file": "decor/board-label-s3.svg",
+      "label": "BOARD 3",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 105,
+      "height": 31,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/board-label-s4",
+      "file": "decor/board-label-s4.svg",
+      "label": "BOARD 4",
+      "category": "decor",
+      "boards": [
+        4
+      ],
+      "width": 113,
+      "height": 31,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/board-label-pack",
+      "file": "decor/board-label-pack.svg",
+      "label": "UI MATERIAL PACK / FRONT-END RECREATION",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 265,
+      "height": 31,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-a",
+      "file": "decor/module-section-a.svg",
+      "label": "A. VERTICAL HERO PORTRAIT CARD",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 260,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-b",
+      "file": "decor/module-section-b.svg",
+      "label": "B. EQUIPMENT / ITEM CLUSTER",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 236,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-c",
+      "file": "decor/module-section-c.svg",
+      "label": "C. PLAYER PORTRAIT MASK",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 204,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-d",
+      "file": "decor/module-section-d.svg",
+      "label": "D. PLAYER NAMEPLATE & ROLE LABELS",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 284,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-e",
+      "file": "decor/module-section-e.svg",
+      "label": "E. TEN-PLAYER STAT ROW",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 196,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-f",
+      "file": "decor/module-section-f.svg",
+      "label": "F. HERO AVATAR",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 182,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-g",
+      "file": "decor/module-section-g.svg",
+      "label": "G. ICON HOLDERS",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 182,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-h",
+      "file": "decor/module-section-h.svg",
+      "label": "H. CARD & PANEL FRAMES",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 196,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/module-section-i",
+      "file": "decor/module-section-i.svg",
+      "label": "I. COMMON COMPONENTS",
+      "category": "decor",
+      "boards": [
+        5
+      ],
+      "width": 182,
+      "height": 29,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "decor/swatch-surface",
+      "file": "decor/swatch-surface.svg",
+      "label": "主背景 #F8F7F3",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 48,
+      "height": 48,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional",
+      "note": "#F8F7F3"
+    },
+    {
+      "id": "decor/swatch-ink",
+      "file": "decor/swatch-ink.svg",
+      "label": "主文字 #2F281E",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 48,
+      "height": 48,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional",
+      "note": "#2F281E"
+    },
+    {
+      "id": "decor/swatch-gold",
+      "file": "decor/swatch-gold.svg",
+      "label": "品牌金 #D7B071",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 48,
+      "height": 48,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional",
+      "note": "#D7B071"
+    },
+    {
+      "id": "decor/swatch-teal",
+      "file": "decor/swatch-teal.svg",
+      "label": "强调色 #2AA68A",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 48,
+      "height": 48,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional",
+      "note": "#2AA68A"
+    },
+    {
+      "id": "decor/swatch-neutral",
+      "file": "decor/swatch-neutral.svg",
+      "label": "中性灰 #E6E6EA",
+      "category": "decor",
+      "boards": [
+        3
+      ],
+      "width": 48,
+      "height": 48,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional",
+      "note": "#E6E6EA"
+    },
+    {
+      "id": "broadcast/kpl-emblem",
+      "file": "broadcast/kpl-emblem.svg",
+      "label": "KPL 赛事金色徽章",
+      "category": "broadcast",
+      "boards": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "width": 200,
+      "height": 176,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/finals-wordmark",
+      "file": "broadcast/finals-wordmark.svg",
+      "label": "年度总决赛字标",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 329,
+      "height": 58,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/finals-badge-stacked",
+      "file": "broadcast/finals-badge-stacked.svg",
+      "label": "年度总决赛中心徽章",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 329,
+      "height": 230,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/finals-badge-horizontal-full",
+      "file": "broadcast/finals-badge-horizontal-full.svg",
+      "label": "横排赛事徽章",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 215,
+      "height": 56,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/finals-badge-horizontal-compact",
+      "file": "broadcast/finals-badge-horizontal-compact.svg",
+      "label": "简化横排赛事徽章",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 215,
+      "height": 51,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/event-title-wordmark",
+      "file": "broadcast/event-title-wordmark.svg",
+      "label": "KPL GRAND FINALS 2026 标题字标",
+      "category": "broadcast",
+      "boards": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "width": 550,
+      "height": 39,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/event-title-with-ornaments",
+      "file": "broadcast/event-title-with-ornaments.svg",
+      "label": "赛事顶中标题条 · 宽版",
+      "category": "broadcast",
+      "boards": [
+        1,
+        2,
+        3
+      ],
+      "width": 1030,
+      "height": 56,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/event-title-compact",
+      "file": "broadcast/event-title-compact.svg",
+      "label": "赛事顶中标题条 · 紧凑",
+      "category": "broadcast",
+      "boards": [
+        1,
+        2,
+        3
+      ],
+      "width": 400,
+      "height": 34,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/event-caption-left",
+      "file": "broadcast/event-caption-left.svg",
+      "label": "GRAND FINALS",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 148,
+      "height": 21,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/event-caption-year",
+      "file": "broadcast/event-caption-year.svg",
+      "label": "2026",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 54,
+      "height": 21,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/event-caption-right",
+      "file": "broadcast/event-caption-right.svg",
+      "label": "KING PRO LEAGUE",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 173,
+      "height": 21,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/grand-finals-tab-accent-blank",
+      "file": "broadcast/grand-finals-tab-accent-blank.svg",
+      "label": "总决赛标签底座",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 288,
+      "height": 66,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/grand-finals-tab-accent",
+      "file": "broadcast/grand-finals-tab-accent.svg",
+      "label": "GRAND FINALS 标签",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 288,
+      "height": 66,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/grand-finals-tab-swirl-blank",
+      "file": "broadcast/grand-finals-tab-swirl-blank.svg",
+      "label": "总决赛标签底座",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 288,
+      "height": 66,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/grand-finals-tab-swirl",
+      "file": "broadcast/grand-finals-tab-swirl.svg",
+      "label": "GRAND FINALS 标签",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 288,
+      "height": 66,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/result-lose-wordmark",
+      "file": "broadcast/result-lose-wordmark.svg",
+      "label": "失败 LOSE 字标",
+      "category": "broadcast",
+      "boards": [
+        1,
+        2
+      ],
+      "width": 425,
+      "height": 106,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/result-lose-block",
+      "file": "broadcast/result-lose-block.svg",
+      "label": "失败 LOSE 侧块",
+      "category": "broadcast",
+      "boards": [
+        1
+      ],
+      "width": 252,
+      "height": 114,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/result-win-wordmark",
+      "file": "broadcast/result-win-wordmark.svg",
+      "label": "胜利 WIN 字标",
+      "category": "broadcast",
+      "boards": [
+        1,
+        2
+      ],
+      "width": 425,
+      "height": 106,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/result-win-block",
+      "file": "broadcast/result-win-block.svg",
+      "label": "胜利 WIN 侧块",
+      "category": "broadcast",
+      "boards": [
+        1
+      ],
+      "width": 252,
+      "height": 114,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/result-block-blank",
+      "file": "broadcast/result-block-blank.svg",
+      "label": "胜负侧块底板",
+      "category": "broadcast",
+      "boards": [
+        1
+      ],
+      "width": 252,
+      "height": 114,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-0",
+      "file": "broadcast/score-digit-0.svg",
+      "label": "比分数字 0",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-1",
+      "file": "broadcast/score-digit-1.svg",
+      "label": "比分数字 1",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-2",
+      "file": "broadcast/score-digit-2.svg",
+      "label": "比分数字 2",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-3",
+      "file": "broadcast/score-digit-3.svg",
+      "label": "比分数字 3",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-4",
+      "file": "broadcast/score-digit-4.svg",
+      "label": "比分数字 4",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-5",
+      "file": "broadcast/score-digit-5.svg",
+      "label": "比分数字 5",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-6",
+      "file": "broadcast/score-digit-6.svg",
+      "label": "比分数字 6",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-7",
+      "file": "broadcast/score-digit-7.svg",
+      "label": "比分数字 7",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-8",
+      "file": "broadcast/score-digit-8.svg",
+      "label": "比分数字 8",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-digit-9",
+      "file": "broadcast/score-digit-9.svg",
+      "label": "比分数字 9",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 60,
+      "height": 58,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-vs",
+      "file": "broadcast/score-vs.svg",
+      "label": "比分 VS",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 79,
+      "height": 42,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-1-v-0",
+      "file": "broadcast/score-1-v-0.svg",
+      "label": "比分 1 vs 0",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 261,
+      "height": 52,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-1-v-1",
+      "file": "broadcast/score-1-v-1.svg",
+      "label": "比分 1 vs 1",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 261,
+      "height": 52,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/score-plate-blank",
+      "file": "broadcast/score-plate-blank.svg",
+      "label": "比分白金底板",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 261,
+      "height": 52,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-plain",
+      "file": "broadcast/team-wb-plain.svg",
+      "label": "北京WB · 队名按钮",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 218,
+      "height": 70,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-plain",
+      "file": "broadcast/team-jdg-plain.svg",
+      "label": "北京JDG · 队名按钮",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 218,
+      "height": 70,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-plain-blank",
+      "file": "broadcast/team-plain-blank.svg",
+      "label": "战队条空白 · 队名按钮",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 218,
+      "height": 70,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-outline",
+      "file": "broadcast/team-wb-outline.svg",
+      "label": "北京WB · 线框队徽按钮",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 221,
+      "height": 70,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-outline",
+      "file": "broadcast/team-jdg-outline.svg",
+      "label": "北京JDG · 线框队徽按钮",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 221,
+      "height": 70,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-outline-blank",
+      "file": "broadcast/team-outline-blank.svg",
+      "label": "战队条空白 · 线框队徽按钮",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 221,
+      "height": 70,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-emblem",
+      "file": "broadcast/team-wb-emblem.svg",
+      "label": "北京WB · 带队徽战队名条",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 295,
+      "height": 67,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-emblem",
+      "file": "broadcast/team-jdg-emblem.svg",
+      "label": "北京JDG · 带队徽战队名条",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 295,
+      "height": 67,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-emblem-blank",
+      "file": "broadcast/team-emblem-blank.svg",
+      "label": "战队条空白 · 带队徽名条",
+      "category": "broadcast",
+      "boards": [
+        3
+      ],
+      "width": 295,
+      "height": 67,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-wide",
+      "file": "broadcast/team-wb-wide.svg",
+      "label": "北京WB · 比分宽版战队名条",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 341,
+      "height": 88,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-wide",
+      "file": "broadcast/team-jdg-wide.svg",
+      "label": "北京JDG · 比分宽版战队名条",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 341,
+      "height": 88,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wide-blank",
+      "file": "broadcast/team-wide-blank.svg",
+      "label": "战队条空白 · 宽版比分名条",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 341,
+      "height": 88,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-mark",
+      "file": "broadcast/team-wb-mark.svg",
+      "label": "北京WB 深色队徽",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3,
+        5
+      ],
+      "width": 60,
+      "height": 60,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-gold-tile",
+      "file": "broadcast/team-wb-gold-tile.svg",
+      "label": "北京WB 金色队徽座",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 86,
+      "height": 81,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-wb-light-holder",
+      "file": "broadcast/team-wb-light-holder.svg",
+      "label": "北京WB 珍珠白队徽座",
+      "category": "broadcast",
+      "boards": [
+        5
+      ],
+      "width": 76,
+      "height": 83,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-mark",
+      "file": "broadcast/team-jdg-mark.svg",
+      "label": "北京JDG 深色队徽",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3,
+        5
+      ],
+      "width": 60,
+      "height": 60,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-gold-tile",
+      "file": "broadcast/team-jdg-gold-tile.svg",
+      "label": "北京JDG 金色队徽座",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 86,
+      "height": 81,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-jdg-light-holder",
+      "file": "broadcast/team-jdg-light-holder.svg",
+      "label": "北京JDG 珍珠白队徽座",
+      "category": "broadcast",
+      "boards": [
+        5
+      ],
+      "width": 76,
+      "height": 83,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/team-logo-holder-blank",
+      "file": "broadcast/team-logo-holder-blank.svg",
+      "label": "金色队徽底座",
+      "category": "broadcast",
+      "boards": [
+        2,
+        3
+      ],
+      "width": 86,
+      "height": 81,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/kpl-gold-holder",
+      "file": "broadcast/kpl-gold-holder.svg",
+      "label": "KPL 金色赛事徽章座",
+      "category": "broadcast",
+      "boards": [
+        5
+      ],
+      "width": 76,
+      "height": 84,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/scoreboard-wide",
+      "file": "broadcast/scoreboard-wide.svg",
+      "label": "北京WB 1 VS 1 北京JDG · 宽版",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 980,
+      "height": 89,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/scoreboard-wide-blank",
+      "file": "broadcast/scoreboard-wide-blank.svg",
+      "label": "总比分条空白 · 宽版",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 980,
+      "height": 89,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/scoreboard-compact",
+      "file": "broadcast/scoreboard-compact.svg",
+      "label": "北京WB 1 VS 1 北京JDG · 紧凑版",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 900,
+      "height": 60,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/scoreboard-compact-blank",
+      "file": "broadcast/scoreboard-compact-blank.svg",
+      "label": "总比分条空白 · 紧凑版",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 900,
+      "height": 60,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/metric-tab-output",
+      "file": "broadcast/metric-tab-output.svg",
+      "label": "输出伤害",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 222,
+      "height": 59,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/metric-tab-taken",
+      "file": "broadcast/metric-tab-taken.svg",
+      "label": "承受伤害",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 211,
+      "height": 59,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/metric-tab-economy",
+      "file": "broadcast/metric-tab-economy.svg",
+      "label": "总经济",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 209,
+      "height": 59,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/metric-tab-participation",
+      "file": "broadcast/metric-tab-participation.svg",
+      "label": "参团率",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 202,
+      "height": 59,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "broadcast/metric-tab-blank",
+      "file": "broadcast/metric-tab-blank.svg",
+      "label": "数据指标按钮底座",
+      "category": "broadcast",
+      "boards": [
+        2
+      ],
+      "width": 212,
+      "height": 59,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-zi-mo",
+      "file": "bp/hero-card-zi-mo.svg",
+      "label": "梓墨 · BP 英雄竖卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 98,
+      "height": 265,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-nuan-yang",
+      "file": "bp/hero-card-nuan-yang.svg",
+      "label": "暖阳 · BP 英雄竖卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 96,
+      "height": 265,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-ting-yue",
+      "file": "bp/hero-card-ting-yue.svg",
+      "label": "听悦 · BP 英雄竖卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 96,
+      "height": 265,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-zhao-jue",
+      "file": "bp/hero-card-zhao-jue.svg",
+      "label": "昭珏 · BP 英雄竖卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 95,
+      "height": 265,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-yi-sheng",
+      "file": "bp/hero-card-yi-sheng.svg",
+      "label": "一笙 · BP 英雄竖卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 95,
+      "height": 265,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-veiled",
+      "file": "bp/hero-card-veiled.svg",
+      "label": "BP 英雄竖卡 · 带底座与遮罩",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 98,
+      "height": 252,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-plain",
+      "file": "bp/hero-card-plain.svg",
+      "label": "BP 英雄竖卡 · 带底座",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 98,
+      "height": 252,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-card-add",
+      "file": "bp/hero-card-add.svg",
+      "label": "BP 英雄竖卡 · 新增占位",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 98,
+      "height": 252,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/capsule-pick",
+      "file": "bp/capsule-pick.svg",
+      "label": "BP 槽位 · 选用",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 58,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/capsule-pick-example",
+      "file": "bp/capsule-pick-example.svg",
+      "label": "BP 槽位 · 选用样例",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 58,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/capsule-ban",
+      "file": "bp/capsule-ban.svg",
+      "label": "BP 槽位 · 禁用",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 58,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/capsule-ban-example",
+      "file": "bp/capsule-ban-example.svg",
+      "label": "BP 槽位 · 禁用样例",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 58,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/capsule-empty",
+      "file": "bp/capsule-empty.svg",
+      "label": "BP 槽位 · 空槽",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 58,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/capsule-add",
+      "file": "bp/capsule-add.svg",
+      "label": "BP 槽位 · 新增",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 70,
+      "height": 58,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-blank",
+      "file": "bp/mini-slot-blank.svg",
+      "label": "BP 顶部小头像槽空底",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-ban-overlay",
+      "file": "bp/mini-slot-ban-overlay.svg",
+      "label": "BP 顶部小头像禁用斜杠",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-blue",
+      "file": "bp/mini-slot-blue.svg",
+      "label": "BP 顶部小头像槽 · 蓝色",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-red",
+      "file": "bp/mini-slot-red.svg",
+      "label": "BP 顶部小头像槽 · 红色",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-banned",
+      "file": "bp/mini-slot-banned.svg",
+      "label": "BP 顶部小头像槽 · 灰色禁用",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-gold",
+      "file": "bp/mini-slot-gold.svg",
+      "label": "BP 顶部小头像槽 · 金色",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/mini-slot-teal",
+      "file": "bp/mini-slot-teal.svg",
+      "label": "BP 顶部小头像槽 · 青色",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 50,
+      "height": 50,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-left-01",
+      "file": "bp/lower-third-mini-left-01.svg",
+      "label": "下三分之一 · 左队小头像 1",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-left-02",
+      "file": "bp/lower-third-mini-left-02.svg",
+      "label": "下三分之一 · 左队小头像 2",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-left-03",
+      "file": "bp/lower-third-mini-left-03.svg",
+      "label": "下三分之一 · 左队小头像 3",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-left-04",
+      "file": "bp/lower-third-mini-left-04.svg",
+      "label": "下三分之一 · 左队小头像 4",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-left-05",
+      "file": "bp/lower-third-mini-left-05.svg",
+      "label": "下三分之一 · 左队小头像 5",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-right-01",
+      "file": "bp/lower-third-mini-right-01.svg",
+      "label": "下三分之一 · 右队小头像 1",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-right-02",
+      "file": "bp/lower-third-mini-right-02.svg",
+      "label": "下三分之一 · 右队小头像 2",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-right-03",
+      "file": "bp/lower-third-mini-right-03.svg",
+      "label": "下三分之一 · 右队小头像 3",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-right-04",
+      "file": "bp/lower-third-mini-right-04.svg",
+      "label": "下三分之一 · 右队小头像 4",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-mini-right-05",
+      "file": "bp/lower-third-mini-right-05.svg",
+      "label": "下三分之一 · 右队小头像 5",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 33,
+      "height": 32,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-zi-mo",
+      "file": "bp/lower-third-card-zi-mo.svg",
+      "label": "梓墨 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-nuan-yang",
+      "file": "bp/lower-third-card-nuan-yang.svg",
+      "label": "暖阳 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-ting-yue",
+      "file": "bp/lower-third-card-ting-yue.svg",
+      "label": "听悦 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-zhao-jue",
+      "file": "bp/lower-third-card-zhao-jue.svg",
+      "label": "昭珏 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-yi-sheng",
+      "file": "bp/lower-third-card-yi-sheng.svg",
+      "label": "一笙 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-wu-wei",
+      "file": "bp/lower-third-card-wu-wei.svg",
+      "label": "无畏 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-xiao-han",
+      "file": "bp/lower-third-card-xiao-han.svg",
+      "label": "小寒 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-qing-rong",
+      "file": "bp/lower-third-card-qing-rong.svg",
+      "label": "清融 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-wu-shuang",
+      "file": "bp/lower-third-card-wu-shuang.svg",
+      "label": "无双 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-guang-ming",
+      "file": "bp/lower-third-card-guang-ming.svg",
+      "label": "光明 · 下三分之一英雄卡",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "raster",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-card-blank",
+      "file": "bp/lower-third-card-blank.svg",
+      "label": "下三分之一英雄卡底座",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 69,
+      "height": 150,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-blank",
+      "file": "bp/lower-third-blank.svg",
+      "label": "BP 下三分之一组合空白",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 864,
+      "height": 195,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/lower-third-composition",
+      "file": "bp/lower-third-composition.svg",
+      "label": "BP / 对局下三分之一完整示例",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 864,
+      "height": 195,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-tag-red",
+      "file": "bp/hero-tag-red.svg",
+      "label": "英雄角标 · 红色",
+      "category": "bp",
+      "boards": [
+        3,
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-tag-purple",
+      "file": "bp/hero-tag-purple.svg",
+      "label": "英雄角标 · 紫色",
+      "category": "bp",
+      "boards": [
+        3,
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/hero-tag-gold",
+      "file": "bp/hero-tag-gold.svg",
+      "label": "英雄角标 · 金色",
+      "category": "bp",
+      "boards": [
+        3,
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/tag-holder-gold",
+      "file": "bp/tag-holder-gold.svg",
+      "label": "金色角标底座",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 58,
+      "height": 55,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/tag-holder-light",
+      "file": "bp/tag-holder-light.svg",
+      "label": "浅色角标底座",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 58,
+      "height": 55,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "bp/tag-holder-add",
+      "file": "bp/tag-holder-add.svg",
+      "label": "角标新增占位",
+      "category": "bp",
+      "boards": [
+        3
+      ],
+      "width": 58,
+      "height": 55,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-grid-5",
+      "file": "charts/radar-grid-5.svg",
+      "label": "五轴雷达图网格",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 80,
+      "height": 80,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-grid-8",
+      "file": "charts/radar-grid-8.svg",
+      "label": "八轴雷达图网格",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 336,
+      "height": 336,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-team-a-polygon",
+      "file": "charts/radar-team-a-polygon.svg",
+      "label": "雷达图 · 队伍 A 数据面",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 336,
+      "height": 336,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-team-a-point",
+      "file": "charts/radar-team-a-point.svg",
+      "label": "雷达图 · 队伍 A 顶点",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 18,
+      "height": 18,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-legend-polygon-a",
+      "file": "charts/radar-legend-polygon-a.svg",
+      "label": "雷达图图例 · 队伍 A 色块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 68,
+      "height": 60,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-team-b-polygon",
+      "file": "charts/radar-team-b-polygon.svg",
+      "label": "雷达图 · 队伍 B 数据面",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 336,
+      "height": 336,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-team-b-point",
+      "file": "charts/radar-team-b-point.svg",
+      "label": "雷达图 · 队伍 B 顶点",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 18,
+      "height": 18,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-legend-polygon-b",
+      "file": "charts/radar-legend-polygon-b.svg",
+      "label": "雷达图图例 · 队伍 B 色块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 68,
+      "height": 60,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-comparison",
+      "file": "charts/radar-comparison.svg",
+      "label": "选手对比雷达图样例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 336,
+      "height": 336,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-legend-grid",
+      "file": "charts/radar-legend-grid.svg",
+      "label": "Radar Grid (5 axis)",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 212,
+      "height": 65,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-legend-team-a",
+      "file": "charts/radar-legend-team-a.svg",
+      "label": "Polygon - Team A",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 212,
+      "height": 65,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-legend-team-b",
+      "file": "charts/radar-legend-team-b.svg",
+      "label": "Polygon - Team B",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 212,
+      "height": 65,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-legend-points",
+      "file": "charts/radar-legend-points.svg",
+      "label": "Vertex Point",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 212,
+      "height": 65,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/radar-module",
+      "file": "charts/radar-module.svg",
+      "label": "选手对比雷达图模块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 594,
+      "height": 375,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-trend-line",
+      "file": "charts/economy-trend-line.svg",
+      "label": "经济差金色走势线",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 622,
+      "height": 72,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-difference-area",
+      "file": "charts/economy-difference-area.svg",
+      "label": "经济差走势图填色",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 622,
+      "height": 72,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-difference-plot",
+      "file": "charts/economy-difference-plot.svg",
+      "label": "经济差折线与填色样例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 622,
+      "height": 72,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-grid",
+      "file": "charts/economy-grid.svg",
+      "label": "经济差横向网格",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 624,
+      "height": 152,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-legend-trend",
+      "file": "charts/economy-legend-trend.svg",
+      "label": "Gold Trend Line",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 226,
+      "height": 54,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-legend-area",
+      "file": "charts/economy-legend-area.svg",
+      "label": "Difference Area",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 226,
+      "height": 54,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-legend-grid",
+      "file": "charts/economy-legend-grid.svg",
+      "label": "Chart Grid Line",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 226,
+      "height": 54,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/economy-difference-module",
+      "file": "charts/economy-difference-module.svg",
+      "label": "胜负页经济差走势图模块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 974,
+      "height": 264,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-time-row",
+      "file": "charts/axis-time-row.svg",
+      "label": "时间轴四个刻度样例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 230,
+      "height": 33,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-time-start",
+      "file": "charts/axis-time-start.svg",
+      "label": "时间轴刻度 00:00",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 62,
+      "height": 30,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-time-first",
+      "file": "charts/axis-time-first.svg",
+      "label": "时间轴刻度 04:52",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 62,
+      "height": 30,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-time-second",
+      "file": "charts/axis-time-second.svg",
+      "label": "时间轴刻度 09:44",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 62,
+      "height": 30,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-time-end",
+      "file": "charts/axis-time-end.svg",
+      "label": "时间轴刻度 14:36",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 62,
+      "height": 30,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-value-positive",
+      "file": "charts/axis-value-positive.svg",
+      "label": "经济差轴数值 10.3K",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 74,
+      "height": 34,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-value-negative",
+      "file": "charts/axis-value-negative.svg",
+      "label": "经济差轴数值 -10.3K",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 74,
+      "height": 34,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-chip-blank",
+      "file": "charts/numeric-chip-blank.svg",
+      "label": "轴数值底座",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 74,
+      "height": 34,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-metric-label",
+      "file": "charts/axis-metric-label.svg",
+      "label": "分均经济指标标签",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 124,
+      "height": 30,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-percent-left",
+      "file": "charts/numeric-percent-left.svg",
+      "label": "数值示例 66.7%",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-percent-right",
+      "file": "charts/numeric-percent-right.svg",
+      "label": "数值示例 33.3%",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-percent-comparison",
+      "file": "charts/numeric-percent-comparison.svg",
+      "label": "数值对比 66.7% / 33.3%",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 178,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-economy-left",
+      "file": "charts/numeric-economy-left.svg",
+      "label": "数值示例 8393",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-economy-right",
+      "file": "charts/numeric-economy-right.svg",
+      "label": "数值示例 8202",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-economy-comparison",
+      "file": "charts/numeric-economy-comparison.svg",
+      "label": "数值对比 8393 / 8202",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 178,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-count-left",
+      "file": "charts/numeric-count-left.svg",
+      "label": "数值示例 57",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-count-right",
+      "file": "charts/numeric-count-right.svg",
+      "label": "数值示例 57",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-count-comparison",
+      "file": "charts/numeric-count-comparison.svg",
+      "label": "数值对比 57 / 57",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 178,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-decimal-left",
+      "file": "charts/numeric-decimal-left.svg",
+      "label": "数值示例 668.2",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-decimal-right",
+      "file": "charts/numeric-decimal-right.svg",
+      "label": "数值示例 731.4",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 83,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/numeric-decimal-comparison",
+      "file": "charts/numeric-decimal-comparison.svg",
+      "label": "数值对比 668.2 / 731.4",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 178,
+      "height": 28,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-tower",
+      "file": "charts/objective-icon-tower.svg",
+      "label": "塔 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-tyrant",
+      "file": "charts/objective-icon-tyrant.svg",
+      "label": "暴君 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-shadow-tyrant",
+      "file": "charts/objective-icon-shadow-tyrant.svg",
+      "label": "暗影暴君 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-storm-dragon",
+      "file": "charts/objective-icon-storm-dragon.svg",
+      "label": "风暴龙王 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-overlord",
+      "file": "charts/objective-icon-overlord.svg",
+      "label": "主宰 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-shadow-overlord",
+      "file": "charts/objective-icon-shadow-overlord.svg",
+      "label": "暗影主宰 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-economy",
+      "file": "charts/objective-icon-economy.svg",
+      "label": "经济 · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-kda",
+      "file": "charts/objective-icon-kda.svg",
+      "label": "KDA · 战场目标图标",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 36,
+      "height": 36,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-icon-row",
+      "file": "charts/objective-icon-row.svg",
+      "label": "对局摘要战场目标图标组合",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 576,
+      "height": 76,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/objective-module",
+      "file": "charts/objective-module.svg",
+      "label": "对局摘要战场目标模块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 594,
+      "height": 166,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/axis-numeric-module",
+      "file": "charts/axis-numeric-module.svg",
+      "label": "坐标轴与数值样式模块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 594,
+      "height": 209,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-track",
+      "file": "charts/progress-track.svg",
+      "label": "横向数据条轨道",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 355,
+      "height": 20,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/progress-output",
+      "file": "charts/progress-output.svg",
+      "label": "输出伤害进度条",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 355,
+      "height": 20,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/progress-output-fill",
+      "file": "charts/progress-output-fill.svg",
+      "label": "输出伤害填充",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 64,
+      "height": 18,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/stat-cell-output",
+      "file": "charts/stat-cell-output.svg",
+      "label": "输出伤害数值单元格",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 167,
+      "height": 42,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-legend-output",
+      "file": "charts/progress-legend-output.svg",
+      "label": "输出伤害图例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 190,
+      "height": 39,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-taken",
+      "file": "charts/progress-taken.svg",
+      "label": "承受伤害进度条",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 355,
+      "height": 20,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/progress-taken-fill",
+      "file": "charts/progress-taken-fill.svg",
+      "label": "承受伤害填充",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 64,
+      "height": 18,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/stat-cell-taken",
+      "file": "charts/stat-cell-taken.svg",
+      "label": "承受伤害数值单元格",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 167,
+      "height": 42,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-legend-taken",
+      "file": "charts/progress-legend-taken.svg",
+      "label": "承受伤害图例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 190,
+      "height": 39,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-economy",
+      "file": "charts/progress-economy.svg",
+      "label": "总经济进度条",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 355,
+      "height": 20,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/progress-economy-fill",
+      "file": "charts/progress-economy-fill.svg",
+      "label": "总经济填充",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 64,
+      "height": 18,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/stat-cell-economy",
+      "file": "charts/stat-cell-economy.svg",
+      "label": "总经济数值单元格",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 167,
+      "height": 42,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-legend-economy",
+      "file": "charts/progress-legend-economy.svg",
+      "label": "总经济图例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 190,
+      "height": 39,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-participation",
+      "file": "charts/progress-participation.svg",
+      "label": "参团率进度条",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 355,
+      "height": 20,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/progress-participation-fill",
+      "file": "charts/progress-participation-fill.svg",
+      "label": "参团率填充",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 64,
+      "height": 18,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "charts/stat-cell-participation",
+      "file": "charts/stat-cell-participation.svg",
+      "label": "参团率数值单元格",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 167,
+      "height": 42,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/progress-legend-participation",
+      "file": "charts/progress-legend-participation.svg",
+      "label": "参团率图例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 190,
+      "height": 39,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/horizontal-comparison-module",
+      "file": "charts/horizontal-comparison-module.svg",
+      "label": "十人面板横向对比条模块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 975,
+      "height": 212,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/stat-cell-blank",
+      "file": "charts/stat-cell-blank.svg",
+      "label": "数值和进度条单元格底座",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 167,
+      "height": 42,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/stat-row-blank",
+      "file": "charts/stat-row-blank.svg",
+      "label": "十人数据行底座",
+      "category": "charts",
+      "boards": [
+        4,
+        5
+      ],
+      "width": 935,
+      "height": 55,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/stat-row-ten-player",
+      "file": "charts/stat-row-ten-player.svg",
+      "label": "十人数据行 · 四项指标样例",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 935,
+      "height": 55,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/stat-row-module",
+      "file": "charts/stat-row-module.svg",
+      "label": "十人数据行模块",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 974,
+      "height": 117,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "charts/divider-rules-module",
+      "file": "charts/divider-rules-module.svg",
+      "label": "分隔线和模块边角组合",
+      "category": "charts",
+      "boards": [
+        4
+      ],
+      "width": 972,
+      "height": 140,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-zi-mo",
+      "file": "modules/hero-build-card-zi-mo.svg",
+      "label": "梓墨 · 英雄与出装竖卡",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 118,
+      "height": 503,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zi-mo-1",
+      "file": "modules/hero-build-item-zi-mo-1.svg",
+      "label": "梓墨 · 出装图标 1",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zi-mo-2",
+      "file": "modules/hero-build-item-zi-mo-2.svg",
+      "label": "梓墨 · 出装图标 2",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zi-mo-3",
+      "file": "modules/hero-build-item-zi-mo-3.svg",
+      "label": "梓墨 · 出装图标 3",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zi-mo-4",
+      "file": "modules/hero-build-item-zi-mo-4.svg",
+      "label": "梓墨 · 出装图标 4",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-nuan-yang",
+      "file": "modules/hero-build-card-nuan-yang.svg",
+      "label": "暖阳 · 英雄与出装竖卡",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 113,
+      "height": 503,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-nuan-yang-1",
+      "file": "modules/hero-build-item-nuan-yang-1.svg",
+      "label": "暖阳 · 出装图标 1",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-nuan-yang-2",
+      "file": "modules/hero-build-item-nuan-yang-2.svg",
+      "label": "暖阳 · 出装图标 2",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-nuan-yang-3",
+      "file": "modules/hero-build-item-nuan-yang-3.svg",
+      "label": "暖阳 · 出装图标 3",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-nuan-yang-4",
+      "file": "modules/hero-build-item-nuan-yang-4.svg",
+      "label": "暖阳 · 出装图标 4",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-ting-yue",
+      "file": "modules/hero-build-card-ting-yue.svg",
+      "label": "听悦 · 英雄与出装竖卡",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 116,
+      "height": 503,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-ting-yue-1",
+      "file": "modules/hero-build-item-ting-yue-1.svg",
+      "label": "听悦 · 出装图标 1",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-ting-yue-2",
+      "file": "modules/hero-build-item-ting-yue-2.svg",
+      "label": "听悦 · 出装图标 2",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-ting-yue-3",
+      "file": "modules/hero-build-item-ting-yue-3.svg",
+      "label": "听悦 · 出装图标 3",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-ting-yue-4",
+      "file": "modules/hero-build-item-ting-yue-4.svg",
+      "label": "听悦 · 出装图标 4",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-zhao-jue",
+      "file": "modules/hero-build-card-zhao-jue.svg",
+      "label": "昭珏 · 英雄与出装竖卡",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 113,
+      "height": 503,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zhao-jue-1",
+      "file": "modules/hero-build-item-zhao-jue-1.svg",
+      "label": "昭珏 · 出装图标 1",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zhao-jue-2",
+      "file": "modules/hero-build-item-zhao-jue-2.svg",
+      "label": "昭珏 · 出装图标 2",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zhao-jue-3",
+      "file": "modules/hero-build-item-zhao-jue-3.svg",
+      "label": "昭珏 · 出装图标 3",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-zhao-jue-4",
+      "file": "modules/hero-build-item-zhao-jue-4.svg",
+      "label": "昭珏 · 出装图标 4",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-yi-sheng",
+      "file": "modules/hero-build-card-yi-sheng.svg",
+      "label": "一笙 · 英雄与出装竖卡",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 110,
+      "height": 503,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-yi-sheng-1",
+      "file": "modules/hero-build-item-yi-sheng-1.svg",
+      "label": "一笙 · 出装图标 1",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-yi-sheng-2",
+      "file": "modules/hero-build-item-yi-sheng-2.svg",
+      "label": "一笙 · 出装图标 2",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-yi-sheng-3",
+      "file": "modules/hero-build-item-yi-sheng-3.svg",
+      "label": "一笙 · 出装图标 3",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-item-yi-sheng-4",
+      "file": "modules/hero-build-item-yi-sheng-4.svg",
+      "label": "一笙 · 出装图标 4",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-blank",
+      "file": "modules/hero-build-card-blank.svg",
+      "label": "5:19 英雄出装竖卡框",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 125,
+      "height": 475,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-build-card-frame",
+      "file": "modules/hero-build-card-frame.svg",
+      "label": "5:19 英雄出装竖卡边框",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 125,
+      "height": 475,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-01",
+      "file": "modules/equipment-icon-01.svg",
+      "label": "装备图标 1",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-02",
+      "file": "modules/equipment-icon-02.svg",
+      "label": "装备图标 2",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-03",
+      "file": "modules/equipment-icon-03.svg",
+      "label": "装备图标 3",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-04",
+      "file": "modules/equipment-icon-04.svg",
+      "label": "装备图标 4",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-05",
+      "file": "modules/equipment-icon-05.svg",
+      "label": "装备图标 5",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-06",
+      "file": "modules/equipment-icon-06.svg",
+      "label": "装备图标 6",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-featured",
+      "file": "modules/equipment-icon-featured.svg",
+      "label": "独立展示装备图标",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-icon-slot",
+      "file": "modules/equipment-icon-slot.svg",
+      "label": "圆形装备图标底座",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-cluster-blank",
+      "file": "modules/equipment-cluster-blank.svg",
+      "label": "装备 2×3 组合 · 空白",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 144,
+      "height": 88,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional",
+      "note": "单图标 40 × 40"
+    },
+    {
+      "id": "modules/equipment-cluster-example",
+      "file": "modules/equipment-cluster-example.svg",
+      "label": "装备 2×3 组合 · 样例",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 144,
+      "height": 88,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional",
+      "note": "单图标 40 × 40"
+    },
+    {
+      "id": "modules/player-portrait-frame",
+      "file": "modules/player-portrait-frame.svg",
+      "label": "雷达页选手相框",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 208,
+      "height": 241,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/player-portrait-mask",
+      "file": "modules/player-portrait-mask.svg",
+      "label": "雷达页选手照片蒙版",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 208,
+      "height": 241,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/player-portrait-frame-overlay",
+      "file": "modules/player-portrait-frame-overlay.svg",
+      "label": "雷达页选手相框描边",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 208,
+      "height": 241,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/player-portrait-example",
+      "file": "modules/player-portrait-example.svg",
+      "label": "雷达页选手照片示例",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 208,
+      "height": 241,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-avatar-portrait",
+      "file": "modules/hero-avatar-portrait.svg",
+      "label": "雷达页英雄头像",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 116,
+      "height": 118,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-avatar-small",
+      "file": "modules/hero-avatar-small.svg",
+      "label": "列表英雄头像",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 108,
+      "height": 108,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-avatar-blue",
+      "file": "modules/hero-avatar-blue.svg",
+      "label": "统计行蓝发英雄头像",
+      "category": "modules",
+      "boards": [
+        4
+      ],
+      "width": 46,
+      "height": 46,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-avatar-stat",
+      "file": "modules/hero-avatar-stat.svg",
+      "label": "统计行英雄头像",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 51,
+      "height": 49,
+      "format": "raster",
+      "variant": "source-art",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-avatar-blank",
+      "file": "modules/hero-avatar-blank.svg",
+      "label": "通用深底英雄头像框",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 108,
+      "height": 108,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/hero-avatar-portrait-blank",
+      "file": "modules/hero-avatar-portrait-blank.svg",
+      "label": "雷达页深底英雄头像框",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 117,
+      "height": 120,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/icon-holder-empty",
+      "file": "modules/icon-holder-empty.svg",
+      "label": "浅底通用图标框",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 76,
+      "height": 84,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-icon-clash",
+      "file": "modules/role-icon-clash.svg",
+      "label": "对抗路位置图标",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-button-clash",
+      "file": "modules/role-button-clash.svg",
+      "label": "对抗路位置标签",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 56,
+      "height": 69,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-icon-jungle",
+      "file": "modules/role-icon-jungle.svg",
+      "label": "打野位置图标",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-button-jungle",
+      "file": "modules/role-button-jungle.svg",
+      "label": "打野位置标签",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 56,
+      "height": 69,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-icon-mid",
+      "file": "modules/role-icon-mid.svg",
+      "label": "中路位置图标",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-button-mid",
+      "file": "modules/role-button-mid.svg",
+      "label": "中路位置标签",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 56,
+      "height": 69,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-icon-farm",
+      "file": "modules/role-icon-farm.svg",
+      "label": "发育路位置图标",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-button-farm",
+      "file": "modules/role-button-farm.svg",
+      "label": "发育路位置标签",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 56,
+      "height": 69,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-icon-roam",
+      "file": "modules/role-icon-roam.svg",
+      "label": "游走位置图标",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-button-roam",
+      "file": "modules/role-button-roam.svg",
+      "label": "游走位置标签",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 56,
+      "height": 69,
+      "format": "vector",
+      "variant": "standard",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-icon-holder-blank",
+      "file": "modules/role-icon-holder-blank.svg",
+      "label": "位置图标金色底座",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 40,
+      "height": 40,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/role-button-blank",
+      "file": "modules/role-button-blank.svg",
+      "label": "位置标签空白底座",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 56,
+      "height": 69,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/player-nameplate-blank",
+      "file": "modules/player-nameplate-blank.svg",
+      "label": "选手名牌空白底板",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 336,
+      "height": 72,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/player-nameplate-example",
+      "file": "modules/player-nameplate-example.svg",
+      "label": "北京WB.梓墨选手名牌",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 336,
+      "height": 72,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/stat-row-compact",
+      "file": "modules/stat-row-compact.svg",
+      "label": "十人数据行 · 双指标紧凑样例",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 583,
+      "height": 64,
+      "format": "mixed",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/stat-row-compact-blank",
+      "file": "modules/stat-row-compact-blank.svg",
+      "label": "十人数据行紧凑底板",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 583,
+      "height": 64,
+      "format": "vector",
+      "variant": "blank",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/stat-bar-output",
+      "file": "modules/stat-bar-output.svg",
+      "label": "输出伤害小型统计条",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 130,
+      "height": 22,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "modules/stat-bar-taken",
+      "file": "modules/stat-bar-taken.svg",
+      "label": "承受伤害小型统计条",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 130,
+      "height": 22,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "modules/stat-bar-economy",
+      "file": "modules/stat-bar-economy.svg",
+      "label": "总经济小型统计条",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 130,
+      "height": 22,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "modules/stat-bar-participation",
+      "file": "modules/stat-bar-participation.svg",
+      "label": "参团率小型统计条",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 130,
+      "height": 22,
+      "format": "vector",
+      "variant": "example",
+      "resize": "stretch-x"
+    },
+    {
+      "id": "modules/stat-bar-group",
+      "file": "modules/stat-bar-group.svg",
+      "label": "四项统计条组合",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 564,
+      "height": 24,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    },
+    {
+      "id": "modules/equipment-dimension-40",
+      "file": "modules/equipment-dimension-40.svg",
+      "label": "40 × 40 装备尺寸标记",
+      "category": "modules",
+      "boards": [
+        5
+      ],
+      "width": 108,
+      "height": 106,
+      "format": "vector",
+      "variant": "example",
+      "resize": "proportional"
+    }
+  ]
+}

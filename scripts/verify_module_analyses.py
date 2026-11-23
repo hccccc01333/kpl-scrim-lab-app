@@ -18,10 +18,11 @@ def source(name):
 
 # 1) 专题层的三个前端文件已物理删除
 for name in ('v3/public/navigation.js', 'v3/public/depth.js',
-             'v3/public/analysis-pages.js'):
+             'v3/public/analysis-pages.js',
+             'v3/public/bp-lab.js', 'v3/public/bp-lab.css'):
     if (ROOT / name).exists():
         failures.append(f'专题前端文件仍存在：{name}')
-notes.append('专题导航 / 专题页 / 模块分析页三个文件已删除')
+notes.append('专题导航 / 专题页 / 模块分析页 / 旧 BP 前端五个文件已删除')
 
 # 2) 前端不再有任何专题入口、专题接口或隐藏 rail
 banned_js = {
@@ -63,19 +64,19 @@ for needle in ("prefix='/api/v3/facts'", "'lane_matchup', 'equip_matrix', 'equip
         failures.append(f'普通数据端点缺：{needle}')
 app = source('v3/public/app.js')
 feat = source('v3/public/features.js')
-bp = source('v3/public/bp-lab.js')
+# 旧 bp-lab.js/css 已下线，BP 入口现在是 bp-studio.js（app.js 的 mods.bp.mount 指向它）。
+# 这里同步盯住当前实现的数据端点，避免日后又退回专题式目录接口。
+bp = source('v3/public/bp-studio.js')
 if '/api/v3/facts/lane_matchup' not in app:
     failures.append('单局复盘未改用新数据端点')
 if "'v3/facts/lane_matchup'" not in feat:
     failures.append('英雄详情未改用新数据端点')
 if 'CATALOG_URL' in bp or "state.catalog" in bp:
     failures.append('BP 概览仍依赖分析目录接口')
-if "v3/bp-lab" not in bp:
+if '/api/v3/bp-studio' not in bp:
     failures.append('BP 概览主数据接口丢失')
-if "label: '己方英雄诊断'" not in bp:
-    failures.append('BP 己方英雄诊断视图丢失')
-if 'v3/bp-lab/diagnose' not in bp:
-    failures.append('BP 己方英雄诊断接口丢失')
+if 'bp-studio/target' not in bp:
+    failures.append('BP 目标下钻接口丢失')
 serve = source('v3/serve.py')
 if "@router.get('/api/v3/bp-lab/diagnose')" not in serve:
     failures.append('BP 己方英雄诊断后端路由丢失')

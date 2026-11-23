@@ -43,7 +43,8 @@ LANG_BY_SUFFIX = {
     '.js': 'JavaScript', '.css': 'CSS', '.html': 'HTML', '.mjs': 'JavaScript',
     '.md': 'Markdown', '.sql': 'SQL', '.sh': 'Shell', '.bat': 'Batch',
 }
-SOURCE_DIRS = ('client/src', 'v3/public', 'scripts', 'tests', 'docs')
+# 2026-11-22：桌面客户端已归档到 内部资料/前端资料库/，不再计入当前项目源码统计。
+SOURCE_DIRS = ('v3/public', 'scripts', 'tests', 'docs')
 ROOT_GLOBS = ('*.py',)
 
 
