@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>工作台界面演示（合成示例）</title>
+<link rel="stylesheet" href="assets/index-DdXQlq82.css"/>
+<style>
+/* 让工作台界面适配演示容器：解除 Electron 固定高度与最小宽度 */
+html, body, #root { height: auto; min-width: 0; }
+body { overflow: auto; min-width: 0; }
+.workspace { overflow: visible; }
+.celadon-art { max-inline-size: 72%; }
+.page.celadon-client-home { gap: 28px; }
+.client-top-nav { overflow: hidden; }
+.client-top-link { pointer-events: none; }
+.celadon-result, .ov-point { pointer-events: auto; cursor: pointer; }
+.celadon-result { border: 0; }
+.ov-point { fill: var(--paper); stroke: var(--accent); stroke-width: 2; }
+.ov-point:hover { fill: var(--accent); }
+ /* 键盘聚焦必须可见：保留 fill 变化并加一圈高对比描边，不用 outline:none */
+ .ov-point:focus-visible { fill: var(--accent); stroke: var(--ink); stroke-width: 3; }
+.ov-point-readout { margin-top: 8px; color: var(--muted); font-size: 11px; min-height: 1.4em; }
+.ov-area { fill: color-mix(in srgb, var(--accent) 10%, transparent); }
+.ov-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+.ov-grid { stroke: var(--line); }
+.celadon-recent-row > span.is-win { color: var(--accent); }
+.celadon-recent-row > span.is-loss { color: var(--coral); }
+.celadon-recent-row b { font-family: var(--mono); }
+@media (max-width: 900px) {
+  .celadon-cover-copy { inline-size: 100%; }
+}
+</style>
+</head>
+<body>
+<section class="wb-app" data-game-panel="0" >
+  <header class="titlebar">
+    <div class="titlebar-brand"><span class="brand-mark"><i></i><i></i><i></i></span>
+      <span class="brand-copy"><strong>赛训数据</strong></span></div>
+    <nav class="client-top-nav">
+      <a class="client-top-link is-active">首页</a><a class="client-top-link">采集</a>
+      <a class="client-top-link">对局</a><a class="client-top-link">战队</a>
+      <a class="client-top-link">选手</a><a class="client-top-link">英雄</a>
+      <a class="client-top-link">BP</a><a class="client-top-link">赛训</a>
+      <a class="client-top-link">数据来源</a>
+    </nav>
+  </header>
+  <main class="workspace"><div class="page celadon-client-home">
+    <section class="celadon-cover">
+      <img class="celadon-art" src="assets/celadon-valley-C2Nn-Jjl.webp" alt="" width="1756" height="896"/>
+      <div class="celadon-cover-copy">
+        <p class="client-demo-badge">赛训周期简报 · 合成示例</p>
+        <h1>赛训总览</h1>
+        <p class="celadon-date">11-02 ~ 11-16</p>
+        <div class="celadon-record">
+          <span><b>27</b><small>胜</small></span>
+          <span><b>9</b><small>负</small></span>
+          <span class="celadon-game-count"><b>36</b><small>局</small></span>
+        </div>
+        <p class="celadon-cover-note">示例战队的 36 局记录，11 个时间点有可用经济时间轴。</p>
+      </div>
+      <div class="celadon-results"><span>近 12 局</span><div><button type="button" class="celadon-result is-win" data-game-chip="0" aria-label="第 1 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="1" aria-label="第 2 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="2" aria-label="第 3 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="3" aria-label="第 4 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="4" aria-label="第 5 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="5" aria-label="第 6 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="6" aria-label="第 7 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="7" aria-label="第 8 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="8" aria-label="第 9 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="9" aria-label="第 10 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="10" aria-label="第 11 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="11" aria-label="第 12 局，负，点击查看">负</button></div></div>
+    </section>
+
+    <div class="page-header">
+      <div><h2 class="page-title">36 局 27 胜 9 负<em>场均领先 2324 金 · 营地终局面板 + 回放时间轴</em></h2></div>
+    </div>
+
+    <div class="overview-grid">
+      <div class="overview-lead">
+        <article class="ink-card latest-card">
+          <div class="latest-top"><span class="ink-kicker">最近对局</span><span class="ink-meta">11-16 21:04 / 18:42 / 训练赛</span></div>
+          <div class="latest-body">
+            <div class="latest-side"><small>本队</small><b>示例战队</b><span>蓝方</span></div>
+            <div class="latest-score"><b>9<span>:</span>6</b><small>胜利</small></div>
+            <div class="latest-side is-away"><small>对手</small><b>星轨战队</b><span>对方战队</span></div>
+          </div>
+          <div class="latest-bottom"><div class="latest-lineup"><span>本队阵容</span><span class="hero-slot"><span class="portrait" aria-hidden="true">廉</span><small>廉颇</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">澜</span><small>澜</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">沈</span><small>沈梦溪</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">公</span><small>公孙离</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">张</span><small>张飞</small></span></div>
+            <span class="latest-link">打开复盘 <svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></span></div>
+        </article>
+        <div class="ledger" role="group" aria-label="本期指标">
+          <div class="ledger-item"><span class="ledger-label">对局总数</span><span class="ledger-value" data-role="matches">36<small>局</small></span><span class="ledger-note">11 局时间轴完整</span></div>
+          <div class="ledger-item"><span class="ledger-label">有胜负胜率</span><span class="ledger-value" data-role="wr">75%</span><span class="ledger-note">27 胜 / 36 局</span></div>
+          <div class="ledger-item"><span class="ledger-label">平均时长</span><span class="ledger-value" data-role="dur">18:42</span><span class="ledger-note">按有时长的对局</span></div>
+          <div class="ledger-item"><span class="ledger-label">场均经济差</span><span class="ledger-value" data-role="econ">+2324</span><span class="ledger-note">本队减对手</span></div>
+        </div>
+      </div>
+      <div class="overview-side">
+        <article class="ink-card hero-watch">
+          <span class="hero-watch-glyph" aria-hidden="true">廉</span>
+          <div class="hero-watch-head"><span class="ink-kicker">英雄观察</span></div>
+          <div class="hero-watch-body"><small>本队出场最多</small><h2 data-role="hero">廉颇</h2>
+            <div class="hero-watch-stats"><span><b data-role="picks">5</b>次出场</span><span><b data-role="hwr">60%</b>胜率 / 5 局</span></div>
+          </div>
+        </article>
+        <section class="card">
+          <div class="card-head"><div><h2 class="card-title">读法</h2><div class="card-sub">先看最近一局，再看这批的走势；每个数字都能回到具体比赛。</div></div></div>
+          <div class="overview-note">
+            <div class="overview-note-row"><b>01</b><span>最近一局</span><small>比分、阵容与复盘入口</small></div>
+            <div class="overview-note-row"><b>02</b><span>经济走势</span><small>近 11 局平均，样本不足会截断</small></div>
+            <div class="overview-note-row"><b>03</b><span>逐局对照</span><small>点进任意一局看时间线与对位</small></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="overview-analysis">
+      <section class="card">
+        <div class="card-head"><div><h2 class="card-title">经济走势</h2><div class="card-sub">11 局平均 · 每 30 秒一个点 · 每 30 秒一个采样点，本队减对手</div></div>
+          <span class="card-link">逐局查看</span></div>
+        <div class="economy-chart"><div class="chart-wrap">
+          <svg viewBox="0 0 760 210" role="img" aria-label="本队经济差曲线（合成示例）">
+      <line class="ov-grid" x1="26" y1="184.0" x2="734" y2="184.0"/>
+      <path class="ov-area" d="M26.0,184.0 L96.8,175.8 L167.6,166.3 L238.4,171.8 L309.2,155.4 L380.0,132.3 L450.8,103.8 L521.6,73.9 L592.4,52.1 L663.2,41.2 L734.0,26.0 L734.0,184.0 L26.0,184.0 Z"/>
+      <path class="ov-line" d="M26.0,184.0 L96.8,175.8 L167.6,166.3 L238.4,171.8 L309.2,155.4 L380.0,132.3 L450.8,103.8 L521.6,73.9 L592.4,52.1 L663.2,41.2 L734.0,26.0"/>
+      <circle class="ov-point" data-i="0" cx="26.0" cy="184.0" r="4.5" tabindex="0" role="button" aria-label="第 0 秒，经济差 0"/><circle class="ov-point" data-i="1" cx="96.8" cy="175.8" r="4.5" tabindex="0" role="button" aria-label="第 30 秒，经济差 120"/><circle class="ov-point" data-i="2" cx="167.6" cy="166.3" r="4.5" tabindex="0" role="button" aria-label="第 60 秒，经济差 260"/><circle class="ov-point" data-i="3" cx="238.4" cy="171.8" r="4.5" tabindex="0" role="button" aria-label="第 90 秒，经济差 180"/><circle class="ov-point" data-i="4" cx="309.2" cy="155.4" r="4.5" tabindex="0" role="button" aria-label="第 120 秒，经济差 420"/><circle class="ov-point" data-i="5" cx="380.0" cy="132.3" r="4.5" tabindex="0" role="button" aria-label="第 150 秒，经济差 760"/><circle class="ov-point" data-i="6" cx="450.8" cy="103.8" r="4.5" tabindex="0" role="button" aria-label="第 180 秒，经济差 1180"/><circle class="ov-point" data-i="7" cx="521.6" cy="73.9" r="4.5" tabindex="0" role="button" aria-label="第 210 秒，经济差 1620"/><circle class="ov-point" data-i="8" cx="592.4" cy="52.1" r="4.5" tabindex="0" role="button" aria-label="第 240 秒，经济差 1940"/><circle class="ov-point" data-i="9" cx="663.2" cy="41.2" r="4.5" tabindex="0" role="button" aria-label="第 270 秒，经济差 2100"/><circle class="ov-point" data-i="10" cx="734.0" cy="26.0" r="4.5" tabindex="0" role="button" aria-label="第 300 秒，经济差 2324"/>
+    </svg>
+          <p class="ov-point-readout" data-role="readout" aria-live="polite">点图上的点，看那一分钟的经济差。</p>
+        </div>
+        <div class="chart-foot"><span><i></i>本队经济差</span><span>11 局平均 · 11 个时间点</span></div></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div><h2 class="card-title">英雄出场</h2><div class="card-sub">本队当前样本</div></div><span class="card-link">全部英雄</a></div>
+        <div class="bar-list"><div class="bar-row"><span><span class="portrait" aria-hidden="true">廉</span> 廉颇</span><div class="meter"><i style="width:60%"></i></div><b>5 场 · 60%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">伽</span> 伽罗</span><div class="meter"><i style="width:67%"></i></div><b>6 场 · 67%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">沈</span> 沈梦溪</span><div class="meter"><i style="width:55%"></i></div><b>4 场 · 55%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">张</span> 张飞</span><div class="meter"><i style="width:50%"></i></div><b>3 场 · 50%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">澜</span> 澜</span><div class="meter"><i style="width:58%"></i></div><b>4 场 · 58%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">公</span> 公孙离</span><div class="meter"><i style="width:62%"></i></div><b>5 场 · 62%</b></div></div>
+      </section>
+    </div>
+
+    <div class="overview-recent">
+      <div class="celadon-section-head"><h2>最近比赛</h2><span>比分、阵容与复盘详情</span></div>
+      <div class="celadon-recent-head"><span>日期</span><span>对手 / 比分 / 结果</span><span></span></div>
+      <div class="celadon-recent-row"><time>11-16</time><span class="celadon-opponent">星轨战队</span><b>9 : 6</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-15</time><span class="celadon-opponent">测试对手B</span><b>7 : 10</b><span class="is-loss">负</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-14</time><span class="celadon-opponent">对面战队</span><b>12 : 4</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-13</time><span class="celadon-opponent">青芒战队</span><b>10 : 8</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-12</time><span class="celadon-opponent">测试对手B</span><b>6 : 9</b><span class="is-loss">负</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-11</time><span class="celadon-opponent">星轨战队</span><b>11 : 7</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div>
+      <p class="celadon-source-note">合成示例数据，仅用于展示界面。真实战报只来自你自己的训练赛。</p>
+    </div>
+    <div class="overview-foot"><span>SOURCE · 营地终局面板 / 回放时间轴 / 表格导入</span><span>数据只留在本机 · 11-16</span></div>
+  </div></main>
+</section>
+<section class="wb-app" data-game-panel="1" hidden>
+  <header class="titlebar">
+    <div class="titlebar-brand"><span class="brand-mark"><i></i><i></i><i></i></span>
+      <span class="brand-copy"><strong>赛训数据</strong></span></div>
+    <nav class="client-top-nav">
+      <a class="client-top-link is-active">首页</a><a class="client-top-link">采集</a>
+      <a class="client-top-link">对局</a><a class="client-top-link">战队</a>
+      <a class="client-top-link">选手</a><a class="client-top-link">英雄</a>
+      <a class="client-top-link">BP</a><a class="client-top-link">赛训</a>
+      <a class="client-top-link">数据来源</a>
+    </nav>
+  </header>
+  <main class="workspace"><div class="page celadon-client-home">
+    <section class="celadon-cover">
+      <img class="celadon-art" src="assets/celadon-valley-C2Nn-Jjl.webp" alt="" width="1756" height="896"/>
+      <div class="celadon-cover-copy">
+        <p class="client-demo-badge">赛训周期简报 · 合成示例</p>
+        <h1>赛训总览</h1>
+        <p class="celadon-date">11-02 ~ 11-16</p>
+        <div class="celadon-record">
+          <span><b>24</b><small>胜</small></span>
+          <span><b>12</b><small>负</small></span>
+          <span class="celadon-game-count"><b>36</b><small>局</small></span>
+        </div>
+        <p class="celadon-cover-note">示例战队的 36 局记录，13 个时间点有可用经济时间轴。</p>
+      </div>
+      <div class="celadon-results"><span>近 12 局</span><div><button type="button" class="celadon-result is-win" data-game-chip="0" aria-label="第 1 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="1" aria-label="第 2 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="2" aria-label="第 3 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="3" aria-label="第 4 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="4" aria-label="第 5 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="5" aria-label="第 6 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="6" aria-label="第 7 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="7" aria-label="第 8 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="8" aria-label="第 9 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="9" aria-label="第 10 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="10" aria-label="第 11 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="11" aria-label="第 12 局，负，点击查看">负</button></div></div>
+    </section>
+
+    <div class="page-header">
+      <div><h2 class="page-title">36 局 24 胜 12 负<em>场均落后 1775 金 · 营地终局面板 + 回放时间轴</em></h2></div>
+    </div>
+
+    <div class="overview-grid">
+      <div class="overview-lead">
+        <article class="ink-card latest-card">
+          <div class="latest-top"><span class="ink-kicker">最近对局</span><span class="ink-meta">11-16 21:04 / 18:42 / 训练赛</span></div>
+          <div class="latest-body">
+            <div class="latest-side"><small>本队</small><b>示例战队</b><span>红方</span></div>
+            <div class="latest-score"><b>7<span>:</span>10</b><small>失利</small></div>
+            <div class="latest-side is-away"><small>对手</small><b>测试对手B</b><span>对方战队</span></div>
+          </div>
+          <div class="latest-bottom"><div class="latest-lineup"><span>本队阵容</span><span class="hero-slot"><span class="portrait" aria-hidden="true">猪</span><small>猪八戒</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">妲</span><small>妲己</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">孙</span><small>孙权</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">阿</span><small>阿轲</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">赵</span><small>赵怀真</small></span></div>
+            <span class="latest-link">打开复盘 <svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></span></div>
+        </article>
+        <div class="ledger" role="group" aria-label="本期指标">
+          <div class="ledger-item"><span class="ledger-label">对局总数</span><span class="ledger-value" data-role="matches">36<small>局</small></span><span class="ledger-note">13 局时间轴完整</span></div>
+          <div class="ledger-item"><span class="ledger-label">有胜负胜率</span><span class="ledger-value" data-role="wr">67%</span><span class="ledger-note">24 胜 / 36 局</span></div>
+          <div class="ledger-item"><span class="ledger-label">平均时长</span><span class="ledger-value" data-role="dur">21:08</span><span class="ledger-note">按有时长的对局</span></div>
+          <div class="ledger-item"><span class="ledger-label">场均经济差</span><span class="ledger-value" data-role="econ">-1775</span><span class="ledger-note">本队减对手</span></div>
+        </div>
+      </div>
+      <div class="overview-side">
+        <article class="ink-card hero-watch">
+          <span class="hero-watch-glyph" aria-hidden="true">猪</span>
+          <div class="hero-watch-head"><span class="ink-kicker">英雄观察</span></div>
+          <div class="hero-watch-body"><small>本队出场最多</small><h2 data-role="hero">猪八戒</h2>
+            <div class="hero-watch-stats"><span><b data-role="picks">4</b>次出场</span><span><b data-role="hwr">50%</b>胜率 / 5 局</span></div>
+          </div>
+        </article>
+        <section class="card">
+          <div class="card-head"><div><h2 class="card-title">读法</h2><div class="card-sub">先看最近一局，再看这批的走势；每个数字都能回到具体比赛。</div></div></div>
+          <div class="overview-note">
+            <div class="overview-note-row"><b>01</b><span>最近一局</span><small>比分、阵容与复盘入口</small></div>
+            <div class="overview-note-row"><b>02</b><span>经济走势</span><small>近 13 局平均，样本不足会截断</small></div>
+            <div class="overview-note-row"><b>03</b><span>逐局对照</span><small>点进任意一局看时间线与对位</small></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="overview-analysis">
+      <section class="card">
+        <div class="card-head"><div><h2 class="card-title">经济走势</h2><div class="card-sub">13 局平均 · 每 30 秒一个点 · 每 30 秒一个采样点，本队减对手</div></div>
+          <span class="card-link">逐局查看</span></div>
+        <div class="economy-chart"><div class="chart-wrap">
+          <svg viewBox="0 0 760 210" role="img" aria-label="本队经济差曲线（合成示例）">
+      <line class="ov-grid" x1="26" y1="56.2" x2="734" y2="56.2"/>
+      <path class="ov-area" d="M26.0,56.2 L85.0,66.3 L144.0,79.3 L203.0,74.9 L262.0,62.0 L321.0,43.3 L380.0,26.0 L439.0,37.5 L498.0,64.9 L557.0,102.3 L616.0,135.4 L675.0,164.2 L734.0,184.0 L734.0,56.2 L26.0,56.2 Z"/>
+      <path class="ov-line" d="M26.0,56.2 L85.0,66.3 L144.0,79.3 L203.0,74.9 L262.0,62.0 L321.0,43.3 L380.0,26.0 L439.0,37.5 L498.0,64.9 L557.0,102.3 L616.0,135.4 L675.0,164.2 L734.0,184.0"/>
+      <circle class="ov-point" data-i="0" cx="26.0" cy="56.2" r="4.5" tabindex="0" role="button" aria-label="第 0 秒，经济差 0"/><circle class="ov-point" data-i="1" cx="85.0" cy="66.3" r="4.5" tabindex="0" role="button" aria-label="第 30 秒，经济差 -140"/><circle class="ov-point" data-i="2" cx="144.0" cy="79.3" r="4.5" tabindex="0" role="button" aria-label="第 60 秒，经济差 -320"/><circle class="ov-point" data-i="3" cx="203.0" cy="74.9" r="4.5" tabindex="0" role="button" aria-label="第 90 秒，经济差 -260"/><circle class="ov-point" data-i="4" cx="262.0" cy="62.0" r="4.5" tabindex="0" role="button" aria-label="第 120 秒，经济差 -80"/><circle class="ov-point" data-i="5" cx="321.0" cy="43.3" r="4.5" tabindex="0" role="button" aria-label="第 150 秒，经济差 180"/><circle class="ov-point" data-i="6" cx="380.0" cy="26.0" r="4.5" tabindex="0" role="button" aria-label="第 180 秒，经济差 420"/><circle class="ov-point" data-i="7" cx="439.0" cy="37.5" r="4.5" tabindex="0" role="button" aria-label="第 210 秒，经济差 260"/><circle class="ov-point" data-i="8" cx="498.0" cy="64.9" r="4.5" tabindex="0" role="button" aria-label="第 240 秒，经济差 -120"/><circle class="ov-point" data-i="9" cx="557.0" cy="102.3" r="4.5" tabindex="0" role="button" aria-label="第 270 秒，经济差 -640"/><circle class="ov-point" data-i="10" cx="616.0" cy="135.4" r="4.5" tabindex="0" role="button" aria-label="第 300 秒，经济差 -1100"/><circle class="ov-point" data-i="11" cx="675.0" cy="164.2" r="4.5" tabindex="0" role="button" aria-label="第 330 秒，经济差 -1500"/><circle class="ov-point" data-i="12" cx="734.0" cy="184.0" r="4.5" tabindex="0" role="button" aria-label="第 360 秒，经济差 -1775"/>
+    </svg>
+          <p class="ov-point-readout" data-role="readout" aria-live="polite">点图上的点，看那一分钟的经济差。</p>
+        </div>
+        <div class="chart-foot"><span><i></i>本队经济差</span><span>13 局平均 · 13 个时间点</span></div></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div><h2 class="card-title">英雄出场</h2><div class="card-sub">本队当前样本</div></div><span class="card-link">全部英雄</a></div>
+        <div class="bar-list"><div class="bar-row"><span><span class="portrait" aria-hidden="true">廉</span> 廉颇</span><div class="meter"><i style="width:60%"></i></div><b>5 场 · 60%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">伽</span> 伽罗</span><div class="meter"><i style="width:67%"></i></div><b>6 场 · 67%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">沈</span> 沈梦溪</span><div class="meter"><i style="width:55%"></i></div><b>4 场 · 55%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">张</span> 张飞</span><div class="meter"><i style="width:50%"></i></div><b>3 场 · 50%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">澜</span> 澜</span><div class="meter"><i style="width:58%"></i></div><b>4 场 · 58%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">公</span> 公孙离</span><div class="meter"><i style="width:62%"></i></div><b>5 场 · 62%</b></div></div>
+      </section>
+    </div>
+
+    <div class="overview-recent">
+      <div class="celadon-section-head"><h2>最近比赛</h2><span>比分、阵容与复盘详情</span></div>
+      <div class="celadon-recent-head"><span>日期</span><span>对手 / 比分 / 结果</span><span></span></div>
+      <div class="celadon-recent-row"><time>11-16</time><span class="celadon-opponent">星轨战队</span><b>9 : 6</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-15</time><span class="celadon-opponent">测试对手B</span><b>7 : 10</b><span class="is-loss">负</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-14</time><span class="celadon-opponent">对面战队</span><b>12 : 4</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-13</time><span class="celadon-opponent">青芒战队</span><b>10 : 8</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-12</time><span class="celadon-opponent">测试对手B</span><b>6 : 9</b><span class="is-loss">负</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-11</time><span class="celadon-opponent">星轨战队</span><b>11 : 7</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div>
+      <p class="celadon-source-note">合成示例数据，仅用于展示界面。真实战报只来自你自己的训练赛。</p>
+    </div>
+    <div class="overview-foot"><span>SOURCE · 营地终局面板 / 回放时间轴 / 表格导入</span><span>数据只留在本机 · 11-16</span></div>
+  </div></main>
+</section>
+<section class="wb-app" data-game-panel="2" hidden>
+  <header class="titlebar">
+    <div class="titlebar-brand"><span class="brand-mark"><i></i><i></i><i></i></span>
+      <span class="brand-copy"><strong>赛训数据</strong></span></div>
+    <nav class="client-top-nav">
+      <a class="client-top-link is-active">首页</a><a class="client-top-link">采集</a>
+      <a class="client-top-link">对局</a><a class="client-top-link">战队</a>
+      <a class="client-top-link">选手</a><a class="client-top-link">英雄</a>
+      <a class="client-top-link">BP</a><a class="client-top-link">赛训</a>
+      <a class="client-top-link">数据来源</a>
+    </nav>
+  </header>
+  <main class="workspace"><div class="page celadon-client-home">
+    <section class="celadon-cover">
+      <img class="celadon-art" src="assets/celadon-valley-C2Nn-Jjl.webp" alt="" width="1756" height="896"/>
+      <div class="celadon-cover-copy">
+        <p class="client-demo-badge">赛训周期简报 · 合成示例</p>
+        <h1>赛训总览</h1>
+        <p class="celadon-date">11-02 ~ 11-16</p>
+        <div class="celadon-record">
+          <span><b>28</b><small>胜</small></span>
+          <span><b>8</b><small>负</small></span>
+          <span class="celadon-game-count"><b>36</b><small>局</small></span>
+        </div>
+        <p class="celadon-cover-note">示例战队的 36 局记录，11 个时间点有可用经济时间轴。</p>
+      </div>
+      <div class="celadon-results"><span>近 12 局</span><div><button type="button" class="celadon-result is-win" data-game-chip="0" aria-label="第 1 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="1" aria-label="第 2 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="2" aria-label="第 3 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="3" aria-label="第 4 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="4" aria-label="第 5 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="5" aria-label="第 6 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="6" aria-label="第 7 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="7" aria-label="第 8 局，负，点击查看">负</button><button type="button" class="celadon-result is-win" data-game-chip="8" aria-label="第 9 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="9" aria-label="第 10 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-win" data-game-chip="10" aria-label="第 11 局，胜，点击查看">胜</button><button type="button" class="celadon-result is-loss" data-game-chip="11" aria-label="第 12 局，负，点击查看">负</button></div></div>
+    </section>
+
+    <div class="page-header">
+      <div><h2 class="page-title">36 局 28 胜 8 负<em>场均领先 3980 金 · 营地终局面板 + 回放时间轴</em></h2></div>
+    </div>
+
+    <div class="overview-grid">
+      <div class="overview-lead">
+        <article class="ink-card latest-card">
+          <div class="latest-top"><span class="ink-kicker">最近对局</span><span class="ink-meta">11-16 21:04 / 18:42 / 训练赛</span></div>
+          <div class="latest-body">
+            <div class="latest-side"><small>本队</small><b>示例战队</b><span>蓝方</span></div>
+            <div class="latest-score"><b>12<span>:</span>4</b><small>胜利</small></div>
+            <div class="latest-side is-away"><small>对手</small><b>对面战队</b><span>对方战队</span></div>
+          </div>
+          <div class="latest-bottom"><div class="latest-lineup"><span>本队阵容</span><span class="hero-slot"><span class="portrait" aria-hidden="true">元</span><small>元流之子</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">裴</span><small>裴擒虎</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">伽</span><small>伽罗</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">司</span><small>司马懿</small></span><span class="hero-slot"><span class="portrait" aria-hidden="true">空</span><small>空空儿</small></span></div>
+            <span class="latest-link">打开复盘 <svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></span></div>
+        </article>
+        <div class="ledger" role="group" aria-label="本期指标">
+          <div class="ledger-item"><span class="ledger-label">对局总数</span><span class="ledger-value" data-role="matches">36<small>局</small></span><span class="ledger-note">11 局时间轴完整</span></div>
+          <div class="ledger-item"><span class="ledger-label">有胜负胜率</span><span class="ledger-value" data-role="wr">78%</span><span class="ledger-note">28 胜 / 36 局</span></div>
+          <div class="ledger-item"><span class="ledger-label">平均时长</span><span class="ledger-value" data-role="dur">16:35</span><span class="ledger-note">按有时长的对局</span></div>
+          <div class="ledger-item"><span class="ledger-label">场均经济差</span><span class="ledger-value" data-role="econ">+3980</span><span class="ledger-note">本队减对手</span></div>
+        </div>
+      </div>
+      <div class="overview-side">
+        <article class="ink-card hero-watch">
+          <span class="hero-watch-glyph" aria-hidden="true">伽</span>
+          <div class="hero-watch-head"><span class="ink-kicker">英雄观察</span></div>
+          <div class="hero-watch-body"><small>本队出场最多</small><h2 data-role="hero">伽罗</h2>
+            <div class="hero-watch-stats"><span><b data-role="picks">6</b>次出场</span><span><b data-role="hwr">67%</b>胜率 / 5 局</span></div>
+          </div>
+        </article>
+        <section class="card">
+          <div class="card-head"><div><h2 class="card-title">读法</h2><div class="card-sub">先看最近一局，再看这批的走势；每个数字都能回到具体比赛。</div></div></div>
+          <div class="overview-note">
+            <div class="overview-note-row"><b>01</b><span>最近一局</span><small>比分、阵容与复盘入口</small></div>
+            <div class="overview-note-row"><b>02</b><span>经济走势</span><small>近 11 局平均，样本不足会截断</small></div>
+            <div class="overview-note-row"><b>03</b><span>逐局对照</span><small>点进任意一局看时间线与对位</small></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="overview-analysis">
+      <section class="card">
+        <div class="card-head"><div><h2 class="card-title">经济走势</h2><div class="card-sub">11 局平均 · 每 30 秒一个点 · 每 30 秒一个采样点，本队减对手</div></div>
+          <span class="card-link">逐局查看</span></div>
+        <div class="economy-chart"><div class="chart-wrap">
+          <svg viewBox="0 0 760 210" role="img" aria-label="本队经济差曲线（合成示例）">
+      <line class="ov-grid" x1="26" y1="184.0" x2="734" y2="184.0"/>
+      <path class="ov-area" d="M26.0,184.0 L96.8,175.3 L167.6,164.9 L238.4,155.4 L309.2,145.1 L380.0,127.6 L450.8,105.4 L521.6,83.2 L592.4,60.9 L663.2,42.7 L734.0,26.0 L734.0,184.0 L26.0,184.0 Z"/>
+      <path class="ov-line" d="M26.0,184.0 L96.8,175.3 L167.6,164.9 L238.4,155.4 L309.2,145.1 L380.0,127.6 L450.8,105.4 L521.6,83.2 L592.4,60.9 L663.2,42.7 L734.0,26.0"/>
+      <circle class="ov-point" data-i="0" cx="26.0" cy="184.0" r="4.5" tabindex="0" role="button" aria-label="第 0 秒，经济差 0"/><circle class="ov-point" data-i="1" cx="96.8" cy="175.3" r="4.5" tabindex="0" role="button" aria-label="第 30 秒，经济差 220"/><circle class="ov-point" data-i="2" cx="167.6" cy="164.9" r="4.5" tabindex="0" role="button" aria-label="第 60 秒，经济差 480"/><circle class="ov-point" data-i="3" cx="238.4" cy="155.4" r="4.5" tabindex="0" role="button" aria-label="第 90 秒，经济差 720"/><circle class="ov-point" data-i="4" cx="309.2" cy="145.1" r="4.5" tabindex="0" role="button" aria-label="第 120 秒，经济差 980"/><circle class="ov-point" data-i="5" cx="380.0" cy="127.6" r="4.5" tabindex="0" role="button" aria-label="第 150 秒，经济差 1420"/><circle class="ov-point" data-i="6" cx="450.8" cy="105.4" r="4.5" tabindex="0" role="button" aria-label="第 180 秒，经济差 1980"/><circle class="ov-point" data-i="7" cx="521.6" cy="83.2" r="4.5" tabindex="0" role="button" aria-label="第 210 秒，经济差 2540"/><circle class="ov-point" data-i="8" cx="592.4" cy="60.9" r="4.5" tabindex="0" role="button" aria-label="第 240 秒，经济差 3100"/><circle class="ov-point" data-i="9" cx="663.2" cy="42.7" r="4.5" tabindex="0" role="button" aria-label="第 270 秒，经济差 3560"/><circle class="ov-point" data-i="10" cx="734.0" cy="26.0" r="4.5" tabindex="0" role="button" aria-label="第 300 秒，经济差 3980"/>
+    </svg>
+          <p class="ov-point-readout" data-role="readout" aria-live="polite">点图上的点，看那一分钟的经济差。</p>
+        </div>
+        <div class="chart-foot"><span><i></i>本队经济差</span><span>11 局平均 · 11 个时间点</span></div></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><div><h2 class="card-title">英雄出场</h2><div class="card-sub">本队当前样本</div></div><span class="card-link">全部英雄</a></div>
+        <div class="bar-list"><div class="bar-row"><span><span class="portrait" aria-hidden="true">廉</span> 廉颇</span><div class="meter"><i style="width:60%"></i></div><b>5 场 · 60%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">伽</span> 伽罗</span><div class="meter"><i style="width:67%"></i></div><b>6 场 · 67%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">沈</span> 沈梦溪</span><div class="meter"><i style="width:55%"></i></div><b>4 场 · 55%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">张</span> 张飞</span><div class="meter"><i style="width:50%"></i></div><b>3 场 · 50%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">澜</span> 澜</span><div class="meter"><i style="width:58%"></i></div><b>4 场 · 58%</b></div><div class="bar-row"><span><span class="portrait" aria-hidden="true">公</span> 公孙离</span><div class="meter"><i style="width:62%"></i></div><b>5 场 · 62%</b></div></div>
+      </section>
+    </div>
+
+    <div class="overview-recent">
+      <div class="celadon-section-head"><h2>最近比赛</h2><span>比分、阵容与复盘详情</span></div>
+      <div class="celadon-recent-head"><span>日期</span><span>对手 / 比分 / 结果</span><span></span></div>
+      <div class="celadon-recent-row"><time>11-16</time><span class="celadon-opponent">星轨战队</span><b>9 : 6</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-15</time><span class="celadon-opponent">测试对手B</span><b>7 : 10</b><span class="is-loss">负</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-14</time><span class="celadon-opponent">对面战队</span><b>12 : 4</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-13</time><span class="celadon-opponent">青芒战队</span><b>10 : 8</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-12</time><span class="celadon-opponent">测试对手B</span><b>6 : 9</b><span class="is-loss">负</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div><div class="celadon-recent-row"><time>11-11</time><span class="celadon-opponent">星轨战队</span><b>11 : 7</b><span class="is-win">胜</span><svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor"/></svg></div>
+      <p class="celadon-source-note">合成示例数据，仅用于展示界面。真实战报只来自你自己的训练赛。</p>
+    </div>
+    <div class="overview-foot"><span>SOURCE · 营地终局面板 / 回放时间轴 / 表格导入</span><span>数据只留在本机 · 11-16</span></div>
+  </div></main>
+</section>
+<script>
+(function () {
+  var panels = [].slice.call(document.querySelectorAll('[data-game-panel]'));
+  var data = [{"team": "示例战队", "opp": "星轨战队", "camp": "蓝方", "score": "9 : 6", "result": "胜利", "heroes": ["廉颇", "澜", "沈梦溪", "公孙离", "张飞"], "duration": "18:42", "econ": 2324, "winrate": 75, "matches": 36, "wins": 27, "curve": [0, 120, 260, 180, 420, 760, 1180, 1620, 1940, 2100, 2324], "hero": "廉颇", "picks": 5, "hero_wr": 60}, {"team": "示例战队", "opp": "测试对手B", "camp": "红方", "score": "7 : 10", "result": "失利", "heroes": ["猪八戒", "妲己", "孙权", "阿轲", "赵怀真"], "duration": "21:08", "econ": -1775, "winrate": 67, "matches": 36, "wins": 24, "curve": [0, -140, -320, -260, -80, 180, 420, 260, -120, -640, -1100, -1500, -1775], "hero": "猪八戒", "picks": 4, "hero_wr": 50}, {"team": "示例战队", "opp": "对面战队", "camp": "蓝方", "score": "12 : 4", "result": "胜利", "heroes": ["元流之子", "裴擒虎", "伽罗", "司马懿", "空空儿"], "duration": "16:35", "econ": 3980, "winrate": 78, "matches": 36, "wins": 28, "curve": [0, 220, 480, 720, 980, 1420, 1980, 2540, 3100, 3560, 3980], "hero": "伽罗", "picks": 6, "hero_wr": 67}];
+  function sendHeight() {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'wb-demo-height', height: document.documentElement.scrollHeight }, '*');
+    }
+  }
+  function show(i) {
+    panels.forEach(function (p, j) { p.hidden = j !== i; });
+    sendHeight();
+  }
+  window.addEventListener('load', sendHeight);
+  window.addEventListener('resize', sendHeight);
+  document.addEventListener('click', function (e) {
+    var chip = e.target.closest('[data-game-chip]');
+    if (chip) { show(parseInt(chip.dataset.gameChip, 10)); return; }
+    var pt = e.target.closest('.ov-point');
+    if (pt) {
+      var i = parseInt(pt.dataset.i, 10);
+      var active = panels.filter(function (p) { return !p.hidden; })[0];
+      var gi = parseInt(active.dataset.gamePanel, 10);
+      var v = data[gi].curve[i];
+      var readout = active.querySelector('[data-role="readout"]');
+      if (readout) readout.textContent = '第 ' + (i * 30) + ' 秒 · 本队经济差 ' + (v >= 0 ? '+' : '') + v + ' 金（' + (v >= 0 ? '领先' : '落后') + '）';
+    }
+  });
+  function activatePoint(target) {
+    // SVG <circle> 没有 HTMLElement.click()，键盘触发时必须派发真实事件，
+    // 否则会抛 "pt.click is not a function"，读数是永远不更新的。
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    var pt = e.target.closest && e.target.closest('.ov-point');
+    if (pt) { e.preventDefault(); activatePoint(pt); }
+  });
+  // 仿原生 <button>：Enter 在 keydown 触发，Space 在 keyup 触发
+  document.addEventListener('keyup', function (e) {
+    if (e.key !== ' ') return;
+    var pt = e.target.closest && e.target.closest('.ov-point');
+    if (pt) { e.preventDefault(); activatePoint(pt); }
+  });
+})();
+</script>
+</body>
+</html>
