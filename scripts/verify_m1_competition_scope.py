@@ -77,9 +77,13 @@ try:
         page.on('request', lambda r: hits.append(r.url) if 'competition=' in r.url else None)
         page.goto(base + '/#overview', wait_until='load')
         page.wait_for_timeout(4000)
-        slot = page.locator('#onboarding-slot')
-        report['card'] = {'visible': slot.is_visible(), 'text': slot.inner_text()[:180]}
-        page.locator('#onboarding-slot').screenshot(path=str(OUT / '01-card.png'))
+        # 清单已从首页移除，改从右上角「初始化清单」入口打开弹层
+        page.locator('[data-action="checklist"]').first.click()
+        page.wait_for_timeout(600)
+        dialog = page.locator('.cl-hub')
+        report['checklist'] = {'visible': dialog.is_visible(), 'text': dialog.inner_text()[:180]}
+        page.screenshot(path=str(OUT / '01-checklist.png'))
+        page.keyboard.press('Escape')
         # 选赛事 A
         page.goto(base + '/#competitions', wait_until='load')
         page.wait_for_timeout(2500)
@@ -112,7 +116,7 @@ try:
         browser.close()
     report['PASS'] = (report['seriesA']['competitionId'] == comp_a
                       and report['seriesB']['competitionId'] == comp_b
-                      and report['card']['visible'] and report['topbar'] != '切换赛事')
+                      and report['checklist']['visible'] and report['topbar'] != '切换赛事')
 finally:
     process.terminate()
 

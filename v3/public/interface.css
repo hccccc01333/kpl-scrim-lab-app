@@ -3,10 +3,10 @@
 /* 选手详情页覆盖层：不放进任何 layer，优先级高于全部 @layer。
    @import 必须排在所有规则之前，否则浏览器直接丢弃。 */
 @import url('./player-v2.css?v=20261120m');
-@import url('./style.css?v=20261123scout2') layer(legacy);
+@import url('./style.css?v=20261123staff1') layer(legacy);
 @import url('./match-recap-fixes.css?v=20261116c') layer(legacy);
 @import url('./workspace-home.css?v=20261116c') layer(legacy);
-@import url('./bp-studio.css?v=20261124link') layer(legacy);
+@import url('./bp-studio.css?v=20261123v301') layer(legacy);
 @import url('./match-review.css?v=20261116c') layer(legacy);
 @import url('./series.css?v=20261116c') layer(legacy);
 @import url('./cross.css?v=20261116c') layer(legacy);
@@ -36,11 +36,11 @@
 @import url("./match-tags.css?v=20261122b");
 @import url("./biggame-detail-fixes.css?v=20261118a");
 /* 单局复盘页白底红蓝对决皮肤（2026-11-19）：未分层最后导入，仅作用于 .md-page。 */
-@import url("./match-redblue.css?v=20261121b");
+@import url("./match-redblue.css?v=20261123review2");
 /* 本局结论/总量：1:1 移植设计稿红蓝渐变卡片（2026-11-19）。 */
 @import url("./design-verdict.css?v=20261122b");
 /* 单局复盘首屏图三版式（2026-11-22）：比分头 / Pick-Ban / 五路表。 */
-@import url("./match-summary.css?v=20261122polish");
+@import url("./match-summary.css?v=20261123review1");
 /* 总量 + 阶段对比：1:1 移植设计稿白卡 + 7 列表格（2026-11-19）。 */
 @import url("./design-totals.css?v=20261119z");
 /* 本局BP复盘：1:1 移植设计稿横向组合卡（2026-11-19）。 */
@@ -63,7 +63,7 @@
 /* 评级规则设置页（2026-11）：分路×字段的 4 档阈值表格。只作用于 .gr-page。 */
 @import url("./grade-rules.css?v=20261121c");
 /* 赛事框架（2026-11）：赛事列表/当前赛事/门控灰化。只作用于 .comp-page 与 [data-nav].is-gated。 */
-@import url("./competitions.css?v=20261121a");
+@import url("./competitions.css?v=20261124rework");
 
 /* ── 精致化收尾（2026-11-23）：只调间距、焦点、阴影与悬停反馈，不改结构 ───── */
 /* 英雄头像浮层：柔和焦点环、更大的点击区、名字不被挤成一团 */
@@ -113,6 +113,9 @@
   .tp-page .tp-utag-remove { min-inline-size: 40px; min-block-size: 36px; }
   .tp-page .tp-note-tag { min-block-size: 38px; padding-inline: 10px; }
 }
+
+/* 英雄榜更新时间胶囊：完整文案留在 DOM，溢出仅视觉省略。 */
+.hero-filterbar .hb-fresh { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* 周报模板：按赛事勾选模块并调整顺序 */
 .report-toolbar { position: relative; }

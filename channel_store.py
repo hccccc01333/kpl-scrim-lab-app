@@ -829,12 +829,16 @@ def attach_camp_detail(channel, game_seq, detail, official_players=None, actor=N
             rating = _camp_number(stats.get('gradeGame'))
             if rating is not None:
                 fields['rating'] = float(rating)
+            equips = [str(item.get('equipName') or '').strip()
+                      for item in (battle_record.get('finalEquips') or [])
+                      if isinstance(item, dict) and item.get('equipName')]
             players.append({'camp': camp, 'slot': index,
                             'playerId': str(basic.get('playerId') or ''),
                             'nickname': _identity_name(basic.get('roleName')),
                             'hero': used_hero.get('heroName') or (official_match or {}).get('heroName') or (official_match or {}).get('hero'),
                             'heroId': used_hero.get('heroId') or (official_match or {}).get('heroId'),
                             'position': position,
+                            'equipment': equips,
                             'stats': fields})
     # 本人阵营：head.acntCamp（1=蓝 / 2=红）→ 通道的 ownSide
     head_camp = str(head.get('acntCamp') or '')
@@ -909,6 +913,8 @@ def _merge_camp(players, channel):
             target['sources'] = list(dict.fromkeys(target['sources'] + ['camp']))
         if row.get('position'):
             target['position'] = row['position']
+        if row.get('equipment') and not target.get('equipment'):
+            target['equipment'] = row['equipment']
         for key, value in (row.get('stats') or {}).items():
             if key not in ALL_FIELDS or value is None:
                 continue
@@ -1135,6 +1141,8 @@ def bundle(channel, *, require_complete=True):
         # 不估算补数，也不影响上面的 complete/partial 判定。
         for key in CAMP_EXTENDED_FIELDS:
             final[key] = (fields.get(key) or {}).get('value')
+        if player.get('equipment'):
+            final['equipment'] = player['equipment']
         players.append({
             'key': f'{camp}-{player.get("slot")}', 'camp': camp, 'side': camp,
             'slot': player.get('slot'), 'panelSlot': player.get('slot'),

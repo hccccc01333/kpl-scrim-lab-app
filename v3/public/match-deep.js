@@ -2903,6 +2903,38 @@ export function createMatchDeep(h) {
       track.addEventListener('scroll', () => syncHScrollHint(track), { passive: true });
       hscrollRO?.observe(track);
       syncHScrollHint(track);
+      /* 鼠标可直接按住卡片拖动；原生横滑仍保留触摸惯性与键盘方向键。 */
+      if (!track.hasAttribute('tabindex')) {
+        track.tabIndex = 0;
+        track.setAttribute('role', 'region');
+        track.setAttribute('aria-label', '可横向滑动的卡片列表');
+      }
+      let dragging = false, startX = 0, startLeft = 0, moved = false;
+      track.addEventListener('pointerdown', (ev) => {
+        if (ev.pointerType !== 'mouse' || ev.button !== 0) return;
+        if (ev.target.closest('a, button, input, select, textarea')) return;
+        dragging = true; moved = false;
+        startX = ev.clientX; startLeft = track.scrollLeft;
+        track.setPointerCapture?.(ev.pointerId);
+        track.classList.add('is-dragging');
+      });
+      track.addEventListener('pointermove', (ev) => {
+        if (!dragging) return;
+        const dx = ev.clientX - startX;
+        if (Math.abs(dx) > 3) moved = true;
+        track.scrollLeft = startLeft - dx;
+      });
+      const stop = (ev) => {
+        if (!dragging) return;
+        dragging = false;
+        track.releasePointerCapture?.(ev.pointerId);
+        track.classList.remove('is-dragging');
+        if (moved) {
+          track.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); }, { capture: true, once: true });
+        }
+      };
+      track.addEventListener('pointerup', stop);
+      track.addEventListener('pointercancel', stop);
     });
   }
 

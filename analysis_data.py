@@ -241,9 +241,41 @@ class AnalysisRepository:
         self.official_dir = (Path(official_dir) if official_dir
                              else self.matches_dir.parent / 'official_replays')
         self._data = None
+        # 营地十人面板的出装按 gameSeq 缓存；同一局只在首次读盘。
+        self._camp_equipment_cache = {}
         # 单进程内多个线程可能同时走 v3 的 TTL 刷新与 /api/reload；
         # 双检锁保证只构建一次，也不会读到半成品缓存。
         self._lock = threading.Lock()
+
+    def _camp_equipment_for(self, match):
+        """营地 battleRecords.finalEquips → {(camp, hero): [装备名]}。
+
+        出装本来就存在 data/camp_details/<gameSeq>.json 里，只是旧版 bundle
+        没有把它带进详情。这里按 campBp.gameSeq 现读现挂，不需要重新爬取或重新审核。
+        """
+        seq = str((match.get('campBp') or {}).get('gameSeq') or '').strip()
+        if not seq or not seq.isdigit():
+            return {}
+        if seq in self._camp_equipment_cache:
+            return self._camp_equipment_cache[seq]
+        result = {}
+        try:
+            path = self.matches_dir.parent / 'camp_details' / f'{seq}.json'
+            if path.is_file():
+                inner = json.loads(path.read_text(encoding='utf-8')).get('data') or {}
+                for key, camp in (('blueRoles', 'blue'), ('redRoles', 'red')):
+                    for role in inner.get(key) or []:
+                        record = role.get('battleRecords') or {}
+                        hero = clean((record.get('usedHero') or {}).get('heroName'))
+                        items = [clean(item.get('equipName'))
+                                 for item in (record.get('finalEquips') or [])
+                                 if isinstance(item, dict) and clean(item.get('equipName'))]
+                        if hero and items:
+                            result[(camp, hero)] = items
+        except (OSError, ValueError, TypeError):
+            result = {}
+        self._camp_equipment_cache[seq] = result
+        return result
 
     def get(self):
         data = self._data
@@ -439,6 +471,13 @@ class AnalysisRepository:
             profile = {
                 'teamName': settings.get('teamName') or '',
                 'coach': clean(settings.get('coach')),
+                'viceCoach': clean(settings.get('viceCoach')),
+                'assistantCoach': clean(settings.get('assistantCoach')),
+                'dataAnalyst': clean(settings.get('dataAnalyst')),
+                'psychologist': clean(settings.get('psychologist')),
+                'staff': [row for row in settings.get('staff', [])
+                          if isinstance(row, dict) and (row.get('title') or row.get('name'))],
+                'updatedAt': clean(settings.get('updatedAt')),
                 'season': clean(settings.get('season')),
                 'organization': clean(settings.get('organization')),
                 'rosterMigratedAt': settings.get('rosterMigratedAt') or '',
@@ -638,6 +677,7 @@ class AnalysisRepository:
             raw_players = value.get('players', [])
             hero_counts = Counter(clean(player.get('hero')) for player in raw_players)
             camp_lanes = (match.get('campBp') or {}).get('lanes') or {}
+            camp_equipment = self._camp_equipment_for(match)
             for player in raw_players:
                 final = player.get('final') or {}
                 process = player.get('process') or {}
@@ -662,7 +702,9 @@ class AnalysisRepository:
                     'finalSource': final.get('source') or 'bundle',
                     'partial': bool(final.get('partial', not final.get('complete', False))),
                     'process': process,
-                    'equipment': final.get('equipmentCandidates'),
+                    'equipment': player.get('equipment')
+                                 or camp_equipment.get((player.get('camp'), hero))
+                                 or final.get('equipmentCandidates'),
                 })
             follow_camps = []
             for source in value.get('sources', []):

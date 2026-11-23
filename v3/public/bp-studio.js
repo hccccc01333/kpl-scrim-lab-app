@@ -26,27 +26,37 @@ const SECTION_LIST = [
   ['plan', '06', '赛前方案', '这场先 Ban 谁、被 Ban 之后怎么接？', '历史证据，不是最优解'],
   ['counter', '07', '应对分析', '对方第一手之后，双方逐层怎么接？', '楼层 × 战队 × 先后手 × BO'],
 ];
-/* 应对分析前置条件：按 KPL draft-20 的真实手序，Ban 与 Pick 混合排列。
-   hand = 全局第几手（1~20），同一阶段多手共用一个槽位。 */
-const COUNTER_PREFIX_STAGES = [
-  {key: 'blueBan1', slots: 1, camp: '1', suffix: 'Ban 1', group: 'ban', hand: 1},
-  {key: 'redBan1', slots: 1, camp: '2', suffix: 'Ban 1', group: 'ban', hand: 2},
-  {key: 'blueBan2', slots: 1, camp: '1', suffix: 'Ban 2', group: 'ban', hand: 3},
-  {key: 'redBan2', slots: 1, camp: '2', suffix: 'Ban 2', group: 'ban', hand: 4},
-  {key: 'blue1', slots: 1, camp: '1', suffix: '1L', group: 'pick', hand: 5},
-  {key: 'red12', slots: 2, camp: '2', suffix: '1L+2L', group: 'pick', hand: 6},
-  {key: 'blue23', slots: 2, camp: '1', suffix: '2L+3L', group: 'pick', hand: 8},
-  {key: 'red3', slots: 1, camp: '2', suffix: '3L', group: 'pick', hand: 10},
-  {key: 'redBan3', slots: 1, camp: '2', suffix: 'Ban 3', group: 'ban', hand: 11},
-  {key: 'blueBan3', slots: 1, camp: '1', suffix: 'Ban 3', group: 'ban', hand: 12},
-  {key: 'redBan4', slots: 1, camp: '2', suffix: 'Ban 4', group: 'ban', hand: 13},
-  {key: 'blueBan4', slots: 1, camp: '1', suffix: 'Ban 4', group: 'ban', hand: 14},
-  {key: 'redBan5', slots: 1, camp: '2', suffix: 'Ban 5', group: 'ban', hand: 15},
-  {key: 'blueBan5', slots: 1, camp: '1', suffix: 'Ban 5', group: 'ban', hand: 16},
-  {key: 'red4', slots: 1, camp: '2', suffix: '4L', group: 'pick', hand: 17},
-  {key: 'blue45', slots: 2, camp: '1', suffix: '4L+5L', group: 'pick', hand: 18},
-  {key: 'red5', slots: 1, camp: '2', suffix: '5L', group: 'pick', hand: 20},
+/* 应对分析前置条件：逐手一张卡，Ban 与 Pick 混排，手号连续不跳号。
+   hand = 全局第几手；key 同时用作 state.counterPrefix 的键和后端 prefix_* 参数名。
+   排程以 bp_formats 为准：draft-20 = KPL 5 Ban/方共 20 手；draft-18 = 训练赛 4 Ban/方共 18 手。
+   旧版把 6/7、8/9、18/19 手合并成一张卡，导致第 19 手看不见，这里全部拆开。 */
+const prefixBan = (key, camp, n, hand) => ({key, camp, suffix: `Ban ${n}`, group: 'ban', hand, slots: 1});
+const prefixPick = (key, camp, n, hand) => ({key, camp, suffix: `${n}L`, group: 'pick', hand, slots: 1});
+const COUNTER_STAGES_20 = [
+  prefixBan('blueBan1', '1', 1, 1), prefixBan('redBan1', '2', 1, 2),
+  prefixBan('blueBan2', '1', 2, 3), prefixBan('redBan2', '2', 2, 4),
+  prefixPick('blue1', '1', 1, 5), prefixPick('red1', '2', 1, 6),
+  prefixPick('red2', '2', 2, 7), prefixPick('blue2', '1', 2, 8),
+  prefixPick('blue3', '1', 3, 9), prefixPick('red3', '2', 3, 10),
+  prefixBan('redBan3', '2', 3, 11), prefixBan('blueBan3', '1', 3, 12),
+  prefixBan('redBan4', '2', 4, 13), prefixBan('blueBan4', '1', 4, 14),
+  prefixBan('redBan5', '2', 5, 15), prefixBan('blueBan5', '1', 5, 16),
+  prefixPick('red4', '2', 4, 17), prefixPick('blue4', '1', 4, 18),
+  prefixPick('blue5', '1', 5, 19), prefixPick('red5', '2', 5, 20),
 ];
+const COUNTER_STAGES_18 = [
+  prefixBan('blueBan1', '1', 1, 1), prefixBan('redBan1', '2', 1, 2),
+  prefixBan('blueBan2', '1', 2, 3), prefixBan('redBan2', '2', 2, 4),
+  prefixPick('blue1', '1', 1, 5), prefixPick('red1', '2', 1, 6),
+  prefixPick('red2', '2', 2, 7), prefixPick('blue2', '1', 2, 8),
+  prefixPick('blue3', '1', 3, 9), prefixPick('red3', '2', 3, 10),
+  prefixBan('redBan3', '2', 3, 11), prefixBan('blueBan3', '1', 3, 12),
+  prefixBan('redBan4', '2', 4, 13), prefixBan('blueBan4', '1', 4, 14),
+  prefixPick('red4', '2', 4, 15), prefixPick('blue4', '1', 4, 16),
+  prefixPick('blue5', '1', 5, 17), prefixPick('red5', '2', 5, 18),
+];
+const ALL_PREFIX_STAGES = [...COUNTER_STAGES_20, ...COUNTER_STAGES_18];
+const prefixStages = (rule) => rule === 'draft-18' ? COUNTER_STAGES_18 : COUNTER_STAGES_20;
 const STORE_KEY = 'bp-studio.v3';
 const MODES = [['scrim', '训练赛'], ['kpl', 'KPL'], ['rank', '排位与巅峰']];
 const MODE_CONF = {
@@ -90,7 +100,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     seqData: null, seqLoading: false, seqError: '', lastLoadedAt: 0, teamQuery: '', collapsed: {},
     counterData: null, counterLoading: false, counterError: '', counterStale: true,
     counterSide: '', counterBo: 0, counterOpen: '', counterSearch: '', counterTeamScope: 'all',
-    counterPrefix: Object.fromEntries(COUNTER_PREFIX_STAGES.map((stage) => [stage.key, []])),
+    counterPrefix: Object.fromEntries([...new Set(ALL_PREFIX_STAGES.map((stage) => stage.key))].map((key) => [key, []])),
     counterPrefixStage: 'blueBan1', counterPrefixSearch: '',
     typesStale: true, seqStale: true, heroQuery: '', viewNote: '', compact: false,
     solo: true, active: 'heroes',
@@ -248,6 +258,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     state.source = conf.source;
     state.rule = conf.rule;
     state.demo = false;
+    normalizePrefixStage();
+  }
+
+  /* 18 手没有第 5 轮 Ban；切模式后当前选中的手号必须落在新排程里。 */
+  function normalizePrefixStage() {
+    const stages = prefixStages(state.rule);
+    if (!stages.some((stage) => stage.key === state.counterPrefixStage)) {
+      state.counterPrefixStage = stages[0].key;
+    }
   }
 
   function restore() {
@@ -463,8 +482,10 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         else if (state.team) search.set('team', state.team);
         if (state.opponent && state.opponent !== '__all__') search.set('opponent', state.opponent);
       }
-      for (const [stage, heroes] of Object.entries(state.counterPrefix)) {
-        if (heroes.length) search.set(`prefix_${stage}`, heroes.join(','));
+      /* 只提交当前模式排程里的手：训练赛 18 手不会把 KPL 第 5 轮 Ban 带进筛选。 */
+      for (const stage of prefixStages(state.rule)) {
+        const heroes = state.counterPrefix[stage.key] || [];
+        if (heroes.length) search.set(`prefix_${stage.key}`, heroes.join(','));
       }
       if (state.from && state.to) { search.set('from', state.from); search.set('to', state.to); }
       state.counterData = await api(`/counter-chain?${search.toString()}`);
@@ -1443,8 +1464,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         ? (camp === '1' ? '敌方蓝方' : '我方红方')
         : (camp === '1' ? '蓝方' : '红方');
     const stageLabel = (stage) => `${sideName(stage.camp)} ${stage.suffix}`;
-    const activeStage = COUNTER_PREFIX_STAGES.find((stage) => stage.key === state.counterPrefixStage)
-      || COUNTER_PREFIX_STAGES[0];
+    const stages = prefixStages(state.rule);
+    const activeStage = stages.find((stage) => stage.key === state.counterPrefixStage)
+      || stages[0];
     const stageButton = (stage) => {
       const picked = state.counterPrefix[stage.key] || [];
       const faces = picked.length
@@ -1452,6 +1474,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         : '<span class="bps-slot-empty" aria-hidden="true"></span>';
       return `<button type="button" class="bps-prefix-stage is-${stage.group} ${picked.length ? 'is-filled' : ''} ${stage.key === activeStage.key ? 'is-on' : ''}"
         data-bps-prefix-stage="${stage.key}" aria-pressed="${stage.key === activeStage.key}"
+        aria-label="第 ${stage.hand} 手 · ${esc(stageLabel(stage))}${picked.length ? '：' + esc(picked.join('、')) : '，未指定'}"
         title="第 ${stage.hand} 手 · ${esc(stageLabel(stage))}${picked.length ? '：' + esc(picked.join('、')) : ''}">
         <span class="bps-slot-index">${String(stage.hand).padStart(2, '0')}</span>
         <span class="bps-slot-faces">${faces}</span>
@@ -1468,8 +1491,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <div class="bps-prefix-body">
         <div class="bps-prefix-slots">
           <div class="bps-prefix-group">
-            <span class="bps-prefix-group-label">BP 顺序 · 第几手</span>
-            <div class="bps-prefix-slot-grid">${COUNTER_PREFIX_STAGES.map(stageButton).join('')}</div>
+            <span class="bps-prefix-group-label">BP 顺序 · 第几手（${state.rule === 'draft-18' ? '训练赛 18 手' : 'KPL 20 手'}）</span>
+            <div class="bps-prefix-slot-grid">${stages.map(stageButton).join('')}</div>
           </div>
         </div>
         <div class="bps-prefix-picker">${heroPicker(state.counterPrefix[activeStage.key], {action: 'counterPrefix',
@@ -1519,18 +1542,18 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
               const open = state.counterOpen === key;
               return `<tr class="bps-counter-tr" data-bps-cd-row="${esc(key)}"
                 tabindex="0" role="button" aria-expanded="${open}">
-                <td><span class="bps-counter-face">${faces(row.heroes)}${esc(heroShort(row.label))}</span></td>
+                <td><span class="bps-counter-face">${faces(row.heroes)}${esc(heroShort(row.label))}${row.games < 3 ? '<em class="bps-resp-tiny">小样本</em>' : ''}</span></td>
                 <td class="is-num">${num(row.games)}</td>
                 <td class="is-num">${rate(row.share)}</td>
                 <td class="is-num">${rate(row.winRate)}</td>
               </tr>${open ? `<tr class="bps-counter-resp-row"><td colspan="4">
-                <div class="bps-counter-resp-head">对手回应 · ${num(row.responseTotal)} 种 · 至少 3 场对位</div>
-                ${(row.responses || []).map((resp) => `<div class="bps-counter-resp">
-                  <span class="bps-counter-face">${faces(resp.heroes)}${esc(heroShort(resp.label))}</span>
+                <div class="bps-counter-resp-head">对手回应 · ${num(row.responseTotal)} 种 · 含 1 场小样本，全部列出</div>
+                ${(row.responses || []).map((resp) => `<div class="bps-counter-resp${resp.games < 3 ? ' is-tiny' : ''}">
+                  <span class="bps-counter-face">${faces(resp.heroes)}${esc(heroShort(resp.label))}${resp.games < 3 ? '<em class="bps-resp-tiny">小样本</em>' : ''}</span>
                   <span class="is-num">${num(resp.games)} 场</span>
                   <span class="is-num">${rate(resp.share)}</span>
                   <span class="is-num">${rate(resp.winRate)}</span>
-                </div>`).join('') || '<p class="bps-note">这一层还没有足够的回应样本。</p>'}
+                </div>`).join('') || '<p class="bps-note">这一层还没有回应记录。</p>'}
               </td></tr>` : ''}`;
             }).join('') || '<tr><td colspan="4" class="bps-note">没有匹配的英雄。换个关键词，或清空搜索框看全部。</td></tr>'}</tbody>
           </table>
@@ -2348,6 +2371,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     decorateSections();
     observeLazy();
     bindFlowDrag();
+    bindActiveObserver();
     updateActiveJump();
     if (state.typeHandFocus) {
       requestAnimationFrame(() => {
@@ -2436,6 +2460,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       applyZoom();
       observeLazy();
       bindFlowDrag();
+      bindActiveObserver();
       updateActiveJump();
     });
   }
@@ -2586,28 +2611,60 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     });
   }
 
-  function updateActiveJump() {
+  /* 分区高亮改由 IntersectionObserver 负责：只在「视口中间带」被跨过时切换一次，
+     不再每个 scroll 事件按 offsetTop 重算。原来筛选台收起会改变 sticky 高度，
+     mark 跟着抖，两个分区在边界处来回抢高亮，看起来就是导航条闪烁。 */
+  let activeObserver = null;
+  function paintActiveJump() {
     if (!state.root) return;
+    state.root.querySelectorAll('[data-bps-jump]').forEach((link) => {
+      const active = link.dataset.bpsJump === state.active;
+      if ((link.getAttribute('aria-pressed') === 'true') === active) return;
+      link.classList.toggle('is-active', active);
+      link.setAttribute('aria-pressed', String(active));
+    });
+  }
+  function setActiveJump(key) {
+    if (!key || key === state.active) return;
+    state.active = key;
+    paintActiveJump();
+  }
+  function computeActiveFromScroll() {
+    if (!state.root || state.solo) return;
     const sections = [...state.root.querySelectorAll('[data-bps-section]')];
     if (!sections.length) return;
     const stickyH = parseFloat(getComputedStyle(document.documentElement)
       .getPropertyValue('--bps-sticky-h')) || 120;
     const mark = window.scrollY + stickyH + 20;
     let active = sections[0].dataset.bpsSection;
-    if (!state.solo) {
-      for (const item of sections) {
-        if (item.offsetTop <= mark) active = item.dataset.bpsSection;
-      }
-      state.active = active;
-    } else {
-      active = state.active;
+    for (const item of sections) {
+      if (item.offsetTop <= mark) active = item.dataset.bpsSection;
     }
-    state.root.querySelectorAll('[data-bps-jump]').forEach((link) => {
-      link.classList.toggle('is-active', link.dataset.bpsJump === active);
-      link.setAttribute('aria-pressed', String(link.dataset.bpsJump === active));
-    });
+    setActiveJump(active);
+  }
+  function bindActiveObserver() {
+    activeObserver?.disconnect();
+    activeObserver = null;
+    if (!state.root || !('IntersectionObserver' in window)) return;
+    const sections = [...state.root.querySelectorAll('[data-bps-section]')];
+    if (!sections.length) return;
+    activeObserver = new IntersectionObserver((entries) => {
+      const hit = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (hit) setActiveJump(hit.target.dataset.bpsSection);
+    }, { rootMargin: '-40% 0px -40% 0px', threshold: 0 });
+    sections.forEach((section) => activeObserver.observe(section));
+  }
+  function updateActiveJump() {
+    if (!state.root) return;
+    if (!activeObserver) computeActiveFromScroll();
+    paintActiveJump();
     const topButton = state.root.querySelector('[data-bps-top]');
-    if (topButton) topButton.hidden = window.scrollY < 600;
+    if (topButton) {
+      const hide = window.scrollY < 600;
+      if (topButton.hidden !== hide) topButton.hidden = hide;
+    }
   }
 
   function filterPicker(action, text) {
@@ -2652,8 +2709,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function onPick(action, hero) {
     if (action === 'counterPrefix') {
-      const stage = COUNTER_PREFIX_STAGES.find((item) => item.key === state.counterPrefixStage)
-        || COUNTER_PREFIX_STAGES[0];
+      const stages = prefixStages(state.rule);
+      const stage = stages.find((item) => item.key === state.counterPrefixStage)
+        || stages[0];
       const list = state.counterPrefix[stage.key];
       const index = list.indexOf(hero);
       if (index >= 0) list.splice(index, 1);
@@ -3014,6 +3072,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       state.mode = 'scrim';
       state.source = 'scrim';
       state.rule = 'draft-18';
+      normalizePrefixStage();
       state.demo = true;
       state.leagues = [];
       state.team = '本队';
@@ -3733,7 +3792,6 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   let scrollBound = null;
-  let lastScrollY = 0;
   let clickBound = null;
   let inputBound = null;
   let keyBound = null;
@@ -3750,19 +3808,10 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     };
     scrollBound = () => {
       if (hoverNode) hoverNode.hidden = true;
-    if (flowCallout) flowCallout.hidden = true;
+      if (flowCallout) flowCallout.hidden = true;
+      /* 不再在滚动里改吸顶层的 padding / display：那会在 sticky 临界点触发
+         scroll anchoring 补偿，把元素推离吸附位，来回 oscillation 就是闪烁。 */
       updateActiveJump();
-      /* 向下阅读时收起筛选台，向上滚动或聚焦时立即恢复；吸顶高度始终很小。 */
-      const y = window.scrollY || 0;
-      const sticky = state.root?.querySelector('.bps-sticky');
-      if (sticky) {
-        const tuck = y > 160 && y > lastScrollY + 4;
-        if (sticky.classList.contains('is-tucked') !== tuck) {
-          sticky.classList.toggle('is-tucked', tuck);
-          syncSticky();
-        }
-      }
-      lastScrollY = y;
     };
     resizeBound = () => { syncSticky(); updateActiveJump(); };
     keyBound = (event) => {

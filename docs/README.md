@@ -4,6 +4,8 @@
 
 - [部署指南](deploy.md)：新机器安装、环境变量、Docker、自检与开源边界。
 - [使用指南](product_guide.md)：启动、导入、校对、复盘与对比的完整路径。
+- [工作台使用文档](guide/使用手册.md)：应用内「文档」页的同源 human-readable 版本。左侧按章节切换，含功能手册、名词解释、常见问题与错误码；源文件在 `guide/content.json`，改完跑 `python scripts/build_help_content.py`。
+- [错误码表](guide/错误码表.md)：错误码、含义、用户处置、代码位置与接入状态；新增错误码先改 `guide/error-codes.json` 再生成。
 - 统一平台（历史，已归档）：页面、功能、数据口径和兼容路由。
 - [采集要求与示例](collection_sop.md)：营地路径的营地链接与双合规路径、OCR 路径（七页截图或一段录屏即可建档）；[单局采集说明](collection_channel.md)含「补采 vs 新录入」的区别。
 - [截图字段说明](screenshot_fields.md)、[表格导入](sheet_import.md)、[录屏识别](replay_video_ocr.md)、[官方营地回放](camp_replay.md)。

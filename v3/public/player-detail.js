@@ -164,6 +164,32 @@ export function createPlayerDetail(h) {
     return out;
   }
   const lanePctile = (c, lane, key, value) => percentile(laneDist(c, lane, key), value);
+  /* KPL 打野在 BP 包里拆成坦野/野核，按人次合并成一路再对标。 */
+  const kplLaneCell = (baseline, lane) => {
+    const lanes = (baseline && baseline.lanes) || {};
+    if (lane !== '打野') return lanes[lane] || null;
+    const parts = ['打野·坦野', '打野·野核'].map((name) => lanes[name]).filter(Boolean);
+    if (!parts.length) return null;
+    const games = parts.reduce((sum, cell) => sum + (cell.games || 0), 0);
+    if (!games) return null;
+    const wins = parts.reduce((sum, cell) => sum + (cell.wins || 0), 0);
+    const weighted = (field) => {
+      let sum = 0, n = 0;
+      for (const cell of parts) if (isNum(cell[field])) { sum += cell[field] * (cell.games || 0); n += cell.games || 0; }
+      return n ? sum / n : null;
+    };
+    return {games, wins, winRate: wins / games * 100, heroWinRate: weighted('heroWinRate'),
+      heroWinSamples: parts.reduce((sum, cell) => sum + (cell.heroWinSamples || 0), 0)};
+  };
+  /* 本人常用英雄在 KPL 的外部胜率：按这名选手在该分路的每一局取英雄胜率均值。 */
+  const selfHeroKplWr = (rows, heroStats) => {
+    let sum = 0, n = 0;
+    for (const row of rows || []) {
+      const wr = (heroStats[row.hero] || {}).winRate;
+      if (isNum(wr)) { sum += wr; n += 1; }
+    }
+    return n ? sum / n : null;
+  };
 
   /* ── 指标对照卡：本人值 vs 同位置中位 + 一针见血的差距判断 + 环比 ────
      不用仪表盘和百分位数字（赛训组要看具体数值），用语义徽章直接说清高低。 */
@@ -195,6 +221,20 @@ export function createPlayerDetail(h) {
       <div class="pm-metric-value">${showVal(key, my)}</div>
       <div class="pm-metric-mid">同位置中位 <b>${showVal(key, mid)}</b></div>
       ${trend ? `<div class="pm-metric-trend">${trend}</div>` : ''}
+    </div>`;
+  };
+
+  /* KPL 对标卡：只比两边都真实存在的字段，不套用本队分位。 */
+  const kplCompareCard = (label, my, ref, leagueLabel) => {
+    const diff = isNum(my) && isNum(ref) ? my - ref : null;
+    const level = diff == null ? 'na' : diff > 0.05 ? 'top' : diff < -0.05 ? 'low' : 'mid';
+    const verdict = diff == null ? '样本不足'
+      : Math.abs(diff) < 0.05 ? '持平 KPL'
+        : `${diff > 0 ? '高于' : '低于'} KPL ${N(Math.abs(diff), 1)} 个百分点`;
+    return `<div class="pm-metric">
+      <div class="pm-metric-top"><span class="pm-metric-label">${S(label)}</span><span class="pm-verdict is-${level}">${S(verdict)}</span></div>
+      <div class="pm-metric-value">${isNum(my) ? `${N(my, 1)}%` : na('—', '没有可比数据')}</div>
+      <div class="pm-metric-mid">KPL ${S(leagueLabel)} <b>${isNum(ref) ? `${N(ref, 1)}%` : '—'}</b></div>
     </div>`;
   };
 
@@ -513,10 +553,14 @@ export function createPlayerDetail(h) {
         '样本不足 2 局的指标照样给值，但不判分位。'));
     }
 
-    /* 03 同位置对标：同一指标的选手排行柱 + 三个分位仪表 */
+    /* 03 同位置对标：本队选手排行，或切到 KPL 某项赛事的同位置平均线。
+       KPL BP 包没有逐局选手面板，只对比双方都真实存在的胜率 / 英雄胜率。 */
     {
       const lane = c.focusLane;
-      const key = f.bench;
+      const isKpl = f.benchSource === 'kpl';
+      const leagueLabel = f.kplLeague || '全部 KPL 赛事';
+      const kplCell = isKpl ? kplLaneCell(c.kplBaseline, lane) : null;
+      const key = isKpl ? 'winRate' : f.bench;
       const all = (c.laneSamples[lane] || []);
       const valid = all.filter((s) => s.games >= 2 && isNum(s[key]));
       const scored = valid.slice().sort((a, b) => b[key] - a[key]);
@@ -525,52 +569,82 @@ export function createPlayerDetail(h) {
       const selfRow = selfIn ? null : scored.find((s) => s.name === c.name);
       const rows = selfRow ? [...top, selfRow] : top;
       const rank = scored.findIndex((s) => s.name === c.name) + 1;
-      const tools = selBar([cardSelect('bench', '指标', [
-        ['winRate', '胜率'], ['kda', 'KDA'], ['hdpm', '对英雄输出'], ['participation', '参团率'],
-      ], key)]);
-      const chart = rows.length ? V.columns({
-        labels: rows.map((s) => s.name),
-        labelsHtml: rows.map((s) => s.name === c.name ? `<span class="pv-col-self">${S(s.name)}</span>` : `<span>${S(s.name)}</span>`),
-        series: [{
-          values: rows.map((s) => s[key]),
-          clsAt: rows.map((s) => (s.name === c.name ? 'is-mark' : 'is-flat')),
-          texts: rows.map((s) => showVal(key, s[key])),
-        }],
-        /* 只有两三个人时别把图拉满 8 栏：柱会浮在巨大的空槽里。
-           宽度随人数收，柱子本身加宽，整图居中，不再是一片空白托两根细柱。 */
-        W: Math.min(w(8), 220 + rows.length * 150), H: 280,
-        padL: 56, padR: 16, maxBarW: 96, baseline: 'auto',
-        fmtV: (v) => N(v, fieldDigits(key) > 1 ? 2 : 1),
-        refs: median(scored.map((x) => x[key])) == null ? []
-          : [{v: median(scored.map((x) => x[key])), label: '同位置中位'}],
-        aria: `同位置选手 ${fieldLabel(key)} 排行`,
-      }) : emptyWith('这一路还没有达标的选手',
-        `本人${lane}只有 ${fmt((c.byLane.get(lane) || []).length)} 局，同位置里也没有达到 2 局门槛的人。`);
+      const sourceSelect = V.pvSelect({name: 'benchSource', label: '对标范围', value: f.benchSource,
+        groups: [{label: '本队', items: [['', '本队同位置']]},
+          {label: 'KPL', items: [['kpl', 'KPL 同位置平均']]}]});
+      const metricSelect = cardSelect('bench', '指标', isKpl
+        ? [['winRate', '胜率']]
+        : [['winRate', '胜率'], ['kda', 'KDA'], ['hdpm', '对英雄输出'], ['participation', '参团率']], key);
+      const leagueSelect = isKpl ? V.pvSelect({name: 'kplLeague', label: 'KPL 赛事', value: f.kplLeague,
+        options: [['', '全部 KPL 赛事']].concat((c.kplBaseline.leagues || [])
+          .map((l) => [l.name, `${l.name} · ${fmt(l.games)} 局`]))}) : '';
+      const tools = selBar([sourceSelect, leagueSelect, metricSelect]);
       const curSelf = c.byLane.get(lane) || [];
       const selfGames = curSelf.length;
       const selfRate = win(curSelf).rate;
       const selfKda = mean(curSelf, (r) => r.kda);
-      const pGames = percentile(all.map((s) => s.games), selfGames);
-      const pRate = percentile(all.map((s) => s.winRate), selfRate);
-      const pKda = percentile(all.map((s) => s.kda), selfKda);
+      const chart = isKpl
+        ? (() => {
+          const bars = [{name: '本人', value: selfRate, mark: true},
+            {name: `${lane} KPL 平均`, value: kplCell && kplCell.winRate, mark: false}]
+            .filter((r) => isNum(r.value));
+          return bars.length ? V.columns({
+            labels: bars.map((r) => r.name),
+            labelsHtml: bars.map((r) => `<span${r.mark ? ' class="pv-col-self"' : ''}>${S(r.name)}</span>`),
+            series: [{values: bars.map((r) => r.value), clsAt: bars.map((r) => (r.mark ? 'is-mark' : 'is-flat')),
+              texts: bars.map((r) => `${N(r.value, 1)}%`)}],
+            W: Math.min(w(8), 460), H: 280, padL: 56, padR: 16, maxBarW: 120, baseline: 'auto',
+            fmtV: (v) => `${N(v, 1)}%`, refs: [], aria: `本人与 KPL ${lane} 胜率对比`,
+          }) : emptyWith('这项赛事没有该分路的 KPL 样本',
+            `${leagueLabel} 的 BP 数据里没有 ${S(lane)} 的可用胜负记录。`);
+        })()
+        : (rows.length ? V.columns({
+          labels: rows.map((s) => s.name),
+          labelsHtml: rows.map((s) => (s.name === c.name ? `<span class="pv-col-self">${S(s.name)}</span>` : `<span>${S(s.name)}</span>`)),
+          series: [{values: rows.map((s) => s[key]),
+            clsAt: rows.map((s) => (s.name === c.name ? 'is-mark' : 'is-flat')),
+            texts: rows.map((s) => showVal(key, s[key]))}],
+          /* 只有两三个人时别把图拉满 8 栏：柱会浮在巨大的空槽里。 */
+          W: Math.min(w(8), 220 + rows.length * 150), H: 280,
+          padL: 56, padR: 16, maxBarW: 96, baseline: 'auto',
+          fmtV: (v) => N(v, fieldDigits(key) > 1 ? 2 : 1),
+          refs: median(scored.map((x) => x[key])) == null ? []
+            : [{v: median(scored.map((x) => x[key])), label: '同位置中位'}],
+          aria: `同位置选手 ${fieldLabel(key)} 排行`,
+        }) : emptyWith('这一路还没有达标的选手',
+          `本人${lane}只有 ${fmt((c.byLane.get(lane) || []).length)} 局，同位置里也没有达到 2 局门槛的人。`));
       const prevSelf = c.prevByLane.get(lane) || [];
-      const gauges = `<div class="pm-grid pm-grid--three">${[
-        metricCard({key: 'games', label: '场次', my: selfGames, mid: median(all.map((s) => s.games)),
-          pct: pGames, prev: c.prevByLane.size ? prevSelf.length : null, prevLabel: c.prevLabel}),
-        metricCard({key: 'winRate', label: '胜率', my: selfRate, mid: median(all.map((s) => s.winRate)),
-          pct: pRate, prev: win(prevSelf).rate, prevLabel: c.prevLabel}),
-        metricCard({key: 'kda', label: 'KDA', my: selfKda, mid: median(all.map((s) => s.kda)),
-          pct: pKda, prev: mean(prevSelf, (r) => r.kda), prevLabel: c.prevLabel}),
-      ].join('')}</div>`;
-      setN(valid.length);
-      out.push(card('03', `同位置对标 · ${lane}`,
-        `${S(lane)} 共 <b>${fmt(all.length)} 人</b>，达 <b>2 局</b>门槛 <b>${fmt(valid.length)} 人</b>；按 <b>${S(fieldLabel(key))}</b> 排，本人 <b>${rank ? `第 ${fmt(rank)} 位` : na('未进榜', '本人该分路不足 2 局，不进榜')}</b>。`,
+      const gauges = isKpl
+        ? `<div class="pm-grid pm-grid--two">${[
+          kplCompareCard('胜率', selfRate, kplCell && kplCell.winRate, leagueLabel),
+          kplCompareCard('英雄胜率', selfHeroKplWr(curSelf, c.kplHeroStats), kplCell && kplCell.heroWinRate, leagueLabel),
+        ].join('')}</div>`
+        : `<div class="pm-grid pm-grid--three">${[
+          metricCard({key: 'games', label: '场次', my: selfGames, mid: median(all.map((s) => s.games)),
+            pct: percentile(all.map((s) => s.games), selfGames),
+            prev: c.prevByLane.size ? prevSelf.length : null, prevLabel: c.prevLabel}),
+          metricCard({key: 'winRate', label: '胜率', my: selfRate, mid: median(all.map((s) => s.winRate)),
+            pct: percentile(all.map((s) => s.winRate), selfRate),
+            prev: win(prevSelf).rate, prevLabel: c.prevLabel}),
+          metricCard({key: 'kda', label: 'KDA', my: selfKda, mid: median(all.map((s) => s.kda)),
+            pct: percentile(all.map((s) => s.kda), selfKda),
+            prev: mean(prevSelf, (r) => r.kda), prevLabel: c.prevLabel}),
+        ].join('')}</div>`;
+      setN(isKpl ? ((kplCell && kplCell.games) || 0) : valid.length);
+      const summary = isKpl
+        ? `${S(leagueLabel)} · ${S(lane)} 共 <b>${fmt((kplCell && kplCell.games) || 0)}</b> 人次；KPL 胜率 <b>${kplCell && isNum(kplCell.winRate) ? P(kplCell.winRate) : '—'}</b>，本人 <b>${P(selfRate)}</b>。`
+        : `${S(lane)} 共 <b>${fmt(all.length)} 人</b>，达 <b>2 局</b>门槛 <b>${fmt(valid.length)} 人</b>；按 <b>${S(fieldLabel(key))}</b> 排，本人 <b>${rank ? `第 ${fmt(rank)} 位` : na('未进榜', '本人该分路不足 2 局，不进榜')}</b>。`;
+      out.push(card('03', isKpl ? `KPL 同位置对标 · ${lane}` : `同位置对标 · ${lane}`, summary,
         tools + grid([
-          panel(`按${fieldLabel(key)}排行 · 前 ${fmt(rows.length)} 人`, chart, {span: 8, foot: '强调色柱 = 本人，灰色柱 = 同位置其他人'}),
-          panel('本人三项 · 数值与差距', gauges, {span: 4, foot: `中位参照 ${fmt(all.length)} 名同位置选手；环比为${S(c.prevLabel)}`}),
-        ])
-        + (all.length - valid.length ? note(`另有 <b>${fmt(all.length - valid.length)} 人</b>只打了 1 局或缺少该项数据，不进榜。`) : ''),
-        '榜单只给单项原始值，不用统一综合分排序；1 局样本不进榜，避免一次高光把人顶到前面。'));
+          panel(isKpl ? `本人 vs ${lane} KPL 平均 · 胜率` : `按${fieldLabel(key)}排行 · 前 ${fmt(rows.length)} 人`,
+            chart, {span: 8, foot: isKpl ? '数据来源：KPL BP 逐局事实 + KPL 英雄外部胜率'
+              : '强调色柱 = 本人，灰色柱 = 同位置其他人'}),
+          panel(isKpl ? '本人 vs KPL · 数值与差距' : '本人三项 · 数值与差距', gauges,
+            {span: 4, foot: isKpl ? `赛事：${S(leagueLabel)}；只比双方都有的字段`
+              : `中位参照 ${fmt(all.length)} 名同位置选手；环比为${S(c.prevLabel)}`}),
+        ]),
+        isKpl ? 'KPL BP 包没有逐局选手面板，只对比胜率与英雄胜率；选赛事后按该赛事全部对局重算。'
+          : '榜单只给单项原始值，不用统一综合分排序；1 局样本不进榜，避免一次高光把人顶到前面。'));
     }
 
     return out;
@@ -952,7 +1026,7 @@ export function createPlayerDetail(h) {
   }
 
   /* ══ 页面装配 ══════════════════════════════════════════════════════ */
-  function render(board, name, detail) {
+  function render(board, name, detail, kplBaseline) {
     cardSeq = 0;
     ensureGradeRules();
     const allRows = (detail && detail.rows) || [];
@@ -1011,6 +1085,8 @@ export function createPlayerDetail(h) {
       desc: [...rows].reverse(),
       laneSamples: detail.laneSamples || {},
       laneDistributions: detail.laneDistributions || laneDistOf(allRows),
+      kplBaseline: kplBaseline || {leagues: [], lanes: {}},
+      kplHeroStats: detail.kplHeroStats || {},
       meta: detail.heroMeta || {}, opponents: detail.opponents || [],
       bench: heroBench(board, name),
       byLane, laneOrder, mainLane, byHero, topHeroes,
@@ -1111,8 +1187,11 @@ export function createPlayerDetail(h) {
   /* ── 卡片级筛选：只留不跨卡的维度，分路/英雄/时间都归切片条 ────── */
   function readFilters(c) {
     const ui = stateUI();
+    const leagueNames = (c.kplBaseline.leagues || []).map((l) => l.name);
     const f = {
       bench: one(['winRate', 'kda', 'hdpm', 'participation'], ui.bench, 'winRate'),
+      benchSource: one(['', 'kpl'], ui.benchSource, ''),
+      kplLeague: one(leagueNames.includes(ui.kplLeague) ? [ui.kplLeague] : [], ui.kplLeague, ''),
       benchField: one(BENCH_FIELDS.map(([key]) => key), ui.benchField, 'gold10'),
       period: one(PERIOD_MODES.map((m) => m[0]), ui.period, 'd3'),
       comboSort: one(['games', 'winRate'], ui.comboSort, 'games'),

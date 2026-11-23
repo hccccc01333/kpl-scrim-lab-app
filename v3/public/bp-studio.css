@@ -30,6 +30,8 @@
   --bps-shadow-md: 0 2px 4px rgb(28 66 104 / 4%), 0 18px 40px -28px rgb(28 66 104 / 35%);
   --bps-shadow-lg: 0 30px 70px -40px rgb(28 66 104 / 55%);
   position: relative;
+  /* 吸顶层的直接父级禁用滚动锚定：任何动态内容变化都不会把 sticky 推离吸附位。 */
+  overflow-anchor: none;
   max-width: 1660px;
   margin: 0 auto;
   padding: 22px 40px 72px;
@@ -141,11 +143,9 @@
      -10px 仍保留压在标题带下沿的效果，但不再遮字。 */
   margin: -10px 0 0;
   padding: 8px 0 10px;
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--bps-paper-2) 98%, transparent) 0%,
-    color-mix(in srgb, var(--bps-paper-2) 92%, transparent) 62%,
-    transparent 100%);
-  backdrop-filter: blur(12px) saturate(1.05);
+  /* 吸顶层不再叠 backdrop-filter：与内部 .bps-jump / .bps-console 的模糊叠加时，
+     Chromium 会在滚动中反复重绘导航胶囊，出现可见闪烁。背景改为不透明实色。 */
+  background: var(--bps-paper-2);
 }
 /* 标题栏的「分析范围与视图」摘要行已去掉，筛选卡直接跟在节导航下面，补一点间距。 */
 .bps-filters { margin-top: 10px; }
@@ -340,8 +340,7 @@
   display: flex; gap: 4px; margin: 10px 0 0; padding: 6px;
   overflow-x: auto; scrollbar-width: none;
   border: 1px solid var(--bps-line); border-radius: 999px;
-  background: color-mix(in srgb, var(--bps-paper) 90%, transparent);
-  backdrop-filter: blur(14px);
+  background: var(--bps-paper);
   box-shadow: 0 14px 30px -26px rgba(14, 47, 43, .7);
 }
 .bps-jump::-webkit-scrollbar { display: none; }
@@ -350,6 +349,7 @@
   padding: 7px 13px; border-radius: 999px;
   color: var(--bps-muted); font-size: 12.5px; font-weight: 700; text-decoration: none;
   white-space: nowrap;
+  transition: background-color .16s ease, color .16s ease;
 }
 .bps-jump button i { font-style: normal; color: var(--bps-quiet); font-size: 10.5px; font-weight: 800; }
 .bps-jump button:hover { background: var(--bps-wash); color: var(--bps-text); }
@@ -2035,21 +2035,24 @@
 .bps-prefix-slots { padding: 14px 16px; border-inline-end: 1px solid var(--bps-line-soft); min-inline-size: 0; }
 .bps-prefix-group + .bps-prefix-group { margin-top: 14px; }
 .bps-prefix-group-label { display: block; margin-bottom: 8px; font-size: 9.5px; font-weight: 800; letter-spacing: .16em; color: var(--bps-quiet); }
-.bps-prefix-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 7px; }
-.bps-prefix-stage { display: flex; align-items: center; gap: 6px; min-inline-size: 0; padding: 7px 8px; border: 1px solid var(--bps-line-soft); border-radius: 10px; background: var(--bps-paper-2); text-align: start; transition: border-color .15s, background .15s, box-shadow .15s; }
+/* 手序卡：20/18 手逐手一张，卡片要放得下完整中文标签（如「红方 Ban 5」「蓝方 5L」）。
+   不给文字容器设固定高度，也不裁切标签——否则中文会被压掉上半/下半一截。 */
+.bps-prefix-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(158px, 1fr)); gap: 9px; }
+.bps-prefix-stage { display: flex; align-items: center; gap: 9px; min-inline-size: 0; min-block-size: 58px; padding: 9px 11px; border: 1px solid var(--bps-line-soft); border-radius: 10px; background: var(--bps-paper-2); text-align: start; transition: border-color .15s, background .15s, box-shadow .15s; }
 .bps-prefix-stage:hover { border-color: var(--bps-accent); background: var(--bps-wash); }
 .bps-prefix-stage.is-on { border-color: var(--bps-accent); background: var(--bps-wash); box-shadow: inset 0 0 0 1px var(--bps-accent); }
-.bps-slot-index { flex: none; font-size: 9px; font-weight: 800; color: var(--bps-quiet); font-variant-numeric: tabular-nums; }
+.bps-slot-index { flex: none; font-size: 0.75rem; font-weight: 800; color: var(--bps-quiet); font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .bps-prefix-stage.is-ban .bps-slot-index { color: var(--bps-red); }
 .bps-prefix-stage.is-ban:not(.is-on) { background: var(--bps-paper-2); border-style: dashed; }
 .bps-slot-faces { display: inline-flex; align-items: center; flex: none; }
-.bps-slot-faces .bps-p { inline-size: 21px; block-size: 21px; border-radius: 6px; margin-inline-end: -4px; border: 1.5px solid var(--bps-paper); }
-.bps-slot-faces i { font-size: 9px; font-style: normal; font-weight: 800; color: var(--bps-accent); margin-inline-start: 6px; }
-.bps-slot-empty { inline-size: 21px; block-size: 21px; border: 1px dashed var(--bps-line); border-radius: 6px; }
+.bps-slot-faces .bps-p { inline-size: 28px; block-size: 28px; border-radius: 6px; margin-inline-end: -4px; border: 1.5px solid var(--bps-paper); }
+.bps-slot-faces i { font-size: 0.7rem; font-style: normal; font-weight: 800; color: var(--bps-accent); margin-inline-start: 6px; }
+.bps-slot-empty { inline-size: 28px; block-size: 28px; border: 1px dashed var(--bps-line); border-radius: 6px; }
 .bps-slot-text { min-inline-size: 0; }
-.bps-slot-text b, .bps-slot-text small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bps-slot-text b { font-size: 10.5px; font-weight: 750; color: var(--bps-ink); }
-.bps-slot-text small { font-size: 9.5px; color: var(--bps-quiet); margin-top: 1px; }
+/* 完整文字留在 DOM 里：中文标签允许折行，不再 nowrap + 省略号把字压成半截。 */
+.bps-slot-text b, .bps-slot-text small { display: block; line-height: 1.35; overflow-wrap: anywhere; }
+.bps-slot-text b { font-size: 0.8125rem; font-weight: 750; color: var(--bps-ink); }
+.bps-slot-text small { font-size: 0.75rem; color: var(--bps-quiet); margin-top: 2px; }
 .bps-prefix-picker { padding: 10px 12px 4px; min-inline-size: 0; }
 .bps-prefix-picker .bps-picker { border: 0; box-shadow: none; background: transparent; }
 .bps-prefix-picker .bps-picker-head { padding: 2px 4px 10px; }
@@ -2111,10 +2114,13 @@
 .bps-prefix-head h4, .bps-plan-col > h4 { text-wrap: balance; }
 
 /* 密集 UI 标签按可见字形对齐，避免字体内部留白让文字看起来偏下。 */
-.bps-chip, .bps-section-meta, .bps-slot-text b, .bps-plan-text b,
+.bps-chip, .bps-section-meta, .bps-plan-text b,
 .bps-mover-row span, .bps-link {
   text-box: trim-both cap alphabetic;
 }
+/* 手序卡标签含中文：trim-both cap alphabetic 会切掉汉字上下伸出的笔画，
+   看起来像被压扁一半，这里显式还原，保证「蓝方 5L / 红方 Ban 5」完整可读。 */
+.bps-slot-text b { text-box: normal; }
 
 .bps-chart-head b { font-size: clamp(0.8125rem, 0.78rem + 0.2vw, 0.9375rem); letter-spacing: .01em; }
 .bps-chart-head span { font-size: clamp(0.625rem, 0.6rem + 0.15vw, 0.6875rem); }
@@ -2216,13 +2222,13 @@
 .bps-prefix-card { container-type: inline-size; }
 .bps-prefix-picker .bps-search { flex: 0 1 260px; }
 .bps-prefix-picker .bps-picker-tools { justify-content: flex-start; }
-.bps-prefix-group-label { font-size: 10.5px; letter-spacing: .1em; color: var(--bps-muted); }
-.bps-slot-index { font-size: 10.5px; color: var(--bps-muted); }
-.bps-slot-text small { font-size: 11px; }
+.bps-prefix-group-label { font-size: 0.75rem; letter-spacing: .1em; color: var(--bps-muted); }
+.bps-slot-index { font-size: 0.75rem; color: var(--bps-muted); }
+.bps-slot-text small { font-size: 0.75rem; }
 @container (max-width: 760px) {
   .bps-prefix-body { grid-template-columns: 1fr; }
   .bps-prefix-slots { border-inline-end: 0; }
-  .bps-prefix-slot-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .bps-prefix-slot-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }
 .bps-counter-table { table-layout: fixed; }
 .bps-counter-table col.is-num, .bps-counter-table th.is-num, .bps-counter-table td.is-num { width: 76px; }
@@ -2232,7 +2238,7 @@
   .bps-plan-col:hover, .bps-counter-card:hover { transform: translateY(-2px); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .bps-plan-col, .bps-counter-card, .bps-stat-card, .bps-combo-row { transition: none; }
+  .bps-plan-col, .bps-counter-card, .bps-stat-card, .bps-combo-row, .bps-jump button { transition: none; }
 }
 
 /* 窄屏：更早折栏，收紧吸顶高度。 */
@@ -2259,10 +2265,8 @@
 .bps-counter-table th, .bps-counter-table td { padding: 9px 10px !important; }
 .bps-counter-table tbody tr:hover td { background: color-mix(in srgb, var(--bps-wash) 70%, transparent); }
 .bps-counter-table th { position: relative; }
-/* 向下阅读时收起筛选台只留分区导航；向上滚动或键盘聚焦立即恢复。 */
-.bps-sticky.is-tucked .bps-filters { display: none; }
-.bps-sticky:focus-within .bps-filters { display: block; }
-.bps-sticky.is-tucked { padding-top: 2px; padding-bottom: 2px; }
+/* 不再自动收起筛选台：sticky 临界点改 padding / display 会触发滚动锚定抖动。
+   筛选台保持常驻，位置只由 position: sticky 决定。 */
 .bps-console { position: relative; }
 .bps-console-tools {
   display: inline-flex; align-items: center; gap: 8px;
@@ -2362,4 +2366,39 @@
   .bps-plan-flow { gap: 5px; }
   .bps-plan-step { padding: 4px 8px; font-size: 11px; }
   .bps-plan-arrow { font-size: 13px; }
+}
+
+/* 应对分析下钻：全部回应（含 1 场小样本）排成白底清单，
+   行与行用细线分开，字号放大一档，避免小字挤在一起。 */
+.bps-counter-table { font-size: 13.5px !important; }
+.bps-counter-table th, .bps-counter-table td { padding: 10px 12px !important; }
+.bps-counter-resp-row > td { background: #fff !important; }
+.bps-counter-resp-head {
+  padding: 10px 12px 8px !important;
+  font-size: 13px !important; font-weight: 700 !important;
+  color: var(--bps-ink) !important;
+  border-bottom: 1px solid var(--bps-line-strong) !important;
+}
+.bps-counter-resp {
+  grid-template-columns: minmax(0, 1fr) 88px 88px 88px !important;
+  gap: 0 !important;
+  padding: 10px 12px !important;
+  font-size: 13.5px !important; line-height: 1.5;
+  color: var(--bps-ink);
+  border-top: 0 !important;
+  border-bottom: 1px solid var(--bps-line-soft) !important;
+}
+.bps-counter-resp:last-of-type { border-bottom: 0 !important; }
+.bps-counter-resp .is-num { color: var(--bps-muted); font-size: 13px; }
+.bps-counter-resp .bps-counter-face { font-weight: 600; }
+.bps-resp-tiny {
+  display: inline-block; margin-left: 6px; padding: 1px 6px;
+  border: 1px solid #f0d7ad; border-radius: 4px;
+  background: #fff5e6; color: #9a5b00;
+  font-size: 10.5px; font-style: normal; font-weight: 700; line-height: 1.4;
+  vertical-align: middle; white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .bps-counter-resp { grid-template-columns: minmax(0, 1fr) 72px 72px !important; }
+  .bps-counter-resp .is-num:last-child { display: none; }
 }

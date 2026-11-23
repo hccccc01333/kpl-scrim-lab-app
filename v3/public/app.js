@@ -1,12 +1,15 @@
 import { normalizedCamp, sampleNear, teamTotal, economyDirection, eventSide, laneRealisation } from './match-recap-metrics.js';
 import { equipIcons } from './equipment-icons.js';
-import { featureSections } from './feature-sections.js?v=20261124nolearn';
+import { featureSections } from './feature-sections.js?v=20261123nav';
 import { createWorkbenchUI, loadingSkeleton } from './workbench-ui.js';
-import { createTour } from './tour.js';
+import { createChecklist } from './tour.js?v=20261123checklist2';
 import { initUpdateBanner } from './update-banner.js';
+import { diagnosticBlock, bindDiagnosticCopy, errorEntry } from './diagnostics.js';
 /* 单局标签：自挂载（盯着 #content 里的 .tagrow 占位），首页 / 档案 / 单局页共用。
    档案库还要读同一份标签数据做组合筛选、搜索与批量管理，不能再自己拉一套接口。 */
 import { tagsOf, tagNotesOf, vocabulary, tagsReady, reloadTags } from './match-tags.js';
+/* 重点关注：给每局挂「关注 + 原因 + 说明」的统一入口，档案行里也能直接标。 */
+import './focus-matches.js';
 /* 分路图标来自 KPL 总决赛 SVG 包；用目录 URL 拼路径，文档根下的相对路径在本站会 404。 */
 const KPL_SVG = new URL('./kpl-svg/', import.meta.url).href;
 const LANE_SVG = { '对抗路': 'clash', '打野': 'jungle', '中路': 'mid', '发育路': 'farm', '游走': 'roam' };
@@ -28,19 +31,20 @@ const zhCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'bas
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CLIENT_DOWNLOAD_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest';
 const app = document.querySelector('#app');
-/* 侧边栏按产品使用分四段（2026-11-23 赛训组定稿）：
-   备战（赛后复盘）/ 情报（赛前准备）两段式；配置收规则库一个入口。 */
+/* 侧边栏按「先把自家底子建好，再做复盘与情报」的顺序排（2026-11-23 定稿）：
+   工作台：首页 → 本队资料 → 本队选手档案 → 采集 → 赛事 → 系列赛编组；
+   其下才是备战（赛后复盘）与情报（赛前准备）。 */
 const nav = [
-  ['overview', '首页'],
-  ['ingest', '采集'], ['matches', '对局'], ['series-builder', '系列赛编组'],
-  ['biggame', '大场分析'], ['cross', '跨局分析'],
-  ['opponents', '对手侦察'], ['teams', '战队'], ['players', '选手'], ['heroes', '英雄'], ['bp', 'BP 工作台'],
+  ['overview', '首页'], ['team-profile', '本队资料'], ['profiles', '本队选手档案'],
+  ['ingest', '采集'], ['competitions', '赛事'], ['series-builder', '系列赛编组'],
+  ['matches', '对局'], ['biggame', '大场分析'], ['cross', '跨局分析'],
+  ['teams', '战队'], ['players', '选手'], ['heroes', '英雄'], ['bp', 'BP 工作台'],
   ['rules', '规则中心'],
-  ['competitions', '赛事'], ['sources', '数据来源'],
+  ['sources', '数据来源'], ['docs', '文档'],
 ];
 const labels = Object.fromEntries(nav);
 for (const pages of Object.values(featureSections)) for (const [key, label] of pages) labels[key] = label;
-Object.assign(labels, { biggame: '大场分析', cross: '跨局分析', 'series-builder': '系列赛编组', rules: '规则中心', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamtraining: '交手记录', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', competitions: '赛事', competition: '赛事详情', weekly: '训练周报' });
+Object.assign(labels, { biggame: '大场分析', cross: '跨局分析', 'series-builder': '系列赛编组', rules: '规则中心', 'team-profile': '本队资料', profiles: '本队选手档案', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamtraining: '交手记录', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', competitions: '赛事', competition: '赛事详情', weekly: '训练周报' });
 function sectionFor(name) {
   const detail = { match: 'matches', player: 'players', playerdetail: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', competition: 'setup', weekly: 'setup' }[name] || name;
   return Object.keys(featureSections).find((section) => featureSections[section].some(([key]) => key === detail)) || detail;
@@ -60,6 +64,8 @@ const icons = {
   matches: '<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   teams: '<path d="M12 3 4 6.5v5.8c0 4.3 3.1 7.1 8 8.7 4.9-1.6 8-4.4 8-8.7V6.5z"/><path d="m8.8 12 2 2 4.4-4.4"/>',
   players: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20v-1.5a5.5 5.5 0 0 1 11 0V20M16 5a3 3 0 0 1 0 6m1 4a4.5 4.5 0 0 1 3.5 4.4V20"/>',
+  'team-profile': '<path d="M12 3 4.5 6v5.6c0 4.2 3 7.1 7.5 8.4 4.5-1.3 7.5-4.2 7.5-8.4V6z"/><path d="m12 7.6 1.35 2.75 3.03.44-2.19 2.14.52 3.02L12 14.62l-2.71 1.43.52-3.02-2.19-2.14 3.03-.44z"/>',
+  profiles: '<rect x="3.5" y="5" width="13" height="11" rx="2"/><circle cx="8.5" cy="9" r="1.7"/><path d="M5.6 14c.4-1.9 1.6-2.8 2.9-2.8s2.5.9 2.9 2.8"/><path d="M8 20h9a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-1.2"/>',
   heroes: '<path d="m12 3 2.4 5.2 5.6.7-4.1 3.9 1 5.6-4.9-2.7-4.9 2.7 1-5.6L4 8.9l5.6-.7z"/>',
   bp: '<path d="m12 3.5 7.5 4.4-2.8 12.3H7.3L4.5 7.9zM4.5 7.9 12 13l7.5-5.1M12 13v7.2"/>',
   space: '<path d="M4 4v16h16M7 16l4-5 3.5 2.5L20 6"/><circle cx="20" cy="6" r="1"/>',
@@ -72,6 +78,7 @@ const icons = {
   competitions: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-12 4h3m-3 3h7"/>',
   sources: '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.7 2.7 0 0 1 5.2 1c0 1.8-2.7 2.2-2.7 4M12 17.4h.01"/>',
+  docs: '<path d="M5 4.5h9.5L19 9v10.5H5z"/><path d="M14 4.5V9h5M8 12h8M8 15.5h8"/>',
   inbox: '<path d="M4 5h16v14H4z"/><path d="M4 13h4l2 3h4l2-3h4"/>',
   demo: '<path d="m8 5 11 7-11 7z"/>',
   camera: '<path d="M4 8h3l1.7-2.2h6.6L17 8h3v11H4z"/><circle cx="12" cy="13.2" r="3.4"/>',
@@ -81,7 +88,7 @@ const icons = {
   download: '<path d="M12 3v11m-4-4 4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
   upload: '<path d="M12 16V5m-4 4 4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
-const icon = (name) => `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icons[name]}</svg>`;
+const icon = (name) => `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icons[name] || ''}</svg>`;
 const esc = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const has = (n) => typeof n === 'number' && Number.isFinite(n);
 const fmt = (n, digits = 0) => has(n) ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: digits }).format(n) : '—';
@@ -260,23 +267,33 @@ async function probeServer() {
   reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 8000);
   scheduleReconnect(reconnectDelay);
 }
-function renderOffline(r = current()) {
+function renderOffline(r = current(), error = null) {
   const box = document.querySelector('#content');
   if (!box) return;
-  box.innerHTML = `<div class="page"><section class="section"><div class="offline-card">
-    <b>${esc(labels[r.name] || '当前页面')}暂时读不到数据</b>
+  const code = 'E-SYS-001';
+  const title = errorEntry(code)?.title || '工作台连接中断';
+  box.innerHTML = `<div class="page"><section class="section"><div class="offline-card dx-error">
+    <div class="dx-error-head"><span class="dx-error-code">${esc(code)}</span><b>${esc(labels[r.name] || '当前页面')} · ${esc(title)}</b></div>
     <p>与工作台的连接中断了，恢复后会<strong>自动加载这一页</strong>，也可以点下面的按钮立即重试。</p>
     <div class="offline-actions"><button class="control" data-action="refresh">立即重试</button></div>
+    ${diagnosticBlock({ code, error, route: r, requestPath: error?.path })}
+    <p class="dx-error-foot">反馈时把错误码和诊断信息一起贴到群里，不用重复描述页面。</p>
   </div></section></div>`;
+  bindDiagnosticCopy(box);
 }
-function renderDataNotice(r) {
+function renderDataNotice(r, error = null) {
   const box = document.querySelector('#content');
   if (!box) return;
-  box.innerHTML = `<div class="page"><section class="section"><div class="offline-card">
-    <b>${esc(labels[r.name] || '当前页面')}暂时读不到数据</b>
+  const code = 'E-SYS-002';
+  const title = errorEntry(code)?.title || '这一页的数据还没返回';
+  box.innerHTML = `<div class="page"><section class="section"><div class="offline-card dx-error">
+    <div class="dx-error-head"><span class="dx-error-code">${esc(code)}</span><b>${esc(labels[r.name] || '当前页面')} · ${esc(title)}</b></div>
     <p>这一页的数据还没返回，已经自动重试过；稍后再点一次读取即可。</p>
     <div class="offline-actions"><button class="control" data-action="refresh">重新读取</button></div>
+    ${diagnosticBlock({ code, error, route: r, requestPath: error?.path })}
+    <p class="dx-error-foot">反馈时把错误码和诊断信息一起贴到群里，不用重复描述页面。</p>
   </div></section></div>`;
+  bindDiagnosticCopy(box);
 }
 let metadata = {};
 let data;
@@ -444,9 +461,12 @@ function applyGate() {
     link.toggleAttribute('data-needs-competition', needsCompetition);
     link.title = needsCompetition ? '先选择赛事，再进入' + link.textContent.trim() : '';
   });
+  const activeNav = current().name;
   app.querySelectorAll('[data-nav]').forEach((link) => {
     const state = unlockState.loaded ? unlockState.routes[link.dataset.nav] : null;
     link.toggleAttribute('data-data-locked', Boolean(state && state.unlocked === false));
+    if (link.dataset.nav === activeNav) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
   });
   const context = app.querySelector('[data-competition-context]');
   if (context) context.textContent = locked ? '选择赛事' : '切换赛事';
@@ -466,16 +486,16 @@ document.addEventListener('competition:selected', () => {
 let workbenchUI;
 function shell() {
   const brand = `<a class="desk-brand" href="#overview" aria-label="赛训数据首页"><img src="static/media/mark.svg" alt="" width="32" height="32">赛训数据</a>`;
-  const navLink = ([key, label]) => `<a href="${navHref(key)}" data-nav="${key}">${icon(key === 'series-builder' ? 'seriesbuilder' : key)}<span>${label}</span></a>`;
+  const navLink = ([key, label]) => `<a href="${navHref(key)}" data-nav="${key}">${icon(key === 'series-builder' ? 'seriesbuilder' : key) || ''}<span>${label}</span></a>`;
   const groups = [
-    ['工作台', nav.slice(0, 1)],
-    ['备战（赛后复盘）', nav.slice(1, 6)],
-    ['情报（赛前准备）', nav.slice(6, 11)],
-    ['配置（规则库）', nav.slice(11, 12)],
-    ['管理', nav.slice(12, 14)],
+    ['工作台', nav.slice(0, 6)],
+    ['备战（赛后复盘）', nav.slice(6, 9)],
+    ['情报（赛前准备）', nav.slice(9, 13)],
+    ['配置（规则库）', nav.slice(13, 14)],
+    ['管理', nav.slice(14, 16)],
   ];
   const navigation = groups.map(([title, entries]) => `<div class="desk-group"><span>${title}</span>${entries.map(navLink).join('')}</div>`).join('');
-  const tools = `<button type="button" data-action="tour">${icon('help')}使用教程</button><a href="kpl-client://open" data-action="open-client">${icon('client')}打开客户端</a>`;
+  const tools = `<button type="button" data-action="checklist">${icon('help')}初始化清单</button><a href="kpl-client://open" data-action="open-client">${icon('client')}打开客户端</a>`;
   app.innerHTML = `<aside class="desk-rail">${brand}<nav class="desk-links main-nav" aria-label="主导航">${navigation}</nav><div class="desk-tools">${tools}</div></aside>
   <header class="desk-bar">
     <button type="button" class="desk-icon menu-button" data-action="menu" aria-label="打开导航" aria-expanded="false" aria-controls="ui-navigation">${icon('menu')}</button>
@@ -490,7 +510,6 @@ function shell() {
   <div class="secondary-wrap"><nav class="secondary-nav" aria-label="分类导航"></nav><label class="desk-page-select"><span>板块页面</span><select aria-label="切换板块页面"></select></label></div>
   <div class="desk-event-chip" id="desk-event-chip" hidden></div>
   <p class="desk-handoff" role="status" hidden></p>
-  <section class="onboarding-slot" id="onboarding-slot" hidden></section>
   <main id="content" tabindex="-1"></main>
   <footer class="footer"><span>赛训数据</span><span class="footer-actions"><button type="button" class="footer-update" data-action="check-update">检查更新</button></span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
   <dialog id="filters"></dialog>`;
@@ -525,7 +544,9 @@ function openInbox() {  const data = inboxState;
     dialog = document.createElement('dialog');
     dialog.id = 'sx-inbox-dialog';
     dialog.className = 'sx-dialog sx-inbox-dialog';
-    document.body.append(dialog);
+    /* 挂到 #app 里：关闭 / 深链 / 对手映射的点击代理都在 #app 上，
+       放 body 会让弹窗里的按钮收不到这些事件（× 关不掉）。 */
+    app.append(dialog);
     dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
   }
   const groups = (data.groups || []).map((group) => {
@@ -586,6 +607,7 @@ async function get(path, fresh = false) {
     /* 后端可能返回英文 detail（如 "Not Found"），不把它原样摆到教练面前。 */
     const error = new Error(response.status === 404 ? '这一页的数据暂时读不到。' : '数据读取失败，稍后会自动重试。');
     error.status = response.status;
+    error.path = path;
     throw error;
   }
   return response.json();
@@ -856,6 +878,11 @@ function matchRows(rows, dayNo = new Map()) {
       <div class="archive-side">
         <div class="tagrow" data-tag-key="${esc(match.key)}" aria-label="这一局的自定义标签"${hiddenTags.length ? ` data-tag-more="+${hiddenTags.length}" title="还有：${esc(hiddenTags.join('、'))}"` : ''}></div>
         <div class="archive-tools">
+          <button type="button" class="archive-focus" data-focus-match="${esc(match.key)}"
+            data-focus-opponent="${esc(match.opponent || '')}" data-focus-date="${esc(match.date || '')}"
+            data-focus-result="${esc(match.result || '')}" data-focus-score="${esc(score(match))}"
+            data-focus-duration="${esc(time(match.duration))}" data-focus-diff="${esc(Number.isFinite(match.goldDiff) ? fmt(match.goldDiff) : '')}"
+            aria-label="${matchTags.includes('重点') ? '编辑这一局的重点关注' : '把这一局加入重点关注'}" title="重点关注">${matchTags.includes('重点') ? '★' : '☆'}</button>
           <button type="button" class="archive-note" data-archive-note="${esc(match.key)}" aria-label="编辑这一局的教练备注">备注${noteCount ? `<b>${noteCount}</b>` : ''}</button>
         </div>
       </div>
@@ -1470,6 +1497,12 @@ document.addEventListener('match-tags:change', (event) => {
         delete row.dataset.tagMore;
         row.removeAttribute('title');
       }
+    }
+    const star = document.querySelector(`.archive-row-wrap[data-match-key="${CSS.escape(key)}"] .archive-focus`);
+    if (star) {
+      const on = (tagsOf(key) || []).includes('重点');
+      star.textContent = on ? '★' : '☆';
+      star.setAttribute('aria-label', on ? '编辑这一局的重点关注' : '把这一局加入重点关注');
     }
   }
   if (current().name === 'matches' && view.archiveTagKeys) refreshMatchResults();
@@ -2188,30 +2221,44 @@ function matchPage(m) {
     return n > 0 ? `${Math.max(4, Math.round(n / max * 100))}%` : '0%';
   };
   const msKda = (p) => `${fmt(p.kills)}/${fmt(p.deaths)}/${fmt(p.assists)}`;
-  /* 出装有就画图标（最多 6 件）；没有也给一个轻量占位，
-     让教练知道这一格是出装、不是空白。 */
+  /* 出装：优先回放 builds，其次营地面板 equipment / 截图 OCR 候选；最多 6 件。 */
+  const msEquipNames = (p) => {
+    const names = [];
+    const push = (raw) => {
+      const name = String(raw || '').trim();
+      if (name && !names.includes(name)) names.push(name);
+    };
+    const fromItem = (item) => push(typeof item === 'string' ? item
+      : (item?.name || item?.itemName || item?.equipName
+         || (Array.isArray(item?.candidates) ? item.candidates[0]?.name : '')));
+    if (Array.isArray(p?.builds)) p.builds.forEach(fromItem);
+    const equip = p?.equipment;
+    if (Array.isArray(equip)) equip.forEach(fromItem);
+    else if (equip && typeof equip === 'object' && Array.isArray(equip.slots)) equip.slots.forEach(fromItem);
+    else if (typeof equip === 'string') equip.split(/[,，\s]+/).forEach(push);
+    return names.slice(0, 6);
+  };
   const msLaneItems = (p) => {
-    const builds = Array.isArray(p?.builds) ? p.builds : [];
-    const items = builds.map((item) => {
-      const name = String((item && item.name) || '').trim();
-      if (!name) return '';
+    const items = msEquipNames(p).map((name) => {
       const icon = equipIcons[name];
       return icon
         ? `<img src="${esc(icon)}" alt="${esc(name)}" title="${esc(name)}" loading="lazy">`
         : `<i title="${esc(name)}">${esc(name.slice(0, 2))}</i>`;
-    }).filter(Boolean).slice(0, 6).join('');
+    }).join('');
     return items
       ? `<span class="ms-lane-items" aria-label="${esc((p?.hero || p?.label || '') + ' 的出装')}">${items}</span>`
-      : '<span class="ms-lane-items is-empty" title="本局没有出装记录">暂无装备</span>';
+      : '<span class="ms-lane-items is-empty" title="本局没有出装记录">装备未采集</span>';
   };
-  /* 图三口径：左侧本队看伤害，右侧对手看经济，中间是分路与下钻入口。 */
+  /* 双方英雄下方统一放金币，装备贴着中线留白摆放。 */
   const msLaneSide = (p, side, value, max) => p
     ? `<div class="ms-lane-side ${side}">
-        <div class="ms-lane-who">${portrait(p.hero, 'ms-lane-face')}<span><b>${esc(p.hero || '—')}</b><small>${esc(p.label || p.nickname || '—')}</small><em>${msKda(p)}</em></span></div>
+        <div class="ms-lane-core">
+          <div class="ms-lane-who">${portrait(p.hero, 'ms-lane-face')}<span><b>${esc(p.hero || '—')}</b><small>${esc(p.label || p.nickname || '—')}</small><em>${msKda(p)}</em></span></div>
+          <div class="ms-lane-stat"><b>${fmt(value)}</b><i style="--w:${msBar(value, max)}"></i></div>
+        </div>
         ${msLaneItems(p)}
-        <div class="ms-lane-stat"><b>${fmt(value)}</b><i style="--w:${msBar(value, max)}"></i></div>
       </div>`
-    : `<div class="ms-lane-side ${side} is-empty"><div class="ms-lane-who"><span><b>未匹配</b><small>—</small></span></div><div class="ms-lane-stat"><b>—</b></div></div>`;
+    : `<div class="ms-lane-side ${side} is-empty"><div class="ms-lane-core"><div class="ms-lane-who"><span><b>未匹配</b><small>—</small></span></div><div class="ms-lane-stat"><b>—</b></div></div></div>`;
   /* 详细数据不跳页签：五条对位卡片预先渲染在各自行下方，点按钮只展开这一路。 */
   const msLaneViews = (m.players || []).length && typeof mods.deep.laneViews === 'function'
     ? mods.deep.laneViews(m.players, own, m.duration, m.replay?.kills) : {};
@@ -2219,7 +2266,7 @@ function matchPage(m) {
     const a = msOwnLanes.get(lane), b = msFoeLanes.get(lane);
     if (!a && !b) return '';
     return `<div class="ms-lane-row">
-      ${msLaneSide(a, 'own', a?.damage, msMaxDamage)}
+      ${msLaneSide(a, 'own', a?.gold, msMaxGold)}
       <div class="ms-lane-mid"><b>${lane}</b><button type="button" class="ms-lane-more" data-ms-lane="${esc(lane)}" aria-expanded="false">详细数据 <span aria-hidden="true">›</span></button></div>
       ${msLaneSide(b, 'foe', b?.gold, msMaxGold)}
     </div>
@@ -2232,7 +2279,23 @@ function matchPage(m) {
       <div class="ms-draft-row is-econ"><b class="own">${msGold(ownAgg.gold)}</b><span class="ms-draft-label">经济</span><b class="foe">${msGold(foeAgg.gold)}</b></div>
       ${msOwnRes ? `<div class="ms-draft-row is-res"><div class="ms-res own">${msResGroup(msOwnRes, 'own')}</div><span class="ms-draft-label">资源</span><div class="ms-res foe">${msResGroup(msFoeRes, 'foe')}</div></div>` : ''}
     </div>` : '<div class="ms-draft-empty">暂无禁选记录。</div>';
-  const msTotals = (m.players || []).length ? `<div class="ms-totals"><span>团队输出 <b>${fmt(ownAgg.damage)}</b> : <b>${fmt(foeAgg.damage)}</b></span><span>团队承伤 <b>${fmt(ownAgg.taken)}</b> : <b>${fmt(foeAgg.taken)}</b></span></div>` : '';
+  const mdTotalMetric = (label, ownValue, foeValue) => {
+    const max = Math.max(1, Number(ownValue) || 0, Number(foeValue) || 0);
+    return `<div class="md-total-metric">
+      <div class="md-total-label">${esc(label)}</div>
+      <div class="md-total-vals"><b class="own">${fmt(ownValue)}</b><span>vs</span><b class="foe">${fmt(foeValue)}</b></div>
+      <div class="md-total-bars"><i class="own" style="--w:${msBar(ownValue, max)}"></i><i class="foe" style="--w:${msBar(foeValue, max)}"></i></div>
+    </div>`;
+  };
+  const mdTotals = (m.players || []).length ? `<section class="section md-totals-card" id="match-totals">
+    <div class="md-totals-head"><b>总量</b><span>双方十人合计</span></div>
+    <div class="md-totals-grid">
+      ${mdTotalMetric('金币', ownAgg.gold, foeAgg.gold)}
+      ${mdTotalMetric('击杀', ownAgg.kills, foeAgg.kills)}
+      ${mdTotalMetric('输出', ownAgg.damage, foeAgg.damage)}
+      ${mdTotalMetric('承伤', ownAgg.taken, foeAgg.taken)}
+    </div>
+  </section>` : '';
   const mdHero = `<section class="md-hero ms-summary" id="match-verdict">
     <div class="ms-top"><div class="ms-top-left"><span class="dv-kicker">本局结论</span><span class="dv-tag">${evTag('desc') ? '本局描述' : '单局复盘'}</span></div><span class="ms-mode">${esc([m.mode || '训练赛', m.session].filter(Boolean).join(' · ') || '排位赛双排')}</span></div>
     <div class="dv-claim ms-claim"><h1>${claimHtml}</h1><p>${esc(heroFact)}</p></div>
@@ -2242,8 +2305,7 @@ function matchPage(m) {
       <div class="ms-team foe"><div class="ms-team-text"><b>${esc(msFoe)}</b><em class="ms-badge ${msFoeBadgeCls}">${msFoeBadgeText}</em></div><span class="ms-crest">${msCrest(msFoe)}</span></div>
     </div>
     ${msDraft}
-    ${msLaneRows ? `<div class="ms-lanes"><div class="ms-lanes-head"><span>伤害</span><span>对位</span><span>经济</span></div>${msLaneRows}</div>` : '<div class="ms-lanes-empty">暂无十人面板数据。</div>'}
-    ${msTotals}
+    ${msLaneRows ? `<div class="ms-lanes"><div class="ms-lanes-head"><span>金币</span><span>对位</span><span>金币</span></div>${msLaneRows}</div>` : '<div class="ms-lanes-empty">暂无十人面板数据。</div>'}
   </section>`;
   /* 脉搏单独成卡：十人面板紧跟在首屏下面，脉搏再跟在面板后面，不再把结论卡撑到 1400px。 */
   const mdPulse = `<section class="section ms-pulse-card" id="match-pulse-card">${pulseBlock}</section>`;
@@ -2722,10 +2784,9 @@ function matchPage(m) {
     return { review, badge, combos, kpl: kplBlock, matchup, ownCombos, foeCombos, comboCard, copyText };
   })();
   /* 用 section：回放事件异步到达后，资源明细要跟着整块刷新。
-     原「总量」卡已并入首屏（比分头 + 经济/资源行），这里只保留资源/推塔/BUFF 明细，
-     放到「十人数据」页签，首屏不再重复一张大卡。 */
+     资源/推塔/BUFF 明细紧跟「总量」卡放在复盘大屏，不再塞进「十人数据」页签。 */
   const mdResourceDetail = events.length ? `<section class="section" id="match-resource-detail">
-    <div class="section-heading"><div><h2>资源与推塔</h2><p>龙 / 主宰、防御塔与 BUFF 的逐项明细；首屏只给双方总数</p></div></div>
+    <div class="section-heading"><div><h2>资源与推塔</h2><p>龙 / 主宰、防御塔与 BUFF 的逐项明细；总量卡只给双方合计</p></div></div>
     ${resourceBand}
   </section>` : '';
 
@@ -2780,7 +2841,8 @@ function matchPage(m) {
         <span class="md-ct-chips"><span class="md-ct-chip ${aOwn ? 'is-hit' : 'is-miss'}">${aOwn ? '我方克制' : '对方克制'} · ${esc(strength(row))}</span></span>
       </div>`;
     }).join('');
-    const foot = '<p class="md-ct-foot">口径：赛训规则中心「克制关系 → 英雄克制英雄」里维护的攻方 → 受方有向关系；强度取维护值（强/中/弱）。规则中心没维护的对位不显示，不拿 KPL / 营地数据兜底。</p>';
+    const version = m.rulesCounters?.sourceVersion;
+    const foot = `<p class="md-ct-foot">口径：赛训规则中心「克制关系 → 英雄克制英雄」里维护的攻方 → 受方有向关系；强度取维护值（强/中/弱）。规则中心没维护的对位不显示，不拿 KPL / 营地数据兜底。${version ? ` 本局使用「${esc(version.competitionName || version.competitionId || '')}」定稿于 ${esc(String(version.finalizedAt || '').slice(0, 10))} 的版本。` : ''}</p>`;
     return `<div class="md-counters">
       <div class="md-ct-head"><b>五路对位</b><span>只看规则中心维护过的英雄克制关系</span></div>
       <div class="md-hscroll"><div class="md-ct-list">${laneRows || '<div class="md-ov-empty">五路对位在规则中心都没有维护克制关系。</div>'}</div></div>
@@ -3091,7 +3153,7 @@ function matchPage(m) {
     aria-controls="md-pane-${key}" tabindex="${key === mdTab ? '0' : '-1'}"><b>${label}</b><small>${note}</small></button>`;
   const mdTabs = `<div class="md-tabs" role="tablist" aria-label="单局页签">
     ${tabButton('review', '复盘大屏', '结论 · 阵容 · 对位')}
-    ${tabButton('data', '十人数据', '对位 · 同队 · 资源')}
+    ${tabButton('data', '十人数据', '经济 · 面板 · 对位')}
     ${tabButton('events', '事件', '击杀 · 资源 · 团战')}
     ${tabButton('map', '地图', '热区 · 纵深')}
   </div>`;
@@ -3101,19 +3163,21 @@ function matchPage(m) {
   return `<div class="page md-page" data-md-tab-active="${mdTab}">${mdCrumb}${mdTabs}
     <div class="md-pane" id="md-pane-review" data-md-pane="review" role="tabpanel" aria-labelledby="md-tab-review">
       ${mdHero}
+      ${mdTotals}
+      ${mdResourceDetail}
       ${mdPulse}
       ${mdOvCounters}
       ${mdOvBroken}
       <div class="md-pane-row">${mdPhases}</div>
     </div>
-    <div class="md-pane" id="md-pane-data" data-md-pane="data" role="tabpanel" aria-labelledby="md-tab-data">${mdGold10}${mdProfiles}${mdOvMatchup}${mdResourceDetail}${mdJungle}${mdCohesion}</div>
+    <div class="md-pane" id="md-pane-data" data-md-pane="data" role="tabpanel" aria-labelledby="md-tab-data">${mdGold10}${mdProfiles}${mdOvMatchup}${mdJungle}${mdCohesion}</div>
     <div class="md-pane" id="md-pane-events" data-md-pane="events" role="tabpanel" aria-labelledby="md-tab-events">${mdEventTimeline}${mdFights}${mdDeaths}${mdKills}</div>
     <div class="md-pane" id="md-pane-map" data-md-pane="map" role="tabpanel" aria-labelledby="md-tab-map">${mdMap}</div>
     ${mdSource}
     </div>`;
 }
 
-const tour = createTour();
+const checklist = createChecklist();
 
 /* ── 按页加载的页面模块 ────────────────────────────────────────────────
    mods 里放的是构造好的模块对象，第一次进入对应路由时才 import + 构造。
@@ -3147,15 +3211,20 @@ function comboNotify(message) {
 }
 
 /* 这些路由有自己的页面模块，其余（含详情页、采集页签）都走 features.js。 */
-const OWN_MODULE_ROUTES = new Set(['overview', 'bp', 'match', 'cross', 'biggame', 'series-builder', 'combo-pool', 'grade-rules', 'competitions', 'lineup-tags', 'profiles', 'metrics-observe', 'rules', 'official-entry', 'match-notes']);
+const OWN_MODULE_ROUTES = new Set(['overview', 'team-profile', 'bp', 'match', 'cross', 'biggame', 'series-builder', 'combo-pool', 'grade-rules', 'competitions', 'lineup-tags', 'profiles', 'metrics-observe', 'rules', 'official-entry', 'match-notes', 'docs']);
 
 async function ensureModules(name) {
   const jobs = [];
   if (!OWN_MODULE_ROUTES.has(name) && !mods.features) {
-    jobs.push(importOnce('./features.js?v=20261124entry').then(({ createFeatures }) => {
+    jobs.push(importOnce('./features.js?v=20261123staff1').then(({ createFeatures }) => {
       mods.features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table,
         pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true),
         currentQuery: () => query(), teamName: () => metadata.teamName || '' });
+    }));
+  }
+  if (name === 'docs' && !mods.docsPage) {
+    jobs.push(importOnce('./docs-page.js').then(({ createDocsPage }) => {
+      mods.docsPage = createDocsPage({ esc, icon });
     }));
   }
   if (name === 'overview' && !mods.brief) {
@@ -3173,13 +3242,18 @@ async function ensureModules(name) {
       });
     }));
   }
+  if (name === 'team-profile' && !mods.teamProfile) {
+    jobs.push(importOnce('./team-profile.js?v=20261123staff4').then(({ createTeamProfilePage }) => {
+      mods.teamProfile = createTeamProfilePage({ esc, API_BASE, notify: comboNotify });
+    }));
+  }
   if (name === 'bp' && !mods.bpLab) {
-    jobs.push(importOnce('./bp-studio.js?v=20261124link2').then(({ createBpStudio }) => {
+    jobs.push(importOnce('./bp-studio.js?v=20261123v301').then(({ createBpStudio }) => {
       mods.bpLab = createBpStudio({ esc, fmt, pct, icon, portrait, API_BASE });
     }));
   }
   if (name === 'match' && !mods.deep) {
-    jobs.push(importOnce('./match-deep.js?v=20261123teamonly').then(({ createMatchDeep }) => {
+    jobs.push(importOnce('./match-deep.js?v=20261123review2').then(({ createMatchDeep }) => {
       mods.deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait,
         phases: phaseWindows, gpmOf, goldGrade, fieldGrade, subjectOf });
       mods.deep.bindPanel(document);
@@ -3217,7 +3291,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'competitions' && !mods.competitions) {
-    jobs.push(importOnce('./competitions.js?v=20261124nolearn').then(({ createCompetitionsPage }) => {
+    jobs.push(importOnce('./competitions.js?v=20261123nav').then(({ createCompetitionsPage }) => {
       mods.competitions = createCompetitionsPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
@@ -3265,6 +3339,7 @@ document.addEventListener('grade-rules:saved', () => { gradeRulesDoc = null; });
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */
 let pulseState = null;
 const renderers = { overview: () => '<div class="page home pbr-home" data-pbr-root></div>',
+  'team-profile': () => '<div data-tp-root></div>',
   bp: () => '<div data-bp-lab-root></div>',
   matches: matchesPage, opponents: opponentsPage, players: playersPage,
   player: playerPage, tempo: tempoPage, sources: sourcesPage, match: matchPage,
@@ -3279,8 +3354,10 @@ const renderers = { overview: () => '<div class="page home pbr-home" data-pbr-ro
   'metrics-observe': () => '<div data-mo-root></div>',
   'rules': () => '<div data-rc-root></div>',
   'official-entry': () => '<div data-oe-root></div>',
-  'match-notes': () => '<div data-mn-root></div>' };
+  'match-notes': () => '<div data-mn-root></div>',
+  docs: () => mods.docsPage.render() };
 let routeFocusPending = false;
+let docsDispose = null;
 let lastRenderedRoute = '';
 /* 单局四段页签吸顶：顶栏本身是 sticky，页签要贴在它下面。
    高度量出来写进 CSS 变量，字号 / 窄屏 / 更新横幅都不会把页签盖住。 */
@@ -3296,95 +3373,10 @@ function bindStickyTabs() {
     stickyTabsObserver.observe(bar);
   }
 }
-/* ── 初始化清单（M1）：首页常驻卡，步骤完成由数据判定，不做向导弹窗 ── */
-const ONBOARDING_STEPS = [
-  { key: 'profile', title: '战队与选手档案', desc: '队名、联赛与首发选手（含营地 ID 绑定）', link: '#playerarchive', cta: '去建档' },
-  { key: 'rules', title: '规则配置', desc: '组合池、克制关系、字段判定——决定分析的口径', link: '#rules', cta: '去配置', optional: true },
-  { key: 'opponents', title: '对手库', desc: '常打对手先建档，分析才能「只看本对手」', link: '#teams', cta: '去录入' },
-  { key: 'capture', title: '采集第一局', desc: '营地同步或截图录屏，识别结果检查通过', link: '#capture', cta: '去采集' },
-  { key: 'series', title: '编第一个系列赛', desc: '把对局编成 BO3/5/7 并确认，解锁大场分析', link: '#series-builder', cta: '去编组' },
-  { key: 'corpus', title: '语料积累解锁分析', desc: '跨局 / 体系等按语料阈值逐步亮起', link: '#cross', cta: '看进度' },
-];
-let onboardingToken = 0;
+/* 状态条 / 锁卡共用的转义小件。初始化清单已移到右上角入口（见 tour.js）。 */
 const onbEsc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[ch]));
-
-async function refreshOnboarding(route = current()) {
-  const slot = document.getElementById('onboarding-slot');
-  if (!slot) return;
-  if (route.name !== 'overview') { slot.hidden = true; slot.innerHTML = ''; return; }
-  const token = ++onboardingToken;
-  let competition = '';
-  try { competition = localStorage.getItem(COMPETITION_KEY) || ''; } catch {}
-  try {
-    const url = API_BASE + '/api/studio/workspace/onboarding'
-      + (competition ? `?competition=${encodeURIComponent(competition)}` : '');
-    const response = await fetch(url, { cache: 'no-store' });
-    if (!response.ok) throw new Error('onboarding ' + response.status);
-    const data = await response.json();
-    if (token !== onboardingToken || route.name !== 'overview') return;
-    slot.innerHTML = renderOnboarding(data, competition);
-    slot.hidden = false;
-  } catch { slot.hidden = true; }
-}
-
-function renderOnboarding(data, competition) {
-  const current = (data.competitions || []).find((item) => String(item.id) === String(competition));
-  const statusWord = { ongoing: '进行中', planned: '筹备中', archived: '已归档' }[current?.status] || '';
-  const done = {
-    profile: !!data.ownPlayersBound,
-    rules: !!(data.rules && (data.rules.comboPoolSaved || data.rules.counterRules)),
-    opponents: (data.opponentCount || 0) >= 1,
-    capture: (data.matchCount || 0) >= 1,
-    series: (data.confirmedSeries || 0) >= 1,
-    corpus: (data.confirmedGames || 0) >= (data.corpusThreshold || 20),
-  };
-  const total = ONBOARDING_STEPS.length;
-  const doneCount = ONBOARDING_STEPS.filter((step) => done[step.key]).length;
-  const pct = Math.round(doneCount / total * 100);
-  const metaFor = (step) => {
-    if (step.key === 'series') return `${data.confirmedSeries || 0} 个已确认`;
-    if (step.key === 'capture') return `已采 ${data.matchCount || 0} 局`;
-    if (step.key === 'corpus') return `语料 ${data.confirmedGames || 0}/${data.corpusThreshold || 20} 局`;
-    if (step.key === 'opponents') return `${data.opponentCount || 0} 个对手`;
-    if (step.key === 'rules') {
-      if (data.rules && data.rules.counterRules) return `克制规则 ${data.rules.counterRules} 条`;
-      if (data.rules && data.rules.comboPoolSaved) return '组合池已保存';
-      return '未配置';
-    }
-    return '';
-  };
-  const rows = ONBOARDING_STEPS.map((step, index) => {
-    const ok = done[step.key];
-    return `<li class="onb-step ${ok ? 'is-done' : ''}">
-      <span class="onb-no" aria-hidden="true">${index + 1}</span>
-      <div class="onb-copy"><b>${onbEsc(step.title)}${step.optional ? '<i class="onb-opt">推荐</i>' : ''}</b><small>${onbEsc(step.desc)}</small></div>
-      <span class="onb-meta">${onbEsc(metaFor(step))}</span>
-      <span class="onb-state">${ok ? '已完成' : '待完成'}</span>
-      <a class="onb-link" href="${step.link}">${ok ? '查看' : onbEsc(step.cta)} →</a>
-    </li>`;
-  }).join('');
-  const header = competition
-    ? `把「${onbEsc(current ? current.name : '当前赛事')}」的数据跑通`
-    : '先选一个赛事，再开始归集数据';
-  const subline = competition
-    ? (statusWord ? `当前赛事 · ${statusWord}` : '当前赛事')
-    : '赛事是备战周期：训练赛与正赛都归到它名下';
-  return `<section class="onb-card">
-    <header class="onb-head">
-      <div class="onb-title">
-        <span class="onb-kicker">初始化清单</span>
-        <h2>${header}</h2>
-        <small>${onbEsc(subline)}</small>
-      </div>
-      <div class="onb-progress"><b>${doneCount}<i>/${total}</i></b>
-        <span class="onb-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="inline-size:${pct}%"></i></span>
-      </div>
-    </header>
-    <ol class="onb-list">${rows}</ol>
-  </section>`;
-}
 
 /* ── 数据解锁 v2：分析页按赛事语料阈值渲染锁卡（不隐藏菜单） ────────── */
 const UNLOCK_GATED = new Set(['biggame', 'cross']);
@@ -3464,6 +3456,8 @@ function render(r = current()) {
   injectEventChip(r);
   refreshUnlocks(r);
   mods.features?.afterRender();
+  docsDispose?.();
+  docsDispose = r.name === 'docs' ? mods.docsPage?.bind(document.querySelector('.help-page')) : null;
   if (r.name === 'match') bindStickyTabs();
   if (r.name === 'bp') {
     /* BP 概览自取数：单页十个内容区，外壳只给挂载点。 */
@@ -3473,14 +3467,16 @@ function render(r = current()) {
   }
   if (r.name === 'overview') {
     /* 首页简报自取数：每次进入/重渲都由模块按当前周期与全局筛选重新请求，
-       空库的首次使用引导在弹窗里（见 showNoDataDialog），首页不换向导。 */
+       空库的首次使用引导在弹窗里（见 showNoDataDialog），首页不摆清单卡。 */
     mods.brief.mount(document.querySelector('[data-pbr-root]'));
-    refreshOnboarding(r);
   } else {
     /* 切走时撤销简报请求，慢响应不再写回已经离开的页面。 */
     mods.brief?.dispose();
-    const onboardingSlot = document.getElementById('onboarding-slot');
-    if (onboardingSlot) onboardingSlot.hidden = true;
+  }
+  if (r.name === 'team-profile') {
+    mods.teamProfile?.mount(document.querySelector('[data-tp-root]'));
+  } else {
+    mods.teamProfile?.dispose();
   }
   if (r.name === 'series-builder') {
     /* 系列赛编组中心自取数（同首页简报模式）。 */
@@ -3550,7 +3546,9 @@ function render(r = current()) {
     routeFocusPending = false;
   }
   refreshInbox();
-  tour.afterRender();
+  /* 初始化清单只在右上角入口里呈现；每次换页顺手对一次完成状态，
+     这样在任何页面做完动作都能即时弹出「你已完成 …」。 */
+  checklist.afterRender();
   if (r.name === 'matches' && archiveScrollRemember > 0) {
     const y = archiveScrollRemember;
     archiveScrollRemember = 0;
@@ -3581,6 +3579,12 @@ async function load(fresh = false) {
     await ensureModules(r.name);
   } catch { /* 模块加载失败按无数据处理，下面的渲染走空态 */ }
   if (stale()) return;
+  /* 文档页是静态内容：不拉业务数据，断网也能看说明和错误码。 */
+  if (r.name === 'docs') {
+    data = null;
+    render(r);
+    return;
+  }
   if (r.name === 'bp') {
     data = null;
     /* BP 页自取数；头像目录单独补一次，到了就重绘，不让 BP 页等完整 metadata。 */
@@ -3662,7 +3666,7 @@ async function load(fresh = false) {
     render(r);
     return;
   }
-  if (['profiles', 'metrics-observe', 'rules', 'official-entry', 'match-notes'].includes(r.name)) {
+  if (['team-profile', 'profiles', 'metrics-observe', 'rules', 'official-entry', 'match-notes'].includes(r.name)) {
     data = null;
     render(r);
     return;
@@ -3733,7 +3737,12 @@ async function load(fresh = false) {
           if (matchupResponse.ok) data.laneMatchup = await matchupResponse.json();
         } catch { /* 对位压制历史失败不影响主页面 */ }
         try {
-          const countersResponse = await fetch(API_BASE + '/api/v3/rules-center/counters', { signal: currentRequest.signal, cache: 'no-store' });
+          // 带当前赛事读取：后端优先返回该赛事的定稿快照，复盘旧赛事不会被后来的改动串味。
+          let counterComp = '';
+          try { counterComp = localStorage.getItem(COMPETITION_KEY) || ''; } catch {}
+          const countersUrl = API_BASE + '/api/v3/rules-center/counters'
+            + (counterComp ? `?competition=${encodeURIComponent(counterComp)}` : '');
+          const countersResponse = await fetch(countersUrl, { signal: currentRequest.signal, cache: 'no-store' });
           if (countersResponse.ok) data.rulesCounters = await countersResponse.json();
         } catch { /* 规则中心克制关系失败不影响主页面 */ }
         try {
@@ -3763,7 +3772,18 @@ async function load(fresh = false) {
           if (existing) { existing.replaceWith(updated); continue; }
           const paneKey = updated.closest('[data-md-pane]')?.dataset.mdPane || 'review';
           const pane = document.querySelector(`[data-md-pane="${paneKey}"]`);
-          if (pane) pane.append(updated);
+          if (pane) {
+            /* 回放事件异步到达：#match-resource-detail 首屏还不存在，不能 append 到页签末尾
+               （那样会掉到阶段对比下面）。找它在 temp 里的下一个已有区块当锚点，插回原位。 */
+            let anchor = null;
+            let sibling = updated.nextElementSibling;
+            while (sibling && !anchor) {
+              if (sibling.id) anchor = document.getElementById(sibling.id);
+              sibling = sibling.nextElementSibling;
+            }
+            if (anchor?.parentElement) anchor.parentElement.insertBefore(updated, anchor);
+            else pane.append(updated);
+          }
         }
         /* 新版不再渲染的区块（首屏的「没有团战数据」占位等）直接撤掉 */
         for (const old of document.querySelectorAll(paneSections)) {
@@ -3787,7 +3807,7 @@ async function load(fresh = false) {
       || /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(String(error?.message || ''));
     if (offline) {
       setOffline(true);
-      renderOffline(r);
+      renderOffline(r, error);
       return;
     }
     /* 单次接口失败（含静态资源与路由表短暂错配）先静默重试，页面保持「正在读取」；
@@ -3799,7 +3819,7 @@ async function load(fresh = false) {
       return;
     }
     retryByRoute.delete(routeKey);
-    renderDataNotice(r);
+    renderDataNotice(r, error);
   }
 }
 
@@ -4225,7 +4245,7 @@ app.addEventListener('click', (event) => {
   }
   const action = event.target.closest('[data-action]')?.dataset.action;
   if (!action) return;
-  if (action === 'tour') { tour.start(); return; }
+  if (action === 'checklist') { checklist.start(); return; }
   if (action === 'open-client') {
     event.preventDefault();
     const started = Date.now();
@@ -4538,6 +4558,6 @@ initUpdateBanner({ API_BASE });
 load();
 /* 首屏空闲时预取 features.js：采集/对局等页签首次进入不必等 2–8s 骨架。
    importOnce 会复用同一个 promise，真正进入时不会重复下载或实例化。 */
-const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261124entry'); };
+const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261123staff1'); };
 if ('requestIdleCallback' in window) requestIdleCallback(prefetchFeatures, { timeout: 2500 });
 else setTimeout(prefetchFeatures, 1200);

@@ -9,7 +9,7 @@
  * 反馈下线（连同 dashboard 请求一起移除）。
  *
  * 双时间口径（docs/重构蓝图_白金画廊交互.md §3.5.3）：
- * - 训练赛归集窗口 date~end_date，按【录入日期】归集（后端 recorded_date，缺省回退 date）；
+ * - 训练赛归集窗口 date~end_date，按【训练日期 date】落入归集起始~结束（不是 recorded_date）；
  * - 正式比赛范围 formal_from~formal_to，与训练归集独立；
  * - 归属在查询时计算，改赛事时间后自动重算，不写死在对局上；
  * - 试训对局 in_trial 由后端排除；key_match_keys 手动挂载作为补充。
@@ -75,6 +75,7 @@ export function createCompetitionsPage(h = {}) {
   let editingScheduleId = '';
   let pendingDeleteId = '';
   let assignNotice = { msg: '', error: false };
+  let carouselRaf = 0;
 
   const STATUS = { planned: '备赛中', training: '训练中', ongoing: '比赛中', completed: '已结束', cancelled: '已取消' };
   const SCHED_STATUS = { planned: '计划中', confirmed: '已确认', completed: '已完成', cancelled: '已取消' };
@@ -189,8 +190,8 @@ export function createCompetitionsPage(h = {}) {
     archiveController = new AbortController();
     const signal = archiveController.signal;
     const paths = ['studio/workspace/competitions/unfiled-matches'];
-    if (archive.id) {
-      const id = encodeURIComponent(archive.id);
+    for (const comp of competitions) {
+      const id = encodeURIComponent(comp.id);
       paths.push(`studio/workspace/competitions/${id}/training-matches`,
                  `studio/workspace/competitions/${id}/formal-matches`);
     }
@@ -198,8 +199,20 @@ export function createCompetitionsPage(h = {}) {
       const results = await Promise.all(paths.map((path) => api(path, { signal })));
       if (myGen !== generation || !root) return;
       archive.unfiled = Array.isArray(results[0]?.matches) ? results[0].matches : [];
-      archive.training = archive.id && Array.isArray(results[1]?.matches) ? results[1].matches : [];
-      archive.formal = archive.id && Array.isArray(results[2]?.matches) ? results[2].matches : [];
+      archive.training = [];
+      archive.formal = [];
+      const seen = new Set();
+      competitions.forEach((comp, i) => {
+        const training = Array.isArray(results[1 + i * 2]?.matches) ? results[1 + i * 2].matches : [];
+        const formal = Array.isArray(results[2 + i * 2]?.matches) ? results[2 + i * 2].matches : [];
+        training.forEach((row) => {
+          const key = String(row.match_key ?? '');
+          if (seen.has(key)) return;
+          seen.add(key);
+          archive.training.push({ ...row, competitionId: comp.id, competitionName: comp.name });
+        });
+        formal.forEach((row) => archive.formal.push({ ...row, competitionId: comp.id, competitionName: comp.name }));
+      });
     } catch (e) {
       if (e.name !== 'AbortError') setNotice(e.message || '归档读取失败。', true);
     } finally {
@@ -225,44 +238,83 @@ export function createCompetitionsPage(h = {}) {
     return `归集 ${collectRange(c)} · 正式 ${formalRange(c)}`;
   }
 
-  function card(c) {
+  function card(c, index, total) {
     const cur = currentId() === c.id;
     const status = STATUS[c.status] || c.status || '备赛中';
-    const opened = archive.id === c.id;
     const statusSwatch = ['ongoing', 'training'].includes(c.status) ? 'teal' : 'gold';
-    const statusBtn = c.status === 'archived'
-      ? `<button type="button" class="control" data-comp-status="planned" data-comp-status-id="${esc(c.id)}">重新开启</button>`
-      : `<button type="button" class="control" data-comp-status="archived" data-comp-status-id="${esc(c.id)}" data-comp-archive="1">归档</button>`
-        + (c.status === 'planned' ? `<button type="button" class="control" data-comp-status="ongoing" data-comp-status-id="${esc(c.id)}">开始备战</button>` : '');
-    return `<article class="comp-card${cur ? ' is-current' : ''}" data-comp-card="${esc(c.id)}">
+    return `<article class="comp-card${cur ? ' is-current' : ''}" data-comp-card="${esc(c.id)}"
+      role="group" aria-roledescription="slide" aria-label="${index + 1} / ${total} · ${esc(c.name)}"
+      data-marker-name="${esc(c.name)}">
       ${svg('decor/corner-top-right.svg', 'comp-card-corner')}
       <header class="comp-card-head">
         <h3>${esc(c.name)}</h3>
         <span class="comp-status is-${esc(c.status || 'planned')}">${deco(`swatch-${statusSwatch}`, { cls: 'comp-swatch' })}${esc(status)}</span>
         ${cur ? `<span class="comp-current-badge">${deco('swatch-gold', { cls: 'comp-swatch' })}当前赛事</span>` : ''}
       </header>
-      <dl class="comp-card-meta">
-        <div><dt>归集窗口</dt><dd>${esc(collectRange(c))}</dd></div>
-        <div><dt>正式范围</dt><dd>${esc(formalRange(c))}</dd></div>
-        <div><dt>阶段</dt><dd>${esc(c.stage || '—')}</dd></div>
-        <div><dt>赛制</dt><dd>${esc(c.format || '—')}</dd></div>
-        <div class="comp-meta-wide"><dt>对手</dt><dd>${esc(teamName(c.opponent_team_id))}</dd></div>
-      </dl>
+      <div class="comp-card-when">
+        <span class="comp-card-when-label">归集时间</span>
+        <b>${esc(collectRange(c))}</b>
+        <small>此区间内的训练赛会自动归档到本赛事</small>
+      </div>
       <footer class="comp-card-actions">
         <button type="button" class="${cur ? 'control comp-selected' : 'primary comp-gold'}" data-comp-select="${esc(c.id)}" ${cur ? 'disabled' : ''}>
-          ${cur ? glyph('shield', { size: 13 }) : deco('swatch-gold', { cls: 'comp-swatch' })}${cur ? '已选中' : '设为当前赛事'}
+          ${cur ? glyph('shield', { size: 13 }) : deco('swatch-gold', { cls: 'comp-swatch' })}${cur ? '已选中' : '设为当前'}
         </button>
         <span class="comp-card-tools">
-          <button type="button" class="control" data-comp-detail="${esc(c.id)}" aria-expanded="${opened ? 'true' : 'false'}">
-            ${glyph('calendar', { size: 13 })}${opened ? '收起归档' : '归档管理'}${glyph('arrow-up', { size: 11, cls: 'comp-chev' })}
-          </button>
           <button type="button" class="control" data-comp-edit="${esc(c.id)}" aria-label="编辑赛事 ${esc(c.name)}">${glyph('edit', { size: 13 })}编辑</button>
           <a class="control" href="#competition/${encodeURIComponent(c.id)}">整体详情 ${glyph('arrow-up', { size: 12, cls: 'comp-ext' })}</a>
           <button type="button" class="control comp-del" data-comp-delete="${esc(c.id)}" aria-label="删除赛事 ${esc(c.name)}">${glyph('trash', { size: 13 })}删除</button>
         </span>
       </footer>
-      <div class="comp-card-actions">${statusBtn}</div>
     </article>`;
+  }
+
+  /* 赛事卡片横向轮播：原生滚动 + snap，控件只负责发起滚动与状态播报。 */
+  function trackCards() {
+    return [...(root?.querySelectorAll('[data-comp-track] [data-comp-card]') || [])];
+  }
+  function nearestCardIndex() {
+    const track = root?.querySelector('[data-comp-track]');
+    if (!track) return 0;
+    const center = track.scrollLeft + track.clientWidth / 2;
+    let best = 0, distance = Infinity;
+    trackCards().forEach((card, index) => {
+      const gap = Math.abs(card.offsetLeft + card.offsetWidth / 2 - center);
+      if (gap < distance) { distance = gap; best = index; }
+    });
+    return best;
+  }
+  function setCarouselStatus(index) {
+    const cards = trackCards();
+    if (!cards.length) return;
+    const status = root?.querySelector('[data-comp-carousel-status]');
+    if (status) {
+      status.textContent = `第 ${index + 1} / ${cards.length} 个赛事 · ${cards[index].dataset.markerName || ''}`;
+      status.hidden = false;
+    }
+    root?.querySelectorAll('[data-comp-marker]').forEach((button, i) => {
+      if (i === index) button.setAttribute('aria-current', 'true');
+      else button.removeAttribute('aria-current');
+    });
+  }
+  function scrollToCard(index) {
+    const track = root?.querySelector('[data-comp-track]');
+    const card = trackCards()[index];
+    if (!track || !card) return;
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    track.scrollTo({ left: card.offsetLeft - (track.clientWidth - card.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'auto' });
+    setCarouselStatus(index);
+  }
+  function paintMarkers() {
+    const node = root?.querySelector('[data-comp-markers]');
+    if (!node) return;
+    node.innerHTML = trackCards().map((card, i) =>
+      `<button type="button" data-comp-marker="${i}" aria-label="切换到 ${esc(card.dataset.markerName || `赛事 ${i + 1}`)}"${i === 0 ? ' aria-current="true"' : ''}></button>`).join('');
+    if (trackCards().length) setCarouselStatus(0);
+  }
+  function onCarouselScroll(event) {
+    if (!event.target?.closest?.('[data-comp-track]') || carouselRaf) return;
+    carouselRaf = requestAnimationFrame(() => { carouselRaf = 0; setCarouselStatus(nearestCardIndex()); });
   }
 
   function paint() {
@@ -276,36 +328,40 @@ export function createCompetitionsPage(h = {}) {
            <small>${esc(fmtRange(curComp))}</small>
            <button type="button" class="control" data-comp-clear>取消选择</button></div>`
       : '';
-    const list = competitions.length
-      ? `<div class="comp-list">${competitions.map(card).join('')}</div>`
+    const ordered = [...competitions].sort((a, b) =>
+      String(b.date || b.createdAt || '').localeCompare(String(a.date || a.createdAt || '')));
+    const list = ordered.length
+      ? `<div class="comp-carousel">
+           <div class="comp-carousel-track" data-comp-track tabindex="0" role="group" aria-label="赛事列表">
+             ${ordered.map((c, i) => card(c, i, ordered.length)).join('')}
+           </div>
+           <div class="comp-carousel-markers" data-comp-markers aria-label="选择赛事"></div>
+         </div>`
       : `<div class="comp-empty">
            <div class="comp-empty-emblem">
              ${svg('decor/divider-title-gold.svg', 'comp-empty-wave')}
              ${deco('section-triangle', { cls: 'comp-empty-tri' })}
            </div>
            <b>还没有赛事</b>
-           <p>先新建赛事并设置归集窗口，训练赛会按录入日期自动归档。</p>
+           <p>先新建赛事并设定归集时间，训练赛会按日期自动归档。</p>
            </div>`;
-    const block = `<section class="comp-block">
+    const block = `<section class="comp-block comp-events-block">
       <div class="comp-block-head">
-        <h2 class="comp-section-title">${svg('decor/section-triangle.svg', 'comp-section-mark')}全部赛事
-          ${competitions.length ? `<span class="comp-count">${competitions.length}</span>` : ''}</h2>
+        <h2 class="comp-section-title">${svg('decor/section-triangle.svg', 'comp-section-mark')}赛事
+          ${ordered.length ? `<span class="comp-count">${ordered.length}</span>` : ''}</h2>
+        ${ordered.length > 1 ? `<span class="comp-carousel-actions">
+          <button type="button" class="control" data-comp-prev aria-label="上一个赛事">‹</button>
+          <span class="comp-carousel-status" data-comp-carousel-status role="status" aria-live="polite" hidden></span>
+          <button type="button" class="control" data-comp-next aria-label="下一个赛事">›</button>
+        </span>` : ''}
       </div>
-      ${list}</section>
-      <section class="comp-block" data-comp-ops>
-        <div class="comp-block-head">
-          <h2 class="comp-section-title">${svg('decor/section-triangle.svg', 'comp-section-mark')}存量系列归属</h2>
-          <span class="comp-block-actions"><button type="button" class="primary comp-gold" data-comp-formal-add>${plus({ size: 14 })}录入正赛</button>
-            <button type="button" class="control" data-comp-kpl-pull>拉取 KPL 正赛</button></span>
-        </div>
-        <div class="comp-archive-panel" data-comp-ops-body></div>
-      </section>`;
+      ${list}</section>`;
     const body = root.querySelector('[data-comp-body]');
     if (body) body.innerHTML = loading ? '<div class="comp-loading">正在读取赛事…</div>' : banner + block;
+    paintMarkers();
     paintNotice();
     paintArchive();
     paintSchedules();
-    paintOps();
   }
 
   /* ── 赛事域 M2：存量系列批量归属 + 正赛数据录入 ─────────────────── */
@@ -394,6 +450,8 @@ export function createCompetitionsPage(h = {}) {
     const form = dialog.querySelector('[data-comp-archive-form]');
     form.reset();
     const preview = dialog.querySelector('[data-comp-archive-preview]');
+    const cancel = dialog.querySelector('[data-comp-archive-cancel]');
+    if (cancel) cancel.onclick = () => dialog.close();
     dialog.showModal();
     preview.textContent = '正在读取收尾检查…';
     try {
@@ -478,7 +536,7 @@ export function createCompetitionsPage(h = {}) {
     }
   }
 
-  const AGG_LABEL = { window: '按录入日期', manual: '手动挂载', direct: '直连', unfiled: '未归档' };
+  const AGG_LABEL = { window: '按归集时间', manual: '手动挂载', direct: '直连', unfiled: '未归档' };
   function aggLabel(value) { return AGG_LABEL[value] || value || '—'; }
 
   /* 第一列：头像 vs 头像（2026-11-22 反馈）。channel-xxx 这种裸 ID 教练认不出来，
@@ -507,19 +565,30 @@ export function createCompetitionsPage(h = {}) {
   function normalRow(row) {
     return `<tr>
       ${versusCell(row)}
-      <td>${esc(row.recordedDate || row.date || '—')}</td>
+      <td>${esc(row.trainingDate || row.date || '—')}</td>
       <td>${esc(row.date || '—')}</td>
       <td>${esc(row.matchType === 'formal' ? '正式赛' : '训练赛')}</td>
       <td>${esc(row.session || row.source || '—')}</td>
       <td>${esc(aggLabel(row.aggregation))}</td>
     </tr>`;
   }
+  function dateOf(row) { return String(row.trainingDate || row.date || ''); }
+  function sortedByDate(rows) { return [...rows].sort((a, b) => dateOf(b).localeCompare(dateOf(a))); }
+  function archivedRow(row) {
+    const name = row.competitionName || competitions.find((c) => c.id === row.competitionId)?.name || '—';
+    return `<tr>
+      <td>${esc(dateOf(row) || '—')}</td>
+      ${versusCell(row)}
+      <td>${esc(row.session || row.source || '—')}</td>
+      <td><span class="comp-event-tag">${esc(name)}</span></td>
+      <td><span class="comp-agg is-${esc(row.aggregation || '')}">${esc(aggLabel(row.aggregation))}</span></td>
+    </tr>`;
+  }
   function unfiledRow(row) {
     const key = String(row.match_key ?? '');
     return `<tr>
+      <td>${esc(dateOf(row) || '—')}</td>
       ${versusCell(row)}
-      <td>${esc(row.recordedDate || row.date || '—')}</td>
-      <td>${esc(row.date || '—')}</td>
       <td>${esc(row.session || row.source || '—')}</td>
       <td><div class="comp-assign">
         <select data-unfiled-target="${esc(key)}" aria-label="把对局 ${esc(key)} 补挂到赛事">
@@ -533,14 +602,14 @@ export function createCompetitionsPage(h = {}) {
   function matchTable(rows, kind) {
     if (!rows.length) return `<p class="comp-sub-empty">暂无对局。</p>`;
     const unfiled = kind === 'unfiled';
-    const caption = unfiled ? '未归档训练赛' : kind === 'formal' ? '赛事正式比赛' : '赛事训练赛';
+    const caption = unfiled ? '未归档训练赛' : kind === 'formal' ? '已归档正式比赛' : '已归档训练赛';
     const headers = unfiled
-      ? ['对阵', '录入日期', '比赛日期', '来源', '补挂到赛事']
-      : ['对阵', '录入日期', '比赛日期', '类型', '来源', '归属方式'];
+      ? ['训练日期', '对阵', '来源', '补挂到赛事']
+      : ['训练日期', '对阵', '来源', '所属赛事', '归档方式'];
     return `<div class="comp-table-wrap" role="region" aria-label="${esc(caption)}" tabindex="0">
       <table class="comp-table">
         <thead><tr>${headers.map((label) => `<th scope="col">${esc(label)}</th>`).join('')}</tr></thead>
-        <tbody>${rows.map((row) => (unfiled ? unfiledRow(row) : normalRow(row))).join('')}</tbody>
+        <tbody>${sortedByDate(rows).map((row) => (unfiled ? unfiledRow(row) : archivedRow(row))).join('')}</tbody>
       </table>
     </div>`;
   }
@@ -549,25 +618,28 @@ export function createCompetitionsPage(h = {}) {
     const node = root?.querySelector('[data-comp-archive]');
     if (!node) return;
     if (archive.loading) { node.innerHTML = '<div class="comp-loading">正在读取归档…</div>'; return; }
-    const comp = competitions.find((c) => c.id === archive.id);
-    const head = comp
-      ? `<div class="comp-archive-head"><div><b>${esc(comp.name)} · 归档</b>
-           <small>${esc(fmtRange(comp))}</small></div>
-           <button type="button" class="control" data-comp-close-archive>收起</button></div>`
-      : '';
-    const detail = comp
-      ? `<div class="comp-archive-detail">
-           <h4>${svg('decor/section-slash.svg', 'comp-sub-mark')}训练赛 <small>按录入日期落入归集窗口</small></h4>
-           ${matchTable(archive.training, 'training')}
-           <h4>${svg('decor/section-slash.svg', 'comp-sub-mark')}正式比赛 <small>formal 范围，独立口径</small></h4>
-           ${matchTable(archive.formal, 'formal')}
-         </div>`
-      : '';
-    node.innerHTML = `${head}${detail}
-      <div class="comp-archive-unfiled">
-        <h4>${svg('decor/section-slash.svg', 'comp-sub-mark')}未归档训练赛 <span class="comp-count">${archive.unfiled.length}</span></h4>
+    node.innerHTML = `
+      <div class="comp-archive-group">
+        <div class="comp-archive-head"><div>
+          <b>训练赛归档 <span class="comp-count">${archive.training.length}</span></b>
+          <small>按训练日期落入赛事的「归集起始 / 归集结束」，也可在赛事卡片设定时间范围。</small>
+        </div></div>
+        ${matchTable(archive.training, 'training')}
+      </div>
+      <div class="comp-archive-group comp-archive-group--unfiled">
+        <div class="comp-archive-head"><div>
+          <b>未归档区 <span class="comp-count">${archive.unfiled.length}</span></b>
+          <small>没有落入任何赛事窗口的训练赛，选赛事后点「补挂」即可归属。</small>
+        </div></div>
         <p class="comp-assign-notice${assignNotice.error ? ' is-error' : ''}" data-comp-assign-notice role="status" aria-live="polite"${assignNotice.msg ? '' : ' hidden'}>${esc(assignNotice.msg)}</p>
         ${matchTable(archive.unfiled, 'unfiled')}
+      </div>
+      <div class="comp-archive-group">
+        <div class="comp-archive-head"><div>
+          <b>正式比赛 <span class="comp-count">${archive.formal.length}</span></b>
+          <small>按正式比赛范围独立归档。</small>
+        </div></div>
+        ${matchTable(archive.formal, 'formal')}
       </div>`;
   }
 
@@ -884,15 +956,14 @@ export function createCompetitionsPage(h = {}) {
       if (comp) openDialog(comp);
       return;
     }
-    const detail = event.target.closest('[data-comp-detail]');
-    if (detail) {
-      archive.id = archive.id === detail.dataset.compDetail ? '' : detail.dataset.compDetail;
-      paint(); refreshArchive();
-      return;
+    if (event.target.closest('[data-comp-prev]')) {
+      scrollToCard(Math.max(0, nearestCardIndex() - 1)); return;
     }
-    if (event.target.closest('[data-comp-close-archive]')) {
-      archive.id = ''; paint(); return;
+    if (event.target.closest('[data-comp-next]')) {
+      scrollToCard(Math.min(trackCards().length - 1, nearestCardIndex() + 1)); return;
     }
+    const marker = event.target.closest('[data-comp-marker]');
+    if (marker) { scrollToCard(Number(marker.dataset.compMarker)); return; }
     const assign = event.target.closest('[data-unfiled-assign]');
     if (assign) { assignUnfiled(assign.dataset.unfiledAssign); return; }
     const del = event.target.closest('[data-comp-delete]');
@@ -1022,7 +1093,9 @@ export function createCompetitionsPage(h = {}) {
       <div data-comp-body></div>
       <section class="comp-block comp-archive-block">
         <div class="comp-block-head">
-          <h2 class="comp-section-title">${svg('decor/section-triangle.svg', 'comp-section-mark')}归档 · 未归档区</h2>
+          <h2 class="comp-section-title">${svg('decor/section-triangle.svg', 'comp-section-mark')}归档区</h2>
+          <span class="comp-block-actions"><button type="button" class="control" data-comp-formal-add>${plus({ size: 14 })}录入正赛</button>
+            <button type="button" class="control" data-comp-kpl-pull>拉取 KPL 正赛</button></span>
         </div>
         <div class="comp-archive-panel" data-comp-archive></div>
       </section>
@@ -1091,7 +1164,7 @@ export function createCompetitionsPage(h = {}) {
         <form class="comp-form" data-comp-form novalidate aria-labelledby="comp-dialog-title">
           <input type="hidden" name="id">
           <h3 id="comp-dialog-title" data-comp-dialog-title>新建赛事</h3>
-          <p class="comp-dialog-sub">归集窗口按录入日期收训练赛；正式比赛范围单独限定，两者互不合并。</p>
+          <p class="comp-dialog-sub">归集起始~结束按训练日期自动归档训练赛；正式比赛范围单独限定，两者互不合并。</p>
           <p class="comp-warn" data-comp-warning role="status" hidden></p>
           <div class="comp-form-grid">
             <label>赛事名称 <input name="name" required placeholder="如：王者荣耀全国大赛" autocomplete="off" autofocus></label>
@@ -1138,6 +1211,7 @@ export function createCompetitionsPage(h = {}) {
     node.addEventListener('click', onClick);
     node.addEventListener('submit', onSubmit);
     node.addEventListener('change', onDialogChange);
+    node.addEventListener('scroll', onCarouselScroll, true);
   }
   function dispose() {
     generation += 1;
@@ -1147,6 +1221,8 @@ export function createCompetitionsPage(h = {}) {
       bound.removeEventListener('click', onClick);
       bound.removeEventListener('submit', onSubmit);
       bound.removeEventListener('change', onDialogChange);
+      bound.removeEventListener('scroll', onCarouselScroll, true);
+      if (carouselRaf) { cancelAnimationFrame(carouselRaf); carouselRaf = 0; }
       bound = null;
     }
     dialog = null;

@@ -1,4 +1,4 @@
-﻿"""工作区数据模型：按 docs/analysis_fields_matrix.md 第 4 节建表。
+"""工作区数据模型：按 docs/analysis_fields_matrix.md 第 4 节建表。
 
 设计约束（与规格一致）：
 - 主键用稳定 ID，不用名称；改名/合并只写覆盖层，历史不动。
@@ -493,6 +493,20 @@ class Workspace:
                         connection.execute(f'ALTER TABLE competitions ADD COLUMN {column} {ddl}')
             except sqlite3.Error as error:
                 self.schema_warnings.append(f'competitions 增强字段迁移: {error}')
+            # 赛事域打通：旧系列赛即使对局已按窗口归档，也可能没有赛事归属，
+            # 导致大场/跨局页按当前赛事筛选时整批消失。按同一归集口径回填。
+            try:
+                for series in connection.execute('SELECT id, competition_id FROM training_series').fetchall():
+                    if series['competition_id']:
+                        continue
+                    keys = [row['match_key'] for row in connection.execute(
+                        'SELECT match_key FROM training_series_games WHERE series_id=?', (series['id'],)).fetchall()]
+                    comps = self._match_competitions(connection, keys)
+                    if comps:
+                        connection.execute('UPDATE training_series SET competition_id=? WHERE id=?',
+                                           (next(iter(comps)), series['id']))
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'series 赛事归属回填: {error}')
             connection.commit()
         finally:
             connection.close()
@@ -1175,6 +1189,14 @@ class Workspace:
         return str(cls._mfield(row, 'recorded_date', '') or cls._mfield(row, 'date', '') or '').strip()
 
     @classmethod
+    def _training_date(cls, row):
+        """训练赛日期口径：对局本身的 date，而不是入库时间 recorded_date。
+
+        赛事卡片的「归集起始 / 归集结束」就是拿这个日期去比的。
+        """
+        return str(cls._mfield(row, 'date', '') or '').strip()
+
+    @classmethod
     def _collect_bounds(cls, competition):
         """训练归集窗口：end_date 缺省时按单日窗口处理，避免旧数据无限吞并后续录入。"""
         start = competition.get('date')
@@ -1212,6 +1234,7 @@ class Workspace:
         item = dict(row)
         item.update({
             'recordedDate': self._recorded_date(row),
+            'trainingDate': self._training_date(row),
             'matchType': self._match_type(row),
             'inTrial': bool(self._mfield(row, 'in_trial', 0)),
             'aggregation': aggregation,  # window / manual / direct / unfiled
@@ -1219,7 +1242,7 @@ class Workspace:
         return item
 
     def competition_training_matches(self, competition_id, limit=None):
-        """按赛事查训练赛：录入日期落入归集窗口 + 手动挂载 + 直连，排除试训对局。
+        """按赛事查训练赛：训练日期落入归集起始/结束 + 手动挂载 + 直连，排除试训对局。
 
         改赛事时间后无需回写对局，本查询立即反映新归属。
         """
@@ -1243,7 +1266,7 @@ class Workspace:
             if str(self._mfield(row, 'formal_link', '') or ''):
                 continue
             mounted = key in manual
-            if not (direct or mounted or self._in_window(self._recorded_date(row), window)):
+            if not (direct or mounted or self._in_window(self._training_date(row), window)):
                 continue
             result.append(self._aggregated_item(
                 row, 'direct' if direct else ('manual' if mounted else 'window')))
@@ -1291,7 +1314,7 @@ class Workspace:
         unfiled_matches = [row for row in self._all_match_rows()
                            if self._match_type(row) == self.TRAINING
                            and not self._mfield(row, 'competition_id')
-                           and self._in_window(self._recorded_date(row),
+                           and self._in_window(self._training_date(row),
                                                self._collect_bounds(competition))]
         return {'competition': competition,
                 'unconfirmedSeries': [{'id': item['id'], 'opponent': item['opponent']}
@@ -1454,8 +1477,29 @@ class Workspace:
             connection.close()
         return linked
 
+    def _window_competition_for(self, row):
+        """对局按赛事卡片的归集窗口落在哪个赛事；直连优先，窗口/手动兜底。
+
+        系列赛编组此前只看直连列，导致「训练赛已归档到赛事、系列赛却没有赛事
+        归属」，进而被大场/跨局页的当前赛事筛选整批排除。这里补齐同一口径。
+        """
+        direct = str(self._mfield(row, 'competition_id', '') or '').strip()
+        if direct:
+            return direct
+        if self._mfield(row, 'in_trial', 0) or self._match_type(row) != self.TRAINING:
+            return None
+        key = str(self._mfield(row, 'match_key', '') or '').strip()
+        date = self._training_date(row)
+        candidates = []
+        for comp in self.list_competitions():
+            if key in self._competition_manual_keys(comp) or self._in_window(date, self._collect_bounds(comp)):
+                candidates.append(comp)
+        # 多个窗口重叠时取起始日最近（最具体）的赛事，保证结果稳定。
+        candidates.sort(key=lambda c: str(c.get('date') or ''), reverse=True)
+        return candidates[0]['id'] if candidates else None
+
     def _match_competitions(self, connection, keys):
-        # 对局键 → 赛事集合（直连列）；编组时校验/推导系列赛事归属用。
+        # 对局键 → 赛事集合；直连列 + 归集窗口/手动挂载，供编组推导赛事归属。
         comps = set()
         for table in self._series_relation_tables(connection):
             try:
@@ -1472,6 +1516,18 @@ class Workspace:
                     row = None
                 if row and row['competition_id']:
                     comps.add(str(row['competition_id']))
+        for key in keys:
+            try:
+                row = connection.execute(
+                    'SELECT * FROM match_records WHERE match_key=?', (key,)).fetchone()
+            except sqlite3.Error:
+                row = None
+            if not row:
+                continue
+            item = {col: row[col] for col in row.keys()}
+            comp = self._window_competition_for(item)
+            if comp:
+                comps.add(comp)
         return comps
 
     def competition_formal_matches(self, competition_id, limit=None):
@@ -1506,7 +1562,7 @@ class Workspace:
         return self._limit(result, limit)
 
     def unfiled_training_matches(self, limit=None):
-        """未归档训练赛：录入日期不在任何赛事归集窗口、也未被任何赛事手动挂载。"""
+        """未归档训练赛：训练日期不在任何赛事归集起始/结束内、也未被手动挂载。"""
         rows = self._all_match_rows()
         covered = set()
         for competition in self.list_competitions():
@@ -1518,7 +1574,7 @@ class Workspace:
                 key = str(self._mfield(row, 'match_key', '') or '')
                 if (str(self._mfield(row, 'competition_id', '') or '') == competition['id']
                         or key in manual
-                        or self._in_window(self._recorded_date(row), window)):
+                        or self._in_window(self._training_date(row), window)):
                     covered.add(key)
         result = [self._aggregated_item(row, 'unfiled') for row in rows
                   if not self._mfield(row, 'in_trial', 0)

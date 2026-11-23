@@ -371,6 +371,7 @@
    遵循：scroll-snap 为 Baseline Widely，可直接使用；overscroll-behavior-x
    为渐进增强，不支持时退化为普通横滑。 */
 .md-page .md-mu-grid {
+  cursor: grab;
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
@@ -390,6 +391,8 @@
   max-width: 300px;
   scroll-snap-align: start;
 }
+.md-page .md-mu-grid.is-dragging { cursor: grabbing; scroll-snap-type: none; scroll-behavior: auto; }
+.md-page .md-mu-grid.is-dragging > * { pointer-events: none; }
 @media (prefers-reduced-motion: no-preference) {
   .md-page .md-mu-grid { scroll-behavior: smooth; }
 }

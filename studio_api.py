@@ -513,7 +513,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.post('/profile')
     def save_profile(value: dict):
-        """队伍建档：队名、教练、赛季。队员名单仍走 /api/settings，避免两套写入。"""
+        """本队资料：基础信息 + 人员配置（职称可自定义）。队员名单仍走 /api/settings。"""
         with sqlite3.connect(db_path) as connection:
             row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
             if not row:
@@ -524,8 +524,10 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 if not isinstance(team_name, str) or not team_name.strip() or len(team_name.strip()) > 50:
                     raise HTTPException(400, '请填写 1–50 字的战队名称')
                 settings['teamName'] = team_name.strip()
-            for key, limit in (('coach', 30), ('season', 40), ('organization', 60),
-                               ('league', 40)):
+            for key, limit in (('coach', 30), ('viceCoach', 30), ('assistantCoach', 30),
+                               ('dataAnalyst', 30), ('psychologist', 30),
+                               ('season', 40), ('organization', 60), ('league', 40),
+                               ('updatedAt', 40)):
                 if key in value:
                     raw = value.get(key)
                     if raw is not None and not isinstance(raw, str):
@@ -534,13 +536,29 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                     if len(cleaned) > limit:
                         raise HTTPException(400, '内容过长')
                     settings[key] = cleaned
+            if 'staff' in value:
+                rows = value.get('staff')
+                if not isinstance(rows, list) or len(rows) > 20:
+                    raise HTTPException(400, '人员配置最多 20 项')
+                staff = []
+                for item in rows:
+                    if not isinstance(item, dict):
+                        continue
+                    title = str(item.get('title') or '').strip()[:30]
+                    name = str(item.get('name') or '').strip()[:30]
+                    if not title and not name:
+                        continue
+                    key = str(item.get('key') or '').strip()[:30]
+                    staff.append({'key': key, 'title': title, 'name': name})
+                settings['staff'] = staff
             connection.execute('UPDATE settings SET body=? WHERE id=1',
                                (json.dumps(settings, ensure_ascii=False),))
         repository_cache['value'] = None
         result_cache.clear()
         return {'ok': True, 'teamName': settings.get('teamName'),
                 'coach': settings.get('coach', ''), 'season': settings.get('season', ''),
-                'league': settings.get('league', '')}
+                'league': settings.get('league', ''), 'staff': settings.get('staff', []),
+                'updatedAt': settings.get('updatedAt', '')}
 
     @router.get('/workspace')
     def workspace():
@@ -1670,6 +1688,18 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         except Exception:
             payload = {}
         payload = payload or {}
+        # 赛事归档时把当前克制关系自动定稿，保证一年后复盘这场比赛读到的是当时的最终版。
+        # 留档失败不阻断归档（规则中心仍可手动补定稿）。
+        try:
+            import bp_facts
+            import rules_counter_versions
+            comp = workspace().get_competition(competition_id)
+            if comp:
+                rules_counter_versions.finalize(
+                    comp, bp_facts._load('rules_counters.json') or {},
+                    summary=f'{comp.get("name") or competition_id} 归档自动定稿')
+        except Exception:  # noqa: BLE001 - 定稿是附加保障，不能拖垮归档流程
+            pass
         try:
             return workspace().archive_and_inherit(competition_id, {
                 'name': payload.get('nextName'), 'date': payload.get('nextDate'),
@@ -2300,13 +2330,23 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             except OSError:
                 return ''
 
+        crawl = {}
+        try:
+            crawl = json.loads((hero_external_stats.OUT_PATH.parent.parent / 'peak' / 'state.json').read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            pass
         return {
             'updatedAt': updated,
             'stale': stale,
-            'kpl': {'heroes': len(data.get('kpl') or {}), 'fileAt': file_day(hero_external_stats.GAMES_PATH)},
+            'kpl': {
+                'heroes': len(data.get('kpl') or {}),
+                'fileAt': file_day(hero_external_stats.GAMES_PATH),
+                'windowEnd': str(data.get('windowEnd') or ''),
+            },
             'peak10': {'heroes': len(data.get('top10') or {})},
             'bigTier': {'heroes': len(data.get('big') or {})},
             'sourceAt': file_day(hero_external_stats.OUT_PATH),
+            'crawl': {key: crawl.get(key) for key in ('running', 'finishedAt', 'lastError', 'enabled', 'reason')},
         }
 
     @router.get('/team-tags/all')

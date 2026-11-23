@@ -57,6 +57,14 @@ const KIND_META = {
 
 const text = (v) => String(v ?? '').trim();
 const splitNames = (raw) => String(raw || '').split(/[\s,，、;；/|]+/).map(text).filter(Boolean);
+/** 英雄集合输入：按 +（含全角）或 ,（含中文逗号）拆成英雄名数组。 */
+const splitHeroSet = (raw) => String(raw ?? '').split(/[+＋,，]/).map(text).filter(Boolean);
+/** 一行克制关系的攻方 / 受方英雄集合：优先 aHeroes / bHeroes 数组，否则拆旧的 a / b。 */
+function counterHeroes(row, side) {
+  const arr = row?.[side === 'a' ? 'aHeroes' : 'bHeroes'];
+  if (Array.isArray(arr)) return arr.map(text).filter(Boolean);
+  return splitHeroSet(row?.[side === 'a' ? 'a' : 'b']);
+}
 const defaultEsc = (v) => text(v).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[c]));
@@ -115,6 +123,9 @@ export function createRulesCenter(h = {}) {
     docs: {}, baseline: {}, saving: false,
     query: { 'hero-tags': '', misc: '' },
     comboPool: null,               // 组合池设置页的同一份数据（/api/v3/custom-combos）
+    competitions: [],              // 赛事下拉：克制关系按赛事 / 时间窗切换版本
+    counterCompetition: '',        // '' = 全部赛事；否则按赛事 ID 过滤 + 新增时绑定
+    counterVersion: null,          // 当前赛事已定稿的克制关系快照（复盘时实际使用）
     heroLane: '全部', counterSub: 'hero',
     counterFilter: { hero: [], combo: [] },      // 克制表英雄头像筛选（各子表独立）
     counterFilterQ: { hero: '', combo: '' },     // 头像筛选器内的搜索词
@@ -124,6 +135,37 @@ export function createRulesCenter(h = {}) {
   };
   const activeKind = () => TABS.find((tab) => tab.key === state.active)?.kind || null;
   const docOf = (kind) => state.docs[kind] || {};
+  /* 赛事版本：选中的赛事只影响「看哪几条」与「新增/编辑绑到哪场」；
+     state.docs 始终保存完整文档，切换赛事不会丢掉别的赛事的条目。 */
+  const selectedCompetition = () => (state.competitions || [])
+    .find((item) => String(item.id) === String(state.counterCompetition)) || null;
+  const effectiveHasValue = (eff = {}) => ['eventId', 'eventName', 'from', 'to']
+    .some((key) => String(eff[key] || '').trim());
+  const effectiveForSelection = (eff = {}) => {
+    const comp = selectedCompetition();
+    if (!comp || effectiveHasValue(eff)) return eff;
+    return {
+      eventId: String(comp.id || ''), eventName: String(comp.name || ''),
+      from: String(comp.date || '').slice(0, 10),
+      to: String(comp.end_date || '').slice(0, 10),
+    };
+  };
+  const effectiveMatches = (row, comp) => {
+    if (!comp) return true;                       // 全部赛事：不过滤
+    const eff = row?.effective || {};
+    if (!effectiveHasValue(eff)) return true;     // 常年生效，任何赛事都看得到
+    const eventId = String(eff.eventId || '').trim();
+    const eventName = String(eff.eventName || '').trim();
+    if (eventId && eventId === String(comp.id || '')) return true;
+    if (eventName && eventName === String(comp.name || '')) return true;
+    const from = String(eff.from || '').trim();
+    const to = String(eff.to || '').trim();
+    const date = String(comp.date || '').slice(0, 10);
+    return Boolean(from && date && date >= from && (!to || date <= to));
+  };
+  const competitionOptionsHtml = () => [`<option value="">全部赛事（常年）</option>`,
+    ...(state.competitions || []).map((item) => `<option value="${esc(item.id)}"${String(item.id) === state.counterCompetition ? ' selected' : ''}>${esc(item.name || item.id)}${item.date ? ` · ${esc(String(item.date).slice(0, 10))}` : ''}</option>`),
+  ].join('');
   const dirty = (kind) => Boolean(state.docs[kind])
     && JSON.stringify(state.docs[kind]) !== state.baseline[kind];
 
@@ -182,9 +224,9 @@ export function createRulesCenter(h = {}) {
     // 弹窗内容可滚动 + foot 吸底：用 center 才能把错误条滚到可见区，不被吸底按钮盖住。
     box.scrollIntoView?.({ block: 'center' });
   }
-  function toast(message) {
+  function toast(message, { error = false } = {}) {
     if (!notify) return;   // 外壳没注入 notify 时静默跳过
-    try { notify(`✓ ${message}`); } catch { /* 外部播报异常不影响主流程 */ }
+    try { notify(`${error ? '✕' : '✓'} ${message}`); } catch { /* 外部播报异常不影响主流程 */ }
     const host = root?.querySelector('.rc-page') || root;
     if (!host) return;
     let el = host.querySelector('[data-rc-toast]');
@@ -196,7 +238,10 @@ export function createRulesCenter(h = {}) {
       el.setAttribute('aria-live', 'polite');
       host.append(el);
     }
-    el.innerHTML = `<span aria-hidden="true">✓</span> <span>${esc(message)}</span>`;
+    el.classList.toggle('is-error', error);
+    el.style.borderColor = error ? 'var(--danger, #B5564A)' : '';
+    el.style.color = error ? 'var(--danger, #B5564A)' : '';
+    el.innerHTML = `<span aria-hidden="true">${error ? '✕' : '✓'}</span> <span>${esc(message)}</span>`;
     clearTimeout(toastTimer);
     toastTimer = window.setTimeout(() => el.remove(), 2400);
   }
@@ -308,6 +353,35 @@ export function createRulesCenter(h = {}) {
       if (!response.ok) throw new Error(String(response.status));
       state.comboPool = await response.json();
     } catch { state.comboPool = state.comboPool || { pairs: [], trios: [] }; }
+    paintCounters();
+  }
+  /** 拉赛事列表；默认跟随顶栏当前赛事，但用户可改成「全部赛事」。 */
+  async function loadCompetitions() {
+    try {
+      const response = await fetch(`${API_BASE}/api/studio/workspace/competitions`,
+        { headers: { Accept: 'application/json' }, signal: controller?.signal, cache: 'no-store' });
+      if (!response.ok) throw new Error(String(response.status));
+      const data = await response.json();
+      state.competitions = Array.isArray(data?.competitions) ? data.competitions : [];
+    } catch { state.competitions = state.competitions || []; }
+    if (!state.counterCompetition) {
+      let current = '';
+      try { current = localStorage.getItem('training-current-competition') || ''; } catch { /* 无 localStorage 环境 */ }
+      if (state.competitions.some((item) => String(item.id) === current)) state.counterCompetition = current;
+    }
+    loadVersionStatus();
+  }
+  /** 查当前赛事已定稿的克制关系快照；复盘旧赛事实际读的就是这份。 */
+  async function loadVersionStatus() {
+    state.counterVersion = null;
+    const comp = selectedCompetition();
+    if (comp) {
+      try {
+        const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/version?competition=${encodeURIComponent(comp.id)}`,
+          { headers: { Accept: 'application/json' }, signal: controller?.signal, cache: 'no-store' });
+        if (response.ok) state.counterVersion = (await response.json()).version || null;
+      } catch { state.counterVersion = null; }
+    }
     paintCounters();
   }
   /** 英雄 → 可打分路（metadata.heroTypes，键缺失视为未标注）。 */
@@ -442,8 +516,17 @@ export function createRulesCenter(h = {}) {
     </span>`;
   const historyBtn = (kind, entry, sub, name = '') => `<button type="button" class="control rc-history-btn"
       data-rc-history="${esc(entry.id)}" data-rc-kind="${kind}" data-rc-sub="${esc(sub || '')}" data-rc-name="${esc(name)}"
-      aria-label="查看 ${esc(name || entry.id || '条目')} 的条目级历史">历史 <span class="rc-rev">r${esc(Number(entry.revision) || 0)}</span></button>`;
+      aria-label="查看 ${esc(name || entry.id || '条目')} 的修改历史（时间、修订号、变更摘要）"
+      title="修改历史：每次改动前的时间与快照；r${esc(Number(entry.revision) || 0)} 表示已修改 ${esc(Number(entry.revision) || 0)} 次">历史 <span class="rc-rev">r${esc(Number(entry.revision) || 0)}</span></button>`;
   const tokens = (list) => (list || []).map((v) => `<span class="rc-token">${esc(v)}</span>`).join('') || '<span class="rc-muted">—</span>';
+  /** 英雄集合：只放头像，名字留作 title / alt，不占表格宽度。 */
+  const heroSetChips = (names) => {
+    const list = (names || []).filter(Boolean);
+    return list.length
+      ? `<span class="rc-counter-set">${list.map((name) =>
+          `<span class="rc-token rc-hero-token" title="${esc(name)}">${portrait(name, 'rc-counter-portrait')}</span>`).join('')}</span>`
+      : '<span class="rc-muted">—</span>';
+  };
   /** 空状态：对应 tab 的语义图标 + 内联「＋新增」，点一下直接开表单。 */
   const emptyWithAdd = (cols, message, iconName, kind, sub = '') => `<tr><td class="rc-empty" colspan="${cols}">
       <span class="rc-empty-inner">${glyph(iconName, { size: 18 })}<span>${esc(message)}</span>
@@ -493,24 +576,55 @@ export function createRulesCenter(h = {}) {
     root?.querySelectorAll('[data-rc-counter-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.rcCounterPanel !== sub.key;
     });
+    const scopeSelect = root?.querySelector('[data-rc-counter-competition]');
+    if (scopeSelect) {
+      const options = competitionOptionsHtml();
+      if (scopeSelect.innerHTML !== options) scopeSelect.innerHTML = options;
+      scopeSelect.value = state.counterCompetition;
+    }
+    const scopeHint = root?.querySelector('[data-rc-comp-scope-hint]');
+    const finalizeBtn = root?.querySelector('[data-rc-finalize]');
+    if (finalizeBtn) {
+      finalizeBtn.disabled = !state.counterCompetition;
+      finalizeBtn.textContent = state.counterVersion ? '重新定稿留档' : '定稿留档';
+      finalizeBtn.title = state.counterCompetition
+        ? '把当前这套克制关系留成该赛事最终版本；复盘这个赛事时会一直用这份快照'
+        : '先选择一个赛事';
+    }
+    if (scopeHint) {
+      const comp = selectedCompetition();
+      const version = state.counterVersion;
+      const versionText = version
+        ? ` 已定稿：${String(version.finalizedAt || '').replace('T', ' ').slice(0, 16)}（修订 r${Number(version.sourceRevision) || 0}，英雄 ${version.counts?.hero || 0} / 组合 ${version.counts?.combo || 0}）；复盘本赛事用这份快照。`
+        : ' 还没定稿；复盘本赛事暂时按当前生效规则读取。';
+      scopeHint.textContent = comp
+        ? `当前赛事：${comp.name || comp.id}（${String(comp.date || '').slice(0, 10) || '未设开始日'} ~ ${String(comp.end_date || '').slice(0, 10) || '进行中'}）。只列常年生效 + 命中该赛事 / 时间窗的关系；新增或修改会绑定到该赛事。${versionText}`
+        : '当前看全部赛事：不做时间过滤；选中赛事后只看当时生效的关系，新增或修改会绑定到该赛事。';
+    }
     const body = root?.querySelector(`[data-rc-body="counters-${sub.key}"]`);
     if (!body) return;
     // 英雄头像筛选：英雄表看攻方 / 受方是否命中；组合表看两张子表的组合成员是否覆盖所选英雄。
     const sel = state.counterFilter[sub.key] || [];
     const comboHeroes = sub.key === 'combo' ? comboHeroesMap() : null;
-    const hitCombo = (name) => {
-      const heroes = comboHeroes?.get(text(name)) || [];
-      return heroes.length > 0 && sel.every((hero) => heroes.includes(hero));
-    };
+    const comp = selectedCompetition();
     const rows = (docOf('counters')[sub.list] || []).filter((row) => {
+      if (!effectiveMatches(row, comp)) return false;
       if (!sel.length) return true;
-      return sub.key === 'hero' ? (sel.includes(row.a) || sel.includes(row.b))
-        : (hitCombo(row.a) || hitCombo(row.b));
+      const aHeroes = counterHeroes(row, 'a');
+      const bHeroes = counterHeroes(row, 'b');
+      // 英雄筛选与攻方 / 受方英雄集合取交集：任一所选英雄命中任一侧即保留。
+      if (sel.some((hero) => aHeroes.includes(hero) || bHeroes.includes(hero))) return true;
+      // 组合子表再兜一层组合池成员映射（旧数据 a / b 是组合名而非英雄集合）。
+      if (sub.key === 'combo' && comboHeroes) {
+        return sel.some((hero) =>
+          (comboHeroes.get(text(row.a)) || []).includes(hero)
+          || (comboHeroes.get(text(row.b)) || []).includes(hero));
+      }
+      return false;
     });
-    const heroCell = (name) => `<span class="rc-hero-cell">${portrait(name)}<b>${esc(name)}</b></span>`;
     body.innerHTML = rows.length ? rows.map((row) => `<tr data-rc-row-id="${esc(row.id)}">
-        ${td('攻方', sub.key === 'hero' ? heroCell(row.a) : `<b>${esc(row.a)}</b>`)}
-        ${td('受方', sub.key === 'hero' ? heroCell(row.b) : `<b>${esc(row.b)}</b>`)}
+        ${td('攻方', heroSetChips(counterHeroes(row, 'a')))}
+        ${td('受方', heroSetChips(counterHeroes(row, 'b')))}
         ${td('方向', '<span class="rc-arrow">→</span>')}
         ${td('强度', `<span class="rc-strength s-${esc(row.strength)}">${esc(row.strength || '中')}</span>`)}
         ${td('分路', esc(row.lane) || '<span class="rc-muted">不限</span>')}
@@ -645,26 +759,179 @@ export function createRulesCenter(h = {}) {
     if (first) first.autofocus = cancel.autofocus ? false : true;
     dialog.showModal();
   }
+
+  /* ── KPL 高准确率克制初稿：只预览不落 state，确认后才 POST 写入 ────── */
+  const seedStat = (label, value) => (value === undefined || value === null || value === '')
+    ? '' : `<span class="rc-token">${esc(label)} ${esc(value)}</span>`;
+
+  async function openSeedPreview() {
+    const dialog = root?.querySelector('[data-rc-seed-dialog]');
+    if (!dialog) return;
+    const bodyNode = root.querySelector('[data-rc-seed-body]');
+    bodyNode.innerHTML = '<p class="rc-muted">正在生成 KPL 初稿…</p>';
+    dialog.showModal();
+    try {
+      const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/seed-preview`,
+        { headers: { Accept: 'application/json' }, signal: controller?.signal, cache: 'no-store' });
+      if (!response.ok) {
+        let detail = '';
+        try { detail = (await response.json()).detail || ''; } catch { /* 非 JSON 响应 */ }
+        throw new Error(detail || `生成初稿失败（${response.status}）`);
+      }
+      const data = await response.json();
+      if (data?.ok === false) throw new Error(data.detail || '后端未能生成初稿。');
+      const rows = Array.isArray(data?.rows) ? data.rows.slice(0, 80) : [];
+      const meta = data?.meta;
+      let metaLine = '<p class="rc-seed-meta">基于 KPL 对局筛选的高准确率克制候选。</p>';
+      if (typeof meta === 'string' && meta) {
+        metaLine = `<p class="rc-seed-meta">${esc(meta)}</p>`;
+      } else if (meta && typeof meta === 'object') {
+        const bits = [];
+        const scalar = (v) => (v !== undefined && v !== null && typeof v !== 'object') ? String(v) : '';
+        // 后端 meta.games = {total, included, ...}；也兼容扁平数字。
+        const games = scalar((meta.games && typeof meta.games === 'object' ? meta.games.total : meta.games)
+          ?? meta.totalGames ?? meta.matchCount ?? meta.n);
+        if (games) bits.push(`共 ${esc(games)} 局`);
+        // 后端 meta.candidates.total = 筛出条数；兼容 count / 数字型 rows。
+        const count = scalar((meta.candidates && typeof meta.candidates === 'object' ? meta.candidates.total : meta.candidates)
+          ?? meta.count ?? (typeof meta.rows === 'number' ? meta.rows : null) ?? meta.matched ?? meta.selected);
+        if (count) bits.push(`筛出 ${esc(count)} 条`);
+        // 后端 meta.thresholds = {minN, minExcessPP, minWilsonLower}；也兼容扁平门槛。
+        const th = (meta.thresholds && typeof meta.thresholds === 'object') ? meta.thresholds
+          : (meta.threshold ?? meta.gate);
+        if (th && typeof th === 'object') {
+          const parts = [];
+          if (th.minExcessPP !== undefined && th.minExcessPP !== null) parts.push(`超额≥${esc(th.minExcessPP)}pp`);
+          if (th.minWilsonLower !== undefined && th.minWilsonLower !== null) parts.push(`Wilson≥${esc(th.minWilsonLower)}`);
+          if (th.minN !== undefined && th.minN !== null) {
+            parts.push(typeof th.minN === 'object'
+              ? `n≥${esc(Object.values(th.minN).join('/'))}` : `n≥${esc(th.minN)}`);
+          }
+          if (parts.length) bits.push(`门槛 ${parts.join('、')}`);
+        } else {
+          const gate = scalar(th ?? meta.minWinRate ?? meta.min);
+          if (gate) bits.push(`门槛 ${esc(gate)}`);
+        }
+        if (bits.length) metaLine = `<p class="rc-seed-meta">${bits.join(' · ')}</p>`;
+      }
+      const rowsHtml = rows.length ? rows.map((row) => {
+        const as = Array.isArray(row?.aHeroes) ? row.aHeroes : splitHeroSet(row?.a);
+        const bs = Array.isArray(row?.bHeroes) ? row.bHeroes : splitHeroSet(row?.b);
+        const ev = (row?.evidence && typeof row.evidence === 'object') ? row.evidence : {};
+        const pick = (...keys) => {
+          for (const k of keys) {
+            const v = ev[k] ?? row?.[k];
+            if (v !== undefined && v !== null && v !== '') return v;
+          }
+          return '';
+        };
+        const evidence = [seedStat('n', pick('n', 'games', 'sample')),
+          seedStat('胜率', pick('wr', 'winRate', 'win_rate', 'win', '胜率')),
+          seedStat('超额', pick('excess', 'lift', '超额')),
+          seedStat('Wilson', pick('wilson', 'wilsonLower', 'wilsonLB'))].join('');
+        return `<label class="rc-seed-row">
+          <input type="checkbox" data-rc-seed-id="${esc(row.id)}" checked>
+          <span>${heroSetChips(as)} <span class="rc-arrow">→</span> ${heroSetChips(bs)}
+            <span class="rc-strength s-${esc(row.strength)}">${esc(row.strength || '中')}</span>
+            ${row?.note ? `<span class="rc-muted">${esc(row.note)}</span>` : ''}</span>
+          <span class="rc-seed-evidence">${evidence || '—'}</span>
+        </label>`;
+      }).join('') : '<p class="rc-muted">没有可用的初稿候选。</p>';
+      bodyNode.innerHTML = `${metaLine}<div class="rc-seed-list">${rowsHtml}</div>`;
+    } catch (error) {
+      bodyNode.innerHTML = `<p class="rc-field-error" role="alert">${esc(error.message || '生成初稿失败，请稍后重试。')}</p>`;
+      toast(error.message || '生成初稿失败，请稍后重试。', { error: true });
+    }
+  }
+
+  async function applySeed() {
+    const dialog = root?.querySelector('[data-rc-seed-dialog]');
+    if (!dialog) return;
+    const ids = [...dialog.querySelectorAll('[data-rc-seed-id]:checked')]
+      .map((el) => el.dataset.rcSeedId).filter(Boolean);
+    if (!ids.length) { toast('请至少勾选一条初稿候选。', { error: true }); return; }
+    const doc = docOf('counters');
+    try {
+      const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/seed-apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ revision: Number(doc.revision) || 0, ids }),
+        signal: controller?.signal,
+      });
+      if (!response.ok) {
+        let detail = '';
+        try { detail = (await response.json()).detail || ''; } catch { /* 非 JSON 响应 */ }
+        throw new Error(detail || `加入规则表失败（${response.status}）`);
+      }
+      dialog.close();
+      await load('counters', { quiet: true });
+      paint();
+      announce(`已加入 ${ids.length} 条，原有手工条目未改动`);
+    } catch (error) {
+      toast(error.message || '加入规则表失败，请稍后重试。', { error: true });
+    }
+  }
+
+  /* ── 赛事定稿：把当前生效的一套克制关系留成该赛事最终版本 ────────── */
+  function openFinalize() {
+    const comp = selectedCompetition();
+    if (!comp) return;
+    const dialog = root?.querySelector('[data-rc-finalize-dialog]');
+    if (!dialog) return;
+    const doc = docOf('counters');
+    const rows = [...(doc.heroPairs || []), ...(doc.comboPairs || [])]
+      .filter((row) => effectiveMatches(row, comp));
+    const desc = dialog.querySelector('[data-rc-finalize-desc]');
+    desc.textContent = `赛事「${comp.name || comp.id}」当前生效 ${rows.length} 条克制关系（英雄 ${rows.filter((r) => counterHeroes(r, 'a').length === 1 && counterHeroes(r, 'b').length === 1).length} / 组合 ${rows.filter((r) => !(counterHeroes(r, 'a').length === 1 && counterHeroes(r, 'b').length === 1)).length}）。定稿后复盘这个赛事会一直读这份快照，之后在别的赛事里改规则不会影响它。`;
+    dialog.querySelector('[data-rc-finalize-summary]').value = '';
+    dialog.showModal();
+  }
+
+  async function applyFinalize() {
+    const comp = selectedCompetition();
+    const dialog = root?.querySelector('[data-rc-finalize-dialog]');
+    if (!comp || !dialog) return;
+    try {
+      const summary = text(dialog.querySelector('[data-rc-finalize-summary]').value);
+      const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ competitionId: comp.id, competitionName: comp.name || '', summary }),
+        signal: controller?.signal,
+      });
+      if (!response.ok) {
+        let detail = '';
+        try { detail = (await response.json()).detail || ''; } catch { /* 非 JSON 响应 */ }
+        throw new Error(detail || `定稿失败（${response.status}）`);
+      }
+      dialog.close();
+      await loadVersionStatus();
+      announce(`赛事「${comp.name || comp.id}」克制关系已定稿留档`);
+    } catch (error) {
+      toast(error.message || '定稿失败，请稍后重试。', { error: true });
+    }
+  }
+
   function newEntry(kind, sub = '') {
     const base = { id: newId(kind), effective: blankEffective(), revision: 0, history: [] };
-    if (kind === 'counters') return { ...base, a: '', b: '', strength: '强', lane: '全部', note: '', ...(sub === 'combo' ? { sub } : {}) };
+    if (kind === 'counters') return { ...base, a: '', b: '', aHeroes: [], bHeroes: [], strength: '强', lane: '全部', note: '', ...(sub === 'combo' ? { sub } : {}) };
     if (kind === 'misc') return { ...base, group: MISC_GROUPS[0], key: '', value: '', note: '' };
     return base;
   }
 
   function entryBody(kind, entry, isEdit = false) {
-    const eff = effectiveFields(entry.effective);
+    // 选中赛事时，新增 / 原本常年生效的条目自动绑定到该赛事；已有赛事字段的条目不覆盖。
+    const eff = effectiveFields(kind === 'counters' ? effectiveForSelection(entry.effective) : entry.effective);
     if (kind === 'counters') {
-      const multi = !isEdit;
       if (state.counterSub === 'combo') {
         // 组合克制组合：组合名可能含分隔符，不适合按名字回传，保留文字输入 + 候选。
         const names = comboNames();
         const comboDatalist = datalistHtml(`${uid}-combo-names`, names);
         return `<div class="rc-grid2">
-          <label>攻方组合（谁克制）${multi ? '，多个用逗号分隔 → 1对多 / 多对多' : ''}
-            <input type="text" data-f="a" value="${esc(entry.a)}" placeholder="如 张良+虞姬" list="${uid}-combo-names" required></label>
-          <label>受方组合（被谁克制）${multi ? '，多个用逗号分隔' : ''}
-            <input type="text" data-f="b" value="${esc(entry.b)}" placeholder="如 太乙+鲁班" list="${uid}-combo-names" required></label>
+          <label>攻方英雄集合（谁克制），用 + 或逗号分隔，如「张良+虞姬」
+            <input type="text" data-f="a" value="${esc(counterHeroes(entry, 'a').join('+'))}" placeholder="如 张良+虞姬" list="${uid}-combo-names" required></label>
+          <label>受方英雄集合（被谁克制），用 + 或逗号分隔，如「太乙+鲁班」
+            <input type="text" data-f="b" value="${esc(counterHeroes(entry, 'b').join('+'))}" placeholder="如 太乙+鲁班" list="${uid}-combo-names" required></label>
           <label>强度 <select data-f="strength">${STRENGTHS.map((s) => `<option value="${esc(s)}"${entry.strength === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
           <label>分路 <select data-f="lane">
             ${['全部', ...LANES].map((l) => `<option value="${esc(l)}"${(entry.lane || '全部') === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}
@@ -676,8 +943,8 @@ export function createRulesCenter(h = {}) {
       }
       // 英雄克制英雄：先选分路，再点头像选攻方 / 受方，不再手打名字。
       picker = {
-        a: isEdit ? [text(entry.a)].filter(Boolean) : [],
-        b: isEdit ? [text(entry.b)].filter(Boolean) : [],
+        a: isEdit ? counterHeroes(entry, 'a') : [],
+        b: isEdit ? counterHeroes(entry, 'b') : [],
         q: { a: '', b: '' },
         lane: { a: '全部', b: '全部' },
       };
@@ -823,29 +1090,32 @@ export function createRulesCenter(h = {}) {
     const source = ed.entry || newEntry(ed.kind, ed.sub);
     if (ed.kind === 'counters') {
       const comboMode = state.counterSub === 'combo';
-      const as = comboMode ? [get('[data-f="a"]')] : (picker?.a || []).map(text).filter(Boolean);
-      const bs = comboMode ? [get('[data-f="b"]')] : (picker?.b || []).map(text).filter(Boolean);
+      // 一行就是一组集合关系：攻方 / 受方各是一个英雄集合，不再笛卡尔展开。
+      const as = [...new Set(comboMode
+        ? splitHeroSet(get('[data-f="a"]'))
+        : (picker?.a || []).map(text).filter(Boolean))];
+      const bs = [...new Set(comboMode
+        ? splitHeroSet(get('[data-f="b"]'))
+        : (picker?.b || []).map(text).filter(Boolean))];
       if (!as.length || !bs.length || as.some((v) => !v) || bs.some((v) => !v)) {
         const target = !as.length || as.some((v) => !v)
           ? (comboMode ? '[data-f="a"]' : '[data-rc-picker="a"]')
           : (comboMode ? '[data-f="b"]' : '[data-rc-picker="b"]');
-        fieldError(form, comboMode ? '攻方与受方都要填写。' : '攻方与受方都要选择英雄。', target);
+        fieldError(form, comboMode ? '攻方与受方英雄集合都要填写。' : '攻方与受方都要选择英雄。', target);
         return null;
       }
-      const out = [];
-      for (const a of as) for (const b of bs) {
-        if (a === b) continue;
-        // 1对1 / 1对多 / 多对多：笛卡尔展开为多条有向关系（每条都带自己的修订与历史）。
-        const base = ed.mode === 'edit' ? source : { ...source, id: newId('counters') };
-        out.push({ ...base, a, b, strength: get('[data-f="strength"]') || '中',
-          lane: get('[data-f="lane"]') || '全部', note: get('[data-f="note"]'), effective: eff });
-      }
-      if (!out.length) {
-        fieldError(form, comboMode ? '攻方与受方不能是同一个对象。' : '攻方与受方不能是同一个英雄。',
+      const overlap = as.some((v) => bs.includes(v));
+      const identical = as.length === bs.length && as.every((v) => bs.includes(v));
+      if (comboMode ? overlap : identical) {
+        fieldError(form,
+          comboMode ? '同一个英雄不能同时出现在攻方和受方。' : '攻方与受方不能是完全相同的英雄集合。',
           comboMode ? '[data-f="b"]' : '[data-rc-picker="b"]');
         return null;
       }
-      return out;
+      // 编辑时 source 即原行，展开保留 id / revision / history；a / b 由数组拼回供后端兼容。
+      return [{ ...source, aHeroes: as, bHeroes: bs, a: as.join('+'), b: bs.join('+'),
+        strength: get('[data-f="strength"]') || '中',
+        lane: get('[data-f="lane"]') || '全部', note: get('[data-f="note"]'), effective: eff }];
     }
     if (ed.kind === 'misc') {
       const key = get('[data-f="key"]').slice(0, 80);
@@ -994,6 +1264,20 @@ export function createRulesCenter(h = {}) {
     if (pick) { togglePick(pick.dataset.rcPick, text(pick.dataset.rcPickName)); return; }
     const pickRemove = event.target.closest('[data-rc-pick-remove]');
     if (pickRemove) { togglePick(pickRemove.dataset.rcPickRemove, text(pickRemove.dataset.rcPickRemoveName)); return; }
+    /* KPL 初稿对话框：预览只展示，确认后才发 seed-apply。 */
+    const seedPreview = event.target.closest('[data-rc-seed-preview]');
+    if (seedPreview) { openSeedPreview(); return; }
+    const seedCancel = event.target.closest('[data-rc-seed-cancel]');
+    if (seedCancel) { root.querySelector('[data-rc-seed-dialog]')?.close(); return; }
+    const seedApply = event.target.closest('[data-rc-seed-apply]');
+    if (seedApply) { applySeed(); return; }
+    /* 赛事定稿快照：复盘旧赛事时实际读取的版本。 */
+    const finalizeOpen = event.target.closest('[data-rc-finalize]');
+    if (finalizeOpen) { openFinalize(); return; }
+    const finalizeCancel = event.target.closest('[data-rc-finalize-cancel]');
+    if (finalizeCancel) { root.querySelector('[data-rc-finalize-dialog]')?.close(); return; }
+    const finalizeConfirm = event.target.closest('[data-rc-finalize-confirm]');
+    if (finalizeConfirm) { applyFinalize(); return; }
     if (event.target.closest('[data-rc-dialog-cancel]')) {
       root.querySelector('[data-rc-dialog]')?.close(); state.editing = null; return;
     }
@@ -1025,6 +1309,12 @@ export function createRulesCenter(h = {}) {
     else if (key === 'misc') paintMisc();
   }
   function onChange(event) {
+    const scope = event.target.closest('[data-rc-counter-competition]');
+    if (scope) {
+      state.counterCompetition = String(scope.value || '');
+      loadVersionStatus();
+      return;
+    }
     const size = event.target.closest('[data-rc-size-filter]');
     const lane = event.target.closest('[data-rc-hero-lane]');
     if (lane) { state.heroLane = lane.value; paintHeroTags(); }
@@ -1099,8 +1389,14 @@ export function createRulesCenter(h = {}) {
         </details>`;
       return `<section class="section">
         <div class="section-heading"><div><h2>克制关系</h2></div>
-          <div class="rc-panel-actions">${reloadBtn}${saveBtn}</div></div>
-        <p class="rc-effective-hint">克制规则支持「按赛事生效」：条目里填赛事 ID / 名称或时间窗，未填＝常年生效；BP 习惯的克制命中会按当前赛事自动取用。</p>
+          <div class="rc-panel-actions">${reloadBtn}<button type="button" class="control" data-rc-seed-preview>从 KPL 生成初稿</button>${saveBtn}</div></div>
+        <p class="rc-effective-hint">克制规则按赛事 / 时间窗生效：未填＝常年生效，任何赛事都能看到；选中赛事后，只列常年生效与命中该赛事的条目。「修订 r1」= 改过 1 次，「历史」按钮可看每次修改前的快照和时间。</p>
+        <div class="rc-comp-scope">
+          <label for="${uid}-counter-competition">查看 / 编辑赛事</label>
+          <select id="${uid}-counter-competition" data-rc-counter-competition>${competitionOptionsHtml()}</select>
+          <button type="button" class="control" data-rc-finalize disabled>定稿留档</button>
+          <span data-rc-comp-scope-hint class="rc-comp-scope-hint"></span>
+        </div>
         <div class="rc-subtabs" role="group" aria-label="克制关系子表">
           ${COUNTER_SUBS.map((s) => `<button type="button" class="rc-subtab" data-rc-counter-sub="${s.key}" aria-pressed="${state.counterSub === s.key}">${esc(s.label)}</button>`).join('')}
         </div>
@@ -1156,6 +1452,25 @@ export function createRulesCenter(h = {}) {
           </div>
         </form>
       </dialog>
+      <dialog class="rc-dialog" data-rc-seed-dialog aria-labelledby="${uid}-seed-dialog-title">
+        <div class="rc-dialog-head"><h2 id="${uid}-seed-dialog-title">KPL 高准确率克制初稿</h2></div>
+        <div class="rc-dialog-body" data-rc-seed-body style="padding:14px 20px 0"></div>
+        <div class="rc-dialog-foot">
+          <button type="button" class="control" data-rc-seed-cancel autofocus>取消</button>
+          <button type="button" class="primary" data-rc-seed-apply>加入规则表</button>
+        </div>
+      </dialog>
+      <dialog class="rc-dialog" data-rc-finalize-dialog aria-labelledby="${uid}-finalize-dialog-title">
+        <div class="rc-dialog-head"><h2 id="${uid}-finalize-dialog-title">克制关系定稿留档</h2></div>
+        <div class="rc-dialog-body" style="padding:14px 20px 0">
+          <p class="rc-seed-meta" data-rc-finalize-desc></p>
+          <label>定稿说明 <textarea data-rc-finalize-summary rows="2" placeholder="如：赛季结束前最终版"></textarea></label>
+        </div>
+        <div class="rc-dialog-foot">
+          <button type="button" class="control" data-rc-finalize-cancel autofocus>取消</button>
+          <button type="button" class="primary" data-rc-finalize-confirm>确认定稿</button>
+        </div>
+      </dialog>
     </div>`;
   }
 
@@ -1195,6 +1510,7 @@ export function createRulesCenter(h = {}) {
     controller = new AbortController();
     Object.keys(KIND_META).forEach((kind) => load(kind, { quiet: true }));
     loadComboPool();
+    loadCompetitions();
     paint();
   }
 

@@ -8,6 +8,9 @@ import { createHeroCompare } from './hero-compare.js';
 import { createCoachBoard } from './coach-viz.js?v=20261124depth2';
 import { createPlayerCompare } from './player-compare.js';
 import { createTeamDossier } from './team-dossier.js?v=dossier-20261123notehistory';
+import {
+  isFocused, reasonsOf, focusNote, focusStats, REASONS, focusUi, applyFocusFilters,
+} from './focus-matches.js';
 
 /* 部署在子路径（如 /v3）时，接口前缀随页面前缀走；根路径下为空串。 */
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -24,6 +27,12 @@ export { featureSections };
 
 export function createFeatures(h) {
   const {esc, fmt, pct, diff, time, portrait, route, table, pageIntro, reload, currentQuery, icon, microChart, gameAnchorBar} = h;
+  /* 标签是异步加载的：首次到位或教练保存关注后，重绘当前页。 */
+  const refreshFocus = () => {
+    if (location.hash === '#featured' && document.querySelector('[data-focus-page]')) reload();
+  };
+  document.addEventListener('focus:ready', refreshFocus);
+  document.addEventListener('focus:change', refreshFocus);
   const heroCompare = createHeroCompare({esc, portrait});
   const coachBoard = createCoachBoard({esc});
   const playerCompare = createPlayerCompare({esc, portrait});
@@ -32,9 +41,9 @@ export function createFeatures(h) {
   const teamDossier = createTeamDossier({esc, fmt, pct, time, portrait, route, teamName: h.teamName});
   const endpoints = {
     teams:['studio/teams'], team:['studio/teams'], teamtraining:['v3/team-training'],
-    capture:['sources'], playerarchive:['v3/players-board','v3/identity/players'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], playercompare:['v3/players-board'], playerdetail:['v3/players-board','v3/custom-combos'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], herocompare:['studio/camp-compare'], featured:['matches','tempo'],
+    capture:['sources'], playerarchive:['v3/players-board','v3/identity/players'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], playercompare:['v3/players-board'], playerdetail:['v3/players-board','v3/custom-combos','v3/kpl/lane-baseline'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], herocompare:['studio/camp-compare'], featured:['matches','tempo'],
     reports:['v3/research/reports'], report:['v3/research/reports'], economy:['v3/economy'],
-    effect:['v3/effect', 'studio/workspace/players'], versions:['matches','v3/versions'], session:['studio/workspace/sessions'],
+    effect:['v3/effect', 'studio/workspace/players'], session:['studio/workspace/sessions'],
     weekly:['studio/workspace/schedules','studio/workspace/matches','v3/effect','v3/workspace/overview','studio/workspace/teams'],
     setup:['v3/workspace/overview','studio/workspace/teams','studio/workspace/players','studio/workspace/pending','v3/workspace/migration','studio/teams','v3/identity/accounts'],
     pending:['studio/workspace/pending','studio/workspace/teams','v3/vocab'], plan:['studio/workspace/schedules','studio/workspace/teams','v3/vocab','studio/workspace/dashboard','studio/workspace/competitions'],
@@ -665,15 +674,17 @@ export function createFeatures(h) {
       const day = (value) => value ? String(value).slice(5, 10).replace('-', '/') : '—';
       const compact = window.matchMedia('(max-width: 700px)').matches;
       const today = localDate();
-      const kplDay = String(data.kpl?.fileAt || '');
-      const peakDay = String(data.updatedAt || '').slice(0, 10);
+      const kplDay = String(data.kpl?.windowEnd || data.kpl?.fileAt || '');
+      const peakDay = String(data.sourceAt || data.updatedAt || '').slice(0, 10);
+      const crawl = data.crawl || {};
+      const crawlNote = crawl.running ? '抓取中' : (crawl.lastError ? '抓取异常' : '每日更新');
       const dateTag = (label, value, old) => `${label} <span class="${old ? 'is-old' : ''}">${day(value)}${old ? ' ⚠' : ''}</span>`;
-      const kpl = dateTag('KPL', kplDay, Boolean(kplDay) && kplDay !== today);
+      const kpl = dateTag('KPL窗口', kplDay, !kplDay);
       const peak = dateTag('巅峰千强', peakDay, Boolean(peakDay) && peakDay !== today);
       const power = dateTag('国服战力', peakDay, Boolean(peakDay) && peakDay !== today);
       const html = compact
-        ? `更新 <span class="${peakDay !== today ? 'is-old' : ''}">${day(peakDay)}${peakDay !== today ? ' ⚠' : ''}</span>`
-        : `数据更新 ${kpl} · ${peak} · ${power}`;
+        ? `${crawlNote} <span class="${peakDay !== today ? 'is-old' : ''}">${day(peakDay)}${peakDay !== today ? ' ⚠' : ''}</span>`
+        : `${crawlNote} · ${kpl} · ${peak} · ${power}`;
       document.querySelectorAll('[data-freshness]').forEach((el) => {
         el.classList.toggle('is-stale', Boolean(data.stale));
         el.innerHTML = html;
@@ -1557,7 +1568,7 @@ export function createFeatures(h) {
   function capturePage() {
     return withPage('导入表格','上传训练赛数据，先预览识别结果，再确认导入。',block('选择文件','支持 CSV、TSV、XLSX 与 XLSM，单个文件不超过 20 MB。',`<div class="upload-area"><span class="upload-icon">${icon('sources')}</span><h2>将比赛数据带入平台</h2><p>先选择文件，检查工作表、字段和数据粒度。预览文件会保留，原始文件不会被修改。</p><label class="primary upload-button">选择表格<input type="file" data-import-file accept=".csv,.tsv,.xlsx,.xlsm"></label><p data-import-status role="status"></p></div><div data-import-preview></div>`),false);
   }
-  /* ─── 对局子页（精选对局 / 训练纪录 / 版本对比）───────────────────────
+  /* ─── 对局子页（重点关注；原精选 / 版本对比已下线）─────────────────────
      沿用「一行一局」的读法：编号 → 对局 → 比分 → 时长 → 经济差 → 结果。
      筛选、排序、分组都在前端按已加载数据完成，不改后端口径。
      原「按条件找局」子页与对局档案的筛选重复，已下线（#query 回退到 #matches）。 */
@@ -1578,64 +1589,65 @@ export function createFeatures(h) {
     const v = items.map(f).filter(isNum);
     return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
   };
-  function featuredPage(matchesData, tempoData) {
+  /* 重点关注：不再按「经济曲线极值」自动挑局，而是把教练手动标记的理由摆出来。
+     标签说明由 match-tags.js 的后端覆盖层保存，统计只数真实标记，不推断/不造数据。 */
+  function focusPage(matchesData, tempoData) {
     const list = matchesData.matches || [];
-    const byKey = new Map(list.map((m) => [m.key, m]));
     const index = matchIndex(list);
-    const games = (tempoData.process?.matches || []).filter((g) => byKey.has(g.key) && Array.isArray(g.points) && g.points.length >= 2);
-    const avgAbs = meanOf(games, (g) => Math.abs(g.finalDiff || 0)) || 6000;
-    /* 复盘价值：反转次数 > 逆风翻盘 > 终局胶着 > 差距悬殊 > 时长 */
-    const valueOf = (g) => (g.signFlips || 0) * 1.6
-      + (isNum(g.diffAt?.['600']) && g.diffAt['600'] < 0 && g.win ? 2.4 : 0)
-      + Math.max(0, 1 - Math.abs(g.finalDiff || 0) / Math.max(2000, avgAbs * 1.6)) * 1.4
-      + Math.min(1, Math.abs(g.finalDiff || 0) / 12000) * 0.8
-      + Math.min(1, (g.duration || 0) / 1200) * 0.5;
-    /* 不按分数堆四张同质卡：每张回答一个不同的问题。首选被占用时顺延到下一条，
-       标题里的名次按全局真实排名写，不把第二名说成「最」。 */
-    const picked = [];
-    const taken = new Set();
-    const push = (g, reason) => {
-      if (!g || taken.has(g.key) || picked.length >= 4) return;
-      taken.add(g.key);
-      picked.push({ g, reason });
-    };
-    const pickBy = (list, reason) => {
-      const g = list.find((x) => !taken.has(x.key));
-      if (g && picked.length < 4) push(g, reason(g));
-    };
-    const rankOf = (f, dir, g) => 1 + games.filter((x) => dir === 'max' ? f(x) > f(g) : f(x) < f(g)).length;
-    const nth = (r, best, rest) => r === 1 ? best : `第 ${r} ${rest}`;
-    const total = games.length;
-    pickBy([...games].sort((a, b) => (b.signFlips || 0) - (a.signFlips || 0)),
-      (g) => `经济差正负切换 ${fmt(g.signFlips || 0)} 次，${total} 局里${nth(rankOf((x) => x.signFlips || 0, 'max', g), '最多', '多')}`);
-    pickBy([...games].sort((a, b) => Math.abs(a.finalDiff || 0) - Math.abs(b.finalDiff || 0)),
-      (g) => `终局只差 ${diff(g.finalDiff)}，${total} 局里${nth(rankOf((x) => -Math.abs(x.finalDiff || 0), 'max', g), '最接近', '接近')}`);
-    pickBy(games.filter((g) => isNum(g.diffAt?.['600']) && g.diffAt['600'] < 0 && g.win).sort((a, b) => a.diffAt['600'] - b.diffAt['600']),
-      (g) => `10 分钟落后 ${diff(-g.diffAt['600'])}，最后翻了回来`);
-    pickBy([...games].sort((a, b) => Math.abs(b.finalDiff || 0) - Math.abs(a.finalDiff || 0)),
-      (g) => `终局经济差 ${diff(g.finalDiff)}，${total} 局里${nth(rankOf((x) => Math.abs(x.finalDiff || 0), 'max', g), '最悬殊', '大')}`);
-    pickBy([...games].sort((a, b) => (b.duration || 0) - (a.duration || 0)),
-      (g) => `打了 ${time(g.duration)}，${total} 局里${nth(rankOf((x) => x.duration || 0, 'max', g), '最长', '长')}`);
-    for (const g of [...games].sort((a, b) => valueOf(b) - valueOf(a))) push(g, `时间轴完整，可作为同类局的对照`);
-    const cards = picked.map(({ g, reason }, i) => {
-      const m = byKey.get(g.key), no = index.get(g.key), cls = resCls(m.result);
-      return `<article class="fj-card ${cls}">
-        <div class="fj-card-top"><span class="fj-card-rank">${String(i + 1).padStart(2, '0')}</span>
-          <span class="fj-card-meta">第 ${no} 局 · ${esc(m.date || '')} · ${esc(m.opponent ? '对阵 ' + m.opponent : '对手未标注')}</span>
-          <span class="fj-badge ${cls}">${resLabel(m.result)}</span></div>
-        <h2>${esc(reason)}</h2>
-        <p>${time(g.duration)} 结束 · 10 分钟经济差 ${diff(g.diffAt?.['600'])} · 终局 ${diff(g.finalDiff)}</p>
-        ${microChart(g.points, '本队经济差')}
-        <div class="fj-card-foot"><span>正负切换 ${fmt(g.signFlips || 0)} 次 · 采样覆盖 ${pct(g.coverage)}</span><a href="${route('match', m.key)}">查看复盘 →</a></div>
+    const games = new Map((tempoData.process?.matches || []).map((g) => [g.key, g]));
+    const stats = focusStats(list);
+    const topReason = [...REASONS].sort((a, b) => stats.counts[b] - stats.counts[a])[0];
+    const chips = `<button type="button" class="fj-chip" data-focus-filter="" aria-pressed="${focusUi.reason === ''}">全部原因</button>`
+      + REASONS.map((name) => `<button type="button" class="fj-chip" data-focus-filter="${esc(name)}" aria-pressed="${focusUi.reason === name}">${esc(name)} <small>${fmt(stats.counts[name])}</small></button>`).join('');
+    const rows = [...list].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))
+      || (index.get(b.key) || 0) - (index.get(a.key) || 0));
+    const rowsHtml = rows.map((m) => {
+      const g = games.get(m.key);
+      const reasons = reasonsOf(m.key);
+      const note = focusNote(m.key);
+      const focused = isFocused(m.key);
+      const cls = resCls(m.result);
+      const econ = isNum(g?.finalDiff) ? g.finalDiff : (isNum(m.goldDiff) ? m.goldDiff : null);
+      const econText = econ === null ? '—' : diff(econ);
+      const score = `${m.own?.kills ?? '—'} : ${m.enemy?.kills ?? '—'}`;
+      const hay = [m.opponent, m.date, m.session, m.mode, note, reasons.join(' '), index.get(m.key)].join(' ');
+      return `<article class="fmx-row ${cls}" data-focus-row data-focus-is="${focused ? 1 : 0}"
+        data-focus-reasons="${esc(reasons.join('|'))}" data-focus-text="${esc(hay)}">
+        <div class="fmx-no">第 ${fmt(index.get(m.key))} 局<small>${esc((m.date || '日期未知').slice(0, 10))}</small></div>
+        <div class="fmx-main">
+          <div class="fmx-title"><b>${esc(m.opponent ? '对阵 ' + m.opponent : '对手未标注')}</b><span class="fj-badge ${cls}">${resLabel(m.result)}</span></div>
+          <div class="fmx-meta">${esc(m.mode || m.session || '训练赛')} · ${time(m.duration)} · 经济差 ${econText}</div>
+          ${reasons.length ? `<div class="fmx-reasons">${reasons.map((r) => `<span>${esc(r)}</span>`).join('')}</div>` : ''}
+          ${note ? `<p class="fmx-note">${esc(note)}</p>` : ''}
+        </div>
+        <div class="fmx-actions">
+          <a class="fmx-evidence" href="${route('match', m.key)}">打开复盘证据 →</a>
+          <button type="button" class="fmx-mark" data-focus-match="${esc(m.key)}"
+            data-focus-opponent="${esc(m.opponent || '')}" data-focus-date="${esc(m.date || '')}"
+            data-focus-result="${esc(m.result || '')}" data-focus-score="${esc(score)}"
+            data-focus-duration="${esc(time(m.duration))}" data-focus-diff="${esc(econText)}">${focused ? '编辑关注' : '＋ 关注'}</button>
+        </div>
       </article>`;
     }).join('');
-    const best = picked[0], bestMatch = best && byKey.get(best.g.key);
-    return withPage('精选对局', '按复盘价值排一遍，先看最值得回看的那几局。',
-      lede([['有完整时间轴', `${fmt(games.length)} 局`],
-        ['最值得回看', bestMatch ? `第 ${index.get(bestMatch.key)} 局` : '—', best ? best.reason : ''],
-        ['平均终局经济差', diff(meanOf(games, (g) => g.finalDiff)), '本队减对手'],
-        ['平均正负切换', `${fmt(meanOf(games, (g) => g.signFlips || 0), 1)} 次`]])
-      + `<div class="fj-cards">${cards || empty('当前范围没有可用的经济时间轴。')}</div>`, false);
+    const emptyHtml = stats.focused === 0
+      ? `<div class="fmx-empty"><b>还没有重点关注的局</b>
+           <span>在对局档案里点 ☆，或直接从全部对局里挑一局，标上原因和要追问的事实。</span>
+           <button type="button" class="fmx-empty-btn" data-focus-only>从全部对局里挑一局 →</button></div>`
+      : empty('没有符合当前原因或搜索条件的对局。');
+    return withPage('重点关注', '教练手动标记要拿去和队员谈的局，按原因汇总，点开就是证据。',
+      `<div data-focus-page>
+        ${lede([['已关注', `${fmt(stats.focused)} 局`, '教练手动标记'],
+          ['写有说明', `${fmt(stats.noted)} 局`, '可直接带进复盘'],
+          ['主要原因', topReason ? `${esc(topReason)} ${fmt(stats.counts[topReason])} 局` : '—'],
+          ['全部对局', `${fmt(list.length)} 局`]])}
+        <div class="fj-toolbar fmx-toolbar">
+          <label class="fj-field"><span>搜对手 / 说明 / 原因</span><input type="search" data-focus-search value="${esc(focusUi.query)}" placeholder="例：击杀 · 小龙团 · 决策"></label>
+          <button type="button" class="fmx-only" data-focus-only aria-pressed="${focusUi.onlyFocused}">${focusUi.onlyFocused ? '只看已关注' : '显示全部对局'}</button>
+          <span class="fj-count" data-focus-count>${fmt(stats.focused)} / ${fmt(list.length)} 局</span>
+        </div>
+        <div class="fmx-reason-bar">${chips}</div>
+        <div class="fmx-list">${stats.focused === 0 && focusUi.onlyFocused && !focusUi.reason && !focusUi.query ? emptyHtml : (rowsHtml || empty('当前范围没有对局。'))}</div>
+      </div>`, false);
   }
 
   function recordsPage(matchesData, tempoData) {
@@ -1675,60 +1687,6 @@ export function createFeatures(h) {
       + `<div class="fj-recs">${cards || empty('当前范围没有可计算的记录。')}</div>`, false);
   }
 
-  function versions(value) {
-    const matches = value.matches || [];
-    const covered = matches.filter((m) => m.version).length;
-    const dims = [['version', '版本'], ['session', '训练组']];
-    const active = covered ? 'version' : 'session';
-    /* 版本按数字段排（S42 → S41 → …），不要字典序把 S9 排在 S40 后面。 */
-    const versionRank = (raw) => {
-      const text = String(raw || '').toUpperCase();
-      const hit = /^S(\d+)$/.exec(text);
-      if (hit) return [2, Number(hit[1])];
-      const numbers = text.match(/\d+/g);
-      return numbers ? [1, ...numbers.map(Number)] : [0];
-    };
-    const versionCompare = (a, b) => {
-      const left = versionRank(a), right = versionRank(b);
-      for (let i = 0; i < Math.max(left.length, right.length); i++) {
-        const delta = (left[i] || 0) - (right[i] || 0);
-        if (delta) return delta;
-      }
-      return String(a).localeCompare(String(b), 'zh');
-    };
-    const rowsOf = (dim) => {
-      const keyOf = dim === 'version' ? (m) => m.version || '未记录版本' : (m) => m.session || '未标注训练组';
-      const groups = new Map();
-      for (const m of matches) {
-        const k = keyOf(m);
-        const g = groups.get(k) || { n: 0, w: 0, d: 0, seconds: 0, durs: 0, gold: 0, golds: 0 };
-        g.n++;
-        if (m.result === 'win' || m.result === 'loss') { g.d++; if (m.result === 'win') g.w++; }
-        if (isNum(m.duration) && m.duration > 0) { g.seconds += m.duration; g.durs++; }
-        if (isNum(m.goldDiff)) { g.gold += m.goldDiff; g.golds++; }
-        groups.set(k, g);
-      }
-      const max = Math.max(1, ...[...groups.values()].map((g) => g.n));
-      const ordered = [...groups.entries()].sort(dim === 'version'
-        ? (a, b) => versionCompare(b[0], a[0]) || b[1].n - a[1].n
-        : (a, b) => b[1].n - a[1].n);
-      return ordered.map(([name, g]) => `<div class="fj-group">
-        <span class="fj-group-name">${esc(name)}<small>${fmt(g.n)} 局</small></span>
-        <span class="fj-group-bar"><i style="width:${(g.n / max * 100).toFixed(1)}%"></i></span>
-        <span class="fj-group-stat"><small>胜率</small>${g.d ? pct(g.w / g.d * 100) : '—'}</span>
-        <span class="fj-group-stat"><small>平均时长</small>${g.durs ? time(g.seconds / g.durs) : '—'}</span>
-        <span class="fj-group-stat"><small>平均经济差</small>${g.golds ? diff(g.gold / g.golds) : '—'}</span>
-      </div>`).join('');
-    };
-    const note = covered ? '' : `<p class="fj-note">${fmt(matches.length)} 局都还没有记录版本，先按训练组看；在单局里补录版本后，这里会自动按版本分组。</p>`;
-    const chips = dims.map(([k, label]) => `<button type="button" class="fj-chip" data-fj-dim="${k}" aria-pressed="${k === active}">${label}</button>`).join('');
-    const panels = dims.map(([k]) => `<div class="fj-panel" data-fj-panel="${k}" ${k === active ? '' : 'hidden'}>${rowsOf(k)}</div>`).join('');
-    return withPage('版本对比', '按版本或训练组，看局数、胜率与平均节奏。',
-      lede([['对局', `${fmt(matches.length)} 局`],
-        ['版本覆盖', `${fmt(covered)} / ${fmt(matches.length)}`],
-        ['训练组', `${fmt(new Set(matches.map((m) => m.session).filter(Boolean)).size)} 个`]])
-      + block('分组对比', '胜率只以有胜负的对局为分母；平均经济差为本队减对手。', `<div class="fj-dims">${chips}</div>${note}${panels}`), false);
-  }
   function setup(value, teams, players, pending, migration, clusters, identity) {
     const o = value.overview || {}, profile = o.profile || {};
     identity = identity || {};
@@ -2402,6 +2360,11 @@ export function createFeatures(h) {
     const overview = data[3]?.overview || {};
     const teams = data[4]?.teams || [];
     const teamName = overview.profile?.teamName || overview.teamName || '本队';
+    const namedStaff = (Array.isArray(overview.profile?.staff) ? overview.profile.staff : [])
+      .filter((row) => row && String(row.name || '').trim()).slice(0, 4);
+    const byline = namedStaff.length
+      ? `<span class="report-byline">汇报：${namedStaff.map((row) => `${esc(row.title || '教练组成员')} ${esc(row.name)}`).join(' · ')}</span>`
+      : '';
     let start = /^\d{4}-\d{2}-\d{2}$/.test(String(key || '')) ? String(key) : '';
     if (!start) {
       const now = new Date();
@@ -2624,7 +2587,6 @@ export function createFeatures(h) {
       <div class="rl-card"><h2>重点战队战绩</h2>${focusRows.length
         ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="重点战队战绩"><table class="report-table"><thead><tr><th scope="col">战队</th><th scope="col" class="num">场次</th><th scope="col">胜负</th></tr></thead><tbody>${focusRows.map((row) => `<tr><th scope="row">${text(row.name)}</th><td class="num">${fmt(row.games)}</td><td>${row.games ? `<b class="${row.wins >= row.losses ? 'win' : 'loss'}">${row.wins} 胜 ${row.losses} 负</b>` : '本周无交手'}</td></tr>`).join('')}</tbody></table></div>`
         : '<p class="report-muted">未勾选重点战队；在报告库「生成训练周报」处勾选后写入本报告。</p>'}</div>
-      <p class="rl-note">口径：MVP 取营地逐局近 12 局中落在本周的记录；组合由本周对局上场英雄现算（同框即算一组，胜率只按有胜负的局算）；选手死亡 = 阵亡 / 场次（目标 ≤2），经济取每分钟金币（打野 800、其他 700、游走 450）。金黄 / 红 / 绿仅为提示，箭头与文字给出同等语义。</p>
     </section>`;
     const activeModules = weeklyTemplate();
     const activeById = new Map(activeModules.map((mod) => [mod.id, mod]));
@@ -2662,10 +2624,9 @@ export function createFeatures(h) {
     const generated = localDate();
     return `<div class="report-page"><div class="report-toolbar"><a class="control" href="#reports">← 返回报告库</a>${templatePanel}<div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>导出图片</button><button type="button" class="primary" data-sx-print>打印 / 保存 PDF</button></div></div><article class="report-sheet">
       <header class="report-brand"><span class="report-mark">${icon('setup')}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">训练周报</span></header>
-      <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT</span><h1>${text(teamName)} · ${text(start)} — ${text(end)}</h1><p>按训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p></div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
+      <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT</span><h1>${text(teamName)} · ${text(start)} — ${text(end)}</h1><p>按训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
       <div class="report-context"><span>对局上下文</span>胜率 ${currentRate != null ? pct(currentRate) : '—'} · 场均 ${time(avg)} · ${wins} 胜 ${losses} 负</div>
       ${bodyHtml}
-      <footer class="report-footer"><span>数据来源：营地记录、对局档案与训练效果</span><span>赛训数据 · ${generated}</span></footer>
     </article></div>`;
   }
   function sessionPage(value, key) {
@@ -2779,7 +2740,7 @@ export function createFeatures(h) {
         </div>
       </div>`+linkDialog, false, `<a class="control" href="#session/${encodeURIComponent(s.id || '')}?report=1">导出报告</a><a class="control" href="#plan">编辑计划</a>`, false, true);
   }
-  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),playerarchive:v=>playerPages.archivePage(v[0],v[1]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),featured:v=>featuredPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[2],v[1]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3],v[4]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),heroes:v=>heroes(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),versions:(v)=>versions(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
+  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),playerarchive:v=>playerPages.archivePage(v[0],v[1]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),featured:v=>focusPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[3],v[1],v[2]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3],v[4]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),heroes:v=>heroes(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
   async function api(path, options={}) {
     const r=await fetch(API_BASE + '/api/'+path,{cache:'no-store',...options});
     if(!r.ok){
@@ -4187,16 +4148,6 @@ if(captureIngestPage.change(event))return;
         .catch((error) => { renameBtn.disabled = false; window.alert(error.message); });
       return true;
     }
-    const dimChip = event.target.closest('[data-fj-dim]');
-    if (dimChip) {
-      const root = dimChip.closest('.section');
-      if (root) {
-        const dim = dimChip.dataset.fjDim;
-        root.querySelectorAll('[data-fj-dim]').forEach((chip) => chip.setAttribute('aria-pressed', String(chip === dimChip)));
-        root.querySelectorAll('[data-fj-panel]').forEach((panel) => { panel.hidden = panel.dataset.fjPanel !== dim; });
-      }
-      return true;
-    }
     const scrollBtn = event.target.closest('[data-hero-scroll]');
     if (scrollBtn) {
       const panel = document.querySelectorAll('.hero-detail-grid > .section')[Number(scrollBtn.dataset.heroScroll)];
@@ -4312,5 +4263,5 @@ if(captureIngestPage.change(event))return;
     event.preventDefault();
     box.focus();
   });
-  return {has:name=>Object.hasOwn(endpoints,name)||['ingest','shots','videos','replays','review'].includes(name),load:(name,key,signal,fresh)=>name==='ingest'?captureIngestPage.load(name,key,signal,fresh):name==='capture'?sourcePages.load(name,key,signal):'review'===name?reviewPage.load(name,key,signal):['shots','videos','replays'].includes(name)?sourcePages.load(name,key,signal):Promise.all((name==='report'?[...endpoints[name],'v3/research/reports/'+encodeURIComponent(key)]:name==='hero'?[...endpoints[name],'studio/camp-partners?hero='+encodeURIComponent(key),'matches','v3/facts/lane_matchup','v3/hero-detail/'+encodeURIComponent(key)]:name==='playerdetail'?[...endpoints[name],'v3/player-detail?player='+encodeURIComponent(key)]:name==='session'?['studio/workspace/sessions/'+encodeURIComponent(key)]:name==='competition'?['studio/workspace/competitions/'+encodeURIComponent(key),'v3/players-board']:name==='team'?[...endpoints[name],'studio/camp-compare?team='+encodeURIComponent(key),'v3/team-bp','v3/team-deep?team='+encodeURIComponent(key),'v3/team-behavior']:endpoints[name]).map(p=>name==='team'&&String(p).startsWith('v3/team-deep')?api(p,{signal}).catch(()=>null):api(p==='matches'||p==='tempo'||p==='v3/identity'?p+currentQuery():p,{signal}))).then(async data=>{if(name!=='weekly')return data;const metrics=await api('studio/workspace/metrics/week?start='+encodeURIComponent(key||''),{signal});const extra=await weeklyLoadExtra(key,signal);return [...data,metrics,...extra];}),render:(name,data,key)=>renders[name](data,key),submit,click,change,afterRender:()=>{loadTeamTagFilters();loadFreshness();updatePairs();updateAnchorNav();const tmJumpButtons=[...document.querySelectorAll('.tm-jump [data-tm-jump]')];if(tmJumpButtons.length){const tmBasicButton=tmJumpButtons.find(b=>b.dataset.tmJump==='tm-basic');const tmGroups=[{button:tmBasicButton,target:document.getElementById('tm-score')},...tmJumpButtons.filter(b=>b.dataset.tmJump!=='tm-basic').map(b=>({button:b,target:document.getElementById(b.dataset.tmJump)}))].filter(g=>g.button&&g.target);if(tmGroups.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);window.__tmJumpScroll=()=>{let active=tmGroups[0];for(const group of tmGroups){if(group.target.getBoundingClientRect().top<=180)active=group;}if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)active=tmGroups[tmGroups.length-1];tmJumpButtons.forEach(b=>b.setAttribute('aria-current',String(b===active.button)));};window.addEventListener('scroll',window.__tmJumpScroll,{passive:true});window.__tmJumpScroll();}}const teamRoot=document.querySelector('[data-tm-directory]');if(teamRoot){syncTeamList(teamRoot);linkTeamGames(teamRoot);}const tpSecs=[...document.querySelectorAll('.tp-page .tp-sec')];if(tpSecs.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);const tpButtons=[...document.querySelectorAll('.tp-jump [data-tm-jump], .tp-bottom-nav [data-tm-jump]')];if(tpButtons.length&&'IntersectionObserver'in window){window.__tpSecObserver?.disconnect();const observer=new IntersectionObserver((entries)=>{const visible=entries.filter((e)=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!visible)return;tpButtons.forEach((b)=>b.setAttribute('aria-current',String(b.dataset.tmJump===visible.target.id)));},{rootMargin:'-90px 0px -55% 0px',threshold:[0,.15,.5,.8]});tpSecs.forEach((sec)=>observer.observe(sec));window.__tpSecObserver=observer;}}captureIngestPage.afterRender();sourcePages.afterRender();reviewPage.afterRender();bindSxDialogs();const setupRoot=document.querySelector('[data-sx-anchor="teams"]');if(setupRoot)syncSetupTeams(setupRoot);const ownRoot=document.querySelector('[data-sx-scope="ownership"]');if(ownRoot)syncOwnershipGroups(ownRoot);const pendingRoot=document.querySelector('[data-sx-scope="pending"]');if(pendingRoot)syncPendingQueue(pendingRoot)}};
+  return {has:name=>Object.hasOwn(endpoints,name)||['ingest','shots','videos','replays','review'].includes(name),load:(name,key,signal,fresh)=>name==='ingest'?captureIngestPage.load(name,key,signal,fresh):name==='capture'?sourcePages.load(name,key,signal):'review'===name?reviewPage.load(name,key,signal):['shots','videos','replays'].includes(name)?sourcePages.load(name,key,signal):Promise.all((name==='report'?[...endpoints[name],'v3/research/reports/'+encodeURIComponent(key)]:name==='hero'?[...endpoints[name],'studio/camp-partners?hero='+encodeURIComponent(key),'matches','v3/facts/lane_matchup','v3/hero-detail/'+encodeURIComponent(key)]:name==='playerdetail'?[...endpoints[name],'v3/player-detail?player='+encodeURIComponent(key)]:name==='session'?['studio/workspace/sessions/'+encodeURIComponent(key)]:name==='competition'?['studio/workspace/competitions/'+encodeURIComponent(key),'v3/players-board']:name==='team'?[...endpoints[name],'studio/camp-compare?team='+encodeURIComponent(key),'v3/team-bp','v3/team-deep?team='+encodeURIComponent(key),'v3/team-behavior']:endpoints[name]).map(p=>name==='team'&&String(p).startsWith('v3/team-deep')?api(p,{signal}).catch(()=>null):api(p==='matches'||p==='tempo'||p==='v3/identity'?p+currentQuery():p,{signal}))).then(async data=>{if(name!=='weekly')return data;const metrics=await api('studio/workspace/metrics/week?start='+encodeURIComponent(key||''),{signal});const extra=await weeklyLoadExtra(key,signal);return [...data,metrics,...extra];}),render:(name,data,key)=>renders[name](data,key),submit,click,change,afterRender:()=>{applyFocusFilters();loadTeamTagFilters();loadFreshness();updatePairs();updateAnchorNav();const tmJumpButtons=[...document.querySelectorAll('.tm-jump [data-tm-jump]')];if(tmJumpButtons.length){const tmBasicButton=tmJumpButtons.find(b=>b.dataset.tmJump==='tm-basic');const tmGroups=[{button:tmBasicButton,target:document.getElementById('tm-score')},...tmJumpButtons.filter(b=>b.dataset.tmJump!=='tm-basic').map(b=>({button:b,target:document.getElementById(b.dataset.tmJump)}))].filter(g=>g.button&&g.target);if(tmGroups.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);window.__tmJumpScroll=()=>{let active=tmGroups[0];for(const group of tmGroups){if(group.target.getBoundingClientRect().top<=180)active=group;}if(window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)active=tmGroups[tmGroups.length-1];tmJumpButtons.forEach(b=>b.setAttribute('aria-current',String(b===active.button)));};window.addEventListener('scroll',window.__tmJumpScroll,{passive:true});window.__tmJumpScroll();}}const teamRoot=document.querySelector('[data-tm-directory]');if(teamRoot){syncTeamList(teamRoot);linkTeamGames(teamRoot);}const tpSecs=[...document.querySelectorAll('.tp-page .tp-sec')];if(tpSecs.length){if(window.__tmJumpScroll)window.removeEventListener('scroll',window.__tmJumpScroll);const tpButtons=[...document.querySelectorAll('.tp-jump [data-tm-jump], .tp-bottom-nav [data-tm-jump]')];if(tpButtons.length&&'IntersectionObserver'in window){window.__tpSecObserver?.disconnect();const observer=new IntersectionObserver((entries)=>{const visible=entries.filter((e)=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!visible)return;tpButtons.forEach((b)=>b.setAttribute('aria-current',String(b.dataset.tmJump===visible.target.id)));},{rootMargin:'-90px 0px -55% 0px',threshold:[0,.15,.5,.8]});tpSecs.forEach((sec)=>observer.observe(sec));window.__tpSecObserver=observer;}}captureIngestPage.afterRender();sourcePages.afterRender();reviewPage.afterRender();bindSxDialogs();const setupRoot=document.querySelector('[data-sx-anchor="teams"]');if(setupRoot)syncSetupTeams(setupRoot);const ownRoot=document.querySelector('[data-sx-scope="ownership"]');if(ownRoot)syncOwnershipGroups(ownRoot);const pendingRoot=document.querySelector('[data-sx-scope="pending"]');if(pendingRoot)syncPendingQueue(pendingRoot)}};
 }

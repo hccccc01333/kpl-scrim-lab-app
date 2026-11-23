@@ -926,8 +926,9 @@ export function createPlayers(h) {
   /* 具体实现拆到 player-detail.js：五块纵向模块，全部按实际分路统计。
      单人详情的时间窗口状态与详情载荷都存在 st.pd 里，切换周期时只重画这一页，
      不重新请求接口，也不改变其他页面的筛选。 */
-  function soloPage(board, name, detail, comboPool) {
+  function soloPage(board, name, detail, comboPool, kplBaseline) {
     st.pd = {...(st.pd || {}), board, name, detail,
+      kplBaseline: kplBaseline || (st.pd && st.pd.kplBaseline) || null,
       comboPool: comboPool || (st.pd && st.pd.comboPool) || null};
     const pool = ((board && board.players) || []).filter((p) => p && p.name && (p.games || 0) >= 1);
     const own = pool.filter((p) => p.side === 'own');
@@ -938,11 +939,22 @@ export function createPlayers(h) {
       st.pd.ui = {...(st.pd.ui || {}), ...fromUrl};
       st.pd.hashFor = name;
     }
+    /* 深链指定了 KPL 赛事时，基准要按那一项赛事重算，不能拿全部赛事冒充。 */
+    const wantedLeague = st.pd.ui && st.pd.ui.kplLeague;
+    if (wantedLeague && (st.pd.kplBaseline || {}).league !== wantedLeague && !st.pd.kplFetching) {
+      st.pd.kplFetching = true;
+      fetch(`${API_BASE}/api/v3/kpl/lane-baseline?league=${encodeURIComponent(wantedLeague)}`,
+        {headers: {Accept: 'application/json'}})
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => { if (data) { st.pd.kplBaseline = data; refreshSolo(); } })
+        .catch(() => {})
+        .finally(() => { st.pd.kplFetching = false; });
+    }
     bindSoloKeys();
     bindTrendDrag();
     /* 深链直接进详情时，档案可能还没加载过：拉一次，回来整页重画。 */
     profileUI.ensure();
-    return detailPage.render(board, name, detail);
+    return detailPage.render(board, name, detail, st.pd.kplBaseline);
   }
 
   /* 标准线（评级规则）异步取到后重画一次详情页；只影响单人页，不动档案筛选。 */
@@ -962,7 +974,7 @@ export function createPlayers(h) {
      前六个是切片（范围 / 自定义起止 / 分路 / 英雄 / 对手 / 结果 / 门槛），
      后面是各卡自己的那一维；旧的 lane/period 键继续认，老链接不会失效。 */
   const FILTER_KEYS = ['range', 'from', 'to', 'lane', 'hero', 'opp', 'res', 'min',
-    'benchLane', 'bench', 'benchField',
+    'benchLane', 'bench', 'benchField', 'benchSource', 'kplLeague',
     'heroLane', 'roleView', 'cmpHero', 'cmpMetric', 'period', 'dayMetric', 'dayLane',
     'extreme', 'winLane', 'stab', 'stabMetric', 'matrix',
     'counterMetric', 'comboSort', 'comboHero', 'altHero', 'heroMetric', 'heroTop'];
@@ -1123,6 +1135,15 @@ export function createPlayers(h) {
     if (pdxSel && st.pd && st.pd.detail) {
       st.pd.ui = {...(st.pd.ui || {}), [pdxSel.dataset.pdxSelect]: pdxSel.value};
       writeFilterHash();
+      if (pdxSel.dataset.pdxSelect === 'kplLeague') {
+        const league = pdxSel.value;
+        fetch(`${API_BASE}/api/v3/kpl/lane-baseline?league=${encodeURIComponent(league)}`,
+          {headers: {Accept: 'application/json'}})
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => { if (data) { st.pd.kplBaseline = data; refreshSolo(); } })
+          .catch(() => {});
+        return true;
+      }
       refreshSolo();
       return true;
     }

@@ -73,6 +73,11 @@ export function reloadTags() {
   return ensureLoaded();
 }
 
+/** 一次写入整局的标签与关联备注；重点关注页用它原子地保存「关注 + 原因 + 说明」。 */
+export function setMatchTags(key, tags, notes) {
+  return apply(text(key), Array.isArray(tags) ? tags.map(text).filter(Boolean) : [], notes);
+}
+
 function ensureLoaded() {
   if (state.ready) return Promise.resolve(state);
   if (state.loading) return state.loading;

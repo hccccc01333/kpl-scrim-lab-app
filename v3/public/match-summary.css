@@ -157,9 +157,12 @@
   display: grid; grid-template-columns: minmax(0, 1fr) calc(88px * var(--k)) minmax(0, 1fr);
   align-items: stretch; border-bottom: 1px solid #edf1f4;
 }
-.md-page .ms-lane-side { display: grid; gap: calc(2px * var(--k)); min-width: 0; padding: calc(5px * var(--k)) calc(9px * var(--k)); }
+.md-page .ms-lane-side { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: calc(10px * var(--k)); min-width: 0; padding: calc(5px * var(--k)) calc(9px * var(--k)); }
+.md-page .ms-lane-core { display: grid; gap: calc(2px * var(--k)); min-width: 0; }
 .md-page .ms-lane-side.own { background: linear-gradient(90deg, rgba(47, 127, 224, .075), rgba(47, 127, 224, .012)); }
-.md-page .ms-lane-side.foe { background: linear-gradient(270deg, rgba(210, 74, 74, .075), rgba(210, 74, 74, .012)); text-align: right; }
+.md-page .ms-lane-side.foe { grid-template-columns: auto minmax(0, 1fr); background: linear-gradient(270deg, rgba(210, 74, 74, .075), rgba(210, 74, 74, .012)); text-align: right; }
+.md-page .ms-lane-side.foe .ms-lane-core { order: 2; }
+.md-page .ms-lane-side.foe .ms-lane-items { order: 1; }
 .md-page .ms-lane-who { display: flex; align-items: center; gap: calc(8px * var(--k)); min-width: 0; }
 .md-page .ms-lane-side.foe .ms-lane-who { flex-direction: row-reverse; }
 .md-page .ms-lane-face {
@@ -180,12 +183,13 @@
   font-size: max(9px, calc(8.5px * var(--k))); line-height: 1.3; color: #8a9aa6;
 }
 .md-page .ms-lane-side.foe .ms-lane-who span { text-align: right; }
-.md-page .ms-lane-items { display: flex; align-items: center; flex-wrap: wrap; gap: calc(3px * var(--k)); }
-.md-page .ms-lane-side.foe .ms-lane-items { justify-content: flex-end; }
+.md-page .ms-lane-items { display: flex; align-items: center; flex-wrap: nowrap; gap: calc(4px * var(--k)); }
+.md-page .ms-lane-side.own .ms-lane-items { justify-content: flex-end; }
+.md-page .ms-lane-side.foe .ms-lane-items { justify-content: flex-start; }
 .md-page .ms-lane-items img,
 .md-page .ms-lane-items i {
-  display: block; flex: none; width: calc(18px * var(--k)); height: calc(18px * var(--k));
-  border-radius: calc(4px * var(--k)); border: 1px solid rgba(40, 80, 120, .14);
+  display: block; flex: none; width: calc(22px * var(--k)); height: calc(22px * var(--k));
+  border-radius: calc(5px * var(--k)); border: 1px solid rgba(40, 80, 120, .14);
   object-fit: cover; background: #f4f7fa;
 }
 .md-page .ms-lane-items i {
@@ -246,6 +250,25 @@
   font-size: max(10px, calc(9px * var(--k)));
 }
 .md-page .ms-totals b { color: #42586a; font-weight: 700; }
+
+/* 总量卡：首屏之后、比赛脉搏之前 */
+.md-page .md-totals-card { margin-top: 12px; padding: 14px 18px 16px; }
+.md-page .md-totals-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.md-page .md-totals-head b { font-size: 14px; font-weight: 800; color: #20374b; }
+.md-page .md-totals-head span { color: #7b8e9d; font-size: 10.5px; }
+.md-page .md-totals-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.md-page .md-total-metric { min-width: 0; padding: 11px 13px; border: 1px solid #e8eef3; border-radius: 10px; background: #fbfdff; }
+.md-page .md-total-label { color: #7b8e9d; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; }
+.md-page .md-total-vals { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.md-page .md-total-vals b { font: 800 18px/1.2 Manrope, "Segoe UI", sans-serif; letter-spacing: -.03em; }
+.md-page .md-total-vals b.own { color: #1f6fcf; }
+.md-page .md-total-vals b.foe { color: #cf3f3f; }
+.md-page .md-total-vals span { color: #9aabb8; font-size: 10px; }
+.md-page .md-total-bars { display: grid; gap: 3px; margin-top: 9px; }
+.md-page .md-total-bars i { display: block; height: 4px; border-radius: 2px; background: #e8eef4; overflow: hidden; }
+.md-page .md-total-bars i::after { content: ''; display: block; height: 100%; width: var(--w, 0%); border-radius: inherit; background: #3b8be8; }
+.md-page .md-total-bars i.foe::after { background: #d24a4a; }
+
 /* 脉搏独立成卡：首屏五路表之后，不再把结论卡拉到 1400px */
 .md-page .ms-pulse-card {
   --k: 1.5437;

@@ -4882,9 +4882,13 @@ def bp_studio_counter_chain(request: Request):
     if bo not in (0, 3, 5, 7):
         raise HTTPException(400, 'bo 只能是 0 / 3 / 5 / 7')
     prefix = {}
+    # 逐手键（red1/red2/blue2/blue3/blue4/blue5）对应前置条件里的单手卡；
+    # 合并楼层键保留兼容旧链接/旧缓存。
     for stage in ('blueBan1', 'redBan1', 'blueBan2', 'redBan2', 'blueBan3', 'redBan3',
                   'blueBan4', 'redBan4', 'blueBan5', 'redBan5',
-                  'blue1', 'red12', 'blue23', 'red3', 'red4', 'blue45', 'red5'):
+                  'blue1', 'red1', 'red2', 'blue2', 'blue3', 'red3',
+                  'red4', 'blue4', 'blue5', 'red5',
+                  'red12', 'blue23', 'blue45'):
         raw = str(values.get(f'prefix_{stage}') or '').strip()
         if raw:
             prefix[stage] = [hero.strip() for hero in raw.split(',') if hero.strip()]
@@ -6567,11 +6571,11 @@ def lineup_tags_meta():
 
 
 # KPL 分路平均：只从 KPL BP 逐局事实里能算的字段出发，没有的字段不对比。
-_KPL_LANE_CACHE = {'mtime': 0.0, 'value': None}
+_KPL_LANE_CACHE = {'stamp': 0.0, 'by_league': {}, 'leagues': []}
 
 
-def _kpl_lane_baseline():
-    """按 KPL BP 对局算各分路平均；只输出有真实样本的指标。
+def _kpl_lane_baseline(league=''):
+    """按 KPL BP 对局算各分路平均；可按赛事过滤。只输出有真实样本的指标。
 
     winRate 来自每局胜负；heroWinRate 是该分路英雄在 KPL 的外部胜率均值。
     逐局选手面板（控制时长 / 视野 / 承伤等）不在 BP 包里，因此不输出这些字段。
@@ -6580,9 +6584,15 @@ def _kpl_lane_baseline():
     ext_path = ROOT / 'data' / 'facts' / 'hero_external_stats.json'
     tag_path = ROOT / 'resources' / 'hero_tags.json'
     stamp = max((p.stat().st_mtime_ns for p in (bp_path, ext_path, tag_path) if p.exists()), default=0)
+    league = str(league or '').strip()
+    key = league or '__all__'
     cached = _KPL_LANE_CACHE
-    if cached['value'] is not None and cached['mtime'] == stamp:
-        return cached['value']
+    if cached['stamp'] == stamp and key in cached['by_league']:
+        return cached['by_league'][key]
+    if cached['stamp'] != stamp:
+        cached['stamp'] = stamp
+        cached['by_league'] = {}
+        cached['leagues'] = []
 
     external = {}
     if ext_path.exists():
@@ -6598,8 +6608,8 @@ def _kpl_lane_baseline():
         except (OSError, ValueError):
             hero_tags = {}
 
-    cells = {}
-    total = 0
+    games = []
+    league_counts = {}
     if bp_path.exists():
         with bp_path.open(encoding='utf-8') as handle:
             for line in handle:
@@ -6610,35 +6620,53 @@ def _kpl_lane_baseline():
                     game = json.loads(line)
                 except ValueError:
                     continue
-                total += 1
-                try:
-                    win_camp = int(game.get('winCamp') or 0)
-                except (TypeError, ValueError):
-                    win_camp = 0
-                for camp, players in (game.get('players') or {}).items():
-                    try:
-                        won = int(camp) == win_camp
-                    except (TypeError, ValueError):
-                        won = False
-                    for player in players or []:
-                        position = str(player.get('position') or '')
-                        hero = str(player.get('hero') or '')
-                        if position == '打野':
-                            sub = ((hero_tags.get(hero) or {}).get('lanes') or {}).get('打野') or ''
-                            lane = '打野·坦野' if '坦野' in str(sub) else '打野·野核'
-                        else:
-                            lane = position
-                        if not lane or lane == '未知':
-                            continue
-                        cell = cells.setdefault(lane, {'games': 0, 'wins': 0, 'heroWrSum': 0.0, 'heroWrN': 0})
-                        cell['games'] += 1
-                        if won:
-                            cell['wins'] += 1
-                        row = external.get(hero) or {}
-                        wr = row.get('winRate')
-                        if isinstance(wr, (int, float)) and not isinstance(wr, bool):
-                            cell['heroWrSum'] += float(wr)
-                            cell['heroWrN'] += 1
+                games.append(game)
+                name = str(game.get('leagueName') or '').strip()
+                if name:
+                    league_counts[name] = league_counts.get(name, 0) + 1
+    cached['leagues'] = [{'name': name, 'games': count}
+                         for name, count in sorted(league_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    if league and league not in league_counts:
+        value = {'schema': 'kpl-lane-baseline-v1', 'games': 0, 'league': league,
+                 'source': 'KPL BP 逐局事实 + KPL 英雄外部胜率',
+                 'fields': ['winRate', 'heroWinRate'], 'leagues': cached['leagues'], 'lanes': {}}
+        cached['by_league'][key] = value
+        return value
+
+    cells = {}
+    total = 0
+    for game in games:
+        if league and str(game.get('leagueName') or '').strip() != league:
+            continue
+        total += 1
+        try:
+            win_camp = int(game.get('winCamp') or 0)
+        except (TypeError, ValueError):
+            win_camp = 0
+        for camp, players in (game.get('players') or {}).items():
+            try:
+                won = int(camp) == win_camp
+            except (TypeError, ValueError):
+                won = False
+            for player in players or []:
+                position = str(player.get('position') or '')
+                hero = str(player.get('hero') or '')
+                if position == '打野':
+                    sub = ((hero_tags.get(hero) or {}).get('lanes') or {}).get('打野') or ''
+                    lane = '打野·坦野' if '坦野' in str(sub) else '打野·野核'
+                else:
+                    lane = position
+                if not lane or lane == '未知':
+                    continue
+                cell = cells.setdefault(lane, {'games': 0, 'wins': 0, 'heroWrSum': 0.0, 'heroWrN': 0})
+                cell['games'] += 1
+                if won:
+                    cell['wins'] += 1
+                row = external.get(hero) or {}
+                wr = row.get('winRate')
+                if isinstance(wr, (int, float)) and not isinstance(wr, bool):
+                    cell['heroWrSum'] += float(wr)
+                    cell['heroWrN'] += 1
 
     lanes = {}
     for lane, cell in cells.items():
@@ -6650,18 +6678,17 @@ def _kpl_lane_baseline():
             'heroWinRate': round(cell['heroWrSum'] / cell['heroWrN'], 1) if cell['heroWrN'] else None,
             'heroWinSamples': cell['heroWrN'],
         }
-    value = {'schema': 'kpl-lane-baseline-v1', 'games': total,
+    value = {'schema': 'kpl-lane-baseline-v1', 'games': total, 'league': league,
              'source': 'KPL BP 逐局事实 + KPL 英雄外部胜率',
-             'fields': ['winRate', 'heroWinRate'], 'lanes': lanes}
-    cached['mtime'] = stamp
-    cached['value'] = value
+             'fields': ['winRate', 'heroWinRate'], 'leagues': cached['leagues'], 'lanes': lanes}
+    cached['by_league'][key] = value
     return value
 
 
 @router.get('/api/v3/kpl/lane-baseline')
-def kpl_lane_baseline():
-    """KPL 分路平均指标：只有能从 KPL 数据算出的字段，其他字段不对比。"""
-    return _kpl_lane_baseline()
+def kpl_lane_baseline(league: str = ''):
+    """KPL 分路平均指标；league 传 leagueName 可只看某一项赛事。"""
+    return _kpl_lane_baseline(league)
 
 
 # ── 赛训组自家克制库（模块九前半）：KPL 初稿 + 教练删改，与营地数据分开 ──
@@ -6863,7 +6890,15 @@ def _rc_check(kind, doc):
             raise HTTPException(400, f'{key} 必须是对象数组')
     if kind == 'counters':
         for row in list(doc.get('heroPairs') or []) + list(doc.get('comboPairs') or []):
-            if not str(row.get('a') or '').strip() or not str(row.get('b') or '').strip():
+            # 兼容旧的单行单英雄，也接受新的「一行一组」aHeroes/bHeroes 集合。
+            a_side = row.get('aHeroes')
+            b_side = row.get('bHeroes')
+            if isinstance(a_side, list) and isinstance(b_side, list):
+                if not [str(x) for x in a_side if str(x).strip()] or not [str(x) for x in b_side if str(x).strip()]:
+                    raise HTTPException(400, '克制关系每条都要有攻方与受方英雄')
+                if set(map(str, a_side)) & set(map(str, b_side)):
+                    raise HTTPException(400, '克制关系的攻方与受方不能包含同一个英雄')
+            elif not str(row.get('a') or '').strip() or not str(row.get('b') or '').strip():
                 raise HTTPException(400, '克制关系每条都要有攻方(a)与受方(b)')
     if kind == 'combos':
         for row in doc.get('combos') or []:
@@ -6914,6 +6949,122 @@ def tiers_get():
             'capabilities': tiers.CAPABILITIES, 'thresholds': tiers.THRESHOLDS}
 
 
+# === 规则中心「克制关系」KPL 高准确率初稿 ===
+# 只生成可预览的候选行；教练确认后才写进 rules_counters.json，手工条目不会被覆盖。
+_COUNTER_SEED_CACHE: dict | None = None
+
+
+def _counter_key(row):
+    a = row.get('aHeroes')
+    b = row.get('bHeroes')
+    if not isinstance(a, list) or not isinstance(b, list):
+        a = [str(row.get('a') or '')]
+        b = [str(row.get('b') or '')]
+    return (tuple(sorted(str(x) for x in a if str(x).strip())),
+            tuple(sorted(str(x) for x in b if str(x).strip())))
+
+
+def _counter_seed_report() -> dict:
+    global _COUNTER_SEED_CACHE
+    if _COUNTER_SEED_CACHE is None:
+        scripts = str(ROOT / 'scripts')
+        if scripts not in sys.path:
+            sys.path.insert(0, scripts)
+        import seed_counter_relations as seed
+        hero_rows, combo_rows, meta = seed.preview()
+        _COUNTER_SEED_CACHE = {'rows': list(hero_rows) + list(combo_rows), 'meta': meta}
+    return _COUNTER_SEED_CACHE
+
+
+@router.get('/api/v3/rules-center/counters/seed-preview')
+def rules_center_counters_seed_preview():
+    """返回 KPL 高准确率克制初稿供预览；不写任何文件。"""
+    report = _counter_seed_report()
+    return {'ok': True, 'rows': report['rows'], 'meta': report['meta']}
+
+
+@router.post('/api/v3/rules-center/counters/seed-apply')
+def rules_center_counters_seed_apply(payload: dict = Body(...)):
+    """把教练勾选的初稿行并入规则表；按 revision 乐观锁，保留手工条目。"""
+    global _COUNTER_SEED_CACHE
+    ids = {str(x) for x in (payload.get('ids') or []) if str(x).strip()}
+    if not ids:
+        raise HTTPException(400, '没有勾选要加入的初稿')
+    try:
+        revision = int(payload.get('revision'))
+    except (TypeError, ValueError):
+        raise HTTPException(400, 'revision 必须是整数')
+
+    report = _counter_seed_report()
+    selected = [row for row in report['rows'] if str(row.get('id')) in ids]
+    if not selected:
+        raise HTTPException(400, '勾选的初稿不存在，请重新预览')
+
+    name = _RC_HISTORY_NAMES['counters']
+    with _RC_LOCK:
+        current = _rc_read('counters') or _rc_default('counters')
+        current_rev = int(current.get('revision') or 0)
+        if revision != current_rev:
+            raise HTTPException(409, '规则已被其他人更新，请刷新后再加入初稿。')
+        doc = dict(current)
+        hero_rows = list(doc.get('heroPairs') or [])
+        combo_rows = list(doc.get('comboPairs') or [])
+        existing = {_counter_key(row) for row in hero_rows + combo_rows}
+        added = []
+        for row in selected:
+            key = _counter_key(row)
+            if key in existing:
+                continue
+            a = row.get('aHeroes') or []
+            b = row.get('bHeroes') or []
+            (hero_rows if len(a) == len(b) == 1 else combo_rows).append(row)
+            existing.add(key)
+            added.append(str(row.get('id')))
+        doc['heroPairs'] = hero_rows
+        doc['comboPairs'] = combo_rows
+        doc['revision'] = current_rev
+        _rc_check('counters', doc)
+        import config_history
+        config_history.record(name, current, doc, summary=f'从 KPL 初稿加入 {len(added)} 条克制关系')
+        doc['revision'] = current_rev + 1
+        doc['updatedAt'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        _rc_write('counters', doc)
+    return {'ok': True, 'added': len(added), 'skipped': len(selected) - len(added),
+            'revision': doc['revision'], 'updatedAt': doc['updatedAt']}
+
+
+# === 规则中心「克制关系」赛事定稿版本 ===
+@router.get('/api/v3/rules-center/counters/version')
+def rules_center_counters_version(competition: str = ''):
+    """查某赛事当前使用哪一份定稿快照；没有定稿则返回 null。"""
+    import rules_counter_versions as versions
+    found = versions.latest(competition)
+    return {'ok': True, 'competition': str(competition or ''), 'version': found}
+
+
+@router.post('/api/v3/rules-center/counters/finalize')
+def rules_center_counters_finalize(payload: dict = Body(...)):
+    """把当前 live 克制表里适用于该赛事的条目整份留档，作为该赛事最终版本。"""
+    import rules_counter_versions as versions
+    competition_id = str(payload.get('competitionId') or '').strip()
+    if not competition_id:
+        raise HTTPException(400, '请先选择赛事')
+    comp = None
+    if DB.is_file():
+        try:
+            from workspace_store import Workspace
+            comp = Workspace(DB).get_competition(competition_id)
+        except Exception:  # noqa: BLE001 - 查不到赛事名不影响按 ID 留档
+            comp = None
+    comp = comp or {'id': competition_id, 'name': str(payload.get('competitionName') or competition_id)}
+    current = _rc_read('counters') or _rc_default('counters')
+    version = versions.finalize(comp, current, str(payload.get('summary') or ''))
+    import config_history
+    config_history.record(_RC_HISTORY_NAMES['counters'], current, current,
+                          summary=f'克制关系定稿留档：{comp.get("name") or competition_id}')
+    return {'ok': True, 'version': version}
+
+
 @router.get('/api/v3/rules-center/{kind}')
 def rules_center_get(kind: str, competition: str = ''):
     """读取一类规则；带 competition 时按规则条目的 effective 过滤（赛事域 M3）。
@@ -6927,6 +7078,16 @@ def rules_center_get(kind: str, competition: str = ''):
     if doc is None:
         raise HTTPException(404, '规则文件不存在或无法解析')
     competition_id = (competition or '').strip()
+    # 克制关系：赛事已定稿的，复盘一律读快照；live 表继续给规则中心编辑用（不带 competition）。
+    if kind == 'counters' and competition_id:
+        import rules_counter_versions as versions
+        found = versions.latest(competition_id)
+        if found:
+            doc = dict(found.get('doc') or {})
+            doc['sourceVersion'] = {key: found.get(key) for key in
+                                    ('id', 'competitionId', 'competitionName',
+                                     'finalizedAt', 'summary', 'sourceRevision', 'counts')}
+            return {**doc, 'saved': _rc_path(kind).is_file(), 'historyName': _RC_HISTORY_NAMES[kind]}
     if competition_id and DB.is_file():
         try:
             from rules_effective import resolve_doc

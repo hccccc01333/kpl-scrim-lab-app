@@ -45,23 +45,37 @@ BAN_STAGES = (
     ('blueBan5', '蓝方 Ban 5', '1', 4, 16),
 )
 
-# Pick 的全局手序（和上面 Ban 的手序合起来就是整场 BP 的顺序）
-PICK_HANDS = {'blue1': 5, 'red12': 6, 'blue23': 8, 'red3': 10,
-              'red4': 17, 'blue45': 18, 'red5': 20}
+# 逐手 Pick 的前置键：前端把 18/20 手拆成一张张卡，后端按该方 pick 下标取值。
+# STAGES 的合并楼层（red12 / blue23 / blue45）仍用于「触发 → 回应」链，两者不冲突。
+# (key, 归属阵营, 该方第几手 pick)
+SINGLE_PICK_STAGES = (
+    ('blue1', '1', 0), ('red1', '2', 0), ('red2', '2', 1),
+    ('blue2', '1', 1), ('blue3', '1', 2), ('red3', '2', 2),
+    ('red4', '2', 3), ('blue4', '1', 3), ('blue5', '1', 4),
+    ('red5', '2', 4),
+)
 
-# 前置槽位的完整展示顺序：按全局手序把 Ban 与 Pick 混排。
+# Pick 的全局手序（draft-20 口径；draft-18 在后 4 手整体前移 2 手）。
+PICK_HANDS = {'blue1': 5, 'red1': 6, 'red2': 7, 'blue2': 8, 'blue3': 9,
+              'red3': 10, 'red4': 17, 'blue4': 18, 'blue5': 19, 'red5': 20}
+PICK_LABELS = {'blue1': '蓝方 1L', 'red1': '红方 1L', 'red2': '红方 2L',
+               'blue2': '蓝方 2L', 'blue3': '蓝方 3L', 'red3': '红方 3L',
+               'red4': '红方 4L', 'blue4': '蓝方 4L', 'blue5': '蓝方 5L',
+               'red5': '红方 5L'}
+
+# 前置槽位的完整展示顺序：按全局手序把 Ban 与 Pick 逐手混排（1~20，不跳 19）。
 DRAFT_ORDER = tuple(
     sorted(
         [(key, 'ban', hand, camp, label) for key, label, camp, _step, hand in BAN_STAGES]
-        + [(key, 'pick', PICK_HANDS[key], camp, label)
-           for key, label, camp, _slots in STAGES],
+        + [(key, 'pick', PICK_HANDS[key], camp, PICK_LABELS[key])
+           for key, camp, _slot in SINGLE_PICK_STAGES],
         key=lambda row: row[2],
     )
 )
 
 # 相邻两层构成一条「触发 → 回应」链（6 段，和无策的表格一一对应）
 CHAINS = tuple((STAGES[i], STAGES[i + 1]) for i in range(len(STAGES) - 1))
-MIN_SAMPLE = 3  # 无策的口径：对位不足 3 场就不出结论
+MIN_SAMPLE = 1  # 全部列出，包含只出现 1 场的小样本；小样本只做标记，不隐藏
 
 
 def _heroes(value):
@@ -107,7 +121,7 @@ def _rate(wins):
     return round(100.0 * sum(1 for won in wins if won) / len(wins), 1)
 
 
-def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=8, prefix=None):
+def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=0, prefix=None):
     """按触发英雄/组合分组，返回每层的回应 Top-N。
 
     ``side`` 限定我方所在阵营（1=蓝方 / 2=红方）；``bo`` 为 3/5/7 或 0=全部。
@@ -115,7 +129,9 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=8, pre
     先按条件筛掉不含这组英雄的对局，再逐层推演后面的回应。
     """
     wanted_prefix = {}
-    valid_keys = {stage[0] for stage in STAGES} | {stage[0] for stage in BAN_STAGES}
+    valid_keys = ({stage[0] for stage in STAGES}
+                  | {stage[0] for stage in BAN_STAGES}
+                  | {stage[0] for stage in SINGLE_PICK_STAGES})
     for key, value in (prefix or {}).items():
         if key in valid_keys and _heroes(value):
             wanted_prefix[key] = _heroes(value)
@@ -177,6 +193,10 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=8, pre
         for stage_key, _, camp, slots in STAGES:
             picks = blue if camp == '1' else red
             values[stage_key] = _stage_value(picks, slots)
+        # 逐手前置键：每张手序卡只锁定该方这一手的实际英雄。
+        for stage_key, camp, slot in SINGLE_PICK_STAGES:
+            picks = blue if camp == '1' else red
+            values[stage_key] = (picks[slot],) if slot < len(picks) else ()
         if any(not values[stage[0]] for stage in STAGES):
             continue
         records.append({'values': values, 'wins': _win_rates(game)})
@@ -240,7 +260,7 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=8, pre
                 'games': len(members),
                 'share': round(100.0 * len(members) / len(records), 1),
                 'winRate': _rate(from_wins),
-                'responses': options[:limit],
+                'responses': options[:limit] if limit > 0 else options,
                 'responseTotal': len(options),
             })
         rows_out.sort(key=lambda row: (-row['games'], row['label']))
@@ -248,7 +268,7 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=8, pre
             'key': f'{from_stage[0]}-{to_stage[0]}',
             'title': f'{from_stage[1]} → {to_stage[1]}',
             'fromCamp': from_stage[2], 'toCamp': to_stage[2],
-            'rows': rows_out[:limit],
+            'rows': rows_out[:limit] if limit > 0 else rows_out,
         })
 
     return {
