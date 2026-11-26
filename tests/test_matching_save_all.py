@@ -94,6 +94,28 @@ def test_save_three_games_of_same_opponent_in_one_request(tmp_path):
     assert [count for _, count in per_game] == [10, 10, 10]
 
 
+def test_saved_matches_can_be_read_back_after_update(tmp_path):
+    """更新/刷新后要能按对局读回已保存的匹配，不能只靠规则和昵称池重算。
+
+    回归点：对手战队改名或规则失效时，归档局的对手一侧会被重算成「待匹配」
+    （10/10 变 5/10）。保存时落库的逐局阵容必须可以原样读回。
+    """
+    client = _client(tmp_path)
+    rows = _rows()
+    assert client.post('/api/studio/matching/players', json={'rows': rows}).status_code == 200
+
+    resp = client.get('/api/studio/matching/players', params={'matchKey': KEY})
+    assert resp.status_code == 200
+    saved = resp.json()['rows']
+    assert len(saved) == 10
+    assert {(r['side'], r['slot'], r['playerId']) for r in saved} == {
+        (r['side'], r['slot'], r['playerId']) for r in rows}
+
+    # 不带筛选项时也能读回，供匹配页一次拿到所有归档局的历史匹配。
+    all_rows = client.get('/api/studio/matching/players').json()['rows']
+    assert len(all_rows) == 10
+
+
 def test_rule_save_syncs_nickname_pool(tmp_path):
     """只建规则不点归档，选手档案也要能按游戏名认出选手 ID。"""
     client = _client(tmp_path)

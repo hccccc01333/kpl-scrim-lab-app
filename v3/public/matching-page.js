@@ -52,7 +52,7 @@ export function createMatchingPage(h) {
     controller = new AbortController();
     root.innerHTML = '<div class="mb-loading">正在读取对局、本队选手、对方战队与规则集…</div>';
     try {
-      const [vectors, workspace, wsPlayers, identity, pool, rules, meta] = await Promise.all([
+      const [vectors, workspace, wsPlayers, identity, pool, rules, meta, savedMatches] = await Promise.all([
         json('/cross/vectors'),
         json('/studio/workspace/teams'),
         json('/studio/workspace/players'),
@@ -60,6 +60,8 @@ export function createMatchingPage(h) {
         json('/studio/workspace/nickname-pool'),
         json('/studio/matching/rules'),
         json('/studio/match-meta'),
+        /* 老版本后端没有这个读回接口：拿不到就退回原规则推断，不让整页打不开。 */
+        json('/studio/matching/players').catch(() => ({ rows: [] })),
       ]);
       if (current !== generation) return;
       /* 本队战队也在 teams 主数据里，但它不是对手：匹配页的对方战队下拉、
@@ -117,6 +119,24 @@ export function createMatchingPage(h) {
           editing: false, editBackup: null,
         };
       });
+      /* 归档局读回保存时落库的十人匹配。更新后战队改名/ID 变化、规则失效、
+         昵称池重建，都不能把已经对上的对手一侧重新变成待匹配。
+         用 confidence='saved' 标记为历史记录：applyRulesAll 不重算这些行。 */
+      const savedBySlot = new Map();
+      (savedMatches?.rows || []).forEach((row) => {
+        if (!row?.matchKey || !row?.playerId) return;
+        savedBySlot.set(`${row.matchKey}|${row.side}|${row.slot}`, row);
+      });
+      games.forEach((game) => {
+        if (!game.archived) return;
+        Object.values(game.sides).flat().forEach((row) => {
+          const saved = savedBySlot.get(`${game.key}|${row.camp}|${row.slot}`);
+          if (!saved) return;
+          row.playerId = String(saved.playerId);
+          row.teamId = String(saved.teamId || '');
+          row.confidence = 'saved';
+        });
+      });
       state = {
         games, ownCandidates, enemyByTeam, teamNames, wsTeams,
         teamOptions: wsTeams.map((t) => ({ id: t.id, name: t.name || '未命名战队' })),
@@ -173,6 +193,9 @@ export function createMatchingPage(h) {
     if (!state) return;
     state.games.forEach((game) => {
       Object.values(game.sides).flat().forEach((row) => {
+        /* 归档局读回的已保存匹配：规则、候选、战队 ID 怎么变都不重算，
+           否则更新之后已归档的 10/10 会退回 5/10。 */
+        if (row.confidence === 'saved') return;
         /* 人工复核过、或刚按位置填好的 ID，只要仍属于当前可选范围就保留，
            别让规则重算把位置匹配当成「没命中规则」清空。 */
         if (row.playerId && (row.confidence === 'manual' || row.confidence === 'position')
@@ -255,7 +278,7 @@ export function createMatchingPage(h) {
     let filled = 0;
     let ambiguous = 0;
     Object.values(game.sides).flat().forEach((row) => {
-      if (row.side !== 'enemy' || row.confidence === 'manual') return;
+      if (row.side !== 'enemy' || row.confidence === 'manual' || row.confidence === 'saved') return;
       const pool = pools[laneKey(row.position)] || [];
       if (!pool.length) return;
       if (pool.length > 1) ambiguous += 1;
@@ -291,7 +314,7 @@ export function createMatchingPage(h) {
   /* 一行的匹配来源 + 复核按钮：自动挂上的 ID 都要教练点一下才算数。 */
   function matchMetaHtml(game, camp, row) {
     if (!row.playerId) return '<span class="mb-src is-blank">待匹配</span>';
-    if (row.confidence === 'manual') return '<span class="mb-src is-done">✓ 已复核</span>';
+    if (row.confidence === 'manual' || row.confidence === 'saved') return '<span class="mb-src is-done">✓ 已复核</span>';
     if (!AUTO_CONFIDENCES.has(row.confidence)) return '';
     return `<span class="mb-src is-${esc(row.confidence)}">${SOURCE_LABELS[row.confidence] || '自动'}</span>`
       + `<button type="button" class="mb-confirm" data-mb-confirm-row="${esc(game.key)}" data-mb-camp="${camp}" data-mb-slot="${row.slot}"`

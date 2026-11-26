@@ -3287,6 +3287,16 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         invalidate_workspace_cache()
         return result
 
+    @router.get('/matching/players')
+    def get_matching_players(matchKey: str = ''):
+        """读回已落库的「对局 ↔ 选手 ID」，供匹配页刷新后恢复归档结果。
+
+        这是保存时写下去的原始记录：不按规则、昵称池或当前战队 ID 重新推断。
+        更新后战队改名、规则失效时，归档的 10/10 也不该退回 5/10。
+        """
+        rows = _event_ws().list_rosters([matchKey] if matchKey else None)
+        return {'rows': rows}
+
     @router.post('/matching/players')
     def save_matching_players(value: dict):
         """落「对局 ↔ 游戏名 ↔ 选手ID」：逐局阵容 + 昵称池一起写。
