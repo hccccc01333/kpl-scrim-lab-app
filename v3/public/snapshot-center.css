@@ -1,0 +1,153 @@
+/* 快照中心：把每个赛事的六套规则口径定格、取回、留痕。
+   此样式在 index.html 最后加载（未分层），用局部 !important 盖住 uplift 的全局按钮尺寸。 */
+.sc-page { display: grid; gap: 16px; }
+
+/* 顶部说明 */
+.sc-lede { margin: 8px 0 0; max-inline-size: 82ch; color: var(--muted, #667); font-size: 13px; line-height: 1.75; }
+.sc-em { color: var(--ink, #243); font-weight: 700; }
+.sc-current {
+  padding: 4px 10px; border: 1px solid var(--line, #d8e2e0); border-radius: 999px;
+  background: var(--paper, #fff); color: var(--muted, #667); font-size: 12px; white-space: nowrap;
+}
+.sc-status { margin: 8px 0 0; padding: 8px 12px; border-radius: 8px; background: var(--soft, #eef5f3); color: var(--ink, #243); font-size: 13px; }
+.sc-status.is-error { background: #fff0ef; color: #a4262c; }
+
+/* 三步说明 + 图例 */
+.sc-how {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 18px;
+  padding: 14px 18px; border: 1px solid var(--line, #d8e2e0); border-radius: 12px;
+  background: linear-gradient(135deg, var(--soft, #eef5f3), var(--panel, #fff));
+}
+.sc-how-title { grid-row: span 2; margin: 0; align-self: center; font-size: 13px; letter-spacing: .08em; color: var(--muted, #667); }
+.sc-how-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+.sc-how-steps li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; align-items: start; }
+.sc-how-steps b {
+  inline-size: 22px; block-size: 22px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--panel, #fff); border: 1px solid var(--line, #d8e2e0);
+  color: #4f8a7d; font-size: 0; font-variant-numeric: tabular-nums;
+}
+.sc-how-steps li:nth-child(1) b::before { content: '1'; }
+.sc-how-steps li:nth-child(2) b::before { content: '2'; }
+.sc-how-steps li:nth-child(3) b::before { content: '3'; }
+.sc-how-steps b::before { font-size: 11px; }
+.sc-how-steps strong { display: block; font-size: 13px; }
+.sc-how-steps span { color: var(--muted, #667); font-size: 12px; line-height: 1.6; }
+.sc-legend { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-block-start: 4px; color: var(--muted, #667); font-size: 11px; }
+.sc-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.sc-legend-dot { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--line, #ccd8d5); }
+.sc-legend-dot.is-ready { background: #4f8a7d; }
+.sc-legend-dot.is-current { background: var(--panel, #fff); border: 1.5px solid #4f8a7d; inline-size: 10px; block-size: 10px; }
+.sc-legend-note { margin-inline-start: auto; }
+
+.sc-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-block-start: 4px; }
+.sc-section-head h2 { margin: 0; font-size: 15px; }
+.sc-section-head span { color: var(--muted, #889); font-size: 12px; }
+
+/* 赛事卡 */
+.sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr)); gap: 16px; align-items: start; }
+.sc-card {
+  border: 1px solid var(--line, #d8e2e0); border-radius: 14px;
+  background: var(--panel, #fff); box-shadow: 0 1px 3px rgb(15 36 58 / 6%); overflow: hidden;
+}
+.sc-card.is-current { border-color: #4f8a7d; box-shadow: 0 0 0 2px rgb(79 138 125 / 16%); }
+.sc-card.is-ended { background: color-mix(in srgb, var(--panel, #fff) 80%, var(--soft, #f3f8f6)); }
+.sc-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 14px 16px 10px; }
+.sc-card-title h3 { margin: 0 0 3px; font-size: 1rem; }
+.sc-card-title p { margin: 0; color: var(--muted, #889); font-size: 11px; font-variant-numeric: tabular-nums; }
+.sc-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.sc-badge { padding: 3px 8px; border: 1px solid var(--line, #d8e2e0); border-radius: 999px; color: var(--muted, #667); font-size: 11px; white-space: nowrap; }
+.sc-badge.is-current { color: #3d776b; border-color: color-mix(in srgb, #4f8a7d 45%, var(--line)); background: color-mix(in srgb, #4f8a7d 8%, var(--panel)); font-weight: 700; }
+.sc-badge.is-ended { color: var(--muted, #889); }
+.sc-badge.is-count { font-variant-numeric: tabular-nums; }
+.sc-progress { block-size: 3px; margin-inline: 16px; border-radius: 999px; background: var(--soft, #edf3f1); overflow: hidden; }
+.sc-progress i { display: block; block-size: 100%; background: #4f8a7d; }
+.sc-card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 16px; color: var(--muted, #889); font-size: 11px; font-variant-numeric: tabular-nums; }
+.sc-card-warn { color: #a4262c; }
+
+/* 六项快照列表 */
+.sc-modules { display: grid; border-block-start: 1px solid var(--line, #e9efed); }
+.sc-module + .sc-module { border-block-start: 1px solid var(--line, #eef2f1); }
+.sc-module.is-open { background: color-mix(in srgb, var(--soft, #f3f8f6) 55%, var(--panel, #fff)); }
+#app .sc-module-head {
+  display: grid !important; grid-template-columns: 18px minmax(0, auto) minmax(0, 1fr) auto 10px;
+  align-items: center !important; gap: 9px; inline-size: 100%;
+  padding: 9px 16px !important; border: 0 !important; border-radius: 0 !important;
+  background: transparent !important; color: inherit !important; font: inherit !important;
+  min-block-size: 0 !important; block-size: auto !important; padding-inline: 16px !important;
+  text-align: start !important; white-space: normal !important; justify-content: stretch !important;
+  cursor: pointer;
+}
+.sc-module-head:hover, .sc-module.is-open .sc-module-head { background: var(--soft, #f3f8f6) !important; }
+.sc-module-head:focus-visible { outline: 2px solid #4f8a7d; outline-offset: -2px; }
+.sc-mark {
+  inline-size: 16px; block-size: 16px; display: grid; place-items: center; border-radius: 50%;
+  border: 1px solid var(--line, #ccd8d5); color: var(--muted, #889); font-size: 10px; line-height: 1;
+}
+.sc-module.is-ready .sc-mark { background: #4f8a7d; border-color: #4f8a7d; color: #fff; }
+.sc-module-name { font-size: 12px; font-weight: 650; white-space: nowrap; }
+.sc-module-brief { color: var(--muted, #667); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-module.is-ready .sc-module-brief { color: var(--ink, #243); }
+.sc-module-meta { color: var(--muted, #99a); font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sc-caret { inline-size: 5px; block-size: 5px; border-inline-end: 1px solid var(--muted, #889); border-block-end: 1px solid var(--muted, #889); transform: rotate(45deg); }
+.sc-module.is-open .sc-caret { transform: rotate(-135deg); }
+.sc-module-body { padding: 2px 16px 14px 43px; }
+.sc-module-hint { margin: 0 0 8px; color: var(--muted, #667); font-size: 11px; line-height: 1.6; }
+.sc-module-hint a { margin-inline-start: 6px; color: #3d776b; text-decoration: none; white-space: nowrap; }
+.sc-module-hint a:hover { text-decoration: underline; }
+.sc-expired-note { margin: 0 0 10px; padding: 8px 10px; border-radius: 6px; background: var(--soft, #f3f8f6); color: var(--muted, #667); font-size: 11px; line-height: 1.6; }
+.sc-snapshot-preview {
+  max-block-size: 200px; overflow: auto; overscroll-behavior: contain;
+  padding: 9px 11px; border: 1px solid var(--line, #e3eae8); border-radius: 8px;
+  background: var(--paper, #fbfdfc);
+}
+.sc-preview-list { margin: 0; padding-inline-start: 18px; font-size: 12px; line-height: 1.7; }
+.sc-preview-list li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sc-mini { color: var(--muted, #889); font-size: 11px; }
+/* 快照里的英雄一律头像：名字只放 title / aria-label。 */
+.sc-heroes { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.sc-hero { display: inline-flex; line-height: 0; }
+.sc-hero-img, .sc-hero .portrait {
+  inline-size: 28px; block-size: 28px; border-radius: 50%; object-fit: cover;
+  border: 1px solid var(--line, #d8e2e0); background: var(--soft, #f1f5f4);
+}
+.sc-hero .portrait-placeholder { display: inline-flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; color: var(--muted, #667); }
+.sc-json { margin: 0; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; }
+#app .sc-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-block-start: 10px; }
+#app .sc-actions button {
+  min-block-size: 28px !important; block-size: auto !important; padding: 4px 10px !important;
+  padding-inline: 10px !important; border-radius: 7px !important; font-size: 11px !important;
+  white-space: normal !important;
+}
+.sc-danger { color: #a4262c; border-color: #e6b7b9; }
+#app .sc-lead-actions button { min-block-size: 30px !important; padding: 5px 10px !important; font-size: 12px !important; }
+.sc-empty { padding: 28px; color: var(--muted, #667); text-align: center; }
+.sc-empty b { display: block; margin-block: 8px; }
+
+/* 原生模态框 */
+.sc-dialog:modal { overscroll-behavior: contain; max-inline-size: min(560px, 92vw); }
+.sc-dialog::backdrop { background: rgb(14 31 42 / 42%); overflow: hidden; overscroll-behavior: contain; }
+.sc-dialog { border: 1px solid var(--line, #d8e2e0); border-radius: 14px; padding: 0; background: var(--panel, #fff); color: var(--ink, #243); }
+.sc-dialog-head { padding: 16px 20px 8px; }
+.sc-dialog-head h2 { margin: 0; font-size: 1.05rem; }
+.sc-dialog-body { padding: 0 20px 12px; font-size: 13px; line-height: 1.7; }
+.sc-warn { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #fff4e5; color: #8a4b08; font-weight: 600; }
+.sc-dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--line, #e3eae8); }
+.sc-dialog-foot.is-danger .primary { background: #a4262c; border-color: #a4262c; }
+
+@media (max-width: 1100px) {
+  .sc-how { grid-template-columns: 1fr; }
+  .sc-how-title { grid-row: auto; }
+  .sc-legend { grid-column: 1; }
+  .sc-legend-note { margin-inline-start: 0; }
+}
+@media (max-width: 760px) {
+  .sc-grid { grid-template-columns: 1fr; }
+  .sc-how-steps { grid-template-columns: 1fr; }
+  #app .sc-module-head { grid-template-columns: 18px minmax(0, 1fr) 10px; justify-items: start; }
+  .sc-mark { grid-column: 1; grid-row: 1; }
+  .sc-module-name { grid-column: 2; grid-row: 1; justify-self: start; }
+  .sc-caret { grid-column: 3; grid-row: 1; }
+  .sc-module-brief { grid-column: 2 / -1; grid-row: 2; justify-self: start; }
+  .sc-module-meta { grid-column: 2 / -1; grid-row: 3; justify-self: start; }
+  .sc-module-body { padding-inline-start: 16px; }
+}

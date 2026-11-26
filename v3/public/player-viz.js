@@ -11,6 +11,8 @@
    2. 颜色走 ui-tokens 变量与 --pv-c1..6 分类色，深色主题自动跟随；
    3. 悬浮说明用原生 <title>，没有 JS 提示层；
    4. 图一律 role="img" + aria-label。 */
+import { glyph } from './ui-icons.js';
+
 export function createPlayerViz({esc, fmt}) {
   const S = (v) => esc(String(v ?? ''));
   const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -18,7 +20,8 @@ export function createPlayerViz({esc, fmt}) {
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
   const signed = (v, d = 0) => (isNum(v) ? `${v > 0 ? '+' : ''}${fmt(v, d)}` : '—');
   const FULL = 1400;
-  const empty = (text) => `<p class="pv-empty">${S(text)}</p>`;
+  /* 图空态统一分层：语义图标 + 一句可读结论（图标装饰性，aria-hidden）。 */
+  const empty = (text) => `<p class="pv-empty">${glyph('chart', { size: 18 })}<span>${S(text)}</span></p>`;
 
   /* 分路固定配色：同一路在整页所有图里颜色一致，读图不用反复找 legend。 */
   const LANE_CLS = {'对抗路': 'is-c1', '打野': 'is-c2', '中路': 'is-c3', '发育路': 'is-c4', '游走': 'is-c5'};
@@ -33,9 +36,11 @@ export function createPlayerViz({esc, fmt}) {
      估计偏大时再由 CSS 的 max-width:100% 等比收一点，绝不横向溢出。 */
   function gridWidth() {
     const hasWin = typeof window !== 'undefined' && Number(window.innerWidth) > 0;
-    const vw = hasWin ? Number(window.innerWidth) : 1440;
-    /* .page-wide 两侧各 48px；1100px 以下面板一律铺满 12 栏（见 CSS）。 */
-    return {grid: Math.min(Math.max(vw, 960), 1800) - 32 - 64, wide: !hasWin || vw > 1100};
+    const vw = hasWin ? Math.max(320, Number(window.innerWidth)) : 1440;
+    /* 桌面保留原有两侧留白；窄屏按真实视口计算，不再强制 960px 后整体缩小。
+       1100px 以下面板一律铺满 12 栏（见 CSS），图内文字保持原始可读尺寸。 */
+    const chrome = vw > 1100 ? 96 : vw > 760 ? 72 : 48;
+    return {grid: Math.max(300, Math.min(vw, 1800) - chrome), wide: !hasWin || vw > 1100};
   }
   /* span = 面板占的栏数（4/5/6/7/8/12），返回这张图能用的像素宽。 */
   const w = (span = 12) => {

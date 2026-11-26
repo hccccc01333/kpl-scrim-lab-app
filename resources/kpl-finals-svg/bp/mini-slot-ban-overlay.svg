@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="50" height="50" viewBox="0 0 50 50" role="img">
+<title>BP 顶部小头像禁用斜杠</title>
+<defs><clipPath id="mini-ban"><rect x="0" y="0" width="50" height="50" rx="4" fill="#fff"/></clipPath></defs><g clip-path="url(#mini-ban)"><path d="M-1 50 L50 -1" fill="none" stroke="#fffaf3" stroke-width="2.4"/></g>
+</svg>

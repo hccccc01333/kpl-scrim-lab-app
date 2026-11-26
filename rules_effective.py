@@ -2,7 +2,7 @@
 
 规则条目的 effective：{eventId, eventName, from, to}——四项全空 = 始终生效。
 赛事是备战周期：eventId 直接对 competitions.id；eventName 对赛事名称；
-from/to 用赛事的训练归集窗口起点（date）落在窗内判定。
+from/to 用赛事的训练起始（date）落在窗内判定。
 """
 
 _ENTRY_KEYS = {'counters': None, 'combos': 'combos', 'lineup_tags': 'tags', 'misc': 'entries'}

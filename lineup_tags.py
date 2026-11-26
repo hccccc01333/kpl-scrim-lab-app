@@ -221,9 +221,6 @@ def save(doc: dict, bump: bool = True, summary: str = '') -> dict:
     """整体覆盖保存；bump 时 revision +1（乐观锁由调用方在保存前校验）。"""
     if not _valid(doc):
         raise ValueError(f'阵容标签格式不正确：每个标签需要名称 + {HEROES_PER_TAG} 个不同英雄')
-    import config_history
-    old = read_saved()
-    config_history.record('lineup_tags', old, doc, summary or _summary(old, doc))
     from datetime import datetime, timezone
     out = {
         'schema': SCHEMA,

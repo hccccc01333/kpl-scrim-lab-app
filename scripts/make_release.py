@@ -84,6 +84,17 @@ TOOLS_SHIP = [
     # /api/v3/replay/<id>/skill-ledger 懒加载（server.py 里按需 import）。
     'tools/replay_skill_ledger.py',
 ]
+# 数据抓取脚本：安装版也要能更新 KPL / 巅峰千强。
+# peak_crawl.py 在模块级 `from scripts.build_bp_facts import ...`，漏掉它会让
+# v3/serve.py 静默把 peak_crawl 置 None——表现就是「英雄榜没数据、也不自动爬」。
+SCRIPTS_SHIP = [
+    'scripts/build_bp_facts.py',
+    'scripts/crawl_kpl_bp.py',
+    # KPL 逐手 draftEvents 回填（重抓官方单局快照，写回 data/kpl/bp_games.jsonl）。
+    'scripts/backfill_kpl_draft_events.py',
+    # 新英雄同步（官方名录 → catalog / 头像 / hero_tags / 名录缓存）。
+    'scripts/sync_new_heroes.py',
+]
 ROOT_FILES = [
     'CHANGELOG.md',
     'LICENSE',
@@ -151,6 +162,41 @@ if not exist "%PY%" set "PY=python"
 pause
 """
 
+UPDATE_KPL_BAT = """@echo off
+chcp 65001 >nul
+cd /d "%~dp0"
+set "PY=runtime\\python.exe"
+if not exist "%PY%" set "PY=python"
+echo ============================================
+echo   KPL 赛事 BP 数据更新（只抓 BP 与胜负）
+echo ============================================
+echo   增量抓取：已抓过的小局不会重复请求。
+echo   抓完自动重建赛事命中用的组合表。
+echo.
+"%PY%" scripts\\crawl_kpl_bp.py %*
+echo.
+echo 更新完成，刷新工作台页面即可看到新的赛事命中。
+pause
+"""
+
+UPDATE_PEAK_BAT = """@echo off
+chcp 65001 >nul
+cd /d "%~dp0"
+set "PY=runtime\\python.exe"
+if not exist "%PY%" set "PY=python"
+echo ============================================
+echo   巅峰千强大盘更新（对位压制用的外部事实）
+echo ============================================
+echo   流程：英雄日线 -^> hero_daily -^> 对位矩阵 -^> lane_matchups.json
+echo   全量约 30-50 分钟（可随时中断，已爬到的对位不会丢）。
+echo   工作台服务每天也会自动刷一轮；这个脚本用来手动补刷。
+echo.
+"%PY%" peak_crawl.py --all %*
+echo.
+echo 更新完成，刷新单局复盘页即可看到最新对位胜率。
+pause
+"""
+
 SOP = """KPL 赛训数据工具 · 部署说明
 ================================
 
@@ -177,21 +223,32 @@ SOP = """KPL 赛训数据工具 · 部署说明
   2. 数据自动进入采集通道，打开通道即可复盘。
   3. 战绩可见性：选手可在营地隐私设置里把教练加入白名单。
 
-五、更新
+五、外部数据（KPL / 巅峰千强 / 国服战力）
+  - 安装包已内置一套快照：英雄榜的 KPL 胜率、巅峰千强梯度、国服第十英雄分
+    开箱即显示，不用等联网。
+  - 联网时工作台每天自动增量刷新一次：巅峰千强日线 / 对位矩阵、KPL 赛事 BP、
+    英雄榜口径。进度可在「数据源」页查看，也可以手动点刷新。
+  - 只想立刻更新 KPL 赛事 BP：双击「更新KPL数据.bat」（用包内 Python，无需另装）。
+  - 手动补刷巅峰千强：双击「更新巅峰数据.bat」（全量约 30–50 分钟，可中断）。
+  - 官方出了新英雄：`python scripts/sync_new_heroes.py --apply` 把名字、头像、
+    分路兜底同步进 catalog / hero_tags；赛训组补完标签工作簿后再重新出包。
+  - 离线机器用内置快照即可，上述自动任务会安静失败，不影响本地分析。
+
+六、更新
   - 启动后工作台会自动检查新版本，右下角出现提示时点「立即更新」。
   - 也可以双击「检查更新.bat」或开始菜单的「检查更新」查看当前版本。
   - 更新只替换程序文件，不会修改 data 目录；失败会自动回滚。
   - 完全离线时，可以让作者发来 patch-版本号.zip，在提示里选「选择本地更新包」。
   - 内置 Python 或依赖有变化的大版本会提供新安装包，直接覆盖安装即可，数据不丢。
 
-六、数据备份与迁移
+七、数据备份与迁移
   整个 data 文件夹拷走即完成备份；换电脑时把 data 放进新包即可延续全部数据。
 
-七、可选组件（截图 / 录屏 OCR）
+八、可选组件（截图 / 录屏 OCR）
   双击「安装OCR组件.bat」按提示安装；需要联网，已配置国内镜像。
   只用营地同步、不需要截图兜底的队伍可以不装。
 
-八、故障处理
+九、故障处理
   - 双击图标没反应或提示启动失败 → 开始菜单「打开日志目录」，把
     launcher.log 和 server.log 发给作者。
   - 提示登录态失效（-30003 / -30314）/ 安全参数被拒 → 工作台会显示「补充授权」，重新扫码即可。
@@ -349,6 +406,9 @@ def ship_files() -> list[str]:
     for name in TOOLS_SHIP:
         if (ROOT / name).is_file():
             files.append(name)
+    for name in SCRIPTS_SHIP:
+        if (ROOT / name).is_file():
+            files.append(name)
     for name in ROOT_FILES:
         if (ROOT / name).is_file():
             files.append(name)
@@ -376,7 +436,7 @@ def previous_tag(version: str) -> str | None:
 
 
 def _shippable_path(path: str) -> bool:
-    if path in ROOT_FILES:
+    if path in ROOT_FILES or path in SCRIPTS_SHIP:
         return True
     if path.startswith(('web/', 'resources/', 'docs/', 'v3/')):
         return True
@@ -582,6 +642,8 @@ def write_launchers(build: Path) -> None:
     (build / '停止工作台.bat').write_text(STOP_BAT, encoding='gbk')
     (build / '安装OCR组件.bat').write_text(OCR_BAT, encoding='gbk')
     (build / '检查更新.bat').write_text(CHECK_BAT, encoding='gbk')
+    (build / '更新KPL数据.bat').write_text(UPDATE_KPL_BAT, encoding='gbk')
+    (build / '更新巅峰数据.bat').write_text(UPDATE_PEAK_BAT, encoding='gbk')
     (build / '部署说明.txt').write_text(SOP, encoding='utf-8')
     (build / '授权说明.txt').write_text(AUTH_NOTE, encoding='utf-8')
 

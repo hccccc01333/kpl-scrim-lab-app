@@ -3,6 +3,8 @@
    交互模式对齐对局档案的英雄多选浮层（搜索 + 头像网格 + 键盘导航 + 点外收起），
    视觉按 2025 常见 combobox 写法重做：胶囊触发器 + chips + 尺寸 tabs。 */
 
+import { glyph } from './ui-icons.js';
+
 const MAX_SELECT = 4;
 const MAX_ROWS = 40;
 const SIZE_LABEL = { 2: '双人', 3: '三人', 4: '四人' };
@@ -82,10 +84,10 @@ export function createComboQuery({ esc, fmt, portrait, route, icon, getHeroes })
       const total = Object.entries(counts()).map(([size, count]) =>
         `${SIZE_LABEL[size]} ${fmt(count)}`).join(' · ');
       const basis = state.data?.poolActive ? '赛训组组合池' : '样本 ≥3 场';
-      return `<div class="kq-hint">从上面选 1–4 个英雄开始查；选 2 个以上 = 只看包含全部所选英雄的组合。<small>库里共：${esc(total)} 组（${basis}）。</small></div>`;
+      return `<div class="kq-hint kq-hint-empty">${glyph('heroes', { size: 28 })}<b>选择英雄开始查询</b><span>最多 4 个，多选只返回包含全部的组合 · 库里共 ${esc(total)} 组（${basis}）</span></div>`;
     }
     if (!rows.length) {
-      return `<div class="kq-hint">所选英雄在 KPL 统计窗口内没有${state.size === 'all' ? '' : SIZE_LABEL[state.size]}组合记录。<small>新阵容或冷门搭配本来就不容易同场，这不代表不能用。</small></div>`;
+      return `<div class="kq-hint kq-hint-empty">${glyph('warning', { size: 28 })}<b>没有匹配的组合</b><span>KPL 统计窗口内暂无这组${state.size === 'all' ? '' : SIZE_LABEL[state.size]}记录</span></div>`;
     }
     const more = rows.length > MAX_ROWS ? `<p class="kq-more">只展示场次最多的前 ${MAX_ROWS} 行（共 ${fmt(rows.length)} 行命中）</p>` : '';
     return `<div class="kq-list">${rows.slice(0, MAX_ROWS).map(rowHtml).join('')}</div>${more}`;
@@ -96,10 +98,10 @@ export function createComboQuery({ esc, fmt, portrait, route, icon, getHeroes })
       title="移除 ${esc(hero)}">${portrait(hero)}<b>${esc(hero)}</b><i aria-hidden="true">×</i></span>`).join('');
     const countsNow = counts();
     const tab = (key, label) => `<button type="button" class="kq-tab${state.size === key ? ' is-on' : ''}"
-      data-kq-size="${key}">${label}${key !== 'all' ? `<small>${fmt(countsNow[key])}</small>` : ''}</button>`;
+      data-kq-size="${key}">${glyph(key === 'all' ? 'hero-pool' : 'heroes', { size: 16 })}${label}${key !== 'all' ? `<small>${fmt(countsNow[key])}</small>` : ''}</button>`;
     return `<div class="kq-bar">
       <button type="button" class="kq-open" data-kq-open aria-haspopup="dialog" aria-expanded="false">
-        ${icon('search')}<span>${state.selected.length ? '已选' : '选择英雄'}</span>${chips}
+        ${glyph('heroes', { size: 18 })}<span>${state.selected.length ? '已选' : '选择英雄'}</span>${chips}
       </button>
       <div class="kq-tabs" role="tablist" aria-label="组合人数">
         ${tab('all', '全部')}${tab(2, '双人')}${tab(3, '三人')}${tab(4, '四人')}
@@ -144,14 +146,13 @@ export function createComboQuery({ esc, fmt, portrait, route, icon, getHeroes })
     pop.innerHTML = `
       <div class="kq-pop-head"><input class="kq-q" data-kq-q type="text" placeholder="搜索英雄"
         autocomplete="off" spellcheck="false"></div>
-      <div class="kq-pop-tip">选 1–4 个英雄 · 选 2 个以上 = 包含全部所选英雄的组合</div>
       <div class="kq-pop-grid" data-kq-list>${pool.map((hero) => {
         const order = state.selected.indexOf(hero);
         return `<button type="button" class="kq-hero${order >= 0 ? ' is-on' : ''}" data-kq-hero="${esc(hero)}">
           ${portrait(hero)}<span>${esc(hero)}</span>${order >= 0 ? `<i class="kq-order">${order + 1}</i>` : ''}</button>`;
       }).join('')}</div>
       <div class="kq-pop-foot"><span>${state.selected.length ? `已选 ${state.selected.length} / ${MAX_SELECT}` : '按目录顺序排列'}</span>
-        <button type="button" class="kq-reset" data-kq-clear>清空</button></div>`;
+        <button type="button" class="kq-reset" data-kq-clear>${glyph('trash', { size: 18 })}清空</button></div>`;
     document.body.appendChild(pop);
     const rect = anchor.getBoundingClientRect();
     const width = 392;

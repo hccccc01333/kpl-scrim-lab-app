@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="868" height="170" viewBox="0 0 868 170" role="img">
+<title>英雄出装对比中央面板</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><filter id="medium" x="-40%" y="-75%" width="180%" height="250%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#4d3c2f" flood-opacity=".24"/></filter></defs>
+<g transform="translate(10 10) scale(1 1)"><g filter="url(#medium)"><defs><clipPath id="panel"><rect x="0" y="0" width="848" height="150" rx="1" fill="#fff"/></clipPath></defs><g clip-path="url(#panel)"><rect x="0" y="0" width="848" height="150" rx="1" fill="url(#pearl)"/><path d="M0 0 Q203.52 105 525.76 0 H593.6 Q228.96 136.5 0 25.5Z" fill="#d8d5d8" opacity="0.1026"/><path d="M0 96 Q381.6 19.5 610.56 0 Q203.52 96 0 148.5Z" fill="#d9d6d6" opacity="0.0608"/><path d="M152.64 150 Q449.44 118.5 848 18 Q652.96 117 381.6 150Z" fill="#fffdfa" opacity="0.228"/><path d="M457.92 150 Q695.36 93 848 57 V85.5 Q780.16 112.5 619.04 150Z" fill="#fff" opacity="0.209"/></g><rect x="0.6" y="0.6" width="846.8" height="148.8" rx="1" fill="none" stroke="url(#gold-edge)" stroke-width="1.2"/></g></g>
+</svg>

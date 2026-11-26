@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="117" height="120" viewBox="0 0 117 120" role="img">
+<title>雷达页深底英雄头像框</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient><linearGradient id="dark" x2="0%" y2="100%">
+ <stop stop-color="#17212a"/><stop offset="1" stop-color="#676e71"/>
+</linearGradient></defs>
+<defs><clipPath id="radar-avatar-holder"><rect x="0" y="0" width="117" height="120" rx="13" fill="#fff"/></clipPath></defs><g clip-path="url(#radar-avatar-holder)"><rect x="0" y="0" width="117" height="120" rx="13" fill="url(#dark)"/><g transform="translate(67.86 0) scale(1 1)"><path d="M0 0 H41.14 Q49.14 0 49.14 8 V49.14 C48.1572 13.7592 33.4152 0.4914 0 0Z" fill="url(#gold)"/><path d="M3.9312 0 C28.5012 1 46.1916 7.371 49.14 42.2604 C48.6486 10.3194 34.398 0 3.9312 0Z" fill="url(#teal-edge)"/></g></g><rect x="0.8" y="0.8" width="115.4" height="118.4" rx="13" fill="none" stroke="url(#gold-edge)" stroke-width="1.6"/>
+</svg>

@@ -48,7 +48,7 @@ def create_analysis_router(db_path, matches_dir, imports_dir, official_dir=None)
             'version': query.get('version') or None,
             'result': query.get('result') or None,
             'camp': query.get('camp') or None,
-            # 赛事归属：对局直连 match_records.competition_id。不传时保持原有口径。
+            # 赛事归属：全站唯一数据范围。不传时保持原有口径。
             'competition': query.get('competition') or query.get('competitionId') or None,
             'includePartial': query.get('includePartial') in ('1', 'true', 'yes'),
         }
@@ -59,19 +59,20 @@ def create_analysis_router(db_path, matches_dir, imports_dir, official_dir=None)
             return set()
         try:
             from workspace_store import Workspace
-            # 赛事域（M1）：统一走 scope 口径（直连 U 归集窗口 U 手动挂载 U 正赛）。
+            # 赛事域（M1）：统一走 scope 口径（直连 U 训练起止 U 手动挂载 U 正赛）。
             return Workspace(db_path).competition_scope_keys(competition_id)
         except (sqlite3.Error, OSError):
             return set()
 
     def scoped(values):
-        """按当前请求的 filters 选取仓库；无 competition 参数时直接复用原仓库。"""
+        """按当前请求的赛事选取仓库；无赛事参数时直接复用原仓库。"""
         competition = values.get('competition')
         if not competition:
             return repository
+        keys = competition_match_keys(competition)
         return CompetitionScopedRepository(
             Path(db_path), Path(matches_dir), Path(imports_dir), official_dir=official_dir,
-            match_keys=competition_match_keys(competition), shared_data=repository.get())
+            match_keys=keys, shared_data=repository.get())
 
     @router.get('/overview')
     def overview(request: Request):

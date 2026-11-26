@@ -66,7 +66,8 @@
 /* 防御：flex 容器里图标不应按 SVG 的 48×48 固有尺寸撑开按钮/标签 */
 .mo-page .ui-glyph { max-inline-size: 18px; max-block-size: 18px; }
 .mo-page .mo-hint { margin: 0; color: var(--muted); font-size: .78rem; }
-.mo-page .mo-setup-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* 排版/对比方式开关已移除，设置区只剩一块筛选，单列铺满即可。 */
+.mo-page .mo-setup-grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
 .mo-page .mo-fs { margin: 0; padding: 10px 14px 14px; border: 1px solid var(--line); border-radius: var(--r-md, 12px); min-inline-size: 0; }
 /* 全局 fieldset{display:flex;gap:12px} 会把 legend 和内容排成一行、把筛选区压成窄列、
    把对比 chip 撑成大圆。这两处必须回归 block，让内部 grid / flex 自己布局。 */
@@ -101,12 +102,7 @@
 .mo-page .mo-refresh:disabled { opacity: .6; cursor: progress; }
 
 /* ── 对位栏 ───────────────────────────────────────────────────────── */
-.mo-page .mo-columns { display: grid; gap: 14px; grid-template-columns: 1fr; }
-.mo-page .mo-columns[data-cols="2"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.mo-page .mo-columns[data-cols="3"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 900px) {
-  .mo-page .mo-columns[data-cols="2"], .mo-page .mo-columns[data-cols="3"] { grid-template-columns: 1fr; }
-}
+.mo-page .mo-columns { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
 .mo-page .mo-slot { min-inline-size: 0; margin: 0; padding: 10px 14px 14px; border: 1px solid var(--line); border-radius: var(--r-md, 12px);
   background: var(--paper); }
 .mo-page .mo-slot > legend { padding: 0 6px; color: var(--accent-ink, var(--accent)); font-size: .8rem; font-weight: 700; }
@@ -127,7 +123,16 @@
 /* ── 结果：图形 ───────────────────────────────────────────────────── */
 .mo-page .mo-result-head { margin-block-end: 12px; }
 .mo-page .mo-result-head p { margin: 4px 0 0; color: var(--muted); font-size: .8rem; }
-.mo-page .mo-figures { display: grid; gap: 14px; }
+/* 栏数 = 已选对象数：JS 写入 --mo-cols，桌面按实际数量给等宽轨道；
+   窄屏才降级为两栏 / 单栏，避免把 SVG 挤成一条缝。 */
+.mo-page .mo-figures { display: grid; gap: 14px; grid-template-columns: repeat(var(--mo-cols, 1), minmax(0, 1fr)); }
+@media (max-width: 1100px) {
+  .mo-page .mo-figures:has(> :nth-child(3)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .mo-page .mo-figures { grid-template-columns: minmax(0, 1fr); }
+}
+.mo-page .mo-fig-col { display: grid; gap: 6px; align-content: start; min-inline-size: 0; }
 .mo-page .mo-fig-head h3 { margin: 6px 0 0; font-size: 1rem; color: var(--accent-ink, var(--accent)); }
 .mo-page .mo-figure { margin: 0; padding: 14px 12px 10px; border: 1px solid var(--line); border-radius: var(--r-md, 12px);
   background: var(--paper); min-inline-size: 0; }
@@ -137,13 +142,20 @@
 .mo-page .mo-ref { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 5; }
 .mo-page .mo-ref-label { fill: var(--accent-ink, var(--accent)); font-size: 11px; }
 .mo-page .mo-line { stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
-.mo-page .mo-dot { stroke: var(--paper); stroke-width: 1; }
+.mo-page .mo-dot { stroke: var(--paper); stroke-width: 1.5; }
+/* 点值标签：白描边保证压在线上也读得清。 */
+.mo-page .mo-point-label { fill: var(--text); font-size: 10px; font-variant-numeric: tabular-nums;
+  paint-order: stroke; stroke: var(--paper); stroke-width: 3px; stroke-linejoin: round; }
 .mo-page .s0 { stroke: var(--mo-line-s0); fill: var(--mo-line-s0); color: var(--mo-line-s0); }
 .mo-page .s1 { stroke: var(--mo-line-s1); fill: var(--mo-line-s1); color: var(--mo-line-s1); stroke-dasharray: 7 3; }
 .mo-page .s2 { stroke: var(--mo-line-s2); fill: var(--mo-line-s2); color: var(--mo-line-s2); }
 .mo-page .s3 { stroke: var(--mo-line-s3); fill: var(--mo-line-s3); color: var(--mo-line-s3); stroke-dasharray: 3 3; }
 .mo-page .s4 { stroke: var(--mo-line-s4); fill: var(--mo-line-s4); color: var(--mo-line-s4); }
 .mo-page .s5 { stroke: var(--mo-line-s5); fill: var(--mo-line-s5); color: var(--mo-line-s5); stroke-dasharray: 8 4; }
+/* 上面的 .s0… 会把 SVG path 也填上色（CSS 优先级高于 fill="none" 属性），
+   于是折线被画成一个大色块。这里把线的填充单独关掉，颜色只留给点和图例。 */
+.mo-page .mo-line.s0, .mo-page .mo-line.s1, .mo-page .mo-line.s2,
+.mo-page .mo-line.s3, .mo-page .mo-line.s4, .mo-page .mo-line.s5 { fill: none; }
 .mo-page .mo-figure figcaption { margin-block-start: 6px; color: var(--muted); font-size: .76rem; }
 .mo-page .mo-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 8px 0 0; padding: 0; font-size: .78rem; }
 .mo-page .mo-legend li { display: inline-flex; gap: 6px; align-items: center; }

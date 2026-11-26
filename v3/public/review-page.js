@@ -12,6 +12,8 @@
  *   POST  /api/channels/{id}/save
  */
 
+import { glyph } from './ui-icons.js';
+
 const ROOT_API = '/api/';
 
 async function api(path, { method = 'GET', body, signal } = {}) {
@@ -250,10 +252,10 @@ export function createReview(h) {
       </div>
       <div class="ed-top-actions">
         <button class="control" data-review-action="save-draft" ${state.busy || !hasPlayers ? 'disabled' : ''}>
-          ${state.busy === 'draft' ? '正在保存…' : '保存修改'}</button>
+          ${glyph('edit', { size: 18 })} ${state.busy === 'draft' ? '正在保存…' : '保存修改'}</button>
         <button class="primary" data-review-action="save-formal" ${blocked ? 'disabled' : ''}
           title="${isSaved ? '已经进入正式统计' : reviewed ? '写入正式统计' : '需要先在右侧标记复核'}">
-          ${state.busy === 'save' ? '正在写入…' : (isSaved ? '已进正式统计' : '保存到正式统计')}</button>
+          ${glyph('export', { size: 18 })} ${state.busy === 'save' ? '正在写入…' : (isSaved ? '已进正式统计' : '保存到正式统计')}</button>
       </div>
     </section>`;
   }
@@ -269,8 +271,7 @@ export function createReview(h) {
       ? `<p class="ed-hint">识别到的日期「${esc(match.date)}」不完整，改成完整日期后保存。</p>`
       : '';
     return `<section class="ed-card ed-match-card">
-      <h3>本局信息</h3>
-      <p class="ed-hint">识别可能读错日期，或录屏没有胜负：在这里改好再保存。</p>
+      <h3>${glyph('calendar', { label: '本局信息', size: 18 })} 本局信息</h3>
       <div class="ed-match-form">
         <label>比赛日期<input type="date" data-match-field="date" value="${esc(dateValue)}"></label>
         <label>训练组 / 对手<input type="text" data-match-field="session" maxlength="40" autocomplete="off"
@@ -284,7 +285,7 @@ export function createReview(h) {
       </div>
       ${rawDate}
       <button class="control ed-wide" data-review-action="save-match" ${state.busy ? 'disabled' : ''}>
-        ${state.busy === 'match' ? '正在保存…' : '保存本局信息'}</button>
+        ${glyph('pick', { size: 18 })} ${state.busy === 'match' ? '正在保存…' : '保存本局信息'}</button>
     </section>`;
   }
 
@@ -310,27 +311,25 @@ export function createReview(h) {
       .map((item) => `<li><span>${stamp(item.at)}</span>${esc(item.action || '')}</li>`).join('');
 
     return `<aside class="ed-aside">
-      <section class="ed-card"><h3>素材来源</h3><ul class="ed-sources">${sources}</ul></section>
+      <section class="ed-card"><h3>${glyph('sources', { label: '素材来源', size: 18 })} 素材来源</h3><ul class="ed-sources">${sources}</ul></section>
       ${mode === 'ocr' ? matchInfoCard(channel) : ''}
       <section class="ed-card">
-        <h3>复核</h3>
+        <h3>${glyph('victory', { label: '复核', size: 18 })} 复核</h3>
         ${!ready
           ? (mode === 'ocr'
             ? '<p class="ed-hint is-warn">这局还没有可核对的识别结果，先回截图 / 录屏页重新识别并挂上。</p>'
             : '<p class="ed-hint is-warn">这局还没有可核对的十人面板，先补详情。</p>')
           : reviewed
             ? `<p class="ed-hint">${text(review.reviewedBy)} · ${stamp(review.reviewedAt)}${review.notes ? `<br>${esc(review.notes)}` : ''}</p>`
-            : (mode === 'ocr'
-              ? '<p class="ed-hint">改完识别结果后，填一句备注并标记复核，才能保存到正式统计。</p>'
-              : '<p class="ed-hint">改完数据后，填一句备注并标记复核，才能保存到正式统计。</p>')}
+            : ''}
         <textarea data-review-notes rows="2" placeholder="${mode === 'ocr'
           ? '例如：按截图识别结果核对，缺失项已人工确认'
           : '例如：按营地十人面板核对，输出以营地总伤害为准'}">${esc(state.notes)}</textarea>
         <button class="control ed-wide" data-review-action="review" ${state.busy || !ready ? 'disabled' : ''}>
-          ${state.busy === 'review' ? '正在标记…' : (reviewed ? '更新复核备注' : '标记为已复核')}</button>
+          ${glyph(reviewed ? 'edit' : 'victory', { size: 18 })} ${state.busy === 'review' ? '正在标记…' : (reviewed ? '更新复核备注' : '标记为已复核')}</button>
       </section>
-      <section class="ed-card"><h3>变更记录</h3>
-        <ul class="ed-log">${log || '<li class="ed-hint">还没有记录</li>'}</ul></section>
+      <section class="ed-card"><h3>${glyph('clock', { label: '变更记录', size: 18 })} 变更记录</h3>
+        <ul class="ed-log">${log || `<li class="ed-hint">${glyph('clock', { size: 16 })} 还没有记录</li>`}</ul></section>
     </aside>`;
   }
 
@@ -340,7 +339,7 @@ export function createReview(h) {
     const channel = value?.channel;
     if (!channel) {
       return `<p class="capture-notice is-error">审查记录 ${esc(id)} 不存在。</p>
-        <p><a class="control" href="#ingest">${icon('arrow')} 回到采集页</a></p>`;
+        <p><a class="control" href="#ingest">${glyph('home', { size: 18 })} 回到采集页</a></p>`;
     }
     const mode = entryMode(channel);
     const ocrEntry = mode === 'ocr';
@@ -358,14 +357,14 @@ export function createReview(h) {
       ? `<div class="capture-notice is-error" role="status">
           <b>这局还没有可用的十人名单。</b>在「截图 / 录屏」页重新识别并挂上，识别出十人后再来核对。
           <div class="notice-actions">
-            <a class="control" href="#shots">去截图 OCR</a>
-            <a class="control" href="#videos">去录屏 OCR</a>
+            <a class="control" href="#shots">${glyph('capture', { size: 18 })} 去截图 OCR</a>
+            <a class="control" href="#videos">${glyph('capture', { size: 18 })} 去录屏 OCR</a>
           </div></div>`
       : `<div class="capture-notice is-error" role="status">
           <b>这局还没有营地十人面板。</b>先补挂本机详情，或回采集页重新拉取并同步这一局。
           <div class="notice-actions">
-            ${gameSeq ? `<button class="control" data-review-action="attach-camp" ${state.busy ? 'disabled' : ''}>${state.busy === 'attach' ? '正在补挂…' : '补挂本机详情'}</button>` : ''}
-            <a class="control" href="#ingest">回采集页重新同步</a>
+            ${gameSeq ? `<button class="control" data-review-action="attach-camp" ${state.busy ? 'disabled' : ''}>${glyph('sources', { size: 18 })} ${state.busy === 'attach' ? '正在补挂…' : '补挂本机详情'}</button>` : ''}
+            <a class="control" href="#ingest">${glyph('refresh', { size: 18 })} 回采集页重新同步</a>
           </div></div>`);
     const missingNote = missing.length
       ? `<div class="capture-notice is-error" role="status"><b>仍有 ${missing.length} 项缺失：</b>${esc(missingText)}。补齐后可直接保存；确认保留缺失，也可标记复核后保存。</div>`
@@ -375,13 +374,10 @@ export function createReview(h) {
       : `${channel.match?.session || '未命名训练组'} · 缺失值审查`;
 
     const head = embedded
-      ? `<div class="cap-embed-head"><a class="control" href="#review">${icon('arrow')} 返回审查列表</a>
+      ? `<div class="cap-embed-head"><a class="control" href="#review">${glyph('home', { size: 18 })} 返回审查列表</a>
           <div><h2>${esc(title)}</h2></div></div>`
-      : `<div class="page-intro"><div><h1>${esc(title)}</h1>
-        <p>${ocrEntry
-          ? '数据来自截图 / 录屏 OCR；核对十人数值后标记复核并保存。'
-          : '数据以营地十人面板为准，可直接修改；保存后需要重新标记复核。'}</p></div>
-        <div class="intro-actions"><a class="control" href="${ocrEntry ? '#shots' : '#ingest'}">${icon('arrow')} ${ocrEntry ? '回截图 / 录屏' : '返回缺失值审查'}</a></div></div>`;
+      : `<div class="page-intro"><div><h1>${glyph('coach', { label: '逐项校对', size: 20 })} ${esc(title)}</h1></div>
+        <div class="intro-actions"><a class="control" href="${ocrEntry ? '#shots' : '#ingest'}">${glyph('home', { size: 18 })} ${ocrEntry ? '回截图 / 录屏' : '返回缺失值审查'}</a></div></div>`;
 
     return `${head}
       ${notice}
@@ -391,7 +387,7 @@ export function createReview(h) {
       ${header(channel)}
       <div class="ed-layout">
         <section class="ed-main">
-          <div class="ed-panel-head"><h2>十人数据</h2></div>
+          <div class="ed-panel-head"><h2>${glyph('players', { label: '十人数据', size: 20 })} 十人数据</h2></div>
           ${table(channel)}
         </section>
         ${aside(channel)}

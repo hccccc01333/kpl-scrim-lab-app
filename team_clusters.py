@@ -67,8 +67,12 @@ def is_placeholder(name) -> bool:
     return not text or text.startswith('待命名')
 
 
-def load_workspace_teams(db_path) -> dict:
-    """读取工作区战队表。战队名的权威来源是 workspace_store.teams；覆盖层只做兼容。"""
+def load_workspace_teams(db_path, *, include_archived=False) -> dict:
+    """读取工作区战队表。战队名的权威来源是 workspace_store.teams；覆盖层只做兼容。
+
+    默认排除已归档战队：删除是软删除（status='archived'），如果解析层照读，
+    删掉的战队卡会从别名/覆盖层里「复活」——用户看到的就是「删了还有档案」。
+    """
     path = Path(db_path)
     if not path.is_file():
         return {}
@@ -76,7 +80,10 @@ def load_workspace_teams(db_path) -> dict:
         connection = sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)
         connection.row_factory = sqlite3.Row
         try:
-            rows = connection.execute('SELECT id, name, coach, status FROM teams').fetchall()
+            sql = 'SELECT id, name, coach, status FROM teams'
+            if not include_archived:
+                sql += " WHERE status IS NULL OR status<>'archived'"
+            rows = connection.execute(sql).fetchall()
         finally:
             connection.close()
     except sqlite3.Error:
@@ -469,8 +476,8 @@ def rename_team(db_path, key, name=None, coach=None, *, sync_workspace=True):
                              if team['id'] == key), None)
             if existing:
                 workspace.upsert_team(key, name=existing['name'], coach=cleaned_coach, source='manual')
-    if previous and previous != cleaned_name:
-        record_alias(db_path, key, previous, cleaned_name)
+    # 改名不保留旧名：旧名堆在别名表里越攒越多，反而制造重名和串线。
+    # 文本引用由 identity_service 的 _sync_team_name_refs 直接换成新名。
     return body
 
 
@@ -518,6 +525,7 @@ def rename_many(db_path, items, *, actor=None) -> dict:
     from workspace_store import Workspace
     workspace = Workspace(db_path).ensure_schema()
     connection = workspace.connect()
+    pending_refs = []
     try:
         connection.execute('BEGIN IMMEDIATE')
         for item in cleaned:
@@ -555,6 +563,8 @@ def rename_many(db_path, items, *, actor=None) -> dict:
             # 批量改名同样把旧队名留成别名，历史文本自动归一到新队名。
             import opponent_identity
             old_name = clean_name((row['name'] if row else '') or body.get('name'))
+            if old_name and old_name != item['name']:
+                pending_refs.append((old_name, item['name']))
             body['aliases'] = opponent_identity.merge_alias(
                 body.get('aliases'), old_name, item['name'])
             body['name'] = item['name']
@@ -576,6 +586,12 @@ def rename_many(db_path, items, *, actor=None) -> dict:
                 connection.execute('UPDATE teams SET aliases=? WHERE id=?',
                                    (json.dumps(merged, ensure_ascii=False), item['id']))
         connection.commit()
+        # 注释里承诺「文本引用会换成新名」，但批量路径以前从没真正调用过。
+        # 该函数自己开连接，必须在上面的事务提交之后跑，否则会等写锁。
+        if pending_refs:
+            import identity_service
+            for old_name, new_name in pending_refs:
+                identity_service._sync_team_name_refs(str(db_path), old_name, new_name)
         opponent_identity.clear_cache()
     except Exception:
         connection.rollback()
@@ -1830,6 +1846,11 @@ def _draft_block(bp, own_side, hero_info=None) -> dict:
         return {'lane': row.get('lane') or '', 'archetype': row.get('archetype') or ''}
 
     events = []
+    try:
+        from bp_formats import get_format
+        schedule = {row.get('order'): row for row in get_format(bp.get('ruleProfile')).schedule}
+    except (ImportError, TypeError, ValueError):
+        schedule = {}
     for event in (bp.get('draftEvents') or []):
         camp = str(event.get('camp') or '')
         if camp not in ('1', '2'):
@@ -1838,26 +1859,32 @@ def _draft_block(bp, own_side, hero_info=None) -> dict:
         known_own = (camp == '1' and own_side == 'left') or (camp == '2' and own_side == 'right')
         hero = event.get('hero')
         row = label(hero)
+        step = schedule.get(event.get('order')) or {}
         events.append({
             'order': event.get('order'),
+            'phase': event.get('phase') or step.get('phase') or '',
             'action': event.get('action'),
             'side': 'own' if known_own else 'enemy',
             'hero': hero,
             'lane': row['lane'],
             'archetype': row['archetype'],
+            'parallel': bool(event.get('parallel', step.get('parallel', False))),
+            'blind': bool(event.get('blind', step.get('blind', False))),
         })
     ordered = {'own': {'ban': [], 'pick': []}, 'enemy': {'ban': [], 'pick': []}}
     for event in sorted(events, key=lambda item: item.get('order') or 0):
         action = event.get('action')
         side = event.get('side')
         if action in ('ban', 'pick') and side in ordered:
-            ordered[side][action].append({key: event[key] for key in ('hero', 'lane', 'archetype')})
+            ordered[side][action].append({key: event[key] for key in (
+                'order', 'phase', 'hero', 'lane', 'archetype', 'parallel', 'blind')})
     return {
         'known': bool(bp.get('pickOrderKnown') and events),
         'events': events,
         'ordered': ordered,
         'orderSource': bp.get('orderSource') or '',
         'orderAssumed': bool(bp.get('orderAssumed')),
+        'ruleProfile': bp.get('ruleProfile') or '',
         'banCount': bp.get('banCount') or {},
     }
 

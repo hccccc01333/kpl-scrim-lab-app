@@ -50,6 +50,27 @@ def test_team_name_required(ws):
         ws.upsert_team(name='  ')
 
 
+def test_own_team_cannot_be_deleted(ws):
+    """本队战队虽在 teams 主数据里，但带删除按钮的对手页不能删掉它。
+
+    delete_team 会连名下选手与账号映射一起清掉；本队 ID 全挂在这支战队下，
+    误删等于把本队档案整个抹掉。前端过滤之外，这里必须兜底拒绝。
+    """
+    own = ws.upsert_team(name='AG电子俱乐部')
+    connection = ws.connect()
+    connection.execute(
+        "INSERT INTO workspace_meta(key, value, updated_at) VALUES('own_team_id', ?, ?)",
+        (own, 1.0))
+    connection.commit()
+    connection.close()
+    assert ws.own_team_id() == own
+    player = ws.upsert_player(team_id=own, name='本队选手')
+    with pytest.raises(ValueError, match='本队战队'):
+        ws.delete_team(own)
+    assert [t['name'] for t in ws.list_teams()] == ['AG电子俱乐部']
+    assert any(p['id'] == player for p in ws.list_players())
+
+
 def test_players_belong_to_team_and_alias(ws):
     team_id = ws.upsert_team(name='白虎')
     player_id = ws.upsert_player(team_id=team_id, name='白虎·刀', position='对抗路')

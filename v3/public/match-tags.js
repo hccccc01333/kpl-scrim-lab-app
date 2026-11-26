@@ -11,6 +11,8 @@
  * 一次最多露 6 个，再多折成「更多 N 个」。
  */
 
+import { glyph } from './ui-icons.js';
+
 const BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const LIST_URL = `${BASE}/api/v3/match-tags`;
 const SAVE_URL = (key) => `${BASE}/api/v3/match-meta/${encodeURIComponent(key)}`;
@@ -129,13 +131,13 @@ function chipsHtml(key) {
     return `<span class="tagchip" data-tag-own="${esc(key)}">
       <span class="tagchip-text"${note ? ` title="${esc(note)}"` : ''}>${esc(tag)}${note ? '<i class="tagchip-dot" aria-hidden="true"></i>' : ''}</span>
       <button type="button" class="tagchip-note" data-tag-note="${esc(key)}"
-        data-tag-name="${esc(tag)}" title="给「${esc(tag)}」写备注" aria-label="给标签 ${esc(tag)} 写备注">✎</button>
+        data-tag-name="${esc(tag)}" title="给「${esc(tag)}」写备注" aria-label="给标签 ${esc(tag)} 写备注">${glyph('edit', { size: 16 })}</button>
       <button type="button" class="tagchip-x" data-tag-remove="${esc(key)}"
-        data-tag-name="${esc(tag)}" title="去掉「${esc(tag)}」" aria-label="去掉标签 ${esc(tag)}">×</button>
+        data-tag-name="${esc(tag)}" title="去掉「${esc(tag)}」" aria-label="去掉标签 ${esc(tag)}">${glyph('trash', { size: 16 })}</button>
       ${editing ? `<span class="tagnote-editor"><input class="tagnote-input" data-tagnote-input="${esc(key)}"
         data-tag-name="${esc(tag)}" value="${esc(note)}" maxlength="200" placeholder="为什么标记这一局（可不填）"
         aria-label="标签 ${esc(tag)} 在本局的备注"><button type="button" data-tagnote-save="${esc(key)}"
-        data-tag-name="${esc(tag)}">保存</button></span>` : ''}
+        data-tag-name="${esc(tag)}">${glyph('pick', { size: 16 })} 保存</button></span>` : ''}
     </span>`;
   }).join('');
 }
@@ -162,7 +164,7 @@ function rowHtml(key) {
   const full = tags.length >= state.limit;
   return `${chipsHtml(key)}
     ${full ? '' : `<button type="button" class="tagadd" data-tag-add="${esc(key)}"
-      title="给这一局加标签">＋ 标签</button>`}
+      title="给这一局加标签">${glyph('edit', { size: 18 })} 加标签</button>`}
     ${pickerHtml(key)}`;
 }
 
@@ -249,9 +251,7 @@ function queryMatches(word) {
 
 function queryResultsHtml(word) {
   const tag = text(word);
-  if (!tag) {
-    return '<p class="tq-hint">输入标签，或点下面的标签快速查找；教练新加的标签会自动出现在这里。</p>';
-  }
+  if (!tag) return '';
   const keys = queryMatches(tag);
   if (!keys.length) {
     return `<p class="tq-empty">还没有对局挂过「${esc(tag)}」这个标签。</p>`;
@@ -270,7 +270,7 @@ function queryChipsHtml(scope, word) {
   if (!pool.length) {
     return state.vocabulary.length
       ? '<span class="tq-chip-empty">没有匹配的标签</span>'
-      : '<span class="tq-chip-empty">还没有标签：先在复盘卡或档案里点「＋ 标签」添加一个</span>';
+      : '<span class="tq-chip-empty">还没有标签：先在复盘卡或档案里点「加标签」创建一个</span>';
   }
   const shown = queryOf(scope).expanded ? pool : pool.slice(0, QUERY_CHIP_LIMIT);
   const rest = pool.length - shown.length;
@@ -297,13 +297,13 @@ function paintQuery(node) {
   const label = text(node.dataset.tqLabel) || QUERY_DEFAULT_LABEL[scope] || '标签查询';
   const word = queryOf(scope).value;
   node.innerHTML = `<div class="tq-body">
-      <div class="tq-head"><b>${esc(label)}</b><span>按标签找对局</span></div>
+      <div class="tq-head">${glyph('matches', { label: '标签查询', size: 18 })}<b>${esc(label)}</b></div>
       <div class="tq-bar">
         <input class="tq-input" data-tq-input="${esc(scope)}" value="${esc(word)}"
           maxlength="${state.maxLength}" placeholder="输入标签，如：团战" autocomplete="off"
           list="none" aria-label="按标签查询对局">
-        <button type="button" class="tq-go" data-tq-go="${esc(scope)}">查询</button>
-        <button type="button" class="tq-clear" data-tq-clear="${esc(scope)}"${text(word) ? '' : ' hidden'}>清除</button>
+        <button type="button" class="tq-go" data-tq-go="${esc(scope)}">${glyph('matches', { size: 18 })} 查询</button>
+        <button type="button" class="tq-clear" data-tq-clear="${esc(scope)}"${text(word) ? '' : ' hidden'}>${glyph('refresh', { size: 18 })} 清除</button>
       </div>
       <div class="tq-chips" data-tq-chips="${esc(scope)}"></div>
       <div class="tq-out" data-tq-out="${esc(scope)}"></div>
@@ -354,7 +354,7 @@ function barHitKeys(scope) {
 function barChipsHtml(scope, word) {
   const pool = barCandidates(word);
   if (!pool.length) {
-    return `<span class="tagbar-empty">${state.vocabulary.length ? '没有匹配的标签' : '还没有标签：在下方卡片点「＋ 标签」创建'}</span>`;
+    return `<span class="tagbar-empty">${state.vocabulary.length ? '没有匹配的标签' : '还没有标签：在下方卡片点「加标签」创建'}</span>`;
   }
   const bar = barOf(scope);
   const shown = bar.expanded ? pool : pool.slice(0, 10);
@@ -368,9 +368,7 @@ function barChipsHtml(scope, word) {
 
 function barResultsHtml(scope) {
   const bar = barOf(scope);
-  if (!bar.tags.length && !text(bar.keyword)) {
-    return '<p class="tagbar-hint">点标签组合筛选，或输入英雄 / 对手 / 日期查找以前标记过的对局。</p>';
-  }
+  if (!bar.tags.length && !text(bar.keyword)) return '';
   const keys = barHitKeys(scope);
   if (!keys.length) return '<p class="tagbar-empty">没有同时满足这些条件的对局。</p>';
   const rows = keys.map((key) => {
@@ -393,8 +391,8 @@ function barManageHtml(scope) {
     const name = text(item.name);
     if (!name) return '';
     return `<span class="tagbar-manage-row"><span>${esc(name)} · ${item.count} 场</span>
-      <button type="button" data-tb-rename="${esc(scope)}" data-tb-name="${esc(name)}">重命名</button>
-      <button type="button" data-tb-delete="${esc(scope)}" data-tb-name="${esc(name)}">删除</button></span>`;
+      <button type="button" data-tb-rename="${esc(scope)}" data-tb-name="${esc(name)}">${glyph('edit', { size: 16 })} 重命名</button>
+      <button type="button" data-tb-delete="${esc(scope)}" data-tb-name="${esc(name)}">${glyph('trash', { size: 16 })} 删除</button></span>`;
   }).join('');
   return `<div class="tagbar-manage">${rows || '<span class="tagbar-empty">还没有标签可管理</span>'}</div>`;
 }
@@ -426,9 +424,9 @@ function paintBar(node) {
       <label for="tb-input-${esc(scope)}">标签检索</label>
       <input type="search" id="tb-input-${esc(scope)}" data-tb-input="${esc(scope)}" value="${esc(bar.keyword)}"
         placeholder="标签名 / 英雄 / 对手 / 日期" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false" list="none">
-      <button type="submit">检索</button>
-      <button type="button" data-tb-reset="${esc(scope)}">重置</button>
-      <button type="button" data-tb-manage-toggle="${esc(scope)}">管理标签</button>
+      <button type="submit">${glyph('matches', { size: 18 })} 检索</button>
+      <button type="button" data-tb-reset="${esc(scope)}">${glyph('refresh', { size: 18 })} 重置</button>
+      <button type="button" data-tb-manage-toggle="${esc(scope)}">${glyph('edit', { size: 18 })} 管理标签</button>
     </form>
     <fieldset class="tagbar-fieldset"><legend>常用标签</legend>
       <div class="tagbar-chips" data-tb-chips="${esc(scope)}"></div>

@@ -28,6 +28,7 @@ BP 完整性（契约 v1.1，见 `docs/kpl_bp_pipeline.md` §1）：
 from __future__ import annotations
 
 import json
+import math
 import os
 import tempfile
 import time
@@ -35,6 +36,8 @@ from datetime import datetime
 from pathlib import Path
 
 import requests
+
+from bp_formats import pick_key
 
 ROOT = Path(__file__).resolve().parent
 DATA_KPL = ROOT / 'data' / 'kpl'
@@ -286,8 +289,22 @@ def picks_match_players(data, picks):
     return True
 
 
+def _number(value):
+    """官方数值归一化：只收有限数字，字符串 / bool / NaN 不当成 0。"""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    if not math.isfinite(value):
+        return None
+    return int(value) if value.is_integer() else value
+
+
 def _player_rows(data):
-    """十人面板 → `{"1": [{hero, player, position}], "2": [...]}`（按接口顺序）。"""
+    """十人面板 → `{"1": [{hero, player, position, stats?}], "2": [...]}`。
+
+    官方 `battle_player_list` 还带终局逐人数值；旧接口/旧局没有这些字段时
+    保持原来的三列结构，不补零，避免把缺失污染成真实样本。
+    """
     grouped = {'1': [], '2': []}
     for row in data.get('battle_player_list') or []:
         camp = str(row.get('camp') or '')
@@ -296,11 +313,26 @@ def _player_rows(data):
         hero = str(row.get('hero_name') or '').strip()
         if not hero:
             continue
-        grouped[camp].append({
+        item = {
             'hero': hero,
             'player': str(row.get('player_name') or row.get('actual_player_name') or '').strip(),
             'position': str(row.get('position_desc') or '').strip(),
-        })
+        }
+        stats = {
+            'kills': _number(row.get('kill_num')),
+            'deaths': _number(row.get('death_num')),
+            'assists': _number(row.get('assist_num')),
+            'participation': _number(row.get('participation_rate')),
+            'gold': _number(row.get('gold')),
+            'damage': _number(row.get('hurt_total')),
+            'heroDamage': _number(row.get('hurt_to_hero_total')),
+            'taken': _number(row.get('be_hurt_total')),
+            'heroTaken': _number(row.get('be_hurt_by_hero_total')),
+        }
+        stats = {key: value for key, value in stats.items() if value is not None}
+        if stats:
+            item['stats'] = stats
+        grouped[camp].append(item)
     return grouped
 
 
@@ -419,6 +451,7 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
     * `bp_list` 不完整 → picks 用十人面板兜底；是巅峰对决最后一局记 `blind`，否则记 `partial`，
       两者 `bansKnown=false`、`pickOrderKnown=false`，照常入库进组合统计；
     * 十人面板也不全 → `invalid`（唯一真正拿不到的情况）。
+    * 普通征召/partial 局双方 Pick 不得同名；只有真正的决胜盲选局豁免。
     """
     match = match or {}
     league = league or {}
@@ -449,6 +482,11 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         bp_has_picks = len(bp_picks['1']) == 5 and len(bp_picks['2']) == 5
         bp_mode = BP_MODE_BLIND if (is_decider_game(match, effective_id) and not bp_has_picks) \
             else BP_MODE_PARTIAL
+    if bp_mode != BP_MODE_BLIND:
+        own_picks = {pick_key(hero) for hero in picks['1']}
+        foe_picks = {pick_key(hero) for hero in picks['2']}
+        if own_picks & foe_picks:
+            raise BattleParseError('duplicate-pick')
     try:
         win_camp = int(data.get('win_camp') or 0)
     except (TypeError, ValueError):
@@ -462,7 +500,8 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         seq = int(data.get('battle_seq') or game_seq or 0)
     except (TypeError, ValueError):
         seq = 0
-    return {
+    duration_ms = _number(data.get('game_duration'))
+    game = {
         'schema': SCHEMA_GAME,
         'battleId': str(data.get('battle_id') or battle_id),
         'matchId': str(match.get('match_id') or ''),
@@ -490,6 +529,9 @@ def parse_battle(payload, *, battle_id='', match=None, league=None, game_seq=0,
         'players': players,
         'fetchedAt': fetched_at or now_iso(),
     }
+    if duration_ms and duration_ms > 0:
+        game['durationMs'] = duration_ms
+    return game
 
 
 # ---------------------------------------------------------------------------
@@ -604,6 +646,133 @@ def load_games(path=GAMES_PATH):
         if isinstance(row, dict) and row.get('battleId'):
             rows.append(row)
     return rows
+
+
+BASELINE_FIELDS = ('winRate', 'heroWinRate', 'kda', 'participation', 'assists',
+                   'gpm', 'dpm', 'hdpm', 'dtpm', 'taken')
+BASELINE_STAT_FIELDS = ('kda', 'participation', 'assists', 'gpm', 'dpm', 'hdpm', 'dtpm', 'taken')
+
+
+def _baseline_lane(player, hero_tags):
+    position = str((player or {}).get('position') or '')
+    hero = str((player or {}).get('hero') or '')
+    if position == '打野':
+        sub = ((hero_tags.get(hero) or {}).get('lanes') or {}).get('打野') or ''
+        return '打野·坦野' if '坦野' in str(sub) else '打野·野核'
+    return position
+
+
+def build_lane_baseline(games, external=None, hero_tags=None, league=''):
+    """按赛事 × 实际分路聚合 KPL 逐局事实，缺失指标不补零。
+
+    `games` 是 `load_games()` 的逐局记录；`external` 是 KPL 英雄外部胜率，
+    `hero_tags` 用于把打野拆成坦野/野核。每个指标同时返回有效样本数。
+    """
+    games = [game for game in games or [] if isinstance(game, dict)]
+    external = external if isinstance(external, dict) else {}
+    hero_tags = hero_tags if isinstance(hero_tags, dict) else {}
+    league = str(league or '').strip()
+    league_counts = {}
+    for game in games:
+        name = str(game.get('leagueName') or '').strip()
+        if name:
+            league_counts[name] = league_counts.get(name, 0) + 1
+    leagues = [{'name': name, 'games': count}
+               for name, count in sorted(league_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    if league and league not in league_counts:
+        return {'schema': 'kpl-lane-baseline-v1', 'games': 0, 'league': league,
+                'source': 'KPL 官方逐局事实 + KPL 英雄外部胜率',
+                'fields': ['winRate', 'heroWinRate'], 'leagues': leagues, 'lanes': {}}
+
+    cells = {}
+    total = 0
+    for game in games:
+        if league and str(game.get('leagueName') or '').strip() != league:
+            continue
+        total += 1
+        win_camp = _number(game.get('winCamp'))
+        duration = _number(game.get('durationMs'))
+        minutes = duration / 60000 if duration and duration > 0 else None
+        players_map = game.get('players') or {}
+        if not isinstance(players_map, dict):
+            continue
+        for camp, players in players_map.items():
+            try:
+                won = int(camp) == int(win_camp)
+            except (TypeError, ValueError):
+                won = False
+            for player in players or []:
+                if not isinstance(player, dict):
+                    continue
+                lane = _baseline_lane(player, hero_tags)
+                if not lane or lane == '未知':
+                    continue
+                cell = cells.setdefault(lane, {
+                    'games': 0, 'wins': 0, 'heroWrSum': 0.0, 'heroWrN': 0,
+                    'sums': {key: 0.0 for key in BASELINE_STAT_FIELDS},
+                    'counts': {key: 0 for key in BASELINE_STAT_FIELDS},
+                })
+                cell['games'] += 1
+                if won:
+                    cell['wins'] += 1
+                hero = str(player.get('hero') or '')
+                hero_row = external.get(hero) or {}
+                hero_wr = _number(hero_row.get('winRate')) if isinstance(hero_row, dict) else None
+                if hero_wr is not None:
+                    cell['heroWrSum'] += hero_wr
+                    cell['heroWrN'] += 1
+
+                stats = player.get('stats') or {}
+                if not isinstance(stats, dict):
+                    stats = {}
+                kills = _number(stats.get('kills'))
+                deaths = _number(stats.get('deaths'))
+                assists = _number(stats.get('assists'))
+                gold = _number(stats.get('gold'))
+                damage = _number(stats.get('damage'))
+                hero_damage = _number(stats.get('heroDamage'))
+                taken = _number(stats.get('taken'))
+                values = {
+                    'kda': (kills + assists) / max(1, deaths)
+                           if all(value is not None for value in (kills, deaths, assists)) else None,
+                    'participation': _number(stats.get('participation')),
+                    'assists': assists,
+                    'gpm': gold / minutes if minutes and gold is not None else None,
+                    'dpm': damage / minutes if minutes and damage is not None else None,
+                    'hdpm': hero_damage / minutes if minutes and hero_damage is not None else None,
+                    'dtpm': taken / minutes if minutes and taken is not None else None,
+                    'taken': taken,
+                }
+                for key, value in values.items():
+                    value = _number(value)
+                    if value is not None:
+                        cell['sums'][key] += value
+                        cell['counts'][key] += 1
+
+    lanes = {}
+    for lane, cell in cells.items():
+        games_n = cell['games']
+        samples = {'winRate': games_n, 'heroWinRate': cell['heroWrN']}
+        item = {
+            'games': games_n,
+            'wins': cell['wins'],
+            'winRate': round(cell['wins'] / games_n * 100, 1) if games_n else None,
+            'heroWinRate': round(cell['heroWrSum'] / cell['heroWrN'], 1) if cell['heroWrN'] else None,
+            'heroWinSamples': cell['heroWrN'],
+            'samples': samples,
+        }
+        for key in BASELINE_STAT_FIELDS:
+            count = cell['counts'][key]
+            samples[key] = count
+            item[key] = round(cell['sums'][key] / count, 2) if count else None
+        lanes[lane] = item
+    fields = [field for field in BASELINE_FIELDS
+              if any((cell['samples'].get(field) or 0) > 0 for cell in lanes.values())]
+    if not fields:
+        fields = ['winRate', 'heroWinRate']
+    return {'schema': 'kpl-lane-baseline-v1', 'games': total, 'league': league,
+            'source': 'KPL 官方逐局事实 + KPL 英雄外部胜率',
+            'fields': fields, 'leagues': leagues, 'lanes': lanes}
 
 
 def load_manifest(path=MANIFEST_PATH):

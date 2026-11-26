@@ -8,30 +8,49 @@
   <meta name="theme-color" content="#173f40">
   <link rel="icon" href="static/media/mark.svg" type="image/svg+xml">
   <title>赛训数据 · 工作台</title>
-  <link rel="stylesheet" href="static/interface.css?v=20261123staff1">
-  <link rel="stylesheet" href="static/metrics-observe.css?v=20261122a">
-  <link rel="stylesheet" href="static/rules-center.css?v=20261122b">
+  <link rel="stylesheet" href="static/interface.css?v=20261126noanalysis">
+  <link rel="stylesheet" href="static/metrics-observe.css?v=20261124mo4">
+  <link rel="stylesheet" href="static/rules-center.css?v=20261124effsel">
   <link rel="stylesheet" href="static/official-entry.css?v=20261123a">
   <link rel="stylesheet" href="static/ui-icons.css?v=20261122a">
-  <link rel="stylesheet" href="static/training-desk.css?v=20261122">
+  <link rel="stylesheet" href="static/training-desk.css?v=20261126chip">
   <!-- 唯一视觉层：必须在 training-desk.css 之后，覆盖其残留配色 -->
-  <link rel="stylesheet" href="static/platinum-ds.css?v=20261123counterfinal2">
-  <link rel="stylesheet" href="static/onboarding.css?v=20261123clean">
+  <link rel="stylesheet" href="static/platinum-ds.css?v=20261126about4">
+  <link rel="stylesheet" href="static/onboarding.css?v=20261126chip">
   <!-- 训练赛档案库：对局档案的紧凑记录列表，排在视觉层之后 -->
   <link rel="stylesheet" href="static/archive-ledger.css?v=20261122a">
   <!-- 重点关注：教练人工标记的局与原因汇总，排在视觉层之后 -->
   <link rel="stylesheet" href="static/focus-matches.css?v=20261123a">
   <!-- 赛事页（白金精修版式）：卡片/规格表/归档面板，排在视觉层之后 -->
-  <link rel="stylesheet" href="static/competitions.css?v=20261124rework">
+  <link rel="stylesheet" href="static/competitions.css?v=20261126mono2">
   <!-- 采集页 v2：独立整页版式，排在视觉层之后，只作用于 #content 的 capv-* 组件 -->
   <link rel="stylesheet" href="static/capture-v2.css?v=20261122a">
-  <link rel="stylesheet" href="static/coach-polish.css?v=20261123fresh">
+  <link rel="stylesheet" href="static/coach-polish.css?v=20261126coach2">
   <!-- 选手详情页：筛选框贴近标签 + 窄卡徽章换行，排在通用控件层之后 -->
   <link rel="stylesheet" href="static/player-detail-fixes.css?v=20261123a">
+  <!-- 数据源展示：赛事 → 战队池/选手池的后端图谱，排在视觉层之后 -->
+  <link rel="stylesheet" href="static/datasource.css?v=20261124ds10">
+  <link rel="stylesheet" href="static/source-health.css?v=20261124sh1">
+  <!-- 匹配与编组：匹配页（选手ID / 对手 / 阵营），排在视觉层之后 -->
+  <link rel="stylesheet" href="static/matching.css?v=20261126coach1">
+  <!-- 英雄新增三页：本队英雄详情 / 分路英雄指标 / 英雄组合表现 -->
+  <link rel="stylesheet" href="static/team-hero-insight.css?v=20261124a">
+  <!-- UI 放大与图标化底座：最后加载，统一按钮/字体/间距/图标尺寸与交互反馈 -->
+  <link rel="stylesheet" href="static/uplift.css?v=20261125a">
+  <!-- PPT 级版面精修：框层级、行对齐、视觉盒文字居中，最后加载 -->
+  <link rel="stylesheet" href="static/ppt-layout.css?v=20261125p1">
+  <!-- 线条感：同类小方块等宽、状态徽章定宽、数字等宽对齐 -->
+  <link rel="stylesheet" href="static/line-rhythm.css?v=20261125r1">
+  <!-- 选手详情页最终视觉层：黑白杂志感，只作用于 data-pl-page="solo" -->
+  <link rel="stylesheet" href="static/player-detail-refined.css?v=20261126pdwhite1">
+  <!-- 单场总览三层排版：必须最后加载（未分层），盖住 uplift 的按钮 !important -->
+  <link rel="stylesheet" href="static/biggame-overview.css?v=20261126ov1">
+  <!-- 快照中心：最后加载，盖住 uplift 的按钮尺寸 !important -->
+  <link rel="stylesheet" href="static/snapshot-center.css?v=20261126sc1">
   <script src="static/theme-init.js"></script>
   <!-- 与 app.js 里的 importOnce 同版本：冷启动直达采集/对局页签时并行预取模块。 -->
-  <link rel="modulepreload" href="static/features.js?v=20261123staff1">
-  <script type="module" src="static/app.js?v=20261123review2"></script>
+  <link rel="modulepreload" href="static/features.js?v=20261126pdwhite1">
+  <script type="module" src="static/app.js?v=20261126noanalysis"></script>
 </head>
 <body>
   <a class="skip" href="#content">跳至主要内容</a>

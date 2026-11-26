@@ -2,6 +2,7 @@
    内容单一信息源来自 help-content.js（由 docs/guide/content.json 生成）。 */
 import { helpContent } from './help-content.js';
 import { diagnosticBlock, bindDiagnosticCopy } from './diagnostics.js';
+import { glyph } from './ui-icons.js';
 
 export function createDocsPage({ esc, icon }) {
   const external = (href, label, extra = '') => `<a href="${esc(href)}"${extra}>${esc(label)}</a>`;
@@ -82,7 +83,7 @@ export function createDocsPage({ esc, icon }) {
     ${feedback.groupNumber ? `<div class="help-qq-row">
       <span>群号</span><code id="help-qq-group" tabindex="0">${esc(feedback.groupNumber)}</code>
       <div class="dx-copy">
-        <button type="button" class="control" data-diagnostic-copy aria-controls="help-qq-group">复制群号</button>
+        <button type="button" class="control" data-diagnostic-copy aria-controls="help-qq-group">${glyph('export', { size: 18 })}复制群号</button>
         <span class="dx-copy-tip" role="status" aria-live="polite"></span>
       </div>
     </div>` : ''}
@@ -92,7 +93,7 @@ export function createDocsPage({ esc, icon }) {
       <div class="dx-head"><b>复制后按实际情况填写</b><span>不要粘贴对局数据</span></div>
       <pre class="dx-text" id="help-feedback-template" tabindex="0"><code>${esc(feedback.template || '')}</code></pre>
       <div class="dx-copy">
-        <button type="button" class="control" data-diagnostic-copy aria-controls="help-feedback-template">复制反馈模板</button>
+        <button type="button" class="control" data-diagnostic-copy aria-controls="help-feedback-template">${glyph('export', { size: 18 })}复制反馈模板</button>
         <span class="dx-copy-tip" role="status" aria-live="polite"></span>
       </div>
     </div>
@@ -103,13 +104,36 @@ export function createDocsPage({ esc, icon }) {
 
   function aboutChapter() {
     const about = helpContent.about || {};
-    return `<div class="help-about-card">
-      <span class="help-kicker">作者</span><b>${esc(about.author || '')}</b>
-      <p>${esc(about.origin || '')}</p>
-      <h3>这个工具坚持的三件事</h3>
-      <ul class="help-notes">${(about.principles || []).map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
-      <div class="help-links">${(about.links || []).map((item) =>
-        external(item.url, item.label + ' ↗', ' class="help-external" target="_blank" rel="noopener noreferrer"')).join('')}</div>
+    const linkIcons = ['book', 'home', 'export', 'victory'];
+    const sectionHead = (no, title) => `<div class="about-sec-head"><span class="about-sec-no">${no}</span><h3>${esc(title)}</h3></div>`;
+    return `<div class="about-page">
+      <section class="about-hero">
+        <div class="about-hero-id">
+          <span class="help-kicker">作者 / AUTHOR</span>
+          <b class="about-author">${esc(about.author || '')}</b>
+          <span class="about-hero-role">项目维护者 · 独立开发</span>
+        </div>
+        <div class="about-hero-seal" aria-hidden="true">${glyph('shield', { size: 30 })}</div>
+      </section>
+      <section class="about-sec">
+        ${sectionHead('01', '项目缘起')}
+        <p class="about-origin">${esc(about.origin || '')}</p>
+      </section>
+      <section class="about-sec">
+        ${sectionHead('02', '这个工具坚持的三件事')}
+        <div class="about-principles">${(about.principles || []).map((p, i) => `<article class="about-principle">
+          <span class="about-principle-no">${String(i + 1).padStart(2, '0')}</span>
+          <p>${esc(p)}</p>
+        </article>`).join('')}</div>
+      </section>
+      <section class="about-sec">
+        ${sectionHead('03', '相关链接')}
+        <div class="about-link-grid">${(about.links || []).map((item, i) => `<a class="about-link${i === 0 ? ' is-primary' : ''}" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">
+          <span class="about-link-ico">${glyph(linkIcons[i] || 'export', { size: 18 })}</span>
+          <span class="about-link-text">${esc(item.label)}</span>
+          <span class="about-link-go" aria-hidden="true">↗</span>
+        </a>`).join('')}</div>
+      </section>
     </div>`;
   }
 
@@ -122,7 +146,7 @@ export function createDocsPage({ esc, icon }) {
 
   function crumb(chapter) {
     const items = [
-      `<li><a href="#docs" data-help-chapter="${esc(chapters[0].id)}">文档首页</a></li>`,
+      `<li><a href="#docs" data-help-chapter="${esc(chapters[0].id)}">${glyph('home', { size: 18 })}文档首页</a></li>`,
       `<li><span>${esc(chapter.group || '文档')}</span></li>`,
       `<li><a href="#docs?chapter=${esc(chapter.id)}" data-help-chapter="${esc(chapter.id)}" aria-current="page">${esc(chapter.title)}</a></li>`,
     ];
@@ -134,8 +158,8 @@ export function createDocsPage({ esc, icon }) {
     const prev = chapters[index - 1];
     const next = chapters[index + 1];
     return `<nav class="help-pager" aria-label="翻页">
-      ${prev ? `<button type="button" class="control" data-help-chapter="${esc(prev.id)}">← ${esc(prev.title)}</button>` : '<span></span>'}
-      ${next ? `<button type="button" class="control" data-help-chapter="${esc(next.id)}">${esc(next.title)} →</button>` : '<span></span>'}
+      ${prev ? `<button type="button" class="control" data-help-chapter="${esc(prev.id)}">${glyph('arrow-up', { size: 18 })}${esc(prev.title)}</button>` : '<span></span>'}
+      ${next ? `<button type="button" class="control" data-help-chapter="${esc(next.id)}">${esc(next.title)}${glyph('arrow-up', { size: 18 })}</button>` : '<span></span>'}
     </nav>`;
   }
 
@@ -144,7 +168,6 @@ export function createDocsPage({ esc, icon }) {
       <header class="help-chapter-head">
         <span class="help-kicker">${esc(chapter.group || '文档')}</span>
         <h1>${esc(chapter.title)}</h1>
-        ${chapter.lead ? `<p>${esc(chapter.lead)}</p>` : ''}
       </header>
       <div class="help-chapter-body">${chapterBody(chapter)}</div>
       ${pager(chapter)}`;
@@ -158,6 +181,9 @@ export function createDocsPage({ esc, icon }) {
       if (!group) { group = { name, items: [] }; groups.push(group); }
       group.items.push(chapter);
     }
+    /* 「关于作者与项目来源」常驻靠前，别让它沉在目录最底下没人翻到。 */
+    const first = new Set(['about']);
+    for (const group of groups) group.items.sort((a, b) => Number(first.has(b.id)) - Number(first.has(a.id)));
     return `<label class="help-search"><span>搜索章节</span><input type="search" data-help-search placeholder="输入关键词…" autocomplete="off"></label>
       <nav class="help-toc" aria-label="文档目录">${groups.map((g) => `<div class="help-toc-group" data-group="${esc(g.name)}">
         <span class="help-toc-title">${esc(g.name)}</span>
@@ -170,12 +196,12 @@ export function createDocsPage({ esc, icon }) {
     const chapter = byId.get(active) || chapters[0];
     return `<div class="page help-page">
       <header class="help-top">
-        <span class="help-kicker">${icon('docs')} 工作台文档</span>
-        <div><h1>${esc(helpContent.title || '使用文档')}</h1><p>${esc(helpContent.subtitle || '')}</p></div>
-        <small>版本 v${esc(helpContent.version || '')} · 内容源自 <code>docs/guide/content.json</code></small>
+        <span class="help-kicker">${glyph('book', { size: 18 })}工作台文档</span>
+        <div><h1>${esc(helpContent.title || '使用文档')}</h1></div>
+        <small>版本 v${esc(helpContent.version || '')}<a href="#docs?chapter=about" data-help-chapter="about" class="help-about-shortcut" title="查看作者与项目来源">关于作者与项目来源 ↗</a></small>
       </header>
       <div class="help-layout">
-        <aside class="help-aside">${toc()}<p class="help-aside-note">左边选章节，右边只读这一章。遇到看不懂的词，去「名词解释」查。</p></aside>
+        <aside class="help-aside">${toc()}</aside>
         <section class="help-chapter" id="help-chapter" tabindex="-1">${chapterHtml(chapter)}</section>
       </div>
     </div>`;

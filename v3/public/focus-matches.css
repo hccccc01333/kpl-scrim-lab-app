@@ -1,0 +1,141 @@
+/* 重点关注：教练人工标记的局。复用 .fj-* 的工具栏与统计条，只补这一页特有的行与对话框。 */
+
+.fmx-reason-bar {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 0 var(--fj-pad, 24px) 14px;
+}
+.fmx-reason-bar .fj-chip { height: 32px; padding: 0 12px; }
+.fmx-reason-bar .fj-chip small {
+  margin-left: 5px; color: var(--quiet, var(--muted)); font-size: 10.5px; font-variant-numeric: tabular-nums;
+}
+.fmx-toolbar .fmx-only {
+  height: 38px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--paper); color: var(--muted); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+}
+.fmx-toolbar .fmx-only:hover { border-color: var(--accent); color: var(--text); }
+.fmx-toolbar .fmx-only[aria-pressed="true"] {
+  background: var(--soft, var(--wash)); border-color: var(--accent); color: var(--text);
+}
+
+.fmx-list { display: grid; gap: 7px; padding: 0 var(--fj-pad, 24px) 26px; }
+.fmx-row {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr) 176px; gap: 14px; align-items: center;
+  padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--line);
+  border-radius: 10px; background: var(--paper);
+}
+.fmx-row[hidden] { display: none; }
+.fmx-row.win { border-left-color: var(--fj-gold, #c9962d); }
+.fmx-row.loss { border-left-color: var(--fj-teal, #2d8a7e); }
+.fmx-row:hover { border-color: var(--accent); background: var(--soft, var(--surface)); }
+.fmx-no {
+  display: grid; gap: 3px; color: var(--muted);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.fmx-no small { color: var(--quiet, var(--muted)); font-size: 10.5px; font-weight: 600; }
+.fmx-main { display: grid; gap: 5px; min-width: 0; }
+.fmx-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fmx-title b {
+  font-size: 13.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.fmx-title .fj-badge { flex: 0 0 auto; }
+.fmx-meta { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.fmx-reasons { display: flex; flex-wrap: wrap; gap: 5px; }
+.fmx-reasons span {
+  padding: 2px 8px; border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--line));
+  border-radius: 999px; background: var(--soft, var(--wash)); color: var(--ink, var(--text));
+  font-size: 10.5px; font-weight: 700;
+}
+.fmx-note {
+  margin: 0; padding: 7px 10px; border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0;
+  background: var(--surface); color: var(--text); font-size: 12px; line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.fmx-empty {
+  display: grid; justify-items: center; gap: 8px; padding: 48px 20px; text-align: center;
+  border: 1px dashed var(--line); border-radius: 12px; background: var(--surface);
+}
+.fmx-empty b { font-size: 16px; }
+.fmx-empty span { max-inline-size: 420px; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+.fmx-empty-btn {
+  margin-top: 4px; min-block-size: 36px; padding: 0 16px; border: 1px solid var(--accent);
+  border-radius: 8px; background: var(--paper); color: var(--accent); font-size: 12.5px; font-weight: 700;
+}
+.fmx-empty-btn:hover { background: var(--wash); }
+
+.fmx-actions { display: grid; gap: 6px; justify-items: stretch; }
+.fmx-evidence, .fmx-mark {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 32px; padding: 0 12px;
+  border-radius: 7px; font-size: 12px; font-weight: 700; text-align: center; text-decoration: none;
+}
+.fmx-evidence { border: 1px solid var(--accent); color: var(--accent); background: var(--paper); }
+.fmx-evidence:hover { background: var(--wash); }
+.fmx-mark { border: 1px solid var(--line); color: var(--muted); background: var(--surface); }
+.fmx-mark:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 原生 <dialog>：不用 role/aria-modal，关闭走 <form method="dialog"> 的提交按钮。 */
+.focus-dialog {
+  inline-size: min(560px, calc(100vw - 32px)); max-block-size: min(720px, calc(100vh - 40px));
+  overflow: auto; padding: 0; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--paper); color: var(--text); box-shadow: 0 28px 70px -32px rgb(15 36 58 / .5);
+}
+.focus-dialog::backdrop { background: rgb(15 36 58 / .38); }
+.focus-dialog-head {
+  position: sticky; inset-block-start: 0; z-index: 1;
+  display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--line); background: var(--paper);
+}
+.focus-dialog-heading { min-inline-size: 0; flex: 1 1 auto; }
+.focus-dialog-heading small { color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .06em; }
+.focus-dialog-heading h2 { margin: 4px 0 5px; font-size: 18px; line-height: 1.3; }
+.focus-dialog-meta { margin: 0; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.focus-dialog-close {
+  flex: 0 0 auto; inline-size: 30px; block-size: 30px; border-radius: 50%;
+  background: var(--surface); color: var(--muted); font-size: 20px; line-height: 1;
+}
+.focus-dialog-close:hover { background: var(--wash); color: var(--text); }
+.focus-dialog-form { display: grid; gap: 16px; padding: 18px 20px 20px; }
+.focus-reasons { margin: 0; padding: 0; border: 0; }
+.focus-reasons legend { margin-bottom: 9px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.focus-reason-grid { display: flex; flex-wrap: wrap; gap: 7px; }
+.focus-reason { position: relative; }
+.focus-reason input { position: absolute; opacity: 0; inline-size: 1px; block-size: 1px; }
+.focus-reason span {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+  color: var(--muted); font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.focus-reason input:checked + span {
+  border-color: var(--accent); background: var(--wash); color: var(--accent);
+}
+.focus-reason input:focus-visible + span { outline: 2px solid var(--focus, var(--accent)); outline-offset: 2px; }
+.focus-note-field { display: grid; gap: 7px; }
+.focus-note-field > span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.focus-note-field textarea {
+  inline-size: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; line-height: 1.6; resize: vertical;
+}
+.focus-note-field textarea:focus { outline: 2px solid var(--focus, var(--accent)); outline-offset: 1px; border-color: var(--accent); }
+.focus-hint { margin: -6px 0 0; color: var(--quiet, var(--muted)); font-size: 11.5px; line-height: 1.6; }
+.focus-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.focus-dialog-actions button {
+  min-block-size: 36px; padding: 0 16px; border-radius: 8px; font-size: 12.5px; font-weight: 700;
+}
+.focus-unfollow { border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+.focus-unfollow:hover { border-color: #c6534a; color: #c6534a; }
+.focus-save { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.focus-save:hover { filter: brightness(.95); }
+.focus-save:disabled, .focus-unfollow:disabled { opacity: .5; cursor: not-allowed; }
+
+/* 档案行里的星标：和「备注」同一排，不抢复盘链接的位置。 */
+.archive-tools .archive-focus {
+  min-inline-size: 28px; block-size: 28px; padding: 0 6px; border: 1px solid var(--line);
+  border-radius: 7px; background: var(--paper); color: var(--muted);
+  font-size: 15px; line-height: 1;
+}
+.archive-tools .archive-focus:hover { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 900px) {
+  .fmx-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .fmx-actions { grid-auto-flow: column; justify-content: start; }
+  .fmx-evidence, .fmx-mark { min-inline-size: 132px; }
+}

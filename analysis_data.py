@@ -241,6 +241,9 @@ class AnalysisRepository:
         self.official_dir = (Path(official_dir) if official_dir
                              else self.matches_dir.parent / 'official_replays')
         self._data = None
+        # 战队改名/合并会 bump opponent_identity 的代际号。快照里烤进去的队名
+        # 必须跟着作废，否则「战队那边改了、对局页面还是旧名字」要等 15 秒 TTL。
+        self._identity_generation = None
         # 营地十人面板的出装按 gameSeq 缓存；同一局只在首次读盘。
         self._camp_equipment_cache = {}
         # 单进程内多个线程可能同时走 v3 的 TTL 刷新与 /api/reload；
@@ -278,12 +281,15 @@ class AnalysisRepository:
         return result
 
     def get(self):
+        import opponent_identity
+        generation = opponent_identity.generation()
         data = self._data
-        if data is not None:
+        if data is not None and self._identity_generation == generation:
             return data
         with self._lock:
-            if self._data is None:
+            if self._data is None or self._identity_generation != generation:
                 self._data = self._load()
+                self._identity_generation = opponent_identity.generation()
             return self._data
 
     def invalidate(self):
@@ -291,12 +297,38 @@ class AnalysisRepository:
             self._data = None
 
     # ---------- loading ----------
+    def _apply_record_team_links(self, matches):
+        """把 match_records 里匹配页确认过的对手战队带进分析快照。
+
+        数据包／match_meta 里可能没有对手队名，但「匹配与编组」已经把
+        enemy_team_id 落到关系表；以前只读包和 meta，于是匹配过仍显示
+        「对手未标注」。这里作为另一条候选供 opponent_identity 解析。
+        """
+        if not self.db_path.is_file():
+            return
+        connection = None
+        try:
+            connection = sqlite3.connect(f'file:{self.db_path.as_posix()}?mode=ro', uri=True)
+            links = {str(key): str(value or '').strip() for key, value in connection.execute(
+                'SELECT match_key, enemy_team_id FROM match_records '
+                'WHERE IFNULL(enemy_team_id, "") != ""')}
+        except sqlite3.Error:
+            return
+        finally:
+            if connection is not None:
+                connection.close()
+        for match in matches:
+            team_id = links.get(str(match.get('key') or ''))
+            if team_id:
+                match['recordTeamId'] = team_id
+
     def _load(self):
         warnings = []
         roster, team_name, db_matches, drafts, aliases, profile = self._load_db(warnings)
         bundles = self._load_bundles(warnings)
         matches, links = self._unify(db_matches, bundles, warnings)
         sheet_matches, imports, aggregates = self._load_imports(warnings)
+        self._apply_record_team_links(matches + sheet_matches)
         # 表格导入的局也吃「本队阵营」覆盖层与昵称绑定：教练在单局页标了蓝/红，
         # 下一层才能算胜负、比分与本队/对手两侧；以前这两步只跑在 db/bundle 上。
         combined = matches + sheet_matches
@@ -442,6 +474,22 @@ class AnalysisRepository:
             team_id = team_by_player.get(player_id)
             table = aliases if (not team_id or team_id in own_ids) else enemy_aliases
             table.setdefault(nickname, player_id)
+        # 匹配与编组落的是 player_nickname_pool，不是 player_accounts。
+        # 不读这张表的话，匹配成功后选手档案已经是选手ID，单局复盘 / 跨局分析 /
+        # 战队分析却还挂着营地游戏名 —— 同一场比赛两套名字。
+        try:
+            pool_rows = connection.execute(
+                "SELECT side, player_id, nickname FROM player_nickname_pool"
+                " WHERE player_id IS NOT NULL AND player_id<>''").fetchall()
+        except sqlite3.Error:
+            pool_rows = []
+        for row in pool_rows:
+            nickname = clean(row['nickname'])
+            player_id = str(row['player_id'] or '')
+            if not nickname or player_id not in roster:
+                continue
+            table = enemy_aliases if str(row['side']) == 'enemy' else aliases
+            table.setdefault(nickname, player_id)
 
     def _load_db(self, warnings):
         if not self.db_path.is_file():
@@ -551,6 +599,10 @@ class AnalysisRepository:
             for key in text_fields:
                 if key in patch:
                     match[key] = clean(patch.get(key))
+            if 'opponentTeamId' in patch:
+                # 对局界面给未归队的局建档后回链到这里：没有 gameSeq 的局
+                # 也跟着战队改名/合并走，不再是一局一个孤立的手工队名。
+                match['opponentTeamId'] = clean(patch.get('opponentTeamId'))
             if 'duration' in patch:
                 minutes = number(patch.get('duration'))
                 match['duration'] = int(round(minutes * 60)) if minutes and minutes > 0 else None

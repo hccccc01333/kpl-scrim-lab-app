@@ -1597,6 +1597,12 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 .demo-banner button { color: var(--ds-ink) !important; }
 .footer-update { color: var(--ds-muted) !important; }
 .footer-update:hover { color: var(--ds-ink) !important; }
+/* 全站页脚的「关于作者与项目来源」：任何页面一点直达，不再埋进文档目录。 */
+#app > .footer .footer-about {
+  color: var(--ds-muted) !important;
+  text-decoration: none !important;
+}
+#app > .footer .footer-about:hover { color: var(--ds-ink) !important; text-decoration: underline !important; }
 .update-error { background: #f5f5f5 !important; border-inline-start-color: #999999 !important; color: var(--ds-ink) !important; }
 .update-toast { background: var(--ds-gold-ink) !important; color: #ffffff !important; }
 .desk-page-select, .desk-page-select span { color: var(--ds-muted) !important; }
@@ -2228,8 +2234,12 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 }
 #content .pbr-home .pbr-roster-hero .portrait,
 #content .pbr-home .pbr-roster-portrait {
+  /* 父容器已是正方形，头像填满即可；min-block-size 清零避免被拉高。 */
   inline-size: 100% !important;
   block-size: 100% !important;
+  min-inline-size: 0 !important;
+  min-block-size: 0 !important;
+  aspect-ratio: 1 / 1 !important;
   object-fit: cover !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -2653,8 +2663,8 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 #content .pbr-home .pbr-notable-card h3 {
   margin: 6px 0 5px !important;
   color: var(--ds-ink) !important;
-  font-size: .9375rem !important;
-  font-weight: 400 !important;
+  font-size: var(--fs-2) !important;
+  font-weight: 600 !important;
   text-indent: 0 !important;
 }
 #content .pbr-home .pbr-notable-card p {
@@ -2821,9 +2831,14 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
   gap: 4px !important;
 }
 #content .pbr-home .pbr-related-rosters .pbr-roster-hero {
+  /* uplift 的 min-block-size:44px 会把这个 32px 小头像撑成长方形，这里抵掉；
+     去掉 1px 边框才能让图片拿到完整 32×32 的内容区。 */
   inline-size: 32px !important;
   block-size: 32px !important;
   min-inline-size: 32px !important;
+  min-block-size: 0 !important;
+  aspect-ratio: 1 / 1 !important;
+  border-width: 0 !important;
   padding: 0 !important;
 }
 #content .pbr-home .pbr-related-rosters .pbr-roster-portrait {
@@ -2897,8 +2912,9 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 #content .pbr-home .pbr-metrics-block .pbr-section-title h2,
 #content .pbr-home .pbr-notable .pbr-section-title h2,
 #content .pbr-home .pbr-findings .pbr-section-title h2 {
-  font-size: 1.0625rem !important;
-  font-weight: 400 !important;
+  /* 与全站 H2 同一档字号/字重，避免首页区块标题比别处小一号、轻一号。 */
+  font-size: var(--fs-3) !important;
+  font-weight: 600 !important;
   text-indent: 0 !important;
 }
 
@@ -3940,7 +3956,7 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
     font-size: 10px !important;
   }
   .page.bgx-page.bgx-detail .bgv-base-ref { white-space: normal !important; }
-  .page.bgx-page.bgx-detail .bgv-board {
+  .page.bgx-page.bgx-detail .bgv-board-scroll {
     scrollbar-width: thin;
     scrollbar-color: var(--ds-line-2, #cbd5e1) transparent;
     overscroll-behavior-inline: contain;
@@ -3995,31 +4011,27 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
   }
 }
 
-/* 35.5 窄卡内判词与胜负条维持单行，避免卡片高度跳变。 */
+/* 35.5 窄卡内判词保持可读，避免卡片高度跳变。 */
 @container bgc (inline-size < 420px) {
   .bgx-page:not(.bgx-detail) .bgx-team-card {
     padding: 12px 16px 11px !important;
     gap: 8px !important;
   }
-  .bgx-page:not(.bgx-detail) .bgx-verdict-row { gap: 10px !important; }
   .bgx-page:not(.bgx-detail) .bgx-verdict-line {
     font-size: 13px !important;
     line-height: 1.45 !important;
     min-inline-size: 0 !important;
   }
-  .bgx-page:not(.bgx-detail) .bgx-form {
-    gap: 3px !important;
-    margin-inline-start: auto !important;
-  }
-  .bgx-page:not(.bgx-detail) .bgx-form-cell {
-    min-inline-size: 19px !important;
-    padding: 2px 4px !important;
-    font-size: 9.5px !important;
-  }
   .bgx-page:not(.bgx-detail) .bgx-side-name { font-size: 24px !important; }
 }
 
-/* 35.6 状态 chip 给淡底与不换行。 */
+/* 35.6 日期/赛制放大，状态 chip 给淡底与不换行。 */
+.bgx-page:not(.bgx-detail) .bgx-team-top > span:first-child {
+  color: var(--ds-body, #3d5064) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  font-variant-numeric: tabular-nums !important;
+}
 .bgx-page:not(.bgx-detail) .bgx-team-top .bgx-status {
   white-space: nowrap !important;
   font-size: 11px !important;
@@ -4043,6 +4055,13 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
   background: color-mix(in oklab, var(--md-own-ink, #1f6fcf) 6%, transparent) !important;
   font-size: 12px !important;
   font-weight: 400 !important;
+}
+@media (hover: hover) {
+  .bgx-page:not(.bgx-detail) .bgx-team-card:hover .bgx-team-foot > b {
+    background: var(--md-own-ink, #1f6fcf) !important;
+    border-color: var(--md-own-ink, #1f6fcf) !important;
+    color: #fff !important;
+  }
 }
 .bgx-page:not(.bgx-detail) .bgx-team-card:focus-visible {
   outline: 2px solid var(--md-own-ink, #1f6fcf) !important;
@@ -4086,17 +4105,7 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 }
 .page.bgx-page.bgx-detail .bgx-hero-outcome b { font-size: 1.25rem !important; }
 
-/* 35.9 列表脚注与列表拉开层级。 */
-.bgx-page:not(.bgx-detail) .bgx-foot {
-  gap: 8px 20px !important;
-  padding-block: 10px 0 !important;
-  border-top: 1px solid var(--ds-line, #eef2f6) !important;
-  font-size: 12px !important;
-  line-height: 1.6 !important;
-  color: var(--ds-muted, #5b6672) !important;
-}
-
-/* ══════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════
    §36 跨局分析审计修复
    ══════════════════════════════════════════════════════════ */
 
@@ -4111,6 +4120,7 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 #content .xw-side.is-red em { color: var(--md-enemy-ink, #cf3f3f) !important; }
 
 /* 36.2 选手执行表：胶囊改蓝红、数值等宽同基线、对比值独占一行。 */
+#content .xw-count-label small { font-size: .9375rem; color: var(--ds-muted); }
 #content .xw-exec-verdict.is-own {
   background: var(--md-own-ink, #1f6fcf) !important;
   color: #fff !important;
@@ -4132,14 +4142,6 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
   font-weight: 400 !important;
   font-variant-numeric: tabular-nums !important;
 }
-
-/* 36.3 打法类型堆叠条：主类蓝，其余中性灰阶。 */
-#content .xw-arch-seg.is-0, #content .xw-arch-key.is-0 i { background: #1f6fcf !important; }
-#content .xw-arch-seg.is-1, #content .xw-arch-key.is-1 i { background: #9db9d6 !important; }
-#content .xw-arch-seg.is-2, #content .xw-arch-key.is-2 i { background: #c4d2df !important; }
-#content .xw-arch-seg.is-3, #content .xw-arch-key.is-3 i { background: #e2e2e2 !important; }
-#content .xw-arch-seg.is-4, #content .xw-arch-key.is-4 i { background: #a8a8a8 !important; }
-#content .xw-arch-seg.is-5, #content .xw-arch-key.is-5 i { background: #7d7d7d !important; }
 
 /* 36.4 1024 宽执行表不再横向溢出。 */
 @media (max-width: 1180px) {
@@ -4177,10 +4179,6 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 #content .xw-trend-col.is-draw i { background: #bdbdbd !important; }
 #content .xw-recent-row.is-win b { color: var(--md-own-ink, #1f6fcf) !important; }
 #content .xw-recent-row.is-loss b { color: var(--md-enemy-ink, #cf3f3f) !important; }
-
-/* 36.7 单卡轮播减少无效留白。 */
-#content .xw-radar-card { flex: 1 1 380px !important; max-width: 760px !important; }
-#content .xw-radar-rail { mask-image: none !important; -webkit-mask-image: none !important; }
 
 /* 36.8 交互反馈：跨局页局部把 hover/focus 提到本队蓝。 */
 #content .xw-tab:hover span, #content .xw-tab:hover b {
@@ -4463,6 +4461,14 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 #content .help-top h1 { font-size: 22px !important; margin-top: 6px !important; text-wrap: balance !important; }
 #content .help-top p { color: var(--muted) !important; font-size: 12.5px !important; }
 #content .help-top small { color: var(--quiet) !important; font-size: 11.5px !important; }
+/* 关于作者与项目来源：页头常驻快捷入口，不用翻到目录最底下。 */
+#content .help-top .help-about-shortcut {
+  margin-inline-start: 10px !important;
+  color: var(--md-own-ink) !important;
+  font-size: 11.5px !important;
+  text-decoration: none !important;
+}
+#content .help-top .help-about-shortcut:hover { text-decoration: underline !important; }
 #content .help-search { display: block !important; margin-bottom: 10px !important; }
 #content .help-search span { display: block !important; color: var(--quiet) !important; font-size: 11px !important; margin-bottom: 5px !important; }
 #content .help-search input {
@@ -4546,6 +4552,56 @@ button.ds-pull-cell:hover { border-color: var(--ds-gold-ink); }
 }
 #content .help-pager button { max-width: 48% !important; text-align: left !important; }
 #content .help-pager button:last-child { text-align: right !important; }
+
+/* 关于作者与项目来源：分块排版（作者名片 / 缘起 / 三件事 / 链接）。 */
+#app #content .help-page .about-page { display: flex !important; flex-direction: column !important; gap: 24px !important; }
+#app #content .help-page .about-hero {
+  display: flex !important; align-items: center !important; justify-content: space-between !important;
+  gap: 16px !important; border: 1px solid var(--line-strong) !important; border-radius: var(--ds-radius) !important;
+  background: var(--paper) !important; padding: var(--sp-5) !important;
+}
+#app #content .help-page .about-hero-id { display: flex !important; flex-direction: column !important; gap: 6px !important; min-width: 0 !important; }
+#app #content .help-page .about-hero-id .help-kicker { color: var(--quiet) !important; letter-spacing: .1em !important; }
+#app #content .help-page .about-author { font-size: var(--fs-4) !important; font-weight: 600 !important; color: var(--text) !important; margin: 0 !important; line-height: 1.3 !important; }
+#app #content .help-page .about-hero-role { color: var(--muted) !important; font-size: 12px !important; }
+#app #content .help-page .about-hero-seal {
+  flex: 0 0 auto !important; display: grid !important; place-items: center !important;
+  inline-size: 56px !important; block-size: 56px !important; border-radius: var(--ds-radius) !important;
+  background: var(--paper-2) !important; color: var(--muted) !important;
+}
+#app #content .help-page .about-sec-head { display: flex !important; align-items: center !important; gap: 10px !important; margin-bottom: var(--sp-3) !important; }
+#app #content .help-page .about-sec-no { color: var(--quiet) !important; font-family: Consolas, monospace !important; font-size: 12px !important; letter-spacing: .08em !important; }
+#app #content .help-page .about-sec-head h3 { font-size: 15px !important; font-weight: 600 !important; color: var(--text) !important; margin: 0 !important; }
+#app #content .help-page .about-origin {
+  border-inline-start: 2px solid var(--line-strong) !important; padding: 4px 0 4px var(--sp-4) !important;
+  color: var(--muted) !important; font-size: 13.5px !important; line-height: 1.9 !important; margin: 0 !important;
+}
+#app #content .help-page .about-principles { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: var(--sp-3) !important; }
+#app #content .help-page .about-principle {
+  display: flex !important; flex-direction: column !important; gap: 10px !important;
+  border: 1px solid var(--line) !important; border-radius: var(--ds-radius) !important;
+  background: var(--paper-2) !important; padding: var(--sp-4) !important;
+}
+#app #content .help-page .about-principle-no { color: var(--quiet) !important; font-family: Consolas, monospace !important; font-size: var(--fs-4) !important; line-height: 1 !important; }
+#app #content .help-page .about-principle p { color: var(--text) !important; font-size: 13px !important; line-height: 1.8 !important; margin: 0 !important; }
+#app #content .help-page .about-link-grid { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 10px !important; }
+#app #content .help-page .about-link {
+  display: flex !important; align-items: center !important; gap: 10px !important;
+  border: 1px solid var(--line) !important; border-radius: var(--ds-radius-sm) !important;
+  background: var(--paper) !important; padding: 11px var(--sp-4) !important;
+  color: var(--text) !important; font-size: 13px !important; text-decoration: none !important;
+}
+#app #content .help-page .about-link:hover { border-color: var(--line-strong) !important; background: var(--paper-2) !important; }
+#app #content .help-page .about-link-ico { display: inline-flex !important; color: var(--muted) !important; }
+#app #content .help-page .about-link-text { flex: 1 1 auto !important; min-width: 0 !important; }
+#app #content .help-page .about-link-go { color: var(--quiet) !important; }
+#app #content .help-page .about-link.is-primary { background: var(--accent) !important; border-color: var(--accent) !important; color: #ffffff !important; }
+#app #content .help-page .about-link.is-primary :is(.about-link-ico, .about-link-go) { color: rgb(255 255 255 / 80%) !important; }
+#app #content .help-page .about-link.is-primary:hover { background: var(--accent-hover) !important; }
+@media (max-width: 900px) {
+  #app #content .help-page .about-principles { grid-template-columns: 1fr !important; }
+  #app #content .help-page .about-link-grid { grid-template-columns: 1fr !important; }
+}
 
 /* 39 规则中心：集合克制关系的 chip 展示与 KPL 初稿预览对话框。 */
 dialog:modal { overscroll-behavior: contain !important; }

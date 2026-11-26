@@ -1,7 +1,9 @@
 /* 本队选手指标观察 · 视图层（hash: #metrics-observe）
  *
- * 组件层第一个实例：默认单栏，可切两栏/三栏做对位排版；每栏对象可选
- * 本队 / 对手 / KPL 分路平均；指标与四档阈值取赛训组 grade-rules；
+ * 选手一律以选手ID出现（营地游戏名只在 lookupName 里供取数）。
+ * 栏数由选了几个对象决定：选几个就画几栏，不再提供排版开关；
+ * 对比方式固定为分栏对比；数据源可选本队选手 / 战队（选队后再挑本队ID）/ KPL 分路平均；
+ * 指标与四档阈值取赛训组 grade-rules；
  * 筛选 BO × 赛事 × 类型 × 时间窗；趋势含巅峰分 / 段位 / 英雄战力（占位）。
  * 数据逻辑在 modules/metrics-engine.js，本文件只负责控件、渲染与事件。
  *
@@ -17,7 +19,7 @@
 import {
   createMetricsEngine, lineChartSvg,
   MAX_POINTS, BO_OPTIONS, TYPE_OPTIONS, WINDOW_OPTIONS, DEFAULT_FILTERS,
-} from './modules/metrics-engine.js';
+} from './modules/metrics-engine.js?v=20261124mo4';
 import { glyph, deco } from './ui-icons.js';
 
 export const HASH = 'metrics-observe';
@@ -26,15 +28,14 @@ const defaultEsc = (v) => String(v ?? '').trim().replace(/[&<>"']/g, (ch) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[ch]));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const SOURCES = [['own', '本队选手'], ['opponent', '对手选手'], ['kpl', 'KPL 分路平均']];
+const SOURCES = [['own', '本队选手'], ['team', '战队'], ['kpl', 'KPL 分路平均']];
 const LANES = ['', '对抗路', '发育路', '中路', '打野·野核', '打野·坦野', '游走'];
 const laneLabel = (lane) => (lane ? ({ '打野·野核': '打野 · 野核', '打野·坦野': '打野 · 坦野' }[lane] || lane) : '全部分路');
 const sourceLabel = (source) => (SOURCES.find((s) => s[0] === source) || ['', '未知'])[1];
-const MAX_SUBJECTS_PER_COL = 5;
 
 /** 刷新图标：外层若提供 icon('refresh') 优先沿用；否则用套件的循环箭头（arrow-up 是趋势箭头，不用）。 */
 function refreshGlyph(h = {}) {
-  return (typeof h?.icon === 'function' && h.icon('refresh')) || glyph('refresh', { size: 14 });
+  return (typeof h?.icon === 'function' && h.icon('refresh')) || glyph('refresh', { size: 18 });
 }
 
 /** 整页外壳；mount 会把它写进挂载点。 */
@@ -51,22 +52,9 @@ export function render(h = {}) {
     </header>
 
     <section class="mo-panel mo-setup" aria-labelledby="${uid}-setup-title">
-      <div class="mo-panel-head"><h2 id="${uid}-setup-title">${glyph('chart', { size: 16 })}观察设置</h2>
+      <div class="mo-panel-head"><h2 id="${uid}-setup-title">${glyph('chart', { size: 20 })}观察设置</h2>
         <button type="button" class="control mo-refresh" data-mo-refresh>${refreshIcon}<span data-mo-refresh-label>刷新数据</span></button></div>
       <div class="mo-setup-grid">
-        <fieldset class="mo-fs"><legend>排版</legend>
-          <div class="mo-radios">
-            <label><input type="radio" name="${uid}-cols" value="1" checked> 单栏</label>
-            <label><input type="radio" name="${uid}-cols" value="2"> 两栏对位</label>
-            <label><input type="radio" name="${uid}-cols" value="3"> 三栏对位</label>
-          </div>
-        </fieldset>
-        <fieldset class="mo-fs"><legend>${glyph('compare', { size: 16 })} 对比方式</legend>
-          <div class="mo-radios">
-            <label><input type="radio" name="${uid}-mode" value="overlay" checked> 叠加曲线</label>
-            <label><input type="radio" name="${uid}-mode" value="split"> 分栏对比</label>
-          </div>
-        </fieldset>
         <fieldset class="mo-fs mo-fs-filters"><legend>筛选与指标</legend>
           <div class="mo-fields">
             <div class="mo-field"><label for="${uid}-lane">分路</label>
@@ -79,11 +67,11 @@ export function render(h = {}) {
               <select id="${uid}-comp" data-mo-comp><option value="">全部赛事</option></select></div>
             <div class="mo-field"><label for="${uid}-type">比赛类型</label>
               <select id="${uid}-type" data-mo-type>${TYPE_OPTIONS.map(([v, l]) => `<option value="${defaultEsc(v)}">${defaultEsc(l)}</option>`).join('')}</select></div>
-            <div class="mo-field"><label for="${uid}-win">${glyph('calendar', { size: 13 })}时间窗</label>
+            <div class="mo-field"><label for="${uid}-win">${glyph('calendar', { size: 16 })}时间窗</label>
               <select id="${uid}-win" data-mo-window>${WINDOW_OPTIONS.map(([v, l]) => `<option value="${defaultEsc(v)}">${defaultEsc(l)}</option>`).join('')}</select></div>
-            <div class="mo-field" data-mo-custom hidden><label for="${uid}-from">${glyph('calendar', { size: 13 })}起始日期</label>
+            <div class="mo-field" data-mo-custom hidden><label for="${uid}-from">${glyph('calendar', { size: 16 })}起始日期</label>
               <input id="${uid}-from" type="date" data-mo-from></div>
-            <div class="mo-field" data-mo-custom hidden><label for="${uid}-to">${glyph('calendar', { size: 13 })}结束日期</label>
+            <div class="mo-field" data-mo-custom hidden><label for="${uid}-to">${glyph('calendar', { size: 16 })}结束日期</label>
               <input id="${uid}-to" type="date" data-mo-to></div>
           </div>
         </fieldset>
@@ -92,8 +80,8 @@ export function render(h = {}) {
     </section>
 
     <section class="mo-panel" aria-labelledby="${uid}-slots-title">
-      <div class="mo-panel-head"><h2 id="${uid}-slots-title">${glyph('compare', { size: 16 })}对比对象</h2>
-        <p class="mo-hint">每栏可叠加多名选手（最多 ${MAX_SUBJECTS_PER_COL} 名）；换数据源会重置该栏。</p></div>
+      <div class="mo-panel-head"><h2 id="${uid}-slots-title">${glyph('compare', { size: 20 })}对比对象</h2>
+        <span class="mo-warn-note">${glyph('warning', { size: 16 })}切换数据源会清空已选</span></div>
       <div class="mo-columns" data-mo-slots></div>
     </section>
 
@@ -119,9 +107,9 @@ export function createMetricsObservePage(h = {}) {
   const uid = 'mo-' + Math.random().toString(36).slice(2, 9);
 
   const state = {
-    cols: 1, mode: 'overlay', lane: '', metric: 'gpm',
+    lane: '', metric: 'gpm', source: 'own', team: '', picks: [],
+    mode: 'split', /* 对比方式固定分栏，不再提供叠加曲线开关 */
     filters: { ...DEFAULT_FILTERS },
-    slots: [{ source: 'own', picks: [] }, { source: 'kpl', picks: [] }, { source: 'opponent', picks: [] }],
     result: null, loading: false, error: '',
   };
   let root = null, bound = null, generation = 0, statusNode = null;
@@ -155,12 +143,11 @@ export function createMetricsObservePage(h = {}) {
     else out = (Math.round(value * 10) / 10).toString();
     return out + (unit && unit !== '%' ? ` <small>${esc(unit)}</small>` : '');
   }
-  function firstOf(source) {
-    const list = engine.listSubjects({ source, lane: state.lane });
-    return list[0] || null;
+  function firstOf() {
+    return engine.listSubjects({ source: state.source, lane: state.lane, team: state.team })[0] || null;
   }
   function subjects() {
-    return state.slots.slice(0, state.cols).flatMap((slot) => slot.picks.map((p) => ({ ...p, __slot: state.slots.indexOf(slot) })));
+    return state.picks.map((p, i) => ({ ...p, __slot: i }));
   }
   function scopeText(includeLane = true) {
     const f = state.filters;
@@ -198,46 +185,50 @@ export function createMetricsObservePage(h = {}) {
     sel.innerHTML = `<option value="">全部赛事</option>` + comps.map((c) =>
       `<option value="${esc(c.id)}"${String(c.id) === String(state.filters.comp) ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
   }
-  function slotOptions(slot) {
-    const list = engine.listSubjects({ source: slot.source, lane: state.lane });
-    return list.slice(0, 60).map((p) => `<option value="${esc(p.name)}">${esc(p.name)} · ${esc(p.lane || '位置未知')} · ${Number(p.games) || 0} 局</option>`).join('');
+  function pickOptions() {
+    const list = engine.listSubjects({ source: state.source, lane: state.lane, team: state.team });
+    const suffix = state.source === 'team' ? ` · 对 ${state.team}` : '';
+    return list.map((p) => `<option value="${esc(p.name)}">${esc(p.name)} · ${esc(p.lane || '位置未知')} · ${Number(p.games) || 0} 局${esc(suffix)}</option>`).join('');
   }
-  function chipsHtml(slot, index) {
-    if (!slot.picks.length) return '<li class="mo-chip is-empty">尚未选择对象，用上方下拉追加。</li>';
-    return slot.picks.map((p) => `<li class="mo-chip is-${esc(p.source)}">
-      <span>${esc(p.name)}</span><small>${esc(sourceLabel(p.source))}</small>
-      <button type="button" data-mo-remove="${index}" data-mo-name="${esc(p.name)}" aria-label="从第 ${index + 1} 栏移除 ${esc(p.name)}">×</button>
+  function teamOptions() {
+    const teams = engine.listTeams();
+    return teams.map((t) => `<option value="${esc(t.name)}"${state.team === t.name ? ' selected' : ''}>${esc(t.name)} · ${Number(t.games) || 0} 局</option>`).join('');
+  }
+  function chipsHtml() {
+    if (!state.picks.length) return `<li class="mo-chip is-empty">${glyph('players', { size: 20 })}<b>还没有对比对象</b><span>在上方选择选手ID加入</span></li>`;
+    return state.picks.map((p, i) => `<li class="mo-chip is-${esc(p.source)}">
+      <span>${esc(p.name)}</span><small>${esc(sourceLabel(p.source))}${p.opponentTeam ? ` · 对 ${esc(p.opponentTeam)}` : ''}</small>
+      <button type="button" data-mo-remove="${i}" data-mo-name="${esc(p.name)}" aria-label="移除 ${esc(p.name)}">×</button>
     </li>`).join('');
   }
-  function paintSlots() {
+  function paintSubjects() {
     const box = $('[data-mo-slots]');
     if (!box) return;
-    box.dataset.cols = String(state.cols);
-    box.innerHTML = state.slots.slice(0, state.cols).map((slot, i) => `<fieldset class="mo-slot" data-mo-slot="${i}">
-      <legend>第 ${i + 1} 栏 · 对比对象 <span class="mo-slot-count">${slot.picks.length} 名</span></legend>
+    box.dataset.cols = String(Math.max(1, state.picks.length));
+    box.innerHTML = `<fieldset class="mo-slot" data-mo-slot="0">
+      <legend>对比对象 <span class="mo-slot-count">${state.picks.length} 名 · ${state.picks.length} 栏</span></legend>
       <div class="mo-slot-controls">
-        <div class="mo-field"><label for="${uid}-source-${i}">数据源</label>
-          <select id="${uid}-source-${i}" data-mo-source="${i}">${SOURCES.map(([v, l]) =>
-            `<option value="${v}"${slot.source === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
-        <div class="mo-field"><label for="${uid}-pick-${i}">追加选手</label>
-          <select id="${uid}-pick-${i}" data-mo-pick="${i}" aria-describedby="${uid}-pick-hint-${i}">
-            <option value="">选择后加入本栏…</option>${slotOptions(slot)}</select>
-          <span id="${uid}-pick-hint-${i}" class="visually-hidden">选中后加入本栏，可重复添加多名对象</span></div>
+        <div class="mo-field"><label for="${uid}-source-0">数据源</label>
+          <select id="${uid}-source-0" data-mo-source>${SOURCES.map(([v, l]) =>
+            `<option value="${v}"${state.source === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        ${state.source === 'team' ? `<div class="mo-field"><label for="${uid}-team-0">战队</label>
+          <select id="${uid}-team-0" data-mo-team><option value="">选择战队…</option>${teamOptions()}</select></div>` : ''}
+        <div class="mo-field"><label for="${uid}-pick-0">追加选手</label>
+          <select id="${uid}-pick-0" data-mo-pick aria-describedby="${uid}-pick-hint-0">
+            <option value="">选择后加入…</option>${state.source === 'team' && !state.team ? '' : pickOptions()}</select>
+          <span id="${uid}-pick-hint-0" class="visually-hidden">选中后按选手ID加入，可添加多名，选几个就画几栏</span></div>
       </div>
-      <ul class="mo-chips" data-mo-chips="${i}">${chipsHtml(slot, i)}</ul>
-    </fieldset>`).join('');
+      <ul class="mo-chips" data-mo-chips="0">${chipsHtml()}</ul>
+    </fieldset>`;
   }
-  function resetPicksForLane() {
-    state.slots.slice(0, state.cols).forEach((slot) => {
-      slot.picks = slot.picks.filter((p) => {
-        const list = engine.listSubjects({ source: p.source, lane: state.lane });
-        return list.some((x) => x.name === p.name);
-      });
-      if (!slot.picks.length) {
-        const first = firstOf(slot.source);
-        if (first) slot.picks = [first];
-      }
-    });
+  function resetPicks() {
+    const available = engine.listSubjects({ source: state.source, lane: state.lane, team: state.team });
+    const names = new Set(available.map((p) => `${p.name}|${p.opponentTeam || ''}`));
+    state.picks = state.picks.filter((p) => names.has(`${p.name}|${p.opponentTeam || ''}`));
+    if (!state.picks.length) {
+      const first = available[0];
+      if (first) state.picks = [first];
+    }
   }
 
   /* ── 渲染：结果 ───────────────────────────────────────────────────── */
@@ -279,7 +270,7 @@ export function createMetricsObservePage(h = {}) {
     return `<figure class="mo-figure">
       ${svg}
       <figcaption>${esc(metric ? metric.label : '指标')}随时间变化 · ${esc(scopeText())}
-        ${rule ? ' · 金色虚线为赛训组达标线' : ''}${list.some((s) => s.placeholder) ? ' · 含属性占位数据' : ''}
+        ${rule ? ' · 虚线为赛训组达标线' : ''}${list.some((s) => s.placeholder) ? ' · 含属性占位数据' : ''}
         · 每条曲线最多 ${MAX_POINTS} 点（等距抽样）</figcaption>
       <ul class="mo-legend">${series.map((s, i) => `<li><span class="mo-swatch ${s.cls}" aria-hidden="true"></span>${esc(s.name)}</li>`).join('')}</ul>
     </figure>`;
@@ -292,15 +283,13 @@ export function createMetricsObservePage(h = {}) {
     const figs = [];
     const hasPoints = (r.series || []).some((s) => (s.points || []).length);
     if (hasPoints) {
-      if (state.mode === 'split') {
-        for (let i = 0; i < state.cols; i++) {
-          const list = r.series.filter((s) => s.subject.__slot === i);
-          if (list.length) figs.push(`<div class="mo-fig-head"><h3>第 ${i + 1} 栏 · ${esc(list.map((s) => s.subject.name).join(' / '))}</h3></div>${chartHtml(list, metric, i * 2)}`);
-        }
-      } else {
-        figs.push(chartHtml(r.series, metric, 0));
+      /* 选几个对象就画几栏：每个对象一栏，栏数直接来自 picks.length。 */
+      for (let i = 0; i < state.picks.length; i++) {
+        const list = r.series.filter((s) => s.subject.__slot === i);
+        if (list.length) figs.push(`<div class="mo-fig-col"><div class="mo-fig-head"><h3>第 ${i + 1} 栏 · ${esc(list.map((s) => s.subject.name).join(' / '))}</h3></div>${chartHtml(list, metric, i * 2)}</div>`);
       }
     }
+    box.style.setProperty('--mo-cols', String(Math.max(1, state.picks.length)));
     const capBase = `${uid}-core-cap`;
     box.innerHTML = `<div class="mo-result-head"><h2>${deco('section-triangle')}指标对比结果</h2>
         <p>规则主体：${esc(r.ruleSubject || '未取到赛训组规则')} · 生效分路：${esc(laneLabel(r.effectiveLane))} · ${esc(scopeText(false))}</p></div>
@@ -326,7 +315,12 @@ export function createMetricsObservePage(h = {}) {
         lane: state.lane, mode: state.mode });
       if (gen !== generation || !root) return;
       result.metric = engine.findMetric(result.effectiveLane, state.metric) || { key: state.metric, label: state.metric, unit: '' };
-      result.series.forEach((s) => { s.subject.__slot = s.subject.__slot ?? list.find((x) => x.name === s.subject.name)?.__slot ?? 0; });
+      result.series.forEach((s) => {
+        if (s.subject.__slot == null) {
+          const match = list.find((x) => x.name === s.subject.name && (x.opponentTeam || '') === (s.subject.opponentTeam || ''));
+          s.subject.__slot = match ? match.__slot : 0;
+        }
+      });
       state.result = result;
       state.error = '';
       paintResults();
@@ -353,8 +347,8 @@ export function createMetricsObservePage(h = {}) {
         const sel = $('[data-mo-lane]'); if (sel) sel.value = state.lane;
       }
       paintMetricOptions();
-      resetPicksForLane();
-      paintSlots();
+      resetPicks();
+      paintSubjects();
       await refresh({ silent: true });
     } catch (error) {
       announce(`初始化失败：${error.message || '未知错误'}`, true);
@@ -376,31 +370,20 @@ export function createMetricsObservePage(h = {}) {
     if (rm) {
       const i = Number(rm.dataset.moRemove);
       const name = rm.dataset.moName;
-      state.slots[i].picks = state.slots[i].picks.filter((p) => p.name !== name);
-      const box = $(`[data-mo-chips="${i}"]`);
-      if (box) box.innerHTML = chipsHtml(state.slots[i], i);
-      announce(`已从本栏移除 ${name}`);
+      state.picks.splice(i, 1);
+      const box = $('[data-mo-chips="0"]');
+      if (box) box.innerHTML = chipsHtml();
+      paintSubjects();
+      announce(`已移除 ${name}`);
       refresh({ silent: true });
     }
   }
   function onChange(event) {
     const t = event.target;
     if (!root || !t.dataset) return;
-    if (t.name === `${uid}-cols`) {
-      state.cols = Number(t.value) || 1;
-      resetPicksForLane(); paintSlots(); paintResults();
-      announce(`已切换为${state.cols}栏对位排版`);
-      return;
-    }
-    if (t.name === `${uid}-mode`) {
-      state.mode = t.value === 'split' ? 'split' : 'overlay';
-      paintResults();
-      announce(state.mode === 'split' ? '已切换为分栏对比' : '已切换为叠加曲线');
-      return;
-    }
     if (t.hasAttribute('data-mo-lane')) {
       state.lane = t.value;
-      paintMetricOptions(); resetPicksForLane(); paintSlots(); refresh();
+      paintMetricOptions(); resetPicks(); paintSubjects(); refresh();
       return;
     }
     if (t.hasAttribute('data-mo-metric')) { state.metric = t.value; refresh(); return; }
@@ -415,24 +398,27 @@ export function createMetricsObservePage(h = {}) {
     if (t.hasAttribute('data-mo-from')) { state.filters.from = t.value; refresh(); return; }
     if (t.hasAttribute('data-mo-to')) { state.filters.to = t.value; refresh(); return; }
     if (t.hasAttribute('data-mo-source')) {
-      const i = Number(t.dataset.moSource);
-      state.slots[i].source = t.value;
-      const first = firstOf(t.value);
-      state.slots[i].picks = first ? [first] : [];
-      paintSlots(); refresh();
+      state.source = t.value;
+      state.team = state.source === 'team' ? (engine.listTeams()[0] || {}).name || '' : '';
+      state.picks = [];
+      resetPicks(); paintSubjects(); refresh();
+      return;
+    }
+    if (t.hasAttribute('data-mo-team')) {
+      state.team = t.value;
+      state.picks = [];
+      resetPicks(); paintSubjects(); refresh();
       return;
     }
     if (t.hasAttribute('data-mo-pick')) {
-      const i = Number(t.dataset.moPick);
       const name = t.value;
       if (!name) return;
-      const picked = engine.listSubjects({ source: state.slots[i].source, lane: state.lane }).find((p) => p.name === name);
-      if (picked && !state.slots[i].picks.some((p) => p.name === picked.name)) {
-        if (state.slots[i].picks.length >= MAX_SUBJECTS_PER_COL) { announce(`本栏最多 ${MAX_SUBJECTS_PER_COL} 名对象。`, true); t.value = ''; return; }
-        state.slots[i].picks.push(picked);
-        const box = $(`[data-mo-chips="${i}"]`);
-        if (box) box.innerHTML = chipsHtml(state.slots[i], i);
-        announce(`已将 ${picked.name} 加入第 ${i + 1} 栏`);
+      const picked = engine.listSubjects({ source: state.source, lane: state.lane, team: state.team })
+        .find((p) => p.name === name && (p.opponentTeam || '') === state.team);
+      if (picked && !state.picks.some((p) => p.name === picked.name && (p.opponentTeam || '') === (picked.opponentTeam || ''))) {
+        state.picks.push(picked);
+        paintSubjects();
+        announce(`已将 ${picked.name} 加入第 ${state.picks.length} 栏`);
         refresh({ silent: true });
       }
       t.value = '';

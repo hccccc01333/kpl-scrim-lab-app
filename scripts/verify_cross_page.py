@@ -58,8 +58,8 @@ def main():
                 continue
             if len(text(page, "#content")) < 300:
                 errors.append("#cross 内容过短")
-            if "跨局分析" not in text(page, ".xw-eyebrow"):
-                errors.append("#cross 页头不是跨局口径")
+            if "跨场分析" not in text(page, ".xw-page:visible .xw-eyebrow"):
+                errors.append("#cross 页头不是跨场口径")
             if len(page.query_selector_all("[data-cx-section]")) != 3:
                 errors.append("#cross 不是 3 个分析分区")
             visible = [x.get_attribute("data-cx-section") for x in page.query_selector_all("[data-cx-section]:not([hidden])")]
@@ -71,13 +71,19 @@ def main():
                 errors.append("#cross 首屏缺少大场胜率/净胜走势")
             if len(page.query_selector_all(".xw-score")) < 2:
                 errors.append("#cross 首屏缺少比分分布")
-            if page.query_selector(".xw-radar") is None:
-                errors.append("#cross 缺少本轮关注条")
+            if page.query_selector(".xw-radar") is not None or "本轮关注" in text(page, "#content"):
+                errors.append("#cross 仍显示本轮关注")
+            lead_small_sizes = page.evaluate("""(
+              [...document.querySelectorAll('#xw-ingame-lead .xw-count-label small')]
+                .map(el => parseFloat(getComputedStyle(el).fontSize))
+            )""")
+            if len(lead_small_sizes) < 4 or any(size < 14 for size in lead_small_sizes):
+                errors.append(f"领先守成条件字号偏小或缺失（{lead_small_sizes}）")
             # 首屏与页面都不该出现深色大块（旧版黑屏）。
-            dark = page.evaluate("""(
-              [...document.querySelectorAll('.xw-mast, .xw-radar, .xw-mod')]
+            dark = page.evaluate(r"""(
+              [...document.querySelectorAll('.xw-mast, .xw-mod')]
                 .filter(el => {
-                  const bg = getComputedStyle(el).backgroundColor.match(r/\d+/g) || [];
+                  const bg = getComputedStyle(el).backgroundColor.match(/\d+/g) || [];
                   return bg.length >= 3 && (+bg[0] < 60 && +bg[1] < 60 && +bg[2] < 60);
                 }).length
             )""")
@@ -97,6 +103,32 @@ def main():
                     errors.append(f"#cross 分区 {section} 未写进地址")
                 if page.query_selector(f'[data-cx-section="{section}"]:not([hidden]) .xw-mod') is None:
                     errors.append(f"#cross 分区 {section} 没有内容")
+                if page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 2"):
+                    errors.append(f"{name}: #cross {section} 横向溢出")
+                if section == "postgame":
+                    verdicts = page.locator(".xw-exec-verdict").all_text_contents()
+                    if any("pp" in verdict.lower() for verdict in verdicts):
+                        errors.append("#cross 对位差值仍显示 pp")
+                    if any("+0%" in verdict for verdict in verdicts):
+                        errors.append("#cross 对位差值出现 +0% 噪声")
+                    if verdicts and not any("%" in verdict for verdict in verdicts):
+                        errors.append("#cross 对位差值未显示百分比")
+                if section == "draft":
+                    cards = page.locator(".xw-arch-card")
+                    if cards.count() != 5:
+                        errors.append(f"#cross 五路类型卡数量异常（{cards.count()}）")
+                    if page.query_selector(".xw-arch-row") is not None:
+                        errors.append("#cross 仍使用旧五路堆叠行")
+                    card_text = text(page, ".xw-arch")
+                    if card_text.count("%") < 5:
+                        errors.append("#cross 五路类型卡缺少可读占比")
+                    if page.locator('.xw-arch-bar[role="img"][aria-label]').count() != 5:
+                        errors.append("#cross 五路类型条缺少无障碍说明")
+                    arch_columns = page.locator(".xw-arch-grid").evaluate(
+                        "el => getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length"
+                    )
+                    if arch_columns < 2:
+                        errors.append(f"#cross 五路类型卡没有形成多列布局（{arch_columns}）")
 
             # 视角切换：本队 / 敌方都要能出数。
             page.click('[data-xw-side="foe"]')
@@ -121,37 +153,35 @@ def main():
             # 独立大场分析：列表 + 详情。
             page.goto(base + "/#biggame", wait_until="domcontentloaded", timeout=30000)
             try:
-                page.wait_for_selector(".xc-bigcard", timeout=30000)
+                page.wait_for_selector(".bgx-team-card", timeout=30000)
                 page.wait_for_timeout(500)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"#biggame 未就绪：{exc}")
                 continue
-            if page.query_selector('.secondary-nav a[href="#biggame"]') is None:
-                errors.append("大场分析没有次级导航入口")
-            if page.query_selector(".xc-bigcard") is None:
+            if page.query_selector(".bgx-list-head") is None:
+                errors.append("大场分析缺少列表页头")
+            if page.query_selector(".bgx-team-card") is None:
                 errors.append("大场列表没有卡片")
             if page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 2"):
                 errors.append(f"{name}: #biggame 横向溢出")
-            link = page.query_selector('.xc-bigcard[href^="#biggame/"]')
+            link = page.query_selector('.bgx-team-card[href^="#biggame/"]')
             if link is None:
                 errors.append("大场卡片没有详情入口")
             else:
                 href = link.get_attribute("href")
                 page.goto(base + "/" + href, wait_until="domcontentloaded", timeout=30000)
                 try:
-                    page.wait_for_selector(".xc-series-detail", timeout=30000)
+                    page.wait_for_selector(".bgx-detail", timeout=30000)
                     page.wait_for_timeout(500)
                 except Exception as exc:  # noqa: BLE001
                     errors.append(f"大场详情未就绪：{exc}")
                 else:
-                    if page.query_selector(".xc-gcard") is None:
+                    if page.query_selector(".bgx-hero-game") is None:
                         errors.append("大场详情缺少逐局卡片")
-                    if "逐局对比" not in text(page, "#content"):
-                        errors.append("大场详情缺少逐局对比")
-                    if page.query_selector(".xc-back") is None:
+                    if "总览与对比" not in text(page, "#content"):
+                        errors.append("大场详情缺少总览与对比")
+                    if page.query_selector(".bgx-back") is None:
                         errors.append("大场详情缺少返回列表")
-                    if page.query_selector(".xc-game-row") is None:
-                        errors.append("大场详情缺少逐局卡")
                     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 2"):
                         errors.append(f"{name}: 大场详情横向溢出")
 

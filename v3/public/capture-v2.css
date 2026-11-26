@@ -105,6 +105,81 @@
   font-variant-numeric: tabular-nums;
 }
 #content .capv-tab.is-on .capv-tab-count { background: var(--ds-ink); color: #ffffff; }
+/* 六个页签在窄窗口要能横滑，选中项滚进视野时别贴着边。 */
+#content .capv-tabs { scroll-padding-inline: 5px; }
+
+/* ── 已采集对局（第 06 页签）：复用单局分析的 .match-row 行排版 ── */
+#content .capv-collected-rows {
+  container-type: inline-size; border-block-start: 1px solid var(--ds-line);
+}
+#content .capv-collected-rows .match-row {
+  /* 时间 · 对手 · 胜负 · 双方阵容 · 删除 —— 跟单局分析同一行读法。 */
+  grid-template-columns: 96px minmax(110px, 1fr) 48px minmax(330px, 2.4fr) 76px;
+  border-block-start: 0; border-block-end: 1px solid var(--ds-line);
+  gap: 10px; padding-block: 10px;
+}
+#content .capv-collected-rows .match-row:last-child { border-block-end: 0; }
+#content .capv-collected-rows .match-opponent { min-inline-size: 0; }
+#content .capv-collected-rows .match-opponent b,
+#content .capv-collected-rows .match-opponent small {
+  display: block; max-inline-size: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#content .capv-collected-rows .match-opponent small {
+  color: var(--ds-quiet); font-size: 11px;
+}
+#content .capv-collected-rows .match-date small { font-variant-numeric: tabular-nums; }
+#content .capv-collected-rows .result { justify-self: start; font-size: 12px; }
+/* 窄屏的通用规则会隐藏阵容，这里赛训组要靠头像认局，必须留着。 */
+#content .capv-collected-rows .match-lineup {
+  display: flex; align-items: center; gap: 8px; padding-right: 0;
+}
+#content .capv-collected-rows .match-lineup .ml-side small { display: none; }
+#content .capv-collected-rows .match-lineup .ml-vs { align-self: center; padding: 0; }
+#content .capv-collected-del {
+  justify-self: start; min-block-size: 28px; padding: 0 11px;
+  border: 1px solid var(--ds-line); border-radius: 7px;
+  background: #fff; color: var(--ds-neg, #c00);
+  font-size: 12px; cursor: pointer; touch-action: manipulation;
+}
+#content .capv-collected-del:hover { border-color: currentColor; background: var(--ds-surface-2); }
+#content .capv-collected-del:focus-visible { outline: 2px solid var(--ds-ink); outline-offset: 2px; }
+#content .capv-collected-empty { margin: 0; padding: 24px 14px; text-align: center; color: var(--ds-quiet); }
+@container (width < 860px) {
+  #content .capv-collected-rows .match-row {
+    grid-template-columns: 88px minmax(0, 1fr) 44px auto;
+    grid-template-areas: "when opp res del" "when lineup lineup lineup";
+    gap: 6px 10px; padding-block: 10px;
+  }
+  #content .capv-collected-rows .match-date { grid-area: when; }
+  #content .capv-collected-rows .match-opponent { grid-area: opp; }
+  #content .capv-collected-rows .result { grid-area: res; }
+  #content .capv-collected-rows .match-lineup { grid-area: lineup; flex-wrap: wrap; }
+  #content .capv-collected-del { grid-area: del; }
+}
+
+/* 删除确认：原生 modal dialog，浏览器负责焦点与背景 inert。 */
+#cap-delete-dialog:modal { overscroll-behavior: contain; }
+#cap-delete-dialog::backdrop {
+  overflow: hidden; overscroll-behavior: contain; background: rgb(0 0 0 / 42%);
+}
+#cap-delete-dialog[open] {
+  max-inline-size: min(460px, calc(100vw - 32px)); padding: 22px 24px;
+  border: 1px solid var(--ds-line); border-radius: 14px;
+  background: var(--ds-surface); color: var(--ds-ink);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 22%);
+}
+#cap-delete-dialog h1 { margin: 0 0 8px; font-size: 18px; }
+#cap-delete-dialog .cap-delete-detail { margin: 0 0 8px; font-size: 13px; overflow-wrap: anywhere; }
+#cap-delete-dialog .capv-hint { color: var(--ds-muted); font-size: 13px; line-height: 1.6; }
+#cap-delete-dialog form { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+#cap-delete-dialog form button {
+  min-block-size: 34px; padding: 0 14px; border: 1px solid var(--ds-line);
+  border-radius: 8px; background: #fff; color: var(--ds-ink);
+  font-size: 13px; cursor: pointer;
+}
+#cap-delete-dialog form button.cap-delete-confirm {
+  border-color: var(--ds-neg, #c00); background: var(--ds-neg, #c00); color: #fff;
+}
 
 /* ── 通用小件 ───────────────────────────────────────────────── */
 #content .capv-kicker {
@@ -325,8 +400,11 @@
 #content .cap-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 14px; }
 #content .cap-progress-head b { color: var(--ds-ink); font-weight: 600; }
 #content .cap-progress-head span { color: var(--ds-muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-#content .cap-progress-track { block-size: 4px; border-radius: var(--ds-pill); background: var(--ds-surface-3); overflow: hidden; }
-#content .cap-progress-track i { display: block; block-size: 100%; border-radius: inherit; background: var(--ds-ink); transition: width .2s; }
+#content .cap-progress-track { appearance: none; border: 0 solid; display: block; inline-size: 100%; block-size: 5px;
+  border-radius: var(--ds-pill); background: var(--ds-surface-3); overflow: clip; }
+#content .cap-progress-track::-webkit-progress-bar { background: transparent; }
+#content .cap-progress-track::-webkit-progress-value { background: var(--ds-ink); border-radius: var(--ds-pill); transition: inline-size .2s; }
+#content .cap-progress-track::-moz-progress-bar { background: var(--ds-ink); border-radius: var(--ds-pill); }
 #content .cap-progress small { color: var(--ds-muted); font-size: 12px; }
 #content .capv-summary {
   display: grid;

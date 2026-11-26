@@ -38,6 +38,13 @@
   transition: none;
 }
 .sb-page > * { min-width: 0; }
+/* 编组三步指引：和工具栏一起常驻，教练不用猜选完局之后点哪里。 */
+.sb-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; margin: -6px 0 -4px; padding: 0; list-style: none; }
+.sb-steps li { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--muted); }
+.sb-steps li b { display: grid; place-items: center; width: 19px; height: 19px; flex: none; border-radius: 50%; background: var(--sb-soft); color: var(--accent); font: 800 10px/1 Manrope, var(--font); }
+.sb-steps li small { color: var(--quiet); font-size: 10.5px; }
+.sb-steps .sb-steps-note { width: 100%; color: var(--quiet); font-size: 10.5px; }
+@media (max-width: 900px) { .sb-steps li small { display: none; } }
 .sb-page.has-selection { padding-bottom: 108px; }
 
 /* ── 页头：编辑式标题 + 右侧概览 ── */
@@ -141,6 +148,7 @@
 .sb-cand-game.win { border-color: color-mix(in srgb, var(--sb-win) 45%, transparent); background: var(--sb-win-soft); color: var(--sb-win); }
 .sb-cand-game.loss { border-color: color-mix(in srgb, var(--sb-loss) 45%, transparent); background: var(--sb-loss-soft); color: var(--sb-loss); }
 .sb-cand-warn { margin: 0; font-size: 11px; color: var(--sb-warn); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-cand-warn.is-soft { color: var(--muted); }
 .sb-cand-apply { margin-top: 1px; min-height: 32px; border: 1px solid var(--sb-line-strong); border-radius: 9px; background: var(--sb-paper); color: var(--text); font-size: 12px; font-weight: 700; }
 .sb-cand-apply:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--sb-paper); }
 .sb-cand-apply:disabled { opacity: .5; cursor: not-allowed; }
@@ -219,9 +227,17 @@
 .sb-state.is-open { color: var(--sb-warn); border-color: color-mix(in srgb, var(--sb-warn) 40%, transparent); background: var(--sb-warn-soft); }
 .sb-state.is-bad { color: var(--sb-loss); border-color: color-mix(in srgb, var(--sb-loss) 40%, transparent); background: var(--sb-loss-soft); }
 .sb-review-badge { display: inline-flex; align-items: center; height: 21px; padding: 0 7px; border: 1px dashed color-mix(in srgb, var(--sb-warn) 60%, var(--sb-line)); border-radius: 99px; background: var(--sb-warn-soft); color: var(--sb-warn); font-size: 10.5px; white-space: nowrap; }
-.sb-series-open { display: inline-flex; align-items: center; gap: 3px; color: var(--accent); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
-.sb-series-open svg { width: 13px; height: 13px; }
-.sb-series-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* 待核实的理由与「核实无误」直接摆在卡片上，不用再进三点菜单找。 */
+.sb-series.has-review { border-color: color-mix(in srgb, var(--sb-warn) 45%, var(--sb-line)); }
+.sb-review-strip { display: flex; align-items: center; gap: 9px; margin-top: 2px; padding: 7px 8px 7px 10px; border: 1px solid color-mix(in srgb, var(--sb-warn) 30%, var(--sb-line)); border-radius: 11px; background: var(--sb-warn-soft); }
+.sb-review-mark { display: grid; place-items: center; width: 19px; height: 19px; flex: none; border-radius: 50%; background: var(--sb-warn); color: var(--sb-paper); font: 800 12px/1 Manrope, var(--font); }
+.sb-review-copy { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.sb-review-copy b { font-size: 11.5px; color: var(--sb-warn); }
+.sb-review-copy small { font-size: 10.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-verify { min-height: 32px; padding: 0 11px; flex: none; border: 1px solid var(--sb-warn); border-radius: 9px; background: var(--sb-paper); color: var(--sb-warn); font-size: 11.5px; font-weight: 800; cursor: pointer; transition: background .16s, color .16s, transform .1s; }
+.sb-verify:hover { background: var(--sb-warn); color: var(--sb-paper); }
+.sb-verify:active { transform: scale(.97); }
+.sb-verify:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .sb-series .sb-iconbtn { width: 28px; height: 28px; border-radius: 8px; border-color: transparent; background: transparent; }
 .sb-series .sb-iconbtn:hover { background: var(--sb-soft); }
 .sb-series .sb-iconbtn svg { width: 16px; height: 16px; }
@@ -286,7 +302,9 @@ a.sb-game:hover { border-color: var(--accent); color: var(--accent); }
 .sb-row-opp { min-width: 0; display: grid; gap: 2px; }
 .sb-row-opp b { font-size: 12.5px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-row-opp small { font-size: 10.5px; color: var(--quiet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-row-flag { font-style: normal; margin-left: 5px; color: var(--sb-warn); font-weight: 700; font-size: 10px; }
+.sb-row-flag { display: inline-block; margin-left: 5px; padding: 1px 5px; border: 1px solid color-mix(in srgb, var(--sb-warn) 40%, var(--sb-line)); border-radius: 6px; background: var(--sb-warn-soft); color: var(--sb-warn); font-weight: 700; font-size: 10px; text-decoration: none; white-space: nowrap; }
+.sb-row-flag:hover { border-color: var(--sb-warn); text-decoration: underline; }
+.sb-row-flag:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .sb-row-result { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 700; color: var(--quiet); }
 .sb-row-result::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--sb-line-strong); flex: none; }
 .sb-row.is-win .sb-row-result { color: var(--sb-win); }
@@ -457,7 +475,6 @@ a.sb-game:hover { border-color: var(--accent); color: var(--accent); }
   .sb-series-head { flex-wrap: wrap; }
   .sb-series-score { margin-left: 0; }
   .sb-series .sb-iconbtn { margin-left: auto; }
-  .sb-series-open { margin-left: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sb-page *, .sb-toast, .sb-selectbar { animation-duration: .01ms !important; transition-duration: .01ms !important; }

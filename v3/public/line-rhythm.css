@@ -1,0 +1,143 @@
+/* ============================================================
+   第三轮：线条感
+   同类小方块用等分轨道，而不是被文字长度撑开；
+   状态徽章定宽，后面的文字就不会跟着凸出去；
+   数字等宽，竖排数字自然成列。
+   加载顺序：uplift → ppt-layout → line-rhythm
+   ============================================================ */
+
+:root, :root[data-theme] {
+  --rhythm-chip: 6.5em;
+  --rhythm-badge: 5.5em;
+}
+
+/* ── 1. 同类页签 / 筛选胶囊：等分宽度，长文字在盒内截断 ─────────── */
+#app #content :is(
+  .capv-tabs, .thd-lane-tabs, .bgx-seg, .lt-lane-row, .gr-subjects,
+  .xw-radar-kinds, .md-tabs, .feature-tabs,
+  .desk-tabs, .sx-tabs, .thd-combo-tabs, .xc-tabs,
+  .pf-heroes, .hc-index, .xw-index, .ds-carousel-markers,
+  .pc-legend, .xw-facts, .archive-sort, .tb-meta, .xw-seg, .xw-radar-links,
+  .help-mini, .arch-id-names, .cp-filter-lanes, .cp-lanes,
+  .pf-lane-filter, .tb-seg, .sh-summary
+) > * {
+  flex: 1 1 0 !important;
+  min-inline-size: 0 !important;
+  justify-content: center !important;
+  text-align: center !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 长标签组：用统一下限而不是等分空间，避免「游走（辅助）」被截掉 */
+#app #content .gr-subjects > * {
+  flex: 0 0 auto !important;
+  min-inline-size: 150px !important;
+  overflow: visible !important;
+}
+
+/* 首页时间/视图胶囊：用统一下限而不是等分空间，避免「近3天」被截成「近…」 */
+#app #content :is(.pbr-periods, .pbr-views) > * {
+  flex: 0 0 auto !important;
+  min-inline-size: 96px !important;
+  justify-content: center !important;
+  overflow: visible !important;
+  white-space: nowrap;
+}
+
+/* ── 2. 状态徽章定宽：一行里「已完成」和「等待核实」占同一格 ─────── */
+#app #content :is(
+  .bgx-status, .sb-review-badge, .sx-check-state, .comp-event-tag,
+  .mo-chip, .xw-chip, .pf-badge, .gr-active-badge, [class*='-status-badge']
+) {
+  inline-size: var(--rhythm-badge) !important;
+  min-inline-size: var(--rhythm-badge) !important;
+  max-inline-size: var(--rhythm-badge) !important;
+  justify-content: center !important;
+  text-align: center !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 3. 指标格：等宽列，数字与单位各归其位 ────────────────────── */
+#app #content .archive-summary {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+#app #content .archive-summary-note { grid-column: 1 / -1; }
+/* 英雄行：数值列等宽，第三列不再被长标签拉宽 */
+#app #content .thd-row:has(> :nth-child(6)) {
+  grid-template-columns:
+    minmax(260px, 1.8fr) repeat(3, minmax(0, 1fr)) minmax(120px, .8fr) 20px !important;
+}
+#app #content :is(.archive-summary .mo-cell, .xw-facts > *) {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 多列数据表：数值列统一用等宽数字，小数点自然对齐 */
+#app #content :is([class*='-num'], [class*='-metric'], td.num, .num, b, strong) {
+  font-variant-numeric: tabular-nums;
+}
+#app #content :is(.thd-num, .mo-cell b, .capv-metric b, .bgx-list-kpi b) {
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0;
+}
+
+/* ── 3.5 掉点列表：五列固定轨道，图标/时间/阵营/英雄/金币各归其位 ── */
+#app #content .md-dr-list {
+  gap: 6px !important;
+  padding-right: 8px !important;
+}
+#app #content .md-dr {
+  display: grid !important;
+  grid-template-columns: 20px 58px 44px minmax(0, 104px) minmax(0, 88px) !important;
+  gap: 10px !important;
+  align-items: center !important;
+  min-block-size: 44px !important;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+  font-size: 13px !important;
+  white-space: nowrap !important;
+}
+#app #content .md-dr-warn {
+  display: inline-flex;
+  inline-size: 20px;
+  justify-content: center;
+  color: #e58a7a;
+}
+#app #content .md-dr-time {
+  color: #dbe8f0;
+  font-size: 14px !important;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+}
+#app #content .md-dr-side {
+  inline-size: 44px;
+  text-align: center;
+  border-radius: 6px;
+  padding: 2px 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+#app #content .md-dr-side.own { color: #f0cd8b; background: rgba(216, 178, 106, .16); }
+#app #content .md-dr-side.foe { color: #6fe0d0; background: rgba(94, 201, 190, .14); }
+#app #content .md-dr-hero {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#app #content .md-dr-impact {
+  text-align: end;
+  font-size: 13px !important;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* ── 4. 长文本在固定盒内单行截断，盒宽不随内容变化 ─────────────── */
+#app #content :is([class*='-label'], [class*='-name'], [class*='-title']) {
+  min-inline-size: 0;
+}

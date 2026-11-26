@@ -858,10 +858,10 @@ dialog::backdrop {
 }
 
 .mn-dialog {
-  inline-size: min(520px, calc(100vw - 32px));
-  max-block-size: min(86vh, 720px);
+  inline-size: min(560px, calc(100vw - 32px));
+  max-block-size: min(88vh, 780px);
   overflow: auto;
-  padding: 18px;
+  padding: 22px 24px;
   border: 1px solid var(--line-strong, var(--line));
   border-radius: var(--r-lg, 18px);
   background: var(--paper);
@@ -870,9 +870,21 @@ dialog::backdrop {
 }
 
 .mn-dialog[open] { display: block; }
-.mn-dialog h2 { margin: 0 0 10px; font-size: 16px; }
+.mn-dialog .mn-head { padding-block-end: 12px; margin-block-end: 16px; border-block-end: 1px solid var(--line); }
+.mn-dialog h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.mn-dialog .mn-sub { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+/* 分步卡片：序号 + 字段放在柔底圆角块里，替代原来一排光秃秃的方框。 */
+.mn-dialog .mn-step { display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: start; gap: 10px;
+  margin-block-end: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft, var(--surface)); }
+.mn-dialog .mn-step-no { display: grid; place-items: center; inline-size: 26px; block-size: 26px;
+  border-radius: 50%; background: var(--accent-ink, var(--accent)); color: var(--paper, #fff); font-size: 13px; font-weight: 700; }
+.mn-dialog .mn-step .oe-field { gap: 6px; }
+.mn-dialog .mn-step .oe-field label { color: var(--text); font-size: 13px; font-weight: 650; }
+.mn-dialog .mn-step .oe-field :is(select, textarea) { border-radius: 9px; background: var(--paper); }
+.mn-dialog .mn-pick { display: grid; gap: 10px; }
+.mn-dialog .mn-hint { margin: -4px 0 10px; color: var(--danger, #B5564A); font-size: 12px; }
 .mn-dialog textarea {
-  min-block-size: 150px;
+  min-block-size: 132px;
   resize: vertical;
   line-height: 1.6;
 }

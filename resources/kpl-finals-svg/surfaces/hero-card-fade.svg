@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="100" height="112" viewBox="0 0 100 112" role="img">
+<title>竖卡白色渐变遮罩</title>
+<defs><linearGradient id="white-fade" x2="0%" y2="100%">
+ <stop stop-color="#fbf8f4" stop-opacity="0"/><stop offset=".48" stop-color="#fbf8f4" stop-opacity=".88"/><stop offset="1" stop-color="#fbf8f4"/>
+</linearGradient></defs>
+<rect x="0" y="0" width="100" height="112" rx="8" fill="url(#white-fade)"/>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="18" height="18" viewBox="0 0 18 18" role="img">
+<title>雷达图 · 队伍 A 顶点</title>
+<defs><radialGradient id="dot-gold" cx="35%" cy="25%" r="80%">
+ <stop stop-color="#ffe497"/><stop offset="1" stop-color="#8a5b12"/>
+</radialGradient></defs>
+<circle cx="9" cy="9" r="6" fill="url(#dot-gold)"/>
+</svg>

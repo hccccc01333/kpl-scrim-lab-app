@@ -139,7 +139,7 @@ def test_formal_match_bp_level_and_order_pending(tmp_path):
 
 
 def test_unlocks_compute_thresholds(tmp_path):
-    """解锁 v2：阈值按等级/已确认系列与语料计算。"""
+    """解锁 v2：大场/跨场都以「1 个已确认系列」为门槛，语料阈值只用于分析置信度。"""
     import unlocks as unlocks_mod
     store = Workspace(tmp_path / 'ws.sqlite3')
     store.ensure_schema()
@@ -147,13 +147,13 @@ def test_unlocks_compute_thresholds(tmp_path):
     none_state = unlocks_mod.compute(store, tmp_path / 'ws.sqlite3', None)
     assert none_state['routes']['biggame']['unlocked'] is False
     assert none_state['routes']['biggame']['cta'] == [['#competitions', '去选赛事']]
-    # 有已确认系列：大场解锁，跨局看语料阈值
+    # 有已确认系列：大场与跨场同时解锁（与上手引导口径一致）
     store.upsert_match('m-1', date='2026-11-02', recorded_date='2026-11-02')
     s1 = store.create_series(best_of=3, games=['m-1'], competition_id='comp-a')
     state = unlocks_mod.compute(store, tmp_path / 'ws.sqlite3', 'comp-a')
     assert state['routes']['biggame']['unlocked'] is True
-    assert state['routes']['cross']['unlocked'] is False
-    assert state['routes']['cross']['need'] == 20
+    assert state['routes']['cross']['unlocked'] is True
+    assert state['routes']['cross']['need'] == 1
     assert state['routes']['cross']['n'] == 1
 
 

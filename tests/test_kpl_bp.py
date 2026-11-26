@@ -124,6 +124,25 @@ def make_game(picks1, picks2, win_camp, *, year=2026, date='2026-10-02',
     return game
 
 
+def cross_camp_pick_payload(own_hero, foe_hero):
+    """让 bp_list 与十人面板同时把指定英雄放到双方首 Pick，其他字段保持不变。"""
+    payload = battle_payload()
+    own_old, foe_old = PICKS_1[0], PICKS_2[0]
+    for row in payload['data']['battle_player_list']:
+        if int(row['camp']) == 1 and row['hero_name'] == own_old:
+            row['hero_name'] = own_hero
+        elif int(row['camp']) == 2 and row['hero_name'] == foe_old:
+            row['hero_name'] = foe_hero
+    for item in payload['data']['bp_list']:
+        if int(item.get('is_ban_or_pick') or 0) != 1:
+            continue
+        if int(item['camp']) == 1 and item['hero_name'] == own_old:
+            item['hero_name'] = own_hero
+        elif int(item['camp']) == 2 and item['hero_name'] == foe_old:
+            item['hero_name'] = foe_hero
+    return payload
+
+
 def detail_for(own_picks, foe_picks=('甲', '乙', '丙', '丁', '戊')):
     return {'ownCamp': 'blue', 'players': [],
             'draft': {'picks': {'left': [{'name': hero} for hero in own_picks],
@@ -188,6 +207,46 @@ def test_parse_battle_builds_schema_row():
     assert len(game['players']['1']) == 5 and len(game['players']['2']) == 5
     assert game['fetchedAt'] == '2026-11-11T14:20:00'
     json.dumps(game)  # 必须可 JSON 序列化
+
+
+def test_parse_battle_keeps_official_player_stats_and_duration(tmp_path):
+    payload = battle_payload()
+    row = payload['data']['battle_player_list'][0]
+    row.update({
+        'kill_num': 5, 'death_num': 0, 'assist_num': 9,
+        'participation_rate': 93.3333, 'gold': 7176,
+        'hurt_total': 144350, 'hurt_to_hero_total': 68113,
+        'be_hurt_total': 37752, 'be_hurt_by_hero_total': 32422,
+    })
+    game = kpl_bp.parse_battle(payload, battle_id='111_1_222', match=MATCH, league=LEAGUE)
+    assert game['durationMs'] == 1200000
+    assert game['players']['1'][0]['stats'] == {
+        'kills': 5, 'deaths': 0, 'assists': 9, 'participation': 93.3333,
+        'gold': 7176, 'damage': 144350, 'heroDamage': 68113,
+        'taken': 37752, 'heroTaken': 32422,
+    }
+
+    path = tmp_path / 'bp_games.jsonl'
+    store = kpl_bp.GameStore(path)
+    assert store.add(game)
+    store.flush()
+    assert kpl_bp.load_games(path)[0]['players']['1'][0]['stats'] == game['players']['1'][0]['stats']
+
+
+def test_parse_battle_ignores_missing_or_invalid_player_stats():
+    payload = battle_payload()
+    row = payload['data']['battle_player_list'][0]
+    row.update({'kill_num': True, 'assist_num': '9', 'participation_rate': float('nan'),
+                'gold': None, 'be_hurt_total': float('inf')})
+    game = kpl_bp.parse_battle(payload, battle_id='111_1_222', match=MATCH, league=LEAGUE)
+    assert 'stats' not in game['players']['1'][0]
+
+    row.update({'kill_num': 0, 'assist_num': 0, 'participation_rate': 0, 'gold': 0,
+                'be_hurt_total': 0})
+    game = kpl_bp.parse_battle(payload, battle_id='111_1_222', match=MATCH, league=LEAGUE)
+    assert game['players']['1'][0]['stats'] == {
+        'kills': 0, 'assists': 0, 'participation': 0, 'gold': 0, 'taken': 0,
+    }
 
 
 def test_parse_battle_unfinished_and_no_winner():
@@ -290,6 +349,84 @@ def test_parse_battle_mismatch_when_pick_ban_semantics_flip():
     game = kpl_bp.parse_battle(payload, match=MATCH, league=LEAGUE, strict_players=False)
     assert game['bpMode'] == kpl_bp.BP_MODE_FULL
     assert game['picks']['1'] == BANS_1
+
+
+def test_parse_battle_rejects_cross_camp_duplicate_pick():
+    payload = cross_camp_pick_payload('李信', '李信')
+    with pytest.raises(kpl_bp.BattleParseError) as exc:
+        kpl_bp.parse_battle(payload, match=MATCH, league=LEAGUE)
+    assert exc.value.reason == 'duplicate-pick'
+    # strict_players 只控制 BP/面板一致性，不放宽全局 Pick 唯一性。
+    with pytest.raises(kpl_bp.BattleParseError) as exc:
+        kpl_bp.parse_battle(payload, match=MATCH, league=LEAGUE, strict_players=False)
+    assert exc.value.reason == 'duplicate-pick'
+
+
+def test_parse_battle_rejects_duplicate_pick_in_partial_fallback():
+    payload = cross_camp_pick_payload('李信', '李信')
+    payload['data']['bp_list'] = payload['data']['bp_list'][:10]
+    with pytest.raises(kpl_bp.BattleParseError) as exc:
+        kpl_bp.parse_battle(payload, match=MATCH, league=LEAGUE)
+    assert exc.value.reason == 'duplicate-pick'
+
+
+def test_parse_battle_blind_allows_cross_camp_shared_picks():
+    payload = battle_payload(bp_list=[], battle_id='b3',
+                             player_heroes={'1': PICKS_1, '2': PICKS_1})
+    match = make_match(['b1', 'b2', 'b3'], score1=4, score2=3, bo=7)
+    game = kpl_bp.parse_battle(payload, battle_id='b3', match=match, league=LEAGUE)
+    assert game['bpMode'] == kpl_bp.BP_MODE_BLIND
+    assert game['picks'] == {'1': PICKS_1, '2': PICKS_1}
+
+
+def test_parse_battle_shared_picks_require_true_decider_blind():
+    for battle_id, score1, score2 in (('b2', 4, 3), ('b3', 4, 1)):
+        payload = battle_payload(bp_list=[], battle_id=battle_id,
+                                 player_heroes={'1': PICKS_1, '2': PICKS_1})
+        match = make_match(['b1', 'b2', 'b3'], score1=score1, score2=score2, bo=7)
+        with pytest.raises(kpl_bp.BattleParseError) as exc:
+            kpl_bp.parse_battle(payload, battle_id=battle_id, match=match, league=LEAGUE)
+        assert exc.value.reason == 'duplicate-pick'
+
+
+def test_parse_battle_complete_bp_on_decider_is_not_blind_exception():
+    payload = cross_camp_pick_payload('李信', '李信')
+    match = make_match(['b1', 'b2', 'b3'], score1=4, score2=3, bo=7)
+    with pytest.raises(kpl_bp.BattleParseError) as exc:
+        kpl_bp.parse_battle(payload, battle_id='b3', match=match, league=LEAGUE)
+    assert exc.value.reason == 'duplicate-pick'
+
+
+def test_parse_battle_yuanliu_forms_share_pick_identity():
+    payload = cross_camp_pick_payload('元流之子(坦克)', '元流之子(射手)')
+    with pytest.raises(kpl_bp.BattleParseError) as exc:
+        kpl_bp.parse_battle(payload, match=MATCH, league=LEAGUE)
+    assert exc.value.reason == 'duplicate-pick'
+
+
+def test_parse_battle_side_swap_keeps_duplicate_validation():
+    payload = cross_camp_pick_payload('李信', '李信')
+    data = payload['data']
+    for row in data['battle_player_list']:
+        row['camp'] = 3 - int(row['camp'])
+    for item in data['bp_list']:
+        item['camp'] = 3 - int(item['camp'])
+    data['camp1'], data['camp2'] = data['camp2'], data['camp1']
+    data['win_camp'] = 3 - int(data['win_camp'])
+    with pytest.raises(kpl_bp.BattleParseError) as exc:
+        kpl_bp.parse_battle(payload, match=MATCH, league=LEAGUE)
+    assert exc.value.reason == 'duplicate-pick'
+
+    unique = battle_payload()
+    data = unique['data']
+    for row in data['battle_player_list']:
+        row['camp'] = 3 - int(row['camp'])
+    for item in data['bp_list']:
+        item['camp'] = 3 - int(item['camp'])
+    data['camp1'], data['camp2'] = data['camp2'], data['camp1']
+    data['win_camp'] = 3 - int(data['win_camp'])
+    game = kpl_bp.parse_battle(unique, match=MATCH, league=LEAGUE)
+    assert game['picks'] == {'1': PICKS_2, '2': PICKS_1}
 
 
 # ---------------------------------------------------------------------------
@@ -628,6 +765,30 @@ def test_run_crawl_end_to_end_idempotent(tmp_path, monkeypatch):
     assert result2['crawl']['added'] == 0
     assert calls['battles'] == ['b2']
     assert len(kpl_bp.load_games(paths['games_path'])) == 1
+
+
+def test_run_crawl_counts_duplicate_pick_as_error(tmp_path, monkeypatch):
+    _install_fake_api(monkeypatch)
+    duplicate = cross_camp_pick_payload('李信', '李信')
+    duplicate['data']['battle_id'] = 'b2'
+
+    def fake_fetch_battle(session, battle_id, log=None):
+        return battle_payload(win_camp=1, battle_id='b1') if battle_id == 'b1' else duplicate
+
+    monkeypatch.setattr(kpl_bp, 'fetch_battle', fake_fetch_battle)
+    paths = {'games_path': tmp_path / 'bp_games.jsonl',
+             'manifest_path': tmp_path / 'manifest.json',
+             'facts_path': tmp_path / 'kpl_combos.json'}
+    result = kpl_bp.run_crawl(since_year=2024, sleep=0, session=object(), log=lambda *a, **k: None,
+                              sleep_fn=lambda _s: None, min_games=1, **paths)
+    assert result['crawl']['added'] == 1
+    assert result['crawl']['errors'] == 1
+    assert result['crawl']['errorBattleIds'] == ['b2']
+    assert result['crawl']['invalid'] == 0 and result['crawl']['mismatch'] == 0
+    manifest = json.loads(paths['manifest_path'].read_text(encoding='utf-8'))
+    assert manifest['games'] == 1 and manifest['errors'] == 1
+    assert manifest['errorBattleIds'] == ['b2']
+    assert manifest['invalid'] == 0
 
 
 def test_run_crawl_dry_run_writes_nothing(tmp_path, monkeypatch):

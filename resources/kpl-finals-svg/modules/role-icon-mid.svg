@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40" height="40" viewBox="0 0 40 40" role="img">
+<title>中路位置图标</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<rect x="0.7" y="0.7" width="38.6" height="38.6" rx="5" fill="url(#gold)" stroke="url(#gold-edge)" stroke-width="1.4"/><path d="M5 34 V9 Q5 5 9 5 H31 M35 9 V31 Q35 35 31 35 H9" fill="none" stroke="#fffaf0" stroke-width="2.4" stroke-linecap="round"/><path d="M10 25Q7 18 13 12Q18 7 25 11L21 15Q17 12 14 16Q11 19 15 23L10 25Z M30 18Q33 23 27 28Q21 32 16 28L20 24Q23 26 26 23Q29 20 26 18Z M12 30L28 12 31 14 14 32Z" fill="#fffaf1"/>
+</svg>

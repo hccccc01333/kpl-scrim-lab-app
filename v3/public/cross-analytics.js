@@ -779,6 +779,15 @@ function earlyOf(rows) {
 }
 
 /* ── 6. 经济路径与滚雪球 ──────────────────────────────────────── */
+/* 一句「10 分钟领先 1,000 金币的 2 局」教练第一反应是「哪 2 局、各领先多少」。
+   标签复用逐局卡片口径：日期 + 对手（有局序再带 G），缺字段退回 key，不补 0。 */
+const gameLabelOf = (r) => {
+  const day = String(r.date || '').slice(5);
+  const who = r.opponent ? `对阵${r.opponent}` : '';
+  const g = num(r.gameIndex) ? `G${r.gameIndex}` : '';
+  return [g, day, who].filter(Boolean).join(' ') || String(r.key || '');
+};
+
 function pathOf(rows) {
   const checkpoints = PHASE_CHECKPOINTS.map((minute) => {
     const idx = minute / 5;
@@ -802,9 +811,44 @@ function pathOf(rows) {
   const leadWin = lead10.filter((r) => r.result === 'win').length;
   const leadShrink = lead10.filter((r) => num(r.final) && r.final < r.at10).length;
   const lateGain = vals(rows.filter((r) => num(r.at10) && num(r.final)).map((r) => r.final - r.at10));
+  // 逐局明细：教练看到「2 局」会追问是哪几局、各领先多少，直接带出来，别只给计数。
+  // 按时间正序，和逐局卡片保持一致；at10 是我方视角的 10 分钟经济差（金币）。
+  const leadGames = lead10.slice().sort(byOrder).map((r) => ({
+    key: r.key,
+    label: gameLabelOf(r),
+    at10: r.at10,
+    result: r.result,
+  }));
+  /* 阶段锚点曲线：教练按 0–4 / 4–10 / 10–结束 三段读比赛，
+     所以曲线只落在这四个锚点上（开局 / 4′ / 10′ / 终局），每段带 n。
+     仍取「常见值」（中位数）：2 局就是这 2 局，不伪装成稳定平均。 */
+  const anchors = [
+    { key: 'start', label: '开局', minute: 0 },
+    { key: 'at4', label: '4′', minute: 4 },
+    { key: 'at10', label: '10′', minute: 10 },
+    { key: 'final', label: '终局', minute: null },
+  ];
+  const anchorPick = (list, key) => {
+    if (key === 'start') {
+      const n = list.filter((r) => num(r.at4) || num(r.at10) || num(r.final)).length;
+      return { n, med: n ? 0 : null };
+    }
+    const v = vals(list.map((r) => r[key]));
+    return { n: v.length, med: median(v) };
+  };
+  const curve = anchors.map((a) => ({
+    ...a,
+    win: anchorPick(rows.filter((r) => r.result === 'win'), a.key),
+    loss: anchorPick(rows.filter((r) => r.result === 'loss'), a.key),
+  }));
   return {
-    checkpoints, phase,
-    lead: { n: lead10.length, wins: leadWin, rate: rateOf(leadWin, lead10.length), shrink: rateOf(leadShrink, lead10.length) },
+    checkpoints, phase, curve,
+    lead: {
+      n: lead10.length, wins: leadWin, rate: rateOf(leadWin, lead10.length), shrink: rateOf(leadShrink, lead10.length),
+      games: leadGames,
+      /* 教练问「领先那几局到底领先多少」，给这些局的 10 分钟平均金币，不给 1000 的门槛值。 */
+      avgAt10: leadGames.length ? mean(leadGames.map((g) => g.at10)) : null,
+    },
     lateGain: { n: lateGain.length, med: median(lateGain) },
   };
 }
@@ -1170,5 +1214,5 @@ export function analyzeCohort(vectors) {
 export const internals = {
   prepare, coverageOf, recordOf, trendOf, driversOf, riskOf, laneOf, playerExecutionOf, earlyOf,
   pathOf, objectiveOf, fightOf, draftOf, opponentOf, executionOf, archetypeOf, ourHeroTarget, foeHeroPairing,
-  quantile, median, wilson, cliffs, shrink, rateOf, halves, reproduce,
+  quantile, median, wilson, cliffs, shrink, rateOf, halves, reproduce, gameLabelOf,
 };

@@ -5,6 +5,8 @@
  * 数据形状由 cross-analytics.js 产出，本文件不改口径。
  */
 
+import { glyph } from './ui-icons.js';
+
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const esc = (v) => String(v == null ? '' : v)
@@ -37,6 +39,8 @@ const unit = (v, u) => {
 const tip = (t) => `data-xc-tip="${esc(t)}"`;
 const widthOf = (v, max) => `${clamp(Math.abs(num(v) ? v : 0) / Math.max(1e-9, max) * 100, 1, 100).toFixed(1)}%`;
 const signedCls = (v) => (num(v) && v < 0 ? 'neg' : 'pos');
+/* 零线上方 = 优势 ↑，下方 = 劣势 ↓；图里直接给方向，不靠读坐标。 */
+const dirOf = (v) => (num(v) && v > 0 ? { glyph: '↑', cls: 'up' } : num(v) && v < 0 ? { glyph: '↓', cls: 'down' } : null);
 
 function shell(chart, ctx, labelA, labelB, bodyA, bodyB) {
   const id = chart.id || 'viz';
@@ -45,8 +49,8 @@ function shell(chart, ctx, labelA, labelB, bodyA, bodyB) {
   return `<div class="xv" data-xc-viz="${esc(id)}">
     <div class="xv-head">
       <div class="xv-switch" role="group" aria-label="切换视图">
-        <button type="button" data-xc-view-btn="a" data-xc-viz-id="${esc(id)}" class="${cur === 'a' ? 'is-on' : ''}">${esc(labelA)}</button>
-        <button type="button" data-xc-view-btn="b" data-xc-viz-id="${esc(id)}" class="${cur === 'b' ? 'is-on' : ''}">${esc(labelB)}</button>
+        <button type="button" data-xc-view-btn="a" data-xc-viz-id="${esc(id)}" class="${cur === 'a' ? 'is-on' : ''}">${glyph('chart', { label: labelA, size: 18 })}${esc(labelA)}</button>
+        <button type="button" data-xc-view-btn="b" data-xc-viz-id="${esc(id)}" class="${cur === 'b' ? 'is-on' : ''}">${glyph('compare', { label: labelB, size: 18 })}${esc(labelB)}</button>
       </div>
     </div>
     <div class="xv-stage">${one('a', bodyA)}${one('b', bodyB)}<div class="xv-tip" hidden></div></div>
@@ -369,73 +373,87 @@ function bars(chart, ctx) {
   return shell({ ...chart, id: chart.id || 'bars' }, ctx, '条形', '读数', A, B);
 }
 
-/* ── 经济路径：三条折线 + 阶段净增 ───────────────────────────────
- * 教练看的三个问题：十分钟大概多少钱、赢的局和输的局差在哪一段、
- * 这一段是挣的还是亏的。所以一条线一个直标，不要图例。 */
+/* ── 经济路径：赢/输两条曲线 + 翻盘局分布 ────────────────────────
+ * 赛训组要的不是一张挤满三条线的图，是两件事：
+ *   1) 赢的局 / 输的局，经济差按 开局→4′→10′→终局 怎么走；
+ *   2) 翻盘局、被翻盘局具体是哪些局，各自 10 分钟差多少。
+ * 于是 A 视图只留两条线、一个直标各一条；B 视图按 10 分钟经济把逐局摆开。 */
 function economy(chart, ctx) {
-  const cps = (chart.checkpoints || []).filter((c) => c && c.all && num(c.all.med));
-  if (cps.length < 2) return empty('这批局的过程数据不够，画不出经济路径。');
+  const anchors = (chart.curve || []).filter((p) => p && (num(p.win && p.win.med) || num(p.loss && p.loss.med)));
+  const linesOK = anchors.filter((p) => num(p.win && p.win.med)).length >= 2 || anchors.filter((p) => num(p.loss && p.loss.med)).length >= 2;
+  if (!linesOK) return empty('这批局的过程数据不够，画不出赢/输经济曲线。');
   const H = 264;
   const L = 62, R = 132;
-  const all = cps.flatMap((c) => [c.win.med, c.loss.med, c.all.med]).filter(num);
+  const all = anchors.flatMap((p) => [p.win.med, p.loss.med]).filter(num);
   const max = Math.max(1000, Math.ceil(Math.max(...all.map((v) => Math.abs(v))) / 1000) * 1000);
-  const xOf = (i) => L + (i / Math.max(1, cps.length - 1)) * (1000 - L - R);
+  const xOf = (i) => L + (i / Math.max(1, anchors.length - 1)) * (1000 - L - R);
   const yOf = (v) => H / 2 - (v / max) * (H / 2 - 22);
-  const line = (key, cls) => polyline(cps.map((c, i) => ({ x: xOf(i), y: num(c[key].med) ? yOf(c[key].med) : null })), cls, 2.6);
+  const line = (key, cls) => polyline(anchors.map((p, i) => ({ x: xOf(i), y: p[key] && num(p[key].med) ? yOf(p[key].med) : null })), cls, 2.8);
   const gridLines = [-1, -0.5, 0, 0.5, 1].map((f) => {
     const y = yOf(f * max);
     return `<line class="${f === 0 ? 'zero' : 'grid'}" x1="${L}" x2="${1000 - R}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" vector-effect="non-scaling-stroke"/>`;
   }).join('');
-  const dots = cps.map((c, i) => {
-    const t = `${c.minute} 分钟：全部局常见 ${signed(c.all.med)} 金币；赢的局 ${signed(c.win.med)}（${c.win.n} 局）；输的局 ${signed(c.loss.med)}（${c.loss.n} 局）`;
-    return `<span class="xv-hit" style="left:${(xOf(i) / 10).toFixed(2)}%;top:${(yOf(c.all.med) / H * 100).toFixed(2)}%" ${tip(t)}><i></i></span>`;
+  const dots = anchors.flatMap((p, i) => {
+    const out = [];
+    if (p.win && num(p.win.med)) {
+      const t = `开局 / 4′ / 10′ / 终局`.split(' / ')[i] + ` · 赢的局常见 ${signed(p.win.med)} 金币（${p.win.n} 局）`;
+      out.push(`<span class="xv-hit is-win" style="left:${(xOf(i) / 10).toFixed(2)}%;top:${(yOf(p.win.med) / H * 100).toFixed(2)}%" ${tip(t)}><i></i></span>`);
+    }
+    if (p.loss && num(p.loss.med)) {
+      const t = `开局 / 4′ / 10′ / 终局`.split(' / ')[i] + ` · 输的局常见 ${signed(p.loss.med)} 金币（${p.loss.n} 局）`;
+      out.push(`<span class="xv-hit is-loss" style="left:${(xOf(i) / 10).toFixed(2)}%;top:${(yOf(p.loss.med) / H * 100).toFixed(2)}%" ${tip(t)}><i></i></span>`);
+    }
+    return out;
   }).join('');
-  /* 直标：每条线在自己最后一个有数的点旁边写名字，省掉图例。
-     三条线末端容易挤在一起，按 y 排序后拉开间距。 */
-  const lastIdxOf = (key) => cps.reduce((acc, c, i) => (num(c[key].med) ? i : acc), -1);
+  /* 每个锚点给一个方向箭头徽标：零线上方 ↑ 有优势，下方 ↓ 处劣势。
+     徽标浮在点上方，赢/输两条线各偏一侧，既不压住线也不抢右侧直标。 */
+  const arrows = anchors.flatMap((p, i) => [
+    ['win', -11], ['loss', 11],
+  ].map(([key, shift]) => {
+    const v = p[key] && p[key].med;
+    const dir = dirOf(v);
+    if (!dir) return '';
+    const who = key === 'win' ? '赢的局' : '输的局';
+    const t = `${p.label} · ${who} ${dir.glyph} ${signed(v)} 金币`;
+    return `<span class="xv-econ-arrow ${dir.cls}" style="left:calc(${(xOf(i) / 10).toFixed(2)}% ${shift < 0 ? '-' : '+'} ${Math.abs(shift)}px);top:calc(${(yOf(v) / H * 100).toFixed(2)}% - 16px)" ${tip(t)}>${dir.glyph}</span>`;
+  }).filter(Boolean)).join('');
+  const endOf = (key) => anchors.reduce((acc, p, i) => (p[key] && num(p[key].med) ? i : acc), -1);
   const ends = [
     ['win', '赢的局', 'is-win'],
     ['loss', '输的局', 'is-loss'],
-    ['all', '全部局', 'is-all'],
   ].map(([key, label, cls]) => {
-    const i = lastIdxOf(key);
+    const i = endOf(key);
     if (i < 0) return null;
-    return { key, label, cls, i, y: yOf(cps[i][key].med), value: cps[i][key].med };
+    return { label, cls, i, y: yOf(anchors[i][key].med), value: anchors[i][key].med, n: anchors[i][key].n };
   }).filter(Boolean).sort((a, b) => a.y - b.y);
-  const GAP = 18;
+  const GAP = 22;
   for (let i = 1; i < ends.length; i += 1) {
     if (ends[i].y - ends[i - 1].y < GAP) ends[i].y = ends[i - 1].y + GAP;
   }
-  for (let i = ends.length - 1; i >= 0; i -= 1) {
-    if (ends[i].y > H - 12) ends[i].y = H - 12 - (ends.length - 1 - i) * GAP;
-  }
-  const direct = ends.map((e) => `<span class="xv-direct ${e.cls}" style="left:calc(${(xOf(e.i) / 10).toFixed(2)}% + 10px);top:${(e.y / H * 100).toFixed(2)}%">${esc(e.label)}<b>${signed(e.value)}</b></span>`).join('');
+  const direct = ends.map((e) => `<span class="xv-direct ${e.cls}" style="left:calc(${(xOf(e.i) / 10).toFixed(2)}% + 10px);top:${(e.y / H * 100).toFixed(2)}%">${esc(e.label)}<b>${signed(e.value)}</b><small>${e.n} 局</small></span>`).join('');
   const yLabels = [-1, -0.5, 0, 0.5, 1].map((f) => `<span class="xv-y-lab" style="top:${(H / 2 - f * (H / 2 - 22)) / H * 100}%">${f === 0 ? '0' : signed(f * max)}</span>`).join('');
   const A = view(
     `<div class="xv-chartwrap xv-chart-econ">
-      ${chartSvg(H, `${gridLines}${line('all', 'allline')}${line('loss', 'lossline')}${line('win', 'winline')}`)}
-      ${yLabels}
-      ${dots}
-      ${direct}
+      ${chartSvg(H, `${gridLines}${line('loss', 'lossline')}${line('win', 'winline')}`)}
+      ${yLabels}${dots}${arrows}${direct}
     </div>
-    <div class="xv-axis" style="padding-left:${(L / 10).toFixed(1)}%;padding-right:${(R / 10).toFixed(1)}%">${cps.map((c) => `<span>${c.minute}′</span>`).join('')}</div>
-    <p class="xv-note">每条线是该分钟「本队减对手」金币差的常见值，线尾数字是这条线最后一个有数的点。越往后样本越少。</p>`
+    <div class="xv-axis" style="padding-left:${(L / 10).toFixed(1)}%;padding-right:${(R / 10).toFixed(1)}%">${anchors.map((p) => `<span>${esc(p.label)}</span>`).join('')}</div>
+    <div class="xv-legend-row"><span><i class="is-win"></i>赢的局</span><span><i class="is-loss"></i>输的局</span><span class="xv-arrow-key"><b class="up">↑</b> 优势 <b class="down">↓</b> 劣势</span></div>`
   );
-  const phase = (chart.phase || []).filter((p) => num(p.win) || num(p.loss));
-  const pmax = Math.max(1, ...phase.flatMap((p) => [Math.abs(p.win || 0), Math.abs(p.loss || 0)]));
-  const B = view(
-    `<div class="xv-phases">${phase.map((p) => `<div class="xv-phase" ${tip(`${p.label}：赢的局常见净增 ${signed(p.win)} 金币，输的局 ${signed(p.loss)} 金币`)}>
-      <span class="xv-phase-label">${esc(p.label)}</span>
-      <div class="xv-phase-bars">
-        <i class="xv-phase-bar win" style="width:${widthOf(p.win, pmax)}"></i>
-        <i class="xv-phase-bar loss" style="width:${widthOf(p.loss, pmax)}"></i>
-      </div>
-      <span class="xv-phase-vals"><b class="win">${signed(p.win)}</b><b class="loss">${signed(p.loss)}</b></span>
-    </div>`).join('')}</div>
-    <div class="xv-legend-row"><span><i class="is-win"></i>赢的局</span><span><i class="is-loss"></i>输的局</span></div>
-    <p class="xv-note">阶段净增 = 这一阶段末的经济差减阶段初；三段相加大约等于终局差。</p>`
-  );
-  return shell({ ...chart, id: chart.id || 'economy' }, ctx, '累计差', '三段净增', A, B);
+  const flips = chart.flips || {};
+  const buckets = [
+    { key: 'throw', label: '被翻盘局', hint: '10 分钟领先 1,000 金币以上，最后输掉', cls: 'is-loss', games: flips.throw || [] },
+    { key: 'comeback', label: '翻盘局', hint: '10 分钟落后 1,000 金币以上，最后赢下', cls: 'is-win', games: flips.comeback || [] },
+  ];
+  const flipsHtml = buckets.map((b) => `<div class="xv-flip ${b.cls}">
+    <div class="xv-flip-head"><b>${esc(b.label)}</b><span>${b.games.length} 局</span></div>
+    ${b.games.length
+      ? `<div class="xv-flip-games">${b.games.map((g) => `<a href="#match/${encodeURIComponent(g.key)}" class="xv-flip-game" ${tip(`${esc(g.label)}：10 分钟 ${signed(g.at10)}，终局 ${signed(g.final)} 金币`)}><span>${esc(g.label)}</span><b>${signed(g.at10)}</b></a>`).join('')}</div>`
+      : '<p class="xv-note">这批没有这样的局。</p>'}
+    <p class="xv-note">${esc(b.hint)}。数值是 10 分钟「本队减对手」金币。</p>
+  </div>`).join('');
+  const B = view(`<div class="xv-flips">${flipsHtml}</div>`);
+  return shell({ ...chart, id: chart.id || 'economy' }, ctx, '赢 / 输曲线', '翻盘局分布', A, B);
 }
 
 const RENDERERS = { trend, profile, distribution, path, laneRange, funnel, fight, bars, economy };

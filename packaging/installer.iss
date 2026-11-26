@@ -77,6 +77,31 @@ Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务:"
 Name: "autostart"; Description: "开机时后台启动工作台（不弹浏览器）"; GroupDescription: "附加任务:"; Flags: unchecked
 
+[InstallDelete]
+; 3.4.0 起升级改为「保留数据、其余重装」：只靠 [Files] 覆盖会留下旧版独有的
+; 文件（源码里删掉的模块/JS、旧字节码缓存），造成前后端混版。Inno Setup 的
+; [InstallDelete] 在装文件之前执行，删掉的程序文件会从 SourceDir 完整装回。
+; data/ 与 .env 故意不进删除列表：比赛数据、授权、备份和本机端口配置跨版本保留。
+Type: filesandordirs; Name: "{app}\v3"
+Type: filesandordirs; Name: "{app}\runtime"
+Type: filesandordirs; Name: "{app}\tools"
+Type: filesandordirs; Name: "{app}\scripts"
+Type: filesandordirs; Name: "{app}\resources"
+Type: filesandordirs; Name: "{app}\docs"
+Type: filesandordirs; Name: "{app}\web"
+Type: filesandordirs; Name: "{app}\_internal"
+Type: filesandordirs; Name: "{app}\data\update"
+Type: files; Name: "{app}\*.py"
+Type: files; Name: "{app}\*.pyc"
+Type: files; Name: "{app}\*.bat"
+Type: files; Name: "{app}\*.txt"
+Type: files; Name: "{app}\*.json"
+Type: files; Name: "{app}\*.md"
+Type: files; Name: "{app}\*.exe"
+Type: files; Name: "{app}\*.ico"
+Type: files; Name: "{app}\*.example"
+; logs/ 也保留：升级失败时还能拿旧日志排查；data/ 子目录除 update 外一律不动。
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "app.ico"; DestDir: "{app}"; Flags: ignoreversion

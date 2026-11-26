@@ -4,6 +4,8 @@
    顶头条为浅白对位结论卡：结论式 H1 + 双人左右对位。
    数据：/api/studio/camp-compare 的 heroes.own / heroes.enemy 聚合样本。 */
 
+import { glyph } from './ui-icons.js';
+
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const es = (v) => String(v == null ? '' : v)
@@ -71,7 +73,7 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
 
   function card(id, name, title, chart, titleAttrs = '') {
     return `<article class="hc-card" id="hc-analysis-${id}">
-      <div class="hc-card-top"><span class="hc-kicker">${id} / 英雄对比</span></div>
+      <div class="hc-card-top">${glyph('compare', { label: '英雄对比', size: 18 })}<span class="hc-kicker">${id} / 英雄对比</span></div>
       <div class="hc-card-name">${es(name)}</div>
       <h3 class="hc-card-title"${titleAttrs}>${title}</h3>
       <div class="hc-card-canvas">${chart}</div>
@@ -260,10 +262,10 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
 
   function render(value) {
     if (value) state.data = value;
-    if (!state.data) return '<div class="page"><div class="loading">正在汇总英雄样本…</div></div>';
+    if (!state.data) return `<div class="page"><div class="loading">${glyph('heroes', { size: 18 })} 正在汇总英雄样本…</div></div>`;
     initKeys();
     const a = find(state.keyA), b = find(state.keyB);
-    if (!a || !b) return '<div class="page"><div class="empty">当前范围没有可对比的英雄样本。</div></div>';
+    if (!a || !b) return `<div class="page"><div class="empty">${glyph('heroes', { label: '英雄样本', size: 20 })} 当前范围没有可对比的英雄样本。</div></div>`;
     const names = ['六项对位分析', '胜率与样本可信度', '分均产出分析', '分路坐标分析'];
     const roleId = roleOf(a);
     const sum = summary(a, b);
@@ -279,17 +281,17 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
       card('04', names[3], roleTitle(a, roleId, groupOf(roleId)), analysis04(a, b)),
     ].join('');
     return `<div class="page hc-page">
-      <div class="page-intro hc-intro"><div><h1>英雄对比</h1><p>两个英雄摆在一起，看谁更稳、强在哪、下一阶段练谁。</p></div>
-        <div class="intro-actions"><button class="control" data-action="refresh">刷新数据</button></div></div>
+      <div class="page-intro hc-intro"><div><h1>${glyph('compare', { label: '英雄对比', size: 20 })} 英雄对比</h1></div>
+        <div class="intro-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 刷新数据</button></div></div>
       ${heroHead(a, b)}
       <div class="hc-toolbar">
         <label class="hc-filter"><span>样本范围</span><select data-hc-scope>
           <option value="own"${state.scope === 'own' ? ' selected' : ''}>本队英雄</option>
           <option value="enemy"${state.scope === 'enemy' ? ' selected' : ''}>对手英雄</option>
         </select></label>
-        <span class="hc-toolbar-count">当前 ${n0(pool().length)} 个英雄 · 点图里的任意英雄可换到右侧对比</span>
+        <span class="hc-toolbar-count">当前 ${n0(pool().length)} 个英雄</span>
       </div>
-      <div class="hc-index" role="group" aria-label="分析直达">${names.map((x, i) => `<button type="button" data-hc-jump="0${i + 1}">${es(x)}</button>`).join('')}</div>
+      <div class="hc-index" role="group" aria-label="分析直达">${names.map((x, i) => `<button type="button" data-hc-jump="0${i + 1}">${glyph(['compare', 'victory', 'chart', 'heroes'][i], { size: 18 })} ${es(x)}</button>`).join('')}</div>
       <section class="hc-cards">${cards}</section>
       <p class="hc-source">数据来源：王者营地面板十人结算汇总；英雄身份按英雄名与分路区分，同一英雄不同分路单列。</p>
     </div>`;

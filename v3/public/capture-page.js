@@ -19,6 +19,7 @@
  *
  * 单个接口暂时读不到时按空数据处理，页面给重试入口，不中断整页。
  */
+import { glyph } from './ui-icons.js';
 
 const ROOT_API = '/api/';
 
@@ -31,6 +32,13 @@ const SOURCE_TIERS = [
   ['完整录屏', { label: '补采 / 新录入', key: 'fallback' }, '同上；十人阵容清楚即可新录入', '#videos'],
   ['标准表格', { label: '选填 · 补充', key: 'extra' }, '手填补充或校正字段，需要按模板列结构', '#capture'],
 ];
+
+/* 采集请求带上当前赛事，后端据此把本批对局盖到统一数据范围。 */
+function currentCaptureContext() {
+  try {
+    return { competitionId: localStorage.getItem('training-current-competition') || '' };
+  } catch { return { competitionId: '' }; }
+}
 
 async function api(path, { method = 'GET', body, raw, signal } = {}) {
   const options = { method, cache: 'no-store', signal };
@@ -138,10 +146,11 @@ function resultChip(entry) {
   return `<i class="ingest-won ${result === 1 ? 'is-win' : 'is-loss'}">${result === 1 ? '胜' : '负'}</i>`;
 }
 
-/* 采集页的五个页签：营地同步 / 截图 / 录屏 / 回放 / 审查。
-   2026-11-16：后四个原先是独立页面（#shots / #videos / #replays / #review），
-   现在是同一个采集页的页签；旧链接仍然可用，路由把它们都映射回 #ingest。 */
-const CAPTURE_HASHES = ['#ingest', '#shots', '#videos', '#replays', '#review'];
+/* 采集页的六个页签：营地同步 / 截图 / 录屏 / 回放 / 审查 / 已采集对局。
+   2026-11-16：前四个后段原先是独立页面（#shots / #videos / #replays / #review），
+   现在是同一个采集页的页签；旧链接仍然可用，路由把它们都映射回 #ingest。
+   2026-11-24：加 #imported，列出库里已落库的对局，删掉后可回营地同步重爬。 */
+const CAPTURE_HASHES = ['#ingest', '#shots', '#videos', '#replays', '#review', '#imported'];
 
 export function createCapture(h) {
   const { esc, fmt, table, block, stats, empty, withPage, icon } = h;
@@ -175,6 +184,8 @@ export function createCapture(h) {
     range: 'all',
     // 拉取/入库进度：phase、已处理数、总数、当前对局、已拿到的局数。
     progress: null,
+    // 刷新后从服务端接回的后台同步任务；只启一个，避免重复轮询。
+    syncResume: null,
     // 上一次同步的结果，留在卡片里直到下次拉取：写入 / 待审 / 没拉全。
     summary: null,
     // 同步结束时右下角那张结果卡；切到别的页面也还在，直到关闭或超时。
@@ -199,7 +210,8 @@ export function createCapture(h) {
     const [name = '', sub = ''] = path.split('/');
     let id = sub || '';
     try { id = decodeURIComponent(id); } catch { /* 非法编码就按原文 */ }
-    const tab = { ingest: 'camp', shots: 'shots', videos: 'videos', replays: 'replays', review: 'review' }[name];
+    const tab = { ingest: 'camp', shots: 'shots', videos: 'videos', replays: 'replays',
+      review: 'review', imported: 'imported' }[name];
     return { tab: tab || 'camp', id: tab === 'review' ? id : '' };
   }
 
@@ -274,22 +286,28 @@ export function createCapture(h) {
     renderWidget();
   }
 
+  function syncPhaseLabel(phase) {
+    return phase === 'official' ? '正在补拉官方回放（放慢速度，避免限流）'
+      : phase === 'channel' ? '正在写入正式统计'
+        : phase === 'done' ? '正在收尾'
+          : phase === 'list' ? '正在读取对局列表' : '正在同步对局详情';
+  }
+
   /** 统一的进度条：教练能看见「第几步、处理到第几局、还剩多少」。 */
   function progressInner(p) {
     const total = Math.max(1, Number(p.total) || 1);
     const done = Math.min(total, Math.max(0, Number(p.done) || 0));
     const percent = Math.round((done / total) * 100);
-    const phase = p.phase === 'official' ? '正在补拉官方回放'
-      : p.phase === 'channel' ? '正在写入正式统计'
-        : p.phase === 'done' ? '正在收尾'
-          : p.phase === 'list' ? '正在读取对局列表' : '正在同步对局详情';
+    const phase = syncPhaseLabel(p.phase);
     const detail = p.current ? ` · 对局 ${p.current}` : '';
     const count = p.phase === 'list'
       ? `已翻 ${done} / ${total} 页${p.matches ? ` · 已拿到 ${p.matches} 局` : ''}`
       : `${done} / ${total} 局${detail}`;
+    // 原生 <progress> 自带进度条语义与读屏播报；不往里面塞文字，也不给它设焦点。
     return `<div class="cap-progress-head"><b>${esc(p.label || phase)}</b>
         <span>${esc(count)}</span></div>
-      <div class="cap-progress-track"><i style="width:${percent}%"></i></div>
+      <progress class="cap-progress-track" max="100" value="${percent}"
+        aria-label="同步进度：${esc(phase)}，${esc(count)}"></progress>
       ${p.note ? `<small>${esc(p.note)}</small>` : ''}`;
   }
 
@@ -307,8 +325,98 @@ export function createCapture(h) {
     renderWidget();
   }
 
+  /** 服务端同步跑在后台线程里：刷新页面只重来前端，任务不会停。首屏读到
+      running=true 时把进度条接回来并继续轮询，别让用户以为同步失败。 */
+  function resumeSyncIfRunning(sync) {
+    if (!sync?.running || state.syncResume) return;
+    state.syncResume = String(sync.startedAt || 'live');
+    const apply = (status) => {
+      const p = status?.progress || {};
+      state.progress = {
+        phase: p.phase || 'detail',
+        label: `${syncPhaseLabel(p.phase)}（刷新后已接回）`,
+        done: Number(p.done) || 0,
+        total: Math.max(1, Number(p.total) || 1),
+        current: p.current || '',
+        note: '同步在后台继续，不用重新点；进度会自动更新',
+      };
+      paintProgress();
+    };
+    apply(sync);
+    const timer = setInterval(async () => {
+      try {
+        const status = await api('camp/sync');
+        if (status?.error) throw new Error(status.error);
+        if (status.running) { apply(status); return; }
+        clearInterval(timer);
+        state.syncResume = null;
+        state.progress = null;
+        setNotice('');
+        await reloadValue();
+        setNotice('后台同步已完成，数据已刷新。');
+        paint();
+      } catch (error) {
+        clearInterval(timer);
+        state.syncResume = null;
+        state.progress = null;
+        setNotice(`接回后台同步失败：${error.message}`, true);
+        paint();
+      }
+    }, 1200);
+  }
+
   function setNotice(message, isError = false) {
     state.notice = message ? { message, isError } : null;
+  }
+
+  /* 删除确认用原生 <dialog>：焦点约束、Esc 和背景 inert 都由浏览器给，
+     不用手写 focus trap，也比 window.confirm 更少打断当前操作。 */
+  let deleteDialog = null;
+  function ensureDeleteDialog() {
+    if (deleteDialog && document.body.contains(deleteDialog)) return deleteDialog;
+    deleteDialog = document.createElement('dialog');
+    deleteDialog.id = 'cap-delete-dialog';
+    deleteDialog.setAttribute('aria-labelledby', 'cap-delete-title');
+    deleteDialog.innerHTML = `<h1 id="cap-delete-title">删除这条已采集对局？</h1>
+      <p class="cap-delete-detail" data-cap-delete-detail></p>
+      <p class="capv-hint">${glyph('warning', { size: 18 })}删除会清掉这一局的阵容、BP 等关联数据。</p>
+      <form method="dialog">
+        <button value="cancel" autofocus>${glyph('ban', { size: 18 })}取消</button>
+        <button value="delete" class="cap-delete-confirm">${glyph('trash', { size: 18 })}删除</button>
+      </form>`;
+    document.body.appendChild(deleteDialog);
+    return deleteDialog;
+  }
+
+  function confirmMatchDelete(key, title) {
+    return new Promise((resolve) => {
+      const dialog = ensureDeleteDialog();
+      dialog.querySelector('[data-cap-delete-detail]').textContent = `${title}（${key}）`;
+      // Esc / 取消不写 returnValue，上一轮的值不能漏到这一轮。
+      dialog.returnValue = '';
+      const onClose = () => {
+        dialog.removeEventListener('close', onClose);
+        const confirmed = dialog.returnValue === 'delete';
+        dialog.returnValue = '';
+        resolve(confirmed);
+      };
+      dialog.addEventListener('close', onClose);
+      dialog.showModal();
+    });
+  }
+
+  async function deleteMatch(key) {
+    state.busy = 'delete-match';
+    try {
+      const result = await api('camp/delete-match', { method: 'POST', body: { matchKey: key } });
+      await reloadValue();
+      setNotice(`已删除对局${result.channelsReset ? '，营地通道已重置，可回「营地同步」重新勾选' : ''}。`);
+    } catch (error) {
+      setNotice(`删除失败：${error.message}`, true);
+    } finally {
+      state.busy = '';
+      paint();
+    }
   }
 
   async function reloadValue() {
@@ -398,6 +506,8 @@ export function createCapture(h) {
       state.value = { channels, sync, config, catalog, matchesView, shots, recordings,
         ocrStatus, ocrInstall, replays, officialCoverage: coverage };
       state.loadedAt = Date.now();
+      // 后台同步不会因为刷新页面而停：首屏发现还在跑，就把进度条接回来继续轮询。
+      resumeSyncIfRunning(sync);
       hydrateSections();
       await loadReviewDetail(route, signal);
       state.degraded = channelsResult.status === 'rejected' ? '对局审查列表' : '';
@@ -835,29 +945,29 @@ export function createCapture(h) {
       step = '第 1 步';
       title = '营地授权已失效，需要补充授权';
       desc = `${issue}重新扫码补充授权后，沿用原来的选手白名单；已进入正式统计的数据不受影响。`;
-      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="auth-start">补充授权</button>';
+      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="auth-start">${glyph('shield', { size: 18 })}补充授权</button>`;
     } else if (!auth.authorized) {
       step = '第 1 步';
       title = '授权王者营地';
       desc = '用教练号扫码授权一次，凭证只存在本机。之后每天拉取都不必再扫。';
-      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="auth-start">扫码授权</button>';
+      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="auth-start">${glyph('shield', { size: 18 })}扫码授权</button>`;
     } else if (!players.length) {
       step = '第 2 步';
       title = '绑定一位选手的营地 ID';
       desc = '挑每场必上的号（通常是队长）。让他在王者营地分享任意一局战绩并复制链接，粘贴到下方即可自动解析。';
  
-      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="focus-player">去添加</button>';
+      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="focus-player">${glyph('pick', { size: 18 })}去添加</button>`;
     } else if (!state.list) {
       step = '第 3 步';
       title = '拉取最近对局';
       desc = `读取 ${players.length} 位选手的最近战绩，按对局去重后让你勾选；进行中的对局不包含在内。`;
-      action = '<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="pull">拉取对局</button>';
+      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="pull">${glyph('refresh', { size: 18 })}拉取对局</button>`;
     } else if (Object.keys(state.checked).length) {
       const count = Object.keys(state.checked).length;
       step = '第 4 步';
       title = `同步所选 ${count} 局`;
       desc = '同步后无缺失值的对局会直接进入正式统计；只有缺英雄或面板字段的局才进入「缺失值审查」。';
-      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="import">同步 ${count} 局</button>`;
+      action = `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="import">${glyph('export', { size: 18 })}同步 ${count} 局</button>`;
     } else {
       step = '已完成';
       title = '今天没有需要同步的新对局';
@@ -865,7 +975,7 @@ export function createCapture(h) {
         ? `还有 ${pending} 条在缺失值审查${missing ? `，其中 ${missing} 条有缺失值` : ''}；无缺失的局已直接进入正式统计。`
         : '无缺失值的对局都已进入正式统计。下次训练赛结束后重新拉取即可。';
       action = pending
-        ? `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="scroll-channels">查看 ${pending} 条</button>`
+        ? `<button class="ds-btn ds-btn-primary hero-cta" data-capture-action="scroll-channels">${glyph('book', { size: 18 })}查看 ${pending} 条</button>`
         : '';
     }
 
@@ -882,7 +992,7 @@ export function createCapture(h) {
       <div class="capv-next-copy">
         <span class="capv-kicker">下一步 · ${esc(step)}</span>
         <h2>${esc(title)}</h2>
-        <p>${esc(desc)}</p>
+        ${expired ? `<p class="capv-hint is-warn">${glyph('warning', { size: 18 })}<span>${esc(issue)}</span></p>` : ''}
         <div class="capv-facts">
           ${fact(auth.authorized && !expired, '营地授权', expired ? '失效' : auth.authorized ? '正常' : '未授权')}
           ${fact(players.length > 0, '营地选手', `${fmt(players.length)} 位`)}
@@ -980,7 +1090,7 @@ export function createCapture(h) {
           <i class="capv-dot is-warn" aria-hidden="true"></i>
           <div class="capv-alert-copy"><b>营地授权已失效，拉取已暂停</b>
             <p>${esc(issue)}重新扫码补充授权后即可继续拉取；已进入正式统计的数据不受影响。</p></div>
-          <button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">补充授权</button>
+          <button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">${glyph('shield', { size: 18 })}补充授权</button>
         </div>`
       : '';
 
@@ -1033,12 +1143,12 @@ export function createCapture(h) {
       <header class="capv-subhead">
         <div><h3>选手白名单</h3><p>${fmt(players.length)} 位 · 勾选 ${fmt(players.filter((p) => p.enabled !== false).length)} 位</p></div>
         <div class="capv-subhead-actions">
-          <span class="capv-hint" data-tour="camp-link">怎么拿到分享链接？
-            <button class="capv-help" type="button" data-cap-dialog-open="cap-help-dialog" aria-label="查看获取链接的帮助">?</button></span>
-          <button class="ds-btn ds-btn-secondary" type="button" data-cap-dialog-open="cap-add-dialog">＋ 批量添加</button>
+          <span class="capv-hint" data-tour="camp-link">获取分享链接
+            <button class="capv-help" type="button" data-cap-dialog-open="cap-help-dialog" aria-label="查看获取链接的帮助">${glyph('book', { size: 18 })}</button></span>
+          <button class="ds-btn ds-btn-secondary" type="button" data-cap-dialog-open="cap-add-dialog">${glyph('pick', { size: 18 })}批量添加</button>
         </div>
       </header>
-      <p class="capv-hint">只绑一个每场都上的号就够 —— 一局详情自带双方十人面板；战绩对教练不可见时，请选手在营地隐私设置里把教练加入白名单。「改名」只是本机备注。</p>
+      <p class="capv-hint is-warn">${glyph('warning', { size: 18 })}战绩对教练不可见时，需把教练加入营地白名单。</p>
       ${list}
       <dialog class="ds-help-dialog" id="cap-help-dialog" aria-labelledby="cap-help-title">
         <div class="ds-dialog-head"><h2 id="cap-help-title">怎么拿到营地分享链接？</h2>
@@ -1086,11 +1196,10 @@ export function createCapture(h) {
             <label class="ds-field-label" for="cap-identities">营地 ID 或分享链接</label>
             <textarea id="cap-identities" name="identity" rows="6" autocomplete="off" spellcheck="false" autofocus
               placeholder="一行一个营地 ID，也可以直接粘贴多条分享链接"></textarea>
-            <p class="ds-hint">支持换行、逗号或空格分隔，链接会自动解析。每场必上的号一位就够 —— 一局详情自带双方十人面板。</p>
           </div>
           <div class="ds-dialog-foot">
-            <button class="ds-btn ds-btn-quiet" type="button" data-cap-dialog-close>取消</button>
-            <button class="ds-btn ds-btn-primary" type="submit">批量添加</button>
+            <button class="ds-btn ds-btn-quiet" type="button" data-cap-dialog-close>${glyph('ban', { size: 18 })}取消</button>
+            <button class="ds-btn ds-btn-primary" type="submit">${glyph('pick', { size: 18 })}批量添加</button>
           </div>
         </form>
       </dialog>
@@ -1137,7 +1246,7 @@ export function createCapture(h) {
     const checked = Object.keys(state.checked).length;
     const blocked = Boolean(state.authIssue);
     const blockedHint = blocked
-      ? '<p class="capv-hint is-warn">营地授权已失效，拉取会失败 —— 先在「营地连接」里补充授权。</p>'
+      ? `<p class="capv-hint is-warn">${glyph('warning', { size: 18 })}营地授权已失效，请先补充授权。</p>`
       : '';
     const moreAction = state.pullHasMore
       ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull-more" ${state.busy ? 'disabled' : ''}>继续拉取更早</button>`
@@ -1155,13 +1264,13 @@ export function createCapture(h) {
 
     // 全选 / 补拉 / 重拉都是次操作；唯一的实心按钮留给「同步所选」。
     const right = `<div class="capv-actions">
-      ${blocked ? '<button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">补充授权</button>' : ''}
+      ${blocked ? `<button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">${glyph('shield', { size: 18 })}补充授权</button>` : ''}
       ${fillable ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-official" ${state.busy ? 'disabled' : ''} title="按较慢速度逐局补拉，避免被营地限流；每次最多 10 局">${state.busy === 'backfill' ? '补拉回放中…' : `补拉缺失回放 ${fillable} 局`}</button>` : ''}
       ${moreAction}
       ${hasList ? `<button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-all" ${list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
       <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消勾选</button>
       <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull" ${state.busy === 'pull' || !players.length || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : '重新拉取'}</button>
-      <button class="ds-btn ${checked ? 'ds-btn-primary' : 'ds-btn-secondary'}" type="button" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>` : ''}
+      <button class="ds-btn ${checked ? 'ds-btn-primary' : 'ds-btn-secondary'}" type="button" data-capture-action="import" ${checked && !state.busy ? '' : 'disabled'}>${glyph('export', { size: 18 })}${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>` : ''}
     </div>`;
 
     const statsStrip = `<div class="capv-metrics">
@@ -1221,14 +1330,14 @@ export function createCapture(h) {
         <span class="capv-empty-glyph">${icon('ingest')}</span>
         <div class="capv-empty-copy"><b>${daysAgo === null ? '还没有拉取过对局' : `上次拉取在${lastLabel}`}</b>
           <p>${esc(note || '营地只保留最近 30 天的对局详情；训练赛结束后当天拉取，才能自动补全十人面板。')}</p></div>
-        <button class="ds-btn ds-btn-primary" type="button" data-capture-action="pull" ${state.busy === 'pull' || blocked ? 'disabled' : ''}>${state.busy === 'pull' ? '正在拉取…' : '拉取最近对局'}</button>
+        <button class="ds-btn ds-btn-primary" type="button" data-capture-action="pull" ${state.busy === 'pull' || blocked ? 'disabled' : ''}>${glyph('refresh', { size: 18 })}${state.busy === 'pull' ? '正在拉取…' : '拉取最近对局'}</button>
       </div>`);
     }
     if (!list.length) {
       return panel(`${flow}${blockedHint}<div class="capv-empty">
         <span class="capv-empty-glyph">${icon('ingest')}</span>
         <div class="capv-empty-copy"><b>最近没有可拉取的新对局</b><p>${esc(state.listNote || '选手最近没有新的战绩；营地只保留最近 30 天的对局详情。')}</p></div>
-        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull" ${state.busy === 'pull' || blocked ? 'disabled' : ''}>重新拉取</button>
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="pull" ${state.busy === 'pull' || blocked ? 'disabled' : ''}>${glyph('refresh', { size: 18 })}重新拉取</button>
       </div>`);
     }
 
@@ -1294,23 +1403,21 @@ export function createCapture(h) {
         <p>营地只保留最近一个月的对局详情（手机营地 App 里也打不开）。这些局不是补采，要用截图或录屏「新录入一局」直接建档。</p>
       </div>
       <div class="capv-actions">
-        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">新录入一局</button>
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">${glyph('capture', { size: 18 })}新录入一局</button>
         <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="jump-ocr">去截图 / 录屏 →</button>
       </div>
     </div>` : '';
 
     const pendingList = pendingRows.length
       ? `<div class="capv-games">${pendingRows.map(entryRow).join('')}</div>`
-      : `<p class="capv-hint">${reviewRows.length || importedRows.length || expiredRows.length
-        ? '没有待同步的新局；下面的折叠里有已进统计和营地无详情的局。'
-        : '没有可同步的新局。'}</p>`;
+      : `<div class="capv-hint capv-hint-empty">${glyph('victory', { size: 28 })}<b>没有待同步的新局</b></div>`;
 
     // 列表一长，顶部的「全部取消勾选」要滚回去才点得到；底下再放一条同样的出口。
     const clearBar = checked
       ? `<div class="capv-selection-bar">
           <span>已勾选 <b>${fmt(checked)}</b> 局</span>
           <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-none">全部取消</button>
-          <button class="ds-btn ds-btn-primary" type="button" data-capture-action="import" ${state.busy ? 'disabled' : ''}>${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>
+          <button class="ds-btn ds-btn-primary" type="button" data-capture-action="import" ${state.busy ? 'disabled' : ''}>${glyph('export', { size: 18 })}${state.busy === 'import' ? `同步中 ${checked} 局…` : `同步所选 ${checked} 局`}</button>
         </div>`
       : '';
 
@@ -1330,13 +1437,13 @@ export function createCapture(h) {
       return `<div class="capv-backfill-intro">
         <div><b>营地一个月窗口外的老局</b>
           <p>超过一个月、或选手隐藏了战绩的局，营地没有可补采的通道；先在这里建一局，再去截图 / 录屏页把识别结果录进这一局。</p></div>
-        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">新录入一局</button>
+        <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">${glyph('capture', { size: 18 })}新录入一局</button>
       </div>`;
     }
     return `<div class="capv-backfill" data-tour="camp-backfill">
       <div class="capv-backfill-head">
-        <div><h3>新录入一局</h3><p>先建一条空白通道，截图或录屏识别完再挂进来。</p></div>
-        <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="backfill-close">取消</button>
+        <div><h3>新录入一局</h3></div>
+        <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="backfill-close">${glyph('ban', { size: 18 })}取消</button>
       </div>
       <div class="capv-backfill-fields">
         <label>比赛日期<input type="date" data-backfill="date" value="${today()}"></label>
@@ -1344,8 +1451,7 @@ export function createCapture(h) {
         <button class="ds-btn ds-btn-primary" type="button" data-capture-action="backfill-create" ${state.busy ? 'disabled' : ''}>
           ${state.busy === 'backfill' ? '正在建…' : '建好这局，去传截图'}</button>
       </div>
-      <p class="capv-hint">建好后会跳到「截图 OCR」：七张截图识别完，在卡片左侧「补采到已有对局」里选中这一局（已预选）补进去；也可以在录屏页用「补采到已有对局」补一段完整录像。补完再去校对页核对保存。
-        <a href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">先看拍摄要求 →</a></p>
+      <p class="capv-hint">${glyph('book', { size: 18 })}<a href="/assets/collection-guide.html?section=screenshots" target="_blank" rel="noopener">查看拍摄要求</a></p>
     </div>`;
   }
 
@@ -1384,8 +1490,7 @@ export function createCapture(h) {
     }
 
     return `<section class="guide-card" data-guide>
-      <div class="guide-body"><span class="guide-eyebrow">下一步</span>
-        <h2>${esc(title)}</h2><p>${esc(desc)}</p></div>
+      <div class="guide-body"><h2>${esc(title)}</h2></div>
       ${action ? `<div class="guide-action">${action}</div>` : ''}
     </section>`;
   }
@@ -1397,7 +1502,7 @@ export function createCapture(h) {
     const origin = esc(failure?.origin || location.origin);
     let title = '营地数据暂时读不到';
     let body = '工作台还没把数据返回来；点「重新读取」再试一次。';
-    let actions = '<button class="primary" data-action="refresh">重新读取</button>';
+    let actions = `<button class="primary" data-action="refresh">${glyph('refresh', { size: 18 })}重新读取</button>`;
     if (cause === 'not-workbench') {
       /* 这个地址背后没有工作台进程（预览 / 静态服务器就是这样）：换地址才有效。 */
       const host = location.hostname || '127.0.0.1';
@@ -1494,7 +1599,7 @@ export function createCapture(h) {
     const passableChannels = ocrChannels.filter((channel) => !(channel.missing || []).length);
 
     const reviewActions = `<div class="capv-actions">
-      <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">新录入一局</button>
+      <button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-open">${glyph('capture', { size: 18 })}新录入一局</button>
       ${passableChannels.length ? `<button class="ds-btn ds-btn-primary" type="button" data-capture-action="approve-clean" ${state.busy ? 'disabled' : ''}>
         ${state.busy === 'approve' ? '正在通过…' : `一键通过无缺失 ${passableChannels.length} 条`}</button>` : ''}
     </div>`;
@@ -1561,14 +1666,16 @@ export function createCapture(h) {
     const recordingCount = value?.recordings?.recordings?.length || 0;
     const replayCount = value?.replays?.replays?.length || 0;
 
-    /* 一个采集页，五步做成页签：营地同步 → 截图 / 录屏（窗口外新录入）→ 回放 → 审查。
-       以前这四块是四个独立页面，链接互相跳、数据各取一遍。 */
+    /* 一个采集页，六步做成页签：营地同步 → 截图 / 录屏（窗口外新录入）→ 回放
+       → 审查 → 已采集对局。以前前四块是独立页面，链接互相跳、数据各取一遍。 */
+    const collectedCount = (value?.matchesView?.matches || []).length;
     const tabs = [
       ['camp', '营地同步', '', '#ingest'],
       ['shots', '截图 OCR', shotGroups ? `${shotGroups} 组` : '', '#shots'],
       ['videos', '录屏', recordingCount ? `${recordingCount} 段` : '', '#videos'],
       ['replays', '回放', replayCount ? `${replayCount} 段` : '', '#replays'],
       ['review', '对局审查', pendingChannels.length ? `${pendingChannels.length} 条` : '', '#review'],
+      ['imported', '已采集对局', collectedCount ? `${collectedCount} 局` : '', '#imported'],
     ];
     const tabBar = `<nav class="capv-tabs" aria-label="采集步骤">${tabs.map(([key, label, count, href], index) =>
       `<a class="capv-tab${tab === key ? ' is-on' : ''}" href="${href}"${tab === key ? ' aria-current="page"' : ''}>
@@ -1629,12 +1736,83 @@ export function createCapture(h) {
           : '<p class="capv-hint">正在读取这一局的审查明细…</p>'}</div>`
       : reviewBlock;
 
+    /* 已采集对局：库里已经落库的局。删掉后营地列表会重新标成可同步，
+       再走一遍「营地同步」就能把这一局重爬回来。 */
+    /* 已采集对局按采集时间从早到晚排。date 是 YYYY-MM-DD，startTime 是
+       "MM-DD HH:MM"，拼成年-月-日 + 时刻即可按字符串比较（无时区偏移）。
+       用 toSorted 返回副本，别改动 state.value 里的原始顺序。 */
+    const collectedTime = (m) => {
+      const day = String(m.date || '');
+      const raw = String(m.startTime || '');
+      const clock = raw.includes(' ') ? raw.slice(raw.indexOf(' ') + 1) : raw;
+      return `${day} ${clock}`.trim();
+    };
+    const collectedCmp = (a, b) => {
+      const ka = collectedTime(a);
+      const kb = collectedTime(b);
+      if (!ka) return 1;
+      if (!kb) return -1;
+      return ka.localeCompare(kb);
+    };
+    const collectedAll = value?.matchesView?.matches || [];
+    const collectedRows = collectedAll.toSorted
+      ? collectedAll.toSorted(collectedCmp)   // 不改动 state 里的原数组
+      : collectedAll.slice().sort(collectedCmp); // 老浏览器兜底
+    const heroIcons = new Map(
+      (value?.catalog?.entries || [])
+        .filter((entry) => entry.kind === 'hero' && entry.icon)
+        .map((entry) => [entry.name, entry.icon]),
+    );
+    /* 跟单局分析同一套读法：时间 + 对手 + 胜负 + 双方英雄头像。
+       采集通道、来源这些内部字段不再露给赛训组。 */
+    const importPanel = `<section class="capv-card capv-collected">
+      <div class="section-heading"><div><h2>已采集对局</h2>
+        <p>${glyph('warning', { size: 18 })}删除会把这一局从对局库里真正删掉，阵容、BP 等关联数据一并断开。</p>
+      </div></div>
+      <div class="capture-rows capv-collected-rows" role="list" aria-label="已采集对局列表">
+        ${collectedRows.map((m) => {
+          const key = String(m.key || '');
+          const day = String(m.date || '');
+          const start = String(m.startTime || '').trim();
+          const clock = start.includes(' ') ? start.slice(start.indexOf(' ') + 1) : '';
+          const result = { win: '胜', loss: '负', draw: '平' }[m.result] || '—';
+          const pairs = (m.lineup || []).filter((p) => p.own || p.enemy).slice(0, 5);
+          const ownHeroes = pairs.length ? pairs.map((p) => p.own) : (m.heroes || []).slice(0, 5);
+          const foeHeroes = pairs.map((p) => p.enemy);
+          const face = (hero, foe) => {
+            if (!hero) return '<span class="ml-cell is-empty"></span>';
+            const icon = heroIcons.get(hero);
+            const img = /^\/catalog\/icons\/hero-\d+\.png$/.test(icon || '')
+              ? `<img class="portrait" src="${esc(icon)}" alt="${esc(hero)}" loading="lazy">`
+              : `<span class="portrait portrait-placeholder" aria-label="${esc(hero)}">${esc(String(hero)[0])}</span>`;
+            return `<span class="ml-cell${foe ? ' is-foe' : ''}" title="${esc((foe ? '对方 ' : '我方 ') + hero)}">${img}</span>`;
+          };
+          const lineup = `<span class="match-lineup archive-lineup" title="左组本队 · 右组对面，同一顺序即同分路对位">
+            <span class="ml-side is-own"><small>我方</small><span class="ml-faces">${ownHeroes.map((h) => face(h, false)).join('')}</span></span>
+            ${foeHeroes.some(Boolean)
+              ? `<span class="ml-vs" aria-hidden="true">VS</span><span class="ml-side is-foe"><small>对方</small><span class="ml-faces">${foeHeroes.map((h) => face(h, true)).join('')}</span></span>`
+              : ''}</span>`;
+          return `<div class="match-row-wrap" role="listitem" data-match-key="${esc(key)}">
+            <div class="match-row">
+              <span class="match-date"><b>${esc(day.slice(5) || '日期未知')}</b><small>${esc(clock || day.slice(0, 4) || '')}</small></span>
+              <span class="match-opponent"><b title="${esc(m.opponent || '')}">${esc(m.opponent || '对手未标注')}</b><small>${esc(m.mode || '训练赛')}</small></span>
+              <span class="result ${esc(m.result || '')}" title="结果">${result}</span>
+              ${lineup}
+              <button type="button" class="capv-collected-del" data-capture-action="delete-match"
+                data-match-key="${esc(key)}" aria-label="删除对局 ${esc(m.opponent || key)}">删除</button>
+            </div>
+          </div>`;
+        }).join('') || '<p class="capv-collected-empty">库里还没有对局，先去「营地同步」拉几局。</p>'}
+      </div>
+    </section>`;
+
     const panels = {
       camp: campPanel,
       shots: embedded('shots'),
       videos: embedded('videos'),
       replays: embedded('replays'),
       review: reviewPanel,
+      imported: importPanel,
     };
 
     return withPage('采集', '',
@@ -1973,7 +2151,10 @@ export function createCapture(h) {
     const problems = [];
     try {
       for (const [campUserId, group] of groups) {
-        await api('camp/sync', { method: 'POST', body: { campUserId, nickname: group.nickname, entries: group.entries } });
+        await api('camp/sync', { method: 'POST', body: {
+          campUserId, nickname: group.nickname, entries: group.entries,
+          ...currentCaptureContext(),
+        } });
         // 同步是后台任务，轮询到结束再走下一组；进度来自后端的真实处理计数。
         // 单局详情请求间隔约 2 秒，一次最多 360 局，轮询上限留足 30 分钟。
         let status = null;
@@ -1982,9 +2163,7 @@ export function createCapture(h) {
           if (status?.error) throw new Error(status.error);
           const p = status?.progress || {};
           if (status.running) {
-            const phaseLabel = p.phase === 'official'
-              ? '正在补拉官方回放（放慢速度，避免限流）'
-              : p.phase === 'channel' ? '正在写入正式统计' : '正在同步对局详情';
+            const phaseLabel = syncPhaseLabel(p.phase);
             state.progress = { phase: p.phase || 'detail', label: phaseLabel,
               done: Number(p.done) || 0, total: Number(p.total) || chosen.length,
               current: p.current || '', note: `本批 ${group.entries.length} 局 · ${group.nickname || '选手'} · 可以切到别的页面，进度在右下角` };
@@ -2330,6 +2509,13 @@ export function createCapture(h) {
       if (action === 'pull-more') { await pullList(true); return true; }
       if (action === 'backfill-official') { await backfillOfficial(); return true; }
       if (action === 'import') { await importSelected(); return true; }
+      if (action === 'delete-match') {
+        const key = button.dataset.matchKey || '';
+        const title = button.closest('tr')?.querySelector('.capv-collected-title')?.textContent || key;
+        if (!await confirmMatchDelete(key, title)) return true;
+        await deleteMatch(key);
+        return true;
+      }
       if (action === 'approve-clean') { await approveClean(); return true; }
       if (action === 'conn-toggle') { state.connOpen = !state.connOpen; paint(); return true; }
       if (action === 'backfill-open') {

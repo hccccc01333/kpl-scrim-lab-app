@@ -1147,3 +1147,20 @@
 
   onScroll();
 })();
+
+/* V21b — 顶栏随滚动方向收起，键盘焦点在栏内时保持显示 */
+(function () {
+  'use strict';
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var doc = document;
+  var bar = doc.querySelector('.topbar');
+  if (!bar) return;
+  var lastY = window.scrollY;
+  window.addEventListener('scroll', function () {
+    var max = Math.max(0, doc.documentElement.scrollHeight - window.innerHeight);
+    var y = Math.max(0, Math.min(window.scrollY, max));
+    if (y === lastY) return;
+    bar.classList.toggle('is-tucked', y > lastY && y > bar.offsetHeight);
+    lastY = y;
+  }, { passive: true });
+})();

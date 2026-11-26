@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="900" height="60" viewBox="0 0 900 60" role="img">
+<title>总比分条空白 · 紧凑版</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="glass" x2="100%" y2="100%">
+ <stop stop-color="#fff" stop-opacity=".5"/><stop offset=".5" stop-color="#f8f6f4" stop-opacity=".21"/><stop offset="1" stop-color="#eee9e6" stop-opacity=".52"/>
+</linearGradient></defs>
+<rect x="0.6" y="0.6" width="898.8" height="58.8" rx="17" fill="url(#glass)" stroke="#d3c9be" stroke-width="1.2"/><rect x="321" y="11" width="3" height="38" rx="1.5" fill="url(#gold)"/><rect x="588" y="11" width="3" height="38" rx="1.5" fill="url(#gold)"/>
+</svg>

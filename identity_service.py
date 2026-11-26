@@ -1,4 +1,4 @@
-﻿"""身份唯一的写入口：游戏账号 → 选手 → 战队。
+"""身份唯一的写入口：游戏账号 → 选手 → 战队。
 
 为什么要单独一个模块：这块以前散在五处——营地白名单写 `camp_config.json`、
 选手认领写 `settings.aliases`（昵称字符串）、建档写 `settings.roster` + `players`、
@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
+import time
 from contextlib import closing
 
 from workspace_store import Workspace, is_placeholder_player
@@ -88,6 +90,113 @@ def resolve_team(ws, *, team_id=None, team_name=None, coach=None):
     if PLACEHOLDER_TEAM.match(team_name):
         raise ValueError('「待命名战队」不是真队名，请填写真实战队名称')
     return {'id': ws.ensure_team_named(team_name, coach=coach), 'name': team_name}
+
+
+def _drop_team_alias(db_path, team_id, old_name):
+    """改名后不再保留旧名：旧名只会越攒越多，制造重名和串线。"""
+    ws = Workspace(db_path)
+    row = _fetch_team(ws, team_id)
+    if row is None:
+        return
+    # _fetch_team 只 SELECT id,name；直接 row['aliases'] 会 KeyError，
+    # 让整次改名事务失败——表现就是「改了名但别处还是旧名」。
+    try:
+        aliases = json.loads(row.get('aliases') or '[]')
+    except (TypeError, ValueError, KeyError):
+        aliases = []
+    kept = [a for a in aliases if str(a) != str(old_name)]
+    if kept != aliases:
+        ws.upsert_team(team_id, name=row['name'], aliases=kept, source='manual', actor='coach')
+
+
+def _sync_team_name_refs(db_path, old_name, new_name):
+    """改名 = 全局换名：文本字段直接更新，不再靠旧名别名兜底。"""
+    old_name, new_name = str(old_name or ''), str(new_name or '')
+    if not old_name or old_name == new_name:
+        return
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute('UPDATE training_series SET opponent=? WHERE opponent=?',
+                           (new_name, old_name))
+        # 赛训计划的对手也是自由文本队名，以前漏掉，改完名计划里仍是旧队。
+        try:
+            connection.execute('UPDATE scrim_plans SET opponent=? WHERE opponent=?',
+                               (new_name, old_name))
+        except sqlite3.Error:
+            pass
+        # 老数据里对手名也直接写在 matches.body（不是 match_meta 覆盖层）。
+        # 只同步覆盖层时，删掉旧名别名后这些对局就永远停在旧队名。
+        for table, key_col in (('matches', 'id'), ('match_meta', 'match_key')):
+            try:
+                rows = connection.execute(
+                    f'SELECT {key_col}, body FROM {table}').fetchall()
+            except sqlite3.Error:
+                continue
+            for key, body in rows:
+                try:
+                    doc = json.loads(body)
+                except (TypeError, ValueError):
+                    continue
+                changed = False
+                for field in ('opponent', 'opponentTeam', 'opponentName', 'team', 'teamName'):
+                    if doc.get(field) == old_name:
+                        doc[field] = new_name
+                        changed = True
+                if changed:
+                    connection.execute(
+                        f'UPDATE {table} SET body=? WHERE {key_col}=?',
+                        (json.dumps(doc, ensure_ascii=False), key))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def sync_own_team(db_path, *, name, coach=None, actor='coach'):
+    """本队资料里的队名 → teams 主数据。
+
+    产品约定：本队页填完队名，战队池里就要出现这支战队。稳定 ID 存在
+    workspace_meta.own_team_id，改名时保留旧名作别名，历史引用仍能认出来。
+    """
+    name = _text(name, 50)
+    if not name:
+        raise ValueError('请填写战队名称')
+    ws = Workspace(db_path).ensure_schema()
+    connection = ws.connect()
+    try:
+        row = connection.execute(
+            "SELECT value FROM workspace_meta WHERE key='own_team_id'").fetchone()
+        tid = str(row['value']) if row else ''
+        current = connection.execute(
+            'SELECT id, name, aliases FROM teams WHERE id=?', (tid,)).fetchone() if tid else None
+        if current is None:
+            current = connection.execute(
+                'SELECT id, name, aliases FROM teams WHERE name=? ORDER BY id LIMIT 1',
+                (name,)).fetchone()
+    finally:
+        connection.close()
+    aliases = []
+    if current is not None:
+        tid = str(current['id'])
+        try:
+            aliases = json.loads(current['aliases'] or '[]')
+        except (TypeError, ValueError):
+            aliases = []
+        old_name = str(current['name'] or '')
+        aliases = [a for a in aliases if str(a) != old_name]
+        ws.upsert_team(tid, name=name, aliases=aliases, source='manual', actor=actor)
+        _sync_team_name_refs(db_path, old_name, name)
+    else:
+        tid = ws.upsert_team(None, name=name, source='manual', actor=actor)
+    connection = ws.connect()
+    try:
+        connection.execute(
+            "INSERT INTO workspace_meta(key, value, updated_at) VALUES('own_team_id', ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (tid, time.time()))
+        connection.commit()
+    finally:
+        connection.close()
+    return {'id': tid, 'name': name}
 
 
 def save_player(db_path, *, player_id=None, name, position=None, positions=None, team_id=None,
@@ -240,7 +349,14 @@ def rename_team(db_path, team_id, *, name=None, coach=None, actor='coach'):
                 (name, team_id)).fetchone()
         if clash is not None:
             raise ValueError(f'队名已存在：{name}，请改别的名字或先合并战队')
+    previous_name = ''
+    if name:
+        row = _fetch_team(Workspace(db_path), team_id)
+        previous_name = str(row['name'] or '') if row else ''
     team_clusters.rename_team(db_path, team_id, name, coach)
+    if name and previous_name and previous_name != name:
+        _drop_team_alias(db_path, team_id, previous_name)
+        _sync_team_name_refs(db_path, previous_name, name)
     return {'ok': True, 'id': team_id, 'name': name, 'coach': coach}
 
 
@@ -285,19 +401,13 @@ def save_team(db_path, *, team_id=None, name, short_name=None, coach=None, statu
                     previous_aliases = json.loads(old['aliases'] or '[]')
                 except (TypeError, ValueError):
                     previous_aliases = []
-    # 改名留下旧名为别名：战队分析改名后，逐局页面读解析层即可自动同步。
-    import opponent_identity
-    merged_aliases = list(aliases) if isinstance(aliases, list) else previous_aliases
-    if not isinstance(merged_aliases, list):
-        merged_aliases = []
-    merged_aliases = opponent_identity.merge_alias(
-        previous_aliases + [item for item in merged_aliases if item not in previous_aliases],
-        previous_name, name)
+    # 改名不再留旧名：旧名只会越攒越多，制造重名；引用处直接换成新名。
+    merged_aliases = [item for item in (aliases if isinstance(aliases, list) else previous_aliases)
+                      if str(item) != str(previous_name)]
     team_id = ws.upsert_team(team_id, name=name, short_name=short_name, aliases=merged_aliases,
                              league=league, coach=coach, status=status or 'active',
                              first_seen=first_seen, source='manual', actor=actor)
     if status != 'archived':
         team_clusters.save_override(db_path, team_id, {'name': name, 'coach': coach})
-        if previous_name and previous_name != name:
-            team_clusters.record_alias(db_path, team_id, previous_name, name)
+        _sync_team_name_refs(db_path, previous_name, name)
     return {'ok': True, 'id': team_id, 'name': name}

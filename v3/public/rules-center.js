@@ -1,17 +1,10 @@
 /* 赛训规则中心（2026-11-22，蓝图 3.5.6；2026-11-23 去重瘦身）
  *
- * 三个 tab：英雄标签 / 克制关系 / 其他规则。共用一套「导入 JSON / 导出 JSON /
- * 变更历史 / 回滚」组件（config-tools.js），共用一套后端持久化骨架
- * （/api/v3/rules-center/{kind}，revision 乐观锁 + config_history 保存前快照）。
+ * 三个 tab：英雄标签 / 克制关系 / 其他规则。整份文档通过 /api/v3/rules-center/{kind}
+ * 保存（revision 仅作乐观锁）；赛事级版本统一走「存为当前赛事快照」+ 快照中心。
  * 原「英雄组合体系 / 阵容标签 / 字段好坏判定」三个 tab 与 组合池设置 / 阵容标签 /
  * 规则设置 页签重复（rules_* 副本也没有分析消费方），整块下线；组合克制
  * 子表的组合候选改读组合池设置的同一份数据（/api/v3/custom-combos）。
- *
- * 统一条目契约：
- *   - effective: {eventId, eventName, from, to} —— 按赛事「正式比赛时间」取规则版本；
- *     四项全留空 = 始终生效。赛事用 ID 或名称关联（两者都可填）。
- *   - revision / history —— 条目级修订与旧快照；文档级 revision 由后端乐观锁维护，
- *     文档级变更历史由 config-tools 的历史面板展示、可回滚。
  *
  * 与既有模块的关系（核心逻辑一律不碰）：
  *   - combo-pool.js（2/3 人池）是组合的唯一编辑入口，本页只读它的数据做克制候选。
@@ -25,8 +18,8 @@
  *     mods.rulesCenter = createRulesCenter({ esc, API_BASE, icon, notify, portrait, getMetadata });
  *     mods.rulesCenter.mount(document.querySelector('[data-rc-root]'));  // 离开路由时 dispose()
  */
-import { createConfigTools } from './config-tools.js?v=20261122b';
 import { glyph, deco, plus } from './ui-icons.js';
+import { currentCompetitionId, currentCompetitionName, saveSnapshot } from './rule-snapshots.js?v=20261124snap';
 
 export const RULES_CENTER_ROUTE = 'rules';   // hash 路由：#rules
 
@@ -68,32 +61,7 @@ function counterHeroes(row, side) {
 const defaultEsc = (v) => text(v).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 }[c]));
-const blankEffective = () => ({ eventId: '', eventName: '', from: '', to: '' });
 const newId = (kind) => `rc-${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-/** 条目级修订 + 旧快照：内容变化才 +revision 并压入一条 history（上限 20）。 */
-function stampEntries(next, prev, keyOf) {
-  const before = new Map((prev || []).map((row) => [keyOf(row), row]));
-  const at = new Date().toISOString();
-  const content = (row) => {
-    if (!row) return '';
-    const { revision, history, ...rest } = row;   // eslint-disable-line no-unused-vars
-    return JSON.stringify(rest);
-  };
-  return next.map((row) => {
-    const old = before.get(keyOf(row));
-    if (!old) return { ...row, revision: 1, history: [] };
-    const rev = Number(old.revision) || 0;
-    if (content(old) === content(row)) {
-      return { ...row, revision: rev, history: Array.isArray(row.history) ? row.history : [] };
-    }
-    const snapshot = { ...old };
-    delete snapshot.history;
-    const history = [...(Array.isArray(row.history) ? row.history : []).slice(-19),
-      { at, revision: rev, snapshot }];
-    return { ...row, revision: rev + 1, history };
-  });
-}
 
 export function createRulesCenter(h = {}) {
   const esc = h.esc || defaultEsc;
@@ -113,7 +81,6 @@ export function createRulesCenter(h = {}) {
   let root = null;
   let bound = null;
   let controller = null;
-  let tools = null;             // 当前 tab 的 config-tools 实例（同一时刻只挂一个）
   let liveNode = null;
   let picker = null;            // 克制弹窗的头像选择状态 {a:[], b:[], q:{a:'',b:''}}
   const generation = {};
@@ -123,9 +90,6 @@ export function createRulesCenter(h = {}) {
     docs: {}, baseline: {}, saving: false,
     query: { 'hero-tags': '', misc: '' },
     comboPool: null,               // 组合池设置页的同一份数据（/api/v3/custom-combos）
-    competitions: [],              // 赛事下拉：克制关系按赛事 / 时间窗切换版本
-    counterCompetition: '',        // '' = 全部赛事；否则按赛事 ID 过滤 + 新增时绑定
-    counterVersion: null,          // 当前赛事已定稿的克制关系快照（复盘时实际使用）
     heroLane: '全部', counterSub: 'hero',
     counterFilter: { hero: [], combo: [] },      // 克制表英雄头像筛选（各子表独立）
     counterFilterQ: { hero: '', combo: '' },     // 头像筛选器内的搜索词
@@ -135,37 +99,6 @@ export function createRulesCenter(h = {}) {
   };
   const activeKind = () => TABS.find((tab) => tab.key === state.active)?.kind || null;
   const docOf = (kind) => state.docs[kind] || {};
-  /* 赛事版本：选中的赛事只影响「看哪几条」与「新增/编辑绑到哪场」；
-     state.docs 始终保存完整文档，切换赛事不会丢掉别的赛事的条目。 */
-  const selectedCompetition = () => (state.competitions || [])
-    .find((item) => String(item.id) === String(state.counterCompetition)) || null;
-  const effectiveHasValue = (eff = {}) => ['eventId', 'eventName', 'from', 'to']
-    .some((key) => String(eff[key] || '').trim());
-  const effectiveForSelection = (eff = {}) => {
-    const comp = selectedCompetition();
-    if (!comp || effectiveHasValue(eff)) return eff;
-    return {
-      eventId: String(comp.id || ''), eventName: String(comp.name || ''),
-      from: String(comp.date || '').slice(0, 10),
-      to: String(comp.end_date || '').slice(0, 10),
-    };
-  };
-  const effectiveMatches = (row, comp) => {
-    if (!comp) return true;                       // 全部赛事：不过滤
-    const eff = row?.effective || {};
-    if (!effectiveHasValue(eff)) return true;     // 常年生效，任何赛事都看得到
-    const eventId = String(eff.eventId || '').trim();
-    const eventName = String(eff.eventName || '').trim();
-    if (eventId && eventId === String(comp.id || '')) return true;
-    if (eventName && eventName === String(comp.name || '')) return true;
-    const from = String(eff.from || '').trim();
-    const to = String(eff.to || '').trim();
-    const date = String(comp.date || '').slice(0, 10);
-    return Boolean(from && date && date >= from && (!to || date <= to));
-  };
-  const competitionOptionsHtml = () => [`<option value="">全部赛事（常年）</option>`,
-    ...(state.competitions || []).map((item) => `<option value="${esc(item.id)}"${String(item.id) === state.counterCompetition ? ' selected' : ''}>${esc(item.name || item.id)}${item.date ? ` · ${esc(String(item.date).slice(0, 10))}` : ''}</option>`),
-  ].join('');
   const dirty = (kind) => Boolean(state.docs[kind])
     && JSON.stringify(state.docs[kind]) !== state.baseline[kind];
 
@@ -283,7 +216,7 @@ export function createRulesCenter(h = {}) {
       if (!quiet) setNotice(`${KIND_META[kind].label}已读取。`);
     } catch (error) {
       if (gen !== generation[kind] || !root || error.name === 'AbortError') return;
-      setNotice(error.message || '规则读取失败，请点「重新读取」重试。', { error: true });
+      setNotice(error.message || '规则读取失败，请刷新页面重试。', { error: true });
     }
   }
   async function save(kind, summary = '') {
@@ -299,7 +232,7 @@ export function createRulesCenter(h = {}) {
       });
       if (response.status === 409) {
         const detail = await response.json().catch(() => ({}));
-        throw new Error(detail.detail || '规则已被其他人更新，请点「重新读取」后再保存。');
+        throw new Error(detail.detail || '规则已被其他人更新，请刷新页面后再保存。');
       }
       if (!response.ok) {
         const detail = await response.json().catch(() => ({}));
@@ -310,8 +243,7 @@ export function createRulesCenter(h = {}) {
       doc.updatedAt = payload.updatedAt || new Date().toISOString();
       state.baseline[kind] = JSON.stringify(doc);
       paint();
-      tools?.refresh();
-      setNotice(`${KIND_META[kind].label}已保存：修订 ${doc.revision}。`);
+      setNotice(`${KIND_META[kind].label}已保存。`);
       document.dispatchEvent(new CustomEvent('rules-center:saved', { detail: { kind } }));
       return true;
     } catch (error) {
@@ -320,6 +252,21 @@ export function createRulesCenter(h = {}) {
     } finally {
       state.saving = false;
       paintSaveState();
+    }
+  }
+
+  /** 先把本页改动落盘，再把整份规则存成当前赛事的快照。 */
+  async function snapshotCurrent(kind) {
+    const compId = currentCompetitionId();
+    if (!compId) { setNotice('请先在顶栏选择赛事，再保存快照。', { error: true }); return; }
+    const saved = await save(kind, `${KIND_META[kind].label}：保存并打包赛事快照`);
+    if (!saved) return;
+    try {
+      const result = await saveSnapshot(kind, compId, `${KIND_META[kind].label} · 赛事快照`, API_BASE);
+      announce(`已把整份${KIND_META[kind].label}存到「${currentCompetitionName() || compId}」快照（第 ${result.revision} 版）`);
+      setNotice(`已打包到「${currentCompetitionName() || compId}」：${KIND_META[kind].label}快照第 ${result.revision} 版。`);
+    } catch (error) {
+      setNotice(error.message || '赛事快照保存失败。', { error: true });
     }
   }
 
@@ -353,35 +300,6 @@ export function createRulesCenter(h = {}) {
       if (!response.ok) throw new Error(String(response.status));
       state.comboPool = await response.json();
     } catch { state.comboPool = state.comboPool || { pairs: [], trios: [] }; }
-    paintCounters();
-  }
-  /** 拉赛事列表；默认跟随顶栏当前赛事，但用户可改成「全部赛事」。 */
-  async function loadCompetitions() {
-    try {
-      const response = await fetch(`${API_BASE}/api/studio/workspace/competitions`,
-        { headers: { Accept: 'application/json' }, signal: controller?.signal, cache: 'no-store' });
-      if (!response.ok) throw new Error(String(response.status));
-      const data = await response.json();
-      state.competitions = Array.isArray(data?.competitions) ? data.competitions : [];
-    } catch { state.competitions = state.competitions || []; }
-    if (!state.counterCompetition) {
-      let current = '';
-      try { current = localStorage.getItem('training-current-competition') || ''; } catch { /* 无 localStorage 环境 */ }
-      if (state.competitions.some((item) => String(item.id) === current)) state.counterCompetition = current;
-    }
-    loadVersionStatus();
-  }
-  /** 查当前赛事已定稿的克制关系快照；复盘旧赛事实际读的就是这份。 */
-  async function loadVersionStatus() {
-    state.counterVersion = null;
-    const comp = selectedCompetition();
-    if (comp) {
-      try {
-        const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/version?competition=${encodeURIComponent(comp.id)}`,
-          { headers: { Accept: 'application/json' }, signal: controller?.signal, cache: 'no-store' });
-        if (response.ok) state.counterVersion = (await response.json()).version || null;
-      } catch { state.counterVersion = null; }
-    }
     paintCounters();
   }
   /** 英雄 → 可打分路（metadata.heroTypes，键缺失视为未标注）。 */
@@ -449,63 +367,6 @@ export function createRulesCenter(h = {}) {
   const datalistHtml = (id, values) => `<datalist id="${esc(id)}">${values
     .map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>`;
 
-  /* ── 生效时间字段 ─────────────────────────────────────────────────── */
-  function effectiveFields(eff = {}) {
-    return `<fieldset class="rc-eff">
-      <legend>生效时间（按赛事正式比赛时间）</legend>
-      <div class="rc-grid2">
-        <label>赛事 ID <input type="text" data-f-eff="eventId" value="${esc(eff.eventId)}" placeholder="如 2026QS"></label>
-        <label>赛事名 <input type="text" data-f-eff="eventName" value="${esc(eff.eventName)}" placeholder="如 2026 秋季赛"></label>
-        <label>起（正式比赛日） <input type="date" data-f-eff="from" value="${esc(eff.from)}" placeholder="留空 = 始终生效"></label>
-        <label>止（正式比赛日） <input type="date" data-f-eff="to" value="${esc(eff.to)}" placeholder="留空 = 始终生效"></label>
-      </div>
-    </fieldset>`;
-  }
-  function readEffective(form) {
-    const out = blankEffective();
-    form.querySelectorAll('[data-f-eff]').forEach((input) => {
-      out[input.dataset.fEff] = text(input.value);
-    });
-    return out;
-  }
-  function effectiveText(eff = {}) {
-    const event = [eff.eventId, eff.eventName].filter(Boolean).join(' · ');
-    const win = [eff.from, eff.to].filter(Boolean).join(' ~ ');
-    if (!event && !win) return '<span class="rc-always">始终生效</span>';
-    return `<span class="rc-effective">${esc(event || '不限赛事')}<br><small>${esc(win || '不限正式比赛日')}</small></span>`;
-  }
-
-  /* ── config-tools 复用 ────────────────────────────────────────────── */
-  function mountTools(kind) {
-    const slot = root?.querySelector('[data-rc-tools-slot]');
-    if (!slot) return;
-    tools?.dispose();
-    tools = null;
-    slot.innerHTML = '';
-    if (!kind) {
-      slot.innerHTML = '';
-      return;
-    }
-    const meta = KIND_META[kind];
-    tools = createConfigTools({
-      configName: `rules_${kind}`, API_BASE, esc, icon, notify,
-      exportName: `rules_${kind}`, label: meta.label,
-      expect: meta.expect,
-      historyUrl: `${API_BASE}/api/v3/rules-center/${kind}/history`,
-      rollbackUrl: `${API_BASE}/api/v3/rules-center/${kind}/rollback`,
-      getDoc: () => docOf(kind),
-      onImport: (doc) => {
-        state.docs[kind] = doc;
-        paint();
-        setNotice(`已读取导入文件，${meta.label}的改动尚未保存，请检查后点「保存更改」。`);
-      },
-      onRollback: () => load(kind, { quiet: true }),
-      isDirty: () => dirty(kind),
-    });
-    slot.innerHTML = tools.html();
-    tools.mount(slot);
-  }
-
   /* ── 表格渲染 ─────────────────────────────────────────────────────── */
   const td = (label, content, cls = '') => `<td data-label="${esc(label)}"${cls ? ` class="${cls}"` : ''}>${content}</td>`;
   const actionBtns = (kind, entry, sub) => `<span class="rc-actions">
@@ -514,10 +375,6 @@ export function createRulesCenter(h = {}) {
       <button type="button" class="control rc-icon is-danger" data-rc-del="${esc(entry.id)}" data-rc-kind="${kind}" data-rc-sub="${esc(sub || '')}"
         aria-label="删除 ${esc(entry.name || entry.key || entry.id || '条目')}" title="删除">${glyph('trash', { size: 14 })}</button>
     </span>`;
-  const historyBtn = (kind, entry, sub, name = '') => `<button type="button" class="control rc-history-btn"
-      data-rc-history="${esc(entry.id)}" data-rc-kind="${kind}" data-rc-sub="${esc(sub || '')}" data-rc-name="${esc(name)}"
-      aria-label="查看 ${esc(name || entry.id || '条目')} 的修改历史（时间、修订号、变更摘要）"
-      title="修改历史：每次改动前的时间与快照；r${esc(Number(entry.revision) || 0)} 表示已修改 ${esc(Number(entry.revision) || 0)} 次">历史 <span class="rc-rev">r${esc(Number(entry.revision) || 0)}</span></button>`;
   const tokens = (list) => (list || []).map((v) => `<span class="rc-token">${esc(v)}</span>`).join('') || '<span class="rc-muted">—</span>';
   /** 英雄集合：只放头像，名字留作 title / alt，不占表格宽度。 */
   const heroSetChips = (names) => {
@@ -531,14 +388,13 @@ export function createRulesCenter(h = {}) {
   const emptyWithAdd = (cols, message, iconName, kind, sub = '') => `<tr><td class="rc-empty" colspan="${cols}">
       <span class="rc-empty-inner">${glyph(iconName, { size: 18 })}<span>${esc(message)}</span>
         <button type="button" class="control rc-empty-add" data-rc-add="${esc(kind)}" data-rc-sub="${esc(sub)}"
-          aria-label="新增${esc(KIND_META[kind]?.label || '条目')}">${plus({ size: 14 })} 新增</button>
+          aria-label="新增${esc(KIND_META[kind]?.label || '条目')}">${plus({ size: 18 })} 新增</button>
       </span></td></tr>`;
 
   function paintHeroTags() {
     const body = root?.querySelector('[data-rc-body="hero-tags"]');
     if (!body) return;
     const heroes = docOf('hero_tags').heroes || {};
-    const meta = docOf('hero_tags')._rulesMeta || {};
     const q = state.query['hero-tags'].toLowerCase();
     const rows = Object.entries(heroes).filter(([name, hero]) => {
       const laneOk = state.heroLane === '全部' || text(hero.defaultLane) === state.heroLane
@@ -547,7 +403,6 @@ export function createRulesCenter(h = {}) {
     });
     body.innerHTML = rows.length ? rows.map(([name, hero]) => {
       const dims = Object.values(hero.matrix || {}).filter((v) => Number(v) === 1).length;
-      const view = { id: name, name, revision: meta[name]?.revision || 0 };
       return `<tr data-rc-row-id="${esc(name)}">
         ${td('英雄', `<span class="rc-hero-cell">${portrait(name, 'portrait-sm')}<b>${esc(name)}</b><small>#${esc(hero.id)}</small></span>`)}
         ${td('默认分路', esc(hero.defaultLane) || '<span class="rc-muted">—</span>')}
@@ -555,13 +410,12 @@ export function createRulesCenter(h = {}) {
         ${td('兼容定位', esc(hero.compat) || '<span class="rc-muted">—</span>')}
         ${td('分路 → 类型', tokens(Object.entries(hero.lanes || {}).map(([lane, type]) => `${lane}:${type}`)))}
         ${td('能力矩阵', `${dims} 项启用`)}
-        ${td('修订 / 历史', historyBtn('hero_tags', view, '', name))}
         ${td('操作', `<span class="rc-actions">
           <button type="button" class="control rc-icon" data-rc-edit-hero="${esc(name)}" aria-label="编辑 ${esc(name)} 标签" title="编辑 ${esc(name)} 标签">${glyph('edit', { size: 14 })}</button>
           <button type="button" class="control rc-icon is-danger" data-rc-del-hero="${esc(name)}" aria-label="删除 ${esc(name)} 标签" title="删除 ${esc(name)} 标签">${glyph('trash', { size: 14 })}</button>
         </span>`)}
       </tr>`;
-    }).join('') : emptyWithAdd(8, '没有匹配的英雄标签，可搜索 / 切分路后再试。', 'heroes', 'hero_tags');
+    }).join('') : emptyWithAdd(7, '没有匹配的英雄标签，可搜索 / 切分路后再试。', 'heroes', 'hero_tags');
     const count = root.querySelector('[data-rc-hero-count]');
     if (count) count.textContent = `共 ${Object.keys(heroes).length} 个英雄`;
   }
@@ -576,39 +430,12 @@ export function createRulesCenter(h = {}) {
     root?.querySelectorAll('[data-rc-counter-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.rcCounterPanel !== sub.key;
     });
-    const scopeSelect = root?.querySelector('[data-rc-counter-competition]');
-    if (scopeSelect) {
-      const options = competitionOptionsHtml();
-      if (scopeSelect.innerHTML !== options) scopeSelect.innerHTML = options;
-      scopeSelect.value = state.counterCompetition;
-    }
-    const scopeHint = root?.querySelector('[data-rc-comp-scope-hint]');
-    const finalizeBtn = root?.querySelector('[data-rc-finalize]');
-    if (finalizeBtn) {
-      finalizeBtn.disabled = !state.counterCompetition;
-      finalizeBtn.textContent = state.counterVersion ? '重新定稿留档' : '定稿留档';
-      finalizeBtn.title = state.counterCompetition
-        ? '把当前这套克制关系留成该赛事最终版本；复盘这个赛事时会一直用这份快照'
-        : '先选择一个赛事';
-    }
-    if (scopeHint) {
-      const comp = selectedCompetition();
-      const version = state.counterVersion;
-      const versionText = version
-        ? ` 已定稿：${String(version.finalizedAt || '').replace('T', ' ').slice(0, 16)}（修订 r${Number(version.sourceRevision) || 0}，英雄 ${version.counts?.hero || 0} / 组合 ${version.counts?.combo || 0}）；复盘本赛事用这份快照。`
-        : ' 还没定稿；复盘本赛事暂时按当前生效规则读取。';
-      scopeHint.textContent = comp
-        ? `当前赛事：${comp.name || comp.id}（${String(comp.date || '').slice(0, 10) || '未设开始日'} ~ ${String(comp.end_date || '').slice(0, 10) || '进行中'}）。只列常年生效 + 命中该赛事 / 时间窗的关系；新增或修改会绑定到该赛事。${versionText}`
-        : '当前看全部赛事：不做时间过滤；选中赛事后只看当时生效的关系，新增或修改会绑定到该赛事。';
-    }
     const body = root?.querySelector(`[data-rc-body="counters-${sub.key}"]`);
     if (!body) return;
     // 英雄头像筛选：英雄表看攻方 / 受方是否命中；组合表看两张子表的组合成员是否覆盖所选英雄。
     const sel = state.counterFilter[sub.key] || [];
     const comboHeroes = sub.key === 'combo' ? comboHeroesMap() : null;
-    const comp = selectedCompetition();
     const rows = (docOf('counters')[sub.list] || []).filter((row) => {
-      if (!effectiveMatches(row, comp)) return false;
       if (!sel.length) return true;
       const aHeroes = counterHeroes(row, 'a');
       const bHeroes = counterHeroes(row, 'b');
@@ -628,14 +455,12 @@ export function createRulesCenter(h = {}) {
         ${td('方向', '<span class="rc-arrow">→</span>')}
         ${td('强度', `<span class="rc-strength s-${esc(row.strength)}">${esc(row.strength || '中')}</span>`)}
         ${td('分路', esc(row.lane) || '<span class="rc-muted">不限</span>')}
-        ${td('生效赛事 / 时间', effectiveText(row.effective))}
         ${td('备注', esc(row.note) || '<span class="rc-muted">—</span>')}
-        ${td('修订 / 历史', historyBtn('counters', row, sub.key))}
         ${td('操作', actionBtns('counters', row, sub.key))}
       </tr>`).join('')
       : sel.length
-        ? `<tr><td class="rc-empty" colspan="9">没有符合「英雄筛选」的${esc(sub.label)}记录，可在上方清空筛选。</td></tr>`
-        : emptyWithAdd(9, `还没有${sub.label}记录，可一次填多个攻方 / 受方。`, 'compare', 'counters', sub.key);
+        ? `<tr><td class="rc-empty" colspan="7">没有符合「英雄筛选」的${esc(sub.label)}记录，可在上方清空筛选。</td></tr>`
+        : emptyWithAdd(7, `还没有${sub.label}记录，可一次填多个攻方 / 受方。`, 'compare', 'counters', sub.key);
     paintCounterFilter(sub.key);
   }
 
@@ -692,10 +517,8 @@ export function createRulesCenter(h = {}) {
         ${td('规则键', `<b>${esc(row.key)}</b>`)}
         ${td('规则值 / 口径', `<span class="rc-value">${esc(row.value)}</span>`)}
         ${td('备注', esc(row.note) || '<span class="rc-muted">—</span>')}
-        ${td('生效赛事 / 时间', effectiveText(row.effective))}
-        ${td('修订 / 历史', historyBtn('misc', row, '', row.key))}
         ${td('操作', actionBtns('misc', row))}
-      </tr>`).join('') : emptyWithAdd(7, '还没有其他规则（异常判定 / 指标口径 / 风格标签等）。', 'sources', 'misc');
+      </tr>`).join('') : emptyWithAdd(5, '还没有其他规则（异常判定 / 指标口径 / 风格标签等）。', 'sources', 'misc');
   }
 
   function paintStatus() {
@@ -704,14 +527,6 @@ export function createRulesCenter(h = {}) {
     node.textContent = state.notice;
     node.classList.toggle('is-error', state.error);
     node.hidden = !state.notice;
-  }
-  function paintRev() {
-    const node = root?.querySelector('[data-rc-doc-rev]');
-    if (!node) return;
-    const kind = activeKind();
-    if (!kind) { node.textContent = '独立页维护'; return; }
-    const doc = docOf(kind);
-    node.textContent = `修订 ${Number(doc.revision) || 0}${doc.updatedAt ? ` · ${esc(String(doc.updatedAt).slice(0, 19).replace('T', ' '))}` : ''}`;
   }
   function paintSaveState() {
     root?.querySelectorAll('[data-rc-save]').forEach((btn) => {
@@ -735,7 +550,7 @@ export function createRulesCenter(h = {}) {
     if (!root) return;
     paintTabs();
     paintHeroTags(); paintCounters(); paintMisc();
-    paintStatus(); paintRev(); paintSaveState();
+    paintStatus(); paintSaveState();
   }
 
   /* ── 对话框：新增 / 编辑 / 删除 / 条目历史 ─────────────────────────── */
@@ -750,178 +565,26 @@ export function createRulesCenter(h = {}) {
     const bodyNode = root.querySelector('[data-rc-dialog-body]');
     bodyNode.innerHTML = `${body}<p class="rc-field-error" id="${uid}-field-error" role="alert" data-rc-field-error hidden></p>`;
     const submit = root.querySelector('[data-rc-dialog-submit]');
-    submit.textContent = submitText;
-    submit.hidden = mode === 'history';
+    submit.innerHTML = `${glyph(mode === 'delete' ? 'trash' : 'pick', { size: 18 })}<span>${esc(submitText)}</span>`;
+
     submit.classList.toggle('is-danger', mode === 'delete');
     const cancel = root.querySelector('[data-rc-dialog-cancel]');
     const first = root.querySelector('[data-rc-dialog-body] input, [data-rc-dialog-body] select, [data-rc-dialog-body] textarea');
-    cancel.autofocus = mode === 'delete' || mode === 'history';
+    cancel.autofocus = mode === 'delete';
     if (first) first.autofocus = cancel.autofocus ? false : true;
     dialog.showModal();
   }
 
-  /* ── KPL 高准确率克制初稿：只预览不落 state，确认后才 POST 写入 ────── */
-  const seedStat = (label, value) => (value === undefined || value === null || value === '')
-    ? '' : `<span class="rc-token">${esc(label)} ${esc(value)}</span>`;
-
-  async function openSeedPreview() {
-    const dialog = root?.querySelector('[data-rc-seed-dialog]');
-    if (!dialog) return;
-    const bodyNode = root.querySelector('[data-rc-seed-body]');
-    bodyNode.innerHTML = '<p class="rc-muted">正在生成 KPL 初稿…</p>';
-    dialog.showModal();
-    try {
-      const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/seed-preview`,
-        { headers: { Accept: 'application/json' }, signal: controller?.signal, cache: 'no-store' });
-      if (!response.ok) {
-        let detail = '';
-        try { detail = (await response.json()).detail || ''; } catch { /* 非 JSON 响应 */ }
-        throw new Error(detail || `生成初稿失败（${response.status}）`);
-      }
-      const data = await response.json();
-      if (data?.ok === false) throw new Error(data.detail || '后端未能生成初稿。');
-      const rows = Array.isArray(data?.rows) ? data.rows.slice(0, 80) : [];
-      const meta = data?.meta;
-      let metaLine = '<p class="rc-seed-meta">基于 KPL 对局筛选的高准确率克制候选。</p>';
-      if (typeof meta === 'string' && meta) {
-        metaLine = `<p class="rc-seed-meta">${esc(meta)}</p>`;
-      } else if (meta && typeof meta === 'object') {
-        const bits = [];
-        const scalar = (v) => (v !== undefined && v !== null && typeof v !== 'object') ? String(v) : '';
-        // 后端 meta.games = {total, included, ...}；也兼容扁平数字。
-        const games = scalar((meta.games && typeof meta.games === 'object' ? meta.games.total : meta.games)
-          ?? meta.totalGames ?? meta.matchCount ?? meta.n);
-        if (games) bits.push(`共 ${esc(games)} 局`);
-        // 后端 meta.candidates.total = 筛出条数；兼容 count / 数字型 rows。
-        const count = scalar((meta.candidates && typeof meta.candidates === 'object' ? meta.candidates.total : meta.candidates)
-          ?? meta.count ?? (typeof meta.rows === 'number' ? meta.rows : null) ?? meta.matched ?? meta.selected);
-        if (count) bits.push(`筛出 ${esc(count)} 条`);
-        // 后端 meta.thresholds = {minN, minExcessPP, minWilsonLower}；也兼容扁平门槛。
-        const th = (meta.thresholds && typeof meta.thresholds === 'object') ? meta.thresholds
-          : (meta.threshold ?? meta.gate);
-        if (th && typeof th === 'object') {
-          const parts = [];
-          if (th.minExcessPP !== undefined && th.minExcessPP !== null) parts.push(`超额≥${esc(th.minExcessPP)}pp`);
-          if (th.minWilsonLower !== undefined && th.minWilsonLower !== null) parts.push(`Wilson≥${esc(th.minWilsonLower)}`);
-          if (th.minN !== undefined && th.minN !== null) {
-            parts.push(typeof th.minN === 'object'
-              ? `n≥${esc(Object.values(th.minN).join('/'))}` : `n≥${esc(th.minN)}`);
-          }
-          if (parts.length) bits.push(`门槛 ${parts.join('、')}`);
-        } else {
-          const gate = scalar(th ?? meta.minWinRate ?? meta.min);
-          if (gate) bits.push(`门槛 ${esc(gate)}`);
-        }
-        if (bits.length) metaLine = `<p class="rc-seed-meta">${bits.join(' · ')}</p>`;
-      }
-      const rowsHtml = rows.length ? rows.map((row) => {
-        const as = Array.isArray(row?.aHeroes) ? row.aHeroes : splitHeroSet(row?.a);
-        const bs = Array.isArray(row?.bHeroes) ? row.bHeroes : splitHeroSet(row?.b);
-        const ev = (row?.evidence && typeof row.evidence === 'object') ? row.evidence : {};
-        const pick = (...keys) => {
-          for (const k of keys) {
-            const v = ev[k] ?? row?.[k];
-            if (v !== undefined && v !== null && v !== '') return v;
-          }
-          return '';
-        };
-        const evidence = [seedStat('n', pick('n', 'games', 'sample')),
-          seedStat('胜率', pick('wr', 'winRate', 'win_rate', 'win', '胜率')),
-          seedStat('超额', pick('excess', 'lift', '超额')),
-          seedStat('Wilson', pick('wilson', 'wilsonLower', 'wilsonLB'))].join('');
-        return `<label class="rc-seed-row">
-          <input type="checkbox" data-rc-seed-id="${esc(row.id)}" checked>
-          <span>${heroSetChips(as)} <span class="rc-arrow">→</span> ${heroSetChips(bs)}
-            <span class="rc-strength s-${esc(row.strength)}">${esc(row.strength || '中')}</span>
-            ${row?.note ? `<span class="rc-muted">${esc(row.note)}</span>` : ''}</span>
-          <span class="rc-seed-evidence">${evidence || '—'}</span>
-        </label>`;
-      }).join('') : '<p class="rc-muted">没有可用的初稿候选。</p>';
-      bodyNode.innerHTML = `${metaLine}<div class="rc-seed-list">${rowsHtml}</div>`;
-    } catch (error) {
-      bodyNode.innerHTML = `<p class="rc-field-error" role="alert">${esc(error.message || '生成初稿失败，请稍后重试。')}</p>`;
-      toast(error.message || '生成初稿失败，请稍后重试。', { error: true });
-    }
-  }
-
-  async function applySeed() {
-    const dialog = root?.querySelector('[data-rc-seed-dialog]');
-    if (!dialog) return;
-    const ids = [...dialog.querySelectorAll('[data-rc-seed-id]:checked')]
-      .map((el) => el.dataset.rcSeedId).filter(Boolean);
-    if (!ids.length) { toast('请至少勾选一条初稿候选。', { error: true }); return; }
-    const doc = docOf('counters');
-    try {
-      const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/seed-apply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ revision: Number(doc.revision) || 0, ids }),
-        signal: controller?.signal,
-      });
-      if (!response.ok) {
-        let detail = '';
-        try { detail = (await response.json()).detail || ''; } catch { /* 非 JSON 响应 */ }
-        throw new Error(detail || `加入规则表失败（${response.status}）`);
-      }
-      dialog.close();
-      await load('counters', { quiet: true });
-      paint();
-      announce(`已加入 ${ids.length} 条，原有手工条目未改动`);
-    } catch (error) {
-      toast(error.message || '加入规则表失败，请稍后重试。', { error: true });
-    }
-  }
-
-  /* ── 赛事定稿：把当前生效的一套克制关系留成该赛事最终版本 ────────── */
-  function openFinalize() {
-    const comp = selectedCompetition();
-    if (!comp) return;
-    const dialog = root?.querySelector('[data-rc-finalize-dialog]');
-    if (!dialog) return;
-    const doc = docOf('counters');
-    const rows = [...(doc.heroPairs || []), ...(doc.comboPairs || [])]
-      .filter((row) => effectiveMatches(row, comp));
-    const desc = dialog.querySelector('[data-rc-finalize-desc]');
-    desc.textContent = `赛事「${comp.name || comp.id}」当前生效 ${rows.length} 条克制关系（英雄 ${rows.filter((r) => counterHeroes(r, 'a').length === 1 && counterHeroes(r, 'b').length === 1).length} / 组合 ${rows.filter((r) => !(counterHeroes(r, 'a').length === 1 && counterHeroes(r, 'b').length === 1)).length}）。定稿后复盘这个赛事会一直读这份快照，之后在别的赛事里改规则不会影响它。`;
-    dialog.querySelector('[data-rc-finalize-summary]').value = '';
-    dialog.showModal();
-  }
-
-  async function applyFinalize() {
-    const comp = selectedCompetition();
-    const dialog = root?.querySelector('[data-rc-finalize-dialog]');
-    if (!comp || !dialog) return;
-    try {
-      const summary = text(dialog.querySelector('[data-rc-finalize-summary]').value);
-      const response = await fetch(`${API_BASE}/api/v3/rules-center/counters/finalize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ competitionId: comp.id, competitionName: comp.name || '', summary }),
-        signal: controller?.signal,
-      });
-      if (!response.ok) {
-        let detail = '';
-        try { detail = (await response.json()).detail || ''; } catch { /* 非 JSON 响应 */ }
-        throw new Error(detail || `定稿失败（${response.status}）`);
-      }
-      dialog.close();
-      await loadVersionStatus();
-      announce(`赛事「${comp.name || comp.id}」克制关系已定稿留档`);
-    } catch (error) {
-      toast(error.message || '定稿失败，请稍后重试。', { error: true });
-    }
-  }
+  /* 克制关系随包内置，赛训组直接增删改；不再从 KPL 重新读取 / 生成初稿。 */
 
   function newEntry(kind, sub = '') {
-    const base = { id: newId(kind), effective: blankEffective(), revision: 0, history: [] };
+    const base = { id: newId(kind) };
     if (kind === 'counters') return { ...base, a: '', b: '', aHeroes: [], bHeroes: [], strength: '强', lane: '全部', note: '', ...(sub === 'combo' ? { sub } : {}) };
     if (kind === 'misc') return { ...base, group: MISC_GROUPS[0], key: '', value: '', note: '' };
     return base;
   }
 
   function entryBody(kind, entry, isEdit = false) {
-    // 选中赛事时，新增 / 原本常年生效的条目自动绑定到该赛事；已有赛事字段的条目不覆盖。
-    const eff = effectiveFields(kind === 'counters' ? effectiveForSelection(entry.effective) : entry.effective);
     if (kind === 'counters') {
       if (state.counterSub === 'combo') {
         // 组合克制组合：组合名可能含分隔符，不适合按名字回传，保留文字输入 + 候选。
@@ -939,7 +602,7 @@ export function createRulesCenter(h = {}) {
         </div>
         ${comboDatalist}
         <label>备注 <textarea data-f="note" rows="2">${esc(entry.note)}</textarea></label>
-        ${eff}`;
+        `;
       }
       // 英雄克制英雄：先选分路，再点头像选攻方 / 受方，不再手打名字。
       picker = {
@@ -966,7 +629,7 @@ export function createRulesCenter(h = {}) {
           </select></label>
         </div>
         <label>备注 <textarea data-f="note" rows="2">${esc(entry.note)}</textarea></label>
-        ${eff}`;
+        `;
     }
     if (kind === 'misc') {
       return `<div class="rc-grid2">
@@ -974,16 +637,15 @@ export function createRulesCenter(h = {}) {
         <label>规则键 <input type="text" data-f="key" value="${esc(entry.key)}" placeholder="如 一血经济阈值" required></label>
       </div>
       <label>规则值 / 口径 / 公式（列表可用换行） <textarea data-f="value" rows="4">${esc(entry.value)}</textarea></label>
-      <label>备注 <textarea data-f="note" rows="2">${esc(entry.note)}</textarea></label>${eff}`;
+      <label>备注 <textarea data-f="note" rows="2">${esc(entry.note)}</textarea></label>`;
     }
-    return eff;
+    return '';
   }
 
   function heroTagBody(name, hero = {}) {
     const dims = docOf('hero_tags').capabilityDims || [];
     const meta = docOf('hero_tags')._rulesMeta || {};
     const types = heroTypes();
-    const eff = hero.effective || {};
     return `<div class="rc-grid2">
         <label>英雄名 <input type="text" data-f="name" value="${esc(name)}" required></label>
         <label>英雄 ID <input type="number" data-f="id" value="${esc(hero.id || '')}"></label>
@@ -997,16 +659,7 @@ export function createRulesCenter(h = {}) {
       <fieldset><legend>能力矩阵（勾选 = 1，原 schema 19 维）</legend><div class="rc-check-grid">
         ${dims.map((dim) => `<label class="rc-check"><input type="checkbox" data-f-dim="${esc(dim)}"${hero.matrix?.[dim] ? ' checked' : ''}> ${esc(dim)}</label>`).join('') || '<span class="rc-muted">该文档没有 capabilityDims</span>'}
       </div></fieldset>
-      ${datalistHtml(`${uid}-types`, types)}
-      ${effectiveFields(eff)}`;
-  }
-
-  function historyBody(title, entries) {
-    if (!entries?.length) return `<p class="rc-muted">${esc(title)}还没有条目级历史。修改内容并保存后，旧版本会留在这里。</p>`;
-    return `${entries.map((item, i) => `<details class="rc-hist-item"${i === 0 ? ' open' : ''}>
-        <summary>修订 ${esc(item.revision || 0)} · ${esc(String(item.at || '').slice(0, 19).replace('T', ' '))}</summary>
-        <pre>${esc(JSON.stringify(item.snapshot || {}, null, 2))}</pre>
-      </details>`).join('')}`;
+      ${datalistHtml(`${uid}-types`, types)}`;
   }
 
   function addEntry(kind, sub = '') {
@@ -1045,24 +698,10 @@ export function createRulesCenter(h = {}) {
     if (!entry) return;
     const name = entry.name || entry.key || `${entry.a || ''} → ${entry.b || ''}` || id;
     openDialog({ title: '删除规则条目', mode: 'delete', kind, sub, entry, warn: true,
-      body: `<p>确定删除「${esc(name)}」吗？保存后生效，文档历史可回滚。</p>`, submitText: '确认删除' });
+      body: `<p>确定删除「${esc(name)}」吗？保存后生效。</p>`, submitText: '确认删除' });
   }
-  function showHistory(kind, id, sub = '', name = '') {
-    if (kind === 'hero_tags') {
-      openDialog({ title: `条目历史 · ${name || id}`, mode: 'history',
-        body: historyBody(name || id, docOf('hero_tags')._rulesMeta?.[id]?.history || []) });
-      return;
-    }
-    const listKey = kind === 'counters' ? COUNTER_SUBS.find((s) => s.key === sub)?.list : KIND_META[kind].list;
-    const entry = (docOf(kind)[listKey] || []).find((row) => String(row.id) === String(id));
-    if (!entry) return;
-    openDialog({ title: `条目历史 · ${name || id}`, mode: 'history',
-      body: historyBody(name || id, entry.history) });
-  }
-
   function collectEntries(ed, form) {
     const get = (sel) => text(form.querySelector(sel)?.value);
-    const eff = readEffective(form);
     if (ed.kind === 'hero_tags') {
       const old = docOf('hero_tags').heroes?.[ed.key] || {};
       const name = get('[data-f="name"]').slice(0, 40);
@@ -1083,8 +722,7 @@ export function createRulesCenter(h = {}) {
         compat: get('[data-f="compat"]'),
         lanes, matrix,
       };
-      if (eff.eventId || eff.eventName || eff.from || eff.to) hero.effective = eff;
-      else delete hero.effective;
+      delete hero.effective;
       return [{ key: name, hero }];
     }
     const source = ed.entry || newEntry(ed.kind, ed.sub);
@@ -1113,15 +751,19 @@ export function createRulesCenter(h = {}) {
         return null;
       }
       // 编辑时 source 即原行，展开保留 id / revision / history；a / b 由数组拼回供后端兼容。
-      return [{ ...source, aHeroes: as, bHeroes: bs, a: as.join('+'), b: bs.join('+'),
+      const row = { ...source, aHeroes: as, bHeroes: bs, a: as.join('+'), b: bs.join('+'),
         strength: get('[data-f="strength"]') || '中',
-        lane: get('[data-f="lane"]') || '全部', note: get('[data-f="note"]'), effective: eff }];
+        lane: get('[data-f="lane"]') || '全部', note: get('[data-f="note"]') };
+      delete row.effective;
+      return [row];
     }
     if (ed.kind === 'misc') {
       const key = get('[data-f="key"]').slice(0, 80);
       if (!key) { fieldError(form, '请填写规则键。', '[data-f="key"]'); return null; }
-      return [{ ...source, group: get('[data-f="group"]') || '自定义', key,
-        value: get('[data-f="value"]'), note: get('[data-f="note"]'), effective: eff }];
+      const row = { ...source, group: get('[data-f="group"]') || '自定义', key,
+        value: get('[data-f="value"]'), note: get('[data-f="note"]') };
+      delete row.effective;
+      return [row];
     }
     return null;
   }
@@ -1133,24 +775,11 @@ export function createRulesCenter(h = {}) {
     if (!doc) return 0;
     if (kind === 'hero_tags') {
       const heroes = { ...(doc.heroes || {}) };
-      const meta = { ...(doc._rulesMeta || {}) };
-      const at = new Date().toISOString();
       for (const { key, hero } of entries) {
-        const old = heroes[ed.key];
-        const m = meta[ed.key] || { revision: 0, history: [] };
-        if (!old || JSON.stringify(old) !== JSON.stringify(hero)) {
-          meta[key] = {
-            revision: (Number(m.revision) || 0) + 1,
-            history: [...(m.history || []).slice(-19), { at, revision: Number(m.revision) || 0, snapshot: old || null }],
-          };
-        } else {
-          meta[key] = m;
-        }
-        if (ed.key && ed.key !== key) { delete heroes[ed.key]; delete meta[ed.key]; }
+        if (ed.key && ed.key !== key) delete heroes[ed.key];
         heroes[key] = hero;
       }
       doc.heroes = heroes;
-      doc._rulesMeta = meta;
       return entries.length;
     }
     const listKey = kind === 'counters'
@@ -1165,7 +794,7 @@ export function createRulesCenter(h = {}) {
     } else {
       next.push(...entries);
     }
-    doc[listKey] = stampEntries(next, prev, (row) => String(row.id));
+    doc[listKey] = next;
     return entries.length;
   }
   function applyDelete(ed) {
@@ -1193,7 +822,6 @@ export function createRulesCenter(h = {}) {
     state.active = key;
     setNotice('', { quiet: true });
     paint();
-    mountTools(activeKind());
   }
 
   /* ── 事件 ─────────────────────────────────────────────────────────── */
@@ -1206,6 +834,8 @@ export function createRulesCenter(h = {}) {
     if (reload) { load(reload.dataset.rcReload); return; }
     const saveBtn = event.target.closest('[data-rc-save]');
     if (saveBtn) { save(saveBtn.dataset.rcSave, `${KIND_META[saveBtn.dataset.rcSave].label}：手动保存`); return; }
+    const snapBtn = event.target.closest('[data-rc-snapshot]');
+    if (snapBtn) { snapshotCurrent(snapBtn.dataset.rcSnapshot); return; }
     const add = event.target.closest('[data-rc-add]');
     if (add) { addEntry(add.dataset.rcAdd, add.dataset.rcSub || state.counterSub); return; }
     const edit = event.target.closest('[data-rc-edit]');
@@ -1216,8 +846,6 @@ export function createRulesCenter(h = {}) {
     if (heroEdit) { editEntry('hero_tags', heroEdit.dataset.rcEditHero); return; }
     const heroDel = event.target.closest('[data-rc-del-hero]');
     if (heroDel) { deleteEntry('hero_tags', heroDel.dataset.rcDelHero); return; }
-    const hist = event.target.closest('[data-rc-history]');
-    if (hist) { showHistory(hist.dataset.rcKind, hist.dataset.rcHistory, hist.dataset.rcSub, hist.dataset.rcName); return; }
     const sub = event.target.closest('[data-rc-counter-sub]');
     if (sub) { state.counterSub = sub.dataset.rcCounterSub; paintCounters(); return; }
     /* 先选分路，再点英雄：group 区分弹窗两侧与列表两张子表。 */
@@ -1264,20 +892,6 @@ export function createRulesCenter(h = {}) {
     if (pick) { togglePick(pick.dataset.rcPick, text(pick.dataset.rcPickName)); return; }
     const pickRemove = event.target.closest('[data-rc-pick-remove]');
     if (pickRemove) { togglePick(pickRemove.dataset.rcPickRemove, text(pickRemove.dataset.rcPickRemoveName)); return; }
-    /* KPL 初稿对话框：预览只展示，确认后才发 seed-apply。 */
-    const seedPreview = event.target.closest('[data-rc-seed-preview]');
-    if (seedPreview) { openSeedPreview(); return; }
-    const seedCancel = event.target.closest('[data-rc-seed-cancel]');
-    if (seedCancel) { root.querySelector('[data-rc-seed-dialog]')?.close(); return; }
-    const seedApply = event.target.closest('[data-rc-seed-apply]');
-    if (seedApply) { applySeed(); return; }
-    /* 赛事定稿快照：复盘旧赛事时实际读取的版本。 */
-    const finalizeOpen = event.target.closest('[data-rc-finalize]');
-    if (finalizeOpen) { openFinalize(); return; }
-    const finalizeCancel = event.target.closest('[data-rc-finalize-cancel]');
-    if (finalizeCancel) { root.querySelector('[data-rc-finalize-dialog]')?.close(); return; }
-    const finalizeConfirm = event.target.closest('[data-rc-finalize-confirm]');
-    if (finalizeConfirm) { applyFinalize(); return; }
     if (event.target.closest('[data-rc-dialog-cancel]')) {
       root.querySelector('[data-rc-dialog]')?.close(); state.editing = null; return;
     }
@@ -1309,12 +923,6 @@ export function createRulesCenter(h = {}) {
     else if (key === 'misc') paintMisc();
   }
   function onChange(event) {
-    const scope = event.target.closest('[data-rc-counter-competition]');
-    if (scope) {
-      state.counterCompetition = String(scope.value || '');
-      loadVersionStatus();
-      return;
-    }
     const size = event.target.closest('[data-rc-size-filter]');
     const lane = event.target.closest('[data-rc-hero-lane]');
     if (lane) { state.heroLane = lane.value; paintHeroTags(); }
@@ -1356,8 +964,9 @@ export function createRulesCenter(h = {}) {
   function panelInner(tab) {
     const kind = tab.kind;
     const meta = KIND_META[kind];
-    const saveBtn = `<button type="button" class="primary" data-rc-save="${kind}" disabled>保存更改</button>`;
-    const reloadBtn = `<button type="button" class="control" data-rc-reload="${kind}">${glyph('arrow-up', { size: 14 })} 重新读取</button>`;
+    const saveBtn = `<button type="button" class="primary" data-rc-save="${kind}" disabled>${glyph('pick', { size: 18 })}保存更改</button>`;
+    const snapBtn = `<button type="button" class="control" data-rc-snapshot="${kind}" title="把整份${KIND_META[kind].label}存到当前赛事快照">${glyph('export', { size: 18 })}存为当前赛事快照</button>`;
+    const reloadBtn = `<button type="button" class="control" data-rc-reload="${kind}">${glyph('refresh', { size: 18 })}重新读取</button>`;
     // search 不在 glyph 白名单：沿用外壳注入的 icon('search')，外壳未提供时退化为纯文字输入框。
     const search = (placeholder) => `<search class="rc-search"><label class="visually-hidden" for="${uid}-search-${tab.key}">搜索${esc(meta.label)}</label>
       ${icon('search')}
@@ -1365,13 +974,13 @@ export function createRulesCenter(h = {}) {
     if (kind === 'hero_tags') {
       return `<section class="section">
         <div class="section-heading"><div><h2>英雄标签（五路 12 类，可直接编辑）</h2></div>
-          <div class="rc-panel-actions">${reloadBtn}<span class="rc-count" data-rc-hero-count></span>${saveBtn}</div></div>
+          <div class="rc-panel-actions">${reloadBtn}<span class="rc-count" data-rc-hero-count></span>${snapBtn}${saveBtn}</div></div>
         <div class="rc-filter">${search('按英雄名 / 类型搜索')}
           <label>分路 <select data-rc-hero-lane>${['全部', ...LANES].map((l) => `<option${state.heroLane === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
-          <button type="button" class="primary" data-rc-add="hero_tags">${plus({ size: 14 })} 新增英雄</button></div>
+          <button type="button" class="primary" data-rc-add="hero_tags">${plus({ size: 18 })} 新增英雄</button></div>
         <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-hero">
           <table class="rc-table"><caption id="${uid}-cap-hero" class="visually-hidden">英雄标签表</caption>
-            <thead><tr><th scope="col">英雄</th><th scope="col">默认分路</th><th scope="col">默认类型</th><th scope="col">兼容定位</th><th scope="col">分路 → 类型</th><th scope="col">能力矩阵</th><th scope="col">修订 / 历史</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">英雄</th><th scope="col">默认分路</th><th scope="col">默认类型</th><th scope="col">兼容定位</th><th scope="col">分路 → 类型</th><th scope="col">能力矩阵</th><th scope="col">操作</th></tr></thead>
             <tbody data-rc-body="hero-tags"></tbody></table></div>
       </section>`;
     }
@@ -1384,43 +993,36 @@ export function createRulesCenter(h = {}) {
             ${laneBtns(`filter-${subKey}`, state.counterFilterLane[subKey] || '全部')}
             <input type="search" data-rc-cfilter-search="${subKey}" placeholder="搜英雄名" autocomplete="off">
             <div class="rc-hero-filter-grid" data-rc-cfilter-grid="${subKey}"></div>
-            <div class="rc-hero-filter-foot"><button type="button" class="control" data-rc-cfilter-clear="${subKey}" disabled>清空筛选</button></div>
+            <div class="rc-hero-filter-foot"><button type="button" class="control" data-rc-cfilter-clear="${subKey}" disabled>${glyph('trash', { size: 18 })}清空筛选</button></div>
           </div>
         </details>`;
       return `<section class="section">
         <div class="section-heading"><div><h2>克制关系</h2></div>
-          <div class="rc-panel-actions">${reloadBtn}<button type="button" class="control" data-rc-seed-preview>从 KPL 生成初稿</button>${saveBtn}</div></div>
-        <p class="rc-effective-hint">克制规则按赛事 / 时间窗生效：未填＝常年生效，任何赛事都能看到；选中赛事后，只列常年生效与命中该赛事的条目。「修订 r1」= 改过 1 次，「历史」按钮可看每次修改前的快照和时间。</p>
-        <div class="rc-comp-scope">
-          <label for="${uid}-counter-competition">查看 / 编辑赛事</label>
-          <select id="${uid}-counter-competition" data-rc-counter-competition>${competitionOptionsHtml()}</select>
-          <button type="button" class="control" data-rc-finalize disabled>定稿留档</button>
-          <span data-rc-comp-scope-hint class="rc-comp-scope-hint"></span>
-        </div>
+          <div class="rc-panel-actions">${snapBtn}${saveBtn}</div></div>
         <div class="rc-subtabs" role="group" aria-label="克制关系子表">
-          ${COUNTER_SUBS.map((s) => `<button type="button" class="rc-subtab" data-rc-counter-sub="${s.key}" aria-pressed="${state.counterSub === s.key}">${esc(s.label)}</button>`).join('')}
+          ${COUNTER_SUBS.map((s) => `<button type="button" class="rc-subtab" data-rc-counter-sub="${s.key}" aria-pressed="${state.counterSub === s.key}">${glyph(s.key === 'hero' ? 'heroes' : 'bp', { size: 18 })}${esc(s.label)}</button>`).join('')}
         </div>
         <div class="rc-filter" data-rc-counter-panel="hero"${state.counterSub !== 'hero' ? ' hidden' : ''}>
-          ${heroFilter('hero')}<button type="button" class="primary" data-rc-add="counters" data-rc-sub="hero">${plus({ size: 14 })} 新增英雄克制</button></div>
+          ${heroFilter('hero')}<button type="button" class="primary" data-rc-add="counters" data-rc-sub="hero">${plus({ size: 18 })} 新增英雄克制</button></div>
         <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-ch" data-rc-counter-panel="hero"${state.counterSub !== 'hero' ? ' hidden' : ''}>
           <table class="rc-table"><caption id="${uid}-cap-ch" class="visually-hidden">英雄克制英雄</caption>
-            <thead><tr><th scope="col">攻方</th><th scope="col">受方</th><th scope="col">方向</th><th scope="col">强度</th><th scope="col">分路</th><th scope="col">生效赛事 / 时间</th><th scope="col">备注</th><th scope="col">修订 / 历史</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">攻方</th><th scope="col">受方</th><th scope="col">方向</th><th scope="col">强度</th><th scope="col">分路</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
             <tbody data-rc-body="counters-hero"></tbody></table></div>
         <div class="rc-filter" data-rc-counter-panel="combo"${state.counterSub !== 'combo' ? ' hidden' : ''}>
-          ${heroFilter('combo')}<button type="button" class="primary" data-rc-add="counters" data-rc-sub="combo">${plus({ size: 14 })} 新增组合克制</button></div>
+          ${heroFilter('combo')}<button type="button" class="primary" data-rc-add="counters" data-rc-sub="combo">${plus({ size: 18 })} 新增组合克制</button></div>
         <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-cc" data-rc-counter-panel="combo"${state.counterSub !== 'combo' ? ' hidden' : ''}>
           <table class="rc-table"><caption id="${uid}-cap-cc" class="visually-hidden">组合克制组合</caption>
-            <thead><tr><th scope="col">攻方组合</th><th scope="col">受方组合</th><th scope="col">方向</th><th scope="col">强度</th><th scope="col">分路</th><th scope="col">生效赛事 / 时间</th><th scope="col">备注</th><th scope="col">修订 / 历史</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">攻方组合</th><th scope="col">受方组合</th><th scope="col">方向</th><th scope="col">强度</th><th scope="col">分路</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
             <tbody data-rc-body="counters-combo"></tbody></table></div>
       </section>`;
     }
     return `<section class="section">
       <div class="section-heading"><div><h2>其他规则（异常判定 / 指标口径 / 风格标签）</h2></div>
         <div class="rc-panel-actions">${reloadBtn}${saveBtn}</div></div>
-      <div class="rc-filter">${search('按分类 / 键 / 值搜索')}<button type="button" class="primary" data-rc-add="misc">${plus({ size: 14 })} 新增条目</button></div>
+      <div class="rc-filter">${search('按分类 / 键 / 值搜索')}<button type="button" class="primary" data-rc-add="misc">${plus({ size: 18 })} 新增条目</button></div>
       <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-misc">
         <table class="rc-table"><caption id="${uid}-cap-misc" class="visually-hidden">其他规则表</caption>
-          <thead><tr><th scope="col">分类</th><th scope="col">规则键</th><th scope="col">规则值 / 口径</th><th scope="col">备注</th><th scope="col">生效赛事 / 时间</th><th scope="col">修订 / 历史</th><th scope="col">操作</th></tr></thead>
+          <thead><tr><th scope="col">分类</th><th scope="col">规则键</th><th scope="col">规则值 / 口径</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
           <tbody data-rc-body="misc"></tbody></table></div>
     </section>`;
   }
@@ -1428,48 +1030,27 @@ export function createRulesCenter(h = {}) {
     return `<div class="rc-page ${CENTER_LABEL ? 'rc-platinum' : ''}">
       <header class="section rc-head">
         ${deco('divider-title', { cls: 'rc-head-deco' })}
-        <div class="section-heading"><div><h1>赛训规则中心</h1></div>
-          <span class="rc-doc-rev" data-rc-doc-rev></span></div>
+        <div class="section-heading"><div><h1>赛训规则中心</h1></div></div>
         <p class="rc-notice" data-rc-notice hidden></p>
       </header>
       <nav class="rc-tabs" role="tablist" aria-label="赛训规则分类">
         ${TABS.map((tab) => `<button type="button" role="tab" id="${uid}-tab-${tab.key}"
           aria-controls="${uid}-panel-${tab.key}" aria-selected="${state.active === tab.key}"
           tabindex="${state.active === tab.key ? 0 : -1}" class="rc-tab${state.active === tab.key ? ' is-on' : ''}"
-          data-rc-tab="${tab.key}">${glyph(TAB_ICON[tab.key] || 'book', { size: 15 })}<span>${esc(tab.label)}</span></button>`).join('')}
+          data-rc-tab="${tab.key}">${glyph(TAB_ICON[tab.key] || 'book', { size: 18 })}<span>${esc(tab.label)}</span></button>`).join('')}
       </nav>
       ${TABS.map((tab) => `<section class="rc-panel" role="tabpanel" id="${uid}-panel-${tab.key}"
         aria-labelledby="${uid}-tab-${tab.key}" data-rc-panel="${tab.key}"${state.active === tab.key ? '' : ' hidden'}>
         ${panelInner(tab)}</section>`).join('')}
-      <div class="rc-tools-slot" data-rc-tools-slot></div>
       <dialog class="rc-dialog" data-rc-dialog aria-labelledby="${uid}-dialog-title">
         <div class="rc-dialog-head"><h2 id="${uid}-dialog-title" data-rc-dialog-title></h2></div>
         <form class="rc-dialog-form" data-rc-dialog-form novalidate>
           <div class="rc-dialog-body" data-rc-dialog-body></div>
           <div class="rc-dialog-foot">
-            <button type="button" class="control" data-rc-dialog-cancel>取消</button>
-            <button type="submit" class="primary" data-rc-dialog-submit>保存</button>
+            <button type="button" class="control" data-rc-dialog-cancel>${glyph('ban', { size: 18 })}取消</button>
+            <button type="submit" class="primary" data-rc-dialog-submit>${glyph('pick', { size: 18 })}保存</button>
           </div>
         </form>
-      </dialog>
-      <dialog class="rc-dialog" data-rc-seed-dialog aria-labelledby="${uid}-seed-dialog-title">
-        <div class="rc-dialog-head"><h2 id="${uid}-seed-dialog-title">KPL 高准确率克制初稿</h2></div>
-        <div class="rc-dialog-body" data-rc-seed-body style="padding:14px 20px 0"></div>
-        <div class="rc-dialog-foot">
-          <button type="button" class="control" data-rc-seed-cancel autofocus>取消</button>
-          <button type="button" class="primary" data-rc-seed-apply>加入规则表</button>
-        </div>
-      </dialog>
-      <dialog class="rc-dialog" data-rc-finalize-dialog aria-labelledby="${uid}-finalize-dialog-title">
-        <div class="rc-dialog-head"><h2 id="${uid}-finalize-dialog-title">克制关系定稿留档</h2></div>
-        <div class="rc-dialog-body" style="padding:14px 20px 0">
-          <p class="rc-seed-meta" data-rc-finalize-desc></p>
-          <label>定稿说明 <textarea data-rc-finalize-summary rows="2" placeholder="如：赛季结束前最终版"></textarea></label>
-        </div>
-        <div class="rc-dialog-foot">
-          <button type="button" class="control" data-rc-finalize-cancel autofocus>取消</button>
-          <button type="button" class="primary" data-rc-finalize-confirm>确认定稿</button>
-        </div>
       </dialog>
     </div>`;
   }
@@ -1482,7 +1063,12 @@ export function createRulesCenter(h = {}) {
     node.addEventListener('keydown', onKeydown);
     node.addEventListener('submit', onSubmit);
   }
+  const onSnapshotRestored = (event) => {
+    const kind = event.detail?.module;
+    if (kind && state.docs[kind]) load(kind, { quiet: true });
+  };
   function dispose() {
+    document.removeEventListener('rule-snapshots:restored', onSnapshotRestored);
     if (bound) {
       bound.removeEventListener('click', onClick);
       bound.removeEventListener('input', onInput);
@@ -1491,8 +1077,6 @@ export function createRulesCenter(h = {}) {
       bound.removeEventListener('submit', onSubmit);
       bound = null;
     }
-    tools?.dispose();
-    tools = null;
     clearTimeout(toastTimer);
     controller?.abort();
     controller = null;
@@ -1506,11 +1090,10 @@ export function createRulesCenter(h = {}) {
     root = node;
     root.innerHTML = html();
     bind(root);
-    mountTools(activeKind());
+    document.addEventListener('rule-snapshots:restored', onSnapshotRestored);
     controller = new AbortController();
     Object.keys(KIND_META).forEach((kind) => load(kind, { quiet: true }));
     loadComboPool();
-    loadCompetitions();
     paint();
   }
 

@@ -584,6 +584,12 @@
 .rc-field-error .ui-glyph { flex: 0 0 auto; margin-block-start: 1px; }
 .rc-dialog-form { padding: 16px 20px 0; }
 .rc-dialog-body :is(label, .rc-eff, fieldset) { display: block; }
+.rc-eff-hint {
+  margin: 6px 0 0;
+  color: var(--rc-muted);
+  font-size: .78rem;
+  line-height: 1.5;
+}
 .rc-dialog-body label { margin-block-end: 10px; color: var(--rc-muted); font-size: .84rem; }
 .rc-dialog-body :is(input[type="text"], input[type="number"], input[type="date"], select, textarea) {
   display: block;

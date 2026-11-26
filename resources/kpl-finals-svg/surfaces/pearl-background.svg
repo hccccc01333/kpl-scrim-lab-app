@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="960" height="450" viewBox="0 0 960 450" role="img">
+<title>珍珠白波纹底板</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient></defs>
+<rect x="0" y="0" width="960" height="450" fill="url(#pearl)"/><path d="M0 0 Q230.4 315 595.2 0 H672 Q259.2 409.5 0 76.5Z" fill="#d8d5d8" opacity="0.2565"/><path d="M0 288 Q432 58.5 691.2 0 Q230.4 288 0 445.5Z" fill="#d9d6d6" opacity="0.152"/><path d="M172.8 450 Q508.8 355.5 960 54 Q739.2 351 432 450Z" fill="#fffdfa" opacity="0.57"/><path d="M518.4 450 Q787.2 279 960 171 V256.5 Q883.2 337.5 700.8 450Z" fill="#fff" opacity="0.5225"/>
+</svg>

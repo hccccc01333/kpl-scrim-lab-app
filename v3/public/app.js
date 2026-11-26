@@ -1,8 +1,9 @@
 import { normalizedCamp, sampleNear, teamTotal, economyDirection, eventSide, laneRealisation } from './match-recap-metrics.js';
 import { equipIcons } from './equipment-icons.js';
+import { glyph, deco } from './ui-icons.js';
 import { featureSections } from './feature-sections.js?v=20261123nav';
 import { createWorkbenchUI, loadingSkeleton } from './workbench-ui.js';
-import { createChecklist } from './tour.js?v=20261123checklist2';
+import { createChecklist } from './tour.js?v=20261126tour3';
 import { initUpdateBanner } from './update-banner.js';
 import { diagnosticBlock, bindDiagnosticCopy, errorEntry } from './diagnostics.js';
 /* 单局标签：自挂载（盯着 #content 里的 .tagrow 占位），首页 / 档案 / 单局页共用。
@@ -31,22 +32,27 @@ const zhCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'bas
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CLIENT_DOWNLOAD_URL = 'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest';
 const app = document.querySelector('#app');
-/* 侧边栏按「先把自家底子建好，再做复盘与情报」的顺序排（2026-11-23 定稿）：
-   工作台：首页 → 本队资料 → 本队选手档案 → 采集 → 赛事 → 系列赛编组；
-   其下才是备战（赛后复盘）与情报（赛前准备）。 */
+/* 侧边栏按 4.0 赛事驱动流程排（2026-11-24 定稿）：
+   工作台：首页 → 赛事（周期先行）→ 本队（身份预建）→ 对方战队 → 采集（自动分队/人工匹配）→ 系列赛编组（最后编组）；
+   选手档案并入「本队」页的二级页签；其余是赛训复盘与情报分析。 */
 const nav = [
-  ['overview', '首页'], ['team-profile', '本队资料'], ['profiles', '本队选手档案'],
+  ['overview', '首页'], ['competitions', '赛事'], ['team-profile', '本队'],
+  ['opponents', '对方战队'], ['ingest', '采集'], ['matching', '匹配与编组'],
+  ['match-notes', '赛训'], ['matches', '单局分析'], ['biggame', '大场分析'], ['cross', '跨场分析'],
+  ['teams', '战队分析'], ['players', '选手分析'], ['heroes', '英雄分析'], ['bp', 'BP 工作台'],
+  ['rules', '规则中心'], ['snapshot-center', '快照中心'],
+  ['sources', '数据源展示'], ['docs', '文档'], ['source-health', '外部数据源'],
   ['ingest', '采集'], ['competitions', '赛事'], ['series-builder', '系列赛编组'],
-  ['matches', '对局'], ['biggame', '大场分析'], ['cross', '跨局分析'],
+  ['matches', '单局分析'], ['biggame', '大场分析'], ['cross', '跨场分析'],
   ['teams', '战队'], ['players', '选手'], ['heroes', '英雄'], ['bp', 'BP 工作台'],
-  ['rules', '规则中心'],
-  ['sources', '数据来源'], ['docs', '文档'],
+  ['rules', '规则中心'], ['snapshot-center', '快照中心'],
+  ['sources', '数据源展示'], ['docs', '文档'], ['source-health', '外部数据源'],
 ];
 const labels = Object.fromEntries(nav);
 for (const pages of Object.values(featureSections)) for (const [key, label] of pages) labels[key] = label;
-Object.assign(labels, { biggame: '大场分析', cross: '跨局分析', 'series-builder': '系列赛编组', rules: '规则中心', 'team-profile': '本队资料', profiles: '本队选手档案', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对手侦察', teamtraining: '交手记录', ownership: '对手归属', pending: '待确认', effect: '训练效果', session: '训练课', competitions: '赛事', competition: '赛事详情', weekly: '训练周报' });
+Object.assign(labels, { biggame: '大场分析', cross: '跨场分析', matching: '匹配与编组', 'series-builder': '系列赛编组', rules: '规则中心', 'match-notes': '赛训', 'team-profile': '本队', profiles: '本队选手档案', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', imported: '已采集对局', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对方战队', teams: '战队分析', players: '选手分析', heroes: '英雄分析', teamtraining: '交手记录', ownership: '对手归属', pending: '待确认', session: '训练课', competitions: '赛事', competition: '赛事详情', weekly: '训练周报', 'snapshot-center': '快照中心' });
 function sectionFor(name) {
-  const detail = { match: 'matches', player: 'players', playerdetail: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'teams', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', competition: 'setup', weekly: 'setup' }[name] || name;
+  const detail = { match: 'matches', player: 'players', playerdetail: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', imported: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'opponents', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', competition: 'competitions', weekly: 'setup' }[name] || name;
   return Object.keys(featureSections).find((section) => featureSections[section].some(([key]) => key === detail)) || detail;
 }
 const icons = {
@@ -57,11 +63,14 @@ const icons = {
   filter: '<path d="M4 7h16M7 12h10m-7 5h4"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  trash: '<path d="M4 7h16M9 7V4.5h6V7m3 0-.8 12.5a1.5 1.5 0 0 1-1.5 1.4H7.3a1.5 1.5 0 0 1-1.5-1.4L5 7m5 4v6m4-6v6"/>',
   edit: '<path d="M4.5 19.5h3.6L18.6 9a2.55 2.55 0 1 0-3.6-3.6L4.5 15.9z"/><path d="m14.2 6.2 3.6 3.6"/>',
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4 4"/>',
   overview: '<path d="M3.5 10.5 12 3l8.5 7.5V20H14v-6h-4v6H3.5z"/>',
   matches: '<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  /* 赛训：哨子（训练课），与「单局分析」的文档图标区分开。 */
+  'match-notes': '<circle cx="10" cy="14" r="5.5"/><path d="M15.3 11.3 20 9v6l-4.7-2.3"/><path d="M8.5 9 8 4.5h4l-.5 4.5"/>',
   teams: '<path d="M12 3 4 6.5v5.8c0 4.3 3.1 7.1 8 8.7 4.9-1.6 8-4.4 8-8.7V6.5z"/><path d="m8.8 12 2 2 4.4-4.4"/>',
   players: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20v-1.5a5.5 5.5 0 0 1 11 0V20M16 5a3 3 0 0 1 0 6m1 4a4.5 4.5 0 0 1 3.5 4.4V20"/>',
   'team-profile': '<path d="M12 3 4.5 6v5.6c0 4.2 3 7.1 7.5 8.4 4.5-1.3 7.5-4.2 7.5-8.4V6z"/><path d="m12 7.6 1.35 2.75 3.03.44-2.19 2.14.52 3.02L12 14.62l-2.71 1.43.52-3.02-2.19-2.14 3.03-.44z"/>',
@@ -75,8 +84,10 @@ const icons = {
   cross: '<path d="M4 17l4-6 4 3 5-7"/><path d="M13.5 7H17v3.5"/>',
   opponents: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
   rules: '<path d="M5 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H5z"/><path d="M19 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z"/>',
+  'snapshot-center': '<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M3.5 9h17M7.5 4v5m9-5v5M8 13h8M8 16.5h5"/>',
   competitions: '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4m8-4v4M4 10h16m-12 4h3m-3 3h7"/>',
   sources: '<ellipse cx="12" cy="5.5" rx="8" ry="3"/><path d="M4 5.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6M4 11.5v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+  'source-health': '<path d="M6.5 17.5a4.5 4.5 0 0 1-.6-8.96 6 6 0 0 1 11.6 1.2 3.8 3.8 0 0 1-.5 7.76"/><path d="M12 10.5v7m-2.5-2.5L12 17.5l2.5-2.5"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.2a2.7 2.7 0 0 1 5.2 1c0 1.8-2.7 2.2-2.7 4M12 17.4h.01"/>',
   docs: '<path d="M5 4.5h9.5L19 9v10.5H5z"/><path d="M14 4.5V9h5M8 12h8M8 15.5h8"/>',
   inbox: '<path d="M4 5h16v14H4z"/><path d="M4 13h4l2 3h4l2-3h4"/>',
@@ -89,6 +100,60 @@ const icons = {
   upload: '<path d="M12 16V5m-4 4 4-4 4 4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>',
 };
 const icon = (name) => `<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icons[name] || ''}</svg>`;
+/* 页内标题用的语义图标：与侧栏共用一套内联 SVG，currentColor 自动跟随青绿主题，
+   不套用会被主题隐藏的金色装饰件。 */
+const HEADING_ICONS = {
+  overview: 'chart', competitions: 'calendar', 'team-profile': 'team-profile',
+  opponents: 'opponents', ingest: 'ingest', matching: 'seriesbuilder',
+  'match-notes': 'match-notes', matches: 'matches', biggame: 'biggame',
+  cross: 'cross', teams: 'teams', players: 'players', heroes: 'heroes',
+  bp: 'bp', rules: 'rules', 'snapshot-center': 'snapshot-center',
+  sources: 'sources', 'source-health': 'source-health', docs: 'docs',
+};
+/* 给页面 H1 与侧栏分组加统一的图标锚点；纯装饰，不改盒模型与文字内容。
+   带 data-deco 的节点直接跳过，重绘后不会叠图标。 */
+function decorateHeadings(routeName) {
+  const h1 = document.querySelector('#content h1:not([data-deco])');
+  /* 有的页面走模块路由（如 #players -> playerarchive），按标题文字兜底选图标。 */
+  let name = HEADING_ICONS[routeName];
+  if (h1 && !name) {
+    const text = h1.textContent || '';
+    if (/选手/.test(text)) name = 'players';
+    else if (/本队|战队/.test(text)) name = 'teams';
+    else if (/英雄/.test(text)) name = 'heroes';
+    else if (/BP|禁选/.test(text)) name = 'bp';
+    else if (/跨局|跨场|大场/.test(text)) name = 'cross';
+    else if (/单局|对局/.test(text)) name = 'matches';
+    else if (/赛事|比赛/.test(text)) name = 'calendar';
+    else if (/采集|导入/.test(text)) name = 'capture';
+    else if (/规则|配置/.test(text)) name = 'rules';
+    else if (/数据源|快照/.test(text)) name = 'sources';
+  }
+  if (h1 && name) {
+    h1.dataset.deco = '1';
+    h1.insertAdjacentHTML('afterbegin',
+      `<span class="desk-h1-glyph" aria-hidden="true">${icon(name)}</span>` +
+      deco('section-triangle', { cls: 'desk-h1-tri' }));
+  }
+  document.querySelectorAll('.desk-group > span:not([data-deco])').forEach((span) => {
+    span.dataset.deco = '1';
+    span.insertAdjacentHTML('afterbegin', '<span class="desk-group-glyph" aria-hidden="true"></span>');
+  });
+}
+/* 首页简报、选手池等模块的 H1 在 render() 之后异步挂载；监听 #content，
+   标题一出现就补图标。切页先断开旧观察器，避免累积监听。 */
+let headingObserver;
+function watchHeadings(routeName) {
+  headingObserver?.disconnect();
+  const root = document.querySelector('#content');
+  if (!root) return;
+  headingObserver = new MutationObserver(() => decorateHeadings(routeName));
+  headingObserver.observe(root, { childList: true, subtree: true });
+  decorateHeadings(routeName);
+  /* 有的页面走独立渲染分支，不在 render() 末尾汇合；定时补一次兜底（幂等）。 */
+  setTimeout(() => decorateHeadings(routeName), 400);
+  setTimeout(() => decorateHeadings(routeName), 1600);
+}
 const esc = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const has = (n) => typeof n === 'number' && Number.isFinite(n);
 const fmt = (n, digits = 0) => has(n) ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: digits }).format(n) : '—';
@@ -275,7 +340,7 @@ function renderOffline(r = current(), error = null) {
   box.innerHTML = `<div class="page"><section class="section"><div class="offline-card dx-error">
     <div class="dx-error-head"><span class="dx-error-code">${esc(code)}</span><b>${esc(labels[r.name] || '当前页面')} · ${esc(title)}</b></div>
     <p>与工作台的连接中断了，恢复后会<strong>自动加载这一页</strong>，也可以点下面的按钮立即重试。</p>
-    <div class="offline-actions"><button class="control" data-action="refresh">立即重试</button></div>
+    <div class="offline-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 立即重试</button></div>
     ${diagnosticBlock({ code, error, route: r, requestPath: error?.path })}
     <p class="dx-error-foot">反馈时把错误码和诊断信息一起贴到群里，不用重复描述页面。</p>
   </div></section></div>`;
@@ -289,7 +354,7 @@ function renderDataNotice(r, error = null) {
   box.innerHTML = `<div class="page"><section class="section"><div class="offline-card dx-error">
     <div class="dx-error-head"><span class="dx-error-code">${esc(code)}</span><b>${esc(labels[r.name] || '当前页面')} · ${esc(title)}</b></div>
     <p>这一页的数据还没返回，已经自动重试过；稍后再点一次读取即可。</p>
-    <div class="offline-actions"><button class="control" data-action="refresh">重新读取</button></div>
+    <div class="offline-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 重新读取</button></div>
     ${diagnosticBlock({ code, error, route: r, requestPath: error?.path })}
     <p class="dx-error-foot">反馈时把错误码和诊断信息一起贴到群里，不用重复描述页面。</p>
   </div></section></div>`;
@@ -326,7 +391,7 @@ function current() {
     players: 'playerarchive', identity: 'playerarchive', compare: 'playerarchive',
     /* 2026-11-16：截图 / 录屏 / 回放 / 审查已并进采集页，旧链接仍落在采集页的对应页签
        （采集页自己按 hash 决定显示哪一块，#review/<id> 也照常打开那条审查明细）。 */
-    shots: 'ingest', videos: 'ingest', replays: 'ingest', review: 'ingest',
+    shots: 'ingest', videos: 'ingest', replays: 'ingest', review: 'ingest', imported: 'ingest',
     /* 2026-11-22：英雄组合页已下线，旧链接回到英雄榜。 */
     /* 2026-11-22：比赛与训练计划已并入赛事页（比赛=赛事同一份数据，排期/看板改为赛事页区块）。 */
     plan: 'competitions', combos: 'heroes' };
@@ -379,13 +444,13 @@ function openDeciderDialog() {
     <div class="bp-order-group"><b>盲选 5 个</b>
       ${Array.from({ length: 5 }, (_, index) => `<label>P${index + 1}<select data-decider-side="${key}" data-decider-index="${index}">${options()}</select></label>`).join('')}
     </div></section>`;
-  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">PEAK DUEL</span><h2>巅峰对决 · 双方盲选</h2></div><button type="button" class="sx-dialog-x" data-decider-close aria-label="关闭">×</button></div>
+  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">PEAK DUEL</span><h2>${glyph('bp', { size: 20 })} 巅峰对决 · 双方盲选</h2></div><button type="button" class="sx-dialog-x" data-decider-close aria-label="关闭">×</button></div>
     <p class="sx-dialog-note">BO7 第 7 局（大比分 3:3）：取消 Ban；双方各盲选 5 个；解除此前全局 BP 限制。允许双方选到同一个英雄；同一方 5 个不能重复。</p>
     <div class="bp-order-grid">${side('own', '我方')}${side('foe', '对方')}</div>
     <div class="bp-order-foot"><p class="form-status" data-decider-status></p>
-      <button type="button" class="control" data-decider-clear>清空</button>
+      <button type="button" class="control" data-decider-clear>${glyph('trash', { size: 18 })} 清空</button>
       <button type="button" class="control" data-decider-close>关闭</button>
-      <button type="button" class="primary" data-decider-summary>生成摘要</button></div>
+      <button type="button" class="primary" data-decider-summary>${glyph('export', { size: 18 })} 生成摘要</button></div>
     <div class="decider-summary" data-decider-summary-box hidden></div>`;
   const values = (key) => [...dialog.querySelectorAll(`[data-decider-side="${key}"]`)].map((select) => select.value);
   const status = dialog.querySelector('[data-decider-status]');
@@ -430,27 +495,48 @@ const navHref = (key) => key === 'setup' ? '#competitions' : key === 'players' ?
    不知道是哪场比赛的数据，所以默认灰掉并阻止激活（aria-disabled 保留可聚焦，
    见 accessibility 指南：disabled 链接用 aria-disabled 而非 pointer-events）。 */
 const GATED_NAV = new Set(['matches', 'teams', 'players', 'heroes', 'bp',
-  'biggame', 'cross', 'series-builder', 'opponents']);
+  'biggame', 'cross', 'matching', 'series-builder', 'opponents']);
 const COMPETITION_KEY = 'training-current-competition';
+let competitionNameCache = '';
+let competitionContextToken = 0;
+try { competitionNameCache = localStorage.getItem(COMPETITION_KEY + '-name') || ''; } catch {}
 function hasCurrentCompetition() {
   try { return Boolean(localStorage.getItem(COMPETITION_KEY)); } catch { return false; }
 }
 let requestedPage = '';
-async function refreshCompetitionContext() {
-  /* 赛事域（M1）：顶栏把「切换赛事」升级成常显当前赛事名。 */
+async function refreshCompetitionContext(force = false) {
+  /* 赛事域（M1）：顶栏把「切换赛事」升级成常显当前赛事名。
+     渲染极频繁（分析页会多次重绘），这里用缓存 + 请求令牌防止「切换赛事」/
+     赛事名来回闪烁；同一赛事只解析一次，切赛事时 force 重新解析。 */
   const context = app.querySelector('[data-competition-context]');
   if (!context) return;
   let id = '';
   try { id = localStorage.getItem(COMPETITION_KEY) || ''; } catch {}
-  if (!id) { context.textContent = '选择赛事'; return; }
-  context.textContent = '切换赛事';
+  if (!id) {
+    competitionNameCache = '';
+    if (context.textContent !== '选择赛事') context.textContent = '选择赛事';
+    return;
+  }
+  if (!force && competitionNameCache) {
+    if (context.textContent !== competitionNameCache) context.textContent = competitionNameCache;
+    return;
+  }
+  /* 只有真的没有缓存（首次进入）才显示占位文字，避免已显示赛事名时又退化。 */
+  if (!competitionNameCache && context.textContent !== '切换赛事') context.textContent = '切换赛事';
+  const token = ++competitionContextToken;
   try {
     const response = await fetch(API_BASE + '/api/studio/workspace/competitions', { cache: 'no-store' });
     if (!response.ok) return;
     const data = await response.json();
+    if (token !== competitionContextToken) return;
     const found = (data.competitions || []).find((item) => String(item.id) === String(id));
-    try { localStorage.setItem(COMPETITION_KEY + '-name', (found && found.name) || ''); } catch {}
-    if (found && context.isConnected) context.textContent = found.name || '切换赛事';
+    if (found && found.name) {
+      competitionNameCache = String(found.name);
+      try { localStorage.setItem(COMPETITION_KEY + '-name', competitionNameCache); } catch {}
+      if (context.isConnected && context.textContent !== competitionNameCache) {
+        context.textContent = competitionNameCache;
+      }
+    }
   } catch { /* 名称解析失败不影响门控 */ }
 }
 
@@ -469,13 +555,18 @@ function applyGate() {
     else link.removeAttribute('aria-current');
   });
   const context = app.querySelector('[data-competition-context]');
-  if (context) context.textContent = locked ? '选择赛事' : '切换赛事';
+  /* 别在每次 applyGate 都把已解析的赛事名打回「切换赛事」。 */
+  if (context && (locked || !competitionNameCache)) {
+    const placeholder = locked ? '选择赛事' : '切换赛事';
+    if (context.textContent !== placeholder) context.textContent = placeholder;
+  }
   refreshCompetitionContext();
 }
 document.addEventListener('route:repainted', () => injectEventChip(current()));
 document.addEventListener('competition:selected', () => {
+  competitionNameCache = '';
   applyGate();
-  refreshCompetitionContext();
+  refreshCompetitionContext(true);
   if (hasCurrentCompetition() && requestedPage && current().name === 'competitions') {
     location.hash = requestedPage;
     requestedPage = '';
@@ -486,16 +577,20 @@ document.addEventListener('competition:selected', () => {
 let workbenchUI;
 function shell() {
   const brand = `<a class="desk-brand" href="#overview" aria-label="赛训数据首页"><img src="static/media/mark.svg" alt="" width="32" height="32">赛训数据</a>`;
-  const navLink = ([key, label]) => `<a href="${navHref(key)}" data-nav="${key}">${icon(key === 'series-builder' ? 'seriesbuilder' : key) || ''}<span>${label}</span></a>`;
+  const navLink = ([key, label]) => `<a href="${navHref(key)}" data-nav="${key}">${icon(key === 'series-builder' || key === 'matching' ? 'seriesbuilder' : key) || ''}<span>${label}</span></a>`;
+  /* 按 key 取导航项，不用 slice 下标：nav 是「主导航 + 各板块页签」的合集，
+     之前插入「快照中心」就把管理组的下标挤掉了，新增的「外部数据源」不显示。 */
+  const navByKey = new Map(nav);
   const groups = [
-    ['工作台', nav.slice(0, 6)],
-    ['备战（赛后复盘）', nav.slice(6, 9)],
-    ['情报（赛前准备）', nav.slice(9, 13)],
-    ['配置（规则库）', nav.slice(13, 14)],
-    ['管理', nav.slice(14, 16)],
-  ];
+    ['工作台', ['overview', 'competitions', 'team-profile', 'opponents', 'ingest', 'matching']],
+    ['赛训与复盘', ['match-notes', 'matches', 'biggame', 'cross']],
+    ['情报（赛前准备）', ['teams', 'players', 'heroes', 'bp']],
+    ['配置（规则库）', ['rules']],
+    ['管理', ['snapshot-center', 'sources', 'docs', 'source-health']],
+  ].map(([title, keys]) => [title,
+    keys.map((key) => [key, navByKey.get(key) || key]).filter(([, label]) => Boolean(label))]);
   const navigation = groups.map(([title, entries]) => `<div class="desk-group"><span>${title}</span>${entries.map(navLink).join('')}</div>`).join('');
-  const tools = `<button type="button" data-action="checklist">${icon('help')}初始化清单</button><a href="kpl-client://open" data-action="open-client">${icon('client')}打开客户端</a>`;
+  const tools = `<button type="button" data-action="checklist">${icon('help')}上手引导</button><a href="kpl-client://open" data-action="open-client">${icon('client')}打开客户端</a>`;
   app.innerHTML = `<aside class="desk-rail">${brand}<nav class="desk-links main-nav" aria-label="主导航">${navigation}</nav><div class="desk-tools">${tools}</div></aside>
   <header class="desk-bar">
     <button type="button" class="desk-icon menu-button" data-action="menu" aria-label="打开导航" aria-expanded="false" aria-controls="ui-navigation">${icon('menu')}</button>
@@ -506,12 +601,12 @@ function shell() {
   </header>
   <dialog id="ui-navigation" class="desk-drawer" aria-label="页面导航" closedby="any"><div class="desk-drawer-head">${brand}<button type="button" class="desk-icon" data-ui-close aria-label="关闭导航" autofocus>${icon('close')}</button></div><nav class="desk-links" aria-label="移动导航">${navigation}</nav><div class="desk-tools ui-drawer-tools">${tools}</div></dialog>
   <dialog id="ui-command" class="ui-command" aria-label="搜索页面与功能" closedby="any"><div class="ui-command-head">${icon('search')}<input type="search" class="ui-command-input" role="combobox" aria-autocomplete="list" aria-controls="ui-command-results" aria-expanded="true" aria-label="搜索页面与功能" placeholder="搜索页面与功能…" autocomplete="off" autofocus><button type="button" class="head-button" data-ui-close aria-label="关闭搜索">${icon('close')}</button></div><div id="ui-command-results" class="ui-command-results" role="listbox" aria-label="搜索结果" data-command-results></div><div class="ui-command-foot"><span>↑ ↓ 选择 · Enter 打开 · Esc 关闭</span><span data-command-count></span></div></dialog>
-  <div class="demo-banner" hidden><strong>演示模式</strong> 所有比赛、选手与分析均为虚构数据，仅供体验。<button data-action="demo">返回真实数据 →</button></div>
+  <div class="demo-banner" hidden><strong>演示模式</strong> 所有比赛、选手与分析均为虚构数据，仅供体验。<button data-action="demo">${glyph('arrow-up', { size: 18 })} 返回真实数据</button></div>
   <div class="secondary-wrap"><nav class="secondary-nav" aria-label="分类导航"></nav><label class="desk-page-select"><span>板块页面</span><select aria-label="切换板块页面"></select></label></div>
   <div class="desk-event-chip" id="desk-event-chip" hidden></div>
   <p class="desk-handoff" role="status" hidden></p>
   <main id="content" tabindex="-1"></main>
-  <footer class="footer"><span>赛训数据</span><span class="footer-actions"><button type="button" class="footer-update" data-action="check-update">检查更新</button></span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
+  <footer class="footer"><span>赛训数据</span><span class="footer-actions"><a href="#docs?chapter=about" class="footer-about">关于作者与项目来源</a><button type="button" class="footer-update" data-action="check-update">${glyph('refresh', { size: 18 })} 检查更新</button></span><span>英雄资料来自王者荣耀官方，相关权利归原权利人。</span></footer>
   <dialog id="filters"></dialog>`;
   applyTheme();
   workbenchUI = createWorkbenchUI({ app, nav, labels, icon, esc, navHref, sectionFor, featureSections });
@@ -556,7 +651,7 @@ function openInbox() {  const data = inboxState;
       body = items.map((item) => `<div class="sx-inbox-map" data-old-id="${esc(item.oldId)}">
         <span><b>${esc(item.oldId)}</b><small>${fmt(item.matches)} 局</small></span>
         <select aria-label="映射到战队">${(data.teams || []).map((team) => `<option value="${esc(team.id)}">${esc(team.name)}</option>`).join('')}</select>
-        <button type="button" class="control" data-sx-map-opponent>映射</button>
+        <button type="button" class="control" data-sx-map-opponent>${glyph('compare', { size: 18 })} 应用映射</button>
       </div>`).join('');
     } else if (items.length) {
       body = `<div class="sx-inbox-items">${items.map((item) => `<a href="${esc(item.href)}" data-sx-inbox-link>${esc(item.label)}</a>`).join('')}</div>`;
@@ -564,10 +659,10 @@ function openInbox() {  const data = inboxState;
     return `<section class="sx-inbox-group">
       <header><b>${esc(group.label)}</b><strong>${fmt(group.count)}</strong></header>
       <p>${esc(group.note || '')}</p>${body}
-      ${group.key !== 'unmapped' ? `<a class="sx-inbox-go" href="${esc(group.href)}" data-sx-inbox-link>去处理 →</a>` : ''}
+      ${group.key !== 'unmapped' ? `<a class="sx-inbox-go" href="${esc(group.href)}" data-sx-inbox-link>${glyph('arrow-up', { size: 18 })} 去处理</a>` : ''}
     </section>`;
   }).join('');
-  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">INBOX</span><h2>待处理 ${fmt(data.total || 0)} 项</h2></div><button type="button" class="sx-dialog-x" data-sx-inbox-close aria-label="关闭">×</button></div><p class="sx-dialog-note">先清数据，再看报告；这里只列需要人工判断的事项。</p><div class="sx-inbox-groups">${groups || '<p class="sx-empty">当前没有待处理项。</p>'}</div>`;
+  dialog.innerHTML = `<div class="sx-dialog-head"><div><span class="sx-eyebrow">INBOX</span><h2>${glyph('warning', { size: 20 })} 待处理 ${fmt(data.total || 0)} 项</h2></div><button type="button" class="sx-dialog-x" data-sx-inbox-close aria-label="关闭">×</button></div><div class="sx-inbox-groups">${groups || `<div class="sx-empty">${glyph('victory', { size: 32 })}<strong>没有待处理项</strong></div>`}</div>`;
   if (!dialog.open) dialog.showModal();
 }
 
@@ -622,9 +717,10 @@ function teamSkeleton() {
   </div>`;
 }
 function pageIntro(title, subtitle, right = '') {
-  return `<div class="page-intro"><div><h1>${esc(title)}</h1>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div>
-    <div class="intro-actions">${right}<button class="control" data-action="filter">${icon('filter')} 数据范围</button>
-    <button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></div></div>`;
+  /* 标题下不再摆说明小字；口径与限制放在各区块正文里，按钮自己要一眼看懂。 */
+  return `<div class="page-intro"><div><h1>${esc(title)}</h1></div>
+    <div class="intro-actions">${right}<button class="control" data-action="filter">${glyph('calendar', { size: 18 })} 筛选范围</button>
+    <button class="control icon-control" data-action="refresh" aria-label="刷新数据">${glyph('refresh', { size: 18 })}</button></div></div>`;
 }
 
 function gameAnchorBar() {
@@ -841,13 +937,15 @@ function applyArchiveSort(sort) {
    事件委托照常工作；标签与备注按钮放在 <a> 外侧，避免交互元素嵌套。 */
 function matchRows(rows, dayNo = new Map()) {
   if (!rows.length) {
-    const clear = '<button type="button" class="mf-clear" data-mf-clear>清除筛选</button>';
-    if (view.archiveTagKeys?.size) return `<div class="empty">标签在全库有命中，但都不在当前数据范围。点右上「数据范围」放宽日期、来源或验证数据后再查。${clear}</div>`;
+    const clear = `<button type="button" class="control" data-mf-clear>${glyph('refresh', { size: 18 })} 清除筛选</button>`;
+    const ingest = `<a class="primary" href="#ingest">${glyph('capture', { size: 18 })} 采集对局</a>`;
+    const formal = `<a class="control" href="#official-entry">${glyph('edit', { size: 18 })} 录正式比赛</a>`;
+    if (view.archiveTagKeys?.size) return `<div class="empty">${glyph('matches', { size: 52 })}<strong>标签命中不在当前范围</strong><p>这些标签在全库有命中，但都不在当前数据范围。</p><p>${clear}</p></div>`;
     /* 空态按类型给去处：正式比赛是空多半是还没录，训练赛是空多半是还没采集。 */
     const type = matchFilters().type || 'training';
-    if (type === 'formal') return `<div class="empty">还没有正式比赛。到「赛训 → 正式比赛录入」录一场 BO 系列赛，逐局数据会存进这里。${clear}</div>`;
-    if (type === 'all') return `<div class="empty">当前范围暂无对局。换个筛选条件，先到「采集」导入训练赛，或到「正式比赛录入」登记正式比赛。${clear}</div>`;
-    return `<div class="empty">当前范围暂无训练赛对局。换个筛选条件，或先到「采集」导入比赛。${clear}</div>`;
+    if (type === 'formal') return `<div class="empty">${glyph('matches', { size: 52 })}<strong>还没有正式比赛</strong><p>${clear}${formal}</p></div>`;
+    if (type === 'all') return `<div class="empty">${glyph('matches', { size: 52 })}<strong>当前范围暂无对局</strong><p>${clear}${ingest}${formal}</p></div>`;
+    return `<div class="empty">${glyph('matches', { size: 52 })}<strong>当前范围暂无训练赛</strong><p>${clear}${ingest}</p></div>`;
   }
   const item = (match) => {
     const no = dayNo.get(match.key);
@@ -856,7 +954,7 @@ function matchRows(rows, dayNo = new Map()) {
     const noteCount = (archiveNotesMap[match.key] || []).length;
     const matchTags = tagsOf(match.key) || [];
     const hiddenTags = matchTags.slice(3);
-    const opponentTitle = match.opponent ? `对手：${match.opponent}` : '对手未标注，点后面的铅笔补上';
+    const opponentTitle = match.opponent ? `对手：${match.opponent}` : '对手未标注';
     const shortResult = { win: '胜', loss: '负', draw: '平' }[match.result] || '—';
     return `<div class="match-row-wrap archive-row-wrap" data-match-key="${esc(match.key)}">
       <label class="archive-pick"><input type="checkbox" data-archive-check="${esc(match.key)}"
@@ -864,11 +962,7 @@ function matchRows(rows, dayNo = new Map()) {
       <a class="match-row archive-row" href="${esc(route('match', match.key))}">
         <span class="archive-when"><b>${esc((match.date || '日期未知').slice(5))}</b><small>${esc(clock || (no ? `第 ${no} 局` : (match.date || '').slice(0, 4)))}</small></span>
         <span class="archive-opponent"><small>${match.isSeed ? '验证对局' : esc(match.mode || match.session || '训练赛')}${match.gameNo ? ` · 第 ${fmt(match.gameNo)} 局` : (no ? ` · 第 ${no} 局` : '')}</small>
-          <span class="archive-opponent-line"><b title="${esc(opponentTitle)}">${esc(match.opponent ? '对阵 ' + match.opponent : '对手未标注')}</b>
-            <button type="button" class="archive-rename-inline" data-match-edit="${esc(match.key)}"
-              data-opponent="${esc(match.opponent || '')}" data-team-id="${esc(match.opponentTeamId || '')}"
-              aria-label="${match.opponentTeamId ? '给对手战队改名（全站同步）：' : '修改这一局的对手队名：'}${esc(match.opponent || '未标注')}"
-              title="${match.opponentTeamId ? '给这支对手战队改名（全站同步）' : '修改对手队名'}">${icon('edit')}</button></span></span>
+          <span class="archive-opponent-line"><b title="${esc(opponentTitle)}">${esc(match.opponent ? '对阵 ' + match.opponent : '对手未标注')}</b></span></span>
         <span class="result ${esc(match.result)}"><i aria-hidden="true"></i>${shortResult}</span>
         <strong class="row-score" title="击杀数 · 本队 : 对面">${score(match)}</strong>
         <span class="match-duration" title="本局时长">${time(match.duration)}</span>
@@ -922,11 +1016,11 @@ function opponentDialog(key, current, teamId) {
   const dialog = dialogFor();
   dialog.setAttribute('aria-labelledby', 'opponent-dialog-title');
   const linked = Boolean(teamId);
-  dialog.innerHTML = `<form id="opponent-form" data-key="${esc(key)}" data-team-id="${esc(teamId || '')}"><div class="dialog-head"><div><h2 id="opponent-dialog-title">${linked ? '给对手战队改名' : '编辑对手队名'}</h2><p>${linked ? '队名由「战队分析」统一管理：改名后这支对手的全部对局同步更新（对局档案、系列赛编组、跨局分析都跟着变）。' : '只影响本机显示与统计，不改原始数据包；留空表示「对手未标注」。'}</p></div>
+  dialog.innerHTML = `<form id="opponent-form" data-key="${esc(key)}" data-team-id="${esc(teamId || '')}"><div class="dialog-head"><div><h2 id="opponent-dialog-title">${linked ? '给对手战队改名' : '编辑对手队名'}</h2><p>${linked ? '队名由「战队分析」统一管理：改名后这支对手的全部对局同步更新（对局档案、系列赛编组、跨场分析都跟着变）。' : '只影响本机显示与统计，不改原始数据包；留空表示「对手未标注」。'}</p></div>
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body"><label>对手战队/队名<input name="opponent" maxlength="50" value="${esc(current)}" placeholder="例如：漂流网咖" autofocus${linked ? ' required' : ''}></label>
     <p class="filter-error" role="alert"></p></div>
-    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">保存</button></div></form>`;
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">${glyph('shield', { size: 18 })} 保存</button></div></form>`;
   dialog.showModal();
   dialog.querySelector('input[name="opponent"]')?.focus();
 }
@@ -964,7 +1058,7 @@ function bulkOpponentDialog() {
     <div class="dialog-body"><label>对手战队/队名<input name="opponent" maxlength="50" placeholder="例如：漂流网咖" required></label>
     <div class="bulk-days"><span>将修改这些对局</span><ul>${dayList}</ul></div>
     <p class="filter-error" role="alert"></p></div>
-    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">保存到 ${fmt(targets.length)} 场</button></div></form>`;
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">${glyph('shield', { size: 18 })} 保存到 ${fmt(targets.length)} 场</button></div></form>`;
   dialog.showModal();
   dialog.querySelector('input[name="opponent"]')?.focus();
 }
@@ -974,35 +1068,32 @@ function bulkOpponentDialog() {
 function welcomePage() {
   return `<div class="page welcome-page">
     <section class="welcome-hero">
+      ${glyph('capture', { size: 52 })}
       <span class="welcome-eyebrow">第一次使用</span>
       <h1>先把第一局拿进来</h1>
-      <p>这个工作台不自带比赛数据。三种方式任选一种，三分钟就能看到一场完整复盘；之后每天打开它，新对局会排到待处理。</p>
     </section>
     <div class="welcome-paths">
       <a class="welcome-path is-primary" href="#ingest">
         <span class="welcome-no">01 · 推荐</span>
-        <b>扫码采集</b>
-        <p>教练号扫码授权一次，之后每天拉取最近的训练赛。BP 与十人面板最完整。</p>
+        <b>${glyph('capture', { size: 20 })} 扫码采集</b>
         <em>适合已经在打训练赛</em>
       </a>
       <button class="welcome-path" data-action="open-client">
         <span class="welcome-no">02 · 复盘</span>
-        <b>打开桌面客户端</b>
-        <p>工作台负责采集与缺失值审查，客户端负责逐分钟复盘；两边读同一套本机数据。</p>
+        <b>${glyph('arrow-up', { size: 20 })} 打开桌面客户端</b>
         <em>需要先安装客户端</em>
       </button>
       <a class="welcome-path" href="#capture">
         <span class="welcome-no">03 · 兜底</span>
-        <b>导入表格 / 截图</b>
-        <p>已经有赛后表格、七张截图或录屏，直接从文件开始；没有营地授权也能用。</p>
+        <b>${glyph('export', { size: 20 })} 导入表格 / 截图</b>
         <em>适合先补一局</em>
       </a>
     </div>
     <section class="welcome-foot">
       <div><span>数据目录</span><code data-welcome-dir>正在读取…</code></div>
       <div class="welcome-actions">
-        <button class="control" data-action="open-data">打开数据目录</button>
-        <button class="control" data-action="refresh">我已经有数据</button>
+        <button class="control" data-action="open-data">${glyph('sources', { size: 18 })} 打开数据目录</button>
+        <button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 重新检查数据</button>
       </div>
     </section>
     <div class="welcome-legacy" data-welcome-legacy hidden></div>
@@ -1012,7 +1103,7 @@ function welcomePage() {
       <div class="welcome-other-row">
         <input class="control" type="text" data-welcome-path spellcheck="false"
           placeholder="粘贴旧数据目录，例如 D:\\KPL训练赛项目\\data">
-        <button class="control" data-action="migrate-path">搬到这台电脑</button>
+        <button class="control" data-action="migrate-path">${glyph('arrow-up', { size: 18 })} 搬到这台电脑</button>
       </div>
       <label class="welcome-check"><input type="checkbox" data-migrate-heavy checked> 连同回放与录屏一起搬（热区、深度分析要用）</label>
       <p>只读取旧目录，不改动它；这台电脑的库里已经有对局时不会执行。</p>
@@ -1106,7 +1197,7 @@ async function hydrateWelcome() {
           <span>${fmt(old.matches || 0)} 局${when ? ` · 最后更新 ${esc(when)}` : ''}</span></div>
         <p><code>${esc(old.path)}</code> 是之前那份训练数据，可以整库搬过来，不用自己复制文件夹。</p>
         <div class="welcome-legacy-actions">
-          <button class="control is-primary" data-action="migrate-legacy" data-path="${esc(old.path)}">搬到这台电脑</button>
+          <button class="control is-primary" data-action="migrate-legacy" data-path="${esc(old.path)}">${glyph('arrow-up', { size: 18 })} 搬到这台电脑</button>
           <label class="welcome-check"><input type="checkbox" data-migrate-heavy checked> 连同回放与录屏（热区、深度分析要用，体积大）</label>
         </div>`;
     }
@@ -1125,8 +1216,8 @@ function showNoDataDialog() {
   const dialog = dialogFor();
   if (!dialog || dialog.open) return;
   dialog.classList.add('is-wide');
-  dialog.innerHTML = `<div class="dialog-head"><div><h2>还没有对局数据</h2>
-    <p>这个工作台不自带比赛数据，先拿一局进来；弹窗关掉后仍是首页，随时可以再打开。</p></div>
+  dialog.innerHTML = `<div class="dialog-head"><div><h2>${glyph('warning', { size: 20 })} 还没有对局数据</h2>
+    <p>这个工作台不自带比赛数据，先拿一局进来。</p></div>
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body welcome-in-dialog">${welcomePage()}</div>
     <div class="dialog-actions"><button type="button" class="control" data-action="close">稍后</button></div>`;
@@ -1180,7 +1271,7 @@ function readMatchFiltersQuery() {
   const params = new URLSearchParams(query);
   const list = (name) => String(params.get(name) || '').split(',').map((x) => x.trim()).filter(Boolean);
   const type = String(params.get('type') || 'training');
-  const mf = { type: ['training', 'formal', 'all'].includes(type) ? type : 'training', opponents: list('opp'), heroes: list('hero'), days: list('day'), results: list('res'), from: String(params.get('from') || ''), to: String(params.get('to') || '') };
+  const mf = { type: ['training', 'all'].includes(type) ? type : 'training', opponents: list('opp'), heroes: list('hero'), days: list('day'), results: list('res'), from: String(params.get('from') || ''), to: String(params.get('to') || '') };
   const search = String(params.get('q') || '');
   if (!matchFiltersActive(mf) && !search && mf.type === 'training') return null;
   return { mf, search };
@@ -1217,7 +1308,7 @@ function restoreMatchFilters() {
     const saved = JSON.parse(localStorage.getItem(MF_STORAGE) || 'null');
     if (saved && matchFiltersActive(saved)) {
       view.matchFilters = { type: 'training', opponents: [], heroes: [], days: [], results: [], from: '', to: '', ...saved };
-      if (!['training', 'formal', 'all'].includes(view.matchFilters.type)) view.matchFilters.type = 'training';
+      if (!['training', 'all'].includes(view.matchFilters.type)) view.matchFilters.type = 'training';
       syncMatchHash();
     }
   } catch {}
@@ -1320,7 +1411,7 @@ function matchFilterBar(total, shown) {
   }
   const seg = (value, label, count) => `<button type="button" class="mf-seg${(mf.type || 'training') === value ? ' is-on' : ''}" data-mf-type="${value}" aria-pressed="${(mf.type || 'training') === value}">${label}<b>${fmt(count)}</b></button>`;
   return `<div class="mfilter" data-filter-bar>
-    <div class="mf-seg-group" role="group" aria-label="比赛类型">${seg('training', '训练赛', typeCounts.training)}${seg('formal', '正式比赛', typeCounts.formal)}${seg('all', '全部', typeCounts.training + typeCounts.formal)}</div>
+    <div class="mf-seg-group" role="group" aria-label="比赛类型">${seg('training', '训练赛', typeCounts.training)}${seg('all', '全部', typeCounts.training + typeCounts.formal)}</div>
     <div class="mf-pills">${pill('opponent', '对手', mf.opponents.length)}${pill('result', '胜负', mf.results.length)}${pill('hero', '英雄', mf.heroes.length)}${pill('day', '日期', mf.days.length)}${pill('tag', '标签', view.archiveTagKeys?.size || 0)}</div>
     ${chips ? `<div class="mf-chips" data-mf-chips>${chips}</div>` : '<div class="mf-chips" data-mf-chips></div>'}
     <span class="archive-tag-hint" data-archive-tag-count></span>
@@ -1347,8 +1438,8 @@ function matchFilterPanel(kind) {
       <em>${fmt(count)} 局</em></label>`).join('');
     const noneCount = facets.opponents.find(([name]) => name === MF_NONE)?.[1] || 0;
     return `<div class="mf-pop-head"><input class="mf-q" data-mf-q="opponent" placeholder="搜索对手" aria-label="搜索对手"></div>
-      <div class="mf-pop-list" data-mf-list><div class="mf-opt-empty">还没有填过对手队名，先在行尾铅笔里补。</div>${rows}</div>
-      <div class="mf-pop-foot"><span>可多选，命中任一对手</span><span class="mf-foot-btns">${noneCount ? `<button type="button" class="mf-bulk" data-mf-bulk>批量补队名 (${fmt(noneCount)})</button>` : ''}<button type="button" data-mf-reset="opponents">清空</button></span></div>`;
+      <div class="mf-pop-list" data-mf-list><div class="mf-opt-empty">还没有填过对手队名</div>${rows}</div>
+      <div class="mf-pop-foot"><span>可多选，命中任一对手</span><span class="mf-foot-btns">${noneCount ? `<button type="button" class="mf-bulk" data-mf-bulk>${glyph('edit', { size: 18 })} 批量补队名 (${fmt(noneCount)})</button>` : ''}<button type="button" data-mf-reset="opponents">清空</button></span></div>`;
   }
   if (kind === 'result') {
     const counts = { win: 0, loss: 0, unknown: 0 };
@@ -1376,9 +1467,8 @@ function matchFilterPanel(kind) {
       </label>`;
     }).join('');
     return `<div class="mf-pop-head"><input class="mf-q" data-mf-q="hero" placeholder="搜索英雄" aria-label="搜索英雄"></div>
-      <div class="mf-pop-tip">选 2 个以上，只看这些英雄<span>同时出场</span>的局（2 人组合 / 3 人组合…）</div>
       <div class="mf-pop-grid" data-mf-list>${rows}</div>
-      <div class="mf-pop-foot"><span>${mf.heroes.length ? `已选 ${mf.heroes.length} 个 · 同一局同时出场` : '按出场次数排序'}</span><button type="button" data-mf-reset="heroes">清空</button></div>`;
+      <div class="mf-pop-foot"><span>${mf.heroes.length ? `已选 ${mf.heroes.length} 个 · 同一局同时出场` : ''}</span><button type="button" data-mf-reset="heroes">清空</button></div>`;
   }
   const dayRows = facets.days.map(([day, count]) => `<label class="mf-opt">
     <input type="checkbox" data-mf-opt="days" data-mf-value="${esc(day)}" ${mf.days.includes(day) ? 'checked' : ''}>
@@ -1391,7 +1481,7 @@ function matchFilterPanel(kind) {
       <i>—</i>
       <input type="date" data-mf-cal="to" value="${esc(mf.to || '')}" aria-label="结束日期">
     </div>
-    <div class="mf-pop-foot"><span>勾选整天，或填起止日期</span><button type="button" data-mf-reset="days">清空</button></div>`;
+    <div class="mf-pop-foot"><span>按日期筛选</span><button type="button" data-mf-reset="days">清空</button></div>`;
 }
 
 /* 搜索命中用 CSS Custom Highlight 标出来，不改 DOM 结构、不碰事件委托。
@@ -1579,7 +1669,7 @@ function updateMatchFilter(kind, value, checked) {
         const temp = document.createElement('div');
         temp.innerHTML = matchFilterPanel('hero');
         list.innerHTML = temp.querySelector('[data-mf-list]')?.innerHTML || '';
-        pop.querySelector('.mf-pop-foot span').textContent = mf.heroes.length ? `已选 ${mf.heroes.length} 个 · 同一局同时出场` : '按出场次数排序';
+        pop.querySelector('.mf-pop-foot span').textContent = mf.heroes.length ? `已选 ${mf.heroes.length} 个 · 同一局同时出场` : '';
       }
     }
   }
@@ -1668,7 +1758,7 @@ async function openArchiveNote(key) {
   let lastAuthor = '';
   try { lastAuthor = localStorage.getItem('training-note-author') || ''; } catch { lastAuthor = ''; }
   dialog.innerHTML = `<form id="archive-note-form" data-key="${esc(key)}"><div class="dialog-head"><div>
-    <h2 id="archive-note-title">教练备注</h2><p>写在这场比赛上，统一搜索一起查。同一场可以留多条。</p></div>
+    <h2 id="archive-note-title">${glyph('book', { size: 20 })} 教练备注</h2></div>
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body">
       <section class="archive-note-history"><h3>已有备注</h3><p class="archive-note-loading">读取备注…</p></section>
@@ -1681,7 +1771,7 @@ async function openArchiveNote(key) {
       </section>
       <p class="filter-error" role="alert"></p></div>
     <div class="dialog-actions"><button type="button" class="control" data-action="close">关闭</button>
-      <button class="primary" type="submit">保存备注</button></div></form>`;
+      <button class="primary" type="submit">${glyph('book', { size: 18 })} 保存备注</button></div></form>`;
   dialog.showModal();
   try {
     const response = await fetch(API_BASE + '/api/studio/notes?match_key=' + encodeURIComponent(key));
@@ -1690,10 +1780,10 @@ async function openArchiveNote(key) {
     const host = dialog.querySelector('.archive-note-loading');
     if (!host.isConnected) return;
     host.className = 'archive-note-list';
-    if (!notes.length) { host.textContent = '这场还没有备注，直接在下面新增第一条。'; return; }
+    if (!notes.length) { host.textContent = '这场还没有备注。'; return; }
     host.innerHTML = notes.map((note) => `<article class="archive-note-item"><p>${esc(note.body)}</p>
       <footer><small>${esc(note.author || '未署名')}${note.updatedAt ? ` · ${esc(new Date(note.updatedAt * 1000).toLocaleString('zh-CN'))}` : ''}</small>
-      <button type="button" data-archive-note-del="${esc(note.id)}" aria-label="删除这条备注">删除</button></footer></article>`).join('');
+      <button type="button" data-archive-note-del="${esc(note.id)}" aria-label="删除这条备注">${glyph('trash', { size: 18 })} 删除</button></footer></article>`).join('');
   } catch {
     const host = dialog.querySelector('.archive-note-loading');
     if (host) host.textContent = '备注读取失败，可以直接在下方新增。';
@@ -1724,16 +1814,15 @@ function matchesPage(value, key) {
     <span class="archive-summary-note">按当前筛选实时计算 · 全库 ${fmt(value.matches.length)} 场</span>
   </div>`;
   const selected = view.archiveSelected?.size || 0;
-  return `<div class="page fixture-page archive-page">${pageIntro('对局档案')}
+  return `<div class="page fixture-page archive-page">${pageIntro('单局分析')}
     ${summary}
     <section class="section fixture-ledger archive-ledger${view.archiveBatch ? ' is-batch' : ''}" aria-label="${hero ? esc(hero) + '的对局' : { training: '训练赛档案', formal: '正式比赛档案', all: '全部对局档案' }[mf.type || 'training']}">
       <div class="mf-toolbar archive-toolbar">
         <label class="search mf-search">${icon('search')}<input type="search" name="search" value="${esc(view.search || '')}" placeholder="搜对手 / 英雄 / 标签 / 备注" aria-label="搜索对局"></label>
         ${matchFilterBar(value.matches.length, rows.length)}
-        <button type="button" class="archive-batch-toggle${view.archiveBatch ? ' is-on' : ''}" data-archive-batch aria-pressed="${Boolean(view.archiveBatch)}">批量打标签</button>
+        <button type="button" class="archive-batch-toggle${view.archiveBatch ? ' is-on' : ''}" data-archive-batch aria-pressed="${Boolean(view.archiveBatch)}">${glyph('book', { size: 18 })} 批量打标签</button>
       </div>
       <div class="archive-list-head">
-        <span>击杀比为本队 : 对面 · 头像角标为真实分路，缺失则不标</span>
         <div class="archive-sort" role="group" aria-label="对局排序">
           <span class="archive-sort-label">排序</span>
           ${ARCHIVE_SORTS.map((item) => `<button type="button" class="archive-sort-btn${archiveSortKey() === item.key ? ' is-on' : ''}" data-archive-sort="${item.key}" aria-pressed="${archiveSortKey() === item.key}" title="${item.hint}">${item.label}</button>`).join('')}
@@ -1744,17 +1833,17 @@ function matchesPage(value, key) {
         <div class="archive-bulk-library"><span>标签库</span>
           <div class="archive-bulk-tags" data-archive-bulk-tags>${vocabulary().length
             ? vocabulary().slice(0, 12).map((item) => `<button type="button" data-archive-bulk-tag-name="${esc(item.name)}" title="${fmt(item.count)} 场">${esc(item.name)}</button>`).join('')
-            : '<span class="archive-bulk-empty">还没有标签，先在行里新建</span>'}</div>
+            : `<span class="archive-bulk-empty">${glyph('book', { size: 18 })} 还没有标签</span>`}</div>
         </div>
         <datalist id="archive-bulk-tag-options">${vocabulary().map((item) => `<option value="${esc(item.name)}"></option>`).join('')}</datalist>
         <b data-archive-selected>已选 ${fmt(selected)} 场</b>
-        <button type="button" data-archive-select-all data-archive-bulk="select-all">全选当前结果</button>
+        <button type="button" data-archive-select-all data-archive-bulk="select-all">${glyph('pick', { size: 18 })} 全选当前结果</button>
         <button type="button" data-archive-bulk="invert">反选</button>
         <label><span>标签名</span><input type="text" data-archive-bulk-tag maxlength="16" placeholder="点上面的标签或输入新标签" aria-label="批量操作的标签名" list="archive-bulk-tag-options" autocomplete="off"></label>
-        <button type="button" class="primary" data-archive-bulk="add">添加到所选</button>
-        <button type="button" data-archive-bulk="remove">从所选移除</button>
-        <button type="button" data-archive-bulk="clear">清空选择</button>
-        <button type="button" data-archive-bulk="exit">退出批量</button>
+        <button type="button" class="primary" data-archive-bulk="add">${glyph('book', { size: 18 })} 添加到所选</button>
+        <button type="button" data-archive-bulk="remove">${glyph('trash', { size: 18 })} 从所选移除</button>
+        <button type="button" data-archive-bulk="clear">${glyph('ban', { size: 18 })} 清空选择</button>
+        <button type="button" data-archive-bulk="exit">${glyph('arrow-up', { size: 18 })} 退出批量</button>
         <span class="archive-bulk-status" data-archive-bulk-status role="status"></span>
       </div>
       <div data-results>${matchRows(rows, dayNumbers(value.matches))}</div></section></div>`;
@@ -1798,25 +1887,25 @@ function playersPage(value) {
     const lane = member ? member.position : (p.positions || []).join(' / ');
     return [`<a class="text-link" href="${esc(route('player', p.playerKey))}">${esc(p.label)}</a>`, esc(lane || '—'), fmt(p.matches), pct(p.winRate), fmt(p.kda, 2), fmt(p.gpm, 1), fmt(p.dpm, 1), pct(p.participation)];
   });
-  const emptyRoster = '<div class="empty">本队名单还没建立。先在「赛训 → 数据准备 → 建档」登记选手，或在「选手认领」把对局昵称并入名单。</div>';
-  return `<div class="page">${pageIntro('名单与状态', '谁在打、谁状态在变、谁和谁能搭。名单取自建档，表现只统计已认领身份。')}
+  const emptyRoster = `<div class="empty">${glyph('players', { size: 52 })}<strong>本队名单还没建立</strong><p>名单取自建档，表现只统计已认领身份。</p><p><a class="primary" href="#profiles">${glyph('players', { size: 18 })} 去建档</a></p></div>`;
+  return `<div class="page">${pageIntro('名单与状态')}
     <div class="analysis-observation"><span>结论</span><p>${esc(brief)}</p></div>
     ${unbound.length ? `<div class="scope-note"><span>身份待认领</span>还有 ${fmt(unbound.length)} 个昵称没有并入名单（${fmt(summary.unboundGames)} 局），不计入名单、状态与排名。命名入口在下方「待命名」。</div>` : ''}
     <section class="section"><div class="section-heading"><div><h2>名单与轮换</h2><p>位置取自名单；出场为当前范围内的已认领记录</p></div><a href="#identity">管理名单 ${icon('arrow')}</a></div>
       <div class="player-card-grid">${roster.map(card).join('') || emptyRoster}</div>
       ${bench.length ? `<p class="roster-bench"><span>本期未出场</span>${bench.map((p) => esc(p.label) + (p.position ? '（' + esc(p.position) + '）' : '')).join('、')}</p>` : ''}</section>
-    ${unbound.length ? `<section class="section"><div class="section-heading"><div><h2>待命名</h2><p>给昵称起名并归队后，这些局会并入该选手的长期档案</p></div></div>
-      <div class="name-queue">${unbound.map((item) => `<div class="name-row"><span class="nm">${esc(item.label)}</span><span class="meta">${fmt(item.games)} 局${item.lastDate ? ' · 最近 ' + esc(shortDate(item.lastDate)) : ''}</span><button class="primary" data-action="name-player" data-label="${esc(item.label)}">命名并归队</button></div>`).join('')}</div></section>` : ''}
+    ${unbound.length ? `<section class="section"><div class="section-heading"><div><h2>待命名</h2></div></div>
+      <div class="name-queue">${unbound.map((item) => `<div class="name-row"><span class="nm">${esc(item.label)}</span><span class="meta">${fmt(item.games)} 局${item.lastDate ? ' · 最近 ' + esc(shortDate(item.lastDate)) : ''}</span><button class="primary" data-action="name-player" data-label="${esc(item.label)}">${glyph('players', { size: 18 })} 命名并归队</button></div>`).join('')}</div></section>` : ''}
     <div class="split-panels">
       <section class="section"><div class="section-heading"><div><h2>状态变化</h2><p>同一名选手近 3 场与此前 3 场的营地评分，不跨选手排名</p></div></div>
-        ${formRows ? `<div class="form-rows"><div class="form-row head"><span>选手</span><span>位置</span><span>此前</span><i></i><span>近 3 场</span><span>变化</span><span>判断</span></div>${formRows}</div>` : `<div class="empty">${(value.form || []).some((item) => item.samples) ? '还没有已认领选手的评分记录。' : '当前范围的记录还没有营地评分，状态要等评分数据补齐。'}</div>`}
+        ${formRows ? `<div class="form-rows"><div class="form-row head"><span>选手</span><span>位置</span><span>此前</span><i></i><span>近 3 场</span><span>变化</span><span>判断</span></div>${formRows}</div>` : `<div class="empty">${glyph('chart', { size: 52 })}<strong>状态样本不足</strong><p>${(value.form || []).some((item) => item.samples) ? '还没有已认领选手的评分记录。' : '当前范围的记录还没有营地评分，状态要等评分数据补齐。'}</p></div>`}
         <p class="section-note">少于 6 场不给趋势结论；评分来自营地结算。</p></section>
       <section class="section"><div class="section-heading"><div><h2>搭档</h2><p>同场 3 场以上的双人组合，只用已认领身份</p></div></div>
         ${pairRows ? `<div class="pair-rows">${pairRows}</div>` : '<div class="empty">同场 3 场以上的固定组合还不够。</div>'}
         <p class="section-note">同场指同一局同时出场，未要求完整五人阵容。${pairs.length > 1 && pairs.every((pair) => pair.games === pairs[0].games) ? ' 当前这套阵容基本固定，组合之间没有差别。' : ''}</p></section>
     </div>
     <section class="section"><div class="section-heading"><div><h2>已认领选手数据</h2><p>${bound.length} 名已认领选手；未认领昵称不计入</p></div></div>
-      ${bound.length ? `<details class="table-disclosure"><summary>查看数据明细 <span>${bound.length} 名</span></summary><div class="table-wrap" tabindex="0"><table><thead><tr><th>选手</th><th>位置</th><th>出场</th><th>胜率</th><th>KDA</th><th>分均经济</th><th>分均输出</th><th>参团率</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>` : '<div class="empty">还没有已认领选手。先在「选手认领」把对局昵称并入名单。</div>'}
+      ${bound.length ? `<details class="table-disclosure"><summary>查看数据明细 <span>${bound.length} 名</span></summary><div class="table-wrap" tabindex="0"><table><thead><tr><th>选手</th><th>位置</th><th>出场</th><th>胜率</th><th>KDA</th><th>分均经济</th><th>分均输出</th><th>参团率</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>` : `<div class="empty">${glyph('players', { size: 52 })}<strong>还没有已认领选手</strong><p><a class="control" href="#profiles">${glyph('players', { size: 18 })} 去认领昵称</a></p></div>`}
       </section>
   </div>`;
 }
@@ -1845,17 +1934,17 @@ function playerPage(value) {
   const crumb = `<div class="md-crumb">
     <a class="md-back" href="#players"><span aria-hidden="true">←</span> 名单与状态</a>
     <span class="md-crumb-meta">${[lane, games ? `${fmt(games)} 局` : '', p && p.bound ? '已归队' : '待命名'].filter(Boolean).map((x) => `<i>${esc(x)}</i>`).join('')}</span>
-    <span class="md-crumb-actions">${p && !p.bound ? `<button class="primary" data-action="name-player" data-label="${esc(label)}">命名并归队</button>` : ''}<button class="control" data-action="filter">${icon('filter')} 数据范围</button><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></span>
+    <span class="md-crumb-actions">${p && !p.bound ? `<button class="primary" data-action="name-player" data-label="${esc(label)}">${glyph('players', { size: 18 })} 命名并归队</button>` : ''}<button class="control" data-action="filter">${glyph('calendar', { size: 18 })} 筛选范围</button><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${glyph('refresh', { size: 18 })}</button></span>
   </div>`;
   const claim = !p ? '当前范围没有该选手的数据'
     : p.bound ? `${p.label} 在 ${lane} 出场 ${fmt(games)} 局，胜率 ${pct(p.winRate)}`
     : `「${p.label}」还没命名，${fmt(games)} 局的记录暂时挂在这个昵称下`;
-  const fact = !p ? '换一个数据范围试试'
+  const fact = !p ? ''
     : p.bound ? `KDA ${fmt(p.kda, 1)} · 分均经济 ${fmt(p.gpm, 1)} · 参团率 ${pct(p.participation)}`
-    : '命名并归队后，这些记录会并入该选手的长期档案';
+    : '记录暂按昵称统计，归队后并入选手档案';
   const hero = `<section class="md-hero">
     <div class="md-hero-head"><span class="md-hero-kicker">${p && p.bound ? '选手结论' : '身份待定'}</span><span class="md-hero-meta">${[lane, p && p.bound ? '已归队' : '待命名'].filter(Boolean).map(esc).join(' · ')}</span></div>
-    <h1><b>${esc(claim)}</b><span>${esc(fact)}</span></h1>
+    <h1><b>${esc(claim)}</b>${fact ? `<span>${esc(fact)}</span>` : ''}</h1>
     <div class="md-line">
       <div class="md-line-side"><span>出场</span><b>${fmt(games)} 局</b></div>
       <div class="md-line-mid"><strong>${fmt(p && p.kda, 1)}<i>KDA</i></strong><div class="md-line-note"><em class="${p && p.winRate >= 50 ? 'win' : 'loss'}">${pct(p && p.winRate)}</em><span>胜率</span></div></div>
@@ -1865,44 +1954,119 @@ function playerPage(value) {
   </section>`;
   return `<div class="page md-page">${crumb}${hero}
     <section class="section"><div class="section-heading"><div><h2>状态</h2><p>同一名选手近 3 场与此前 3 场的营地评分</p></div></div>${formHtml}</section>
-    ${heroes.length ? `<section class="section"><div class="section-heading"><div><h2>常用英雄</h2><p>按出场次数</p></div></div><div class="hero-chips player-heroes">${heroes.map((h) => `<span>${portrait(h.hero)}${esc(h.hero)} <small>${fmt(h.matches)} 局</small></span>`).join('')}</div></section>` : ''}
-    <section class="section"><div class="section-heading"><div><h2>近期对局</h2><p>点击比赛可回看完整记录</p></div><a href="#players">返回选手</a></div>
+    ${heroes.length ? `<section class="section"><div class="section-heading"><div><h2>常用英雄</h2></div></div><div class="hero-chips player-heroes">${heroes.map((h) => `<span>${portrait(h.hero)}${esc(h.hero)} <small>${fmt(h.matches)} 局</small></span>`).join('')}</div></section>` : ''}
+    <section class="section"><div class="section-heading"><div><h2>近期对局</h2></div><a href="#players">返回选手</a></div>
     <div class="player-history">${[...value.points].reverse().slice(0,8).map(m=>`<a href="${esc(route('match',m.matchKey))}"><span>${esc(m.date||'日期未知')}</span>${portrait(m.hero)}<b>${esc(m.hero||'未知英雄')}</b><small>${esc(m.opponent||'对手未标注')}</small><strong>${fmt(m.kda,1)} <i>KDA</i></strong></a>`).join('')||'<div class="empty">暂无逐局记录。</div>'}</div><details class="table-disclosure"><summary>查看全部逐局 <span>${rows.length} 条</span></summary><div class="table-wrap" tabindex="0"><table><thead><tr><th>日期</th><th>对手</th><th>英雄</th><th>赛果</th><th>KDA</th><th>分均经济</th><th>分均输出</th></tr></thead><tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></section></div>`;
 }
 
+const OPP_LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
+
 function opponentsPage(value) {
-  /* 阵容侦察：一行一支对手，看他们五个位置是谁、常打什么英雄。 */
-  const lanes = ['对抗路', '打野', '中路', '发育路', '游走'];
-  const teams = [...(value.teams || [])].sort((a, b) => (b.matches || 0) - (a.matches || 0) || String(b.lastSeen || '').localeCompare(String(a.lastSeen || '')));
-  const named = teams.filter((t) => t.named).length;
-  const players = teams.reduce((n, t) => n + (t.players || []).length, 0);
-  const laneOf = (p) => lanes.indexOf(p.lane) < 0 ? 99 : lanes.indexOf(p.lane);
-  const rows = teams.map((t) => {
-    const roster = [...(t.players || [])].sort((a, b) => laneOf(a) - laneOf(b));
-    const laneGroups = [...lanes, '其他'].map((lane) => {
-      const players = roster.filter((p) => lane === '其他' ? lanes.indexOf(p.lane) < 0 : p.lane === lane);
-      if (!players.length) return '';
-      const names = players.slice(0, 3).map((p) => esc(p.name)).join('、');
-      const more = players.length > 3 ? ` 等 ${players.length} 人` : '';
-      return `<span class="tm-lane-group"><i>${esc(lane)} · ${players.length}</i><b>${names}${more}</b></span>`;
-    }).join('') || '<span class="tm-lane-group"><i>阵容</i><b>未记录</b></span>';
-    return `<a class="fj-row tm-scout" href="${route('team', t.id)}">
-      <span class="tm-crest">${esc((t.displayName || '?').slice(0, 1))}</span>
-      <span class="fj-main"><b>${esc(t.displayName)}</b><small>${esc(t.coach ? '教练 ' + t.coach : t.named ? '已建档' : '阵容聚类 · 待命名')}</small></span>
-      <span class="tm-scout-roster">${laneGroups}</span>
-      <span class="fj-heroes">${(t.heroes || []).slice(0, 5).map((h) => portrait(h.hero)).join('')}</span>
-      <span class="fj-go">→</span></a>`;
-  }).join('');
-  return `<div class="page feature-page">${pageIntro('对手侦察', `${fmt(teams.length)} 支对手 · ${fmt(players)} 名选手 · ${fmt(named)} 支已命名 · 一行一支，看阵容与常用英雄。`)}
-    <div class="fj-lede">
-      <span><small>对手战队</small><b>${fmt(teams.length)} 支</b><i>营地阵容聚类</i></span>
-      <span><small>对手选手</small><b>${fmt(players)} 人</b><i>五人阵容合计</i></span>
-      <span><small>已命名</small><b>${fmt(named)} 支</b><i>${named ? '教练已确认' : '全部待命名'}</i></span>
-      <span><small>完整五人</small><b>${fmt(teams.filter((t) => (t.players || []).length >= 5).length)} 支</b><i>可做阵容对位</i></span>
-      <span><small>最近交手</small><b>${esc(teams[0]?.lastSeen || '—')}</b><i>${esc(teams[0]?.displayName || '')}</i></span>
-    </div>
-    <section class="section"><div class="section-heading"><div><h2>阵容侦察</h2><p>位置按营地分路字段排序；右侧是该队这批对局里的常用英雄</p></div></div>
-      <div class="fj-list">${rows || '<div class="empty">暂无已识别对手。</div>'}</div></section></div>`;
+  /* 本队战队也在 teams 主数据里（对局要引用它），但不能出现在「对方战队」
+     列表里：那张卡带删除按钮，而删除会连本队选手 ID 和账号映射一起清掉。 */
+  const ownId = String(value.ownTeamId || '');
+  const teams = [...(value.teams || [])]
+    .filter((t) => String(t.id || '') !== ownId)
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'));
+  const players = (value.players || []).filter((p) => p.status !== 'archived');
+  const playerCard = (p) => `<article class="opp-player">
+    <span class="opp-player-avatar" aria-hidden="true">${esc(String(p.camp_user_id || '?').slice(0, 1))}</span>
+    <div class="opp-player-main"><b>ID ${esc(p.camp_user_id || '—')}</b>
+      <small>${esc(p.name && p.name !== p.camp_user_id ? p.name : '姓名未填')}</small></div>
+    <div class="opp-player-ops">
+      <button type="button" class="control" data-opp-player-edit="${esc(p.id || '')}" aria-label="编辑选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('edit', { size: 13 })}</button>
+      <button type="button" class="control is-danger" data-opp-player-del="${esc(p.id || '')}" aria-label="删除选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('trash', { size: 13 })}</button>
+    </div></article>`;
+  const teamCard = (t) => {
+    const roster = players.filter((p) => p.team_id === t.id);
+    const lanes = OPP_LANES.map((lane) => {
+      const list = roster.filter((p) => (p.position || '') === lane);
+      return `<div class="opp-lane"><div class="opp-lane-head">
+        <b><img class="opp-lane-icon" src="${KPL_SVG}modules/role-icon-${LANE_SVG[lane] || 'holder-blank'}.svg" alt="" aria-hidden="true">${esc(lane)} <span class="opp-lane-count">${list.length}</span></b>
+        <button type="button" class="control" data-opp-player-add="${esc(t.id || '')}" data-opp-lane="${esc(lane)}">${glyph('players', { size: 13 })} 添加选手</button>
+      </div><div class="opp-player-list">${list.map(playerCard).join('') || '<p class="opp-empty">还没有选手</p>'}</div></div>`;
+    }).join('');
+    return `<section class="opp-team-card" aria-labelledby="opp-team-${esc(t.id || '')}">
+      <header class="opp-team-head"><div>
+        <span class="opp-eyebrow">${glyph('opponent', { size: 14 })} 对方战队</span>
+        <h2 id="opp-team-${esc(t.id || '')}">${esc(t.name || '未命名战队')}</h2>
+        <p class="opp-team-meta">${esc(t.league || '层级未填')} · 主教练 ${esc(t.coach || '未填')}${t.aliases && t.aliases.length ? ` · 别名 ${esc(t.aliases.join(' / '))}` : ''}</p>
+      </div><div class="opp-team-ops">
+        <button type="button" class="control" data-opp-team-edit="${esc(t.id || '')}" aria-label="编辑战队 ${esc(t.name || '')}">${glyph('edit', { size: 14 })} 编辑</button>
+        <button type="button" class="control is-danger" data-opp-team-del="${esc(t.id || '')}" aria-label="删除战队 ${esc(t.name || '')}">${glyph('trash', { size: 14 })} 删除</button>
+      </div></header>
+      <div class="opp-lanes">${lanes}</div></section>`;
+  };
+  return `<div class="page feature-page opp-page">
+    <div class="opp-page-head"><h1>对方战队</h1>
+      <button type="button" class="primary" data-opp-team-add>${glyph('opponent', { size: 16 })} 创建对手战队</button></div>
+    ${teams.length ? `<div class="opp-team-grid">${teams.map(teamCard).join('')}</div>`
+      : `<div class="empty opp-page-empty">${glyph('opponent', { size: 52 })}<strong>还没有对手战队</strong><p><button type="button" class="primary" data-opp-team-add>${glyph('opponent', { size: 18 })} 创建对手战队</button></p></div>`}
+  </div>`;
+}
+
+function oppTeamDialog(team) {
+  const dialog = dialogFor();
+  dialog.setAttribute('aria-labelledby', 'opp-team-dialog-title');
+  const edit = Boolean(team);
+  dialog.innerHTML = `<form id="opp-team-form" data-team-id="${esc(team?.id || '')}"><div class="dialog-head"><div>
+    <h2 id="opp-team-dialog-title">${glyph('opponent', { size: 20 })} ${edit ? '编辑对手战队' : '创建对手战队'}</h2></div>
+    <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
+    <div class="dialog-body">
+      <label for="opp-team-name">战队名称 <em>必填</em></label>
+      <input id="opp-team-name" name="name" required maxlength="50" value="${esc(team?.name || '')}" autofocus>
+      <label for="opp-team-short">简称</label><input id="opp-team-short" name="shortName" maxlength="20" value="${esc(team?.short_name || '')}">
+      <label for="opp-team-league">层级 / 联赛</label><input id="opp-team-league" name="league" maxlength="50" value="${esc(team?.league || '')}" placeholder="例如：KPL / 次级联赛">
+      <label for="opp-team-coach">主教练</label><input id="opp-team-coach" name="coach" maxlength="50" value="${esc(team?.coach || '')}">
+      <label for="opp-team-alias">别名（逗号分隔）</label><input id="opp-team-alias" name="aliases" maxlength="200" value="${esc((team?.aliases || []).join(', '))}">
+      <p class="filter-error" role="alert"></p></div>
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button>
+      <button class="primary" type="submit">${glyph('shield', { size: 18 })} ${edit ? '保存修改' : '创建战队'}</button></div></form>`;
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+  dialog.querySelector('#opp-team-name')?.focus();
+}
+
+function oppPlayerDialog(player, teamId, lane) {
+  const dialog = dialogFor();
+  dialog.setAttribute('aria-labelledby', 'opp-player-dialog-title');
+  const edit = Boolean(player);
+  dialog.innerHTML = `<form id="opp-player-form" data-player-id="${esc(player?.id || '')}" data-team-id="${esc(player?.team_id || teamId || '')}"><div class="dialog-head"><div>
+    <h2 id="opp-player-dialog-title">${glyph('players', { size: 20 })} ${edit ? '编辑对方选手' : '添加对方选手'}</h2></div>
+    <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
+    <div class="dialog-body">
+      <label for="opp-player-id">选手 ID <em>必填 · 不可重复</em></label>
+      <input id="opp-player-id" name="campUserId" required maxlength="80" value="${esc(player?.camp_user_id || '')}" placeholder="他在这个战队里用的 ID" autofocus>
+      <label for="opp-player-name">真实姓名（可选）</label>
+      <input id="opp-player-name" name="name" maxlength="50" value="${esc(player?.name && player.name !== player.camp_user_id ? player.name : '')}" placeholder="不知道可以留空">
+      <label for="opp-player-lane">分路</label>
+      <select id="opp-player-lane" name="position"><option value="">未指定</option>${OPP_LANES.map((x) => `<option value="${esc(x)}"${(player?.position || lane) === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <label for="opp-player-role">身份</label>
+      <select id="opp-player-role" name="role"><option value="main"${(player?.role || 'main') === 'main' ? ' selected' : ''}>首发</option><option value="sub"${player?.role === 'sub' ? ' selected' : ''}>替补</option></select>
+      <label for="opp-player-alias">别名（逗号分隔）</label><input id="opp-player-alias" name="aliases" maxlength="200" value="${esc((player?.aliases || []).join(', '))}">
+      <p class="filter-error" role="alert"></p></div>
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button>
+      <button class="primary" type="submit">${glyph('shield', { size: 18 })} ${edit ? '保存修改' : '添加选手'}</button></div></form>`;
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+  dialog.querySelector('#opp-player-id')?.focus();
+}
+
+function oppConfirm(message, onConfirm) {
+  const dialog = dialogFor();
+  dialog.setAttribute('aria-labelledby', 'opp-confirm-title');
+  dialog.innerHTML = `<div class="dialog-head"><div><h2 id="opp-confirm-title">${glyph('warning', { size: 20 })} 确认删除</h2>
+    <p>${esc(message)}</p></div>
+    <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
+    <div class="dialog-actions"><button type="button" class="control" data-action="close" autofocus>取消</button>
+      <button type="button" class="primary is-danger" data-opp-confirm-ok>${glyph('trash', { size: 18 })} 确认删除</button></div>`;
+  dialog.querySelector('[data-opp-confirm-ok]')?.addEventListener('click', () => {
+    dialog.close();
+    onConfirm();
+  }, { once: true });
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+  dialog.querySelector('[data-action="close"]')?.focus();
 }
 
 function tempoPage(value) {
@@ -1911,7 +2075,7 @@ function tempoPage(value) {
   const anchor = current().anchor;
   const rows = value.process.matches.map((m) => [`<a class="text-link" href="${esc(route('match', m.key))}">${esc(m.date || '日期未知')}　${esc(m.opponent || '未标注')}</a>`,
     pct(m.coverage), diff(m.diffAt['600']), diff(m.finalDiff), fmt(m.killsPerMinute,1)]);
-  return `<div class="page">${pageIntro('节奏分析', '查看赛内经济变化与关键时点。')}
+  return `<div class="page">${pageIntro('节奏分析')}
     ${gameAnchorBar()}
     <div class="stats-band"><div><span>可分析对局</span><strong>${fmt(a.games)}</strong><p>时间轴覆盖 ≥ 60%</p></div>
     <div><span>10 分钟经济差</span><strong>${diff(a.avgDiffAt['600'])}</strong><p>${a.landmarkSamples['600']} 局可用</p></div>
@@ -1920,22 +2084,12 @@ function tempoPage(value) {
     <section class="section"><div class="section-heading"><div><h2>最近可用经济曲线</h2><p>${p ? esc(p.date || '') : '暂无样本'}</p></div></div>
     ${chart(p?.points, '本队经济差')}</section>
     <section class="section"><div class="section-heading"><div><h2>逐局经济走势</h2><p>本队减去对手 · 展示最近 9 场有时间轴的对局</p></div></div>
-    <div class="tempo-card-grid">${value.process.matches.slice(0,9).map(m=>`<a class="tempo-card${anchor===m.key?' is-anchor':''}" href="${esc(route('match',m.key))}"><div><span>${esc(m.date||'日期未知')}</span><small>${esc(m.opponent||'对手未标注')}</small></div><h3>末次经济差 <strong>${diff(m.finalDiff)}</strong></h3>${microChart(m.points,'本队经济差')}<p><span>${time(m.observedStart)} — ${time(m.observedEnd)}</span><span>覆盖 ${pct(m.coverage)}</span></p></a>`).join('')||'<div class="empty">当前范围暂无可用时间轴。</div>'}</div>
+    <div class="tempo-card-grid">${value.process.matches.slice(0,9).map(m=>`<a class="tempo-card${anchor===m.key?' is-anchor':''}" href="${esc(route('match',m.key))}"><div><span>${esc(m.date||'日期未知')}</span><small>${esc(m.opponent||'对手未标注')}</small></div><h3>末次经济差 <strong>${diff(m.finalDiff)}</strong></h3>${microChart(m.points,'本队经济差')}<p><span>${time(m.observedStart)} — ${time(m.observedEnd)}</span><span>覆盖 ${pct(m.coverage)}</span></p></a>`).join('')||`<div class="empty">${glyph('chart', { size: 52 })}<strong>当前范围暂无可用时间轴</strong><p>这批对局还没有可用的逐分钟经济采样。</p></div>`}</div>
     ${table(['对局', '时间轴覆盖', '10 分钟经济差', '最后采样经济差', '分均击杀'], rows)}</section></div>`;
 }
 
-function sourcesPage(value) {
-  const checks = value.quality.checks.map((c) => [esc(c.label), `${c.ok} / ${c.total} 局`,
-    c.missing ? `缺 ${c.missing} 局` : c.total ? '已覆盖' : '暂无样本', esc(c.hint)]);
-  const inventory = value.inventory;
-  const rows = [['本机记录', inventory.dbMatches], ['对局数据包', inventory.bundleMatches], ['导入表格对局', inventory.sheetMatches], ['未确认草稿', inventory.drafts]]
-    .map(([name, count]) => [esc(name), fmt(count)]);
-  return `<div class="page">${pageIntro('数据来源与覆盖', '检查当前样本的字段覆盖情况。')}
-    <section class="section"><div class="section-heading"><div><h2>字段覆盖</h2><p>当前筛选范围共 ${value.quality.total} 局</p></div></div>
-    <div class="coverage-grid">${value.quality.checks.map(c=>`<article><div><b>${esc(c.label)}</b><span>${fmt(c.ok)} / ${fmt(c.total)} 局</span></div><div class="coverage-track"><i style="width:${c.total?Math.max(0,Math.min(100,c.ok/c.total*100)):0}%"></i></div><p>${esc(c.hint||'')}</p></article>`).join('')}</div><details class="desk-disclosure"><summary>查看字段覆盖明细</summary>${table(['检查项', '覆盖 / 总数', '状态', '说明'], checks)}</details></section>
-    <section class="section"><div class="section-heading"><div><h2>数据来源</h2><p>已合并的对局可能出现在多个来源中。</p></div></div>
-    <div class="source-grid">${[['本机记录', inventory.dbMatches], ['对局数据包', inventory.bundleMatches], ['导入表格对局', inventory.sheetMatches], ['未确认草稿', inventory.drafts]].map(([name,count])=>`<div><span>${esc(name)}</span><strong>${fmt(count)}</strong><small>条记录</small></div>`).join('')}</div><details class="desk-disclosure"><summary>查看来源明细</summary>${table(['来源', '局数'], rows)}</details></section></div>`;
-}
+/* 旧的 sourcesPage（字段覆盖率 / 来源计数）已由自取数的「数据源展示」模块替代，
+   页面逻辑见 datasource-page.js，接口见 /api/studio/workspace/data-map。 */
 
 /* 10 分钟经济的分路阈值（赛训组 2026-11-14 口径）：
    对抗路 / 发育路 6800 及格、7000 良好、7400 优秀（10 分钟总量）；
@@ -2112,10 +2266,10 @@ function matchPage(m) {
   /* 时长缺失时 time() 会返回「—」，不能当成一项元信息排进去（会多出一个孤零零的破折号）。 */
   const hasDuration = Number.isFinite(m.duration) && m.duration > 0;
   const mdCrumb = `<div class="md-crumb">
-    <a class="md-back" href="#matches"><span aria-hidden="true">←</span> 对局档案</a>
+    <a class="md-back" href="#matches"><span aria-hidden="true">←</span> 单局分析</a>
     <span class="md-crumb-meta">${[m.date || '日期未知', m.mode, hasDuration ? time(m.duration) : ''].filter(Boolean).map((x) => `<i>${esc(x)}</i>`).join('')}</span>
     <div class="tagrow" data-tag-key="${esc(m.key || current().key || '')}"></div>
-    <span class="md-crumb-actions"><button class="control" data-action="filter">${icon('filter')} 数据范围</button><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></span>
+    <span class="md-crumb-actions"><button class="control" data-action="filter">${glyph('calendar', { size: 18 })} 筛选范围</button><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${glyph('refresh', { size: 18 })}</button></span>
   </div>`;
   const outcome = m.result === 'win' ? '收下这一局' : m.result === 'loss' ? '交出这一局' : '结束这一局';
   const heroWhen = hasDuration ? ` ${time(m.duration)} ` : '';
@@ -2418,7 +2572,7 @@ function matchPage(m) {
   const positionsEmpty = m.positionsRequested
     ? '<div class="empty">该局没有逐秒位置数据（需要在采集页的通道校对里关联本局官方回放）</div>'
     : '<div class="empty">正在读取营地的逐秒位置…</div>';
-  const mdHeat = `<section class="section" id="match-heat"><div class="section-heading"><div><h2>对位热区${evTag('desc')}</h2><p>选一路，看这一路两个人在 90 秒窗口里怎么移动；可拖动时间轴或点播放。蓝为本队、红为对手</p></div></div>
+  const mdHeat = `<section class="section" id="match-heat"><div class="section-heading"><div><h2>对位热区${evTag('desc')}</h2><p>蓝为本队、红为对手</p></div></div>
     ${m.positions ? mods.deep.heat(m.positions, m.players, own, m.duration, m.replay) : positionsEmpty}
   </section>`;
   const mdDuel = `<section class="section" id="match-duel"><div class="section-heading"><div><h2>入侵时长${evTag('desc')}</h2></div></div>
@@ -2799,7 +2953,7 @@ function matchPage(m) {
      讲的是同一批组合，上下重复，整块撤掉，只留设计稿那一版。 */
 
   const mdOvMatchup = bpAnalysis.matchup ? `<section class="section md-ov" id="match-ov-matchup">
-      <div class="section-heading"><div><h2>对位压制${evTag('interval')}</h2><p>巅峰千强同分路对位（源站累积样本）：基准取最近 8 周周中位数，低登场率英雄向 50% 收缩；n≥50 收录，50–199 或低登场率只作初步观察，n≥200 且方向稳定才判优势/劣势；牌面下方补「英雄强度」——近 7 天胜率、登场率与同路 T1–T4 档位，对位样本凑不够时看这一行</p></div></div>
+      <div class="section-heading"><div><h2>对位压制${evTag('interval')}</h2><p>巅峰千强同分路对位（源站累积样本）：基准取最近 8 周周中位数，低登场率英雄向 50% 收缩；n≥50 收录，50–199 或低登场率只作初步观察，n≥200 且方向稳定才判优势/劣势</p></div></div>
       <div class="md-ov-pad">${bpAnalysis.matchup}</div>
     </section>` : '';
   /* 克制关系：只认赛训规则中心「克制关系 → 英雄克制英雄」里维护过的有向关系。
@@ -2991,11 +3145,11 @@ function matchPage(m) {
   /* 战斗拆成两块：团战（点地图看本波）与掉点（筛选/点选看单次），各自带分析。 */
   const battle = mods.deep.battle(m.positions, m.players, own, m.duration, points, m.replay?.deaths, m.replay?.fights);
   const mdFights = battle && battle.fights
-    ? `<section class="section" id="match-battle"><div class="section-heading"><div><h2>团战${evTag('desc')}</h2><p>团战点大小＝参战人数，颜色＝该波击杀差（本队金 / 对手青）；点地图上的点看这一波的伤害、承伤与控制，下方为团战分析</p></div></div>${battle.fights}</section>`
+    ? `<section class="section" id="match-battle"><div class="section-heading"><div><h2>团战${evTag('desc')}</h2><p>点大小＝参战人数，颜色＝该波击杀差（本队金 / 对手青）</p></div></div>${battle.fights}</section>`
     : battle ? ''
       : '<section class="section" id="match-battle"><div class="empty">这局没有团战或掉点数据（需要营地回放的 battles 段）</div></section>';
   const mdDeaths = battle && battle.deaths
-    ? `<section class="section" id="match-deaths"><div class="section-heading"><div><h2>掉点${evTag('desc')}</h2><p>掉点＝一次阵亡；损失＝死前 120 秒经济差走势外推到复活时刻的差额（本队视角，负＝我方亏、正＝我方赚）。点圆点或列表固定选中，切换选手看他这局全部掉点</p></div></div>${battle.deaths}</section>`
+    ? `<section class="section" id="match-deaths"><div class="section-heading"><div><h2>掉点${evTag('desc')}</h2><p>掉点＝一次阵亡；损失＝死前 120 秒经济差走势外推到复活时刻的差额（本队视角，负＝我方亏、正＝我方赚）</p></div></div>${battle.deaths}</section>`
     : '';
   /* 切C 与首杀（设计稿 design-redblue/切C与首杀_优化版.html）：
      切 C 五张卡 → 敌方切 C 五张卡 → 团战首杀 / 团战击杀四个数字卡。
@@ -3148,14 +3302,14 @@ function matchPage(m) {
      结论（脉搏在内）/ 总量 / 阵容 / BP 复盘（含赛事命中）/ 对位 / 组合 / 阶段 / 节点，
      用宽屏分栏排；十人 / 事件 / 地图 仍作为下钻页签。地址带页签，刷新后停在原处。 */
   const mdTab = ['review', 'data', 'events', 'map'].includes(current().tab) ? current().tab : 'review';
-  const tabButton = (key, label, note) => `<button type="button" class="md-tab" data-md-tab="${key}"
+  const tabButton = (key, label) => `<button type="button" class="md-tab" data-md-tab="${key}"
     id="md-tab-${key}" role="tab" aria-selected="${key === mdTab}"
-    aria-controls="md-pane-${key}" tabindex="${key === mdTab ? '0' : '-1'}"><b>${label}</b><small>${note}</small></button>`;
+    aria-controls="md-pane-${key}" tabindex="${key === mdTab ? '0' : '-1'}"><b>${label}</b></button>`;
   const mdTabs = `<div class="md-tabs" role="tablist" aria-label="单局页签">
-    ${tabButton('review', '复盘大屏', '结论 · 阵容 · 对位')}
-    ${tabButton('data', '十人数据', '经济 · 面板 · 对位')}
-    ${tabButton('events', '事件', '击杀 · 资源 · 团战')}
-    ${tabButton('map', '地图', '热区 · 纵深')}
+    ${tabButton('review', '复盘大屏')}
+    ${tabButton('data', '十人数据')}
+    ${tabButton('events', '事件')}
+    ${tabButton('map', '地图')}
   </div>`;
   /* 复盘大屏的区块导航条已撤掉（2026-11-22）：顶部四个页签已经承担导航，
      再压一条吸顶条只会把结论卡继续往下推。证据类型图例也一并撤掉：
@@ -3211,19 +3365,19 @@ function comboNotify(message) {
 }
 
 /* 这些路由有自己的页面模块，其余（含详情页、采集页签）都走 features.js。 */
-const OWN_MODULE_ROUTES = new Set(['overview', 'team-profile', 'bp', 'match', 'cross', 'biggame', 'series-builder', 'combo-pool', 'grade-rules', 'competitions', 'lineup-tags', 'profiles', 'metrics-observe', 'rules', 'official-entry', 'match-notes', 'docs']);
+const OWN_MODULE_ROUTES = new Set(['overview', 'team-profile', 'bp', 'match', 'cross', 'biggame', 'matching', 'series-builder', 'combo-pool', 'grade-rules', 'competitions', 'lineup-tags', 'profiles', 'metrics-observe', 'rules', 'snapshot-center', 'official-entry', 'match-notes', 'docs', 'sources', 'source-health']);
 
 async function ensureModules(name) {
   const jobs = [];
   if (!OWN_MODULE_ROUTES.has(name) && !mods.features) {
-    jobs.push(importOnce('./features.js?v=20261123staff1').then(({ createFeatures }) => {
+    jobs.push(importOnce('./features.js?v=20261126pdrefine1').then(({ createFeatures }) => {
       mods.features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table,
         pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true),
         currentQuery: () => query(), teamName: () => metadata.teamName || '' });
     }));
   }
   if (name === 'docs' && !mods.docsPage) {
-    jobs.push(importOnce('./docs-page.js').then(({ createDocsPage }) => {
+    jobs.push(importOnce('./docs-page.js?v=20261126about2').then(({ createDocsPage }) => {
       mods.docsPage = createDocsPage({ esc, icon });
     }));
   }
@@ -3248,7 +3402,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'bp' && !mods.bpLab) {
-    jobs.push(importOnce('./bp-studio.js?v=20261123v301').then(({ createBpStudio }) => {
+    jobs.push(importOnce('./bp-studio.js?v=20261126bpclear1').then(({ createBpStudio }) => {
       mods.bpLab = createBpStudio({ esc, fmt, pct, icon, portrait, API_BASE });
     }));
   }
@@ -3260,23 +3414,29 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'cross' && !mods.crossPage) {
-    jobs.push(importOnce('./cross-page.js').then(({ createCrossPage }) => {
+    jobs.push(importOnce('./cross-page.js?v=20261126zero').then(({ createCrossPage }) => {
       mods.crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
     }));
   }
   if (name === 'biggame' && !mods.bigGamePage) {
-    jobs.push(importOnce('./biggame-page.js?v=20261122trend').then(({ createBigGamePage }) => {
+    jobs.push(importOnce('./biggame-page.js?v=20261126coach2').then(({ createBigGamePage }) => {
       /* 大场页的英雄池交叉要按双方战队分区：本队名从这里取，对手名在详情数据里。 */
       mods.bigGamePage = createBigGamePage({ esc, fmt, pct, diff, time, portrait, teamName: () => metadata.teamName || '' });
     }));
   }
+  if (name === 'matching' && !mods.matching) {
+    jobs.push(importOnce('./matching-page.js').then(({ createMatchingPage }) => {
+      mods.matching = createMatchingPage({ esc, API_BASE, icon,
+        refresh: () => load(true) });
+    }));
+  }
   if (name === 'series-builder' && !mods.seriesBuilder) {
-    jobs.push(importOnce('./series-builder.js').then(({ createSeriesBuilder }) => {
+    jobs.push(importOnce('./series-builder.js?v=20261126noanalysis').then(({ createSeriesBuilder }) => {
       mods.seriesBuilder = createSeriesBuilder({ esc, fmt, diff, pct, time, portrait, route, icon });
     }));
   }
   if (name === 'combo-pool' && !mods.comboPool) {
-    jobs.push(importOnce('./combo-pool.js?v=20261123a').then(({ createComboPoolPage }) => {
+    jobs.push(importOnce('./combo-pool.js?v=20261124lean').then(({ createComboPoolPage }) => {
       /* 组合池自取数：英雄资料通过 getter 读外壳的 metadata，不碰 combo-query
          的既有组合分析逻辑；头像目录后到时由 load() 调 rerender() 补画。 */
       mods.comboPool = createComboPoolPage({
@@ -3286,17 +3446,17 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'grade-rules' && !mods.gradeRules) {
-    jobs.push(importOnce('./grade-rules.js?v=20261123a').then(({ createGradeRulesPage }) => {
+    jobs.push(importOnce('./grade-rules.js?v=20261124lean').then(({ createGradeRulesPage }) => {
       mods.gradeRules = createGradeRulesPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
   if (name === 'competitions' && !mods.competitions) {
-    jobs.push(importOnce('./competitions.js?v=20261123nav').then(({ createCompetitionsPage }) => {
+    jobs.push(importOnce('./competitions.js?v=20261126mono2').then(({ createCompetitionsPage }) => {
       mods.competitions = createCompetitionsPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
   if (name === 'lineup-tags' && !mods.lineupTags) {
-    jobs.push(importOnce('./lineup-tags.js?v=20261123a').then(({ createLineupTagsPage }) => {
+    jobs.push(importOnce('./lineup-tags.js?v=20261124snap').then(({ createLineupTagsPage }) => {
       mods.lineupTags = createLineupTagsPage({ esc, portrait, API_BASE, icon, notify: comboNotify,
         getMetadata: () => metadata });
     }));
@@ -3304,20 +3464,28 @@ async function ensureModules(name) {
   /* === 数据管理层新模块（2026-11-22）===
      三套档案 / 指标观察 / 规则中心 / 正式录入 / 赛后笔记；全部自取数，
      外壳只给挂载点。CSS 统一在 index.html 内 kpl-gold.css 之后加载。 */
-  if (name === 'profiles' && !mods.profiles) {
+  if ((name === 'profiles' || name === 'team-profile') && (!mods.profiles || !mods.teamProfiles)) {
     jobs.push(importOnce('./profiles.js').then(({ createProfilesPage }) => {
-      mods.profiles = createProfilesPage({ esc, icon, notify: comboNotify, API_BASE });
+      const ctx = { esc, icon, notify: comboNotify, API_BASE };
+      if (!mods.profiles) mods.profiles = createProfilesPage(ctx);
+      /* 本队页里的档案用嵌入骨架：不再重复整页标题与返回链接。 */
+      if (!mods.teamProfiles) mods.teamProfiles = createProfilesPage({ ...ctx, embedded: true });
     }));
   }
   if (name === 'metrics-observe' && !mods.metricsObserve) {
-    jobs.push(importOnce('./metrics-observe.js').then(({ createMetricsObservePage }) => {
+    jobs.push(importOnce('./metrics-observe.js?v=20261124mo5').then(({ createMetricsObservePage }) => {
       mods.metricsObserve = createMetricsObservePage({ esc, API_BASE, notify: comboNotify });
     }));
   }
   if (name === 'rules' && !mods.rulesCenter) {
-    jobs.push(importOnce('./rules-center.js?v=20261123b').then(({ createRulesCenter }) => {
+    jobs.push(importOnce('./rules-center.js?v=20261124lean').then(({ createRulesCenter }) => {
       mods.rulesCenter = createRulesCenter({ esc, API_BASE, icon, notify: comboNotify,
         portrait, getMetadata: () => metadata });
+    }));
+  }
+  if (name === 'snapshot-center' && !mods.snapshotCenter) {
+    jobs.push(importOnce('./snapshot-center.js?v=20261126sc1').then(({ createSnapshotCenter }) => {
+      mods.snapshotCenter = createSnapshotCenter({ esc, API_BASE, icon, notify: comboNotify, portrait });
     }));
   }
   if (name === 'official-entry' && !mods.officialEntry) {
@@ -3330,6 +3498,18 @@ async function ensureModules(name) {
       mods.matchNotesPage = initMatchNotesPage;
     }));
   }
+  /* 数据源展示：赛事范围内的后端数据图谱（只读），自取数。 */
+  if (name === 'sources' && !mods.dataSource) {
+    jobs.push(importOnce('./datasource-page.js?v=20261124ds10').then(({ createDataSourcePage }) => {
+      mods.dataSource = createDataSourcePage({ esc, API_BASE, icon, notify: comboNotify });
+    }));
+  }
+  /* 管理 → 外部数据源爬取情况：四张状态卡 + 手动重试。 */
+  if (name === 'source-health' && !mods.sourceHealth) {
+    jobs.push(importOnce('./source-health-page.js?v=20261124sh1').then(({ createSourceHealthPage }) => {
+      mods.sourceHealth = createSourceHealthPage({ esc, API_BASE, icon, notify: comboNotify });
+    }));
+  }
   await Promise.all(jobs);
 }
 
@@ -3339,13 +3519,17 @@ document.addEventListener('grade-rules:saved', () => { gradeRulesDoc = null; });
 /* 比赛脉搏交互需要原始序列，渲染时记下来，注入 DOM 后再绑定。 */
 let pulseState = null;
 const renderers = { overview: () => '<div class="page home pbr-home" data-pbr-root></div>',
-  'team-profile': () => '<div data-tp-root></div>',
+  'team-profile': () => '<div data-tp-root></div><div data-pf-root></div>',
   bp: () => '<div data-bp-lab-root></div>',
   matches: matchesPage, opponents: opponentsPage, players: playersPage,
-  player: playerPage, tempo: tempoPage, sources: sourcesPage, match: matchPage,
+  player: playerPage, tempo: tempoPage,
+  /* 数据源展示改成自取数模块；旧的 sourcesPage（字段覆盖率）已下线。 */
+  sources: () => '<div data-ds-root></div>', match: matchPage,
+  'source-health': () => '<div data-sh-root></div>',
   cross: () => mods.crossPage.render(),
   biggame: () => mods.bigGamePage.render(),
   'series-builder': () => '<div data-sb-root></div>',
+  matching: () => '<div data-matching-root></div>',
   'combo-pool': () => '<div data-cp-root></div>',
   'grade-rules': () => '<div data-gr-root></div>',
   'competitions': () => '<div data-comp-root></div>',
@@ -3353,6 +3537,7 @@ const renderers = { overview: () => '<div class="page home pbr-home" data-pbr-ro
   'profiles': () => '<div data-pf-root></div>',
   'metrics-observe': () => '<div data-mo-root></div>',
   'rules': () => '<div data-rc-root></div>',
+  'snapshot-center': () => '<div data-sc-root></div>',
   'official-entry': () => '<div data-oe-root></div>',
   'match-notes': () => '<div data-mn-root></div>',
   docs: () => mods.docsPage.render() };
@@ -3394,19 +3579,29 @@ async function refreshUnlocks(r = current()) {
     if (!response.ok) throw new Error('unlocks ' + response.status);
     const data = await response.json();
     if (token !== unlockToken) return;
-    const changed = unlockCache.routes[data.routes || {}] !== undefined
-      ? JSON.stringify(unlockState.routes) !== JSON.stringify(data.routes) : true;
+    /* 以前这里误写成 unlockCache（未定义），严格模式下抛 ReferenceError 被下面
+       空 catch 吞掉，unlockState 永不刷新——赛训组把 BO3 改成 BO5 又改回、
+       点「已核实」后，大场/跨局解锁进度卡在旧状态，看着像没被收录。 */
+    const changed = JSON.stringify(unlockState.routes) !== JSON.stringify(data.routes || {});
     unlockState = { loaded: true, competition, routes: data.routes || {} };
     applyGate();
-    if (UNLOCK_GATED.has(r.name) && (changed || !document.querySelector('.lock-card'))) render(r);
-  } catch { /* 解析失败保持当前页面 */ }
+    /* 旧条件 !document.querySelector('.lock-card') 在「已解锁」页恒真：
+       render → refreshUnlocks → render → … 无限重绘，顶栏赛事 chip 因此疯闪。 */
+    const gated = UNLOCK_GATED.has(r.name);
+    const lockedNow = Boolean(unlockState.routes[r.name] && unlockState.routes[r.name].unlocked === false);
+    const hasLockCard = Boolean(document.querySelector('.lock-card'));
+    if (gated && (changed || (lockedNow && !hasLockCard) || (!lockedNow && hasLockCard))) render(r);
+  } catch (err) { /* 解析失败保持当前页面；别再静默吞掉同类笔误 */
+    console.warn('refreshUnlocks failed:', err);
+  }
 }
 
 function renderUnlockCard(state) {
   const pct = state.need ? Math.min(100, Math.round(state.n / state.need * 100)) : 0;
   const cta = (state.cta || []).map(([href, label]) =>
-    `<a class="lock-cta" href="${href}">${onbEsc(label)} →</a>`).join('');
+    `<a class="lock-cta" href="${href}">${glyph('arrow-up', { size: 18 })} ${onbEsc(label)}</a>`).join('');
   return `<section class="lock-card">
+    ${glyph('shield', { size: 40 })}
     <span class="lock-kicker">未解锁</span>
     <h2>${onbEsc(state.label)}</h2>
     <p class="lock-hint">${onbEsc(state.hint)}</p>
@@ -3427,13 +3622,19 @@ function injectEventChip(r) {
     id = localStorage.getItem(COMPETITION_KEY) || '';
     name = localStorage.getItem(COMPETITION_KEY + '-name') || '';
   } catch {}
-  if (!id) { strip.hidden = true; return; }
+  if (!id) {
+    if (!strip.hidden) strip.hidden = true;
+    return;
+  }
+  const text = `当前赛事 · ${name || id}`;
+  /* route:repainted 在详情页很频繁；内容没变就别整块重建节点，避免闪烁。 */
+  if (!strip.hidden && strip.textContent === text) return;
   strip.hidden = false;
   strip.textContent = '';
   const dot = document.createElement('span');
   dot.className = 'desk-event-chip-dot';
   const label = document.createElement('span');
-  label.textContent = `当前赛事 · ${name || id}`;
+  label.textContent = text;
   strip.append(dot, label);
 }
 
@@ -3449,11 +3650,13 @@ function render(r = current()) {
       && unlockState.routes[r.name] && unlockState.routes[r.name].unlocked === false) {
     document.querySelector('#content').innerHTML = renderUnlockCard(unlockState.routes[r.name]);
     injectEventChip(r);
+    decorateHeadings(r.name);
     return;
   }
   document.querySelector('#content').innerHTML = mods.features?.has(r.name)
     ? mods.features.render(r.name, data, r.key) : renderers[r.name](data, r.key);
   injectEventChip(r);
+  decorateHeadings(r.name);
   refreshUnlocks(r);
   mods.features?.afterRender();
   docsDispose?.();
@@ -3475,8 +3678,16 @@ function render(r = current()) {
   }
   if (r.name === 'team-profile') {
     mods.teamProfile?.mount(document.querySelector('[data-tp-root]'));
+    mods.teamProfiles?.mount(document.querySelector('[data-pf-root]'));
   } else {
     mods.teamProfile?.dispose();
+    mods.teamProfiles?.dispose();
+  }
+  if (r.name === 'matching') {
+    /* 匹配页自取数；离开时撤销在途请求与监听。 */
+    mods.matching.mount(document.querySelector('[data-matching-root]'));
+  } else {
+    mods.matching?.dispose();
   }
   if (r.name === 'series-builder') {
     /* 系列赛编组中心自取数（同首页简报模式）。 */
@@ -3522,11 +3733,26 @@ function render(r = current()) {
   } else {
     mods.rulesCenter?.dispose();
   }
+  if (r.name === 'snapshot-center') {
+    mods.snapshotCenter?.mount(document.querySelector('[data-sc-root]'));
+  } else {
+    mods.snapshotCenter?.dispose();
+  }
   if (r.name === 'official-entry') {
     mods.officialEntry?.(document.querySelector('[data-oe-root]'));
   }
   if (r.name === 'match-notes') {
     mods.matchNotesPage?.(document.querySelector('[data-mn-root]'));
+  }
+  if (r.name === 'sources') {
+    mods.dataSource?.mount(document.querySelector('[data-ds-root]'));
+  } else {
+    mods.dataSource?.dispose();
+  }
+  if (r.name === 'source-health') {
+    mods.sourceHealth?.mount(document.querySelector('[data-sh-root]'));
+  } else {
+    mods.sourceHealth?.dispose();
   }
   /* 赛事门控：未选赛事时灰掉对局/战队/选手/英雄/BP 等功能入口。 */
   applyGate();
@@ -3549,6 +3775,8 @@ function render(r = current()) {
   /* 初始化清单只在右上角入口里呈现；每次换页顺手对一次完成状态，
      这样在任何页面做完动作都能即时弹出「你已完成 …」。 */
   checklist.afterRender();
+  /* 部分页面由模块异步挂载标题：标题一出现就补图标。 */
+  watchHeadings(r.name);
   if (r.name === 'matches' && archiveScrollRemember > 0) {
     const y = archiveScrollRemember;
     archiveScrollRemember = 0;
@@ -3597,6 +3825,12 @@ async function load(fresh = false) {
     render(r);
     return;
   }
+  /* 匹配页自取数：一次拿轻量对局 + 选手池 + 战队池，写操作也由模块自己发。 */
+  if (r.name === 'matching') {
+    data = null;
+    render(r);
+    return;
+  }
   /* 系列赛编组中心自取数（series-builder.js）：不走通用取数管道，
      接口失败也不会被这里的静默重试/整页报错吃掉。 */
   if (r.name === 'series-builder') {
@@ -3632,8 +3866,21 @@ async function load(fresh = false) {
     render(r);
     return;
   }
+  /* 外部数据源爬取状态自取数（source-health-page.js），不走通用 /api/sources。 */
+  if (r.name === 'source-health') {
+    data = null;
+    render(r);
+    return;
+  }
   /* 赛事列表页自取数（competitions.js），与组合池同模式。 */
   if (r.name === 'competitions') {
+    data = null;
+    render(r);
+    return;
+  }
+  /* 数据源展示自取数（datasource-page.js）：整页只读 /api/studio/workspace/data-map。
+     不能走通用 /api/sources，否则旧字段覆盖率的错误态会盖掉图谱。 */
+  if (r.name === 'sources') {
     data = null;
     render(r);
     return;
@@ -3662,6 +3909,18 @@ async function load(fresh = false) {
         metadata = { ...metadata, icons: meta.icons, heroTypes: meta.heroTypes || metadata.heroTypes, iconsOnly: true };
         if (current().name === 'rules') mods.rulesCenter?.rerender();
       }).catch(() => { /* 头像缺失时保留文字占位 */ });
+    }
+    render(r);
+    return;
+  }
+  /* 快照中心的英雄头像需要头像目录；和规则中心同模式按需补一次。 */
+  if (r.name === 'snapshot-center') {
+    data = null;
+    if (!metadata.icons || metadata.iconsOnly) {
+      get('metadata/icons').then((meta) => {
+        metadata = { ...metadata, icons: meta.icons, heroTypes: meta.heroTypes || metadata.heroTypes, iconsOnly: true };
+        if (current().name === 'snapshot-center') mods.snapshotCenter?.rerender();
+      }).catch(() => { /* 头像缺失时保留占位字 */ });
     }
     render(r);
     return;
@@ -3706,7 +3965,12 @@ async function load(fresh = false) {
   }
   try {
     /* 跨局分析由页面自己取 series-summary；不必先拉对局列表。 */
-    const pageData = (r.name === 'cross' || r.name === 'biggame') ? Promise.resolve({}) : (mods.features?.has(r.name) ? mods.features.load(r.name, r.key, currentRequest.signal, fresh) : get(endpoint, fresh));
+    /* 对方战队是纯主数据页：战队与选手两张表一起读，渲染时按战队分组。 */
+    const pageData = r.name === 'opponents'
+      ? Promise.all([get('studio/workspace/teams', fresh), get('studio/workspace/players', fresh)])
+          .then(([teamData, playerData]) => ({ teams: teamData.teams || [], ownTeamId: teamData.ownTeamId || '', players: playerData.players || [] }))
+      : (r.name === 'cross' || r.name === 'biggame') ? Promise.resolve({})
+      : (mods.features?.has(r.name) ? mods.features.load(r.name, r.key, currentRequest.signal, fresh) : get(endpoint, fresh));
     const [result, meta] = await Promise.all([pageData, (metadata.icons && !metadata.iconsOnly) ? Promise.resolve(metadata) : get('metadata')]);
     if (stale()) return;
     metadata = meta;
@@ -3826,14 +4090,14 @@ async function load(fresh = false) {
 function namePlayerDialog(label) {
   const dialog = dialogFor();
   const team = (metadata && metadata.teamName) || '';
-  dialog.innerHTML = `<form id="name-form"><div class="dialog-head"><div><h2>命名并归队</h2><p>把「${esc(label)}」归到一名选手和一支战队；保存后这些记录并入该选手。</p></div>
+  dialog.innerHTML = `<form id="name-form"><div class="dialog-head"><div><h2>${glyph('players', { size: 20 })} 命名并归队</h2><p>保存后这些记录并入该选手。</p></div>
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body">
       <div class="date-fields"><label>对局昵称<input value="${esc(label)}" readonly></label><label>选手名称<input name="name" required maxlength="40" value="${esc(label)}"></label></div>
       <div class="date-fields"><label>所属战队<input name="team" maxlength="40" value="${esc(team)}" placeholder="默认本队"></label></div>
       <fieldset class="sx-pos-field"><legend>位置（可多选，第一个勾的是主位置）</legend><div class="sx-pos-chips">${['对抗路', '打野', '中路', '发育路', '游走'].map((x) => `<label class="sx-pos-chip"><input type="checkbox" name="position" value="${x}"><span>${x}</span></label>`).join('')}</div></fieldset>
       <p class="filter-error" role="alert"></p></div>
-    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">保存并归队</button></div></form>`;
+    <div class="dialog-actions"><button type="button" class="control" data-action="close">取消</button><button class="primary" type="submit">${glyph('players', { size: 18 })} 保存并归队</button></div></form>`;
   dialog.showModal();
 }
 
@@ -3847,25 +4111,25 @@ function dialogFor() {
 
 function filterDialog() {
   const dialog = dialogFor();
-  dialog.innerHTML = `<form id="filter-form"><div class="dialog-head"><div><h2>数据范围</h2><p>选择日期、来源与样本。</p></div>
+  dialog.innerHTML = `<form id="filter-form"><div class="dialog-head"><div><h2>${glyph('calendar', { size: 20 })} 筛选范围</h2></div>
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body"><div class="date-fields"><label>开始日期<input type="date" name="from" value="${esc(filters.from)}"></label>
     <label>结束日期<input type="date" name="to" value="${esc(filters.to)}"></label></div><fieldset><legend>数据来源</legend>
     ${Object.entries(sourceName).map(([key, text]) => `<label class="check"><input type="checkbox" name="source" value="${key}" ${filters.source.includes(key) ? 'checked' : ''}>${text}</label>`).join('')}</fieldset>
     <label class="check"><input type="checkbox" name="validation" ${filters.validation ? 'checked' : ''}>包含验证数据</label><p class="filter-error" role="alert"></p></div>
-    <div class="dialog-actions"><button type="button" class="control" data-action="reset">恢复默认</button><button class="primary" type="submit">应用范围</button></div></form>`;
+    <div class="dialog-actions"><button type="button" class="control" data-action="reset">${glyph('refresh', { size: 18 })} 恢复默认</button><button class="primary" type="submit">${glyph('calendar', { size: 18 })} 应用范围</button></div></form>`;
   if (dialog.open) dialog.close();
   dialog.showModal();
 }
 
 function clientMissingDialog() {
   const dialog = dialogFor();
-  dialog.innerHTML = `<div class="dialog-head"><div><h2>没有检测到客户端</h2>
+  dialog.innerHTML = `<div class="dialog-head"><div><h2>${glyph('warning', { size: 20 })} 没有检测到客户端</h2>
     <p>可能还没有安装，或系统没有注册 kpl-client://open 协议。</p></div>
     <button type="button" class="head-button" data-action="close" aria-label="关闭">${icon('close')}</button></div>
     <div class="dialog-body"><p>下载安装后，再点「打开客户端」即可从这里直接进入客户端；当前页面会自动带过去。</p></div>
     <div class="dialog-actions"><button type="button" class="control" data-action="close">稍后</button>
-      <a class="primary" href="${CLIENT_DOWNLOAD_URL}" target="_blank" rel="noopener">去下载客户端</a></div>`;
+      <a class="primary" href="${CLIENT_DOWNLOAD_URL}" target="_blank" rel="noopener">${glyph('export', { size: 18 })} 下载客户端</a></div>`;
   if (dialog.open) dialog.close();
   dialog.showModal();
 }
@@ -4157,11 +4421,43 @@ app.addEventListener('click', (event) => {
     });
     return;
   }
-  const editOpponent = event.target.closest('[data-match-edit]');
-  if (editOpponent) {
-    event.preventDefault();
-    event.stopPropagation();
-    opponentDialog(editOpponent.dataset.matchEdit, editOpponent.dataset.opponent || '', editOpponent.dataset.teamId || '');
+  /* 对方战队：战队与选手建档入口。 */
+  if (event.target.closest('[data-opp-team-add]')) { oppTeamDialog(null); return; }
+  const teamEdit = event.target.closest('[data-opp-team-edit]');
+  if (teamEdit) { oppTeamDialog((data.teams || []).find((t) => t.id === teamEdit.dataset.oppTeamEdit)); return; }
+  const teamDel = event.target.closest('[data-opp-team-del]');
+  if (teamDel) {
+    const t = (data.teams || []).find((x) => x.id === teamDel.dataset.oppTeamDel);
+    if (!t) return;
+    oppConfirm(`确定删除战队「${t.name || t.id}」？该战队下的选手和账号映射会一并删除，不会留在选手池。`, () => {
+      fetch(API_BASE + '/api/studio/workspace/teams/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: t.id }),
+      }).then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || '删除失败');
+        load(true);
+      }).catch((err) => window.alert(err.message || '删除失败'));
+    });
+    return;
+  }
+  const playerAdd = event.target.closest('[data-opp-player-add]');
+  if (playerAdd) { oppPlayerDialog(null, playerAdd.dataset.oppPlayerAdd, playerAdd.dataset.oppLane); return; }
+  const playerEdit = event.target.closest('[data-opp-player-edit]');
+  if (playerEdit) { oppPlayerDialog((data.players || []).find((p) => p.id === playerEdit.dataset.oppPlayerEdit)); return; }
+  const playerDel = event.target.closest('[data-opp-player-del]');
+  if (playerDel) {
+    const p = (data.players || []).find((x) => x.id === playerDel.dataset.oppPlayerDel);
+    if (!p) return;
+    oppConfirm(`确定删除选手「${p.camp_user_id || p.name || p.id}」？该选手 ID 和挂着的账号映射会一并删除。`, () => {
+      fetch(API_BASE + '/api/studio/workspace/players/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }),
+      }).then(async (response) => {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.detail || '删除失败');
+        document.querySelector('#filters')?.close();
+        load(true);
+      }).catch((err) => window.alert(err.message || '删除失败'));
+    });
     return;
   }
   if (event.target.closest('[data-decider-open]')) {
@@ -4179,7 +4475,7 @@ app.addEventListener('click', (event) => {
     const teamId = row?.querySelector('select')?.value;
     if (!row || !teamId) return;
     button.disabled = true;
-    button.textContent = '映射中…';
+    button.innerHTML = `${glyph('refresh', { size: 18 })} 应用中…`;
     fetch(API_BASE + '/api/studio/workspace/opponents/map', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body:JSON.stringify({oldId:row.dataset.oldId, teamId}),
@@ -4193,7 +4489,7 @@ app.addEventListener('click', (event) => {
       await load(true);
     }).catch((error) => {
       button.disabled = false;
-      button.textContent = '映射';
+      button.innerHTML = `${glyph('compare', { size: 18 })} 应用映射`;
       window.alert(error.message);
     });
     return;
@@ -4331,6 +4627,52 @@ app.addEventListener('click', (event) => {
 });
 
 app.addEventListener('submit', (event) => {
+  if (event.target.id === 'opp-team-form') {
+    event.preventDefault();
+    const form = event.target;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.aliases = String(payload.aliases || '').split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+    if (form.dataset.teamId) payload.id = form.dataset.teamId;
+    const error = !String(payload.name || '').trim() ? '请填写战队名称。' : '';
+    form.querySelector('.filter-error').textContent = error;
+    if (error) return;
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    fetch(API_BASE + '/api/studio/workspace/teams', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }).then(async (response) => {
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || '保存失败');
+      document.querySelector('#filters')?.close(); load(true);
+    }).catch((err) => { button.disabled = false; form.querySelector('.filter-error').textContent = err.message || '保存失败'; });
+    return;
+  }
+  if (event.target.id === 'opp-player-form') {
+    event.preventDefault();
+    const form = event.target;
+    const payload = Object.fromEntries(new FormData(form).entries());
+    payload.aliases = String(payload.aliases || '').split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+    payload.teamId = form.dataset.teamId || '';
+    const playerId = form.dataset.playerId || '';
+    if (playerId) payload.id = playerId;
+    const gameId = String(payload.campUserId || '').trim();
+    const duplicate = (data.players || []).some((p) => p.camp_user_id === gameId && p.id !== playerId);
+    const error = !gameId ? '请填写选手 ID。' : duplicate ? `选手 ID「${gameId}」已存在，不能重复。` : '';
+    form.querySelector('.filter-error').textContent = error;
+    if (error) return;
+    payload.campUserId = gameId;
+    if (!String(payload.name || '').trim()) payload.name = gameId;
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    fetch(API_BASE + '/api/studio/workspace/players', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    }).then(async (response) => {
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || '保存失败');
+      document.querySelector('#filters')?.close(); load(true);
+    }).catch((err) => { button.disabled = false; form.querySelector('.filter-error').textContent = err.message || '保存失败'; });
+    return;
+  }
   if (mods.features?.submit(event)) return;
   if (event.target.id === 'bulk-opponent-form') {
     event.preventDefault();
@@ -4558,6 +4900,6 @@ initUpdateBanner({ API_BASE });
 load();
 /* 首屏空闲时预取 features.js：采集/对局等页签首次进入不必等 2–8s 骨架。
    importOnce 会复用同一个 promise，真正进入时不会重复下载或实例化。 */
-const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261123staff1'); };
+const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261126pdrefine1'); };
 if ('requestIdleCallback' in window) requestIdleCallback(prefetchFeatures, { timeout: 2500 });
 else setTimeout(prefetchFeatures, 1200);

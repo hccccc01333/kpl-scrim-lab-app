@@ -1,13 +1,15 @@
 import { equipIcons } from './equipment-icons.js';
+import { glyph } from './ui-icons.js';
 import { createResearch } from './research.js?v=20261124entry';
 import { createCapture } from './capture-page.js';
 import { createSources } from './sources-page.js';
 import { createReview } from './review-page.js';
-import { createPlayers } from './players-page.js';
+import { createPlayers } from './players-page.js?v=20261126pdwhite1';
 import { createHeroCompare } from './hero-compare.js';
+import { createHeroUsagePage, createLaneMetricsPage, createComboCardsPage } from './team-hero-insight.js?v=20261124a';
 import { createCoachBoard } from './coach-viz.js?v=20261124depth2';
-import { createPlayerCompare } from './player-compare.js';
-import { createTeamDossier } from './team-dossier.js?v=dossier-20261123notehistory';
+import { createPlayerCompare } from './player-compare.js?v=20261124ids';
+import { createTeamDossier } from './team-dossier.js?v=bplab2-20261126';
 import {
   isFocused, reasonsOf, focusNote, focusStats, REASONS, focusUi, applyFocusFilters,
 } from './focus-matches.js';
@@ -34,6 +36,9 @@ export function createFeatures(h) {
   document.addEventListener('focus:ready', refreshFocus);
   document.addEventListener('focus:change', refreshFocus);
   const heroCompare = createHeroCompare({esc, portrait});
+  const heroUsagePage = createHeroUsagePage({esc, portrait});
+  const laneMetricsPage = createLaneMetricsPage({esc, portrait});
+  const comboCardsPage = createComboCardsPage({esc, portrait});
   const coachBoard = createCoachBoard({esc});
   const playerCompare = createPlayerCompare({esc, portrait});
   const research = createResearch({esc,fmt,table,icon,pageIntro});
@@ -41,9 +46,9 @@ export function createFeatures(h) {
   const teamDossier = createTeamDossier({esc, fmt, pct, time, portrait, route, teamName: h.teamName});
   const endpoints = {
     teams:['studio/teams'], team:['studio/teams'], teamtraining:['v3/team-training'],
-    capture:['sources'], playerarchive:['v3/players-board','v3/identity/players'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], playercompare:['v3/players-board'], playerdetail:['v3/players-board','v3/custom-combos','v3/kpl/lane-baseline'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], herocompare:['studio/camp-compare'], featured:['matches','tempo'],
+    capture:['sources'], playerarchive:['v3/players-board','v3/identity/players'], ownership:['studio/opponents'], coach:['v3/bp-board','studio/coach'], playercompare:['v3/players-board'], playerdetail:['v3/players-board','v3/custom-combos','v3/kpl/lane-baseline'], heroes:['studio/camp-compare'], hero:['studio/camp-compare'], herocompare:['studio/camp-compare'], teamheroes:['v3/team-hero-insight'], lanemetrics:['v3/team-hero-insight'], comboperf:['v3/team-hero-insight'], featured:['matches','tempo'],
     reports:['v3/research/reports'], report:['v3/research/reports'], economy:['v3/economy'],
-    effect:['v3/effect', 'studio/workspace/players'], session:['studio/workspace/sessions'],
+    session:['studio/workspace/sessions'],
     weekly:['studio/workspace/schedules','studio/workspace/matches','v3/effect','v3/workspace/overview','studio/workspace/teams'],
     setup:['v3/workspace/overview','studio/workspace/teams','studio/workspace/players','studio/workspace/pending','v3/workspace/migration','studio/teams','v3/identity/accounts'],
     pending:['studio/workspace/pending','studio/workspace/teams','v3/vocab'], plan:['studio/workspace/schedules','studio/workspace/teams','v3/vocab','studio/workspace/dashboard','studio/workspace/competitions'],
@@ -111,10 +116,18 @@ export function createFeatures(h) {
       }
     })
     .catch(() => {});
-  const block = (title, subtitle, body, right='', attrs='') => body ? `<section class="section" data-gm-id="${gmId(title)}" ${attrs}><div class="section-heading" data-gm-part="标题"><div><h2>${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div><div class="gm-inline-actions">${right}</div></div>${body}</section>` : '';
+  /* 语义图标助手：按钮自带图标与明确文案，功能不靠标题下的小字解释。 */
+  const gi = (name, size = 18) => glyph(name, { size });
+  const formGlyph = (label) => /删除|移除/.test(label) ? 'trash'
+    : /确认|完成|生成|认领/.test(label) ? 'victory'
+    : /合并|对比|对账/.test(label) ? 'compare'
+    : /迁移|导出|导入/.test(label) ? 'export'
+    : /添加|新增|登记/.test(label) ? 'edit'
+    : 'shield';
+  const block = (title, subtitle, body, right='', attrs='', iconName='') => body ? `<section class="section" data-gm-id="${gmId(title)}" ${attrs}><div class="section-heading" data-gm-part="标题"><div><h2>${iconName ? `${gi(iconName)} ` : ''}${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div><div class="gm-inline-actions">${right}</div></div>${body}</section>` : '';
   const stats = (items) => `<div class="stats-band">${items.map(([label,value,detail]) => `<div><span>${esc(label)}</span><strong>${value}</strong><p>${esc(detail || '')}</p></div>`).join('')}</div>`;
   const empty = (s) => `<div class="empty">${esc(s)}</div>`;
-  const form = (id, fields, button='保存') => `<form class="feature-form" data-feature-form="${id}" aria-label="${esc(id)} 设置">${fields}<div class="form-footer"><p class="form-status" role="status"></p><button class="primary" type="submit">${button}</button></div></form>`;
+  const form = (id, fields, button='保存设置') => `<form class="feature-form" data-feature-form="${id}" aria-label="${esc(id)} 设置">${fields}<div class="form-footer"><p class="form-status" role="status"></p><button class="primary" type="submit">${gi(formGlyph(button))}${esc(button)}</button></div></form>`;
   const field = (label, name, value='', extra='') => `<label>${esc(label)}<input name="${esc(name)}" value="${esc(value ?? '')}" ${extra}></label>`;
   /* ── 赛训词表：版本 / 规则 / 赛制 / 训练组 ───────────────────────────
      选项来自 /api/v3/vocab（后端同一份词表）；「其他（手填）」会露出输入框，
@@ -143,9 +156,9 @@ export function createFeatures(h) {
   const options = (teams, value='') => `<option value="">请选择</option>${teams.map(t=>`<option value="${esc(t.id)}" data-roster="${esc((t.currentPlayers || t.players || []).map(p => p.name || p.id).join('、'))}" data-former="${esc(String((t.formerPlayers || []).length))}" ${t.id===value?'selected':''}>${esc(t.name || t.displayName)}</option>`).join('')}`;
   const select = (label, name, html) => `<label>${esc(label)}<select name="${esc(name)}">${html}</select></label>`;
   const multiTable = (head, rows) => table(head, rows);
-  const sxIntro = (title, sub, right='', withFilter=true) => `<div class="page-intro"><div><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div><div class="intro-actions">${right}${withFilter ? `<button class="control" data-action="filter">${icon('filter')} 数据范围</button>` : ''}<button class="control icon-control" data-action="refresh" aria-label="刷新数据">${icon('refresh')}</button></div></div>`;
+  const sxIntro = (title, sub, right='', withFilter=true) => `<div class="page-intro"><div><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div><div class="intro-actions">${right}${withFilter ? `<button class="control" data-action="filter">${gi('compare')} 数据范围</button>` : ''}<button class="control icon-control" data-action="refresh" aria-label="刷新数据" title="刷新数据">${gi('refresh')}</button></div></div>`;
   /* withScope=false 给不需要「统计范围」口径说明的页面（如英雄榜）用；其余页面保持原样。 */
-  const withPage = (title, sub, body, isScoped=true, right='', withFilter=true, sx=false, withScope=true) => `<div class="page feature-page${sx ? ' sx-page' : ''}">${isScoped ? `<div class="page-intro"><div><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div><div class="intro-actions">${right}<button class="control" data-action="refresh">刷新数据</button></div></div>` : sxIntro(title,sub,right,withFilter)}${isScoped && withScope ? scope : ''}${body}</div>`;
+  const withPage = (title, sub, body, isScoped=true, right='', withFilter=true, sx=false, withScope=true) => `<div class="page feature-page${sx ? ' sx-page' : ''}">${isScoped ? `<div class="page-intro"><div><h1>${esc(title)}</h1>${sub ? `<p>${esc(sub)}</p>` : ''}</div><div class="intro-actions">${right}<button class="control" data-action="refresh">${gi('refresh')}刷新数据</button></div></div>` : sxIntro(title,sub,right,withFilter)}${isScoped && withScope ? scope : ''}${body}</div>`;
   /* 英雄榜头像多选：选择存在模块内，刷新页面数据后仍保留。 */
   const heroPickState = { picked: new Set() };
   const heroSortState = { key: 'games', dir: 'desc' };
@@ -227,7 +240,6 @@ export function createFeatures(h) {
   const canonicalTeamName = (name) => String(name || '').trim().replace(/^待命名对手 #/, '待命名战队 #');
   const sxSubnav = (items, active) => `<nav class="sx-subnav" aria-label="子页面">${items.map(([key, label]) => `<a href="#${key}" ${key === active ? 'aria-current="page"' : ''}>${label}</a>`).join('')}</nav>`;
   const dataPrepNav = (active) => sxSubnav([['setup','建档'],['ownership','对手归属'],['pending','待确认']], active);
-  const reviewNav = (active) => sxSubnav([['reports','报告库'],['effect','训练效果']], active);
   const isPlaceholderPlayer = (name) => {
     const value = String(name || '').trim();
     return value.startsWith('待命名选手') || ['新选手', '未命名', '未命名选手', '选手'].includes(value);
@@ -337,23 +349,13 @@ export function createFeatures(h) {
      也不用把 4 支队硬塞进 3 列小卡（旧版最后一张永远是孤儿卡）。
      仍然不合成综合得分：单局样本撑不起强弱关系，只给交手、推塔、近况。 */
   const tbPad = (n) => String(n).padStart(2, '0');
-  const tbDays = (first, last) => {
-    const day = (value) => {
-      const hit = /^(\d{1,2})-(\d{1,2})/.exec(String(value || ''));
-      return hit ? new Date(2000, Number(hit[1]) - 1, Number(hit[2])).getTime() : null;
-    };
-    const a = day(first), b = day(last);
-    if (a == null || b == null) return null;
-    return Math.max(1, Math.round((b - a) / 86400000) + 1);
-  };
-  /* 索引行：选中按钮负责换右边档案，旁边独立的改名按钮就地命名。
-     wrapper 只作外壳——data-team-row 仍在内层 button 上，选中/过滤/排序逻辑不动；
-     改名按钮带 data-team-rename，走全站统一的命名对话框，改完全站一起更新。 */
+  /* 索引行：选中按钮负责换右边档案；勾选框只用于批量打标签。
+     wrapper 只作外壳——data-team-row 仍在内层 button 上，选中/过滤/排序逻辑不动。 */
   const tbItem = (t, index, selectedId) => {
     const pending = t.named ? '' : '待命名 · ';
     const last = t.lastSeen || '还没交过手';
     return `<div class="tb-item-wrap" data-team-id="${esc(t.id)}">
-      <label class="tb-item-check" title="勾选以批量合并或打标签"><input type="checkbox" data-merge-check value="${esc(t.id)}" aria-label="勾选 ${esc(t.displayName)}"><span></span></label>
+      <label class="tb-item-check" title="勾选以批量打标签"><input type="checkbox" data-bulk-check value="${esc(t.id)}" aria-label="勾选 ${esc(t.displayName)}"><span></span></label>
       <button type="button" class="tb-item" data-team-row data-team-select="${esc(t.id)}" data-team-id="${esc(t.id)}"
         data-team-name="${esc([t.displayName, t.name, t.coach, ...(t.currentPlayers || []).map((x) => `${x.name || ''} ${x.id || ''}`)].filter(Boolean).join(' ').toLowerCase())}"
         data-team-named="${t.named ? '1' : '0'}" data-team-games="${t.matches || 0}" data-team-wins="${t.wins || 0}" data-team-losses="${t.losses || 0}" data-team-rate="${t.winRate ?? ''}"
@@ -362,8 +364,6 @@ export function createFeatures(h) {
         <span class="tb-item-main"><b title="${esc(t.displayName)}">${text(t.displayName)}</b><small>${esc(pending)}${text(last)} · ${fmt(t.matches || 0)} 局</small><span class="tb-item-tags" data-team-tag-badges></span></span>
         <span class="tb-item-rate"><b><em>本队</em>${pct(t.winRate)}</b></span>
       </button>
-      <button type="button" class="tb-item-rename${t.named ? '' : ' is-pending'}" data-team-rename="${esc(t.id)}" data-team-label="${esc(t.displayName)}"
-        title="${t.named ? '改名' : '命名'}：${esc(t.displayName)}" aria-label="${t.named ? '改名' : '命名'} ${esc(t.displayName)}">${t.named ? '改名' : '命名'}</button>
     </div>`;
   };
   /* 档案：头部身份 → 四个读数 → 一句话结论 → 当前五人 / 最近交手。
@@ -473,7 +473,6 @@ export function createFeatures(h) {
         <div class="tb-dhead-side">${form}
           <div class="tb-actions">
             <a class="tb-cta" href="${route('team', t.id)}">完整档案 <span aria-hidden="true">→</span></a>
-            <button type="button" class="tb-ghost" data-team-rename="${esc(t.id)}" data-team-label="${esc(t.displayName)}">${t.named ? '改名' : '命名'}</button>
           </div>
         </div>
       </header>
@@ -523,7 +522,7 @@ export function createFeatures(h) {
     const toggle = root.querySelector('[data-team-compare-toggle]');
     if (toggle) {
       toggle.setAttribute('aria-pressed', String(on));
-      toggle.textContent = on ? '退出对比' : '对比';
+      toggle.innerHTML = on ? `${gi('refresh', 16)}退出对比` : `${gi('compare', 16)}并排对比`;
     }
     const detail = root.querySelector('[data-team-detail]');
     if (detail) {
@@ -732,82 +731,17 @@ export function createFeatures(h) {
     });
   }
   const mapping = {enemy_team_id:'对手战队',session:'训练组',version:'版本',rules:'规则',pick_order:'选用顺序'};
-  /* 并队前先对两套「当前五人」：对方转会 / 离队会让选手对不上，
-     教练要能看出谁没再出场、谁是新加入的，再决定要不要合。 */
-  /* 可搜索战队输入：按输入文本在 datalist 里反查 id + 当前五人，
-     命中后写入隐藏字段（提交用）并把 roster 记在 input 上（预览用）。 */
-  function resolveMergeSearch(input) {
-    if (!input) return null;
-    const form = input.closest('form');
-    const key = input.dataset.mergeSearch;
-    const hidden = form?.querySelector(`input[name="${key}"]`);
-    const text = String(input.value || '').trim();
-    const opts = [...(form?.querySelectorAll('#tb-team-options option') || [])];
-    const hit = text && (opts.find((o) => o.value === text) || opts.find((o) => o.value.includes(text) || text.includes(o.value)));
-    input.dataset.roster = hit ? (hit.dataset.roster || '') : '';
-    if (hidden) hidden.value = hit ? (hit.dataset.id || '') : '';
-    input.classList.toggle('is-resolved', Boolean(hit));
-    return hit || null;
-  }
-  function syncMergePreview(form) {
-    if (!form) return;
-    const box = form.querySelector('[data-merge-preview]');
-    if (!box) return;
-    const fromId = form.querySelector('input[name="from"]')?.value;
-    const intoId = form.querySelector('input[name="into"]')?.value;
-    const roster = (key) => String(form.querySelector(`[data-merge-search="${key}"]`)?.dataset.roster || '').split('、').map((x) => x.trim()).filter(Boolean);
-    if (!fromId || !intoId || fromId === intoId) {
-      box.innerHTML = '<p class="tm-merge-hint">输入队名并选中来源和「合并至」，这里会先对一下两边的当前五人。</p>';
-      return;
-    }
-    const a = roster('from'), b = roster('into');
-    const shared = a.filter((x) => b.includes(x));
-    const onlyA = a.filter((x) => !b.includes(x));
-    const onlyB = b.filter((x) => !a.includes(x));
-    /* 每人一个独立标签：共同=蓝、只在单边=红，名字一眼分清。 */
-    const chips = (list, mine) => list.map((n) => `<span class="tm-name${mine.includes(n) ? ' is-shared' : ' is-only'}">${esc(n)}</span>`).join('') || '<span class="tm-name is-none">—</span>';
-    const fact = (kind, count, names, note) => `<div class="tm-fact"><span class="tm-fact-tag ${kind}">${count ? fmt(count) : '0'}</span><div class="tm-fact-body"><b>${note}</b>${names ? `<p>${esc(names.join('、'))}</p>` : ''}</div></div>`;
-    const warn = shared.length === 0
-      ? '<p class="tm-merge-warn"><b>两边没有共同选手</b> · 若只是交手过不同对手，请不要合并；确认是同一支战队大换血再继续。</p>' : '';
-    box.innerHTML = `<div class="tm-rosters">
-      <section class="tm-roster"><h4>来源当前五人</h4><div class="tm-names">${chips(a, shared)}</div></section>
-      <section class="tm-roster"><h4>目标当前五人</h4><div class="tm-names">${chips(b, shared)}</div></section>
-    </div>
-    <div class="tm-facts">
-      ${fact('is-shared', shared.length, shared, '共同选手')}
-      ${fact('is-only', onlyA.length, onlyA, '只在来源 · 可能已离队或转会')}
-      ${fact('is-only', onlyB.length, onlyB, '只在目标 · 新加入')}
-    </div>
-    <p class="tm-merge-note">合并只统一战队身份：当前阵容取最近 5 局各位置出场最多的人，历史选手留在「曾效力」，不会凑成 7–8 人的名单。选手真的转到别的队，请到「对手归属」改挂。</p>${warn}`;
-  }
-  /* 统一执行合并：from 并入 into，可串行合并多支（批量勾选时指定 targetId）。
-     成功则 reload() 让全站队名/归属一起更新。 */
-  function runMerge(fromId, intoId, label, btn) {
-    if (!fromId || !intoId || fromId === intoId) return;
-    const name = label || '这两支战队';
-    if (!window.confirm(`确定把「${name}」合并为同一支战队吗？\n合并只统一身份，历史对局与选手记录都保留。`)) return;
-    if (btn) btn.disabled = true;
-    api('studio/teams/merge', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: fromId, into: intoId }),
-    }).then(() => reload()).catch((error) => {
-      if (btn) btn.disabled = false;
-      window.alert(error.message || '合并失败，请重试。');
-    });
-  }
-  function updateMergeBar(root) {
-    const bar = root?.querySelector('[data-merge-bar]');
-    if (!bar) return;
-    const count = root.querySelectorAll('[data-merge-check]:checked').length;
-    bar.hidden = count === 0;
-    const label = bar.querySelector('[data-merge-count]');
-    if (label) label.textContent = `已选 ${count} 支`;
-    const run = bar.querySelector('[data-merge-run]');
-    if (run) run.disabled = count < 2;
-  }
   /* 批量打标签：勾选多支后一键写入赛训库，再点同一标签即取消。 */
+  function updateBulkBar(root) {
+    const bar = root?.querySelector('[data-bulk-bar]');
+    if (!bar) return;
+    const count = root.querySelectorAll('[data-bulk-check]:checked').length;
+    bar.hidden = count === 0;
+    const label = bar.querySelector('[data-bulk-count]');
+    if (label) label.textContent = `已选 ${count} 支`;
+  }
   async function bulkTagSelected(root, tag) {
-    const rows = [...root.querySelectorAll('[data-merge-check]:checked')]
+    const rows = [...root.querySelectorAll('[data-bulk-check]:checked')]
       .map((check) => check.closest('.tb-item-wrap')?.querySelector('[data-team-row]')).filter(Boolean);
     if (!rows.length) return;
     const buttons = root.querySelectorAll('[data-bulk-tag]');
@@ -836,19 +770,11 @@ export function createFeatures(h) {
   function teamsPage(value, key, compare, bp, deep, behavior) {
     const teams = value.teams || [];
     if (key) return teamDetail(value, key, compare, bp, deep, behavior);
-    const named = teams.filter((t) => t.named).length;
-    const pendingTeams = teams.filter((t) => !t.named);
     const games = teams.reduce((sum, t) => sum + (t.matches || 0), 0);
     const wins = teams.reduce((sum, t) => sum + (t.wins || 0), 0);
     const losses = teams.reduce((sum, t) => sum + (t.losses || 0), 0);
-    const thin = teams.filter((t) => (t.matches || 0) < 3).length;
-    const latest = [...teams].sort((a, b) => String(b.lastSeen || '').localeCompare(String(a.lastSeen || '')))[0];
-    const lastSeen = latest ? String(latest.lastSeen || '') : '';
-    const firstSeen = teams.map((t) => String(t.firstSeen || '')).filter(Boolean).sort()[0] || '';
-    const spanDays = tbDays(firstSeen, lastSeen);
     const decided = wins + losses;
     const ownRate = decided ? wins / decided * 100 : null;
-    const oppRate = decided ? losses / decided * 100 : null;
     const cards = [...teams].sort((a, b) => String(b.lastSeen || '').localeCompare(String(a.lastSeen || ''))
       || String(a.displayName || '').localeCompare(String(b.displayName || ''), 'zh'));
     const viewState = readTeamViewState();
@@ -866,7 +792,7 @@ export function createFeatures(h) {
         </div>
         <div class="tb-hero-aside">
           <div class="tb-hero-actions">
-            <button class="control" data-action="refresh" title="重新读取营地面板">${icon('refresh')} 刷新数据</button>
+            <button class="control" data-action="refresh" title="重新读取营地面板">${gi('refresh')}刷新数据</button>
           </div>
 
         </div>
@@ -884,13 +810,12 @@ export function createFeatures(h) {
         <label class="tb-sort"><span>排序</span><select data-team-sort aria-label="排序">${sortOptions}</select>${icon('chevron')}</label>
         <label class="tb-sort"><span>标签</span><select data-team-tag-filter aria-label="按标签筛选">${tagOptions}</select>${icon('chevron')}</label>
       </div>
-      <div class="tb-merge-bar" data-merge-bar hidden>
-        <span data-merge-count>已选 0 支</span>
+      <div class="tb-merge-bar" data-bulk-bar hidden>
+        <span data-bulk-count>已选 0 支</span>
         <span class="tb-bulk-tag-label">打标签</span>
         <button type="button" class="tb-bulk-tag is-kpl" data-bulk-tag="KPL">KPL</button>
         <button type="button" class="tb-bulk-tag is-jia" data-bulk-tag="K甲">K甲</button>
-        <button type="button" class="tb-merge-run" data-merge-run disabled>合并选中 →</button>
-        <button type="button" class="tb-merge-clear" data-merge-clear>取消</button>
+        <button type="button" class="tb-merge-clear" data-bulk-clear>取消</button>
       </div>
     </div>`;
     const board = `<section class="tb-workspace" data-tm-board data-tm-directory data-team-filter="${statusValue}" data-team-selected="${esc(initialTeam)}" aria-label="对手目录">
@@ -900,7 +825,7 @@ export function createFeatures(h) {
           <div class="tb-rail-title"><h2>对手索引</h2><small>共 ${fmt(games)} 局交手</small></div>
           <div class="tb-rail-head-actions">
             <span class="tb-rail-count" data-team-count aria-live="polite">${fmt(teams.length)} 支</span>
-            <button type="button" class="tb-compare-btn" data-team-compare-toggle aria-pressed="false" title="并排对比两支对手">对比</button>
+            <button type="button" class="tb-compare-btn" data-team-compare-toggle aria-pressed="false" title="并排对比两支对手">${gi('compare', 16)}并排对比</button>
           </div>
         </div>
         ${toolbar}
@@ -915,9 +840,6 @@ export function createFeatures(h) {
             <b>${pct(ownRate)}</b>
             <small>${fmt(games)} 局 · ${fmt(wins)} 胜 ${fmt(losses)} 负</small>
           </div>
-          <p>同一支队被拆成几条？先合并成一条，再去命名。</p>
-          <button type="button" class="tb-rail-link" data-tb-maint>合并同一支战队 <span aria-hidden="true">↓</span></button>
-          <button type="button" class="tb-rail-link" data-team-bulk>批量命名${pendingTeams.length ? `（${fmt(pendingTeams.length)} 支待命名）` : ''}</button>
         </div>
       </aside>
       <div class="tb-detail" data-team-detail>${cards.map((t, index) => tbDossier(t, value.own, initialTeam)).join('')}
@@ -926,91 +848,10 @@ export function createFeatures(h) {
           <small>换个关键词，或把命名状态切回「全部」。</small>
           <button type="button" class="tb-empty-reset" data-team-reset>清空筛选</button>
         </div>
-        <div class="tb-compare-hint" data-team-compare-hint hidden><b>再选一支对手</b><small>在左边点第二支战队，这里并排显示两边的读数；再点一次可取消。</small></div>
+        <div class="tb-compare-hint" data-team-compare-hint hidden><b>${gi('compare', 16)}再选一支对手，开始并排对比</b></div>
       </div>
     </section>`;
-    /* 系统按 3–4 名重合选手算出「可能是同一支」的候选，做成一键合并卡片：
-       教练不用在几百支的下拉框里找，看到候选点一下、确认即可。 */
-    const suggestionCards = (value.suggestions || []).map((s) => {
-      const kind = s.kind === 'roster-change' ? '阵容更替' : '阵容重合';
-      const detail = s.kind === 'roster-change'
-        ? `换出 ${fmt(s.changedFrom || 0)} 人 / 加入 ${fmt(s.changedInto || 0)} 人`
-        : `共同 ${fmt(s.overlap || '—')} 名选手`;
-      return `<div class="tb-sug-card">
-        <div class="tb-sug-pair"><b>${text(s.fromName || s.from || '?')}</b><i>→</i><b>${text(s.intoName || s.toName || '?')}</b></div>
-        <div class="tb-sug-meta"><span class="tb-sug-kind">${kind}</span><span>${detail}</span></div>
-        <div class="tb-sug-act"><button type="button" class="tb-sug-merge" data-merge-quick data-merge-from="${esc(s.from || '')}" data-merge-into="${esc(s.into || '')}" data-merge-label="${esc(`${s.fromName || '?'} → ${s.intoName || '?'}`)}">一键合并</button></div>
-      </div>`;
-    }).join('');
-    /* 手动兜底：可搜索的战队选择。input + datalist 让几百支也能打字过滤，不用往下滑。 */
-    const teamSearchOptions = teams.map((t) => `<option value="${esc(t.name || t.displayName)}" data-id="${esc(t.id)}" data-roster="${esc((t.currentPlayers || t.players || []).map((p) => p.name || p.id).join('、'))}"></option>`).join('');
-    const mergeEmpty = `<div class="tb-merge-empty">
-      <span class="tb-merge-empty-icon" aria-hidden="true">${icon('teams')}</span>
-      <b>没有发现重复战队</b>
-      <p>系统按重合选手自动筛查，目前没有可疑的候选。<br>若你确认某两支是同一队，用下方手动合并即可。</p>
-    </div>`;
-    const merge = `<details class="tb-maint" id="tb-merge" open>
-      <summary>
-        <span class="tb-maint-icon" aria-hidden="true">${icon('teams')}</span>
-        <span class="tb-maint-copy"><b>合并同一支战队</b><em>换人、转会或离队会让同一支被认成几条。先并成一条，再去命名。</em></span>
-        <span class="tb-maint-more" aria-hidden="true"></span>
-      </summary>
-      <div class="tb-maint-body">
-        ${suggestionCards
-          ? `<section class="tb-merge-sec">
-              <header class="tb-merge-sec-head"><div><b>疑似同一支</b><p>按重合选手筛出的候选，确认无误后一键并成一条</p></div><span class="tb-merge-sec-count">${fmt((value.suggestions || []).length)} 组</span></header>
-              <div class="tb-sug-grid">${suggestionCards}</div>
-            </section>`
-          : mergeEmpty}
-        <section class="tb-merge-sec is-manual">
-          <header class="tb-merge-sec-head"><div><b>手动合并</b><p>输入队名搜索，把「来源」并入「目标」</p></div></header>
-          <form class="feature-form tb-merge-form" data-feature-form="merge">
-            <div class="tb-merge-fields">
-              <label class="tb-merge-field" for="tb-merge-from"><span>来源战队</span><input id="tb-merge-from" type="text" data-merge-search="from" list="tb-team-options" placeholder="搜索并选中…" autocomplete="off" spellcheck="false"><small>历史对局会保留</small></label>
-              <span class="tb-merge-arrow" aria-hidden="true">${icon('arrow')}</span>
-              <label class="tb-merge-field" for="tb-merge-into"><span>合并至</span><input id="tb-merge-into" type="text" data-merge-search="into" list="tb-team-options" placeholder="搜索并选中…" autocomplete="off" spellcheck="false"><small>保留它的队名与身份</small></label>
-            </div>
-            <datalist id="tb-team-options">${teamSearchOptions}</datalist>
-            <input type="hidden" name="from" value=""><input type="hidden" name="into" value="">
-            <div class="tb-merge-preview" data-merge-preview><p class="tb-merge-hint">选好两边后，这里会先对一下当前五人，确认是同一支再合并。</p></div>
-            <div class="form-footer"><p class="form-status" role="status"></p><button class="primary" type="submit">确认合并</button></div>
-          </form>
-        </section>
-      </div>
-    </details>`;
-    const renameDialog = `<dialog class="tb-dialog" data-team-rename-dialog closedby="any" aria-labelledby="tb-rename-title">
-      <form class="tb-dialog-body" data-feature-form="teamRename" novalidate>
-        <header class="tb-dialog-head">
-          <h2 id="tb-rename-title">给对手命名</h2>
-          <p>队名会同步到对局档案、系列赛和跨局分析；留空不能保存。</p>
-        </header>
-        <label class="tb-dialog-field"><span>战队名</span><input name="name" maxlength="24" autocomplete="off" spellcheck="false" placeholder="例如：XX 战队" required></label>
-        <p class="tb-dialog-error" data-team-rename-error role="alert" hidden></p>
-        <footer class="tb-dialog-foot">
-          <button type="button" class="tb-ghost" data-dialog-close>取消</button>
-          <button type="submit" class="tb-cta" data-team-rename-save>保存</button>
-        </footer>
-      </form>
-    </dialog>`;
-    const bulkDialog = `<dialog class="tb-dialog tb-dialog-wide" data-team-bulk-dialog closedby="any" aria-labelledby="tb-bulk-title">
-      <form class="tb-dialog-body" data-feature-form="teamBulkRename" novalidate>
-        <header class="tb-dialog-head">
-          <h2 id="tb-bulk-title">批量命名</h2>
-          <p>只列出还没命名的对手。改好的会一次提交，没动过的行自动跳过。</p>
-        </header>
-        <div class="tb-bulk-list">
-          ${pendingTeams.length
-            ? pendingTeams.map((t) => `<label class="tb-bulk-row" data-bulk-team="${esc(t.id)}"><span class="tb-bulk-crest" aria-hidden="true">${esc((t.displayName || '?').slice(0, 1))}</span><span class="tb-bulk-id">${text(t.displayName)}</span><input name="name" value="${esc(t.displayName)}" maxlength="24" autocomplete="off" spellcheck="false" aria-label="给 ${esc(t.displayName)} 命名"></label>`).join('')
-            : '<p class="tb-bulk-empty">当前没有待命名的对手，全部已建档。</p>'}
-        </div>
-        <p class="tb-dialog-error" data-team-bulk-error role="alert" hidden></p>
-        <footer class="tb-dialog-foot">
-          <button type="button" class="tb-ghost" data-dialog-close>取消</button>
-          <button type="submit" class="tb-cta"${pendingTeams.length ? '' : ' disabled'}>保存</button>
-        </footer>
-      </form>
-    </dialog>`;
-    return `<div class="page feature-page tb-page" data-tm-page>${hero}${board}${merge}${renameDialog}${bulkDialog}</div>`;
+    return `<div class="page feature-page tb-page" data-tm-page>${hero}${board}</div>`;
   }
   /* ── 战队详情 v3（2026-11-14）──────────────────────────────────────
      对齐首页（#overview）的设计参数：1180 容器、18px 段落标题、13px 正文、
@@ -1170,7 +1011,7 @@ export function createFeatures(h) {
           ${tmCrest(team.displayName)}
           <div><h3>${text(team.displayName)}</h3>
             <p>${fmt(team.matches)} 局 · 本队 ${tmRecord(team)} · 最近 ${text(team.lastSeen || '—')}</p></div>
-          <a class="control" href="${route('team', team.id)}">战队分析 →</a>
+          <a class="control" href="${route('team', team.id)}">${gi('compare', 16)}战队分析</a>
         </header>
         <div class="ttn-timeline">${sessions.length ? sessions.map((session) => sessionCard(session)).join('')
           : empty('这支对手还没有营地交手日。')}</div>
@@ -1185,7 +1026,7 @@ export function createFeatures(h) {
     return withPage('交手记录', `按对手汇总营地交手日 · 只统计训练赛与正式赛对局 · ${TM_NOTE}`,
       head + `<div class="ttn-layout">
         <aside class="section ttn-side">
-          <div class="section-heading"><div><h2>对手交手榜</h2><p>按最近交手排序；点一支看时间线。</p></div></div>
+          <div class="section-heading"><div><h2>${gi('opponent')}对手交手榜</h2></div></div>
           <div class="ttn-search"><input data-ttn-search placeholder="搜索对手" aria-label="搜索对手"></div>
           <div class="ttn-list" data-ttn-list>${listRows || empty('还没有可归集的对手。')}</div>
         </aside>
@@ -1224,8 +1065,8 @@ export function createFeatures(h) {
       <span class="sx-own-avatar">${esc((p.name || '?').slice(0, 1))}</span>
       <span class="sx-own-pname"><b>${text(p.name)}</b><small>${nickname}${text((p.lanes || []).join(' / ') || p.position || '位置未记录')} · ${fmt(p.games)} 场</small></span>
       <span class="sx-own-source ${mapped ? 'is-manual' : 'is-pending'}">${mapped ? '已命名' : '待命名'}</span>
-      <button type="button" class="control sx-own-action" data-sx-id-open="${esc(p.id)}" data-id-account="${esc(p.id)}" data-id-nickname="${esc(p.nickname || p.name)}" data-id-name="${mapped ? esc(p.name) : ''}" data-id-position="${esc(p.position || (p.lanes || [])[0] || '')}" data-id-positions="${esc((p.positions || []).join(','))}" data-id-team="${esc(p.teamId || '')}" data-id-teamname="${esc(teamNameOf(p.teamId))}" data-id-games="${fmt(p.games)}" data-id-player="${esc(p.playerId || '')}">${mapped ? '编辑' : '命名'}</button>
-      ${mapped ? `<button type="button" class="control sx-own-action" data-sx-player-assign="${esc(p.id)}" data-player-name="${esc(p.name)}" data-team-id="${esc(p.teamId || '')}">调整</button>` : ''}
+      <button type="button" class="control sx-own-action" data-sx-id-open="${esc(p.id)}" data-id-account="${esc(p.id)}" data-id-nickname="${esc(p.nickname || p.name)}" data-id-name="${mapped ? esc(p.name) : ''}" data-id-position="${esc(p.position || (p.lanes || [])[0] || '')}" data-id-positions="${esc((p.positions || []).join(','))}" data-id-team="${esc(p.teamId || '')}" data-id-teamname="${esc(teamNameOf(p.teamId))}" data-id-games="${fmt(p.games)}" data-id-player="${esc(p.playerId || '')}">${gi('edit', 16)}${mapped ? '编辑选手身份' : '命名选手'}</button>
+      ${mapped ? `<button type="button" class="control sx-own-action" data-sx-player-assign="${esc(p.id)}" data-player-name="${esc(p.name)}" data-team-id="${esc(p.teamId || '')}">${gi('opponent', 16)}调整战队归属</button>` : ''}
     </div>`;
     };
     const groups = [];
@@ -1245,7 +1086,7 @@ export function createFeatures(h) {
         search:(t.displayName + ' ' + players.map((p) => p.name).join(' ')).toLowerCase(),
         html:`<details class="sx-own-group" data-sx-own-group data-sx-name="${esc((t.displayName + ' ' + players.map((p) => p.name).join(' ')).toLowerCase())}" data-sx-named="${t.named ? '1' : '0'}" data-sx-unassigned="${players.filter((p) => !p.teamId).length}">
           <summary><span class="sx-own-crest">${esc((t.displayName || '?').slice(0, 1))}</span><span class="sx-own-title"><b>${text(t.displayName)}</b><small>${players.length} 名选手${t.named ? '' : ' · 还没命名'}</small></span><span class="sx-own-state ${t.named ? 'is-named' : 'is-pending'}">${t.named ? '已命名' : '待命名'}</span><span class="sx-own-toggle">展开</span></summary>
-          <div class="sx-own-players">${t.named ? '' : `<div class="sx-own-hint">战队名仍是占位名。<button type="button" class="sx-inline-btn" data-sx-team-rename="${esc(t.id)}" data-team-name="${esc(t.displayName)}">就地命名 →</button></div>`}${players.map(playerLine).join('')}</div>
+          <div class="sx-own-players">${t.named ? '' : `<div class="sx-own-hint">战队名仍是占位名。<button type="button" class="sx-inline-btn" data-sx-team-rename="${esc(t.id)}" data-team-name="${esc(t.displayName)}">${gi('edit', 16)}就地命名战队</button></div>`}${players.map(playerLine).join('')}</div>
         </details>`,
       });
     });
@@ -1259,7 +1100,7 @@ export function createFeatures(h) {
       </div>
       <span class="sx-toolbar-count" data-sx-own-count>共 ${teams.length} 支 · ${members.length} 名</span>
     </div>`;
-    const nextCta = teams.length - named > 0 ? `<a class="primary sx-head-cta" href="#setup">去建档命名 →</a>` : '';
+    const nextCta = teams.length - named > 0 ? `<a class="primary sx-head-cta" href="#setup">${gi('edit')}去建档命名</a>` : '';
     const dialog = `<dialog class="sx-dialog" id="sx-team-dialog">
       <form data-feature-form="sxTeamDialog">
         <div class="sx-dialog-head"><div><span class="sx-eyebrow">主数据维护</span><h2 data-sx-dialog-title>命名战队</h2></div><button type="button" class="sx-dialog-x" data-sx-dialog-close aria-label="关闭">×</button></div>
@@ -1275,19 +1116,19 @@ export function createFeatures(h) {
           <label>所属战队<select name="teamId"><option value="">未归属</option>${teams.map((t) => `<option value="${esc(t.id)}">${esc(t.displayName)}</option>`).join('')}</select></label>
         </div>
         <p class="form-status" role="status"></p>
-        <div class="sx-dialog-actions"><button type="button" class="control" data-sx-dialog-close>取消</button><button class="primary" type="submit">保存</button></div>
+        <div class="sx-dialog-actions"><button type="button" class="control" data-sx-dialog-close>取消</button><button class="primary" type="submit">${gi('shield')}保存命名与归属</button></div>
       </form>
     </dialog>`;
-    return withPage('对手归属', `以战队为单位核对选手归属 · ${teams.length} 支战队中 ${named} 支已命名；改完立即在对局与 BP 页生效。`,
+    return withPage('对手归属', '',
       dataPrepNav('ownership')
       +lede([['对手战队', `${fmt(teams.length)} 支`, `${fmt(named)} 支已命名`],
         ['对手选手', `${fmt(members.length)} 名`, `${fmt(unassigned)} 名未归属`],
         ['待命名', `${fmt(teams.length - named)} 支`, '命名后显示真实队名'],
         ['手动确认', `${fmt(manual)} 名`, '其余为阵容推断']])
-      + block('战队与选手', '默认展示前 5 支战队；展开后可命名战队或调整选手，搜索会跨全部战队匹配选手昵称。',
+      + block('战队与选手', '',
         `${toolbar}<div class="sx-own-groups" data-sx-own-groups>${groupHtml || empty('当前没有识别到对手选手。')}<p class="sx-empty" data-sx-own-empty hidden>没有符合条件的战队或选手。</p></div>
-        <button class="sx-more" type="button" data-sx-own-more ${groups.length <= 5 ? 'hidden' : ''}>展开全部 ${groups.length} 组</button>`,
-        `<span class="sx-count">${fmt(teams.length)} 支</span>`,'data-sx-scope="ownership"')
+        <button class="sx-more" type="button" data-sx-own-more ${groups.length <= 5 ? 'hidden' : ''}>${gi('arrow-up', 16)}展开全部 ${groups.length} 组</button>`,
+        `<span class="sx-count">${fmt(teams.length)} 支</span>`,'data-sx-scope="ownership"','opponent')
       + dialog, false, nextCta, false, true);
   }
   function identity(value) {
@@ -1298,7 +1139,7 @@ export function createFeatures(h) {
     const claim=form('identityClaim',fields,'确认认领').replace('<form class="feature-form"','<form class="feature-form" data-aliases="'+esc(JSON.stringify(value.aliases))+'"');
     const roster=form('identityRoster',field('选手名称','name','','required maxlength="40"')+select('位置','position','<option value="">待确认</option>'+['对抗路','打野','中路','发育路','游走'].map(x=>`<option value="${x}">${x}</option>`).join('')),'添加本队选手');
     const cards=`<div class="roster-chips">${value.entries.slice(0,18).map(x=>`<span><i>${text(x.label.slice(0,1))}</i><b>${text(x.label)}</b><small>${fmt(x.matches)} 局 · ${x.bound?'已认领':'待认领'}</small></span>`).join('')||empty('当前范围暂无本队昵称。')}</div>`;
-    return withPage('选手认领','将对局昵称连接到本队选手，让跨对局分析使用稳定身份。',stats([['本队昵称',fmt(value.entries.length),'当前数据范围'],['待认领',fmt(unbound.length),'需要教练确认'],['本队名单',fmt(value.members.length),'有效选手'],['身份来源','人工','不会自动猜测']])+block('认领昵称','确认该昵称确属这名本队选手后保存。',claim)+block('本队名单','新增后会同时建立选手主数据。',roster)+block('昵称概览','展示前 18 个昵称；可在上方选择全部昵称。',cards),false);
+    return withPage('选手认领','',stats([['本队昵称',fmt(value.entries.length),'当前数据范围'],['待认领',fmt(unbound.length),'需要教练确认'],['本队名单',fmt(value.members.length),'有效选手'],['身份来源','人工','不会自动猜测']])+block('认领昵称','',claim,'','','shield')+block('本队名单','',roster,'','','players')+block('昵称概览','',cards,'','','book'),false);
   }
   /* 英雄档位沿用 KPL 赛研 common.js:tierOf —— 按胜率 55 / 50 / 45 分 S/A/B/C。
      分析接口的 winRate 是 0–100 百分数，赛研是 0–1 小数，阈值按百分数写。 */
@@ -1499,7 +1340,7 @@ export function createFeatures(h) {
       <header class="hero-masthead"><div class="page-intro"><div>
         <a class="hero-back" href="#heroes">← 返回英雄榜</a>
         <h1>${esc(key || '英雄详情')}</h1><p>${intro}</p></div>
-        <div class="intro-actions"><button class="control" data-action="refresh">刷新数据</button></div></div>
+        <div class="intro-actions"><button class="control" data-action="refresh">${gi('refresh')}刷新数据</button></div></div>
         ${kpi}</header>
       ${anchorNav}<div class="hero-detail-grid">${lanePanel}${partnerPanel}${trioPanel}${playerBuildPanel}${playerPanel}${teamPanel}${leaguePanel}${growthPanel}${matchPanel}${timePanel}${matchupPanel}</div></div>`;
   }
@@ -1518,40 +1359,6 @@ export function createFeatures(h) {
       block('优势兑现路径',a.note,observation+chart+multiTable(['10 分钟状态','局数','胜场','胜率','95% Wilson 区间','样本'],buckets))+
       block('经济转折匹配',t.note,multiTable(['对局','近似时间窗口','本队经济差变化','附近候选事件'],rows)));
   }
-  function effect(value, players) {
-    const results = value.results || [];
-    const metricOptions = '<option value="kda">KDA</option><option value="gpm">分均经济</option><option value="dpm">分均输出</option><option value="tpm">分均承伤</option><option value="participation">参团率</option>';
-    const boundPlayers = players.players.filter((p) => p.camp_user_id);
-    const fields = field('训练目标','goal','','required placeholder="如：提升前 10 分钟经济差"')+
-      field('训练方法','intervention','','placeholder="如：固定开局换线演练"')+
-      field('开始日期','startDate',localDate(),'type="date" required')+
-      field('结束日期','endDate','','type="date"')+
-      select('观察指标','metric',metricOptions)+
-      field('目标值','target','','type="number" step="any" placeholder="可留空，留空只记录变化"')+
-      select('适用选手（留空为全队）','playerIds','<option value="">全队</option>'+boundPlayers.map((p) => `<option value="${esc(p.camp_user_id)}">${text(p.name)}</option>`).join(''))+
-      field('复盘备注','review','','placeholder="训练安排、对手、执行情况"');
-    const resultCards = `<div class="effect-grid">${results.map((r) => {
-      const e = r.effect || {};
-      return `<article class="effect-card"><div><span>${text(r.start_date || '日期未知')}</span><small>${text(e.label || r.metric)}</small></div><h3>${text(r.goal)}</h3>${r.intervention ? `<p class="sx-effect-method">${text(r.intervention)}</p>` : ''}${e.available ? `<div class="effect-values"><span>干预前<strong>${fmt(e.preMean,2)}</strong><small>${fmt(e.nPre)} 人次</small></span><i>→</i><span>干预后<strong>${fmt(e.postMean,2)}</strong><small>${fmt(e.nPost)} 人次</small></span><span>效应量 d<strong>${fmt(e.effectSize,2)}</strong><small>描述性对比</small></span></div>` : `<p>${text(e.reason || '样本不足')}</p>`}</article>`;
-    }).join('') || empty('还没有训练干预记录。')}</div>`;
-    const usable = results.filter((r) => (r.effect || {}).available);
-    const meanD = usable.length ? usable.reduce((s, r) => s + (r.effect.effectSize || 0), 0) / usable.length : null;
-    const emptyState = `<div class="sx-empty sx-effect-empty">
-      <span class="sx-empty-mark">◎</span>
-      <h3>还没有训练干预</h3>
-      <ol class="sx-effect-steps"><li><b>1</b><span>写下训练目标与观察指标</span></li><li><b>2</b><span>正常打训练赛，保持同一数据口径</span></li><li><b>3</b><span>回来看干预前后的均值与效应量</span></li></ol>
-      <button type="button" class="control" data-sx-jump="effect-form">登记第一条 ↓</button>
-    </div>`;
-    const resultsBlock = block('干预记录','',results.length?resultCards:emptyState);
-    const playerHint = boundPlayers.length ? '' : '<p class="sx-form-note">本队名单还没有绑定营地 ID，当前只能按全队对比；绑定后可按选手查看。</p>';
-    const formBlock = block('新增训练干预','',form('training',fields,'添加训练')+playerHint,'','data-sx-anchor="effect-form"');
-    return withPage('训练效果',`已登记 ${fmt(results.length)} 条干预，其中 ${fmt(usable.length)} 条可对比。`,
-      reviewNav('effect')
-      +lede([['干预记录',`${fmt(results.length)} 条`,'训练目标'],['可对比',`${fmt(usable.length)} 条`,'两侧样本 ≥ 5 人次'],['平均效应量',meanD==null?'—':fmt(meanD,2),'Cohen’s d'],['最近一条',text(results[0]?.start_date),text(results[0]?.goal||'')]])
-      
-      +`<div class="sx-effect-layout">${resultsBlock}${formBlock}</div>`,false,
-      results.length ? '<a class="control sx-head-cta" href="#effect" data-sx-jump="effect-form">新增训练</a>' : '',false,true);
-  }
   function pairComparison(kind, value) {
     const items = kind === 'team' ? value.teams : kind === 'player' ? value.players.own : value.heroes.own;
     const key = kind === 'team' ? 'id' : kind === 'player' ? 'id' : 'hero';
@@ -1566,7 +1373,7 @@ export function createFeatures(h) {
     return withPage(titles[kind],note,block('选择两个对象','切换后可并列查看已记录指标。',`<div class="compare-widget" data-pair-data="${data}"><div class="compare-select"><label>对象 A<select data-pair="a">${choices}</select></label><span>VS</span><label>对象 B<select data-pair="b">${choices}</select></label></div><div data-pair-result></div></div>`));
   }
   function capturePage() {
-    return withPage('导入表格','上传训练赛数据，先预览识别结果，再确认导入。',block('选择文件','支持 CSV、TSV、XLSX 与 XLSM，单个文件不超过 20 MB。',`<div class="upload-area"><span class="upload-icon">${icon('sources')}</span><h2>将比赛数据带入平台</h2><p>先选择文件，检查工作表、字段和数据粒度。预览文件会保留，原始文件不会被修改。</p><label class="primary upload-button">选择表格<input type="file" data-import-file accept=".csv,.tsv,.xlsx,.xlsm"></label><p data-import-status role="status"></p></div><div data-import-preview></div>`),false);
+    return withPage('导入表格','',block('选择文件','支持 CSV、TSV、XLSX 与 XLSM，单个文件不超过 20 MB。',`<div class="upload-area"><span class="upload-icon">${gi('sources', 24)}</span><h2>${gi('sources')}将比赛数据带入平台</h2><p>预览文件会保留，原始文件不会被修改。</p><label class="primary upload-button">${gi('sources')}选择表格文件<input type="file" data-import-file accept=".csv,.tsv,.xlsx,.xlsm"></label><p data-import-status role="status"></p></div><div data-import-preview></div>`, '', '', 'sources'),false);
   }
   /* ─── 对局子页（重点关注；原精选 / 版本对比已下线）─────────────────────
      沿用「一行一局」的读法：编号 → 对局 → 比分 → 时长 → 经济差 → 结果。
@@ -1621,20 +1428,19 @@ export function createFeatures(h) {
           ${note ? `<p class="fmx-note">${esc(note)}</p>` : ''}
         </div>
         <div class="fmx-actions">
-          <a class="fmx-evidence" href="${route('match', m.key)}">打开复盘证据 →</a>
+          <a class="fmx-evidence" href="${route('match', m.key)}">${gi('chart', 16)}打开复盘证据</a>
           <button type="button" class="fmx-mark" data-focus-match="${esc(m.key)}"
             data-focus-opponent="${esc(m.opponent || '')}" data-focus-date="${esc(m.date || '')}"
             data-focus-result="${esc(m.result || '')}" data-focus-score="${esc(score)}"
-            data-focus-duration="${esc(time(m.duration))}" data-focus-diff="${esc(econText)}">${focused ? '编辑关注' : '＋ 关注'}</button>
+            data-focus-duration="${esc(time(m.duration))}" data-focus-diff="${esc(econText)}">${gi('pick', 16)}${focused ? '编辑关注原因' : '关注这局'}</button>
         </div>
       </article>`;
     }).join('');
     const emptyHtml = stats.focused === 0
-      ? `<div class="fmx-empty"><b>还没有重点关注的局</b>
-           <span>在对局档案里点 ☆，或直接从全部对局里挑一局，标上原因和要追问的事实。</span>
-           <button type="button" class="fmx-empty-btn" data-focus-only>从全部对局里挑一局 →</button></div>`
+      ? `<div class="fmx-empty">${gi('pick', 24)}<b>还没有重点关注的局</b>
+           <button type="button" class="fmx-empty-btn" data-focus-only>${gi('matches')}从全部对局里挑一局</button></div>`
       : empty('没有符合当前原因或搜索条件的对局。');
-    return withPage('重点关注', '教练手动标记要拿去和队员谈的局，按原因汇总，点开就是证据。',
+    return withPage('重点关注', '',
       `<div data-focus-page>
         ${lede([['已关注', `${fmt(stats.focused)} 局`, '教练手动标记'],
           ['写有说明', `${fmt(stats.noted)} 局`, '可直接带进复盘'],
@@ -1642,7 +1448,7 @@ export function createFeatures(h) {
           ['全部对局', `${fmt(list.length)} 局`]])}
         <div class="fj-toolbar fmx-toolbar">
           <label class="fj-field"><span>搜对手 / 说明 / 原因</span><input type="search" data-focus-search value="${esc(focusUi.query)}" placeholder="例：击杀 · 小龙团 · 决策"></label>
-          <button type="button" class="fmx-only" data-focus-only aria-pressed="${focusUi.onlyFocused}">${focusUi.onlyFocused ? '只看已关注' : '显示全部对局'}</button>
+          <button type="button" class="fmx-only" data-focus-only aria-pressed="${focusUi.onlyFocused}">${gi('compare', 16)}${focusUi.onlyFocused ? '只看已关注' : '显示全部对局'}</button>
           <span class="fj-count" data-focus-count>${fmt(stats.focused)} / ${fmt(list.length)} 局</span>
         </div>
         <div class="fmx-reason-bar">${chips}</div>
@@ -1676,10 +1482,10 @@ export function createFeatures(h) {
         <span class="fj-rec-label">${esc(label)}</span>
         <strong>${show(holder)}</strong>
         <p>${esc(note)}${isNum(gap) ? ` · ${value >= mean ? '高' : '低'}于均值 ${fmt(gap)}%` : ''}</p>
-        <a href="${route('match', holder.key)}"><span>第 ${index.get(holder.key)} 局 · ${esc(holder.opponent || '对手未标注')}</span><b>查看 →</b></a>
+        <a href="${route('match', holder.key)}"><span>第 ${index.get(holder.key)} 局 · ${esc(holder.opponent || '对手未标注')}</span><b>${gi('arrow-up', 16)}查看这局</b></a>
       </article>`;
     }).join('');
-    return withPage('训练纪录', '这批局的极值在哪一场，和均值差多少。',
+    return withPage('训练纪录', '',
       lede([['对局', `${fmt(all.length)} 局`],
         ['平均时长', time(meanOf(all, duration))],
         ['平均终局经济差', diff(meanOf(all, (m) => m.goldDiff)), '本队减对手'],
@@ -1735,6 +1541,13 @@ export function createFeatures(h) {
     ];
     const done = steps.filter((x) => x.ok).length;
     const percent = Math.round(done / steps.length * 100);
+    const stepGlyph = (name) => /已就绪/.test(name) ? 'victory'
+      : /待确认|核对/.test(name) ? 'warning'
+      : /迁移/.test(name) ? 'export'
+      : /本队资料/.test(name) ? 'shield'
+      : /战队/.test(name) ? 'opponent'
+      : /游戏ID|选手/.test(name) ? 'players'
+      : 'matches';
     let next;
     if (!profile.teamName) next = {title:'先补齐本队资料', note:'战队名与主教练会进入报告署名、教练档案和平台展示。', cta:'填写本队资料', href:'#setup', jump:'profile'};
     else if (!teamList.length) next = {title:'添加第一支战队', note:'战队是选手归属、交手记录和 BP 分析的挂载点。', cta:'添加战队', href:'#setup', jump:'teams'};
@@ -1745,29 +1558,27 @@ export function createFeatures(h) {
     else if (pending.fields > 0) next = {title:`核对 ${pending.fields} 项待确认字段`, note:'版本、规则与训练组确认后，复盘才会归到正确的口径。', cta:'去待确认', href:'#pending'};
     else if (migration.candidates > 0) next = {title:`迁移 ${migration.candidates} 局新增对局`, note:'只补基本信息，不覆盖既有记录，也不推测身份与 BP 手序。', cta:'迁移对局', href:'#setup', jump:'migration'};
     else next = {title:'前置数据已就绪', note:'主数据、对局和待确认字段都已处理，可以进入对局与训练分析。', cta:'查看对局', href:'#matches'};
-    const nextCta = `<a class="primary sx-head-cta" href="${next.href}" ${next.jump ? `data-sx-jump="${next.jump}"` : ''}>${esc(next.cta)} →</a>`;
+    const nextCta = `<a class="primary sx-head-cta" href="${next.href}" ${next.jump ? `data-sx-jump="${next.jump}"` : ''}>${gi('arrow-up')}${esc(next.cta)}</a>`;
     const cockpit = `<section class="sx-progress-card" aria-label="建档进度">
       <div class="sx-progress-main">
         <div class="sx-ring" style="--sx-progress:${percent}" role="img" aria-label="建档完成 ${done} / ${steps.length}">
           <span><b>${done}</b><small>/${steps.length}</small></span>
         </div>
         <div class="sx-progress-copy">
-          <span class="sx-eyebrow">赛训准备度</span>
+          <span class="sx-eyebrow">${gi('shield', 16)}赛训准备度</span>
           <h2>${done === steps.length ? '前置数据已就绪' : `还差 ${steps.length - done} 项，分析才完整`}</h2>
-          <p>${done === steps.length ? '主数据、对局与待确认字段都已处理，可以开始复盘。' : '每完成一项，后面的对局、选手与报告就会少一层人工校正。'}</p>
           <div class="sx-bar"><i style="width:${percent}%"></i></div>
           <a class="sx-next" href="${next.href}" ${next.jump ? `data-sx-jump="${next.jump}"` : ''}>
             <span class="sx-next-kicker">下一步</span>
-            <b>${esc(next.title)}</b>
-            <small>${esc(next.note)}</small>
-            <em>${esc(next.cta)} →</em>
+            <b>${gi(stepGlyph(next.title))}${esc(next.title)}</b>
+            <em>${gi('arrow-up', 16)}${esc(next.cta)}</em>
           </a>
         </div>
       </div>
       <ol class="sx-checklist">${steps.map((step, i) => `<li class="sx-check ${step.ok ? 'is-done' : ''}">
         <a href="${step.href}" ${step.jump ? `data-sx-jump="${step.jump}"` : ''}>
           <span class="sx-check-dot">${step.ok ? '✓' : String(i + 1).padStart(2, '0')}</span>
-          <span class="sx-check-copy"><b>${esc(step.name)}</b><small>${esc(step.meta)}</small></span>
+          <span class="sx-check-copy"><b>${gi(stepGlyph(step.name), 16)}${esc(step.name)}</b><small>${esc(step.meta)}</small></span>
           <span class="sx-check-state">${step.ok ? '已完成' : '待完成'}</span>
           <span class="sx-check-arrow">→</span>
         </a>
@@ -1779,12 +1590,12 @@ export function createFeatures(h) {
     const quality = checks.length ? `<section class="sx-quality ${failed.length ? 'is-warn' : 'is-ok'}">
       <div class="sx-quality-score"><b>${o.dataQuality.score ?? '—'}</b><small>数据分</small></div>
       <div class="sx-quality-copy"><b>${failed.length ? `${failed.length} 项检查未通过` : '前置检查全部通过'}</b><p>${failed.length ? `${esc(failed[0].label)} · ${esc(failed[0].hint)}${failed.length > 1 ? ` 等 ${failed.length} 项` : ''}` : '对手、时长、经济差、分路与选手绑定均可用于分析。'}</p></div>
-      <a class="control" href="${qualityTarget}">${failed.length ? '去处理' : '查看数据'} →</a>
+      <a class="control" href="${qualityTarget}">${gi(failed.length ? 'warning' : 'chart')}${failed.length ? '处理未过项' : '查看数据'}</a>
     </section>` : '';
     const legacyMembers = (profile.members || []).filter((m) => !m.archived);
     const legacyBanner = legacyMembers.length > playerList.length && !profile.rosterMigratedAt ? `<section class="sx-legacy">
       <div class="sx-legacy-copy"><b>旧档案里还有 ${legacyMembers.length} 名成员</b><p>迁移会保留旧 id，跳过同名、同战队、同位置的重复项；旧占位名会改成「待命名选手 #N」，与战队占位名「待命名战队 #N」分开。</p></div>
-      <button type="button" class="control" data-sx-migrate-roster>迁移旧名单</button>
+      <button type="button" class="control" data-sx-migrate-roster>${gi('export')}迁移旧名单</button>
       <p class="sx-legacy-status" role="status"></p>
     </section>` : '';
     const leagueOptions = (sxTiers.leagues || []).map((item) => `<option value="${esc(item)}"></option>`).join('');
@@ -1796,7 +1607,7 @@ export function createFeatures(h) {
       field('组织','organization',profile.organization||'', 'placeholder="如：AG 电子竞技俱乐部"')+
       `<datalist id="sx-league-options">${leagueOptions}</datalist>`,
       '保存本队资料');
-    const profileBlock = block('本队资料','平台展示、教练档案与报告署名都会用到这一组信息。',profileForm,profile.teamName?'<span class="sx-done-badge">已保存</span>':'','data-sx-anchor="profile"');
+    const profileBlock = block('本队资料','',profileForm,profile.teamName?'<span class="sx-done-badge">已保存</span>':'','data-sx-anchor="profile"','shield');
     /* ── 身份对照：游戏ID → 选手 → 战队（一处命名，处处生效） ─────────── */
     const idChip = (key, label, count, pressed = false) =>
       `<button type="button" class="fj-chip" data-sx-id-chip="${key}" aria-pressed="${pressed}">${esc(label)} ${fmt(count)}</button>`;
@@ -1813,8 +1624,8 @@ export function createFeatures(h) {
         <span class="sx-id-team">${mapped ? `<b>${text(teamLabel || '未归队')}</b>` : (suggest ? `<small>建议 ${esc(suggest)}</small>` : '<small>战队未识别</small>')}</span>
         <span class="sx-id-side">${row.side === 'own' ? '本队' : '对手'}</span>
         <span class="sx-id-actions">
-          <button type="button" class="sx-inline-btn" ${openAttrs}>${mapped ? '编辑' : '命名'}</button>
-          ${mapped ? `<button type="button" class="sx-inline-btn is-quiet" data-sx-id-unmap="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}">解绑</button><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(row.playerId)}" data-id-name="${esc(row.name)}">删除</button>` : ''}
+          <button type="button" class="sx-inline-btn" ${openAttrs}>${gi('edit', 16)}${mapped ? '编辑身份' : '命名选手'}</button>
+          ${mapped ? `<button type="button" class="sx-inline-btn is-quiet" data-sx-id-unmap="${esc(row.accountId)}" data-id-nickname="${esc(row.nickname)}">${gi('refresh', 16)}解绑ID</button><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(row.playerId)}" data-id-name="${esc(row.name)}">${gi('trash', 16)}删除选手</button>` : ''}
         </span>
       </div>`;
     };
@@ -1824,18 +1635,17 @@ export function createFeatures(h) {
       <div class="sx-chips">${idChip('all', '全部', idState.all, true)}${idChip('unmapped', '待命名', idState.unmapped)}${idChip('mapped', '已命名', idState.mapped)}${idChip('own', '本队', idState.own)}${idChip('enemy', '对手', idState.enemy)}</div>
       <span class="sx-toolbar-count" data-sx-id-count>共 ${fmt(idState.all)} 个游戏ID</span>
     </div>`;
-    const identityBlock = block('身份对照 · 游戏ID → 选手 → 战队',
-      '营地爬到的每个游戏ID都在这里。命名一次，建档、对手归属、选手档案、个人页都按这个名字显示；以后同一账号自动认人。',
-      `<p class="sx-id-hint">游戏ID 指营地昵称，选手ID 是你给这个人起的真名（如「小义」）。命名时顺手选战队；战队还没有就写个新队名，会一起建出来。删选手会连他的游戏ID映射一起删，那些ID回到「待命名」。</p>`
+    const identityBlock = block('身份对照 · 游戏ID → 选手 → 战队', '',
+      `<p class="sx-id-hint">${gi('warning', 16)}删除选手会同时删除他的游戏ID映射，这些ID会回到「待命名」。</p>`
       + idToolbar
-      + `<div class="sx-id-list" data-sx-id-list>${idHead}${identityRows.map(idRow).join('') || empty('还没有可命名的游戏账号。先在「采集 → 营地同步」拉一场。')}<p class="sx-empty" data-sx-id-empty hidden>没有符合条件的游戏ID。</p></div>`
-      + `<button class="sx-more" type="button" data-sx-id-more ${identityRows.length <= 20 ? 'hidden' : ''}>显示全部 ${fmt(identityRows.length)} 个</button>`,
-      `<span class="sx-count">${fmt(idState.unmapped)} 个待命名</span>`, 'data-sx-anchor="identity"');
+      + `<div class="sx-id-list" data-sx-id-list>${idHead}${identityRows.map(idRow).join('') || empty('还没有可命名的游戏账号。')}<p class="sx-empty" data-sx-id-empty hidden>没有符合条件的游戏ID。</p></div>`
+      + `<button class="sx-more" type="button" data-sx-id-more ${identityRows.length <= 20 ? 'hidden' : ''}>${gi('arrow-up', 16)}显示全部 ${fmt(identityRows.length)} 个</button>`,
+      `<span class="sx-count">${fmt(idState.unmapped)} 个待命名</span>`, 'data-sx-anchor="identity"', 'players');
     const quickOptions = unnamedTeams.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
     const quickForm = unnamedTeams.length ? `<div class="sx-quick">
-      <div class="sx-quick-copy"><b>命名队列</b><p>${unnamedTeams.length} 支战队还是占位名。命名会同步到对局、BP、报告与对手归属。</p></div>
-      ${form('sxRenameTeam',select('待命名战队','id',quickOptions)+field('真实队名','name','','required maxlength="40" placeholder="如：重庆狼队"')+field('主教练','coach','','placeholder="可留空"'),'保存命名')}
-    </div>` : `<div class="sx-quick is-done"><div class="sx-quick-copy"><b>战队名都已补齐</b><p>已命名 ${namedTeams.length} 支；需要时可展开下方战队列表编辑。</p></div></div>`;
+      <div class="sx-quick-copy">${gi('opponent')}<b>命名队列 · ${unnamedTeams.length} 支待命名</b></div>
+      ${form('sxRenameTeam',select('待命名战队','id',quickOptions)+field('真实队名','name','','required maxlength="40" placeholder="如：重庆狼队"')+field('主教练','coach','','placeholder="可留空"'),'保存战队命名')}
+    </div>` : `<div class="sx-quick is-done"><div class="sx-quick-copy">${gi('victory')}<b>战队名都已补齐 · ${namedTeams.length} 支</b></div></div>`;
     const teamToolbar = `<div class="sx-toolbar">
       <label class="sx-search">${icon('search')}<input data-sx-team-search placeholder="搜索战队名或教练" aria-label="搜索战队"></label>
       <div class="sx-chips">
@@ -1856,7 +1666,7 @@ export function createFeatures(h) {
           <span class="sx-team-mark ${named ? 'is-named' : ''}">${esc((t.name || '待').slice(0, 1))}</span>
           <span class="sx-team-title"><b>${text(t.name)}</b><small>${own ? '本队档案 · 所有分析的本队视角' : manual ? '手动建档 · 用于选手归属，不计入对手命名进度' : named ? (t.coach ? '主教练 ' + text(t.coach) : '教练未填') : '营地阵容聚类 · 待命名'}</small></span>
           <span class="sx-team-state ${own ? 'is-own' : manual ? 'is-manual' : named ? 'is-named' : 'is-pending'}">${own ? '本队' : manual ? '手动' : named ? '已命名' : '待命名'}</span>
-          <span class="sx-team-edit">编辑</span>
+          <span class="sx-team-edit">${gi('edit', 16)}编辑战队</span>
         </summary>
         ${form('masterTeam',`<input type="hidden" name="id" value="${esc(t.id)}"><input type="hidden" name="status" value="${esc(t.status || 'active')}">`+field('战队名称','name',t.name,'required maxlength="40"')+field('简称','shortName',t.short_name||'')+field('教练','coach',t.coach||''),'保存修改')}
       </details>`;
@@ -1867,16 +1677,16 @@ export function createFeatures(h) {
     const bulkForm = `<details class="sx-manage"><summary>批量命名（粘贴名单 / CSV）</summary><div class="sx-manage-body">
       <form class="feature-form sx-bulk-form" data-feature-form="bulkRename" data-sx-teams="${esc(bulkTeams)}">
         <label class="sx-bulk-names">名单<textarea name="names" rows="6" placeholder="每行一个队名，按待命名顺序对应；也可写 #1=重庆狼队"></textarea></label>
-        <div class="sx-bulk-foot"><label class="sx-bulk-file">从 CSV/TXT 读入<input type="file" data-sx-bulk-file accept=".csv,.txt"></label><p class="form-status" role="status"></p><button class="primary" type="submit">批量保存</button></div>
+        <div class="sx-bulk-foot"><label class="sx-bulk-file">${gi('sources', 16)}从 CSV/TXT 读入<input type="file" data-sx-bulk-file accept=".csv,.txt"></label><p class="form-status" role="status"></p><button class="primary" type="submit">${gi('edit')}批量保存命名</button></div>
       </form>
       <p class="sx-form-note">按当前待命名顺序逐行对应；显式写 #1=队名 可以跳过顺序。一次最多 200 支。</p>
     </div></details>`;
     const teamManage = bulkForm + `<details class="sx-manage"><summary>新增战队 / 合并重复战队</summary><div class="sx-manage-body">
       ${form('masterTeam',field('战队名称','name','','required maxlength="40"')+field('简称','shortName')+field('教练','coach'),'添加战队')}
       ${form('masterMerge',select('来源战队','from',options(teamList))+select('合并至','into',options(teamList)),'合并主数据')}
-      <div class="sx-reconcile"><p>旧版本的命名覆盖层与工作区主数据不一致时，可一次对账；只补名字和教练，不动比赛记录。</p><button type="button" class="control" data-sx-reconcile-teams>对账历史战队名</button><p class="form-status" role="status"></p></div>
+      <div class="sx-reconcile"><p>旧版本的命名覆盖层与工作区主数据不一致时，可一次对账；只补名字和教练，不动比赛记录。</p><button type="button" class="control" data-sx-reconcile-teams>${gi('compare')}对账历史战队名</button><p class="form-status" role="status"></p></div>
     </div></details>`;
-    const teamBlock = block('战队主数据','营地识别到的对手战队；本队和手动建档的战队单独标出，不计入对手命名进度。',quickForm+teamToolbar+teamListHtml+teamManage,`<span class="sx-count">${fmt(opponentTeams.length)} 支对手 · 本队 ${fmt(teamList.length - opponentTeams.length - manualTeams.length)}${manualTeams.length ? ` · 手动 ${fmt(manualTeams.length)}` : ''}</span>`,'data-sx-anchor="teams"');
+    const teamBlock = block('战队主数据','营地识别到的对手战队；本队和手动建档的战队单独标出，不计入对手命名进度。',quickForm+teamToolbar+teamListHtml+teamManage,`<span class="sx-count">${fmt(opponentTeams.length)} 支对手 · 本队 ${fmt(teamList.length - opponentTeams.length - manualTeams.length)}${manualTeams.length ? ` · 手动 ${fmt(manualTeams.length)}` : ''}</span>`,'data-sx-anchor="teams"','opponent');
     const playerForm = form('masterPlayer',
       select('所属战队','teamId',options(teamList))+
       field('选手名称','name','','required maxlength="40" placeholder="真实 ID 或常用名，不要用占位名"')+
@@ -1887,20 +1697,21 @@ export function createFeatures(h) {
       const team = teamList.find((t) => t.id === p.team_id)?.name || '未指定战队';
       const placeholder = isPlaceholderPlayer(p.name);
       const accounts = (identityRows || []).filter((row) => row.playerId === p.id).length;
-      return `<div class="sx-player-row ${placeholder ? 'is-placeholder' : ''}"><span class="sx-player-mark">${esc((p.name || '?').slice(0, 1))}</span><span class="sx-player-main"><b>${text(p.name)}</b><small>${placeholder ? '选手占位名 · ' : ''}${text(team)} · ${text(p.position || '位置未填')}${accounts ? ` · ${fmt(accounts)} 个游戏ID` : ' · 没有游戏ID'}</small></span><span class="sx-player-state ${placeholder ? 'is-pending' : p.role === 'main' ? 'is-main' : ''}">${placeholder ? '待命名' : p.role === 'main' ? '主力' : '替补'}</span><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(p.id)}" data-id-name="${esc(p.name)}">删除</button></div>`;
+      return `<div class="sx-player-row ${placeholder ? 'is-placeholder' : ''}"><span class="sx-player-mark">${esc((p.name || '?').slice(0, 1))}</span><span class="sx-player-main"><b>${text(p.name)}</b><small>${placeholder ? '选手占位名 · ' : ''}${text(team)} · ${text(p.position || '位置未填')}${accounts ? ` · ${fmt(accounts)} 个游戏ID` : ' · 没有游戏ID'}</small></span><span class="sx-player-state ${placeholder ? 'is-pending' : p.role === 'main' ? 'is-main' : ''}">${placeholder ? '待命名' : p.role === 'main' ? '主力' : '替补'}</span><button type="button" class="sx-inline-btn is-danger" data-sx-id-delete="${esc(p.id)}" data-id-name="${esc(p.name)}">${gi('trash', 16)}删除选手</button></div>`;
     }).join('');
     const editPlayers = playerList.map((p) => `<details class="sx-manage"><summary>${text(p.name)} · 编辑</summary><div class="sx-manage-body">${form('masterPlayer',`<input type="hidden" name="id" value="${esc(p.id)}"><input type="hidden" name="aliases" value="${esc(JSON.stringify(p.aliases||[]))}"><input type="hidden" name="role" value="${esc(p.role||'main')}">`+select('所属战队','teamId',options(teamList,p.team_id))+field('选手名称','name',p.name,'required maxlength="40"')+select('位置','position','<option value="">待确认</option>'+['对抗路','打野','中路','发育路','游走'].map((x) => `<option value="${x}" ${p.position === x ? 'selected' : ''}>${x}</option>`).join(''))+field('营地 ID','campUserId',p.camp_user_id||''),'保存修改')}</div></details>`).join('');
-    const playerBlock = block('选手主数据','选手占位名是「待命名选手 #N」，战队占位名是「待命名战队 #N」，两者分开统计。先有战队再登记选手，营地 ID 用于绑定昵称。',playerForm+(playerRows?`<div class="sx-player-list">${playerRows}</div>`:'')+editPlayers,`<span class="sx-count">${fmt(realPlayers.length)} 名${placeholderPlayers ? ` · ${fmt(placeholderPlayers)} 待命名` : ''}</span>`,'data-sx-anchor="players"');
+    const roleBatch = `<div class="sx-role-batch"><label>对手预建五路 ID<select data-sx-roles-team>${options(teamList)}</select></label><button type="button" class="control" data-sx-roles-create>${gi('players')}生成五路 ID</button><span data-sx-roles-status role="status"></span></div>`;
+    const playerBlock = block('选手主数据','选手占位名是「待命名选手 #N」，战队占位名是「待命名战队 #N」，两者分开统计。先有战队再登记选手，营地 ID 用于绑定昵称。',playerForm+roleBatch+(playerRows?`<div class="sx-player-list">${playerRows}</div>`:'')+editPlayers,`<span class="sx-count">${fmt(realPlayers.length)} 名${placeholderPlayers ? ` · ${fmt(placeholderPlayers)} 待命名` : ''}</span>`,'data-sx-anchor="players"','players');
     const migrationBlock = block('对局迁移',migration.note || '仅新增未迁移的真实对局基本信息；不覆盖现有记录，不推测选手身份、对手归属及 BP 手序。',
       `<div class="sx-migration">
         <div><span>结构化对局</span><b>${fmt(matchCount)}</b><small>局</small></div>
         <div><span>阵容记录</span><b>${fmt(counts.match_rosters)}</b><small>条</small></div>
         <div><span>BP 记录</span><b>${fmt(counts.bp)}</b><small>条</small></div>
         <div><span>待迁移</span><b>${fmt(migration.candidates)}</b><small>局</small></div>
-        <button class="control" data-feature-action="migrate" ${migration.candidates?'':'disabled'}>迁移新增对局</button>
+        <button class="control" data-feature-action="migrate" ${migration.candidates?'':'disabled'}>${gi('export')}迁移新增对局</button>
         <p class="migration-status" role="status"></p>
-      </div>`,'','data-sx-anchor="migration"');
-    return withPage('数据准备',`本队资料、战队与选手主数据是后续识别的前提 · 当前 ${done} / ${steps.length} 项已完成。`,
+      </div>`,'','data-sx-anchor="migration"','export');
+    return withPage('数据准备','',
       dataPrepNav('setup')+cockpit+quality+legacyBanner+identityBlock+profileBlock+teamBlock+playerBlock+migrationBlock,false,nextCta,false,true);
   }
   function pending(value, teams, vocab) {
@@ -1922,7 +1733,7 @@ export function createFeatures(h) {
         return `<form class="sx-confirm" data-feature-form="confirm" data-sx-field="${esc(f.field)}">
           <input type="hidden" name="matchKey" value="${esc(row.matchKey)}"><input type="hidden" name="field" value="${esc(f.field)}">
           <label class="sx-confirm-field"><span class="sx-confirm-label"><b>${esc(label)}</b><small>${esc(sourceName(f.source))}${confidenceName(f.confidence) ? ' · ' + confidenceName(f.confidence) : ''}</small></span>${controlOf(f)}</label>
-          <button class="control" type="submit">确认</button>
+          <button class="control" type="submit">${gi('victory', 16)}确认此字段</button>
           <p class="form-status" role="status"></p>
         </form>`;
       }).join('');
@@ -1930,7 +1741,7 @@ export function createFeatures(h) {
       return `<article class="sx-pending-card" data-sx-pending-card data-sx-total="${row.fields.length}" data-sx-search="${esc((row.opponent + ' ' + row.date + ' ' + row.matchKey).toLowerCase())}">
         <header><div><span>${text(row.date || '日期未知')}</span><b>${text(row.opponent || '对手未确认')}</b></div><span class="sx-pending-key" title="${esc(row.matchKey)}">${esc(shortKey)}</span><a href="#match/${encodeURIComponent(row.matchKey)}">查看对局 →</a></header>
         <div class="sx-pending-fields">${fields}</div>
-        <div class="sx-pending-foot"><span data-sx-card-count>${row.fields.length} 项待确认</span><p class="sx-card-status" role="status"></p><button type="button" class="control" data-sx-confirm-card>全部确认</button></div>
+        <div class="sx-pending-foot"><span data-sx-card-count>${row.fields.length} 项待确认</span><p class="sx-card-status" role="status"></p><button type="button" class="control" data-sx-confirm-card>${gi('victory', 16)}确认本局全部字段</button></div>
       </article>`;
     }).join('');
     const toolbar = rows.length ? `<div class="sx-toolbar">
@@ -1938,13 +1749,13 @@ export function createFeatures(h) {
       <div class="sx-chips"><button type="button" class="fj-chip" data-sx-pending-chip="" aria-pressed="true">全部 ${value.fields}</button>${fieldChips}</div>
       <span class="sx-toolbar-count" data-sx-pending-count>共 ${value.total} 局 · ${value.fields} 项</span>
     </div>` : '';
-    return withPage('待确认',`逐项核对预填字段，确认后写入记录与来源 · ${fmt(value.fields)} 项待确认，分布在 ${fmt(value.total)} 局。`,
+    return withPage('待确认','',
       dataPrepNav('pending')
       +lede([['待确认对局',`${fmt(value.total)} 局`,'含至少一个待确认字段'],['待确认字段',`${fmt(value.fields)} 项`,'逐项确认'],['自动预填','系统生成','需要人工核实'],['写入方式','确认后写回','标记人工来源']])
       + vocabDatalist(vocabList(vocab, 'session'))
       + block('确认队列','版本 / 规则 / 赛制从词表里选，训练组可输入新值；保存时统一归一化，「其他」手填的新值下次自动出现。',
         toolbar+`<div class="sx-pending-grid">${cards || '<p class="sx-empty">当前没有待确认字段。</p>'}</div><p class="sx-empty" data-sx-pending-empty hidden>没有匹配的待确认字段。</p>`,
-        `<button class="control" data-feature-action="prefill">重新扫描</button>`,'data-sx-scope="pending"'),false,'',false,true);
+        `<button class="control" data-feature-action="prefill">${gi('refresh')}重新扫描待确认字段</button>`,'data-sx-scope="pending"','warning'),false,'',false,true);
   }
   function plan(value, teams, vocab, dashboard, competitionData) {
     const schedules = value.schedules || [];
@@ -1983,12 +1794,12 @@ export function createFeatures(h) {
         ${form('schedule',`<input type="hidden" name="id" value="${esc(x.id)}">`+schedFields(x),'保存修改')}
       </details>`;
     };
-    const nextBanner = next ? `<div class="sx-plan-next"><span>下一场</span><b>${text(next.date)} ${text(next.start_time || '')}</b><p>对阵 ${text(opponentOf(next))} · ${text(next.session || '训练组未定')} · ${text(next.format || '赛制未定')}</p><a href="#session/${encodeURIComponent(next.id)}">打开训练课 →</a></div>` : '';
+    const nextBanner = next ? `<div class="sx-plan-next"><span>下一场</span><b>${gi('calendar', 16)}${text(next.date)} ${text(next.start_time || '')}</b><p>对阵 ${text(opponentOf(next))} · ${text(next.session || '训练组未定')} · ${text(next.format || '赛制未定')}</p><a href="#session/${encodeURIComponent(next.id)}">${gi('arrow-up', 16)}打开训练课</a></div>` : '';
     const list = schedules.length ? `<div class="sx-plan-list">${nextBanner}${[...upcoming, ...past].map(rowOf).join('')}</div>`
-      : `<div class="sx-empty sx-empty-inline"><b>还没有登记任何计划</b><p>登记今天约谁、练什么，赛后就能按对手和训练组回看。</p><button type="button" class="control" data-sx-jump="plan-form">添加第一条计划 ↓</button></div>`;
+      : `<div class="sx-empty sx-empty-inline">${gi('calendar', 24)}<b>还没有登记任何计划</b><button type="button" class="control" data-sx-jump="plan-form">${gi('edit')}添加第一条训练计划</button></div>`;
     const valid = schedules.filter((x) => x.status !== 'cancelled').length;
-    const planSection = block('训练赛排期','按日期查看；点开一行可以修改时间、对手和状态。',list,`<span class="sx-count">${fmt(schedules.length)} 条</span>`,'data-sx-anchor="plan-list"');
-    const formSection = block('添加计划','登记后，当天训练赛的采集与复盘会自动挂到这局上。',form('schedule',schedFields(),'添加计划'),'','data-sx-anchor="plan-form"');
+    const planSection = block('训练赛排期','',list,`<span class="sx-count">${fmt(schedules.length)} 条</span>`,'data-sx-anchor="plan-list"','calendar');
+    const formSection = block('添加计划','',form('schedule',schedFields(),'添加训练计划'),'','data-sx-anchor="plan-form"','calendar');
 
     /* ── 比赛：赛训的中心实体。先有比赛，训练计划/训练课/对局都挂在比赛下 ── */
     const compFields = (x = {}) => field('赛事名','name',x.name||'','required maxlength="60" placeholder="如 KPL 2026 春季赛"')+
@@ -2017,12 +1828,12 @@ export function createFeatures(h) {
         ${form('competition',`<input type="hidden" name="id" value="${esc(c.id)}">`+compFields(c),'保存修改')}
       </details>`;
     };
-    const compBanner = nextComp ? `<div class="sx-plan-next"><span>下一场比赛</span><b>${text(nextComp.date)} · ${text(nextComp.name)}</b><p>对阵 ${text(teams.teams.find((t) => t.id === nextComp.opponent_team_id)?.name || '待定')} · ${text(nextComp.stage || '赛段未定')} · ${text(nextComp.owner ? '负责人 ' + nextComp.owner : '负责人未定')}</p><a href="#competition/${encodeURIComponent(nextComp.id)}">打开比赛 →</a></div>` : '';
+    const compBanner = nextComp ? `<div class="sx-plan-next"><span>下一场比赛</span><b>${gi('victory', 16)}${text(nextComp.date)} · ${text(nextComp.name)}</b><p>对阵 ${text(teams.teams.find((t) => t.id === nextComp.opponent_team_id)?.name || '待定')} · ${text(nextComp.stage || '赛段未定')} · ${text(nextComp.owner ? '负责人 ' + nextComp.owner : '负责人未定')}</p><a href="#competition/${encodeURIComponent(nextComp.id)}">${gi('arrow-up', 16)}打开比赛</a></div>` : '';
     const compList = competitions.length
       ? `<div class="sx-plan-list">${compBanner}${[...compUpcoming, ...compPast].map(compRow).join('')}</div>`
-      : `<div class="sx-empty sx-empty-inline"><b>还没有登记比赛</b><p>先添加比赛（日期 + 对手 + 赛事名），再把训练计划挂到这场比赛下；比赛详情会自动汇总训练课、对局与选手。</p><button type="button" class="control" data-sx-jump="competition-form">添加第一场比赛 ↓</button></div>`;
-    const compSection = block('比赛','赛训以比赛为中心：先登记比赛，训练计划与对局都会汇总到比赛详情。',compList,`<span class="sx-count">${fmt(competitions.length)} 场</span>`,'data-sx-anchor="competition-list"');
-    const compFormSection = block('添加比赛','填写比赛日期、对手与赛事名；训练计划可以在下面直接关联这场比赛。',form('competition',compFields(),'添加比赛'),'','data-sx-anchor="competition-form"');
+      : `<div class="sx-empty sx-empty-inline">${gi('victory', 24)}<b>还没有登记比赛</b><button type="button" class="control" data-sx-jump="competition-form">${gi('edit')}添加第一场比赛</button></div>`;
+    const compSection = block('比赛','',compList,`<span class="sx-count">${fmt(competitions.length)} 场</span>`,'data-sx-anchor="competition-list"','victory');
+    const compFormSection = block('添加比赛','',form('competition',compFields(),'添加比赛'),'','data-sx-anchor="competition-form"','calendar');
 
     const dash = dashboard || {};
     const dashWeeks = dash.weeks || [];
@@ -2079,7 +1890,7 @@ export function createFeatures(h) {
     }).join('');
     const comboChart = `<div class="dash-combo"><svg viewBox="0 0 ${comboW} ${comboH}" role="img" aria-label="近 8 周训练局数"><g class="dash-combo-grid">${comboGrid}</g><g class="dash-combo-bars">${comboBars}</g><g class="dash-combo-labels">${comboLabels}</g></svg><div class="dash-combo-foot"><span>训练局数</span><em>本周 ${fmt(dashCurrent.sessionCount)} 场训练课</em></div></div>`;
     const loadStrip = loadStripWeeks.length ? `<div class="dash-week-strip">${loadStripWeeks.map((week) => `<div><span>${text((week.label || '').slice(0, 5))}</span><b>${fmt(week.sessionCount)} 场</b><small>${Number(week.gameCount) ? `${fmt(week.gameCount)} 局` : '未挂局'}</small></div>`).join('')}</div>` : '';
-    const loadChart = activeGameWeeks.length >= 3 ? comboChart : (loadStrip || '<div class="dash-empty-chart">近 8 周还没有训练课。先登记计划，再把对局挂到训练课。</div>');
+    const loadChart = activeGameWeeks.length >= 3 ? comboChart : (loadStrip || `<div class="dash-empty-chart">${gi('calendar', 20)}近 8 周还没有训练课</div>`);
     const ringPct = Math.max(0, Math.min(100, Number(goalPct) || 0));
     const ring = `<div class="dash-ring"><svg viewBox="0 0 120 120" aria-hidden="true"><circle class="dash-ring-bg" cx="60" cy="60" r="47"></circle><circle class="dash-ring-value" cx="60" cy="60" r="47" pathLength="100" stroke-dasharray="${ringPct} 100"></circle></svg><div class="dash-ring-label"><b>${goalPct != null ? pct(goalPct) : '—'}</b><span>目标达成</span></div></div>`;
     const goalLegend = [['achieved', '达成'], ['partial', '部分'], ['missed', '未达成'], ['pending', '未评估']].map(([key, label]) => `<span class="dash-legend-${key}"><i></i>${label}<b>${fmt(goalCounts[key] || 0)}</b></span>`).join('');
@@ -2105,7 +1916,7 @@ export function createFeatures(h) {
     ].map(([label, value]) => `<div class="dash-coverage-row"><span>${label}</span><div>${value != null ? `<i style="width:${Math.max(0, Math.min(100, Number(value)))}%"></i>` : ''}</div><b>${value != null ? pct(value) : '—'}</b></div>`).join('');
     const goalBody = goalTotal
       ? `<div class="dash-goal-body">${ring}<div class="dash-goal-legend">${goalLegend}</div></div>`
-      : `<div class="dash-goal-empty"><span>${icon('space')}</span><b>本周还没有训练目标</b><p>先写 1–3 条可复盘的目标，达成环才会出现。</p><a href="#plan" data-sx-jump="plan-form">去添加训练目标 →</a></div>`;
+      : `<div class="dash-goal-empty"><span>${gi('victory', 24)}</span><b>本周还没有训练目标</b><a href="#plan" data-sx-jump="plan-form">${gi('edit', 16)}添加训练目标</a></div>`;
     const heatHead = `<div class="dash-heat-head"><span></span>${['一', '二', '三', '四', '五', '六', '日'].map((day) => `<i>${day}</i>`).join('')}</div>`;
     const heatFoot = `<div class="dash-heat-foot"><span>少</span>${[0, 1, 2, 3, 4].map((level) => `<i class="dash-heat-cell is-${level}"></i>`).join('')}<span>多</span><em>训练日</em></div>`;
     const showHeat = totalSessions >= 3 || totalDashGames >= 3;
@@ -2120,25 +1931,25 @@ export function createFeatures(h) {
       : compactRhythm;
     const dashHtml = `<section class="train-dash">
       <div class="dash-hero">
-        <div class="dash-hero-main"><span class="dash-eyebrow">TRAINING PULSE</span><h2>赛训看板</h2><p>${text(dashCurrent.start || '本周')} — ${text(dashCurrent.end || '')} · 只看训练过程，不把对局胜率当训练成绩。</p></div>
+        <div class="dash-hero-main"><span class="dash-eyebrow">TRAINING PULSE</span><h2>${gi('chart')}赛训看板</h2><p>${text(dashCurrent.start || '本周')} — ${text(dashCurrent.end || '')} · 只看训练过程，不把对局胜率当训练成绩。</p></div>
         <div class="dash-hero-side"><span>本周训练</span><b>${fmt(dashCurrent.sessionCount || 0)}</b><small>场 · ${fmt(dashCurrent.gameCount || 0)} 局</small></div>
-        <div class="dash-hero-mark">${icon('setup')}</div>
+        <div class="dash-hero-mark">${gi('home', 32)}</div>
       </div>
       <div class="dash-kpis">${dashKpis}</div>
       <div class="dash-grid${sparseLayout ? ' is-sparse' : ''}">
-        <div class="dash-panel is-load"><div class="dash-panel-head"><div><span>LOAD</span><h3>近 8 周训练负荷</h3></div><small>按训练课挂接对局统计</small></div>${loadChart}</div>
-        <div class="dash-panel is-goal"><div class="dash-panel-head"><div><span>GOALS</span><h3>目标达成</h3></div><small>${fmt(goalTotal)} 条目标</small></div>${goalBody}</div>
-        <div class="dash-panel is-heat"><div class="dash-panel-head"><div><span>RHYTHM</span><h3>训练节奏</h3></div><small>${showHeat ? '近 8 周 · 每天' : '本周'}</small></div>${rhythmBody}<div class="dash-coverage">${coverageRows}</div></div>
-        <div class="dash-panel is-recent"><div class="dash-panel-head"><div><span>RECENT</span><h3>最近训练课</h3></div><a href="#plan" data-sx-jump="plan-list">全部 →</a></div><div class="dash-recent">${recentRows || '<p class="dash-empty">还没有训练课。</p>'}</div></div>
+        <div class="dash-panel is-load"><div class="dash-panel-head"><div><span>LOAD</span><h3>${gi('heatmap', 16)}近 8 周训练负荷</h3></div><small>按训练课挂接对局统计</small></div>${loadChart}</div>
+        <div class="dash-panel is-goal"><div class="dash-panel-head"><div><span>GOALS</span><h3>${gi('victory', 16)}目标达成</h3></div><small>${fmt(goalTotal)} 条目标</small></div>${goalBody}</div>
+        <div class="dash-panel is-heat"><div class="dash-panel-head"><div><span>RHYTHM</span><h3>${gi('clock', 16)}训练节奏</h3></div><small>${showHeat ? '近 8 周 · 每天' : '本周'}</small></div>${rhythmBody}<div class="dash-coverage">${coverageRows}</div></div>
+        <div class="dash-panel is-recent"><div class="dash-panel-head"><div><span>RECENT</span><h3>${gi('clock', 16)}最近训练课</h3></div><a href="#plan" data-sx-jump="plan-list">${gi('arrow-up', 16)}全部</a></div><div class="dash-recent">${recentRows || `<p class="dash-empty">${gi('calendar', 18)}还没有训练课</p>`}</div></div>
       </div>
     </section>`;
-    return withPage('比赛与训练计划',`以比赛为中心：先登记比赛，训练计划挂到比赛下 · 已登记 ${fmt(competitions.length)} 场比赛、${fmt(schedules.length)} 条训练计划（${fmt(valid)} 条有效）。`,
+    return withPage('比赛与训练计划','',
       lede([['比赛',`${fmt(competitions.length)} 场`,nextComp?`下一场 ${nextComp.date}`:'还没有比赛'],['已登记训练',`${fmt(schedules.length)} 条`,'训练赛排期'],['下一场训练',next?`${next.date} ${next.start_time||''}`:'—',next?'已排期':'还没有未来计划'],['训练组',`${fmt(new Set(schedules.map((x) => x.session).filter(Boolean)).size)} 个`,'按 session 归组']])
       + `<div class="sx-plan-layout">${compSection}${compFormSection}</div>`
       + vocabDatalist(vocabList(vocab, 'session'))
       + `<div class="sx-plan-layout">${planSection}${formSection}</div>`
       ,false,
-      `<a class="control sx-head-cta" href="#plan" data-sx-jump="competition-form">添加比赛</a>`,false,true);
+      `<a class="control sx-head-cta" href="#plan" data-sx-jump="competition-form">${gi('calendar')}添加比赛</a>`,false,true);
   }
   /* 比赛详情：一名教练负责的一场比赛，把训练课、对局、选手聚合到一页。
      数据来自 /api/studio/workspace/competitions/<id>（schedules + session_matches）
@@ -2205,14 +2016,14 @@ export function createFeatures(h) {
     let isCurrent = false;
     try { isCurrent = localStorage.getItem('training-current-competition') === curId; } catch {}
     const sectionLinks = [
-      ['matches', '对局', '查看这场赛事下的训练赛对局'],
-      ['teams', '战队', '分析与本队交手的对手战队'],
-      ['playerarchive', '选手', '本队选手档案与数据'],
-      ['heroes', '英雄', '英雄池与胜率'],
-      ['bp', 'BP', 'BP 模拟与应对分析'],
-    ].map(([href, label, desc]) => `<a class="comp-jump" href="#${href}"><b>${label}</b><small>${desc}</small><span>→</span></a>`).join('');
+      ['matches', '对局分析', 'matches'],
+      ['teams', '对手战队', 'opponent'],
+      ['playerarchive', '选手档案', 'players'],
+      ['heroes', '英雄数据', 'heroes'],
+      ['bp', 'BP 分析', 'bp'],
+    ].map(([href, label, iconName]) => `<a class="comp-jump" href="#${href}"><b>${gi(iconName)}${label}</b><span>→</span></a>`).join('');
     const selectBtn = curId
-      ? `<button type="button" class="${isCurrent ? 'control' : 'primary'}" data-competition-select="${esc(curId)}" ${isCurrent ? 'disabled' : ''}>${isCurrent ? '✓ 当前赛事' : '设为当前赛事'}</button>` : '';
+      ? `<button type="button" class="${isCurrent ? 'control' : 'primary'}" data-competition-select="${esc(curId)}" ${isCurrent ? 'disabled' : ''}>${gi(isCurrent ? 'victory' : 'shield')}${isCurrent ? '当前赛事' : '设为当前赛事'}</button>` : '';
     /* 基础信息编辑：复用 feature-form 委托，提交走 submit() 的 competitionEdit 分支。
        own_player_ids 在库里是 JSON 字符串，先解成数组再回显成原生复选框。 */
     const ceIds = (() => {
@@ -2247,18 +2058,18 @@ export function createFeatures(h) {
       + ceField('数据分析师', 'dataAnalyst', c.data_analyst, 'maxlength="40"')
       + `<fieldset style="grid-column:1/-1;border:0;margin:0;padding:0"><legend style="padding:0;margin-bottom:7px;color:var(--muted);font-size:12px;font-weight:700">本队选手</legend><div style="display:flex;flex-wrap:wrap;gap:6px 16px">${ceChecks || '<span>暂无可选选手</span>'}${ceHidden}</div></fieldset>`
       + `<label for="ce-status"><span>状态</span><select id="ce-status" name="status">${ceStatusOptions}</select></label>`;
-    const editBlock = block('编辑赛事信息', '修改基础信息、参赛名单与状态；保存后自动刷新本页。',
-      `<details><summary style="cursor:pointer;padding:4px 24px;color:var(--accent);font-size:12px;font-weight:700">展开编辑表单</summary>${form('competitionEdit', ceFields, '保存赛事信息')}</details>`);
-    return withPage('赛事详情', `${c.name || '比赛'} · ${c.date || ''} · 对阵 ${foe} · 训练课 ${fmt(schedules.length)} 场 / 对局 ${fmt(matches.length)} 局`,
-      `<div class="page-head-actions"><a class="control" href="#competitions">← 全部赛事</a>${selectBtn}</div>`
-      + `<section class="section"><div class="section-heading"><div><h2>${text(c.name || '未命名比赛')}</h2><p>${text(c.stage || '赛段未填写')} · ${text(c.format || '赛制未填写')} · ${compStatus[status] || status}</p></div></div>${hero}${kpis}</section>`
+    const editBlock = block('编辑赛事信息', '',
+      `<details><summary style="cursor:pointer;padding:4px 24px;color:var(--accent);font-size:12px;font-weight:700">${gi('edit', 16)}展开编辑表单</summary>${form('competitionEdit', ceFields, '保存赛事信息')}</details>`, '', '', 'edit');
+    return withPage('赛事详情', '',
+      `<div class="page-head-actions"><a class="control" href="#competitions">${gi('arrow-up', 16)}全部赛事</a>${selectBtn}</div>`
+      + `<section class="section"><div class="section-heading"><div><h2>${gi('victory')}${text(c.name || '未命名比赛')}</h2><p>${text(c.stage || '赛段未填写')} · ${text(c.format || '赛制未填写')} · ${compStatus[status] || status}</p></div></div>${hero}${kpis}</section>`
       + editBlock
-      + block('功能入口', '已选中本赛事后，点下面任意板块即可分析这场赛事的数据。', `<div class="comp-jumps">${sectionLinks}</div>`)
-      + block('本队选手', '按分路列出本队名单与近期胜率；点「选手」可查看个人档案。', rosterRows)
-      + block('训练课', '挂在这场比赛下的训练计划与训练课；点击进入训练课复盘。', schedRows, `<a class="control" href="#plan" data-sx-jump="plan-form">添加训练课</a>`)
-      + block('关联对局', '训练课按「手工关联 → 日期+对手 → 日期+训练组 → 日期」归集到的对局。', matchRows),
+      + block('功能入口', '', `<div class="comp-jumps">${sectionLinks}</div>`, '', '', 'compare')
+      + block('本队选手', '', rosterRows, '', '', 'players')
+      + block('训练课', '', schedRows, `<a class="control" href="#plan" data-sx-jump="plan-form">${gi('calendar', 16)}添加训练课</a>`, '', 'calendar')
+      + block('关联对局', '训练课按「手工关联 → 日期+对手 → 日期+训练组 → 日期」归集到的对局。', matchRows, '', '', 'matches'),
       false,
-      `<a class="control sx-head-cta" href="#competitions">全部赛事</a>`, false, true);
+      `<a class="control sx-head-cta" href="#competitions">${gi('arrow-up')}全部赛事</a>`, false, true);
   }
 
   function sessionReport(value) {
@@ -2309,9 +2120,9 @@ export function createFeatures(h) {
       <div class="report-brief-block"><span>禁用习惯</span><div class="report-hero-row">${(brief.bans || []).map((h) => `<i>${portrait(h.hero)}<small>${fmt(h.games)}</small></i>`).join('') || '—'}</div></div>
       <div class="report-brief-block"><span>关键选手</span><div class="report-players">${(brief.players || []).slice(0, 5).map((p) => `<em>${text(p.lane || '位置未知')} · ${text(p.name)}</em>`).join('') || '—'}</div></div>
     </div>` : '<p class="report-muted">未指定对手，暂无对手简报。</p>';
-    const toolbar = `<div class="report-toolbar"><a class="control" href="#session/${encodeURIComponent(s.id || '')}">← 返回训练课</a><div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>导出图片</button><button type="button" class="primary" data-sx-print>打印 / 保存 PDF</button></div></div>`;
+    const toolbar = `<div class="report-toolbar"><a class="control" href="#session/${encodeURIComponent(s.id || '')}">${gi('arrow-up', 16)}返回训练课</a><div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>${gi('export')}导出报告图片</button><button type="button" class="primary" data-sx-print>${gi('book')}打印 / 保存 PDF</button></div></div>`;
     return `<div class="report-page">${toolbar}<article class="report-sheet">
-      <header class="report-brand"><span class="report-mark">${icon('setup')}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">训练课报告</span></header>
+      <header class="report-brand"><span class="report-mark">${gi('chart', 24)}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">训练课报告</span></header>
       <section class="report-title"><div><span class="report-eyebrow">SESSION REPORT</span><h1>${text(date)} · 对阵 ${text(teamName)}</h1><p>${text(s.start_time || '时间未定')} · ${text(s.format || '赛制未定')} · ${text(s.session || '训练组未定')}</p></div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
       <section class="report-kpis">${[['训练局数', fmt(trainingGameCount), '本场'], ['训练时长', trainingDuration != null ? `${fmt(trainingDuration / 3600, 1)} 小时` : '—', '累计'], ['目标达成率', goalCompletion != null ? pct(goalCompletion) : '—', '按目标'], ['复盘完成率', reviewCompletion != null ? pct(reviewCompletion) : '—', '本场']].map(([label, value, note]) => `<div><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join('')}</section>
       <div class="report-context"><span>对局上下文</span>${fmt(matchCount)} 局 · 胜率 ${winRate != null ? pct(winRate) : '—'} · 场均 ${time(avg)} · ${wins} 胜 ${losses} 负</div>
@@ -2326,7 +2137,7 @@ export function createFeatures(h) {
           <div class="report-section"><h2>对手简报</h2>${briefHtml}</div>
         </aside>
       </section>
-      <footer class="report-footer"><span>数据来源：营地面板与对局档案</span><span>赛训数据 · ${generated}</span></footer>
+      <footer class="report-footer"><span>数据来源：营地面板与单局分析</span><span>赛训数据 · ${generated}</span></footer>
     </article></div>`;
   }
   /* 领导版周报的补充数据：只服务 #weekly，任何接口失败都降级为空，不让原周报整页崩掉。
@@ -2348,17 +2159,124 @@ export function createFeatures(h) {
       get('v3/players/board?from=' + encodeURIComponent(range.start) + '&to=' + encodeURIComponent(range.end)),
       get('v3/players/board?from=' + encodeURIComponent(range.prevStart) + '&to=' + encodeURIComponent(range.prevEnd)),
       get('v3/players-board'),
+      /* 周报身份映射：战队别名、选手 ID、规则集、昵称池，都按当前工作区实时读取。 */
+      get('studio/teams'),
+      get('v3/identity/players'),
+      get('studio/workspace/nickname-pool'),
+      get('studio/matching/rules'),
+      get('studio/workspace/players'),
+      get('matches?from=' + encodeURIComponent(range.prevStart) + '&to=' + encodeURIComponent(range.prevEnd)),
     ]);
   }
   function weeklyReport(data, key) {
     const schedules = data[0]?.schedules || [];
-    const allMatches = data[1]?.matches || [];
+    const workspaceMatches = data[1]?.matches || [];
+    const analysisWeekMatches = data[6]?.matches || [];
+    const analysisPrevMatches = data[15]?.matches || [];
+    /* 周报只看分析口径的对局：已纠错移除的局不会出现，对手名也已经是确认名。 */
+    const normalizeMatch = (m) => {
+      const camp = m.ownCamp || m.own_side || '';
+      const result = m.result || (m.winner ? (m.winner === camp ? 'win' : 'loss') : '');
+      return {
+        ...m, match_key: m.key || m.match_key || '', date: m.date || '',
+        opponent: m.opponent || '',
+        opponentTeamId: m.opponentTeamId || m.enemy_team_id || '',
+        enemy_team_id: m.opponentTeamId || m.enemy_team_id || '',
+        ownCamp: camp, own_side: camp,
+        winner: m.winner || (result === 'win' ? camp : result === 'loss'
+          ? (camp === 'blue' ? 'red' : 'blue') : ''),
+        result, score: m.scores || m.score, duration: m.duration,
+        matchType: m.matchType || m.match_type || '', session: m.session || '',
+        excluded_at: m.excluded_at || m.excludedAt || null,
+      };
+    };
+    const allMatches = (analysisWeekMatches.length
+      ? analysisWeekMatches : workspaceMatches.filter((m) => !m.excluded_at)).map(normalizeMatch);
     const effects = data[2]?.results || [];
     const metricData = data[5] || {};
     const metrics = metricData.metrics || {};
     const metric = (id) => metrics[id] || {};
     const overview = data[3]?.overview || {};
     const teams = data[4]?.teams || [];
+    const clusterTeams = data[10]?.teams || [];
+    const identityPlayers = data[11]?.players || [];
+    const nicknamePool = data[12]?.rows || [];
+    const matchingRules = data[13]?.rules || [];
+    const workspacePlayers = data[14]?.players || [];
+    /* 周报里所有「选手」都从游戏名换成选手 ID：规则集 > 昵称池 > 工作区别名。
+       未匹配到人时不再把游戏名当选手名直接印出去，统一标「未匹配选手」。 */
+    const playerAlias = new Map();
+    const playerIdByName = new Map();
+    const rememberPlayer = (id, names) => {
+      const cleanId = String(id || '').trim();
+      if (!cleanId) return;
+      playerIdByName.set(cleanId, cleanId);
+      String(names || '').split(/[|：:]/).map((s) => s.trim()).filter(Boolean)
+        .forEach((name) => { if (!playerAlias.has(name)) playerAlias.set(name, cleanId); });
+    };
+    workspacePlayers.forEach((p) => rememberPlayer(p.id, [p.name, p.match_name, p.camp_user_id, ...(Array.isArray(p.aliases) ? p.aliases : [])].join('|')));
+    identityPlayers.forEach((p) => rememberPlayer(p.id, [p.name, p.campUserId, p.nickname].join('|')));
+    matchingRules.forEach((r) => {
+      if (r?.enabled && r.nickname && r.playerId) playerAlias.set(`${r.side}|${r.nickname}`, r.playerId);
+    });
+    nicknamePool.forEach((r) => {
+      const nickname = String(r?.nickname || '').trim();
+      if (!nickname || !r.player_id) return;
+      const key = `${r.side}|${nickname}`;
+      if (!playerAlias.has(key)) playerAlias.set(key, r.player_id);
+      if (!playerAlias.has(nickname)) playerAlias.set(nickname, r.player_id);
+    });
+    const playerOf = (value, side = 'own') => {
+      const raw = String(value || '').trim();
+      if (!raw) return '未匹配选手';
+      const exact = playerAlias.get(`${side}|${raw}`) || playerAlias.get(`enemy|${raw}`)
+        || playerAlias.get(`own|${raw}`) || playerAlias.get(raw)
+        || (playerIdByName.has(raw) ? raw : '');
+      if (exact) return exact;
+      /* 只有一个候选时容忍「高校队」/「高校队12」这类长短写法差异。 */
+      const loose = [...playerAlias.entries()].filter(([name]) => !name.includes('|')
+        && (name.includes(raw) || raw.includes(name)));
+      return loose.length === 1 ? loose[0][1] : '未匹配选手';
+    };
+    const playerName = (value, side = 'own') => {
+      const id = playerOf(value, side);
+      if (id === '未匹配选手') return id;
+      const found = identityPlayers.find((p) => p.id === id) || workspacePlayers.find((p) => p.id === id);
+      return found?.name || found?.match_name || id;
+    };
+    const teamAlias = new Map();
+    const teamById = new Map(teams.map((t) => [String(t.id || ''), t]));
+    const rememberTeam = (id, names) => {
+      const cleanId = String(id || '').trim();
+      if (!cleanId) return;
+      if (!teamAlias.has(cleanId)) teamAlias.set(cleanId, cleanId);
+      String(names || '').split(/[|：:]/).map((s) => s.trim()).filter(Boolean)
+        .forEach((name) => { if (!teamAlias.has(name)) teamAlias.set(name, cleanId); });
+    };
+    teams.forEach((t) => rememberTeam(t.id, [t.name, t.short_name, ...(Array.isArray(t.aliases) ? t.aliases : [])].join('|')));
+    clusterTeams.forEach((t) => {
+      const name = teamById.get(String(t.id || ''))?.name || (t.named ? t.name : '');
+      if (name) {
+        teamAlias.set(t.id, name);
+        rememberTeam(name, [t.name, t.displayName].join('|'));
+      }
+    });
+    const teamNameOf = (value) => {
+      const raw = String(value || '').trim();
+      if (!raw) return '待确认对手';
+      const id = teamAlias.get(raw) || raw;
+      const found = teamById.get(id);
+      if (found?.name) return found.name;
+      const cluster = clusterTeams.find((t) => t.id === id && t.named);
+      if (cluster?.name) return cluster.name;
+      /* 「高校队」这类旧名被登记成「高校队12」时按包含关系归到同一支。 */
+      const fuzzy = teams.find((t) => {
+        const name = String(t.name || '').trim();
+        return name && (name.includes(raw) || raw.includes(name));
+      });
+      if (fuzzy?.name) return fuzzy.name;
+      return '待确认对手';
+    };
     const teamName = overview.profile?.teamName || overview.teamName || '本队';
     const namedStaff = (Array.isArray(overview.profile?.staff) ? overview.profile.staff : [])
       .filter((row) => row && String(row.name || '').trim()).slice(0, 4);
@@ -2386,16 +2304,28 @@ export function createFeatures(h) {
     const prevEnd = localDate(prevEndDate);
     const prevRange = (value) => String(value || '') >= prevStart && String(value || '') <= prevEnd;
     const prevSchedules = schedules.filter((s) => prevRange(s.date));
-    const prevMatches = allMatches.filter((m) => prevRange(m.date));
-    const teamOf = (id) => teams.find((t) => t.id === id)?.name || '未指定对手';
-    const resultOf = (m) => m.own_side && m.winner
-      ? (m.winner === m.own_side ? 'win' : 'loss')
-      : (m.result === 'win' ? 'win' : m.result === 'loss' ? 'loss' : null);
-    const wins = metric('week.win_count').value ?? weekMatches.filter((m) => resultOf(m) === 'win').length;
-    const losses = metric('week.loss_count').value ?? weekMatches.filter((m) => resultOf(m) === 'loss').length;
+    const prevMatches = (analysisPrevMatches.length
+      ? analysisPrevMatches
+      : workspaceMatches.filter((m) => prevRange(m.date) && !m.excluded_at)).map(normalizeMatch);
+    const scheduleOpponentByDate = new Map();
+    weekSchedules.forEach((s) => {
+      if (s.date && String(s.opponent || '').trim()) scheduleOpponentByDate.set(s.date, String(s.opponent).trim());
+    });
+    const rawOpponentOf = (m) => m.enemy_team_id || m.opponent || scheduleOpponentByDate.get(m.date) || '';
+    const dateOpponent = new Map();
+    weekMatches.forEach((m) => {
+      const name = teamNameOf(rawOpponentOf(m));
+      if (name !== '待确认对手') dateOpponent.set(m.date, name);
+    });
+    const teamOf = (value, date = '', opponent = '') => teamNameOf(
+      value || opponent || scheduleOpponentByDate.get(date) || dateOpponent.get(date) || '');
+    const resultOf = (m) => m.result === 'win' || m.result === 'loss' ? m.result
+      : m.own_side && m.winner ? (m.winner === m.own_side ? 'win' : 'loss') : null;
+    const wins = weekMatches.filter((m) => resultOf(m) === 'win').length;
+    const losses = weekMatches.filter((m) => resultOf(m) === 'loss').length;
     const prevWins = prevMatches.filter((m) => resultOf(m) === 'win').length;
     const prevLosses = prevMatches.filter((m) => resultOf(m) === 'loss').length;
-    const currentRate = metric('week.win_rate').value ?? (wins + losses ? wins / (wins + losses) * 100 : null);
+    const currentRate = wins + losses ? wins / (wins + losses) * 100 : null;
     const prevRate = prevWins + prevLosses ? prevWins / (prevWins + prevLosses) * 100 : null;
     const usableEffects = weekEffects.filter((e) => e.effect?.available);
     const meanEffect = usableEffects.length
@@ -2417,7 +2347,7 @@ export function createFeatures(h) {
       return total ? achieved / total * 100 : null;
     };
     const trainingWeekSessionCount = metric('training.week_session_count').value ?? weekSchedules.length;
-    const trainingWeekGameCount = metric('training.week_game_count').value ?? weekMatches.length;
+    const trainingWeekGameCount = weekMatches.length;
     const trainingWeekGoalCompletion = metric('training.week_goal_completion').value ?? goalCompletionFor(weekSchedules);
     const trainingWeekReviewCompletion = metric('training.week_review_completion').value
       ?? (weekSchedules.length ? weekSchedules.filter((s) => s.review_status === 'done').length / weekSchedules.length * 100 : null);
@@ -2445,11 +2375,11 @@ export function createFeatures(h) {
     }).join('');
     const durations = weekMatches.map((m) => Number(m.duration)).filter((n) => Number.isFinite(n) && n > 0);
     const avg = durations.length ? durations.reduce((a, b) => a + b, 0) / durations.length : null;
-    const weekFoes = new Set(weekMatches.map((m) => teamOf(m.enemy_team_id)).filter(Boolean));
+    const weekFoes = new Set(weekMatches.map((m) => teamOf(m.enemy_team_id, m.date, m.opponent)).filter(Boolean));
     const formalCount = weekMatches.filter((m) => m.matchType === 'formal').length;
 
     /* ── 领导版补充数据：只新增区块，原有训练课 / 对局 / 目标 / 复盘 / 效果一律不动 ── */
-    const detailMatches = data[6]?.matches || [];
+    const detailMatches = allMatches;
     const weekPlayers = data[7]?.players || [];
     const prevPlayers = data[8]?.players || [];
     const campPlayers = data[9]?.players || [];
@@ -2458,7 +2388,7 @@ export function createFeatures(h) {
     /* MVP：营地逐局记录带 mvp 标记与日期，只数本周；接口只给近 12 局，口径写进标题。 */
     const mvpRows = campPlayers.map((p) => {
       const recent = Array.isArray(p.recent) ? p.recent.filter((g) => inRange(g.day)) : [];
-      return {name: p.name || p.nickname || '未命名', lane: p.lane || '',
+      return {name: playerName(p.name || p.nickname || ''), lane: p.lane || '',
               games: recent.length, mvp: recent.filter((g) => g.mvp === true).length};
     }).filter((row) => row.mvp > 0).sort((a, b) => b.mvp - a.mvp || b.games - a.games).slice(0, 3);
 
@@ -2483,12 +2413,12 @@ export function createFeatures(h) {
     const ratedPairs = pairRows.filter((row) => row.decided > 0);
     const highPairs = [...ratedPairs].sort((a, b) => b.winRate - a.winRate || b.decided - a.decided).slice(0, 4);
     const lowPairs = [...ratedPairs].sort((a, b) => a.winRate - b.winRate || b.decided - a.decided).slice(0, 4);
-    const pairText = (row) => row.heroes.map(text).join(' + ');
+    const pairText = (row) => `<span class="rl-pair">${row.heroes.map((name) => `<span class="rl-pair-hero">${portrait(name, 'rl-hero-face')}<em>${text(name)}</em></span>`).join('<span class="rl-pair-plus" aria-hidden="true">＋</span>')}</span>`;
     const pairRateText = (row) => row.winRate == null ? '—' : `${fmt(row.winRate, 1)}%（${fmt(row.wins)} 胜 / ${fmt(row.decided)} 局有胜负）`;
 
     /* 选手红绿：死亡率 = 阵亡 / 场次（目标 ≤2），经济 = 每分钟金币（打野 800 / 其他 700 / 游走 450）。 */
     const laneTarget = (lane) => String(lane || '').includes('打野') ? 800 : String(lane || '').includes('游走') ? 450 : 700;
-    const prevByName = new Map(prevPlayers.map((p) => [String(p.label || ''), p]));
+    const prevByName = new Map(prevPlayers.map((p) => [playerOf(p.label), p]));
     const rosterPos = new Map((data[7]?.roster || []).map((p) => [String(p.id || ''), p.position || '']));
     const gradeRows = weekPlayers.map((p) => {
       const games = num(p.matches);
@@ -2496,14 +2426,14 @@ export function createFeatures(h) {
       const gpm = p.gpm == null ? null : Number(p.gpm);
       const lane = rosterPos.get(String(p.playerId || '')) || (Array.isArray(p.positions) ? p.positions[0] : '') || '';
       const target = laneTarget(lane);
-      const before = prevByName.get(String(p.label || ''));
+      const before = prevByName.get(playerOf(p.label));
       const prevGpm = before && before.gpm != null ? Number(before.gpm) : null;
       const prevDeaths = before && before.matches ? num(before.deaths) / num(before.matches) : null;
       const dropped = (prevGpm != null && gpm != null && gpm < prevGpm)
         || (prevDeaths != null && deathRate != null && deathRate > prevDeaths);
       const good = deathRate != null && deathRate <= 1.5 && gpm != null && gpm >= target;
       const bad = (deathRate != null && deathRate > 2) || (gpm != null && gpm < target * 0.85);
-      return {name: String(p.label || '未命名'), lane, games, deathRate, gpm, target,
+      return {name: playerName(p.label), lane, games, deathRate, gpm, target,
               tone: good ? 'good' : bad ? 'bad' : dropped ? 'down' : 'flat'};
     });
     const toneLabel = {good:'优秀', bad:'待改善', down:'下降', flat:'达标'};
@@ -2519,8 +2449,8 @@ export function createFeatures(h) {
       if (Array.isArray(raw)) focusTeams = raw.map(String);
     } catch {}
     const focusRows = focusTeams.map((name) => {
-      const matched = weekMatches.filter((m) => teamOf(m.enemy_team_id) === name
-        || teamOf(m.enemy_team_id).includes(name) || String(m.enemyName || '').includes(name));
+      const matched = weekMatches.filter((m) => teamOf(m.enemy_team_id, m.date, m.opponent) === name
+        || teamOf(m.enemy_team_id, m.date, m.opponent).includes(name) || String(m.enemyName || '').includes(name));
       return {name, games: matched.length,
               wins: matched.filter((m) => resultOf(m) === 'win').length,
               losses: matched.filter((m) => resultOf(m) === 'loss').length};
@@ -2547,7 +2477,7 @@ export function createFeatures(h) {
       const linked = linkedFor(schedule);
       const w = linked.filter((m) => resultOf(m) === 'win').length;
       const l = linked.filter((m) => resultOf(m) === 'loss').length;
-      return `<tr><td>${text(schedule.date)}</td><td>${text(teamOf(schedule.opponent_team_id))}</td><td class="num">${fmt(linked.length)}</td><td class="${w ? 'win' : ''}">${w} 胜 ${l} 负</td><td>${schedule.review_status === 'done' ? '已复盘' : '待复盘'}</td></tr>`;
+      return `<tr><td>${text(schedule.date)}</td><td>${text(teamOf(schedule.opponent_team_id || schedule.opponent))}</td><td class="num">${fmt(linked.length)}</td><td class="${w ? 'win' : ''}">${w} 胜 ${l} 负</td><td>${schedule.review_status === 'done' ? '已复盘' : '待复盘'}</td></tr>`;
     }).join('');
     const scoreOf = (m) => {
       try {
@@ -2557,7 +2487,7 @@ export function createFeatures(h) {
       } catch {}
       return '—';
     };
-    const matchRows = [...weekMatches].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((m) => `<tr><td>${text(m.date || '—')}</td><td>${text(teamOf(m.enemy_team_id))}</td><td class="num">${scoreOf(m)}</td><td class="${resultOf(m) === 'win' ? 'win' : resultOf(m) === 'loss' ? 'loss' : ''}">${resultOf(m) === 'win' ? '胜' : resultOf(m) === 'loss' ? '负' : '—'}</td><td class="num">${time(m.duration)}</td></tr>`).join('');
+    const matchRows = [...weekMatches].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((m) => `<tr><td>${text(m.date || '—')}</td><td>${text(teamOf(m.enemy_team_id, m.date, m.opponent))}</td><td class="num">${scoreOf(m)}</td><td class="${resultOf(m) === 'win' ? 'win' : resultOf(m) === 'loss' ? 'loss' : ''}">${resultOf(m) === 'win' ? '胜' : resultOf(m) === 'loss' ? '负' : '—'}</td><td class="num">${time(m.duration)}</td></tr>`).join('');
     const gradeLine = (row) => `<b>${text(row.name)}</b><span class="${row.tone === 'good' ? 'is-good' : row.tone === 'bad' ? 'is-bad' : row.tone === 'down' ? 'is-down' : 'is-flat'}">${toneLabel[row.tone]} ${toneArrow[row.tone]} · 死亡 ${row.deathRate == null ? '—' : fmt(row.deathRate, 1)} 次/局 · 经济 ${row.gpm == null ? '—' : fmt(row.gpm)}/分（目标 ${fmt(row.target)}）</span>`;
     const leaderHtml = `<section class="report-leader" aria-label="领导摘要">
       <div class="rl-grid">
@@ -2590,7 +2520,7 @@ export function createFeatures(h) {
     </section>`;
     const activeModules = weeklyTemplate();
     const activeById = new Map(activeModules.map((mod) => [mod.id, mod]));
-    const titled = (mod, fallback) => `<div class="report-section"><h2>${text(mod.title || fallback)}</h2>`;
+    const titled = (mod, fallback) => `<div class="report-section"><h2>${gi('chart', 18)}${text(mod.title || fallback)}</h2>`;
     const kpiBody = `<section class="report-kpis">${[['训练赛与正式赛', fmt(weekMatches.length), '局'], ['胜率', currentRate != null ? pct(currentRate) : '—', `${wins} 胜 ${losses} 负`], ['交手对手', fmt(weekFoes.size), '支'], ['场均时长', time(avg), '本周']].map(([label, value, note]) => `<div><span>${label}</span><strong>${value}</strong><small>${note}</small></div>`).join('')}</section>`;
     const renderModule = (mod) => {
       const fallback = WEEKLY_TITLES[mod.id] || '自定义说明';
@@ -2598,7 +2528,7 @@ export function createFeatures(h) {
       if (mod.id === 'compare') return `${titled(mod, fallback)}<section class="report-compare">${compareCells}</section></div>`;
       if (mod.id === 'leader') return `${titled(mod, fallback)}${leaderHtml}</div>`;
       if (mod.id === 'matches') return `${titled(mod, fallback)}${matchRows ? `<table class="report-table"><thead><tr><th>日期</th><th>对手</th><th class="num">比分</th><th>结果</th><th class="num">时长</th></tr></thead><tbody>${matchRows}</tbody></table>` : '<p class="report-muted">本周没有对局记录。</p>'}</div>`;
-      if (mod.id === 'types') return `${titled(mod, fallback)}<p class="report-muted">正式赛 ${fmt(formalCount)} 局 · 训练赛 ${fmt(weekMatches.length - formalCount)} 局</p></div>`;
+      if (mod.id === 'types') return `${titled(mod, fallback)}<p class="report-muted">训练赛 ${fmt(weekMatches.length)} 局</p></div>`;
       if (mod.id === 'foes') return `${titled(mod, fallback)}${weekFoes.size ? `<ol class="report-goals">${[...weekFoes].map((name) => `<li>${text(name)}</li>`).join('')}</ol>` : '<p class="report-muted">本周没有交手记录。</p>'}</div>`;
       if (mod.id === 'effects') return `${titled(mod, fallback)}${weekEffects.length ? `<div class="report-effect"><b>${fmt(weekEffects.length)} 条干预记录</b><span>可对比 ${fmt(usableEffects.length)} 条 · 平均效应量 ${meanEffect == null ? '—' : fmt(meanEffect, 2)}</span></div>` : '<p class="report-muted">本周没有训练干预记录。</p>'}</div>`;
       if (mod.id.startsWith('text:')) return `${titled(mod, fallback)}<div class="report-custom-text">${text(mod.text || '').replace(/\n/g, '<br>') || '<p class="report-muted">（还没有填写内容）</p>'}</div></div>`;
@@ -2608,23 +2538,22 @@ export function createFeatures(h) {
     let openTemplate = false;
     try { openTemplate = sessionStorage.getItem('sx-weekly-open-template') === '1'; sessionStorage.removeItem('sx-weekly-open-template'); } catch {}
     const templatePanel = `<details class="report-template" data-report-template ${openTemplate ? 'open' : ''}>
-      <summary>自定义周报模块</summary>
+      <summary>${gi('edit', 16)}自定义周报模块</summary>
       <p class="rt-comp">当前赛事：<b>${text(weeklyCompetition() || '未指定赛事')}</b></p>
       <div class="rt-presets">
-        <button type="button" data-rt-preset="default">恢复默认</button>
+        <button type="button" data-rt-preset="default">${gi('refresh', 16)}恢复默认</button>
         <button type="button" data-rt-preset="team">赛训组版</button>
         <button type="button" data-rt-preset="leader">领导版</button>
         <button type="button" data-rt-preset="empty">空模板</button>
       </div>
       <div class="rt-list" data-rt-list>${activeModules.map(weeklyRowHtml).join('')}</div>
-      <button type="button" class="control rt-add" data-rt-add-text>＋ 添加文字块</button>
-      <div class="rt-actions"><button type="button" class="primary" data-rt-save>保存模板</button><span data-rt-status role="status"></span></div>
-      <p class="rt-hint">标题可直接改；文字块写结论或口径说明。模块按赛事保存、赛训组共享，顺序即周报顺序。</p>
+      <button type="button" class="control rt-add" data-rt-add-text>${gi('edit')}添加文字块</button>
+      <div class="rt-actions"><button type="button" class="primary" data-rt-save>${gi('book')}保存周报模板</button><span data-rt-status role="status"></span></div>
     </details>`;
     const generated = localDate();
-    return `<div class="report-page"><div class="report-toolbar"><a class="control" href="#reports">← 返回报告库</a>${templatePanel}<div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>导出图片</button><button type="button" class="primary" data-sx-print>打印 / 保存 PDF</button></div></div><article class="report-sheet">
-      <header class="report-brand"><span class="report-mark">${icon('setup')}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">训练周报</span></header>
-      <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT</span><h1>${text(teamName)} · ${text(start)} — ${text(end)}</h1><p>按训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
+    return `<div class="report-page"><div class="report-toolbar"><a class="control" href="#reports">${gi('arrow-up', 16)}返回报告库</a>${templatePanel}<div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>${gi('export')}导出周报图片</button><button type="button" class="primary" data-sx-print>${gi('book')}打印 / 保存 PDF</button></div></div><article class="report-sheet">
+      <header class="report-brand"><span class="report-mark">${gi('chart', 24)}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">训练周报</span></header>
+      <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT</span><h1>${gi('chart')}${text(teamName)} · ${text(start)} — ${text(end)}</h1><p>按训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
       <div class="report-context"><span>对局上下文</span>胜率 ${currentRate != null ? pct(currentRate) : '—'} · 场均 ${time(avg)} · ${wins} 胜 ${losses} 负</div>
       ${bodyHtml}
     </article></div>`;
@@ -2689,12 +2618,12 @@ export function createFeatures(h) {
         <label class="sx-search">${icon('search')}<input data-sx-link-search placeholder="搜索日期、对手或训练组" aria-label="搜索可关联对局"></label>
         <div class="sx-link-list" data-sx-link-list>${linkRows || '<p class="sx-empty">当前没有可关联的对局。</p>'}</div>
         <p class="form-status" role="status"></p>
-        <div class="sx-dialog-actions"><button type="button" class="control" data-sx-dialog-close>取消</button><button type="button" class="control" data-sx-link-reset>恢复自动</button><button class="primary" type="submit">保存关联</button></div>
+        <div class="sx-dialog-actions"><button type="button" class="control" data-sx-dialog-close>取消</button><button type="button" class="control" data-sx-link-reset>${gi('refresh')}恢复自动关联</button><button class="primary" type="submit">${gi('matches')}保存关联结果</button></div>
       </form>
     </dialog>`;
     const matchBlock = block('关联对局', `关联方式：${reason} · ${fmt(matches.length)} 局`,
-      (matchRows ? `<div class="sx-session-matches">${matchRows}</div>` : `<div class="sx-empty sx-empty-inline"><b>这场训练课还没有关联对局</b><p>可以手动挂局，也可以按日期 / 对手 / 训练组自动匹配。</p><a class="control" href="#matches">去对局档案 →</a></div>`),
-      `<button type="button" class="control" data-sx-link-matches>${manualMode ? '手动关联 · 已锁定' : '手动关联'}</button>`);
+      (matchRows ? `<div class="sx-session-matches">${matchRows}</div>` : `<div class="sx-empty sx-empty-inline">${gi('matches', 24)}<b>这场训练课还没有关联对局</b><a class="control" href="#matches">${gi('arrow-up', 16)}去单局分析挂局</a></div>`),
+      `<button type="button" class="control" data-sx-link-matches>${gi('matches', 16)}${manualMode ? '手动关联 · 已锁定' : '手动关联对局'}</button>`, '', 'matches');
     const brief = value.opponentBrief;
     const recentHtml = brief ? (brief.recent || []).map((g) => `<div class="sx-brief-row"><span>${text(String(g.start || '').slice(5, 16) || '日期未知')}</span><b class="${g.win === true ? 'is-win' : g.win === false ? 'is-loss' : ''}">${g.win === true ? '胜' : g.win === false ? '负' : '—'}</b><small>${time(g.duration)}</small></div>`).join('') : '';
     const briefHtml = brief ? `<div class="sx-brief">
@@ -2707,9 +2636,9 @@ export function createFeatures(h) {
       </div>
       <a class="control" href="${route('team', team?.id || brief.id)}">完整战队页 →</a>
     </div>` : '';
-    const opponentBlock = block('对手简报', brief ? '最近交手、常用英雄、禁用习惯与关键选手。' : '这场比赛还没有指定对手。',
-      brief ? briefHtml : `<div class="sx-empty sx-empty-inline"><b>还没有指定对手</b><p>在上方编辑计划，选择约战对手后会生成赛前简报。</p></div>`);
-    const goalsHtml = goalItems.length ? `<ul class="sx-goal-list">${goalItems.map((goal, i) => `<li class="is-${esc(goal.status)}"><span>${String(i + 1).padStart(2, '0')}</span><b>${text(goal.label)}</b>${goal.metricId ? `<em>${text(goalMetricLabel(goal.metricId))}${goal.actual != null ? ` · ${fmt(goal.actual)}` : ''}</em>` : (goal.target ? `<em>目标 ${text(goal.target)}</em>` : '')}<i>${text(goalStatusLabels[goal.status] || '未评估')}</i></li>`).join('')}</ul>` : '<p class="sx-session-muted">还没有写训练目标；建议写 1–3 条可复盘的目标。</p>';
+    const opponentBlock = block('对手简报', brief ? '' : '这场比赛还没有指定对手。',
+      brief ? briefHtml : `<div class="sx-empty sx-empty-inline">${gi('opponent', 24)}<b>还没有指定对手</b></div>`, '', '', 'opponent');
+    const goalsHtml = goalItems.length ? `<ul class="sx-goal-list">${goalItems.map((goal, i) => `<li class="is-${esc(goal.status)}"><span>${String(i + 1).padStart(2, '0')}</span><b>${text(goal.label)}</b>${goal.metricId ? `<em>${text(goalMetricLabel(goal.metricId))}${goal.actual != null ? ` · ${fmt(goal.actual)}` : ''}</em>` : (goal.target ? `<em>目标 ${text(goal.target)}</em>` : '')}<i>${text(goalStatusLabels[goal.status] || '未评估')}</i></li>`).join('')}</ul>` : `<p class="sx-session-muted">${gi('victory', 16)}还没有写训练目标</p>`;
     const attendanceHtml = players.length
       ? `<div class="sx-attendance">${players.map((p) => `<label><input type="checkbox" name="attendance" value="${esc(p.id)}" ${attendance.includes(p.id) ? 'checked' : ''}>${text(p.name)}</label>`).join('')}</div>`
       : '<p class="sx-session-muted">本队选手主数据还没建立，暂时不能勾选出勤。</p>';
@@ -2735,12 +2664,12 @@ export function createFeatures(h) {
       +`<div class="sx-session-grid">
         <div class="sx-session-main">${matchBlock}${opponentBlock}</div>
         <div class="sx-session-side">
-          ${block('训练目标', '这场训练要验证什么；赛后用同一组目标回看。', goalsHtml)}
-          ${block('赛后复盘', '把结论写在这里，下次计划可以直接沿用。', reviewForm)}
+          ${block('训练目标', '', goalsHtml, '', '', 'victory')}
+          ${block('赛后复盘', '', reviewForm, '', '', 'book')}
         </div>
-      </div>`+linkDialog, false, `<a class="control" href="#session/${encodeURIComponent(s.id || '')}?report=1">导出报告</a><a class="control" href="#plan">编辑计划</a>`, false, true);
+      </div>`+linkDialog, false, `<a class="control" href="#session/${encodeURIComponent(s.id || '')}?report=1">${gi('export')}导出报告</a><a class="control" href="#plan">${gi('edit')}编辑计划</a>`, false, true);
   }
-  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),playerarchive:v=>playerPages.archivePage(v[0],v[1]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),featured:v=>focusPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[3],v[1],v[2]),herocompare:v=>heroCompare.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3],v[4]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),heroes:v=>heroes(v[0]),economy:v=>economy(v[0]),effect:v=>effect(v[0],v[1]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
+  const renders={ingest:v=>captureIngestPage.render(v),capture:v=>sourcePages.render('capture',v),shots:v=>sourcePages.render('shots',v),videos:v=>sourcePages.render('videos',v),replays:v=>sourcePages.render('replays',v),review:(v,k)=>reviewPage.render(k,v),playerarchive:v=>playerPages.archivePage(v[0],v[1]),reports:v=>research.reports(v[0]),report:v=>research.report(v[1]),hero:(v,k)=>heroDetail(v[0],v[1],v[2],v[3],v[4],k),featured:v=>focusPage(v[0],v[1]),playercompare:v=>playerCompare.render(v[0]),playerdetail:(v,k)=>playerPages.soloPage(v[0],k,v[3],v[1],v[2]),herocompare:v=>heroCompare.render(v[0]),teamheroes:v=>heroUsagePage.render(v[0]),lanemetrics:v=>laneMetricsPage.render(v[0]),comboperf:v=>comboCardsPage.render(v[0]),teams:(v,k)=>teamsPage(v[0],k),team:(v,k)=>teamsPage(v[0],k,v[1],v[2],v[3],v[4]),teamtraining:v=>teamTraining(v[0]),ownership:v=>ownership(v[0]),coach:v=>coachBoard.render(v[0],v[1]),heroes:v=>heroes(v[0]),economy:v=>economy(v[0]),setup:v=>setup(...v),pending:v=>pending(v[0],v[1],v[2]),plan:v=>plan(v[0],v[1],v[2],v[3],v[4]),competition:v=>competitionPage(v),session:(v,k)=>sessionPage(v[0],k),weekly:(v,k)=>weeklyReport(v,k)};
   async function api(path, options={}) {
     const r=await fetch(API_BASE + '/api/'+path,{cache:'no-store',...options});
     if(!r.ok){
@@ -2867,7 +2796,7 @@ export function createFeatures(h) {
         <p class="sx-dialog-note">保存后，这个游戏 ID 以后自动显示这名选手和这支战队；分析按选手累计，历史对局不改。</p>
       </div>
       <p class="form-status" role="status"></p>
-      <div class="sx-dialog-actions"><button type="button" class="control" data-sx-identity-close>取消</button><button class="primary" type="submit">保存</button></div>
+      <div class="sx-dialog-actions"><button type="button" class="control" data-sx-identity-close>取消</button><button class="primary" type="submit">${gi('shield')}保存身份命名</button></div>
     </form>`;
     document.body.appendChild(dialog);
     dialog.querySelectorAll('[data-sx-identity-close]').forEach((button) => {
@@ -3014,52 +2943,6 @@ export function createFeatures(h) {
       });
     return true;
   }
-  /* 目录页的批量命名：只提交真正改过名的行，没动过的跳过。 */
-  function submitTeamBulkRename(f) {
-    const dialog = f.closest('dialog');
-    const error = f.querySelector('[data-team-bulk-error]');
-    const button = f.querySelector('button[type=submit]');
-    const rows = [...f.querySelectorAll('[data-bulk-team]')];
-    const items = rows.map((row) => {
-      const id = row.dataset.bulkTeam || '';
-      const name = (row.querySelector('input[name="name"]')?.value || '').trim();
-      const current = (row.querySelector('.tb-bulk-id')?.textContent || '').trim();
-      return id && name && name !== current ? {id, name} : null;
-    }).filter(Boolean);
-    const fail = (message) => {
-      if (error) { error.textContent = message; error.hidden = false; }
-      if (button) { button.disabled = false; button.textContent = '保存'; }
-    };
-    if (!rows.length) { fail('当前没有待命名的对手。'); return true; }
-    if (!items.length) { fail('没有改动：至少给一支对手换个名字。'); return true; }
-    if (error) { error.hidden = true; error.textContent = ''; }
-    if (button) { button.disabled = true; button.textContent = `保存中…（${items.length} 支）`; }
-    api('studio/teams/rename-batch', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items})})
-      .then(() => { dialog?.close(); reload(); })
-      .catch((err) => fail(err.message || '保存失败，请重试。'));
-    return true;
-  }
-  /* 目录页的命名对话框：提交到营地战队的改名接口，成功后关窗并重渲染。
-     失败的信息留在对话框里，不用系统 alert 打断。 */
-  function submitTeamRename(f, payload) {
-    const dialog = f.closest('dialog');
-    const error = f.querySelector('[data-team-rename-error]');
-    const button = f.querySelector('button[type=submit]');
-    const name = String(payload.name || '').trim();
-    const id = dialog?.dataset.teamId || '';
-    const fail = (message) => {
-      if (error) { error.textContent = message; error.hidden = false; }
-      if (button) { button.disabled = false; button.textContent = '保存'; }
-    };
-    if (!name) { fail('队名不能为空。'); f.querySelector('input[name="name"]')?.focus(); return true; }
-    if (!id) { fail('找不到这支战队，刷新页面后再试。'); return true; }
-    if (error) { error.hidden = true; error.textContent = ''; }
-    if (button) { button.disabled = true; button.textContent = '保存中…'; }
-    api('studio/teams/rename', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id, name})})
-      .then(() => { dialog?.close(); reload(); })
-      .catch((err) => fail(err.message || '改名失败，请重试。'));
-    return true;
-  }
   function confirmPendingCard(button) {
     const card = button.closest('[data-sx-pending-card]');
     if (!card) return;
@@ -3169,8 +3052,6 @@ export function createFeatures(h) {
     event.preventDefault(); const id=f.dataset.featureForm, payload=Object.fromEntries(new FormData(f));
     /* 词表下拉选了「其他（手填）」：用手填值覆盖哨兵值，空值让后端按必填规则拦下。 */
     applyVocabValue(f, payload);
-    if (id === 'teamRename') return submitTeamRename(f, payload);
-    if (id === 'teamBulkRename') return submitTeamBulkRename(f);
     if (id === 'sessionLinks') {
       const dialog = f.closest('dialog');
       const scheduleId = String(payload.id || '').trim();
@@ -3280,7 +3161,7 @@ export function createFeatures(h) {
       const response=await fetch(API_BASE + '/api/v3/import/preview?strict=1&name='+encodeURIComponent(file.name),{method:'POST',body:file});
       const value=await response.json();if(!response.ok)throw Error(value.detail||'表格读取失败');
       if(!root.isConnected)return;status.textContent='请核对识别结果。';
-      preview.innerHTML=`<div class="import-preview"><div class="section-heading"><div><h2>${text(value.name)}</h2><p>${value.sheets.length} 个工作表 · 请确认字段识别与粒度</p></div></div>${value.sheets.map(sheet=>`<div class="import-sheet"><h3>${text(sheet.name)} <small>${fmt(sheet.rows)} 行 · 粒度 ${text(sheet.grain||'未识别')}</small></h3><p>字段：${text((sheet.header||[]).join('、'))}</p>${sheet.unmappedColumns?.length?`<p>未映射：${text(sheet.unmappedColumns.join('、'))}</p>`:''}${sheet.warnings?.length?`<p>${text(sheet.warnings.join('；'))}</p>`:''}${table(sheet.header||[],(sheet.sample||[]).map(row=>Array.isArray(row)?row.map(text):(sheet.header||[]).map(key=>text(row[key]))))}</div>`).join('')}<div class="import-actions"><p role="status" data-import-commit-status></p><button class="primary" data-feature-action="import-commit" data-preview-id="${esc(value.previewId)}">确认导入</button></div></div>`;
+      preview.innerHTML=`<div class="import-preview"><div class="section-heading"><div><h2>${gi('sources')}${text(value.name)}</h2><p>${value.sheets.length} 个工作表</p></div></div>${value.sheets.map(sheet=>`<div class="import-sheet"><h3>${text(sheet.name)} <small>${fmt(sheet.rows)} 行 · 粒度 ${text(sheet.grain||'未识别')}</small></h3><p>字段：${text((sheet.header||[]).join('、'))}</p>${sheet.unmappedColumns?.length?`<p>未映射：${text(sheet.unmappedColumns.join('、'))}</p>`:''}${sheet.warnings?.length?`<p>${text(sheet.warnings.join('；'))}</p>`:''}${table(sheet.header||[],(sheet.sample||[]).map(row=>Array.isArray(row)?row.map(text):(sheet.header||[]).map(key=>text(row[key]))))}</div>`).join('')}<div class="import-actions"><p role="status" data-import-commit-status></p><button class="primary" data-feature-action="import-commit" data-preview-id="${esc(value.previewId)}">${gi('victory')}确认导入这批数据</button></div></div>`;
     }catch(error){status.textContent=error.message}
   }
   function change(event) {
@@ -3302,13 +3183,8 @@ export function createFeatures(h) {
         return true;
       }
     }
-    if (event.target.matches('[data-merge-search]')) {
-      resolveMergeSearch(event.target);
-      syncMergePreview(event.target.closest('form'));
-      return true;
-    }
-    if (event.target.matches('[data-merge-check]')) {
-      updateMergeBar(event.target.closest('[data-tm-board]'));
+    if (event.target.matches('[data-bulk-check]')) {
+      updateBulkBar(event.target.closest('[data-tm-board]'));
       return true;
     }
     if (event.target.matches('[data-sx-team-search]')) { syncSetupTeams(event.target.closest('.section')); return true; }
@@ -3414,7 +3290,7 @@ if(captureIngestPage.change(event))return;
       const list = document.querySelector('[data-report-template] [data-rt-list]');
       if (build && list) list.innerHTML = build().map(weeklyRowHtml).join('');
       const status = document.querySelector('[data-rt-status]');
-      if (status) status.textContent = '已套用预设，点「保存模板」生效。';
+      if (status) status.textContent = '已套用预设，点「保存周报模板」生效。';
       return true;
     }
     const rtAdd = event.target.closest?.('[data-rt-add-text]');
@@ -3580,15 +3456,6 @@ if(captureIngestPage.change(event))return;
       searchBox.querySelector('[data-team-search]')?.focus();
       return true;
     }
-    const maintJump = event.target.closest('[data-tb-maint]');
-    if (maintJump) {
-      const panel = document.getElementById('tb-merge');
-      if (panel) {
-        panel.open = true;
-        panel.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }
-      return true;
-    }
     const teamReset = event.target.closest('[data-team-reset]');
     if (teamReset) {
       const root = teamReset.closest('[data-tm-board]');
@@ -3619,43 +3486,11 @@ if(captureIngestPage.change(event))return;
       }
       return true;
     }
-    /* 建议卡片一键合并 */
-    const quickMerge = event.target.closest('[data-merge-quick]');
-    if (quickMerge) {
-      runMerge(quickMerge.dataset.mergeFrom, quickMerge.dataset.mergeInto, quickMerge.dataset.mergeLabel, quickMerge);
-      return true;
-    }
-    /* 批量合并：勾选 ≥2 支后合并选中，全部并入第一支（targetId）。 */
-    const mergeRun = event.target.closest('[data-merge-run]');
-    if (mergeRun) {
-      const root = mergeRun.closest('[data-tm-board]');
-      const checked = [...(root?.querySelectorAll('[data-merge-check]:checked') || [])];
-      const ids = checked.map((c) => c.value);
-      if (ids.length < 2) return true;
-      const targetId = ids[0];
-      const targetName = checked[0].closest('.tb-item-wrap')?.querySelector('.tb-item-main b')?.textContent?.trim() || '第一支';
-      const names = checked.map((c) => c.closest('.tb-item-wrap')?.querySelector('.tb-item-main b')?.textContent?.trim()).filter(Boolean).join('、');
-      if (!window.confirm(`把勾选的 ${ids.length} 支战队（${names}）合并为同一支吗？\n将并入「${targetName}」，历史对局与选手记录都保留。`)) return true;
-      mergeRun.disabled = true;
-      /* 串行合并，避免并发写同一批 cluster 覆盖层 */
-      let chain = Promise.resolve();
-      ids.slice(1).forEach((id) => {
-        chain = chain.then(() => api('studio/teams/merge', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: id, into: targetId }),
-        }));
-      });
-      chain.then(() => reload()).catch((error) => {
-        mergeRun.disabled = false;
-        window.alert(error.message || '批量合并失败，请重试。');
-      });
-      return true;
-    }
-    const mergeClear = event.target.closest('[data-merge-clear]');
-    if (mergeClear) {
-      const root = mergeClear.closest('[data-tm-board]');
-      root?.querySelectorAll('[data-merge-check]:checked').forEach((c) => { c.checked = false; });
-      updateMergeBar(root);
+    const bulkClear = event.target.closest('[data-bulk-clear]');
+    if (bulkClear) {
+      const root = bulkClear.closest('[data-tm-board]');
+      root?.querySelectorAll('[data-bulk-check]:checked').forEach((c) => { c.checked = false; });
+      updateBulkBar(root);
       return true;
     }
     const ttSelect = event.target.closest('[data-tt-select]');
@@ -3672,7 +3507,7 @@ if(captureIngestPage.change(event))return;
       document.querySelector('[data-report-template]')?.removeAttribute('open');
       const button = reportImage;
       button.disabled = true;
-      button.textContent = '导出中…';
+      button.innerHTML = `${gi('clock', 16)}导出中…`;
       api('studio/workspace/reports/screenshot', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({path:location.hash.slice(1)}),
@@ -3682,11 +3517,11 @@ if(captureIngestPage.change(event))return;
         link.download = '训练课报告.png';
         link.rel = 'noopener';
         link.click();
-        button.textContent = '已导出';
-        setTimeout(() => { button.disabled = false; button.textContent = '导出图片'; }, 1400);
+        button.innerHTML = `${gi('victory', 16)}已导出`;
+        setTimeout(() => { button.disabled = false; button.innerHTML = `${gi('export', 16)}导出图片`; }, 1400);
       }).catch((error) => {
         button.disabled = false;
-        button.textContent = '导出图片';
+        button.innerHTML = `${gi('export', 16)}导出图片`;
         window.alert(error.message);
       });
       return true;
@@ -3700,6 +3535,54 @@ if(captureIngestPage.change(event))return;
       const value = document.querySelector('[data-sx-week-start]')?.value;
       try { sessionStorage.setItem('sx-weekly-open-template', '1'); } catch {}
       location.hash = '#weekly/' + value;
+      return true;
+    }
+    /* 重点战队名单由教练自己维护：添加 / 改名 / 删除，勾选状态单独存。
+       名单变动后整页重载一次，让复选框、周报预览都按新名单重画。 */
+    const focusKey = 'sx-weekly-focus-options';
+    const readFocus = () => {
+      try {
+        const raw = JSON.parse(localStorage.getItem(focusKey) || 'null');
+        if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+      } catch {}
+      return ['KA女子队','SPK','AA俱乐部'];
+    };
+    const rewriteFocus = (list) => {
+      try { localStorage.setItem(focusKey, JSON.stringify(list)); } catch {}
+      try {
+        const picked = JSON.parse(localStorage.getItem('sx-weekly-focus-teams') || '[]');
+        const kept = Array.isArray(picked) ? picked.map(String).filter((name) => list.includes(name)) : [];
+        localStorage.setItem('sx-weekly-focus-teams', JSON.stringify(kept));
+      } catch {}
+      location.reload();
+    };
+    if (event.target.closest('[data-sx-focus-add]')) {
+      const name = String(document.querySelector('[data-sx-focus-new]')?.value || '').trim();
+      const list = readFocus();
+      if (name && !list.includes(name)) rewriteFocus([...list, name]);
+      return true;
+    }
+    const focusRemove = event.target.closest('[data-sx-focus-remove]');
+    if (focusRemove) {
+      const list = readFocus(), i = Number(focusRemove.dataset.sxFocusRemove);
+      if (Number.isInteger(i) && i >= 0 && i < list.length) rewriteFocus(list.filter((_, idx) => idx !== i));
+      return true;
+    }
+    const focusRename = event.target.closest('[data-sx-focus-rename]');
+    if (focusRename) {
+      const list = readFocus(), i = Number(focusRename.dataset.sxFocusRename), old = list[i];
+      if (old != null) {
+        const next = String(window.prompt('把战队改成什么名字？', old) || '').trim();
+        if (next && next !== old && !list.includes(next)) {
+          const updated = list.slice(); updated[i] = next;
+          try {
+            const picked = JSON.parse(localStorage.getItem('sx-weekly-focus-teams') || '[]');
+            if (Array.isArray(picked)) localStorage.setItem('sx-weekly-focus-teams',
+              JSON.stringify(picked.map(String).map((name) => name === old ? next : name)));
+          } catch {}
+          rewriteFocus(updated);
+        }
+      }
       return true;
     }
     const weekGo = event.target.closest('[data-sx-week-go]');
@@ -3864,6 +3747,23 @@ if(captureIngestPage.change(event))return;
         .catch((error) => { window.alert(error.message); identityDelete.disabled = false; });
       return true;
     }
+    const rolesCreate = event.target.closest('[data-sx-roles-create]');
+    if (rolesCreate) {
+      const teamId = rolesCreate.parentElement.querySelector('[data-sx-roles-team]')?.value || '';
+      if (!teamId) { window.alert('请先选择战队'); return true; }
+      const status = rolesCreate.parentElement.querySelector('[data-sx-roles-status]');
+      rolesCreate.disabled = true;
+      if (status) status.textContent = '正在建档…';
+      api('studio/workspace/identity/players/roles', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({teamId})})
+        .then((result) => {
+          const created = (result.players || []).filter((p) => p.created).length;
+          if (status) status.textContent = `已就绪 ${(result.players || []).length} 路 · 新建 ${created}`;
+          reload();
+        })
+        .catch((error) => { if (status) status.textContent = error.message; rolesCreate.disabled = false; });
+      return true;
+    }
     const ownChip = event.target.closest('[data-sx-own-chip]');
     if (ownChip) {
       const root = ownChip.closest('.section');
@@ -3918,7 +3818,7 @@ if(captureIngestPage.change(event))return;
       || event.target.closest('[data-pa-drawer]')
       || event.target.closest('[data-pa-claim]') || event.target.closest('[data-pa-filter-claim]') || event.target.closest('[data-pa-add-player]')
       || event.target.closest('[data-pa-mode]') || event.target.closest('[data-pa-side]') || event.target.closest('[data-pa-unmap]')
-      || event.target.closest('[data-pa-id-edit]') || event.target.closest('[data-pa-id-leave]') || event.target.closest('[data-pa-id-delete]')
+      || event.target.closest('[data-pa-id-edit]') || event.target.closest('[data-pa-id-leave]') || event.target.closest('[data-pa-id-join]') || event.target.closest('[data-pa-id-delete]')
       || event.target.closest('[data-pd-window]')
       || event.target.closest('[data-pa-profile]') || event.target.closest('[data-pa-filter-top]')
       || event.target.closest('[data-pa-filter-profile]')
@@ -4094,20 +3994,6 @@ if(captureIngestPage.change(event))return;
       if (root) setTeamCompare(root, root.dataset.teamCompare !== '1');
       return true;
     }
-    const teamBulk = event.target.closest('[data-team-bulk]');
-    if (teamBulk) {
-      const dialog = document.querySelector('[data-team-bulk-dialog]');
-      if (dialog) {
-        const error = dialog.querySelector('[data-team-bulk-error]');
-        if (error) { error.hidden = true; error.textContent = ''; }
-        const save = dialog.querySelector('button[type="submit"]');
-        if (save && dialog.querySelectorAll('[data-bulk-team]').length) { save.disabled = false; save.textContent = '保存'; }
-        if (!dialog.open) dialog.showModal();
-        const first = dialog.querySelector('input[name="name"]');
-        if (first) { first.focus(); first.select(); }
-      }
-      return true;
-    }
     const teamSelect = event.target.closest('[data-team-select]');
     if (teamSelect) {
       const root = teamSelect.closest('[data-tm-board]');
@@ -4169,36 +4055,7 @@ if(captureIngestPage.change(event))return;
       }
       return true;
     }
-    if(event.target.closest('[data-review-action]')){reviewPage.click(event);return true;} if(event.target.closest('[data-source-action]')){sourcePages.click(event);return true;} if(event.target.closest('[data-capture-action]')||event.target.closest('[data-capture-form]')||event.target.closest('[data-chan-expand]')||event.target.closest('[data-chan-open]')){captureIngestPage.click(event);return true;} const b=event.target.closest('[data-feature-action]');if(!b)return false;if(b.dataset.featureAction==='import-commit'){b.disabled=true;const status=b.parentElement.querySelector('[data-import-commit-status]');status.textContent='正在导入…';api('v3/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:b.dataset.previewId,strict:true})}).then(result=>{status.textContent=`导入完成：${result.sheets.length} 个工作表。可在数据范围中启用表格来源。`;b.textContent='已导入'}).catch(error=>{status.textContent=error.message;b.disabled=false});return true;}if(b.dataset.featureAction==='migrate'){b.disabled=true;api('v3/workspace/migration',{method:'POST'}).then(()=>reload()).catch(error=>{b.disabled=false;b.parentElement.querySelector('.migration-status').textContent=error.message});return true}if(b.dataset.featureAction==='prefill'){b.disabled=true;api('studio/workspace/prefill/run',{method:'POST'}).then(()=>reload()).catch(error=>{b.disabled=false;b.textContent=error.message})}return true; }
-  /* 合并的战队选择框：datalist 会按当前值过滤，选过一次后再点开只剩那一项，
-     点错想重选就得手动删。这里在聚焦时暂存并清空，让下拉列出全部战队；
-     失焦时若没选新的就恢复原值，既不误丢选择，也不用手动清除。 */
-  document.addEventListener('focusin', (event) => {
-    const input = event.target;
-    if (!input.matches?.('[data-merge-search]')) return;
-    const hidden = input.closest('form')?.querySelector(`input[name="${input.dataset.mergeSearch}"]`);
-    if (hidden?.value && input.value) {
-      input.dataset.stashValue = input.value;
-      input.dataset.stashId = hidden.value;
-      input.dataset.stashRoster = input.dataset.roster || '';
-      input.value = '';
-      hidden.value = '';
-      input.dataset.roster = '';
-      input.classList.remove('is-resolved');
-      syncMergePreview(input.closest('form'));
-    }
-  });
-  document.addEventListener('focusout', (event) => {
-    const input = event.target;
-    if (!input.matches?.('[data-merge-search]') || input.value || !input.dataset.stashValue) return;
-    input.value = input.dataset.stashValue;
-    const hidden = input.closest('form')?.querySelector(`input[name="${input.dataset.mergeSearch}"]`);
-    if (hidden) hidden.value = input.dataset.stashId || '';
-    input.dataset.roster = input.dataset.stashRoster || '';
-    input.classList.add('is-resolved');
-    delete input.dataset.stashValue; delete input.dataset.stashId; delete input.dataset.stashRoster;
-    syncMergePreview(input.closest('form'));
-  });
+    if(event.target.closest('[data-review-action]')){reviewPage.click(event);return true;} if(event.target.closest('[data-source-action]')){sourcePages.click(event);return true;} if(event.target.closest('[data-capture-action]')||event.target.closest('[data-capture-form]')||event.target.closest('[data-chan-expand]')||event.target.closest('[data-chan-open]')){captureIngestPage.click(event);return true;} const b=event.target.closest('[data-feature-action]');if(!b)return false;if(b.dataset.featureAction==='import-commit'){b.disabled=true;const status=b.parentElement.querySelector('[data-import-commit-status]');status.textContent='正在导入…';api('v3/import/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({previewId:b.dataset.previewId,strict:true})}).then(result=>{status.textContent=`导入完成：${result.sheets.length} 个工作表。可在数据范围中启用表格来源。`;b.innerHTML=`${gi('victory',16)}已导入`}).catch(error=>{status.textContent=error.message;b.disabled=false});return true;}if(b.dataset.featureAction==='migrate'){b.disabled=true;api('v3/workspace/migration',{method:'POST'}).then(()=>reload()).catch(error=>{b.disabled=false;b.parentElement.querySelector('.migration-status').textContent=error.message});return true}if(b.dataset.featureAction==='prefill'){b.disabled=true;api('studio/workspace/prefill/run',{method:'POST'}).then(()=>reload()).catch(error=>{b.disabled=false;b.innerHTML=`${gi('warning',16)}${esc(error.message)}`})}return true; }
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       const openPicker = document.querySelector('.hero-board [data-hb-picker-pop]:not([hidden])');

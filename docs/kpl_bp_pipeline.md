@@ -40,7 +40,9 @@
     `bp_list` 空/不完整时用十人面板兜底，只标记 `bansKnown = false`，不算错。
   * `win_camp`（1/2）、`game_duration`（毫秒）、`battle_seq`；
   * `camp1/camp2`：`team_id / team_name / team_abbreviation / is_win`；
-  * `battle_player_list`：10 条，含 `hero_name / player_name / actual_player_name / position_desc / team_name`。
+  * `battle_player_list`：10 条，除 `hero_name / player_name / actual_player_name / position_desc / team_name`
+    外，还含 `kill_num / death_num / assist_num / participation_rate / gold / hurt_total /
+    hurt_to_hero_total / be_hurt_total / be_hurt_by_hero_total` 等终局字段。
 * 单次请求 ~46 KB；同一个 `requests.Session`（keep-alive）串行约 **0.1 秒/局**。
   4600 局 ≈ 8 分钟。不要开大并发（16 并发反而更慢）。
 * 请求头用 `Referer: https://pvp.qq.com/`、普通浏览器 UA 即可；`trust_env = False`（直连，绕过代理）。
@@ -61,6 +63,7 @@
   "startTime": "2026-10-02 14:00:00",
   "date": "2026-10-02",
   "gameSeq": 1,
+  "durationMs": 840000,
   "camp1": {"teamId": "10008", "team": "深圳DYG", "abbr": "DYG"},
   "camp2": {"teamId": "10017", "team": "广州TTG", "abbr": "TTG"},
   "winCamp": 2,
@@ -70,7 +73,9 @@
   "pickOrderKnown": true,
   "picks": {"1": ["敖隐", "女娲", "苏烈", "裴擒虎", "达摩"], "2": ["张飞", "海月", "赵云", "夏洛特", "百里守约"]},
   "bans":  {"1": ["沈梦溪", "钟馗", "苍", "马超", "公孙离"], "2": ["鲁班大师", "盾山", "阿古朵", "橘右京", "夏侯惇"]},
-  "players": {"1": [{"hero": "苏烈", "player": "小A", "position": "游走"}], "2": []},
+  "players": {"1": [{"hero": "苏烈", "player": "小A", "position": "游走",
+    "stats": {"kills": 5, "deaths": 0, "assists": 9, "participation": 93.3333,
+      "gold": 7176, "damage": 144350, "heroDamage": 68113, "taken": 37752, "heroTaken": 32422}}], "2": []},
   "fetchedAt": "2026-11-11T14:20:00"
 }
 ```
@@ -82,8 +87,10 @@
   * `"partial"` —— 老局 `bp_list` 缺失/不全，`picks` 同样由十人面板给出。
   三种都算有效数据、都进组合统计；`bansKnown` / `pickOrderKnown` 让下游知道别把空的
   `bans` 当成「一个 ban 都没有」。
-* 只保留 BP 与胜负相关字段，不落整包快照（46 KB → ~1 KB）。
-* 文件为追加式去重存储：`battleId` 已存在就不再请求。
+* 只保留 BP、胜负与选手终局统计，不落整包快照。`stats` 是兼容扩展：旧局没有详细字段时省略，
+  不补零；`participation` 保持官方 `0–100` 口径，`durationMs` 用于计算分均指标。
+* 文件为追加式去重存储：`battleId` 已存在就不再请求。要给旧局补详细指标，运行
+  `python scripts/crawl_kpl_bp.py --refresh`（会重抓并覆盖已有行）。
 
 ## 2. 落盘：`data/kpl/manifest.json`
 

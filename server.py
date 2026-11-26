@@ -422,6 +422,18 @@ def save_settings(value: dict):
             if not {p['id'] for p in old['roster']}.issubset({p['id'] for p in value['roster']}):
                 raise ValueError('已有队员请保留，避免历史记录失去身份关联')
             c.execute('UPDATE settings SET body=? WHERE id=1', (json.dumps(value, ensure_ascii=False),))
+        # 本队名单不能只躺在 settings JSON 里：队员要落到 players 主数据并挂到本队战队，
+        # 这样「选手池」才看得到人，战队与选手才是 1:N 的真关联。
+        import identity_service
+        own = identity_service.sync_own_team(DB_PATH, name=value['teamName'], actor='coach')
+        for player in value.get('roster', []):
+            team_name = str(player.get('team') or value['teamName']).strip()
+            identity_service.save_player(
+                DB_PATH, player_id=str(player.get('id') or ''), name=player['name'],
+                position=player.get('position') or None,
+                team_id=own['id'] if team_name == value['teamName'] else None,
+                team_name=team_name, camp_user_id=player.get('campUserId') or None,
+                role='main', actor='coach')
     except ValueError as e:
         raise HTTPException(400, str(e))
     return {'ok': True}
@@ -2328,6 +2340,18 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         with _camp_sync_lock:
             _camp_sync_job['progress'] = {'done': max(1, len(entries)), 'total': max(1, len(entries)),
                                           'current': '', 'phase': 'done'}
+        # 把采集上下文盖到权威对局表；只补归属列，不改营地详情/通道产物。
+        try:
+            ctx = _camp_sync_job.get('context') or {}
+            if ctx.get('competitionId') or ctx.get('ownTeamId') or ctx.get('opponentTeamId'):
+                import capture_context
+                capture_context.stamp_synced_entries(
+                    DB_PATH, competition_id=ctx.get('competitionId'),
+                    own_team_id=ctx.get('ownTeamId'),
+                    opponent_team_id=ctx.get('opponentTeamId'),
+                    match_type=ctx.get('matchType') or None, entries=entries)
+        except Exception as error:  # noqa: BLE001 - 上下文回填失败不阻断同步
+            print(f'[capture-context] 回填失败: {error}')
         result = {'nickname': nickname or f'选手 {camp_user_id[-4:]}',
                   'campUserId': camp_user_id, 'ok': True, 'summary': summary,
                   'channels': channels}
@@ -2655,6 +2679,85 @@ def camp_list(value: dict):
             'lastTime': data.get('lastTime'), 'gaming': data.get('gaming')}
 
 
+# 删除一条已采集对局时要一起清掉的派生表：都按 match_key 关联。
+_CAPTURED_MATCH_CHILD_TABLES = (
+    'match_meta', 'match_rosters', 'player_nickname_pool',
+    'prefill_fields', 'provenance', 'bp', 'training_series_games',
+    'session_match_links',
+)
+
+
+@app.post('/api/camp/delete-match')
+async def camp_delete_match(request: Request):
+    """从库里移除一条已采集对局，并让营地列表能重新勾选同步这一局。"""
+    try:
+        payload = await request.json()
+    except (ValueError, TypeError):
+        raise HTTPException(400, '请求体不是 JSON')
+    key = str((payload or {}).get('matchKey') or '').strip()
+    if not key:
+        raise HTTPException(400, '缺少对局 key')
+    # 之前只删数据库行的版本会留下 bundle 文件，列表还能把这一局读回来；
+    # 那种「半删」状态也得能再点一次删干净，所以文件在就允许继续。
+    bundle = MATCHES_DIR / f'{key}.json'
+    with db() as c:
+        row = c.execute('SELECT match_key, date, source FROM match_records WHERE match_key=?',
+                        (key,)).fetchone()
+        if row is None and not bundle.is_file():
+            raise HTTPException(404, '这条对局不在库里')
+        # 对局本身 + 所有按 key 挂着的派生数据一起删，不留孤儿行。
+        for table in _CAPTURED_MATCH_CHILD_TABLES:
+            c.execute(f'DELETE FROM {table} WHERE match_key=?', (key,))
+        c.execute('DELETE FROM account_player_links WHERE game_match_key=?', (key,))
+        c.execute('DELETE FROM match_records WHERE match_key=?', (key,))
+        # channel-<id>.json 是 StudioRepository 的另一份数据源，必须一起删掉。
+        if bundle.is_file():
+            bundle.unlink()
+        # 赛事的「关键对局」也可能指着这条，一起摘掉，避免赛事页留下断链。
+        for comp in c.execute('SELECT id, key_match_keys FROM competitions').fetchall():
+            try:
+                keys = json.loads(comp['key_match_keys'] or '[]')
+            except (TypeError, ValueError):
+                continue
+            if isinstance(keys, list) and key in keys:
+                c.execute('UPDATE competitions SET key_match_keys=? WHERE id=?',
+                          (json.dumps([k for k in keys if k != key]), comp['id']))
+        # 「已入库」的判定来自 channels.body.saved.status 和 sources.camp.players，
+        # 只删对局不清这里，营地列表还是会把它标成已同步、不让勾选。
+        seq = key[5:] if key.startswith(('camp:', 'camp-')) else ''
+        reset = 0
+        if seq:
+            # 本地详情缓存不删的话，重新同步会直接命中旧文件，不是真的重爬。
+            if _safe_game_seq(seq):
+                cached = _camp_detail_path(seq)
+                if cached.is_file():
+                    cached.unlink()
+            official_id = 'camp-' + seq
+            for channel in c.execute('SELECT id, body FROM channels').fetchall():
+                try:
+                    body = json.loads(channel['body'])
+                except (TypeError, ValueError):
+                    continue
+                if str((body.get('official') or {}).get('id') or '') != official_id:
+                    continue
+                if isinstance(body.get('saved'), dict):
+                    body['saved'].pop('status', None)
+                sources = body.get('sources')
+                if isinstance(sources, dict) and isinstance(sources.get('camp'), dict):
+                    sources['camp'].pop('players', None)
+                c.execute('UPDATE channels SET body=?, updated_at=? WHERE id=?',
+                          (json.dumps(body, ensure_ascii=False), time.time(), channel['id']))
+                reset += 1
+        c.execute(
+            'INSERT INTO change_log (id, entity_type, entity_id, field, old_value, new_value, '
+            'source, actor, reason, created_at, revision) VALUES (?,?,?,?,?,?,?,?,?,?,1)',
+            (uuid.uuid4().hex[:16], 'match', key, 'deleted', str((row['date'] if row else '') or ''), '',
+             'manual', 'coach', '采集页删除已采集对局', time.time()))
+    if V3_MODULE is not None:
+        V3_MODULE.invalidate_snapshot()
+    return {'ok': True, 'key': key, 'channelsReset': reset}
+
+
 @app.post('/api/camp/sync')
 def camp_sync_start(value: dict):
     """两段式同步第二段：按教练勾选的对局条目拉取详情并落盘，随后自动挂载通道。"""
@@ -2671,6 +2774,13 @@ def camp_sync_start(value: dict):
             raise HTTPException(409, '同步已在进行中')
         _camp_sync_job.update({'running': True, 'result': None, 'error': None,
                                'startedAt': time.time(), 'finishedAt': None,
+                               # 统一采集上下文（可选）：旧前端不传时行为完全不变。
+                               'context': {
+                                   'competitionId': str(value.get('competitionId') or '').strip(),
+                                   'ownTeamId': str(value.get('ownTeamId') or '').strip(),
+                                   'opponentTeamId': str(value.get('opponentTeamId') or '').strip(),
+                                   'matchType': str(value.get('matchType') or '').strip(),
+                               },
                                'progress': {'done': 0, 'total': len(entries),
                                             'current': '', 'phase': 'detail'}})
 
@@ -4547,7 +4657,7 @@ def _v3_index_body() -> str:
     stamp = _v3_asset_stamp()
     # godmode.js 也要吃同一个戳：它以前把 ?v=8.0.0 写死在 index.html 里，
     # 升级后 URL 不变，浏览器会一直用旧副本，改了也看不到。
-    text = re.sub(r'(static/(?:style\.css|workspace-home\.css|app\.js|godmode\.js))(\?v=[^"\']*)?',
+    text = re.sub(r'(static/(?:style\.css|workspace-home\.css|interface\.css|platinum-ds\.css|biggame-overview\.css|snapshot-center\.css|app\.js|godmode\.js|cross-page\.js|snapshot-center\.js))(\?v=[^"\']*)?',
                   lambda match: f'{match.group(1)}?v={stamp}', text)
     if 'name="app-version"' not in text:
         text = re.sub(r'<head>',
@@ -4684,6 +4794,20 @@ if __name__ == '__main__':
             print(f'端口 {port} 已被占用（不是这个工作台的数据目录），没有启动第二份。')
             print('请关掉占用该端口的程序，或用 TRAINING_PORT 换一个端口。')
             sys.exit(1)
+    # 首次安装补种内置数据（组合池 / 克制关系 / 阵容标签 / 评级规则 / KPL 事实表，
+    # 以及 KPL 逐局 BP / 巅峰千强日线与对位快照）。只在文件不存在时写，
+    # 升级时不会覆盖赛训组自己保存的数据。
+    try:
+        import builtin_seed
+        builtin_seed.ensure_all(verbose=True)
+    except Exception as exc:                          # noqa: BLE001 - 补种失败不挡启动
+        print(f'[内置数据] 补种失败（不影响启动）：{exc}')
+    # 启动后台检查外部数据里出现、但本地名录缺失的新英雄（联网时自动补名字与头像）。
+    try:
+        import data_source_health
+        data_source_health.auto_sync_heroes()
+    except Exception as exc:                          # noqa: BLE001 - 不挡启动
+        print(f'[英雄同步] 自动检查启动失败（不影响启动）：{exc}')
     # 真实服务入口才开巅峰千强每日自动刷新；模块导入 / 测试客户端不会触发爬取。
     os.environ.setdefault('PEAK_AUTO_CRAWL', '1')
     if V3_MODULE is not None and hasattr(V3_MODULE, 'start_peak_auto'):

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="125" height="475" viewBox="0 0 125 475" role="img">
+<title>5:19 英雄出装竖卡边框</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<rect x="0.7" y="0.7" width="123.6" height="473.6" rx="14" fill="none" stroke="url(#gold-edge)" stroke-width="1.4"/><g transform="translate(37 475) scale(-1 -1)"><path d="M0 0 H29 Q37 0 37 8 V37 C36.26 10.36 25.16 0.37 0 0Z" fill="url(#gold)"/><path d="M2.96 0 C21.46 1 34.78 5.55 37 31.82 C36.63 7.77 25.9 0 2.96 0Z" fill="url(#teal-edge)"/></g>
+</svg>

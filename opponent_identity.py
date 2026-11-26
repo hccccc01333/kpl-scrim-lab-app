@@ -37,6 +37,9 @@ import team_clusters
 _CACHE = {}
 _LOCK = threading.Lock()
 _TTL = 5.0
+# 每次改名/合并都会 clear_cache()；调用方（分析快照）用这个代际号发现自己
+# 手里烤进去的旧队名已经作废，不必依赖跨模块调用或 15 秒 TTL。
+_GENERATION = 0
 
 
 def camp_dir_for(matches_dir):
@@ -86,8 +89,15 @@ def _cached(name, key, builder):
 
 def clear_cache():
     """改名/合并后调用：立刻丢掉解析缓存（DB 指纹也会变，这里是双保险）。"""
+    global _GENERATION
     with _LOCK:
         _CACHE.clear()
+        _GENERATION += 1
+
+
+def generation():
+    """当前命名代际号；写入方每改名/合并一次 +1。"""
+    return _GENERATION
 
 
 def _canonical(team_id, overrides):
@@ -246,14 +256,27 @@ def apply_to_matches(matches, resolution):
     seq_to_id = resolution.get('seqToId') or {}
     aliases = resolution.get('aliases') or {}
     for match in matches:
-        team_id = seq_to_id.get(game_seq(match))
-        if team_id:
-            match['opponentTeamId'] = team_id
-            name = by_id.get(team_id)
-            if name:
-                match['opponent'] = name
-                match['opponentNameSource'] = 'team'
+        # 「匹配与编组」保存的 opponentTeamId 是教练确认过的归属，优先于
+        # camp_details 面板按 gameSeq 推出来的旧 cluster id：面板的 cluster
+        # 可能已改名/合并，旧 id 解析不到队名，以前会把它写回 match，反而
+        # 把已匹配的队名抹掉，于是局列表里还是「对手未标注」。
+        explicit_id = clean(match.get('opponentTeamId'))
+        record_id = clean(match.get('recordTeamId'))
+        seq_id = seq_to_id.get(game_seq(match))
+        named = False
+        for team_id in (explicit_id, record_id, seq_id):
+            if not team_id:
                 continue
+            name = by_id.get(team_id) or aliases.get(team_id)
+            if not name:
+                continue
+            match['opponentTeamId'] = team_id
+            match['opponent'] = name
+            match['opponentNameSource'] = 'team'
+            named = True
+            break
+        if named:
+            continue
         text = clean(match.get('opponent'))
         if text and text in aliases:
             match['opponent'] = aliases[text]

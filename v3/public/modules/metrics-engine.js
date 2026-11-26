@@ -238,6 +238,21 @@ export function createMetricsEngine(options = {}) {
     return response.json();
   }
 
+  /* 营地游戏名 → 选手ID：优先 memberId，其次匹配与编组登记的 camp_user_id / 别名。
+     没建ID的账号返回 null，不进分析页（游戏名只留在 lookupName 供取数）。 */
+  function boundName(p) {
+    const members = (sources && sources.board && sources.board.identity && sources.board.identity.members) || [];
+    if (p && p.memberId) {
+      const owner = members.find((m) => m.id === p.memberId);
+      if (owner) return owner.label || owner.name || p.name;
+    }
+    const raw = text(p && p.name);
+    const owner = members.find((m) => m.camp_user_id === raw
+      || (Array.isArray(m.aliases) && m.aliases.includes(raw))
+      || m.name === raw || m.label === raw);
+    return owner ? (owner.label || owner.name || raw) : null;
+  }
+
   async function loadSources() {
     if (sources) return sources;
     if (sourcesPending) return sourcesPending;
@@ -273,7 +288,7 @@ export function createMetricsEngine(options = {}) {
     return job;
   }
 
-  function listSubjects({ source = 'own', lane = '' } = {}) {
+  function listSubjects({ source = 'own', lane = '', team = '' } = {}) {
     const src = sources || { board: { players: [] } };
     if (source === 'kpl') {
       const lanes = (src.kpl && src.kpl.lanes) || {};
@@ -287,10 +302,30 @@ export function createMetricsEngine(options = {}) {
         }));
     }
     const side = source === 'opponent' ? 'enemy' : 'own';
-    return ((src.board.players || []).filter((p) => (p.side || 'own') === side && (p.games || 0) > 0)
-      .filter((p) => !lane || familyMatch(p.lane, lane))
-      .slice().sort((a, b) => (b.games || 0) - (a.games || 0))
-      .map((p) => ({ id: `${source}:${p.name}`, name: p.name, source, lane: p.lane || '', games: p.games || 0 })));
+    const byId = new Map();
+    for (const p of (src.board.players || [])) {
+      if ((p.side || 'own') !== side || (p.games || 0) <= 0) continue;
+      if (lane && !familyMatch(p.lane, lane)) continue;
+      const split = source === 'team' && team ? ((p.splits && p.splits.opponent && p.splits.opponent[team]) || null) : null;
+      if (source === 'team' && (!split || (split.games || 0) <= 0)) continue;
+      const label = boundName(p);
+      if (!label) continue; /* 未建ID的营地号不进分析页 */
+      const subject = { id: `${source}:${label}`, name: label, lookupName: p.name, bound: true,
+        source, lane: p.lane || '', games: split ? split.games : (p.games || 0),
+        opponentTeam: source === 'team' ? team : '' };
+      const previous = byId.get(label);
+      if (!previous || subject.games > previous.games) byId.set(label, subject);
+    }
+    return [...byId.values()].sort((a, b) => b.games - a.games);
+  }
+
+  /** 可选战队：从 players-board 的对手列表里取，带场次供下拉显示。 */
+  function listTeams() {
+    const src = sources || { board: {} };
+    const seen = new Set();
+    return ((src.board.opponents || []).map((o) => ({ name: text(o.name), games: o.games || 0 }))
+      .filter((o) => o.name && !seen.has(o.name) && seen.add(o.name)))
+      .sort((a, b) => b.games - a.games || a.name.localeCompare(b.name, 'zh-CN'));
   }
 
   function listMetrics(lane = '') {
@@ -315,9 +350,12 @@ export function createMetricsEngine(options = {}) {
   async function rowsFor(subject) {
     // KPL 平均只有聚合值，没有逐局面板；不伪造逐局数据，也不画趋势。
     if (subject.baseline) return [];
-    const doc = await detail(subject.name);
+    const doc = await detail(subject.lookupName || subject.name);
     const kplHeroes = (doc && doc.kplHeroStats) || {};
-    return (doc && Array.isArray(doc.rows) ? doc.rows : []).slice().map((row) => ({
+    let rows = doc && Array.isArray(doc.rows) ? doc.rows : [];
+    /* 战队口径：只保留对该队的逐局样本，不把跨队场次混进来冒充。 */
+    if (subject.opponentTeam) rows = rows.filter((r) => (text(r.opponent) || text(r.opponentTeam)) === subject.opponentTeam);
+    return rows.slice().map((row) => ({
       ...row,
       winRate: row.result === 'win' ? 100 : (row.result === 'loss' ? 0 : null),
       heroWinRate: isNum(kplHeroes[row.hero]?.winRate) ? kplHeroes[row.hero].winRate : null,
@@ -368,16 +406,19 @@ export function createMetricsEngine(options = {}) {
     const src = await loadSources();
     const list = subjects.filter((s) => s && s.name);
     const metrics = listMetrics(lane);
-    const effectiveLane = lane || (list.find((s) => s.lane) || {}).lane || '';
+    /* 分路筛选为空时不替用户挑第一对象的分路：多对象跨位置对比会因此丢样本。
+       规则主体由 listMetrics 按空分路兜底，每个对象仍用自己的逐局数据。 */
+    const effectiveLane = lane || '';
     const rowsBy = new Map();
-    await Promise.all(list.map(async (s) => { rowsBy.set(s.name, filterRows(await rowsFor(s), filters, src.competitions)); }));
+    const keyOf = (s) => `${s.id || s.name}|${s.opponentTeam || ''}`;
+    await Promise.all(list.map(async (s) => { rowsBy.set(keyOf(s), filterRows(await rowsFor(s), filters, src.competitions)); }));
 
     const series = await Promise.all(list.map((s) => seriesFor({
-      subject: s, metricKey, rows: rowsBy.get(s.name), filters, lane: effectiveLane,
+      subject: s, metricKey, rows: rowsBy.get(keyOf(s)), filters, lane: effectiveLane,
     })));
     const coreTable = metrics.core.map((metric) => ({
       key: metric.key, label: metric.label, unit: metric.unit, placeholder: false, fromRule: metric.fromRule,
-      cells: list.map((s) => tableRow(effectiveLane, metric, s, rowsBy.get(s.name) || [])),
+      cells: list.map((s) => tableRow(effectiveLane, metric, s, rowsBy.get(keyOf(s)) || [])),
     }));
     const attrTable = metrics.attrs.map((metric) => ({
       key: metric.key, label: metric.label, unit: metric.unit, placeholder: true, fromRule: false,
@@ -400,7 +441,7 @@ export function createMetricsEngine(options = {}) {
       ruleSubject: metrics.ruleSubject, effectiveLane, competitions: src.competitions };
   }
 
-  return { loadSources, invalidate, listSubjects, listMetrics, filterRows, seriesFor, buildComparison,
+  return { loadSources, invalidate, listSubjects, listTeams, listMetrics, filterRows, seriesFor, buildComparison,
     grade: gradeValue, findMetric, get sources() { return sources; } };
 }
 
@@ -443,8 +484,14 @@ export function lineChartSvg(series = [], opts = {}) {
     if (!pts.length) return '';
     const cls = s.cls || `s${si % 6}`;
     const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p.x ?? i).toFixed(1)} ${Y(p.y).toFixed(1)}`).join(' ');
-    const dots = pts.map((p) => `<circle class="mo-dot ${cls}" cx="${X(p.x ?? 0).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="2.8"><title>${esc(p.tip || `${s.name}: ${p.y}`)}</title></circle>`).join('');
-    return `<path class="mo-line ${cls}" d="${d}" fill="none"/>${dots}`;
+    const dots = pts.map((p) => `<circle class="mo-dot ${cls}" cx="${X(p.x ?? 0).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.4"><title>${esc(p.tip || `${s.name}: ${p.y}`)}</title></circle>`).join('');
+    /* 单序列且点数不多时直接把数值写在点旁，避免「一条线看不出是多少」。 */
+    const labels = series.length === 1 && pts.length <= 8 ? pts.map((p) => {
+      const cx = X(p.x ?? 0), cy = Y(p.y);
+      const ty = cy - 9 < padT + 2 ? cy + 15 : cy - 9;
+      return `<text class="mo-point-label" x="${cx.toFixed(1)}" y="${ty.toFixed(1)}" text-anchor="middle">${fmtTick(p.y)}</text>`;
+    }).join('') : '';
+    return `<path class="mo-line ${cls}" d="${d}" fill="none"/>${dots}${labels}`;
   }).join('');
   const title = opts.title || '指标趋势';
   const desc = opts.desc || series.map((s) => {

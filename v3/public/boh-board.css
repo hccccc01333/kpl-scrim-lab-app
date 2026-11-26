@@ -1,0 +1,400 @@
+/* BO 习惯 · 楼层板（2026-11-24）
+   左蓝方 / 右红方：各 4~5 个 Ban 位 + 1~5 楼，中间显示所选手的意图。
+   只作用于 .boh-* 新类名，不改动旧的 .bgv-boh-* 逐行版式。 */
+
+.boh-board-wrap {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(330px, 1.3fr) minmax(200px, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.boh-side { display: grid; gap: 8px; align-content: start; min-inline-size: 0; }
+.boh-side-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 9px;
+}
+.boh-side-head b { font-size: .9375rem; }
+.boh-side-head span { font-size: .625rem; letter-spacing: .12em; opacity: .8; }
+.boh-side.is-blue .boh-side-head {
+  color: #1b5d97;
+  background: linear-gradient(120deg, #dcecff, #f1f8ff);
+  border: 1px solid #bcd8f4;
+}
+.boh-side.is-red .boh-side-head {
+  color: #a63c38;
+  background: linear-gradient(120deg, #ffe5e1, #fff4f1);
+  border: 1px solid #f2c8c2;
+}
+
+.boh-bans { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 6px; }
+.boh-cell {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-inline-size: 0;
+  padding: 6px 3px;
+  border: 1px solid var(--line, #d9e1e0);
+  border-radius: 9px;
+  background: var(--paper, #fff);
+  color: var(--text, #1e2b2a);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .15s, box-shadow .15s, transform .15s, background .15s;
+}
+.boh-cell:hover { border-color: var(--accent, #2a7770); transform: translateY(-1px); }
+.boh-cell:focus-visible { outline: 2px solid var(--accent, #2a7770); outline-offset: 2px; }
+.boh-cell[aria-pressed="true"] {
+  border-color: var(--accent, #2a7770);
+  background: color-mix(in srgb, var(--accent, #2a7770) 6%, var(--paper, #fff));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #2a7770) 16%, transparent);
+}
+.boh-cell.is-pick.is-high-win {
+  border-color: #86c9aa;
+  background: linear-gradient(135deg, #effbf5, #fff 72%);
+  box-shadow: inset 3px 0 0 #25845f;
+}
+.boh-cell.is-pick.is-high-win .boh-pick-copy small { color: #17724f; font-weight: 700; }
+.boh-cell.is-pick.is-high-win[aria-pressed="true"] {
+  border-color: var(--accent, #2a7770);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #2a7770) 20%, transparent),
+              inset 3px 0 0 #25845f;
+}
+.boh-high-win-tag {
+  position: absolute;
+  inset-block-start: -6px;
+  inset-inline-end: -5px;
+  z-index: 1;
+  padding: 1px 5px;
+  border: 1px solid #76bb9b;
+  border-radius: 999px;
+  background: #17724f;
+  color: #fff;
+  font-size: .5625rem;
+  font-weight: 750;
+  line-height: 1.5;
+  letter-spacing: .02em;
+  pointer-events: none;
+}
+.boh-cell > b {
+  max-inline-size: 100%;
+  overflow: hidden;
+  font-size: .6875rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.boh-ban-tag { color: var(--quiet, #6f7d7b); font-size: .625rem; letter-spacing: .02em; }
+.boh-cell-face { inline-size: 38px; block-size: 38px; border-radius: 8px; object-fit: cover; }
+.boh-cell-empty {
+  display: grid;
+  place-items: center;
+  inline-size: 38px;
+  block-size: 38px;
+  color: var(--quiet, #6f7d7b);
+  font-size: 1rem;
+}
+/* Ban 位上一道斜杠就是「这家伙被搬掉了」；只压在头像上，不动卡片布局，
+   空位不画杠，选中/未选中也不会因为边框变化而跳动。 */
+.boh-cell.is-ban .boh-ban-face { position: relative; display: inline-grid; line-height: 0; }
+.boh-cell.is-ban.has-hero .boh-ban-face .boh-cell-face { filter: grayscale(1) brightness(.82); opacity: .7; }
+.boh-cell.is-ban.has-hero .boh-ban-face::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: linear-gradient(to top right,
+    transparent calc(50% - 2px), #75837d calc(50% - 2px),
+    #75837d calc(50% + 2px), transparent calc(50% + 2px));
+  pointer-events: none;
+}
+.boh-cell.is-pick {
+  grid-template-columns: 38px 40px minmax(0, 1fr);
+  grid-template-areas: "floor face copy";
+  align-items: center;
+  column-gap: 8px;
+  padding: 5px 8px;
+  text-align: start;
+}
+.boh-floor {
+  grid-area: floor;
+  color: var(--quiet, #6f7d7b);
+  font-size: .6875rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.boh-cell.is-pick .boh-cell-face,
+.boh-cell.is-pick .boh-cell-empty { grid-area: face; }
+.boh-pick-copy { grid-area: copy; display: grid; gap: 1px; min-inline-size: 0; }
+.boh-pick-copy small { color: var(--quiet, #6f7d7b); font-size: .625rem; }
+
+.boh-frame {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  padding: 20px 8px 8px;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  background:
+    linear-gradient(var(--paper, #fff), var(--paper, #fff)) padding-box,
+    linear-gradient(160deg, #2f7fd1, #8fc7ff 48%, #d7ebff) border-box;
+}
+.boh-side.is-red .boh-frame {
+  background:
+    linear-gradient(var(--paper, #fff), var(--paper, #fff)) padding-box,
+    linear-gradient(160deg, #c8433f, #f3a29b 48%, #ffd9d4) border-box;
+}
+.boh-frame-label {
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline-start: 12px;
+  padding: 0 6px;
+  color: #1b5d97;
+  background: var(--paper, #fff);
+  font-size: .6875rem;
+  font-weight: 700;
+  transform: translateY(-50%);
+}
+.boh-side.is-red .boh-frame-label { color: #a63c38; }
+
+.boh-analyze {
+  container: boh-analysis / inline-size;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-block-size: 360px;
+  padding: 14px;
+  border: 1px solid var(--line, #d9e1e0);
+  border-radius: 14px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--accent, #2a7770) 4%, var(--paper, #fff)),
+    var(--paper, #fff) 40%);
+}
+.boh-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.boh-overview-side {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-inline-size: 0;
+  padding: 10px;
+  border: 1px solid var(--line, #d9e1e0);
+  border-radius: 11px;
+  background: var(--paper, #fff);
+}
+/* 红蓝各自一个带对应颜色的整框，右侧窄栏扫一眼就知道在看哪一边；
+   保留顶部 3px 色条做身份标记，其余边框用同色低饱和，不抢内容。 */
+.boh-overview-side.is-blue {
+  border: 1px solid color-mix(in srgb, #2f7fd1 38%, var(--line, #d9e1e0));
+  border-block-start: 3px solid #2f7fd1;
+  background: linear-gradient(180deg, color-mix(in srgb, #2f7fd1 4%, var(--paper, #fff)), var(--paper, #fff) 38%);
+}
+.boh-overview-side.is-red {
+  border: 1px solid color-mix(in srgb, #c8433f 38%, var(--line, #d9e1e0));
+  border-block-start: 3px solid #c8433f;
+  background: linear-gradient(180deg, color-mix(in srgb, #c8433f 4%, var(--paper, #fff)), var(--paper, #fff) 38%);
+}
+.boh-overview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.boh-overview-head h3 { margin: 0; font-size: .875rem; font-weight: 750; }
+.boh-overview-side.is-blue .boh-overview-head h3 { color: #1b5d97; }
+.boh-overview-side.is-red .boh-overview-head h3 { color: #a63c38; }
+.boh-overview-head span { color: var(--quiet, #6f7d7b); font-size: .5625rem; letter-spacing: .1em; }
+.boh-overview-block { display: grid; gap: 6px; padding-block-start: 8px; border-block-start: 1px solid var(--line, #d9e1e0); }
+.boh-overview-block h4 { margin: 0; color: var(--muted, #4b5a58); font-size: .75rem; font-weight: 700; }
+.boh-overview-list { display: grid; gap: 6px; }
+.boh-overview-row {
+  display: grid;
+  gap: 5px;
+  min-inline-size: 0;
+  padding: 7px;
+  border: 1px solid var(--line, #d9e1e0);
+  border-radius: 8px;
+  background: var(--wash, #f7f9f8);
+}
+/* 组合卡是一行内容（两张头像 + 胜率），用 flex 横排省掉上下堆叠的高度；
+   用 gap 而不是子元素 margin，窄容器里按源码顺序自然折行。 */
+.boh-overview-row.is-combo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  border-inline-start: 3px solid var(--pool-comfort, #17765a);
+}
+.boh-overview-row.is-combo > .bgv-boh-hero { flex: none; }
+.boh-overview-row.is-combo > .boh-overview-meta { margin-inline-start: auto; }
+.boh-overview-row.is-counter { border-inline-start: 3px solid var(--bgx-loss, #a94f3c); }
+.boh-overview-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.boh-overview-meta small { color: var(--quiet, #6f7d7b); font-size: .625rem; }
+.boh-overview-wins { display: grid; gap: 5px; }
+.boh-overview-win {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-inline-size: 0;
+  padding: 5px 7px;
+  border: 1px solid #cce7d9;
+  border-radius: 8px;
+  background: #f2fbf6;
+}
+.boh-overview-win > span:last-child { display: grid; gap: 1px; margin-inline-start: auto; text-align: end; }
+.boh-overview-win > span:last-child b { color: #17724f; font-size: .8125rem; font-variant-numeric: tabular-nums; }
+.boh-overview-win > span:last-child small { color: var(--quiet, #6f7d7b); font-size: .625rem; }
+.boh-overview-scope { grid-column: 1 / -1; margin: 0; color: var(--quiet, #6f7d7b); font-size: .6875rem; line-height: 1.55; }
+@container boh-analysis (max-width: 520px) {
+  .boh-overview { grid-template-columns: 1fr; }
+}
+.boh-an-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-block-end: 8px;
+  border-block-end: 1px solid var(--line, #d9e1e0);
+}
+.boh-an-head b { font-size: .9375rem; }
+.boh-an-scope { margin-inline-start: auto; color: var(--quiet, #6f7d7b); font-size: .625rem; }
+.boh-an-kicker {
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: #fff;
+  font-size: .6875rem;
+  font-weight: 700;
+}
+.boh-an-kicker.is-blue { background: linear-gradient(120deg, #2f7fd1, #6bb0e8); }
+.boh-an-kicker.is-red { background: linear-gradient(120deg, #c8433f, #eb8b83); }
+.boh-an-title { margin-block-start: 3px; color: var(--muted, #4b5a58); font-size: .8125rem; font-weight: 650; }
+.boh-an-hint, .boh-an-none { margin: 4px 0; color: var(--quiet, #6f7d7b); font-size: .8125rem; line-height: 1.65; }
+.boh-an-remain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px dashed var(--line-strong, #b6c2c0);
+  border-radius: 9px;
+  background: var(--wash, #f4f7f6);
+}
+.boh-an-remain::before {
+  content: "剩余";
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: var(--quiet, #6f7d7b);
+  background: var(--paper, #fff);
+  font-size: .625rem;
+}
+.boh-an-list { display: grid; gap: 6px; }
+.boh-an-combo, .boh-an-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line, #d9e1e0);
+  border-radius: 9px;
+  background: var(--paper, #fff);
+}
+.boh-an-combo > b { color: var(--bgx-loss, #a94f3c); font-size: .75rem; }
+.boh-an-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin-inline-start: auto;
+}
+.boh-an-row-meta > small { color: var(--quiet, #6f7d7b); font-size: .625rem; }
+.boh-an-stat { display: inline-flex; align-items: baseline; gap: 3px; white-space: nowrap; }
+.boh-an-num {
+  color: var(--text, #1e2b2a);
+  font-size: 1.375rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.boh-an-num.is-good { color: var(--bgx-win, #17765a); }
+.boh-an-stat small { color: var(--quiet, #6f7d7b); font-size: .625rem; }
+.boh-an-focus {
+  display: inline-grid;
+  padding: 2px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px var(--accent, #2a7770);
+}
+.boh-an-side { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.boh-an-arrow { display: inline-grid; justify-items: center; color: var(--bgx-loss, #a94f3c); }
+.boh-an-arrow i { font-size: .625rem; font-style: normal; }
+.boh-an-arrow b { font-size: 1.125rem; font-weight: 400; line-height: 1; }
+.boh-an-caret { display: none; }
+
+.boh-ban-intent {
+  display: grid;
+  gap: 7px;
+  margin-block-start: 5px;
+  padding-block-start: 9px;
+  border-block-start: 1px dashed var(--line-strong, #b6c2c0);
+}
+.boh-ban-intent-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.boh-ban-intent-head b { font-size: .875rem; }
+.boh-ban-intent-head small { margin-inline-start: auto; color: var(--quiet, #6f7d7b); font-size: .625rem; }
+.boh-fold {
+  border: 1px solid var(--line, #d9e1e0);
+  border-radius: 10px;
+  background: var(--paper, #fff);
+}
+.boh-fold > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+  font-size: .8125rem;
+  list-style: none;
+}
+.boh-fold > summary::-webkit-details-marker { display: none; }
+.boh-fold > summary::before {
+  content: "";
+  inline-size: 7px;
+  block-size: 7px;
+  flex: none;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  rotate: -45deg;
+}
+.boh-fold[open] > summary::before { rotate: 45deg; }
+.boh-fold > summary > b { font-weight: 650; }
+.boh-fold > summary > span {
+  margin-inline-start: auto;
+  color: var(--quiet, #6f7d7b);
+  font-size: .75rem;
+  font-variant-numeric: tabular-nums;
+}
+.boh-fold.is-combo > summary { color: var(--pool-comfort, #17765a); }
+.boh-fold.is-hot > summary { color: #a86a12; }
+.boh-fold.is-counter > summary { color: var(--bgx-loss, #a94f3c); }
+.boh-fold-body { display: grid; gap: 7px; padding: 0 10px 10px; }
+.boh-fold::details-content {
+  interpolate-size: allow-keywords;
+  overflow: clip;
+  contain: layout;
+}
+.boh-fold:not([open])::details-content { block-size: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .boh-fold::details-content {
+    transition: block-size, content-visibility, display;
+    transition-duration: .22s;
+    transition-timing-function: ease-in-out;
+    transition-behavior: allow-discrete;
+  }
+}
+
+.boh-board-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-block-start: 4px; }
+.boh-board-foot .bgv-boh-intent-note,
+.boh-board-foot .bgv-boh-verdict { margin: 0; flex: 1 1 320px; }
+.boh-board-foot .bgv-boh-samples { flex: 1 1 100%; padding-block-start: 0; border-block-start: 0; }
+
+@media (max-width: 1100px) {
+  .boh-board-wrap { grid-template-columns: 1fr; }
+  .boh-analyze { order: -1; min-block-size: 0; }
+  .boh-bans { grid-template-columns: repeat(4, minmax(52px, 1fr)); }
+}

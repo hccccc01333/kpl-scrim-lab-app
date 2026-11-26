@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import re
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -39,6 +40,25 @@ def settle(page, timeout: int = 25000) -> str:
     return 'data'
 
 
+def assert_tree_semantics(page):
+    """聚合树必须明确标注非单局，列头不能再用单个节点推断整列格式。"""
+    page.locator('[data-bps-jump="types"]').click()
+    section = page.locator('[data-bps-section="types"]')
+    section.wait_for(state='attached')
+    own_side = section.locator('[data-bps-type-side="own"]')
+    own_side.wait_for(state='attached', timeout=40000)
+    own_side.click()
+    page.get_by_role('heading', name='历史 BP 聚合树（非单局）', exact=True).wait_for(state='attached')
+    svg = page.locator('.bps-tree-scroll svg[role="img"]').first
+    if svg.count():
+        svg.wait_for(state='attached', timeout=40000)
+        assert svg.get_attribute('aria-label') == '历史 BP 聚合树（非单局）'
+        headers = page.locator('.bps-tree-scroll .bv-tree-hand').all_text_contents()
+        assert headers and all(re.fullmatch(r'\d+ 手', text.strip()) for text in headers), headers
+    else:
+        assert page.get_by_text('还没有可画的手序', exact=True).is_visible()
+
+
 def run(width: int, height: int) -> str:
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -58,6 +78,7 @@ def run(width: int, height: int) -> str:
             assert page.locator('a[href="#ingest"]').count() >= 1, '空态缺「去采集」入口'
         else:
             assert page.locator('.bps-console').count() >= 1, '有数据时控制台没渲染'
+            assert_tree_semantics(page)
         overflow = page.evaluate(
             "() => { const el = document.querySelector('#content');"
             " return el ? el.scrollWidth - el.clientWidth : 0; }")
@@ -83,6 +104,7 @@ def main() -> int:
             # 点完之后旧空态还在 DOM 里（重取期间不闪骨架），所以直接等控制台出现。
             page.wait_for_selector('.bps-console', timeout=40000)
             assert page.locator('.bps-console').count() >= 1, '载入模拟数据后没渲染出 BP 界面'
+            assert_tree_semantics(page)
             print('空态 → 载入模拟数据：ok')
             browser.close()
     print('BP 页面冒烟通过')

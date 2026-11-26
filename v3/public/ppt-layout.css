@@ -1,0 +1,172 @@
+/* ============================================================
+   PPT 级版面精修（第二轮）
+   目标：一个卡片只有一层框；行内小方块整齐对齐；文字按视觉盒居中；
+        间隔走 8px 节奏；边框不用黑线，只用暖灰发丝线 + 渐变高光。
+   加载顺序：uplift.css → ppt-layout.css（最后加载）
+   ============================================================ */
+
+:root, :root[data-theme] {
+  --ppt-line: rgba(126, 96, 56, .16);
+  --ppt-line-soft: rgba(126, 96, 56, .10);
+  --ppt-fill: var(--paper-2, #f7f7f7);
+  --ppt-gap: 12px;
+  --ppt-gap-lg: 18px;
+  --ppt-radius: 14px;
+}
+
+/* ── 1. 框的层级：外层一套框，内层一律降级为色块 ───────────────── */
+/* 外框：只规整已有的那一层框（暖灰发丝线 + 顶部金色高光），绝不新增黑框 */
+#app #content :is(.section, .panel, .card) {
+  border-color: var(--ppt-line) !important;
+  border-radius: var(--ppt-radius) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(214, 168, 92, .22),
+    0 1px 3px rgba(28, 22, 12, .04) !important;
+}
+
+/* 内框：所有非交互元素一律不再描边，用底色和间距代替方框。
+   只保留表格线（数据可读性）和交互控件自己的框。 */
+#app #content *:not(:is(
+  button, .control, input, select, textarea, a, [role='button'],
+  table, thead, tbody, tr, th, td
+)) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+/* 只给最外层的内容分区留一圈发丝线，避免"框里框" */
+#app #content :is(.section, .panel) {
+  border-color: var(--ppt-line) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(214, 168, 92, .22),
+    0 1px 3px rgba(28, 22, 12, .04) !important;
+}
+/* 内容块用底色分层，代替第二层框 */
+#app #content .section :is(
+  [class*='-card'], [class*='-group'], [class*='-panel'], [class*='-box'],
+  [class*='-metric'], [class*='-tile'], [class*='-item'], [class*='-step'],
+  [class*='-block'], [class*='-fact'], .card, .panel
+):not(:is(button, .control, input, select, textarea, a, table, th, td, .md-board *)) {
+  background: var(--ppt-fill);
+  border-radius: 10px !important;
+}
+/* 深色复盘大板不能被浅色底色覆盖，否则白字落在浅底上不可读 */
+#app #content .md-board {
+  border-color: #274458 !important;
+}
+#app #content .md-board :is([class*='-block'], [class*='-card'], [class*='-panel']) {
+  background: transparent !important;
+}
+/* 时间轴刻度是 2px 的标记，不是 44px 的按钮 */
+#app #content .md-heat-mark {
+  min-inline-size: 2px !important;
+  min-block-size: 9px !important;
+  inline-size: 2px !important;
+  block-size: 9px !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  font-size: 0 !important;
+}
+
+/* ── 2. 对齐：横向容器里的方块共用中线，长内容不撑破布局 ─────────── */
+/* 注意：不要在 *-head 上无条件写 align-items——很多页头是 column 方向，
+   那样会把标题整体居中。这里只做方向无关的两件事：允许换行 + 允许收缩。 */
+:where(#app #content :is(
+  [class*='-head'], [class*='-bar'], [class*='-row'], [class*='-tools'],
+  [class*='-ops'], [class*='-actions'], [class*='-tabs'], [class*='-list'],
+  .toolbar, .mf-toolbar, .archive-list-head
+)):not(:is(table, thead, tbody, tr)) {
+  flex-wrap: wrap;
+  min-inline-size: 0;
+}
+#app #content :is([class*='-head'], [class*='-bar'], [class*='-row'], .toolbar) > * {
+  min-inline-size: 0;
+}
+/* 已知横向工具条：统一 12px 节奏与中线对齐 */
+#app #content :is(.mf-toolbar, .archive-list-head, .feature-toolbar, .thd-toolbar,
+                 .rt-toolbar, .sx-toolbar, .bv-toolbar) {
+  align-items: safe center !important;
+  gap: var(--ppt-gap) !important;
+}
+
+/* 首页筛选组：原来 2px 的间距让小方块挤在一起，统一成 10px 节奏 */
+#app #content :is(.pbr-periods, .pbr-views, .pbr-bar-actions) { gap: 12px !important; }
+
+/* 赛事轮播指示点：统一小圆点 + 透明扩展命中区，不再是大黑方块 */
+#app #content [data-comp-marker] {
+  inline-size: 12px !important;
+  block-size: 12px !important;
+  min-inline-size: 12px !important;
+  min-block-size: 12px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: var(--line-strong) !important;
+  position: relative;
+}
+#app #content [data-comp-marker]::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+#app #content [data-comp-marker][aria-current='true'] {
+  background: #c89b5a !important;
+}
+
+/* 卡片顶部的渐变高光统一为金色，不再从黑色起步 */
+#app #content .tp-card-view::before {
+  background: linear-gradient(90deg, #c89b5a, #e6c88a 55%, rgba(200, 155, 90, 0)) !important;
+}
+
+/* 空状态：去掉框之后用浅底色保持"一页一张卡"的体量感 */
+#app #content :is(.pbr-empty, .empty, .empty-state, .ui-empty, .bpl-empty, .sx-empty,
+                 .xw-empty, .bv-empty, .nm-empty, .thd-empty-state, .capv-hint-empty,
+                 .kq-hint-empty, .mb-blank, .sb-empty, .sc-empty, .review-empty) {
+  background: var(--ppt-fill) !important;
+  border-radius: var(--ppt-radius) !important;
+}
+
+/* 多行紧凑控件均匀分配，最后一行不留孤儿 */
+:where(.tag-list, .chip-list, .control-group, [class*='-tags'], [class*='-pills']) {
+  flex-wrap: wrap;
+  flex-wrap: balance;
+  gap: 10px;
+}
+
+/* ── 3. 卡片内网格：列宽一致、顶部对齐 ───────────────────────────── */
+/* 竖排列表和横竖混排的数字块都不是卡片网格，强制统一列数会把它们挤成一条竖线。
+   .xw-counts 是竖排计数行；.arch-id-figs 原本是 2×2 的四宫格。 */
+#app #content :is(.capv-tiers, .comp-cards, .tb-roster) {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)) !important;
+  gap: var(--ppt-gap-lg) !important;
+  align-items: start !important;
+}
+
+/* ── 4. 文字的视觉盒：标题/按钮/徽章按字面居中，而非字体留白 ─────── */
+#app #content :is(h1, h2, h3, .control, button, [class*='-badge'], [class*='-tag'], [class*='-seg']) {
+  text-box: trim-both cap alphabetic;
+}
+/* 不支持 text-box 的浏览器安全地忽略上一行，这里仍保证光学对齐 */
+:where(#app #content) { line-height: 1.55; }
+:where(#app #content h1, #app #content h2, #app #content h3) {
+  line-height: 1.25;
+  text-wrap: balance;
+}
+:where(#app #content p) { line-height: 1.65; }
+
+/* ── 5. 小方块统一尺寸节奏：同一行里的小标记等高 ─────────────────── */
+/* 排除 .portrait：英雄头像常带 is-chip / is-badge 这类后缀，套上 padding 会把圆形图像压扁。 */
+#app #content :is([class*='-badge'], [class*='-tag'], [class*='-chip'], [class*='-seg']):not(.portrait) {
+  min-block-size: 28px;
+  padding-block: 5px;
+  display: inline-flex;
+  align-items: safe center;
+  gap: 8px;
+  line-height: 1.3;
+}
+
+/* ── 6. 卡片内标题与正文的上对齐关系 ─────────────────────────────── */
+#app #content :is(.section, .card, .panel, [class*='-card']) > header,
+#app #content :is(.section, .card, .panel, [class*='-card']) > [class*='-head'] {
+  align-self: start;
+}

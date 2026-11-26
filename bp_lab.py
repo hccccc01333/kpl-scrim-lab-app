@@ -144,6 +144,10 @@ def _top(counter, n, limit=5):
 
 def hero_board(games):
     """英雄 Pick/Ban 率、胜率、分路表现；分母为队-局。"""
+    try:
+        from hero_archetypes import default_lane
+    except Exception:  # pragma: no cover - 老实例缺英雄库时退回实测分路
+        default_lane = lambda hero: None
     games = list(games or [])
     total = len(games)
     lane_maps = {id(g): _lane_map(g.get("players")) for g in games}
@@ -171,7 +175,10 @@ def hero_board(games):
             lane_rows.append({"lane": lane, "picks": len(lane_records),
                               "wins": lane_wins, "decided": lane_decided,
                               "winRate": lane_rate, "interval": lane_interval})
-        primary_lane = lane_rows[0]["lane"] if lane_rows else ""
+        # 分路先看这批局里的实际出场位置；只被 Ban、没被 Pick 的英雄没有
+        # 实测位置，用英雄库登记的默认分路兜底——每个英雄都有分路，不该
+        # 因为没选过就落进「未记录」。这一列只作归类，不当作实测证据。
+        primary_lane = lane_rows[0]["lane"] if lane_rows else (default_lane(hero) or "")
         if decided < 10 or len(pick_rows) < 5:
             signal = "样本不足"
         elif (ban_rate or 0) >= 10 and (win_rate or 0) >= 52:

@@ -1,9 +1,13 @@
 """赛训组自定义「分路 × 字段」评级规则。
 
-口径（2026-11-21）：
-- 赛训组在设置页为每个评分主体（分路；打野再分坦野/野核）的每个字段设定
-  4 档阈值：卓越 / 优秀 / 达标 / 待提升。规则优先级最高，保存后所有评级按这里取数；
+口径（2026-11-21；2026-11-24 补「全字段 + 生效勾选」）：
+- 赛训组在设置页为每个评分主体（分路；打野再分坦野/野核）设定 4 档阈值：
+  卓越 / 优秀 / 达标 / 待提升。规则优先级最高，保存后所有评级按这里取数；
   没保存过时用内置默认（仅展示/兜底，不参与分析口径）。
+- 设置页**列全 FIELDS 里的所有字段**（不再只列每路默认那几个），每行带 active
+  勾选：勾上才进入评级口径；没勾的字段即使有阈值也不参与计算/展示。
+- 老存档缺字段或缺 active 时，load() 会自动补齐（新增字段默认不生效，老字段
+  默认生效），赛训组点一次保存即整体落盘。
 - 数据落在 data/facts/grade_rules.json，尊重 KPL_DATA_DIR 覆盖（与 combo_pool 同目录）。
 - 字段按**真实口径**，不强行分均：控制时长按秒、经济转治疗按比值、对位经济差按金、
   参团率按 %、死亡按次；只有 gpm/dpm/tpm 本来就是分均。单位写在规则里，界面照实显示。
@@ -113,13 +117,32 @@ _DEFAULT_SUBJECTS = {
 }
 
 
-def _rule(field: str, thresholds: list) -> dict:
+# 全字段兜底阈值：优先取现有分路默认里第一个出现值；没出现过的基础字段给一个
+# 粗略占位（勾选后赛训组按实战改）。这些字段默认 active=False。
+_SUGGESTED_THRESHOLDS = {
+    'gold': [12000, 9000, 6000], 'damage': [80000, 60000, 40000],
+    'taken': [90000, 130000, 180000], 'kills': [6, 4, 2],
+    'assists': [10, 7, 4], 'damageConversion': [1.2, 0.9, 0.6],
+    'takenPerDeath': [20000, 30000, 45000], 'cs': [250, 180, 120],
+    'towerDamage': [12000, 8000, 4000], 'jungleGold': [9000, 6500, 4000],
+    'hard_control_time': [20, 12, 6], 'gold_to_taken': [1.2, 0.9, 0.6],
+    'effective_damage': [30, 22, 15], 'lane_resource_diff': [800, 400, 0],
+    'side_lane_gold': [6000, 4000, 2000], 'key_assist': [6, 4, 2],
+}
+_FALLBACK_THRESHOLDS = dict(_SUGGESTED_THRESHOLDS)
+for _fields in _DEFAULT_SUBJECTS.values():
+    for _field, _thresholds in _fields.items():
+        _FALLBACK_THRESHOLDS.setdefault(_field, _thresholds)
+
+
+def _rule(field: str, thresholds: list, active: bool = False) -> dict:
     meta = FIELDS[field]
     return {
         'label': meta['label'], 'unit': meta['unit'], 'direction': meta['direction'],
         'source': meta['source'], 'key': meta['key'],
         'thresholds': list(thresholds),
         'estimate': meta['source'] == 'tile',   # 营地卡片字段：阈值是占位参考值
+        'active': bool(active),                 # 勾上才进入评级口径
     }
 
 
@@ -128,15 +151,52 @@ def path() -> Path:
 
 
 def _default_doc() -> dict:
+    """每个主体列全 FIELDS；只有该分路原本配过的字段默认勾选生效。"""
+    subjects = {}
+    for subject in SUBJECT_LABELS:
+        configured = _DEFAULT_SUBJECTS.get(subject) or {}
+        subjects[subject] = {
+            field: _rule(field, configured.get(field) or _FALLBACK_THRESHOLDS.get(field, [0, 0, 0]),
+                         active=field in configured)
+            for field in FIELDS
+        }
     return {
         'schema': SCHEMA,
         'revision': 0,
         'updatedAt': '',
-        'subjects': {
-            subject: {field: _rule(field, thresholds) for field, thresholds in fields.items()}
-            for subject, fields in _DEFAULT_SUBJECTS.items()
-        },
+        'subjects': subjects,
     }
+
+
+def normalize(doc: dict | None) -> dict:
+    """把任意版本存档补齐成「全字段 + active」结构，供展示与评级共用。
+
+    已保存的字段优先：阈值 / 标签等原样保留，active 缺省时按内置默认判定；
+    存档里没有的字段用内置默认补上并标为不生效（赛训组可再勾）。
+    """
+    base = _default_doc()
+    if not isinstance(doc, dict) or not isinstance(doc.get('subjects'), dict):
+        return base
+    saved = doc['subjects']
+    subjects = {}
+    for subject in SUBJECT_LABELS:
+        incoming = saved.get(subject) if isinstance(saved.get(subject), dict) else {}
+        fields = {}
+        for field, rule in base['subjects'][subject].items():
+            old = incoming.get(field)
+            if isinstance(old, dict) and isinstance(old.get('thresholds'), list) \
+                    and len(old['thresholds']) == 3 \
+                    and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                            for x in old['thresholds']) \
+                    and old.get('direction') in ('up', 'down'):
+                merged = dict(rule)
+                merged.update(old)
+                merged['active'] = bool(old.get('active', rule['active']))
+                fields[field] = merged
+            else:
+                fields[field] = rule
+        subjects[subject] = fields
+    return {**doc, 'schema': SCHEMA, 'subjects': subjects}
 
 
 def _valid(doc: object) -> bool:
@@ -158,6 +218,8 @@ def _valid(doc: object) -> bool:
                 return False
             if not all(isinstance(x, (int, float)) for x in thresholds):
                 return False
+            if 'active' in rule and not isinstance(rule['active'], bool):
+                return False
     return True
 
 
@@ -167,7 +229,7 @@ def read_saved() -> dict | None:
         return None
     try:
         doc = json.loads(file.read_text(encoding='utf-8'))
-        return doc if _valid(doc) else None
+        return normalize(doc) if _valid(doc) else None
     except (OSError, ValueError):
         return None
 
@@ -179,9 +241,7 @@ def load() -> dict:
 def save(doc: dict, bump: bool = True, summary: str = '') -> dict:
     if not _valid(doc):
         raise ValueError('评级规则数据格式不正确')
-    import config_history
-    config_history.record('grade_rules', read_saved(), doc,
-                          summary or config_history.diff_summary('grade_rules', read_saved(), doc))
+    doc = normalize(doc)   # 老存档/旧客户端提交时补齐全字段与 active，整体落盘
     out = {
         'schema': SCHEMA,
         'revision': int(doc.get('revision') or 0) + (1 if bump else 0),
@@ -241,10 +301,13 @@ def grade(subject: str, field: str, value, doc: dict | None = None):
         number = float(value)
     except (TypeError, ValueError):
         return None
-    rules = (doc or read_saved() or {}).get('subjects') or {}
+    source = doc if doc is not None else read_saved()
+    if not source:
+        return None        # 未保存时不拿内置默认参与评级口径
+    rules = normalize(source).get('subjects') or {}
     rule = rules.get(subject, {}).get(field)
-    if not rule:
-        return None
+    if not rule or not rule.get('active', True):
+        return None        # 没勾选生效的字段不进入任何评级口径
     thresholds = rule['thresholds']
     down = rule['direction'] == 'down'
     level = 'low'

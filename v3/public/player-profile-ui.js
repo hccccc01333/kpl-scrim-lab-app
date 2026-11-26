@@ -7,6 +7,8 @@
  *
  * 数据走 /api/v3/player-profiles（按营地游戏名存，认领改名后仍能按 nicknames 回查）。
  */
+import { glyph } from './ui-icons.js';
+
 const POSITIONS = ['对抗路', '打野', '中路', '发育路', '游走'];
 const GRADES = [['S', 'S'], ['A', 'A'], ['B', 'B'], ['C', 'C']];
 
@@ -63,7 +65,7 @@ export function createProfileUI({esc, fmt, st, apiBase, refresh}) {
 
   function cardStrip(player) {
     const profile = of(player);
-    const body = profile ? chips(profile) : '<span class="pf-add">＋ 档案</span>';
+    const body = profile ? chips(profile) : `<span class="pf-add">${glyph('book', { size: 16 })}档案</span>`;
     const tip = profile ? '编辑档案：百段 / 巅峰分 / 千强 / 实力' : '录百段、巅峰赛分、实力（可尝试自动采集）';
     return `<button type="button" class="pf-strip${profile ? ' is-filled' : ''}" data-pa-profile="${text(player.name)}" title="${text(tip)}">
       ${body}<i aria-hidden="true">${profile ? '编辑' : ''}</i>
@@ -88,9 +90,9 @@ export function createProfileUI({esc, fmt, st, apiBase, refresh}) {
     const heroes = heroRows.map((item) => `<span class="pf-hero"><b>${text(item.hero)}</b>${fmt(item.power)}</span>`).join('');
     return `<section class="pf-summary" data-pl-profile="${text(player.name)}">
       <header class="pf-summary-head">
-        <div><h2>主页档案</h2><p>${profile ? '百段与巅峰赛分来自选手主页，采不到就手填；这里只存你确认过的数。' : '这个号还没有主页档案：百段、巅峰赛分、千强、实力都能手填。'}</p></div>
+        <div><h2>${glyph('book', { size: 18 })}主页档案</h2></div>
         <span class="pf-summary-acts">
-          <button type="button" class="arch-btn is-primary" data-pa-profile="${text(player.name)}">${profile ? '编辑档案' : '录入档案'}</button>
+          <button type="button" class="arch-btn is-primary" data-pa-profile="${text(player.name)}">${glyph('edit', { size: 18 })}${profile ? '编辑档案' : '录入档案'}</button>
         </span>
       </header>
       ${profile ? `<div class="pf-summary-body">
@@ -153,7 +155,7 @@ export function createProfileUI({esc, fmt, st, apiBase, refresh}) {
       <label class="pf-main"><input type="checkbox" data-lane-primary ${item.primary ? 'checked' : ''} aria-label="主分路"> 主</label>
       <input class="pf-input" type="number" data-lane-seg min="0" max="999" value="${item.segments == null ? '' : item.segments}" placeholder="段数" aria-label="段数" inputmode="numeric">
       <input class="pf-input" type="number" data-lane-peak min="0" max="9999" value="${item.peak == null ? '' : item.peak}" placeholder="巅峰分" aria-label="巅峰分" inputmode="numeric">
-      <button type="button" class="pf-row-x" data-lane-remove aria-label="删除这条分路">×</button>
+      <button type="button" class="pf-row-x" data-lane-remove aria-label="删除这条分路">${glyph('trash', { size: 16 })}</button>
     </div>`;
   }
 
@@ -161,7 +163,7 @@ export function createProfileUI({esc, fmt, st, apiBase, refresh}) {
     return `<div class="pf-hero-row" data-pf-hero-row>
       <input class="pf-input" data-hero-name placeholder="英雄" value="${text(item.hero || '')}" maxlength="20">
       <input class="pf-input" data-hero-power type="number" min="0" max="100000" placeholder="战力" value="${item.power == null ? '' : item.power}" inputmode="numeric">
-      <button type="button" class="pf-row-x" data-hero-remove aria-label="删除这个英雄">×</button>
+      <button type="button" class="pf-row-x" data-hero-remove aria-label="删除这个英雄">${glyph('trash', { size: 16 })}</button>
     </div>`;
   }
 
@@ -195,26 +197,25 @@ export function createProfileUI({esc, fmt, st, apiBase, refresh}) {
     const canAuto = Boolean(st.profileMeta && st.profileMeta.canAuto);
     const hint = (st.profileMeta && st.profileMeta.hint) || '主页数据要营地网页的登录态：点「扫码登录」开一个窗口扫码即可；不想登就直接手填。';
     dialog.innerHTML = `<form>
-      <div class="dialog-head"><div><h2>主页档案 · ${text(name)}</h2>
-        <p>百段、巅峰赛分、英雄战力只存在选手主页上，营地对局接口给不出来。能采就采，采不到直接填。</p></div>
-        <button type="button" class="head-button" data-pf-close aria-label="关闭">×</button></div>
+      <div class="dialog-head"><div><h2>${glyph('book', { size: 18 })}主页档案 · ${text(name)}</h2></div>
+        <button type="button" class="head-button" data-pf-close aria-label="关闭">${glyph('ban', { size: 16 })}</button></div>
       <div class="dialog-body">
         <div class="pf-crawl">
-          <button type="button" class="control" data-pf-crawl>尝试自动采集</button>
-          <button type="button" class="control is-strong" data-pf-login>扫码登录</button>
-          <span class="pf-crawl-status" data-pf-status>${canAuto ? '已存登录态，可以直接试。' : hint}</span>
-          <button type="button" class="link-button" data-pf-cookie-toggle>${canAuto ? '换一份 Cookie' : '手填 Cookie'}</button>
+          <button type="button" class="control" data-pf-crawl>${glyph('refresh', { size: 18 })}自动采集</button>
+          <button type="button" class="control is-strong" data-pf-login>${glyph('shield', { size: 18 })}扫码登录</button>
+          <span class="pf-crawl-status" data-pf-status>${canAuto ? '已存登录态，可以直接采集' : hint}</span>
+          <button type="button" class="link-button" data-pf-cookie-toggle>${glyph('edit', { size: 16 })}${canAuto ? '换 Cookie' : '手填 Cookie'}</button>
           <div class="pf-cookie" data-pf-cookie ${canAuto ? 'hidden' : 'hidden'}>
             <label>营地网页 Cookie（只存本机 data/，不会提交到别处）
               <textarea data-pf-cookie-input rows="2" placeholder="从浏览器开发者工具复制整行 Cookie"></textarea></label>
-            <div><button type="button" class="control" data-pf-cookie-save>保存并重试</button></div>
+            <div><button type="button" class="control" data-pf-cookie-save>${glyph('shield', { size: 18 })}保存并采集</button></div>
           </div>
         </div>
         <fieldset class="pf-lanes">
-          <legend>分路与分数（1–5 条，勾「主」的是主分路）</legend>
+          <legend>${glyph('players', { size: 16 })}分路与分数</legend>
           <div class="pf-lane-head" aria-hidden="true"><span>分路</span><span>主</span><span>段数</span><span>巅峰分</span><span></span></div>
           <div class="pf-lane-list" data-pf-lanes>${lanes.map(laneRow).join('')}</div>
-          <button type="button" class="control" data-pf-lane-add>＋ 加一条分路</button>
+          <button type="button" class="control" data-pf-lane-add>${glyph('players', { size: 18 })}加一条分路</button>
         </fieldset>
         <div class="pf-flags">
           <label class="pf-check"><input type="checkbox" name="top1000" ${profile && profile.top1000 ? 'checked' : ''}> 巅峰千强</label>
@@ -225,17 +226,17 @@ export function createProfileUI({esc, fmt, st, apiBase, refresh}) {
           </span>
         </div>
         <fieldset class="pf-heroes">
-          <legend>英雄战力（可不填，按战力从高到低存）</legend>
+          <legend>${glyph('heroes', { size: 16 })}英雄战力</legend>
           <div class="pf-hero-head" aria-hidden="true"><span>英雄</span><span>战力</span><span></span></div>
           <div class="pf-hero-list" data-pf-heroes>${heroes.map(heroRow).join('')}</div>
-          <button type="button" class="control" data-pf-hero-add>＋ 加一个英雄</button>
+          <button type="button" class="control" data-pf-hero-add>${glyph('heroes', { size: 18 })}加一个英雄</button>
         </fieldset>
         <label class="pf-note-field">备注<input name="note" maxlength="200" value="${text((profile && profile.note) || '')}" placeholder="例如：主指挥 / 会开团 / 只会打野"></label>
         <p class="filter-error" data-pf-error></p>
       </div>
       <div class="dialog-actions">
-        <button type="button" class="control" data-pf-close>取消</button>
-        <button type="submit" class="primary">保存档案</button>
+        <button type="button" class="control" data-pf-close>${glyph('ban', { size: 18 })}取消</button>
+        <button type="submit" class="primary">${glyph('shield', { size: 18 })}保存档案</button>
       </div></form>`;
     bind(dialog, name, storageName);
     dialog.showModal();

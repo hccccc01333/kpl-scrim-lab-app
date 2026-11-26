@@ -21,7 +21,19 @@ import { glyph, deco, plus } from './ui-icons.js';
 
 const DEFAULT_API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 const CSS_HREF = new URL('./profiles.css', import.meta.url).href;
+const SVG_BASE = new URL('./kpl-svg/', import.meta.url).href;
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
+/* 五路本地 SVG：分路段数前的小图标，路径是常量，不接受外部输入。 */
+const LANE_ICON = {
+  '对抗路': 'modules/role-icon-clash.svg',
+  '打野': 'modules/role-icon-jungle.svg',
+  '中路': 'modules/role-icon-mid.svg',
+  '发育路': 'modules/role-icon-farm.svg',
+  '游走': 'modules/role-icon-roam.svg',
+};
+const laneIcon = (lane) => LANE_ICON[lane]
+  ? `<img class="pf-lane-icon" src="${SVG_BASE}${LANE_ICON[lane]}" alt="" width="18" height="18" loading="lazy" aria-hidden="true">`
+  : '';
 const TABS = [
   { key: 'own', label: '本队' },
   { key: 'opponents', label: '对手' },
@@ -145,14 +157,13 @@ function textareaInput(id, name, value, opts = {}) {
 }
 
 function field(label, id, control, hintId = '') {
-  // 必填星号由控件上的 required 属性统一推导，避免说明写「带 * 必填」而个别表单漏标。
+  // 必填星号由控件上的 required 属性统一推导；hintId 仅保留入参兼容调用方，不再渲染说明小字。
   const required = /\srequired(?=[\s>])/.test(control);
   const mark = required ? ' <span class="pf-required" aria-hidden="true">*</span>' : '';
   const cleanLabel = label.replace(/\s*\*\s*$/, '');
   return `<div class="pf-field">
     <label for="${escapeHtml(id)}">${escapeHtml(cleanLabel)}${mark}</label>
     ${control}
-    ${hintId ? `<p class="pf-hint" id="${escapeHtml(hintId)}">按需要填写，留空不参与对比。</p>` : ''}
   </div>`;
 }
 
@@ -164,6 +175,8 @@ export function createProfilesPage(h = {}) {
   const API_BASE = h.API_BASE ?? DEFAULT_API_BASE;
   const notify = typeof h.notify === 'function' ? h.notify : null;
   const icon = typeof h.icon === 'function' ? h.icon : (() => '');
+  /* 嵌入「本队」页时只显示本队选手档案，不显示整页标题与三类页签。 */
+  const embedded = Boolean(h.embedded);
 
   let root = null;
   let bound = null;
@@ -179,6 +192,10 @@ export function createProfilesPage(h = {}) {
     heroLaneFilter: '',
     importQuery: '',
     tab: 'own',
+    /* 嵌入本队页时用卡牌展示；grid=网格，strip=可左右滑动的长条卡。 */
+    ownView: 'grid',
+    /* 本队档案按主位置筛选；空串表示全部。 */
+    ownLaneFilter: '',
     loading: true,
     saving: false,
     notice: '',
@@ -317,19 +334,25 @@ export function createProfilesPage(h = {}) {
   }
 
   function heroPowersCell(powers) {
-    const entries = Object.entries(powers || {}).filter(([, value]) => text(value) !== '');
+    /* 选了英雄但还没填战力也要显示头像，战力位置用横杠占位，避免看起来漏选。 */
+    const entries = Object.entries(powers || {});
     if (!entries.length) return '<span class="pf-dim">未录入</span>';
     const parts = entries.slice(0, 4).map(([id, value]) => {
       const hero = heroById(id);
       const src = hero ? safeIcon(hero.icon) : '';
-      return `<span class="pf-mini-hero" title="${esc(hero?.name || id)} 战力 ${esc(value)}">${src ? `<img src="${esc(src)}" alt="" width="18" height="18" loading="lazy">` : ''}<b>${esc(hero?.name || id)}</b> ${esc(value)}</span>`;
+      const label = hero?.name || id;
+      const shown = text(value) !== '' ? esc(value) : '<span class="pf-dim">—</span>';
+      return `<span class="pf-mini-hero" title="${esc(label)} 战力 ${text(value) !== '' ? esc(value) : '未录入'}">${src ? `<img src="${esc(src)}" alt="" width="18" height="18" loading="lazy">` : ''}<b>${esc(label)}</b> ${shown}</span>`;
     });
     if (entries.length > 4) parts.push(`<span class="pf-dim">+${entries.length - 4}</span>`);
     return parts.join('');
   }
 
   function laneScoresCell(scores) {
-    return LANES.map((lane) => `<span class="pf-lane"><i>${esc(lane)}</i> ${dash(scores?.[lane])}</span>`).join('');
+    /* 只列出真正填了段数的分路，没填的不再用横杠占位置。 */
+    const entries = LANES.filter((lane) => text(scores?.[lane]) !== '');
+    if (!entries.length) return '<span class="pf-dim">未录入</span>';
+    return entries.map((lane) => `<span class="pf-lane">${laneIcon(lane)}<i>${esc(lane)}</i> ${esc(scores[lane])}</span>`).join('');
   }
 
   function tagsCell(tags) {
@@ -358,26 +381,48 @@ export function createProfilesPage(h = {}) {
 
   /* ── 骨架与局部刷新 ────────────────────────────────────────────── */
   function html() {
+    if (embedded) {
+      return `<div class="pf-page pf-page-embedded">
+        <header class="pf-head pf-head-embedded">
+          <div class="pf-head-top"><div><h2>${glyph('players', { size: 20 })}本队选手档案</h2></div>
+            <button type="button" class="control" data-pf-reload>${icon('refresh') || glyph('refresh', { size: 18 })}<span data-pf-reload-label>刷新</span></button>
+          </div>
+        </header>
+        <p class="pf-notice" data-pf-notice role="status" aria-live="polite" hidden></p>
+        <div data-pf-body></div>
+      </div>
+      <dialog class="pf-dialog" data-pf-editor aria-labelledby="pf-editor-title">
+        <div data-pf-editor-body></div>
+      </dialog>
+      <dialog class="pf-dialog pf-dialog-sm" data-pf-confirm aria-labelledby="pf-confirm-title" aria-describedby="pf-confirm-text">
+        <h2 id="pf-confirm-title">请确认</h2>
+        <p id="pf-confirm-text" data-pf-confirm-text></p>
+        <div class="pf-dialog-actions">
+          <button type="button" class="control" data-pf-confirm-cancel autofocus>${glyph('ban', { size: 18 })}取消</button>
+          <button type="button" class="pf-danger" data-pf-confirm-ok>${glyph('warning', { size: 18 })}确认</button>
+        </div>
+      </dialog>`;
+    }
     return `<div class="pf-page">
       <header class="pf-head">
         <div class="pf-head-top">
           <div>
             ${deco('divider-title')}
-            <h1>档案管理</h1>
-            <p>本队 / 对手 / 试训三条线各自独立。档案只记身份与属性，赛后指标率请到观察视图看。</p>
+            <a class="pf-back" href="#team-profile">← 返回本队</a>
+            <h1>${glyph('book', { size: 20 })}档案管理</h1>
           </div>
-          <button type="button" class="control" data-pf-reload>${icon('refresh') || glyph('refresh', { size: 14 })}<span data-pf-reload-label>刷新</span></button>
+          <button type="button" class="control" data-pf-reload>${icon('refresh') || glyph('refresh', { size: 18 })}<span data-pf-reload-label>刷新</span></button>
         </div>
         <nav class="pf-tabs" aria-label="档案类别">
           ${TABS.map((tab) => `<button type="button" class="pf-tab" data-pf-tab="${esc(tab.key)}" aria-pressed="${state.tab === tab.key}">
-            ${glyph(TAB_GLYPH[tab.key], { size: 15 })}${esc(tab.label)} <span class="pf-tab-count" data-pf-count="${esc(tab.key)}">0</span>
+            ${glyph(TAB_GLYPH[tab.key], { size: 18 })}${esc(tab.label)} <span class="pf-tab-count" data-pf-count="${esc(tab.key)}">0</span>
           </button>`).join('')}
         </nav>
       </header>
       <p class="pf-notice" data-pf-notice role="status" aria-live="polite" hidden></p>
       <div data-pf-body></div>
     </div>
-    <dialog class="pf-dialog" data-pf-editor aria-labelledby="pf-editor-title" aria-describedby="pf-editor-desc">
+    <dialog class="pf-dialog" data-pf-editor aria-labelledby="pf-editor-title">
       <div data-pf-editor-body></div>
     </dialog>
     <dialog class="pf-dialog pf-dialog-sm" data-pf-confirm aria-labelledby="pf-confirm-title" aria-describedby="pf-confirm-text">
@@ -432,7 +477,78 @@ export function createProfilesPage(h = {}) {
   }
 
   /* ── 本队 ──────────────────────────────────────────────────────── */
+  function playerCard(item) {
+    const starter = item.starter === 'sub' ? '替补' : '首发';
+    const isSub = item.starter === 'sub';
+    return `<article class="pf-player-card">
+      <header class="pf-card-head">
+        <span class="pf-card-avatar" aria-hidden="true">${esc(String(item.realName || item.matchId || '?').slice(0, 1))}</span>
+        <div class="pf-card-who"><b>${dash(item.realName)}</b><span>${dash(item.matchId)}</span></div>
+        <span class="pf-badge ${isSub ? 'is-sub' : 'is-starter'}">${starter}</span>
+      </header>
+      <dl class="pf-card-facts">
+        <div><dt>主位置</dt><dd>${dash(item.mainLane)}</dd></div>
+        <div><dt>巅峰分</dt><dd>${dash(item.peakScore)}</dd></div>
+        <div><dt>性格</dt><dd>${dash(item.personality)}</dd></div>
+        <div><dt>记录时间</dt><dd>${dash(item.recordedAt)}</dd></div>
+      </dl>
+      <div class="pf-card-detail"><span>五路分路段数</span><div class="pf-lanes">${laneScoresCell(item.laneScores)}</div></div>
+      <div class="pf-card-detail"><span>英雄战力</span><div class="pf-heroes">${heroPowersCell(item.heroPowers)}</div></div>
+      <div class="pf-card-detail"><span>风格标签</span><div>${tagsCell(item.tags)}</div></div>
+      <footer class="pf-card-actions">
+        <button type="button" class="control" data-pf-edit data-pf-kind="own" data-pf-id="${esc(item.id)}">${glyph('edit', { size: 18 })}编辑</button>
+        <button type="button" class="control" data-pf-transfer-out data-pf-id="${esc(item.id)}">${glyph('export', { size: 18 })}转出</button>
+        <button type="button" class="control is-danger" data-pf-delete data-pf-kind="own" data-pf-id="${esc(item.id)}">${glyph('trash', { size: 18 })}删除</button>
+      </footer>
+    </article>`;
+  }
+
+  function ownCardsHtml() {
+    const players = state.ownLaneFilter
+      ? state.doc.own.filter((item) => item.mainLane === state.ownLaneFilter)
+      : state.doc.own;
+    const cards = players.map(playerCard).join('');
+    const empty = state.ownLaneFilter
+      ? `<div class="pf-empty"><div class="pf-empty-guide">
+          ${emptyIcon()}<b>该分路暂无选手</b>
+          <span>「${esc(state.ownLaneFilter)}」还没有建档；切回「全部」查看其他选手。</span>
+        </div></div>`
+      : `<div class="pf-empty"><div class="pf-empty-guide">
+          ${emptyIcon()}<b>还没有本队选手</b>
+          <span>先建档案，再补事实字段，赛后指标才有归属。</span>
+          <span class="pf-empty-steps">1 新增选手 · 2 点头像补五路段数与英雄战力 · 3 从选手分析导入已有数据</span>
+        </div></div>`;
+    const strip = `<div class="pf-card-strip-wrap">
+      <button type="button" class="pf-strip-arrow" data-pf-strip-prev aria-label="向左查看选手">‹</button>
+      <div class="pf-card-strip" tabindex="0" role="region" aria-label="本队选手卡片">${cards || empty}</div>
+      <button type="button" class="pf-strip-arrow" data-pf-strip-next aria-label="向右查看选手">›</button>
+    </div>`;
+    const grid = `<div class="pf-card-grid" role="list" aria-label="本队选手卡片">${cards || empty}</div>`;
+    return state.ownView === 'strip' ? strip : grid;
+  }
+
   function ownHtml() {
+    const viewSwitch = embedded ? `<div class="pf-view-switch" role="group" aria-label="档案展示方式">
+      <button type="button" class="${state.ownView === 'grid' ? 'is-active' : ''}" data-pf-view="grid" aria-pressed="${state.ownView === 'grid'}">网格</button>
+      <button type="button" class="${state.ownView === 'strip' ? 'is-active' : ''}" data-pf-view="strip" aria-pressed="${state.ownView === 'strip'}">长条</button>
+    </div>` : '';
+    if (embedded) {
+      return `<section class="pf-section pf-section-embedded">
+        <div class="pf-section-head"><div><h2>${glyph('players', { size: 20 })}本队选手档案</h2></div>
+          <div class="pf-head-actions">${viewSwitch}
+            <button type="button" class="control" data-pf-import-own>${glyph('players', { size: 18 })}从选手分析导入</button>
+            <button type="button" class="primary" data-pf-add-own>${plus({ size: 18 })}新增本队选手</button>
+          </div></div>
+        <div class="pf-lane-filter" role="group" aria-label="按主位置筛选选手">
+          ${[['', '全部'], ...LANES.map((lane) => [lane, lane])].map(([value, label]) => {
+            const count = value ? state.doc.own.filter((item) => item.mainLane === value).length : state.doc.own.length;
+            const active = state.ownLaneFilter === value;
+            return `<button type="button" class="${active ? 'is-active' : ''}" data-pf-lane-filter="${esc(value)}" aria-pressed="${active}">${esc(label)} <span>${count}</span></button>`;
+          }).join('')}
+        </div>
+        ${ownCardsHtml()}
+      </section>`;
+    }
     const rows = state.doc.own.map((item) => `<tr>
       <th scope="row">${dash(item.realName)}</th>
       <td>${dash(item.matchId)}</td>
@@ -445,17 +561,17 @@ export function createProfilesPage(h = {}) {
       <td>${tagsCell(item.tags)}</td>
       <td>${dash(item.recordedAt)}</td>
       <td class="pf-actions">
-        <button type="button" class="control" data-pf-edit data-pf-kind="own" data-pf-id="${esc(item.id)}">${glyph('edit', { size: 14 })}编辑</button>
-        <button type="button" class="control" data-pf-transfer-out data-pf-id="${esc(item.id)}">${glyph('export', { size: 14 })}转出</button>
-        <button type="button" class="control is-danger" data-pf-delete data-pf-kind="own" data-pf-id="${esc(item.id)}">${glyph('trash', { size: 14 })}删除</button>
+        <button type="button" class="control" data-pf-edit data-pf-kind="own" data-pf-id="${esc(item.id)}">${glyph('edit', { size: 18 })}编辑</button>
+        <button type="button" class="control" data-pf-transfer-out data-pf-id="${esc(item.id)}">${glyph('export', { size: 18 })}转出</button>
+        <button type="button" class="control is-danger" data-pf-delete data-pf-kind="own" data-pf-id="${esc(item.id)}">${glyph('trash', { size: 18 })}删除</button>
       </td>
     </tr>`).join('');
     return `<section class="pf-section">
       <div class="pf-section-head"><div><h2>本队选手档案</h2>
         <p>真实姓名 / 比赛 ID 必填；五路段数、英雄战力与风格标签都是纯事实字段，可在卡片里点头像补录。</p></div>
         <div class="pf-head-actions">
-          <button type="button" class="control" data-pf-import-own>${glyph('players', { size: 14 })}从选手分析导入</button>
-          <button type="button" class="primary" data-pf-add-own>${plus({ size: 14 })}新增本队选手</button>
+          <button type="button" class="control" data-pf-import-own>${glyph('players', { size: 18 })}从选手分析导入</button>
+          <button type="button" class="primary" data-pf-add-own>${plus({ size: 18 })}新增本队选手</button>
         </div></div>
       <div class="pf-table-wrap" tabindex="0" role="region" aria-label="本队选手档案表">
         <table class="pf-table">
@@ -486,15 +602,14 @@ export function createProfilesPage(h = {}) {
       <td>${dash(item.peakScore)}</td>
       <td>${dash(item.note)}</td>
       <td class="pf-actions">
-        <button type="button" class="primary" data-pf-transfer-in data-pf-id="${esc(item.id)}">${glyph('home', { size: 14 })}转会转入</button>
-        <button type="button" class="control" data-pf-edit data-pf-kind="opponents" data-pf-id="${esc(item.id)}">${glyph('edit', { size: 14 })}编辑</button>
-        <button type="button" class="control is-danger" data-pf-delete data-pf-kind="opponents" data-pf-id="${esc(item.id)}">${glyph('trash', { size: 14 })}删除</button>
+        <button type="button" class="primary" data-pf-transfer-in data-pf-id="${esc(item.id)}" title="保存后升格为本队档案，需补齐必填项">${glyph('home', { size: 18 })}转会转入</button>
+        <button type="button" class="control" data-pf-edit data-pf-kind="opponents" data-pf-id="${esc(item.id)}">${glyph('edit', { size: 18 })}编辑</button>
+        <button type="button" class="control is-danger" data-pf-delete data-pf-kind="opponents" data-pf-id="${esc(item.id)}">${glyph('trash', { size: 18 })}删除</button>
       </td>
     </tr>`).join('');
     return `<section class="pf-section">
-      <div class="pf-section-head"><div><h2>对手选手档案</h2>
-        <p>只需比赛正式 ID；其他信息先空着也能存。「转会转入」会把这条升格为本队档案（必填项需补齐）。</p></div>
-        <button type="button" class="primary" data-pf-add-opp>${plus({ size: 14 })}新增对手选手</button></div>
+      <div class="pf-section-head"><div><h2>${glyph('opponent', { size: 20 })}对手选手档案</h2></div>
+        <button type="button" class="primary" data-pf-add-opp>${plus({ size: 18 })}新增对手选手</button></div>
       <div class="pf-table-wrap" tabindex="0" role="region" aria-label="对手选手档案表">
         <table class="pf-table">
           <caption class="pf-visually-hidden">对手选手档案</caption>
@@ -524,8 +639,8 @@ export function createProfilesPage(h = {}) {
           <td>${metricsCell(win.metrics)}</td>
           <td>${dash(win.recordedAt)}</td>
           <td class="pf-actions">
-            <button type="button" class="control" data-pf-window-edit data-pf-trial="${esc(trial.id)}" data-pf-id="${esc(win.id)}">${glyph('edit', { size: 14 })}编辑</button>
-            <button type="button" class="control is-danger" data-pf-window-delete data-pf-trial="${esc(trial.id)}" data-pf-id="${esc(win.id)}">${glyph('trash', { size: 14 })}删除</button>
+            <button type="button" class="control" data-pf-window-edit data-pf-trial="${esc(trial.id)}" data-pf-id="${esc(win.id)}">${glyph('edit', { size: 18 })}编辑</button>
+            <button type="button" class="control is-danger" data-pf-window-delete data-pf-trial="${esc(trial.id)}" data-pf-id="${esc(win.id)}">${glyph('trash', { size: 18 })}删除</button>
           </td>
         </tr>`);
       }
@@ -615,17 +730,16 @@ export function createProfilesPage(h = {}) {
         <td>${trial.promoted ? '已转正（留在本系统）' : '试训中'}</td>
         <td>${count} 个</td>
         <td class="pf-actions">
-          <button type="button" class="control" data-pf-window-add data-pf-trial="${esc(trial.id)}">${glyph('calendar', { size: 14 })}加时间窗</button>
-          <button type="button" class="control" data-pf-promote data-pf-id="${esc(trial.id)}">${glyph('shield', { size: 14 })}${trial.promoted ? '取消转正' : '标记转正'}</button>
-          <button type="button" class="control" data-pf-edit data-pf-kind="trials" data-pf-id="${esc(trial.id)}">${glyph('edit', { size: 14 })}编辑</button>
-          <button type="button" class="control is-danger" data-pf-delete data-pf-kind="trials" data-pf-id="${esc(trial.id)}">${glyph('trash', { size: 14 })}删除</button>
+          <button type="button" class="control" data-pf-window-add data-pf-trial="${esc(trial.id)}">${glyph('calendar', { size: 18 })}加时间窗</button>
+          <button type="button" class="control" data-pf-promote data-pf-id="${esc(trial.id)}">${glyph('shield', { size: 18 })}${trial.promoted ? '取消转正' : '标记转正'}</button>
+          <button type="button" class="control" data-pf-edit data-pf-kind="trials" data-pf-id="${esc(trial.id)}">${glyph('edit', { size: 18 })}编辑</button>
+          <button type="button" class="control is-danger" data-pf-delete data-pf-kind="trials" data-pf-id="${esc(trial.id)}">${glyph('trash', { size: 18 })}删除</button>
         </td>
       </tr>`;
     }).join('');
     return `<section class="pf-section">
-      <div class="pf-section-head"><div><h2>试训档案</h2>
-        <p>独立时间窗系统：按姓名 / 主打分路 / 风格建档，再往下挂 10/27–10/30 这样的时间块。</p></div>
-        <button type="button" class="primary" data-pf-add-trial>${plus({ size: 14 })}新增试训者</button></div>
+      <div class="pf-section-head"><div><h2>${glyph('clock', { size: 20 })}试训档案</h2></div>
+        <button type="button" class="primary" data-pf-add-trial>${plus({ size: 18 })}新增试训者</button></div>
       <div class="pf-table-wrap" tabindex="0" role="region" aria-label="试训者档案表">
         <table class="pf-table">
           <caption class="pf-visually-hidden">试训者档案</caption>
@@ -698,8 +812,7 @@ export function createProfilesPage(h = {}) {
 
   function heroPickerHtml() {
     return `<div class="pf-field pf-hero-picker">
-      <label for="pf-hero-search">英雄战力 · 点头像选英雄</label>
-      <p class="pf-hint" id="pf-hero-hint">先点头像选中，再在右侧填战力；不选英雄也能保存。</p>
+      <label for="pf-hero-search">${glyph('heroes', { size: 18 })}英雄战力</label>
       <div class="pf-hero-filters">
         <label for="pf-hero-lane">分路筛选</label>
         <select id="pf-hero-lane" data-pf-hero-lane>
@@ -707,7 +820,7 @@ export function createProfilesPage(h = {}) {
           ${LANES.map((lane) => `<option value="${escapeHtml(lane)}"${state.heroLaneFilter === lane ? ' selected' : ''}>${escapeHtml(lane)}</option>`).join('')}
         </select>
         <input type="search" id="pf-hero-search" data-pf-hero-search placeholder="搜索英雄名"
-               autocomplete="off" aria-describedby="pf-hero-hint">
+               autocomplete="off">
       </div>
       <div class="pf-hero-selected" data-pf-hero-selected></div>
       <div class="pf-hero-grid" data-pf-hero-grid></div>
@@ -741,7 +854,7 @@ export function createProfilesPage(h = {}) {
           <div class="pf-tag-add">
             <label class="pf-visually-hidden" for="pf-tag-input">新风格标签</label>
             <input id="pf-tag-input" data-pf-tag-input type="text" placeholder="如：指挥 / 激进 / 稳塔" autocomplete="off">
-            <button type="button" class="control" data-pf-tag-add>添加标签</button>
+            <button type="button" class="control" data-pf-tag-add>${glyph('edit', { size: 18 })}添加标签</button>
           </div>
         </fieldset>`;
     } else if (ed.kind === 'opponents') {
@@ -781,8 +894,7 @@ export function createProfilesPage(h = {}) {
           textInput(`pf-lane-${i}`, `lane-${i}`, draft.laneScores[lane] ?? '', { type: 'number', min: 0, inputmode: 'numeric' }))).join('')}</div>
       </fieldset>
       ${heroPickerHtml()}
-      ${field('该段用英雄', 'pf-heroesUsed', textInput('pf-heroesUsed', 'heroesUsed', draft.heroesUsed, { placeholder: '多个用逗号分隔', describedBy: 'pf-heroes-hint' }))}
-      <p class="pf-hint" id="pf-heroes-hint">和上面选的英雄可以不一致：这里记实际常用的。</p>
+      ${field('该段用英雄', 'pf-heroesUsed', textInput('pf-heroesUsed', 'heroesUsed', draft.heroesUsed, { placeholder: '多个用逗号分隔' }))}
       <fieldset class="pf-fieldset"><legend>比赛指标（选填）</legend>
         <div class="pf-metric-grid">${METRICS.map((m) => field(m.label, `pf-metric-${m.key}`,
           textInput(`pf-metric-${m.key}`, `metric-${m.key}`, draft.metrics[m.key] ?? '', { placeholder: '选填' }))).join('')}</div>
@@ -792,14 +904,14 @@ export function createProfilesPage(h = {}) {
       ? '<p class="pf-transfer-note">转会转入：保存后会补齐必填项，并从对手档案移除这条记录。</p>'
       : '';
     return `<h2 id="pf-editor-title">${esc(editorTitle(ed.kind, Boolean(ed.id)))}</h2>
-      <p id="pf-editor-desc" class="pf-dialog-desc">带 * 的为必填项；其余留空不参与对比。</p>
+
       ${transferNote}
       <p class="pf-dialog-err" role="alert" data-pf-dialog-err hidden></p>
       <form data-pf-form>
         ${inner}
         <div class="pf-dialog-actions">
-          <button type="button" class="control" data-pf-dialog-cancel>取消</button>
-          <button type="submit" class="primary">保存</button>
+          <button type="button" class="control" data-pf-dialog-cancel>${glyph('ban', { size: 18 })}取消</button>
+          <button type="submit" class="primary">${glyph('shield', { size: 18 })}保存</button>
         </div>
       </form>`;
   }
@@ -879,20 +991,20 @@ export function createProfilesPage(h = {}) {
 
   function importFormHtml() {
     return `<h2 id="pf-editor-title">从选手分析导入本队</h2>
-      <p id="pf-editor-desc" class="pf-dialog-desc">按比赛 ID 去重，只导入还没建档的人；真实姓名等字段留空，导入后在表格里补录。</p>
+
       <p class="pf-dialog-err" role="alert" data-pf-dialog-err hidden></p>
       <form data-pf-form>
         <div class="pf-import-bar">
           <label class="pf-visually-hidden" for="pf-import-search">搜索本队选手</label>
           <input type="search" id="pf-import-search" data-pf-import-search placeholder="搜索比赛 ID / 分路" autocomplete="off" autofocus>
-          <button type="button" class="control" data-pf-import-all>全选</button>
-          <button type="button" class="control" data-pf-import-none>清空</button>
+          <button type="button" class="control" data-pf-import-all>${glyph('players', { size: 18 })}全选</button>
+          <button type="button" class="control" data-pf-import-none>${glyph('ban', { size: 18 })}清空</button>
         </div>
-        <p class="pf-hint" data-pf-import-count></p>
+        <p class="pf-import-count" data-pf-import-count></p>
         <div class="pf-import-list" data-pf-import-list tabindex="0" role="group" aria-label="可导入的本队选手"></div>
         <div class="pf-dialog-actions">
-          <button type="button" class="control" data-pf-dialog-cancel>取消</button>
-          <button type="submit" class="primary">导入所选</button>
+          <button type="button" class="control" data-pf-dialog-cancel>${glyph('ban', { size: 18 })}取消</button>
+          <button type="submit" class="primary">${glyph('players', { size: 18 })}导入所选</button>
         </div>
       </form>`;
   }
@@ -1068,6 +1180,14 @@ export function createProfilesPage(h = {}) {
   function onClick(event) {
     const target = event.target;
     if (target.closest('[data-pf-reload]')) { load(); return; }
+
+    const view = target.closest('[data-pf-view]');
+    if (view) { state.ownView = view.dataset.pfView === 'strip' ? 'strip' : 'grid'; paint(); return; }
+    const laneFilter = target.closest('[data-pf-lane-filter]');
+    if (laneFilter) { state.ownLaneFilter = laneFilter.dataset.pfLaneFilter || ''; paint(); return; }
+    const strip = root?.querySelector('.pf-card-strip');
+    if (target.closest('[data-pf-strip-prev]')) { strip?.scrollBy({ left: -strip.clientWidth * 0.8, behavior: 'smooth' }); return; }
+    if (target.closest('[data-pf-strip-next]')) { strip?.scrollBy({ left: strip.clientWidth * 0.8, behavior: 'smooth' }); return; }
 
     const tab = target.closest('[data-pf-tab]');
     if (tab) { state.tab = tab.dataset.pfTab; paint(); return; }
@@ -1323,6 +1443,7 @@ export function createProfilesPage(h = {}) {
 
   function mount(node) {
     if (!node) return;
+    disposed = false;
     if (root && root !== node) {
       unbind(root);
       controller?.abort();

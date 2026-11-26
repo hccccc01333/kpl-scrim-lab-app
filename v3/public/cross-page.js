@@ -9,8 +9,9 @@
  * 「环比」= 同一筛选条件下、紧邻的等长上一段时间；全部时间没有上一段，就不给环比。
  */
 
-import { analyzeCohort, fmt, LANES } from './cross-analytics.js';
+import { analyzeCohort, fmt, LANES, internals } from './cross-analytics.js';
 import { renderViz } from './cross-viz.js';
+import { glyph } from './ui-icons.js';
 
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 
@@ -42,34 +43,33 @@ const SECTION_INDEX = {
 /* 对面楼层：按 BP 的 pick 顺序。
    蓝方：1L 单 → 2L+3L 成对 → 4L+5L 成对；
    红方：1L+2L 成对 → 3L 单 → 4L 单 → 5L 单（counter）。
-   只用于「只看对面」的楼层分析；slot 是 heroesFoe 里的下标。 */
+   只用于「只看对面」楼层分析的英雄视图；slot 是 heroesFoe 里的下标。
+   组合视图与这些楼层按钮解耦：只按红蓝方取数，在对面 5 手里找组合池命中。 */
 const FLOOR_SETS = {
   blue: [
     { key: '1', label: '1L', slots: [0] },
-    { key: '2-3', label: '2L + 3L', slots: [1, 2], combo: true },
-    { key: '4-5', label: '4L + 5L', slots: [3, 4], combo: true },
+    { key: '2-3', label: '2L + 3L', slots: [1, 2] },
+    { key: '4-5', label: '4L + 5L', slots: [3, 4] },
     { key: 'first4', label: '前 4 手', slots: [0, 1, 2, 3] },
   ],
   red: [
-    { key: '1-2', label: '1L + 2L', slots: [0, 1], combo: true },
+    { key: '1-2', label: '1L + 2L', slots: [0, 1] },
     { key: '3', label: '3L', slots: [2] },
     { key: '4', label: '4L', slots: [3] },
     { key: '5', label: '5L · counter', slots: [4], counter: true },
     { key: 'first4', label: '前 4 手', slots: [0, 1, 2, 3] },
   ],
 };
-/* 关注信号的分类：给颜色和名字，不给「严重/轻微」这种主观分级。 */
-const RADAR_KINDS = {
-  'late-drop': { label: '后段掉速', tone: 'sand' },
-  'losing-streak': { label: '连败收尾', tone: 'plum' },
-  'after-loss-flat': { label: '败局未改善', tone: 'slate' },
-  'needs-review': { label: '编组待核实', tone: 'clay' },
-  interrupted: { label: '中断', tone: 'slate' },
-};
 const COMP_GLOSS = {
   无前排: '五个英雄里没有前排，正面顶不住，靠边路与拉扯',
   单前排: '只有一名前排，正面能顶一阵，第二个身板要靠边路或辅助补',
   多前排: '两名以上前排，正面能顶住，开团与反打更稳',
+};
+/* 类型颜色按类型名固定，不随某条路的排序变化；同一类型在不同分路表里保持一致。 */
+const ARCH_COLORS = {
+  战边: '#2f6f5b', 坦边: '#4f7fa3', 刺野: '#a05f77', 战野: '#c18a4f', 坦野: '#7b8a68',
+  工具人: '#6a6a8a', 法刺: '#3f7f78', 游射: '#4f7fa3', 呆射: '#c18a4f',
+  开团辅: '#a05f77', 保护辅: '#2f6f5b', 功能辅: '#6a6a8a',
 };
 const DEFAULT_RANGE = 'all';
 const COMPLETION_LABEL = { completed: '已完赛', open: '未完赛', interrupted: '中断', incomplete: '采集不完整' };
@@ -102,7 +102,6 @@ const gold = (v, digits = 0) => {
 const plain = (v, digits = 0) => (num(v) ? (digits ? v.toFixed(digits) : Math.round(v).toLocaleString('zh-CN')) : '—');
 const secText = (v) => (num(v) ? `${Math.round(v)} 秒` : '—');
 const clock = (v) => (num(v) && v > 0 ? `${Math.floor(Math.round(v) / 60)}:${String(Math.round(v) % 60).padStart(2, '0')}` : '—');
-const ppOf = (v) => (num(v) ? `${v > 0 ? '+' : '−'}${Math.abs(Math.round(v * 100))} 个百分点` : '—');
 
 
 export function createCrossPage(h) {
@@ -111,15 +110,17 @@ export function createCrossPage(h) {
   let generation = 0;
   let controller = null;
   const state = {
-    allSeries: [], attention: [], rulesets: [], latestDate: '', vectors: [], vectorsError: false,
+    allSeries: [], rulesets: [], latestDate: '', vectors: [], vectorsError: false,
     /* 赛训组组合池：双人组合模块只认这里的名单。 */
     comboPool: null,
+    /* 规则中心「克制关系」：对位台给应对英雄标「克制夏侯惇」用，随赛事定稿版本走。 */
+    counterRules: null,
     section: SECTIONS[0].key,
     loaded: false, loading: false, error: '',
     detailId: '', detail: null, detailLoading: false, detailError: '',
-    /* 页面内交互：关注分类 / BP 分区口径（本队或敌方）/ BP 只看哪个对手 / 对位台选中的英雄 */
-    radarKind: '', side: 'own', bpOpp: '', bpMode: 'against', bpHeroes: [], bpInit: false,
-    /* 楼层分析：只看对面，默认对面蓝方 1L；combo 只在红方成对楼层可用。 */
+    /* 页面内交互：BP 分区口径（本队或敌方）/ BP 只看哪个对手 / 对位台选中的英雄 */
+    side: 'own', bpOpp: '', bpMode: 'against', bpHeroes: [], bpInit: false,
+    /* 楼层分析：只看对面，默认对面蓝方 1L；组合视图是独立开关，只看红蓝方。 */
     floorSide: 'blue', floorSlot: '1', floorMode: 'hero',
     /* 展开中的「看这 N 局」、英雄选择器弹层、选择器搜索词 */
     games: '', picker: '', heroQuery: '',
@@ -157,8 +158,7 @@ export function createCrossPage(h) {
     state.floorSide = params.get('bside') === 'red' ? 'red' : 'blue';
     const floorKeys = FLOOR_SETS[state.floorSide].map((x) => x.key);
     state.floorSlot = floorKeys.includes(params.get('bfloor') || '') ? params.get('bfloor') : floorKeys[0];
-    const floorDef = FLOOR_SETS[state.floorSide].find((x) => x.key === state.floorSlot);
-    state.floorMode = params.get('bmode') === 'combo' && floorDef?.combo ? 'combo' : 'hero';
+    state.floorMode = params.get('bmode') === 'combo' ? 'combo' : 'hero';
   }
 
   function scopeQuery() {
@@ -351,7 +351,7 @@ export function createCrossPage(h) {
     if (Math.abs(diff) < eps) return `<span class="xw-delta is-flat">持平</span>`;
     const up = diff > 0;
     const text = kind === 'rate' ? `${Math.abs(Math.round(diff * 100))}` : plain(Math.abs(diff), cfg.digits || 0);
-    const unit = kind === 'rate' ? ' pp' : '';
+    const unit = kind === 'rate' ? '%' : '';
     return `<span class="xw-delta ${up ? 'is-up' : 'is-down'}" title="环比上一段：${plain(prev, cfg.digits || 0)} → ${plain(cur, cfg.digits || 0)}">${up ? '↑' : '↓'}${text}${unit}</span>`;
   }
 
@@ -450,16 +450,18 @@ export function createCrossPage(h) {
     state.error = '';
     paintLoading('第 1 步 / 2 · 正在读系列赛与大场…');
     try {
-      const [summaryResponse, combosResponse] = await Promise.all([
+      const [summaryResponse, combosResponse, countersResponse] = await Promise.all([
         fetch(scopedSeriesUrl(`${API_BASE}/api/cross/series-summary`), { signal: controller.signal, cache: 'no-store' }),
         fetch(`${API_BASE}/api/v3/custom-combos`, { signal: controller.signal, cache: 'no-store' }).catch(() => null),
+        fetch(scopedSeriesUrl(`${API_BASE}/api/v3/rules-center/counters`), { signal: controller.signal, cache: 'no-store' }).catch(() => null),
       ]);
       if (gen !== generation) return;
       if (!summaryResponse.ok) throw new Error(`系列赛汇总 ${summaryResponse.status}`);
       const payload = await summaryResponse.json();
       state.comboPool = combosResponse?.ok ? await combosResponse.json().catch(() => null) : null;
+      /* 克制关系读不到就当没有，不阻塞对位台其它内容。 */
+      state.counterRules = countersResponse?.ok ? await countersResponse.json().catch(() => null) : null;
       state.allSeries = payload.series || [];
-      state.attention = payload.summary?.attention || [];
       state.rulesets = payload.rulesets || [];
       state.latestDate = state.allSeries.map(seriesDate).filter(Boolean).sort().pop() || '';
       paintLoading('第 2 步 / 2 · 正在算各局向量（首次约半分钟，之后走缓存）…');
@@ -518,8 +520,11 @@ export function createCrossPage(h) {
       const tone = diff > 0 ? 'is-win' : diff < 0 ? 'is-loss' : 'is-draw';
       const h = (10 + Math.abs(diff) / max * 46).toFixed(1);
       const title = `${seriesDate(s)} ${s.opponent || '对手待补'} ${us}:${them} · 点开看这场大场`;
+      /* 平局也要留一根零线，否则整列空白看起来像数据缺失。 */
+      const up = diff > 0 ? `<i style="height:${h}px"></i>`
+        : diff === 0 ? '<i class="xw-trend-zero" aria-hidden="true"></i>' : '';
       return `<a class="xw-trend-col ${tone}" href="#biggame/${encodeURIComponent(s.id)}" title="${esc(title)}">
-        <span class="xw-trend-up">${diff > 0 ? `<i style="height:${h}px"></i>` : ''}</span>
+        <span class="xw-trend-up">${up}</span>
         <span class="xw-trend-score">${us}:${them}</span>
         <span class="xw-trend-down">${diff < 0 ? `<i style="height:${h}px"></i>` : ''}</span>
       </a>`;
@@ -602,7 +607,7 @@ export function createCrossPage(h) {
     if (t.series) kpis.push({ n: String(sum.close), label: '打满' });
     return `<header class="xw-mast">
       <div class="xw-mast-top">
-        <p class="xw-eyebrow">跨局分析<i>/</i>多场大场<i>/</i>${esc(scopeLabel())}</p>
+        <p class="xw-eyebrow">跨场分析<i>/</i>多场大场<i>/</i>${esc(scopeLabel())}</p>
         <nav class="xw-mast-links">
           <a href="#biggame">大场分析 <span>↗</span></a>
           <a href="#series-builder">系列赛编组 <span>↗</span></a>
@@ -651,21 +656,22 @@ export function createCrossPage(h) {
         ${select('opponent', '对手', uniq('opponent'), scope.opponent, '全部对手')}
         ${quick.length > 1 ? `<div class="xw-quick"><span>常打</span>${quick.map(([name, n]) =>
           `<button type="button" class="xw-chip${scope.opponent === name ? ' is-on' : ''}" data-cx-opp="${esc(name)}" title="${esc(`${name}：${n} 场`)}">${esc(name)} <b>${n}</b></button>`).join('')}</div>` : ''}
-        ${scopeActive() ? '<button type="button" class="xw-clear" data-cx-clear>清除筛选</button>' : ''}
+        ${scopeActive() ? `<button type="button" class="xw-clear control" data-cx-clear>${glyph('refresh', { label: '清除筛选', size: 18 })} 清除筛选</button>` : ''}
       </div>
     </div>
-      <nav class="xw-tabs" aria-label="跨局分析分区">
-        ${SECTIONS.map((section) => `<button type="button" class="xw-tab${section.key === state.section ? ' is-active' : ''}" data-cx-section-link="${section.key}" title="${esc(section.note)}"><b>${section.num}</b><span>${esc(section.label)}</span><i>${esc(section.note)}</i></button>`).join('')}
+      <nav class="xw-tabs" aria-label="跨场分析分区">
+        ${SECTIONS.map((section) => `<button type="button" class="xw-tab${section.key === state.section ? ' is-active' : ''}" data-cx-section-link="${section.key}" title="${esc(section.note)}"><b>${section.num}</b>${glyph(section.key === 'ingame' ? 'chart' : section.key === 'postgame' ? 'players' : 'bp', { label: section.label, size: 18 })}<span>${esc(section.label)}</span></button>`).join('')}
       </nav>
     </div>`;
   }
 
   /* ── 通用块 ─────────────────────────────────────────────────── */
   function module({ id, span = 12, kicker = '', title = '', meta = '', body = '', note = '', extra = '' }) {
+    const icon = String(kicker).includes('赛后') ? 'players' : String(kicker).includes('英雄') || String(kicker).includes('BP') ? 'bp' : 'chart';
     return `<article class="xw-mod is-${span}" id="xw-${esc(id)}">
       <div class="xw-mod-head">
         <div class="xw-mod-copy">
-          ${kicker ? `<span class="xw-mod-kicker">${esc(kicker)}</span>` : ''}
+          ${kicker ? `<span class="xw-mod-kicker">${glyph(icon, { size: 18 })}${esc(kicker)}</span>` : ''}
           ${title ? `<h3>${title}</h3>` : ''}
         </div>
         ${meta ? `<span class="xw-mod-meta">${meta}</span>` : ''}
@@ -692,14 +698,14 @@ export function createCrossPage(h) {
   }
 
   function emptyVector(text) {
-    return `<p class="xw-muted">${esc(text)}</p>`;
+    return `<div class="xw-empty">${glyph('warning', { label: '暂无数据', size: 22 })}<p class="xw-muted">${esc(text)}</p></div>`;
   }
 
   /* ── 「看这 N 局」：把结论落回具体对局 ──────────────────────────
      教练看到「大优被翻 11 局」第一反应是哪 11 局，所以每个计数都挂一个
      展开按钮，按 key 反查逐局，点局进单局复盘。 */
   const gamesBtn = (key, n, active) =>
-    `<button type="button" class="xw-more${active ? ' is-on' : ''}" data-xw-games="${esc(key)}">看这 ${n} 局</button>`;
+    `<button type="button" class="xw-more${active ? ' is-on' : ''}" data-xw-games="${esc(key)}">${glyph('matches', { label: '看这局', size: 18 })} 看这 ${n} 局</button>`;
 
   function gamesPanel(a, keys, title, hint = '') {
     const map = new Map((a.rows || []).map((r) => [r.key, r]));
@@ -708,9 +714,9 @@ export function createCrossPage(h) {
     if (!list.length) return '<div class="xw-games-panel"><p class="xw-muted">这批局没有可展开的明细。</p></div>';
     return `<div class="xw-games-panel" id="xw-games-panel">
       <div class="xw-games-head">
-        <b>${esc(title)}</b>
-        <span>${list.length} 局 · 按时间倒序 · 点一局进单局复盘</span>
-        <button type="button" class="xw-clear" data-xw-games="${esc(state.games)}">收起</button>
+        ${glyph('matches', { label: '对局明细', size: 18 })}<b>${esc(title)}</b>
+        <span>${list.length} 局 · 按时间倒序</span>
+        <button type="button" class="xw-clear control" data-xw-games="${esc(state.games)}">${glyph('arrow-up', { label: '收起', size: 18 })} 收起明细</button>
       </div>
       <div class="xw-gcard-grid">
         ${list.map((r) => `<a class="xw-gcard is-${r.result === 'win' ? 'win' : r.result === 'loss' ? 'loss' : 'na'}" href="#match/${encodeURIComponent(r.key)}">
@@ -721,80 +727,57 @@ export function createCrossPage(h) {
           <em>终 ${fmt.signed(r.final)}</em>
         </a>`).join('')}
       </div>
-      ${hint ? `<p class="xw-games-hint">${esc(hint)}</p>` : ''}
     </div>`;
   }
 
   /* 单场大场分析仍复用这个卡片壳；列表页不再使用。 */
   function card({ id, span = 6, kicker, sample, title, lede = '', chart = null, body = '', note = '', method = '' }) {
+    /* 口径说明不再挂在标题下面；真正需要保留的限制放到卡片末尾。 */
+    const scope = lede
+      ? `<p class="xc-card-note">${glyph('warning', { label: '数据口径', size: 16 })} ${esc(lede)}</p>`
+      : '';
     return `<article class="xc-card xc-span-${span}" id="xc-${esc(id)}">
-      <div class="xc-card-head"><span class="xc-kicker">${esc(kicker)}</span>${sample ? `<span class="xc-badge">${esc(sample)}</span>` : ''}</div>
+      <div class="xc-card-head"><span class="xc-kicker">${glyph('chart', { size: 18 })}${esc(kicker)}</span>${sample ? `<span class="xc-badge">${esc(sample)}</span>` : ''}</div>
       <h3 class="xc-card-title">${title}</h3>
-      ${lede ? `<p class="xc-card-lede">${lede}</p>` : ''}
       ${chart ? `<div class="xc-card-chart">${renderViz({ ...chart, id: chart.id || id }, { view: (key) => vizViews[key] || 'a' })}</div>` : ''}
       ${body}
+      ${scope}
     </article>`;
   }
   /* 页面内用到的两个小格式化：比例数与正负色（只用文字，不靠红绿）。 */
   const rateNum = (v) => (num(v) ? Math.round(v * 100) : null);
 
-  /* ── 本轮关注：横滑卡片，按类型筛 ──────────────────────────── */
-  function radarHtml(attention) {
-    const items = attention || [];
-    const kindCount = new Map();
-    for (const item of items) kindCount.set(item.kind, (kindCount.get(item.kind) || 0) + 1);
-    const kinds = [...kindCount.entries()].sort((a, b) => b[1] - a[1]);
-    const cur = state.radarKind;
-    const list = cur ? items.filter((item) => item.kind === cur) : items;
-    const chips = `<button type="button" class="xw-chip${cur ? '' : ' is-on'}" data-xw-radar-kind="">全部 <b>${items.length}</b></button>${
-      kinds.map(([kind, n]) => `<button type="button" class="xw-chip${cur === kind ? ' is-on' : ''}" data-xw-radar-kind="${esc(kind)}">${esc(RADAR_KINDS[kind]?.label || kind)} <b>${n}</b></button>`).join('')}`;
-    const cards = list.map((item) => {
-      const meta = RADAR_KINDS[item.kind] || { label: '需要关注', tone: 'slate' };
-      const gameLabels = (item.gameIndexes || []).map((g) => `G${g}`);
-      const games = gameLabels.join(' ');
-      return `<article class="xw-radar-card is-${meta.tone}" role="listitem">
-        <div class="xw-radar-top">
-          <span class="xw-radar-kind">${esc(meta.label)}</span>
-          ${games ? `<span class="xw-radar-g">${esc(games)}</span>` : ''}
-        </div>
-        <h3>${esc(item.title || '需要关注')}</h3>
-        <p>${esc(item.detail || '')}</p>
-        <div class="xw-radar-links">
-          ${item.seriesId ? `<a href="#biggame/${encodeURIComponent(item.seriesId)}${scopeQuery()}">看这场大场 →</a>` : ''}
-          ${(item.links || []).slice(0, 2).map((key, i) => `<a href="#match/${encodeURIComponent(key)}">打开${esc(gameLabels[i] || '对局')} →</a>`).join('')}
-        </div>
-      </article>`;
-    }).join('');
-    if (!items.length) {
-      return `<section class="xw-radar" id="xw-radar">
-        <div class="xw-radar-head"><div class="xw-radar-title"><h2>本轮关注 <b>0</b> 条</h2></div></div>
-        <p class="xw-muted">当前范围没有需要优先处理的信号。</p>
-      </section>`;
-    }
-    return `<section class="xw-radar" id="xw-radar">
-      <div class="xw-radar-head">
-        <div class="xw-radar-title"><h2>本轮关注 <b>${items.length}</b> 条</h2><span>按类型筛 · 卡片可以左右拖</span></div>
-        <div class="xw-radar-kinds">${chips}</div>
-      </div>
-      <div class="xw-radar-wrap">
-        <button type="button" class="xw-rail-btn is-prev" data-xw-scroll="-1" aria-label="向左翻">‹</button>
-        <div class="xw-radar-rail" role="list">${cards}</div>
-        <button type="button" class="xw-rail-btn is-next" data-xw-scroll="1" aria-label="向右翻">›</button>
-      </div>
-    </section>`;
-  }
-
   /* ── 赛中 ───────────────────────────────────────────────────── */
   function ingameStatement(a) {
-    if (!a || !a.total) return `<p class="xw-statement">这批大场没有可读的赛中过程，先确认对局是否挂上回放。</p>`;
+    if (!a || !a.total) return `<div class="xw-verdict"><p class="xw-verdict-main">这批大场没有可读的赛中过程，先确认对局是否挂上回放。</p></div>`;
     const lead = a.path.lead;
     const risk = a.risk;
-    const parts = [];
+    /* 描述、结论、明细三段本质是同一句话：合成一句大结论顶在最前面，
+       下面只留一行把结论说清楚，字号压下去，不再三段各占一行抢注意力。 */
+    const losses = Math.max(0, lead.n - lead.wins);
+    const thrown = Math.min(losses, (risk.throw && risk.throw.k) || 0);
+    const games = lead.games || [];
+    const detail = games.length
+      ? `领先明细：${games.slice(0, 6).map((g) => `${esc(g.label)} <b>${gold(g.at10)}</b>`).join('、')}${games.length > 6 ? ` 等 ${games.length} 局` : ''}。`
+      : '';
+    let main = '', note = '';
     if (lead.n) {
-      parts.push(`10 分钟领先 1,000 金币的 <em>${lead.n}</em> 局里赢下 <em>${lead.wins}</em> 局；其中 <em>${risk.throw.k}</em> 局最后被翻，<em>${Math.round((lead.shrink.value || 0) * lead.n)}</em> 局的领先在终局前被收窄。`);
+      const adv = gold(lead.avgAt10);
+      if (!lead.wins && thrown === losses) {
+        main = `<b>${lead.n}</b> 局 10 分钟平均领先 <b>${adv}</b> 金币，结果 <b>0 胜 ${losses} 负</b>，全被翻盘。`;
+        note = `10 分钟的经济优势一分都没兑现，先复盘 10 分钟后的资源兑现和团战决策。${detail}`;
+      } else if (lead.wins > losses) {
+        main = `<b>${lead.n}</b> 局 10 分钟平均领先 <b>${adv}</b> 金币，赢下 <b>${lead.wins}</b> 局，前中期优势兑现了。`;
+        note = `保持这套前中期节奏。${detail}`;
+      } else {
+        main = `<b>${lead.n}</b> 局 10 分钟平均领先 <b>${adv}</b> 金币，但只赢下 <b>${lead.wins}</b> 局，兑现不稳定。`;
+        note = `重点看丢掉的 ${losses} 局是怎么被追回来的。${detail}`;
+      }
+    } else {
+      main = `这批局没有 10 分钟领先 <b>1,000</b> 金币的样本。`;
+      note = '';
     }
-    if (risk.comeback.n) parts.push(`落后 1,000 金币以上还能翻回来 <em>${risk.comeback.k}</em> 局。`);
-    return `<p class="xw-statement">${parts.join('') || '过程样本不足，先看下面的前期节奏。'}</p>`;
+    return `<div class="xw-verdict"><p class="xw-verdict-main">${main}</p>${note ? `<p class="xw-verdict-take">${note}</p>` : ''}</div>`;
   }
 
   const tile = ({ label, value, unit = '', sub = '', delta = '' }) =>
@@ -803,11 +786,19 @@ export function createCrossPage(h) {
   function economyModule(a) {
     const risk = a.risk;
     const path = a.path;
+    /* 翻盘 / 被翻盘的逐局分布：把 key 反查成逐局卡，带 10 分钟与终局经济。 */
+    const byKey = new Map((a.rows || []).map((r) => [r.key, r]));
+    const flipOf = (keys) => (keys || []).map((key) => byKey.get(key)).filter(Boolean).map((r) => ({
+      key: r.key, label: internals.gameLabelOf(r), at10: r.at10, final: r.final, result: r.result,
+    }));
+    const flips = {
+      throw: flipOf(risk.keys && risk.keys.throw),
+      comeback: flipOf(risk.keys && risk.keys.comeback),
+    };
     return module({
-      id: 'ingame-economy', span: 12, kicker: '赛中 · 经济路径', meta: `${risk.at10.n} 局有 10 分钟差`,
-      title: `10 分钟常见 <em>${gold(risk.at10.p50)}</em> 金币，终局 <em>${gold(risk.final.p50)}</em> 金币`,
-      body: renderViz({ type: 'economy', id: 'ingame-economy-viz', checkpoints: path.checkpoints, phase: path.phase }, { view: (key) => vizViews[key] || 'a' }),
-      note: '本队减对手，单位金币。经济约 30 秒一个点，按 5 分钟窗口取常见值；越往后样本越少，最后两段只作参考。',
+      id: 'ingame-economy', span: 12, kicker: '赛中 · 经济路径', meta: `${path.curve.length ? '4 个阶段锚点' : '过程样本不足'}`,
+      title: `赢的局 <em>${gold(path.curve.find((p) => p.key === 'at10')?.win.med)}</em>，输的局 <em>${gold(path.curve.find((p) => p.key === 'at10')?.loss.med)}</em>（10 分钟）`,
+      body: renderViz({ type: 'economy', id: 'ingame-economy-viz', curve: path.curve, phase: path.phase, flips }, { view: (key) => vizViews[key] || 'a' }),
     });
   }
 
@@ -882,14 +873,14 @@ export function createCrossPage(h) {
     const openKey = state.games.startsWith('risk:') ? state.games.slice(5) : '';
     const openRow = rows.find((x) => x.key === openKey);
     return module({
-      id: 'ingame-lead', span: 5, kicker: '赛中 · 领先守成', meta: `${risk.at10.n} 局有 10 分钟差`,
+      id: 'ingame-lead', span: 5, kicker: '赛中 · 领先守成', meta: `${risk.at10.n} 局有 10 分钟经济差`,
       title: rows.length ? `大优被翻 <em>${risk.throw.k}</em> 局，大劣翻盘 <em>${risk.comeback.k}</em> 局` : '领先守成',
       body: `<div class="xw-counts">${rows.map((x) => `<div class="xw-count-row${openKey === x.key ? ' is-open' : ''}">
-        <b>${x.k}</b><span class="xw-count-label">${esc(x.label)}<small>共 ${x.n} 局 · ${esc(x.hint)}</small></span>
+        <b>${x.k}</b><span class="xw-count-label">${esc(x.label)}<small><strong>符合条件 ${x.n} 局</strong> · ${esc(x.hint)}</small></span>
         ${x.keys.length ? gamesBtn(`risk:${x.key}`, x.keys.length, openKey === x.key) : ''}
       </div>`).join('')}</div>
       ${openRow ? gamesPanel(a, risk.keys[openRow.key], `${openRow.label}：${risk.keys[openRow.key].length} 局`) : ''}`,
-      note: '这里写局数不写百分比：分母是「满足条件的局」，不是全部局。点「看这 N 局」能展开具体是哪几局。',
+      note: '左侧大数字是命中局数；右侧“符合条件”是该指标分母。四类样本可能重叠，不能相加。',
     });
   }
 
@@ -1034,7 +1025,7 @@ export function createCrossPage(h) {
         const ownBetter = comparable && (m.key === 'd' ? value < foeValue : value > foeValue);
         const gapValue = comparable ? Math.abs(value - foeValue) : null;
         const gapText = gapValue === null ? ''
-          : m.rate ? `${Math.round(gapValue * 100)}pp`
+          : m.rate ? `${Math.max(1, Math.round(gapValue * 100))}%`
             : m.digits ? fmt.fixed(gapValue, m.digits) : plain(gapValue);
         const verdict = !comparable ? ''
           : `<em class="xw-exec-verdict is-${ownBetter ? 'own' : 'foe'}">${ownBetter ? '本队优' : '对手优'} ${m.key === 'd' ? `少 ${gapText}` : `+${gapText}`}</em>`;
@@ -1093,28 +1084,36 @@ export function createCrossPage(h) {
 
   function archetypeModule(dp) {
     const data = dp.archetypes.own;
-    if (!data.length) return module({ id: 'draft-arch', span: 7, kicker: '英雄和 BP · 打法类型', title: '没有可读的分路类型', body: emptyVector('十人面板缺少英雄或分路。') });
+    if (!data.length) return module({ id: 'draft-arch', span: 12, kicker: '英雄和 BP · 打法类型', title: '没有可读的分路类型', body: emptyVector('十人面板缺少英雄或分路。') });
     const body = data.map((lane) => {
       const total = Math.max(1, lane.n);
-      const band = lane.items.map((x, i) => `<span class="xw-arch-seg is-${i}" style="flex:${x.games}" title="${esc(`${x.arch} ${x.games} 局`)}"></span>`).join('');
-      const legend = lane.items.map((x, i) => `<span class="xw-arch-key is-${i}"><i></i>${esc(x.arch)}<b>${x.games}</b><em>${Math.round(x.games / total * 100)}%</em></span>`).join('');
+      const ranked = lane.items.slice().sort((a, b) => b.games - a.games || lane.items.indexOf(a) - lane.items.indexOf(b));
+      const primary = ranked[0];
+      const primaryShare = Math.round(primary.games / total * 100);
+      const mix = primaryShare >= 75 ? `主玩${primary.arch}` : ranked.length > 1 ? `${ranked.length} 类轮换` : `只拿${primary.arch}`;
+      const colorOf = (arch) => ARCH_COLORS[arch] || '#7b8a68';
+      const bandLabel = ranked.map((x) => `${x.arch} ${x.games} 局（${Math.round(x.games / total * 100)}%）`).join('；');
+      const band = ranked.map((x) => `<span class="xw-arch-fill" style="flex:${x.games};--arch-color:${colorOf(x.arch)}" aria-hidden="true"></span>`).join('');
+      const types = ranked.map((x, i) => `<li${i === 0 ? ' class="is-primary"' : ''}>
+        <i style="--arch-color:${colorOf(x.arch)}" aria-hidden="true"></i><b>${esc(x.arch)}</b><span>${x.games} 局</span><em>${Math.round(x.games / total * 100)}%</em>
+      </li>`).join('');
       const miss = lane.unknown && lane.unknown.games
-        ? `<p class="xw-arch-miss">另有 ${lane.unknown.games} 局的英雄没有类型标签（${esc(lane.unknown.heroes.slice(0, 3).join('、'))}），不计入上面的占比。</p>`
+        ? `<p class="xw-arch-miss">另有 ${lane.unknown.games} 局未识别类型（${esc(lane.unknown.heroes.slice(0, 3).join('、'))}），不计入占比。</p>`
         : '';
-      return `<div class="xw-arch-row">
-        <span class="xw-arch-lane">${esc(lane.lane)}<small>${lane.n} 局</small></span>
-        <div class="xw-arch-main">
-          <div class="xw-arch-band">${band}</div>
-          <div class="xw-arch-legend">${legend}</div>
-          ${miss}
-        </div>
-      </div>`;
+      return `<article class="xw-arch-card" role="listitem">
+        <header class="xw-arch-card-head"><h4>${esc(lane.lane)}</h4><span>${lane.n} 局有类型</span></header>
+        <div class="xw-arch-primary"><span>${esc(mix)}</span><div><b>${esc(primary.arch)}</b><strong>${primaryShare}%</strong></div><small>${primary.games} / ${lane.n} 局</small></div>
+        <div class="xw-arch-bar" role="img" aria-label="${esc(`${lane.lane}：${bandLabel}`)}">${band}</div>
+        <ul class="xw-arch-types" aria-label="${esc(`${lane.lane}类型清单`)}">${types}</ul>
+        ${miss}
+      </article>`;
     }).join('');
     const total = data.reduce((s, x) => s + x.n, 0);
     return module({
-      id: 'draft-arch', span: 7, kicker: `英雄和 BP · 打法类型 · ${sideLabel()}`, meta: `${total} 个分路出场`,
-      title: '五路各拿什么类型，谁在变',
-      body: `<div class="xw-arch">${body}</div>`,
+      id: 'draft-arch', span: 12, kicker: `英雄和 BP · 打法类型 · ${sideLabel()}`, meta: `${total} 个分路类型样本`,
+      title: '五路各拿什么类型，哪里在轮换',
+      body: `<div class="xw-arch"><div class="xw-arch-grid" role="list" aria-label="五路英雄类型分布">${body}</div></div>`,
+      note: '每路先看主玩类型和占比，下面保留完整类型清单；占比只按已识别类型的出场计算。',
     });
   }
 
@@ -1196,7 +1195,7 @@ export function createCrossPage(h) {
       const tone = thin ? 'thin' : (num(x.lift) && x.lift < 0 ? 'bad' : 'good');
       return `<div class="xw-pair is-${tone}">
         <span class="xw-pair-faces">${x.heroes.map((h) => portrait(h, 'xw-face-img')).join('<i>+</i>')}</span>
-        <span class="xw-pair-copy"><b title="${esc(x.label)}">${esc(x.label)}</b><small>${x.wins} 胜 ${x.n - x.wins} 负 · ${x.n} 局 · 胜率 ${rateNum(x.rate?.value)}%${!thin && num(x.lift) ? ` · ${x.lift >= 0 ? '+' : '−'}${Math.abs(Math.round(x.lift * 100))}pp` : ''}</small></span>
+        <span class="xw-pair-copy"><b title="${esc(x.label)}">${esc(x.label)}</b><small>${x.wins} 胜 ${x.n - x.wins} 负 · ${x.n} 局 · 胜率 ${rateNum(x.rate?.value)}%${!thin && num(x.lift) ? ` · ${x.lift >= 0 ? '+' : '−'}${Math.abs(Math.round(x.lift * 100))}%` : ''}</small></span>
         <em class="xw-pair-tag">${thin ? '样本少' : tone === 'good' ? '更好打' : '更吃力'}</em>
       </div>`;
     };
@@ -1245,9 +1244,9 @@ export function createCrossPage(h) {
     });
   }
 
-  /* 楼层分析：只看对面，按对方的 pick 顺序拆楼层。
-     蓝方单 pick（1L…5L）；红方按 BP 的 1+2、3、4+5 成对。
-     英雄模式数每个楼层出现的人；组合模式只在成对楼层可用。 */
+  /* 楼层分析：只看对面。
+     英雄视图按对方 pick 顺序拆楼层；组合视图与楼层按钮解耦，只按红蓝方取数，
+     在对面 5 个 pick 位里找组合池命中（可跨楼层、可同楼层），并标注每一手的位置。 */
   function floorRows(rows, side, floor) {
     return (rows || []).filter((r) => {
       if (!r.decided || opponentSideOf(r) !== side) return false;
@@ -1272,19 +1271,54 @@ export function createCrossPage(h) {
       .sort((a, b) => b.games - a.games || String(a.hero).localeCompare(String(b.hero), 'zh-CN'));
   }
 
-  function floorCombos(rows, side, floor) {
-    if (!floor.combo) return [];
+  /* 组合池名单：内置名单来自赛训组提供的「全英雄组合.xlsx」，
+     自定义名单会整体覆盖它；两种都按名单判定命中。 */
+  function floorPoolKeys() {
+    const poolDoc = state.comboPool || null;
+    const pairs = (poolDoc?.pairs || []).filter((row) => Array.isArray(row.heroes) && row.heroes.length === 2);
+    const keys = new Map();
+    for (const row of pairs) {
+      const heroes = [...new Set(row.heroes)];
+      if (heroes.length !== 2) continue;
+      /* 名单顺序固定展示顺序，楼层按这个顺序标注，不随局内 pick 先后颠倒。 */
+      keys.set(heroes.slice().sort().join('|'), heroes);
+    }
+    return { pairs, keys };
+  }
+
+  /* 组合视图：从对面 5 手里找池子里的双人组合，记录每个组合落在哪两手。
+     fi/fj 是名单里第 1 / 第 2 个英雄在 heroesFoe 里的下标。 */
+  function floorPoolCombos(rows, side, pool) {
+    const games = (rows || []).filter((r) => r.decided && opponentSideOf(r) === side);
     const map = new Map();
-    for (const r of floorRows(rows, side, floor)) {
-      const heroes = floor.slots.map((i) => r.heroesFoe[i]);
-      const key = heroes.join(' + ');
-      const e = map.get(key) || { heroes, games: 0, wins: 0 };
-      e.games += 1;
-      if (r.result === 'loss') e.wins += 1;
-      map.set(key, e);
+    for (const r of games) {
+      const hs = r.heroesFoe || [];
+      const seen = new Set();
+      for (let i = 0; i < hs.length; i += 1) {
+        for (let j = i + 1; j < hs.length; j += 1) {
+          if (!hs[i] || !hs[j]) continue;
+          const key = [hs[i], hs[j]].sort().join('|');
+          const heroes = pool.keys.get(key);
+          if (!heroes || seen.has(key)) continue;
+          seen.add(key);
+          const e = map.get(key) || { heroes, games: 0, wins: 0, patterns: new Map() };
+          e.games += 1;
+          if (r.result === 'loss') e.wins += 1;
+          const fi = heroes[0] === hs[i] ? i : j;
+          const fj = heroes[1] === hs[j] ? j : i;
+          const pk = `${fi}-${fj}`;
+          const p = e.patterns.get(pk) || { fi, fj, n: 0 };
+          p.n += 1;
+          e.patterns.set(pk, p);
+          map.set(key, e);
+        }
+      }
     }
     return [...map.values()]
-      .map((e) => ({ ...e, label: e.heroes.join(' + '), rate: pctOf(e.wins, e.games) }))
+      .map((e) => ({
+        ...e, label: e.heroes.join(' + '), rate: pctOf(e.wins, e.games),
+        floors: [...e.patterns.values()].sort((a, b) => b.n - a.n || a.fi - b.fi),
+      }))
       .sort((a, b) => b.games - a.games || a.label.localeCompare(b.label, 'zh-CN'));
   }
 
@@ -1292,43 +1326,56 @@ export function createCrossPage(h) {
     const side = state.floorSide === 'red' ? 'red' : 'blue';
     const floors = FLOOR_SETS[side];
     const floor = floors.find((x) => x.key === state.floorSlot) || floors[0];
-    const mode = state.floorMode === 'combo' && floor.combo ? 'combo' : 'hero';
+    const mode = state.floorMode === 'combo' ? 'combo' : 'hero';
     const rows = dp.rows || [];
-    const games = floorRows(rows, side, floor);
+    const pool = floorPoolKeys();
+    /* 组合视图不跟楼层联动：只按红蓝方取数，在对面 5 手里找组合池命中。 */
+    const games = mode === 'combo'
+      ? rows.filter((r) => r.decided && opponentSideOf(r) === side)
+      : floorRows(rows, side, floor);
     const wins = games.filter((r) => r.result === 'loss').length;
     const rate = pctOf(wins, games.length);
-    const items = mode === 'combo' ? floorCombos(rows, side, floor) : floorHeroes(rows, side, floor);
+    const items = mode === 'combo' ? floorPoolCombos(rows, side, pool) : floorHeroes(rows, side, floor);
     const bans = (dp.draft.bansFoe || []).slice(0, 8);
     const banList = bans.length
       ? `<div class="xw-ban-chips">${bans.map((b) => `<span class="xw-ban-chip" title="${esc(`对面 ban ${b.hero} ${b.games} 次`)}">
           <span class="xw-face">${portrait(b.hero, 'xw-face-img')}</span><b>${esc(b.hero)}</b><em>${b.games}</em></span>`).join('')}</div>`
       : '<p class="xw-muted">没有可拆分的对面 ban。</p>';
     const sideBtns = ['blue', 'red'].map((key) => `<button type="button" class="xw-segbtn${side === key ? ' is-on' : ''}" data-xw-floor-side="${key}">${key === 'blue' ? '蓝方' : '红方'}</button>`).join('');
-    const floorBtns = floors.map((x) => `<button type="button" class="xw-segbtn${floor.key === x.key ? ' is-on' : ''}" data-xw-floor="${esc(x.key)}">${esc(x.label)}</button>`).join('');
-    const modeBtns = `<div class="xw-floor-mode"><span>显示</span><div class="xw-seg">
-      <button type="button" class="xw-segbtn${mode === 'combo' ? '' : ' is-on'}" data-xw-floor-mode="hero">英雄</button>
-      <button type="button" class="xw-segbtn${mode === 'combo' ? ' is-on' : ''}" data-xw-floor-mode="combo"${floor.combo ? '' : ' disabled title="这个楼层是单 pick，没有组合"'}>组合</button>
-    </div></div>`;
+    /* 组合视图里楼层按钮不参与，直接不渲染，避免看起来像还能联动。 */
+    const floorBtns = mode === 'hero'
+      ? `<div class="xw-seg">${floors.map((x) => `<button type="button" class="xw-segbtn${floor.key === x.key ? ' is-on' : ''}" data-xw-floor="${esc(x.key)}">${esc(x.label)}</button>`).join('')}</div>`
+      : '';
+    const comboBtn = `<div class="xw-floor-mode"><div class="xw-seg"><button type="button" class="xw-segbtn${mode === 'combo' ? ' is-on' : ''}" data-xw-floor-combo aria-pressed="${mode === 'combo'}">组合显示</button></div></div>`;
     const resultText = (x) => `${x.games} 次 · 胜率 ${x.rate === null || x.rate === undefined ? '—' : `${x.rate}%`}`;
+    const comboCard = (x) => `<div class="xw-floor-combo-card">
+      <div class="xw-floor-combo-head">
+        <span class="xw-face-pair">${x.heroes.map((hero) => `<span class="xw-face">${portrait(hero, 'xw-face-img')}</span>`).join('<i>+</i>')}</span>
+        <span class="xw-floor-copy"><b title="${esc(x.label)}">${esc(x.label)}</b><small>${resultText(x)}</small></span>
+      </div>
+      <div class="xw-floor-combo-slots">${x.floors.map((p) => `<span><em>${p.fi + 1}L</em> ${esc(x.heroes[0])} · <em>${p.fj + 1}L</em> ${esc(x.heroes[1])}<i>×${p.n}</i></span>`).join('')}</div>
+    </div>`;
     const list = items.length
-      ? `<div class="xw-floor-list">${items.slice(0, 12).map((x) => mode === 'combo'
-        ? `<div class="xw-floor-item is-combo"><span class="xw-face-pair">${x.heroes.map((h) => `<span class="xw-face">${portrait(h, 'xw-face-img')}</span>`).join('')}</span>
-            <span class="xw-floor-copy"><b>${esc(x.label)}</b><small>${resultText(x)}</small></span></div>`
+      ? `<div class="xw-floor-list${mode === 'combo' ? ' is-combo' : ''}">${items.slice(0, 12).map((x) => mode === 'combo'
+        ? comboCard(x)
         : `<div class="xw-floor-item"><span class="xw-face">${portrait(x.hero, 'xw-face-img')}</span>
             <span class="xw-floor-copy"><b>${esc(x.hero)}</b><small>${resultText(x)}</small></span></div>`).join('')}</div>`
-      : `<p class="xw-muted">${mode === 'combo' ? '这个楼层还没有可统计的组合。' : '这个楼层还没有可统计的对面选人。'}</p>`;
+      : `<p class="xw-muted">${mode === 'combo'
+        ? (pool.keys.size ? '这批局对面 5 手里没有出现组合池中的双人组合。' : '组合池还没有保存双人组合。')
+        : '这个楼层还没有可统计的对面选人。'}</p>`;
     return module({
       id: 'draft-floor', span: 12, kicker: '英雄和 BP · 楼层分析', meta: `${rows.filter((r) => r.decided).length} 局 · 只看对面`,
-      title: `${side === 'blue' ? '对面蓝方' : '对面红方'}每一楼拿什么`,
+      title: mode === 'combo'
+        ? `${side === 'blue' ? '对面蓝方' : '对面红方'} 5 手里拿了什么组合`
+        : `${side === 'blue' ? '对面蓝方' : '对面红方'}每一楼拿什么`,
       body: `<div class="xw-floor-bans"><div class="xw-block-head"><b>对面常搬</b><span>次数</span></div>${banList}</div>
         <div class="xw-floor-controls">
           <div class="xw-seg">${sideBtns}</div>
-          <div class="xw-seg">${floorBtns}</div>
-          ${modeBtns}
+          ${floorBtns}
+          ${comboBtn}
         </div>
-        <div class="xw-floor-summary"><b>${side === 'blue' ? '对面蓝方' : '对面红方'}</b><span>${esc(floor.label)}</span><span>${games.length} 局</span><span>对面胜率 ${rate === null ? '—' : `${rate}%`}</span><span>${items.length} ${mode === 'combo' ? '种组合' : '个英雄'}</span></div>
+        <div class="xw-floor-summary"><b>${side === 'blue' ? '对面蓝方' : '对面红方'}</b><span>${mode === 'combo' ? '5 手' : esc(floor.label)}</span><span>${games.length} 局</span><span>对面胜率 ${rate === null ? '—' : `${rate}%`}</span><span>${items.length} ${mode === 'combo' ? '种组合' : '个英雄'}</span></div>
         ${list}`,
-      note: '只看对面：按 BP 顺序拆楼层——蓝方 1L、2L+3L、4L+5L；红方 1L+2L、3L、4L、5L（counter）。卡片里是这个英雄在对面该楼层的出现次数与对面胜率。',
     });
   }
 
@@ -1349,6 +1396,21 @@ export function createCrossPage(h) {
     const heroes = pickedHeroes;
     const hero = heroes[0] || '';
     const isCombo = heroes.length > 1;
+    /* 标题按实际选中的英雄显示：单选一个就写那一个，多选组合要把全部列出来。
+       以前固定只写 heroes[0]，选了「夏侯惇 + 安琪拉」仍写成「打夏侯惇」，
+       教练会以为下面只统计了夏侯惇一个。 */
+    const heroLabel = heroes.length > 1 ? heroes.join(' + ') : hero;
+    /* 应对英雄若克制我们选中的某个英雄（规则中心「英雄克制英雄」a→b），
+       在行尾标「克制X」。方向：a=攻方(应对英雄)，b=受方(我们选的英雄)。 */
+    const counterTag = (foeHero) => {
+      const pairs = state.counterRules?.heroPairs || [];
+      const beaten = [...new Set(pairs
+        .filter((row) => row?.a === foeHero && heroes.includes(row.b))
+        .map((row) => row.b))];
+      /* 始终占住这一格，没有克制关系就留空，让各行的局数/胜率对齐。 */
+      if (!beaten.length) return '<span class="xw-ct-cell" aria-hidden="true"></span>';
+      return `<span class="xw-ct-cell"><span class="xw-ct-tag" title="规则中心克制关系：${esc(foeHero)} 克制 ${esc(beaten.join('、'))}">克制${beaten.map((h) => esc(h)).join('、')}</span></span>`;
+    };
     const modes = [['against', '我们拿英雄 / 组合'], ['pair', '对手拿英雄 / 组合']].map(([key, label]) =>
       `<button type="button" class="xw-segbtn${mode === key ? ' is-on' : ''}" data-xw-mode="${key}">${esc(label)}</button>`).join('');
     const chips = pool.slice(0, 10).map((x) => `<button type="button" class="xw-chip${heroes.includes(x.hero) ? ' is-on' : ''}" data-xw-pick="${esc(x.hero)}">${esc(x.hero)} <b>${x.games}</b></button>`).join('');
@@ -1360,7 +1422,7 @@ export function createCrossPage(h) {
     const pickerHtml = `<div class="xw-picker${pickerOpen ? ' is-open' : ''}">
       <span class="xw-picker-label">英雄 / 组合</span>
       <button type="button" class="xw-picker-btn" data-xw-picker="hero" aria-expanded="${pickerOpen ? 'true' : 'false'}">
-        ${heroes.length ? `${btnFaces}<span class="xw-picker-names">${btnNames}</span>` : '<b>选英雄（1–4 个）</b>'}
+        ${glyph('heroes', { label: '选英雄', size: 18 })}${heroes.length ? `${btnFaces}<span class="xw-picker-names">${btnNames}</span>` : '<b>选英雄</b>'}
         <i aria-hidden="true">▾</i>
       </button>
       ${pickerOpen ? `<div class="xw-picker-pop">
@@ -1376,8 +1438,8 @@ export function createCrossPage(h) {
           }).join('')}
         </div>
         <div class="xw-picker-foot">
-          <button type="button" class="xw-clear" data-xw-combo-clear>清空</button>
-          <button type="button" class="xw-clear" data-xw-picker="">关闭</button>
+          <button type="button" class="xw-clear control" data-xw-combo-clear>${glyph('trash', { label: '清空', size: 18 })} 清空</button>
+          <button type="button" class="xw-clear control" data-xw-picker="">${glyph('ban', { label: '关闭', size: 18 })} 关闭</button>
         </div>
       </div>` : ''}
     </div>`;
@@ -1386,7 +1448,7 @@ export function createCrossPage(h) {
       ${pickerHtml}
     </div>
     <div class="xw-chips">${chips}</div>`;
-    let body = emptyVector(hero ? '当前范围里没有这组英雄的记录。' : '选 1–4 个英雄，组合起来看。');
+    let body = emptyVector(hero ? '当前范围里没有这组英雄的记录。' : '还没有选择英雄。');
     if (mode === 'against' && hero) {
       const t = dp.bp.target(heroes);
       if (t && (t.games || t.ban.games)) {
@@ -1394,15 +1456,17 @@ export function createCrossPage(h) {
         const turns = t.ban.byTurn.map((n, i) => `<div class="xw-turn${n === maxBan && n ? ' is-top' : ''}">
           <span>第 ${i + 1} 手</span><b>${n}</b><i style="height:${(n / maxBan * 64).toFixed(1)}px"></i>
         </div>`).join('');
-        const responses = t.responses.length ? `<div class="xw-bp-list">${t.responses.map((x) => `<div class="xw-bp-row">
-          <span class="xw-face is-sm">${portrait(x.hero, 'xw-face-img')}</span>
-          <b>${esc(x.hero)}</b>
+        /* 赛训组反馈：应对清单不显示英雄名，直接用放大的头像；头像后面
+           挂「克制X」标。名字保留在 title / alt 里，读屏和悬停仍能读到。 */
+        const responses = t.responses.length ? `<div class="xw-bp-list">${t.responses.map((x) => `<div class="xw-bp-row is-portrait">
+          <span class="xw-face is-hero" title="${esc(x.hero)}">${portrait(x.hero, 'xw-face-img')}</span>
+          ${counterTag(x.hero)}
           <span>${x.games} 局</span>
           <em>${themWord}赢 ${x.foeWins}${x.games ? `（${Math.round(x.foeWins / x.games * 100)}%）` : ''}</em>
         </div>`).join('')}</div>` : `<p class="xw-muted">没有可对照的同位置对手。</p>`;
-        const combos = t.combos.length ? `<div class="xw-bp-list">${t.combos.map((x) => `<div class="xw-bp-row">
-          <span class="xw-face-pair">${x.heroes.map((h) => portrait(h, 'xw-face-img')).join('')}</span>
-          <b>${esc(x.heroes.join(' + '))}</b>
+        const combos = t.combos.length ? `<div class="xw-bp-list">${t.combos.map((x) => `<div class="xw-bp-row is-portrait">
+          <span class="xw-face-pair is-hero" title="${esc(x.heroes.join(' + '))}">${x.heroes.map((h) => portrait(h, 'xw-face-img')).join('')}</span>
+          <span class="xw-ct-cell" aria-hidden="true"></span>
           <span>${x.games} 局</span>
           <em>${themWord}赢 ${x.foeWins}${x.games ? `（${Math.round(x.foeWins / x.games * 100)}%）` : ''}</em>
         </div>`).join('')}</div>` : '';
@@ -1426,9 +1490,9 @@ export function createCrossPage(h) {
           <div class="xw-subblock"><div class="xw-block-head"><b>对手第几手 ban 它</b><span>按对方自己的 ban 顺序</span></div>${
             t.ban.games
               ? `<div class="xw-turns">${turns}</div>`
-              : `<p class="xw-muted">${themWord}一次都没 ban 过${esc(hero)}，不用看顺序。</p>`}</div>
+              : `<p class="xw-muted">${themWord}一次都没 ban 过${esc(heroLabel)}，不用看顺序。</p>`}</div>
           <div class="xw-two-col is-bp">
-            <div class="xw-subblock"><div class="xw-block-head"><b>没 ban 时，${themWord}拿什么打${esc(hero)}</b><span>同位置</span></div>${responses}</div>
+            <div class="xw-subblock"><div class="xw-block-head"><b>没 ban 时，${themWord}拿什么打${esc(heroLabel)}</b><span>同位置</span></div>${responses}</div>
             <div class="xw-subblock"><div class="xw-block-head"><b>各队怎么应对</b><span>${opponents.length} 个对手</span></div>${byOpp || emptyVector('没有分队伍样本。')}</div>
           </div>
           ${combos ? `<div class="xw-subblock is-bp-combos"><div class="xw-block-head"><b>${meWord}拿它时，${themWord}整条阵容的常见组合</b><span>对方英雄</span></div>${combos}</div>` : ''}`;
@@ -1473,7 +1537,7 @@ export function createCrossPage(h) {
         : (!hero ? '先选 1–4 个英雄，看对手怎么应对'
           : (isCombo ? `${meWord}拿 ${heroes.map((h) => esc(h)).join(' + ')} 这几个时，${themWord}怎么应对` : `${meWord}拿这个英雄时，${themWord}怎么应对`)),
       body: `${controls}${body}`,
-      note: mode === 'pair' ? '所选英雄同时在对方阵容出现时，同一方还常拿谁；选 2–4 个即按组合看。' : 'ban 顺序按对方自己那一侧的 ban 列表；「没 ban 时拿什么打」取这套组合里第一个英雄所在分路的对手。',
+      note: mode === 'pair' ? '所选英雄同时在对方阵容出现时，同一方还常拿谁；选 2–4 个即按组合看。' : 'ban 顺序按对方自己那一侧的 ban 列表；「没 ban 时拿什么打」取这套组合里第一个英雄所在分路的对手；「克制X」标只取规则中心维护过的英雄克制关系。',
     });
   }
 
@@ -1485,17 +1549,15 @@ export function createCrossPage(h) {
   /* ── 页面 ───────────────────────────────────────────────────── */
   function listHtml() {
     syncWords();
-    if (state.error) return `<div class="page xw-page"><section class="xw-blank"><h1>读不到跨局数据</h1><p>${esc(state.error)}</p><button type="button" class="xw-btn primary" data-cx-retry>重试</button></section></div>`;
+    if (state.error) return `<div class="page xw-page"><section class="xw-blank">${glyph('warning', { label: '读取失败', size: 28 })}<h1>读不到跨局数据</h1><p>${esc(state.error)}</p><button type="button" class="xw-btn primary control" data-cx-retry>${glyph('refresh', { label: '重试', size: 18 })} 重试</button></section></div>`;
     if (!state.allSeries.length) {
-      return `<div class="page xw-page"><section class="xw-blank"><h1>还没有已确认的系列赛</h1><p>跨局分析以「多场 BO」为单位；先到系列赛编组确认 BO3/5/7。</p><a class="xw-btn primary" href="#series-builder">去系列赛编组 →</a></section></div>`;
+      return `<div class="page xw-page"><section class="xw-blank">${glyph('bp', { label: '系列赛编组', size: 28 })}<h1>还没有已确认的系列赛</h1><p>先到系列赛编组确认 BO3/5/7。</p><a class="xw-btn primary control" href="#series-builder">${glyph('bp', { label: '去编组', size: 18 })} 去系列赛编组</a></section></div>`;
     }
     const series = filteredSeries();
     if (!series.length) {
-      return `<div class="page xw-page">${scopeBarHtml(null)}<section class="xw-blank"><h1>当前范围没有系列赛</h1><p>放宽时间，或清除赛制、对手筛选。</p><button type="button" class="xw-btn primary" data-cx-clear>清除筛选</button></section></div>`;
+      return `<div class="page xw-page">${scopeBarHtml(null)}<section class="xw-blank">${glyph('refresh', { label: '清除筛选', size: 28 })}<h1>当前范围没有系列赛</h1><button type="button" class="xw-btn primary control" data-cx-clear>${glyph('refresh', { label: '清除筛选', size: 18 })} 清除筛选</button></section></div>`;
     }
     const sum = deriveSummary(series);
-    const ids = new Set(series.map((s) => s.id));
-    const attention = (state.attention || []).filter((item) => ids.has(item.seriesId));
     const vectors = vectorSide(selectedVectors(series));
     const a = analyzeCohort(vectors);
     const prev = prevCohort();
@@ -1512,7 +1574,6 @@ export function createCrossPage(h) {
     return `<div class="page xw-page">
       ${headHtml(sum, series)}
       ${scopeBarHtml(sum)}
-      ${radarHtml(attention)}
       <section class="xw-section" id="xw-sec-ingame" data-cx-section="ingame"${state.section === 'ingame' ? '' : ' hidden'}>
         ${sectionHead('ingame', meta.ingame)}
         ${state.vectorsError ? '<div class="xw-section-note">各局向量没取到，赛中分析暂不可用。</div>' : ''}
@@ -1594,7 +1655,7 @@ export function createCrossPage(h) {
   }
 
   function detailHtml() {
-    if (state.detailError) return `<div class="page xc-page"><a class="xc-back" href="#cross${scopeQuery()}">← 返回跨局分析</a><section class="xc-blank"><h1>读不到这场大场</h1><p>${esc(state.detailError)}</p></section></div>`;
+    if (state.detailError) return `<div class="page xc-page"><a class="xc-back" href="#cross${scopeQuery()}">${glyph('home', { label: '返回跨场分析', size: 18 })} 返回跨场分析</a><section class="xc-blank">${glyph('warning', { label: '读取失败', size: 28 })}<h1>读不到这场大场</h1><p>${esc(state.detailError)}</p></section></div>`;
     const data = state.detail;
     if (!data) return `<div class="page xc-page"><div class="loading">正在读取大场明细…</div></div>`;
     const series = data.series || {};
@@ -1636,7 +1697,7 @@ export function createCrossPage(h) {
     const caveats = (data.caveats || []).map((c) => `<li>${esc(c)}</li>`).join('');
     const coverage = data.coverage || {};
     return `<div class="page xc-page xc-series-detail">
-      <a class="xc-back" href="${back}">← 返回跨局分析</a>
+      <a class="xc-back" href="${back}">${glyph('home', { label: '返回跨场分析', size: 18 })} 返回跨场分析</a>
       <header class="xc-head xc-detail-head">
         <div class="xc-head-main">
           <p class="xc-eyebrow">大场分析 <i>/</i> BO${esc(String(series.bestOf || '—'))} <i>/</i> ${esc(String(series.startAt || games[0]?.date || '—'))} <i>/</i> ${esc(COMPLETION_LABEL[series.completion] || series.completion || '—')}</p>
@@ -1644,18 +1705,18 @@ export function createCrossPage(h) {
           <p class="xc-sub">${games.length} 局 · ${durations.length ? `平均 ${fmt.duration(fmt.mean(durations))}` : '缺时长'} · ${at10s.length ? `10 分钟差 ${fmt.signed(fmt.median(at10s))}` : '缺 10 分钟过程'} · ${series.completionMode === 'fixed' ? '固定打满' : '标准决胜'} · ${scoreValid(series) ? '' : '比分与赛制不一致 · '}${series.status === 'needs_review' ? '编组待核实' : '编组已确认'}</p>
           <div class="xc-coverage"><span class="xc-cov"><b>${fmt.count(games.length)}</b> 小局</span><span class="xc-cov"><b>${fmt.count(coverage.withVector || 0)}</b> 有向量</span><span class="xc-cov"><b>${fmt.count(coverage.orderKnownGames || 0)}</b> 有手序</span><span class="xc-cov"><b>${fmt.count(coverage.at10Games || 0)}</b> 有 10 分钟</span></div>
         </div>
-        <div class="xc-head-actions"><a class="xc-btn" href="#series-builder">去编组中心 →</a></div>
+        <div class="xc-head-actions"><a class="xc-btn control" href="#series-builder">${glyph('bp', { label: '去编组中心', size: 18 })} 去编组中心</a></div>
       </header>
       <div class="xc-cards">
         <article class="xc-card xc-span-12">
-          <div class="xc-card-head"><span class="xc-kicker">系列赛结论</span><span class="xc-badge">${games.length} 局</span></div>
+          <div class="xc-card-head"><span class="xc-kicker">${glyph('chart', { size: 18 })}系列赛结论</span><span class="xc-badge">${games.length} 局</span></div>
           <h3 class="xc-card-title">${esc(verdict)}</h3>
           ${miniGames(games)}
           ${detailChart(games)}
-          <p class="xc-card-note">点任意一局进入单局复盘；线是 10 分钟经济差与终局经济差，本队减对手。</p>
+          <p class="xc-card-note">${glyph('warning', { label: '数据口径', size: 16 })} 线是 10 分钟经济差与终局经济差（本队减对手）。</p>
         </article>
         ${card({ id: 'detail-games', span: 12, kicker: '逐局对比', sample: `${games.length} 局`, title: '每一局的结果、经济差与阵容', lede: '调整按终局阵容口径；没有 BP 手序时，不推断先后手针对。', body: `<div class="xc-table-wrap"><table class="xc-table"><thead><tr><th class="num">局</th><th>结果</th><th class="num">时长</th><th class="num">10′差</th><th class="num">终局差</th><th>我方体系</th><th>对方体系</th><th>调整</th><th>复盘</th></tr></thead><tbody>${games.map((g) => `<tr><td class="num">G${g.gameIndex}</td><td><b class="${g.result === 'win' ? 'win' : 'loss'}">${g.result === 'win' ? '胜' : g.result === 'loss' ? '负' : '—'}</b></td><td class="num">${fmt.duration(g.duration)}</td><td class="num">${fmt.signed(g.at10)}</td><td class="num">${fmt.signed(g.finalDiff)}</td><td>${esc(g.compOwn || '—')}</td><td>${esc(g.compFoe || '—')}</td><td>${esc(g.adjustment?.changeLabel || '—')}</td><td><a href="#match/${encodeURIComponent(g.matchKey)}">打开 →</a></td></tr>`).join('')}</tbody></table></div>` })}
-        ${card({ id: 'detail-adjust', span: 7, kicker: '调整与对手回应', sample: `${transitions.length} 次过渡`, title: transitions.length ? '每一局之间改了什么' : '没有可对照的连续局', lede: '我方新增/移出、对方新增/移出与重复 ban；终局阵容口径。', body: adjustments || '<p class="xc-muted">只有一局，或缺少阵容。</p>', method: '相邻两局对比终局阵容；有手序才谈「针对顺序」，这里不做先后手推断。' })}
+        ${card({ id: 'detail-adjust', span: 7, kicker: '调整与对手回应', sample: `${transitions.length} 次过渡`, title: transitions.length ? '每一局之间改了什么' : '没有可对照的连续局', lede: '', body: adjustments || '<p class="xc-muted">只有一局，或缺少阵容。</p>', method: '相邻两局对比终局阵容；有手序才谈「针对顺序」，这里不做先后手推断。' })}
         ${card({ id: 'detail-ledger', span: 5, kicker: '全局 BP 消耗', sample: `${ledgerRows ? games.length : 0} 局`, title: esc(rule), lede: '每局累计曾选与我方不可再选；跨局复用按规则集检查。', body: ledgerRows ? `<div class="xc-table-wrap"><table class="xc-table"><thead><tr><th class="num">局</th><th class="num">我</th><th class="num">敌</th><th>本局新增</th><th class="num">我方已锁</th></tr></thead><tbody>${ledgerRows}</tbody></table></div><p class="xc-card-note">${esc(series.ruleset?.note || '')}</p>` : '<p class="xc-muted">没有阵容账本。</p>', method: '累计曾选按系列赛推进；规则集以本场设置为准；检测到复用会写在覆盖说明里。' })}
         ${card({ id: 'detail-afterloss', span: 6, kicker: '败局恢复', sample: `${(data.afterLoss?.pairs || []).length} 对`, title: data.afterLoss?.n ? `下一局赢 ${data.afterLoss.nextWins}/${data.afterLoss.n}（${pct100(data.afterLoss.nextWinRate)}）` : '没有输局后的下一局', lede: data.afterLoss?.deltaSamples ? `下一局 10 分钟差常见变化 ${fmt.signed(data.afterLoss.medianAt10Delta)}（${data.afterLoss.deltaSamples} 对）` : '缺过程数据，不比较经济差。', body: `${afterPairs || '<p class="xc-muted">没有可对照的连败过渡。</p>'}${data.compSwitch?.pairs ? `<div class="xc-risk-grid"><div class="xc-risk"><span>体系延续后</span><b>${pct100(data.compSwitch.continued?.winRate)}</b><small>${data.compSwitch.continued?.nextWins || 0}/${data.compSwitch.continued?.n || 0} 次</small></div><div class="xc-risk"><span>体系切换后</span><b>${pct100(data.compSwitch.switched?.winRate)}</b><small>${data.compSwitch.switched?.nextWins || 0}/${data.compSwitch.switched?.n || 0} 次</small></div></div>` : ''}`, note: '调整与下一局胜负是关联，不是因果。' })}
         ${card({ id: 'detail-response', span: 6, kicker: '对手回应', sample: `${(data.opponentResponse || []).length} 次`, title: responseRows ? '对手逐局的新增/移出与禁用' : '没有可读的对手调整', lede: '只有终局名单时，这里显示的是「换人」，不是「第几手针对」。', body: responseRows ? `<div class="xc-table-wrap"><table class="xc-table"><thead><tr><th class="num">局</th><th>新增</th><th>移出</th><th>换体系</th><th>重复 ban</th></tr></thead><tbody>${responseRows}</tbody></table></div>` : '<p class="xc-muted">阵容缺失，无法对照。</p>' })}
@@ -1780,9 +1841,9 @@ export function createCrossPage(h) {
       document.addEventListener('competition:selected', () => {
         // 赛事域（M1）：切赛事即切分析域——清空语料/明细与页内筛选后重载。
         Object.assign(state, {
-          allSeries: [], attention: [], rulesets: [], latestDate: '', vectors: [], vectorsError: false,
+          allSeries: [], rulesets: [], latestDate: '', vectors: [], vectorsError: false,
           detailId: '', detail: null, detailError: '',
-          radarKind: '', side: 'own', bpOpp: '', bpMode: 'against', bpHeroes: [], bpInit: false,
+          side: 'own', bpOpp: '', bpMode: 'against', bpHeroes: [], bpInit: false,
         });
         state.loaded = false;
         loadAll();
@@ -1837,7 +1898,7 @@ export function createCrossPage(h) {
     if (boBtn) { scope.bo = boBtn.dataset.cxBo; syncScopeUrl(); repaint(); return; }
     if (event.target.closest('[data-cx-clear]')) {
       Object.assign(scope, { range: DEFAULT_RANGE, from: '', to: '', bo: '', opponent: '' });
-      state.bpOpp = ''; state.radarKind = ''; state.bpHeroes = []; state.bpInit = false;
+      state.bpOpp = ''; state.bpHeroes = []; state.bpInit = false;
       state.floorSide = 'blue'; state.floorSlot = '1'; state.floorMode = 'hero';
       syncScopeUrl(); repaint(); return;
     }
@@ -1850,19 +1911,6 @@ export function createCrossPage(h) {
       syncScopeUrl();
       const bar = document.querySelector('.xw-bar');
       if (bar) bar.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-    /* 关注分类 */
-    const radarBtn = event.target.closest('[data-xw-radar-kind]');
-    if (radarBtn) { state.radarKind = radarBtn.dataset.xwRadarKind || ''; repaint(); return; }
-    /* 关注条左右箭头 */
-    const scrollBtn = event.target.closest('[data-xw-scroll]');
-    if (scrollBtn) {
-      const rail = document.querySelector('.xw-radar-rail');
-      if (rail) {
-        const step = (rail.querySelector('.xw-radar-card')?.getBoundingClientRect().width || 340) + 14;
-        rail.scrollBy({ left: Number(scrollBtn.dataset.xwScroll) * step, behavior: 'smooth' });
-      }
       return;
     }
     /* 口径 chip：点一下取消这一条 */
@@ -1912,24 +1960,22 @@ export function createCrossPage(h) {
     /* BP 分区：本队 / 敌方 */
     const sideBtn = event.target.closest('[data-xw-side]');
     if (sideBtn) { state.side = sideBtn.dataset.xwSide === 'foe' ? 'foe' : 'own'; state.bpHeroes = []; state.bpInit = false; syncScopeUrl(); repaint(); return; }
-    /* 楼层分析：对面蓝/红、楼层、英雄/组合 */
+    /* 楼层分析：对面蓝/红、楼层、组合显示（组合视图只跟红蓝方联动） */
     const floorSideBtn = event.target.closest('[data-xw-floor-side]');
     if (floorSideBtn) {
       state.floorSide = floorSideBtn.dataset.xwFloorSide === 'red' ? 'red' : 'blue';
       const floors = FLOOR_SETS[state.floorSide];
       if (!floors.some((x) => x.key === state.floorSlot)) state.floorSlot = floors[0].key;
-      if (!floors.find((x) => x.key === state.floorSlot)?.combo) state.floorMode = 'hero';
       syncScopeUrl(); repaint(); return;
     }
     const floorBtn = event.target.closest('[data-xw-floor]');
     if (floorBtn) {
       state.floorSlot = floorBtn.dataset.xwFloor || '1';
-      if (!FLOOR_SETS[state.floorSide].find((x) => x.key === state.floorSlot)?.combo) state.floorMode = 'hero';
       syncScopeUrl(); repaint(); return;
     }
-    const floorModeBtn = event.target.closest('[data-xw-floor-mode]');
-    if (floorModeBtn) {
-      state.floorMode = floorModeBtn.dataset.xwFloorMode === 'combo' ? 'combo' : 'hero';
+    const floorComboBtn = event.target.closest('[data-xw-floor-combo]');
+    if (floorComboBtn) {
+      state.floorMode = state.floorMode === 'combo' ? 'hero' : 'combo';
       syncScopeUrl(); repaint(); return;
     }
     /* 对位台：模式与英雄 */

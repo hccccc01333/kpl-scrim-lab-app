@@ -30,6 +30,10 @@
   color: var(--muted, #5c574e);
   font-size: .75rem;
   width: fit-content;
+  max-inline-size: 26ch;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .desk-event-chip-dot {
   inline-size: 7px;

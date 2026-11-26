@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="701" height="171" viewBox="0 0 701 171" role="img">
+<title>半透明过渡容器</title>
+<defs><linearGradient id="glass" x2="100%" y2="100%">
+ <stop stop-color="#fff" stop-opacity=".5"/><stop offset=".5" stop-color="#f8f6f4" stop-opacity=".21"/><stop offset="1" stop-color="#eee9e6" stop-opacity=".52"/>
+</linearGradient><filter id="medium" x="-40%" y="-75%" width="180%" height="250%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#4d3c2f" flood-opacity=".24"/></filter></defs>
+<g transform="translate(10 10) scale(1 1)"><g filter="url(#medium)"><rect x="0.7" y="0.7" width="679.6" height="149.6" rx="24" fill="url(#glass)" stroke="#fff" stroke-width="1.4"/><defs><clipPath id="panel"><rect x="0" y="0" width="681" height="151" rx="24" fill="#fff"/></clipPath></defs><g clip-path="url(#panel)"><path d="M0 0 Q163.44 105.7 422.22 0 H476.7 Q183.87 137.41 0 25.67Z" fill="#d8d5d8" opacity="0.0864"/><path d="M0 96.64 Q306.45 19.63 490.32 0 Q163.44 96.64 0 149.49Z" fill="#d9d6d6" opacity="0.0512"/><path d="M122.58 151 Q360.93 119.29 681 18.12 Q524.37 117.78 306.45 151Z" fill="#fffdfa" opacity="0.192"/><path d="M367.74 151 Q558.42 93.62 681 57.38 V86.07 Q626.52 113.25 497.13 151Z" fill="#fff" opacity="0.176"/></g></g></g>
+</svg>

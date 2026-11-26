@@ -22,7 +22,7 @@ from urllib.request import urlopen
 from urllib.error import URLError
 from collections import Counter, defaultdict
 from contextlib import closing
-from datetime import date
+from datetime import date, datetime as _datetime, timedelta
 from pathlib import Path
 from threading import Lock, Thread
 from time import monotonic
@@ -48,9 +48,10 @@ import hero_capabilities
 import identity_service
 try:
     import peak_crawl
-except ModuleNotFoundError:
-    # 公开仓库不带 scripts/build_bp_facts.py（巅峰千强那部分依赖私有数据集），
-    # 抓取模块整个导不进来。这时只关掉巅峰千强抓取，别让根路径连带 404。
+except (ImportError, OSError, ValueError):
+    # 发布包必须带 scripts/build_bp_facts.py，否则 peak_crawl 整段导不进来：
+    # 表现是「英雄榜没 KPL / 国服战力 / 巅峰千强数据，也不会自动爬」。
+    # 真出意外时只关掉抓取，别让根路径连带 404。
     peak_crawl = None
 import player_profile
 import vocab as vocab_store
@@ -541,7 +542,7 @@ _refresh_lock = Lock()
 
 def _sync_bundle_records(snapshot):
     """语料 ↔ 归档登记（P1-5）：新对局包首次出现时补一条 match_records，
-    recorded_date 取对局日期；归属走训练归集窗口口径，归档区可改直连。
+    recorded_date 取对局日期；归属走训练起止口径，归档区可改直连。
     只在缺行时写入，避免快照重建反复 bump 数据库指纹。"""
     try:
         from workspace_store import Workspace
@@ -632,7 +633,11 @@ def _competition_scope_keys(competition_id):
 
 
 def repository(request: Request):
-    """按请求取分析仓库：带 competition 参数时返回按赛事收窄的视图（M1）。"""
+    """按请求取分析仓库：带 competition 参数时返回按赛事收窄的视图。
+
+    赛事是全站唯一的数据范围；所有分析源共用 competition_scope_keys 解析出的
+    同一份 Match Keys。
+    """
     snapshot = _base_repository(request)
     competition = request.query_params.get('competition') \
         or request.query_params.get('competitionId')
@@ -1632,6 +1637,23 @@ def peak_refresh():
     return {'ok': True, 'running': True, 'message': '刷新已开始，进度看 /api/v3/peak/status。'}
 
 
+@router.get('/api/v3/data-source-health')
+def data_source_health_status():
+    """管理页「外部数据源爬取情况」：汇总各源状态，不触发任何爬取。"""
+    import data_source_health as health
+    return health.snapshot()
+
+
+@router.post('/api/v3/data-source-health/refresh')
+def data_source_health_refresh(payload: dict = Body(default={})):
+    """手动重试某个数据源；后台线程执行，接口立即返回。"""
+    import data_source_health as health
+    result = health.refresh(str(payload.get('source') or ''))
+    if not result.get('ok'):
+        raise HTTPException(409, result.get('message') or '刷新失败')
+    return result
+
+
 def start_peak_auto() -> bool:
     """由 server.py 的真实服务入口调用：启动每日自动刷新线程（导入 / 测试不触发）。"""
     if peak_crawl is None:
@@ -1727,57 +1749,6 @@ def grade_rules_set(payload: dict = Body(...)):
         except ValueError as error:
             raise HTTPException(status_code=400, detail=str(error))
     return {'ok': True, 'revision': saved['revision'], 'updatedAt': saved['updatedAt']}
-
-
-@router.get('/api/v3/config-history/{name}')
-def config_history_list(name: str):
-    """赛训组配置的变更历史（组合池 / 评级规则）：时间 + 变更摘要，最新在前。"""
-    import config_history
-    if name not in ('combo_pool', 'grade_rules'):
-        raise HTTPException(status_code=404, detail='未知的配置类型')
-    return {'entries': config_history.list_entries(name)}
-
-
-@router.post('/api/v3/config-history/{name}/rollback')
-def config_history_rollback(name: str, payload: dict = Body(...)):
-    """回滚到某条历史快照。revision 不匹配返回 409；entryId 不存在返回 404。"""
-    import config_history
-    import combo_pool
-    import grade_rules
-    if name not in ('combo_pool', 'grade_rules'):
-        raise HTTPException(status_code=404, detail='未知的配置类型')
-    module = combo_pool if name == 'combo_pool' else grade_rules
-    lock = _COMBO_POOL_LOCK if name == 'combo_pool' else _GRADE_RULES_LOCK
-    entry_id = str(payload.get('entryId') or '')
-    try:
-        revision = int(payload.get('revision'))
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail='revision 必须是整数')
-    with lock:
-        current = module.load()
-        if revision != current.get('revision'):
-            raise HTTPException(status_code=409, detail='配置已被其他人更新，请刷新后再试。')
-        snapshot = config_history.get_snapshot(name, entry_id)
-        if snapshot is None:
-            # 快照为 None 表示回到「未保存（内置默认）」状态：删除配置文件。
-            file = module.path()
-            if file.exists():
-                file.unlink()
-            if name == 'combo_pool':
-                _KPL_COMBOS_CACHE.update(key=None, body=None)
-            return {'ok': True, 'revision': current['revision'], 'reset': True}
-        incoming = dict(snapshot)
-        incoming['schema'] = module.SCHEMA
-        incoming['revision'] = current.get('revision')
-        incoming.pop('saved', None)
-        incoming.pop('updatedAt', None)
-        try:
-            saved = module.save(incoming, summary=f'回滚到 {entry_id}')
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error))
-        if name == 'combo_pool':
-            _KPL_COMBOS_CACHE.update(key=None, body=None)
-    return {'ok': True, 'revision': saved['revision'], 'updatedAt': saved['updatedAt'], 'reset': False}
 
 
 @router.get('/api/v3/kpl/combos')
@@ -3367,6 +3338,85 @@ async def update_match_meta(key: str, request: Request, repo=Depends(repository)
     return {'ok': True, 'meta': previous}
 
 
+@router.post('/api/v3/opponent-team')
+async def save_opponent_team(request: Request, repo=Depends(repository)):
+    """对局界面给对手改名：归到战队主数据，并回链这一局。
+
+    对局档案里点铅笔改对手名时，若这局已归到某支战队（营地面板或此前建档），
+    改的是那支战队的队名，战队页与其它对局一起更新；若还没归队，就按新名字
+    建一支战队并把这一局挂上去。这样对局与战队的改名是同一条链，不再各写各的。
+    """
+    body = await read_json(request)
+    if not isinstance(body, dict):
+        raise HTTPException(400, '数据格式无效')
+    key = str(body.get('key') or '').strip()
+    name = str(body.get('opponent') or '').strip()
+    if not key or len(key) > 200:
+        raise HTTPException(404, '找不到该场对局')
+    if not name or len(name) > 50:
+        raise HTTPException(400, '战队名不能为空且不超过 50 个字')
+    match = repo.match_detail(key)
+    if match is None:
+        raise HTTPException(404, '找不到该场对局')
+
+    import opponent_identity
+    resolved = opponent_identity.resolve_names(DB)
+    names = resolved.get('names') or {}
+    aliases = resolved.get('aliases') or {}
+
+    with sqlite3.connect(DB) as connection:
+        connection.execute('CREATE TABLE IF NOT EXISTS match_meta '
+                           '(match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+        row = connection.execute('SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+        try:
+            meta = json.loads(row[0]) if row else {}
+            if not isinstance(meta, dict):
+                meta = {}
+        except (ValueError, TypeError):
+            meta = {}
+
+    # 归属优先级：已建档的回链 > 营地面板归属 > 当前队名/旧名匹配。
+    team_id = str(meta.get('opponentTeamId') or '').strip() or str(match.get('opponentTeamId') or '').strip()
+    if not team_id:
+        current = str(match.get('opponent') or meta.get('opponent') or '').strip()
+        target = aliases.get(current, current)
+        if target in names.values():
+            team_id = next((tid for tid, value in names.items() if value == target), '')
+        elif current in names.values():
+            team_id = next((tid for tid, value in names.items() if value == current), '')
+
+    if team_id and team_id in names:
+        try:
+            identity_service.rename_team(DB, team_id, name=name)
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        result_id = team_id
+    else:
+        # 新队名恰好已经存在：直接挂过去，不重复建队。
+        existing = next((tid for tid, value in names.items() if value == name), '')
+        try:
+            if existing:
+                result_id = existing
+            else:
+                result_id = identity_service.save_team(DB, name=name, actor='coach')['id']
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    meta['opponent'] = name
+    meta['opponentTeamId'] = result_id
+    with sqlite3.connect(DB) as connection:
+        connection.execute('INSERT INTO match_meta(match_key,body,updated_at) VALUES(?,?,?) '
+                           'ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at',
+                           (key, json.dumps(meta, ensure_ascii=False), time.time()))
+    invalidate_snapshot()
+    # 只清快照不够：opponent_identity 自己还有 5 秒解析缓存，
+    # 不清它改名后别处仍把旧队名折回来（测试与真实页面都会看到旧名）。
+    opponent_identity.clear_cache()
+    invalidate_players_cache()
+    return {'ok': True, 'key': key, 'teamId': result_id, 'name': name,
+            'linked': bool(team_id)}
+
+
 @router.get('/api/v3/match-tags')
 def match_tags(repo=Depends(repository)):
     """单局标签一览：每局挂了什么、以及用过的标签和局数。
@@ -3733,6 +3783,8 @@ _TEAM_BP_CACHE_MAX = 4
 # 重启后第一次打开选手档案不用再付这 1.6 秒。
 _PLAYERS_BOARD_CACHE = {}
 _PLAYERS_BOARD_CACHE_MAX = 3
+# 身份口径变化（例如补齐 enemy 昵称池）必须让旧磁盘缓存失效。
+_PLAYERS_BOARD_CACHE_VERSION = 2
 _PLAYERS_BOARD_DISK = _CACHE_DIR / 'players-board.json'
 
 # 训练台账（按对手归集的排期 + 交手日）同样按营地指纹缓存。
@@ -4286,7 +4338,7 @@ def _bp_studio_kpl(leagues):
 
 
 def _competition_window(competition_id):
-    """赛事的训练归集窗口（date/end_date）；解析失败返回 None。"""
+    """赛事的训练起止（date/end_date，对应卡片「训练起始 / 训练结束」）；解析失败返回 None。"""
     if not competition_id or not DB.is_file():
         return None
     try:
@@ -4313,10 +4365,13 @@ def _bp_studio_scrim(window=None):
     games = normalize_scrims(rows)
     if window:
         lo, hi = window
-        # 赛事域 P1-4：scrim 语料按当前赛事的训练归集窗口收滤。
+        # 赛事域 P1-4：scrim 语料按当前赛事的训练起止收滤。
+        # normalize_scrims 写入的日期字段是 date（_period 截成 YYYY-MM-DD），
+        # 不是原始 bp_board 记录里的 day；按 day 收滤会把全部归一化对局都筛掉，
+        # 于是选了赛事之后 BP 页永远显示「没有征召 18 手的 BP 记录」。
         games = [g for g in games
-                 if (not lo or (g.get('day') or '') >= lo)
-                 and (not hi or (g.get('day') or '') <= hi)]
+                 if (not lo or ((g.get('date') or g.get('day') or '') >= lo))
+                 and (not hi or ((g.get('date') or g.get('day') or '') <= hi))]
     if len(_BP_STUDIO_SCRIM) > 4:
         _BP_STUDIO_SCRIM.clear()
     _BP_STUDIO_SCRIM[stamp] = games
@@ -5491,6 +5546,9 @@ def invalidate_players_cache():
     # 英雄详情的「选手使用榜」走 depth_api.build_facts；它也吃账号映射，
     # 认领/改名后不能还挂着旧昵称。
     _hero_facts_cache, _hero_facts_at = None, 0.0
+    # 选手档案页走另一套带指纹 key 的看板缓存；只清 _players_cache 时，
+    # 改名后档案页最长 60 秒仍按旧游戏名聚合。
+    _PLAYERS_BOARD_CACHE.clear()
 
 
 def _depth_identity_profile():
@@ -5727,13 +5785,17 @@ def _players_board():
     team_name = str(profile.get('teamName') or '').strip()
     home = own_team()
     accounts = camp_accounts()
-    # 名单只认选手主数据（players 表）；还没迁移旧名单时才退回 settings。
+    # 本队名单仍只用于 roster；身份索引要覆盖全部战队，否则 matching 保存的
+    # 对手选手会在 players-board 里丢掉 memberId，选手档案只能补出空卡。
+    all_players = []
+    members = []
     try:
         import workspace_store
+        all_players = [dict(player) for player in workspace_store.Workspace(DB).list_players()]
         members = [dict(player, label=player.get('name') or '')
-                   for player in workspace_store.Workspace(DB).list_players(team_id=home['id'])]
+                   for player in all_players if player.get('team_id') == home['id']]
     except sqlite3.Error:
-        members = []
+        pass
     if not members:
         for member in (profile.get('members') or profile.get('roster') or []):
             if member.get('archived') or (member.get('team') and member.get('team') != team_name):
@@ -5743,19 +5805,47 @@ def _players_board():
             item['position'] = item.get('position') or ''
             members.append(item)
     aliases = {str(key): str(value) for key, value in (profile.get('aliases') or {}).items()}
-    member_by_id = {member['id']: member for member in members}
-    name_to_member = {}
+    member_by_id = {str(member['id']): member for member in all_players if member.get('id')}
+    for member in members:
+        if member.get('id'):
+            member_by_id.setdefault(str(member['id']), member)
+    name_to_member = {'own': {}, 'enemy': {}}
     for member in members:
         for label in (member.get('label'), member.get('name')):
             if label:
-                name_to_member[str(label)] = member
+                name_to_member['own'][_camp_name(label)] = member
     for alias, member_id in aliases.items():
-        if member_id in member_by_id:
-            name_to_member[alias] = member_by_id[member_id]
+        member = member_by_id.get(str(member_id))
+        if member:
+            name_to_member['own'][_camp_name(alias)] = member
+    # 匹配与编组落在 player_nickname_pool（不是 player_accounts）。own/enemy
+    # 分开索引，避免同名双方串人；规则与昵称池都要在连接关闭前读完。
+    try:
+        with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as pool_connection:
+            pool_rows = pool_connection.execute(
+                "SELECT side, player_id, nickname FROM player_nickname_pool"
+                " WHERE player_id IS NOT NULL AND player_id<>''").fetchall()
+            rule_rows = pool_connection.execute(
+                "SELECT side, player_id, nickname FROM matching_rules"
+                " WHERE enabled=1 AND player_id IS NOT NULL AND player_id<>''").fetchall()
+        for side, player_id, nickname in pool_rows:
+            member = member_by_id.get(str(player_id))
+            side_key = 'enemy' if str(side) == 'enemy' else 'own'
+            if nickname and member:
+                name_to_member[side_key].setdefault(_camp_name(nickname), member)
+        # 匹配页最容易用到的动作是「建规则」，它此前只写 matching_rules。
+        # 规则就是权威绑定，档案页也要认，否则只建规则不点归档时仍显示未匹配。
+        for side, player_id, nickname in rule_rows:
+            member = member_by_id.get(str(player_id))
+            side_key = 'enemy' if str(side) == 'enemy' else 'own'
+            if nickname and member:
+                name_to_member[side_key].setdefault(_camp_name(nickname), member)
+    except sqlite3.Error:
+        pass
 
     buckets = {}
     for row in records:
-        bucket = buckets.setdefault(row['name'], {
+        bucket = buckets.setdefault((row['side'], row['name']), {
             'name': row['name'], 'side': row['side'], 'games': 0, 'wins': 0, 'decided': 0,
             '_kda': [], '_gpm': [], '_dpm': [], '_dtpm': [], '_part': [], '_goldShare': [],
             '_damageShare': [], '_takenShare': [], '_rating': [], 'mvp': 0, '_cs': [],
@@ -5829,7 +5919,7 @@ def _players_board():
     for bucket in buckets.values():
         lane = bucket['lanes'].most_common(1)[0][0] if bucket['lanes'] else ''
         mapped = next((accounts[account] for account in bucket['_accounts'] if account in accounts), None)
-        member = mapped or name_to_member.get(bucket['name'])
+        member = mapped or name_to_member.get(bucket['side'], {}).get(_camp_name(bucket['name']))
         member_id = (member or {}).get('id') or (member or {}).get('playerId') or None
         players.append({
             'name': bucket['name'], 'lane': lane,
@@ -6026,7 +6116,7 @@ def _hero_meta():
 
 def _lane_samples(records):
     """每个「选手 × 实际分路」一个样本；分位、排行榜与最低局数门槛都基于它。"""
-    fields = ('kda', 'gpm', 'dpm', 'hdpm', 'participation', 'takenShare',
+    fields = ('kda', 'gpm', 'dpm', 'hdpm', 'participation', 'assists', 'taken', 'takenShare',
               'damageShare', 'goldShare', 'rating', 'ctrlPerMin', 'dtpm')
     buckets = {}
     for row in records:
@@ -6075,16 +6165,64 @@ def _lane_distributions(records):
     return {lane: dict(groups) for lane, groups in out.items()}
 
 
+def _player_id_scope(name):
+    """把详情页的路由参数解析成取数范围。
+
+    选手档案卡片链过来的是「选手ID」名（不是游戏名）：一个 ID 可能挂多个游戏名，
+    这里按 memberId 把这些号全找出来，逐局数据才能合在同一页里看。
+    传游戏名时保持老行为（只认那一个号），所以旧的深链不会失效。
+    """
+    board = _players_board()
+    identity = board.get('identity') or {}
+    members = identity.get('members') or []
+    wanted = str(name or '').strip()
+    member = next((m for m in members
+                   if str(m.get('label') or m.get('name') or '').strip() == wanted), None)
+    if not member:
+        # 别的分析页点进来的还是游戏名。只要这个号已经在「匹配与编组」
+        # 挂到选手ID上，就自动切到 ID 口径：名字换成 ID，多个号合并统计。
+        matched = next((p for p in board.get('players') or []
+                        if _camp_name(p.get('name')) == _camp_name(wanted)
+                        and p.get('memberId')), None)
+        if matched:
+            member = next((m for m in members
+                           if str(m.get('id')) == str(matched.get('memberId'))), None)
+            if member:
+                wanted = str(member.get('label') or member.get('name') or wanted)
+    if not member:
+        return {'display': wanted, 'names': {wanted} if wanted else set(),
+                'member': None, 'board': board}
+    member_id = str(member.get('id') or '')
+    names = set()
+    for player in board.get('players') or []:
+        if str(player.get('memberId') or '') != member_id:
+            continue
+        if player.get('name'):
+            names.add(str(player['name']))
+        for nickname in player.get('nicknames') or []:
+            if nickname:
+                names.add(str(nickname))
+    if not names:
+        names = {wanted}
+    return {'display': wanted, 'names': names, 'member': member, 'board': board}
+
+
 def _player_detail(name):
-    """一名选手的全量逐局事实 + 十人上下文 + 同位置样本 + 英雄标签。"""
+    """一名选手的全量逐局事实 + 十人上下文 + 同位置样本 + 英雄标签。
+
+    参数是选手ID时合并其名下所有游戏名的对局，页面上的名字一律换成选手ID；
+    参数仍是游戏名时走原来的单号口径。
+    """
+    scope = _player_id_scope(name)
+    display = scope['display']
+    wanted = {_camp_name(value) for value in scope['names']}
     facts = _camp_records()
     games_all, records = facts['games'], facts['records']
-    key = _camp_name(name)
-    mine = [row for row in records if _camp_name(row['name']) == key]
+    mine = [row for row in records if _camp_name(row['name']) in wanted]
     if not mine:
         return {'player': None, 'identity': {}, 'rows': [], 'laneSamples': {},
                 'laneDistributions': {}, 'heroMeta': {}, 'opponents': [],
-                'summary': {'games': 0, 'name': name}}
+                'summary': {'games': 0, 'name': display}}
     game_by_id = {game['id']: game for game in games_all}
     meta = _hero_meta()
     # 教练在对局里手填的 10 分钟经济存在 match_meta 覆盖层；逐局事实按
@@ -6144,12 +6282,29 @@ def _player_detail(name):
     # 同局十人回填完整面板统计，对位 / 搭档 / 阵容分析才不用只看 KDA 与经济。
     record_by_key = {(item['gameId'], item['accountId']): item for item in records}
 
+    # 本队游戏名 → 选手ID名：十人面板里的队友也统一按 ID 显示；
+    # 对手没挂选手ID就保留游戏名，不硬套自己战队的 ID。
+    board = scope['board']
+    members_by_id = {str(m.get('id')): m for m in (board.get('identity') or {}).get('members') or []}
+    name_to_display = {}
+    for candidate in board.get('players') or []:
+        owner = members_by_id.get(str(candidate.get('memberId') or ''))
+        if not owner:
+            continue
+        label = owner.get('label') or owner.get('name')
+        if not label:
+            continue
+        for alias in [candidate.get('name')] + list(candidate.get('nicknames') or []):
+            if alias:
+                name_to_display[_camp_name(alias)] = label
+
     def compact(items, game_id):
         out = []
         for cell in items:
             full = record_by_key.get((game_id, str(cell.get('accountId') or ''))) or {}
             out.append({
-                'name': cell.get('name') or '', 'hero': cell.get('hero') or '',
+                'name': name_to_display.get(_camp_name(cell.get('name')), cell.get('name') or ''),
+                'hero': cell.get('hero') or '',
                 'lane': cell.get('lane') or '', 'gold': cell.get('gold'),
                 'kda': cell.get('kda'), 'cs': full.get('cs'),
                 'participation': full.get('participation'), 'rating': full.get('rating'),
@@ -6168,6 +6323,9 @@ def _player_detail(name):
         foe = next((cell for cell in foe_side if cell['lane'] == row['lane']), None)
         tag = meta.get(row.get('hero') or '') or {}
         item = dict(row)
+        # 逐局事实保留原游戏名供追溯，页面上的名字一律换成选手ID。
+        item['gameName'] = row.get('name') or ''
+        item['name'] = display
         item.update({
             'duration': game.get('duration'), 'title': game.get('title') or '',
             'match': game.get('match') or '', 'ownCamp': game.get('ownCamp') or '',
@@ -6185,16 +6343,28 @@ def _player_detail(name):
         })
         rows.append(item)
 
-    board = _players_board()
-    player = next((p for p in board['players'] if _camp_name(p['name']) == key), None)
+    member = scope['member']
+    player = next((p for p in board['players'] if _camp_name(p['name']) in wanted), None)
+    account_ids, nicknames = [], []
+    if member:
+        for candidate in board['players']:
+            if str(candidate.get('memberId') or '') != str(member.get('id') or ''):
+                continue
+            for account in candidate.get('accountIds') or []:
+                if account not in account_ids:
+                    account_ids.append(account)
+            for nickname in candidate.get('nicknames') or []:
+                if nickname not in nicknames:
+                    nicknames.append(nickname)
     identity = {
-        'bound': bool(player and player.get('bound')),
-        'playerId': (player or {}).get('memberId') or '',
-        'teamName': (player or {}).get('teamName') or '',
-        'accountIds': (player or {}).get('accountIds') or [],
-        'nicknames': (player or {}).get('nicknames') or [],
+        'bound': bool(member),
+        'playerId': (member or {}).get('id') or (player or {}).get('memberId') or '',
+        'teamName': (member or {}).get('teamName') or (player or {}).get('teamName') or '',
+        'accountIds': account_ids or (player or {}).get('accountIds') or [],
+        'nicknames': nicknames or sorted(scope['names']),
+        'ownNames': sorted(scope['names']),
         'side': (player or {}).get('side') or rows[0]['side'],
-        'lane': (player or {}).get('lane') or '',
+        'lane': (player or {}).get('lane') or (member or {}).get('position') or '',
         'laneMix': (player or {}).get('laneMix') or [],
     }
     # 英雄替代候选要拿 KPL 职业赛胜率做外部参照；与训练赛分开取，不混算。
@@ -6207,7 +6377,7 @@ def _player_detail(name):
         'laneSamples': _lane_samples(records),
         'laneDistributions': _lane_distributions(records), 'heroMeta': meta,
         'opponents': opponents, 'kplHeroStats': kpl_hero_stats,
-        'summary': {'games': len(rows), 'name': rows[0]['name'],
+        'summary': {'games': len(rows), 'name': display,
                     'days': len({row['day'] for row in rows if row['day']}),
                     'heroes': len({row['hero'] for row in rows if row['hero']})},
     }
@@ -6228,7 +6398,7 @@ def players_board():
     整份 board 约 1.3 MB、纯聚合要 0.4 秒，而它只取决于营地面板与选手主数据；
     按（营地目录, 对局包 + DB）指纹缓存，选手档案 / 对比 / 战队页共用一份。
     """
-    stamp = bp_board_stamp()
+    stamp = bp_board_stamp() + (_PLAYERS_BOARD_CACHE_VERSION,)
     if stamp[0] is not None:
         cached = _PLAYERS_BOARD_CACHE.get(stamp)
         if cached is not None:
@@ -6399,6 +6569,199 @@ def hero_detail(hero: str, repo=Depends(repository)):
             'playerBuilds': player_builds[:8]}
 
 
+# ── 本队英雄详情（英雄页第三个页签） ─────────────────────────────────
+# 三块内容一次给齐：① 本队选手逐英雄使用 / 胜率 / 近期趋势；② 分路 × 英雄
+# 按规则中心的指标逐项定档；③ 组合池里的英雄组合按近期窗口算胜率场次。
+# 全部只读同一份营地逐人面板，日期用仓库的 dateKey（可能是 MM-DD），
+# 用数据里最后一天当锚点补齐年份，避免「今天没有训练赛」时窗口全空。
+_THD_PERIODS = (3, 7, 30)
+
+
+@router.get('/api/v3/team-hero-insight')
+def team_hero_insight(repo=Depends(repository)):
+    import combo_pool
+    import grade_rules
+    import hero_external_stats
+
+    rows, _ = repo._selected_rows({'sources': list(DEFAULT_SOURCES)})
+    own = [row for row in rows if row.get('isOwn') and row.get('hero')]
+    full_keys = [str(row.get('dateKey') or '') for row in own
+                 if len(str(row.get('dateKey') or '')) == 10]
+    try:
+        base_date = date.fromisoformat(max(full_keys)) if full_keys else date.today()
+    except ValueError:
+        base_date = date.today()
+
+    def day_of(row):
+        key = str(row.get('dateKey') or '')
+        if len(key) == 10:
+            return key
+        if len(key) == 5 and key[2] == '-':
+            # 老表格只有 MM-DD：按最近一次完整日期的年份补齐，跨年往前推一年。
+            try:
+                month, day = int(key[:2]), int(key[3:])
+                year = base_date.year - (1 if (month, day) > (base_date.month, base_date.day) else 0)
+                return date(year, month, day).isoformat()
+            except ValueError:
+                return ''
+        return ''
+
+    own = [(row, day_of(row)) for row in own]
+    days = sorted({day for _, day in own if day})
+    anchor = days[-1] if days else base_date.isoformat()
+    anchor_date = date.fromisoformat(anchor)
+
+    def bounds(days_count):
+        return ((anchor_date - timedelta(days=days_count)).isoformat(), anchor,
+                (anchor_date - timedelta(days=2 * days_count)).isoformat(),
+                (anchor_date - timedelta(days=days_count)).isoformat())
+
+    def in_span(day, lo, hi):
+        return bool(day) and lo < day <= hi
+
+    def stat(items):
+        games = len(items)
+        decided = sum(1 for row in items if row.get('result') in ('win', 'loss'))
+        wins = sum(1 for row in items if row.get('result') == 'win')
+        return {'games': games, 'wins': wins, 'decided': decided,
+                'winRate': round(wins / decided * 100, 1) if decided else None}
+
+    def change(cur, prev):
+        """环比一律给百分比（不用 pp）：(本期-上期)/上期。上期缺失返回 None。"""
+        if cur is None or prev in (None, 0):
+            return None
+        return round((cur - prev) / abs(prev) * 100, 1)
+
+    def spans(items, days_count):
+        lo, hi, plo, phi = bounds(days_count)
+        return ([row for row, day in items if in_span(day, lo, hi)],
+                [row for row, day in items if in_span(day, plo, phi)])
+
+    # ① 逐英雄：整体 / 选手拆分 / 窗口环比 / 近 7 天逐日趋势
+    by_hero = defaultdict(list)
+    for row, day in own:
+        by_hero[row['hero']].append((row, day))
+    heroes = []
+    for hero, items in by_hero.items():
+        lane = Counter((row.get('position') or '') for row, _ in items).most_common(1)
+        by_period = {}
+        for n in _THD_PERIODS:
+            cur, prev = spans(items, n)
+            a, b = stat(cur), stat(prev)
+            by_period[str(n)] = {'current': a, 'previous': b,
+                                 'change': change(a['winRate'], b['winRate'])}
+        players = []
+        by_player = defaultdict(list)
+        for row, day in items:
+            by_player[row.get('label') or '未知选手'].append((row, day))
+        for name, pitems in by_player.items():
+            cur, prev = spans(pitems, 7)
+            a, b = stat(cur), stat(prev)
+            vs = [row for row, _ in pitems if row.get('opponent')]
+            players.append({'name': name, 'games': len(pitems),
+                            'winRate': stat([row for row, _ in pitems])['winRate'],
+                            'vsWinRate': stat(vs)['winRate'] if vs else None,
+                            'recent': a, 'change': change(a['winRate'], b['winRate'])})
+        players.sort(key=lambda x: -x['games'])
+        trend = []
+        for back in range(6, -1, -1):
+            day = (anchor_date - timedelta(days=back)).isoformat()
+            trend.append({'date': day, **stat([row for row, d in items if d == day])})
+        ext = hero_external_stats.hero_fields(hero)
+        heroes.append({'hero': hero, 'lane': lane[0][0] if lane else '',
+                       **stat([row for row, _ in items]),
+                       'vsWinRate': stat([row for row, _ in items if row.get('opponent')])['winRate'],
+                       'kplWinRate': ext.get('kplWinRate'), 'kplGames': ext.get('kplGames'),
+                       'players': players, 'byPeriod': by_period, 'trend7': trend})
+    heroes.sort(key=lambda x: (-x['games'], x['hero']))
+
+    # ② 分路 × 英雄：按规则中心的「分路 × 字段」逐项算均值、环比与定档
+    rules_doc = grade_rules.load()
+    subjects = rules_doc.get('subjects') or {}
+    lane_heroes = {}
+    for subject, rules in subjects.items():
+        subject_rows = [(row, day) for row, day in own
+                        if (row.get('position') or '') == subject
+                        or (subject.startswith('打野') and (row.get('position') or '') == '打野')]
+        grouped = defaultdict(list)
+        for row, day in subject_rows:
+            grouped[row['hero']].append((row, day))
+        out = []
+        for hero, items in grouped.items():
+            by_period = {}
+            for n in _THD_PERIODS:
+                cur, prev = spans(items, n)
+                metrics = []
+                for key, rule in rules.items():
+                    if rule.get('active') is False:
+                        continue        # 设置页没勾选生效的字段，分析里不出现
+                    values = [grade_rules.field_value(row, rule) for row in cur]
+                    values = [float(v) for v in values if v is not None]
+                    old = [grade_rules.field_value(row, rule) for row in prev]
+                    old = [float(v) for v in old if v is not None]
+                    value = round(sum(values) / len(values), 2) if values else None
+                    previous = round(sum(old) / len(old), 2) if old else None
+                    grade = grade_rules.grade(subject, key, value, rules_doc)
+                    metrics.append({'key': key, 'label': rule.get('label') or key,
+                                    'unit': rule.get('unit') or '',
+                                    'direction': rule.get('direction') or 'up',
+                                    'value': value, 'previous': previous,
+                                    'change': change(value, previous),
+                                    'estimate': bool(rule.get('estimate')),
+                                    'level': grade['level'] if grade else None,
+                                    'grade': grade['label'] if grade else None,
+                                    'samples': len(values)})
+                by_period[str(n)] = {'games': len(cur), 'metrics': metrics}
+            out.append({'hero': hero, 'games': by_period['7']['games'], 'byPeriod': by_period})
+        out.sort(key=lambda x: (-x['games'], x['hero']))
+        lane_heroes[subject] = out
+
+    # ③ 组合池：只认赛训组保存过的名单（没保存过才用内置种子，并在响应里标注）
+    saved = combo_pool.read_saved()
+    combo_doc = saved or combo_pool.load()
+    match_heroes = defaultdict(set)
+    match_day, match_result = {}, {}
+    for row, day in own:
+        key = row.get('matchKey')
+        if not key:
+            continue
+        match_heroes[key].add(row['hero'])
+        if day:
+            match_day[key] = day
+        if row.get('result') in ('win', 'loss'):
+            match_result[key] = row['result']
+    combos = []
+    for kind, label in (('pairs', '双人组合'), ('trios', '三人体系')):
+        for row in combo_doc.get(kind) or []:
+            combo_heroes = [combo_pool.normalize(h) for h in (row.get('heroes') or [])]
+            matched = [(key, match_day.get(key, '')) for key, pool in match_heroes.items()
+                       if all(hero in pool for hero in combo_heroes)]
+            by_period = {}
+            for n in _THD_PERIODS:
+                lo, hi, plo, phi = bounds(n)
+                cur_keys = [key for key, day in matched if in_span(day, lo, hi)]
+                prev_keys = [key for key, day in matched if in_span(day, plo, phi)]
+                a = stat([{'result': match_result.get(key)} for key in cur_keys])
+                b = stat([{'result': match_result.get(key)} for key in prev_keys])
+                by_period[str(n)] = {'current': a, 'previous': b,
+                                     'change': change(a['winRate'], b['winRate'])}
+            combos.append({'id': row.get('id') or '', 'kind': kind, 'kindLabel': label,
+                           'heroes': combo_heroes, 'name': row.get('name') or '',
+                           'strength': row.get('strength') or '', 'note': row.get('note') or '',
+                           'byPeriod': by_period})
+    combos.sort(key=lambda x: (-(x['byPeriod']['7']['current']['games']),
+                               -x['byPeriod']['30']['current']['games'], x['heroes']))
+
+    return {'generatedAt': _datetime.now().isoformat(timespec='seconds'),
+            'anchor': anchor,
+            'window': {str(n): bounds(n)[0] for n in _THD_PERIODS},
+            'sources': {'panels': len(own), 'players': len({row.get('label') for row, _ in own}),
+                        'heroes': len(heroes), 'games': len(match_heroes)},
+            'comboBuiltin': saved is None,
+            'rulesRevision': rules_doc.get('revision'),
+            'heroRows': heroes, 'laneHeroes': lane_heroes, 'combos': combos}
+
+
 # ── 数据迁移：把本机爬到的对局数据打包带走 ────────────────────────────
 # 王者营地只留约一个月滚动窗口，滑出窗口的数据只存在于本机 data/ 里，
 # 换机器/备份只能靠这个包，不能指望重新爬。
@@ -6528,7 +6891,7 @@ async def crawl_player_profile(request: Request):
 
 
 # ── 阵容标签自定义 + 口述文稿批量导入（模块八）────────────────────────────
-# 独立配置：数据落 data/facts/lineup_tags.json，历史走 config_history，
+# 独立配置：数据落 data/facts/lineup_tags.json，赛事级版本走 rule-snapshots，
 # 不改组合池 / 评级规则的口径与缓存。路由集中追加在文件末尾，避免与并行改动冲突。
 _LINEUP_TAGS_LOCK = Lock()
 
@@ -6570,16 +6933,14 @@ def lineup_tags_meta():
             'lanes': lineup_tags.hero_lanes(), 'defaults': lineup_tags.DEFAULT_TAGS}
 
 
-# KPL 分路平均：只从 KPL BP 逐局事实里能算的字段出发，没有的字段不对比。
+# KPL 分路平均：官方 BP + 选手终局字段；没有真实样本的指标不输出。
 _KPL_LANE_CACHE = {'stamp': 0.0, 'by_league': {}, 'leagues': []}
 
 
 def _kpl_lane_baseline(league=''):
-    """按 KPL BP 对局算各分路平均；可按赛事过滤。只输出有真实样本的指标。
+    """按 KPL 对局算各分路平均；可按赛事过滤，并返回每个指标的有效样本数。"""
+    import kpl_bp
 
-    winRate 来自每局胜负；heroWinRate 是该分路英雄在 KPL 的外部胜率均值。
-    逐局选手面板（控制时长 / 视野 / 承伤等）不在 BP 包里，因此不输出这些字段。
-    """
     bp_path = ROOT / 'data' / 'kpl' / 'bp_games.jsonl'
     ext_path = ROOT / 'data' / 'facts' / 'hero_external_stats.json'
     tag_path = ROOT / 'resources' / 'hero_tags.json'
@@ -6608,79 +6969,8 @@ def _kpl_lane_baseline(league=''):
         except (OSError, ValueError):
             hero_tags = {}
 
-    games = []
-    league_counts = {}
-    if bp_path.exists():
-        with bp_path.open(encoding='utf-8') as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    game = json.loads(line)
-                except ValueError:
-                    continue
-                games.append(game)
-                name = str(game.get('leagueName') or '').strip()
-                if name:
-                    league_counts[name] = league_counts.get(name, 0) + 1
-    cached['leagues'] = [{'name': name, 'games': count}
-                         for name, count in sorted(league_counts.items(), key=lambda kv: (-kv[1], kv[0]))]
-    if league and league not in league_counts:
-        value = {'schema': 'kpl-lane-baseline-v1', 'games': 0, 'league': league,
-                 'source': 'KPL BP 逐局事实 + KPL 英雄外部胜率',
-                 'fields': ['winRate', 'heroWinRate'], 'leagues': cached['leagues'], 'lanes': {}}
-        cached['by_league'][key] = value
-        return value
-
-    cells = {}
-    total = 0
-    for game in games:
-        if league and str(game.get('leagueName') or '').strip() != league:
-            continue
-        total += 1
-        try:
-            win_camp = int(game.get('winCamp') or 0)
-        except (TypeError, ValueError):
-            win_camp = 0
-        for camp, players in (game.get('players') or {}).items():
-            try:
-                won = int(camp) == win_camp
-            except (TypeError, ValueError):
-                won = False
-            for player in players or []:
-                position = str(player.get('position') or '')
-                hero = str(player.get('hero') or '')
-                if position == '打野':
-                    sub = ((hero_tags.get(hero) or {}).get('lanes') or {}).get('打野') or ''
-                    lane = '打野·坦野' if '坦野' in str(sub) else '打野·野核'
-                else:
-                    lane = position
-                if not lane or lane == '未知':
-                    continue
-                cell = cells.setdefault(lane, {'games': 0, 'wins': 0, 'heroWrSum': 0.0, 'heroWrN': 0})
-                cell['games'] += 1
-                if won:
-                    cell['wins'] += 1
-                row = external.get(hero) or {}
-                wr = row.get('winRate')
-                if isinstance(wr, (int, float)) and not isinstance(wr, bool):
-                    cell['heroWrSum'] += float(wr)
-                    cell['heroWrN'] += 1
-
-    lanes = {}
-    for lane, cell in cells.items():
-        games = cell['games']
-        lanes[lane] = {
-            'games': games,
-            'wins': cell['wins'],
-            'winRate': round(cell['wins'] / games * 100, 1) if games else None,
-            'heroWinRate': round(cell['heroWrSum'] / cell['heroWrN'], 1) if cell['heroWrN'] else None,
-            'heroWinSamples': cell['heroWrN'],
-        }
-    value = {'schema': 'kpl-lane-baseline-v1', 'games': total, 'league': league,
-             'source': 'KPL BP 逐局事实 + KPL 英雄外部胜率',
-             'fields': ['winRate', 'heroWinRate'], 'leagues': cached['leagues'], 'lanes': lanes}
+    value = kpl_bp.build_lane_baseline(kpl_bp.load_games(bp_path), external, hero_tags, league)
+    cached['leagues'] = value['leagues']
     cached['by_league'][key] = value
     return value
 
@@ -6692,7 +6982,7 @@ def kpl_lane_baseline(league: str = ''):
 
 
 # ── 赛训组自家克制库（模块九前半）：KPL 初稿 + 教练删改，与营地数据分开 ──
-# 独立配置：数据落 data/facts/counter_library.json，历史走 config_history；
+# 独立配置：数据落 data/facts/counter_library.json，赛事级版本走 rule-snapshots；
 # 命中克制用 source='own' 标识，和 campHit / kplHit 分来源显示（不做合成分）。
 # 路由集中追加在文件末尾，避免与并行改动冲突。
 _COUNTER_LIBRARY_LOCK = Lock()
@@ -6821,14 +7111,36 @@ async def profiles_put(request: Request):
                'updatedAt': datetime.now(timezone.utc).isoformat(timespec='seconds'),
                **incoming}
         _profiles_write(doc)
+    # 本队选手档案 → 选手池：档案页是权威录入口，保存时同步到 players 主数据，
+    # 并挂在本队战队下。同步失败不阻塞档案保存，图谱会把未落库的人标出来。
+    try:
+        import identity_service
+        connection = sqlite3.connect(f'file:{DB}?mode=ro', uri=True)
+        try:
+            row = connection.execute('SELECT body FROM settings WHERE id=1').fetchone()
+        finally:
+            connection.close()
+        settings = json.loads(row[0]) if row else {}
+        team_name = str(settings.get('teamName') or '').strip() or '我的战队'
+        own_team = identity_service.sync_own_team(str(DB), name=team_name, actor='coach')
+        for item in doc['own']:
+            name = str(item.get('realName') or item.get('matchId') or '').strip()
+            if not name:
+                continue
+            identity_service.save_player(
+                str(DB), player_id=str(item.get('id') or ''), name=name,
+                position=item.get('mainLane') or None, team_id=own_team['id'],
+                team_name=team_name, camp_user_id=item.get('matchId') or None, actor='coach')
+    except Exception:
+        pass
     return {'ok': True, **doc}
 
 
 # === rules center ===（2026-11-22）赛训规则中心持久化层
-# 六类规则共用一套「读 / 写（revision 乐观锁）/ 保存前快照 / 回滚」骨架，复用
-# config_history.record()。刻意不碰 combo_pool.py / grade_rules.py / counter_library.py
+# 六类规则共用一套「读 / 写（revision 乐观锁）」骨架；赛事级版本统一走
+# /api/v3/rule-snapshots。刻意不碰 combo_pool.py / grade_rules.py / counter_library.py
 # 的数据文件与算法：组合、克制、阵容标签在新文件里独立维护，英雄标签则回写
-# resources/hero_tags.json（保留原 schema，仅允许附加 _rulesMeta 修订元数据）。
+# resources/hero_tags.json（保留原 schema）。
 import tempfile
 from datetime import datetime, timezone
 
@@ -6840,8 +7152,6 @@ _RC_SPECS = {
     'lineup_tags': {'file': 'rules_lineup_tags.json', 'schema': 'rules-center-lineup-tags-v1', 'list': 'tags'},
     'misc': {'file': 'rules_misc.json', 'schema': 'rules-center-misc-v1', 'list': 'entries'},
 }
-_RC_HISTORY_NAMES = {kind: f'rules_{kind}' for kind in _RC_SPECS}
-
 
 def _rc_path(kind):
     if kind == 'hero_tags':
@@ -6922,6 +7232,100 @@ def _rc_write(kind, doc):
             os.unlink(tmp)
 
 
+# === 赛事快照中心：整份规则按赛事打包，与可自由编辑的「当下内容」分离 ===
+# 每个模块（英雄标签 / 克制关系 / 其他规则 / 阵容标签 / 组合池 / 规则设置）
+# 都能把整份 doc 存成「当前赛事」的快照；赛训组随时覆盖，也能从快照回滚当下。
+_SNAPSHOT_SCHEMA = 'rule-snapshots-v1'
+_SNAPSHOT_MODULES = frozenset(('hero_tags', 'counters', 'misc',
+                              'lineup_tags', 'combos', 'grade_rules'))
+_SNAPSHOT_LOCK = Lock()
+
+
+def _snapshot_path():
+    return bp_facts.FACTS / 'rule_snapshots.json'
+
+
+def _snapshots_load():
+    path = _snapshot_path()
+    empty = {'schema': _SNAPSHOT_SCHEMA, 'revision': 0, 'competitions': {}}
+    if not path.is_file():
+        return empty
+    try:
+        doc = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return empty
+    if not isinstance(doc, dict) or not isinstance(doc.get('competitions'), dict):
+        return empty
+    doc.setdefault('schema', _SNAPSHOT_SCHEMA)
+    doc.setdefault('revision', 0)
+    return doc
+
+
+def _snapshots_write(doc):
+    path = _snapshot_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix='rule-snapshots-', suffix='.json', dir=str(path.parent))
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(doc, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+@router.get('/api/v3/rule-snapshots')
+def rule_snapshots_get():
+    with _SNAPSHOT_LOCK:
+        return _snapshots_load()
+
+
+@router.post('/api/v3/rule-snapshots')
+def rule_snapshots_save(payload: dict = Body(...)):
+    comp_id = str(payload.get('competitionId') or '').strip()
+    module = str(payload.get('module') or '').strip()
+    if not comp_id or module not in _SNAPSHOT_MODULES:
+        raise HTTPException(400, '赛事或规则模块无效，无法保存快照')
+    doc = payload.get('doc')
+    if not isinstance(doc, dict):
+        raise HTTPException(400, '快照内容必须是对象')
+    with _SNAPSHOT_LOCK:
+        current = _snapshots_load()
+        comps = current.setdefault('competitions', {})
+        slot = comps.setdefault(comp_id, {})
+        prev = slot.get(module) or {}
+        entry = {
+            'doc': doc,
+            'savedAt': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+            'summary': str(payload.get('summary') or '')[:200],
+            'revision': int(prev.get('revision') or 0) + 1,
+        }
+        slot[module] = entry
+        current['revision'] = int(current.get('revision') or 0) + 1
+        _snapshots_write(current)
+    return {'ok': True, 'competitionId': comp_id, 'module': module, **entry}
+
+
+@router.delete('/api/v3/rule-snapshots')
+def rule_snapshots_delete(payload: dict = Body(...)):
+    comp_id = str(payload.get('competitionId') or '').strip()
+    module = str(payload.get('module') or '').strip()
+    if not comp_id or module not in _SNAPSHOT_MODULES:
+        raise HTTPException(400, '赛事或规则模块无效，无法删除快照')
+    with _SNAPSHOT_LOCK:
+        current = _snapshots_load()
+        comps = current.get('competitions') or {}
+        slot = comps.get(comp_id) or {}
+        if module not in slot:
+            raise HTTPException(404, '这个赛事还没有该模块的快照')
+        slot.pop(module, None)
+        if not slot:
+            comps.pop(comp_id, None)
+        current['revision'] = int(current.get('revision') or 0) + 1
+        _snapshots_write(current)
+    return {'ok': True, 'competitionId': comp_id, 'module': module}
+
+
 @router.get('/api/v3/unlocks')
 def unlocks_get(competition: str = ''):
     """数据解锁（v2）：各分析路由按赛事语料阈值返回解锁状态（锁卡/进度）。"""
@@ -6936,8 +7340,8 @@ def unlocks_get(competition: str = ''):
             'biggame': {'label': '大场分析', 'unlocked': False, 'n': 0, 'need': 1,
                         'unit': '个已确认系列', 'hint': '先在赛事页选择或创建赛事',
                         'cta': [['#competitions', '去选赛事']]},
-            'cross': {'label': '跨局分析', 'unlocked': False, 'n': 0, 'need': 20,
-                      'unit': '局语料', 'hint': '先在赛事页选择或创建赛事',
+            'cross': {'label': '跨场分析', 'unlocked': False, 'n': 0, 'need': 1,
+                      'unit': '个已确认系列', 'hint': '先在赛事页选择或创建赛事',
                       'cta': [['#competitions', '去选赛事']]}}}
 
 
@@ -6949,160 +7353,24 @@ def tiers_get():
             'capabilities': tiers.CAPABILITIES, 'thresholds': tiers.THRESHOLDS}
 
 
-# === 规则中心「克制关系」KPL 高准确率初稿 ===
-# 只生成可预览的候选行；教练确认后才写进 rules_counters.json，手工条目不会被覆盖。
-_COUNTER_SEED_CACHE: dict | None = None
-
-
-def _counter_key(row):
-    a = row.get('aHeroes')
-    b = row.get('bHeroes')
-    if not isinstance(a, list) or not isinstance(b, list):
-        a = [str(row.get('a') or '')]
-        b = [str(row.get('b') or '')]
-    return (tuple(sorted(str(x) for x in a if str(x).strip())),
-            tuple(sorted(str(x) for x in b if str(x).strip())))
-
-
-def _counter_seed_report() -> dict:
-    global _COUNTER_SEED_CACHE
-    if _COUNTER_SEED_CACHE is None:
-        scripts = str(ROOT / 'scripts')
-        if scripts not in sys.path:
-            sys.path.insert(0, scripts)
-        import seed_counter_relations as seed
-        hero_rows, combo_rows, meta = seed.preview()
-        _COUNTER_SEED_CACHE = {'rows': list(hero_rows) + list(combo_rows), 'meta': meta}
-    return _COUNTER_SEED_CACHE
-
-
-@router.get('/api/v3/rules-center/counters/seed-preview')
-def rules_center_counters_seed_preview():
-    """返回 KPL 高准确率克制初稿供预览；不写任何文件。"""
-    report = _counter_seed_report()
-    return {'ok': True, 'rows': report['rows'], 'meta': report['meta']}
-
-
-@router.post('/api/v3/rules-center/counters/seed-apply')
-def rules_center_counters_seed_apply(payload: dict = Body(...)):
-    """把教练勾选的初稿行并入规则表；按 revision 乐观锁，保留手工条目。"""
-    global _COUNTER_SEED_CACHE
-    ids = {str(x) for x in (payload.get('ids') or []) if str(x).strip()}
-    if not ids:
-        raise HTTPException(400, '没有勾选要加入的初稿')
-    try:
-        revision = int(payload.get('revision'))
-    except (TypeError, ValueError):
-        raise HTTPException(400, 'revision 必须是整数')
-
-    report = _counter_seed_report()
-    selected = [row for row in report['rows'] if str(row.get('id')) in ids]
-    if not selected:
-        raise HTTPException(400, '勾选的初稿不存在，请重新预览')
-
-    name = _RC_HISTORY_NAMES['counters']
-    with _RC_LOCK:
-        current = _rc_read('counters') or _rc_default('counters')
-        current_rev = int(current.get('revision') or 0)
-        if revision != current_rev:
-            raise HTTPException(409, '规则已被其他人更新，请刷新后再加入初稿。')
-        doc = dict(current)
-        hero_rows = list(doc.get('heroPairs') or [])
-        combo_rows = list(doc.get('comboPairs') or [])
-        existing = {_counter_key(row) for row in hero_rows + combo_rows}
-        added = []
-        for row in selected:
-            key = _counter_key(row)
-            if key in existing:
-                continue
-            a = row.get('aHeroes') or []
-            b = row.get('bHeroes') or []
-            (hero_rows if len(a) == len(b) == 1 else combo_rows).append(row)
-            existing.add(key)
-            added.append(str(row.get('id')))
-        doc['heroPairs'] = hero_rows
-        doc['comboPairs'] = combo_rows
-        doc['revision'] = current_rev
-        _rc_check('counters', doc)
-        import config_history
-        config_history.record(name, current, doc, summary=f'从 KPL 初稿加入 {len(added)} 条克制关系')
-        doc['revision'] = current_rev + 1
-        doc['updatedAt'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
-        _rc_write('counters', doc)
-    return {'ok': True, 'added': len(added), 'skipped': len(selected) - len(added),
-            'revision': doc['revision'], 'updatedAt': doc['updatedAt']}
-
-
-# === 规则中心「克制关系」赛事定稿版本 ===
-@router.get('/api/v3/rules-center/counters/version')
-def rules_center_counters_version(competition: str = ''):
-    """查某赛事当前使用哪一份定稿快照；没有定稿则返回 null。"""
-    import rules_counter_versions as versions
-    found = versions.latest(competition)
-    return {'ok': True, 'competition': str(competition or ''), 'version': found}
-
-
-@router.post('/api/v3/rules-center/counters/finalize')
-def rules_center_counters_finalize(payload: dict = Body(...)):
-    """把当前 live 克制表里适用于该赛事的条目整份留档，作为该赛事最终版本。"""
-    import rules_counter_versions as versions
-    competition_id = str(payload.get('competitionId') or '').strip()
-    if not competition_id:
-        raise HTTPException(400, '请先选择赛事')
-    comp = None
-    if DB.is_file():
-        try:
-            from workspace_store import Workspace
-            comp = Workspace(DB).get_competition(competition_id)
-        except Exception:  # noqa: BLE001 - 查不到赛事名不影响按 ID 留档
-            comp = None
-    comp = comp or {'id': competition_id, 'name': str(payload.get('competitionName') or competition_id)}
-    current = _rc_read('counters') or _rc_default('counters')
-    version = versions.finalize(comp, current, str(payload.get('summary') or ''))
-    import config_history
-    config_history.record(_RC_HISTORY_NAMES['counters'], current, current,
-                          summary=f'克制关系定稿留档：{comp.get("name") or competition_id}')
-    return {'ok': True, 'version': version}
+# 克制关系不再从 KPL 重新读取 / 生成初稿：随包内置一份种子，赛训组在规则中心
+# 直接增删改。生成脚本只作为离线留档（scripts/seed_counter_relations.py）。
 
 
 @router.get('/api/v3/rules-center/{kind}')
-def rules_center_get(kind: str, competition: str = ''):
-    """读取一类规则；带 competition 时按规则条目的 effective 过滤（赛事域 M3）。
-
-    effective 四项全空 = 常年生效；eventId/eventName 对赛事，from/to 用赛事
-    归集窗口起点判定。命中判定（BP 习惯的克制/组合规则）消费这里即可。
-    """
+def rules_center_get(kind: str):
+    """读取一类规则的当前工作稿；赛事级版本由 /api/v3/rule-snapshots 管理。"""
     if kind not in _RC_SPECS:
         raise HTTPException(404, '未知的规则类型')
     doc = _rc_read(kind)
     if doc is None:
         raise HTTPException(404, '规则文件不存在或无法解析')
-    competition_id = (competition or '').strip()
-    # 克制关系：赛事已定稿的，复盘一律读快照；live 表继续给规则中心编辑用（不带 competition）。
-    if kind == 'counters' and competition_id:
-        import rules_counter_versions as versions
-        found = versions.latest(competition_id)
-        if found:
-            doc = dict(found.get('doc') or {})
-            doc['sourceVersion'] = {key: found.get(key) for key in
-                                    ('id', 'competitionId', 'competitionName',
-                                     'finalizedAt', 'summary', 'sourceRevision', 'counts')}
-            return {**doc, 'saved': _rc_path(kind).is_file(), 'historyName': _RC_HISTORY_NAMES[kind]}
-    if competition_id and DB.is_file():
-        try:
-            from rules_effective import resolve_doc
-            from workspace_store import Workspace
-            comp = Workspace(DB).get_competition(competition_id)
-            if comp:
-                doc = resolve_doc(kind, doc, comp)
-        except Exception:  # noqa: BLE001 - 过滤失败退回全量，页面保持可用
-            pass
-    return {**doc, 'saved': _rc_path(kind).is_file(), 'historyName': _RC_HISTORY_NAMES[kind]}
+    return {**doc, 'saved': _rc_path(kind).is_file()}
 
 
 @router.post('/api/v3/rules-center/{kind}')
 def rules_center_set(kind: str, payload: dict = Body(...)):
-    """整体覆盖保存；revision 不匹配返回 409；保存前由 config_history 留快照。"""
+    """整体覆盖保存；revision 不匹配返回 409。"""
     if kind not in _RC_SPECS:
         raise HTTPException(404, '未知的规则类型')
     try:
@@ -7113,8 +7381,6 @@ def rules_center_set(kind: str, payload: dict = Body(...)):
     if not isinstance(incoming, dict):
         raise HTTPException(400, 'doc 必须是 JSON 对象')
     incoming = {k: v for k, v in incoming.items() if k not in ('saved', 'historyName', 'updatedAt')}
-    summary = str(payload.get('summary') or '规则已更新')[:200]
-    name = _RC_HISTORY_NAMES[kind]
     with _RC_LOCK:
         current = _rc_read(kind) or _rc_default(kind)
         current_rev = int(current.get('revision') or 0)
@@ -7126,55 +7392,9 @@ def rules_center_set(kind: str, payload: dict = Body(...)):
         doc['revision'] = current_rev
         doc['updatedAt'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
         _rc_check(kind, doc)
-        import config_history
-        config_history.record(name, _rc_read(kind), doc, summary)
         doc['revision'] = current_rev + 1
         _rc_write(kind, doc)
     return {'ok': True, 'revision': doc['revision'], 'updatedAt': doc['updatedAt']}
-
-
-@router.get('/api/v3/rules-center/{kind}/history')
-def rules_center_history(kind: str):
-    """变更历史（时间 + 修订 + 摘要），与组合池/评级规则共用 config_history 结构。"""
-    if kind not in _RC_SPECS:
-        raise HTTPException(404, '未知的规则类型')
-    import config_history
-    return {'entries': config_history.list_entries(_RC_HISTORY_NAMES[kind])}
-
-
-@router.post('/api/v3/rules-center/{kind}/rollback')
-def rules_center_rollback(kind: str, payload: dict = Body(...)):
-    """回滚到某条历史快照；revision 不匹配 409，快照不存在 404。"""
-    if kind not in _RC_SPECS:
-        raise HTTPException(404, '未知的规则类型')
-    entry_id = str(payload.get('entryId') or '')
-    try:
-        revision = int(payload.get('revision'))
-    except (TypeError, ValueError):
-        raise HTTPException(400, 'revision 必须是整数')
-    name = _RC_HISTORY_NAMES[kind]
-    import config_history
-    with _RC_LOCK:
-        current = _rc_read(kind) or _rc_default(kind)
-        current_rev = int(current.get('revision') or 0)
-        if revision != current_rev:
-            raise HTTPException(409, '规则已被其他人更新，请刷新后再试。')
-        snapshot = config_history.get_snapshot(name, entry_id)
-        if snapshot is None:
-            raise HTTPException(404, '没有可回滚的快照（首次保存前无旧版本）')
-        doc = dict(snapshot)
-        doc.pop('saved', None)
-        doc.pop('historyName', None)
-        doc.pop('updatedAt', None)
-        if kind != 'hero_tags':
-            doc['schema'] = _RC_SPECS[kind]['schema']
-        doc['revision'] = current_rev
-        _rc_check(kind, doc)
-        config_history.record(name, current, doc, summary=f'回滚到 {entry_id}')
-        doc['revision'] = current_rev + 1
-        doc['updatedAt'] = datetime.now(timezone.utc).isoformat(timespec='seconds')
-        _rc_write(kind, doc)
-    return {'ok': True, 'revision': doc['revision'], 'updatedAt': doc['updatedAt'], 'reset': False}
 
 
 if __name__ == '__main__':

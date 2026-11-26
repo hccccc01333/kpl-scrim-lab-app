@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="264" height="150" viewBox="0 0 264 150" role="img">
+<title>横向辅助卡框</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient><filter id="medium" x="-40%" y="-75%" width="180%" height="250%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#4d3c2f" flood-opacity=".24"/></filter></defs>
+<g transform="translate(7 7) scale(1 1)"><g filter="url(#medium)"><defs><clipPath id="panel"><rect x="0" y="0" width="250" height="136" rx="15" fill="#fff"/></clipPath></defs><g clip-path="url(#panel)"><rect x="0.8" y="0.8" width="248.4" height="134.4" rx="15" fill="url(#pearl)" stroke="#fffcf6" stroke-width="0.8"/><path d="M0 0 Q60 95.2 155 0 H175 Q67.5 123.76 0 23.12Z" fill="#d8d5d8" opacity="0.27"/><path d="M0 87.04 Q112.5 17.68 180 0 Q60 87.04 0 134.64Z" fill="#d9d6d6" opacity="0.16"/><path d="M45 136 Q132.5 107.44 250 16.32 Q192.5 106.08 112.5 136Z" fill="#fffdfa" opacity="0.6"/><path d="M135 136 Q205 84.32 250 51.68 V77.52 Q230 102 182.5 136Z" fill="#fff" opacity="0.55"/><g transform="translate(206.48 0) scale(1 1)"><path d="M0 0 H35.52 Q43.52 0 43.52 8 V43.52 C42.6496 12.1856 29.5936 0.4352 0 0Z" fill="url(#gold)"/><path d="M3.4816 0 C25.2416 1 40.9088 6.528 43.52 37.4272 C43.0848 9.1392 30.464 0 3.4816 0Z" fill="url(#teal-edge)"/></g><g transform="translate(43.52 136) scale(-1 -1)"><path d="M0 0 H35.52 Q43.52 0 43.52 8 V43.52 C42.6496 12.1856 29.5936 0.4352 0 0Z" fill="url(#gold)"/><path d="M3.4816 0 C25.2416 1 40.9088 6.528 43.52 37.4272 C43.0848 9.1392 30.464 0 3.4816 0Z" fill="url(#teal-edge)"/></g></g></g></g>
+</svg>

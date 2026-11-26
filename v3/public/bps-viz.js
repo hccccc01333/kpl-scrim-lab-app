@@ -9,6 +9,8 @@
  * 图会退化为点/空态，不补值。
  */
 
+import { glyph } from './ui-icons.js';
+
 export function createBpViz({esc, portrait, short = (value) => String(value ?? '')}) {
   const LANE_COLOR = {
     对抗路: '#a9663f', 打野: '#2f7a5f', 中路: '#4a6fa8',
@@ -78,7 +80,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       && (row.decided || 0) >= minDecided && row[yKey] >= minY
       && (!onlyLane || row.lane === onlyLane));
     if (!points.length) {
-      return `<div class="bv-empty">当前筛选下没有可绘制的英雄（需要 Ban 率、胜率与足够胜负样本）。</div>`;
+      return `<div class="bv-empty">${glyph('warning', { size: 18 })} 当前筛选下没有可绘制的英雄（需要 Ban 率、胜率与足够胜负样本）。</div>`;
     }
     const pad = {left: 58, right: 26, top: 30, bottom: 46};
     const plotW = width - pad.left - pad.right;
@@ -165,7 +167,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     sizeKey = 'games', labelKey = 'label', xLabel = '使用率', yLabel = '相对基准',
     xMax = null, yMin = -20, yMax = 20, labelTop = 8, midY = 0} = {}) {
     const list = (points || []).filter((row) => has(row[xKey]) && has(row[yKey]));
-    if (list.length < 3) return '<div class="bv-empty">样本不足，象限图暂不绘制。</div>';
+    if (list.length < 3) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，象限图暂不绘制。</div>`;
     const pad = {left: 48, right: 20, top: 20, bottom: 38};
     const plotW = width - pad.left - pad.right;
     const plotH = height - pad.top - pad.bottom;
@@ -226,7 +228,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function dotCI(rows, {labelKey = 'label', valueKey = 'winRate', lowKey = 'interval',
     max = 100, width = 720, rowHeight = 34, suffix = '%', leftWidth = 118} = {}) {
     const list = (rows || []).filter((row) => has(row[valueKey]));
-    if (!list.length) return '<div class="bv-empty">暂无可用样本。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 暂无可用样本。</div>`;
     const height = list.length * rowHeight + 26;
     const left = leftWidth;
     const right = width - 54;
@@ -259,7 +261,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function dumbbell(rows, {aKey = 'kplShare', bKey = 'ownShare', labelKey = 'hero',
     width = 760, rowHeight = 36, aLabel = 'KPL', bLabel = '本队', leftWidth = 104} = {}) {
     const list = (rows || []).filter((row) => has(row[aKey]) || has(row[bKey])).slice(0, 10);
-    if (!list.length) return '<div class="bv-empty">两边都还没有可比较的应对。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 两边都还没有可比较的应对。</div>`;
     const height = list.length * rowHeight + 40;
     const left = leftWidth;
     const right = width - 24;
@@ -291,7 +293,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function handHeatmap(hands, {width = 900, leftWidth = 76, colWidth = 96,
     rowHeight = 52} = {}) {
     const list = (hands || []).filter((hand) => (hand.heroes || []).length);
-    if (!list.length) return '<div class="bv-empty">没有逐手 Ban 记录。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有逐手 Ban 记录。</div>`;
     /* 列 = 全局被 Ban 次数最高的英雄；行 = 手序。颜色按全局最大值归一，跨手可比。 */
     const totals = new Map();
     for (const hand of list) {
@@ -342,7 +344,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function radar(rows, {width = 420, height = 420, aKey = 'ownShare', bKey = 'enemyShare',
     labelKey = 'system', aLabel = '本队', bLabel = '对手'} = {}) {
     const list = (rows || []).filter((row) => has(row[aKey]) || has(row[bKey])).slice(0, 8);
-    if (list.length < 3) return '<div class="bv-empty">体系样本不足 3 项，雷达暂不绘制。</div>';
+    if (list.length < 3) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 体系样本不足 3 项，雷达暂不绘制。</div>`;
     const cx = width / 2;
     const cy = height / 2 + 4;
     const radius = Math.min(width, height) / 2 - 62;
@@ -379,7 +381,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function slope(rows, {width = 720, rowHeight = 30, fromKey = 'previous', toKey = 'current',
     valueKey = 'winRate', labelKey = 'hero', suffix = '%'} = {}) {
     const list = (rows || []).filter((row) => has(row[fromKey]?.[valueKey]) || has(row[toKey]?.[valueKey])).slice(0, 8);
-    if (!list.length) return '<div class="bv-empty">没有可比较的窗口变化。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有可比较的窗口变化。</div>`;
     const height = list.length * rowHeight + 34;
     const values = list.flatMap((row) => [row[fromKey]?.[valueKey], row[toKey]?.[valueKey]]).filter(has);
     const min = Math.max(0, Math.floor(Math.min(...values) / 5) * 5 - 5);
@@ -412,7 +414,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function comboScatter(points, {width = 760, height = 320, xKey = 'share', yKey = 'relative',
     sizeKey = 'games', labelKey = 'label', labelTop = 6} = {}) {
     const list = (points || []).filter((row) => has(row[xKey]) && has(row[yKey]));
-    if (list.length < 3) return '<div class="bv-empty">样本不足，象限图暂不绘制。</div>';
+    if (list.length < 3) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，象限图暂不绘制。</div>`;
     const pad = {left: 52, right: 24, top: 24, bottom: 42};
     const plotW = width - pad.left - pad.right;
     const plotH = height - pad.top - pad.bottom;
@@ -472,7 +474,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 英雄云：头像打包成云，大小 = 出场，外圈颜色 = 胜率 ───────────── */
   function heroCloud(rows, {width = 700, height = 340} = {}) {
     const list = (rows || []).filter((row) => (row.picks || 0) > 0).slice(0, 16);
-    if (list.length < 3) return '<div class="bv-empty">样本不足，英雄云暂不绘制。</div>';
+    if (list.length < 3) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，英雄云暂不绘制。</div>`;
     const max = Math.max(...list.map((row) => row.picks || 1));
     const placed = [];
     const cx = width / 2;
@@ -511,7 +513,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function portraitQuadrant(rows, {width = 700, height = 340, xKey = 'games',
     yKey = 'opponentWinRate', labelKey = 'hero'} = {}) {
     const list = (rows || []).filter((row) => has(row[xKey]) && has(row[yKey]));
-    if (list.length < 3) return '<div class="bv-empty">样本不足，象限图暂不绘制。</div>';
+    if (list.length < 3) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，象限图暂不绘制。</div>`;
     const pad = {left: 46, right: 20, top: 26, bottom: 38};
     const plotW = width - pad.left - pad.right;
     const plotH = height - pad.top - pad.bottom;
@@ -572,7 +574,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 类型排行：第一手 Ban 的类型，点 + 轨道，可点选联动 ───────────── */
   function typeRank(rows, laneOf, {width = 460, focus = '', attr = 'data-bps-type-focus'} = {}) {
     const list = (rows || []).filter((row) => (row.share || 0) > 0).slice(0, 10);
-    if (!list.length) return '<div class="bv-empty">没有第一手 Ban 的类型样本。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有第一手 Ban 的类型样本。</div>`;
     const height = list.length * 34 + 22;
     const left = 76;
     const right = width - 46;
@@ -605,7 +607,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function typeLines(series, {width = 560, height = 280, xLabels = [], focus = '',
     suffix = '%', attr = 'data-bps-type-focus', maxY = 100} = {}) {
     if (!series?.length || !series[0]?.values?.length) {
-      return '<div class="bv-empty">样本不足，趋势暂不绘制。</div>';
+      return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，趋势暂不绘制。</div>`;
     }
     const pad = {left: 42, right: 108, top: 20, bottom: 30};
     const plotW = width - pad.left - pad.right;
@@ -658,7 +660,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 核数点图：横轴核数、纵轴胜率、点大小 = 局数，不用平均数 ──────── */
   function coreDots(rows, {width = 460, height = 260} = {}) {
     const list = (rows || []).filter((row) => row.games > 0);
-    if (!list.length) return '<div class="bv-empty">没有完整阵容。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有完整阵容。</div>`;
     const pad = {left: 44, right: 26, top: 26, bottom: 40};
     const plotW = width - pad.left - pad.right;
     const plotH = height - pad.top - pad.bottom;
@@ -689,7 +691,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function poolScatter(rows, {width = 760, height = 360, maxHeroes = 12} = {}) {
     const list = (rows || []).filter((row) => (row.picks || 0) > 0 && has(row.winRate))
       .sort((a, b) => (b.picks || 0) - (a.picks || 0)).slice(0, maxHeroes);
-    if (list.length < 3) return '<div class="bv-empty">样本不足，英雄池暂不绘制。</div>';
+    if (list.length < 3) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，英雄池暂不绘制。</div>`;
     const pad = {left: 46, right: 22, top: 26, bottom: 40};
     const plotW = width - pad.left - pad.right;
     const plotH = height - pad.top - pad.bottom;
@@ -755,7 +757,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function typeCounterMatrix(matrixData, laneOf, {width = 760, cell = 58, leftW = 92, topH = 62} = {}) {
     const rows = matrixData?.rows || [];
     const cols = matrixData?.cols || [];
-    if (!rows.length || !cols.length) return '<div class="bv-empty">样本不足，克制矩阵暂不绘制。</div>';
+    if (!rows.length || !cols.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，克制矩阵暂不绘制。</div>`;
     const height = topH + rows.length * cell + 30;
     const cells = [];
     rows.forEach((enemy, ri) => {
@@ -798,7 +800,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
 
   /* ── 英雄关系环：克制 / 被克制 / 最佳搭档三向环绕头像 ─────────────── */
   function heroRing(data, {width = 640, height = 360, focus = ''} = {}) {
-    if (!data?.available) return `<div class="bv-empty">${esc(data?.reason || '没有关系数据。')}</div>`;
+    if (!data?.available) return `<div class="bv-empty">${glyph('warning', { size: 18 })} ${esc(data?.reason || '没有关系数据。')}</div>`;
     const cx = width / 2;
     const cy = 158;
     const radius = 96;
@@ -863,7 +865,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function decisionTreeMap(data, pathIds, {width = 780, height = 420, branch = 3, byType = false} = {}) {
     const nodes = data?.nodes || [];
     if (!data?.available || !nodes.length) {
-      return `<div class="bv-empty">${esc(data?.reason || '没有可展开的手序。')}</div>`;
+      return `<div class="bv-empty">${glyph('warning', { size: 18 })} ${esc(data?.reason || '没有可展开的手序。')}</div>`;
     }
     const byId = new Map(nodes.map((node) => [node.id, node]));
     const children = new Map();
@@ -878,9 +880,14 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       .sort((a, b) => (b.count - a.count) || String(a.hero).localeCompare(String(b.hero)));
     const total = siblings.reduce((sum, node) => sum + node.count, 0) || 1;
     const first = siblings.slice(0, Math.max(2, branch));
-    if (!first.length) return `<div class="bv-empty">这条路径之后没有更长的已核验样本。</div>`;
-    height = Math.max(320, 120 + (first.length - 1) * 100);
-    const gap = Math.min(110, (height - 120) / Math.max(1, first.length - 1));
+    if (!first.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 这条路径之后没有更长的已核验样本。</div>`;
+    /* 上一条分支的「路径胜率」在 _y+68，下一条的「N 手 · BAN · 对方」在 _y-36，
+       两者至少要留 ~40px，否则文字会叠在一起（赛训组反馈）。 */
+    const minGap = 150;
+    const labelPad = 136;
+    const span = Math.max(1, first.length - 1);
+    height = Math.max(height, minGap * span + labelPad);
+    const gap = Math.min(minGap, (height - labelPad) / span);
     const startY = (height - (first.length - 1) * gap) / 2 - 10;
     first.forEach((node, index) => { node._y = startY + index * gap; });
     const currentY = first.reduce((sum, node) => sum + node._y, 0) / first.length;
@@ -949,17 +956,11 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   function draftFlowMap(data, {width = 1080, height = 480, byType = false, maxEdges = 0} = {}) {
     const all = (data?.nodes || []).filter((node) => node.level > 0);
     if (!data?.available || !all.length) {
-      return `<div class="bv-empty">${esc(data?.reason || '没有可用的手序样本。')}</div>`;
+      return `<div class="bv-empty">${glyph('warning', { size: 18 })} ${esc(data?.reason || '没有可用的手序样本。')}</div>`;
     }
-    const depth = Math.max(2, Number(data.depth) || 6);
-    const perCol = depth >= 18 ? 68 : 92;
-    const canvasWidth = Math.max(width, depth * perCol + 150);
-    if (depth > 12) height = Math.max(height, 520);
     const keyOf = (node) => byType
       ? `${node.level}:${node.actor}:${node.action}:${node.type || '待分类'}`
-      : (data.startHero && node.level === 1)
-        ? `1:${node.hero}`
-        : `${node.level}:${node.actor}:${node.action}:${node.hero}`;
+      : `${node.level}:${node.actor}:${node.action}:${node.hero}`;
     const merged = new Map();
     const sourceKey = new Map();
     for (const node of all) {
@@ -995,6 +996,13 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       byLevel.get(node.level).push(node);
     }
     const levels = [...byLevel.keys()].sort((a, b) => a - b);
+    /* 点某个英雄当起点后手号保留原值（可能是第 15~20 手），
+       布局按「出现了几列」算，不用手号本身算，否则画布会被拉得极宽。 */
+    const span = Math.max(2, levels.length);
+    const perCol = span >= 18 ? 68 : 92;
+    const canvasWidth = Math.max(width, span * perCol + 150);
+    if (span > 12) height = Math.max(height, 520);
+    const levelIndex = new Map(levels.map((level, index) => [level, index]));
     const top = 88;
     const bottom = 84;
     for (const level of levels) {
@@ -1038,8 +1046,8 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
     /* 2026-11-22 赛训组反馈：BP 开始节点贴面板左边太多空白，整条流图往左收紧。 */
     const left = 40;
     const right = 88;
-    const colW = (canvasWidth - left - right) / Math.max(1, depth - 1);
-    const xOf = (level) => left + (level - 1) * colW;
+    const colW = (canvasWidth - left - right) / Math.max(1, span - 1);
+    const xOf = (level) => left + (levelIndex.get(level) ?? 0) * colW;
     const maxCount = Math.max(1, ...[...merged.values()].map((node) => node.count));
     const maxEdge = Math.max(1, ...edgeCounts.values());
     const tone = (node) => {
@@ -1050,13 +1058,10 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       return node.action === 'ban'
         ? {color: '#a86a2a', dash: '5 4'} : {color: '#4a6fa8', dash: ''};
     };
-    const headers = levels.map((level) => {
-      const list = byLevel.get(level);
-      const lead = list[0];
-      const paint = tone(lead);
-      return `<text x="${xOf(level).toFixed(1)}" y="40" class="bv-tree-hand" fill="${paint.color}">${level} 手 · ${lead.action === 'ban' ? 'BAN' : 'PICK'}</text>
-        <text x="${xOf(level).toFixed(1)}" y="54" class="bv-tree-side" fill="${paint.color}">${lead.actor === 'team' ? '我方' : '对方'}</text>`;
-    }).join('');
+    /* 同一手可能混有 18/20 手制与不同行动方，列头只报手数；
+       Pick/Ban 与我方/对方由节点颜色、虚线和下方图例逐节点表达。 */
+    const headers = levels.map((level) =>
+      `<text x="${xOf(level).toFixed(1)}" y="40" class="bv-tree-hand">${level} 手</text>`).join('');
     const edges = [];
     for (const [edge, count] of edgeCounts) {
       const [parentKey, childKey] = edge.split('>');
@@ -1104,13 +1109,13 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
       }
     }
     return wrap(canvasWidth, height, `${headers}${edges.join('')}${marks.join('')}`)
-      .replace('<svg ', `<svg style="min-width:${canvasWidth}px" `);
+      .replace('<svg ', `<svg aria-label="历史 BP 聚合树（非单局）" style="min-width:${canvasWidth}px" `);
   }
 
   /* ── 类型时间轴：第一手 Ban 的类型份额按月堆叠 ─────────────────────── */
   function typeTimeline(timeline, laneOf, {width = 1200, height = 240} = {}) {
     const months = (timeline || []).filter((item) => (item.types || []).length);
-    if (months.length < 2) return '<div class="bv-empty">月份太少，时间轴暂不绘制。</div>';
+    if (months.length < 2) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 月份太少，时间轴暂不绘制。</div>`;
     const totals = new Map();
     for (const month of months) {
       for (const row of month.types || []) {
@@ -1174,7 +1179,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 组合矩阵：英雄 × 英雄，格子颜色 = 相对基准，深浅 = 局数 ─────── */
   function comboMatrix(pairs, {width = 780, cell = 42, labelW = 104, topH = 66} = {}) {
     const rows = (pairs || []).filter((row) => (row.heroes || []).length === 2);
-    if (rows.length < 6) return '<div class="bv-empty">组合样本不足，矩阵暂不绘制。</div>';
+    if (rows.length < 6) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 组合样本不足，矩阵暂不绘制。</div>`;
     /* 先取局数最高的 26 组，再由这些组合里的英雄构成矩阵，避免“14×14 大半是空格”。 */
     const topPairs = [...rows].sort((a, b) => (b.games || 0) - (a.games || 0)).slice(0, 26);
     const weight = new Map();
@@ -1236,7 +1241,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 类型轮盘：第一手 Ban 的类型份额，做成同心扇形 ───────────────── */
   function typeWheel(rows, laneOf, {size = 380, total = 0, title = '第一手 Ban'} = {}) {
     const list = (rows || []).filter((row) => (row.share || 0) > 0).slice(0, 9);
-    if (list.length < 2) return '<div class="bv-empty">样本不足，类型轮盘暂不绘制。</div>';
+    if (list.length < 2) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 样本不足，类型轮盘暂不绘制。</div>`;
     const cx = size / 2;
     const cy = size / 2;
     const outer = size / 2 - 54;
@@ -1279,7 +1284,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
 
   /* ── 位次流：五条分路在 1–5 手的份额带 ───────────────────────────── */
   function slotStream(slots, laneOf, {width = 720, height = 300, laneOrder = []} = {}) {
-    if (!slots?.length) return '<div class="bv-empty">没有逐手 Pick 记录。</div>';
+    if (!slots?.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有逐手 Pick 记录。</div>`;
     const lanes = laneOrder.length ? laneOrder
       : [...new Set(slots.flatMap((slot) => (slot.types || []).map((row) => laneOf?.(row.type)))
         .filter(Boolean))];
@@ -1333,7 +1338,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 核数环：外环份额，内环胜率 ──────────────────────────────────── */
   function coreRadial(rows, {size = 300, avg = null} = {}) {
     const list = (rows || []).filter((row) => row.games > 0);
-    if (!list.length) return '<div class="bv-empty">没有完整阵容。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有完整阵容。</div>`;
     const cx = size / 2;
     const cy = size / 2;
     const outer = size / 2 - 34;
@@ -1373,7 +1378,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── 类型 × 位次点阵：每格一个圆，面积 = 占比 ─────────────────────── */
   function dotMatrix(rows, cols, cells, {width = 780, rowHeight = 32, leftWidth = 110,
     colWidth = 104, tone = ''} = {}) {
-    if (!rows.length || !cols.length) return '<div class="bv-empty">没有可用的类型样本。</div>';
+    if (!rows.length || !cols.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有可用的类型样本。</div>`;
     const values = cells.flat().map((cell) => (has(cell) ? cell : 0));
     const max = Math.max(1, ...values);
     const height = rows.length * rowHeight + 34;
@@ -1402,7 +1407,7 @@ export function createBpViz({esc, portrait, short = (value) => String(value ?? '
   /* ── Ban 位环：五个 Ban 位的份额做成同心环，比横条更像“手序” ── */
   function handRing(hands, {size = 168, label = 'Ban 位'} = {}) {
     const list = (hands || []).filter((row) => has(row.share));
-    if (!list.length) return '<div class="bv-empty">没有 Ban 记录。</div>';
+    if (!list.length) return `<div class="bv-empty">${glyph('warning', { size: 18 })} 没有 Ban 记录。</div>`;
     const cx = size / 2;
     const cy = size / 2;
     const colors = ['#123f39', '#246b63', '#5b9a86', '#c9a26b'];

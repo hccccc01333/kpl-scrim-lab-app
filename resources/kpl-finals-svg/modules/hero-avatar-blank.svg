@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="108" height="108" viewBox="0 0 108 108" role="img">
+<title>通用深底英雄头像框</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient><linearGradient id="dark" x2="0%" y2="100%">
+ <stop stop-color="#17212a"/><stop offset="1" stop-color="#676e71"/>
+</linearGradient></defs>
+<defs><clipPath id="avatar-holder"><rect x="0" y="0" width="108" height="108" rx="13" fill="#fff"/></clipPath></defs><g clip-path="url(#avatar-holder)"><rect x="0" y="0" width="108" height="108" rx="13" fill="url(#dark)"/><g transform="translate(62.64 0) scale(1 1)"><path d="M0 0 H37.36 Q45.36 0 45.36 8 V45.36 C44.4528 12.7008 30.8448 0.4536 0 0Z" fill="url(#gold)"/><path d="M3.6288 0 C26.3088 1 42.6384 6.804 45.36 39.0096 C44.9064 9.5256 31.752 0 3.6288 0Z" fill="url(#teal-edge)"/></g></g><rect x="0.8" y="0.8" width="106.4" height="106.4" rx="13" fill="none" stroke="url(#gold-edge)" stroke-width="1.6"/>
+</svg>

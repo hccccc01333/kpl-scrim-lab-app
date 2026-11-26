@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="50" height="50" viewBox="0 0 50 50" role="img">
+<title>BP 顶部小头像槽空底</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<defs><clipPath id="mini-empty"><rect x="0" y="0" width="50" height="50" rx="12" fill="#fff"/></clipPath></defs><g clip-path="url(#mini-empty)"><rect x="0" y="0" width="50" height="50" rx="12" fill="url(#pearl)"/><path d="M0 0 Q12 35 31 0 H35 Q13.5 45.5 0 8.5Z" fill="#d8d5d8" opacity="0.1026"/><path d="M0 32 Q22.5 6.5 36 0 Q12 32 0 49.5Z" fill="#d9d6d6" opacity="0.0608"/><path d="M9 50 Q26.5 39.5 50 6 Q38.5 39 22.5 50Z" fill="#fffdfa" opacity="0.228"/><path d="M27 50 Q41 31 50 19 V28.5 Q46 37.5 36.5 50Z" fill="#fff" opacity="0.209"/></g><rect x="0.6" y="0.6" width="48.8" height="48.8" rx="12" fill="none" stroke="url(#gold-edge)" stroke-width="1.2"/>
+</svg>

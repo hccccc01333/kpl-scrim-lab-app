@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="336" height="72" viewBox="0 0 336 72" role="img">
+<title>选手名牌空白底板</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="paper" x2="0%" y2="100%">
+ <stop stop-color="#fffefb"/><stop offset="1" stop-color="#eeeae5"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<defs><clipPath id="nameplate"><rect x="0" y="0" width="336" height="72" rx="15" fill="#fff"/></clipPath></defs><g clip-path="url(#nameplate)"><rect x="0.8" y="0.8" width="334.4" height="70.4" rx="15" fill="url(#pearl)" stroke="#fffcf6" stroke-width="0.8"/><path d="M0 0 Q80.64 50.4 208.32 0 H235.2 Q90.72 65.52 0 12.24Z" fill="#d8d5d8" opacity="0.27"/><path d="M0 46.08 Q151.2 9.36 241.92 0 Q80.64 46.08 0 71.28Z" fill="#d9d6d6" opacity="0.16"/><path d="M60.48 72 Q178.08 56.88 336 8.64 Q258.72 56.16 151.2 72Z" fill="#fffdfa" opacity="0.6"/><path d="M181.44 72 Q275.52 44.64 336 27.36 V41.04 Q309.12 54 245.28 72Z" fill="#fff" opacity="0.55"/><g transform="translate(312.96 0) scale(1 1)"><path d="M0 0 H15.04 Q23.04 0 23.04 8 V23.04 C22.5792 6.4512 15.6672 0.2304 0 0Z" fill="url(#gold)"/><path d="M1.8432 0 C13.3632 1 21.6576 3.456 23.04 19.8144 C22.8096 4.8384 16.128 0 1.8432 0Z" fill="url(#teal-edge)"/></g><g transform="translate(23.04 72) scale(-1 -1)"><path d="M0 0 H15.04 Q23.04 0 23.04 8 V23.04 C22.5792 6.4512 15.6672 0.2304 0 0Z" fill="url(#gold)"/><path d="M1.8432 0 C13.3632 1 21.6576 3.456 23.04 19.8144 C22.8096 4.8384 16.128 0 1.8432 0Z" fill="url(#teal-edge)"/></g></g><g transform="translate(2 4) scale(1 1)"><defs><clipPath id="nameplate-side"><rect x="0" y="0" width="65" height="61" rx="13" fill="#fff"/></clipPath></defs><g clip-path="url(#nameplate-side)"><rect x="0" y="0" width="65" height="61" rx="13" fill="url(#paper)" stroke="url(#gold-edge)" stroke-width="1"/><g transform="translate(65 0) scale(-1 1)"><path d="M0 0 H24 Q10 1 10 14 V61 H0Z" fill="url(#gold)"/><path d="M8 0 H21 Q12 5 12 15 V61 H8Z" fill="url(#teal-edge)"/></g></g></g>
+</svg>

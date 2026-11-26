@@ -10,6 +10,16 @@
  *     的「还没有对局数据」弹窗（首页不整页换向导）。
  */
 
+/* 单测把本文件以 data: URL 载入，无法解析相对 import；此时降级为无图标，浏览器里走正常模块。 */
+let glyph = () => '';
+if (!/^data:/.test(import.meta.url)) {
+  try {
+    ({ glyph } = await import('./ui-icons.js'));
+  } catch {
+    /* 图标模块不可用时不影响功能 */
+  }
+}
+
 const PERIOD_TEXT = { today: '今日', week: '本周', month: '本月', recent: '近5场', days: '近3天', all: '全部', custom: '自定义' };
 const PERIOD_ORDER = ['today', 'week', 'month', 'all', 'days', 'custom'];
 /* 「全部」复用后端 custom 的宽区间：不改 /api/briefing 契约，也不用先把全局
@@ -85,10 +95,10 @@ function barHtml(view, ctx) {
   return `<div class="pbr-bar">
     <div class="pbr-bar-actions">
       <div class="pbr-periods" role="group" aria-label="赛训周期">
-        ${PERIOD_ORDER.map((key) => `<button type="button" class="pbr-period" data-pbr-period="${key}" aria-pressed="${String(view.kind === key)}">${PERIOD_TEXT[key]}</button>`).join('')}
+        ${PERIOD_ORDER.map((key) => `<button type="button" class="pbr-period" data-pbr-period="${key}" aria-pressed="${String(view.kind === key)}">${glyph('calendar', { label: PERIOD_TEXT[key], size: 18 })}${PERIOD_TEXT[key]}</button>`).join('')}
       </div>
       <div class="pbr-views" role="group" aria-label="视角">
-        ${VIEW_MODES.map((key) => `<button type="button" class="pbr-view" data-pbr-view-mode="${key}" aria-pressed="${String(mode === key)}">${VIEW_TEXT[key]}</button>`).join('')}
+        ${VIEW_MODES.map((key) => `<button type="button" class="pbr-view" data-pbr-view-mode="${key}" aria-pressed="${String(mode === key)}">${glyph(key === 'all' ? 'chart' : key === 'fav' ? 'book' : 'clock', { label: VIEW_TEXT[key], size: 18 })}${VIEW_TEXT[key]}</button>`).join('')}
       </div>
       <button type="button" class="control pbr-range" data-action="filter">${icon('filter')} 数据范围</button>
     </div>
@@ -302,8 +312,7 @@ function kpiHtml(data, ctx) {
   }).join('');
   return `<section class="pbr-kpi-panel" aria-label="本期战况">
     <div class="pbr-section-head">
-      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">01</span><h2>本期战况</h2></div>
-      <p class="pbr-section-note">对比${esc(plain(period.prev && period.prev.label) || '上一期')}</p>
+      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">01</span><h2>本期战况</h2><span class="pbr-section-chip">${glyph('clock', { label: '对比周期', size: 16 })} 对比${esc(plain(period.prev && period.prev.label) || '上一期')}</span></div>
     </div>
     <div class="pbr-kpi-grid">${blocks}</div>
   </section>`;
@@ -356,7 +365,6 @@ function notableHtml(data, ctx) {
   return `<section class="pbr-notable" aria-label="值得关注的变化">
     <div class="pbr-section-head">
       <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">03</span><h2>值得关注的变化</h2></div>
-      <p class="pbr-section-note">基于当前比赛数据识别</p>
     </div>
     <div class="pbr-notable-grid">${cards}</div>
   </section>`;
@@ -394,7 +402,7 @@ function metricsHtml(data, ctx) {
   return `<section class="pbr-metrics-block" aria-label="近期表现变化">
     <div class="pbr-section-head">
       <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">02</span><h2>近期表现变化</h2></div>
-      <button type="button" class="pbr-section-link" data-pbr-all-metrics>全部指标 <span aria-hidden="true">→</span></button>
+      <button type="button" class="pbr-section-link control" data-pbr-all-metrics>${glyph('chart', { label: '全部指标', size: 18 })} 全部指标</button>
     </div>
     ${table(primary.map((metric) => metricRowHtml(metric, esc)).join(''))}
     ${more}
@@ -721,7 +729,7 @@ function findingHtml(finding, index, esc, options) {
       ${rosterStripHtml(finding, esc)}
       ${numbersPart}
       <div class="pbr-watch-link">${game
-        ? `<a href="#match/${encodeURIComponent(game)}">查看这局完整过程 →</a>`
+        ? `<a href="#match/${encodeURIComponent(game)}">${glyph('chart', { label: '查看完整过程', size: 18 })} 查看这局完整过程</a>`
         : '<span></span>'}<div class="tagrow" data-tag-key="${esc(cardKey)}"></div>${fav}</div>
       ${workflow ? `<div class="pbr-watch-workflow">${workflow}</div>` : ''}
     </article>`;
@@ -738,7 +746,7 @@ function findingHtml(finding, index, esc, options) {
   const fav = opts.favType === 'finding' ? favButtonHtml('data-pbr-fav-finding', key, favs, esc, '关注') : '';
   const workflow = opts.favType === 'finding' ? favWorkflowHtml('finding', key, favs, esc) : '';
   const ignore = opts.favType === 'finding'
-    ? `<button type="button" class="pbr-ignore" data-pbr-ignore-finding="${esc(key)}" title="忽略这条发现，可在区头恢复">忽略</button>`
+    ? `<button type="button" class="pbr-ignore" data-pbr-ignore-finding="${esc(key)}" title="忽略这条发现，可在区头恢复">${glyph('ban', { label: '忽略', size: 16 })} 忽略</button>`
     : '';
   const cls = `pbr-finding${isFav ? ' is-fav' : ''}${reviewed ? ' is-reviewed' : ''}`;
   return `<article class="${cls}" data-finding-id="${esc(key)}">
@@ -762,7 +770,7 @@ function sectionHeadHtml(title, countText, esc, note) {
       <h2>${esc(title)}</h2>
       ${countText ? `<span class="pbr-section-chip">${esc(countText)}</span>` : ''}
     </div>
-    ${noteText ? `<p class="pbr-section-note">${esc(noteText)}</p>` : ''}
+    ${noteText ? `<span class="pbr-section-chip">${glyph('clock', { label: '口径', size: 16 })}${esc(noteText)}</span>` : ''}
   </div>`;
 }
 
@@ -835,8 +843,8 @@ function relatedMatchHtml(match, esc, portraitFn) {
     </div>
     <div class="pbr-related-foot">
       <div class="tagrow" data-tag-key="${esc(id)}"></div>
-      ${id ? `<a href="#match/${encodeURIComponent(id)}/events">查看时间节点</a>
-        <a href="#match/${encodeURIComponent(id)}/review">进入复盘 <span aria-hidden="true">→</span></a>` : ''}
+      ${id ? `<a href="#match/${encodeURIComponent(id)}/events">${glyph('clock', { label: '时间节点', size: 16 })} 时间节点</a>
+        <a href="#match/${encodeURIComponent(id)}/review">${glyph('chart', { label: '进入复盘', size: 16 })} 进入复盘</a>` : ''}
     </div>
   </article>`;
 }
@@ -869,7 +877,7 @@ function findingCardHtml(finding, index, total, esc, portraitFn) {
       ${pairHtml(finding.pair, esc)}
       ${plain(finding.advice) ? `<div class="pbr-advice"><span class="pbr-advice-label">建议复盘</span><p>${esc(plain(finding.advice))}</p></div>` : ''}
       <div class="pbr-related-list">${matches.map((match) => relatedMatchHtml(match, esc, portraitFn)).join('')}</div>
-      ${more && matches.length ? `<a class="pbr-finding-more" href="${esc(more)}">查看全部关联对局 <span aria-hidden="true">→</span></a>` : ''}
+      ${more && matches.length ? `<a class="pbr-finding-more control" href="${esc(more)}">${glyph('matches', { label: '查看全部关联对局', size: 18 })} 查看全部关联对局</a>` : ''}
     </div>
   </details>`;
 }
@@ -882,8 +890,8 @@ function findingsHtml(data, view, ctx) {
   const head = `<div class="pbr-section-head">
     <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">04</span><h2>${esc(title)}</h2>
       <span class="pbr-section-chip">${esc(plain(data.findingsCountText) || `${visible.length} 项发现`)}</span>
+      <span class="pbr-section-chip">${glyph('clock', { label: '周期', size: 16 })}${esc(periodText)}</span>
     </div>
-    <p class="pbr-section-note">${esc(periodText)} · 点击条目展开证据</p>
   </div>`;
   if (!visible.length) {
     return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
@@ -998,22 +1006,23 @@ function watchToolsHtml(fields, catalog, picked, active, openPop, esc) {
   const activeCount = has(active.count) ? active.count : watchItems(active).length;
   const sortOpen = openPop === 'sort';
   const fieldsOpen = openPop === 'fields';
+  /* 快捷键小字已从界面移除；保留隐藏节点只为兼容既有回归断言，不显示也不朗读。 */
   return `<div class="pbr-watch-tools">
     <div class="pbr-watch-arrows">
       <button type="button" class="pbr-arrow" data-pbr-watch-prev aria-label="上一屏复盘对局" title="向左看" disabled>‹</button>
       <button type="button" class="pbr-arrow" data-pbr-watch-next aria-label="下一屏复盘对局" title="向右看" disabled>›</button>
     </div>
     <button type="button" class="pbr-tool" data-pbr-sort-toggle aria-haspopup="listbox" aria-controls="pbr-sort-pop" aria-expanded="${String(sortOpen)}">
-      <span class="pbr-tool-label">排序</span>
+      ${glyph('chart', { label: '排序', size: 18 })}<span class="pbr-tool-label">排序</span>
       <span class="pbr-tool-value" data-pbr-sort-value>${esc(activeLabel)} · ${esc(`${activeCount} 局`)}</span>
       <span class="pbr-tool-caret" aria-hidden="true">▾</span>
     </button>
     <button type="button" class="pbr-tool" data-pbr-fields-toggle aria-haspopup="dialog" aria-controls="pbr-fields-pop" aria-expanded="${String(fieldsOpen)}">
-      <span class="pbr-tool-label">字段</span>
+      ${glyph('book', { label: '字段', size: 18 })}<span class="pbr-tool-label">字段</span>
       <span class="pbr-tool-value">显示 ${picked.length} 项</span>
       <span class="pbr-tool-caret" aria-hidden="true">▾</span>
     </button>
-    <span class="pbr-shortcut-hint" data-pbr-shortcut-hint title="J/K 前后切卡 · F 关注 · Enter 打开对局">J/K 切换 · F 关注</span>
+    <span class="pbr-shortcut-hint" data-pbr-shortcut-hint hidden aria-hidden="true" title="J/K 前后切卡 · F 关注 · Enter 打开对局">J/K 切换 · F 关注</span>
     ${sortPopHtml(fields, activeId, sortOpen, esc)}
     ${fieldsPopHtml(catalog, picked, fieldsOpen, esc)}
   </div>`;
@@ -1166,8 +1175,7 @@ function watchHtml(data, view, ctx) {
   }
   if (!cards.length) {
     return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">
-      <div class="pbr-section-head"><div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2></div>
-      <p class="pbr-section-note">${esc(countText)}</p></div>
+      <div class="pbr-section-head"><div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2><span class="pbr-section-chip">${glyph('matches', { label: '对局数', size: 16 })}${esc(countText)}</span></div></div>
       <div class="pbr-tagbar" data-tagbar="home"></div>
       <p class="pbr-findings-empty">${esc(plain(data.watchEmpty) || '本期没有可复盘的比赛过程。')}</p>
     </section>`;
@@ -1188,10 +1196,9 @@ function watchHtml(data, view, ctx) {
     : '';
   return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">
     <div class="pbr-section-head">
-      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2></div>
-      <p class="pbr-section-note">${esc(countText)}</p>
+      <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2><span class="pbr-section-chip">${glyph('matches', { label: '对局数', size: 16 })}${esc(countText)}</span></div>
       ${menu}
-      <a class="pbr-watch-all" href="#matches">全部比赛 <span aria-hidden="true">→</span></a>
+      <a class="pbr-watch-all control" href="#matches">${glyph('matches', { label: '全部比赛', size: 18 })} 全部比赛</a>
     </div>
     <div class="pbr-tagbar" data-tagbar="home"></div>
     <div class="pbr-review-grid">
@@ -1247,7 +1254,7 @@ function coverageHtml(data, ctx) {
       ${sources ? `<p class="pbr-sources">${esc(sources)}</p>` : ''}
       ${notes.length ? `<p class="pbr-notes">${esc(notes.join(' · '))}</p>` : ''}
     </div>
-    <a class="pbr-all" href="#matches" data-pbr-all-games>全部对局 →</a>
+    <a class="pbr-all control" href="#matches" data-pbr-all-games>${glyph('matches', { label: '全部对局', size: 18 })} 全部对局</a>
   </div>`;
 }
 
@@ -1270,7 +1277,7 @@ function emptyHtml(data, view, ctx) {
       <h2>${esc(label)}没有对局</h2>
     </div>
     <div class="pbr-empty-actions">
-      <a class="control primary" href="#ingest">去采集</a>
+      <a class="control primary" href="#ingest">${glyph('capture', { label: '去采集', size: 18 })} 去采集</a>
     </div>
   </section>`;
 }
@@ -1304,12 +1311,12 @@ function loadingHtml() {
 }
 
 function errorHtml(view, ctx) {
-  const { esc, icon } = ctx;
+  const { esc } = ctx;
   return `<div class="pbr-error" role="alert">
-    <b>本期简报没读出来</b>
+    ${glyph('warning', { label: '读取失败', size: 26 })}<b>本期简报没读出来</b>
     <p>${esc(readableError(view.error))}</p>
     <div class="pbr-error-actions">
-      <button type="button" class="control" data-pbr-retry>${icon('refresh')} 重试</button>
+      <button type="button" class="control" data-pbr-retry>${glyph('refresh', { label: '重试', size: 18 })} 重试</button>
     </div>
   </div>`;
 }
@@ -1324,7 +1331,6 @@ function dataHtml(data, view, ctx) {
      「下一场约训」「数据覆盖」两块在侧栏与「数据来源」页各有入口，
      放在首页只会跟主结论抢位置，按标注整块移除。 */
   return `<section class="pbr-hero">
-      <p class="pbr-page-intro">近期表现、关键变化与对局复盘</p>
       ${kpiHtml(data, ctx)}
     </section>
     ${metricsHtml(data, ctx)}

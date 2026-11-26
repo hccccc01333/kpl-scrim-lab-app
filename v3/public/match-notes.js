@@ -83,18 +83,18 @@ function when(value) {
 /* ── 渲染 ─────────────────────────────────────────────────────── */
 
 function notesInnerHtml(key, notes) {
-  if (!notes.length) return `<div class="mn-empty mn-empty-cta">${glyph('book', { size: 18 })}
-      <span>这一局还没有笔记。点「写笔记」记下复盘要点。</span>
-      <button type="button" class="mn-add" data-mn-add="${esc(key)}" aria-label="为当前对局写第一条笔记">${glyph('book', { size: 14 })} 写第一条笔记</button>
+  if (!notes.length) return `<div class="mn-empty mn-empty-cta">${glyph('book', { label: '赛后笔记', size: 20 })}
+      <span>这一局还没有笔记</span>
+      <button type="button" class="mn-add" data-mn-add="${esc(key)}" aria-label="为当前对局写第一条笔记">${glyph('edit', { size: 18 })} 写第一条笔记</button>
     </div>`;
   return notes.map((note) => `<article class="mn-note" data-mn-note-id="${esc(note.id)}">
       <p class="mn-body">${esc(note.body).replace(/\n/g, '<br>')}</p>
       ${note.tags.length ? `<div class="mn-tags">${note.tags.map((tag) => `<span class="mn-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
       <div class="mn-note-actions">
         <button type="button" class="mn-edit" data-mn-edit="${esc(key)}" data-mn-id="${esc(note.id)}"
-          aria-label="编辑笔记" title="编辑笔记">${glyph('edit', { size: 14 })} 编辑</button>
+          aria-label="编辑笔记" title="编辑笔记">${glyph('edit', { size: 18 })} 编辑</button>
         <button type="button" class="mn-del" data-mn-del="${esc(key)}" data-mn-id="${esc(note.id)}"
-          aria-label="删除笔记" title="删除笔记">${glyph('trash', { size: 14 })} 删除</button>
+          aria-label="删除笔记" title="删除笔记">${glyph('trash', { size: 18 })} 删除</button>
         <span class="mn-meta">${esc(when(note.updatedAt || note.createdAt))}${note.author ? ` · ${esc(note.author)}` : ''}</span>
       </div>
     </article>`).join('');
@@ -107,7 +107,7 @@ export function matchNotesHtml(matchKey, notes = []) {
   return `<section class="mn-embed" data-match-notes data-match-key="${esc(key)}">
     <div class="mn-head">
       <span><span class="mn-kicker">赛后笔记</span><span class="mn-count">${list.length} 条</span></span>
-      <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('book', { size: 15 })} 写笔记</button>
+      <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('edit', { size: 18 })} 写笔记</button>
     </div>
     <div class="mn-list" data-mn-list>${notesInnerHtml(key, list)}</div>
     <p class="mn-status" role="status" aria-live="polite" data-mn-status></p>
@@ -117,8 +117,8 @@ export function matchNotesHtml(matchKey, notes = []) {
 /** 独立页：应用标准页壳 + 按对局分组的笔记列表。分组头显示 日期 · 对阵（可点进复盘）。 */
 export function matchNotesPageHtml() {
   return `<div class="page feature-page mn-pagev2">
-    <header class="page-intro mn-page-intro"><div><h1>赛后笔记</h1></div>
-      <div class="intro-actions"><button type="button" class="primary" data-mn-page-add>${glyph('book', { size: 15 })} 新增笔记</button></div></header>
+    <header class="page-intro mn-page-intro"><div><h1>${glyph('book', { label: '赛后笔记', size: 20 })} 赛后笔记</h1></div>
+      <div class="intro-actions"><button type="button" class="primary" data-mn-page-add>${glyph('edit', { size: 18 })} 新增笔记</button></div></header>
     <div class="mn-page-list" data-mn-page-list></div>
     <p class="mn-status" role="status" aria-live="polite" data-mn-page-status></p>
   </div>`;
@@ -151,7 +151,7 @@ function confirmDelete(note) {
       <p class="mn-confirm-summary">${esc(digest)}${full.length > 60 ? '…' : ''}</p>
       <form method="dialog" class="mn-dialog-actions">
         <button value="cancel" class="oe-btn" autofocus>取消</button>
-        <button value="delete" class="oe-btn oe-btn-danger" data-mn-confirm-del>删除笔记</button>
+        <button value="delete" class="oe-btn oe-btn-danger" data-mn-confirm-del>${glyph('trash', { size: 18 })} 删除笔记</button>
       </form>`;
     document.body.append(dialog);
     let settled = false;
@@ -184,27 +184,56 @@ function repaint(key) {
 
 /* ── 编辑弹窗（原生 dialog） ─────────────────────────────────── */
 
-function chipsHtml(tags, askKey, key, body, editing) {
-  const keyChoices = [...new Set([...state.byMatch.keys(), key].filter(Boolean))].slice(0, 200);
-  return `<div class="mn-head"><h2 id="mn-editor-title">${glyph('book', { size: 18 })} ${editing ? '编辑赛后笔记' : '写赛后笔记'}</h2></div>
-    ${askKey ? `<div class="oe-field"><label for="mn-key">对局 matchKey</label>
-      <input type="text" id="mn-key" data-mn-key-input maxlength="160" value="${esc(key)}" required
-        list="mn-key-options"
-        placeholder="例如 channel-xxxxxxxx">
-      <datalist id="mn-key-options">${keyChoices.map((option) => `<option value="${esc(option)}"></option>`).join('')}</datalist></div>` : ''}
-    <div class="oe-field"><label for="mn-body">笔记正文</label>
-      <textarea id="mn-body" data-mn-body maxlength="${MAX_BODY}" required
-        placeholder="这局哪里出了问题，下一场怎么调…">${esc(body)}</textarea></div>
-    <div class="oe-field"><label for="mn-tag-input">标签（回车添加，可自由增删）</label>
+function dateOptionsHtml(index) {
+  const counts = new Map();
+  index.forEach((match) => {
+    const date = String(match?.date || '').slice(0, 10);
+    if (date) counts.set(date, (counts.get(date) || 0) + 1);
+  });
+  const dates = [...counts.keys()].sort((a, b) => b.localeCompare(a));
+  return `<option value="">选择日期</option>${dates.map((date) =>
+    `<option value="${esc(date)}">${esc(date)}（${counts.get(date)} 局）</option>`).join('')}`;
+}
+
+function gameOptionsHtml(index, date) {
+  const games = [...index.values()]
+    .filter((match) => match && String(match.date || '').slice(0, 10) === date)
+    .sort((a, b) => String(b.startTime || '').localeCompare(String(a.startTime || '')));
+  if (!games.length) return '<option value="">这一天暂无对局</option>';
+  return `<option value="">选择这一天的对局</option>` + games.map((match) => {
+    const clock = String(match.startTime || '').slice(6) || '时间未标注';
+    const rival = match.opponent ? `对阵 ${match.opponent}` : '对手未标注';
+    const result = match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '';
+    const tail = String(match.key || '').replace(/^channel-/, '').slice(0, 6);
+    return `<option value="${esc(match.key)}">${esc(clock)} · ${esc(rival)}${result ? ` · ${result}` : ''}${tail ? ` · ${esc(tail)}` : ''}</option>`;
+  }).join('');
+}
+
+function chipsHtml(tags, askKey, index, body, editing) {
+  const pick = askKey ? `<div class="mn-pick">
+      <div class="mn-step"><span class="mn-step-no" aria-hidden="true">1</span><div class="oe-field"><label for="mn-date">先选日期</label>
+        <select id="mn-date" data-mn-date required aria-invalid="false">${dateOptionsHtml(index)}</select></div></div>
+      <div class="mn-step"><span class="mn-step-no" aria-hidden="true">2</span><div class="oe-field"><label for="mn-game">再选这一天的对局</label>
+        <select id="mn-game" data-mn-game required aria-invalid="false"><option value="">先选日期</option></select></div></div>
+    </div>
+    ${index.size ? '' : '<p class="mn-hint">对局列表暂时读不到，请刷新后重试。</p>'}
+    ${index.size ? '' : `<div class="oe-field"><label for="mn-key">对局编号（列表读取失败时可手动填写）</label>
+      <input type="text" id="mn-key" data-mn-key-input maxlength="160" placeholder="channel-xxxxxxxx"></div>`}` : '';
+  return `<div class="mn-head"><div class="mn-head-title"><h2 id="mn-editor-title">${glyph('book', { size: 18 })} ${editing ? '编辑赛后笔记' : '写赛后笔记'}</h2>
+      <p class="mn-sub">${askKey ? '先选日期和对局，再写正文、加标签。' : '把问题和下一次的调整写清楚。'}</p></div></div>
+    ${pick}
+    <div class="mn-step"><span class="mn-step-no" aria-hidden="true">${askKey ? '3' : '1'}</span><div class="oe-field"><label for="mn-body">笔记正文</label>
+      <textarea id="mn-body" data-mn-body maxlength="${MAX_BODY}" required aria-invalid="false"
+        placeholder="这局哪里出了问题，下一场怎么调…">${esc(body)}</textarea></div></div>
+    <div class="mn-step"><span class="mn-step-no" aria-hidden="true">${askKey ? '4' : '2'}</span><div class="oe-field"><label for="mn-tag-input">标签（回车添加，可自由增删）</label>
       <div class="mn-tags" data-mn-chips>${tags.map((tag) => `<span class="mn-tag">${esc(tag)}
         <button type="button" class="mn-tag-x" data-mn-tag-remove="${esc(tag)}" aria-label="移除标签 ${esc(tag)}">×</button></span>`).join('')}</div>
       <div class="oe-pair"><input type="text" id="mn-tag-input" class="mn-tag-input" data-mn-tag-input
         maxlength="${MAX_TAG_LEN}" list="mn-tag-options" autocomplete="off" spellcheck="false"
         placeholder="${DEFAULT_TAGS.slice(0, 3).map(esc).join(' / ')}">
         <datalist id="mn-tag-options">${DEFAULT_TAGS.map((tag) => `<option value="${esc(tag)}"></option>`).join('')}</datalist>
-        <button type="button" class="mn-tagadd" data-mn-tag-add>添加</button></div>
-    </div>
-    <p class="oe-err" role="alert" data-mn-editor-error></p>`;
+        <button type="button" class="mn-tagadd" data-mn-tag-add>${glyph('edit', { size: 18 })} 添加标签</button></div></div></div>
+    <p class="oe-err" id="mn-editor-error" role="alert" data-mn-editor-error></p>`;
 }
 
 function closeEditor() {
@@ -216,17 +245,22 @@ function closeEditor() {
   dialog.remove();
 }
 
-/** 打开（或重建）笔记表单；askKey 用于独立页新增，需手工填 matchKey。 */
-function openEditor({ key = '', note = null, askKey = false, onSaved } = {}) {
+/** 打开（或重建）笔记表单；askKey 用于独立页新增，先选日期再选对局。 */
+let editorToken = 0;
+async function openEditor({ key = '', note = null, askKey = false, onSaved } = {}) {
   closeEditor();
+  const token = ++editorToken;
+  /* 独立页新增要先拿到对局目录，才能按日期列对局；目录只拉一次并缓存。 */
+  const index = askKey ? await matchIndex() : new Map();
+  if (token !== editorToken) return;
   const current = note ? normalize(note) : null;
   const editorState = { key, body: current?.body || '', tags: current ? current.tags.slice() : [] };
   const dialog = document.createElement('dialog');
   dialog.className = 'mn-dialog';
   dialog.setAttribute('aria-labelledby', 'mn-editor-title');
-  dialog.innerHTML = `${chipsHtml(editorState.tags, askKey, key, editorState.body, Boolean(current))}
+  dialog.innerHTML = `${chipsHtml(editorState.tags, askKey, index, editorState.body, Boolean(current))}
     <form method="dialog" class="mn-dialog-actions">
-      <button value="cancel" class="oe-btn">取消</button>
+      <button value="cancel" class="oe-btn" formnovalidate>取消</button>
       <button type="button" class="oe-btn oe-btn-primary" data-mn-save>保存笔记</button>
     </form>`;
   document.body.append(dialog);
@@ -235,7 +269,20 @@ function openEditor({ key = '', note = null, askKey = false, onSaved } = {}) {
   const bodyInput = dialog.querySelector('[data-mn-body]');
   const tagInput = dialog.querySelector('[data-mn-tag-input]');
   const chips = dialog.querySelector('[data-mn-chips]');
+  const dateSelect = dialog.querySelector('[data-mn-date]');
+  const gameSelect = dialog.querySelector('[data-mn-game]');
   /** 错误行：warning 图标 + "错误："文字前缀（不只靠红色）；保存中走 spinner + 文字双通道。 */
+  /* :user-invalid 只是视觉状态，aria-invalid 由脚本同步给读屏；清空错误时一并复位。 */
+  const markInvalid = (node, invalid) => node?.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+  const clearErrors = () => {
+    setError('');
+    [dateSelect, gameSelect, bodyInput].forEach((node) => markInvalid(node, false));
+  };
+  const fail = (message, node) => {
+    setError(message);
+    markInvalid(node, true);
+    node?.focus();
+  };
   const setError = (message, { busy = false } = {}) => {
     if (!message) { errorNode.textContent = ''; return; }
     errorNode.innerHTML = busy
@@ -273,10 +320,13 @@ function openEditor({ key = '', note = null, askKey = false, onSaved } = {}) {
     }
     if (event.target.closest('[data-mn-tag-add]')) { addTag(); return; }
     if (event.target.closest('[data-mn-save]')) {
-      const finalKey = text(dialog.querySelector('[data-mn-key-input]')?.value || key);
+      const finalKey = text(gameSelect?.value || dialog.querySelector('[data-mn-key-input]')?.value || key);
       const body = String(bodyInput.value || '').trim();
-      if (!finalKey) { setError('请填写对局 matchKey。'); return; }
-      if (!body) { setError('笔记正文不能为空。'); bodyInput.focus(); return; }
+      clearErrors();
+      if (askKey && dateSelect && !dateSelect.value) { fail('请先选择日期。', dateSelect); return; }
+      if (askKey && gameSelect && !gameSelect.value) { fail('请选择这一天的对局。', gameSelect); return; }
+      if (!finalKey) { setError('请选择要写笔记的对局。'); return; }
+      if (!body) { fail('笔记正文不能为空。', bodyInput); return; }
       const button = dialog.querySelector('[data-mn-save]');
       const saveLabel = button.textContent;
       button.disabled = true;
@@ -300,6 +350,15 @@ function openEditor({ key = '', note = null, askKey = false, onSaved } = {}) {
       });
     }
   });
+  dialog.addEventListener('change', (event) => {
+    if (event.target !== dateSelect || !gameSelect) return;
+    gameSelect.innerHTML = dateSelect.value ? gameOptionsHtml(index, dateSelect.value) : '<option value="">先选日期</option>';
+    markInvalid(gameSelect, false);
+    clearErrors();
+  });
+  dialog.addEventListener('input', (event) => {
+    if (event.target === dateSelect || event.target === gameSelect || event.target === bodyInput) clearErrors();
+  });
   dialog.addEventListener('keydown', (event) => {
     if (event.target !== tagInput || event.key !== 'Enter') return;
     event.preventDefault();
@@ -313,7 +372,7 @@ function openEditor({ key = '', note = null, askKey = false, onSaved } = {}) {
 
   state.editor = { dialog, onClose: null };
   dialog.showModal();
-  (askKey ? dialog.querySelector('[data-mn-key-input]') : bodyInput)?.focus();
+  (askKey ? (dateSelect && !index.size ? dialog.querySelector('[data-mn-key-input]') : dateSelect) : bodyInput)?.focus();
 }
 
 /* ── 嵌入组件 ─────────────────────────────────────────────────── */
@@ -430,16 +489,16 @@ async function loadPage(page) {
       return `<a class="mn-group-main" href="#match/${encodeURIComponent(key)}" title="打开这一局的复盘（${esc(key)}）">
           <b>${esc(label)}</b><small>${esc(key)}</small></a>
         <span class="mn-count">${notes.length} 条</span>
-        <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('book', { size: 14 })} 写笔记</button>`;
+        <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('edit', { size: 18 })} 写笔记</button>`;
     };
     list.innerHTML = keys.length
       ? keys.map((key) => `<article class="mn-group" data-match-notes data-match-key="${esc(key)}">
           <div class="mn-group-head">${groupHead(key, byMatch[key])}</div>
           <div class="mn-list" data-mn-list>${notesInnerHtml(key, byMatch[key])}</div>
         </article>`).join('')
-      : `<div class="mn-empty mn-empty-cta">${glyph('book', { size: 18 })}
-          <span>还没有赛后笔记。可在单局复盘页写，也可以在这里新增。</span>
-          <button type="button" class="mn-add" data-mn-page-add aria-label="写第一条赛后笔记">${glyph('book', { size: 14 })} 写第一条笔记</button>
+      : `<div class="mn-empty mn-empty-cta">${glyph('book', { label: '赛后笔记', size: 20 })}
+          <span>还没有赛后笔记</span>
+          <button type="button" class="mn-add" data-mn-page-add aria-label="写第一条赛后笔记">${glyph('edit', { size: 18 })} 写第一条笔记</button>
         </div>`;
     // 分组容器就是 embed：绑一次事件，后续增删改由 repaint / loadPage 原地刷新。
     list.querySelectorAll('.mn-group').forEach((group) => {

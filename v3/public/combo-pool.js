@@ -9,7 +9,8 @@
  *     <div data-cp-root></div>
  * 模块自己取数、渲染、绑定；切路由时 dispose() 断请求与监听。
  */
-import { createConfigTools } from './config-tools.js?v=20261121c';
+import { glyph } from './ui-icons.js';
+import { currentCompetitionId, currentCompetitionName, saveSnapshot } from './rule-snapshots.js?v=20261124snap';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const DEFAULT_API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
@@ -221,18 +222,6 @@ export function createComboPoolPage(h = {}) {
       || JSON.stringify(state.trios) !== JSON.stringify(state.savedTrios);
   }
 
-  /* 配置管理工具：导出 / 导入 / 变更历史 / 未保存提醒。 */
-  const tools = createConfigTools({
-    configName: 'combo_pool', API_BASE, esc, icon, notify,
-    getDoc: () => ({ revision: state.revision, pairs: state.pairs, trios: state.trios }),
-    isDirty: dirty,
-    onImport: (doc) => {
-      state.pairs = Array.isArray(doc.pairs) ? doc.pairs : [];
-      state.trios = Array.isArray(doc.trios) ? doc.trios : [];
-      resetSelection(); paintAll();
-    },
-    onRollback: () => { load({ quiet: true }); },
-  });
   function entryOf(kind, id) {
     const list = kind === 'pairs' ? state.pairs : state.trios;
     return list.find((item) => String(item?.id) === String(id)) || null;
@@ -292,7 +281,6 @@ export function createComboPoolPage(h = {}) {
       /* 保存成功后以服务端为准刷新列表；这次后台读取不覆盖刚成功的提示。 */
       await load({ quiet: true, keepNotice: true });
       setNotice(successText);
-      tools.refresh();
       /* 通知外壳失效 KPL 组合全库缓存：保存后同一会话再开英雄组合页要看到新名单。 */
       document.dispatchEvent(new CustomEvent('combo-pool:saved'));
       return true;
@@ -302,6 +290,18 @@ export function createComboPoolPage(h = {}) {
     } finally {
       ui.saving = false;
       paintSelected();
+    }
+  }
+
+  /** 组合池的增删改即时落盘，因此这里直接把当下整份池打包到当前赛事。 */
+  async function snapshotCurrent() {
+    const compId = currentCompetitionId();
+    if (!compId) { setNotice('请先在顶栏选择赛事，再保存快照。', { error: true }); return; }
+    try {
+      const result = await saveSnapshot('combos', compId, '组合池设置 · 赛事快照', API_BASE);
+      setNotice(`已把组合池存到「${currentCompetitionName() || compId}」快照（第 ${result.revision} 版）。`);
+    } catch (error) {
+      setNotice(error.message || '赛事快照保存失败。', { error: true });
     }
   }
 
@@ -480,9 +480,9 @@ export function createComboPoolPage(h = {}) {
       /* 按钮始终可提交：选择数量属于校验，交给 submit 的报错与提示，
          而不是用 disabled 让键盘用户点不到、也不知道为什么。 */
       submit.disabled = ui.saving;
-      submit.textContent = ui.editing ? '保存修改'
+      submit.innerHTML = `${glyph('hero-pool', { size: 18 })}<span>${ui.editing ? '保存修改'
         : kind === 'pairs' ? '加入双人组合池'
-          : kind === 'trios' ? '加入三人体系池' : '加入组合池';
+          : kind === 'trios' ? '加入三人体系池' : '加入组合池'}</span>`;
     }
     if (hint) {
       hint.textContent = ui.selected.length > MAX_SELECT
@@ -509,9 +509,9 @@ export function createComboPoolPage(h = {}) {
         ${tag}
         <span class="cp-row-actions">
           <button type="button" class="control cp-icon-btn" data-cp-edit="${esc(entry.id)}" data-cp-kind="${kind}"
-            aria-label="编辑${label} ${esc(name)}" title="编辑">${icon('edit') || '编辑'}</button>
+            aria-label="编辑${label} ${esc(name)}" title="编辑">${glyph('edit', { size: 18 })}</button>
           <button type="button" class="control cp-icon-btn cp-danger" data-cp-delete="${esc(entry.id)}" data-cp-kind="${kind}"
-            aria-label="删除${label} ${esc(name)}" title="删除">${icon('close') || '删除'}</button>
+            aria-label="删除${label} ${esc(name)}" title="删除">${glyph('trash', { size: 18 })}</button>
         </span>
       </li>`;
   }
@@ -526,7 +526,7 @@ export function createComboPoolPage(h = {}) {
       return `<li class="cp-empty">没有${ui.filterMode === 'include' ? '包含' : '同时包含'}「${esc(ui.filterHeroes.join('、'))}」的${label}。</li>`;
     }
     const builtinBtn = (!ui.listQuery && !ui.filterHeroes.length)
-      ? ` <button type="button" class="control cp-add-builtin" data-cp-add-builtin="${kind}" aria-label="从内置默认补充${label}">从内置默认补充</button>` : '';
+      ? ` <button type="button" class="control cp-add-builtin" data-cp-add-builtin="${kind}" aria-label="从内置默认补充${label}">${glyph('refresh', { size: 18 })}从内置默认补充</button>` : '';
     return `<li class="cp-empty">${ui.listQuery
       ? `没有匹配「${esc(ui.listQuery)}」的${label}。` : emptyText}${builtinBtn}</li>`;
   }
@@ -580,9 +580,10 @@ export function createComboPoolPage(h = {}) {
       <section class="section cp-lead">
         <div class="section-heading"><div>
           <h1>组合池设置</h1>
-          <p class="pool-effective-hint">这里的组合是「全局名单」，所有赛事共用；要按赛事生效的组合 / 克制，配在规则中心 → 克制关系 → 组合克制组合。</p>
         </div>
-          <button type="button" class="control" data-cp-reload>${icon('refresh')} 重新读取</button></div>
+          <div class="cp-head-actions">
+            <button type="button" class="control" data-cp-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
+            <button type="button" class="control" data-cp-reload>${glyph('refresh', { size: 18 })}重新读取</button></div></div>
         <!-- 可见状态条只给人看；播报统一走 notify 的单一 polite live region，避免读两遍。 -->
         <p class="cp-status" data-cp-status hidden></p>
       </section>
@@ -594,7 +595,7 @@ export function createComboPoolPage(h = {}) {
           <input id="${uid}-search" type="search" data-cp-search placeholder="搜索英雄名" autocomplete="off" spellcheck="false">
         </search>
         <div class="cp-lanes" role="group" aria-label="按分路筛选英雄">${laneButtons()}
-          <button type="button" class="cp-lane-pick" data-cp-lane-pick disabled>＋ 选本分路</button>
+          <button type="button" class="control cp-lane-pick" data-cp-lane-pick disabled>${glyph('pick', { size: 18 })}选本分路</button>
         </div>
         <div class="cp-grid-scroller" data-cp-grid-scroller>
           <div class="cp-grid" data-cp-grid></div>
@@ -604,7 +605,7 @@ export function createComboPoolPage(h = {}) {
       <section class="section cp-selected">
        <div class="cp-selected-inner">
         <div class="section-heading"><div><h2>已选英雄</h2></div>
-          <button type="button" class="control" data-cp-clear disabled>清空</button></div>
+          <button type="button" class="control" data-cp-clear disabled>${glyph('trash', { size: 18 })}清空</button></div>
         <div class="cp-chips" data-cp-selected></div>
        </div>
       </section>
@@ -612,12 +613,12 @@ export function createComboPoolPage(h = {}) {
       <!-- 批量导入与命名表单不跟随滚动：sticky 区只保留已选头像和操作入口。 -->
       <section class="section cp-compose">
         <details class="cp-batch">
-          <summary>批量导入 / 按分路选</summary>
+          <summary>${glyph('export', { size: 18 })}批量导入 / 按分路选</summary>
           <form class="cp-batch-form" data-cp-batch-form aria-label="批量加入英雄">
             <label class="visually-hidden" for="${uid}-batch">批量粘贴英雄名</label>
             <input id="${uid}-batch" type="text" data-cp-batch placeholder="粘贴英雄名，空格 / 逗号 / 顿号分隔"
               autocomplete="off" spellcheck="false">
-            <button type="submit" class="control" data-cp-batch-add>加入已选</button>
+            <button type="submit" class="control" data-cp-batch-add>${glyph('pick', { size: 18 })}加入已选</button>
           </form>
         </details>
         <form class="cp-form" data-cp-form aria-labelledby="${uid}-form-title">
@@ -634,8 +635,8 @@ export function createComboPoolPage(h = {}) {
           </fieldset>
           <p class="cp-form-hint" data-cp-form-hint></p>
           <div class="cp-form-foot">
-            <button type="button" class="control" data-cp-cancel-edit hidden>取消编辑</button>
-            <button type="submit" class="primary" data-cp-submit>加入组合池</button>
+            <button type="button" class="control" data-cp-cancel-edit hidden>${glyph('ban', { size: 18 })}取消编辑</button>
+            <button type="submit" class="primary" data-cp-submit>${glyph('hero-pool', { size: 18 })}加入组合池</button>
           </div>
         </form>
       </section>
@@ -643,7 +644,7 @@ export function createComboPoolPage(h = {}) {
       <section class="section cp-existing">
         <div class="section-heading"><div><h2>已有组合</h2></div></div>
         <details class="cp-filter" data-cp-filter>
-          <summary>用英雄头像筛选组合 <span class="cp-filter-summary-count" data-cp-filter-summary-count></span></summary>
+          <summary>${glyph('heroes', { size: 18 })}用英雄头像筛选组合 <span class="cp-filter-summary-count" data-cp-filter-summary-count></span></summary>
           <div class="cp-filter-body">
             <div class="cp-filter-tools">
               <label class="visually-hidden" for="${uid}-filter-search">在筛选器内搜索英雄</label>
@@ -652,14 +653,14 @@ export function createComboPoolPage(h = {}) {
             </div>
             <p class="cp-filter-hint" data-cp-filter-hint></p>
             <div class="cp-filter-mode" role="group" aria-label="筛选匹配方式">
-              <button type="button" class="cp-lane${ui.filterMode === 'exact' ? ' is-on' : ''}" data-cp-filter-mode="exact" aria-pressed="${ui.filterMode === 'exact'}">精确匹配（按人数分池）</button>
-              <button type="button" class="cp-lane${ui.filterMode === 'include' ? ' is-on' : ''}" data-cp-filter-mode="include" aria-pressed="${ui.filterMode === 'include'}">包含匹配（跨池查找）</button>
+              <button type="button" class="cp-lane${ui.filterMode === 'exact' ? ' is-on' : ''}" data-cp-filter-mode="exact" aria-pressed="${ui.filterMode === 'exact'}">${glyph('shield', { size: 18 })}精确匹配（按人数分池）</button>
+              <button type="button" class="cp-lane${ui.filterMode === 'include' ? ' is-on' : ''}" data-cp-filter-mode="include" aria-pressed="${ui.filterMode === 'include'}">${glyph('heroes', { size: 18 })}包含匹配（跨池查找）</button>
             </div>
             <div class="cp-filter-chips" data-cp-filter-chips></div>
             <div class="cp-filter-grid cp-grid-scroller" data-cp-grid-scroller>
               <div class="cp-grid" data-cp-filter-grid></div>
             </div>
-            <button type="button" class="control cp-filter-clear" data-cp-filter-clear disabled>清空筛选</button>
+            <button type="button" class="control cp-filter-clear" data-cp-filter-clear disabled>${glyph('trash', { size: 18 })}清空筛选</button>
           </div>
         </details>
         <search class="cp-list-search">
@@ -680,11 +681,10 @@ export function createComboPoolPage(h = {}) {
         <h2 id="${uid}-dialog-title">确认删除</h2>
         <p data-cp-dialog-text></p>
         <form method="dialog" class="cp-dialog-actions" aria-label="确认删除组合">
-          <button type="submit" value="cancel" class="control" autofocus>取消</button>
-          <button type="submit" value="delete" class="cp-delete-btn">删除</button>
+          <button type="submit" value="cancel" class="control" autofocus>${glyph('ban', { size: 18 })}取消</button>
+          <button type="submit" value="delete" class="cp-delete-btn">${glyph('trash', { size: 18 })}删除</button>
         </form>
       </dialog>
-      ${tools.html()}
     </div>`;
   }
 
@@ -731,6 +731,7 @@ export function createComboPoolPage(h = {}) {
       return;
     }
     if (event.target.closest('[data-cp-reload]')) { load(); return; }
+    if (event.target.closest('[data-cp-snapshot]')) { snapshotCurrent(); return; }
     if (event.target.closest('[data-cp-cancel-edit]')) {
       resetSelection();
       setNotice('已取消编辑。');
@@ -818,8 +819,12 @@ export function createComboPoolPage(h = {}) {
     save(nextPairs, nextTrios, '已删除，组合池已更新。');
   }
 
+  const onSnapshotRestored = (event) => {
+    if (event.detail?.module === 'combos') load({ quiet: true });
+  };
   function bind(node) {
     bound = node;
+    document.addEventListener('rule-snapshots:restored', onSnapshotRestored);
     node.addEventListener('click', onClick);
     node.addEventListener('input', onInput);
     node.addEventListener('submit', onSubmit);
@@ -828,7 +833,7 @@ export function createComboPoolPage(h = {}) {
   }
   function dispose() {
     generation += 1;
-    tools.dispose();
+    document.removeEventListener('rule-snapshots:restored', onSnapshotRestored);
     controller?.abort();
     controller = null;
     if (bound) {
@@ -849,7 +854,6 @@ export function createComboPoolPage(h = {}) {
     if (data) applyPayload(data);
     root.innerHTML = html();
     bind(root);
-    tools.mount(root);
     controller = new AbortController();
     paintAll();
     ensureHeroes().then(() => { if (root === node) { paintGrid(); paintFilterGrid(); paintFilterChips(); } });

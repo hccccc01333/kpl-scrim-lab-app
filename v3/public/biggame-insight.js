@@ -11,6 +11,8 @@
  * - 不再出现选手状态；不再用三个小圆环叠在一起表达 BP。
  */
 
+import { glyph } from './ui-icons.js';
+
 const LANE_ORDER = ['对抗路', '打野', '中路', '发育路', '游走'];
 const LANE_SHORT = { 对抗路: '对抗', 打野: '打野', 中路: '中路', 发育路: '发育', 游走: '游走' };
 const PHASE_KEYS = ['early', 'mid', 'late'];
@@ -68,13 +70,16 @@ function emptyState(text) {
 }
 
 function cardHead(esc, kicker, title, lede, meta = '') {
+  /* 标题下不再摆说明小字：口径限制收成带图标的角标，操作靠控件本身自解释。 */
+  const scope = lede
+    ? `<span class="bgx-card-scope" title="${esc(lede)}">${glyph('warning', { label: '数据口径', size: 16 })} 口径</span>`
+    : '';
   return `<div class="bgx-card-head">
     <div class="bgx-card-head-copy">
       <span class="bgx-kicker">${esc(kicker)}</span>
       <h2 class="bgx-card-title">${title}</h2>
-      ${lede ? `<p class="bgx-card-lede">${lede}</p>` : ''}
     </div>
-    ${meta ? `<div class="bgx-card-meta">${meta}</div>` : ''}
+    ${meta || scope ? `<div class="bgx-card-meta">${scope}${meta}</div>` : ''}
   </div>`;
 }
 
@@ -99,41 +104,126 @@ function selectBase(ui, attr = 'data-bgv-base') {
 }
 
 /* ── 01 总览：指标板 ───────────────────────────────────────── */
-function flagCell(value, esc) {
-  if (!num(value)) return '<span class="bgv-cell is-na">—</span>';
-  return `<span class="bgv-cell ${value ? 'is-good' : 'is-bad'}">${value ? '✓' : '✗'}</span>`;
+const VIEW_MODES = [['games', '逐局'], ['win', '赢局平均'], ['loss', '输局平均']];
+const VIEW_WORD = { games: '整场', win: '赢局', loss: '输局' };
+const NA_TEXT = { 'no-replay': '缺回放', 'not-triggered': '本局未触发', 'no-base': '无历史基准' };
+/* 单元格里只放得下短标签；完整解释留在 title 和表下图例。 */
+const NA_SHORT = { 'no-replay': '缺回放', 'not-triggered': '未触发', 'no-base': '无基准' };
+const VERDICT_LABEL = {
+  firstBlood: '一血', firstTower: '首塔', at10: '10 分钟经济', towers: '推塔',
+  fightRate: '团战胜率', cut: '切 C', cutJungle: '打野切 C', cutSuffered: '被切 C',
+};
+
+/* 画图只消费后端已经算好的逐局值，不在这里重新算指标口径。 */
+function plotValue(metric, cell) {
+  if (cell === null || cell === undefined) return null;
+  if (metric.kind === 'flag') return num(cell) ? 1 : 0;
+  if (metric.kind === 'pair') {
+    if (!num(cell.own) || !num(cell.foe)) return null;
+    const total = cell.own + cell.foe;
+    return total > 0 ? cell.own / total * 100 : 50;
+  }
+  return num(cell) ? cell : null;
 }
 
-function pairCell(value) {
-  if (!value || !num(value.own) || !num(value.foe)) return '<span class="bgv-cell is-na">—</span>';
+function wholeFor(metric, view) {
+  return view !== 'games' && metric.byResult?.[view] ? metric.byResult[view] : (metric.series || {});
+}
+
+function wholeNumber(metric, view) {
+  const whole = wholeFor(metric, view);
+  return metric.kind === 'num' ? whole.value : (num(whole.rate) ? whole.rate : whole.value);
+}
+
+function deltaFor(metric, mode, view) {
+  const base = (metric.base || {})[mode];
+  const current = wholeNumber(metric, view);
+  return num(base) && num(current) ? current - base : null;
+}
+
+function deltaText(metric, delta) {
+  const digits = metric.kind === 'num' && metric.unit === 'gold' ? 0 : 1;
+  const unit = metric.kind === 'num' ? (metric.unit === 'gold' ? '' : ' 次') : 'pp';
+  const abs = digits ? Math.abs(delta).toFixed(digits) : Math.round(Math.abs(delta)).toLocaleString('zh-CN');
+  return `${delta > 0 ? '↑' : '↓'} ${abs}${unit}`;
+}
+
+/* 对比列收敛成一枚胶囊：只看方向和幅度，基准值放进表头标签里。 */
+function deltaPill(metric, delta, title = '') {
+  if (!num(delta)) return `<span class="bgv-delta is-na" title="没有可用的历史基准">— 无基准</span>`;
+  const digits = metric.kind === 'num' && metric.unit === 'gold' ? 0 : 1;
+  const rounded = digits ? Number(Math.abs(delta).toFixed(digits)) : Math.round(Math.abs(delta));
+  if (!rounded) return `<span class="bgv-delta is-flat">持平</span>`;
+  const good = (delta > 0) !== !!metric.reverse;
+  return `<span class="bgv-delta ${good ? 'is-good' : 'is-bad'}" title="${title}">${deltaText(metric, delta)}</span>`;
+}
+
+function naCell(reason) {
+  const key = reason || 'not-triggered';
+  const short = NA_SHORT[key] || '无数据';
+  const full = NA_TEXT[key] || NA_TEXT['not-triggered'];
+  return `<span class="bgv-cell is-na" data-na="${key}" title="${full}">—<small>${short}</small></span>`;
+}
+
+function flagCell(value, reason) {
+  if (!num(value)) return naCell(reason);
+  const got = !!value;
+  const word = got ? '拿到' : '未拿到';
+  return `<span class="bgv-cell ${got ? 'is-good' : 'is-bad'}" title="${word}">${got ? '✓' : '✗'}<small>${word}</small></span>`;
+}
+
+function pairCell(value, reason) {
+  if (!value || !num(value.own) || !num(value.foe)) return naCell(reason);
   const tone = value.own > value.foe ? 'is-good' : value.own < value.foe ? 'is-bad' : '';
   return `<span class="bgv-cell ${tone}"><b>${fmtNumber(value.own)}</b><i>:</i><b>${fmtNumber(value.foe)}</b></span>`;
 }
 
-function numberCell(value, reverse = false) {
-  if (!num(value)) return '<span class="bgv-cell is-na">—</span>';
+function numberCell(value, reverse, reason) {
+  if (!num(value)) return naCell(reason);
   const tone = value === 0 ? '' : (value > 0) !== reverse ? 'is-good' : 'is-bad';
   return `<span class="bgv-cell ${tone}"><b>${fmtSigned(value)}</b></span>`;
 }
 
-function pctCell(value) {
-  if (!num(value)) return '<span class="bgv-cell is-na">—</span>';
+function pctCell(value, reason) {
+  if (!num(value)) return naCell(reason);
   const tone = value >= 55 ? 'is-good' : value <= 45 ? 'is-bad' : '';
   return `<span class="bgv-cell ${tone}"><b>${Math.round(value)}%</b></span>`;
 }
 
-function cellFor(metric, value) {
-  if (metric.kind === 'flag') return flagCell(value);
-  if (metric.kind === 'pair') return pairCell(value);
-  if (metric.kind === 'pct') return pctCell(value);
-  return numberCell(value, metric.reverse);
+function cellFor(metric, value, reason) {
+  if (metric.kind === 'flag') return flagCell(value, reason);
+  if (metric.kind === 'pair') return pairCell(value, reason);
+  if (metric.kind === 'pct') return pctCell(value, reason);
+  return numberCell(value, metric.reverse, reason);
 }
 
-function seriesFor(metric) {
-  const s = metric.series || {};
+/* 赢局 / 输局视角只画一列聚合值，不把赢下的那几局又铺开一遍。 */
+function aggregateCell(metric, view) {
+  const w = wholeFor(metric, view);
+  if (metric.kind === 'flag') {
+    return num(w.rate) ? `<span class="bgv-cell ${w.rate >= 55 ? 'is-good' : w.rate <= 45 ? 'is-bad' : ''}">
+      <b>${Math.round(w.rate)}%</b><small>${w.own || 0}/${w.n || 0}</small></span>` : naCell('not-triggered');
+  }
+  if (metric.kind === 'pair') {
+    return num(w.own) && num(w.foe)
+      ? `<span class="bgv-cell ${w.own > w.foe ? 'is-good' : w.own < w.foe ? 'is-bad' : ''}">
+        <b>${fmtNumber(w.own)} : ${fmtNumber(w.foe)}</b><small>控制 ${num(w.rate) ? `${Math.round(w.rate)}%` : '—'}</small></span>`
+      : naCell('not-triggered');
+  }
+  if (metric.kind === 'pct') {
+    return num(w.value) ? `<span class="bgv-cell ${w.value >= 55 ? 'is-good' : w.value <= 45 ? 'is-bad' : ''}">
+      <b>${Math.round(w.value)}%</b><small>${w.n || 0} 局</small></span>` : naCell('not-triggered');
+  }
+  return num(w.value) ? `<span class="bgv-cell ${(w.value > 0) !== !!metric.reverse ? 'is-good' : 'is-bad'}">
+    <b>${metric.unit === 'gold' ? fmtSigned(w.value) : fmtNumber(w.value)}</b><small>${w.n || 0} 局</small></span>`
+    : naCell('not-triggered');
+}
+
+function seriesFor(metric, view) {
+  const s = wholeFor(metric, view);
   if (metric.kind === 'flag') {
     if (!num(s.n) || !s.n) return '—';
-    return `<b>${s.own}/${s.n}</b><small>${num(s.rate) ? `${Math.round(s.rate)}%` : '—'}</small>`;
+    return `<b>${s.own}/${s.n}</b><small>${num(s.rate) ? `${Math.round(s.rate)}%` : '—'} · ${VIEW_WORD[view]}值</small>`;
   }
   if (metric.kind === 'pair') {
     if (!num(s.own) || !num(s.foe)) return '—';
@@ -147,118 +237,269 @@ function seriesFor(metric) {
     <small>${num(s.total) ? `共 ${s.total} 次` : `${s.n || 0} 局`}</small>`;
 }
 
-/* 对比列只说「比选中的时间窗增加/下降多少」，不再展示基准值。 */
-function baseFor(metric, mode, modeLabel, esc) {
-  const ref = `<span class="bgv-base-ref">比${esc(modeLabel)}</span>`;
-  const base = (metric.base || {})[mode];
-  if (!num(base)) return `<span class="bgv-base is-na">${ref}<em>—</em></span>`;
-  let delta = null;
-  let unit = '';
-  if (metric.kind === 'flag' || metric.kind === 'pair') {
-    if (num(metric.series?.rate)) delta = metric.series.rate - base;
-    unit = 'pp';
-  } else if (metric.kind === 'pct') {
-    if (num(metric.series?.value)) delta = metric.series.value - base;
-    unit = 'pp';
-  } else if (num(metric.series?.value)) {
-    delta = metric.series.value - base;
-    unit = metric.unit === 'gold' ? '' : ' 次';
+/* 五张读数卡底部的迷你走势：0 为中心的方向色，缺失留空不画 0。 */
+function miniSpark(values, { zero = false, pips = false } = {}) {
+  if (!values.length) return '<span class="bgv-spark is-empty">—</span>';
+  if (pips) {
+    return `<span class="bgv-spark is-pips" aria-hidden="true">${values.map((value) =>
+      `<i class="${!num(value) ? 'is-na' : value ? 'is-win' : 'is-loss'}"></i>`).join('')}</span>`;
   }
-  if (!num(delta)) return `<span class="bgv-base is-na">${ref}<em>—</em></span>`;
-  const digits = metric.kind === 'num' && metric.unit === 'gold' ? 0 : 1;
-  const rounded = digits ? Number(Math.abs(delta).toFixed(digits)) : Math.round(Math.abs(delta));
-  if (!rounded) return `<span class="bgv-base">${ref}<em>持平</em></span>`;
-  const valueText = digits ? rounded.toFixed(digits) : rounded.toLocaleString('zh-CN');
-  const cls = (delta > 0) !== !!metric.reverse ? 'is-up' : 'is-down';
-  return `<span class="bgv-base">${ref}<em class="${cls}">${delta > 0 ? '增加' : '下降'} ${valueText}${unit}</em></span>`;
+  const valid = values.filter(num);
+  if (!valid.length) return '<span class="bgv-spark is-empty">—</span>';
+  const width = 96;
+  const height = 24;
+  const mid = height / 2;
+  const max = Math.max(1, ...valid.map((value) => Math.abs(value)));
+  const step = width / values.length;
+  const bars = values.map((value, index) => {
+    if (!num(value)) return '';
+    const barHeight = Math.max(1, Math.abs(value) / max * (mid - 2));
+    const y = zero ? (value >= 0 ? mid - barHeight : mid) : height - barHeight;
+    const cls = zero && value < 0 ? 'is-down' : 'is-up';
+    return `<rect x="${(index * step + 2).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(2, step - 4).toFixed(1)}" height="${barHeight.toFixed(1)}" rx="1" class="${cls}"></rect>`;
+  }).join('');
+  return `<svg class="bgv-spark" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
+    ${zero ? `<line x1="0" y1="${mid}" x2="${width}" y2="${mid}" class="bgv-spark-zero"/>` : ''}${bars}</svg>`;
 }
 
-function readoutTile(label, value, sub, tone = '') {
-  return `<div class="bgv-tile ${tone}"><span>${label}</span><b>${value}</b><small>${sub || ''}</small></div>`;
+function readoutTile(label, value, sub, tone = '', spark = '') {
+  return `<div class="bgv-tile ${tone}"><span>${label}</span><b>${value}</b><small>${sub || ''}</small>${spark}</div>`;
 }
 
-function overviewReadout(insight, metrics) {
+function viewIndexes(games, view) {
+  return games.map((_, index) => index).filter((index) => view === 'games' || games[index].result === view);
+}
+
+function overviewReadout(insight, metrics, games, view) {
   const score = (insight.summary || {}).score || {};
   const byKey = new Map(metrics.map((metric) => [metric.key, metric]));
-  const blood = byKey.get('firstBlood')?.series || {};
+  const indexes = viewIndexes(games, view);
+  const blood = byKey.get('firstBlood');
+  const at10 = byKey.get('at10');
+  const towers = byKey.get('towers');
   const dragonRows = metrics.filter((metric) => metric.key.startsWith('dragon:'));
-  const dragonOwn = dragonRows.reduce((sum, metric) => sum + (metric.series?.own || 0), 0);
-  const dragonFoe = dragonRows.reduce((sum, metric) => sum + (metric.series?.foe || 0), 0);
-  const at10 = byKey.get('at10')?.series || {};
-  const towers = byKey.get('towers')?.series || {};
+  let dragonOwn = 0;
+  let dragonFoe = 0;
+  const dragonSpread = indexes.map((index) => {
+    let own = 0;
+    let foe = 0;
+    for (const metric of dragonRows) {
+      const cell = metric.perGame?.[index];
+      if (!cell || !num(cell.own) || !num(cell.foe)) continue;
+      own += cell.own;
+      foe += cell.foe;
+    }
+    dragonOwn += own;
+    dragonFoe += foe;
+    return own + foe ? own / (own + foe) * 100 - 50 : null;
+  });
+  const bloodWhole = blood ? wholeFor(blood, view) : {};
+  const at10Whole = at10 ? wholeFor(at10, view) : {};
+  const towerWhole = towers ? wholeFor(towers, view) : {};
+  const resultPips = miniSpark(indexes.map((index) =>
+    games[index].result === 'win' ? 1 : games[index].result === 'loss' ? 0 : null), { pips: true });
+  const bloodTone = num(bloodWhole.rate) ? (bloodWhole.rate >= 55 ? 'is-good' : bloodWhole.rate <= 45 ? 'is-bad' : '') : '';
+  const goldTone = num(at10Whole.value) ? (at10Whole.value > 0 ? 'is-good' : 'is-bad') : '';
+  const towerTone = num(towerWhole.rate) ? (towerWhole.rate >= 55 ? 'is-good' : towerWhole.rate <= 45 ? 'is-bad' : '') : '';
   return `<div class="bgv-readout">
-    ${readoutTile('大场', `${score.us ?? 0}<i>:</i>${score.them ?? 0}`, '本场 BO', '')}
-    ${readoutTile('一血', num(blood.rate) ? `${blood.own}/${blood.n}` : '—', num(blood.rate) ? `${Math.round(blood.rate)}%` : '无回放')}
+    ${readoutTile('大场', `${score.us ?? 0}<i>:</i>${score.them ?? 0}`, `${VIEW_WORD[view]} · ${indexes.length} 局`, '', resultPips)}
+    ${readoutTile('一血', num(bloodWhole.rate) ? `${bloodWhole.own || 0}/${bloodWhole.n || 0}` : '—',
+      num(bloodWhole.rate) ? `${Math.round(bloodWhole.rate)}% · ${bloodWhole.n} 局` : '无回放', bloodTone,
+      blood ? miniSpark(indexes.map((index) => plotValue(blood, blood.perGame?.[index])), { pips: true }) : '')}
     ${readoutTile('中立资源', dragonOwn + dragonFoe ? `${fmtNumber(dragonOwn)} : ${fmtNumber(dragonFoe)}` : '—',
-      dragonOwn + dragonFoe ? `我方占比 ${Math.round(dragonOwn / (dragonOwn + dragonFoe) * 100)}%` : '无回放')}
-    ${readoutTile('10′ 经济差', num(at10.value) ? fmtSigned(at10.value) : '—', num(at10.n) ? `${at10.n} 局有过程` : '缺过程')}
-    ${readoutTile('推塔', num(towers.own) ? `${fmtNumber(towers.own)} : ${fmtNumber(towers.foe)}` : '—',
-      num(towers.rate) ? `占 ${Math.round(towers.rate)}%` : '无回放')}
+      dragonOwn + dragonFoe ? `我方占比 ${Math.round(dragonOwn / (dragonOwn + dragonFoe) * 100)}%` : '无回放', '',
+      miniSpark(dragonSpread, { zero: true }))}
+    ${readoutTile('10′ 经济差', num(at10Whole.value) ? fmtSigned(at10Whole.value) : '—',
+      num(at10Whole.n) ? `${at10Whole.n} 局有过程` : '缺过程', goldTone,
+      at10 ? miniSpark(indexes.map((index) => plotValue(at10, at10.perGame?.[index])), { zero: true }) : '')}
+    ${readoutTile('推塔', num(towerWhole.own) && num(towerWhole.foe) ? `${fmtNumber(towerWhole.own)} : ${fmtNumber(towerWhole.foe)}` : '—',
+      num(towerWhole.rate) ? `占 ${Math.round(towerWhole.rate)}%` : '无回放', towerTone,
+      towers ? miniSpark(indexes.map((index) => {
+        const cell = towers.perGame?.[index];
+        return cell && num(cell.own) && num(cell.foe) ? cell.own - cell.foe : null;
+      }), { zero: true }) : '')}
+  </div>`;
+}
+
+/* 结论层：只拼装后端已经算好的数值，覆盖不足 3 局的差异降权，不占头条。 */
+function conclusionBlock(insight, metrics, games, mode, modeLabel, esc) {
+  const total = games.length;
+  if (!total) return '';
+  const ranked = metrics.map((metric) => {
+    const delta = deltaFor(metric, mode, 'games');
+    const coverage = num(metric.coverage) ? metric.coverage
+      : (metric.perGame || []).filter((value) => value !== null && value !== undefined).length;
+    return { metric, delta, coverage, score: num(delta) ? Math.abs(delta) * Math.min(coverage, 3) / 3 : 0 };
+  }).filter((row) => num(row.delta) && row.coverage > 0)
+    .map((row) => ({ ...row, good: (row.delta > 0) !== !!row.metric.reverse }))
+    .sort((a, b) => b.score - a.score);
+  if (!ranked.length) {
+    return `<div class="bgv-conclusion is-muted"><p class="bgv-conclusion-line">本场没有${esc(modeLabel)}基准，先看下面的逐局证据。</p></div>`;
+  }
+  const labelOf = (row) => VERDICT_LABEL[row.metric.key] || row.metric.label;
+  const notable = (row) => Math.abs(row.delta) >= (row.metric.kind === 'num' && row.metric.unit === 'gold' ? 1500 : 10);
+  const phrase = (list) => `${list.map(labelOf).join('、')}${list.some(notable) ? '明显' : ''}`;
+  const good = ranked.filter((row) => row.good).slice(0, 2);
+  const bad = ranked.filter((row) => !row.good).slice(0, 2);
+  let text;
+  if (good.length && bad.length) text = `本场${phrase(good)}占优，但 ${phrase(bad)}落后。`;
+  else if (good.length) text = `本场${phrase(good)}占优，其余指标与${modeLabel}接近。`;
+  else text = `本场${phrase(bad)}落后，其余指标与${modeLabel}接近。`;
+  text += `覆盖 ${total} 局，逐局证据见下表。`;
+  const tags = ranked.slice(0, 3).map((row) =>
+    `<span class="bgv-diff ${row.good ? 'is-good' : 'is-bad'}">${esc(labelOf(row))}
+      <b>${deltaText(row.metric, row.delta)}</b><small>${row.coverage}/${total} 局</small></span>`).join('');
+  return `<div class="bgv-conclusion" aria-label="本场结论">
+    <p class="bgv-conclusion-line">${esc(text)}</p>
+    <div class="bgv-diff-tags">${tags}</div>
+    <p class="bgv-conclusion-note">差异标签按「偏离基准 × 覆盖局数」排序；不足 3 局的指标降权。</p>
+  </div>`;
+}
+
+/* 展开层讲人话：每局一张小卡，写清第几把、胜负、数值和一条方向条，
+   不再放没有坐标和单位的抽象走势图。 */
+function plotText(metric, raw) {
+  if (metric.kind === 'flag') return raw ? '✓ 拿到' : '✗ 未拿到';
+  if (metric.kind === 'pair') return num(raw?.own) && num(raw?.foe) ? `${fmtNumber(raw.own)} : ${fmtNumber(raw.foe)}` : '—';
+  if (metric.kind === 'pct') return num(raw) ? `${Math.round(raw)}%` : '—';
+  return num(raw) ? (metric.unit === 'gold' ? fmtSigned(raw) : fmtNumber(raw)) : '—';
+}
+
+function detailBody(metric, games, view, esc) {
+  const indexes = viewIndexes(games, view);
+  const raws = indexes.map((index) => metric.perGame?.[index]);
+  const values = raws.map((raw) => plotValue(metric, raw));
+  const max = Math.max(1, ...values.filter(num).map((value) => Math.abs(value)));
+  const cards = indexes.map((index, position) => {
+    const game = games[index];
+    const raw = raws[position];
+    const value = values[position];
+    const reason = metric.missing?.[index] || (raw === null || raw === undefined ? 'not-triggered' : null);
+    const positive = metric.kind === 'flag' ? value === 1
+      : metric.kind === 'num' ? value > 0 : value >= 50;
+    const tone = !num(value) ? 'is-na' : (positive !== !!metric.reverse ? 'is-up' : 'is-down');
+    const width = num(value) ? Math.max(6, Math.min(100, Math.abs(value) / max * 100)) : 0;
+    return `<div class="bgv-evidence ${tone === 'is-na' ? 'is-na' : ''}">
+      <b>${esc(gameWord(game.gameIndex))}</b>
+      <span>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : ''}</span>
+      <em>${num(value) ? esc(plotText(metric, raw)) : esc(NA_SHORT[reason] || '无数据')}</em>
+      <i class="bgv-evidence-bar ${tone}" style="--w:${width.toFixed(0)}%"></i>
+    </div>`;
+  }).join('');
+  return `<div class="bgv-evidence-wrap">
+    <p class="bgv-evidence-head">${esc(metric.label)} · 逐局证据（${values.filter(num).length}/${games.length} 局有值）</p>
+    <div class="bgv-evidence-list">${cards || '<span class="bgx-quiet">这个视角没有可展示的局</span>'}</div>
   </div>`;
 }
 
 export function renderOverview(insight, ui, h) {
-  const { esc, count, pct1 } = localHelpers(h);
+  const { esc, count } = localHelpers(h);
   const block = insight.overview;
   if (!block || !(block.metrics || []).length) {
-    return `${cardHead(esc, '01 总览与对比', '这场没有可用的过程指标', '先补齐回放或 BP 名单，指标板才有数据。')}${emptyState('没有过程指标。')}`;
+    return `${cardHead(esc, '01 总览与对比', '这场没有可用的过程指标', '')}${emptyState('没有过程指标，先补齐回放或 BP 名单。')}`;
   }
   const mode = BASE_MODES.some(([key]) => key === ui.baseMode) ? ui.baseMode : 'format';
   const modeLabel = (BASE_MODES.find(([key]) => key === mode) || [])[1];
   const games = block.games || [];
-  const columns = games.length || 1;
+  const view = VIEW_MODES.some(([key]) => key === ui.overviewView) ? ui.overviewView : 'games';
+  const shownGames = view === 'games' ? games : games.filter((game) => game.result === view);
+  const aggregate = view !== 'games';
+  const indexes = viewIndexes(games, view);
+  const columns = aggregate ? 1 : (shownGames.length || 1);
   const metricsAll = block.metrics || [];
-  const KEY_METRICS = new Set(['firstBlood', 'firstTower', 'at10', 'dragon:暴君', 'dragon:主宰',
-    'towers', 'fightRate', 'cut']);
   const groups = [];
   for (const metric of metricsAll) if (!groups.includes(metric.group)) groups.push(metric.group);
   const metricGroup = ui.metricGroup === 'key' || groups.includes(ui.metricGroup) ? ui.metricGroup : 'all';
-  const metrics = metricGroup === 'all' ? metricsAll
-    : metricGroup === 'key' ? metricsAll.filter((metric) => KEY_METRICS.has(metric.key))
+  let metrics = metricGroup === 'all' ? metricsAll
+    : metricGroup === 'key' ? metricsAll.slice()
       : metricsAll.filter((metric) => metric.group === metricGroup);
+  if (metricGroup === 'key') {
+    /* 关键项不再固定名单：偏离基准越大、覆盖越足越靠前；不足 3 局降权。 */
+    const scored = (metric) => {
+      const delta = deltaFor(metric, mode, view);
+      const coverage = num(metric.coverage) ? metric.coverage : (metric.perGame || []).length;
+      return num(delta) ? Math.abs(delta) * Math.min(coverage, 3) / 3 : 0;
+    };
+    metrics.sort((a, b) => scored(b) - scored(a) || metricsAll.indexOf(a) - metricsAll.indexOf(b));
+    metrics = metrics.slice(0, 8);
+  }
 
-  // 只筛出一个分组时不再重复画分组标题行。
-  const showGroupHeads = new Set(metrics.map((metric) => metric.group)).size > 1;
-  const groupRows = [];
+  /* 关键项按偏离排序后分组会交错，重复组名反而更乱：只在固定分组视角显示组带。 */
+  const showGroupHeads = metricGroup !== 'key' && new Set(metrics.map((metric) => metric.group)).size > 1;
+  const bodyRows = [];
   let lastGroup = '';
   for (const metric of metrics) {
     if (showGroupHeads && metric.group !== lastGroup) {
-      groupRows.push(`<div class="bgv-row is-group"><span>${esc(metric.group)}</span></div>`);
+      bodyRows.push(`<tr class="bgv-group-row"><th scope="colgroup" colspan="${columns + 3}">${esc(metric.group)}</th></tr>`);
       lastGroup = metric.group;
     }
-    const cells = (metric.perGame || []).map((value) => cellFor(metric, value)).join('');
-    groupRows.push(`<div class="bgv-row">
-      <div class="bgv-metric"><b>${esc(metric.label)}</b><small>${esc(metric.hint || '')}</small></div>
+    const cells = aggregate
+      ? `<td class="bgv-col-game is-aggregate">${aggregateCell(metric, view)}</td>`
+      : shownGames.map((game) => {
+        const index = games.indexOf(game);
+        const value = metric.perGame?.[index];
+        const reason = metric.missing?.[index] || (value === null || value === undefined ? 'not-triggered' : null);
+        return `<td class="bgv-col-game" data-bgv-game="${esc(String(game.gameIndex))}">
+          <button type="button" class="bgv-cell-btn" data-bgv-game="${esc(String(game.gameIndex))}" aria-label="${esc(metric.label)} ${esc(gameWord(game.gameIndex))}：点按高亮这一局">${cellFor(metric, value, reason)}</button></td>`;
+      }).join('');
+    const detailId = `bgv-detail-${metrics.indexOf(metric)}`;
+    const strip = miniSpark(indexes.map((index) => plotValue(metric, metric.perGame?.[index])),
+      { zero: metric.kind === 'num' });
+    bodyRows.push(`<tr class="bgv-metric-row">
+      <th scope="row" class="bgv-col-metric">
+        <button type="button" class="bgv-row-toggle" data-bgv-expand="${detailId}" aria-expanded="false" aria-controls="${detailId}">
+          <span class="bgv-row-caret" aria-hidden="true"></span>
+          <span class="bgv-metric-copy"><b title="${esc(metric.label)}">${esc(metric.label)}</b><small title="${esc(metric.hint || '')}">${esc(metric.hint || '')}</small></span>
+          <span class="bgv-mini-strip" aria-hidden="true">${strip}</span>
+        </button>
+      </th>
       ${cells}
-      <div class="bgv-series">${seriesFor(metric)}</div>
-      <div class="bgv-compare">${baseFor(metric, mode, modeLabel, esc)}</div>
-    </div>`);
+      <td class="bgv-col-series">${seriesFor(metric, view)}</td>
+      <td class="bgv-col-compare">${deltaPill(metric, deltaFor(metric, mode, view), `${esc(metric.label)} · ${esc(modeLabel)}`)}</td>
+    </tr>
+    <tr class="bgv-detail-row" id="${detailId}" hidden><td colspan="${columns + 3}">${detailBody(metric, games, view, esc)}</td></tr>`);
   }
 
-  const head = `<div class="bgv-row is-head">
-    <span class="bgv-metric">指标</span>
-    ${games.map((game) => `<span class="bgv-col-head">${esc(gameWord(game.gameIndex))}
-      <i class="${game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : ''}">${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</i></span>`).join('')}
-    <span class="bgv-series">整场</span>
-    <span class="bgv-compare">对比</span>
-  </div>`;
+  const head = `<thead><tr>
+    <th scope="col" class="bgv-col-metric">指标</th>
+    ${aggregate
+      ? `<th scope="col" class="bgv-col-head">${VIEW_WORD[view]}平均<small>${shownGames.length} 局</small></th>`
+      : shownGames.map((game) => `<th scope="col" class="bgv-col-head" data-bgv-game="${esc(String(game.gameIndex))}">${esc(gameWord(game.gameIndex))}
+        <i class="${game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : ''}">${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</i></th>`).join('')}
+    <th scope="col" class="bgv-col-series">整场</th>
+    <th scope="col" class="bgv-col-compare">对比<small>${esc(modeLabel)}</small></th>
+  </tr></thead>`;
 
   const filterToggle = `<div class="bgx-seg bgv-filter" role="group" aria-label="指标分组">
     ${[['all', '全部'], ['key', '关键 8 项'], ...groups.map((name) => [name, name])].map(([value, label]) =>
       `<button type="button" class="bgx-seg-btn" data-bgv-group="${esc(value)}" aria-pressed="${metricGroup === value}">${esc(label)}</button>`).join('')}
   </div>`;
+  const viewToggle = `<div class="bgx-seg bgv-view" role="group" aria-label="指标视角">
+    ${VIEW_MODES.map(([value, label]) =>
+      `<button type="button" class="bgx-seg-btn" data-bgv-view="${value}" aria-pressed="${view === value}">${label}</button>`).join('')}
+  </div>`;
+  const baseN = insight.baseline?.modes?.[mode]?.metrics?.n;
+  const baseTag = `<span class="bgv-base-tag" title="对比基准来自${esc(modeLabel)}，不是本场数据">基准 ${esc(modeLabel)}${num(baseN) ? ` · ${count(baseN)} 局` : ''}</span>`;
   const filterBar = `<div class="bgv-toolbar">
-    ${filterToggle}
+    <div class="bgv-toolbar-left">${filterToggle}${viewToggle}</div>
     <span class="bgv-toolbar-count">显示 ${count(metrics.length)} / ${count(metricsAll.length)} 项</span>
   </div>`;
-  return `${cardHead(esc, '01 总览与对比', `这一场 BO${esc(String(insight.baseline?.bestOf || games.length))}，每一局的关键指标`,
-    `一行一个指标、一列一局；对比列写本场比「${esc(modeLabel)}」增加或下降多少。按上面的分组可以只看一段。`,
-    `${selectBase(ui)}<span class="bgx-chip">${count(games.length)} 局</span>`)}
-    ${overviewReadout(insight, metricsAll)}
+  const legend = `<div class="bgv-na-legend">
+    <span><i class="is-good">✓ 拿到</i><i class="is-bad">✗ 未拿到</i></span>
+    <span><i class="is-na">—</i> 缺回放 / 本局未触发 / 无历史基准：每格写明原因，不再把「—」当 0</span>
+  </div>`;
+  return `${cardHead(esc, '01 总览与对比', `这一场 BO${esc(String(insight.baseline?.bestOf || games.length))}，每一局的关键指标`, '',
+    `${selectBase(ui)}${baseTag}<span class="bgx-chip">${count(games.length)} 局</span>`)}
+    ${conclusionBlock(insight, metricsAll, games, mode, modeLabel, esc)}
+    ${overviewReadout(insight, metricsAll, games, view)}
     ${filterBar}
-    <div class="bgv-board" style="--bgv-cols:${columns}">
-      ${head}${groupRows.join('')}
-    </div>`;
+    <div class="bgv-board-scroll${aggregate ? ' is-aggregate' : ''}" tabindex="0" role="region" aria-label="逐局指标表，可横向滚动" style="--bgv-cols:${columns}">
+      <table class="bgv-board">
+        <caption class="visually-hidden">本场逐局指标、整场值与${esc(modeLabel)}基准对比</caption>
+        ${head}<tbody>${bodyRows.join('')}</tbody>
+      </table>
+    </div>
+    ${legend}`;
 }
 
 /* ── 01 系列赛走势 ─────────────────────────────────────────── */
@@ -267,20 +508,24 @@ function qty(value, total) {
   return `${num(value) ? value : 0}<i>/${num(total) ? total : '—'}</i>`;
 }
 
-function readCell(value, total, label, tone = '') {
-  return `<div class="bgv-read ${tone}"><b>${qty(value, total)}</b><span>${label}</span></div>`;
+function readCell(value, total, label, tone = '', note = '') {
+  return `<div class="bgv-read ${tone}"><b>${qty(value, total)}</b><span>${label}</span>${note ? `<small>${note}</small>` : ''}</div>`;
 }
 
-function lineupRow(h, side, cells, result) {
+const bpSideClass = (side) => side === 'blue' || side === 'red' ? `is-${side}` : 'is-unknown';
+const bpSideName = (side) => side === 'blue' ? '蓝方' : side === 'red' ? '红方' : '阵营未记录';
+const bpSideBadge = (team, side) => `<span class="bgv-bp-side-badge ${bpSideClass(side)}"><i></i>${team} · ${bpSideName(side)}</span>`;
+
+function lineupRow(h, side, cells, actualSide) {
   const { esc } = h;
-  return `<div class="bgv-lineup-side ${side === 'foe' ? 'is-foe' : ''}">
-    <span class="bgv-side-label">${side === 'foe' ? '对方' : '我方'}</span>
+  return `<div class="bgv-lineup-side ${bpSideClass(actualSide)}">
+    <span class="bgv-side-label">${side === 'foe' ? '对方' : '我方'}<small>${bpSideName(actualSide)}</small></span>
     <div class="bgv-lineup-heroes">${(cells || []).map((cell) =>
       heroChip(h, cell.hero, [cell.position, cell.archetype].filter(Boolean).join(' · '))).join('') || '<span class="bgx-quiet">没有名单</span>'}</div>
   </div>`;
 }
 
-function capsPips(side, caps, core) {
+function capsPips(side, caps, core, actualSide) {
   const items = ['前排', '开团', '控制'].map((key) => ({ label: key, value: num(caps[key]) ? caps[key] : 0 }));
   if (num(core)) items.push({ label: '核心', value: core });
   const dots = (value) => {
@@ -288,24 +533,26 @@ function capsPips(side, caps, core) {
     return `<span class="bgv-cap-dots">${Array.from({ length: 5 },
       (_, index) => `<i class="${index < count ? 'is-on' : ''}"></i>`).join('')}</span>`;
   };
-  return `<div class="bgv-caps-side ${side === 'foe' ? 'is-foe' : ''}">
-    <span class="bgv-caps-side-label">${side === 'foe' ? '对方' : '我方'}</span>
+  return `<div class="bgv-caps-side ${bpSideClass(actualSide)}">
+    <span class="bgv-caps-side-label">${side === 'foe' ? '对方' : '我方'}<small>${bpSideName(actualSide)}</small></span>
     <div class="bgv-caps-tiles">${items.map((item) => `<div class="bgv-cap">
       <b>${item.value}</b><span>${item.label}</span>${dots(item.value)}
     </div>`).join('')}</div>
   </div>`;
 }
 
-function comboBlock(game, h) {
+function comboBlock(game, h, ownSide) {
   const { esc } = h;
+  const foeSide = ownSide === 'blue' ? 'red' : ownSide === 'red' ? 'blue' : null;
   /* 只认赛训组组合池里的双人组合：本局两边都拿到才算「命中」；
      池子为空时不再退回 KPL / 历史常用组合，避免拿任意双人组当组合池。 */
   const poolDoc = h.comboPool && !h.comboPool.builtin ? h.comboPool : null;
   const pool = (poolDoc?.pairs || []).filter((row) => Array.isArray(row.heroes) && row.heroes.length === 2);
   const strengthWord = (value) => value === 'strong' ? '强联动' : value === 'weak' ? '弱联动' : '组合池';
   const sideBlock = (side) => {
-    const title = side === 'foe' ? '对方命中组合' : '我方命中组合';
-    const empty = (text) => `<div class="bgv-combo-side ${side === 'foe' ? 'is-foe' : ''}">
+    const title = side === 'foe' ? '对方双人组合' : '我方双人组合';
+    const actualSide = side === 'foe' ? foeSide : ownSide;
+    const empty = (text) => `<div class="bgv-combo-side ${bpSideClass(actualSide)}">
       <span class="bgv-combo-title">${title}</span><p class="bgv-combo-empty">${text}</p></div>`;
     if (h.comboPool === undefined) return empty('组合池读取中…');
     if (!h.comboPool) return empty('组合池暂不可读');
@@ -313,7 +560,7 @@ function comboBlock(game, h) {
     const picked = new Set((side === 'foe' ? game.heroesFoe : game.heroesOwn) || []);
     const hits = pool.filter((row) => row.heroes.every((hero) => picked.has(hero)));
     if (!hits.length) return empty('这局没有命中组合池');
-    return `<div class="bgv-combo-side ${side === 'foe' ? 'is-foe' : ''}">
+    return `<div class="bgv-combo-side ${bpSideClass(actualSide)}">
       <span class="bgv-combo-title">${title}</span>
       ${hits.slice(0, 2).map((row) => {
         const pair = row.heroes || [];
@@ -329,29 +576,80 @@ function comboBlock(game, h) {
   return `<div class="bgv-combos-deny">${sideBlock('foe')}${sideBlock('own')}</div>`;
 }
 
-function banTiles(list, h, side) {
-  const { esc } = h;
-  const heroes = list || [];
-  if (!heroes.length) return '';
-  return `<div class="bgv-ban-row ${side === 'foe' ? 'is-foe' : ''}"><span>${side === 'foe' ? '敌 ban' : '我 ban'}</span>
-    <div>${heroes.map((hero) => `<span class="bgv-ban-tile">${h.portrait(hero, 'bgv-ban-img')}<b>${esc(hero)}</b></span>`).join('')}</div>
-  </div>`;
+function bpDraftFlow(game, boGame, h) {
+  const ownSide = boGame?.foeSide === 'blue' ? 'red' : boGame?.foeSide === 'red' ? 'blue' : null;
+  const foeSide = ownSide === 'blue' ? 'red' : ownSide === 'red' ? 'blue' : null;
+  const picks = {
+    own: boGame?.ownPicks?.length ? boGame.ownPicks : (game.heroesOwn || []),
+    foe: boGame?.foePicks?.length ? boGame.foePicks : (game.heroesFoe || []),
+  };
+  const bans = {
+    own: boGame?.ownBans?.length ? boGame.ownBans : (game.bansOwn || []),
+    foe: boGame?.foeBans?.length ? boGame.foeBans : (game.bansFoe || []),
+  };
+  if (!ownSide) {
+    const team = (key, label) => {
+      const events = [
+        ...(bans[key] || []).map((hero) => ({ hero, action: 'ban' })),
+        ...(picks[key] || []).map((hero) => ({ hero, action: 'pick' })),
+      ];
+      return `<section class="bgv-bp-fallback-team"><h4>${label}</h4><div>${events.map((event) => `
+        <span class="bgv-bp-event is-unknown is-${event.action}">${h.portrait(event.hero, 'bgv-bp-event-face')}<b>${h.esc(event.hero)}</b><small>${event.action === 'ban' ? 'Ban' : 'Pick'}</small></span>`).join('')}</div></section>`;
+    };
+    return `<section class="bgv-bp-draft is-unknown"><header><b>Ban / Pick 流程</b><span>阵营未记录，按队伍汇总</span></header><div class="bgv-bp-fallback">${team('own', '我方')}${team('foe', '对方')}</div></section>`;
+  }
+  const banCount = Math.max(4, Math.min(5, Math.max((bans.own || []).length, (bans.foe || []).length)));
+  const schedule = BP_SCHEDULE[banCount] || BP_SCHEDULE[4];
+  const phases = [
+    { key: 'ban1', title: 'R1 Ban', note: '第一轮禁用', events: [] },
+    { key: 'pick1', title: 'P1', note: '第一轮选择', events: [] },
+    { key: 'ban2', title: 'R2 Ban', note: '第二轮禁用', events: [] },
+    { key: 'pick2', title: 'P2', note: '第二轮选择', events: [] },
+  ];
+  const counters = { own: { ban: 0, pick: 0 }, foe: { ban: 0, pick: 0 } };
+  let phaseIndex = -1;
+  let lastAction = '';
+  schedule.forEach(([action, camp], order) => {
+    if (action !== lastAction) { phaseIndex++; lastAction = action; }
+    const side = camp === 'B' ? 'blue' : 'red';
+    const team = side === ownSide ? 'own' : 'foe';
+    const list = action === 'ban' ? bans[team] : picks[team];
+    const slot = counters[team][action]++;
+    phases[phaseIndex].events.push({
+      action, side, team, hero: list[slot] || '', order: order + 1, slot: slot + 1,
+    });
+  });
+  return `<section class="bgv-bp-draft" aria-label="两轮 Ban 与 Pick 流程">
+    <header><b>两轮 BP 流程</b><div class="bgv-bp-draft-legend"><span class="is-blue"><i></i>蓝方</span><span class="is-red"><i></i>红方</span><span><em>Ban</em>禁用</span><span><em>Pick</em>选择</span></div></header>
+    <div class="bgv-bp-phases">${phases.map((phase) => `<section class="bgv-bp-phase">
+      <header><b>${phase.title}</b><span>${phase.note}</span></header>
+      <div class="bgv-bp-phase-events">${phase.events.map((event) => `<div class="bgv-bp-event ${bpSideClass(event.side)} is-${event.action}" title="${h.esc(`第 ${event.order} 手 · ${event.team === 'own' ? '我方' : '对方'} · ${event.action === 'ban' ? 'Ban' : 'Pick'} ${event.hero || '未记录'}`)}">
+        <span class="bgv-bp-event-side">${event.team === 'own' ? '我' : '敌'} · ${bpSideName(event.side)}</span>
+        ${event.hero ? h.portrait(event.hero, 'bgv-bp-event-face') : '<span class="bgv-bp-event-empty">—</span>'}
+        <b>${h.esc(event.hero || '未记录')}</b>
+        <small>${event.action === 'ban' ? 'Ban' : 'Pick'} ${event.slot}</small>
+        ${event.action === 'ban' ? '<i class="bgv-bp-event-slash"></i>' : ''}
+      </div>`).join('')}</div>
+    </section>`).join('')}</div>
+  </section>`;
 }
+
 
 export function renderBp(insight, ui, h) {
   const { esc, count } = localHelpers(h);
   const plan = insight.bpPlan;
   if (!plan || !(plan.games || []).length) {
-    return `${cardHead(esc, '02 BP 博弈', '这场没有可核对的 BP 记录', '名单缺失时不给结论；先到对局详情补齐 BP。')}${emptyState('没有 BP 名单。')}`;
+    return `${cardHead(esc, '02 BP 博弈', '这场没有可核对的 BP 记录', '')}${emptyState('没有 BP 名单，先到对局详情补齐 BP。')}`;
   }
   const allGames = plan.games;
   const playable = allGames.filter((game) => (game.heroesOwn || []).length && (game.heroesFoe || []).length);
   const filtered = ui.bpGame ? playable.filter((game) => String(game.gameIndex) === String(ui.bpGame)) : playable;
   const games = filtered.length ? filtered : playable;
   if (!playable.length) {
-    return `${cardHead(esc, '02 BP 博弈', '这场没有可读的 BP 名单', '名单缺失时不给结论；先到对局详情补齐 BP。')}${emptyState('没有 BP 名单。')}`;
+    return `${cardHead(esc, '02 BP 博弈', '这场没有可读的 BP 名单', '')}${emptyState('没有 BP 名单，先到对局详情补齐 BP。')}`;
   }
   const series = plan.series || {};
+  const boGames = insight.boBp?.current?.games || [];
   const ownHits = games.reduce((sum, game) => sum + (game.plan?.ownHits || 0), 0);
   const foeHits = games.reduce((sum, game) => sum + (game.plan?.foeHits || 0), 0);
   const brokenFoe = games.reduce((sum, game) => sum + ((game.combos?.foe || [])
@@ -362,26 +660,37 @@ export function renderBp(insight, ui, h) {
   const pairN = games.filter((game) => num(game.kpl?.own?.pairN)).length;
   const banTotal = games.reduce((sum, game) => sum
     + (game.ban?.denyItems || []).filter((item) => item.foePicks > 0).length, 0);
+  const banPossible = games.reduce((sum, game) => sum + (game.bansOwn || []).length, 0);
   const edgeMean = num(series.edgeMean) ? series.edgeMean : null;
   const edgeWord = edgeMean === null ? '数据不足' : edgeMean >= 0.03 ? '整体占优'
     : edgeMean <= -0.03 ? '整体下风' : '整体接近';
   const cards = games.map((game, index) => {
     const comp = (insight.comp?.games || []).find((item) => String(item.gameIndex) === String(game.gameIndex)) || {};
     const system = (insight.compSystem?.games || []).find((item) => String(item.gameIndex) === String(game.gameIndex)) || {};
+    const boGame = boGames.find((item) => String(item.index) === String(game.gameIndex)) || null;
+    const ownSide = boGame?.foeSide === 'blue' ? 'red' : boGame?.foeSide === 'red' ? 'blue' : null;
+    const foeSide = ownSide === 'blue' ? 'red' : ownSide === 'red' ? 'blue' : null;
     const planTotal = (game.plan?.foeWanted || []).length || 3;
     const planHit = game.plan?.foeHits || 0;
     const banHit = (game.ban?.denyItems || []).filter((item) => item.foePicks > 0).length;
+    const banCount = (game.bansOwn || []).length || 5;
     const pairHit = game.kpl?.own?.pairHits || 0;
     const ownCaps = comp.ownCaps || {};
     const foeCaps = comp.foeCaps || {};
     const core = num((system.own || {}).cores) ? system.own.cores : null;
     const foeCore = num((system.foe || {}).cores) ? system.foe.cores : null;
-    const ownCells = (game.signature?.own || []).length
-      ? game.signature.own
-      : (game.heroesOwn || []).map((hero) => ({ hero, position: '', archetype: '' }));
-    const foeCells = (game.signature?.foe || []).length
-      ? game.signature.foe
-      : (game.heroesFoe || []).map((hero) => ({ hero, position: '', archetype: '' }));
+    /* 名单展示必须以完整的 heroes*（5 人）为准，签名只用来加分路/打法角标。
+       backend 的 _signature() 会丢掉「分路未登记 / 打法待分类」的选手，
+       旧逻辑只要签名非空就整份替掉名单，那位选手就从界面上凭空消失。
+       老数据只有签名没有 heroes* 时，仍退回签名，保证不倒退。 */
+    const lineupCells = (heroes, signature) => {
+      const sig = signature || [];
+      const byHero = new Map(sig.map((cell) => [cell.hero, cell]));
+      const names = heroes && heroes.length ? heroes : sig.map((cell) => cell.hero);
+      return names.map((hero) => byHero.get(hero) || { hero, position: '', archetype: '' });
+    };
+    const ownCells = lineupCells(game.heroesOwn, game.signature?.own);
+    const foeCells = lineupCells(game.heroesFoe, game.signature?.foe);
     const open = ui.bpOpen?.[String(game.gameIndex)] ?? (!!ui.bpGame || index === 0);
     return `<details class="bgv-bp-card ${game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : ''}"
       data-bp-card="${esc(String(game.gameIndex))}" ${open ? 'open' : ''}>
@@ -390,37 +699,41 @@ export function renderBp(insight, ui, h) {
         <em>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</em>
       </summary>
       <div class="bgv-bp-body">
-        ${lineupRow(h, 'own', ownCells, game.result)}
-        ${lineupRow(h, 'foe', foeCells, game.result)}
-        ${comboBlock(game, h)}
-        <div class="bgv-bp-reads">
-          ${readCell(planHit, planTotal, '对方计划命中', planHit >= Math.ceil(planTotal / 2) ? 'is-good' : '')}
-          ${readCell(banHit, 5, 'ban 命中', banHit >= 3 ? 'is-good' : '')}
-          ${readCell(pairHit, 10, 'KPL 双人命中', pairHit >= 3 ? 'is-good' : '')}
+        <div class="bgv-bp-game-head">${bpSideBadge('我方', ownSide)}<span class="bgv-bp-vs">VS</span>${bpSideBadge('对方', foeSide)}</div>
+        <div class="bgv-bp-lineups">${lineupRow(h, 'own', ownCells, ownSide)}${lineupRow(h, 'foe', foeCells, foeSide)}</div>
+        ${bpDraftFlow(game, boGame, h)}
+        <div class="bgv-bp-lower">
+          <section class="bgv-bp-combo-panel" aria-label="双方双人组合">${comboBlock(game, h, ownSide)}</section>
+          <section class="bgv-bp-read-panel" aria-label="本局教练指标">
+            <div class="bgv-bp-reads">
+              ${readCell(planHit, planTotal, '对方首选被处理', planHit >= Math.ceil(planTotal / 2) ? 'is-good' : '', '禁用或抢走对方想用的英雄')}
+              ${readCell(banHit, banCount, '禁用命中', banHit >= Math.ceil(banCount / 2) ? 'is-good' : '', '禁到对方常用英雄')}
+              ${readCell(pairHit, 10, '双人组合命中', pairHit >= 3 ? 'is-good' : '', '五人阵容共 10 种双人搭配')}
+            </div>
+            <div class="bgv-caps-board">${capsPips('own', ownCaps, core, ownSide)}${capsPips('foe', foeCaps, foeCore, foeSide)}</div>
+          </section>
         </div>
-        <div class="bgv-caps-board">${capsPips('own', ownCaps, core)}${capsPips('foe', foeCaps, foeCore)}</div>
-        <div class="bgv-bans-visual">${banTiles(game.bansOwn, h, 'own')}${banTiles(game.bansFoe, h, 'foe')}</div>
       </div>
     </details>`;
   }).join('');
 
   const filterChip = ui.bpGame
-    ? `<button type="button" class="bgx-btn" data-bp-game="">看全部 ${count(playable.length)} 局</button>`
+    ? `<button type="button" class="bgx-btn control" data-bp-game="">${glyph('matches', { label: '看全部局', size: 18 })} 看全部 ${count(playable.length)} 局</button>`
     : '';
   return `${cardHead(esc, '02 BP 博弈', `${ui.bpGame ? `第 ${esc(String(ui.bpGame))} 把` : `这 ${count(playable.length)} 局`} BP，${esc(edgeWord)}`,
     '',
     `${filterChip}${ui.bpGame ? `<span class="bgx-chip">第 ${esc(String(ui.bpGame))} 把</span>` : ''}`)}
     <div class="bgv-bp-summary">
-      ${readoutTile('拆掉对方组合', `${brokenFoe} 组`, 'ban 或抢掉其中一张', brokenFoe > 0 ? 'is-good' : '')}
-      ${readoutTile('我方组合被拆', `${brokenOwn} 组`, '对面 ban 或抢掉', brokenOwn > brokenFoe ? 'is-bad' : '')}
-      ${readoutTile('我方拿到首选', `${ownHits} 次`, '对手核心被我们抢/ban 的次数另计', ownHits >= foeHits ? 'is-good' : '')}
-      ${readoutTile('KPL 双人命中', pairN ? `${pairHits} 对` : '—', `${pairN} 局有组合样本`)}
-      ${readoutTile('ban 命中', `${banTotal} / ${games.length * 5}`, '打到对手常用英雄的 ban')}
+      ${readoutTile('拆掉对方想组的组合', `${brokenFoe} 组`, '禁用或抢走其中一张', brokenFoe > 0 ? 'is-good' : '')}
+      ${readoutTile('对方拆掉我方组合', `${brokenOwn} 组`, '对方禁用或抢走其中一张', brokenOwn > brokenFoe ? 'is-bad' : '')}
+      ${readoutTile('拿到对方想用的英雄', `${ownHits} 次`, '对手核心被我们抢 / ban 的次数另计', ownHits >= foeHits ? 'is-good' : '')}
+      ${readoutTile('双人组合命中', pairN ? `${pairHits} 对` : '—', `${pairN} 局有组合样本`)}
+      ${readoutTile('禁用命中', banPossible ? `${banTotal} / ${banPossible}` : '—', '禁到对方常用英雄的 Ban 数')}
     </div>
     <div class="bgv-bp-grid">${cards}</div>`;
 }
 
-/* ── 02 BO 赛制 BP 习惯：可点的局次轨道 ───────────────────── */
+/* ── 02 BP 意图：可点的局次轨道 ──────────────────────────── */
 function topEntries(games, getter, limit = 2) {
   const counts = new Map();
   for (const game of games) {
@@ -436,6 +749,13 @@ function topEntries(games, getter, limit = 2) {
 function boHero(h, hero, tone = 'is-pick') {
   if (!hero) return '<span class="bgv-boh-none">—</span>';
   return `<span class="bgv-boh-hero ${tone}" title="${h.esc(hero)}">${h.portrait(hero, 'bgv-boh-face')}<b>${h.esc(hero)}</b></span>`;
+}
+
+/* 规则中心里的 KPL 初稿证据串（n / 胜率 / 超额 / Wilson 下界）是生成器的中间量，
+   不是教练写得出的结论，不占复盘卡片的版面；赛训组手写的备注照常保留。 */
+function coachNote(note) {
+  const text = String(note || '');
+  return /KPL|Wilson|下界|超额|衰减|pp\b|n=\d/.test(text) ? '' : text;
 }
 
 function boRow(label, tiles, meta, cls = '') {
@@ -501,8 +821,8 @@ export function renderBoHabit(insight, ui, h) {
   const block = insight.boBp;
   if (!block || !block.available) {
     return `<section class="bgx-card bgv-boh">
-      ${cardHead(esc, '02 BO 赛制 BP 习惯', '同赛制的历史 BO 还不够', '等对手在同一赛制下有更多大场，再看每一把的开场习惯。')}
-      ${emptyState('暂无同赛制历史。')}
+      ${cardHead(esc, '02 BP 意图', '这一把的 BP 还没数据', '')}
+      ${emptyState('本场 BP 还没到齐，暂无同赛制历史。')}
     </section>`;
   }
   const bestOf = Number(block.bestOf) || 7;
@@ -524,8 +844,7 @@ export function renderBoHabit(insight, ui, h) {
   const slots = Array.from({ length: bestOf }, (_, index) => index + 1);
   const selected = Math.min(bestOf, Math.max(1, Number(ui.boSlot) || 1));
   const cur = (current.games || []).find((game) => Number(game.index) === selected) || null;
-  const sideKey = ['auto', 'blue', 'red'].includes(ui.boSide) ? ui.boSide : 'auto';
-  const selectedSide = sideKey === 'auto' ? (cur?.foeSide || 'blue') : sideKey;
+  const selectedSide = cur?.foeSide || 'blue';
 
   /* 组合意图：组合只认赛训组保存的组合池；克制方向只认赛训规则中心的
      克制关系（英雄→英雄、组合→组合），不再拿营地/KPL 对位临时兜底。 */
@@ -542,6 +861,11 @@ export function renderBoHabit(insight, ui, h) {
 
   const splitNames = (value) => String(value || '')
     .split(/[+＋，,、;；/|]+/).map((part) => part.trim()).filter(Boolean);
+  const counterHeroes = (row, side) => {
+    const list = row?.[side === 'a' ? 'aHeroes' : 'bHeroes'];
+    if (Array.isArray(list)) return [...new Set(list.map((hero) => String(hero || '').trim()).filter(Boolean))];
+    return [...new Set(splitNames(row?.[side === 'a' ? 'a' : 'b']))];
+  };
   const comboByKey = new Map(poolCombos.map((combo) => [combo.key, combo]));
   const comboByName = new Map(poolCombos
     .map((combo) => [String(combo.name || '').trim(), combo])
@@ -566,15 +890,15 @@ export function renderBoHabit(insight, ui, h) {
   const rawHeroRules = (h.rulesCounters && h.rulesCounters.heroPairs) || [];
   const rawComboRules = (h.rulesCounters && h.rulesCounters.comboPairs) || [];
   const heroRules = rawHeroRules
-    .map((row) => ({
-      attacker: String(row.a || '').trim(),
-      defender: String(row.b || '').trim(),
-      strength: row.strength, note: row.note,
-    }))
+    .flatMap((row) => counterHeroes(row, 'a').flatMap((attacker) =>
+      counterHeroes(row, 'b').map((defender) => ({
+        attacker, defender,
+        strength: row.strength, note: row.note,
+      }))))
     .filter((row) => row.attacker && row.defender);
   const comboRules = rawComboRules
     .map((row) => ({
-      attacker: resolveCombo(row.a), defender: resolveCombo(row.b),
+      attacker: resolveCombo(row.aHeroes ?? row.a), defender: resolveCombo(row.bHeroes ?? row.b),
       strength: row.strength, note: row.note,
     }))
     .filter((row) => row.attacker && row.defender);
@@ -695,7 +1019,7 @@ export function renderBoHabit(insight, ui, h) {
       <span class="bgv-boh-flow-side">${boHero(h, hit.attacker)}</span>
       ${arrow}
       <span class="bgv-boh-flow-side is-def">${boHero(h, hit.defender)}</span>
-      <em class="bgv-boh-flow-note">在 ${esc(hit.combo.heroes.join(' + '))}</em>
+      ${hit.combo ? `<em class="bgv-boh-flow-note">在 ${esc(hit.combo.heroes.join(' + '))}</em>` : ''}
     </span>`;
   };
   const intentLabel = {
@@ -750,23 +1074,308 @@ export function renderBoHabit(insight, ui, h) {
       },
     }];
   }));
-  const sideMatched = !cur || !cur.foeSide || cur.foeSide === selectedSide;
 
-  const scopeTabs = `<div class="bgx-seg" role="group" aria-label="历史范围">
-    <button type="button" class="bgx-seg-btn" data-bgx-boscope="opp" aria-pressed="${scope === 'opp'}">只看本对手</button>
-    <button type="button" class="bgx-seg-btn" data-bgx-boscope="all" aria-pressed="${scope === 'all'}">全部 BO${esc(String(bestOf))}</button>
+  /* ── BO 习惯 · 楼层板 ─────────────────────────────────────────
+     左边蓝方、右边红方：各 4/5 个 Ban 位 + 1~5 楼；中间是选中那一手的意图。
+     场次/胜率只来自同赛制历史局，按该局实际红蓝方取数，不把两边混算。 */
+  const board = (h.boBoard && h.boBoard.game === selected) ? h.boBoard
+    : { game: selected, bans: { blue: [], red: [] }, pick: null, open: {} };
+  const otherSide = (side) => (side === 'blue' ? 'red' : 'blue');
+  const sideView = (game, side) => {
+    const foeSide = game?.foeSide || selectedSide;
+    const foeIsSide = foeSide === side;
+    const ownSide = foeIsSide ? otherSide(side) : side;
+    return {
+      picks: (foeIsSide ? game?.foePicks : game?.ownPicks) || [],
+      bans: (foeIsSide ? game?.foeBans : game?.ownBans) || [],
+      win: game?.result === 'win' ? ownSide === side
+        : game?.result === 'loss' ? ownSide !== side : null,
+    };
+  };
+  const historyBoardGames = historyForFormat.flatMap((item) => item.games || [])
+    .filter((game) => gameBans(game) === formatBans);
+  /* 没有同赛制历史时，用本场已打的局给出场次/胜率，并在面板上明确标出口径。 */
+  const boardGames = historyBoardGames.length ? historyBoardGames
+    : (current.games || []).filter((game) => gameBans(game) === formatBans);
+  const boardStatScope = historyBoardGames.length
+    ? `${historyBoardGames.length} 局同赛制历史` : `本场 ${boardGames.length} 局（无同赛制历史）`;
+  const statOf = (list) => {
+    const decided = list.filter((game) => game.win !== null);
+    const wins = decided.filter((game) => game.win).length;
+    return {
+      n: list.length, w: wins, decided: decided.length,
+      pct: decided.length ? Math.round(wins / decided.length * 100) : null,
+    };
+  };
+  const statHtml = (stat) => `<span class="boh-an-stat" title="${stat.decided} 局有胜负结果">
+    <b class="boh-an-num">${stat.n || '—'}</b><small>场</small>
+    <b class="boh-an-num ${stat.pct !== null && stat.pct >= 70 ? 'is-good' : ''}">${stat.pct === null ? '—' : `${stat.pct}%`}</b><small>胜率</small>
+  </span>`;
+  /* 攻方组合/英雄由本方拿齐，受方由对面拿齐；两端都按楼层板上的颜色取数。 */
+  const relationStat = (side, attackers, defenders) => {
+    const matched = boardGames.filter((game) => {
+      const mine = sideView(game, side).picks;
+      const theirs = sideView(game, otherSide(side)).picks;
+      return attackers.every((hero) => mine.includes(hero))
+        && defenders.every((hero) => theirs.includes(hero));
+    });
+    return statOf(matched.map((game) => ({ ...game, win: sideView(game, side).win })));
+  };
+  const comboStat = (side, combo) => relationStat(side, combo.heroes, []);
+  const heroStat = (side, hero) => relationStat(side, [hero], []);
+  const focusFaces = (combo, focus) => combo.heroes.map((hero) => {
+    const tile = boHero(h, hero);
+    return hero === focus ? `<span class="boh-an-focus">${tile}</span>` : tile;
+  }).join('<i class="bgv-boh-plus">+</i>');
+  const faceList = (heroes) => heroes.map((hero) => boHero(h, hero)).join('<i class="bgv-boh-plus">+</i>');
+  const heroStrip = (heroes) => heroes.map((hero) => boHero(h, hero)).join('');
+  /* 可折叠的一层；prefix 让 Ban 与楼层的展开状态各自独立记忆。 */
+  const fold = (prefix, key, label, meta, body, cls = '') => `<details class="boh-fold ${cls}" data-boh-fold="${prefix}-${key}" ${board.open && board.open[`${prefix}-${key}`] ? 'open' : ''}>
+    <summary><b>${label}</b><span>${meta}</span></summary>
+    <div class="boh-fold-body">${body}</div>
+  </details>`;
+
+  /* Ban 的三层判断：视角翻到「被 ban 的英雄若给对手用」。
+     - 胜率/场次看对手方拿这个英雄的表现；
+     - 想拿组合看对手方想拿的组合；
+     - 命中克制看这个英雄克不克 ban 方自己这局的英雄/组合。 */
+  const banIntentFolds = (side, index, hero) => {
+    const denied = otherSide(side);
+    const prefix = `ban-${side}-${index}`;
+    const folds = [];
+    const wants = poolCombos.filter((combo) => combo.heroes.includes(hero))
+      .sort((a, b) => comboStat(denied, b).n - comboStat(denied, a).n);
+    if (wants.length) {
+      folds.push(fold(prefix, 'want', `${boSideLabel(denied)}想拿组合`, `${wants.length} 组`, `<div class="boh-an-list">${wants.slice(0, 4).map((combo) => `<div class="boh-an-row is-combo">
+        ${focusFaces(combo, hero)}
+        <div class="boh-an-row-meta">${statHtml(comboStat(denied, combo))}<small>${boSideLabel(denied)}想拿 · 被 ban 掉</small></div>
+      </div>`).join('')}</div>`, 'is-combo'));
+    }
+    const hs = heroStat(denied, hero);
+    if (hs.n) {
+      const hot = hs.decided >= 2 && hs.pct !== null && hs.w / hs.decided >= 0.7;
+      folds.push(fold(prefix, 'hero', hot ? `${boSideLabel(denied)}高胜率英雄` : `${boSideLabel(denied)}英雄数据`, hs.pct === null ? '—' : `${hs.pct}%`, `<div class="boh-an-row is-hero">
+        ${boHero(h, hero)}
+        <div class="boh-an-row-meta">${statHtml(hs)}<small>${boSideLabel(denied)}拿到这个英雄时的表现</small></div>
+      </div>`, hot ? 'is-hot' : ''));
+    }
+    const myPicks = cur ? sideView(cur, side).picks : [];
+    const deniedPicks = cur ? sideView(cur, denied).picks : [];
+    const hits = [];
+    const addHit = (attackers, defenders, note) => {
+      const key = `${attackers.join('+')}|${defenders.join('+')}`;
+      if (hits.some((hit) => hit.key === key)) return;
+      hits.push({ key, attackers, defenders, note, stat: relationStat(denied, attackers, defenders) });
+    };
+    for (const rule of heroRules) {
+      if (rule.attacker !== hero) continue;
+      if (myPicks.includes(rule.defender)) addHit([hero], [rule.defender], rule.note);
+      const defCombo = resolveCombo(rule.defender);
+      if (defCombo && defCombo.heroes.every((item) => myPicks.includes(item))) {
+        addHit([hero], defCombo.heroes, defCombo.name || rule.defender);
+      }
+    }
+    for (const rule of comboRules) {
+      if (!rule.attacker.heroes.includes(hero)) continue;
+      if (!rule.attacker.heroes.every((item) => item === hero || deniedPicks.includes(item))) continue;
+      if (!rule.defender.heroes.every((item) => myPicks.includes(item))) continue;
+      addHit(rule.attacker.heroes, rule.defender.heroes, rule.defender.name || '');
+    }
+    if (hits.length) {
+      folds.push(fold(prefix, 'counter', `命中克制 · 克${boSideLabel(side)}`, `${hits.length} 条`, `<div class="boh-an-list">${hits.map((hit) => `<div class="boh-an-row is-counter">
+        <span class="boh-an-side">${faceList(hit.attackers)}</span>
+        <span class="boh-an-arrow"><i>克制</i><b>→</b></span>
+        <span class="boh-an-side is-def">${faceList(hit.defenders)}</span>
+        <div class="boh-an-row-meta">${statHtml(hit.stat)}${coachNote(hit.note) ? `<small>${esc(coachNote(hit.note))}</small>` : ''}</div>
+      </div>`).join('')}</div>`, 'is-counter'));
+    }
+    return `<div class="boh-ban-intent">
+      <div class="boh-ban-intent-head"><span class="boh-an-kicker is-${denied}">${boSideLabel(denied)}视角</span>${glyph('ban', { label: '被禁英雄', size: 18 })}<b>${esc(hero)}</b></div>
+      ${folds.length ? folds.join('') : '<p class="boh-an-none">这个英雄没有命中组合 / 高胜率样本 / 克制关系。</p>'}
+    </div>`;
+  };
+
+  const banAnalysis = (side, slots) => {
+    const bans = cur ? sideView(cur, side).bans : [];
+    const pickedPairs = slots.map((index) => ({ index, hero: bans[index] })).filter((item) => item.hero);
+    const picked = pickedPairs.map((item) => item.hero);
+    if (!picked.length) return `<div class="boh-an-empty">${glyph('ban', { label: '未选 Ban 位', size: 22 })}<b>未选 Ban 位</b></div>`;
+    const broken = poolCombos.filter((combo) => combo.heroes.some((hero) => picked.includes(hero)));
+    const remaining = [...new Set(broken.flatMap((combo) => combo.heroes))]
+      .filter((hero) => !picked.includes(hero));
+    const candidates = poolCombos
+      .filter((combo) => !combo.heroes.some((hero) => picked.includes(hero))
+        && combo.heroes.some((hero) => remaining.includes(hero)))
+      .sort((a, b) => comboStat(side, b).n - comboStat(side, a).n);
+    return `<div class="boh-an-head"><span class="boh-an-kicker is-${side}">${boSideLabel(side)} · Ban</span><b>${picked.map((hero) => esc(hero)).join(' + ')}</b><small class="boh-an-scope">${boardStatScope}</small></div>
+      ${broken.length ? `<div class="boh-an-title">${picked.length > 1 ? `这 ${picked.length} 个 Ban 拆了 ${broken.length} 组：` : '这个 Ban 拆掉的组合：'}</div>
+        <div class="boh-an-broken">${broken.slice(0, 6).map((combo) => `<div class="boh-an-combo">
+          ${comboFaces(combo, { slashed: combo.heroes.find((hero) => picked.includes(hero)) || '' })}
+          <b>${esc(combo.name || combo.heroes.join(' + '))} 被拆</b>
+        </div>`).join('')}</div>`
+        : '<p class="boh-an-none">这个 Ban 没有命中组合池里的组合。</p>'}
+      ${remaining.length ? `<div class="boh-an-title">被拆之后剩下的英雄：</div>
+        <div class="boh-an-remain">${heroStrip(remaining)}</div>
+        <div class="boh-an-title">这些英雄可以搭的组合：</div>
+        <div class="boh-an-list">${candidates.length ? candidates.slice(0, 4).map((combo) => `<div class="boh-an-row is-combo">
+          ${focusFaces(combo, '')}
+          <div class="boh-an-row-meta">${statHtml(comboStat(side, combo))}</div>
+        </div>`).join('') : '<p class="boh-an-none">暂时没有可搭的组合。</p>'}</div>` : ''}
+      ${pickedPairs.map((item) => banIntentFolds(side, item.index, item.hero)).join('')}`;
+  };
+
+  const pickAnalysis = (side, index, hero) => {
+    const foe = otherSide(side);
+    const oppPicks = cur ? sideView(cur, foe).picks : [];
+    const myPicks = cur ? sideView(cur, side).picks : [];
+    const prefix = `${side}-${index}`;
+    const folds = [];
+    const combos = poolCombos.filter((combo) => combo.heroes.includes(hero))
+      .sort((a, b) => comboStat(side, b).n - comboStat(side, a).n);
+    if (combos.length) {
+      folds.push(fold(prefix, 'combo', '想选组合', `${combos.length} 组`, `<div class="boh-an-list">${combos.slice(0, 4).map((combo) => `<div class="boh-an-row is-combo">
+        ${focusFaces(combo, hero)}
+        <div class="boh-an-row-meta">${statHtml(comboStat(side, combo))}<small>含 ${esc(hero)} 的组合</small></div>
+      </div>`).join('')}</div>`, 'is-combo'));
+    }
+    const hs = heroStat(side, hero);
+    if (hs.n) {
+      const hot = hs.decided >= 2 && hs.pct !== null && hs.w / hs.decided >= 0.7;
+      folds.push(fold(prefix, 'hero', hot ? '高胜率英雄' : '英雄数据', hs.pct === null ? '—' : `${hs.pct}%`, `<div class="boh-an-row is-hero">
+        ${boHero(h, hero)}
+        <div class="boh-an-row-meta">${statHtml(hs)}<small>${hot ? '这个英雄在这边的强势选择' : '这个英雄在这边的历史表现'}</small></div>
+      </div>`, hot ? 'is-hot' : ''));
+    }
+    const hits = [];
+    const addHit = (attackers, defenders, note) => {
+      const key = `${attackers.join('+')}|${defenders.join('+')}`;
+      if (hits.some((hit) => hit.key === key)) return;
+      hits.push({ key, attackers, defenders, note, stat: relationStat(side, attackers, defenders) });
+    };
+    for (const rule of heroRules) {
+      if (rule.attacker !== hero) continue;
+      if (oppPicks.includes(rule.defender)) addHit([hero], [rule.defender], rule.note);
+      const defCombo = resolveCombo(rule.defender);
+      if (defCombo && defCombo.heroes.every((item) => oppPicks.includes(item))) {
+        addHit([hero], defCombo.heroes, defCombo.name || rule.defender);
+      }
+    }
+    for (const rule of comboRules) {
+      if (!rule.attacker.heroes.includes(hero)) continue;
+      if (!rule.attacker.heroes.every((item) => myPicks.includes(item))) continue;
+      if (!rule.defender.heroes.every((item) => oppPicks.includes(item))) continue;
+      addHit(rule.attacker.heroes, rule.defender.heroes, rule.defender.name || '');
+    }
+    if (hits.length) {
+      folds.push(fold(prefix, 'counter', '命中克制', `${hits.length} 条`, `<div class="boh-an-list">${hits.map((hit) => `<div class="boh-an-row is-counter">
+        <span class="boh-an-side">${faceList(hit.attackers)}</span>
+        <span class="boh-an-arrow"><i>克制</i><b>→</b></span>
+        <span class="boh-an-side is-def">${faceList(hit.defenders)}</span>
+        <div class="boh-an-row-meta">${statHtml(hit.stat)}${coachNote(hit.note) ? `<small>${esc(coachNote(hit.note))}</small>` : ''}</div>
+      </div>`).join('')}</div>`, 'is-counter'));
+    }
+    return `<div class="boh-an-head"><span class="boh-an-kicker is-${side}">${boSideLabel(side)} · ${index + 1} 楼</span><b>${esc(hero)}</b><small class="boh-an-scope">${boardStatScope}</small></div>
+      ${folds.length ? folds.join('') : '<p class="boh-an-none">这个英雄没有命中组合、高胜率样本或克制规则。</p>'}`;
+  };
+
+  const banCell = (side, index) => {
+    const bans = cur ? sideView(cur, side).bans : [];
+    const hero = bans[index] || '';
+    const on = (board.bans?.[side] || []).includes(index);
+    return `<button type="button" class="boh-cell is-ban ${hero ? 'has-hero' : ''} ${on ? 'is-on' : ''}" data-boh-cell data-side="${side}" data-kind="ban" data-index="${index}" aria-pressed="${on}"
+      title="${esc(boSideLabel(side))} Ban ${index + 1}${hero ? ` · ${esc(hero)}（已 ban）` : ''}">
+      <span class="boh-ban-tag">Ban ${index + 1}</span>
+      ${hero ? `<span class="boh-ban-face">${h.portrait(hero, 'boh-cell-face')}</span>` : '<span class="boh-cell-empty">—</span>'}
+      <b>${esc(hero || '未记录')}</b>
+    </button>`;
+  };
+  const pickCell = (side, index) => {
+    const picks = cur ? sideView(cur, side).picks : [];
+    const hero = picks[index] || '';
+    const on = !!(board.pick && board.pick.side === side && board.pick.index === index);
+    const stat = hero ? heroStat(side, hero) : null;
+    const highWin = !!(stat?.decided && stat.w / stat.decided >= 0.7);
+    return `<button type="button" class="boh-cell is-pick ${on ? 'is-on' : ''} ${highWin ? 'is-high-win' : ''}" data-boh-cell data-side="${side}" data-kind="pick" data-index="${index}" aria-pressed="${on}"
+      title="${esc(boSideLabel(side))} ${index + 1} 楼${hero ? ` · ${esc(hero)}${highWin ? ' · 高胜率' : ''}` : ''}">
+      <span class="boh-floor">${index + 1} 楼</span>
+      ${hero ? h.portrait(hero, 'boh-cell-face') : '<span class="boh-cell-empty">—</span>'}
+      <span class="boh-pick-copy"><b>${esc(hero || '未记录')}</b><small>${stat && stat.n ? `${stat.n} 场 · ${stat.pct === null ? '—' : `${stat.pct}%`}` : '—'}</small></span>
+      ${highWin ? '<span class="boh-high-win-tag" aria-hidden="true">高胜</span>' : ''}
+    </button>`;
+  };
+  const sideBoard = (side) => `<section class="boh-side is-${side}" aria-label="${boSideLabel(side)}">
+    <header class="boh-side-head"><b>${boSideLabel(side)}</b><span>${side === 'blue' ? 'BLUE' : 'RED'} SIDE</span></header>
+    <div class="boh-bans">${Array.from({ length: formatBans }, (_, index) => banCell(side, index)).join('')}</div>
+    <div class="boh-frame"><span class="boh-frame-label">${boSideLabel(side)} 1–5 楼</span>
+      ${Array.from({ length: 5 }, (_, index) => pickCell(side, index)).join('')}
+    </div>
+  </section>`;
+  const overviewSide = (side) => {
+    const picks = cur ? sideView(cur, side).picks : [];
+    const oppPicks = cur ? sideView(cur, otherSide(side)).picks : [];
+    const combos = poolCombos.filter((combo) => combo.heroes.every((hero) => picks.includes(hero)))
+      .sort((a, b) => comboStat(side, b).n - comboStat(side, a).n);
+    const hits = [];
+    const addHit = (hit) => {
+      const key = hit.type === 'combo'
+        ? `combo|${hit.attacker.key}|${hit.defender.key}`
+        : `hero|${hit.attacker}|${hit.defender}`;
+      if (hits.some((item) => item.key === key)) return;
+      hits.push({
+        ...hit, key,
+        stat: relationStat(side,
+          hit.type === 'combo' ? hit.attacker.heroes : [hit.attacker],
+          hit.type === 'combo' ? hit.defender.heroes : [hit.defender]),
+      });
+    };
+    for (const rule of heroRules) {
+      if (!picks.includes(rule.attacker)) continue;
+      if (oppPicks.includes(rule.defender)) addHit({ type: 'hero', attacker: rule.attacker, defender: rule.defender, note: rule.note });
+      const defCombo = resolveCombo(rule.defender);
+      if (defCombo && defCombo.heroes.every((hero) => oppPicks.includes(hero))) {
+        addHit({ type: 'combo', attacker: { heroes: [rule.attacker], key: rule.attacker }, defender: defCombo, note: rule.note });
+      }
+    }
+    for (const rule of comboRules) {
+      if (!rule.attacker.heroes.every((hero) => picks.includes(hero))) continue;
+      if (!rule.defender.heroes.every((hero) => oppPicks.includes(hero))) continue;
+      addHit({ type: 'combo', attacker: rule.attacker, defender: rule.defender, note: rule.note });
+    }
+    const highWins = picks.map((hero) => ({ hero, stat: heroStat(side, hero) }))
+      .filter((item) => item.stat.decided && item.stat.w / item.stat.decided >= 0.7)
+      .sort((a, b) => b.stat.w / b.stat.decided - a.stat.w / a.stat.decided || b.stat.n - a.stat.n);
+    const block = (key, title, body) => `<section class="boh-overview-block">
+      <h4>${title}</h4>${body}
+    </section>`;
+    return `<section class="boh-overview-side is-${side}" aria-label="${boSideLabel(side)}总览">
+      <header class="boh-overview-head"><h3>${boSideLabel(side)}</h3><span>${side === 'blue' ? 'BLUE' : 'RED'} SIDE</span></header>
+      ${block('combo', '组合', combos.length ? `<div class="boh-overview-list">${combos.slice(0, 4).map((combo) => `<div class="boh-overview-row is-combo">
+        ${comboFaces(combo)}<div class="boh-overview-meta">${statHtml(comboStat(side, combo))}</div>
+      </div>`).join('')}</div>` : '<p class="boh-an-none">这局没有命中已保存的组合。</p>')}
+      ${block('counter', '克制关系', hits.length ? `<div class="boh-overview-list">${hits.slice(0, 4).map((hit) => `<div class="boh-overview-row is-counter">
+        ${counterFlow(hit)}<div class="boh-overview-meta">${statHtml(hit.stat)}${coachNote(hit.note) ? `<small>${esc(coachNote(hit.note))}</small>` : ''}</div>
+      </div>`).join('')}</div>` : '<p class="boh-an-none">这局没有命中克制规则。</p>')}
+      ${block('win', '高胜率英雄', highWins.length ? `<div class="boh-overview-wins">${highWins.map((item) => `<div class="boh-overview-win">
+        ${boHero(h, item.hero)}<span><b>${item.stat.pct}%</b><small>${item.stat.n} 场</small></span>
+      </div>`).join('')}</div>` : '<p class="boh-an-none">没有达到 70% 胜率的英雄。</p>')}
+    </section>`;
+  };
+  const overviewHtml = `<div class="boh-overview" aria-label="蓝红双方 BP 总览">
+    ${overviewSide('blue')}${overviewSide('red')}
+    <p class="boh-overview-scope">胜率口径：${esc(boardStatScope)}；70% 及以上标为高胜率。</p>
   </div>`;
-  const sideTabs = `<div class="bgx-seg" role="group" aria-label="红蓝方">
-    ${[['auto', '本场同侧'], ['blue', '蓝方'], ['red', '红方']].map(([key, label]) =>
-      `<button type="button" class="bgx-seg-btn" data-bgx-boside="${key}" aria-pressed="${sideKey === key}">${label}</button>`).join('')}
-  </div>`;
-  const windowTabs = `<div class="bgx-seg" role="group" aria-label="时间">
-    ${[['30', '近 30 天'], ['90', '近 90 天'], ['all', '全部']].map(([key, label]) =>
-      `<button type="button" class="bgx-seg-btn" data-bgx-bowindow="${key}" aria-pressed="${key === windowKey}">${label}</button>`).join('')}
-  </div>`;
+  const boardBans = [...(board.bans?.blue || []), ...(board.bans?.red || [])];
+  const analysisHtml = board.pick && (sideView(cur, board.pick.side).picks[board.pick.index] || cur)
+    ? pickAnalysis(board.pick.side, board.pick.index, sideView(cur, board.pick.side).picks[board.pick.index] || '未记录')
+    : boardBans.length
+      ? banAnalysis(board.bans.blue.length ? 'blue' : 'red', board.bans.blue.length ? board.bans.blue : board.bans.red)
+      : overviewHtml;
+
+  /* 这一块现在是「这一把的 BP 意图」，不是历史习惯统计：
+     筛选只保留本场视角和切局，历史样本范围 / 时间窗那些入口拿掉了。 */
   const stepButtons = `<div class="bgv-boh-step" role="group" aria-label="切换局次">
-    <button type="button" class="bgx-btn" data-boh-step="-1" ${selected <= 1 ? 'disabled' : ''}>← 上一把</button>
-    <button type="button" class="bgx-btn" data-boh-step="1" ${selected >= bestOf ? 'disabled' : ''}>下一把 →</button>
+    <button type="button" class="bgx-btn control" data-boh-step="-1" ${selected <= 1 ? 'disabled' : ''}>${glyph('clock', { label: '上一把', size: 18 })} 上一把</button>
+    <button type="button" class="bgx-btn control" data-boh-step="1" ${selected >= bestOf ? 'disabled' : ''}>${glyph('clock', { label: '下一把', size: 18 })} 下一把</button>
   </div>`;
 
   const rail = slots.map((slot) => {
@@ -783,12 +1392,8 @@ export function renderBoHabit(insight, ui, h) {
     const flag = game ? (!first ? '新' : same ? '照做' : '变招') : '';
     return `<button type="button" class="bgv-boh-slot ${slot === selected ? 'is-on' : ''} ${game ? (first ? (same ? 'is-same' : 'is-diff') : 'is-new') : ''}"
       data-bgx-boslot="${slot}" aria-pressed="${slot === selected}"
-      title="${esc(gameWord(slot))} · ${boSideLabel(slotSide)} · ${slotGames.length || 0} 个样本${first ? ` · ${first.heroes.map((hero) => hero).join(' + ')}` : ''}">
-      <span class="bgv-boh-no">${String(slot).padStart(2, '0')}</span>
+      title="${esc(gameWord(slot))} · ${boSideLabel(slotSide)} · ${slotGames.length || 0} 个样本${first ? ` · ${first.heroes.map((hero) => hero).join(' + ')}` : ''}${flag ? ` · ${flag}` : ''}">
       <b>${esc(gameWord(slot))}</b>
-      <span class="bgv-boh-slot-face">${first ? first.heroes.map((hero) => h.portrait(hero, 'bgv-boh-slot-img')).join('') : '—'}</span>
-      <small>${boSideLabel(slotSide)} ${slotGames.length} 场</small>
-      ${flag ? `<i class="bgv-boh-flag ${first ? (same ? 'is-same' : 'is-diff') : 'is-new'}">${flag}</i>` : ''}
     </button>`;
   }).join('');
 
@@ -935,7 +1540,8 @@ export function renderBoHabit(insight, ui, h) {
       ? ' <a class="bgv-boh-rulelink" href="#rules">去检查 →</a>' : ''}`
     : '';
   const intent = (() => {
-    if (poolHint) return { note: `<p class="bgv-boh-intent-note">${esc(poolHint)}</p>` };
+    if (poolHint) return { note: `<p class="bgv-boh-intent-note">${esc(poolHint)}${poolHint === '组合池还没有保存组合'
+      ? ' <a class="bgv-boh-rulelink" href="#combo-pool">去保存组合 →</a>' : ''}</p>` };
     let stealGames = 0;
     let breakGames = 0;
     let counterGames = 0;
@@ -984,17 +1590,14 @@ export function renderBoHabit(insight, ui, h) {
     return boDetailRow(`#${row.order} ${row.label}`, currentTilesFor(row), key ? (same ? '照做' : '变招') : '未记录', row.counter ? 'is-counter' : '', currentIntents.get(row));
   }).join('');
   const currentTags = cur ? topEntries([cur], (game) => game.foeTags?.[0], 2) : [];
-  const mismatch = cur && !sideMatched
-    ? `<div class="bgv-boh-empty">本场是${boSideLabel(cur.foeSide)}，当前筛选的是${boSideLabel(selectedSide)}；切回「本场同侧」再看逐手对照。</div>`
-    : '';
   const currentBlock = !cur
     ? `<div class="bgv-boh-empty">本场没打到这一把${bestOf > (current.games || []).length ? '（大场已结束）' : ''}。</div>`
-    : mismatch || `
+    : `
       ${currentRows}
       ${boRow('常用体系', currentTags.length ? currentTags.map((tag) => `<span class="bgv-boh-tag">${esc(tag.key)}</span>`).join('') : '<span class="bgv-boh-none">—</span>', '')}
       ${boRow('这一把', `<b class="bgv-boh-rate ${cur.result === 'win' ? 'is-win' : cur.result === 'loss' ? 'is-loss' : ''}">${cur.result === 'win' ? '胜' : cur.result === 'loss' ? '负' : '—'}</b>`, '')}
       ${compared ? `<p class="bgv-boh-verdict ${matches === compared ? 'is-same' : 'is-diff'}">
-        ${pooledGames.length < 2 ? '样本少（1 局），只作方向参考；' : ''}BP 顺序：${matches}/${compared} 个节点照做${matches === compared ? '，这一把基本沿用平时习惯。' : '，有变化的地方已在上面逐项标出。'}
+        ${pooledGames.length < 2 ? '对照样本少（1 局），只作方向参考；' : ''}BP 顺序：${matches}/${compared} 个节点与历史一致${matches === compared ? '，这一把延续了同样的意图。' : '，变化的节点就是这把要看的重点。'}
       </p>` : ''}
     `;
 
@@ -1008,21 +1611,21 @@ export function renderBoHabit(insight, ui, h) {
   const sampleDates = [...sampleMap].map(([label, n]) => (n > 1 ? `${label} ×${n}` : label));
 
   return `<section class="bgx-card bgv-boh">
-    ${cardHead(esc, '02 BO 赛制 BP 习惯', `对手在 BO${esc(String(bestOf))} 的每一把，习惯怎么开`,
-      '先看同侧同赛制的历史习惯，再对照本场第 N 把是不是照做；组合按组合池，克制箭头按赛训规则中心。',
-      `<span class="bgx-chip">${count(historyForFormat.length)} 场 BO${esc(String(bestOf))} · ${esc(formatLabel)}</span>`)}
-    <div class="bgv-boh-toolbar">${scopeTabs}${sideTabs}<span class="bgx-spacer"></span>${windowTabs}<button type="button" class="bgx-btn ${ui.boIncludeOtherEvents ? 'is-on' : ''}" data-bgx-boother aria-pressed="${ui.boIncludeOtherEvents}" title="对手 BP 习惯允许跨赛事积累；默认只看当前赛事">${ui.boIncludeOtherEvents ? '✓ ' : ''}含其他赛事历史</button><button type="button" class="bgx-btn" data-bgx-boreset>重置</button></div>
+    ${cardHead(esc, '02 BP 意图', '对手这一把，BP 想干什么', '',
+      `<span class="bgx-chip">${esc(formatLabel)}</span>`)}
+    <div class="bgv-boh-toolbar">${stepButtons}<span class="bgx-spacer"></span><button type="button" class="bgx-btn control" data-bgx-boreset>${glyph('refresh', { label: '重置', size: 18 })} 重置</button></div>
     <div class="bgv-boh-rail">${rail}</div>
-    <div class="bgv-boh-detail">
-      <section class="bgv-boh-col">
-        <header><span>历史习惯 · ${boSideLabel(selectedSide)} · ${pooledGames.length} 局</span><b title="${pooledGames.length} 局样本">${winRate(pooledStat)}</b></header>
-        ${historyBlock}
-        ${sampleDates.length ? `<div class="bgv-boh-samples">样本：${sampleDates.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
-      </section>
-      <section class="bgv-boh-col is-current">
-        <header><span>本场 · ${esc(gameWord(selected))} · ${boSideLabel(cur?.foeSide || selectedSide)}</span>${stepButtons}<b>${cur ? (cur.result === 'win' ? '胜' : cur.result === 'loss' ? '负' : '—') : '未打到'}</b></header>
-        ${currentBlock}
-      </section>
+    <div class="boh-board-wrap">
+      ${sideBoard('blue')}
+      <section class="boh-analyze" aria-label="蓝红双方 BP 总览或所选英雄意图">${analysisHtml}</section>
+      ${sideBoard('red')}
+    </div>
+    <div class="boh-board-foot">
+      ${intent.note || ''}
+      ${compared ? `<p class="bgv-boh-verdict ${matches === compared ? 'is-same' : 'is-diff'}">
+        ${pooledGames.length < 2 ? '对照样本少（1 局），只作方向参考；' : ''}BP 顺序：${matches}/${compared} 个节点与历史一致${matches === compared ? '，这一把延续了同样的意图。' : '，变化的节点可按楼层点开看。'}
+      </p>` : ''}
+      ${sampleDates.length ? `<div class="bgv-boh-samples">样本：${sampleDates.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
     </div>
   </section>`;
 }
@@ -1030,83 +1633,107 @@ export function renderBoHabit(insight, ui, h) {
 
 
 /* ── 03 阵容体系 ───────────────────────────────────────────── */
-const ARCH_TONE = ['is-0', 'is-1', 'is-2', 'is-3'];
 
-function archBand(rows, esc) {
-  const list = rows || [];
-  const total = list.reduce((sum, row) => sum + (row.n || 0), 0);
-  if (!total) return '<div class="xw-arch-miss">没有名单</div>';
-  const segs = list.map((row, index) =>
-    `<span class="xw-arch-seg ${ARCH_TONE[index % 4]}" style="flex:${Math.max(1, row.n || 0)}" title="${esc(row.type)} ${row.n} 局"></span>`).join('');
-  const legend = list.map((row, index) =>
-    `<span class="xw-arch-key ${ARCH_TONE[index % 4]}"><i></i>${esc(row.type)}<b>${row.n}</b><em>${Math.round((row.n || 0) / total * 100)}%</em></span>`).join('');
-  return `<div class="bgv-arch-band"><div class="xw-arch-band">${segs}</div><div class="xw-arch-legend">${legend}</div></div>`;
-}
-
-function distributionPanel(block, side, esc, title, games) {
+function distributionPanel(block, side, esc, title, games, h) {
   const rows = (block.distribution || {})[side] || {};
   const known = games.filter((game) => (game[side] || {}).types && Object.keys(game[side].types).length).length;
+  const lanePanel = (lane) => {
+    const list = rows[lane] || [];
+    const total = list.reduce((sum, row) => sum + (row.n || 0), 0);
+    if (!total) return '<div class="bgv-type-empty">没有名单</div>';
+    const cards = list.map((row) => {
+      const heroes = new Map();
+      for (const game of games) {
+        for (const item of ((game[side] || {}).heroes || [])) {
+          if (item.lane !== lane || item.type !== row.type || !item.hero) continue;
+          heroes.set(item.hero, (heroes.get(item.hero) || 0) + 1);
+        }
+      }
+      const faces = [...heroes.entries()].map(([hero, n]) => `<span class="bgv-type-hero" title="${esc(`${hero} · ${n} 局`)}">
+        ${h.portrait(hero, 'bgv-type-face')}${n > 1 ? `<em>×${n}</em>` : ''}
+      </span>`).join('');
+      return `<article class="bgv-type-card">
+        <header><h5>${esc(row.type)}</h5><span>${row.n} 局 · ${row.pct == null ? '—' : `${Math.round(row.pct)}%`}</span></header>
+        <div class="bgv-type-heroes">${faces || '<span class="bgv-type-empty">头像缺失</span>'}</div>
+      </article>`;
+    }).join('');
+    return `<section class="bgv-type-lane">
+      <h4>${esc(LANE_SHORT[lane] || lane)}<small>${total} 局</small></h4>
+      <div class="bgv-type-grid">${cards}</div>
+    </section>`;
+  };
   return `<section class="xw-mod bgv-mod">
     <div class="xw-mod-head">
       <div class="xw-mod-copy"><span class="xw-mod-kicker">${side === 'own' ? '我方' : '对方'}</span>
         <h3>${esc(title)}</h3></div>
       <span class="xw-mod-meta">${known} 局有名单</span>
     </div>
-    <div class="xw-mod-body"><div class="xw-arch">${LANE_ORDER.map((lane) => `<div class="xw-arch-row">
-      <span class="xw-arch-lane">${esc(LANE_SHORT[lane] || lane)}<small>${(rows[lane] || []).reduce((sum, row) => sum + row.n, 0)} 局</small></span>
-      <div class="xw-arch-main">${archBand(rows[lane] || [], esc)}</div>
-    </div>`).join('')}</div></div>
+    <div class="bgv-type-lanes">${LANE_ORDER.map(lanePanel).join('')}</div>
   </section>`;
 }
 
-function bandChart(rows, esc, tone = '') {
-  const list = rows || [];
-  const total = list.reduce((sum, row) => sum + (row.value || 0), 0);
-  if (!total) return '<div class="bgv-empty">没有数据</div>';
-  return `<div class="bgv-band-chart ${tone}">
-    <div class="xw-arch-band">${list.map((row, index) => (row.value > 0
-      ? `<span class="xw-arch-seg is-${index}" style="flex:${row.value}" title="${esc(row.label)} ${row.value} 局"></span>` : '')).join('')}</div>
-    <div class="xw-arch-legend">${list.map((row, index) =>
-      `<span class="xw-arch-key is-${index}"><i></i>${esc(row.label)}<b>${row.value}</b><em>${num(row.pct) ? `${Math.round(row.pct)}%` : '—'}</em></span>`).join('')}</div>
+function corePanel(block, side, games, esc) {
+  const entries = games.map((game) => ({ game, value: game[side]?.cores }))
+    .filter((entry) => typeof entry.value === 'number' && Number.isFinite(entry.value));
+  if (!entries.length) return '<div class="bgv-empty">没有核心数数据</div>';
+  const values = entries.map((entry) => entry.value);
+  const counts = new Map();
+  for (const value of values) counts.set(value, (counts.get(value) || 0) + 1);
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const dots = entries.map((entry, index) => `<span class="bgv-core-dot is-tone-${entry.value % 3}" style="--core-order:${index}" title="${esc(`第 ${entry.game?.gameIndex || index + 1} 局 · ${entry.value} 核`)}">${entry.value}</span>`).join('');
+  const legend = [...counts.entries()].sort((a, b) => a[0] - b[0]).map(([value, n]) =>
+    `<span class="bgv-core-key is-tone-${value % 3}"><i></i>${value} 核<b>${n} 局</b><em>${Math.round(n / values.length * 100)}%</em></span>`).join('');
+  return `<div class="bgv-core-panel">
+    <div class="bgv-core-dots" aria-label="每局核心数">${dots}</div>
+    <div class="bgv-core-legend">${legend}</div>
+    <p class="bgv-core-note">${values.length} 局 · 平均 ${average.toFixed(1)} 核；一格代表一局。</p>
   </div>`;
-}
-
-function comboRows(rows) {
-  return (rows || []).slice(0, 4).map((row) => ({ label: row.label, value: row.n || 0, pct: row.pct }));
-}
-
-function coreRows(rows) {
-  const map = new Map((rows || []).map((row) => [Number(row.n), row.games || 0]));
-  const total = [...map.values()].reduce((sum, value) => sum + value, 0);
-  return [1, 2, 3, 4, 5].map((n) => ({
-    label: `${n} 核`, value: map.get(n) || 0,
-    pct: total ? (map.get(n) || 0) / total * 100 : null,
-  }));
 }
 
 /* 英雄池交叉：三个方框——我方队名 / 敌方队名 / 公共英雄。
    * 我方框只放我方用过的，敌方框只放对方用过的，两队都用的单独进公共英雄框；
    * 每个头像上的身份标签常驻，不靠 hover、也不在窄屏隐藏。
-   * 大场页与战队详情共用这一份版面，各自喂 rows 与真实队名。 */
-export function renderHeroPoolCross(rows, h, names = {}) {
+   * 只有这三种归属标签，不再有「新东西」第四类；上游给 none 时按这批局里
+   * 实际谁选出过归侧。大场页与战队详情共用这份版面。 */
+export function renderHeroPoolCross(rows, h, names = {}, outcomeScope = 'all') {
   const { esc } = h;
   const ownName = names.ownName || '本队';
   const foeName = names.foeName || '对手';
-  const tag = { none: '新东西', own: '我方熟', foe: '对方熟', both: '公共英雄' };
-  const order = { both: 0, own: 1, foe: 2, none: 3 };
-  const sorted = [...rows].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)
-    || (b.ownApps + b.foeApps) - (a.ownApps + a.foeApps)
-    || String(a.hero).localeCompare(String(b.hero), 'zh-CN'));
-  const zone = (list) => list.map((row) => `<div class="xw-hero is-${esc(row.status || 'none')}">
+  const tag = { own: '我方熟', foe: '对方熟', both: '公共英雄' };
+  const order = { both: 0, own: 1, foe: 2 };
+  const statusOf = (row) => {
+    if (row.ownApps && row.foeApps) return 'both';
+    if (row.ownApps) return 'own';
+    if (row.foeApps) return 'foe';
+    if (row.ownPick && row.foePick) return 'both';
+    if (row.ownPick) return 'own';
+    if (row.foePick) return 'foe';
+    return row.status === 'foe' ? 'foe' : row.status === 'both' ? 'both' : 'own';
+  };
+  const sorted = (rows || []).map((row) => ({...row, status: statusOf(row)}))
+    .sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9)
+      || (b.ownApps + b.foeApps) - (a.ownApps + a.foeApps)
+      || String(a.hero).localeCompare(String(b.hero), 'zh-CN'));
+  const outcome = (row) => {
+    const wins = Number(outcomeScope === 'own' ? row.ownWins : outcomeScope === 'foe' ? row.foeWins : row.wins) || 0;
+    const losses = Number(outcomeScope === 'own' ? row.ownLosses : outcomeScope === 'foe' ? row.foeLosses : row.losses) || 0;
+    if (!wins && !losses) return '';
+    const mixed = wins > 0 && losses > 0;
+    const label = mixed ? `${wins}胜${losses}负` : wins ? '胜' : '负';
+    const tone = mixed ? 'mixed' : wins ? 'win' : 'loss';
+    const scopeName = outcomeScope === 'own' ? '我方' : outcomeScope === 'foe' ? '对方' : '总';
+    return `<span class="bgv-pool-outcome is-${tone}" aria-label="${esc(`${scopeName}视角 · ${label}`)}">${label}</span>`;
+  };
+  const zone = (list) => list.map((row) => `<div class="xw-hero is-${esc(row.status)}">
       ${h.portrait(row.hero, 'xw-face-img')}
+      ${outcome(row)}
       <b>${esc(row.hero)}</b>
       <small>${esc([row.lane, row.type].filter(Boolean).join(' · '))}</small>
       <small class="bgv-pool-count">我 <em>${fmtCount(row.ownApps)}</em> · 敌 <em>${fmtCount(row.foeApps)}</em></small>
-      <span class="bgv-pool-tag is-${esc(row.status || 'none')}">${tag[row.status] || '新东西'}</span>
+      <span class="bgv-pool-tag is-${esc(row.status)}">${tag[row.status]}</span>
     </div>`).join('');
-  /* 新东西（双方以前都没用过）按这批局里谁实际拿出来过归侧，不混进公共英雄。 */
-  const ownRows = sorted.filter((r) => r.status === 'own' || (r.status === 'none' && r.ownPick));
-  const foeRows = sorted.filter((r) => r.status === 'foe' || (r.status === 'none' && r.foePick));
+  const ownRows = sorted.filter((r) => r.status === 'own');
+  const foeRows = sorted.filter((r) => r.status === 'foe');
   const bothRows = sorted.filter((r) => r.status === 'both');
   const panel = (side, name, sub, list) => `<section class="bgv-poolteam is-${side}">
       <header><b>${esc(name)}</b><span>${list.length} 个</span></header>
@@ -1124,102 +1751,85 @@ function fmtCount(v) {
   return Number.isFinite(v) ? v : 0;
 }
 
-function poolGroups(games, h, names) {
+function poolGroups(games, h, names, outcomeScope = 'all') {
+  /* 只统计本场这几局的十人名单：次数与三种归属标签都用同一份口径，
+     不混进 series_insight 提供的「历史语料次数」，否则会出现 0/0 却标我方熟。 */
   const rows = new Map();
   for (const game of games) {
     for (const side of ['own', 'foe']) {
       for (const item of ((game[side] || {}).heroes || [])) {
         const key = item.hero;
-        const row = rows.get(key) || { hero: key, lane: item.lane, type: item.type, ownApps: 0, foeApps: 0, status: item.status, ownPick: false, foePick: false };
-        row.ownApps = Math.max(row.ownApps, item.ownApps || 0);
-        row.foeApps = Math.max(row.foeApps, item.foeApps || 0);
-        row.status = item.status;
-        row[side === 'own' ? 'ownPick' : 'foePick'] = true;
+        if (!key) continue;
+        const row = rows.get(key) || {
+          hero: key, lane: item.lane || '', type: item.type || '',
+          ownApps: 0, foeApps: 0, ownPick: false, foePick: false,
+          wins: 0, losses: 0, ownWins: 0, ownLosses: 0, foeWins: 0, foeLosses: 0,
+        };
+        if (side === 'own') { row.ownApps++; row.ownPick = true; }
+        else { row.foeApps++; row.foePick = true; }
+        if (game.result === 'win' || game.result === 'loss') {
+          const heroWon = side === 'own' ? game.result === 'win' : game.result === 'loss';
+          if (heroWon) {
+            row.wins++;
+            if (side === 'own') row.ownWins++; else row.foeWins++;
+          } else {
+            row.losses++;
+            if (side === 'own') row.ownLosses++; else row.foeLosses++;
+          }
+        }
         rows.set(key, row);
       }
     }
   }
-  return renderHeroPoolCross([...rows.values()], h, names);
+  return renderHeroPoolCross([...rows.values()], h, names, outcomeScope);
 }
 
 export function renderCompSystem(insight, ui, h) {
   const { esc, count } = localHelpers(h);
   const block = insight.compSystem;
   if (!block || !(block.games || []).length) {
-    return `${cardHead(esc, '03 阵容体系', '这场读不到阵容结构', '缺十人名单时不给体系结论。')}${emptyState('没有阵容数据。')}`;
+    return `${cardHead(esc, '03 阵容体系', '这场读不到阵容结构', '')}${emptyState('没有阵容数据，缺十人名单时不给体系结论。')}`;
   }
   const games = block.games.slice().sort((a, b) => (a.gameIndex || 0) - (b.gameIndex || 0));
   const known = games.filter((game) => (game.own || {}).combo || (game.foe || {}).combo).length;
-  /* 教练反馈：这一块列得太细。每局只留五人头像 + 核数，
-     Combo/射手/辅助的长串改名放在头像 title 里，想看再悬停，不再占一整行。 */
-  const gameRows = games.map((game) => {
-    const side = (key, label) => {
-      const cell = game[key] || {};
-      const picks = (cell.heroes || []).slice(0, 5);
-      const tip = [cell.combo, cell.adc, cell.support].filter(Boolean).join(' · ');
-      const faces = picks.length
-        ? picks.map((item) => `<span class="bgv-mini-hero" title="${esc([item.hero, item.lane, item.type].filter(Boolean).join(' · '))}">${h.portrait(item.hero, 'bgv-mini-face')}</span>`).join('')
-        : '<span class="bgv-comp-none">名单缺失</span>';
-      return `<div class="bgv-comp-side"><small>${label}</small><div${tip ? ` title="${esc(tip)}"` : ''}>${faces}</div>${num(cell.cores) ? `<em class="bgv-comp-core">${cell.cores} 核</em>` : ''}</div>`;
-    };
-    return `<div class="bgv-comp-game ${game.result === 'win' ? 'is-win' : game.result === 'loss' ? 'is-loss' : ''}">
-      <b>${esc(gameWord(game.gameIndex))}</b><span>${game.result === 'win' ? '胜' : game.result === 'loss' ? '负' : '—'}</span>
-      ${side('own', '我')}${side('foe', '敌')}
-    </div>`;
-  }).join('');
 
   const anomalies = (block.anomalies || []).map((item) => `<div class="bgv-anom is-${esc(item.level || 'low')}">
     <b>${esc(item.title)}</b><p>${esc(item.detail)}</p>
   </div>`).join('');
-
-  const comboMax = Math.max(1,
-    ...(block.combos?.own || []).map((row) => row.n || 0),
-    ...(block.combos?.foe || []).map((row) => row.n || 0));
+  const outcomeScope = ['all', 'own', 'foe'].includes(ui.poolOutcomeScope) ? ui.poolOutcomeScope : 'all';
+  const outcomeTabs = `<div class="bgx-seg bgv-pool-scope" role="group" aria-label="英雄池胜负统计视角">${[
+    ['all', '总胜负'], ['own', '只看我方'], ['foe', '只看对方'],
+  ].map(([key, label]) => `<button type="button" data-bgx-pool-outcome="${key}" aria-pressed="${outcomeScope === key}">${label}</button>`).join('')}</div>`;
+  const outcomeNote = outcomeScope === 'own' ? '角标只统计我方使用这个英雄时的胜负。'
+    : outcomeScope === 'foe' ? '角标只统计对方使用这个英雄时的胜负。'
+      : '角标统计双方使用这个英雄时，所在队伍的胜负。';
 
   return `<section class="bgv-sec">
     <header class="xw-sec-head">
       <div class="xw-sec-title"><span class="xw-sec-num">03</span><h2>阵容体系：双方各自在打什么</h2></div>
       <span class="xw-sec-meta">${count(games.length)} 局 · ${known} 局有名单</span>
     </header>
-    <p class="xw-statement">不看「能力雷达」，只看教练会说的词：坦野还是刺野、战边还是坦边、呆射还是游射、几核。再看英雄池我们/对方熟不熟。每条色带就是一局，厚色带里每一段是一个类型。</p>
-
     <div class="bgv-arch-grid">
-      ${distributionPanel(block, 'own', esc, '五路类型', games)}
-      ${distributionPanel(block, 'foe', esc, '五路类型', games)}
+      ${distributionPanel(block, 'own', esc, '五路类型', games, h)}
+      ${distributionPanel(block, 'foe', esc, '五路类型', games, h)}
     </div>
 
-    <div class="bgv-chart-grid">
-      <section class="xw-mod bgv-mod">
-        <div class="xw-mod-head"><div class="xw-mod-copy"><span class="xw-mod-kicker">打野 + 对抗路</span>
-          <h3>我们和对面，各自怎么搭前两手</h3></div><span class="xw-mod-meta">${comboMax} 局封顶</span></div>
-        <div class="bgv-chart-pair">
-          <div><span class="bgv-chart-label">我方</span>${bandChart(comboRows(block.combos?.own), esc)}</div>
-          <div><span class="bgv-chart-label is-foe">对方</span>${bandChart(comboRows(block.combos?.foe), esc, 'is-foe')}</div>
-        </div>
-      </section>
-      <section class="xw-mod bgv-mod">
-        <div class="xw-mod-head"><div class="xw-mod-copy"><span class="xw-mod-kicker">核心数</span>
-          <h3>一核到五核，各占多少</h3></div><span class="xw-mod-meta">分均经济 ≥18% 计核心</span></div>
-        <div class="bgv-chart-pair">
-          <div><span class="bgv-chart-label">我方</span>${bandChart(coreRows(block.cores?.own), esc)}</div>
-          <div><span class="bgv-chart-label is-foe">对方</span>${bandChart(coreRows(block.cores?.foe), esc, 'is-foe')}</div>
-        </div>
-      </section>
-    </div>
-
-    <section class="xw-mod bgv-mod">
-      <div class="xw-mod-head"><div class="xw-mod-copy"><span class="xw-mod-kicker">逐局</span>
-        <h3>每一把的五人：阵容有没有换</h3></div>
-        <span class="xw-mod-meta">${games.length} 局</span></div>
-      <div class="bgv-comp-games">${gameRows}</div>
+    <section class="xw-mod bgv-mod bgv-core-mod">
+      <div class="xw-mod-head"><div class="xw-mod-copy"><span class="xw-mod-kicker">核心数</span>
+        <h3>每局几个核心</h3></div><span class="xw-mod-meta">分均经济 ≥18% 计核心</span></div>
+      <div class="bgv-core-pair">
+        <div><span class="bgv-chart-label">我方</span>${corePanel(block, 'own', games, esc)}</div>
+        <div><span class="bgv-chart-label is-foe">对方</span>${corePanel(block, 'foe', games, esc)}</div>
+      </div>
     </section>
 
     ${anomalies ? `<div class="bgv-anoms">${anomalies}</div>` : ''}
 
     <section class="bgv-pool-block">
-      <header class="xw-sec-head"><div class="xw-sec-title"><span class="xw-sec-num">池</span><h2>英雄池交叉：这场选出来的英雄，双方以前用没用过</h2></div>
-        <span class="xw-sec-meta">我方 ${block.ownHistoryGames || 0} 局 · 对方 ${block.foeHistoryGames || 0} 局</span></header>
-      ${poolGroups(games, h, { ownName: h.ownName, foeName: h.foeName })}
+      <header class="xw-sec-head"><div class="xw-sec-title"><h2>英雄池交叉：这场选出来的英雄，谁用过</h2></div>
+        <div class="bgv-pool-head-tools">${outcomeTabs}<span class="xw-sec-meta">${count(games.length)} 局 · 只统计这场十人名单</span></div></header>
+      <p class="bgv-pool-scope-note">${outcomeNote}</p>
+      ${poolGroups(games, h, { ownName: h.ownName, foeName: h.foeName }, outcomeScope)}
     </section>
   </section>`;
 }
@@ -1282,48 +1892,12 @@ function ringSvg(percent, tone = '') {
   </div>`;
 }
 
-/* 全场走势：龙 / 塔 / 团战 / 反野按 0–4、4–10、10 分后三个阶段画折线，只在场次汇总时出现。 */
-function phaseTrendSvg(resources, esc) {
-  const rows = PHASE_KEYS.map((key) => (resources || []).find((row) => row.key === key)).filter(Boolean);
-  if (rows.length < 2) return '';
-  const valueOf = (row, key) => {
-    if (key === 'invade') return (num(row.antiRed) ? row.antiRed : 0) + (num(row.antiBlue) ? row.antiBlue : 0);
-    return num(row[key]) ? row[key] : 0;
-  };
-  const series = [
-    { label: '龙', color: 'var(--bgx-accent)', key: 'dragonOwn' },
-    { label: '塔', color: '#b08a3e', key: 'towerOwn' },
-    { label: '团', color: 'var(--bgx-loss)', key: 'fightN' },
-    { label: '反野', color: '#3a6ea5', key: 'invade' },
-  ].map((item) => ({ ...item, values: rows.map((row) => valueOf(row, item.key)) }));
-  const max = Math.max(1, ...series.flatMap((item) => item.values));
-  const top = Math.max(1, Math.ceil(Math.ceil(max * 1.1) / 4) * 4);
-  const W = 960; const H = 220; const padL = 46; const padR = 24; const padT = 18; const padB = 34;
-  const x = (index) => padL + (index / Math.max(1, rows.length - 1)) * (W - padL - padR);
-  const y = (value) => padT + (1 - value / top) * (H - padT - padB);
-  const grid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-    const gy = padT + ratio * (H - padT - padB);
-    return `<line class="bgx-trend-grid" x1="${padL}" y1="${gy.toFixed(1)}" x2="${W - padR}" y2="${gy.toFixed(1)}"></line>
-      <text class="bgx-trend-axis" x="${padL - 10}" y="${(gy + 4).toFixed(1)}" text-anchor="end">${Math.round(top * (1 - ratio))}</text>`;
-  }).join('');
-  const xLabels = rows.map((row, index) => `<text class="bgx-trend-axis" x="${x(index).toFixed(1)}" y="${H - 10}" text-anchor="middle">${esc(row.label || '')}</text>`).join('');
-  const lines = series.map((item) => {
-    const points = item.values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
-    const dots = item.values.map((value, index) => `<circle cx="${x(index).toFixed(1)}" cy="${y(value).toFixed(1)}" r="4" fill="${item.color}"><title>${esc(`${item.label} · ${rows[index].label || ''} · ${Math.round(value * 100) / 100}`)}</title></circle>`).join('');
-    return `<polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>${dots}`;
-  }).join('');
-  const legend = series.map((item) => `<span><i style="background:${item.color}"></i>${esc(item.label)}</span>`).join('');
-  return `<div class="bgx-phase-trend">
-    <div class="bgx-phase-trend-head"><b>全场走势 · 场均</b><span class="bgx-phase-trend-legend">${legend}</span></div>
-    <div class="bgx-phase-trend-scroll"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="龙、塔、团战、反野按阶段的全场走势">${grid}${xLabels}${lines}</svg></div>
-  </div>`;
-}
 
 export function renderPhase(insight, ui, h) {
   const { esc, fixed, count } = localHelpers(h);
   const games = (insight.phase && insight.phase.perGame) || [];
   if (!games.length) {
-    return `${cardHead(esc, '04 执行与资源', '每一段拿了什么，打了几波团', '这几局没有阶段数据。')}${emptyState('没有阶段数据。')}`;
+    return `${cardHead(esc, '04 执行与资源', '每一段拿了什么，打了几波团', '')}${emptyState('没有阶段数据。')}`;
   }
   const active = PHASE_TABS.some(([key]) => key === ui.phase) ? ui.phase : 'mid';
   const cellsFor = (game) => (active === 'all'
@@ -1359,7 +1933,7 @@ export function renderPhase(insight, ui, h) {
 
   const phaseName = (PHASE_TABS.find(([key]) => key === active) || [])[2] || '全场';
   return `${cardHead(esc, '04 执行与资源', `${esc(phaseName)}这一段：龙、塔、团战、反野`,
-    '先选阶段，再看这一段的资源与团战；没有回放事件的项显示「—」，不补 0。选手状态已下线，不再用不可靠的状态分。', tabs)}
+    '没有回放事件的项显示「—」，不补 0。', tabs)}
     <div class="bgx-phase-readout">
       <div class="bgx-phase-stat">
         <header><b><i>龙</i>拿了几条龙</b><em>${num(ownDragon) || num(foeDragon) ? `场均 · ${count(withReplay.length)} 局` : '无回放'}</em></header>
@@ -1385,6 +1959,5 @@ export function renderPhase(insight, ui, h) {
         <div class="bgx-vcols">${vcol(antiRed, buffMax, '', '反红')}${vcol(antiBlue, buffMax, 'is-foe', '反蓝')}</div>
         <p class="bgx-phase-buff-note">被反：红 <b>${num(stolenRed) ? fixed(stolenRed, 1) : '—'}</b> · 蓝 <b>${num(stolenBlue) ? fixed(stolenBlue, 1) : '—'}</b></p>
       </div>
-    </div>
-    ${active === 'all' ? phaseTrendSvg(insight.phase?.resources, esc) : ''}`;
+    </div>`;
 }

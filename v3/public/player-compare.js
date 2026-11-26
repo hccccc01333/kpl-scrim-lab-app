@@ -4,6 +4,8 @@
    同位置优先配对（仍可手动跨位置对比）；筛选与目录合并为一条吸顶工具条。
    数据：/api/v3/players-board 的 players（营地聚合与分位）+ games（逐局十人面板）。 */
 
+import { glyph } from './ui-icons.js';
+
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const es = (v) => String(v == null ? '' : v)
@@ -45,7 +47,35 @@ const DIMS = [
 export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
   const state = { board: null, scope: 'all', lane: '', nameA: '', nameB: '', source: 'own', team: '' };
 
-  const rawAll = () => ((state.board && state.board.players) || []).filter((p) => (p.games || 0) >= 1);
+  /* 全站口径：分析页只显示选手ID，不显示营地游戏名。
+     游戏名 → 选手ID 的映射只在「匹配与编组」维护，board 里带 memberId 的
+     一律换成选手主数据上的名字；原游戏名留在 gameName 供追溯。 */
+  const members = () => (state.board && state.board.identity && state.board.identity.members) || [];
+  const idOf = (p) => {
+    const list = members();
+    if (p.memberId) {
+      const owner = list.find((m) => m.id === p.memberId);
+      if (owner) return owner;
+    }
+    const raw = String(p.name || '');
+    return list.find((m) => m.camp_user_id === raw
+      || (Array.isArray(m.aliases) && m.aliases.includes(raw))
+      || m.name === raw || m.label === raw) || null;
+  };
+  const rawAll = () => {
+    const byId = new Map();
+    for (const p of (state.board && state.board.players) || []) {
+      if ((p.games || 0) < 1) continue;
+      const owner = idOf(p);
+      if (!owner) continue; /* 还没建选手ID的营地号不进分析页，先去匹配与编组建档 */
+      const name = owner.label || owner.name || p.name;
+      const previous = byId.get(name);
+      if (!previous || (p.games || 0) > (previous.games || 0)) {
+        byId.set(name, {...p, gameName: p.name, name, bound: true});
+      }
+    }
+    return [...byId.values()];
+  };
   /* 对比数据源：本队 / KPL / 指定战队。
      - 本队：board 里 side=own 的选手；
      - 指定战队：取每名本队选手对该队的逐场切片（board.players[].splits.opponent）；
@@ -131,7 +161,7 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
   function card(id, name, title, chart) {
     return `<article class="hc-card" id="pc-analysis-${id}">
       <div class="hc-card-head">
-        <div class="hc-card-heading"><span class="hc-card-no">${id}</span><div>
+        <div class="hc-card-heading">${glyph('compare', { label: '选手对比', size: 18 })}<span class="hc-card-no">${id}</span><div>
           <span class="hc-card-name">${es(name)}</span>
           <h3 class="hc-card-title">${title}</h3>
         </div></div>
@@ -324,16 +354,16 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
 
   function render(value) {
     if (value) state.board = value;
-    if (!state.board) return '<div class="page"><div class="loading">正在汇总选手面板…</div></div>';
+    if (!state.board) return `<div class="page"><div class="loading">${glyph('players', { size: 18 })} 正在汇总选手面板…</div></div>`;
     initKeys();
     const a = find(state.nameA), b = find(state.nameB);
     if (!a || !b || a === b) {
       const why = state.source === 'kpl' ? '当前数据源（KPL）没有选手逐局样本，人数与场次按 0 显示。'
         : state.source === 'team' ? `本队对「${esc(state.team || '指定战队')}」还没有足够的出场样本，人数与场次按 0 显示。`
           : '当前筛选下不足两名选手，放宽对路或阵营再看。';
-      return `<div class="page hc-page pc-page"><h1 class="pc-empty-title">选手对比</h1>
+      return `<div class="page hc-page pc-page"><h1 class="pc-empty-title">${glyph('players', { label: '选手对比', size: 20 })} 选手对比</h1>
         <div class="hc-controlbar"><div class="hc-controlbar-filters">${sourceBar()}</div></div>
-        <div class="empty">${why}</div>
+        <div class="empty">${glyph('warning', { size: 20 })} ${why}${state.source === 'own' && !rawAll().length ? ' 当前还没有绑定选手ID的营地账号，先去「匹配与编组」建档。' : ''}</div>
         <p class="hc-source">样本计数：${n0(all().length)} 名选手 · 0 局。无样本一律显示 0。</p></div>`;
     }
     const sa = statOf(a), sb = statOf(b);
@@ -363,13 +393,13 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
             <option value="">全部位置</option>${['对抗路', '打野', '中路', '发育路', '游走'].map((l) => `<option value="${esc(l)}"${state.lane === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
           <label class="hc-filter"><span>阵营</span><select data-pc-scope aria-label="阵营">
             <option value="all"${state.scope === 'all' ? ' selected' : ''}>本队</option></select></label>
-          <button class="control pc-refresh" data-action="refresh">刷新数据</button>
-          <span class="hc-toolbar-count">${n0(pool().length)} 人 · 点条形可换人${reach.length ? ` · ${reach.map((x) => `<button type="button" class="pc-reach" data-pc-pick="${esc(x)}">${esc(x)}</button>`).join('')}` : ''}</span>
+          <button class="control pc-refresh" data-action="refresh">${glyph('refresh', { size: 18 })} 刷新数据</button>
+          <span class="hc-toolbar-count">${n0(pool().length)} 人${reach.length ? ` · ${reach.map((x) => `<button type="button" class="pc-reach" data-pc-pick="${esc(x)}">${glyph('players', { size: 16 })} ${esc(x)}</button>`).join('')}` : ''}</span>
         </div>
-        <div class="hc-index" role="group" aria-label="分析直达">${NAMES.map(([id, name]) => `<button type="button" data-pc-jump="${id}"><i>${id}</i>${esc(name)}</button>`).join('')}</div>
+        <div class="hc-index" role="group" aria-label="分析直达">${NAMES.map(([id, name], i) => `<button type="button" data-pc-jump="${id}">${glyph(['compare', 'chart', 'heroes', 'arrow-up'][i], { size: 18 })}<i>${id}</i>${esc(name)}</button>`).join('')}</div>
       </div>
       <section class="hc-cards">${cards}</section>
-      <p class="hc-source">数据来源：王者营地十人面板与逐局结算；数据源＝${{own: '自家', kpl: 'KPL', team: `指定战队 ${state.team || ''}`}[state.source] || '自家'}，无样本按 0 显示；同位置排名只在本位置内比较，跨位置对比请看原始值。</p>
+      <p class="hc-source">选手一律按选手ID显示：营地游戏名通过「匹配与编组」的绑定反查，还没建ID的账号不进对比页；同一个ID的多个号合并取场次最多的一份。数据来源：王者营地十人面板与逐局结算；数据源＝${{own: '自家', kpl: 'KPL', team: `指定战队 ${state.team || ''}`}[state.source] || '自家'}，无样本按 0 显示；同位置排名只在本位置内比较。</p>
     </div>`;
   }
 

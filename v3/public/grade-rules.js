@@ -6,7 +6,8 @@
  *
  * 外壳（app.js）只给挂载点：<div data-gr-root></div>
  */
-import { createConfigTools } from './config-tools.js?v=20261121c';
+import { glyph } from './ui-icons.js';
+import { currentCompetitionId, currentCompetitionName, saveSnapshot } from './rule-snapshots.js?v=20261124snap';
 
 const DEFAULT_API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 
@@ -45,7 +46,7 @@ export function createGradeRulesPage(h = {}) {
   let defaults = null;             // 服务端返回的默认文档快照，供「恢复默认」用
 
   const state = { ready: false, loading: false, revision: 0, updatedAt: '', subjects: {}, saved: false };
-  const ui = { subject: '游走', saving: false, notice: '', error: false, draft: null };
+  const ui = { subject: '游走', saving: false, notice: '', error: false, draft: null, onlyActive: false };
 
   /* ── 播报 ─────────────────────────────────────────────────────────── */
   function announce(message) {
@@ -89,8 +90,13 @@ export function createGradeRulesPage(h = {}) {
       applyPayload(payload);
       state.ready = true;
       paintAll();
-      if (!quiet) setNotice(state.saved ? `规则已读取：修订 ${state.revision}。`
-        : `已载入内置默认规则：${Object.keys(state.subjects).length} 个评分主体。改完点保存才会生效。`);
+      if (!quiet) {
+        const total = Object.values(state.subjects).reduce((n, fields) => n + Object.keys(fields || {}).length, 0);
+        const active = Object.values(state.subjects).reduce(
+          (n, fields) => n + Object.values(fields || {}).filter((r) => r.active !== false).length, 0);
+        setNotice(state.saved ? `规则已读取：修订 ${state.revision}，${total} 个字段（${active} 个生效）。`
+          : `已载入内置默认规则：${total} 个字段（${active} 个生效，其余列出但默认不生效）。改完点保存才会生效。`);
+      }
       else if (!keepNotice) setNotice('', { quiet: true });
     } catch (error) {
       if (gen !== generation || !root || keepNotice) return;
@@ -128,7 +134,6 @@ export function createGradeRulesPage(h = {}) {
       state.subjects = JSON.parse(JSON.stringify(ui.draft));
       state.saved = true;
       setNotice(`规则已保存并生效（修订 ${state.revision}）。`);
-      tools.refresh();
       document.dispatchEvent(new CustomEvent('grade-rules:saved'));
       return true;
     } catch (error) {
@@ -140,10 +145,40 @@ export function createGradeRulesPage(h = {}) {
     }
   }
 
+  /** 先把草稿保存并生效，再把整份评级规则打包到当前赛事快照。 */
+  async function snapshotCurrent() {
+    const compId = currentCompetitionId();
+    if (!compId) { setNotice('请先在顶栏选择赛事，再保存快照。', { error: true }); return; }
+    if (!(await save())) return;
+    try {
+      const result = await saveSnapshot('grade_rules', compId, '规则设置 · 赛事快照', API_BASE);
+      setNotice(`已把评级规则存到「${currentCompetitionName() || compId}」快照（第 ${result.revision} 版）。`);
+    } catch (error) {
+      setNotice(error.message || '赛事快照保存失败。', { error: true });
+    }
+  }
+
   /* ── 草稿编辑 ─────────────────────────────────────────────────────── */
   function fieldsOf(subject) {
-    // 字段顺序完全由后端规则文档决定（按各分路官方口径排列），前端不再硬编码清单。
+    // 字段顺序完全由后端规则文档决定（已列全 FIELDS），前端不再硬编码清单。
     return Object.keys(ui.draft?.[subject] || {});
+  }
+  function activeCount(subject) {
+    return Object.values(ui.draft?.[subject] || {}).filter((r) => r?.active !== false).length;
+  }
+  function setActive(subject, field, checked) {
+    const rule = ui.draft?.[subject]?.[field];
+    if (!rule) return;
+    rule.active = Boolean(checked);
+    const row = root?.querySelector(`[data-gr-active="${field}"]`)?.closest('tr');
+    row?.classList.toggle('is-off', !rule.active);
+    paintTabs(); paintFoot();
+  }
+  function setAllActive(checked) {
+    const fields = ui.draft?.[ui.subject] || {};
+    Object.values(fields).forEach((rule) => { rule.active = Boolean(checked); });
+    paintTable(); paintTabs(); paintFoot();
+    announce(`「${SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject}」已${checked ? '全部勾选生效' : '全部取消生效'}（还没保存）`);
   }
   function setThreshold(subject, field, index, value) {
     const rule = ui.draft?.[subject]?.[field];
@@ -162,27 +197,14 @@ export function createGradeRulesPage(h = {}) {
     return JSON.stringify(ui.draft) !== JSON.stringify(state.subjects);
   }
 
-  /* 配置管理工具：导出 / 导入 / 变更历史 / 撤销 / 未保存提醒。 */
-  const tools = createConfigTools({
-    configName: 'grade_rules', API_BASE, esc, icon, notify,
-    getDoc: () => ({ revision: state.revision, subjects: ui.draft }),
-    isDirty: dirty,
-    onImport: (doc) => {
-      if (doc.subjects && typeof doc.subjects === 'object') {
-        ui.draft = JSON.parse(JSON.stringify(doc.subjects));
-        paintAll();
-      }
-    },
-    onRollback: () => { load({ quiet: true }); },
-    onHistoryLoaded: () => { paintFoot(); },
-  });
-
   /* ── 渲染 ─────────────────────────────────────────────────────────── */
+  const SUBJECT_ICON = ['shield', 'pick', 'heroes', 'bp', 'compare', 'coach'];
   function subjectTabs() {
-    return SUBJECTS.map((s) => {
+    return SUBJECTS.map((s, i) => {
       const count = Object.keys(ui.draft?.[s.key] || {}).length;
+      const on = activeCount(s.key);
       return `<button type="button" class="gr-subject${s.key === ui.subject ? ' is-on' : ''}"
-        data-gr-subject="${esc(s.key)}" aria-pressed="${s.key === ui.subject}">${esc(s.label)}<span class="gr-tab-count">${count}</span></button>`;
+        data-gr-subject="${esc(s.key)}" aria-pressed="${s.key === ui.subject}">${glyph(SUBJECT_ICON[i] || 'heroes', { size: 16 })}${esc(s.label)}<span class="gr-tab-count" title="${on} 个生效 / 共 ${count} 个字段">${on}/${count}</span></button>`;
     }).join('');
   }
   function paintTabs() {
@@ -193,19 +215,26 @@ export function createGradeRulesPage(h = {}) {
       node.classList.toggle('is-on', on);
       // 字段数由后端数据决定，load 完成后补画（首屏 html() 时 draft 还没到）。
       const count = Object.keys(ui.draft?.[key] || {}).length;
+      const active = activeCount(key);
       const badge = node.querySelector('.gr-tab-count');
-      if (badge) badge.textContent = String(count);
+      if (badge) {
+        badge.textContent = `${active}/${count}`;
+        badge.title = `${active} 个生效 / 共 ${count} 个字段`;
+      }
     });
   }
   function paintTable() {
     const body = root?.querySelector('[data-gr-tbody]');
     if (!body || !ui.draft) return;
     const subject = ui.subject;
-    const fields = fieldsOf(subject);
-    if (!fields.length) {
-      body.innerHTML = '<tr><td colspan="6" class="gr-empty">这个评分主体还没有字段。可从其它分路复制，或恢复默认。</td></tr>';
+    const allFields = fieldsOf(subject);
+    if (!allFields.length) {
+      body.innerHTML = '<tr><td colspan="7" class="gr-empty">这个评分主体还没有字段。请点「恢复本分路默认」。</td></tr>';
       return;
     }
+    const fields = ui.onlyActive
+      ? allFields.filter((field) => ui.draft[subject][field]?.active !== false)
+      : allFields;
     body.innerHTML = fields.map((field) => {
       const rule = ui.draft[subject][field];
       const down = rule.direction === 'down';
@@ -220,8 +249,11 @@ export function createGradeRulesPage(h = {}) {
       const source = rule.source === 'tile'
         ? '<small class="gr-src gr-src-tile">营地卡片</small>'
         : '<small class="gr-src">基础字段</small>';
-      return `<tr>
+      const on = rule.active !== false;
+      return `<tr class="${on ? '' : 'is-off'}">
         <th scope="row">${esc(label)}${estimate}${source}</th>
+        <td class="gr-active-cell"><input type="checkbox" class="gr-active" data-gr-active="${esc(field)}"
+          ${on ? 'checked' : ''} aria-label="启用字段「${esc(label)}」"><span class="visually-hidden">${on ? '已生效' : '未生效'}</span></td>
         <td><span class="gr-dir ${down ? 'is-down' : 'is-up'}" title="${down ? '数值越低越好' : '数值越高越好'}">${down ? '↓ 越低越好' : '↑ 越高越好'}</span></td>
         ${cells}
         <td><span class="gr-unit">${esc(unit)}</span></td>
@@ -229,6 +261,10 @@ export function createGradeRulesPage(h = {}) {
     }).join('');
     const title = root.querySelector('[data-gr-subject-title]');
     if (title) title.textContent = SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject;
+    const toggle = root.querySelector('[data-gr-only-active]');
+    if (toggle) toggle.checked = ui.onlyActive;
+    const toggleLabel = root.querySelector('[data-gr-only-active-label]');
+    if (toggleLabel) toggleLabel.textContent = `只看生效 (${activeCount(subject)}/${allFields.length})`;
   }
   function levelInputs(subject, field, thresholds) {
     return LEVELS.slice(0, 3).map((lv, i) => {
@@ -249,15 +285,13 @@ export function createGradeRulesPage(h = {}) {
     const save = root?.querySelector('[data-gr-save]');
     if (save) {
       save.disabled = ui.saving || !dirty();
-      save.textContent = ui.saving ? '保存中…' : '保存并生效';
+      save.innerHTML = `${glyph('pick', { size: 18 })}<span>${ui.saving ? '保存中…' : '保存并生效'}</span>`;
     }
     const reset = root?.querySelector('[data-gr-reset]');
     if (reset) reset.disabled = ui.saving;
-    const undo = root?.querySelector('[data-gr-undo]');
-    if (undo) undo.disabled = ui.saving || !tools.state.entries.length;
     const rev = root?.querySelector('[data-gr-rev]');
     if (rev) {
-      rev.textContent = state.saved ? `已保存 · 修订 ${state.revision}` : '内置默认 · 尚未保存';
+      rev.textContent = state.saved ? '已保存' : '内置默认 · 尚未保存';
       rev.classList.toggle('is-saved', state.saved);
     }
   }
@@ -271,8 +305,8 @@ export function createGradeRulesPage(h = {}) {
       <section class="section gr-lead">
         <div class="section-heading"><div><h1>规则设置</h1></div>
           <div class="gr-lead-actions">
-            <span class="gr-rev" data-gr-rev></span>
-            <button type="button" class="control" data-gr-reload>${icon('refresh')} 重新读取</button>
+            <button type="button" class="control" data-gr-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
+            <button type="button" class="control" data-gr-reload>${glyph('refresh', { size: 18 })}重新读取</button>
           </div></div>
         <p class="gr-status" data-gr-status hidden></p>
       </section>
@@ -280,12 +314,17 @@ export function createGradeRulesPage(h = {}) {
       <section class="section gr-editor">
         <div class="gr-toolbar">
           <div class="gr-subjects" role="group" aria-label="选择评分主体">${subjectTabs()}</div>
+          <div class="gr-toolbar-actions">
+            <label class="gr-only-active"><input type="checkbox" data-gr-only-active><span data-gr-only-active-label>只看生效</span></label>
+            <button type="button" class="control" data-gr-all-on>${glyph('pick', { size: 18 })}本分路全选</button>
+            <button type="button" class="control" data-gr-all-off>${glyph('ban', { size: 18 })}全部取消</button>
+          </div>
         </div>
         <div class="gr-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-table-cap">
           <table class="gr-table">
             <caption id="${uid}-table-cap" class="visually-hidden"><span data-gr-subject-title>游走</span> 的评级阈值</caption>
             <thead><tr>
-              <th scope="col">字段</th><th scope="col">方向</th>
+              <th scope="col">字段</th><th scope="col" title="勾上才生效">生效</th><th scope="col">方向</th>
               <th scope="col"><span class="gr-lv gr-lv-elite">卓越</span></th>
               <th scope="col"><span class="gr-lv gr-lv-good">优秀</span></th>
               <th scope="col"><span class="gr-lv gr-lv-pass">达标</span></th>
@@ -295,12 +334,10 @@ export function createGradeRulesPage(h = {}) {
           </table>
         </div>
         <div class="gr-foot">
-          <button type="button" class="control" data-gr-undo disabled title="回滚到上一次保存的版本">撤销上次修改</button>
-          <button type="button" class="control" data-gr-reset>恢复本分路默认</button>
-          <button type="button" class="primary" data-gr-save disabled>保存并生效</button>
+          <button type="button" class="control" data-gr-reset>${glyph('refresh', { size: 18 })}恢复本分路默认</button>
+          <button type="button" class="primary" data-gr-save disabled>${glyph('pick', { size: 18 })}<span>保存并生效</span></button>
         </div>
       </section>
-      ${tools.html()}
     </div>`;
   }
 
@@ -314,12 +351,10 @@ export function createGradeRulesPage(h = {}) {
       return;
     }
     if (event.target.closest('[data-gr-reload]')) { load(); return; }
+    if (event.target.closest('[data-gr-snapshot]')) { snapshotCurrent(); return; }
+    if (event.target.closest('[data-gr-all-on]')) { setAllActive(true); return; }
+    if (event.target.closest('[data-gr-all-off]')) { setAllActive(false); return; }
     if (event.target.closest('[data-gr-reset]')) { resetSubject(); paintFoot(); return; }
-    if (event.target.closest('[data-gr-undo]')) {
-      const last = tools.state.entries[0];
-      if (last) tools.rollbackTo(last.id, last.revision);
-      return;
-    }
     if (event.target.closest('[data-gr-save]')) { save(); return; }
   }
   function onInput(event) {
@@ -357,7 +392,11 @@ export function createGradeRulesPage(h = {}) {
   }
   function validateAll() {
     if (!root) return true;
-    const inputs = [...root.querySelectorAll('[data-gr-th]')];
+    // 未勾选生效的字段不参与评级口径，阈值留空也不拦保存。
+    const inputs = [...root.querySelectorAll('[data-gr-th]')].filter((input) => {
+      const field = text(input.dataset.grTh);
+      return ui.draft?.[ui.subject]?.[field]?.active !== false;
+    });
     const bad = inputs.filter((input) => !validateInput(input));
     if (bad.length) {
       bad[0].focus();
@@ -366,6 +405,17 @@ export function createGradeRulesPage(h = {}) {
     return true;
   }
   function onChange(event) {
+    const active = event.target.closest('[data-gr-active]');
+    if (active) {
+      setActive(ui.subject, text(active.dataset.grActive), active.checked);
+      return;
+    }
+    const only = event.target.closest('[data-gr-only-active]');
+    if (only) {
+      ui.onlyActive = Boolean(only.checked);
+      paintTable();
+      return;
+    }
     const input = event.target.closest('[data-gr-th]');
     if (!input) return;
     validateInput(input);
@@ -375,8 +425,12 @@ export function createGradeRulesPage(h = {}) {
     const input = event.target.closest('[data-gr-th]');
     if (input) validateInput(input);
   }
+  const onSnapshotRestored = (event) => {
+    if (event.detail?.module === 'grade_rules') load({ quiet: true });
+  };
   function bind(node) {
     if (bound === node) return;
+    document.addEventListener('rule-snapshots:restored', onSnapshotRestored);
     if (bound) dispose();
     bound = node;
     node.addEventListener('click', onClick);
@@ -385,6 +439,7 @@ export function createGradeRulesPage(h = {}) {
     node.addEventListener('focusout', onBlur);
   }
   function dispose() {
+    document.removeEventListener('rule-snapshots:restored', onSnapshotRestored);
     if (bound) {
       bound.removeEventListener('click', onClick);
       bound.removeEventListener('input', onInput);
@@ -392,7 +447,6 @@ export function createGradeRulesPage(h = {}) {
       bound.removeEventListener('focusout', onBlur);
       bound = null;
     }
-    tools.dispose();
     controller?.abort();
     controller = null;
     root = null;
@@ -406,7 +460,6 @@ export function createGradeRulesPage(h = {}) {
     if (data) applyPayload(data);
     root.innerHTML = html();
     bind(root);
-    tools.mount(root);
     controller = new AbortController();
     paintAll();
     load();

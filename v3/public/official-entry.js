@@ -143,12 +143,12 @@ function gameRowHtml(gameNo) {
     </td>
     <td data-label="赛后数据图">
       <div class="oe-shots" data-oe-shots="${gameNo}">
-        <button type="button" class="oe-mini" data-oe-add-image="${gameNo}">${glyph('capture', { size: 14 })}贴数据图</button>
+        <button type="button" class="oe-mini" data-oe-add-image="${gameNo}">${glyph('capture', { size: 18 })}贴数据图</button>
         <div class="oe-shot-list" data-oe-shot-list></div>
       </div>
     </td>
     <td data-label="操作"><button type="button" class="oe-mini oe-mini-danger oe-mini-icon" data-oe-remove-game="${gameNo}"
-      aria-label="删除第${gameNo}局" title="删除第${gameNo}局">${glyph('trash', { size: 14 })}</button></td>
+      aria-label="删除第${gameNo}局" title="删除第${gameNo}局">${glyph('trash', { size: 18 })}</button></td>
   </tr>`;
 }
 
@@ -158,14 +158,13 @@ export function officialEntryPage() {
     <header class="oe-head">
       <div><span class="oe-kicker">正式比赛 · 线上表格录入</span>
         ${deco('divider-title')}
-        <h1>录入一场 BO 系列赛</h1>
-        <p class="oe-intro">逐局填写官方赛后数据，字段全部选填——现场没确认的可以先空着，之后补录。赛后截图可作为附件随对局保存。</p></div>
-      <a class="oe-link" href="${API.notes}">${glyph('book', { size: 14 })}赛后笔记 ${glyph('arrow-up', { size: 14, cls: 'oe-ext' })}</a>
+        <h1>录入一场 BO 系列赛</h1></div>
+      <a class="oe-link" href="${API.notes}">${glyph('book', { size: 18 })}赛后笔记 ${glyph('arrow-up', { size: 18, cls: 'oe-ext' })}</a>
     </header>
 
     <form class="oe-series" data-oe-form novalidate aria-label="逐局正式比赛录入">
       <fieldset class="oe-fieldset">
-        <legend>比赛信息 <small class="oe-optional-note">全部字段选填：先保存现场能确认的，其余回头补录。</small></legend>
+        <legend>比赛信息 <small class="oe-optional-note">${glyph('warning', { size: 16 })}全部选填 · 未确认的可回头补录</small></legend>
         <div class="oe-grid">
           <div class="oe-pending" data-oe-pending hidden></div>
           <div class="oe-field"><label for="oe-date">比赛日期（选填）</label>
@@ -203,8 +202,8 @@ export function officialEntryPage() {
         </table>
       </div>
       <div class="oe-actions">
-        <button type="button" class="oe-btn" data-oe-add-game>${plus({ size: 14 })}加一局</button>
-        <button type="submit" class="oe-btn oe-btn-primary" data-oe-save>${glyph('pick', { size: 16 })}保存到正式比赛</button>
+        <button type="button" class="oe-btn" data-oe-add-game>${plus({ size: 18 })}加一局</button>
+        <button type="submit" class="oe-btn oe-btn-primary" data-oe-save>${glyph('pick', { size: 18 })}保存到正式比赛</button>
         <p class="oe-status" role="status" aria-live="polite" aria-atomic="true" data-oe-status></p>
       </div>
       <div class="oe-toast" role="status" aria-live="polite" data-oe-toast hidden></div>
@@ -213,7 +212,7 @@ export function officialEntryPage() {
 
     <dialog class="oe-dialog oe-image-dialog" data-oe-image-dialog aria-labelledby="oe-img-title">
       <h2 id="oe-img-title">贴官方赛后数据图</h2>
-      <p class="oe-dialog-hint">支持选择文件或直接 Ctrl/⌘ + V 粘贴截图；单张不超过 12 MB，每局最多 ${MAX_IMAGES_PER_GAME} 张。图片仅作附件，字段请手工填写。</p>
+      <p class="oe-dialog-hint">${glyph('warning', { size: 18 })}可拖入 / 粘贴截图；单张 ≤ 12 MB，每局最多 ${MAX_IMAGES_PER_GAME} 张。图片仅作附件，字段需手填。</p>
       <div class="oe-drop" data-oe-drop role="button" tabindex="0" aria-label="选择或拖入图片"
         aria-describedby="oe-drop-hint">
         <span class="oe-drop-symbol">${glyph('capture', { size: 32, cls: 'oe-drop-capture' })}</span>
@@ -224,8 +223,8 @@ export function officialEntryPage() {
       <div class="oe-img-preview" data-oe-preview></div>
       <p class="oe-err" role="alert" data-oe-img-error></p>
       <form method="dialog" class="oe-dialog-actions" aria-label="截图操作">
-        <button type="submit" value="cancel" class="oe-btn">取消</button>
-        <button type="button" class="oe-btn oe-btn-primary" data-oe-upload>${glyph('export', { size: 15 })}上传并附到本局</button>
+        <button type="submit" value="cancel" class="oe-btn">${glyph('ban', { size: 18 })}取消</button>
+        <button type="button" class="oe-btn oe-btn-primary" data-oe-upload>${glyph('export', { size: 18 })}上传并附到本局</button>
       </form>
     </dialog>
   </section>`;
@@ -291,7 +290,7 @@ export function initOfficialEntry(container) {
     holder.innerHTML = list.map((image) => `<span class="oe-shot">
         <img src="/api/images/${encodeURIComponent(image.id)}" alt="${esc(image.name)}赛后数据图" loading="lazy">
         <button type="button" class="oe-shot-x" data-oe-remove-image="${gameNo}" data-image-id="${esc(image.id)}"
-          aria-label="移除图片 ${esc(image.name)}" title="移除">${glyph('trash', { size: 14 })}</button>
+          aria-label="移除图片 ${esc(image.name)}" title="移除">${glyph('trash', { size: 18 })}</button>
       </span>`).join('');
   }
 
@@ -404,7 +403,7 @@ export function initOfficialEntry(container) {
     const originalLabel = button.innerHTML;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    button.innerHTML = `${glyph('refresh', { size: 14, cls: 'oe-spin' })}上传中…`;
+    button.innerHTML = `${glyph('refresh', { size: 18, cls: 'oe-spin' })}上传中…`;
     imgError.textContent = '正在上传…';
     try {
       const saved = await api(`${API.images}?name=${encodeURIComponent(pendingFile.name.slice(0, 100))}`, {
@@ -607,7 +606,7 @@ export function initOfficialEntry(container) {
     const originalLabel = button.innerHTML;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    button.innerHTML = `${glyph('refresh', { size: 14, cls: 'oe-spin' })}保存中…`;
+    button.innerHTML = `${glyph('refresh', { size: 18, cls: 'oe-spin' })}保存中…`;
     say('正在保存…');
     try {
       const data = await api(API.entry, { method: 'POST', body: payload });

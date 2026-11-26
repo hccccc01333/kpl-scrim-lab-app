@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="128" height="68" viewBox="0 0 128 68" role="img">
+<title>强投影示例</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><filter id="strong" x="-40%" y="-75%" width="180%" height="250%" color-interpolation-filters="sRGB"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#433427" flood-opacity=".38"/></filter></defs>
+<g transform="translate(12 12) scale(1 1)"><g filter="url(#strong)"><rect x="0" y="0" width="104" height="44" rx="8" fill="url(#pearl)" stroke="#fff" stroke-width="1.2"/></g></g>
+</svg>

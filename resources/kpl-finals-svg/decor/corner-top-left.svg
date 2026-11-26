@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="84" height="84" viewBox="0 0 84 84" role="img">
+<title>左上金色圆角</title>
+<defs><linearGradient id="gold" x2="0%" y2="100%" gradientUnits="objectBoundingBox">
+ <stop stop-color="#f9da8f"/><stop offset=".34" stop-color="#d7a861"/><stop offset="1" stop-color="#a47435"/>
+</linearGradient><linearGradient id="teal-edge" x2="0%" y2="100%">
+ <stop stop-color="#a0d6bc"/><stop offset=".55" stop-color="#158c81"/><stop offset="1" stop-color="#043c36"/>
+</linearGradient></defs>
+<g transform="translate(84 0) scale(-1 1)"><path d="M0 0 H76 Q84 0 84 8 V84 C82.32 23.52 57.12 0.84 0 0Z" fill="url(#gold)"/><path d="M6.72 0 C48.72 1 78.96 12.6 84 72.24 C83.16 17.64 58.8 0 6.72 0Z" fill="url(#teal-edge)"/></g>
+</svg>

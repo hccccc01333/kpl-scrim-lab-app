@@ -14,6 +14,8 @@
    - 日期默认折叠，只渲染展开的一天；每天默认 24 行，按需加载更多。
    - 写操作直接用返回的 series 更新本地状态，不再全量重取。 */
 
+import { glyph } from './ui-icons.js';
+
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 
 const BO_LIST = [3, 5, 7];
@@ -294,11 +296,22 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     if (items.some((v) => !v.clock)) warns.push('部分对局缺少开赛时间，请确认局序');
     const opps = [...new Set(items.map((v) => v.opponent || ''))];
     if (opps.length > 1) warns.push('选中了不同对手：' + opps.filter(Boolean).join(' / '));
-    if (opps.length === 1 && !opps[0]) warns.push('对手未标注，建议先在对局档案补齐');
+    if (opps.length === 1 && !opps[0]) warns.push('对手未标注，建议先在单局分析补齐');
     const versions = [...new Set(items.map((v) => v.version || ''))].filter(Boolean);
     if (versions.length > 1) warns.push('选中了不同版本：' + versions.join(' / '));
     if (keys.length > 7) warns.push('超过 7 局，无法确认为单个 BO');
     return warns;
+  }
+
+  /* 只有“选错局”才值得让教练再核实一遍；单纯缺字段不是选择错误，
+     编组照常确认，行内给出「去补齐」入口即可。 */
+  function reviewWarnings(keys) {
+    return hardWarnings(selectionWarnings(keys));
+  }
+
+  /* 自动识别候选里的「对手未标注」同样只是补数据，不该卡住一键编组。 */
+  function hardWarnings(warnings) {
+    return (warnings || []).filter((w) => !String(w).startsWith('对手未标注'));
   }
 
   /* 一行一局的“能不能直接编”的最低字段；缺哪项在行内用 ⚠ 提示。 */
@@ -478,7 +491,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       });
     }
     const confirm = root.querySelector('[data-sb-confirm],[data-sb-append-confirm]');
-    if (confirm) confirm.textContent = flag ? '处理中…' : (state.appendTo ? '加入系列赛' : '确认编组');
+    if (confirm) confirm.innerHTML = `${glyph(flag ? 'refresh' : 'victory', { size: 18 })}<span>${flag ? '处理中…' : (state.appendTo ? '加入系列赛' : '确认编组')}</span>`;
   }
 
   /* ───────────────────────── 渲染 ───────────────────────── */
@@ -531,13 +544,13 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       <div class="sb-menu-seg">${BO_LIST.map((bo) => `<button type="button" data-sb-set-bo-series="${esc(s.id)}" data-bo="${bo}"
         class="${Number(s.bestOf) === bo ? 'is-active' : ''}" role="menuitemradio" aria-checked="${Number(s.bestOf) === bo}">BO${bo}</button>`).join('')}</div>
       <div class="sb-menu-sep"></div>
-      <button type="button" role="menuitem" data-sb-append="${esc(s.id)}">添加对局</button>
-      <button type="button" role="menuitem" data-sb-edit="${esc(s.id)}">${editing ? '退出调整' : '调整局序 / 移出'}</button>
-      ${s.status === 'needs_review' ? `<button type="button" role="menuitem" data-sb-mark-reviewed="${esc(s.id)}">标记已核实</button>` : ''}
-      <button type="button" role="menuitem" data-sb-mark="${esc(s.id)}" data-mark="interrupted">标记中断</button>
-      <button type="button" role="menuitem" data-sb-mark="${esc(s.id)}" data-mark="incomplete">标记采集不完整</button>
+      <button type="button" role="menuitem" data-sb-append="${esc(s.id)}">${glyph('pick', { size: 18 })}添加对局</button>
+      <button type="button" role="menuitem" data-sb-edit="${esc(s.id)}">${glyph('edit', { size: 18 })}${editing ? '退出调整' : '调整局序 / 移出'}</button>
+      ${s.status === 'needs_review' ? `<button type="button" role="menuitem" data-sb-mark-reviewed="${esc(s.id)}">${glyph('shield', { size: 18 })}标记已核实</button>` : ''}
+      <button type="button" role="menuitem" data-sb-mark="${esc(s.id)}" data-mark="interrupted">${glyph('warning', { size: 18 })}标记中断</button>
+      <button type="button" role="menuitem" data-sb-mark="${esc(s.id)}" data-mark="incomplete">${glyph('warning', { size: 18 })}标记采集不完整</button>
       <div class="sb-menu-sep"></div>
-      <button type="button" role="menuitem" class="is-danger" data-sb-delete="${esc(s.id)}">${danger ? '确认删除编组？' : '删除编组'}</button>
+      <button type="button" role="menuitem" class="is-danger" data-sb-delete="${esc(s.id)}">${glyph('trash', { size: 18 })}${danger ? '确认删除编组？' : '删除编组'}</button>
     </div>`;
   }
 
@@ -551,7 +564,9 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     const score = s.score || { us: 0, them: 0 };
     const stateClass = ['interrupted', 'incomplete'].includes(s.completion) ? 'is-bad'
       : s.completion === 'completed' ? 'is-done' : 'is-open';
-    return `<article class="sb-series${editing ? ' is-editing' : ''}" data-sb-series="${esc(s.id)}">
+    const reasons = s.status === 'needs_review'
+      ? reviewWarnings((s.games || []).map((g) => String(g.matchKey))) : [];
+    return `<article class="sb-series${editing ? ' is-editing' : ''}${reasons.length ? ' has-review' : ''}" data-sb-series="${esc(s.id)}">
       <div class="sb-series-head">
         <span class="sb-bo">BO${esc(s.bestOf)}</span>
         <div class="sb-series-title">
@@ -561,7 +576,6 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
         <span class="sb-series-score" aria-label="小局比分"><b>${fmt(score.us)}</b><i>:</i><b>${fmt(score.them)}</b></span>
         <span class="sb-state ${stateClass}">${esc(completionLabel(s))}</span>
         ${s.status === 'needs_review' ? '<span class="sb-review-badge">待核实</span>' : ''}
-        <a class="sb-series-open" href="${esc(route('cross', 'series/' + s.id))}">分析 ${icon('arrow')}</a>
         <button type="button" class="sb-iconbtn" data-sb-menu="${esc(s.id)}"
           aria-label="更多系列赛操作" aria-expanded="${menu}">${icon('menu')}</button>
       </div>
@@ -585,6 +599,12 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
         }).join('')}
         ${editing ? `<button type="button" class="sb-game-done" data-sb-finish-edit="${esc(s.id)}">完成调整</button>` : ''}
       </div>
+      ${reasons.length ? `<div class="sb-review-strip" role="group" aria-label="核实这一组">
+        <span class="sb-review-mark" aria-hidden="true">!</span>
+        <span class="sb-review-copy"><b>需要你确认</b><small>${esc(reasons[0])}${reasons.length > 1 ? ` · 另 ${reasons.length - 1} 项` : ''}</small></span>
+        <button type="button" class="sb-verify" data-sb-mark-reviewed="${esc(s.id)}"
+          aria-label="核实 ${esc(s.opponent || s.date || '这一组')} 无误" title="确认局序与赛制，标为已核实">✓ 核实无误</button>
+      </div>` : ''}
       ${s.notes ? `<p class="sb-series-note">${esc(s.notes)}</p>` : ''}
       ${menu ? menuHtml(s, editing, danger) : ''}
     </article>`;
@@ -596,9 +616,10 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       .filter(({ s }) => Number(s.count) <= 7);
   }
 
-  /* 批量只碰“高置信”：无警告、无需人工核实、装得下 BO。 */
+  /* 批量只碰“高置信”：没有需要核实的冲突、装得下 BO。
+     仅缺对手的候选照常可一键编组，缺的字段在成组后由行内「去补齐」引导。 */
   function bulkCandidates() {
-    return actionableSuggestions().filter(({ s }) => !(s.warnings || []).length && !s.needsReview);
+    return actionableSuggestions().filter(({ s }) => !hardWarnings(s.warnings).length);
   }
 
   function suggestPanel() {
@@ -608,7 +629,9 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     const bulk = bulkCandidates();
     const cards = list.map(({ s, index }) => {
       const warnings = s.warnings || [];
-      const needsReview = warnings.length > 0 || Boolean(s.needsReview);
+      const hard = hardWarnings(warnings);
+      const soft = warnings.filter((w) => hard.indexOf(w) < 0);
+      const needsReview = hard.length > 0;
       return `<article class="sb-cand" data-sb-cand="${index}">
         <div class="sb-cand-top">
           <span class="sb-bo">BO${esc(s.bestOf)}</span>
@@ -621,21 +644,22 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
           const res = v.result === 'win' ? 'win' : v.result === 'loss' ? 'loss' : '';
           return `<span class="sb-cand-game ${res}" title="${esc(clockText(v.clock))}">G${i + 1}</span>`;
         }).join('')}</div>
-        ${warnings.length ? `<p class="sb-cand-warn" title="${esc(warnings.join('；'))}">⚠ ${esc(warnings[0])}${warnings.length > 1 ? ` +${warnings.length - 1}` : ''}</p>` : ''}
+        ${hard.length ? `<p class="sb-cand-warn" title="${esc(hard.join('；'))}">⚠ ${esc(hard[0])}${hard.length > 1 ? ` +${hard.length - 1}` : ''}</p>`
+          : soft.length ? `<p class="sb-cand-warn is-soft" title="${esc(soft.join('；'))}">仅缺对手等数据，成组后补齐即可</p>` : ''}
         <button type="button" class="sb-cand-apply" data-sb-confirm-suggest="${index}"
-          ${needsReview ? 'disabled title="这组需要人工核实后再编组"' : 'title="按这个候选创建系列赛"'}>${needsReview ? '需核实' : '一键编组'}</button>
+          ${needsReview ? 'disabled title="这组需要人工核实后再编组"' : 'title="按这个候选创建系列赛"'}>${glyph(needsReview ? 'warning' : 'export', { size: 18 })}${needsReview ? '需核实' : '一键编组'}</button>
       </article>`;
     }).join('');
     return `<section class="sb-cands" data-sb-suggest-panel aria-label="自动识别候选">
       <header class="sb-cands-head">
         <span class="sb-cands-icon">${sparkIcon()}</span>
-        <div class="sb-cands-copy"><b>自动识别候选</b><small>按日期 + 对手 + 时间连续性分组，只生成候选，确认后才落库</small>${hasFilter() ? '<small>候选基于全量数据，不受当前筛选影响</small>' : ''}</div>
+        <div class="sb-cands-copy"><b>自动识别候选</b>${hasFilter() ? '<small>基于全量数据，不受筛选影响</small>' : ''}</div>
         <span class="sb-cands-count">${bulk.length} 组可一键${list.length > bulk.length ? ` · 另 ${list.length - bulk.length} 组需核实` : ''}${hidden ? ` · 另 ${hidden} 组需手动拆分` : ''}</span>
         ${bulk.length ? `<button type="button" class="sb-bulk-btn${state.bulkConfirm ? ' is-confirm' : ''}" data-sb-bulk-suggest
-          title="只处理无警告、无需人工核实、≤7 局的候选">${state.bulkConfirm ? `确认编组 ${bulk.length} 组？` : `全部编组 ${bulk.length} 组`}</button>` : ''}
-        <button type="button" class="sb-linkbtn" data-sb-suggest-close>收起</button>
+          title="只处理没有冲突、无需人工核实、≤7 局的候选（仅缺对手可成组后补齐）">${glyph(state.bulkConfirm ? 'warning' : 'export', { size: 18 })}${state.bulkConfirm ? `确认编组 ${bulk.length} 组？` : `全部编组 ${bulk.length} 组`}</button>` : ''}
+        <button type="button" class="sb-linkbtn" data-sb-suggest-close>${glyph('arrow-up', { size: 18 })}收起</button>
       </header>
-      ${state.bulkConfirm && bulk.length ? `<p class="sb-bulk-note">只处理无警告、无需核实的 ${bulk.length} 组；确认后仍可撤销。
+      ${state.bulkConfirm && bulk.length ? `<p class="sb-bulk-note">只处理无冲突、无需核实的 ${bulk.length} 组（仅缺对手的会照常编组）；确认后仍可撤销。
         <button type="button" class="sb-linkbtn" data-sb-bulk-cancel>取消</button></p>` : ''}
       ${list.length ? `<div class="sb-cands-rail">${cards}</div>`
         : `<p class="sb-cands-none">这 ${hidden} 组候选都超过 7 局，无法一次确认为单个 BO；请在下方按时间连续段手动选取。</p>`}
@@ -660,7 +684,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       tabindex="0" aria-selected="${selected}" title="点这一行选中；Shift 点首尾可连选">
       <span class="sb-check" aria-hidden="true"></span>
       <span class="sb-row-when"><b>第 ${no} 局</b><small>${esc(clockText(v.clock))}</small></span>
-      <span class="sb-row-opp"><b>${esc(v.opponent ? '对阵 ' + v.opponent : '对手待补')}</b><small>${esc(meta)}${issues.length ? `<i class="sb-row-flag" title="${esc(issues.join(' / '))}">⚠ ${issues.length}</i>` : ''}</small></span>
+      <span class="sb-row-opp"><b>${esc(v.opponent ? '对阵 ' + v.opponent : '对手待补')}</b><small>${esc(meta)}${issues.length ? `<a class="sb-row-flag" href="${esc('#match/' + encodeURIComponent(key))}" title="缺：${esc(issues.join(' / '))}；点开去补齐">⚠ ${issues.length} · 去补齐</a>` : ''}</small></span>
       <span class="sb-row-result">${v.result === 'win' ? '胜' : v.result === 'loss' ? '负' : '—'}</span>
       <span class="sb-row-score">${own === null || foe === null ? '—' : `${fmt(own)} : ${fmt(foe)}`}</span>
       <span class="sb-row-dur">${time(v.duration)}</span>
@@ -758,10 +782,9 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
   function workspaceHtml(days = displayDays()) {
     if (!days.length) {
       return `<div class="sb-workspace is-empty"><div class="sb-empty">
-        <b>${hasFilter() ? '没有匹配的对局' : '还没有待编组对局'}</b>
-        <p>${hasFilter() ? '换个对手或关键词试试。' : '先到「对局档案」完成归档，再回来编组。'}</p>
-        ${hasFilter() ? '<button type="button" class="sb-ghost" data-sb-reset-filter>清除筛选</button>'
-          : `<a class="sb-ghost" href="#matches">去对局档案</a>`}
+        ${glyph(hasFilter() ? 'warning' : 'calendar', { size: 28 })}<b>${hasFilter() ? '没有匹配的对局' : '还没有待编组对局'}</b>
+        ${hasFilter() ? `<button type="button" class="sb-ghost" data-sb-reset-filter>${glyph('trash', { size: 18 })}清除筛选</button>`
+          : `<a class="sb-ghost" href="#matches">${glyph('matches', { size: 18 })}去单局分析</a>`}
       </div></div>`;
     }
     return `<div class="sb-workspace">
@@ -790,7 +813,6 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     return `<header class="sb-hero">
       <div class="sb-hero-copy">
         <h1>系列赛编组</h1>
-        <p class="sb-lede">选择属于同一场比赛的对局，再确认赛制。按住 Shift 可连续选择。</p>
       </div>
       <div class="sb-hero-meta" aria-label="编组概览">
         <span class="sb-hero-stat"><b>${fmt(ungrouped)}</b><small>局待编组</small></span>
@@ -820,6 +842,16 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     if (node) node.textContent = scopeText(days);
   }
 
+  /* 编组三步操作指引常驻在工具栏上方；教练不用猜「选完局之后点哪」。 */
+  function stepsHtml() {
+    return `<ol class="sb-steps" aria-label="编组流程">
+      <li><b>1</b><span>勾选对局</span><small>按住 Shift 连选同一天</small></li>
+      <li><b>2</b><span>确认赛制</span><small>按局数推荐 BO，可手改</small></li>
+      <li><b>3</b><span>底部确认编组</span><small>撤销用 ⌘/Ctrl+Z</small></li>
+      <li class="sb-steps-note">智能候选只生成建议，不会改动已有编组；标「待核实」的组，点卡片上的「✓ 核实无误」即可。</li>
+    </ol>`;
+  }
+
   function toolbarHtml(days = []) {
     const options = opponentOptions();
     const current = state.filter.opponent;
@@ -846,7 +878,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
         ${quality ? `<button type="button" class="sb-filter-chip is-quality${state.filter.qualityOnly ? ' is-on' : ''}"
           data-sb-quality-filter aria-pressed="${state.filter.qualityOnly}" title="只看缺对手 / 开赛时间 / 阵容等字段的待编组局">
           <span class="sb-chip-dot" aria-hidden="true"></span>需补数据 <b>${quality}</b></button>` : ''}
-        <button type="button" class="sb-iconbtn sb-refresh" data-sb-refresh aria-label="刷新数据" title="刷新数据">${icon('refresh')}</button>
+        <button type="button" class="sb-iconbtn sb-refresh" data-sb-refresh aria-label="刷新数据" title="刷新数据">${glyph('refresh', { size: 18 })}</button>
       </div>
       <div class="sb-toolbar-side">
         ${scope ? `<span class="sb-toolbar-scope">${esc(scope)}</span>` : ''}
@@ -875,14 +907,15 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
   function html() {
     if (state.error && !state.loaded) {
       return `<div class="page sb-page"><section class="sb-empty is-error">
-        <b>读不到编组数据</b><p>${esc(state.error)}</p>
-        <button type="button" class="sb-ghost" data-sb-retry>重试</button>
+        ${glyph('warning', { size: 28 })}<b>读不到编组数据</b><p>${esc(state.error)}</p>
+        <button type="button" class="sb-ghost" data-sb-retry>${glyph('refresh', { size: 18 })}重试</button>
       </section></div>`;
     }
     const days = state.loaded ? displayDays() : [];
     if (state.loaded) syncOpenDays(days);
     return `<div class="page sb-page${state.selection.size ? ' has-selection' : ''}">
       ${heroHtml()}
+      ${stepsHtml()}
       ${toolbarHtml(state.loaded ? days : [])}
       ${bannerHtml()}
       ${suggestPanel()}
@@ -969,10 +1002,10 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
         ${full ? '<em class="sb-switch-auto">自动</em>' : ''}
       </label>`}
       <div class="sb-selectbar-actions">
-        <button type="button" class="sb-ab-cancel" data-sb-clear aria-label="取消选择">${icon('close')}</button>
+        <button type="button" class="sb-ab-cancel" data-sb-clear aria-label="取消选择">${glyph('ban', { size: 18 })}</button>
         ${appending
-          ? `<button type="button" class="sb-ab-confirm" data-sb-append-confirm ${(overflow || !keys.length) ? 'disabled' : ''}>加入系列赛</button>`
-          : `<button type="button" class="sb-ab-confirm" data-sb-confirm ${keys.length > 7 ? 'disabled' : ''}>确认编组</button>`}
+          ? `<button type="button" class="sb-ab-confirm" data-sb-append-confirm ${(overflow || !keys.length) ? 'disabled' : ''}>${glyph('pick', { size: 18 })}加入系列赛</button>`
+          : `<button type="button" class="sb-ab-confirm" data-sb-confirm ${keys.length > 7 ? 'disabled' : ''}>${glyph('victory', { size: 18 })}确认编组</button>`}
       </div>`;
     root.appendChild(bar);
   }
@@ -1035,7 +1068,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
           opponent: opps.length === 1 ? opps[0] : null,
           session: sessions.length === 1 ? sessions[0] : null,
           version: versions.length === 1 ? versions[0] : null,
-          status: selectionWarnings(keys).length ? 'needs_review' : 'confirmed',
+          status: reviewWarnings(keys).length ? 'needs_review' : 'confirmed',
         },
       });
       const created = payload.series;
@@ -1067,13 +1100,13 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     return {
       bestOf: s.bestOf, completionMode: s.completionMode, games: s.matchKeys,
       opponent: s.opponent, session: s.session, version: s.version,
-      status: s.needsReview ? 'needs_review' : 'confirmed',
+      status: hardWarnings(s.warnings).length ? 'needs_review' : 'confirmed',
     };
   }
 
   async function confirmSuggest(index) {
     const s = state.suggestions[index];
-    if (!s || (s.warnings || []).length || s.needsReview) return;
+    if (!s || hardWarnings(s.warnings).length) return;
     try {
       const payload = await api('/api/series', { method: 'POST', body: suggestionBody(s) });
       const created = payload.series;
@@ -1147,8 +1180,11 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       if (payload.series) upsertSeries(payload.series);
       render();
       toast('已更新：' + label, 'ok', op ? { undo: () => undoOp(op) } : {});
-      /* 局次变了，候选与未编组行都要跟着变；bootstrap 命中缓存，补一次很便宜。 */
-      if (body && body.games) load({ silent: true });
+      /* 局次 / BO 数 / 核实状态变了，候选、未编组行和「待核实 / 已编组」统计都要
+         跟着变（BO5→BO3 改回、点已核实后尤其明显）。bootstrap 命中缓存很便宜。 */
+      if (body && (body.games || body.bestOf || body.status || body.completion || body.completionMode)) {
+        load({ silent: true });
+      }
       return true;
     } catch (error) {
       toast(`更新失败：${error.message}`, 'error');
@@ -1421,7 +1457,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       state.dangerId = action.dataset.sbDelete;
       const panel = root.querySelector(`[data-sb-menu-panel="${CSS.escape(action.dataset.sbDelete)}"]`);
       const button = panel?.querySelector('[data-sb-delete]');
-      if (button) button.textContent = '确认删除编组？';
+      if (button) button.innerHTML = `${glyph('trash', { size: 18 })}<span>确认删除编组？</span>`;
       return;
     }
     if (action.dataset.sbMove) { moveGame(action.dataset.sbMove, action.dataset.key, Number(action.dataset.dir)); return; }

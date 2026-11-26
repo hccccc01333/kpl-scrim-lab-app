@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1672" height="94" viewBox="0 0 1672 94" role="img">
+<title>素材板页眉白金弧线底板</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<rect x="0" y="0" width="1672" height="94" fill="url(#pearl)"/><path d="M0 0 Q401.28 65.8 1036.64 0 H1170.4 Q451.44 85.54 0 15.98Z" fill="#d8d5d8" opacity="0.1755"/><path d="M0 60.16 Q752.4 12.22 1203.84 0 Q401.28 60.16 0 93.06Z" fill="#d9d6d6" opacity="0.104"/><path d="M300.96 94 Q886.16 74.26 1672 11.28 Q1287.44 73.32 752.4 94Z" fill="#fffdfa" opacity="0.39"/><path d="M902.88 94 Q1371.04 58.28 1672 35.72 V53.58 Q1538.24 70.5 1220.56 94Z" fill="#fff" opacity="0.3575"/><path d="M0 93H1170Q1230 92 1313 0 M1350 93Q1457 89 1610 0" fill="none" stroke="url(#gold-edge)" stroke-width="1.5"/>
+</svg>

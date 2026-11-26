@@ -12,7 +12,8 @@
 import { fmt } from './cross-analytics.js';
 import {
   gameWord, renderPhase, renderBp, renderBoHabit, renderOverview, renderCompSystem,
-} from './biggame-insight.js?v=20261122trend';
+} from './biggame-insight.js?v=20261126coach2';
+import { glyph } from './ui-icons.js';
 
 const API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
 
@@ -93,9 +94,11 @@ export function createBigGamePage(h) {
   /* 单场页的视图状态：切局次/阶段/对比窗口都只重绘，不重新取数。 */
   const ui = {
     phase: 'mid', window: 'd30',
-    boWindow: '90', boScope: 'opp', boSlot: 1, boSide: 'auto', baseMode: 'format', module: 'overview',
+    boWindow: '90', boScope: 'opp', boSlot: 1, baseMode: 'format', module: 'overview',
     boIncludeOtherEvents: false,
-    bpGame: '', bpOpen: {}, metricGroup: 'all',
+    bpGame: '', bpOpen: {}, metricGroup: 'all', overviewView: 'games', poolOutcomeScope: 'all',
+    /* BO 习惯楼层板：当前局次、双方已选 Ban、选中的楼层、折叠展开状态。 */
+    boBoard: { game: 0, bans: { blue: [], red: [] }, pick: null, open: {} },
   };
 
   /* ── 地址与范围 ───────────────────────────────────────────── */
@@ -354,34 +357,18 @@ export function createBigGamePage(h) {
       <span class="bgx-quiet" style="inline-size:1px;block-size:18px;background:var(--bgx-line)"></span>
       <label class="bgx-field"><span>赛制</span></label>${seg(BO_OPTIONS, scope.bo, 'data-cx-bo')}
       ${select('opponent', '对手', uniq('opponent'), scope.opponent, '全部对手')}
-      ${select('session', '训练组', uniq('session'), scope.session, '全部训练组')}
       ${select('status', '状态', STATUS_OPTIONS, scope.status, '全部状态')}
       ${select('completion', '完赛', COMPLETION_OPTIONS, scope.completion, '全部完赛状态')}
-      ${scopeActive() ? '<button type="button" class="bgx-btn" data-cx-clear>清除筛选</button>' : ''}
+      ${scopeActive() ? `<button type="button" class="bgx-btn control" data-cx-clear>${glyph('refresh', { label: '清除筛选', size: 18 })} 清除筛选</button>` : ''}
       <span class="bgx-scope-meta">当前范围 <b>${esc(scopeLabel())}</b> · 按大场统计</span>
     </div>`;
   }
 
-  /* 逐局压成一条胜负色块，经济差留在 tooltip，卡面只留走势 */
-  function formStrip(games) {
-    return (games || []).map((game) => {
-      const win = game.result === 'win';
-      const loss = game.result === 'loss';
-      const cls = win ? 'is-win' : loss ? 'is-loss' : '';
-      const ch = win ? '胜' : loss ? '负' : '—';
-      const tip = `${gameWord(game.gameIndex)} ${ch}${num(game.at10) ? ` · 10′ ${signed(game.at10)}` : ''}`;
-      return `<i class="bgx-form-cell ${cls}" title="${esc(tip)}">${ch}</i>`;
-    }).join('');
-  }
-
-  function teamCard(s, attentionCount) {
+  function teamCard(s) {
     const games = gameResults(s);
     const us = Number(s.score?.us) || 0;
     const them = Number(s.score?.them) || 0;
     const valid = scoreValid(s);
-    const leads = games.filter((g) => num(g.at10) && g.at10 > 0);
-    const holds = leads.filter((g) => g.result === 'win').length;
-    const avgDur = mean(games.map((g) => g.duration));
     const oppRaw = String(s.opponent || '').trim();
     const oppTbd = oppRaw.length <= 1;
     const opp = opponentLabel(oppRaw);
@@ -401,40 +388,31 @@ export function createBigGamePage(h) {
         <span class="bgx-score ${outcome}">${us}<i>:</i>${them}</span>
         <span class="bgx-outcome ${outcome}">${us > them ? '战胜' : them > us ? '不敌' : '对阵'}${valid ? '' : ' · 比分异常'}</span>
       </div>
-      <div class="bgx-verdict-row">
-        <p class="bgx-verdict-line">${esc(verdict)}</p>
-        <span class="bgx-form">${formStrip(games) || '<span class="bgx-noform">暂无小局</span>'}</span>
-      </div>
+      <p class="bgx-verdict-line">${esc(verdict)}</p>
       <div class="bgx-team-foot">
-        <span class="bgx-team-foot-meta">${leads.length ? `10′ 领先 ${leads.length}/${games.length} 局，守住 ${holds} 局` : '无 10 分钟过程'}${num(avgDur) ? ` · 场均 ${dur(avgDur)}` : ''}${attentionCount ? ` · ${attentionCount} 条关注` : ''}</span><b>进入 →</b>
+        <b>${glyph('matches', { label: '进入大场', size: 18 })} 进入大场</b>
       </div>
     </a>`;
   }
 
   function listHtml() {
     if (state.error) {
-      return `<div class="page bgx-page"><section class="bgx-empty"><h2>读不到大场</h2><p>${esc(state.error)}</p><button type="button" class="bgx-btn" data-cx-retry>重试</button></section></div>`;
+      return `<div class="page bgx-page"><section class="bgx-empty">${glyph('warning', { label: '读取失败', size: 28 })}<h2>读不到大场</h2><p>${esc(state.error)}</p><button type="button" class="bgx-btn control" data-cx-retry>${glyph('refresh', { label: '重试', size: 18 })} 重试</button></section></div>`;
     }
     if (!state.allSeries.length) {
-      return `<div class="page bgx-page"><section class="bgx-empty"><h1>还没有已确认的大场</h1><p>大场分析以已确认的 BO3/5/7 为单位；先到系列赛编组确认 BO 关系。</p><a class="bgx-btn is-primary" href="#series-builder">去系列赛编组 →</a></section></div>`;
+      return `<div class="page bgx-page"><section class="bgx-empty">${glyph('bp', { label: '系列赛编组', size: 28 })}<h1>还没有已确认的大场</h1><p>先到系列赛编组确认 BO3/5/7 关系。</p><a class="bgx-btn is-primary control" href="#series-builder">${glyph('bp', { label: '去编组', size: 18 })} 去系列赛编组</a></section></div>`;
     }
     const series = filteredSeries();
     if (!series.length) {
-      return `<div class="page bgx-page">${scopeBarHtml()}<section class="bgx-empty"><h2>当前范围没有大场</h2><p>放宽时间，或清除赛制/对手/状态筛选。</p><button type="button" class="bgx-btn is-primary" data-cx-clear>清除筛选</button></section></div>`;
+      return `<div class="page bgx-page">${scopeBarHtml()}<section class="bgx-empty">${glyph('refresh', { label: '清除筛选', size: 28 })}<h2>当前范围没有大场</h2><button type="button" class="bgx-btn is-primary control" data-cx-clear>${glyph('refresh', { label: '清除筛选', size: 18 })} 清除筛选</button></section></div>`;
     }
     const sum = deriveSummary(series);
     const t = sum.totals;
-    const ids = new Set(series.map((s) => s.id));
-    const attention = (state.attention || []).filter((a) => ids.has(a.seriesId));
-    const attnCount = new Map();
-    for (const item of attention) if (item.seriesId) attnCount.set(item.seriesId, (attnCount.get(item.seriesId) || 0) + 1);
-    const cards = series.map((s) => teamCard(s, attnCount.get(s.id) || 0)).join('');
+    const cards = series.map((s) => teamCard(s)).join('');
     return `<div class="page bgx-page">
       <header class="bgx-list-head">
         <div>
-          <p class="bgx-eyebrow">大场分析 <i>/</i> 单场 BO <i>/</i> ${esc(scopeLabel())}</p>
-          <h1>${esc(String(t.series))} 场已确认 BO，<em><span class="du-win">${t.seriesWins} 胜</span> <span class="du-loss">${t.seriesLosses} 负</span></em></h1>
-          <p class="bgx-list-sub">小局 ${t.gameWins} 胜 ${t.games - t.gameWins} 负（${pct1(t.gameWinRate)}）· 场均 ${fixed(t.avgGames, 1)} 局 · ${sum.close} 场打满 · ${sum.sweep} 场零封。点任一场进入单场分析。</p>
+          <h1>${esc(String(t.series))} 场已确认的大场，<em><span class="du-win">${t.seriesWins} 胜</span> <span class="du-loss">${t.seriesLosses} 负</span></em></h1>
         </div>
         <div class="bgx-list-kpis">
           <div class="bgx-list-kpi"><span>大场胜率</span><b>${pct100(t.seriesWinRate)}</b></div>
@@ -444,7 +422,6 @@ export function createBigGamePage(h) {
       </header>
       ${scopeBarHtml()}
       <div class="bgx-grid">${cards}</div>
-      <p class="bgx-foot"><span>大场＝已确认的 BO3/5/7；比分异常或编组待核实的场次已在卡上标出。</span><span>10′ 差＝本队减对手，正数领先。</span></p>
     </div>`;
   }
 
@@ -509,7 +486,7 @@ export function createBigGamePage(h) {
     const kpi = (label, value, sub) => `<div class="bgx-hero-kpi"><span>${esc(label)}</span><b>${value}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</div>`;
     return `<header class="bgx-hero">
       <div class="bgx-hero-main">
-        <p class="bgx-eyebrow">大场分析 <i>/</i> 单场 BO <i>/</i> ${esc(String(series.bestOf ? `BO${series.bestOf}` : '赛制未设置'))}</p>
+        <p class="bgx-eyebrow">大场分析 <i>/</i> 大场 <i>/</i> ${esc(String(series.bestOf ? `BO${series.bestOf}` : '赛制未设置'))}</p>
         <div class="bgx-hero-score">
           <span class="bgx-hero-digits"><b>${us}</b><i>/</i><b>${them}</b></span>
           <span class="bgx-hero-outcome"><span>${us > them ? '战胜' : them > us ? '不敌' : '对阵'}</span><b>${esc(opponentLabel(series.opponent))}</b></span>
@@ -546,7 +523,7 @@ export function createBigGamePage(h) {
 
   function detailHtml() {
     if (state.detailError) {
-      return `<div class="page bgx-page"><a class="bgx-back" href="#biggame${scopeQuery()}">← 返回大场列表</a><section class="bgx-empty"><h2>读不到这场大场</h2><p>${esc(state.detailError)}</p></section></div>`;
+      return `<div class="page bgx-page"><a class="bgx-back" href="#biggame${scopeQuery()}">${glyph('home', { label: '返回列表', size: 18 })} 返回大场列表</a><section class="bgx-empty">${glyph('warning', { label: '读取失败', size: 28 })}<h2>读不到这场大场</h2><p>${esc(state.detailError)}</p></section></div>`;
     }
     const data = state.detail;
     if (!data) return `<div class="page bgx-page"><div class="loading">正在读取大场明细…</div></div>`;
@@ -563,27 +540,27 @@ export function createBigGamePage(h) {
     const { prev, next } = navNeighbors(series.id);
     const dateOf = (item) => String(item?.startAt || '').slice(5);
     const detailBar = `<div class="bgx-detail-bar">
-      <a class="bgx-back" href="${back}">← 返回大场列表</a>
+      <a class="bgx-back" href="${back}">${glyph('home', { label: '返回列表', size: 18 })} 返回大场列表</a>
       <div class="bgx-detail-neighbors">
         ${prev ? `<a href="#biggame/${encodeURIComponent(prev.id)}${scopeQuery()}" title="上一场：${esc(prev.opponent || '')} ${esc(String(prev.startAt || '').slice(0, 10))}">← ${esc(prev.opponent || '上一场')} ${esc(dateOf(prev))}</a>` : ''}
         ${next ? `<a href="#biggame/${encodeURIComponent(next.id)}${scopeQuery()}" title="下一场：${esc(next.opponent || '')} ${esc(String(next.startAt || '').slice(0, 10))}">${esc(next.opponent || '下一场')} ${esc(dateOf(next))} →</a>` : ''}
       </div>
       <div class="bgx-detail-actions">
         ${currentCompetitionId() ? `<span class="bgx-chip" title="当前赛事">${esc((() => { try { return localStorage.getItem('training-current-competition-name') || ''; } catch { return ''; } })())}</span>` : ''}
-        <button type="button" class="bgx-btn" data-bgx-copy>复制链接</button>
-        <button type="button" class="bgx-btn" data-bgx-print>打印</button>
+        <button type="button" class="bgx-btn control" data-bgx-copy>${glyph('export', { label: '复制链接', size: 18 })} 复制链接</button>
+        <button type="button" class="bgx-btn control" data-bgx-print>${glyph('book', { label: '打印', size: 18 })} 打印</button>
       </div>
     </div>`;
     const moduleKey = ['overview', 'bp', 'comp', 'exec'].includes(ui.module) ? ui.module : 'overview';
     const modules = [
-      ['overview', '01', '总览与对比', '逐局指标、对比时间窗'],
-      ['bp', '02', 'BP 博弈', '每局选禁、阵容结构'],
-      ['comp', '03', '阵容体系', '五路类型、组合、核心、英雄池'],
-      ['exec', '04', '执行与资源', '阶段、龙塔、团战、反野'],
+      ['overview', '01', '总览与对比', 'chart'],
+      ['bp', '02', 'BP 博弈', 'bp'],
+      ['comp', '03', '阵容体系', 'heroes'],
+      ['exec', '04', '执行与资源', 'heatmap'],
     ];
-    const nav = `<nav class="rpt-nav" aria-label="分析模块">${modules.map(([key, index, label, hint]) =>
+    const nav = `<nav class="rpt-nav" aria-label="分析模块">${modules.map(([key, index, label, icon]) =>
       `<button type="button" class="rpt-nav-item" data-bgx-module="${key}" aria-current="${key === moduleKey}">
-        <span>${index}</span><b>${esc(label)}</b><small>${esc(hint)}</small>
+        <span>${index}</span>${glyph(icon, { label, size: 18 })}<b>${esc(label)}</b>
       </button>`).join('')}</nav>`;
     let body = '';
     if (moduleKey === 'overview') {
@@ -592,13 +569,13 @@ export function createBigGamePage(h) {
       </section>`;
     } else if (moduleKey === 'bp') {
       const bpNav = `<nav class="bgv-subnav" aria-label="BP 页内导航">
-        <button type="button" class="is-on" data-bp-jump="games">逐局 BP</button>
-        <button type="button" data-bp-jump="habit">BO 习惯</button>
+        <button type="button" class="is-on" data-bp-jump="games">${glyph('matches', { label: '逐局 BP', size: 18 })} 逐局 BP</button>
+        <button type="button" data-bp-jump="habit">${glyph('clock', { label: 'BO 习惯', size: 18 })} BO 习惯</button>
       </nav>`;
       body = `<section class="rpt-module" id="bgx-bp">
         ${bpNav}
         <div id="bgx-bp-games" class="bgv-bp-anchor">${cardShell('bp', renderBp(insight, ui, { esc, fmt, portrait: h.portrait, comboPool: state.comboPool }))}</div>
-        <div id="bgx-bp-habit" class="bgv-bp-anchor">${renderBoHabit(insight, ui, { esc, fmt, portrait: h.portrait, comboPool: state.comboPool, rulesCounters: state.rulesCounters, rulesCombos: state.rulesCombos })}</div>
+        <div id="bgx-bp-habit" class="bgv-bp-anchor">${renderBoHabit(insight, ui, { esc, fmt, portrait: h.portrait, comboPool: state.comboPool, rulesCounters: state.rulesCounters, rulesCombos: state.rulesCombos, boBoard: ui.boBoard })}</div>
       </section>`;
     } else if (moduleKey === 'comp') {
       body = `<section class="rpt-module" id="bgx-comp">
@@ -753,22 +730,90 @@ export function createBigGamePage(h) {
       requestAnimationFrame(() => scrollToBp('games'));
       return;
     }
+    const overviewView = target.closest('[data-bgv-view]');
+    if (overviewView) {
+      /* 赢局/输局视角只换呈现，保持滚动位置，教练不用重新找刚才那一行。 */
+      const wanted = overviewView.dataset.bgvView;
+      ui.overviewView = ['games', 'win', 'loss'].includes(wanted) ? wanted : 'games';
+      const y = window.scrollY;
+      repaintDetail();
+      window.scrollTo(0, y);
+      return;
+    }
+    const expandBtn = target.closest('[data-bgv-expand]');
+    if (expandBtn) {
+      /* 行展开就地切换 DOM，避免整页重绘带来的卡顿与焦点丢失。 */
+      const panel = document.getElementById(expandBtn.dataset.bgvExpand || '');
+      const open = expandBtn.getAttribute('aria-expanded') === 'true';
+      expandBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+      if (panel) panel.hidden = open;
+      return;
+    }
+    const gameCell = target.closest('[data-bgv-game]');
+    if (gameCell && gameCell.closest('.bgv-board-scroll')) {
+      const board = gameCell.closest('.bgv-board-scroll');
+      const index = gameCell.dataset.bgvGame;
+      const active = board.querySelector(`[data-bgv-game="${index}"].is-col-active`);
+      board.querySelectorAll('[data-bgv-game].is-col-active').forEach((node) => node.classList.remove('is-col-active'));
+      if (!active) {
+        board.querySelectorAll('[data-bgv-game]').forEach((node) => {
+          if (node.dataset.bgvGame === index) node.classList.add('is-col-active');
+        });
+      }
+      return;
+    }
     const metricGroup = target.closest('[data-bgv-group]');
     if (metricGroup) {
       ui.metricGroup = metricGroup.dataset.bgvGroup || 'all';
       repaintDetail();
       return;
     }
+    const poolOutcome = target.closest('[data-bgx-pool-outcome]');
+    if (poolOutcome) {
+      ui.poolOutcomeScope = ['all', 'own', 'foe'].includes(poolOutcome.dataset.bgxPoolOutcome)
+        ? poolOutcome.dataset.bgxPoolOutcome : 'all';
+      repaintDetail();
+      return;
+    }
+    const bohCell = target.closest('[data-boh-cell]');
+    if (bohCell) {
+      const side = bohCell.dataset.side === 'red' ? 'red' : 'blue';
+      const kind = bohCell.dataset.kind;
+      const index = Number(bohCell.dataset.index) || 0;
+      const board = ui.boBoard;
+      if (board.game !== (ui.boSlot || 1)) {
+        board.game = ui.boSlot || 1;
+        board.bans = { blue: [], red: [] };
+        board.pick = null;
+        board.open = {};
+      }
+      if (kind === 'ban') {
+        const list = board.bans[side];
+        const at = list.indexOf(index);
+        if (at >= 0) list.splice(at, 1); else list.push(index);
+        board.pick = null;
+      } else {
+        const same = board.pick && board.pick.side === side && board.pick.index === index;
+        board.pick = same ? null : { side, index };
+        board.bans = { blue: [], red: [] };
+      }
+      const y = window.scrollY;
+      repaintDetail();
+      window.scrollTo(0, y);
+      return;
+    }
     const bohStep = target.closest('[data-boh-step]');
     if (bohStep) {
       const best = Number(state.detail?.insight?.boBp?.bestOf) || 7;
       ui.boSlot = Math.min(best, Math.max(1, (ui.boSlot || 1) + Number(bohStep.dataset.bohStep || 0)));
+      ui.boBoard = { game: 0, bans: { blue: [], red: [] }, pick: null, open: {} };
       repaintDetail();
       requestAnimationFrame(() => scrollToBp('habit'));
       return;
     }
     if (target.closest('[data-bgx-boreset]')) {
-      Object.assign(ui, { boScope: 'opp', boWindow: '90', boSlot: 1, boSide: 'auto' });
+      Object.assign(ui, { boScope: 'opp', boWindow: '90', boSlot: 1 });
+      ui.boBoard = { game: 0, bans: { blue: [], red: [] }, pick: null, open: {} };
       repaintDetail();
       return;
     }
@@ -778,12 +823,6 @@ export function createBigGamePage(h) {
     if (boWindow) { ui.boWindow = boWindow.dataset.bgxBowindow; repaintDetail(); return; }
     const boScope = target.closest('[data-bgx-boscope]');
     if (boScope) { ui.boScope = boScope.dataset.bgxBoscope === 'all' ? 'all' : 'opp'; repaintDetail(); return; }
-    const boSide = target.closest('[data-bgx-boside]');
-    if (boSide) {
-      ui.boSide = ['blue', 'red'].includes(boSide.dataset.bgxBoside) ? boSide.dataset.bgxBoside : 'auto';
-      repaintDetail();
-      return;
-    }
     const boOther = target.closest('[data-bgx-boother]');
     if (boOther) {
       // 赛事域：对手习惯类分析允许显式跨赛事积累（默认关，卡片上明示）。
@@ -792,7 +831,12 @@ export function createBigGamePage(h) {
       return;
     }
     const boSlot = target.closest('[data-bgx-boslot]');
-    if (boSlot) { ui.boSlot = Number(boSlot.dataset.bgxBoslot) || 1; repaintDetail(); return; }
+    if (boSlot) {
+      ui.boSlot = Number(boSlot.dataset.bgxBoslot) || 1;
+      ui.boBoard = { game: 0, bans: { blue: [], red: [] }, pick: null, open: {} };
+      repaintDetail();
+      return;
+    }
     const intentToggle = target.closest('[data-boh-intent-toggle]');
     if (intentToggle) {
       const panel = intentToggle.parentElement?.querySelector('.bgv-boh-intent-panel');
@@ -815,8 +859,10 @@ export function createBigGamePage(h) {
     if (moduleBtn) {
       ui.module = moduleBtn.dataset.bgxModule;
       try { history.replaceState(null, '', `#biggame/${encodeURIComponent(detailIdOf())}${scopeQuery()}`); } catch { /* ignore */ }
+      /* 页签是就地换内容，别把教练带回页面顶部；跟 BP 棋盘点格一样保住滚动位置。 */
+      const y = window.scrollY;
       repaintDetail();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo(0, y);
       return;
     }
   }
@@ -855,9 +901,10 @@ export function createBigGamePage(h) {
         });
         Object.assign(ui, {
           phase: 'mid', window: 'd30', boWindow: '90', boScope: 'opp', boSlot: 1,
-          boSide: 'auto', baseMode: 'format', module: 'overview',
+          baseMode: 'format', module: 'overview',
           boIncludeOtherEvents: false,
-          bpGame: '', bpOpen: {}, metricGroup: 'all',
+          bpGame: '', bpOpen: {}, metricGroup: 'all', overviewView: 'games', poolOutcomeScope: 'all',
+          boBoard: { game: 0, bans: { blue: [], red: [] }, pick: null, open: {} },
         });
         state.detailId = '';
         state.detail = null;
@@ -877,6 +924,10 @@ export function createBigGamePage(h) {
         const node = event.target;
         if (node && node.matches && node.matches('details[data-bp-card]')) {
           ui.bpOpen[node.dataset.bpCard] = node.open;
+        }
+        /* 楼层板的三块折叠各自记忆开合，重绘后仍保持用户展开的状态。 */
+        if (node && node.matches && node.matches('details[data-boh-fold]')) {
+          ui.boBoard.open[node.dataset.bohFold] = node.open;
         }
       }, true);
       document.addEventListener('keydown', (event) => {

@@ -14,7 +14,11 @@
  *   - 新建 / 编辑为头像网格手动挑选：分路筛选（KPL 分路图标）→ 搜索 → 点 5 个；
  *   - 后端 load() 没保存过时给内置标签（DEFAULT_TAGS），教练改完保存即生效。
  */
+import { currentCompetitionId, currentCompetitionName, saveSnapshot } from './rule-snapshots.js?v=20261124snap';
+
 const DEFAULT_API_BASE = new URL('..', import.meta.url).pathname.replace(/\/$/, '');
+import { glyph } from './ui-icons.js';
+
 const MAX_HEROES = 5;
 
 /* 分路顺序与图标：图标来自 kpl-svg/modules/role-icon-*.svg（与十人面板同源）。 */
@@ -206,6 +210,18 @@ export function createLineupTagsPage(h = {}) {
       paintFormState();
     }
   }
+  /** 阵容标签的增删改即时落盘，直接把当下整份标签表打包到当前赛事。 */
+  async function snapshotCurrent() {
+    const compId = currentCompetitionId();
+    if (!compId) { setNotice('请先在顶栏选择赛事，再保存快照。', { error: true }); return; }
+    try {
+      const result = await saveSnapshot('lineup_tags', compId, '阵容标签 · 赛事快照', API_BASE);
+      setNotice(`已把阵容标签存到「${currentCompetitionName() || compId}」快照（第 ${result.revision} 版）。`);
+    } catch (error) {
+      setNotice(error.message || '赛事快照保存失败。', { error: true });
+    }
+  }
+
   const entryOf = (id) => state.tags.find((row) => String(row?.id) === String(id)) || null;
   const newId = () => `lt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -314,9 +330,9 @@ export function createLineupTagsPage(h = {}) {
           <div class="lt-card-top"><b class="lt-card-name">${esc(row.name)}</b>
             <span class="lt-row-actions">
               <button type="button" class="control lt-icon-btn" data-lt-edit="${esc(row.id)}"
-                aria-label="编辑标签 ${esc(row.name)}" title="编辑">${icon('edit') || '编辑'}</button>
+                aria-label="编辑标签 ${esc(row.name)}" title="编辑">${glyph('edit', { size: 18 })}</button>
               <button type="button" class="control lt-icon-btn lt-danger" data-lt-delete="${esc(row.id)}"
-                aria-label="删除标签 ${esc(row.name)}" title="删除">${icon('close') || '删除'}</button>
+                aria-label="删除标签 ${esc(row.name)}" title="删除">${glyph('trash', { size: 18 })}</button>
             </span></div>
           <div class="lt-card-faces" aria-hidden="true">${faces}</div>
           <small class="lt-card-heroes">${esc(heroes.join(' · '))}</small>
@@ -416,7 +432,7 @@ export function createLineupTagsPage(h = {}) {
       /* 选择数量属于校验：按钮始终可点，点后由 submit 给出明确错误，
          不让键盘用户面对一个无法触发、也不知道原因的禁用按钮。 */
       submit.disabled = ui.saving;
-      submit.textContent = ui.saving ? '保存中…' : ui.editingId ? '保存修改' : '保存为阵容标签';
+      submit.innerHTML = `${glyph('pick', { size: 18 })}<span>${ui.saving ? '保存中…' : ui.editingId ? '保存修改' : '保存为阵容标签'}</span>`;
     }
     const cancel = root?.querySelector('[data-lt-cancel-edit]');
     if (cancel) cancel.hidden = !ui.editingId;
@@ -432,14 +448,15 @@ export function createLineupTagsPage(h = {}) {
       <section class="section lt-lead">
         <div class="lt-lead-row">
           <h1>阵容标签</h1>
-          <button type="button" class="control" data-lt-reload>${icon('refresh')} 重新读取</button>
+          <button type="button" class="control" data-lt-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
+          <button type="button" class="control" data-lt-reload>${glyph('refresh', { size: 18 })}重新读取</button>
         </div>
         <p class="lt-status" data-lt-status hidden></p>
       </section>
 
       <section class="section lt-existing">
         <div class="section-heading"><div><h2>我们的阵容标签 <span class="lt-count" data-lt-total></span></h2></div>
-          <button type="button" class="control" data-lt-restore hidden>恢复内置标签</button></div>
+          <button type="button" class="control" data-lt-restore hidden>${glyph('refresh', { size: 18 })}恢复内置标签</button></div>
         <ul class="lt-gallery" data-lt-list role="list"></ul>
       </section>
 
@@ -469,8 +486,8 @@ export function createLineupTagsPage(h = {}) {
                 placeholder="记录赛训口径 / 使用场景">
             </div>
             <p class="lt-save-actions">
-              <button type="button" class="control" data-lt-cancel-edit hidden>取消编辑</button>
-              <button type="submit" class="primary" data-lt-save>保存为阵容标签</button>
+              <button type="button" class="control" data-lt-cancel-edit hidden>${glyph('ban', { size: 18 })}取消编辑</button>
+              <button type="submit" class="primary" data-lt-save>${glyph('pick', { size: 18 })}保存为阵容标签</button>
             </p>
           </div>
           <div class="lt-picker-side">
@@ -491,8 +508,8 @@ export function createLineupTagsPage(h = {}) {
         <h2 id="${ids.dialog}-title">确认删除</h2>
         <p data-lt-dialog-text></p>
         <form method="dialog" class="lt-dialog-actions" data-lt-dialog-form aria-label="确认删除阵容标签">
-          <button type="submit" value="cancel" class="control" autofocus>取消</button>
-          <button type="submit" value="delete" class="lt-delete-btn">删除</button>
+          <button type="submit" value="cancel" class="control" autofocus>${glyph('ban', { size: 18 })}取消</button>
+          <button type="submit" value="delete" class="lt-delete-btn">${glyph('trash', { size: 18 })}删除</button>
         </form>
       </dialog>
     </div>`;
@@ -501,6 +518,7 @@ export function createLineupTagsPage(h = {}) {
   /* ── 事件 ───────────────────────────────────────────────────────────── */
   function onClick(event) {
     if (event.target.closest('[data-lt-reload]')) { load(); return; }
+    if (event.target.closest('[data-lt-snapshot]')) { snapshotCurrent(); return; }
     if (event.target.closest('[data-lt-restore]')) { restoreDefaults(); return; }
     const laneChip = event.target.closest('[data-lt-lane]');
     if (laneChip) { setLane(text(laneChip.dataset.ltLane)); return; }
@@ -587,8 +605,12 @@ export function createLineupTagsPage(h = {}) {
     link.dataset.ltCss = '1';
     document.head.append(link);
   }
+  const onSnapshotRestored = (event) => {
+    if (event.detail?.module === 'lineup_tags') load({ quiet: true, keepNotice: true });
+  };
   function bind(node) {
     bound = node;
+    document.addEventListener('rule-snapshots:restored', onSnapshotRestored);
     node.addEventListener('click', onClick);
     node.addEventListener('input', onInput);
     node.addEventListener('submit', onSubmit);
@@ -596,6 +618,7 @@ export function createLineupTagsPage(h = {}) {
   }
   function dispose() {
     generation += 1;
+    document.removeEventListener('rule-snapshots:restored', onSnapshotRestored);
     controller?.abort();
     controller = null;
     if (bound) {

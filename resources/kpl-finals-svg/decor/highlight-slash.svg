@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="57" height="57" viewBox="0 0 57 57" role="img">
+<title>斜线高光</title>
+<defs><radialGradient id="glint">
+ <stop stop-color="#fff"/><stop offset=".25" stop-color="#fff6df" stop-opacity=".94"/><stop offset=".6" stop-color="#ffe7b5" stop-opacity=".28"/><stop offset="1" stop-color="#fff6e2" stop-opacity="0"/>
+</radialGradient></defs>
+<g transform="rotate(-46 29 30)"><ellipse cx="29" cy="30" rx="29" ry="6" fill="url(#glint)"/></g><path d="M7 51 L52 5" fill="none" stroke="#fff6e2" stroke-width="1.5"/>
+</svg>

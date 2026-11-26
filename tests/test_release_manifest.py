@@ -99,6 +99,73 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertLessEqual(len(shipped), 12, sorted(shipped))
         self.assertFalse(any('agent_' in name for name in shipped), sorted(shipped))
 
+    def test_crawler_scripts_are_shipped(self):
+        """安装版必须能跑数据刷新：peak_crawl 从 scripts.build_bp_facts 取纯函数。"""
+        shipped = set(ship_files())
+        for name in ('scripts/build_bp_facts.py', 'scripts/crawl_kpl_bp.py',
+                     'scripts/backfill_kpl_draft_events.py', 'scripts/sync_new_heroes.py',
+                     'peak_crawl.py', 'hero_external_stats.py', 'kpl_bp.py'):
+            with self.subTest(script=name):
+                self.assertIn(name, shipped)
+
+    def test_update_kpl_bat_is_generated(self, tmp_path=None):
+        """安装版要有「更新KPL数据.bat」，且用包内 Python 调随包的抓取脚本。"""
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from make_release import write_launchers
+        build = Path(tmp_path or '/tmp/_dsh_kpl_bat_check') / 'build'
+        build.mkdir(parents=True, exist_ok=True)
+        write_launchers(build)
+        bat = build / '更新KPL数据.bat'
+        self.assertTrue(bat.is_file())
+        text = bat.read_text(encoding='gbk')
+        self.assertIn('crawl_kpl_bp.py', text)
+        self.assertIn('runtime\\python.exe', text)
+
+    def test_update_peak_bat_is_generated(self, tmp_path=None):
+        """手动补刷巅峰千强的入口也要随包生成，且用包内 Python。"""
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from make_release import write_launchers
+        build = Path(tmp_path or '/tmp/_dsh_peak_bat_check') / 'build'
+        build.mkdir(parents=True, exist_ok=True)
+        write_launchers(build)
+        bat = build / '更新巅峰数据.bat'
+        self.assertTrue(bat.is_file())
+        text = bat.read_text(encoding='gbk')
+        self.assertIn('peak_crawl.py --all', text)
+        self.assertIn('runtime\\python.exe', text)
+
+    def test_all_local_imports_of_shipped_modules_are_shipped(self):
+        """防止再出现 peak_crawl 因 scripts/*.py 缺失而静默失效。"""
+        import ast
+        import sys
+        sys.path.insert(0, str(ROOT / 'scripts'))
+        from make_release import ship_files
+        shipped = set(ship_files())
+        local = {}
+        for folder in (ROOT, ROOT / 'v3', ROOT / 'tools', ROOT / 'scripts'):
+            for path in folder.glob('*.py'):
+                rel = path.relative_to(ROOT).as_posix()
+                prefix = rel.split('/')[0]
+                name = (prefix + '.' + path.stem) if prefix in ('v3', 'tools', 'scripts') else path.stem
+                local[name] = rel
+        missing = set()
+        for rel in shipped:
+            if not rel.endswith('.py') or not (ROOT / rel).is_file():
+                continue
+            tree = ast.parse((ROOT / rel).read_text(encoding='utf-8'))
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module]
+                for name in names:
+                    if name in local and local[name] not in shipped:
+                        missing.add((rel, local[name]))
+        self.assertFalse(missing, f'发布包缺少这些被 import 的本地模块：{sorted(missing)}')
+
     def test_shell_referenced_assets_are_shipped(self):
         """index.html 引用的资源必须都在清单里，否则安装版直接 404。
 

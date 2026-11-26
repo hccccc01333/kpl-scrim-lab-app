@@ -42,6 +42,11 @@ body { color: var(--text); caret-color: var(--accent); }
 .desk-links.main-nav, .desk-links { display: grid; flex: none; align-content: start; height: auto; gap: 20px; margin: 30px 0 18px; padding: 0; overflow: visible; }
 .desk-group { display: grid; gap: 3px; }
 .desk-group > span { color: #adcbc4; padding: 0 12px 5px; font-size: 12px; }
+/* 页内标题与分组标题的图标锚点：inline SVG 走 currentColor，跟随青绿主题。 */
+.desk-group > span .desk-group-glyph { display: inline-block; width: 5px; height: 5px; margin-inline-end: 8px; vertical-align: 2px; border-radius: 1px; background: #7fb5a8; transform: rotate(45deg); }
+#content h1 .desk-h1-glyph { display: inline-flex; align-items: center; margin-inline-end: 8px; vertical-align: -0.08em; color: var(--accent); }
+#content h1 .desk-h1-glyph svg { width: 0.82em; height: 0.82em; }
+#content h1 .ui-deco-section-triangle.desk-h1-tri { inline-size: 12px; block-size: 12px; margin-inline-end: 9px; vertical-align: 0.04em; opacity: 0.9; }
 .desk-links .desk-group a, .desk-tools > :is(a, button) { display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 8px 12px; min-height: 40px; font: 520 14px/1.4 var(--font); color: #edf6f2; background: transparent; border: 0; border-radius: 6px; text-decoration: none; cursor: pointer; }
 .desk-links svg, .desk-tools svg, .desk-bar svg, .desk-home-actions svg, .desk-drawer-head svg { flex: none; width: 19px; height: 19px; }
 .desk-links .desk-group a:hover, .desk-tools > :hover { background: #285150; color: #fff; }
@@ -58,7 +63,9 @@ body { color: var(--text); caret-color: var(--accent); }
 .desk-search, .desk-context, .desk-icon { min-height: 38px; border: 0; cursor: pointer; border-radius: 6px; background: transparent; }
 .desk-search { min-width: 158px; padding: 0 9px; background: var(--surface); }
 .desk-search kbd { margin-left: auto; padding: 2px 4px; color: var(--quiet); font: 11px var(--font); }
-.desk-context { padding: 0 8px; }
+/* 赛事名异步解析：固定最小宽度 + 省略号，避免「切换赛事」↔赛事名换字时把右侧工具挤来挤去。 */
+.desk-context { padding: 0 8px; inline-size: 13ch; justify-content: center; overflow: hidden; white-space: nowrap; }
+.desk-context span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .desk-icon { position: relative; justify-content: center; width: 38px; }
 .desk-icon:hover, .desk-search:hover, .desk-context:hover { background: var(--soft); color: var(--accent-ink); }
 .desk-bar .menu-button { display: none; }
@@ -180,7 +187,7 @@ body { color: var(--text); caret-color: var(--accent); }
   #content .pbr-bar-context { display: none; }
   #content .desk-home-actions { gap: 10px; }
   .desk-crumb { gap: 2px; font-size: 12px; }
-  .desk-context { padding: 0 4px; font-size: 12px; }
+  .desk-context { padding: 0 4px; font-size: 12px; inline-size: 9ch; }
   .desk-context svg { display: none; }
   #content .arch-bar { flex-wrap: wrap; }
   #content .tb-workspace.is-expanded .tb-rail-tools { grid-template-columns: minmax(0,1fr); }

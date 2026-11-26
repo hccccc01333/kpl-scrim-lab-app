@@ -1276,6 +1276,7 @@
 .xw-trend-up { display: flex; align-items: flex-end; justify-content: center; }
 .xw-trend-down { display: flex; align-items: flex-start; justify-content: center; }
 .xw-trend-up i, .xw-trend-down i { display: block; width: 100%; opacity: .9; transition: opacity .15s; border-radius: 2px 2px 0 0; }
+.xw-trend-up i.xw-trend-zero { height: 3px !important; margin-block-start: 34px; border-radius: 999px; opacity: .65; background: var(--line-strong, #bdbdbd); }
 .xw-trend-up i { background: var(--accent); }
 .xw-trend-down i { background: var(--warning); border-radius: 0 0 2px 2px; }
 .xw-trend-col:hover .xw-trend-up i,
@@ -1418,14 +1419,7 @@
 .xw-tab.is-active { background: var(--tint, var(--surface)); box-shadow: inset 0 3px 0 var(--accent); }
 .xw-tab.is-active b { color: var(--accent); }
 
-/* ── 本轮关注 ─────────────────────────────────────────────────── */
-.xw-radar { padding: 20px 40px 22px; background: var(--paper); border-bottom: 1px solid var(--line); }
-.xw-radar-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px 26px; flex-wrap: wrap; }
-.xw-radar-title { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-.xw-radar-title h2 { font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
-.xw-radar-title h2 b { color: var(--accent); font-variant-numeric: tabular-nums; }
-.xw-radar-title span { font-size: 12.5px; color: var(--quiet); }
-.xw-radar-kinds { display: flex; flex-wrap: wrap; gap: 7px; }
+/* ── 通用筛选 chip ────────────────────────────────────────────── */
 .xw-chip {
   display: inline-flex;
   align-items: center;
@@ -1443,39 +1437,6 @@
 .xw-chip:hover { border-color: var(--text); color: var(--text); }
 .xw-chip.is-on { background: var(--text); border-color: var(--text); color: var(--paper); }
 .xw-chip.is-on b { color: var(--paper); }
-.xw-radar-rail {
-  display: flex;
-  gap: 14px;
-  overflow-x: auto;
-  padding: 18px 4px 8px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: thin;
-  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 48px), transparent 100%);
-}
-.xw-radar-card {
-  flex: 0 0 380px;
-  scroll-snap-align: start;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  padding: 18px 20px 16px;
-  border: 1px solid var(--line);
-  border-left: 4px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--bg);
-}
-.xw-radar-card.is-sand { border-left-color: var(--warning); }
-.xw-radar-card.is-plum { border-left-color: #6f4560; }
-.xw-radar-card.is-slate { border-left-color: #40586b; }
-.xw-radar-card.is-clay { border-left-color: #8a5340; }
-.xw-radar-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.xw-radar-kind { font-size: 12.5px; font-weight: 600; letter-spacing: .04em; color: var(--muted); }
-.xw-radar-g { font-size: 12px; color: var(--quiet); font-variant-numeric: tabular-nums; }
-.xw-radar-card h3 { font-size: 16.5px; font-weight: 600; line-height: 1.42; letter-spacing: -.01em; }
-.xw-radar-card p { font-size: 14px; line-height: 1.68; color: var(--muted); }
-.xw-radar-links { display: flex; flex-wrap: wrap; gap: 16px; margin-top: auto; padding-top: 8px; font-size: 13px; }
-.xw-radar-links a { text-decoration: none; color: var(--accent); border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); }
-.xw-radar-links a:hover { border-bottom-color: var(--accent); }
 
 /* ── 分区 ─────────────────────────────────────────────────────── */
 .xw-section { display: grid; gap: 18px; padding: 30px 40px 0; }
@@ -1496,6 +1457,22 @@
 .xw-tools { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
 .xw-statement { max-width: 104ch; font-size: 16px; line-height: 1.85; color: var(--text); }
 .xw-statement em { font-style: normal; font-weight: 600; color: var(--accent); }
+/* 赛训组要的结论：一句话顶在最前面，字放大。 */
+.xw-verdict {
+  max-width: 116ch;
+  padding: 20px 24px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+}
+.xw-verdict p { margin: 0; }
+/* 一句话大结论：三段合成一句，顶在最前面，字号压过所有说明。 */
+.xw-verdict-main { font-size: clamp(24px, 2.6vw, 34px) !important; line-height: 1.42 !important; font-weight: 700; letter-spacing: -.02em; color: var(--text); }
+.xw-verdict-main b { font-style: normal; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+/* 下面一行把结论说清楚：明细和解释并在一起，字号明显比结论小。 */
+.xw-verdict-take { margin-top: 14px !important; font-size: 15px !important; line-height: 1.75 !important; color: var(--muted); }
+.xw-verdict-take b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .xw-section-note { font-size: 13.5px; color: var(--warning); }
 .xw-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 
@@ -1588,27 +1565,34 @@
 .xw-ledger-row b { font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .xw-ledger-row small { font-size: 11.5px; color: var(--quiet); }
 
-/* 领先守成：只写局数 */
+/* 领先守成：只写局数；命中数放大，条件分母与说明保持可读 */
 .xw-counts { display: grid; gap: 0; }
 .xw-count-row {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
+  grid-template-columns: 72px minmax(0, 1fr);
   align-items: center;
-  gap: 18px;
-  padding: 10px 0;
+  gap: 16px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line-soft);
 }
 .xw-count-row:last-child { border-bottom: 0; }
 .xw-count-row > b {
-  font-size: 54px;
+  font-size: 3.25rem;
   font-weight: 600;
   letter-spacing: -.05em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
-.xw-count-label { display: grid; gap: 2px; font-size: 14.5px; }
-.xw-count-label small { font-size: 12px; line-height: 1.5; color: var(--quiet); }
+.xw-count-label { display: grid; gap: 6px; min-width: 0; font-size: 1rem; font-weight: 650; line-height: 1.4; }
+.xw-count-label small { max-width: 48ch; font-size: .875rem; font-weight: 500; line-height: 1.6; color: var(--muted); }
+.xw-count-label small strong { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+#xw-ingame-lead .xw-more { min-block-size: 2.25rem; padding: 6px 10px; font-size: .875rem; }
+#xw-ingame-lead .xw-mod-note { font-size: .875rem; line-height: 1.7; color: var(--muted); }
+@media (max-width: 640px) {
+  .xw-count-row { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
+  .xw-count-row .xw-more { grid-column: 2; justify-self: start; }
+}
 
 /* 资源兑现：四步卡 */
 .xw-steps {
@@ -1652,7 +1636,9 @@
   overflow: hidden;
 }
 .xw-bucket { display: grid; gap: 3px; padding: 16px 18px; background: var(--paper); }
-.xw-bucket span { font-size: 13.5px; color: var(--muted); }
+.xw-bucket span { font-size: 17px; font-weight: 600; line-height: 1.4; color: var(--text); }
+/* 团战卡标题与分桶标签放大（赛训组反馈 2026-11-26） */
+#xw-ingame-fight .xw-mod-head h3 { font-size: 28px !important; line-height: 1.35 !important; }
 .xw-bucket b { font-size: 40px; font-weight: 600; letter-spacing: -.045em; line-height: 1; font-variant-numeric: tabular-nums; }
 .xw-bucket b em { font-style: normal; font-size: 16px; color: var(--muted); }
 .xw-bucket small { font-size: 12px; color: var(--quiet); }
@@ -1742,27 +1728,48 @@
 .xw-lane-row .is-pos { color: var(--accent); }
 .xw-lane-row .is-neg { color: var(--warning); }
 
-/* 打法类型：厚色带 + 图例 */
-.xw-arch { display: grid; gap: 16px; }
-.xw-arch-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 18px; align-items: start; }
-.xw-arch-lane { display: grid; gap: 2px; font-size: 14px; }
-.xw-arch-lane small { font-size: 11.5px; color: var(--quiet); }
-.xw-arch-main { display: grid; gap: 8px; }
-.xw-arch-band { display: flex; height: 34px; border-radius: 6px; overflow: hidden; background: var(--surface); }
-.xw-arch-seg { display: block; min-width: 3px; background: var(--accent); }
-.xw-arch-seg.is-0 { background: var(--accent); }
-.xw-arch-seg.is-1 { background: var(--warning); }
-.xw-arch-seg.is-2 { background: #6f4560; }
-.xw-arch-seg.is-3 { background: #40586b; }
-.xw-arch-legend { display: flex; flex-wrap: wrap; gap: 7px 18px; }
-.xw-arch-miss { font-size: 12px; line-height: 1.55; color: var(--quiet); }
-.xw-arch-key { display: inline-flex; align-items: baseline; gap: 7px; font-size: 13px; color: var(--muted); }
-.xw-arch-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); }
-.xw-arch-key.is-1 i { background: var(--warning); }
-.xw-arch-key.is-2 i { background: #6f4560; }
-.xw-arch-key.is-3 i { background: #40586b; }
-.xw-arch-key b { font-size: 15px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-.xw-arch-key em { font-style: normal; font-size: 12px; color: var(--quiet); font-variant-numeric: tabular-nums; }
+/* 五路类型：每路一张卡，先给主玩类型，再给完整构成 */
+.xw-arch { container: xw-arch / inline-size; }
+.xw-arch-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.xw-arch-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+}
+.xw-arch-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.xw-arch-card-head h4 { margin: 0; font-size: 1rem; font-weight: 700; line-height: 1.4; }
+.xw-arch-card-head span { flex: none; font-size: .8125rem; color: var(--quiet); font-variant-numeric: tabular-nums; }
+.xw-arch-primary { display: grid; gap: 4px; }
+.xw-arch-primary > span { font-size: .75rem; font-weight: 650; line-height: 1.5; color: var(--muted); }
+.xw-arch-primary > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.xw-arch-primary b { font-size: 1.5rem; line-height: 1.25; letter-spacing: -.02em; }
+.xw-arch-primary strong { flex: none; font-size: 1.5rem; font-weight: 650; line-height: 1.25; color: var(--accent); font-variant-numeric: tabular-nums; }
+.xw-arch-primary small { font-size: .8125rem; line-height: 1.5; color: var(--quiet); font-variant-numeric: tabular-nums; }
+.xw-arch-bar { display: flex; block-size: 12px; overflow: clip; border-radius: 999px; background: var(--surface); }
+.xw-arch-fill { display: block; min-inline-size: 3px; border-inline-end: 2px solid var(--paper); background: var(--arch-color); }
+.xw-arch-fill:last-child { border-inline-end: 0; }
+.xw-arch-types { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.xw-arch-types li { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto auto; align-items: baseline; gap: 6px; min-width: 0; font-size: .875rem; line-height: 1.5; }
+.xw-arch-types i { inline-size: 8px; block-size: 8px; border-radius: 2px; background: var(--arch-color); }
+.xw-arch-types b { min-width: 0; font-weight: 650; }
+.xw-arch-types span { color: var(--quiet); font-variant-numeric: tabular-nums; }
+.xw-arch-types em { min-inline-size: 3.5ch; color: var(--text); font-style: normal; font-weight: 700; text-align: end; font-variant-numeric: tabular-nums; }
+.xw-arch-types li.is-primary b, .xw-arch-types li.is-primary em { color: var(--accent); }
+.xw-arch-miss { margin: 0; font-size: .8125rem; line-height: 1.6; color: var(--quiet); }
+@container xw-arch (min-width: 40rem) {
+  .xw-arch-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container xw-arch (min-width: 62rem) {
+  .xw-arch-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container xw-arch (min-width: 76rem) {
+  .xw-arch-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
 
 /* 体系 */
 .xw-comps { display: grid; gap: 0; }
@@ -1893,6 +1900,21 @@
 .xw-bp-row .xw-face.is-sm .xw-face-img { width: 36px; height: 36px; border-radius: 7px; }
 .xw-face-pair { display: flex; gap: 3px; flex: none; }
 .xw-face-pair .xw-face-img { width: 34px; height: 34px; border-radius: 7px; }
+/* 赛训组反馈（2026-11-26）：应对清单不显示英雄名，改用放大的头像；
+   组合把两个头像叠在一起。第二格留给「克制X」标，没标时留空以对齐。 */
+.xw-bp-row.is-portrait { grid-template-columns: auto minmax(120px, 1fr) 62px minmax(0, 1fr); }
+/* cross.css 在 layer(legacy) 里，会被 biggame.css / design-consistency.css 的
+   未分层 .portrait 尺寸规则（26px + min 28px）盖掉；照 bps-tile .portrait 的
+   先例用 !important 把这里的头像尺寸提上来。 */
+.xw-bp-row.is-portrait .xw-face.is-hero .xw-face-img { width: 52px !important; height: 52px !important; border-radius: 10px; }
+.xw-bp-row.is-portrait .xw-face-pair.is-hero { flex-wrap: wrap; }
+.xw-bp-row.is-portrait .xw-face-pair.is-hero .xw-face-img { width: 40px !important; height: 40px !important; border-radius: 9px; }
+.xw-ct-cell { display: flex; align-items: center; min-width: 0; }
+.xw-ct-tag {
+  display: inline-flex; align-items: center; padding: 3px 9px;
+  border-radius: 5px; font-size: 13px; font-weight: 700; white-space: nowrap;
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper)); color: var(--accent);
+}
 /* 各队怎么应对：队伍名 + 局数 + 对手英雄（带头像）分两行，避免右边一大块空白。 */
 .xw-bp-row.is-opp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; }
 .xw-bp-row.is-opp > b { grid-column: 1; }
@@ -1987,6 +2009,27 @@
 .xv-legend i.is-win, .xv-legend-row i.is-win { background: var(--accent); }
 .xv-legend i.is-loss, .xv-legend-row i.is-loss { background: var(--warning); }
 .xv-note { font-size: 12.5px; line-height: 1.6; color: var(--quiet); }
+/* 经济路径的方向标记：↑ 在零线上方（优势），↓ 在下方（劣势）。 */
+.xv-econ-arrow {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: 0 1px 2px rgb(16 33 30 / 12%);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.xv-econ-arrow.up, .xv-arrow-key b.up { color: var(--ds-pos); }
+.xv-econ-arrow.down, .xv-arrow-key b.down { color: var(--ds-neg); }
+.xv-arrow-key { white-space: nowrap; }
+.xv-arrow-key b { font-size: 14px; font-weight: 700; }
 .xv-tip {
   position: absolute;
   z-index: 8;
@@ -2011,6 +2054,8 @@
 }
 .xv-hit i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--paper); }
 .xv-hit:hover i { background: var(--accent); transform: scale(1.5); }
+.xv-hit.is-win i { background: var(--ds-pos); }
+.xv-hit.is-loss i { background: var(--ds-neg); }
 .xv-direct {
   position: absolute;
   transform: translateY(-50%);
@@ -2025,6 +2070,25 @@
 .xv-direct.is-win { color: var(--accent); }
 .xv-direct.is-loss { color: var(--warning); }
 .xv-direct.is-all { color: var(--quiet); }
+.xv-direct small { font-size: 11px; opacity: .72; }
+/* 翻盘局分布：两类局各一栏，逐局一行，10 分钟经济对齐到右侧。 */
+.xv-flips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
+.xv-flip { display: grid; gap: 10px; align-content: start; padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.xv-flip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.xv-flip-head b { font-size: 15px; }
+.xv-flip-head span { font-size: 12.5px; color: var(--quiet); font-variant-numeric: tabular-nums; }
+.xv-flip.is-loss .xv-flip-head b { color: var(--warning); }
+.xv-flip.is-win .xv-flip-head b { color: var(--accent); }
+.xv-flip-games { display: grid; gap: 6px; }
+.xv-flip-game {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 6px 9px; border-radius: 6px; text-decoration: none;
+  font-size: 13px; color: var(--text); background: var(--line-soft);
+}
+.xv-flip-game:hover { background: var(--paper); outline: 1px solid var(--line); }
+.xv-flip-game b { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xv-flip.is-loss .xv-flip-game b { color: var(--warning); }
+.xv-flip.is-win .xv-flip-game b { color: var(--accent); }
 .xv-phases { display: grid; gap: 12px; }
 .xv-phase { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .xv-phase-label { font-size: 13.5px; color: var(--text); }
@@ -2047,7 +2111,7 @@
   .xw-tab i { display: none; }
 }
 @media (max-width: 860px) {
-  .xw-mast, .xw-bar, .xw-radar, .xw-section, .xw-source { padding-left: 20px; padding-right: 20px; }
+  .xw-mast, .xw-bar, .xw-section, .xw-source { padding-left: 20px; padding-right: 20px; }
   .xw-kpis li { padding: 0 14px; }
   .xw-tiles, .xw-buckets, .xw-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .xw-score-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2116,7 +2180,7 @@
   cursor: pointer;
 }
 .xw-index-link:hover { background: var(--surface); color: var(--text); }
-.xw-mod, .xw-radar, .xw-section { scroll-margin-top: calc(var(--xw-sticky-top, 0px) + 104px); }
+.xw-mod, .xw-section { scroll-margin-top: calc(var(--xw-sticky-top, 0px) + 104px); }
 
 /* 「看这 N 局」 */
 .xw-more {
@@ -2133,7 +2197,7 @@
 }
 .xw-more:hover { border-color: var(--accent); color: var(--accent); }
 .xw-more.is-on { background: var(--tint); border-color: var(--accent); color: var(--accent); }
-.xw-count-row { grid-template-columns: 86px minmax(0, 1fr) auto; }
+.xw-count-row { grid-template-columns: 72px minmax(0, 1fr) auto; }
 .xw-count-row.is-open { background: var(--tint); }
 .xw-step .xw-more { margin-top: 4px; justify-self: start; }
 .xw-step.is-open { background: var(--tint); }
@@ -2272,30 +2336,6 @@
 .xw-picker-opt.is-on { border-color: var(--accent); background: var(--tint); }
 .xw-picker-foot { display: flex; gap: 8px; justify-content: flex-end; }
 
-/* 关注条左右箭头 */
-.xw-radar-wrap { position: relative; }
-.xw-rail-btn {
-  position: absolute;
-  top: 50%;
-  z-index: 5;
-  width: 34px;
-  height: 34px;
-  margin-top: -17px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: 50%;
-  background: var(--paper);
-  color: var(--text);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow: 0 4px 12px -6px rgb(16 33 30 / 45%);
-}
-.xw-rail-btn:hover { border-color: var(--accent); color: var(--accent); }
-.xw-rail-btn.is-prev { left: -10px; }
-.xw-rail-btn.is-next { right: -4px; }
-
 /* 加载骨架 */
 .xw-loading { display: grid; gap: 22px; padding: 40px; }
 .xw-skel-head { display: grid; gap: 12px; }
@@ -2327,7 +2367,7 @@
   outline-offset: 2px;
   border-radius: 6px;
 }
-.xw-page :is(.xw-segbtn, .xw-chip, .xw-tab, .xw-hero, .xw-more, .xw-clear, .xw-btn, .xw-picker-btn, .xw-picker-opt, .xw-rail-btn, .xw-index-link):active {
+.xw-page :is(.xw-segbtn, .xw-chip, .xw-tab, .xw-hero, .xw-more, .xw-clear, .xw-btn, .xw-picker-btn, .xw-picker-opt, .xw-index-link):active {
   transform: translateY(1px);
 }
 .xw-tab:active, .xw-hero:active { transform: translateY(1px); }
@@ -2388,6 +2428,32 @@
 .xw-floor-item .xw-face-img { width: 34px; height: 34px; border-radius: 7px; }
 .xw-floor-item .xw-face-pair { display: flex; flex: none; gap: 3px; }
 .xw-floor-item.is-combo .xw-face-pair .xw-face-img { width: 30px; height: 30px; }
+/* 组合视图：两个英雄在上，下面单独标注各自是在第几手拿的。 */
+.xw-floor-list.is-combo { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.xw-floor-combo-card {
+  display: grid; gap: 10px; min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg);
+}
+.xw-floor-combo-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.xw-floor-combo-head .xw-face-pair { display: flex; flex: none; gap: 3px; align-items: center; }
+.xw-floor-combo-head .xw-face-pair .xw-face-img { width: 30px; height: 30px; border-radius: 7px; }
+.xw-floor-combo-head .xw-face-pair i { color: var(--muted); font-style: normal; font-size: 12px; }
+.xw-floor-combo-slots {
+  display: grid; gap: 4px;
+  padding-top: 8px; border-top: 1px dashed var(--line);
+}
+.xw-floor-combo-slots > span {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 6px;
+  color: var(--muted); font-size: 12px;
+}
+.xw-floor-combo-slots em {
+  padding: 1px 5px; border-radius: 4px;
+  background: var(--soft, #f5f7fa); color: var(--text);
+  font-style: normal; font-weight: 600; font-size: 11px;
+}
+.xw-floor-combo-slots i { margin-inline-start: auto; color: var(--quiet); font-style: normal; font-size: 11px; }
 .xw-floor-copy { display: grid; gap: 2px; min-width: 0; }
 .xw-floor-copy b {
   overflow: hidden;
@@ -2513,14 +2579,6 @@
 .xw-two-col.is-bp { align-items: start; }
 .xw-bp-list { align-content: start; }
 
-/* 打法类型的分类色：五种类型拉开色相，避免相邻两块都是深紫/深灰 */
-.xw-arch-seg.is-0, .xw-arch-key.is-0 i { background: #2f6f5b; }
-.xw-arch-seg.is-1, .xw-arch-key.is-1 i { background: #4f7fa3; }
-.xw-arch-seg.is-2, .xw-arch-key.is-2 i { background: #a05f77; }
-.xw-arch-seg.is-3, .xw-arch-key.is-3 i { background: #c18a4f; }
-.xw-arch-seg.is-4, .xw-arch-key.is-4 i { background: #7b8a68; }
-.xw-arch-seg.is-5, .xw-arch-key.is-5 i { background: #6a6a8a; }
-
 /* 筛选条 + 分区页签一起吸顶：滚到长页中间也能改口径、换分区 */
 .xw-pin {
   position: sticky;
@@ -2547,6 +2605,10 @@
 .xv-phase-bar.loss { background: var(--ds-neg); }
 .xv-phase-vals b.win { color: var(--ds-pos); }
 .xv-phase-vals b.loss { color: var(--ds-neg); }
+.xw-verdict { border-left-color: var(--ds-pos); }
+.xw-verdict-main b { color: var(--ds-pos); }
+.xv-flip.is-win .xv-flip-head b, .xv-flip.is-win .xv-flip-game b { color: var(--ds-pos); }
+.xv-flip.is-loss .xv-flip-head b, .xv-flip.is-loss .xv-flip-game b { color: var(--ds-neg); }
 
 /* 团战输出 / 承伤：两条系列用暖 / 冷两色分开，避免和胜负绿红混淆 */
 .xw-dmg-plot i.is-out { background: #b07a43; }

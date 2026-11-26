@@ -1,0 +1,415 @@
+/* ============================================================
+   UI UPLIFT · 全局放大与图标化视觉层（最后加载，覆盖历史层）
+   ------------------------------------------------------------
+   目标（来自赛训组反馈）：
+   1) 按钮 / 控件太小、字被挤压 → 统一放大命中区与字号；
+   2) 文字没居中 / 不对齐 → 所有控件改为 flex 居中、禁止换行挤压；
+   3) 排版太单调 → 增加金色 SVG 图标、层级间距与按压 / 悬停 / 焦点反馈；
+   4) 标题下的"功能说明小字" → 在页面模块里逐条移除，本文件只负责底座。
+   本文件为未分层样式且最后加载，可覆盖 interface.css 的所有 @layer 规则。
+   ============================================================ */
+
+/* platinum-ds 用 :root[data-theme=...]（0-2-0）定义字号，普通 :root 会被它压住，
+   这里同步用带属性的选择器，保证后加载的胜利。 */
+:root, :root[data-theme] {
+  /* 字号阶梯整体上抬一档：小字不再靠"缩小"塞进控件 */
+  --fs-display: 2.5rem;
+  --fs-title: 1.25rem;
+  --fs-section: 1.25rem;
+  --fs-body: .9375rem;
+  --fs-small: .875rem;
+  --fs-label: .875rem;
+  --fs-micro: .8125rem;
+  /* 白金视觉层的独立字号阶梯（platinum-ds.css 定义）必须同步放大，
+     否则 #content 里的按钮仍会退回 12/14px。 */
+  --fs-1: .8125rem;
+  --fs-2: .9375rem;
+  --fs-3: 1.125rem;
+  --fs-4: 1.4375rem;
+  --fs-5: 1.875rem;
+  --fs-6: 2.25rem;
+
+  /* 控件高度与间距：给文字和图标留出呼吸空间 */
+  --control-height: 46px;
+  --sp-3: 14px;
+  --sp-4: 18px;
+  --sp-5: 28px;
+  --sp-6: 36px;
+  --r-sm: 9px;
+  --r-md: 12px;
+  --r-lg: 14px;
+
+  /* 统一的图标尺寸与命中区 */
+  --uplift-icon: 19px;
+  --uplift-target: 44px;
+}
+
+/* ── 1. 通用控件：放大 + 居中 + 不挤压 ───────────────────────── */
+:where(.control, .primary, .btn, .btn-primary, .xc-btn, .tp-btn, .bpl-btn,
+       .icon-control, .icon-btn, .head-button, .sx-inline-btn, .text-link.control),
+button:not(:is([type='checkbox'], [type='radio'], [role='tab'], .md-tab)) {
+  min-block-size: var(--uplift-target);
+  block-size: auto;
+  padding: 10px 18px;
+  gap: 10px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  line-height: 1.45;
+  letter-spacing: 0;
+  white-space: nowrap;
+  text-align: center;
+  justify-content: center;
+  align-items: center;
+}
+
+/* 图标按钮：正方形命中区，图标居中不拉伸 */
+:where(.icon-control, .icon-btn, .head-button, .sx-icon-btn, .pf-icon-btn, .oe-shot-x, .rc-icon),
+button:has(> svg:only-child):not(:has(span)), button:has(> img.ui-glyph:only-child) {
+  min-inline-size: var(--uplift-target);
+  min-block-size: var(--uplift-target);
+  padding-inline: 12px;
+}
+
+/* 小尺寸按钮也抬到可读区间（不再 12px 字挤成一团） */
+:where(.btn-sm, .control.sm, .mini-btn, .chip-btn) {
+  min-block-size: 36px;
+  padding: 7px 12px;
+  font-size: var(--fs-small);
+}
+
+/* 控件内图标统一放大；金色 KPL 语义图标（img.ui-glyph）保持自然比例 */
+:where(.control, .primary, .btn, .xc-btn, .tp-btn, .bpl-btn, button) :is(svg, img.ui-glyph) {
+  inline-size: var(--uplift-icon);
+  block-size: var(--uplift-icon);
+  flex: 0 0 auto;
+  vertical-align: -0.22em;
+}
+:where(.control, .primary, .btn, button) img.ui-glyph { inline-size: var(--uplift-icon); block-size: auto; }
+
+/* ── 2. 表单控件：同样放大、对齐 ─────────────────────────────── */
+:where(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden']),
+       select, textarea):not(.search input, .search-box input, .ui-command-input, .cmdk-head input) {
+  min-block-size: var(--control-height);
+  padding: 11px 14px;
+  font-size: var(--fs-body);
+  border-radius: var(--r-md);
+}
+:where(.search, .search-box) {
+  min-block-size: var(--control-height);
+  border-radius: var(--r-md);
+}
+:where(.search input, .search-box input) {
+  min-block-size: calc(var(--control-height) - 2px);
+  font-size: var(--fs-body);
+}
+
+/* 复选框 / 单选框本身放大：密集表格里也能一眼点中 */
+:where(input[type='checkbox'], input[type='radio']),
+#app input[type='checkbox'], #app input[type='radio'] {
+  inline-size: 22px !important;
+  block-size: 22px !important;
+  accent-color: var(--gold, #966319);
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* ── 3. 页签 / 筛选胶囊：更大的点击区，文字居中 ──────────────── */
+:where(.desk-tabs a, .desk-tabs button, .feature-tabs a, .feature-tabs button,
+       [role='tab'], .md-tabs [data-md-tab], .filter-chip, .seg-btn,
+       .mf-seg, .mf-pill, .sx-chip, .mo-chip, .xc-chip, .rc-tab, .cp-tab) {
+  min-block-size: 40px;
+  padding: 8px 16px;
+  font-size: var(--fs-small);
+  border-radius: var(--r-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* ── 4. 侧边导航：放大到舒适阅读尺寸 ─────────────────────────── */
+:where(.desk-nav a, .desk-nav button, [data-nav]) {
+  min-block-size: 46px;
+  padding: 10px 16px;
+  font-size: var(--fs-body);
+  gap: 14px;
+  border-radius: var(--r-md);
+  display: flex;
+  align-items: center;
+}
+:where(.desk-nav svg, [data-nav] svg) { inline-size: 22px; block-size: 22px; }
+:where(.desk-nav .nav-group-label, .desk-nav small) { font-size: var(--fs-small); }
+
+/* 控件变大后，导航与工具条必须能换行，不能把文字挤没（WCAG 1.4.10） */
+:where(nav, nav ul, .toolbar, .filter-bar, .toolbar-row, .intro-actions) { flex-wrap: wrap; }
+:where(.toolbar, .filter-bar, .toolbar-row) > :not(button, input, select, textarea, a, [role='button'], label) { min-inline-size: 0; }
+
+/* ── 5. 顶栏按钮与搜索 ───────────────────────────────────────── */
+:where(.desk-context, .desk-search, .desk-inbox, .head-button) {
+  min-block-size: 44px;
+  font-size: var(--fs-body);
+}
+:where(.desk-brand) { font-size: 1.125rem; }
+
+/* ── 6. 标题层级：更有分量，标题与内容拉开距离 ───────────────── */
+:where(#content h1, .page-title, .tp-id h1, .report-title h1) {
+  font-size: var(--fs-display);
+  line-height: 1.25;
+  letter-spacing: -.02em;
+}
+:where(#content h2, .section-heading h2, .card-title, .tp-head h2) {
+  font-size: var(--fs-section);
+  font-weight: 700;
+  line-height: 1.35;
+}
+:where(#content h3, .card h3) { font-size: 1.0625rem; font-weight: 700; }
+:where(.section-heading, .card-head) { padding: 24px 28px 18px; gap: 18px; }
+:where(.page, #content) { padding-inline: var(--page-gutter); }
+
+/* ── 7. 空状态：放大插画与行动按钮，不再是一行小字 ───────────── */
+:where(.empty, .offline-card) {
+  padding: 56px 32px;
+  border-radius: var(--r-lg);
+  background: linear-gradient(180deg, var(--paper), var(--surface));
+  text-align: center;
+}
+:where(.empty img, .offline-card img, .empty svg, .offline-card svg) {
+  inline-size: 52px; block-size: 52px; margin: 0 auto 18px; opacity: .95;
+}
+:where(.empty strong, .offline-card strong, .empty b) {
+  display: block; font-size: 1.25rem; font-weight: 700; margin-block-end: 12px;
+}
+:where(.empty p, .offline-card p) { font-size: var(--fs-body); max-inline-size: 56ch; margin-inline: auto; }
+:where(.empty .control, .empty button, .offline-card .control, .offline-card button) {
+  min-block-size: 48px; padding: 12px 22px;
+}
+
+/* ── 8. 细节交互：悬停 / 按压 / 焦点三态可区分 ───────────────── */
+:where(.control, .primary, .btn, .xc-btn, .tp-btn, .bpl-btn, button) {
+  transition: background-color var(--duration) var(--ease),
+              border-color var(--duration) var(--ease),
+              box-shadow var(--duration) var(--ease),
+              scale var(--duration) var(--ease);
+}
+:where(.control, .primary, .btn, .xc-btn, .tp-btn, .bpl-btn, button):hover:not(:disabled, [aria-disabled='true']) {
+  box-shadow: 0 4px 14px rgb(16 35 60 / 12%);
+}
+:where(.control, .primary, .btn, .xc-btn, .tp-btn, .bpl-btn, button):active:not(:disabled, [aria-disabled='true']) {
+  scale: .975;
+}
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* ── 9. 文字排布：短标题不出现孤字，正文不断开单词 ───────────── */
+:where(h1, h2, h3) { text-wrap: balance; }
+:where(p, li) { text-wrap: pretty; overflow-wrap: break-word; }
+
+/* ── 9.5 强覆盖：历史 CSS 里存在 #content/.xxx .control 等高优先级尺寸，
+        这里用 ID 作用域 + !important 只锁"尺寸/字号/对齐"三类属性，
+        保证任何页面上按钮都不会再被压回 12px / 30px。 ───────────── */
+#app :is(.control, .btn, .primary, .btn-primary, .xc-btn, .tp-btn, .bpl-btn),
+#app button:not(:is([type='checkbox'], [type='radio'], [role='tab'])) {
+  min-block-size: var(--uplift-target) !important;
+  font-size: var(--fs-body) !important;
+  justify-content: center !important;
+  align-items: center !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  border-radius: var(--r-md) !important;
+  padding-inline: 18px !important;
+}
+#app :is(.icon-control, .icon-btn, .head-button, .sx-icon-btn, .pf-icon-btn, .oe-shot-x, .rc-icon),
+#app button:has(> svg:only-child):not(:has(span)),
+#app button:has(> img.ui-glyph:only-child) {
+  min-inline-size: var(--uplift-target) !important;
+  padding-inline: 12px !important;
+}
+#app :is(input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='hidden']), select, textarea):not(.search input, .search-box input, .ui-command-input, .cmdk-head input) {
+  min-block-size: var(--control-height) !important;
+  font-size: var(--fs-body) !important;
+  padding: 11px 14px !important;
+  border-radius: var(--r-md) !important;
+}
+#app :is(.search, .search-box, .mf-search) { min-block-size: var(--control-height) !important; }
+#app :is(.search input, .search-box input, .mf-search input) {
+  min-block-size: calc(var(--control-height) - 2px) !important;
+  font-size: var(--fs-body) !important;
+}
+#app #content .mf-toolbar.archive-toolbar .archive-batch-toggle {
+  min-block-size: 44px !important;
+  block-size: 44px !important;
+  padding: 9px 16px !important;
+  font-size: var(--fs-body) !important;
+}
+#app #content .tagadd,
+#app #content .archive-row .tagadd,
+#app #content .md-page .md-crumb .tagadd {
+  min-block-size: 36px !important;
+  padding: 6px 12px !important;
+  font-size: var(--fs-small) !important;
+  line-height: 1.4 !important;
+}
+#app #content .mf-toolbar.archive-toolbar :is(.mf-search, .mf-search input) {
+  min-block-size: 46px !important;
+  font-size: var(--fs-body) !important;
+}
+#app :is(.mf-seg, .mf-pill),
+#app #content .mf-toolbar.archive-toolbar :is(.mf-seg, .mf-pill) {
+  min-block-size: 44px !important;
+  block-size: 44px !important;
+  padding: 9px 16px !important;
+  font-size: var(--fs-body) !important;
+  border-radius: var(--r-md) !important;
+}
+#app #content .mf-toolbar :is(.mf-seg, .mf-pill) b {
+  min-inline-size: 20px !important;
+  block-size: 20px !important;
+  font-size: 12px !important;
+}
+
+/* 首页空状态（pbr-*）也按统一空态语言放大 */
+#app #content .pbr-empty { padding: 72px 32px !important; border-radius: var(--r-lg) !important; text-align: center; }
+#app #content .pbr-empty-icon { inline-size: 84px !important; block-size: 84px !important; margin: 0 auto 24px !important; }
+#app #content .pbr-empty-icon svg { inline-size: 44px !important; block-size: 44px !important; }
+#app #content .pbr-empty-copy h2 { font-size: 1.5rem !important; font-weight: 700 !important; margin-block-end: 24px !important; }
+#app #content .pbr-empty-actions { display: flex !important; justify-content: center !important; gap: 14px; flex-wrap: wrap; }
+
+/* ── 9.8 金色 KPL 装饰细节：只在标题与空态上点一笔，不铺满整页 ── */
+:where(#content h1, .page-title, .tp-id h1) {
+  background-image: linear-gradient(90deg, #C89B5A, #E6C88A 55%, rgba(200,155,90,0));
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: 72px 3px;
+  padding-block-end: 12px;
+}
+:where(.section-heading h2, .card-title)::before {
+  content: '';
+  display: inline-block;
+  inline-size: 12px;
+  block-size: 12px;
+  margin-inline-end: 10px;
+  vertical-align: -1px;
+  background: url('kpl-svg/decor/section-triangle.svg') center/contain no-repeat;
+}
+:where(.section, .panel, .card) {
+  box-shadow: inset 0 2px 0 rgba(200, 155, 90, .12), var(--shadow);
+}
+
+/* ── 9.9 逐页改造收尾（团队反馈的具体落点） ──────────────────── */
+/* 标题内图标：与文字保持间距并垂直居中 */
+:where(h1, h2, h3, .section-heading h2, .card-title) .ui-glyph {
+  margin-inline-end: 10px;
+  vertical-align: -.12em;
+}
+/* 空状态里并排的行动按钮：flex 布局 + 间距，避免靠空白字符撑开 */
+:where(.empty p, .offline-card p, .pbr-empty-copy):has(button, .control, a.primary) {
+  display: flex !important;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  max-inline-size: none !important;
+}
+:where(.empty, .offline-card) a.primary {
+  min-block-size: 48px;
+  padding: 12px 24px;
+}
+/* 去掉说明小字后的卡片保持舒展，不塌陷 */
+:where(.sx-next, .comp-jumps, .rt-presets) { padding-block: 18px; gap: 14px; }
+:where(.rt-presets) :is(button, .control, a) { gap: 10px; }
+/* 配置 / 采集页新引入的空态：图标 + 标题 + 动作按钮竖排 */
+:where(.capv-hint-empty, .kq-hint-empty, .mb-blank, .sb-empty, .sc-empty) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  min-block-size: 160px;
+  padding: 40px 28px;
+  text-align: center;
+  color: var(--muted);
+}
+:where(.capv-hint-empty, .kq-hint-empty, .mb-blank, .sb-empty, .sc-empty) .ui-glyph {
+  inline-size: 44px;
+  block-size: 44px;
+}
+:where(.capv-hint-empty, .kq-hint-empty, .mb-blank, .sb-empty, .sc-empty) :is(.control, button, a.primary) {
+  min-block-size: 46px;
+  padding: 11px 20px;
+}
+
+/* BP / 对比页新引入的图标容器：统一 flex 对齐与间距 */
+:where(.bv-empty, .hc-card-top, .tq-head, .tagbar-manage-row, .bps-softbtn.is-icon) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+:where(.bps-softbtn.is-icon) { min-inline-size: auto; padding-inline: 16px; }
+:where(.bps-sub) { font-size: var(--fs-small); line-height: 1.6; }
+
+/* 选手 / 战队页新引入的警告、计数与空态层 */
+:where(.mo-warn-note, .dialog-consequence) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+:where(.mo-warn-note, .dialog-consequence) .ui-glyph { margin-block-start: 2px; }
+:where(.nm-empty, .thd-empty-state) {
+  display: grid;
+  place-items: center;
+  gap: 12px;
+  min-block-size: 140px;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+:where(.nm-empty, .thd-empty-state) .ui-glyph { inline-size: 44px; block-size: 44px; }
+:where(.pf-import-count) { font-variant-numeric: tabular-nums; color: var(--muted); font-size: var(--fs-small); }
+:where(.tp-sec-head) [data-freshness] { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: 10px; }
+:where(.pv-empty span) { display: block; margin-block-start: 8px; color: var(--muted); }
+
+/* 分析页新引入的元信息 / 空态层：与既有卡片语言保持一致 */
+:where(.bgx-card-scope, .xc-muted, .bgx-card-meta) {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
+:where(.boh-an-empty, .xw-empty) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-block-size: 96px;
+  padding: 24px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-md);
+  color: var(--muted);
+  font-size: var(--fs-body);
+  text-align: center;
+}
+
+/* 解锁卡片新图标已自带箭头，去掉旧 ::after 避免双箭头 */
+:where(.lock-cta)::after { content: none !important; }
+
+/* ── 10. 触控设备进一步放大命中区 ────────────────────────────── */
+@media (pointer: coarse) {
+  :root { --uplift-target: 48px; }
+  :where(.control, .primary, .btn, .icon-btn, .head-button, select, summary, [role='tab'], [data-nav]) {
+    min-block-size: 48px;
+  }
+}
+
+/* 尊重系统降低动效偏好 */
+@media (prefers-reduced-motion: reduce) {
+  :where(.control, .primary, .btn, .xc-btn, .tp-btn, .bpl-btn, button) { transition: none; }
+}

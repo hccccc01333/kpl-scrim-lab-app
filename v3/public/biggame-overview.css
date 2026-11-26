@@ -1,0 +1,182 @@
+/* 单场总览的三层排版：结论 → 差异 → 逐局证据。
+ *
+ * 必须最后加载且不能进 @layer：interface.css 把 biggame.css 放进 layer(celadon)，
+ * 而 uplift.css / ppt-layout.css 的未分层 !important 会把按钮撑成 44px 药丸，
+ * 这正是「字超出按钮、单元格像胶囊」的来源。这里用同名类 + 更高优先级锁回尺寸。
+ */
+#app .bgv-board .bgv-cell-btn,
+#app .bgv-board .bgv-row-toggle {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  white-space: normal !important;
+  text-align: start !important;
+  padding: 0 !important;
+  padding-inline: 0 !important;
+  min-block-size: 0 !important;
+  block-size: auto !important;
+  box-shadow: none !important;
+}
+#app .bgv-board .bgv-cell-btn {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  inline-size: 100%;
+  min-block-size: 34px !important;
+  padding: 5px 3px !important;
+  cursor: pointer;
+}
+#app .bgv-board .bgv-row-toggle {
+  display: grid !important;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: start !important;
+  justify-content: stretch !important;
+  gap: 5px;
+  inline-size: 100%;
+  cursor: pointer;
+}
+#app .bgv-toolbar .bgx-seg-btn,
+#app .bgv-select .bgx-select {
+  min-block-size: 28px !important;
+  padding: 3px 9px !important;
+  padding-inline: 9px !important;
+  font-size: .75rem !important;
+  border-radius: 7px !important;
+}
+
+/* 结论 */
+.bgv-conclusion { display: grid; gap: 8px; margin-block-end: 12px; padding: 12px 14px; border: 1px solid var(--bgx-line); border-inline-start: 3px solid var(--bgx-accent); border-radius: 11px; background: var(--bgx-card-2); }
+.bgv-conclusion.is-muted { border-inline-start-color: var(--bgx-line-strong); }
+.bgv-conclusion-line { margin: 0; color: var(--bgx-ink); font-size: .875rem; font-weight: 650; line-height: 1.55; }
+.bgv-conclusion-note { margin: 0; color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-diff-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+.bgv-diff { display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 9px; border: 1px solid var(--bgx-line); border-radius: 999px; background: var(--bgx-card); color: var(--bgx-muted); font-size: .75rem; }
+.bgv-diff b { font-variant-numeric: tabular-nums; font-weight: 750; }
+.bgv-diff small { color: var(--bgx-quiet); font-size: .625rem; font-variant-numeric: tabular-nums; }
+.bgv-diff.is-good { border-color: color-mix(in srgb, var(--bgx-win) 28%, var(--bgx-line)); background: var(--bgx-win-soft); color: var(--bgx-win); }
+.bgv-diff.is-bad { border-color: color-mix(in srgb, var(--bgx-loss) 28%, var(--bgx-line)); background: var(--bgx-loss-soft); color: var(--bgx-loss); }
+
+/* 五张读数卡 */
+.bgv-readout { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 9px; }
+.bgv-tile { display: grid; align-content: start; gap: 2px; padding: 11px 13px; border: 1px solid var(--bgx-line); border-radius: 10px; background: var(--bgx-card-2); }
+.bgv-tile > span { color: var(--bgx-quiet); font-size: .625rem; font-weight: 650; letter-spacing: .05em; }
+.bgv-tile > b { font-size: 1.25rem; line-height: 1.15; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.bgv-tile > b i { font-style: normal; color: var(--bgx-quiet); font-weight: 500; padding: 0 2px; }
+.bgv-tile small { color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-tile.is-good > b { color: var(--bgx-win); }
+.bgv-tile.is-bad > b { color: var(--bgx-loss); }
+.bgv-spark { display: block; inline-size: 100%; block-size: 18px; margin-block-start: 4px; overflow: visible; }
+.bgv-spark.is-empty { color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-spark rect.is-up { fill: var(--bgx-win); }
+.bgv-spark rect.is-down { fill: var(--bgx-loss); }
+.bgv-spark-zero { stroke: var(--bgx-line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.bgv-spark.is-pips { display: flex; align-items: center; gap: 4px; }
+.bgv-spark.is-pips i { inline-size: 6px; block-size: 6px; border-radius: 50%; background: var(--bgx-line-strong); }
+.bgv-spark.is-pips i.is-win { background: var(--bgx-win); }
+.bgv-spark.is-pips i.is-loss { background: var(--bgx-loss); }
+.bgv-spark.is-pips i.is-na { background: var(--bgx-line); }
+
+/* 表格 */
+.bgv-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-block: 12px 9px; }
+.bgv-toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.bgv-toolbar-count { color: var(--bgx-quiet); font-size: .625rem; font-variant-numeric: tabular-nums; }
+.bgv-base-tag { padding: 3px 9px; border: 1px solid var(--bgx-line); border-radius: 999px; color: var(--bgx-muted); font-size: .625rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bgv-board-scroll {
+  --bgv-w-metric: 168px; --bgv-w-series: 104px; --bgv-w-compare: 116px;
+  overflow: auto; max-inline-size: 100%; max-block-size: min(560px, 72vh);
+  border: 1px solid var(--bgx-line); border-radius: 11px;
+  background: var(--bgx-card); scrollbar-gutter: stable;
+}
+.bgv-board-scroll:focus-visible { outline: 2px solid var(--bgx-accent); outline-offset: 2px; }
+.bgv-board { border-collapse: separate; border-spacing: 0; inline-size: 100%; min-inline-size: calc(var(--bgv-w-metric) + var(--bgv-cols, 7) * 66px + var(--bgv-w-series) + var(--bgv-w-compare)); font-variant-numeric: tabular-nums; table-layout: fixed; }
+.bgv-board th, .bgv-board td { padding: 7px 7px; border-block-start: 1px solid var(--bgx-line); text-align: start; }
+.bgv-board thead th { position: sticky; inset-block-start: 0; z-index: 3; border-block-start: 0; background: var(--bgx-card); color: var(--bgx-muted); font-size: .625rem; font-weight: 650; }
+.bgv-board thead th small { display: block; color: var(--bgx-quiet); font-weight: 500; }
+.bgv-board .bgv-col-metric { position: sticky; inset-inline-start: 0; z-index: 2; inline-size: var(--bgv-w-metric); min-inline-size: var(--bgv-w-metric); padding-inline-start: 9px; background: var(--bgx-card); }
+.bgv-board thead .bgv-col-metric { z-index: 4; }
+.bgv-board .bgv-col-series { position: sticky; inset-inline-end: var(--bgv-w-compare); z-index: 2; inline-size: var(--bgv-w-series); min-inline-size: var(--bgv-w-series); background: var(--bgx-wash); box-shadow: inset 1px 0 0 var(--bgx-line); }
+.bgv-board .bgv-col-compare { position: sticky; inset-inline-end: 0; z-index: 2; inline-size: var(--bgv-w-compare); min-inline-size: var(--bgv-w-compare); background: var(--bgx-wash); box-shadow: inset 1px 0 0 var(--bgx-line); }
+.bgv-board thead .bgv-col-series, .bgv-board thead .bgv-col-compare { z-index: 4; }
+.bgv-board thead .bgv-col-head { text-align: center; }
+.bgv-board .bgv-col-game { padding: 0; text-align: center; }
+.bgv-col-head i { display: block; font-style: normal; font-size: .625rem; color: var(--bgx-quiet); }
+.bgv-col-head i.is-win { color: var(--bgx-win); }
+.bgv-col-head i.is-loss { color: var(--bgx-loss); }
+.bgv-row-toggle:focus-visible { outline: 2px solid var(--bgx-accent); outline-offset: 2px; border-radius: 5px; }
+.bgv-row-caret { inline-size: 6px; block-size: 6px; margin-block-start: 4px; border-inline-end: 1.5px solid var(--bgx-quiet); border-block-end: 1.5px solid var(--bgx-quiet); transform: rotate(45deg); transition: transform .15s ease; }
+.bgv-row-toggle[aria-expanded='true'] .bgv-row-caret { transform: rotate(-135deg); }
+.bgv-metric-copy { display: grid; gap: 1px; min-inline-size: 0; }
+.bgv-metric-copy b, .bgv-metric-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-inline-size: 100%; }
+.bgv-metric-copy b { font-size: .75rem; line-height: 1.3; }
+.bgv-metric-copy small { color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-mini-strip { display: none; }
+.bgv-cell-btn:hover, .bgv-cell-btn:focus-visible { background: var(--bgx-accent-soft); outline: none; }
+.bgv-cell { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 0; font-variant-numeric: tabular-nums; line-height: 1.15; max-inline-size: 100%; }
+.bgv-cell b { font-size: .8125rem; font-weight: 650; }
+.bgv-cell i { font-style: normal; color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-cell small { font-size: .5625rem; font-weight: 650; white-space: nowrap; }
+.bgv-cell.is-good { color: var(--bgx-win); }
+.bgv-cell.is-bad { color: var(--bgx-loss); }
+.bgv-cell.is-na { color: var(--bgx-quiet); }
+.bgv-col-series b { font-size: .9375rem; }
+.bgv-col-series small { display: block; color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-delta { display: inline-flex; align-items: center; justify-content: center; padding: 3px 7px; border-radius: 999px; background: var(--bgx-wash); color: var(--bgx-muted); font-size: .6875rem; font-weight: 750; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bgv-delta.is-good { color: var(--bgx-win); background: var(--bgx-win-soft); }
+.bgv-delta.is-bad { color: var(--bgx-loss); background: var(--bgx-loss-soft); }
+.bgv-delta.is-flat, .bgv-delta.is-na { color: var(--bgx-quiet); }
+.bgv-group-row th { position: sticky; inset-inline-start: 0; padding: 5px 11px !important; background: var(--bgx-card-2); color: var(--bgx-accent); font-size: .625rem; font-weight: 700; letter-spacing: .1em; text-align: start !important; }
+.bgv-board .is-col-active { background: var(--bgx-accent-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bgx-accent) 30%, transparent); }
+
+/* 赢局 / 输局视角：只保留一列聚合值，表格按实际列数收窄，不留空白染色体。 */
+.bgv-board-scroll.is-aggregate {
+  --bgv-w-metric: 210px; --bgv-w-series: 118px; --bgv-w-compare: 118px;
+  /* 210 指标 + 180 聚合 + 118 整场 + 118 对比；写死宽度，fit-content 在
+     table-layout:fixed 下会忽略列宽并塌成一条细线。 */
+  inline-size: 626px; max-inline-size: 100%;
+}
+.bgv-board-scroll.is-aggregate .bgv-board { inline-size: 100%; min-inline-size: 0; }
+.bgv-board-scroll.is-aggregate .bgv-col-metric { inline-size: 210px; min-inline-size: 210px; }
+.bgv-board-scroll.is-aggregate .bgv-col-game.is-aggregate { inline-size: 180px; min-inline-size: 180px; padding: 7px; background: color-mix(in srgb, var(--bgx-accent) 5%, var(--bgx-card)); }
+
+/* 展开层：逐局证据卡，取代看不懂的抽象走势图。 */
+.bgv-detail-row td { padding: 0 !important; background: var(--bgx-card-2); }
+.bgv-detail-row[hidden] { display: none; }
+.bgv-evidence-wrap { padding: 10px 12px 12px; }
+.bgv-evidence-head { margin: 0 0 8px; color: var(--bgx-muted); font-size: .6875rem; font-weight: 650; }
+.bgv-evidence-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 7px; }
+.bgv-evidence { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; padding: 7px 9px; border: 1px solid var(--bgx-line); border-radius: 8px; background: var(--bgx-card); }
+.bgv-evidence > b { grid-column: 1; font-size: .75rem; }
+.bgv-evidence > span { grid-column: 2; justify-self: end; color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-evidence > em { grid-column: 1 / -1; font-style: normal; font-size: .875rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bgv-evidence.is-na > em { color: var(--bgx-quiet); font-size: .75rem; font-weight: 500; }
+.bgv-evidence-bar { grid-column: 1 / -1; position: relative; block-size: 4px; border-radius: 999px; background: var(--bgx-wash); overflow: hidden; }
+.bgv-evidence-bar::before { content: ''; display: block; inline-size: var(--w, 0%); block-size: 100%; background: var(--bgx-line-strong); }
+.bgv-evidence-bar.is-up::before { background: var(--bgx-win); }
+.bgv-evidence-bar.is-down::before { background: var(--bgx-loss); }
+
+.bgv-na-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-block-start: 8px; color: var(--bgx-quiet); font-size: .625rem; }
+.bgv-na-legend i { margin-inline-end: 5px; font-style: normal; font-weight: 700; }
+.bgv-na-legend i.is-good { color: var(--bgx-win); }
+.bgv-na-legend i.is-bad { color: var(--bgx-loss); }
+
+/* 窄屏：表格转卡片，首列 / 整场 / 对比一卡看全。
+   用视口媒体查询而不是容器查询：赢局视角的表格本身就是 626px 紧凑宽度，
+   容器查询会误判成「窄」并把聚合列藏掉。 */
+@media (max-width: 900px) {
+  .bgv-board-scroll { max-block-size: none; overflow: visible; }
+  .bgv-board-scroll.is-aggregate { inline-size: auto; }
+  .bgv-readout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bgv-board { min-inline-size: 0; inline-size: 100%; }
+  .bgv-board thead, .bgv-board .bgv-col-game, .bgv-group-row { display: none; }
+  .bgv-board, .bgv-board tbody, .bgv-board tr, .bgv-board th, .bgv-board td { display: block; }
+  .bgv-board .bgv-col-metric, .bgv-board .bgv-col-series, .bgv-board .bgv-col-compare { position: static; inset: auto; inline-size: auto; min-inline-size: 0; background: transparent; box-shadow: none; }
+  .bgv-board tbody .bgv-metric-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; padding: 9px 11px; border-block-start: 1px solid var(--bgx-line); }
+  .bgv-board tbody .bgv-metric-row > .bgv-col-metric { grid-column: 1; padding: 0; }
+  .bgv-board tbody .bgv-metric-row > .bgv-col-series { grid-column: 2; padding: 0; text-align: right; }
+  .bgv-board tbody .bgv-metric-row > .bgv-col-compare { grid-column: 3; padding: 0; text-align: right; }
+  .bgv-mini-strip { display: block; grid-column: 1 / -1; inline-size: 100%; }
+  .bgv-mini-strip .bgv-spark { block-size: 14px; }
+  .bgv-evidence-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

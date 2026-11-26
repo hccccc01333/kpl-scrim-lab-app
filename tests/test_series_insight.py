@@ -192,3 +192,22 @@ def test_single_game_never_reports_rates():
     assert ahead['n'] == 1
     assert ahead['rate'] is None
     assert ahead['enough'] is False
+
+
+def test_overview_contract_for_conclusion_layer():
+    """总览前端只排版：覆盖局数、缺失原因、胜负分组必须由后端给全。"""
+    insight = _build()
+    overview = insight['overview']
+    assert len(overview['games']) == 3
+    assert all('hasReplay' in game for game in overview['games'])
+    for metric in overview['metrics']:
+        assert len(metric['missing']) == 3
+        assert metric['coverage'] == sum(1 for reason in metric['missing'] if reason is None)
+        assert set(metric['byResult']) == {'win', 'loss'}
+        assert metric['byResult']['win']['n'] + metric['byResult']['loss']['n'] == metric['coverage']
+
+    # 缺回放的局要能单独标记，不能混进「本局未触发」。
+    rows = [_target('t1', 1, result='win', at10=1500, final=3200)]
+    rows[0]['vector']['hasReplay'] = False
+    insight_no_replay = _build(games=rows)
+    assert insight_no_replay['overview']['games'][0]['hasReplay'] is False

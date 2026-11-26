@@ -18,6 +18,8 @@
  * 录屏的挂载接口要求重新上传视频流，留在下一轮。
  */
 
+import { glyph } from './ui-icons.js';
+
 const ROOT_API = '/api/';
 
 async function api(path, { method = 'GET', body, signal, raw } = {}) {
@@ -316,7 +318,7 @@ export function createSources(h) {
       <div class="src-entry-actions">
         <button class="primary" data-source-action="create-shots" data-group="${index}"
           ${busy ? 'disabled' : ''}>${busy ? '正在新建…' : '建好并录入'}</button>
-        <button class="control" data-source-action="cancel-entry" ${busy ? 'disabled' : ''}>取消</button>
+        <button class="control" data-source-action="cancel-entry" ${busy ? 'disabled' : ''}>${glyph('ban', { size: 18 })}取消</button>
       </div>
     </div>`;
   }
@@ -349,7 +351,7 @@ export function createSources(h) {
       <div class="src-entry-actions">
         <button class="primary" data-source-action="create-recording" data-recording="${esc(recording.id)}"
           ${busy ? 'disabled' : ''}>${busy ? '正在新建…' : '建好并录入'}</button>
-        <button class="control" data-source-action="cancel-entry" ${busy ? 'disabled' : ''}>取消</button>
+        <button class="control" data-source-action="cancel-entry" ${busy ? 'disabled' : ''}>${glyph('ban', { size: 18 })}取消</button>
       </div>
     </div>`;
   }
@@ -373,11 +375,12 @@ export function createSources(h) {
   ];
   const SHOT_TYPES = SHOT_PAGES.map(([, type]) => type);
 
+  const STEP_ICON = ['capture', 'sources', 'pick'];
   function steps(items, active) {
-    return `<ol class="src-steps">${items.map(([title, hint], index) => {
+    return `<ol class="src-steps">${items.map(([title], index) => {
       const cls = index < active ? 'is-done' : index === active ? 'is-on' : '';
       return `<li class="${cls}"><i>${index < active ? '✓' : index + 1}</i>
-        <span><b>${esc(title)}</b><small>${esc(hint)}</small></span></li>`;
+        <span><b>${glyph(STEP_ICON[index] || 'book', { size: 18 })}${esc(title)}</b></span></li>`;
     }).join('')}</ol>`;
   }
 
@@ -435,9 +438,9 @@ export function createSources(h) {
             也可以把工作台换到空间更大的盘再装。</div>`);
     }
     const installButton = s.ready || s.running ? ''
-      : `<button class="primary" data-source-action="install-mimo" ${s.diskEnough ? '' : 'disabled'}>${install.phase === 'error' ? '重试安装' : s.diskEnough ? '安装 Mimo' : '安装 Mimo（需 4 GB）'}</button>`;
+      : `<button class="primary" data-source-action="install-mimo" ${s.diskEnough ? '' : 'disabled'}>${glyph('refresh', { size: 18 })}${install.phase === 'error' ? '重试安装' : s.diskEnough ? '安装 Mimo' : '安装 Mimo（需 4 GB）'}</button>`;
     const rapidButton = s.rapid.available || s.running ? ''
-      : `<button class="control" data-source-action="install-rapid" ${(!s.freeBytes || s.freeBytes >= 1024 ** 3) ? '' : 'disabled'}>安装主 OCR</button>`;
+      : `<button class="control" data-source-action="install-rapid" ${(!s.freeBytes || s.freeBytes >= 1024 ** 3) ? '' : 'disabled'}>${glyph('refresh', { size: 18 })}安装主 OCR</button>`;
 
     return `<section class="section src-engine${open ? ' is-open' : ''}" data-engine-panel>
       <div class="src-engine-bar">
@@ -475,7 +478,7 @@ export function createSources(h) {
         </div>
       </div>` : ''}
       <div class="src-engine-foot">
-        <button class="control" data-source-action="recheck-engine">重新检测</button>
+        <button class="control" data-source-action="recheck-engine">${glyph('refresh', { size: 18 })}重新检测</button>
         <span>${s.running ? '安装可以切页面，装好后右下角会提示。'
           : s.rapid.available
             ? 'Mimo 约 2–4 GB（含模型），首次视网速 10–40 分钟；不装也不影响主 OCR。'
@@ -590,14 +593,14 @@ export function createSources(h) {
   function shotGuide() {
     return `<section class="section src-guide" data-tour="shots-guide">
       <div class="section-heading"><div><h2>截图示例</h2></div>
-        <div class="capture-actions"><a class="control" href="#videos">还要录屏 · 去「录屏」→</a></div>
+        <div class="capture-actions"><a class="control" href="#videos">${glyph('capture', { size: 18 })}去录屏</a></div>
       </div>
       <ol class="src-shots">${SHOT_PAGES.map(([no, , name, fields, file]) => `<li>
         <a href="/assets/capture-guide/${file}" target="_blank" rel="noopener" title="点开看大图">
           <img src="/assets/capture-guide/${file}" alt="${esc(name)}" loading="lazy"></a>
         <b><i>${no}</i>${esc(name)}</b><small>${esc(fields)}</small>
       </li>`).join('')}</ol>
-      <p class="src-note">示例图里昵称已经打码，只是教学用；<b>你上传的截图不要打码</b>——识别要靠昵称和数值，遮住反而要人工补十行。</p>
+      <p class="src-note">${glyph('warning', { size: 18 })}<b>上传的截图不要打码</b> —— 遮住昵称和数值要人工补十行。</p>
       <ul class="src-rules">
         <li><b>同一局</b>截图的日期、比分、十人阵容要一致</li>
         <li><b>保留</b>顶部比分与日期、双方十人、列名、底部页签</li>
@@ -681,7 +684,7 @@ export function createSources(h) {
               <small>营地一个月内、已有这一局但缺素材</small></div>
             <div class="shot-action-controls">
               <select data-shot-channel="${index}"><option value="">选已有对局…</option>${channelOptions(channels, pendingChannelId())}</select>
-              <button class="primary" data-source-action="attach-shots" data-group="${index}" ${ids.length ? '' : 'disabled'}>补到这一局</button>
+              <button class="primary" data-source-action="attach-shots" data-group="${index}" ${ids.length ? '' : 'disabled'}>${glyph('pick', { size: 18 })}补到这一局</button>
             </div>
           </div>
           <div class="shot-action is-entry${entryOpen ? ' is-open' : ''}">
@@ -710,16 +713,15 @@ export function createSources(h) {
           <div class="section-heading"><div><h2>上传截图</h2></div>
             <div class="capture-actions">
               <span class="src-count">${fmt(images.length)} 张 · ${fmt(groups.length)} 组</span>
-              <button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>
+              <button class="control" data-source-action="refresh">${glyph('refresh', { size: 18 })}刷新</button>
             </div>
           </div>
           <div class="src-upload-body">
             ${uploadZone({ id: 'shot-files', accept: 'image/png,image/jpeg,image/webp', multiple: true,
               title: '选择截图', hint: 'PNG / JPEG / WebP，可一次多选' })}
             <button class="primary" data-source-action="upload-shots" ${state.busy === 'upload' ? 'disabled' : ''}>
-              ${state.busy === 'upload' ? '正在上传…' : '上传并识别'}</button>
+              ${glyph('export', { size: 18 })}${state.busy === 'upload' ? '正在上传…' : '上传并识别'}</button>
           </div>
-          <p class="capture-hint">识别在本机完成；一页通常几秒，Mimo 精读整页约 2–3 分钟，可以先去挂别的组。</p>
         </section>
         <section class="section src-results" data-tour="shots-results">
           <div class="section-heading"><div><h2>识别结果</h2></div>
@@ -768,7 +770,7 @@ export function createSources(h) {
   function videoGuide(maxBytes) {
     return `<section class="section src-guide" data-tour="videos-guide">
       <div class="section-heading"><div><h2>一局要录成这样</h2></div>
-        <div class="capture-actions"><a class="control" href="#shots">还要补截图 · 去「截图 OCR」→</a></div>
+        <div class="capture-actions"><a class="control" href="#shots">${glyph('capture', { size: 18 })}去截图 OCR</a></div>
       </div>
       <ol class="src-timeline">
         <li><i>1</i><div><b>开始 · 约 5 秒</b><span>录到回放列表 / 加载页，双方十人英雄和昵称要清楚，再完整录到局内 00:00。</span></div></li>
@@ -783,7 +785,7 @@ export function createSources(h) {
           <img src="/assets/capture-guide/recording-panel.png" alt="团队面板示例" loading="lazy"></a>
           <figcaption>团队面板：双方各五人 KDA + 累计金币</figcaption></figure>
       </div>
-      <p class="src-note">示例里昵称已经打码，只是教学用；<b>你录的原片不用做任何处理</b>，直接上传完整录像即可。</p>
+      <p class="src-note">${glyph('warning', { size: 18 })}<b>上传完整原片</b>，不用做任何处理。</p>
       <ul class="src-rules">
         <li><b>记分板</b>00:30、之后每 5 分钟、结束前，各开 ≥5 秒</li>
         <li><b>格式</b>横屏 1080p / 30 fps；mp4、mov、mkv、webm</li>
@@ -823,7 +825,7 @@ export function createSources(h) {
           ${state.busy === 'upload' ? '正在上传…' : '上传并识别'}</button>
       </div>
       <p class="src-progress" data-upload-progress>${esc(state.progress || '')}</p>
-      <p class="capture-hint">识别在本机完成。Mimo 精读更细但慢（CPU 上整段偏久）；只想看时间轴和金币，选「仅快速布局」。</p>
+      <p class="capture-hint">${glyph('warning', { size: 18 })}只要时间轴和金币，选「仅快速布局」。</p>
     </section>`;
   }
 
@@ -1016,7 +1018,7 @@ export function createSources(h) {
               <span class="src-count">${recordings.length
                 ? `共 ${fmt(recordings.length)} 段 · ${fmt(done)} 段已出报告${running ? ` · ${fmt(running)} 段识别中` : ''}`
                 : '还没有录屏'}</span>
-              <button class="control" data-source-action="refresh">${icon('refresh')} 刷新</button>
+              <button class="control" data-source-action="refresh">${glyph('refresh', { size: 18 })}刷新</button>
             </div>
           </div>
           <div class="shot-grid">${rows || `<p class="src-empty">还没有上传过录屏。</p>`}</div>
@@ -1089,7 +1091,7 @@ export function createSources(h) {
         </details>
         <footer class="shot-actions">
           <select data-replay-channel="${index}"><option value="">选择要挂载的对局…</option>${channelOptions(channels, pendingChannelId())}</select>
-          <button class="control" data-source-action="attach-replay" data-replay="${esc(abc.sha256 || '')}" data-index="${index}">挂到所选通道</button>
+          <button class="control" data-source-action="attach-replay" data-replay="${esc(abc.sha256 || '')}" data-index="${index}">${glyph('pick', { size: 18 })}挂到所选通道</button>
         </footer>
       </article>`;
     }).join('');
@@ -1125,8 +1127,7 @@ export function createSources(h) {
     const upload = `<div class="upload-area">
       <span class="upload-icon">${icon('sources')}</span>
       <h2>选择本局十人表</h2>
-      <p>先选择文件，检查工作表、字段和数据粒度；预览阶段不会改动原始文件，也不会写入正式统计。</p>
-      <label class="primary upload-button">选择表格<input type="file" data-import-file accept=".csv,.tsv,.xlsx,.xlsm"></label>
+      <label class="primary upload-button">${glyph('sources', { size: 18 })}选择表格<input type="file" data-import-file accept=".csv,.tsv,.xlsx,.xlsm"></label>
       <p data-import-status role="status"></p>
     </div><div data-import-preview></div>`;
 
@@ -1160,7 +1161,7 @@ export function createSources(h) {
           <div><b>唯一性</b><span>选手昵称十行不重复；每方英雄不重复</span></div>
           <div><b>本队阵营</b><span>blue 或 red，十行一致；多局逐局不同</span></div>
         </div>
-        <p class="capture-hint">同一张表可以往下追加多局：每局十行、对局ID不同；跨局汇总不要放进来。</p>`)
+        <p class="capture-hint">${glyph('warning', { size: 18 })}每局十行、对局 ID 不同；跨局汇总不要放进来。</p>`)
       + block('字段要求', '',
         `<div class="table-wrap sv-spec-wrap"><table class="sv-spec-table"><thead><tr>
           <th>列名</th><th>字段</th><th>要求</th><th>规则</th>
@@ -1168,12 +1169,12 @@ export function createSources(h) {
         `<span class="src-count">共 ${sheet.columns.length} 列 · ${requiredCount} 列必填</span>`)
       + block('模板与示例', '',
         `<div class="sv-downloads">
-          <a class="control" href="/assets/capture-guide/match-template.xlsx" download>${icon('sources')} 下载 XLSX 模板</a>
-          <a class="control" href="/assets/capture-guide/match-template.csv" download>${icon('sources')} 下载 CSV 模板</a>
-          <a class="control" href="/assets/capture-guide/match-example.csv" download>${icon('sources')} 下载示例（对照格式）</a>
-          <a class="control" href="/assets/capture-guide/match-sample.csv" download>${icon('sources')} 下载示例 · 十人一局（可直接试导入）</a>
+          <a class="control" href="/assets/capture-guide/match-template.xlsx" download>${glyph('export', { size: 18 })}下载 XLSX 模板</a>
+          <a class="control" href="/assets/capture-guide/match-template.csv" download>${glyph('export', { size: 18 })}下载 CSV 模板</a>
+          <a class="control" href="/assets/capture-guide/match-example.csv" download>${glyph('export', { size: 18 })}下载示例（对照格式）</a>
+          <a class="control" href="/assets/capture-guide/match-sample.csv" download>${glyph('export', { size: 18 })}下载示例 · 十人一局（可直接试导入）</a>
         </div>
-        <p class="capture-hint">示例是虚构数据。试导入后在「数据范围 → 表格导入」勾选才看得到；正式记录请换掉对局 ID、日期和十人数据。</p>`)
+        <p class="capture-hint">${glyph('warning', { size: 18 })}示例是虚构数据；正式记录请换掉对局 ID、日期和十人数据。</p>`)
       + block('最常见的三个错', '',
         `<ul class="sv-pitfalls">
           <li><b>对局 ID 十行不一致</b> —— 同一局十行必须同一个 ID，且不能用示例里的编号。</li>

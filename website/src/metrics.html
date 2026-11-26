@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="assets/style.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="assets/v6.css?v={{ASSET_VERSION}}">
 <link rel="stylesheet" href="assets/v14.css?v={{ASSET_VERSION}}">
+<link rel="stylesheet" href="assets/v21.css?v={{ASSET_VERSION}}">
 <link rel="alternate" type="application/rss+xml" title="{{SITE_FULL_NAME}} · 更新日志" href="feed.xml">
 <script>document.documentElement.classList.add('js');</script>
 <script src="assets/site.js?v={{ASSET_VERSION}}" defer></script>
@@ -114,6 +115,19 @@
       <p class="page-lede">工具不替你下结论，但必须说清每个数字是怎么来的。下面写的是实际计算规则——包括哪些局被排除、哪些值宁可留空。</p>
       <div class="mx-formula" aria-hidden="true">
         <span>winRate</span><b>=</b><span>wins</span><i>/</i><span>decided</span>
+      </div>
+      <div class="mx-hero-visual" aria-hidden="true">
+        <div class="mx-trace-top"><span>CALCULATION TRACE</span><span>03 / RULES</span></div>
+        <div class="mx-trace-formula">
+          <span class="tk-name">winRate</span><span class="tk-op">=</span>
+          <span class="tk-var">wins</span><span class="tk-op">÷</span><span class="tk-var">decided</span>
+        </div>
+        <div class="mx-trace-rows">
+          <div><span>WINS</span><b>27</b><i></i></div>
+          <div><span>LOSSES</span><b>9</b><i></i></div>
+          <div><span>DECIDED</span><b>36</b><i></i></div>
+        </div>
+        <p class="mx-trace-foot">decided = wins + losses · 未判定局不进分母</p>
       </div>
     </div>
   </section>

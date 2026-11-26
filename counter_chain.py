@@ -78,6 +78,15 @@ CHAINS = tuple((STAGES[i], STAGES[i + 1]) for i in range(len(STAGES) - 1))
 MIN_SAMPLE = 1  # 全部列出，包含只出现 1 场的小样本；小样本只做标记，不隐藏
 
 
+def oriented_chains(side=""):
+    """始终给完整六段真实 BP 楼层链；选边只改变「我方 / 对手」的标注口径。
+
+    蓝方永远先手、红方回应，不能因为站红方就少看三段。前端按 fromCamp/toCamp
+    给每一段单独标注是谁，不再整张表共用一套左右称谓。
+    """
+    return CHAINS
+
+
 def _heroes(value):
     if isinstance(value, (list, tuple)):
         return [pick_key(str(x)) for x in value if str(x or '').strip()]
@@ -226,7 +235,7 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=0, pre
                 'chains': []}
 
     chains = []
-    for from_stage, to_stage in CHAINS:
+    for from_stage, to_stage in oriented_chains(side):
         groups = defaultdict(list)
         for record in records:
             value = record['values'][from_stage[0]]
@@ -267,6 +276,8 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=0, pre
         chains.append({
             'key': f'{from_stage[0]}-{to_stage[0]}',
             'title': f'{from_stage[1]} → {to_stage[1]}',
+            'fromLabel': from_stage[1].split(' ', 1)[-1],
+            'toLabel': to_stage[1].split(' ', 1)[-1],
             'fromCamp': from_stage[2], 'toCamp': to_stage[2],
             'rows': rows_out[:limit] if limit > 0 else rows_out,
         })
@@ -274,7 +285,7 @@ def build_counter_chain(games, team='', opponent='', side='', bo=0, limit=0, pre
     return {
         'available': True,
         'scope': {'games': len(rows), 'orderGames': len(rows), 'team': team,
-                  'opponent': opponent, 'side': side, 'bo': bo,
+                  'opponent': opponent, 'side': side, 'viewSide': side, 'bo': bo,
                   'prefix': wanted_prefix, 'prefixGames': len(records),
                    'draftOrder': [{'key': key, 'action': action, 'hand': hand,
                                    'camp': camp, 'label': label}

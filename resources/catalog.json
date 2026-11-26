@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-10-28T03:58:54.633130+00:00",
+  "updatedAt": "2026-11-24T13:03:25.342372+00:00",
   "sources": [
     "https://pvp.qq.com/web201605/js/herolist.json",
     "https://pvp.qq.com/web201605/js/item.json"
@@ -2745,6 +2745,62 @@
       "url": "https://game.gtimg.cn/images/yxzj/img201606/itemimg/1161.jpg",
       "icon": null,
       "error": "HTTPError"
+    },
+    {
+      "id": "hero-630",
+      "kind": "hero",
+      "name": "莉莉安",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/630/630.jpg",
+      "icon": "/catalog/icons/hero-630.png",
+      "sha256": "320bec8c1be41dbcfbae5985d76606ac2509cab3f55783a0d6e707ec41768366"
+    },
+    {
+      "id": "hero-632",
+      "kind": "hero",
+      "name": "绯泪",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/632/632.jpg",
+      "icon": "/catalog/icons/hero-632.png",
+      "sha256": "040aab596addd020a3a33be286ab4ff0bcdecb52dfb8de31396fae4a2aa92cd1"
+    },
+    {
+      "id": "hero-633",
+      "kind": "hero",
+      "name": "卡芬妮",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/633/633.jpg",
+      "icon": "/catalog/icons/hero-633.png",
+      "sha256": "8e592477503d013a4548d52a740328fcc4912310530eda74aca91162f9603b68"
+    },
+    {
+      "id": "hero-646",
+      "kind": "hero",
+      "name": "刀锋宝贝",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/646/646.jpg",
+      "icon": "/catalog/icons/hero-646.png",
+      "sha256": "780d5c1f20dba57bd229dca57bd07e8bb60a038d76a3a2f2999fb9a1d7b01ddb"
+    },
+    {
+      "id": "hero-648",
+      "kind": "hero",
+      "name": "星葵",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/648/648.jpg",
+      "icon": "/catalog/icons/hero-648.png",
+      "sha256": "36895df0ee2d233d677f5cd2223d66e1c4e721fe9c6db69c01576141ee770cc0"
+    },
+    {
+      "id": "hero-649",
+      "kind": "hero",
+      "name": "皮皮",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/649/649.jpg",
+      "icon": "/catalog/icons/hero-649.png",
+      "sha256": "39d8f55d8defc59fc738fca3b165225672cf83a1c6a91db4b4ec2b1358f29d42"
+    },
+    {
+      "id": "hero-652",
+      "kind": "hero",
+      "name": "索文",
+      "url": "https://game.gtimg.cn/images/yxzj/img201606/heroimg/652/652.jpg",
+      "icon": "/catalog/icons/hero-652.png",
+      "sha256": "56afda525bcc1055ee1e6b216a50dca4a73ec73c427d754b11fed72833558c16"
     }
   ]
 }

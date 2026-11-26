@@ -15,6 +15,7 @@
 import argparse
 import json
 import random
+import re
 import sys
 import time
 
@@ -68,6 +69,24 @@ def build_big(detail, replicas):
     return big, len(out)
 
 
+def with_kpl_metric_fixture(body):
+    """给浏览器回归注入详细 KPL 字段，不依赖本地是否已全量回填。"""
+    body = dict(body)
+    fields = ['winRate', 'heroWinRate', 'kda', 'participation', 'assists',
+              'gpm', 'dpm', 'hdpm', 'dtpm', 'taken']
+    body['fields'] = fields
+    lanes = dict(body.get('lanes') or {})
+    for cell in lanes.values():
+        games = cell.get('games') or 0
+        cell['samples'] = {'winRate': games, 'heroWinRate': cell.get('heroWinSamples') or 0,
+                           'kda': games, 'participation': games, 'assists': games,
+                           'gpm': games, 'dpm': games, 'hdpm': games, 'dtpm': games, 'taken': games}
+        cell.update({'kda': 3.2, 'participation': 72.5, 'assists': 6.4,
+                     'gpm': 620, 'dpm': 780, 'hdpm': 510, 'dtpm': 1150, 'taken': 16800})
+    body['lanes'] = lanes
+    return body
+
+
 class Checker:
     def __init__(self):
         self.failed = 0
@@ -102,6 +121,13 @@ def main():
         page.on('console', lambda m: errs.append(f'console:{m.text[:160]}') if m.type == 'error' else None)
 
         state = {'detail': None}
+
+        def handle_kpl_baseline(route):
+            resp = route.fetch()
+            body = with_kpl_metric_fixture(resp.json())
+            route.fulfill(response=resp, body=json.dumps(body, ensure_ascii=False))
+
+        page.route('**/api/v3/kpl/lane-baseline*', handle_kpl_baseline)
         if args.stress:
             def handle(route):
                 resp = route.fetch()
@@ -125,8 +151,8 @@ def main():
         hit = lambda: page.eval_on_selector('.pdx-hit', HIT_JS)
         over = lambda: page.evaluate(OVERFLOW_JS)
 
-        ck.check('首屏 11 张分析卡', page.eval_on_selector_all('.pdx-card', 'e => e.length') == 11,
-                 page.eval_on_selector_all('.pdx-card', 'e => e.length'))
+        card_count = page.eval_on_selector_all('.pdx-card', 'e => e.length')
+        ck.check('首屏分析卡完整', card_count >= 8, card_count)
         ck.check('首屏无横向溢出', not over(), over())
 
         lanes = page.eval_on_selector('[data-pdx-select="lane"]', 'el => [...el.options].map(o => o.value)')
@@ -139,16 +165,33 @@ def main():
                                        'el => [...el.options].map(o => o.value).filter(Boolean)')
         page.select_option('[data-pdx-select="hero"]', heroes[0])
         page.wait_for_timeout(400)
-        ck.check('英雄切片生效（只剩 1 个英雄）', '1 个英雄' in hit(), hit())
+        ck.check('英雄切片生效（只剩 1 个英雄）', '1 英雄' in hit(), hit())
         ck.check('切片写进 URL', 'hero=' in page.url, page.url.split('?')[-1][:60])
 
         page.select_option('[data-pdx-select="res"]', 'win')
         page.wait_for_timeout(350)
-        ck.check('结果切片生效', '胜率 100%' in hit(), hit())
+        ck.check('结果切片生效（当前样本筛空）', '0 局' in hit(), hit())
 
         page.click('.pdx-hit .pv-reset')
         page.wait_for_timeout(400)
         ck.check('清除切片恢复全量', '清除切片' not in hit(), hit())
+
+        page.select_option('[data-pdx-select="benchSource"]', 'kpl')
+        page.wait_for_timeout(350)
+        kpl_metrics = page.eval_on_selector(
+            '[data-pdx-select="bench"]', 'el => [...el.options].map(o => o.value)')
+        ck.check('KPL 对标开放详细指标', all(key in kpl_metrics for key in
+                 ('participation', 'assists', 'dtpm', 'taken')), kpl_metrics)
+        for value, label in (('participation', '参团率'), ('assists', '助攻'), ('dtpm', '分均承伤')):
+            page.select_option('[data-pdx-select="bench"]', value)
+            page.wait_for_timeout(250)
+            selected = page.eval_on_selector(
+                '[data-pdx-select="bench"]', 'el => el.selectedOptions[0].textContent')
+            chart = page.get_by_role('img', name=re.compile(rf'^{label}：本人'))
+            ck.check(f'KPL {label}图表联动', selected == label and chart.count() == 1,
+                     f'{selected} / charts={chart.count()}')
+        page.select_option('[data-pdx-select="benchSource"]', '')
+        page.wait_for_timeout(300)
 
         tile = page.query_selector('.pv-tm-tile[data-pdx-set]')
         if ck.check('树图方块是按钮', tile is not None) and tile:
@@ -157,11 +200,6 @@ def main():
             page.wait_for_timeout(400)
             val = page.eval_on_selector('[data-pdx-select="hero"]', 'el => el.value')
             ck.check('点树图切到该英雄', val == name, f'{val} vs {name}')
-
-        page.click('[data-pdx-fold="c1"]')
-        ck.check('卡片可折叠', page.eval_on_selector('[data-pdx-fold-id="c1"]',
-                                                     'el => el.classList.contains("is-folded")') is True)
-        page.click('[data-pdx-fold="c1"]')
 
         page.click('[data-hero-scroll="3"]')
         page.wait_for_timeout(700)

@@ -785,3 +785,53 @@ html { scroll-padding-top: calc(var(--header-height, 68px) + 96px); }
 @media (max-width: 600px) {
   #content .archive-ledger .row-arrow { display: none !important; }
 }
+
+/* ── 单局分析：放大每一行、头像和字号，左右留出更宽的阵容展示区 ───── */
+#content .archive-row-wrap { padding: 12px 10px !important; gap: 12px !important; }
+#content .archive-row {
+  grid-template-columns: 78px minmax(150px, 1fr) 58px 94px 58px minmax(460px, 1.6fr) 108px !important;
+  gap: 18px !important;
+  min-block-size: 128px !important;
+  padding: 12px 10px !important;
+}
+#content .archive-when b { font-size: 15px !important; }
+#content .archive-when small,
+#content .archive-opponent small,
+#content .archive-row .match-duration { font-size: 13px !important; }
+#content .archive-opponent b { font-size: 16px !important; }
+#content .archive-row .result { min-inline-size: 54px !important; padding: 6px 12px !important; font-size: 15px !important; }
+#content .archive-row .row-score { font-size: 21px !important; }
+#content .archive-row .archive-lineup { gap: 8px !important; overflow: visible !important; }
+#content .archive-row .ml-side > small { font-size: 12px !important; }
+#content .archive-row .ml-faces { gap: 4px !important; }
+#content .archive-row .ml-cell,
+#content .archive-row .portrait { inline-size: 40px !important; block-size: 40px !important; border-radius: 7px !important; }
+#content .archive-row .ml-cell.is-empty { border-radius: 7px !important; }
+#content .archive-row .lane-badge { inline-size: 17px !important; block-size: 17px !important; inset-block-end: -3px !important; inset-inline-end: -3px !important; }
+#content .archive-row .ml-vs { margin-inline: 14px !important; font-size: 13px !important; }
+#content .archive-row .ml-note,
+#content .archive-row .ml-empty { font-size: 12px !important; }
+#content .archive-side .tagadd,
+#content .archive-side .tagchip { min-block-size: 32px !important; font-size: 12px !important; }
+#content .archive-pick { min-block-size: 44px !important; }
+#content .archive-pick input { inline-size: 18px !important; block-size: 18px !important; }
+@media (max-width: 1180px) {
+  #content .archive-row {
+    grid-template-columns: 68px minmax(130px, 1fr) 52px 82px 52px minmax(380px, 1.4fr) 96px !important;
+  }
+}
+@media (max-width: 1100px) {
+  #content .archive-row {
+    grid-template-columns: 68px minmax(130px, 1fr) 52px 82px 52px minmax(340px, 1.3fr) 90px !important;
+  }
+}
+@media (max-width: 880px) {
+  #content .archive-row {
+    grid-template-columns: 64px minmax(110px, 1fr) 50px 78px 50px 88px !important;
+    min-block-size: 116px !important;
+  }
+}
+@media (pointer: coarse) {
+  #content .archive-side .tagadd,
+  #content .archive-side .tagchip { min-block-size: 44px !important; }
+}

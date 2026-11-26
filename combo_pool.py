@@ -172,9 +172,6 @@ def save(doc: dict, bump: bool = True, summary: str = '') -> dict:
     """整体覆盖保存；bump 时按 revision 乐观锁由调用方校验后再递增。"""
     if not _valid(doc):
         raise ValueError('组合池数据格式不正确')
-    import config_history
-    config_history.record('combo_pool', read_saved(), doc,
-                          summary or config_history.diff_summary('combo_pool', read_saved(), doc))
     out = {'schema': SCHEMA,
            'revision': int(doc.get('revision') or 0) + (1 if bump else 0),
            'updatedAt': doc.get('updatedAt') or '',

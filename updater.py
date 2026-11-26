@@ -334,6 +334,28 @@ def _prune_backups(target: Path) -> None:
         shutil.rmtree(item, ignore_errors=True)
 
 
+def _clear_bytecode_cache(target: Path) -> int:
+    """清掉运行期生成的旧字节码。
+
+    发布包刻意不带 *.pyc，所以补丁的 remove 列表里永远没有它们；旧 pyc 一旦
+    被 Python 复用，升级后跑的还是旧版后端逻辑。只清项目自己的代码目录，
+    不碰 runtime/ 下的第三方库缓存（数量大且与本产品代码无关）。
+    """
+    root = Path(target)
+    cleared = 0
+    for sub in ('', 'v3', 'tools', 'scripts'):
+        base = root / sub if sub else root
+        if not base.is_dir():
+            continue
+        for cache in base.rglob('__pycache__'):
+            shutil.rmtree(cache, ignore_errors=True)
+            cleared += 1
+        for pyc in base.rglob('*.pyc'):
+            pyc.unlink(missing_ok=True)
+            cleared += 1
+    return cleared
+
+
 def apply_pending(target: Path | None = None) -> dict:
     target = _root(target)
     pending = read_pending(target)
@@ -384,17 +406,19 @@ def apply_pending(target: Path | None = None) -> dict:
         raise ValueError(message) from exc
 
     clear_pending(target)
+    cleared_caches = _clear_bytecode_cache(target)
     shutil.rmtree(staged, ignore_errors=True)
     _prune_backups(target)
     result = _write_result(
         target, True, f"已更新到 {pending['version']}",
         version=pending['version'], previousVersion=current,
         backupDir=_display_path(target, backup),
-        files=len(pending['files']), removed=len(pending['remove']))
+        files=len(pending['files']), removed=len(pending['remove']),
+        clearedCaches=cleared_caches)
     return {'ok': True, 'skipped': False, 'version': pending['version'],
             'previousVersion': current, 'backupDir': str(backup),
             'files': len(pending['files']), 'removed': len(pending['remove']),
-            'result': result}
+            'clearedCaches': cleared_caches, 'result': result}
 
 
 def _port_free(port: int, host: str = '127.0.0.1') -> bool:

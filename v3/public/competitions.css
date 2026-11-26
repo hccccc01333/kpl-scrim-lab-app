@@ -248,12 +248,6 @@
 .comp-card-tools { display: flex; flex-wrap: wrap; gap: 7px; margin-inline-start: auto; }
 .comp-card-actions .ui-glyph:not(:only-child),
 .comp-assign .ui-glyph { margin-inline-end: 5px; }
-/* ↗ 外链箭头：arrow-up 旋转 45°，替代不存在的 icon('external')。 */
-.comp-card-actions .comp-ext {
-  margin-inline-end: 0;
-  margin-inline-start: 4px;
-  transform: rotate(45deg);
-}
 .comp-card-actions .comp-chev {
   margin-inline-start: 4px;
   margin-inline-end: 0;
@@ -683,3 +677,536 @@
 .comp-agg { color: var(--muted, #6f6a60); font-size: 12px; }
 .comp-agg.is-window { color: var(--teal-ink, #176b69); font-weight: 700; }
 .comp-agg.is-manual { color: var(--accent, #8a5a12); font-weight: 700; }
+
+.comp-archive-group--excluded { border-style: dashed; }
+.comp-archive-group--excluded .comp-archive-head b { color: var(--muted, #6f6a60); }
+
+/* ── 赛事与训练 · 黑白灰档案版式（2026-11-26） ─────────────────────
+   保留轮播、归档和表单事件，只重建视觉层级：眉注/概览 → 赛事章节 → 账本记录。
+   后加载全局层会清边框、放大按钮并给标题/指示点上金色，因此这里只对被锁定的
+   属性做 !important，全部限制在 .comp-page。 */
+#app #content .comp-page {
+  --cp-ink: var(--ds-ink, var(--text));
+  --cp-muted: var(--ds-muted, var(--muted));
+  --cp-line: var(--ds-line, var(--line));
+  --cp-line-strong: var(--ds-line-2, var(--line-strong));
+  --cp-surface: var(--ds-surface, var(--paper));
+  --cp-surface-2: var(--ds-surface-2, var(--surface));
+  --cp-hover: color-mix(in srgb, var(--cp-ink) 4%, transparent);
+  gap: 24px !important;
+}
+
+/* 页头：大标题 + 右侧动作，下面一条紧凑概览 */
+#app #content .comp-page .comp-lead-row {
+  align-items: flex-end !important;
+  gap: 24px !important;
+  margin-block-end: 18px !important;
+}
+#app #content .comp-page .comp-lead-copy { min-inline-size: 0; }
+#app #content .comp-page .comp-kicker {
+  margin: 0 0 7px !important;
+  color: var(--cp-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .14em !important;
+}
+#app #content .comp-page .comp-lead-row h1 {
+  padding-block-end: 0 !important;
+  background-image: none !important;
+  color: var(--cp-ink) !important;
+  font-size: clamp(2rem, 2.7vw, 2.65rem) !important;
+  font-weight: 750 !important;
+  line-height: 1.15 !important;
+  letter-spacing: -.035em !important;
+}
+#app #content .comp-page .comp-lead-sub {
+  margin: 8px 0 0 !important;
+  color: var(--cp-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+#app #content .comp-page .comp-lead-actions { gap: 8px !important; }
+#app #content .comp-page .comp-lead-actions :is(button) {
+  min-block-size: 42px !important;
+  padding-inline: 15px !important;
+  border-radius: 9px !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+#app #content .comp-page .comp-lead-actions .primary {
+  border-color: var(--cp-ink) !important;
+  background: var(--cp-ink) !important;
+  color: var(--cp-surface) !important;
+}
+#app #content .comp-page .comp-lead-actions .primary:hover {
+  background: color-mix(in srgb, var(--cp-ink) 86%, var(--cp-surface)) !important;
+}
+#app #content .comp-page .comp-summary {
+  display: flex;
+  align-items: flex-end;
+  padding-block: 14px;
+  border-block: 1px solid var(--cp-line);
+}
+#app #content .comp-page .comp-summary > div {
+  min-inline-size: 150px;
+  padding-inline: 22px;
+  border-inline-start: 1px solid var(--cp-line);
+}
+#app #content .comp-page .comp-summary > div:first-child {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+#app #content .comp-page .comp-summary b {
+  display: block;
+  color: var(--cp-ink);
+  font: 750 1.65rem/1 var(--font);
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -.04em;
+}
+#app #content .comp-page .comp-summary span {
+  display: block;
+  margin-block-start: 6px;
+  color: var(--cp-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+#app #content .comp-page .comp-notice {
+  border-color: var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+  color: var(--cp-muted) !important;
+}
+#app #content .comp-page .comp-notice.is-error {
+  border-color: var(--danger) !important;
+  background: var(--danger-soft, var(--surface)) !important;
+  color: var(--danger) !important;
+}
+
+/* 当前赛事：一条深墨标记，不再用金色软底 */
+#app #content .comp-page .comp-current {
+  gap: 7px 12px !important;
+  margin-block-end: 16px !important;
+  padding: 12px 16px !important;
+  border: 1px solid var(--cp-line) !important;
+  border-inline-start: 3px solid var(--cp-ink) !important;
+  border-radius: 10px !important;
+  background: var(--cp-surface-2) !important;
+  box-shadow: none !important;
+}
+#app #content .comp-page .comp-current-dot {
+  flex: none;
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--cp-ink);
+}
+#app #content .comp-page .comp-current > span {
+  color: var(--cp-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .04em !important;
+}
+#app #content .comp-page .comp-current b { color: var(--cp-ink) !important; font-size: 16px !important; }
+#app #content .comp-page .comp-current small { color: var(--cp-muted) !important; font-size: 11.5px !important; }
+#app #content .comp-page .comp-current .control {
+  min-block-size: 32px !important;
+  padding-inline: 10px !important;
+  border-radius: 7px !important;
+  font-size: 11.5px !important;
+}
+
+/* 章节标题：序号 + 名称 + 计数 */
+#app #content .comp-page .comp-block { gap: 14px !important; }
+#app #content .comp-page .comp-block-head { gap: 10px 14px !important; }
+#app #content .comp-page .comp-section-title {
+  gap: 10px !important;
+  color: var(--cp-ink) !important;
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.015em !important;
+}
+#app #content .comp-page .comp-section-index {
+  padding-inline-end: 10px;
+  border-inline-end: 1px solid var(--cp-line);
+  color: var(--cp-muted);
+  font: 700 11px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+}
+#app #content .comp-page .comp-count {
+  min-block-size: 24px !important;
+  padding: 3px 9px !important;
+  border: 1px solid var(--cp-line) !important;
+  background: transparent !important;
+  color: var(--cp-muted) !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+}
+#app #content .comp-page .comp-carousel-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-inline-size: min(100%, 430px) !important;
+  margin-inline-start: auto !important;
+}
+#app #content .comp-page .comp-carousel-actions .control {
+  flex: 0 0 40px !important;
+  min-inline-size: 40px !important;
+  min-block-size: 38px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  font-size: 20px !important;
+  line-height: 1 !important;
+}
+#app #content .comp-page .comp-carousel-status {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-inline-size: 0 !important;
+  min-block-size: 38px !important;
+  padding: 0 12px !important;
+  overflow: hidden !important;
+  color: var(--cp-muted) !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.4 !important;
+  text-align: center !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+#app #content .comp-page .comp-carousel-status[hidden] { display: none !important; }
+#app #content .comp-page .comp-block-actions :is(button) {
+  min-block-size: 38px !important;
+  padding-inline: 12px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+}
+
+/* 赛事卡片：一层框、一个序号、一个主时间 */
+#app #content .comp-page .comp-carousel-track {
+  gap: 16px !important;
+  padding: 4px 2px 12px !important;
+}
+#app #content .comp-page .comp-carousel-track .comp-card {
+  flex-basis: clamp(300px, 34vw, 420px) !important;
+  border: 1px solid var(--cp-line) !important;
+  border-radius: 14px !important;
+  background: var(--cp-surface) !important;
+  box-shadow: none !important;
+  transition: border-color .16s ease, background-color .16s ease;
+}
+#app #content .comp-page .comp-carousel-track .comp-card:hover {
+  border-color: var(--cp-line-strong) !important;
+  background: color-mix(in srgb, var(--cp-surface) 96%, var(--cp-ink)) !important;
+  box-shadow: none !important;
+  translate: none !important;
+}
+#app #content .comp-page .comp-card.is-current {
+  border-color: var(--cp-ink) !important;
+  box-shadow: inset 3px 0 0 var(--cp-ink) !important;
+}
+#app #content .comp-page .comp-card-index {
+  position: absolute;
+  inset-block-start: 20px;
+  inset-inline-end: 20px;
+  color: var(--cp-muted);
+  font: 700 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+}
+#app #content .comp-page .comp-card-head {
+  align-items: flex-start !important;
+  gap: 8px 10px !important;
+  padding: 20px 62px 0 20px !important;
+}
+#app #content .comp-page .comp-card-head h3 {
+  max-inline-size: 100%;
+  color: var(--cp-ink) !important;
+  font-size: 21px !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  letter-spacing: -.02em !important;
+}
+#app #content .comp-page .comp-status {
+  min-block-size: 26px !important;
+  gap: 6px !important;
+  padding: 4px 9px !important;
+  border: 1px solid var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+  color: var(--cp-muted) !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+}
+#app #content .comp-page .comp-status-dot {
+  inline-size: 5px;
+  block-size: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+#app #content .comp-page .comp-status.is-cancelled,
+#app #content .comp-page .comp-status.is-confirmed {
+  border-color: var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+  color: var(--cp-muted) !important;
+}
+#app #content .comp-page .comp-status.is-cancelled {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--cp-line)) !important;
+  background: var(--danger-soft, var(--surface)) !important;
+  color: var(--danger) !important;
+}
+#app #content .comp-page .comp-current-badge {
+  min-block-size: 26px !important;
+  padding: 4px 9px !important;
+  border-color: var(--cp-ink) !important;
+  background: var(--cp-ink) !important;
+  color: var(--cp-surface) !important;
+  font-size: 11px !important;
+  font-weight: 650 !important;
+}
+#app #content .comp-page .comp-card-when {
+  gap: 6px !important;
+  margin-block-start: 18px !important;
+  padding: 18px 20px !important;
+  border-block: 1px solid var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+}
+#app #content .comp-page .comp-card-when-label {
+  color: var(--cp-muted) !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: .08em !important;
+}
+#app #content .comp-page .comp-card-when b {
+  color: var(--cp-ink) !important;
+  font-size: 18px !important;
+  font-weight: 750 !important;
+  line-height: 1.35 !important;
+  letter-spacing: -.02em !important;
+}
+#app #content .comp-page .comp-card-when small { color: var(--cp-muted) !important; font-size: 11px !important; }
+#app #content .comp-page .comp-card-actions {
+  gap: 6px !important;
+  padding: 14px 20px 18px !important;
+}
+#app #content .comp-page .comp-card-actions :is(button, a) {
+  min-block-size: 38px !important;
+  padding-inline: 11px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+#app #content .comp-page .comp-card-actions .primary {
+  border-color: var(--cp-ink) !important;
+  background: var(--cp-ink) !important;
+  color: var(--cp-surface) !important;
+}
+#app #content .comp-page .comp-card-actions [data-comp-select]:disabled {
+  border-color: var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+  color: var(--cp-muted) !important;
+}
+#app #content .comp-page .comp-card-tools { gap: 4px !important; }
+#app #content .comp-page .comp-card-actions .comp-del { color: var(--danger) !important; }
+#app #content .comp-page [data-comp-marker][aria-current='true'] { background: var(--cp-ink) !important; }
+#app #content .comp-page [data-comp-marker]:focus-visible { outline-color: var(--cp-ink) !important; }
+
+/* 归档区：外层一条边界，内部分组只留章节头和账本表 */
+#app #content .comp-page .comp-archive-panel {
+  padding: 0 !important;
+  overflow: clip;
+  border: 1px solid var(--cp-line) !important;
+  border-radius: 14px !important;
+  background: var(--cp-surface) !important;
+  box-shadow: none !important;
+}
+#app #content .comp-page .comp-archive-group {
+  margin: 0 !important;
+  padding: 20px 22px !important;
+  border: 0 !important;
+  border-block-end: 1px solid var(--cp-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#app #content .comp-page .comp-archive-group:last-child { border-block-end: 0 !important; }
+#app #content .comp-page .comp-archive-group--unfiled { background: color-mix(in srgb, var(--cp-ink) 2%, var(--cp-surface)) !important; }
+#app #content .comp-page .comp-archive-group--excluded { border-block-end: 0 !important; }
+#app #content .comp-page .comp-archive-group .comp-archive-head {
+  margin-block-end: 12px !important;
+  padding-block-end: 14px !important;
+  border-block-end: 1px solid var(--cp-line) !important;
+}
+#app #content .comp-page .comp-archive-head b {
+  color: var(--cp-ink) !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+}
+#app #content .comp-page .comp-archive-head small { color: var(--cp-muted) !important; font-size: 11.5px !important; }
+#app #content .comp-page .comp-table-wrap {
+  max-block-size: 360px !important;
+  border: 1px solid var(--cp-line) !important;
+  border-radius: 10px !important;
+  background: var(--cp-surface) !important;
+  box-shadow: none !important;
+}
+#app #content .comp-page .comp-table {
+  min-inline-size: 720px !important;
+  font-size: 12.5px !important;
+}
+#app #content .comp-page .comp-table :is(th, td) {
+  padding: 10px 12px !important;
+  border-block-end: 1px solid var(--cp-line) !important;
+}
+#app #content .comp-page .comp-table thead th {
+  background: var(--cp-surface-2) !important;
+  color: var(--cp-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .04em !important;
+}
+#app #content .comp-page .comp-table tbody th {
+  position: static !important;
+  inset-inline-start: auto !important;
+  background: transparent !important;
+  color: var(--cp-muted) !important;
+}
+#app #content .comp-page .comp-table tbody tr > :first-child {
+  position: sticky !important;
+  inset-inline-start: 0 !important;
+  z-index: 1 !important;
+  background: var(--cp-surface) !important;
+}
+#app #content .comp-page .comp-table tbody tr > :first-child:is(td) {
+  color: var(--cp-muted) !important;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#app #content .comp-page .comp-table tbody tr:hover > :is(th, td) { background: var(--cp-hover) !important; }
+#app #content .comp-page .comp-versus { font-size: 12px !important; }
+#app #content .comp-page .comp-versus:hover { color: var(--cp-ink) !important; }
+#app #content .comp-page .comp-crest {
+  inline-size: 26px !important;
+  block-size: 26px !important;
+  border-radius: 7px !important;
+}
+#app #content .comp-page .comp-crest.is-own {
+  background: var(--cp-ink) !important;
+  box-shadow: none !important;
+  color: var(--cp-surface) !important;
+}
+#app #content .comp-page .comp-crest.is-foe {
+  border: 1px solid var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+  box-shadow: none !important;
+  color: var(--cp-muted) !important;
+}
+#app #content .comp-page .comp-versus-name { color: var(--cp-ink) !important; font-weight: 650 !important; }
+#app #content .comp-page .comp-event-tag {
+  inline-size: auto !important;
+  min-inline-size: 0 !important;
+  max-inline-size: none !important;
+  min-block-size: 26px !important;
+  padding: 4px 9px !important;
+  overflow: visible !important;
+  border: 1px solid var(--cp-line) !important;
+  background: transparent !important;
+  color: var(--cp-ink) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+#app #content .comp-page .comp-agg { color: var(--cp-muted) !important; font-size: 11.5px !important; }
+#app #content .comp-page .comp-agg.is-window,
+#app #content .comp-page .comp-agg.is-manual { color: var(--cp-ink) !important; font-weight: 650 !important; }
+#app #content .comp-page .comp-table .control,
+#app #content .comp-page .comp-assign .control {
+  min-block-size: 32px !important;
+  padding-inline: 9px !important;
+  border-radius: 7px !important;
+  font-size: 11.5px !important;
+}
+#app #content .comp-page .comp-assign select {
+  min-block-size: 32px !important;
+  padding: 0 28px 0 9px !important;
+  border-color: var(--cp-line) !important;
+  border-radius: 7px !important;
+  background: var(--cp-surface) !important;
+  color: var(--cp-ink) !important;
+  font-size: 11.5px !important;
+}
+#app #content .comp-page .comp-sub-empty {
+  padding: 18px 4px !important;
+  border: 0 !important;
+  border-block-start: 1px solid var(--cp-line) !important;
+  border-radius: 0 !important;
+  text-align: start !important;
+}
+#app #content .comp-page .comp-assign-notice {
+  border-color: var(--cp-line) !important;
+  background: var(--cp-surface-2) !important;
+  color: var(--cp-muted) !important;
+}
+#app #content .comp-page .comp-assign-notice.is-error {
+  border-color: var(--danger) !important;
+  background: var(--danger-soft, var(--surface)) !important;
+  color: var(--danger) !important;
+}
+
+/* 空态与弹窗：同样收成中性纸面 */
+#app #content .comp-page .comp-empty { padding: 36px 20px !important; }
+#app #content .comp-page .comp-empty-mark {
+  display: grid;
+  place-items: center;
+  inline-size: 52px;
+  block-size: 52px;
+  margin: 0 auto 12px;
+  border: 1px solid var(--cp-line);
+  border-radius: 14px;
+  background: var(--cp-surface-2);
+  color: var(--cp-muted);
+}
+#app #content .comp-page .comp-dialog {
+  border: 1px solid var(--cp-line) !important;
+  border-radius: 14px !important;
+  background: var(--cp-surface) !important;
+  box-shadow: 0 24px 70px -30px rgb(0 0 0 / 45%) !important;
+}
+#app #content .comp-page .comp-dialog::backdrop { background: rgb(0 0 0 / 32%); }
+
+@media (max-width: 1100px) {
+  #app #content .comp-page .comp-summary > div { min-inline-size: 0; padding-inline: 16px; }
+  #app #content .comp-page .comp-card-head h3 { font-size: 19px !important; }
+}
+
+@media (max-width: 900px) {
+  #app #content .comp-page .comp-lead-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  #app #content .comp-page .comp-lead-actions { inline-size: 100%; }
+  #app #content .comp-page .comp-summary { inline-size: 100%; }
+  #app #content .comp-page .comp-summary > div { flex: 1; }
+  #app #content .comp-page .comp-archive-group { padding: 18px 16px !important; }
+}
+
+@media (max-width: 620px) {
+  #app #content .comp-page .comp-summary b { font-size: 22px !important; }
+  #app #content .comp-page .comp-summary span { font-size: 10px !important; }
+  #app #content .comp-page .comp-summary > div { padding-inline: 12px; }
+  #app #content .comp-page .comp-carousel-track .comp-card { flex-basis: 86vw !important; }
+  #app #content .comp-page .comp-block-actions { inline-size: 100%; margin-inline-start: 0 !important; }
+  #app #content .comp-page .comp-block-actions :is(button) { flex: 1 1 auto; }
+  #app #content .comp-page .comp-archive-group { padding: 16px 12px !important; }
+}
+
+@media (forced-colors: active) {
+  #app #content .comp-page :is(.comp-current, .comp-card, .comp-archive-panel, .comp-archive-group, .comp-table-wrap, .comp-dialog) {
+    border-color: CanvasText !important;
+  }
+  #app #content .comp-page :is(.comp-current-badge, .comp-card-actions .primary, .comp-lead-actions .primary, .comp-crest.is-own) {
+    background: ButtonFace !important;
+    color: ButtonText !important;
+  }
+}

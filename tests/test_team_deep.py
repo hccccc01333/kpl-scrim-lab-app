@@ -184,6 +184,57 @@ def test_team_deep_players_picks_bans_and_gold_share(tmp_path):
     assert enemy_bans['盾山']['archetype'] == '保护辅'
 
 
+def test_draft_block_preserves_phase_parallel_and_rule_profile():
+    bp = {
+        'pickOrderKnown': True,
+        'orderSource': 'draftEvents',
+        'orderAssumed': False,
+        'ruleProfile': 'rank-20',
+        'draftEvents': [
+            {'order': 1, 'phase': 'ban', 'action': 'ban', 'camp': '1',
+             'hero': '盾山', 'parallel': True},
+            {'order': 6, 'phase': 'pick', 'action': 'pick', 'camp': '2',
+             'hero': '赵云', 'parallel': False},
+        ],
+    }
+    block = team_clusters._draft_block(bp, 'left', {
+        '盾山': {'lane': '游走', 'archetype': '保护辅'},
+        '赵云': {'lane': '打野', 'archetype': '战野'},
+    })
+
+    assert block['ruleProfile'] == 'rank-20'
+    assert block['events'][0]['phase'] == 'ban'
+    assert block['events'][0]['parallel'] is True
+    assert block['events'][1]['side'] == 'enemy'
+    assert block['ordered']['own']['ban'][0]['phase'] == 'ban'
+    assert block['ordered']['enemy']['pick'][0]['hero'] == '赵云'
+
+
+def test_draft_block_restores_missing_phase_from_rule_schedule():
+    bp = {
+        'pickOrderKnown': True,
+        'orderSource': 'campDefault:draft-18',
+        'orderAssumed': True,
+        'ruleProfile': 'draft-18',
+        'draftEvents': [
+            {'order': 1, 'action': 'ban', 'camp': '1', 'hero': '盾山'},
+            {'order': 5, 'action': 'pick', 'camp': '1', 'hero': '赵云'},
+            {'order': 11, 'action': 'ban', 'camp': '2', 'hero': '张良'},
+            {'order': 15, 'action': 'pick', 'camp': '2', 'hero': '吕布'},
+        ],
+    }
+    block = team_clusters._draft_block(bp, 'left', {
+        '盾山': {'lane': '游走', 'archetype': '保护辅'},
+        '赵云': {'lane': '打野', 'archetype': '战野'},
+        '张良': {'lane': '中路', 'archetype': '工具人'},
+        '吕布': {'lane': '对抗路', 'archetype': '战边'},
+    })
+
+    assert [event['phase'] for event in block['events']] == ['ban1', 'pick1', 'ban2', 'pick2']
+    assert block['orderAssumed'] is True
+    assert all(event['parallel'] is False for event in block['events'])
+
+
 def test_team_deep_game_style_matches_style_windows(tmp_path):
     camp = tmp_path / 'camp_details'
     three_games(camp)

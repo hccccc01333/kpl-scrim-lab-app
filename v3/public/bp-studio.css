@@ -21,6 +21,7 @@
   --bps-accent-2: #2f7fe0;
   --bps-amber: #a86a2a;
   --bps-amber-soft: #f7ecdc;
+  --bps-blue: #2f6bb5;
   --bps-red: #a94b40;
   --bps-red-soft: #f9eae7;
   --bps-green: #23795a;
@@ -1013,10 +1014,10 @@
 
 /* 分路矩阵：第二种呈现 */
 .bps-matrix {
-  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px; padding: 4px 0 10px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px; padding: 4px 0 10px;
 }
-@media (max-width: 1200px) { .bps-matrix { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1200px) { .bps-matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) { .bps-matrix { grid-template-columns: 1fr; } }
 .bps-matrix-col {
   border: 1px solid var(--bps-line); border-radius: 14px;
@@ -1024,21 +1025,21 @@
 }
 .bps-matrix-col > header {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-  padding: 10px 12px; border-bottom: 1px solid var(--bps-line-soft);
+  padding: 14px 16px; border-bottom: 1px solid var(--bps-line-soft);
   background: var(--bps-paper);
 }
-.bps-matrix-col > header b { font-size: 13px; font-weight: 800; color: var(--bps-ink); }
-.bps-matrix-col > header span { color: var(--bps-quiet); font-size: 10.5px; font-weight: 650; }
-.bps-matrix-grid { display: grid; gap: 5px; padding: 7px; }
+.bps-matrix-col > header b { font-size: clamp(1rem, .8rem + .55vw, 1.4rem) !important; font-weight: 800; color: var(--bps-ink); }
+.bps-matrix-col > header span { color: var(--bps-quiet); font-size: clamp(.8125rem, .7rem + .3vw, 1rem) !important; font-weight: 650; }
+.bps-matrix-grid { display: grid; gap: 8px; padding: 10px; }
 .bps-tile-bg {
   position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(90deg, rgba(168, 106, 42, .38), rgba(168, 106, 42, .05));
   opacity: var(--heat, 0);
 }
 .bps-tile {
-  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr);
-  gap: 4px 9px; align-items: center;
-  padding: 7px 9px 7px 10px; border-radius: 10px;
+  position: relative; display: grid; grid-template-columns: 52px minmax(0, 1fr);
+  gap: 6px 12px; align-items: center;
+  padding: 12px 14px; border-radius: 12px;
   border: 1px solid rgba(20, 54, 48, .06);
   background: rgba(168, 106, 42, calc(.03 + var(--heat, 0) * .2));
   text-align: left; overflow: hidden;
@@ -1046,16 +1047,17 @@
 }
 .bps-tile > :not(.bps-tile-bg) { position: relative; z-index: 1; }
 .bps-tile:hover { transform: translateY(-1px); box-shadow: var(--bps-shadow-sm); }
-.bps-tile .portrait { width: 36px; height: 36px; border-radius: 10px; grid-row: span 2; }
+.bps-tile .portrait { width: 52px !important; height: 52px !important; aspect-ratio: 1; flex: 0 0 52px; border-radius: 12px; grid-column: 1 !important; grid-row: 1 / span 2 !important; }
+.bps-tile .portrait img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .bps-tile-rank {
-  position: absolute; right: 7px; top: 5px;
-  color: rgba(35, 58, 50, .35); font-size: 9px; font-weight: 800; letter-spacing: .04em;
+  position: absolute; right: 10px; top: 8px;
+  color: rgba(35, 58, 50, .35); font-size: 11px; font-weight: 800; letter-spacing: .04em;
 }
-.bps-tile-id { min-width: 0; }
-.bps-tile-id b { display: block; font-size: 12.5px; font-weight: 750; color: var(--bps-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bps-tile-id small { display: block; color: var(--bps-muted); font-size: 10px; }
-.bps-tile-nums { grid-column: 2; display: flex; gap: 8px; }
-.bps-tile-nums em { font-style: normal; color: var(--bps-quiet); font-size: 10px; font-weight: 700; }
+.bps-tile-id { min-width: 0; grid-column: 2 !important; grid-row: 1 !important; width: 100%; }
+.bps-tile-id b { display: block; font-size: clamp(1rem, .85rem + .45vw, 1.375rem) !important; font-weight: 750; color: var(--bps-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bps-tile-id small { display: block; color: var(--bps-muted); font-size: clamp(.8125rem, .7rem + .3vw, 1rem) !important; }
+.bps-tile-nums { grid-column: 2 !important; grid-row: 2 !important; display: flex; gap: 12px; }
+.bps-tile-nums em { font-style: normal; color: var(--bps-quiet); font-size: clamp(.8125rem, .7rem + .3vw, 1rem) !important; font-weight: 700; }
 
 /* 缩放容器 */
 .bv-scatter { cursor: grab; touch-action: none; user-select: none; }
@@ -1980,6 +1982,10 @@
 .bps-counter-search::placeholder { color: var(--bps-quiet); }
 .bps-counter-scope { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 10px 0 4px; font-size: 11.5px; color: var(--bps-muted); }
 .bps-counter-scope b { color: var(--bps-ink); }
+.bps-counter-scope .bps-counter-view-hint { flex-basis: 100%; color: var(--bps-accent); }
+.bps-camp { font-weight: 800; white-space: nowrap; }
+.bps-camp.is-blue { color: var(--bps-blue); }
+.bps-camp.is-red { color: var(--bps-red); }
 .bps-counter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
 @media (max-width: 1100px) { .bps-counter-grid { grid-template-columns: 1fr; } }
 .bps-counter-card { min-width: 0; border: 1px solid var(--bps-line); border-radius: 12px; background: var(--bps-paper); overflow: hidden; box-shadow: var(--bps-shadow-sm); }
@@ -2401,4 +2407,15 @@
 @media (max-width: 760px) {
   .bps-counter-resp { grid-template-columns: minmax(0, 1fr) 72px 72px !important; }
   .bps-counter-resp .is-num:last-child { display: none; }
+}
+
+/* 选定具体分路时，不再让唯一一列里的小卡竖着排；平铺成自适应网格。
+   「全部」仍保留按分路分列、列内竖排的矩阵形态。 */
+.bps-matrix.is-single-lane { grid-template-columns: minmax(0, 1fr) !important; }
+.bps-matrix.is-single-lane .bps-matrix-grid {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  align-content: start;
+}
+@media (max-width: 760px) {
+  .bps-matrix.is-single-lane .bps-matrix-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

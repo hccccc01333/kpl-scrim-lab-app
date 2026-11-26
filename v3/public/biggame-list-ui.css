@@ -1,19 +1,19 @@
-/* 大场列表 · 对齐对局档案单局页的浅白红蓝风格（2026-11-19）
-   画布是冷调浅白（不是带绿调的纸白）；胜负走红蓝对决：
-   蓝 #1f6fcf = 本队/胜，红 #cf3f3f = 对手/负，直接取自 design-verdict.css。
-   头部整块复用 design-verdict 的蓝→白→粉渐变，做成大场结论卡。
+/* 大场列表 · 与全站「纯白 + 灰」视觉层对齐（2026-11-24）
+   中性色（画布/纸面/文字/描边）全部走全站令牌，不自带冷调浅白或装饰渐变；
+   胜负红蓝是数据语义色，保留：蓝 = 本队/胜，红 = 对手/负。
    只作用于 #biggame 列表页（.bgx-page 且非 .bgx-detail）。
    本文件在 interface.css 最后以未分层导入，盖过 biggame.css 的 @layer(celadon)。 */
 
 .bgx-page:not(.bgx-detail) {
-  --bc-canvas: #f7f9fc;
-  --bc-paper: #ffffff;
-  --bc-ink: #1c2b3a;
-  --bc-body: #3d5064;
-  --bc-muted: #546a7b;
-  --bc-quiet: #8396a6;
-  --bc-line: #e2e9f1;
-  --bc-line-strong: #cfdae6;
+  /* 中性色一律走全站白/灰令牌，与跨局分析等页面同一套画布；红蓝只作胜负语义色保留。 */
+  --bc-canvas: var(--bg);
+  --bc-paper: var(--paper);
+  --bc-ink: var(--text);
+  --bc-body: var(--muted);
+  --bc-muted: var(--muted);
+  --bc-quiet: var(--quiet);
+  --bc-line: var(--line);
+  --bc-line-strong: var(--line-strong);
   --bc-blue: #1f6fcf;
   --bc-blue-soft: #eaf3ff;
   --bc-blue-line: #bfdbfa;
@@ -26,30 +26,22 @@
 }
 .bgx-page:not(.bgx-detail)::before { display: none; }
 
-/* ── 头部：蓝→白→粉渐变结论卡（同 design-verdict）────────────────────── */
+/* ── 头部：与全站一致的白底描边卡，不再用装饰性渐变背景 ─────────────────────── */
 .bgx-page:not(.bgx-detail) .bgx-list-head {
   position: relative;
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: 18px 24px; padding: 22px 26px;
-  border: 0; border-radius: 14px; overflow: hidden;
-  background: linear-gradient(90deg,
-    #b6d3f6 0%, #d7e8fc 20%, #f2f7fd 38%, #ffffff 50%,
-    #fff0f0 62%, #fbdcdc 80%, #f6c6c6 100%);
-  box-shadow: 0 10px 30px -20px rgba(24, 48, 72, .34);
-}
-/* 中间提亮，让结论文字落在白区 */
-.bgx-page:not(.bgx-detail) .bgx-list-head::before {
-  content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(58% 130% at 50% 50%, rgba(255,255,255,.96), rgba(255,255,255,.58) 62%, transparent 100%);
+  border: 1px solid var(--bc-line); border-radius: var(--ds-radius, 10px); overflow: hidden;
+  background: var(--bc-paper); box-shadow: none;
 }
 .bgx-page:not(.bgx-detail) .bgx-list-head > * { position: relative; z-index: 1; min-width: 0; }
 .bgx-page:not(.bgx-detail) .bgx-eyebrow {
-  color: #5f7688; font-size: 11px; font-weight: 800; letter-spacing: .1em;
+  color: var(--bc-muted); font-size: 11px; font-weight: 800; letter-spacing: .1em;
 }
-.bgx-page:not(.bgx-detail) .bgx-eyebrow i { color: #94a6b4; font-style: normal; margin: 0 3px; }
+.bgx-page:not(.bgx-detail) .bgx-eyebrow i { color: var(--bc-quiet); font-style: normal; margin: 0 3px; }
 .bgx-page:not(.bgx-detail) .bgx-list-head h1 {
-  margin-top: 10px; font-family: var(--font); font-size: 22px; font-weight: 750;
-  letter-spacing: -.01em; line-height: 1.35; color: #16293b;
+  margin-top: 0; font-family: var(--font); font-size: 22px; font-weight: 750;
+  letter-spacing: -.01em; line-height: 1.35; color: var(--bc-ink);
 }
 .bgx-page:not(.bgx-detail) .bgx-list-head h1 em { font-style: normal; }
 /* 胜负数放大成蓝红读数，对应设计稿的 24 : 18 */
@@ -63,30 +55,30 @@
   margin-top: 8px; color: var(--bc-muted); font-size: 12px; line-height: 1.6;
 }
 
-/* KPI 直接落在渐变卡右侧，不再另起白卡 */
+/* KPI 直接落在头部卡右侧，不再另起白卡 */
 .bgx-page:not(.bgx-detail) .bgx-list-kpis {
   display: flex; align-items: center; gap: 0; padding: 0;
   background: transparent; border: 0; border-radius: 0; box-shadow: none;
 }
 .bgx-page:not(.bgx-detail) .bgx-list-kpi {
-  padding: 0 20px; text-align: left; border-left: 1px solid rgba(35, 90, 150, .16);
+  padding: 0 20px; text-align: left; border-left: 1px solid var(--bc-line);
   background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .bgx-page:not(.bgx-detail) .bgx-list-kpi:first-child { border-left: 0; }
 .bgx-page:not(.bgx-detail) .bgx-list-kpi span {
-  display: block; color: #6d8292; font-size: 11px; font-weight: 650; letter-spacing: .04em;
+  display: block; color: var(--bc-muted); font-size: 11px; font-weight: 650; letter-spacing: .04em;
 }
 .bgx-page:not(.bgx-detail) .bgx-list-kpi b {
   display: block; margin-top: 3px; font-size: 21px; font-weight: 750;
-  letter-spacing: -.03em; color: #16293b; font-variant-numeric: tabular-nums;
+  letter-spacing: -.03em; color: var(--bc-ink); font-variant-numeric: tabular-nums;
 }
-.bgx-page:not(.bgx-detail) .bgx-list-kpi b i { color: #94a6b4; font-size: 12px; font-style: normal; }
+.bgx-page:not(.bgx-detail) .bgx-list-kpi b i { color: var(--bc-quiet); font-size: 12px; font-style: normal; }
 
 /* ── 筛选条 ─────────────────────────────────────────────────────────── */
 .bgx-page:not(.bgx-detail) .bgx-scope {
   display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
   padding: 10px 14px; border: 1px solid var(--bc-line); border-radius: 13px;
-  background: var(--bc-paper); box-shadow: 0 1px 2px rgba(24, 48, 72, .03);
+  background: var(--bc-paper); box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .bgx-page:not(.bgx-detail) .bgx-field { gap: 7px; }
@@ -95,7 +87,7 @@
 }
 .bgx-page:not(.bgx-detail) .bgx-seg {
   display: inline-flex; gap: 2px; padding: 4px;
-  border: 1px solid var(--bc-line); border-radius: 10px; background: #eff3f8;
+  border: 1px solid var(--bc-line); border-radius: 10px; background: var(--surface);
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .bgx-page:not(.bgx-detail) .bgx-seg-btn {
@@ -105,7 +97,7 @@
 .bgx-page:not(.bgx-detail) .bgx-seg-btn:hover { color: var(--bc-ink); }
 .bgx-page:not(.bgx-detail) .bgx-seg-btn[aria-pressed='true'] {
   background: var(--bc-paper); color: var(--bc-ink); font-weight: 700;
-  box-shadow: 0 1px 2px rgba(15, 30, 40, .12);
+  box-shadow: var(--shadow-card);
 }
 .bgx-page:not(.bgx-detail) .bgx-select {
   min-block-size: 32px; padding: 5px 10px;
@@ -139,16 +131,20 @@
 }
 .bgx-page:not(.bgx-detail) .bgx-team-card:hover {
   border-color: var(--bc-line-strong);
-  box-shadow: 0 4px 18px -12px rgba(28, 43, 58, .22);
+  box-shadow: 0 4px 18px -12px rgba(0, 0, 0, .22);
 }
 .bgx-page:not(.bgx-detail) .bgx-team-card::before,
 .bgx-page:not(.bgx-detail) .bgx-team-card::after { display: none; }
 
-/* 顶行：日期与状态，压低存在感 */
+/* 顶行：日期与状态，日期作为卡片的时间锚点需要先被读到 */
 .bgx-page:not(.bgx-detail) .bgx-team-top {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  flex-wrap: wrap; margin-block-end: 8px;
+  flex-wrap: wrap; margin-block-end: 10px;
   color: var(--bc-quiet); font-size: 11px; font-weight: 600; letter-spacing: .01em;
+}
+.bgx-page:not(.bgx-detail) .bgx-team-top > span:first-child {
+  min-inline-size: 0; color: var(--bc-body); font-size: 14px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .bgx-page:not(.bgx-detail) .bgx-team-top span:last-child {
   padding: 2px 9px 3px; border: 1px solid var(--bc-line); border-radius: 999px;
@@ -182,47 +178,27 @@
 .bgx-page:not(.bgx-detail) .bgx-outcome.is-win { color: var(--bc-blue); }
 .bgx-page:not(.bgx-detail) .bgx-outcome.is-loss { color: var(--bc-red); }
 
-/* 结论与逐局走势同一行：左结论、右战绩条，填满横向 */
-.bgx-page:not(.bgx-detail) .bgx-verdict-row {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  flex-wrap: wrap; margin-block-end: 10px;
-}
+/* 结论：卡片只保留一句可读判词 */
 .bgx-page:not(.bgx-detail) .bgx-verdict-line {
-  margin: 0; color: var(--bc-body, var(--bc-ink));
+  margin: 0 0 12px; color: var(--bc-body, var(--bc-ink));
   font-size: 14px; font-weight: 500; line-height: 1.55; letter-spacing: .005em;
 }
 
-/* 底行：胜负色块 + 过程说明 + 进入按钮 */
+/* 底行：只保留进入动作，避免过程说明抢走卡片主结论 */
 .bgx-page:not(.bgx-detail) .bgx-team-foot {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: flex-end;
   margin-block-start: auto; color: var(--bc-quiet); font-size: 11px;
 }
-.bgx-page:not(.bgx-detail) .bgx-form { display: inline-flex; align-items: center; gap: 5px; flex: none; }
-.bgx-page:not(.bgx-detail) .bgx-form-cell {
-  display: inline-grid; place-items: center; min-inline-size: 24px; padding: 2px 6px;
-  border: 1px solid var(--bc-line); border-radius: 999px;
-  background: transparent; color: var(--bc-muted);
-  font-size: 10px; font-weight: 700; font-style: normal; line-height: 1.2; white-space: nowrap;
-}
-.bgx-page:not(.bgx-detail) .bgx-form-cell.is-win {
-  border-color: color-mix(in srgb, var(--bc-blue) 42%, transparent); color: var(--bc-blue);
-}
-.bgx-page:not(.bgx-detail) .bgx-form-cell.is-loss {
-  border-color: color-mix(in srgb, var(--bc-red) 42%, transparent); color: var(--bc-red);
-}
-.bgx-page:not(.bgx-detail) .bgx-noform { color: var(--bc-quiet); font-size: 11px; }
-.bgx-page:not(.bgx-detail) .bgx-team-foot-meta {
-  min-inline-size: 0; color: var(--bc-quiet); font-size: 11px;
-}
 .bgx-page:not(.bgx-detail) .bgx-team-foot > b {
-  flex: none; margin-inline-start: auto; padding: 5px 13px;
+  flex: none; padding: 5px 13px;
   border: 1px solid color-mix(in srgb, var(--bc-blue) 45%, transparent); border-radius: 999px;
   color: var(--bc-blue); font-size: 11px; font-weight: 700; white-space: nowrap;
 }
-.bgx-page:not(.bgx-detail) .bgx-team-card:hover .bgx-team-foot > b {
-  background: var(--bc-blue); border-color: var(--bc-blue); color: #fff;
+@media (hover: hover) {
+  .bgx-page:not(.bgx-detail) .bgx-team-card:hover .bgx-team-foot > b {
+    background: var(--bc-blue); border-color: var(--bc-blue); color: #fff;
+  }
 }
-.bgx-page:not(.bgx-detail) .bgx-foot { color: var(--bc-quiet); font-size: 11px; }
 
 /* 窄卡片自适应：字号收敛、底行允许折行 */
 @container bgc (inline-size < 420px) {
@@ -238,16 +214,8 @@
 .bgx-page:not(.bgx-detail) .bgx-empty h2 { font-size: 18px; font-weight: 700; color: var(--bc-ink); }
 .bgx-page:not(.bgx-detail) .bgx-empty p { color: var(--bc-muted); font-size: 12.5px; }
 
-/* 深色主题：红蓝关系保留，底与线换深 */
+/* 深色主题：中性色由全站令牌自动翻深，红蓝语义色提亮一档保持可读 */
 :root[data-theme='dark'] .bgx-page:not(.bgx-detail) {
-  --bc-canvas: #12151b;
-  --bc-paper: #1b1f27;
-  --bc-ink: #e8eef6;
-  --bc-body: #c2cede;
-  --bc-muted: #9aabc0;
-  --bc-quiet: #78899d;
-  --bc-line: #2a323e;
-  --bc-line-strong: #3b4757;
   --bc-blue: #6aa9ee;
   --bc-blue-soft: #1b2c40;
   --bc-blue-line: #34527a;
@@ -256,20 +224,11 @@
   --bc-red-line: #6d3b40;
 }
 :root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-list-head {
-  background: linear-gradient(90deg,
-    #1c3350 0%, #1a283c 24%, #1b1f27 50%, #2a1f27 76%, #3a232b 100%);
+  background: var(--bc-paper);
+  border-color: var(--bc-line);
   box-shadow: none;
 }
-/* 提亮层换成暗色，否则白色径向渐变会在深色卡上烧出亮斑压住浅字 */
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-list-head::before {
-  background: radial-gradient(58% 130% at 50% 50%, rgba(18, 21, 27, .96), rgba(18, 21, 27, .62) 62%, transparent 100%);
-}
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-list-head h1,
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-list-kpi b { color: #e8eef6; }
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-eyebrow { color: #9aabc0; }
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-list-sub,
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-list-kpi span { color: #9aabc0; }
-:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-seg { background: #141821; }
+:root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-seg { background: var(--bg); }
 :root[data-theme='dark'] .bgx-page:not(.bgx-detail) .bgx-team-card:hover {
   border-color: var(--bc-line-strong);
   box-shadow: 0 4px 18px -12px rgba(0, 0, 0, .5);

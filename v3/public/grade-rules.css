@@ -58,6 +58,20 @@
 .gr-rev { color: var(--muted); font-size: var(--fs-small); white-space: nowrap; }
 .gr-rev.is-saved { color: var(--success); }
 .gr-toolbar { margin-block-end: 10px; }
+.gr-toolbar-actions {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.gr-toolbar-actions button { min-block-size: 30px; padding: 4px 10px; font: inherit; font-size: var(--fs-small); }
+.gr-only-active {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: var(--fs-small); cursor: pointer;
+}
+.gr-hint {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.6;
+}
 .gr-tab-count {
   display: inline-block;
   min-inline-size: 18px;
@@ -131,6 +145,11 @@
 .gr-table tbody tr:last-child td { border-block-end: 0; }
 .gr-table tbody tr:hover td,
 .gr-table tbody tr:hover th { background: var(--surface-hover); }
+.gr-table tbody tr.is-off { opacity: 0.55; }
+.gr-table tbody tr.is-off th,
+.gr-table tbody tr.is-off td { background: transparent; }
+.gr-active-cell { text-align: center !important; inline-size: 56px; }
+.gr-active-cell input { inline-size: 16px; block-size: 16px; accent-color: var(--accent); cursor: pointer; }
 
 .gr-lv {
   display: inline-block;
@@ -211,9 +230,10 @@
     border: 0;
     padding: 6px 4px;
   }
-  .gr-table td:nth-child(2)::before { content: '方向'; color: var(--muted); font-size: var(--fs-micro); }
-  .gr-table td:nth-child(3)::before { content: '卓越'; color: var(--muted); font-size: var(--fs-micro); }
-  .gr-table td:nth-child(4)::before { content: '优秀'; color: var(--muted); font-size: var(--fs-micro); }
-  .gr-table td:nth-child(5)::before { content: '达标'; color: var(--muted); font-size: var(--fs-micro); }
-  .gr-table td:nth-child(6)::before { content: '单位'; color: var(--muted); font-size: var(--fs-micro); }
+  .gr-table td:nth-child(2)::before { content: '生效'; color: var(--muted); font-size: var(--fs-micro); }
+  .gr-table td:nth-child(3)::before { content: '方向'; color: var(--muted); font-size: var(--fs-micro); }
+  .gr-table td:nth-child(4)::before { content: '卓越'; color: var(--muted); font-size: var(--fs-micro); }
+  .gr-table td:nth-child(5)::before { content: '优秀'; color: var(--muted); font-size: var(--fs-micro); }
+  .gr-table td:nth-child(6)::before { content: '达标'; color: var(--muted); font-size: var(--fs-micro); }
+  .gr-table td:nth-child(7)::before { content: '单位'; color: var(--muted); font-size: var(--fs-micro); }
 }

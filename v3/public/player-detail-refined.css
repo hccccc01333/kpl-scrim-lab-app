@@ -1,0 +1,585 @@
+/* 选手详情页 · 白色轻量版视觉层（2026-11-26）
+   只作用于 #playerdetail 渲染的 [data-pl-page="solo"]，不污染其他页面。
+   设计目标：白底画布 + 白色身份报头 + 单一钴蓝强调色；用细线、留白和
+   少量浅色底建立层级，去掉整块深墨，教练长时间看表格也不累眼。
+
+   注意：通用视觉层用 `#content h1 { color: ... !important }` 锁死了标题色，
+   所以这里凡是要压过它的颜色规则都带 `#content` 前缀（ID 选择器优先）。 */
+[data-pl-page="solo"] {
+  --pd-canvas: #f6f7fa;
+  --pd-surface: #ffffff;
+  --pd-surface-soft: #f8fafc;
+  --pd-ink: #1d2430;
+  --pd-muted: #5a6474;
+  --pd-quiet: #8892a2;
+  --pd-line: #e3e8f0;
+  --pd-line-strong: #d3dae6;
+  --pd-accent: #3157d5;
+  --pd-accent-hover: #2446b8;
+  --pd-accent-soft: #eef2ff;
+  --pd-ok: #0e7a58;
+  --pd-ok-soft: #e8f6f0;
+  --pd-warn: #9a5b00;
+  --pd-warn-soft: #fff3e2;
+  --pd-radius: 12px;
+  background: var(--pd-canvas);
+  color: var(--pd-ink);
+  font-size: 14px;
+}
+
+[data-pl-page="solo"] .hero-detail-page { background: transparent; }
+
+/* ── 身份报头：白卡 + 一条淡蓝顶边，头像/数值承担唯一强调 ────────────── */
+#content [data-pl-page="solo"] .hero-masthead {
+  position: relative;
+  padding: 25px 28px !important;
+  border: 1px solid var(--pd-line) !important;
+  border-radius: 16px !important;
+  background: var(--pd-surface) !important;
+  box-shadow: 0 4px 18px rgb(28 40 70 / 5%) !important;
+  color: var(--pd-ink);
+  overflow: hidden;
+}
+#content [data-pl-page="solo"] .hero-masthead::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  block-size: 3px;
+  background: linear-gradient(90deg, var(--pd-accent), var(--pd-accent-soft) 52%, transparent);
+  pointer-events: none;
+}
+#content [data-pl-page="solo"] .hero-masthead .page-intro {
+  gap: 20px !important;
+  align-items: flex-start;
+}
+#content [data-pl-page="solo"] .pls-back-row .hero-back,
+#content [data-pl-page="solo"] .hero-back {
+  border: 1px solid var(--pd-line) !important;
+  background: var(--pd-surface) !important;
+  color: var(--pd-muted) !important;
+  font-size: 12px !important;
+}
+#content [data-pl-page="solo"] .hero-back:hover {
+  border-color: var(--pd-accent) !important;
+  color: var(--pd-accent) !important;
+}
+#content [data-pl-page="solo"] .hero-back.is-quiet {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--pd-quiet) !important;
+}
+#content [data-pl-page="solo"] .pls-id { gap: 16px; align-items: center; }
+#content [data-pl-page="solo"] .pls-id-copy { min-inline-size: 0; }
+#content [data-pl-page="solo"] .pls-ava {
+  inline-size: 66px; block-size: 66px;
+  border: 0 !important; border-radius: 14px !important;
+  background: var(--pd-accent) !important;
+  box-shadow: 0 0 0 5px var(--pd-accent-soft);
+  color: #fff !important;
+  font-size: 29px !important;
+}
+#content [data-pl-page="solo"] .pls-id h1 {
+  margin: 0;
+  padding-block-end: 0 !important;
+  background: none !important;
+  color: var(--pd-ink) !important;
+  font-size: clamp(30px, 3vw, 40px) !important;
+  font-weight: 760;
+  line-height: 1.12;
+  letter-spacing: -.035em;
+}
+#content [data-pl-page="solo"] .pls-meta { gap: 6px; margin-block-start: 10px; }
+#content [data-pl-page="solo"] .pls-chip {
+  padding: 4px 9px;
+  border: 1px solid var(--pd-line) !important;
+  border-radius: 999px;
+  background: var(--pd-surface-soft) !important;
+  color: var(--pd-muted) !important;
+  font-size: 11.5px !important;
+}
+#content [data-pl-page="solo"] .pls-chip.is-role {
+  border-color: var(--pd-accent) !important;
+  background: var(--pd-accent) !important;
+  color: #fff !important;
+}
+#content [data-pl-page="solo"] .pls-chip.is-ok {
+  border-color: #bfe4d4 !important;
+  background: var(--pd-ok-soft) !important;
+  color: var(--pd-ok) !important;
+}
+#content [data-pl-page="solo"] .pls-chip.is-warn {
+  border-color: #f0d6ad !important;
+  background: var(--pd-warn-soft) !important;
+  color: var(--pd-warn) !important;
+}
+
+#content [data-pl-page="solo"] .intro-actions {
+  gap: 7px !important;
+  align-items: center;
+  justify-content: flex-end;
+}
+#content [data-pl-page="solo"] .intro-actions .control,
+#content [data-pl-page="solo"] .pdx-empty .control {
+  min-height: 34px !important; height: 34px !important;
+  padding-inline: 11px !important;
+  border: 1px solid var(--pd-line-strong) !important;
+  border-radius: 8px !important;
+  background: var(--pd-surface) !important;
+  box-shadow: none !important;
+  color: var(--pd-ink) !important;
+  font-size: 11.5px !important;
+  transform: none !important;
+}
+#content [data-pl-page="solo"] .intro-actions .control:hover,
+#content [data-pl-page="solo"] .pdx-empty .control:hover {
+  border-color: var(--pd-accent) !important;
+  color: var(--pd-accent) !important;
+  background: var(--pd-accent-soft) !important;
+  transform: none !important;
+}
+#content [data-pl-page="solo"] .intro-actions .control.is-primary {
+  border-color: var(--pd-accent) !important;
+  background: var(--pd-accent) !important;
+  color: #fff !important;
+  font-weight: 700;
+}
+#content [data-pl-page="solo"] .intro-actions .control.is-primary:hover {
+  border-color: var(--pd-accent-hover) !important;
+  background: var(--pd-accent-hover) !important;
+  color: #fff !important;
+}
+#content [data-pl-page="solo"] .intro-actions .control.is-primary.is-on {
+  border-color: var(--pd-accent) !important;
+  background: var(--pd-accent-soft) !important;
+  color: var(--pd-accent) !important;
+}
+#content [data-pl-page="solo"] .pv-pos {
+  padding: 5px 8px !important;
+  border: 1px solid var(--pd-line) !important;
+  background: var(--pd-surface-soft) !important;
+  color: var(--pd-muted) !important;
+  font-size: 11px !important;
+}
+#content [data-pl-page="solo"] .pv-sel.is-head .pv-sel-label { color: var(--pd-muted) !important; }
+#content [data-pl-page="solo"] .pv-sel.is-head select {
+  min-inline-size: 138px;
+  border-color: var(--pd-line-strong) !important;
+  background: var(--pd-surface) !important;
+  color: var(--pd-ink) !important;
+  font-size: 11.5px !important;
+}
+
+/* ── KPI：六个读数一条数据带，白底细分隔线，关键读数用钴蓝 ───────────── */
+#content [data-pl-page="solo"] .hero-kpi {
+  display: grid !important;
+  grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+  gap: 0 !important;
+  margin: 0 0 28px !important;
+  padding: 0 !important;
+  border: 1px solid var(--pd-line) !important;
+  border-radius: var(--pd-radius) !important;
+  background: var(--pd-surface) !important;
+  box-shadow: 0 3px 12px rgb(28 40 70 / 4%) !important;
+  overflow: hidden !important;
+}
+#content [data-pl-page="solo"] .hero-kpi-cell {
+  min-inline-size: 0;
+  min-block-size: 108px;
+  padding: 17px 20px !important;
+  border: 0 !important;
+  border-inline-end: 1px solid var(--pd-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+#content [data-pl-page="solo"] .hero-kpi-cell:nth-child(6n) { border-inline-end: 0 !important; }
+#content [data-pl-page="solo"] .hero-kpi-cell.is-key { background: transparent !important; }
+#content [data-pl-page="solo"] .hero-kpi-cell span {
+  color: var(--pd-quiet) !important;
+  font-size: 10.5px !important;
+  font-weight: 650;
+  letter-spacing: .08em;
+}
+#content [data-pl-page="solo"] .hero-kpi-cell strong {
+  margin-block-start: 9px !important;
+  color: var(--pd-ink) !important;
+  font-size: clamp(23px, 2.1vw, 29px) !important;
+  font-weight: 720;
+  line-height: 1.1;
+  letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums;
+}
+#content [data-pl-page="solo"] .hero-kpi-cell.is-key strong { color: var(--pd-accent) !important; }
+#content [data-pl-page="solo"] .hero-kpi-cell p {
+  margin-block-start: 7px !important;
+  color: var(--pd-muted) !important;
+  font-size: 11px !important;
+  line-height: 1.5;
+}
+
+/* ── 模块导航留在页面流；只有切片条吸顶 ─────────────────────────────── */
+[data-pl-page="solo"] .hero-anchor-nav.pdx-nav {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 5px;
+  margin: 0 0 10px; padding: 0 0 8px;
+  border: 0; border-bottom: 1px solid var(--pd-line);
+  background: transparent;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+[data-pl-page="solo"] .hero-anchor-nav.pdx-nav button {
+  min-height: 30px !important; height: 30px !important;
+  padding: 0 10px !important;
+  border: 0 !important; border-radius: 7px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--pd-muted) !important;
+  font-size: 11.5px !important;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-pl-page="solo"] .hero-anchor-nav.pdx-nav button:hover {
+  background: var(--pd-accent-soft) !important;
+  color: var(--pd-accent) !important;
+}
+[data-pl-page="solo"] .hero-anchor-nav.pdx-nav .pv-keyhint { display: none; }
+[data-pl-page="solo"] .hero-anchor-nav.pdx-nav .pv-reset {
+  margin-inline-start: auto;
+  border: 1px solid var(--pd-line) !important;
+  background: var(--pd-surface) !important;
+  color: var(--pd-muted) !important;
+}
+[data-pl-page="solo"] .pdx-dock {
+  z-index: 34;
+  margin: 0 0 30px !important;
+  padding: 0 !important;
+  background: transparent !important;
+}
+[data-pl-page="solo"] .pdx-scope {
+  gap: 8px 16px !important;
+  padding: 11px 13px !important;
+  border: 1px solid var(--pd-line) !important;
+  border-radius: var(--pd-radius) !important;
+  background: var(--pd-surface) !important;
+  box-shadow: none !important;
+}
+[data-pl-page="solo"] .pdx-scope-row { gap: 7px 13px !important; }
+[data-pl-page="solo"] .pdx-scope .pv-sel-label {
+  color: var(--pd-quiet) !important;
+  font-size: 10.5px !important;
+}
+[data-pl-page="solo"] .pdx-scope .pv-sel select {
+  height: 34px !important;
+  border-radius: 8px !important;
+  font-size: 11.5px !important;
+}
+[data-pl-page="solo"] .pdx-scope .pv-sel-box input[type="date"] {
+  height: 34px !important;
+  border-radius: 8px !important;
+  font-size: 11.5px !important;
+}
+[data-pl-page="solo"] .pdx-hit { gap: 4px 12px !important; font-size: 11px !important; }
+[data-pl-page="solo"] .pdx-hit b { font-size: 12.5px !important; }
+
+/* ── 阅读层级：section 只分隔，card 透明，panel 只保留一层框 ──────────── */
+#content [data-pl-page="solo"] .hero-detail-grid > .section {
+  margin: 0 !important;
+  padding: 30px 0 36px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--pd-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#content [data-pl-page="solo"] .hero-detail-grid > .section:last-child { border-bottom: 0 !important; }
+#content [data-pl-page="solo"] .hero-detail-grid .section-heading {
+  gap: 16px; margin: 0 0 20px !important; padding: 0 !important;
+}
+#content [data-pl-page="solo"] .hero-detail-grid .section-heading h2 {
+  margin: 0 !important;
+  color: var(--pd-ink) !important;
+  font-size: 21px !important;
+  font-weight: 720;
+  line-height: 1.25;
+  letter-spacing: -.025em;
+}
+#content [data-pl-page="solo"] .hero-detail-grid .section-heading p {
+  margin: 5px 0 0 !important;
+  color: var(--pd-muted) !important;
+  font-size: 12px !important;
+  line-height: 1.6;
+}
+#content [data-pl-page="solo"] .pdx-cards { gap: 22px; }
+#content [data-pl-page="solo"] .pdx-card.pdx-card {
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+#content [data-pl-page="solo"] .pdx-card-head { gap: 10px; margin: 0 0 14px !important; }
+#content [data-pl-page="solo"] .pdx-no {
+  min-width: 28px; height: 28px; line-height: 28px;
+  border: 0 !important; border-radius: 6px !important;
+  background: var(--pd-accent-soft) !important;
+  color: var(--pd-accent) !important;
+  font-size: 10.5px !important;
+}
+#content [data-pl-page="solo"] .pdx-card h3 {
+  margin: 2px 0 0 !important;
+  color: var(--pd-ink) !important;
+  font-size: 14.5px !important;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+#content [data-pl-page="solo"] .pdx-card-body { color: var(--pd-ink); font-size: 13px; }
+#content [data-pl-page="solo"] .pdx-n {
+  border: 1px solid var(--pd-line) !important;
+  background: var(--pd-surface) !important;
+  color: var(--pd-muted) !important;
+  font-size: 10.5px !important;
+}
+
+#content [data-pl-page="solo"] .pv-grid { gap: 14px; }
+#content [data-pl-page="solo"] .pv-panel.pv-panel {
+  padding: 16px !important;
+  border: 1px solid var(--pd-line) !important;
+  border-radius: var(--pd-radius) !important;
+  background: var(--pd-surface) !important;
+  box-shadow: none !important;
+}
+#content [data-pl-page="solo"] .pv-panel-head { margin-bottom: 9px !important; }
+#content [data-pl-page="solo"] .pv-panel-head h4 {
+  color: var(--pd-ink) !important;
+  font-size: 11.5px !important;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+#content [data-pl-page="solo"] .pv-panel-right { color: var(--pd-quiet) !important; font-size: 10.5px !important; }
+#content [data-pl-page="solo"] .pv-panel-foot {
+  border-top: 1px solid var(--pd-line) !important;
+  color: var(--pd-quiet) !important;
+  font-size: 10.5px !important;
+}
+
+#content [data-pl-page="solo"] .pm-grid { gap: 10px; }
+#content [data-pl-page="solo"] .pm-metric {
+  gap: 6px; min-width: 0; padding: 12px 0 !important;
+  border: 0 !important; border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: none !important;
+}
+#content [data-pl-page="solo"] .pm-metric:hover {
+  border: 0 !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+#content [data-pl-page="solo"] .pm-metric-label { color: var(--pd-muted) !important; font-size: 12px !important; }
+#content [data-pl-page="solo"] .pm-metric-value {
+  color: var(--pd-ink) !important;
+  font-size: clamp(25px, 2.2vw, 32px) !important;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+#content [data-pl-page="solo"] .pm-metric-mid { color: var(--pd-quiet) !important; font-size: 11.5px !important; }
+#content [data-pl-page="solo"] .pm-metric-mid b { color: var(--pd-ink) !important; }
+#content [data-pl-page="solo"] .pm-metric-trend { border-top: 1px solid var(--pd-line) !important; }
+#content [data-pl-page="solo"] .pm-verdict { font-size: 10.5px !important; }
+
+/* 标准线用钴蓝虚线，颜色只服务于「当前选中 / 关键读数」 */
+#content [data-pl-page="solo"] .pv-svg .pv-ref.is-standard {
+  stroke: var(--pd-accent) !important;
+  stroke-width: 2 !important;
+  stroke-dasharray: 6 5;
+}
+#content [data-pl-page="solo"] .pv-svg .pv-ref.is-standard + .pv-ref-label {
+  fill: var(--pd-accent) !important;
+  stroke: var(--pd-surface) !important;
+}
+#content [data-pl-page="solo"] .pv-rules-wrap {
+  border: 1px solid var(--pd-line) !important;
+  border-radius: 10px !important;
+  background: var(--pd-surface) !important;
+}
+#content [data-pl-page="solo"] .pv-rules-table { font-size: 12.5px !important; }
+#content [data-pl-page="solo"] .pv-rules-table caption { padding: 10px 12px !important; color: var(--pd-ink) !important; }
+#content [data-pl-page="solo"] .pv-rules-table th,
+#content [data-pl-page="solo"] .pv-rules-table td {
+  padding: 8px 10px !important;
+  border-top: 1px solid var(--pd-line) !important;
+}
+#content [data-pl-page="solo"] .pv-rules-table td.is-mine {
+  background: var(--pd-accent-soft) !important;
+  color: var(--pd-accent) !important;
+}
+
+/* ── 空态 / 未找到：白卡提示 + 可点的下一步，避免用户卡在死胡同 ───────── */
+#content [data-pl-page="solo"] .pdx-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin: 8px 0 46px;
+  padding: 46px 28px 40px;
+  border: 1px solid var(--pd-line);
+  border-radius: 16px;
+  background: var(--pd-surface);
+  box-shadow: 0 4px 18px rgb(28 40 70 / 4%);
+  text-align: center;
+}
+#content [data-pl-page="solo"] .pdx-empty-icon {
+  display: grid; place-items: center;
+  inline-size: 62px; block-size: 62px;
+  border-radius: 18px;
+  background: var(--pd-accent-soft);
+  color: var(--pd-accent);
+  font-size: 24px;
+  font-weight: 760;
+  letter-spacing: -.04em;
+}
+#content [data-pl-page="solo"] .pdx-empty-icon :is(svg, img) { inline-size: 30px; block-size: 30px; }
+#content [data-pl-page="solo"] .pdx-empty h2 {
+  margin: 0;
+  padding-block-end: 0 !important;
+  background: none !important;
+  color: var(--pd-ink) !important;
+  font-size: 22px !important;
+  font-weight: 720;
+  line-height: 1.25;
+}
+#content [data-pl-page="solo"] .pdx-empty p {
+  max-inline-size: 58ch;
+  margin: 0;
+  color: var(--pd-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.7;
+}
+#content [data-pl-page="solo"] .pdx-empty code {
+  padding: 2px 7px;
+  border: 1px solid var(--pd-line);
+  border-radius: 6px;
+  background: var(--pd-surface-soft);
+  color: var(--pd-accent);
+  font-size: 12px;
+}
+#content [data-pl-page="solo"] .pdx-empty-actions {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+  margin-block-start: 6px;
+}
+#content [data-pl-page="solo"] .pdx-empty-peers {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+  margin-block-start: 12px;
+  padding-block-start: 18px;
+  border-top: 1px solid var(--pd-line);
+  inline-size: min(100%, 620px);
+}
+#content [data-pl-page="solo"] .pdx-empty-peers > span {
+  align-self: center;
+  color: var(--pd-quiet) !important;
+  font-size: 11.5px !important;
+}
+#content [data-pl-page="solo"] .pdx-empty-peer {
+  padding: 5px 10px;
+  border: 1px solid var(--pd-line) !important;
+  border-radius: 999px;
+  background: var(--pd-surface-soft) !important;
+  color: var(--pd-muted) !important;
+  font-size: 11.5px !important;
+  text-decoration: none;
+}
+#content [data-pl-page="solo"] .pdx-empty-peer:hover {
+  border-color: var(--pd-accent) !important;
+  background: var(--pd-accent-soft) !important;
+  color: var(--pd-accent) !important;
+}
+
+#content [data-pl-page="solo"] .pv-top {
+  border: 1px solid var(--pd-line) !important;
+  background: var(--pd-surface) !important;
+  box-shadow: 0 2px 8px rgb(28 40 70 / 8%) !important;
+  color: var(--pd-accent) !important;
+}
+#content [data-pl-page="solo"] .pv-top:hover {
+  border-color: var(--pd-accent) !important;
+  background: var(--pd-accent-soft) !important;
+}
+
+/* ── 响应式：KPI 与面板逐级 collapse，不靠整体缩小 SVG 伪装适配 ──────── */
+@media (max-width: 1100px) {
+  #content [data-pl-page="solo"] .hero-masthead { padding: 22px !important; }
+  #content [data-pl-page="solo"] .hero-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell:nth-child(6n) { border-inline-end: 1px solid var(--pd-line) !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell:nth-child(3n) { border-inline-end: 0 !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell:nth-child(n+4) { border-top: 1px solid var(--pd-line) !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell { min-block-size: 98px; }
+}
+
+@media (max-width: 900px) {
+  #content [data-pl-page="solo"] .pv-panel.pv-panel { grid-column: 1 / -1 !important; }
+  #content [data-pl-page="solo"] .hero-detail-grid > .section { padding-block: 24px 30px !important; }
+  #content [data-pl-page="solo"] .hero-detail-grid .section-heading h2 { font-size: 19px !important; }
+}
+
+@media (max-width: 720px) {
+  #content [data-pl-page="solo"] .hero-masthead { padding: 19px !important; border-radius: 13px !important; }
+  #content [data-pl-page="solo"] .pls-ava { inline-size: 54px; block-size: 54px; border-radius: 11px !important; font-size: 24px !important; }
+  #content [data-pl-page="solo"] .pls-id h1 { font-size: 30px !important; }
+  #content [data-pl-page="solo"] .intro-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-inline-start: 0 !important;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  #content [data-pl-page="solo"] .intro-actions .control { flex: none; }
+  #content [data-pl-page="solo"] .hero-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-bottom: 22px !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell:nth-child(3n) { border-inline-end: 1px solid var(--pd-line) !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell:nth-child(2n) { border-inline-end: 0 !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell:nth-child(n+3) { border-top: 1px solid var(--pd-line) !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell { min-block-size: 92px; padding: 14px !important; }
+  #content [data-pl-page="solo"] .hero-kpi-cell strong { font-size: 22px !important; }
+  #content [data-pl-page="solo"] .pdx-dock { margin-bottom: 22px !important; }
+  #content [data-pl-page="solo"] .pdx-scope { padding: 9px 10px !important; }
+  #content [data-pl-page="solo"] .pdx-scope-row { flex-wrap: nowrap !important; overflow-x: auto; padding-bottom: 3px; }
+  #content [data-pl-page="solo"] .pdx-hit { width: 100%; margin-inline-start: 0; }
+  #content [data-pl-page="solo"] .pv-panel.pv-panel { padding: 13px !important; border-radius: 10px !important; }
+  #content [data-pl-page="solo"] .pm-grid { grid-template-columns: minmax(0, 1fr) !important; }
+  #content [data-pl-page="solo"] .pm-metric + .pm-metric { border-top: 1px solid var(--pd-line) !important; }
+  #content [data-pl-page="solo"] .pv-split,
+  #content [data-pl-page="solo"] .pv-split.is-radar { grid-template-columns: minmax(0, 1fr) !important; }
+  #content [data-pl-page="solo"] .pdx-empty { padding: 34px 18px 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #content [data-pl-page="solo"] .hero-anchor-nav button,
+  #content [data-pl-page="solo"] .intro-actions .control,
+  #content [data-pl-page="solo"] .pdx-empty .control,
+  #content [data-pl-page="solo"] .pm-metric { transition: none !important; }
+}
+
+/* 焦点可见：白底上用钴蓝描边，不依赖浏览器默认黑色轮廓 */
+#content [data-pl-page="solo"] :is(a, button, select, input):focus-visible {
+  outline: 2px solid var(--pd-accent);
+  outline-offset: 2px;
+}
+
+/* 强制颜色模式（Windows 高对比）：保留可用边界，别让细线消失 */
+@media (forced-colors: active) {
+  #content [data-pl-page="solo"] .hero-masthead,
+  #content [data-pl-page="solo"] .hero-kpi,
+  #content [data-pl-page="solo"] .pdx-scope,
+  #content [data-pl-page="solo"] .pv-panel.pv-panel,
+  #content [data-pl-page="solo"] .pdx-empty {
+    border: 1px solid CanvasText !important;
+  }
+}
+
+@media print {
+  [data-pl-page="solo"] { background: #fff; }
+  [data-pl-page="solo"] .hero-masthead { background: #fff !important; color: #000 !important; border-color: #bbb !important; }
+  [data-pl-page="solo"] .hero-masthead::before { display: none; }
+  #content [data-pl-page="solo"] .pls-id h1,
+  [data-pl-page="solo"] .pls-chip,
+  [data-pl-page="solo"] .intro-actions .control { color: #000 !important; }
+  [data-pl-page="solo"] .hero-kpi,
+  #content [data-pl-page="solo"] .pv-panel.pv-panel,
+  #content [data-pl-page="solo"] .pdx-empty { background: #fff !important; }
+}

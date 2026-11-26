@@ -7,6 +7,7 @@ import pickle
 import os
 import re
 import sqlite3
+import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ import metric_service
 import team_clusters
 import vocab
 import hero_external_stats
+import workspace_store
 from camp_time import camp_times
 
 from studio_analysis import (DIMENSIONS, METHODS, METRICS, deduplicate, extract_rows,
@@ -150,6 +152,159 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     # 版本 / 规则 / 赛制 / 训练组统一走词表：写库前折成规范值，新值自动登记。
     vocab_dir = Path(db_path).parent
 
+    def _event_ws():
+        return workspace_store.Workspace(db_path).ensure_schema()
+
+    # ------------------------------- 统一采集上下文与双匹配池
+    def _camp_dir():
+        return Path(db_path).parent / 'camp_details'
+
+    @router.get('/workspace/capture-batches')
+    def list_capture_batches():
+        return {'batches': _event_ws().list_capture_batches()}
+
+    @router.post('/workspace/capture-batches')
+    def create_capture_batch(value: dict):
+        try:
+            return _event_ws().create_capture_batch(
+                competition_id=value.get('competitionId'),
+                own_team_id=value.get('ownTeamId'),
+                opponent_team_id=value.get('opponentTeamId'),
+                match_type=value.get('matchType') or 'training',
+                camp_user_id=value.get('campUserId'),
+                notes=value.get('notes') or '')
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.get('/workspace/capture-batches/{batch_id}')
+    def get_capture_batch(batch_id: str):
+        batch = _event_ws().get_capture_batch(batch_id)
+        if batch is None:
+            raise HTTPException(404, '采集批次不存在')
+        return batch
+
+    @router.post('/workspace/capture-batches/{batch_id}/analyze')
+    def analyze_capture_batch(batch_id: str, value: dict | None = None):
+        import capture_context
+        batch = _event_ws().get_capture_batch(batch_id)
+        if batch is None:
+            raise HTTPException(404, '采集批次不存在')
+        value = value or {}
+        try:
+            return capture_context.analyze(
+                db_path, _camp_dir(), batch=batch,
+                entries=value.get('entries'), at_date=value.get('atDate'))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.post('/workspace/capture-batches/{batch_id}/commit')
+    def commit_capture_batch(batch_id: str, value: dict):
+        import capture_context
+        try:
+            return capture_context.commit(db_path, batch_id, value.get('analysis'))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.post('/workspace/capture-batches/{batch_id}/series')
+    def capture_batch_series(batch_id: str, value: dict):
+        import capture_context
+        try:
+            return capture_context.group_series(
+                db_path, batch_id, value.get('matchKeys') or [],
+                best_of=value.get('bestOf') or 3, series_id=value.get('seriesId'))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.get('/workspace/nickname-pool')
+    def nickname_pool(side: str = '', playerId: str = '', nickname: str = ''):
+        return {'rows': _event_ws().nickname_pool(
+            side=side or None, player_id=playerId or None, nickname=nickname or None)}
+
+    # ------------------------------- 4.0 Alpha2 时间化身份关系（本队/对手）
+    @router.get('/workspace/identity/memberships')
+    def list_memberships(playerId: str = '', teamId: str = '', atDate: str = '',
+                         includeUndone: bool = False):
+        return {'memberships': _event_ws().list_memberships(
+            player_id=playerId or None, team_id=teamId or None,
+            at_date=atDate or None, include_undone=includeUndone)}
+
+    @router.post('/workspace/identity/memberships')
+    def add_membership(value: dict):
+        try:
+            return _event_ws().add_membership(
+                value.get('playerId'), value.get('teamId'),
+                valid_from=value.get('validFrom') or value.get('startDate'),
+                valid_to=value.get('validTo') or value.get('endDate'),
+                relation_type=value.get('relationType') or 'formal',
+                roster_role=value.get('rosterRole') or 'starter',
+                notes=value.get('notes') or '')
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.post('/workspace/identity/memberships/{membership_id}/undo')
+    def undo_membership(membership_id: str):
+        try:
+            return _event_ws().undo_membership(membership_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.get('/workspace/identity/account-links')
+    def list_account_links(accountId: str = '', playerId: str = '', atDate: str = '',
+                           gameMatchKey: str = '', includeUndone: bool = False):
+        return {'links': _event_ws().list_account_links(
+            account_id=accountId or None, player_id=playerId or None,
+            at_date=atDate or None, game_match_key=gameMatchKey or None,
+            include_undone=includeUndone)}
+
+    @router.post('/workspace/identity/account-links')
+    def add_account_link(value: dict):
+        try:
+            return _event_ws().add_account_link(
+                value.get('accountId'), value.get('playerId'),
+                valid_from=value.get('validFrom') or value.get('startDate'),
+                valid_to=value.get('validTo') or value.get('endDate'),
+                game_match_key=value.get('gameMatchKey'),
+                side=value.get('side'))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.post('/workspace/identity/account-links/{link_id}/undo')
+    def undo_account_link(link_id: str):
+        try:
+            return _event_ws().undo_account_link(link_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.get('/workspace/identity/resolve')
+    def resolve_identity(accountId: str = '', atDate: str = '', gameMatchKey: str = ''):
+        return _event_ws().resolve_player_at(
+            accountId, at_date=atDate or None, game_match_key=gameMatchKey or None) or {}
+
+    @router.post('/workspace/identity/players/roles')
+    def batch_role_players(value: dict):
+        try:
+            return _event_ws().batch_create_role_players(
+                value.get('teamId'), prefix=value.get('prefix'),
+                valid_from=value.get('validFrom'),
+                relation_type=value.get('relationType') or 'formal')
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.post('/workspace/identity/players/merge')
+    def merge_players(value: dict):
+        try:
+            return _event_ws().merge_players(
+                value.get('fromPlayerId'), value.get('toPlayerId'))
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
+    @router.post('/workspace/identity/players/merge/{merge_id}/undo')
+    def undo_merge(merge_id: str):
+        try:
+            return _event_ws().undo_merge(merge_id)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+
     @router.get('/bp/{key}')
     def get_bp(key: str):
         match = repository().match_detail(key)
@@ -245,13 +400,27 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 source_stamp(imports_dir), source_stamp(results_db))
 
     def invalidate_workspace_cache():
-        """战队改名/合并后：分析快照、结果缓存与队名解析缓存一起失效。"""
+        """战队改名/删除/匹配保存后：所有读缓存一起失效。
+
+        以前这里只清 repository/result/opponent_identity，v3 的 _players_cache
+        （60 秒）和选手档案看板缓存仍然吐旧名字——用户看到的就是「改名不联动」、
+        「删了战队还有档案」。写路径必须一次清干净。
+        """
         repository_cache['value'] = None
         result_cache.clear()
         try:
             import opponent_identity
             opponent_identity.clear_cache()
         except ImportError:
+            pass
+        try:
+            v3_module = sys.modules.get('kpl_v3_app')
+            if v3_module:
+                if hasattr(v3_module, 'invalidate_players_cache'):
+                    v3_module.invalidate_players_cache()
+                if hasattr(v3_module, 'invalidate_snapshot'):
+                    v3_module.invalidate_snapshot()
+        except Exception:
             pass
 
     def cached(key, builder):
@@ -553,9 +722,14 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 settings['staff'] = staff
             connection.execute('UPDATE settings SET body=? WHERE id=1',
                                (json.dumps(settings, ensure_ascii=False),))
+        # 本队队名落战队主数据（战队池的数据源），而不是只躺在 settings JSON 里。
+        import identity_service
+        own_team = identity_service.sync_own_team(db_path, name=settings.get('teamName') or '',
+                                                  coach=settings.get('coach') or '', actor='coach')
+        invalidate_workspace_cache()
         repository_cache['value'] = None
         result_cache.clear()
-        return {'ok': True, 'teamName': settings.get('teamName'),
+        return {'ok': True, 'teamId': own_team['id'], 'teamName': settings.get('teamName'),
                 'coach': settings.get('coach', ''), 'season': settings.get('season', ''),
                 'league': settings.get('league', ''), 'staff': settings.get('staff', []),
                 'updatedAt': settings.get('updatedAt', '')}
@@ -1345,7 +1519,10 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     @router.get('/workspace/teams')
     def wb_teams(q: str = '', include_archived: bool = False):
         ws = workspace()
-        return {'teams': ws.search_teams(q) if q else ws.list_teams(include_archived=include_archived)}
+        teams = ws.search_teams(q) if q else ws.list_teams(include_archived=include_archived)
+        # 本队战队也在 teams 主数据里（对局要引用它），但对方战队页不能把它
+        # 当对手显示、更不能给它删除按钮。把稳定 ID 一并交给前端做区分。
+        return {'teams': teams, 'ownTeamId': ws.own_team_id()}
 
     @router.post('/workspace/teams')
     async def wb_save_team(request: Request):
@@ -1361,6 +1538,17 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             raise HTTPException(400, str(error))
         invalidate_workspace_cache()
         return {'ok': True, 'id': saved['id']}
+
+    @router.post('/workspace/teams/delete')
+    async def wb_delete_team(request: Request):
+        payload = await request.json()
+        try:
+            result = workspace().delete_team(payload.get('id'))
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        # 以前这里漏调：删队后 30~60 秒内分析页/档案页仍能读到已归档战队。
+        invalidate_workspace_cache()
+        return result
 
     @router.post('/workspace/teams/merge')
     async def wb_merge_team(request: Request):
@@ -1390,6 +1578,12 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     async def wb_save_player(request: Request):
         payload = await request.json()
         import identity_service
+        game_id = str(payload.get('campUserId') or '').strip()
+        if game_id:
+            for existing in workspace().list_players():
+                if str(existing.get('camp_user_id') or '').strip() == game_id \
+                        and str(existing.get('id') or '') != str(payload.get('id') or ''):
+                    raise HTTPException(400, f'选手 ID「{game_id}」已存在，不能重复')
         try:
             saved = identity_service.save_player(
                 db_path, player_id=payload.get('id'), name=payload.get('name') or '',
@@ -1786,18 +1980,62 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             saved['orderPending'] = bp['orderPending']
         return saved
 
-    # ---- 赛事归集与双时间口径（新增端点，均只读；literal 路由须先于 /{competition_id}）----
+    # ---- 归档纠错：拉错的局先排除、再可撤销（记录保留，不物理删除）----
+    @router.get('/workspace/matches/excluded')
+    def wb_excluded_matches():
+        return {'count': len(workspace().excluded_matches()), 'matches': workspace().excluded_matches()}
+
+    @router.post('/workspace/matches/{match_key:path}/exclude')
+    async def wb_exclude_match(match_key: str, request: Request):
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+        try:
+            return workspace().exclude_match(match_key, (payload or {}).get('reason', ''))
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    @router.post('/workspace/matches/{match_key:path}/restore')
+    async def wb_restore_match(match_key: str):
+        try:
+            return workspace().restore_match(match_key)
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+
+    # ---- 赛事训练时间与双时间口径（新增端点，均只读；literal 路由须先于 /{competition_id}）----
     @router.get('/workspace/competitions/unfiled-matches')
     def wb_unfiled_training_matches():
-        """未归档训练赛：不在任何赛事归集窗口、也未被手动挂载（已排除试训对局）。"""
+        """未归档训练赛：不在任何赛事训练起止内、也未被手动挂载（已排除试训对局）。"""
         rows = workspace().unfiled_training_matches(limit=None)
         return {'count': len(rows), 'matches': rows}
 
     @router.get('/workspace/competitions/overlaps')
     def wb_competition_overlaps(start: str = '', end: str = '', excludeId: str = ''):
-        """时间窗口重叠检查：只提示、不阻止保存（训练归集窗口 / 正式范围任一重叠即算）。"""
+        """时间窗口重叠检查：只提示、不阻止保存（训练起止 / 正式范围任一重叠即算）。"""
         rows = workspace().overlapping_competitions(start, end, excludeId or None)
         return {'count': len(rows), 'overlaps': rows}
+
+    @router.get('/workspace/data-map')
+    def wb_data_map(competition: str = ''):
+        """赛事数据图谱（只读）：赛事 → 战队池/选手池/对局池的 ID 关联与体检结果。
+
+        给「数据源展示」页用。赛事范围的对局键统一走 Workspace.competition_scope_keys，
+        不在图里另造口径；库结构漂移由 datasource_graph 按 PRAGMA 自行兜底。
+        """
+        def build():
+            import datasource_graph
+            ws = workspace()
+            comps = ws.list_competitions()
+            cid = str(competition or '')
+            if cid and not any(str(c.get('id')) == cid for c in comps):
+                raise HTTPException(404, '赛事不存在')
+            if not cid and comps:
+                cid = str(comps[0].get('id') or '')
+            scope = ws.competition_scope_keys(cid) if cid else set()
+            return datasource_graph.build(str(db_path), cid, scope)
+
+        return cached(('data-map', competition, source_stamp(db_path)), build)
 
     @router.get('/workspace/competitions/{competition_id}')
     def wb_competition_detail(competition_id: str):
@@ -1822,7 +2060,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     # ---- 归集查询：训练赛按录入日期 / 正式赛按 formal 范围；改赛事时间后即时重算 ----
     @router.get('/workspace/competitions/{competition_id}/training-matches')
     def wb_competition_training_matches(competition_id: str):
-        """按赛事查训练赛：录入日期落入归集窗口 + 手动挂载补全，试训对局排除。"""
+        """按赛事查训练赛：训练日期落入训练起止 + 手动挂载补全，试训对局排除。"""
         ws = workspace()
         if not ws.get_competition(competition_id):
             raise HTTPException(404, '找不到这场比赛')
@@ -2262,14 +2500,45 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
         英雄行补齐外部口径：KPL 胜率由本地官方赛程缓存自算，国服第十英雄
         战力分与大盘梯度（T0–T4.5）来自 91m 每日抓取；缺数据时前端继续显示
-        「—」，不编造数字。
+        「—」，不编造数字。英雄榜按官方英雄表铺满：本队没用过的英雄也占一行，
+        只带外部口径，训练赛胜率留空；英雄表新增英雄后自动跟着变多。
         """
         result = team_clusters.compare(camp_dir(), team or None)
         for side in ('own', 'enemy'):
             for row in ((result.get('heroes') or {}).get(side) or []):
                 if isinstance(row, dict) and row.get('hero'):
                     row.update(hero_external_stats.hero_fields(row['hero']))
+        own = (result.setdefault('heroes', {})).setdefault('own', [])
+        seen = {str(row.get('hero') or '') for row in own if isinstance(row, dict)}
+        for name in _catalog_hero_names():
+            if name in seen:
+                continue
+            row = {'hero': name, 'games': 0, 'wins': 0, 'winRate': None,
+                   'catalogOnly': True}
+            row.update(hero_external_stats.hero_fields(name))
+            own.append(row)
         return result
+
+    def _catalog_hero_names():
+        """只从本地英雄表缓存读名字，不联网；新增英雄后自动进入英雄榜。"""
+        candidates = [
+            Path(__file__).resolve().parent / 'data' / 'hero_list.json',
+            Path(__file__).resolve().parent / 'resources' / 'builtin' / 'misc' / 'hero_list.json',
+        ]
+        try:
+            from paths import data_root
+            candidates.insert(0, data_root() / 'hero_list.json')
+        except Exception:
+            pass
+        for path in candidates:
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+                names = [str(value).strip() for value in data.values() if str(value).strip()]
+                if names:
+                    return list(dict.fromkeys(names))
+            except (OSError, ValueError, AttributeError):
+                continue
+        return []
 
     def _tag_db():
         """标签 / 笔记共用 results_db；表在首次访问时建，不依赖外部迁移。"""
@@ -2804,6 +3073,12 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         date = str(payload.get('date') or '').strip()
         opponent = str(payload.get('opponent') or '').strip()
         event = str(payload.get('event') or '').strip()
+        # 4.0 Beta：正赛入库补齐赛事归属。competition_id 在此前版本漏定义，
+        # 导致这里的 match_records 登记被 except 静默吞掉；一并修正。
+        competition_id = str(payload.get('competitionId') or '').strip()
+        ws_context = _event_ws()
+        if competition_id and ws_context.get_competition(competition_id) is None:
+            raise HTTPException(400, '所选赛事不存在')
         match_type = 'formal'  # 正式比赛固定口径，不信任前端传值
         try:
             bo = int(payload.get('boFormat') or 0)
@@ -2980,5 +3255,199 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     # =====================================================================
     # [entry-dev] 正式比赛录入 + 赛后笔记（新增区块 END）
     # =====================================================================
+
+    # ------------------------------- 匹配页（游戏名 → 选手ID / 对局 → 战队）
+    @router.get('/matching/rules')
+    def get_matching_rules(side: str = ''):
+        return {'rules': _event_ws().list_matching_rules(side or None)}
+
+    @router.post('/matching/rules')
+    async def save_matching_rule(request: Request):
+        payload = await request.json()
+        try:
+            saved = _event_ws().save_matching_rule(
+                rule_id=payload.get('id'), side=payload.get('side'),
+                nickname=payload.get('nickname'), player_id=payload.get('playerId'),
+                team_id=payload.get('teamId'), scope=payload.get('scope'),
+                enabled=bool(payload.get('enabled', True)), notes=payload.get('notes') or '',
+                actor='coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        # 规则写进 matching_rules 后，选手档案页要立刻按新绑定重新聚合。
+        invalidate_workspace_cache()
+        return {'ok': True, 'rule': saved}
+
+    @router.post('/matching/rules/delete')
+    async def delete_matching_rule(request: Request):
+        payload = await request.json()
+        try:
+            result = _event_ws().delete_matching_rule(payload.get('id'), actor='coach')
+        except ValueError as error:
+            raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
+        return result
+
+    @router.post('/matching/players')
+    def save_matching_players(value: dict):
+        """落「对局 ↔ 游戏名 ↔ 选手ID」：逐局阵容 + 昵称池一起写。
+
+        一个游戏名可以挂同一个选手的多个小号；对面换人时，只把这局实际出现的
+        名字挂到对应选手上。昵称池按 own/enemy 分侧，避免蓝红撞名串人。
+        """
+        rows = value.get('rows')
+        if not isinstance(rows, list) or len(rows) > 1000:
+            raise HTTPException(400, '选手匹配数据格式无效')
+        ws = _event_ws()
+        rosters = {}
+        nicknames = []
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            key = str(raw.get('matchKey') or '').strip()
+            name = str(raw.get('name') or '').strip()
+            if not key or len(key) > 200 or not name or len(name) > 60:
+                continue
+            rosters.setdefault(key, [])
+            player_id = str(raw.get('playerId') or '').strip()
+            if not player_id:
+                continue
+            team_id = str(raw.get('teamId') or '').strip()
+            camp = raw.get('side') if raw.get('side') in ('blue', 'red') else 'blue'
+            role = raw.get('role') if raw.get('role') in ('own', 'enemy') else (
+                'own' if camp == str(raw.get('ownCamp') or 'blue') else 'enemy')
+            try:
+                slot = int(raw.get('slot') or 0)
+            except (TypeError, ValueError):
+                slot = 0
+            rosters[key].append({
+                'teamId': team_id, 'playerId': player_id, 'side': camp,
+                'slot': slot, 'hero': str(raw.get('hero') or '')[:40], 'accountId': None,
+            })
+            nicknames.append({
+                'side': role, 'playerId': player_id, 'nickname': name,
+                'accountId': None, 'matchKey': key,
+                'lane': str(raw.get('position') or '')[:20], 'confidence': 'manual',
+            })
+        for key, entries in rosters.items():
+            ws.upsert_rosters(key, entries)
+        saved = ws.upsert_nickname_entries(nicknames)
+        invalidate_workspace_cache()
+        # 选手档案读 V3 的 players-board 缓存，也要跟着匹配结果一起失效。
+        try:
+            v3_module = sys.modules.get('kpl_v3_app')
+            if v3_module and hasattr(v3_module, 'invalidate_players_cache'):
+                v3_module.invalidate_players_cache()
+            if v3_module and hasattr(v3_module, 'invalidate_snapshot'):
+                v3_module.invalidate_snapshot()
+        except Exception:  # noqa: BLE001 - 刷新失败不影响保存结果
+            pass
+        return {'ok': True, 'matches': len(rosters), 'nicknames': saved}
+
+    @router.post('/matching/teams')
+    def save_matching_teams(value: dict):
+        """落「对局 ↔ 对手战队 / 我方阵营」：只改关系列与覆盖层，不动原始对局。"""
+        rows = value.get('rows')
+        if not isinstance(rows, list) or len(rows) > 1000:
+            raise HTTPException(400, '战队匹配数据格式无效')
+        ws = _event_ws()
+        known = {str(team.get('id') or '') for team in ws.list_teams(include_archived=True)}
+        clean = []
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            key = str(raw.get('matchKey') or '').strip()
+            if not key or len(key) > 200:
+                continue
+            own = str(raw.get('ownTeamId') or '').strip()
+            enemy = str(raw.get('enemyTeamId') or '').strip()
+            camp = raw.get('ownCamp') if raw.get('ownCamp') in ('blue', 'red') else ''
+            opponent = str(raw.get('opponentName') or '').strip()[:50]
+            for team_id in (own, enemy):
+                if team_id and team_id not in known:
+                    raise HTTPException(400, f'战队不存在：{team_id}')
+            if own and enemy and own == enemy:
+                raise HTTPException(400, '本队与对手不能是同一支战队')
+            clean.append((key, own, enemy, camp, opponent))
+        if not clean:
+            raise HTTPException(400, '没有要保存的战队匹配')
+        with sqlite3.connect(db_path, timeout=30) as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            for key, own, enemy, camp, opponent in clean:
+                connection.execute(
+                    'UPDATE match_records SET '
+                    'own_team_id=COALESCE(?, own_team_id), '
+                    'enemy_team_id=COALESCE(?, enemy_team_id), '
+                    'enemy_cluster_id=COALESCE(?, enemy_cluster_id), '
+                    'own_side=COALESCE(?, own_side), revision=revision+1 WHERE match_key=?',
+                    (own or None, enemy or None, enemy or None, camp or None, key))
+                row = connection.execute(
+                    'SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+                try:
+                    meta = json.loads(row[0]) if row else {}
+                    if not isinstance(meta, dict):
+                        meta = {}
+                except (ValueError, TypeError):
+                    meta = {}
+                if enemy:
+                    meta['opponentTeamId'] = enemy
+                if opponent:
+                    meta['opponent'] = opponent
+                if own:
+                    meta['ownTeamId'] = own
+                if camp:
+                    meta['ownCamp'] = camp
+                connection.execute(
+                    'INSERT INTO match_meta(match_key,body,updated_at) VALUES(?,?,?) '
+                    'ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at',
+                    (key, json.dumps(meta, ensure_ascii=False), time.time()))
+            connection.commit()
+        invalidate_workspace_cache()
+        try:
+            v3_module = sys.modules.get('kpl_v3_app')
+            if v3_module and hasattr(v3_module, 'invalidate_snapshot'):
+                v3_module.invalidate_snapshot()
+        except Exception:  # noqa: BLE001 - 缓存刷新失败不影响已落库的关系
+            pass
+        return {'ok': True, 'saved': len(clean)}
+
+    @router.post('/matching/archive')
+    def archive_matching_games(value: dict):
+        """匹配保存后归档：只写 match_meta 覆盖层的归档标记，不改原始对局。
+
+        归档的对局在匹配页默认隐藏、锁定为只读；教练点「编辑」才重新开放。
+        """
+        keys = value.get('keys') or []
+        if not isinstance(keys, list) or len(keys) > 200:
+            raise HTTPException(400, '归档数据格式无效')
+        archived = bool(value.get('archived', True))
+        clean = []
+        for raw in keys:
+            key = str(raw or '').strip()
+            if key and len(key) <= 200 and key not in clean:
+                clean.append(key)
+        if not clean:
+            raise HTTPException(400, '没有要归档的对局')
+        with sqlite3.connect(db_path, timeout=30) as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            for key in clean:
+                row = connection.execute(
+                    'SELECT body FROM match_meta WHERE match_key=?', (key,)).fetchone()
+                try:
+                    meta = json.loads(row[0]) if row else {}
+                except (ValueError, TypeError):
+                    meta = {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                if archived:
+                    meta['matchingArchived'] = True
+                else:
+                    meta.pop('matchingArchived', None)
+                connection.execute(
+                    'INSERT INTO match_meta(match_key,body,updated_at) VALUES(?,?,?) '
+                    'ON CONFLICT(match_key) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at',
+                    (key, json.dumps(meta, ensure_ascii=False), time.time()))
+            connection.commit()
+        invalidate_workspace_cache()
+        return {'ok': True, 'saved': len(clean), 'archived': archived}
 
     return router

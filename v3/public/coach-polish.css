@@ -102,3 +102,20 @@
 @media (prefers-reduced-motion: reduce) {
   .pb-dot, .pb-seat, .hc-index button { transition: none; }
 }
+
+/* BP 习惯看板的折叠箭头：platinum-ds.css 给 #content details > summary::before
+   硬塞了 '›'，和自绘的 border 箭头叠成乱码。本文件在它之后无 layer 加载，
+   在这里覆盖掉字符与 transform，只保留一套旋转箭头。 */
+#content details.boh-fold > summary::before {
+  content: "";
+  display: inline-block;
+  inline-size: 7px;
+  block-size: 7px;
+  color: inherit;
+  transform: none;
+  border-inline-end: 2px solid currentColor;
+  border-block-end: 2px solid currentColor;
+  rotate: -45deg;
+  transition: rotate .15s;
+}
+#content details.boh-fold[open] > summary::before { transform: none; rotate: 45deg; }

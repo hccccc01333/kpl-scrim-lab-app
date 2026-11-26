@@ -39,9 +39,12 @@ def compute(workspace, db_path, competition_id=None):
             ([['#series-builder', '去编组']] if any_series else
              [['#capture', '去采集'], ['#series-builder', '去编组']])),
         'cross': route(
-            '跨局分析', confirmed_games >= corpus_need, confirmed_games, corpus_need,
-            '局语料', '继续采集并确认系列赛',
-            [['#capture', '去采集'], ['#series-builder', '去编组']]),
+            # 赛训组口径：确认 1 个系列赛（一局大场）就能进跨场看趋势；
+            # 不再要求攒够 tiers 的 20 局语料，否则录完大场仍显示「未解锁」。
+            '跨场分析', confirmed_series >= 1, confirmed_series, 1,
+            '个已确认系列', '确认 1 个系列赛即可解锁',
+            ([['#series-builder', '去编组']] if any_series else
+             [['#capture', '去采集'], ['#series-builder', '去编组']])),
     }
     if not competition_id:
         for item in routes.values():

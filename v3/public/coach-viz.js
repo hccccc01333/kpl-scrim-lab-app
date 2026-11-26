@@ -5,6 +5,8 @@
    与「通用跨局分析」「英雄对比」同一套语言：白底、大读数、一分析一形态、
    每卡两个可切换视图、悬停读数、点选换教练、无解释小字。 */
 
+import { glyph } from './ui-icons.js';
+
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const es = (v) => String(v == null ? '' : v)
@@ -43,8 +45,8 @@ export function createCoachBoard({ esc = es } = {}) {
     return `<div class="hcv" data-cv-viz="${id}">
       <div class="hcv-stage">
         <div class="hcv-bar"><div class="hcv-switch" role="group" aria-label="切换视图">
-          <button type="button" data-cv-view-btn="a" data-cv-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}">${es(meta[0])}</button>
-          <button type="button" data-cv-view-btn="b" data-cv-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}">${es(meta[1])}</button>
+          <button type="button" data-cv-view-btn="a" data-cv-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}">${glyph('coach', { size: 18 })} ${es(meta[0])}</button>
+          <button type="button" data-cv-view-btn="b" data-cv-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}">${glyph('compare', { size: 18 })} ${es(meta[1])}</button>
         </div></div>
         ${one('a', a)}${one('b', b)}<div class="hcv-tip" hidden></div>
       </div>
@@ -58,13 +60,12 @@ export function createCoachBoard({ esc = es } = {}) {
 
   function card(id, name, title, chart, action, method) {
     return `<article class="hc-card" id="cv-analysis-${id}">
-      <div class="hc-card-top"><span class="hc-kicker">${id} / 教练档案</span></div>
+      <div class="hc-card-top">${glyph('coach', { label: '教练档案', size: 18 })}<span class="hc-kicker">${id} / 教练档案</span></div>
       <div class="hc-card-name">${es(name)}</div>
       <h3 class="hc-card-title">${title}</h3>
       <div class="hc-card-canvas">${chart}</div>
-      <div class="hc-card-foot"><div class="hc-train"><span>怎么用</span><p>${esc(action)}</p></div>
-        <a class="hc-open" href="#bp">BP 概览 →</a></div>
-      <p class="hc-method"><b>怎么算的</b> ${esc(method)}</p>
+      <div class="hc-card-foot"><a class="hc-open" href="#bp">${glyph('bp', { size: 18 })} 打开 BP 概览</a></div>
+      <p class="hc-method">${glyph('book', { size: 16 })} <b>口径</b> ${esc(method)}</p>
     </article>`;
   }
 
@@ -396,8 +397,8 @@ export function createCoachBoard({ esc = es } = {}) {
     }).join('');
     const names = ['带队战绩分析', '边位偏好分析', '禁用策略分析', '英雄池分析', '阵容对位分析', '教练画像分析'];
     return `<div class="page pb-page cv-page">
-      <div class="page-intro pb-intro"><div><h1>教练档案</h1><p>只看执教与 BP：战绩、边位、禁用、英雄池、阵容对位。</p></div>
-        <div class="intro-actions"><button class="control" data-action="refresh">刷新数据</button></div></div>
+      <div class="page-intro pb-intro"><div><h1>${glyph('coach', { label: '教练档案', size: 20 })} 教练档案</h1></div>
+        <div class="intro-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 刷新数据</button></div></div>
       <section class="pb-hero pb-coach-hero">
         <div class="pb-hero-top"><span class="pb-kicker">教练档案 · 对手教练</span>
           <span class="pb-scope">${n0(d.all.length)} 场参照 · ${n0(d.coaches.length)} 位教练</span></div>
@@ -414,17 +415,17 @@ export function createCoachBoard({ esc = es } = {}) {
       </section>
       <div class="pb-toolbar">
         <label class="hc-filter"><span>对手教练</span><select data-cv-coach>${options}</select></label>
-        <span class="hc-toolbar-count">${n0(d.mine.length)} 局执教记录 · 点席位图也能换教练</span>
-        <details class="pb-entry"><summary>录入教练姓名</summary>
+        <span class="hc-toolbar-count">${n0(d.mine.length)} 局执教记录</span>
+        <details class="pb-entry"><summary>${glyph('edit', { size: 18 })} 录入教练姓名</summary>
           <form class="feature-form pb-entry-form" data-feature-form="coach">
             <label>战队<select name="teamId"><option value="">本队</option>${(state.board.teams || []).map((t) => `<option value="${esc(t.id)}"${t.id === state.teamId ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>
             <label>教练姓名<input name="name" maxlength="40" value="${esc(state.roster?.own?.coach || '')}" placeholder="可留空"></label>
-            <button class="primary" type="submit">保存</button>
+            <button class="primary" type="submit">${glyph('pick', { size: 18 })} 保存教练</button>
             <p class="form-status" role="status"></p>
           </form>
         </details>
       </div>
-      <div class="hc-index" role="group" aria-label="分析直达">${names.map((x, i) => `<button type="button" data-cv-jump="0${i + 1}">${es(x)}</button>`).join('')}</div>
+      <div class="hc-index" role="group" aria-label="分析直达">${names.map((x, i) => `<button type="button" data-cv-jump="0${i + 1}">${glyph(['coach', 'bp', 'ban', 'hero-pool', 'compare', 'chart'][i], { size: 18 })} ${es(x)}</button>`).join('')}</div>
       <section class="hc-cards">
         ${card01(d, team, name)}${card02(d, name)}${card03(d, name)}${card04(d, name)}${card05(d, name)}${card06(d, name)}
       </section>
@@ -487,7 +488,7 @@ export function createCoachBoard({ esc = es } = {}) {
     const board = state.board;
     if (!board) return '<div class="page"><div class="loading">正在汇总教练样本…</div></div>';
     const teams = (board.teams || []).filter((t) => (board.games || []).some((g) => g.teamId === t.id));
-    if (!teams.length) return '<div class="page"><div class="empty">当前范围没有可用的教练记录。</div></div>';
+    if (!teams.length) return `<div class="page"><div class="empty">${glyph('coach', { label: '教练记录', size: 20 })} 当前范围没有可用的教练记录。</div></div>`;
     if (!state.teamId || !teams.some((t) => t.id === state.teamId)) state.teamId = teams[0].id;
     const team = teams.find((t) => t.id === state.teamId) || teams[0];
     const name = (state.roster?.teams || []).find((x) => x.id === team.id)?.coach || team.coach || team.name;

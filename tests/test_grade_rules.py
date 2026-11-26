@@ -114,3 +114,51 @@ def test_invalid_doc_rejected(isolated):
            'subjects': {'游走': {'deaths': {'direction': 'sideways', 'thresholds': [1, 2, 3]}}}}
     with pytest.raises(ValueError):
         grade_rules.save(bad)
+
+
+def test_every_subject_lists_all_fields_with_active(isolated):
+    """设置页要列全字段；只有原本配过的默认勾选，其余列出但默认不生效。"""
+    doc = grade_rules.load()
+    for subject in grade_rules.SUBJECT_LABELS:
+        fields = doc['subjects'][subject]
+        assert set(fields) == set(grade_rules.FIELDS)
+        assert all(isinstance(rule['active'], bool) for rule in fields.values())
+        on = {key for key, rule in fields.items() if rule['active']}
+        assert on == set(grade_rules._DEFAULT_SUBJECTS.get(subject) or {})
+
+
+def test_inactive_field_does_not_grade(isolated):
+    doc = grade_rules.load()
+    doc['subjects']['游走']['kills']['active'] = False
+    assert grade_rules.grade('游走', 'kills', 5, doc) is None
+    doc['subjects']['游走']['kills']['active'] = True
+    assert grade_rules.grade('游走', 'kills', 5, doc) is not None
+
+
+def test_old_saved_doc_is_normalized_to_full_fields(isolated):
+    """老存档只有几个字段：读取后自动补齐，老字段默认生效、新字段默认不生效。"""
+    old = {
+        'schema': grade_rules.SCHEMA, 'revision': 2, 'updatedAt': '',
+        'subjects': {'游走': {'participation': {
+            'label': '参团率', 'unit': '%', 'direction': 'up', 'source': 'player',
+            'key': 'participation', 'thresholds': [88, 77, 66],
+        }}},
+    }
+    (isolated / grade_rules.FILENAME).write_text(
+        __import__('json').dumps(old, ensure_ascii=False), encoding='utf-8')
+    doc = grade_rules.load()
+    fields = doc['subjects']['游走']
+    assert set(fields) == set(grade_rules.FIELDS)
+    assert fields['participation']['thresholds'] == [88, 77, 66]
+    assert fields['participation']['active'] is True
+    assert fields['kills']['active'] is False
+    assert grade_rules.grade('游走', 'participation', 80, doc)['level'] == 'good'
+
+
+def test_save_roundtrip_keeps_active_flags(isolated):
+    doc = grade_rules.load()
+    doc['subjects']['对抗路']['vision']['active'] = True
+    saved = grade_rules.save(doc)
+    assert saved['subjects']['对抗路']['vision']['active'] is True
+    assert grade_rules.read_saved()['subjects']['对抗路']['vision']['active'] is True
+

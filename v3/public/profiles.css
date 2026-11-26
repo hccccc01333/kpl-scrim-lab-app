@@ -29,6 +29,52 @@
   flex-wrap: wrap;
 }
 .pf-head .ui-deco-divider-title { inline-size: min(320px, 100%); margin-block: 0 10px; }
+.pf-back { display: inline-block; margin: 0 0 8px; color: var(--muted, #6f6a60); font-size: 12px; text-decoration: none; }
+.pf-back:hover { color: var(--accent, #8a5a12); text-decoration: underline; }
+/* 嵌入「本队」页：作为资料卡下方的第二个区块，不再重复整页外框。 */
+.pf-page-embedded { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line, #e4ded3); }
+.pf-head-embedded { margin-bottom: 14px; }
+.pf-head-embedded h2 { margin: 0 0 4px; font-size: 20px; font-weight: 800; }
+.pf-head-embedded p { margin: 0; color: var(--muted, #6f6a60); font-size: 12px; }
+
+/* 本队选手卡牌：网格 / 长条两种视图，字段变多时不再挤横向表格。 */
+.pf-view-switch { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line, #e4ded3); border-radius: 10px; background: var(--soft, #f7f3ea); }
+.pf-view-switch button { padding: 5px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--muted, #6f6a60); font-size: 12px; cursor: pointer; }
+.pf-view-switch button.is-active { background: var(--paper, #fff); color: var(--accent, #8a5a12); font-weight: 700; box-shadow: 0 1px 3px #00000014; }
+.pf-lane-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 16px; }
+.pf-lane-filter button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--line, #e4ded3); border-radius: 999px; background: var(--paper, #fff); color: var(--muted, #6f6a60); font-size: 12px; cursor: pointer; }
+.pf-lane-filter button span { color: var(--muted, #6f6a60); font-size: 11px; opacity: .8; }
+.pf-lane-filter button:hover { border-color: var(--accent, #8a5a12); }
+.pf-lane-filter button.is-active { border-color: var(--accent, #8a5a12); background: var(--accent, #8a5a12); color: #fff; font-weight: 700; }
+.pf-lane-filter button.is-active span { color: #fff; }
+.pf-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.pf-card-strip-wrap { display: flex; align-items: stretch; gap: 8px; }
+.pf-card-strip { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 2px 2px 12px; scrollbar-width: thin; }
+.pf-card-strip .pf-player-card { flex: 0 0 clamp(280px, 28vw, 380px); scroll-snap-align: start; }
+.pf-strip-arrow { flex: 0 0 34px; border: 1px solid var(--line, #e4ded3); border-radius: 10px; background: var(--paper, #fff); color: var(--accent, #8a5a12); font-size: 22px; cursor: pointer; }
+.pf-strip-arrow:hover { background: var(--soft, #f7f3ea); }
+.pf-player-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; border: 1px solid var(--line, #e4ded3); border-radius: 14px; background: var(--paper, #fff); box-shadow: 0 1px 3px #0000000a; font-size: 14px; }
+.pf-card-head { display: flex; align-items: center; gap: 10px; }
+.pf-card-avatar { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 50%; background: var(--soft, #f7f3ea); color: var(--accent, #8a5a12); font-size: 17px; font-weight: 800; }
+.pf-card-who { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.pf-card-who b { font-size: 15px; }
+.pf-card-who span { color: var(--muted, #6f6a60); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-card-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 0; padding: 10px 0; border-top: 1px solid var(--line, #e4ded3); border-bottom: 1px solid var(--line, #e4ded3); }
+.pf-card-facts div { min-width: 0; }
+.pf-card-facts dt { color: var(--muted, #6f6a60); font-size: 12px; }
+.pf-card-facts dd { margin: 2px 0 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.pf-card-detail > span { display: block; margin-bottom: 5px; color: var(--muted, #6f6a60); font-size: 12px; }
+.pf-card-detail .pf-lanes, .pf-card-detail .pf-heroes { display: flex; flex-wrap: wrap; gap: 6px 10px; min-inline-size: 0; font-size: 14px; }
+.pf-card-detail .pf-lane { display: inline-flex; align-items: center; gap: 4px; margin-inline-end: 0; padding: 3px 8px; border-radius: 999px; background: var(--soft, #f7f3ea); font-size: 15px; font-weight: 700; }
+.pf-card-detail .pf-lane i { font-style: normal; font-size: 13px; font-weight: 500; color: var(--muted, #6f6a60); }
+.pf-lane-icon { width: 20px; height: 20px; flex: 0 0 20px; vertical-align: middle; }
+.pf-card-detail .pf-mini-hero { font-size: 14px; }
+.pf-card-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 4px; }
+.pf-card-actions .control { padding: 5px 9px; font-size: 12px; }
+@media (max-width: 560px) {
+  .pf-card-grid { grid-template-columns: 1fr; }
+  .pf-card-strip .pf-player-card { flex-basis: 86vw; }
+}
 .pf-head h1 {
   margin: 0 0 0.35rem;
   /* 与指标观察页 h1 的 clamp(1.35rem, 2.4vw, 1.9rem) 比例协调 */

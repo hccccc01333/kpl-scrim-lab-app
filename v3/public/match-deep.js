@@ -1,4 +1,5 @@
 import { normalizedCamp, sampleNear } from './match-recap-metrics.js';
+import { glyph } from './ui-icons.js';
 /* 单局深度分析：比赛脉搏 / 总量 / 阶段对比 / 十人面板 / 十人热区 / 对位深区。
    全部为纯函数式构建，数据来自 /api/matches/<key>、/api/replay/<key>、/api/positions/<key>。
    视觉口径：深墨蓝底 + 金（本队）· 青（对手）+ 等宽数字 + 体素方块。 */
@@ -1209,8 +1210,8 @@ export function createMatchDeep(h) {
 
     return `<div class="md-heatwrap" data-md-heat>
       <div class="md-panel-bar">
-        <button type="button" class="md-heat-play" data-heat-play aria-pressed="false">播放</button>
-        <button type="button" class="md-heat-speed" data-heat-speed title="播放速度（快捷键 S 切换）">${heatSpeed}×</button>
+        <button type="button" class="md-heat-play" data-heat-play aria-pressed="false" title="播放 / 暂停（空格）">${glyph('refresh', { size: 18 })} 播放</button>
+        <button type="button" class="md-heat-speed" data-heat-speed title="播放速度（快捷键 S 切换）">${glyph('clock', { size: 18 })} ${heatSpeed}×</button>
         <div class="md-heat-track">
           <input type="range" class="md-heat-range" data-heat-range min="0" max="${Math.round(total)}" step="${step}" value="${Math.round(total)}" aria-label="热区时间轴">
           <div class="md-heat-marks" aria-label="事件刻度">${markHtml}</div>
@@ -1224,8 +1225,7 @@ export function createMatchDeep(h) {
       </div>
       <div class="md-heat-phases" data-heat-phases>
         ${phaseLabel.map((label, i) =>
-          `<button type="button" class="md-heat-phase" data-heat-phase="${[240, 600, Math.round(total)][i]}">${label}</button>`).join('')}
-        <span class="md-heat-keys">空格 播放/暂停 · ← → 前后 10 秒 · 1 / 2 / 3 跳分期 · S 速度</span>
+          `<button type="button" class="md-heat-phase" data-heat-phase="${[240, 600, Math.round(total)][i]}" title="跳到${label}（快捷键 ${i + 1}）">${glyph('clock', { size: 18 })} ${label}</button>`).join('')}
       </div>
       <div class="md-heats md-heats-lane" data-heat-lanes>${laneCards}</div>
       <div class="md-heat-legend">
@@ -1903,7 +1903,7 @@ export function createMatchDeep(h) {
       return `<circle class="md-fight-halo" data-fight-halo cx="${item.layout.x}" cy="${item.layout.y}" r="${(item.layout.r + 4).toFixed(1)}"/>`;
     })();
     const fightTimeline = fightCount ? `<div class="md-fight-timeline">
-      <div class="md-ftl-head"><b>团战时间线</b><span>${fmt(fightCount)} 波 · 点一条选中；地图上叠在一起的点可从这里直接选</span></div>
+      <div class="md-ftl-head"><b>${glyph('matches', { label: '团战时间线', size: 18 })} 团战时间线</b><span>${fmt(fightCount)} 波</span></div>
       <div class="md-ftl">${fightsInfo.map((item) => `<button type="button" class="md-ftl-chip ${resultTone(item.result)}${item.index === fightDefaultIndex ? ' is-on' : ''}" data-fight-chip="${item.index}" title="${esc(`${time(item.t)} · ${item.ownParts.length}v${item.foeParts.length} · 击杀 ${item.ownKills}:${item.foeKills}`)}">
         <span>${time(item.t)}</span><i></i><em>${item.ownKills}:${item.foeKills}</em><small>${num(item.swing) ? diff(item.swing) : '—'}</small>
       </button>`).join('')}</div>
@@ -1911,7 +1911,7 @@ export function createMatchDeep(h) {
     const mapReady = fightsInfo.some((x) => x.center);
     const fightBoard = !fightCount ? '' : `<div class="md-board md-board-fight" data-md-fights>
       <div class="md-board-head">
-        <div class="md-board-title"><b>团战地图</b><span>${fmt(fightCount)} 场团战 · 点地图上的点，看这一波的伤害 / 承伤 / 控制</span></div>
+        <div class="md-board-title"><b>${glyph('heatmap', { label: '团战地图', size: 18 })} 团战地图</b><span>${fmt(fightCount)} 场团战</span></div>
         <p class="md-board-legend">
           <span class="own"><i class="fight"></i>我方赢</span>
           <span class="foe"><i class="fight"></i>对手赢</span>
@@ -1924,7 +1924,6 @@ export function createMatchDeep(h) {
           ${mapReady ? `<svg viewBox="0 0 ${SIZE} ${SIZE}" role="img" aria-label="团战位置分布">${grid}${mapBase}${fightLeaders}${fightMarks}${fightHalo}</svg>`
             : '<div class="md-map-empty">这局没有逐秒位置，团战点无法落图；右侧仍可逐波查看。</div>'}
           <p class="md-board-legend"><span class="own"><i class="fight"></i>我方赢</span><span class="foe"><i class="fight"></i>对手赢</span>${fightsInfo.filter((x) => x.center).length < fightCount ? `<span>仅 ${fightsInfo.filter((x) => x.center).length}/${fightCount} 波有位置</span>` : ''}</p>
-          <p class="md-board-hint">重叠的点已自动错开，细线指回实测位置；同一处压着多波时，连点可轮换。</p>
           <p class="md-board-hint is-hot" data-fight-hint hidden></p>
         </div>
         <div class="md-fight-panel" data-fight-panel>
@@ -1970,8 +1969,8 @@ export function createMatchDeep(h) {
       ...sizeBuckets.filter((b) => b.n).map((b) => `<span class="md-fight-size"><b>${b.label}</b><i>${b.n} 波</i><em>${b.wins} 胜</em></span>`),
       ...phaseFights.filter((b) => b.n).map((b) => `<span class="md-fight-size is-phase"><b>${b.label}</b><i>${b.n} 波</i><em>${b.wins} 胜</em></span>`),
     ].join('');
-    const fightKeys = keyFights.length ? `<div class="md-fight-keys"><b>关键团战</b>${keyFights.map((item) => `<button type="button" data-fight-jump="${item.index}">
-      <span>${time(item.t)}</span>
+    const fightKeys = keyFights.length ? `<div class="md-fight-keys"><b>${glyph('victory', { label: '关键团战', size: 18 })} 关键团战</b>${keyFights.map((item) => `<button type="button" data-fight-jump="${item.index}">
+      ${glyph('matches', { size: 16 })} <span>${time(item.t)}</span>
       <i class="${resultTone(item.result)}">${resultText(item.result)}</i>
       <em>${num(item.swing) ? diff(item.swing) : '—'}</em>
     </button>`).join('')}</div>` : '';
@@ -2111,8 +2110,10 @@ export function createMatchDeep(h) {
       const tone = num(row.impact) ? (row.impact < 0 ? 'down' : 'up') : '';
       const own = row.d.camp === ownCamp;
       return `<button type="button" class="md-dr${own ? ' own' : ' foe'}${i === (defaultDeath ? rows.indexOf(defaultDeath) : -1) ? ' is-on' : ''}" data-death-row="${i}">
+        <span class="md-dr-warn">${glyph('warning', { size: 16 })}</span>
         <span class="md-dr-time">${time(row.d.t)}</span>
-        <span class="md-dr-hero"><i></i>${esc(row.d.hero || '—')}<small>${own ? '我方' : '对方'}</small></span>
+        <span class="md-dr-side ${own ? 'own' : 'foe'}">${own ? '我方' : '对方'}</span>
+        <span class="md-dr-hero">${esc(row.d.hero || '—')}</span>
         <span class="md-dr-impact ${tone}">${num(row.impact) ? diff(row.impact) : '—'}</span>
       </button>`;
     }).join('');
@@ -2129,7 +2130,7 @@ export function createMatchDeep(h) {
     })();
     const deathBoard = `<div class="md-board md-board-death" data-md-deaths>
       <div class="md-board-head">
-        <div class="md-board-title"><b>掉点地图</b><span>${fmt(rows.length)} 次阵亡 · 我方 ${fmt(ownDeaths.length)} / 对手 ${fmt(foeDeaths.length)} · 点圆点或右侧列表固定选中</span></div>
+        <div class="md-board-title"><b>${glyph('heatmap', { label: '掉点地图', size: 18 })} 掉点地图</b><span>${fmt(rows.length)} 次阵亡 · 我方 ${fmt(ownDeaths.length)} / 对手 ${fmt(foeDeaths.length)}</span></div>
         ${picker}
       </div>
       <div class="md-board-body">
@@ -2138,7 +2139,6 @@ export function createMatchDeep(h) {
             : '<div class="md-map-empty">这局没有逐秒位置，掉点无法落图；右侧列表与详情仍可用。</div>'}
           <div class="md-death-tip" data-death-tip hidden></div>
           <p class="md-board-legend"><span class="own"><i class="death"></i>我方阵亡</span><span class="foe"><i class="death"></i>对手阵亡</span><span><i class="size"></i>点越大，经济影响越大</span>${rows.filter((row) => row.hasPos).length < rows.length ? `<span>仅 ${rows.filter((row) => row.hasPos).length}/${rows.length} 次有位置</span>` : ''}</p>
-          <p class="md-board-hint">重叠的点已自动错开，细线指回实测位置；同一处多次掉点可连点轮换，或直接用右侧列表精确选。</p>
         </div>
         <div class="md-board-block md-dr-block">
           <h4>掉点列表 <small>按时间排 · 数值＝本队经济影响（负亏 / 正赚）</small></h4>
@@ -2559,7 +2559,7 @@ export function createMatchDeep(h) {
     const tab = (mode, text) => `<button type="button" role="tab" id="iv-tab-${mode}"
       class="iv-tab${duelMode === mode ? ' is-on' : ''}" aria-selected="${duelMode === mode}"
       aria-controls="iv-view-${mode}" tabindex="${duelMode === mode ? '0' : '-1'}"
-      data-iv-mode-btn="${mode}">${text}</button>`;
+      data-iv-mode-btn="${mode}">${glyph(mode === 'half' ? 'shield' : 'heatmap', { size: 18 })} ${text}</button>`;
     /* 半区优先：初始口径 half（切过深区就尊重上次选择） */
     return `<div class="md-invasion" data-md-duel>
       <div class="iv-bar"><div class="iv-tabs" role="tablist" aria-label="入侵口径">${tab('half', '半区 &gt;50%')}${tab('deep', '深区 &gt;66%')}</div></div>

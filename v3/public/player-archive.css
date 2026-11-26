@@ -329,6 +329,11 @@ progress.arch-claim-track::-moz-progress-bar {
   .arch-bar > .arch-sep { display: none; }
 }
 
+/* 战队筛选：可见 label + 原生 select，键盘与读屏都能直接用 */
+.arch-team-filter { display: inline-flex; flex: none; align-items: center; gap: 8px; }
+.arch-team-filter > span:first-child {
+  color: var(--muted); font: 650 .8125rem/1 var(--font); white-space: nowrap;
+}
 .arch-select { position: relative; display: inline-flex; }
 .arch-select select {
   block-size: 42px; min-inline-size: 120px; padding: 0 30px 0 12px;
@@ -723,7 +728,8 @@ progress.arch-claim-track::-moz-progress-bar {
 /* ── 选手ID 视图 ────────────────────────────────────────────────── */
 .arch-ids { display: grid; gap: 10px; }
 .arch-id {
-  display: flex; align-items: center; gap: 18px;
+  /* 游戏名区块移除后不再有 flex:1 的填充项：三段沿整行铺开，左 ID / 中数据 / 右操作。 */
+  display: flex; align-items: center; justify-content: space-between; gap: 22px;
   padding: 14px 18px; border: 1px solid var(--arch-line); border-radius: 14px;
   background: var(--paper); box-shadow: var(--arch-shadow);
   transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
@@ -739,6 +745,11 @@ progress.arch-claim-track::-moz-progress-bar {
 }
 .arch-id-title { display: grid; gap: 4px; min-inline-size: 0; }
 .arch-id-title > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9375rem; }
+/* 已匹配的选手ID可点进详情：多个游戏名的对局合并后按 ID 展示。 */
+.arch-id.is-openable { cursor: pointer; }
+.arch-id.is-openable:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--arch-line)); }
+.arch-id-title > a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9375rem; font-weight: 650; }
+.arch-id-title > a:hover { color: var(--accent-ink); text-decoration: underline; }
 .arch-id-title > small { color: var(--quiet); font-size: .75rem; }
 .arch-id-names { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 6px; min-inline-size: 0; }
 .arch-name-chip {
@@ -762,7 +773,8 @@ progress.arch-claim-track::-moz-progress-bar {
 }
 .arch-id-go:hover { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .arch-id-figs {
-  display: grid; flex: none; grid-template-columns: repeat(2, minmax(48px, auto)); gap: 8px 18px;
+  /* 四个指标横着排成一行，块内数字在上、标签在下；不再用两列网格。 */
+  display: flex; flex: none; gap: 18px;
   padding-inline-start: 16px; border-inline-start: 1px solid var(--arch-line-soft);
 }
 .arch-id-figs > span { display: grid; gap: 3px; }
@@ -922,6 +934,7 @@ progress.arch-claim-track::-moz-progress-bar {
 }
 .arch-team-more:hover { border-color: var(--accent); background: var(--soft); }
 .arch-team .arch-grid { margin: 0; }
+.arch-team .arch-ids { margin: 0; }
 .arch-team-empty { margin: 0 0 12px; color: var(--muted); font-size: .8125rem; }
 .arch-team .arch-index {
   margin-block-start: 14px; border-block-start-color: color-mix(in srgb, var(--arch-line) 60%, transparent);
@@ -1130,3 +1143,391 @@ progress.arch-claim-track::-moz-progress-bar {
 .pf-tag.is-cmd { color: #a87300; border-color: #f0b400; background: color-mix(in srgb, #f0b400 12%, var(--paper)); }
 .pf-tag.is-role { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--arch-line)); }
 .arch-seg .arch-chip.is-on { cursor: default; }
+
+/* ── 选手档案 · 黑白灰档案版式（2026-11-26） ───────────────────────
+   分组保留，卡片的独立边框/阴影收成账目行；标题、指标、操作重新分主次。
+   后加载的 ppt-layout / uplift / platinum-ds 会清边框并放大控件，因此这里
+   只对已经被它们锁住的属性使用 !important，全部限制在选手档案页。 */
+#app #content .arch-page[data-pl-page="archive"] {
+  --pa-ink: var(--ds-ink, var(--text));
+  --pa-muted: var(--ds-muted, var(--muted));
+  --pa-line: var(--ds-line, var(--line));
+  --pa-line-strong: var(--ds-line-2, var(--line-strong));
+  --pa-surface: var(--ds-surface, var(--paper));
+  --pa-surface-2: var(--ds-surface-2, var(--surface));
+  --pa-hover: color-mix(in srgb, var(--pa-ink) 4%, transparent);
+  padding-block-start: 26px !important;
+}
+
+/* 报头：左侧标题，右侧紧凑概览 */
+#app #content .arch-page[data-pl-page="archive"] .arch-head { margin-block-end: 18px !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-top {
+  align-items: flex-end !important;
+  gap: 32px !important;
+  margin-block-end: 22px !important;
+  padding-block-end: 22px !important;
+  border-block-end: 1px solid var(--pa-line) !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-title-block { min-inline-size: 0; }
+#app #content .arch-page[data-pl-page="archive"] .arch-kicker {
+  margin: 0 0 8px !important;
+  color: var(--pa-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: .14em !important;
+  text-transform: uppercase;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-kicker span {
+  margin-inline: 6px;
+  color: var(--pa-muted);
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-top h1 {
+  font-size: clamp(2rem, 2.6vw, 2.75rem) !important;
+  font-weight: 750 !important;
+  line-height: 1.15 !important;
+  letter-spacing: -.035em !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-subtitle {
+  margin: 8px 0 0 !important;
+  color: var(--pa-muted) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-summary {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-summary > div {
+  min-inline-size: 104px;
+  padding-inline: 18px;
+  border-inline-start: 1px solid var(--pa-line);
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-summary > div:first-child {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-summary b {
+  display: block;
+  color: var(--pa-ink);
+  font: 750 1.75rem/1 var(--font);
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: -.04em;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-summary span {
+  display: block;
+  margin-block-start: 7px;
+  color: var(--pa-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+/* 工具条：只保留一条清晰边界，不再用厚重浮层 */
+#app #content .arch-page[data-pl-page="archive"] .arch-bar {
+  margin-block-start: 0 !important;
+  padding: 10px !important;
+  gap: 8px !important;
+  border: 1px solid var(--pa-line) !important;
+  border-radius: 12px !important;
+  background: color-mix(in srgb, var(--pa-surface) 94%, transparent) !important;
+  box-shadow: 0 10px 28px -24px rgb(0 0 0 / 38%) !important;
+  backdrop-filter: blur(14px);
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-search {
+  block-size: 42px !important;
+  border-color: var(--pa-line) !important;
+  border-radius: 9px !important;
+  background: var(--pa-surface-2) !important;
+  box-shadow: none !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-search:focus-within {
+  border-color: var(--pa-ink) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pa-ink) 10%, transparent) !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-search input {
+  min-block-size: 0 !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team-filter > span:first-child {
+  color: var(--pa-muted) !important;
+  font-size: 12px !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-select select {
+  block-size: 42px !important;
+  min-block-size: 42px !important;
+  padding: 0 32px 0 12px !important;
+  border-color: var(--pa-line) !important;
+  border-radius: 9px !important;
+  background: var(--pa-surface) !important;
+  color: var(--pa-ink) !important;
+  font-size: 13px !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-select select:hover { border-color: var(--pa-line-strong) !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-bar-end { margin-inline-start: auto; }
+#app #content .arch-page[data-pl-page="archive"] .arch-count {
+  color: var(--pa-muted) !important;
+  font-size: 12px !important;
+  font-variant-numeric: tabular-nums;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-btn.is-primary {
+  min-block-size: 42px !important;
+  padding-inline: 16px !important;
+  border-color: var(--pa-ink) !important;
+  border-radius: 9px !important;
+  background: var(--pa-ink) !important;
+  color: var(--pa-surface) !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-btn.is-primary:hover {
+  background: color-mix(in srgb, var(--pa-ink) 86%, var(--pa-surface)) !important;
+  border-color: color-mix(in srgb, var(--pa-ink) 86%, var(--pa-surface)) !important;
+}
+
+/* 战队分组：一个章节一块灰带，内部只留账目行 */
+#app #content .arch-page[data-pl-page="archive"] .arch-teams {
+  gap: 22px !important;
+  margin-block-start: 22px !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team {
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--pa-line) !important;
+  border-radius: 14px !important;
+  background: var(--pa-surface) !important;
+  box-shadow: none !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team-head {
+  align-items: center !important;
+  gap: 14px !important;
+  margin: 0 !important;
+  padding: 18px 22px !important;
+  border-block-end: 1px solid var(--pa-line) !important;
+  background: var(--pa-surface-2) !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team-index {
+  padding-inline-end: 14px;
+  border-inline-end: 1px solid var(--pa-line);
+  color: var(--pa-muted);
+  font: 700 12px/1 var(--font);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team-head h2 {
+  margin: 0 !important;
+  color: var(--pa-ink) !important;
+  font-size: 22px !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+  letter-spacing: -.02em !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team-tag {
+  min-block-size: 26px !important;
+  margin-inline-start: auto;
+  padding: 4px 10px !important;
+  border: 1px solid var(--pa-line) !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--pa-muted) !important;
+  font-size: 11px !important;
+  font-style: normal !important;
+  font-weight: 650 !important;
+  letter-spacing: .02em !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team-tag.is-own {
+  border-color: var(--pa-ink) !important;
+  background: var(--pa-ink) !important;
+  color: var(--pa-surface) !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team .arch-ids {
+  gap: 0 !important;
+  margin: 0 !important;
+  padding: 0 22px 10px !important;
+}
+
+/* 选手账目行：名字 → 指标 → 操作，分层但不做三层盒子 */
+#app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id {
+  position: relative;
+  gap: 20px !important;
+  padding: 16px 4px !important;
+  border: 0 !important;
+  border-block-end: 1px solid var(--pa-line) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: background-color .16s ease;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id:last-child { border-block-end: 0 !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id::before {
+  content: '';
+  position: absolute;
+  inset-block: 14px;
+  inset-inline-start: -22px;
+  inline-size: 3px;
+  background: transparent;
+  transition: background-color .16s ease;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id:hover {
+  background: var(--pa-hover) !important;
+  box-shadow: none !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id:hover::before { background: var(--pa-ink); }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-head { flex-basis: 260px !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-mark {
+  inline-size: 40px !important;
+  block-size: 40px !important;
+  border-radius: 10px !important;
+  background: var(--pa-ink) !important;
+  box-shadow: none !important;
+  color: var(--pa-surface) !important;
+  font-size: 15px !important;
+  font-weight: 750 !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-title > :is(a, b) {
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  letter-spacing: -.01em !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--pa-muted) !important;
+  font-size: 11px !important;
+  line-height: 1.4 !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-state i {
+  inline-size: 5px;
+  block-size: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-state.is-linked { color: var(--pa-ink); }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-state.is-linked i { background: currentColor; }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-figs {
+  gap: 26px !important;
+  padding-inline-start: 22px !important;
+  border-inline-start: 1px solid var(--pa-line) !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-figs > span { gap: 5px !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-figs b {
+  color: var(--pa-ink) !important;
+  font-size: 18px !important;
+  font-weight: 750 !important;
+  line-height: 1.1 !important;
+  letter-spacing: -.025em !important;
+  font-variant-numeric: lining-nums tabular-nums;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-figs small {
+  color: var(--pa-muted) !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: .06em !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-foot { gap: 4px !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-foot button {
+  min-block-size: 32px !important;
+  padding: 0 9px !important;
+  border: 1px solid transparent !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: var(--pa-muted) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-foot button:hover:not(:disabled) {
+  border-color: var(--pa-line) !important;
+  background: var(--pa-surface-2) !important;
+  color: var(--pa-ink) !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id-foot button.is-danger { color: var(--ds-danger, var(--danger)) !important; }
+#app #content .arch-page[data-pl-page="archive"] .arch-id-foot button.is-danger:hover:not(:disabled) {
+  border-color: var(--ds-danger, var(--danger)) !important;
+  background: var(--ds-danger, var(--danger)) !important;
+  color: #fff !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-id :is(a, button):focus-visible {
+  outline: 2px solid var(--pa-ink) !important;
+  outline-offset: 2px !important;
+}
+#app #content .arch-page[data-pl-page="archive"] .arch-note {
+  margin-block-start: 22px !important;
+  padding-block-start: 14px !important;
+  border-block-start: 1px solid var(--pa-line) !important;
+  color: var(--pa-muted) !important;
+  font-size: 11px !important;
+}
+
+@media (max-width: 1100px) {
+  #app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id { gap: 14px !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-head { flex-basis: 220px !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-figs {
+    gap: 16px !important;
+    padding-inline-start: 14px !important;
+  }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-foot button {
+    padding-inline: 7px !important;
+    font-size: 11px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  #app #content .arch-page[data-pl-page="archive"] .arch-top {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-summary { inline-size: 100%; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-summary > div {
+    flex: 1;
+    min-inline-size: 0;
+  }
+  #app #content .arch-page[data-pl-page="archive"] .arch-team .arch-id { flex-wrap: wrap !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-head { flex: 1 1 100% !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-figs {
+    flex: 1 1 auto;
+    padding-inline-start: 0 !important;
+    border-inline-start: 0 !important;
+  }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-foot {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 620px) {
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-summary > div { padding-inline: 12px; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-summary b { font-size: 24px !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-team-head { padding: 16px !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-team-index { display: none; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-team-tag { margin-inline-start: 0 !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-team .arch-ids { padding: 0 16px 8px !important; }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-figs {
+    flex-wrap: wrap;
+    gap: 18px !important;
+  }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-foot {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+  #app #content .arch-page[data-pl-page="archive"] .arch-id-foot button { flex: 1 1 auto; }
+}
+
+@media (forced-colors: active) {
+  #app #content .arch-page[data-pl-page="archive"] :is(.arch-bar, .arch-team, .arch-id, .arch-search, .arch-select select, .arch-id-foot button) {
+    border-color: CanvasText !important;
+  }
+  #app #content .arch-page[data-pl-page="archive"] :is(.arch-id-mark, .arch-team-tag.is-own, .arch-btn.is-primary) {
+    background: ButtonFace !important;
+    color: ButtonText !important;
+  }
+}

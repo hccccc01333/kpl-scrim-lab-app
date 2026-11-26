@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="58" height="55" viewBox="0 0 58 55" role="img">
+<title>浅色角标底座</title>
+<defs><linearGradient id="pearl" x1="0%" y1="0%" x2="100%" y2="90%">
+ <stop stop-color="#faf8f4"/><stop offset=".32" stop-color="#ebe8e7"/><stop offset=".63" stop-color="#f9f8f7"/><stop offset="1" stop-color="#eeeae6"/>
+</linearGradient><linearGradient id="gold-edge" x1="0%" y1="10%" x2="100%" y2="90%">
+ <stop stop-color="#fffaf0"/><stop offset=".3" stop-color="#eaca8e"/><stop offset=".68" stop-color="#fff6e4"/><stop offset="1" stop-color="#ac803c"/>
+</linearGradient></defs>
+<defs><clipPath id="tag-light"><rect x="0" y="0" width="58" height="55" rx="13" fill="#fff"/></clipPath></defs><g clip-path="url(#tag-light)"><rect x="0" y="0" width="58" height="55" rx="13" fill="url(#pearl)"/><path d="M0 0 Q13.92 38.5 35.96 0 H40.6 Q15.66 50.05 0 9.35Z" fill="#d8d5d8" opacity="0.1026"/><path d="M0 35.2 Q26.1 7.15 41.76 0 Q13.92 35.2 0 54.45Z" fill="#d9d6d6" opacity="0.0608"/><path d="M10.44 55 Q30.74 43.45 58 6.6 Q44.66 42.9 26.1 55Z" fill="#fffdfa" opacity="0.228"/><path d="M31.32 55 Q47.56 34.1 58 20.9 V31.35 Q53.36 41.25 42.34 55Z" fill="#fff" opacity="0.209"/></g><rect x="0.6" y="0.6" width="56.8" height="53.8" rx="13" fill="none" stroke="url(#gold-edge)" stroke-width="1.2"/>
+</svg>

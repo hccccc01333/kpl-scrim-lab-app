@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="74" height="34" viewBox="0 0 74 34" role="img">
+<title>轴数值底座</title>
+<defs><linearGradient id="paper" x2="0%" y2="100%">
+ <stop stop-color="#fffefb"/><stop offset="1" stop-color="#eeeae5"/>
+</linearGradient></defs>
+<rect x="0.5" y="0.5" width="73" height="33" rx="9" fill="url(#paper)" stroke="#dcd5cc" stroke-width="1"/>
+</svg>

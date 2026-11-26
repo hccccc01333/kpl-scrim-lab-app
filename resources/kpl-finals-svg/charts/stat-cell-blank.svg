@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="167" height="42" viewBox="0 0 167 42" role="img">
+<title>数值和进度条单元格底座</title>
+<defs><linearGradient id="glass" x2="100%" y2="100%">
+ <stop stop-color="#fff" stop-opacity=".5"/><stop offset=".5" stop-color="#f8f6f4" stop-opacity=".21"/><stop offset="1" stop-color="#eee9e6" stop-opacity=".52"/>
+</linearGradient></defs>
+<rect x="0.5" y="0.5" width="166" height="41" rx="9" fill="url(#glass)" stroke="#e6e0da" stroke-width="1"/><g transform="translate(49 13) scale(1 1)"><rect x="0.5" y="0.5" width="75" height="14" rx="2.5" fill="#f0eff0" stroke="#c5c2c1" stroke-width="1"/></g>
+</svg>

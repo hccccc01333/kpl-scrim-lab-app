@@ -2842,6 +2842,7 @@ def _overview_block(rows, baseline):
             'at10': metric.get('at10'), 'finalDiff': metric.get('finalDiff'),
             'firstBlood': metric.get('firstBlood'), 'firstTower': metric.get('firstTower'),
             'dragonTypes': metric.get('dragonTypes'),
+            'hasReplay': bool(row.get('hasReplay')),
         })
 
     def base_rate(mode, key):
@@ -2956,6 +2957,46 @@ def _overview_block(rows, baseline):
         'series': {'value': cuts_suffered.get('mean'), 'total': cuts_suffered.get('total'), 'n': cuts_suffered.get('n')},
         'base': {mode: base_number(mode, 'cutSuffered') for mode in modes},
     })
+
+    def cell_present(key, cell):
+        if key == 'towers' or key.startswith('dragon:'):
+            return isinstance(cell, dict) and _num(cell.get('own')) is not None \
+                and _num(cell.get('foe')) is not None
+        return _num(cell) is not None
+
+    def reduce_cells(kind, cells):
+        vals = [cell for cell in cells if cell is not None]
+        n = len(vals)
+        if kind == 'flag':
+            own = sum(1 for cell in vals if cell == 1)
+            return {'own': own, 'n': n, 'rate': _rate(own, n)}
+        if kind == 'pair':
+            own = sum(_num(cell.get('own')) or 0 for cell in vals)
+            foe = sum(_num(cell.get('foe')) or 0 for cell in vals)
+            return {'own': _r(own / n) if n else None, 'foe': _r(foe / n) if n else None,
+                    'rate': _rate(own, own + foe), 'n': n}
+        nums = [value for value in (_num(cell) for cell in vals) if value is not None]
+        return {'value': _r(_mean(nums)) if nums else None,
+                'total': int(sum(nums)) if nums else 0, 'n': len(nums)}
+
+    # 前端只负责把数字排版：每个指标的覆盖局数、逐局缺失原因、胜负分组都在这里算好。
+    # 「缺回放」和「本局未触发」必须分开，教练不能把一个「—」读成 0。
+    for metric in metrics:
+        key = metric['key']
+        cells = metric['perGame']
+        present = [cell_present(key, cell) for cell in cells]
+        metric['coverage'] = sum(1 for hit in present if hit)
+        metric['missing'] = [
+            None if hit else ('no-replay' if not row.get('hasReplay') else 'not-triggered')
+            for hit, row in zip(present, rows)
+        ]
+        metric['byResult'] = {
+            result: reduce_cells(metric['kind'], [
+                cell for cell, row in zip(cells, rows)
+                if row.get('result') == result and cell_present(key, cell)
+            ])
+            for result in ('win', 'loss')
+        }
 
     coverage = {
         'firstBlood': sum(1 for row in rows if _num(row.get('metrics', {}).get('firstBlood')) is not None),

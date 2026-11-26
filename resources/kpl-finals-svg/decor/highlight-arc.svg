@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="83" height="55" viewBox="0 0 83 55" role="img">
+<title>短圆角高光</title>
+<defs><radialGradient id="glint">
+ <stop stop-color="#fff"/><stop offset=".25" stop-color="#fff6df" stop-opacity=".94"/><stop offset=".6" stop-color="#ffe7b5" stop-opacity=".28"/><stop offset="1" stop-color="#fff6e2" stop-opacity="0"/>
+</radialGradient></defs>
+<ellipse cx="43" cy="22" rx="42" ry="21" fill="url(#glint)"/><path d="M5 49 Q10 18 31 9 Q58 -1 79 15" fill="none" stroke="#fff7e6" stroke-width="2"/>
+</svg>

@@ -14,7 +14,8 @@
  * 筛选状态存 localStorage：刷新页面回来还是同一边、同一窗口。
  */
 
-import {createBpViz} from './bps-viz.js?v=20261124link2';
+import {createBpViz} from './bps-viz.js?v=20261126bpclear1';
+import { glyph } from './ui-icons.js';
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
 const SECTION_LIST = [
@@ -186,9 +187,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return `<section class="bps-section" id="bps-${id}" data-bps-section="${id}">
       <header class="bps-section-head">
         <span class="bps-section-no">${meta[1] || no}</span>
-        <h2>${esc(title)}</h2>
+        <h2>${glyph('bp', { label: 'BP 工作台', size: 20 })} ${esc(title)}</h2>
         <span class="bps-section-meta">${esc(metaText || meta[4] || '')}</span>
-        <p>${esc(question)}</p>
       </header>`;
   };
 
@@ -206,7 +206,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   async function api(path, signal) {
-    /* 赛事域 P1-4：BP 工作台全部请求自动带上当前赛事，scrim 语料按其归集窗口收滤。 */
+    /* 赛事域 P1-4：BP 工作台全部请求自动带上当前赛事，scrim 语料按其训练起止收滤。 */
     let competition = '';
     try { competition = localStorage.getItem('training-current-competition') || ''; } catch {}
     const competitionSuffix = competition
@@ -586,7 +586,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return `<div class="bps-sample-warn">
       <b>当前窗口只有 ${num(games)} 个队-局</b>
       <span>胜率、克制这类结论很容易被 1–2 局带偏。${canWiden ? '' : '当前数据源本身样本有限，换数据源或补采更多对局后再看。'}</span>
-      ${canWiden ? `<button type="button" class="bps-softbtn" data-bps-widen="${next}">放到近 ${next} 天</button>` : ''}
+      ${canWiden ? `<button type="button" class="bps-softbtn" data-bps-widen="${next}">${glyph('refresh', { size: 18 })} 放到近 ${next} 天</button>` : ''}
     </div>`;
   }
 
@@ -684,10 +684,10 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <div class="bps-hero-copy">
         <h1>BP 工作台</h1>
         ${state.mode === 'scrim' && !(data.quality?.ordered)
-          ? `<p class="bps-note">当前营地数据是排位/巅峰（rank-20）；征召 18 手还没有完整对局。
-              <button type="button" class="bps-softbtn" data-bps-demo>载入模拟数据</button></p>` : ''}
+          ? `<p class="bps-note">${glyph('warning', { size: 18 })} 当前营地数据是排位/巅峰（rank-20）；征召 18 手还没有完整对局。
+              <button type="button" class="control" data-bps-demo>${glyph('refresh', { size: 18 })} 载入模拟数据</button></p>` : ''}
         ${state.demo
-          ? '<p class="bps-note">模拟数据 · 8 局征召 18 手，仅用于界面验证，不计入真实统计。</p>' : ''}
+          ? `<p class="bps-note">${glyph('warning', { size: 18 })} 模拟数据 · 8 局征召 18 手，仅用于界面验证，不计入真实统计。</p>` : ''}
       </div>
       <div class="bps-hero-facts">
         <div><span>覆盖队-局</span><b>${num(games)}</b><small>${isKpl ? 'KPL 双方视角' : `双方合计 · 本队 ${num(teamGames)}`}</small></div>
@@ -722,8 +722,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         </div>`;
       }).join('')}
       <div class="bps-pop-foot">
-        <button type="button" class="bps-link" data-bps-leagues-clear>清空（全库）</button>
-        <button type="button" class="bps-softbtn" data-bps-pop-close>收起</button>
+        <button type="button" class="bps-link" data-bps-leagues-clear>${glyph('refresh', { size: 18 })} 清空（全库）</button>
+        <button type="button" class="bps-softbtn" data-bps-pop-close>${glyph('arrow-up', { size: 18 })} 收起</button>
       </div>
     </div>`;
   }
@@ -760,7 +760,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       </div>
       <div class="bps-pop-foot">
         ${scrim ? '' : `<button type="button" class="bps-link" data-bps-select-${kind}="">不限定</button>`}
-        <button type="button" class="bps-softbtn" data-bps-pop-close>收起</button>
+        <button type="button" class="bps-softbtn" data-bps-pop-close>${glyph('arrow-up', { size: 18 })} 收起</button>
       </div>
     </div>`;
   }
@@ -768,7 +768,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function rangePanel() {
     const days = state.data?.options?.recentOptions || [7, 15, 30, 90, 180, 365];
     return `<div class="bps-pop is-right" data-bps-pop-panel="range" ${state.pop === 'range' ? '' : 'hidden'}>
-      <div class="bps-pop-head"><b>时间窗口</b><span class="bps-sub">默认以数据最后一天为锚点</span></div>
+      <div class="bps-pop-head"><b>${glyph('calendar', { size: 18 })} 时间窗口</b></div>
       <div class="bps-chips">
         ${days.map((value) => `<button type="button" class="bps-chip" data-bps-days="${value}"
           aria-pressed="${!state.from && Number(state.recentDays) === value}">近 ${value} 天</button>`).join('')}
@@ -787,33 +787,33 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <p class="bps-note">KPL ${num(state.prior)}% / 训练赛 ${num(100 - state.prior)}%。用于 03 的“综合推荐”和类型对照；强队可调低，次级队可调高。</p>
       </div>
       <div class="bps-pop-foot">
-        <button type="button" class="bps-link" data-bps-range-reset>回到近 ${state.recentDays} 天</button>
-        <button type="button" class="bps-primary" data-bps-range-apply>应用</button>
+        <button type="button" class="bps-link" data-bps-range-reset>${glyph('refresh', { size: 18 })} 回到近 ${state.recentDays} 天</button>
+        <button type="button" class="bps-primary" data-bps-range-apply>${glyph('pick', { size: 18 })} 应用筛选</button>
       </div>
     </div>`;
   }
 
   function viewsPanel() {
     return `<div class="bps-pop is-right" data-bps-pop-panel="views" ${state.pop === 'views' ? '' : 'hidden'}>
-      <div class="bps-pop-head"><b>保存的视图</b><span class="bps-sub">把这一套筛选记下来，下次一键回来</span></div>
+      <div class="bps-pop-head"><b>${glyph('book', { size: 18 })} 保存的视图</b></div>
       <div class="bps-view-save">
         <input data-bps-view-name placeholder="例如：北京WB · BO5 · 第1手" value="${esc(state.viewName || '')}" autocomplete="off">
-        <button type="button" class="bps-primary" data-bps-view-save>保存当前</button>
+        <button type="button" class="bps-primary" data-bps-view-save>${glyph('book', { size: 18 })} 保存当前视图</button>
       </div>
       <div class="bps-view-save" style="margin-top:-4px">
         <input data-bps-view-note placeholder="备注（可选）：针对 WB 第一手盾山" value="${esc(state.viewNote || '')}" autocomplete="off">
       </div>
       <div class="bps-view-list">
         ${(state.views || []).map((view) => `<div class="bps-view-row">
-          <button type="button" class="bps-view-name" data-bps-view-apply="${esc(view.name)}">${esc(view.name)}</button>
+          <button type="button" class="bps-view-name" data-bps-view-apply="${esc(view.name)}">${glyph('bp', { size: 16 })} ${esc(view.name)}</button>
           <small>${esc(view.note || view.summary || '')}</small>
-          <button type="button" class="bps-link" data-bps-view-del="${esc(view.name)}" aria-label="删除">×</button>
+          <button type="button" class="bps-link" data-bps-view-del="${esc(view.name)}" aria-label="删除视图">${glyph('trash', { size: 16 })}</button>
         </div>`).join('') || '<p class="bps-note">还没有保存的视图。</p>'}
       </div>
       <div class="bps-pop-foot">
-        <button type="button" class="bps-softbtn" data-bps-share>复制分享链接</button>
-        <button type="button" class="bps-softbtn" data-bps-export-all>导出长图（01–07）</button>
-        <span class="bps-sub">${esc(state.shareTip || '链接会带上当前赛季、战队、窗口和目标')}</span>
+        <button type="button" class="bps-softbtn" data-bps-share>${glyph('export', { size: 18 })} 复制分享链接</button>
+        <button type="button" class="bps-softbtn" data-bps-export-all>${glyph('export', { size: 18 })} 导出长图（01–07）</button>
+        <span class="bps-sub">${esc(state.shareTip)}</span>
       </div>
     </div>`;
   }
@@ -832,7 +832,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <span class="bps-console-label">赛季</span>
         <button type="button" class="bps-trigger" data-bps-pop="season"
           aria-expanded="${state.pop === 'season'}">
-          ${leagues ? `已选 ${leagues} 个赛季` : '全部赛季'}
+          ${glyph('calendar', { size: 18 })} ${leagues ? `已选 ${leagues} 个赛季` : '全部赛季'}
           <span class="bps-trigger-sub">${leagues ? '' : (state.data?.options?.years?.length || 0) + ' 年'}</span>
           ${icon('chevron')}
         </button>
@@ -843,7 +843,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <span class="bps-console-label">本队</span>
         <button type="button" class="bps-trigger" data-bps-pop="team"
           aria-expanded="${state.pop === 'team'}">
-          ${state.team ? `${isKpl ? teamMark(state.team) : ''}<span>${esc(state.team)}</span>` : '不限定'}
+          ${glyph('players', { size: 18 })} ${state.team ? `${isKpl ? teamMark(state.team) : ''}<span>${esc(state.team)}</span>` : '不限定'}
           ${icon('chevron')}
         </button>
         ${teamPanel('team')}
@@ -852,7 +852,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <span class="bps-console-label">对手</span>
         <button type="button" class="bps-trigger ${state.opponent ? '' : 'is-empty'}"
           data-bps-pop="opponent" aria-expanded="${state.pop === 'opponent'}">
-          ${state.opponent ? `${isKpl ? teamMark(state.opponent) : ''}<span>${state.opponent === '__all__' ? '全部对手' : esc(state.opponent)}</span>` : '选择对手'}
+          ${glyph('opponent', { size: 18 })} ${state.opponent ? `${isKpl ? teamMark(state.opponent) : ''}<span>${state.opponent === '__all__' ? '全部对手' : esc(state.opponent)}</span>` : '选择对手'}
           ${icon('chevron')}
         </button>
         ${teamPanel('opponent')}
@@ -862,7 +862,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <span class="bps-console-label">窗口</span>
         <button type="button" class="bps-trigger" data-bps-pop="range"
           aria-expanded="${state.pop === 'range'}">
-          ${state.from && state.to ? `${esc(state.from)} → ${esc(state.to)}` : `近 ${state.recentDays} 天`}
+          ${glyph('clock', { size: 18 })} ${state.from && state.to ? `${esc(state.from)} → ${esc(state.to)}` : `近 ${state.recentDays} 天`}
           <span class="bps-trigger-sub">${state.compare === 'prev' ? '环比' : state.compare === 'yoy' ? '同比' : '不对比'}</span>
           ${icon('chevron')}
         </button>
@@ -872,7 +872,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <div class="bps-console-group">
         <span class="bps-console-label">视图</span>
         <button type="button" class="bps-trigger" data-bps-pop="views" aria-expanded="${state.pop === 'views'}">
-          ${(state.views || []).length ? `${state.views.length} 个视图` : '保存视图'}
+          ${glyph('book', { size: 18 })} ${(state.views || []).length ? `${state.views.length} 个视图` : '保存视图'}
           ${icon('chevron')}
         </button>
         ${viewsPanel()}
@@ -882,22 +882,22 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           ? '<span class="bps-updating"><i></i>更新中</span>'
           : qualityChip()}
         <button type="button" class="bps-softbtn is-icon" data-bps-compact aria-pressed="${state.compact}"
-          title="${state.compact ? '切回标准视图' : '切换简洁视图（隐藏图表）'}">${state.compact ? '标准' : '简洁'}</button>
-        <button type="button" class="bps-softbtn is-icon" data-bps-reset aria-label="重置筛选" title="清空赛季、战队、时间、目标等全部筛选">${icon('close')}</button>
-        <button type="button" class="bps-softbtn is-icon" data-bps-refresh aria-label="重新读取" title="重新读取">${icon('refresh')}</button>
+          title="${state.compact ? '切回标准视图' : '切换简洁视图（隐藏图表）'}">${glyph('chart', { size: 18 })} ${state.compact ? '标准' : '简洁'}</button>
+        <button type="button" class="bps-softbtn is-icon" data-bps-reset aria-label="重置筛选" title="清空赛季、战队、时间、目标等全部筛选">${glyph('refresh', { size: 18 })}</button>
+        <button type="button" class="bps-softbtn is-icon" data-bps-refresh aria-label="重新读取" title="重新读取">${glyph('refresh', { size: 18 })}</button>
       </div>
     </div>`;
   }
 
   function jumpBar() {
     return `<nav class="bps-jump" aria-label="BP 分区">
-      ${SECTION_LIST.map(([key, no, title]) => `<button type="button" data-bps-jump="${key}"
+      ${SECTION_LIST.map(([key, no, title], i) => `<button type="button" data-bps-jump="${key}"
         aria-pressed="${state.solo && state.active === key}"
         class="${state.solo && state.active === key ? 'is-active' : ''}">
-        <i>${no}</i>${esc(title)}</button>`).join('')}
+        ${glyph(['heroes', 'bp', 'compare', 'opponent', 'clock', 'book', 'shield'][i], { size: 18 })} <i>${no}</i>${esc(title)}</button>`).join('')}
       <button type="button" class="bps-jump-mode" data-bps-solo aria-pressed="${state.solo}"
         title="${state.solo ? '当前：单节阅读，点击切回连续滚动' : '当前：连续滚动，点击切到单节阅读'}">
-        ${state.solo ? '单节阅读' : '连续滚动'}
+        ${glyph(state.solo ? 'book' : 'matches', { size: 18 })} ${state.solo ? '单节阅读' : '连续滚动'}
       </button>
     </nav>`;
   }
@@ -1104,7 +1104,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             </div>
             <div class="bps-chart">${state.chartView === 'bubble'
               ? viz.heroScatter(chartRows, {onlyLane: state.lane, width: 860, height: 350, minDecided: 8})
-              : heroMatrix(matrixRows)}</div>
+              : heroMatrix(matrixRows, Boolean(state.lane))}</div>
             ${state.chartView === 'bubble' ? `<div class="bps-chart-legend">
               ${['对抗路', '打野', '中路', '发育路', '游走'].map((lane) => `<i><span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:${viz.LANE_COLOR[lane]}"></span>${lane}</i>`).join('')}
               <i><span style="display:inline-block;width:8px;height:8px;border-radius:50%;border:2px solid var(--bps-quiet)"></span>气泡大小 = Pick 次数</i>
@@ -1128,7 +1128,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       </div></section>`;
   }
 
-  function heroMatrix(rows) {
+  function heroMatrix(rows, singleLane = false) {
     const byLane = {};
     for (const row of rows) {
       const lane = row.lane || '未记录';
@@ -1136,7 +1136,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     const lanes = [...LANES.filter((lane) => byLane[lane]), ...(byLane['未记录'] ? ['未记录'] : [])];
     if (!lanes.length) return '<div class="bv-empty">当前筛选没有英雄。</div>';
-    return `<div class="bps-matrix">${lanes.map((lane) => {
+    return `<div class="bps-matrix${singleLane ? ' is-single-lane' : ''}">${lanes.map((lane) => {
       const list = [...byLane[lane]].sort((a, b) => (b.priority || 0) - (a.priority || 0));
       const maxBan = Math.max(1, ...list.map((row) => row.banRate || 0));
       return `<div class="bps-matrix-col">
@@ -1174,15 +1174,15 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <div class="bps-picker-selected">
           ${picked.map((hero) => `<span class="bps-picker-chip">${heroImg(hero)}<span>${esc(heroShort(hero))}</span>
             <button type="button" data-bps-remove="${esc(hero)}" data-bps-remove-action="${action}"
-              aria-label="移除 ${esc(hero)}">×</button></span>`).join('')
-            || `<span class="bps-sub">${esc(placeholder || '点头像选英雄，最多 3 个')}</span>`}
+              aria-label="移除 ${esc(hero)}">${glyph('trash', { size: 14 })}</button></span>`).join('')
+            || `<span class="bps-sub">${esc(placeholder || '选英雄（最多 3 个）')}</span>`}
         </div>
         <div class="bps-picker-tools">
           <label class="bps-search">${icon('search')}
             <input type="search" data-bps-search="${action}" value="${esc(state[`${action}Search`] || '')}"
               placeholder="搜英雄" autocomplete="off"></label>
           <span class="bps-sub">${picked.length}/${max}</span>
-          <button type="button" class="bps-link" data-bps-clear="${action}">清空</button>
+          <button type="button" class="bps-link" data-bps-clear="${action}">${glyph('refresh', { size: 18 })} 清空</button>
         </div>
       </div>
       <div class="bps-picker-grid">
@@ -1204,7 +1204,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   // ── 02 组合（组合强度 + 阵容差异）────────────────────────────────────
   function comboCard() {
     if (state.comboPick.length < 2) {
-      return `<div class="bps-empty bps-combo-empty"><b>先选两个英雄</b>
+      return `<div class="bps-empty bps-combo-empty">${glyph('heroes', { label: '英雄组合', size: 20 })}<b>先选两个英雄</b>
         <p>组合按“同队同局”统计：两个英雄在同一支队、同一局里一起出场才算命中。</p></div>`;
     }
     if (state.comboLoading && !state.comboDetail) {
@@ -1212,12 +1212,12 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     if (state.comboError) {
       return `<div class="bps-inline-error">${esc(state.comboError)}
-        <button type="button" class="bps-softbtn" data-bps-combo-retry>重试</button></div>`;
+        <button type="button" class="bps-softbtn" data-bps-combo-retry>${glyph('refresh', { size: 18 })} 重试</button></div>`;
     }
     const detail = state.comboDetail;
     if (!detail) return '<div class="bps-loading">准备组合数据…</div>';
     if (!detail.available) {
-      return `<div class="bps-empty bps-combo-empty"><b>这组英雄没有同队同局记录</b>
+      return `<div class="bps-empty bps-combo-empty">${glyph('heroes', { label: '英雄组合', size: 20 })}<b>这组英雄没有同队同局记录</b>
         <p>${esc(detail.reason || '换一个组合或放宽时间窗。')}</p></div>`;
     }
     const recent = (detail.recent || []).map((row) => `<div class="bps-window-cell">
@@ -1302,11 +1302,10 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             </div>
             <div class="bps-board-head" style="border-top:0;padding-top:0">
               <span class="bps-sub">${num(sorted.length)} 组 · 同队同局 ≥2 局才进榜</span>
-              <span class="bps-sub">点一行带回左侧</span>
             </div>
             <div class="bps-board-list">${list.map(row).join('') || '<div class="bps-empty"><b>当前范围没有组合记录</b></div>'}</div>
             ${sorted.length > 12 ? `<div class="bps-board-foot">
-              <button type="button" class="bps-link" data-bps-combo-more>${state.comboOpen ? '收起' : `展开全部 ${num(sorted.length)} 组`}</button>
+              <button type="button" class="bps-link" data-bps-combo-more>${glyph(state.comboOpen ? 'arrow-up' : 'compare', { size: 18 })} ${state.comboOpen ? '收起' : `展开全部 ${num(sorted.length)} 组`}</button>
             </div>` : ''}
           </div>
         </div>
@@ -1526,16 +1525,29 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     } else {
       const data = state.counterData;
       const scope = data.scope || {};
+      const viewHint = state.counterSide
+        ? '六段楼层链全部保留；每段按当前视角标注我方 / 对手，蓝方先手、红方回应。'
+        : '六段楼层链按真实 BP 顺序展开；左侧是当层出手，展开看下一层怎么接。';
+      const campRole = (camp) => {
+        if (!state.counterSide) return camp === '1' ? '蓝方' : '红方';
+        return `${state.counterSide === camp ? '我方' : '对手'}${camp === '1' ? '蓝方' : '红方'}`;
+      };
+      const campSpan = (camp, text) => `<span class="bps-camp ${camp === '1' ? 'is-blue' : 'is-red'}">${esc(text)}</span>`;
+      const chainTitle = (chain) => [
+        campSpan(chain.fromCamp, campRole(chain.fromCamp)), esc(chain.fromLabel || ''),
+        '→',
+        campSpan(chain.toCamp, campRole(chain.toCamp)), esc(chain.toLabel || ''),
+      ].join(' ');
       const faces = (heroes) => (heroes || []).map((hero) => heroImg(hero)).join('');
       const card = (chain) => {
         const rows = chain.rows.filter((row) => !state.counterSearch
           || row.label.includes(state.counterSearch));
         return `<div class="bps-counter-card" data-bps-counter-chain="${esc(chain.key)}">
-          <div class="bps-counter-head"><b>${esc(chain.title)}</b>
-            <span class="bps-sub">${num(chain.rows.length)} 组触发 · ${state.counterOpen.startsWith(chain.key + '|') ? '点击收起回应' : '点击展开回应'}</span></div>
+          <div class="bps-counter-head"><b>${chainTitle(chain)}</b>
+            <span class="bps-sub">${num(chain.rows.length)} 组触发</span></div>
           <table class="bps-counter-table">
             <colgroup><col><col class="is-num"><col class="is-num"><col class="is-num"></colgroup>
-            <thead><tr><th>英雄 / 组合</th><th class="is-num">场次</th>
+            <thead><tr><th>${state.counterSide ? `${campSpan(chain.fromCamp, campRole(chain.fromCamp))}英雄 / 组合` : '英雄 / 组合'}</th><th class="is-num">场次</th>
               <th class="is-num">出场率</th><th class="is-num">胜率</th></tr></thead>
             <tbody>${rows.map((row) => {
               const key = `${chain.key}|${row.label}`;
@@ -1547,7 +1559,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
                 <td class="is-num">${rate(row.share)}</td>
                 <td class="is-num">${rate(row.winRate)}</td>
               </tr>${open ? `<tr class="bps-counter-resp-row"><td colspan="4">
-                <div class="bps-counter-resp-head">对手回应 · ${num(row.responseTotal)} 种 · 含 1 场小样本，全部列出</div>
+                <div class="bps-counter-resp-head">${state.counterSide ? `${campSpan(chain.toCamp, campRole(chain.toCamp))}回应` : '下一层回应'} · ${num(row.responseTotal)} 种 · 含 1 场小样本，全部列出</div>
                 ${(row.responses || []).map((resp) => `<div class="bps-counter-resp${resp.games < 3 ? ' is-tiny' : ''}">
                   <span class="bps-counter-face">${faces(resp.heroes)}${esc(heroShort(resp.label))}${resp.games < 3 ? '<em class="bps-resp-tiny">小样本</em>' : ''}</span>
                   <span class="is-num">${num(resp.games)} 场</span>
@@ -1565,6 +1577,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           ? `${esc(scope.team || state.team || '本队')} vs ${esc(scope.opponent || state.opponent || '对手')}`
           : '全部战队'}</span>
         <span>${scope.side === '1' ? '我方蓝方' : scope.side === '2' ? '我方红方' : '不限位置'} · ${scope.bo ? `BO${scope.bo}` : '全部 BO'}</span>
+        <span class="bps-counter-view-hint">${esc(viewHint)}</span>
       </div>
       <div class="bps-counter-grid">${(data.chains || []).map(card).join('')}</div>`;
     }
@@ -1677,9 +1690,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       </div>
     </div>`;
     return `<div class="bps-panel bps-cmp" style="margin-bottom:16px">
-      <div class="bps-panel-head"><h3>对手对比</h3>
-        <span class="bps-sub">同一窗口 · 左右两列滚动联动，悬停同一指标会同时高亮</span>
-        <button type="button" class="bps-link" data-bps-compare-clear>取消对比</button></div>
+      <div class="bps-panel-head">${glyph('compare', { label: '对手对比', size: 18 })}<h3>对手对比</h3>
+        <button type="button" class="bps-link" data-bps-compare-clear>${glyph('trash', { size: 18 })} 取消对比</button></div>
       <div class="bps-panel-body">
         <div class="bps-compare-grid">
           ${column(a, state.opponent === '__all__' ? '全部对手' : state.opponent, true)}
@@ -1693,7 +1705,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const options = (state.data?.options?.teams || [])
       .filter((item) => item.name !== state.opponent && item.name !== state.team);
     return `<div class="bps-pop is-right" data-bps-pop-panel="compare" ${state.pop === 'compare' ? '' : 'hidden'}>
-      <div class="bps-pop-head"><b>选择对比对手</b><span class="bps-sub">同一窗口下并排看</span></div>
+      <div class="bps-pop-head"><b>${glyph('compare', { size: 18 })} 选择对比对手</b></div>
       <div class="bps-team-grid">
         ${options.map((item) => `<button type="button" class="bps-team-option"
           data-bps-compare-opponent="${esc(item.name)}" aria-pressed="${state.compareOpponent === item.name}">
@@ -1713,7 +1725,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const data = state.seqData;
     return `<div class="bps-panel bps-seq">
       <div class="bps-panel-head"><h3>手序查询 · 第 N 手他在做什么</h3>
-        <span class="bps-sub">先选队伍、动作、第几手；再加英雄就只看这一手</span>
+
         ${state.target.length === 1 && state.seqHero !== state.target[0]
           ? `<button type="button" class="bps-link" data-bps-seq-from-target>用 03 目标：${esc(state.target[0])}</button>` : ''}</div>
       <div class="bps-seq-controls">
@@ -1725,7 +1737,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           ${state.seqHero ? `${heroImg(state.seqHero)}<span>${esc(state.seqHero)}</span>` : '全部英雄'}
           ${icon('chevron')}
         </button>
-        ${state.seqHero ? '<button type="button" class="bps-link" data-bps-seq-clear>清空</button>' : ''}
+        ${state.seqHero ? `<button type="button" class="bps-link" data-bps-seq-clear>${glyph('refresh', { size: 18 })} 清空</button>` : ''}
       </div>
       ${state.seqOpen ? `<div class="bps-seq-picker">
         <div class="bps-chips">${lanes.map((lane) => `<button type="button" class="bps-chip"
@@ -1901,7 +1913,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return `${sel ? `<div class="bps-counter-sel">
         <span>已框选 ${rows.length} × ${cols.length}</span>
         <button type="button" class="bps-link" data-bps-counter-reset>重置矩阵</button>
-      </div>` : '<div class="bps-counter-hint">在矩阵上拖一个方块，只看这几类对比（例如 3×2）</div>'}
+      </div>` : ''}
       ${viz.typeCounterMatrix({rows, cols, matrix}, laneOf, {width: Math.max(520, 96 + cols.length * cell), cell})}
       ${best.length ? `<div class="bps-best-counters">${best.slice(0, 4).map((row) =>
         `<span class="bps-best-chip"><b>${esc(row.enemy)}</b> → ${esc(row.response)}
@@ -1911,7 +1923,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function decisionTreeHtml() {
     const tree = state.tree;
     if (!tree?.available) {
-      return `<div class="bps-empty"><b>还没有可展开的手序</b>
+      return `<div class="bps-empty">${glyph('bp', { label: '手序', size: 20 })}<b>还没有可展开的手序</b>
         <p>${esc(tree?.reason || '先选一个有已核验逐手记录的对手和窗口。')}</p></div>`;
     }
     const nodes = tree.nodes || [];
@@ -1936,9 +1948,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (!next.length) {
       return `<div class="bps-decision">
         <div class="bps-decision-path">${crumb}</div>
-        <div class="bps-empty is-soft"><b>这条路径到头了</b>
-          <p>当前选择之后没有更长的已核验样本；换一个分支或换窗口。</p>
-          <button type="button" class="bps-softbtn" data-bps-decision-reset>回到起点</button></div>
+        <div class="bps-empty is-soft">${glyph('bp', { label: '手序路径', size: 20 })}<b>这条路径到头了</b>
+          <p>当前选择之后没有更长的已核验样本</p>
+          <button type="button" class="bps-softbtn" data-bps-decision-reset>${glyph('refresh', { size: 18 })} 回到起点</button></div>
       </div>`;
     }
     const cards = next.map((node) => {
@@ -1952,13 +1964,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       return `<span class="bps-decision-pinrow">
         <b>${route.map((node) => esc(heroShort(node.hero))).join(' → ')}</b>
         <em>${tail.count} 局 · 胜率 ${tail.winRate == null ? '—' : `${fmt(tail.winRate, 1)}%`}</em>
-        <button type="button" data-bps-decision-unpin="${index}" aria-label="移除">×</button>
+        <button type="button" data-bps-decision-unpin="${index}" aria-label="移除固定路径">${glyph('trash', { size: 16 })}</button>
       </span>`;
     }).join('');
     return `<div class="bps-decision">
       <div class="bps-decision-path">${crumb}</div>
-      <div class="bps-decision-caption">当前${last ? `在「${esc(heroShort(last.hero))}」之后` : '从第一手开始'}，
-        水平展开前 ${next.length} 个分支；线宽 = 分支概率，节点条 = 该路径胜率。</div>
       <div class="bps-decision-tree">${viz.decisionTreeMap(state.tree, state.decisionPath,
         {width: 780, height: 420, branch: 3})}</div>
       <div class="bps-decision-manual">
@@ -1966,8 +1976,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <select data-bps-decision-hero>
           <option value="">选一个英雄…</option>${cards}
         </select>
-        <button type="button" class="bps-softbtn" data-bps-decision-apply>走这手</button>
-        <button type="button" class="bps-softbtn" data-bps-decision-pin-current>固定当前路径</button>
+        <button type="button" class="bps-softbtn" data-bps-decision-apply>${glyph('pick', { size: 18 })} 走这手</button>
+        <button type="button" class="bps-softbtn" data-bps-decision-pin-current>${glyph('book', { size: 18 })} 固定当前路径</button>
         <span class="bps-note">${esc(state.decisionNote || '')}</span>
       </div>
       ${pins ? `<div class="bps-decision-pins"><span class="bps-console-label">固定对比</span>${pins}</div>` : ''}
@@ -1987,8 +1997,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function draftTreePanel() {
     return `<div class="bps-panel is-wide bps-tree-panel" data-bps-tree>
-      <div class="bps-panel-head"><h3>BP 时序分支</h3>
-        <span class="bps-sub">同一手同一英雄合并；线宽 = 局数；训练赛按征召规则展开手序</span></div>
+      <div class="bps-panel-head"><h3>历史 BP 聚合树（非单局）</h3>
+        <span class="bps-sub">跨局合并；线宽 = 局数；阵营与 Pick/Ban 以节点和图例为准</span></div>
       <div class="bps-panel-body">
         <p class="bps-tree-takeaway">${treeTakeaway(false)}</p>
         <div class="bps-tree-tools">
@@ -2034,7 +2044,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             <span><i class="is-own-ban"></i>我方 Ban</span>
             <span><i class="is-foe-pick"></i>对方 Pick</span>
             <span><i class="is-foe-ban"></i>对方 Ban</span>
-            <span class="is-note">线宽 = 局数；同一手同一英雄合并成一个节点</span>
+            <span class="is-note">跨局聚合；线宽 = 局数；同一手同一英雄合并成一个节点</span>
           </div>`
           : (state.tree ? `<div class="bps-empty"><b>还没有可画的手序</b>
               <p>${esc(state.tree.reason || '')}</p></div>` : '')}`}
@@ -2068,8 +2078,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const available = state.tree?.available;
     const focus = state.typeHandFocus;
     return `<div class="bps-panel is-wide bps-tree-panel bps-typetree" data-bps-typetree>
-      <div class="bps-panel-head"><h3>BP 时序 · 类型</h3>
-        <span class="bps-sub">和上面的时序同款分析，节点换成英雄类型（五路 12 类）；点一手看该手各类型占比</span></div>
+      <div class="bps-panel-head"><h3>历史 BP 聚合树（非单局） · 类型</h3>
+        <span class="bps-sub">节点＝英雄类型（五路 12 类）</span></div>
       <div class="bps-panel-body">
         <p class="bps-tree-takeaway">${treeTakeaway(true)}</p>
         <div class="bps-tree-tools">
@@ -2091,7 +2101,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
             <span><i class="is-own-ban"></i>我方 Ban</span>
             <span><i class="is-foe-pick"></i>对方 Pick</span>
             <span><i class="is-foe-ban"></i>对方 Ban</span>
-            <span class="is-note">胶囊色 = 分路 · 线宽 = 局数</span>
+            <span class="is-note">跨局聚合 · 胶囊色 = 分路 · 线宽 = 局数</span>
           </div>
           ${focus ? `<div class="bps-typebreak">
             <div class="bps-typebreak-head"><b>第 ${focus} 手 · 各类型占比</b>
@@ -2137,7 +2147,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <span class="bps-console-label">对象</span>${seg(sides, side, 'data-bps-type-side', {small: true})}
       <span class="bps-console-label">赛制</span>${seg(boOptions, String(state.typeBo), 'data-bps-type-bo', {small: true})}
       ${focus ? `<button type="button" class="bps-chip is-focus" data-bps-type-focus="">
-        已聚焦 ${esc(focus)} <em>×</em></button>` : '<span class="bps-sub">点图里的类型可以跨图聚焦</span>'}
+        ${glyph('compare', { size: 16 })} 已聚焦 ${esc(focus)} <em>×</em></button>` : ''}
     </div>`;
     if (!profile) {
       return `${head}${tools}<div class="bps-empty"><b>当前窗口没有可拆的 BP 记录</b>
@@ -2204,8 +2214,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <em>${num(row.count)} 次 · ${rate(row.winRate)}</em></div>`).join('') || '<p class="bps-note">样本不足。</p>'}
     </div>`;
     return `<div class="bps-panel bps-plan-response">
-      <div class="bps-panel-head"><h3>针对「${esc(block.label)}」的应对 · 引用 03</h3>
-        <span class="bps-sub">与破解页同一份目标数据；选目标后自动同步</span></div>
+      <div class="bps-panel-head">${glyph('bp', { label: '应对方案', size: 18 })}<h3>针对「${esc(block.label)}」的应对 · 引用 03</h3></div>
       <div class="bps-plan-response-grid">${col(block.kpl, 'KPL 应对')}${col(block.own, '本队应对')}</div>
     </div>`;
   }
@@ -2242,7 +2251,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     const firstOption = (firstBranch?.options || [])[0];
     const firstSystem = (plan.ourSystems || [])[0];
     const step = (index, label, hero, text) => `<button type="button" class="bps-plan-step" data-bps-plan-step="${index}">
-      <i>${index + 1}</i><span class="bps-plan-step-label">${esc(label)}</span>
+      ${glyph('bp', { size: 16 })} <i>${index + 1}</i><span class="bps-plan-step-label">${esc(label)}</span>
       ${hero ? heroImg(hero) : ''}<b>${esc(text || (hero ? heroShort(hero) : '样本不足'))}</b></button>`;
     const flowStrip = firstBan ? `<div class="bps-plan-flow" aria-label="赛前推演">
       ${step(0, '先 Ban', firstBan.hero)}
@@ -2289,13 +2298,13 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function unavailableState(reason) {
     return `<div class="bps">
       <div class="bps-empty bps-unavailable">
+        ${glyph('bp', { label: 'BP 记录', size: 20 })}
         <b>还没有可分析的 BP 记录</b>
         <p>${esc(reason || '当前数据源还没有可用的 BP 记录。')}</p>
-        <p class="bps-note">先把训练赛对局拿进来（营地同步，或截图 / 录屏），BP 页会按每方 Ban / Pick 顺序自动整理；想先看版式，也可以载入一份模拟数据。</p>
         <div class="bps-unavailable-actions">
-          <a class="bps-primary" href="#ingest">去采集</a>
-          <button type="button" class="bps-softbtn" data-bps-demo>载入模拟数据</button>
-          <button type="button" class="bps-softbtn" data-bps-refresh>重新读取</button>
+          <a class="bps-primary" href="#ingest">${glyph('capture', { size: 18 })} 去采集</a>
+          <button type="button" class="bps-softbtn" data-bps-demo>${glyph('refresh', { size: 18 })} 载入模拟数据</button>
+          <button type="button" class="bps-softbtn" data-bps-refresh>${glyph('refresh', { size: 18 })} 重新读取</button>
         </div>
       </div>
     </div>`;
@@ -2303,8 +2312,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function errorState() {
     return `<div class="bps"><div class="bps-empty" style="margin-top:40px">
+      ${glyph('warning', { label: '读取失败', size: 20 })}
       <b>BP 数据暂时读不到</b><p>${esc(state.error)}</p>
-      <button type="button" class="bps-primary" data-bps-refresh>重新读取</button></div></div>`;
+      <button type="button" class="bps-primary" data-bps-refresh>${glyph('refresh', { size: 18 })} 重新读取</button></div></div>`;
   }
 
   /* 重绘会替换整棵 DOM；记录当前控件的稳定标识，渲染后回焦，避免 Tab 顺序从头开始。 */
@@ -2351,7 +2361,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <div class="bps-sections">
           ${visible.map((key) => SECTION_RENDER[key]()).join('')}
         </div>
-        <button type="button" class="bps-top" data-bps-top hidden aria-label="回到顶部">${icon('arrow')}</button>
+        <button type="button" class="bps-top" data-bps-top hidden aria-label="回到顶部">${glyph('arrow-up', { size: 18 })}</button>
       </div>`;
     }
     if (y > 0) window.scrollTo(0, y);
@@ -2568,8 +2578,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       if (head && !head.querySelector('.bps-export')) {
         const group = document.createElement('span');
         group.className = 'bps-export';
-        group.innerHTML = `<button type="button" data-bps-export-png="${key}" title="导出本节 PNG">PNG</button>
-          <button type="button" data-bps-export-csv="${key}" title="导出本节 CSV">CSV</button>`;
+        group.innerHTML = `<button type="button" data-bps-export-png="${key}" title="导出本节 PNG">${glyph('export', { size: 16 })} PNG</button>
+          <button type="button" data-bps-export-csv="${key}" title="导出本节 CSV">${glyph('export', { size: 16 })} CSV</button>`;
         head.appendChild(group);
       }
       if (head && !head.querySelector('.bps-collapse')) {

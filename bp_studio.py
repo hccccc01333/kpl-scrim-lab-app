@@ -1493,7 +1493,7 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, 
     只认已核验的逐手 `events`（18/20 手，order/action/actor/hero）；没有手序的局不参与，
     不按名单顺序补。节点 `actor` 相对所选队伍：team = 我方，enemy = 对方。
     蓝/红方的第一手行动方不同，默认取样本多的一侧，避免把两个视角混进一棵树。
-    ``start_hero`` 把某个英雄当作新的第 1 手：只留经过它的局，并从它开始重排手序。
+    ``start_hero`` 把某个英雄当作起点：只留经过它的局，但保留它在原 BP 里的手号、动作和行动方。
     """
     depth = max(2, min(20, int(depth or 6)))
     branch = max(2, min(5, int(branch or 3)))
@@ -1549,7 +1549,9 @@ def draft_tree(games, team="", opponent="", depth=6, branch=3, limit_games=600, 
         else:
             events = events[:depth]
         for offset, event in enumerate(events):
-            order = offset + 1 if start_hero else int(event.get("order") or 0)
+            # 选中某英雄当起点时只截样本、不改手号：夏侯惇原本是第 2 手 Ban，
+            # 点开后仍要显示「2 手 · BAN · 我方」，不能重排成第 1 手。
+            order = int(event.get("order") or (offset + 1 if start_hero else 0))
             action = "ban" if event.get("action") == "ban" else "pick"
             actor = "team" if event.get("actor") == "team" else "enemy"
             hero = str(event.get("hero") or "").strip()

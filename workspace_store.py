@@ -18,6 +18,7 @@ import json
 import sqlite3
 import time
 import uuid
+from datetime import date as _date, datetime as _datetime
 from pathlib import Path
 
 SCHEMA = """
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS players (
   aliases TEXT NOT NULL DEFAULT '[]',
   camp_user_id TEXT,
   role TEXT NOT NULL DEFAULT 'main',
+  status TEXT NOT NULL DEFAULT 'active',
   revision INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_players_team ON players(team_id);
@@ -89,13 +91,103 @@ CREATE TABLE IF NOT EXISTS player_accounts (
 );
 CREATE INDEX IF NOT EXISTS idx_accounts_player ON player_accounts(player_id);
 
+/* 统一采集上下文：一次勾选 = 一个批次，携带本队/对手/对局类型。 */
+CREATE TABLE IF NOT EXISTS capture_batches (
+  id TEXT PRIMARY KEY,
+  competition_id TEXT,
+  own_team_id TEXT,
+  opponent_team_id TEXT,
+  match_type TEXT NOT NULL DEFAULT 'training',
+  camp_user_id TEXT,
+  status TEXT NOT NULL DEFAULT 'draft',
+  notes TEXT,
+  report TEXT,
+  created_at REAL NOT NULL,
+  updated_at REAL,
+  actor TEXT
+);
+
+/* 双匹配池：按 playerId 聚合的 own/enemy 昵称池，昵称只作展示与匹配线索。 */
+CREATE TABLE IF NOT EXISTS player_nickname_pool (
+  id TEXT PRIMARY KEY,
+  side TEXT NOT NULL,
+  player_id TEXT,
+  nickname TEXT NOT NULL,
+  account_id TEXT,
+  match_key TEXT,
+  lane TEXT,
+  source TEXT NOT NULL DEFAULT 'camp',
+  confidence TEXT NOT NULL DEFAULT 'medium',
+  seen_at TEXT,
+  created_at REAL NOT NULL,
+  UNIQUE(side, nickname, account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nickname_pool_player ON player_nickname_pool(player_id);
+CREATE INDEX IF NOT EXISTS idx_nickname_pool_nick ON player_nickname_pool(nickname, side);
+
+/* 匹配规则集：游戏名 → 选手 ID 的确定映射。own 用 scope=''；
+   enemy 用 scope=对手战队 id，换队/换人靠「异常」交教练改，不静默覆盖。 */
+CREATE TABLE IF NOT EXISTS matching_rules (
+  id TEXT PRIMARY KEY,
+  side TEXT NOT NULL,
+  nickname TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  team_id TEXT NOT NULL DEFAULT '',
+  scope TEXT NOT NULL DEFAULT '',
+  enabled INTEGER NOT NULL DEFAULT 1,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at REAL NOT NULL,
+  updated_at REAL NOT NULL,
+  UNIQUE(side, nickname, scope)
+);
+CREATE INDEX IF NOT EXISTS idx_matching_rules_side ON matching_rules(side, nickname);
+
 CREATE TABLE IF NOT EXISTS player_team_history (
   player_id TEXT NOT NULL,
   team_id TEXT NOT NULL,
   start_date TEXT,
   end_date TEXT,
   source TEXT,
+  membership_id TEXT,
+  relation_type TEXT NOT NULL DEFAULT 'formal',
+  roster_role TEXT NOT NULL DEFAULT 'starter',
+  actor TEXT,
+  undone_at REAL,
+  notes TEXT,
   PRIMARY KEY(player_id, team_id, start_date)
+);
+
+/* 4.0 账号—选手的**时间化**关系。player_accounts 仍是"当前映射"快表，
+   本表记录生效区间与单局覆盖：同一个账号先后由不同选手使用、同一选手换号、
+   某局身份纠错都在这里留痕；历史对局文件一律不改。 */
+CREATE TABLE IF NOT EXISTS account_player_links (
+  link_id TEXT PRIMARY KEY,
+  platform TEXT NOT NULL DEFAULT 'camp',
+  account_id TEXT NOT NULL,
+  player_id TEXT NOT NULL,
+  valid_from TEXT,
+  valid_to TEXT,
+  game_match_key TEXT,
+  side TEXT,
+  status TEXT NOT NULL DEFAULT 'confirmed',
+  source TEXT,
+  actor TEXT,
+  undone_at REAL,
+  created_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_account_links_account ON account_player_links(account_id, valid_from);
+CREATE INDEX IF NOT EXISTS idx_account_links_player ON account_player_links(player_id);
+
+/* 重复选手人工合并：留镜像与撤销依据，不物理删除、不重写历史出场。 */
+CREATE TABLE IF NOT EXISTS identity_merge_logs (
+  merge_id TEXT PRIMARY KEY,
+  from_player_id TEXT NOT NULL,
+  to_player_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'applied',
+  detail TEXT NOT NULL DEFAULT '{}',
+  actor TEXT,
+  undone_at REAL,
+  created_at REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS schedules (
@@ -128,10 +220,10 @@ CREATE INDEX IF NOT EXISTS idx_schedules_competition ON schedules(competition_id
 CREATE TABLE IF NOT EXISTS competitions (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  date TEXT NOT NULL,          -- 训练赛归集窗口起（按录入日期）
-  end_date TEXT,               -- 训练赛归集窗口止（按录入日期）
-  formal_from TEXT,            -- 正式比赛范围起（与训练归集独立的时间口径）
-  formal_to TEXT,              -- 正式比赛范围止
+  date TEXT NOT NULL,          -- 训练起始（赛事卡片「训练起始」，按对局的训练日期比对）
+  end_date TEXT,               -- 训练结束（赛事卡片「训练结束」）
+  formal_from TEXT,            -- 正式比赛起（与训练时间独立的时间口径）
+  formal_to TEXT,              -- 正式比赛止
   opponent_team_id TEXT,
   team_ids TEXT NOT NULL DEFAULT '[]',
   head_coach TEXT,
@@ -240,7 +332,8 @@ CREATE TABLE IF NOT EXISTS match_rosters (
   hero TEXT,
   is_sub INTEGER NOT NULL DEFAULT 0,
   is_trial INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY(match_key, team_id, player_id)
+  -- 按槽位唯一：同一选手的多个小号可以在同一局各占一个位置。
+  PRIMARY KEY(match_key, side, slot)
 );
 
 CREATE TABLE IF NOT EXISTS bp (
@@ -431,8 +524,28 @@ class Workspace:
                 existing = {row[1] for row in connection.execute('PRAGMA table_info(players)')}
                 if 'positions' not in existing:
                     connection.execute("ALTER TABLE players ADD COLUMN positions TEXT NOT NULL DEFAULT '[]'")
+                if 'status' not in existing:
+                    connection.execute("ALTER TABLE players ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
             except sqlite3.Error as error:
                 self.schema_warnings.append(f'players 迁移: {error}')
+            # 4.0 时间化身份：旧库 player_team_history 只加列，不重建（PK 不变）。
+            try:
+                cols = {row[1] for row in connection.execute('PRAGMA table_info(player_team_history)')}
+                for column, ddl in {
+                    'membership_id': 'TEXT',
+                    'relation_type': "TEXT NOT NULL DEFAULT 'formal'",
+                    'roster_role': "TEXT NOT NULL DEFAULT 'starter'",
+                    'actor': 'TEXT',
+                    'undone_at': 'REAL',
+                    'notes': 'TEXT',
+                }.items():
+                    if cols and column not in cols:
+                        connection.execute(f'ALTER TABLE player_team_history ADD COLUMN {column} {ddl}')
+                if cols:
+                    connection.execute('CREATE INDEX IF NOT EXISTS idx_membership_id '
+                                       'ON player_team_history(membership_id)')
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'player_team_history 迁移: {error}')
             # 系列赛关系列（V2.0）：旧库的 match_records 可能没有 series_id/game_no，
             # 有 match_key 结构的按需补列；matches 若是存 JSON body 的旧表（无
             # match_key）则跳过，写回时按 PRAGMA 动态判断可用表。
@@ -466,6 +579,57 @@ class Workspace:
                             connection.execute(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}')
                 except sqlite3.Error as error:
                     self.schema_warnings.append(f'{table} 赛事列迁移: {error}')
+            # 匹配保存丢人：旧主键 (match_key,team_id,player_id) 会让同一选手的
+            # 第二个小号 INSERT OR REPLACE 掉第一人，10 人只剩 9 人。
+            # 改成按槽位唯一，并保留旧数据（迁移只在主键不含 slot 时跑一次）。
+            try:
+                pk_cols = {row[1] for row in connection.execute(
+                    'PRAGMA table_info(match_rosters)') if row[5]}
+                if pk_cols and 'slot' not in pk_cols:
+                    connection.execute(
+                        'ALTER TABLE match_rosters RENAME TO match_rosters_old_pk')
+                    connection.execute(
+                        'CREATE TABLE match_rosters ('
+                        'match_key TEXT NOT NULL, team_id TEXT NOT NULL, '
+                        'player_id TEXT NOT NULL, account_id TEXT, '
+                        'side TEXT NOT NULL, slot INTEGER NOT NULL, hero TEXT, '
+                        'is_sub INTEGER NOT NULL DEFAULT 0, '
+                        'is_trial INTEGER NOT NULL DEFAULT 0, '
+                        'PRIMARY KEY(match_key, side, slot))')
+                    connection.execute(
+                        'INSERT OR REPLACE INTO match_rosters '
+                        '(match_key,team_id,player_id,account_id,side,slot,hero,is_sub,is_trial) '
+                        'SELECT match_key,team_id,player_id,account_id,side,slot,hero,is_sub,is_trial '
+                        'FROM match_rosters_old_pk')
+                    connection.execute('DROP TABLE match_rosters_old_pk')
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'match_rosters 主键迁移: {error}')
+            # 一次性清理：老版本删队只把 teams 标 archived，覆盖层/规则/昵称池
+            # 还留着记录，导致删完后战队档案仍从缓存里复活。
+            try:
+                archived = [row[0] for row in connection.execute(
+                    "SELECT id FROM teams WHERE status='archived'")]
+                for team_id in archived:
+                    for sql, params in (
+                        ('DELETE FROM team_clusters WHERE key=?', (team_id,)),
+                        ('DELETE FROM matching_rules WHERE team_id=? OR scope=?',
+                         (team_id, team_id)),
+                    ):
+                        try:
+                            connection.execute(sql, params)
+                        except sqlite3.Error:
+                            pass
+                    try:
+                        player_ids = [row[0] for row in connection.execute(
+                            'SELECT id FROM players WHERE team_id=?', (team_id,))]
+                        for player_id in player_ids:
+                            connection.execute(
+                                'DELETE FROM player_nickname_pool WHERE player_id=?',
+                                (player_id,))
+                    except sqlite3.Error:
+                        pass
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'归档战队残留清理: {error}')
             # 赛事域（M1）：系列赛赛事归属冗余列，旧库补列。
             try:
                 series_cols = {row[1] for row in connection.execute('PRAGMA table_info(training_series)')}
@@ -474,7 +638,7 @@ class Workspace:
             except sqlite3.Error as error:
                 self.schema_warnings.append(f'training_series 赛事列迁移: {error}')
             # 比赛实体增强字段（教练组 / 本队选手 / 参赛队伍 / 关键对局等）。
-            # formal_from/formal_to：正式比赛范围，独立于训练赛归集窗口 date/end_date。
+            # formal_from/formal_to：正式比赛起止，独立于训练起止 date/end_date。
             try:
                 existing = {row[1] for row in connection.execute('PRAGMA table_info(competitions)')}
                 for column, ddl in {
@@ -493,6 +657,17 @@ class Workspace:
                         connection.execute(f'ALTER TABLE competitions ADD COLUMN {column} {ddl}')
             except sqlite3.Error as error:
                 self.schema_warnings.append(f'competitions 增强字段迁移: {error}')
+            # 4.0 归档纠错：把拉错的局（排位/巅峰赛等）标为排除，保留原记录以便撤销。
+            # 只加两列，不改对局本身；所有归集查询统一在 _all_match_rows 过滤。
+            try:
+                existing = {row[1] for row in connection.execute('PRAGMA table_info(match_records)')}
+                if existing:
+                    if 'excluded_at' not in existing:
+                        connection.execute('ALTER TABLE match_records ADD COLUMN excluded_at TEXT')
+                    if 'excluded_reason' not in existing:
+                        connection.execute('ALTER TABLE match_records ADD COLUMN excluded_reason TEXT')
+            except sqlite3.Error as error:
+                self.schema_warnings.append(f'match_records 归档纠错字段迁移: {error}')
             # 赛事域打通：旧系列赛即使对局已按窗口归档，也可能没有赛事归属，
             # 导致大场/跨局页按当前赛事筛选时整批消失。按同一归集口径回填。
             try:
@@ -572,6 +747,16 @@ class Workspace:
             connection.close()
         return [self._team_row(row) for row in rows]
 
+    def own_team_id(self) -> str:
+        """本队战队的稳定 ID（本队页填队名时由 identity_service 写入）。"""
+        connection = self.connect()
+        try:
+            row = connection.execute(
+                "SELECT value FROM workspace_meta WHERE key='own_team_id'").fetchone()
+            return str(row['value']) if row and row['value'] else ''
+        finally:
+            connection.close()
+
     def search_teams(self, q='', limit=20):
         connection = self.connect()
         try:
@@ -608,6 +793,70 @@ class Workspace:
         finally:
             connection.close()
         return target_id
+
+    def delete_team(self, team_id, *, actor=None):
+        """删除对手战队：战队卡下架，名下选手连同账号映射一起删除，不留野生 ID。"""
+        team_id = str(team_id or '').strip()
+        if not team_id:
+            raise ValueError('缺少战队 id')
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            # 本队战队是主数据，下面挂着全部本队选手 ID 与账号映射。它曾因
+            # 「对方战队」页没过滤而被当成对手显示，误点删除会连本队 ID 一起清掉。
+            # 前端过滤之外，这里必须兜底拒绝。
+            own = connection.execute(
+                "SELECT value FROM workspace_meta WHERE key='own_team_id'").fetchone()
+            if own and str(own['value'] or '') == team_id:
+                raise ValueError('这是本队战队，不能删除；本队选手 ID 都挂在它下面')
+            team = connection.execute('SELECT name FROM teams WHERE id=?', (team_id,)).fetchone()
+            if team is None:
+                raise ValueError('战队不存在')
+            rows = connection.execute('SELECT id, name FROM players WHERE team_id=?', (team_id,)).fetchall()
+            player_ids = [row['id'] for row in rows]
+
+            def safe(sql, params=()):
+                """老库可能没有某张表；删队不该因为缺表而整笔回滚。"""
+                try:
+                    connection.execute(sql, params)
+                    return True
+                except sqlite3.Error:
+                    return False
+
+            for player_id in player_ids:
+                safe('DELETE FROM player_accounts WHERE player_id=?', (player_id,))
+            # 级联清掉所有按 player_id / team_id 存的下游数据。以前只删 players
+            # 和 player_accounts，覆盖层、昵称池、阵容、规则里的记录全留下，
+            # 用户看到的就是「战队卡删了，档案/匹配里还有」。
+            for player_id in player_ids:
+                safe('DELETE FROM player_nickname_pool WHERE player_id=?', (player_id,))
+                safe('DELETE FROM match_rosters WHERE player_id=?', (player_id,))
+                safe('DELETE FROM player_team_history WHERE player_id=?', (player_id,))
+                safe('DELETE FROM account_player_links WHERE player_id=?', (player_id,))
+                safe('DELETE FROM team_roster_versions WHERE player_id=?', (player_id,))
+            safe('DELETE FROM match_rosters WHERE team_id=?', (team_id,))
+            safe('DELETE FROM matching_rules WHERE team_id=? OR scope=?', (team_id, team_id))
+            safe('DELETE FROM team_roster_versions WHERE team_id=?', (team_id,))
+            safe('DELETE FROM team_relations WHERE team_id=? OR related_team_id=?',
+                 (team_id, team_id))
+            safe('DELETE FROM team_aliases WHERE team_id=?', (team_id,))
+            safe('DELETE FROM team_clusters WHERE key=?', (team_id,))
+            for table in ('capture_batches', 'competitions', 'schedules'):
+                safe(f'UPDATE {table} SET opponent_team_id=NULL WHERE opponent_team_id=?',
+                     (team_id,))
+            for row in rows:
+                connection.execute('DELETE FROM players WHERE id=?', (row['id'],))
+                self._log(connection, 'player', row['id'], 'deleted', row['name'], None, 'manual', actor)
+            connection.execute(
+                "UPDATE teams SET status='archived', revision=revision+1 WHERE id=?", (team_id,))
+            self._log(connection, 'team', team_id, 'delete', team['name'], 'archived', 'manual', actor)
+            connection.commit()
+            return {'ok': True, 'id': team_id, 'playersDeleted': len(rows)}
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     # ---------------------------------------------------------------- 选手
     def upsert_player(self, player_id=None, *, team_id, name, position=None, positions=None,
@@ -676,6 +925,122 @@ class Workspace:
                 item['positions'] = []
             out.append(item)
         return out
+
+    # ---- 匹配规则集：游戏名 → 选手 ID 的确定映射 -------------------------
+    @staticmethod
+    def _rule_row(row):
+        item = {key: row[key] for key in row.keys()}
+        return {
+            'id': item['id'], 'side': item['side'], 'nickname': item['nickname'],
+            'playerId': item['player_id'], 'teamId': item.get('team_id') or '',
+            'scope': item.get('scope') or '', 'enabled': bool(item.get('enabled', 1)),
+            'notes': item.get('notes') or '', 'createdAt': item.get('created_at'),
+            'updatedAt': item.get('updated_at'),
+        }
+
+    def list_matching_rules(self, side=None):
+        self.ensure_schema()
+        connection = self.connect()
+        try:
+            if side in ('own', 'enemy'):
+                rows = connection.execute(
+                    'SELECT * FROM matching_rules WHERE side=? ORDER BY nickname, scope',
+                    (side,)).fetchall()
+            else:
+                rows = connection.execute(
+                    'SELECT * FROM matching_rules ORDER BY side, nickname, scope').fetchall()
+        finally:
+            connection.close()
+        return [self._rule_row(row) for row in rows]
+
+    def save_matching_rule(self, *, rule_id=None, side=None, nickname='', player_id='',
+                           team_id='', scope=None, enabled=True, notes='', actor=None):
+        side = str(side or '').strip()
+        if side not in ('own', 'enemy'):
+            raise ValueError('规则阵营只能是 own 或 enemy')
+        nickname = str(nickname or '').strip()
+        player_id = str(player_id or '').strip()
+        if not nickname or not player_id:
+            raise ValueError('游戏名和选手 ID 都不能为空')
+        team_id = str(team_id or '').strip()
+        scope = str(scope if scope is not None else (team_id if side == 'enemy' else '')).strip()
+        now = time.time()
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            rule_id = str(rule_id or '').strip()
+            existing = None
+            if rule_id:
+                existing = connection.execute(
+                    'SELECT * FROM matching_rules WHERE id=?', (rule_id,)).fetchone()
+            if not existing:
+                existing = connection.execute(
+                    'SELECT * FROM matching_rules WHERE side=? AND nickname=? AND scope=?',
+                    (side, nickname, scope)).fetchone()
+            if existing:
+                connection.execute(
+                    'UPDATE matching_rules SET side=?, nickname=?, player_id=?, team_id=?, '
+                    'scope=?, enabled=?, notes=?, updated_at=? WHERE id=?',
+                    (side, nickname, player_id, team_id, scope, 1 if enabled else 0,
+                     str(notes or '')[:500], now, existing['id']))
+                result_id = existing['id']
+                verb = 'updated'
+            else:
+                result_id = 'rule-' + uuid.uuid4().hex[:10]
+                connection.execute(
+                    'INSERT INTO matching_rules(id, side, nickname, player_id, team_id, scope, '
+                    'enabled, notes, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                    (result_id, side, nickname, player_id, team_id, scope, 1 if enabled else 0,
+                     str(notes or '')[:500], now, now))
+                verb = 'created'
+            # 规则就是「游戏名 → 选手ID」的权威绑定。选手档案页的 name_to_member
+            # 只读 player_nickname_pool，不读 matching_rules；以前只建规则时档案页
+            # 一直显示未匹配。这里在同一事务里把规则同步进昵称池，两处同源。
+            if enabled:
+                connection.execute(
+                    'DELETE FROM player_nickname_pool WHERE side=? AND nickname=?',
+                    (side, nickname))
+                connection.execute(
+                    'INSERT INTO player_nickname_pool(id, side, player_id, nickname, '
+                    'account_id, match_key, lane, source, confidence, seen_at, created_at) '
+                    "VALUES(?,?,?,?,NULL,NULL,NULL,'manual','manual',NULL,?)",
+                    (uuid.uuid4().hex[:16], side, player_id, nickname, now))
+            self._log(connection, 'matching_rule', result_id, verb, nickname, None, 'manual', actor)
+            connection.commit()
+            row = connection.execute(
+                'SELECT * FROM matching_rules WHERE id=?', (result_id,)).fetchone()
+        except sqlite3.IntegrityError as error:
+            connection.rollback()
+            raise ValueError(f'规则已存在，不能重复：{error}') from error
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return self._rule_row(row)
+
+    def delete_matching_rule(self, rule_id, *, actor=None):
+        rule_id = str(rule_id or '').strip()
+        if not rule_id:
+            raise ValueError('缺少规则 ID')
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute(
+                'SELECT * FROM matching_rules WHERE id=?', (rule_id,)).fetchone()
+            if not row:
+                connection.rollback()
+                return {'ok': True, 'deleted': 0}
+            connection.execute('DELETE FROM matching_rules WHERE id=?', (rule_id,))
+            self._log(connection, 'matching_rule', rule_id, 'deleted', row['nickname'],
+                      None, 'manual', actor)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return {'ok': True, 'deleted': 1}
 
     def migrate_roster(self, roster, *, own_team_name='', actor=None):
         """把旧 settings.roster 一次性迁入 players；保留旧 id，跳过明确重复项。"""
@@ -1085,12 +1450,18 @@ class Workspace:
         try:
             connection.execute('DELETE FROM match_rosters WHERE match_key=?', (match_key,))
             for row in rosters:
-                if not row.get('teamId') or not row.get('playerId'):
+                # 以前 teamId 为空就整行丢弃：本队未设或候选行没带 teamId 时，
+                # 已命中的选手直接不落库。玩家 ID 才是必需项。
+                if not row.get('playerId'):
                     continue
+                team_id = str(row.get('teamId') or '').strip()
+                if not team_id:
+                    side = str(row.get('side') or 'blue')
+                    team_id = (self.own_team_id() if side == 'blue' else '') or 'team-unassigned'
                 connection.execute(
                     'INSERT OR REPLACE INTO match_rosters(match_key, team_id, player_id, account_id, '
                     'side, slot, hero, is_sub, is_trial) VALUES(?,?,?,?,?,?,?,?,?)',
-                    (match_key, row['teamId'], row['playerId'], row.get('accountId'),
+                    (match_key, team_id, row['playerId'], row.get('accountId'),
                      row.get('side') or 'blue', int(row.get('slot') or 0), row.get('hero'),
                      1 if row.get('isSub') else 0, 1 if row.get('isTrial') else 0))
             connection.commit()
@@ -1144,8 +1515,8 @@ class Workspace:
 
     # ---------------------------------------------------------------- 赛事归集与双时间口径
     # 设计要点（docs/重构蓝图_白金画廊交互.md §3.5.3）：
-    # - 训练赛按【录入日期 recorded_date】落入赛事的归集窗口 date~end_date（缺省回退 date）；
-    # - 正式比赛按【发生日期 date】落入独立的 formal_from~formal_to 范围；
+    # - 训练赛按【训练日期 date】落入赛事的训练起止 date~end_date（缺省回退 date）；
+    # - 正式比赛按【发生日期 date】落入独立的正式比赛起止 formal_from~formal_to 范围；
     # - 全部在查询时计算，改赛事时间后归属自然重算，不写死在对局上；
     # - 试训对局 in_trial=1 一律排除；key_match_keys / competition_id 手动挂载作为补充；
     # - 「赛事」与「训练赛/正式赛」是独立维度，分别用 match_type 过滤。
@@ -1192,20 +1563,22 @@ class Workspace:
     def _training_date(cls, row):
         """训练赛日期口径：对局本身的 date，而不是入库时间 recorded_date。
 
-        赛事卡片的「归集起始 / 归集结束」就是拿这个日期去比的。
+        赛事卡片的「训练起始 / 训练结束」就是拿这个日期去比的。
         """
         return str(cls._mfield(row, 'date', '') or '').strip()
 
     @classmethod
     def _collect_bounds(cls, competition):
-        """训练归集窗口：end_date 缺省时按单日窗口处理，避免旧数据无限吞并后续录入。"""
+        """训练起止窗口：end_date 缺省时按单日窗口处理，避免旧数据无限吞并后续录入。"""
         start = competition.get('date')
         return cls._date_bounds(start, competition.get('end_date') or start)
 
     def _all_match_rows(self):
         connection = self.connect()
         try:
-            rows = connection.execute('SELECT * FROM match_records ORDER BY date, match_key').fetchall()
+            rows = connection.execute(
+                "SELECT * FROM match_records WHERE excluded_at IS NULL OR excluded_at = '' "
+                'ORDER BY date, match_key').fetchall()
             return [{key: row[key] for key in row.keys()} for row in rows]
         except sqlite3.Error:
             return []
@@ -1242,7 +1615,7 @@ class Workspace:
         return item
 
     def competition_training_matches(self, competition_id, limit=None):
-        """按赛事查训练赛：训练日期落入归集起始/结束 + 手动挂载 + 直连，排除试训对局。
+        """按赛事查训练赛：训练日期落入训练起始/结束 + 手动挂载 + 直连，排除试训对局。
 
         改赛事时间后无需回写对局，本查询立即反映新归属。
         """
@@ -1273,6 +1646,59 @@ class Workspace:
         result.sort(key=lambda item: (item['recordedDate'], str(item.get('match_key') or '')))
         return self._limit(result, limit)
 
+    # ---------------------------------------------------- 归档纠错（删除 / 撤销）
+    @staticmethod
+    def _now_iso():
+        return _datetime.now().astimezone().isoformat(timespec='seconds')
+
+    def exclude_match(self, match_key, reason=''):
+        """把拉错的局从所有归集视图里移除；记录留库，可原样撤销。"""
+        key = str(match_key or '').strip()
+        if not key:
+            raise ValueError('缺少对局键')
+        connection = self.connect()
+        try:
+            cursor = connection.execute(
+                'UPDATE match_records SET excluded_at=?, excluded_reason=? WHERE match_key=?',
+                (self._now_iso(), str(reason or '').strip()[:200], key))
+            connection.commit()
+            if not cursor.rowcount:
+                raise ValueError('找不到该对局')
+            return {'matchKey': key, 'excluded': True, 'reason': str(reason or '')}
+        finally:
+            connection.close()
+
+    def restore_match(self, match_key):
+        """撤销排除：对局按既有日期/归属规则重新回到归档区。"""
+        key = str(match_key or '').strip()
+        if not key:
+            raise ValueError('缺少对局键')
+        connection = self.connect()
+        try:
+            cursor = connection.execute(
+                "UPDATE match_records SET excluded_at=NULL, excluded_reason=NULL WHERE match_key=?",
+                (key,))
+            connection.commit()
+            if not cursor.rowcount:
+                raise ValueError('找不到该对局')
+            return {'matchKey': key, 'excluded': False}
+        finally:
+            connection.close()
+
+    def excluded_matches(self, limit=200):
+        """已排除列表，供「撤销」面板读取。"""
+        connection = self.connect()
+        try:
+            rows = connection.execute(
+                "SELECT match_key, date, session, excluded_at, excluded_reason "
+                'FROM match_records WHERE excluded_at IS NOT NULL AND excluded_at != "" '
+                'ORDER BY excluded_at DESC LIMIT ?', (limit,)).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error:
+            return []
+        finally:
+            connection.close()
+
     def competition_scope_keys(self, competition_id, kinds=('training', 'formal')):
         # 赛事分析域的对局键集合（M1 统一 scope 层）：训练赛口径（直连 U 归集
         # 窗口 U 手动挂载）U 正赛口径（formal 窗口）。所有分析取「当前赛事
@@ -1287,6 +1713,564 @@ class Workspace:
             keys |= {str(row.get('match_key') or '')
                      for row in self.competition_formal_matches(competition_id, limit=None)}
         return keys
+
+    # ---------------------------------------------------- 统一采集上下文与双匹配池
+    def create_capture_batch(self, *, competition_id=None, own_team_id=None,
+                             opponent_team_id=None, match_type='training',
+                             camp_user_id=None, notes='', actor='coach', batch_id=None):
+        if match_type not in ('training', 'formal'):
+            raise ValueError('对局类型只能是 training / formal')
+        batch_id = str(batch_id or 'cap-' + uuid.uuid4().hex[:12])
+        now = time.time()
+        connection = self.connect()
+        try:
+            connection.execute(
+                'INSERT INTO capture_batches(id, competition_id, own_team_id, opponent_team_id, '
+                'match_type, camp_user_id, notes, created_at, actor) VALUES(?,?,?,?,?,?,?,?,?)',
+                (batch_id, str(competition_id or '') or None, str(own_team_id or '') or None,
+                 str(opponent_team_id or '') or None, match_type,
+                 str(camp_user_id or '') or None, str(notes or ''), now, actor))
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_capture_batch(batch_id)
+
+    def get_capture_batch(self, batch_id):
+        connection = self.connect()
+        try:
+            row = connection.execute('SELECT * FROM capture_batches WHERE id=?',
+                                     (str(batch_id),)).fetchone()
+            return dict(row) if row else None
+        finally:
+            connection.close()
+
+    def list_capture_batches(self, competition_id=None, limit=100):
+        connection = self.connect()
+        try:
+            if competition_id:
+                rows = connection.execute(
+                    'SELECT * FROM capture_batches WHERE competition_id=? '
+                    'ORDER BY created_at DESC LIMIT ?', (str(competition_id), int(limit))).fetchall()
+            else:
+                rows = connection.execute(
+                    'SELECT * FROM capture_batches ORDER BY created_at DESC LIMIT ?',
+                    (int(limit),)).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            connection.close()
+
+    def update_capture_batch(self, batch_id, *, status=None, report=None, notes=None):
+        current = self.get_capture_batch(batch_id)
+        if current is None:
+            raise ValueError('采集批次不存在')
+        connection = self.connect()
+        try:
+            connection.execute(
+                'UPDATE capture_batches SET status=COALESCE(?,status), '
+                'report=COALESCE(?,report), notes=COALESCE(?,notes), updated_at=? WHERE id=?',
+                (status, json.dumps(report, ensure_ascii=False) if report is not None else None,
+                 notes, time.time(), str(batch_id)))
+            connection.commit()
+        finally:
+            connection.close()
+        return self.get_capture_batch(batch_id)
+
+    def upsert_nickname_entries(self, rows):
+        """rows: [{side, playerId, nickname, accountId, matchKey, lane, confidence, seenAt}]"""
+        saved = 0
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            for row in rows or []:
+                side = str(row.get('side') or '')
+                nickname = str(row.get('nickname') or '').strip()
+                if side not in ('own', 'enemy') or not nickname:
+                    continue
+                # UNIQUE(side,nickname,account_id) 里的 account_id 是 NULL 时
+                # SQLite 不去重：同一昵称会被反复插入，多数票解析被污染。
+                # 匹配写入传的 accountId 固定为空，先按 (side,nickname) 清旧行。
+                connection.execute(
+                    'DELETE FROM player_nickname_pool WHERE side=? AND nickname=?',
+                    (side, nickname))
+                connection.execute(
+                    'INSERT INTO player_nickname_pool(id, side, player_id, nickname, account_id, '
+                    'match_key, lane, source, confidence, seen_at, created_at) '
+                    "VALUES(?,?,?,?,?,?,?,'camp',?,?,?) "
+                    'ON CONFLICT(side, nickname, account_id) DO UPDATE SET '
+                    'player_id=COALESCE(excluded.player_id, player_nickname_pool.player_id), '
+                    'match_key=excluded.match_key, seen_at=excluded.seen_at',
+                    (uuid.uuid4().hex[:16], side, str(row.get('playerId') or '') or None,
+                     nickname, str(row.get('accountId') or '') or None,
+                     str(row.get('matchKey') or '') or None, str(row.get('lane') or '') or None,
+                     str(row.get('confidence') or 'medium'), str(row.get('seenAt') or '') or None,
+                     time.time()))
+                saved += 1
+            if saved:
+                # 让跨局向量的指纹跟着变：匹配成功后旧缓存不能继续挂游戏名。
+                self._log(connection, 'player', str(rows[0].get('playerId') or '') or 'matching',
+                          'matching', None, saved, 'camp', None, None, '匹配与编组保存')
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return saved
+
+    def nickname_pool(self, side=None, player_id=None, nickname=None):
+        sql = 'SELECT * FROM player_nickname_pool WHERE 1=1'
+        params = []
+        if side:
+            sql += ' AND side=?'; params.append(str(side))
+        if player_id:
+            sql += ' AND player_id=?'; params.append(str(player_id))
+        if nickname:
+            sql += ' AND nickname=?'; params.append(str(nickname))
+        sql += ' ORDER BY seen_at DESC, created_at DESC'
+        connection = self.connect()
+        try:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+        finally:
+            connection.close()
+
+    def find_nickname_player(self, nickname, side=None):
+        rows = self.nickname_pool(side=side, nickname=str(nickname or '').strip())
+        counts = {}
+        for row in rows:
+            if row['player_id']:
+                counts[row['player_id']] = counts.get(row['player_id'], 0) + 1
+        if not counts:
+            return None
+        return max(counts, key=counts.get)
+
+    def stamp_capture_context(self, match_keys, *, match_type=None,
+                              own_team_id=None, enemy_team_id=None, own_side=None,
+                              competition_id=None, source='camp-context'):
+        """把采集上下文回填到权威对局表；缺日期的对局保持 draft，不猜时间。"""
+        saved = 0
+        connection = self.connect()
+        try:
+            for key in match_keys or []:
+                row = connection.execute(
+                    'SELECT date, competition_id FROM match_records WHERE match_key=?',
+                    (str(key),)).fetchone()
+                if row is None:
+                    continue
+                connection.execute(
+                    'UPDATE match_records SET '
+                    'match_type=COALESCE(?, match_type), own_team_id=COALESCE(?, own_team_id), '
+                    'enemy_team_id=COALESCE(?, enemy_team_id), own_side=COALESCE(?, own_side), '
+                    'competition_id=COALESCE(?, competition_id), source=?, '
+                    'revision=revision+1 WHERE match_key=?',
+                    (str(match_type or '') or None,
+                     str(own_team_id or '') or None, str(enemy_team_id or '') or None,
+                     str(own_side or '') or None, str(competition_id or '') or None,
+                     source, str(key)))
+                saved += 1
+            connection.commit()
+        finally:
+            connection.close()
+        return saved
+
+    # ---------------------------------------------------- 4.0 时间化身份关系
+    MEMBERSHIP_RELATIONS = ('trial', 'formal', 'loan')
+    MEMBERSHIP_ROLES = ('starter', 'sub')
+    DEFAULT_LANES = ('对抗路', '打野', '中路', '发育路', '游走')
+
+    @staticmethod
+    def _iso(value, field, allow_empty=False):
+        text = str(value or '').strip()
+        if not text:
+            if allow_empty:
+                return ''
+            raise ValueError(f'缺少{field}')
+        try:
+            return _date.fromisoformat(text).isoformat()
+        except ValueError as error:
+            raise ValueError(f'{field}日期格式无效，应为 YYYY-MM-DD') from error
+
+    def add_membership(self, player_id, team_id, *, valid_from, valid_to=None,
+                       relation_type='formal', roster_role='starter', actor='coach', notes=''):
+        """新增一段选手—战队关系（试训 / 转正 / 转会）。不重写历史对局。"""
+        if relation_type not in self.MEMBERSHIP_RELATIONS:
+            raise ValueError('人员关系只能是 trial / formal / loan')
+        if roster_role not in self.MEMBERSHIP_ROLES:
+            raise ValueError('阵容角色只能是 starter / sub')
+        start = self._iso(valid_from, '生效日期')
+        end = self._iso(valid_to, '结束日期', allow_empty=True)
+        if end and end < start:
+            raise ValueError('结束日期不能早于生效日期')
+        connection = self.connect()
+        membership_id = uuid.uuid4().hex[:16]
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            if connection.execute('SELECT 1 FROM players WHERE id=?', (str(player_id),)).fetchone() is None:
+                raise ValueError('选手不存在')
+            if connection.execute('SELECT 1 FROM teams WHERE id=?', (str(team_id),)).fetchone() is None:
+                raise ValueError('战队不存在')
+            # 同一选手当前关系先收口：新关系生效日即旧关系结束日。
+            if not end:
+                connection.execute(
+                    "UPDATE player_team_history SET end_date=?, notes=COALESCE(notes,'') "
+                    'WHERE player_id=? AND (end_date IS NULL OR end_date=\'\') AND undone_at IS NULL',
+                    (start, str(player_id)))
+            try:
+                connection.execute(
+                    'INSERT INTO player_team_history(player_id, team_id, start_date, end_date, '
+                    'source, membership_id, relation_type, roster_role, actor, notes) '
+                    "VALUES(?,?,?,?,'manual',?,?,?,?,?)",
+                    (str(player_id), str(team_id), start, end or None, membership_id,
+                     relation_type, roster_role, actor, str(notes or '')))
+            except sqlite3.IntegrityError as error:
+                raise ValueError('该选手在此日期已有同一战队的归属记录') from error
+            if not end:
+                connection.execute('UPDATE players SET team_id=?, revision=revision+1 WHERE id=?',
+                                   (str(team_id), str(player_id)))
+            self._log(connection, 'player', str(player_id), 'membership', None,
+                      f'{team_id}@{start}({relation_type}/{roster_role})', 'manual', actor)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return {'membershipId': membership_id, 'playerId': str(player_id), 'teamId': str(team_id),
+                'validFrom': start, 'validTo': end or None,
+                'relationType': relation_type, 'rosterRole': roster_role}
+
+    def list_memberships(self, player_id=None, team_id=None, at_date=None, include_undone=False):
+        sql = 'SELECT * FROM player_team_history WHERE 1=1'
+        params = []
+        if player_id:
+            sql += ' AND player_id=?'; params.append(str(player_id))
+        if team_id:
+            sql += ' AND team_id=?'; params.append(str(team_id))
+        if at_date:
+            day = self._iso(at_date, '查询日期')
+            sql += " AND start_date<=? AND (end_date IS NULL OR end_date='' OR end_date>=?)"
+            params += [day, day]
+        if not include_undone:
+            sql += ' AND undone_at IS NULL'
+        sql += ' ORDER BY start_date, team_id'
+        connection = self.connect()
+        try:
+            rows = connection.execute(sql, params).fetchall()
+            out = []
+            for row in rows:
+                item = dict(row)
+                item['validFrom'] = item.pop('start_date')
+                item['validTo'] = item.pop('end_date')
+                out.append(item)
+            return out
+        finally:
+            connection.close()
+
+    def undo_membership(self, membership_id):
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute(
+                'SELECT * FROM player_team_history WHERE membership_id=? AND undone_at IS NULL',
+                (str(membership_id),)).fetchone()
+            if row is None:
+                raise ValueError('归属记录不存在或已撤销')
+            connection.execute('UPDATE player_team_history SET undone_at=? WHERE membership_id=?',
+                               (time.time(), str(membership_id)))
+            if not row['end_date']:
+                previous = connection.execute(
+                    "SELECT team_id FROM player_team_history WHERE player_id=? AND membership_id<>? "
+                    "AND undone_at IS NULL AND (end_date IS NULL OR end_date='' OR end_date<=?) "
+                    'ORDER BY start_date DESC LIMIT 1',
+                    (row['player_id'], str(membership_id), row['start_date'])).fetchone()
+                if previous:
+                    connection.execute('UPDATE players SET team_id=?, revision=revision+1 WHERE id=?',
+                                       (previous['team_id'], row['player_id']))
+            self._log(connection, 'player', row['player_id'], 'membership:undo',
+                      str(membership_id), None, 'manual', 'coach')
+            connection.commit()
+            return {'membershipId': str(membership_id), 'undone': True}
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def add_account_link(self, account_id, player_id, *, valid_from, valid_to=None,
+                         game_match_key=None, side=None, actor='coach', update_current=True):
+        """时间化账号—选手映射；当前有效且非单局覆盖时同步 player_accounts 快表。"""
+        account_id = str(account_id or '').strip()
+        player_id = str(player_id or '').strip()
+        if not account_id or not player_id:
+            raise ValueError('缺少游戏账号或选手')
+        start = self._iso(valid_from, '生效日期')
+        end = self._iso(valid_to, '结束日期', allow_empty=True)
+        if end and end < start:
+            raise ValueError('结束日期不能早于生效日期')
+        link_id = uuid.uuid4().hex[:16]
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            if connection.execute('SELECT 1 FROM players WHERE id=?', (player_id,)).fetchone() is None:
+                raise ValueError('选手不存在')
+            connection.execute(
+                'INSERT INTO account_player_links(link_id, platform, account_id, player_id, '
+                'valid_from, valid_to, game_match_key, side, status, source, actor, created_at) '
+                "VALUES(?,'camp',?,?,?,?,?,?,'confirmed','manual',?,?)",
+                (link_id, account_id, player_id, start, end or None,
+                 str(game_match_key or '') or None, str(side or '') or None,
+                 actor, time.time()))
+            self._log(connection, 'player', player_id, 'account-link', None,
+                      f'{account_id}@{start}', 'manual', actor)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        if update_current and not end and not game_match_key:
+            self.map_account(account_id, player_id=player_id, seen_at=start, actor=actor)
+        return {'linkId': link_id, 'accountId': account_id, 'playerId': player_id,
+                'validFrom': start, 'validTo': end or None}
+
+    def list_account_links(self, account_id=None, player_id=None, at_date=None,
+                           game_match_key=None, include_undone=False):
+        sql = 'SELECT * FROM account_player_links WHERE 1=1'
+        params = []
+        if account_id:
+            sql += ' AND account_id=?'; params.append(str(account_id))
+        if player_id:
+            sql += ' AND player_id=?'; params.append(str(player_id))
+        if game_match_key:
+            sql += ' AND game_match_key=?'; params.append(str(game_match_key))
+        if at_date:
+            day = self._iso(at_date, '查询日期')
+            sql += " AND valid_from<=? AND (valid_to IS NULL OR valid_to='' OR valid_to>=?)"
+            params += [day, day]
+        if not include_undone:
+            sql += ' AND undone_at IS NULL'
+        sql += ' ORDER BY valid_from DESC'
+        connection = self.connect()
+        try:
+            return [dict(row) for row in connection.execute(sql, params).fetchall()]
+        finally:
+            connection.close()
+
+    def resolve_player_at(self, account_id, *, at_date=None, game_match_key=None):
+        """按「单局覆盖 → 时间化区间 → 当前映射」解析身份，供身份匹配与分析共用。"""
+        account_id = str(account_id or '').strip()
+        if not account_id:
+            return None
+        if game_match_key:
+            row = self.list_account_links(account_id=account_id, game_match_key=game_match_key)
+            if row:
+                return self._resolved(row[0], 'game')
+        day = self._iso(at_date, '查询日期') if at_date else None
+        if day:
+            # 单局覆盖不能参与按日期解析，否则一次身份纠错会污染整段时间。
+            rows = [item for item in self.list_account_links(account_id=account_id, at_date=day)
+                    if not item['game_match_key']]
+            if rows:
+                return self._resolved(rows[0], 'time')
+        connection = self.connect()
+        try:
+            row = connection.execute(
+                'SELECT player_id, nickname FROM player_accounts '
+                "WHERE platform='camp' AND account_id=?", (account_id,)).fetchone()
+        finally:
+            connection.close()
+        if row is None:
+            return None
+        return {'playerId': row['player_id'], 'source': 'current', 'linkId': None,
+                'nickname': row['nickname'], 'accountId': account_id}
+
+    def _resolved(self, link, source):
+        player = None
+        connection = self.connect()
+        try:
+            row = connection.execute('SELECT id, name, team_id FROM players WHERE id=?',
+                                     (link['player_id'],)).fetchone()
+            if row:
+                player = dict(row)
+        finally:
+            connection.close()
+        return {'playerId': link['player_id'], 'source': source, 'linkId': link['link_id'],
+                'validFrom': link['valid_from'], 'validTo': link['valid_to'],
+                'gameMatchKey': link['game_match_key'], 'accountId': link['account_id'],
+                'name': player['name'] if player else '', 'teamId': player['team_id'] if player else ''}
+
+    def undo_account_link(self, link_id):
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute(
+                'SELECT * FROM account_player_links WHERE link_id=? AND undone_at IS NULL',
+                (str(link_id),)).fetchone()
+            if row is None:
+                raise ValueError('账号映射不存在或已撤销')
+            connection.execute('UPDATE account_player_links SET undone_at=? WHERE link_id=?',
+                               (time.time(), str(link_id)))
+            if not row['valid_to'] and not row['game_match_key']:
+                previous = connection.execute(
+                    'SELECT player_id FROM account_player_links WHERE account_id=? AND link_id<>? '
+                    "AND undone_at IS NULL AND (valid_to IS NULL OR valid_to='') "
+                    'ORDER BY valid_from DESC LIMIT 1',
+                    (row['account_id'], str(link_id))).fetchone()
+                if previous:
+                    connection.execute(
+                        "UPDATE player_accounts SET player_id=? WHERE platform='camp' AND account_id=?",
+                        (previous['player_id'], row['account_id']))
+                else:
+                    connection.execute(
+                        "DELETE FROM player_accounts WHERE platform='camp' AND account_id=?",
+                        (row['account_id'],))
+            self._log(connection, 'player', row['player_id'], 'account-link:undo',
+                      str(link_id), None, 'manual', 'coach')
+            connection.commit()
+            return {'linkId': str(link_id), 'undone': True}
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def batch_create_role_players(self, team_id, *, prefix=None, valid_from=None,
+                                  relation_type='formal', actor='coach'):
+        """对手一键建档：按五个分路生成可识别的本地选手 ID；已存在则复用。"""
+        team_id = str(team_id or '')
+        start = self._iso(valid_from, '生效日期') if valid_from else time.strftime('%Y-%m-%d')
+        connection = self.connect()
+        try:
+            team = connection.execute('SELECT id, name FROM teams WHERE id=?', (team_id,)).fetchone()
+        finally:
+            connection.close()
+        if team is None:
+            raise ValueError('战队不存在')
+        label = str(prefix or team['name'] or team_id).strip()
+        result = []
+        for lane in self.DEFAULT_LANES:
+            name = f'{label}·{lane}'
+            found = self.find_player(name, team_id=team_id)
+            if found:
+                player_id = found['id']
+                created = False
+            else:
+                player_id = self.upsert_player(None, team_id=team_id, name=name,
+                                               position=lane, actor=actor)
+                created = True
+            if not self.list_memberships(player_id=player_id, team_id=team_id, at_date=start):
+                self.add_membership(player_id, team_id, valid_from=start,
+                                    relation_type=relation_type, roster_role='starter', actor=actor,
+                                    notes='一键生成分路 ID')
+            result.append({'playerId': player_id, 'name': name, 'position': lane, 'created': created})
+        return {'teamId': team_id, 'teamName': team['name'], 'players': result}
+
+    def merge_players(self, from_player_id, to_player_id, *, actor='coach'):
+        """人工合并重复身份：只搬映射与关系，历史出场记录不改写；可撤销。"""
+        source, target = str(from_player_id), str(to_player_id)
+        if source == target:
+            raise ValueError('不能把选手合并到自己')
+        connection = self.connect()
+        merge_id = uuid.uuid4().hex[:16]
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            rows = connection.execute(
+                'SELECT id, name, aliases, status, team_id FROM players WHERE id IN (?,?)',
+                (source, target)).fetchall()
+            by_id = {row['id']: dict(row) for row in rows}
+            if source not in by_id or target not in by_id:
+                raise ValueError('选手不存在')
+            accounts = [row['id'] for row in connection.execute(
+                'SELECT id FROM player_accounts WHERE player_id=?', (source,)).fetchall()]
+            links = [row['link_id'] for row in connection.execute(
+                'SELECT link_id FROM account_player_links WHERE player_id=? AND undone_at IS NULL',
+                (source,)).fetchall()]
+            memberships = [dict(row) for row in connection.execute(
+                'SELECT membership_id, end_date, notes FROM player_team_history '
+                'WHERE player_id=? AND undone_at IS NULL', (source,)).fetchall()]
+            detail = {'sourceName': by_id[source]['name'], 'sourceAliases': by_id[source]['aliases'],
+                      'sourceStatus': by_id[source]['status'], 'targetAliases': by_id[target]['aliases'],
+                      'accounts': accounts, 'links': links, 'memberships': memberships,
+                      'sourceTeamId': by_id[source]['team_id']}
+            # 目标已有同一账号时删掉来源的快表行（时间化 link 仍保留可撤销）。
+            for account_row in connection.execute(
+                    'SELECT id, platform, account_id FROM player_accounts WHERE player_id=?',
+                    (source,)).fetchall():
+                clash = connection.execute(
+                    'SELECT 1 FROM player_accounts WHERE platform=? AND account_id=? AND player_id<>?',
+                    (account_row['platform'], account_row['account_id'], source)).fetchone()
+                if clash:
+                    connection.execute('DELETE FROM player_accounts WHERE id=?', (account_row['id'],))
+                else:
+                    connection.execute('UPDATE player_accounts SET player_id=? WHERE id=?',
+                                       (target, account_row['id']))
+            connection.execute('UPDATE account_player_links SET player_id=? WHERE player_id=?',
+                               (target, source))
+            connection.execute(
+                "UPDATE player_team_history SET end_date=?, notes=COALESCE(notes,'')||? "
+                'WHERE player_id=? AND undone_at IS NULL AND (end_date IS NULL OR end_date=\'\')',
+                (time.strftime('%Y-%m-%d'), f' → 合并入 {target}', source))
+            aliases = [by_id[source]['name'], source]
+            try:
+                current = json.loads(by_id[target]['aliases'] or '[]')
+                if not isinstance(current, list):
+                    current = []
+            except (TypeError, ValueError):
+                current = []
+            merged = current + [item for item in aliases if item not in current]
+            connection.execute('UPDATE players SET aliases=?, revision=revision+1 WHERE id=?',
+                               (json.dumps(merged, ensure_ascii=False), target))
+            connection.execute("UPDATE players SET status='archived', revision=revision+1 WHERE id=?",
+                               (source,))
+            connection.execute(
+                'INSERT INTO identity_merge_logs(merge_id, from_player_id, to_player_id, status, '
+                'detail, actor, created_at) VALUES(?,?,?,?,?,?,?)',
+                (merge_id, source, target, 'applied',
+                 json.dumps(detail, ensure_ascii=False), actor, time.time()))
+            self._log(connection, 'player', source, 'mergedInto', None, target, 'merge', actor)
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+        return {'mergeId': merge_id, 'fromPlayerId': source, 'toPlayerId': target,
+                'movedAccounts': len(detail['accounts']), 'movedLinks': len(detail['links'])}
+
+    def undo_merge(self, merge_id):
+        connection = self.connect()
+        try:
+            connection.execute('BEGIN IMMEDIATE')
+            row = connection.execute(
+                "SELECT * FROM identity_merge_logs WHERE merge_id=? AND status='applied'",
+                (str(merge_id),)).fetchone()
+            if row is None:
+                raise ValueError('合并记录不存在或已撤销')
+            detail = json.loads(row['detail'] or '{}')
+            source, target = row['from_player_id'], row['to_player_id']
+            for account_id in detail.get('accounts', []):
+                connection.execute('UPDATE player_accounts SET player_id=? WHERE id=?', (source, account_id))
+            connection.execute('UPDATE account_player_links SET player_id=? WHERE player_id=?',
+                               (source, target))
+            for item in detail.get('memberships', []):
+                connection.execute(
+                    'UPDATE player_team_history SET end_date=?, notes=? WHERE membership_id=?',
+                    (item.get('end_date'), item.get('notes'), item['membership_id']))
+            connection.execute('UPDATE players SET aliases=?, status=?, revision=revision+1 WHERE id=?',
+                               (detail.get('sourceAliases', '[]'), detail.get('sourceStatus', 'active'),
+                                source))
+            connection.execute('UPDATE players SET aliases=?, revision=revision+1 WHERE id=?',
+                               (detail.get('targetAliases', '[]'), target))
+            connection.execute('UPDATE identity_merge_logs SET status=?, undone_at=? WHERE merge_id=?',
+                               ('undone', time.time(), str(merge_id)))
+            self._log(connection, 'player', source, 'mergedInto:undo', target, None,
+                      'merge', 'coach')
+            connection.commit()
+            return {'mergeId': str(merge_id), 'undone': True}
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def unfiled_series(self, limit=200):
         # 未归属赛事的系列赛（存量批量归属工具的数据源）。
@@ -1478,7 +2462,7 @@ class Workspace:
         return linked
 
     def _window_competition_for(self, row):
-        """对局按赛事卡片的归集窗口落在哪个赛事；直连优先，窗口/手动兜底。
+        """对局按赛事卡片的训练起止落在哪个赛事；直连优先，窗口/手动兜底。
 
         系列赛编组此前只看直连列，导致「训练赛已归档到赛事、系列赛却没有赛事
         归属」，进而被大场/跨局页的当前赛事筛选整批排除。这里补齐同一口径。
@@ -1499,7 +2483,7 @@ class Workspace:
         return candidates[0]['id'] if candidates else None
 
     def _match_competitions(self, connection, keys):
-        # 对局键 → 赛事集合；直连列 + 归集窗口/手动挂载，供编组推导赛事归属。
+        # 对局键 → 赛事集合；直连列 + 训练起止/手动挂载，供编组推导赛事归属。
         comps = set()
         for table in self._series_relation_tables(connection):
             try:
@@ -1531,7 +2515,7 @@ class Workspace:
         return comps
 
     def competition_formal_matches(self, competition_id, limit=None):
-        """赛事正式比赛范围：formal_from~formal_to（缺省回退归集窗口）+ 类型为 formal。"""
+        """赛事正式比赛范围：formal_from~formal_to（缺省回退训练起止）+ 类型为 formal。"""
         competition = self.get_competition(competition_id)
         if not competition:
             return []
@@ -1562,7 +2546,7 @@ class Workspace:
         return self._limit(result, limit)
 
     def unfiled_training_matches(self, limit=None):
-        """未归档训练赛：训练日期不在任何赛事归集起始/结束内、也未被手动挂载。"""
+        """未归档训练赛：训练日期不在任何赛事训练起止内、也未被手动挂载。"""
         rows = self._all_match_rows()
         covered = set()
         for competition in self.list_competitions():
@@ -1584,7 +2568,7 @@ class Workspace:
         return self._limit(result, limit)
 
     def overlapping_competitions(self, start, end, exclude_id=None):
-        """时间窗口重叠检查（训练归集窗口 / 正式比赛范围任一重叠即算），仅供提示。"""
+        """时间窗口重叠检查（训练起止 / 正式比赛范围任一重叠即算），仅供提示。"""
         target = self._date_bounds(start, end)
         if not target:
             return []
@@ -2058,8 +3042,9 @@ class Workspace:
         传 None 表示保留原值（兼容旧调用方与局部更新）。
 
         双时间口径（新增字段全部可选，旧库/旧调用方不受影响）：
-          date/end_date        训练赛归集窗口（按录入日期）；collect_from/collect_to 为其别名；
-          formal_from/formal_to 正式比赛范围。传 None 保留原值，传 '' 清空。
+          date/end_date        训练起止（赛事卡片「训练起始 / 训练结束」，按训练日期比对）；
+                               collect_from/collect_to 为其别名；
+          formal_from/formal_to 正式比赛起止。传 None 保留原值，传 '' 清空。
         """
         name = str(name or '').strip()
         if not name:
@@ -2274,11 +3259,43 @@ class Workspace:
         connection = self.connect()
         try:
             rows = connection.execute(
-                'SELECT match_key,date,session,enemy_team_id,own_side,winner,score,duration,status '
+                'SELECT match_key,date,session,enemy_team_id,own_side,winner,score,duration,status,'
+                'excluded_at,excluded_reason '
                 'FROM match_records ORDER BY date DESC, match_key LIMIT ?', (max(1, min(500, limit)),)).fetchall()
+            meta = {}
+            try:
+                meta_rows = connection.execute('SELECT match_key,body FROM match_meta').fetchall()
+            except sqlite3.OperationalError:
+                meta_rows = []
+            for key, body in meta_rows:
+                try:
+                    value = json.loads(body or '{}')
+                except (TypeError, ValueError):
+                    value = {}
+                if isinstance(value, dict):
+                    meta[key] = value
+            team_names = {}
+            try:
+                team_names = {str(row[0]): str(row[1] or '').strip()
+                              for row in connection.execute('SELECT id, name FROM teams')}
+            except sqlite3.Error:
+                team_names = {}
         finally:
             connection.close()
-        return [{key: row[key] for key in row.keys()} for row in rows]
+        out = []
+        for row in rows:
+            item = {key: row[key] for key in row.keys()}
+            extra = meta.get(item.get('match_key') or '') or {}
+            item['opponent'] = str(extra.get('opponent') or '').strip()
+            if not item.get('enemy_team_id'):
+                item['enemy_team_id'] = str(extra.get('opponentTeamId') or '').strip() or None
+            # 匹配页确认过 enemy_team_id 后，队名由战队主数据统一给出；
+            # match_meta 里没写自由文本时这里不能再留空，否则别处显示「对手未标注」。
+            enemy_id = str(item.get('enemy_team_id') or '').strip()
+            if enemy_id and team_names.get(enemy_id):
+                item['opponent'] = team_names[enemy_id]
+            out.append(item)
+        return out
 
     def manual_session_keys(self, schedule_id):
         connection = self.connect()
