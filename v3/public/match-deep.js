@@ -390,7 +390,10 @@ export function createMatchDeep(h) {
   const HEAT_SPEEDS = [1, 2, 4];
   let battleState = null;
   let battleBound = false;
-  const HEAT_WINDOW = 90; // 热区时间窗（秒）
+  /* 热区时间窗（秒）。90 秒会把半张地图糊成一条长拖尾，
+     默认收到 20 秒，保留 15/20/30/60 让教练按复盘粒度切换。 */
+  const HEAT_WINDOWS = [15, 20, 30, 60];
+  let heatWindow = 20;
 
   /* 入侵：以对侧半区（推进进度 > 50%）为准；连续 2 个采样（≈4 秒）才算一次。
      静止 ≥12 秒的样本（阵亡停留等）既不计入分子也不计入分母。 */
@@ -1212,6 +1215,11 @@ export function createMatchDeep(h) {
       <div class="md-panel-bar">
         <button type="button" class="md-heat-play" data-heat-play aria-pressed="false" title="播放 / 暂停（空格）">${glyph('refresh', { size: 18 })} 播放</button>
         <button type="button" class="md-heat-speed" data-heat-speed title="播放速度（快捷键 S 切换）">${glyph('clock', { size: 18 })} ${heatSpeed}×</button>
+        <label class="md-heat-pick"><span>窗口</span>
+          <select data-heat-window aria-label="热区时间窗">
+            ${HEAT_WINDOWS.map((n) => `<option value="${n}"${n === heatWindow ? ' selected' : ''}>${n} 秒</option>`).join('')}
+          </select>
+        </label>
         <div class="md-heat-track">
           <input type="range" class="md-heat-range" data-heat-range min="0" max="${Math.round(total)}" step="${step}" value="${Math.round(total)}" aria-label="热区时间轴">
           <div class="md-heat-marks" aria-label="事件刻度">${markHtml}</div>
@@ -1236,7 +1244,7 @@ export function createMatchDeep(h) {
         <span><i class="sw is-ring"></i>描边格＝在对侧半区</span>
         <span><i class="sw is-mark fight"></i>团战刻度　<i class="sw is-mark death"></i>掉点刻度</span>
       </div>
-      <p class="md-panel-note">底图：三路（对抗路 / 中路 / 发育路）、河道、双方基地与四个红蓝 BUFF 点位（BUFF 位置由回放 killbuff 事件的击杀时刻坐标反推，与本局坐标同一套 ±60）。窗口 ${HEAT_WINDOW} 秒随指针滚动；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久，细线是他这 90 秒的走位。分期按赛训组口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
+      <p class="md-panel-note">底图：三路（对抗路 / 中路 / 发育路）、河道、双方基地与四个红蓝 BUFF 点位（BUFF 位置由回放 killbuff 事件的击杀时刻坐标反推，与本局坐标同一套 ±60）。当前窗口 ${heatWindow} 秒随指针滚动，可在上方切换 15 / 20 / 30 / 60 秒；静止 ≥12 秒的样本已剔除。格子颜色越深＝停留越久，细线是他在当前窗口里的走位。分期按赛训组口径：对线 0–4、发育 4–10、10 分钟以后算后期。</p>
     </div>`;
   }
 
@@ -1445,7 +1453,7 @@ export function createMatchDeep(h) {
     const at = clamp(Number.isFinite(t) ? t : duration, 0, duration);
     const slider = box.querySelector('[data-heat-range]');
     if (slider) slider.value = String(at);
-    const from = Math.max(0, at - HEAT_WINDOW);
+    const from = Math.max(0, at - heatWindow);
     const clock = box.querySelector('[data-heat-clock]');
     if (clock) clock.textContent = `${time(from)} – ${time(at)}`;
     const i0 = Math.max(0, Math.ceil(from / step));
@@ -1571,6 +1579,15 @@ export function createMatchDeep(h) {
         toggleHeat(hit);
       });
       root.addEventListener('change', (event) => {
+        const win = event.target.closest && event.target.closest('[data-heat-window]');
+        if (win) {
+          const next = Number(win.value);
+          if (HEAT_WINDOWS.includes(next)) heatWindow = next;
+          const note = win.closest('[data-md-heat]')?.querySelector('.md-panel-note');
+          if (note) note.textContent = note.textContent.replace(/当前窗口 \d+ 秒/, `当前窗口 ${heatWindow} 秒`);
+          paintHeat(heatAt(win.closest('[data-md-heat]')));
+          return;
+        }
         const pick = event.target.closest && event.target.closest('[data-heat-lane]');
         if (!pick) return;
         heatLane = pick.value;
@@ -1586,6 +1603,8 @@ export function createMatchDeep(h) {
     box.querySelectorAll('[data-lane]').forEach((row) => { row.hidden = row.dataset.lane !== heatLane; });
     const pick = box.querySelector('[data-heat-lane]');
     if (pick) pick.value = heatLane;
+    const win = box.querySelector('[data-heat-window]');
+    if (win) win.value = String(heatWindow);
     const speed = box.querySelector('[data-heat-speed]');
     if (speed) speed.textContent = `${heatSpeed}×`;
     paintHeat(heatAt(box));

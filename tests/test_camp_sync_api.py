@@ -628,6 +628,31 @@ class CampAutoOfficialTests(unittest.TestCase):
         self.assertEqual(report['paced'], 2, report)
         sleep.assert_called_once_with(2.0)
 
+    def test_batches_cover_all_entries_in_chunks_of_40(self):
+        """选 N 局要按 40 局一批全部补完，不能只拉前 40 局。"""
+        entries = [self._entry(seq=str(1793999000 + i)) for i in range(85)]
+        sizes = []
+        progress_seen = []
+
+        def fake_auto(chunk, **kwargs):
+            sizes.append(len(chunk))
+            kwargs['progress'](len(chunk), len(chunk), chunk[-1]['gameSeq'])
+            return {'tried': len(chunk), 'imported': len(chunk), 'attached': len(chunk),
+                    'skipped': 0, 'failed': 0, 'paced': len(chunk), 'retried': 0,
+                    'rateLimited': 0, 'lastWaitSec': 0, 'items': []}
+
+        with mock.patch.object(server, '_camp_auto_official', side_effect=fake_auto), \
+                mock.patch.object(server.time, 'sleep') as sleep:
+            report = server._camp_auto_official_batches(
+                entries,
+                progress=lambda done, total, _seq: progress_seen.append((done, total)))
+        self.assertEqual(sizes, [40, 40, 5], sizes)
+        self.assertEqual(report['imported'], 85, report)
+        self.assertEqual(report['attached'], 85, report)
+        self.assertEqual(report['batches'], 3, report)
+        self.assertEqual(sleep.call_count, 2, '批间也要放慢')
+        self.assertEqual(progress_seen[-1], (85, 85), progress_seen)
+
 
 class CampRepairOfficialTests(unittest.TestCase):
     """回放已落盘、通道还没拿到载荷时，要能自动补挂。
@@ -749,6 +774,27 @@ class CampRepairOfficialTests(unittest.TestCase):
         self.assertEqual(target['gameSvrId'], '120245')
         self.assertEqual(target['relaySvrId'], '-1656708288')
         self.assertEqual(target['uniqueRoleId'], '2081911312')
+
+    def test_backfill_pulls_beyond_first_20_fillable(self):
+        """coverage['sample'] 只有 20 局，补拉要按 40 局一批从全部可补局取。"""
+        connection = sqlite3.connect(self.db)
+        for i in range(45):
+            seq = str(1793999200 + i)
+            channel = channel_store.blank({'date': '2026-11-02'})
+            channel['id'] = f'ch-{seq}'
+            channel['official'] = {'id': f'camp-{seq}', 'source': {
+                'gameSeq': seq, 'gameSvr': '120245', 'relaySvr': '-1656708288',
+                'playerId': '2081911312'}}
+            connection.execute('INSERT INTO channels VALUES (?,1,?,?,?)',
+                               (channel['id'], json.dumps(channel, ensure_ascii=False), 0, 0))
+        connection.commit()
+        connection.close()
+        with mock.patch.object(server, '_camp_auto_official_batches',
+                               return_value={'tried': 40}) as batches:
+            server.official_backfill({'limit': 40})
+        entries = batches.call_args[0][0]
+        self.assertEqual(len(entries), 40, len(entries))
+        self.assertEqual(batches.call_args.kwargs['batch_size'], 40)
 
 
 if __name__ == '__main__':

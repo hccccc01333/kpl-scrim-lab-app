@@ -152,3 +152,29 @@ def test_analysis_endpoints_filter_matches_by_competition(tmp_path):
     assert players['players']
     assert all(item['matches'] == 1 and item['lastDate'] == '2026-10-01'
                for item in players['players'])
+
+
+def test_analysis_competency_scope_falls_back_to_file_layer(tmp_path):
+    """营地采集的对局只在数据包里、没在 match_records 建行时，带赛事参数的
+    分析端点仍应按赛事窗口纳入它们（首页本来就看得到）。"""
+    db = tmp_path / 'training.sqlite3'
+    make_db(db)  # db-A(2026-10-01) / db-B(2026-10-02) 只在 matches(body) 里
+    ws = Workspace(db)
+    ws.ensure_schema()
+    cid = ws.save_competition(name='春季赛', date='2026-10-01', end_date='2026-10-31')
+    # 刻意不 upsert_match：模拟营地采集没在权威表登记的局
+
+    app = FastAPI()
+    app.include_router(create_analysis_router(db, tmp_path / 'matches', tmp_path / 'imports'))
+    client = TestClient(app)
+
+    all_keys = {row['key'] for row in client.get('/api/analysis/matches').json()['matches']}
+    assert all_keys == {'db-A', 'db-B'}
+
+    scoped = client.get('/api/analysis/matches', params={'competition': cid}).json()['matches']
+    assert {row['key'] for row in scoped} == {'db-A', 'db-B'}
+
+    # 窗口外的赛事不应把这两局拉进去
+    other = ws.save_competition(name='其他赛事', date='2026-01-01', end_date='2026-02-01')
+    assert client.get('/api/analysis/matches',
+                      params={'competition': other}).json()['matches'] == []

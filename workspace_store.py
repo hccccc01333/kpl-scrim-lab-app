@@ -2938,16 +2938,39 @@ class Workspace:
         if completion:
             where.append('completion = ?')
             params.append(completion)
-        if competition:
-            where.append('competition_id = ?')
-            params.append(competition)
-        sql = 'SELECT * FROM training_series'
-        if where:
-            sql += ' WHERE ' + ' AND '.join(where)
-        sql += ' ORDER BY COALESCE(start_at, \'\') DESC, id DESC LIMIT ?'
-        params.append(int(limit))
         connection = self.connect()
         try:
+            if competition:
+                # 赛事域：直连归属的组 + 开赛日落在本赛事窗口、且无归属的组。
+                # 后者是营地采集对局没在权威表登记时编组的兜底：当时 create_series
+                # 推不出赛事，系列赛 competition_id 为空，会被整组排除在大场/跨场
+                # 之外（赛训组反馈「编组了但分析页没有」的第二个漏点）。这里只读
+                # 按窗口判定，不改库、不产生写副作用。
+                extra = []
+                comp = self.get_competition(competition)
+                if comp:
+                    bounds = self._collect_bounds(comp)
+                    for row in connection.execute(
+                            "SELECT id, competition_id, start_at FROM training_series "
+                            "WHERE competition_id IS NULL OR competition_id = ''"):
+                        start = str(row['start_at'] or '').strip()
+                        if not start or not self._in_window(start, bounds):
+                            continue
+                        if self._window_competition_for({'date': start}) == competition:
+                            extra.append(str(row['id']))
+                if extra:
+                    marks = ','.join('?' for _ in extra)
+                    where.append(f"(competition_id = ? OR id IN ({marks}))")
+                    params.append(competition)
+                    params.extend(extra)
+                else:
+                    where.append('competition_id = ?')
+                    params.append(competition)
+            sql = 'SELECT * FROM training_series'
+            if where:
+                sql += ' WHERE ' + ' AND '.join(where)
+            sql += ' ORDER BY COALESCE(start_at, \'\') DESC, id DESC LIMIT ?'
+            params.append(int(limit))
             # 赛事域（P2-1）：GET 不再有写副作用；归属回填在写路径
             # （create/update/bulk_assign）与赛事页归属工具完成。
             rows = connection.execute(sql, params).fetchall()

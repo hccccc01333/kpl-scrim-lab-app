@@ -1109,19 +1109,6 @@ export function createPlayerDetail(h) {
     const scope = buildScope(allRows);
     const rows = scope.rows;
     const identity = detail.identity || {};
-    /* 选手档案只做自家：对手的号不再进档案 / 详情页，链接直接落回本队名册。 */
-    if (identity.side === 'enemy') {
-      const peers = peerLinks();
-      return `<div class="page hero-detail-page page-wide" data-pl-page="solo">
-        ${emptyHead('档案只收录本队选手', `${S(name)} 是对手战队的游戏名`)}
-        <div class="hero-detail-grid"><section class="section"><div class="pdx-empty">
-          <span class="pdx-empty-icon" aria-hidden="true">对手</span>
-          <h2>${S(name)} 没有个人档案</h2>
-          <p>选手档案只收录本队选手。这位对手的对局数据仍参与交手记录与 BP 分析，只是不在这里建个人页。</p>
-          <div class="pdx-empty-actions"><a class="control is-primary" href="#teams">${glyph('opponent', {size: 18})}去看对方战队</a><a class="control" href="#playerarchive">${glyph('players', {size: 18})}回到选手档案</a></div>
-          ${peers ? `<div class="pdx-empty-peers"><span>本队选手：</span>${peers}</div>` : ''}
-        </div></section></div></div>`;
-    }
     const byLane = group(rows, (r) => r.lane);
     const laneOrder = LANES.filter((lane) => byLane.has(lane));
     for (const lane of byLane.keys()) if (!laneOrder.includes(lane)) laneOrder.push(lane);
@@ -1220,7 +1207,7 @@ export function createPlayerDetail(h) {
       <div class="intro-actions">${roster.length > 1 ? `<label class="pv-sel is-head"><span class="pv-sel-label">换选手</span>
           <span class="pv-sel-box"><select data-pl-switch-player aria-label="切换到其他选手">
             ${roster.map(([who, games]) => `<option value="${S(who)}"${who === name ? ' selected' : ''}>${S(who)} · ${fmt(games)} 局</option>`).join('')}
-          </select><i class="pv-sel-caret" aria-hidden="true"></i></span></label>` : ''}<span class="pv-pos" title="按出场数排序的位置，可用键盘 ← → 切换">第 ${fmt(Math.max(1, roster.findIndex(([who]) => who === name) + 1))} / ${fmt(roster.length)} 位</span>${identity.bound ? '' : `<button class="control" data-pl-name="${S(name)}">${glyph('players', { size: 18 })}命名并归队</button>`}${compareCount >= 2
+          </select><i class="pv-sel-caret" aria-hidden="true"></i></span></label>` : ''}<span class="pv-pos" title="按出场数排序的位置，可用键盘 ← → 切换">第 ${fmt(Math.max(1, roster.findIndex(([who]) => who === name) + 1))} / ${fmt(roster.length)} 位</span>${identity.bound || identity.side === 'enemy' ? '' : `<button class="control" data-pl-name="${S(name)}">${glyph('players', { size: 18 })}命名并归队</button>`}${compareCount >= 2
           ? `<a class="control is-primary is-on" href="#playercompare">${glyph('compare', { size: 18 })}去看对比（${compareCount}/2）</a>`
           : `<button class="control is-primary${inCompare ? ' is-on' : ''}" data-pl-pick-b="${S(name)}">${glyph('compare', { size: 18 })}${inCompare ? `已放入对比（${compareCount}/2）` : '放入对比'}</button>`}<button class="control" data-action="refresh">${glyph('refresh', { size: 18 })}刷新数据</button></div>
     </div></header>${kpiHtml}`;

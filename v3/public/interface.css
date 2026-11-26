@@ -3,7 +3,7 @@
 /* 选手详情页覆盖层：不放进任何 layer，优先级高于全部 @layer。
    @import 必须排在所有规则之前，否则浏览器直接丢弃。 */
 @import url('./player-v2.css?v=20261120m');
-@import url('./style.css?v=20261123staff1') layer(legacy);
+@import url('./style.css?v=20261126allplayers') layer(legacy);
 @import url('./match-recap-fixes.css?v=20261116c') layer(legacy);
 @import url('./workspace-home.css?v=20261116c') layer(legacy);
 @import url('./bp-studio.css?v=20261123v301') layer(legacy);

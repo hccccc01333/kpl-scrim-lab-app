@@ -7,7 +7,7 @@
    选手档案照 KPL 赛研的选手卡：头像 + 名字/位置 + 一个大指标 + 一行战绩摘要。
    认领与命名就在档案页完成（卡片名字旁、顶部身份条），不再单设名单页与认领页。 */
 
-import {createPlayerDetail} from './player-detail.js?v=20261126pdwhite1';
+import {createPlayerDetail} from './player-detail.js?v=20261126allplayers';
 import {createProfileUI} from './player-profile-ui.js';
 import { glyph } from './ui-icons.js';
 

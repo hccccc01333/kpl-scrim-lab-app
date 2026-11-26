@@ -4,7 +4,7 @@ import { createResearch } from './research.js?v=20261124entry';
 import { createCapture } from './capture-page.js';
 import { createSources } from './sources-page.js';
 import { createReview } from './review-page.js';
-import { createPlayers } from './players-page.js?v=20261126pdwhite1';
+import { createPlayers } from './players-page.js?v=20261126allplayers';
 import { createHeroCompare } from './hero-compare.js';
 import { createHeroUsagePage, createLaneMetricsPage, createComboCardsPage } from './team-hero-insight.js?v=20261124a';
 import { createCoachBoard } from './coach-viz.js?v=20261124depth2';

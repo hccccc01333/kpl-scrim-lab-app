@@ -415,6 +415,7 @@ def create_series_router(db_path, lookup):
                 start_at=dates[0] if dates else None,
                 end_at=dates[-1] if dates else None,
                 series_id=payload.get('id'),
+                competition_id=payload.get('competitionId') or payload.get('competition_id'),
                 actor=payload.get('actor') or 'coach')
         except workspace_store.SeriesConflict as error:
             raise HTTPException(409, detail={

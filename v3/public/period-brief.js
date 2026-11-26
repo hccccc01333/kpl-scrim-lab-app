@@ -1105,10 +1105,6 @@ function reviewCardHtml(card, index, esc, portraitFn) {
     || plain(card.primary_destination).replace('#match/', '');
   const base = `#match/${encodeURIComponent(gameId)}`;
   const problem = plain(card.problem) || plain(card.conclusion);
-  const focusValue = plain(card.focusValue)
-    || (listOf(card.numbers)[0] || {}).value || '—';
-  const focusLabel = plain(card.focusLabel)
-    || (listOf(card.numbers)[0] || {}).label || '关键指标';
   return `<article class="pbr-review-card" data-review-id="${esc(plain(card.id))}">
     <div class="pbr-review-top">
       <span class="pbr-review-no">${String(index + 1).padStart(2, '0')}</span>
@@ -1125,18 +1121,6 @@ function reviewCardHtml(card, index, esc, portraitFn) {
     <div class="pbr-hero-focus" data-pbr-hero-focus hidden></div>
     <div class="pbr-review-issue">
       <p class="pbr-review-problem">${esc(problem)}</p>
-      <p class="pbr-review-detail">${esc((() => {
-        const moments = listOf(card.moments);
-        const first = moments[0] || {};
-        const last = moments.slice(-1)[0] || {};
-        const range = first.clock && last.clock && first.clock !== last.clock
-          ? `${first.clock}–${last.clock}` : (last.clock || first.clock || '');
-        return [range, focusValue].filter(Boolean).join(' · ');
-      })())}</p>
-    </div>
-    <div class="pbr-review-metric">
-      <strong>${esc(focusValue)}</strong>
-      <span>${esc(focusLabel)}</span>
     </div>
     <div class="pbr-review-tags">
       <span class="pbr-review-tag-label">系统特征</span>

@@ -1969,14 +1969,18 @@ function opponentsPage(value) {
     .filter((t) => String(t.id || '') !== ownId)
     .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'));
   const players = (value.players || []).filter((p) => p.status !== 'archived');
-  const playerCard = (p) => `<article class="opp-player">
-    <span class="opp-player-avatar" aria-hidden="true">${esc(String(p.camp_user_id || '?').slice(0, 1))}</span>
-    <div class="opp-player-main"><b>ID ${esc(p.camp_user_id || '—')}</b>
-      <small>${esc(p.name && p.name !== p.camp_user_id ? p.name : '姓名未填')}</small></div>
-    <div class="opp-player-ops">
-      <button type="button" class="control" data-opp-player-edit="${esc(p.id || '')}" aria-label="编辑选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('edit', { size: 13 })}</button>
-      <button type="button" class="control is-danger" data-opp-player-del="${esc(p.id || '')}" aria-label="删除选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('trash', { size: 13 })}</button>
-    </div></article>`;
+  const playerCard = (p) => {
+    const key = (p.name && p.name !== p.camp_user_id ? p.name : p.camp_user_id) || '';
+    return `<article class="opp-player">
+      <span class="opp-player-avatar" aria-hidden="true">${esc(String(p.camp_user_id || '?').slice(0, 1))}</span>
+      <a class="opp-player-main" href="#playerdetail/${encodeURIComponent(key)}" title="打开选手分析">
+        <b>ID ${esc(p.camp_user_id || '—')}</b>
+        <small>${esc(p.name && p.name !== p.camp_user_id ? p.name : '姓名未填')}</small></a>
+      <div class="opp-player-ops">
+        <button type="button" class="control" data-opp-player-edit="${esc(p.id || '')}" aria-label="编辑选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('edit', { size: 13 })}</button>
+        <button type="button" class="control is-danger" data-opp-player-del="${esc(p.id || '')}" aria-label="删除选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('trash', { size: 13 })}</button>
+      </div></article>`;
+  };
   const teamCard = (t) => {
     const roster = players.filter((p) => p.team_id === t.id);
     const lanes = OPP_LANES.map((lane) => {
@@ -3407,7 +3411,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'match' && !mods.deep) {
-    jobs.push(importOnce('./match-deep.js?v=20261123review2').then(({ createMatchDeep }) => {
+    jobs.push(importOnce('./match-deep.js?v=20261126heat20').then(({ createMatchDeep }) => {
       mods.deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait,
         phases: phaseWindows, gpmOf, goldGrade, fieldGrade, subjectOf });
       mods.deep.bindPanel(document);

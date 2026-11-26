@@ -1265,7 +1265,7 @@ export function createCapture(h) {
     // 全选 / 补拉 / 重拉都是次操作；唯一的实心按钮留给「同步所选」。
     const right = `<div class="capv-actions">
       ${blocked ? `<button class="ds-btn ds-btn-primary" type="button" data-capture-action="auth-start">${glyph('shield', { size: 18 })}补充授权</button>` : ''}
-      ${fillable ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-official" ${state.busy ? 'disabled' : ''} title="按较慢速度逐局补拉，避免被营地限流；每次最多 10 局">${state.busy === 'backfill' ? '补拉回放中…' : `补拉缺失回放 ${fillable} 局`}</button>` : ''}
+      ${fillable ? `<button class="ds-btn ds-btn-secondary" type="button" data-capture-action="backfill-official" ${state.busy ? 'disabled' : ''} title="按较慢速度逐局补拉，避免被营地限流；每批 40 局，自动补完">${state.busy === 'backfill' ? '补拉回放中…' : `补拉缺失回放 ${fillable} 局`}</button>` : ''}
       ${moreAction}
       ${hasList ? `<button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-all" ${list.some((entry) => !entry.imported && !entry.channelReady && !campDetailExpired(entry)) ? '' : 'disabled'}>全选</button>
       <button class="ds-btn ds-btn-quiet" type="button" data-capture-action="check-none" ${checked ? '' : 'disabled'}>取消勾选</button>
@@ -2090,27 +2090,51 @@ export function createCapture(h) {
 
   async function backfillOfficial() {
     if (state.busy) return;
-    const coverage = state.value?.officialCoverage || {};
-    if (!Number(coverage.fillable)) {
+    const initial = Number(state.value?.officialCoverage?.fillable) || 0;
+    if (!initial) {
       setNotice('清单里没有可补的回放；营地只保留最近一个月的回放。', true);
       paint();
       return;
     }
     state.busy = 'backfill';
-    setNotice('正在补拉缺失回放：逐局放慢速度，避免被营地限流…');
-    paint();
+    let left = initial;
+    let imported = 0;
+    let attached = 0;
+    let failed = 0;
+    let limited = 0;
+    let retried = 0;
+    let batches = 0;
     try {
-      const result = await api('official/backfill', { method: 'POST', body: { limit: 10 } });
-      const report = result?.report || {};
-      const imported = Number(report.imported) || 0;
-      const attached = Number(report.attached) || 0;
-      const failed = Number(report.failed) || 0;
-      const limited = Number(report.rateLimited) || 0;
+      // 每批最多 40 局，自动接着补，直到没有可补的局；批间由后端保持
+      // 和详情同步同量级的间隔，前端只负责显示进度，不并发请求。
+      while (left > 0) {
+        const before = left;
+        const batch = Math.min(40, left);
+        batches += 1;
+        setNotice(`正在补拉缺失回放：第 ${batches} 批（最多 ${batch} 局，还剩 ${left} 局），逐局放慢避免限流…`);
+        paint();
+        const result = await api('official/backfill', { method: 'POST', body: { limit: 40 } });
+        const report = result?.report || {};
+        imported += Number(report.imported) || 0;
+        attached += Number(report.attached) || 0;
+        failed += Number(report.failed) || 0;
+        limited += Number(report.rateLimited) || 0;
+        retried += Number(report.retried) || 0;
+        const coverage = result?.coverage
+          || await api('official/coverage').catch(() => null);
+        left = Number(coverage?.fillable) || 0;
+        if (state.value) state.value = { ...state.value, officialCoverage: coverage || {} };
+        // 一批下来剩余局数没降（例如接口全部拒绝），再循环只会原地打转。
+        if (left >= before) break;
+      }
       const parts = [];
       if (imported) parts.push(`新拉 ${imported} 局`);
       if (attached) parts.push(`挂上 ${attached} 局`);
       if (failed) parts.push(`${failed} 局没拉到`);
       if (limited) parts.push(`${limited} 次被限流已退避`);
+      if (retried) parts.push(`重试 ${retried} 次`);
+      if (batches > 1) parts.push(`分 ${batches} 批`);
+      if (left) parts.push(`还剩 ${left} 局待补`);
       setNotice(parts.length
         ? `回放补拉：${parts.join('，')}。`
         : '没有可补的回放；营地只保留最近一个月的回放。', failed > 0);

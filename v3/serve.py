@@ -621,15 +621,56 @@ def _start_background_rebuild():
     return True
 
 
-def _competition_scope_keys(competition_id):
-    """赛事域（M1）：统一 scope 口径的唯一出口（workspace_store.competition_scope_keys）。"""
-    if not competition_id or not DB.is_file():
+def _competition_scope_keys(competition_id, data=None):
+    """赛事域（M1）统一 scope：数据库归属 + 文件层落在赛事窗口内的对局。
+
+    数据库口径（workspace_store.competition_scope_keys）只覆盖 match_records 里
+    登记过的对局。营地采集 / 表格导入的对局可能只落了数据包与营地面板，没在
+    match_records 建行（或缺 date 被跳过），于是被带赛事参数的分析页静默过滤；
+    首页取数不带赛事参数仍能看到 —— 赛训组反馈的「首页有 26 号，单局 / 大场 /
+    跨场都没有」正是这一层漏掉的。这里用分析快照按赛事训练 / 正赛窗口补齐这批
+    key，并保留单一归属纪律：已直连其他赛事的对局不拉回本赛事。
+    """
+    if not competition_id:
         return set()
     try:
         from workspace_store import Workspace
-        return Workspace(DB).competition_scope_keys(competition_id)
+        ws = Workspace(DB)
+        keys = set(ws.competition_scope_keys(competition_id))
     except Exception:  # noqa: BLE001 - 老库/IO 异常退回空集，页面保持可用
-        return set()
+        ws, keys = None, set()
+    if not isinstance(data, dict):
+        return keys
+    try:
+        if ws is None:
+            from workspace_store import Workspace
+            ws = Workspace(DB)
+        competition = ws.get_competition(competition_id)
+        if not competition:
+            return keys
+        training_bounds = ws._collect_bounds(competition)
+        formal_bounds = (ws._date_bounds(competition.get('formal_from'),
+                                         competition.get('formal_to'))
+                         or training_bounds)
+        other = set()
+        if DB.is_file():
+            with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as connection:
+                other = {str(row[0]) for row in connection.execute(
+                    'SELECT match_key FROM match_records '
+                    'WHERE competition_id IS NOT NULL AND competition_id != "" '
+                    'AND competition_id != ?', (competition_id,))}
+        for match in list(data.get('matches') or []) + list(data.get('sheetMatches') or []):
+            key = str(match.get('key') or '')
+            if not key or key in keys or key in other:
+                continue
+            day = str(match.get('date') or '')[:10]
+            if not day:
+                continue
+            if ws._in_window(day, training_bounds) or ws._in_window(day, formal_bounds):
+                keys.add(key)
+    except Exception:  # noqa: BLE001 - 兜底失败不影响既有 DB scope
+        pass
+    return keys
 
 
 def repository(request: Request):
@@ -645,7 +686,7 @@ def repository(request: Request):
         from analysis_api import CompetitionScopedRepository
         return CompetitionScopedRepository(
             DB, MATCHES, IMPORTS, OFFICIAL,
-            match_keys=_competition_scope_keys(competition),
+            match_keys=_competition_scope_keys(competition, snapshot.get()),
             shared_data=snapshot.get())
     return snapshot
 
@@ -6190,6 +6231,45 @@ def _player_id_scope(name):
             if member:
                 wanted = str(member.get('label') or member.get('name') or wanted)
     if not member:
+        # 对手选手也走选手分析：对方战队登记的「名字 / 营地 ID / 内部 ID」
+        # 都能作为入口。匹配与编组的昵称池是权威映射，按 playerId 把同一人的
+        # 多个游戏号合进来，与本队选手 ID 的口径一致，否则「4」只能查到空页。
+        try:
+            import workspace_store
+            registered = [dict(p) for p in workspace_store.Workspace(DB).list_players()]
+            short = wanted.rsplit('.', 1)[-1]
+            target = next((p for p in registered
+                           if wanted in (str(p.get('name') or '').strip(),
+                                         str(p.get('camp_user_id') or '').strip(),
+                                         str(p.get('id') or '').strip())
+                           or short == str(p.get('name') or '').strip()), None)
+            pool_rows = []
+            try:
+                with closing(sqlite3.connect(f'file:{DB.as_posix()}?mode=ro', uri=True)) as connection:
+                    pool_rows = connection.execute(
+                        'SELECT side, player_id, nickname FROM player_nickname_pool'
+                        " WHERE player_id IS NOT NULL AND player_id<>''").fetchall()
+            except sqlite3.Error:
+                pass
+            if not target:
+                by_id = {str(p.get('id') or ''): p for p in registered}
+                target = next((by_id.get(str(pid)) for _, pid, nickname in pool_rows
+                               if nickname and nickname == wanted and str(pid) in by_id), None)
+            if target:
+                pid = str(target.get('id') or '')
+                names = {str(nickname).strip() for _, player_id, nickname in pool_rows
+                         if str(player_id) == pid and nickname}
+                for extra in (target.get('name'), target.get('camp_user_id')):
+                    if extra:
+                        names.add(str(extra).strip())
+                names.discard('')
+                if not names:
+                    names = {wanted}
+                display = str(target.get('name') or wanted).strip() or wanted
+                return {'display': display, 'names': names, 'member': None,
+                        'board': board, 'opponent': True}
+        except sqlite3.Error:
+            pass
         return {'display': wanted, 'names': {wanted} if wanted else set(),
                 'member': None, 'board': board}
     member_id = str(member.get('id') or '')

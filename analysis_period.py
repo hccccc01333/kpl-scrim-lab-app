@@ -591,15 +591,18 @@ def _cand_lead_hold(ctx):
     other_wins = sum(1 for game in other if game.get('result') == 'win')
     cur_lost = cur['total'] - cur['wins']
     prev_lost = prev['total'] - prev['wins']
+    cur_rate = f"{cur['rate']:.1f}%" if cur['rate'] is not None else '—'
+    shift = abs(change or 0)
     if prev['total'] == 0:
-        title = '本批十分钟领先后的兑现情况'
+        title = f"领先 ≥1000 的 {cur['total']} 局赢下 {cur['wins']} 局，兑现率 {cur_rate}"
     elif cur_lost > 0 and cur_lost == prev_lost:
         # 两期未兑现局数相同，不能只凭胜率变化写成「丢掉优势的局变多了」。
-        title = f"十分钟领先后，仍有 {cur_lost} 局未兑现"
+        title = f"十分钟领先后仍有 {cur_lost} 局没兑现，兑现率 {cur_rate}"
     else:
-        title = {'up': '十分钟领先后的兑现变好了',
-                 'down': '十分钟领先后，丢掉优势的局变多了',
-                 'flat': '十分钟领先后的兑现基本持平'}.get(tone, '十分钟领先后的兑现情况')
+        title = {'up': f"十分钟领先后兑现率 {cur_rate}，比{ctx['prev_word']}提升 {shift:.1f} 个百分点",
+                 'down': f"十分钟领先后兑现率 {cur_rate}，比{ctx['prev_word']}回落 {shift:.1f} 个百分点",
+                 'flat': f"十分钟领先后兑现率 {cur_rate}，与{ctx['prev_word']}基本持平"}.get(
+                     tone, f"十分钟领先后兑现率 {cur_rate}")
     conclusion = (f"本期 {cur['total']} 局十分钟经济领先 ≥1000，赢下 {cur['wins']} 局；"
                   + (f"{ctx['prev_word']} {prev['total']} 局赢下 {prev['wins']} 局。"
                      if prev['total'] else f"{ctx['prev_short']}暂无可比数据。"))
@@ -622,7 +625,9 @@ def _cand_lead_hold(ctx):
         'limitation': f"样本 {cur['total']} 局；经济点为约 30 秒一个的近似值，仅作本批观察。",
         'pair': _pair_stats('十分钟领先局胜率', cur['wins'], cur['total'],
                             '未建立领先局胜率', other_wins, len(other)),
-        'foldSummary': f"领先 ≥1000 共 {cur['total']} 局，赢下 {cur['wins']} 局 · 最近本批对比",
+        'foldSummary': (f"本期 {cur['wins']}/{cur['total']} 兑现（{cur_rate}）"
+                        + (f" · {ctx['prev_word']} {prev['wins']}/{prev['total']}"
+                           if prev['total'] else ' · 上期暂无可比数据')),
         'stats': [
             {'label': '本期兑现', 'value': f"{cur['wins']}/{cur['total']}"},
             {'label': '上期兑现', 'value': f"{prev['wins']}/{prev['total']}" if prev['total'] else '—'},
@@ -757,8 +762,11 @@ def _cand_fight_arrival(ctx):
             {'seq': row['game'], 'label': row['label']},
             f"少 {abs(int(row['advStart']))} 人还赢下团战", t=row['startSec'], approx=False))
     # 本条只比较同一批团战里「少人 / 齐人」两种口径的胜率，不拿频次变化当结论。
-    title = (f"少人接团胜率明显低于齐人团"
-             if cur['gap'] >= 10 else '少人接团与齐人接团胜率接近')
+    # 折叠态的结论直接给出胜率差，而不是只写「明显低于」这种没有数字的判断。
+    gap_text = f"{abs(cur['gap']):.1f}"
+    title = (f"少人接团胜率低 {gap_text} 个百分点" if cur['gap'] >= 10
+             else f"少人接团胜率反而高 {gap_text} 个百分点" if cur['gap'] <= -10
+             else f"少人接团与齐人团胜率接近（差 {gap_text} 个百分点）")
     late_text = f"{cur['lateRate']:.1f}%" if cur['lateRate'] is not None else '—'
     conclusion = (f"本期 {len(cur['behind'])} 波团战开打时就少人，赢 {cur['behindWins']} 波；"
                   f"人齐的 {len(cur['even'])} 波赢 {cur['evenWins']} 波，"
@@ -788,7 +796,8 @@ def _cand_fight_arrival(ctx):
         'limitation': '团战数据来自回放，只描述到位与结果的关系，不判断指挥失误；仅作本批观察。',
         'pair': _pair_stats('少人接团胜率', cur['behindWins'], len(cur['behind']),
                             '人员齐整胜率', cur['evenWins'], len(cur['even']), unit='波'),
-        'foldSummary': f"开局少人团 {len(cur['behind'])} 波，人齐团 {len(cur['even'])} 波 · 最近本批对比",
+        'foldSummary': (f"少人 {len(cur['behind'])} 波 {cur['behindRate']:.1f}% · "
+                        f"齐人 {len(cur['even'])} 波 {cur['evenRate']:.1f}%"),
         'stats': [
             {'label': '少人接团', 'value': f"{cur['behindRate']:.1f}%",
              'title': f"{cur['behindWins']} 胜 / {len(cur['behind'])} 波"},
@@ -1144,15 +1153,18 @@ def _cand_roster(ctx):
         else:
             low_total += 1
             low_wins += entry['result'] == 'win'
+    high_rate = f"{high_wins / high_total * 100:.0f}%" if high_total else '—'
+    low_rate = f"{low_wins / low_total * 100:.0f}%" if low_total else '—'
+    core = f"发育路死 ≥3 的 {len(seqs)} 局胜率 {high_rate}"
     diff_games = len(prev_seqs) - len(seqs) if prev_games else 0
     if not prev_games:
-        title = f"{len(seqs)} 局里发育路一局死 3 次以上"
+        title = core
     elif diff_games > 0:
-        title = f'发育路高死亡对局减少 {diff_games} 场'
+        title = f"高死亡局少 {diff_games} 场，{core}"
     elif diff_games < 0:
-        title = f'发育路高死亡对局增加 {-diff_games} 场'
+        title = f"高死亡局多 {-diff_games} 场，{core}"
     else:
-        title = '发育路高死亡对局数基本持平'
+        title = f"高死亡局数持平，{core}"
     conclusion = (f"本期 {games} 局里有 {len(seqs)} 局，发育路一局死 3 次以上"
                   f"（共 {len(death_rows)} 人次）；"
                   + (f"{ctx['prev_word']} {prev_games} 局里 {len(prev_seqs)} 局。"
@@ -1182,7 +1194,8 @@ def _cand_roster(ctx):
             'hero': worst.get('hero') or '', 'lane': '发育路',
             'deaths': worst.get('deaths'),
         } if death_rows else None),
-        'foldSummary': f"单局死亡 ≥3 次共 {len(death_rows)} 人次，最近本批对比",
+        'foldSummary': (f"{len(seqs)}/{games} 局死亡 ≥3 次（{len(death_rows)} 人次）"
+                        f" · 胜率 {high_rate} vs 常态 {low_rate}"),
         'stats': [
             {'label': '本期高死亡', 'value': f"{len(seqs)}/{games} 局"},
             {'label': '上期高死亡', 'value': f"{len(prev_seqs)}/{prev_games} 局" if prev_games else '—'},

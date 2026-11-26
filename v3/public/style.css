@@ -2745,7 +2745,9 @@ a.hz-card { display: block; text-decoration: none; }
 .opp-player-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
 .opp-player { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
 .opp-player-avatar { display: inline-flex; width: 30px; height: 30px; flex: 0 0 30px; align-items: center; justify-content: center; border-radius: 8px; background: var(--soft); font-size: 13px; font-weight: 800; }
-.opp-player-main { min-width: 0; display: grid; gap: 2px; flex: 1; }
+.opp-player-main { min-width: 0; display: grid; gap: 2px; flex: 1; text-decoration: none; color: inherit; }
+.opp-player-main:hover b { color: var(--accent, #356a63); text-decoration: underline; text-underline-offset: 2px; }
+.opp-player-main:focus-visible { outline: 2px solid var(--accent, #356a63); outline-offset: 2px; border-radius: 4px; }
 .opp-player-main b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opp-player-main small { color: var(--muted, #6f6a60); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opp-player-ops { display: flex; gap: 3px; }

@@ -188,6 +188,16 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
   async function api(path, options = {}) {
     const write = String(options.method || 'GET').toUpperCase() !== 'GET';
     if (write && state.busy) throw new Error('上一次操作还在处理，请稍候再试');
+    /* 编组页读全库，但写操作必须带上当前赛事：新编的系列赛若只靠对局直连列
+       推断赛事，营地采集那批没在权威表登记的对局会推不出归属，随后被大场/
+       跨场页的赛事筛选整组排除。 */
+    if (write && options.body && typeof options.body === 'object' && !Array.isArray(options.body)) {
+      let competition = '';
+      try { competition = localStorage.getItem('training-current-competition') || ''; } catch {}
+      if (competition && !options.body.competitionId) {
+        options.body = { ...options.body, competitionId: competition };
+      }
+    }
     if (write) setBusy(true);
     try {
       const response = await fetch(`${API_BASE}${path}`, {

@@ -53,23 +53,55 @@ def create_analysis_router(db_path, matches_dir, imports_dir, official_dir=None)
             'includePartial': query.get('includePartial') in ('1', 'true', 'yes'),
         }
 
-    def competition_match_keys(competition_id):
-        """赛事下的对局 key；老库无 match_records 时视为空集。"""
-        if not competition_id or not Path(db_path).is_file():
-            return set()
+    def competition_match_keys(competition_id, data=None):
+        """赛事下的对局 key：DB 归属 + 文件层落在赛事窗口内的对局。
+
+        DB scope 只覆盖 match_records 登记过的局；营地采集 / 表格导入可能只落
+        数据包，不在权威表建行，会被赛事域分析页整批漏掉（首页无赛事参数仍可见）。
+        这里按赛事窗口把快照里的文件层对局补齐，同时保留单一赛事归属纪律。
+        """
+        keys = set()
+        if competition_id and Path(db_path).is_file():
+            try:
+                from workspace_store import Workspace
+                # 赛事域（M1）：统一走 scope 口径（直连 U 训练起止 U 手动挂载 U 正赛）。
+                keys |= set(Workspace(db_path).competition_scope_keys(competition_id))
+            except (sqlite3.Error, OSError):
+                pass
+        if not competition_id or not isinstance(data, dict):
+            return keys
         try:
             from workspace_store import Workspace
-            # 赛事域（M1）：统一走 scope 口径（直连 U 训练起止 U 手动挂载 U 正赛）。
-            return Workspace(db_path).competition_scope_keys(competition_id)
-        except (sqlite3.Error, OSError):
-            return set()
+            ws = Workspace(db_path)
+            competition = ws.get_competition(competition_id)
+            if not competition:
+                return keys
+            training = ws._collect_bounds(competition)
+            formal = ws._date_bounds(competition.get('formal_from'),
+                                     competition.get('formal_to')) or training
+            other = set()
+            with sqlite3.connect(f'file:{Path(db_path).as_posix()}?mode=ro', uri=True) as conn:
+                other = {str(row[0]) for row in conn.execute(
+                    'SELECT match_key FROM match_records '
+                    'WHERE competition_id IS NOT NULL AND competition_id != "" '
+                    'AND competition_id != ?', (competition_id,))}
+            for match in list(data.get('matches') or []) + list(data.get('sheetMatches') or []):
+                key = str(match.get('key') or '')
+                if not key or key in keys or key in other:
+                    continue
+                day = str(match.get('date') or '')[:10]
+                if day and (ws._in_window(day, training) or ws._in_window(day, formal)):
+                    keys.add(key)
+        except (sqlite3.Error, OSError, ValueError):
+            pass
+        return keys
 
     def scoped(values):
         """按当前请求的赛事选取仓库；无赛事参数时直接复用原仓库。"""
         competition = values.get('competition')
         if not competition:
             return repository
-        keys = competition_match_keys(competition)
+        keys = competition_match_keys(competition, repository.get())
         return CompetitionScopedRepository(
             Path(db_path), Path(matches_dir), Path(imports_dir), official_dir=official_dir,
             match_keys=keys, shared_data=repository.get())

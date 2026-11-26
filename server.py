@@ -1493,16 +1493,19 @@ def official_coverage():
             'onDiskNotAttached': len(unattached),
             'pending': len(pending), 'fillable': len(fillable),
             'repairable': len(unattached),
-            'listed': len(index), 'sample': fillable[:20]}
+            'listed': len(index), 'sample': fillable[:20],
+            # 补拉要从全部可补局里按批取，不能只在前 20 局里打转（否则剩
+            # 下的局永远补不到）。sample 保留给前端展示，语义不变。
+            'fillableItems': fillable}
 
 
 @app.post('/api/official/backfill')
 def official_backfill(value: dict):
-    """把清单里还能补的官方回放一次性拉下来（默认最多 20 局，按需调大）。"""
+    """把还能补的官方回放按 40 局一批拉下来（默认一批，最多 200 局）。"""
     try:
-        limit = max(1, min(200, int((value or {}).get('limit') or 20)))
+        limit = max(1, min(200, int((value or {}).get('limit') or CAMP_REPLAY_BATCH_SIZE)))
     except (TypeError, ValueError):
-        limit = 20
+        limit = CAMP_REPLAY_BATCH_SIZE
     if _camp_sync_job.get('running'):
         raise HTTPException(409, '营地同步进行中，请等同步完成后再补拉回放。')
     if not _official_backfill_lock.acquire(blocking=False):
@@ -1511,7 +1514,9 @@ def official_backfill(value: dict):
         coverage = official_coverage()
         index = _camp_official_index()
         entries = []
-        for item in coverage['sample']:
+        # 用全部可补局，不再只看 coverage['sample'] 的前 20 局：否则点多
+        # 次也总在同一小撮局里打转，剩下的永远补不到。
+        for item in (coverage.get('fillableItems') or coverage['sample']):
             seq = item['gameSeq']
             if seq in index:
                 entries.append(index[seq])
@@ -1519,12 +1524,14 @@ def official_backfill(value: dict):
             source = item.get('source') or {}
             if source.get('gameSvrId') and source.get('relaySvrId') and source.get('uniqueRoleId'):
                 entries.append({'gameSeq': seq, **source})
+        entries = entries[:limit]
         if not entries:
             return {'ok': True, 'report': {'tried': 0, 'imported': 0, 'attached': 0,
                                            'skipped': 0, 'failed': 0, 'paced': 0,
                                            'retried': 0, 'rateLimited': 0, 'items': []},
                     'coverage': coverage}
-        report = _camp_auto_official(entries, limit=limit, actor='backfill')
+        report = _camp_auto_official_batches(entries, batch_size=min(CAMP_REPLAY_BATCH_SIZE, limit),
+                                             actor='backfill')
         _invalidate_v3_snapshot()
         return {'ok': True, 'report': report, 'coverage': official_coverage()}
     finally:
@@ -1766,6 +1773,9 @@ CAMP_REPLAY_INTERVAL = max(0.0, _camp_env_number('CAMP_REPLAY_INTERVAL', 2.0))
 CAMP_REPLAY_JITTER = max(0.0, _camp_env_number('CAMP_REPLAY_JITTER', 0.6))
 CAMP_REPLAY_RETRIES = max(1, int(_camp_env_number('CAMP_REPLAY_RETRIES', 2)))
 CAMP_REPLAY_RETRY_WAITS = (5.0, 15.0)
+# 对局采集选 N 局时，回放按每批 40 局补完，不再只拉前 40 局就收手。
+# 批间也保留同样量级的间隔，避免一批接一批连发被营地限流。
+CAMP_REPLAY_BATCH_SIZE = max(1, int(_camp_env_number('CAMP_REPLAY_BATCH_SIZE', 40)))
 
 
 def _camp_replay_import(source, owner_id, report):
@@ -1890,6 +1900,44 @@ def _camp_auto_official(entries, limit=40, actor='camp-sync', camp_user_id='', p
             report['failed'] += 1
             report['items'].append({'gameSeq': seq, 'status': 'imported',
                                     'error': f'回放已落盘但挂载失败：{error}'})
+    return report
+
+
+def _camp_auto_official_batches(entries, *, batch_size=None, actor='camp-sync',
+                                camp_user_id='', progress=None):
+    """选 N 局就把 N 局补完，每批最多 CAMP_REPLAY_BATCH_SIZE（默认 40）局。
+
+    以前同步完只调用一次 `_camp_auto_official(entries)`，而它有 `limit=40`：
+    选 90 局就只有前 40 局拿到回放，剩下的详情/通道都有了、单局页却一直空着。
+    这里按 40 局切片逐批处理并汇总报告，批间照样放慢，进度按全局局数回报。
+    """
+    entries = list(entries or [])
+    size = max(1, int(batch_size or CAMP_REPLAY_BATCH_SIZE))
+    total = len(entries)
+    counters = ('tried', 'imported', 'attached', 'skipped', 'failed',
+                'paced', 'retried', 'rateLimited')
+    report = {key: 0 for key in counters}
+    report.update({'lastWaitSec': 0, 'batches': 0, 'items': []})
+    for offset in range(0, total, size):
+        if offset and report['tried']:
+            time.sleep(CAMP_REPLAY_INTERVAL + random.random() * CAMP_REPLAY_JITTER)
+        base = offset
+
+        def batch_progress(done, _batch_total, current, base=base):
+            if progress is not None:
+                try:
+                    progress(base + done, total, current)
+                except Exception:  # noqa: BLE001 - 进度回调不能打断补拉
+                    pass
+
+        part = _camp_auto_official(entries[offset:offset + size], limit=size,
+                                   actor=actor, camp_user_id=camp_user_id,
+                                   progress=batch_progress)
+        for key in counters:
+            report[key] += int(part.get(key) or 0)
+        report['lastWaitSec'] = max(report['lastWaitSec'], part.get('lastWaitSec') or 0)
+        report['items'].extend(part.get('items') or [])
+        report['batches'] += 1
     return report
 
 
@@ -2329,9 +2377,10 @@ def _camp_sync_worker(camp_user_id: str, nickname: str, entries):
         # 入库即建采集通道：以前只写 camp_details/*.json，采集流水与统计都是空的。
         channels = _camp_ensure_channels(entries, nickname, progress)
         # 只给一条营地链接 → 详情、通道、官方回放一起到位。回放拉取放在通道之后，
-        # 这样拉下来的经济曲线/事件/位置能立刻挂到通道上。
+        # 这样拉下来的经济曲线/事件/位置能立刻挂到通道上。选了 N 局就按 40 局一批
+        # 全部补完，不再只拉前 40 局。
         try:
-            channels['official'] = _camp_auto_official(
+            channels['official'] = _camp_auto_official_batches(
                 entries, actor='camp-sync', camp_user_id=camp_user_id,
                 progress=official_progress)
         except Exception as error:
@@ -4657,7 +4706,7 @@ def _v3_index_body() -> str:
     stamp = _v3_asset_stamp()
     # godmode.js 也要吃同一个戳：它以前把 ?v=8.0.0 写死在 index.html 里，
     # 升级后 URL 不变，浏览器会一直用旧副本，改了也看不到。
-    text = re.sub(r'(static/(?:style\.css|workspace-home\.css|interface\.css|platinum-ds\.css|biggame-overview\.css|snapshot-center\.css|app\.js|godmode\.js|cross-page\.js|snapshot-center\.js))(\?v=[^"\']*)?',
+    text = re.sub(r'(static/(?:style\.css|workspace-home\.css|interface\.css|platinum-ds\.css|biggame-overview\.css|snapshot-center\.css|app\.js|godmode\.js|cross-page\.js|snapshot-center\.js|match-deep\.js))(\?v=[^"\']*)?',
                   lambda match: f'{match.group(1)}?v={stamp}', text)
     if 'name="app-version"' not in text:
         text = re.sub(r'<head>',
