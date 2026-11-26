@@ -47,6 +47,35 @@ def test_competition_scope_keys_covers_direct_window_manual_formal(ws):
     assert ws.competition_scope_keys('missing') == set()
 
 
+def test_competition_start_only_window_covers_later_days(ws):
+    """赛训组回归：赛事只填训练起始时间（结束留空）时，起始日之后的所有对局
+    与系列赛都要落在 scope 内——此前 end_date 缺省被补成 start，窗口塌成单日，
+    导致次日/第三天的营地采集对局在单局/大场/跨场里整批消失。"""
+    cid = ws.save_competition(name='王者荣耀女子公开赛', date='2026-11-24')
+    assert ws._collect_bounds(ws.get_competition(cid)) == ('2026-11-24', '')
+
+    # 起始日 + 之后两天；全部按窗口归属本赛事
+    for key, day in (('m-d1', '2026-11-24'), ('m-d2', '2026-11-25'), ('m-d3', '2026-11-26')):
+        ws.upsert_match(key, date=day, recorded_date=day)
+    scope = ws.competition_scope_keys(cid, kinds=('training',))
+    assert scope == {'m-d1', 'm-d2', 'm-d3'}
+
+    # 窗口解析到本赛事：编组后的系列赛也能归入（第二天开赛）
+    assert ws._window_competition_for({'date': '2026-11-25'}) == cid
+    ws.create_series(best_of=3, games=['m-d2'])
+    assert [item['games'][0]['matchKey']
+            for item in ws.list_series(competition=cid)] == ['m-d2']
+
+    # 更早的对局不被吞并；直连其他赛事的仍不串味
+    ws.upsert_match('m-old', date='2026-11-20', recorded_date='2026-11-20')
+    other = ws.save_competition(name='下一赛事', date='2026-12-01')
+    ws.upsert_match('m-other', date='2026-12-05', competition_id=other,
+                    recorded_date='2026-12-05')
+    scope = ws.competition_scope_keys(cid, kinds=('training',))
+    assert 'm-old' not in scope
+    assert 'm-other' not in scope
+
+
 def test_series_competition_derive_and_mixed_error(ws):
     ws.upsert_match('m-a1', date='2026-11-02', competition_id='comp-a',
                     recorded_date='2026-11-02')

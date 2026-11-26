@@ -1468,6 +1468,31 @@ class Workspace:
         finally:
             connection.close()
 
+    def list_rosters(self, match_keys=None):
+        """读回已保存的逐局十人匹配，供匹配页在刷新/更新后恢复归档结果。
+
+        只按 (match_key, side, slot) 原样读回；规则、昵称池和战队 ID 变化都
+        不能重新推断或覆盖已经归档的匹配，否则对手一侧会退回「待匹配」。
+        """
+        connection = self.connect()
+        try:
+            if match_keys is None:
+                rows = connection.execute(
+                    'SELECT match_key, side, slot, player_id, team_id FROM match_rosters '
+                    'ORDER BY match_key, side, slot').fetchall()
+            else:
+                keys = [str(key) for key in match_keys]
+                if not keys:
+                    return []
+                marks = ','.join('?' for _ in keys)
+                rows = connection.execute(
+                    f'SELECT match_key, side, slot, player_id, team_id FROM match_rosters '
+                    f'WHERE match_key IN ({marks}) ORDER BY match_key, side, slot', keys).fetchall()
+            return [{'matchKey': row[0], 'side': row[1], 'slot': row[2],
+                     'playerId': row[3], 'teamId': row[4] or ''} for row in rows]
+        finally:
+            connection.close()
+
     def upsert_bp(self, match_key, *, bans=None, picks=None, pick_order=None, first_pick=None,
                   bp_coach=None, comp_tags=None, notes=None):
         connection = self.connect()
@@ -1569,9 +1594,16 @@ class Workspace:
 
     @classmethod
     def _collect_bounds(cls, competition):
-        """训练起止窗口：end_date 缺省时按单日窗口处理，避免旧数据无限吞并后续录入。"""
+        """训练起止窗口：只填起始日时按「起始日起持续有效」处理。
+
+        此前 end_date 缺省时用 start 兜底，窗口塌成单日，导致只填了训练起始
+        时间的赛事把次日及之后的对局/系列赛全部排除在分析 scope 之外（赛训组
+        反馈「编组了但单局/大场/跨场都没有」）。缺一端即无界是 _date_bounds
+        既有语义，这里不再用 start 补 end；新的赛事起始日更晚时，
+        _window_competition_for 按 date 倒序取最近赛事，仍可正确分区。
+        """
         start = competition.get('date')
-        return cls._date_bounds(start, competition.get('end_date') or start)
+        return cls._date_bounds(start, competition.get('end_date'))
 
     def _all_match_rows(self):
         connection = self.connect()
@@ -1624,6 +1656,12 @@ class Workspace:
             return []
         window = self._collect_bounds(competition)
         manual = self._competition_manual_keys(competition)
+        # 明确归属优先：被手动挂到其他赛事的对局，不能被本赛事的开放窗口吞并。
+        # list_competitions 按 date 倒序，setdefault 让起始日最近的赛事优先。
+        manual_owners = {}
+        for comp in self.list_competitions():
+            for mounted_key in self._competition_manual_keys(comp):
+                manual_owners.setdefault(mounted_key, str(comp.get('id') or ''))
         result = []
         for row in self._all_match_rows():
             if self._mfield(row, 'in_trial', 0) or self._match_type(row) != self.TRAINING:
@@ -1635,10 +1673,13 @@ class Workspace:
             # 避免同一局同时落在两个赛事的 scope 里（跨域双归属）。
             if direct_id and not direct:
                 continue
+            mounted = key in manual
+            other_owner = manual_owners.get(key)
+            if not direct and other_owner and other_owner != competition_id:
+                continue
             # 双通道统一：已被 official-entry 转正的速记占位行，让位给正牌对局。
             if str(self._mfield(row, 'formal_link', '') or ''):
                 continue
-            mounted = key in manual
             if not (direct or mounted or self._in_window(self._training_date(row), window)):
                 continue
             result.append(self._aggregated_item(
