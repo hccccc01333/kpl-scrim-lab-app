@@ -59,7 +59,7 @@ export function createFeatures(h) {
   /* 周报模板：模块清单、标题与文字块按赛事存在赛训数据库，本地留一份用于同步渲染。 */
   const WEEKLY_MODULE_META = [
     ['kpi', '核心指标'], ['compare', '上周对比'], ['leader', '领导摘要'],
-    ['matches', '对局明细'], ['types', '对局类型'], ['foes', '交手对手'], ['effects', '训练效果'],
+    ['matches', '本周对局概览'], ['types', '对局类型'], ['foes', '交手对手'], ['effects', '训练效果'],
   ];
   const WEEKLY_TITLES = Object.fromEntries(WEEKLY_MODULE_META);
   const WEEKLY_MODULE_IDS = WEEKLY_MODULE_META.map(([id]) => id);
@@ -2528,36 +2528,98 @@ export function createFeatures(h) {
       } catch {}
       return '—';
     };
-    const matchRows = [...weekMatches].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((m) => `<tr><td>${text(m.date || '—')}</td><td>${text(teamOf(m.enemy_team_id, m.date, m.opponent))}</td><td class="num">${scoreOf(m)}</td><td class="${resultOf(m) === 'win' ? 'win' : resultOf(m) === 'loss' ? 'loss' : ''}">${resultOf(m) === 'win' ? '胜' : resultOf(m) === 'loss' ? '负' : '—'}</td><td class="num">${time(m.duration)}</td></tr>`).join('');
+    /* 一周局数可能很多：周报只保留按日聚合的节奏带 + 结论，逐局明细留在「对局」页，
+       不把十几行表格塞进领导周报。 */
+    const dayMap = new Map();
+    const foeMap = new Map();
+    for (const m of weekMatches) {
+      const day = String(m.date || '日期未知');
+      const rec = dayMap.get(day) || {games: 0, wins: 0, losses: 0};
+      rec.games += 1;
+      if (resultOf(m) === 'win') rec.wins += 1;
+      if (resultOf(m) === 'loss') rec.losses += 1;
+      dayMap.set(day, rec);
+      const foe = teamOf(m.enemy_team_id, m.date, m.opponent) || '未标注对手';
+      foeMap.set(foe, (foeMap.get(foe) || 0) + 1);
+    }
+    const dayRows = [...dayMap.entries()].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    const maxDayGames = Math.max(1, ...dayRows.map(([, rec]) => rec.games));
+    const chronological = [...weekMatches].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    let streakNow = 0, streakSign = '', bestWinStreak = 0, bestLossStreak = 0;
+    for (const m of chronological) {
+      const r = resultOf(m);
+      if (!r) continue;
+      if (r === streakSign) streakNow += 1;
+      else { streakSign = r; streakNow = 1; }
+      if (r === 'win') bestWinStreak = Math.max(bestWinStreak, streakNow);
+      else bestLossStreak = Math.max(bestLossStreak, streakNow);
+    }
+    const topFoes = [...foeMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const rhythmHtml = dayRows.length ? `<div class="rmo-strip" role="img" aria-label="本周按日对局节奏：${dayRows.map(([day, rec]) => `${day} ${rec.games} 局`).join('，')}">${dayRows.map(([day, rec]) => {
+      const winPct = rec.games ? rec.wins / rec.games * 100 : 0;
+      const lossPct = rec.games ? rec.losses / rec.games * 100 : 0;
+      return `<div class="rmo-day" style="--bar-h:${Math.round(rec.games / maxDayGames * 100)}%">
+        <span class="rmo-bar"><i class="rmo-win" style="block-size:${winPct}%"></i><i class="rmo-loss" style="block-size:${lossPct}%"></i></span>
+        <b>${fmt(rec.games)}</b><small>${text(String(day).slice(5) || day)}</small>
+      </div>`;
+    }).join('')}</div>` : '<p class="report-muted">本周没有可聚合的对局记录。</p>';
+    const matchOverviewHtml = `<div class="report-match-overview">
+      <div class="rmo-head"><b>${fmt(weekMatches.length)} 局</b><span>${text(start)} — ${text(end)} · 训练赛与正式赛</span></div>
+      ${rhythmHtml}
+      <div class="rmo-facts">
+        <div><span>最佳连胜</span><b>${fmt(bestWinStreak)} 局</b></div>
+        <div><span>最长连败</span><b>${fmt(bestLossStreak)} 局</b></div>
+        <div><span>场均时长</span><b>${time(avg)}</b></div>
+        <div><span>交手最多</span><b>${topFoes.length ? text(topFoes[0][0]) : '—'}${topFoes.length > 1 ? ` · ${text(topFoes[1][0])}` : ''}</b></div>
+      </div>
+      <p class="rl-note">按日聚合，只保留节奏与结论；逐局比分、时长和英雄请到「对局」页查看，不随一周周报全部展开。</p>
+    </div>`;
     const gradeLine = (row) => `<b>${text(row.name)}</b><span class="${row.tone === 'good' ? 'is-good' : row.tone === 'bad' ? 'is-bad' : row.tone === 'down' ? 'is-down' : 'is-flat'}">${toneLabel[row.tone]} ${toneArrow[row.tone]} · 死亡 ${row.deathRate == null ? '—' : fmt(row.deathRate, 1)} 次/局 · 经济 ${row.gpm == null ? '—' : fmt(row.gpm)}/分（目标 ${row.target == null ? '未设' : fmt(row.target)}）</span>`;
     const leaderHtml = `<section class="report-leader" aria-label="领导摘要">
-      <div class="rl-grid">
-        <div class="rl-card"><h2>MVP 拿得多的选手</h2>${mvpRows.length
-          ? `<ol class="rl-list">${mvpRows.map((row) => `<li><b>${text(row.name)}</b><span>${text(row.lane || '位置未知')} · ${fmt(row.mvp)} 次 MVP / ${fmt(row.games)} 局（近 12 局样本）</span></li>`).join('')}</ol>`
-          : '<p class="report-muted">本周没有可用的 MVP 逐局记录。</p>'}</div>
-        <div class="rl-card"><h2>常用组合前三</h2>${commonPairs.length
-          ? `<ol class="rl-list">${commonPairs.map((row) => `<li><b>${pairText(row)}</b><span>${fmt(row.games)} 局 · 胜率 ${row.winRate == null ? '—' : pct(row.winRate)}</span></li>`).join('')}</ol>`
-          : '<p class="report-muted">本周没有可统计的英雄组合。</p>'}</div>
+      <div class="rl-mosaic">
+        <article class="rl-card rl-card--people">
+          <header><span class="rl-kicker">PLAYER · 01</span><h2>本周 MVP 高频选手</h2></header>
+          ${mvpRows.length
+            ? `<ol class="rl-list">${mvpRows.map((row) => `<li><b>${text(row.name)}</b><span>${text(row.lane || '位置未知')} · ${fmt(row.mvp)} 次 MVP / ${fmt(row.games)} 局（近 12 局样本）</span></li>`).join('')}</ol>`
+            : '<p class="report-muted">本周没有可用的 MVP 逐局记录。</p>'}
+        </article>
+        <article class="rl-card rl-card--people">
+          <header><span class="rl-kicker">SYNERGY · 02</span><h2>本周常用组合</h2></header>
+          ${commonPairs.length
+            ? `<ol class="rl-list">${commonPairs.map((row) => `<li><b>${pairText(row)}</b><span>${fmt(row.games)} 局 · 胜率 ${row.winRate == null ? '—' : pct(row.winRate)}</span></li>`).join('')}</ol>`
+            : '<p class="report-muted">本周没有可统计的英雄组合。</p>'}
+        </article>
+        <article class="rl-card rl-card--people is-good-card">
+          <header><span class="rl-kicker">HIGHLIGHT · 03</span><h2>本周表现优异</h2></header>
+          ${excellentRows.length
+            ? `<ul class="rl-list">${excellentRows.map((row) => `<li>${gradeLine(row)}</li>`).join('')}</ul>`
+            : '<p class="report-muted">本周没有达到优秀线的选手。</p>'}
+        </article>
+        <article class="rl-card rl-card--people is-bad-card">
+          <header><span class="rl-kicker">FOCUS · 04</span><h2>本周重点改善</h2></header>
+          ${improveRows.length
+            ? `<ul class="rl-list">${improveRows.map((row) => `<li>${gradeLine(row)}</li>`).join('')}</ul>`
+            : '<p class="report-muted">本周没有需要重点标注的选手。</p>'}
+        </article>
+        <article class="rl-card rl-card--table">
+          <header><span class="rl-kicker">FORM · 05</span><h2>本周高胜率组合</h2></header>
+          ${highPairs.length
+            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周高胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率</th></tr></thead><tbody>${highPairs.map((row) => `<tr><th scope="row">${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-good">${pairRateText(row)}</td></tr>`).join('')}</tbody></table></div>`
+            : '<p class="report-muted">本周没有可统计的高胜率组合。</p>'}
+        </article>
+        <article class="rl-card rl-card--table">
+          <header><span class="rl-kicker">RISK · 06</span><h2>本周低胜率组合</h2></header>
+          ${lowPairs.length
+            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周低胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率 / 提示</th></tr></thead><tbody>${lowPairs.map((row) => `<tr><th scope="row">${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-bad"><b>${pairRateText(row)}</b><em class="rl-flag">胜率偏低 · 建议复盘控制与开团</em></td></tr>`).join('')}</tbody></table></div>`
+            : '<p class="report-muted">本周没有可统计的低胜率组合。</p>'}
+        </article>
+        <article class="rl-card rl-card--foes">
+          <header><span class="rl-kicker">OPPONENT · 07</span><h2>本周重点对手</h2></header>
+          ${focusRows.length
+            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周重点战队战绩"><table class="report-table"><thead><tr><th scope="col">战队</th><th scope="col" class="num">场次</th><th scope="col">胜负</th></tr></thead><tbody>${focusRows.map((row) => `<tr><th scope="row">${text(row.name)}</th><td class="num">${fmt(row.games)}</td><td>${row.games ? `<b class="${row.wins >= row.losses ? 'win' : 'loss'}">${row.wins} 胜 ${row.losses} 负</b>` : '本周无交手'}</td></tr>`).join('')}</tbody></table></div>`
+            : '<p class="report-muted">未勾选重点战队；在报告库「生成训练周报」处勾选后写入本报告。</p>'}
+        </article>
       </div>
-      <div class="rl-grid">
-        <div class="rl-card"><h2>胜率高的英雄组合（前 4）</h2>${highPairs.length
-          ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="高胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率</th></tr></thead><tbody>${highPairs.map((row) => `<tr><th scope="row">${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-good">${pairRateText(row)}</td></tr>`).join('')}</tbody></table></div>`
-          : '<p class="report-muted">本周没有可统计的高胜率组合。</p>'}</div>
-        <div class="rl-card"><h2>胜率低的英雄组合（后 4）</h2>${lowPairs.length
-          ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="低胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率 / 提示</th></tr></thead><tbody>${lowPairs.map((row) => `<tr><th scope="row">${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-bad"><b>${pairRateText(row)}</b><em class="rl-flag">胜率偏低 · 建议复盘控制与开团</em></td></tr>`).join('')}</tbody></table></div>`
-          : '<p class="report-muted">本周没有可统计的低胜率组合。</p>'}</div>
-      </div>
-      <div class="rl-grid">
-        <div class="rl-card"><h2>表现优秀（最多 3 人）</h2>${excellentRows.length
-          ? `<ul class="rl-list">${excellentRows.map((row) => `<li>${gradeLine(row)}</li>`).join('')}</ul>`
-          : '<p class="report-muted">本周没有达到优秀线的选手。</p>'}</div>
-        <div class="rl-card"><h2>待改善（最多 3 人）</h2>${improveRows.length
-          ? `<ul class="rl-list">${improveRows.map((row) => `<li>${gradeLine(row)}</li>`).join('')}</ul>`
-          : '<p class="report-muted">本周没有需要重点标注的选手。</p>'}</div>
-      </div>
-      <div class="rl-card"><h2>重点战队战绩</h2>${focusRows.length
-        ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="重点战队战绩"><table class="report-table"><thead><tr><th scope="col">战队</th><th scope="col" class="num">场次</th><th scope="col">胜负</th></tr></thead><tbody>${focusRows.map((row) => `<tr><th scope="row">${text(row.name)}</th><td class="num">${fmt(row.games)}</td><td>${row.games ? `<b class="${row.wins >= row.losses ? 'win' : 'loss'}">${row.wins} 胜 ${row.losses} 负</b>` : '本周无交手'}</td></tr>`).join('')}</tbody></table></div>`
-        : '<p class="report-muted">未勾选重点战队；在报告库「生成训练周报」处勾选后写入本报告。</p>'}</div>
     </section>`;
     const activeModules = weeklyTemplate();
     const activeById = new Map(activeModules.map((mod) => [mod.id, mod]));
@@ -2568,7 +2630,7 @@ export function createFeatures(h) {
       if (mod.id === 'kpi') return `${titled(mod, fallback)}${kpiBody}</div>`;
       if (mod.id === 'compare') return `${titled(mod, fallback)}<section class="report-compare">${compareCells}</section></div>`;
       if (mod.id === 'leader') return `${titled(mod, fallback)}${leaderHtml}</div>`;
-      if (mod.id === 'matches') return `${titled(mod, fallback)}${matchRows ? `<table class="report-table"><thead><tr><th>日期</th><th>对手</th><th class="num">比分</th><th>结果</th><th class="num">时长</th></tr></thead><tbody>${matchRows}</tbody></table>` : '<p class="report-muted">本周没有对局记录。</p>'}</div>`;
+      if (mod.id === 'matches') return `${titled(mod, fallback)}${matchOverviewHtml}</div>`;
       if (mod.id === 'types') return `${titled(mod, fallback)}<p class="report-muted">训练赛 ${fmt(weekMatches.length)} 局</p></div>`;
       if (mod.id === 'foes') return `${titled(mod, fallback)}${weekFoes.size ? `<ol class="report-goals">${[...weekFoes].map((name) => `<li>${text(name)}</li>`).join('')}</ol>` : '<p class="report-muted">本周没有交手记录。</p>'}</div>`;
       if (mod.id === 'effects') return `${titled(mod, fallback)}${weekEffects.length ? `<div class="report-effect"><b>${fmt(weekEffects.length)} 条干预记录</b><span>可对比 ${fmt(usableEffects.length)} 条 · 平均效应量 ${meanEffect == null ? '—' : fmt(meanEffect, 2)}</span></div>` : '<p class="report-muted">本周没有训练干预记录。</p>'}</div>`;
@@ -2592,7 +2654,7 @@ export function createFeatures(h) {
       <div class="rt-actions"><button type="button" class="primary" data-rt-save>${gi('book')}保存周报模板</button><span data-rt-status role="status"></span></div>
     </details>`;
     const generated = localDate();
-    return `<div class="report-page"><div class="report-toolbar"><a class="control" href="#reports">${gi('arrow-up', 16)}返回报告库</a>${templatePanel}<div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>${gi('export')}导出周报图片</button><button type="button" class="primary" data-sx-print>${gi('book')}打印 / 保存 PDF</button></div></div><article class="report-sheet">
+    return `<div class="report-page report-page--weekly"><div class="report-toolbar"><a class="control" href="#reports">${gi('arrow-up', 16)}返回报告库</a>${templatePanel}<div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>${gi('export')}导出周报图片</button><button type="button" class="primary" data-sx-print>${gi('book')}打印 / 保存 PDF</button></div></div><article class="report-sheet report-sheet--weekly">
       <header class="report-brand"><span class="report-mark">${gi('chart', 24)}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">一周训练周报</span></header>
       <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT · 一周</span><h1>${gi('chart')}${text(teamName)} · 一周训练报告（${text(start)} — ${text(end)}）</h1><p>按一周内的训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
       <div class="report-context"><span>对局上下文</span>胜率 ${currentRate != null ? pct(currentRate) : '—'} · 场均 ${time(avg)} · ${wins} 胜 ${losses} 负</div>

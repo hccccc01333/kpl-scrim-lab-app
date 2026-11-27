@@ -200,12 +200,12 @@ function gameOptionsHtml(index, date) {
     .filter((match) => match && String(match.date || '').slice(0, 10) === date)
     .sort((a, b) => String(b.startTime || '').localeCompare(String(a.startTime || '')));
   if (!games.length) return '<option value="">这一天暂无对局</option>';
-  return `<option value="">选择这一天的对局</option>` + games.map((match) => {
-    const clock = String(match.startTime || '').slice(6) || '时间未标注';
+  return `<option value="">选择这一天的对局</option>` + games.map((match, index) => {
+    const clock = String(match.startTime || '').slice(11, 16) || '时间未标注';
     const rival = match.opponent ? `对阵 ${match.opponent}` : '对手未标注';
     const result = match.result === 'win' ? '胜' : match.result === 'loss' ? '负' : '';
-    const tail = String(match.key || '').replace(/^channel-/, '').slice(0, 6);
-    return `<option value="${esc(match.key)}">${esc(clock)} · ${esc(rival)}${result ? ` · ${result}` : ''}${tail ? ` · ${esc(tail)}` : ''}</option>`;
+    /* 选项里不暴露 channel-xxx：同一天同对手用序号区分，教练能认出来。 */
+    return `<option value="${esc(match.key)}">第 ${index + 1} 局 · ${esc(clock)} · ${esc(rival)}${result ? ` · ${result}` : ''}</option>`;
   }).join('');
 }
 
@@ -484,10 +484,14 @@ async function loadPage(page) {
     });
     const groupHead = (key, notes) => {
       const m = index.get(key);
-      const date = String(m?.date || '').slice(5);
-      const label = [date, m?.opponent ? `对阵 ${m.opponent}` : ''].filter(Boolean).join(' · ') || '未标注对局';
-      return `<a class="mn-group-main" href="#match/${encodeURIComponent(key)}" title="打开这一局的复盘（${esc(key)}）">
-          <b>${esc(label)}</b><small>${esc(key)}</small></a>
+      const day = String(m?.date || '');
+      const label = [day.slice(5), m?.opponent ? `对阵 ${m.opponent}` : '对手未标注'].filter(Boolean).join(' · ') || '未标注对局';
+      /* 分组头只放教练看得懂的日期/对手/赛制，不再把 channel-xxx 当副标题。 */
+      const detail = [m?.matchType === 'formal' ? '正式赛' : '训练赛',
+        String(m?.startTime || '').slice(11, 16) || '',
+        m?.session ? `训练组 ${m.session}` : ''].filter(Boolean).join(' · ');
+      return `<a class="mn-group-main" href="#match/${encodeURIComponent(key)}" title="打开这一局的复盘：${esc(label)}">
+          <b>${esc(label)}</b><small>${esc(detail)}</small></a>
         <span class="mn-count">${notes.length} 条</span>
         <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('edit', { size: 18 })} 写笔记</button>`;
     };

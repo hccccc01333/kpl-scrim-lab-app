@@ -5851,6 +5851,65 @@ a.hz-card { display: block; text-decoration: none; }
   .rl-table-wrap tbody td { border: 0; padding: 2px 0; }
 }
 
+/* 周报横向精致版：屏幕用宽画布，打印走 A4 横向命名页，保留其它报告的纵向版式。 */
+@page weekly-report { size: A4 landscape; margin: 10mm; }
+.report-page--weekly .report-toolbar { max-width: 1180px; }
+.report-sheet--weekly { page: weekly-report; max-width: 1180px; padding: 42px 52px 34px; }
+@media print { .report-sheet--weekly { max-width: none; padding: 0; } }
+.report-sheet--weekly .report-title { align-items: center; padding-block: 24px 20px; border-bottom: 1px solid #e4ebeb; }
+.report-sheet--weekly .report-title h1 { font-size: 34px; letter-spacing: -.035em; text-wrap: balance; }
+.report-sheet--weekly .report-title p { font-size: 13px; }
+.report-sheet--weekly .report-kind { font-size: 12.5px; letter-spacing: .12em; }
+
+/* 领导摘要做成 12 栏编辑式拼版：人物卡 3 栏、表格卡 4 栏，行内不靠目测对齐。 */
+.report-leader { margin-block-start: 6px; }
+.rl-mosaic { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+.rl-mosaic > .rl-card {
+  grid-column: span 3; container-type: inline-size; position: relative;
+  display: grid; align-content: start; gap: 8px; min-height: 152px;
+  padding: 15px 17px; border: 1px solid #e1e9e9; border-radius: 12px;
+  background: linear-gradient(180deg, #fff 0, #fbfcfc 100%);
+  box-shadow: 0 1px 0 rgba(23, 55, 58, .03), 0 8px 22px -18px rgba(23, 55, 58, .35);
+  break-inside: avoid;
+}
+.rl-mosaic > .rl-card::before { content: ''; position: absolute; inset: 0 0 auto; block-size: 3px; border-radius: 12px 12px 0 0; background: #b07824; opacity: .75; }
+.rl-mosaic > .is-good-card::before { background: #176b69; }
+.rl-mosaic > .is-bad-card::before { background: #b3261e; }
+.rl-card > header { display: grid; gap: 3px; }
+.rl-kicker { color: #b07824; font: 800 9.5px/1.2 Manrope, var(--font); letter-spacing: .16em; }
+.rl-card h2 { margin: 0; font-size: 15px; letter-spacing: -.01em; text-wrap: balance; }
+.rl-mosaic > .rl-card--table, .rl-mosaic > .rl-card--foes { grid-column: span 4; }
+.rl-mosaic .rl-list li { padding-block: 7px; }
+.rl-mosaic .rl-list span { font-size: 11.5px; }
+@container (width < 300px) {
+  .rl-card > header { gap: 2px; }
+  .rl-kicker { font-size: 8.5px; }
+  .rl-card h2 { font-size: 13px; }
+  .rl-list li { grid-template-columns: 1fr; }
+}
+@media (max-width: 1180px) { .rl-mosaic { grid-template-columns: repeat(6, minmax(0, 1fr)); } .rl-mosaic > .rl-card { grid-column: span 3; } .rl-mosaic > .rl-card--table, .rl-mosaic > .rl-card--foes { grid-column: span 3; } }
+@media (max-width: 680px) { .rl-mosaic { grid-template-columns: 1fr; } .rl-mosaic > .rl-card, .rl-mosaic > .rl-card--table, .rl-mosaic > .rl-card--foes { grid-column: 1; } }
+@media print { .rl-mosaic { gap: 8px; } .rl-mosaic > .rl-card { min-height: 0; padding: 10px 12px; box-shadow: none; } }
+
+/* 对局模块不再铺十几行明细，改成按日聚合的节奏带 + 结论。 */
+.report-match-overview { padding: 14px 16px; border: 1px solid #e2e9ea; border-radius: 12px; background: linear-gradient(180deg, #fff 0, #fafcfc 100%); break-inside: avoid; }
+.rmo-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; }
+.rmo-head b { color: #16363a; font: 800 22px/1 Manrope, var(--font); }
+.rmo-head span { color: #7b8b8e; font-size: 12px; }
+.rmo-strip { display: flex; align-items: flex-end; gap: 8px; block-size: 118px; margin-block: 14px 12px; padding-block-start: 6px; border-bottom: 1px solid #dde6e7; overflow-x: auto; scrollbar-gutter: stable; }
+.rmo-day { flex: 1 0 30px; max-inline-size: 64px; min-inline-size: 30px; block-size: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; }
+.rmo-bar { inline-size: 100%; block-size: var(--bar-h, 6%); min-block-size: 5px; display: flex; flex-direction: column-reverse; border-radius: 6px 6px 0 0; background: #eef3f3; overflow: hidden; }
+.rmo-bar i { display: block; inline-size: 100%; }
+.rmo-win { background: #176b69; }
+.rmo-loss { background: #b07824; }
+.rmo-day b { color: #16363a; font-size: 11px; font-variant-numeric: tabular-nums; }
+.rmo-day small { color: #7b8b8e; font-size: 9px; font-variant-numeric: tabular-nums; }
+.rmo-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rmo-facts > div { padding: 8px 10px; border-radius: 8px; background: #f7f9f9; }
+.rmo-facts span { display: block; color: #7b8b8e; font-size: 10px; }
+.rmo-facts b { display: block; margin-block-start: 3px; color: #183033; font-size: 13px; overflow-wrap: anywhere; }
+@media (max-width: 680px) { .rmo-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* 认领移出选手栏（2026-11-08）：待认领条的两个入口 + 档案页的「管理认领」 */
 .pl-claim-links { display: grid; gap: 6px; justify-items: end; align-self: end; }
 .pl-claim-links .pl-claim-all { align-self: auto; }
