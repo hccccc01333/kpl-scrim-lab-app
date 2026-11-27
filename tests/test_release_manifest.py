@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 
-from make_release import ship_files  # noqa: E402
+from make_release import parse_args, ship_files  # noqa: E402
 
 TOOLS_DIR = ROOT / 'tools'
 # 会 import tools/ 模块的两个运行期入口文件。
@@ -182,6 +182,15 @@ class ReleaseManifestTests(unittest.TestCase):
         for ref in refs:
             with self.subTest(asset=ref):
                 self.assertIn(f'v3/public/{ref}', shipped)
+
+    def test_clean_install_is_the_default_update_mode(self):
+        """正式更新一律清装；传统增量包必须显式 --incremental 才算本地调试。"""
+        default = parse_args([])
+        self.assertFalse(default.incremental)
+        self.assertTrue(default.clean or not default.incremental)
+        legacy = parse_args(['--incremental'])
+        self.assertTrue(legacy.incremental)
+        self.assertFalse(legacy.clean or not legacy.incremental)
 
     def test_never_ship_files_stay_out(self):
         from make_release import NEVER_SHIP

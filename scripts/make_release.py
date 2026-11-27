@@ -797,9 +797,12 @@ def parse_args(argv=None):
     parser.add_argument('--output', default=str(ROOT / 'dist'),
                         help='输出目录（默认 dist/）')
     parser.add_argument('--since', help='生成补丁的起始 git tag；默认自动取上一个 tag')
-    parser.add_argument('--all', action='store_true', help='补丁包含全部程序文件')
+    parser.add_argument('--all', action='store_true',
+                        help='补丁 payload 也逐文件列出全部程序文件（默认清装不需要）')
     parser.add_argument('--clean', action='store_true',
-                        help='自动更新改为保留数据、重装程序：补丁内嵌完整程序包')
+                        help='默认行为；保留兼容旧命令（自动更新必定清装）')
+    parser.add_argument('--incremental', action='store_true',
+                        help='仅本地调试：生成传统增量包，不清理旧文件')
     parser.add_argument('--no-patch', action='store_true', help='不生成增量包')
     parser.add_argument('--no-full', action='store_true', help='不生成完整包')
     parser.add_argument('--no-ocr-runtime', action='store_true',
@@ -841,7 +844,8 @@ def main(argv=None) -> int:
         # 客户端必须走完整包，否则装完后版本号是新的、内容却缺一截
         #（1.0-1.3 的用户曾能通过 1.0.0 门槛装上只含 1.4→1.5.12 差异的补丁）。
         args.min_version = '1.0.0' if args.all or not since else since.lstrip('v')
-    if args.clean:
+    clean_update = args.clean or not args.incremental
+    if clean_update:
         # 补丁本身保持小清单（老更新器也能装）；完整程序包作为 payload 里的
         # 一个普通文件随补丁下发，重启后由新 updater 完成清装。
         bundle_out, _ = build_clean_bundle(version, ship, args)
@@ -866,7 +870,8 @@ def main(argv=None) -> int:
                   'createdAt': now_iso()}
         (payload_dir / 'clean_request.json').write_text(
             json.dumps(marker, ensure_ascii=False, indent=2), encoding='utf-8')
-        changed, _ = diff_paths(since, ship) if since else (ship, [])
+        # 完整程序已经在 bundle 里；--all 不再把 manifest 撑成几百 KB。
+        changed, _ = diff_paths(since, ship) if since else ([], [])
         paths = sorted(set(changed) | {
             'version.py', 'updater.py', 'update_client.py', 'server.py',
             'scripts/make_release.py', 'clean_request.json',
