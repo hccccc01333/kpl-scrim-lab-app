@@ -17,7 +17,12 @@ assert.doesNotMatch(js, /if \(mod\.id === 'matches'\)[^\n]*<table class="report-
 assert.match(css, /@page weekly-report \{ size: A4 landscape; margin: 10mm; \}/, '打印必须走 A4 横向命名页');
 assert.match(css, /\.rl-mosaic \{ display: grid; grid-template-columns: repeat\(12, minmax\(0, 1fr\)\)/, '领导摘要必须是 12 栏编辑式拼版');
 assert.match(css, /\.report-sheet--weekly \{ page: weekly-report;/, '周报必须绑定横向命名页');
-assert.match(app, /features\.js\?v=20261127weeklyart1/, 'app.js 模块版本戳必须更新');
-assert.match(html, /features\.js\?v=20261127weeklyart1/, 'index.html 预取版本戳必须更新');
+assert.match(js, /class="report-lede"/, '必须有本周结论导语');
+assert.match(js, /<footer class="report-footer">/, '周报必须有页脚版本信息');
+assert.match(css, /--rl-gradient-space: in oklab/, '渐变必须显式指定 in oklab 并有回退');
+assert.match(css, /text-wrap: pretty/, '导语正文必须用 pretty 换行');
+assert.match(css, /@media \(forced-colors: active\) \{\s*\.report-lede/, '导语必须有强制颜色回退');
+assert.match(app, /features\.js\?v=20261127weeklyart2/, 'app.js 模块版本戳必须更新');
+assert.match(html, /features\.js\?v=20261127weeklyart2/, 'index.html 预取版本戳必须更新');
 
 console.log('weekly editorial layout: all assertions passed');

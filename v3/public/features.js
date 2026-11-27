@@ -2574,6 +2574,19 @@ export function createFeatures(h) {
       </div>
       <p class="rl-note">按日聚合，只保留节奏与结论；逐局比分、时长和英雄请到「对局」页查看，不随一周周报全部展开。</p>
     </div>`;
+    /* 封面导语：一眼给出本周结论，不逼教练先扫完所有表格。 */
+    const ledeFacts = [
+      `${fmt(weekMatches.length)} 局 · ${currentRate == null ? '胜负待确认' : `胜率 ${pct(currentRate)}`}`,
+      mvpRows[0] ? `${text(mvpRows[0].name)} ${fmt(mvpRows[0].mvp)} 次 MVP` : '',
+      topFoes[0] ? `重点对手 ${text(topFoes[0][0])} 交手 ${fmt(topFoes[0][1])} 局` : '',
+      bestWinStreak ? `最长 ${fmt(bestWinStreak)} 连胜` : '',
+    ].filter(Boolean);
+    const ledeHtml = `<section class="report-lede" aria-label="本周结论">
+      <span class="rl-issue" aria-hidden="true">01</span>
+      <div><span class="rl-kicker">WEEKLY VERDICT · 本周结论</span>
+        <p>${ledeFacts.length ? ledeFacts.map((fact) => `<b>${fact}</b>`).join('<i aria-hidden="true">/</i>') : '本周数据不足，先补齐对局与选手记录。'}</p>
+      </div>
+    </section>`;
     const gradeLine = (row) => `<b>${text(row.name)}</b><span class="${row.tone === 'good' ? 'is-good' : row.tone === 'bad' ? 'is-bad' : row.tone === 'down' ? 'is-down' : 'is-flat'}">${toneLabel[row.tone]} ${toneArrow[row.tone]} · 死亡 ${row.deathRate == null ? '—' : fmt(row.deathRate, 1)} 次/局 · 经济 ${row.gpm == null ? '—' : fmt(row.gpm)}/分（目标 ${row.target == null ? '未设' : fmt(row.target)}）</span>`;
     const leaderHtml = `<section class="report-leader" aria-label="领导摘要">
       <div class="rl-mosaic">
@@ -2658,7 +2671,9 @@ export function createFeatures(h) {
       <header class="report-brand"><span class="report-mark">${gi('chart', 24)}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">一周训练周报</span></header>
       <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT · 一周</span><h1>${gi('chart')}${text(teamName)} · 一周训练报告（${text(start)} — ${text(end)}）</h1><p>按一周内的训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
       <div class="report-context"><span>对局上下文</span>胜率 ${currentRate != null ? pct(currentRate) : '—'} · 场均 ${time(avg)} · ${wins} 胜 ${losses} 负</div>
+      ${ledeHtml}
       ${bodyHtml}
+      <footer class="report-footer"><span>赛训数据 · 一周训练周报</span><span>${text(start)} — ${text(end)} · 生成于 ${text(generated)}</span></footer>
     </article></div>`;
   }
   function sessionPage(value, key) {
