@@ -3408,7 +3408,7 @@ const OWN_MODULE_ROUTES = new Set(['overview', 'team-profile', 'bp', 'match', 'c
 async function ensureModules(name) {
   const jobs = [];
   if (!OWN_MODULE_ROUTES.has(name) && !mods.features) {
-    jobs.push(importOnce('./features.js?v=20261127weeklyart2').then(({ createFeatures }) => {
+    jobs.push(importOnce('./features.js?v=20261127weeklyart3').then(({ createFeatures }) => {
       mods.features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table,
         pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true),
         currentQuery: () => query(), teamName: () => metadata.teamName || '' });
@@ -4957,6 +4957,6 @@ initUpdateBanner({ API_BASE });
 load();
 /* 首屏空闲时预取 features.js：采集/对局等页签首次进入不必等 2–8s 骨架。
    importOnce 会复用同一个 promise，真正进入时不会重复下载或实例化。 */
-const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261127weeklyart2'); };
+const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261127weeklyart3'); };
 if ('requestIdleCallback' in window) requestIdleCallback(prefetchFeatures, { timeout: 2500 });
 else setTimeout(prefetchFeatures, 1200);
