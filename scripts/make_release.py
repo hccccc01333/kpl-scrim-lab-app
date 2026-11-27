@@ -347,6 +347,8 @@ def _scratch_file(name: str) -> bool:
 # 并从这里删掉即可（资源戳会自动覆盖它）。
 NEVER_SHIP = {
     'v3/public/godmode.js',
+    # 一次性补丁脚本（自述「用后即删」），不是程序文件；别混进发布包。
+    'tmp_patch_onb.py',
 }
 
 

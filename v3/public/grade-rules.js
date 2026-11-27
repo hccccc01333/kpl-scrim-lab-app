@@ -74,7 +74,8 @@ export function createGradeRulesPage(h = {}) {
     state.updatedAt = text(payload.updatedAt);
     state.subjects = payload.subjects && typeof payload.subjects === 'object' ? payload.subjects : {};
     state.saved = Boolean(payload.saved);
-    if (!defaults) defaults = JSON.parse(JSON.stringify(state.subjects));
+    // 服务端显式下发内置默认档位；保存过后 state.subjects 是上次保存值，不能当默认。
+    if (!defaults) defaults = JSON.parse(JSON.stringify(payload.defaults || state.subjects));
     ui.draft = JSON.parse(JSON.stringify(state.subjects));
   }
   async function load({ quiet = false, keepNotice = false } = {}) {
@@ -401,6 +402,24 @@ export function createGradeRulesPage(h = {}) {
     if (bad.length) {
       bad[0].focus();
       return false;
+    }
+    // 阈值顺序要对整个草稿负责：当前只渲染一个主体，但保存会一次写入所有主体。
+    // up 档位必须 elite≥good≥pass，down 必须 elite≤good≤pass，和后端 _valid 一致。
+    for (const [subject, fields] of Object.entries(ui.draft || {})) {
+      for (const [field, rule] of Object.entries(fields || {})) {
+        if (!rule || rule.active === false) continue;
+        const ts = rule.thresholds;
+        if (!Array.isArray(ts) || ts.length !== 3
+            || !ts.every((v) => Number.isFinite(Number(v)))) continue; // 格式问题由上面的输入校验管
+        const [a, b, c] = ts.map(Number);
+        const ok = rule.direction === 'down' ? (a <= b && b <= c) : (a >= b && b >= c);
+        if (ok) continue;
+        if (subject === ui.subject) {
+          root.querySelector(`[data-gr-th="${field}"]`)?.focus();
+        }
+        setNotice(`${subject} · ${field} 的阈值顺序与档位方向不符（${rule.direction === 'down' ? '卓越应≤达标' : '卓越应≥达标'}）`, { error: true });
+        return false;
+      }
     }
     return true;
   }

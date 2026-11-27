@@ -108,6 +108,11 @@ export async function restoreSnapshot(module, snapshotDoc, API_BASE = apiBase())
     throw new Error(detail || `恢复快照失败（${response.status}）`);
   }
   document.dispatchEvent(new CustomEvent('rule-snapshots:restored', { detail: { module } }));
+  // 评级规则是跨页缓存的：恢复快照必须和「保存规则」一样让对局页/选手页
+  // 丢掉内存里的旧文档，否则不刷新页面时仍按恢复前的阈值评级。
+  if (module === 'grade_rules') {
+    document.dispatchEvent(new CustomEvent('grade-rules:saved', { detail: { module } }));
+  }
   return response.json();
 }
 

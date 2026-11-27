@@ -23,7 +23,8 @@ LANES = {0: '对抗路', 1: '中路', 2: '发育路', 3: '打野', 4: '游走'}
 METRICS = {
     'kda': ('KDA', lambda row: (row['kills'] + row['assists']) / max(1, row['deaths'])),
     'gpm': ('分均经济', lambda row: row['gold'] / row['minutes'] if row['minutes'] else None),
-    'dpm': ('分均输出', lambda row: row['heroDamage'] / row['minutes'] if row['minutes'] else None),
+    # 和全站 dpm 对齐：总伤害/分钟；heroDamage/minutes 是另一个指标 hdpm。
+    'dpm': ('分均输出', lambda row: row['damage'] / row['minutes'] if row['minutes'] else None),
     'tpm': ('分均承伤', lambda row: row['taken'] / row['minutes'] if row['minutes'] else None),
     'participation': ('参团率', lambda row: row['participation'] * 100 if row['participation'] is not None else None),
 }
@@ -232,7 +233,9 @@ def group_by_opponent(rows, camp_dir, db_path):
     import opponent_identity
     import team_clusters
     panels = team_clusters.load_panels(camp_dir)
-    sig = {panel['seq']: team_clusters.signature(panel) for panel in panels}
+    # 与匹配页归档的对手卡同口径：确认过对应关系的局不能按阵容签名散开。
+    key_of = team_clusters.cluster_key_of(db_path, panels)
+    sig = {panel['seq']: key_of(panel) for panel in panels}
     resolved = opponent_identity.resolve_names(db_path)
     names, canonical = resolved['names'], resolved['canonical']
     groups = defaultdict(list)

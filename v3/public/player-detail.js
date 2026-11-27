@@ -62,11 +62,28 @@ export function createPlayerDetail(h) {
     '中路': [5500, 5500, 5500], '打野': [8000, 8000, 8000],
     '打野·野核': [8000, 8000, 8000], '打野·坦野': [6800, 6800, 6800],
   };
-  function rulesFor(doc, lane) {
-    if (!doc || !doc.subjects) return null;
-    const keys = lane === '打野' ? ['打野·野核', '打野·坦野', '打野', lane] : [lane];
+  /* 分路 → 规则主体。打野按英雄标签兜底（本页拿不到本局打野刀）：和后端
+     grade_rules.subject_for / 对局页 subjectOf 同一口径，不再固定取野核。 */
+  function rulesFor(doc, lane, hero, heroLaneTypes) {
+    // 未保存过的规则是内置默认档位，其他页面都不拿它评级，这里也不拿。
+    if (!doc || !doc.saved || !doc.subjects) return null;
+    let keys = [lane];
+    if (lane === '打野') {
+      const lanes = (heroLaneTypes || {})[hero] || {};
+      const jungle = String(lanes['打野'] || '');
+      const derived = jungle.includes('坦野') ? '打野·坦野'
+        : jungle ? '打野·野核' : '';
+      keys = [derived, '打野·野核', '打野·坦野', '打野'].filter(Boolean);
+    }
     for (const key of keys) if (doc.subjects[key]) return {key, fields: doc.subjects[key]};
     return null;
+  }
+  function mainHeroOf(rows) {
+    const counts = new Map();
+    for (const row of rows || []) {
+      if (row.hero) counts.set(row.hero, (counts.get(row.hero) || 0) + 1);
+    }
+    return [...counts].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))[0]?.[0] || '';
   }
 
   /* 指标登记表：一处定义，全页共用标签、小数位和单位口径。 */
@@ -455,19 +472,26 @@ export function createPlayerDetail(h) {
   function buildBench(c, f) {
     const lane = c.focusLane;
     const doc = st && st.pd && st.pd.gradeRules;
-    const rule = rulesFor(doc, lane);
-    const rows = c.scope.rows;
+    const heroTypes = (st && st.pd && st.pd.heroLaneTypes) || {};
+    const rule = rulesFor(doc, lane, mainHeroOf(c.byLane.get(lane)), heroTypes);
+    /* 标准线是分路口径（规则按 focusLane 取），「本人」必须取同一分路的局；
+       以前用 c.scope.rows 把其它分路也算进来，同一个选手这一页会同时出现
+       618（全部）和 586（中路）两个数，教练看到的就是对不上。 */
+    const rows = c.byLane.get(lane) || [];
     /* 规则字段 + 手填的 10 分钟经济合成一份字段表；gold10 不进评级规则接口，
        但口径与对局页的 10 分钟经济评级一致，教练填过就能在这里对照。 */
-    const fields = {...(rule ? rule.fields : {})};
+    // 设置页没勾选生效的字段不参与标准线表；gold10 是手填合成项，不受 active 管。
+    const fields = Object.fromEntries(Object.entries(rule ? rule.fields : {})
+      .filter(([, item]) => item && item.active !== false));
     const gold10Ts = GOLD10_THRESHOLDS[rule && rule.key] || GOLD10_THRESHOLDS[lane];
     if (gold10Ts) fields.gold10 = {label: '10 分钟经济', key: 'gold10', unit: '金', thresholds: gold10Ts};
+    // 元组第一个是逐局字段、第二个才是规则字段（分均承伤 dtpm → tpm），按规则字段过滤。
     const options = BENCH_FIELDS
-      .filter(([key]) => fields[key])
+      .filter(([, ruleKey]) => fields[ruleKey])
       .map(([key, ruleKey, label]) => [key, ruleKey, label]);
     const pickKey = one(options.map(([key]) => key), f.benchField, options[0] ? options[0][0] : 'gpm');
     const active = options.find(([key]) => key === pickKey) || options[0];
-    const ruleItem = active ? fields[active[0]] : null;
+    const ruleItem = active ? fields[active[1]] : null;
     const thresholds = (ruleItem && Array.isArray(ruleItem.thresholds)) ? ruleItem.thresholds : null;
     const pass = thresholds ? thresholds[2] : null;
     const fmtBench = (v, unit) => {
@@ -479,7 +503,7 @@ export function createPlayerDetail(h) {
 
     /* 左边贴规则：卓越 / 优秀 / 达标三档 + 本人在当前切片的均值。 */
     const ruleRows = options.map(([key, ruleKey, label]) => {
-      const r = fields[key];
+      const r = fields[ruleKey] || {};
       const vals = rows.map((row) => rowValue(row, ruleKey)).filter(isNum);
       const mine = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
       const ts = Array.isArray(r.thresholds) ? r.thresholds : [];

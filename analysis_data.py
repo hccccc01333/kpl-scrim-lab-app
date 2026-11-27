@@ -1775,6 +1775,11 @@ class AnalysisRepository:
 
     @staticmethod
     def _series_stats(values):
+        """逐局样本的均值/分布（不是总览 KPI）。
+
+        总览里的「分均经济/输出/承伤」统一用 Σ总量÷Σ分钟；这里的 mean 是
+        每局自己的 gpm/dpm/dtpm 取平均，只用于分布与对照，不再冒充总览数字。
+        """
         if not values:
             return None
         n = len(values)

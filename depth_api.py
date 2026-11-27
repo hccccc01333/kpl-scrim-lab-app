@@ -288,10 +288,15 @@ def _signature(root, db_path=None, stamp=None):
         try:
             connection = sqlite3.connect(db_path)
             try:
+                # 匹配页归档写的是 channel-* 的 match_meta + match_records，
+                # 只盯 camp:* 会让确认后的对手卡在 facts 缓存里一直是旧占位名。
                 row = connection.execute(
-                    "SELECT COUNT(*), COALESCE(MAX(updated_at), 0) FROM match_meta "
-                    "WHERE match_key LIKE 'camp:%'").fetchone()
-                parts.append(f'camp-meta:{row[0]}:{row[1]}')
+                    "SELECT COUNT(*), COALESCE(MAX(updated_at), 0) FROM match_meta").fetchone()
+                parts.append(f'match-meta:{row[0]}:{row[1]}')
+                records = connection.execute(
+                    "SELECT match_key, COALESCE(enemy_team_id, ''), COALESCE(revision, 0) "
+                    "FROM match_records ORDER BY match_key").fetchall()
+                parts.append('match-records:' + '|'.join(f'{k}:{t}:{r}' for k, t, r in records))
                 # 战队分析改名/合并也会改队名，facts 里的「vs 某队」标签要跟着刷新。
                 for table in ('team_clusters', 'teams'):
                     try:
@@ -1251,11 +1256,24 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
     raise HTTPException(status_code=404, detail='未知分析')
 
 
+# 每个 router 实例持有一份 facts 缓存；匹配保存/战队合并后必须能远程清掉，
+# 否则同一个进程里深度分析页继续显示旧的「待命名战队」。
+_FACTS_CACHES = []
+
+
+def invalidate_facts_cache():
+    """清空所有深度分析 router 的 facts 缓存（工作区写入路径调用）。"""
+    for entry in _FACTS_CACHES:
+        entry['key'] = None
+        entry['facts'] = None
+
+
 def create_depth_router(root, db_path=None, profile_loader=None):
     """普通页面（单局复盘对位压制 / 英雄详情）需要的三份底层数据，不是分析专题。"""
     root = Path(root)
     router = APIRouter(prefix='/api/v3/facts', tags=['facts'])
     cache = {'key': None, 'facts': None}
+    _FACTS_CACHES.append(cache)
     facts_kinds = ('lane_matchup', 'equip_matrix', 'equip_impact', 'lane_profile', 'mastery')
 
     def facts():

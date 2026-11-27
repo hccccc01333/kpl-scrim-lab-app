@@ -301,7 +301,20 @@ def _opponent_signature(panel):
     return 'team-' + digest[:12]
 
 
-def _opponent_names(camp_dir, panels, db_path):
+def _opponent_keys(panels, db_path):
+    """逐局对手 id：匹配页归档确认的战队卡优先，否则退回阵容签名。"""
+    cards = {}
+    if db_path:
+        try:
+            import team_clusters
+            cards = team_clusters.card_team_by_seq(db_path)
+        except Exception:  # pragma: no cover - 解析失败不阻塞分析
+            cards = {}
+    return {seq: (cards.get(str(seq)) or {}).get('id') or _opponent_signature(panel)
+            for seq, panel in panels.items()}
+
+
+def _opponent_names(camp_dir, panels, db_path, keys=None):
     """战队分析的当前队名（含被合并战队与旧名别名）；访问不到时用稳定序号兜底。
 
     以前只取 team_clusters.list_teams 的显示名，被合并掉的 cluster 会掉回
@@ -319,10 +332,10 @@ def _opponent_names(camp_dir, panels, db_path):
         except Exception:  # pragma: no cover - 查询失败不阻塞分析
             names = {}
     # 兜底：按首次出现顺序编号
-    ordered = sorted({_opponent_signature(p) for p in panels.values()},
+    keys = keys or {seq: _opponent_signature(panel) for seq, panel in panels.items()}
+    ordered = sorted(set(keys.values()),
                      key=lambda key: min((panels[seq]['start'] or panels[seq]['date'])
-                                         for seq, panel in panels.items()
-                                         if _opponent_signature(panel) == key))
+                                         for seq, value in keys.items() if value == key))
     for index, key in enumerate(ordered, 1):
         names.setdefault(key, f'待命名战队 #{index}')
     return names, merges
@@ -367,13 +380,23 @@ def _player_index(normalized, panel):
         side = 'own' if panel and camp == CAMP_CODE_REV.get(panel['own']) else 'enemy'
         hero = _clean(player.get('hero'))
         panel_row = roster.get((side, hero)) or {}
+        # 周期简报的对局名片读 nickname + final.*；面板行本来就有这些数，
+        # 过去只带 name/lane 导致 kills/gold/participation 全部显示空。
         enriched.append({
             'playerId': player_id,
             'hero': hero,
             'camp': camp,
             'side': side,
             'name': panel_row.get('name') or '',
+            'nickname': panel_row.get('name') or '',
             'lane': panel_row.get('lane') or '',
+            'final': {
+                'kills': panel_row.get('kills'),
+                'deaths': panel_row.get('deaths'),
+                'assists': panel_row.get('assists'),
+                'totalGold': panel_row.get('gold'),
+                'participation': panel_row.get('participation'),
+            },
         })
     return enriched, obj_to_player, obj_to_camp, player_map
 
@@ -535,13 +558,14 @@ def load_facts(replays_dir, camp_dir, data_dir=None, db_path=None, *, now=None):
     calibration = map_calibration.load(data_dir) if data_dir else None
     panels, rows = load_panels(camp_dir, year=year)
 
-    names, merges = _opponent_names(camp_dir, panels, db_path)
+    keys = _opponent_keys(panels, db_path)
+    names, merges = _opponent_names(camp_dir, panels, db_path, keys)
     # 合并过的战队统一用目标 id：否则同一支队在对手分组、同批对手排名里
     # 会被拆成好几份，队名一致了但局数还是散的。
     canonical = (merges or {}).get('canonical') or {}
     seq_to_opponent = {}
     for seq, panel in panels.items():
-        signature = _opponent_signature(panel)
+        signature = keys[seq]
         seq_to_opponent[seq] = canonical.get(signature, signature)
     for seq, opponent_id in seq_to_opponent.items():
         for row in rows:

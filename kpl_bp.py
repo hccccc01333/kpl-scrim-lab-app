@@ -38,6 +38,7 @@ from pathlib import Path
 import requests
 
 from bp_formats import pick_key
+import grade_rules
 
 ROOT = Path(__file__).resolve().parent
 DATA_KPL = ROOT / 'data' / 'kpl'
@@ -654,12 +655,10 @@ BASELINE_STAT_FIELDS = ('kda', 'participation', 'assists', 'gpm', 'dpm', 'hdpm',
 
 
 def _baseline_lane(player, hero_tags):
-    position = str((player or {}).get('position') or '')
-    hero = str((player or {}).get('hero') or '')
-    if position == '打野':
-        sub = ((hero_tags.get(hero) or {}).get('lanes') or {}).get('打野') or ''
-        return '打野·坦野' if '坦野' in str(sub) else '打野·野核'
-    return position
+    """KPL 只有英雄、没有本局出装，按统一口径的英雄标签兜底分档。"""
+    player = player if isinstance(player, dict) else {}
+    return grade_rules.subject_for(player.get('position'), hero=player.get('hero'),
+                                   hero_tags=hero_tags)
 
 
 def build_lane_baseline(games, external=None, hero_tags=None, league=''):

@@ -125,6 +125,28 @@ class OwnCampInferenceTest(unittest.TestCase):
             connection.close()
         self.assertNotEqual(_signature(self.root, db), before)
 
+    def test_signature_changes_when_matching_confirms_opponent_team(self):
+        """匹配页归档写 channel-* 的 match_meta / match_records，facts 必须重建。"""
+        db = self.root / 'training.sqlite3'
+        connection = sqlite3.connect(db)
+        try:
+            connection.execute('CREATE TABLE match_meta (match_key TEXT PRIMARY KEY, body TEXT NOT NULL, updated_at REAL NOT NULL)')
+            connection.execute('CREATE TABLE match_records (match_key TEXT PRIMARY KEY, enemy_team_id TEXT, revision INTEGER)')
+            connection.execute("INSERT INTO match_meta VALUES ('channel-g1', '{\"opponent\": \"待命名战队 #1\"}', 1)")
+            connection.execute("INSERT INTO match_records VALUES ('channel-g1', NULL, 1)")
+            connection.commit()
+        finally:
+            connection.close()
+        before = _signature(self.root, db)
+        connection = sqlite3.connect(db)
+        try:
+            connection.execute("UPDATE match_meta SET body='{\"opponent\": \"高校队12\", \"opponentTeamId\": \"team-a\"}', updated_at=2 WHERE match_key='channel-g1'")
+            connection.execute("UPDATE match_records SET enemy_team_id='team-a', revision=2 WHERE match_key='channel-g1'")
+            connection.commit()
+        finally:
+            connection.close()
+        self.assertNotEqual(_signature(self.root, db), before)
+
 
 class ApplySideTest(unittest.TestCase):
 

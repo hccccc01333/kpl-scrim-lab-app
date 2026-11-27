@@ -414,6 +414,13 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         except ImportError:
             pass
         try:
+            # 深度分析的 facts 是 router 闭包缓存，签名也覆盖 channel-* 的
+            # 匹配写入；这里再显式清一次，避免同一进程内还挂着旧占位队名。
+            import depth_api
+            depth_api.invalidate_facts_cache()
+        except ImportError:
+            pass
+        try:
             v3_module = sys.modules.get('kpl_v3_app')
             if v3_module:
                 if hasattr(v3_module, 'invalidate_players_cache'):
@@ -2503,7 +2510,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         「—」，不编造数字。英雄榜按官方英雄表铺满：本队没用过的英雄也占一行，
         只带外部口径，训练赛胜率留空；英雄表新增英雄后自动跟着变多。
         """
-        result = team_clusters.compare(camp_dir(), team or None)
+        result = team_clusters.compare(camp_dir(), team or None, db_path=db_path)
         for side in ('own', 'enemy'):
             for row in ((result.get('heroes') or {}).get(side) or []):
                 if isinstance(row, dict) and row.get('hero'):

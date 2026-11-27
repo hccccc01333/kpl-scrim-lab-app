@@ -111,6 +111,25 @@ class PlayersBoardIdentityTests(unittest.TestCase):
         self.assertEqual(by_side['own']['memberId'], 'own-1')
         self.assertEqual(by_side['enemy']['memberId'], '1')
 
+    def test_new_own_player_shows_team_without_account_mapping(self):
+        """新加的本队选手只在匹配页挂了游戏名（没走命名并归队），
+        选手详情的「归属战队」也要来自主数据的 team_id，不能显示未归队。
+        """
+        self.ws.upsert_player('own-new', team_id=self.own_team, name='清颖', position='中路')
+        own_names = ['清颖', '我方1', '我方2', '我方3', '我方4']
+        self.write_panel('401', own_names, [f'敌{i}' for i in range(5)])
+        self.bind_nicknames('own', ['清颖'], ['own-new'])
+
+        board = serve._players_board()
+        row = next(player for player in board['players'] if player['name'] == '清颖')
+        self.assertEqual(row['memberId'], 'own-new')
+        self.assertTrue(row['bound'])
+        self.assertEqual(row['teamName'], '测试本队')
+
+        detail = serve._player_detail('清颖')
+        self.assertEqual(detail['identity']['bound'], True)
+        self.assertEqual(detail['identity']['teamName'], '测试本队')
+
     def test_enabled_enemy_rule_is_consumed(self):
         enemy_names = [f'敌{i}' for i in range(5)]
         self.write_panel('301', [f'我方{i}' for i in range(5)], enemy_names)

@@ -225,9 +225,11 @@ function ensureGradeRules() {
 /* 把选手的分路（+打野刀类型）映射到规则主体 key，与后端 grade_rules.subject_for 一致。 */
 function subjectOf(player) {
   const pos = String(player?.position || '').trim();
+  if (pos === '打野·坦野' || pos === '打野·野核') return pos;
   if (pos === '打野') {
-    const kind = player?.blade?.kind;
-    return kind === 'tank' ? '打野·坦野' : '打野·野核';
+    // 与 grade_rules.subject_for / jungleKindOf 同一口径：本局打野刀优先，
+    // 拿不到再退回英雄静态标签。以前这里只看 blade，缺刀时会和 goldGrade 分叉。
+    return jungleKindOf(player?.hero, player) === 'tank' ? '打野·坦野' : '打野·野核';
   }
   return pos;
 }
@@ -237,7 +239,8 @@ function fieldGrade(subject, field, value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   const rule = gradeRulesDoc.subjects?.[subject]?.[field];
-  if (!rule || !Array.isArray(rule.thresholds)) return null;
+  // 设置页没勾选生效的字段不进入任何评级口径，与后端 grade_rules.grade 一致。
+  if (!rule || rule.active === false || !Array.isArray(rule.thresholds)) return null;
   const [e, g, p] = rule.thresholds;
   const down = rule.direction === 'down';
   let level = 'low';
@@ -2110,9 +2113,8 @@ const GOLD10_JUNGLE = {
   core: [[8000, '达标', 'pass'], [0, '待提升', 'low']],     // 野核：800/分钟
 };
 function gold10Grade(lane, value, hero, player) {
-  /* 规则优先：赛训组保存过规则就按「主体×10分钟经济」判定；否则退回硬编码口径。 */
-  const custom = fieldGrade(subjectOf(player), 'gold10', value);
-  if (custom) return custom;
+  /* 10 分钟经济来自教练手填的 coach detail，不是规则中心的字段白名单成员；
+     这里保持独立硬编码口径，不走 fieldGrade（以前那次调用永远拿不到规则）。 */
   const defs = lane === '打野'
     ? GOLD10_JUNGLE[jungleKindOf(hero, player)]
     : GOLD10_GRADES[lane];
@@ -2981,7 +2983,7 @@ function matchPage(m) {
       const chips = [chip(forward, true), chip(reverse, false)].filter(Boolean).join('');
       if (!chips) return '';
       return `<div class="md-ct-row">
-        <span class="md-ct-lane">${esc(entry.lane)}</span>
+        <span class="md-ct-lane" aria-hidden="true"></span>
         <span class="md-ct-who">${heroFace(entry.mine, 'own')}<i>vs</i>${heroFace(entry.foe, 'foe')}</span>
         <span class="md-ct-chips">${chips}</span>
       </div>`;

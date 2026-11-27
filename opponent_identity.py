@@ -221,7 +221,8 @@ def resolve(db_path, camp_dir):
             panels = team_clusters.load_panels(camp_dir)
         except (OSError, ValueError):
             panels = []
-        for cluster in team_clusters.build(panels)['clusters']:
+        for cluster in team_clusters.build(
+                panels, team_clusters.cluster_key_of(db_path, panels))['clusters']:
             team_id = names['canonical'].get(cluster['id'], cluster['id'])
             for seq in cluster['seqs']:
                 seq_to_id[str(seq)] = team_id

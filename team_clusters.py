@@ -30,6 +30,7 @@ import json
 import os
 import sqlite3
 from collections import Counter, defaultdict
+from contextlib import closing
 import unicodedata
 from pathlib import Path
 
@@ -288,11 +289,83 @@ def signature(panel) -> str:
     return 'team-' + digest[:12]
 
 
-def build(panels) -> dict:
+def card_team_by_seq(db_path) -> dict:
+    """营地 seq → 匹配页确认的对手战队卡（id / name / coach）。
+
+    匹配与编组归档时写 match_meta.opponentTeamId，工作区建卡写 teams 主数据；
+    这两处是权威。以前所有分析功能只按营地阵容签名聚类，确认过的对应关系
+    完全没被读到，于是同一支队换人后又被显示成「待命名战队 #N」。
+    """
+    result = {}
+    path = Path(db_path)
+    if not path.is_file():
+        return result
+    try:
+        workspace = load_workspace_teams(db_path)
+        own_id = ''
+        try:
+            import workspace_store
+            own_id = str(workspace_store.Workspace(path).own_team_id() or '')
+        except Exception:  # noqa: BLE001 - 没有 own_team_id 时只按队名兜底
+            pass
+        with closing(sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True)) as connection:
+            seq_keys = {}
+            try:
+                for key, body in connection.execute('SELECT id, body FROM channels'):
+                    try:
+                        doc = json.loads(body)
+                    except (TypeError, ValueError):
+                        continue
+                    seq = str((doc.get('match') or {}).get('gameSeq') or '')
+                    if seq:
+                        seq_keys[seq] = 'channel-' + str(key)
+            except sqlite3.Error:
+                pass
+            keys = set(seq_keys.values())
+            meta_ids, record_ids = {}, {}
+            try:
+                for key, body in connection.execute('SELECT match_key, body FROM match_meta'):
+                    if key not in keys:
+                        continue
+                    try:
+                        doc = json.loads(body)
+                    except (TypeError, ValueError):
+                        continue
+                    tid = str(doc.get('opponentTeamId') or '')
+                    if tid:
+                        meta_ids[key] = tid
+            except sqlite3.Error:
+                pass
+            try:
+                for key, tid in connection.execute(
+                        'SELECT match_key, enemy_team_id FROM match_records'):
+                    if key in keys and tid:
+                        record_ids[key] = str(tid)
+            except sqlite3.Error:
+                pass
+        for seq, key in seq_keys.items():
+            tid = meta_ids.get(key) or record_ids.get(key) or ''
+            team = workspace.get(tid) or {}
+            name = clean_name(team.get('name'))
+            if tid and tid != own_id and name and not is_placeholder(name):
+                result[seq] = {'id': tid, 'name': name,
+                               'coach': clean_name(team.get('coach'))}
+    except sqlite3.Error:
+        pass
+    return result
+
+
+def cluster_key_of(db_path, panels) -> callable:
+    """面板 → 权威战队 id；没有确认关系的局才退回阵容签名。"""
+    cards = card_team_by_seq(db_path)
+    return lambda panel: (cards.get(str(panel.get('seq')) or '') or {}).get('id') or signature(panel)
+
+
+def build(panels, key_of=None) -> dict:
     """纯计算：把面板聚成战队，返回 {clusters: [...], suggestions: [...]}。"""
     groups: dict[str, dict] = {}
     for panel in panels:
-        key = signature(panel)
+        key = (key_of(panel) if key_of else None) or signature(panel)
         group = groups.setdefault(key, {
             'id': key, 'seqs': [], 'matches': 0, 'wins': 0, 'losses': 0,
             'firstSeen': None, 'lastSeen': None, 'heroes': {},
@@ -481,6 +554,50 @@ def rename_team(db_path, key, name=None, coach=None, *, sync_workspace=True):
     return body
 
 
+def _backfill_merged_team_refs(db_path, source, target):
+    """并队后把权威关系字段里的旧 id 换到目标卡。
+
+    工作区只归档 source 并改挂 players；训练计划、历史对局关系、匹配覆盖层
+    仍指着旧 id，训练台账/简报/匹配页会把这些局判成「未指定对手」。
+    """
+    source, target = str(source), str(target)
+    with closing(sqlite3.connect(db_path)) as connection:
+        for table, column in (('schedules', 'opponent_team_id'),
+                              ('training_series', 'opponent_team_id'),
+                              ('match_records', 'enemy_team_id')):
+            try:
+                connection.execute(
+                    f'UPDATE {table} SET {column}=? WHERE {column}=?', (target, source))
+            except sqlite3.Error:
+                pass
+        for table, key_col, path in (('match_meta', 'match_key', ('opponentTeamId',)),
+                                     ('channels', 'id', ('match', 'opponentTeamId'))):
+            try:
+                rows = connection.execute(f'SELECT {key_col}, body FROM {table}').fetchall()
+            except sqlite3.Error:
+                continue
+            for key, body in rows:
+                try:
+                    doc = json.loads(body)
+                except (TypeError, ValueError):
+                    continue
+                node = doc
+                changed = False
+                try:
+                    for part in path[:-1]:
+                        node = node[part]
+                except (KeyError, TypeError):
+                    continue
+                if isinstance(node, dict) and node.get(path[-1]) == source:
+                    node[path[-1]] = target
+                    changed = True
+                if changed:
+                    connection.execute(
+                        f'UPDATE {table} SET body=? WHERE {key_col}=?',
+                        (json.dumps(doc, ensure_ascii=False), key))
+        connection.commit()
+
+
 def merge_team(db_path, source, target, *, sync_workspace=True):
     """把 source 并进 target：覆盖层跟随，工作区同步归档并改挂选手。"""
     if not source or not target or source == target:
@@ -491,6 +608,7 @@ def merge_team(db_path, source, target, *, sync_workspace=True):
     if sync_workspace:
         from workspace_store import Workspace
         Workspace(db_path).ensure_schema().merge_teams(source, target)
+        _backfill_merged_team_refs(db_path, source, target)
     if source_name and source_name != target_name:
         record_alias(db_path, target, source_name, target_name)
     return body
@@ -766,7 +884,8 @@ def _apply_roster_status(item, panel_index):
 
 
 def _list_teams(panels, db_path, own_name='') -> dict:
-    built = build(panels)
+    # 匹配页确认过的对手卡优先于阵容签名：换人不再裂成「待命名战队 #N」。
+    built = build(panels, cluster_key_of(db_path, panels))
     overrides = load_overrides(db_path)
     workspace_index = load_workspace_teams(db_path)
     # 合并：被并走的 cluster 不再单独出现，局数并入目标
@@ -1171,14 +1290,20 @@ def _team_roster(panels, side='enemy') -> dict:
     }
 
 
-def compare(camp_dir, team_id=None, min_games=3) -> dict:
+def compare(camp_dir, team_id=None, min_games=3, db_path=None) -> dict:
     """逐人 / 逐英雄统计：我方与对手用同一套口径，按分路可对齐。
 
     只使用营地十人面板里真实存在的战斗字段；字段缺失记 0，不补猜。
+    team_id 可以是匹配页确认的战队卡 id：传了 db_path 时按同一套权威口径筛选。
     """
     panels = load_panels(camp_dir)
+    key_of = cluster_key_of(db_path, panels) if db_path else None
+
+    def team_key(panel):
+        return (key_of(panel) if key_of else None) or signature(panel)
+
     if team_id:
-        panels = [panel for panel in panels if signature(panel) == team_id]
+        panels = [panel for panel in panels if team_key(panel) == team_id]
 
     players = {'own': {}, 'enemy': {}}
     heroes = {'own': {}, 'enemy': {}}
@@ -1192,7 +1317,7 @@ def compare(camp_dir, team_id=None, min_games=3) -> dict:
                     continue
                 record = players[side].setdefault(
                     player['id'], _new_record({'id': player['id'], 'name': player['name'],
-                                               'lane': player['lane'], 'teamId': signature(panel)}))
+                                               'lane': player['lane'], 'teamId': team_key(panel)}))
                 if not record['name'] and player['name']:
                     record['name'] = player['name']
                 if not record.get('lane') and player['lane']:
@@ -1399,8 +1524,10 @@ def account_team_index(camp_dir, db_path) -> dict:
     """
     overrides = load_overrides(db_path)
     index = {}
-    for panel in load_panels(camp_dir):
-        team_id = signature(panel)
+    panels = load_panels(camp_dir)
+    key_of = cluster_key_of(db_path, panels)
+    for panel in panels:
+        team_id = key_of(panel)
         merged = overrides.get(team_id, {}).get('mergedInto')
         if merged:
             team_id = merged
@@ -1437,8 +1564,9 @@ def opponent_players(camp_dir, db_path):
     teams = list_teams(camp_dir, db_path)
 
     seen = {}
+    key_of = cluster_key_of(db_path, panels)
     for panel in panels:
-        team_id = signature(panel)
+        team_id = key_of(panel)
         for player in panel['enemy_roster']:
             if not player['id']:
                 continue

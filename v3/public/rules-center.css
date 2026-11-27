@@ -296,9 +296,28 @@
 .rc-effective { display: inline-block; white-space: normal; }
 .rc-size { min-inline-size: 44px; background: var(--rc-soft); color: var(--rc-accent-ink); }
 .rc-size-5 { background: color-mix(in srgb, var(--rc-success) 18%, var(--rc-paper)); color: var(--rc-accent-ink); }
-.rc-strength.s-强 { background: var(--rc-soft); color: var(--rc-accent-ink); }
-.rc-strength:is(.s-中) { background: var(--rc-surface); color: var(--rc-text); }
-.rc-strength:is(.s-弱) { background: var(--rc-danger-soft); color: var(--rc-danger); }
+/* 强度三色（赛训组口径）：强=金黄 / 中=蓝 / 弱=灰，扫一眼就知道克制力度。 */
+.rc-strength.s-强 {
+  background: color-mix(in srgb, var(--rc-accent) 30%, var(--rc-paper));
+  color: var(--rc-accent-ink);
+  border-color: var(--rc-accent);
+  font-weight: 700;
+}
+.rc-strength:is(.s-中) {
+  background: #E7F0FA;
+  color: #1F5FA8;
+  border-color: #9FC0E4;
+}
+.rc-strength:is(.s-弱) {
+  background: var(--rc-surface);
+  color: var(--rc-muted);
+  border-color: var(--rc-line-strong);
+}
+:root[data-theme='dark'] .rc-strength:is(.s-中) {
+  background: #16304C;
+  color: #9DC5F2;
+  border-color: #2F5D8F;
+}
 .rc-actions { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .rc-icon { min-block-size: 28px; padding: 3px 8px; font-size: .78rem; }
 .rc-icon.is-danger { color: var(--rc-danger); }

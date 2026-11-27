@@ -2166,6 +2166,10 @@ export function createFeatures(h) {
       get('studio/matching/rules'),
       get('studio/workspace/players'),
       get('matches?from=' + encodeURIComponent(range.prevStart) + '&to=' + encodeURIComponent(range.prevEnd)),
+      /* 周报的红绿目标跟赛训组规则设置走，不再用页内写死的 700。 */
+      get('v3/grade-rules'),
+      /* 打野细分主体需要英雄 × 分路标签（周报行只有 lane=打野，没有打野刀）。 */
+      get('metadata/icons'),
     ]);
   }
   function weeklyReport(data, key) {
@@ -2416,8 +2420,38 @@ export function createFeatures(h) {
     const pairText = (row) => `<span class="rl-pair">${row.heroes.map((name) => `<span class="rl-pair-hero">${portrait(name, 'rl-hero-face')}<em>${text(name)}</em></span>`).join('<span class="rl-pair-plus" aria-hidden="true">＋</span>')}</span>`;
     const pairRateText = (row) => row.winRate == null ? '—' : `${fmt(row.winRate, 1)}%（${fmt(row.wins)} 胜 / ${fmt(row.decided)} 局有胜负）`;
 
-    /* 选手红绿：死亡率 = 阵亡 / 场次（目标 ≤2），经济 = 每分钟金币（打野 800 / 其他 700 / 游走 450）。 */
-    const laneTarget = (lane) => String(lane || '').includes('打野') ? 800 : String(lane || '').includes('游走') ? 450 : 700;
+    /* 选手红绿：经济目标与死亡目标都优先取赛训组「规则设置」里保存的
+       分路阈值（中路经济达标 550、死亡卓越 2 / 达标 4），没保存过时再用
+       页内兜底值。以前分别写死 700 和 ≤2，中路选手会被错判成待改善。 */
+    const gradeDoc = data[16] || {};
+    const gradeSubjects = gradeDoc.saved ? (gradeDoc.subjects || {}) : {};
+    const heroLaneTypes = (data[17] && data[17].heroTypes) || {};
+    /* 周报行只有 lane=打野，没有打野刀类型；用该选手打野出场最多的英雄
+       的「打野」标签判定坦野/野核，跟对局页 subject_for 同一口径。 */
+    const subjectOf = (lane, heroes) => {
+      const text = String(lane || '');
+      if (text.includes('打野')) {
+        const picks = (Array.isArray(heroes) ? heroes : [])
+          .filter((h) => h && h.hero && heroLaneTypes[h.hero]
+                    && heroLaneTypes[h.hero]['打野'])
+          .sort((a, b) => (b.games || 0) - (a.games || 0));
+        const kind = picks[0] ? String(heroLaneTypes[picks[0].hero]['打野']) : '';
+        return kind.includes('坦野') ? '打野·坦野' : '打野·野核';
+      }
+      return text.includes('游走') ? '游走'
+        : text.includes('对抗') ? '对抗路'
+        : text.includes('发育') ? '发育路'
+        : text.includes('中') ? '中路' : '';
+    };
+    const ruleThresholds = (subject, field) => {
+      const rule = gradeSubjects[subject]?.[field];
+      if (!rule || rule.active === false || !Array.isArray(rule.thresholds)
+          || rule.thresholds.length < 3) return null;
+      const ts = rule.thresholds.map(Number);
+      return ts.every(Number.isFinite) ? ts : null;
+    };
+    const laneTarget = (subject) => ruleThresholds(subject, 'gpm')?.[2] ?? (
+      String(subject || '').includes('打野') ? 800 : String(subject || '').includes('游走') ? 450 : 700);
     const prevByName = new Map(prevPlayers.map((p) => [playerOf(p.label), p]));
     const rosterPos = new Map((data[7]?.roster || []).map((p) => [String(p.id || ''), p.position || '']));
     const gradeRows = weekPlayers.map((p) => {
@@ -2425,14 +2459,19 @@ export function createFeatures(h) {
       const deathRate = games ? num(p.deaths) / games : null;
       const gpm = p.gpm == null ? null : Number(p.gpm);
       const lane = rosterPos.get(String(p.playerId || '')) || (Array.isArray(p.positions) ? p.positions[0] : '') || '';
-      const target = laneTarget(lane);
+      const subject = subjectOf(lane, p.heroes);
+      const target = laneTarget(subject);
+      const gpmTs = ruleThresholds(subject, 'gpm');
+      const deathTs = ruleThresholds(subject, 'deaths');
       const before = prevByName.get(playerOf(p.label));
       const prevGpm = before && before.gpm != null ? Number(before.gpm) : null;
       const prevDeaths = before && before.matches ? num(before.deaths) / num(before.matches) : null;
       const dropped = (prevGpm != null && gpm != null && gpm < prevGpm)
         || (prevDeaths != null && deathRate != null && deathRate > prevDeaths);
-      const good = deathRate != null && deathRate <= 1.5 && gpm != null && gpm >= target;
-      const bad = (deathRate != null && deathRate > 2) || (gpm != null && gpm < target * 0.85);
+      const good = deathRate != null && deathRate <= (deathTs ? deathTs[0] : 1.5)
+        && gpm != null && gpm >= (gpmTs ? gpmTs[0] : target);
+      const bad = (deathRate != null && deathRate > (deathTs ? deathTs[2] : 2))
+        || (gpm != null && gpm < target * 0.85);
       return {name: playerName(p.label), lane, games, deathRate, gpm, target,
               tone: good ? 'good' : bad ? 'bad' : dropped ? 'down' : 'flat'};
     });

@@ -451,16 +451,15 @@ export function createRulesCenter(h = {}) {
     });
     body.innerHTML = rows.length ? rows.map((row) => `<tr data-rc-row-id="${esc(row.id)}">
         ${td('攻方', heroSetChips(counterHeroes(row, 'a')))}
-        ${td('受方', heroSetChips(counterHeroes(row, 'b')))}
         ${td('方向', '<span class="rc-arrow">→</span>')}
+        ${td('受方', heroSetChips(counterHeroes(row, 'b')))}
         ${td('强度', `<span class="rc-strength s-${esc(row.strength)}">${esc(row.strength || '中')}</span>`)}
-        ${td('分路', esc(row.lane) || '<span class="rc-muted">不限</span>')}
         ${td('备注', esc(row.note) || '<span class="rc-muted">—</span>')}
         ${td('操作', actionBtns('counters', row, sub.key))}
       </tr>`).join('')
       : sel.length
-        ? `<tr><td class="rc-empty" colspan="7">没有符合「英雄筛选」的${esc(sub.label)}记录，可在上方清空筛选。</td></tr>`
-        : emptyWithAdd(7, `还没有${sub.label}记录，可一次填多个攻方 / 受方。`, 'compare', 'counters', sub.key);
+        ? `<tr><td class="rc-empty" colspan="6">没有符合「英雄筛选」的${esc(sub.label)}记录，可在上方清空筛选。</td></tr>`
+        : emptyWithAdd(6, `还没有${sub.label}记录，可一次填多个攻方 / 受方。`, 'compare', 'counters', sub.key);
     paintCounterFilter(sub.key);
   }
 
@@ -579,7 +578,7 @@ export function createRulesCenter(h = {}) {
 
   function newEntry(kind, sub = '') {
     const base = { id: newId(kind) };
-    if (kind === 'counters') return { ...base, a: '', b: '', aHeroes: [], bHeroes: [], strength: '强', lane: '全部', note: '', ...(sub === 'combo' ? { sub } : {}) };
+    if (kind === 'counters') return { ...base, a: '', b: '', aHeroes: [], bHeroes: [], strength: '强', note: '', ...(sub === 'combo' ? { sub } : {}) };
     if (kind === 'misc') return { ...base, group: MISC_GROUPS[0], key: '', value: '', note: '' };
     return base;
   }
@@ -596,9 +595,6 @@ export function createRulesCenter(h = {}) {
           <label>受方英雄集合（被谁克制），用 + 或逗号分隔，如「太乙+鲁班」
             <input type="text" data-f="b" value="${esc(counterHeroes(entry, 'b').join('+'))}" placeholder="如 太乙+鲁班" list="${uid}-combo-names" required></label>
           <label>强度 <select data-f="strength">${STRENGTHS.map((s) => `<option value="${esc(s)}"${entry.strength === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
-          <label>分路 <select data-f="lane">
-            ${['全部', ...LANES].map((l) => `<option value="${esc(l)}"${(entry.lane || '全部') === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}
-          </select></label>
         </div>
         ${comboDatalist}
         <label>备注 <textarea data-f="note" rows="2">${esc(entry.note)}</textarea></label>
@@ -622,12 +618,7 @@ export function createRulesCenter(h = {}) {
           ${pickField('a', '攻方（谁克制）')}
           ${pickField('b', '受方（被谁克制）')}
         </div>
-        <div class="rc-grid2">
-          <label>强度 <select data-f="strength">${STRENGTHS.map((s) => `<option value="${esc(s)}"${entry.strength === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
-          <label>分路 <select data-f="lane">
-            ${['全部', ...LANES].map((l) => `<option value="${esc(l)}"${(entry.lane || '全部') === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}
-          </select></label>
-        </div>
+        <label>强度 <select data-f="strength">${STRENGTHS.map((s) => `<option value="${esc(s)}"${entry.strength === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
         <label>备注 <textarea data-f="note" rows="2">${esc(entry.note)}</textarea></label>
         `;
     }
@@ -753,7 +744,9 @@ export function createRulesCenter(h = {}) {
       // 编辑时 source 即原行，展开保留 id / revision / history；a / b 由数组拼回供后端兼容。
       const row = { ...source, aHeroes: as, bHeroes: bs, a: as.join('+'), b: bs.join('+'),
         strength: get('[data-f="strength"]') || '中',
-        lane: get('[data-f="lane"]') || '全部', note: get('[data-f="note"]') };
+        note: get('[data-f="note"]') };
+      // 分路口径不清，规则中心不再维护这个字段；旧行的历史值也不再写回。
+      delete row.lane;
       delete row.effective;
       return [row];
     }
@@ -1006,13 +999,13 @@ export function createRulesCenter(h = {}) {
           ${heroFilter('hero')}<button type="button" class="primary" data-rc-add="counters" data-rc-sub="hero">${plus({ size: 18 })} 新增英雄克制</button></div>
         <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-ch" data-rc-counter-panel="hero"${state.counterSub !== 'hero' ? ' hidden' : ''}>
           <table class="rc-table"><caption id="${uid}-cap-ch" class="visually-hidden">英雄克制英雄</caption>
-            <thead><tr><th scope="col">攻方</th><th scope="col">受方</th><th scope="col">方向</th><th scope="col">强度</th><th scope="col">分路</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">攻方</th><th scope="col">方向</th><th scope="col">受方</th><th scope="col">强度</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
             <tbody data-rc-body="counters-hero"></tbody></table></div>
         <div class="rc-filter" data-rc-counter-panel="combo"${state.counterSub !== 'combo' ? ' hidden' : ''}>
           ${heroFilter('combo')}<button type="button" class="primary" data-rc-add="counters" data-rc-sub="combo">${plus({ size: 18 })} 新增组合克制</button></div>
         <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-cc" data-rc-counter-panel="combo"${state.counterSub !== 'combo' ? ' hidden' : ''}>
           <table class="rc-table"><caption id="${uid}-cap-cc" class="visually-hidden">组合克制组合</caption>
-            <thead><tr><th scope="col">攻方组合</th><th scope="col">受方组合</th><th scope="col">方向</th><th scope="col">强度</th><th scope="col">分路</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
+            <thead><tr><th scope="col">攻方组合</th><th scope="col">方向</th><th scope="col">受方组合</th><th scope="col">强度</th><th scope="col">备注</th><th scope="col">操作</th></tr></thead>
             <tbody data-rc-body="counters-combo"></tbody></table></div>
       </section>`;
     }

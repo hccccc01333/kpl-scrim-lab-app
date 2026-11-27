@@ -54,7 +54,9 @@ export function createMatchingPage(h) {
     try {
       const [vectors, workspace, wsPlayers, identity, pool, rules, meta, savedMatches] = await Promise.all([
         json('/cross/vectors'),
-        json('/studio/workspace/teams'),
+        // 归档/合并过的战队卡仍被历史匹配关系引用，必须一起取回，
+        // 否则已确认的对手会被误判成未确认，teamLabel 还会显示裸 ID。
+        json('/studio/workspace/teams?include_archived=true'),
         json('/studio/workspace/players'),
         json('/v3/identity/players'),
         json('/studio/workspace/nickname-pool'),
@@ -139,7 +141,8 @@ export function createMatchingPage(h) {
       });
       state = {
         games, ownCandidates, enemyByTeam, teamNames, wsTeams,
-        teamOptions: wsTeams.map((t) => ({ id: t.id, name: t.name || '未命名战队' })),
+        teamOptions: wsTeams.map((t) => ({ id: t.id,
+          name: (t.name || '未命名战队') + (t.status === 'archived' ? '（已归档）' : '') })),
         rules: (rules.rules || []).map((r) => ({ ...r, enabled: Boolean(r.enabled) })),
         nickVotes, selected: games.find((g) => !g.archived)?.key || games[0]?.key || '',
         filter: 'pending', query: '', status: '', ruleTeamFilter: '',

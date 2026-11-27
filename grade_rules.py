@@ -220,6 +220,13 @@ def _valid(doc: object) -> bool:
                 return False
             if 'active' in rule and not isinstance(rule['active'], bool):
                 return False
+            # 阈值必须和 direction 同向：up 是 elite≥good≥pass，down 是 elite≤good≤pass。
+            # 倒序阈值会让 grade() 把「差」判成「卓越」，且保存时以前不报错。
+            if rule['direction'] == 'down':
+                if not (thresholds[0] <= thresholds[1] <= thresholds[2]):
+                    return False
+            elif not (thresholds[0] >= thresholds[1] >= thresholds[2]):
+                return False
     return True
 
 
@@ -320,10 +327,53 @@ def grade(subject: str, field: str, value, doc: dict | None = None):
     return {'level': level, 'label': dict(LEVELS)[level]}
 
 
-def subject_for(position, hero=None, player=None) -> str:
+_HERO_LANE_TYPES_CACHE = None
+
+
+def _hero_lane_types() -> dict:
+    """英雄 × 实际分路 → 分类，来自 resources/hero_tags.json（只读、懒加载）。"""
+    global _HERO_LANE_TYPES_CACHE
+    if _HERO_LANE_TYPES_CACHE is not None:
+        return _HERO_LANE_TYPES_CACHE
+    path = Path(__file__).resolve().parent / 'resources' / 'hero_tags.json'
+    try:
+        raw = json.loads(path.read_text(encoding='utf-8'))
+        _HERO_LANE_TYPES_CACHE = {
+            str(name): (value.get('lanes') or {})
+            for name, value in (raw.get('heroes') or {}).items()
+            if isinstance(value, dict)
+        }
+    except (OSError, ValueError):
+        _HERO_LANE_TYPES_CACHE = {}
+    return _HERO_LANE_TYPES_CACHE
+
+
+def subject_for(position, hero=None, player=None, hero_tags=None) -> str:
+    """分路 → 评级主体 key。全项目唯一口径，前后端都按这套语义实现。
+
+    打野的两档：
+    1. 本局实际打野刀（player.blade.kind，营地 finalEquips 判定）优先——
+       同一个英雄换出装要换口径；
+    2. 拿不到打野刀时退回英雄在「打野」位上的静态标签（resources/hero_tags.json）——
+       坦野 → 打野·坦野，其余（战野/刺野/法核等）→ 打野·野核。
+    `hero_tags` 可传入同结构的映射，避免调用方重复读盘；不传则懒加载。
+    已经是主体 key（如前端直接传 '打野·坦野'）时原样返回。
+    """
     pos = str(position or '').strip()
-    if pos == '打野':
-        blade = player.get('blade') if isinstance(player, dict) else None
-        kind = blade.get('kind') if isinstance(blade, dict) else None
-        return '打野·坦野' if kind == 'tank' else '打野·野核'
-    return pos if pos in SUBJECT_LABELS else ''
+    if pos in ('打野·坦野', '打野·野核'):
+        return pos
+    if pos != '打野':
+        return pos if pos in SUBJECT_LABELS else ''
+    blade = player.get('blade') if isinstance(player, dict) else None
+    kind = blade.get('kind') if isinstance(blade, dict) else None
+    if kind == 'tank':
+        return '打野·坦野'
+    if kind == 'core':
+        return '打野·野核'
+    tags = hero_tags if isinstance(hero_tags, dict) else _hero_lane_types()
+    entry = tags.get(str(hero or '')) or {}
+    # 两种传入形态都吃：hero_tags.json 的 {英雄: {'lanes': {...}}}，
+    # 以及 _icon_metadata()['heroTypes'] 的 {英雄: {...}}（已剥掉 lanes 层）。
+    lanes = entry.get('lanes') if isinstance(entry, dict) and isinstance(entry.get('lanes'), dict) else entry
+    jungle_type = str((lanes.get('打野') if isinstance(lanes, dict) else '') or '')
+    return '打野·坦野' if '坦野' in jungle_type else '打野·野核'

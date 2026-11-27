@@ -1767,6 +1767,8 @@ def grade_rules_get():
     import grade_rules
     doc = grade_rules.load()
     doc['saved'] = grade_rules.has_saved()
+    # 设置页「恢复本分路默认」必须恢复内置默认，而不是上次保存值。
+    doc['defaults'] = grade_rules.normalize(None)
     return doc
 
 
@@ -3825,7 +3827,7 @@ _TEAM_BP_CACHE_MAX = 4
 _PLAYERS_BOARD_CACHE = {}
 _PLAYERS_BOARD_CACHE_MAX = 3
 # 身份口径变化（例如补齐 enemy 昵称池）必须让旧磁盘缓存失效。
-_PLAYERS_BOARD_CACHE_VERSION = 2
+_PLAYERS_BOARD_CACHE_VERSION = 3  # v3: 分均经济/输出/承伤统一为 Σ总量÷Σ分钟
 _PLAYERS_BOARD_DISK = _CACHE_DIR / 'players-board.json'
 
 # 训练台账（按对手归集的排期 + 交手日）同样按营地指纹缓存。
@@ -3836,6 +3838,22 @@ _TEAM_TRAINING_CACHE_MAX = 3
 def bp_board_stamp():
     """营地目录 + 对局包/DB 的联合指纹，BP 汇总类缓存的统一失效口径。"""
     return (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
+
+
+def _card_team_by_seq():
+    """营地 seq → 赛训组建卡 / 匹配页确认的对手战队卡。
+
+    BP 页以前只按营地五人阵容签名聚类：同一个对手换个人就变成一支新队，
+    赛训组在「对方战队」建的卡、匹配页归档时确认的对手卡完全没被读到。
+    这里按 channels.body.match.gameSeq → match_meta.opponentTeamId /
+    match_records.enemy_team_id 反查，把权威战队卡带进 BP 口径。
+    """
+    # 与战队分析 / 对手归属页共用同一份解析，避免 BP 与其它功能各读一套口径。
+    try:
+        import team_clusters
+        return team_clusters.card_team_by_seq(DB)
+    except Exception:  # noqa: BLE001 - 解析失败时退回空的权威映射
+        return {}
 
 
 @router.get('/api/v3/bp-board')
@@ -3860,9 +3878,13 @@ def bp_board():
     camp_dir = MATCHES.parent / 'camp_details'
     clusters = team_clusters.list_teams(camp_dir, DB)
     teams = clusters['teams']
+    # 赛训组建的对手卡是权威：同一支队的阵容变动不该在 BP 页裂成多支占位队。
+    cards = _card_team_by_seq()
+    card_ids = {card['id'] for card in cards.values()}
     # 只有人工录入并核实的教练姓名才能用于执教档案。
     # 缺失时留空，不使用开发期的随机姓名填充。
     coach_of = {t['id']: (t.get('coach') or '') for t in teams}
+    coach_of.update({card['id']: card.get('coach') or '' for card in cards.values()})
     seq_team = {seq: team for team in teams for seq in team.get('seqs', [])}
     # 营地 startTime 只有「MM-DD HH:MM」；按 team_style.resolve_days 推断年份
     # 补成 ISO 日期，才能与回放/DB 的 YYYY-MM-DD 做 BP↔过程匹配、时间过滤与
@@ -3883,6 +3905,9 @@ def bp_board():
             'left' if panel['own'] == 'blue' else 'right')
         enemy = 'right' if own == 'left' else 'left'
         team = seq_team.get(seq) or {}
+        card = cards.get(seq)
+        if card:
+            team = dict(team, id=card['id'], displayName=card['name'])
         start = panel.get('start') or ''
         resolved = day_of.get(start)
         day = resolved.isoformat() if resolved else ''
@@ -3933,11 +3958,44 @@ def bp_board():
                       'enemy': (bp.get('teamStats') or {}).get(enemy) or {}},
         })
     games.sort(key=lambda g: g['start'], reverse=True)
+    # 对手列表按权威战队卡归并：归档时确认成同一张卡的 27 局，不能再按
+    # 阵容签名散成 13 个「待命名战队」。没有卡的局保留原来的聚类口径。
+    by_seq = {game['key']: game for game in games}
+    card_teams = {}
+    for game in games:
+        tid = game.get('teamId') or ''
+        if tid not in card_ids:
+            continue
+        item = card_teams.setdefault(tid, {
+            'id': tid, 'name': game['opponent'], 'coach': coach_of.get(tid, ''),
+            'matches': 0, 'wins': 0, 'losses': 0, 'players': [], '_seen': set()})
+        item['matches'] += 1
+        if game.get('result') is True:
+            item['wins'] += 1
+        elif game.get('result') is False:
+            item['losses'] += 1
+        for name in ((game.get('players') or {}).get('enemy') or []):
+            if name and name not in item['_seen']:
+                item['_seen'].add(name)
+                item['players'].append(name)
+    for item in card_teams.values():
+        item.pop('_seen', None)
+        item['players'] = item['players'][:6]
+    cluster_teams = []
+    for cluster in teams:
+        seqs = [seq for seq in cluster.get('seqs', []) if seq not in cards]
+        if not seqs:
+            continue
+        cluster_teams.append({
+            'id': cluster['id'], 'name': cluster['displayName'],
+            'coach': coach_of.get(cluster['id'], ''),
+            'matches': len(seqs),
+            'wins': sum(1 for seq in seqs if by_seq.get(seq, {}).get('result') is True),
+            'losses': sum(1 for seq in seqs if by_seq.get(seq, {}).get('result') is False),
+            'players': [p.get('name') for p in cluster['players'][:6]]})
     payload = {
         'games': games,
-        'teams': [{'id': t['id'], 'name': t['displayName'], 'coach': coach_of[t['id']],
-                   'matches': t['matches'], 'wins': t['wins'], 'losses': t['losses'],
-                   'players': [p.get('name') for p in t['players'][:6]]} for t in teams],
+        'teams': list(card_teams.values()) + cluster_teams,
         'heroMeta': hero_meta,
         'source': '营地终局名单 · 按规则自动还原（征召 18 / KPL 18|20 / 排位·巅峰 20）',
     }
@@ -5767,6 +5825,7 @@ def _camp_records():
                     'kills': kills, 'deaths': deaths, 'assists': assists,
                     'kda': round((kills + assists) / deaths, 2) if deaths else round(kills + assists, 2),
                     'gold': item['gold'], 'damage': item['damage'], 'taken': item['taken'],
+                    'minutes': minutes,  # 聚合口径 Σ总量/Σ分钟，逐局曲线仍用上面的 gpm/dpm/dtpm
                     # 输出两套口径分开存，避免「分均输出」和「输出占比」混用同一个分子。
                     'heroDamage': _camp_number(stats.get('totalHeroHurtCnt')) or 0,
                     'ctrlTime': _camp_number(stats.get('ctrlTime')) or 0,
@@ -5830,10 +5889,16 @@ def _players_board():
     # 对手选手会在 players-board 里丢掉 memberId，选手档案只能补出空卡。
     all_players = []
     members = []
+    team_names = {}
     try:
         import workspace_store
-        all_players = [dict(player) for player in workspace_store.Workspace(DB).list_players()]
-        members = [dict(player, label=player.get('name') or '')
+        workspace = workspace_store.Workspace(DB)
+        all_players = [dict(player) for player in workspace.list_players()]
+        team_names = {team['id']: team['name'] for team in workspace.list_teams()}
+        # 归属战队以选手ID主数据的 team_id 为准。新添加的选手只建了 ID、还没走
+        # 过「命名并归队」时 player_accounts 里没有映射，不能因此显示「未归队」。
+        members = [dict(player, label=player.get('name') or '',
+                        teamName=team_names.get(str(player.get('team_id') or ''), ''))
                    for player in all_players if player.get('team_id') == home['id']]
     except sqlite3.Error:
         pass
@@ -5844,9 +5909,14 @@ def _players_board():
             item = dict(member)
             item['label'] = item.get('label') or item.get('name') or ''
             item['position'] = item.get('position') or ''
+            item['teamName'] = item.get('teamName') or item.get('team') or team_name
             members.append(item)
     aliases = {str(key): str(value) for key, value in (profile.get('aliases') or {}).items()}
-    member_by_id = {str(member['id']): member for member in all_players if member.get('id')}
+    # 选手 ID 索引也要带 teamName：昵称池 / 匹配规则映射走的是 member_by_id，
+    # 只带 team_id 会让档案板里已归队的选手显示成「未归队」。
+    member_by_id = {str(member['id']): dict(member,
+                    teamName=team_names.get(str(member.get('team_id') or ''), ''))
+                    for member in all_players if member.get('id')}
     for member in members:
         if member.get('id'):
             member_by_id.setdefault(str(member['id']), member)
@@ -5890,6 +5960,8 @@ def _players_board():
             'name': row['name'], 'side': row['side'], 'games': 0, 'wins': 0, 'decided': 0,
             '_kda': [], '_gpm': [], '_dpm': [], '_dtpm': [], '_part': [], '_goldShare': [],
             '_damageShare': [], '_takenShare': [], '_rating': [], 'mvp': 0, '_cs': [],
+            '_gold': 0.0, '_damage': 0.0, '_taken': 0.0,
+            '_gpmMin': 0.0, '_dpmMin': 0.0, '_dtpmMin': 0.0,
             '_accounts': [], '_nicknames': Counter(),
             'lanes': Counter(), 'heroes': Counter(), 'heroWins': Counter(),
             'heroDecided': Counter(), 'heroRating': defaultdict(list), 'heroKda': defaultdict(list), 'recent': []})
@@ -5909,6 +5981,16 @@ def _players_board():
                            ('_rating', 'rating'), ('_cs', 'cs')):
             if row.get(field) is not None:
                 bucket[key].append(row[field])
+        # 比率类指标按「总量÷总分钟」聚合，和 /api/players 同一口径；
+        # 上面的逐局列表只保留给单局曲线，不再拿来算总览 KPI。
+        minutes = row.get('minutes')
+        if isinstance(minutes, (int, float)) and minutes > 0:
+            for total_field, minute_field, source in (('_gold', '_gpmMin', 'gold'),
+                                                      ('_damage', '_dpmMin', 'damage'),
+                                                      ('_taken', '_dtpmMin', 'taken')):
+                if isinstance(row.get(source), (int, float)):
+                    bucket[total_field] += row[source]
+                    bucket[minute_field] += minutes
         if row['mvp']:
             bucket['mvp'] += 1
         bucket['lanes'][row['lane']] += 1
@@ -5926,6 +6008,9 @@ def _players_board():
         values = [value for value in values if value is not None]
         return round(sum(values) / len(values), digits) if values else None
 
+    def rate(total, minutes):
+        return round(total / minutes) if minutes else None
+
     players = []
     def split_of(rows, key):
         """按对手 / 训练日切片的个人聚合；只统计该维度下的局，不跨切片平均。"""
@@ -5936,7 +6021,8 @@ def _players_board():
                 continue
             item = out.setdefault(name, {'games': 0, 'wins': 0, 'decided': 0, 'mvp': 0,
                                          '_kda': [], '_gpm': [], '_dpm': [], '_part': [],
-                                         '_damageShare': [], '_rating': []})
+                                         '_damageShare': [], '_rating': [],
+                                         '_gold': 0.0, '_damage': 0.0, '_gpmMin': 0.0, '_dpmMin': 0.0})
             item['games'] += 1
             if row['result'] in ('win', 'loss'):
                 item['decided'] += 1
@@ -5949,10 +6035,19 @@ def _players_board():
                                       ('_rating', 'rating')):
                 if row.get(field) is not None:
                     item[bucket_key].append(row[field])
+            minutes = row.get('minutes')
+            if isinstance(minutes, (int, float)) and minutes > 0:
+                if isinstance(row.get('gold'), (int, float)):
+                    item['_gold'] += row['gold']
+                    item['_gpmMin'] += minutes
+                if isinstance(row.get('damage'), (int, float)):
+                    item['_damage'] += row['damage']
+                    item['_dpmMin'] += minutes
         return {name: {
             'games': item['games'], 'wins': item['wins'], 'decided': item['decided'],
             'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None,
-            'kda': mean(item['_kda'], 2), 'gpm': mean(item['_gpm'], 0), 'dpm': mean(item['_dpm'], 0),
+            'kda': mean(item['_kda'], 2), 'gpm': rate(item['_gold'], item['_gpmMin']),
+            'dpm': rate(item['_damage'], item['_dpmMin']),
             'participation': mean(item['_part'], 1), 'damageShare': mean(item['_damageShare'], 1),
             'rating': mean(item['_rating'], 1), 'mvp': item['mvp'],
         } for name, item in out.items()}
@@ -5968,11 +6063,13 @@ def _players_board():
             'side': bucket['side'], 'bound': bool(member), 'memberId': member_id,
             'accountIds': bucket['_accounts'],
             'nicknames': [nick for nick, _ in bucket['_nicknames'].most_common()],  # 全量：档案页要按昵称逐个解绑
-            'teamName': (mapped or {}).get('teamName') or '',
+            'teamName': (mapped or {}).get('teamName') or (member or {}).get('teamName') or '',
             'games': bucket['games'], 'wins': bucket['wins'], 'decided': bucket['decided'],
             'winRate': round(bucket['wins'] / bucket['decided'] * 100, 1) if bucket['decided'] else None,
-            'kda': mean(bucket['_kda'], 2), 'gpm': mean(bucket['_gpm'], 0), 'dpm': mean(bucket['_dpm'], 0),
-            'dtpm': mean(bucket['_dtpm'], 0), 'participation': mean(bucket['_part'], 1),
+            'kda': mean(bucket['_kda'], 2), 'gpm': rate(bucket['_gold'], bucket['_gpmMin']),
+            'dpm': rate(bucket['_damage'], bucket['_dpmMin']),
+            'dtpm': rate(bucket['_taken'], bucket['_dtpmMin']),
+            'participation': mean(bucket['_part'], 1),
             'goldShare': mean(bucket['_goldShare'], 1), 'damageShare': mean(bucket['_damageShare'], 1),
             'takenShare': mean(bucket['_takenShare'], 1), 'cs': mean(bucket['_cs'], 0),
             'rating': mean(bucket['_rating'], 1), 'mvp': bucket['mvp'],
@@ -6456,6 +6553,8 @@ def _player_detail(name):
         'player': player, 'identity': identity, 'rows': rows,
         'laneSamples': _lane_samples(records),
         'laneDistributions': _lane_distributions(records), 'heroMeta': meta,
+        # 打野细分主体的英雄标签兜底：选手页拿不到本局打野刀时按这里分野核/坦野。
+        'heroLaneTypes': _icon_metadata().get('heroTypes') or {},
         'opponents': opponents, 'kplHeroStats': kpl_hero_stats,
         'summary': {'games': len(rows), 'name': display,
                     'days': len({row['day'] for row in rows if row['day']}),
@@ -6552,8 +6651,9 @@ def hero_detail(hero: str, repo=Depends(repository)):
     全部从同一份营地逐行面板算出，避免前端把多个来源的口径混在一起。
     """
     base = {'sources': list(DEFAULT_SOURCES)}
-    hero_rows, _ = repo._selected_rows({**base, 'hero': hero})
-    all_rows, _ = repo._selected_rows(base)
+    # 只算完整局：partial 行没有 gpm/kda，计入场次/胜率会让分母和指标样本对不上。
+    hero_rows, _ = repo._aggregate_rows({**base, 'hero': hero})
+    all_rows, _ = repo._aggregate_rows(base)
     hero_rows = [row for row in hero_rows if row.get('isOwn')]
     all_rows = [row for row in all_rows if row.get('isOwn')]
 
@@ -6756,13 +6856,18 @@ def team_hero_insight(repo=Depends(repository)):
     heroes.sort(key=lambda x: (-x['games'], x['hero']))
 
     # ② 分路 × 英雄：按规则中心的「分路 × 字段」逐项算均值、环比与定档
-    rules_doc = grade_rules.load()
+    # 只有赛训组保存过的规则才参与评级；未保存时用内置默认档位会让
+    # 指标观察出现别的页面都不会给的「卓越/达标」。
+    rules_doc = grade_rules.read_saved() or {'saved': False, 'subjects': {}}
     subjects = rules_doc.get('subjects') or {}
     lane_heroes = {}
     for subject, rules in subjects.items():
+        # 一个打野主体只收真正属于它的局：打野刀优先、英雄标签兜底，
+        # 和选手页 / 对局页 / KPL 基线共用 grade_rules.subject_for，
+        # 不再让「野核」「坦野」两页都拿同一批行套不同阈值。
         subject_rows = [(row, day) for row, day in own
-                        if (row.get('position') or '') == subject
-                        or (subject.startswith('打野') and (row.get('position') or '') == '打野')]
+                        if grade_rules.subject_for(row.get('position'),
+                                                   hero=row.get('hero'), player=row) == subject]
         grouped = defaultdict(list)
         for row, day in subject_rows:
             grouped[row['hero']].append((row, day))

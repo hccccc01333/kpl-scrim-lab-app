@@ -23,7 +23,7 @@ import match_facts
 
 DEFAULT_SOURCE = 'db,bundle'
 MATCH_ROUTE = re.compile(r'^#match/([^?#]+)(.*)$')
-FACTS_CACHE_VERSION = 2  # 事实表结构变更时递增，旧落盘缓存自动失效
+FACTS_CACHE_VERSION = 3  # 事实表结构变更时递增，旧落盘缓存自动失效（v3: 十人名片补 final/nickname）
 
 
 def _router_match_keys(matches_dir, signature):

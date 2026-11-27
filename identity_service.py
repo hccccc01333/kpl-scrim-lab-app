@@ -146,6 +146,28 @@ def _sync_team_name_refs(db_path, old_name, new_name):
                     connection.execute(
                         f'UPDATE {table} SET body=? WHERE {key_col}=?',
                         (json.dumps(doc, ensure_ascii=False), key))
+        # 采集通道正文里的对手名藏在 body.match 下；列表接口会按权威名覆盖，
+        # 但单条详情/标题直接读原始正文，漏掉它改名后详情仍是旧名。
+        try:
+            channel_rows = connection.execute('SELECT id, body FROM channels').fetchall()
+        except sqlite3.Error:
+            channel_rows = []
+        for key, body in channel_rows:
+            try:
+                doc = json.loads(body)
+            except (TypeError, ValueError):
+                continue
+            match = doc.get('match') if isinstance(doc, dict) else None
+            if not isinstance(match, dict):
+                continue
+            changed = False
+            for field in ('opponent', 'opponentTeam', 'opponentName', 'teamName'):
+                if match.get(field) == old_name:
+                    match[field] = new_name
+                    changed = True
+            if changed:
+                connection.execute('UPDATE channels SET body=? WHERE id=?',
+                                   (json.dumps(doc, ensure_ascii=False), key))
         connection.commit()
     finally:
         connection.close()

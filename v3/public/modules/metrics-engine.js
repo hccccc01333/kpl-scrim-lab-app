@@ -83,6 +83,18 @@ export const MAX_POINTS = 40;    // 单条曲线最多 40 点，防止长赛季�
 const DAY = 86400000;
 const laneFamily = (lane) => (text(lane).startsWith('打野') ? '打野' : text(lane));
 const familyMatch = (a, b) => !a || !b || laneFamily(a) === laneFamily(b);
+/* 逐局行的 lane 只有「打野」；选中具体子主体时按英雄打野标签分流，
+   与 grade_rules.subject_for 同口径（战野/刺野/法核 → 野核，坦野 → 坦野）。 */
+function rowLaneSubject(row, lane) {
+  const rowLane = text(row && row.lane);
+  if (!lane || !rowLane.startsWith('打野') || !String(lane).startsWith('打野')) {
+    return familyMatch(rowLane, lane);
+  }
+  if (lane === '打野') return true;
+  const hero = text(row && row.hero);
+  const jungle = String(((sources && sources.heroTypes && sources.heroTypes[hero]) || {})['打野'] || '');
+  return (jungle.includes('坦野') ? '打野·坦野' : '打野·野核') === lane;
+}
 const hash = (s) => { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 function rng(seed) { let s = (seed >>> 0) || 1; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 
@@ -261,12 +273,16 @@ export function createMetricsEngine(options = {}) {
       getJSON(`${apiBase}/api/v3/players-board`),
       getJSON(`${apiBase}/api/studio/workspace/competitions`).catch(() => ({ competitions: [] })),
       getJSON(`${apiBase}/api/v3/kpl/lane-baseline`).catch(() => ({ lanes: {} })),
-    ]).then(([rules, board, competitions, kpl]) => {
+      // 英雄 × 分路标签：逐局行的 lane 只有「打野」，要靠英雄判定坦野/野核。
+      getJSON(`${apiBase}/api/metadata/icons`).catch(() => ({})),
+    ]).then(([rules, board, competitions, kpl, icons]) => {
       sources = {
-        rules: rules && rules.subjects ? rules : { subjects: {} },
+        // 未保存过规则时不要拿内置默认档位给指标评级，跟对局/选手页一致。
+        rules: rules && rules.saved && rules.subjects ? rules : { subjects: {} },
         board: board && Array.isArray(board.players) ? board : { players: [], games: [] },
         competitions: Array.isArray(competitions?.competitions) ? competitions.competitions : [],
         kpl: kpl && kpl.lanes ? kpl : { lanes: {} },
+        heroTypes: icons && icons.heroTypes ? icons.heroTypes : {},
       };
       sourcesPending = null;
       return sources;
@@ -331,7 +347,9 @@ export function createMetricsEngine(options = {}) {
   function listMetrics(lane = '') {
     const subjects = (sources && sources.rules && sources.rules.subjects) || {};
     const ruleSubject = pickRuleSubject(subjects, lane);
-    const fromRules = ruleSubject ? Object.entries(subjects[ruleSubject] || {}).map(([key, rule]) => ({
+    // 未勾选生效的字段不进入指标表，跟后端 team-hero-insight 的口径一致。
+    const fromRules = ruleSubject ? Object.entries(subjects[ruleSubject] || {})
+      .filter(([, rule]) => rule && rule.active !== false).map(([key, rule]) => ({
       key, label: text(rule.label || key), unit: text(rule.unit || ''), direction: rule.direction === 'down' ? 'down' : 'up',
       thresholds: Array.isArray(rule.thresholds) ? rule.thresholds : [], fromRule: true,
       gradeKey: text(rule.key || key), source: rule.source === 'tile' ? 'tile' : 'player', placeholder: false,
@@ -370,7 +388,7 @@ export function createMetricsEngine(options = {}) {
         samples: subject.games || 0, baseline: true };
     }
     const sourceRows = rows || await rowsFor(subject);
-    const matching = sourceRows.filter((r) => !lane || familyMatch(r.lane, lane));
+    const matching = sourceRows.filter((r) => rowLaneSubject(r, lane));
     if (ATTR_KEYS.has(metricKey)) {
       return { subject, metric: safeMetric, points: attrSeries(subject, safeMetric), placeholder: true, samples: matching.length };
     }
@@ -392,7 +410,7 @@ export function createMetricsEngine(options = {}) {
         grade: { level: 'na', label: value == null ? '不对比' : 'KPL 平均' },
         samples: (subject.samples && subject.samples[metric.key]) || 0 };
     }
-    const matching = rows.filter((r) => !lane || familyMatch(r.lane, lane));
+    const matching = rows.filter((r) => rowLaneSubject(r, lane));
     const values = matching.map((r) => metricValue(r, metric));
     const value = mean(values);
     return { subject: subject.name, source: subject.source, value, grade: gradeValue(value, metric), samples: values.filter(isNum).length };
