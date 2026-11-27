@@ -191,7 +191,7 @@ export function createGradeRulesPage(h = {}) {
   function resetSubject() {
     if (!defaults?.[ui.subject]) return;
     ui.draft[ui.subject] = JSON.parse(JSON.stringify(defaults[ui.subject]));
-    paintTable();
+    paintTable(); paintMinutes();
     setNotice(`「${SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject}」已恢复默认阈值（还没保存）。`);
   }
   function dirty() {
@@ -275,6 +275,62 @@ export function createGradeRulesPage(h = {}) {
           value="${esc(thresholds[i])}" aria-invalid="false"></td>`;
     }).join('');
   }
+  /* 补刀是特殊的「按局时长匹配」指标：分钟表与四档阈值并存，
+     规则里保留 minuteStandard，保存后对局页按 minutes 选档（不足 19 分钟按 18 分钟）。 */
+  function minutePanelHtml() {
+    const rule = ui.draft?.[ui.subject]?.cs;
+    if (!rule || !rule.minuteStandard || typeof rule.minuteStandard !== 'object') return '';
+    const rows = Object.entries(rule.minuteStandard)
+      .map(([minute, val]) => [Number(minute), val])
+      .filter(([minute]) => Number.isFinite(minute))
+      .sort((a, b) => a[0] - b[0]);
+    if (!rows.length) return '';
+    const cells = rows.map(([minute, val]) => `<tr>
+      <th scope="row">${esc(minute)} 分钟</th>
+      <td><input type="text" inputmode="numeric" data-gr-minute-val="${esc(minute)}"
+        value="${esc(val)}" aria-label="${esc(minute)} 分钟标准补刀数"></td>
+      <td><button type="button" class="control gr-minute-del" data-gr-minute-del="${esc(minute)}"
+        aria-label="删除 ${esc(minute)} 分钟标准">删除</button></td>
+    </tr>`).join('');
+    return `<section class="gr-minutes" aria-labelledby="${uid}-minutes-cap">
+      <div class="gr-minutes-head"><div><h2 id="${uid}-minutes-cap">补刀 · 按分钟标准</h2>
+        <p>发育路 / 对抗路：高于标准显示金色「高于标准」，低于显示红色「低于标准」，等于显示蓝色「达标」；中路补刀固定蓝色参考。
+        局时长不足 19 分钟统一按 18 分钟档；可继续添加 21、22、23… 分钟。</p></div></div>
+      <div class="gr-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-minutes-cap">
+        <table class="gr-table gr-minute-table"><thead><tr>
+          <th scope="col">比赛分钟</th><th scope="col">标准补刀数</th><th scope="col">操作</th>
+        </tr></thead><tbody>${cells}</tbody></table>
+      </div>
+      <div class="gr-minute-add">
+        <label>分钟<input type="text" inputmode="numeric" data-gr-minute-new-min aria-label="新分钟"></label>
+        <label>标准补刀数<input type="text" inputmode="numeric" data-gr-minute-new-val aria-label="新标准补刀数"></label>
+        <button type="button" class="control" data-gr-minute-add>添加分钟档</button>
+      </div>
+    </section>`;
+  }
+  function paintMinutes() {
+    const node = root?.querySelector('[data-gr-minute-panel]');
+    if (node) node.innerHTML = minutePanelHtml();
+  }
+  function setMinuteValue(minute, value) {
+    const table = ui.draft?.[ui.subject]?.cs?.minuteStandard;
+    if (!table) return;
+    table[String(minute)] = value;
+  }
+  function addMinute() {
+    const minInput = root?.querySelector('[data-gr-minute-new-min]');
+    const valInput = root?.querySelector('[data-gr-minute-new-val]');
+    const minute = Number(text(minInput?.value));
+    const value = Number(text(valInput?.value));
+    if (!Number.isInteger(minute) || minute < 1 || minute > 240
+        || !Number.isFinite(value) || value < 0) {
+      setNotice('分钟填 1–240 的整数，标准补刀数填非负数字。', { error: true });
+      return;
+    }
+    setMinuteValue(minute, Math.round(value));
+    paintMinutes(); paintFoot();
+    announce(`已添加 ${minute} 分钟补刀标准（还没保存）`);
+  }
   function paintStatus() {
     const node = root?.querySelector('[data-gr-status]');
     if (!node) return;
@@ -297,7 +353,7 @@ export function createGradeRulesPage(h = {}) {
     }
   }
   function paintAll() {
-    paintTabs(); paintTable(); paintStatus(); paintFoot();
+    paintTabs(); paintTable(); paintMinutes(); paintStatus(); paintFoot();
   }
 
   /* ── 页面骨架：静态标记 + 事件委托，无内联脚本 ───────────────────── */
@@ -335,6 +391,7 @@ export function createGradeRulesPage(h = {}) {
             <tbody data-gr-tbody></tbody>
           </table>
         </div>
+        <div data-gr-minute-panel></div>
         <div class="gr-foot">
           <button type="button" class="control" data-gr-reset>${glyph('refresh', { size: 18 })}恢复本分路默认</button>
           <button type="button" class="primary" data-gr-save disabled>${glyph('pick', { size: 18 })}<span>保存并生效</span></button>
@@ -348,7 +405,7 @@ export function createGradeRulesPage(h = {}) {
     const tab = event.target.closest('[data-gr-subject]');
     if (tab) {
       ui.subject = text(tab.dataset.grSubject);
-      paintTabs(); paintTable();
+      paintTabs(); paintTable(); paintMinutes();
       announce(`已切换到${SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject}`);
       return;
     }
@@ -357,9 +414,31 @@ export function createGradeRulesPage(h = {}) {
     if (event.target.closest('[data-gr-all-on]')) { setAllActive(true); return; }
     if (event.target.closest('[data-gr-all-off]')) { setAllActive(false); return; }
     if (event.target.closest('[data-gr-reset]')) { resetSubject(); paintFoot(); return; }
+    if (event.target.closest('[data-gr-minute-add]')) { addMinute(); return; }
+    const del = event.target.closest('[data-gr-minute-del]');
+    if (del) {
+      const minute = text(del.dataset.grMinuteDel);
+      const table = ui.draft?.[ui.subject]?.cs?.minuteStandard;
+      if (table && Object.prototype.hasOwnProperty.call(table, minute)) {
+        delete table[minute];
+        paintMinutes(); paintFoot();
+        announce(`已删除 ${minute} 分钟补刀标准（还没保存）`);
+      }
+      return;
+    }
     if (event.target.closest('[data-gr-save]')) { save(); return; }
   }
   function onInput(event) {
+    const minuteInput = event.target.closest('[data-gr-minute-val]');
+    if (minuteInput) {
+      const value = Number(text(minuteInput.value));
+      if (Number.isFinite(value) && value >= 0) {
+        setMinuteValue(text(minuteInput.dataset.grMinuteVal), Math.round(value));
+        if (ui.error) setNotice('', { quiet: true });
+        paintFoot();
+      }
+      return;
+    }
     const input = event.target.closest('[data-gr-th]');
     if (!input) return;
     // 输入时只更新草稿、清错误，不重画表格（避免丢焦点/光标）；保存时才校验数值。
@@ -422,6 +501,21 @@ export function createGradeRulesPage(h = {}) {
         return false;
       }
     }
+    // 补刀分钟表：至少一档，分钟 1–240，标准值非负数字。
+    for (const subject of ['对抗路', '发育路', '中路']) {
+      const table = ui.draft?.[subject]?.cs?.minuteStandard;
+      if (!table || typeof table !== 'object' || !Object.keys(table).length) {
+        setNotice(`${subject} 的补刀分钟标准不能为空。`, { error: true });
+        return false;
+      }
+      for (const [minute, value] of Object.entries(table)) {
+        const m = Number(minute), v = Number(value);
+        if (!Number.isInteger(m) || m < 1 || m > 240 || !Number.isFinite(v) || v < 0) {
+          setNotice(`${subject} · ${minute} 分钟的补刀标准不合法。`, { error: true });
+          return false;
+        }
+      }
+    }
     return true;
   }
   function onChange(event) {
@@ -442,6 +536,14 @@ export function createGradeRulesPage(h = {}) {
     if (!input.classList.contains('is-invalid') && ui.error) setNotice('', { quiet: true });
   }
   function onBlur(event) {
+    const minuteInput = event.target.closest('[data-gr-minute-val]');
+    if (minuteInput) {
+      const value = Number(text(minuteInput.value));
+      const bad = !Number.isFinite(value) || value < 0;
+      minuteInput.classList.toggle('is-invalid', bad);
+      minuteInput.setAttribute('aria-invalid', bad ? 'true' : 'false');
+      return;
+    }
     const input = event.target.closest('[data-gr-th]');
     if (input) validateInput(input);
   }

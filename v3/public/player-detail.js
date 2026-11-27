@@ -778,18 +778,6 @@ export function createPlayerDetail(h) {
       });
       const byType = [...group(scope.rows, (r) => r.heroType || '未分类')].sort((a, b) => b[1].length - a[1].length);
       const ringItems = byType.map(([type, list], i) => ({label: type, value: list.length, cls: V.catCls(i)}));
-      /* 对抗路的战边 / 坦边单独给占比与胜率：职业环只给次数，教练要的是比例和赢没赢。 */
-      const sideRows = ['战边', '坦边'].map((type) => {
-        const list = scope.rows.filter((r) => r.heroType === type);
-        const wr = win(list);
-        return `<tr><th scope="row">${type}</th><td>${fmt(list.length)}</td>
-          <td>${P(scope.rows.length ? list.length / scope.rows.length * 100 : 0)}</td>
-          <td>${list.length ? P(wr.rate) : '0'}</td></tr>`;
-      }).join('');
-      const sideTable = `<div class="pv-rules-wrap" role="region" tabindex="0" aria-labelledby="pdx-side-cap">
-        <table class="pv-rules-table"><caption id="pdx-side-cap">战边 / 坦边 · 出场占比与胜率</caption>
-          <thead><tr><th scope="col">类型</th><th scope="col">出场</th><th scope="col">出场占比</th><th scope="col">胜率</th></tr></thead>
-          <tbody>${sideRows}</tbody></table></div>`;
       const tmEmpty = pool.length
         ? V.treemap({items: treemapItems, W: w(7), H: 330, pickName: 'hero', top: TOP_TILES + 1, aria: '英雄出场场次的矩形树图'})
         : emptyWith('门槛把英雄全筛掉了',
@@ -806,8 +794,6 @@ export function createPlayerDetail(h) {
             items: ringItems, size: 200, aria: '英雄职业构成', top: 8,
             center: {value: scope.rows.length, label: '切片场次', text: `${fmt(scope.rows.length)}`},
           }), {span: 5, foot: `覆盖 ${fmt(byType.length)} 类职业`}),
-          panel('对抗路类型占比', sideTable, {span: 12,
-            foot: '占比分母是当前切片的全部场次；没有样本的项按 0 显示。'}),
         ]) + (restText ? note(restText) : '') + (below ? note(banned) : ''),
         '职业元数据来自 resources/hero_tags.json 的 defaultType；面积只算次数，不代表强度。'));
     }

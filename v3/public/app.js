@@ -211,7 +211,7 @@ function goldGrade(lane, gpm, hero, player) {
 /* ── 赛训组自定义评级规则（grade-rules.js 设置页维护，最高优先级）─────────
    gradeRulesDoc 在 load() 里对 match 路由取一次；没保存过规则时为 null，
    所有 fieldGrade 调用退回上面的硬编码口径，保证旧实例照常工作。 */
-const LEVEL_LABEL = { elite: '卓越', good: '优秀', pass: '达标', low: '待提升' };
+const LEVEL_LABEL = { elite: '卓越', good: '优秀', pass: '达标', ok: '达标', low: '待提升' };
 let gradeRulesPromise = null;
 function ensureGradeRules() {
   if (gradeRulesDoc !== null && gradeRulesDoc !== undefined) return Promise.resolve(gradeRulesDoc);
@@ -233,14 +233,32 @@ function subjectOf(player) {
   }
   return pos;
 }
-/* 按已保存规则给一个数值定档；无规则/无值返回 null。direction=down 时数值越低越好。 */
-function fieldGrade(subject, field, value) {
+/* 按已保存规则给一个数值定档；无规则/无值返回 null。direction=down 时数值越低越好。
+   `minutes` 只供按局时长匹配的字段（补刀）使用，口径与后端 grade_rules.grade 一致。 */
+function fieldGrade(subject, field, value, minutes) {
   if (value === null || value === undefined || value === '' || !gradeRulesDoc) return null;
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   const rule = gradeRulesDoc.subjects?.[subject]?.[field];
   // 设置页没勾选生效的字段不进入任何评级口径，与后端 grade_rules.grade 一致。
   if (!rule || rule.active === false || !Array.isArray(rule.thresholds)) return null;
+  const table = field === 'cs' && rule.minuteStandard && typeof rule.minuteStandard === 'object'
+    ? rule.minuteStandard : null;
+  if (table) {
+    const keys = Object.keys(table).map(Number).filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+    if (!keys.length) return null;
+    let minute = Number(minutes);
+    if (!Number.isFinite(minute)) return null;
+    minute = Math.round(minute);
+    if (minute < 18) minute = 18;
+    const lower = keys.filter((x) => x <= minute);
+    const standard = Number(table[String(lower.length ? lower[lower.length - 1] : keys[0])]);
+    if (!Number.isFinite(standard)) return null;
+    if (subject === '中路') return { level: 'ok', label: '达标' };
+    if (n > standard) return { level: 'elite', label: '高于标准' };
+    if (n < standard) return { level: 'low', label: '低于标准' };
+    return { level: 'ok', label: '达标' };
+  }
   const [e, g, p] = rule.thresholds;
   const down = rule.direction === 'down';
   let level = 'low';
@@ -3382,7 +3400,7 @@ const OWN_MODULE_ROUTES = new Set(['overview', 'team-profile', 'bp', 'match', 'c
 async function ensureModules(name) {
   const jobs = [];
   if (!OWN_MODULE_ROUTES.has(name) && !mods.features) {
-    jobs.push(importOnce('./features.js?v=20261126pdrefine1').then(({ createFeatures }) => {
+    jobs.push(importOnce('./features.js?v=20261127csmin1').then(({ createFeatures }) => {
       mods.features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table,
         pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true),
         currentQuery: () => query(), teamName: () => metadata.teamName || '' });
@@ -3419,7 +3437,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'match' && !mods.deep) {
-    jobs.push(importOnce('./match-deep.js?v=20261126heat20').then(({ createMatchDeep }) => {
+    jobs.push(importOnce('./match-deep.js?v=20261127csmin1').then(({ createMatchDeep }) => {
       mods.deep = createMatchDeep({ esc, fmt, pct, diff, time, portrait,
         phases: phaseWindows, gpmOf, goldGrade, fieldGrade, subjectOf });
       mods.deep.bindPanel(document);
@@ -3448,7 +3466,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'combo-pool' && !mods.comboPool) {
-    jobs.push(importOnce('./combo-pool.js?v=20261124lean').then(({ createComboPoolPage }) => {
+    jobs.push(importOnce('./combo-pool.js?v=20261127csmin1').then(({ createComboPoolPage }) => {
       /* 组合池自取数：英雄资料通过 getter 读外壳的 metadata，不碰 combo-query
          的既有组合分析逻辑；头像目录后到时由 load() 调 rerender() 补画。 */
       mods.comboPool = createComboPoolPage({
@@ -3458,7 +3476,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'grade-rules' && !mods.gradeRules) {
-    jobs.push(importOnce('./grade-rules.js?v=20261124lean').then(({ createGradeRulesPage }) => {
+    jobs.push(importOnce('./grade-rules.js?v=20261127csmin1').then(({ createGradeRulesPage }) => {
       mods.gradeRules = createGradeRulesPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
@@ -3490,7 +3508,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'rules' && !mods.rulesCenter) {
-    jobs.push(importOnce('./rules-center.js?v=20261124lean').then(({ createRulesCenter }) => {
+    jobs.push(importOnce('./rules-center.js?v=20261127csmin1').then(({ createRulesCenter }) => {
       mods.rulesCenter = createRulesCenter({ esc, API_BASE, icon, notify: comboNotify,
         portrait, getMetadata: () => metadata });
     }));
@@ -4923,6 +4941,6 @@ initUpdateBanner({ API_BASE });
 load();
 /* 首屏空闲时预取 features.js：采集/对局等页签首次进入不必等 2–8s 骨架。
    importOnce 会复用同一个 promise，真正进入时不会重复下载或实例化。 */
-const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261126pdrefine1'); };
+const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261127csmin1'); };
 if ('requestIdleCallback' in window) requestIdleCallback(prefetchFeatures, { timeout: 2500 });
 else setTimeout(prefetchFeatures, 1200);

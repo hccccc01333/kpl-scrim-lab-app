@@ -4,7 +4,7 @@ import { createResearch } from './research.js?v=20261124entry';
 import { createCapture } from './capture-page.js';
 import { createSources } from './sources-page.js';
 import { createReview } from './review-page.js';
-import { createPlayers } from './players-page.js?v=20261126allplayers';
+import { createPlayers } from './players-page.js?v=20261127csmin1';
 import { createHeroCompare } from './hero-compare.js';
 import { createHeroUsagePage, createLaneMetricsPage, createComboCardsPage } from './team-hero-insight.js?v=20261124a';
 import { createCoachBoard } from './coach-viz.js?v=20261124depth2';
@@ -2593,8 +2593,8 @@ export function createFeatures(h) {
     </details>`;
     const generated = localDate();
     return `<div class="report-page"><div class="report-toolbar"><a class="control" href="#reports">${gi('arrow-up', 16)}返回报告库</a>${templatePanel}<div class="report-toolbar-actions"><button type="button" class="control" data-sx-report-image>${gi('export')}导出周报图片</button><button type="button" class="primary" data-sx-print>${gi('book')}打印 / 保存 PDF</button></div></div><article class="report-sheet">
-      <header class="report-brand"><span class="report-mark">${gi('chart', 24)}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">训练周报</span></header>
-      <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT</span><h1>${gi('chart')}${text(teamName)} · ${text(start)} — ${text(end)}</h1><p>按训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
+      <header class="report-brand"><span class="report-mark">${gi('chart', 24)}</span><div><b>赛训数据</b><small>TRAINING DATA</small></div><span class="report-kind">一周训练周报</span></header>
+      <section class="report-title"><div><span class="report-eyebrow">WEEKLY REPORT · 一周</span><h1>${gi('chart')}${text(teamName)} · 一周训练报告（${text(start)} — ${text(end)}）</h1><p>按一周内的训练赛与正式赛对局汇总 · 共 ${fmt(weekMatches.length)} 局</p>${byline}</div><div class="report-stamp"><span>生成日期</span><b>${generated}</b></div></section>
       <div class="report-context"><span>对局上下文</span>胜率 ${currentRate != null ? pct(currentRate) : '—'} · 场均 ${time(avg)} · ${wins} 胜 ${losses} 负</div>
       ${bodyHtml}
     </article></div>`;

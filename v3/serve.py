@@ -6942,6 +6942,25 @@ def team_hero_insight(repo=Depends(repository)):
     # 指标观察出现别的页面都不会给的「卓越/达标」。
     rules_doc = grade_rules.read_saved() or {'saved': False, 'subjects': {}}
     subjects = rules_doc.get('subjects') or {}
+
+    def _avg_minutes(rows):
+        """补刀按局时长匹配：用这一组局的平均时长挑标准档。"""
+        values = []
+        for row, _day in rows:
+            raw = row.get('minutes')
+            if raw is None and row.get('duration') not in (None, ''):
+                try:
+                    raw = float(row['duration']) / 60
+                except (TypeError, ValueError):
+                    raw = None
+            try:
+                minute = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if minute > 0:
+                values.append(minute)
+        return sum(values) / len(values) if values else None
+
     lane_heroes = {}
     for subject, rules in subjects.items():
         # 一个打野主体只收真正属于它的局：打野刀优先、英雄标签兜底，
@@ -6968,7 +6987,8 @@ def team_hero_insight(repo=Depends(repository)):
                     old = [float(v) for v in old if v is not None]
                     value = round(sum(values) / len(values), 2) if values else None
                     previous = round(sum(old) / len(old), 2) if old else None
-                    grade = grade_rules.grade(subject, key, value, rules_doc)
+                    grade = grade_rules.grade(subject, key, value, rules_doc,
+                                              minutes=_avg_minutes(cur) if key == 'cs' else None)
                     metrics.append({'key': key, 'label': rule.get('label') or key,
                                     'unit': rule.get('unit') or '',
                                     'direction': rule.get('direction') or 'up',

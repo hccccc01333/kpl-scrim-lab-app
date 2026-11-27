@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -43,6 +44,14 @@ SOURCES = (
 
 _STATE = {'running': {}, 'last': {}}
 _LOCK = threading.Lock()
+
+# 后台自动补爬：只在外部源显示缺失 / 过期时启动，成功后拉长冷却，失败则短冷却后重试。
+_AUTO_LAST = {}
+_AUTO_LOCK = threading.Lock()
+_AUTO_OK_COOLDOWN = 6 * 3600
+_AUTO_FAIL_COOLDOWN = 30 * 60
+_AUTO_CHECK_INTERVAL = 10 * 60
+_AUTO_THREAD = None
 
 
 def _json(path: Path, fallback=None):
@@ -225,8 +234,11 @@ def snapshot() -> dict:
     counts = {status: sum(1 for c in cards if c['status'] == status)
               for status in ('ok', 'stale', 'warn', 'error', 'running')}
     needs_action = [c['name'] for c in cards if c['status'] in ('stale', 'error')]
-    return {'sources': cards, 'counts': counts, 'needsAction': needs_action,
-            'offlineHint': '爬取失败时先确认电脑能上网（公司网络可能拦截 pvp.qq.com / 91m.com），再点卡片上的「重新爬取」。'}
+    auto_on = os.environ.get('SOURCE_AUTO_CRAWL', '1') != '0'
+    hint = ('缺失或过期的数据源会由后台自动补爬，成功后卡片显示「爬取成功」；'
+            if auto_on else '后台自动补爬已关闭；')
+    hint += '爬取失败时先确认电脑能上网（公司网络可能拦截 pvp.qq.com / 91m.com），再点卡片上的「重新爬取」。'
+    return {'sources': cards, 'counts': counts, 'needsAction': needs_action, 'offlineHint': hint}
 
 
 def _run(key: str, func) -> bool:
@@ -244,10 +256,15 @@ def _run(key: str, func) -> bool:
             ok = bool(result.get('ok', True)) if isinstance(result, dict) else True
         except Exception as exc:  # noqa: BLE001 - 后台任务必须把错误带回页面
             message, ok = f'{type(exc).__name__}: {exc}'[:300], False
+        prefix = '爬取成功' if ok else '爬取失败'
+        if not message.startswith(('爬取成功', '爬取失败')):
+            message = f'{prefix}：{message}'
         with _LOCK:
             _STATE['running'].pop(key, None)
             _STATE['last'][key] = {'ok': ok, 'message': message,
                                    'finishedAt': datetime.now(timezone.utc).isoformat()}
+        with _AUTO_LOCK:
+            _AUTO_LAST[key] = time.monotonic()
 
     threading.Thread(target=worker, daemon=True, name=f'data-source-{key}').start()
     return True
@@ -333,6 +350,49 @@ def refresh(key: str) -> dict:
     started = _run(key, func)
     return {'ok': started,
             'message': '刷新已开始，进度看卡片状态。' if started else '这一轮还在跑，请稍后。'}
+
+
+def auto_recover_missing() -> list[str]:
+    """后台自动补爬：检测到外部源缺失 / 过期就启动，带冷却避免反复请求源站。"""
+    if os.environ.get('SOURCE_AUTO_CRAWL', '1') == '0':
+        return []
+    runners = {'heroes': _sync_heroes, 'kpl': _crawl_kpl, 'peak': _refresh_peak}
+    started, now = [], time.monotonic()
+    for card in snapshot().get('sources') or []:
+        key = str(card.get('key') or '')
+        if key not in runners or card.get('running') or card.get('status') not in ('stale', 'error'):
+            continue
+        with _AUTO_LOCK:
+            last = _AUTO_LAST.get(key)
+            last_ok = bool((_STATE['last'].get(key) or {}).get('ok'))
+            cooldown = _AUTO_OK_COOLDOWN if last_ok else _AUTO_FAIL_COOLDOWN
+            if last is not None and now - last < cooldown:
+                continue
+            _AUTO_LAST[key] = now
+        if _run(key, runners[key]):
+            started.append(key)
+    return started
+
+
+def start_auto_recovery() -> bool:
+    """真实服务启动时挂一个守护线程，周期性检查并后台补爬缺失的外部数据。"""
+    global _AUTO_THREAD
+    if os.environ.get('SOURCE_AUTO_CRAWL', '1') == '0':
+        return False
+    if _AUTO_THREAD is not None and _AUTO_THREAD.is_alive():
+        return True
+
+    def loop():
+        while True:
+            try:
+                auto_recover_missing()
+            except Exception as exc:  # noqa: BLE001 - 自动任务不能把服务带崩
+                print(f'[数据源] 后台自动补爬检查失败（不影响启动）：{exc}')
+            time.sleep(_AUTO_CHECK_INTERVAL)
+
+    _AUTO_THREAD = threading.Thread(target=loop, daemon=True, name='data-source-auto-recover')
+    _AUTO_THREAD.start()
+    return True
 
 
 def auto_sync_heroes() -> bool:

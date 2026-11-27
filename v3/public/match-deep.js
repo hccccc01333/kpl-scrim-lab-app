@@ -732,6 +732,8 @@ export function createMatchDeep(h) {
     const minutes = Number(duration) > 0 ? duration / 60 : 0;
     return [
       { label: '分均经济', field: 'gpm', get: (p) => gpmOf(p, duration), text: (v) => fmt(Math.round(v)) },
+      /* 补刀按赛训规则的分钟标准定档；minutes 供 gradeBadge 选分钟档。 */
+      { label: '补刀', field: 'cs', get: (p) => read(p, 'cs'), text: (v) => fmt(Math.round(v)), minutes },
       { label: '经济转输出', get: (p) => read(p, 'damageConversion'), text: (v) => fmt(v, 2) },
       /* 「承受」展示总量，但评级按赛训口径用分均承伤 tpm（越低越好）。 */
       { label: '承受', field: 'tpm', get: (p) => read(p, 'taken'), gradeValue: (p) => minutes ? read(p, 'taken') / minutes : null, text: (v) => fmt(v), word: '更高' },
@@ -745,7 +747,12 @@ export function createMatchDeep(h) {
   function gradeBadge(def, player) {
     if (!def?.field || !player || typeof fieldGrade !== 'function') return '';
     const value = def.gradeValue ? def.gradeValue(player) : def.get(player);
-    const lv = fieldGrade(subjectOf(player), def.field, value);
+    let minutes = player.minutes;
+    if (!Number.isFinite(Number(minutes)) && Number.isFinite(Number(player.duration))) {
+      minutes = Number(player.duration) / 60;
+    }
+    if (!Number.isFinite(Number(minutes)) && Number.isFinite(Number(def.minutes))) minutes = def.minutes;
+    const lv = fieldGrade(subjectOf(player), def.field, value, minutes);
     return lv ? `<em class="md-grade ${lv.level}" title="赛训规则：${esc(lv.label)}">${esc(lv.label)}</em>` : '';
   }
 

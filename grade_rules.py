@@ -54,7 +54,8 @@ FIELDS = {
     'assists': {'label': '助攻数', 'unit': '次', 'direction': 'up', 'source': 'player', 'key': 'assists'},
     'damageConversion': {'label': '伤害转化率', 'unit': '比值', 'direction': 'up', 'source': 'player', 'key': 'damageConversion'},
     'takenPerDeath': {'label': '每死承伤', 'unit': '伤害/次', 'direction': 'down', 'source': 'player', 'key': 'takenPerDeath'},
-    'cs': {'label': '补兵数', 'unit': '个', 'direction': 'up', 'source': 'player', 'key': 'cs'},
+    'cs': {'label': '补兵数', 'unit': '个', 'direction': 'up', 'source': 'player', 'key': 'cs',
+           'minuteSubjects': ['发育路', '对抗路', '中路']},
     'towerDamage': {'label': '对塔伤害', 'unit': '伤害', 'direction': 'up', 'source': 'player', 'key': 'towerDamage'},
     'jungleGold': {'label': '野怪经济', 'unit': '金', 'direction': 'up', 'source': 'player', 'key': 'jungleGold'},
     # ── 营地自适应卡片（campTiles）────────────────────────────────────
@@ -80,6 +81,18 @@ SUBJECT_LABELS = {
     '对抗路': '对抗路', '发育路': '发育路', '中路': '中路',
     '打野·坦野': '打野·坦野', '打野·野核': '打野·野核', '游走': '游走（辅助）',
 }
+
+# 补刀是「按局时长匹配」的特殊指标：分钟 → 标准补刀数。
+# 初值来自赛训组下发的分路表；规则设置里可继续加 21/22/23… 分钟。
+CS_MINUTE_STANDARDS = {
+    '发育路': {1: 3, 2: 6, 3: 18, 4: 27, 5: 36, 6: 42, 7: 45, 8: 48, 9: 51, 10: 54,
+               11: 59, 12: 64, 13: 69, 14: 75, 15: 80, 16: 85, 17: 91, 18: 96, 19: 101, 20: 108},
+    '对抗路': {1: 3, 2: 6, 3: 18, 4: 27, 5: 36, 6: 42, 7: 45, 8: 48, 9: 51, 10: 54,
+               11: 59, 12: 64, 13: 69, 14: 75, 15: 80, 16: 85, 17: 91, 18: 96, 19: 101, 20: 108},
+    '中路': {1: 4, 2: 8, 3: 12, 4: 28, 5: 31, 6: 34, 7: 37, 8: 40, 9: 43, 10: 46,
+             11: 55, 12: 64, 13: 73, 14: 82, 15: 91, 16: 100, 17: 109, 18: 112, 19: 115, 20: 115},
+}
+CS_MINUTE_FLOOR = 18  # 局时长不足 19 分钟时统一按 18 分钟标准，避免早停局被误判
 
 # 每个分路默认要看的字段（来自 campTiles 的 roles 标注 + 基础字段的教练口径）。
 # 阈值：基础字段用常见赛训值；营地卡片字段无公开基准，给占位参考值并在 note 标注需校准。
@@ -135,15 +148,35 @@ for _fields in _DEFAULT_SUBJECTS.values():
         _FALLBACK_THRESHOLDS.setdefault(_field, _thresholds)
 
 
-def _rule(field: str, thresholds: list, active: bool = False) -> dict:
+def _clean_minute_standard(value, fallback: dict | None = None) -> dict:
+    """补刀分钟表：键是分钟（字符串），值是标准补刀数；非法值退回默认表。"""
+    source = value if isinstance(value, dict) else (fallback or {})
+    out = {}
+    for minute, count in source.items():
+        try:
+            key = int(str(minute).strip())
+            val = int(count)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= key <= 240 and val >= 0:
+            out[str(key)] = val
+    if out:
+        return dict(sorted(out.items(), key=lambda item: int(item[0])))
+    return {str(k): int(v) for k, v in (fallback or {}).items()}
+
+
+def _rule(field: str, thresholds: list, active: bool = False, subject: str = '') -> dict:
     meta = FIELDS[field]
-    return {
+    rule = {
         'label': meta['label'], 'unit': meta['unit'], 'direction': meta['direction'],
         'source': meta['source'], 'key': meta['key'],
         'thresholds': list(thresholds),
         'estimate': meta['source'] == 'tile',   # 营地卡片字段：阈值是占位参考值
         'active': bool(active),                 # 勾上才进入评级口径
     }
+    if field == 'cs' and subject in CS_MINUTE_STANDARDS:
+        rule['minuteStandard'] = _clean_minute_standard(None, CS_MINUTE_STANDARDS[subject])
+    return rule
 
 
 def path() -> Path:
@@ -157,7 +190,7 @@ def _default_doc() -> dict:
         configured = _DEFAULT_SUBJECTS.get(subject) or {}
         subjects[subject] = {
             field: _rule(field, configured.get(field) or _FALLBACK_THRESHOLDS.get(field, [0, 0, 0]),
-                         active=field in configured)
+                         active=field in configured, subject=subject)
             for field in FIELDS
         }
     return {
@@ -192,6 +225,9 @@ def normalize(doc: dict | None) -> dict:
                 merged = dict(rule)
                 merged.update(old)
                 merged['active'] = bool(old.get('active', rule['active']))
+                if 'minuteStandard' in rule:
+                    merged['minuteStandard'] = _clean_minute_standard(
+                        old.get('minuteStandard'), rule['minuteStandard'])
                 fields[field] = merged
             else:
                 fields[field] = rule
@@ -213,6 +249,18 @@ def _valid(doc: object) -> bool:
                 return False
             if rule.get('direction') not in ('up', 'down'):
                 return False
+            minutes = rule.get('minuteStandard')
+            if minutes is not None:
+                if not isinstance(minutes, dict) or not minutes:
+                    return False
+                for key, val in minutes.items():
+                    try:
+                        minute = int(str(key).strip())
+                        count = int(val)
+                    except (TypeError, ValueError):
+                        return False
+                    if not (1 <= minute <= 240 and count >= 0 and not isinstance(val, bool)):
+                        return False
             thresholds = rule.get('thresholds')
             if not isinstance(thresholds, list) or len(thresholds) != 3:
                 return False
@@ -301,8 +349,26 @@ def field_value(player: dict, rule: dict) -> float | None:
         return None
 
 
-def grade(subject: str, field: str, value, doc: dict | None = None):
-    """按规则给一个数值定档。返回 {'level','label'} 或 None。"""
+def _minute_standard_key(table: dict, minutes) -> str | None:
+    """按局时长挑补刀标准档：<19 分钟按 18 分钟；未配置的分钟向下取最近档。"""
+    keys = sorted((int(k) for k in table), key=int)
+    if not keys:
+        return None
+    try:
+        minute = int(round(float(minutes)))
+    except (TypeError, ValueError):
+        return None
+    if minute < CS_MINUTE_FLOOR:
+        minute = CS_MINUTE_FLOOR
+    lower = [k for k in keys if k <= minute]
+    return str(lower[-1] if lower else keys[0])
+
+
+def grade(subject: str, field: str, value, doc: dict | None = None, minutes=None):
+    """按规则给一个数值定档。返回 {'level','label'} 或 None。
+
+    `minutes` 只供按局时长匹配的字段（目前是补刀 cs）使用。
+    """
     if value is None:
         return None
     try:
@@ -316,6 +382,20 @@ def grade(subject: str, field: str, value, doc: dict | None = None):
     rule = rules.get(subject, {}).get(field)
     if not rule or not rule.get('active', True):
         return None        # 没勾选生效的字段不进入任何评级口径
+    minute_table = rule.get('minuteStandard') if field == 'cs' else None
+    if isinstance(minute_table, dict) and minute_table:
+        key = _minute_standard_key(minute_table, minutes)
+        if key is None:
+            return None
+        # 赛训口径：中路补刀只作蓝色参考，不按标准分金红；发育/对抗按分钟标准定档。
+        if subject == '中路':
+            return {'level': 'ok', 'label': '达标'}
+        standard = float(minute_table[key])
+        if number > standard:
+            return {'level': 'elite', 'label': '高于标准'}
+        if number < standard:
+            return {'level': 'low', 'label': '低于标准'}
+        return {'level': 'ok', 'label': '达标'}
     thresholds = rule['thresholds']
     down = rule['direction'] == 'down'
     level = 'low'

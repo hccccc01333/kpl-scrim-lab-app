@@ -4866,8 +4866,10 @@ if __name__ == '__main__':
     try:
         import data_source_health
         data_source_health.auto_sync_heroes()
+        # 外部源出现缺失 / 过期时后台自动补爬；成功后卡片显示「爬取成功」。
+        data_source_health.start_auto_recovery()
     except Exception as exc:                          # noqa: BLE001 - 不挡启动
-        print(f'[英雄同步] 自动检查启动失败（不影响启动）：{exc}')
+        print(f'[数据源] 自动检查启动失败（不影响启动）：{exc}')
     # 真实服务入口才开巅峰千强每日自动刷新；模块导入 / 测试客户端不会触发爬取。
     os.environ.setdefault('PEAK_AUTO_CRAWL', '1')
     if V3_MODULE is not None and hasattr(V3_MODULE, 'start_peak_auto'):

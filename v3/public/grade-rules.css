@@ -85,6 +85,18 @@
 }
 
 
+/* 补刀分钟标准：特殊指标按局时长取档，单独一张可增删的表 */
+.gr-minutes { margin-block: 18px; display: grid; gap: 10px; }
+.gr-minutes-head h2 { margin: 0 0 4px; font-size: var(--fs-body); }
+.gr-minutes-head p { margin: 0; color: var(--muted); font-size: var(--fs-small); line-height: 1.6; }
+.gr-minute-table { max-inline-size: 520px; }
+.gr-minute-table td input { inline-size: 110px; }
+.gr-minute-del { min-block-size: 28px; padding: 2px 8px; font: inherit; font-size: var(--fs-small); }
+.gr-minute-add { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.gr-minute-add label { display: inline-grid; gap: 4px; color: var(--muted); font-size: var(--fs-small); }
+.gr-minute-add input { inline-size: 120px; }
+.gr-minute-add button { min-block-size: 32px; padding: 4px 12px; font: inherit; font-size: var(--fs-small); }
+
 /* 表格：语义 <table>，滚动容器可键盘聚焦，表头 sticky */
 .gr-table-wrap {
   container-type: inline-size;
