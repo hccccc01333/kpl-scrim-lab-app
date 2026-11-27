@@ -85,14 +85,14 @@ const laneFamily = (lane) => (text(lane).startsWith('打野') ? '打野' : text(
 const familyMatch = (a, b) => !a || !b || laneFamily(a) === laneFamily(b);
 /* 逐局行的 lane 只有「打野」；选中具体子主体时按英雄打野标签分流，
    与 grade_rules.subject_for 同口径（战野/刺野/法核 → 野核，坦野 → 坦野）。 */
-function rowLaneSubject(row, lane) {
+function rowLaneSubject(row, lane, heroTypes) {
   const rowLane = text(row && row.lane);
   if (!lane || !rowLane.startsWith('打野') || !String(lane).startsWith('打野')) {
     return familyMatch(rowLane, lane);
   }
   if (lane === '打野') return true;
   const hero = text(row && row.hero);
-  const jungle = String(((sources && sources.heroTypes && sources.heroTypes[hero]) || {})['打野'] || '');
+  const jungle = String(((heroTypes && heroTypes[hero]) || {})['打野'] || '');
   return (jungle.includes('坦野') ? '打野·坦野' : '打野·野核') === lane;
 }
 const hash = (s) => { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
@@ -388,7 +388,7 @@ export function createMetricsEngine(options = {}) {
         samples: subject.games || 0, baseline: true };
     }
     const sourceRows = rows || await rowsFor(subject);
-    const matching = sourceRows.filter((r) => rowLaneSubject(r, lane));
+    const matching = sourceRows.filter((r) => rowLaneSubject(r, lane, sources && sources.heroTypes));
     if (ATTR_KEYS.has(metricKey)) {
       return { subject, metric: safeMetric, points: attrSeries(subject, safeMetric), placeholder: true, samples: matching.length };
     }
@@ -410,7 +410,7 @@ export function createMetricsEngine(options = {}) {
         grade: { level: 'na', label: value == null ? '不对比' : 'KPL 平均' },
         samples: (subject.samples && subject.samples[metric.key]) || 0 };
     }
-    const matching = rows.filter((r) => rowLaneSubject(r, lane));
+    const matching = rows.filter((r) => rowLaneSubject(r, lane, sources && sources.heroTypes));
     const values = matching.map((r) => metricValue(r, metric));
     const value = mean(values);
     return { subject: subject.name, source: subject.source, value, grade: gradeValue(value, metric), samples: values.filter(isNum).length };

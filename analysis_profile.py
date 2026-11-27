@@ -28,6 +28,8 @@ METRICS = {
     'tpm': ('分均承伤', lambda row: row['taken'] / row['minutes'] if row['minutes'] else None),
     'participation': ('参团率', lambda row: row['participation'] * 100 if row['participation'] is not None else None),
 }
+# 分均承伤越低越好，和 grade_rules.FIELDS 的 tpm direction='down' 对齐。
+DOWN_METRICS = {'tpm'}
 
 
 def _clean(value):
@@ -209,7 +211,9 @@ def training_effect(rows, training, *, actor='coach'):
     target = training.get('target')
     rate = None
     if target is not None:
-        rate = round(sum(1 for value in post if value >= target) / len(post) * 100, 1)
+        reached = ((lambda value: value <= target) if key in DOWN_METRICS
+                   else (lambda value: value >= target))
+        rate = round(sum(1 for value in post if reached(value)) / len(post) * 100, 1)
     return {
         'available': True,
         'metric': key, 'label': label,

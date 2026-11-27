@@ -309,6 +309,7 @@ export function createGradeRulesPage(h = {}) {
             <button type="button" class="control" data-gr-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
             <button type="button" class="control" data-gr-reload>${glyph('refresh', { size: 18 })}重新读取</button>
           </div></div>
+        <span class="gr-rev" data-gr-rev></span>
         <p class="gr-status" data-gr-status hidden></p>
       </section>
 

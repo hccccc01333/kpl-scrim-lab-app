@@ -1167,6 +1167,23 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
         for p in rows:
             if p.get('hero'):
                 hero_pool[p['hero']].append(p)
+        # 逐人事实行没有 win 字段，需要从 replayGames/teams 的胜方阵营还原。
+        win_camp = {str(g.get('id')): str(g.get('winCamp') or '')
+                    for g in facts.get('replayGames') or [] if g.get('winCamp')}
+        for team in facts.get('teams') or []:
+            if team.get('result') is None:
+                continue
+            winner = ('1' if team.get('camp') == '蓝' else '2') if team['result'] \
+                else ('2' if team.get('camp') == '蓝' else '1')
+            win_camp.setdefault(str(team.get('match') or ''), winner)
+
+        def row_win(row):
+            winner = win_camp.get(str(row.get('match') or ''))
+            camp = row.get('camp')
+            if not winner or camp not in ('蓝', '红'):
+                return None
+            return winner == ('1' if camp == '蓝' else '2')
+
         hero_to_label = {}
         for p in rows:
             if p.get('hero') and p.get('match'):
@@ -1198,11 +1215,12 @@ def analysis_payload(facts, analysis_id, game_id=None, side=None, team=None,
         for (label, hero), records in groups.items():
             if not records:
                 continue
-            wins = sum(1 for r in records if r.get('win') is True)
-            decided = [r for r in records if r.get('win') is not None]
+            wins = sum(1 for r in records if row_win(r) is True)
+            decided = [r for r in records if row_win(r) is not None]
             bench = [r for r in hero_pool.get(hero, []) if _player_label(r) != label]
-            bench_win = (round(sum(1 for r in bench if r.get('win') is True)
-                               / len(bench) * 100, 1) if bench else None)
+            bench_decided = [r for r in bench if row_win(r) is not None]
+            bench_win = (round(sum(1 for r in bench_decided if row_win(r) is True)
+                               / len(bench_decided) * 100, 1) if bench_decided else None)
             bench_cs = mean([r.get('csPerMin') for r in bench])
             team_hero_damage = defaultdict(int)
             for r in rows:

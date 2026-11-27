@@ -472,7 +472,7 @@ export function createPlayerDetail(h) {
   function buildBench(c, f) {
     const lane = c.focusLane;
     const doc = st && st.pd && st.pd.gradeRules;
-    const heroTypes = (st && st.pd && st.pd.heroLaneTypes) || {};
+    const heroTypes = (st && st.pd && st.pd.detail && st.pd.detail.heroLaneTypes) || {};
     const rule = rulesFor(doc, lane, mainHeroOf(c.byLane.get(lane)), heroTypes);
     /* 标准线是分路口径（规则按 focusLane 取），「本人」必须取同一分路的局；
        以前用 c.scope.rows 把其它分路也算进来，同一个选手这一页会同时出现

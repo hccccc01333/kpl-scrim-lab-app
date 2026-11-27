@@ -108,7 +108,7 @@ export function createFeatures(h) {
       ${builtIn ? '' : `<textarea class="rt-text" data-rt-text maxlength="2000" placeholder="写结论、备注或口径说明…" aria-label="${esc(fallback)}内容">${esc(mod.text || '')}</textarea>`}
     </div>`;
   };
-  fetch('/api/studio/report-template?competition=' + encodeURIComponent(weeklyCompetition()), { cache: 'no-store' })
+  fetch(API_BASE + '/api/studio/report-template?competition=' + encodeURIComponent(weeklyCompetition()), { cache: 'no-store' })
     .then((response) => response.ok ? response.json() : null)
     .then((data) => {
       if (Array.isArray(data?.modules) && data.modules.length) {
@@ -653,7 +653,7 @@ export function createFeatures(h) {
       syncTeamList(root);
     };
     if (teamTagAllCache && !window.__teamTagsDirty) { apply(teamTagAllCache); return; }
-    fetch('/api/studio/team-tags/all').then((response) => response.ok ? response.json() : null).then((data) => {
+    fetch(API_BASE + '/api/studio/team-tags/all').then((response) => response.ok ? response.json() : null).then((data) => {
       if (!data) return;
       teamTagAllCache = data;
       window.__teamTagsDirty = false;
@@ -690,7 +690,7 @@ export function createFeatures(h) {
       });
     };
     if (freshnessCache) { paint(freshnessCache); return; }
-    fetch('/api/studio/data-freshness').then((response) => response.ok ? response.json() : null).then((data) => {
+    fetch(API_BASE + '/api/studio/data-freshness').then((response) => response.ok ? response.json() : null).then((data) => {
       if (!data) return;
       freshnessCache = data;
       paint(data);
@@ -2450,8 +2450,8 @@ export function createFeatures(h) {
       const ts = rule.thresholds.map(Number);
       return ts.every(Number.isFinite) ? ts : null;
     };
-    const laneTarget = (subject) => ruleThresholds(subject, 'gpm')?.[2] ?? (
-      String(subject || '').includes('打野') ? 800 : String(subject || '').includes('游走') ? 450 : 700);
+    /* 没勾选/没保存的字段不进入红绿评级：不拿写死的 700 兜底。 */
+    const laneTarget = (subject) => ruleThresholds(subject, 'gpm')?.[2] ?? null;
     const prevByName = new Map(prevPlayers.map((p) => [playerOf(p.label), p]));
     const rosterPos = new Map((data[7]?.roster || []).map((p) => [String(p.id || ''), p.position || '']));
     const gradeRows = weekPlayers.map((p) => {
@@ -2468,10 +2468,12 @@ export function createFeatures(h) {
       const prevDeaths = before && before.matches ? num(before.deaths) / num(before.matches) : null;
       const dropped = (prevGpm != null && gpm != null && gpm < prevGpm)
         || (prevDeaths != null && deathRate != null && deathRate > prevDeaths);
-      const good = deathRate != null && deathRate <= (deathTs ? deathTs[0] : 1.5)
-        && gpm != null && gpm >= (gpmTs ? gpmTs[0] : target);
-      const bad = (deathRate != null && deathRate > (deathTs ? deathTs[2] : 2))
-        || (gpm != null && gpm < target * 0.85);
+      const graded = Boolean(gpmTs || deathTs);
+      const good = graded
+        && (!gpmTs || (gpm != null && gpm >= gpmTs[0]))
+        && (!deathTs || (deathRate != null && deathRate <= deathTs[0]));
+      const bad = graded && ((gpmTs && gpm != null && gpm < gpmTs[2])
+        || (deathTs && deathRate != null && deathRate > deathTs[2]));
       return {name: playerName(p.label), lane, games, deathRate, gpm, target,
               tone: good ? 'good' : bad ? 'bad' : dropped ? 'down' : 'flat'};
     });
@@ -2527,7 +2529,7 @@ export function createFeatures(h) {
       return '—';
     };
     const matchRows = [...weekMatches].sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 12).map((m) => `<tr><td>${text(m.date || '—')}</td><td>${text(teamOf(m.enemy_team_id, m.date, m.opponent))}</td><td class="num">${scoreOf(m)}</td><td class="${resultOf(m) === 'win' ? 'win' : resultOf(m) === 'loss' ? 'loss' : ''}">${resultOf(m) === 'win' ? '胜' : resultOf(m) === 'loss' ? '负' : '—'}</td><td class="num">${time(m.duration)}</td></tr>`).join('');
-    const gradeLine = (row) => `<b>${text(row.name)}</b><span class="${row.tone === 'good' ? 'is-good' : row.tone === 'bad' ? 'is-bad' : row.tone === 'down' ? 'is-down' : 'is-flat'}">${toneLabel[row.tone]} ${toneArrow[row.tone]} · 死亡 ${row.deathRate == null ? '—' : fmt(row.deathRate, 1)} 次/局 · 经济 ${row.gpm == null ? '—' : fmt(row.gpm)}/分（目标 ${fmt(row.target)}）</span>`;
+    const gradeLine = (row) => `<b>${text(row.name)}</b><span class="${row.tone === 'good' ? 'is-good' : row.tone === 'bad' ? 'is-bad' : row.tone === 'down' ? 'is-down' : 'is-flat'}">${toneLabel[row.tone]} ${toneArrow[row.tone]} · 死亡 ${row.deathRate == null ? '—' : fmt(row.deathRate, 1)} 次/局 · 经济 ${row.gpm == null ? '—' : fmt(row.gpm)}/分（目标 ${row.target == null ? '未设' : fmt(row.target)}）</span>`;
     const leaderHtml = `<section class="report-leader" aria-label="领导摘要">
       <div class="rl-grid">
         <div class="rl-card"><h2>MVP 拿得多的选手</h2>${mvpRows.length
@@ -3365,7 +3367,7 @@ if(captureIngestPage.change(event))return;
       const status = document.querySelector('[data-rt-status]');
       if (!modules.length) { if (status) status.textContent = '至少勾选一个模块。'; return true; }
       if (status) status.textContent = '保存中…';
-      fetch('/api/studio/report-template', {
+      fetch(API_BASE + '/api/studio/report-template', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({competition: weeklyCompetition(), modules}),
       }).then((response) => response.ok ? response.json() : Promise.reject(new Error('保存失败')))

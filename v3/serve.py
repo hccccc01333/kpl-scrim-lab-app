@@ -6661,31 +6661,51 @@ def hero_detail(hero: str, repo=Depends(repository)):
         values = [row[key] for row in rows if isinstance(row.get(key), (int, float))]
         return round(sum(values) / len(values), 2) if values else None
 
+    def rate(rows, total_key):
+        """分均类 KPI 统一 Σ总量/Σ分钟；逐局均值只用于曲线/分布。"""
+        total = 0.0
+        minutes = 0.0
+        found = False
+        for row in rows:
+            value, span = row.get(total_key), row.get('minutes')
+            if isinstance(value, (int, float)) and isinstance(span, (int, float)) and span > 0:
+                total += value
+                minutes += span
+                found = True
+        return round(total / minutes) if found and minutes else None
+
     def group(rows, field):
         buckets = {}
         for row in rows:
             name = row.get(field) or '未标注'
             item = buckets.setdefault(name, {'name': name, 'games': 0, 'wins': 0,
-                                            'decided': 0, '_kda': [], '_gpm': []})
+                                            'decided': 0, '_kda': [], '_gold': 0.0,
+                                             '_damage': 0.0, '_taken': 0.0, '_minutes': 0.0})
             item['games'] += 1
             if row.get('result') in ('win', 'loss'):
                 item['decided'] += 1
                 if row['result'] == 'win':
                     item['wins'] += 1
-            for key, bucket in (('kda', '_kda'), ('gpm', '_gpm')):
+            if isinstance(row.get('kda'), (int, float)):
+                item['_kda'].append(row['kda'])
+            for key, bucket in (('gold', '_gold'), ('damage', '_damage'),
+                                ('taken', '_taken'), ('minutes', '_minutes')):
                 if isinstance(row.get(key), (int, float)):
-                    item[bucket].append(row[key])
+                    item[bucket] += row[key]
         result = [{
             'name': item['name'], 'games': item['games'], 'wins': item['wins'],
             'decided': item['decided'],
             'winRate': round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None,
             'kda': round(sum(item['_kda']) / len(item['_kda']), 2) if item['_kda'] else None,
-            'gpm': round(sum(item['_gpm']) / len(item['_gpm'])) if item['_gpm'] else None,
+            'gpm': round(item['_gold'] / item['_minutes']) if item['_minutes'] else None,
         } for item in buckets.values()]
         return sorted(result, key=lambda x: -x['games'])[:12]
 
     league = {key: {'hero': mean(hero_rows, key), 'all': mean(all_rows, key)}
-              for key in ('kda', 'gpm', 'dpm', 'participation', 'gold', 'cs')}
+              for key in ('kda', 'participation', 'gold', 'cs')}
+    league['gpm'] = {'hero': rate(hero_rows, 'gold'), 'all': rate(all_rows, 'gold')}
+    league['dpm'] = {'hero': rate(hero_rows, 'damage'), 'all': rate(all_rows, 'damage')}
+    league['tpm'] = {'hero': rate(hero_rows, 'taken'), 'all': rate(all_rows, 'taken')}
 
     match_keys = {row.get('matchKey') for row in hero_rows if row.get('matchKey')}
     curves = [match for match in (repo.process(base).get('matches') or [])
@@ -6759,12 +6779,37 @@ _THD_PERIODS = (3, 7, 30)
 
 @router.get('/api/v3/team-hero-insight')
 def team_hero_insight(repo=Depends(repository)):
+    import camp_tiles
     import combo_pool
     import grade_rules
     import hero_external_stats
 
     rows, _ = repo._selected_rows({'sources': list(DEFAULT_SOURCES)})
     own = [row for row in rows if row.get('isOwn') and row.get('hero')]
+    # 平板卡片字段（视野价值、控制时长、有效承伤等）原本只挂在单局详情上。
+    # 战队英雄洞察用的是扁平分析行，不补挂这些规则会全部静默跳过。
+    seq_by_match = {}
+    for match in repo.get().get('matches') or []:
+        seq = camp_tiles.game_seq(match) or str(
+            (match.get('campBp') or {}).get('gameSeq') or '').strip()
+        if seq:
+            seq_by_match[str(match.get('key') or '')] = seq
+    tile_tables = {}
+
+    def tiles_for(row):
+        seq = seq_by_match.get(str(row.get('matchKey') or ''))
+        if not seq:
+            return None
+        if seq not in tile_tables:
+            path = MATCHES.parent / 'camp_details' / f'{seq}.json'
+            tile_tables[seq] = camp_tiles.read_detail(path) if path.is_file() else {}
+        key = (str(row.get('camp') or ''), str(row.get('hero') or ''))
+        return (tile_tables[seq].get(key) or {}).get('tiles')
+
+    for row in own:
+        tiles = tiles_for(row)
+        if tiles:
+            row['campTiles'] = tiles
     full_keys = [str(row.get('dateKey') or '') for row in own
                  if len(str(row.get('dateKey') or '')) == 10]
     try:

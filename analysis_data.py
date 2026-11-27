@@ -1268,7 +1268,10 @@ class AnalysisRepository:
         for match in matches:
             process = match.get('process') or {}
             timeline = process.get('timeline') or []
-            own = match.get('ownCamp') or match.get('ownSide') or 'blue'
+            own = match.get('ownCamp') or match.get('ownSide') or ''
+            if own not in ('blue', 'left', 'red', 'right'):
+                # 不知道己方阵营就不能猜蓝色，否则 10 分钟经济差会整体反号。
+                continue
             sign = 1 if own in ('blue', 'left') else -1
             series = []
             for point in timeline:
@@ -1290,7 +1293,9 @@ class AnalysisRepository:
                     at10 = prior[-1][1]
             if at10 is not None and at10 > 0:
                 ten_led += 1
-                if match.get('result') == 'win':
+                result = match.get('result') or _result_for(
+                    own, match.get('winnerCamp') or match.get('winner'), match.get('scores'))
+                if result == 'win':
                     ten_won += 1
         ten_min_lead = f'{ten_won}/{ten_led}' if ten_led else None
         unknown_opponent = sum(1 for match in matches if not match.get('opponent'))

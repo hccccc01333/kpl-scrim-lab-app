@@ -424,17 +424,25 @@ export function createMetricsObservePage(h = {}) {
       t.value = '';
     }
   }
+  /* 规则中心保存/快照恢复后，指标观察的 sources 缓存必须跟着失效。 */
+  function onRulesSaved() {
+    if (!root) return;
+    engine.invalidate();
+    load();
+  }
   function bind(node) {
     if (bound === node) return;
     if (bound) dispose();
     bound = node;
     node.addEventListener('click', onClick);
     node.addEventListener('change', onChange);
+    window.addEventListener('grade-rules:saved', onRulesSaved);
   }
   function dispose() {
     if (bound) {
       bound.removeEventListener('click', onClick);
       bound.removeEventListener('change', onChange);
+      window.removeEventListener('grade-rules:saved', onRulesSaved);
       bound = null;
     }
     generation++;

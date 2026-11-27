@@ -370,10 +370,13 @@ def _clear_bytecode_cache(target: Path) -> int:
     return cleared
 
 
-def _program_delete_paths(target: Path) -> tuple[list[str], list[str]]:
+def _program_delete_paths(target: Path, bundle_paths: set[str] | None = None
+                          ) -> tuple[list[str], list[str]]:
     """返回需要清掉的程序目录与根目录程序文件。
 
     data/（比赛数据、授权、备份）、.env、runtime/、_internal/、logs/ 一律不动。
+    根目录只清**随包发布**的文件和旧版 .py/.pyc；安装包生成的 EXE、快捷方式
+    BAT、图标、说明文档，以及用户的 update_config.json 必须保留。
     """
     root = Path(target)
     directories = [name for name in PROGRAM_DIRS if (root / name).is_dir()]
@@ -382,8 +385,14 @@ def _program_delete_paths(target: Path) -> tuple[list[str], list[str]]:
         for item in (root / name).rglob('*'):
             if item.is_file():
                 files.append(item.relative_to(root).as_posix())
+    preserve = {'update_config.json', '.env', 'camp_auth.json', 'camp_config.json'}
     for item in root.iterdir():
-        if item.is_file() and item.suffix.lower() in PROGRAM_ROOT_SUFFIXES:
+        if not item.is_file() or item.name in preserve:
+            continue
+        if bundle_paths is not None:
+            if item.name in bundle_paths or item.suffix.lower() in ('.py', '.pyc'):
+                files.append(item.name)
+        elif item.suffix.lower() in PROGRAM_ROOT_SUFFIXES:
             files.append(item.name)
     return directories, sorted(set(files))
 
@@ -410,6 +419,51 @@ def _force_rmtree(path: Path) -> None:
     shutil.rmtree(path)
 
 
+def _merge_bootstrap_backup(backup: Path, target: Path) -> str:
+    """把引导阶段留下的真正旧版文件覆盖到清装备份里。
+
+    引导补丁会先把 updater/server/version 等几个文件写到新版本，清装启动时
+    ``current`` 已是新版本号。restart_flow 在引导阶段记录的 ``previousVersion``
+    才是真正的升级前版本，同名文件要从那一份备份取回，回滚才不会混版。
+    """
+    current = read_installed_version(target)
+    last = read_last_result(target) or {}
+    previous = str(last.get('previousVersion') or '')
+    if not previous or compare_versions(previous, current) >= 0:
+        return current
+    safe = re.sub(r'[^0-9A-Za-z._-]+', '_', previous)
+    root = data_root(target) / 'backups'
+    candidates = sorted((item for item in root.glob(f'code-{safe}-*') if item.is_dir()),
+                        key=lambda item: item.stat().st_mtime, reverse=True)
+    if not candidates:
+        return previous
+    source = candidates[0]
+    payload = _read_json(source / 'backup.json') or {}
+    for record in payload.get('files', []):
+        if not record.get('existed'):
+            continue
+        relative = record.get('path') or ''
+        saved = source / 'files' / relative
+        if not saved.is_file() or not relative:
+            continue
+        destination = backup / 'files' / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(saved, destination)
+    return previous
+
+
+def _remove_extracted_not_in_backup(backup: Path, target: Path,
+                                    extracted: list[str]) -> None:
+    """回滚时删掉失败清装已经写入、旧备份里不存在的新文件。"""
+    payload = _read_json(backup / 'backup.json') or {}
+    backed = {record.get('path') for record in payload.get('files', [])
+              if record.get('existed')}
+    for relative in extracted:
+        if relative in backed:
+            continue
+        _force_unlink(Path(target) / relative)
+
+
 def _extract_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo,
                       destination: Path, digest: str) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -422,26 +476,65 @@ def _extract_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo,
             shutil.copyfileobj(reader, writer, length=1024 * 1024)
         if sha256_file(temp) != str(digest).lower():
             raise ValueError(f'清装包文件校验失败：{destination.name}')
-        if destination.exists():
-            _force_unlink(destination)
-        os.replace(temp, destination)
+        last_error = None
+        for attempt in range(4):
+            try:
+                if destination.exists():
+                    _force_unlink(destination)
+                os.replace(temp, destination)
+                return
+            except PermissionError as exc:
+                last_error = exc
+                try:
+                    os.chmod(destination.parent, stat.S_IWRITE)
+                except OSError:
+                    pass
+                time.sleep(0.15 * (attempt + 1))
+        if last_error:
+            raise last_error
     finally:
         temp.unlink(missing_ok=True)
+
+
+def _sweep_clean_artifacts(target: Path) -> None:
+    """清掉没有标记的单据碎片，避免半途退出后留下几十 MB 孤儿文件。"""
+    root = Path(target)
+    for item in root.glob('clean_bundle.part*'):
+        if item.is_file():
+            item.unlink(missing_ok=True)
+    bundle = root / CLEAN_BUNDLE
+    if bundle.is_file():
+        bundle.unlink(missing_ok=True)
 
 
 def apply_clean_bundle_if_requested(target: Path | None = None) -> dict:
     """重启后完成「保留数据、重装程序」的第二阶段。
 
-    增量补丁先把新 updater/server 和内嵌的完整程序包写进 data/update/；
+    增量补丁先把新 updater/server 和内嵌的完整程序包分片写到应用根目录；
     重启时这里校验整包、备份旧程序、清空程序目录后整包装回。
     """
     target = _root(target)
     marker = Path(target) / CLEAN_REQUEST
     if not marker.is_file():
+        _sweep_clean_artifacts(target)
         return {'ok': True, 'skipped': True, 'message': '没有待清装的更新'}
 
+    current = read_installed_version(target)
     request = _read_json(marker) or {}
-    bundle_rel = normalize_rel_path(request.get('bundle') or CLEAN_BUNDLE)
+    version = str(request.get('version') or current)
+    if compare_versions(version, current) < 0:
+        # 残留的旧更新标记不能把已装好的新版降级回去。
+        marker.unlink(missing_ok=True)
+        _sweep_clean_artifacts(target)
+        return {'ok': True, 'skipped': True,
+                'message': f'忽略过期清装标记：{version} < {current}'}
+    result_written = False
+    try:
+        bundle_rel = normalize_rel_path(request.get('bundle') or CLEAN_BUNDLE)
+    except Exception as exc:  # noqa: BLE001
+        message = str(exc) if str(exc).startswith('清装失败') else f'清装失败：{exc}'
+        _write_result(target, False, message, version=current)
+        raise ValueError(message) from exc
     bundle = Path(target) / bundle_rel
     expected = str(request.get('sha256') or '').lower()
     parts = request.get('parts') or []
@@ -462,14 +555,11 @@ def apply_clean_bundle_if_requested(target: Path | None = None) -> dict:
             raise ValueError('清装包缺失，请重新下载更新包')
         if expected and sha256_file(bundle) != expected:
             raise ValueError('清装包校验失败，请重新下载更新包')
-    except Exception:
+    except Exception as exc:
         bundle.unlink(missing_ok=True)
-        raise
-    version = str(request.get('version') or read_installed_version(target))
-    current = read_installed_version(target)
-    stamp = time.strftime('%Y%m%d-%H%M%S')
-    safe_version = re.sub(r'[^0-9A-Za-z._-]+', '_', version)
-
+        message = str(exc) if str(exc).startswith('清装失败') else f'清装失败：{exc}'
+        _write_result(target, False, message, version=current)
+        raise ValueError(message) from exc
     try:
         with zipfile.ZipFile(bundle) as archive:
             try:
@@ -495,8 +585,11 @@ def apply_clean_bundle_if_requested(target: Path | None = None) -> dict:
             if 'version.py' not in {path for path, _, _ in paths}:
                 raise ValueError('清装包缺少 version.py')
 
-            directories, existing = _program_delete_paths(target)
+            bundle_paths = {path for path, _, _ in paths}
+            directories, existing = _program_delete_paths(target, bundle_paths)
             backup = _backup_files(target, existing, current)
+            previous = _merge_bootstrap_backup(backup, target)
+            extracted = []
             try:
                 for name in directories:
                     _force_rmtree(Path(target) / name)
@@ -504,38 +597,41 @@ def apply_clean_bundle_if_requested(target: Path | None = None) -> dict:
                     _force_unlink(Path(target) / name)
                 for path, info, digest in paths:
                     _extract_from_zip(archive, info, Path(target) / path, digest)
+                    extracted.append(path)
                 installed = read_installed_version(target)
                 if compare_versions(installed, version) != 0:
                     raise ValueError(f'清装后版本号不一致（{installed} != {version}）')
             except Exception as exc:
                 try:
+                    _remove_extracted_not_in_backup(backup, target, extracted)
                     restore_backup(backup, target)
-                    message = f'清装失败，已回滚：{exc}'
+                    message = f'清装失败，已回滚到 {previous}：{exc}'
                 except Exception as rollback_error:  # noqa: BLE001
                     message = f'清装失败且回滚失败：{exc}；{rollback_error}'
-                _write_result(target, False, message, version=current,
+                _write_result(target, False, message, version=previous,
                               backupDir=_display_path(target, backup))
+                result_written = True
                 raise ValueError(message) from exc
-    except ValueError:
-        raise
     except Exception as exc:  # noqa: BLE001
-        _write_result(target, False, f'清装失败：{exc}', version=current)
-        raise ValueError(f'清装失败：{exc}') from exc
+        message = str(exc) if str(exc).startswith('清装失败') else f'清装失败：{exc}'
+        if not result_written:
+            _write_result(target, False, message, version=current)
+        raise ValueError(message) from exc
 
-    marker.unlink(missing_ok=True)
-    bundle.unlink(missing_ok=True)
+    # 先清大文件、最后删标记：中途失败仍可凭标记重试。
     for item in parts:
         (Path(target) / normalize_rel_path(item['path'])).unlink(missing_ok=True)
+    bundle.unlink(missing_ok=True)
+    marker.unlink(missing_ok=True)
     cleared = _clear_bytecode_cache(target)
     _prune_backups(target)
     _write_result(target, True, f'已清装到 {version}', version=version,
-                  previousVersion=current, files=len(paths),
+                  previousVersion=previous, files=len(paths),
                   removedDirs=directories,
-                  backupDir=_display_path(target, data_root(target) / 'backups' /
-                                          f'code-{safe_version}-{stamp}'),
+                  backupDir=_display_path(target, backup),
                   clearedCaches=cleared)
     return {'ok': True, 'skipped': False, 'version': version,
-            'previousVersion': current, 'files': len(paths)}
+            'previousVersion': previous, 'files': len(paths)}
 
 
 def sha256_file_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> str:
@@ -734,9 +830,13 @@ def restart_flow(target: Path | None = None, port: int | None = None) -> dict:
         return {'ok': False, 'message': str(exc)}
 
     process = None
+    last = {}
     try:
         process = start_server(target, port)
         if wait_health(port, expected, timeout=90):
+            last = read_last_result(target) or {}
+            if (Path(target) / CLEAN_REQUEST).is_file() or last.get('ok') is False:
+                raise RuntimeError(last.get('message') or '清装未完成，版本文件不能代表安装完成')
             message = f"已更新到 {expected}，服务已重启"
             _write_result(target, True, message, version=expected)
             return {'ok': True, 'message': message, 'version': expected}
@@ -744,7 +844,17 @@ def restart_flow(target: Path | None = None, port: int | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         if process is not None:
             _terminate(process)
-        backup = Path(applied.get('backupDir', '')) if applied.get('backupDir') else None
+        # 清装失败时 last_result 指向保留旧文件的清装备份；引导备份只有几个新文件。
+        backup_value = (last.get('backupDir') if last.get('ok') is False
+                        else applied.get('backupDir'))
+        if backup_value:
+            backup = Path(backup_value)
+            if not backup.is_absolute():
+                backup = Path(target) / backup
+        else:
+            backup = None
+        (Path(target) / CLEAN_REQUEST).unlink(missing_ok=True)
+        _sweep_clean_artifacts(target)
         rollback_ok = False
         if backup and backup.is_dir():
             try:

@@ -514,41 +514,35 @@ def _load_replay(folder, panel, panels, opponent_names, calibration, seq_to_oppo
 # 主入口
 # ---------------------------------------------------------------------------
 def data_signature(replays_dir, camp_dir, db_path=None, data_dir=None):
-    """扫盘签名：目录内文件数量 + 最大 mtime。用于 API 缓存。
+    """扫盘签名：逐文件 (名字, mtime_ns, 大小)。用于 API 缓存。
 
-    positions.json 与地图定标文件都参与签名——否则只改位置/定标时，
-    /api/decision/* 会一直返回旧 facts。
+    数量 + 最大 mtime 太粗：编辑一个非最新采集文件时签名不变，简报/工作台
+    缓存会继续返回旧 facts。positions.json 与地图定标文件也参与签名。
     """
+    def stat_of(path):
+        try:
+            info = path.stat()
+            return (path.name, info.st_mtime_ns, info.st_size)
+        except OSError:
+            return (path.name, -1, -1)
+
     def scan(directory, pattern):
         path = Path(directory)
         if not path.is_dir():
-            return (0, 0.0)
-        count, latest = 0, 0.0
-        for item in path.glob(pattern):
-            try:
-                latest = max(latest, item.stat().st_mtime)
-            except OSError:
-                continue
-            count += 1
-        return count, round(latest, 3)
+            return ()
+        return tuple(stat_of(item) for item in sorted(path.glob(pattern)))
 
     camp = scan(camp_dir, '*.json')
     replay_files = scan(replays_dir, 'camp-*/normalized.json')
     positions = scan(replays_dir, 'camp-*/positions.json')
-    calibration = (0, 0.0)
+    calibration = ()
     if data_dir:
         file_path = Path(data_dir) / map_calibration.CALIBRATION_FILE
         if file_path.is_file():
-            try:
-                calibration = (1, round(file_path.stat().st_mtime, 3))
-            except OSError:
-                calibration = (1, 0.0)
-    db = (0, 0.0)
+            calibration = stat_of(file_path)
+    db = ()
     if db_path and Path(db_path).is_file():
-        try:
-            db = (1, round(Path(db_path).stat().st_mtime, 3))
-        except OSError:
-            db = (1, 0.0)
+        db = stat_of(Path(db_path))
     return (camp, replay_files, positions, calibration, db)
 
 
