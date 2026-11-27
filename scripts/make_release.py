@@ -479,6 +479,36 @@ def asset_url(base: str | None, name: str) -> str:
     return name
 
 
+def build_clean_bundle(version: str, ship_paths: list[str], args) -> tuple[Path, list[dict]]:
+    """生成内嵌完整程序包，供自动更新重启后清装。"""
+    stage = DIST / f'clean-stage-{version}'
+    if stage.exists():
+        shutil.rmtree(stage)
+    stage.mkdir(parents=True)
+    try:
+        copy_ship_files(stage, ship_paths)
+        entries = []
+        for path in ship_paths:
+            full = stage / path
+            if not full.is_file():
+                raise RuntimeError(f'清装包文件缺失：{path}')
+            entries.append({'path': path, 'sha256': sha256_file(full),
+                            'size': full.stat().st_size})
+        (stage / 'manifest.json').write_text(
+            json.dumps(entries, ensure_ascii=False, indent=2), encoding='utf-8')
+        out = DIST / f'clean-bundle-{version}.zip'
+        out.unlink(missing_ok=True)
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+            archive.write(stage / 'manifest.json', 'manifest.json')
+            for path in ship_paths:
+                archive.write(stage / path, f'payload/{path}')
+        print(f'清装内嵌包：{out.name}（{out.stat().st_size / 1024 / 1024:.1f} MB，'
+              f'{len(entries)} 个程序文件）')
+        return out, entries
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
 def build_patch(version: str, paths: list[str], removed: list[str],
                 notes: list[str], args) -> tuple[dict, Path]:
     paths = sorted(set(paths) | {'version.py'})
@@ -768,6 +798,8 @@ def parse_args(argv=None):
                         help='输出目录（默认 dist/）')
     parser.add_argument('--since', help='生成补丁的起始 git tag；默认自动取上一个 tag')
     parser.add_argument('--all', action='store_true', help='补丁包含全部程序文件')
+    parser.add_argument('--clean', action='store_true',
+                        help='自动更新改为保留数据、重装程序：补丁内嵌完整程序包')
     parser.add_argument('--no-patch', action='store_true', help='不生成增量包')
     parser.add_argument('--no-full', action='store_true', help='不生成完整包')
     parser.add_argument('--no-ocr-runtime', action='store_true',
@@ -809,7 +841,39 @@ def main(argv=None) -> int:
         # 客户端必须走完整包，否则装完后版本号是新的、内容却缺一截
         #（1.0-1.3 的用户曾能通过 1.0.0 门槛装上只含 1.4→1.5.12 差异的补丁）。
         args.min_version = '1.0.0' if args.all or not since else since.lstrip('v')
-    paths, removed = (ship, []) if args.all else diff_paths(since, ship)
+    if args.clean:
+        # 补丁本身保持小清单（老更新器也能装）；完整程序包作为 payload 里的
+        # 一个普通文件随补丁下发，重启后由新 updater 完成清装。
+        bundle_out, _ = build_clean_bundle(version, ship, args)
+        # 应用根目录下的 clean_* 文件老更新器允许搬运（data/ 前缀被禁止）。
+        payload_dir = ROOT
+        # 单个 payload 文件上限 50 MB；清装包按 40 MB 切片，老更新器逐片搬运。
+        chunk_size = 40 * 1024 * 1024
+        part_paths = []
+        raw = bundle_out.read_bytes()
+        for index in range(0, len(raw), chunk_size):
+            name = f'clean_bundle.part{index // chunk_size + 1:02d}'
+            target = payload_dir / name
+            target.write_bytes(raw[index:index + chunk_size])
+            part_paths.append({
+                'path': name, 'sha256': sha256_file(target),
+                'size': target.stat().st_size,
+            })
+        marker = {'version': version,
+                  'bundle': 'clean_bundle.zip',
+                  'sha256': sha256_file(bundle_out),
+                  'parts': part_paths,
+                  'createdAt': now_iso()}
+        (payload_dir / 'clean_request.json').write_text(
+            json.dumps(marker, ensure_ascii=False, indent=2), encoding='utf-8')
+        changed, _ = diff_paths(since, ship) if since else (ship, [])
+        paths = sorted(set(changed) | {
+            'version.py', 'updater.py', 'update_client.py', 'server.py',
+            'scripts/make_release.py', 'clean_request.json',
+        } | {item['path'] for item in part_paths})
+        removed = []
+    else:
+        paths, removed = (ship, []) if args.all else diff_paths(since, ship)
     paths = [path for path in paths if path not in PATCH_EXCLUDE]
     removed = [path for path in removed if path not in PATCH_EXCLUDE]
     if since and any(path in ('requirements.txt', 'requirements-ocr.txt', 'requirements-mimo.txt')

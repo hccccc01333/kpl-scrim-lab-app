@@ -1175,6 +1175,16 @@ def _startup_auto_install_ocr():
         pass
 
 
+@app.on_event('startup')
+def _startup_finish_clean_update():
+    """增量补丁重启后在这里完成「保留数据、重装程序」的第二阶段。"""
+    try:
+        import updater
+        updater.apply_clean_bundle_if_requested(ROOT)
+    except Exception as exc:  # noqa: BLE001 - 清装失败保留现场，不影响服务启动
+        print(f'[update] 清装未完成：{exc}', flush=True)
+
+
 def _ocr_install_worker(target: str) -> None:
     spec = _OCR_INSTALL_TARGETS[target]
     try:

@@ -123,3 +123,7 @@ _tmp_*
 
 # 本机生成的快捷方式（含绝对路径，不随仓库分发）
 *.lnk
+
+# 自动更新清装补丁的临时分片与标记（构建时生成，不进仓库）
+clean_bundle.part*
+clean_request.json

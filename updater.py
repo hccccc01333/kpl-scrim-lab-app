@@ -14,6 +14,7 @@ before it is copied.  The current code is backed up under
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -45,6 +46,16 @@ MAX_PATCH_BYTES = 120 * 1024 * 1024
 MAX_UNCOMPRESSED_BYTES = 300 * 1024 * 1024
 MAX_MEMBER_BYTES = 50 * 1024 * 1024
 MAX_MEMBERS = 5000
+# 自动更新改成「保留数据、重装程序」后，补丁内嵌的完整程序清单会超过
+# 256 KB；清单本身只在本地读取，放宽到 2 MB 足够容纳全量文件校验值。
+MAX_MANIFEST_BYTES_LOCAL = 2 * 1024 * 1024
+CLEAN_BUNDLE = 'clean_bundle.zip'
+CLEAN_REQUEST = 'clean_request.json'
+# 只清程序目录；data/ 与 .env 不动，runtime/ 与 _internal/ 属于安装包运行时，
+# 增量补丁不含它们，也不能删。
+PROGRAM_DIRS = ('v3', 'tools', 'scripts', 'resources', 'docs', 'web')
+PROGRAM_ROOT_SUFFIXES = ('.py', '.pyc', '.bat', '.txt', '.json', '.md',
+                         '.exe', '.ico', '.example')
 STAGED_ROOT = 'data/update/staged'
 PENDING_FILE = 'data/update/pending.json'
 LAST_RESULT_FILE = 'data/update/last_result.json'
@@ -196,7 +207,7 @@ def stage_patch(zip_path: Path, target: Path | None = None,
             info = archive.getinfo('update.json')
         except KeyError as exc:
             raise ValueError('更新包缺少 update.json') from exc
-        if info.file_size > 256 * 1024:
+        if info.file_size > MAX_MANIFEST_BYTES_LOCAL:
             raise ValueError('update.json 超过大小限制')
         manifest_raw = archive.read(info)
         manifest = normalize_manifest(json.loads(manifest_raw.decode('utf-8')))
@@ -354,6 +365,154 @@ def _clear_bytecode_cache(target: Path) -> int:
             pyc.unlink(missing_ok=True)
             cleared += 1
     return cleared
+
+
+def _program_delete_paths(target: Path) -> tuple[list[str], list[str]]:
+    """返回需要清掉的程序目录与根目录程序文件。
+
+    data/（比赛数据、授权、备份）、.env、runtime/、_internal/、logs/ 一律不动。
+    """
+    root = Path(target)
+    directories = [name for name in PROGRAM_DIRS if (root / name).is_dir()]
+    files = []
+    for item in root.iterdir():
+        if item.is_file() and item.suffix.lower() in PROGRAM_ROOT_SUFFIXES:
+            files.append(item.name)
+    return directories, files
+
+
+def _extract_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo,
+                      destination: Path, digest: str) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(dir=str(destination.parent),
+                                     prefix='.clean-', suffix='.tmp')
+    os.close(fd)
+    temp = Path(temp_name)
+    try:
+        with archive.open(info) as reader, open(temp, 'wb') as writer:
+            shutil.copyfileobj(reader, writer, length=1024 * 1024)
+        if sha256_file(temp) != str(digest).lower():
+            raise ValueError(f'清装包文件校验失败：{destination.name}')
+        os.replace(temp, destination)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def apply_clean_bundle_if_requested(target: Path | None = None) -> dict:
+    """重启后完成「保留数据、重装程序」的第二阶段。
+
+    增量补丁先把新 updater/server 和内嵌的完整程序包写进 data/update/；
+    重启时这里校验整包、备份旧程序、清空程序目录后整包装回。
+    """
+    target = _root(target)
+    marker = Path(target) / CLEAN_REQUEST
+    if not marker.is_file():
+        return {'ok': True, 'skipped': True, 'message': '没有待清装的更新'}
+
+    request = _read_json(marker) or {}
+    bundle_rel = normalize_rel_path(request.get('bundle') or CLEAN_BUNDLE)
+    bundle = Path(target) / bundle_rel
+    expected = str(request.get('sha256') or '').lower()
+    parts = request.get('parts') or []
+    try:
+        if parts:
+            # 老更新器单次搬运的文件上限 50 MB，清装包按 40 MB 切片下发；
+            # 这里逐片校验后拼回完整 zip。
+            with open(bundle, 'wb') as writer:
+                for item in parts:
+                    part = Path(target) / normalize_rel_path(item['path'])
+                    if not part.is_file():
+                        raise ValueError('清装分包缺失，请重新下载更新包')
+                    if sha256_file(part) != str(item['sha256']).lower():
+                        raise ValueError('清装分包校验失败，请重新下载更新包')
+                    with open(part, 'rb') as reader:
+                        shutil.copyfileobj(reader, writer, length=1024 * 1024)
+        elif not bundle.is_file():
+            raise ValueError('清装包缺失，请重新下载更新包')
+        if expected and sha256_file(bundle) != expected:
+            raise ValueError('清装包校验失败，请重新下载更新包')
+    except Exception:
+        bundle.unlink(missing_ok=True)
+        raise
+    version = str(request.get('version') or read_installed_version(target))
+    current = read_installed_version(target)
+    stamp = time.strftime('%Y%m%d-%H%M%S')
+    safe_version = re.sub(r'[^0-9A-Za-z._-]+', '_', version)
+
+    try:
+        with zipfile.ZipFile(bundle) as archive:
+            try:
+                entries = json.loads(archive.read('manifest.json').decode('utf-8'))
+            except (KeyError, ValueError) as exc:
+                raise ValueError('清装包缺少有效清单') from exc
+            if not isinstance(entries, list) or not entries:
+                raise ValueError('清装包清单为空')
+            members = {}
+            for info in archive.infolist():
+                if not info.is_dir() and not info.filename.startswith('__MACOSX/'):
+                    members[_safe_member(info.filename)] = info
+            paths = []
+            for item in entries:
+                path = normalize_rel_path(item['path'])
+                digest = str(item['sha256']).lower()
+                info = members.get(f'payload/{path}')
+                if info is None:
+                    raise ValueError(f'清装包缺少文件：{path}')
+                if sha256_file_from_zip(archive, info) != digest:
+                    raise ValueError(f'清装包文件校验失败：{path}')
+                paths.append((path, info, digest))
+            if 'version.py' not in {path for path, _, _ in paths}:
+                raise ValueError('清装包缺少 version.py')
+
+            directories, existing = _program_delete_paths(target)
+            backup = _backup_files(target, existing, current)
+            try:
+                for name in directories:
+                    shutil.rmtree(Path(target) / name, ignore_errors=True)
+                for name in existing:
+                    (Path(target) / name).unlink(missing_ok=True)
+                for path, info, digest in paths:
+                    _extract_from_zip(archive, info, Path(target) / path, digest)
+                installed = read_installed_version(target)
+                if compare_versions(installed, version) != 0:
+                    raise ValueError(f'清装后版本号不一致（{installed} != {version}）')
+            except Exception as exc:
+                try:
+                    restore_backup(backup, target)
+                    message = f'清装失败，已回滚：{exc}'
+                except Exception as rollback_error:  # noqa: BLE001
+                    message = f'清装失败且回滚失败：{exc}；{rollback_error}'
+                _write_result(target, False, message, version=current,
+                              backupDir=_display_path(target, backup))
+                raise ValueError(message) from exc
+    except ValueError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _write_result(target, False, f'清装失败：{exc}', version=current)
+        raise ValueError(f'清装失败：{exc}') from exc
+
+    marker.unlink(missing_ok=True)
+    bundle.unlink(missing_ok=True)
+    for item in parts:
+        (Path(target) / normalize_rel_path(item['path'])).unlink(missing_ok=True)
+    cleared = _clear_bytecode_cache(target)
+    _prune_backups(target)
+    _write_result(target, True, f'已清装到 {version}', version=version,
+                  previousVersion=current, files=len(paths),
+                  removedDirs=directories,
+                  backupDir=_display_path(target, data_root(target) / 'backups' /
+                                          f'code-{safe_version}-{stamp}'),
+                  clearedCaches=cleared)
+    return {'ok': True, 'skipped': False, 'version': version,
+            'previousVersion': current, 'files': len(paths)}
+
+
+def sha256_file_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo) -> str:
+    digest = hashlib.sha256()
+    with archive.open(info) as reader:
+        for chunk in iter(lambda: reader.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def apply_pending(target: Path | None = None) -> dict:

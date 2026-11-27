@@ -5,6 +5,6 @@ footer. Bump `VERSION` when releasing; `RELEASE_NOTES` feeds CHANGELOG.md.
 """
 from __future__ import annotations
 
-VERSION = '3.5.4'
+VERSION = '3.5.5'
 RELEASE_DATE = '2026-11-27'
-RELEASE_NAME = '3.5.4：规则、归属与数据口径统一'
+RELEASE_NAME = '3.5.5：自动更新改为保留数据后重装程序'

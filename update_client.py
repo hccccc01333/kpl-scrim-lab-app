@@ -25,7 +25,7 @@ DEFAULT_MANIFEST_URLS = (
     'https://github.com/hccccc01333/kpl-scrim-lab-app/releases/latest/download/update.json',
     'https://raw.githubusercontent.com/hccccc01333/kpl-scrim-lab-app/main/update.json',
 )
-MAX_MANIFEST_BYTES = 256 * 1024
+MAX_MANIFEST_BYTES = 2 * 1024 * 1024  # 清装补丁的完整程序清单会超过 256 KB
 CACHE_MAX_AGE = 6 * 3600
 USER_AGENT = 'KPL-Scrim-Lab-Updater/1.0'
 
