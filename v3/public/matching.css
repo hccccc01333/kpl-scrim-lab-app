@@ -101,8 +101,15 @@
 .mb-derived select, #content .mb-page .mb-derived select { inline-size: 100%; max-inline-size: 100%; min-height: 44px !important; padding: 0 .5rem !important; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--text); font: inherit; font-size: max(1rem, 1em) !important; }
 .mb-sides { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .875rem; }
 .mb-side { min-inline-size: 0; }
-.mb-side > header { display: flex; justify-content: space-between; gap: .5rem; padding: .625rem .75rem; border-bottom: 1px solid var(--line); font-size: .9375rem; }
+.mb-side > header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .5rem; padding: .625rem .75rem; border-bottom: 1px solid var(--line); font-size: .9375rem; }
+.mb-side-head-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .5rem; min-inline-size: 0; }
 .mb-side > header span { color: var(--muted); font-size: .8125rem; }
+/* 侧栏一键复核：和逐条确认同色系但更醒目；没有待复核时保持可聚焦的禁用态。 */
+.mb-confirm-all { min-height: 30px; padding: 0 .625rem; border: 1px solid color-mix(in srgb, var(--mb-ok) 55%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--mb-ok) 12%, var(--paper)); color: var(--mb-ok); font: inherit; font-size: .8125rem; font-weight: 800; cursor: pointer; transition: background .15s, scale .1s; }
+.mb-confirm-all:hover:not(:disabled) { background: color-mix(in srgb, var(--mb-ok) 22%, var(--paper)); }
+.mb-confirm-all:active:not(:disabled) { scale: .97; }
+.mb-confirm-all:focus-visible { outline: 2px solid var(--mb-ok); outline-offset: 2px; }
+.mb-confirm-all:disabled { opacity: .5; cursor: not-allowed; }
 .mb-table-wrap { max-block-size: 420px; overflow: auto; container-type: inline-size; scrollbar-gutter: stable; overscroll-behavior: contain; }
 .mb-table { inline-size: 100%; border-collapse: separate; border-spacing: 0; font-size: .9375rem; }
 .mb-table thead th { position: sticky; inset-block-start: 0; z-index: 2; padding: .625rem .5rem; background: var(--paper); color: var(--muted); font-size: .8125rem; text-align: start; }

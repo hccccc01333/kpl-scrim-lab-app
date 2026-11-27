@@ -313,6 +313,11 @@ export function createMatchingPage(h) {
   function reviewTotal() {
     return state ? state.games.reduce((n, game) => n + reviewPending(game), 0) : 0;
   }
+  /* 一侧待复核的行：侧栏「一键确认」只处理这一侧，不跨阵营误确认对方 ID。 */
+  function reviewPendingSide(game, camp) {
+    return (game.sides[camp] || [])
+      .filter((row) => row.playerId && AUTO_CONFIDENCES.has(row.confidence));
+  }
 
   /* 一行的匹配来源 + 复核按钮：自动挂上的 ID 都要教练点一下才算数。 */
   function matchMetaHtml(game, camp, row) {
@@ -432,6 +437,8 @@ export function createMatchingPage(h) {
     const campBlock = (camp) => {
       const role = camp === game.ownCamp ? 'own' : 'enemy';
       const rows = game.sides[camp] || [];
+      const pendingSide = reviewPendingSide(game, camp);
+      const sideLabel = camp === 'blue' ? '蓝方' : '红方';
       /* 只排展示顺序，不改 rows 本身：row.slot 是 change/save 用来定位原始行的索引。 */
       const ordered = rows.toSorted
         ? rows.toSorted((a, b) => laneRank(a.position) - laneRank(b.position))
@@ -449,8 +456,12 @@ export function createMatchingPage(h) {
         </tr>`;
       }).join('');
       return `<section class="mb-side">
-        <header><b>${camp === 'blue' ? '蓝方' : '红方'}</b><span>${role === 'own' ? '本队一侧 · 本队选手 ID' : '对手一侧 · 所选战队 ID'}</span></header>
-        <div class="mb-table-wrap" role="region" tabindex="0" aria-label="${camp === 'blue' ? '蓝方' : '红方'}选手匹配">
+        <header>
+          <div class="mb-side-head-title"><b>${sideLabel}</b><span>${role === 'own' ? '本队一侧 · 本队选手 ID' : '对手一侧 · 所选战队 ID'}</span></div>
+          <button type="button" class="mb-confirm-all" data-mb-confirm-all="${esc(game.key)}" data-mb-camp="${camp}"${locked || !pendingSide.length ? ' disabled' : ''}
+            aria-label="一键确认${sideLabel}的 ${pendingSide.length} 条自动匹配" title="确认本侧所有自动匹配的 ID">一键确认${pendingSide.length ? `（${pendingSide.length}）` : ''}</button>
+        </header>
+        <div class="mb-table-wrap" role="region" tabindex="0" aria-label="${sideLabel}选手匹配">
           <table class="mb-table"><thead><tr><th scope="col">位置</th><th scope="col">游戏名</th><th scope="col">选手 ID</th><th scope="col">状态</th></tr></thead><tbody>${rowsHtml}</tbody></table>
         </div>
       </section>`;
@@ -755,10 +766,37 @@ export function createMatchingPage(h) {
       state.selected = target.key;
       render();
       const first = root.querySelector('[data-mb-confirm-row]');
-      state.status = `已定位到 ${target.date || ''} 的待复核 ID（共 ${reviewTotal()} 条），逐条点「✓ 确认」。`;
+      state.status = `已定位到 ${target.date || ''} 的待复核 ID（共 ${reviewTotal()} 条），可点侧栏「一键确认」批量复核，或逐条点「✓ 确认」。`;
       const bar = root.querySelector('.mb-status');
       if (bar) bar.textContent = state.status;
       first?.focus();
+      return;
+    }
+    const confirmAll = event.target.closest('[data-mb-confirm-all]');
+    if (confirmAll) {
+      const game = state.games.find((g) => g.key === confirmAll.dataset.mbConfirmAll);
+      if (!game || (game.archived && !game.editing)) return;
+      const camp = confirmAll.dataset.mbCamp;
+      const rows = reviewPendingSide(game, camp);
+      if (!rows.length) return;
+      const slots = new Set(rows.map((row) => String(row.slot)));
+      rows.forEach((row) => { row.confidence = 'manual'; });
+      game.dirty = true;
+      /* 局部更新，不整页 render：保留教练正在看的滚动位置和焦点。 */
+      root.querySelectorAll('[data-mb-player][data-mb-camp]').forEach((select) => {
+        if (select.dataset.mbPlayer !== game.key || select.dataset.mbCamp !== camp) return;
+        if (!slots.has(String(select.dataset.mbSlot))) return;
+        const meta = select.closest('.mb-match-cell')?.querySelector('.mb-match-meta');
+        if (meta) meta.innerHTML = '<span class="mb-src is-done">✓ 已复核</span>';
+      });
+      confirmAll.disabled = true;
+      confirmAll.textContent = '一键确认';
+      confirmAll.setAttribute('aria-label', `已确认${camp === 'blue' ? '蓝方' : '红方'}全部自动匹配`);
+      state.status = `已一键复核${camp === 'blue' ? '蓝方' : '红方'} ${rows.length} 条自动匹配；还剩 ${reviewTotal()} 条待复核。`;
+      const bar = root.querySelector('.mb-status');
+      if (bar) bar.textContent = state.status;
+      refreshReviewUi();
+      (root.querySelector('[data-mb-confirm-row]') || root.querySelector('[data-mb-save]'))?.focus();
       return;
     }
     const confirmRow = event.target.closest('[data-mb-confirm-row]');

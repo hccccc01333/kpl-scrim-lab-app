@@ -3463,7 +3463,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'matching' && !mods.matching) {
-    jobs.push(importOnce('./matching-page.js').then(({ createMatchingPage }) => {
+    jobs.push(importOnce('./matching-page.js?v=20261127bulkconfirm1').then(({ createMatchingPage }) => {
       mods.matching = createMatchingPage({ esc, API_BASE, icon,
         refresh: () => load(true) });
     }));
