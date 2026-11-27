@@ -26,6 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 import map_calibration
+from workspace_store import is_placeholder_team, real_team_name
 
 try:  # 对手身份聚合是可选的：没有 team_clusters 也能出事实表（用于单测）
     import team_clusters
@@ -315,11 +316,13 @@ def _opponent_keys(panels, db_path):
 
 
 def _opponent_names(camp_dir, panels, db_path, keys=None):
-    """战队分析的当前队名（含被合并战队与旧名别名）；访问不到时用稳定序号兜底。
+    """战队分析的当前队名（含被合并战队与旧名别名）；未确认一律空串。
 
     以前只取 team_clusters.list_teams 的显示名，被合并掉的 cluster 会掉回
     「待命名战队 #N」，简报里的对手分组因此和战队分析对不上。现在统一走
-    opponent_identity.resolve_names，与对局档案、系列赛编组同一份口径。
+    opponent_identity.resolve_names，与对局档案、系列赛编组同一份口径；
+    且按 workspace_store.real_team_name 归一化，任何历史占位名都不再被造出来。
+    分组仍按 cluster id，空名只表示「未标注对手」，不会被合并成一个假战队。
     """
     names = {}
     merges = {}
@@ -327,17 +330,15 @@ def _opponent_names(camp_dir, panels, db_path, keys=None):
         try:
             import opponent_identity
             resolved = opponent_identity.resolve_names(db_path)
-            names = {key: value for key, value in resolved['names'].items() if value}
+            names = {key: real_team_name(value)
+                     for key, value in resolved['names'].items() if value}
             merges = {'aliases': resolved['aliases'], 'canonical': resolved['canonical']}
         except Exception:  # pragma: no cover - 查询失败不阻塞分析
             names = {}
-    # 兜底：按首次出现顺序编号
+    # 未确认的签名簇只留 id 分组，名字留空 = 未标注对手；不再造「待命名战队 #N」。
     keys = keys or {seq: _opponent_signature(panel) for seq, panel in panels.items()}
-    ordered = sorted(set(keys.values()),
-                     key=lambda key: min((panels[seq]['start'] or panels[seq]['date'])
-                                         for seq, value in keys.items() if value == key))
-    for index, key in enumerate(ordered, 1):
-        names.setdefault(key, f'待命名战队 #{index}')
+    for key in set(keys.values()):
+        names.setdefault(key, '')
     return names, merges
 
 
@@ -513,6 +514,10 @@ def _load_replay(folder, panel, panels, opponent_names, calibration, seq_to_oppo
 # ---------------------------------------------------------------------------
 # 主入口
 # ---------------------------------------------------------------------------
+# 变更对手命名口径时递增，令 briefing / workbench / analysis_data 的落盘缓存失效。
+_NAME_POLICY_VERSION = 'opponent-names-v2-no-placeholders'
+
+
 def data_signature(replays_dir, camp_dir, db_path=None, data_dir=None):
     """扫盘签名：逐文件 (名字, mtime_ns, 大小)。用于 API 缓存。
 
@@ -546,7 +551,10 @@ def data_signature(replays_dir, camp_dir, db_path=None, data_dir=None):
         base = Path(db_path)
         db = tuple(stat_of(path) for path in
                    (base, Path(f'{base}-wal'), Path(f'{base}-journal')) if path.is_file())
-    return (camp, replay_files, positions, calibration, db)
+    # 口径版本参与签名：老版本落盘的 facts 缓存里带着「待命名战队 #N」，
+    # 数据文件没变也会命中旧缓存。加一次版本位，升级后强制重算即可归一化，
+    # 不需要用户清缓存或删 data。
+    return (camp, replay_files, positions, calibration, db, _NAME_POLICY_VERSION)
 
 
 def load_facts(replays_dir, camp_dir, data_dir=None, db_path=None, *, now=None):
@@ -635,7 +643,7 @@ def load_facts(replays_dir, camp_dir, data_dir=None, db_path=None, *, now=None):
         'identity': {
             'playersWithNickname': sum(1 for row in rows if row['name']),
             'namedOpponents': sum(1 for item in opponents
-                                  if item['name'] and not item['name'].startswith('待命名')),
+                                  if not is_placeholder_team(item.get('name'))),
         },
         'errors': len(errors),
     }

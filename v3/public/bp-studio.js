@@ -702,7 +702,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function seasonPanel() {
     const years = state.data?.options?.years || [];
     const selected = new Set(state.leagues);
-    return `<div class="bps-pop is-right" data-bps-pop-panel="season" ${state.pop === 'season' ? '' : 'hidden'}>
+    return `<div class="bps-pop is-right" id="bps-pop-season" popover="auto" data-bps-pop-panel="season" ${state.pop === 'season' ? '' : 'hidden'}>
       <div class="bps-pop-head"><b>选择赛季</b>
         <span class="bps-sub">${selected.size ? `已选 ${selected.size} 个` : '未选 = 全库'}</span>
       </div>
@@ -731,21 +731,28 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   function teamPanel(kind) {
     const dataSource = state.data?.source || state.source;
     const scrim = dataSource === 'scrim';
+    /* 服务端已按权威战队卡归一化；前端再挡一层，旧缓存/手工塞进来的占位名
+       也不能变成可点的「战队」。占位不是名字，只是未确认的签名簇。 */
+    const isPlaceholder = (name) => !String(name || '').trim()
+      || /^待命名/.test(String(name).trim());
+    const realOptions = (list) => (list || []).filter((item) => !isPlaceholder(item.name));
     const options = kind === 'team'
       ? (scrim
         ? [{name: '本队', abbr: ''}]
-        : (state.data?.options?.teams || []))
+        : realOptions(state.data?.options?.teams))
       : (scrim
-        ? (state.data?.options?.scrimOpponents || []).map((name) => ({name, abbr: ''}))
-        : (state.data?.options?.teams || []));
+        ? realOptions((state.data?.options?.scrimOpponents || []).map((name) => ({name, abbr: ''})))
+        : realOptions(state.data?.options?.teams));
+    const pendingHint = scrim && kind === 'opponent'
+      ? (state.data?.options?.opponentPendingHint || '') : '';
     const current = kind === 'team' ? state.team : state.opponent;
-    return `<div class="bps-pop is-right" data-bps-pop-panel="${kind}" ${state.pop === kind ? '' : 'hidden'}>
+    return `<div class="bps-pop is-right" id="bps-pop-${kind}" popover="auto" data-bps-pop-panel="${kind}" ${state.pop === kind ? '' : 'hidden'}>
       <div class="bps-pop-head"><b>${kind === 'team' ? '选择本队' : '选择对手'}</b>
         <span class="bps-sub">${scrim ? '训练赛只统计本队，对手来自营地记录' : '队标来自 KPL 官方赛程'}</span></div>
       ${scrim ? '' : `<label class="bps-search" style="margin-bottom:8px">${icon('search')}
         <input type="search" data-bps-team-search="${kind}" placeholder="搜战队" autocomplete="off" value="${esc(state.teamQuery || '')}">
       </label>`}
-      <div class="bps-team-grid ${scrim ? 'is-scrim' : ''}">
+      <div class="bps-team-grid ${scrim ? 'is-scrim' : ''}" role="group" aria-label="${kind === 'team' ? '可选本队' : '可选对手'}">
         ${kind === 'opponent' ? `<button type="button" class="bps-team-option"
           data-bps-select-opponent="__all__" aria-pressed="${current === '__all__'}">
           <span class="bps-team-mark"><b>Σ</b></span>
@@ -756,8 +763,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           aria-pressed="${item.name === current}">
           ${scrim ? '' : teamMark(item.name)}
           <span><b>${esc(item.name)}</b><small>${esc(item.abbr || '')}${item.games ? ` · ${num(item.games)} 场` : ''}</small></span>
-        </button>`).join('') || `<p class="bps-note">${scrim ? '训练赛还没有对手记录。' : '这个数据源里还没有战队记录。'}</p>`}
+        </button>`).join('') || `<p class="bps-note">${scrim ? '训练赛还没有已确认的对手。' : '这个数据源里还没有战队记录。'}</p>`}
       </div>
+      ${pendingHint ? `<p class="bps-pop-hint" role="note">${esc(pendingHint)}</p>` : ''}
       <div class="bps-pop-foot">
         ${scrim ? '' : `<button type="button" class="bps-link" data-bps-select-${kind}="">不限定</button>`}
         <button type="button" class="bps-softbtn" data-bps-pop-close>${glyph('arrow-up', { size: 18 })} 收起</button>
@@ -767,7 +775,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function rangePanel() {
     const days = state.data?.options?.recentOptions || [7, 15, 30, 90, 180, 365];
-    return `<div class="bps-pop is-right" data-bps-pop-panel="range" ${state.pop === 'range' ? '' : 'hidden'}>
+    return `<div class="bps-pop is-right" id="bps-pop-range" popover="auto" data-bps-pop-panel="range" ${state.pop === 'range' ? '' : 'hidden'}>
       <div class="bps-pop-head"><b>${glyph('calendar', { size: 18 })} 时间窗口</b></div>
       <div class="bps-chips">
         ${days.map((value) => `<button type="button" class="bps-chip" data-bps-days="${value}"
@@ -794,7 +802,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   function viewsPanel() {
-    return `<div class="bps-pop is-right" data-bps-pop-panel="views" ${state.pop === 'views' ? '' : 'hidden'}>
+    return `<div class="bps-pop is-right" id="bps-pop-views" popover="auto" data-bps-pop-panel="views" ${state.pop === 'views' ? '' : 'hidden'}>
       <div class="bps-pop-head"><b>${glyph('book', { size: 18 })} 保存的视图</b></div>
       <div class="bps-view-save">
         <input data-bps-view-name placeholder="例如：北京WB · BO5 · 第1手" value="${esc(state.viewName || '')}" autocomplete="off">
@@ -830,7 +838,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       ${isKpl ? `<span class="bps-console-sep"></span>
       <div class="bps-console-group">
         <span class="bps-console-label">赛季</span>
-        <button type="button" class="bps-trigger" data-bps-pop="season"
+        <button type="button" class="bps-trigger" data-bps-pop="season" popovertarget="bps-pop-season"
           aria-expanded="${state.pop === 'season'}">
           ${glyph('calendar', { size: 18 })} ${leagues ? `已选 ${leagues} 个赛季` : '全部赛季'}
           <span class="bps-trigger-sub">${leagues ? '' : (state.data?.options?.years?.length || 0) + ' 年'}</span>
@@ -841,7 +849,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <span class="bps-console-sep"></span>
       <div class="bps-console-group">
         <span class="bps-console-label">本队</span>
-        <button type="button" class="bps-trigger" data-bps-pop="team"
+        <button type="button" class="bps-trigger" data-bps-pop="team" popovertarget="bps-pop-team"
           aria-expanded="${state.pop === 'team'}">
           ${glyph('players', { size: 18 })} ${state.team ? `${isKpl ? teamMark(state.team) : ''}<span>${esc(state.team)}</span>` : '不限定'}
           ${icon('chevron')}
@@ -851,7 +859,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <div class="bps-console-group">
         <span class="bps-console-label">对手</span>
         <button type="button" class="bps-trigger ${state.opponent ? '' : 'is-empty'}"
-          data-bps-pop="opponent" aria-expanded="${state.pop === 'opponent'}">
+          data-bps-pop="opponent" popovertarget="bps-pop-opponent" aria-expanded="${state.pop === 'opponent'}">
           ${glyph('opponent', { size: 18 })} ${state.opponent ? `${isKpl ? teamMark(state.opponent) : ''}<span>${state.opponent === '__all__' ? '全部对手' : esc(state.opponent)}</span>` : '选择对手'}
           ${icon('chevron')}
         </button>
@@ -860,7 +868,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <span class="bps-console-sep"></span>
       <div class="bps-console-group">
         <span class="bps-console-label">窗口</span>
-        <button type="button" class="bps-trigger" data-bps-pop="range"
+        <button type="button" class="bps-trigger" data-bps-pop="range" popovertarget="bps-pop-range"
           aria-expanded="${state.pop === 'range'}">
           ${glyph('clock', { size: 18 })} ${state.from && state.to ? `${esc(state.from)} → ${esc(state.to)}` : `近 ${state.recentDays} 天`}
           <span class="bps-trigger-sub">${state.compare === 'prev' ? '环比' : state.compare === 'yoy' ? '同比' : '不对比'}</span>
@@ -871,7 +879,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <span class="bps-console-sep"></span>
       <div class="bps-console-group">
         <span class="bps-console-label">视图</span>
-        <button type="button" class="bps-trigger" data-bps-pop="views" aria-expanded="${state.pop === 'views'}">
+        <button type="button" class="bps-trigger" data-bps-pop="views" popovertarget="bps-pop-views" aria-expanded="${state.pop === 'views'}">
           ${glyph('book', { size: 18 })} ${(state.views || []).length ? `${state.views.length} 个视图` : '保存视图'}
           ${icon('chevron')}
         </button>
@@ -1335,7 +1343,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       const peakIdx = max > 0 ? h.hands.findIndex((x) => x.count === max) : -1;
       const cells = h.hands.map((x, i) => `<span class="bps-bhcell ${max > 0 && x.count === max ? 'is-peak' : ''}" title="第${i + 1}手 ${num(x.count)} 次">${num(x.count)}</span>`).join('');
       return `<div class="bps-banhero">
-        ${heroImg(h.hero)}
+        <span class="bps-ban-face" aria-hidden="true">${heroImg(h.hero)}</span>
         <div class="bps-banhero-main"><b>${esc(heroShort(h.hero))}</b>
           <small>${num(h.total)} 次被 Ban${peakIdx >= 0 ? ` · 常在第 <b>${peakIdx + 1}</b> 手` : ''}</small></div>
         <div class="bps-banhands">${cells}</div>
@@ -1703,8 +1711,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   function comparePanelPick() {
     const options = (state.data?.options?.teams || [])
-      .filter((item) => item.name !== state.opponent && item.name !== state.team);
-    return `<div class="bps-pop is-right" data-bps-pop-panel="compare" ${state.pop === 'compare' ? '' : 'hidden'}>
+      .filter((item) => item.name !== state.opponent && item.name !== state.team
+        && String(item.name || '').trim() && !/^待命名/.test(String(item.name).trim()));
+    return `<div class="bps-pop is-right" id="bps-pop-compare" popover="auto" data-bps-pop-panel="compare" ${state.pop === 'compare' ? '' : 'hidden'}>
       <div class="bps-pop-head"><b>${glyph('compare', { size: 18 })} 选择对比对手</b></div>
       <div class="bps-team-grid">
         ${options.map((item) => `<button type="button" class="bps-team-option"
@@ -1821,7 +1830,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
         <div class="bps-opp-id"><h3>${state.opponent === '__all__' ? '全部对手' : esc(state.opponent)}</h3>
           <p>${num(block.games)} 个队-局 · 可算手序 ${num(block.orderGames)} 局 · ${esc(block.sample || '')}</p></div>
         <span class="bps-compare-wrap" style="margin-left:auto">
-          <button type="button" class="bps-softbtn" data-bps-pop="compare">
+          <button type="button" class="bps-softbtn" data-bps-pop="compare" popovertarget="bps-pop-compare">
             ${state.compareOpponent ? `对比：${esc(state.compareOpponent)}` : '对比对手'} ${icon('chevron')}
           </button>
           ${comparePanelPick()}
@@ -2377,6 +2386,8 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       filterPicker(input.dataset.bpsSearch, input.value);
     });
     restoreFocus(focus);
+    /* 重绘会重建面板 DOM，原生 popover 状态不会自动带过来；按当前 state.pop 复原。 */
+    closePops(state.pop);
     applyZoom();
     decorateSections();
     observeLazy();
@@ -2595,26 +2606,25 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     });
   }
 
+  /* 浮层定位交给浏览器：Popover API 把面板放进 top layer（不会再被页面上
+     别处的高 z-index 卡片压住），CSS Anchor Positioning + position-try 负责
+     视口内的翻转/贴边。这里不再用 getBoundingClientRect 手算 left / maxHeight，
+     也不靠目测缩放修错位。老浏览器走 hidden 属性的轻量回退。 */
   function closePops(except = '') {
     state.pop = except;
     if (!state.root) return;
-    const trigger = except ? state.root.querySelector(`[data-bps-pop="${except}"]`) : null;
+    const supportsPopover = typeof HTMLElement !== 'undefined'
+      && typeof HTMLElement.prototype.showPopover === 'function';
     state.root.querySelectorAll('[data-bps-pop-panel]').forEach((panel) => {
-      panel.hidden = panel.dataset.bpsPopPanel !== except;
-      panel.classList.remove('is-up');
-      if (panel.hidden) return;
-      /* 浮层宽度大，贴触发器右缘后可能越过视口；按触发器位置钳制到可视区域。 */
-      const groupRect = (panel.offsetParent || trigger || panel).getBoundingClientRect();
-      const triggerRect = trigger ? trigger.getBoundingClientRect() : groupRect;
-      const width = panel.offsetWidth;
-      const desired = Math.max(12, Math.min(triggerRect.right - width, window.innerWidth - width - 12));
-      panel.style.left = `${desired - groupRect.left}px`;
-      panel.style.right = 'auto';
-      const rect = panel.getBoundingClientRect();
-      if (rect.bottom > window.innerHeight - 12 && rect.top > window.innerHeight * 0.4) {
-        panel.classList.add('is-up');
+      const open = panel.dataset.bpsPopPanel === except;
+      if (supportsPopover) {
+        panel.removeAttribute('hidden');
+        const isOpen = panel.matches(':popover-open');
+        if (open && !isOpen) panel.showPopover();
+        else if (!open && isOpen) panel.hidePopover();
+      } else {
+        panel.hidden = !open;
       }
-      panel.style.maxHeight = `${Math.max(220, Math.min(620, window.innerHeight - 40))}px`;
     });
     state.root.querySelectorAll('[data-bps-pop]').forEach((button) => {
       button.setAttribute('aria-expanded', String(button.dataset.bpsPop === except));
@@ -3072,6 +3082,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     }
     const popButton = event.target.closest('[data-bps-pop]');
     if (popButton) {
+      /* 开关完全由 closePops 统一负责；挡住 popovertarget 的原生 toggle，
+         否则会出现 JS 打开、浏览器默认动作紧接着又关掉的抖动。 */
+      event.preventDefault();
       closePops(state.pop === popButton.dataset.bpsPop ? '' : popButton.dataset.bpsPop);
       return;
     }
@@ -3806,6 +3819,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   let inputBound = null;
   let keyBound = null;
   let resizeBound = null;
+  let toggleBound = null;
 
   function bind() {
     clickBound = (event) => {
@@ -3824,6 +3838,19 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       updateActiveJump();
     };
     resizeBound = () => { syncSticky(); updateActiveJump(); };
+    /* 自动 popover 的轻关闭（点外面 / Esc）由浏览器完成，这里同步自己的状态，
+       否则下一次点同一个触发器会被 JS 误判成「再关一次」。 */
+    toggleBound = (event) => {
+      const panel = event.target;
+      if (!panel?.matches?.('[data-bps-pop-panel]')) return;
+      if (event.newState === 'closed' && state.pop === panel.dataset.bpsPopPanel) {
+        state.pop = '';
+        state.root?.querySelectorAll('[data-bps-pop]').forEach((button) => {
+          button.setAttribute('aria-expanded', 'false');
+        });
+      }
+    };
+    document.addEventListener('toggle', toggleBound, true);
     keyBound = (event) => {
       if (event.key === 'Escape' && flowCallout) flowCallout.hidden = true;
       if (event.key === 'Enter' || event.key === ' ') {
@@ -3840,6 +3867,21 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           event.preventDefault();
           togglePin(pin.dataset.bpsPin);
           return;
+        }
+      }
+      /* 浮层选项可纯键盘操作：↑↓ / Home / End 在按钮之间移动焦点。
+         不靠颜色传达选中态（选项同时带 aria-pressed 和文字说明）。 */
+      if (state.pop && !event.target.closest('input, textarea, select')
+        && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+        const panel = state.root?.querySelector(`[data-bps-pop-panel="${state.pop}"]`);
+        const items = [...(panel?.querySelectorAll('button:not([disabled])') || [])];
+        if (items.length && (items.includes(document.activeElement)
+          || panel.contains(document.activeElement))) {
+          event.preventDefault();
+          const index = items.indexOf(document.activeElement);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+            : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+          items[next].focus();
         }
       }
       if (event.key === 'Escape') {
@@ -3879,6 +3921,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     if (scrollBound) window.removeEventListener('scroll', scrollBound);
     if (resizeBound) window.removeEventListener('resize', resizeBound);
     if (keyBound) document.removeEventListener('keydown', keyBound);
+    if (toggleBound) document.removeEventListener('toggle', toggleBound, true);
     document.removeEventListener('mouseover', onHoverIn);
     document.removeEventListener('mouseout', onHoverOut);
     document.removeEventListener('mouseover', onCompareHover);
@@ -3893,7 +3936,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     state.root?.removeEventListener('pointermove', matrixPointerMove);
     state.root?.removeEventListener('pointerup', onPointerUp);
     state.root?.removeEventListener('pointerup', matrixPointerUp);
-    clickBound = inputBound = scrollBound = resizeBound = keyBound = null;
+    clickBound = inputBound = scrollBound = resizeBound = keyBound = toggleBound = null;
   }
 
   function mount(root) {

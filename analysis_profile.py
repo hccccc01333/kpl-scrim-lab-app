@@ -232,10 +232,13 @@ def group_by_opponent(rows, camp_dir, db_path):
     """按阵容签名把对手侧的行分组，队名/合并关系走战队分析的当前口径。
 
     以前只认 team_clusters.list_teams 的 live 队，被合并掉的 cluster 会留下
-    一串「team-xxxxxxxx」当队名；现在统一走 opponent_identity。
+    一串「team-xxxxxxxx」当队名；现在统一走 opponent_identity，并按
+    workspace_store.real_team_name 归一化：未确认签名簇的名字是空串，
+    不再造「待命名战队 #N」。分组仍按 id，空名只表示未标注对手。
     """
     import opponent_identity
     import team_clusters
+    from workspace_store import real_team_name
     panels = team_clusters.load_panels(camp_dir)
     # 与匹配页归档的对手卡同口径：确认过对应关系的局不能按阵容签名散开。
     key_of = team_clusters.cluster_key_of(db_path, panels)
@@ -249,9 +252,8 @@ def group_by_opponent(rows, camp_dir, db_path):
         key = sig.get(row['seq'])
         if key:
             groups[canonical.get(key, key)].append(row)
-    ordered = sorted(groups)
-    return [{'id': key, 'name': names.get(key) or f'待命名战队 #{index}', 'rows': groups[key]}
-            for index, key in enumerate(ordered, 1)]
+    return [{'id': key, 'name': real_team_name(names.get(key)), 'rows': groups[key]}
+            for key in sorted(groups)]
 
 
 def profiles(camp_dir, db_path, *, min_games=3):

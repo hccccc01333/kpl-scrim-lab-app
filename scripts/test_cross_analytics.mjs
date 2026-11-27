@@ -147,20 +147,24 @@ assert.ok(exec.length > 0);
 assert.ok(exec.every((p) => p.part == null || (p.part >= 0 && p.part <= 1)));
 
 /* 11. 「10 分钟领先」逐局明细：要带出是哪几局、各领先多少，不能只给计数。
-     领先阈值与 pathOf 保持一致（at10 >= 1000），按时间正序，缺字段不补 0。 */
+     领先阈值与 pathOf 保持一致（默认档 at10 >= 3,000；5,000 为其子集），按时间正序，缺字段不补 0。 */
 const leadRows = [
-  make(0, { at10: 1800, result: 'loss', date: '2026-01-05', opponent: 'B', clock: '19:30' }),
-  make(1, { at10: 2500, result: 'win', date: '2026-01-06', opponent: 'A', clock: '20:00' }),
-  make(2, { at10: 900, result: 'win' }),          // 未达 1000，不进明细
+  make(0, { at10: 3200, result: 'loss', date: '2026-01-05', opponent: 'B', clock: '19:30' }),
+  make(1, { at10: 5400, result: 'win', date: '2026-01-06', opponent: 'A', clock: '20:00' }),
+  make(2, { at10: 2500, result: 'win' }),          // 未达 1000，不进明细
   make(3, { at10: null, result: 'loss' }),        // 缺失，不进明细
 ];
 const lead = internals.pathOf(internals.prepare(leadRows)).lead;
-assert.equal(lead.n, 2, '只有 at10>=1000 的局计入领先');
+assert.equal(lead.n, 2, '只有 at10>=3000 的局计入默认档');
 assert.equal(lead.games.length, 2, '明细条数与计数一致');
-assert.deepEqual(lead.games.map((g) => g.at10), [1800, 2500], '明细按时间正序、带各自 10 分钟经济');
+assert.deepEqual(lead.games.map((g) => g.at10), [3200, 5400], '明细按时间正序、带各自 10 分钟经济');
 assert.ok(lead.games.every((g) => g.key && g.label), '每局都有 key 与可读标签');
 assert.ok(lead.games[0].label.includes('对阵B'), '标签带日期与对手');
-assert.equal(lead.avgAt10, 2150, '平均领先金币取这些领先局的均值，不是 1000 门槛');
+assert.equal(lead.avgAt10, 4300, '平均领先金币取这些领先局的均值，不是门槛值');
+assert.deepEqual(lead.tiers, {
+  3000: { n: 2, wins: 1 },
+  5000: { n: 1, wins: 1 },
+}, '3,000 / 5,000 两档样本量各自独立统计');
 
 /* 12. 赢/输阶段锚点曲线：开局/4′/10′/终局四个锚点，各带常见值与样本 n。
      start 的 med 固定为 0 但 n 只数有曲线的局；缺段的局不进那一锚点。 */
@@ -183,8 +187,8 @@ assert.equal(curve[3].loss.n, 1, '终局输局锚点只 1 局有数');
 /* 13. 领先守成四项计数：左侧命中数、右侧条件分母和逐局 key 必须一致。
      5 局大优（2 局被翻）+ 7 局大劣（2 局翻盘）+ 3 局小幅落后 + 1 局小幅领先 = 16 局有 10 分钟差。 */
 const riskRows = [
-  ...Array.from({ length: 5 }, (_, i) => make(i, { at10: 1200 + i * 10, result: i < 2 ? 'loss' : 'win', finalDiff: i < 2 ? -1000 : 1000 })),
-  ...Array.from({ length: 7 }, (_, i) => make(10 + i, { at10: -1200 - i * 10, result: i < 2 ? 'win' : 'loss', finalDiff: i < 2 ? 1000 : i < 4 ? -12000 : -1000 })),
+  ...Array.from({ length: 5 }, (_, i) => make(i, { at10: (i < 2 ? 5200 : 3200) + i * 10, result: i < 2 ? 'loss' : 'win', finalDiff: i < 2 ? -1000 : 1000 })),
+  ...Array.from({ length: 7 }, (_, i) => make(10 + i, { at10: -((i < 2 ? 5200 : 3200) + i * 10), result: i < 2 ? 'win' : 'loss', finalDiff: i < 2 ? 1000 : i < 4 ? -12000 : -1000 })),
   ...Array.from({ length: 3 }, (_, i) => make(20 + i, { at10: -100 * (i + 1), result: 'loss', finalDiff: -2000 })),
   make(30, { at10: 100, result: 'win', finalDiff: 1000 }),
 ];
@@ -200,5 +204,21 @@ assert.equal(risk.blowLoss.k, 2);
 for (const key of ['throw', 'comeback', 'behind', 'blowLoss']) {
   assert.equal(risk.keys[key].length, risk[key].k, `${key} 的明细数应与命中数一致`);
 }
+/* 14. 两档门槛：3,000 是默认档，5,000 只收更严的局；分母必须跟着门槛走。 */
+assert.equal(risk.tiers[3000].throw.n, 5);
+assert.equal(risk.tiers[3000].throw.k, 2);
+assert.equal(risk.tiers[3000].comeback.n, 7);
+assert.equal(risk.tiers[3000].comeback.k, 2);
+assert.equal(risk.tiers[5000].throw.n, 2, '5,000 档只收达到更严门槛的局');
+assert.equal(risk.tiers[5000].throw.k, 2);
+assert.equal(risk.tiers[5000].comeback.n, 2);
+assert.equal(risk.tiers[5000].comeback.k, 2);
+for (const threshold of [3000, 5000]) {
+  for (const key of ['throw', 'comeback']) {
+    assert.equal(risk.tiers[threshold].keys[key].length, risk.tiers[threshold][key].k,
+      `${threshold} 档 ${key} 的明细数应与该档命中数一致`);
+  }
+}
+assert.ok(risk.tiers[5000].throw.n < risk.tiers[3000].throw.n, '门槛更严，分母只减不增');
 
 console.log('cross-analytics: all assertions passed');

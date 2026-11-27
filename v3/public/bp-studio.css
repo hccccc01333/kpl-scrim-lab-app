@@ -224,12 +224,17 @@
   font-size: 11px; font-weight: 800;
 }
 
-/* 弹层 */
+/* 弹层：用 Popover API 放进 top layer，别处再高的 z-index 也压不到它。
+   定位交给浏览器（CSS Anchor Positioning + position-try），不再用 JS 量矩形。 */
 .bps-pop {
-  position: absolute; z-index: 90;
-  top: calc(100% + 8px); left: 0;
-  width: min(680px, calc(100vw - 32px));
-  max-height: min(70vh, 620px); overflow: auto;
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(680px, calc(100vw - 24px));
+  max-height: min(70dvh, 640px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 16px;
   border: 1px solid var(--bps-line);
   border-radius: 16px;
@@ -237,9 +242,28 @@
   box-shadow: 0 30px 80px -30px rgba(10, 40, 34, .45), 0 2px 8px rgba(10, 40, 34, .08);
   animation: bps-pop .16s var(--ease, ease) both;
 }
-.bps-pop.is-right { left: auto; right: 0; }
-.bps-pop.is-up { top: auto; bottom: calc(100% + 8px); }
+/* Baseline 默认：支持锚定位时按触发按钮定位，贴边/翻转由浏览器尝试，
+   逻辑方向关键字同时兼容 RTL；只滚动浮层本身，不再套一层窄滚动区。 */
+@supports (anchor-name: --bps-anchor) {
+  .bps-pop {
+    position-area: block-end span-inline-end;
+    position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  }
+}
+/* 轻量回退：没有锚定位的浏览器沿用原来的相对定位，不引入第三方库。 */
+@supports not (anchor-name: --bps-anchor) {
+  .bps-pop { position: absolute; top: calc(100% + 8px); left: 0; }
+  .bps-pop.is-right { left: auto; right: 0; }
+  .bps-pop.is-up { top: auto; bottom: calc(100% + 8px); }
+}
 .bps-pop[hidden] { display: none; }
+.bps-pop-hint {
+  margin: 10px 2px 0; padding: 8px 10px;
+  border: 1px dashed var(--bps-line); border-radius: 9px;
+  background: var(--bps-paper-2);
+  color: var(--bps-muted); font-size: 12px; line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 @keyframes bps-pop { from { opacity: 0; transform: translateY(-6px); } }
 .bps-pop-head {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -300,20 +324,32 @@
 .bps-chip[aria-pressed="true"] em { color: #9ed7c6; }
 .bps-chip em { font-style: normal; color: var(--bps-quiet); font-size: 11px; }
 
-/* 战队选择 */
+/* 战队选择：文字不截断，滚动只发生在浮层外层（内层曾套 380px 窄滚动区）。 */
 .bps-team-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 6px; max-height: 380px; overflow: auto; padding: 2px;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px; padding: 2px;
 }
 .bps-team-option {
-  display: flex; align-items: center; gap: 9px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr);
+  align-items: center; gap: 9px; min-width: 0;
   padding: 8px 10px; border-radius: 10px;
   border: 1px solid transparent; text-align: left;
 }
+.bps-team-option > span:last-child { min-width: 0; }
 .bps-team-option:hover { background: var(--bps-wash); }
 .bps-team-option[aria-pressed="true"] { border-color: var(--bps-accent); background: var(--bps-wash); }
-.bps-team-option b { font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bps-team-option small { display: block; color: var(--bps-quiet); font-size: 11px; }
+.bps-team-option b {
+  display: block; font-size: 13px; font-weight: 650; line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.bps-team-option small {
+  display: block; color: var(--bps-quiet); font-size: 11px;
+  line-height: 1.4; overflow-wrap: anywhere;
+}
+/* 精确文字对齐：裁掉字体上下的固有留白，不用负 margin 目测微调。 */
+@supports (text-box: trim-both cap alphabetic) {
+  .bps-team-option b, .bps-pop-head b { text-box: trim-both cap alphabetic; }
+}
 .bps-team-mark {
   flex: 0 0 auto; display: grid; place-items: center;
   width: 30px; height: 30px; border-radius: 9px;
@@ -1133,11 +1169,35 @@
 /* 03 破解：单英雄 Ban 手序 + 双人组合应对（浅白、无圆环重叠） */
 .bps-subblock-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .bps-subblock-head b { font-size: 14px; color: var(--bps-ink); }
-.bps-banhero { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--bps-line-soft); }
+/* Ban 行：头像列固定成 30×30 的方块，斜线用同一个 inset / 圆角贴在方块上，
+   和头像一起被 grid 居中；文字按 cap 基线对齐，不靠缩放或负 margin 目测凑。 */
+.bps-banhero {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center; gap: 10px; padding: 7px 0;
+  border-bottom: 1px solid var(--bps-line-soft);
+}
 .bps-banhero:last-child { border-bottom: 0; }
-.bps-banhero-main { flex: 1 1 120px; min-width: 0; }
-.bps-banhero-main b { display: block; font-size: 13.5px; color: var(--bps-text); }
-.bps-banhero-main small { color: var(--bps-muted); font-size: 11.5px; }
+.bps-ban-face {
+  position: relative; display: inline-grid; place-items: center;
+  inline-size: 30px; block-size: 30px; line-height: 0; flex: none;
+}
+.bps-ban-face .bps-p {
+  display: block; inline-size: 30px; block-size: 30px;
+  border-radius: 6px; object-fit: cover;
+}
+.bps-ban-face::after {
+  content: ''; position: absolute; inset: 0; border-radius: 6px;
+  background: linear-gradient(to top right,
+    transparent calc(50% - 1.5px), var(--bps-quiet, #75837d) calc(50% - 1.5px),
+    var(--bps-quiet, #75837d) calc(50% + 1.5px), transparent calc(50% + 1.5px));
+  pointer-events: none;
+}
+.bps-banhero-main { min-width: 0; }
+.bps-banhero-main b { display: block; font-size: 13.5px; color: var(--bps-text); line-height: 1.35; }
+.bps-banhero-main small { display: block; color: var(--bps-muted); font-size: 11.5px; line-height: 1.35; }
+@supports (text-box: trim-both cap alphabetic) {
+  .bps-banhero-main b, .bps-banhero-main small { text-box: trim-both cap alphabetic; }
+}
 .bps-banhero-main small b { display: inline; color: var(--bps-accent); }
 .bps-banhands { display: flex; gap: 4px; }
 .bps-bhcell {

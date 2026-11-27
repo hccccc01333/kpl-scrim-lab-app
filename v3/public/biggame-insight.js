@@ -143,7 +143,9 @@ function deltaFor(metric, mode, view) {
 
 function deltaText(metric, delta) {
   const digits = metric.kind === 'num' && metric.unit === 'gold' ? 0 : 1;
-  const unit = metric.kind === 'num' ? (metric.unit === 'gold' ? '' : ' 次') : 'pp';
+  /* 赛训组口径：对比列写百分号，数值不变（19.4pp → 19.4%）。
+     底层仍是「当前值 − 基准值」的百分点差，只把展示单位改成 %。 */
+  const unit = metric.kind === 'num' ? (metric.unit === 'gold' ? '' : ' 次') : '%';
   const abs = digits ? Math.abs(delta).toFixed(digits) : Math.round(Math.abs(delta)).toLocaleString('zh-CN');
   return `${delta > 0 ? '↑' : '↓'} ${abs}${unit}`;
 }
@@ -1797,9 +1799,13 @@ export function renderCompSystem(insight, ui, h) {
     <b>${esc(item.title)}</b><p>${esc(item.detail)}</p>
   </div>`).join('');
   const outcomeScope = ['all', 'own', 'foe'].includes(ui.poolOutcomeScope) ? ui.poolOutcomeScope : 'all';
+  /* 赛训组口径：窄屏只放得下「总共 / 我方 / 敌方」，完整语义放到 title / aria-label，
+     data-bgx-pool-outcome 的取值不变（all/own/foe），功能语义不跟着改。 */
   const outcomeTabs = `<div class="bgx-seg bgv-pool-scope" role="group" aria-label="英雄池胜负统计视角">${[
-    ['all', '总胜负'], ['own', '只看我方'], ['foe', '只看对方'],
-  ].map(([key, label]) => `<button type="button" data-bgx-pool-outcome="${key}" aria-pressed="${outcomeScope === key}">${label}</button>`).join('')}</div>`;
+    ['all', '总共', '总胜负：双方使用这个英雄时所在队伍的胜负'],
+    ['own', '我方', '只看我方：只统计我方使用这个英雄时的胜负'],
+    ['foe', '敌方', '只看对方：只统计对方使用这个英雄时的胜负'],
+  ].map(([key, label, title]) => `<button type="button" data-bgx-pool-outcome="${key}" aria-pressed="${outcomeScope === key}" title="${esc(title)}" aria-label="${esc(title)}">${label}</button>`).join('')}</div>`;
   const outcomeNote = outcomeScope === 'own' ? '角标只统计我方使用这个英雄时的胜负。'
     : outcomeScope === 'foe' ? '角标只统计对方使用这个英雄时的胜负。'
       : '角标统计双方使用这个英雄时，所在队伍的胜负。';

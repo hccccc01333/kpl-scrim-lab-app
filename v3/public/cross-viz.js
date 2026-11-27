@@ -6,6 +6,7 @@
  */
 
 import { glyph } from './ui-icons.js';
+import { BIG_LEAD_AT10 } from './cross-analytics.js';
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -441,17 +442,28 @@ function economy(chart, ctx) {
     <div class="xv-legend-row"><span><i class="is-win"></i>赢的局</span><span><i class="is-loss"></i>输的局</span><span class="xv-arrow-key"><b class="up">↑</b> 优势 <b class="down">↓</b> 劣势</span></div>`
   );
   const flips = chart.flips || {};
+  /* 3,000 / 5,000 两档分别给逐局名单；没有 tiers 的老数据退回单一默认档，不空白。 */
+  const tierList = (flips.tiers && flips.tiers.length)
+    ? flips.tiers
+    : [{ threshold: BIG_LEAD_AT10, throw: flips.throw || [], comeback: flips.comeback || [] }];
   const buckets = [
-    { key: 'throw', label: '被翻盘局', hint: '10 分钟领先 1,000 金币以上，最后输掉', cls: 'is-loss', games: flips.throw || [] },
-    { key: 'comeback', label: '翻盘局', hint: '10 分钟落后 1,000 金币以上，最后赢下', cls: 'is-win', games: flips.comeback || [] },
+    { key: 'throw', label: '被翻盘局', side: 'lead', word: '领先', tail: '最后输掉' },
+    { key: 'comeback', label: '翻盘局', side: 'behind', word: '落后', tail: '最后赢下' },
   ];
-  const flipsHtml = buckets.map((b) => `<div class="xv-flip ${b.cls}">
-    <div class="xv-flip-head"><b>${esc(b.label)}</b><span>${b.games.length} 局</span></div>
-    ${b.games.length
-      ? `<div class="xv-flip-games">${b.games.map((g) => `<a href="#match/${encodeURIComponent(g.key)}" class="xv-flip-game" ${tip(`${esc(g.label)}：10 分钟 ${signed(g.at10)}，终局 ${signed(g.final)} 金币`)}><span>${esc(g.label)}</span><b>${signed(g.at10)}</b></a>`).join('')}</div>`
-      : '<p class="xv-note">这批没有这样的局。</p>'}
-    <p class="xv-note">${esc(b.hint)}。数值是 10 分钟「本队减对手」金币。</p>
-  </div>`).join('');
+  const flipsHtml = buckets.map((b) => {
+    const tiers = tierList.map((t) => ({ threshold: t.threshold, games: t[b.key] || [] }));
+    const wordClass = b.side === 'lead' ? 'xv-lead-word' : 'xv-behind-word';
+    return `<div class="xv-flip is-${b.side}">
+      <div class="xv-flip-head"><b>${esc(b.label)} · <em class="${wordClass}">${b.word}</em></b><span>≥${BIG_LEAD_AT10.toLocaleString('zh-CN')} 档 ${tiers[0].games.length} 局</span></div>
+      <div class="xv-tier-grid">${tiers.map((t) => `<section class="xv-tier is-${b.side}">
+        <header><b>≥${t.threshold.toLocaleString('zh-CN')} 金币</b><span>${t.games.length} 局</span></header>
+        ${t.games.length
+          ? `<div class="xv-flip-games">${t.games.map((g) => `<a href="#match/${encodeURIComponent(g.key)}" class="xv-flip-game" ${tip(`${esc(g.label)}：10 分钟 ${signed(g.at10)}，终局 ${signed(g.final)} 金币`)}><span>${esc(g.label)}</span><b>${signed(g.at10)}</b></a>`).join('')}</div>`
+          : '<p class="xv-note">这一档没有这样的局。</p>'}
+      </section>`).join('')}</div>
+      <p class="xv-note">10 分钟<em class="${wordClass}">${b.word}</em>达到该档门槛，${b.tail}。数值是 10 分钟「本队减对手」金币。</p>
+    </div>`;
+  }).join('');
   const B = view(`<div class="xv-flips">${flipsHtml}</div>`);
   return shell({ ...chart, id: chart.id || 'economy' }, ctx, '赢 / 输曲线', '翻盘局分布', A, B);
 }

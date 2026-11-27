@@ -9,7 +9,7 @@
  * 「环比」= 同一筛选条件下、紧邻的等长上一段时间；全部时间没有上一段，就不给环比。
  */
 
-import { analyzeCohort, fmt, LANES, internals } from './cross-analytics.js';
+import { analyzeCohort, fmt, LANES, internals, LEAD_TIERS, BIG_LEAD_AT10 } from './cross-analytics.js';
 import { renderViz } from './cross-viz.js';
 import { glyph } from './ui-icons.js';
 
@@ -758,26 +758,31 @@ export function createCrossPage(h) {
     const thrown = Math.min(losses, (risk.throw && risk.throw.k) || 0);
     const games = lead.games || [];
     const detail = games.length
-      ? `领先明细：${games.slice(0, 6).map((g) => `${esc(g.label)} <b>${gold(g.at10)}</b>`).join('、')}${games.length > 6 ? ` 等 ${games.length} 局` : ''}。`
+      ? `<em class="xw-lead-word">领先</em>明细：${games.slice(0, 6).map((g) => `${esc(g.label)} <b>${gold(g.at10)}</b>`).join('、')}${games.length > 6 ? ` 等 ${games.length} 局` : ''}。`
       : '';
+    /* 两档门槛都写在结论里：≥3,000（默认档）与 ≥5,000（更严档）样本量并列。 */
+    const tierLine = LEAD_TIERS.map(({ threshold, word }) =>
+      `≥${threshold.toLocaleString('zh-CN')}（${word}领先）${(lead.tiers?.[threshold] || {}).n || 0} 局`).join(' · ');
     let main = '', note = '';
     if (lead.n) {
       const adv = gold(lead.avgAt10);
+      const head = `<b>${lead.n}</b> 局 10 分钟平均<em class="xw-lead-word">领先</em> <b>${adv}</b> 金币，`;
       if (!lead.wins && thrown === losses) {
-        main = `<b>${lead.n}</b> 局 10 分钟平均领先 <b>${adv}</b> 金币，结果 <b>0 胜 ${losses} 负</b>，全被翻盘。`;
+        main = `${head}结果 <b>0 胜 ${losses} 负</b>，全被翻盘。`;
         note = `10 分钟的经济优势一分都没兑现，先复盘 10 分钟后的资源兑现和团战决策。${detail}`;
       } else if (lead.wins > losses) {
-        main = `<b>${lead.n}</b> 局 10 分钟平均领先 <b>${adv}</b> 金币，赢下 <b>${lead.wins}</b> 局，前中期优势兑现了。`;
+        main = `${head}赢下 <b>${lead.wins}</b> 局，前中期优势兑现了。`;
         note = `保持这套前中期节奏。${detail}`;
       } else {
-        main = `<b>${lead.n}</b> 局 10 分钟平均领先 <b>${adv}</b> 金币，但只赢下 <b>${lead.wins}</b> 局，兑现不稳定。`;
+        main = `${head}但只赢下 <b>${lead.wins}</b> 局，兑现不稳定。`;
         note = `重点看丢掉的 ${losses} 局是怎么被追回来的。${detail}`;
       }
     } else {
-      main = `这批局没有 10 分钟领先 <b>1,000</b> 金币的样本。`;
+      main = `这批局没有 10 分钟<em class="xw-lead-word">领先</em> ≥${BIG_LEAD_AT10.toLocaleString('zh-CN')} 金币的样本。`;
       note = '';
     }
-    return `<div class="xw-verdict"><p class="xw-verdict-main">${main}</p>${note ? `<p class="xw-verdict-take">${note}</p>` : ''}</div>`;
+    const take = [note, tierLine].filter(Boolean).join(' ');
+    return `<div class="xw-verdict"><p class="xw-verdict-main">${main}</p>${take ? `<p class="xw-verdict-take">${take}</p>` : ''}</div>`;
   }
 
   const tile = ({ label, value, unit = '', sub = '', delta = '' }) =>
@@ -794,6 +799,12 @@ export function createCrossPage(h) {
     const flips = {
       throw: flipOf(risk.keys && risk.keys.throw),
       comeback: flipOf(risk.keys && risk.keys.comeback),
+      /* 图 6 同时给 3,000 / 5,000 两档逐局名单，按同一套 key 反查，口径与计数一致。 */
+      tiers: LEAD_TIERS.map(({ threshold }) => ({
+        threshold,
+        throw: flipOf(risk.tiers?.[threshold]?.keys?.throw),
+        comeback: flipOf(risk.tiers?.[threshold]?.keys?.comeback),
+      })),
     };
     return module({
       id: 'ingame-economy', span: 12, kicker: '赛中 · 经济路径', meta: `${path.curve.length ? '4 个阶段锚点' : '过程样本不足'}`,
@@ -864,23 +875,52 @@ export function createCrossPage(h) {
 
   function leadModule(a) {
     const risk = a.risk;
+    /* 同一指标在两档门槛下各算一份；3,000 档是默认档，5,000 档只在下面并列展示。 */
+    const tierRisk = (threshold, field) => risk.tiers?.[threshold]?.[field] || risk[field] || { k: 0, n: 0 };
     const rows = [
-      { key: 'throw', label: '大优被翻', k: risk.throw.k, n: risk.throw.n, hint: '10 分钟领先 1,000 金币以上，最后输掉' },
-      { key: 'comeback', label: '大劣翻盘', k: risk.comeback.k, n: risk.comeback.n, hint: '10 分钟落后 1,000 金币以上，最后赢下' },
-      { key: 'behind', label: '10 分钟落后', k: risk.behind.k, n: risk.behind.n, hint: '落后就算，没有 1,000 金币门槛' },
-      { key: 'blowLoss', label: '终局被打穿', k: risk.blowLoss.k, n: risk.blowLoss.n, hint: '终局落后 10,000 金币以上' },
-    ].map((x) => ({ ...x, keys: (risk.keys && risk.keys[x.key]) || [] })).filter((x) => num(x.k));
+      {
+        key: 'throw', label: '大优被翻', side: 'lead', field: 'throw',
+        hint: (t) => `10 分钟<em class="xw-lead-word">领先</em> ≥${t.toLocaleString('zh-CN')} 金币，最后输掉`,
+      },
+      {
+        key: 'comeback', label: '大劣翻盘', side: 'behind', field: 'comeback',
+        hint: (t) => `10 分钟<em class="xw-behind-word">落后</em> ≥${t.toLocaleString('zh-CN')} 金币，最后赢下`,
+      },
+      {
+        key: 'behind', label: '10 分钟落后', side: 'behind', k: risk.behind.k, n: risk.behind.n,
+        hint: '<em class="xw-behind-word">落后</em>就算，没有金币门槛',
+      },
+      {
+        key: 'blowLoss', label: '终局被打穿', side: 'behind', k: risk.blowLoss.k, n: risk.blowLoss.n,
+        hint: '终局<em class="xw-behind-word">落后</em> 10,000 金币以上',
+      },
+    ].map((x) => ({
+      ...x,
+      main: x.field ? tierRisk(BIG_LEAD_AT10, x.field) : { k: x.k, n: x.n },
+      keys: (risk.keys && risk.keys[x.key]) || [],
+    })).filter((x) => num(x.main.k));
     const openKey = state.games.startsWith('risk:') ? state.games.slice(5) : '';
     const openRow = rows.find((x) => x.key === openKey);
+    const tierChips = (x) => LEAD_TIERS.map(({ threshold, word }) => {
+      const r = tierRisk(threshold, x.field);
+      const sideWord = x.side === 'lead' ? '领先' : '落后';
+      return `<span class="xw-tier is-${x.side}"><b>≥${threshold.toLocaleString('zh-CN')}</b><em>${word}${sideWord}</em> ${r.k}/${r.n} 局</span>`;
+    }).join('');
     return module({
       id: 'ingame-lead', span: 5, kicker: '赛中 · 领先守成', meta: `${risk.at10.n} 局有 10 分钟经济差`,
-      title: rows.length ? `大优被翻 <em>${risk.throw.k}</em> 局，大劣翻盘 <em>${risk.comeback.k}</em> 局` : '领先守成',
-      body: `<div class="xw-counts">${rows.map((x) => `<div class="xw-count-row${openKey === x.key ? ' is-open' : ''}">
-        <b>${x.k}</b><span class="xw-count-label">${esc(x.label)}<small><strong>符合条件 ${x.n} 局</strong> · ${esc(x.hint)}</small></span>
+      title: rows.length
+        ? `大优被翻 <em>${tierRisk(BIG_LEAD_AT10, 'throw').k}</em> 局，大劣翻盘 <em>${tierRisk(BIG_LEAD_AT10, 'comeback').k}</em> 局`
+        : '领先守成',
+      body: `<div class="xw-counts">${rows.map((x) => `<div class="xw-count-row is-${x.side}${openKey === x.key ? ' is-open' : ''}">
+        <b>${x.main.k}</b><span class="xw-count-label">
+          <span class="xw-count-name">${esc(x.label)}</span>
+          <small><strong>符合条件 ${x.main.n} 局</strong> · ${x.field ? x.hint(BIG_LEAD_AT10) : x.hint}</small>
+          ${x.field ? `<span class="xw-tier-line">${tierChips(x)}</span>` : ''}
+        </span>
         ${x.keys.length ? gamesBtn(`risk:${x.key}`, x.keys.length, openKey === x.key) : ''}
       </div>`).join('')}</div>
       ${openRow ? gamesPanel(a, risk.keys[openRow.key], `${openRow.label}：${risk.keys[openRow.key].length} 局`) : ''}`,
-      note: '左侧大数字是命中局数；右侧“符合条件”是该指标分母。四类样本可能重叠，不能相加。',
+      note: '左侧大数字与「符合条件」按 ≥3,000 档统计；≥5,000 是更严档位的同一指标，两档不能相加。四类样本也可能重叠，不能相加。',
     });
   }
 

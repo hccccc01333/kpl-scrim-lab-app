@@ -1593,6 +1593,33 @@
   .xw-count-row { grid-template-columns: 64px minmax(0, 1fr); gap: 12px; }
   .xw-count-row .xw-more { grid-column: 2; justify-self: start; }
 }
+/* 领先守成：按「领先 / 落后」着色（不是按胜负），3,000 / 5,000 两档并列。
+   flex-wrap + minmax(0,1fr) 保证窄屏换到第二行而不是把卡片撑破。 */
+.xw-count-row.is-lead > b { color: var(--ds-pos); }
+.xw-count-row.is-behind > b { color: var(--ds-neg); }
+.xw-lead-word { color: var(--ds-pos); font-style: normal; font-weight: 700; }
+.xw-behind-word { color: var(--ds-neg); font-style: normal; font-weight: 700; }
+.xw-count-name { display: block; min-width: 0; overflow-wrap: anywhere; }
+.xw-tier-line { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; min-width: 0; margin-block-start: 4px; }
+.xw-tier {
+  --tier-fg: #16352f;
+  --tier-bg: color-mix(in srgb, var(--ds-pos) 15%, var(--surface));
+  display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px;
+  min-width: 0; max-width: 100%; padding: 3px 8px; border-radius: 6px;
+  background: var(--tier-bg);
+  color: var(--tier-fg);              /* fallback for browsers without contrast-color() */
+  color: contrast-color(var(--tier-bg));
+  font-size: 11.5px; line-height: 1.45; font-variant-numeric: tabular-nums;
+  text-box: trim-both cap alphabetic; /* trim the font's ghost leading around the badge */
+}
+.xw-tier.is-behind { --tier-bg: color-mix(in srgb, var(--ds-neg) 15%, var(--surface)); }
+.xw-tier b { font-weight: 750; }
+.xw-tier em { font-style: normal; opacity: .86; }
+:root[data-theme='dark'] .xw-tier { --tier-fg: #f0f7f5; }
+@media (max-width: 720px) {
+  .xw-tier-line { gap: 4px 6px; }
+  .xw-tier { font-size: 11px; padding: 2px 6px; }
+}
 
 /* 资源兑现：四步卡 */
 .xw-steps {
@@ -2089,6 +2116,21 @@
 .xv-flip-game b { font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .xv-flip.is-loss .xv-flip-game b { color: var(--warning); }
 .xv-flip.is-win .xv-flip-game b { color: var(--accent); }
+/* 翻盘局分布也按「领先 / 落后」分色，并把 3,000 / 5,000 两档各占一格。 */
+.xv-flip.is-lead .xv-flip-head b, .xv-flip.is-lead .xv-flip-game b { color: var(--ds-pos); }
+.xv-flip.is-behind .xv-flip-head b, .xv-flip.is-behind .xv-flip-game b { color: var(--ds-neg); }
+.xv-lead-word { color: var(--ds-pos); font-style: normal; font-weight: 700; }
+.xv-behind-word { color: var(--ds-neg); font-style: normal; font-weight: 700; }
+.xv-tier-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; }
+.xv-tier {
+  display: grid; align-content: start; gap: 8px; min-width: 0;
+  padding: 10px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+.xv-tier > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 10px; }
+.xv-tier > header b { font-size: 13px; font-variant-numeric: tabular-nums; }
+.xv-tier > header span { font-size: 11.5px; color: var(--quiet); font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) { .xv-flips { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) { .xv-tier-grid { grid-template-columns: minmax(0, 1fr); } }
 .xv-phases { display: grid; gap: 12px; }
 .xv-phase { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .xv-phase-label { font-size: 13.5px; color: var(--text); }

@@ -10,9 +10,9 @@
 1. **身份来自阵容签名**：把对面 5 个 playerId 排序后哈希，得到不可变的 cluster id。
    重导入、改名、合并都不会改变它；原始比赛数据一个字节都不动。
 2. **人工决策单独存放**：命名 / 教练 / 合并写进 team_clusters 表，覆盖层生效。
-3. **兜底显示名**：「待命名战队 #N」，N 按首次出现时间排序，只用于显示，不落库。
-   选手占位名是「待命名选手 #N」，两者前缀不同，避免混用。
-   教练改完名立刻全量生效，历史对局不用批量改。
+3. **未确认的簇不造名字**：name / displayName 都留空（= 未标注对手），
+   只用 id / number 稳定引用这一簇去完成归属。选手占位名是「待命名选手 #N」，
+   两者口径分开；教练改完名立刻全量生效，历史对局不用批量改。
 4. **合并分两级**：5 人完全相同 → 自动同一 cluster；3–4 人重合 → 只给"建议合并"，
    必须人工确认，避免把轮换阵容误判成同一支队。前后两段时间不重叠、只剩
    2 个老队员，也算「阵容更替」候选，同样只提示不自动合并。
@@ -35,6 +35,7 @@ import unicodedata
 from pathlib import Path
 
 import team_style
+from workspace_store import real_team_name
 
 # 重合几个人才提示"可能是同一支队"（整队 5 人，3 人以上才给建议）
 SUGGEST_OVERLAP = 3
@@ -63,9 +64,9 @@ def clean_name(value) -> str:
 
 
 def is_placeholder(name) -> bool:
-    """「待命名战队 #N」是显示兜底，不是主数据里的真实队名。"""
-    text = clean_name(name)
-    return not text or text.startswith('待命名')
+    """占位名判定统一走 workspace_store，避免本模块和接口/前端各写一套口径。"""
+    from workspace_store import is_placeholder_team
+    return is_placeholder_team(clean_name(name))
 
 
 def load_workspace_teams(db_path, *, include_archived=False) -> dict:
@@ -930,7 +931,9 @@ def _list_teams(panels, db_path, own_name='') -> dict:
         override_name = clean_name(override.get('name'))
         name = workspace_name if workspace_name and not is_placeholder(workspace_name) else override_name
         coach = clean_name(workspace_team.get('coach')) or clean_name(override.get('coach'))
-        display = name or f'待命名战队 #{index}'
+        # 未确认签名簇不再造「待命名战队 #N」：displayName 与 name 同口径，
+        # 都是空串 = 未标注对手；id / number 仍可稳定引用这一簇去完成归属。
+        display = real_team_name(name)
         if not name:
             pending += 1
         decided = item['wins'] + item['losses']
@@ -956,7 +959,10 @@ def _list_teams(panels, db_path, own_name='') -> dict:
 
     suggestions = []
     numbers = {item['id']: item['number'] for item in teams}
-    names = {item['id']: item['displayName'] for item in teams}
+    # 合并建议是内部操作标签，可以显示中性序号，但绝不能伪装成真实队名；
+    # 「未标注对手 #N」同样被 is_placeholder_team 识别，不会流进可选对手。
+    names = {item['id']: item['displayName'] or f'未标注对手 #{item["number"]}'
+             for item in teams}
     for suggestion in built['suggestions']:
         source = clusters.get(suggestion['from'], {})
         target = clusters.get(suggestion['into'], {})
@@ -1594,9 +1600,10 @@ def opponent_players(camp_dir, db_path):
     for mapped in accounts.values():
         team_id = mapped.get('teamId')
         if team_id and team_id not in by_id:
+            extra_name = real_team_name(mapped.get('teamName'))
             extras[team_id] = {'id': team_id,
-                               'displayName': mapped.get('teamName') or '未命名战队',
-                               'named': bool(mapped.get('teamName'))}
+                               'displayName': extra_name,
+                               'named': bool(extra_name)}
             buckets.setdefault(team_id, [])
 
     for player_id, record in seen.items():

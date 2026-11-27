@@ -408,25 +408,39 @@ def grade(subject: str, field: str, value, doc: dict | None = None, minutes=None
     return {'level': level, 'label': dict(LEVELS)[level]}
 
 
-_HERO_LANE_TYPES_CACHE = None
+_HERO_TAGS_PATH = Path(__file__).resolve().parent / 'resources' / 'hero_tags.json'
+_HERO_LANE_TYPES_CACHE = {'stamp': None, 'lanes': None}
 
 
 def _hero_lane_types() -> dict:
-    """英雄 × 实际分路 → 分类，来自 resources/hero_tags.json（只读、懒加载）。"""
+    """英雄 × 实际分路 → 分类，来自 resources/hero_tags.json。
+
+    规则中心保存英雄标签会回写该文件，缓存按 mtime 自失效；读取失败不缓存
+    空结果，文件修好后下一次调用即可生效。
+    """
     global _HERO_LANE_TYPES_CACHE
-    if _HERO_LANE_TYPES_CACHE is not None:
-        return _HERO_LANE_TYPES_CACHE
-    path = Path(__file__).resolve().parent / 'resources' / 'hero_tags.json'
     try:
-        raw = json.loads(path.read_text(encoding='utf-8'))
-        _HERO_LANE_TYPES_CACHE = {
+        stat = _HERO_TAGS_PATH.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = None
+    cache = _HERO_LANE_TYPES_CACHE
+    if stamp is not None and cache['stamp'] == stamp and cache['lanes'] is not None:
+        return cache['lanes']
+    try:
+        raw = json.loads(_HERO_TAGS_PATH.read_text(encoding='utf-8'))
+        heroes = raw.get('heroes')
+        if not isinstance(heroes, dict):
+            raise ValueError('hero_tags.json 缺少 heroes 对象')
+        lanes = {
             str(name): (value.get('lanes') or {})
-            for name, value in (raw.get('heroes') or {}).items()
+            for name, value in heroes.items()
             if isinstance(value, dict)
         }
-    except (OSError, ValueError):
-        _HERO_LANE_TYPES_CACHE = {}
-    return _HERO_LANE_TYPES_CACHE
+    except (OSError, ValueError, TypeError):
+        lanes = {}
+    cache.update(stamp=stamp, lanes=lanes)
+    return lanes
 
 
 def subject_for(position, hero=None, player=None, hero_tags=None) -> str:

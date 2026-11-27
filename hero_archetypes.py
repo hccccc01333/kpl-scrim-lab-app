@@ -16,8 +16,14 @@
 - 按该局实际分路取类型；实际分路未登记时返回「待分类」，不猜；
 - 只有分路缺失时才退回默认分路（字典第一个分路）；
 - 「待分类」不计入类型占比分母，且必须单独计数展示。
+
+运行时以 resources/hero_tags.json 为准（规则中心「英雄标签」保存后回写它），
+按文件 mtime 失效缓存；文件缺失/损坏时回退下面的静态表，保证离线可用。
 """
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 LANES = ('对抗路', '打野', '中路', '发育路', '游走')
 
@@ -318,19 +324,86 @@ HERO_LABEL_META: dict[str, dict] = {
 }
 
 
+# ── 实时标签（规则中心数据源，优先于离线静态表）─────────────────────────
+# 规则中心「英雄标签」页编辑的是 hero_tags.json 的 heroes[name].lanes 与
+# defaultLane，保存后直接回写该文件；静态表只是导入脚本的离线快照。类型判定
+# 必须跟随文件变化，否则图7五路类型 / BP 类型博弈 / 战队页口径与规则中心脱节。
+_TAGS_PATH = Path(__file__).resolve().parent / 'resources' / 'hero_tags.json'
+_TAGS_CACHE: dict = {'stamp': None, 'heroes': None}
+_TYPE_ALIASES = {'法核': '法刺'}  # 老缓存写法归一到五路 12 类
+
+
+def _norm_type(value) -> str:
+    text = str(value or '').strip()
+    return _TYPE_ALIASES.get(text, text)
+
+
+def _live_heroes() -> dict | None:
+    """英雄 → {'lanes': {分路: 类型}, 'default': 默认分路}，按 mtime 失效。
+
+    文件缺失 / JSON 损坏 / 结构不对时返回 None，调用方回退静态 HERO_ARCHETYPES；
+    失败状态不缓存，文件修好后下一次调用即可读到（不要求重启进程）。
+    """
+    try:
+        stat = _TAGS_PATH.stat()
+        stamp = (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+    if _TAGS_CACHE['stamp'] == stamp and _TAGS_CACHE['heroes'] is not None:
+        return _TAGS_CACHE['heroes']
+    try:
+        doc = json.loads(_TAGS_PATH.read_text(encoding='utf-8'))
+        raw = doc.get('heroes')
+        if not isinstance(raw, dict):
+            raise ValueError('hero_tags.json 缺少 heroes 对象')
+        heroes = {}
+        for name, hero in raw.items():
+            if not isinstance(hero, dict):
+                continue
+            source = hero.get('lanes')
+            lanes = ({str(lane): _norm_type(t) for lane, t in source.items()
+                      if str(t or '').strip()} if isinstance(source, dict) else {})
+            default = str(hero.get('defaultLane') or '').strip()
+            if default not in lanes:
+                default = next(iter(lanes), '')
+            heroes[str(name)] = {'lanes': lanes, 'default': default}
+    except (OSError, ValueError, TypeError):
+        return None
+    _TAGS_CACHE.update(stamp=stamp, heroes=heroes)
+    return heroes
+
+
 def default_lane(hero: str) -> str | None:
-    """英雄的默认分路（表里登记的第一个分路）；未收录返回 None。"""
-    lanes = HERO_ARCHETYPES.get(str(hero or ''))
+    """英雄的默认分路：优先实时标签，未收录时用静态表的第一个分路。"""
+    name = str(hero or '')
+    live = _live_heroes()
+    if live is not None:
+        row = live.get(name)
+        if row is not None:
+            return row['default'] or None
+    lanes = HERO_ARCHETYPES.get(name)
     return next(iter(lanes), None) if lanes else None
 
 
 def archetype_of(hero: str, lane: str | None = None) -> str:
-    """按实际分路取打法类型。
+    """按实际分路取打法类型（实时标签优先）。
 
     有实际分路但表里没登记该分路时返回「待分类」，不拿默认分路的类型硬套
     （例如元歌出现在发育路，不能标成战边）。只有分路未知时才退回默认分路。
+    英雄未登记在实时标签里时回退离线静态表；都没有则「待分类」。
     """
-    lanes = HERO_ARCHETYPES.get(str(hero or ''))
+    name = str(hero or '')
+    live = _live_heroes()
+    if live is not None:
+        row = live.get(name)
+        if row is not None:
+            lanes = row['lanes']
+            if not lanes:
+                return OTHER
+            if lane:
+                return lanes.get(str(lane), OTHER)
+            return lanes.get(row['default']) or next(iter(lanes.values()))
+    lanes = HERO_ARCHETYPES.get(name)
     if not lanes:
         return OTHER
     if lane:

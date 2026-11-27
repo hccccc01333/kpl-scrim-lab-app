@@ -83,6 +83,14 @@
 .bgv-toolbar-left { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .bgv-toolbar-count { color: var(--bgx-quiet); font-size: .625rem; font-variant-numeric: tabular-nums; }
 .bgv-base-tag { padding: 3px 9px; border: 1px solid var(--bgx-line); border-radius: 999px; color: var(--bgx-muted); font-size: .625rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 图 6 筛选按钮：标签收成「总共 / 我方 / 敌方」后，窄屏靠换行而不是截断。 */
+.bgv-pool-head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-inline-size: 0; }
+.bgv-pool-scope { flex-wrap: wrap; min-inline-size: 0; }
+.bgv-pool-scope > button { text-box: trim-both cap alphabetic; }
+@media (max-width: 640px) {
+  .bgv-pool-scope { inline-size: 100%; }
+  .bgv-pool-scope > button { flex: 1 1 auto; min-inline-size: 0; padding-inline: 6px; }
+}
 .bgv-board-scroll {
   --bgv-w-metric: 168px; --bgv-w-series: 104px; --bgv-w-compare: 116px;
   overflow: auto; max-inline-size: 100%; max-block-size: min(560px, 72vh);

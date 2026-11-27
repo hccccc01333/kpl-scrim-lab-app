@@ -741,7 +741,7 @@ def v3_index():
 _CROSS_LANES = ('对抗路', '打野', '中路', '发育路', '游走')
 _CROSS_VECTOR_CACHE = {}
 _CROSS_VECTOR_BY_KEY = {}
-_CROSS_VECTOR_SCHEMA = 11
+_CROSS_VECTOR_SCHEMA = 12
 _CROSS_VECTOR_DISK = DATA_DIR / '.cache' / 'cross-vectors.json'
 _CROSS_VECTOR_DISK_LOCK = Lock()
 _CROSS_VECTOR_DISK_STATE = {'loaded': False, 'entries': {}}
@@ -2101,12 +2101,14 @@ def tempo(repo=Depends(repository), values=Depends(filters)):
 
 @router.get('/api/opponents')
 def opponents(repo=Depends(repository), values=Depends(filters)):
+    from workspace_store import is_placeholder_team
     scoped, warnings = repo._selected_matches(values)
     match_rows = {row['key']: row for row in repo.matches(values)['matches']}
     groups = defaultdict(list)
     unknown = 0
     for item in scoped:
-        if not item.get('opponent'):
+        # 占位队名（历史数据或显示兜底）不是分析对象，统一按「未知」处理。
+        if not item.get('opponent') or is_placeholder_team(item['opponent']):
             unknown += 1
             continue
         groups[item['opponent']].append(item)
@@ -2895,15 +2897,19 @@ def own_team():
 
 
 def _identity_teams():
-    """命名字段里可选的战队：工作区主数据，待命名的排在后面。"""
+    """命名字段里可选的战队：只给真实战队卡，占位队不是可选项。
+
+    升级保留 data/ 时库里可能残留历史上建出来的「待命名战队 #N」，
+    以前这里把它们也列出来，命名选手时一不小心就落进占位队。
+    """
     import workspace_store
     try:
-        teams = workspace_store.Workspace(DB).list_teams()
+        teams = workspace_store.Workspace(DB).list_named_teams()
     except sqlite3.Error:
         return []
     rows = [{'id': team['id'], 'name': team['name'], 'coach': team.get('coach') or '',
-             'named': not str(team['name']).startswith('待命名')} for team in teams]
-    rows.sort(key=lambda item: (not item['named'], item['name']))
+             'named': True} for team in teams]
+    rows.sort(key=lambda item: item['name'])
     return rows
 
 
@@ -3763,6 +3769,7 @@ def team_bp():
         cached = _TEAM_BP_CACHE.get(stamp)
         if cached is not None:
             return cached
+    from workspace_store import is_placeholder_team
     clusters = team_clusters.list_teams(camp_dir, DB)
     teams = []
     for team in clusters['teams']:
@@ -3782,11 +3789,16 @@ def team_bp():
                 picks[entry['name']] += 1
             for entry in bp['bans'][side]:
                 bans[entry['name']] += 1
-        teams.append({'id': team['id'], 'name': team['displayName'],
-                      'games': team['matches'], 'available': available,
+        pending = is_placeholder_team(team.get('displayName'))
+        teams.append({
+            'id': team['id'],
+            'name': _neutral_pending_team(team['id']) if pending else team['displayName'],
+            'pending': pending,
+            'games': team['matches'], 'available': available,
                       'picks': [{'hero': k, 'count': v} for k, v in picks.most_common()],
                       'bans': [{'hero': k, 'count': v} for k, v in bans.most_common()]})
-    payload = {'teams': teams}
+    payload = {'teams': teams,
+               'pendingHint': '未确认对手只显示稳定标识；请到「工作台 → 对手归属」建卡后再分析。'}
     if stamp[0] is not None:
         if len(_TEAM_BP_CACHE) >= _TEAM_BP_CACHE_MAX:
             _TEAM_BP_CACHE.clear()
@@ -3805,6 +3817,15 @@ def team_deep(team: str = ''):
     deep = team_clusters.team_deep(camp_dir, DB, team)
     if deep is None:
         raise HTTPException(404, '战队不存在：没有匹配的营地十人面板。')
+    from workspace_store import is_placeholder_team
+    info = deep.get('team') or {}
+    if is_placeholder_team(info.get('displayName')) or is_placeholder_team(info.get('name')):
+        # 未确认的签名簇可以逐局看，但不能顶着假队名当战队档案。
+        info['displayName'] = _neutral_pending_team(team)
+        info['name'] = ''
+        info['pending'] = True
+        info['pendingHint'] = ('这组对手尚未确认战队卡；请到「工作台 → 对手归属」'
+                               '确认真实队名后再对外使用分析结论。')
     return deep
 
 
@@ -3844,6 +3865,11 @@ def bp_board_stamp():
     return (_camp_dir_stamp(MATCHES.parent / 'camp_details'), _dataset_stamp())
 
 
+def _neutral_pending_team(team_id):
+    """未确认签名簇的稳定标识：用 id 尾段，不编造「待命名战队 #N」这种假队名。"""
+    return '未确认对手 · ' + str(team_id or '')[-6:]
+
+
 def _card_team_by_seq():
     """营地 seq → 赛训组建卡 / 匹配页确认的对手战队卡。
 
@@ -3873,6 +3899,7 @@ def bp_board():
     """
     import team_clusters
     from bp_camp import parse_camp_bp
+    from workspace_store import is_placeholder_team
     import team_style
     stamp = bp_board_stamp()
     if stamp[0] is not None:
@@ -3910,8 +3937,11 @@ def bp_board():
         enemy = 'right' if own == 'left' else 'left'
         team = seq_team.get(seq) or {}
         card = cards.get(seq)
-        if card:
-            team = dict(team, id=card['id'], displayName=card['name'])
+        if card and not is_placeholder_team(card['name']):
+            # 已确认的战队卡优先；占位卡不是真名，不能当权威名字覆盖。
+            team = dict(team, id=card['id'], name=card['name'], displayName=card['name'])
+        real_name = str(team.get('name') or '').strip()
+        named = bool(real_name) and not is_placeholder_team(real_name)
         start = panel.get('start') or ''
         resolved = day_of.get(start)
         day = resolved.isoformat() if resolved else ''
@@ -3927,8 +3957,13 @@ def bp_board():
         games.append({
             'key': seq, 'start': start, 'day': day,
             'session': day.replace('-', '/') + ' 训练赛' if day else '训练赛',
-            'opponent': team.get('displayName') or '未归属对手',
-            'teamId': team.get('id') or '', 'coach': coach_of.get(team.get('id'), ''),
+            # 未确认的对手不再拿「待命名战队 #N」当队名：那只是聚类显示兜底，
+            # 不是真队名。置空后 normalize_scrims 不会造出假对手行，
+            # 本队统计仍保留；未确认局数在 options 里单独提示去「对手归属」处理。
+            'opponent': real_name if named else '',
+            'unnamed': not named,
+            'teamId': team.get('id') if named else '',
+            'coach': coach_of.get(team.get('id'), '') if named else '',
             'result': 'win' if result else ('loss' if result is False else None),
             'side': panel['own'], 'ownSide': own,
             'duration': bp.get('duration'), 'mapName': bp.get('mapName'),
@@ -3991,7 +4026,11 @@ def bp_board():
         if not seqs:
             continue
         cluster_teams.append({
-            'id': cluster['id'], 'name': cluster['displayName'],
+            # 「待命名战队 #N」只是签名簇的显示兜底，不是队名；这里用稳定短 id
+            # 当临时标识，并标记 pending，避免下游把它当可选对手 / 分析对象。
+            'id': cluster['id'],
+            'name': _neutral_pending_team(cluster['id']),
+            'pending': True,
             'coach': coach_of.get(cluster['id'], ''),
             'matches': len(seqs),
             'wins': sum(1 for seq in seqs if by_seq.get(seq, {}).get('result') is True),
@@ -4000,6 +4039,7 @@ def bp_board():
     payload = {
         'games': games,
         'teams': list(card_teams.values()) + cluster_teams,
+        'pendingTeams': sum(1 for team in cluster_teams if team.get('pending')),
         'heroMeta': hero_meta,
         'source': '营地终局名单 · 按规则自动还原（征召 18 / KPL 18|20 / 排位·巅峰 20）',
     }
@@ -4560,6 +4600,7 @@ def bp_studio_page(request: Request):
     from bp_studio import (SCHEMA, build_studio, compare_break, hero_catalog,
                            league_catalog, lineup_diff, opponent_studio, plan,
                            target_break, team_catalog, _hero_rates, _strong_combos)
+    from workspace_store import is_placeholder_team
     import kpl_bp
 
     values = request.query_params
@@ -4618,8 +4659,6 @@ def bp_studio_page(request: Request):
                 source, f'当前数据源还没有{label}的 BP 记录（{rule}）。')
     if not primary:
         return _bp_studio_unavailable(source, '当前数据源还没有可用的 BP 记录。')
-    scrim_names = sorted({str(game.get('enemy')) for game in own_games
-                          if str(game.get('team')) == '本队' and game.get('enemy')})
     # 首屏不知道默认值：由服务端一次性解析，避免前端先空跑一次再重取。
     if team == '__auto__':
         team = '本队' if source == 'scrim' else ''
@@ -4704,8 +4743,15 @@ def bp_studio_page(request: Request):
         page['combos'][f'{key}Total'] = len(rows)
         page['combos'][key] = rows[:45]
     catalog = league_catalog(raw)
-    scrim_opponents = sorted({str(game.get('enemy')) for game in own_games
-                              if str(game.get('team')) == '本队' and game.get('enemy')})
+    # 训练赛对手下拉只收真实队名。bp_board 已把未确认局的 opponent 置空，
+    # 这里再按占位规则挡一层，防止旧缓存/其它入口把「待命名战队 #N」带进来。
+    scrim_opponents = sorted({str(game.get('enemy')).strip() for game in own_games
+                              if str(game.get('team')) == '本队'
+                              and str(game.get('enemy') or '').strip()
+                              and not is_placeholder_team(game.get('enemy'))})
+    unassigned_games = sum(1 for game in own_games
+                           if str(game.get('team')) == '本队'
+                           and is_placeholder_team(game.get('enemy')))
     report = {
         'schema': SCHEMA,
         'source': source,
@@ -4722,9 +4768,16 @@ def bp_studio_page(request: Request):
         'options': {
             'leagues': catalog['leagues'], 'years': catalog['years'],
             'kinds': catalog['kinds'],
-            'teams': team_catalog(raw),
+            'teams': [row for row in team_catalog(raw)
+                      if not is_placeholder_team(row.get('name'))],
             'heroes': hero_catalog(kpl_games),
             'scrimOpponents': scrim_opponents,
+            # 未确认对手不编造名字：前端在数据来源说明里提示去「对手归属」确认。
+            'unassignedOpponents': unassigned_games,
+            'opponentPendingHint': (
+                f'还有 {unassigned_games} 局对手未确认，暂不列为可选对手；'
+                '请到「工作台 → 对手归属」把这几局归到真实战队后再来分析。'
+                if unassigned_games else ''),
             'teamIcons': _team_icons(),
             'recentDays': recent_days,
             'recentOptions': [7, 15, 30, 90, 180, 365],
@@ -7658,6 +7711,7 @@ def rules_center_get(kind: str):
 @router.post('/api/v3/rules-center/{kind}')
 def rules_center_set(kind: str, payload: dict = Body(...)):
     """整体覆盖保存；revision 不匹配返回 409。"""
+    global _CROSS_VECTOR_SCHEMA
     if kind not in _RC_SPECS:
         raise HTTPException(404, '未知的规则类型')
     try:
@@ -7681,6 +7735,15 @@ def rules_center_set(kind: str, payload: dict = Body(...)):
         _rc_check(kind, doc)
         doc['revision'] = current_rev + 1
         _rc_write(kind, doc)
+        if kind == 'hero_tags':
+            # 英雄×分路类型变了：_cross_vector 预算的 arch/archDefault 驱动
+            # 图7五路类型 / BP工作台 / 战队档案，内存与磁盘缓存必须一起失效。
+            _CROSS_VECTOR_CACHE.clear()
+            _CROSS_VECTOR_BY_KEY.clear()
+            with _CROSS_VECTOR_DISK_LOCK:
+                _CROSS_VECTOR_DISK_STATE['loaded'] = False
+                _CROSS_VECTOR_DISK_STATE['entries'] = {}
+            _CROSS_VECTOR_SCHEMA += 1
     return {'ok': True, 'revision': doc['revision'], 'updatedAt': doc['updatedAt']}
 
 

@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from workspace_store import Workspace  # noqa: E402
+from workspace_store import Workspace, real_team_name  # noqa: E402
 import team_clusters  # noqa: E402
 
 
@@ -137,10 +137,13 @@ def main():
     if not any(team['id'] == own_team_id for team in ws.list_teams(include_archived=True)):
         ws.upsert_team(own_team_id, name='我方战队', source='migration')
 
-    # 对手战队：按聚类结果建 teams（命名走覆盖层，未命名的用「待命名战队 #N」）
+    # 对手战队：只建真实命名的队。未确认签名的簇没有队名，不再写占位队污染工作区。
     clusters = team_clusters.list_teams(camp_dir, db_path, '我方战队')
     for team in clusters['teams']:
-        ws.upsert_team(team['id'], name=team['displayName'], source='migration')
+        name = real_team_name(team.get('displayName'))
+        if not name:
+            continue
+        ws.upsert_team(team['id'], name=name, source='migration')
     team_names = {team['id']: team['name'] for team in ws.list_teams(include_archived=True)}
 
     written = 0

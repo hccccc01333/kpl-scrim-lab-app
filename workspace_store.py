@@ -463,6 +463,36 @@ def _loads(value, default=None):
 PLAYER_PLACEHOLDER_PREFIX = '待命名选手 #'
 LEGACY_PLAYER_PLACEHOLDERS = {'新选手', '未命名', '未命名选手', '选手'}
 
+# 战队占位名的唯一识别口径。战队分析 / BP 工作台 / 身份命名都调用
+# is_placeholder_team()，不再各处写 startswith('待命名')：漏掉一处就会让
+# 「待命名战队 #N」漏进可选对手或分析报告。
+TEAM_PLACEHOLDER_PREFIX = '待命名'
+LEGACY_TEAM_PLACEHOLDERS = {'待命名', '待命名战队', '待命名队伍', '未命名战队',
+                            '未命名队伍', '未标注对手'}
+
+
+def is_placeholder_team(name) -> bool:
+    """战队占位名识别（含「待命名战队 #N」）；空值同样视为未命名。
+
+    只用于读口径（禁止把占位当真队名/可选对手/分析对象），不禁止历史库里
+    残留的占位记录被读出——清版本保留 data 时它们仍在，必须能识别而不是假装不存在。
+    """
+    text = str(name or '').strip()
+    return (not text or text in LEGACY_TEAM_PLACEHOLDERS
+            or text.startswith(TEAM_PLACEHOLDER_PREFIX)
+            or text.startswith('未标注对手'))
+
+
+def real_team_name(name) -> str:
+    """数据源头统一口径：占位名/空名一律归一化为空串，真实队名原样返回。
+
+    match_facts / analysis_profile / team_clusters 都用这个函数，避免任何一层
+    再把未确认签名簇「显示兜底」成假队名。空串经 is_placeholder_team 仍判为占位，
+    下游现有的过滤与中性标识逻辑无需改动。
+    """
+    text = str(name or '').strip()
+    return '' if is_placeholder_team(text) else text
+
 
 def is_placeholder_player(name) -> bool:
     """选手占位名与战队占位名（待命名战队 #N）分开识别。"""
@@ -747,6 +777,15 @@ class Workspace:
             connection.close()
         return [self._team_row(row) for row in rows]
 
+    def list_named_teams(self, *, include_archived=False):
+        """可选战队：排除占位名/空名，供对手下拉、命名表单、分析对象使用。
+
+        老版本升级保留了 data/，库里可能仍有「待命名战队 #N」这类历史行；
+        在读取口径挡住它们，比清缓存或前端隐藏更可靠（别的入口仍会读到）。
+        """
+        return [team for team in self.list_teams(include_archived=include_archived)
+                if not is_placeholder_team(team.get('name'))]
+
     def own_team_id(self) -> str:
         """本队战队的稳定 ID（本队页填队名时由 identity_service 写入）。"""
         connection = self.connect()
@@ -772,6 +811,8 @@ class Workspace:
     def _team_row(row):
         item = {key: row[key] for key in row.keys()}
         item['aliases'] = json.loads(item.get('aliases') or '[]')
+        # 供上层区分「真实战队卡」与历史占位行；不改动 name 原值，避免破坏写入口径。
+        item['placeholder'] = is_placeholder_team(item.get('name'))
         return item
 
     def merge_teams(self, source_id, target_id, *, actor=None):

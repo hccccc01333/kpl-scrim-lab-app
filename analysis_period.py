@@ -40,6 +40,9 @@ MIN_SAMPLE = 3            # 比较类结论的最小样本（docs/period_brief.m
 COMPARABLE_EPS = 0.5      # 小于这个变化视为「基本持平」
 FINDING_MIN_SCORE = 2.0   # 低于这个分值不占发现卡
 LEAD_AT10 = 1000          # 十分钟经济领先阈值（与 analysis_economy.SIGNIFICANT_LEAD 同口径）
+# 注意：这是「周期简报」的口径，不是跨场分析卡片的后端来源。跨场分析卡片在
+# cross-analytics.js 里算，2026-11 起用 3,000 / 5,000 两档（LEAD_TIERS）。
+# 别为了「统一」直接改这里：会让 lead_hold / comeback / watch 的既有回归样本失真。
 DEFAULT_SOURCE = 'db,bundle'
 RANK_MIN_PEERS = 5        # 同期对手少于这个数就不给排名（避免 2/3 这种假精确）
 RANK_TIERS = ((75.0, 'lead', '领先'), (25.0, 'mid', '中等'), (0.0, 'behind', '落后'))

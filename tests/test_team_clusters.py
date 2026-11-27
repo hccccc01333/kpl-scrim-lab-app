@@ -72,7 +72,10 @@ def test_rename_and_merge_stay_consistent_with_workspace(tmp_path):
     ])
     db = tmp_path / 'db.sqlite3'
     result = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')
-    assert [team['displayName'] for team in result['teams']] == ['待命名战队 #1', '待命名战队 #2']
+    # 未确认的签名簇不再造「待命名战队 #N」：名字留空 = 未标注对手，
+    # 仍可用 id / number 稳定引用去完成命名。
+    assert [team['displayName'] for team in result['teams']] == ['', '']
+    assert [team['named'] for team in result['teams']] == [False, False]
 
     team_clusters.rename_team(db, result['teams'][0]['id'], '青岚', '张教练')
     renamed = team_clusters.list_teams(tmp_path / 'camp_details', db, '本队')

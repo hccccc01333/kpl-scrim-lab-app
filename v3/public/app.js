@@ -1393,10 +1393,18 @@ function matchPasses(match, mf) {
   return true;
 }
 
+/* 占位队名（待命名战队 #N）是签名聚类的显示兜底，不是对手：
+   老数据升级后仍在，筛选项里出现它就会诱导教练按假队名筛。 */
+const isPlaceholderOpponent = (name) => {
+  const text = String(name || '').trim();
+  return !text || /^待命名/.test(text);
+};
+
 function matchFacets(matches) {
   const opponents = new Map(), heroes = new Map(), days = new Map();
   for (const match of matches || []) {
-    const name = String(match.opponent || '').trim() || MF_NONE;
+    const name = isPlaceholderOpponent(match.opponent) ? MF_NONE
+      : String(match.opponent).trim();
     opponents.set(name, (opponents.get(name) || 0) + 1);
     for (const hero of match.heroes || []) heroes.set(hero, (heroes.get(hero) || 0) + 1);
     const day = String(match.date || '');
@@ -3511,6 +3519,14 @@ async function ensureModules(name) {
     jobs.push(importOnce('./rules-center.js?v=20261127csmin1').then(({ createRulesCenter }) => {
       mods.rulesCenter = createRulesCenter({ esc, API_BASE, icon, notify: comboNotify,
         portrait, getMetadata: () => metadata });
+      // 规则中心保存英雄标签后，同一次 SPA 会话也刷新 metadata（combo / 分路筛选 / 评级兜底）。
+      document.addEventListener('rules-center:saved', (event) => {
+        if (event.detail?.kind !== 'hero_tags') return;
+        fetch(API_BASE + '/api/metadata', { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((meta) => { if (meta) metadata = meta; })
+          .catch(() => {});
+      });
     }));
   }
   if (name === 'snapshot-center' && !mods.snapshotCenter) {

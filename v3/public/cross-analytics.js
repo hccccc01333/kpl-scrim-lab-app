@@ -23,6 +23,17 @@ export const PHASES = [
   { key: 'late', label: '10 分钟后' },
 ];
 const PHASE_CHECKPOINTS = [0, 5, 10, 15, 20, 25];
+/* 10 分钟金币门槛（赛训组 2026-11 口径）：从单一 1,000 改为两档——
+   ≥3,000「明显」优势/劣势、≥5,000「巨大」优势/劣势。
+   两档同时计算、同时展示，不互相替代；顶层 throw/comeback 仍取 3,000 档，
+   旧调用方（逐局 drilldown、翻盘局分布图）不用改结构也能跟着新门槛走。
+   注意：analysis_period.LEAD_AT10 是「周期简报」的另一套口径，不是这里的来源。 */
+export const LEAD_TIERS = [
+  { threshold: 3000, word: '明显' },
+  { threshold: 5000, word: '巨大' },
+];
+export const BIG_LEAD_AT10 = LEAD_TIERS[0].threshold;
+export const HUGE_LEAD_AT10 = LEAD_TIERS[1].threshold;
 
 /* ── 基础统计 ─────────────────────────────────────────────────── */
 const num = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -398,14 +409,15 @@ function winConditionOf(drivers) {
 }
 
 /* ── 3. 稳定性与风险 ──────────────────────────────────────────── */
-function riskOf(rows) {
+/* 单档风险账本：3,000 / 5,000 各算一份，命中数与分母必须同档，不能串档相除。 */
+function riskTierOf(rows, threshold) {
   const withAt10 = rows.filter((r) => num(r.at10));
   const decided = rows.filter((r) => r.decided);
   const withFinal = decided.filter((r) => num(r.final));
   const lead = withAt10.filter((r) => r.at10 > 0);
-  const bigLead = withAt10.filter((r) => r.at10 >= 1000);
+  const bigLead = withAt10.filter((r) => r.at10 >= threshold);
   const behind = withAt10.filter((r) => r.at10 < 0);
-  const bigBehind = withAt10.filter((r) => r.at10 <= -1000);
+  const bigBehind = withAt10.filter((r) => r.at10 <= -threshold);
   const leadWin = lead.filter((r) => r.result === 'win').length;
   const throwN = bigLead.filter((r) => r.result === 'loss').length;
   const comebackN = bigBehind.filter((r) => r.result === 'win').length;
@@ -414,11 +426,8 @@ function riskOf(rows) {
   const blowLoss = withFinal.filter((r) => r.final <= -10000).length;
   const blowWin = withFinal.filter((r) => r.final >= 10000).length;
   const shrink = bigLead.filter((r) => num(r.final) && r.final < r.at10).length;
-  const dist = (key) => {
-    const a = vals(rows.map((r) => r[key]));
-    return { n: a.length, p10: quantile(a, 0.1), p25: quantile(a, 0.25), p50: median(a), p75: quantile(a, 0.75), p90: quantile(a, 0.9) };
-  };
   return {
+    threshold,
     lead: rateOf(leadWin, lead.length),
     throw: rateOf(throwN, bigLead.length),
     comeback: rateOf(comebackN, bigBehind.length),
@@ -427,7 +436,6 @@ function riskOf(rows) {
     long: rateOf(longGames, withDur),
     blowLoss: rateOf(blowLoss, withFinal.length),
     blowWin: rateOf(blowWin, withFinal.length),
-    at10: dist('at10'), final: dist('final'), duration: dist('duration'),
     /* 每个计数都带上「是哪几局」：页面上的「看这 11 局」直接用这份 key 列表。 */
     keys: {
       lead: lead.map((r) => r.key),
@@ -440,6 +448,20 @@ function riskOf(rows) {
       blowLoss: withFinal.filter((r) => r.final <= -10000).map((r) => r.key),
       blowWin: withFinal.filter((r) => r.final >= 10000).map((r) => r.key),
     },
+  };
+}
+
+function riskOf(rows) {
+  const base = riskTierOf(rows, BIG_LEAD_AT10);
+  const tiers = {};
+  for (const { threshold } of LEAD_TIERS) tiers[threshold] = riskTierOf(rows, threshold);
+  const dist = (key) => {
+    const a = vals(rows.map((r) => r[key]));
+    return { n: a.length, p10: quantile(a, 0.1), p25: quantile(a, 0.25), p50: median(a), p75: quantile(a, 0.75), p90: quantile(a, 0.9) };
+  };
+  return {
+    ...base, tiers,
+    at10: dist('at10'), final: dist('final'), duration: dist('duration'),
   };
 }
 
@@ -779,7 +801,7 @@ function earlyOf(rows) {
 }
 
 /* ── 6. 经济路径与滚雪球 ──────────────────────────────────────── */
-/* 一句「10 分钟领先 1,000 金币的 2 局」教练第一反应是「哪 2 局、各领先多少」。
+/* 一句「10 分钟领先 ≥3,000 金币的 2 局」教练第一反应是「哪 2 局、各领先多少」。
    标签复用逐局卡片口径：日期 + 对手（有局序再带 G），缺字段退回 key，不补 0。 */
 const gameLabelOf = (r) => {
   const day = String(r.date || '').slice(5);
@@ -807,7 +829,15 @@ function pathOf(rows) {
     const l = vals(rows.filter((r) => r.result === 'loss').map((r) => r.seg[p.key]));
     return { ...p, win: median(w), loss: median(l), nWin: w.length, nLoss: l.length };
   });
-  const lead10 = rows.filter((r) => num(r.at10) && r.at10 >= 1000);
+  const leadAt = (threshold) => rows.filter((r) => num(r.at10) && r.at10 >= threshold);
+  const lead10 = leadAt(BIG_LEAD_AT10);
+  const leadTiers = Object.fromEntries(LEAD_TIERS.map(({ threshold }) => {
+    const list = leadAt(threshold);
+    return [threshold, {
+      n: list.length,
+      wins: list.filter((r) => r.result === 'win').length,
+    }];
+  }));
   const leadWin = lead10.filter((r) => r.result === 'win').length;
   const leadShrink = lead10.filter((r) => num(r.final) && r.final < r.at10).length;
   const lateGain = vals(rows.filter((r) => num(r.at10) && num(r.final)).map((r) => r.final - r.at10));
@@ -846,7 +876,9 @@ function pathOf(rows) {
     lead: {
       n: lead10.length, wins: leadWin, rate: rateOf(leadWin, lead10.length), shrink: rateOf(leadShrink, lead10.length),
       games: leadGames,
-      /* 教练问「领先那几局到底领先多少」，给这些局的 10 分钟平均金币，不给 1000 的门槛值。 */
+      /* 教练问「领先那几局到底领先多少」，给这些局各自的 10 分钟金币与均值，
+         不给固定门槛值；两档样本量分列在 tiers，口径一眼可对。 */
+      tiers: leadTiers,
       avgAt10: leadGames.length ? mean(leadGames.map((g) => g.at10)) : null,
     },
     lateGain: { n: lateGain.length, med: median(lateGain) },

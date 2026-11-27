@@ -18,16 +18,23 @@
 from __future__ import annotations
 
 import json
-import re
 import sqlite3
 import time
 from contextlib import closing
 
-from workspace_store import Workspace, is_placeholder_player
+from workspace_store import Workspace, is_placeholder_player, is_placeholder_team
 
 POSITIONS = ('对抗路', '打野', '中路', '发育路', '游走')
 PLATFORM = 'camp'
-PLACEHOLDER_TEAM = re.compile(r'^待命名')
+# 兼容旧调用方引用的名字；判定统一走 workspace_store.is_placeholder_team，
+# 避免这里的正则和前端/接口各自一套口径（「待命名队伍」等别名曾漏判）。
+class _PlaceholderTeam:
+    @staticmethod
+    def match(name):
+        return is_placeholder_team(name)
+
+
+PLACEHOLDER_TEAM = _PlaceholderTeam()
 
 
 def _text(value, limit=40):

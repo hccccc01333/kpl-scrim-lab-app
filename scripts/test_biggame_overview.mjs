@@ -86,7 +86,7 @@ assert.match(html, /\d+\/7 局/);
 /* 2. 基准只写一次，带历史样本量；对比列是 delta 胶囊。 */
 assert.match(html, /基准 同赛制历史 · 128 局/);
 assert.equal((html.match(/比同赛制历史/g) || []).length, 0);
-assert.match(html, /bgv-delta is-good"[^>]*>↑ 42\.1pp/);
+assert.match(html, /bgv-delta is-good"[^>]*>↑ 42\.1%/);
 assert.match(html, /bgv-delta is-bad"[^>]*>↓ 5,363/);
 assert.match(html, /bgv-delta is-na"[^>]*>— 无基准/);
 
@@ -116,7 +116,7 @@ assert.match(winHtml, /data-bgv-view="win" aria-pressed="true"/);
 assert.equal((winHtml.match(/data-bgv-game=/g) || []).length, 0);
 assert.match(winHtml, /4\/4/);
 
-/* 7. 关键 8 项按偏离 × 覆盖排序，一血（42.1pp）排在推塔（15pp）前。 */
+/* 7. 关键 8 项按偏离 × 覆盖排序，一血（42.1%）排在推塔（15%）前。 */
 const keyHtml = renderOverview(insight, { baseMode: 'format', metricGroup: 'key', overviewView: 'games' }, h);
 const order = ['一血', '推塔'].map((label) => keyHtml.indexOf(`>${label}</b>`));
 assert.ok(order[0] >= 0 && order[1] >= 0 && order[0] < order[1], '关键项按差异绝对值排序');

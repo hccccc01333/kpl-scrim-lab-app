@@ -1397,10 +1397,48 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
     def teams():
         # 战队聚合要读全部营地面板并做聚类；按营地/对局包/DB 指纹缓存，
         # 改名、合并、同步新面板都会换 key（invalidate_workspace_cache 也会清）。
-        return cached(
+        from workspace_store import is_placeholder_team
+
+        def normalize(report):
+            """真实战队卡优先；未确认的签名簇不再顶着「待命名战队 #N」当分析对象。
+
+            这些簇是读取时的显示兜底，不是库里的队名；清版本保留 data 后仍然
+            会被读出来，所以要在出口按规则归类，而不是靠前端隐藏或清缓存。
+            """
+            rows = []
+            pending = 0
+            for team in report.get('teams') or []:
+                row = dict(team)
+                real = str(row.get('name') or '').strip()
+                display = str(row.get('displayName') or '').strip()
+                placeholder = (not real or is_placeholder_team(real)
+                               or is_placeholder_team(display))
+                row['placeholder'] = placeholder
+                if placeholder:
+                    pending += 1
+                    row['displayName'] = '未确认对手 · ' + str(row.get('id') or '')[-6:]
+                    row['pendingHint'] = (
+                        '这一组对手还没有确认战队卡；请到「工作台 → 对手归属」'
+                        '归到真实战队后再分析，占位名不是队名。')
+                else:
+                    row['pendingHint'] = ''
+                rows.append(row)
+            # 真队名排前面：页面默认打开的就是已经建卡的对手。
+            rows.sort(key=lambda item: (item['placeholder'],
+                                        -(item.get('matches') or 0),
+                                        item.get('displayName') or ''))
+            result = dict(report)
+            result['teams'] = rows
+            result['pendingTeams'] = pending
+            result['pendingHint'] = (
+                f'另有 {pending} 组对手未确认（占位名不作为战队/对手分析对象），'
+                '请在「工作台 → 对手归属」确认后重新读取。' if pending else '')
+            return result
+
+        return normalize(cached(
             ('teams', source_stamp(camp_dir()), source_stamp(db_path),
              source_stamp(matches_dir), own_team_name()),
-            lambda: team_clusters.list_teams(camp_dir(), db_path, own_team_name()))
+            lambda: team_clusters.list_teams(camp_dir(), db_path, own_team_name())))
 
     # ---------------- 约定计划（教练登记） ----------------
     def plans_connection():
@@ -1419,8 +1457,35 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
 
     @router.get('/analysis/opponents')
     def opponent_profiles(min: int = 3):
+        """对手分析画像：未确认的签名簇不顶着「待命名战队 #N」出现。
+
+        analysis_profile.group_by_opponent 在读取时用占位名做显示兜底，
+        升级保留 data 后仍会读到；在接口出口按统一口径标记，真实队名优先。
+        """
         import analysis_profile
-        return analysis_profile.profiles(camp_dir(), db_path, min_games=max(1, min))
+        from workspace_store import is_placeholder_team
+        report = analysis_profile.profiles(camp_dir(), db_path, min_games=max(1, min))
+        rows = []
+        pending = 0
+        for item in report.get('profiles') or []:
+            row = dict(item)
+            if is_placeholder_team(row.get('name')):
+                pending += 1
+                row['name'] = '未确认对手 · ' + str(row.get('id') or '')[-6:]
+                row['pending'] = True
+                row['pendingHint'] = ('这组对手还没有确认战队卡；请到「工作台 → 对手归属」'
+                                      '归到真实战队后再看分析结论。')
+            else:
+                row['pending'] = False
+                row['pendingHint'] = ''
+            rows.append(row)
+        rows.sort(key=lambda item: (item['pending'], -(item.get('games') or 0),
+                                    item.get('name') or ''))
+        result = dict(report)
+        result['profiles'] = rows
+        result['pendingHint'] = (
+            f'另有 {pending} 组对手未确认，占位名不作为战队/对手分析对象。' if pending else '')
+        return result
 
     @router.get('/analysis/training-effect')
     def training_effect(session: str = ''):
@@ -2430,10 +2495,15 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         opponents = team_clusters.opponent_players(camp_dir(), db_path)
         overrides = team_clusters.load_overrides(db_path)
         coaches = []
+        from workspace_store import is_placeholder_team
         for team in opponents['teams']:
             override = overrides.get(team['id'], {})
+            name = team['displayName']
+            # 未确认对手不顶着占位名出现在教练档案里；用稳定 id 尾段做临时标识。
+            if is_placeholder_team(name):
+                name = '未确认对手 · ' + str(team['id'])[-6:]
             coaches.append({
-                'id': team['id'], 'name': team['displayName'], 'named': team['named'],
+                'id': team['id'], 'name': name, 'named': team['named'],
                 'coach': override.get('coach') or '',
                 'players': [{'id': p['id'], 'name': p['name'], 'lanes': p['lanes'], 'games': p['games']}
                             for p in team['players']],
