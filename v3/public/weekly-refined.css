@@ -167,3 +167,49 @@
   .report-sheet--weekly { background: #fff; border: 0; box-shadow: none; }
   .rl-mosaic > .rl-card, .report-match-overview { background: #fff; }
 }
+
+/* ── 组合卡：把「组合 / 局数 / 胜率」做成固定三列，数字和头像按视觉边界对齐。 ── */
+.report-sheet--weekly .rl-table-wrap { overflow-x: auto; }
+.report-sheet--weekly .rl-table-wrap .report-table { table-layout: fixed; width: 100%; border-collapse: collapse; }
+.report-sheet--weekly .rl-table-wrap .report-table th,
+.report-sheet--weekly .rl-table-wrap .report-table td {
+  padding: 9px 8px; border: 0; border-bottom: 1px solid var(--wr-rule);
+  vertical-align: middle; text-align: left;
+}
+.report-sheet--weekly .rl-table-wrap .report-table thead th {
+  color: var(--wr-mute); font-size: 0.625rem; font-weight: 700;
+  letter-spacing: .12em; border-bottom-color: var(--wr-rule);
+}
+.report-sheet--weekly .rl-table-wrap .report-table th:nth-child(2),
+.report-sheet--weekly .rl-table-wrap .report-table td:nth-child(2) { width: 44px; text-align: right; white-space: nowrap; }
+.report-sheet--weekly .rl-table-wrap .report-table th:last-child,
+.report-sheet--weekly .rl-table-wrap .report-table td:last-child { width: 210px; text-align: right; }
+.report-sheet--weekly .rl-table-wrap .report-table .num { font-variant-numeric: tabular-nums; }
+.report-sheet--weekly .rl-table-wrap .report-table td.is-good,
+.report-sheet--weekly .rl-table-wrap .report-table td.is-bad { font-size: 0.75rem; line-height: 1.35; }
+.report-sheet--weekly .rl-flag { display: block; margin-block-start: 4px; font-size: 0.625rem; font-style: normal; }
+.report-sheet--weekly .rl-pair { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.report-sheet--weekly .rl-pair-hero {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px;
+  font-size: 0.75rem; line-height: 1.2; white-space: nowrap;
+  text-box: trim-both cap alphabetic;
+}
+.report-sheet--weekly .rl-pair-hero em { text-box: trim-both cap alphabetic; }
+.report-sheet--weekly .rl-pair-hero .portrait { inline-size: 24px; block-size: 24px; }
+.report-sheet--weekly .rl-mosaic .rl-list li { grid-template-columns: 1fr; gap: 4px; }
+.report-sheet--weekly .rl-mosaic .rl-list b { display: block; }
+
+/* 高/低胜率组合给足宽度，重点对手独占一行；并强制表格不被窄容器查询拆成块。 */
+.report-sheet--weekly .rl-mosaic > .rl-card--table { grid-column: span 6; }
+.report-sheet--weekly .rl-mosaic > .rl-card--foes { grid-column: 1 / -1; }
+.report-sheet--weekly .rl-table-wrap table { display: table; }
+.report-sheet--weekly .rl-table-wrap thead { display: table-header-group; }
+.report-sheet--weekly .rl-table-wrap tbody { display: table-row-group; }
+.report-sheet--weekly .rl-table-wrap tr { display: table-row; margin: 0; border: 0; padding: 0; border-radius: 0; }
+.report-sheet--weekly .rl-table-wrap th,
+.report-sheet--weekly .rl-table-wrap td { display: table-cell; inline-size: auto; }
+.report-sheet--weekly .rl-table-wrap tbody th { position: static; }
+.report-sheet--weekly .rl-table-wrap .report-table th:nth-child(2),
+.report-sheet--weekly .rl-table-wrap .report-table td:nth-child(2) { width: 52px; }
+.report-sheet--weekly .rl-table-wrap .report-table th:last-child,
+.report-sheet--weekly .rl-table-wrap .report-table td:last-child { width: 190px; }

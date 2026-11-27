@@ -24,8 +24,13 @@ assert.match(css, /text-wrap: pretty/, '导语正文必须用 pretty 换行');
 assert.match(css, /@media \(forced-colors: active\) \{\s*\.report-lede/, '导语必须有强制颜色回退');
 assert.match(css, /counter-reset: weekly-section/, '章节必须有编辑式编号');
 assert.match(css, /"Songti SC"/, '标题必须有衬线字体栈');
-assert.match(html, /weekly-refined\.css\?v=20261127weeklyart3/, 'index.html 必须最后加载周报视觉层');
-assert.match(app, /features\.js\?v=20261127weeklyart3/, 'app.js 模块版本戳必须更新');
-assert.match(html, /features\.js\?v=20261127weeklyart3/, 'index.html 预取版本戳必须更新');
+assert.match(css, /\.rl-table-wrap \.report-table \{ table-layout: fixed; width: 100%/, '组合表必须固定三列');
+assert.match(css, /text-box: trim-both cap alphabetic/, '头像与文字必须按可见字形对齐');
+assert.match(css, /font-variant-numeric: tabular-nums/, '局数必须等宽对齐');
+assert.match(css, /\.rl-table-wrap tr \{ display: table-row/, '组合表不能被容器查询拆成块');
+assert.match(css, /\.rl-mosaic > \.rl-card--table \{ grid-column: span 6; \}/, '组合卡必须给足宽度');
+assert.match(html, /weekly-refined\.css\?v=20261127weeklyart5/, 'index.html 必须最后加载周报视觉层');
+assert.match(app, /features\.js\?v=20261127weeklyart5/, 'app.js 模块版本戳必须更新');
+assert.match(html, /features\.js\?v=20261127weeklyart5/, 'index.html 预取版本戳必须更新');
 
 console.log('weekly editorial layout: all assertions passed');
