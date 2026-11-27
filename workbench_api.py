@@ -21,7 +21,7 @@ def _router_facts(replays_dir, camp_dir, data_dir, db_path):
     lock = threading.Lock()
 
     def get():
-        key = match_facts.data_signature(replays_dir, camp_dir, db_path)
+        key = match_facts.data_signature(replays_dir, camp_dir, db_path, data_dir)
         with lock:
             if cache['key'] != key or cache['facts'] is None:
                 cache['facts'] = match_facts.load_facts(

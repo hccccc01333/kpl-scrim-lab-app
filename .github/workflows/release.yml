@@ -19,6 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # 手动发布时必须签出输入 tag，否则会把 main 的代码发布到旧 tag 下。
+          ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5

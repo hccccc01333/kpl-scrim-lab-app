@@ -381,6 +381,7 @@ def check_for_update(root: Path, current_version: str, force: bool = False,
     else:
         try:
             manifest, source = fetch_manifest(urls, timeout, root=root,
+                                              allow_http=_allow_http(),
                                               details=diagnostics)
         except Exception as exc:  # noqa: BLE001
             if cached:

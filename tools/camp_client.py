@@ -128,7 +128,12 @@ def call(endpoint: str, body: dict, timeout: int = 30) -> dict:
                           data=json.dumps(body, ensure_ascii=False).encode('utf-8'),
                           method='POST', headers=build_headers(account))
     with request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read(8 * 1024 * 1024).decode('utf-8', 'replace')
+        # 营地详情可能超过旧的 8MB 上限；read(n) 截断会让 json.loads 失败，
+        # 再回退到 raw 片段就等于整次响应静默丢失。
+        body = resp.read()
+        if len(body) > 64 * 1024 * 1024:
+            raise RuntimeError(f'{endpoint} 响应超过 64MB，已中止读取')
+        raw = body.decode('utf-8', 'replace')
         headers = {k.lower(): v for k, v in resp.headers.items()}
     if headers.get('encryptparamerr'):
         _raise_auth_error(headers['encryptparamerr'], '安全参数被拒')

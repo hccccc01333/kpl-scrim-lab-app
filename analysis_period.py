@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
-from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote, urlencode
 
@@ -90,6 +89,9 @@ def parse_period(kind='week', *, today=None, date_from=None, date_to=None):
         if start > end:
             raise ValueError('开始日期不能晚于结束日期')
 
+    # 「本期」不能包含未来的周末/月末；否则和上期的同进度窗口长度不等。
+    if kind in ('week', 'month'):
+        end = min(end, today)
     days = (end - start).days + 1
     prev_end = start - timedelta(days=1)
     if kind == 'today':
@@ -1398,20 +1400,37 @@ def _k(value):
     return f'{"+" if value >= 0 else "-"}{abs(value):,.0f} 金币'
 
 
-@lru_cache(maxsize=1)
+_HERO_ICON_CACHE = {}
+
+
 def _hero_icon_map():
-    """英雄名 → /catalog/icons/hero-<id>.png；目录缺失时返回空表，前端退回首字。"""
+    """英雄名 → /catalog/icons/hero-<id>.png；目录缺失时返回空表，前端退回首字。
+
+    catalog.json 会在运行时同步新英雄，无参 lru_cache 会让整个进程一直用旧图；
+    这里按文件指纹缓存，改完立即生效。
+    """
     path = Path(__file__).resolve().parent / 'resources' / 'catalog.json'
+    try:
+        info = path.stat()
+        key = (info.st_mtime_ns, info.st_size)
+    except OSError:
+        key = None
+    if key in _HERO_ICON_CACHE:
+        return _HERO_ICON_CACHE[key]
     try:
         payload = json.loads(path.read_text(encoding='utf-8'))
     except (OSError, ValueError):
-        return {}
-    entries = payload.get('entries') if isinstance(payload, dict) else payload
-    return {
-        str(entry.get('name')): str(entry.get('icon') or '')
-        for entry in (entries or [])
-        if entry.get('kind') == 'hero' and entry.get('name') and entry.get('icon')
-    }
+        result = {}
+    else:
+        entries = payload.get('entries') if isinstance(payload, dict) else payload
+        result = {
+            str(entry.get('name')): str(entry.get('icon') or '')
+            for entry in (entries or [])
+            if entry.get('kind') == 'hero' and entry.get('name') and entry.get('icon')
+        }
+    _HERO_ICON_CACHE.clear()
+    _HERO_ICON_CACHE[key] = result
+    return result
 
 
 def _team_totals(panel):

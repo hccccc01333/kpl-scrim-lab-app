@@ -501,9 +501,15 @@ export function createCompetitionsPage(h = {}) {
     const saveBtn = dialog.querySelector('[data-comp-formal-save]');
     const value = (fieldName) => String(form.elements[fieldName]?.value ?? '').trim();
     const lineup = value('lineup').split('\n').map((line) => line.trim()).filter(Boolean);
+    // 赛果选择是「我方胜/负」语义，而库里 winner 存的是绝对阵营；
+    // 必须按我方阵营换算，红方我方胜不能再被显示成失利。
+    const ownSide = value('ownSide') || 'blue';
+    const result = value('winner');
+    const winner = result === 'win' ? ownSide
+      : result === 'loss' ? (ownSide === 'blue' ? 'red' : 'blue') : null;
     const payload = {
       date: value('date'), opponent: value('opponent'), score: value('score'),
-      winner: value('winner') || null, competitionId: value('competitionId') || null,
+      ownSide, winner, competitionId: value('competitionId') || null,
       lineup: lineup.length ? lineup : null,
     };
     const splitList = (name) => value(name)
@@ -1185,7 +1191,7 @@ export function createCompetitionsPage(h = {}) {
             <label>对手 <input name="opponent" required placeholder="对手队名" autocomplete="off"></label>
             <label>比分 <input name="score" placeholder="如 3:1"></label>
             <label>归属赛事 <select name="competitionId"></select></label>
-            <label>赛果 <select name="winner"><option value="">未记录</option><option value="blue">我方胜</option><option value="red">我方负</option></select></label>
+            <label>赛果 <select name="winner"><option value="">未记录</option><option value="win">我方胜</option><option value="loss">我方负</option></select></label>
           </div>
           <label>阵容（可选，每行「阵营,位置,英雄」；留空 = 仅结果级）
             <textarea name="lineup" rows="4" placeholder="我方,对抗路,英雄名&#10;对方,中路,英雄名"></textarea></label>

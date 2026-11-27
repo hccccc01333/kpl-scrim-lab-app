@@ -28,6 +28,7 @@ export function createSourceHealthPage(h = {}) {
   let root = null;
   let controller = null;
   let timer = 0;
+  let deferred = 0;
   let generation = 0;
   let loading = false;
   let failed = '';
@@ -129,8 +130,12 @@ export function createSourceHealthPage(h = {}) {
       if (!response.ok) throw new Error(doc.detail || `接口返回 ${response.status}`);
       say(doc.message || '爬取任务已启动，卡片会显示进度。');
       notify?.(doc.message || '爬取任务已启动');
-      clearTimeout(timer);
-      timer = window.setTimeout(() => load(true), 1200);
+      if (button) button.disabled = false;
+      const ticket = generation;
+      clearTimeout(deferred);
+      deferred = window.setTimeout(() => {
+        if (root && ticket === generation) load(true);
+      }, 1200);
     } catch (error) {
       say(`启动失败：${error.message}`);
       notify?.(`启动失败：${error.message}`);
@@ -160,6 +165,8 @@ export function createSourceHealthPage(h = {}) {
   function dispose() {
     clearTimeout(timer);
     clearInterval(timer);
+    clearTimeout(deferred);
+    deferred = 0;
     timer = 0;
     controller?.abort();
     controller = null;

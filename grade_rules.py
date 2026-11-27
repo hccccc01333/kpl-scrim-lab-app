@@ -216,7 +216,8 @@ def _valid(doc: object) -> bool:
             thresholds = rule.get('thresholds')
             if not isinstance(thresholds, list) or len(thresholds) != 3:
                 return False
-            if not all(isinstance(x, (int, float)) for x in thresholds):
+            if not all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                       for x in thresholds):
                 return False
             if 'active' in rule and not isinstance(rule['active'], bool):
                 return False
@@ -309,7 +310,7 @@ def grade(subject: str, field: str, value, doc: dict | None = None):
     except (TypeError, ValueError):
         return None
     source = doc if doc is not None else read_saved()
-    if not source:
+    if not source or not source.get('subjects') or source.get('saved') is False:
         return None        # 未保存时不拿内置默认参与评级口径
     rules = normalize(source).get('subjects') or {}
     rule = rules.get(subject, {}).get(field)

@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -74,16 +75,27 @@ def read_installed_version(target: Path) -> str:
         if match:
             parse_version(match.group(1))
             return match.group(1)
-    except Exception:
-        pass
+    except FileNotFoundError:
+        return '0.0.0'
+    except (OSError, UnicodeError, ValueError) as exc:
+        # 文件被占用/损坏时静默降级成 0.0.0 会让更新器误判老版本并覆盖健康安装。
+        logging.warning('读取已安装版本失败：%s', exc)
+        raise
     return '0.0.0'
 
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix(path.suffix + '.tmp')
-    temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-    os.replace(temp, path)
+    fd, temp_name = tempfile.mkstemp(dir=str(path.parent),
+                                     prefix=f'.{path.name}.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
 
 
 def _read_json(path: Path):
@@ -155,9 +167,12 @@ def _atomic_copy(source: Path, destination: Path) -> None:
     os.close(fd)
     try:
         shutil.copyfile(source, temp_name)
-        if destination.exists():
+        try:
+            # os.replace 在 Windows 上原子覆盖，先删目标会留下文件消失的窗口。
+            os.replace(temp_name, destination)
+        except PermissionError:
             _force_unlink(destination)
-        os.replace(temp_name, destination)
+            os.replace(temp_name, destination)
     finally:
         Path(temp_name).unlink(missing_ok=True)
 
@@ -436,7 +451,9 @@ def _merge_bootstrap_backup(backup: Path, target: Path) -> str:
     candidates = sorted((item for item in root.glob(f'code-{safe}-*') if item.is_dir()),
                         key=lambda item: item.stat().st_mtime, reverse=True)
     if not candidates:
-        return previous
+        # 没有真正升级前的备份时不能声称回滚到旧版：清装备份里的 version.py
+        # 已经是新版本，返回旧号会让 wait_health 永远等不到服务。
+        return current
     source = candidates[0]
     payload = _read_json(source / 'backup.json') or {}
     for record in payload.get('files', []):
@@ -844,6 +861,9 @@ def restart_flow(target: Path | None = None, port: int | None = None) -> dict:
     except Exception as exc:  # noqa: BLE001
         if process is not None:
             _terminate(process)
+        # 健康检查超时也会走到这里；此时 last 还是空字典，必须重新读结果，
+        # 否则会误用只有几个新文件的 bootstrap 备份，留下混版安装。
+        last = read_last_result(target) or last
         # 清装失败时 last_result 指向保留旧文件的清装备份；引导备份只有几个新文件。
         backup_value = (last.get('backupDir') if last.get('ok') is False
                         else applied.get('backupDir'))

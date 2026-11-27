@@ -65,7 +65,7 @@ def _fetch_player(ws, player_id):
 def _fetch_team(ws, team_id):
     with closing(ws.connect()) as connection:
         row = connection.execute(
-            "SELECT id, name FROM teams WHERE id=? AND status='active'", (team_id,)).fetchone()
+            "SELECT id, name, aliases FROM teams WHERE id=? AND status='active'", (team_id,)).fetchone()
     return dict(row) if row else None
 
 

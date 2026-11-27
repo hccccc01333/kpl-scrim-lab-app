@@ -2290,8 +2290,14 @@ class Workspace:
             source, target = row['from_player_id'], row['to_player_id']
             for account_id in detail.get('accounts', []):
                 connection.execute('UPDATE player_accounts SET player_id=? WHERE id=?', (source, account_id))
-            connection.execute('UPDATE account_player_links SET player_id=? WHERE player_id=?',
-                               (source, target))
+            # 只能回退合并时搬走的 link_id；直接按 player_id=target 会把目标
+            # 原本自己的账号关系也错误地搬回来源账号。
+            links = [item for item in detail.get('links', []) if item is not None]
+            if links:
+                placeholders = ','.join('?' for _ in links)
+                connection.execute(
+                    f'UPDATE account_player_links SET player_id=? WHERE link_id IN ({placeholders})',
+                    [source, *links])
             for item in detail.get('memberships', []):
                 connection.execute(
                     'UPDATE player_team_history SET end_date=?, notes=? WHERE membership_id=?',

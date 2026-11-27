@@ -35,8 +35,22 @@ def _router_match_keys(matches_dir, signature):
     cache = {'key': None, 'map': {}}
     lock = threading.Lock()
 
+    def matches_signature():
+        """映射读的是 matches_dir，签名只覆盖事实表会漏掉新增/改名对局。"""
+        base = Path(matches_dir) if matches_dir else None
+        if not base or not base.is_dir():
+            return ()
+        out = []
+        for path in sorted(base.glob('*.json')):
+            try:
+                info = path.stat()
+                out.append((path.name, info.st_mtime_ns, info.st_size))
+            except OSError:
+                continue
+        return tuple(out)
+
     def get():
-        key = signature()
+        key = (signature(), matches_signature())
         with lock:
             if cache['key'] == key:
                 return cache['map']

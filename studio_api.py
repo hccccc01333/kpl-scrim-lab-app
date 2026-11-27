@@ -1472,6 +1472,12 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
         import prefill
         return prefill.queue(workspace())
 
+    @router.get('/workspace/formal-entries/pending')
+    def wb_formal_entries_pending():
+        # official-entry.js 的「待补全速记」面板一直在调这个地址；
+        # 之前没有路由，异常被前端吞掉后面板永远隐藏。
+        return {'entries': workspace().pending_formal_entries()}
+
     @router.post('/workspace/pending/confirm')
     async def wb_confirm(request: Request):
         payload = await request.json()
@@ -1600,6 +1606,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 aliases=payload.get('aliases'), actor='coach')
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, 'id': saved['playerId'], **saved}
 
     @router.post('/workspace/players/delete')
@@ -1613,6 +1620,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
             removed = identity_service.delete_player(db_path, player_id, actor='coach')
         except ValueError as error:
             raise HTTPException(404, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, **removed}
 
     @router.post('/workspace/players/migrate-profile')
@@ -2499,6 +2507,7 @@ def create_studio_router(db_path, matches_dir, imports_dir, results_db=None):
                 db_path, account_id=account_id, player_id=rows[0]['player_id'], team_id=team_id)
         except ValueError as error:
             raise HTTPException(400, str(error))
+        invalidate_workspace_cache()
         return {'ok': True, 'playerId': account_id, 'teamId': saved['teamId']}
 
     @router.get('/camp-compare')

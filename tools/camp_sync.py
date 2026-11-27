@@ -143,17 +143,20 @@ def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
             summary['reachedWindow'] = bool(page_times and min(page_times) < window_start)
             break
 
+        page_max = max((int(e.get('dtEventTime') or 0) for e in new_entries), default=newest)
         for entry in new_entries:
             seq = _safe_seq(entry.get('gameSeq'))
             event_time = int(entry.get('dtEventTime') or 0)
-            newest = max(newest, event_time)
             summary['fetched'] += 1
             if not seq:
                 summary['failed'] += 1
                 continue
             out_path = DETAIL_DIR / f'{seq}.json'
             if out_path.is_file():
+                # 已经落盘才算处理成功；水位只由成功/命中缓存的局推进，
+                # 失败局留到下一轮重试，否则永久静默丢局。
                 summary['cached'] += 1
+                newest = max(newest, event_time)
                 continue
             detail = battle_detail(
                 seq, str(entry.get('gameSvrId') or ''), str(entry.get('relaySvrId') or ''),
@@ -169,12 +172,13 @@ def sync(friend_user_id: str, max_pages: int | None = None) -> dict:
                                     encoding='utf-8')
                 summary['saved'] += 1
                 summary['gameSeqs'].append(seq)
+                newest = max(newest, event_time)
                 print(f"  已入库 {seq} · {entry.get('mapName')} · {entry.get('gametime')}")
             time.sleep(REQUEST_INTERVAL)
 
         if not data.get('hasMore'):
             break
-        next_cursor = int(data.get('lastTime') or newest)
+        next_cursor = int(data.get('lastTime') or page_max)
         if next_cursor <= cursor or next_cursor <= watermark:
             break
         cursor = next_cursor

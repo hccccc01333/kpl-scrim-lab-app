@@ -91,9 +91,13 @@ function rowLaneSubject(row, lane, heroTypes) {
     return familyMatch(rowLane, lane);
   }
   if (lane === '打野') return true;
+  const blade = row && row.blade ? row.blade.kind : '';
   const hero = text(row && row.hero);
   const jungle = String(((heroTypes && heroTypes[hero]) || {})['打野'] || '');
-  return (jungle.includes('坦野') ? '打野·坦野' : '打野·野核') === lane;
+  const subject = blade === 'tank' || blade === 'core'
+    ? (blade === 'tank' ? '打野·坦野' : '打野·野核')
+    : (jungle.includes('坦野') ? '打野·坦野' : '打野·野核');
+  return subject === lane;
 }
 const hash = (s) => { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; };
 function rng(seed) { let s = (seed >>> 0) || 1; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
@@ -230,6 +234,21 @@ function metricValue(row, metric) {
 function mean(values) {
   const v = values.filter(isNum);
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+/* 分均类指标与服务端看板同口径：Σ总量 / Σ分钟；
+   逐局均值只用于曲线和分布，不能拿来当汇总值。 */
+const RATE_TOTALS = { gpm: 'gold', dpm: 'damage', tpm: 'taken', dtpm: 'taken' };
+function aggregateValue(key, rows, metric) {
+  const totalKey = RATE_TOTALS[key];
+  if (!totalKey) return mean(rows.map((row) => metricValue(row, metric)));
+  let total = 0;
+  let minutes = 0;
+  for (const row of rows) {
+    if (!isNum(row[totalKey]) || !isNum(row.minutes) || row.minutes <= 0) continue;
+    total += row[totalKey];
+    minutes += row.minutes;
+  }
+  return minutes ? total / minutes : null;
 }
 
 /**
@@ -412,7 +431,7 @@ export function createMetricsEngine(options = {}) {
     }
     const matching = rows.filter((r) => rowLaneSubject(r, lane, sources && sources.heroTypes));
     const values = matching.map((r) => metricValue(r, metric));
-    const value = mean(values);
+    const value = aggregateValue(metric.key, matching, metric);
     return { subject: subject.name, source: subject.source, value, grade: gradeValue(value, metric), samples: values.filter(isNum).length };
   }
 

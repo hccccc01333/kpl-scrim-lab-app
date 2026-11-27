@@ -12,7 +12,9 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import match_facts
 import official_economy
+from time import monotonic
 
 MATCH_SCHEMA = 'kpl-match-data-v1'
 IMPORT_SCHEMA = 'kpl-sheet-import-v1'
@@ -123,6 +125,14 @@ def _bundle_date(match, path):
     拼出来的日期若比文件时间晚半年以上（跨年入库），按上一年算。
     """
     raw = match.get('date')
+    if isinstance(raw, dict):
+        # text 可能被裁掉，但 year/month/day 是显式年份，不能拿 mtime 猜。
+        try:
+            year, month, day = (int(raw['year']), int(raw['month']), int(raw['day']))
+            if 1900 <= year <= 2200 and 1 <= month <= 12 and 1 <= day <= 31:
+                return f'{year:04d}-{month:02d}-{day:02d}'
+        except (KeyError, TypeError, ValueError):
+            pass
     text = clean(raw.get('text')) if isinstance(raw, dict) else clean(raw)
     if text:
         return text
@@ -241,6 +251,8 @@ class AnalysisRepository:
         self.official_dir = (Path(official_dir) if official_dir
                              else self.matches_dir.parent / 'official_replays')
         self._data = None
+        self._signature = None
+        self._signature_state = (0.0, None)
         # 战队改名/合并会 bump opponent_identity 的代际号。快照里烤进去的队名
         # 必须跟着作废，否则「战队那边改了、对局页面还是旧名字」要等 15 秒 TTL。
         self._identity_generation = None
@@ -259,11 +271,16 @@ class AnalysisRepository:
         seq = str((match.get('campBp') or {}).get('gameSeq') or '').strip()
         if not seq or not seq.isdigit():
             return {}
-        if seq in self._camp_equipment_cache:
-            return self._camp_equipment_cache[seq]
+        path = self.matches_dir.parent / 'camp_details' / f'{seq}.json'
+        try:
+            info = path.stat()
+            cache_key = (seq, info.st_mtime_ns, info.st_size)
+        except OSError:
+            cache_key = (seq, None, None)
+        if cache_key in self._camp_equipment_cache:
+            return self._camp_equipment_cache[cache_key]
         result = {}
         try:
-            path = self.matches_dir.parent / 'camp_details' / f'{seq}.json'
             if path.is_file():
                 inner = json.loads(path.read_text(encoding='utf-8')).get('data') or {}
                 for key, camp in (('blueRoles', 'blue'), ('redRoles', 'red')):
@@ -277,24 +294,53 @@ class AnalysisRepository:
                             result[(camp, hero)] = items
         except (OSError, ValueError, TypeError):
             result = {}
-        self._camp_equipment_cache[seq] = result
+        self._camp_equipment_cache[cache_key] = result
         return result
+
+    def _file_signature(self):
+        """分析快照的输入指纹；1 秒 TTL 避免每次 get() 都扫两百多个文件。"""
+        now = monotonic()
+        cached_at, cached = self._signature_state
+        if cached is not None and now - cached_at < 1.0:
+            return cached
+        parts = [match_facts.data_signature(
+            self.official_dir, self.matches_dir.parent / 'camp_details',
+            str(self.db_path), self.matches_dir.parent)]
+        for directory, pattern in ((self.matches_dir, '*.json'),
+                                   (self.imports_dir, '*.jsonl'),
+                                   (self.imports_dir, '*.json')):
+            files = []
+            for path in sorted(directory.glob(pattern)):
+                try:
+                    info = path.stat()
+                    files.append((path.name, info.st_mtime_ns, info.st_size))
+                except OSError:
+                    continue
+            parts.append(tuple(files))
+        value = tuple(parts)
+        self._signature_state = (now, value)
+        return value
 
     def get(self):
         import opponent_identity
         generation = opponent_identity.generation()
+        signature = self._file_signature()
         data = self._data
-        if data is not None and self._identity_generation == generation:
+        if (data is not None and self._identity_generation == generation
+                and self._signature == signature):
             return data
         with self._lock:
-            if self._data is None or self._identity_generation != generation:
+            if (self._data is None or self._identity_generation != generation
+                    or self._signature != signature):
                 self._data = self._load()
                 self._identity_generation = opponent_identity.generation()
+                self._signature = self._file_signature()
             return self._data
 
     def invalidate(self):
         with self._lock:
             self._data = None
+            self._camp_equipment_cache.clear()
 
     # ---------- loading ----------
     def _apply_record_team_links(self, matches):
@@ -967,16 +1013,25 @@ class AnalysisRepository:
         rows = []
         if not Path(path).is_file():
             return rows
+        bad = 0
         try:
-            with Path(path).open(encoding='utf-8') as handle:
+            # utf-8-sig 兼容 Excel 导出的 BOM；坏行逐行跳过，不能再把整文件截断。
+            with Path(path).open(encoding='utf-8-sig') as handle:
                 for line in handle:
-                    if line.strip():
+                    if not line.strip():
+                        continue
+                    try:
                         rows.append(json.loads(line))
-                        if len(rows) >= limit:
-                            warnings.append(f'{Path(path).name} 行数超过 {limit}，只读取前 {limit} 行。')
-                            break
-        except (OSError, json.JSONDecodeError) as error:
+                    except json.JSONDecodeError:
+                        bad += 1
+                        continue
+                    if len(rows) >= limit:
+                        warnings.append(f'{Path(path).name} 行数超过 {limit}，只读取前 {limit} 行。')
+                        break
+        except OSError as error:
             warnings.append(f'表格行读取失败 {Path(path).name}：{error}')
+        if bad:
+            warnings.append(f'{Path(path).name} 跳过 {bad} 行无法解析的数据。')
         return rows
 
     def _sheet_matches_for(self, import_id, sheet, rows, entry, warnings):
@@ -1267,14 +1322,14 @@ class AnalysisRepository:
         ten_won = 0
         for match in matches:
             process = match.get('process') or {}
-            timeline = process.get('timeline') or []
+            points = process.get('timeline') or []
             own = match.get('ownCamp') or match.get('ownSide') or ''
             if own not in ('blue', 'left', 'red', 'right'):
                 # 不知道己方阵营就不能猜蓝色，否则 10 分钟经济差会整体反号。
                 continue
             sign = 1 if own in ('blue', 'left') else -1
             series = []
-            for point in timeline:
+            for point in points:
                 t = point.get('gameTime')
                 if not isinstance(t, (int, float)):
                     continue
@@ -1343,9 +1398,10 @@ class AnalysisRepository:
                 h_rows = [row for row in p_rows if row.get('hero') == hero]
                 games = len(h_rows)
                 wins = sum(1 for row in h_rows if row.get('result') == 'win')
+                decided = sum(1 for row in h_rows if row.get('result') in ('win', 'loss'))
                 return {
                     'player': player, 'hero': hero, 'games': games,
-                    'wins': wins, 'winRate': round(wins / games * 100, 1) if games else None,
+                    'wins': wins, 'winRate': round(wins / decided * 100, 1) if decided else None,
                 }
             lane_compare.append({'lane': lane, 'own': agg(True), 'foe': agg(False)})
         result['laneCompare'] = lane_compare
@@ -1960,13 +2016,15 @@ class AnalysisRepository:
                     entry = pairs.setdefault(key, {
                         'a': {'key': a['playerKey'], 'label': a['label'], 'position': a.get('position') or ''},
                         'b': {'key': b['playerKey'], 'label': b['label'], 'position': b.get('position') or ''},
-                        'games': 0, 'wins': 0})
+                        'games': 0, 'wins': 0, 'decided': 0})
                     entry['games'] += 1
-                    if win == 'win':
-                        entry['wins'] += 1
+                    if win:
+                        entry['decided'] += 1
+                        if win == 'win':
+                            entry['wins'] += 1
         out = []
         for entry in pairs.values():
-            entry['winRate'] = round(entry['wins'] / entry['games'] * 100, 1) if entry['games'] else None
+            entry['winRate'] = round(entry['wins'] / entry['decided'] * 100, 1) if entry['decided'] else None
             out.append(entry)
         out.sort(key=lambda item: -item['games'])
         return {'pairs': out, 'warnings': warnings}

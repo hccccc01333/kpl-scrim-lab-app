@@ -469,7 +469,9 @@ export function createCapture(h) {
         api('camp/config', { signal }).catch(() => ({ players: [] })),
         // 英雄图标与阵容：拿不到时只是不显示头像，不影响主流程
         api('catalog', { signal }).catch(() => ({ entries: [] })),
-        api('studio/view/matches', { signal }).catch(() => ({ matches: [] })),
+        // 旧 studio/view/matches 接口早已下线；采集页只需要 key + heroes，
+        // 统一从 /api/matches 取，避免「已采集对局」静默显示 0。
+        api('matches', { signal }).catch(() => ({ matches: [] })),
         // 截图 / 录屏 / 回放三块：同一个采集页里的页签，一起取，切换不再请求
         api('postgame/images', { signal }).catch(() => ({ images: [], groups: [] })),
         api('recordings', { signal }).catch(() => ({ recordings: [], jobs: [] })),

@@ -64,15 +64,19 @@ export function createPlayerDetail(h) {
   };
   /* 分路 → 规则主体。打野按英雄标签兜底（本页拿不到本局打野刀）：和后端
      grade_rules.subject_for / 对局页 subjectOf 同一口径，不再固定取野核。 */
-  function rulesFor(doc, lane, hero, heroLaneTypes) {
+  function rulesFor(doc, lane, hero, heroLaneTypes, blade) {
     // 未保存过的规则是内置默认档位，其他页面都不拿它评级，这里也不拿。
     if (!doc || !doc.saved || !doc.subjects) return null;
     let keys = [lane];
     if (lane === '打野') {
       const lanes = (heroLaneTypes || {})[hero] || {};
       const jungle = String(lanes['打野'] || '');
-      const derived = jungle.includes('坦野') ? '打野·坦野'
-        : jungle ? '打野·野核' : '';
+      // 装备判定的打野刀优先，和单局页 grade_rules.subject_for 同口径；
+      // 没有 blade 时才退回英雄静态标签。
+      const derived = blade && blade.kind === 'tank' ? '打野·坦野'
+        : blade && blade.kind === 'core' ? '打野·野核'
+          : jungle.includes('坦野') ? '打野·坦野'
+            : jungle ? '打野·野核' : '';
       keys = [derived, '打野·野核', '打野·坦野', '打野'].filter(Boolean);
     }
     for (const key of keys) if (doc.subjects[key]) return {key, fields: doc.subjects[key]};
@@ -473,7 +477,10 @@ export function createPlayerDetail(h) {
     const lane = c.focusLane;
     const doc = st && st.pd && st.pd.gradeRules;
     const heroTypes = (st && st.pd && st.pd.detail && st.pd.detail.heroLaneTypes) || {};
-    const rule = rulesFor(doc, lane, mainHeroOf(c.byLane.get(lane)), heroTypes);
+    const laneRows = c.byLane.get(lane) || [];
+    const mainHero = mainHeroOf(laneRows);
+    const bladeRow = laneRows.find((row) => row && row.blade && row.hero === mainHero);
+    const rule = rulesFor(doc, lane, mainHero, heroTypes, bladeRow && bladeRow.blade);
     /* 标准线是分路口径（规则按 focusLane 取），「本人」必须取同一分路的局；
        以前用 c.scope.rows 把其它分路也算进来，同一个选手这一页会同时出现
        618（全部）和 586（中路）两个数，教练看到的就是对不上。 */

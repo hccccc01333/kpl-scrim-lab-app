@@ -1820,7 +1820,8 @@ export function createCrossPage(h) {
     }
     const detailId = detailIdOf();
     if (detailId) {
-      if (force || state.detailId !== detailId || (!state.detail && !state.detailLoading)) loadDetail(detailId);
+      // 不因 detailLoading 卡住：过期请求可能不会再回来清理标志。
+      if (force || state.detailId !== detailId || !state.detail) loadDetail(detailId);
       else if (state.detail) paint(detailHtml());
       return;
     }

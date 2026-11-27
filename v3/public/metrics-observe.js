@@ -436,13 +436,14 @@ export function createMetricsObservePage(h = {}) {
     bound = node;
     node.addEventListener('click', onClick);
     node.addEventListener('change', onChange);
-    window.addEventListener('grade-rules:saved', onRulesSaved);
+    // grade-rules.js / rule-snapshots.js 都把事件派发在 document 上且不冒泡。
+    document.addEventListener('grade-rules:saved', onRulesSaved);
   }
   function dispose() {
     if (bound) {
       bound.removeEventListener('click', onClick);
       bound.removeEventListener('change', onChange);
-      window.removeEventListener('grade-rules:saved', onRulesSaved);
+      document.removeEventListener('grade-rules:saved', onRulesSaved);
       bound = null;
     }
     generation++;

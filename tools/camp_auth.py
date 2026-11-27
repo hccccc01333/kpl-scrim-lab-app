@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib import parse, request
 
@@ -214,7 +215,7 @@ def build_account(data: dict, xlog_uid: str) -> dict:
         'nickname': str(data.get('nickname') or data.get('snsnickname') or ''),
         'expires': str(data.get('expires') or ''),
         'xLogUid': xlog_uid,
-        'loginAt': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        'loginAt': datetime.now(timezone.utc).isoformat(timespec='seconds'),
     }
 
 
@@ -298,7 +299,7 @@ _HEALTH_LOCK = threading.Lock()
 
 
 def _now_text() -> str:
-    return time.strftime('%Y-%m-%dT%H:%M:%S')
+    return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
 
 def health_path() -> Path:

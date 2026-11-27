@@ -541,8 +541,11 @@ def data_signature(replays_dir, camp_dir, db_path=None, data_dir=None):
         if file_path.is_file():
             calibration = stat_of(file_path)
     db = ()
-    if db_path and Path(db_path).is_file():
-        db = stat_of(Path(db_path))
+    if db_path:
+        # WAL/journal 里的写入可能还没落回主文件；只 stat 主 DB 会漏掉改名/合并。
+        base = Path(db_path)
+        db = tuple(stat_of(path) for path in
+                   (base, Path(f'{base}-wal'), Path(f'{base}-journal')) if path.is_file())
     return (camp, replay_files, positions, calibration, db)
 
 

@@ -95,7 +95,9 @@ Type: files; Name: "{app}\*.py"
 Type: files; Name: "{app}\*.pyc"
 Type: files; Name: "{app}\*.bat"
 Type: files; Name: "{app}\*.txt"
-Type: files; Name: "{app}\*.json"
+; 只删程序清单；update_config.json / camp_auth.json / camp_config.json 是用户配置与凭证
+; （自动更新器明确保留），不能用 *.json 一并抹掉。
+Type: files; Name: "{app}\update.json"
 Type: files; Name: "{app}\*.md"
 Type: files; Name: "{app}\*.exe"
 Type: files; Name: "{app}\*.ico"

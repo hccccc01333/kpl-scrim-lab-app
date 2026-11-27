@@ -194,7 +194,7 @@ function jungleKindOf(hero, player) {
   const blade = player && typeof player === 'object' ? player.blade : null;
   if (blade && JUNGLE_TYPES[blade.kind]) return blade.kind;
   const type = String((metadata.heroTypes || {})[hero || '']?.['打野'] || '');
-  return JUNGLE_TYPES.tank.key === type ? 'tank' : 'core';
+  return type.includes('坦野') ? 'tank' : 'core';
 }
 function jungleTypeLabel(hero, player) {
   return JUNGLE_TYPES[jungleKindOf(hero, player)].key;
@@ -3001,7 +3001,13 @@ function matchPage(m) {
         <span class="md-ct-chips"><span class="md-ct-chip ${aOwn ? 'is-hit' : 'is-miss'}">${aOwn ? '我方克制' : '对方克制'} · ${esc(strength(row))}</span></span>
       </div>`;
     }).join('');
-    const version = m.rulesCounters?.sourceVersion;
+    // 规则中心 counters 接口不返回 sourceVersion；用当前 revision/updatedAt
+    // 让用户至少能看到本局按哪一版规则渲染。
+    const counters = m.rulesCounters;
+    const version = counters && {
+      competitionName: `规则中心 Rev ${counters.revision ?? 0}`,
+      finalizedAt: counters.updatedAt || '',
+    };
     const foot = `<p class="md-ct-foot">口径：赛训规则中心「克制关系 → 英雄克制英雄」里维护的攻方 → 受方有向关系；强度取维护值（强/中/弱）。规则中心没维护的对位不显示，不拿 KPL / 营地数据兜底。${version ? ` 本局使用「${esc(version.competitionName || version.competitionId || '')}」定稿于 ${esc(String(version.finalizedAt || '').slice(0, 10))} 的版本。` : ''}</p>`;
     return `<div class="md-counters">
       <div class="md-ct-head"><b>五路对位</b><span>只看规则中心维护过的英雄克制关系</span></div>
@@ -3532,8 +3538,8 @@ const renderers = { overview: () => '<div class="page home pbr-home" data-pbr-ro
   /* 数据源展示改成自取数模块；旧的 sourcesPage（字段覆盖率）已下线。 */
   sources: () => '<div data-ds-root></div>', match: matchPage,
   'source-health': () => '<div data-sh-root></div>',
-  cross: () => mods.crossPage.render(),
-  biggame: () => mods.bigGamePage.render(),
+  cross: () => (mods.crossPage ? mods.crossPage.render() : emptyPage()),
+  biggame: () => (mods.bigGamePage ? mods.bigGamePage.render() : emptyPage()),
   'series-builder': () => '<div data-sb-root></div>',
   matching: () => '<div data-matching-root></div>',
   'combo-pool': () => '<div data-cp-root></div>',
@@ -3546,7 +3552,8 @@ const renderers = { overview: () => '<div class="page home pbr-home" data-pbr-ro
   'snapshot-center': () => '<div data-sc-root></div>',
   'official-entry': () => '<div data-oe-root></div>',
   'match-notes': () => '<div data-mn-root></div>',
-  docs: () => mods.docsPage.render() };
+  docs: () => (mods.docsPage ? mods.docsPage.render() : emptyPage()) };
+const emptyPage = () => '<div class="page"><p class="md-empty">这一页暂时没有可显示的内容。</p></div>';
 let routeFocusPending = false;
 let docsDispose = null;
 let lastRenderedRoute = '';
@@ -3654,6 +3661,12 @@ function render(r = current()) {
   document.title = labels[r.name] + ' | 赛训数据';
   if (UNLOCK_GATED.has(r.name) && unlockState.loaded
       && unlockState.routes[r.name] && unlockState.routes[r.name].unlocked === false) {
+    // 门控页也要释放上一个页面的模块，否则监听/轮询会挂在已卸载 DOM 上继续跑。
+    docsDispose?.(); docsDispose = null;
+    for (const key of ['bpLab', 'brief', 'teamProfile', 'teamProfiles', 'matching',
+      'seriesBuilder', 'comboPool', 'gradeRules', 'competitions', 'lineupTags',
+      'profiles', 'metricsObserve', 'rulesCenter', 'snapshotCenter', 'dataSource',
+      'sourceHealth']) mods[key]?.dispose?.();
     document.querySelector('#content').innerHTML = renderUnlockCard(unlockState.routes[r.name]);
     injectEventChip(r);
     decorateHeadings(r.name);
@@ -3980,7 +3993,7 @@ async function load(fresh = false) {
     const [result, meta] = await Promise.all([pageData, (metadata.icons && !metadata.iconsOnly) ? Promise.resolve(metadata) : get('metadata')]);
     if (stale()) return;
     metadata = meta;
-    data = result;
+    data = result || {};
     retryByRoute.delete(routeKey);
     if (r.name === 'match') data.replayStatus = 'loading';
     /* 评级规则先取到再渲染：这样 10 分钟经济档位与选手字段徽标首屏就按赛训口径。 */
@@ -4073,8 +4086,10 @@ async function load(fresh = false) {
     /* 主动取消的请求、已经切走的页面：既不重试，也不把错误写进新页面。 */
     if (stale() || isCancelled(error, currentRequest.signal)) return;
     /* 网络层断开：进入自动重连，恢复后自动加载当前页。 */
+    // TypeError 也可能是渲染器内部空引用；只有「fetch 形状」的 TypeError 才算断网。
     const offline = error instanceof TypeError
-      || /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(String(error?.message || ''));
+      && /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(
+        String(error && error.message || ''));
     if (offline) {
       setOffline(true);
       renderOffline(r, error);
@@ -4449,10 +4464,10 @@ app.addEventListener('click', (event) => {
   const playerAdd = event.target.closest('[data-opp-player-add]');
   if (playerAdd) { oppPlayerDialog(null, playerAdd.dataset.oppPlayerAdd, playerAdd.dataset.oppLane); return; }
   const playerEdit = event.target.closest('[data-opp-player-edit]');
-  if (playerEdit) { oppPlayerDialog((data.players || []).find((p) => p.id === playerEdit.dataset.oppPlayerEdit)); return; }
+  if (playerEdit) { oppPlayerDialog((data?.players || []).find((p) => p.id === playerEdit.dataset.oppPlayerEdit)); return; }
   const playerDel = event.target.closest('[data-opp-player-del]');
   if (playerDel) {
-    const p = (data.players || []).find((x) => x.id === playerDel.dataset.oppPlayerDel);
+    const p = (data?.players || []).find((x) => x.id === playerDel.dataset.oppPlayerDel);
     if (!p) return;
     oppConfirm(`确定删除选手「${p.camp_user_id || p.name || p.id}」？该选手 ID 和挂着的账号映射会一并删除。`, () => {
       fetch(API_BASE + '/api/studio/workspace/players/delete', {
@@ -4662,7 +4677,7 @@ app.addEventListener('submit', (event) => {
     const playerId = form.dataset.playerId || '';
     if (playerId) payload.id = playerId;
     const gameId = String(payload.campUserId || '').trim();
-    const duplicate = (data.players || []).some((p) => p.camp_user_id === gameId && p.id !== playerId);
+    const duplicate = (data?.players || []).some((p) => p.camp_user_id === gameId && p.id !== playerId);
     const error = !gameId ? '请填写选手 ID。' : duplicate ? `选手 ID「${gameId}」已存在，不能重复。` : '';
     form.querySelector('.filter-error').textContent = error;
     if (error) return;
@@ -4785,7 +4800,7 @@ app.addEventListener('submit', (event) => {
   event.target.querySelector('.filter-error').textContent = error;
   if (error) return;
   filters = { source, from, to, validation: form.has('validation') };
-  localStorage.setItem('training-rebuild-filters', JSON.stringify(filters));
+  try { localStorage.setItem('training-rebuild-filters', JSON.stringify(filters)); } catch { /* 隐私模式/配额满不能挡住筛选提交 */ }
   document.querySelector('#filters').close();
   load();
 });
@@ -4882,6 +4897,8 @@ app.addEventListener('mouseout', hideChartPoint);
 app.addEventListener('focusout', hideChartPoint);
 
 window.addEventListener('hashchange', () => {
+  // 弹窗跨页存活会让提交回调在新页 data=null 上取 players，误报成断网。
+  document.querySelector('#filters')?.close();
   routeFocusPending = true;
   const nextRoute = current().name;
   if (lastRouteName === 'matches') {

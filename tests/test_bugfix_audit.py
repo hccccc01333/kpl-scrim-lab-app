@@ -31,6 +31,21 @@ class BugfixAuditTests(unittest.TestCase):
         self.assertGreater(led, 0)
         self.assertGreater(wins, 0, '逐局事实没有 result 字段，不能再把胜局算成 0')
 
+    def test_overview_timeline_matches_is_a_count(self):
+        coverage = repository().overview({}).get('coverage') or {}
+        self.assertIsInstance(coverage.get('timelineMatches'), int)
+        self.assertGreater(coverage['timelineMatches'], 0)
+
+    def test_unsaved_rules_are_not_used_for_grading(self):
+        import grade_rules
+        self.assertIsNone(grade_rules.grade(
+            '游走', 'participation', 80, {'saved': False, 'subjects': {}}))
+
+    def test_official_entries_pending_route_exists(self):
+        import server
+        paths = server.app.openapi()['paths']
+        self.assertIn('/api/studio/workspace/formal-entries/pending', paths)
+
     def test_mastery_win_rates_are_not_all_null(self):
         facts = depth_api.build_facts(str(ROOT))
         rows = depth_api.analysis_payload(facts, 'mastery')['players']

@@ -481,6 +481,8 @@ def asset_url(base: str | None, name: str) -> str:
 
 def build_clean_bundle(version: str, ship_paths: list[str], args) -> tuple[Path, list[dict]]:
     """生成内嵌完整程序包，供自动更新重启后清装。"""
+    # 用户可改的镜像配置不能随清装覆盖；首次安装包仍由 ROOT_FILES 带它。
+    ship_paths = [path for path in ship_paths if path not in PATCH_EXCLUDE]
     stage = DIST / f'clean-stage-{version}'
     if stage.exists():
         shutil.rmtree(stage)
@@ -916,10 +918,15 @@ def main(argv=None) -> int:
         manifest['releaseDate'] = meta.get('releaseDate', '')
     if not args.no_full:
         manifest['full'] = build_full(version, manifest, args)
-    manifest_path = DIST / 'update.json'
-    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
-                             encoding='utf-8')
-    print(f'更新清单：{manifest_path}')
+    if args.no_patch:
+        # 只做完整安装包时不能覆盖已发布的自动更新清单；
+        # 否则客户端会拿到一份没有 patch 的 update.json，误判为已是最新。
+        print('跳过更新清单写入（--no-patch，保留现有 dist/update.json）')
+    else:
+        manifest_path = DIST / 'update.json'
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2),
+                                 encoding='utf-8')
+        print(f'更新清单：{manifest_path}')
     return 0
 
 

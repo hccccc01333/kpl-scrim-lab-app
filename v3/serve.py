@@ -22,7 +22,7 @@ from urllib.request import urlopen
 from urllib.error import URLError
 from collections import Counter, defaultdict
 from contextlib import closing
-from datetime import date, datetime as _datetime, timedelta
+from datetime import date, datetime as _datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock, Thread
 from time import monotonic
@@ -2447,9 +2447,13 @@ def _merge_staging(staging, destination):
         else:
             if target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
-            elif target.exists():
-                target.unlink()
-            os.replace(entry, target)
+            try:
+                os.replace(entry, target)
+            except PermissionError:
+                # 被占用时再强制删旧文件；正常路径不先删，避免中途丢文件。
+                if target.exists():
+                    target.unlink()
+                os.replace(entry, target)
 
 
 def _run_migration(source, destination, include_heavy):
@@ -4134,8 +4138,12 @@ def _camp_dir_stamp(camp_dir):
     if state['path'] == str(camp_dir) and now - state['at'] < _STAMP_TTL:
         return state['value']
     try:
-        value = max((p.stat().st_mtime_ns for p in camp_dir.glob('*.json')),
-                    default=0.0)
+        # 只取最大 mtime 会漏掉「新增/删除的不是最新文件」；带上数量和每个文件指纹。
+        files = []
+        for path in sorted(camp_dir.glob('*.json')):
+            info = path.stat()
+            files.append((path.name, info.st_mtime_ns, info.st_size))
+        value = (len(files), tuple(files))
     except OSError:
         value = None
     state.update(path=str(camp_dir), at=now, value=value)
@@ -6405,6 +6413,23 @@ def _player_detail(name):
     # 教练在对局里手填的 10 分钟经济存在 match_meta 覆盖层；逐局事实按
     # 「阵营-槽位」索引，这里按对局缓存详情，再按阵营 + 英雄定位到这名选手。
     gold10_detail_cache = {}
+    # 打野细分按最终装备（肉刀/红法刀）判定，和单局页/规则中心同口径；
+    # 英雄静态标签只在没有 blade 数据时兜底。
+    blade_by_game = {}
+    for game in games_all:
+        seq = str(game.get('id') or '').strip()
+        if not seq.isdigit():
+            continue
+        path = MATCHES.parent / 'camp_details' / f'{seq}.json'
+        if not path.is_file():
+            continue
+        table = camp_tiles.read_detail(path)
+        blades = {}
+        for (camp, hero), entry in table.items():
+            if entry.get('blade'):
+                blades[(camp, hero)] = entry['blade']
+        if blades:
+            blade_by_game[seq] = blades
     match_repo = AnalysisRepository(DB, MATCHES, IMPORTS, OFFICIAL)
 
     def coach_gold10(game, row):
@@ -6449,11 +6474,13 @@ def _player_detail(name):
         label = game.get('opponent')
         if not label:
             continue
-        item = opp.setdefault(label, {'name': label, 'games': 0, 'wins': 0})
+        item = opp.setdefault(label, {'name': label, 'games': 0, 'wins': 0, 'decided': 0})
         item['games'] += 1
-        if game['result'] == 'win':
-            item['wins'] += 1
-    opponents = [dict(item, winRate=round(item['wins'] / item['games'] * 100, 1) if item['games'] else None)
+        if game['result'] in ('win', 'loss'):
+            item['decided'] += 1
+            if game['result'] == 'win':
+                item['wins'] += 1
+    opponents = [dict(item, winRate=round(item['wins'] / item['decided'] * 100, 1) if item['decided'] else None)
                  for item in sorted(opp.values(), key=lambda cell: -cell['games'])]
 
     # 同局十人回填完整面板统计，对位 / 搭档 / 阵容分析才不用只看 KDA 与经济。
@@ -6517,6 +6544,10 @@ def _player_detail(name):
             'enemyLineup': [cell.get('hero') or '' for cell in foe_side],
             'series': series_by_match.get(game.get('match') or ''),
             'gold10': coach_gold10(game, row),
+            'blade': blade_by_game.get(str(game.get('id') or ''), {}).get(
+                (('blue' if '蓝' in str(row.get('camp') or '') else
+                  'red' if '红' in str(row.get('camp') or '') else ''),
+                 str(row.get('hero') or ''))),
         })
         rows.append(item)
 
@@ -6810,6 +6841,12 @@ def team_hero_insight(repo=Depends(repository)):
         tiles = tiles_for(row)
         if tiles:
             row['campTiles'] = tiles
+        seq = seq_by_match.get(str(row.get('matchKey') or ''))
+        if seq and seq in tile_tables:
+            entry = tile_tables[seq].get(
+                (str(row.get('camp') or ''), str(row.get('hero') or ''))) or {}
+            if entry.get('blade'):
+                row['blade'] = entry['blade']
     full_keys = [str(row.get('dateKey') or '') for row in own
                  if len(str(row.get('dateKey') or '')) == 10]
     try:
@@ -6982,7 +7019,7 @@ def team_hero_insight(repo=Depends(repository)):
     combos.sort(key=lambda x: (-(x['byPeriod']['7']['current']['games']),
                                -x['byPeriod']['30']['current']['games'], x['heroes']))
 
-    return {'generatedAt': _datetime.now().isoformat(timespec='seconds'),
+    return {'generatedAt': _datetime.now(timezone.utc).isoformat(timespec='seconds'),
             'anchor': anchor,
             'window': {str(n): bounds(n)[0] for n in _THD_PERIODS},
             'sources': {'panels': len(own), 'players': len({row.get('label') for row, _ in own}),

@@ -133,24 +133,24 @@ def test_period_windows_equal_length():
     assert (today['prev']['from'], today['prev']['to']) == (day('11-12'), day('11-12'))
 
     week = analysis_period.parse_period('week', today=CURRENT)
-    assert (week['from'], week['to']) == (day('11-09'), day('11-15'))
-    # 本周与上周相同进度：今天周五，上周只比到上周五
+    # 本期不延伸到未来周末；本周与上周同进度，都是周一到今天周五。
+    assert (week['from'], week['to']) == (day('11-09'), day('11-13'))
     assert (week['prev']['from'], week['prev']['to']) == (day('11-02'), day('11-06'))
-    assert week['days'] == 7 and week['prev']['days'] == 5
+    assert week['days'] == 5 and week['prev']['days'] == 5
     assert week['prev']['sameProgress'] is True
-    assert week['rangeLabel'] == '11-09 ~ 11-15'
+    assert week['rangeLabel'] == '11-09 ~ 11-13'
 
     month = analysis_period.parse_period('month', today=CURRENT)
-    assert (month['from'], month['to']) == (day('11-01'), day('11-30'))
-    # 本月到 13 号，上月只比到上月 13 号
+    assert (month['from'], month['to']) == (day('11-01'), day('11-13'))
+    # 本月到 13 号，上月也只比到上月 13 号
     assert (month['prev']['from'], month['prev']['to']) == (day('10-01'), day('10-13'))
-    assert month['days'] == 30 and month['prev']['days'] == 13
+    assert month['days'] == 13 and month['prev']['days'] == 13
 
-    # 跨月同进度：3 月 15 日 → 2 月 1 日 ~ 2 月 15 日
+    # 跨月同进度：3 月 15 日 → 本期 3/1~3/15，上期 2/1~2/15。
     march = analysis_period.parse_period('month', today=date(YEAR, 3, 15))
-    assert (march['from'], march['to']) == (f'{YEAR}-03-01', f'{YEAR}-03-31')
+    assert (march['from'], march['to']) == (f'{YEAR}-03-01', f'{YEAR}-03-15')
     assert (march['prev']['from'], march['prev']['to']) == (f'{YEAR}-02-01', f'{YEAR}-02-15')
-    assert march['prev']['days'] == 15
+    assert march['prev']['days'] == march['days'] == 15
 
     custom = analysis_period.parse_period('custom', today=CURRENT,
                                           date_from=day('11-02'), date_to=day('11-06'))

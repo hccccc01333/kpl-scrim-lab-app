@@ -198,7 +198,9 @@ def build(events_csv: Path, sha: str, out_root: Path,
 
     build_dir = out_dir / "build_timeline"
     build_dir.mkdir(exist_ok=True)
-    seen: set[tuple[str, int]] = set()
+    # 同一帧重复命令才算重复；不同时间再次购买同一件装备（消耗品/卖后重买）
+    # 是真实花费，不能再按 (player, equip_id) 全局去重。
+    seen: set[tuple[str, int, float]] = set()
     unique: dict[str, list[dict]] = collections.defaultdict(list)
     with (build_dir / "equipment_events.csv").open(
             "w", encoding="utf-8-sig", newline="") as handle:
@@ -208,7 +210,7 @@ def build(events_csv: Path, sha: str, out_root: Path,
             "flag_kind", "acquisition_basis"])
         writer.writeheader()
         for item in sorted(buys, key=lambda row: row["t"]):
-            key = (item["player"], item["equip_id"])
+            key = (item["player"], item["equip_id"], item["t"])
             first = key not in seen
             if first:
                 seen.add(key)
@@ -231,9 +233,14 @@ def build(events_csv: Path, sha: str, out_root: Path,
             "final_items", "final_check", "slot_count_match"])
         writer.writeheader()
         for entity_id, info in players.items():
-            items = unique.get(info["player"], [])
-            spend = sum(int(item["price"]) for item in items
+            events = unique.get(info["player"], [])
+            # 花费按每一次真实购买累加；最终装备按 equip_id 取最后一次购买。
+            spend = sum(int(item["price"]) for item in events
                         if item["price"] is not None)
+            final_by_equip = {}
+            for item in events:
+                final_by_equip[item["equip_id"]] = item
+            items = list(final_by_equip.values())
             writer.writerow({
                 "player": info["player"], "hero": info["hero"],
                 "camp": {1: "blue", 2: "red"}.get(info["camp"], ""),

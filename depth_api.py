@@ -24,7 +24,7 @@ import math
 import re
 import sqlite3
 import statistics
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from datetime import date
 from pathlib import Path
 

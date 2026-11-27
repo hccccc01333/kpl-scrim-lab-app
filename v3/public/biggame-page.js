@@ -659,7 +659,7 @@ export function createBigGamePage(h) {
     readScope();
     const detailId = detailIdOf();
     if (detailId) {
-      if (force || state.detailId !== detailId || (!state.detail && !state.detailLoading)) loadDetail(detailId);
+      if (force || state.detailId !== detailId || !state.detail) loadDetail(detailId);
       else if (state.detail) paint(detailHtml());
       return;
     }

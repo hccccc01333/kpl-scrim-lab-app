@@ -2464,7 +2464,8 @@ def camp_auth_check(force: bool = False):
     health = camp_auth.read_health()
     if not force and health.get('checkedAt'):
         try:
-            checked = time.mktime(time.strptime(health['checkedAt'], '%Y-%m-%dT%H:%M:%S'))
+            parsed = datetime.fromisoformat(health['checkedAt'])
+            checked = parsed.timestamp()
         except (ValueError, OverflowError):
             checked = 0
         if time.time() - checked < AUTH_CHECK_TTL:

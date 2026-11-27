@@ -17,7 +17,8 @@ FILES = [
 ]
 
 def price_map():
-    rows = list(csv.DictReader(open(OUT / 'agent_equip_prices.csv', encoding='utf-8-sig')))
+    with (OUT / 'agent_equip_prices.csv').open(encoding='utf-8-sig') as handle:
+        rows = list(csv.DictReader(handle))
     out = {}
     for r in rows:
         if r.get('section') != 'battle_item' or not r.get('item_id'):
@@ -33,7 +34,8 @@ def main():
     buys, skills, summaries = [], [], []
     for path in FILES:
         data = path.read_bytes()
-        report = json.load(open(path.parent / 'replay-report.json', encoding='utf-8'))
+        with (path.parent / 'replay-report.json').open(encoding='utf-8') as handle:
+            report = json.load(handle)
         blocks = {int(b['entityId']): b for b in report.get('blocks', []) if b.get('entityId') is not None}
         ev = list(events(data))
         counts = Counter(e['name'] for e in ev)
