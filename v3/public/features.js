@@ -2419,6 +2419,12 @@ export function createFeatures(h) {
     const lowPairs = [...ratedPairs].sort((a, b) => a.winRate - b.winRate || b.decided - a.decided).slice(0, 4);
     const pairText = (row) => `<span class="rl-pair">${row.heroes.map((name) => `<span class="rl-pair-hero">${portrait(name, 'rl-hero-face')}<em>${text(name)}</em></span>`).join('<span class="rl-pair-plus" aria-hidden="true">＋</span>')}</span>`;
     const pairRateText = (row) => row.winRate == null ? '—' : `${fmt(row.winRate, 1)}%（${fmt(row.wins)} 胜 / ${fmt(row.decided)} 局有胜负）`;
+    /* 胜率用原生 progress 承载数值语义，文字仍保留完整分母，避免只看颜色。 */
+    const rateProgress = (row, tone) => {
+      if (row.winRate == null) return '<span class="rl-rate-empty">—</span>';
+      const value = Math.max(0, Math.min(100, Number(row.winRate.toFixed(1))));
+      return `<span class="rl-rate rl-rate--${tone}"><progress max="100" value="${value}" aria-label="胜率 ${fmt(value, 1)}%"></progress><span class="rl-rate-text">${pairRateText(row)}</span></span>`;
+    };
 
     /* 选手红绿：经济目标与死亡目标都优先取赛训组「规则设置」里保存的
        分路阈值（中路经济达标 550、死亡卓越 2 / 达标 4），没保存过时再用
@@ -2599,7 +2605,7 @@ export function createFeatures(h) {
         <article class="rl-card rl-card--people">
           <header><span class="rl-kicker">SYNERGY · 02</span><h2>本周常用组合</h2></header>
           ${commonPairs.length
-            ? `<ol class="rl-list">${commonPairs.map((row) => `<li><b>${pairText(row)}</b><span>${fmt(row.games)} 局 · 胜率 ${row.winRate == null ? '—' : pct(row.winRate)}</span></li>`).join('')}</ol>`
+            ? `<ol class="rl-list rl-list--pairs">${commonPairs.map((row, i) => `<li><b><span class="rl-rank">${fmt(i + 1)}</span>${pairText(row)}</b><span>${fmt(row.games)} 局 · ${rateProgress(row, 'plain')}</span></li>`).join('')}</ol>`
             : '<p class="report-muted">本周没有可统计的英雄组合。</p>'}
         </article>
         <article class="rl-card rl-card--people is-good-card">
@@ -2617,13 +2623,13 @@ export function createFeatures(h) {
         <article class="rl-card rl-card--table">
           <header><span class="rl-kicker">FORM · 05</span><h2>本周高胜率组合</h2></header>
           ${highPairs.length
-            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周高胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率</th></tr></thead><tbody>${highPairs.map((row) => `<tr><th scope="row">${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-good">${pairRateText(row)}</td></tr>`).join('')}</tbody></table></div>`
+            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周高胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率</th></tr></thead><tbody>${highPairs.map((row, i) => `<tr><th scope="row"><span class="rl-rank">${fmt(i + 1)}</span>${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-good">${rateProgress(row, 'good')}</td></tr>`).join('')}</tbody></table></div>`
             : '<p class="report-muted">本周没有可统计的高胜率组合。</p>'}
         </article>
         <article class="rl-card rl-card--table">
           <header><span class="rl-kicker">RISK · 06</span><h2>本周低胜率组合</h2></header>
           ${lowPairs.length
-            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周低胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率 / 提示</th></tr></thead><tbody>${lowPairs.map((row) => `<tr><th scope="row">${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-bad"><b>${pairRateText(row)}</b><em class="rl-flag">胜率偏低 · 建议复盘控制与开团</em></td></tr>`).join('')}</tbody></table></div>`
+            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周低胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率 / 提示</th></tr></thead><tbody>${lowPairs.map((row, i) => `<tr><th scope="row"><span class="rl-rank">${fmt(i + 1)}</span>${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-bad"><b>${rateProgress(row, 'bad')}</b><em class="rl-flag">胜率偏低 · 建议复盘控制与开团</em></td></tr>`).join('')}</tbody></table></div>`
             : '<p class="report-muted">本周没有可统计的低胜率组合。</p>'}
         </article>
         <article class="rl-card rl-card--foes">

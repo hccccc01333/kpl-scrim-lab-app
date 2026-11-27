@@ -213,3 +213,19 @@
 .report-sheet--weekly .rl-table-wrap .report-table td:nth-child(2) { width: 52px; }
 .report-sheet--weekly .rl-table-wrap .report-table th:last-child,
 .report-sheet--weekly .rl-table-wrap .report-table td:last-child { width: 190px; }
+
+/* 组合排名 + 胜率条：原生 progress 带语义，文字保留完整胜负分母。 */
+.rl-rank { display: inline-block; min-inline-size: 18px; margin-inline-end: 6px; color: var(--wr-copper); font: 800 0.625rem/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
+.rl-rate { display: grid; grid-template-columns: minmax(36px, 1fr) auto; align-items: center; gap: 8px; }
+.rl-rate progress { appearance: none; border: 0 solid; inline-size: 100%; block-size: 4px; background: transparent; overflow: clip; }
+.rl-rate progress::-webkit-progress-bar { background: #e7e0d5; border-radius: 2px; }
+.rl-rate progress::-webkit-progress-value { background: var(--wr-copper); border-radius: 2px; }
+.rl-rate progress::-moz-progress-bar { background: var(--wr-copper); border-radius: 2px; }
+.rl-rate--good progress::-webkit-progress-value { background: #176b69; }
+.rl-rate--good progress::-moz-progress-bar { background: #176b69; }
+.rl-rate--bad progress::-webkit-progress-value { background: #b3261e; }
+.rl-rate--bad progress::-moz-progress-bar { background: #b3261e; }
+.rl-rate-text { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rl-rate-empty { color: var(--wr-mute); }
+.rl-list--pairs .rl-rate { display: inline-grid; grid-template-columns: 36px auto; gap: 6px; vertical-align: middle; }
+@media (forced-colors: active) { .rl-rate progress { border: 1px solid CanvasText; } }
