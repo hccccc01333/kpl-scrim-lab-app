@@ -71,6 +71,33 @@ class CleanBundleTest(unittest.TestCase):
             self.assertFalse((root / 'clean_bundle.zip').exists())
             self.assertFalse(part.exists())
 
+    def test_failed_clean_rolls_back_nested_program_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'version.py').write_text("VERSION = '3.5.4'\n", encoding='utf-8')
+            (root / 'v3').mkdir()
+            (root / 'v3' / 'serve.py').write_text('old nested', encoding='utf-8')
+            (root / 'data').mkdir()
+            (root / 'data' / 'keep.txt').write_text('keep', encoding='utf-8')
+
+            bundle = root / 'clean_bundle.zip'
+            entries = [{'path': 'version.py', 'sha256': _sha(b'bad'), 'size': 3}]
+            with zipfile.ZipFile(bundle, 'w') as archive:
+                archive.writestr('manifest.json', json.dumps(entries))
+                archive.writestr('payload/version.py', b'bad')
+            marker = {'version': '3.5.5', 'bundle': 'clean_bundle.zip',
+                      'sha256': _sha(bundle.read_bytes())}
+            (root / 'clean_request.json').write_text(json.dumps(marker), encoding='utf-8')
+
+            with self.assertRaises(ValueError):
+                updater.apply_clean_bundle_if_requested(root)
+
+            self.assertEqual((root / 'version.py').read_text(encoding='utf-8').strip(),
+                             "VERSION = '3.5.4'")
+            self.assertEqual((root / 'v3' / 'serve.py').read_text(encoding='utf-8'),
+                             'old nested')
+            self.assertEqual((root / 'data' / 'keep.txt').read_text(encoding='utf-8'), 'keep')
+
     def test_no_marker_is_a_noop(self):
         with tempfile.TemporaryDirectory() as directory:
             result = updater.apply_clean_bundle_if_requested(Path(directory))

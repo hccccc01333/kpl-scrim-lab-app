@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -154,6 +155,8 @@ def _atomic_copy(source: Path, destination: Path) -> None:
     os.close(fd)
     try:
         shutil.copyfile(source, temp_name)
+        if destination.exists():
+            _force_unlink(destination)
         os.replace(temp_name, destination)
     finally:
         Path(temp_name).unlink(missing_ok=True)
@@ -375,10 +378,36 @@ def _program_delete_paths(target: Path) -> tuple[list[str], list[str]]:
     root = Path(target)
     directories = [name for name in PROGRAM_DIRS if (root / name).is_dir()]
     files = []
+    for name in directories:
+        for item in (root / name).rglob('*'):
+            if item.is_file():
+                files.append(item.relative_to(root).as_posix())
     for item in root.iterdir():
         if item.is_file() and item.suffix.lower() in PROGRAM_ROOT_SUFFIXES:
             files.append(item.name)
-    return directories, files
+    return directories, sorted(set(files))
+
+
+def _force_unlink(path: Path) -> None:
+    if not path.exists():
+        return
+    try:
+        os.chmod(path, stat.S_IWRITE)
+    except OSError:
+        pass
+    path.unlink()
+
+
+def _force_rmtree(path: Path) -> None:
+    if not path.exists():
+        return
+    for root, dirs, names in os.walk(path):
+        for name in names + dirs:
+            try:
+                os.chmod(Path(root) / name, stat.S_IWRITE)
+            except OSError:
+                pass
+    shutil.rmtree(path)
 
 
 def _extract_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo,
@@ -393,6 +422,8 @@ def _extract_from_zip(archive: zipfile.ZipFile, info: zipfile.ZipInfo,
             shutil.copyfileobj(reader, writer, length=1024 * 1024)
         if sha256_file(temp) != str(digest).lower():
             raise ValueError(f'清装包文件校验失败：{destination.name}')
+        if destination.exists():
+            _force_unlink(destination)
         os.replace(temp, destination)
     finally:
         temp.unlink(missing_ok=True)
@@ -468,9 +499,9 @@ def apply_clean_bundle_if_requested(target: Path | None = None) -> dict:
             backup = _backup_files(target, existing, current)
             try:
                 for name in directories:
-                    shutil.rmtree(Path(target) / name, ignore_errors=True)
+                    _force_rmtree(Path(target) / name)
                 for name in existing:
-                    (Path(target) / name).unlink(missing_ok=True)
+                    _force_unlink(Path(target) / name)
                 for path, info, digest in paths:
                     _extract_from_zip(archive, info, Path(target) / path, digest)
                 installed = read_installed_version(target)
