@@ -114,6 +114,25 @@ const HEADING_ICONS = {
    带 data-deco 的节点直接跳过，重绘后不会叠图标。 */
 function decorateHeadings(routeName) {
   const h1 = document.querySelector('#content h1:not([data-deco])');
+  /* 所有常规页共用一个页头骨架：面包屑给出「分组 · 页面」眉题，标题统一字号/字族。
+     周报与对话框是独立语义，保持原有排版。 */
+  if (h1 && routeName !== 'weekly' && !h1.closest('.report-sheet--weekly, dialog')) {
+    const host = h1.parentElement;
+    if (host) {
+      host.classList.add('page-h1-host');
+      const container = host.closest('.page-intro, .pbr-title, .comp-lead-row, .opp-page-head, .tm-dossier-copy, .hero-masthead, .report-title, header') || host.parentElement;
+      container?.classList.add('page-header-unified');
+      if (!host.querySelector(':scope > .page-h1-kicker')) {
+        const section = document.querySelector('[data-ui-section]')?.textContent?.trim() || labels[sectionFor(routeName)] || '';
+        const page = document.querySelector('[data-ui-page]')?.textContent?.trim() || labels[routeName] || '';
+        const kicker = document.createElement('span');
+        kicker.className = 'page-h1-kicker';
+        kicker.textContent = section && page ? `${section} · ${page}` : (page || section);
+        host.prepend(kicker);
+      }
+      h1.classList.add('page-h1');
+    }
+  }
   /* 有的页面走模块路由（如 #players -> playerarchive），按标题文字兜底选图标。 */
   let name = HEADING_ICONS[routeName];
   if (h1 && !name) {

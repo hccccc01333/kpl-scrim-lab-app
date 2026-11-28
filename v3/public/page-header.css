@@ -1,0 +1,90 @@
+/* 统一页头：所有常规页面共用「眉题 · 宋体标题 · 一行说明」骨架。
+   以非分层样式最后加载，覆盖各页面历史遗留的标题字号/字族/装饰三角。
+   周报（report-sheet--weekly）与对话框不参与，保留各自语义。 */
+
+:root {
+  --ui-page-title-font: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
+  --ui-page-title-size: clamp(1.75rem, 1.2rem + 1.6vw, 2.25rem);
+  --ui-page-kicker-color: #a86f22;
+  --ui-page-rule: #e8e3da;
+  --ui-page-muted: #667274;
+  --ui-page-ink: #1c2b2e;
+}
+
+#content .page-header-unified {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-block: 10px 14px;
+  margin-block-end: 16px;
+  border-block-end: 1px solid var(--ui-page-rule);
+}
+
+#content .page-h1-host {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-inline-size: 0;
+}
+
+#content .page-h1-host > .page-h1-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-end: 6px;
+  color: var(--ui-page-kicker-color);
+  font: 700 0.625rem/1 Manrope, var(--font);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+#content .page-h1-host > .page-h1-kicker::before {
+  content: "";
+  inline-size: 18px;
+  block-size: 1px;
+  background: currentColor;
+}
+
+#content .page-h1 {
+  margin: 0;
+  color: var(--ui-page-ink);
+  font-family: var(--ui-page-title-font);
+  font-size: var(--ui-page-title-size);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+
+/* 旧页面各自塞了三角/图标/英文眉题，统一页头里不再重复。 */
+#content .page-h1 .desk-h1-glyph,
+#content .page-h1 .desk-h1-tri,
+#content .page-h1 .ui-deco,
+#content .page-h1-host > .comp-kicker,
+#content .page-h1-host > .dash-eyebrow,
+#content .page-h1-host > .mo-kicker,
+#content .page-h1-host > .ds-event-kicker {
+  display: none !important;
+}
+
+#content .page-h1-host p,
+#content .page-h1-host .comp-lead-sub,
+#content .page-h1-host .pbr-sub {
+  margin-block-start: 6px;
+  max-inline-size: 70ch;
+  color: var(--ui-page-muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+@media (forced-colors: active) {
+  #content .page-header-unified { border-block-end-color: CanvasText; }
+  #content .page-h1-host > .page-h1-kicker,
+  #content .page-h1,
+  #content .page-h1-host p,
+  #content .page-h1-host .comp-lead-sub,
+  #content .page-h1-host .pbr-sub { color: CanvasText; }
+}
