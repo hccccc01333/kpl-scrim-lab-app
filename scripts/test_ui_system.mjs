@@ -8,6 +8,8 @@ const html = read('v3/public/index.html');
 const docs = read('v3/public/docs-page.js');
 const sources = read('v3/public/datasource-page.js');
 const health = read('v3/public/source-health-page.js');
+const rhythm = read('v3/public/line-rhythm.css');
+const desk = read('v3/public/training-desk.css');
 
 assert.match(html, /ui-system\.css\?v=20261128ui5/, '全站样式必须最后加载并带版本戳');
 assert.match(css, /--ui-control-height: 38px/, '控件高度必须统一');
@@ -36,6 +38,12 @@ assert.match(health, /openSources\.has\(node\.closest\('\[data-source\]'\)\?\.da
   '数据源轮询重绘必须恢复用户展开的状态说明');
 assert.doesNotMatch(health, /setInterval\(/, '数据源轮询不能混用 timeout 与 interval');
 assert.match(health, /pending \? 3000 : 30000/, '同步结束后必须恢复 30 秒空闲轮询');
+assert.doesNotMatch(rhythm, /\.pf-lane-filter, \.tb-seg, \.sh-summary/, '状态摘要不能跟页签一起被等分成窄列');
+assert.match(rhythm, /#app #content \.sh-summary > \* \{[\s\S]*?flex: 0 1 auto !important/, '状态计数必须按文字宽度排布并换行');
+assert.match(desk, /@media \(max-width: 620px\)[\s\S]*?\.desk-crumb \{ display: none; \}/,
+  '窄屏顶栏面包屑必须隐藏，避免竖排文字压住搜索框和板块切换');
+assert.match(html, /line-rhythm\.css\?v=20261128ui6/, '线条感样式必须带新版本戳');
+assert.match(html, /training-desk\.css\?v=20261128ui6/, '顶栏样式必须带新版本戳');
 
 assert.equal((docs.match(/<h1>/g) || []).length, 1, '文档页只能有一个 h1');
 assert.match(docs, /<h2>\$\{esc\(chapter\.title\)\}<\/h2>/, '章节标题必须降为 h2');

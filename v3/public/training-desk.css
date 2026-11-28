@@ -186,7 +186,9 @@ body { color: var(--text); caret-color: var(--accent); }
   #content .pbr-title .pbr-celadon-art { width: 35%; height: 80%; inset: auto -4% 0 auto; opacity: .53; }
   #content .pbr-bar-context { display: none; }
   #content .desk-home-actions { gap: 10px; }
-  .desk-crumb { gap: 2px; font-size: 12px; }
+  /* 窄屏顶栏放不下面包屑：会被挤成竖排文字压住搜索框和板块切换；
+     页头眉题已给出同一层级，隐藏即可。 */
+  .desk-crumb { display: none; }
   .desk-context { padding: 0 4px; font-size: 12px; inline-size: 9ch; }
   .desk-context svg { display: none; }
   #content .arch-bar { flex-wrap: wrap; }

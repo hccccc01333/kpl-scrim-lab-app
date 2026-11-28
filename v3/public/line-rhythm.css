@@ -19,7 +19,7 @@
   .pf-heroes, .hc-index, .xw-index, .ds-carousel-markers,
   .pc-legend, .xw-facts, .archive-sort, .tb-meta, .xw-seg, .xw-radar-links,
   .help-mini, .arch-id-names, .cp-filter-lanes, .cp-lanes,
-  .pf-lane-filter, .tb-seg, .sh-summary
+  .pf-lane-filter, .tb-seg
 ) > * {
   flex: 1 1 0 !important;
   min-inline-size: 0 !important;
@@ -28,6 +28,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 状态计数不是页签：按文字宽度排布、换行，避免 pill 被等分成极窄的一列 */
+#app #content .sh-summary > * {
+  flex: 0 1 auto !important;
+  min-inline-size: auto !important;
+  justify-content: flex-start !important;
+  text-align: start !important;
+  overflow: visible !important;
 }
 
 /* 长标签组：用统一下限而不是等分空间，避免「游走（辅助）」被截掉 */
