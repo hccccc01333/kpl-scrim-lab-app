@@ -37,7 +37,7 @@ assert.match(js, /rmo-ratio/, '按日节奏必须显示胜负数字');
 assert.match(js, /rec\.wins\} 胜 \$\{rec\.losses\} 负/, '节奏图 aria-label 必须带胜负');
 assert.match(css, /forced-colors: active\) \{ \.rmo-ratio/, '胜负数字必须有强制颜色回退');
 assert.match(html, /weekly-refined\.css\?v=20261128weeklyart7/, 'index.html 必须最后加载周报视觉层');
-assert.match(app, /features\.js\?v=20261128weeklyart7/, 'app.js 模块版本戳必须更新');
-assert.match(html, /features\.js\?v=20261128weeklyart7/, 'index.html 预取版本戳必须更新');
+assert.match(app, /features\.js\?v=20261128ui5/, 'app.js 模块版本戳必须更新');
+assert.match(html, /features\.js\?v=20261128ui5/, 'index.html 预取版本戳必须更新');
 
 console.log('weekly editorial layout: all assertions passed');

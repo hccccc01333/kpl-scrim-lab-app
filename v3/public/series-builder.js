@@ -531,7 +531,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       const html = portrait(name);
       return eager ? html.replace('loading="lazy"', 'loading="eager"') : html;
     };
-    return `<span class="sb-faces${foe ? ' is-foe' : ''}" title="${foe ? '对面' : '本队'}阵容">`
+    return `<span class="sb-faces sb-faces--large${foe ? ' is-foe' : ''}" title="${foe ? '对面' : '本队'}阵容">`
       + list.map(face).join('') + '</span>';
   }
 
@@ -699,7 +699,7 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       <span class="sb-row-score">${own === null || foe === null ? '—' : `${fmt(own)} : ${fmt(foe)}`}</span>
       <span class="sb-row-dur">${time(v.duration)}</span>
       <span class="sb-row-gold ${gold > 0 ? 'is-up' : gold < 0 ? 'is-down' : ''}">${diff(v.finalDiff)}</span>
-      <span class="sb-row-lineup">${heroFaces(v.heroes, false, eager)}<em>VS</em>${heroFaces(v.heroesFoe, true, eager)}</span>
+      <span class="sb-row-lineup sb-row-lineup--wrap">${heroFaces(v.heroes, false, eager)}<em>VS</em>${heroFaces(v.heroesFoe, true, eager)}</span>
       <a class="sb-row-open" href="${esc('#match/' + encodeURIComponent(key))}" aria-label="打开这一局复盘" title="打开复盘">${icon('arrow')}</a>
     </div>`;
   }
@@ -761,12 +761,12 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
       <header class="sb-day-head" data-sb-day-toggle="${esc(item.date)}" role="button" tabindex="0"
         aria-expanded="${open}" aria-controls="sb-day-${esc(item.date)}">
         <span class="sb-day-date"><b>${esc(item.date)}</b><small>${esc(weekdayOf(item.date))}</small></span>
-        <span class="sb-day-stats">${state.filter.reviewOnly
+        <span class="sb-day-progress"><span class="sb-day-stats">${state.filter.reviewOnly
           ? `<b>${item.series.length}</b> 组待核实`
           : state.filter.qualityOnly
             ? `<b>${item.rows.length}</b> 局需补数据`
             : `${item.rows.length ? `<b>${item.rows.length}</b> 局待编` : '已编组'}${item.series.length ? `<i>·</i>${item.series.length} 组` : ''}`}</span>
-        <span class="sb-day-meter" title="当天已编组占比 ${ratio}%"><i style="width:${ratio}%"></i></span>
+          <span class="sb-day-meter" role="progressbar" aria-label="当天已编组占比" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${ratio}" title="当天已编组占比 ${ratio}%"><i style="width:${ratio}%"></i></span></span>
         <span class="sb-day-chev">${icon('chevron')}</span>
       </header>
       <div class="sb-day-wrap" id="sb-day-${esc(item.date)}" ${open ? '' : 'hidden'}>${open ? dayBody(item) : ''}</div>
@@ -852,14 +852,17 @@ export function createSeriesBuilder({ esc, fmt, diff, time, portrait, route, ico
     if (node) node.textContent = scopeText(days);
   }
 
-  /* 编组三步操作指引常驻在工具栏上方；教练不用猜「选完局之后点哪」。 */
+  /* 操作帮助默认收起；需要时展开，不长期占据编组工作区。 */
   function stepsHtml() {
-    return `<ol class="sb-steps" aria-label="编组流程">
-      <li><b>1</b><span>勾选对局</span><small>按住 Shift 连选同一天</small></li>
-      <li><b>2</b><span>确认赛制</span><small>按局数推荐 BO，可手改</small></li>
-      <li><b>3</b><span>底部确认编组</span><small>撤销用 ⌘/Ctrl+Z</small></li>
-      <li class="sb-steps-note">智能候选只生成建议，不会改动已有编组；标「待核实」的组，点卡片上的「✓ 核实无误」即可。</li>
-    </ol>`;
+    return `<details class="sb-help">
+      <summary><b>编组说明</b><span>勾选对局 → 确认赛制 → 底部确认编组</span><i aria-hidden="true">⌄</i></summary>
+      <ol class="sb-steps" aria-label="编组流程">
+        <li><b>1</b><span>勾选对局</span><small>按住 Shift 连选同一天</small></li>
+        <li><b>2</b><span>确认赛制</span><small>按局数推荐 BO，可手改</small></li>
+        <li><b>3</b><span>底部确认编组</span><small>撤销用 ⌘/Ctrl+Z</small></li>
+        <li class="sb-steps-note">智能候选只生成建议，不会改动已有编组；标「待核实」的组，点卡片上的「✓ 核实无误」即可。</li>
+      </ol>
+    </details>`;
   }
 
   function toolbarHtml(days = []) {

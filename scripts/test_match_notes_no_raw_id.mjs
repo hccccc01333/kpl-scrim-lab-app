@@ -10,6 +10,6 @@ assert.doesNotMatch(js, /title="打开这一局的复盘（\$\{esc\(key\)\}）"/
 assert.match(js, /const detail = \[m\?\.matchType/, '副标题要做成赛制/时间/训练组');
 assert.match(js, /第 \$\{index \+ 1\} 局/, '同日多局用序号而不是 ID 尾号区分');
 assert.doesNotMatch(js, /const tail = String\(match\.key/, '对局选择项不得再截 key 尾号');
-assert.match(app, /match-notes\.js\?v=20261127noid1/, '模块版本戳必须更新');
+assert.match(app, /match-notes\.js\?v=20261128ui5/, '模块版本戳必须更新');
 
 console.log('match notes no raw id: all assertions passed');

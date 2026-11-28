@@ -32,13 +32,13 @@ function change(v) {
   const arrow = v > 0 ? '↑' : v < 0 ? '↓' : '→';
   return `<span class="thd-chg is-${dir}">${arrow} ${signedPc(v)}</span>`;
 }
-const seg = (values, current, attr, suffix = '天') => `<div class="thd-seg" role="group">${values.map((d) =>
-  `<button type="button" ${attr}="${d}" class="${current === d ? 'is-on' : ''}">${d} ${suffix}</button>`).join('')}</div>`;
+const seg = (values, current, attr, suffix = '天', cls = '') => `<div class="thd-seg${cls ? ` ${cls}` : ''}" role="group">${values.map((d) =>
+  `<button type="button" ${attr}="${d}" class="${current === d ? 'is-on' : ''}" aria-pressed="${current === d}">${d} ${suffix}</button>`).join('')}</div>`;
 /* 标题下的说明小字已移除：标题与按钮本身要能一眼看懂；sub 仅保留入参兼容调用方。 */
 const intro = (title, sub) => `<div class="page-intro"><div><h1>${glyph('heroes', { size: 20 })}${es(title)}</h1></div>
   <div class="intro-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })}刷新数据</button></div></div>`;
 const toolbar = (period, note) => `<div class="thd-toolbar"><span class="thd-toolbar-label">时间范围</span>
-  ${seg(PERIODS, period, 'data-thd-period')}<span class="thd-toolbar-note">${es(note)}</span></div>`;
+  ${seg(PERIODS, period, 'data-thd-period', '天', 'thd-seg-quiet thd-period-switch')}<span class="thd-toolbar-note">${es(note)}</span></div>`;
 
 /* 行点击后重绘整个页面：窗口滚动位置保持不变，展开态放在各自 state 里。 */
 function makeRerender(selector, renderFn) {
@@ -95,36 +95,38 @@ export function createHeroUsagePage({ esc: E = es, portrait = () => '' } = {}) {
       const bg = b.byPeriod?.[String(state.period)]?.current?.games || 0;
       return bg - ag || b.games - a.games || String(a.hero).localeCompare(String(b.hero), 'zh-CN');
     });
+    const hasChange = list.some((r) => isNum(r.byPeriod?.[String(state.period)]?.change));
     const body = list.map((r) => {
       const p = r.byPeriod?.[String(state.period)] || {};
       const cur = p.current || {};
       const open = state.openHero === r.hero;
+      const playerHasChange = (r.players || []).some((x) => isNum(x.change));
       return `<div class="thd-row-wrap${open ? ' is-open' : ''}">
         <button type="button" class="thd-row" data-thd-hero="${E(r.hero)}" aria-expanded="${open}">
           <span class="thd-hero-cell">${portrait(r.hero, 'thd-face')}<span><b>${E(r.hero)}</b><small>${E(r.lane || '位置未知')}</small></span></span>
-          <span class="thd-num"><b>${n0(cur.games)}</b><small>次</small></span>
-          <span class="thd-num"><b>${pc(cur.winRate)}</b><small>训练赛</small></span>
-          <span class="thd-num thd-kpl"><b>${pc(r.kplWinRate)}</b><small>KPL</small></span>
-          <span class="thd-change">${change(p.change)}<small>环比</small></span>
+          <span class="thd-num"><b>${n0(cur.games)}</b></span>
+          <span class="thd-num"><b>${pc(cur.winRate)}</b></span>
+          <span class="thd-num thd-kpl"><b>${pc(r.kplWinRate)}</b></span>
+          ${hasChange ? `<span class="thd-change">${change(p.change)}</span>` : ''}
           <span class="thd-caret" aria-hidden="true">${open ? '▴' : '▾'}</span>
         </button>
         ${open ? `<div class="thd-expand">
           <div class="thd-expand-col"><h4>本队选手使用 ${E(r.hero)}</h4>
-            <table class="thd-mini-table"><thead><tr><th>选手</th><th>使用</th><th>训练胜率</th><th>近 7 天环比</th></tr></thead><tbody>
-            ${(r.players || []).map((x) => `<tr><th>${E(x.name)}</th><td>${n0(x.games)}</td><td>${pc(x.winRate)}</td><td>${change(x.change)}</td></tr>`).join('')
-              || '<tr><td colspan="4">暂无选手使用记录。</td></tr>'}</tbody></table></div>
+            <table class="thd-mini-table"><thead><tr><th>选手</th><th>使用（次）</th><th>训练赛胜率（%）</th>${playerHasChange ? '<th>近 7 天环比（%）</th>' : ''}</tr></thead><tbody>
+            ${(r.players || []).map((x) => `<tr><th>${E(x.name)}</th><td>${n0(x.games)}</td><td>${pc(x.winRate)}</td>${playerHasChange ? `<td>${change(x.change)}</td>` : ''}</tr>`).join('')
+              || `<tr><td colspan="${playerHasChange ? 4 : 3}">暂无选手使用记录。</td></tr>`}</tbody></table></div>
           <div class="thd-expand-col"><div class="thd-chart-head"><h4>胜率趋势 · ${E(r.hero)}</h4>
-            <div class="thd-seg" role="group" aria-label="趋势天数">${[3, 7].map((d) => `<button type="button" data-thd-trend="${d}" class="${state.trendDays === d ? 'is-on' : ''}">近 ${d} 天</button>`).join('')}</div></div>
+            <div class="thd-seg" role="group" aria-label="趋势天数">${[3, 7].map((d) => `<button type="button" data-thd-trend="${d}" class="${state.trendDays === d ? 'is-on' : ''}" aria-pressed="${state.trendDays === d}">近 ${d} 天</button>`).join('')}</div></div>
             ${chart(r)}</div></div>` : ''}
       </div>`;
     }).join('');
-    return `<div class="page thd-page thd-usage-page">
+    return `<div class="page thd-page thd-usage-page${hasChange ? '' : ' thd-no-change'}">
       ${intro('本队英雄详情', '自家选手每个英雄用了多少次、胜率如何、环比有没有下降；点开一行看近期胜率趋势。')}
       ${toolbar(state.period, `窗口截至 ${data().anchor || '—'}${w[state.period] ? ` · 从 ${w[state.period]} 起` : ''}`)}
-      <section class="thd-section">
+      <section class="thd-section thd-usage-table">
         <header class="thd-section-head"><div><span class="thd-kicker">01 / 英雄</span><h2>${glyph('heroes', { size: 18 })}本队英雄使用明细</h2></div>
           <span class="thd-section-count">${list.length} 个英雄 · ${n0(data().sources?.panels)} 条本队面板</span></header>
-        <div class="thd-table-head"><span>英雄 / 分路</span><span>使用次数</span><span>训练赛胜率</span><span>KPL 胜率</span><span>环比</span><span></span></div>
+        <div class="thd-table-head"><span>英雄 / 分路</span><span>使用次数（次）</span><span>训练赛胜率（%）</span><span>KPL 胜率（%）</span>${hasChange ? '<span>环比（%）</span>' : ''}<span></span></div>
         <div class="thd-rows">${body || `<div class="thd-empty">${glyph('heroes', { size: 18 })}当前范围没有本队英雄使用记录</div>`}</div>
       </section>
       <p class="thd-source">数据来源：本机营地十人面板；KPL 胜率取自官方赛程本地缓存。缺数据的项显示「—」，不补造数字。</p>
@@ -147,25 +149,46 @@ export function createHeroUsagePage({ esc: E = es, portrait = () => '' } = {}) {
 
 /* ── ② 分路英雄指标 ─────────────────────────────────────────────────── */
 export function createLaneMetricsPage({ esc: E = es, portrait = () => '' } = {}) {
-  const state = { data: null, period: 7, lane: '', openHero: '' };
+  const state = { data: null, period: 7, lane: '', openHero: null };
   const laneData = () => state.data?.laneHeroes || {};
   const lanes = () => LANE_ORDER.filter((k) => (laneData()[k] || []).length)
     .concat(Object.keys(laneData()).filter((k) => !LANE_ORDER.includes(k) && (laneData()[k] || []).length));
   const laneLabel = (k) => k === '游走' ? '游走（辅助）' : k;
+  const metricsOf = (r) => r.byPeriod?.[String(state.period)]?.metrics || [];
+  const passCount = (r) => metricsOf(r).filter((x) => ['elite', 'good', 'pass'].includes(x.level)).length;
+  const compareUseful = (a, b) => Number(metricsOf(b).length > 0) - Number(metricsOf(a).length > 0)
+    || passCount(b) - passCount(a)
+    || (b.byPeriod?.[String(state.period)]?.games || 0) - (a.byPeriod?.[String(state.period)]?.games || 0)
+    || String(a.hero).localeCompare(String(b.hero), 'zh-CN');
+  const laneScore = (key) => {
+    const list = laneData()[key] || [];
+    return list.reduce((score, r) => score + passCount(r) * 100
+      + (metricsOf(r).length ? 1 : 0) + metricsOf(r).length / 100, 0);
+  };
 
   function render(value) {
     if (value) state.data = value;
     if (!state.data) return '<div class="page"><div class="loading">正在读取规则中心与分路指标…</div></div>';
-    if (!state.lane || !(laneData()[state.lane] || []).length) state.lane = lanes()[0] || '';
+    const laneList = lanes();
+    if (!laneList.includes(state.lane)) {
+      state.lane = laneList.slice().sort((a, b) => laneScore(b) - laneScore(a)
+        || (laneData()[b] || []).length - (laneData()[a] || []).length)[0] || '';
+    }
     const list = laneData()[state.lane] || [];
+    const ranked = list.slice().sort(compareUseful);
+    const current = list.find((x) => x.hero === state.openHero);
+    /* null 表示尚未选择；'' 表示用户主动收起。首屏优先有指标、达标数多、场次多的英雄。 */
+    if (state.openHero == null || (state.openHero && !metricsOf(current || {}).length && metricsOf(ranked[0] || {}).length)) {
+      state.openHero = ranked[0]?.hero || '';
+    }
     const open = list.find((x) => x.hero === state.openHero);
     const p = open?.byPeriod?.[String(state.period)] || {};
-    const tabs = lanes().map((k) => `<button type="button" data-thd-lane="${E(k)}" class="${state.lane === k ? 'is-on' : ''}">${E(laneLabel(k))}<small>${(laneData()[k] || []).length}</small></button>`).join('');
+    const tabs = laneList.map((k) => `<button type="button" data-thd-lane="${E(k)}" class="${state.lane === k ? 'is-on' : ''}" aria-pressed="${state.lane === k}">${E(laneLabel(k))}<small>${(laneData()[k] || []).length} 个英雄</small></button>`).join('');
     const chips = list.map((r) => {
-      const m = r.byPeriod?.[String(state.period)]?.metrics || [];
-      const ok = m.filter((x) => ['elite', 'good', 'pass'].includes(x.level)).length;
-      return `<button type="button" class="thd-lane-hero${state.openHero === r.hero ? ' is-on' : ''}" data-thd-lane-hero="${E(r.hero)}">
-        ${portrait(r.hero, 'thd-face')}<b>${E(r.hero)}</b><small>${n0(r.byPeriod?.[String(state.period)]?.games)} 局 · ${ok} 项达标</small></button>`;
+      const m = metricsOf(r);
+      const ok = passCount(r);
+      return `<button type="button" class="thd-lane-hero${state.openHero === r.hero ? ' is-on' : ''}" data-thd-lane-hero="${E(r.hero)}" aria-pressed="${state.openHero === r.hero}">
+        ${portrait(r.hero, 'thd-face')}<b>${E(r.hero)}</b><span class="thd-lane-hero-meta"><small>${n0(r.byPeriod?.[String(state.period)]?.games)} 局</small><span class="thd-pass-badge">${ok} 项达标</span></span></button>`;
     }).join('');
     const metrics = (p.metrics || []).map((m) => {
       const value = m.unit === '%' ? pc(m.value)
@@ -201,7 +224,7 @@ export function createLaneMetricsPage({ esc: E = es, portrait = () => '' } = {})
     const p = t.closest('[data-thd-period]');
     if (p) { state.period = Number(p.dataset.thdPeriod); ctl.rerender(); return; }
     const l = t.closest('[data-thd-lane]');
-    if (l) { state.lane = l.dataset.thdLane; state.openHero = ''; ctl.rerender(); return; }
+    if (l) { state.lane = l.dataset.thdLane; state.openHero = null; ctl.rerender(); return; }
     const h = t.closest('[data-thd-lane-hero]');
     if (h) { state.openHero = state.openHero === h.dataset.thdLaneHero ? '' : h.dataset.thdLaneHero; ctl.rerender(); }
   });
@@ -217,30 +240,40 @@ export function createComboCardsPage({ esc: E = es, portrait = () => '' } = {}) 
   function render(value) {
     if (value) state.data = value;
     if (!state.data) return '<div class="page"><div class="loading">正在读取组合池与本队对局…</div></div>';
-    const list = all();
+    const hasData = (c) => {
+      const p = c.byPeriod?.[String(state.period)] || {};
+      return (p.current?.games || 0) > 0 || isNum(p.current?.winRate);
+    };
+    const list = all().slice().sort((a, b) => Number(hasData(b)) - Number(hasData(a))
+      || (b.byPeriod?.[String(state.period)]?.current?.games || 0) - (a.byPeriod?.[String(state.period)]?.current?.games || 0)
+      || (a.heroes || []).join('+').localeCompare((b.heroes || []).join('+'), 'zh-CN'));
+    const withData = list.filter(hasData).length;
     const shown = state.expanded ? list : list.slice(0, 12);
     const cards = shown.map((c) => {
       const p = c.byPeriod?.[String(state.period)] || {};
       const cur = p.current || {};
+      const data = hasData(c), hasChange = isNum(p.change);
       const strength = c.strength === 'strong' ? '强联动' : c.strength === 'weak' ? '弱联动' : '';
-      return `<article class="thd-combo-card">
+      return `<article class="thd-combo-card${data ? '' : ' is-empty'}">
         <div class="thd-combo-top"><span>${E(c.kindLabel || (c.kind === 'trios' ? '三人体系' : '双人组合'))}</span>
           ${strength ? `<span class="thd-strength is-${E(c.strength)}">${strength}</span>` : ''}</div>
         <div class="thd-combo-heroes">${(c.heroes || []).map((h, i) => `${i ? '<i>+</i>' : ''}${portrait(h, 'thd-face')}<b>${E(h)}</b>`).join('')}</div>
         ${c.name ? `<p class="thd-combo-name">${E(c.name)}</p>` : ''}
-        <div class="thd-combo-nums"><div><b>${pc(cur.winRate)}</b><span>胜率</span></div><div><b>${n0(cur.games)}</b><span>场次</span></div>
-          <div>${change(p.change)}<span>环比</span></div></div></article>`;
+        ${data ? `<div class="thd-combo-nums${hasChange ? '' : ' is-no-change'}"><div><b>${pc(cur.winRate)}</b><span>胜率</span></div><div><b>${n0(cur.games)}</b><span>场次</span></div>
+          ${hasChange ? `<div>${change(p.change)}<span>环比</span></div>` : ''}</div>` : '<div class="thd-combo-empty-note">当前窗口暂无对局</div>'}</article>`;
     }).join('');
+    const hiddenCount = list.length - shown.length;
     return `<div class="page thd-page thd-combo-page">
       ${intro('英雄组合表现', '范围是本队选手；组合名单按赛训组组合池，看近几天这些组合的胜率和场次。')}
       ${toolbar(state.period, `窗口截至 ${E(state.data.anchor || '—')} · ${state.data.comboBuiltin ? '组合池尚未保存，当前用内置名单' : '组合池已保存的名单'}`)}
       <section class="thd-section">
         <header class="thd-section-head"><div><span class="thd-kicker">03 / 组合</span><h2>${glyph('compare', { size: 18 })}本队选手英雄组合</h2></div>
-          <span class="thd-section-count">共 ${list.length} 组</span></header>
+          <span class="thd-section-count">共 ${list.length} 组 · ${withData} 组有数据</span></header>
+        <p class="thd-combo-rule"><span class="thd-strength is-strong">强联动</span>＝赛训组优先搭配；<span class="thd-strength is-weak">弱联动</span>＝满足特定条件再考虑。标签不代表当前胜率更高。</p>
         <div class="thd-combo-grid">${cards || `<div class="thd-empty">${glyph('compare', { size: 18 })}组合池里还没有组合</div>`}</div>
-        ${list.length > 12 ? `<button type="button" class="thd-more" data-thd-combo-more>${glyph(state.expanded ? 'ban' : 'heroes', { size: 18 })}${state.expanded ? '收起' : `展开全部 ${list.length} 个组合`}</button>` : ''}
+        ${state.expanded || hiddenCount > 0 ? `<button type="button" class="thd-more" data-thd-combo-more>${glyph(state.expanded ? 'ban' : 'heroes', { size: 18 })}${state.expanded ? '收起' : `展开其余 ${hiddenCount} 组`}</button>` : ''}
       </section>
-      <p class="thd-source">组合名单来自赛训组组合池；场次与胜率取本队选手在营地面板里同时用到该组合英雄的对局。未命中的组合仍显示，场次为 0。</p>
+      <p class="thd-source">组合名单来自赛训组组合池；场次与胜率按本队选手同局使用计算。暂无对局的组合排在后面并折叠。</p>
     </div>`;
   }
   const ctl = makeRerender('.thd-combo-page', render);

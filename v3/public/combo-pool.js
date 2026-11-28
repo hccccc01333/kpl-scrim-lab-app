@@ -467,7 +467,10 @@ export function createComboPoolPage(h = {}) {
         <span>${esc(name)}</span>
         <button type="button" class="cp-chip-x" data-cp-chip-remove="${esc(name)}"
           aria-label="从已选中移除 ${esc(name)}">×</button>
-      </span>`).join('') : '<p class="cp-empty">还没有选英雄。点上方头像开始（选 2 个或 3 个）。</p>';
+      </span>`).join('') : `<div class="cp-selected-empty">
+        <p><b>还没有选英雄。</b>从上方英雄池开始：选 2 个加入双人组合池，选 3 个加入三人体系池。</p>
+        <button type="button" class="control cp-empty-action" data-cp-start-pick>${glyph('heroes', { size: 18 })}去选择英雄</button>
+      </div>`;
 
     const clear = root.querySelector('[data-cp-clear]');
     if (clear) clear.disabled = !ui.selected.length;
@@ -477,9 +480,10 @@ export function createComboPoolPage(h = {}) {
     const strength = root.querySelector('[data-cp-strength-wrap]');
     const cancel = root.querySelector('[data-cp-cancel-edit]');
     if (submit) {
-      /* 按钮始终可提交：选择数量属于校验，交给 submit 的报错与提示，
-         而不是用 disabled 让键盘用户点不到、也不知道为什么。 */
-      submit.disabled = ui.saving;
+      /* 数量无效时不让提交进入保存链路；原因始终显示在旁边，禁用态也有明确文案。 */
+      submit.disabled = ui.saving || !kind;
+      submit.title = !kind ? '请先选择 2 个或 3 个英雄' : '';
+      submit.setAttribute('aria-describedby', `${uid}-form-hint`);
       submit.innerHTML = `${glyph('hero-pool', { size: 18 })}<span>${ui.editing ? '保存修改'
         : kind === 'pairs' ? '加入双人组合池'
           : kind === 'trios' ? '加入三人体系池' : '加入组合池'}</span>`;
@@ -493,7 +497,10 @@ export function createComboPoolPage(h = {}) {
             : ui.editing ? '保存后会覆盖原来的条目。' : '可以填名字；双人组合还要选联动强弱。';
     }
     if (strength) strength.hidden = !kind;   // 双人和三人都要选强弱
-    if (cancel) cancel.hidden = !ui.editing;
+    if (cancel) {
+      cancel.hidden = !ui.editing;
+      cancel.disabled = ui.saving;
+    }
   }
 
   function rowHtml(kind, entry) {
@@ -594,11 +601,12 @@ export function createComboPoolPage(h = {}) {
           <label class="visually-hidden" for="${uid}-search">按英雄名搜索</label>
           <input id="${uid}-search" type="search" data-cp-search placeholder="搜索英雄名" autocomplete="off" spellcheck="false">
         </search>
-        <div class="cp-lanes" role="group" aria-label="按分路筛选英雄">${laneButtons()}
+        <div class="cp-lanes" role="group" aria-label="按分路筛选英雄">${laneButtons()}</div>
+        <div class="cp-lane-actions" role="group" aria-label="按当前分路批量选择">
           <button type="button" class="control cp-lane-pick" data-cp-lane-pick disabled>${glyph('pick', { size: 18 })}选本分路</button>
         </div>
         <div class="cp-grid-scroller" data-cp-grid-scroller>
-          <div class="cp-grid" data-cp-grid></div>
+          <div class="cp-grid cp-grid--bounded" data-cp-grid></div>
         </div>
       </section>
 
@@ -633,10 +641,10 @@ export function createComboPoolPage(h = {}) {
             <label><input type="radio" data-cp-strength="strong" name="${uid}-strength" value="strong" checked> 强联动</label>
             <label><input type="radio" data-cp-strength="weak" name="${uid}-strength" value="weak"> 弱联动</label>
           </fieldset>
-          <p class="cp-form-hint" data-cp-form-hint></p>
+          <p class="cp-form-hint" id="${uid}-form-hint" data-cp-form-hint></p>
           <div class="cp-form-foot">
-            <button type="button" class="control" data-cp-cancel-edit hidden>${glyph('ban', { size: 18 })}取消编辑</button>
-            <button type="submit" class="primary" data-cp-submit>${glyph('hero-pool', { size: 18 })}加入组合池</button>
+            <button type="button" class="control cp-cancel-edit" data-cp-cancel-edit hidden>${glyph('ban', { size: 18 })}取消编辑</button>
+            <button type="submit" class="primary" data-cp-submit disabled>${glyph('hero-pool', { size: 18 })}加入组合池</button>
           </div>
         </form>
       </section>
@@ -658,7 +666,7 @@ export function createComboPoolPage(h = {}) {
             </div>
             <div class="cp-filter-chips" data-cp-filter-chips></div>
             <div class="cp-filter-grid cp-grid-scroller" data-cp-grid-scroller>
-              <div class="cp-grid" data-cp-filter-grid></div>
+              <div class="cp-grid cp-grid--bounded" data-cp-filter-grid></div>
             </div>
             <button type="button" class="control cp-filter-clear" data-cp-filter-clear disabled>${glyph('trash', { size: 18 })}清空筛选</button>
           </div>
@@ -722,6 +730,12 @@ export function createComboPoolPage(h = {}) {
     const hero = event.target.closest('[data-cp-hero]');
     if (hero) { toggleHero(text(hero.dataset.cpHero)); return; }
     if (event.target.closest('[data-cp-lane-pick]')) { addLaneHeroes(); return; }
+    if (event.target.closest('[data-cp-start-pick]')) {
+      root?.querySelector('.cp-pool')?.scrollIntoView?.({ block: 'start' });
+      root?.querySelector('[data-cp-search]')?.focus({ preventScroll: true });
+      announce('请在英雄池中选择 2 个或 3 个英雄。');
+      return;
+    }
     const remove = event.target.closest('[data-cp-chip-remove]');
     if (remove) { toggleHero(text(remove.dataset.cpChipRemove), false); return; }
     if (event.target.closest('[data-cp-clear]')) {

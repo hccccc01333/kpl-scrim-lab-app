@@ -530,8 +530,19 @@ export function createRulesCenter(h = {}) {
   function paintSaveState() {
     root?.querySelectorAll('[data-rc-save]').forEach((btn) => {
       const kind = btn.dataset.rcSave;
-      btn.disabled = !dirty(kind) || state.saving;
-      btn.textContent = state.saving ? '保存中…' : (dirty(kind) ? '保存更改 ●' : '保存更改');
+      const isDirty = dirty(kind);
+      btn.disabled = !isDirty || state.saving;
+      btn.innerHTML = `${glyph('pick', { size: 18 })}<span>${state.saving ? '保存中…' : '保存更改'}</span>`;
+      const status = root?.querySelector(`[data-rc-save-state="${kind}"]`);
+      if (status) {
+        status.textContent = state.saving ? '保存中…'
+          : isDirty ? '有未保存更改'
+            : state.docs[kind] ? `已保存 · 修订 ${Number(state.docs[kind].revision) || 0}` : '读取中…';
+        status.classList.toggle('is-dirty', isDirty || state.saving);
+      }
+    });
+    root?.querySelectorAll('[data-rc-snapshot]').forEach((btn) => {
+      btn.disabled = state.saving || !state.docs[btn.dataset.rcSnapshot];
     });
   }
   function paintTabs() {
@@ -540,6 +551,13 @@ export function createRulesCenter(h = {}) {
       btn.setAttribute('aria-selected', String(on));
       btn.tabIndex = on ? 0 : -1;
       btn.classList.toggle('is-on', on);
+      const dirtyMark = btn.querySelector('[data-rc-tab-dirty]');
+      if (dirtyMark) {
+        const kind = TABS.find((tab) => tab.key === btn.dataset.rcTab)?.kind;
+        const isDirty = Boolean(kind && dirty(kind));
+        dirtyMark.hidden = !isDirty;
+        dirtyMark.textContent = isDirty ? '未保存' : '';
+      }
     });
     root?.querySelectorAll('[data-rc-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.rcPanel !== state.active;
@@ -810,8 +828,8 @@ export function createRulesCenter(h = {}) {
 
   function switchTab(key) {
     if (!TABS.some((tab) => tab.key === key) || key === state.active) return;
-    const dirtyKinds = Object.keys(KIND_META).filter((k) => k !== activeKind() && dirty(k));
-    if (dirtyKinds.length && !window.confirm(`还有未保存的修改（${dirtyKinds.map((k) => KIND_META[k].label).join('、')}），确定切换吗？`)) return;
+    const dirtyKinds = Object.keys(KIND_META).filter((k) => dirty(k));
+    if (dirtyKinds.length && !window.confirm(`还有未保存的修改（${dirtyKinds.map((k) => KIND_META[k].label).join('、')}）。切换不会保存，确定继续吗？`)) return;
     state.active = key;
     setNotice('', { quiet: true });
     paint();
@@ -957,9 +975,12 @@ export function createRulesCenter(h = {}) {
   function panelInner(tab) {
     const kind = tab.kind;
     const meta = KIND_META[kind];
-    const saveBtn = `<button type="button" class="primary" data-rc-save="${kind}" disabled>${glyph('pick', { size: 18 })}保存更改</button>`;
+    const saveState = `<span class="rc-save-state" id="${uid}-save-state-${kind}" data-rc-save-state="${kind}" role="status" aria-live="polite"></span>`;
+    const saveBtn = `<button type="button" class="primary" data-rc-save="${kind}" aria-describedby="${uid}-save-state-${kind}" disabled>${glyph('pick', { size: 18 })}保存更改</button>`;
     const snapBtn = `<button type="button" class="control" data-rc-snapshot="${kind}" title="把整份${KIND_META[kind].label}存到当前赛事快照">${glyph('export', { size: 18 })}存为当前赛事快照</button>`;
     const reloadBtn = `<button type="button" class="control" data-rc-reload="${kind}">${glyph('refresh', { size: 18 })}重新读取</button>`;
+    const readActions = `<div class="rc-read-actions" role="group" aria-label="读取操作">${reloadBtn}${kind === 'hero_tags' ? '<span class="rc-count" data-rc-hero-count></span>' : ''}</div>`;
+    const commitActions = `<div class="rc-save-actions" role="group" aria-label="保存与快照">${saveState}${snapBtn}${saveBtn}</div>`;
     // search 不在 glyph 白名单：沿用外壳注入的 icon('search')，外壳未提供时退化为纯文字输入框。
     const search = (placeholder) => `<search class="rc-search"><label class="visually-hidden" for="${uid}-search-${tab.key}">搜索${esc(meta.label)}</label>
       ${icon('search')}
@@ -967,7 +988,7 @@ export function createRulesCenter(h = {}) {
     if (kind === 'hero_tags') {
       return `<section class="section">
         <div class="section-heading"><div><h2>英雄标签（五路 12 类，可直接编辑）</h2></div>
-          <div class="rc-panel-actions">${reloadBtn}<span class="rc-count" data-rc-hero-count></span>${snapBtn}${saveBtn}</div></div>
+          <div class="rc-panel-actions">${readActions}${commitActions}</div></div>
         <div class="rc-filter">${search('按英雄名 / 类型搜索')}
           <label>分路 <select data-rc-hero-lane>${['全部', ...LANES].map((l) => `<option${state.heroLane === l ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>
           <button type="button" class="primary" data-rc-add="hero_tags">${plus({ size: 18 })} 新增英雄</button></div>
@@ -991,7 +1012,7 @@ export function createRulesCenter(h = {}) {
         </details>`;
       return `<section class="section">
         <div class="section-heading"><div><h2>克制关系</h2></div>
-          <div class="rc-panel-actions">${snapBtn}${saveBtn}</div></div>
+          <div class="rc-panel-actions">${readActions}${commitActions}</div></div>
         <div class="rc-subtabs" role="group" aria-label="克制关系子表">
           ${COUNTER_SUBS.map((s) => `<button type="button" class="rc-subtab" data-rc-counter-sub="${s.key}" aria-pressed="${state.counterSub === s.key}">${glyph(s.key === 'hero' ? 'heroes' : 'bp', { size: 18 })}${esc(s.label)}</button>`).join('')}
         </div>
@@ -1011,7 +1032,7 @@ export function createRulesCenter(h = {}) {
     }
     return `<section class="section">
       <div class="section-heading"><div><h2>其他规则（异常判定 / 指标口径 / 风格标签）</h2></div>
-        <div class="rc-panel-actions">${reloadBtn}${saveBtn}</div></div>
+        <div class="rc-panel-actions">${readActions}${commitActions}</div></div>
       <div class="rc-filter">${search('按分类 / 键 / 值搜索')}<button type="button" class="primary" data-rc-add="misc">${plus({ size: 18 })} 新增条目</button></div>
       <div class="rc-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-cap-misc">
         <table class="rc-table"><caption id="${uid}-cap-misc" class="visually-hidden">其他规则表</caption>
@@ -1030,15 +1051,15 @@ export function createRulesCenter(h = {}) {
         ${TABS.map((tab) => `<button type="button" role="tab" id="${uid}-tab-${tab.key}"
           aria-controls="${uid}-panel-${tab.key}" aria-selected="${state.active === tab.key}"
           tabindex="${state.active === tab.key ? 0 : -1}" class="rc-tab${state.active === tab.key ? ' is-on' : ''}"
-          data-rc-tab="${tab.key}">${glyph(TAB_ICON[tab.key] || 'book', { size: 18 })}<span>${esc(tab.label)}</span></button>`).join('')}
+          data-rc-tab="${tab.key}">${glyph(TAB_ICON[tab.key] || 'book', { size: 18 })}<span>${esc(tab.label)}</span><span class="rc-tab-dirty" data-rc-tab-dirty hidden>未保存</span></button>`).join('')}
       </nav>
       ${TABS.map((tab) => `<section class="rc-panel" role="tabpanel" id="${uid}-panel-${tab.key}"
         aria-labelledby="${uid}-tab-${tab.key}" data-rc-panel="${tab.key}"${state.active === tab.key ? '' : ' hidden'}>
         ${panelInner(tab)}</section>`).join('')}
-      <dialog class="rc-dialog" data-rc-dialog aria-labelledby="${uid}-dialog-title">
+      <dialog class="rc-dialog" data-rc-dialog aria-labelledby="${uid}-dialog-title" aria-describedby="${uid}-dialog-body" closedby="closerequest">
         <div class="rc-dialog-head"><h2 id="${uid}-dialog-title" data-rc-dialog-title></h2></div>
         <form class="rc-dialog-form" data-rc-dialog-form novalidate>
-          <div class="rc-dialog-body" data-rc-dialog-body></div>
+          <div class="rc-dialog-body" id="${uid}-dialog-body" data-rc-dialog-body></div>
           <div class="rc-dialog-foot">
             <button type="button" class="control" data-rc-dialog-cancel>${glyph('ban', { size: 18 })}取消</button>
             <button type="submit" class="primary" data-rc-dialog-submit>${glyph('pick', { size: 18 })}保存</button>

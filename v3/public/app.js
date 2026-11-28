@@ -50,7 +50,7 @@ const nav = [
 ];
 const labels = Object.fromEntries(nav);
 for (const pages of Object.values(featureSections)) for (const [key, label] of pages) labels[key] = label;
-Object.assign(labels, { biggame: '大场分析', cross: '跨场分析', matching: '匹配与编组', 'series-builder': '系列赛编组', rules: '规则中心', 'match-notes': '赛训', 'team-profile': '本队', profiles: '本队选手档案', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', imported: '已采集对局', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对方战队', teams: '战队分析', players: '选手分析', heroes: '英雄分析', teamtraining: '交手记录', ownership: '对手归属', pending: '待确认', session: '训练课', competitions: '赛事', competition: '赛事详情', weekly: '训练周报', 'snapshot-center': '快照中心' });
+Object.assign(labels, { ingest: '采集', biggame: '大场分析', cross: '跨场分析', matching: '匹配与编组', 'series-builder': '系列赛编组', rules: '规则中心', 'match-notes': '赛训', 'team-profile': '本队', profiles: '本队选手档案', match: '对局复盘', player: '选手详情', playerdetail: '选手个人页', team: '战队详情', hero: '英雄详情', report: '分析报告', review: '缺失值审查', shots: '截图 OCR', videos: '录屏', replays: '回放', imported: '已采集对局', capture: '导入表格', economy: '经济转折', tempo: '节奏分析', opponents: '对方战队', teams: '战队分析', players: '选手分析', heroes: '英雄分析', teamtraining: '交手记录', ownership: '对手归属', pending: '待确认', session: '训练课', competitions: '赛事', competition: '赛事详情', weekly: '训练周报', 'snapshot-center': '快照中心' });
 function sectionFor(name) {
   const detail = { match: 'matches', player: 'players', playerdetail: 'players', team: 'teams', hero: 'heroes', report: 'reports', review: 'ingest', shots: 'ingest', videos: 'ingest', replays: 'ingest', imported: 'ingest', capture: 'ingest', economy: 'matches', tempo: 'matches', opponents: 'opponents', ownership: 'setup', pending: 'setup', effect: 'setup', session: 'setup', competition: 'competitions', weekly: 'setup' }[name] || name;
   return Object.keys(featureSections).find((section) => featureSections[section].some(([key]) => key === detail)) || detail;
@@ -987,6 +987,7 @@ function matchRows(rows, dayNo = new Map()) {
     if (type === 'all') return `<div class="empty">${glyph('matches', { size: 52 })}<strong>当前范围暂无对局</strong><p>${clear}${ingest}${formal}</p></div>`;
     return `<div class="empty">${glyph('matches', { size: 52 })}<strong>当前范围暂无训练赛</strong><p>${clear}${ingest}</p></div>`;
   }
+  const opponentRates = archiveOpponentRates(rows);
   const item = (match) => {
     const no = dayNo.get(match.key);
     const start = String(match.startTime || '').trim();
@@ -996,20 +997,20 @@ function matchRows(rows, dayNo = new Map()) {
     const hiddenTags = matchTags.slice(3);
     const opponentTitle = match.opponent ? `对手：${match.opponent}` : '对手未标注';
     const shortResult = { win: '胜', loss: '负', draw: '平' }[match.result] || '—';
-    return `<div class="match-row-wrap archive-row-wrap" data-match-key="${esc(match.key)}">
+    return `<div class="match-row-wrap archive-row-wrap archive-row--tools-reveal" data-match-key="${esc(match.key)}">
       <label class="archive-pick"><input type="checkbox" data-archive-check="${esc(match.key)}"
         ${view.archiveSelected?.has(match.key) ? 'checked' : ''} aria-label="选择这一局：${esc(match.opponent || match.date || match.key)}"></label>
       <a class="match-row archive-row" href="${esc(route('match', match.key))}">
         <span class="archive-when"><b>${esc((match.date || '日期未知').slice(5))}</b><small>${esc(clock || (no ? `第 ${no} 局` : (match.date || '').slice(0, 4)))}</small></span>
         <span class="archive-opponent"><small>${match.isSeed ? '验证对局' : esc(match.mode || match.session || '训练赛')}${match.gameNo ? ` · 第 ${fmt(match.gameNo)} 局` : (no ? ` · 第 ${no} 局` : '')}</small>
           <span class="archive-opponent-line"><b title="${esc(opponentTitle)}">${esc(match.opponent ? '对阵 ' + match.opponent : '对手未标注')}</b></span></span>
-        <span class="result ${esc(match.result)}"><i aria-hidden="true"></i>${shortResult}</span>
+        <span class="result archive-result archive-result--quiet ${esc(match.result)}"><i aria-hidden="true"></i>${shortResult}</span>
         <strong class="row-score" title="击杀数 · 本队 : 对面">${score(match)}</strong>
         <span class="match-duration" title="本局时长">${time(match.duration)}</span>
         ${archiveLineup(match)}
         <span class="row-arrow" title="查看复盘">查看复盘 ${icon('arrow')}</span>
       </a>
-      <div class="archive-side">
+      <div class="archive-side archive-side--reveal">
         <div class="tagrow" data-tag-key="${esc(match.key)}" aria-label="这一局的自定义标签"${hiddenTags.length ? ` data-tag-more="+${hiddenTags.length}" title="还有：${esc(hiddenTags.join('、'))}"` : ''}></div>
         <div class="archive-tools">
           <button type="button" class="archive-focus" data-focus-match="${esc(match.key)}"
@@ -1024,7 +1025,7 @@ function matchRows(rows, dayNo = new Map()) {
   };
   const sort = archiveSortKey();
   const byKey = new Map((data?.matches || []).map((match) => [match.key, match]));
-  const compare = archiveCompare(sort, byKey, archiveOpponentRates(rows));
+  const compare = archiveCompare(sort, byKey, opponentRates);
   if (!view.archiveCollapsed) {
     view.archiveCollapsed = new Set();
     try { for (const day of JSON.parse(sessionStorage.getItem(ARCHIVE_COLLAPSED_KEY) || '[]')) view.archiveCollapsed.add(day); } catch {}
@@ -1870,12 +1871,13 @@ function matchesPage(value, key) {
         ${matchFilterBar(value.matches.length, rows.length)}
         <button type="button" class="archive-batch-toggle${view.archiveBatch ? ' is-on' : ''}" data-archive-batch aria-pressed="${Boolean(view.archiveBatch)}">${glyph('book', { size: 18 })} 批量打标签</button>
       </div>
-      <div class="archive-list-head">
+      <div class="archive-list-head archive-list-head--scroll">
         <div class="archive-sort" role="group" aria-label="对局排序">
           <span class="archive-sort-label">排序</span>
           ${ARCHIVE_SORTS.map((item) => `<button type="button" class="archive-sort-btn${archiveSortKey() === item.key ? ' is-on' : ''}" data-archive-sort="${item.key}" aria-pressed="${archiveSortKey() === item.key}" title="${item.hint}">${item.label}</button>`).join('')}
         </div>
       </div>
+      <div class="archive-columns" aria-hidden="true"><span>日期 / 场次</span><span>对手</span><span>结果</span><span>比分</span><span>时长</span><span>双方阵容</span><span>标签与操作</span></div>
       <p class="visually-hidden" role="status" data-archive-sort-status></p>
       <div class="archive-bulkbar" data-archive-bulkbar${view.archiveBatch ? '' : ' hidden'}>
         <div class="archive-bulk-library"><span>标签库</span>
@@ -2019,11 +2021,11 @@ function opponentsPage(value) {
   const players = (value.players || []).filter((p) => p.status !== 'archived');
   const playerCard = (p) => {
     const key = (p.name && p.name !== p.camp_user_id ? p.name : p.camp_user_id) || '';
-    return `<article class="opp-player">
+    return `<article class="opp-player opp-player--card">
       <span class="opp-player-avatar" aria-hidden="true">${esc(String(p.camp_user_id || '?').slice(0, 1))}</span>
       <a class="opp-player-main" href="#playerdetail/${encodeURIComponent(key)}" title="打开选手分析">
         <b>ID ${esc(p.camp_user_id || '—')}</b>
-        <small>${esc(p.name && p.name !== p.camp_user_id ? p.name : '姓名未填')}</small></a>
+        <small>${esc(p.name && p.name !== p.camp_user_id ? p.name : '姓名未填')}<em class="opp-player-role">${p.role === 'sub' ? '替补' : '首发'}</em></small></a>
       <div class="opp-player-ops">
         <button type="button" class="control" data-opp-player-edit="${esc(p.id || '')}" aria-label="编辑选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('edit', { size: 13 })}</button>
         <button type="button" class="control is-danger" data-opp-player-del="${esc(p.id || '')}" aria-label="删除选手 ${esc(p.camp_user_id || p.name || '')}">${glyph('trash', { size: 13 })}</button>
@@ -2035,7 +2037,7 @@ function opponentsPage(value) {
       const list = roster.filter((p) => (p.position || '') === lane);
       return `<div class="opp-lane"><div class="opp-lane-head">
         <b><img class="opp-lane-icon" src="${KPL_SVG}modules/role-icon-${LANE_SVG[lane] || 'holder-blank'}.svg" alt="" aria-hidden="true">${esc(lane)} <span class="opp-lane-count">${list.length}</span></b>
-        <button type="button" class="control" data-opp-player-add="${esc(t.id || '')}" data-opp-lane="${esc(lane)}">${glyph('players', { size: 13 })} 添加选手</button>
+        <button type="button" class="control opp-lane-add" data-opp-player-add="${esc(t.id || '')}" data-opp-lane="${esc(lane)}">${glyph('players', { size: 13 })} 添加选手</button>
       </div><div class="opp-player-list">${list.map(playerCard).join('') || '<p class="opp-empty">还没有选手</p>'}</div></div>`;
     }).join('');
     return `<section class="opp-team-card" aria-labelledby="opp-team-${esc(t.id || '')}">
@@ -2049,10 +2051,10 @@ function opponentsPage(value) {
       </div></header>
       <div class="opp-lanes">${lanes}</div></section>`;
   };
-  return `<div class="page feature-page opp-page">
+  return `<div class="page feature-page opp-page opp-page--centered">
     <div class="opp-page-head"><h1>对方战队</h1>
       <button type="button" class="primary" data-opp-team-add>${glyph('opponent', { size: 16 })} 创建对手战队</button></div>
-    ${teams.length ? `<div class="opp-team-grid">${teams.map(teamCard).join('')}</div>`
+    ${teams.length ? `<div class="opp-team-grid opp-team-grid--balanced">${teams.map(teamCard).join('')}</div>`
       : `<div class="empty opp-page-empty">${glyph('opponent', { size: 52 })}<strong>还没有对手战队</strong><p><button type="button" class="primary" data-opp-team-add>${glyph('opponent', { size: 18 })} 创建对手战队</button></p></div>`}
   </div>`;
 }
@@ -3427,20 +3429,20 @@ const OWN_MODULE_ROUTES = new Set(['overview', 'team-profile', 'bp', 'match', 'c
 async function ensureModules(name) {
   const jobs = [];
   if (!OWN_MODULE_ROUTES.has(name) && !mods.features) {
-    jobs.push(importOnce('./features.js?v=20261128weeklyart7').then(({ createFeatures }) => {
+    jobs.push(importOnce('./features.js?v=20261128ui5').then(({ createFeatures }) => {
       mods.features = createFeatures({ esc, fmt, pct, diff, time, portrait, route, table,
         pageIntro, icon, microChart, gameAnchorBar, reload: () => load(true),
         currentQuery: () => query(), teamName: () => metadata.teamName || '' });
     }));
   }
   if (name === 'docs' && !mods.docsPage) {
-    jobs.push(importOnce('./docs-page.js?v=20261126about2').then(({ createDocsPage }) => {
+    jobs.push(importOnce('./docs-page.js?v=20261128ui5').then(({ createDocsPage }) => {
       mods.docsPage = createDocsPage({ esc, icon });
     }));
   }
   if (name === 'overview' && !mods.brief) {
     /* 首页简报：模块自己请求 /api/briefing，外壳只给挂载点、筛选与跳转动作。 */
-    jobs.push(importOnce('./period-brief.js').then(({ createPeriodBrief }) => {
+    jobs.push(importOnce('./period-brief.js?v=20261128ui5').then(({ createPeriodBrief }) => {
       mods.brief = createPeriodBrief({
         esc, fmt, icon, API_BASE, portrait,
         getFilters: () => filters,
@@ -3454,12 +3456,12 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'team-profile' && !mods.teamProfile) {
-    jobs.push(importOnce('./team-profile.js?v=20261123staff4').then(({ createTeamProfilePage }) => {
+    jobs.push(importOnce('./team-profile.js?v=20261128ui5').then(({ createTeamProfilePage }) => {
       mods.teamProfile = createTeamProfilePage({ esc, API_BASE, notify: comboNotify });
     }));
   }
   if (name === 'bp' && !mods.bpLab) {
-    jobs.push(importOnce('./bp-studio.js?v=20261126bpclear1').then(({ createBpStudio }) => {
+    jobs.push(importOnce('./bp-studio.js?v=20261128ui5').then(({ createBpStudio }) => {
       mods.bpLab = createBpStudio({ esc, fmt, pct, icon, portrait, API_BASE });
     }));
   }
@@ -3471,29 +3473,29 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'cross' && !mods.crossPage) {
-    jobs.push(importOnce('./cross-page.js?v=20261126zero').then(({ createCrossPage }) => {
+    jobs.push(importOnce('./cross-page.js?v=20261128ui5').then(({ createCrossPage }) => {
       mods.crossPage = createCrossPage({ esc, fmt, pct, diff, time, portrait });
     }));
   }
   if (name === 'biggame' && !mods.bigGamePage) {
-    jobs.push(importOnce('./biggame-page.js?v=20261126coach2').then(({ createBigGamePage }) => {
+    jobs.push(importOnce('./biggame-page.js?v=20261128ui5').then(({ createBigGamePage }) => {
       /* 大场页的英雄池交叉要按双方战队分区：本队名从这里取，对手名在详情数据里。 */
       mods.bigGamePage = createBigGamePage({ esc, fmt, pct, diff, time, portrait, teamName: () => metadata.teamName || '' });
     }));
   }
   if (name === 'matching' && !mods.matching) {
-    jobs.push(importOnce('./matching-page.js?v=20261127bulkconfirm1').then(({ createMatchingPage }) => {
+    jobs.push(importOnce('./matching-page.js?v=20261128ui5').then(({ createMatchingPage }) => {
       mods.matching = createMatchingPage({ esc, API_BASE, icon,
         refresh: () => load(true) });
     }));
   }
   if (name === 'series-builder' && !mods.seriesBuilder) {
-    jobs.push(importOnce('./series-builder.js?v=20261126noanalysis').then(({ createSeriesBuilder }) => {
+    jobs.push(importOnce('./series-builder.js?v=20261128ui5').then(({ createSeriesBuilder }) => {
       mods.seriesBuilder = createSeriesBuilder({ esc, fmt, diff, pct, time, portrait, route, icon });
     }));
   }
   if (name === 'combo-pool' && !mods.comboPool) {
-    jobs.push(importOnce('./combo-pool.js?v=20261127csmin1').then(({ createComboPoolPage }) => {
+    jobs.push(importOnce('./combo-pool.js?v=20261128ui5').then(({ createComboPoolPage }) => {
       /* 组合池自取数：英雄资料通过 getter 读外壳的 metadata，不碰 combo-query
          的既有组合分析逻辑；头像目录后到时由 load() 调 rerender() 补画。 */
       mods.comboPool = createComboPoolPage({
@@ -3503,17 +3505,17 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'grade-rules' && !mods.gradeRules) {
-    jobs.push(importOnce('./grade-rules.js?v=20261127csmin1').then(({ createGradeRulesPage }) => {
+    jobs.push(importOnce('./grade-rules.js?v=20261128ui5').then(({ createGradeRulesPage }) => {
       mods.gradeRules = createGradeRulesPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
   if (name === 'competitions' && !mods.competitions) {
-    jobs.push(importOnce('./competitions.js?v=20261126mono2').then(({ createCompetitionsPage }) => {
+    jobs.push(importOnce('./competitions.js?v=20261128ui5').then(({ createCompetitionsPage }) => {
       mods.competitions = createCompetitionsPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
   if (name === 'lineup-tags' && !mods.lineupTags) {
-    jobs.push(importOnce('./lineup-tags.js?v=20261124snap').then(({ createLineupTagsPage }) => {
+    jobs.push(importOnce('./lineup-tags.js?v=20261128ui5').then(({ createLineupTagsPage }) => {
       mods.lineupTags = createLineupTagsPage({ esc, portrait, API_BASE, icon, notify: comboNotify,
         getMetadata: () => metadata });
     }));
@@ -3530,12 +3532,12 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'metrics-observe' && !mods.metricsObserve) {
-    jobs.push(importOnce('./metrics-observe.js?v=20261124mo5').then(({ createMetricsObservePage }) => {
+    jobs.push(importOnce('./metrics-observe.js?v=20261128ui5').then(({ createMetricsObservePage }) => {
       mods.metricsObserve = createMetricsObservePage({ esc, API_BASE, notify: comboNotify });
     }));
   }
   if (name === 'rules' && !mods.rulesCenter) {
-    jobs.push(importOnce('./rules-center.js?v=20261127csmin1').then(({ createRulesCenter }) => {
+    jobs.push(importOnce('./rules-center.js?v=20261128ui5').then(({ createRulesCenter }) => {
       mods.rulesCenter = createRulesCenter({ esc, API_BASE, icon, notify: comboNotify,
         portrait, getMetadata: () => metadata });
       // 规则中心保存英雄标签后，同一次 SPA 会话也刷新 metadata（combo / 分路筛选 / 评级兜底）。
@@ -3549,7 +3551,7 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'snapshot-center' && !mods.snapshotCenter) {
-    jobs.push(importOnce('./snapshot-center.js?v=20261126sc1').then(({ createSnapshotCenter }) => {
+    jobs.push(importOnce('./snapshot-center.js?v=20261128ui5').then(({ createSnapshotCenter }) => {
       mods.snapshotCenter = createSnapshotCenter({ esc, API_BASE, icon, notify: comboNotify, portrait });
     }));
   }
@@ -3559,19 +3561,19 @@ async function ensureModules(name) {
     }));
   }
   if (name === 'match-notes' && !mods.matchNotesPage) {
-    jobs.push(importOnce('./match-notes.js?v=20261127noid1').then(({ initMatchNotesPage }) => {
+    jobs.push(importOnce('./match-notes.js?v=20261128ui5').then(({ initMatchNotesPage }) => {
       mods.matchNotesPage = initMatchNotesPage;
     }));
   }
   /* 数据源展示：赛事范围内的后端数据图谱（只读），自取数。 */
   if (name === 'sources' && !mods.dataSource) {
-    jobs.push(importOnce('./datasource-page.js?v=20261124ds10').then(({ createDataSourcePage }) => {
+    jobs.push(importOnce('./datasource-page.js?v=20261128ui5').then(({ createDataSourcePage }) => {
       mods.dataSource = createDataSourcePage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
   /* 管理 → 外部数据源爬取情况：四张状态卡 + 手动重试。 */
   if (name === 'source-health' && !mods.sourceHealth) {
-    jobs.push(importOnce('./source-health-page.js?v=20261124sh1').then(({ createSourceHealthPage }) => {
+    jobs.push(importOnce('./source-health-page.js?v=20261128ui5').then(({ createSourceHealthPage }) => {
       mods.sourceHealth = createSourceHealthPage({ esc, API_BASE, icon, notify: comboNotify });
     }));
   }
@@ -4976,6 +4978,6 @@ initUpdateBanner({ API_BASE });
 load();
 /* 首屏空闲时预取 features.js：采集/对局等页签首次进入不必等 2–8s 骨架。
    importOnce 会复用同一个 promise，真正进入时不会重复下载或实例化。 */
-const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261128weeklyart7'); };
+const prefetchFeatures = () => { if (!mods.features) importOnce('./features.js?v=20261128ui5'); };
 if ('requestIdleCallback' in window) requestIdleCallback(prefetchFeatures, { timeout: 2500 });
 else setTimeout(prefetchFeatures, 1200);

@@ -14,6 +14,6 @@ assert.match(js, /select\.dataset\.mbCamp !== camp/, '只更新当前阵营的�
 assert.match(js, /可点侧栏「一键确认」批量复核/, '复核提示必须告诉教练有批量入口');
 assert.match(css, /\.mb-confirm-all:disabled/, '禁用态要有可辨识样式');
 assert.match(css, /\.mb-side > header \{[^}]*flex-wrap: wrap/, '窄屏侧栏标题与按钮要能换行');
-assert.match(app, /matching-page\.js\?v=20261127bulkconfirm1/, '模块版本戳必须更新，避免旧缓存');
+assert.match(app, /matching-page\.js\?v=20261128ui5/, '模块版本戳必须更新，避免旧缓存');
 
 console.log('matching bulk confirm: all assertions passed');

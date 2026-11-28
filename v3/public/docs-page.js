@@ -66,7 +66,7 @@ export function createDocsPage({ esc, icon }) {
       <td><code>${esc(entry.owner)}</code></td>
       <td><span class="help-status ${entry.status === '已接入' ? 'is-live' : ''}">${esc(entry.status)}</span></td>
     </tr>`).join('');
-    return `<div class="table-wrap"><table class="help-table"><thead><tr><th>错误码</th><th>是什么问题</th><th>常见原因</th><th>你可以怎么做</th><th>代码位置</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>
+    return `<div class="table-wrap" tabindex="0" role="region" aria-label="错误码索引"><table class="help-table"><caption class="visually-hidden">错误码、原因、处理方式与接入状态</caption><thead><tr><th scope="col">错误码</th><th scope="col">是什么问题</th><th scope="col">常见原因</th><th scope="col">你可以怎么做</th><th scope="col">代码位置</th><th scope="col">状态</th></tr></thead><tbody>${rows}</tbody></table></div>
     <p class="help-note-line">标注「预留」的错误码已经登记好含义，但界面还没接上；界面上看到的码一定是「已接入」。</p>`;
   }
 
@@ -167,7 +167,7 @@ export function createDocsPage({ esc, icon }) {
     return `${crumb(chapter)}
       <header class="help-chapter-head">
         <span class="help-kicker">${esc(chapter.group || '文档')}</span>
-        <h1>${esc(chapter.title)}</h1>
+        <h2>${esc(chapter.title)}</h2>
       </header>
       <div class="help-chapter-body">${chapterBody(chapter)}</div>
       ${pager(chapter)}`;

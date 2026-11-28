@@ -99,10 +99,15 @@ export function createTeamProfilePage(h = {}) {
         <h3>人员配置</h3>
         <div class="tp-people-grid">${people.length ? people.map((row) => {
           const named = String(row.name || '').trim();
-          return `<div class="tp-person ${named ? '' : 'is-empty'}">
-          <span class="tp-person-avatar" aria-hidden="true">${named ? esc(named.slice(0, 1)) : '＋'}</span>
-          <span class="tp-person-copy"><b>${named ? esc(named) : '待填写'}</b><small>${esc(row.title || '教练组成员')}</small></span>
-        </div>`;
+          if (!named) return `<button type="button" class="tp-person is-empty" data-tp-edit aria-label="添加${esc(row.title || '教练组成员')}姓名">
+            <span class="tp-person-avatar" aria-hidden="true">＋</span>
+            <span class="tp-person-copy"><b>添加姓名</b><small>${esc(row.title || '教练组成员')}</small></span>
+            <i class="tp-person-go" aria-hidden="true">→</i>
+          </button>`;
+          return `<div class="tp-person is-filled">
+            <span class="tp-person-avatar" aria-hidden="true">${esc(named.slice(0, 1))}</span>
+            <span class="tp-person-copy"><b>${esc(named)}</b><small>${esc(row.title || '教练组成员')}</small></span>
+          </div>`;
         }).join('') : `<p class="tp-empty">${glyph('players', { size: 20 })}<b>还没有人员配置</b><span>点上方「编辑资料」添加</span></p>`}</div>
       </div>
     </article>`;
@@ -131,8 +136,7 @@ export function createTeamProfilePage(h = {}) {
   function render() {
     if (!root) return;
     root.innerHTML = `<div class="page sx-page tp-page">
-      <header class="tp-head"><div><span class="sx-eyebrow">工作台 · 本队 02</span><h1>${glyph('shield', { size: 20 })}本队</h1>
-      </div></header>
+      <header class="tp-head tp-head--clean"><h1>本队</h1></header>
       <p class="tp-notice" data-tp-notice role="status" aria-live="polite" hidden></p>
       ${loading ? '<p class="tp-loading">正在读取本队资料…</p>'
         : (editing || !profile.teamName ? formHtml() : cardHtml())}

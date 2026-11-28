@@ -25,12 +25,12 @@ const laneRank = (x) => { const i = LANES.indexOf(x); return i < 0 ? 99 : i; };
 const sideName = (s) => (s === 'blue' ? '蓝方' : s === 'red' ? '红方' : '边位未知');
 
 const VIEWS = {
-  '01': ['教练席位', '同侪站位'],
-  '02': ['两种边位', '本教练的边位'],
-  '03': ['全场禁用热度', '禁得准不准'],
-  '04': ['五路热门英雄', '本教练的英雄'],
-  '05': ['五路对位', '谁拿到更热的英雄'],
-  '06': ['教练画像', '四项读数'],
+  '01': ['带队战绩', '与其他教练对照'],
+  '02': ['蓝红方表现', '本教练的边位'],
+  '03': ['禁用热门程度', '是否针对本队'],
+  '04': ['各分路热门英雄', '本教练最近选用'],
+  '05': ['分路对位', '双方英雄热门度'],
+  '06': ['教练偏好', '四项读数'],
 };
 
 export function createCoachBoard({ esc = es } = {}) {
@@ -45,8 +45,8 @@ export function createCoachBoard({ esc = es } = {}) {
     return `<div class="hcv" data-cv-viz="${id}">
       <div class="hcv-stage">
         <div class="hcv-bar"><div class="hcv-switch" role="group" aria-label="切换视图">
-          <button type="button" data-cv-view-btn="a" data-cv-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}">${glyph('coach', { size: 18 })} ${es(meta[0])}</button>
-          <button type="button" data-cv-view-btn="b" data-cv-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}">${glyph('compare', { size: 18 })} ${es(meta[1])}</button>
+          <button type="button" data-cv-view-btn="a" data-cv-viz="${id}" class="${cur === 'a' ? 'is-on' : ''}" aria-pressed="${cur === 'a'}">${glyph('coach', { size: 18 })} ${es(meta[0])}</button>
+          <button type="button" data-cv-view-btn="b" data-cv-viz="${id}" class="${cur === 'b' ? 'is-on' : ''}" aria-pressed="${cur === 'b'}">${glyph('compare', { size: 18 })} ${es(meta[1])}</button>
         </div></div>
         ${one('a', a)}${one('b', b)}<div class="hcv-tip" hidden></div>
       </div>
@@ -54,6 +54,11 @@ export function createCoachBoard({ esc = es } = {}) {
   }
   const view = (hero, body) => `<div class="hcv-view"><div class="hcv-hero">${hero}</div><div class="hcv-body">${body}</div></div>`;
   const big = (v, label, cls = '') => `<div class="hcv-figure ${cls}"><b>${esc(v)}</b><span>${esc(label)}</span></div>`;
+  const colorLegend = `<div class="pb-color-legend" aria-label="颜色图例">
+    <span><i class="pb-legend-swatch is-blue" aria-hidden="true"></i>蓝方</span>
+    <span><i class="pb-legend-swatch is-red" aria-hidden="true"></i>红方</span>
+    <span><i class="pb-legend-swatch is-selected" aria-hidden="true"></i>当前教练</span>
+    <span><i class="pb-legend-swatch is-negative" aria-hidden="true"></i>低于参照</span></div>`;
   const icon = (hero, cls = '') => (hero && hero.icon
     ? `<img class="portrait ${cls}" src="${esc(hero.icon)}" alt="${esc(hero.name || '')}">`
     : `<span class="portrait portrait-placeholder ${cls}">${es((hero && hero.name || '?')[0])}</span>`);
@@ -65,7 +70,7 @@ export function createCoachBoard({ esc = es } = {}) {
       <h3 class="hc-card-title">${title}</h3>
       <div class="hc-card-canvas">${chart}</div>
       <div class="hc-card-foot"><a class="hc-open" href="#bp">${glyph('bp', { size: 18 })} 打开 BP 概览</a></div>
-      <p class="hc-method">${glyph('book', { size: 16 })} <b>口径</b> ${esc(method)}</p>
+      <p class="hc-method">${glyph('book', { size: 16 })} <b>说明</b> ${esc(method)}</p>
     </article>`;
   }
 
@@ -161,7 +166,7 @@ export function createCoachBoard({ esc = es } = {}) {
     const seats = d.coaches.map((c) => {
       const tone = c.winRate === null ? 'thin' : c.winRate >= 50 ? 'win' : 'loss';
       const rec = `${n0(c.wins)} 胜 ${n0(c.losses)} 负`;
-      return `<button type="button" class="pb-seat ${tone}${c.teamId === state.teamId ? ' is-on' : ''}" data-cv-pick="${esc(c.teamId)}" ${tip(`${c.name} · ${c.team} · ${rec} · 选用热度 ${n1(c.pickHeat)}`)}>
+      return `<button type="button" class="pb-seat ${tone}${c.teamId === state.teamId ? ' is-on' : ''}" data-cv-pick="${esc(c.teamId)}" ${tip(`${c.name} · ${c.team} · ${rec} · 选用热门度 ${n1(c.pickHeat)}`)}>
         <b>${esc(c.name)}</b><em>${rec}</em></button>`;
     }).join('');
     const A = view(
@@ -175,19 +180,19 @@ export function createCoachBoard({ esc = es } = {}) {
     const inTop = self && top.some((c) => c.teamId === self.teamId);
     const rows = (inTop || !self ? top : [...top.slice(0, 7), self]);
     const B = view(
-      big(`${n0(d.pickRank)}`, `位 / ${n0(d.coaches.length)} 位教练 · 按选用热度`, 'teal'),
-      `<div class="hcv-rows">${rows.map((c) => `<div class="hcv-row${c.teamId === state.teamId ? ' is-on' : ''}" ${tip(`${c.name} · ${c.team} · 选用热度 ${n1(c.pickHeat)} · 战绩 ${n0(c.wins)} 胜 ${n0(c.losses)} 负`)}>
+      big(`${n0(d.pickRank)}`, `位 / ${n0(d.coaches.length)} 位教练 · 按选用热门度`, 'teal'),
+      `<div class="hcv-rows">${rows.map((c) => `<div class="hcv-row${c.teamId === state.teamId ? ' is-on' : ''}" ${tip(`${c.name} · ${c.team} · 选用热门度 ${n1(c.pickHeat)} · 战绩 ${n0(c.wins)} 胜 ${n0(c.losses)} 负`)}>
         <span class="hcv-row-label">${esc(c.name)}<small>${esc(c.team)}</small></span>
         <i class="hcv-track"><b style="width:${wOf(c.pickHeat, maxRate)}"></b></i>
         <em class="hcv-row-val">${n1(c.pickHeat)}</em>
       </div>`).join('')}</div>`
     );
     const title = d.mine.length
-      ? `<em>${esc(name)}</em> 带队 <em>${n0(d.wins)} 胜 ${n0(d.losses)} 负</em>；选用热度 <em>${n1(d.self?.pickHeat)}</em>，在 ${n0(d.coaches.length)} 位教练里排第 ${n0(d.pickRank)}`
+      ? `<em>${esc(name)}</em> 带队 <em>${n0(d.wins)} 胜 ${n0(d.losses)} 负</em>；英雄热门度排第 <em>${n0(d.pickRank)}</em>`
       : `还没有 ${esc(name)} 的执教对局`;
     return card('01', '带队战绩分析', title, shell('01', A, B),
-      '点席位换教练；胜负接近时，看谁拿到的英雄更热。',
-      '战绩按教练一方统计；选用热度＝该教练每局五个英雄在全部对局里的平均出场次数。');
+      '点名字换教练；战绩接近时再看英雄热门度。',
+      '胜负按教练一方统计；热门度＝每局所选英雄在全场的平均被选次数。');
   }
 
   /* ── 02 边位偏好分析 ──────────────────────────────────────── */
@@ -215,10 +220,10 @@ export function createCoachBoard({ esc = es } = {}) {
       </div>`
     );
     const blue = d.sideStats[0], red = d.sideStats[1];
-    const title = `全场蓝方 <em>${pc(blue.winRate)}</em>、红方 <em>${pc(red.winRate)}</em>；${esc(name)} 最近一局走 <em>${sideName(selfSide)}</em>`;
+    const title = `全场蓝方 <em>${pc(blue.winRate)}</em>、红方 <em>${pc(red.winRate)}</em>；本教练最近走 <em>${sideName(selfSide)}</em>`;
     return card('02', '边位偏好分析', title, shell('02', A, B),
-      '蓝红差距大时，赛前把训练赛优先约在吃亏的那一方。',
-      '边位按教练一方记录；胜率＝该边位有胜负的对局里赢下的比例。');
+      '差距大时，优先练胜率较低的一边。',
+      '只统计有胜负的对局；胜率＝该边位赢下的比例。');
   }
 
   /* ── 03 禁用策略分析 ──────────────────────────────────────── */
@@ -250,11 +255,11 @@ export function createCoachBoard({ esc = es } = {}) {
       }).join('')}</div>`
     );
     const title = mineBans.length
-      ? `${esc(name)} 的 <em>${n0(mineBans.length)}</em> 个禁用里，<em>${n0(hit)}</em> 个是本队的常用英雄；全场最热的是 <em>${esc(d.bans[0]?.name || '—')}</em>（${n0(d.bans[0]?.n)} 次）`
+      ? `本队常用英雄被禁 <em>${n0(hit)} / ${n0(mineBans.length)}</em>；全场禁用最多的是 <em>${esc(d.bans[0]?.name || '—')}</em>`
       : '还没有这位教练的禁用记录';
     return card('03', '禁用策略分析', title, shell('03', A, B),
-      '禁到本队常用英雄才算针对；只禁热门，等于按版本走。',
-      '热度＝全场双方全部禁用记录里的出现次数；本队用过＝该英雄在本队全部选用里的次数。');
+      '先看是否禁到本队常用英雄，再看是否只跟版本。',
+      '次数按全场双方记录统计；“本队用过”指本队选用次数。');
   }
 
   /* ── 04 英雄池分析 ────────────────────────────────────────── */
@@ -283,8 +288,8 @@ export function createCoachBoard({ esc = es } = {}) {
     const hottest = minePicks.slice().sort((a, b) => (d.pickHeat.get(b.name)?.n || 0) - (d.pickHeat.get(a.name)?.n || 0))[0];
     const title = `${esc(name)} 最近一局覆盖 <em>${n0(lanes)}</em> 条分路，选人里全场最热的是 <em>${esc(hottest?.name || '—')}</em>`;
     return card('04', '英雄池分析', title, shell('04', A, B),
-      '英雄池窄的队伍，第二轮直接按热门位去 ban。',
-      '热度＝全部对局里该英雄被选中的次数；分路按营地终局名单标注。');
+      '英雄选择少的队伍，可重点针对其常用分路。',
+      '次数＝该英雄在全部对局里被选中的次数；分路来自营地终局名单。');
   }
 
   /* ── 05 阵容对位分析 ──────────────────────────────────────── */
@@ -324,8 +329,8 @@ export function createCoachBoard({ esc = es } = {}) {
       ? `五路对位里 <em>${n0(hotter)}</em> 条路拿到更热门的英雄；本教练用 <em>${esc(pairs.find((x) => x.a)?.a?.name || '—')}</em> 打 <em>${esc(pairs.find((x) => x.b)?.b?.name || '—')}</em>`
       : '还没有可对照的阵容';
     return card('05', '阵容对位分析', title, shell('05', A, B),
-      '热门英雄让给本队，就用对位英雄做针对性训练，不要硬抢。',
-      '按分路一对一配对，热度取该英雄在全部对局里的出场次数；差值为本教练 − 本队。');
+      '不硬抢热门英雄，优先练能对位的英雄。',
+      '按分路一一对比；次数取全场选用次数，差值＝本教练 − 本队。');
   }
 
   /* ── 06 教练画像分析 ──────────────────────────────────────── */
@@ -342,40 +347,40 @@ export function createCoachBoard({ esc = es } = {}) {
       const on = c.teamId === state.teamId;
       return `<i class="pb-dot${on ? ' is-on' : ''}${c.winRate !== null && c.winRate < 50 ? ' neg' : ''}"
         style="left:${left}%;bottom:${bottom}%"
-        ${tip(`${c.name} · 选用热度 ${n1(c.pickHeat)} · 禁用热度 ${n1(c.banHeat)} · ${n0(c.wins)} 胜 ${n0(c.losses)} 负`)}></i>
+        ${tip(`${c.name} · 选用热门度 ${n1(c.pickHeat)} · 禁用热门度 ${n1(c.banHeat)} · ${n0(c.wins)} 胜 ${n0(c.losses)} 负`)}></i>
         ${on ? `<em class="pb-dot-name" style="left:${left}%;bottom:${bottom}%">${es(c.name)}</em>` : ''}`;
     }).join('');
     const A = view(
-      big(d.self ? n1(d.self.pickHeat) : '—', `${name} 的选用热度 · 全场均值 ${n1(avg(pts.map((c) => c.pickHeat)))}`, 'gold'),
+      big(d.self ? n1(d.self.pickHeat) : '—', `${name} 的选用热门度 · 全场均值 ${n1(avg(pts.map((c) => c.pickHeat)))}`, 'gold'),
       `<div class="pb-scatter">
         <span class="pb-sc-x"></span><span class="pb-sc-y"></span>
-        <span class="pb-sc-lab yt">禁得偏热</span><span class="pb-sc-lab yb">禁得偏冷</span>
+        <span class="pb-sc-lab yt">禁用更多</span><span class="pb-sc-lab yb">禁用更少</span>
         <span class="pb-sc-tick tl">${n1(yMax)}</span><span class="pb-sc-tick bl">${n1(yMin)}</span>
         <span class="pb-sc-tick tr">${n1(xMax)}</span><span class="pb-sc-tick br">${n1(xMin)}</span>
         ${dots}
       </div>
-      <div class="pb-sc-axis"><span>英雄偏冷</span><span>选用热度</span><span>英雄偏热</span></div>`
+      <div class="pb-sc-axis"><span>选用较少</span><span>英雄热门度</span><span>选用较多</span></div>`
     );
     const self = d.self;
     const pickRank = d.pickRank, banRank = d.banRank;
     const laneCount = new Set((d.last?.picks || []).map((p) => p.lane)).size;
     const B = view(
-      big(self ? `第 ${n0(pickRank)}` : '—', `位 / ${n0(pts.length)} 位 · 选用热度`, 'teal'),
+      big(self ? `第 ${n0(pickRank)}` : '—', `位 / ${n0(pts.length)} 位 · 英雄热门度`, 'teal'),
       `<div class="hcv-rows">
-        <div class="hcv-row" ${tip('选用热度越高，越倾向版本热门')}><span class="hcv-row-label">选用热度<small>全场第 ${n0(pickRank)}</small></span><i class="hcv-track"><b style="width:${wOf(self?.pickHeat, xMax)}"></b></i><em class="hcv-row-val">${n1(self?.pickHeat)}</em></div>
-        <div class="hcv-row" ${tip('禁用热度越高，越倾向跟版本 ban')}><span class="hcv-row-label">禁用热度<small>全场第 ${n0(banRank)}</small></span><i class="hcv-track"><b class="teal" style="width:${wOf(self?.banHeat, yMax)}"></b></i><em class="hcv-row-val">${n1(self?.banHeat)}</em></div>
-        <div class="hcv-row" ${tip('最近一局的分路覆盖')}><span class="hcv-row-label">分路覆盖<small>最近一局</small></span><i class="hcv-track"><b style="width:${wOf(laneCount, 5)}"></b></i><em class="hcv-row-val">${n0(laneCount)} / 5</em></div>
-        <div class="hcv-row" ${tip('最近一局的边位')}><span class="hcv-row-label">最近边位<small>${esc(sideName(d.last?.side))}</small></span><i class="hcv-track"><b style="width:${d.last?.side === 'blue' ? 100 : 0}%;background:var(--blue)"></b></i><em class="hcv-row-val">${esc(sideName(d.last?.side))}</em></div>
-        ${self?.topPicks?.length ? `<div class="hcv-row" ${tip('该教练自己最常选用的英雄（条件频率，非全场热度）')}><span class="hcv-row-label">教练常用<small>本队 ${n0(self.games)} 局</small></span><em class="hcv-row-val">${self.topPicks.map((p) => `${esc(p.name)}×${n0(p.n)}`).join('、')}</em></div>` : ''}
-        ${self?.topBans?.length ? `<div class="hcv-row" ${tip('该教练自己最常禁用的英雄（条件频率，非全场热度）')}><span class="hcv-row-label">教练常禁<small>本队 ${n0(self.games)} 局</small></span><em class="hcv-row-val">${self.topBans.map((p) => `${esc(p.name)}×${n0(p.n)}`).join('、')}</em></div>` : ''}
+        <div class="hcv-row" ${tip('越高表示越常选全场热门英雄')}><span class="hcv-row-label">选用热门度<small>全场第 ${n0(pickRank)}</small></span><i class="hcv-track"><b style="width:${wOf(self?.pickHeat, xMax)}"></b></i><em class="hcv-row-val">${n1(self?.pickHeat)}</em></div>
+        <div class="hcv-row" ${tip('越高表示越常禁全场热门英雄')}><span class="hcv-row-label">禁用热门度<small>全场第 ${n0(banRank)}</small></span><i class="hcv-track"><b class="teal" style="width:${wOf(self?.banHeat, yMax)}"></b></i><em class="hcv-row-val">${n1(self?.banHeat)}</em></div>
+        <div class="hcv-row" ${tip('最近一局覆盖了几条分路')}><span class="hcv-row-label">覆盖分路<small>最近一局</small></span><i class="hcv-track"><b style="width:${wOf(laneCount, 5)}"></b></i><em class="hcv-row-val">${n0(laneCount)} / 5</em></div>
+        <div class="hcv-row" ${tip('最近一局是蓝方还是红方')}><span class="hcv-row-label">最近边位<small>${esc(sideName(d.last?.side))}</small></span><i class="hcv-track"><b style="width:${d.last?.side === 'blue' ? 100 : 0}%;background:var(--blue)"></b></i><em class="hcv-row-val">${esc(sideName(d.last?.side))}</em></div>
+        ${self?.topPicks?.length ? `<div class="hcv-row" ${tip('这位教练自己最常选的英雄，次数不是全场热度')}><span class="hcv-row-label">本人常用<small>${n0(self.games)} 局里</small></span><em class="hcv-row-val">${self.topPicks.map((p) => `${esc(p.name)}×${n0(p.n)}`).join('、')}</em></div>` : ''}
+        ${self?.topBans?.length ? `<div class="hcv-row" ${tip('这位教练自己最常禁的英雄，次数不是全场热度')}><span class="hcv-row-label">本人常禁<small>${n0(self.games)} 局里</small></span><em class="hcv-row-val">${self.topBans.map((p) => `${esc(p.name)}×${n0(p.n)}`).join('、')}</em></div>` : ''}
       </div>`
     );
     const title = self
-      ? `${esc(name)} 选用热度 <em>${n1(self.pickHeat)}</em>、禁用热度 <em>${n1(self.banHeat)}</em>，在 ${n0(pts.length)} 位教练里分别排第 ${n0(pickRank)} 与第 ${n0(banRank)}`
+      ? `${esc(name)} 的英雄热门度：选用第 <em>${n0(pickRank)}</em>、禁用第 <em>${n0(banRank)}</em>`
       : '还没有这位教练的 BP 记录';
     return card('06', '教练画像分析', title, shell('06', A, B),
-      '偏热的教练按版本准备；偏冷的教练要给冷门英雄单独留训练位。',
-      '选用 / 禁用热度＝该教练英雄在全部对局里的平均出场次数（与版本热门的接近程度）；教练个人常用/常禁英雄见下方条件频率。');
+      '偏爱热门英雄就按版本准备，偏爱冷门英雄就单独训练。',
+      '热门度＝所选或所禁英雄在全场的平均次数；下方列出本人常用次数。');
   }
 
   /* ── 组装页面 ─────────────────────────────────────────────── */
@@ -383,14 +388,11 @@ export function createCoachBoard({ esc = es } = {}) {
     const last = d.last;
     const lineup = last ? last.picks.slice().sort((a, b) => laneRank(a.lane) - laneRank(b.lane))
       .map((p) => `<span class="pb-lineup-item">${icon(p)}<em>${esc(p.lane || '')}</em></span>`).join('') : '';
-    const bans = last ? last.bans.map((b) => `<span>${esc(b.name)}</span>`).join(' / ') : '';
     const banHit = last ? last.bans.filter((b) => (d.oppPickHeat.get(b.name)?.n || 0) > 0).length : 0;
+    const result = last?.won === true ? '取胜' : last?.won === false ? '落败' : '结果未记录';
     const claim = d.mine.length && last
-      ? `最近一局 <em>${sideName(last.side)}</em> ${last.won ? '取胜' : last.won === false ? '落败' : ''}：<em>${n0(last.bans.length)}</em> 个禁用里 <em>${n0(banHit)}</em> 个禁到本队常用英雄`
+      ? `最近一局<em>${sideName(last.side)} ${result}</em>，禁用命中本队常用英雄 <em>${n0(banHit)} / ${n0(last.bans.length)}</em>`
       : `还没有 ${esc(name)} 的执教对局`;
-    const fact = last
-      ? `选用 ${last.picks.map((p) => esc(p.name)).join(' / ') || '—'}；禁用 ${bans || '—'}。`
-      : '';
     const options = (state.board.teams || []).map((t) => {
       const n = (state.roster?.teams || []).find((x) => x.id === t.id)?.coach || t.coach || t.name;
       return `<option value="${esc(t.id)}"${t.id === state.teamId ? ' selected' : ''}>${esc(n)} · ${esc(t.name)}</option>`;
@@ -399,7 +401,7 @@ export function createCoachBoard({ esc = es } = {}) {
     return `<div class="page pb-page cv-page">
       <div class="page-intro pb-intro"><div><h1>${glyph('coach', { label: '教练档案', size: 20 })} 教练档案</h1></div>
         <div class="intro-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 刷新数据</button></div></div>
-      <section class="pb-hero pb-coach-hero">
+      <section class="pb-hero pb-coach-hero pb-coach-hero-light">
         <div class="pb-hero-top"><span class="pb-kicker">教练档案 · 对手教练</span>
           <span class="pb-scope">${n0(d.all.length)} 场参照 · ${n0(d.coaches.length)} 位教练</span></div>
         <div class="pb-coach-main">
@@ -411,7 +413,7 @@ export function createCoachBoard({ esc = es } = {}) {
           <div class="pb-coach-lineup"><span class="pb-lineup-label">最近一局选用</span><div class="pb-lineup">${lineup || '<em class="pb-lineup-empty">—</em>'}</div></div>
         </div>
         <h3 class="pb-claim">${claim}</h3>
-        <p class="pb-fact">${fact}</p>
+        ${colorLegend}
       </section>
       <div class="pb-toolbar">
         <label class="hc-filter"><span>对手教练</span><select data-cv-coach>${options}</select></label>
@@ -442,7 +444,11 @@ export function createCoachBoard({ esc = es } = {}) {
     state.views[id] = key;
     const wrap = [...document.querySelectorAll('[data-cv-viz]')].find((el) => el.dataset.cvViz === id);
     if (!wrap) return;
-    wrap.querySelectorAll('[data-cv-view-btn]').forEach((b) => b.classList.toggle('is-on', b.dataset.cvViewBtn === key));
+    wrap.querySelectorAll('[data-cv-view-btn]').forEach((b) => {
+      const on = b.dataset.cvViewBtn === key;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
     wrap.querySelectorAll('.hc-view').forEach((v) => {
       const on = v.dataset.cvView === key;
       v.hidden = !on;

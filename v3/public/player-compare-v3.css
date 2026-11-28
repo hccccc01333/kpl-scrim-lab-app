@@ -1,16 +1,16 @@
 /* ══════════════════════════════════════════════════════════════════════════
    选手对比页 v4 —— KPL 红蓝对决 / 浅白底 / 一针见血
    未分层，最后导入，盖过 style.css 里 2018 年的 .hc-* / .pc-* 小字样式。
-   红方 A / 蓝方 B 双色贯穿；筛选与目录合并为一条吸顶工具条；
+   蓝方 A / 红方 B 双色贯穿；筛选与目录合并为一条吸顶工具条；
    分位一律翻成「同位置第几 / 共几人」；删掉细横条、谁赢哪项、分位差、
    同场记录、评分分布、按天走势、区间条与标准差术语。
    ══════════════════════════════════════════════════════════════════════════ */
 
 .pc-page {
-  --pca: #c0392b;          /* 红方 A */
-  --pca-soft: #fbecEa;
-  --pcb: #2166c7;          /* 蓝方 B */
-  --pcb-soft: #e9f1fc;
+  --pca: #2166c7;          /* 蓝方 A */
+  --pca-soft: #e9f1fc;
+  --pcb: #c0392b;          /* 红方 B */
+  --pcb-soft: #fbecea;
   --pcink: #162630;
   --pcmute: #5c6b76;
   --pcpaper: #fff;
@@ -39,8 +39,8 @@
   display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 16px;
   padding: 15px 17px; border: 1px solid var(--pcline); border-radius: 12px; min-inline-size: 0;
 }
-.pc-page .hc-duel-side.a { background: linear-gradient(110deg, var(--pca-soft), #fff 78%); border-color: #efc9c3; box-shadow: inset 3px 0 0 var(--pca); }
-.pc-page .hc-duel-side.b { background: linear-gradient(250deg, var(--pcb-soft), #fff 78%); border-color: #c3d6f3; box-shadow: inset 3px 0 0 var(--pcb); }
+.pc-page .hc-duel-side.a { background: linear-gradient(110deg, var(--pca-soft), #fff 78%); border-color: #c3d6f3; box-shadow: inset 3px 0 0 var(--pca); }
+.pc-page .hc-duel-side.b { background: linear-gradient(250deg, var(--pcb-soft), #fff 78%); border-color: #efc9c3; box-shadow: inset 3px 0 0 var(--pcb); }
 .pc-page .hc-duel-id { display: flex; align-items: center; gap: 12px; min-inline-size: 0; }
 .pc-page .hc-duel-id > div { display: flex; flex-direction: column; gap: 2px; min-inline-size: 0; }
 .pc-page .hc-duel-id span { font-size: 11.5px; font-weight: 800; letter-spacing: .05em; color: var(--pcmute); }

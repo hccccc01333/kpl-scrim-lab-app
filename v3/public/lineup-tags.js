@@ -55,6 +55,7 @@ export function createLineupTagsPage(h = {}) {
     name: `lt-${Math.random().toString(36).slice(2, 8)}-name`,
     competition: `lt-${Math.random().toString(36).slice(2, 8)}-comp`,
     note: `lt-${Math.random().toString(36).slice(2, 8)}-note`,
+    form: `lt-${Math.random().toString(36).slice(2, 8)}-form`,
     dialog: `lt-${Math.random().toString(36).slice(2, 8)}-dialog`,
   };
 
@@ -291,7 +292,7 @@ export function createLineupTagsPage(h = {}) {
     if (note) note.value = text(entry.note);
     if (comp) comp.value = text(entry.competition?.id);
     paintSlots(); paintPicker(); paintFormState();
-    setNotice(`已把「${text(entry.name)}」回填到下方，改完点保存。`);
+    setNotice(`已把「${text(entry.name)}」回填到编辑区，改完点保存。`);
     name?.focus();
     root?.querySelector('.lt-save')?.scrollIntoView?.({ block: 'start' });
   }
@@ -448,21 +449,21 @@ export function createLineupTagsPage(h = {}) {
       <section class="section lt-lead">
         <div class="lt-lead-row">
           <h1>阵容标签</h1>
-          <button type="button" class="control" data-lt-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
-          <button type="button" class="control" data-lt-reload>${glyph('refresh', { size: 18 })}重新读取</button>
+          <div class="lt-lead-actions" role="group" aria-label="页面操作">
+            <button type="button" class="control" data-lt-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
+            <button type="button" class="control" data-lt-reload>${glyph('refresh', { size: 18 })}重新读取</button>
+          </div>
         </div>
         <p class="lt-status" data-lt-status hidden></p>
       </section>
 
-      <section class="section lt-existing">
-        <div class="section-heading"><div><h2>我们的阵容标签 <span class="lt-count" data-lt-total></span></h2></div>
-          <button type="button" class="control" data-lt-restore hidden>${glyph('refresh', { size: 18 })}恢复内置标签</button></div>
-        <ul class="lt-gallery" data-lt-list role="list"></ul>
-      </section>
-
-      <section class="section lt-save">
-        <div class="section-heading"><div><h2 data-lt-form-title>新建阵容标签</h2></div></div>
-        <form class="lt-editor" data-lt-save-form aria-label="新建或编辑阵容标签">
+      <section class="section lt-save" aria-labelledby="${ids.form}-title">
+        <div class="section-heading"><div><h2 id="${ids.form}-title" data-lt-form-title>新建阵容标签</h2></div>
+          <div class="lt-save-actions lt-editor-actions" role="group" aria-label="编辑操作">
+            <button type="button" class="control" data-lt-cancel-edit hidden>${glyph('ban', { size: 18 })}取消编辑</button>
+            <button type="submit" class="primary" data-lt-save form="${ids.form}">${glyph('pick', { size: 18 })}保存为阵容标签</button>
+          </div></div>
+        <form id="${ids.form}" class="lt-editor" data-lt-save-form aria-label="新建或编辑阵容标签">
           <div class="lt-editor-side">
             <div class="lt-field">
               <span class="lt-field-label">已选英雄 <span class="lt-count" data-lt-count>0/${MAX_HEROES}</span></span>
@@ -485,10 +486,6 @@ export function createLineupTagsPage(h = {}) {
               <input id="${ids.note}" data-lt-note type="text" maxlength="80" autocomplete="off"
                 placeholder="记录赛训口径 / 使用场景">
             </div>
-            <p class="lt-save-actions">
-              <button type="button" class="control" data-lt-cancel-edit hidden>${glyph('ban', { size: 18 })}取消编辑</button>
-              <button type="submit" class="primary" data-lt-save>${glyph('pick', { size: 18 })}保存为阵容标签</button>
-            </p>
           </div>
           <div class="lt-picker-side">
             <div class="lt-picker-bar">
@@ -504,9 +501,15 @@ export function createLineupTagsPage(h = {}) {
         </form>
       </section>
 
-      <dialog class="lt-dialog" data-lt-dialog aria-labelledby="${ids.dialog}-title">
-        <h2 id="${ids.dialog}-title">确认删除</h2>
-        <p data-lt-dialog-text></p>
+      <section class="section lt-existing">
+        <div class="section-heading"><div><h2>我们的阵容标签 <span class="lt-count" data-lt-total></span></h2></div>
+          <button type="button" class="control" data-lt-restore hidden>${glyph('refresh', { size: 18 })}恢复内置标签</button></div>
+        <ul class="lt-gallery" data-lt-list role="list"></ul>
+      </section>
+
+      <dialog class="lt-dialog" data-lt-dialog aria-labelledby="${ids.dialog}-title" aria-describedby="${ids.dialog}-text" closedby="closerequest">
+        <h2 id="${ids.dialog}-title">确认删除阵容标签</h2>
+        <p id="${ids.dialog}-text" class="lt-dialog-text" data-lt-dialog-text></p>
         <form method="dialog" class="lt-dialog-actions" data-lt-dialog-form aria-label="确认删除阵容标签">
           <button type="submit" value="cancel" class="control" autofocus>${glyph('ban', { size: 18 })}取消</button>
           <button type="submit" value="delete" class="lt-delete-btn">${glyph('trash', { size: 18 })}删除</button>

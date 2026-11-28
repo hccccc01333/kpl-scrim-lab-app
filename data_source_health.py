@@ -107,24 +107,45 @@ def _external_hero_names() -> set[str]:
     return {name for name in names if 2 <= len(name) <= 10}
 
 
-def _card(key, status, label, detail, updated_at, count, auto, hint=''):
+def _card(key, status, label, detail, updated_at, count, auto, hint='', sync_state=None,
+          external_running=False):
     with _LOCK:
         running = dict(_STATE['running'].get(key) or {})
         last = dict(_STATE['last'].get(key) or {})
+    if external_running and not running:
+        running = {'message': '后台同步进行中，稍等片刻…'}
     if running:
-        status, label = 'running', '正在爬取'
+        status, label, sync_state = 'running', '正在同步', 'running'
         detail = running.get('message') or '后台任务进行中，稍等片刻…'
+    elif last.get('ok') is False:
+        # 旧数据仍保留，但最近一次同步失败不能继续显示「已同步 / 正常」。
+        sync_state = 'failure'
+        status, label = 'error', '同步失败'
+        detail = str(last.get('message') or detail or '最近一次同步失败。')
+        if count:
+            detail += f' · 此前收录的 {count:,} 条数据仍保留'
+        hint = hint or '确认电脑能联网后点「重新同步」；失败不会删除已有数据。'
+    elif not count and last.get('ok') is True:
+        sync_state = 'success-empty'
+    elif sync_state is None:
+        sync_state = 'success' if count else ('success-empty' if updated_at else 'never')
+    if not running and sync_state == 'success-empty' and not count:
+        status, label = 'warn', '已同步·无数据'
+        detail = detail or '最近一次同步成功，但没有收录到数据（0 条），不计入正常。'
+    elif not running and sync_state == 'never' and not count:
+        status, label = 'warn', '从未同步'
+        detail = detail or '尚未同步过，当前收录为 0 条，不计入正常。'
     return {'key': key, 'name': next(s['name'] for s in SOURCES if s['key'] == key),
             'icon': next(s['icon'] for s in SOURCES if s['key'] == key),
             'description': next(s['description'] for s in SOURCES if s['key'] == key),
             'auto': auto, 'status': status, 'label': label, 'detail': detail,
-            'updatedAt': updated_at, 'count': count, 'hint': hint,
-            'canRetry': key in ('heroes', 'kpl', 'peak'),
-            'running': bool(running), 'lastResult': last}
+            'syncState': sync_state, 'updatedAt': updated_at, 'count': count, 'hint': hint,
+            'canRetry': True, 'running': bool(running), 'lastResult': last}
 
 
 def _hero_card():
     hint = ''
+    sync_state = 'success'
     catalog = _json(CATALOG, {}) or {}
     heroes = [e for e in catalog.get('entries') or [] if e.get('kind') == 'hero']
     have = {str(e.get('name') or '') for e in heroes}
@@ -138,63 +159,101 @@ def _hero_card():
         status, label = 'stale', '有新增英雄'
         detail = ('外部数据里已有、但本地名录缺失：' + '、'.join(missing[:6])
                   + ('…' if len(missing) > 6 else ''))
-        hint = '点「重新爬取」联网补齐名字与头像；打法类型仍需赛训组在工作簿补一行。'
+        hint = '点「重新同步」联网补齐名字与头像；打法类型仍需赛训组在工作簿补一行。'
     elif not heroes:
-        status, label, detail = 'error', '名录为空', '没有读到英雄名录文件。'
-        hint = '检查随包 resources/catalog.json 是否完整，或点「重新爬取」。'
+        updated = str(catalog.get('updatedAt') or _stamp(CATALOG))
+        if not CATALOG.is_file():
+            status, label, detail, sync_state = 'warn', '从未同步', '英雄名录尚未同步，收录为 0 个。', 'never'
+        else:
+            sync_state = 'success-empty' if updated else 'never'
+            status, label = 'warn', '已同步·无数据' if updated else '从未同步'
+            detail = '英雄名录同步成功，但收录为 0 个。' if updated else '英雄名录尚未同步，收录为 0 个。'
+        hint = '检查随包 resources/catalog.json 是否完整，或点「重新同步」。'
     else:
-        status, label = 'ok', '已同步'
+        status, label, sync_state = 'ok', '已同步', 'success'
         detail = f'英雄名录 {count} 个 · 外部数据未发现缺失英雄'
     return _card('heroes', status, label, detail, str(catalog.get('updatedAt') or _stamp(CATALOG)),
-                 count, next(s['auto'] for s in SOURCES if s['key'] == 'heroes'), hint)
+                 count, next(s['auto'] for s in SOURCES if s['key'] == 'heroes'), hint, sync_state)
 
 
 def _kpl_card():
     hint = ''
-    doc = _json(KPL_MANIFEST if KPL_MANIFEST.is_file() else KPL_MANIFEST_SEED, {}) or {}
+    sync_state = 'success'
+    manifest = KPL_MANIFEST if KPL_MANIFEST.is_file() else KPL_MANIFEST_SEED
+    doc = _json(manifest, {}) or {}
     count = int(doc.get('games') or 0)
     errors = int(doc.get('errors') or 0)
-    updated = str(doc.get('updatedAt') or '')
+    updated = str(doc.get('updatedAt') or (_stamp(manifest) if manifest.is_file() else ''))
     age = _age_days(updated)
-    if not count:
-        status, label, detail = 'error', '还没有数据', '没有读到 KPL 逐局 BP 清单。'
-        hint = '点「重新爬取」抓取官方逐局数据（首次全量约十几分钟）。'
+    if not count and errors:
+        status, label, detail, sync_state = 'error', '同步失败', f'最近一次同步有 {errors} 局失败，收录为 0 局。', 'failure'
+        hint = '确认联网后点「重新同步」；失败不会删除已有数据。'
+    elif not count:
+        sync_state = 'success-empty' if updated else 'never'
+        status = 'warn'
+        label = '已同步·无数据' if updated else '从未同步'
+        detail = ('KPL 同步成功，但官方清单收录为 0 局。' if updated
+                  else 'KPL 逐局 BP 尚未同步，当前收录为 0 局。')
+        hint = '点「重新同步」抓取官方逐局数据（首次全量约十几分钟）。'
     elif errors:
         status, label = 'warn', '有少量错误'
         detail = f'已收录 {count:,} 局 · {errors} 局抓取失败（不影响其它局）'
     elif age is not None and age > 14:
         status, label = 'stale', '数据偏旧'
         detail = f'已收录 {count:,} 局 · 最近更新 {updated[:10]}'
-        hint = '点「重新爬取」补最近赛事。'
+        hint = '点「重新同步」补最近赛事。'
     else:
         status, label = 'ok', '已同步'
         detail = f'已收录 {count:,} 局 · 数据窗口至 {str(doc.get("windowEnd") or "")[:10]}'
     return _card('kpl', status, label, detail, updated, count,
-                 next(s['auto'] for s in SOURCES if s['key'] == 'kpl'), hint)
+                 next(s['auto'] for s in SOURCES if s['key'] == 'kpl'), hint, sync_state)
 
 
 def _peak_card():
     hint = ''
+    sync_state = 'success'
     try:
         import peak_crawl
         snap = peak_crawl.status() or {}
     except (ImportError, OSError, ValueError, AttributeError):
-        snap = {}
+        snap = {'available': False}
+    # peak_crawl 的进程内状态重启后会归零；state.json 才是上一次同步结果的持久证据。
+    persisted = _json(ROOT / 'data' / 'peak' / 'state.json', {}) or {}
+    for field in ('startedAt', 'finishedAt', 'lastError', 'windowEnd', 'pairs'):
+        if not snap.get(field) and persisted.get(field) is not None:
+            snap[field] = persisted[field]
     running = bool(snap.get('running'))
     error = str(snap.get('lastError') or '')
     error = '' if error.lower() in ('', 'none', 'null') else error
     count = int(snap.get('pairs') or 0)
+    finished = str(snap.get('finishedAt') or '')
+    started = str(snap.get('startedAt') or '')
     if error:
-        status, label = 'error', '爬取失败'
+        status, label, sync_state = 'error', '同步失败', 'failure'
         detail = f'最近一次失败：{error}'
-        hint = '多半是源站暂时连不上：确认电脑能联网后点「重新爬取」。'
+        if count:
+            detail += f' · 此前收录的 {count:,} 对数据仍保留'
+        hint = '多半是源站暂时连不上：确认电脑能联网后点「重新同步」。'
     elif snap.get('available') is False:
-        status, label = 'error', '模块缺失'
+        status, label, sync_state = 'error', '模块缺失', 'failure'
         detail = '当前安装包缺少巅峰千强抓取模块（依赖 scripts/build_bp_facts.py）。'
         hint = '请用完整安装包重装，或检查 scripts/ 是否随包发布。'
+    elif not count and finished:
+        status, label, sync_state = 'warn', '已同步·无数据', 'success-empty'
+        detail = '最近一次同步成功，但源站没有返回可用的对位数据（0 对），不计入正常。'
+        hint = '可点「重新同步」再试一次；0 对不会计入正常状态。'
+    elif not count and started and not running:
+        status, label, sync_state = 'error', '同步未完成', 'failure'
+        detail = '上次同步启动后未正常结束，可能被中断；当前对位收录为 0 对。'
+        hint = '点「重新同步」重新开始一轮。'
+    elif not count:
+        status, label, sync_state = 'warn', '从未同步', 'never'
+        detail = '尚未完成过一次同步，当前对位收录为 0 对，不计入正常。'
+        hint = '确认联网后点「重新同步」。'
     elif snap.get('stale') and not running:
         status, label = 'stale', '待刷新'
         detail = '今天还没抓过，当前展示的是上一次成功的数据。'
+        hint = '点「重新同步」补最新对位数据。'
     elif snap.get('enabled') is False:
         status, label = 'warn', '自动刷新已关'
         detail = '检测到 PEAK_AUTO_CRAWL=0，今天的自动任务不会运行。'
@@ -202,30 +261,35 @@ def _peak_card():
         status, label = 'ok', '已同步'
         detail = f'对位数据 {count:,} 对 · 源站数据窗口至 {str(snap.get("windowEnd") or "")[:10]}'
     return _card('peak', status, label, detail,
-                 str(snap.get('finishedAt') or snap.get('startedAt') or _stamp(ROOT / 'data' / 'peak' / 'state.json')),
-                 count, next(s['auto'] for s in SOURCES if s['key'] == 'peak'), hint)
+                 str(finished or started or _stamp(ROOT / 'data' / 'peak' / 'state.json')),
+                 count, next(s['auto'] for s in SOURCES if s['key'] == 'peak'), hint, sync_state,
+                 external_running=running)
 
 
 def _stats_card():
     hint = ''
+    sync_state = 'success'
     path = ROOT / 'data' / 'facts' / 'hero_external_stats.json'
     doc = _json(path, {}) or {}
     count = sum(len(v) for v in doc.values() if isinstance(v, dict))
     today = date.today().isoformat()
     updated = _stamp(path)
     if not count:
-        status, label = 'error', '还没有数据'
-        detail = '英雄外部统计文件缺失或为空。'
-        hint = '点巅峰千强的「重新爬取」会一起重算。'
+        sync_state = 'success-empty' if path.is_file() else 'never'
+        status = 'warn'
+        label = '已同步·无数据' if path.is_file() else '从未同步'
+        detail = ('英雄榜重算成功，但统计文件收录为 0 条。' if path.is_file()
+                  else '英雄榜尚未重算，统计文件不存在，收录为 0 条。')
+        hint = '点「重新同步」直接重算英雄榜，或随巅峰千强一起刷新。'
     elif updated[:10] != today:
         status, label = 'stale', '待刷新'
         detail = f'共 {count:,} 个英雄条目 · 上次更新 {updated[:10]}'
-        hint = '确认联网后点巅峰千强的「重新爬取」，会一并重算国服战力。'
+        hint = '确认联网后点「重新同步」，或随巅峰千强一起重算国服战力。'
     else:
         status, label = 'ok', '已同步'
         detail = f'共 {count:,} 个英雄条目 · 今天已更新'
     return _card('stats', status, label, detail, updated, count,
-                 next(s['auto'] for s in SOURCES if s['key'] == 'stats'), hint)
+                 next(s['auto'] for s in SOURCES if s['key'] == 'stats'), hint, sync_state)
 
 
 def snapshot() -> dict:
@@ -233,11 +297,13 @@ def snapshot() -> dict:
     cards = [_hero_card(), _kpl_card(), _peak_card(), _stats_card()]
     counts = {status: sum(1 for c in cards if c['status'] == status)
               for status in ('ok', 'stale', 'warn', 'error', 'running')}
-    needs_action = [c['name'] for c in cards if c['status'] in ('stale', 'error')]
+    needs_action = [c['name'] for c in cards
+                    if c['status'] in ('stale', 'warn', 'error')
+                    or c.get('syncState') in ('never', 'success-empty', 'failure')]
     auto_on = os.environ.get('SOURCE_AUTO_CRAWL', '1') != '0'
-    hint = ('缺失或过期的数据源会由后台自动补爬，成功后卡片显示「爬取成功」；'
-            if auto_on else '后台自动补爬已关闭；')
-    hint += '爬取失败时先确认电脑能上网（公司网络可能拦截 pvp.qq.com / 91m.com），再点卡片上的「重新爬取」。'
+    hint = ('缺失、无数据或过期的数据源会由后台自动补爬；0 条数据不计入正常；'
+            if auto_on else '后台自动补爬已关闭；0 条数据不计入正常；')
+    hint += '同步失败时先确认电脑能上网（公司网络可能拦截 pvp.qq.com / 91m.com），再用统一入口重新同步。'
     return {'sources': cards, 'counts': counts, 'needsAction': needs_action, 'offlineHint': hint}
 
 
@@ -256,8 +322,8 @@ def _run(key: str, func) -> bool:
             ok = bool(result.get('ok', True)) if isinstance(result, dict) else True
         except Exception as exc:  # noqa: BLE001 - 后台任务必须把错误带回页面
             message, ok = f'{type(exc).__name__}: {exc}'[:300], False
-        prefix = '爬取成功' if ok else '爬取失败'
-        if not message.startswith(('爬取成功', '爬取失败')):
+        prefix = '同步成功' if ok else '同步失败'
+        if not message.startswith(('同步成功', '同步失败')):
             message = f'{prefix}：{message}'
         with _LOCK:
             _STATE['running'].pop(key, None)
@@ -337,13 +403,23 @@ def _refresh_peak() -> dict:
     import peak_crawl
     snap = peak_crawl.status() or {}
     if snap.get('running'):
-        return {'ok': False, 'message': '已有一轮刷新在跑，请稍后。'}
+        # 并发保护不是同步失败；真实进度由 peak_crawl.status() 的 running 展示。
+        return {'ok': True, 'skipped': True, 'message': '已有一轮刷新在跑，请稍后。'}
     peak_crawl.refresh(reason='api')
     return {'ok': True, 'message': '巅峰千强刷新已开始，进度会直接反映在卡片上。'}
 
 
+def _refresh_stats() -> dict:
+    """英雄榜只重算本地事实，不重新爬巅峰对位；四个卡片共用同一个刷新接口。"""
+    import hero_external_stats
+    stats = hero_external_stats.build()
+    count = sum(len(stats.get(key) or {}) for key in ('kpl', 'top10', 'big'))
+    return {'ok': True, 'message': f'英雄榜重算完成 · 共 {count} 个英雄条目'}
+
+
 def refresh(key: str) -> dict:
-    runners = {'heroes': _sync_heroes, 'kpl': _crawl_kpl, 'peak': _refresh_peak}
+    runners = {'heroes': _sync_heroes, 'kpl': _crawl_kpl, 'peak': _refresh_peak,
+               'stats': _refresh_stats}
     func = runners.get(str(key or ''))
     if func is None:
         return {'ok': False, 'message': f'不支持的数据源：{key}'}
@@ -356,11 +432,15 @@ def auto_recover_missing() -> list[str]:
     """后台自动补爬：检测到外部源缺失 / 过期就启动，带冷却避免反复请求源站。"""
     if os.environ.get('SOURCE_AUTO_CRAWL', '1') == '0':
         return []
-    runners = {'heroes': _sync_heroes, 'kpl': _crawl_kpl, 'peak': _refresh_peak}
+    runners = {'heroes': _sync_heroes, 'kpl': _crawl_kpl, 'peak': _refresh_peak,
+               'stats': _refresh_stats}
     started, now = [], time.monotonic()
     for card in snapshot().get('sources') or []:
         key = str(card.get('key') or '')
-        if key not in runners or card.get('running') or card.get('status') not in ('stale', 'error'):
+        if key not in runners or card.get('running'):
+            continue
+        if card.get('status') not in ('stale', 'error') \
+                and card.get('syncState') not in ('never', 'success-empty', 'failure'):
             continue
         with _AUTO_LOCK:
             last = _AUTO_LAST.get(key)

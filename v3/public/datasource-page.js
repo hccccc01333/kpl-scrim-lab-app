@@ -125,15 +125,12 @@ export function createDataSourcePage(h = {}) {
 
   function html() {
     return `<div class="ds-page">
-      <section class="section ds-head">
-        <div class="section-heading">
-          <div><h2>数据源展示</h2></div>
-        </div>
+      <header class="page-intro ds-page-intro"><div><h1>数据源展示</h1><p>按赛事查看数据表、关联线路和 ID 断链；空池与断链分开显示。</p></div><div class="intro-actions"><button type="button" class="control" data-ds-refresh>${glyph('refresh', { size: 18 })}重新读取</button></div></header>
+      <section class="section ds-head" aria-label="数据源概况">
         <div class="ds-controls">
           <label class="ds-pick"><span>当前赛事</span>
             <select data-ds-comp aria-label="选择赛事"><option value="">读取中…</option></select></label>
           <span class="ds-updated" data-ds-updated></span>
-          <button type="button" class="control" data-ds-refresh>${glyph('refresh', { size: 18 })}重新读取</button>
         </div>
         <p class="ds-notice" data-ds-notice role="alert" hidden></p>
         <p class="visually-hidden" role="status" data-ds-status></p>
@@ -217,8 +214,8 @@ export function createDataSourcePage(h = {}) {
           <article class="ds-event-card ${comp.status === 'planned' ? 'is-planned' : ''}">
             <span class="ds-event-kicker">赛事 · COMPETITION</span>
             <h3>${esc(comp.name)}</h3>
-            <div class="ds-event-meta"><code title="${esc(comp.id)}">${esc(comp.id)}</code>
-              ${comp.status ? `<em>${esc(comp.status)}</em>` : ''}${comp.date ? `<span>${esc(comp.date)}</span>` : ''}</div>
+            <div class="ds-event-meta"><span class="ds-event-id" title="${esc(comp.id)}">赛事 ID · ${esc(String(comp.id || '').slice(0, 12))}${String(comp.id || '').length > 12 ? '…' : ''}</span>
+              ${comp.status ? `<em>${esc({ planned: '计划中', active: '进行中', finished: '已结束', archived: '已归档' }[comp.status] || comp.status)}</em>` : ''}${comp.date ? `<span>${esc(comp.date)}</span>` : ''}</div>
             <div class="ds-event-numbers">
               <span><b>${fmt(comp.declaredTeams)}</b>声明战队</span>
               <span><b>${fmt(comp.declaredPlayers)}</b>声明选手</span>

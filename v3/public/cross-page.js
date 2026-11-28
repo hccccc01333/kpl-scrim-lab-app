@@ -525,13 +525,15 @@ export function createCrossPage(h) {
         : diff === 0 ? '<i class="xw-trend-zero" aria-hidden="true"></i>' : '';
       return `<a class="xw-trend-col ${tone}" href="#biggame/${encodeURIComponent(s.id)}" title="${esc(title)}">
         <span class="xw-trend-up">${up}</span>
+        <span class="xw-trend-value">${diff > 0 ? '+' : ''}${diff}</span>
         <span class="xw-trend-score">${us}:${them}</span>
         <span class="xw-trend-down">${diff < 0 ? `<i style="height:${h}px"></i>` : ''}</span>
+        <small class="xw-trend-date">${esc((seriesDate(s) || '日期未知').slice(5))}</small>
       </a>`;
     }).join('');
     return `<div class="xw-trend">
-      <div class="xw-trend-head"><b>大场净胜走势</b><span>最近 ${list.length} 场 · 点柱看这场</span></div>
-      <div class="xw-trend-rail">${cols}</div>
+      <div class="xw-trend-head"><b>大场净胜走势</b><span>净胜 = 小局胜 − 小局负 · 点柱看这场</span></div>
+      <div class="xw-trend-rail"><span class="xw-trend-baseline" aria-hidden="true">0</span>${cols}</div>
       <div class="xw-trend-axis"><span>${esc((seriesDate(list[0]) || '—').slice(5))}</span><span>${esc((seriesDate(list[list.length - 1]) || '—').slice(5))}</span></div>
     </div>`;
   }
@@ -659,7 +661,7 @@ export function createCrossPage(h) {
         ${scopeActive() ? `<button type="button" class="xw-clear control" data-cx-clear>${glyph('refresh', { label: '清除筛选', size: 18 })} 清除筛选</button>` : ''}
       </div>
     </div>
-      <nav class="xw-tabs" aria-label="跨场分析分区">
+      <nav class="xw-tabs xw-tabs--compact" aria-label="跨场分析分区">
         ${SECTIONS.map((section) => `<button type="button" class="xw-tab${section.key === state.section ? ' is-active' : ''}" data-cx-section-link="${section.key}" title="${esc(section.note)}"><b>${section.num}</b>${glyph(section.key === 'ingame' ? 'chart' : section.key === 'postgame' ? 'players' : 'bp', { label: section.label, size: 18 })}<span>${esc(section.label)}</span></button>`).join('')}
       </nav>
     </div>`;
@@ -674,11 +676,11 @@ export function createCrossPage(h) {
           ${kicker ? `<span class="xw-mod-kicker">${glyph(icon, { size: 18 })}${esc(kicker)}</span>` : ''}
           ${title ? `<h3>${title}</h3>` : ''}
         </div>
-        ${meta ? `<span class="xw-mod-meta">${meta}</span>` : ''}
+        ${meta ? `<span class="xw-mod-meta xw-mod-meta--context">${meta}</span>` : ''}
       </div>
       ${extra}
       ${body ? `<div class="xw-mod-body">${body}</div>` : ''}
-      ${note ? `<p class="xw-mod-note">${note}</p>` : ''}
+      ${note ? `<p class="xw-mod-note xw-mod-note--contained"><b>口径</b>${note}</p>` : ''}
     </article>`;
   }
 
@@ -686,10 +688,10 @@ export function createCrossPage(h) {
     const section = SECTIONS.find((x) => x.key === key);
     const index = (SECTION_INDEX[key] || []).map(([id, label]) =>
       `<button type="button" class="xw-index-link" data-xw-jump="${esc(id)}">${esc(label)}</button>`).join('');
-    return `<header class="xw-sec-head">
+    return `<header class="xw-sec-head xw-sec-head--grouped">
       <div class="xw-sec-title">
-        <span class="xw-sec-num">${section.num}</span>
-        <h2>${esc(section.label)}</h2>
+        <span class="xw-sec-num" aria-hidden="true">${section.num}</span>
+        <div><h2>${esc(section.label)}</h2><p class="xw-sec-note">${esc(section.note)}</p></div>
         <span class="xw-sec-meta">${meta || ''}</span>
       </div>
       ${extra ? `<div class="xw-sec-tools">${extra}</div>` : ''}

@@ -94,11 +94,15 @@ function barHtml(view, ctx) {
   const mode = VIEW_MODES.includes(plain(view.viewMode)) ? plain(view.viewMode) : 'all';
   return `<div class="pbr-bar">
     <div class="pbr-bar-actions">
-      <div class="pbr-periods" role="group" aria-label="赛训周期">
-        ${PERIOD_ORDER.map((key) => `<button type="button" class="pbr-period" data-pbr-period="${key}" aria-pressed="${String(view.kind === key)}">${glyph('calendar', { label: PERIOD_TEXT[key], size: 18 })}${PERIOD_TEXT[key]}</button>`).join('')}
+      <div class="pbr-filter-group pbr-periods" role="group" aria-label="赛训周期">
+        <span class="pbr-filter-label">周期</span>
+        <div class="pbr-period-buttons">${PERIOD_ORDER.map((key) => `<button type="button" class="pbr-period" data-pbr-period="${key}" aria-pressed="${String(view.kind === key)}">${glyph('calendar', { label: PERIOD_TEXT[key], size: 18 })}${PERIOD_TEXT[key]}</button>`).join('')}</div>
       </div>
-      <div class="pbr-views" role="group" aria-label="视角">
+      <div class="pbr-filter-group pbr-views" role="group" aria-label="视角">
+        <span class="pbr-filter-label">视角</span>
+        <div class="pbr-view-buttons">
         ${VIEW_MODES.map((key) => `<button type="button" class="pbr-view" data-pbr-view-mode="${key}" aria-pressed="${String(mode === key)}">${glyph(key === 'all' ? 'chart' : key === 'fav' ? 'book' : 'clock', { label: VIEW_TEXT[key], size: 18 })}${VIEW_TEXT[key]}</button>`).join('')}
+        </div>
       </div>
       <button type="button" class="control pbr-range" data-action="filter">${icon('filter')} 数据范围</button>
     </div>
@@ -107,9 +111,15 @@ function barHtml(view, ctx) {
 
 /* 页头只留标题。操作入口在左侧导航与各页内已有，页头再放按钮只是噪音。 */
 function titleHtml(view, ctx) {
+  const { esc } = ctx;
+  const period = view.data?.period || {};
+  const range = plain(period.rangeLabel);
+  const prev = period.prev || {};
   return `<div class="pbr-title">
     <div class="pbr-title-copy">
       <h1>赛训总览</h1>
+      ${range ? `<span class="pbr-title-range">${esc(plain(period.label) || PERIOD_TEXT[view.kind] || '')} · ${esc(range)}</span>` : ''}
+      ${prev.rangeLabel ? `<span class="pbr-title-compare">对比${esc(plain(prev.label) || '上一期')} ${esc(plain(prev.rangeLabel))}</span>` : ''}
     </div>
   </div>`;
 }
@@ -849,16 +859,28 @@ function relatedMatchHtml(match, esc, portraitFn) {
   </article>`;
 }
 
-function findingCardHtml(finding, index, total, esc, portraitFn) {
+function findingCardHtml(finding, index, total, esc, portraitFn, view) {
   const key = findingKey(finding);
   const status = plain(finding.statusTag) || '持续观察';
-  const category = plain(finding.categoryTag) || '本批观察';
+  const category = plain(finding.categoryTag) || KIND_TEXT[plain(finding.kind)] || '战术观察';
   const statusClass = status === '重点复盘' ? 'is-attention'
     : status === '有所改善' ? 'is-good' : 'is-neutral';
+  const favs = (view && view.findingFavs) || {};
+  const state = favStateOf(favs, key);
+  const isFav = Boolean(state);
+  const reviewed = Boolean(state && state.reviewedAt);
+  const fav = favButtonHtml('data-pbr-fav-finding', key, favs, esc, '关注');
+  const workflow = favWorkflowHtml('finding', key, favs, esc);
+  const ignore = `<button type="button" class="pbr-ignore" data-pbr-ignore-finding="${esc(key)}" title="忽略这条发现，可在区头恢复">${glyph('ban', { label: '忽略', size: 16 })} 忽略</button>`;
   const matches = listOf(finding.relatedMatches).slice(0, 2);
+  const evidence = listOf(finding.evidence)
+    .filter((item) => item && (plain(item.label) || plain(item.game)))
+    .slice(0, EVIDENCE_LIMIT);
   const more = plain(finding.deep_destination);
-  /* 整行就是 summary：点结论、数字或右侧文字都会展开，不再用只有三角的按钮。 */
-  return `<details class="pbr-finding" name="pbr-finding-group" data-finding-id="${esc(key)}">
+  const cls = `pbr-finding${isFav ? ' is-fav' : ''}${reviewed ? ' is-reviewed' : ''}`;
+  /* 整行就是 summary：点结论、数字或右侧文字都会展开，不再用只有三角的按钮。
+     关注、忽略与结论放在 body，避免 summary 内嵌交互控件。 */
+  return `<details class="${cls}" name="pbr-finding-group" data-finding-id="${esc(key)}">
     <summary class="pbr-finding-trigger">
       <span class="pbr-finding-no">${String(index + 1).padStart(2, '0')}</span>
       <span class="pbr-finding-main">
@@ -876,31 +898,46 @@ function findingCardHtml(finding, index, total, esc, portraitFn) {
       <p class="pbr-finding-lead">${esc(plain(finding.conclusion))}</p>
       ${pairHtml(finding.pair, esc)}
       ${plain(finding.advice) ? `<div class="pbr-advice"><span class="pbr-advice-label">建议复盘</span><p>${esc(plain(finding.advice))}</p></div>` : ''}
-      <div class="pbr-related-list">${matches.map((match) => relatedMatchHtml(match, esc, portraitFn)).join('')}</div>
+      ${matches.length
+        ? `<div class="pbr-related-list">${matches.map((match) => relatedMatchHtml(match, esc, portraitFn)).join('')}</div>`
+        : evidence.length ? `<ul class="pbr-evidence is-inline">${evidence.map((item) => evidenceInlineHtml(item, esc)).join('')}</ul>` : ''}
       ${more && matches.length ? `<a class="pbr-finding-more control" href="${esc(more)}">${glyph('matches', { label: '查看全部关联对局', size: 18 })} 查看全部关联对局</a>` : ''}
+      <div class="pbr-finding-actions">${fav}${ignore}${workflow}</div>
     </div>
   </details>`;
 }
 
 function findingsHtml(data, view, ctx) {
   const { esc } = ctx;
-  const visible = collectFindings(data);
+  const all = collectFindings(data);
+  const ignored = (view && view.findingIgnored) || {};
+  const favs = (view && view.findingFavs) || {};
+  const mode = viewModeOf(view);
+  const visible = sortedByFav(all
+    .filter((finding) => !ignored[findingKey(finding)])
+    .filter((finding) => inView(favStateOf(favs, findingKey(finding)), mode)), findingKey, favs);
+  const ignoredCount = all.filter((finding) => ignored[findingKey(finding)]).length;
   const title = plain(data.findingsTitle) || '近期战术发现';
   const periodText = plain((data.period || {}).label) || '最近本批';
+  const countText = mode === 'all' && !ignoredCount
+    ? plain(data.findingsCountText) || `${visible.length} 项发现`
+    : `${visible.length} 项发现`;
   const head = `<div class="pbr-section-head">
     <div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">04</span><h2>${esc(title)}</h2>
-      <span class="pbr-section-chip">${esc(plain(data.findingsCountText) || `${visible.length} 项发现`)}</span>
+      <span class="pbr-section-chip">${esc(countText)}</span>
       <span class="pbr-section-chip">${glyph('clock', { label: '周期', size: 16 })}${esc(periodText)}</span>
     </div>
+    ${ignoredCount ? `<button type="button" class="pbr-restore-ignored" data-pbr-restore-ignored>已忽略 ${ignoredCount} 条 · 恢复</button>` : ''}
   </div>`;
   if (!visible.length) {
+    const empty = mode === 'fav' ? '还没有关注的发现。' : mode === 'todo' ? '没有待复盘的发现。' : plain(data.findingsEmpty) || '本期没有需要单独展开的发现。';
     return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
-      <p class="pbr-findings-empty">${esc(plain(data.findingsEmpty) || '本期没有需要单独展开的发现。')}</p>
+      <p class="pbr-findings-empty">${esc(empty)}</p>
     </section>`;
   }
   return `<section class="pbr-findings" aria-label="${esc(title)}">${head}
     <div class="pbr-finding-accordion" aria-label="${esc(title)}">
-      ${visible.map((finding, index) => findingCardHtml(finding, index, visible.length, esc, ctx.portrait)).join('')}
+      ${visible.map((finding, index) => findingCardHtml(finding, index, visible.length, esc, ctx.portrait, view)).join('')}
     </div>
   </section>`;
 }
@@ -1158,10 +1195,12 @@ function watchHtml(data, view, ctx) {
       || plain(card.primary_destination).replace('#match/', '')));
   }
   if (!cards.length) {
+    const activeField = fields.find((field) => plain(field.id) === wanted) || fields[0];
+    const emptyText = plain(data.watchEmpty) || plain(activeField && activeField.empty) || '本期没有可复盘的比赛过程。';
     return `<section class="pbr-findings pbr-watch" aria-label="${esc(title)}">
       <div class="pbr-section-head"><div class="pbr-section-title"><span class="pbr-section-index" aria-hidden="true">05</span><h2>${esc(title)}</h2><span class="pbr-section-chip">${glyph('matches', { label: '对局数', size: 16 })}${esc(countText)}</span></div></div>
       <div class="pbr-tagbar" data-tagbar="home"></div>
-      <p class="pbr-findings-empty">${esc(plain(data.watchEmpty) || '本期没有可复盘的比赛过程。')}</p>
+      <p class="pbr-findings-empty">${esc(emptyText)}</p>
     </section>`;
   }
   const menu = fields.length > 1
@@ -1171,8 +1210,8 @@ function watchHtml(data, view, ctx) {
           ${fields.map((field) => {
             const id = plain(field.id);
             const on = id === wanted;
-            return `<button type="button" role="option" aria-selected="${String(on)}"
-              class="pbr-watch-menu-option${on ? ' is-on' : ''}" data-pbr-sort-option="${esc(id)}">
+            return `<button type="button" role="option" data-pbr-sort-option="${esc(id)}" aria-selected="${String(on)}"
+              class="pbr-watch-menu-option${on ? ' is-on' : ''}">
               ${esc(plain(field.label) || id)}</button>`;
           }).join('')}
         </div>
@@ -1249,21 +1288,29 @@ function emptyHtml(data, view, ctx) {
   const { esc } = ctx;
   const period = data.period || {};
   const label = plain(period.label) || PERIOD_TEXT[view.kind] || PERIOD_TEXT[DEFAULT_KIND];
-  return `<section class="pbr-empty" aria-label="${esc(label)}暂无对局">
-    <span class="pbr-empty-icon" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
-           stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-        <path d="M3 9h18M8 2v4M16 2v4M8 14h4"></path>
-      </svg>
-    </span>
-    <div class="pbr-empty-copy">
-      <h2>${esc(label)}没有对局</h2>
-    </div>
-    <div class="pbr-empty-actions">
-      <a class="control primary" href="#ingest">${glyph('capture', { label: '去采集', size: 18 })} 去采集</a>
-    </div>
-  </section>`;
+  return `<div class="pbr-empty-layout">
+    <section class="pbr-empty pbr-empty--compact" aria-label="${esc(label)}暂无对局">
+      <span class="pbr-empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"
+             stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+          <path d="M3 9h18M8 2v4M16 2v4M8 14h4"></path>
+        </svg>
+      </span>
+      <div class="pbr-empty-copy"><h2>${esc(label)}没有对局</h2><p>可以切换上方周期，或先采集这一阶段的训练赛。</p></div>
+      <div class="pbr-empty-actions">
+        <a class="control primary" href="#ingest">${glyph('capture', { label: '去采集', size: 18 })} 去采集</a>
+      </div>
+    </section>
+    <section class="pbr-empty-support" aria-label="后续操作">
+      <div class="pbr-empty-support-head"><b>接下来可以做什么</b><span>已有历史对局时，从这里继续</span></div>
+      <div class="pbr-shortcut-grid">
+        <a class="pbr-shortcut" href="#matches"><span class="pbr-shortcut-icon">${glyph('matches', { size: 20 })}</span><span><b>查看全部对局</b><small>从历史训练赛开始复盘</small></span><i aria-hidden="true">→</i></a>
+        <a class="pbr-shortcut" href="#matching"><span class="pbr-shortcut-icon">${glyph('players', { size: 20 })}</span><span><b>核对选手匹配</b><small>补齐阵营、选手与对手</small></span><i aria-hidden="true">→</i></a>
+        <a class="pbr-shortcut" href="#series-builder"><span class="pbr-shortcut-icon">${glyph('matches', { size: 20 })}</span><span><b>整理系列赛</b><small>把同场对局编成一个大场</small></span><i aria-hidden="true">→</i></a>
+      </div>
+    </section>
+  </div>`;
 }
 
 function loadingHtml() {
@@ -1321,7 +1368,7 @@ function dataHtml(data, view, ctx) {
     ${notableHtml(data, ctx)}
     ${findingsHtml(data, view, ctx)}
     ${watchHtml(data, view, ctx)}
-    `;
+    <a class="pbr-all control" href="#matches" data-pbr-all-games>${glyph('matches', { label: '全部对局', size: 18 })} 全部对局</a>`;
 }
 
 /* 纯渲染：给浏览器与静态回归共用，不碰 DOM、不发请求。 */
@@ -1693,6 +1740,11 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, portrait, getFilte
 
   function focusKeep(node) {
     if (!node) return;
+    const closed = node.closest && node.closest('details:not([open])');
+    if (closed) closed.open = true;
+    if (!node.matches || !node.matches('a[href], button, input, select, textarea, summary, [tabindex]')) {
+      node.setAttribute('tabindex', '-1');
+    }
     try { node.focus({ preventScroll: true }); } catch { node.focus(); }
   }
 
@@ -1853,18 +1905,26 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, portrait, getFilte
     if (focusSelector) {
       const node = next.querySelector(focusSelector);
       if (node) focusKeep(node);
-      else focusKeep(next.querySelector('.pbr-finding-list'));
+      else focusKeep(next.querySelector('.pbr-finding-accordion'));
     }
     return next;
   }
 
   function refreshFindings(focusSelector) {
-    const before = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
-    const top = before ? before.scrollTop : 0;
+    const openIds = new Set();
+    if (root) {
+      root.querySelectorAll('.pbr-findings:not(.pbr-watch) details[data-finding-id][open]').forEach((node) => {
+        openIds.add(node.dataset.findingId);
+      });
+    }
     const next = replaceSection('.pbr-findings:not(.pbr-watch)',
       findingsHtml(view.data || {}, { ...view, ...viewState() }, ctx), focusSelector);
-    const list = next && next.querySelector('.pbr-finding-list');
-    if (list) list.scrollTop = top;
+    if (next) {
+      next.querySelectorAll('details[data-finding-id]').forEach((node) => {
+        if (openIds.has(node.dataset.findingId)) node.open = true;
+      });
+    }
+    return next;
   }
 
   function refreshWatch(focusSelector) {
@@ -1991,15 +2051,14 @@ export function createPeriodBrief({ esc, fmt, icon, API_BASE, portrait, getFilte
     const id = plain(button.dataset.pbrIgnoreFinding);
     if (!id) return;
     ensureFavs();
-    const list = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
-    const top = list ? list.scrollTop : 0;
     findingIgnored = { ...findingIgnored, [id]: new Date().toISOString() };
     writeIgnoredMap(findingIgnored);
     refreshFindings(null);
-    const after = root && root.querySelector('.pbr-findings:not(.pbr-watch) .pbr-finding-list');
-    if (after) after.scrollTop = top;
-    const next = root && root.querySelector('[data-pbr-ignore-finding]');
-    focusKeep(next || (after || null));
+    const next = root && (root.querySelector('[data-pbr-ignore-finding]')
+      || root.querySelector('[data-pbr-restore-ignored]')
+      || root.querySelector('.pbr-finding-accordion')
+      || root.querySelector('.pbr-findings-empty'));
+    focusKeep(next);
   }
 
   function restoreIgnored() {

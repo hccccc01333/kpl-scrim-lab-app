@@ -10,6 +10,6 @@ assert.match(src, /data-heat-window/);
 assert.match(src, /const from = Math\.max\(0, at - heatWindow\);/);
 assert.match(src, /当前窗口 \$\{heatWindow\} 秒/);
 assert.doesNotMatch(src, /HEAT_WINDOW = 90/);
-assert.ok(app.indexOf('match-deep.js?v=20261126heat20') > -1);
+assert.ok(app.indexOf('match-deep.js?v=20261127csmin1') > -1);
 
 console.log('match heat window: all assertions passed');

@@ -23,6 +23,6 @@ assert.match(css, /\.desk-h1-tri/, '旧装饰三角必须隐藏');
 assert.match(css, /\.comp-kicker/, '赛事页旧英文眉题必须隐藏');
 
 assert.match(html, /page-header\.css\?v=20261128hdr1/, 'index.html 必须加载统一页头样式');
-assert.match(html, /app\.js\?v=20261128hdr1/, 'index.html 必须更新 app.js 版本戳');
+assert.match(html, /app\.js\?v=20261128ui5/, 'index.html 必须更新 app.js 版本戳');
 
 console.log('page header unification: all assertions passed');

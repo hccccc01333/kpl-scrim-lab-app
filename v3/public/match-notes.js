@@ -83,17 +83,17 @@ function when(value) {
 /* ── 渲染 ─────────────────────────────────────────────────────── */
 
 function notesInnerHtml(key, notes) {
-  if (!notes.length) return `<div class="mn-empty mn-empty-cta">${glyph('book', { label: '赛后笔记', size: 20 })}
-      <span>这一局还没有笔记</span>
-      <button type="button" class="mn-add" data-mn-add="${esc(key)}" aria-label="为当前对局写第一条笔记">${glyph('edit', { size: 18 })} 写第一条笔记</button>
+  if (!notes.length) return `<div class="mn-empty mn-empty--clear" aria-label="这一局还没有笔记">
+      <span class="mn-empty-icon" aria-hidden="true">${glyph('book', { size: 24 })}</span>
+      <span><b>这一局还没有笔记</b><small>从页面上方的新增入口选择这一局，补上第一条赛后观察。</small></span>
     </div>`;
   return notes.map((note) => `<article class="mn-note" data-mn-note-id="${esc(note.id)}">
       <p class="mn-body">${esc(note.body).replace(/\n/g, '<br>')}</p>
       ${note.tags.length ? `<div class="mn-tags">${note.tags.map((tag) => `<span class="mn-tag">${esc(tag)}</span>`).join('')}</div>` : ''}
       <div class="mn-note-actions">
-        <button type="button" class="mn-edit" data-mn-edit="${esc(key)}" data-mn-id="${esc(note.id)}"
+        <button type="button" class="mn-edit mn-note-action" data-mn-edit="${esc(key)}" data-mn-id="${esc(note.id)}"
           aria-label="编辑笔记" title="编辑笔记">${glyph('edit', { size: 18 })} 编辑</button>
-        <button type="button" class="mn-del" data-mn-del="${esc(key)}" data-mn-id="${esc(note.id)}"
+        <button type="button" class="mn-del mn-note-action" data-mn-del="${esc(key)}" data-mn-id="${esc(note.id)}"
           aria-label="删除笔记" title="删除笔记">${glyph('trash', { size: 18 })} 删除</button>
         <span class="mn-meta">${esc(when(note.updatedAt || note.createdAt))}${note.author ? ` · ${esc(note.author)}` : ''}</span>
       </div>
@@ -107,7 +107,7 @@ export function matchNotesHtml(matchKey, notes = []) {
   return `<section class="mn-embed" data-match-notes data-match-key="${esc(key)}">
     <div class="mn-head">
       <span><span class="mn-kicker">赛后笔记</span><span class="mn-count">${list.length} 条</span></span>
-      <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('edit', { size: 18 })} 写笔记</button>
+      <button type="button" class="mn-add mn-add--large" data-mn-add="${esc(key)}">${glyph('edit', { size: 18 })} 写笔记</button>
     </div>
     <div class="mn-list" data-mn-list>${notesInnerHtml(key, list)}</div>
     <p class="mn-status" role="status" aria-live="polite" data-mn-status></p>
@@ -492,8 +492,7 @@ async function loadPage(page) {
         m?.session ? `训练组 ${m.session}` : ''].filter(Boolean).join(' · ');
       return `<a class="mn-group-main" href="#match/${encodeURIComponent(key)}" title="打开这一局的复盘：${esc(label)}">
           <b>${esc(label)}</b><small>${esc(detail)}</small></a>
-        <span class="mn-count">${notes.length} 条</span>
-        <button type="button" class="mn-add" data-mn-add="${esc(key)}">${glyph('edit', { size: 18 })} 写笔记</button>`;
+        <span class="mn-count">${notes.length} 条</span>`;
     };
     list.innerHTML = keys.length
       ? keys.map((key) => `<article class="mn-group" data-match-notes data-match-key="${esc(key)}">
@@ -501,8 +500,7 @@ async function loadPage(page) {
           <div class="mn-list" data-mn-list>${notesInnerHtml(key, byMatch[key])}</div>
         </article>`).join('')
       : `<div class="mn-empty mn-empty-cta">${glyph('book', { label: '赛后笔记', size: 20 })}
-          <span>还没有赛后笔记</span>
-          <button type="button" class="mn-add" data-mn-page-add aria-label="写第一条赛后笔记">${glyph('edit', { size: 18 })} 写第一条笔记</button>
+          <span>还没有赛后笔记</span><small>点击右上角「新增笔记」选择对局，写下第一条观察。</small>
         </div>`;
     // 分组容器就是 embed：绑一次事件，后续增删改由 repaint / loadPage 原地刷新。
     list.querySelectorAll('.mn-group').forEach((group) => {

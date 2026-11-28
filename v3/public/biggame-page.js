@@ -364,6 +364,10 @@ export function createBigGamePage(h) {
     </div>`;
   }
 
+  function scoreHtml(us, them, outcome = '', prefix = 'bgx-score') {
+    return `<span class="${prefix} ${outcome}" aria-label="本队 ${us} 比 ${them} 对手"><b>${us}</b><i>:</i><b>${them}</b></span>`;
+  }
+
   function teamCard(s) {
     const games = gameResults(s);
     const us = Number(s.score?.us) || 0;
@@ -381,16 +385,16 @@ export function createBigGamePage(h) {
     return `<a class="bgx-team-card ${outcome}" href="#biggame/${encodeURIComponent(s.id)}${scopeQuery()}">
       <div class="bgx-team-top">
         <span>${esc((seriesDate(s) || '—').slice(5))} · BO${esc(String(s.bestOf || '—'))}${s.completionMode === 'fixed' ? ' · 固定打满' : ''}</span>
-        <span class="bgx-status${s.completion === 'completed' ? ' is-done' : ''}">${esc(COMPLETION_LABEL[s.completion] || s.completion || '—')}${s.status === 'needs_review' ? ' · 待核实' : ''}</span>
+        <span class="bgx-status bgx-status--${esc(s.completion || 'open')}${s.completion === 'completed' ? ' is-done' : ''}">${esc(COMPLETION_LABEL[s.completion] || s.completion || '—')}${s.status === 'needs_review' ? ' · 待核实' : ''}</span>
       </div>
       <div class="bgx-scoreline">
         <b class="bgx-side-name${oppClass}">${oppName}</b>
-        <span class="bgx-score ${outcome}">${us}<i>:</i>${them}</span>
+        ${scoreHtml(us, them, outcome)}
         <span class="bgx-outcome ${outcome}">${us > them ? '战胜' : them > us ? '不敌' : '对阵'}${valid ? '' : ' · 比分异常'}</span>
       </div>
       <p class="bgx-verdict-line">${esc(verdict)}</p>
-      <div class="bgx-team-foot">
-        <b>${glyph('matches', { label: '进入大场', size: 18 })} 进入大场</b>
+      <div class="bgx-team-foot bgx-team-foot--primary">
+        <b>${glyph('matches', { label: '进入大场', size: 18 })} ${s.completion === 'completed' ? `已完赛 ${us}:${them} · 查看复盘` : '进入大场'}</b>
       </div>
     </a>`;
   }
@@ -488,7 +492,7 @@ export function createBigGamePage(h) {
       <div class="bgx-hero-main">
         <p class="bgx-eyebrow">大场分析 <i>/</i> 大场 <i>/</i> ${esc(String(series.bestOf ? `BO${series.bestOf}` : '赛制未设置'))}</p>
         <div class="bgx-hero-score">
-          <span class="bgx-hero-digits"><b>${us}</b><i>/</i><b>${them}</b></span>
+          ${scoreHtml(us, them, us > them ? 'is-win' : them > us ? 'is-loss' : '', 'bgx-hero-digits')}
           <span class="bgx-hero-outcome"><span>${us > them ? '战胜' : them > us ? '不敌' : '对阵'}</span><b>${esc(opponentLabel(series.opponent))}</b></span>
         </div>
         <p class="bgx-hero-verdict">${valid ? esc(verdictText(series, games, score)) : `<b class="bgx-warn">比分异常：</b>${esc(verdictText(series, games, score))}`}</p>

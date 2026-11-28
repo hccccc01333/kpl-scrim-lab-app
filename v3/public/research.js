@@ -28,17 +28,19 @@ export function createResearch({esc,fmt,table,icon,pageIntro}) {
   const chartRows=metric?rows.filter(r=>typeof r[metric]==='number'&&r[metric]>=0).slice(0,8):[];const max=Math.max(1,...chartRows.map(r=>r[metric]));
   const chart=chartRows.length?`<div class="research-bars">${chartRows.map((r,i)=>`<div><span>${text(r.label||r.hero||r.opponent||r.date||('样本 '+(i+1)))}</span><div><i style="width:${Math.max(0,Math.min(100,r[metric]/max*100))}%"></i></div><b>${value(r[metric])}</b></div>`).join('')}</div>`:'';
   const summary=result.summary?`<div class="research-summary">${Object.entries(result.summary).map(([k,v])=>`<div><span>${text(k)}</span><b>${value(v)}</b></div>`).join('')}</div>`:'';
-  return summary+(chart?section('样本概览',`${labels[metric]||metric} · 最多显示前 8 条`,chart):'')+section('结果明细',`${rows.length} 条结果 · ${result.sourceRows??'—'} 条本队输入记录`,table(cols.map(k=>labels[k]||k),rows.map(row=>cols.map(k=>value(row[k])))))+`<div class="scope-note"><span>计算说明</span>${text(result.note||'请结合样本量查看结果。')}</div>`+(result.warnings?.length?`<div class="scope-note"><span>来源提示</span>${result.warnings.map(text).join('；')}</div>`:'');
+  return summary+(chart?section('样本概览',`${labels[metric]||metric} · 最多显示前 8 条`,chart):'')+section('结果明细',`${rows.length} 条结果 · ${result.sourceRows??'—'} 条本队输入记录`,table(cols.map(k=>labels[k]||k),rows.map(row=>cols.map(k=>value(row[k])))))+`<div class="scope-note research-note-body"><span>报告正文</span><p>${text(result.note||'这份快照还没有文字结论，请结合上方结果明细复核。')}</p></div>`+(result.warnings?.length?`<div class="scope-note"><span>来源提示</span>${result.warnings.map(text).join('；')}</div>`:'');
  }
  function reports(data) {
   const reports=data.reports||[];
   const latest=reports[0]?.createdAt?.slice(0,10)||'—';
   const reportCards=reports.map(r=>`<a class="profile-card report-card" href="#report/${encodeURIComponent(r.id)}"><div class="profile-card-top"><span>${text('分析快照')}</span><b>${text((r.createdAt||'').slice(0,10))}</b></div><h3>${text(r.title)}</h3><span>${glyph('book', { size: 18 })}查看报告</span></a>`).join('');
   const intro=`<section class="sx-report-hero">
-    <div class="sx-report-copy"><span class="sx-eyebrow">REPORT LIBRARY</span><h2>把分析结论保存成可复核的快照</h2></div>
-    <div class="sx-report-stats"><div><b>${reports.length}</b><span>已保存报告</span></div><div><b>${text(latest)}</b><span>最近保存</span></div></div>
+    <div class="sx-report-copy"><span class="sx-eyebrow">报告库</span><h2>把分析结论保存成可复核的快照</h2><p>先选周期与重点战队，再生成周报；历史报告会保留当时的样本和计算口径。</p></div>
+    <div class="sx-report-stats"><div class="sx-report-stat"><b>${fmt(reports.length)}</b><span>已保存报告</span></div><div class="sx-report-stat"><b>${text(latest)}</b><span>最近保存</span></div></div>
   </section>`;
-  const library=reports.length?`<section class="section"><div class="section-heading"><div><h2>已保存报告</h2></div></div><div class="profiles-grid sx-report-grid">${reportCards}</div></section>`:'';
+  const library=reports.length
+    ?`<section class="section"><div class="section-heading"><div><h2>已保存报告</h2></div></div><div class="profiles-grid sx-report-grid">${reportCards}</div></section>`
+    :`<section class="section sx-report-empty"><div class="sx-report-empty-icon">${glyph('book', { size: 30 })}</div><div><h2>还没有保存的报告</h2><p>在上方「生成训练周报」选择起始日与重点战队，第一份报告生成后会自动保存到这里。</p></div></section>`;
   const reportHeader=`<div class="page-intro"><div><h1>报告库</h1></div><div class="intro-actions"><button class="control icon-control" data-action="refresh" aria-label="刷新数据">${glyph('refresh', { size: 18 })}</button></div></div>`;
   const now=new Date();
   const monday=new Date(now); monday.setDate(now.getDate() - (now.getDay()+6)%7);
@@ -49,8 +51,8 @@ export function createResearch({esc,fmt,table,icon,pageIntro}) {
   const focusBoxes=`<fieldset class="sx-week-focus"><legend>重点战队 · 可自己添加 / 改名 / 删除</legend>
     <div class="sx-week-focus-list">${focusOptions.map((name,i)=>`<span class="sx-week-focus-row">
       <label><input type="checkbox" data-sx-week-team value="${text(name)}" ${focusTeams.includes(name)?'checked':''}>${text(name)}</label>
-      <button type="button" class="sx-week-focus-icon" data-sx-focus-rename="${i}" title="改名" aria-label="改名 ${text(name)}">${glyph('edit', { size: 18 })}</button>
-      <button type="button" class="sx-week-focus-icon is-del" data-sx-focus-remove="${i}" title="删除" aria-label="删除 ${text(name)}">${glyph('trash', { size: 18 })}</button>
+      <button type="button" class="sx-week-focus-icon sx-week-focus-icon--large" data-sx-focus-rename="${i}" title="改名" aria-label="改名 ${text(name)}">${glyph('edit', { size: 18 })}</button>
+      <button type="button" class="sx-week-focus-icon sx-week-focus-icon--large is-del" data-sx-focus-remove="${i}" title="删除" aria-label="删除 ${text(name)}">${glyph('trash', { size: 18 })}</button>
     </span>`).join('')}</div>
     <div class="sx-week-focus-add"><label for="sx-focus-new">添加战队</label><input id="sx-focus-new" type="text" data-sx-focus-new placeholder="输入战队名"><button type="button" data-sx-focus-add>${glyph('pick', { size: 18 })}添加</button></div>
   </fieldset>`;

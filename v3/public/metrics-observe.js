@@ -58,7 +58,7 @@ export function render(h = {}) {
         <fieldset class="mo-fs mo-fs-filters"><legend>筛选与指标</legend>
           <div class="mo-fields">
             <div class="mo-field"><label for="${uid}-lane">分路</label>
-              <select id="${uid}-lane" data-mo-lane>${LANES.map((l) => `<option value="${defaultEsc(l)}">${defaultEsc(laneLabel(l))}</option>`).join('')}</select></div>
+              <select id="${uid}-lane" data-mo-lane>${LANES.map((l) => `<option value="${defaultEsc(l)}"${l ? '' : ' selected'}>${defaultEsc(laneLabel(l))}</option>`).join('')}</select></div>
             <div class="mo-field"><label for="${uid}-metric">趋势指标</label>
               <select id="${uid}-metric" data-mo-metric><option value="gpm">分均经济</option></select></div>
             <div class="mo-field"><label for="${uid}-bo">BO 赛制</label>
@@ -80,8 +80,7 @@ export function render(h = {}) {
     </section>
 
     <section class="mo-panel" aria-labelledby="${uid}-slots-title">
-      <div class="mo-panel-head"><h2 id="${uid}-slots-title">${glyph('compare', { size: 20 })}对比对象</h2>
-        <span class="mo-warn-note">${glyph('warning', { size: 16 })}切换数据源会清空已选</span></div>
+      <div class="mo-panel-head"><h2 id="${uid}-slots-title">${glyph('compare', { size: 20 })}对比对象</h2></div>
       <div class="mo-columns" data-mo-slots></div>
     </section>
 
@@ -117,6 +116,7 @@ export function createMetricsObservePage(h = {}) {
   /* ── 工具 ─────────────────────────────────────────────────────────── */
   const $ = (sel) => (root ? root.querySelector(sel) : null);
   const $$ = (sel) => (root ? [...root.querySelectorAll(sel)] : []);
+  const mono = (name) => `<span class="mo-ava player-avatar" aria-hidden="true">${esc(String(name || '?').trim().slice(0, 1) || '?')}</span>`;
   function announce(message, isError = false) {
     if (!statusNode || !statusNode.isConnected) return;
     statusNode.textContent = message;
@@ -197,7 +197,7 @@ export function createMetricsObservePage(h = {}) {
   function chipsHtml() {
     if (!state.picks.length) return `<li class="mo-chip is-empty">${glyph('players', { size: 20 })}<b>还没有对比对象</b><span>在上方选择选手ID加入</span></li>`;
     return state.picks.map((p, i) => `<li class="mo-chip is-${esc(p.source)}">
-      <span>${esc(p.name)}</span><small>${esc(sourceLabel(p.source))}${p.opponentTeam ? ` · 对 ${esc(p.opponentTeam)}` : ''}</small>
+      ${mono(p.name)}<span>${esc(p.name)}</span><small>${esc(sourceLabel(p.source))}${p.opponentTeam ? ` · 对 ${esc(p.opponentTeam)}` : ''}</small>
       <button type="button" data-mo-remove="${i}" data-mo-name="${esc(p.name)}" aria-label="移除 ${esc(p.name)}">×</button>
     </li>`).join('');
   }
@@ -208,9 +208,10 @@ export function createMetricsObservePage(h = {}) {
     box.innerHTML = `<fieldset class="mo-slot" data-mo-slot="0">
       <legend>对比对象 <span class="mo-slot-count">${state.picks.length} 名 · ${state.picks.length} 栏</span></legend>
       <div class="mo-slot-controls">
-        <div class="mo-field"><label for="${uid}-source-0">数据源</label>
-          <select id="${uid}-source-0" data-mo-source>${SOURCES.map(([v, l]) =>
-            `<option value="${v}"${state.source === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <div class="mo-field mo-source-control"><label for="${uid}-source-0">数据源</label>
+          <select id="${uid}-source-0" data-mo-source aria-describedby="${uid}-source-note-0">${SOURCES.map(([v, l]) =>
+            `<option value="${v}"${state.source === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+          <span id="${uid}-source-note-0" class="mo-source-note">${glyph('warning', { size: 16 })}切换数据源会清空已选</span></div>
         ${state.source === 'team' ? `<div class="mo-field"><label for="${uid}-team-0">战队</label>
           <select id="${uid}-team-0" data-mo-team><option value="">选择战队…</option>${teamOptions()}</select></div>` : ''}
         <div class="mo-field"><label for="${uid}-pick-0">追加选手</label>

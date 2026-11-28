@@ -558,7 +558,7 @@ export function createPlayerDetail(h) {
     /* 01 身份与数据合并状态（身份是全量口径，不随切片变） */
     {
       const id = c.identity, accounts = id.accountIds || [], nicks = id.nicknames || [];
-      const body = `<div class="pv-id-main"><span class="pv-id-ava">${S(String(c.name).slice(0, 1))}</span>
+      const body = `<div class="pv-id-main"><span class="pv-id-ava player-avatar" aria-hidden="true">${S(String(c.name || '').trim().slice(0, 1) || '?')}</span>
           <div><b>${S(c.name)}</b><small>选手ID · 已合并 ${fmt(nicks.length)} 个游戏名</small></div>
           <span class="pv-badge ${id.bound ? 'is-ok' : 'is-warn'}">${id.bound ? '已匹配' : '未匹配'}</span></div>
         <div class="pv-id-grid">
@@ -1209,7 +1209,7 @@ export function createPlayerDetail(h) {
       <div class="pls-head">
         <span class="pls-back-row"><a class="hero-back" href="${S(back.href)}">← ${S(back.label)}</a>${backExtra}</span>
         <div class="pls-id">
-          <span class="pls-ava" aria-hidden="true">${S(String(name).trim().slice(0, 1) || '?')}</span>
+          <span class="pls-ava player-avatar" aria-hidden="true">${S(String(name).trim().slice(0, 1) || '?')}</span>
           <div class="pls-id-copy">
             <h1>${S(name)}</h1>
             <p class="pls-meta">

@@ -237,7 +237,7 @@ export function createCompetitionsPage(h = {}) {
     const cur = currentId() === c.id;
     const status = STATUS[c.status] || c.status || '备赛中';
     const indexLabel = String(index + 1).padStart(2, '0');
-    return `<article class="comp-card${cur ? ' is-current' : ''}" data-comp-card="${esc(c.id)}"
+    return `<article class="comp-card comp-card--fill${cur ? ' is-current' : ''}" data-comp-card="${esc(c.id)}"
       role="group" aria-roledescription="slide" aria-label="${index + 1} / ${total} · ${esc(c.name)}"
       data-marker-name="${esc(c.name)}">
       <span class="comp-card-index" aria-hidden="true">${indexLabel}</span>
@@ -336,7 +336,7 @@ export function createCompetitionsPage(h = {}) {
            <div class="comp-carousel-track" data-comp-track tabindex="0" role="group" aria-label="赛事列表">
              ${ordered.map((c, i) => card(c, i, ordered.length)).join('')}
            </div>
-           <div class="comp-carousel-markers" data-comp-markers aria-label="选择赛事"></div>
+
          </div>`
       : `<div class="comp-empty">
            <div class="comp-empty-mark">${glyph('calendar', { size: 30 })}</div>
@@ -588,7 +588,7 @@ export function createCompetitionsPage(h = {}) {
       <td>${esc(row.session || row.source || '—')}</td>
       <td><span class="comp-event-tag" title="${esc(name)}">${esc(name)}</span></td>
       <td><span class="comp-agg is-${esc(row.aggregation || '')}">${esc(aggLabel(row.aggregation))}</span></td>
-      <td><button type="button" class="control is-danger" data-comp-exclude="${esc(String(row.match_key || ''))}" aria-label="从归档中移除对局 ${esc(String(row.match_key || ''))}">${glyph('trash', { size: 13 })}移除</button></td>
+      <td class="comp-table-actions"><button type="button" class="control is-danger" data-comp-exclude="${esc(String(row.match_key || ''))}" aria-label="从归档中移除对局 ${esc(String(row.match_key || ''))}">${glyph('trash', { size: 13 })}移除</button></td>
     </tr>`;
   }
   function unfiledRow(row) {
@@ -597,7 +597,7 @@ export function createCompetitionsPage(h = {}) {
       <td>${esc(dateOf(row) || '—')}</td>
       ${versusCell(row)}
       <td>${esc(row.session || row.source || '—')}</td>
-      <td><div class="comp-assign">
+      <td class="comp-table-actions"><div class="comp-assign">
         <select data-unfiled-target="${esc(key)}" aria-label="把对局 ${esc(key)} 补挂到赛事">
           <option value="">选择赛事…</option>
           ${competitions.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}
@@ -613,8 +613,8 @@ export function createCompetitionsPage(h = {}) {
     const headers = unfiled
       ? ['训练日期', '对阵', '来源', '补挂到赛事']
       : ['训练日期', '对阵', '来源', '所属赛事', '归档方式', '纠错'];
-    return `<div class="comp-table-wrap" role="region" aria-label="${esc(caption)}" tabindex="0">
-      <table class="comp-table">
+    return `<div class="comp-table-wrap comp-table-wrap--archive" role="region" aria-label="${esc(caption)}" tabindex="0">
+      <table class="comp-table comp-table--archive">
         <caption class="visually-hidden">${esc(caption)}</caption>
         <thead><tr>${headers.map((label) => `<th scope="col">${esc(label)}</th>`).join('')}</tr></thead>
         <tbody>${sortedByDate(rows).map((row) => (unfiled ? unfiledRow(row) : archivedRow(row))).join('')}</tbody>
@@ -1140,9 +1140,9 @@ export function createCompetitionsPage(h = {}) {
           </div>
         </div>
         <div class="comp-summary" data-comp-summary aria-label="赛事与训练概览">
-          <div><b>0</b><span>赛事</span></div>
-          <div><b>0</b><span>训练归档</span></div>
-          <div><b>0</b><span>未归档</span></div>
+          <div class="comp-stat-card"><b>0</b><span>赛事</span><small>当前工作区</small></div>
+          <div class="comp-stat-card"><b>0</b><span>训练归档</span><small>已归属训练赛</small></div>
+          <div class="comp-stat-card"><b>0</b><span>未归档</span><small>等待补挂</small></div>
         </div>
         <p class="comp-notice" data-comp-notice role="status" aria-live="polite" hidden></p>
       </header>

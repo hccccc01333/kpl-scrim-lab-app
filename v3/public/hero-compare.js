@@ -70,6 +70,10 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
   }
   const view = (hero, body) => `<div class="hcv-view"><div class="hcv-hero">${hero}</div><div class="hcv-body">${body}</div></div>`;
   const big = (v, label, cls = '') => `<div class="hcv-figure ${cls}"><b>${es(v)}</b><span>${es(label)}</span></div>`;
+  const colorLegend = `<div class="hc-color-legend" aria-label="对比颜色与领先说明">
+    <span><i class="hc-legend-swatch is-blue" aria-hidden="true"></i>对象 A（左 · 蓝）</span>
+    <span><i class="hc-legend-swatch is-red" aria-hidden="true"></i>对象 B（右 · 红）</span>
+    <span>▲ / ▼ 与英雄名一起表示领先，不只看颜色</span></div>`;
 
   function card(id, name, title, chart, titleAttrs = '') {
     return `<article class="hc-card" id="hc-analysis-${id}">
@@ -224,7 +228,8 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
         <span class="hc-cell-label">${lbl}</span>
         <div class="hc-cell-duel"><b class="a ${win === 'a' ? 'win' : ''}">${fmt(va)}</b>
           <i class="hc-duel-bar"><em class="a" style="width:${wa.toFixed(1)}%"></em><em class="b" style="width:${(100 - wa).toFixed(1)}%"></em></i>
-          <b class="b ${win === 'b' ? 'win' : ''}">${fmt(vb)}</b></div></div>`;
+          <b class="b ${win === 'b' ? 'win' : ''}">${fmt(vb)}</b></div>
+        <span class="hc-cell-lead">${win ? `${win === 'a' ? es(a.hero) : es(b.hero)} 领先` : '持平'}</span></div>`;
     }).join('')}</div>`;
     return shell('04', view(big(bigVal, `${a.hero} · ${g.label}的${g.head.label}位次`, roleId === 'support' ? 'teal' : 'gold'), note + scatter + strip));
   }
@@ -241,22 +246,22 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
       <div class="hc-hero-top"><span class="hc-hero-kicker">英雄对比 / ${state.scope === 'own' ? '本队' : '对手'}营地样本</span>
         <span class="hc-hero-scope">${n0(pool().length)} 个英雄 · ${n0(totalGames)} 人次出场</span></div>
       <div class="hc-duel">
-        <div class="hc-duel-side a">
+        <div class="hc-duel-side a is-blue" aria-label="对象 A，左侧蓝色">
           <div class="hc-duel-id">${portrait(a.hero, 'hc-avatar')}<div><span>对象 A</span><b>${es(a.hero)}</b><small>${es(a.lane || '位置未知')} · ${n0(a.games)} 局</small></div></div>
           <div class="hc-duel-num"><b>${pc(a.winRate)}</b><span>胜率</span></div>
           ${sel('a', state.keyA)}
         </div>
         <div class="hc-vs"><span>VS</span><i></i><b>${aWins} : ${bWins}</b><small>六项领先</small></div>
-        <div class="hc-duel-side b">
+        <div class="hc-duel-side b is-red" aria-label="对象 B，右侧红色">
           <div class="hc-duel-id">${portrait(b.hero, 'hc-avatar')}<div><span>对象 B</span><b>${es(b.hero)}</b><small>${es(b.lane || '位置未知')} · ${n0(b.games)} 局</small></div></div>
           <div class="hc-duel-num"><b>${pc(b.winRate)}</b><span>胜率</span></div>
           ${sel('b', state.keyB)}
         </div>
       </div>
       <h2 class="hc-claim">${tie
-        ? `${es(a.hero)} 与 ${es(b.hero)} 六项各领先 ${aWins} 项，侧重不同`
-        : `${es(aWins > bWins ? a.hero : b.hero)} 六项里领先 ${Math.max(aWins, bWins)} 项`}</h2>
-      <p class="hc-fact">差距最大的是${es(best ? best.label : '—')}：${es(a.hero)} ${best ? best.show(a[best.key]) : '—'}，${es(b.hero)} ${best ? best.show(b[best.key]) : '—'}</p>
+        ? `${es(a.hero)} 与 ${es(b.hero)} 六项各领先 ${aWins} 项${best ? `，最大差距在${es(best.label)}` : ''}`
+        : `${es(aWins > bWins ? a.hero : b.hero)} 六项里领先 ${Math.max(aWins, bWins)} 项${best ? `，最大差距在${es(best.label)}` : ''}`}</h2>
+      ${colorLegend}
     </section>`;
   }
 
@@ -280,7 +285,7 @@ export function createHeroCompare({ esc = es, portrait = () => '' } = {}) {
         analysis03(a, b)),
       card('04', names[3], roleTitle(a, roleId, groupOf(roleId)), analysis04(a, b)),
     ].join('');
-    return `<div class="page hc-page">
+    return `<div class="page hc-page hc-hero-compare-page hc-blue-red">
       <div class="page-intro hc-intro"><div><h1>${glyph('compare', { label: '英雄对比', size: 20 })} 英雄对比</h1></div>
         <div class="intro-actions"><button class="control" data-action="refresh">${glyph('refresh', { size: 18 })} 刷新数据</button></div></div>
       ${heroHead(a, b)}

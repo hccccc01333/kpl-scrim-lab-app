@@ -65,6 +65,12 @@ const MODE_CONF = {
   kpl: {source: 'kpl', rule: ''},
   rank: {source: 'scrim', rule: 'rank-20'},
 };
+/* 界面只显示教练能读懂的赛制，内部 rule key 仍用于 API 与状态持久化。 */
+export function bpRuleLabel(rule) {
+  if (rule === 'draft-18') return '训练赛 18 手（每方 4 Ban）';
+  if (rule === 'rank-20') return '排位 / 巅峰 20 手';
+  return 'KPL 20 手（每方 5 Ban）';
+}
 
 export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   /* 元流之子实际只有这五个形态：坦克 / 辅助 / 射手 / 法师 / 刺客。 */
@@ -683,9 +689,9 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
     return `<header class="bps-hero">
       <div class="bps-hero-copy">
         <h1>BP 工作台</h1>
+        <p class="bps-hero-desc">从英雄优先级到赛前方案，用 KPL 与本队训练赛样本准备 BP。</p>
         ${state.mode === 'scrim' && !(data.quality?.ordered)
-          ? `<p class="bps-note">${glyph('warning', { size: 18 })} 当前营地数据是排位/巅峰（rank-20）；征召 18 手还没有完整对局。
-              <button type="button" class="control" data-bps-demo>${glyph('refresh', { size: 18 })} 载入模拟数据</button></p>` : ''}
+          ? `<p class="bps-note">${glyph('warning', { size: 18 })} 当前营地数据是排位 / 巅峰；完整征召 18 手样本不足。需要验证界面时，可在「视图」的「演示与排查」中查看模拟数据。</p>` : ''}
         ${state.demo
           ? `<p class="bps-note">${glyph('warning', { size: 18 })} 模拟数据 · 8 局征召 18 手，仅用于界面验证，不计入真实统计。</p>` : ''}
       </div>
@@ -818,6 +824,11 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
           <button type="button" class="bps-link" data-bps-view-del="${esc(view.name)}" aria-label="删除视图">${glyph('trash', { size: 16 })}</button>
         </div>`).join('') || '<p class="bps-note">还没有保存的视图。</p>'}
       </div>
+      <details class="bps-debug">
+        <summary>演示与排查</summary>
+        <p>模拟数据只用于验证界面，不计入真实统计。</p>
+        <button type="button" class="bps-softbtn bps-demo-action" data-bps-demo>${glyph('refresh', { size: 18 })} 查看模拟数据（仅演示）</button>
+      </details>
       <div class="bps-pop-foot">
         <button type="button" class="bps-softbtn" data-bps-share>${glyph('export', { size: 18 })} 复制分享链接</button>
         <button type="button" class="bps-softbtn" data-bps-export-all>${glyph('export', { size: 18 })} 导出长图（01–07）</button>
@@ -1498,7 +1509,7 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
       <div class="bps-prefix-body">
         <div class="bps-prefix-slots">
           <div class="bps-prefix-group">
-            <span class="bps-prefix-group-label">BP 顺序 · 第几手（${state.rule === 'draft-18' ? '训练赛 18 手' : 'KPL 20 手'}）</span>
+            <span class="bps-prefix-group-label">BP 顺序 · ${esc(bpRuleLabel(state.rule))}</span>
             <div class="bps-prefix-slot-grid">${stages.map(stageButton).join('')}</div>
           </div>
         </div>
@@ -2291,9 +2302,16 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
   }
 
   // ── 组装 ────────────────────────────────────────────────────────────
+  function heroBandShell() {
+    return `<header class="bps-hero bps-hero--quiet"><div class="bps-hero-copy">
+      <h1>BP 工作台</h1>
+      <p class="bps-hero-desc">从英雄优先级到赛前方案，用 KPL 与本队训练赛样本准备 BP。</p>
+    </div></header>`;
+  }
+
   function skeleton() {
     return `<div class="bps">
-      <header class="bps-hero" style="display:block;min-height:150px"></header>
+      ${heroBandShell()}
       <p class="bps-loading" data-bps-loading>正在读取 BP 数据…</p>
       <div class="bps-skeleton">
         <div class="bps-sk" style="height:64px"></div>
@@ -2305,22 +2323,28 @@ export function createBpStudio({esc, fmt, pct, icon, portrait, API_BASE}) {
 
   /* 库里一条 BP 记录都没有：说清缺什么、下一步做什么，别摆一句「读不到」。 */
   function unavailableState(reason) {
+    const readableReason = String(reason || '当前数据源还没有可用的 BP 记录。').replace(/\s*[（(]draft-\d+[）)]/g, '');
     return `<div class="bps">
-      <div class="bps-empty bps-unavailable">
+      ${heroBandShell()}
+      <div class="bps-empty bps-empty-compact bps-unavailable">
         ${glyph('bp', { label: 'BP 记录', size: 20 })}
         <b>还没有可分析的 BP 记录</b>
-        <p>${esc(reason || '当前数据源还没有可用的 BP 记录。')}</p>
+        <p>${esc(readableReason)}</p>
         <div class="bps-unavailable-actions">
           <a class="bps-primary" href="#ingest">${glyph('capture', { size: 18 })} 去采集</a>
-          <button type="button" class="bps-softbtn" data-bps-demo>${glyph('refresh', { size: 18 })} 载入模拟数据</button>
           <button type="button" class="bps-softbtn" data-bps-refresh>${glyph('refresh', { size: 18 })} 重新读取</button>
         </div>
+        <details class="bps-debug">
+          <summary>演示与排查</summary>
+          <p>模拟数据只用于验证界面，不计入真实统计。</p>
+          <button type="button" class="bps-softbtn bps-demo-action" data-bps-demo>${glyph('refresh', { size: 18 })} 查看模拟数据（仅演示）</button>
+        </details>
       </div>
     </div>`;
   }
 
   function errorState() {
-    return `<div class="bps"><div class="bps-empty" style="margin-top:40px">
+    return `<div class="bps">${heroBandShell()}<div class="bps-empty bps-empty-compact">
       ${glyph('warning', { label: '读取失败', size: 20 })}
       <b>BP 数据暂时读不到</b><p>${esc(state.error)}</p>
       <button type="button" class="bps-primary" data-bps-refresh>${glyph('refresh', { size: 18 })} 重新读取</button></div></div>`;

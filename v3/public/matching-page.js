@@ -505,7 +505,7 @@ export function createMatchingPage(h) {
         <b>${esc(rule.nickname)}</b>
         <span class="mb-rule-arrow" aria-hidden="true">→</span>
         <span class="mb-rule-person">${esc(playerName(rule.playerId))}</span>
-        <small>ID ${esc(rule.playerId)}</small>
+        <small>账号 ${esc(rule.playerId)}</small>
       </td>
       <td>${esc(rule.scope ? teamLabel(rule.scope) : rule.teamId ? teamLabel(rule.teamId) : '—')}</td>
       <td>${rule.enabled ? '启用' : '停用'}</td>
@@ -551,31 +551,31 @@ export function createMatchingPage(h) {
     const canAuto = Boolean(currentGame?.enemyTeamId && (!currentGame.archived || currentGame.editing));
     const reviewing = reviewTotal();
     root.innerHTML = `<section class="mb-page">
-      <header class="mb-head"><h1>匹配</h1></header>
+      <header class="mb-head mb-head--icon-safe"><h1><span class="mb-title-icon" aria-hidden="true">${glyph('seriesbuilder', { size: 24 })}</span>匹配与编组</h1></header>
       <ol class="mb-guide" aria-label="匹配流程">
         <li><b>1</b><span>选一局对局</span></li>
-        <li><b>2</b><span>确认对手战队 · ID 按位置自动填</span></li>
+        <li><b>2</b><span>确认对手战队 · 按位置自动填写选手账号</span></li>
         <li><b>3</b><span>复核标记 → 保存归档</span></li>
       </ol>
       <div class="mb-stats">
         <div><span>待配对局</span><b>${pendingGames}</b></div>
         <div><span>已归档对局</span><b>${doneGames}</b></div>
         <div><span>未匹配游戏名</span><b>${pending}</b></div>
-        <div><span>待复核 ID</span><b data-mb-stat-review>${reviewing}</b></div>
+        <div><span>待复核账号</span><b data-mb-stat-review>${reviewing}</b></div>
         <div><span>异常待确认</span><b>${alerts}</b></div>
         <div><span>待保存改动</span><b data-mb-stat-dirty>${dirty}</b></div>
       </div>
       <div class="mb-body">
         <div class="mb-toolbar">
           <div class="mb-filters" role="group" aria-label="按匹配状态筛选">
-            ${[['pending', '待匹配', 'clock'], ['matched', '已匹配', 'victory']].map(([key, label, ico]) => `<button type="button" data-mb-filter="${key}" aria-pressed="${state.filter === key}">${glyph(ico, { size: 18 })}${label}</button>`).join('')}
+            ${[['pending', '待匹配', 'clock'], ['matched', '已匹配', 'victory']].map(([key, label, ico]) => `<button type="button" class="mb-filter-btn" data-mb-filter="${key}" aria-pressed="${state.filter === key}"><span class="mb-state-dot" aria-hidden="true"></span>${glyph(ico, { size: 18 })}${label}</button>`).join('')}
           </div>
           <label class="mb-search"><span>搜索对局 / 游戏名</span><input type="search" data-mb-query value="${esc(state.query)}" autocomplete="off" autocorrect="off" spellcheck="false"></label>
           <button type="button" class="mb-tool" data-mb-autofill${canAuto ? '' : ' disabled'} title="按对手战队选手的分路，把这局对手一侧的 ID 自动填好">${glyph('refresh', { size: 18 })}按位置匹配</button>
           <button type="button" class="mb-tool mb-review" data-mb-review${reviewing ? '' : ' disabled'} title="逐条定位自动匹配、等待教练确认的 ID">${glyph('shield', { size: 18 })}复核 <b data-mb-review-count>${reviewing}</b></button>
           <button type="button" class="mb-primary mb-save" data-mb-save${targets ? '' : ' disabled'}>${glyph('export', { size: 20 })}<span>保存并归档${targets ? `（${targets} 局）` : ''}</span></button>
         </div>
-        <p class="mb-status" role="status">${esc(state.status || '')}</p>
+        <p class="mb-status mb-status--text" role="status">${esc(state.status || '')}</p>
         <div class="mb-workspace">
           <div class="mb-list-wrap"><div class="mb-list-head">${state.filter === 'matched' ? '已归档对局' : '待匹配对局'} <span>${games.length} 局</span></div><div class="mb-list">${renderList(games)}</div></div>
           <div class="mb-detail" data-mb-detail>${renderDetail(state.games.find((g) => g.key === state.selected) || games[0])}</div>

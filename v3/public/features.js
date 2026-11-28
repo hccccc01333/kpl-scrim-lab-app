@@ -1,14 +1,14 @@
 import { equipIcons } from './equipment-icons.js';
 import { glyph } from './ui-icons.js';
-import { createResearch } from './research.js?v=20261124entry';
-import { createCapture } from './capture-page.js';
+import { createResearch } from './research.js?v=20261128ui5';
+import { createCapture } from './capture-page.js?v=20261128ui5';
 import { createSources } from './sources-page.js';
 import { createReview } from './review-page.js';
-import { createPlayers } from './players-page.js?v=20261127csmin1';
-import { createHeroCompare } from './hero-compare.js';
-import { createHeroUsagePage, createLaneMetricsPage, createComboCardsPage } from './team-hero-insight.js?v=20261124a';
-import { createCoachBoard } from './coach-viz.js?v=20261124depth2';
-import { createPlayerCompare } from './player-compare.js?v=20261124ids';
+import { createPlayers } from './players-page.js?v=20261128ui5';
+import { createHeroCompare } from './hero-compare.js?v=20261128ui5';
+import { createHeroUsagePage, createLaneMetricsPage, createComboCardsPage } from './team-hero-insight.js?v=20261128ui5';
+import { createCoachBoard } from './coach-viz.js?v=20261128ui5';
+import { createPlayerCompare } from './player-compare.js?v=20261128ui5';
 import { createTeamDossier } from './team-dossier.js?v=bplab2-20261126';
 import {
   isFocused, reasonsOf, focusNote, focusStats, REASONS, focusUi, applyFocusFilters,
@@ -829,11 +829,12 @@ export function createFeatures(h) {
           </div>
         </div>
         ${toolbar}
-        <div class="tb-list" data-team-results>
+        <div class="tb-list tb-list-scroll" data-team-results tabindex="0" role="region" aria-label="可滚动的对手索引">
           ${cards.map((t, index) => tbItem(t, index, initialTeam)).join('')}
           <p class="tb-empty" data-team-empty hidden>没有符合条件的对手。<button type="button" class="tb-empty-reset" data-team-reset>清空筛选</button></p>
           ${teams.length ? '' : empty('当前没有识别到对手战队。')}
         </div>
+        <p class="tb-scroll-note">列表可滚动 · 共 ${fmt(teams.length)} 支对手</p>
         <div class="tb-rail-foot">
           <div class="tb-bench">
             <span>本队整体基准</span>
@@ -984,7 +985,7 @@ export function createFeatures(h) {
     const sessionCard = (session) => {
       const result = (session.wins || session.losses)
         ? `${fmt(session.wins)} 胜 ${fmt(session.losses)} 负` : '结果未记录';
-      return `<article class="ttn-session is-camp">
+      return `<article class="ttn-session is-camp" data-ttn-session-day="${esc(session.date || '')}">
         <header>
           <span class="ttn-date"><b>${text(session.date || '日期未定')}</b><small>${text(session.time || '')}</small></span>
           <span class="ttn-badge is-camp">交手日</span>
@@ -992,6 +993,18 @@ export function createFeatures(h) {
           <span class="ttn-result">${result}${session.duration ? ` · ${time(session.duration)}` : ''}</span>
         </header>
       </article>`;
+    };
+    const sessionsByDay = (sessions) => {
+      const groups = new Map();
+      for (const session of sessions) {
+        const day = String(session.date || '日期未定');
+        if (!groups.has(day)) groups.set(day, []);
+        groups.get(day).push(session);
+      }
+      return [...groups.entries()].map(([day, rows]) => `<section class="ttn-day-group" data-ttn-day="${esc(day)}">
+        <h4 class="ttn-day-title"><span>${esc(day)}</span><small>${fmt(rows.length)} 次交手记录</small></h4>
+        <div class="ttn-day-sessions">${rows.map(sessionCard).join('')}</div>
+      </section>`).join('');
     };
     const listRows = teams.map((team, index) => {
       const days = team.campSessions.length;
@@ -1013,8 +1026,10 @@ export function createFeatures(h) {
             <p>${fmt(team.matches)} 局 · 本队 ${tmRecord(team)} · 最近 ${text(team.lastSeen || '—')}</p></div>
           <a class="control" href="${route('team', team.id)}">${gi('compare', 16)}战队分析</a>
         </header>
-        <div class="ttn-timeline">${sessions.length ? sessions.map((session) => sessionCard(session)).join('')
-          : empty('这支对手还没有营地交手日。')}</div>
+        <div class="ttn-timeline ttn-timeline-scroll" tabindex="0" role="region" aria-label="${esc(team.displayName || '对手')}的按日交手记录">
+          ${sessions.length ? sessionsByDay(sessions) : empty('这支对手还没有营地交手日。')}
+        </div>
+        <p class="ttn-scroll-note">按日分组 · 记录较多时可在此区域滚动</p>
       </section>`;
     }).join('');
     const head = lede([
@@ -1023,14 +1038,18 @@ export function createFeatures(h) {
       ['对局', `${fmt(totalMatches)} 局`, '训练赛 + 正式赛'],
       ['最近交手', text(latest), '按营地记录'],
     ]);
-    return withPage('交手记录', `按对手汇总营地交手日 · 只统计训练赛与正式赛对局 · ${TM_NOTE}`,
-      head + `<div class="ttn-layout">
+    return withPage('交手记录', '按对手汇总营地交手日；仅统计训练赛与正式赛对局。',
+      head + `<p class="ttn-description">${esc(TM_NOTE)} 左侧索引与右侧记录均可滚动；右侧按日期分组，搜索无结果时会显示明确空态。</p>
+      <div class="ttn-layout">
         <aside class="section ttn-side">
           <div class="section-heading"><div><h2>${gi('opponent')}对手交手榜</h2></div></div>
           <div class="ttn-search"><input data-ttn-search placeholder="搜索对手" aria-label="搜索对手"></div>
-          <div class="ttn-list" data-ttn-list>${listRows || empty('还没有可归集的对手。')}</div>
+          <div class="ttn-list ttn-list-scroll" data-ttn-list tabindex="0" role="region" aria-label="可滚动的对手交手榜">${listRows || empty('还没有可归集的对手。')}</div>
+          <p class="ttn-scroll-note">索引可滚动 · 共 ${fmt(teams.length)} 支对手</p>
         </aside>
-        <div class="ttn-detail" data-ttn-detail>${panels || empty('还没有可归集的对手。')}</div>
+        <div class="ttn-detail" data-ttn-detail>${panels || empty('还没有可归集的对手。')}
+          <div class="ttn-detail-empty" data-ttn-empty hidden><b>没有匹配的对手</b><span>请修改搜索词，或从左侧选择其他战队。</span></div>
+        </div>
       </div>`, false);
   }
   function syncTeamTraining(root) {
@@ -1043,6 +1062,8 @@ export function createFeatures(h) {
       item.hidden = !ok;
       if (ok) shown++;
     }
+    const emptyState = root.querySelector('[data-ttn-empty]');
+    if (emptyState) emptyState.hidden = items.length === 0 || shown > 0;
     if (!shown) {
       root.querySelectorAll('[data-tt-panel]').forEach((panel) => { panel.hidden = true; });
     } else if (!items.some((item) => !item.hidden && item.classList.contains('is-active'))) {
@@ -1178,24 +1199,23 @@ export function createFeatures(h) {
       </div>
     </div>`;
     const bigOptions = [0, 0.5, 1, 2, 3, 3.5, 4.5].map((t) => `<option value="${t}">T${t} · ${rows.filter((p) => p.bigTier === t).length} 个</option>`).join('');
-    const controls = `<div class="hero-filterbar"><label>搜索英雄<input data-hero-filter="name" placeholder="输入英雄名"></label><label>档位<select data-hero-filter="tier"><option value="">全部档位</option>${tierOptions}</select></label><label>巅峰千强<select data-hero-filter="bigtier"><option value="">全部档位</option>${bigOptions}</select></label>${picker}<span class="hero-filter-count" data-hero-count>共 ${fmt(heroPickState.picked.size ? pickedFaces.filter((h) => heroPickState.picked.has(h)).length : rows.length)} 个英雄</span><span class="hb-fresh" data-freshness></span></div>`;
+    const controls = `<div class="hero-filterbar"><label>搜索英雄<input data-hero-filter="name" placeholder="输入英雄名"></label><label>档位<select data-hero-filter="tier"><option value="">全部档位</option>${tierOptions}</select></label><label>巅峰千强<select data-hero-filter="bigtier"><option value="">全部巅峰档位</option>${bigOptions}</select></label>${picker}<span class="hero-filter-count" data-hero-count>共 ${fmt(heroPickState.picked.size ? pickedFaces.filter((h) => heroPickState.picked.has(h)).length : rows.length)} 个英雄</span><span class="hb-fresh" data-freshness></span></div>`;
     const tableRows = rows.map(p => {
       const kpl = kplRate(p);
       const peak = peak10(p);
-      const gradient = p.tier ? Math.max(6, Math.min(100, Number(p.winRate) || 0)) : 0;
       const bigTier = typeof p.bigTier === 'number' ? p.bigTier : null;
       const bigGrade = bigTier == null ? 'none' : bigTier <= 0.5 ? 'S' : bigTier <= 2 ? 'A' : bigTier <= 3.5 ? 'B' : 'C';
       return `<tr data-hero-row data-hero-name="${esc(p.hero || '')}" data-hero-tier="${p.tier || ''}" data-hero-games="${p.games || 0}" data-hero-own="${p.winRate ?? ''}" data-hero-kpl="${kpl ?? ''}" data-hero-top10="${peak ?? ''}" data-hero-bigtier="${bigTier ?? ''}"${heroPickState.picked.size && !heroPickState.picked.has(p.hero) ? ' hidden' : ''}>
         <th scope="row" class="hb-hero"><span class="hb-face">${portrait(p.hero)}</span><span class="hb-hero-copy"><b class="hb-name">${text(p.hero)}</b><small>${text(p.lane || '位置未知')} · ${fmt(p.games)} 局</small></span></th>
-        <td class="hb-rate" data-label="训练赛 / KPL 胜率"><strong class="hb-rate-pair"><span class="hb-own">${pct(p.winRate)}</span><i aria-hidden="true">/</i><span class="hb-kpl">${kpl == null ? '—' : pct(kpl)}</span></strong><span class="visually-hidden">本队训练赛胜率 ${pct(p.winRate)}，KPL 胜率 ${kpl == null ? '暂无数据' : pct(kpl)}</span></td>
-        <td class="hb-gradient" data-label="整体梯度">${tierBadge(p.tier)}<span class="hb-gradient-track" aria-hidden="true"><i class="is-${p.tier || 'none'}" style="width:${gradient}%"></i></span></td>
-        <td class="hb-big-tier" data-label="巅峰千强"><span class="hero-tier is-${bigGrade}">${bigTier == null ? '—' : `T${bigTier}`}</span><small>巅峰千强 · 每日更新</small></td>
-        <td class="hb-peak" data-label="国服第十英雄分"><strong>${peak == null ? '—' : fmt(peak)}</strong><small>国服第 10 · 每日</small></td>
+        <td class="hb-rate" data-label="训练赛胜率 / KPL 胜率"><strong class="hb-rate-pair"><span class="hb-own">${pct(p.winRate)}</span><i aria-hidden="true">/</i><span class="hb-kpl">${kpl == null ? '—' : pct(kpl)}</span></strong><span class="visually-hidden">本队训练赛胜率 ${pct(p.winRate)}，KPL 胜率 ${kpl == null ? '暂无数据' : pct(kpl)}</span></td>
+        <td class="hb-gradient" data-label="整体梯度">${tierBadge(p.tier)}</td>
+        <td class="hb-big-tier" data-label="巅峰千强"><span class="hero-tier is-${bigGrade}">${bigTier == null ? '—' : `T${bigTier}`}</span></td>
+        <td class="hb-peak" data-label="国服第十英雄分"><strong>${peak == null ? '—' : fmt(peak)}</strong></td>
       </tr>`;
     }).join('');
     const table = `<div class="hero-table-wrap" tabindex="0" role="region" aria-label="英雄榜：本队训练赛胜率、KPL 胜率、整体梯度、巅峰千强梯度与国服第十英雄分">
       <table class="hero-board-table">
-        <thead><tr><th scope="col" data-hero-sort="name" tabindex="0" aria-label="按英雄名排序">英雄 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="own" tabindex="0" aria-label="按训练赛胜率排序">训练赛 / KPL 胜率 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="tier" tabindex="0" aria-label="按整体梯度排序">整体梯度 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="bigtier" tabindex="0" aria-label="按巅峰千强排序">巅峰千强 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="top10" tabindex="0" aria-label="按国服第十英雄分排序">国服第十英雄分 <i data-hero-sort-arrow aria-hidden="true"></i></th></tr></thead>
+        <thead><tr><th scope="col" data-hero-sort="name" tabindex="0" aria-label="按英雄名排序">英雄 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" class="hb-winrate-head" data-hero-sort="own" tabindex="0" aria-label="按训练赛胜率排序">训练赛胜率 / KPL 胜率 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="tier" tabindex="0" aria-label="按整体梯度排序">整体梯度 <i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="bigtier" tabindex="0" aria-label="按巅峰千强排序">巅峰千强<small class="hb-th-sub">每日更新</small><i data-hero-sort-arrow aria-hidden="true"></i></th><th scope="col" data-hero-sort="top10" tabindex="0" aria-label="按国服第十英雄分排序">国服第十英雄分<small class="hb-th-sub">每日更新</small><i data-hero-sort-arrow aria-hidden="true"></i></th></tr></thead>
         <tbody>${tableRows || `<tr><td colspan="5">${empty('当前范围暂无英雄记录。')}</td></tr>`}</tbody>
       </table>
     </div>`;
@@ -1405,7 +1425,7 @@ export function createFeatures(h) {
     const stats = focusStats(list);
     const topReason = [...REASONS].sort((a, b) => stats.counts[b] - stats.counts[a])[0];
     const chips = `<button type="button" class="fj-chip" data-focus-filter="" aria-pressed="${focusUi.reason === ''}">全部原因</button>`
-      + REASONS.map((name) => `<button type="button" class="fj-chip" data-focus-filter="${esc(name)}" aria-pressed="${focusUi.reason === name}">${esc(name)} <small>${fmt(stats.counts[name])}</small></button>`).join('');
+      + REASONS.filter((name) => stats.counts[name] > 0).map((name) => `<button type="button" class="fj-chip" data-focus-filter="${esc(name)}" aria-pressed="${focusUi.reason === name}">${esc(name)} <small>${fmt(stats.counts[name])}</small></button>`).join('');
     const rows = [...list].sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))
       || (index.get(b.key) || 0) - (index.get(a.key) || 0));
     const rowsHtml = rows.map((m) => {
@@ -1418,7 +1438,7 @@ export function createFeatures(h) {
       const econText = econ === null ? '—' : diff(econ);
       const score = `${m.own?.kills ?? '—'} : ${m.enemy?.kills ?? '—'}`;
       const hay = [m.opponent, m.date, m.session, m.mode, note, reasons.join(' '), index.get(m.key)].join(' ');
-      return `<article class="fmx-row ${cls}" data-focus-row data-focus-is="${focused ? 1 : 0}"
+      return `<article class="fmx-row fmx-row--card ${cls}" data-focus-row data-focus-is="${focused ? 1 : 0}"
         data-focus-reasons="${esc(reasons.join('|'))}" data-focus-text="${esc(hay)}">
         <div class="fmx-no">第 ${fmt(index.get(m.key))} 局<small>${esc((m.date || '日期未知').slice(0, 10))}</small></div>
         <div class="fmx-main">
@@ -1428,7 +1448,7 @@ export function createFeatures(h) {
           ${note ? `<p class="fmx-note">${esc(note)}</p>` : ''}
         </div>
         <div class="fmx-actions">
-          <a class="fmx-evidence" href="${route('match', m.key)}">${gi('chart', 16)}打开复盘证据</a>
+          <a class="fmx-evidence primary" href="${route('match', m.key)}">${gi('chart', 16)}打开复盘证据</a>
           <button type="button" class="fmx-mark" data-focus-match="${esc(m.key)}"
             data-focus-opponent="${esc(m.opponent || '')}" data-focus-date="${esc(m.date || '')}"
             data-focus-result="${esc(m.result || '')}" data-focus-score="${esc(score)}"
@@ -1447,7 +1467,7 @@ export function createFeatures(h) {
           ['主要原因', topReason ? `${esc(topReason)} ${fmt(stats.counts[topReason])} 局` : '—'],
           ['全部对局', `${fmt(list.length)} 局`]])}
         <div class="fj-toolbar fmx-toolbar">
-          <label class="fj-field"><span>搜对手 / 说明 / 原因</span><input type="search" data-focus-search value="${esc(focusUi.query)}" placeholder="例：击杀 · 小龙团 · 决策"></label>
+          <label class="fj-field fmx-search"><span>搜对手 / 说明 / 原因</span><input type="search" data-focus-search value="${esc(focusUi.query)}" placeholder="例：击杀 · 小龙团 · 决策"></label>
           <button type="button" class="fmx-only" data-focus-only aria-pressed="${focusUi.onlyFocused}">${gi('compare', 16)}${focusUi.onlyFocused ? '只看已关注' : '显示全部对局'}</button>
           <span class="fj-count" data-focus-count>${fmt(stats.focused)} / ${fmt(list.length)} 局</span>
         </div>

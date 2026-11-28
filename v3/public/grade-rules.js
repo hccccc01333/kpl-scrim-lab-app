@@ -109,10 +109,7 @@ export function createGradeRulesPage(h = {}) {
   async function save() {
     if (ui.saving || !ui.draft) return false;
     /* 保存前校验全部阈值：非数字 / 档位顺序错误都阻止提交，聚焦首个错误。 */
-    if (!validateAll()) {
-      setNotice('有阈值填写不正确或档位顺序颠倒，请检查标红的输入后再保存。', { error: true });
-      return false;
-    }
+    if (!validateAll()) return false;
     ui.saving = true;
     paintFoot();
     try {
@@ -171,22 +168,31 @@ export function createGradeRulesPage(h = {}) {
     const rule = ui.draft?.[subject]?.[field];
     if (!rule) return;
     rule.active = Boolean(checked);
-    const row = root?.querySelector(`[data-gr-active="${field}"]`)?.closest('tr');
-    row?.classList.toggle('is-off', !rule.active);
+    if (ui.onlyActive) paintTable();
+    else {
+      const row = root?.querySelector(`[data-gr-active="${field}"]`)?.closest('tr');
+      row?.classList.toggle('is-off', !rule.active);
+    }
     paintTabs(); paintFoot();
   }
   function setAllActive(checked) {
+    if (ui.saving) return;
     const fields = ui.draft?.[ui.subject] || {};
     Object.values(fields).forEach((rule) => { rule.active = Boolean(checked); });
+    /* 「全部停用」后若仍只看生效，会得到没有解释的空表。
+       自动回到全量视图，让教练能立刻重新勾选。 */
+    if (!checked) ui.onlyActive = false;
     paintTable(); paintTabs(); paintFoot();
-    announce(`「${SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject}」已${checked ? '全部勾选生效' : '全部取消生效'}（还没保存）`);
+    announce(`「${SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject}」已${checked ? '全部生效' : '全部停用'}（仅当前分路，还没保存）`);
   }
   function setThreshold(subject, field, index, value) {
     const rule = ui.draft?.[subject]?.[field];
-    if (!rule || !Array.isArray(rule.thresholds)) return;
-    const number = Number(value);
-    if (!Number.isFinite(number)) return;
-    rule.thresholds[index] = number;
+    if (!rule) return;
+    if (!Array.isArray(rule.thresholds)) rule.thresholds = [null, null, null];
+    const raw = text(value);
+    /* 空值代表「未配置」，不能 Number('') 悄悄变成真实 0。
+       保存前会明确拦截未配置项，避免向后端现有数值契约发送 null。 */
+    rule.thresholds[index] = raw === '' ? null : Number(raw);
   }
   function resetSubject() {
     if (!defaults?.[ui.subject]) return;
@@ -241,7 +247,7 @@ export function createGradeRulesPage(h = {}) {
       const down = rule.direction === 'down';
       const label = rule.label || field;
       const unit = rule.unit || '';
-      const t = rule.thresholds || [0, 0, 0];
+      const t = Array.isArray(rule.thresholds) ? rule.thresholds : [];
       const cells = levelInputs(subject, field, t);
       // 营地卡片字段没有公开基准，阈值是占位参考值，明确标注需赛训组按实战校准。
       const estimate = rule.estimate
@@ -255,11 +261,11 @@ export function createGradeRulesPage(h = {}) {
         <th scope="row">${esc(label)}${estimate}${source}</th>
         <td class="gr-active-cell"><input type="checkbox" class="gr-active" data-gr-active="${esc(field)}"
           ${on ? 'checked' : ''} aria-label="启用字段「${esc(label)}」"><span class="visually-hidden">${on ? '已生效' : '未生效'}</span></td>
-        <td><span class="gr-dir ${down ? 'is-down' : 'is-up'}" title="${down ? '数值越低越好' : '数值越高越好'}">${down ? '↓ 越低越好' : '↑ 越高越好'}</span></td>
+        <td><span class="gr-dir ${down ? 'is-down' : 'is-up'}" title="${down ? '数值越低评级越高' : '数值越高评级越高'}">${down ? '↓ 越低越好' : '↑ 越高越好'}<small class="gr-direction-help">${down ? '卓越 ≤ 达标' : '卓越 ≥ 达标'}</small></span></td>
         ${cells}
         <td><span class="gr-unit">${esc(unit)}</span></td>
       </tr>`;
-    }).join('');
+    }).join('') || '<tr><td colspan="7" class="gr-empty gr-filter-empty">当前分路没有生效字段。取消「只看生效」可查看并重新勾选。</td></tr>';
     const title = root.querySelector('[data-gr-subject-title]');
     if (title) title.textContent = SUBJECTS.find((s) => s.key === ui.subject)?.label || ui.subject;
     const toggle = root.querySelector('[data-gr-only-active]');
@@ -270,9 +276,12 @@ export function createGradeRulesPage(h = {}) {
   function levelInputs(subject, field, thresholds) {
     return LEVELS.slice(0, 3).map((lv, i) => {
       const id = `${uid}-${subject}-${field}-${lv.level}`.replace(/[^\w-]/g, '-');
+      const value = thresholds[i];
+      const configured = value !== null && value !== undefined && text(value) !== '';
       return `<td><label class="visually-hidden" for="${id}">${esc(lv.label)}阈值</label>
         <input id="${id}" type="text" inputmode="decimal" data-gr-th="${esc(field)}" data-gr-index="${i}"
-          value="${esc(thresholds[i])}" aria-invalid="false"></td>`;
+          value="${configured ? esc(value) : ''}" placeholder="未配置" aria-invalid="false"
+          aria-label="${esc(lv.label)}阈值${configured ? '' : '，未配置'}"></td>`;
     }).join('');
   }
   /* 补刀是特殊的「按局时长匹配」指标：分钟表与四档阈值并存，
@@ -348,8 +357,12 @@ export function createGradeRulesPage(h = {}) {
     if (reset) reset.disabled = ui.saving;
     const rev = root?.querySelector('[data-gr-rev]');
     if (rev) {
-      rev.textContent = state.saved ? '已保存' : '内置默认 · 尚未保存';
-      rev.classList.toggle('is-saved', state.saved);
+      const isDirty = dirty();
+      rev.textContent = ui.saving ? '保存中…'
+        : isDirty ? '有未保存更改'
+          : state.saved ? `已保存 · 修订 ${state.revision}` : '内置默认 · 尚未保存';
+      rev.classList.toggle('is-saved', state.saved && !isDirty && !ui.saving);
+      rev.classList.toggle('is-dirty', isDirty || ui.saving);
     }
   }
   function paintAll() {
@@ -365,7 +378,7 @@ export function createGradeRulesPage(h = {}) {
             <button type="button" class="control" data-gr-snapshot>${glyph('export', { size: 18 })}存为当前赛事快照</button>
             <button type="button" class="control" data-gr-reload>${glyph('refresh', { size: 18 })}重新读取</button>
           </div></div>
-        <span class="gr-rev" data-gr-rev></span>
+        <span class="gr-rev" id="${uid}-save-state" data-gr-rev role="status" aria-live="polite"></span>
         <p class="gr-status" data-gr-status hidden></p>
       </section>
 
@@ -374,8 +387,8 @@ export function createGradeRulesPage(h = {}) {
           <div class="gr-subjects" role="group" aria-label="选择评分主体">${subjectTabs()}</div>
           <div class="gr-toolbar-actions">
             <label class="gr-only-active"><input type="checkbox" data-gr-only-active><span data-gr-only-active-label>只看生效</span></label>
-            <button type="button" class="control" data-gr-all-on>${glyph('pick', { size: 18 })}本分路全选</button>
-            <button type="button" class="control" data-gr-all-off>${glyph('ban', { size: 18 })}全部取消</button>
+            <button type="button" class="control" data-gr-all-on title="将当前分路的全部字段设为生效">${glyph('pick', { size: 18 })}本分路全部生效</button>
+            <button type="button" class="control" data-gr-all-off title="只停用当前分路的全部字段，并回到全量视图">${glyph('ban', { size: 18 })}本分路全部停用</button>
           </div>
         </div>
         <div class="gr-table-wrap" tabindex="0" role="region" aria-labelledby="${uid}-table-cap">
@@ -483,14 +496,22 @@ export function createGradeRulesPage(h = {}) {
       bad[0].focus();
       return false;
     }
-    // 阈值顺序要对整个草稿负责：当前只渲染一个主体，但保存会一次写入所有主体。
-    // up 档位必须 elite≥good≥pass，down 必须 elite≤good≤pass，和后端 _valid 一致。
+    // 后端现有契约要求每个字段恰好 3 个数字；未配置必须显式补值，
+    // 想表达真实 0 就输入 0，不能把空值静默转换成 0。
     for (const [subject, fields] of Object.entries(ui.draft || {})) {
       for (const [field, rule] of Object.entries(fields || {})) {
-        if (!rule || rule.active === false) continue;
+        if (!rule) continue;
         const ts = rule.thresholds;
         if (!Array.isArray(ts) || ts.length !== 3
-            || !ts.every((v) => Number.isFinite(Number(v)))) continue; // 格式问题由上面的输入校验管
+            || !ts.every((v) => v !== null && v !== undefined && text(v) !== '' && Number.isFinite(Number(v)))) {
+          setNotice(`${subject} · ${rule?.label || field} 有未配置或非数字阈值；请填写数字，真实 0 请输入 0。`, { error: true });
+          if (subject === ui.subject) {
+            const first = [...root.querySelectorAll(`[data-gr-th="${field}"]`)]
+              .find((input) => text(input.value) === '');
+            (first || root.querySelector(`[data-gr-th="${field}"]`))?.focus();
+          }
+          return false;
+        }
         const [a, b, c] = ts.map(Number);
         const ok = rule.direction === 'down' ? (a <= b && b <= c) : (a >= b && b >= c);
         if (ok) continue;

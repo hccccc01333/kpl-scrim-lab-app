@@ -24,7 +24,7 @@ export function createSnapshotCenter(h = {}) {
   let controller = null;
   const state = {
     competitions: [], snapshots: {}, loading: false,
-    open: {}, pending: null, busy: '',
+    open: {}, pending: null, busy: '', notice: '', noticeError: false,
   };
 
   const MODULE_ROUTE = {
@@ -56,6 +56,8 @@ export function createSnapshotCenter(h = {}) {
 
   function announce(text, options = {}) {
     if (notify) notify(text, options);
+    state.notice = String(text || '');
+    state.noticeError = Boolean(options.error);
     const node = root?.querySelector('[data-sc-status]');
     if (node) {
       node.textContent = text;
@@ -86,8 +88,10 @@ export function createSnapshotCenter(h = {}) {
   function paintStatus() {
     const node = root?.querySelector('[data-sc-status]');
     if (!node) return;
-    node.hidden = !(state.loading || state.busy);
-    node.textContent = state.busy || (state.loading ? '正在读取快照…' : '');
+    const message = state.busy || (state.loading ? '正在读取快照…' : state.notice);
+    node.hidden = !message;
+    node.textContent = message;
+    node.classList.toggle('is-error', !state.busy && !state.loading && state.noticeError);
   }
 
   /** 快照里的英雄一律用头像展示；名字只放在 title / aria-label 里，不占正文。 */
@@ -176,24 +180,29 @@ export function createSnapshotCenter(h = {}) {
         </div>
           <div class="sc-lead-actions">
             <span class="sc-current" data-sc-current></span>
-            <button type="button" class="control" data-sc-packall>${glyph('export', { size: 18 })}一键打包当前赛事</button>
+            <button type="button" class="control" data-sc-packall disabled aria-describedby="${uid}-packall-help">${glyph('export', { size: 18 })}一键打包当前赛事</button>
             <button type="button" class="control" data-sc-refresh>${glyph('refresh', { size: 18 })}刷新</button>
           </div></div>
+        <p class="sc-packall-help" id="${uid}-packall-help" data-sc-packall-help>先在顶栏选择赛事，才能一键打包六类规则。</p>
         <p class="sc-status" data-sc-status hidden></p>
       </section>
       <section class="sc-how" aria-label="使用说明">
-        <h2 class="sc-how-title">怎么用</h2>
-        <ol class="sc-how-steps">
-          <li><b>打包</b><span>在对应赛事卡里，把当下六类规则整份存成快照</span></li>
-          <li><b>取回</b><span>展开一份快照，点「用此快照覆盖当下」回到那个版本</span></li>
-          <li><b>留痕</b><span>跨赛事覆盖会先确认；已结束赛事只允许按当下打包覆盖</span></li>
-        </ol>
-        <div class="sc-legend">
-          <span><i class="sc-legend-dot is-ready"></i>已打包</span>
-          <span><i class="sc-legend-dot is-empty"></i>未打包</span>
-          <span><i class="sc-legend-dot is-current"></i>当前赛事</span>
-          <span class="sc-legend-note">六类：${SNAPSHOT_MODULES.map((m) => esc(m.label)).join(' · ')}</span>
-        </div>
+        <details data-sc-how>
+          <summary class="sc-how-title">怎么用：打包 / 取回 / 留痕</summary>
+          <div class="sc-how-body">
+            <ol class="sc-how-steps">
+              <li><b>打包</b><span>在对应赛事卡里，把当下六类规则整份存成快照</span></li>
+              <li><b>取回</b><span>展开一份快照，点「用此快照覆盖当下」回到那个版本</span></li>
+              <li><b>留痕</b><span>跨赛事覆盖会先确认；已结束赛事只允许按当下打包覆盖</span></li>
+            </ol>
+            <div class="sc-legend">
+              <span><i class="sc-legend-dot is-ready"></i>已打包</span>
+              <span><i class="sc-legend-dot is-empty"></i>未打包</span>
+              <span><i class="sc-legend-dot is-current"></i>当前赛事</span>
+              <span class="sc-legend-note">六类：${SNAPSHOT_MODULES.map((m) => esc(m.label)).join(' · ')}</span>
+            </div>
+          </div>
+        </details>
       </section>
       <div class="sc-section-head"><h2>赛事快照</h2><span data-sc-grid-count></span></div>
       <div class="sc-grid" data-sc-grid></div>
@@ -215,6 +224,15 @@ export function createSnapshotCenter(h = {}) {
     if (cur) cur.textContent = current
       ? `当前赛事：${currentCompetitionName() || compLabel(compById(current)) || current}`
       : '当前赛事：未选择（顶栏「选择赛事」）';
+    const packAll = root.querySelector('[data-sc-packall]');
+    if (packAll) {
+      packAll.disabled = !current || Boolean(state.busy);
+      packAll.title = current ? '把当前赛事的六类规则一起打包' : '请先在顶栏选择赛事';
+    }
+    const packHelp = root.querySelector('[data-sc-packall-help]');
+    if (packHelp) packHelp.textContent = current
+      ? `将打包到：${currentCompetitionName() || compLabel(compById(current)) || current}`
+      : '未选择赛事：请先在顶栏选择赛事，才能一键打包六类规则。';
     const grid = root.querySelector('[data-sc-grid]');
     if (!grid) return;
     const comps = state.competitions;
@@ -231,17 +249,20 @@ export function createSnapshotCenter(h = {}) {
           <div class="sc-card-title"><h3>${esc(compLabel(comp))}</h3><p>${esc(compRange(comp))}</p></div>
           <div class="sc-badges">
             <span class="sc-badge ${expired ? 'is-ended' : isCurrent ? 'is-current' : ''}">${status}</span>
-            <span class="sc-badge is-count">${count}/${SNAPSHOT_MODULES.length} 已打包</span>
+            <span class="sc-badge is-count">${expired ? '历史快照已隐藏' : `${count}/${SNAPSHOT_MODULES.length} 已打包`}</span>
           </div>
         </header>
-        <div class="sc-progress" role="img" aria-label="已打包 ${count} / ${SNAPSHOT_MODULES.length}">
+        ${expired ? '' : `<div class="sc-progress" role="img" aria-label="已打包 ${count} / ${SNAPSHOT_MODULES.length}">
           <i style="inline-size:${Math.round(count / SNAPSHOT_MODULES.length * 100)}%"></i>
-        </div>
-        <div class="sc-card-meta">
+        </div>`}
+        ${expired ? '' : `<div class="sc-card-meta">
           <span>${saved ? `最近打包 ${esc(shortTime(saved))}` : '还没有打包任何快照'}</span>
-          ${expired ? '<span class="sc-card-warn">旧快照不展示，也不能回滚</span>' : ''}
-        </div>
-        <div class="sc-modules">${SNAPSHOT_MODULES.map((m) => moduleHtml(comp, m)).join('')}</div>
+        </div>`}
+        ${expired ? `<div class="sc-ended-empty" role="note">
+          <b>历史快照已隐藏</b>
+          <p>赛事已结束：六类旧快照统一不展示，也不能回滚。需要留痕时，可用当下内容重新打包归档。</p>
+          <button type="button" class="control" data-sc-expired-packall="${esc(comp.id)}">${glyph('export', { size: 18 })}用当下打包六类快照</button>
+        </div>` : `<div class="sc-modules">${SNAPSHOT_MODULES.map((m) => moduleHtml(comp, m)).join('')}</div>`}
       </article>`;
     }).join('') : `<div class="sc-empty">${glyph('calendar', { size: 28 })}<b>还没有赛事卡</b><a class="control" href="#competitions">${glyph('calendar', { size: 18 })}创建赛事</a></div>`;
     paintStatus();
@@ -304,6 +325,19 @@ export function createSnapshotCenter(h = {}) {
       state.pending = null;
       root?.querySelector('[data-sc-dialog]')?.close();
       if (fn) fn();
+      return;
+    }
+    const expiredPackAll = event.target.closest('[data-sc-expired-packall]');
+    if (expiredPackAll) {
+      const compId = expiredPackAll.dataset.scExpiredPackall;
+      const comp = compById(compId);
+      if (!isExpired(comp)) return;
+      confirmDialog({ title: '确认归档已结束赛事', danger: true,
+        body: `<p>将用当下六类规则覆盖「${esc(compLabel(comp))}」的历史归档。旧快照不会展示，也不能回滚。</p><p>确定继续吗？</p>`,
+        onConfirm: () => withBusy('正在按当下内容打包六类快照…', async () => {
+          for (const m of SNAPSHOT_MODULES) await saveSnapshot(m.key, compId, `${m.label} · 已结束赛事按当下归档`, API_BASE);
+          announce(`已用当下六类规则归档「${compLabel(comp)}」。`);
+        }) });
       return;
     }
     const expiredPack = event.target.closest('[data-sc-expired-pack]');

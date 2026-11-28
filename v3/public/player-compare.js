@@ -173,12 +173,10 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
   /* ── 01 位置指标对位：去掉细横条，数字放大、赢家就地高亮 ───────── */
   function analysis01(a, b) {
     const mets = metricsFor(a, b);
-    let leadA = 0, leadB = 0;
     const rows = mets.map(([key, label, show]) => {
       const va = a[key], vb = b[key];
       const ok = isNum(va) && isNum(vb);
       const win = ok ? (va > vb ? 'a' : vb > va ? 'b' : '') : '';
-      if (win === 'a') leadA++; else if (win === 'b') leadB++;
       return `<div class="pc-vs-row ${win}" ${tip(`${label} · ${a.name} ${show(va)} / ${b.name} ${show(vb)}`)}>
         <span class="pc-vs-key">${esc(label)}</span>
         <b class="pc-vs-val a${win === 'a' ? ' is-win' : ''}">${show(va)}${win === 'a' ? '<i>领先</i>' : ''}</b>
@@ -188,7 +186,7 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
     const head = `<div class="pc-vs-head"><span>本位置指标</span><b class="a">${esc(a.name)}</b><b class="b">${esc(b.name)}</b></div>`;
     const label = mets.length > 4 ? `${esc(a.lane || '位置')}看这些指标` : '按位置挑的指标';
     return shell('01', [[label, view(
-      big(`${leadA} : ${leadB}`, `本位置指标领先项 · ${a.name} / ${b.name}`, leadA === leadB ? '' : leadA > leadB ? 'red' : 'blue'),
+      big(`${mets.length} 项`, '逐项读数 · 领先项已就地标注'),
       `<div class="pc-vs-table">${head}${rows}</div>`
     )]]);
   }
@@ -378,7 +376,7 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
     const reach = pool().map((p) => p.name).filter((x) => x !== a.name && x !== b.name).slice(0, 3);
 
     const cards = [
-      card('01', '位置指标', `${esc(a.lane || '本位置')}看：${esc(leadA > leadB ? a.name : leadB > leadA ? b.name : '两人')}领先 <em>${Math.max(leadA, leadB)}</em> 项`, analysis01(a, b)),
+      card('01', '位置指标', `${esc(a.lane || '本位置')} · 逐项读数`, analysis01(a, b)),
       card('02', '位置排名', ra && rb ? `同位置平均排名 <em>第 ${n0(ra.rank)}</em> 对 <em>第 ${n0(rb.rank)}</em>` : '同位置排名样本不足', analysis02(a, b)),
       card('03', '英雄池', `两人重合 <em>${overlap}</em> 个英雄；集中度见右栏`, analysis03(a, b)),
       card('04', '状态走势', `最近一局 <em>${n1(sa.chrono.length ? sa.chrono[sa.chrono.length - 1].rating : null)}</em> 对 <em>${n1(sb.chrono.length ? sb.chrono[sb.chrono.length - 1].rating : null)}</em>`, analysis04(a, b)),
@@ -396,7 +394,7 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
           <button class="control pc-refresh" data-action="refresh">${glyph('refresh', { size: 18 })} 刷新数据</button>
           <span class="hc-toolbar-count">${n0(pool().length)} 人${reach.length ? ` · ${reach.map((x) => `<button type="button" class="pc-reach" data-pc-pick="${esc(x)}">${glyph('players', { size: 16 })} ${esc(x)}</button>`).join('')}` : ''}</span>
         </div>
-        <div class="hc-index" role="group" aria-label="分析直达">${NAMES.map(([id, name], i) => `<button type="button" data-pc-jump="${id}">${glyph(['compare', 'chart', 'heroes', 'arrow-up'][i], { size: 18 })}<i>${id}</i>${esc(name)}</button>`).join('')}</div>
+        <nav class="hc-index pc-steps" aria-label="分析步骤">${NAMES.map(([id, name]) => `<button type="button" data-pc-jump="${id}"><i aria-hidden="true">${id}</i>${esc(name)}</button>`).join('')}</nav>
       </div>
       <section class="hc-cards">${cards}</section>
       <p class="hc-source">选手一律按选手ID显示：营地游戏名通过「匹配与编组」的绑定反查，还没建ID的账号不进对比页；同一个ID的多个号合并取场次最多的一份。数据来源：王者营地十人面板与逐局结算；数据源＝${{own: '自家', kpl: 'KPL', team: `指定战队 ${state.team || ''}`}[state.source] || '自家'}，无样本按 0 显示；同位置排名只在本位置内比较。</p>
@@ -418,15 +416,13 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
       return rows;
     };
     const sameLane = a.lane && a.lane === b.lane;
-    const mono = (name, cls) => `<span class="pc-mono ${cls}">${esc(String(name || '?').trim().slice(0, 1) || '?')}</span>`;
+    const mono = (name, cls) => `<span class="pc-mono player-avatar ${cls}" aria-hidden="true">${esc(String(name || '?').trim().slice(0, 1) || '?')}</span>`;
     const side = (p, cls, which) => `<div class="hc-duel-side ${cls}">
-      <div class="hc-duel-id">${mono(p.name, cls)}<div><span>${cls === 'a' ? '红方' : '蓝方'} · 选手 ${which}</span><b>${esc(p.name)}</b><small>${esc(p.lane || '位置未知')} · ${n0(p.games)} 局 · 胜率 ${pc(p.winRate)}</small></div></div>
+      <div class="hc-duel-id">${mono(p.name, cls)}<div><span>${cls === 'a' ? '蓝方' : '红方'} · 选手 ${which}</span><b>${esc(p.name)}</b><small>${esc(p.lane || '位置未知')} · ${n0(p.games)} 局 · 胜率 ${pc(p.winRate)}</small></div></div>
       <div class="hc-duel-num"><b>${n1(p.score)}</b><span>表现分</span></div>
       <select data-pc-select="${which === 'A' ? 'a' : 'b'}" aria-label="选手 ${which}">${opts(p.name)}</select>
     </div>`;
-    const claim = leadA === leadB
-      ? `两人位置指标各领先 <em>${leadA}</em> 项，势均力敌`
-      : `${esc(leadA > leadB ? a.name : b.name)} 在本位置指标里领先 <em>${Math.max(leadA, leadB)}</em> 项`;
+    const claim = `<span class="pc-score-name a">${esc(a.name)}</span><b class="pc-score" data-pc-score-a="${leadA}" data-pc-score-b="${leadB}">${leadA}:${leadB}</b><span class="pc-score-name b">${esc(b.name)}</span>`;
     const fact = sameLane
       ? `同为${esc(a.lane)}，第 2 张卡的名次可直接横着读；换人时同位置选手排在前面。`
       : `${esc(a.name)} 是${esc(a.lane || '未知位置')}，${esc(b.name)} 是${esc(b.lane || '未知位置')}；不同位置只比原始值，名次各按各的位置算。`;
@@ -436,12 +432,11 @@ export function createPlayerCompare({ esc = es, portrait = () => '' } = {}) {
         <span class="hc-hero-scope">${n0(all().length)} 名选手 · ${n0((state.board.games || []).length)} 局</span></div>
       <div class="hc-duel">
         ${side(a, 'a', 'A')}
-        <div class="hc-vs ${winner}"><span class="hc-vs-tag">VS</span>
-          <b><span class="hc-vs-n a">${leadA}</span><i></i><span class="hc-vs-n b">${leadB}</span></b><small>位置指标领先</small></div>
+        <div class="hc-vs ${winner}"><span class="hc-vs-tag">VS</span><small>逐项指标</small></div>
         ${side(b, 'b', 'B')}
       </div>
       <div class="hc-verdict"><span class="hc-verdict-tag">结论</span>
-        <h2 class="hc-claim">${claim}</h2><p class="hc-fact">${fact}</p></div>
+        <h2 class="hc-claim pc-verdict-score">${claim}</h2><p class="hc-fact pc-score-rule">${fact} 指标比分按 ${metricsFor(a, b).length} 项逐项计分，平局不计分。</p></div>
     </section>`;
   }
 

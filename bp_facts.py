@@ -26,6 +26,31 @@ LANES = ('对抗路', '打野', '中路', '发育路', '游走')
 
 _cache: dict[str, tuple[float, dict]] = {}
 
+_STRENGTH_METRICS = ('wr7d', 'pick7d', 'wr30d', 'pick30d',
+                     'wr', 'pick', 'wrAdj30d', 'wrAdj')
+
+
+def _finite_number(value):
+    """外部事实里的数值边界：NaN / inf / 非数字都按“未知”处理。"""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _json_safe(value):
+    """FastAPI 使用严格 JSON（禁止 NaN）；未知指标必须落成 null，不能拖垮整局复盘。"""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
 
 def _load(name):
     path = FACTS / name
@@ -88,29 +113,34 @@ def _lane_strength(heroes, pools, lane, hero):
     row = heroes.get(hero) or {}
     if not row:
         return None
+    metrics = {key: _finite_number(row.get(key)) for key in _STRENGTH_METRICS}
+    # 胜率全为 NaN 的行不能展示档位：档位也是从这些胜率算出来的。
+    if not any(metrics[key] is not None for key in ('wr7d', 'wr30d', 'wr', 'wrAdj30d', 'wrAdj')):
+        return None
     pool = [name for name in (pools.get(lane) or []) if heroes.get(name)]
     tier = row.get('tier')
     rank = row.get('roleRank')
     size = row.get('roleSize')
     role = row.get('role')
-    mine = row.get('wrAdj30d') if row.get('wrAdj30d') is not None else row.get('wrAdj')
+    mine = metrics['wrAdj30d'] if metrics['wrAdj30d'] is not None else metrics['wrAdj']
     if pool and mine is not None:
         # 本局这条路排：池子里没有这个英雄（源站只把他列在别的路）就把他补进来，
         # 名次依旧可解释（「放到这条路大概第几」），不会出现 rank > size。
         names = pool if hero in pool else pool + [hero]
-        scores = sorted((heroes[name].get('wrAdj30d') if heroes[name].get('wrAdj30d') is not None
-                         else heroes[name].get('wrAdj')) or 0 for name in names)
-        rank = 1 + sum(1 for score in scores if score > mine)
-        size = len(scores)
-        tier = _tier_of(rank, size)
-        role = lane              # 本局这条路排的名次，标签也写这条路
-    return {
-        'wr7d': row.get('wr7d'), 'pick7d': row.get('pick7d'),
-        'wr30d': row.get('wr30d'), 'pick30d': row.get('pick30d'),
-        'wr': row.get('wr'), 'pick': row.get('pick'),
-        'wrAdj30d': row.get('wrAdj30d'), 'wrAdj': row.get('wrAdj'),
-        'tier': tier, 'rank': rank, 'size': size, 'role': role,
-    }
+        scores = []
+        for name in names:
+            other = heroes[name]
+            score = _finite_number(other.get('wrAdj30d'))
+            if score is None:
+                score = _finite_number(other.get('wrAdj'))
+            if score is not None:
+                scores.append(score)  # 缺失 / NaN 不参与排名，不能冒充 0 分垫底
+        if scores:
+            rank = 1 + sum(1 for score in scores if score > mine)
+            size = len(scores)
+            tier = _tier_of(rank, size)
+            role = lane          # 本局这条路排的名次，标签也写这条路
+    return {**metrics, 'tier': tier, 'rank': rank, 'size': size, 'role': role}
 
 
 def _kpl_counters():
@@ -731,7 +761,7 @@ def for_match(detail):
         'attributionCounts': attribution_counts,
     }
 
-    return {
+    return _json_safe({
         'schema': 'bp-match-facts-v1',
         'ladder': {'source': 'ladder', 'bracket': lane_data.get('bracket'),
                    'windowEnd': lane_data.get('windowEnd'),
@@ -759,4 +789,4 @@ def for_match(detail):
                 # 这样前端能回答「这套在 KPL 也打过多少场」。
                 'draftCombos': draft_combos,
                 'lineup': lineup, 'lineupSeen': lineup is not None},
-    }
+    })

@@ -7,7 +7,7 @@
    选手档案照 KPL 赛研的选手卡：头像 + 名字/位置 + 一个大指标 + 一行战绩摘要。
    认领与命名就在档案页完成（卡片名字旁、顶部身份条），不再单设名单页与认领页。 */
 
-import {createPlayerDetail} from './player-detail.js?v=20261127csmin1';
+import {createPlayerDetail} from './player-detail.js?v=20261128ui5';
 import {createProfileUI} from './player-profile-ui.js';
 import { glyph } from './ui-icons.js';
 
@@ -18,7 +18,7 @@ export function createPlayers(h) {
   const LANES = ['对抗路', '打野', '中路', '发育路', '游走'];
   const clamp = (v) => Math.max(0, Math.min(100, typeof v === 'number' && Number.isFinite(v) ? v : 0));
   const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? fmt(v, d) : '—');
-  const mono = (name) => `<span class="pl-ava">${esc(String(name || '?').trim().slice(0, 1) || '?')}</span>`;
+  const mono = (name, cls = '') => `<span class="pl-ava player-avatar${cls ? ` ${cls}` : ''}" aria-hidden="true">${esc(String(name || '?').trim().slice(0, 1) || '?')}</span>`;
   const resCls = (r) => r === 'win' ? 'is-win' : r === 'loss' ? 'is-loss' : 'is-none';
   const resWord = (r) => r === 'win' ? '胜' : r === 'loss' ? '负' : '—';
   const tone = (t) => t === 'up' ? '上升' : t === 'down' ? '下滑' : '持平';
@@ -575,20 +575,20 @@ export function createPlayers(h) {
     const row = (p) => {
       const thin = (p.games || 0) < 2;
       const val = (v, digits) => (thin ? '—' : num(v, digits));
-      return `<div class="arch-row${thin ? ' is-thin' : ''}" data-pa-goto="${esc(p.name)}">
-      <a class="arch-row-name" href="${esc(paDetailHref(p.name))}"><i class="arch-lane" data-side="${esc(p.side)}" aria-hidden="true">${esc(laneMark(p.lane))}</i><b>${esc(p.name)}</b>${paClaimChip(board, p)}</a>
-      <span>${p.side === 'own' ? '本队' : '对手'}</span>
-      <span>${esc(p.lane || '—')}</span>
-      <span>${fmt(p.games)}</span>
-      <span>${thin ? '—' : pct0(p.winRate)}</span>
-      <span>${val(p.kda, 2)}</span>
-      <span>${thin ? '—' : fmt(p.mvp)}</span>
-      <span>${thin ? '—' : pct0(p.participation)}</span>
-      <span>${thin ? '—' : pct0(p.damageShare)}</span>
-      <span>${val(p.score, 1)}</span>
+      return `<div class="arch-row${thin ? ' is-thin' : ''}" role="row" data-pa-goto="${esc(p.name)}">
+      <a class="arch-row-name" role="cell" href="${esc(paDetailHref(p.name))}"><i class="arch-lane" data-side="${esc(p.side)}" aria-hidden="true">${esc(laneMark(p.lane))}</i><b>${esc(p.name)}</b>${paClaimChip(board, p)}</a>
+      <span role="cell">${p.side === 'own' ? '本队' : '对手'}</span>
+      <span role="cell">${esc(p.lane || '—')}</span>
+      <span role="cell">${fmt(p.games)}</span>
+      <span role="cell">${thin ? '—' : pct0(p.winRate)}</span>
+      <span role="cell">${val(p.kda, 2)}</span>
+      <span role="cell">${thin ? '—' : fmt(p.mvp)}</span>
+      <span role="cell">${thin ? '—' : pct0(p.participation)}</span>
+      <span role="cell">${thin ? '—' : pct0(p.damageShare)}</span>
+      <span role="cell">${val(p.score, 1)}</span>
     </div>`;
     };
-    return `<div class="arch-list"><div class="arch-row is-head"><span>游戏名</span><span>阵营</span><span>位置</span><span>局数</span><span>胜率</span><span>KDA</span><span>MVP</span><span>参团</span><span>输出</span><span>表现分</span></div>${rows.map(row).join('')}</div>`;
+    return `<div class="arch-list" role="table" aria-label="选手数据列表"><div class="arch-row is-head" role="row"><span role="columnheader">游戏名</span><span role="columnheader">阵营</span><span role="columnheader">位置</span><span role="columnheader">局数（局）</span><span role="columnheader">胜率（%）</span><span role="columnheader">KDA</span><span role="columnheader">MVP（次）</span><span role="columnheader">参团率（%）</span><span role="columnheader">输出占比（%）</span><span role="columnheader">表现分（分）</span></div>${rows.map(row).join('')}</div>`;
   }
 
   function paBody(board) {
@@ -651,10 +651,10 @@ export function createPlayers(h) {
     const hasTeam = Boolean(group.teamId || group.teamName);
     const lane = group.position || group.lane || '位置未填';
     const figures = [
-      ['局', group.games ? fmt(group.games) : '—'],
-      ['胜率', group.games ? pct(group.winRate) : '—'],
+      ['局数（局）', group.games ? fmt(group.games) : '—'],
+      ['胜率（%）', group.games ? pct(group.winRate) : '—'],
       ['KDA', group.games ? num(group.kda, 2) : '—'],
-      ['表现分', group.games ? num(group.score, 1) : '—'],
+      ['表现分（分）', group.games ? num(group.score, 1) : '—'],
     ];
     /* 选手档案是纯 ID 池：游戏名不在这里展示，挂接/解绑只在「匹配与编组」做。 */
     const linked = group.names.length > 0;
@@ -663,26 +663,31 @@ export function createPlayers(h) {
     const title = linked
       ? `<a class="arch-id-title-link" href="${esc(href(group.name))}" title="打开 ${esc(group.name)} 的选手详情">${esc(group.name)}</a>`
       : `<b>${esc(group.name)}</b>`;
-    const state = linked ? '有对局数据' : '暂无数据';
+    const state = linked ? '有数据' : '无数据';
     /* 一行一个选手ID：谁 → 打成什么样 → 能做什么，三段从左到右。 */
     return `<article class="arch-id${group.names.length ? ' is-openable' : ''}" data-pa-id-card="${esc(group.id)}"${group.names.length ? ` data-pl-goto="${esc(group.name)}"` : ''}>
       <header class="arch-id-head">
-        <span class="arch-id-mark" aria-hidden="true">${esc(String(group.name).trim().slice(0, 1) || '?')}</span>
+        ${mono(group.name, 'arch-id-mark')}
         <span class="arch-id-title">
           ${title}
           <small class="arch-id-meta">
             <span class="arch-id-lane">${esc(lane)}</span>
-            <span class="arch-id-state${linked ? ' is-linked' : ''}"><i aria-hidden="true"></i>${state}</span>
+            <span class="arch-id-state${linked ? ' is-linked' : ''}" data-pa-data-state="${linked ? 'ready' : 'empty'}" title="${linked ? '已关联对局数据' : '尚未关联对局数据'}"><i class="arch-id-state-dot" aria-hidden="true"></i>${state}</span>
           </small>
         </span>
       </header>
       <span class="arch-id-figs">${figures.map(([k, v]) => `<span><b>${v}</b><small>${k}</small></span>`).join('')}</span>
       <footer class="arch-id-foot">
         <button type="button" data-pa-id-edit="${esc(group.id)}">${glyph('edit', { size: 18 })}编辑 / 转会</button>
-        ${hasTeam
-          ? `<button type="button" data-pa-id-leave="${esc(group.id)}">${glyph('export', { size: 18 })}移出战队</button>`
-          : `<button type="button" data-pa-id-join="${esc(group.id)}">${glyph('home', { size: 18 })}加入战队</button>`}
-        <button type="button" class="is-danger" data-pa-id-delete="${esc(group.id)}" data-id-name="${esc(group.name)}">${glyph('trash', { size: 18 })}删除选手ID</button>
+        <details class="arch-id-more">
+          <summary class="arch-id-more-trigger" aria-label="更多选手操作"><span aria-hidden="true">…</span></summary>
+          <div class="arch-id-more-menu">
+            ${hasTeam
+              ? `<button type="button" data-pa-id-leave="${esc(group.id)}">${glyph('export', { size: 18 })}移出战队</button>`
+              : `<button type="button" data-pa-id-join="${esc(group.id)}">${glyph('home', { size: 18 })}加入战队</button>`}
+            <button type="button" class="is-danger" data-pa-id-delete="${esc(group.id)}" data-id-name="${esc(group.name)}">${glyph('trash', { size: 18 })}删除选手ID</button>
+          </div>
+        </details>
       </footer>
     </article>`;
   }
@@ -755,7 +760,7 @@ export function createPlayers(h) {
       ${hero}
       ${bar}
       <div data-pa-body>${paBody(board)}</div>
-      <p class="arch-note">${glyph('warning', { size: 16 })}转会不改已经打完的局</p>
+      <p class="arch-note arch-note-readable">${glyph('warning', { size: 16 })}转会不改已经打完的局；删除选手 ID 后，关联游戏名会回到待认领。</p>
     </div>`;
   }
 
@@ -1220,7 +1225,7 @@ export function createPlayers(h) {
     const recent = (player.recent || []).slice(0, 3);
     return `<aside class="pl-drawer" id="pl-drawer" role="dialog" aria-label="${esc(player.name)} 的档案预览">
       <header class="pld-head">
-        <span class="pld-ava">${esc(String(player.name).trim().slice(0, 1) || '?')}${tier ? `<i class="pa-tier is-${tier.toLowerCase()}">${tier}</i>` : ''}</span>
+        <span class="pld-ava player-avatar" aria-hidden="true">${esc(String(player.name).trim().slice(0, 1) || '?')}${tier ? `<i class="pa-tier is-${tier.toLowerCase()}">${tier}</i>` : ''}</span>
         <div><h2>${esc(player.name)}</h2><p>${esc(player.lane || '位置未记录')} · ${player.side === 'own' ? '本队' : '对手'} · ${player.bound ? '已认领' : '待认领'}</p></div>
         <button type="button" class="head-button" data-drawer-close aria-label="关闭档案预览">${glyph('ban', { size: 16 })}</button>
       </header>
@@ -1706,9 +1711,9 @@ export function createPlayers(h) {
       return true;
     }
     if (event.target.closest('[data-pa-export]')) { exportArchive(); return true; }
-    /* 选手池整行可点：行内的按钮与链接优先，其余位置进个人页 */
+    /* 选手池整行可点：行内按钮、链接与 details 摘要优先，其余位置进个人页 */
     const goto = event.target.closest('[data-pl-goto]');
-    if (goto && !event.target.closest('button, a')) {
+    if (goto && !event.target.closest('button, a, summary')) {
       const target = goto.dataset.plGoto;
       if (target) {
         location.hash = href(target);
