@@ -2432,6 +2432,17 @@ export function createFeatures(h) {
     const gradeDoc = data[16] || {};
     const gradeSubjects = gradeDoc.saved ? (gradeDoc.subjects || {}) : {};
     const heroLaneTypes = (data[17] && data[17].heroTypes) || {};
+    /* 低胜率组合的复盘标签按英雄分路标签推，不改底层数据；无标签时给通用结论。 */
+    const pairFocusTag = (row) => {
+      const types = row.heroes.map((hero) => heroLaneTypes[hero] || {});
+      const has = (label) => types.some((tags) => Object.values(tags).some((value) => String(value || '').includes(label)));
+      if (has('游走') || has('辅助')) return '控制与开团';
+      if (has('打野')) return '节奏与资源交换';
+      if (has('中路')) return '清线与支援';
+      if (has('发育') || has('射手')) return '输出站位与保护';
+      if (has('对抗')) return '边线换血与传送';
+      return '协同与资源交换';
+    };
     /* 周报行只有 lane=打野，没有打野刀类型；用该选手打野出场最多的英雄
        的「打野」标签判定坦野/野核，跟对局页 subject_for 同一口径。 */
     const subjectOf = (lane, heroes) => {
@@ -2561,10 +2572,11 @@ export function createFeatures(h) {
       else bestLossStreak = Math.max(bestLossStreak, streakNow);
     }
     const topFoes = [...foeMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
-    const rhythmHtml = dayRows.length ? `<div class="rmo-strip" role="img" aria-label="本周按日对局节奏：${dayRows.map(([day, rec]) => `${day} ${rec.games} 局`).join('，')}">${dayRows.map(([day, rec]) => {
+    const rhythmHtml = dayRows.length ? `<div class="rmo-strip" role="img" aria-label="本周按日对局节奏：${dayRows.map(([day, rec]) => `${day} ${rec.games} 局 ${rec.wins} 胜 ${rec.losses} 负`).join('，')}">${dayRows.map(([day, rec]) => {
       const winPct = rec.games ? rec.wins / rec.games * 100 : 0;
       const lossPct = rec.games ? rec.losses / rec.games * 100 : 0;
       return `<div class="rmo-day" style="--bar-h:${Math.round(rec.games / maxDayGames * 100)}%">
+        <span class="rmo-ratio"><b>${fmt(rec.wins)}</b><i aria-hidden="true">:</i><b>${fmt(rec.losses)}</b></span>
         <span class="rmo-bar"><i class="rmo-win" style="block-size:${winPct}%"></i><i class="rmo-loss" style="block-size:${lossPct}%"></i></span>
         <b>${fmt(rec.games)}</b><small>${text(String(day).slice(5) || day)}</small>
       </div>`;
@@ -2629,7 +2641,7 @@ export function createFeatures(h) {
         <article class="rl-card rl-card--table">
           <header><span class="rl-kicker">RISK · 06</span><h2>本周低胜率组合</h2></header>
           ${lowPairs.length
-            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周低胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率 / 提示</th></tr></thead><tbody>${lowPairs.map((row, i) => `<tr><th scope="row"><span class="rl-rank">${fmt(i + 1)}</span>${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-bad"><b>${rateProgress(row, 'bad')}</b><em class="rl-flag">胜率偏低 · 建议复盘控制与开团</em></td></tr>`).join('')}</tbody></table></div>`
+            ? `<div class="rl-table-wrap" tabindex="0" role="region" aria-label="本周低胜率英雄组合"><table class="report-table"><thead><tr><th scope="col">组合</th><th scope="col" class="num">局数</th><th scope="col" class="num">胜率 / 提示</th></tr></thead><tbody>${lowPairs.map((row, i) => `<tr><th scope="row"><span class="rl-rank">${fmt(i + 1)}</span>${pairText(row)}</th><td class="num">${fmt(row.games)}</td><td class="num is-bad"><b>${rateProgress(row, 'bad')}</b><em class="rl-flag">胜率偏低 · 先复盘${pairFocusTag(row)}</em></td></tr>`).join('')}</tbody></table></div>`
             : '<p class="report-muted">本周没有可统计的低胜率组合。</p>'}
         </article>
         <article class="rl-card rl-card--foes">

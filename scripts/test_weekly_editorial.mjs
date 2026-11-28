@@ -32,8 +32,12 @@ assert.match(css, /\.rl-mosaic > \.rl-card--table \{ grid-column: span 6; \}/, '
 assert.match(js, /<progress max="100" value=/, '胜率必须用原生 progress 承载语义');
 assert.match(js, /class="rl-rank"/, '组合必须有排名');
 assert.match(css, /appearance: none; border: 0 solid;/, 'progress 必须显式重置默认样式');
-assert.match(html, /weekly-refined\.css\?v=20261127weeklyart6/, 'index.html 必须最后加载周报视觉层');
-assert.match(app, /features\.js\?v=20261127weeklyart6/, 'app.js 模块版本戳必须更新');
-assert.match(html, /features\.js\?v=20261127weeklyart6/, 'index.html 预取版本戳必须更新');
+assert.match(js, /pairFocusTag/, '低胜率组合必须有按分路推导的复盘标签');
+assert.match(js, /rmo-ratio/, '按日节奏必须显示胜负数字');
+assert.match(js, /rec\.wins\} 胜 \$\{rec\.losses\} 负/, '节奏图 aria-label 必须带胜负');
+assert.match(css, /forced-colors: active\) \{ \.rmo-ratio/, '胜负数字必须有强制颜色回退');
+assert.match(html, /weekly-refined\.css\?v=20261128weeklyart7/, 'index.html 必须最后加载周报视觉层');
+assert.match(app, /features\.js\?v=20261128weeklyart7/, 'app.js 模块版本戳必须更新');
+assert.match(html, /features\.js\?v=20261128weeklyart7/, 'index.html 预取版本戳必须更新');
 
 console.log('weekly editorial layout: all assertions passed');

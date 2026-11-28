@@ -229,3 +229,10 @@
 .rl-rate-empty { color: var(--wr-mute); }
 .rl-list--pairs .rl-rate { display: inline-grid; grid-template-columns: 36px auto; gap: 6px; vertical-align: middle; }
 @media (forced-colors: active) { .rl-rate progress { border: 1px solid CanvasText; } }
+
+/* 按日节奏：胜负数字用文本给出，颜色只辅助；读屏由 rmo-strip 的 aria-label 承担。 */
+.rmo-ratio { display: flex; align-items: baseline; gap: 2px; color: var(--wr-mute); font: 700 0.5625rem/1 Manrope, var(--font); font-variant-numeric: tabular-nums; }
+.rmo-ratio b:first-child { color: #176b69; }
+.rmo-ratio b:last-child { color: #b07824; }
+.rmo-ratio i { color: #b0aaa0; font-style: normal; }
+@media (forced-colors: active) { .rmo-ratio, .rmo-ratio b, .rmo-ratio i { color: CanvasText; } }
